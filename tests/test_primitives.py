@@ -1,0 +1,209 @@
+"""Ref, Deferred, Queue, Semaphore."""
+
+from collections.abc import Callable
+from contextlib import AbstractContextManager
+
+import pyfect as fx
+from pyfect.testing import run_test as run
+
+
+def test_ref_updates_are_atomic_across_fibers():
+    @fx.gen
+    def program():
+        ref = yield from fx.Ref.make(0)
+        yield from fx.for_each(
+            range(100),
+            lambda _: ref.update(lambda n: n + 1).and_then(fx.yield_now()),
+            concurrency=10,
+        )
+        return (yield from ref.get())
+
+    assert run(program) == 100
+
+
+def test_ref_modify_returns_a_result_and_updates():
+    @fx.gen
+    def program():
+        ref = yield from fx.Ref.make([1, 2, 3])
+        head = yield from ref.modify(lambda xs: (xs[0], xs[1:]))
+        return head, (yield from ref.get())
+
+    assert run(program) == (1, [2, 3])
+
+
+def test_deferred_wakes_every_waiter_with_the_same_result():
+    @fx.gen
+    def program():
+        d = yield from fx.Deferred[int].make()
+        waiters = yield from fx.for_each(range(3), lambda _: d.wait().fork())
+        yield from fx.yield_now()
+        first = yield from d.succeed(7)
+        second = yield from d.succeed(8)
+        results = yield from fx.for_each(waiters, lambda f: f.join())
+        return results, first, second
+
+    assert run(program) == ([7, 7, 7], True, False)
+
+
+def test_deferred_failure_propagates():
+    @fx.gen
+    def program():
+        d = yield from fx.Deferred[int, str].make()
+        yield from d.fail("nope")
+        return (yield from d.wait())
+
+    ex = fx.testing.run_test_exit(program)
+    assert isinstance(ex, fx.Failure) and ex.cause.failures == ("nope",)
+
+
+def test_bounded_queue_applies_backpressure():
+    log: list[str] = []
+
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int].bounded(2)
+
+        @fx.gen
+        def producer():
+            for i in range(4):
+                yield from q.offer(i)
+                log.append(f"offered {i}")
+
+        fiber = yield from producer.fork()
+        yield from fx.yield_now()
+        log.append("consumer starts")
+        taken: list[int] = []
+        for _ in range(4):
+            taken.append((yield from q.take()))  # noqa: PERF401
+        yield from fiber.join()
+        return taken
+
+    assert run(program) == [0, 1, 2, 3]
+    assert log[:3] == ["offered 0", "offered 1", "consumer starts"]
+
+
+def test_dropping_and_sliding_queues():
+    @fx.gen
+    def program():
+        dropping = yield from fx.Queue[int].dropping(2)
+        sliding = yield from fx.Queue[int].sliding(2)
+        accepted = yield from fx.for_each(range(3), dropping.offer)
+        for i in range(3):
+            yield from sliding.offer(i)
+        return accepted, (yield from dropping.take_all()), (yield from sliding.take_all())
+
+    assert run(program) == ([True, True, False], [0, 1], [1, 2])
+
+
+def test_ended_queue_drains_then_fails_with_done():
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int, fx.Done].unbounded()
+        yield from q.offer_all([1, 2])
+        yield from q.end()
+        late = yield from q.offer(3)
+        a = yield from q.take()
+        b = yield from q.take()
+        c = yield from q.take().exit()
+        return late, a, b, c
+
+    late, a, b, c = run(program.pipe(fx.catch_tag(fx.Done, fx.die)))
+    assert (late, a, b) == (False, 1, 2)
+    assert isinstance(c, fx.Failure) and isinstance(c.cause.failures[0], fx.Done)
+
+
+def test_ending_a_queue_wakes_waiting_takers():
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int, fx.Done].unbounded()
+        taker = yield from q.take().exit().fork()
+        yield from fx.yield_now()
+        yield from q.end()
+        return (yield from taker.join())
+
+    ex = run(program)
+    assert isinstance(ex, fx.Failure) and isinstance(ex.cause.failures[0], fx.Done)
+
+
+def test_a_taker_interrupted_right_after_its_wake_up_passes_it_on():
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[str].unbounded()
+        doomed = yield from q.take().fork()
+        survivor = yield from q.take().fork()
+        yield from fx.yield_now()
+        # In one step: queue the interrupt, then wake `doomed`. The interrupt
+        # lands after the wake-up but before `doomed` can retry its take.
+        yield from fx.sync(lambda: doomed.unsafe_interrupt_as(None)).and_then(q.offer("item"))
+        assert isinstance((yield from doomed.await_exit()), fx.Failure)
+        return (yield from survivor.join())
+
+    assert run(program) == "item"
+
+
+def test_semaphore_limits_concurrency():
+    running = 0
+    peak = 0
+
+    def enter() -> None:
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+
+    def leave() -> None:
+        nonlocal running
+        running -= 1
+
+    @fx.gen
+    def program():
+        sem = yield from fx.Semaphore.make(2)
+        task = sem.with_permits(fx.sync(enter).and_then(fx.sleep(1)).and_then(fx.sync(leave)))
+        fiber = yield from fx.for_each(range(6), lambda _: task, concurrency="unbounded").fork()
+        yield from fx.testing.adjust(3)
+        yield from fiber.join()
+        return (yield from sem.available)
+
+    assert run(program) == 2
+    assert peak == 2
+
+
+def test_semaphore_permits_return_on_interrupt():
+    @fx.gen
+    def program():
+        sem = yield from fx.Semaphore.make(1)
+        holder = yield from sem.with_permits(fx.never).fork()
+        waiter = yield from sem.with_permits(fx.never).fork()
+        yield from fx.yield_now()
+        yield from waiter.interrupt()
+        yield from holder.interrupt()
+        return (yield from sem.available)
+
+    assert run(program) == 1
+
+
+def test_semaphore_take_and_release_return_counts():
+    """Effect: Semaphore.test.ts 'module-level combinators delegate to the instance api'."""
+
+    @fx.gen
+    def program():
+        sem = yield from fx.Semaphore.make(3)
+        return (yield from sem.take(2)), (yield from sem.release(1))
+
+    assert run(program) == (2, 2)
+
+
+def test_with_permits_interrupted_at_a_yield_gives_its_permit_back(
+    yield_budget: Callable[[int], AbstractContextManager[None]],
+):
+    @fx.fn
+    def program(delay: int):
+        sem = yield from fx.Semaphore.make(1)
+        holder = yield from sem.with_permits(fx.never).fork()
+        yield from fx.for_each(range(delay), lambda _: fx.yield_now())
+        yield from holder.interrupt()
+        return (yield from sem.available)
+
+    for budget in range(1, 16):
+        for delay in range(5):
+            with yield_budget(budget):
+                assert run(program(delay)) == 1, (budget, delay)

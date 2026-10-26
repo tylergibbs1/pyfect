@@ -1,0 +1,54 @@
+[project]
+name = "pyfect"
+version = "0.1.0"
+description = "Effect-TS for Python: typed effects, a real fiber runtime, structured concurrency, services and layers."
+readme = "README.md"
+authors = [{ name = "Tyler Gibbs", email = "tylergibbs049@gmail.com" }]
+license = "MIT"
+requires-python = ">=3.13"
+dependencies = []
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.pyright]
+typeCheckingMode = "strict"
+include = ["src", "tests", "examples"]
+reportUnnecessaryTypeIgnoreComment = true
+exclude = ["research"]
+pythonVersion = "3.13"
+# Pyright infers the *send* type of an unannotated generator as Unknown
+# (microsoft/pyright#10279). Effect generators never use the send type, but
+# strict flags every one of them. Parameters are still required to be
+# annotated by reportMissingParameterType, so turning this off loses nothing.
+reportUnknownParameterType = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["research"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "PL", "PERF"]
+# UP046/UP047: Effect and Layer need explicit variance + PEP 696 defaults,
+# which the PEP 695 class syntax cannot spell.
+# PLR0913/PLR2004: combinator signatures and tests legitimately trip these.
+ignore = ["UP046", "UP047", "PLR0913", "PLR2004", "PLC0415"]
