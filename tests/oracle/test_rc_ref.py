@@ -261,6 +261,12 @@ class _RecordingClock:
     def unsafe_monotonic(self) -> float:
         return self.inner.unsafe_monotonic()
 
+    def unsafe_now_nanos(self) -> int:
+        return self.inner.unsafe_now_nanos()
+
+    def unsafe_monotonic_nanos(self) -> int:
+        return self.inner.unsafe_monotonic_nanos()
+
     def sleep(self, seconds: Seconds) -> fx.Effect[None]:
         self.sleeps.append(seconds)
         return self.inner.sleep(seconds)

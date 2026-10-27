@@ -4,7 +4,8 @@
 
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
-``fx.random``, ``fx.schedule``, ``fx.scheduler``, ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
+``fx.clock``, ``fx.date_time``, ``fx.random``, ``fx.schedule``, ``fx.scheduler``,
+``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
 ``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``.
@@ -13,6 +14,7 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 from pyfect import (
     cause,
     clock,
+    date_time,
     duration,
     exit,
     layer,
@@ -76,6 +78,7 @@ from pyfect.effect import (
 )
 from pyfect.errors import (
     ExceededCapacityError,
+    IllegalArgumentError,
     NoSuchElementException,
     TaggedError,
     TimeoutException,
@@ -146,6 +149,7 @@ __all__ = [
     "FiberHandle",
     "FiberMap",
     "FiberSet",
+    "IllegalArgumentError",
     "Interrupted",
     "Interruptor",
     "Latch",
@@ -200,6 +204,7 @@ __all__ = [
     "clock",
     "context",
     "current_fiber",
+    "date_time",
     "default_teardown",
     "die",
     "duration",

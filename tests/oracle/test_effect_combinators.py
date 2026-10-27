@@ -28,8 +28,6 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import Any
 
-import pytest
-
 import pyfect as fx
 from pyfect import testing
 from pyfect.exit import fail as exit_fail
@@ -1009,4 +1007,4 @@ def test_timed_uses_monotonic_time_when_wall_time_moves_backward():
 
     duration, result = yield from body.timed()
     assert result == "done"
-    assert duration == pytest.approx(0.1)
+    assert duration == 0.1

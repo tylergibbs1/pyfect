@@ -109,6 +109,11 @@ class NoSuchElementException(TaggedError, LookupError):
     """An expected value was missing."""
 
 
+class IllegalArgumentError(TaggedError, ValueError):
+    """An argument outside what an operation accepts, such as an unknown
+    time zone name."""
+
+
 class ExceededCapacityError(TaggedError):
     """A bounded structure was asked to hold more than its capacity."""
 

@@ -1265,3 +1265,63 @@ def check_random() -> None:
     )
     fx.provide_service(fx.Random, object())  # pyright: ignore[reportArgumentType]
     fx.random.with_seed(b"seed")  # pyright: ignore[reportArgumentType]
+
+
+def check_clock() -> None:
+    assert_type(fx.clock.now_nanos(), fx.Effect[int])
+    assert_type(fx.clock.monotonic_nanos(), fx.Effect[int])
+    assert_type(fx.clock.clock_with(lambda c: fx.succeed(c.unsafe_now_nanos())), fx.Effect[int])
+
+    class SecondsOnly:
+        def unsafe_now(self) -> float:
+            return 0.0
+
+        def unsafe_monotonic(self) -> float:
+            return 0.0
+
+        def sleep(self, seconds: Seconds) -> fx.Effect[None]:
+            return fx.void
+
+    # A clock must also give whole nanoseconds.
+    fx.provide_service(fx.Clock, SecondsOnly())  # pyright: ignore[reportArgumentType]
+
+
+def check_date_time() -> None:
+    import calendar
+    from datetime import datetime, tzinfo
+
+    from pyfect import date_time
+    from pyfect.date_time import CurrentTimeZone
+
+    assert_type(date_time.now(), fx.Effect[datetime])
+    assert_type(date_time.is_future(datetime.now()), fx.Effect[bool])
+    assert_type(date_time.now_in_current_zone(), fx.Effect[datetime, Never, CurrentTimeZone])
+    # The providers remove CurrentTimeZone; a named zone may not exist.
+    assert_type(
+        date_time.now_in_current_zone().pipe(date_time.with_current_zone_offset(3600)),
+        fx.Effect[datetime],
+    )
+    assert_type(
+        lookup("k")
+        .pipe(lambda e: e.zip(date_time.now_in_current_zone()))
+        .pipe(date_time.with_current_zone_named("Europe/London")),
+        fx.Effect[
+            tuple[str, datetime], Invalid | NotFound | fx.IllegalArgumentError, Port | Primary
+        ],
+    )
+    assert_type(
+        date_time.layer_current_zone_named("UTC"),
+        fx.Layer[CurrentTimeZone, fx.IllegalArgumentError],
+    )
+    assert_type(date_time.zone_from_string("+05:30"), tzinfo | None)
+    # Only "reject" can fail to resolve a wall-clock time.
+    wall = datetime(2025, 3, 9, 2, 30)
+    zone = date_time.zone_local()
+    assert_type(date_time.make_zoned(wall, zone), datetime)
+    assert_type(date_time.make_zoned(wall, zone, disambiguation="later"), datetime)
+    assert_type(date_time.make_zoned(wall, zone, disambiguation="reject"), datetime | None)
+    # Calendar units are whole; weeks start on a calendar.Day.
+    date_time.add(datetime.now(), days=1.5)  # pyright: ignore[reportArgumentType]
+    date_time.start_of(datetime.now(), "week", week_starts_on=calendar.MONDAY)
+    date_time.start_of(datetime.now(), "week", week_starts_on=1)  # pyright: ignore[reportArgumentType]
+    date_time.end_of(datetime.now(), "fortnight")  # pyright: ignore[reportArgumentType]
