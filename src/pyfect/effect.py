@@ -121,19 +121,29 @@ def try_(
     """Run ``thunk``, mapping a raised exception to a typed error with
     ``catch``, or to an ``UnknownError``. If ``catch`` raises, that is a
     defect."""
-    to_error = _unknown_error if catch is None else catch
+    to_error = _unknown_error_in("try_") if catch is None else catch
 
     def run() -> Effect[Any, Any]:
         try:
             return _Succeed(thunk())
         except Exception as exc:
-            return fail(to_error(exc))
+            return _failure_of(to_error, exc)
 
     return _Suspend(run)
 
 
-def _unknown_error(exc: Exception) -> UnknownError:
-    return UnknownError(exc, "An error occurred in try_")
+def _unknown_error_in(name: str) -> Callable[[Exception], UnknownError]:
+    return lambda exc: UnknownError(exc, f"An error occurred in {name}")
+
+
+def _failure_of[E](catch: Callable[[Exception], E] | None, exc: BaseException) -> Effect[Never, E]:
+    """The failure for ``exc`` raised by user code. ``catch`` runs when the
+    effect runs, on the fiber, so a raising ``catch`` is a defect rather than
+    an exception lost in a done callback. Without ``catch``, or for a
+    ``BaseException`` that is not an ``Exception``, ``exc`` is a defect."""
+    if catch is None or not isinstance(exc, Exception):
+        return _FailCause(die_cause(exc))
+    return _Suspend(lambda: fail(catch(exc)))
 
 
 def suspend[A, E = Never, R = Never](thunk: Callable[[], Effect[A, E, R]]) -> Effect[A, E, R]:
@@ -158,11 +168,19 @@ def from_async[A](make: Callable[[], Awaitable[A]]) -> Effect[A]:
     return _await(make, None)
 
 
+@overload
+def try_async[A](make: Callable[[], Awaitable[A]]) -> Effect[A, UnknownError]: ...
+@overload
 def try_async[A, E](
     make: Callable[[], Awaitable[A]], catch: Callable[[Exception], E]
-) -> Effect[A, E]:
-    """Like ``from_async``, mapping raised exceptions to a typed error."""
-    return _await(make, catch)
+) -> Effect[A, E]: ...
+def try_async(
+    make: Callable[[], Awaitable[Any]], catch: Callable[[Exception], Any] | None = None
+) -> Effect[Any, Any]:
+    """Like ``from_async``, mapping an exception raised by ``make`` or the
+    awaitable to a typed error with ``catch``, or to an ``UnknownError``. If
+    ``catch`` raises, that is a defect."""
+    return _await(make, _unknown_error_in("try_async") if catch is None else catch)
 
 
 class AsyncioRequiredError(RuntimeError):
@@ -172,31 +190,37 @@ class AsyncioRequiredError(RuntimeError):
 def _await[A, E](
     make: Callable[[], Awaitable[A]], catch: Callable[[Exception], E] | None
 ) -> Effect[A, E]:
-    def register(resume: Callable[[Effect[A, E]], None]) -> Effect[None]:
+    def start() -> Effect[A, E]:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             raise AsyncioRequiredError(
                 "from_async/try_async need an asyncio loop; run with run_async or run_main"
             ) from None
-        task = loop.create_task(_as_coroutine(make()))
+        try:
+            awaitable = make()
+        except BaseException as exc:
+            return _failure_of(catch, exc)
+        return _Callback(lambda resume: register(loop, awaitable, resume))
+
+    def register(
+        loop: asyncio.AbstractEventLoop,
+        awaitable: Awaitable[A],
+        resume: Callable[[Effect[A, E]], None],
+    ) -> Effect[None]:
+        task = loop.create_task(_as_coroutine(awaitable))
 
         def done(t: asyncio.Task[A]) -> None:
             if t.cancelled():
                 resume(_FailCause(interrupt_cause()))
                 return
             exc = t.exception()
-            if exc is None:
-                resume(_Succeed(t.result()))
-            elif catch is not None and isinstance(exc, Exception):
-                resume(_FailCause(fail_cause_of(catch(exc))))
-            else:
-                resume(_FailCause(die_cause(exc)))
+            resume(_Succeed(t.result()) if exc is None else _failure_of(catch, exc))
 
         task.add_done_callback(done)
         return _cancel_task(task)
 
-    return _Callback(register)
+    return _Suspend(start)
 
 
 async def _as_coroutine[A](aw: Awaitable[A]) -> A:
@@ -228,21 +252,24 @@ def blocking[A](thunk: Callable[[], A]) -> Effect[A]:
     return _blocking(thunk, None)
 
 
-def try_blocking[A, E](thunk: Callable[[], A], catch: Callable[[Exception], E]) -> Effect[A, E]:
-    """Like ``blocking``, mapping raised exceptions to a typed error."""
-    return _blocking(thunk, catch)
+@overload
+def try_blocking[A](thunk: Callable[[], A]) -> Effect[A, UnknownError]: ...
+@overload
+def try_blocking[A, E](thunk: Callable[[], A], catch: Callable[[Exception], E]) -> Effect[A, E]: ...
+def try_blocking(
+    thunk: Callable[[], Any], catch: Callable[[Exception], Any] | None = None
+) -> Effect[Any, Any]:
+    """Like ``blocking``, mapping a raised exception to a typed error with
+    ``catch``, or to an ``UnknownError``. If ``catch`` raises, that is a
+    defect."""
+    return _blocking(thunk, _unknown_error_in("try_blocking") if catch is None else catch)
 
 
 def _blocking[A, E](thunk: Callable[[], A], catch: Callable[[Exception], E] | None) -> Effect[A, E]:
     def register(resume: Callable[[Effect[A, E]], None]) -> None:
         def done(fut: Future[A]) -> None:
             exc = fut.exception()
-            if exc is None:
-                resume(_Succeed(fut.result()))
-            elif catch is not None and isinstance(exc, Exception):
-                resume(_FailCause(fail_cause_of(catch(exc))))
-            else:
-                resume(_FailCause(die_cause(exc)))
+            resume(_Succeed(fut.result()) if exc is None else _failure_of(catch, exc))
 
         _pool().submit(thunk).add_done_callback(done)
 

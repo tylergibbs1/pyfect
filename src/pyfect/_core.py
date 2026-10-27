@@ -399,6 +399,11 @@ class Effect(Frame, Generic[A_co, E_co, R_co]):
         """Discard the value and any typed error."""
         return _MatchCause(self, _ignore_failure, _succeed_none)
 
+    def ignore_cause(self) -> Effect[None, Never, R_co]:
+        """Discard the value and the whole cause: typed errors, defects and
+        interrupts."""
+        return _MatchCause(self, _succeed_none, _succeed_none)
+
     # --- folding ----------------------------------------------------------
 
     def match[B, C](

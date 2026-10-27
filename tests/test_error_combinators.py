@@ -248,3 +248,32 @@ def test_unknown_error_reads_as_its_message() -> None:
     error = fx.UnknownError(ValueError("bad"), "An error occurred in try_")
     assert str(error) == "An error occurred in try_"
     assert str(fx.UnknownError(ValueError("bad"))) == "bad"
+
+
+def test_try_blocking_without_catch_fails_with_unknown_error() -> None:
+    thrown = ValueError("blocking")
+
+    def boom() -> int:
+        raise thrown
+
+    ex = fx.run_sync_exit(fx.try_blocking(boom))
+    assert isinstance(ex, fx.Failure)
+    found = ex.cause.find_fail()
+    assert isinstance(found, Fail)
+    assert isinstance(found.error, fx.UnknownError)
+    assert found.error.cause is thrown
+    assert found.error.message == "An error occurred in try_blocking"
+
+
+def test_a_raising_catch_in_try_blocking_is_a_defect() -> None:
+    defect = RuntimeError("catch")
+
+    def boom() -> int:
+        raise ValueError("blocking")
+
+    def catch(_: Exception) -> Never:
+        raise defect
+
+    ex = fx.run_sync_exit(fx.try_blocking(boom, catch))
+    assert isinstance(ex, fx.Failure)
+    assert ex.cause.find_defect() is defect

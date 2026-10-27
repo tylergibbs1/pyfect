@@ -2,7 +2,7 @@
 
 ## 1. Verdict
 
-**No, pyfect is not 1:1 with Effect.** Weighted overall parity is about **16%**. Counting only the runtime core (no platform libraries), it is about **18%**.
+**No, pyfect is not 1:1 with Effect.** Weighted overall parity is about **25%** after M1 (16% at the audit). Counting only the runtime core (no platform libraries), it is about **27%** (18% at the audit).
 
 The fiber runtime itself (fiber loop, `gen`, interruption regions, supervision) is close to v4 and well designed. Its error, finalizer and interruption semantics differ from Effect in roughly 20 confirmed places. About 75% of the v4 module surface does not exist yet: Stream, Schema, STM, observability, Config, PubSub, Cache, Pool, Request batching and ManagedRuntime.
 
@@ -10,21 +10,21 @@ How to read the numbers: a Python-native equivalent (for example `timedelta` for
 
 | Area | Coverage | Weight | Biggest gap |
 |---|---|---|---|
-| Effect core A (constructors, errors, Exit, Cause, Result) | 30% | 10 | Defect election; Cause/Exit/Result combinators |
-| Effect core B (concurrency, resources, runtime entry) | 40% | 10 | `cached*`, `run_fork`, fork options, finalizer cause combination |
+| Effect core A (constructors, errors, Exit, Cause, Result) | 70% (was 30%) | 10 | Filter-based combinators, `catchReason(s)` / `unwrapReason`, `onErrorIf` / `onExitIf`, Cause annotations |
+| Effect core B (concurrency, resources, runtime entry) | 55% (was 40%) | 10 | `run_fork`, fork options (`startImmediately`), `awaitAllChildren`, `reduce` / `findFirst` |
 | Fibers and sync primitives | 30% | 6 | FiberSet/Map/Handle, Latch, interrupt delivery |
 | Context, Layer, Scope, ManagedRuntime | 25% | 8 | Ambient MemoMap, ManagedRuntime, RcRef/RcMap, keyed finalizers |
 | Queue, PubSub, Ref, Pool, Cache, Request | 12% | 7 | Queue Closing state, PubSub, Cache/Pool, batching |
 | Stream, Channel, Sink, Pull | 2% | 10 | Everything |
 | Schedule, Clock, DateTime, Cron, Random | 22% | 5 | Effectful Schedule with metadata, Random, Cron |
 | Observability (log, trace, metric, console) | 3% | 7 | Everything |
-| Config, Redacted, Data, Option, Brand | 8% | 6 | Config/ConfigProvider, Redacted, Option decision |
+| Config, Redacted, Data, Option, Brand | 15% (was 8%) | 6 | Config/ConfigProvider, Redacted |
 | Schema family | 0% | 10 | Everything |
 | STM (Tx*) | 0% | 3 | Everything |
 | Collections and pure utilities | 50% (mostly native) | 3 | ByteSize, Crypto, case conversion |
 | Platform and libraries (survey) | 1% | 10 | Everything; blocked on core |
-| Testing support | 20% | 5 | pytest plugin, async TestClock, TestConsole |
-| **Weighted total** | **≈16%** | 100 | |
+| Testing support | 70% (was 20%) | 5 | TestConsole (M5), property tests (M8) |
+| **Weighted total** | **≈25%** (was ≈16%) | 100 | |
 
 ## 2. Confirmed bugs and divergences in existing code (fix first)
 
@@ -117,6 +117,7 @@ Every item below was reproduced by running pyfect against Effect's source and te
 |---|---|---|
 | `race`/`race_first`/`race_all`/`timeout` interrupted from outside | Already matched Effect: `raceAll`/`raceAllFirst` interrupt and await the racers in a `void` exit finalizer, so Effect also reports the Interrupt alone (not the #12 merge). Checked against Effect 4.0.6. | `tests/test_race_interruption.py` |
 | `sliding(0)` | `offer` keeps the newest item (one slot), `offer_all` keeps nothing, as Effect's `offerUnsafe` / `offerAllUnsafe` | `test_queue.py::test_offer*_sliding_queue_of_capacity_zero_*` |
+| `try_async` / `try_blocking` with a `catch` that raises | The fiber used to hang, because `catch` ran in the task's done callback and the exception was lost there. Now `catch` runs on the fiber through `_failure_of`, so a raising `catch` is a defect, as in Effect's `tryPromise`. A synchronous raise from `make` goes through `catch` too. | `tests/oracle/test_effect_errors.py` (`tryPromise` ports), `test_error_combinators.py::test_a_raising_catch_in_try_blocking_is_a_defect` |
 | Resume queued just before an interrupt | The interrupt is held until the resumed run finishes, parks or yields (`Fiber._resume`), so the Fail wins alone, like Effect's synchronous resume. The loop no longer takes a `resumed` flag. | `test_interrupt_delivery.py::test_a_resume_that_lands_before_*`, `test_a_fiber_resumed_before_*`, `test_an_interrupt_after_a_queued_resume_*`, `test_an_uninterruptible_wait_resumed_before_*` |
 
 Effect's own source runs under Node 24 without a build: write a `.ts` script that imports `Effect.ts` from the reference checkout (`pyfect-ref/effect/packages/effect/src`, next to this repo) by absolute path and run `node script.ts`. Check an expected result there before pinning it.
@@ -143,6 +144,22 @@ Every milestone ends with green ports of the named Effect tests in `tests/oracle
 - **Exit criteria:** the cases cited in §2 pass: `Effect.test.ts` (recovery/defect-election block at ~4117, interruption ~2355/2418, finalizers ~3088, acquireUseRelease ~348, forEach interruption ~833/851, forkIn ~3011, TestClock ~2214, provide memo ~5280); `Fiber.test.ts:137`; `Queue.test.ts` ("fail doesnt drop items", "bounded 0 capacity", offerAll, shutdown); `Scope.test.ts:159`; `Layer.test.ts` (fresh variants); `Deferred.test.ts:34`; `Schedule.test.ts` (fixed, upTo, fibonacci); `Data.test.ts` (TaggedError equality and message).
 
 ### M1 — Test harness and the core Effect/Cause/Exit/Result surface (L)
+
+**Status (2026-10-26): done.** Every API listed below exists, is exported, has `assert_type` pins in `tests/type_checks.py`, and is tested. 251 Effect test cases are ported to `tests/oracle/` (Cause 75, Effect.test.ts error handling and constructors 56, Effect.test.ts combinators 50, TestClock 19, @effect/vitest 25, Result 15, Option 10, Exit 1). Each oracle file's docstring lists the titles it omits and why. The full suite has 667 tests. The completeness pass also made `try_async` / `try_blocking` default to `UnknownError` (Effect's `tryPromise`), added `ignore_cause`, and built `effect_fixture`.
+
+Deferred from the M1 exit-criteria files, with the reason:
+
+- `catchFilter`, `catchCauseFilter`, `tapCauseFilter`, `filterMap` and the Filter overloads: they need the `Filter` module. The predicate forms are ported.
+- `catchReason`, `catchReasons`, `unwrapReason`: v4's nested reason errors need a design for a `reason` field on `TaggedError`. Not in the M1 list.
+- `onErrorIf`, `onExitIf`, `reduce`, `findFirst`, `findFirstFilter`, `head`: outside the M1 list; small, and next in line for the Effect.test.ts long tail.
+- `Effect.ignore` / `ignoreCause` with `log` / `message`: they need the Logger (M5).
+- Cause `Done`, `IllegalArgumentError`, `ExceededCapacityError`: they come with `Pull` (M6) and the queue strategies (M4). Cause annotations and stack traces wait for tracing (M5).
+- Result `andThen`, `orElse`, `makeEquivalence`, `transposeMapOption` and the Do notation; most of the Option long tail: a `match` statement says each in a line (see the oracle docstrings).
+- The `cached` ports yield extra times where Effect uses `startImmediately`, and `race_all_first` has no `onWinner`. Both need M2's fork options.
+- The `timed` monotonic-time port compares with `pytest.approx`. It becomes exact once `ClockService` has nanosecond methods (M3).
+- TestConsole: there is no Console until M5. Property tests (`it.prop`) come with Hypothesis and Schema (M8).
+- `AsyncioRuntime` has no stall detection, so an asyncio test with the timeout disabled can hang where the sync runtime raises `StalledError`.
+
 - **Testing:** pytest plugin with `@testing.effect`, `@testing.live`, `layer_fixture`, `effect_fixture`, `flaky`, a test timeout that drains finalizers, `run_test_async` (asyncio TestClock), `with_live`, `TestClock.layer`, separate wall and monotonic time, assertion helpers.
 - **Effect:** `catch_if`, `catch_cause_if`, multi-class `catch_tag` (+`or_else`), `tap_defect`, `tap_error_tag`, `map_both`, `flip`, `sandbox`, `or_else_succeed`, `first_success_of`, `eventually`, `option`, `match_cause`, `fail_sync`, `try_` defaulting to `UnknownError`, `from_result` / `from_optional`, `flatten`, `zip_with(concurrent=)`, `filter_or_fail` / `filter_or_else`, `when`, `replicate_effect`, `cached` / `cached_with_ttl` / `cached_invalidate_with_ttl`, `timeout_option` / `timeout_or_else`, `interruptible_mask`, `all(discard=, mode='result')`, `all_dict`, `partition`, `validate`, `race_all_first`, `acquire_context` / `acquire_async_context`.
 - **Cause / Exit / Result:** `Cause.map`, `interruptors`, `find_*` properties, `pretty_errors`; Exit `map` / `map_error` / `map_both` / `as_void` / `match`; Result `map` / `flat_map` / `get_or_else` / `get_or_raise` / `match` / `try_` / `all`.
@@ -266,8 +283,8 @@ Every milestone ends with green ports of the named Effect tests in `tests/oracle
 ## 6. Coverage gaps of this audit
 - **Failed areas:** none. All 14 groups reported.
 - **No divergence checks possible:** Stream, Schema, STM and collections have no existing code, so only missing APIs were listed. Platform was surveyed, not audited per API: only the `run_main` behaviors were executed.
-- **Type-level parity not audited:** nobody checked that pyright-inferred E and R types match Effect's for existing combinators. Add `assert_type` pins in `tests/type_checks.py` as part of M0/M1.
+- **Type-level parity:** every M1 API has `assert_type` pins in `tests/type_checks.py`. Combinators older than M1 are only partly pinned.
 - **Scheduler parity under asyncio vs threads:** mostly exercised through SyncScheduler. Asyncio-specific interleavings (cancellation races, `from_async` interruption) are thinly covered.
-- **Effect.test.ts long tail:** the testing group marked "other Effect.test.ts APIs" as XL and untracked. A full one-by-one index of that file has not been made.
+- **Effect.test.ts long tail:** of its 324 test titles, about 140 appear by title in pyfect's tests (the M1 sections, plus earlier ports). The rest belong to later milestones (forking, interruption, finalization, repeat/retry, transactions, `Effect.fn`) or to the deferred list under M1.
 - **Not audited:** performance (ops/sec, yield fairness), memory beyond the scope-finalizer leak, and Cause annotations / stack frames.
 - **Thinly covered modules:** Exit, Result and Request batching were checked against source only, not run against oracle tests.

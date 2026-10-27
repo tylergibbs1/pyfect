@@ -23,9 +23,15 @@ Omitted, with the reason:
   ``InterruptorStackTrace``: reasons carry no annotations until tracing
   exists (M5).
 - ``isNoSuchElementError``: ``isinstance`` is the guard.
-- ``Done``, ``TimeoutError``, ``IllegalArgumentError``,
-  ``ExceededCapacityError``, ``UnknownError``: error classes, which live in
-  ``pyfect.errors`` / ``pyfect.queue`` and are ported with them.
+- ``isUnknownError`` and the ``*TypeId`` constants of the error classes:
+  ``isinstance`` is the guard. ``UnknownError``'s cause is the ``Exception``
+  that was raised (Python only raises exceptions), so it is ported with one.
+- ``TimeoutError``: pyfect's ``TimeoutException`` always carries the
+  ``duration`` that ran out (``tests/test_concurrency.py``), so it has no
+  message-only constructor to port.
+- ``Done``, ``IllegalArgumentError``, ``ExceededCapacityError``: not ported
+  yet; ``Done`` comes with ``Pull`` (M6) and ``ExceededCapacityError`` with
+  the queue strategies that raise it (M4).
 """
 
 import traceback
@@ -519,3 +525,27 @@ def test_creates_an_error_without_message() -> None:
 def test_is_an_instance_of_error() -> None:
     """is an instance of Error"""
     assert isinstance(fx.NoSuchElementException(), Exception)
+
+
+# UnknownError
+
+
+def test_creates_an_error_with_cause_and_message() -> None:
+    """creates an error with cause and message"""
+    original = ValueError("original")
+    error = fx.UnknownError(original, "wrapper message")
+    assert error.message == "wrapper message"
+    assert str(error) == "wrapper message"
+
+
+def test_stores_the_original_cause() -> None:
+    """stores the original cause"""
+    original = ValueError("raw")
+    error = fx.UnknownError(original)
+    assert error.cause is original
+    assert error.__cause__ is original
+
+
+def test_unknown_error_is_an_instance_of_error() -> None:
+    """is an instance of Error"""
+    assert isinstance(fx.UnknownError(ValueError("x")), Exception)

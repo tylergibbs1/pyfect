@@ -16,6 +16,8 @@ and take no real time::
   ``asyncio=True`` for effects that need an event loop.
 - ``layer_fixture``: build a layer once per pytest scope; tests that take
   the fixture as ``Services[...]`` get its services.
+- ``effect_fixture``: run a scoped effect once per pytest scope; tests get
+  its value, and its finalizers run when the scope ends.
 - ``flaky``: retry a test effect that sometimes fails.
 - ``run_test`` / ``run_test_async``: run one effect with a ``TestClock``,
   synchronously or on the running asyncio loop.
@@ -46,7 +48,7 @@ from pyfect.testing._clock import (
 )
 from pyfect.testing._decorators import TestBody, TestDecorator, effect, live
 from pyfect.testing._flaky import flaky
-from pyfect.testing._layers import Services, layer_fixture
+from pyfect.testing._layers import Services, effect_fixture, layer_fixture
 from pyfect.testing._runners import run_test, run_test_async, run_test_async_exit, run_test_exit
 from pyfect.testing._runtime import TestTimeoutError
 
@@ -65,6 +67,7 @@ __all__ = [
     "assert_failure",
     "assert_success",
     "effect",
+    "effect_fixture",
     "flaky",
     "layer_fixture",
     "live",

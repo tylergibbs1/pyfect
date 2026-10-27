@@ -341,3 +341,62 @@ def test_flaky_gives_up_after_ten_retries_and_dies_with_the_last_failure():
     ex = yield from testing.flaky(always_fails).exit()
     testing.assert_exit_failure(ex, die(error))
     assert len(attempts) == 11
+
+
+def test_an_effect_fixture_builds_once_per_scope_and_releases_at_teardown(
+    pytester: pytest.Pytester,
+) -> None:
+    pytester.makepyfile(
+        """
+        import pyfect as fx
+        from pyfect import testing
+
+        log = []
+
+
+        @fx.gen
+        def _connection():
+            log.append("open")
+            yield from fx.add_finalizer(lambda _: fx.sync(lambda: log.append("close")))
+            return "conn"
+
+
+        conn = testing.effect_fixture(_connection, scope="module")
+
+
+        def test_first(conn):
+            assert conn == "conn"
+            assert log == ["open"]
+
+
+        def test_second(conn):
+            assert log == ["open"]
+
+
+        def test_released_after_the_module():
+            pass
+
+
+        def teardown_module():
+            assert log == ["open", "close"]
+        """
+    )
+    pytester.runpytest("-p", "no:randomly").assert_outcomes(passed=3)
+
+
+def test_an_effect_fixture_that_fails_errors_the_tests_using_it(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(
+        """
+        import pyfect as fx
+        from pyfect import testing
+
+        broken = testing.effect_fixture(fx.fail("no database"))
+
+
+        def test_uses_it(broken):
+            pass
+        """
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(errors=1)
+    result.stdout.fnmatch_lines(["*no database*"])

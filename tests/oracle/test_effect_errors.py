@@ -9,10 +9,16 @@ Each test's docstring is the Effect test title. Omitted, with the reason:
   skips tap", ``filter`` "Filter.Filter overload maps pass values": the
   ``Filter`` module is not ported; ``catch_cause_if`` / ``tap_cause_if`` /
   ``filter`` take predicates.
+- ``tryPromise`` "does not allocate AbortController for zero-argument thunks":
+  ``try_async`` cancels the task, so there is no signal to allocate.
+- ``Effect.ignore`` and ``Effect.ignoreCause`` with ``log`` / ``message``:
+  logging comes with observability (M5).
 - "typed recovery with mixed causes": ported in ``tests/test_cause_recovery.py``,
   which runs every recovery combinator through it.
 """
 
+import asyncio
+from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any, Never, TypeIs
 
@@ -187,6 +193,149 @@ def test_turns_a_throwing_catch_mapper_into_a_defect() -> None:
         raise defect
 
     assert _defect(testing.run_test_exit(fx.try_(boom, catch))) is defect
+
+
+# --- tryPromise (pyfect: try_async) -------------------------------------------------
+
+
+def _run_async_exit[A, E](eff: fx.Effect[A, E]) -> fx.Exit[A, E]:
+    return asyncio.run(testing.run_test_async_exit(eff, timeout=2))
+
+
+async def _resolve(value: int) -> int:
+    return value
+
+
+def test_succeeds_with_the_resolved_value_in_direct_thunk_form() -> None:
+    """succeeds with the resolved value in direct-thunk form"""
+    assert _run_async_exit(fx.try_async(lambda: _resolve(1))) == fx.Success(1)
+
+
+def test_maps_synchronous_throws_to_unknown_error_in_direct_thunk_form() -> None:
+    """maps synchronous throws to UnknownError in direct-thunk form"""
+    thrown = ValueError("try")
+
+    def make() -> Awaitable[int]:
+        raise thrown
+
+    error = _error(_run_async_exit(fx.try_async(make)))
+    assert isinstance(error, fx.UnknownError)
+    assert error.cause is thrown
+    assert error.message == "An error occurred in try_async"
+
+
+def test_maps_promise_rejections_to_unknown_error_in_direct_thunk_form() -> None:
+    """maps promise rejections to UnknownError in direct-thunk form"""
+    rejected = ValueError("reject")
+
+    async def make() -> int:
+        raise rejected
+
+    error = _error(_run_async_exit(fx.try_async(make)))
+    assert isinstance(error, fx.UnknownError)
+    assert error.cause is rejected
+    assert error.message == "An error occurred in try_async"
+
+
+def test_succeeds_with_the_resolved_value_in_options_form() -> None:
+    """succeeds with the resolved value in options form"""
+    catch_called = False
+
+    def catch(_: Exception) -> str:
+        nonlocal catch_called
+        catch_called = True
+        return "error"
+
+    assert _run_async_exit(fx.try_async(lambda: _resolve(1), catch)) == fx.Success(1)
+    assert not catch_called
+
+
+def test_maps_synchronous_throws_with_catch_in_options_form() -> None:
+    """maps synchronous throws with catch in options form"""
+    thrown = ValueError("try")
+    mapped = {"cause": thrown}
+
+    def make() -> Awaitable[int]:
+        raise thrown
+
+    ex = _run_async_exit(fx.try_async(make, lambda _: mapped))
+    assert ex == fx.Failure(fx.cause.fail(mapped))
+
+
+def test_maps_promise_rejections_with_catch_in_options_form() -> None:
+    """maps promise rejections with catch in options form"""
+    rejected = ValueError("reject")
+    mapped = {"cause": rejected}
+
+    async def make() -> int:
+        raise rejected
+
+    ex = _run_async_exit(fx.try_async(make, lambda _: mapped))
+    assert ex == fx.Failure(fx.cause.fail(mapped))
+
+
+def test_turns_a_throwing_catch_mapper_for_a_synchronous_throw_into_a_defect() -> None:
+    """turns a throwing catch mapper for a synchronous throw into a defect"""
+    defect = RuntimeError("catch")
+
+    def make() -> Awaitable[int]:
+        raise ValueError("try")
+
+    def catch(_: Exception) -> Never:
+        raise defect
+
+    assert _defect(_run_async_exit(fx.try_async(make, catch))) is defect
+
+
+def test_turns_a_throwing_catch_mapper_for_a_promise_rejection_into_a_defect() -> None:
+    """turns a throwing catch mapper for a promise rejection into a defect"""
+    defect = RuntimeError("catch")
+
+    async def make() -> int:
+        raise ValueError("reject")
+
+    def catch(_: Exception) -> Never:
+        raise defect
+
+    assert _defect(_run_async_exit(fx.try_async(make, catch))) is defect
+
+
+def test_aborts_the_provided_abort_signal_on_interruption() -> None:
+    """aborts the provided AbortSignal on interruption"""
+    cancelled = False
+    started = asyncio.Event()
+
+    async def forever() -> int:
+        nonlocal cancelled
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+        return 0
+
+    @fx.gen
+    def program():
+        fiber = yield from fx.try_async(forever).fork()
+        yield from fx.from_async(started.wait)
+        yield from fiber.interrupt()
+
+    assert _run_async_exit(program) == fx.Success(None)
+    assert cancelled
+
+
+# --- Effect.ignoreCause --------------------------------------------------------------
+
+
+def test_ignores_defects() -> None:
+    """ignores defects"""
+    assert testing.run_test_exit(fx.die(RuntimeError("boom")).ignore_cause()) == fx.Success(None)
+
+
+def test_ignores_interrupts() -> None:
+    """ignores interrupts"""
+    assert testing.run_test_exit(fx.interrupt().ignore_cause()) == fx.Success(None)
 
 
 # --- error handling -------------------------------------------------------------------

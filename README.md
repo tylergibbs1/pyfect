@@ -74,6 +74,11 @@ swallow it; finalizers always run. Uninterruptible regions (`uninterruptible`,
 sibling crashed), recovery combinators (`catch_all`, `catch_tag`, `match`, `result`,
 `ignore`, `retry`, ...) don't run: every typed error is turned into a defect, as in Effect.
 
+**Wrapping code that raises.** `try_`, `try_async` and `try_blocking` turn an exception into
+a typed error with `catch`, or into an `UnknownError` holding it when there is no `catch`; a
+`catch` that raises is a defect. `ignore` drops typed errors; `ignore_cause` drops defects
+and interrupts too.
+
 **Structured concurrency.** A fiber's children are interrupted when it finishes. `all` and
 `for_each` take a concurrency limit and interrupt siblings on the first failure. `race`,
 `race_first`, `race_all` and `timeout` always wait for losers to clean up.
@@ -132,6 +137,8 @@ def test_retry_backs_off():
   `self`). Tests sharing the fixture share its `TestClock`; with `live=True` the layer and
   its `@testing.effect` tests use the real clock. `scope="class"` releases the layer when
   the class's tests are done.
+- `testing.effect_fixture(eff, scope="function")` runs a scoped effect once per pytest
+  scope; any test can take its value, and the finalizers it added run when the scope ends.
 - `testing.flaky(eff, timeout=30)` retries an effect that sometimes fails; if it never
   passes, the last failure dies (typed errors become defects), like Effect's `flakyTest`.
 - `testing.with_live(eff)` runs part of a test on the real clock; `TestClock.layer()`

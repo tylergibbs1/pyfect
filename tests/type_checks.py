@@ -200,11 +200,22 @@ def is_int(x: int | str) -> TypeIs[int]:
     return isinstance(x, int)
 
 
+async def _one_async() -> int:
+    return 1
+
+
 def check_error_constructors(
     mixed: list[int | str], r: fx.Result[int, str], opt: fx.Option[int | None]
 ) -> None:
     assert_type(fx.try_(lambda: 1), fx.Effect[int, fx.UnknownError, Never])
     assert_type(fx.try_(lambda: 1, lambda e: Invalid(str(e))), fx.Effect[int, Invalid, Never])
+    assert_type(fx.try_(lambda: 1).ignore_cause(), fx.Effect[None, Never, Never])
+    assert_type(fx.try_async(_one_async), fx.Effect[int, fx.UnknownError, Never])
+    assert_type(fx.try_async(_one_async, lambda e: Invalid(str(e))), fx.Effect[int, Invalid, Never])
+    assert_type(fx.try_blocking(lambda: 1), fx.Effect[int, fx.UnknownError, Never])
+    assert_type(
+        fx.try_blocking(lambda: 1, lambda e: Invalid(str(e))), fx.Effect[int, Invalid, Never]
+    )
     assert_type(fx.fail_sync(Gone), fx.Effect[Never, Gone, Never])
     assert_type(fx.fail_cause_sync(lambda: fx.cause.fail(1)), fx.Effect[Never, int, Never])
     assert_type(fx.from_result(r), fx.Effect[int, str, Never])
@@ -587,6 +598,9 @@ def check_testing() -> None:
     coroutine = fx.testing.run_test_async(fx.succeed(1))
     assert_type(coroutine, CoroutineType[Any, Any, int]).close()
     assert_type(fx.testing.layer_fixture(port_live), FixtureFunctionDefinition)
+    scoped_value: fx.Effect[int, str, fx.Scope] = fx.succeed(1)
+    assert_type(fx.testing.effect_fixture(scoped_value), FixtureFunctionDefinition)
+    fx.testing.effect_fixture(Port())  # pyright: ignore[reportArgumentType]
     fx.testing.run_test(fx.fail("e"))  # pyright: ignore[reportArgumentType]
 
 
