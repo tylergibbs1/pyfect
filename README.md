@@ -128,7 +128,7 @@ generators never use it. Parameters are still required to be annotated.
 - `x = yield from eff` inside `@fx.gen` / `@fx.fn` generators.
 - Early-exit with an error: `return (yield from NotFound(key))`.
 - Most combinators are methods. The ones that remove a type go through `.pipe(...)`, one per
-  call: `catch_tag`, `provide`, `provide_service`.
+  call: `catch_tag`, `catch_if`, `catch_no_such_element`, `provide`, `provide_service`.
 - Keep layers in module-level constants. They are memoized by identity.
 
 ## Roadmap

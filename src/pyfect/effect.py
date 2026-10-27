@@ -15,6 +15,7 @@ from collections.abc import Awaitable, Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Never, overload
 
+from pyfect._catch import catch_if, catch_tag
 from pyfect._core import (
     Effect,
     _Callback,
@@ -22,7 +23,6 @@ from pyfect._core import (
     _FromExit,
     _Gen,
     _Locally,
-    _MatchCause,
     _Succeed,
     _Suspend,
     _Sync,
@@ -30,12 +30,15 @@ from pyfect._core import (
     _YieldNow,
 )
 from pyfect._fiber import Fiber
-from pyfect.cause import Cause, Fail
+from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.cause import fail as fail_cause_of
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.context import TagLike, tag_class
+from pyfect.errors import NoSuchElementException, UnknownError
 from pyfect.exit import Exit
+from pyfect.option import Option, Some
+from pyfect.result import Ok, Result
 
 # --- constructors -------------------------------------------------------------
 
@@ -66,16 +69,71 @@ def sync[A](thunk: Callable[[], A]) -> Effect[A]:
     return _Sync(thunk)
 
 
-def try_[A, E](thunk: Callable[[], A], catch: Callable[[Exception], E]) -> Effect[A, E]:
-    """Run ``thunk``, mapping a raised exception to a typed error."""
+def fail_sync[E](thunk: Callable[[], E]) -> Effect[Never, E]:
+    """Fail with ``thunk()``, computed each time the effect runs."""
+    return _Suspend(lambda: fail(thunk()))
 
-    def run() -> Effect[A, E]:
+
+def fail_cause_sync[E](thunk: Callable[[], Cause[E]]) -> Effect[Never, E]:
+    """Fail with the cause ``thunk()``, computed each time the effect runs."""
+    return _Suspend(lambda: fail_cause(thunk()))
+
+
+def from_result[A = Never, E = Never](result: Result[A, E]) -> Effect[A, E]:
+    """Succeed with an ``Ok``'s value or fail with an ``Err``'s error."""
+    return _Succeed(result.value) if isinstance(result, Ok) else fail(result.error)
+
+
+@overload
+def from_option[A = Never](option: Option[A]) -> Effect[A, NoSuchElementException]: ...
+@overload
+def from_option[E, A = Never](option: Option[A], on_none: Callable[[], E]) -> Effect[A, E]: ...
+def from_option(option: Option[Any], on_none: Callable[[], Any] | None = None) -> Effect[Any, Any]:
+    """Succeed with a ``Some``'s value. ``None`` fails with ``on_none()``,
+    computed each time the effect runs, or a ``NoSuchElementException``."""
+    if option is not None:
+        return _Succeed(option.value)
+    if on_none is None:
+        return fail(NoSuchElementException("from_option: None"))
+    return fail_sync(on_none)
+
+
+def from_optional[A = Never](value: A | None) -> Effect[A, NoSuchElementException]:
+    """Succeed with ``value``, or fail with ``NoSuchElementException`` if it
+    is ``None``. When ``None`` can be a real value, use ``from_option``."""
+    return fail(NoSuchElementException()) if value is None else _Succeed(value)
+
+
+def transpose_option[A = Never, E = Never, R = Never](
+    option: Option[Effect[A, E, R]],
+) -> Effect[Option[A], E, R]:
+    """Run the effect inside a ``Some``, keeping its value in a ``Some``."""
+    return _Succeed(None) if option is None else option.value.map(Some)
+
+
+@overload
+def try_[A](thunk: Callable[[], A]) -> Effect[A, UnknownError]: ...
+@overload
+def try_[A, E](thunk: Callable[[], A], catch: Callable[[Exception], E]) -> Effect[A, E]: ...
+def try_(
+    thunk: Callable[[], Any], catch: Callable[[Exception], Any] | None = None
+) -> Effect[Any, Any]:
+    """Run ``thunk``, mapping a raised exception to a typed error with
+    ``catch``, or to an ``UnknownError``. If ``catch`` raises, that is a
+    defect."""
+    to_error = _unknown_error if catch is None else catch
+
+    def run() -> Effect[Any, Any]:
         try:
             return _Succeed(thunk())
         except Exception as exc:
-            return _FailCause(fail_cause_of(catch(exc)))
+            return fail(to_error(exc))
 
     return _Suspend(run)
+
+
+def _unknown_error(exc: Exception) -> UnknownError:
+    return UnknownError(exc, "An error occurred in try_")
 
 
 def suspend[A, E = Never, R = Never](thunk: Callable[[], Effect[A, E, R]]) -> Effect[A, E, R]:
@@ -254,41 +312,24 @@ def fn[**P, A, E = Never, R = Never](
 # --- combinators that remove types (use with .pipe) ---------------------------
 
 
-class _CatchTag[EC, B, E2, R2]:
-    __slots__ = ("handler", "tag")
+@overload
+def catch_no_such_element[A, R = Never](
+    eff: Effect[A, NoSuchElementException, R],
+) -> Effect[Option[A], Never, R]: ...
+@overload
+def catch_no_such_element[A, R = Never, ER = Never](
+    eff: Effect[A, NoSuchElementException | ER, R],
+) -> Effect[Option[A], ER, R]: ...
+def catch_no_such_element(eff: Effect[Any, Any, Any]) -> Effect[Option[Any], Any, Any]:
+    """Succeed with ``None`` on a ``NoSuchElementException`` and with
+    ``Some(value)`` on success, removing the error from ``E``::
 
-    def __init__(self, tag: type[EC], handler: Callable[[EC], Effect[B, E2, R2]]) -> None:
-        self.tag = tag
-        self.handler = handler
-
-    @overload
-    def __call__[A, R = Never](self, eff: Effect[A, EC, R]) -> Effect[A | B, E2, R | R2]: ...
-    @overload
-    def __call__[A, R = Never, ER = Never](
-        self, eff: Effect[A, EC | ER, R]
-    ) -> Effect[A | B, ER | E2, R | R2]: ...
-    def __call__(self, eff: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
-        tag, handler = self.tag, self.handler
-
-        def on_failure(cause: Cause[Any]) -> Effect[Any, Any, Any]:
-            found = cause.find_recoverable_error()
-            if not isinstance(found, Fail):
-                return _FailCause(found)
-            if isinstance(found.error, tag):
-                return handler(found.error)
-            return _FailCause(cause)
-
-        return _MatchCause(eff, on_failure, None)
-
-
-def catch_tag[EC, B, E2 = Never, R2 = Never](
-    tag: type[EC], handler: Callable[[EC], Effect[B, E2, R2]]
-) -> _CatchTag[EC, B, E2, R2]:
-    """Recover from one error class and remove it from ``E``::
-
-    eff.pipe(catch_tag(NotFound, lambda e: succeed(None)))
+    eff.pipe(catch_no_such_element)
     """
-    return _CatchTag(tag, handler)
+    return eff.match_effect(
+        on_failure=lambda e: _Succeed(None) if isinstance(e, NoSuchElementException) else fail(e),
+        on_success=lambda a: _Succeed(Some(a)),
+    )
 
 
 class _ProvideService[S, T]:
@@ -320,15 +361,22 @@ __all__ = [
     "AsyncioRequiredError",
     "blocking",
     "callback",
+    "catch_if",
+    "catch_no_such_element",
     "catch_tag",
     "current_fiber",
     "die",
     "fail",
     "fail_cause",
+    "fail_cause_sync",
+    "fail_sync",
     "fiber_id",
     "fn",
     "from_async",
     "from_exit",
+    "from_option",
+    "from_optional",
+    "from_result",
     "gen",
     "interrupt",
     "never",
@@ -336,6 +384,7 @@ __all__ = [
     "succeed",
     "suspend",
     "sync",
+    "transpose_option",
     "try_",
     "try_async",
     "try_blocking",

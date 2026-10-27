@@ -107,3 +107,15 @@ class TimeoutException(TaggedError, builtins.TimeoutError):
 
 class NoSuchElementException(TaggedError, LookupError):
     """An expected value was missing."""
+
+
+@dataclass(eq=False)
+class UnknownError(TaggedError):
+    """An exception raised by code given to ``try_`` without a ``catch``.
+    ``cause`` is that exception, and also the error's ``__cause__``."""
+
+    cause: Exception
+    message: str | None = None
+
+    def __str__(self) -> str:
+        return self.message if self.message is not None else str(self.cause)

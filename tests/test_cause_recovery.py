@@ -8,7 +8,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Never
+from typing import Any, Never, TypeIs
 
 import pytest
 
@@ -48,16 +48,30 @@ def _fail_once(eff: fx.Effect[Any, MixedError]) -> fx.Effect[Any, MixedError]:
     return fx.suspend(body)
 
 
+def _is_mixed(e: object) -> TypeIs[MixedError]:
+    return isinstance(e, MixedError)
+
+
 RECOVERIES: dict[str, Callable[[fx.Effect[Any, MixedError]], fx.Effect[Any, Any]]] = {
     "catch_all": lambda e: e.catch_all(lambda _: fx.succeed("recovered")),
     "catch_tag": lambda e: e.pipe(fx.catch_tag(MixedError, lambda _: fx.succeed("recovered"))),
+    "catch_tag tuple": lambda e: e.pipe(
+        fx.catch_tag((MixedError, ValueError), lambda _: fx.succeed("recovered"))
+    ),
+    "catch_if": lambda e: e.catch_if(lambda _: True, lambda _: fx.succeed("recovered")),
+    "catch_if refinement": lambda e: e.pipe(
+        fx.catch_if(_is_mixed, lambda _: fx.succeed("recovered"))
+    ),
     "match_effect": lambda e: e.match_effect(
         on_failure=lambda _: fx.succeed("recovered"), on_success=fx.succeed
     ),
     "match": lambda e: e.match(on_failure=lambda _: "recovered", on_success=lambda a: a),
     "ignore": lambda e: e.ignore(),
+    "or_else_succeed": lambda e: e.or_else_succeed(lambda _: "recovered"),
+    "option": lambda e: e.option(),
     "result": lambda e: e.result(),
     "retry": lambda e: _fail_once(e).retry(schedule.recurs(1)),
+    "eventually": lambda e: _fail_once(e).eventually(),
 }
 
 
@@ -106,8 +120,12 @@ def test_error_mapping_keeps_defects_and_interrupts():
     so nothing is elected."""
     eff = fx.fail_cause(Cause((Fail(ERROR), Interrupt(1), Die(DEFECT))))
     for self in (eff, fx.suspend(lambda: eff)):
-        ex = testing.run_test_exit(self.map_error(lambda _: "mapped"))
-        assert _reasons(ex) == [("Fail", "mapped"), ("Interrupt", 1), ("Die", DEFECT)]
+        for mapped in (
+            self.map_error(lambda _: "mapped"),
+            self.map_both(on_failure=lambda _: "mapped", on_success=lambda a: a),
+        ):
+            ex = testing.run_test_exit(mapped)
+            assert _reasons(ex) == [("Fail", "mapped"), ("Interrupt", 1), ("Die", DEFECT)]
 
 
 def test_elected_non_exception_errors_die_as_unhandled_error():

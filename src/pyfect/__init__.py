@@ -12,6 +12,7 @@ from pyfect import cause, clock, duration, exit, layer, option, result, schedule
 from pyfect._concurrency import Concurrency, all, for_each, race_all
 from pyfect._core import Effect, Restore, uninterruptible_mask
 from pyfect._fiber import Fiber
+from pyfect._iterables import filter, first_success_of
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
 from pyfect.clock import Clock, sleep
 from pyfect.context import Context, MissingServiceError, Reference, Tag
@@ -21,15 +22,22 @@ from pyfect.effect import (
     AsyncioRequiredError,
     blocking,
     callback,
+    catch_if,
+    catch_no_such_element,
     catch_tag,
     current_fiber,
     die,
     fail,
     fail_cause,
+    fail_cause_sync,
+    fail_sync,
     fiber_id,
     fn,
     from_async,
     from_exit,
+    from_option,
+    from_optional,
+    from_result,
     gen,
     interrupt,
     never,
@@ -37,13 +45,14 @@ from pyfect.effect import (
     succeed,
     suspend,
     sync,
+    transpose_option,
     try_,
     try_async,
     try_blocking,
     void,
     yield_now,
 )
-from pyfect.errors import NoSuchElementException, TaggedError, TimeoutException
+from pyfect.errors import NoSuchElementException, TaggedError, TimeoutException, UnknownError
 from pyfect.exit import Exit, Failure, Success
 from pyfect.layer import Layer, provide
 from pyfect.option import Option, Some
@@ -98,12 +107,15 @@ __all__ = [
     "TaggedError",
     "TimeoutException",
     "UnhandledError",
+    "UnknownError",
     "acquire_release",
     "acquire_use_release",
     "add_finalizer",
     "all",
     "blocking",
     "callback",
+    "catch_if",
+    "catch_no_such_element",
     "catch_tag",
     "cause",
     "clock",
@@ -113,11 +125,18 @@ __all__ = [
     "exit",
     "fail",
     "fail_cause",
+    "fail_cause_sync",
+    "fail_sync",
     "fiber_id",
+    "filter",
+    "first_success_of",
     "fn",
     "for_each",
     "from_async",
     "from_exit",
+    "from_option",
+    "from_optional",
+    "from_result",
     "gen",
     "interrupt",
     "layer",
@@ -139,6 +158,7 @@ __all__ = [
     "suspend",
     "sync",
     "testing",
+    "transpose_option",
     "try_",
     "try_async",
     "try_blocking",

@@ -7,7 +7,7 @@ pyright fails.
 """
 
 from dataclasses import dataclass
-from typing import Never, Protocol, assert_type
+from typing import Never, Protocol, TypeIs, assert_type
 
 import pyfect as fx
 from pyfect import layer, schedule
@@ -51,6 +51,11 @@ class Invalid(fx.TaggedError):
     reason: str
 
 
+primary_live = layer.succeed(Primary, GoodDb())
+port_live = layer.succeed(Port, 8080)
+merged_live = layer.merge(primary_live, port_live)
+
+
 # --- generators infer A, E and R --------------------------------------------------
 
 
@@ -84,10 +89,141 @@ def check_catch_tag() -> None:
     assert_type(caught_all, fx.Effect[str | None, Never, Primary | Port])
 
 
-# --- provide removes exactly what the layer builds --------------------------------
+# --- error combinators: the type-removing ones remove exactly what they catch -------
 
-primary_live = layer.succeed(Primary, GoodDb())
-port_live = layer.succeed(Port, 8080)
+
+@dataclass
+class Gone(fx.TaggedError):
+    pass
+
+
+def is_not_found(e: object) -> TypeIs[NotFound]:
+    return isinstance(e, NotFound)
+
+
+def handle_rest(e: Invalid) -> fx.Effect[int]:
+    return fx.succeed(len(e.reason))
+
+
+def handle_too_little(e: Gone) -> fx.Effect[int]:
+    return fx.succeed(0)
+
+
+def check_error_removal(three: fx.Effect[str, NotFound | Invalid | Gone]) -> None:
+    assert_type(
+        three.pipe(fx.catch_tag((NotFound, Invalid), lambda e: fx.succeed(type(e).__name__))),
+        fx.Effect[str, Gone, Never],
+    )
+    assert_type(
+        three.pipe(fx.catch_tag((NotFound, Invalid, Gone), lambda e: fx.succeed(None))),
+        fx.Effect[str | None, Never, Never],
+    )
+    assert_type(
+        three.pipe(fx.catch_if(is_not_found, lambda e: fx.succeed(e.key))),
+        fx.Effect[str, Invalid | Gone, Never],
+    )
+    two = lookup("k").pipe(fx.provide(merged_live))
+    # or_else must cover every error catch_tag / catch_if leave.
+    assert_type(
+        two.pipe(fx.catch_tag(NotFound, lambda e: fx.succeed(e.key), or_else=handle_rest)),
+        fx.Effect[str | int, Never, Never],
+    )
+    assert_type(
+        two.pipe(fx.catch_if(is_not_found, lambda e: fx.succeed(1), or_else=handle_rest)),
+        fx.Effect[str | int, Never, Never],
+    )
+    two.pipe(fx.catch_tag(NotFound, lambda e: fx.succeed(1), or_else=handle_too_little))  # pyright: ignore[reportArgumentType]
+    maybe = fx.from_optional(1 if two else None).flat_map(lambda n: fx.fail(Invalid(str(n))))
+    assert_type(maybe.pipe(fx.catch_no_such_element), fx.Effect[fx.Option[Never], Invalid, Never])
+    assert_type(
+        fx.from_optional(1 if two else None).pipe(fx.catch_no_such_element),
+        fx.Effect[fx.Option[int], Never, Never],
+    )
+
+
+def check_error_combinators(eff: fx.Effect[int, NotFound | Invalid, Port]) -> None:
+    # The methods keep every error they may not handle.
+    assert_type(
+        eff.catch_if(lambda e: isinstance(e, NotFound), lambda e: fx.succeed("x")),
+        fx.Effect[int | str, NotFound | Invalid, Port],
+    )
+    assert_type(
+        eff.catch_if(lambda e: True, lambda e: fx.succeed("x"), or_else=lambda e: fx.succeed(0.5)),
+        fx.Effect[int | str | float, Never, Port],
+    )
+    assert_type(
+        eff.catch_cause_if(lambda c: c.has_fails, lambda c: fx.succeed(None)),
+        fx.Effect[int | None, NotFound | Invalid, Port],
+    )
+    assert_type(
+        eff.tap_error_tag((NotFound, Invalid), fx.succeed),
+        fx.Effect[int, NotFound | Invalid, Port],
+    )
+    assert_type(eff.tap_defect(fx.succeed), fx.Effect[int, NotFound | Invalid, Port])
+    assert_type(
+        eff.tap_cause_if(lambda c: True, lambda c: fx.fail(Gone())),
+        fx.Effect[int, NotFound | Invalid | Gone, Port],
+    )
+    assert_type(eff.map_both(on_failure=str, on_success=str), fx.Effect[str, str, Port])
+    assert_type(eff.flip(), fx.Effect[NotFound | Invalid, int, Port])
+    assert_type(eff.sandbox(), fx.Effect[int, fx.Cause[NotFound | Invalid], Port])
+    assert_type(eff.or_else_succeed(lambda e: None), fx.Effect[int | None, Never, Port])
+    assert_type(eff.eventually(), fx.Effect[int, Never, Port])
+    assert_type(eff.option(), fx.Effect[fx.Option[int], Never, Port])
+    assert_type(
+        eff.match_cause(on_failure=lambda c: c.failures, on_success=str),
+        fx.Effect[tuple[NotFound | Invalid, ...] | str, Never, Port],
+    )
+    assert_type(eff.when(fx.succeed(True)), fx.Effect[fx.Option[int], NotFound | Invalid, Port])
+    assert_type(
+        eff.filter_or_fail(lambda n: n > 0),
+        fx.Effect[int, NotFound | Invalid | fx.NoSuchElementException, Port],
+    )
+    assert_type(
+        eff.filter_or_fail(lambda n: n > 0, lambda n: Gone()),
+        fx.Effect[int, NotFound | Invalid | Gone, Port],
+    )
+    assert_type(
+        eff.filter_or_else(lambda n: n > 0, lambda n: fx.succeed("neg")),
+        fx.Effect[int | str, NotFound | Invalid, Port],
+    )
+    assert_type(fx.succeed(eff).flatten(), fx.Effect[int, NotFound | Invalid, Port])
+    fx.succeed(1).flatten()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+def is_int(x: int | str) -> TypeIs[int]:
+    return isinstance(x, int)
+
+
+def check_error_constructors(
+    mixed: list[int | str], r: fx.Result[int, str], opt: fx.Option[int | None]
+) -> None:
+    assert_type(fx.try_(lambda: 1), fx.Effect[int, fx.UnknownError, Never])
+    assert_type(fx.try_(lambda: 1, lambda e: Invalid(str(e))), fx.Effect[int, Invalid, Never])
+    assert_type(fx.fail_sync(Gone), fx.Effect[Never, Gone, Never])
+    assert_type(fx.fail_cause_sync(lambda: fx.cause.fail(1)), fx.Effect[Never, int, Never])
+    assert_type(fx.from_result(r), fx.Effect[int, str, Never])
+    assert_type(fx.from_result(fx.Ok(1)), fx.Effect[int, Never, Never])
+    assert_type(fx.from_option(opt), fx.Effect[int | None, fx.NoSuchElementException, Never])
+    assert_type(fx.from_option(opt, Gone), fx.Effect[int | None, Gone, Never])
+    assert_type(fx.from_optional(mixed[0]), fx.Effect[int | str, fx.NoSuchElementException, Never])
+    assert_type(
+        fx.transpose_option(fx.Some(lookup("k"))),
+        fx.Effect[fx.Option[str], NotFound | Invalid, Primary | Port],
+    )
+    assert_type(
+        fx.first_success_of([fx.succeed(1), fx.fail(Gone()), lookup("k")]),
+        fx.Effect[int | str, Gone | NotFound | Invalid, Primary | Port],
+    )
+    assert_type(fx.filter(mixed, is_int), fx.Effect[list[int], Never, Never])
+    assert_type(fx.filter(mixed, lambda x: x == 1), fx.Effect[list[int | str], Never, Never])
+    assert_type(
+        fx.filter(mixed, lambda x: lookup("k").as_(True), concurrency=2),
+        fx.Effect[list[int | str], NotFound | Invalid, Primary | Port],
+    )
+
+
+# --- provide removes exactly what the layer builds --------------------------------
 
 
 def check_provide() -> None:
