@@ -5,10 +5,10 @@ Stream core, constructors, sources and run functions of M6).
 Each test's docstring is the Effect test title. Chunks are tuples here,
 ``Uint8Array`` is ``bytes``, Effect's inclusive ``Stream.range(a, b)`` is
 ``stream.range_inclusive(a, b)`` (``stream.range`` follows Python's), and
-``fromArray`` / ``fromIteratorSucceed`` are ``from_iterable``. The
-operators these titles use (``take``, ``tap``, ``map``, ``mapEffect``,
-``chunks``, ``provideService``) come from ``tests/oracle/_stream_ops.py``
-until the Stream operator cluster adds them.
+``fromArray`` / ``fromIteratorSucceed`` are ``from_iterable``.
+``provideService`` comes from ``tests/oracle/_stream_ops.py`` until the
+Stream context functions are added; the operator sections are ported in
+``test_stream_*.py``.
 
 Adapted, with the reason:
 
@@ -26,8 +26,10 @@ Not ported:
   stream.
 - The eight ``toAsyncIterable`` titles: ``to_async_iterator`` is the last
   step of M6.
-- The other sections (encoding, filtering, taking, error handling, ...)
-  port with the operators they test, in the later M6 clusters.
+- The operator sections are in ``test_stream_filtering.py``,
+  ``test_stream_errors.py``, ``test_stream_combining.py`` and
+  ``test_stream_timing.py``; the others (encoding, grouping, sinks,
+  sharing, partitioning) port with their M6 clusters.
 """
 
 from dataclasses import dataclass
@@ -53,7 +55,7 @@ def test_with_take():
 
         return fx.sync(offer_all)
 
-    result = yield from stream.callback(register).pipe(ops.take(len(array))).run_collect()
+    result = yield from stream.callback(register).take(len(array)).run_collect()
     assert result == array
 
 
@@ -75,12 +77,7 @@ def test_with_cleanup():
         yield from fx.add_finalizer(mark)
         yield from queue.offer(None)
 
-    fiber = (
-        yield from stream.callback(register)
-        .pipe(ops.tap(lambda _: latch.open()))
-        .run_drain()
-        .fork()
-    )
+    fiber = yield from stream.callback(register).tap(lambda _: latch.open()).run_drain().fork()
     yield from latch.wait()
     yield from fiber.interrupt()
     assert cleanup
@@ -162,7 +159,7 @@ def test_register_effect_has_run_when_the_stream_starts_pulling():
         return fx.sync(lambda: emit.append(queue))
 
     fiber = yield from (
-        stream.callback(register).pipe(ops.take(1)).run_collect().fork(start_immediately=True)
+        stream.callback(register).take(1).run_collect().fork(start_immediately=True)
     )
     assert fiber.unsafe_poll() is None
     assert emit, "register effect has not run"
@@ -229,7 +226,7 @@ def test_range_min_less_than_max():
 @testing.effect
 def test_range_zero_chunk_size_does_not_change_the_emitted_range():
     """range - zero chunk size does not change the emitted range"""
-    result = yield from stream.range_inclusive(1, 3, chunk_size=0).pipe(ops.take(4)).run_collect()
+    result = yield from stream.range_inclusive(1, 3, chunk_size=0).take(4).run_collect()
     assert result == [1, 2, 3]
 
 
@@ -238,7 +235,7 @@ def test_range_normalizes_the_chunk_size_without_changing_emitted_values():
     """range - normalizes the chunk size without changing emitted values"""
     results = yield from fx.for_each(
         [-1, 0, 2],
-        lambda size: stream.range_inclusive(1, 5, chunk_size=size).pipe(ops.chunks).run_collect(),
+        lambda size: stream.range_inclusive(1, 5, chunk_size=size).chunks().run_collect(),
     )
     assert results == [
         [(1,), (2,), (3,), (4,), (5,)],
@@ -252,7 +249,7 @@ def test_service():
     """service"""
     result = yield from (
         stream.service(Greeter)
-        .pipe(ops.map_(lambda greeter: greeter.greet("World")))
+        .map(lambda greeter: greeter.greet("World"))
         .pipe(ops.provide_service(Greeter, _Greeter()))
         .run_collect()
     )
@@ -264,7 +261,7 @@ def test_service_option_some():
     """serviceOption - some"""
     result = yield from (
         stream.service_option(Greeter)
-        .pipe(ops.map_(lambda found: fx.option.map(found, lambda g: g.greet("World"))))
+        .map(lambda found: fx.option.map(found, lambda g: g.greet("World")))
         .pipe(ops.provide_service(Greeter, _Greeter()))
         .run_collect()
     )
@@ -294,9 +291,7 @@ def test_from_iterator_succeed_normalizes_the_chunk_size():
     """fromIteratorSucceed - normalizes the chunk size"""
     results = yield from fx.for_each(
         [-1, 0, 1],
-        lambda size: (
-            stream.from_iterable(iter([1, 2, 3]), chunk_size=size).pipe(ops.chunks).run_collect()
-        ),
+        lambda size: stream.from_iterable(iter([1, 2, 3]), chunk_size=size).chunks().run_collect(),
     )
     assert results == [[(1,), (2,), (3,)]] * 3
 
@@ -304,18 +299,14 @@ def test_from_iterator_succeed_normalizes_the_chunk_size():
 @testing.effect
 def test_from_iterable_emits_array_as_one_chunk_by_default():
     """fromIterable - emits array as one chunk by default"""
-    result = yield from stream.from_iterable([1, 2, 3, 4]).pipe(ops.chunks).run_collect()
+    result = yield from stream.from_iterable([1, 2, 3, 4]).chunks().run_collect()
     assert result == [(1, 2, 3, 4)]
 
 
 @testing.effect
 def test_from_iterable_supports_chunk_size_option():
     """fromIterable - supports chunkSize option"""
-    result = (
-        yield from stream.from_iterable([1, 2, 3, 4, 5], chunk_size=2)
-        .pipe(ops.chunks)
-        .run_collect()
-    )
+    result = yield from stream.from_iterable([1, 2, 3, 4, 5], chunk_size=2).chunks().run_collect()
     assert result == [(1, 2), (3, 4), (5,)]
 
 
@@ -324,9 +315,7 @@ def test_from_iterable_normalizes_the_chunk_size():
     """fromIterable - normalizes the chunk size"""
     results = yield from fx.for_each(
         [-1, 0, 2],
-        lambda size: (
-            stream.from_iterable([1, 2, 3], chunk_size=size).pipe(ops.chunks).run_collect()
-        ),
+        lambda size: stream.from_iterable([1, 2, 3], chunk_size=size).chunks().run_collect(),
     )
     assert results == [[(1,), (2,), (3,)], [(1,), (2,), (3,)], [(1, 2), (3,)]]
 
@@ -355,7 +344,7 @@ def test_scoped_provides_scope_to_sequential_map_effect_pull_effects():
 
     result = (
         yield from stream.from_iterable([1, 2])
-        .pipe(ops.map_effect(acquire))
+        .map_effect(acquire)
         .pipe(stream.scoped)
         .run_collect()
     )

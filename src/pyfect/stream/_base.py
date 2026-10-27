@@ -9,7 +9,7 @@ when called (they build ``Stream`` values, so they load after it).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, cast
 
 from pyfect._effect_args import wrong_argument
@@ -60,3 +60,10 @@ def require_stream(value: object, name: str) -> None:
     """Raise ``TypeError`` naming ``name`` unless ``value`` is a ``Stream``."""
     if not isinstance(value, StreamBase):
         raise TypeError(wrong_argument(value, name, "a Stream", "build one with pyfect.stream"))
+
+
+def require_streams(values: Iterable[object], name: str) -> None:
+    """``require_stream`` for each of a ``*args`` parameter's values,
+    naming the bad one ``name[i]``."""
+    for i, value in enumerate(values):
+        require_stream(value, f"{name}[{i}]")

@@ -2422,3 +2422,93 @@ def check_stream_runs(source: _St[int, ValueError, Replica], words: _St[str]) ->
     assert_type(words.run_string(), fx.Effect[str])
     assert_type(fx.stream.make(b"a").run_bytes(), fx.Effect[bytes])
     source.run_string()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+def _is_not_found(error: object) -> TypeIs[NotFound]:
+    return isinstance(error, NotFound)
+
+
+def _is_int(value: object) -> TypeIs[int]:
+    return isinstance(value, int)
+
+
+def check_stream_operators(
+    source: _St[int, ValueError, Replica], other: _St[str, KeyError]
+) -> None:
+    assert_type(source.map(str), _St[str, ValueError, Replica])
+    assert_type(
+        source.map_effect(lambda n: fx.fail(KeyError()).as_(n)),
+        _St[int, ValueError | KeyError, Replica],
+    )
+    assert_type(source.flat_map(lambda _: other), _St[str, ValueError | KeyError, Replica])
+    assert_type(source.switch_map(lambda _: other), _St[str, ValueError | KeyError, Replica])
+    assert_type(fx.stream.make(other).flatten(), _St[str, KeyError])
+    source.flatten()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    assert_type(source.filter(lambda n: n > 0), _St[int, ValueError, Replica])
+    mixed: _St[int | str] = fx.stream.make(1, "a")
+    assert_type(mixed.filter(_is_int), _St[int])
+    assert_type(mixed.take_while(_is_int), _St[int])
+    assert_type(source.take(2).drop(1).changes(), _St[int, ValueError, Replica])
+    assert_type(source.grouped(2), _St[tuple[int, ...], ValueError, Replica])
+    assert_type(source.zip_with_next(), _St[tuple[int, fx.Option[int]], ValueError, Replica])
+    assert_type(fx.stream.make(b"ab").limit_bytes(1, lambda: fx.stream.empty), _St[bytes])
+    source.limit_bytes(1, lambda: fx.stream.empty)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    assert_type(source.zip(other), _St[tuple[int, str], ValueError | KeyError, Replica])
+    assert_type(
+        source.zip(other).zip_flatten(source),
+        _St[tuple[int, str, int], ValueError | KeyError, Replica],
+    )
+    assert_type(source.merge(other), _St[int | str, ValueError | KeyError, Replica])
+    assert_type(
+        fx.stream.make(1).interleave_with(fx.stream.make("a"), fx.stream.make(True)),
+        _St[int | str],
+    )
+    assert_type(
+        source.interleave_with(other, fx.stream.make(True)),
+        _St[int | str, ValueError | KeyError, Replica],
+    )
+    assert_type(
+        source.combine(other, lambda: 0, lambda s, left, _right: left.map(lambda n: (n, s))),
+        _St[int, ValueError, Replica],
+    )
+    assert_type(
+        source.combine(other, lambda: 0, lambda s, _left, right: right.map(lambda a: (a, s))),
+        _St[str, KeyError, Replica],
+    )
+    assert_type(
+        fx.stream.make(1).combine(
+            fx.stream.make("a"), lambda: 0, lambda s, left, _right: left.map(lambda n: (n, s))
+        ),
+        _St[int],
+    )
+    assert_type(
+        source.combine_array(other, lambda: 0, lambda s, left, _right: left.map(lambda c: (c, s))),
+        _St[int, ValueError, Replica],
+    )
+    assert_type(source.collect(), _St[list[int], ValueError, Replica])
+    assert_type(source.accumulate(), _St[tuple[int, ...], ValueError, Replica])
+    assert_type(fx.stream.merge_all([source, source], concurrency=2), _St[int, ValueError, Replica])
+    assert_type(
+        fx.stream.zip_latest_all(source, other),
+        _St[tuple[int, str], ValueError | KeyError, Replica],
+    )
+    assert_type(fx.stream.race_all(source, source), _St[int, ValueError, Replica])
+    assert_type(source.buffer(capacity="unbounded"), _St[int, ValueError, Replica])
+    assert_type(source.buffer(capacity=2, strategy="sliding"), _St[int, ValueError, Replica])
+    assert_type(source.catch_all(lambda _: other), _St[int | str, KeyError, Replica])
+    assert_type(source.ignore(), _St[int, Never, Replica])
+    assert_type(
+        source.catch_filter(lambda e: fx.Ok(e) if e.args else fx.Err(e), lambda _: other),
+        _St[int | str, ValueError | KeyError, Replica],
+    )
+
+
+def check_stream_catch_removes_errors(source: _St[int, NotFound | ValueError]) -> None:
+    caught = source.pipe(fx.stream.catch_tag(NotFound, lambda _: fx.stream.make("x")))
+    assert_type(caught, _St[int | str, ValueError])
+    refined = source.pipe(fx.stream.catch_if(_is_not_found, lambda _: fx.stream.make("x")))
+    assert_type(refined, _St[int | str, ValueError])
+    assert_type(
+        source.catch_if(_is_not_found, lambda _: fx.stream.make("x")),
+        _St[int | str, NotFound | ValueError],
+    )

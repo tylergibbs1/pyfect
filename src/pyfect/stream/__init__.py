@@ -11,12 +11,17 @@ at a time while its functions take one item at a time::
     fx.run_sync(stream.range(0, 5).run_collect())  # [0, 1, 2, 3, 4]
 
 Constructors are functions here, and so are the combinators that remove
-something from a stream's type (``scoped``), used with ``.pipe``; the rest
-(``run_collect``, ``run_fold``, ``to_pull``, ...) are methods.
+something from a stream's type (``scoped``, ``catch_tag``, ``catch_if``),
+used with ``.pipe``, and the ones combining any number of streams
+(``merge_all``, ``zip_latest_all``, ``race_all``); the rest (``map``,
+``flat_map``, ``take``, ``zip``, ``merge``, ``catch_all``, ``debounce``,
+``run_collect``, ``to_pull``, ...) are methods.
 ``range`` follows Python's ``range`` and leaves its end out;
 ``range_inclusive`` is Effect's ``range``.
 """
 
+from pyfect.stream._catch import catch_if_refinement as catch_if
+from pyfect.stream._catch import catch_tag
 from pyfect.stream._constructors import (
     DEFAULT_CHUNK_SIZE,
     die,
@@ -48,6 +53,7 @@ from pyfect.stream._constructors import (
     unfold,
     unwrap,
 )
+from pyfect.stream._many import merge_all, race_all, zip_latest_all
 from pyfect.stream._sources import (
     callback,
     from_async_iterable,
@@ -71,6 +77,8 @@ __all__ = [
     "DEFAULT_CHUNK_SIZE",
     "Stream",
     "callback",
+    "catch_if",
+    "catch_tag",
     "die",
     "empty",
     "fail",
@@ -95,8 +103,10 @@ __all__ = [
     "from_subscription",
     "iterate",
     "make",
+    "merge_all",
     "never",
     "paginate",
+    "race_all",
     "range",
     "range_inclusive",
     "scoped",
@@ -111,4 +121,5 @@ __all__ = [
     "transform_pull_bracket",
     "unfold",
     "unwrap",
+    "zip_latest_all",
 ]

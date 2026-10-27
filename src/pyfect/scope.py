@@ -61,6 +61,12 @@ class CloseableScope:
         return len(self._finalizers)
 
     @property
+    def is_empty(self) -> bool:
+        """Open with no finalizers, so it can be handed on for reuse
+        (Effect's ``Empty`` state). A closed scope is never empty."""
+        return self._closed is None and not self._finalizers
+
+    @property
     def is_closed(self) -> bool:
         """Whether ``close`` has started (later finalizers run at once)."""
         return self._closed is not None

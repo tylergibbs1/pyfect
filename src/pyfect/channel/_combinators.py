@@ -93,7 +93,7 @@ def _ignore(_: object) -> None:
 
 def flat_map(self: AnyChannel, f: Callable[[Any], AnyChannel]) -> Channel_:
     """One inner channel at a time, each in a child scope closed when it
-    ends; a child scope left without finalizers is reused."""
+    ends; a child scope left open without finalizers is reused."""
 
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
         def with_outer(pull: AnyPull) -> AnyPull:
@@ -103,7 +103,7 @@ def flat_map(self: AnyChannel, f: Callable[[Any], AnyChannel]) -> Channel_:
             def next_inner(used: CloseableScope) -> AnyPull:
                 nonlocal child_pull, child_scope
                 child_pull = None
-                if used.finalizer_count == 0:
+                if used.is_empty:
                     return make_pull
                 child_scope = None
                 return used.close(Success(None)).and_then(make_pull)

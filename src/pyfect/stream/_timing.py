@@ -1,0 +1,287 @@
+"""The work behind ``Stream``'s ``schedule``, ``repeat_elements``,
+``timeout_or_else``, ``debounce`` and ``throttle``."""
+# pyright: reportPrivateUsage=false
+
+from __future__ import annotations
+
+import math
+from collections.abc import Callable, Generator
+from typing import Any
+
+from pyfect._core import Effect, _FailCause, _FlatMap, _Gen, _Succeed, _Suspend
+from pyfect.cause import Cause, Die
+from pyfect.cause import die as die_cause
+from pyfect.channel import transform_pull
+from pyfect.clock import Clock, ClockService, sleep
+from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.latch import Latch
+from pyfect.schedule import Schedule
+from pyfect.schedule._model import Stop, to_step_with_sleep
+from pyfect.scope import CloseableScope
+from pyfect.stream._base import AnyStream
+from pyfect.stream._mapping import one
+from pyfect.stream._stream import Stream
+
+type AnyEffect = Effect[Any, Any, Any]
+type Chunk = tuple[Any, ...]
+type AnyStream_ = Stream[Any, Any, Any]
+
+_VOID: AnyEffect = _Succeed(None)
+
+
+def _none(_: object) -> None:
+    return None
+
+
+def schedule(self: AnyStream, policy: Schedule[Any, Any, Any, Any]) -> AnyStream_:
+    scheduled = self._channel.flatten_array().schedule(policy).map_done(_none)
+    return Stream(scheduled.map(one))
+
+
+def repeat_elements(self: AnyStream, policy: Schedule[Any, Any, Any, Any]) -> AnyStream_:
+    def build(pull_item: AnyEffect, _scope: CloseableScope) -> AnyEffect:
+        repeating: AnyEffect | None = None
+
+        def first() -> Generator[AnyEffect, Any, Chunk]:
+            nonlocal repeating
+            item = yield pull_item
+            chunk = (item,)
+            step = yield to_step_with_sleep(policy)
+
+            def decided(decision: object) -> AnyEffect:
+                nonlocal repeating
+                if isinstance(decision, Stop):
+                    repeating = None
+                    return pull
+                return _Succeed(chunk)
+
+            repeating = _FlatMap(step(item), decided)
+            return chunk
+
+        pull = _Gen(first)
+        return _Succeed(_Suspend(lambda: pull if repeating is None else repeating))
+
+    return Stream(transform_pull(self._channel.flatten_array(), build))
+
+
+# --- timeouts -----------------------------------------------------------------
+
+
+class _TimedOut(Exception):
+    """Dies the merged watcher when a pull waits past the timeout."""
+
+
+def timeout_or_else(
+    self: AnyStream, duration: Duration, or_else: Callable[[], AnyStream] | None
+) -> AnyStream_:
+    from pyfect.stream._constructors import empty, from_effect_drain, suspend, unwrap
+
+    seconds = to_seconds(duration)
+    fallback: Callable[[], AnyStream] = or_else or (lambda: empty)
+    if math.isinf(seconds) and seconds > 0:
+        return Stream(self._channel)
+    if seconds <= 0:
+        return suspend(fallback)
+    marker = _TimedOut()
+
+    def with_clock(clock: ClockService) -> AnyStream_:
+        # When the pull in flight times out; empty while no pull waits.
+        deadline: list[float] = []
+        waiting = Latch()
+
+        def started(pull: AnyEffect) -> AnyEffect:
+            def start() -> AnyEffect:
+                deadline[:] = [clock.unsafe_now() + seconds]
+                waiting.unsafe_open()
+                return pull
+
+            def arrived(chunk: Chunk) -> AnyEffect:
+                waiting.unsafe_close()
+                deadline.clear()
+                return _Succeed(chunk)
+
+            return _FlatMap(_Suspend(start), arrived)
+
+        def watch() -> Generator[AnyEffect, Any]:
+            while True:
+                yield waiting.wait()
+                if not deadline:
+                    continue
+                yield sleep(deadline[0] - clock.unsafe_now())
+                if not deadline or deadline[0] - clock.unsafe_now() > 0:
+                    continue
+                yield _FailCause(die_cause(marker))
+
+        timed = Stream(transform_pull(self._channel, lambda pull, _: _Succeed(started(pull))))
+        return timed.merge(from_effect_drain(_Gen(watch)), halt_strategy="left")
+
+    def recover(cause: Cause[Any]) -> AnyStream_:
+        from pyfect.stream._constructors import fail_cause
+
+        timed_out = any(isinstance(r, Die) and r.defect is marker for r in cause.reasons)
+        return Stream(fallback()._channel) if timed_out else fail_cause(cause)
+
+    return unwrap(Clock().map(with_clock)).catch_cause(recover)
+
+
+# --- debouncing ---------------------------------------------------------------
+
+
+def debounce(self: AnyStream, duration: Duration) -> AnyStream_:
+    wait = to_seconds(duration)
+
+    def build(pull: AnyEffect, scope: CloseableScope) -> AnyEffect:
+        def body() -> Generator[AnyEffect, Any, AnyEffect]:
+            clock: ClockService = yield Clock()
+            last: Chunk | None = None
+            stopped: Cause[Any] | None = None
+            emit_at = math.inf
+            pulling = Latch()
+            emitting = Latch()
+            ended = Latch()
+
+            def got(chunk: Chunk) -> AnyEffect:
+                nonlocal last, emit_at
+                emitting.unsafe_open()
+                last = chunk
+                emit_at = clock.unsafe_now() + wait
+                return _VOID
+
+            def failed(cause: Cause[Any]) -> AnyEffect:
+                nonlocal stopped, emit_at
+                stopped = cause
+                emit_at = clock.unsafe_now()
+                emitting.unsafe_open()
+                ended.unsafe_open()
+                return _VOID
+
+            yield pulling.when_open(pull).flat_map(got).forever().on_error(failed).fork_in(scope)
+
+            def take_last(chunk: Chunk) -> AnyEffect:
+                nonlocal last
+                last = None
+                return _Succeed((chunk[-1],))
+
+            def loop() -> AnyEffect:
+                now = clock.unsafe_now()
+                delay = wait if emit_at < now else min(wait, emit_at - now)
+                return _FlatMap(sleep(Seconds(delay)).race_first(ended.wait()), after)
+
+            def after(_: object) -> AnyEffect:
+                if clock.unsafe_now() < emit_at:
+                    return loop()
+                if last is not None:
+                    emitting.unsafe_close()
+                    pulling.unsafe_close()
+                    return take_last(last)
+                if stopped is not None:
+                    return _FailCause(stopped)
+                return loop()
+
+            sleep_loop = _Suspend(loop)
+
+            def next_pull() -> AnyEffect:
+                if stopped is not None:
+                    return take_last(last) if last is not None else _FailCause(stopped)
+                pulling.unsafe_open()
+                return emitting.when_open(sleep_loop)
+
+            return _Suspend(next_pull)
+
+        return _Gen(body)
+
+    return Stream(transform_pull(self._channel, build))
+
+
+# --- throttling ---------------------------------------------------------------
+
+
+def throttle(
+    self: AnyStream,
+    cost: Callable[[Chunk], AnyEffect],
+    units: float,
+    duration: Duration,
+    *,
+    burst: float,
+    strategy: str,
+) -> AnyStream_:
+    seconds = to_seconds(duration)
+    period_ns = seconds if math.isinf(seconds) else round(seconds * 1e9)
+    cap = math.inf if units + burst < 0 else units + burst
+    if strategy == "enforce":
+        return _throttle_enforce(self, cost, units, period_ns, cap)
+    return _throttle_shape(self, cost, units, period_ns, cap)
+
+
+def _refilled(tokens: float, elapsed_ns: int, period_ns: float, units: float) -> float:
+    """The bucket after ``elapsed_ns``. Times are whole nanoseconds, so
+    equal steps refill equally; the division is JavaScript's, as in Effect
+    (``x / 0`` is infinite and ``0 / 0`` is NaN), so a zero period never
+    raises."""
+    if period_ns == 0:
+        cycles = math.nan if elapsed_ns == 0 else math.inf
+    else:
+        cycles = elapsed_ns / period_ns
+    return tokens + cycles * units
+
+
+def _throttle_enforce(
+    self: AnyStream, cost: Callable[[Chunk], AnyEffect], units: float, period_ns: float, cap: float
+) -> AnyStream_:
+    def with_clock(pull: AnyEffect, clock: ClockService) -> AnyEffect:
+        tokens = units
+        stamp = clock.unsafe_now_nanos()
+
+        def loop(chunk: Chunk) -> AnyEffect:
+            def weighed(weight: float) -> AnyEffect:
+                nonlocal tokens, stamp
+                now = clock.unsafe_now_nanos()
+                total = _refilled(tokens, now - stamp, period_ns, units)
+                available = cap if total < 0 else min(total, cap)
+                if weight <= available:
+                    tokens = available - weight
+                    stamp = now
+                    return _Succeed(chunk)
+                return _FlatMap(pull, loop)
+
+            return _FlatMap(cost(chunk), weighed)
+
+        return _FlatMap(pull, loop)
+
+    return Stream(
+        transform_pull(self._channel, lambda pull, _: Clock().map(lambda c: with_clock(pull, c)))
+    )
+
+
+def _throttle_shape(
+    self: AnyStream, cost: Callable[[Chunk], AnyEffect], units: float, period_ns: float, cap: float
+) -> AnyStream_:
+    def with_clock(pull: AnyEffect, clock: ClockService) -> AnyEffect:
+        tokens = units
+        stamp = clock.unsafe_monotonic_nanos()
+
+        def admit(chunk: Chunk) -> AnyEffect:
+            def weighed(weight: float) -> AnyEffect:
+                nonlocal tokens, stamp
+                now = clock.unsafe_monotonic_nanos()
+                remaining = min(_refilled(tokens, now - stamp, period_ns, units), cap) - weight
+
+                def keep(_: object = None) -> AnyEffect:
+                    nonlocal tokens, stamp
+                    tokens = remaining
+                    stamp = now
+                    return _Succeed(chunk)
+
+                if remaining >= 0:
+                    return keep()
+                cycles = math.inf if units == 0 else -remaining / units
+                delay = max(0.0, cycles * period_ns / 1e9)
+                return _FlatMap(sleep(Seconds(delay)), keep) if delay > 0 else keep()
+
+            return _FlatMap(cost(chunk), weighed)
+
+        return _FlatMap(pull, admit)
+
+    return Stream(
+        transform_pull(self._channel, lambda pull, _: Clock().map(lambda c: with_clock(pull, c)))
+    )

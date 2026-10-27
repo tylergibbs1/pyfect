@@ -4,8 +4,7 @@ Each test's docstring is the Effect test title. Effect's module functions
 are methods (``SubscriptionRef.getAndUpdateEffect(ref, f)`` is
 ``ref.get_and_update_effect(f)``).
 
-``SubscriptionRef.changes(ref)`` is ``ref.changes()``, a ``Stream``;
-``Stream.take`` and ``Stream.tap`` come from ``tests/oracle/_stream_ops.py``.
+``SubscriptionRef.changes(ref)`` is ``ref.changes()``, a ``Stream``.
 
 Omitted, with the reason:
 
@@ -17,8 +16,6 @@ from typing import Any
 import pyfect as fx
 from pyfect import testing
 
-from . import _stream_ops as ops
-
 
 def _collect(
     ref: fx.SubscriptionRef[int], n: int, latch: fx.Latch | None = None
@@ -26,8 +23,8 @@ def _collect(
     """``changes(ref).pipe(Stream.tap(latch.open), Stream.take(n), Stream.runCollect)``."""
     changes = ref.changes()
     if latch is not None:
-        changes = changes.pipe(ops.tap(lambda _: latch.open()))
-    return changes.pipe(ops.take(n)).run_collect()
+        changes = changes.tap(lambda _: latch.open())
+    return changes.take(n).run_collect()
 
 
 def _interrupted_only(ex: fx.Exit[Any, Any]) -> bool:

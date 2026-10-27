@@ -21,6 +21,7 @@ from pyfect.schedule import Schedule
 from pyfect.schedule._model import CurrentMetadata, Metadata, Stop, to_step_with_metadata
 from pyfect.scope import Scope
 from pyfect.stream._base import AnyStream, StreamBase, require_stream
+from pyfect.stream._concat import SuspendedStream
 from pyfect.stream._stream import Stream, from_channel, from_pull
 
 DEFAULT_CHUNK_SIZE = channel.DEFAULT_CHUNK_SIZE
@@ -69,7 +70,7 @@ def sync[A](thunk: Callable[[], A]) -> Stream[A]:
 
 def suspend[A, E, R](thunk: Callable[[], StreamBase[A, E, R]]) -> Stream[A, E, R]:
     """The stream ``thunk()`` returns, built each time it runs."""
-    return Stream(channel.suspend(lambda: thunk()._channel))
+    return SuspendedStream(thunk)
 
 
 def fail[E](error: E) -> Stream[Never, E]:

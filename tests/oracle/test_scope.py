@@ -3,8 +3,8 @@
 Each test's docstring is the Effect test title. ``Scope.makeUnsafe`` is
 ``CloseableScope(strategy)``, ``Scope.forkUnsafe`` is ``scope._fork_now()``
 and ``closeUnsafe`` is ``close_unsafe``. Effect's ``state._tag`` checks read
-``finalizer_count`` and ``is_closed``: "Empty" is an open scope with no
-finalizers. An ``AbortController`` signal is the cancellation of the asyncio
+``is_empty`` (Effect's "Empty": open, no finalizers), ``finalizer_count``
+and ``is_closed``. An ``AbortController`` signal is the cancellation of the asyncio
 task awaiting ``run_async_exit``.
 
 "a sole throwing finalizer keeps the scoped effect's failure" is ported in
@@ -181,10 +181,11 @@ def test_closing_a_child_removes_it_from_the_parent():
     """closing a child removes it from the parent"""
     parent = CloseableScope()
     child = parent._fork_now()
-    assert child.finalizer_count == 0 and not child.is_closed
+    assert child.is_empty
     assert parent.finalizer_count == 1
     yield from child.close(fx.Success(None))
     assert parent.finalizer_count == 0
+    assert not child.is_empty
 
 
 @testing.effect

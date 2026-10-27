@@ -19,7 +19,13 @@ from pyfect.channel import Channel, from_transform, from_transform_bracket
 from pyfect.channel import from_pull as channel_from_pull
 from pyfect.channel._base import require_channel
 from pyfect.stream._base import A_co, E_co, R_co, StreamBase, StreamChannel, require_stream
+from pyfect.stream._chunk_methods import ChunkMethods
+from pyfect.stream._error_methods import ErrorMethods
+from pyfect.stream._filter_methods import FilterMethods
+from pyfect.stream._map_methods import MapMethods
 from pyfect.stream._run_methods import RunMethods
+from pyfect.stream._timing_methods import TimingMethods
+from pyfect.stream._zip_methods import ZipMethods
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
@@ -28,14 +34,22 @@ if TYPE_CHECKING:
     from pyfect.scope import CloseableScope
 
 
-class Stream(RunMethods[A_co, E_co, R_co]):
+class Stream(
+    MapMethods[A_co, E_co, R_co],
+    FilterMethods[A_co, E_co, R_co],
+    ChunkMethods[A_co, E_co, R_co],
+    ZipMethods[A_co, E_co, R_co],
+    ErrorMethods[A_co, E_co, R_co],
+    TimingMethods[A_co, E_co, R_co],
+    RunMethods[A_co, E_co, R_co],
+):
     """``Stream[A, E, R]``: writes items of type ``A`` in non-empty tuples
     (chunks), then fails with ``E`` or ends; needs the services ``R``.
 
     Build streams with the functions in ``pyfect.stream``; methods that
     keep or add to the type parameters are here. Combinators that remove
-    something from a type (``scoped``, ...) are functions in
-    ``pyfect.stream``, used with ``.pipe``.
+    something from a type (``scoped``, ``catch_tag``, ``catch_if``) are
+    functions in ``pyfect.stream``, used with ``.pipe``.
     """
 
     __slots__ = ()
