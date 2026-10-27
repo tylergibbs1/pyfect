@@ -398,3 +398,46 @@ def test_a_take_interrupted_at_a_yield_keeps_its_message(
             with yield_budget(budget):
                 out, offered = run(program(delay))
             assert out == ([1] if offered == fx.Success(True) else []), (budget, delay)
+
+
+def test_offer_to_a_sliding_queue_of_capacity_zero_keeps_the_newest_item():
+    """Effect Queue.ts ``offerUnsafe``: a full sliding queue drops its oldest
+    item and appends the new one, so capacity 0 holds one item. (Checked
+    against Effect 4.0.6; no Effect test covers it.)"""
+
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int].sliding(0)
+        offered = ((yield from q.offer(1)), (yield from q.offer(2)))
+        size = yield from q.size
+        return offered, size, (yield from q.take()), (yield from q.size)
+
+    assert run(program) == ((True, True), 1, 2, 0)
+
+
+def test_offer_all_to_a_sliding_queue_of_capacity_zero_keeps_nothing():
+    """Effect Queue.ts ``offerAllUnsafe`` trims a sliding queue to its
+    capacity after appending, so nothing stays and nothing is returned."""
+
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int].sliding(0)
+        return (yield from q.offer_all([1, 2, 3])), (yield from q.size)
+
+    assert run(program) == ([], 0)
+
+
+def test_offer_to_a_sliding_queue_of_capacity_zero_wakes_a_waiting_taker():
+    """Effect leaves the taker parked next to the item (its sliding branch
+    skips ``releaseTakers``), which hangs it until another take; pyfect wakes
+    it, as every other offer that adds an item does."""
+
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int].sliding(0)
+        taker = yield from q.take().fork()
+        yield from _settle()
+        yield from q.offer(7)
+        return (yield from taker.join()), (yield from q.size)
+
+    assert run(program) == (7, 0)

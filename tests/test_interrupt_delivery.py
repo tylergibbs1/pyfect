@@ -3,10 +3,10 @@ a fiber that has not started never runs its body, a fiber that interrupts
 itself stops at its next step, and a parked fiber is woken at once."""
 
 from collections.abc import Callable
-from typing import assert_type
+from typing import Never, assert_type
 
 import pyfect as fx
-from pyfect.cause import Interrupt
+from pyfect.cause import Fail, Interrupt
 from pyfect.testing import run_test as run
 
 
@@ -199,10 +199,11 @@ def test_interrupting_a_deep_tree_of_fibers_finishes_it():
         assert log == ["leaf"]
 
 
-def test_a_resume_that_lands_before_the_interrupt_keeps_its_failure():
-    """In Effect a resume runs the fiber at once, so a failure handed to
-    ``resume`` before an interrupt is part of the fiber's exit. pyfect queues
-    the resume; the interrupt arriving meanwhile must not erase it."""
+def test_a_resume_that_lands_before_the_interrupt_keeps_its_failure_alone():
+    """In Effect a resume runs the fiber at once, so a fiber resumed with a
+    failure has finished before the interrupt arrives: its exit is the
+    failure alone. pyfect queues the resume; an interrupt arriving meanwhile
+    waits for the resumed run, as if it had come after it."""
     resumes: list[Callable[[fx.Effect[None, str]], None]] = []
 
     def register(resume: Callable[[fx.Effect[None, str]], None]) -> None:
@@ -217,4 +218,65 @@ def test_a_resume_that_lands_before_the_interrupt_keeps_its_failure():
         return (yield from fiber.await_exit())
 
     ex = run(program)
-    assert isinstance(ex, fx.Failure) and ex.cause.failures == ("boom",)
+    assert isinstance(ex, fx.Failure) and ex.cause.reasons == (Fail("boom"),)
+
+
+def _resumed_then_interrupted[A](
+    after_resume: fx.Effect[A], resume_with: fx.Effect[None]
+) -> fx.Exit[A, Never]:
+    """Resume a parked fiber, then interrupt it before the resume runs."""
+    resumes: list[Callable[[fx.Effect[None]], None]] = []
+
+    def register(resume: Callable[[fx.Effect[None]], None]) -> None:
+        resumes.append(resume)
+
+    @fx.gen
+    def program():
+        fiber = yield from fx.callback(register).and_then(after_resume).fork()
+        yield from fx.yield_now()
+        resumes[0](resume_with)
+        fiber.unsafe_interrupt_as(None)
+        return (yield from fiber.await_exit())
+
+    return run(program)
+
+
+def test_a_fiber_resumed_before_an_interrupt_finishes_when_it_can():
+    """Effect: the resumed run completes before the interrupt lands, which
+    then finds the fiber done."""
+    ex = _resumed_then_interrupted(fx.succeed("done"), fx.void)
+    assert ex == fx.Success("done")
+
+
+def test_an_interrupt_after_a_queued_resume_stops_the_fiber_at_its_next_wait():
+    """Effect: the resumed run goes on until it parks again; the interrupt
+    then cancels that wait (running its canceler)."""
+    log: list[str] = []
+
+    def park(_resume: Callable[[fx.Effect[None]], None]) -> fx.Effect[None]:
+        log.append("parked")
+        return fx.sync(lambda: log.append("canceled"))
+
+    ex = _resumed_then_interrupted(fx.callback(park), fx.void)
+    assert isinstance(ex, fx.Failure) and ex.cause.reasons == (Interrupt(None),)
+    assert log == ["parked", "canceled"]
+
+
+def test_an_uninterruptible_wait_resumed_before_an_interrupt_finishes_its_run():
+    """Effect runs the resume at once, so leaving the uninterruptible region
+    happens before the interrupt arrives; the fiber then finishes."""
+    resumes: list[Callable[[fx.Effect[None]], None]] = []
+
+    def register(resume: Callable[[fx.Effect[None]], None]) -> None:
+        resumes.append(resume)
+
+    @fx.gen
+    def program():
+        body = fx.callback(register).uninterruptible().and_then(fx.succeed("done"))
+        fiber = yield from body.fork()
+        yield from fx.yield_now()
+        resumes[0](fx.void)
+        fiber.unsafe_interrupt_as(None)
+        return (yield from fiber.await_exit())
+
+    assert run(program) == fx.Success("done")

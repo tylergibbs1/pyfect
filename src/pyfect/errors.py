@@ -1,6 +1,8 @@
 """Typed errors.
 
-Subclass ``TaggedError`` (usually as a dataclass) for domain errors. An
+Subclass ``TaggedError`` (usually as a ``@dataclass(eq=False)``; plain
+``@dataclass`` works too, but pyright then thinks it unhashable) for
+domain errors. An
 instance is yieldable: ``yield from NotFound(key)`` fails the surrounding
 generator and adds ``NotFound`` to its error channel. Write
 ``return (yield from NotFound(key))`` so the type checker knows the code

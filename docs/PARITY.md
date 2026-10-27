@@ -111,15 +111,24 @@ Every item below was reproduced by running pyfect against Effect's source and te
 | 31 | Fixed | `test_interrupt_delivery.py::test_interrupt_returns_none`, `test_primitives.py::test_semaphore_take_and_release_return_counts` |
 | 32 | Fixed. `TimeoutException(duration)` + `duration.format_duration` | `test_concurrency.py::test_timeout_produces_a_useful_error_message` |
 
+### Resolved after M0
+
+| Item | Resolution | Pinned by |
+|---|---|---|
+| `race`/`race_first`/`race_all`/`timeout` interrupted from outside | Already matched Effect: `raceAll`/`raceAllFirst` interrupt and await the racers in a `void` exit finalizer, so Effect also reports the Interrupt alone (not the #12 merge). Checked against Effect 4.0.6. | `tests/test_race_interruption.py` |
+| `sliding(0)` | `offer` keeps the newest item (one slot), `offer_all` keeps nothing, as Effect's `offerUnsafe` / `offerAllUnsafe` | `test_queue.py::test_offer*_sliding_queue_of_capacity_zero_*` |
+| Resume queued just before an interrupt | The interrupt is held until the resumed run finishes, parks or yields (`Fiber._resume`), so the Fail wins alone, like Effect's synchronous resume. The loop no longer takes a `resumed` flag. | `test_interrupt_delivery.py::test_a_resume_that_lands_before_*`, `test_a_fiber_resumed_before_*`, `test_an_interrupt_after_a_queued_resume_*`, `test_an_uninterruptible_wait_resumed_before_*` |
+
+Effect's own source runs under Node 24 without a build: write a `.ts` script that imports `Effect.ts` from the reference checkout (`pyfect-ref/effect/packages/effect/src`, next to this repo) by absolute path and run `node script.ts`. Check an expected result there before pinning it.
+
 ### Still open
 
 - **#13**: before moving time, `TestClock.adjust` waits for global idleness (bounded by `warning_delay`) instead of Effect's single forked `yieldNow`. A busy fiber the clock did not wake costs `warning_delay` of real time plus a `BusyFiberWarning`, where Effect continues silently. Matching Effect needs forked and race children to start immediately.
-- **`race` on an outside interrupt** reports only the Interrupt and drops the losers' causes (the #12 gap, for race/timeout).
-- **Resume vs interrupt**: a resume queued just before an interrupt gives Fail + Interrupt; Effect gives the Fail alone because its resumes are synchronous. A parent with children in an interrupt cascade finishes one scheduler turn later than in Effect.
+- A parent with children in an interrupt cascade finishes one scheduler turn later than in Effect.
 - **MemoMap scope refcounting** (Effect's `memoMapObserve`) is not ported; a layer reused from a parent map lives as long as the outer `provide`'s scope.
 - **`Cause +` dedupes with Python `==`**, so `fail(1) + fail(True)` collapse; Effect's `Equal.equals` keeps them apart.
-- **`sliding(0)`** drops every item; Effect's behaves like a one-slot sliding buffer. No Effect test covers it.
-- **TaggedError**: pyright treats a plain `@dataclass` subclass as unhashable in set literals (runtime hashing works; fixing it needs a `dataclass_transform` base). Frozen dataclass errors don't set `__cause__` and don't `copy.copy`; Python itself doesn't support frozen exceptions well, so don't freeze TaggedErrors.
+- **`sliding(0)` with a parked taker**: Effect's `offerUnsafe` sliding branch skips `releaseTakers`, so the taker stays parked next to the item; pyfect wakes it (`test_queue.py::test_offer_to_a_sliding_queue_of_capacity_zero_wakes_a_waiting_taker`).
+- **TaggedError**: pyright treats a plain `@dataclass` subclass as unhashable in set literals (runtime hashing works); `@dataclass(eq=False)` is hashable to both (pinned in `tests/type_checks.py`). A `dataclass_transform` base was tried and rejected: pyright then gives every plain subclass a field-only `__init__`, so `Boom("msg")` and `Done()`-style args errors stop type-checking, and making the runtime agree would re-run `@dataclass` on explicit dataclass subclasses (losing `default_factory` defaults). Frozen dataclass errors don't set `__cause__` and don't `copy.copy`; Python itself doesn't support frozen exceptions well, so don't freeze TaggedErrors.
 - **Concurrent `TestClock.adjust` calls** are not serialized (Effect uses `Semaphore(1)`); no deterministic repro.
 - Effect's `runMain` interrupts with the main fiber's id; pyfect uses `None`. Only visible in `Cause.pretty()` of an interrupt-only cause, which `run_main` never prints.
 

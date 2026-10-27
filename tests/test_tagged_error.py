@@ -157,3 +157,16 @@ def test_subclass_inherits_an_explicit_eq():
         pass
 
     assert Child("a") == Child("b")
+
+
+def test_an_eq_false_dataclass_error_still_compares_and_hashes_by_fields():
+    """``@dataclass(eq=False)`` is the spelling pyright sees as hashable
+    (tests/type_checks.py); it must keep the structural equality."""
+
+    @dataclass(eq=False)
+    class Missing(fx.TaggedError):
+        key: str
+
+    assert Missing("x") == Missing("x")
+    assert Missing("x") != Missing("y")
+    assert hash(Missing("x")) == hash(Missing("x"))

@@ -5,7 +5,9 @@ Capacity and overflow behavior are fixed at creation:
 - ``"suspend"`` (default): ``offer`` waits while the queue is full.
   Capacity 0 is a rendezvous: an offer completes when a taker takes it.
 - ``"dropping"``: ``offer`` on a full queue drops the new item.
-- ``"sliding"``: ``offer`` on a full queue drops the oldest item.
+- ``"sliding"``: ``offer`` on a full queue drops the oldest item. As in
+  Effect, ``sliding(0)`` keeps the newest offered item, while
+  ``offer_all`` to it keeps nothing.
 
 A queue can be finished. After ``fail(error)``, new offers return
 ``False``, but takers still drain the items and the offers that were
@@ -76,7 +78,9 @@ class Queue[A, E = Never]:
             match self._state:
                 case st.Open(takers=takers, offers=offers):
                     if self._free(takers) > 0 or self._strategy == "sliding":
-                        self._push([item], takers)
+                        # As Effect's ``offerUnsafe``: a full sliding queue
+                        # swaps its oldest item for this one, even at capacity 0.
+                        self._push([item], takers, keep_at_least=1)
                         resume(_Succeed(True))
                     elif self._strategy == "suspend":
                         return self._park(offers, st.OfferOne(item, resume))
@@ -184,12 +188,14 @@ class Queue[A, E = Never]:
             return len(takers)
         return max(0, self._capacity - len(self._items))
 
-    def _push(self, batch: list[A], takers: WaitList) -> None:
+    def _push(self, batch: list[A], takers: WaitList, *, keep_at_least: int = 0) -> None:
+        """Add ``batch``; a sliding queue then drops its oldest items down to
+        its capacity (or ``keep_at_least``, if larger)."""
         self._items.extend(batch)
         if self._strategy == "sliding" and self._capacity is not None:
-            for _ in range(len(self._items) - self._capacity):
+            for _ in range(len(self._items) - max(self._capacity, keep_at_least)):
                 self._items.popleft()
-        _wake(takers, len(batch))
+        _wake(takers, min(len(batch), len(self._items)))
 
     def _shut(self, cause: Cause[E], offers: deque[st.Offer[A]]) -> None:
         self._items.clear()

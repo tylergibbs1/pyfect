@@ -12,7 +12,9 @@ Interruption follows Effect's rules:
   fiber is interruptible and not running, it is unwound right away: a fiber
   that has not started never runs its body, and a parked fiber has its wait
   cancelled (running its canceler). A running fiber, including one that
-  interrupts itself, stops at its next step.
+  interrupts itself, stops at its next step. A fiber whose resume is
+  already queued gets the interrupt after that resumed run, since in
+  Effect the resume would already have run.
 - While interruptible and interrupted, the loop turns whatever comes next
   into a failure, so the stack unwinds. Recovery handlers are skipped;
   finalizers run, because they run in uninterruptible regions.
@@ -131,6 +133,7 @@ class Fiber(Generic[A_co, E_co]):
         "_exit",
         "_interrupt",
         "_interruptible",
+        "_interrupts_after_resume",
         "_observers",
         "_parent",
         "_phase",
@@ -150,6 +153,8 @@ class Fiber(Generic[A_co, E_co]):
         self._stack: list[Frame] = []
         self._interruptible = True
         self._interrupt: Cause[Never] | None = None
+        # Interrupts that arrived while a resume was queued (see _resume).
+        self._interrupts_after_resume: list[int | None] = []
         self._children: set[Fiber[Any, Any]] = set()
         self._observers: list[Callable[[Exit[Any, Any]], None]] = []
         self._exit: Exit[Any, Any] | None = None
@@ -227,29 +232,24 @@ class Fiber(Generic[A_co, E_co]):
     def _interrupted_and_interruptible(self) -> bool:
         return self._interrupt is not None and self._interruptible
 
-    def _run(self, start: Step, *, resumed: bool = False) -> None:
+    def _run(self, start: Step) -> None:
         if self._exit is not None:
             return  # finished early by an interrupt; a stale start or resume
         outer = _thread.scheduler
         _thread.scheduler = self._scheduler
         self._phase = "running"
         try:
-            self._loop(start, resumed=resumed)
+            self._loop(start)
         finally:
             self._phase = "idle"
             _thread.scheduler = outer
 
-    def _loop(self, start: Step, *, resumed: bool) -> None:
-        # A resume claimed before an interrupt arrived takes its first step
-        # (in Effect the resume would already have run), so a failure it
-        # carries is kept alongside the interrupt.
+    def _loop(self, start: Step) -> None:
         cur: Step = start
         ops = 0
-        check_interrupt = not resumed
         while True:
-            if check_interrupt and self._interrupt is not None and self._interruptible:
+            if self._interrupt is not None and self._interruptible:
                 cur = self._with_interrupt(cur, self._interrupt)
-            check_interrupt = True
 
             if isinstance(cur, Effect):
                 ops += 1
@@ -331,30 +331,47 @@ class Fiber(Generic[A_co, E_co]):
         wait.canceler = canceler
         self._waiting = wait
         if self._interrupted_and_interruptible():
-            return self._cancel_wait()
+            return self._cancel_wait(wait)
         return SUSPEND
 
     def _resume(self, wait: _Wait, effect: Effect[Any, Any, Any]) -> None:
+        """Run a claimed resume. In Effect a resume runs the fiber at once,
+        so an interrupt that arrived while this one was queued lands only
+        once the resumed run has finished, parked or yielded."""
         if self._waiting is wait:
             self._waiting = None
-            self._run(effect, resumed=True)
+            self._run(effect)
+        deferred, self._interrupts_after_resume = self._interrupts_after_resume, []
+        for by in deferred:
+            self._deliver_interrupt(by)
 
     def _deliver_interrupt(self, by: int | None) -> None:
         if self._exit is not None:
             return
-        if self._interrupt is None:
-            self._interrupt = interrupt_cause(by)
-        else:
-            self._interrupt = self._interrupt.add_interrupts(interrupt_cause(by))
-        if not self._interruptible or self._phase == "running":
-            return  # the loop raises it at its next interruptible step
-        if self._waiting is not None:
-            step = self._cancel_wait()
-            if step is not SUSPEND:
-                self._unwind(step)
-        elif self._phase == "pending":
-            self._unwind(Failure(self._interrupt))
-        # Otherwise the fiber is queued to run; it raises it at its first step.
+        wait = self._waiting
+        if wait is not None and self._interruptible and self._phase != "running":
+            if not wait.claim():
+                self._interrupts_after_resume.append(by)
+                return
+            self._record_interrupt(by)
+            step = self._abandon_wait(wait)
+            self._unwind(step)
+            return
+        if wait is not None and wait.done:
+            self._interrupts_after_resume.append(by)
+            return
+        interrupt = self._record_interrupt(by)
+        if self._interruptible and self._phase == "pending":
+            self._unwind(Failure(interrupt))
+        # Otherwise the loop raises it at its next interruptible step: the
+        # fiber is running, uninterruptible, or queued to run.
+
+    def _record_interrupt(self, by: int | None) -> Cause[Never]:
+        cause = interrupt_cause(by)
+        if self._interrupt is not None:
+            cause = self._interrupt.add_interrupts(cause)
+        self._interrupt = cause
+        return cause
 
     def _unwind(self, step: Step) -> None:
         """Run an interrupted fiber now. A cascade (each fiber interrupting
@@ -374,17 +391,18 @@ class Fiber(Generic[A_co, E_co]):
             for fiber, nxt in queued:  # only left over if a run raised
                 fiber._scheduler.schedule(lambda f=fiber, n=nxt: f._run(n))
 
-    def _cancel_wait(self) -> Step:
-        """Abandon the current wait because of an interrupt. Returns the
-        step to continue with (the canceler, then the interrupt)."""
-        wait = self._waiting
-        assert wait is not None
-        self._waiting = None
+    def _cancel_wait(self, wait: _Wait) -> Step:
+        """An interrupted fiber just parked: abandon the wait, unless another
+        thread resumed it meanwhile (that run then meets the interrupt at
+        its first step)."""
         if not wait.claim():
-            # Already resumed; the resumption is queued and will see the
-            # interrupt at its first step.
-            self._waiting = wait
             return SUSPEND
+        return self._abandon_wait(wait)
+
+    def _abandon_wait(self, wait: _Wait) -> Step:
+        """Give up a claimed wait because of an interrupt. Returns the step
+        to continue with (the canceler, then the interrupt)."""
+        self._waiting = None
         assert self._interrupt is not None
         if wait.canceler is None:
             return Failure(self._interrupt)

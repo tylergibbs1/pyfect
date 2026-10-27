@@ -201,3 +201,19 @@ def check_durations(scheduler: SyncScheduler) -> None:
     scheduler.call_later(1.0, lambda: None)  # pyright: ignore[reportArgumentType]
     # A schedule's decision is Seconds too, so custom steps can't return NaN.
     schedule.Schedule(0, lambda _now, _v, n: (n, n, 1.0))  # pyright: ignore[reportArgumentType]
+
+
+# --- TaggedError hashing -----------------------------------------------------------
+# A plain ``@dataclass`` subclass hashes at runtime, but pyright synthesizes
+# ``__hash__ = None`` for it. A ``dataclass_transform`` base would fix that only by
+# giving every plain subclass a field-only ``__init__`` (``Boom("msg")`` stops
+# type-checking), so ``eq=False`` is the spelling pyright accepts.
+
+
+@dataclass(eq=False)
+class HashableNotFound(fx.TaggedError):
+    key: str
+
+
+hashable_errors = {HashableNotFound("k")}
+unhashable_to_pyright = {NotFound("k")}  # pyright: ignore[reportUnhashable]
