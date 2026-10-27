@@ -95,7 +95,11 @@ effect forked, and `Fiber.join_all` / `await_all` / `interrupt_all` handle sever
 default. Layers are memoized, built concurrently by `merge`, and their resources are
 released in parallel when the program ends. A nested `provide` reuses layers the enclosing
 `provide` already built; `provide(layer, local=True)` always builds anew, and `layer.fresh`
-rebuilds a layer and everything under it.
+rebuilds a layer and everything under it. A shared layer is released when the last scope
+using it closes (`layer.MemoMap` shares builds across `ManagedRuntime`s too). A typed
+`Context[R]` holds services (`get`, `pick`, `omit`, `merge_all`); `fx.context(...)` reads the
+current one and `fx.provide(ctx)` provides one. Layers have `tap`, `flat_map`, `catch_all`,
+`or_die`, `launch`, `update_service`, and `layer.mock(Tag, member=...)` stubs a service.
 
 **Building blocks.** `Ref`, `Deferred`, `Queue` (bounded, rendezvous with capacity 0,
 dropping, sliding; endable), `Semaphore`, `PartitionedSemaphore` (permits shared
@@ -202,7 +206,8 @@ generators never use it. Parameters are still required to be annotated.
 - `x = yield from eff` inside `@fx.gen` / `@fx.fn` generators.
 - Early-exit with an error: `return (yield from NotFound(key))`.
 - Most combinators are methods. The ones that remove a type go through `.pipe(...)`, one per
-  call: `catch_tag`, `catch_if`, `catch_no_such_element`, `provide`, `provide_service`.
+  call: `catch_tag`, `catch_if`, `catch_no_such_element`, `provide`, `provide_service`,
+  `provide_context`, `provide_service_effect`, `layer.catch_tag`, `Context.pick` / `omit`.
 - Keep layers in module-level constants. They are memoized by identity.
 
 ## Roadmap

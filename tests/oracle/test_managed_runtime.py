@@ -6,11 +6,6 @@ using`` is ``async with``, ``forkChild`` is ``fork`` and ``forkDetach`` is
 ``fork_daemon``. ``Layer.effectDiscard(eff)`` is a layer building a unit
 service (``_discard``). Effect's 500 ms ``Promise.race`` deadlock bounds
 are ``asyncio.wait_for``; durations are seconds.
-
-Omitted: "a layer finalizer shared through a MemoMap can dispose the
-runtime releasing it" relies on MemoMap reference counting (the first
-runtime's disposal would not release a layer the second still uses),
-which pyfect does not port (see PARITY.md, Still open).
 """
 
 import asyncio
@@ -375,6 +370,31 @@ def test_a_layer_build_interrupted_by_dispose_can_dispose_the_runtime():
         return await _settles(runtime.dispose_async())
 
     assert (_run(main()), cleaned) == ("settled", True)
+
+
+def test_a_layer_finalizer_shared_through_a_memo_map_can_dispose_the_runtime_releasing_it():
+    """a layer finalizer shared through a MemoMap can dispose the runtime releasing it"""
+    released = False
+
+    def release() -> None:
+        nonlocal released
+        released = True
+
+    async def main() -> str:
+        shared = _finalizer(fx.suspend(lambda: runtime_b.dispose_effect.and_then(fx.sync(release))))
+        # runtime_a builds the layer, but runtime_b holds the last reference to it.
+        runtime_a = fx.ManagedRuntime.make(shared)
+        runtime_b: fx.ManagedRuntime[_Unit, Any] = fx.ManagedRuntime.make(
+            shared, memo_map=runtime_a.memo_map
+        )
+        await runtime_a.run_async_exit(fx.void)
+        await runtime_b.run_async_exit(fx.void)
+        await runtime_a.dispose_async()
+        assert not released
+        return await _settles(runtime_b.dispose_async())
+
+    assert _run(main()) == "settled"
+    assert released
 
 
 def test_runtimes_whose_layer_finalizers_dispose_each_other_can_be_disposed():

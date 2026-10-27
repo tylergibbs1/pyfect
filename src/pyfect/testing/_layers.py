@@ -67,7 +67,11 @@ def layer_fixture[RO, E](
 
     def fixture() -> Generator[Services[RO]]:
         with _held(
-            layer.build, live=live, asyncio=asyncio, warning_delay=warning_delay, timeout=timeout
+            layer.build_with_scope,
+            live=live,
+            asyncio=asyncio,
+            warning_delay=warning_delay,
+            timeout=timeout,
         ) as (built, context, runtime):
             yield Services(context.merge(built), runtime)
 

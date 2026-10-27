@@ -16,6 +16,13 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Never, overload
 
 from pyfect._catch import catch_if, catch_tag
+from pyfect._context_effects import (
+    context,
+    provide_context,
+    provide_service_effect,
+    service_option,
+    update_service_scoped,
+)
 from pyfect._core import (
     Effect,
     _Callback,
@@ -391,6 +398,7 @@ __all__ = [
     "catch_if",
     "catch_no_such_element",
     "catch_tag",
+    "context",
     "current_fiber",
     "die",
     "fail",
@@ -407,7 +415,10 @@ __all__ = [
     "gen",
     "interrupt",
     "never",
+    "provide_context",
     "provide_service",
+    "provide_service_effect",
+    "service_option",
     "succeed",
     "suspend",
     "sync",
@@ -415,6 +426,7 @@ __all__ = [
     "try_",
     "try_async",
     "try_blocking",
+    "update_service_scoped",
     "void",
     "yield_now",
 ]

@@ -1,5 +1,5 @@
-"""Layer memoization across fresh and nested provides; merged layers'
-release."""
+"""Layer memoization across nested provides; merged layers' release.
+``fresh`` is covered by the ports in ``tests/oracle/test_layer.py``."""
 
 import pyfect as fx
 from pyfect import layer
@@ -29,49 +29,6 @@ def make_layer[T](tag: TagLike[str, T], n: int, log: list[str]) -> layer.Layer[T
 
 def make_layer1(log: list[str]) -> layer.Layer[S1]:
     return make_layer(S1, 1, log)
-
-
-def test_fresh_with_merge():
-    """Layer.test.ts: fresh with merge."""
-    log: list[str] = []
-    l1 = make_layer1(log)
-    fx.run_sync(fx.void.pipe(fx.provide(layer.merge(l1, layer.fresh(l1)))))
-    assert log == ["acquire1", "acquire1", "release1", "release1"]
-
-
-def test_fresh_builds_its_whole_subgraph_anew():
-    """Layer.test.ts: with multiple layers."""
-    log: list[str] = []
-    l1 = make_layer1(log)
-    env = layer.merge(layer.merge(l1, l1), layer.fresh(layer.merge(l1, l1)))
-    fx.run_sync(fx.void.pipe(fx.provide(env)))
-    assert log == ["acquire1", "acquire1", "release1", "release1"]
-
-
-def test_fresh_with_provide():
-    """Layer.test.ts: fresh with provide."""
-    log: list[str] = []
-    l1 = make_layer1(log)
-    fx.run_sync(fx.void.pipe(fx.provide(layer.fresh(l1).pipe(fx.provide(l1)))))
-    assert log == ["acquire1", "acquire1", "release1", "release1"]
-
-
-def test_identical_fresh_layers():
-    """Layer.test.ts: with identical fresh layers."""
-    log: list[str] = []
-    l1, l2, l3 = make_layer(S1, 1, log), make_layer(S2, 2, log), make_layer(S3, 3, log)
-    env = layer.merge(l2, layer.fresh(l3.pipe(fx.provide(l1)))).pipe(fx.provide(layer.fresh(l1)))
-    fx.run_sync(fx.void.pipe(fx.provide(env)))
-    assert log == [
-        "acquire1",
-        "acquire2",
-        "acquire1",
-        "acquire3",
-        "release3",
-        "release1",
-        "release2",
-        "release1",
-    ]
 
 
 def test_nested_provide_reuses_the_outer_build():
@@ -141,9 +98,9 @@ def test_layer_build_reuses_the_enclosing_provide():
     @fx.gen
     def program():
         scope = CloseableScope()
-        built = yield from l1.build(scope)
+        built = yield from l1.build_with_scope(scope)
         yield from scope.close(fx.Success(None))
-        return built.lookup(S1)[1]
+        return built.get(S1)
 
     assert fx.run_sync(program.pipe(fx.provide(l1))) == "s1"
     assert log == ["acquire1", "release1"]

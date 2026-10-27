@@ -794,3 +794,136 @@ def check_managed_runtime() -> None:
     assert_type(fallible.run_sync_exit(Port()), fx.Exit[int, NotFound])
     # The plain variants need a layer that cannot fail, as they need E = Never.
     fallible.run_sync(Port())  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+# --- typed Context ------------------------------------------------------------------
+
+
+def check_context_operations(
+    both: fx.Context[Primary | Port], port_ctx: fx.Context[Port], replica: fx.Context[Replica]
+) -> None:
+    assert_type(both.get(Port), int)
+    assert_type(both.get(Primary), Db)
+    assert_type(both.get(Level), int)  # a reference is always there
+    both.get(Replica)  # pyright: ignore[reportArgumentType]
+    assert_type(both.unsafe_get(Replica), Db)
+    assert_type(both.get_option(Replica), fx.Option[Db])
+    assert_type(both.get_or_else(Replica, lambda: None), Db | None)
+    assert_type(both.pipe(fx.Context.pick(Port)), fx.Context[Port])
+    both.pipe(fx.Context.pick(Replica))  # pyright: ignore[reportArgumentType]
+    assert_type(both.pipe(fx.Context.omit(Port)), fx.Context[Primary])
+    assert_type(port_ctx.pipe(fx.Context.omit(Port)), fx.Context[Never])
+    assert_type(both.pipe(fx.Context.omit(Port, Primary)), fx.Context[Never])
+    assert_type(both.pipe(fx.Context.omit(Replica)), fx.Context[Primary | Port])
+    three = both.merge(replica)
+    assert_type(three.pipe(fx.Context.omit(Port)), fx.Context[Primary | Replica])
+    assert_type(three.pipe(fx.Context.omit(Port, Replica)), fx.Context[Primary])
+    assert_type(three.pipe(fx.Context.omit(Port, Primary, Replica)), fx.Context[Never])
+    three.pipe(fx.Context.omit(Port)).get(Port)  # pyright: ignore[reportArgumentType]
+    assert_type(three.pipe(fx.Context.add_or_omit(Port, None)), fx.Context[Primary | Replica])
+    assert_type(both.pipe(fx.Context.add_or_omit(Port, fx.Some(1))), fx.Context[Primary])
+    fx.Context.add_or_omit(Port, fx.Some("1"))  # pyright: ignore[reportArgumentType]
+    assert_type(fx.Context.merge_all(port_ctx, replica), fx.Context[Port | Replica])
+    assert_type(port_ctx.merge(replica), fx.Context[Port | Replica])
+
+
+def check_context_effects(ctx: fx.Context[Primary | Port]) -> None:
+    assert_type(
+        fx.context(Port, Primary), fx.Effect[fx.Context[Port | Primary], Never, Port | Primary]
+    )
+    assert_type(fx.context(), fx.Effect[fx.Context[Never], Never, Never])
+    assert_type(fx.service_option(Port), fx.Effect[fx.Option[int]])
+    assert_type(lookup("k").pipe(fx.provide_context(ctx)), fx.Effect[str, NotFound | Invalid])
+    assert_type(lookup("k").pipe(fx.provide(ctx)), fx.Effect[str, NotFound | Invalid])
+    assert_type(
+        lookup("k").pipe(fx.provide_context(fx.Context.make(Port, 1))),
+        fx.Effect[str, NotFound | Invalid, Primary],
+    )
+    assert_type(
+        lookup("k").pipe(fx.provide_service_effect(Port, fx.fail(Invalid("x")).as_(1))),
+        fx.Effect[str, NotFound | Invalid, Primary],
+    )
+    fx.provide_service_effect(Port, fx.succeed("1"))  # pyright: ignore[reportArgumentType]
+    assert_type(fx.succeed(1).update_service(Port, lambda n: n + 1), fx.Effect[int, Never, Port])
+    fx.succeed(1).update_service(Port, str)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        fx.scoped_with(lambda scope: scope.add_finalizer(lambda _: fx.void)), fx.Effect[None]
+    )
+
+
+# --- layer building and combinators ---------------------------------------------------
+
+
+def check_layer_building(memo: layer.MemoMap, scope: fx.CloseableScope) -> None:
+    needs_port = layer.effect(Replica, Port().map(lambda _: GoodDb()))
+    assert_type(needs_port.build(), fx.Effect[fx.Context[Replica], Never, Port | fx.Scope])
+    assert_type(needs_port.build_with_scope(scope), fx.Effect[fx.Context[Replica], Never, Port])
+    assert_type(
+        needs_port.build_with_memo_map(memo, scope), fx.Effect[fx.Context[Replica], Never, Port]
+    )
+    assert_type(needs_port.launch(), fx.Effect[Never, Never, Port])
+    assert_type(
+        layer.from_build(lambda _m, _s: fx.succeed(fx.Context.make(Port, 1))), layer.Layer[Port]
+    )
+    assert_type(layer.empty, layer.Layer[Never])
+    # Providing nothing removes nothing.
+    assert_type(
+        lookup("k").pipe(fx.provide(layer.empty)),
+        fx.Effect[str, NotFound | Invalid, Primary | Port],
+    )
+
+
+def check_layer_constructors() -> None:
+    assert_type(layer.succeed_context(fx.Context.make(Port, 1)), layer.Layer[Port])
+    assert_type(layer.sync_context(lambda: fx.Context.make(Port, 1)), layer.Layer[Port])
+    assert_type(
+        layer.effect_context(Primary().map(lambda _: fx.Context.make(Port, 1))),
+        layer.Layer[Port, Never, Primary],
+    )
+    assert_type(
+        layer.effect_discard(fx.acquire_release(fx.fail(NotFound("k")), lambda _a, _e: fx.void)),
+        layer.Layer[Never, NotFound],
+    )
+    assert_type(layer.suspend(lambda: port_live), layer.Layer[Port])
+    assert_type(layer.unwrap(Primary().map(lambda _: port_live)), layer.Layer[Port, Never, Primary])
+    assert_type(layer.mock(Primary, get=GoodDb().get), layer.Layer[Primary])
+
+
+def check_layer_combinators() -> None:
+    failing = layer.effect(Port, fx.fail(NotFound("k")))
+    assert_type(
+        failing.tap(lambda ctx: fx.sync(lambda: ctx.get(Port))), layer.Layer[Port, NotFound]
+    )
+    assert_type(
+        failing.tap(lambda _: Primary().and_then(fx.Scope())),
+        layer.Layer[Port, NotFound, Primary],
+    )
+    assert_type(failing.tap_error(lambda e: fx.sync(lambda: e.key)), layer.Layer[Port, NotFound])
+    assert_type(
+        failing.tap_cause(lambda _: fx.fail(Invalid("x"))), layer.Layer[Port, NotFound | Invalid]
+    )
+    assert_type(failing.or_die(), layer.Layer[Port])
+    assert_type(failing.catch_all(lambda _: port_live), layer.Layer[Port])
+    assert_type(failing.catch_cause(lambda _: merged_live), layer.Layer[Port])
+    failing.catch_all(lambda _: primary_live)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        failing.flat_map(lambda ctx: layer.succeed(Primary, GoodDb())),
+        layer.Layer[Primary, NotFound],
+    )
+    assert_type(
+        failing.update_service(Primary, lambda db: db), layer.Layer[Port, NotFound, Primary]
+    )
+
+
+def check_layer_catch_tag() -> None:
+    two = layer.effect(Port, fx.fail(NotFound("k"))).pipe(
+        layer.provide(layer.effect(Primary, fx.fail(Invalid("x"))))
+    )
+    assert_type(two, layer.Layer[Port, NotFound | Invalid])
+    assert_type(
+        two.pipe(layer.catch_tag(NotFound, lambda _: port_live)), layer.Layer[Port, Invalid]
+    )
+    assert_type(
+        two.pipe(layer.catch_tag((NotFound, Invalid), lambda _: port_live)), layer.Layer[Port]
+    )
+    two.pipe(layer.catch_tag(NotFound, lambda _: primary_live))  # pyright: ignore[reportArgumentType]

@@ -27,12 +27,26 @@ reference do not need it provided, so it never appears in ``R``::
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, Never, Protocol, Self, TypeVar, final
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Generic,
+    Never,
+    Protocol,
+    Self,
+    TypeVar,
+    cast,
+    final,
+    overload,
+)
 
 from pyfect._core import Effect, Step
 from pyfect.cause import Cause, Die
 from pyfect.exit import Failure, Success
+from pyfect.option import Option, Some
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
@@ -112,12 +126,20 @@ class TagLike[S, T](Protocol):
 class Context(Generic[R_contra]):
     """An immutable map from tag to service. ``Context[R]`` holds the
     services of the tags ``R``, so a context with more services stands in
-    for one with fewer (``Context[A | B]`` is a ``Context[A]``)."""
+    for one with fewer (``Context[A | B]`` is a ``Context[A]``).
+
+    ``Context(mapping)`` is Effect's ``makeUnsafe``: an untyped context.
+    Build typed ones with ``make`` and ``add``."""
 
     __slots__ = ("_services",)
 
     def __init__(self, services: Mapping[type[Tag[Any]], Any] | None = None) -> None:
         self._services: dict[type[Tag[Any]], Any] = dict(services or {})
+
+    if TYPE_CHECKING:
+        # The tags seen covariantly, for ``omit`` (see ``_Holding``).
+        @property
+        def _held(self) -> type[R_contra]: ...  # pyright: ignore[reportGeneralTypeIssues]
 
     @staticmethod
     def empty() -> Context[Never]:
@@ -128,6 +150,55 @@ class Context(Generic[R_contra]):
         """A context holding one service."""
         return Context({tag_class(tag): service})
 
+    @overload
+    @staticmethod
+    def merge_all[X1, X2](c1: Context[X1], c2: Context[X2], /) -> Context[X1 | X2]: ...
+    @overload
+    @staticmethod
+    def merge_all[X1, X2, X3](
+        c1: Context[X1], c2: Context[X2], c3: Context[X3], /
+    ) -> Context[X1 | X2 | X3]: ...
+    @overload
+    @staticmethod
+    def merge_all[X1, X2, X3, X4](
+        c1: Context[X1], c2: Context[X2], c3: Context[X3], c4: Context[X4], /
+    ) -> Context[X1 | X2 | X3 | X4]: ...
+    @overload
+    @staticmethod
+    def merge_all(*contexts: Context[Any]) -> Context[Any]: ...
+    @staticmethod
+    def merge_all(*contexts: Context[Any]) -> Context[Any]:
+        """Every context's services; later contexts win where several have
+        a tag."""
+        merged: dict[type[Tag[Any]], Any] = {}
+        for ctx in contexts:
+            merged.update(ctx._services)
+        return Context(merged)
+
+    @staticmethod
+    def pick[T = Never](*tags: TagLike[Any, T]) -> _Pick[T]:
+        """Keep only ``tags``' services, in this context's order. Use with
+        ``.pipe``; the context must hold every tag."""
+        return _Pick(frozenset(map(tag_class, tags)))
+
+    @staticmethod
+    def omit[T = Never](*tags: TagLike[Any, T]) -> _Omit[T]:
+        """Drop ``tags``' services and remove them from the type. Use with
+        ``.pipe``."""
+        return _Omit(frozenset(map(tag_class, tags)))
+
+    @staticmethod
+    def add_or_omit[S, T](tag: TagLike[S, T], service: Option[S]) -> _Omit[T]:
+        """``add`` for ``Some(service)``, ``omit`` for ``None``. Either way the
+        tag leaves the type. Use with ``.pipe``."""
+        cls = tag_class(tag)
+        if service is None:
+            return _Omit(frozenset((cls,)))
+        return _Omit(frozenset(), (cls, service.value))
+
+    def pipe[B](self, f: Callable[[Self], B], /) -> B:
+        return f(self)
+
     def lookup(self, tag: type[Tag[Any]]) -> tuple[bool, Any]:
         if tag in self._services:
             return True, self._services[tag]
@@ -135,15 +206,101 @@ class Context(Generic[R_contra]):
             return True, _default_of(tag)
         return False, None
 
+    def get[S, T](self: Context[T], tag: TagLike[S, T]) -> S:
+        """The service of ``tag``, which the context's type must hold (a
+        reference falls back to its default)."""
+        return self.unsafe_get(tag)
+
+    def unsafe_get[S, T](self, tag: TagLike[S, T]) -> S:
+        """``get`` without the type check: raises ``MissingServiceError`` if
+        the service is absent."""
+        found, value = self.lookup(tag_class(tag))
+        if not found:
+            raise MissingServiceError(_missing(tag_class(tag), self))
+        return value
+
+    def get_option[S, T](self, tag: TagLike[S, T]) -> Option[S]:
+        """``Some(service)``, or ``None`` if absent. A reference is never
+        absent: it falls back to its default."""
+        found, value = self.lookup(tag_class(tag))
+        return Some(value) if found else None
+
+    def get_or_else[S, T, B](self, tag: TagLike[S, T], or_else: Callable[[], B]) -> S | B:
+        """The service, or ``or_else()`` if absent."""
+        found, value = self.lookup(tag_class(tag))
+        return value if found else or_else()
+
     def add[S, T](self, tag: TagLike[S, T], service: S) -> Context[R_contra | T]:
+        """A copy with ``service`` added. Replacing a tag keeps its place."""
         return Context({**self._services, tag_class(tag): service})
 
     def merge[R2](self, other: Context[R2]) -> Context[R_contra | R2]:
-        """Both contexts' services; ``other`` wins where both have a tag."""
+        """Both contexts' services; ``other`` wins where both have a tag.
+        Merging with an empty context gives back the other one."""
+        if not other._services:
+            return cast("Context[Any]", self)
+        if not self._services:
+            return cast("Context[Any]", other)
         return Context({**self._services, **other._services})
 
     def tags(self) -> tuple[type[Tag[Any]], ...]:
         return tuple(self._services)
+
+    @property
+    def unsafe_map(self) -> Mapping[type[Tag[Any]], Any]:
+        """The services by tag, in insertion order, untyped (Effect's
+        ``mapUnsafe``)."""
+        return MappingProxyType(self._services)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Context) and self._services == other._services
+
+    __hash__ = None  # pyright: ignore[reportAssignmentType]
+
+    def __repr__(self) -> str:
+        entries = ", ".join(f"{tag.key}: {value!r}" for tag, value in self._services.items())
+        return f"Context({{{entries}}})"
+
+
+@final
+class _Pick[T]:
+    __slots__ = ("keep",)
+
+    def __init__(self, keep: frozenset[type[Tag[Any]]]) -> None:
+        self.keep = keep
+
+    def __call__(self, ctx: Context[T]) -> Context[T]:
+        return Context({t: s for t, s in ctx._services.items() if t in self.keep})
+
+
+class _Holding(Protocol[T_co]):
+    """A context holding the tags ``T``, matched covariantly. Pyright
+    subtracts tags from a union only when solving a covariant position;
+    matching ``Context[T | R]`` (contravariant) may keep removed tags in ``R``."""
+
+    @property
+    def _held(self) -> type[T_co]: ...
+
+
+@final
+class _Omit[T]:
+    __slots__ = ("added", "drop")
+
+    def __init__(
+        self, drop: frozenset[type[Tag[Any]]], added: tuple[type[Tag[Any]], Any] | None = None
+    ) -> None:
+        self.drop = drop
+        self.added = added
+
+    @overload
+    def __call__(self, ctx: _Holding[T]) -> Context[Never]: ...
+    @overload
+    def __call__[R](self, ctx: _Holding[T | R]) -> Context[R]: ...
+    def __call__(self, ctx: Any) -> Context[Any]:
+        kept = {t: s for t, s in ctx._services.items() if t not in self.drop}
+        if self.added is not None:
+            kept[self.added[0]] = self.added[1]
+        return Context(kept)
 
 
 _EMPTY: Context[Never] = Context()

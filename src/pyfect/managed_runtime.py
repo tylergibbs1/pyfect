@@ -46,7 +46,7 @@ from pyfect.context import Context, Reference
 from pyfect.deferred import Deferred
 from pyfect.effect import die
 from pyfect.exit import Exit, Failure, Success
-from pyfect.layer import Layer, MemoMap, _build_with
+from pyfect.layer import Layer, MemoMap
 from pyfect.run import Interruptor, await_fiber, drive, unwrap
 from pyfect.scheduler import AsyncioScheduler, Scheduler, SyncScheduler
 from pyfect.scope import CloseableScope
@@ -129,7 +129,9 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
 
     def _context_in(self, fiber: Fiber[Any, Any]) -> Effect[Context, Any]:
         if self._build_fiber is None:
-            build = _build_with(self._layer, self.memo_map, self._layer_scope).map(self._cache)
+            build = self._layer.build_with_memo_map(self.memo_map, self._layer_scope).map(
+                self._cache
+            )
             # On the requesting fiber's run and scheduler, as Effect's build.
             builder = new_root(fiber._run_scheduler, Context.empty(), scheduler=fiber._scheduler)
             start_root(builder, build)

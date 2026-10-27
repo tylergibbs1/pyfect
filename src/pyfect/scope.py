@@ -184,6 +184,19 @@ def scoped(eff: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
     return _Suspend(body)
 
 
+def scoped_with[A, E = Never, R = Never](
+    f: Callable[[CloseableScope], Effect[A, E, R]],
+) -> Effect[A, E, R]:
+    """Run ``f`` with a new scope and close it when the effect ``f`` gives
+    ends."""
+
+    def body() -> Effect[A, E, R]:
+        scope = CloseableScope()
+        return _call_user(f, scope).on_exit(scope.close)
+
+    return _Suspend(body)
+
+
 def add_finalizer[R = Never](
     f: Callable[[Exit[Any, Any]], Effect[object, Never, R]],
 ) -> Effect[None, Never, Scope | R]:

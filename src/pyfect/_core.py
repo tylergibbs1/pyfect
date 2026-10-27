@@ -40,6 +40,7 @@ from pyfect._effect_errors import (
 )
 from pyfect._effect_folding import FoldingMethods
 from pyfect._effect_resources import ResourceMethods, _call_user, _run_finalizer
+from pyfect._effect_services import ServiceMethods
 from pyfect._effect_timing import TimingMethods
 
 if TYPE_CHECKING:
@@ -53,6 +54,7 @@ class Effect(
     ErrorMethods[A_co, E_co, R_co],
     FoldingMethods[A_co, E_co, R_co],
     ResourceMethods[A_co, E_co, R_co],
+    ServiceMethods[A_co, E_co, R_co],
     ConcurrencyMethods[A_co, E_co, R_co],
     TimingMethods[A_co, E_co, R_co],
 ):
