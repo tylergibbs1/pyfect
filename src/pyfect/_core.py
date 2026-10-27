@@ -27,7 +27,7 @@ primitives from here: loading this module loads the rest in the right order.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from typing import TYPE_CHECKING, Any, Literal, Never, Self, TypeIs, overload
 
 from pyfect._effect_args import require_effect
@@ -167,6 +167,21 @@ class Effect(
     ) -> Effect[B, E_co | E2, R_co | R2]:
         """Run the effect this effect succeeds with."""
         return _FlatMap(self, _identity)
+
+    def head[B](
+        self: Effect[Iterable[B], E_co, R_co],
+    ) -> Effect[B, E_co | NoSuchElementException, R_co]:
+        """The first item of the iterable this effect succeeds with; a
+        ``NoSuchElementException`` if it is empty."""
+
+        def first(items: Iterable[B]) -> Effect[B, NoSuchElementException]:
+            from pyfect.errors import NoSuchElementException
+
+            for item in items:
+                return _Succeed(item)
+            return _fail(NoSuchElementException())
+
+        return _FlatMap(self, first)
 
     def when[E2 = Never, R2 = Never](
         self, condition: Effect[bool, E2, R2]

@@ -1,6 +1,7 @@
 """Behavior of the structural combinators beyond the Effect test ports in
 ``tests/oracle/test_effect_combinators.py``."""
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -246,3 +247,24 @@ def test_a_caller_interrupted_before_the_source_runs_does_not_strand_the_next() 
     assert isinstance(owner_exit, fx.Failure) and owner_exit.cause.has_interrupts
     assert computed_before == 0
     assert waiter_exit == fx.Success(1)
+
+
+def _one_two_three() -> Iterator[int]:
+    yield from (1, 2, 3)
+
+
+def test_reduce_reads_a_one_shot_iterable_once_so_every_run_sees_it() -> None:
+    """Effect's ``reduce`` copies the iterable when it is called (checked
+    under Node: two runs over one generator both give 6)."""
+    reduced = fx.reduce(_one_two_three(), lambda: 0, lambda acc, n: fx.succeed(acc + n))
+    assert testing.run_test(reduced) == 6
+    assert testing.run_test(reduced) == 6
+
+
+def test_find_first_reads_the_iterable_each_run() -> None:
+    """Effect's ``findFirst`` iterates when it runs, so a shared generator
+    continues where the last run stopped (under Node: ``Some(2)``, then
+    ``Some(3)``)."""
+    found = fx.find_first(_one_two_three(), lambda n: fx.succeed(n > 1))
+    assert testing.run_test(found) == fx.Some(2)
+    assert testing.run_test(found) == fx.Some(3)

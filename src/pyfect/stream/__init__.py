@@ -26,6 +26,7 @@ used with ``.pipe``, and the ones combining any number of streams
 from pyfect.stream._async_iterable import StreamAsyncIterable, StreamAsyncIterator
 from pyfect.stream._catch import catch_if_refinement as catch_if
 from pyfect.stream._catch import catch_tag
+from pyfect.stream._catch_reason import catch_reason, catch_reasons, unwrap_reason
 from pyfect.stream._constructors import (
     DEFAULT_CHUNK_SIZE,
     die,
@@ -64,6 +65,7 @@ from pyfect.stream._context import (
     provide_service_effect,
     update_context,
 )
+from pyfect.stream._execution_plan import with_execution_plan
 from pyfect.stream._fanout_methods import GROUP_BUFFER_SIZE
 from pyfect.stream._many import merge_all, race_all, zip_latest_all
 from pyfect.stream._sources import (
@@ -93,6 +95,8 @@ __all__ = [
     "StreamAsyncIterator",
     "callback",
     "catch_if",
+    "catch_reason",
+    "catch_reasons",
     "catch_tag",
     "die",
     "empty",
@@ -140,6 +144,8 @@ __all__ = [
     "transform_pull_bracket",
     "unfold",
     "unwrap",
+    "unwrap_reason",
     "update_context",
+    "with_execution_plan",
     "zip_latest_all",
 ]

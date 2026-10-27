@@ -17,6 +17,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Never, Unpack, overload
 
 from pyfect._catch import catch_if, catch_tag
+from pyfect._catch_reason import catch_reason, catch_reasons, unwrap_reason
 from pyfect._context_effects import (
     context,
     provide_context,
@@ -475,6 +476,8 @@ __all__ = [
     "callback",
     "catch_if",
     "catch_no_such_element",
+    "catch_reason",
+    "catch_reasons",
     "catch_tag",
     "context",
     "current_fiber",
@@ -504,6 +507,7 @@ __all__ = [
     "try_",
     "try_async",
     "try_blocking",
+    "unwrap_reason",
     "update_service_scoped",
     "void",
     "yield_now",

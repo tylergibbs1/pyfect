@@ -17,12 +17,8 @@ Adapted, with the reason:
 The three sink titles of the section ("run - upstream failures bypass sink
 error handlers", "run - sink onExit observes interruption on upstream
 failure", "pipeThrough - upstream failures bypass sink error handlers")
-are in ``test_stream_sinks.py``.
-
-Not ported:
-
-- The ``catchReason`` and ``catchReasons`` titles: reason errors
-  (``catchReason`` / ``unwrapReason``) are not ported to ``Effect`` either.
+are in ``test_stream_sinks.py``, and the ``catchReason`` / ``catchReasons``
+titles in ``test_stream_reasons.py``.
 """
 
 from collections.abc import Callable

@@ -43,6 +43,7 @@ from pyfect import (
     duration,
     encoding,
     error_reporter,
+    execution_plan,
     exit,
     layer,
     logger,
@@ -65,7 +66,16 @@ from pyfect._concurrency import Concurrency, for_each, race_all, race_all_first
 from pyfect._context_managers import acquire_async_context, acquire_context
 from pyfect._core import Effect, Restore, interruptible_mask, uninterruptible_mask
 from pyfect._fiber import Fiber
-from pyfect._iterables import filter, first_success_of, partition, validate
+from pyfect._iterables import (
+    filter,
+    find_first,
+    find_first_filter,
+    first_success_of,
+    partition,
+    reduce,
+    validate,
+)
+from pyfect._reasons import HasReason
 from pyfect._root import NoRunError
 from pyfect.batching import Request, RequestResolver, request, request_unsafe
 from pyfect.cache import Cache, ScopedCache
@@ -83,6 +93,8 @@ from pyfect.effect import (
     callback,
     catch_if,
     catch_no_such_element,
+    catch_reason,
+    catch_reasons,
     catch_tag,
     context,
     current_fiber,
@@ -112,6 +124,7 @@ from pyfect.effect import (
     try_,
     try_async,
     try_blocking,
+    unwrap_reason,
     update_service_scoped,
     void,
     yield_now,
@@ -126,6 +139,7 @@ from pyfect.errors import (
     TimeoutException,
     UnknownError,
 )
+from pyfect.execution_plan import ExecutionPlan, with_execution_plan
 from pyfect.exit import Exit, Failure, Success
 from pyfect.fiber_handle import FiberHandle
 from pyfect.fiber_map import FiberMap
@@ -236,12 +250,14 @@ __all__ = [
     "Err",
     "ErrorReporter",
     "ExceededCapacityError",
+    "ExecutionPlan",
     "Exit",
     "Failure",
     "Fiber",
     "FiberHandle",
     "FiberMap",
     "FiberSet",
+    "HasReason",
     "IllegalArgumentError",
     "Interrupted",
     "Interruptor",
@@ -316,6 +332,8 @@ __all__ = [
     "case",
     "catch_if",
     "catch_no_such_element",
+    "catch_reason",
+    "catch_reasons",
     "catch_tag",
     "cause",
     "channel",
@@ -334,6 +352,7 @@ __all__ = [
     "duration",
     "encoding",
     "error_reporter",
+    "execution_plan",
     "exit",
     "fail",
     "fail_cause",
@@ -341,6 +360,8 @@ __all__ = [
     "fail_sync",
     "fiber_id",
     "filter",
+    "find_first",
+    "find_first_filter",
     "first_success_of",
     "fn",
     "for_each",
@@ -377,6 +398,7 @@ __all__ = [
     "race_all_first",
     "random",
     "redacted",
+    "reduce",
     "request",
     "request_unsafe",
     "result",
@@ -406,9 +428,11 @@ __all__ = [
     "try_async",
     "try_blocking",
     "uninterruptible_mask",
+    "unwrap_reason",
     "update_service_scoped",
     "use_span",
     "validate",
     "void",
+    "with_execution_plan",
     "yield_now",
 ]

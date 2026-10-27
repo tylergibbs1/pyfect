@@ -277,3 +277,18 @@ def test_a_raising_catch_in_try_blocking_is_a_defect() -> None:
     ex = fx.run_sync_exit(fx.try_blocking(boom, catch))
     assert isinstance(ex, fx.Failure)
     assert ex.cause.find_defect() is defect
+
+
+def test_on_exit_if_adds_a_failing_hooks_error_to_a_success() -> None:
+    """Effect's ``onExitIf`` over ``onExit`` (checked under Node: a hook
+    failing with "fin" after a success fails the effect with "fin")."""
+    ex = testing.run_test(fx.succeed(1).on_exit_if(lambda _: True, lambda _: fx.fail("fin")).exit())
+    testing.assert_exit_failure(ex, fail("fin"))
+
+
+def test_on_error_if_adds_a_failing_hooks_error_after_the_original() -> None:
+    """Under Node: ``onErrorIf(fail("e"), always, () => fail("fin"))`` fails
+    with ``Fail(e)`` then ``Fail(fin)``."""
+    failing: fx.Effect[Never, str] = fx.fail("e")
+    ex = testing.run_test(failing.on_error_if(lambda _: True, lambda _: fx.fail("fin")).exit())
+    testing.assert_exit_failure(ex, from_reasons([Fail("e"), Fail("fin")]))

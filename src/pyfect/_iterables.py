@@ -1,5 +1,6 @@
 """Effects over iterables of values or effects: ``first_success_of``,
-``filter``, ``partition``, ``validate``."""
+``filter``, ``partition``, ``validate``, ``reduce``, ``find_first``,
+``find_first_filter``."""
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from typing import Any, Literal, Never, TypeIs, overload
 from pyfect._concurrency import Concurrency, for_each
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend
 from pyfect.cause import die, fail
+from pyfect.option import Option, Some
 from pyfect.result import Err, Ok, Result
 
 
@@ -138,3 +140,55 @@ def validate(
         return _Succeed(None if discard else passes)
 
     return partition(items, f, concurrency=concurrency).flat_map(decide)
+
+
+def reduce[A, Z, E = Never, R = Never](
+    items: Iterable[A], zero: Callable[[], Z], f: Callable[[Z, A], Effect[Z, E, R]]
+) -> Effect[Z, E, R]:
+    """Fold ``items`` from the left with an effectful ``f``, one at a time,
+    stopping at the first failure. ``items`` is read now, as Effect reads
+    it; ``zero()`` is called each time the effect runs."""
+    elements = list(items)
+
+    def start() -> Effect[Z, E, R]:
+        state: Effect[Z, E, R] = _Succeed(zero())
+        for item in elements:
+            state = _fold(state, f, item)
+        return state
+
+    return _Suspend(start)
+
+
+def _fold[A, Z, E, R](
+    state: Effect[Z, E, R], f: Callable[[Z, A], Effect[Z, E, R]], item: A
+) -> Effect[Z, E, R]:
+    return state.flat_map(lambda acc: f(acc, item))
+
+
+def find_first[A, E = Never, R = Never](
+    items: Iterable[A], predicate: Callable[[A], Effect[bool, E, R]]
+) -> Effect[Option[A], E, R]:
+    """The first item for which ``predicate`` succeeds with ``True``
+    (``Some(item)``), checking one at a time and stopping there; ``None``
+    if there is none. ``items`` is read each time the effect runs."""
+    return find_first_filter(
+        items, lambda item: predicate(item).map(lambda keep: Ok(item) if keep else Err(item))
+    )
+
+
+def find_first_filter[A, B, E = Never, R = Never](
+    items: Iterable[A], filter: Callable[[A], Effect[Result[B, object], E, R]]
+) -> Effect[Option[B], E, R]:
+    """The value of the first item ``filter`` passes (``Ok(value)``), as
+    ``Some(value)``, checking one at a time and stopping there; ``None`` if
+    every item is rejected (``Err``)."""
+
+    def check(it: Iterator[A]) -> Effect[Option[B], E, R]:
+        for item in it:
+            return filter(item).flat_map(lambda passed: _found(passed, it))
+        return _Succeed(None)
+
+    def _found(passed: Result[B, object], it: Iterator[A]) -> Effect[Option[B], E, R]:
+        return _Succeed(Some(passed.value)) if isinstance(passed, Ok) else check(it)
+
+    return _Suspend(lambda: check(iter(items)))

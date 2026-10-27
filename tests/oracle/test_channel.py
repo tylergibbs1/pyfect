@@ -13,6 +13,9 @@ counting to ``n``; ``countOps`` counts scheduled tasks with
 A ``Filter`` is a function returning ``Ok(value)`` or ``Err(rest)``
 (``pyfect.result``), as in ``Stream``; ``Filter.make`` is not needed.
 
+The reason-error titles (``catchReason`` / ``catchReasons`` orElse,
+``unwrapReason``) are in ``test_channel_reasons.py``.
+
 Not ported:
 
 - ``fromArray`` and ``fromChunk`` are ``from_iterable`` over a list or a
@@ -22,10 +25,6 @@ Not ported:
   negatives are normalized.
 - ``fromReadableStream``, ``fromTransformStream`` (four titles): Web
   Streams have no Python counterpart (PARITY.md).
-- ``catchReason orElse``, ``catchReason ignores non-matching parent tag``,
-  ``catchReasons orElse`` and the three ``unwrapReason`` titles: reason
-  errors (an error wrapping a tagged ``reason``) have no pyfect design yet
-  (PARITY.md, Effect core A).
 """
 
 import asyncio

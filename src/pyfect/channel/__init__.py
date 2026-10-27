@@ -21,6 +21,7 @@ so channels of millions of items never touch Python's recursion limit.
 """
 
 from pyfect.channel._catch import catch_if, catch_tag
+from pyfect.channel._catch_reason import catch_reason, catch_reasons, unwrap_reason
 from pyfect.channel._channel import (
     Channel,
     from_pull,
@@ -88,6 +89,8 @@ __all__ = [
     "callback",
     "callback_array",
     "catch_if",
+    "catch_reason",
+    "catch_reasons",
     "catch_tag",
     "decode_text",
     "die",
@@ -134,5 +137,6 @@ __all__ = [
     "to_transform",
     "transform_pull",
     "unwrap",
+    "unwrap_reason",
     "update_context",
 ]

@@ -18,7 +18,7 @@ from opentelemetry.trace import Span as OtelApiSpan
 from opentelemetry.trace import SpanContext
 
 import pyfect as fx
-from pyfect import layer, logger, otel, schedule
+from pyfect import channel, execution_plan, layer, logger, otel, schedule, stream
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.context import ServiceEffect
@@ -30,6 +30,7 @@ from pyfect.fiber_set import FiberSetRuntime
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.scheduler import Scheduler, SyncScheduler
+from pyfect.stream import Stream
 
 
 class Db(Protocol):
@@ -153,6 +154,195 @@ def check_error_removal(three: fx.Effect[str, NotFound | Invalid | Gone]) -> Non
     assert_type(
         fx.from_optional(1 if two else None).pipe(fx.catch_no_such_element),
         fx.Effect[fx.Option[int], Never, Never],
+    )
+
+
+# --- reason errors: catch_reason keeps the parent unless or_else covers the rest -------
+
+
+@dataclass
+class RateLimited(fx.TaggedError):
+    retry_after: int
+
+
+@dataclass
+class QuotaExceeded(fx.TaggedError):
+    limit: int
+
+
+@dataclass
+class AiFailure(fx.TaggedError):
+    reason: RateLimited | QuotaExceeded
+
+
+def on_quota(reason: QuotaExceeded, error: AiFailure) -> fx.Effect[str]:
+    return fx.succeed(str(reason.limit))
+
+
+def on_rate_only(reason: RateLimited, error: AiFailure) -> fx.Effect[str]:
+    return fx.succeed("")
+
+
+def on_quota_stream(reason: QuotaExceeded, error: AiFailure) -> Stream[str]:
+    return stream.succeed("")
+
+
+def on_quota_channel(reason: QuotaExceeded, error: AiFailure) -> channel.Channel[str]:
+    return channel.succeed("")
+
+
+def check_reasons(
+    ai: fx.Effect[int, AiFailure | NotFound, Port], only: fx.Effect[int, AiFailure]
+) -> None:
+    def retry_in(r: RateLimited, e: AiFailure) -> fx.Effect[int]:
+        return fx.succeed(r.retry_after)
+
+    assert_type(
+        ai.pipe(fx.catch_reason(AiFailure, RateLimited, retry_in)),
+        fx.Effect[int, AiFailure | NotFound, Port],
+    )
+    assert_type(
+        ai.pipe(
+            fx.catch_reason(AiFailure, RateLimited, lambda r, _: fx.fail(Gone()), or_else=on_quota)
+        ),
+        fx.Effect[int | str, NotFound | Gone, Port],
+    )
+    assert_type(
+        only.pipe(fx.catch_reason(AiFailure, RateLimited, retry_in, or_else=on_quota)),
+        fx.Effect[int | str, Never, Never],
+    )
+    assert_type(
+        ai.pipe(
+            fx.catch_reasons(
+                AiFailure,
+                (RateLimited, lambda r, _: fx.succeed(r.retry_after)),
+                (QuotaExceeded, lambda r, _: fx.succeed(str(r.limit))),
+            )
+        ),
+        fx.Effect[int | str, AiFailure | NotFound, Port],
+    )
+    assert_type(
+        ai.pipe(
+            fx.catch_reasons(
+                AiFailure, (RateLimited, lambda r, _: fx.succeed(None)), or_else=on_quota
+            )
+        ),
+        fx.Effect[int | str | None, NotFound, Port],
+    )
+    assert_type(
+        ai.pipe(fx.unwrap_reason(AiFailure)),
+        fx.Effect[int, NotFound | RateLimited | QuotaExceeded, Port],
+    )
+    assert_type(only.pipe(fx.unwrap_reason(AiFailure)), fx.Effect[int, RateLimited | QuotaExceeded])
+    # or_else must cover every reason the cases leave; the tag must carry a reason.
+    ai.pipe(fx.catch_reason(AiFailure, RateLimited, retry_in, or_else=on_rate_only))  # pyright: ignore[reportArgumentType]
+    fx.unwrap_reason(NotFound)  # pyright: ignore[reportArgumentType]
+
+
+def check_stream_and_channel_reasons(
+    s: Stream[int, AiFailure | NotFound], ch: channel.Channel[int, AiFailure | NotFound, None]
+) -> None:
+    assert_type(
+        s.pipe(
+            stream.catch_reason(AiFailure, RateLimited, lambda r, _: stream.succeed(r.retry_after))
+        ),
+        Stream[int, AiFailure | NotFound, Never],
+    )
+    assert_type(
+        s.pipe(
+            stream.catch_reason(
+                AiFailure,
+                RateLimited,
+                lambda r, _: stream.succeed(r.retry_after),
+                or_else=on_quota_stream,
+            )
+        ),
+        Stream[int | str, NotFound, Never],
+    )
+    assert_type(
+        s.pipe(stream.unwrap_reason(AiFailure)),
+        Stream[int, NotFound | RateLimited | QuotaExceeded, Never],
+    )
+    assert_type(
+        ch.pipe(
+            channel.catch_reasons(
+                AiFailure,
+                (RateLimited, lambda r, _: channel.succeed(r.retry_after)),
+                or_else=on_quota_channel,
+            )
+        ),
+        channel.Channel[int | str, NotFound, None, object, object, object, Never],
+    )
+    assert_type(
+        ch.pipe(channel.unwrap_reason(AiFailure)),
+        channel.Channel[int, NotFound | RateLimited | QuotaExceeded, None],
+    )
+
+
+# --- execution plans provide what every step provides ------------------------------
+
+
+def busy_only(error: str) -> fx.Effect[bool, Never, Level]:
+    return fx.succeed(error == "busy")
+
+
+def check_execution_plan(
+    eff: fx.Effect[int, str, Primary | Port], s: Stream[int, str, Primary | Port]
+) -> None:
+    both = layer.merge(primary_live, port_live)
+    plan = execution_plan.make(
+        execution_plan.Step(both, attempts=2), execution_plan.Step(primary_live)
+    )
+    assert_type(plan, execution_plan.ExecutionPlan[Primary, object, Never, Never])
+    assert_type(eff.pipe(fx.with_execution_plan(plan)), fx.Effect[int, str, Port])
+    assert_type(s.pipe(stream.with_execution_plan(plan)), Stream[int, str, Port])
+    guarded = execution_plan.make(execution_plan.Step(both, while_=busy_only))
+    assert_type(guarded, execution_plan.ExecutionPlan[Primary | Port, str, Never, Level])
+    assert_type(eff.pipe(fx.with_execution_plan(guarded)), fx.Effect[int, str, Level])
+    assert_type(
+        guarded.capture_requirements,
+        fx.Effect[execution_plan.ExecutionPlan[Primary | Port, str, Never, Never], Never, Level],
+    )
+    assert_type(
+        execution_plan.merge(plan, execution_plan.make(execution_plan.Step(fx.Context.empty()))),
+        execution_plan.ExecutionPlan[Never, object, Never, Never],
+    )
+
+    def observe(event: execution_plan.Event[str]) -> fx.Effect[None, Never, Level]:
+        return fx.void
+
+    assert_type(
+        eff.pipe(fx.with_execution_plan(plan, on_event=observe)), fx.Effect[int, str, Port | Level]
+    )
+    # The plan's predicates read the errors, so the effect's errors must be theirs.
+    failing_int: fx.Effect[int, int, Primary | Port] = fx.fail(1).pipe(fx.provide(merged_live))
+    failing_int.pipe(fx.with_execution_plan(guarded))  # pyright: ignore[reportArgumentType]
+
+
+# --- folds over iterables and conditional exit hooks -------------------------------
+
+
+def check_folds_and_hooks(items: list[int], eff: fx.Effect[int, NotFound, Port]) -> None:
+    assert_type(fx.succeed(items).head(), fx.Effect[int, fx.NoSuchElementException, Never])
+    assert_type(
+        fx.reduce(items, lambda: "", lambda acc, n: fx.succeed(acc + str(n))),
+        fx.Effect[str, Never, Never],
+    )
+    assert_type(
+        fx.find_first(items, lambda n: fx.succeed(n > 1)), fx.Effect[fx.Option[int], Never, Never]
+    )
+
+    def parse(n: int) -> fx.Effect[fx.Result[str, int], Invalid]:
+        return fx.succeed(fx.Ok(str(n)))
+
+    assert_type(fx.find_first_filter(items, parse), fx.Effect[fx.Option[str], Invalid, Never])
+    assert_type(
+        eff.on_exit_if(lambda ex: True, lambda ex: fx.fail(Gone())),
+        fx.Effect[int, NotFound | Gone, Port],
+    )
+    assert_type(
+        eff.on_error_filter(lambda c: c.find_error(), lambda e, c: Primary().as_void()),
+        fx.Effect[int, NotFound, Port | Primary],
     )
 
 
