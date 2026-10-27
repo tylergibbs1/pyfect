@@ -4,8 +4,9 @@
 
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
-``fx.clock``, ``fx.config_provider``, ``fx.console``, ``fx.cron``, ``fx.date_time``,
-``fx.random``, ``fx.schedule``, ``fx.scheduler``,
+``fx.clock``, ``fx.config`` (``fx.Config``, ``fx.ConfigError``), ``fx.config_provider``,
+``fx.console``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.redacted``
+(``fx.Redacted``), ``fx.byte_size``, ``fx.schedule``, ``fx.scheduler``,
 ``fx.Queue``, ``fx.PubSub``, ``fx.Pool``, ``fx.Cache``, ``fx.ScopedCache``, ``fx.Ref``,
 ``fx.SynchronizedRef``, ``fx.SubscriptionRef``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
@@ -27,9 +28,11 @@ building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Sink``
 
 from pyfect import (
     batching,
+    byte_size,
     cause,
     channel,
     clock,
+    config,
     config_provider,
     console,
     cron,
@@ -44,6 +47,7 @@ from pyfect import (
     option,
     pull,
     random,
+    redacted,
     result,
     schedule,
     scheduler,
@@ -65,6 +69,7 @@ from pyfect.cache import Cache, ScopedCache
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
 from pyfect.channel import Channel
 from pyfect.clock import Clock, sleep
+from pyfect.config import Config, ConfigError
 from pyfect.config_provider import ConfigProvider, CurrentConfigProvider
 from pyfect.context import Context, MissingServiceError, Reference, Tag
 from pyfect.deferred import Deferred
@@ -157,6 +162,7 @@ from pyfect.queue import Dequeue, Enqueue, Queue
 from pyfect.random import Random
 from pyfect.rc_map import RcMap
 from pyfect.rc_ref import RcRef
+from pyfect.redacted import Redacted
 from pyfect.ref import Ref
 from pyfect.resource import Resource
 from pyfect.result import Err, Ok, Result
@@ -207,6 +213,8 @@ __all__ = [
     "Clock",
     "CloseableScope",
     "Concurrency",
+    "Config",
+    "ConfigError",
     "ConfigProvider",
     "Context",
     "CurrentConfigProvider",
@@ -261,6 +269,7 @@ __all__ = [
     "Random",
     "RcMap",
     "RcRef",
+    "Redacted",
     "Ref",
     "Reference",
     "Request",
@@ -298,6 +307,7 @@ __all__ = [
     "annotate_logs_scoped",
     "batching",
     "blocking",
+    "byte_size",
     "callback",
     "catch_if",
     "catch_no_such_element",
@@ -305,6 +315,7 @@ __all__ = [
     "cause",
     "channel",
     "clock",
+    "config",
     "config_provider",
     "console",
     "context",
@@ -360,6 +371,7 @@ __all__ = [
     "race_all",
     "race_all_first",
     "random",
+    "redacted",
     "request",
     "request_unsafe",
     "result",

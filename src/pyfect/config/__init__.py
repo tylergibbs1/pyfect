@@ -1,0 +1,87 @@
+"""Typed configuration (Effect's ``Config``).
+
+A ``Config[A]`` says which keys to read from the ``CurrentConfigProvider``
+and how to decode them. It is an effect, failing with ``ConfigError``::
+
+    @fx.gen
+    def main():
+        port = yield from config.port("PORT").with_default(8080)
+        ...
+
+Each read resolves in two channels: data that is not there is *absent*
+(``with_default`` and ``option`` recover it), data that is there but
+invalid *fails* (only ``or_else`` recovers it). Constructors read one string
+(``string``, ``integer``, ``port``, ``boolean``, ``duration``, ``literal``,
+``url``, ``log_level``, ``byte_size``, ``redacted``, ...) or a container
+(``list_of``, ``dict_of``); ``all`` / ``all_dict`` group configs, ``gen``
+builds one from a generator, and the methods ``map``, ``flat_map``,
+``map_effect``, ``or_else``, ``with_default`` and ``nested`` transform one.
+Schema-based configs (Effect's ``Config.schema``) come with Schema.
+"""
+
+from pyfect.config._all import all, all_dict
+from pyfect.config._collections import dict_of, list_of
+from pyfect.config._config import Config, gen, option, unwrap
+from pyfect.config._config import fail_config as fail
+from pyfect.config._config import succeed_config as succeed
+from pyfect.config._constructors import (
+    boolean,
+    byte_size,
+    date_time,
+    duration,
+    finite,
+    integer,
+    literal,
+    log_level,
+    non_empty_string,
+    number,
+    port,
+    redacted,
+    string,
+    url,
+)
+from pyfect.config._error import ConfigError
+from pyfect.config._issue import (
+    Composite,
+    Forbidden,
+    InvalidType,
+    InvalidValue,
+    Issue,
+    Pointer,
+    SchemaError,
+)
+
+__all__ = [
+    "Composite",
+    "Config",
+    "ConfigError",
+    "Forbidden",
+    "InvalidType",
+    "InvalidValue",
+    "Issue",
+    "Pointer",
+    "SchemaError",
+    "all",
+    "all_dict",
+    "boolean",
+    "byte_size",
+    "date_time",
+    "dict_of",
+    "duration",
+    "fail",
+    "finite",
+    "gen",
+    "integer",
+    "list_of",
+    "literal",
+    "log_level",
+    "non_empty_string",
+    "number",
+    "option",
+    "port",
+    "redacted",
+    "string",
+    "succeed",
+    "unwrap",
+    "url",
+]

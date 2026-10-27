@@ -2910,3 +2910,103 @@ def check_config_provider(needs_db: fx.Effect[fx.ConfigProvider, NotFound, Prima
     assert_type(cp.layer_add(provider, as_primary=True), fx.Layer[fx.CurrentConfigProvider])
     assert_type(cp.layer_add(needs_db), fx.Layer[fx.CurrentConfigProvider, NotFound, Primary])
     cp.Record({"A"})  # pyright: ignore[reportArgumentType]
+
+
+# --- Config ------------------------------------------------------------------------------
+
+
+def check_config_constructors() -> None:
+    from datetime import datetime
+    from typing import Literal
+    from urllib.parse import SplitResult
+
+    from pyfect import config
+    from pyfect.byte_size import ByteSize
+
+    assert_type(config.string("A"), fx.Config[str])
+    assert_type(config.non_empty_string(), fx.Config[str])
+    assert_type(config.number("A"), fx.Config[float])
+    assert_type(config.finite("A"), fx.Config[float])
+    assert_type(config.integer("A"), fx.Config[int])
+    assert_type(config.port("A"), fx.Config[int])
+    assert_type(config.boolean("A"), fx.Config[bool])
+    assert_type(config.duration("A"), fx.Config[Seconds])
+    assert_type(config.byte_size("A"), fx.Config[ByteSize])
+    assert_type(config.date_time("A"), fx.Config[datetime])
+    assert_type(config.url("A"), fx.Config[SplitResult])
+    assert_type(config.log_level("A"), fx.Config[fx.LogLevel])
+    assert_type(config.redacted("A"), fx.Config[fx.Redacted[str]])
+    assert_type(config.literal(1, 2, name="A"), fx.Config[int])
+    env: fx.Config[Literal["dev", "prod"]] = config.literal("dev", "prod", name="ENV")
+    assert_type(env, fx.Config[Literal["dev", "prod"]])
+    config.literal([1], name="A")  # pyright: ignore[reportArgumentType]
+    assert_type(config.succeed(1), fx.Config[int])
+    assert_type(config.fail(config.SchemaError(config.Forbidden("no"))), fx.Config[Never])
+    assert_type(config.list_of(config.integer(), "PORTS"), fx.Config[list[int]])
+    assert_type(config.dict_of(config.finite(), "W", separator=";"), fx.Config[dict[str, float]])
+    config.list_of(config.integer, "PORTS")  # pyright: ignore[reportArgumentType]
+
+
+def check_config_combinators(port: fx.Config[int], host: fx.Config[str]) -> None:
+    from pyfect import config
+
+    assert_type(port.map(str), fx.Config[str])
+    assert_type(port.with_default(None), fx.Config[int | None])
+    assert_type(port.with_default(3000), fx.Config[int])
+    assert_type(port.or_else(lambda _e: host), fx.Config[int | str])
+    assert_type(port.nested("server"), fx.Config[int])
+    assert_type(port.map_effect(lambda p: fx.succeed(p + 1)), fx.Config[int])
+    port.map_effect(lambda p: fx.fail(NotFound("x")))  # pyright: ignore[reportArgumentType]
+    assert_type(port.flat_map(lambda p: host if p == 80 else config.succeed("dev")), fx.Config[str])
+    assert_type(port.flat_map(lambda p: fx.succeed(str(p))), fx.Effect[str, config.ConfigError])
+    assert_type(
+        port.flat_map(lambda _p: fx.fail(NotFound("x"))),
+        fx.Effect[Never, config.ConfigError | NotFound],
+    )
+    assert_type(config.option(port), fx.Config[fx.Option[int]])
+    assert_type(port.option(), fx.Effect[fx.Option[int]])
+    assert_type(config.all(port, host), fx.Config[tuple[int, str]])
+    assert_type(config.all(*[port, port]), fx.Config[tuple[int, ...]])
+    assert_type(config.all(), fx.Config[tuple[()]])
+    assert_type(config.all_dict({"port": port}), fx.Config[dict[str, int]])
+    assert_type(config.unwrap({"a": port}), fx.Config[Any])
+    assert_type(port.parse(fx.config_provider.from_env()), fx.Effect[int, config.ConfigError])
+    config.all(port, 5)  # pyright: ignore[reportArgumentType, reportCallIssue]
+
+
+def check_config_is_an_effect(port: fx.Config[int]) -> None:
+    from pyfect import config
+
+    @fx.gen
+    def program():
+        value = yield from port
+        return value + 1
+
+    assert_type(program, fx.Effect[int, config.ConfigError])
+    eff: fx.Effect[int, config.ConfigError] = port
+    _ = eff
+    assert_type(
+        port.pipe(fx.catch_tag(config.ConfigError, lambda _e: fx.succeed(0))), fx.Effect[int]
+    )
+
+
+def check_config_gen(port: fx.Config[int], db: fx.Effect[Db, Never, Primary]) -> None:
+    from pyfect import config
+
+    @config.gen
+    def server():
+        host = yield from config.string("HOST")
+        p = yield from port
+        return f"{host}:{p}"
+
+    assert_type(server, fx.Config[str])
+
+    @config.gen  # pyright: ignore[reportArgumentType]
+    def needs_service():
+        found = yield from db
+        return found
+
+    @config.gen  # pyright: ignore[reportArgumentType]
+    def other_error():
+        yield from fx.fail(NotFound("x"))
+        return 1

@@ -192,6 +192,18 @@ zone-aware parts of Effect's DateTime to aware `datetime`: `now()`, the `Current
 service, calendar `add` / `start_of` / `end_of`, DST disambiguation and RFC 9557 strings.
 `clock.now_nanos()` and `timed` count whole nanoseconds.
 
+**Configuration.** A `fx.Config[A]` reads and decodes settings from the
+`CurrentConfigProvider` (environment variables unless `config_provider.layer` installs a
+`.env` file, a directory, nested dicts or your own lookup). Configs are effects failing with
+`ConfigError`: `port = yield from config.port("PORT").with_default(8080)`. Missing data is
+*absent* (`with_default` and `config.option` recover it) while present but invalid data
+*fails*, with Effect's messages (`Expected a value between 1 and 65535\n  at ["PORT"]`).
+Constructors: `string`, `integer`, `number`, `port`, `boolean`, `duration`, `literal`, `url`,
+`date_time`, `log_level`, `byte_size`, `redacted` (a `fx.Redacted` that prints as
+`<redacted>`), `list_of` / `dict_of` (from `"a,b"` or structured input); `config.all`,
+`all_dict` and `@config.gen` combine them, and `map`, `flat_map`, `map_effect`, `or_else` and
+`nested` transform them.
+
 **Logging.** `fx.log(...)`, `log_info`, `log_warning`, `log_error`, ... write to the loggers
 in `CurrentLoggers` (Effect's default console logger unless replaced), dropping anything below
 `MinimumLogLevel` (`INFO` by default; `fx.LogLevel` is an `IntEnum` sharing `logging`'s
@@ -349,7 +361,8 @@ Queue, PubSub, the Ref family, Pool, Cache, Request batching), observability (M5
 streams (M6: Pull, Channel, Stream, Sink, the text framers) are done; see
 [`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
 
-1. **Config and data**: typed config providers, `Redacted`.
+1. **Config and data**: config providers, `Config` and `Redacted` are in; `ByteSize`,
+   `Brand` and the case functions remain.
 2. **Schema**: built on what Python already has (dataclasses, pydantic) rather than a
    reimplementation.
 3. **More building blocks**: `STM`.
