@@ -5,8 +5,8 @@
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
 ``fx.clock``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.schedule``, ``fx.scheduler``,
-``fx.Queue``, ``fx.PubSub``, ``fx.Pool``, ``fx.Ref``, ``fx.SynchronizedRef``,
-``fx.SubscriptionRef``, ``fx.Deferred``,
+``fx.Queue``, ``fx.PubSub``, ``fx.Pool``, ``fx.Cache``, ``fx.ScopedCache``, ``fx.Ref``,
+``fx.SynchronizedRef``, ``fx.SubscriptionRef``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
 ``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``.
@@ -34,6 +34,7 @@ from pyfect._core import Effect, Restore, interruptible_mask, uninterruptible_ma
 from pyfect._fiber import Fiber
 from pyfect._iterables import filter, first_success_of, partition, validate
 from pyfect._root import NoRunError
+from pyfect.cache import Cache, ScopedCache
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
 from pyfect.clock import Clock, sleep
 from pyfect.context import Context, MissingServiceError, Reference, Tag
@@ -137,6 +138,7 @@ from pyfect.synchronized_ref import SynchronizedRef
 
 __all__ = [
     "AsyncioRequiredError",
+    "Cache",
     "Cause",
     "Clock",
     "CloseableScope",
@@ -189,6 +191,7 @@ __all__ = [
     "Result",
     "Schedule",
     "Scope",
+    "ScopedCache",
     "ScopedRef",
     "Semaphore",
     "Some",

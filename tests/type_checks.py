@@ -1230,6 +1230,74 @@ def check_rc_map_methods(rc_map: fx.RcMap[str, int, NotFound]) -> None:
     rc_map.get(1)  # pyright: ignore[reportArgumentType]
 
 
+def _scoped_port(key: str) -> fx.Effect[int, NotFound, Port | fx.Scope]:
+    return _lookup_port(key).flat_map(
+        lambda n: fx.acquire_release(fx.succeed(n), lambda _a, _e: fx.void)
+    )
+
+
+def check_cache() -> None:
+    assert_type(
+        fx.Cache.make(_lookup_port, capacity=2),
+        fx.Effect[fx.Cache[str, int, NotFound], Never, Port],
+    )
+    assert_type(
+        fx.Cache.make(_lookup_port, capacity=None, require_services_at="lookup"),
+        fx.Effect[fx.Cache[str, int, NotFound, Port]],
+    )
+
+    def ttl(ex: fx.Exit[int, NotFound], key: str) -> float:
+        return len(key) if isinstance(ex, fx.Success) else 0
+
+    assert_type(
+        fx.Cache.make(_lookup_port, capacity=2, time_to_live=ttl),
+        fx.Effect[fx.Cache[str, int, NotFound], Never, Port],
+    )
+    fx.Cache.make(_lookup_port, capacity=2, time_to_live=lambda _ex, key: key)  # pyright: ignore[reportArgumentType]
+
+
+def check_cache_methods(cache: fx.Cache[str, int, NotFound, Port]) -> None:
+    assert_type(cache.get("k"), fx.Effect[int, NotFound, Port])
+    assert_type(cache.refresh("k"), fx.Effect[int, NotFound, Port])
+    assert_type(cache.get_option("k"), fx.Effect[fx.Option[int], NotFound])
+    assert_type(cache.get_success("k"), fx.Effect[fx.Option[int]])
+    assert_type(cache.set("k", 1), fx.Effect[None])
+    assert_type(cache.has("k"), fx.Effect[bool])
+    assert_type(cache.invalidate_when("k", lambda n: n > 0), fx.Effect[bool])
+    assert_type(cache.invalidate_all(), fx.Effect[None])
+    assert_type(cache.size(), fx.Effect[int])
+    assert_type(cache.entries(), fx.Effect[list[tuple[str, int]]])
+    assert_type(cache.capacity, int | None)
+    cache.get(1)  # pyright: ignore[reportArgumentType]
+    cache.set("k", "v")  # pyright: ignore[reportArgumentType]
+
+
+def check_scoped_cache() -> None:
+    assert_type(
+        fx.ScopedCache.make(_scoped_port, capacity=2),
+        fx.Effect[fx.ScopedCache[str, int, NotFound], Never, Port | fx.Scope],
+    )
+    assert_type(
+        fx.ScopedCache.make(_scoped_port, capacity=2, require_services_at="lookup"),
+        fx.Effect[fx.ScopedCache[str, int, NotFound, Port], Never, fx.Scope],
+    )
+
+    def scoped_length(key: str) -> fx.Effect[int, Never, fx.Scope]:
+        return fx.acquire_release(fx.succeed(len(key)), lambda _a, _e: fx.void)
+
+    scope_only = fx.ScopedCache.make(scoped_length, capacity=2, require_services_at="lookup")
+    assert_type(scope_only, fx.Effect[fx.ScopedCache[str, int], Never, fx.Scope])
+
+
+def check_scoped_cache_methods(cache: fx.ScopedCache[str, int, NotFound, Port]) -> None:
+    assert_type(cache.get("k"), fx.Effect[int, NotFound, Port])
+    assert_type(cache.get_option("k"), fx.Effect[fx.Option[int], NotFound])
+    assert_type(cache.keys(), fx.Effect[list[str]])
+    assert_type(cache.values(), fx.Effect[list[int]])
+    assert_type(cache.is_closed, bool)
+    cache.get(1)  # pyright: ignore[reportArgumentType]
+
+
 def check_scoped_ref(ref: fx.ScopedRef[int]) -> None:
     assert_type(fx.ScopedRef.make(lambda: 0), fx.Effect[fx.ScopedRef[int], Never, fx.Scope])
     assert_type(
