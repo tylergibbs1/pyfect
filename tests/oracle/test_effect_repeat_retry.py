@@ -17,19 +17,17 @@ from pyfect.schedule import CurrentMetadata, Decision, Metadata, Stop
 def test_schedule_and_schedule_from_preserve_source_done_failures():
     """schedule and scheduleFrom preserve source Done failures"""
 
-    # Effect's ``Cause.done(42)`` carries a value; pyfect's ``Done`` has none
-    # until ``Pull`` (M6).
-    def done() -> fx.Effect[int, fx.Done]:
-        return fx.fail(fx.Done())
+    def done() -> fx.Effect[int, fx.Done[int]]:
+        return fx.fail(fx.Done(42))
 
     source = fx.suspend(done)
     policy = schedule.recurs(3)
     scheduled = yield from source.schedule(policy).exit()
     assert isinstance(scheduled, fx.Failure)
-    assert scheduled.cause.reasons == (Fail(fx.Done()),)
+    assert scheduled.cause.reasons == (Fail(fx.Done(42)),)
     from_zero = yield from source.schedule_from(0, policy).exit()
     assert isinstance(from_zero, fx.Failure)
-    assert from_zero.cause.reasons == (Fail(fx.Done()),)
+    assert from_zero.cause.reasons == (Fail(fx.Done(42)),)
 
 
 @testing.effect
@@ -43,11 +41,9 @@ def test_returns_the_schedule_output_without_running_the_source_after_completion
 @testing.effect
 def test_fails_with_a_done_raised_by_the_repeated_effect():
     """fails with a Done raised by the repeated effect"""
-    # Effect's ``Cause.done(42)`` carries a value; pyfect's ``Done`` has none
-    # until ``Pull`` (M6).
-    ex = yield from fx.fail(fx.Done()).repeat(schedule.recurs(3)).exit()
+    ex = yield from fx.fail(fx.Done(42)).repeat(schedule.recurs(3)).exit()
     assert isinstance(ex, fx.Failure)
-    assert ex.cause.reasons == (Fail(fx.Done()),)
+    assert ex.cause.reasons == (Fail(fx.Done(42)),)
 
 
 @testing.effect
@@ -101,19 +97,19 @@ def test_repeat_or_else_passes_source_done_failures_and_iteration_metadata_to_or
     n = 0
     seen: list[tuple[object, int | None]] = []
 
-    def source() -> fx.Effect[int, fx.Done]:
+    def source() -> fx.Effect[int, fx.Done[int]]:
         nonlocal n
         n += 1
-        return fx.succeed(n) if n < 3 else fx.fail(fx.Done())
+        return fx.succeed(n) if n < 3 else fx.fail(fx.Done(42))
 
-    def or_else(error: fx.Done, meta: Metadata[int, int] | None) -> fx.Effect[int]:
+    def or_else(error: fx.Done[int], meta: Metadata[int, int] | None) -> fx.Effect[int]:
         seen.append((error, None if meta is None else meta.attempt))
         return fx.succeed(-1)
 
     result = yield from fx.suspend(source).repeat_or_else(schedule.recurs(10), or_else)
     assert result == -1
     assert n == 3
-    assert seen == [(fx.Done(), 2)]
+    assert seen == [(fx.Done(42), 2)]
 
 
 def countdown() -> tuple[fx.Effect[int], list[int]]:

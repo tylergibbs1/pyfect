@@ -4,8 +4,10 @@
 only surfaced as a defect inside the finalizer, where nothing reported it:
 the finalizer silently did nothing. Every public callable with an
 ``Effect`` parameter now rejects anything else at once, with a
-``TypeError`` naming the parameter. The guard test below walks the public
-API, so a new combinator that forgets ``require_effect`` fails here.
+``TypeError`` naming the parameter. ``Layer`` parameters are checked the
+same way (``require_layer``). The guard test below walks the public API, so
+a new combinator that forgets ``require_effect`` or ``require_layer`` fails
+here.
 """
 
 from __future__ import annotations
@@ -49,6 +51,21 @@ def test_var_positional_effects_name_the_bad_index():
 def test_transpose_option_rejects_a_non_effect_in_its_some():
     with pytest.raises(TypeError, match=r"^option\.value must be an Effect"):
         fx.transpose_option(fx.Some(lambda: None))  # pyright: ignore[reportArgumentType]
+
+
+def test_provide_names_both_kinds_of_source_it_accepts():
+    with pytest.raises(TypeError, match=r"^source must be a Layer or a Context, got function"):
+        fx.provide(lambda: None)  # pyright: ignore[reportArgumentType, reportCallIssue]
+
+
+def test_a_function_passed_as_a_layer_suggests_layer_suspend():
+    with pytest.raises(TypeError, match=r"layers\[1\] must be a Layer.*fx\.layer\.suspend\(f\)"):
+        fx.layer.merge(fx.layer.empty, lambda: fx.layer.empty)  # pyright: ignore[reportArgumentType]
+
+
+def test_a_provided_layer_rejects_a_non_effect_target_when_piped():
+    with pytest.raises(TypeError, match=r"^target must be an Effect"):
+        fx.provide(fx.layer.empty)(None)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
 
 @testing.effect
@@ -98,14 +115,15 @@ def _reachable() -> tuple[list[Callable[..., Any]], list[type]]:
 
 
 def _methods(cls: type) -> Iterator[tuple[str, Callable[..., Any]]]:
-    """Public methods defined on ``cls`` or its pyfect bases, as callables
-    (class and static methods bound to ``cls``)."""
+    """Public methods (and ``__call__``) defined on ``cls`` or its pyfect
+    bases, as callables (class and static methods bound to ``cls``)."""
     for klass in cls.__mro__:
-        if not klass.__module__.startswith("pyfect"):
+        if not klass.__module__.startswith("pyfect") or typing.is_protocol(klass):
             continue
         for name, member in vars(klass).items():
             raw = getattr(member, "__func__", member)
-            if not name.startswith("_") and inspect.isfunction(raw):
+            public = not name.startswith("_") or name == "__call__"
+            if public and inspect.isfunction(raw):
                 bound = getattr(cls, name) if raw is not member else raw
                 yield f"{klass.__module__}.{klass.__qualname__}.{name}", bound
 
@@ -122,12 +140,16 @@ def _public_callables() -> Iterator[tuple[str, Callable[..., Any]]]:
                 yield qualname, fn
 
 
-_EFFECT = re.compile(r"(?:_core\.)?Effect(?:\[.*\])?")
+_KINDS = {
+    "Effect": re.compile(r"(?:_core\.)?Effect(?:\[.*\])?"),
+    "Layer": re.compile(r"(?:_layer_core\.)?Layer(?:\[.*\])?"),
+}
 
 
-def _is_effect_annotation(annotation: object) -> bool:
-    """``Effect[...]`` itself, or a union with it at the top level (not an
-    effect nested in a ``Callable`` or a collection)."""
+def _annotation_kinds(annotation: object) -> set[str]:
+    """Which of ``Effect[...]`` and ``Layer[...]`` the annotation is, alone or
+    in a union at the top level (not nested in a ``Callable`` or a
+    collection)."""
     text = annotation if isinstance(annotation, str) else str(annotation)
     depth, current = 0, ""
     top: list[str] = []
@@ -142,31 +164,34 @@ def _is_effect_annotation(annotation: object) -> bool:
         else:
             current += ch
     top.append(current.strip())
-    return any(_EFFECT.fullmatch(part) for part in top)
+    return {kind for kind, pattern in _KINDS.items() for part in top if pattern.fullmatch(part)}
 
 
-def _effect_parameters(fn: Callable[..., Any]) -> list[str]:
+def _checked_parameters(fn: Callable[..., Any]) -> dict[str, set[str]]:
+    """Each Effect- or Layer-typed parameter with the kinds it accepts."""
     signatures = [inspect.signature(getattr(o, "__func__", o)) for o in typing.get_overloads(fn)]
     signatures.append(inspect.signature(fn))
-    names = {
-        name
-        for sig in signatures
-        for name, p in sig.parameters.items()
-        if name != "self" and _is_effect_annotation(p.annotation)
-    }
+    kinds: dict[str, set[str]] = {}
+    for sig in signatures:
+        for name, p in sig.parameters.items():
+            if name != "self":
+                kinds.setdefault(name, set()).update(_annotation_kinds(p.annotation))
     impl = inspect.signature(fn).parameters
-    return [name for name in impl if name in names]
+    return {name: kinds[name] for name in impl if kinds.get(name)}
 
 
 def _cases() -> list[tuple[str, Callable[..., Any], str]]:
     return [
         (qualname, fn, param)
         for qualname, fn in _public_callables()
-        for param in _effect_parameters(fn)
+        for param in _checked_parameters(fn)
     ]
 
 
 _CASES = _cases()
+
+
+_VALID: dict[str, object] = {"Effect": fx.void, "Layer": fx.layer.empty}
 
 
 def _not_an_effect() -> None:
@@ -179,6 +204,9 @@ def test_the_guard_finds_the_combinators_it_is_meant_to_check():
     assert ("acquire_release", "acquire") in names
     assert ("run_sync", "eff") in names
     assert ("all", "effects") in names
+    assert ("fresh", "layer") in names
+    assert ("merge", "layers") in names
+    assert ("__call__", "eff") in names
     assert len(_CASES) > 50
 
 
@@ -190,11 +218,12 @@ def test_the_guard_finds_the_combinators_it_is_meant_to_check():
 def test_a_non_effect_argument_is_rejected_when_called(fn: Callable[..., Any], param: str):
     args: list[object] = []
     kwargs: dict[str, object] = {}
+    checked = _checked_parameters(fn)
     for name, p in inspect.signature(fn).parameters.items():
-        effect_typed = name in _effect_parameters(fn)
-        value: object = _not_an_effect if name == param else fx.void if effect_typed else object()
+        valid = _VALID[min(checked[name])] if name in checked else None
+        value: object = _not_an_effect if name == param else valid or object()
         if p.kind is p.VAR_POSITIONAL:
-            args.extend([fx.void, value] if effect_typed else [])
+            args.extend([valid, value] if valid is not None else [])
         elif p.kind is p.VAR_KEYWORD or (p.default is not p.empty and name != param):
             continue
         elif p.kind is p.KEYWORD_ONLY:
@@ -206,7 +235,8 @@ def test_a_non_effect_argument_is_rejected_when_called(fn: Callable[..., Any], p
         if inspect.signature(fn).parameters[param].kind is (inspect.Parameter.VAR_POSITIONAL)
         else param
     )
-    with pytest.raises(TypeError, match=rf"^{re.escape(expected)} must be an Effect"):
+    kinds = " or ".join(("an Effect", "a Layer")[k == "Layer"] for k in sorted(checked[param]))
+    with pytest.raises(TypeError, match=rf"^{re.escape(expected)} must be {kinds}\b.*, got"):
         result = fn(*args, **kwargs)
         if inspect.iscoroutine(result):  # an async run function checks when awaited
             asyncio.run(result)

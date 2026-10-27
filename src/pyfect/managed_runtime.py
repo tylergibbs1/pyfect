@@ -42,6 +42,7 @@ from weakref import WeakSet
 from pyfect._core import Effect, Restore, _Locally, _Succeed, _WithFiber, uninterruptible_mask
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber, current_fiber, current_run_scheduler
+from pyfect._layer_core import require_layer
 from pyfect._root import new_root, start_root
 from pyfect.context import Context, Reference
 from pyfect.deferred import Deferred
@@ -91,6 +92,7 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
     def __init__(self, layer: Layer[R_contra, ER_co], *, memo_map: MemoMap | None = None) -> None:
         """Nothing is built until the first run. Runtimes given the same
         ``memo_map`` build each layer once between them."""
+        require_layer(layer, "layer")
         self.memo_map = MemoMap() if memo_map is None else memo_map
         self._layer = layer
         self._scope = CloseableScope()

@@ -78,6 +78,7 @@ from pyfect.effect import (
     yield_now,
 )
 from pyfect.errors import (
+    Done,
     ExceededCapacityError,
     IllegalArgumentError,
     NoSuchElementException,
@@ -96,7 +97,7 @@ from pyfect.layer_ref import LayerRef, LayerRefService
 from pyfect.managed_runtime import ManagedRuntime
 from pyfect.option import Option, Some
 from pyfect.partitioned_semaphore import PartitionedSemaphore
-from pyfect.queue import Done, Queue
+from pyfect.queue import Dequeue, Enqueue, Queue
 from pyfect.random import Random
 from pyfect.rc_map import RcMap
 from pyfect.rc_ref import RcRef
@@ -138,10 +139,12 @@ __all__ = [
     "Context",
     "CurrentScheduler",
     "Deferred",
+    "Dequeue",
     "Done",
     "Duration",
     "Effect",
     "EmptyCauseError",
+    "Enqueue",
     "Err",
     "ExceededCapacityError",
     "Exit",

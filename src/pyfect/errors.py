@@ -25,11 +25,12 @@ from __future__ import annotations
 import builtins
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Any, ClassVar, Never, Self
+from typing import Any, ClassVar, Never, Self, TypeIs, overload
 
 from pyfect._core import Effect, _FailCause
-from pyfect.cause import fail
+from pyfect.cause import Cause, Fail, Interrupt, Reason, fail, from_reasons
 from pyfect.duration import Seconds, format_duration
+from pyfect.result import Err, Ok, Result
 
 
 class TaggedError(Exception):
@@ -112,6 +113,47 @@ class NoSuchElementException(TaggedError, LookupError):
 class IllegalArgumentError(TaggedError, ValueError):
     """An argument outside what an operation accepts, such as an unknown
     time zone name."""
+
+
+class Done[L = None](TaggedError):
+    """A producer finished normally: no more items will come. ``value`` is
+    what it leaves over (Effect's ``Cause.Done(value)``); a bare ``Done``
+    means ``Done[None]``.
+
+    A queue that can be ended says so in its error type,
+    ``Queue[int, Done]``; its takers fail with ``Done()`` once it drains."""
+
+    __match_args__ = ("value",)
+
+    @overload
+    def __init__(self: Done[None]) -> None: ...
+    @overload
+    def __init__(self, value: L) -> None: ...
+    def __init__(self, value: object = None) -> None:
+        super().__init__(value)
+
+    @property
+    def value(self) -> L:
+        return self.args[0]
+
+    def __repr__(self) -> str:
+        return "Done()" if self.value is None else f"Done({self.value!r})"
+
+
+def filter_done[E](cause: Cause[E]) -> Result[Done[Any], Cause[E]]:
+    """``Ok(done)`` if ``cause`` holds a ``Done`` failure and nothing else but
+    interruptions; otherwise ``Err`` of the cause without its ``Done``
+    failures (Effect's ``Pull.filterDone``)."""
+    dones = [r.error for r in cause.reasons if _is_done(r)]
+    if not dones:
+        return Err(cause)
+    if all(_is_done(r) or isinstance(r, Interrupt) for r in cause.reasons):
+        return Ok(dones[0])
+    return Err(from_reasons(r for r in cause.reasons if not _is_done(r)))
+
+
+def _is_done(reason: Reason[object]) -> TypeIs[Fail[Done[Any]]]:
+    return isinstance(reason, Fail) and isinstance(reason.error, Done)
 
 
 class ExceededCapacityError(TaggedError):

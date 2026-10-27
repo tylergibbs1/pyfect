@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Any, Literal, Never, Self, cast, overload
 
 from pyfect._core import Effect, _Gen, _Succeed, _WithFiber
-from pyfect._layer_core import Layer, effect_context, fork_or_create
+from pyfect._layer_core import Layer, effect_context, fork_or_create, require_layer
 from pyfect.context import Context, ServiceEffect, Tag
 from pyfect.duration import Duration
 from pyfect.layer import effect as layer_effect
@@ -67,6 +67,7 @@ class LayerRef[I, E = Never]:
         """A ref building ``layer`` (with the services in scope now, sharing
         what enclosing builds built) when first used. Released when the
         current scope closes."""
+        require_layer(layer, "layer")
 
         def body():
             context: Context = yield from _WithFiber(lambda fiber: _Succeed(fiber._context))
@@ -145,6 +146,7 @@ class LayerRefService[I, E = Never](Tag[LayerRef[I, E]]):
     ) -> Layer[Self, Any, Any]:
         """A layer making the ``LayerRef`` (see ``LayerRef.make``). Provide
         its dependencies with ``.pipe(provide(...))``."""
+        require_layer(layer, "layer")
         return layer_effect(
             cls,
             LayerRef.make(

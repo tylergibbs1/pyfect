@@ -29,9 +29,10 @@ Omitted, with the reason:
 - ``TimeoutError``: pyfect's ``TimeoutException`` always carries the
   ``duration`` that ran out (``tests/test_concurrency.py``), so it has no
   message-only constructor to port.
-- ``Done``, ``IllegalArgumentError``, ``ExceededCapacityError``: not ported
-  yet; ``Done`` comes with ``Pull`` (M6) and ``ExceededCapacityError`` with
-  the queue strategies that raise it (M4).
+- ``isDone`` "returns true for Done values" / "returns false for other
+  values" and ``DoneTypeId``: ``isinstance(x, fx.Done)`` is the guard.
+- ``IllegalArgumentError``, ``ExceededCapacityError``: not ported yet; no
+  v4 queue strategy raises ``ExceededCapacityError``.
 """
 
 import traceback
@@ -549,3 +550,20 @@ def test_stores_the_original_cause() -> None:
 def test_unknown_error_is_an_instance_of_error() -> None:
     """is an instance of Error"""
     assert isinstance(fx.UnknownError(ValueError("x")), Exception)
+
+
+# Done
+
+
+def test_creates_a_done_signal_without_value() -> None:
+    """creates a Done signal without value"""
+    done = fx.Done()
+    assert isinstance(done, fx.Done)
+    assert done.value is None
+
+
+def test_creates_a_done_signal_with_a_value() -> None:
+    """creates a Done signal with a value"""
+    done = fx.Done(42)
+    assert isinstance(done, fx.Done)
+    assert done.value == 42

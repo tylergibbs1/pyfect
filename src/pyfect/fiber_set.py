@@ -190,6 +190,7 @@ class FiberSetRuntime[A, E, R]:
     ) -> Fiber[A, E]:
         """Fork ``eff`` on a root fiber and add it to the set. A closed set
         gives back an interrupted fiber that never runs ``eff``."""
+        require_effect(eff, "eff")
         if self._set._fibers is None:
             return self._runtime.interrupted()
         fiber = self._runtime.fork(eff, uninterruptible=uninterruptible, scheduler=scheduler)
@@ -214,6 +215,7 @@ class FiberSetAsyncRuntime[A, E, R]:
         uninterruptible: bool = False,
         scheduler: Scheduler | None = None,
     ) -> asyncio.Future[A]:
+        require_effect(eff, "eff")
         return future_of(
             self._run(
                 eff,

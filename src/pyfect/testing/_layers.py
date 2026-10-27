@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Literal, Never, final
 
 from pyfect._effect_args import require_effect
+from pyfect._layer_core import require_layer
 from pyfect.clock import Clock
 from pyfect.context import Context
 from pyfect.duration import Duration, to_seconds
@@ -65,6 +66,7 @@ def layer_fixture[RO, E](
     fixture's runtime, so fibers the layer forks keep running; ``asyncio``
     picks an event loop for it, needed by ``from_async``. ``timeout``
     bounds building and releasing, in real time."""
+    require_layer(layer, "layer")
 
     def fixture() -> Generator[Services[RO]]:
         with _held(

@@ -259,6 +259,7 @@ class FiberHandleRuntime[A, E, R]:
         """Fork ``eff`` on a root fiber and make it current. A closed
         handle, or a current fiber with ``only_if_missing``, gives back an
         interrupted fiber that never runs ``eff``."""
+        require_effect(eff, "eff")
         handle = self._handle
         if handle._state is None or (only_if_missing and handle._state.current is not None):
             return self._runtime.interrupted()
@@ -287,6 +288,7 @@ class FiberHandleAsyncRuntime[A, E, R]:
         uninterruptible: bool = False,
         scheduler: Scheduler | None = None,
     ) -> asyncio.Future[A]:
+        require_effect(eff, "eff")
         return future_of(
             self._run(
                 eff,

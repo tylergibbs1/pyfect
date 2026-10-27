@@ -437,7 +437,62 @@ def check_data_types(q: fx.Queue[int], endable: fx.Queue[int, fx.Done]) -> None:
     q.end()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     assert_type(q.offer_all([1, 2]), fx.Effect[list[int], Never, Never])
     assert_type(q.shutdown(), fx.Effect[bool, Never, Never])
-    assert_type(q.take_up_to(0), fx.Effect[list[int], Never, Never])
+    assert_type(q.take_between(1, 0), fx.Effect[list[int], Never, Never])
+
+
+def check_queue(
+    q: fx.Queue[int],
+    endable: fx.Queue[int, fx.Done],
+    failing: fx.Queue[int, str | fx.Done],
+    strings: fx.Queue[int, str],
+    leftover: fx.Queue[int, fx.Done[int]],
+) -> None:
+    assert_type(q.take_n(2), fx.Effect[list[int], Never, Never])
+    assert_type(q.take_between(1, 3), fx.Effect[list[int], Never, Never])
+    assert_type(q.poll(), fx.Effect[fx.Option[int], Never, Never])
+    assert_type(strings.peek(), fx.Effect[int, str, Never])
+    assert_type(q.size(), fx.Effect[int, Never, Never])
+    assert_type(q.is_full(), fx.Effect[bool, Never, Never])
+    assert_type(q.capacity, int | None)
+    assert_type(q.interrupt(), fx.Effect[bool, Never, Never])
+    assert_type(q.unsafe_take(), fx.Exit[int, Never] | None)
+    # clear / collect / await_done take Done out of the error type.
+    assert_type(endable.clear(), fx.Effect[list[int], Never, Never])
+    assert_type(failing.clear(), fx.Effect[list[int], str, Never])
+    assert_type(strings.clear(), fx.Effect[list[int], str, Never])
+    assert_type(endable.collect(), fx.Effect[list[int], Never, Never])
+    assert_type(endable.await_done(), fx.Effect[None, Never, Never])
+    assert_type(failing.collect(), fx.Effect[list[int], str, Never])
+    assert_type(failing.await_done(), fx.Effect[None, str, Never])
+    assert_type(q.await_done(), fx.Effect[None, Never, Never])
+    # end / into need Done (Done[None]) among the queue's errors.
+    failing.end()
+    leftover.end()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    assert_type(failing.into(fx.fail("boom")), fx.Effect[bool, Never, Never])
+    assert_type(endable.into(Port()), fx.Effect[bool, Never, Port])
+    endable.into(fx.fail("boom"))  # pyright: ignore[reportArgumentType]
+    strings.into(fx.void)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    q.offer_all(["x"])  # pyright: ignore[reportArgumentType]
+    assert_type(fx.Done(3).value, int)
+    assert_type(fx.Done().value, None)
+
+
+def check_queue_views(
+    q: fx.Queue[int], failing: fx.Queue[int, str | fx.Done], producer: fx.Enqueue[bool, Never]
+) -> None:
+    # An Enqueue is contravariant, a Dequeue covariant.
+    def consume(takes: fx.Dequeue[float, object]) -> None:
+        assert_type(takes.take(), fx.Effect[float, object, Never])
+
+    consume(failing)
+    offers: fx.Enqueue[bool, Never] = q
+    ends: fx.Enqueue[int, str | fx.Done] = failing
+    wide: fx.Enqueue[object, Never] = q  # pyright: ignore[reportAssignmentType]
+    assert_type(producer.offer_all([True]), fx.Effect[list[bool], Never, Never])
+    producer.offer(1)  # pyright: ignore[reportArgumentType]
+    producer.end()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    assert_type(ends.end(), fx.Effect[bool, Never, Never])
+    print(offers, wide)
 
 
 def check_semaphore(sem: fx.Semaphore) -> None:

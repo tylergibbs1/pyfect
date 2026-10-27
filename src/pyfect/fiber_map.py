@@ -299,6 +299,7 @@ class FiberMapRuntime[K: Hashable, A, E, R]:
         """Fork ``eff`` on a root fiber under ``key``. A closed map, or a
         taken key with ``only_if_missing``, gives back an interrupted fiber
         that never runs ``eff``."""
+        require_effect(eff, "eff")
         fiber_map = self._map
         if fiber_map._state is None or (only_if_missing and fiber_map.unsafe_has(key)):
             return self._runtime.interrupted()
@@ -331,6 +332,7 @@ class FiberMapAsyncRuntime[K: Hashable, A, E, R]:
         uninterruptible: bool = False,
         scheduler: Scheduler | None = None,
     ) -> asyncio.Future[A]:
+        require_effect(eff, "eff")
         return future_of(
             self._run(
                 key,

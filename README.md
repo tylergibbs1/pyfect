@@ -119,7 +119,11 @@ steps are effects that see `Metadata`, and the running effect reads `CurrentMeta
 `complete(eff)` runs an effect once and stores its outcome, and `complete_with(eff)`
 stores the effect itself. Ending or failing a queue keeps its items and waiting offers
 until takers drain them; `offer_all` returns the items it could not add, `shutdown` returns
-whether it finished the queue, and `Semaphore.take`/`release` return permit counts.
+whether it finished the queue, and `Semaphore.take`/`release` return permit counts. A queue
+also has `take_n` / `take_between`, `poll`, `peek`, `clear`, `collect`, `await_done`,
+`interrupt` and `into(eff)`; `fx.Enqueue` / `fx.Dequeue` are its write-only (contravariant)
+and read-only (covariant) views, and `fx.Done(value)` is the end-of-input signal it fails
+with once ended.
 
 **Time.** `fx.cron` parses cron expressions (seconds, names, steps, a zone) and finds the
 `next` / `prev` match with Effect's DST rules; `schedule.cron("0 9 * * MON", "Europe/Berlin")`

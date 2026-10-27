@@ -14,11 +14,11 @@ keeps the layers first built through it to itself.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any, Generic, Never, Self, TypeVar, overload
 
 from pyfect._core import Effect, _FailCause, _Locally, _Succeed, _Suspend, _WithFiber
-from pyfect._effect_args import require_effect
+from pyfect._effect_args import require_effect, wrong_argument
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.context import Context, Tag, TagLike
@@ -34,6 +34,21 @@ RIn_co = TypeVar("RIn_co", covariant=True, default=Never)
 type Builder = Callable[[MemoMap, CloseableScope], Effect[Context, Any, Any]]
 
 _VOID: Effect[None] = _Succeed(None)
+
+
+_LAYER_HINT = "to build a layer lazily, pass fx.layer.suspend(f)"
+
+
+def require_layer(value: object, name: str, expected: str = "a Layer") -> None:
+    """``require_effect`` for a ``Layer`` parameter."""
+    if not isinstance(value, Layer):
+        raise TypeError(wrong_argument(value, name, expected, _LAYER_HINT))
+
+
+def require_layers(values: Iterable[object], name: str) -> None:
+    """``require_layer`` for each of a ``*args`` parameter's values."""
+    for i, value in enumerate(values):
+        require_layer(value, f"{name}[{i}]")
 
 
 class _Entry:
@@ -87,6 +102,7 @@ class MemoMap:
     ) -> Effect[Context[O], E, R] | None:
         """The shared build of ``layer``, if this map or a parent has one.
         ``scope`` uses it from now on, whether or not the effect runs."""
+        require_layer(layer, "layer")
         entry = self._entries.get(layer)
         if entry is not None:
             entry.observe(scope)
@@ -100,6 +116,7 @@ class MemoMap:
         build: Callable[[MemoMap, CloseableScope], Effect[Context[O], E, R]],
     ) -> Effect[Context[O], E, R]:
         """Reuse ``layer``'s shared build, or run ``build`` as it."""
+        require_layer(layer, "layer")
 
         def run() -> Effect[Context[O], E, R]:
             published: list[Deferred[Context, Any]] = []

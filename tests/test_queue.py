@@ -1,5 +1,6 @@
 """Queue lifecycle: Open -> Closing(cause) -> Done(cause), rendezvous, batch offers."""
 
+from collections.abc import Callable
 from typing import Never
 
 import pytest
@@ -201,7 +202,7 @@ def test_negative_capacity_is_rejected():
     assert isinstance(ex, fx.Failure) and isinstance(ex.cause.defects[0], ValueError)
 
 
-# --- offer_all, shutdown, take_up_to ------------------------------------------------
+# --- offer_all, shutdown, take_between ---------------------------------------------
 
 
 def test_offer_all_returns_what_a_dropping_queue_rejected():
@@ -245,7 +246,7 @@ def test_offer_all_admits_what_fits_in_one_step():
         yield from q.offer(0)
         producer = yield from q.offer_all([1, 2, 3, 4]).fork()
         yield from _settle()
-        size_while_parked = yield from q.size
+        size_while_parked = yield from q.size()
         yield from q.take_all()
         rest = yield from producer.join()
         return size_while_parked, rest, (yield from q.take_all())
@@ -294,26 +295,26 @@ def test_shutdown_settles_parked_offers_with_what_was_not_accepted():
         single = yield from q.offer(4).fork()
         yield from _settle()
         yield from q.shutdown()
-        return first, (yield from batch.join()), (yield from single.join()), (yield from q.size)
+        return first, (yield from batch.join()), (yield from single.join()), (yield from q.size())
 
     assert run(program) == (1, [3], False, 0)
 
 
-def test_take_up_to_zero_returns_empty_without_waiting():
+def test_take_between_up_to_zero_returns_empty_without_waiting():
     @fx.gen
     def program():
         q = yield from fx.Queue[int].unbounded()
-        return (yield from q.take_up_to(0)), (yield from q.take_up_to(-1))
+        return (yield from q.take_between(1, 0)), (yield from q.take_between(1, -1))
 
     assert run(program) == ([], [])
 
 
-def test_take_up_to_zero_still_reports_a_finished_queue():
+def test_take_between_up_to_zero_still_reports_a_finished_queue():
     @fx.gen
     def program():
         q = yield from fx.Queue[int, fx.Done].unbounded()
         yield from q.end()
-        return (yield from q.take_up_to(0).exit())
+        return (yield from q.take_between(1, 0).exit())
 
     ex = run(program)
     assert isinstance(ex, fx.Failure)
@@ -351,10 +352,10 @@ def _dequeue(name: str, q: fx.Queue[int, fx.Done]) -> fx.Effect[list[int], fx.Do
         case "take_all":
             return q.take_all()
         case _:
-            return q.take_up_to(2)
+            return q.take_between(1, 2)
 
 
-@pytest.mark.parametrize("dequeue", ["take", "take_all", "take_up_to"])
+@pytest.mark.parametrize("dequeue", ["take", "take_all", "take_between"])
 @pytest.mark.parametrize("capacity", [None, 0])
 @pytest.mark.parametrize("offer_first", [True, False])
 def test_a_take_interrupted_at_a_yield_keeps_its_message(
@@ -405,8 +406,8 @@ def test_offer_to_a_sliding_queue_of_capacity_zero_keeps_the_newest_item():
     def program():
         q = yield from fx.Queue[int].sliding(0)
         offered = ((yield from q.offer(1)), (yield from q.offer(2)))
-        size = yield from q.size
-        return offered, size, (yield from q.take()), (yield from q.size)
+        size = yield from q.size()
+        return offered, size, (yield from q.take()), (yield from q.size())
 
     assert run(program) == ((True, True), 1, 2, 0)
 
@@ -418,7 +419,7 @@ def test_offer_all_to_a_sliding_queue_of_capacity_zero_keeps_nothing():
     @fx.gen
     def program():
         q = yield from fx.Queue[int].sliding(0)
-        return (yield from q.offer_all([1, 2, 3])), (yield from q.size)
+        return (yield from q.offer_all([1, 2, 3])), (yield from q.size())
 
     assert run(program) == ([], 0)
 
@@ -434,6 +435,134 @@ def test_offer_to_a_sliding_queue_of_capacity_zero_wakes_a_waiting_taker():
         taker = yield from q.take().fork()
         yield from _settle()
         yield from q.offer(7)
-        return (yield from taker.join()), (yield from q.size)
+        return (yield from taker.join()), (yield from q.size())
 
     assert run(program) == (7, 0)
+
+
+# --- take_between, peek, clear, Done (checked against Effect 4.0.6 under Node) -------
+
+
+def test_a_batch_take_on_a_bounded_queue_waits_for_at_most_its_capacity():
+    """A bounded queue never holds more than its capacity, so ``take_n(5)`` on
+    ``bounded(2)`` completes with the two items there (Effect's ``canTake``)."""
+
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int].bounded(2)
+        yield from q.offer_all([1, 2, 3, 4, 5]).fork()
+        yield from fx.yield_now()
+        return (yield from q.take_n(5))
+
+    assert run(program) == [1, 2]
+
+
+def test_a_peek_woken_by_an_item_leaves_it_for_a_take_parked_behind_it():
+    """``peek`` leaves the item there, so the take parked behind it must still
+    be woken for it."""
+
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int].unbounded()
+        peeker = yield from q.peek().fork(start_immediately=True)
+        taker = yield from q.take().fork(start_immediately=True)
+        yield from q.offer(7)
+        return (yield from peeker.join()), (yield from taker.join())
+
+    assert run(program) == (7, 7)
+
+
+def test_clear_of_a_queue_ended_while_interrupted_succeeds_empty():
+    """Interruptions beside ``Done`` do not count as a failure (Effect's
+    ``Pull.filterDone``)."""
+
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int, fx.Done].unbounded()
+        yield from q.fail_cause(fx.cause.fail(fx.Done()) + fx.cause.interrupt(1))
+        return (yield from q.clear())
+
+    assert run(program) == []
+
+
+def test_a_rendezvous_queue_is_always_full_and_an_unbounded_one_never():
+    @fx.gen
+    def program():
+        rendezvous = yield from fx.Queue[int].bounded(0)
+        unbounded = yield from fx.Queue[int].unbounded()
+        yield from unbounded.offer_all(range(100))
+        return (yield from rendezvous.is_full()), (yield from unbounded.is_full())
+
+    assert run(program) == (True, False)
+
+
+def test_into_ends_the_queue_when_the_effect_succeeds_and_fails_it_otherwise():
+    @fx.gen
+    def program():
+        ended = yield from fx.Queue[int, str | fx.Done].unbounded()
+        failed = yield from fx.Queue[int, str | fx.Done].unbounded()
+        yield from ended.into(fx.succeed(1))
+        yield from failed.into(fx.fail("boom"))
+        return (yield from ended.await_done().exit()), (yield from failed.await_done().exit())
+
+    assert run(program) == (fx.Success(None), fx.exit.fail("boom"))
+
+
+def test_into_finishes_the_queue_when_the_running_fiber_is_interrupted():
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int, fx.Done].unbounded()
+        fiber = yield from q.into(fx.never).fork()
+        yield from _settle()
+        yield from fiber.interrupt()
+        return (yield from q.take().exit())
+
+    ex = run(program)
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
+
+
+def test_done_failures_compare_by_value():
+    assert fx.Done(1) != fx.Done(2)
+    assert fx.Done() == fx.Done(None)
+    assert repr(fx.Done()) == "Done()"
+    assert repr(fx.Done(3)) == "Done(3)"
+
+
+_FIRST_WAITERS: dict[str, Callable[[fx.Queue[int]], fx.Effect[object]]] = {
+    "take": lambda q: q.take(),
+    "take_n": lambda q: q.take_n(1),
+    "take_between": lambda q: q.take_between(1, 3),
+    "peek": lambda q: q.peek(),
+}
+
+
+@pytest.mark.parametrize("first", list(_FIRST_WAITERS))
+@pytest.mark.parametrize("ops", range(2, 17))
+def test_a_waiter_interrupted_between_its_wake_up_and_its_retry_strands_no_item(
+    first: str, ops: int
+):
+    """A woken waiter can pause for its step budget before it retries, and be
+    interrupted there. The waiter parked behind it must still get the item
+    (checked against Effect under Node: it wakes every ready taker)."""
+
+    def program(delay: int) -> fx.Effect[tuple[bool, bool]]:
+        @fx.gen
+        def go():
+            q = yield from fx.Queue[int].unbounded()
+            waiting = _FIRST_WAITERS[first](q).pipe(fx.provide_service(fx.MaxOpsBeforeYield, ops))
+            woken = yield from waiting.fork()
+            behind = yield from q.take().fork()
+            yield from _settle()
+            yield from q.offer(1)
+            yield from fx.for_each(range(delay), lambda _: fx.yield_now())
+            yield from woken.interrupt()
+            yield from _settle()
+            took_first = first != "peek" and isinstance(woken.unsafe_poll(), fx.Success)
+            took_behind = isinstance(behind.unsafe_poll(), fx.Success)
+            yield from behind.interrupt()
+            return took_first, took_behind
+
+        return go
+
+    for delay in range(3):
+        assert any(run(program(delay))), f"item stranded at delay {delay}"

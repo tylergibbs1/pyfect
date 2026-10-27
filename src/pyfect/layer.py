@@ -51,6 +51,8 @@ from pyfect._layer_core import (
     fork_or_create,
     from_build,
     from_build_memo,
+    require_layer,
+    require_layers,
 )
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
@@ -166,6 +168,7 @@ def unwrap(eff: Effect[Layer[Any, Any, Any], Any, Any]) -> Layer[Any, Any, Any]:
 def fresh[O, E, R](layer: Layer[O, E, R]) -> Layer[O, E, R]:
     """A copy of ``layer`` that is not shared: each use builds it, and
     everything under it, anew."""
+    require_layer(layer, "layer")
     return Layer(lambda _memo, scope: layer._build(MemoMap(), scope))
 
 
@@ -239,6 +242,7 @@ def merge[O1, O2, O3, O4, O5, EE = Never, RR = Never](
 def merge(*layers: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
     """Build all layers, concurrently, and provide everything they build.
     Their resources are released concurrently too."""
+    require_layers(layers, "layers")
 
     def build(memo: MemoMap, scope: CloseableScope) -> Effect[Context, Any, Any]:
         parallel = scope._fork_now("parallel")
@@ -287,6 +291,7 @@ class _Provide[RO, E2, RI]:
     def __call__(self, target: Effect[Any, Any, Any] | Layer[Any, Any, Any]) -> Any:
         if isinstance(target, Layer):
             return feed(self.layer, target, keep_dep=False)
+        require_effect(target, "target")
         return _provide_to_effect(self.layer, target, local=False)
 
 
@@ -306,6 +311,7 @@ class _ProvideLocal[RO, E2, RI]:
         self, target: Effect[A, E, RO | R]
     ) -> Effect[A, E | E2, R | RI]: ...
     def __call__(self, target: Effect[Any, Any, Any]) -> Any:
+        require_effect(target, "target")
         return _provide_to_effect(self.layer, target, local=True)
 
 
@@ -331,6 +337,7 @@ def provide(
     reused; ``local=True`` builds everything anew (effects only)."""
     if isinstance(source, Context):
         return _ProvideContext(source)
+    require_layer(source, "source", "a Layer or a Context")
     return _ProvideLocal(source) if local else _Provide(source)
 
 
@@ -347,6 +354,7 @@ class _ProvideMerge[RO, E2, RI]:
         self, target: Layer[O, E, RO | R]
     ) -> Layer[O | RO, E | E2, R | RI]: ...
     def __call__(self, target: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
+        require_layer(target, "target")
         return feed(self.layer, target, keep_dep=True)
 
 
@@ -355,6 +363,7 @@ def provide_merge[RO, E2 = Never, RI = Never](
 ) -> _ProvideMerge[RO, E2, RI]:
     """Like ``provide`` for layers, but the result builds both layers'
     services."""
+    require_layer(layer, "layer")
     return _ProvideMerge(layer)
 
 
@@ -379,6 +388,7 @@ class _CatchTag[EC, O, E2, R2]:
         self, target: Layer[O, EC | ER, R]
     ) -> Layer[O, ER | E2, R | R2]: ...
     def __call__(self, target: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
+        require_layer(target, "target")
         handle = self.handle
         return Layer(
             lambda memo, scope: _MatchCause(target._build(memo, scope), handle(memo, scope), None)

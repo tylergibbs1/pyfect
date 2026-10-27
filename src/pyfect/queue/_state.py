@@ -2,8 +2,9 @@
 
 ``Open`` accepts offers. ``Closing(cause)`` was ended or failed but still
 holds items or parked offers, which takers drain. ``Done(cause)`` is
-finished: nothing is parked, so there is nowhere to drop an offer or a
-taker. Matches over ``State`` are checked for exhaustiveness by pyright.
+finished: nothing is parked, so there is nowhere to drop an offer, a taker
+or an ``await_done`` waiter. Matches over ``State`` are checked for
+exhaustiveness by pyright.
 
 A parked offer owns its items. The queue admits them as space frees (or
 hands them straight to a taker when the capacity is 0) and only then
@@ -45,12 +46,14 @@ type Offer[A] = OfferOne[A] | OfferMany[A]
 class Open[A]:
     takers: WaitList = field(default_factory=WaitList)
     offers: deque[Offer[A]] = field(default_factory=deque[Offer[A]])
+    awaiters: WaitList = field(default_factory=WaitList)
 
 
 @dataclass(eq=False, slots=True)
 class Closing[A, E]:
     takers: WaitList
     offers: deque[Offer[A]]
+    awaiters: WaitList
     cause: Cause[E]
 
 

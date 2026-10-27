@@ -1,5 +1,6 @@
 """Validate the effects handed to public combinators, once, when the
-combinator is called.
+combinator is called. Layers are checked the same way (``require_layer``
+in ``_layer_core``).
 
 An effect is a value, so a combinator that takes one can only notice a
 wrong value (a lambda, a coroutine, ``None``) when it runs it, possibly
@@ -31,7 +32,15 @@ def require_effects(values: Iterable[object], name: str) -> None:
 
 
 def _message(value: object, name: str) -> str:
-    message = f"{name} must be an Effect, got {type(value).__name__}: {value!r}"
+    return wrong_argument(
+        value, name, "an Effect", "to run a function, pass fx.sync(f) or fx.suspend(f)"
+    )
+
+
+def wrong_argument(value: object, name: str, expected: str, hint_for_callable: str) -> str:
+    """The ``TypeError`` message for a parameter ``name`` that must be
+    ``expected``; a callable gets ``hint_for_callable``."""
+    message = f"{name} must be {expected}, got {type(value).__name__}: {value!r}"
     if callable(value):
-        message += " (to run a function, pass fx.sync(f) or fx.suspend(f))"
+        message += f" ({hint_for_callable})"
     return message
