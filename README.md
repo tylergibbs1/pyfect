@@ -101,6 +101,14 @@ using it closes (`layer.MemoMap` shares builds across `ManagedRuntime`s too). A 
 current one and `fx.provide(ctx)` provides one. Layers have `tap`, `flat_map`, `catch_all`,
 `or_die`, `launch`, `update_service`, and `layer.mock(Tag, member=...)` stubs a service.
 
+**Shared resources.** `RcRef.make(acquire)` acquires on first use and releases when the
+last scope holding it closes (or after `idle_time_to_live`); `RcMap.make(lookup)` does the
+same per key, with a `capacity` that fails new keys with `ExceededCapacityError`.
+`ScopedRef` swaps a value with resources safely, `Resource.manual` / `Resource.auto` cache
+a value refreshed by hand or on a schedule, and `LayerRef` / `LayerMap` cache built
+layers (one, or one per key). `LayerRefService` and `LayerMapService` are tags for them,
+built with `layer(...)`.
+
 **Building blocks.** `Ref`, `Deferred`, `Queue` (bounded, rendezvous with capacity 0,
 dropping, sliding; endable), `Semaphore`, `PartitionedSemaphore` (permits shared
 round-robin across keys), `Latch`, `Scope` with `acquire_release`, and `Schedule`

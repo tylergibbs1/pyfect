@@ -6,7 +6,8 @@ Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
 ``fx.schedule``, ``fx.scheduler``, ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
-``fx.FiberMap``, ``fx.FiberHandle``, ``fx.testing``.
+``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
+``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``.
 """
 
 from pyfect import (
@@ -72,18 +73,29 @@ from pyfect.effect import (
     void,
     yield_now,
 )
-from pyfect.errors import NoSuchElementException, TaggedError, TimeoutException, UnknownError
+from pyfect.errors import (
+    ExceededCapacityError,
+    NoSuchElementException,
+    TaggedError,
+    TimeoutException,
+    UnknownError,
+)
 from pyfect.exit import Exit, Failure, Success
 from pyfect.fiber_handle import FiberHandle
 from pyfect.fiber_map import FiberMap
 from pyfect.fiber_set import FiberSet
 from pyfect.latch import Latch
 from pyfect.layer import Layer, provide
+from pyfect.layer_map import LayerMap, LayerMapService
+from pyfect.layer_ref import LayerRef, LayerRefService
 from pyfect.managed_runtime import ManagedRuntime
 from pyfect.option import Option, Some
 from pyfect.partitioned_semaphore import PartitionedSemaphore
 from pyfect.queue import Done, Queue
+from pyfect.rc_map import RcMap
+from pyfect.rc_ref import RcRef
 from pyfect.ref import Ref
+from pyfect.resource import Resource
 from pyfect.result import Err, Ok, Result
 from pyfect.run import (
     Interruptor,
@@ -108,6 +120,7 @@ from pyfect.scope import (
     scoped,
     scoped_with,
 )
+from pyfect.scoped_ref import ScopedRef
 from pyfect.semaphore import Semaphore
 
 __all__ = [
@@ -124,6 +137,7 @@ __all__ = [
     "Effect",
     "EmptyCauseError",
     "Err",
+    "ExceededCapacityError",
     "Exit",
     "Failure",
     "Fiber",
@@ -134,6 +148,10 @@ __all__ = [
     "Interruptor",
     "Latch",
     "Layer",
+    "LayerMap",
+    "LayerMapService",
+    "LayerRef",
+    "LayerRefService",
     "ManagedRuntime",
     "MaxOpsBeforeYield",
     "MissingServiceError",
@@ -144,12 +162,16 @@ __all__ = [
     "PartitionedSemaphore",
     "PreventSchedulerYield",
     "Queue",
+    "RcMap",
+    "RcRef",
     "Ref",
     "Reference",
+    "Resource",
     "Restore",
     "Result",
     "Schedule",
     "Scope",
+    "ScopedRef",
     "Semaphore",
     "Some",
     "Success",

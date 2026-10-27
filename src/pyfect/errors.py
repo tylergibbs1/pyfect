@@ -109,6 +109,10 @@ class NoSuchElementException(TaggedError, LookupError):
     """An expected value was missing."""
 
 
+class ExceededCapacityError(TaggedError):
+    """A bounded structure was asked to hold more than its capacity."""
+
+
 @dataclass(eq=False)
 class UnknownError(TaggedError):
     """An exception raised by code given to ``try_`` without a ``catch``.

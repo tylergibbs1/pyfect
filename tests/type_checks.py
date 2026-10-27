@@ -927,3 +927,176 @@ def check_layer_catch_tag() -> None:
         two.pipe(layer.catch_tag((NotFound, Invalid), lambda _: port_live)), layer.Layer[Port]
     )
     two.pipe(layer.catch_tag(NotFound, lambda _: primary_live))  # pyright: ignore[reportArgumentType]
+
+
+def check_rc_ref() -> None:
+    ref_eff = fx.RcRef.make(fx.acquire_release(fx.succeed(1), lambda _a, _e: fx.void))
+    assert_type(ref_eff, fx.Effect[fx.RcRef[int, Never], Never, fx.Scope])
+    needing = fx.RcRef.make(Port().flat_map(lambda _: fx.fail(NotFound("k"))), idle_time_to_live=1)
+    assert_type(needing, fx.Effect[fx.RcRef[Never, NotFound], Never, fx.Scope | Port])
+
+
+def check_rc_ref_methods(ref: fx.RcRef[int, NotFound]) -> None:
+    assert_type(ref.get(), fx.Effect[int, NotFound, fx.Scope])
+    assert_type(ref.invalidate(), fx.Effect[None])
+
+
+def check_rc_ref_is_covariant(ref: fx.RcRef[bool, Never]) -> fx.RcRef[int, NotFound]:
+    return ref  # Effect's RcRef<out A, out E>
+
+
+def check_resource_variance(
+    rc_map: fx.RcMap[str, bool], scoped: fx.ScopedRef[bool], resource: fx.Resource[bool]
+) -> None:
+    # Effect declares these ``in out``: a value can be put in as well as read.
+    widened_map: fx.RcMap[str, int] = rc_map  # pyright: ignore[reportAssignmentType]
+    widened_scoped: fx.ScopedRef[int] = scoped  # pyright: ignore[reportAssignmentType]
+    widened_resource: fx.Resource[int] = resource  # pyright: ignore[reportAssignmentType]
+    del widened_map, widened_scoped, widened_resource
+
+
+def _lookup_port(key: str) -> fx.Effect[int, NotFound, Port]:
+    return Port()
+
+
+def check_rc_map() -> None:
+    assert_type(
+        fx.RcMap.make(_lookup_port),
+        fx.Effect[fx.RcMap[str, int, NotFound], Never, fx.Scope | Port],
+    )
+    assert_type(
+        fx.RcMap.make(_lookup_port, capacity=2, idle_time_to_live=len),
+        fx.Effect[fx.RcMap[str, int, NotFound | fx.ExceededCapacityError], Never, fx.Scope | Port],
+    )
+    fx.RcMap.make(_lookup_port, idle_time_to_live=lambda key: key)  # pyright: ignore[reportArgumentType]
+
+
+def check_rc_map_methods(rc_map: fx.RcMap[str, int, NotFound]) -> None:
+    assert_type(rc_map.get("k"), fx.Effect[int, NotFound, fx.Scope])
+    assert_type(rc_map.get_option("k"), fx.Effect[fx.Option[int], NotFound, fx.Scope])
+    assert_type(rc_map.keys(), fx.Effect[list[str]])
+    assert_type(rc_map.has("k"), fx.Effect[bool])
+    assert_type(rc_map.invalidate("k"), fx.Effect[None])
+    assert_type(rc_map.touch("k"), fx.Effect[None])
+    rc_map.get(1)  # pyright: ignore[reportArgumentType]
+
+
+def check_scoped_ref(ref: fx.ScopedRef[int]) -> None:
+    assert_type(fx.ScopedRef.make(lambda: 0), fx.Effect[fx.ScopedRef[int], Never, fx.Scope])
+    assert_type(
+        fx.ScopedRef.from_acquire(
+            Port().flat_map(lambda p: fx.acquire_release(fx.succeed(p), lambda _a, _e: fx.void))
+        ),
+        fx.Effect[fx.ScopedRef[int], Never, fx.Scope | Port],
+    )
+    assert_type(ref.get(), fx.Effect[int])
+    assert_type(ref.set(fx.succeed(1)), fx.Effect[None])
+    assert_type(ref.set(fx.acquire_release(fx.succeed(1), lambda _a, _e: fx.void)), fx.Effect[None])
+    assert_type(ref.set(Port().and_then(fx.Scope()).as_(1)), fx.Effect[None, Never, Port])
+    assert_type(ref.set(fx.fail(NotFound("k"))), fx.Effect[None, NotFound])
+    ref.set(fx.succeed("x"))  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
+def check_resource() -> None:
+    manual = fx.Resource.manual(Port().flat_map(lambda _: fx.fail(NotFound("k"))))
+    assert_type(manual, fx.Effect[fx.Resource[Never, NotFound], Never, fx.Scope | Port])
+    auto = fx.Resource.auto(fx.succeed(1), schedule.spaced(1))
+    assert_type(auto, fx.Effect[fx.Resource[int, Never], Never, fx.Scope])
+
+
+def check_resource_methods(resource: fx.Resource[int, NotFound]) -> None:
+    assert_type(resource.get(), fx.Effect[int, NotFound])
+    assert_type(resource.refresh(), fx.Effect[None, NotFound])
+
+
+failing_port_live = layer.effect(Port, fx.fail(NotFound("k")).and_then(Primary()).as_(1))
+
+
+def check_layer_ref() -> None:
+    assert_type(
+        fx.LayerRef.make(failing_port_live),
+        fx.Effect[fx.LayerRef[Port, NotFound], Never, fx.Scope | Primary],
+    )
+    assert_type(
+        fx.LayerRef.make(failing_port_live, preload=True, idle_time_to_live=1),
+        fx.Effect[fx.LayerRef[Port, NotFound], NotFound, fx.Scope | Primary],
+    )
+
+
+def check_layer_ref_methods(ref: fx.LayerRef[Port, NotFound]) -> None:
+    assert_type(ref.get(), layer.Layer[Port, NotFound])
+    assert_type(ref.context_effect(), fx.Effect[fx.Context[Port], NotFound, fx.Scope])
+    assert_type(ref.invalidate(), fx.Effect[None])
+    assert_type(ref.refresh(), fx.Effect[None, NotFound])
+
+
+class PortRef(fx.LayerRefService[Port, NotFound]): ...
+
+
+def check_layer_ref_service() -> None:
+    assert_type(PortRef.layer(failing_port_live), layer.Layer[PortRef, Never, Primary])
+    assert_type(
+        PortRef.layer(failing_port_live, preload=True), layer.Layer[PortRef, NotFound, Primary]
+    )
+    assert_type(PortRef.get(), layer.Layer[Port, NotFound, PortRef])
+    assert_type(PortRef.context_effect(), fx.Effect[fx.Context[Port], NotFound, fx.Scope | PortRef])
+    assert_type(PortRef.invalidate(), fx.Effect[None, Never, PortRef])
+    assert_type(PortRef.refresh(), fx.Effect[None, NotFound, PortRef])
+    PortRef.layer(primary_live)  # pyright: ignore[reportArgumentType]
+
+
+def _port_layer(key: str) -> layer.Layer[Port, NotFound, Primary]:
+    return failing_port_live
+
+
+def check_layer_map() -> None:
+    assert_type(
+        fx.LayerMap.make(_port_layer),
+        fx.Effect[fx.LayerMap[str, Port, NotFound], Never, fx.Scope | Primary],
+    )
+    assert_type(
+        fx.LayerMap.make(_port_layer, preload_keys=["a"], idle_time_to_live=1),
+        fx.Effect[fx.LayerMap[str, Port, NotFound], NotFound, fx.Scope | Primary],
+    )
+    assert_type(
+        fx.LayerMap.from_record({"a": failing_port_live}),
+        fx.Effect[fx.LayerMap[str, Port, NotFound], Never, fx.Scope | Primary],
+    )
+    assert_type(
+        fx.LayerMap.from_record({"a": failing_port_live}, preload=True),
+        fx.Effect[fx.LayerMap[str, Port, NotFound], NotFound, fx.Scope | Primary],
+    )
+
+
+def check_layer_map_methods(layer_map: fx.LayerMap[str, Port, NotFound]) -> None:
+    assert_type(layer_map.get("a"), layer.Layer[Port, NotFound])
+    assert_type(layer_map.context_effect("a"), fx.Effect[fx.Context[Port], NotFound, fx.Scope])
+    assert_type(
+        layer_map.context_effect_option("a"),
+        fx.Effect[fx.Option[fx.Context[Port]], NotFound, fx.Scope],
+    )
+    assert_type(layer_map.invalidate("a"), fx.Effect[None])
+
+
+class PortMap(fx.LayerMapService[str, Port, NotFound]): ...
+
+
+def check_layer_map_service() -> None:
+    assert_type(PortMap.layer(_port_layer), layer.Layer[PortMap, Never, Primary])
+    assert_type(
+        PortMap.layer(_port_layer, preload_keys=["a"]), layer.Layer[PortMap, NotFound, Primary]
+    )
+    assert_type(
+        PortMap.layer_from_record({"a": failing_port_live}, preload=True),
+        layer.Layer[PortMap, NotFound, Primary],
+    )
+    assert_type(PortMap.get("a"), layer.Layer[Port, NotFound, PortMap])
+    assert_type(
+        PortMap.context_effect("a"), fx.Effect[fx.Context[Port], NotFound, fx.Scope | PortMap]
+    )
+    assert_type(
+        PortMap.context_effect_option("a"),
+        fx.Effect[fx.Option[fx.Context[Port]], NotFound, fx.Scope | PortMap],
+    )
+    assert_type(PortMap.invalidate("a"), fx.Effect[None, Never, PortMap])
+    PortMap.get(1)  # pyright: ignore[reportArgumentType]
