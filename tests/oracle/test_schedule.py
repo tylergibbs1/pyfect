@@ -6,17 +6,17 @@ returns ``Continue(output, delay)`` where Effect's ``Pull`` succeeds with
 ``[output, delay]``, and ``Stop(output)`` where it fails with
 ``Cause.done(output)``.
 
-Omitted, with the reason:
-
-- "cron" / every title: ``Schedule.cron`` needs the ``Cron`` module, which
-  is not ported yet.
+Every title is ported. The cron ports read the times in local time, as
+Effect's ``new Date(2024, 0, 1)`` does.
 """
 
 import math
 from collections.abc import Iterable
+from datetime import datetime
 
 import pyfect as fx
 from pyfect import random, schedule, testing
+from pyfect.cron import CronParseError
 from pyfect.duration import ZERO, Seconds
 from pyfect.result import Err, Ok
 from pyfect.schedule import Continue, Metadata, Schedule, Stop
@@ -399,3 +399,69 @@ def test_windowed_delays_until_the_nearest_window_boundary():
     """delays until the nearest window boundary"""
     delays = yield from record_delays(schedule.windowed(1), 1.5)
     assert delays == [1, 0.5, 0.5, 0.5, 0.5, 0]
+
+
+# --- cron -----------------------------------------------------------------------------
+
+
+def cron_times(
+    expression: str, start: datetime, steps: int
+) -> fx.Effect[list[str], CronParseError]:
+    """Effect's pattern: set the clock to ``start``, run the delays and
+    format each time they add up to, in local time."""
+
+    @fx.gen
+    def go():
+        yield from testing.set_time(start.timestamp())
+        delays = yield from run_delays(schedule.cron(expression), nones(steps))
+        times: list[str] = []
+        at = start.timestamp()
+        for delay in delays:
+            at += delay
+            times.append(datetime.fromtimestamp(at).strftime("%a %b %d %Y %H:%M:%S"))
+        return times
+
+    return go
+
+
+@testing.effect
+def test_cron_should_recur_on_interval_matching_cron_expression():
+    """should recur on interval matching cron expression"""
+    times = yield from cron_times("*/2 * * * *", datetime(2024, 1, 1, 0, 0, 35), 4)
+    assert times == [
+        "Mon Jan 01 2024 00:02:00",
+        "Mon Jan 01 2024 00:04:00",
+        "Mon Jan 01 2024 00:06:00",
+        "Mon Jan 01 2024 00:08:00",
+    ]
+
+
+@testing.effect
+def test_cron_should_recur_on_interval_matching_cron_expression_second_granularity():
+    """should recur on interval matching cron expression (second granularity)"""
+    times = yield from cron_times("*/3 * * * * *", datetime(2024, 1, 1), 10)
+    assert times == [f"Mon Jan 01 2024 00:00:{s:02}" for s in range(3, 31, 3)]
+
+
+@testing.effect
+def test_cron_should_recur_at_time_matching_cron_expression():
+    """should recur at time matching cron expression"""
+    times = yield from cron_times("30 4 5,15 * WED", datetime(2024, 1, 1), 6)
+    assert times == [
+        "Wed Jan 03 2024 04:30:00",
+        "Fri Jan 05 2024 04:30:00",
+        "Wed Jan 10 2024 04:30:00",
+        "Mon Jan 15 2024 04:30:00",
+        "Wed Jan 17 2024 04:30:00",
+        "Wed Jan 24 2024 04:30:00",
+    ]
+
+
+@testing.effect
+def test_cron_does_not_fail_when_the_test_clock_is_adjusted_to_infinity():
+    """does not fail when the test clock is adjusted to infinity"""
+    latch = yield from fx.Deferred[None].make()
+    fiber = yield from latch.wait().repeat(schedule.cron("0 0 4 8-14 * *", "UTC")).fork()
+    yield from testing.adjust(math.inf)
+    yield from latch.succeed(None)
+    yield from fiber.join()

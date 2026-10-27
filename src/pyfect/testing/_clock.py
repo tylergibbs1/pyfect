@@ -137,6 +137,10 @@ class TestClock:
     # --- the Clock service ------------------------------------------------------------
 
     def unsafe_now(self) -> float:
+        # As Effect's ``currentTimeMillis``: infinite once time is moved to
+        # infinity (the nanosecond clocks stay at the last finite time).
+        if math.isinf(self._timestamp_ns):
+            return self._timestamp_ns
         return self._wall_ns / _NANOS
 
     def unsafe_monotonic(self) -> float:

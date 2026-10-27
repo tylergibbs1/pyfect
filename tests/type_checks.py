@@ -1325,3 +1325,28 @@ def check_date_time() -> None:
     date_time.start_of(datetime.now(), "week", week_starts_on=calendar.MONDAY)
     date_time.start_of(datetime.now(), "week", week_starts_on=1)  # pyright: ignore[reportArgumentType]
     date_time.end_of(datetime.now(), "fortnight")  # pyright: ignore[reportArgumentType]
+
+
+def check_cron() -> None:
+    from collections.abc import Iterator
+    from datetime import datetime
+
+    from pyfect import cron
+    from pyfect.cron import Cron, CronParseError
+    from pyfect.result import Result
+
+    assert_type(cron.parse("0 9 * * MON"), Result[Cron, CronParseError])
+    assert_type(cron.parse_unsafe("0 9 * * MON", "Europe/Berlin"), Cron)
+    c = cron.make(minutes=[0], hours=[9], days=[], months=[], weekdays=[1])
+    assert_type(cron.next(c), datetime)
+    assert_type(cron.prev(c, datetime.now()), datetime)
+    assert_type(cron.sequence(c), Iterator[datetime])
+    assert_type(cron.match(c, datetime.now()), bool)
+    assert_type(cron.format(c, include_seconds=True), str)
+    # A cron is immutable.
+    c.minutes = frozenset()  # pyright: ignore[reportAttributeAccessIssue]
+    # Parsing can fail, so the schedule carries CronParseError.
+    assert_type(schedule.cron("*/5 * * * *"), schedule.Schedule[Seconds, object, CronParseError])
+    assert_type(schedule.cron(c), schedule.Schedule[Seconds, object, CronParseError])
+    # A Cron carries its own zone, so a zone next to one is rejected (Effect's overloads).
+    schedule.cron(c, "UTC")  # pyright: ignore[reportArgumentType]

@@ -6,6 +6,7 @@ forked ``yield_now``, as in Effect), so a busy fiber the clock did not wake
 costs nothing. A woken fiber that never suspends makes adjust give up after
 ``warning_delay`` with a ``BusyFiberWarning``."""
 
+import math
 import time
 import warnings
 from collections.abc import Generator
@@ -133,3 +134,14 @@ def test_repeated_sleeps_end_at_their_exact_sum():
     fiber = yield from fx.sleep(0.1).replicate_effect(3).as_("woke").fork()
     yield from testing.adjust(0.3)
     assert fiber.unsafe_poll() == fx.Success("woke")
+
+
+@testing.effect
+def test_wall_time_reads_infinite_after_moving_to_infinity():
+    """Effect's ``currentTimeMillis`` is the TestClock's timestamp, so a
+    schedule stepping after ``adjust(Infinity)`` sees ``now`` infinite and
+    stops (``Schedule.cron``'s infinity port depends on it)."""
+    yield from testing.set_time(5.0)
+    yield from testing.adjust(math.inf)
+    assert (yield from fx.clock.now()) == math.inf
+    assert (yield from fx.clock.now_nanos()) == 5_000_000_000

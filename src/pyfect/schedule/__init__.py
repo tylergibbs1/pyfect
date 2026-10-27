@@ -36,6 +36,7 @@ from pyfect.schedule._constructors import (
     spaced,
     windowed,
 )
+from pyfect.schedule._cron import cron
 from pyfect.schedule._model import (
     Continue,
     CurrentMetadata,
@@ -64,6 +65,7 @@ __all__ = [
     "SetInputType",
     "StepFn",
     "Stop",
+    "cron",
     "duration",
     "during",
     "exponential",

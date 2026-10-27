@@ -4,7 +4,7 @@
 
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
-``fx.clock``, ``fx.date_time``, ``fx.random``, ``fx.schedule``, ``fx.scheduler``,
+``fx.clock``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.schedule``, ``fx.scheduler``,
 ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
@@ -14,6 +14,7 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 from pyfect import (
     cause,
     clock,
+    cron,
     date_time,
     duration,
     exit,
@@ -203,6 +204,7 @@ __all__ = [
     "cause",
     "clock",
     "context",
+    "cron",
     "current_fiber",
     "date_time",
     "default_teardown",
