@@ -1,5 +1,7 @@
 """The work behind the filtering and folding ``Channel`` methods:
-``filter`` and its effect and tuple variants, ``scan_effect``,
+``filter`` and ``filter_map`` with their effect and tuple variants (a
+filter returns ``Ok(value)`` to write ``value``, ``Err`` to skip),
+``scan_effect``,
 ``map_accum`` and ``flatten_array``.
 
 A pull that skips items pulls again from the continuation, so skipping
@@ -12,11 +14,13 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, cast
 
+from pyfect._concurrency import for_each
 from pyfect._core import Effect, _FailCause, _FlatMap, _MatchCause, _Succeed, _Suspend
 from pyfect._iterables import filter as filter_items
 from pyfect.cause import Cause
 from pyfect.channel._base import AnyChannel, AnyPull
 from pyfect.channel._channel import Channel, transform_pull
+from pyfect.result import Ok, Result
 
 type Channel_ = Channel[Any, Any, Any, Any, Any, Any, Any]
 
@@ -62,6 +66,61 @@ def filter_array_effect(
 
         def loop(kept: list[Any]) -> AnyPull:
             return _Succeed(tuple(kept)) if kept else _FlatMap(filtered, loop)
+
+        return _FlatMap(filtered, loop)
+
+    return transform_pull(self, lambda pull, _: _Succeed(with_pull(pull)))
+
+
+def filter_map(self: AnyChannel, f: Callable[[Any], Result[Any, object]]) -> Channel_:
+    def with_pull(pull: AnyPull) -> AnyPull:
+        def loop(item: Any) -> AnyPull:
+            result = f(item)
+            return _Succeed(result.value) if isinstance(result, Ok) else _FlatMap(pull, loop)
+
+        return _FlatMap(pull, loop)
+
+    return transform_pull(self, lambda pull, _: _Succeed(with_pull(pull)))
+
+
+def filter_map_effect(
+    self: AnyChannel, f: Callable[[Any], Effect[Result[Any, object], Any, Any]]
+) -> Channel_:
+    def with_pull(pull: AnyPull) -> AnyPull:
+        def loop(item: Any) -> AnyPull:
+            return _FlatMap(f(item), written)
+
+        def written(result: Result[Any, object]) -> AnyPull:
+            return _Succeed(result.value) if isinstance(result, Ok) else _FlatMap(pull, loop)
+
+        return _FlatMap(pull, loop)
+
+    return transform_pull(self, lambda pull, _: _Succeed(with_pull(pull)))
+
+
+def _passing(results: Sequence[Result[Any, object]]) -> tuple[Any, ...]:
+    return tuple(result.value for result in results if isinstance(result, Ok))
+
+
+def filter_map_array(self: AnyChannel, f: Callable[[Any], Result[Any, object]]) -> Channel_:
+    def with_pull(pull: AnyPull) -> AnyPull:
+        def loop(items: tuple[Any, ...]) -> AnyPull:
+            kept = _passing([f(item) for item in items])
+            return _Succeed(kept) if kept else _FlatMap(pull, loop)
+
+        return _FlatMap(pull, loop)
+
+    return transform_pull(self, lambda pull, _: _Succeed(with_pull(pull)))
+
+
+def filter_map_array_effect(
+    self: AnyChannel, f: Callable[[Any], Effect[Result[Any, object], Any, Any]]
+) -> Channel_:
+    def with_pull(pull: AnyPull) -> AnyPull:
+        filtered = _FlatMap(pull, lambda items: for_each(items, f).map(_passing))
+
+        def loop(kept: tuple[Any, ...]) -> AnyPull:
+            return _Succeed(kept) if kept else _FlatMap(filtered, loop)
 
         return _FlatMap(filtered, loop)
 

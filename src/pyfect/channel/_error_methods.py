@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from pyfect.cause import Cause
     from pyfect.channel._channel import Channel
     from pyfect.logger import Severity
+    from pyfect.result import Result
     from pyfect.schedule import Schedule
     from pyfect.schedule._model import SetInputType
 
@@ -149,6 +150,72 @@ class ErrorMethods(
         from pyfect.channel import _errors
 
         return _errors.catch_if(self, predicate, f, or_else)
+
+    @overload
+    def catch_filter[EB, X, O2, E2 = Never, D2 = None, R2 = Never](
+        self,
+        filter: Callable[[OutErr_co], Result[EB, X]],
+        f: Callable[[EB], Channel[O2, E2, D2, InElem_contra, InErr_contra, InDone_contra, R2]],
+    ) -> Channel[
+        OutElem_co | O2,
+        X | E2,
+        OutDone_co | D2,
+        InElem_contra,
+        InErr_contra,
+        InDone_contra,
+        Env_co | R2,
+    ]: ...
+    @overload
+    def catch_filter[EB, X, O2, O3, D2 = None, D3 = None, EE = Never, RR = Never](
+        self,
+        filter: Callable[[OutErr_co], Result[EB, X]],
+        f: Callable[[EB], Channel[O2, EE, D2, InElem_contra, InErr_contra, InDone_contra, RR]],
+        *,
+        or_else: Callable[[X], Channel[O3, EE, D3, InElem_contra, InErr_contra, InDone_contra, RR]],
+    ) -> Channel[
+        OutElem_co | O2 | O3,
+        EE,
+        OutDone_co | D2 | D3,
+        InElem_contra,
+        InErr_contra,
+        InDone_contra,
+        Env_co | RR,
+    ]: ...
+    def catch_filter(
+        self,
+        filter: Callable[[Any], Result[Any, Any]],
+        f: Callable[[Any], Channel[Any, Any, Any, Any, Any, Any, Any]],
+        *,
+        or_else: Callable[[Any], Channel[Any, Any, Any, Any, Any, Any, Any]] | None = None,
+    ) -> Channel[Any, Any, Any, Any, Any, Any, Any]:
+        """Go on with ``f(value)`` after a typed failure ``filter`` maps to
+        ``Ok(value)``. One it maps to ``Err(x)`` goes to ``or_else(x)``, or
+        fails with ``x``. Defects and interruptions pass through."""
+        from pyfect.channel import _errors
+
+        return _errors.catch_filter(self, filter, f, or_else)
+
+    def catch_cause_filter[EB, X, O2, E2 = Never, D2 = None, R2 = Never](
+        self,
+        filter: Callable[[Cause[OutErr_co]], Result[EB, Cause[X]]],
+        f: Callable[
+            [EB, Cause[OutErr_co]],
+            Channel[O2, E2, D2, InElem_contra, InErr_contra, InDone_contra, R2],
+        ],
+    ) -> Channel[
+        OutElem_co | O2,
+        X | E2,
+        OutDone_co | D2,
+        InElem_contra,
+        InErr_contra,
+        InDone_contra,
+        Env_co | R2,
+    ]:
+        """Go on with ``f(value, cause)`` after a failure ``filter`` maps to
+        ``Ok(value)``; one it maps to ``Err(rest)`` fails with ``rest``."""
+        from pyfect.channel import _errors
+
+        return _errors.catch_cause_filter(self, filter, f)
 
     def catch_defect[O2, E2 = Never, D2 = None, R2 = Never](
         self,

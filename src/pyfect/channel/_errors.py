@@ -22,6 +22,7 @@ from pyfect.channel._constructors import empty, fail, from_effect_drain
 from pyfect.channel._constructors import fail_cause as fail_cause_channel
 from pyfect.exit import Failure
 from pyfect.pull import is_done_cause
+from pyfect.result import Err, Ok, Result
 from pyfect.scope import CloseableScope
 
 if TYPE_CHECKING:
@@ -93,6 +94,37 @@ def catch_if(
         return fail(error) if or_else is None else or_else(error)
 
     return catch_all(self, handle)
+
+
+def catch_filter(
+    self: AnyChannel,
+    filter: Callable[[Any], Result[Any, Any]],
+    f: Handler,
+    or_else: Handler | None,
+) -> Channel_:
+    def handle(error: Any) -> AnyChannel:
+        match filter(error):
+            case Ok(value):
+                return f(value)
+            case Err(rest):
+                return fail(rest) if or_else is None else or_else(rest)
+
+    return catch_all(self, handle)
+
+
+def catch_cause_filter(
+    self: AnyChannel,
+    filter: Callable[[Cause[Any]], Result[Any, Cause[Any]]],
+    f: Callable[[Any, Cause[Any]], AnyChannel],
+) -> Channel_:
+    def handle(cause: Cause[Any]) -> AnyChannel:
+        match filter(cause):
+            case Ok(value):
+                return f(value, cause)
+            case Err(rest):
+                return fail_cause_channel(rest)
+
+    return catch_cause(self, handle)
 
 
 def catch_defect(self: AnyChannel, f: Callable[[BaseException], AnyChannel]) -> Channel_:

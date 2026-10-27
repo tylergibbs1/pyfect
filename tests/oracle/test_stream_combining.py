@@ -1,5 +1,5 @@
 """Ports of Effect's ``Stream.test.ts``: the ``concat``, ``flatMap``,
-``mapEffect with concurrency``, ``switchMap``, ``zipWithArray``,
+``flattening``, ``mapEffect with concurrency``, ``switchMap``, ``zipWithArray``,
 ``interleave``, ``merge`` and ``raceAll`` sections, and ``onStart`` /
 ``onEnd``.
 
@@ -22,6 +22,10 @@ Adapted, with the reason:
   through the scheduler, so in order the failure takes more scheduler
   turns than the one ``testing.adjust`` gives before it moves time. (A
   hang would still fail the test: the runner reports a deadlock.)
+
+- The two "supports dropping parens in pipe" titles pipe a lambda that
+  calls the method: pyright cannot solve an unbound generic method passed
+  to ``pipe``, and methods are how pyfect spells these combinators.
 
 Not ported:
 
@@ -149,6 +153,23 @@ def test_runs_nested_chains_in_order_closing_each_part_before_the_next_starts():
 
 
 # --- flatMap --------------------------------------------------------------------
+
+
+# --- flattening ---------------------------------------------------------------------
+
+
+@testing.effect
+def test_flatten_supports_dropping_parens_in_pipe():
+    """flatten supports dropping parens in pipe"""
+    nested = stream.make(stream.make(1, 2), stream.make(3, 4))
+    assert (yield from nested.pipe(lambda s: s.flatten()).run_collect()) == [1, 2, 3, 4]
+
+
+@testing.effect
+def test_flatten_effect_supports_dropping_parens_in_pipe():
+    """flattenEffect supports dropping parens in pipe"""
+    effects = stream.make(fx.succeed(1), fx.succeed(2), fx.succeed(3))
+    assert (yield from effects.pipe(lambda s: s.flatten_effect()).run_collect()) == [1, 2, 3]
 
 
 @testing.effect

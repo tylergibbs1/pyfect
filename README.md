@@ -151,8 +151,8 @@ moves a chunk at a time while its functions see one item at a time. Build one wi
 `callback` with backpressure, `from_queue`, `from_pubsub`, `from_async_iterable`, `tick`,
 `from_schedule`, ...), transform it with methods (`map`, `map_effect(concurrency=)`,
 `flat_map`, `filter`, `take`, `scan`, `grouped`, `zip`, `merge`, `catch_all`, `retry`,
-`debounce`, `throttle`, `timeout`, `buffer`, ...; the error-removing `catch_tag` is a
-function for `.pipe`) and run it with `run_collect`, `run_fold`, `run_for_each`,
+`debounce`, `throttle`, `timeout`, `buffer`, `with_span`, ...; the error-removing
+`catch_tag` and the providers `provide` / `provide_service` are functions for `.pipe`) and run it with `run_collect`, `run_fold`, `run_for_each`,
 `run_head` or `to_pull`. `fx.stream.range(0, 3)` is `0, 1, 2`, as Python's `range`;
 `range_inclusive` is Effect's. `SubscriptionRef.changes()` is a stream. Split one with
 `group_by_key`, `partition`, `broadcast_n` or `share`, hand it to a queue or pubsub with
@@ -344,15 +344,15 @@ generators never use it. Parameters are still required to be annotated.
 
 ## Roadmap
 
-Concurrency and dependency injection (M2), time (M3) and concurrent data structures (M4:
-Queue, PubSub, the Ref family, Pool, Cache, Request batching) are done; see
+Concurrency and dependency injection (M2), time (M3), concurrent data structures (M4:
+Queue, PubSub, the Ref family, Pool, Cache, Request batching), observability (M5) and
+streams (M6: Pull, Channel, Stream, Sink, the text framers) are done; see
 [`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
 
-1. **Streams**: `Stream`, `Sink`, `Channel` on top of `Queue`.
-2. **Observability**: `Logger`, spans via `@fx.fn`, OpenTelemetry bridge, metrics.
+1. **Config and data**: typed config providers, `Redacted`.
+2. **Schema**: built on what Python already has (dataclasses, pydantic) rather than a
+   reimplementation.
 3. **More building blocks**: `STM`.
-4. **Config and Schema**: typed config providers; schema built on what Python already has
-   (dataclasses, pydantic) rather than a reimplementation.
 
 ## Development
 

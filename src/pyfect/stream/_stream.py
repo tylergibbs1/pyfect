@@ -27,6 +27,7 @@ from pyfect.stream._fanout_methods import FanOutMethods
 from pyfect.stream._filter_methods import FilterMethods
 from pyfect.stream._map_methods import MapMethods
 from pyfect.stream._run_methods import RunMethods
+from pyfect.stream._service_methods import ServiceMethods
 from pyfect.stream._sink_methods import SinkMethods
 from pyfect.stream._timing_methods import TimingMethods
 from pyfect.stream._zip_methods import ZipMethods
@@ -45,6 +46,7 @@ class Stream(
     ZipMethods[A_co, E_co, R_co],
     ErrorMethods[A_co, E_co, R_co],
     TimingMethods[A_co, E_co, R_co],
+    ServiceMethods[A_co, E_co, R_co],
     RunMethods[A_co, E_co, R_co],
     SinkMethods[A_co, E_co, R_co],
     FanOutMethods[A_co, E_co, R_co],
@@ -56,7 +58,8 @@ class Stream(
 
     Build streams with the functions in ``pyfect.stream``; methods that
     keep or add to the type parameters are here. Combinators that remove
-    something from a type (``scoped``, ``catch_tag``, ``catch_if``) are
+    something from a type (``scoped``, ``catch_tag``, ``catch_if``,
+    ``provide*``, ``update_context``) are
     functions in ``pyfect.stream``, used with ``.pipe``.
     """
 

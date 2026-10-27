@@ -2157,6 +2157,59 @@ def check_channel_transforms(
     assert_type(source.drain(), _Ch[Never, ValueError, str, object, object, object, Replica])
 
 
+def check_channel_filter_maps(
+    source: _Ch[int, ValueError, str, object, object, object, Replica],
+    chunks: _Ch[tuple[int, ...], ValueError, str, object, object, object, Replica],
+) -> None:
+    def halve(n: int) -> fx.Result[float, int]:
+        return fx.Ok(n / 2) if n % 2 == 0 else fx.Err(n)
+
+    def halve_effect(n: int) -> fx.Effect[fx.Result[float, int], KeyError, Port]:
+        return fx.succeed(halve(n))
+
+    assert_type(
+        source.filter_map(halve), _Ch[float, ValueError, str, object, object, object, Replica]
+    )
+    assert_type(
+        source.filter_map_effect(halve_effect),
+        _Ch[float, ValueError | KeyError, str, object, object, object, Replica | Port],
+    )
+    assert_type(
+        chunks.filter_map_array(halve),
+        _Ch[tuple[float, ...], ValueError, str, object, object, object, Replica],
+    )
+    assert_type(
+        chunks.filter_map_array_effect(halve_effect),
+        _Ch[tuple[float, ...], ValueError | KeyError, str, object, object, object, Replica | Port],
+    )
+    source.filter_map_array(halve)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+def check_channel_catch_filters(
+    source: _Ch[int, NotFound | Invalid, str, object, object, object, Replica],
+) -> None:
+    def not_found(e: NotFound | Invalid) -> fx.Result[NotFound, Invalid]:
+        return fx.Ok(e) if isinstance(e, NotFound) else fx.Err(e)
+
+    def found_cause(c: fx.Cause[NotFound | Invalid]) -> fx.Result[str, fx.Cause[Invalid]]:
+        return fx.Ok("found")
+
+    assert_type(
+        source.catch_filter(not_found, lambda e: fx.channel.succeed(e.key)),
+        _Ch[int | str, Invalid, str | None, object, object, object, Replica],
+    )
+    assert_type(
+        source.catch_filter(
+            not_found, lambda e: fx.channel.succeed(e.key), or_else=lambda _: fx.channel.empty
+        ),
+        _Ch[int | str, Never, str | None, object, object, object, Replica],
+    )
+    assert_type(
+        source.catch_cause_filter(found_cause, lambda s, _: fx.channel.succeed(s)),
+        _Ch[int | str, Invalid, str | None, object, object, object, Replica],
+    )
+
+
 def check_channel_failures(
     source: _Ch[int, NotFound | Invalid, str, object, object, object, Replica],
 ) -> None:
@@ -2389,6 +2442,40 @@ def check_stream_scopes(
     assert_type(fx.stream.unwrap(made), _St[int, NotFound, Primary])
     assert_type(needs_scope.pipe(fx.stream.scoped), _St[int, NotFound, Primary])
     assert_type(only_scope.pipe(fx.stream.scoped), _St[int, NotFound])
+
+
+def check_stream_services(
+    source: _St[int, ValueError, Replica | Port],
+    only_port: _St[int, ValueError, Port],
+    port_layer: fx.Layer[Port, KeyError, Primary],
+) -> None:
+    assert_type(source.pipe(fx.stream.provide_service(Port, 1)), _St[int, ValueError, Replica])
+    assert_type(only_port.pipe(fx.stream.provide_service(Port, 1)), _St[int, ValueError])
+    assert_type(
+        source.pipe(fx.stream.provide_service_effect(Port, fx.fail(KeyError()).as_(1))),
+        _St[int, ValueError | KeyError, Replica],
+    )
+    assert_type(
+        only_port.pipe(fx.stream.provide_context(fx.Context.make(Port, 1))), _St[int, ValueError]
+    )
+    assert_type(
+        source.pipe(fx.stream.provide(fx.Context.make(Port, 1))), _St[int, ValueError, Replica]
+    )
+    assert_type(
+        source.pipe(fx.stream.provide(port_layer)),
+        _St[int, ValueError | KeyError, Replica | Primary],
+    )
+
+    def add_port(ctx: fx.Context[Primary]) -> fx.Context[Primary | Port]:
+        return ctx.add(Port, 1)
+
+    assert_type(only_port.pipe(fx.stream.update_context(add_port)), _St[int, ValueError, Primary])
+    assert_type(
+        source.update_service(Primary, lambda db: db),
+        _St[int, ValueError, Replica | Port | Primary],
+    )
+    assert_type(source.with_span("s"), _St[int, ValueError, Replica | Port])
+    source.pipe(fx.stream.provide_service(Port, "not an int"))  # pyright: ignore[reportArgumentType]
 
 
 def check_stream_runs(source: _St[int, ValueError, Replica], words: _St[str]) -> None:

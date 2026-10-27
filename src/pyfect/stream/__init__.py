@@ -11,7 +11,8 @@ at a time while its functions take one item at a time::
     fx.run_sync(stream.range(0, 5).run_collect())  # [0, 1, 2, 3, 4]
 
 Constructors are functions here, and so are the combinators that remove
-something from a stream's type (``scoped``, ``catch_tag``, ``catch_if``),
+something from a stream's type (``scoped``, ``catch_tag``, ``catch_if``,
+``provide``, ``provide_service``, ``provide_context``, ``update_context``, ...),
 used with ``.pipe``, and the ones combining any number of streams
 (``merge_all``, ``zip_latest_all``, ``race_all``); the rest (``map``,
 ``flat_map``, ``take``, ``zip``, ``merge``, ``catch_all``, ``debounce``,
@@ -55,6 +56,13 @@ from pyfect.stream._constructors import (
     sync,
     unfold,
     unwrap,
+)
+from pyfect.stream._context import (
+    provide,
+    provide_context,
+    provide_service,
+    provide_service_effect,
+    update_context,
 )
 from pyfect.stream._fanout_methods import GROUP_BUFFER_SIZE
 from pyfect.stream._many import merge_all, race_all, zip_latest_all
@@ -113,6 +121,10 @@ __all__ = [
     "merge_all",
     "never",
     "paginate",
+    "provide",
+    "provide_context",
+    "provide_service",
+    "provide_service_effect",
     "race_all",
     "range",
     "range_inclusive",
@@ -128,5 +140,6 @@ __all__ = [
     "transform_pull_bracket",
     "unfold",
     "unwrap",
+    "update_context",
     "zip_latest_all",
 ]

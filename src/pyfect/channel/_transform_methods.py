@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from pyfect.channel._channel import Channel
     from pyfect.errors import Done
     from pyfect.pull import Pull
+    from pyfect.result import Result
     from pyfect.take import Take
 
 
@@ -219,6 +220,44 @@ class TransformMethods(
         from pyfect.channel import _filters
 
         return _filters.filter_array_effect(self, predicate)
+
+    def filter_map[B](
+        self, f: Callable[[OutElem_co], Result[B, object]]
+    ) -> Channel[B, OutErr_co, OutDone_co, InElem_contra, InErr_contra, InDone_contra, Env_co]:
+        """Write ``value`` for each item ``f`` maps to ``Ok(value)``; skip
+        the items it maps to ``Err``."""
+        from pyfect.channel import _filters
+
+        return _filters.filter_map(self, f)
+
+    def filter_map_effect[B, E2 = Never, R2 = Never](
+        self, f: Callable[[OutElem_co], Effect[Result[B, object], E2, R2]]
+    ) -> Channel[
+        B, OutErr_co | E2, OutDone_co, InElem_contra, InErr_contra, InDone_contra, Env_co | R2
+    ]:
+        """``filter_map`` with an effectful ``f``."""
+        from pyfect.channel import _filters
+
+        return _filters.filter_map_effect(self, f)
+
+    def filter_map_array[A, B, E, D, I, IE, ID, R](
+        self: TransformMethods[tuple[A, ...], E, D, I, IE, ID, R],
+        f: Callable[[A], Result[B, object]],
+    ) -> Channel[tuple[B, ...], E, D, I, IE, ID, R]:
+        """``filter_map`` on the items of each tuple, skipping tuples left
+        empty."""
+        from pyfect.channel import _filters
+
+        return _filters.filter_map_array(self, f)
+
+    def filter_map_array_effect[A, B, E, D, I, IE, ID, R, E2 = Never, R2 = Never](
+        self: TransformMethods[tuple[A, ...], E, D, I, IE, ID, R],
+        f: Callable[[A], Effect[Result[B, object], E2, R2]],
+    ) -> Channel[tuple[B, ...], E | E2, D, I, IE, ID, R | R2]:
+        """``filter_map_array`` with an effectful ``f``."""
+        from pyfect.channel import _filters
+
+        return _filters.filter_map_array_effect(self, f)
 
     def scan[S](
         self, initial: S, f: Callable[[S, OutElem_co], S]

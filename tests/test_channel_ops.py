@@ -9,6 +9,7 @@ from typing import Any, Never
 
 import pyfect as fx
 from pyfect import channel, schedule, testing
+from pyfect.result import Err, Ok, Result
 from pyfect.scope import acquire_release
 from pyfect.tracer import AnySpan, ExternalSpan
 
@@ -385,3 +386,44 @@ def test_callback_shuts_its_queue_down_when_the_channel_closes():
 
     assert (yield from channel.callback(register).run_head()) == fx.Some(1)
     assert not (yield from queues[0].offer(2))
+
+
+# --- filter_map and catch_filter -------------------------------------------------------
+
+
+def _big_evens(n: int) -> Result[int, int]:
+    return Ok(n * 10) if n >= 4 and n % 2 == 0 else Err(n)
+
+
+@testing.effect
+def test_filter_map_array_skips_tuples_left_empty():
+    source = channel.from_iterable_array(range(1, 8), chunk_size=2)
+    assert (yield from source.filter_map_array(_big_evens).run_collect()) == [(40,), (60,)]
+    effectful = source.filter_map_array_effect(lambda n: fx.succeed(_big_evens(n)))
+    assert (yield from effectful.run_collect()) == [(40,), (60,)]
+
+
+@testing.effect
+def test_filter_map_skips_many_items_without_growing_the_stack():
+    kept = channel.from_iterable(range(100_000)).filter_map(
+        lambda n: Ok(n) if n == 99_999 else Err(n)
+    )
+    assert (yield from kept.run_collect()) == [99_999]
+    kept_effect = channel.from_iterable(range(100_000)).filter_map_effect(
+        lambda n: fx.succeed(Ok(n) if n == 99_999 else Err(n))
+    )
+    assert (yield from kept_effect.run_collect()) == [99_999]
+
+
+def _over_five(error: int) -> Result[int, str]:
+    return Ok(error) if error > 5 else Err(f"small {error}")
+
+
+@testing.effect
+def test_catch_filter_fails_with_the_rest_or_hands_it_to_or_else():
+    failed = channel.fail(3).catch_filter(_over_five, channel.succeed)
+    assert (yield from failed.run_collect().exit()) == fx.exit.fail("small 3")
+    handled = channel.fail(3).catch_filter(
+        _over_five, channel.succeed, or_else=lambda rest: channel.succeed(f"else {rest}")
+    )
+    assert (yield from handled.run_collect()) == ["else small 3"]

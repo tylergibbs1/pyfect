@@ -6,9 +6,7 @@ Each test's docstring is the Effect test title. Chunks are tuples here,
 ``Uint8Array`` is ``bytes``, Effect's inclusive ``Stream.range(a, b)`` is
 ``stream.range_inclusive(a, b)`` (``stream.range`` follows Python's), and
 ``fromArray`` / ``fromIteratorSucceed`` are ``from_iterable``.
-``provideService`` comes from ``tests/oracle/_stream_ops.py`` until the
-Stream context functions are added; the operator sections are ported in
-``test_stream_*.py``.
+The operator sections are ported in ``test_stream_*.py``.
 
 Adapted, with the reason:
 
@@ -39,8 +37,6 @@ from typing import Any, Protocol
 
 import pyfect as fx
 from pyfect import stream, testing
-
-from . import _stream_ops as ops
 
 # --- callback --------------------------------------------------------------------
 
@@ -252,7 +248,7 @@ def test_service():
     result = yield from (
         stream.service(Greeter)
         .map(lambda greeter: greeter.greet("World"))
-        .pipe(ops.provide_service(Greeter, _Greeter()))
+        .pipe(stream.provide_service(Greeter, _Greeter()))
         .run_collect()
     )
     assert result == ["Hello, World!"]
@@ -264,7 +260,7 @@ def test_service_option_some():
     result = yield from (
         stream.service_option(Greeter)
         .map(lambda found: fx.option.map(found, lambda g: g.greet("World")))
-        .pipe(ops.provide_service(Greeter, _Greeter()))
+        .pipe(stream.provide_service(Greeter, _Greeter()))
         .run_collect()
     )
     assert result == [fx.Some("Hello, World!")]

@@ -10,6 +10,9 @@ run. ``Stream.take(n)`` / ``Stream.runDrain`` are ``run_for_each_while``
 counting to ``n``; ``countOps`` counts scheduled tasks with
 ``MaxOpsBeforeYield`` at 1 (one per operation).
 
+A ``Filter`` is a function returning ``Ok(value)`` or ``Err(rest)``
+(``pyfect.result``), as in ``Stream``; ``Filter.make`` is not needed.
+
 Not ported:
 
 - ``fromArray`` and ``fromChunk`` are ``from_iterable`` over a list or a
@@ -19,16 +22,10 @@ Not ported:
   negatives are normalized.
 - ``fromReadableStream``, ``fromTransformStream`` (four titles): Web
   Streams have no Python counterpart (PARITY.md).
-- ``filterMap with Filter``, ``filterMapEffect with FilterEffect``,
-  ``catchFilter with Filter``, ``catchCauseFilter with Filter``: the
-  ``Filter`` module is not ported (PARITY.md); ``filter`` / ``catch_if``
-  cover them.
 - ``catchReason orElse``, ``catchReason ignores non-matching parent tag``,
   ``catchReasons orElse`` and the three ``unwrapReason`` titles: reason
   errors (an error wrapping a tagged ``reason``) have no pyfect design yet
   (PARITY.md, Effect core A).
-- ``catchFilter`` in the ``typed recovery with mixed causes`` recoveries,
-  for the same reason as above.
 """
 
 import asyncio
@@ -41,6 +38,7 @@ import pyfect as fx
 from pyfect import cause, channel, schedule, testing
 from pyfect._wake_tracking import WakeTracker
 from pyfect.duration import Seconds
+from pyfect.result import Err, Ok, Result
 from pyfect.scheduler import Cancel, Scheduler, Task
 
 
@@ -431,6 +429,33 @@ def test_map_effect_interrupts_pending_tasks_on_failure():
     assert ex == fx.exit.fail("boom")
 
 
+# --- filtering ----------------------------------------------------------------------
+
+
+@testing.effect
+def test_filter_map_with_filter():
+    """filterMap with Filter"""
+
+    def double_evens(n: int) -> Result[int, int]:
+        return Ok(n * 2) if n % 2 == 0 else Err(n)
+
+    result = yield from channel.from_iterable([1, 2, 3, 4]).filter_map(double_evens).run_collect()
+    assert result == [4, 8]
+
+
+@testing.effect
+def test_filter_map_effect_with_filter_effect():
+    """filterMapEffect with FilterEffect"""
+
+    def above_two(n: int) -> fx.Effect[Result[int, int]]:
+        return fx.succeed(Ok(n + 1) if n > 2 else Err(n))
+
+    result = (
+        yield from channel.from_iterable([1, 2, 3, 4]).filter_map_effect(above_two).run_collect()
+    )
+    assert result == [4, 5]
+
+
 # --- encoding -----------------------------------------------------------------------
 
 
@@ -659,6 +684,33 @@ def test_catch_if_with_predicate():
 
 
 @testing.effect
+def test_catch_filter_with_filter():
+    """catchFilter with Filter"""
+
+    def boom(error: str) -> Result[str, str]:
+        return Ok(error) if error == "boom" else Err(error)
+
+    recovered = channel.fail("boom").catch_filter(
+        boom, lambda error: channel.succeed(f"recovered: {error}")
+    )
+    assert (yield from recovered.run_collect()) == ["recovered: boom"]
+
+
+@testing.effect
+def test_catch_cause_filter_with_filter():
+    """catchCauseFilter with Filter"""
+
+    def find_error(c: fx.Cause[str]) -> Result[str, fx.Cause[str]]:
+        found = c.find_recoverable_error()
+        return Ok(found.error) if isinstance(found, cause.Fail) else Err(c)
+
+    recovered = channel.fail("boom").catch_cause_filter(
+        find_error, lambda error, _: channel.succeed(f"recovered: {error}")
+    )
+    assert (yield from recovered.run_collect()) == ["recovered: boom"]
+
+
+@testing.effect
 def test_catch_tag_or_else():
     """catchTag orElse"""
 
@@ -704,6 +756,7 @@ _recoveries: dict[str, _Recovery] = {
     "catch": lambda c: c.catch_all(lambda _: _recovered),
     "catchTag": lambda c: c.pipe(channel.catch_tag(MixedError, lambda _: _recovered)),
     "catchIf": lambda c: c.catch_if(lambda _: True, lambda _: _recovered),
+    "catchFilter": lambda c: c.catch_filter(Ok, lambda _: _recovered),
     "ignore": lambda c: c.ignore(),
     "retry": lambda c: _fail_once(c).retry(schedule.recurs(1)),
 }
