@@ -26,3 +26,4 @@ yarn-error.log*
 next-env.d.ts
 # API reference JSON, written by `bun run generate:api`
 /.generated/
+.env*
