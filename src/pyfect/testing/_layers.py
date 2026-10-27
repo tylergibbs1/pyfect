@@ -14,7 +14,7 @@ from pyfect.duration import Duration, to_seconds
 from pyfect.effect import Effect, provide_service
 from pyfect.exit import Success
 from pyfect.layer import Layer
-from pyfect.run import _unwrap
+from pyfect.run import unwrap
 from pyfect.scope import CloseableScope, Scope
 from pyfect.testing._clock import TestClock
 from pyfect.testing._runtime import AsyncioRuntime, Runtime, SyncRuntime
@@ -129,11 +129,11 @@ def _held[T](
     context = Context.empty() if clock is None else Context.empty().add(Clock, clock)
     resources = CloseableScope()
     try:
-        built = _unwrap(runtime.run(build(resources), context, timeout=limit))
+        built = unwrap(runtime.run(build(resources), context, timeout=limit))
         yield built, context, runtime
     finally:
         closed = runtime.run(resources.close(Success(None)), context, timeout=limit)
         if clock is not None:
             clock.stop_warning()
         runtime.close()
-        _unwrap(closed)
+        unwrap(closed)

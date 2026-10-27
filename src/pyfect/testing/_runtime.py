@@ -17,7 +17,7 @@ from pyfect.clock import Clock
 from pyfect.context import Context
 from pyfect.duration import Seconds
 from pyfect.exit import Exit, Failure
-from pyfect.run import _await_fiber
+from pyfect.run import await_fiber
 from pyfect.scheduler import AsyncioScheduler, Cancel, Scheduler, StalledError, SyncScheduler
 from pyfect.testing._clock import TestClock
 
@@ -157,9 +157,6 @@ async def run_on_loop[A, E](
 ) -> Exit[A, E]:
     """Run on the running loop. Cancelling the awaiting task interrupts the
     fiber and waits for its finalizers."""
-    loop = asyncio.get_running_loop()
-    done: asyncio.Future[Exit[A, E]] = loop.create_future()
     fiber, deadline = _start(scheduler, eff, context, timeout)
-    fiber.unsafe_add_observer(done.set_result)
-    ex = await _await_fiber(fiber, done)
+    ex = await await_fiber(fiber)
     return deadline.check(ex, context)

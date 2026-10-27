@@ -10,7 +10,7 @@ from pyfect.clock import Clock
 from pyfect.context import Context
 from pyfect.duration import Duration, to_seconds
 from pyfect.exit import Exit
-from pyfect.run import _unwrap
+from pyfect.run import unwrap
 from pyfect.scheduler import AsyncioScheduler
 from pyfect.testing._clock import TestClock
 from pyfect.testing._runtime import SyncRuntime, run_on_loop
@@ -45,7 +45,7 @@ def run_test[A](
     warning_delay: Duration = 1.0,
     timeout: Duration | None = None,
 ) -> A:
-    return _unwrap(
+    return unwrap(
         run_test_exit(
             eff, stall_timeout=stall_timeout, warning_delay=warning_delay, timeout=timeout
         )
@@ -71,4 +71,4 @@ async def run_test_async_exit[A, E](
 async def run_test_async[A](
     eff: Effect[A, Never, Never], *, warning_delay: Duration = 1.0, timeout: Duration | None = None
 ) -> A:
-    return _unwrap(await run_test_async_exit(eff, warning_delay=warning_delay, timeout=timeout))
+    return unwrap(await run_test_async_exit(eff, warning_delay=warning_delay, timeout=timeout))

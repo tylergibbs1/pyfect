@@ -1,0 +1,61 @@
+"""Root fibers: the fibers the run functions and runtimes start."""
+# pyright: reportPrivateUsage=false
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+from pyfect._core import Effect
+from pyfect._fiber import Fiber, _thread
+from pyfect.context import Context
+from pyfect.scheduler import AsyncioScheduler, CurrentScheduler, Scheduler
+
+
+def new_root(
+    run_scheduler: Scheduler,
+    context: Context,
+    *,
+    scheduler: Scheduler | None = None,
+    uninterruptible: bool = False,
+) -> Fiber[Any, Any]:
+    """An unstarted fiber with no parent, of the run on ``run_scheduler``.
+    ``scheduler`` is provided as its ``CurrentScheduler``."""
+    if scheduler is not None:
+        context = context.add(CurrentScheduler, scheduler)
+    return Fiber(run_scheduler, context, None, interruptible=not uninterruptible)
+
+
+def start_root(fiber: Fiber[Any, Any], eff: Effect[Any, Any, Any], *, now: bool = False) -> None:
+    """Start a root fiber. Called from a fiber of the same run, or with
+    ``now`` (the caller is on the run's thread and no fiber of it is
+    running), it runs at once, up to its first wait, before this returns
+    (Effect evaluates it synchronously); otherwise it is scheduled."""
+    if now or _thread.run_scheduler is fiber._run_scheduler:
+        fiber._drain((fiber, eff), unwinding=False)
+    else:
+        fiber._start(eff)
+
+
+def ambient_run(scheduler: Scheduler | None) -> tuple[Scheduler, bool]:
+    """The run a root fiber started here joins, and whether it can start
+    at once: the current fiber's (it can), else the running asyncio loop's
+    (it can: this is the loop's thread), else ``scheduler``, which the
+    caller then drives (it is scheduled)."""
+    if _thread.run_scheduler is not None:
+        return _thread.run_scheduler, True
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        if scheduler is None:
+            raise NoRunError(
+                "run_fork needs a running fiber, a running asyncio loop, or a scheduler "
+                "to run on; use run_sync or run_async otherwise"
+            ) from None
+        return scheduler, False
+    return AsyncioScheduler(loop), True
+
+
+class NoRunError(RuntimeError):
+    """``run_fork`` or ``run_callback`` was called with nothing to run the
+    fiber: no fiber, no asyncio loop and no scheduler."""

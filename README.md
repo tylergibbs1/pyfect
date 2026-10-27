@@ -61,7 +61,11 @@ error it handles; `provide` removes exactly what a layer builds and leaves the r
 **A fiber runtime of its own.** Fibers run on pyfect's scheduler, not as asyncio tasks. The
 same program runs synchronously (`run_sync`, no event loop, sleeps and forks included) or on
 asyncio (`run_async`, `run_main`, interop with `from_async`). `blocking` moves blocking calls
-to a thread. `run_main` interrupts the program on SIGINT/SIGTERM so finalizers run, then exits
+to a thread. `run_fork` starts a program and hands back its fiber; every run function but `run_main` takes a
+`context=` with the services it needs. `ManagedRuntime.make(layer)` builds a layer once and runs
+many effects with it (`with` / `async with`, made for a web server's lifespan; see
+[`examples/fastapi_style.py`](examples/fastapi_style.py)).
+`run_main` interrupts the program on SIGINT/SIGTERM so finalizers run, then exits
 130 when the program was only interrupted, or with the error's `TaggedError.exit_code`
 (default 1) when it failed.
 
@@ -205,8 +209,7 @@ generators never use it. Parameters are still required to be annotated.
 
 1. **Streams**: `Stream`, `Sink`, `Channel` on top of `Queue`.
 2. **Observability**: `Logger`, spans via `@fx.fn`, OpenTelemetry bridge, metrics.
-3. **Runtime integration**: `ManagedRuntime` for FastAPI/Django handlers, `fx.launch` for
-   long-running layers.
+3. **Runtime integration**: `fx.launch` for long-running layers.
 4. **More building blocks**: `PubSub`, `Pool`, `Cache`, `Request` batching, `STM`.
 5. **Config and Schema**: typed config providers; schema built on what Python already has
    (dataclasses, pydantic) rather than a reimplementation.

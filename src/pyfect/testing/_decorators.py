@@ -11,7 +11,7 @@ from pyfect._core import Effect, _Gen, _Suspend
 from pyfect.clock import Clock, LiveClock
 from pyfect.context import Context
 from pyfect.duration import Duration, Seconds, to_seconds
-from pyfect.run import _unwrap
+from pyfect.run import unwrap
 from pyfect.scope import Scope, scoped
 from pyfect.testing._clock import TestClock
 from pyfect.testing._layers import Services
@@ -148,7 +148,7 @@ def _make_test(f: Callable[..., Any], options: _Options) -> Callable[..., None]:
                 clock.stop_warning()
             if services is None:
                 runtime.close()
-        _unwrap(ex)
+        unwrap(ex)
 
     marker = pytest.mark.pyfect_live if options.mode == "live" else pytest.mark.pyfect_effect
     return marker(test)

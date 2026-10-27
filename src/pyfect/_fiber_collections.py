@@ -10,10 +10,11 @@ from collections.abc import Hashable, Iterator
 from typing import Any, TypeGuard
 
 from pyfect._core import Effect
-from pyfect._fiber import Fiber, _thread
+from pyfect._fiber import Fiber
+from pyfect._root import new_root, start_root
 from pyfect.context import Context
 from pyfect.exit import Exit, Failure, Success
-from pyfect.scheduler import CurrentScheduler, Scheduler
+from pyfect.scheduler import Scheduler
 
 INTERNAL_FIBER_ID = -1
 """The interruptor of fibers a collection interrupts itself (replaced,
@@ -66,16 +67,10 @@ class CapturedRuntime:
         run it runs at once, up to its first wait, before the call returns
         (Effect evaluates it synchronously); from anywhere else it is
         scheduled."""
-        context = (
-            self.context if scheduler is None else self.context.add(CurrentScheduler, scheduler)
+        fiber: Fiber[A, E] = new_root(
+            self.run_scheduler, self.context, scheduler=scheduler, uninterruptible=uninterruptible
         )
-        fiber: Fiber[A, E] = Fiber(
-            self.run_scheduler, context, None, interruptible=not uninterruptible
-        )
-        if _thread.run_scheduler is self.run_scheduler:
-            fiber._drain((fiber, eff), unwinding=False)
-        else:
-            fiber._start(eff)
+        start_root(fiber, eff)
         return fiber
 
     def interrupted(self) -> Fiber[Any, Any]:

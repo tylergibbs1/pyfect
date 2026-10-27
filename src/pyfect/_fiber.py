@@ -170,6 +170,7 @@ class Fiber(Generic[A_co, E_co]):
     """A running effect. Obtain one with ``eff.fork()``."""
 
     __slots__ = (
+        "__weakref__",
         "_children",
         "_ctx",
         "_exit",

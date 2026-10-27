@@ -27,6 +27,7 @@ from pyfect._context_managers import acquire_async_context, acquire_context
 from pyfect._core import Effect, Restore, interruptible_mask, uninterruptible_mask
 from pyfect._fiber import Fiber
 from pyfect._iterables import filter, first_success_of, partition, validate
+from pyfect._root import NoRunError
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
 from pyfect.clock import Clock, sleep
 from pyfect.context import Context, MissingServiceError, Reference, Tag
@@ -73,12 +74,24 @@ from pyfect.fiber_map import FiberMap
 from pyfect.fiber_set import FiberSet
 from pyfect.latch import Latch
 from pyfect.layer import Layer, provide
+from pyfect.managed_runtime import ManagedRuntime
 from pyfect.option import Option, Some
 from pyfect.partitioned_semaphore import PartitionedSemaphore
 from pyfect.queue import Done, Queue
 from pyfect.ref import Ref
 from pyfect.result import Err, Ok, Result
-from pyfect.run import run_async, run_async_exit, run_main, run_sync, run_sync_exit
+from pyfect.run import (
+    Interruptor,
+    Teardown,
+    default_teardown,
+    run_async,
+    run_async_exit,
+    run_callback,
+    run_fork,
+    run_main,
+    run_sync,
+    run_sync_exit,
+)
 from pyfect.schedule import Schedule
 from pyfect.scheduler import CurrentScheduler, MaxOpsBeforeYield, PreventSchedulerYield
 from pyfect.scope import (
@@ -112,10 +125,13 @@ __all__ = [
     "FiberMap",
     "FiberSet",
     "Interrupted",
+    "Interruptor",
     "Latch",
     "Layer",
+    "ManagedRuntime",
     "MaxOpsBeforeYield",
     "MissingServiceError",
+    "NoRunError",
     "NoSuchElementException",
     "Ok",
     "Option",
@@ -133,6 +149,7 @@ __all__ = [
     "Success",
     "Tag",
     "TaggedError",
+    "Teardown",
     "TimeoutException",
     "UnhandledError",
     "UnknownError",
@@ -151,6 +168,7 @@ __all__ = [
     "cause",
     "clock",
     "current_fiber",
+    "default_teardown",
     "die",
     "duration",
     "exit",
@@ -182,6 +200,8 @@ __all__ = [
     "result",
     "run_async",
     "run_async_exit",
+    "run_callback",
+    "run_fork",
     "run_main",
     "run_sync",
     "run_sync_exit",

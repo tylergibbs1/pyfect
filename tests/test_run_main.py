@@ -12,14 +12,18 @@ import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
+
+import pyfect as fx
 
 READY = "ready"
 
 _PRELUDE = """\
 import sys
 from dataclasses import dataclass
+from typing import ClassVar
 from typing import ClassVar
 import pyfect as fx
 
@@ -148,3 +152,50 @@ def test_signal_waits_for_uninterruptible_work(tmp_path: Path):
     done = run_main_process(tmp_path, program, send=signal.SIGTERM)
     assert done.stdout.splitlines() == ["done"]
     assert done.returncode == 130
+
+
+def test_default_teardown_maps_exits_to_statuses():
+    """Effect Runtime.defaultTeardown: 0, 130, or the error's exit code."""
+
+    @dataclass
+    class Gone(fx.TaggedError):
+        exit_code: ClassVar[int] = 69
+
+    assert fx.default_teardown(fx.run_sync_exit(fx.void)) == 0
+    assert fx.default_teardown(fx.run_sync_exit(fx.interrupt())) == 130
+    assert fx.default_teardown(fx.run_sync_exit(fx.die(ValueError()))) == 1
+    assert fx.default_teardown(fx.run_sync_exit(fx.fail(Gone()))) == 69
+
+
+def test_a_custom_teardown_sets_the_status(tmp_path: Path):
+    """Effect Runtime.makeRunMain's ``teardown`` option."""
+    program = "fx.run_main(fx.succeed(1), teardown=lambda ex: 3)\nlog('unreachable')\n"
+    done = run_main_process(tmp_path, program)
+    assert done.returncode == 3
+    assert done.stdout == ""
+
+
+def test_disable_error_reporting_exits_without_a_traceback(tmp_path: Path):
+    """Effect Runtime.makeRunMain's ``disableErrorReporting`` option."""
+    program = "fx.run_main(fx.die(ValueError('boom')), disable_error_reporting=True)\n"
+    done = run_main_process(tmp_path, program)
+    assert done.returncode == 1
+    assert done.stderr == ""
+
+
+def test_a_typed_failure_exits_with_its_exit_code(tmp_path: Path):
+    """Effect's ``runMain`` takes an ``Effect<A, E>``: a failure is
+    reported, and ``defaultTeardown`` exits with the error's exit code."""
+    program = """
+    @dataclass
+    class ConfigMissing(fx.TaggedError):
+        exit_code: ClassVar[int] = 78
+        message: str
+
+    fx.run_main(fx.fail(ConfigMissing("no config")))
+    log("unreachable")
+    """
+    done = run_main_process(tmp_path, program)
+    assert done.returncode == 78
+    assert "ConfigMissing" in done.stderr
+    assert done.stdout == ""

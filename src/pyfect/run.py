@@ -5,15 +5,23 @@
   no asyncio loop).
 - ``run_async``: inside a running asyncio loop. Cancelling the awaiting
   task interrupts the fiber and waits for its finalizers.
+- ``run_fork``: start the effect and get its ``Fiber`` back at once, on the
+  current fiber's run or the running asyncio loop. ``run_callback`` is the
+  same with an exit callback, returning a function that interrupts it.
 - ``run_main``: for a script's main program, like Effect's ``runMain``.
   Runs on a fresh asyncio loop; SIGINT and SIGTERM interrupt the fiber so
-  finalizers run. Ends the process with status 130 when interrupted, or the
-  error's ``exit_code`` (``TaggedError.exit_code``, default 1) on failure.
+  finalizers run. It accepts effects that can fail, as Effect's does: the
+  failure is reported, and ``teardown`` turns the exit into the process status;
+  ``default_teardown`` gives 0 on success, 130 when interrupted, or the
+  error's ``exit_code`` (``TaggedError.exit_code``, default 1).
 
-Each has an ``_exit`` variant that returns the ``Exit`` instead of raising,
-and accepts effects that can fail. The plain variants only accept effects
-whose errors are handled (``E = Never``) and whose services are provided
-(``R = Never``); anything else is a type error at the call.
+Each of ``run_sync`` and ``run_async`` has an ``_exit`` variant that
+returns the ``Exit`` instead of raising, and accepts effects that can fail.
+The plain variants only accept effects whose errors are handled
+(``E = Never``). Every run function except ``run_main`` takes a
+``context`` with the services the effect needs (Effect's ``run*With``);
+without one, ``R`` must be ``Never``. Anything else is a type error at the
+call.
 """
 # pyright: reportPrivateUsage=false
 
@@ -23,26 +31,50 @@ import asyncio
 import signal
 import sys
 import threading
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
-from typing import Any, Never
+from typing import Any, Never, Protocol, overload
 
 from pyfect._core import Effect
-from pyfect._fiber import Fiber, root_fiber
+from pyfect._fiber import Fiber
+from pyfect._root import ambient_run, new_root, start_root
 from pyfect.context import Context
 from pyfect.errors import TaggedError
 from pyfect.exit import Exit, Success
-from pyfect.scheduler import AsyncioScheduler, SyncScheduler
+from pyfect.scheduler import AsyncioScheduler, Scheduler, SyncScheduler
+
+_EMPTY: Context[Never] = Context.empty()
+
+type Teardown = Callable[[Exit[Any, Any]], int]
+"""Turns ``run_main``'s exit into the process status."""
 
 
-def run_sync_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]:
+@overload
+def run_sync_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]: ...
+@overload
+def run_sync_exit[A, E, R](eff: Effect[A, E, R], *, context: Context[R]) -> Exit[A, E]: ...
+def run_sync_exit(eff: Effect[Any, Any, Any], *, context: Context = _EMPTY) -> Exit[Any, Any]:
     scheduler = SyncScheduler()
-    fiber: Fiber[A, E] = root_fiber(scheduler, Context.empty())
+    fiber: Fiber[Any, Any] = new_root(scheduler, context)
     fiber._start(eff)
+    return drive(scheduler, fiber)
+
+
+@overload
+def run_sync[A](eff: Effect[A, Never, Never]) -> A: ...
+@overload
+def run_sync[A, R](eff: Effect[A, Never, R], *, context: Context[R]) -> A: ...
+def run_sync(eff: Effect[Any, Never, Any], *, context: Context = _EMPTY) -> Any:
+    return unwrap(run_sync_exit(eff, context=context))
+
+
+def drive[A, E](scheduler: SyncScheduler, fiber: Fiber[A, E]) -> Exit[A, E]:
+    """Run ``scheduler`` on this thread until ``fiber`` is done. On Ctrl-C
+    the fiber is interrupted and its finalizers run before the
+    ``KeyboardInterrupt`` propagates; a second Ctrl-C aborts."""
     try:
         scheduler.run_until(lambda: fiber._exit is not None)
     except KeyboardInterrupt:
-        # Let finalizers run, then re-raise. A second Ctrl-C aborts.
         fiber.unsafe_interrupt_as(None)
         scheduler.run_until(lambda: fiber._exit is not None)
         raise
@@ -51,39 +83,152 @@ def run_sync_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]:
     return ex
 
 
-def run_sync[A](eff: Effect[A, Never, Never]) -> A:
-    return _unwrap(run_sync_exit(eff))
+@overload
+async def run_async_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]: ...
+@overload
+async def run_async_exit[A, E, R](eff: Effect[A, E, R], *, context: Context[R]) -> Exit[A, E]: ...
+async def run_async_exit(
+    eff: Effect[Any, Any, Any], *, context: Context = _EMPTY
+) -> Exit[Any, Any]:
+    fiber: Fiber[Any, Any] = new_root(AsyncioScheduler.current(), context)
+    fiber._start(eff)
+    return await await_fiber(fiber)
 
 
-async def run_async_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]:
-    fiber, done = _start_async(eff)
-    return await _await_fiber(fiber, done)
+@overload
+async def run_async[A](eff: Effect[A, Never, Never]) -> A: ...
+@overload
+async def run_async[A, R](eff: Effect[A, Never, R], *, context: Context[R]) -> A: ...
+async def run_async(eff: Effect[Any, Never, Any], *, context: Context = _EMPTY) -> Any:
+    return unwrap(await run_async_exit(eff, context=context))
 
 
-async def run_async[A](eff: Effect[A, Never, Never]) -> A:
-    return _unwrap(await run_async_exit(eff))
+@overload
+def run_fork[A, E](
+    eff: Effect[A, E, Never], *, scheduler: Scheduler | None = None, uninterruptible: bool = False
+) -> Fiber[A, E]: ...
+@overload
+def run_fork[A, E, R](
+    eff: Effect[A, E, R],
+    *,
+    context: Context[R],
+    scheduler: Scheduler | None = None,
+    uninterruptible: bool = False,
+) -> Fiber[A, E]: ...
+def run_fork(
+    eff: Effect[Any, Any, Any],
+    *,
+    context: Context = _EMPTY,
+    scheduler: Scheduler | None = None,
+    uninterruptible: bool = False,
+) -> Fiber[Any, Any]:
+    """Start ``eff`` on a fiber with no parent and return the fiber.
+
+    Called from a fiber, the new fiber joins that fiber's run and runs at
+    once, up to its first wait. Otherwise it runs on the running asyncio
+    loop, again at once. With neither, ``scheduler``
+    runs it (driving it is up to the caller); without one this raises
+    ``NoRunError``. Inside a run, ``scheduler`` is the fiber's
+    ``CurrentScheduler``."""
+    run, now = ambient_run(scheduler)
+    fiber: Fiber[Any, Any] = new_root(
+        run,
+        context,
+        scheduler=None if scheduler is run else scheduler,
+        uninterruptible=uninterruptible,
+    )
+    start_root(fiber, eff, now=now)
+    return fiber
 
 
-def run_main[A](eff: Effect[A, Never, Never]) -> A:
-    """Run as the program's main fiber; see the module docstring."""
-    ex = asyncio.run(_run_main_exit(eff))
+class Interruptor(Protocol):
+    """Interrupts a fiber started by ``run_callback``, attributed to the
+    fiber with id ``by``. Does not wait."""
+
+    def __call__(self, by: int | None = None, /) -> None: ...
+
+
+@overload
+def run_callback[A, E](
+    eff: Effect[A, E, Never],
+    *,
+    on_exit: Callable[[Exit[A, E]], None] | None = None,
+    scheduler: Scheduler | None = None,
+    uninterruptible: bool = False,
+) -> Interruptor: ...
+@overload
+def run_callback[A, E, R](
+    eff: Effect[A, E, R],
+    *,
+    context: Context[R],
+    on_exit: Callable[[Exit[A, E]], None] | None = None,
+    scheduler: Scheduler | None = None,
+    uninterruptible: bool = False,
+) -> Interruptor: ...
+def run_callback(
+    eff: Effect[Any, Any, Any],
+    *,
+    context: Context = _EMPTY,
+    on_exit: Callable[[Exit[Any, Any]], None] | None = None,
+    scheduler: Scheduler | None = None,
+    uninterruptible: bool = False,
+) -> Interruptor:
+    """``run_fork``, calling ``on_exit`` with the exit when the fiber is
+    done. Returns a function that interrupts the fiber."""
+    fiber = run_fork(eff, context=context, scheduler=scheduler, uninterruptible=uninterruptible)
+    if on_exit is not None:
+        fiber.unsafe_add_observer(on_exit)
+
+    def interrupt(by: int | None = None, /) -> None:
+        fiber.unsafe_interrupt_as(by)
+
+    return interrupt
+
+
+def default_teardown(ex: Exit[Any, Any]) -> int:
+    """Effect's ``defaultTeardown``: 0 on success, 130 when only
+    interrupted, otherwise the squashed error's ``exit_code`` (1 unless a
+    ``TaggedError`` sets it)."""
     if isinstance(ex, Success):
-        return ex.value
+        return 0
     if ex.cause.has_interrupts_only:
-        raise SystemExit(130)
+        return 130
     error = ex.cause.squash()
-    code = error.exit_code if isinstance(error, TaggedError) else 1
+    return error.exit_code if isinstance(error, TaggedError) else 1
+
+
+def run_main[A, E](
+    eff: Effect[A, E, Never],
+    *,
+    teardown: Teardown = default_teardown,
+    disable_error_reporting: bool = False,
+) -> A:
+    """Run as the program's main fiber; see the module docstring.
+
+    Returns the value when the program succeeds and ``teardown`` gives 0;
+    otherwise ends the process with ``teardown``'s status. A failure that
+    is not only an interrupt is reported first, unless
+    ``disable_error_reporting``: with status 1 by raising the error (Python
+    prints its traceback), with any other status by printing the cause."""
+    ex = asyncio.run(_run_main_exit(eff))
+    code = teardown(ex)
+    if isinstance(ex, Success):
+        if code == 0:
+            return ex.value
+        raise SystemExit(code)
+    if ex.cause.has_interrupts_only or disable_error_reporting:
+        raise SystemExit(code)
     if code == 1:
-        # Python prints the traceback and exits 1 for an uncaught exception.
-        return _unwrap(ex)
+        return unwrap(ex)
     print(ex.cause.pretty(), file=sys.stderr)
     raise SystemExit(code)
 
 
-async def _run_main_exit[A](eff: Effect[A, Never, Never]) -> Exit[A, Never]:
-    fiber, done = _start_async(eff)
+async def _run_main_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]:
+    fiber: Fiber[A, E] = new_root(AsyncioScheduler.current(), Context.empty())
+    fiber._start(eff)
     with _interrupt_on_signals(fiber):
-        return await _await_fiber(fiber, done)
+        return await await_fiber(fiber)
 
 
 @contextmanager
@@ -107,17 +252,11 @@ def _interrupt_on_signals(fiber: Fiber[Any, Any]) -> Generator[None]:
             signal.signal(sig, handler)
 
 
-def _start_async[A, E](eff: Effect[A, E, Never]) -> tuple[Fiber[A, E], asyncio.Future[Exit[A, E]]]:
-    loop = asyncio.get_running_loop()
-    fiber: Fiber[A, E] = root_fiber(AsyncioScheduler(loop), Context.empty())
-    done: asyncio.Future[Exit[A, E]] = loop.create_future()
+async def await_fiber[A, E](fiber: Fiber[A, E]) -> Exit[A, E]:
+    """Wait on the running loop for ``fiber``, whose run is the loop's.
+    Cancelling the awaiting task interrupts the fiber and waits for it."""
+    done: asyncio.Future[Exit[A, E]] = asyncio.get_running_loop().create_future()
     fiber.unsafe_add_observer(done.set_result)
-    fiber._start(eff)
-    return fiber, done
-
-
-async def _await_fiber[A, E](fiber: Fiber[A, E], done: asyncio.Future[Exit[A, E]]) -> Exit[A, E]:
-    """Cancelling the awaiting task interrupts the fiber and waits for it."""
     try:
         return await asyncio.shield(done)
     except asyncio.CancelledError:
@@ -126,7 +265,9 @@ async def _await_fiber[A, E](fiber: Fiber[A, E], done: asyncio.Future[Exit[A, E]
         raise
 
 
-def _unwrap[A](ex: Exit[A, Any]) -> A:
+def unwrap[A](ex: Exit[A, Any]) -> A:
+    """The value, or raise the squashed error (with the full cause as a
+    note when there is more than one reason)."""
     if isinstance(ex, Success):
         return ex.value
     error = ex.cause.squash()

@@ -28,7 +28,7 @@ reference do not need it provided, so it never appears in ``R``::
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, ClassVar, Never, Protocol, Self, TypeVar, final
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, Never, Protocol, Self, TypeVar, final
 
 from pyfect._core import Effect, Step
 from pyfect.cause import Cause, Die
@@ -39,6 +39,9 @@ if TYPE_CHECKING:
 
 S_inv = TypeVar("S_inv")
 T_co = TypeVar("T_co", covariant=True)
+# A bare ``Context`` is ``Context[Any]``: the runtime's own contexts are
+# untyped; contexts handed to users and taken from them carry their tags.
+R_contra = TypeVar("R_contra", contravariant=True, default=Any)
 
 
 class MissingServiceError(Exception):
@@ -106,17 +109,24 @@ class TagLike[S, T](Protocol):
 
 
 @final
-class Context:
-    """An immutable map from tag to service."""
+class Context(Generic[R_contra]):
+    """An immutable map from tag to service. ``Context[R]`` holds the
+    services of the tags ``R``, so a context with more services stands in
+    for one with fewer (``Context[A | B]`` is a ``Context[A]``)."""
 
     __slots__ = ("_services",)
 
     def __init__(self, services: Mapping[type[Tag[Any]], Any] | None = None) -> None:
         self._services: dict[type[Tag[Any]], Any] = dict(services or {})
 
-    @classmethod
-    def empty(cls) -> Context:
+    @staticmethod
+    def empty() -> Context[Never]:
         return _EMPTY
+
+    @staticmethod
+    def make[S, T](tag: TagLike[S, T], service: S) -> Context[T]:
+        """A context holding one service."""
+        return Context({tag_class(tag): service})
 
     def lookup(self, tag: type[Tag[Any]]) -> tuple[bool, Any]:
         if tag in self._services:
@@ -125,17 +135,18 @@ class Context:
             return True, _default_of(tag)
         return False, None
 
-    def add(self, tag: type[Tag[Any]], service: object) -> Context:
-        return Context({**self._services, tag: service})
+    def add[S, T](self, tag: TagLike[S, T], service: S) -> Context[R_contra | T]:
+        return Context({**self._services, tag_class(tag): service})
 
-    def merge(self, other: Context) -> Context:
+    def merge[R2](self, other: Context[R2]) -> Context[R_contra | R2]:
+        """Both contexts' services; ``other`` wins where both have a tag."""
         return Context({**self._services, **other._services})
 
     def tags(self) -> tuple[type[Tag[Any]], ...]:
         return tuple(self._services)
 
 
-_EMPTY = Context()
+_EMPTY: Context[Never] = Context()
 _defaults: dict[type[Reference[Any]], Any] = {}
 
 

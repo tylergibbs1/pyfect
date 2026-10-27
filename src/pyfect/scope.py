@@ -68,8 +68,10 @@ class CloseableScope:
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
             ctx = fiber._context
 
+            # As Effect's ``provideContext``: the closing fiber's services,
+            # overridden by those in scope at registration.
             def finalizer(ex: Exit[Any, Any]) -> Effect[object, Never, Any]:
-                return _Locally(_call_user(f, ex), lambda _: ctx)
+                return _Locally(_call_user(f, ex), lambda current: current.merge(ctx))
 
             if self._closed is not None:
                 return finalizer(self._closed).as_void()
@@ -117,16 +119,17 @@ class CloseableScope:
         """A child scope, closed when this one closes (if not before). The
         child of a closed scope starts closed."""
 
-        def body() -> CloseableScope:
-            child = CloseableScope(strategy)
-            if self._closed is not None:
-                child._closed = self._closed
-                return child
-            child._parent = self
-            self._add(child, child.close)
-            return child
+        return _Sync(lambda: self._fork_now(strategy))
 
-        return _Sync(body)
+    def _fork_now(self, strategy: Strategy = "sequential") -> CloseableScope:
+        """``fork``, run at once (Effect's ``Scope.forkUnsafe``)."""
+        child = CloseableScope(strategy)
+        if self._closed is not None:
+            child._closed = self._closed
+            return child
+        child._parent = self
+        self._add(child, child.close)
+        return child
 
 
 type _Entries = list[tuple[object, Finalizer]]

@@ -751,3 +751,46 @@ def check_fiber_set_runner(
 
 def check_fiber_map_async_runner(run: FiberMapAsyncRuntime[str, int, Never, Never]) -> None:
     assert_type(run("a", fx.succeed(1), only_if_missing=True), asyncio.Future[int])
+
+
+# --- running with a context, and ManagedRuntime ---------------------------------------
+
+
+def check_run_with_context(port_ctx: fx.Context[Port], both: fx.Context[Primary | Port]) -> None:
+    assert_type(fx.Context.make(Port, 1), fx.Context[Port])
+    assert_type(fx.Context.make(Port, 1).add(Primary, GoodDb()), fx.Context[Port | Primary])
+    assert_type(fx.Context.empty(), fx.Context[Never])
+    fx.Context.make(Port, "1")  # pyright: ignore[reportArgumentType]
+    assert_type(fx.run_sync(Port(), context=port_ctx), int)
+    assert_type(fx.run_sync(Port(), context=both), int)
+    fx.run_sync(lookup("k").catch_all(lambda _: fx.succeed("")), context=both)
+    fx.run_sync(lookup("k").catch_all(lambda _: fx.succeed("")), context=port_ctx)  # pyright: ignore[reportArgumentType]
+    assert_type(fx.run_sync_exit(lookup("k"), context=both), fx.Exit[str, NotFound | Invalid])
+    assert_type(fx.run_fork(lookup("k"), context=both), fx.Fiber[str, NotFound | Invalid])
+    assert_type(fx.run_fork(fx.succeed(1)), fx.Fiber[int, Never])
+    fx.run_fork(Port())  # pyright: ignore[reportArgumentType]
+    assert_type(fx.run_callback(fx.succeed(1)), fx.Interruptor)
+
+
+def check_run_main() -> None:
+    # As Effect's runMain: errors are allowed (teardown maps them to a status).
+    assert_type(fx.run_main(fx.fail(NotFound("k")).as_(1)), int)
+    fx.run_main(Port())  # pyright: ignore[reportArgumentType]
+
+
+def check_managed_runtime() -> None:
+    runtime = fx.ManagedRuntime.make(merged_live)
+    assert_type(runtime, fx.ManagedRuntime[Primary | Port, Never])
+    assert_type(runtime.run_sync(Port()), int)
+    assert_type(runtime.run_sync_exit(lookup("k")), fx.Exit[str, NotFound | Invalid])
+    assert_type(runtime.run_fork(lookup("k")), fx.Fiber[str, NotFound | Invalid])
+    assert_type(runtime.context_effect, fx.Effect[fx.Context[Primary | Port], Never, Never])
+    assert_type(runtime.run_async(Port()), CoroutineType[Any, Any, int]).close()
+    runtime.run_sync(Replica())  # pyright: ignore[reportArgumentType]
+    runtime.run_sync(lookup("k"))  # pyright: ignore[reportArgumentType]
+
+    fallible = fx.ManagedRuntime.make(layer.effect(Port, fx.fail(NotFound("port"))))
+    assert_type(fallible, fx.ManagedRuntime[Port, NotFound])
+    assert_type(fallible.run_sync_exit(Port()), fx.Exit[int, NotFound])
+    # The plain variants need a layer that cannot fail, as they need E = Never.
+    fallible.run_sync(Port())  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
