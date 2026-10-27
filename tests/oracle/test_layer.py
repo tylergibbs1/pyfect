@@ -14,10 +14,12 @@ Omitted, with the reason:
 - "allows passing partial service in dual form": Python has one form,
   ``mock(tag, **members)``.
 - The ``Stream`` / ``Channel`` halves of the mock tests: no Stream yet (M6).
-- "withSpan forwards captureStackTrace to the layer stack frame",
-  "withSpan supports data-first usage and runs the onEnd finalizer",
-  "withParentSpan supports data-last usage with external spans": no tracer
-  yet (M5).
+- "withSpan forwards captureStackTrace to the layer stack frame": pyfect
+  records no stack frames for spans.
+
+``Layer.withSpan`` / ``withParentSpan`` are the ``with_span`` /
+``with_parent_span`` methods (one call form for Effect's data-first and
+data-last ones).
 """
 # pyright: reportPrivateUsage=false
 
@@ -26,6 +28,7 @@ from typing import Never
 import pyfect as fx
 from pyfect import layer, schedule, testing
 from pyfect.context import TagLike
+from pyfect.tracer import AnySpan, ExternalSpan, ParentSpan, Span
 
 ACQUIRE1, ACQUIRE2, ACQUIRE3 = "Acquiring Module 1", "Acquiring Module 2", "Acquiring Module 3"
 RELEASE1, RELEASE2, RELEASE3 = "Releasing Module 1", "Releasing Module 2", "Releasing Module 3"
@@ -695,3 +698,45 @@ def test_forked_memo_maps_reuse_parent_layers_but_isolate_child_layers():
     yield from scope2.close(fx.Success(None))
     yield from scope1.close(fx.Success(None))
     assert log == [ACQUIRE1, ACQUIRE2, ACQUIRE2, RELEASE2, RELEASE2, RELEASE1]
+
+
+class SpanName(fx.Tag[str]): ...
+
+
+class SpanId(fx.Tag[str]): ...
+
+
+def _span_name(span: AnySpan | None) -> str:
+    assert span is not None
+    return span.span_id if isinstance(span, ExternalSpan) else span.name
+
+
+@testing.effect
+def test_with_span_supports_data_first_usage_and_runs_the_on_end_finalizer():
+    """withSpan supports data-first usage and runs the onEnd finalizer"""
+    exits: list[fx.Exit[object, object]] = []
+    scope = fx.CloseableScope()
+    named = layer.effect(SpanName, ParentSpan().map(_span_name))
+
+    def on_end(_span: Span, ex: fx.Exit[object, object]) -> fx.Effect[None]:
+        return fx.sync(lambda: exits.append(ex))
+
+    context = yield from named.with_span("layer-span", on_end=on_end).build_with_scope(scope)
+    assert context.get(SpanName) == "layer-span"
+    assert exits == []
+
+    yield from scope.close(fx.Success(None))
+
+    assert len(exits) == 1
+    assert isinstance(exits[0], fx.Success)
+
+
+@testing.effect
+def test_with_parent_span_supports_data_last_usage_with_external_spans():
+    """withParentSpan supports data-last usage with external spans"""
+    parent = ExternalSpan(
+        span_id="0000000000000001", trace_id="00000000000000000000000000000001", sampled=True
+    )
+    ids = layer.effect(SpanId, ParentSpan().map(_span_name))
+    context = yield from fx.scoped(ids.with_parent_span(parent).build())
+    assert context.get(SpanId) == parent.span_id

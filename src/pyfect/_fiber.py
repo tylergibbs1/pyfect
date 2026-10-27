@@ -40,6 +40,7 @@ import threading
 from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING, Any, Generic, Literal, Never, TypeVar
 
 from pyfect._core import (
@@ -56,6 +57,7 @@ from pyfect._core import (
     _Sync,
     _WithFiber,
 )
+from pyfect._tracer_ref import CurrentTracer
 from pyfect.cause import Cause, Die
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.context import Context, Reference, Tag
@@ -70,6 +72,7 @@ from pyfect.scheduler import (
 
 if TYPE_CHECKING:
     from pyfect.scope import CloseableScope
+    from pyfect.tracer import ContextHook
 
 A_co = TypeVar("A_co", covariant=True)
 E_co = TypeVar("E_co", covariant=True, default=Never)
@@ -208,6 +211,7 @@ class Fiber(Generic[A_co, E_co]):
         "_run_scheduler",
         "_scheduler",
         "_stack",
+        "_tracer_hook",
         "_waiting",
         "id",
     )
@@ -380,6 +384,7 @@ class Fiber(Generic[A_co, E_co]):
         self._ctx = view.context
         self._scheduler: Scheduler = view.scheduler
         self._ops_budget: float = view.ops_budget
+        self._tracer_hook: ContextHook | None = view.tracer_hook
 
     def _start(self, effect: Effect[Any, Any, Any]) -> None:
         self._scheduler.schedule(lambda: self._drive(effect))
@@ -412,7 +417,8 @@ class Fiber(Generic[A_co, E_co]):
                     self._pause(cur)
                     return
                 try:
-                    cur = cur._step(self)
+                    hook = self._tracer_hook
+                    cur = cur._step(self) if hook is None else _run_hooked(hook, cur, self)
                 except Exception as exc:
                     cur = Failure(Cause((Die(exc),)))
             elif isinstance(cur, Success | Failure):
@@ -442,7 +448,11 @@ class Fiber(Generic[A_co, E_co]):
         self._scheduler.schedule(lambda: self._drive(cur))
 
     def _continue(self, frame: Frame, ex: Exit[Any, Any]) -> Step:
+        hook = self._tracer_hook
         try:
+            if hook is not None:
+                step: Callable[[], Step] = partial(_hand_over, frame, ex, self)
+                return hook(step, self)
             if isinstance(ex, Success):
                 return frame._on_success(ex.value, self)
             return frame._on_failure(ex.cause, self)
@@ -649,6 +659,17 @@ def _no_op() -> None:
     pass
 
 
+def _run_hooked(hook: ContextHook, cur: Effect[Any, Any, Any], fiber: Fiber[Any, Any]) -> Step:
+    step: Callable[[], Step] = partial(cur._step, fiber)
+    return hook(step, fiber)
+
+
+def _hand_over(frame: Frame, ex: Exit[Any, Any], fiber: Fiber[Any, Any]) -> Step:
+    if isinstance(ex, Success):
+        return frame._on_success(ex.value, fiber)
+    return frame._on_failure(ex.cause, fiber)
+
+
 class _RunScheduler(Tag[Scheduler]):
     """The scheduler of the run a context was made in."""
 
@@ -664,6 +685,7 @@ class _RunView:
     context: Context
     scheduler: Scheduler
     ops_budget: float
+    tracer_hook: ContextHook | None
 
     @staticmethod
     def of(given: Context, run_scheduler: Scheduler) -> _RunView:
@@ -674,7 +696,9 @@ class _RunView:
             budget = math.inf
         else:
             budget = max(1, context.lookup(MaxOpsBeforeYield)[1])
-        return _RunView(given, run_scheduler, context, context.lookup(CurrentScheduler)[1], budget)
+        scheduler = context.lookup(CurrentScheduler)[1]
+        hook = context.lookup(CurrentTracer)[1].context
+        return _RunView(given, run_scheduler, context, scheduler, budget, hook)
 
 
 # One entry: the view the last fiber switch computed.

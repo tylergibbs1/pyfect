@@ -13,7 +13,7 @@ import asyncio
 import functools
 from collections.abc import Awaitable, Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Never, overload
+from typing import TYPE_CHECKING, Any, Never, Unpack, overload
 
 from pyfect._catch import catch_if, catch_tag
 from pyfect._context_effects import (
@@ -47,6 +47,9 @@ from pyfect.errors import NoSuchElementException, UnknownError
 from pyfect.exit import Exit
 from pyfect.option import Option, Some
 from pyfect.result import Ok, Result
+
+if TYPE_CHECKING:
+    from pyfect.tracer import SpanOptions
 
 # --- constructors -------------------------------------------------------------
 
@@ -328,9 +331,17 @@ def gen[A, E = Never, R = Never](
     return _Gen(f)
 
 
+@overload
 def fn[**P, A, E = Never, R = Never](
-    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
-) -> Callable[P, Effect[A, E, R]]:
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]], /
+) -> Callable[P, Effect[A, E, R]]: ...
+@overload
+def fn(name: str, /, **options: Unpack[SpanOptions]) -> _Traced: ...
+def fn(
+    f: Callable[..., Generator[Effect[Any, Any, Any], Any, Any]] | str,
+    /,
+    **options: Unpack[SpanOptions],
+) -> Callable[..., Effect[Any, Any, Any]] | _Traced:
     """Turn a generator function with parameters into a function that
     returns an effect::
 
@@ -338,13 +349,42 @@ def fn[**P, A, E = Never, R = Never](
         def find_user(user_id: str):
             db = yield from Database()
             ...
+
+    ``@fn("name")`` (with span options as keywords) also runs every call
+    inside a span of that name, the parent of the spans made inside.
     """
+    if isinstance(f, str):
+        return _Traced(f, options)
 
     @functools.wraps(f)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> Effect[A, E, R]:
+    def wrapper(*args: Any, **kwargs: Any) -> Effect[Any, Any, Any]:
         return _Gen(lambda: f(*args, **kwargs))
 
     return wrapper
+
+
+class _Traced:
+    """``@fn("name")``: the decorator that adds the span."""
+
+    __slots__ = ("name", "options")
+
+    def __init__(self, name: str, options: SpanOptions) -> None:
+        self.name = name
+        self.options = options
+
+    def __call__[**P, A, E = Never, R = Never](
+        self, f: Callable[P, Generator[Effect[Any, E, R], Any, A]], /
+    ) -> Callable[P, Effect[A, E, R]]:
+        from pyfect.tracer import use_span
+
+        name, options = self.name, self.options
+
+        @functools.wraps(f)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> Effect[A, E, R]:
+            body: Effect[A, E, R] = _Gen(lambda: f(*args, **kwargs))
+            return use_span(name, body.with_parent_span, **options)
+
+        return wrapper
 
 
 # --- combinators that remove types (use with .pipe) ---------------------------

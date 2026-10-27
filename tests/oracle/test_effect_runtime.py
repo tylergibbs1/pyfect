@@ -10,8 +10,8 @@ Omitted:
 - "callback can branch over sync/async": pyfect's ``callback`` has no
   ``executionMode``; ``run_sync`` drives asynchronous effects to the end.
 - "terminal root failure captures stack frame", "failure without a current
-  frame has no stack annotation and reuses the original exit": stack
-  frame annotations are tracing (M5).
+  frame has no stack annotation and reuses the original exit": pyfect
+  records no stack frames and causes carry no annotations.
 """
 
 import asyncio

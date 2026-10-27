@@ -5,22 +5,18 @@ prefix). ``RequestResolver.make`` is the ``RequestResolver`` constructor
 (its ``run_all`` takes the entries) and ``makeGrouped`` is
 ``make_grouped``; ``Data.Class`` keys are frozen dataclasses and
 ``Effect.serviceOption`` is ``service_option``. Where Effect checks a key
-with ``strictEqual``, the port checks identity (``is``).
-
-Omitted, with the reason:
-
-- "RequestResolver.withSpan > applies span options returned by an
-  options function": tracing is M5.
-"""
+with ``strictEqual``, the port checks identity (``is``)."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 import pytest
 
 import pyfect as fx
 from pyfect import testing
 from pyfect.batching import Entry
+from pyfect.tracer import Span
 
 
 @dataclass(frozen=True)
@@ -156,3 +152,25 @@ def test_releases_the_key_when_the_last_pending_request_is_interrupted():
 
     assert len(keys) == 1
     assert keys[0][0] is nxt
+
+
+@dataclass(frozen=True)
+class GetSpan(fx.Request[Span]):
+    kind: Literal["client", "server"]
+
+
+@testing.effect
+def test_with_span_applies_span_options_returned_by_an_options_function():
+    """RequestResolver.withSpan > applies span options returned by an options function"""
+
+    def run_all(entries: Sequence[Entry[GetSpan]]):
+        span = yield from fx.current_span().or_die()
+        for entry in entries:
+            entry.complete_unsafe(fx.Success(span))
+
+    resolver = fx.RequestResolver(fx.fn(run_all)).with_span(
+        "resolver", lambda entries: {"kind": entries[0].request.kind}
+    )
+    span = yield from fx.request(GetSpan("client"), resolver)
+
+    assert span.kind == "client"

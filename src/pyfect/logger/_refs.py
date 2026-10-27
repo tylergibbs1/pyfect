@@ -59,13 +59,14 @@ class CurrentLogSpans(Reference[tuple[LogSpan, ...]]):
 
 class CurrentLoggers(Reference[tuple[Logger[Any], ...]]):
     """The loggers each log goes to, in order; no logger appears twice.
-    By default only ``logger.default_logger``."""
+    By default ``logger.default_logger`` and ``logger.tracer_logger``."""
 
     @classmethod
     def default(cls) -> tuple[Logger[Any], ...]:
         from pyfect.logger._console import default_logger
+        from pyfect.logger._tracer import tracer_logger
 
-        return (default_logger,)
+        return (default_logger, tracer_logger)
 
 
 class LogToStderr(Reference[bool]):

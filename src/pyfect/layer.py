@@ -54,6 +54,7 @@ from pyfect._layer_core import (
     require_layer,
     require_layers,
 )
+from pyfect._layer_tracing import parent_span, span
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.context import Context, Tag, TagLike, tag_class
@@ -75,9 +76,11 @@ __all__ = [
     "from_build_memo",
     "merge",
     "mock",
+    "parent_span",
     "provide",
     "provide_context",
     "provide_merge",
+    "span",
     "succeed",
     "succeed_context",
     "suspend",

@@ -12,9 +12,6 @@ Omitted, with the reason:
   (``fx.all(*effects)``) or collected with ``for_each``.
 - ``timeoutOrElse`` "data-first" / "pipe" forms: Python has one call form,
   so "factory and body follow cleanup and replay" is ported once.
-- ``timeoutOrElse`` "source and fallback inherit caller context": the span
-  and log-annotation checks wait for tracing and logging (M5); the service,
-  reference and fiber checks are ported.
 - "cached / cachedInvalidateWithTTL never strands a second caller when the
   owner yields before registering cleanup" sweeps a custom ``Scheduler``'s
   ``shouldYield`` points; pyfect's schedulers have no ``should_yield`` (the
@@ -748,31 +745,49 @@ def test_source_and_fallback_inherit_caller_context() -> None:
     @fx.gen
     def caller():
         caller_id = yield from fx.fiber_id()
+        parent_span = yield from fx.current_span().or_die()
 
         @fx.gen
         def source_body():
             observed.append((yield from SourceService()))
             observed.append((yield from Local()))
+            observed.append((yield from fx.current_span().or_die()) is parent_span)
             return (yield from fx.never)
 
         @fx.gen
         def fallback():
+            annotations = yield from fx.CurrentLogAnnotations()
             observed.append((yield from fx.fiber_id()) == caller_id)
             observed.append((yield from Local()))
+            observed.append((yield from fx.current_span().or_die()) is parent_span)
+            observed.append(annotations["request"])
             return (yield from FallbackService())
 
         source = source_body.pipe(fx.provide_service(Local, "source-local"))
         value = yield from source.timeout_or_else(0, lambda: fallback)
         observed.append((yield from Local()))
+        observed.append((yield from fx.current_span().or_die()) is parent_span)
         return value
 
     program = (
         caller.pipe(fx.provide_service(SourceService, "source service"))
         .pipe(fx.provide_service(FallbackService, "fallback service"))
         .pipe(fx.provide_service(Local, "parent-local"))
+        .annotate_logs({"request": "request-value"})
+        .with_span("timeout-parent")
     )
     assert fx.run_sync(program) == "fallback service"
-    assert observed == ["source service", "source-local", True, "parent-local", "parent-local"]
+    assert observed == [
+        "source service",
+        "source-local",
+        True,
+        True,
+        "parent-local",
+        True,
+        "request-value",
+        "parent-local",
+        True,
+    ]
 
 
 def test_external_interruption_stops_a_pending_fallback() -> None:

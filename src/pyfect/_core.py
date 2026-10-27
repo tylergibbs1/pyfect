@@ -14,7 +14,8 @@ the result in ``_on_success`` / ``_on_failure``. The step protocol is in
 - error handling: ``pyfect._effect_errors``
 - folding (``match``, ``exit``, ``result``): ``pyfect._effect_folding``
 - finalizers and interruptibility: ``pyfect._effect_resources``
-- log annotations, spans and loggers: ``pyfect._effect_logging``
+- log annotations, log spans and loggers: ``pyfect._effect_logging``
+- tracing spans: ``pyfect._effect_tracing``
 - forking, racing and timeouts: ``pyfect._effect_concurrency``
 - delays, caching and schedules: ``pyfect._effect_timing``
 
@@ -45,6 +46,7 @@ from pyfect._effect_logging import LoggingMethods
 from pyfect._effect_resources import ResourceMethods, _call_user, _run_finalizer
 from pyfect._effect_services import ServiceMethods
 from pyfect._effect_timing import TimingMethods
+from pyfect._effect_tracing import TracingMethods
 
 if TYPE_CHECKING:
     from pyfect._concurrency import Concurrency
@@ -59,6 +61,7 @@ class Effect(
     ResourceMethods[A_co, E_co, R_co],
     ServiceMethods[A_co, E_co, R_co],
     LoggingMethods[A_co, E_co, R_co],
+    TracingMethods[A_co, E_co, R_co],
     ConcurrencyMethods[A_co, E_co, R_co],
     TimingMethods[A_co, E_co, R_co],
 ):

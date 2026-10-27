@@ -15,7 +15,7 @@ keeps the layers first built through it to itself.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, Generic, Never, Self, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, Unpack, overload
 
 from pyfect._core import Effect, _FailCause, _Locally, _Succeed, _Suspend, _WithFiber
 from pyfect._effect_args import require_effect, wrong_argument
@@ -26,6 +26,10 @@ from pyfect.deferred import Deferred
 from pyfect.effect import never
 from pyfect.exit import Exit, Failure
 from pyfect.scope import CloseableScope, Scope, scoped
+
+if TYPE_CHECKING:
+    from pyfect._layer_tracing import OnEnd
+    from pyfect.tracer import AnySpan, SpanOptions
 
 ROut_contra = TypeVar("ROut_contra", contravariant=True)
 E_co = TypeVar("E_co", covariant=True, default=Never)
@@ -303,6 +307,29 @@ class Layer(Generic[ROut_contra, E_co, RIn_co]):
         layer needs (which it then needs from outside)."""
         updated = effect_context(tag().map(lambda service: Context.make(tag, f(service))))
         return feed(updated, self, keep_dep=False)
+
+    # --- tracing ----------------------------------------------------------------
+
+    def with_span(
+        self,
+        name: str,
+        *,
+        on_end: OnEnd | None = None,
+        **options: Unpack[SpanOptions],
+    ) -> Layer[ROut_contra, E_co, RIn_co]:
+        """Build inside a new span, the parent of the spans made while
+        building. The span ends, and ``on_end`` runs, when the layer's scope
+        closes."""
+        from pyfect._layer_tracing import with_span
+
+        return with_span(self, name, on_end, options)
+
+    def with_parent_span(self, span: AnySpan) -> Layer[ROut_contra, E_co, RIn_co]:
+        """Build with ``span`` as the parent of the spans made while
+        building."""
+        from pyfect._layer_tracing import with_parent_span
+
+        return with_parent_span(self, span)
 
 
 def _in_scope[A, E](eff: Effect[A, E, Any], scope: CloseableScope) -> Effect[A, E, Any]:

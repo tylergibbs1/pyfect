@@ -4,7 +4,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Collection, Hashable, Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Generic, Literal, Never, TypeVar, cast, final, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Literal,
+    Never,
+    TypeVar,
+    Unpack,
+    cast,
+    final,
+    overload,
+)
 
 from pyfect._core import (
     Effect,
@@ -23,6 +34,7 @@ from pyfect.exit import Failure, Success
 
 if TYPE_CHECKING:
     from pyfect.batching._engine import Batch, Slot
+    from pyfect.tracer import SpanOptions
 
 
 @final
@@ -375,6 +387,38 @@ class RequestResolver(Generic[Q_contra, E_co]):
                 _call_user(theirs, entries, key)
             )
         )
+
+    def with_span[Q](
+        self: RequestResolver[Q, E_co],
+        name: str,
+        options: Callable[[Sequence[Entry[Q]]], SpanOptions] | None = None,
+        **span_options: Unpack[SpanOptions],
+    ) -> RequestResolver[Q, E_co]:
+        """Run each batch inside a span, with a ``batchSize`` attribute and
+        links to the spans the requests were made in. ``options`` computes
+        the span options from the batch, in place of the keywords."""
+        from pyfect.tracer import ParentSpan, SpanLink
+
+        run_all = self._run_all
+
+        def build(entries: Sequence[Entry[Q]], key: Hashable) -> Effect[None, E_co]:
+            opts = span_options if options is None else options(entries)
+            links = list(opts.get("links", ()))
+            seen: set[int] = set()
+            for entry in entries:
+                span = entry.context.unsafe_get(ParentSpan)
+                if span is not None and id(span) not in seen:
+                    seen.add(id(span))
+                    links.append(SpanLink(span))
+            attributes = {"batchSize": len(entries), **opts.get("attributes", {})}
+            return run_all(entries, key).with_span(
+                name, **{**opts, "links": links, "attributes": attributes}
+            )
+
+        def traced(entries: Sequence[Entry[Q]], key: Hashable) -> Effect[None, E_co]:
+            return _call_user(build, entries, key)
+
+        return self._with(run_all=traced)
 
     def with_cache(
         self, *, capacity: int, strategy: CacheStrategy = "lru"

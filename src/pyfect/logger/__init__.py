@@ -50,6 +50,7 @@ from pyfect.logger._refs import (
     UnhandledLogLevel,
 )
 from pyfect.logger._stdlib import to_logging
+from pyfect.logger._tracer import tracer_logger
 
 __all__ = [
     "CurrentLogAnnotations",
@@ -86,4 +87,5 @@ __all__ = [
     "log_warning",
     "log_with_level",
     "to_logging",
+    "tracer_logger",
 ]

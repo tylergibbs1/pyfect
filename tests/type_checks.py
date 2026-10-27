@@ -1745,3 +1745,61 @@ def check_console(eff: fx.Effect[int, NotFound, Primary]) -> None:
     # A TestConsole is a Console; a partial console is not.
     fx.void.pipe(fx.provide_service(fx.console.CurrentConsole, fx.testing.TestConsole()))
     fx.void.pipe(fx.provide_service(fx.console.CurrentConsole, object()))  # pyright: ignore[reportArgumentType]
+
+
+# --- tracing -------------------------------------------------------------------
+
+
+def check_span_effects(eff: fx.Effect[int, NotFound, Primary]) -> None:
+    from pyfect.tracer import AnySpan, ExternalSpan, Span, SpanLink
+
+    parent = ExternalSpan(span_id="s", trace_id="t")
+    # Spans add nothing to E or R: ParentSpan is a Reference.
+    assert_type(
+        eff.with_span("a", kind="client", attributes={"k": 1}), fx.Effect[int, NotFound, Primary]
+    )
+    assert_type(eff.with_span("a", parent=parent, root=True), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.with_span_scoped("a"), fx.Effect[int, NotFound, Primary | fx.Scope])
+    assert_type(eff.with_parent_span(parent), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.annotate_spans("k", 1), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.annotate_spans({"k": 1}), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.link_spans(parent, attributes={"r": 1}), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.with_tracer(fx.tracer.native_tracer), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.with_tracer_enabled(False), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.with_tracer_timing(False), fx.Effect[int, NotFound, Primary])
+    assert_type(fx.make_span("a"), fx.Effect[Span])
+    assert_type(fx.make_span_scoped("a"), fx.Effect[Span, Never, fx.Scope])
+    assert_type(fx.use_span("a", lambda _span: eff), fx.Effect[int, NotFound, Primary])
+    assert_type(fx.current_span(), fx.Effect[Span, fx.NoSuchElementException])
+    assert_type(fx.current_parent_span(), fx.Effect[AnySpan, fx.NoSuchElementException])
+    assert_type(fx.annotate_current_span("k", 1), fx.Effect[None])
+    assert_type(fx.tracer.ParentSpan(), ServiceEffect[AnySpan | None, Never])
+    assert_type(SpanLink(parent).span, AnySpan)
+    eff.with_span("a", kind="sideways")  # pyright: ignore[reportArgumentType]
+    eff.with_span("a", colour="red")  # pyright: ignore[reportCallIssue]
+
+
+def check_traced_fn() -> None:
+    @fx.fn("find", kind="server")
+    def find(user_id: str):
+        db = yield from Primary()
+        value = db.get(user_id)
+        if value is None:
+            return (yield from NotFound(user_id))
+        return value
+
+    # The span changes nothing in the function's type.
+    assert_type(find("u"), fx.Effect[str, NotFound, Primary])
+    find(1)  # pyright: ignore[reportArgumentType]
+    fx.fn("find", kind="sideways")  # pyright: ignore[reportArgumentType]
+
+
+def check_layer_spans(built: layer.Layer[Primary, NotFound, Replica]) -> None:
+    from pyfect.tracer import ExternalSpan, ParentSpan
+
+    assert_type(layer.span("a"), layer.Layer[ParentSpan])
+    assert_type(layer.parent_span(ExternalSpan("s", "t")), layer.Layer[ParentSpan])
+    assert_type(built.with_span("a"), layer.Layer[Primary, NotFound, Replica])
+    assert_type(
+        built.with_parent_span(ExternalSpan("s", "t")), layer.Layer[Primary, NotFound, Replica]
+    )

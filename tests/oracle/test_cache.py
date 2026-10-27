@@ -17,7 +17,6 @@ Adapted, with the reason:
 
 Omitted, with the reason:
 
-- "make - spans are connected": tracing is M5.
 - "PersistedCache > persists synchronous lookup defects": persistence is
   not ported.
 """
@@ -33,6 +32,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import exit, testing
+from pyfect.tracer import ExternalSpan, Span
 
 _HOUR = 3600.0
 _MINUTE = 60.0
@@ -115,6 +115,25 @@ def test_make_creates_cache_with_fixed_capacity():
     """make - creates cache with fixed capacity"""
     cache = yield from _length_cache(10)
     assert cache.capacity == 10
+
+
+@testing.effect
+def test_make_spans_are_connected():
+    """make - spans are connected"""
+
+    def lookup(_key: str) -> fx.Effect[Span, fx.NoSuchElementException]:
+        return fx.current_span().with_span("lookup")
+
+    def program():
+        cache = yield from fx.Cache.make(lookup, capacity=10)
+        return (yield from cache.get("test"))
+
+    result = yield from fx.gen(program).with_span("parent")
+    assert result.name == "lookup"
+    parent = result.parent
+    assert parent is not None, "Expected parent span"
+    assert not isinstance(parent, ExternalSpan), "Expected span parent"
+    assert parent.name == "parent"
 
 
 @testing.effect

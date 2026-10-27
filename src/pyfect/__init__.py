@@ -12,7 +12,8 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
 ``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``. Logging:
 ``fx.log`` and its levels, ``fx.LogLevel``, ``fx.Logger`` (formatters and layers in
-``fx.logger``). Request batching:
+``fx.logger``). Tracing: ``eff.with_span``, ``fx.fn("name")``, ``fx.use_span``,
+``fx.current_span`` and the rest; spans and tracers in ``fx.tracer``. Request batching:
 ``fx.Request``, ``fx.RequestResolver``, ``fx.request`` (``Entry`` and the rest in
 ``fx.batching``).
 """
@@ -34,6 +35,7 @@ from pyfect import (
     schedule,
     scheduler,
     testing,
+    tracer,
 )
 from pyfect._all import all, all_dict
 from pyfect._concurrency import Concurrency, for_each, race_all, race_all_first
@@ -164,6 +166,14 @@ from pyfect.scoped_ref import ScopedRef
 from pyfect.semaphore import Semaphore
 from pyfect.subscription_ref import SubscriptionRef
 from pyfect.synchronized_ref import SynchronizedRef
+from pyfect.tracer import (
+    annotate_current_span,
+    current_parent_span,
+    current_span,
+    make_span,
+    make_span_scoped,
+    use_span,
+)
 
 __all__ = [
     "AsyncioRequiredError",
@@ -251,6 +261,7 @@ __all__ = [
     "add_finalizer",
     "all",
     "all_dict",
+    "annotate_current_span",
     "annotate_logs_scoped",
     "batching",
     "blocking",
@@ -264,6 +275,8 @@ __all__ = [
     "context",
     "cron",
     "current_fiber",
+    "current_parent_span",
+    "current_span",
     "date_time",
     "default_teardown",
     "die",
@@ -296,6 +309,8 @@ __all__ = [
     "log_warning",
     "log_with_level",
     "logger",
+    "make_span",
+    "make_span_scoped",
     "never",
     "option",
     "partition",
@@ -326,12 +341,14 @@ __all__ = [
     "suspend",
     "sync",
     "testing",
+    "tracer",
     "transpose_option",
     "try_",
     "try_async",
     "try_blocking",
     "uninterruptible_mask",
     "update_service_scoped",
+    "use_span",
     "validate",
     "void",
     "yield_now",

@@ -161,6 +161,16 @@ every entry to the standard library's `logging` with the clock's time and the ca
 `exc_info`. `ignore(log=True)` logs what it drops; pool and cache finalizer failures are logged at
 `UnhandledLogLevel`.
 
+**Tracing.** `eff.with_span("name", kind=, attributes=, ...)` runs an effect inside a span that
+ends with its exit and is the parent of the spans made inside, forked fibers included;
+`@fx.fn("name")` does the same for every call of a generator function. `fx.use_span`,
+`fx.make_span(_scoped)`, `fx.current_span()`, `fx.annotate_current_span`, `eff.annotate_spans`,
+`eff.link_spans` and `ExternalSpan` parents follow Effect's `Tracer`; layers take
+`layer.span("startup")` and `built.with_span(...)`. Logs inside a span become its events
+(`logger.tracer_logger`). The native tracer keeps spans in memory; `eff.with_tracer(tracer)`
+installs another, whose optional `context` hook runs around every fiber step (for an
+OpenTelemetry-style context).
+
 **Console.** `fx.console.log(...)`, `warn`, `error`, `table`, `count`, `time_log`, ... are
 effects calling the `Console` in `CurrentConsole` (a `LiveConsole` printing like Node's
 `console` unless provided); `console.group(label=)` and `console.time(label)` stay open until
