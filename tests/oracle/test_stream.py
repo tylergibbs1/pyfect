@@ -24,14 +24,13 @@ Not ported:
   ``fromEventListener`` (two titles): Web Streams and DOM events have no
   Python counterpart (PARITY.md); ``callback`` is how a listener feeds a
   stream.
-- The eight ``toAsyncIterable`` titles: ``to_async_iterator`` is the last
-  step of M6.
+- The eight ``toAsyncIterable`` titles are in ``test_stream_fanout.py``.
 - The operator sections are in ``test_stream_filtering.py``,
   ``test_stream_errors.py``, ``test_stream_combining.py`` and
   ``test_stream_timing.py``, the sink sections (``transduce``,
   ``aggregateWithin``, ``tapSink``, ``peel``) in ``test_stream_sinks.py``;
-  the others (encoding, grouping, sharing, partitioning) port with their
-  M6 clusters.
+  the grouping, sharing, partitioning and broadcasting sections in
+  ``test_stream_fanout.py``; encoding ports with its M6 cluster.
 """
 
 from dataclasses import dataclass

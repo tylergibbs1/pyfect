@@ -2620,3 +2620,95 @@ def check_stream_sink_methods(
     )
     assert_type(fx.stream.empty.transduce(fx.sink.reduce(lambda: 0, _plus)), _St[int])
     source.transduce(words)  # pyright: ignore[reportArgumentType]
+
+
+def check_stream_transform_pull_without_services(source: _St[int, ValueError]) -> None:
+    assert_type(
+        fx.stream.transform_pull(source, lambda p, _scope: fx.succeed(p)), _St[int, ValueError]
+    )
+
+
+def _parity_of(n: int) -> fx.Effect[tuple[bool, str], NotFound, Primary]: ...
+
+
+def _sign_of(n: int) -> fx.Ok[int] | fx.Err[str]: ...
+
+
+def check_stream_fan_out(source: _St[int, ValueError, Replica]) -> None:
+    assert_type(
+        source.group_by(_parity_of),
+        _St[tuple[bool, _St[str]], ValueError | NotFound, Replica | Primary],
+    )
+    assert_type(
+        source.group_by_key(lambda n: n % 2), _St[tuple[int, _St[int]], ValueError, Replica]
+    )
+    assert_type(
+        source.group_adjacent_by(str), _St[tuple[str, tuple[int, ...]], ValueError, Replica]
+    )
+    assert_type(
+        source.partition(_sign_of),
+        fx.Effect[tuple[_St[int, ValueError], _St[str, ValueError]], Never, Replica | fx.Scope],
+    )
+    assert_type(
+        source.partition_effect(lambda n: fx.succeed(_sign_of(n)), concurrency=2),
+        fx.Effect[tuple[_St[int, ValueError], _St[str, ValueError]], Never, Replica | fx.Scope],
+    )
+    assert_type(
+        source.partition_queue(_sign_of),
+        fx.Effect[
+            tuple[Dequeue[int, ValueError | fx.Done], Dequeue[str, ValueError | fx.Done]],
+            Never,
+            Replica | fx.Scope,
+        ],
+    )
+    assert_type(
+        source.broadcast(capacity=8), fx.Effect[_St[int, ValueError], Never, Replica | fx.Scope]
+    )
+    assert_type(
+        source.broadcast(capacity="unbounded", replay=2),
+        fx.Effect[_St[int, ValueError], Never, Replica | fx.Scope],
+    )
+    source.broadcast(capacity="unbounded", strategy="dropping")  # pyright: ignore[reportArgumentType]
+    assert_type(
+        source.broadcast_n(2, capacity=4, strategy="sliding"),
+        fx.Effect[tuple[_St[int, ValueError], ...], Never, Replica | fx.Scope],
+    )
+    assert_type(
+        source.share(capacity=16, idle_time_to_live=1),
+        fx.Effect[_St[int, ValueError], Never, Replica | fx.Scope],
+    )
+
+
+def check_stream_bridges(
+    source: _St[int, ValueError, Replica],
+    plain: _St[str],
+    queue: fx.Queue[int, ValueError | fx.Done],
+    pubsub: fx.PubSub[int],
+    replica: fx.Context[Replica],
+) -> None:
+    assert_type(
+        source.to_queue(capacity="unbounded"),
+        fx.Effect[Dequeue[int, ValueError | fx.Done], Never, Replica | fx.Scope],
+    )
+    assert_type(source.run_into_queue(queue), fx.Effect[None, Never, Replica])
+    plain.run_into_queue(queue)  # pyright: ignore[reportArgumentType]
+    assert_type(source.run_into_pubsub(pubsub), fx.Effect[None, ValueError, Replica])
+    assert_type(source.to_pubsub(capacity=8), fx.Effect[fx.PubSub[int], Never, Replica | fx.Scope])
+    assert_type(
+        source.to_pubsub_take(capacity=8),
+        fx.Effect[fx.PubSub[fx.Take[int, ValueError]], Never, Replica | fx.Scope],
+    )
+    assert_type(plain.to_async_iterable(), fx.stream.StreamAsyncIterable[str])
+    source.to_async_iterable()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    assert_type(source.to_async_iterable_with(replica), fx.stream.StreamAsyncIterable[int])
+    source.to_async_iterable_with(fx.Context.empty())  # pyright: ignore[reportArgumentType]
+    assert_type(
+        source.to_async_iterable_effect(),
+        fx.Effect[fx.stream.StreamAsyncIterable[int], Never, Replica],
+    )
+    assert_type(aiter(plain.to_async_iterable()), fx.stream.StreamAsyncIterator[str])
+
+
+async def check_stream_async_for(plain: _St[str]) -> None:
+    async for word in plain.to_async_iterable():
+        assert_type(word, str)

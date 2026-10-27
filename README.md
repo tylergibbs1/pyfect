@@ -154,7 +154,10 @@ moves a chunk at a time while its functions see one item at a time. Build one wi
 `debounce`, `throttle`, `timeout`, `buffer`, ...; the error-removing `catch_tag` is a
 function for `.pipe`) and run it with `run_collect`, `run_fold`, `run_for_each`,
 `run_head` or `to_pull`. `fx.stream.range(0, 3)` is `0, 1, 2`, as Python's `range`;
-`range_inclusive` is Effect's. `SubscriptionRef.changes()` is a stream.
+`range_inclusive` is Effect's. `SubscriptionRef.changes()` is a stream. Split one with
+`group_by_key`, `partition`, `broadcast_n` or `share`, hand it to a queue or pubsub with
+`to_queue` / `to_pubsub`, and read it from asyncio code with `async for x in
+s.to_async_iterable()` (`to_async_iterable_with(context)` for one that needs services).
 
 **Sinks.** `fx.Sink[A, In, L, E, R]` consumes a stream: it reads `In` items until it has
 what it needs, then succeeds with `A` and leaves over the `L` items it read but did not

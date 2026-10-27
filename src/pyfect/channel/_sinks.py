@@ -48,7 +48,7 @@ def run_into_pubsub(
     return run.ensuring(pubsub.shutdown()) if shutdown_on_end else run
 
 
-def _make_pubsub(
+def make_pubsub(
     capacity: Capacity, strategy: Strategy, replay: int | None
 ) -> Effect[PubSub[Any], Any, Any]:
     if capacity == "unbounded":
@@ -75,7 +75,7 @@ def to_pubsub(
         run = run_into_pubsub(self, pubsub, shutdown_on_end, array=array)
         return fork_scoped(run).as_(pubsub)
 
-    return _make_pubsub(capacity, strategy, replay).flat_map(start)
+    return make_pubsub(capacity, strategy, replay).flat_map(start)
 
 
 def to_pubsub_take(
@@ -85,4 +85,4 @@ def to_pubsub_take(
         run = run_for_each(self, pubsub.publish).on_exit(pubsub.end)
         return fork_scoped(run).as_(pubsub)
 
-    return _make_pubsub(capacity, strategy, replay).flat_map(start)
+    return make_pubsub(capacity, strategy, replay).flat_map(start)

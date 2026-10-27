@@ -19,8 +19,10 @@ from pyfect.channel import Channel, from_transform, from_transform_bracket
 from pyfect.channel import from_pull as channel_from_pull
 from pyfect.channel._base import require_channel
 from pyfect.stream._base import A_co, E_co, R_co, StreamBase, StreamChannel, require_stream
+from pyfect.stream._bridge_methods import BridgeMethods
 from pyfect.stream._chunk_methods import ChunkMethods
 from pyfect.stream._error_methods import ErrorMethods
+from pyfect.stream._fanout_methods import FanOutMethods
 from pyfect.stream._filter_methods import FilterMethods
 from pyfect.stream._map_methods import MapMethods
 from pyfect.stream._run_methods import RunMethods
@@ -44,6 +46,8 @@ class Stream(
     TimingMethods[A_co, E_co, R_co],
     RunMethods[A_co, E_co, R_co],
     SinkMethods[A_co, E_co, R_co],
+    FanOutMethods[A_co, E_co, R_co],
+    BridgeMethods[A_co, E_co, R_co],
 ):
     """``Stream[A, E, R]``: writes items of type ``A`` in non-empty tuples
     (chunks), then fails with ``E`` or ends; needs the services ``R``.
@@ -88,21 +92,21 @@ def from_pull(make: Effect[Any, Any, Any]) -> Stream[Any, Any, Any]:
 
 
 @overload
-def transform_pull[A, E, R, B, EE = Never, RR = Never](
-    stream: StreamBase[A, E, R],
+def transform_pull[A, E, B, EE = Never, RR = Never](
+    stream: StreamBase[A, E, RR],
     f: Callable[
         [Pull[tuple[A, ...], E], CloseableScope],
         Effect[Effect[tuple[B, ...], Done, RR], EE, RR],
     ],
-) -> Stream[B, EE, R | RR]: ...
+) -> Stream[B, EE, RR]: ...
 @overload
-def transform_pull[A, E, R, B, EE = Never, RR = Never](
-    stream: StreamBase[A, E, R],
+def transform_pull[A, E, B, EE = Never, RR = Never](
+    stream: StreamBase[A, E, RR],
     f: Callable[
         [Pull[tuple[A, ...], E], CloseableScope],
         Effect[Effect[tuple[B, ...], EE | Done, RR], EE, RR],
     ],
-) -> Stream[B, EE, R | RR]: ...
+) -> Stream[B, EE, RR]: ...
 def transform_pull(
     stream: StreamBase[Any, Any, Any],
     f: Callable[[Any, CloseableScope], Effect[Any, Any, Any]],
@@ -120,21 +124,21 @@ def transform_pull(
 
 
 @overload
-def transform_pull_bracket[A, E, R, B, EE = Never, RR = Never](
-    stream: StreamBase[A, E, R],
+def transform_pull_bracket[A, E, B, EE = Never, RR = Never](
+    stream: StreamBase[A, E, RR],
     f: Callable[
-        [Pull[tuple[A, ...], E, None, R], CloseableScope, CloseableScope],
+        [Pull[tuple[A, ...], E, None, RR], CloseableScope, CloseableScope],
         Effect[Effect[tuple[B, ...], Done, RR], EE, RR],
     ],
-) -> Stream[B, EE, R | RR]: ...
+) -> Stream[B, EE, RR]: ...
 @overload
-def transform_pull_bracket[A, E, R, B, EE = Never, RR = Never](
-    stream: StreamBase[A, E, R],
+def transform_pull_bracket[A, E, B, EE = Never, RR = Never](
+    stream: StreamBase[A, E, RR],
     f: Callable[
-        [Pull[tuple[A, ...], E, None, R], CloseableScope, CloseableScope],
+        [Pull[tuple[A, ...], E, None, RR], CloseableScope, CloseableScope],
         Effect[Effect[tuple[B, ...], EE | Done, RR], EE, RR],
     ],
-) -> Stream[B, EE, R | RR]: ...
+) -> Stream[B, EE, RR]: ...
 def transform_pull_bracket(
     stream: StreamBase[Any, Any, Any],
     f: Callable[[Any, CloseableScope, CloseableScope], Effect[Any, Any, Any]],
