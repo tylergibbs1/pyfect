@@ -203,6 +203,73 @@ def check_durations(scheduler: SyncScheduler) -> None:
     schedule.Schedule(0, lambda _now, _v, n: (n, n, 1.0))  # pyright: ignore[reportArgumentType]
 
 
+# --- Result, Exit and Option ------------------------------------------------------------
+# The methods exist on both cases, so they apply to the union without narrowing, and each
+# side keeps its own type.
+
+
+def check_result(r: fx.Result[int, str], raising: fx.Result[int, ValueError]) -> None:
+    assert_type(r.map(str), fx.Ok[str] | fx.Err[str])
+    assert_type(r.map_error(len), fx.Err[int] | fx.Ok[int])
+    assert_type(r.map_both(on_failure=len, on_success=str), fx.Err[int] | fx.Ok[str])
+    assert_type(
+        r.flat_map(lambda n: fx.Ok(n) if n else fx.Err(0.0)),
+        fx.Ok[int] | fx.Err[float] | fx.Err[str],
+    )
+    assert_type(r.get_or_else(len), int)
+    assert_type(r.match(on_failure=len, on_success=float), int | float)
+    assert_type(raising.get_or_raise(), int)
+    # Only an Err holding an exception can be raised.
+    r.get_or_raise()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    assert_type(fx.result.try_(lambda: 1), fx.Ok[int] | fx.Err[Exception])
+    assert_type(fx.result.try_(lambda: 1, str), fx.Ok[int] | fx.Err[str])
+    assert_type(fx.result.from_optional(1 if r else None, lambda: "none"), fx.Ok[int] | fx.Err[str])
+    # all joins the error types and never widens to Unknown.
+    assert_type(fx.result.all(r, raising), fx.Ok[tuple[int, int]] | fx.Err[str | ValueError])
+    assert_type(fx.result.all(fx.Ok(1), fx.Err("e")), fx.Ok[tuple[int, Never]] | fx.Err[str])
+    assert_type(fx.result.all(*[r, r]), fx.Ok[tuple[int, ...]] | fx.Err[str])
+    # A side the callback never produces is Never, not Unknown.
+    assert_type(r.flat_map(lambda n: fx.Ok(str(n))), fx.Ok[str] | fx.Err[Never] | fx.Err[str])
+    assert_type(fx.Ok(1).flat_map(lambda _: fx.Err("e")), fx.Ok[Never] | fx.Err[str])
+    assert_type(fx.result.from_optional(None, lambda: "none"), fx.Ok[Never] | fx.Err[str])
+    if fx.result.is_ok(r):
+        assert_type(r, fx.Ok[int])
+    else:
+        assert_type(r, fx.Err[str])
+
+
+def check_exit(ex: fx.Exit[int, str], exits: list[fx.Exit[int, str]]) -> None:
+    assert_type(ex.map(str), fx.Success[str] | fx.Failure[str])
+    assert_type(ex.map_error(len), fx.Success[int] | fx.Failure[int])
+    assert_type(ex.map_both(on_failure=len, on_success=str), fx.Success[str] | fx.Failure[int])
+    assert_type(ex.as_void(), fx.Success[None] | fx.Failure[str])
+    assert_type(ex.match(on_failure=lambda c: c.failures, on_success=str), str | tuple[str, ...])
+    assert_type(fx.exit.as_void_all(exits), fx.Exit[None, str])
+    assert_type(fx.exit.as_void_all([fx.Success(1)]), fx.Exit[None, Never])
+    if fx.exit.is_failure(ex):
+        assert_type(ex, fx.Failure[str])
+    else:
+        assert_type(ex, fx.Success[int])
+
+
+def check_option(o: fx.Option[int | None]) -> None:
+    # Some(None) is a present None: the nesting survives the round trip.
+    assert_type(fx.option.from_optional(1 if o else None), fx.Some[int] | None)
+    assert_type(fx.option.map(o, str), fx.Some[str] | None)
+    assert_type(fx.option.flat_map(o, fx.option.from_optional), fx.Some[int] | None)
+    assert_type(fx.option.get_or_else(o, lambda: "x"), int | str | None)
+    assert_type(fx.option.get_or_raise(o), int | None)
+    assert_type(fx.option.from_iterable([None]), fx.Some[None] | None)
+    assert_type(fx.option.flat_map(o, lambda _: None), fx.Some[Never] | None)
+    # Some, Success and Failure are covariant, like Ok and Err.
+    _widened: tuple[fx.Option[object], fx.Exit[object, Exception]] = (o, fx.exit.fail(ValueError()))
+    match o:
+        case fx.Some(value):
+            assert_type(value, int | None)
+        case None:
+            pass
+
+
 # --- TaggedError hashing -----------------------------------------------------------
 # A plain ``@dataclass`` subclass hashes at runtime, but pyright synthesizes
 # ``__hash__ = None`` for it. A ``dataclass_transform`` base would fix that only by

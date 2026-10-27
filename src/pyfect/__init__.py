@@ -3,11 +3,12 @@
     import pyfect as fx
 
 Constructors and run functions live at the top level. Data types and
-their modules: ``fx.layer``, ``fx.schedule``, ``fx.Queue``, ``fx.Ref``,
-``fx.Deferred``, ``fx.Semaphore``, ``fx.testing``.
+their modules: ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
+``fx.schedule``, ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
+``fx.Semaphore``, ``fx.testing``.
 """
 
-from pyfect import clock, duration, layer, schedule, testing
+from pyfect import clock, duration, exit, layer, option, result, schedule, testing
 from pyfect._concurrency import Concurrency, all, for_each, race_all
 from pyfect._core import Effect, Restore, uninterruptible_mask
 from pyfect._fiber import Fiber
@@ -45,6 +46,7 @@ from pyfect.effect import (
 from pyfect.errors import NoSuchElementException, TaggedError, TimeoutException
 from pyfect.exit import Exit, Failure, Success
 from pyfect.layer import Layer, provide
+from pyfect.option import Option, Some
 from pyfect.queue import Done, Queue
 from pyfect.ref import Ref
 from pyfect.result import Err, Ok, Result
@@ -81,6 +83,7 @@ __all__ = [
     "MissingServiceError",
     "NoSuchElementException",
     "Ok",
+    "Option",
     "Queue",
     "Ref",
     "Reference",
@@ -89,6 +92,7 @@ __all__ = [
     "Schedule",
     "Scope",
     "Semaphore",
+    "Some",
     "Success",
     "Tag",
     "TaggedError",
@@ -105,6 +109,7 @@ __all__ = [
     "current_fiber",
     "die",
     "duration",
+    "exit",
     "fail",
     "fail_cause",
     "fiber_id",
@@ -116,9 +121,11 @@ __all__ = [
     "interrupt",
     "layer",
     "never",
+    "option",
     "provide",
     "provide_service",
     "race_all",
+    "result",
     "run_async",
     "run_async_exit",
     "run_main",

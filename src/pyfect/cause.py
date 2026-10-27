@@ -13,6 +13,7 @@ unwinding, or when concurrent work fails in several places at once.
 from __future__ import annotations
 
 import traceback
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Generic, Never, TypeVar
 
@@ -58,6 +59,10 @@ class Cause(Generic[E_co]):
                 seen.add(r.fiber_id)
                 new.append(r)
         return Cause((*self.reasons, *new)) if new else self
+
+    def map[E2](self, f: Callable[[E_co], E2]) -> Cause[E2]:
+        """Apply ``f`` to every typed error; defects and interruptions stay."""
+        return Cause(tuple(Fail(f(r.error)) if isinstance(r, Fail) else r for r in self.reasons))
 
     @property
     def failures(self) -> tuple[E_co, ...]:
