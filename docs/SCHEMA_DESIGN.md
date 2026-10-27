@@ -36,9 +36,13 @@ from pyfect import schema as S
   (`decode_to(to)` keeps the source's Encoded) must return an instance of a
   class with a generic `__call__`. A function returning a generic `Callable`
   is **not checked** by `.pipe` (`schema_1_codec.py`, Q5).
-- Literals: `literals[L: LiteralString | int | bool | None](*values: L)`
+- Literals: `Literals[L: LiteralString | int | float | bool | None](*values: L)`
   keeps string literals; all-int calls widen to `int` and need the expected
-  type (`x: S.Bottom[Literal[1, 2], Literal[1, 2]] = S.Literals(1, 2)`).
+  type (`x: S.LiteralsSchema[Literal[1, 2]] = S.Literals(1, 2)`).
+- Checks: `Filter[T]` / `FilterGroup[T]` are contravariant in `T`, so a
+  check on `Sized` fits a `str` schema and a check on `float` does not.
+  `schema.check(*checks)` keeps the schema's type; `S.refine(guard)` and
+  `S.from_brand(brand)` change it and are curried classes for `.pipe`.
 - Brands: pyright reads a `NewType` passed as `Callable[[A], B]` as returning
   `Any`, so a brand names both types through `pyfect.brand.Brand[str, UserId]`:
   `S.String.pipe(S.from_brand(Brand[str, UserId].nominal()))` is
@@ -86,9 +90,11 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
 
 - AST nodes (`S.ast`) are frozen dataclasses compared by identity, with
   keyword-only `annotations` (snake_case keys: `identifier`, `message`,
-  `message_missing_key`, ...). Each implements `get_expected()` and
-  `parse(input, options) -> Exit[object, Issue]`; a node without an encoding
-  is its own `flip()` and `to_type()`.
+  `message_missing_key`, ...) and `checks`. Each implements `get_expected()`
+  and `_parse(input, options) -> Exit[object, Issue]`; `AST.parse` runs
+  `_parse` and then the checks (a check that raises is a defect). Annotating
+  a node with checks annotates its last check, as in Effect. A node without
+  an encoding is its own `flip()` and `to_type()`.
 - Issues (`S.issue`) are frozen dataclasses; `input` is `Some(value)` only
   under `report_input=True`. `format_issue` is Effect's default formatter.
 - `ParseOptions` is a TypedDict passed as keyword arguments, both when an

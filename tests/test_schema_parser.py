@@ -192,7 +192,7 @@ class Dying(ast.AST):
     def get_expected(self) -> str:
         return "dying"
 
-    def parse(self, input: object, options: S.ParseOptions) -> Exit[object, Issue]:
+    def _parse(self, input: object, options: S.ParseOptions) -> Exit[object, Issue]:
         return Failure(self.cause)
 
 

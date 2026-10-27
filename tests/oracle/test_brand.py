@@ -3,9 +3,7 @@ test title. A brand is a ``typing.NewType`` and ``Brand<T>`` is
 ``Brand[Base, T]``; ``Option`` results are
 ``Some(value)`` or ``None``.
 
-Every title is ported. Schema (M8) is not ported yet, so ``Schema.isInt()``
-and ``Schema.isGreaterThan(0)`` are ``Filter`` values with the same
-``expected`` text, and ``String(error)`` (``"BrandError(<message>)"``) is
+Every title is ported. ``String(error)`` (``"BrandError(<message>)"``) is
 Python's ``str(error)``, the message.
 """
 
@@ -13,7 +11,8 @@ from typing import NewType
 
 import pytest
 
-from pyfect.brand import Brand, BrandError, Filter
+from pyfect import schema as S
+from pyfect.brand import Brand, BrandError
 from pyfect.option import Some
 from pyfect.result import Err, Ok
 
@@ -22,8 +21,8 @@ Positive = NewType("Positive", float)
 PositiveInt = NewType("PositiveInt", float)
 MyNumber = NewType("MyNumber", float)
 
-is_int = Filter[float](lambda n: n.is_integer(), expected="an integer")
-is_greater_than_0 = Filter[float](lambda n: n > 0, expected="a value greater than 0")
+is_int = S.is_int()
+is_greater_than_0 = S.is_greater_than(0)
 
 
 def assert_success[B](ctor: Brand[float, B], value: float) -> None:

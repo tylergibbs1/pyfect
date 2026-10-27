@@ -1,16 +1,14 @@
 """Ports of Effect's ``SchemaIssue.test.ts``. Each test's docstring is the
 Effect test title. ``isIssue`` is ``issue.is_issue``.
 
-Ported in part: "does not expose an actual field", "preserves structural
-metadata" and "formats leaf issues with static built-in messages" leave out
-the ``OneOf``, ``AnyOf`` and ``Filter`` issues, which come with unions and
-checks. Omitted: "uses an empty AnyOf when no union candidates apply"
-(unions).
+Every title is ported.
 """
 
 from pyfect import schema as S
-from pyfect.schema import issue
+from pyfect.result import Err
+from pyfect.schema import ast, issue
 from pyfect.schema.issue import (
+    AnyOf,
     Composite,
     Encoding,
     Forbidden,
@@ -18,6 +16,7 @@ from pyfect.schema.issue import (
     InvalidValue,
     Leaf,
     MissingKey,
+    OneOf,
     Pointer,
     UnexpectedKey,
 )
@@ -29,6 +28,9 @@ def test_is_issue():
     assert not issue.is_issue({"~effect/SchemaIssue/Issue": False})
 
 
+UNION = ast.Union((S.String.ast, S.Number.ast))
+
+
 def test_does_not_expose_an_actual_field():
     """does not expose an actual field"""
     invalid_value = InvalidValue()
@@ -38,9 +40,12 @@ def test_does_not_expose_an_actual_field():
         MissingKey(None),
         UnexpectedKey(S.String.ast),
         Forbidden(None),
+        OneOf(UNION, (S.String.ast,)),
+        issue.Filter(S.is_min_length(1), invalid_value),
         Encoding(S.String.ast, invalid_value),
         Pointer(("value",), invalid_value),
         Composite(S.String.ast, (invalid_value,)),
+        AnyOf(UNION, (invalid_value,)),
     ]
 
     for i in issues:
@@ -53,10 +58,14 @@ def test_preserves_structural_metadata():
     invalid_type = InvalidType(S.String.ast)
     invalid_value = InvalidValue(annotations)
     unexpected_key = UnexpectedKey(S.Number.ast)
+    successes = (S.String.ast,)
+    one_of = OneOf(UNION, successes)
 
     assert invalid_type.ast is S.String.ast
     assert invalid_value.annotations is annotations
     assert unexpected_key.ast is S.Number.ast
+    assert one_of.ast is UNION
+    assert one_of.successes is successes
 
 
 def test_formats_leaf_issues_with_static_built_in_messages():
@@ -67,7 +76,17 @@ def test_formats_leaf_issues_with_static_built_in_messages():
         (MissingKey(None), "Missing key"),
         (UnexpectedKey(S.String.ast), "Expected no excess property"),
         (Forbidden(None), "Forbidden operation"),
+        (OneOf(UNION, (S.String.ast,)), "Expected exactly one member to match"),
     ]
 
     for leaf, expected in cases:
         assert issue.format_issue(leaf) == expected
+
+
+def test_uses_an_empty_any_of_when_no_union_candidates_apply():
+    """uses an empty AnyOf when no union candidates apply"""
+    result = S.decode_unknown_result(S.Union(S.String, S.Number))(None)
+    assert isinstance(result, Err)
+    found = result.error.issue
+    assert isinstance(found, AnyOf)
+    assert found.issues == ()

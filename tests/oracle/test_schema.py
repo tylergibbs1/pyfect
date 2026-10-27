@@ -21,9 +21,11 @@ Omitted:
   inspects as a tagged formatted message", "SchemaError / does not capture
   stack frames": ``toJSON``, Node's ``inspect`` and ``Error.stackTraceLimit``
   have no Python counterpart.
-- Every other title waits for the schema kinds it exercises: Literal(s),
-  Struct, Tuple, Array, Union, Record, checks, transformations, classes,
-  declarations and the built-in codecs. The parse-option titles all decode
+- Literal(s), Enum, Union of primitives, checks, Int, Natural, Trimmed,
+  Finite, fromBrand and resolveAnnotations: ported in test_schema_checks.py.
+- Every other title waits for the schema kinds it exercises: Struct, Tuple,
+  Array, Record, transformations, classes, declarations and the built-in
+  codecs. The parse-option titles all decode
   structs; the adapter titles ("is", "asserts", "decodeUnknownOption /
   encodeUnknownOption", ...) use ``FiniteFromString`` or effectful getters.
 """

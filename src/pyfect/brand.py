@@ -9,7 +9,7 @@ one with the checks of several::
     PositiveInt = NewType("PositiveInt", float)
 
     to_int = Brand[float, Int].make(lambda n: n.is_integer() or f"Expected {n} to be an integer")
-    positive = Brand[float, Int].check(Filter(lambda n: n > 0, expected="a value greater than 0"))
+    positive = Brand[float, Int].check(S.is_greater_than(0))
     to_positive_int = Brand[float, PositiveInt].all(to_int, positive)
 
     to_positive_int(1.0)          # PositiveInt(1.0)
@@ -17,58 +17,37 @@ one with the checks of several::
     to_positive_int.result(-1.5)  # Err(BrandError(...))
 
 A predicate passes with ``True`` or ``None``; ``False`` fails with
-``"Expected <expected>"`` and a string fails with that message. Every
-filter runs and the messages are joined by newlines, except that an
-aborted filter (``Filter.abort()``) that fails stops the rest.
+``"Expected <filter>"`` and a string fails with that message. ``check``
+takes schema checks (``S.is_int()``, ``S.make_filter(...)``). Every check
+runs and the messages are joined by newlines, except that an aborted check
+(``.abort()``) that fails stops the rest. ``S.from_brand(brand)`` runs a
+brand's checks in a schema.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
-from typing import Self, TypeGuard, cast
+from dataclasses import dataclass
+from typing import Any, Self, TypeGuard, cast
 
 from pyfect.errors import TaggedError
 from pyfect.option import Option, Some
 from pyfect.result import Err, Ok, Result
-
-type FilterOutput = bool | str | None
-"""What a predicate gives: ``True`` / ``None`` to accept, ``False`` or a
-message to reject."""
-
-
-@dataclass(frozen=True, slots=True)
-class Filter[A]:
-    """One check of a brand. ``expected`` names what passes (``False`` reads
-    ``"Expected <expected>"``); ``message`` replaces every failure's text."""
-
-    predicate: Callable[[A], FilterOutput]
-    expected: str | None = None
-    message: str | None = None
-    aborted: bool = False
-
-    def abort(self) -> Filter[A]:
-        """This filter, stopping the checks after it when it fails."""
-        return replace(self, aborted=True)
-
-
-def _failure[A](f: Filter[A], value: A) -> str | None:
-    out = f.predicate(value)
-    if out is True or out is None:
-        return None
-    if f.message is not None:
-        return f.message
-    if isinstance(out, str):
-        return out
-    return f"Expected {'<filter>' if f.expected is None else f.expected}"
+from pyfect.schema.ast import Check, FilterOutput, collect_issues, make_filter, unknown
+from pyfect.schema.issue import Composite, Issue, format_issue
 
 
 @dataclass(eq=False)
 class BrandError(TaggedError, ValueError):
-    """A value failed a brand's checks; ``message`` has one line per
-    failed filter."""
+    """A value failed a brand's checks. ``issue`` says why; ``message``
+    (also ``str(error)``) is the issue in Effect's default format, one line
+    per failed check."""
 
-    message: str
+    issue: Issue
+
+    @property
+    def message(self) -> str:
+        return format_issue(self.issue)
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,9 +55,10 @@ class Brand[A, B]:
     """A checked constructor that brands an ``A`` as ``B`` (Effect's
     ``Brand.Constructor``). Name both types when making one:
     ``Brand[float, Int].make(...)``. Calling it raises ``BrandError`` on
-    failure; ``option``, ``result`` and ``is_`` report it instead."""
+    failure; ``option``, ``result`` and ``is_`` report it instead.
+    ``checks`` are schema checks, so ``S.from_brand`` can run them."""
 
-    filters: tuple[Filter[A], ...] = ()
+    checks: tuple[Check[A], ...] = ()
 
     @classmethod
     def nominal(cls) -> Self:
@@ -87,18 +67,21 @@ class Brand[A, B]:
 
     @classmethod
     def make(cls, predicate: Callable[[A], FilterOutput]) -> Self:
-        """A constructor with one check, ``predicate``."""
-        return cls((Filter(predicate),))
+        """A constructor with one check, ``predicate``: ``True`` / ``None``
+        pass, ``False`` fails with ``"Expected <filter>"`` and a string
+        fails with that message."""
+        return cls((make_filter(predicate),))
 
     @classmethod
-    def check(cls, first: Filter[A], /, *rest: Filter[A]) -> Self:
-        """A constructor running the filters in order."""
+    def check(cls, first: Check[A], /, *rest: Check[A]) -> Self:
+        """A constructor running the schema checks in order (every one,
+        unless one marked ``abort()`` fails)."""
         return cls((first, *rest))
 
     @classmethod
     def all(cls, first: Brand[A, object], /, *rest: Brand[A, object]) -> Self:
         """A constructor running the checks of every brand given, in order."""
-        return cls(tuple(f for b in (first, *rest) for f in b.filters))
+        return cls(tuple(c for b in (first, *rest) for c in b.checks))
 
     def __call__(self, value: A) -> B:
         match self.result(value):
@@ -108,15 +91,10 @@ class Brand[A, B]:
                 raise error
 
     def result(self, value: A) -> Result[B, BrandError]:
-        failures: list[str] = []
-        for f in self.filters:
-            failure = _failure(f, value)
-            if failure is not None:
-                failures.append(failure)
-                if f.aborted:
-                    break
-        if failures:
-            return Err(BrandError("\n".join(failures)))
+        checks = cast("tuple[Check[Any], ...]", self.checks)
+        issues = collect_issues(checks, value, unknown, {"errors": "all"})
+        if issues is not None:
+            return Err(BrandError(Composite(unknown, issues)))
         # A brand is a ``NewType``: the branded value is the value itself.
         return Ok(cast("B", value))
 

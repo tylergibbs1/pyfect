@@ -3298,7 +3298,8 @@ def check_byte_size(unknown: object) -> None:
 def check_brand(value: float) -> None:
     from typing import NewType
 
-    from pyfect.brand import Brand, BrandError, Filter
+    from pyfect import schema as S
+    from pyfect.brand import Brand, BrandError
     from pyfect.option import Option
     from pyfect.result import Result
 
@@ -3309,7 +3310,8 @@ def check_brand(value: float) -> None:
     assert_type(to_int(1.0), Int)
     assert_type(to_int.option(1.0), Option[Int])
     assert_type(to_int.result(1.0), Result[Int, BrandError])
-    positive = Brand[float, Int].check(Filter[float](lambda n: n > 0).abort())
+    positive = Brand[float, Int].check(S.is_greater_than(0).abort())
+    Brand[float, Int].check(S.is_min_length(1))  # pyright: ignore[reportArgumentType]
     assert_type(Brand[float, PositiveInt].all(to_int, positive), Brand[float, PositiveInt])
     assert_type(Brand[float, Int].nominal(), Brand[float, Int])
     if to_int.is_(value):
@@ -3424,3 +3426,74 @@ def check_schema_codec_protocol(unknown: object) -> None:
     assert_type(S.encode_sync(Record), S.Parser[Record, Mapping[str, object]])
     as_schema: S.Schema[Record] = Record
     _ = as_schema
+
+
+def check_schema_checks(unknown: object) -> None:
+    import enum
+    from collections.abc import Mapping, Sized
+    from datetime import datetime
+    from typing import Literal, NewType
+
+    from pyfect import schema as S
+    from pyfect.brand import Brand
+
+    # A check keeps the schema's type; it must accept that type (checks are
+    # contravariant: a check on Sized fits a str schema).
+    assert_type(S.String.check(S.is_min_length(1), S.is_trimmed()), S.Bottom[str])
+    assert_type(S.is_min_length(1), S.Filter[Sized])
+    assert_type(S.is_greater_than(1), S.Filter[float])
+    assert_type(S.is_greater_than_date(datetime.now()), S.Filter[datetime])
+    assert_type(S.is_int32(), S.FilterGroup[float])
+    assert_type(S.is_property_names(S.String), S.Filter[Mapping[Any, object]])
+    S.String.check(S.is_greater_than(1))  # pyright: ignore[reportArgumentType]
+    S.Number.check(S.is_trimmed())  # pyright: ignore[reportArgumentType]
+    S.String.check()  # pyright: ignore[reportCallIssue]
+    on_str: S.Filter[str] = S.make_filter(lambda s: s.isupper() or "lower")
+    assert_type(S.make_filter_group(on_str, S.is_min_length(1)), S.FilterGroup[str])
+    assert_type(on_str.and_(S.is_trimmed()), S.FilterGroup[str])
+    assert_type(on_str.abort(), S.Filter[str])
+
+    def big(n: int) -> str:
+        return f"{n}n"
+
+    assert_type(S.make_is_greater_than(formatter=big), S.Bound[int])
+    assert_type(S.Int, S.Bottom[int])
+    assert_type(S.Finite, S.Bottom[float])
+    assert_type(S.Port, S.Bottom[int])
+
+    # Literals keep their values; numbers need the type written out.
+    assert_type(S.Literal("a"), S.LiteralSchema[Literal["a"]])
+    assert_type(S.Literals("a", "b"), S.LiteralsSchema[Literal["a", "b"]])
+    S.Literals("a", "b").pick("c")  # pyright: ignore[reportArgumentType]
+    assert_type(S.decode_unknown_sync(S.Literals("a", "b"))(unknown), Literal["a", "b"])
+    assert_type(S.Literals(1, 2), S.LiteralsSchema[int])
+    ones: S.LiteralsSchema[Literal[1, 2]] = S.Literals(1, 2)
+    S.Literal(b"a")  # pyright: ignore[reportArgumentType]
+    S.Literal(("a",))  # pyright: ignore[reportArgumentType]
+
+    class Color(enum.Enum):
+        RED = "red"
+
+    assert_type(S.Enum(Color), S.EnumSchema[Color])
+    assert_type(S.decode_unknown_sync(S.Enum(Color))(unknown), Color)
+    assert_type(S.encode_sync(S.Enum(Color))(Color.RED), str | int | float)
+    S.Enum(int)  # pyright: ignore[reportArgumentType]
+
+    assert_type(S.Union(S.String, S.Number), S.UnionSchema[str | float, str | float, Never, Never])
+    assert_type(
+        S.Union(S.String).map_members(lambda ms: (*ms, S.Boolean)),
+        S.UnionSchema[str | bool, str | bool, Never, Never],
+    )
+
+    def is_a(s: str) -> TypeIs[Literal["a"]]:
+        return s == "a"
+
+    assert_type(S.String.pipe(S.refine(is_a)), S.Bottom[Literal["a"], str])
+    S.Number.pipe(S.refine(is_a))  # pyright: ignore[reportArgumentType]
+
+    Small = NewType("Small", float)
+    small = Brand[float, Small].check(S.is_less_than(10))
+    assert_type(S.Number.pipe(S.from_brand(small)), S.Bottom[Small, float])
+    S.String.pipe(S.from_brand(small))  # pyright: ignore[reportArgumentType]
+    assert_type(S.resolve_annotations(S.String), S.ast.Annotations | None)
+    _ = ones

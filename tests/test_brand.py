@@ -5,7 +5,9 @@ from typing import NewType
 
 import pytest
 
-from pyfect.brand import Brand, BrandError, Filter
+from pyfect import schema as S
+from pyfect.brand import Brand, BrandError
+from pyfect.schema import Filter
 
 Positive = NewType("Positive", int)
 
@@ -16,19 +18,22 @@ def message(f: Filter[int]) -> str:
     return raised.value.message
 
 
+FILTERS: list[tuple[Filter[int], str]] = [
+    (S.make_filter(lambda n: n > 0), "Expected <filter>"),
+    (S.make_filter(lambda n: n > 0 or "neg"), "neg"),
+    (S.make_filter(lambda n: None if n > 0 else "neg"), "neg"),
+    (S.make_filter(lambda n: n > 0, expected="a positive number"), "Expected a positive number"),
+    (S.make_filter(lambda n: n > 0, message="custom"), "custom"),
+    (S.make_filter(lambda n: n > 0 or "str", expected="a positive", message="custom"), "custom"),
+    (S.make_filter(lambda n: n > 0 or "str", expected="a positive"), "str"),
+    (S.make_filter(lambda n: n > 0, expected=""), "Expected "),
+    (S.make_filter(lambda n: n > 0 or ""), ""),
+]
+
+
 @pytest.mark.parametrize(
     ("f", "expected"),
-    [
-        (Filter[int](lambda n: n > 0), "Expected <filter>"),
-        (Filter[int](lambda n: n > 0 or "neg"), "neg"),
-        (Filter[int](lambda n: None if n > 0 else "neg"), "neg"),
-        (Filter[int](lambda n: n > 0, expected="a positive number"), "Expected a positive number"),
-        (Filter[int](lambda n: n > 0, message="custom"), "custom"),
-        (Filter[int](lambda n: n > 0 or "str", expected="a positive", message="custom"), "custom"),
-        (Filter[int](lambda n: n > 0 or "str", expected="a positive"), "str"),
-        (Filter[int](lambda n: n > 0, expected=""), "Expected "),
-        (Filter[int](lambda n: n > 0 or ""), ""),
-    ],
+    FILTERS,
     ids=[
         "false",
         "string",
@@ -53,7 +58,7 @@ def test_a_brand_error_is_a_value_error():
 def test_all_of_nominal_constructors_checks_nothing():
     to_positive = Brand[int, Positive].all(Brand[int, Positive].nominal(), Brand[int, Positive]())
     assert to_positive(-1) == -1
-    assert to_positive.filters == ()
+    assert to_positive.checks == ()
 
 
 def test_a_branded_value_is_the_value_itself():

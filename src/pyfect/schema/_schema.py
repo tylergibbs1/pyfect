@@ -14,7 +14,7 @@ from pyfect.option import Option, Some
 from pyfect.schema._adapters import CONSTRUCTOR, OPTION, raise_schema_failure, schema_error_of
 from pyfect.schema._error import SchemaError
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast import AST, annotate
+from pyfect.schema.ast import AST, Check, annotate, append_checks
 from pyfect.schema.issue import Issue
 
 T_co = TypeVar("T_co", covariant=True)
@@ -41,8 +41,14 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
     def annotate(self, **annotations: object) -> Self:
         """This schema with annotations merged over its own: ``identifier``
         names it in messages (``Expected <identifier>``), ``message``
-        replaces its message, ``title`` / ``description`` / ... document it."""
+        replaces its message, ``title`` / ``description`` / ... document it.
+        On a schema with checks they annotate the last check."""
         return replace(self, ast=annotate(self.ast, annotations))
+
+    def check(self, first: Check[T_co], /, *rest: Check[T_co]) -> Self:
+        """This schema with checks run, in order, on each value it accepts
+        (``S.is_min_length(3)``, ``S.make_filter(...)``, ...)."""
+        return replace(self, ast=append_checks(self.ast, (first, *rest)))
 
     def make[A](
         self: Bottom[A, object, object, object], input: A, /, **options: Unpack[ParseOptions]
