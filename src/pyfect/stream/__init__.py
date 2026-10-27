@@ -16,7 +16,8 @@ used with ``.pipe``, and the ones combining any number of streams
 (``merge_all``, ``zip_latest_all``, ``race_all``); the rest (``map``,
 ``flat_map``, ``take``, ``zip``, ``merge``, ``catch_all``, ``debounce``,
 ``group_by``, ``partition``, ``broadcast``, ``share``, ``run_collect``,
-``to_pull``, ``to_queue``, ``to_async_iterable``, ...) are methods.
+``to_pull``, ``to_queue``, ``to_async_iterable``, ``pipe_through_channel``,
+``decode_text``, ``split_lines``, ...) are methods.
 ``range`` follows Python's ``range`` and leaves its end out;
 ``range_inclusive`` is Effect's ``range``.
 """

@@ -22,7 +22,7 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Sink``
 (constructors in ``fx.sink``), ``fx.Channel``
 (constructors in ``fx.channel``), ``fx.Pull`` (helpers in ``fx.pull``), ``fx.Take``
-(``fx.take``).
+(``fx.take``); framers (NDJSON, JSON arrays, Server-Sent Events) in ``fx.encoding``.
 """
 
 from pyfect import (
@@ -34,6 +34,7 @@ from pyfect import (
     cron,
     date_time,
     duration,
+    encoding,
     error_reporter,
     exit,
     layer,
@@ -310,6 +311,7 @@ __all__ = [
     "default_teardown",
     "die",
     "duration",
+    "encoding",
     "error_reporter",
     "exit",
     "fail",

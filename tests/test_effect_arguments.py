@@ -83,9 +83,9 @@ def test_on_interrupt_with_an_effect_still_runs_on_interrupt():
 
 def _public_modules() -> list[types.ModuleType]:
     submodules = [
-        importlib.import_module(f"pyfect.{info.name}")
-        for info in pkgutil.iter_modules(fx.__path__)
-        if not info.name.startswith("_")
+        importlib.import_module(info.name)
+        for info in pkgutil.walk_packages(fx.__path__, "pyfect.")
+        if _is_public_module(info.name)
     ]
     return [fx, testing, *submodules]
 
@@ -157,10 +157,9 @@ _ARTICLES = {
 }
 
 
-def _annotation_kinds(annotation: object) -> set[str]:
-    """Which of ``Effect[...]`` and ``Layer[...]`` the annotation is, alone or
-    in a union at the top level (not nested in a ``Callable`` or a
-    collection)."""
+def _top_level_parts(annotation: object) -> list[str]:
+    """The members of a union annotation (the annotation alone if it is not
+    one), not looking inside brackets."""
     text = annotation if isinstance(annotation, str) else str(annotation)
     depth, current = 0, ""
     top: list[str] = []
@@ -175,7 +174,24 @@ def _annotation_kinds(annotation: object) -> set[str]:
         else:
             current += ch
     top.append(current.strip())
+    return top
+
+
+def _annotation_kinds(annotation: object) -> set[str]:
+    """Which of ``Effect[...]`` and ``Layer[...]`` the annotation is, alone or
+    in a union at the top level (not nested in a ``Callable`` or a
+    collection)."""
+    top = _top_level_parts(annotation)
     return {kind for kind, pattern in _KINDS.items() for part in top if pattern.fullmatch(part)}
+
+
+def _takes_a_function(annotation: object) -> bool:
+    """Whether a function is a valid argument (``Effect[...] | Callable[...]``):
+    then the parameter is not an effect-only one."""
+    return any(
+        re.fullmatch(r"(?:collections\.abc\.)?Callable(?:\[.*\])?", part)
+        for part in _top_level_parts(annotation)
+    )
 
 
 def _checked_parameters(fn: Callable[..., Any]) -> dict[str, set[str]]:
@@ -188,7 +204,11 @@ def _checked_parameters(fn: Callable[..., Any]) -> dict[str, set[str]]:
             if name != "self":
                 kinds.setdefault(name, set()).update(_annotation_kinds(p.annotation))
     impl = inspect.signature(fn).parameters
-    return {name: kinds[name] for name in impl if kinds.get(name)}
+    return {
+        name: kinds[name]
+        for name, p in impl.items()
+        if kinds.get(name) and not _takes_a_function(p.annotation)
+    }
 
 
 def _cases() -> list[tuple[str, Callable[..., Any], str]]:
@@ -227,6 +247,8 @@ def test_the_guard_finds_the_combinators_it_is_meant_to_check():
     assert ("scoped", "stream") in names
     assert ("run", "sink") in names
     assert ("__call__", "eff") in names
+    assert ("pipe_through_channel", "channel") in names
+    assert ("duplex", "channel") in names  # in a module of a subpackage
     assert len(_CASES) > 50
 
 

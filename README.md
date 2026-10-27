@@ -167,6 +167,15 @@ use. Build one with `fx.sink` (`collect()`, `sum()`, `take(n)`, `fold`, `reduce_
 `transduce`, `aggregate_within`, `grouped_within`, `pipe_through`, `tap_sink` or `peel`.
 A stream's own failures pass by a sink's error handlers, as in Effect.
 
+**Text, bytes and framers.** `decode_text(encoding)`, `encode_text()` and `split_lines()`
+are `Stream` methods (a character or a `\r\n` split across chunks stays whole), and
+`pipe_through_channel(ch)` runs a stream through any channel. `fx.encoding` holds the
+framers, each a channel: `ndjson` (newline-delimited JSON), `json_array` (the elements of
+one JSON array, the root or one an RFC 6901 pointer selects, streamed without holding the
+document) and `sse` (Server-Sent Events, with a push parser and a `retry:` directive as a
+`Retry` failure). `examples/stream_pipeline.py` puts them together: NDJSON in, concurrent
+calls with retries, a bounded buffer for backpressure, batches and a sink.
+
 **Request batching.** A `fx.Request[A, E]` subclass (a frozen dataclass) describes one
 lookup; a `fx.RequestResolver` answers many at once. Requests made through one resolver in
 the same scheduler tick become one batch, so N concurrent `fx.request(GetUser(i), users)`

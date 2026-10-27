@@ -30,7 +30,8 @@ Not ported:
   ``test_stream_timing.py``, the sink sections (``transduce``,
   ``aggregateWithin``, ``tapSink``, ``peel``) in ``test_stream_sinks.py``;
   the grouping, sharing, partitioning and broadcasting sections in
-  ``test_stream_fanout.py``; encoding ports with its M6 cluster.
+  ``test_stream_fanout.py``; the encoding section in
+  ``test_stream_text.py``.
 """
 
 from dataclasses import dataclass

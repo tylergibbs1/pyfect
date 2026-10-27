@@ -23,6 +23,7 @@ from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.context import ServiceEffect
 from pyfect.duration import Seconds, to_seconds
+from pyfect.encoding import Json, json_array, ndjson, sse
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
 from pyfect.fiber_set import FiberSetRuntime
@@ -2712,3 +2713,89 @@ def check_stream_bridges(
 async def check_stream_async_for(plain: _St[str]) -> None:
     async for word in plain.to_async_iterable():
         assert_type(word, str)
+
+
+# --- Stream channel and text methods, framers ----------------------------------------
+
+type _Duplexed[T, IE] = fx.Channel[tuple[T, ...], KeyError, int, tuple[T, ...], IE, str, Replica]
+
+
+def check_stream_text_and_framers(
+    *,
+    data: _St[bytes, ValueError, Replica],
+    text: _St[str, ValueError],
+    plain: _St[int],
+    events: _St[sse.Event, sse.Retry],
+    failing_events: _St[sse.Event, ValueError],
+    to_bytes: _Duplexed[bytes, ValueError | ndjson.NdjsonError],
+    to_text: _Duplexed[str, ndjson.NdjsonError],
+) -> None:
+    assert_type(data.decode_text(), _St[str, ValueError, Replica])
+    assert_type(data.decode_text("latin-1"), _St[str, ValueError, Replica])
+    assert_type(text.encode_text(), _St[bytes, ValueError])
+    assert_type(text.split_lines(), _St[str, ValueError])
+    plain.decode_text()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    plain.split_lines()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    data.encode_text()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    # A channel's upstream error is the stream's: the channel decides.
+    assert_type(
+        data.pipe_through_channel(ndjson.decode()),
+        _St[Json, ValueError | ndjson.NdjsonError, Replica],
+    )
+    assert_type(
+        text.pipe_through_channel(ndjson.decode_string(ignore_empty_lines=True)),
+        _St[Json, ValueError | ndjson.NdjsonError],
+    )
+    assert_type(
+        data.pipe_through_channel(json_array.decode(pointer="/items")),
+        _St[Json, ValueError | json_array.JsonArrayError, Replica],
+    )
+    assert_type(
+        text.pipe_through_channel(json_array.decode_string()),
+        _St[Json, ValueError | json_array.JsonArrayError],
+    )
+    assert_type(plain.pipe_through_channel(ndjson.encode()), _St[bytes, ndjson.NdjsonError])
+    assert_type(
+        plain.pipe_through_channel(json_array.encode_string()), _St[str, json_array.JsonArrayError]
+    )
+    assert_type(
+        text.pipe_through_channel(sse.decode()),
+        _St[sse.Event, ValueError | sse.Retry | sse.SseError],
+    )
+    # ``sse.encode`` writes a ``Retry`` failure and ends: it leaves the errors.
+    assert_type(events.pipe_through_channel(sse.encode()), _St[str])
+    # Pyright cannot solve ``E | Retry`` from an upstream error without
+    # ``Retry``; such a stream's failures pass by the encoder instead.
+    failing_events.pipe_through_channel(sse.encode())  # pyright: ignore[reportArgumentType]
+    assert_type(failing_events.pipe_through_channel_or_fail(sse.encode()), _St[str, ValueError])
+    assert_type(
+        data.pipe_through_channel_or_fail(fx.channel.decode_text()),
+        _St[str, ValueError, Replica],
+    )
+    text.pipe_through_channel(ndjson.decode())  # pyright: ignore[reportArgumentType]
+    plain.pipe_through_channel(sse.encode())  # pyright: ignore[reportArgumentType]
+    assert_type(
+        ndjson.duplex(to_bytes),
+        fx.Channel[
+            tuple[Json, ...],
+            ndjson.NdjsonError | KeyError,
+            int,
+            tuple[object, ...],
+            ValueError,
+            str,
+            Replica,
+        ],
+    )
+    assert_type(
+        ndjson.duplex_string(to_text),
+        fx.Channel[
+            tuple[Json, ...],
+            ndjson.NdjsonError | KeyError,
+            int,
+            tuple[object, ...],
+            Never,
+            str,
+            Replica,
+        ],
+    )
+    ndjson.duplex(to_text)  # pyright: ignore[reportArgumentType, reportCallIssue]

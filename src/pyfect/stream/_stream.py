@@ -20,6 +20,7 @@ from pyfect.channel import from_pull as channel_from_pull
 from pyfect.channel._base import require_channel
 from pyfect.stream._base import A_co, E_co, R_co, StreamBase, StreamChannel, require_stream
 from pyfect.stream._bridge_methods import BridgeMethods
+from pyfect.stream._channel_methods import ChannelMethods
 from pyfect.stream._chunk_methods import ChunkMethods
 from pyfect.stream._error_methods import ErrorMethods
 from pyfect.stream._fanout_methods import FanOutMethods
@@ -48,6 +49,7 @@ class Stream(
     SinkMethods[A_co, E_co, R_co],
     FanOutMethods[A_co, E_co, R_co],
     BridgeMethods[A_co, E_co, R_co],
+    ChannelMethods[A_co, E_co, R_co],
 ):
     """``Stream[A, E, R]``: writes items of type ``A`` in non-empty tuples
     (chunks), then fails with ``E`` or ends; needs the services ``R``.

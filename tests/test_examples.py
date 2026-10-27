@@ -50,3 +50,16 @@ def test_batching_sends_one_query_per_feed_and_none_once_cached():
         "db: SELECT id, name FROM authors WHERE id IN (1, 2, 3, 4)",
         "cached feed: 6 posts",
     ]
+
+
+def test_stream_pipeline_writes_every_well_formed_order_in_batches_under_backpressure():
+    assert run_example("stream_pipeline.py").splitlines() == [
+        "batch 1: orders 1, 2, 3, 4, 5, $5.50",
+        "batch 2: orders 6, 7, 8, 9, 10, $6.90",
+        "batch 3: orders 11, 12, 14, 15, 16, $6.05",
+        "batch 4: orders 17, 18, 19, 20, 21, $5.95",
+        "batch 5: orders 22, 23, 24, 25, 26, $5.95",
+        "batch 6: orders 27, 28, 29, 30, $5.55",
+        "29 orders written; retried [7, 14, 21, 28]",
+        "backpressure held: True",
+    ]
