@@ -9,7 +9,7 @@ Each run of the effect sees the metadata of the step that started it as
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeIs
 
 from pyfect._core import Effect, _FailCause, _Gen, _Locally, _Succeed
 from pyfect._effect_args import require_effect
@@ -21,6 +21,7 @@ from pyfect.schedule._model import (
     CurrentMetadata,
     Metadata,
     Schedule,
+    SetInputType,
     Stop,
     to_step_with_metadata,
 )
@@ -165,3 +166,28 @@ def from_options(
         limit = times
         policy = policy.while_(lambda m: m.attempt <= limit)
     return policy
+
+
+def resolve_policy(
+    policy: Schedule[Any, Any, Any, Any] | Callable[[Any], Any] | None,
+    schedule: Schedule[Any, Any, Any, Any] | None,
+    times: int | None,
+    while_: _Predicate | None,
+    until: _Predicate | None,
+) -> Schedule[Any, Any, Any, Any]:
+    """The schedule behind ``retry`` / ``repeat``: a schedule as given, a
+    builder applied to ``SetInputType``, or the keyword options."""
+    if policy is None:
+        return from_options(schedule, times, while_, until)
+    if schedule is not None or times is not None or while_ is not None or until is not None:
+        raise TypeError("pass either a schedule or the schedule/times/while_/until keywords")
+    if _is_schedule(policy):
+        return policy
+    built: object = policy(SetInputType())
+    if not _is_schedule(built):
+        raise TypeError(f"a schedule builder must return a Schedule, got {built!r}")
+    return built
+
+
+def _is_schedule(value: object) -> TypeIs[Schedule[Any, Any, Any, Any]]:
+    return isinstance(value, Schedule)

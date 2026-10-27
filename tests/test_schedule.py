@@ -2,9 +2,13 @@
 ``Schedule.test.ts`` (ported in ``tests/oracle/test_schedule.py``)."""
 
 from collections.abc import Sequence
+from typing import TypeIs
+
+import pytest
 
 import pyfect as fx
 from pyfect import schedule, testing
+from pyfect.cause import Fail
 from pyfect.duration import ZERO, Seconds
 from pyfect.result import Err
 from pyfect.schedule import Continue, CurrentMetadata, Decision, Metadata, Schedule, Stop
@@ -344,3 +348,62 @@ def test_infinite_intervals_wait_forever():
         assert delays(s, [0.0, 1.0]) == [inf, inf]
     assert delays(schedule.fixed(inf), [0.0, 1.0]) == [inf, inf]
     assert delays(schedule.windowed(inf), [0.0, 1.0]) == [inf, inf]
+
+
+def test_retry_builder_types_the_schedule_with_the_error():
+    attempts: list[float] = []
+    retryable = flaky(5, attempts).retry(
+        lambda typed: typed(schedule.recurs(10)).while_(lambda m: m.input != "attempt 2 failed")
+    )
+    ex = testing.run_test_exit(retryable)
+    assert isinstance(ex, fx.Failure)
+    assert ex.cause.reasons == (Fail("attempt 2 failed"),)
+    assert len(attempts) == 2
+
+
+def test_repeat_builder_types_the_schedule_with_the_value():
+    n = 0
+
+    def bump() -> int:
+        nonlocal n
+        n += 1
+        return n
+
+    repeated = fx.sync(bump).repeat(
+        lambda typed: typed(schedule.identity()).while_(lambda m: m.input < 4)
+    )
+    assert run(repeated) == 4
+
+
+def test_retry_and_repeat_reject_a_schedule_with_option_keywords():
+    eff = fx.succeed(1)
+    with pytest.raises(TypeError, match="either a schedule or"):
+        eff.retry(schedule.recurs(1), times=2)  # pyright: ignore[reportCallIssue]
+    with pytest.raises(TypeError, match="either a schedule or"):
+        eff.repeat(schedule.recurs(1), until=bool)  # pyright: ignore[reportCallIssue]
+
+
+def test_a_builder_that_returns_no_schedule_is_rejected():
+    def builder(typed: schedule.SetInputType[int]) -> int:
+        return 3
+
+    with pytest.raises(TypeError, match="must return a Schedule"):
+        fx.succeed(1).repeat(builder)  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
+def test_an_until_refinement_ends_with_the_narrowed_value():
+    values: list[int | str] = [1, 2, "done"]
+
+    def is_str(v: int | str) -> TypeIs[str]:
+        return isinstance(v, str)
+
+    result = fx.sync(lambda: values.pop(0)).repeat(until=is_str)
+    assert run(result) == "done"
+
+
+def test_negative_times_is_rejected_at_the_call():
+    # Effect stops at once; pyfect rejects it, as it does recurs(-1).
+    with pytest.raises(ValueError, match="times must be >= 0"):
+        fx.succeed(1).repeat(times=-1)
+    with pytest.raises(ValueError, match="times must be >= 0"):
+        fx.fail("e").retry(times=-1)

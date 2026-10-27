@@ -114,7 +114,8 @@ dropping, sliding; endable), `Semaphore`, `PartitionedSemaphore` (permits shared
 round-robin across keys), `Latch`, `Scope` with `acquire_release`, and `Schedule`
 for `retry`, `repeat` and `schedule` (`exponential`, `spaced`, `fixed`, `windowed`,
 `fibonacci`, `up_to(times=, duration=)`, `while_`, `max` / `min`, `concat`, `jittered`, ...;
-steps are effects that see `Metadata`, and the running effect reads `CurrentMetadata`). Names follow Effect v4: `Deferred.done(exit)` completes with an exit,
+steps are effects that see `Metadata`, and the running effect reads `CurrentMetadata`;
+`retry` / `repeat` also take `times=`, `while_=`, `until=` and `schedule=` keywords). Names follow Effect v4: `Deferred.done(exit)` completes with an exit,
 `complete(eff)` runs an effect once and stores its outcome, and `complete_with(eff)`
 stores the effect itself. Ending or failing a queue keeps its items and waiting offers
 until takers drain them; `offer_all` returns the items it could not add, `shutdown` returns

@@ -363,14 +363,17 @@ def to_step_with_sleep[Out, In, E, R](
 
 
 @final
-class _SetInputType[I]:
+class SetInputType[I]:
+    """Fixes a schedule's input type to ``I``: what ``set_input_type`` returns
+    and what the builder forms of ``Effect.retry`` and ``repeat`` receive."""
+
     __slots__ = ()
 
     def __call__[O, E, R](self, schedule: Schedule[O, I, E, R]) -> Schedule[O, I, E, R]:
         return schedule
 
 
-def set_input_type[I](input_type: type[I], /) -> _SetInputType[I]:
+def set_input_type[I](input_type: type[I], /) -> SetInputType[I]:
     """Type a schedule to take ``input_type`` inputs, so the metadata its
     combinators see carries that type::
 
@@ -378,4 +381,4 @@ def set_input_type[I](input_type: type[I], /) -> _SetInputType[I]:
 
     Curried for ``.pipe``: as a method, pyright would fix the input type
     from the schedule before seeing ``input_type``."""
-    return _SetInputType()
+    return SetInputType()

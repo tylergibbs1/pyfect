@@ -1,4 +1,5 @@
-"""Ports of the ``repeat`` and ``retry`` sections of Effect's ``Effect.test.ts``.
+"""Ports of the ``schedule``, ``repeat`` and ``retry`` sections of Effect's
+``Effect.test.ts``.
 
 Each test's docstring is the Effect test title. Every title is ported.
 Effect's option objects (``{ times, while, until, schedule }``) are keyword
@@ -10,6 +11,33 @@ from pyfect import schedule, testing
 from pyfect.cause import Die, Fail
 from pyfect.duration import ZERO
 from pyfect.schedule import CurrentMetadata, Decision, Metadata, Stop
+
+
+@testing.effect
+def test_schedule_and_schedule_from_preserve_source_done_failures():
+    """schedule and scheduleFrom preserve source Done failures"""
+
+    # Effect's ``Cause.done(42)`` carries a value; pyfect's ``Done`` has none
+    # until ``Pull`` (M6).
+    def done() -> fx.Effect[int, fx.Done]:
+        return fx.fail(fx.Done())
+
+    source = fx.suspend(done)
+    policy = schedule.recurs(3)
+    scheduled = yield from source.schedule(policy).exit()
+    assert isinstance(scheduled, fx.Failure)
+    assert scheduled.cause.reasons == (Fail(fx.Done()),)
+    from_zero = yield from source.schedule_from(0, policy).exit()
+    assert isinstance(from_zero, fx.Failure)
+    assert from_zero.cause.reasons == (Fail(fx.Done()),)
+
+
+@testing.effect
+def test_returns_the_schedule_output_without_running_the_source_after_completion():
+    """returns the schedule output without running the source after completion"""
+    eff, n = counter()
+    assert (yield from eff.schedule_from(0, schedule.recurs(3))) == 3
+    assert n[0] == 3
 
 
 @testing.effect

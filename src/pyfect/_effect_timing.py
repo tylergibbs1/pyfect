@@ -5,7 +5,7 @@ The work lives in ``pyfect.clock``, ``pyfect._cached`` and
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Never, overload
+from typing import TYPE_CHECKING, Any, Never, TypeIs, overload
 
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
 from pyfect.duration import Duration
@@ -13,7 +13,7 @@ from pyfect.duration import Duration
 if TYPE_CHECKING:
     from pyfect._core import Effect
     from pyfect.exit import Exit
-    from pyfect.schedule import Metadata, Schedule
+    from pyfect.schedule import Metadata, Schedule, SetInputType
 
 
 class TimingMethods(EffectBase[A_co, E_co, R_co]):
@@ -64,6 +64,20 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         self, policy: Schedule[object, E_co, EE, RR], /
     ) -> Effect[A_co, E_co | EE, R_co | RR]: ...
     @overload
+    def retry[A, E, R, EE = Never, RR = Never](
+        self: TimingMethods[A, E, R],
+        builder: Callable[[SetInputType[E]], Schedule[object, E, EE, RR]],
+        /,
+    ) -> Effect[A, E | EE, R | RR]: ...
+    @overload
+    def retry[E2, EE = Never, RR = Never](
+        self,
+        /,
+        *,
+        until: Callable[[E_co], TypeIs[E2]],
+        while_: Callable[[E_co], bool | Effect[bool, EE, RR]] | None = None,
+    ) -> Effect[A_co, E2 | EE, R_co | RR]: ...
+    @overload
     def retry[EE = Never, RR = Never](
         self,
         /,
@@ -75,7 +89,7 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
     ) -> Effect[A_co, E_co | EE, R_co | RR]: ...
     def retry(
         self,
-        policy: Schedule[Any, Any, Any, Any] | None = None,
+        policy: Schedule[Any, Any, Any, Any] | Callable[[Any], Any] | None = None,
         /,
         *,
         schedule: Schedule[Any, Any, Any, Any] | None = None,
@@ -86,14 +100,19 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         """Retry on typed failure while ``policy`` recurs; then fail with the
         last error. Defects and interruptions are not retried.
 
+        ``policy`` is a schedule, or a function from ``SetInputType`` to
+        one, so the schedule's metadata sees this effect's error type::
+
+            eff.retry(lambda typed: typed(schedule.recurs(3)).while_(lambda m: m.input.retryable))
+
         Instead of a policy, the keywords build one: retry at most
         ``times`` times, only while ``while_(error)`` holds, until
         ``until(error)`` holds, on ``schedule``'s delays. Predicates may
-        return a bool or an effect of one."""
-        from pyfect.schedule._drive import from_options, retry
+        return a bool or an effect of one; with a ``TypeIs`` predicate as
+        ``until`` (and no ``schedule`` or ``times``), the error narrows."""
+        from pyfect.schedule._drive import resolve_policy, retry
 
-        if policy is None:
-            policy = from_options(schedule, times, while_, until)
+        policy = resolve_policy(policy, schedule, times, while_, until)
         return retry(as_effect(self), policy)
 
     def retry_or_else[B, A2, EE = Never, RR = Never](
@@ -112,6 +131,20 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         self, schedule: Schedule[B, A_co, EE, RR], /
     ) -> Effect[B, E_co | EE, R_co | RR]: ...
     @overload
+    def repeat[A, E, R, B, EE = Never, RR = Never](
+        self: TimingMethods[A, E, R],
+        builder: Callable[[SetInputType[A]], Schedule[B, A, EE, RR]],
+        /,
+    ) -> Effect[B, E | EE, R | RR]: ...
+    @overload
+    def repeat[B, EE = Never, RR = Never](
+        self,
+        /,
+        *,
+        until: Callable[[A_co], TypeIs[B]],
+        while_: Callable[[A_co], bool | Effect[bool, EE, RR]] | None = None,
+    ) -> Effect[B, E_co | EE, R_co | RR]: ...
+    @overload
     def repeat[EE = Never, RR = Never](
         self,
         /,
@@ -123,7 +156,7 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
     ) -> Effect[A_co, E_co | EE, R_co | RR]: ...
     def repeat(
         self,
-        policy: Schedule[Any, Any, Any, Any] | None = None,
+        policy: Schedule[Any, Any, Any, Any] | Callable[[Any], Any] | None = None,
         /,
         *,
         schedule: Schedule[Any, Any, Any, Any] | None = None,
@@ -131,18 +164,19 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         while_: Callable[[Any], Any] | None = None,
         until: Callable[[Any], Any] | None = None,
     ) -> Effect[Any, Any, Any]:
-        """Repeat after each success while ``schedule`` recurs. Succeeds
-        with the schedule's final output.
+        """Repeat after each success while the schedule recurs. Succeeds
+        with the schedule's final output. The schedule may also be given
+        as a function from ``SetInputType`` to one (see ``retry``).
 
         Instead of a schedule, the keywords build one: repeat at most
         ``times`` times, only while ``while_(value)`` holds, until
         ``until(value)`` holds, on ``schedule``'s delays. That form
-        succeeds with the last value. Predicates may return a bool or an
-        effect of one."""
-        from pyfect.schedule._drive import from_options, repeat
+        succeeds with the last value, narrowed by a ``TypeIs`` predicate
+        as ``until`` (with no ``schedule`` or ``times``). Predicates may
+        return a bool or an effect of one."""
+        from pyfect.schedule._drive import repeat, resolve_policy
 
-        if policy is None:
-            policy = from_options(schedule, times, while_, until)
+        policy = resolve_policy(policy, schedule, times, while_, until)
         return repeat(as_effect(self), policy)
 
     def repeat_or_else[B, B2, E2, EE = Never, RR = Never](

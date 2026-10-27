@@ -607,8 +607,50 @@ def check_schedule_effects(
     assert_type(eff.schedule_from(0, schedule.spaced(1)), fx.Effect[int, NotFound, Port])
     assert_type(schedule.CurrentMetadata(), ServiceEffect[schedule.Metadata[object, object], Never])
     # A retry policy must accept the effect's errors; a repeat schedule its values.
-    eff.retry(only_str)  # pyright: ignore[reportArgumentType]
-    eff.repeat(only_str)  # pyright: ignore[reportArgumentType]
+    eff.retry(only_str)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    eff.repeat(only_str)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    # A builder types the schedule's metadata with the errors (or values).
+    assert_type(
+        eff.retry(lambda typed: typed(schedule.recurs(3)).while_(lambda m: m.input.key == "k")),
+        fx.Effect[int, NotFound, Port],
+    )
+    assert_type(
+        eff.repeat(lambda typed: typed(schedule.recurs(3)).while_(lambda m: m.input > 0)),
+        fx.Effect[int, NotFound, Port],
+    )
+    assert_type(
+        eff.repeat(lambda typed: typed(schedule.identity()).tap(lambda _: Port())),
+        fx.Effect[int, NotFound, Port],
+    )
+    eff.retry(lambda typed: typed(only_str))  # pyright: ignore[reportArgumentType]
+
+
+def only_not_found(e: NotFound | Invalid) -> TypeIs[NotFound]:
+    return isinstance(e, NotFound)
+
+
+def is_positive_int(v: int | str) -> TypeIs[int]:
+    return isinstance(v, int)
+
+
+def check_schedule_refinements(
+    eff: fx.Effect[int | str, NotFound | Invalid, Port],
+) -> None:
+    # A TypeIs predicate as `until` narrows, as Effect's refinement does.
+    assert_type(eff.retry(until=only_not_found), fx.Effect[int | str, NotFound, Port])
+    assert_type(eff.repeat(until=is_positive_int), fx.Effect[int, NotFound | Invalid, Port])
+    # With a schedule or times, the predicate need not have held: no narrowing.
+    assert_type(
+        eff.retry(times=3, until=only_not_found), fx.Effect[int | str, NotFound | Invalid, Port]
+    )
+    assert_type(
+        eff.repeat(schedule=schedule.recurs(3), until=is_positive_int),
+        fx.Effect[int | str, NotFound | Invalid, Port],
+    )
+    assert_type(
+        eff.retry(until=lambda e: isinstance(e, NotFound)),
+        fx.Effect[int | str, NotFound | Invalid, Port],
+    )
 
 
 # --- Result, Exit and Option ------------------------------------------------------------
