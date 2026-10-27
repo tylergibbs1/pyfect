@@ -7,7 +7,7 @@ pyright fails.
 """
 
 import asyncio
-from collections.abc import Callable, Hashable
+from collections.abc import Callable, Hashable, Sequence
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from types import CoroutineType
@@ -23,6 +23,7 @@ from pyfect.duration import Seconds, to_seconds
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
 from pyfect.fiber_set import FiberSetRuntime
+from pyfect.pubsub import Atomic, Subscription
 from pyfect.scheduler import Scheduler, SyncScheduler
 
 
@@ -493,6 +494,33 @@ def check_queue_views(
     producer.end()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     assert_type(ends.end(), fx.Effect[bool, Never, Never])
     print(offers, wide)
+
+
+def check_pubsub(ps: fx.PubSub[int], sub: Subscription[int]) -> None:
+    assert_type(fx.PubSub[int].bounded(2), fx.Effect[fx.PubSub[int], Never, Never])
+    assert_type(fx.PubSub[int].unbounded(replay=3), fx.Effect[fx.PubSub[int], Never, Never])
+    assert_type(
+        fx.PubSub.make(lambda: Atomic[str].bounded(4), "sliding"),
+        fx.Effect[fx.PubSub[str], Never, Never],
+    )
+    assert_type(ps.subscribe(), fx.Effect[Subscription[int], Never, fx.Scope])
+    assert_type(ps.publish(1), fx.Effect[bool, Never, Never])
+    assert_type(ps.publish_all([1, 2]), fx.Effect[bool, Never, Never])
+    assert_type(ps.end(0), fx.Effect[bool, Never, Never])
+    assert_type(ps.shutdown(), fx.Effect[None, Never, Never])
+    assert_type(ps.capacity, int | None)
+    assert_type(sub.take(), fx.Effect[int, Never, Never])
+    assert_type(sub.take_all(), fx.Effect[Sequence[int], Never, Never])
+    assert_type(sub.take_up_to(2), fx.Effect[Sequence[int], Never, Never])
+    assert_type(sub.take_between(1, 2), fx.Effect[Sequence[int], Never, Never])
+    assert_type(sub.unsafe_remaining(), int | None)
+    assert_type(Atomic[int].unbounded().subscribe().poll(), fx.Option[int])
+    ps.publish("x")  # pyright: ignore[reportArgumentType]
+    ps.end("x")  # pyright: ignore[reportArgumentType]
+    # A Subscription only gives messages, so it is covariant; a PubSub is invariant.
+    reads: Subscription[object] = sub
+    widened: fx.PubSub[object] = ps  # pyright: ignore[reportAssignmentType]
+    print(reads, widened)
 
 
 def check_semaphore(sem: fx.Semaphore) -> None:

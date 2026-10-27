@@ -5,7 +5,7 @@
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
 ``fx.clock``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.schedule``, ``fx.scheduler``,
-``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
+``fx.Queue``, ``fx.PubSub``, ``fx.Ref``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
 ``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``.
@@ -97,6 +97,7 @@ from pyfect.layer_ref import LayerRef, LayerRefService
 from pyfect.managed_runtime import ManagedRuntime
 from pyfect.option import Option, Some
 from pyfect.partitioned_semaphore import PartitionedSemaphore
+from pyfect.pubsub import PubSub
 from pyfect.queue import Dequeue, Enqueue, Queue
 from pyfect.random import Random
 from pyfect.rc_map import RcMap
@@ -171,6 +172,7 @@ __all__ = [
     "Option",
     "PartitionedSemaphore",
     "PreventSchedulerYield",
+    "PubSub",
     "Queue",
     "Random",
     "RcMap",

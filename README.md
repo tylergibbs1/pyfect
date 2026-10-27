@@ -123,7 +123,10 @@ whether it finished the queue, and `Semaphore.take`/`release` return permit coun
 also has `take_n` / `take_between`, `poll`, `peek`, `clear`, `collect`, `await_done`,
 `interrupt` and `into(eff)`; `fx.Enqueue` / `fx.Dequeue` are its write-only (contravariant)
 and read-only (covariant) views, and `fx.Done(value)` is the end-of-input signal it fails
-with once ended.
+with once ended. `PubSub` (bounded, dropping, sliding, unbounded, each with `replay=`)
+delivers every message to every subscriber: `subscribe()` gives a scoped `Subscription`
+with `take` / `take_all` / `take_up_to` / `take_between`, and `end(value)` makes drained
+subscribers take `value` from then on.
 
 **Time.** `fx.cron` parses cron expressions (seconds, names, steps, a zone) and finds the
 `next` / `prev` match with Effect's DST rules; `schedule.cron("0 9 * * MON", "Europe/Berlin")`
@@ -240,7 +243,7 @@ Concurrency, the runtime entry points and dependency injection (M2) are done; se
 
 1. **Streams**: `Stream`, `Sink`, `Channel` on top of `Queue`.
 2. **Observability**: `Logger`, spans via `@fx.fn`, OpenTelemetry bridge, metrics.
-3. **More building blocks**: `PubSub`, `Pool`, `Cache`, `Request` batching, `STM`.
+3. **More building blocks**: `Pool`, `Cache`, `Request` batching, `STM`.
 4. **Config and Schema**: typed config providers; schema built on what Python already has
    (dataclasses, pydantic) rather than a reimplementation.
 
