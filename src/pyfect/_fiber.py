@@ -58,7 +58,7 @@ from pyfect._core import (
 )
 from pyfect.cause import Cause, Die
 from pyfect.cause import interrupt as interrupt_cause
-from pyfect.context import Context, Tag
+from pyfect.context import Context, Reference, Tag
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as exit_die
 from pyfect.scheduler import (
@@ -290,6 +290,12 @@ class Fiber(Generic[A_co, E_co]):
         else:
             scope._watch(self)
         return self
+
+    def get_ref[S](self, reference: type[Reference[S]]) -> S:
+        """The value of ``reference`` in this fiber's current context (its
+        default when nobody provided one). Loggers read the log annotations
+        and spans with it."""
+        return self._ctx.unsafe_get(reference)
 
     @staticmethod
     def get_current() -> Fiber[Any, Any] | None:

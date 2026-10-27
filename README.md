@@ -149,6 +149,18 @@ zone-aware parts of Effect's DateTime to aware `datetime`: `now()`, the `Current
 service, calendar `add` / `start_of` / `end_of`, DST disambiguation and RFC 9557 strings.
 `clock.now_nanos()` and `timed` count whole nanoseconds.
 
+**Logging.** `fx.log(...)`, `log_info`, `log_warning`, `log_error`, ... write to the loggers
+in `CurrentLoggers` (Effect's default console logger unless replaced), dropping anything below
+`MinimumLogLevel` (`INFO` by default; `fx.LogLevel` is an `IntEnum` sharing `logging`'s
+numbers). `eff.annotate_logs("request", rid)`, `eff.with_log_span("db")` and
+`fx.annotate_logs_scoped(...)` add context; a `Cause` among the items is logged as the cause.
+`logger.layer([...])` replaces the loggers (`merge_with_existing=True` adds to them):
+`format_simple`, `format_logfmt`, `format_structured`, `format_json`, `console_pretty`, your own
+`fx.Logger.make(...)`, a `batched(window=, flush=)` one, or `logger.to_logging("app")`, which hands
+every entry to the standard library's `logging` with the clock's time and the cause as
+`exc_info`. `ignore(log=True)` logs what it drops; pool and cache finalizer failures are logged at
+`UnhandledLogLevel`.
+
 **Deterministic tests.** `fx.testing` uses a `TestClock`: time moves only when the test
 calls `adjust` or `set_time`, and each fiber it wakes runs until it suspends before time
 moves on. A test that would hang fails with `StalledError` instead, and a woken fiber that

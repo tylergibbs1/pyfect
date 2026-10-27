@@ -33,6 +33,7 @@ from pyfect.clock import Clock, ClockService
 from pyfect.context import Context
 from pyfect.duration import Duration, to_seconds
 from pyfect.exit import Exit, Failure, Success
+from pyfect.logger._log import log_unhandled
 from pyfect.pool._state import PoolConfig, PoolItem, PoolState, Strategy
 from pyfect.pool._waiters import Waiter
 from pyfect.scope import CloseableScope, Scope, acquire_release, fork_in
@@ -206,37 +207,39 @@ class Pool[A, E = Never]:
 
     def invalidate(self, item: A) -> Effect[None]:
         """Release ``item`` once nobody borrows it, and acquire a
-        replacement. Items are compared with ``==``."""
+        replacement. The item is found by identity (``is``), as Effect's
+        ``===``."""
 
         def body() -> Effect[None]:
             if self.state.is_shutting_down:
                 return _VOID
-            for pool_item in self.state.items:
-                if isinstance(pool_item.exit, Success) and pool_item.exit.value == item:
-                    pool_item.disable_reclaim = True
-                    return self._invalidate_item(pool_item).uninterruptible()
-            return _VOID
+            pool_item = self._find(item)
+            if pool_item is None:
+                return _VOID
+            pool_item.disable_reclaim = True
+            return self._invalidate_item(pool_item).uninterruptible()
 
         return _Suspend(body)
 
     def reserve(self, item: A) -> Effect[None, Never, Scope]:
         """Keep ``item`` from new borrowers until the current scope closes,
         counting it as fully used, without extending existing leases. A
-        no-op when each item serves one borrower."""
+        no-op when each item serves one borrower. The item is found by
+        identity (``is``)."""
         state = self.state
         concurrency = self.config.concurrency
 
         def take() -> PoolItem[A, E] | None:
             if concurrency == 1:
                 return None
-            for pool_item in state.items:
-                if isinstance(pool_item.exit, Success) and pool_item.exit.value == item:
-                    if pool_item.reservations == 0:
-                        state.usage += concurrency - 1
-                    pool_item.reservations += 1
-                    state._remove_available(pool_item)
-                    return pool_item
-            return None
+            pool_item = self._find(item)
+            if pool_item is None:
+                return None
+            if pool_item.reservations == 0:
+                state.usage += concurrency - 1
+            pool_item.reservations += 1
+            state._remove_available(pool_item)
+            return pool_item
 
         def give_back(pool_item: PoolItem[A, E] | None) -> Effect[None]:
             def run(fiber: Fiber[Any, Any]) -> Effect[None]:
@@ -259,6 +262,13 @@ class Pool[A, E = Never]:
             return _WithFiber(run)
 
         return acquire_release(_Sync(take), lambda pool_item, _: give_back(pool_item)).as_void()
+
+    def _find(self, value: A) -> PoolItem[A, E] | None:
+        """The pool item holding ``value`` itself; an equal value is another item."""
+        for pool_item in self.state.items:
+            if isinstance(pool_item.exit, Success) and pool_item.exit.value is value:
+                return pool_item
+        return None
 
     # --- leases ---------------------------------------------------------------
 
@@ -518,7 +528,7 @@ class Pool[A, E = Never]:
         strategy = self.config.strategy
         item = PoolItem(
             ex,
-            scope.close(ex).catch_cause(_ignore),
+            scope.close(ex).catch_cause(_report_finalizer_failure),
             self._clock.unsafe_now_nanos(),
         )
 
@@ -591,8 +601,8 @@ class _Release(Frame):
         )
 
 
-def _ignore(_: Cause[Any]) -> Effect[None]:
-    return _VOID
+def _report_finalizer_failure(cause: Cause[Any]) -> Effect[None]:
+    return log_unhandled("Unhandled error in pool finalizer", cause)
 
 
 def _clamp[N: (int, float)](value: N, low: N, high: N) -> N:

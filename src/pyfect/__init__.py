@@ -4,12 +4,15 @@
 
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
-``fx.clock``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.schedule``, ``fx.scheduler``,
+``fx.clock``, ``fx.console``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.schedule``,
+``fx.scheduler``,
 ``fx.Queue``, ``fx.PubSub``, ``fx.Pool``, ``fx.Cache``, ``fx.ScopedCache``, ``fx.Ref``,
 ``fx.SynchronizedRef``, ``fx.SubscriptionRef``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
-``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``. Request batching:
+``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``. Logging:
+``fx.log`` and its levels, ``fx.LogLevel``, ``fx.Logger`` (formatters and layers in
+``fx.logger``). Request batching:
 ``fx.Request``, ``fx.RequestResolver``, ``fx.request`` (``Entry`` and the rest in
 ``fx.batching``).
 """
@@ -18,11 +21,13 @@ from pyfect import (
     batching,
     cause,
     clock,
+    console,
     cron,
     date_time,
     duration,
     exit,
     layer,
+    logger,
     option,
     random,
     result,
@@ -100,6 +105,26 @@ from pyfect.latch import Latch
 from pyfect.layer import Layer, provide
 from pyfect.layer_map import LayerMap, LayerMapService
 from pyfect.layer_ref import LayerRef, LayerRefService
+from pyfect.logger import (
+    CurrentLogAnnotations,
+    CurrentLoggers,
+    CurrentLogLevel,
+    CurrentLogSpans,
+    Logger,
+    LogLevel,
+    LogToStderr,
+    MinimumLogLevel,
+    UnhandledLogLevel,
+    annotate_logs_scoped,
+    log,
+    log_debug,
+    log_error,
+    log_fatal,
+    log_info,
+    log_trace,
+    log_warning,
+    log_with_level,
+)
 from pyfect.managed_runtime import ManagedRuntime
 from pyfect.option import Option, Some
 from pyfect.partitioned_semaphore import PartitionedSemaphore
@@ -148,6 +173,10 @@ __all__ = [
     "CloseableScope",
     "Concurrency",
     "Context",
+    "CurrentLogAnnotations",
+    "CurrentLogLevel",
+    "CurrentLogSpans",
+    "CurrentLoggers",
     "CurrentScheduler",
     "Deferred",
     "Dequeue",
@@ -173,8 +202,12 @@ __all__ = [
     "LayerMapService",
     "LayerRef",
     "LayerRefService",
+    "LogLevel",
+    "LogToStderr",
+    "Logger",
     "ManagedRuntime",
     "MaxOpsBeforeYield",
+    "MinimumLogLevel",
     "MissingServiceError",
     "NoRunError",
     "NoSuchElementException",
@@ -209,6 +242,7 @@ __all__ = [
     "Teardown",
     "TimeoutException",
     "UnhandledError",
+    "UnhandledLogLevel",
     "UnknownError",
     "acquire_async_context",
     "acquire_context",
@@ -217,6 +251,7 @@ __all__ = [
     "add_finalizer",
     "all",
     "all_dict",
+    "annotate_logs_scoped",
     "batching",
     "blocking",
     "callback",
@@ -225,6 +260,7 @@ __all__ = [
     "catch_tag",
     "cause",
     "clock",
+    "console",
     "context",
     "cron",
     "current_fiber",
@@ -251,6 +287,15 @@ __all__ = [
     "interrupt",
     "interruptible_mask",
     "layer",
+    "log",
+    "log_debug",
+    "log_error",
+    "log_fatal",
+    "log_info",
+    "log_trace",
+    "log_warning",
+    "log_with_level",
+    "logger",
     "never",
     "option",
     "partition",

@@ -16,7 +16,7 @@ from typing import Any, Never, Protocol, TypeIs, assert_type
 from _pytest.fixtures import FixtureFunctionDefinition
 
 import pyfect as fx
-from pyfect import layer, schedule
+from pyfect import layer, logger, schedule
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.context import ServiceEffect
@@ -1675,3 +1675,57 @@ def check_resolver_is_contravariant(
     narrowed: fx.RequestResolver[GetUser] = both
     widened: fx.RequestResolver[GetUser | GetIds] = users  # pyright: ignore[reportAssignmentType]
     del narrowed, widened
+
+
+# --- logging -------------------------------------------------------------------
+
+
+def check_log_effects(eff: fx.Effect[int, NotFound, Primary]) -> None:
+    assert_type(fx.log("a", 1), fx.Effect[None])
+    assert_type(fx.log_with_level(fx.LogLevel.DEBUG, "a"), fx.Effect[None])
+    assert_type(fx.log_warning(fx.cause.fail("x")), fx.Effect[None])
+    assert_type(fx.annotate_logs_scoped("k", 1), fx.Effect[None, Never, fx.Scope])
+    assert_type(fx.annotate_logs_scoped({"k": 1}), fx.Effect[None, Never, fx.Scope])
+    assert_type(eff.annotate_logs("k", 1), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.annotate_logs({"k": 1}), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.with_log_span("db"), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.with_logger(logger.format_json), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.ignore(log=True), fx.Effect[None, Never, Primary])
+    assert_type(
+        eff.ignore_cause(log=fx.LogLevel.ERROR, message="m"), fx.Effect[None, Never, Primary]
+    )
+    assert_type(fx.LogLevel.INFO.is_enabled(), fx.Effect[bool])
+    # ALL and NONE are thresholds, not levels to log at.
+    fx.log_with_level(fx.LogLevel.NONE, "x")  # pyright: ignore[reportArgumentType]
+    eff.ignore(log=fx.LogLevel.ALL)  # pyright: ignore[reportArgumentType]
+
+
+def check_log_references() -> None:
+    assert_type(fx.MinimumLogLevel(), ServiceEffect[fx.LogLevel, Never])
+    assert_type(fx.CurrentLogLevel(), ServiceEffect[logger.Severity, Never])
+    fx.log("x").pipe(fx.provide_service(fx.MinimumLogLevel, fx.LogLevel.ALL))
+    fx.log("x").pipe(fx.provide_service(fx.CurrentLogLevel, fx.LogLevel.NONE))  # pyright: ignore[reportArgumentType]
+
+
+def check_loggers() -> None:
+    assert_type(fx.Logger.make(lambda o: len(o.message)), fx.Logger[int])
+    assert_type(logger.format_simple, fx.Logger[str])
+    assert_type(logger.format_structured, fx.Logger[logger.StructuredLog])
+    assert_type(logger.format_json.map(len), fx.Logger[int])
+    assert_type(logger.format_logfmt.with_console_log(), fx.Logger[None])
+    assert_type(logger.console_pretty(colors=False), fx.Logger[None])
+    assert_type(logger.to_logging("app"), fx.Logger[None])
+    batched = logger.format_json.batched(window=1.0, flush=lambda lines: fx.log(len(lines)))
+    assert_type(batched, fx.Effect[fx.Logger[None], Never, fx.Scope])
+    # Outputs are covariant: any logger is a Logger[object].
+    loggers: list[fx.Logger[object]] = [logger.format_json, logger.format_structured]
+    assert_type(loggers, list[fx.Logger[object]])
+
+
+def check_logger_layer(make: fx.Effect[fx.Logger[str], NotFound, Primary]) -> None:
+    assert_type(logger.layer([logger.default_logger]), layer.Layer[Never])
+    batched = logger.format_json.batched(window=1.0, flush=lambda _: fx.void)
+    assert_type(logger.layer([logger.format_json, batched]), layer.Layer[Never])
+    assert_type(
+        logger.layer([make], merge_with_existing=True), layer.Layer[Never, NotFound, Primary]
+    )

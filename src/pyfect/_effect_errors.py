@@ -9,7 +9,7 @@ Every handler is a ``_MatchCause``. Typed recovery goes through
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Never, overload
+from typing import TYPE_CHECKING, Any, Literal, Never, overload
 
 from pyfect import _core
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
@@ -20,6 +20,7 @@ from pyfect.exit import Success
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
+    from pyfect.logger import Severity
 
 
 class ErrorMethods(EffectBase[A_co, E_co, R_co]):
@@ -194,14 +195,39 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
         class or a tuple of classes)."""
         return self.tap_error(lambda e: f(e) if isinstance(e, tag) else _core._Succeed(None))
 
-    def ignore(self) -> Effect[None, Never, R_co]:
-        """Discard the value and any typed error."""
-        return _core._MatchCause(as_effect(self), _ignore_failure, _succeed_none)
+    def ignore(
+        self, *, log: bool | Severity = False, message: str | None = None
+    ) -> Effect[None, Never, R_co]:
+        """Discard the value and any typed error. With ``log``, log the
+        failure's cause first, after ``message`` if given, at the current
+        log level (``True``) or the level given."""
+        if log is False:
+            return _core._MatchCause(as_effect(self), _ignore_failure, _succeed_none)
+        write = _cause_logger(log, message)
 
-    def ignore_cause(self) -> Effect[None, Never, R_co]:
+        def on_failure(cause: Cause[Any]) -> Effect[None]:
+            found = cause.find_recoverable_error()
+            return write(cause) if isinstance(found, Fail) else _core._FailCause(found)
+
+        return _core._MatchCause(as_effect(self), on_failure, _succeed_none)
+
+    def ignore_cause(
+        self, *, log: bool | Severity = False, message: str | None = None
+    ) -> Effect[None, Never, R_co]:
         """Discard the value and the whole cause: typed errors, defects and
-        interrupts."""
-        return _core._MatchCause(as_effect(self), _succeed_none, _succeed_none)
+        interrupts. ``log`` and ``message`` as for ``ignore``."""
+        on_failure = _succeed_none if log is False else _cause_logger(log, message)
+        return _core._MatchCause(as_effect(self), on_failure, _succeed_none)
+
+
+def _cause_logger(
+    log: Literal[True] | Severity, message: str | None
+) -> Callable[[Cause[Any]], Effect[None]]:
+    from pyfect.logger import log_with_level
+
+    level = None if log is True else log
+    prefix = () if message is None else (message,)
+    return lambda cause: log_with_level(level, *prefix, cause)
 
 
 def _fail[E](error: E) -> Effect[Never, E]:

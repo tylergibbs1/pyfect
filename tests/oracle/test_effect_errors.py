@@ -11,14 +11,12 @@ Each test's docstring is the Effect test title. Omitted, with the reason:
   ``filter`` take predicates.
 - ``tryPromise`` "does not allocate AbortController for zero-argument thunks":
   ``try_async`` cancels the task, so there is no signal to allocate.
-- ``Effect.ignore`` and ``Effect.ignoreCause`` with ``log`` / ``message``:
-  logging comes with observability (M5).
 - "typed recovery with mixed causes": ported in ``tests/test_cause_recovery.py``,
   which runs every recovery combinator through it.
 """
 
 import asyncio
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Never, TypeIs
 
@@ -325,6 +323,78 @@ def test_aborts_the_provided_abort_signal_on_interruption() -> None:
     assert cancelled
 
 
+# --- Effect.ignore / Effect.ignoreCause with log -----------------------------------------
+
+
+@dataclass(frozen=True)
+class _Captured:
+    log_level: fx.LogLevel
+    cause: Cause[object]
+    message: tuple[object, ...]
+
+
+def _run_ignoring(
+    ignore: Callable[[fx.Effect[Never, str]], fx.Effect[None]],
+    current_log_level: fx.logger.Severity = fx.LogLevel.INFO,
+) -> list[_Captured]:
+    captured: list[_Captured] = []
+    capture = fx.Logger.make(lambda o: captured.append(_Captured(o.log_level, o.cause, o.message)))
+    testing.run_test(
+        ignore(fx.fail("boom"))
+        .pipe(fx.provide(fx.logger.layer([capture])))
+        .pipe(fx.provide_service(fx.MinimumLogLevel, fx.LogLevel.TRACE))
+        .pipe(fx.provide_service(fx.CurrentLogLevel, current_log_level))
+    )
+    return captured
+
+
+def _fails_with_boom(cause: Cause[object]) -> bool:
+    return cause.failures == ("boom",)
+
+
+def test_ignore_does_not_log_when_log_is_omitted() -> None:
+    """does not log when log is omitted"""
+    assert _run_ignoring(lambda eff: eff.ignore()) == []
+
+
+def test_ignore_does_not_log_when_log_is_false() -> None:
+    """does not log when log is false"""
+    assert _run_ignoring(lambda eff: eff.ignore(log=False)) == []
+
+
+def test_ignore_logs_with_the_current_level_when_log_is_true() -> None:
+    """logs with the current level when log is true"""
+    logs = _run_ignoring(lambda eff: eff.ignore(log=True), fx.LogLevel.WARN)
+    assert len(logs) == 1
+    assert logs[0].log_level is fx.LogLevel.WARN
+    assert _fails_with_boom(logs[0].cause)
+
+
+def test_ignore_logs_with_the_provided_level_when_log_is_a_log_level() -> None:
+    """logs with the provided level when log is a LogLevel"""
+    logs = _run_ignoring(lambda eff: eff.ignore(log=fx.LogLevel.ERROR), fx.LogLevel.WARN)
+    assert len(logs) == 1
+    assert logs[0].log_level is fx.LogLevel.ERROR
+    assert _fails_with_boom(logs[0].cause)
+
+
+def test_ignore_prepends_the_provided_message_when_logging() -> None:
+    """prepends the provided message when logging"""
+    logs = _run_ignoring(lambda eff: eff.ignore(log=True, message="Ignoring failure"))
+    assert len(logs) == 1
+    assert logs[0].message == ("Ignoring failure",)
+    assert _fails_with_boom(logs[0].cause)
+
+
+def test_ignore_with_log_keeps_defects() -> None:
+    """A defect is not ignored, and not logged (Effect re-fails the cause)."""
+    captured: list[object] = []
+    eff = fx.die(RuntimeError("boom")).ignore(log=True)
+    ex = testing.run_test_exit(eff.with_logger(fx.Logger.make(captured.append)))
+    assert isinstance(ex, fx.Failure)
+    assert captured == []
+
+
 # --- Effect.ignoreCause --------------------------------------------------------------
 
 
@@ -336,6 +406,40 @@ def test_ignores_defects() -> None:
 def test_ignores_interrupts() -> None:
     """ignores interrupts"""
     assert testing.run_test_exit(fx.interrupt().ignore_cause()) == fx.Success(None)
+
+
+def test_ignore_cause_does_not_log_when_log_is_omitted() -> None:
+    """does not log when log is omitted"""
+    assert _run_ignoring(lambda eff: eff.ignore_cause()) == []
+
+
+def test_ignore_cause_does_not_log_when_log_is_false() -> None:
+    """does not log when log is false"""
+    assert _run_ignoring(lambda eff: eff.ignore_cause(log=False)) == []
+
+
+def test_ignore_cause_logs_with_the_current_level_when_log_is_true() -> None:
+    """logs with the current level when log is true"""
+    logs = _run_ignoring(lambda eff: eff.ignore_cause(log=True), fx.LogLevel.WARN)
+    assert len(logs) == 1
+    assert logs[0].log_level is fx.LogLevel.WARN
+    assert _fails_with_boom(logs[0].cause)
+
+
+def test_ignore_cause_logs_with_the_provided_level_when_log_is_a_log_level() -> None:
+    """logs with the provided level when log is a LogLevel"""
+    logs = _run_ignoring(lambda eff: eff.ignore_cause(log=fx.LogLevel.ERROR), fx.LogLevel.WARN)
+    assert len(logs) == 1
+    assert logs[0].log_level is fx.LogLevel.ERROR
+    assert _fails_with_boom(logs[0].cause)
+
+
+def test_ignore_cause_prepends_the_provided_message_when_logging() -> None:
+    """prepends the provided message when logging"""
+    logs = _run_ignoring(lambda eff: eff.ignore_cause(log=True, message="Ignoring cause"))
+    assert len(logs) == 1
+    assert logs[0].message == ("Ignoring cause",)
+    assert _fails_with_boom(logs[0].cause)
 
 
 # --- error handling -------------------------------------------------------------------

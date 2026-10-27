@@ -40,6 +40,7 @@ from pyfect.deferred import Deferred
 from pyfect.duration import Seconds
 from pyfect.effect import from_exit, interrupt
 from pyfect.exit import Exit, Failure, Success, as_void_all
+from pyfect.logger._log import log_unhandled
 from pyfect.option import Option, Some
 from pyfect.scope import CloseableScope, Scope
 
@@ -482,9 +483,11 @@ def _release_all(fiber: Fiber[Any, Any], entries: dict[Any, _Entry[Any, Any]]) -
 
 def _close_evicted(entry: _Entry[Any, Any]) -> Effect[None]:
     """Close an entry the cache let go of. A failing finalizer must not
-    fail the unrelated caller that triggered the eviction; Effect logs it
-    at ``UnhandledLogLevel``, which waits for logging (M5)."""
-    return entry.scope.close(_DONE).ignore_cause()
+    fail the unrelated caller that triggered the eviction, so its failure
+    is logged at the ``UnhandledLogLevel``."""
+    return entry.scope.close(_DONE).catch_cause(
+        lambda cause: log_unhandled("Unhandled error in ScopedCache finalizer", cause)
+    )
 
 
 def _await_forked(

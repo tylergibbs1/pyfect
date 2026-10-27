@@ -53,19 +53,45 @@ def test_a_raising_use_callback_is_a_defect_and_returns_the_item():
     assert (yield from pool.use(fx.succeed)) == "resource"
 
 
-@testing.effect
-def test_invalidate_compares_items_with_equality():
-    attempts = 0
+class _Conn:
+    """Equal to every other connection, as a value type with a broad
+    ``__eq__`` would be; the pool must still tell them apart."""
 
-    def acquire() -> fx.Effect[tuple[str, int]]:
-        nonlocal attempts
-        attempts += 1
-        return fx.succeed(("conn", attempts))
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Conn)
+
+    def __hash__(self) -> int:
+        return 0
+
+
+@testing.effect
+def test_invalidate_matches_the_item_by_identity_not_equality():
+    """Effect finds the item with ``===``: an equal but distinct value is
+    not the pool's item."""
+    conns: list[_Conn] = []
+
+    def acquire() -> fx.Effect[_Conn]:
+        conns.append(_Conn())
+        return fx.succeed(conns[-1])
 
     pool = yield from fx.Pool.make(fx.suspend(acquire), size=1)
-    assert (yield from pool.use(fx.succeed)) == ("conn", 1)
-    yield from pool.invalidate(("conn", 1))
-    assert (yield from pool.use(fx.succeed)) == ("conn", 2)
+    assert (yield from pool.use(fx.succeed)) is conns[0]
+    yield from pool.invalidate(_Conn())
+    assert (yield from pool.use(fx.succeed)) is conns[0]
+    yield from pool.invalidate(conns[0])
+    assert (yield from pool.use(fx.succeed)) is conns[1]
+
+
+@testing.effect
+def test_reserve_matches_the_item_by_identity_not_equality():
+    pool = yield from fx.Pool.make(fx.sync(_Conn), size=1, concurrency=2)
+    item = yield from fx.scoped(pool.get())
+    reservation = fx.CloseableScope()
+    yield from pool.reserve(_Conn()).pipe(fx.provide_service(fx.Scope, reservation))
+    assert pool.state.usage == 0
+    yield from pool.reserve(item).pipe(fx.provide_service(fx.Scope, reservation))
+    assert pool.state.usage == 1
+    yield from reservation.close(fx.Success(None))
 
 
 @testing.effect
