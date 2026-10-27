@@ -121,6 +121,15 @@ stores the effect itself. Ending or failing a queue keeps its items and waiting 
 until takers drain them; `offer_all` returns the items it could not add, `shutdown` returns
 whether it finished the queue, and `Semaphore.take`/`release` return permit counts.
 
+**Time.** `fx.cron` parses cron expressions (seconds, names, steps, a zone) and finds the
+`next` / `prev` match with Effect's DST rules; `schedule.cron("0 9 * * MON", "Europe/Berlin")`
+runs an effect on one. `fx.random` reads the `Random` service (`next_int_between`,
+`shuffle`, `choice`), and `.pipe(random.with_seed("seed"))` gives Effect's exact sequence
+for that seed, which `jittered` schedules use too. `fx.date_time` adds the effectful and
+zone-aware parts of Effect's DateTime to aware `datetime`: `now()`, the `CurrentTimeZone`
+service, calendar `add` / `start_of` / `end_of`, DST disambiguation and RFC 9557 strings.
+`clock.now_nanos()` and `timed` count whole nanoseconds.
+
 **Deterministic tests.** `fx.testing` uses a `TestClock`: time moves only when the test
 calls `adjust` or `set_time`, and each fiber it wakes runs until it suspends before time
 moves on. A test that would hang fails with `StalledError` instead, and a woken fiber that

@@ -107,3 +107,29 @@ def test_an_invalid_expression_fails_the_schedule_with_cron_parse_error():
     assert exit == fx.Failure(
         fx.cause.fail(CronParseError("Expected a value between 0 and 59", "61"))
     )
+
+
+@pytest.mark.parametrize(
+    ("expression", "message"),
+    [
+        ("*/0 * * * *", "Expected step value to be greater than 0"),
+        ("*/61 * * * *", "Expected step value to be less than or equal to 59"),
+        ("* */24 * * *", "Expected step value to be less than or equal to 23"),
+        ("* * * */13 *", "Expected step value to be less than or equal to 12"),
+        ("*/a * * * *", "Expected step value to be a positive integer"),
+    ],
+)
+def test_step_values_out_of_range_are_rejected_like_effect(expression: str, message: str):
+    # Messages printed by Effect's Cron.parse under Node.
+    result = cron.parse(expression)
+    assert isinstance(result, fx.result.Err)
+    assert result.error.message == message
+
+
+def test_next_without_a_start_searches_from_now():
+    c = cron.parse_unsafe("* * * * *", "UTC")
+    before = datetime.now(UTC)
+    found = cron.next(c)
+    assert before < found <= before + timedelta(minutes=1)
+    assert found.second == 0
+    assert found.tzinfo == ZoneInfo("UTC")

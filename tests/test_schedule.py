@@ -407,3 +407,38 @@ def test_negative_times_is_rejected_at_the_call():
         fx.succeed(1).repeat(times=-1)
     with pytest.raises(ValueError, match="times must be >= 0"):
         fx.fail("e").retry(times=-1)
+
+
+def test_recurs_and_up_to_reject_negative_times():
+    # Effect stops at once; pyfect rejects it at the call (PARITY.md §4).
+    with pytest.raises(ValueError, match="recurs needs times >= 0"):
+        schedule.recurs(-1)
+    with pytest.raises(ValueError, match="up_to needs times >= 0"):
+        schedule.spaced(1).up_to(times=-1)
+
+
+def test_map_effect_runs_an_effect_for_each_output():
+    # Effect's Schedule.map with an effectful function: repeat gives 20 (checked under Node).
+    s = schedule.recurs(2).map_effect(lambda m: fx.succeed(m.output * 10))
+    assert run(fx.succeed(1).repeat(s)) == 20
+
+
+def test_a_failing_map_effect_fails_the_repeat():
+    s = schedule.recurs(2).map_effect(lambda _: fx.fail("mapped"))
+    assert run(fx.succeed(1).repeat(s).result()) == Err("mapped")
+
+
+@testing.effect
+def test_to_step_with_sleep_sleeps_then_returns_the_decision():
+    # Effect: toStepWithSleep(spaced("1 second").pipe(upTo({ times: 2 }))) gives 0, 1, Done(2).
+    step = yield from schedule.to_step_with_sleep(schedule.spaced(1).up_to(times=2))
+    times: list[float] = []
+
+    def timed_step(i: int) -> fx.Effect[Decision[int]]:
+        return step(i).tap(lambda _: fx.clock.now().map(times.append))
+
+    fiber = yield from fx.for_each([0, 1, 2], timed_step).fork()
+    yield from testing.adjust(2)
+    decisions = yield from fiber.join()
+    assert decisions == [Continue(0, Seconds(1)), Continue(1, Seconds(1)), Stop(2)]
+    assert times == [1, 2, 2]

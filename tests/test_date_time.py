@@ -172,3 +172,52 @@ def test_millisecond_is_a_unit():
     assert date_time.nearest(dt.replace(microsecond=123_500), "millisecond") == (
         dt.replace(microsecond=124_000)
     )
+
+
+@pytest.mark.parametrize(
+    ("unit", "start", "end", "nearest"),
+    [
+        ("minute", "12:34:00.000", "12:34:59.999", "12:35:00.000"),
+        ("hour", "12:00:00.000", "12:59:59.999", "13:00:00.000"),
+    ],
+)
+def test_start_end_and_nearest_of_time_units(
+    unit: date_time.Unit, start: str, end: str, nearest: str
+):
+    # Expected values printed by Effect's DateTime under Node.
+    at = datetime.fromisoformat("2024-03-14T12:34:56.789+00:00").astimezone(
+        ZoneInfo("Pacific/Auckland")
+    )
+
+    def utc_time(dt: datetime) -> str:
+        return dt.astimezone(UTC).strftime("%H:%M:%S.%f")[:-3]
+
+    assert utc_time(date_time.start_of(at, unit)) == start
+    assert utc_time(date_time.end_of(at, unit)) == end
+    assert utc_time(date_time.nearest(at, unit)) == nearest
+
+
+@pytest.mark.parametrize(
+    ("unit", "start", "end", "nearest"),
+    [
+        ("day", "2024-03-14T11:00", "2024-03-15T10:59", "2024-03-14T11:00"),
+        ("week", "2024-03-09T11:00", "2024-03-16T10:59", "2024-03-16T11:00"),
+        ("month", "2024-02-29T11:00", "2024-03-31T10:59", "2024-02-29T11:00"),
+        ("year", "2023-12-31T11:00", "2024-12-31T10:59", "2023-12-31T11:00"),
+    ],
+)
+def test_start_end_and_nearest_of_calendar_units_in_a_zone(
+    unit: date_time.Unit, start: str, end: str, nearest: str
+):
+    # Expected values printed by Effect's DateTime under Node.
+    at = datetime.fromisoformat("2024-03-14T12:34:56.789+00:00").astimezone(
+        ZoneInfo("Pacific/Auckland")
+    )
+
+    def utc_minute(dt: datetime) -> str:
+        return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M")
+
+    assert utc_minute(date_time.start_of(at, unit)) == start
+    assert utc_minute(date_time.end_of(at, unit)) == end
+    assert date_time.end_of(at, unit).microsecond == 999_999
+    assert utc_minute(date_time.nearest(at, unit)) == nearest
