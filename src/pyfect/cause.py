@@ -13,9 +13,11 @@ unwinding, or when concurrent work fails in several places at once.
 from __future__ import annotations
 
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Generic, Never, TypeVar
+
+from pyfect.result import Err, Ok, Result
 
 E_co = TypeVar("E_co", covariant=True)
 
@@ -48,7 +50,8 @@ class Cause(Generic[E_co]):
             return other
         if not other.reasons:
             return self
-        return Cause(_dedupe((*self.reasons, *other.reasons)))
+        combined = _dedupe((*self.reasons, *other.reasons))
+        return self if combined == self.reasons else Cause(combined)
 
     def add_interrupts(self, interrupts: Cause[Never]) -> Cause[E_co]:
         """Add each interruption whose fiber is not recorded yet."""
@@ -73,26 +76,37 @@ class Cause(Generic[E_co]):
         return tuple(r.defect for r in self.reasons if isinstance(r, Die))
 
     @property
-    def is_interrupted(self) -> bool:
+    def interruptors(self) -> frozenset[int]:
+        """The ids of the fibers that interrupted; external interrupts have none."""
+        return frozenset(
+            r.fiber_id for r in self.reasons if isinstance(r, Interrupt) and r.fiber_id is not None
+        )
+
+    @property
+    def has_fails(self) -> bool:
+        return any(isinstance(r, Fail) for r in self.reasons)
+
+    @property
+    def has_dies(self) -> bool:
+        return any(isinstance(r, Die) for r in self.reasons)
+
+    @property
+    def has_interrupts(self) -> bool:
         return any(isinstance(r, Interrupt) for r in self.reasons)
 
     @property
-    def is_interrupted_only(self) -> bool:
+    def has_interrupts_only(self) -> bool:
         return bool(self.reasons) and all(isinstance(r, Interrupt) for r in self.reasons)
-
-    @property
-    def has_defects(self) -> bool:
-        return any(isinstance(r, Die) for r in self.reasons)
 
     def elect_defects(self) -> Cause[E_co]:
         """If there is a defect, every typed error becomes a defect too."""
-        if not self.has_defects:
+        if not self.has_dies:
             return self
         return Cause(
             tuple(Die(_as_exception(r.error)) if isinstance(r, Fail) else r for r in self.reasons)
         )
 
-    def find_error(self) -> Fail[E_co] | Cause[Never]:
+    def find_fail(self) -> Fail[E_co] | Cause[Never]:
         """The first ``Fail``, even beside a defect; otherwise this cause,
         which then holds no typed error. For observing errors (``tap_error``),
         never for recovering from them: use ``find_recoverable_error``."""
@@ -100,6 +114,27 @@ class Cause(Generic[E_co]):
             if isinstance(r, Fail):
                 return r
         return self.without_failures()
+
+    def find_error(self) -> Result[E_co, Cause[Never]]:
+        """``Ok`` of the first typed error, else ``Err`` of this cause, which
+        then holds no typed error."""
+        found = self.find_fail()
+        return Ok(found.error) if isinstance(found, Fail) else Err(found)
+
+    def find_die(self) -> Die | None:
+        return next((r for r in self.reasons if isinstance(r, Die)), None)
+
+    def find_defect(self) -> BaseException | None:
+        die = self.find_die()
+        return None if die is None else die.defect
+
+    def find_interrupt(self) -> Interrupt | None:
+        return next((r for r in self.reasons if isinstance(r, Interrupt)), None)
+
+    def filter_interruptors(self) -> frozenset[int] | None:
+        """``interruptors`` if the cause holds an interruption (the set is
+        empty when every one was external), else ``None``."""
+        return self.interruptors if self.has_interrupts else None
 
     def find_recoverable_error(self) -> Fail[E_co] | Cause[Never]:
         """What a typed recovery handler may act on.
@@ -109,7 +144,7 @@ class Cause(Generic[E_co]):
         typed error elected to a defect. A cause with no typed error is
         returned as is. Interruptions do not block recovery.
         """
-        if not self.has_defects:
+        if not self.has_dies:
             for r in self.reasons:
                 if isinstance(r, Fail):
                     return r
@@ -130,28 +165,25 @@ class Cause(Generic[E_co]):
             return _as_exception(self.failures[0])
         if self.defects:
             return self.defects[0]
-        return Interrupted() if self.reasons else EmptyCauseError("Empty cause")
+        return _interrupted(self) if self.reasons else EmptyCauseError("Empty cause")
+
+    def pretty_errors(self) -> tuple[BaseException, ...]:
+        """One exception per typed error and defect, in order. Typed errors
+        that are not exceptions are wrapped in ``UnhandledError``. A cause of
+        interruptions alone gives one ``Interrupted`` naming the interruptors;
+        an empty cause gives none."""
+        errors = tuple(
+            _as_exception(r.error) if isinstance(r, Fail) else r.defect
+            for r in self.reasons
+            if not isinstance(r, Interrupt)
+        )
+        return errors if errors or not self.reasons else (_interrupted(self),)
 
     def pretty(self) -> str:
-        """Each typed error and defect, exceptions with their traceback and
-        cause chain. Interruptions are listed only when nothing else failed,
-        as in Effect."""
-        blocks: list[str] = []
-        interrupters: list[str] = []
-        for r in self.reasons:
-            match r:
-                case Fail(error=BaseException() as e) | Die(defect=e):
-                    blocks.append("".join(traceback.format_exception(e)).rstrip())
-                case Fail(error=e):
-                    blocks.append(f"Fail: {e!r}")
-                case Interrupt(fiber_id=fid):
-                    interrupters.append("externally" if fid is None else f"by fiber #{fid}")
-        if not blocks and interrupters:
-            blocks.append(
-                "All fibers interrupted without error\n"
-                + "\n".join(f"  interrupted {by}" for by in interrupters)
-            )
-        return "\n\n".join(blocks)
+        """``pretty_errors`` rendered with their tracebacks and cause chains."""
+        return "\n\n".join(
+            "".join(traceback.format_exception(e)).rstrip() for e in self.pretty_errors()
+        )
 
 
 class UnhandledError(Exception):
@@ -168,6 +200,15 @@ class Interrupted(Exception):
 
 class EmptyCauseError(Exception):
     """What an empty cause squashes to: it records no reason at all."""
+
+
+def _interrupted(cause: Cause[object]) -> Interrupted:
+    error = Interrupted("All fibers interrupted without error")
+    for r in cause.reasons:
+        if isinstance(r, Interrupt):
+            by = "externally" if r.fiber_id is None else f"by fiber #{r.fiber_id}"
+            error.add_note(f"interrupted {by}")
+    return error
 
 
 def _as_exception(error: object) -> BaseException:
@@ -205,6 +246,14 @@ def merge[E](*causes: Cause[E]) -> Cause[E]:
     for c in causes:
         combined = combined + c
     return combined.elect_defects()
+
+
+empty: Cause[Never] = Cause(())
+
+
+def from_reasons[E = Never](reasons: Iterable[Reason[E]]) -> Cause[E]:
+    """A cause holding exactly ``reasons``, in order, repeats included."""
+    return Cause(tuple(reasons))
 
 
 def fail[E](error: E) -> Cause[E]:

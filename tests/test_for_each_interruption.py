@@ -30,7 +30,7 @@ def test_an_external_interrupt_keeps_a_worker_defect():
 
     ex = run(program)
     assert isinstance(ex, fx.Failure)
-    assert ex.cause.is_interrupted
+    assert ex.cause.has_interrupts
     assert ex.cause.defects == (defect,)
 
 
@@ -58,7 +58,7 @@ def test_an_external_interrupt_keeps_a_recorded_sibling_failure():
 
     ex = run(program)
     assert isinstance(ex, fx.Failure)
-    assert ex.cause.is_interrupted
+    assert ex.cause.has_interrupts
     assert ex.cause.failures == ("sibling failure",)
 
 
@@ -82,7 +82,7 @@ def test_an_external_interrupt_waits_for_every_worker_to_finish():
 
     ex = run(program)
     assert log == ["w0 cleaned", "w1 cleaned", "interrupt returned"]
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted_only
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only
 
 
 def test_for_each_reads_the_iterable_when_it_runs():

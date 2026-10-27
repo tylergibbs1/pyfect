@@ -126,7 +126,7 @@ def test_fork_scoped_into_a_closed_scope_does_not_run_the_work():
 
     ex = run(program)
     assert ran == []
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
 
 
 def test_a_parallel_scope_runs_its_finalizers_concurrently():
@@ -166,4 +166,4 @@ def test_a_fork_scoped_fiber_can_close_its_own_parallel_scope():
 
     closed, sibling_exit = run(program)
     assert closed == fx.Success("closed")
-    assert isinstance(sibling_exit, fx.Failure) and sibling_exit.cause.is_interrupted
+    assert isinstance(sibling_exit, fx.Failure) and sibling_exit.cause.has_interrupts

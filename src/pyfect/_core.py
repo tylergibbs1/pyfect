@@ -135,9 +135,7 @@ class Effect(Frame, Generic[A_co, E_co, R_co]):
 
     def map_error[E2](self, f: Callable[[E_co], E2]) -> Effect[A_co, E2, R_co]:
         def on_failure(cause: Cause[E_co]) -> Effect[Never, E2, Never]:
-            return _FailCause(
-                Cause(tuple(Fail(f(r.error)) if isinstance(r, Fail) else r for r in cause.reasons))
-            )
+            return _FailCause(cause.map(f))
 
         return _MatchCause(self, on_failure, None)
 
@@ -179,7 +177,7 @@ class Effect(Frame, Generic[A_co, E_co, R_co]):
         self, f: Callable[[E_co], Effect[object, E2, R2]]
     ) -> Effect[A_co, E_co | E2, R_co | R2]:
         def on_failure(cause: Cause[E_co]) -> Effect[Any, Any, Any]:
-            found = cause.find_error()
+            found = cause.find_fail()
             if not isinstance(found, Fail):
                 return _FailCause(cause)
             return _FlatMap(f(found.error), lambda _: _FailCause(cause))
@@ -275,7 +273,7 @@ class Effect(Frame, Generic[A_co, E_co, R_co]):
         self, finalizer: Effect[object, Never, R2]
     ) -> Effect[A_co, E_co, R_co | R2]:
         def handle(ex: Exit[A_co, E_co]) -> Effect[object, Never, R2]:
-            if isinstance(ex, Failure) and ex.cause.is_interrupted:
+            if isinstance(ex, Failure) and ex.cause.has_interrupts:
                 return finalizer
             return _Succeed(None)
 

@@ -41,7 +41,7 @@ def test_an_unstarted_uninterruptible_body_does_not_run_either():
 
     ex = run(program)
     assert ran == []
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted_only
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only
 
 
 def test_a_synchronous_self_interrupt_stops_the_fiber():
@@ -60,7 +60,7 @@ def test_a_synchronous_self_interrupt_stops_the_fiber():
         return (yield from fiber.await_exit())
 
     ex = run(program)
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
 
 
 def test_a_map_callback_that_interrupts_its_own_fiber_skips_the_next_map():
@@ -75,7 +75,7 @@ def test_a_map_callback_that_interrupts_its_own_fiber_skips_the_next_map():
     )
     ex = fx.testing.run_test_exit(eff)
     assert ran == []
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
 
 
 def test_a_self_interrupt_runs_the_interrupt_finalizer_once_in_order():
@@ -111,7 +111,7 @@ def test_a_self_interrupt_runs_the_interrupt_finalizer_once_in_order():
         return ex
 
     ex = run(program)
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
     assert events == ["acquired", "finalizer-start", "finalizer-end", "awaited"]
 
 
@@ -130,7 +130,7 @@ def test_a_parked_fiber_is_finished_before_interrupt_returns_control():
 
     ex = run(program)
     assert log == ["finalizer", "next step"]
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted_only
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only
 
 
 def test_interrupt_returns_none():
@@ -195,7 +195,7 @@ def test_interrupting_a_deep_tree_of_fibers_finishes_it():
 
     for extra in range(24):
         ex, log = at_stack_depth(extra)
-        assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted_only
+        assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only
         assert log == ["leaf"]
 
 

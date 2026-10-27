@@ -11,6 +11,7 @@ from typing import Never, Protocol, assert_type
 
 import pyfect as fx
 from pyfect import layer, schedule
+from pyfect.cause import Die, Fail, Interrupt
 from pyfect.context import ServiceEffect
 from pyfect.duration import Seconds, to_seconds
 from pyfect.scheduler import SyncScheduler
@@ -268,6 +269,22 @@ def check_option(o: fx.Option[int | None]) -> None:
             assert_type(value, int | None)
         case None:
             pass
+
+
+def check_cause(c: fx.Cause[str]) -> None:
+    assert_type(fx.cause.empty, fx.Cause[Never])
+    assert_type(fx.cause.from_reasons([Fail(1), Die(ValueError())]), fx.Cause[int])
+    assert_type(c.map(len), fx.Cause[int])
+    assert_type(c.interruptors, frozenset[int])
+    assert_type(c.filter_interruptors(), frozenset[int] | None)
+    assert_type(c.find_fail(), Fail[str] | fx.Cause[Never])
+    assert_type(c.find_error(), fx.Ok[str] | fx.Err[fx.Cause[Never]])
+    assert_type(c.find_die(), Die | None)
+    assert_type(c.find_defect(), BaseException | None)
+    assert_type(c.find_interrupt(), Interrupt | None)
+    assert_type(c.pretty_errors(), tuple[BaseException, ...])
+    assert_type(fx.cause.from_reasons([Interrupt(1), Die(ValueError())]), fx.Cause[Never])
+    assert_type(c + fx.cause.fail(1), fx.Cause[str | int])
 
 
 # --- TaggedError hashing -----------------------------------------------------------

@@ -242,6 +242,10 @@ Every milestone ends with green ports of the named Effect tests in `tests/oracle
 | Pipeable 20-arity pipe | single-step `.pipe` | Keeps pyright inference correct |
 | `run_sync` on async effects | blocks (optional `stall_timeout`) | Pythonic; documented |
 | withConcurrency, once, memoize, zipLeft/Right, loop, iterate | not ported | Not in v4 |
+| Cause annotations, `annotate`, StackTrace, InterruptorStackTrace | deferred to tracing (M5) | Nothing records stack frames or spans yet; reasons carry no annotations |
+| Cause `isCause` / `is*Reason` / `make*Reason`, `findErrorOption` | `isinstance`, the reason classes, `find_error` | Classes are their own guards and constructors; `find_error` already returns `Ok` / `Err` |
+| Cause `findDie` / `findDefect` / `findInterrupt` / `filterInterruptors` return `Result<_, Cause>` | `find_die` / `find_defect` / `find_interrupt` / `filter_interruptors` return the value or `None` | The `Err` side is the cause itself, which the caller already holds; `find_error` keeps `Ok` / `Err` because a typed error may itself be `None` |
+| `Cause.squash` / `prettyErrors` return a typed error as is | a non-exception typed error is wrapped in `UnhandledError` | The result must be raisable |
 
 ## 5. Open design questions (need a human decision)
 

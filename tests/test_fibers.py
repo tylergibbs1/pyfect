@@ -54,7 +54,7 @@ def test_interrupt_runs_finalizers_and_reports_interruption():
 
     ex = run(program)
     assert log == ["finalizer"]
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted_only
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only
 
 
 def test_interruption_cannot_be_caught():
@@ -90,7 +90,7 @@ def test_uninterruptible_regions_finish_before_the_interrupt_lands():
 
     ex = run(program)
     assert log == ["region done"]
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
 
 
 def test_uninterruptible_mask_restore_reenables_interruption():

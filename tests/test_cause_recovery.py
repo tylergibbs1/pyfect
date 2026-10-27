@@ -229,7 +229,7 @@ def test_uninterruptible_handlers_observe_the_interruption_after_skipped_handler
 
     testing.run_test(program)
     [ex] = seen
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted_only
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only
 
 
 def test_interrupted_recovery_raises_interrupted_at_the_run_boundary():
@@ -362,7 +362,7 @@ def test_squash_of_an_empty_cause():
 def test_recovery_reads_causes_only_through_find_recoverable_error():
     """``first_failure`` let combinators recover past a defect. Nothing in
     src/ may bring it back, nor pick a typed error out of ``.failures``:
-    combinators go through ``find_recoverable_error`` (or ``find_error``
+    combinators go through ``find_recoverable_error`` (or ``find_fail``
     to observe)."""
     src = Path(__file__).parent.parent / "src" / "pyfect"
     offenders = [
@@ -386,6 +386,6 @@ def test_tap_error_taps_the_first_error_even_beside_a_defect():
     assert isinstance(ex, fx.Failure) and ex.cause == cause
 
 
-def test_find_error():
-    assert (die(DEFECT) + fail("x")).find_error() == Fail("x")
-    assert (die(DEFECT) + interrupt(1)).find_error() == die(DEFECT) + interrupt(1)
+def test_find_fail():
+    assert (die(DEFECT) + fail("x")).find_fail() == Fail("x")
+    assert (die(DEFECT) + interrupt(1)).find_fail() == die(DEFECT) + interrupt(1)

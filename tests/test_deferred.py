@@ -55,7 +55,7 @@ def test_complete_stores_the_interrupt_when_the_completing_fiber_is_interrupted(
         return (yield from d.wait().exit())
 
     ex = run(program)
-    assert isinstance(ex, fx.Failure) and ex.cause.is_interrupted_only
+    assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only
 
 
 def test_complete_with_does_not_memoize_the_effect():
@@ -98,7 +98,7 @@ def test_done_with_an_interrupt_resumes_every_waiter():
         return (yield from fx.for_each(waiters, lambda f: f.await_exit()))
 
     exits = run(program)
-    assert all(isinstance(ex, fx.Failure) and ex.cause.is_interrupted_only for ex in exits)
+    assert all(isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only for ex in exits)
 
 
 def test_poll_returns_the_stored_effect():

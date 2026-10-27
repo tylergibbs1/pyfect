@@ -69,7 +69,7 @@ def run_main[A](eff: Effect[A, Never, Never]) -> A:
     ex = asyncio.run(_run_main_exit(eff))
     if isinstance(ex, Success):
         return ex.value
-    if ex.cause.is_interrupted_only:
+    if ex.cause.has_interrupts_only:
         raise SystemExit(130)
     error = ex.cause.squash()
     code = error.exit_code if isinstance(error, TaggedError) else 1

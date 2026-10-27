@@ -3,12 +3,12 @@
     import pyfect as fx
 
 Constructors and run functions live at the top level. Data types and
-their modules: ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
+their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
 ``fx.schedule``, ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.testing``.
 """
 
-from pyfect import clock, duration, exit, layer, option, result, schedule, testing
+from pyfect import cause, clock, duration, exit, layer, option, result, schedule, testing
 from pyfect._concurrency import Concurrency, all, for_each, race_all
 from pyfect._core import Effect, Restore, uninterruptible_mask
 from pyfect._fiber import Fiber
@@ -105,6 +105,7 @@ __all__ = [
     "blocking",
     "callback",
     "catch_tag",
+    "cause",
     "clock",
     "current_fiber",
     "die",

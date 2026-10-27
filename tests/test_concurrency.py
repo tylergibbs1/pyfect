@@ -84,7 +84,7 @@ def test_first_failure_interrupts_siblings():
     assert log == ["sibling interrupted"]
     assert isinstance(ex, fx.Failure)
     assert ex.cause.failures == ("boom",)
-    assert not ex.cause.is_interrupted, "our own interrupts of siblings are not reported"
+    assert not ex.cause.has_interrupts, "our own interrupts of siblings are not reported"
 
 
 def test_interrupting_a_concurrent_for_each_interrupts_all_workers():
