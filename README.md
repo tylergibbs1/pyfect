@@ -145,6 +145,14 @@ its own. Build one with `fx.channel` (`from_iterable`, `from_iterable_array`,
 `to_pull`. Pull loops run on the fiber's own stack, about 1M items/s one by one and
 20M+ in chunks (`benchmarks/channel.py`).
 
+**Streams.** `fx.Stream[A, E, R]` is a channel writing non-empty tuples of items, so it
+moves a chunk at a time while its functions see one item at a time. Build one with
+`fx.stream` (`make`, `from_iterable`, `range`, `unfold`, `paginate`, `from_effect`,
+`callback` with backpressure, `from_queue`, `from_pubsub`, `from_async_iterable`, `tick`,
+`from_schedule`, ...) and run it with `run_collect`, `run_fold`, `run_for_each`,
+`run_head` or `to_pull`. `fx.stream.range(0, 3)` is `0, 1, 2`, as Python's `range`;
+`range_inclusive` is Effect's. `SubscriptionRef.changes()` is a stream.
+
 **Request batching.** A `fx.Request[A, E]` subclass (a frozen dataclass) describes one
 lookup; a `fx.RequestResolver` answers many at once. Requests made through one resolver in
 the same scheduler tick become one batch, so N concurrent `fx.request(GetUser(i), users)`

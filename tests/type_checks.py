@@ -2283,3 +2283,142 @@ def check_channel_io(
         fx.Effect[Dequeue[int, fx.Done], Never, fx.Scope],
     )
     chunks.run_into_queue(queue)  # pyright: ignore[reportArgumentType]
+
+
+# --- streams ---------------------------------------------------------------------
+
+type _St[A, E = Never, R = Never] = fx.stream.Stream[A, E, R]
+
+
+def check_stream_constructors(eff: fx.Effect[int, NotFound, Primary]) -> None:
+    st = fx.stream
+    assert_type(st.succeed(1), _St[int])
+    assert_type(st.make(1, 2), _St[int])
+    assert_type(st.make(), _St[Never])
+    assert_type(st.sync(lambda: "a"), _St[str])
+    assert_type(st.empty, _St[Never])
+    assert_type(st.never, _St[Never])
+    assert_type(st.fail(NotFound("k")), _St[Never, NotFound])
+    assert_type(st.die(RuntimeError()), _St[Never])
+    assert_type(st.from_effect(eff), _St[int, NotFound, Primary])
+    assert_type(st.from_effect_drain(eff), _St[Never, NotFound, Primary])
+    assert_type(st.from_iterable("ab", chunk_size=1), _St[str])
+    assert_type(st.from_arrays([1], (2,)), _St[int])
+    assert_type(st.from_iterable_effect(eff.map(lambda n: [n])), _St[int, NotFound, Primary])
+    assert_type(st.range(0, 3), _St[int])
+    assert_type(st.range_inclusive(0, 3), _St[int])
+    assert_type(st.iterate(1, lambda n: n + 1), _St[int])
+    assert_type(st.service(Primary), _St[Db, Never, Primary])
+    assert_type(st.service_option(Primary), _St[fx.Option[Db]])
+    assert_type(st.suspend(lambda: st.from_effect(eff)), _St[int, NotFound, Primary])
+    assert_type(st.tick(1), _St[None])
+    st.range(0, 1.5)  # pyright: ignore[reportArgumentType]
+
+
+def check_stream_repeats(
+    ends: fx.Effect[int, NotFound | fx.Done, Primary], only_ends: fx.Effect[str, fx.Done]
+) -> None:
+    assert_type(fx.stream.from_effect_repeat(ends), _St[int, NotFound, Primary])
+    assert_type(fx.stream.from_effect_repeat(only_ends), _St[str])
+    assert_type(fx.stream.from_effect_repeat(fx.succeed(1)), _St[int])
+    assert_type(fx.stream.from_iterable_effect_repeat(only_ends.map(list)), _St[str, Never, Never])
+    assert_type(
+        fx.stream.from_effect_schedule(fx.fail(NotFound("k")), schedule.recurs(1)),
+        _St[Never, NotFound],
+    )
+    assert_type(fx.stream.from_effect_schedule(fx.succeed(1), schedule.recurs(1)), _St[int])
+    assert_type(fx.stream.from_schedule(schedule.recurs(1)), _St[int])
+
+
+def check_stream_unfolds(
+    step: Callable[[int], fx.Effect[tuple[str, int] | None, NotFound]],
+) -> None:
+    assert_type(fx.stream.unfold(0, step), _St[str, NotFound])
+
+    def page(s: int) -> fx.Effect[tuple[list[str], fx.Option[int]], NotFound, Port]: ...
+
+    assert_type(fx.stream.paginate(0, page), _St[str, NotFound, Port])
+
+
+def check_stream_pulls(
+    pull: fx.Effect[fx.Effect[tuple[int, ...], NotFound | fx.Done, Primary], NotFound, Primary],
+    source: _St[int, ValueError, Replica],
+) -> None:
+    assert_type(fx.stream.from_pull(pull), _St[int, NotFound, Primary])
+    channel = fx.stream.to_channel(source)
+    assert_type(
+        channel,
+        fx.channel.Channel[tuple[int, ...], ValueError, None, object, object, object, Replica],
+    )
+    assert_type(fx.stream.from_channel(channel), _St[int, ValueError, Replica])
+    chunks: list[tuple[int, ...]] = [(1,)]
+    assert_type(fx.stream.from_channel(fx.channel.from_iterable(chunks)), _St[int])
+    fx.stream.from_channel(fx.channel.from_iterable([1]))  # pyright: ignore[reportArgumentType]
+    assert_type(
+        fx.stream.transform_pull(source, lambda p, _scope: fx.succeed(p.map(lambda c: c * 2))),
+        _St[int, ValueError, Replica],
+    )
+
+
+def check_stream_sources(
+    queue: Dequeue[int, NotFound | fx.Done],
+    pubsub: fx.PubSub[str],
+    takes: fx.PubSub[fx.Take[int, NotFound]],
+    subscription: Subscription[bytes],
+) -> None:
+    assert_type(fx.stream.from_queue(queue), _St[int, NotFound])
+    assert_type(fx.stream.from_pubsub(pubsub), _St[str])
+    assert_type(fx.stream.from_pubsub_take(takes), _St[int, NotFound])
+    assert_type(fx.stream.from_subscription(subscription), _St[bytes])
+    assert_type(fx.SubscriptionRef(1).changes(), _St[int])
+
+    def register(q: fx.Queue[int, NotFound | fx.Done]) -> fx.Effect[None, NotFound, fx.Scope]: ...
+
+    def register_with(q: fx.Queue[int, fx.Done]) -> fx.Effect[None, Never, fx.Scope | Port]: ...
+
+    assert_type(fx.stream.callback(register), _St[int, NotFound])
+    assert_type(fx.stream.callback(register_with, buffer_size=2), _St[int, Never, Port])
+
+
+def check_stream_scopes(
+    made: fx.Effect[_St[int, NotFound, Primary], NotFound, fx.Scope],
+    needs_scope: _St[int, NotFound, fx.Scope | Primary],
+    only_scope: _St[int, NotFound, fx.Scope],
+) -> None:
+    assert_type(fx.stream.unwrap(made), _St[int, NotFound, Primary])
+    assert_type(needs_scope.pipe(fx.stream.scoped), _St[int, NotFound, Primary])
+    assert_type(only_scope.pipe(fx.stream.scoped), _St[int, NotFound])
+
+
+def check_stream_runs(source: _St[int, ValueError, Replica], words: _St[str]) -> None:
+    assert_type(source.run_collect(), fx.Effect[list[int], ValueError, Replica])
+    assert_type(source.run_drain(), fx.Effect[None, ValueError, Replica])
+    assert_type(source.run_count(), fx.Effect[int, ValueError, Replica])
+    assert_type(source.run_sum(), fx.Effect[int, ValueError, Replica])
+    assert_type(
+        source.run_fold(lambda: "", lambda s, n: s + str(n)), fx.Effect[str, ValueError, Replica]
+    )
+    assert_type(
+        source.run_fold_effect(lambda: 0, lambda s, n: fx.fail(KeyError()).as_(s + n)),
+        fx.Effect[int, ValueError | KeyError, Replica],
+    )
+    assert_type(source.run_head(), fx.Effect[fx.Option[int], ValueError, Replica])
+    assert_type(source.run_last(), fx.Effect[fx.Option[int], ValueError, Replica])
+    assert_type(
+        source.run_for_each(lambda _: fx.fail(KeyError())),
+        fx.Effect[None, ValueError | KeyError, Replica],
+    )
+    assert_type(
+        source.run_for_each_while(lambda n: fx.succeed(n < 3).pipe(fx.provide_service(Port, 1))),
+        fx.Effect[None, ValueError, Replica],
+    )
+    assert_type(
+        source.run_for_each_array(lambda chunk: fx.succeed(len(chunk))),
+        fx.Effect[None, ValueError, Replica],
+    )
+    assert_type(
+        source.to_pull(), fx.Effect[fx.Pull[tuple[int, ...], ValueError], Never, Replica | fx.Scope]
+    )
+    assert_type(words.run_string(), fx.Effect[str])
+    assert_type(fx.stream.make(b"a").run_bytes(), fx.Effect[bytes])
+    source.run_string()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]

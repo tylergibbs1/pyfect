@@ -4,15 +4,8 @@ Each test's docstring is the Effect test title. Effect's module functions
 are methods (``SubscriptionRef.getAndUpdateEffect(ref, f)`` is
 ``ref.get_and_update_effect(f)``).
 
-Adapted, with the reason:
-
-- "multiple subscribers can receive changes", "subscriptions are
-  interruptible", "concurrent subscribes and unsubscribes are handled
-  correctly": Effect reads ``SubscriptionRef.changes``, a ``Stream``, and
-  Stream is M6. The ports read the subscription ``changes`` is built on:
-  ``ref.subscribe()`` and ``n`` takes stand for ``Stream.take(n)`` and
-  ``Stream.runCollect``, and a latch opened after each take for
-  ``Stream.tap``.
+``SubscriptionRef.changes(ref)`` is ``ref.changes()``, a ``Stream``;
+``Stream.take`` and ``Stream.tap`` come from ``tests/oracle/_stream_ops.py``.
 
 Omitted, with the reason:
 
@@ -24,21 +17,17 @@ from typing import Any
 import pyfect as fx
 from pyfect import testing
 
+from . import _stream_ops as ops
 
-def _collect(ref: fx.SubscriptionRef[int], n: int, latch: fx.Latch | None = None):
+
+def _collect(
+    ref: fx.SubscriptionRef[int], n: int, latch: fx.Latch | None = None
+) -> fx.Effect[list[int]]:
     """``changes(ref).pipe(Stream.tap(latch.open), Stream.take(n), Stream.runCollect)``."""
-
-    @fx.gen
-    def body():
-        subscription = yield from ref.subscribe()
-        values: list[int] = []
-        for _ in range(n):
-            values.append((yield from subscription.take()))
-            if latch is not None:
-                yield from latch.open()
-        return values
-
-    return fx.scoped(body)
+    changes = ref.changes()
+    if latch is not None:
+        changes = changes.pipe(ops.tap(lambda _: latch.open()))
+    return changes.pipe(ops.take(n)).run_collect()
 
 
 def _interrupted_only(ex: fx.Exit[Any, Any]) -> bool:

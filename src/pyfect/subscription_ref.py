@@ -7,20 +7,22 @@ order. Each update stores (and publishes) once, under the ref's lock, so
 subscribers see the values in the order they were set; a ``*_some``
 update that keeps the value publishes nothing.
 
-Effect's ``changes`` is a ``Stream`` over this subscription
-(``Stream.fromPubSub``); it arrives with Stream in M6, built on
-``subscribe``.
+``changes()`` is the same as a ``Stream``: the current value, then every
+later one, from a subscription made when the stream starts.
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
-from typing import Never
+from typing import TYPE_CHECKING, Never
 
 from pyfect._core import Effect, _Sync
 from pyfect._locked_ref import LockedRef
 from pyfect.pubsub import Atomic, PubSub, Subscription
 from pyfect.scope import Scope
+
+if TYPE_CHECKING:
+    from pyfect.stream import Stream
 
 
 class SubscriptionRef[A](LockedRef[A]):
@@ -43,3 +45,10 @@ class SubscriptionRef[A](LockedRef[A]):
         """Subscribe until the current scope closes: the current value, then
         every later one."""
         return self._pubsub.subscribe()
+
+    def changes(self) -> Stream[A]:
+        """A stream of the current value, then every later one (Effect's
+        ``SubscriptionRef.changes``). Each run subscribes anew."""
+        from pyfect.stream import from_pubsub
+
+        return from_pubsub(self._pubsub)

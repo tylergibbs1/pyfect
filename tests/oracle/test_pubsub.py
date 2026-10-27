@@ -28,8 +28,6 @@ Omitted, with the reason:
   normalize message counts": counts are ``int``, so there is no fraction or
   NaN to normalize (pyright rejects them); ``tests/test_pubsub.py`` checks
   counts of 0 and less.
-- "Stream.fromPubSub completes after shutdown": Stream is not ported yet
-  (M6).
 """
 
 import gc
@@ -39,7 +37,7 @@ from typing import Any
 import pytest
 
 import pyfect as fx
-from pyfect import testing
+from pyfect import stream, testing
 from pyfect.pubsub import Atomic, PubSub, ReplayWindow, Subscription
 
 
@@ -638,6 +636,17 @@ def test_shutdown_interrupts_suspended_take_all_subscribers():
     fiber = yield from subscription.take_all().fork(start_immediately=True)
     yield from pubsub.shutdown()
     assert _interrupted((yield from fiber.await_exit()))
+
+
+@testing.effect
+def test_stream_from_pub_sub_completes_after_shutdown():
+    """Stream.fromPubSub completes after shutdown"""
+    pubsub = yield from PubSub[int].unbounded()
+    fiber = yield from stream.from_pubsub(pubsub).run_collect().fork()
+    yield from fx.yield_now()
+    assert fiber.unsafe_poll() is None
+    yield from pubsub.shutdown()
+    assert (yield from fiber.join()) == []
 
 
 @testing.effect
