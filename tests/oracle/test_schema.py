@@ -7,7 +7,7 @@ adapter's.
 Ported in part: "keeps synchronous decode and encode effects eager" (a
 pyfect ``Exit`` is not an ``Effect``, so the ``_effect`` adapters wrap the
 parse's exit with ``from_exit``; the results are checked), "isSchema" (the
-``Class`` and ``Opaque`` halves wait for schema classes), "toString" (Python's
+``Opaque`` half waits for ``Opaque``; a schema class is a schema), "toString" (Python's
 ``str(error)`` is the message; Effect prints ``Fail(SchemaError(<message>))``),
 "SchemaError / extends Error and exposes the issue" (``isSchemaError`` is
 ``isinstance``; there is no ``name`` property).
@@ -23,10 +23,11 @@ Omitted:
   have no Python counterpart.
 - Literal(s), Enum, Union of primitives, checks, Int, Natural, Trimmed,
   Finite, fromBrand and resolveAnnotations: ported in test_schema_checks.py.
-- Every other title waits for the schema kinds it exercises: Struct, Tuple,
-  Array, Record, transformations, classes, declarations and the built-in
-  codecs. The parse-option titles all decode
-  structs; the adapter titles ("is", "asserts", "decodeUnknownOption /
+- Struct, Record and class titles are in test_schema_struct.py and
+  test_schema_class.py. Every other title waits for the schema kinds it
+  exercises: Tuple, Array, transformations, declarations and the built-in
+  codecs. Ported parse-option titles are in test_schema_struct.py; the
+  adapter titles ("is", "asserts", "decodeUnknownOption /
   encodeUnknownOption", ...) use ``FiniteFromString`` or effectful getters.
 """
 
@@ -78,6 +79,11 @@ def test_keeps_synchronous_decode_and_encode_effects_eager():
 def test_is_schema():
     """isSchema"""
     assert S.is_schema(S.String)
+
+    class A(S.Class):
+        a: str
+
+    assert S.is_schema(A)
     assert not S.is_schema({})
 
 

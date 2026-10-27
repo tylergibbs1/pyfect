@@ -15,6 +15,11 @@ class NotFound(fx.TaggedError):
     key: str
 
 
+@dataclass(frozen=True, eq=False)
+class FrozenNotFound(fx.TaggedError):
+    key: str
+
+
 @dataclass
 class Invalid(fx.TaggedError):
     reason: str
@@ -209,8 +214,13 @@ def test_an_error_in_generator_cleanup_is_added_as_a_defect():
 
 @pytest.mark.parametrize(
     "error",
-    [NotFound("k"), NotFound(key="k"), fx.TimeoutException(fx.duration.to_seconds(1.5))],
-    ids=["positional", "keyword", "TimeoutException"],
+    [
+        NotFound("k"),
+        NotFound(key="k"),
+        FrozenNotFound("k"),
+        fx.TimeoutException(fx.duration.to_seconds(1.5)),
+    ],
+    ids=["positional", "keyword", "frozen", "TimeoutException"],
 )
 def test_dataclass_tagged_errors_survive_copy_and_pickle(error: fx.TaggedError):
     """Exceptions are copied (``copy``) and pickled (process pools, logging);

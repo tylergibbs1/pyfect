@@ -3497,3 +3497,140 @@ def check_schema_checks(unknown: object) -> None:
     S.String.pipe(S.from_brand(small))  # pyright: ignore[reportArgumentType]
     assert_type(S.resolve_annotations(S.String), S.ast.Annotations | None)
     _ = ones
+
+
+def check_schema_structs(unknown: object) -> None:
+    """A TypedDict declares a struct: its Type is exact, its Encoded a
+    ``Mapping[str, object]``; keyword schemas carry their services."""
+    from collections.abc import Mapping
+    from typing import NotRequired, TypedDict
+
+    from pyfect import schema as S
+
+    class UserDict(TypedDict):
+        id: int
+        nick: NotRequired[str]
+
+    users = S.Struct(UserDict)
+    assert_type(users, S.StructSchema[UserDict, Never, Never])
+    assert_type(S.decode_unknown_sync(users)(unknown), UserDict)
+    assert_type(S.encode_sync(users), S.Parser[UserDict, Mapping[str, object]])
+    assert_type(users.make({"id": 1}), UserDict)
+    users.make({"nick": "a"})  # pyright: ignore[reportArgumentType]
+    assert_type(users.fields, Mapping[str, S.Bottom[object, object, Never, Never]])
+    needs: S.Bottom[int, str, Primary, Never] = S.Bottom(S.ast.unknown)
+    assert_type(S.Struct(UserDict, id=needs), S.StructSchema[UserDict, Primary, Never])
+    S.decode_unknown_sync(S.Struct(UserDict, id=needs))  # pyright: ignore[reportArgumentType]
+    S.Struct(int)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    checked = users.check(S.make_filter(lambda u: u["id"] > 0))
+    assert_type(checked, S.StructSchema[UserDict, Never, Never])
+    assert_type(S.String.annotate_key(message_missing_key="required"), S.Bottom[str])
+
+
+type _Tree = dict[str, _Tree]
+
+
+def check_schema_records(unknown: object) -> None:
+    from collections.abc import Mapping
+    from typing import Literal
+
+    from pyfect import schema as S
+
+    scores = S.Record(S.String, S.Number)
+    assert_type(scores, S.RecordSchema[str, float, str, float, Never, Never])
+    assert_type(S.decode_unknown_sync(scores)(unknown), dict[str, float])
+    assert_type(S.encode_sync(scores), S.Parser[dict[str, float], Mapping[str, float]])
+    keyed = S.Record(S.Literals("a", "b"), S.Boolean)
+    assert_type(S.decode_unknown_sync(keyed)(unknown), dict[Literal["a", "b"], bool])
+
+    tree: S.Bottom[_Tree, object] = S.Record(S.String, S.suspend(lambda: tree))
+    assert_type(S.suspend(lambda: S.Number), S.Bottom[float])
+    _ = tree
+
+
+def check_schema_classes(unknown: object) -> None:
+    """A schema class is a frozen, keyword-only dataclass and its own schema
+    (``Codec[Self, Mapping[str, object]]``)."""
+    from collections.abc import Mapping
+
+    from pyfect import schema as S
+    from pyfect.option import Option
+
+    class User(S.Class):
+        id: int
+        name: str
+        score: float = S.field(S.Finite)
+        nick: str | None = None
+
+        @S.class_check(expected="a short name")
+        def short_name(self) -> bool:
+            return len(self.name) < 10
+
+    user = User(id=1, name="a", score=1.0)
+    User(id=1, name="a")  # pyright: ignore[reportCallIssue]
+    User(id="1", name="a", score=1.0)  # pyright: ignore[reportArgumentType]
+    User(1, "a", 1.0)  # pyright: ignore[reportCallIssue]
+    user.id = 2  # pyright: ignore[reportAttributeAccessIssue]
+    assert_type(user.short_name(), bool)
+    assert_type(S.decode_unknown_sync(User)(unknown), User)
+    assert_type(S.encode_sync(User), S.Parser[User, Mapping[str, object]])
+    assert_type(User.make(user), User)
+    assert_type(User.make_option(user), Option[User])
+    assert_type(User.make_effect(user), fx.Effect[User, S.issue.Issue])
+    assert_type(User.check(S.make_filter(lambda u: u.id > 0)), S.Bottom[User, Mapping[str, object]])
+    assert_type(User.annotate(title="user"), S.Bottom[User, Mapping[str, object]])
+    assert_type(User.pipe(S.decode_unknown_sync), S.Parser[object, User])
+    as_schema: S.Schema[User] = User
+    assert_type(
+        S.Union(User, S.Null), S.UnionSchema[User | None, Mapping[str, object] | None, Never, Never]
+    )
+
+    class Wrong(S.Class):
+        name: str = S.field(S.Int)  # pyright: ignore[reportAssignmentType]
+
+    needs: S.Bottom[int, str, Primary, Never] = S.Bottom(S.ast.unknown)
+
+    class NeedsServices(S.Class):
+        id: int = S.field(needs)  # pyright: ignore[reportArgumentType, reportUnknownVariableType]
+
+    class Mutable(S.Class, frozen=False):
+        count: int = 0
+
+    counter = Mutable()
+    counter.count = 1
+
+    class Admin(User):
+        level: int
+
+    assert_type(S.decode_unknown_sync(Admin)(unknown), Admin)
+    Admin(id=1, name="a", score=1.0)  # pyright: ignore[reportCallIssue]
+
+    class Circle(S.TaggedClass, tag="circle"):
+        radius: float
+
+    assert_type(Circle(radius=1).radius, float)
+    _ = (as_schema, Wrong, NeedsServices)
+
+
+class _NotFound(fx.schema.TaggedError):
+    id: int
+
+
+class _Invalid(fx.schema.Error):
+    message: str
+
+
+def check_schema_errors(failing: fx.Effect[int, _NotFound | _Invalid]) -> None:
+    """``S.TaggedError`` subclasses are ``pyfect.errors.TaggedError``s:
+    yieldable and removed by ``catch_tag``."""
+    from pyfect import schema as S
+
+    def find() -> Generator[Any, Any, int]:
+        return (yield from _NotFound(id=1))
+
+    found = fx.gen(find)
+    recovered = failing.pipe(fx.catch_tag(_NotFound, lambda e: fx.succeed(e.id)))
+    assert_type(recovered, fx.Effect[int, _Invalid, Never])
+    assert_type(S.decode_unknown_sync(_NotFound)(None), _NotFound)
+    _NotFound(id=1).id = 2  # pyright: ignore[reportAttributeAccessIssue]
+    _ = found

@@ -16,27 +16,27 @@ Omitted:
   supported": need ``transform``, ``decodeTo``, ``Struct`` or ``suspend``.
 - "Checks / refine": refines ``Option(String)``, a declaration; refine itself
   is covered by tests/test_schema_checks.py.
-- "Checks / Record checks / ...", "Checks / Array checks / UniqueArray",
+- "Checks / Record checks / isMinProperties with symbol keys", "... /
+  isMaxProperties with symbol keys", "... / isBetweenProperties with symbol
+  keys": Python has no symbols.
+- "Checks / Array checks / UniqueArray",
   "Check / isStringFinite / rejects long digit runs in linear time" (its
-  record half), "Union / Void", "Union / Void | String", "Union / mode:
-  oneOf" (structs), "Union / mode: oneOf with ... sentinel ...", "Union /
-  preserves ...", "Union / keeps suspended members lazy ...",
+  record half), "Union / Void", "Union / Void | String",
   "Union.mapMembers / evolve", "Union.mapMembers / Array", "Literals.mapMembers
-  / evolve": need ``Record``,
-  ``Array``, ``Struct``, ``Void`` or ``suspend``; the size and key checks they
+  / evolve": need ``Array`` or ``Void``; the size and key checks they
   use are covered on mappings in tests/test_schema_checks.py.
 - "Check / isStringSymbol", "Check / brand / ...": Python has no symbols, and
   a brand is a ``NewType``, not a schema identifier.
 - "Checks / String checks / isPattern with stateful RegExp flags": a Python
   pattern keeps no ``lastIndex``.
 - "Finite": only verifies arbitrary generation (no arbitraries yet).
-- "Union / mode: "oneOf" with different sentinel keys", "... with nested and
-  contradicted sentinels", "... with Void", "Union / should exclude members
-  based on failed sentinels / ...", "Union / Struct({}) preserves its
-  semantics in a union", "Union / preserves member order after sentinel
-  dispatch", "... recovering members during runtime type / sentinel
-  dispatch", "Union / does not force a recursive suspended member ...": need
-  ``Struct``, ``Tuple``, ``Void``, ``suspend`` or transformations.
+- "Union / mode: "oneOf" with Void", "Union / should exclude members based
+  on failed sentinels / string | tuple", "... / tagged tuple union", "Union /
+  preserves member order after sentinel dispatch", "... recovering members
+  during runtime type / sentinel dispatch": need ``Tuple``, ``Void`` or
+  transformations.
+- "Union / Struct({}) preserves its semantics in a union": an empty struct
+  takes only mappings in pyfect (Effect's takes any non-nullish value).
 - "Union / does not start later members after an asynchronous success",
   "... starts the next member only after an asynchronous failure", "...
   mode: "oneOf" succeeds on each execution of the same suspended decode
@@ -47,7 +47,7 @@ Omitted:
 """
 
 import enum
-from typing import NewType
+from typing import Literal, Never, NewType, TypedDict
 
 import pytest
 
@@ -180,6 +180,202 @@ def test_union_mode_one_of_counts_repeated_literal_occurrences():
     member = S.Literal("a")
     schema = S.Union(member, member, mode="one_of")
     SchemaAsserts(schema).decoding().fail("a", "Expected exactly one member to match")
+
+
+class _A(TypedDict):
+    a: str
+
+
+class _B(TypedDict):
+    b: float
+
+
+def test_union_mode_one_of():
+    '''Union / mode: "oneOf"'''
+    schema = S.Union(S.Struct(_A), S.Struct(_B), mode="one_of")
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed({"a": "a"})
+    decoding.succeed({"b": 1})
+    decoding.fail({"a": "a", "b": 1}, "Expected exactly one member to match")
+
+
+def test_union_mode_one_of_with_different_sentinel_keys():
+    """Union / mode: "oneOf" with different sentinel keys"""
+
+    class Kind(TypedDict):
+        kind: Literal["a"]
+        value: str
+
+    class Status(TypedDict):
+        status: Literal["ready"]
+        value: str
+
+    schema = S.Union(S.Struct(Kind), S.Struct(Status), mode="one_of")
+    SchemaAsserts(schema).decoding().fail(
+        {"kind": "a", "status": "ready", "value": "value"}, "Expected exactly one member to match"
+    )
+
+
+def test_union_mode_one_of_counts_repeated_member_occurrences():
+    """Union / mode: "oneOf" counts repeated member occurrences"""
+
+    class Kind(TypedDict):
+        kind: Literal["a"]
+
+    member = S.Struct(Kind)
+    schema = S.Union(member, member, mode="one_of")
+    SchemaAsserts(schema).decoding().fail({"kind": "a"}, "Expected exactly one member to match")
+
+
+class _TaggedA(TypedDict):
+    _tag: Literal["a"]
+    a: str
+
+
+class _TaggedB(TypedDict):
+    _tag: Literal["b"]
+    b: float
+
+
+def test_union_should_exclude_members_based_on_failed_sentinels_string_struct():
+    """Union / should exclude members based on failed sentinels / string | struct"""
+    schema = S.Union(S.String, S.Struct(_TaggedA))
+    SchemaAsserts(schema).decoding().fail({}, 'Expected string | { readonly "_tag": "a", ... }')
+
+
+def test_union_should_exclude_members_based_on_failed_sentinels_tagged_struct_union():
+    """Union / should exclude members based on failed sentinels / tagged struct union"""
+    schema = S.Union(S.Struct(_TaggedA), S.Struct(_TaggedB))
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.fail({"_tag": "a"}, 'Missing key\n  at ["a"]')
+    decoding.fail({"_tag": "b"}, 'Missing key\n  at ["b"]')
+    decoding.fail(
+        {"_tag": "c"}, 'Expected { readonly "_tag": "a", ... } | { readonly "_tag": "b", ... }'
+    )
+
+
+def test_union_mode_one_of_with_nested_and_contradicted_sentinels():
+    """Union / mode: "oneOf" with nested and contradicted sentinels"""
+
+    class AX(TypedDict):
+        kind: Literal["a"]
+        variant: Literal["x"]
+
+    class AY(TypedDict):
+        kind: Literal["a"]
+        variant: Literal["y"]
+
+    class B(TypedDict):
+        kind: Literal["b"]
+
+    class Block(TypedDict):
+        block: object
+
+    nested = S.Union(S.Struct(AX), S.Struct(AY))
+    schema = S.Struct(Block, block=S.Union(nested, S.Struct(B), mode="one_of"))
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed({"block": {"kind": "a", "variant": "x"}})
+    expected = (
+        'Expected { readonly "kind": "a", readonly "variant": "x", ... }'
+        ' | { readonly "kind": "a", readonly "variant": "y", ... }\n  at ["block"]'
+    )
+    decoding.fail({"block": {"kind": "a", "variant": "z"}}, expected)
+    # Effect's ``variant: undefined``.
+    decoding.fail({"block": {"kind": "a", "variant": None}}, expected)
+
+
+type _Str = S.Codec[str, str, Never, Never]
+
+
+def _counting(schema: _Str) -> tuple[_Str, list[int]]:
+    evaluations = [0]
+
+    def make() -> _Str:
+        evaluations[0] += 1
+        return schema
+
+    return S.suspend(make), evaluations
+
+
+def test_union_keeps_suspended_members_lazy_during_candidate_selection():
+    """Union / keeps suspended members lazy during candidate selection"""
+    suspended, decoding_evaluations = _counting(S.String)
+    decoding = SchemaAsserts(S.Union(S.Literal("a"), suspended)).decoding()
+    decoding.succeed("a", "a")
+    assert decoding_evaluations == [0]
+    decoding.succeed("b", "b")
+    decoding.succeed("c", "c")
+    assert decoding_evaluations == [1]
+
+    suspended, encoding_evaluations = _counting(S.String)
+    SchemaAsserts(S.Union(S.Literal("a"), suspended)).encoding().succeed("a", "a")
+    assert encoding_evaluations == [0]
+
+    suspended, one_of_evaluations = _counting(S.String)
+    one_of = SchemaAsserts(S.Union(S.Literal("a"), suspended, mode="one_of")).decoding()
+    one_of.fail("a", "Expected exactly one member to match")
+    assert one_of_evaluations == [1]
+
+
+def test_union_does_not_force_a_recursive_suspended_member_after_an_earlier_success():
+    """Union / does not force a recursive suspended member after an earlier success"""
+    evaluations = [0]
+    recursive: list[_Str] = []
+
+    def make() -> _Str:
+        evaluations[0] += 1
+        return recursive[0]
+
+    recursive.append(S.Union(S.Literal("end"), S.suspend(make)))
+    SchemaAsserts(recursive[0]).decoding().succeed("end", "end")
+    assert evaluations == [0]
+
+
+# ----------------------------------------------------------- Record checks
+
+
+def test_checks_record_checks_is_min_properties():
+    """Checks / Record checks / isMinProperties"""
+    schema = S.Record(S.String, S.Finite).check(S.is_min_properties(1))
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed({"a": 1, "b": 2})
+    decoding.fail({}, "Expected a value with at least 1 entry")
+
+
+def test_checks_record_checks_is_max_properties():
+    """Checks / Record checks / isMaxProperties"""
+    schema = S.Record(S.String, S.Finite).check(S.is_max_properties(2))
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed({"a": 1, "b": 2})
+    decoding.fail({"a": 1, "b": 2, "c": 3}, "Expected a value with at most 2 entries")
+
+
+def test_checks_record_checks_is_between_properties():
+    """Checks / Record checks / isBetweenProperties"""
+    schema = S.Record(S.String, S.Number).check(S.is_between_properties(2, 2))
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed({"a": 1, "b": 2})
+    decoding.succeed({"__proto__": 0, "": 0})
+    decoding.fail({"a": 1}, "Expected a value with exactly 2 entries")
+    decoding.fail({"a": 1, "b": 2, "c": 3}, "Expected a value with exactly 2 entries")
+
+
+def test_checks_record_checks_is_property_names():
+    """Checks / Record checks / isPropertyNames"""
+    schema = S.Record(S.String, S.Finite).check(
+        S.is_property_names(S.String.check(S.is_pattern(r"^[A-Z]")))
+    )
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed({"Ab": 1})
+    decoding.fail({"ab": 1}, 'Expected a string matching the RegExp ^[A-Z]\n  at ["ab"]')
+
+
+def test_checks_record_checks_is_property_names_with_never():
+    """Checks / Record checks / isPropertyNames with Never"""
+    schema = S.Record(S.String, S.Finite).check(S.is_property_names(S.Never))
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed({})
+    decoding.fail({"a": 1}, 'Expected never\n  at ["a"]')
 
 
 def test_union_options_preserves_union_options_through_public_derivations():

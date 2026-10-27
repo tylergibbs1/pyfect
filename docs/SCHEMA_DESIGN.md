@@ -67,10 +67,12 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
   first `__codec__()`, then cached), not when the class is made: at class
   creation a self or forward reference (`children: list[Node]`, Effect's
   `suspend`) is not bound yet and raises `NameError`. `str` String, `int` Int, `float` Number, `bool` Boolean, `None` Null,
-  `object` Unknown, `Any` Any, `Literal[...]` Literals, `X | Y` Union,
-  `list[X]` / `tuple[X, ...]` Array, `tuple[X, Y]` Tuple, `dict[str, X]`
-  Record, an `Enum` Enum, a schema class itself. Anything else raises
-  `TypeError` on that first use (a boundary error, not a parse error).
+  `object` Unknown, `Any` Any, `Literal[x]` Literal, `Literal[x, y]`
+  Literals, `X | Y` Union, `dict[K, V]` / `Mapping[K, V]` Record, a
+  TypedDict a Struct, an `Enum` Enum, a schema class itself (`Annotated`,
+  `NewType` and `type` aliases are unwrapped). `list[X]` / `tuple[...]`
+  come with Array and Tuple. Anything else raises `TypeError` on that first
+  use (a boundary error, not a parse error).
 - `S.field(schema, default=...)` gives any other schema (checks,
   transformations). It is a `dataclass_transform` field specifier returning
   the schema's Type, so `wrong: str = S.field(S.Int)` is a type error. Its
@@ -82,6 +84,33 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
   offered.
 - `Annotated[T, schema]` is not used for schemas: pyright cannot check the
   schema against `T`.
+- A struct field takes another schema as a keyword: `S.Struct(UserDict,
+  id=S.Int.check(...))`; a keyword naming no key of the TypedDict raises
+  `TypeError`. A field schema may need services (`RD` / `RE` of the struct).
+- `S.Record(key, value)` has the Type `dict[K, V]` and the Encoded
+  `Mapping[KI, VI]`. Literal keys become required properties, any other key
+  schema (an `Enum` too) an index signature; a key matching no index
+  signature is excess.
+- A missing key with a default decodes to the default (Effect's
+  `withDecodingDefault`), so a defaulted field is optional when decoding
+  and on the encoded side (a defaulted literal field is no union sentinel).
+- A class decodes from a mapping only: an instance is not a mapping (Effect
+  also takes an instance, a JavaScript object having its fields as keys).
+- Construction is validation: `User(id=1)` runs the field schemas and the
+  class checks and raises `SchemaError`; `User.make` takes an instance (it
+  revalidates it). Class checks are methods decorated with
+  `@S.class_check(**annotations)` returning `True`/`None`, `False` or a
+  message. `S.Class(frozen=False)` makes a mutable class; `tag=` names a
+  `TaggedClass`'s tag (default: the class name).
+- `S.Error` / `S.TaggedError` are exceptions (`S.TaggedError` an
+  `errors.TaggedError`, so `catch_tag` works): frozen fields, but `add_note`
+  and the traceback stay writable; equal when their fields are.
+- A union picks the members to try by tag: a member whose input is a
+  mapping with required literal keys (`_tag: Literal["A"]`) is tried only
+  when the input holds one of its values and contradicts none, and the
+  union names it `{ readonly "_tag": "A", ... }` (Effect's sentinels). A
+  suspended member is a candidate for any input and is not made to select
+  candidates (it may be the union itself).
 
 `S.Int` is the `int` schema with the messages of Effect's `Int` check;
 `S.BigInt` is also `int`, with Effect's `bigint` messages.

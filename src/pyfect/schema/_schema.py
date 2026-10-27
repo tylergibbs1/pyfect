@@ -45,6 +45,13 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
         On a schema with checks they annotate the last check."""
         return replace(self, ast=annotate(self.ast, annotations))
 
+    def annotate_key(self, **annotations: object) -> Self:
+        """This schema with annotations for the struct key holding it
+        (Effect's ``annotateKey``): ``message_missing_key`` replaces
+        ``"Missing key"``."""
+        key_annotations = {**(self.ast.key_annotations or {}), **annotations}
+        return replace(self, ast=replace(self.ast, key_annotations=key_annotations))
+
     def check(self, first: Check[T_co], /, *rest: Check[T_co]) -> Self:
         """This schema with checks run, in order, on each value it accepts
         (``S.is_min_length(3)``, ``S.make_filter(...)``, ...)."""
@@ -80,8 +87,9 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
 
 
 class Codec(Protocol[T_co, E_co, RD_co, RE_co]):
-    """What takes a schema accepts: a schema object (``Bottom``) or, later,
-    a schema class. ``Codec[T, E, RD, RE]`` reads as Effect's ``Codec``."""
+    """What takes a schema accepts: a schema object (``Bottom``) or a schema
+    class (``S.Class``, ...). ``Codec[T, E, RD, RE]`` reads as Effect's
+    ``Codec``."""
 
     def __codec__(self) -> Bottom[T_co, E_co, RD_co, RE_co]: ...
 
@@ -92,5 +100,6 @@ type Decoder[A, R = Never] = Codec[A, object, R, object]
 type Encoder[I, R = Never] = Codec[object, I, object, R]
 
 
-def is_schema(value: object) -> TypeIs[Bottom[object, object, object, object]]:
-    return isinstance(value, Bottom)
+def is_schema(value: object) -> TypeIs[Top]:
+    """``value`` is a schema object or a schema class."""
+    return isinstance(value, Bottom) or (isinstance(value, type) and hasattr(value, "__codec__"))

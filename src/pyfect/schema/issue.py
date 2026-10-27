@@ -16,7 +16,7 @@ raised while transforming a value.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeIs
 
@@ -28,7 +28,8 @@ if TYPE_CHECKING:
     from pyfect.schema.ast import AST, Check, Union
     from pyfect.schema.ast import Filter as AstFilter
 
-type PathKey = str | int
+type PathKey = Hashable
+"""A key of a path: a mapping key (a ``str`` in decoded JSON) or an index."""
 type Path = tuple[PathKey, ...]
 type IssueAnnotations = Mapping[str, object]
 """Annotations of a leaf issue; ``message`` replaces its text, ``expected``
@@ -161,8 +162,13 @@ def format_issue(issue: Issue) -> str:
 
 
 def format_path(path: Path) -> str:
-    """``["a"][1]``: string keys as JSON strings, indexes bare."""
-    return "".join(f"[{json_quote(key) if isinstance(key, str) else key}]" for key in path)
+    """``["a"][1]``: string keys as JSON strings, any other key (an index)
+    as ``format_unknown`` prints it."""
+    return "".join(f"[{_format_key(key)}]" for key in path)
+
+
+def _format_key(key: PathKey) -> str:
+    return json_quote(key) if isinstance(key, str) else format_unknown(key)
 
 
 def _format(issue: Issue, path: str, override: str | None) -> str:

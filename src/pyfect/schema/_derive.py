@@ -1,0 +1,150 @@
+"""The schema an annotation stands for, used by ``Struct`` and the schema
+classes: ``str`` String, ``int`` Int, ``float`` Number, ``bool`` Boolean,
+``None`` Null, ``object`` Unknown, ``Any`` Any, ``Literal[x]`` Literal, ``Literal[x, y]`` Literals,
+``X | Y`` Union, an ``Enum`` Enum, a ``TypedDict`` Struct, ``dict[K, V]`` /
+``Mapping[K, V]`` Record, a schema class itself; ``Annotated[T, ...]`` and
+a ``NewType`` stand for ``T``, a ``type`` alias for its value. Anything
+else raises ``TypeError``: give such a field its schema explicitly.
+"""
+
+from __future__ import annotations
+
+import collections.abc
+import enum
+import types
+import typing
+from collections.abc import Mapping
+from typing import Any, cast, get_args, get_origin, get_type_hints, is_typeddict
+from weakref import WeakKeyDictionary
+
+from pyfect.schema import ast
+from pyfect.schema._literals import Enum, Literal, Literals, Union
+from pyfect.schema._primitives import Any as AnySchema
+from pyfect.schema._primitives import Boolean, Int, Null, Number, String, Unknown
+from pyfect.schema._record import Record
+from pyfect.schema._schema import Bottom, Codec
+
+type AnyBottom = Bottom[Any, Any, Any, Any]
+
+_SIMPLE: dict[object, AnyBottom] = {
+    str: String,
+    int: Int,
+    float: Number,
+    bool: Boolean,
+    None: Null,
+    type(None): Null,
+    object: Unknown,
+    Any: AnySchema,
+}
+
+_MAPPINGS = frozenset({dict, collections.abc.Mapping, collections.abc.MutableMapping})
+
+
+def schema_of(annotation: object) -> AnyBottom:
+    """The schema ``annotation`` stands for; ``TypeError`` when none does."""
+    annotation = _unwrap(annotation)
+    simple = _SIMPLE.get(annotation) if _hashable(annotation) else None
+    found = simple or _of_form(annotation) or _of_class(annotation)
+    if found is None:
+        raise TypeError(f"No schema for the annotation {annotation!r}: give the field its schema")
+    return found
+
+
+def _of_form(annotation: object) -> AnyBottom | None:
+    """The schema of a generic form (``Literal[...]``, ``X | Y``, ...)."""
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is typing.Literal:
+        return Literal(args[0]) if len(args) == 1 else Literals(*args)
+    if origin is typing.Union or origin is types.UnionType:
+        return Union(*map(schema_of, args))
+    if origin in _MAPPINGS and len(args) == 2:
+        return Record(schema_of(args[0]), schema_of(args[1]))
+    return None
+
+
+def _unwrap(annotation: object) -> object:
+    """The type ``Annotated[T, ...]``, a ``NewType`` or a ``type`` alias
+    stands for."""
+    while True:
+        if get_origin(annotation) is typing.Annotated:
+            annotation = get_args(annotation)[0]
+        elif isinstance(annotation, typing.NewType):
+            annotation = annotation.__supertype__
+        elif isinstance(annotation, typing.TypeAliasType):
+            annotation = annotation.__value__
+        else:
+            return annotation
+
+
+def _of_class(annotation: object) -> AnyBottom | None:
+    if not isinstance(annotation, type):
+        return None
+    annotation = cast("type[object]", annotation)
+    if issubclass(annotation, enum.Enum):
+        return Enum(annotation)
+    if is_typeddict(annotation):
+        return Bottom(typed_dict_ast(cast("type[Mapping[str, object]]", annotation)))
+    if hasattr(annotation, "__codec__"):
+        return cast("Codec[Any, Any, Any, Any]", annotation).__codec__()
+    return None
+
+
+def _hashable(value: object) -> bool:
+    try:
+        hash(value)
+    except TypeError:
+        return False
+    return True
+
+
+_STRUCTS: WeakKeyDictionary[type, ast.Objects] = WeakKeyDictionary()
+_BUILDING: set[type] = set()
+
+
+def typed_dict_ast(
+    typed_dict: type[Mapping[str, object]], fields: Mapping[str, AnyBottom] | None = None
+) -> ast.AST:
+    """The struct node of a TypedDict, its fields derived from its
+    annotations unless given in ``fields``. A TypedDict met again while
+    deriving its own fields becomes a ``Suspend`` of it."""
+    if fields is None:
+        cached = _STRUCTS.get(typed_dict)
+        if cached is not None:
+            return cached
+        if typed_dict in _BUILDING:
+            return ast.Suspend(lambda: _STRUCTS[typed_dict])
+        _BUILDING.add(typed_dict)
+        try:
+            node = objects_of(typed_dict, typed_dict_fields(typed_dict, {}))
+        finally:
+            _BUILDING.discard(typed_dict)
+        _STRUCTS[typed_dict] = node
+        return node
+    return objects_of(typed_dict, fields)
+
+
+def typed_dict_fields(
+    typed_dict: type[Mapping[str, object]], overrides: Mapping[str, AnyBottom]
+) -> dict[str, AnyBottom]:
+    """The schema of each key: the given one, else its annotation's."""
+    hints = get_type_hints(typed_dict)
+    unknown = [name for name in overrides if name not in hints]
+    if unknown:
+        raise TypeError(f"{typed_dict.__name__} has no key {unknown[0]!r}")
+    return {
+        name: overrides[name] if name in overrides else schema_of(hint)
+        for name, hint in hints.items()
+    }
+
+
+def objects_of(
+    typed_dict: type[Mapping[str, object]], fields: Mapping[str, AnyBottom]
+) -> ast.Objects:
+    optional: frozenset[str] = getattr(typed_dict, "__optional_keys__", frozenset())
+    return ast.Objects(
+        tuple(
+            ast.PropertySignature(name, schema.ast, optional=name in optional)
+            for name, schema in fields.items()
+        )
+    )

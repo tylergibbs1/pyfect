@@ -37,6 +37,7 @@ from pyfect.schema.ast._check import (
     make_filter_by_guard,
     normalize_filter_output,
 )
+from pyfect.schema.ast._class import Class, ClassShape, ClassSide, check_instance
 from pyfect.schema.ast._keywords import (
     Any,
     BigInt,
@@ -63,6 +64,9 @@ from pyfect.schema.ast._literal import (
     format_literal,
     same_literal,
 )
+from pyfect.schema.ast._objects import IndexSignature, Objects, PropertySignature
+from pyfect.schema.ast._record import record
+from pyfect.schema.ast._suspend import Suspend
 from pyfect.schema.ast._union import Union, UnionMode
 
 __all__ = [
@@ -73,19 +77,26 @@ __all__ = [
     "Boolean",
     "Check",
     "Checks",
+    "Class",
+    "ClassShape",
+    "ClassSide",
     "Enum",
     "EnumSide",
     "Filter",
     "FilterGroup",
     "FilterIssue",
     "FilterOutput",
+    "IndexSignature",
     "Literal",
     "LiteralValue",
     "Never",
     "Null",
     "Number",
+    "Objects",
+    "PropertySignature",
     "Refinement",
     "String",
+    "Suspend",
     "Union",
     "UnionMode",
     "Unknown",
@@ -94,6 +105,7 @@ __all__ = [
     "append_checks",
     "big_int",
     "boolean",
+    "check_instance",
     "collect_issues",
     "filter_of",
     "format_literal",
@@ -105,6 +117,7 @@ __all__ = [
     "normalize_filter_output",
     "null",
     "number",
+    "record",
     "same_literal",
     "string",
     "unknown",

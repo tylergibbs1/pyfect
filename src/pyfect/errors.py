@@ -100,10 +100,12 @@ class TaggedError(Exception):
 
     def __reduce__(self) -> str | tuple[Any, ...]:
         # A dataclass error's ``args`` need not match its fields, so copy and
-        # pickle rebuild it from the fields instead.
+        # pickle rebuild it from the fields instead. The state is the rest
+        # (notes, ...): the constructor sets the fields, which may be frozen.
         if is_dataclass(self):
             init = {f.name: getattr(self, f.name) for f in fields(self) if f.init}
-            return (_rebuild, (type(self), init), self.__dict__)
+            state = {k: v for k, v in self.__dict__.items() if k not in init}
+            return (_rebuild, (type(self), init), state)
         return super().__reduce__()
 
 

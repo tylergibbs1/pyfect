@@ -90,6 +90,7 @@ from pyfect.schema._checks_string import (
     is_uppercased,
     is_uuid,
 )
+from pyfect.schema._class import Class, Error, TaggedClass, TaggedError, class_check, field
 from pyfect.schema._error import SchemaError
 from pyfect.schema._literals import (
     Enum,
@@ -146,6 +147,7 @@ from pyfect.schema._primitives import (
     Trimmed,
     Unknown,
 )
+from pyfect.schema._record import Record, RecordSchema
 from pyfect.schema._refine import (
     FromBrand,
     Refine,
@@ -163,6 +165,7 @@ from pyfect.schema._schema import (
     Top,
     is_schema,
 )
+from pyfect.schema._struct import Struct, StructSchema, suspend
 from pyfect.schema.ast import Check, Filter, FilterGroup, FilterOutput, make_filter
 
 __all__ = [
@@ -174,11 +177,13 @@ __all__ = [
     "Bound",
     "Char",
     "Check",
+    "Class",
     "Codec",
     "Decoder",
     "Encoder",
     "Enum",
     "EnumSchema",
+    "Error",
     "Filter",
     "FilterGroup",
     "FilterOutput",
@@ -199,10 +204,16 @@ __all__ = [
     "ParseOptions",
     "Parser",
     "Port",
+    "Record",
+    "RecordSchema",
     "Refine",
     "Schema",
     "SchemaError",
     "String",
+    "Struct",
+    "StructSchema",
+    "TaggedClass",
+    "TaggedError",
     "Top",
     "Trimmed",
     "Union",
@@ -210,6 +221,7 @@ __all__ = [
     "Unknown",
     "asserts",
     "ast",
+    "class_check",
     "decode_effect",
     "decode_exit",
     "decode_option",
@@ -230,6 +242,7 @@ __all__ = [
     "encode_unknown_option",
     "encode_unknown_result",
     "encode_unknown_sync",
+    "field",
     "from_brand",
     "is_",
     "is_base64",
@@ -296,4 +309,5 @@ __all__ = [
     "make_is_multiple_of",
     "refine",
     "resolve_annotations",
+    "suspend",
 ]

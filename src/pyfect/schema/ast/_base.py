@@ -29,10 +29,14 @@ class AST(ABC):
 
     ``checks`` run on every value the node itself accepts (Effect's
     ``checks``); a subclass parses its own kind in ``_parse``.
+    ``key_annotations`` describe the key holding the node in a struct.
     """
 
     annotations: Annotations | None = field(default=None, kw_only=True)
     checks: Checks | None = field(default=None, kw_only=True)
+    key_annotations: Annotations | None = field(default=None, kw_only=True)
+    """Annotations of the key holding this node in a struct
+    (``message_missing_key``, ...): Effect's ``annotateKey``."""
     tag: ClassVar[str]
 
     @abstractmethod
