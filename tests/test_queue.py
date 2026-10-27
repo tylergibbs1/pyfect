@@ -528,6 +528,14 @@ def test_done_failures_compare_by_value():
     assert repr(fx.Done(3)) == "Done(3)"
 
 
+def test_a_raised_done_names_itself():
+    """A Done that escapes run_sync shows as Done(...), not as its bare value."""
+    with pytest.raises(fx.Done) as raised:
+        fx.run_sync(fx.die(fx.Done()))
+    assert str(raised.value) == "Done()"
+    assert str(fx.Done(42)) == "Done(42)"
+
+
 _FIRST_WAITERS: dict[str, Callable[[fx.Queue[int]], fx.Effect[object]]] = {
     "take": lambda q: q.take(),
     "take_n": lambda q: q.take_n(1),

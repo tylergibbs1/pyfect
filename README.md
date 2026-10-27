@@ -250,7 +250,8 @@ generators never use it. Parameters are still required to be annotated.
 
 ## Roadmap
 
-Concurrency, the runtime entry points and dependency injection (M2) are done; see
+Concurrency and dependency injection (M2), time (M3) and concurrent data structures (M4:
+Queue, PubSub, the Ref family, Pool, Cache, Request batching) are done; see
 [`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
 
 1. **Streams**: `Stream`, `Sink`, `Channel` on top of `Queue`.

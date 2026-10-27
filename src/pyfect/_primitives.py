@@ -361,14 +361,7 @@ def uninterruptible_mask[A, E, R](f: Callable[[Restore], Effect[A, E, R]]) -> Ef
     inner effect with the interruptibility the caller had."""
 
     def body(fiber: Fiber[Any, Any]) -> Effect[A, E, R]:
-        previous = fiber._interruptible
-
-        class _Restore:
-            def __call__[A2, E2, R2](self, eff: Effect[A2, E2, R2], /) -> Effect[A2, E2, R2]:
-                return _SetInterruptible(eff, previous)
-
-        restore = _Restore()
-
+        restore = _interruptible if fiber._interruptible else _uninterruptible
         return _SetInterruptible(_Suspend(lambda: f(restore)), False)
 
     return _WithFiber(body)
@@ -398,5 +391,11 @@ class _Uninterruptible:
         return _SetInterruptible(eff, False)
 
 
+class _Interruptible:
+    def __call__[A, E, R](self, eff: Effect[A, E, R], /) -> Effect[A, E, R]:
+        return _SetInterruptible(eff, True)
+
+
 _keep_interruptibility = _KeepInterruptibility()
+_interruptible = _Interruptible()
 _uninterruptible = _Uninterruptible()

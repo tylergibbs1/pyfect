@@ -139,6 +139,8 @@ class Done[L = None](TaggedError):
     def __repr__(self) -> str:
         return "Done()" if self.value is None else f"Done({self.value!r})"
 
+    __str__ = __repr__
+
 
 def filter_done[E](cause: Cause[E]) -> Result[Done[Any], Cause[E]]:
     """``Ok(done)`` if ``cause`` holds a ``Done`` failure and nothing else but
