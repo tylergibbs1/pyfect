@@ -15,13 +15,16 @@ raised while parsing is raised as it is.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Never, Protocol, TypeIs, Unpack, cast
+from typing import Any, Never, Protocol, TypeIs, Unpack, cast
 
 from pyfect._core import Effect
-from pyfect.effect import from_exit
-from pyfect.exit import Exit, Success
+from pyfect.effect import fail, from_exit, succeed
+from pyfect.exit import Exit, Failure, Success
+from pyfect.exit import fail as fail_exit
 from pyfect.option import Option, Some
 from pyfect.result import Err, Ok, Result
+from pyfect.run import run_sync_exit
+from pyfect.schema import ast as ast_module
 from pyfect.schema._adapters import (
     ASSERTION,
     GUARD,
@@ -35,6 +38,7 @@ from pyfect.schema._error import SchemaError
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Codec, Top
 from pyfect.schema.ast import AST
+from pyfect.schema.issue import InvalidValue, Issue
 
 
 class Parser[I, O](Protocol):
@@ -47,18 +51,43 @@ class Guard[A](Protocol):
     def __call__(self, input: object, /) -> TypeIs[A]: ...
 
 
-type _Run[O] = Callable[[object, ParseOptions], Exit[O, SchemaError]]
+type _Run[O] = Callable[[object, ParseOptions], Exit[O, SchemaError] | Effect[O, SchemaError, Any]]
+"""A parse: an ``Exit``, or an ``Effect`` when a transformation needs one."""
+
+
+def _present(value: object) -> Effect[object, Issue]:
+    # A value made missing at the top (a getter omitting it) is invalid.
+    return fail(InvalidValue()) if value is ast_module.MISSING else succeed(value)
 
 
 def _runner[O](ast: AST, base: ParseOptions) -> _Run[O]:
     """Parse with ``ast``. The node is the schema's, so its output is the
-    side's type: the one cast of this module."""
+    side's type: the casts of this module."""
 
-    def run(input: object, options: ParseOptions) -> Exit[O, SchemaError]:
-        exit = ast.parse(input, {**base, **options} if options else base)
-        return cast("Exit[O, SchemaError]", exit.map_error(SchemaError))
+    def run(
+        input: object, options: ParseOptions
+    ) -> Exit[O, SchemaError] | Effect[O, SchemaError, Any]:
+        merged: ParseOptions = {**base, **options} if options else base
+        concurrency = merged.get("concurrency")
+        if isinstance(concurrency, int) and concurrency < 1:
+            raise ValueError(f"concurrency must be at least 1, got {concurrency}")
+        result = ast.parse(input, merged)
+        if isinstance(result, Success):
+            if result.value is ast_module.MISSING:
+                return fail_exit(SchemaError(InvalidValue()))
+            return cast("Success[O]", result)
+        if isinstance(result, Failure):
+            return Failure(result.cause.map(SchemaError))
+        return cast("Effect[O, SchemaError, Any]", result.flat_map(_present).map_error(SchemaError))
 
     return run
+
+
+def _run_now[O](run: _Run[O], input: object, options: ParseOptions) -> Exit[O, SchemaError]:
+    result = run(input, options)
+    if isinstance(result, Success | Failure):
+        return result
+    return run_sync_exit(cast("Effect[O, SchemaError, Never]", result))
 
 
 def _decoding[A](schema: Codec[A, object, object, object], options: ParseOptions) -> _Run[A]:
@@ -69,23 +98,29 @@ def _encoding[I](schema: Codec[object, I, object, object], options: ParseOptions
     return _runner(schema.__codec__().ast.flip(), options)
 
 
-def _as_effect[O](run: _Run[O]) -> Parser[object, Effect[O, SchemaError]]:
-    def parse(input: object, /, **options: Unpack[ParseOptions]) -> Effect[O, SchemaError]:
-        return from_exit(run(input, options))
+def _as_effect[O](run: _Run[O]) -> Parser[object, Effect[O, SchemaError, Any]]:
+    """The parse as an effect; its services are the schema's (the caller's
+    ``R``)."""
+
+    def parse(input: object, /, **options: Unpack[ParseOptions]) -> Effect[O, SchemaError, Any]:
+        result = run(input, options)
+        if isinstance(result, Success | Failure):
+            return from_exit(result)
+        return result
 
     return parse
 
 
 def _as_exit[O](run: _Run[O]) -> Parser[object, Exit[O, SchemaError]]:
     def parse(input: object, /, **options: Unpack[ParseOptions]) -> Exit[O, SchemaError]:
-        return run(input, options)
+        return _run_now(run, input, options)
 
     return parse
 
 
 def _as_option[O](run: _Run[O]) -> Parser[object, Option[O]]:
     def parse(input: object, /, **options: Unpack[ParseOptions]) -> Option[O]:
-        match run(input, options):
+        match _run_now(run, input, options):
             case Success(value):
                 return Some(value)
             case failure:
@@ -97,7 +132,7 @@ def _as_option[O](run: _Run[O]) -> Parser[object, Option[O]]:
 
 def _as_result[O](run: _Run[O]) -> Parser[object, Result[O, SchemaError]]:
     def parse(input: object, /, **options: Unpack[ParseOptions]) -> Result[O, SchemaError]:
-        match run(input, options):
+        match _run_now(run, input, options):
             case Success(value):
                 return Ok(value)
             case failure:
@@ -108,7 +143,7 @@ def _as_result[O](run: _Run[O]) -> Parser[object, Result[O, SchemaError]]:
 
 def _as_sync[O](run: _Run[O]) -> Parser[object, O]:
     def parse(input: object, /, **options: Unpack[ParseOptions]) -> O:
-        match run(input, options):
+        match _run_now(run, input, options):
             case Success(value):
                 return value
             case failure:
@@ -251,7 +286,7 @@ def is_[A](schema: Codec[A, object, object, object], /) -> Guard[A]:
     run: _Run[A] = _runner(schema.__codec__().ast.to_type(), {})
 
     def guard(input: object, /) -> TypeIs[A]:
-        match run(input, {}):
+        match _run_now(run, input, {}):
             case Success():
                 return True
             case failure:
@@ -265,7 +300,7 @@ def asserts(schema: Top, input: object, /) -> None:
     """Raise ``SchemaError`` unless ``input`` is a value of the schema's
     decoded side."""
     run: _Run[object] = _runner(schema.__codec__().ast.to_type(), {})
-    match run(input, {}):
+    match _run_now(run, input, {}):
         case Success():
             return
         case failure:

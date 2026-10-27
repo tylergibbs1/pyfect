@@ -59,6 +59,20 @@ class _FromExit[A, E](Effect[A, E, Never]):
         return self.outcome
 
 
+def known_exit[A, E](eff: Effect[A, E, Any]) -> Exit[A, E] | None:
+    """The outcome of an effect that is nothing but its outcome
+    (``succeed``, ``fail_cause``, ``from_exit``), without running it; else
+    ``None``. Lets a caller stay synchronous where Effect returns an
+    ``Exit`` (which is an ``Effect`` there)."""
+    if isinstance(eff, _Succeed):
+        return Success(eff.value)
+    if isinstance(eff, _FailCause):
+        return Failure(eff.cause)
+    if isinstance(eff, _FromExit):
+        return eff.outcome
+    return None
+
+
 @final
 class _Sync[A](Effect[A, Never, Never]):
     """Run a side-effecting thunk. If it raises, that is a defect."""

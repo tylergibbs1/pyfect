@@ -14,6 +14,7 @@ from pyfect.schema._options import ParseOptions
 from pyfect.schema.ast._base import AST, Checks, invalid_type
 from pyfect.schema.ast._check import collect_issues
 from pyfect.schema.ast._objects import Objects
+from pyfect.schema.ast._result import ParseResult, flat_map
 from pyfect.schema.issue import Composite, Issue, reported
 
 type ClassSide = _Literal["decode", "encode", "type", "encoded"]
@@ -70,17 +71,22 @@ class Class(AST):
             return self.shape.encoded.expected()
         return AST.expected(self)
 
-    def parse(self, input: object, options: ParseOptions) -> Exit[object, Issue]:
-        if self.side != "encode":
+    def parse(self, input: object, options: ParseOptions) -> ParseResult:
+        if self.encoding is not None:
             return AST.parse(self, input, options)
-        # Checks describe instances: run them, then encode the fields.
-        match replace(self, side="type").parse(input, options):
-            case Success(instance):
-                return self.shape.fields.flip().parse(self.shape.values_of(instance), options)
-            case failure:
-                return failure
+        return self.parse_local(input, options)
 
-    def _parse(self, input: object, options: ParseOptions) -> Exit[object, Issue]:
+    def parse_local(self, input: object, options: ParseOptions) -> ParseResult:
+        if self.side != "encode":
+            return AST.parse_local(self, input, options)
+        # Checks describe instances: run them, then encode the fields.
+        shape = self.shape
+        return flat_map(
+            replace(self, side="type").parse_local(input, options),
+            lambda instance: shape.fields.flip().parse(shape.values_of(instance), options),
+        )
+
+    def _parse(self, input: object, options: ParseOptions) -> ParseResult:
         match self.side:
             case "type" | "encode":
                 if isinstance(input, self.shape.cls):
@@ -91,24 +97,24 @@ class Class(AST):
             case "decode":
                 return self._decode(input, options)
 
-    def _decode(self, input: object, options: ParseOptions) -> Exit[object, Issue]:
+    def _decode(self, input: object, options: ParseOptions) -> ParseResult:
         shape = self.shape
-        match shape.fields.parse(input, options):
-            case Success(values):
-                try:
-                    instance = shape.construct(cast("dict[object, object]", values))
-                except Exception as defect:
-                    return die_exit(defect)
-                return check_instance(shape, instance, options)
-            case failure:
-                return failure
 
-    def flip(self) -> Class:
+        def construct(values: object) -> Exit[object, Issue]:
+            try:
+                instance = shape.construct(cast("dict[object, object]", values))
+            except Exception as defect:
+                return die_exit(defect)
+            return check_instance(shape, instance, options)
+
+        return flat_map(shape.fields.parse(input, options), construct)
+
+    def _flip(self) -> Class:
         flipped: dict[ClassSide, ClassSide] = {"decode": "encode", "encode": "decode"}
         side = flipped.get(self.side)
         return self if side is None else replace(self, side=side)
 
-    def to_type(self) -> Class:
+    def _to_type(self) -> Class:
         match self.side:
             case "decode":
                 return replace(self, side="type")

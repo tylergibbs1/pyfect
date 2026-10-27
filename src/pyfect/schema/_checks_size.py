@@ -16,7 +16,7 @@ from typing import Any
 from pyfect.exit import Success
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Top
-from pyfect.schema.ast import AST, Filter, filter_of, issue_of
+from pyfect.schema.ast import AST, Filter, filter_of, issue_of, run_now
 from pyfect.schema.issue import Composite, Issue, Pointer, reported
 
 
@@ -210,7 +210,7 @@ def is_property_names(key_schema: Top, /, **annotations: object) -> Filter[Mappi
     def run(input: Mapping[Any, object], ast: AST, options: ParseOptions) -> Issue | None:
         issues: list[Issue] = []
         for key in input:
-            match keys.parse(key, options):
+            match run_now(keys.parse(key, options)):
                 case Success():
                     pass
                 case failure:

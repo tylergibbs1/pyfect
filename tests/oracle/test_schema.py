@@ -37,10 +37,10 @@ import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
 from pyfect.cause import Fail
-from pyfect.exit import Exit, Failure
+from pyfect.exit import Failure
 from pyfect.result import Err
 from pyfect.schema import ast
-from pyfect.schema.issue import InvalidType, Issue
+from pyfect.schema.issue import InvalidType
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -49,7 +49,7 @@ class _Counted(ast.String):
 
     parses: list[object] = field(default_factory=list[object])
 
-    def parse(self, input: object, options: S.ParseOptions) -> Exit[object, Issue]:
+    def parse(self, input: object, options: S.ParseOptions) -> ast.ParseResult:
         self.parses.append(input)
         return super(_Counted, self).parse(input, options)
 

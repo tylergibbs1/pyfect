@@ -12,15 +12,17 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field, replace
+from typing import cast
 
-from pyfect.exit import Exit, Success
+from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast._base import AST, issue_of
+from pyfect.schema.ast._base import AST, issue_of, join_checks
+from pyfect.schema.ast._result import ParseResult, then
 from pyfect.schema.issue import Composite, Issue, Pointer, reported
 
-type DeclarationParser = Callable[[object, Declaration, ParseOptions], Exit[object, Issue]]
+type DeclarationParser = Callable[[object, Declaration, ParseOptions], ParseResult]
 type DeclarationRun = Callable[[tuple[AST, ...]], DeclarationParser]
 
 
@@ -40,7 +42,7 @@ class Declaration(AST):
         expected = (self.annotations or {}).get("expected")
         return expected if isinstance(expected, str) else "<Declaration>"
 
-    def _parse(self, input: object, options: ParseOptions) -> Exit[object, Issue]:
+    def _parse(self, input: object, options: ParseOptions) -> ParseResult:
         # Making the parser is the declaration's own setup: an error there
         # is raised, not turned into a defect of this input.
         if not self._parser:
@@ -56,11 +58,19 @@ class Declaration(AST):
             return self
         return replace(self, type_parameters=parameters)
 
-    def flip(self) -> Declaration:
-        return self._map(lambda t: t.flip())
+    def _flip(self) -> Declaration:
+        # Checks describe the decoded side: flipped, they check the input.
+        flipped = self._map(lambda t: t.flip())
+        if self.checks is None and self.encoding_checks is None:
+            return flipped
+        return replace(flipped, checks=self.encoding_checks, encoding_checks=self.checks)
 
-    def to_type(self) -> Declaration:
-        return self._map(lambda t: t.to_type())
+    def _to_type(self) -> Declaration:
+        typed = self._map(lambda t: t.to_type())
+        if self.encoding_checks is None:
+            return typed
+        checks = join_checks(self.checks, self.encoding_checks) if typed is self else self.checks
+        return replace(typed, checks=checks, encoding_checks=None)
 
 
 def parse_at_key(
@@ -71,13 +81,17 @@ def parse_at_key(
     *,
     input: object,
     options: ParseOptions,
-) -> Exit[object, Issue]:
+) -> ParseResult:
     """``value`` (``input``'s part at ``key``) parsed by ``node``; an issue
     is reported as ``ast``'s at ``key`` (Effect's ``makeCompositeAtKey``)."""
-    exit = node.parse(value, options)
-    if isinstance(exit, Success):
-        return exit
-    issue = issue_of(exit)
-    if issue is None:
-        return exit
-    return fail_exit(Composite(ast, (Pointer((key,), issue),), reported(input, options)))
+
+    def at_key(exit: Exit[object, Issue]) -> Exit[object, Issue]:
+        if type(exit) is Success:
+            return exit
+        failure = cast("Failure[Issue]", exit)
+        issue = issue_of(failure)
+        if issue is None:
+            return failure
+        return fail_exit(Composite(ast, (Pointer((key,), issue),), reported(input, options)))
+
+    return then(node.parse(value, options), at_key)

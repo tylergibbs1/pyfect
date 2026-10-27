@@ -8,13 +8,12 @@ from dataclasses import dataclass, replace
 from typing import Generic, Never, Protocol, Self, TypeIs, TypeVar, Unpack, cast
 
 from pyfect._core import Effect
-from pyfect.effect import from_exit
 from pyfect.exit import Success
 from pyfect.option import Option, Some
 from pyfect.schema._adapters import CONSTRUCTOR, OPTION, raise_schema_failure, schema_error_of
 from pyfect.schema._error import SchemaError
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast import AST, Check, annotate, append_checks
+from pyfect.schema.ast import AST, Check, annotate, append_checks, run_now, to_effect
 from pyfect.schema.issue import Issue
 
 T_co = TypeVar("T_co", covariant=True)
@@ -61,7 +60,7 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
         self: Bottom[A, object, object, object], input: A, /, **options: Unpack[ParseOptions]
     ) -> A:
         """``input`` checked against the decoded side; raises ``SchemaError``."""
-        match self.ast.to_type().parse(input, options):
+        match run_now(self.ast.to_type().parse(input, options)):
             case Success(value):
                 return cast("A", value)
             case failure:
@@ -71,7 +70,7 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
         self: Bottom[A, object, object, object], input: A, /, **options: Unpack[ParseOptions]
     ) -> Option[A]:
         """``Some(value)``, or ``None`` when ``input`` is invalid."""
-        match self.ast.to_type().parse(input, options):
+        match run_now(self.ast.to_type().parse(input, options)):
             case Success(value):
                 return Some(cast("A", value))
             case failure:
@@ -83,7 +82,7 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
     ) -> Effect[A, Issue]:
         """``make`` as an effect failing with the bare ``Issue``, as Effect's
         ``makeEffect`` (so an enclosing schema can add its path)."""
-        return cast("Effect[A, Issue]", from_exit(self.ast.to_type().parse(input, options)))
+        return cast("Effect[A, Issue]", to_effect(self.ast.to_type().parse(input, options)))
 
 
 class Codec(Protocol[T_co, E_co, RD_co, RE_co]):

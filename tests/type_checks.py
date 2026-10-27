@@ -3403,7 +3403,9 @@ def check_schema_services(unknown: object) -> None:
     # The synchronous adapters run no services: such a schema is rejected.
     S.decode_unknown_sync(needs)  # pyright: ignore[reportArgumentType]
     S.encode_unknown_exit(needs)  # pyright: ignore[reportArgumentType]
-    fx.testing.SchemaAsserts(needs)  # pyright: ignore[reportArgumentType]
+    # Schema assertions run once ``provide`` gave each direction its service.
+    fx.testing.SchemaAsserts(needs).decoding().succeed(unknown)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    fx.testing.SchemaAsserts(needs).decoding().provide(Port, 1).succeed(unknown)  # pyright: ignore[reportArgumentType]
     decode_only: S.Bottom[int, str, Primary] = S.Bottom(S.ast.unknown)
     assert_type(S.encode_unknown_sync(decode_only)(unknown), str)
 
@@ -3767,3 +3769,65 @@ def check_schema_classes_are_covariant() -> None:
         _16: S.RedactedSchema[object, object, Db, object] = secret
 
     _ = pins
+
+
+def check_schema_transformations(db: Db) -> None:
+    from pyfect import schema as S
+    from pyfect.option import Option, Some
+    from pyfect.schema import getter as G
+    from pyfect.schema import transformation as T
+    from pyfect.schema.issue import Issue
+
+    # Codecs: decoded type first, encoded second.
+    assert_type(S.NumberFromString, S.DecodeToSchema[float, str])
+    assert_type(S.FiniteFromString.to, S.Codec[float, object])
+    assert_type(S.flip(S.NumberFromString), S.FlipSchema[str, float, Never, Never])
+    assert_type(S.flip(S.flip(S.NumberFromString)), S.Codec[float, str])
+    assert_type(S.OptionFromNullOr(S.String), S.DecodeToSchema[Option[str], str | None])
+    assert_type(
+        S.OptionFromOptionalNullOr(S.FiniteFromString), S.DecodeToSchema[Option[float], str | None]
+    )
+    assert_type(S.OptionFromOptionalKey(S.String), S.DecodeToSchema[Option[str], str])
+
+    # Getters and transformations compose end to end; a mismatch is an error.
+    length: G.Getter[int, str] = G.transform(len)
+    assert_type(G.trim().compose(length), G.Getter[int, str])
+    G.number().compose(length)  # pyright: ignore[reportArgumentType]
+    assert_type(T.trim().compose(T.to_lower_case()), T.Transformation[str, str])
+    assert_type(T.number_from_string.flip(), T.Transformation[str, float])
+
+    # ``decode_to`` checks that the transformation meets both schemas and
+    # joins the services each side needs.
+    to_int: T.Transformation[int, str] = T.Transformation(G.transform(int), G.transform(str))
+    assert_type(S.String.pipe(S.decode_to(S.Int, to_int)), S.DecodeToSchema[int, str])
+    S.Number.pipe(S.decode_to(S.Int, to_int))  # pyright: ignore[reportArgumentType]
+
+    def from_db(value: str, options: S.ParseOptions) -> fx.Effect[int, Issue, Primary]:
+        return Primary().map(lambda _: len(value))
+
+    needs_db: T.Transformation[int, str, Primary] = T.Transformation(
+        G.transform_effect(from_db), G.transform(str)
+    )
+    assert_type(
+        S.String.pipe(S.decode_to(S.Int, needs_db)), S.DecodeToSchema[int, str, Primary, Never]
+    )
+
+    # A middleware replaces the services it provides; catching adds its own.
+    def fallback(issue: Issue) -> fx.Effect[Option[str], Issue, Port]:
+        return Port().map(lambda port: Some(str(port)))
+
+    assert_type(S.String.pipe(S.catch_decoding(fallback)), S.Bottom[str, str, Port, Never])
+
+    def provide_port(
+        parse: fx.Effect[Option[str], Issue, Port], options: S.ParseOptions
+    ) -> fx.Effect[Option[str], Issue]:
+        return parse.pipe(fx.provide_service(Port, 1))
+
+    caught = S.String.pipe(S.catch_decoding(fallback))
+    assert_type(caught.pipe(S.middleware_decoding(provide_port)), S.Bottom[str, str, Never, Never])
+
+    # A decoding default needing a service puts it on the decoding side.
+    with_db = S.FiniteFromString.pipe(S.with_decoding_default_key(Primary().map(lambda _: "1")))
+    assert_type(with_db, S.DecodeToSchema[float, str, Primary, Never])
+    S.FiniteFromString.pipe(S.with_decoding_default_key(fx.succeed(1)))  # pyright: ignore[reportArgumentType]
+    _ = db

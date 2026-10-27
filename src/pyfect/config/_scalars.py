@@ -9,9 +9,10 @@ import re
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
-from urllib.parse import SplitResult, urlsplit
+from urllib.parse import SplitResult
 
 from pyfect._js import SPACE, js_number
+from pyfect._url import parse_url
 from pyfect.byte_size import ByteSize
 from pyfect.byte_size import from_string as byte_size_from_string
 from pyfect.config._leaf import EXPECTED_STRING, Scalar, composite, expected
@@ -203,24 +204,12 @@ def _date_time(text: str) -> Result[datetime, Issue]:
 
 date_time = Scalar(_STRING, _date_time)
 
-_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*")
-_SPECIAL_SCHEMES = frozenset({"http", "https", "ws", "wss", "ftp"})
 _INVALID_URL = InvalidValue({"message": "Expected a valid URL string"})
 
 
 def _url(text: str) -> Result[SplitResult, Issue]:
-    if any(ch <= " " or ch == "\x7f" for ch in text):
-        return Err(_INVALID_URL)
-    try:
-        url = urlsplit(text)
-        _ = url.port  # raises ValueError for a port that is not a number in range
-    except ValueError:
-        return Err(_INVALID_URL)
-    if not _SCHEME.fullmatch(url.scheme):
-        return Err(_INVALID_URL)
-    if url.scheme.lower() in _SPECIAL_SCHEMES and not url.hostname:
-        return Err(_INVALID_URL)
-    return Ok(url)
+    url = parse_url(text)
+    return Err(_INVALID_URL) if url is None else Ok(url)
 
 
 url = Scalar(_STRING, _url)

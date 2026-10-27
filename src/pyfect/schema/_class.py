@@ -131,9 +131,9 @@ class _Shape:
         self.codec = Bottom[Any, Mapping[str, object]](
             ast.Class(self, annotations={"identifier": identifier})
         )
-        self._built: tuple[dict[str, AnyBottom], ast.Objects, ast.Objects, ast.AST] | None = None
+        self._built: tuple[dict[str, AnyBottom], ast.Objects, ast.AST, ast.AST] | None = None
 
-    def _build(self) -> tuple[dict[str, AnyBottom], ast.Objects, ast.Objects, ast.AST]:
+    def _build(self) -> tuple[dict[str, AnyBottom], ast.Objects, ast.AST, ast.AST]:
         if self._built is None:
             schemas = _field_schemas(self.cls, self.field_names)
             properties = tuple(
@@ -172,7 +172,7 @@ class _Shape:
     def validate(self, instance: object) -> None:
         """Raise ``SchemaError`` unless ``instance``'s fields fit their
         schemas' Types and the class's checks pass."""
-        match self._build()[2].parse(self.values_of(instance), {}):
+        match ast.run_now(self._build()[2].parse(self.values_of(instance), {})):
             case Success():
                 pass
             case failure:

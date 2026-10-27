@@ -39,9 +39,14 @@ SE = TypeVar("SE")
 
 @dataclass(frozen=True, slots=True)
 class OptionalKey(Generic[A_co, I_co, RD_co, RE_co]):
-    """A tuple element that may be missing (Effect's ``optionalKey``)."""
+    """A tuple element, or the source of ``decode_to``, that may be missing
+    (Effect's ``optionalKey``)."""
 
     schema: Codec[A_co, I_co, RD_co, RE_co]
+
+    def pipe[B2](self, f: Callable[[OptionalKey[A_co, I_co, RD_co, RE_co]], B2], /) -> B2:
+        """``f(self)``: ``S.optional_key(s).pipe(S.decode_to(...))``."""
+        return f(self)
 
 
 def optional_key[A, I, RD, RE](

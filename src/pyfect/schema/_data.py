@@ -52,8 +52,8 @@ def _node(
     return ast.Declaration(nodes, run, annotations={"expected": expected})
 
 
-def _wrap[A](exit: _Exit[object, Issue], f: Callable[[object], A]) -> _Exit[object, Issue]:
-    return Success(f(exit.value)) if isinstance(exit, Success) else exit
+def _wrap(result: ast.ParseResult, f: Callable[[object], object]) -> ast.ParseResult:
+    return ast.map_value(result, f)
 
 
 # ------------------------------------------------------------------ Option
@@ -71,7 +71,7 @@ class OptionSchema(
 def _option_run(nodes: tuple[ast.AST, ...]) -> _Parser:
     (value,) = nodes
 
-    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> _Exit[object, Issue]:
+    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
         if input is None:
             return Success(None)
         if isinstance(input, Some):
@@ -108,7 +108,7 @@ class ResultSchema(
 def _result_run(nodes: tuple[ast.AST, ...]) -> _Parser:
     success, failure = nodes
 
-    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> _Exit[object, Issue]:
+    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
         if isinstance(input, Ok):
             ok = cast("Ok[object]", input)
             exit = ast.parse_at_key(node, "value", success, ok.value, input=ok, options=options)
@@ -151,7 +151,7 @@ class CauseReasonSchema(
 def _reason_run(nodes: tuple[ast.AST, ...]) -> _Parser:
     error, defect = nodes
 
-    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> _Exit[object, Issue]:
+    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
         if isinstance(input, Fail):
             fail = cast("Fail[object]", input)
             exit = ast.parse_at_key(node, "error", error, fail.error, input=fail, options=options)
@@ -192,7 +192,7 @@ class CauseSchema(
 def _cause_run(nodes: tuple[ast.AST, ...]) -> _Parser:
     reasons = ast.Arrays((), (ast.Declaration(nodes, _reason_run, annotations=_REASON),))
 
-    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> _Exit[object, Issue]:
+    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
         if not isinstance(input, _Cause):
             return ast.invalid_type(node, input, options)
         cause = cast("_Cause[object]", input)
@@ -236,7 +236,7 @@ def _exit_run(nodes: tuple[ast.AST, ...]) -> _Parser:
     value, *causes = nodes
     cause = ast.Declaration(tuple(causes), _cause_run, annotations={"expected": "Cause"})
 
-    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> _Exit[object, Issue]:
+    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
         if isinstance(input, Success):
             ok = cast("Success[object]", input)
             exit = ast.parse_at_key(node, "value", value, ok.value, input=ok, options=options)
@@ -281,27 +281,29 @@ def _redacted_run(label: str | None) -> Callable[[tuple[ast.AST, ...]], _Parser]
     def run(nodes: tuple[ast.AST, ...]) -> _Parser:
         (value,) = nodes
 
-        def parse(
-            input: object, node: ast.Declaration, options: ParseOptions
-        ) -> _Exit[object, Issue]:
+        def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
             if not isinstance(input, _Redacted):
                 return ast.invalid_type(node, input, options)
             secret = cast("_Redacted[object]", input)
             if label_node is not None:
-                checked = label_node.parse(secret.label, options)
+                checked = ast.run_now(label_node.parse(secret.label, options))
                 issue = None if isinstance(checked, Success) else ast.issue_of(checked)
                 if issue is not None:
                     return fail_exit(Pointer(("label",), issue))
-            match value.parse(_redacted.value(secret), options):
-                case Success(parsed):
-                    return Success(_Redacted(parsed, label=secret.label))
-                case failure if ast.issue_of(failure) is None:
-                    return failure
-                case _:
-                    # The value's own issue would show the secret: report
-                    # only that it is invalid.
-                    hidden = Pointer(("value",), InvalidValue(None, reported(secret, options)))
-                    return fail_exit(Composite(node, (hidden,), reported(secret, options)))
+
+            def hide(exit: _Exit[object, Issue]) -> _Exit[object, Issue]:
+                match exit:
+                    case Success(parsed):
+                        return Success(_Redacted(parsed, label=secret.label))
+                    case Failure() as failure if ast.issue_of(failure) is None:
+                        return failure
+                    case _:
+                        # The value's own issue would show the secret:
+                        # report only that it is invalid.
+                        hidden = Pointer(("value",), InvalidValue(None, reported(secret, options)))
+                        return fail_exit(Composite(node, (hidden,), reported(secret, options)))
+
+            return ast.then(value.parse(_redacted.value(secret), options), hide)
 
         return parse
 

@@ -12,12 +12,14 @@ import enum
 import math
 from dataclasses import dataclass, replace
 from typing import Literal as _Literal
+from typing import cast
 
 from pyfect._js import js_number
 from pyfect.exit import Exit, Success
 from pyfect.logger._text import json_quote
 from pyfect.schema._options import ParseOptions
 from pyfect.schema.ast._base import AST, invalid_type
+from pyfect.schema.ast._result import ParseResult, map_value
 from pyfect.schema.issue import Issue
 
 type LiteralValue = str | int | float | bool | None
@@ -115,15 +117,19 @@ class Enum(AST):
             return self.enum.__name__
         return " | ".join(format_literal(m.value) for m in self.enum)
 
-    def parse(self, input: object, options: ParseOptions) -> Exit[object, Issue]:
-        if self.side != "encode":
+    def parse(self, input: object, options: ParseOptions) -> ParseResult:
+        if self.encoding is not None:
             return AST.parse(self, input, options)
+        return self.parse_local(input, options)
+
+    def parse_local(self, input: object, options: ParseOptions) -> ParseResult:
+        if self.side != "encode":
+            return AST.parse_local(self, input, options)
         # Checks describe members: run them on the member, then encode it.
-        match replace(self, side="type").parse(input, options):
-            case Success(member) if isinstance(member, enum.Enum):
-                return Success(member.value)
-            case exit:
-                return exit
+        return map_value(
+            replace(self, side="type").parse_local(input, options),
+            lambda member: cast("enum.Enum", member).value,
+        )
 
     def _parse(self, input: object, options: ParseOptions) -> Exit[object, Issue]:
         if self.side in ("type", "encode"):
@@ -135,12 +141,12 @@ class Enum(AST):
                 return Success(member if self.side == "decode" else input)
         return invalid_type(self, input, options)
 
-    def flip(self) -> Enum:
+    def _flip(self) -> Enum:
         flipped: dict[EnumSide, EnumSide] = {"decode": "encode", "encode": "decode"}
         side = flipped.get(self.side)
         return self if side is None else replace(self, side=side)
 
-    def to_type(self) -> Enum:
+    def _to_type(self) -> Enum:
         match self.side:
             case "decode":
                 return replace(self, side="type")

@@ -18,19 +18,13 @@ so an ``Option`` accepts ``None`` and the "not an Option" input is ``1``.
 A ``Die`` holds an exception, so a ``Cause`` / ``Exit`` defect schema makes
 one (``S.instance_of(...)``; Effect's ``Unknown`` / ``Defect()``).
 
-Ported with a substitute: transformations come with a later cluster, so
-``FiniteFromString`` (and ``FiniteFromString.check(isInt())``) stands as
-``Finite`` (``Int``) and its inputs are numbers; a failure that only a
-string-to-number decode produces is left out of those titles: "Tuple /
-TupleWithRest / [FiniteFromString, String] + [Boolean, String]", "...
-[Boolean, String, Number]", "... validates every post-rest index",
-"suspend / should work", "Redacted / Redacted(FiniteFromString)", "Option
-/ Option(FiniteFromString)", "Result / Result(FiniteFromString,
-FiniteFromString)", "Cause / Cause(FiniteFromString, FiniteFromString)",
-"Exit / Exit(FiniteFromString, String, Unknown)", "ReadonlySet",
-"HashSet", "Chunk", "ReadonlyMap", "HashMap".
+Ported with a substitute: "Cause / Cause(FiniteFromString,
+FiniteFromString)": a ``Die`` holds an exception, so its defect schema is
+``instance_of(ValueError)``.
 
 Omitted:
+- Ported in ``test_schema_transform.py``: "RedactedFromValue / should
+  decode a value", "OptionFromNullOr", "OptionFromOptionalNullOr / ...".
 - Transformations and codecs (later clusters): "mutable / supports
   encodings on array elements" (``List`` over a transformation), "mutable /
   supports withDecodingDefaultType after mutable", "... does not support
@@ -38,9 +32,7 @@ Omitted:
   annotations, checks, encoding checks, and context" (no encoding checks;
   ``List`` is its own schema), "ArrayEnsure", "ArrayEnsure roundtrips
   array-valued elements", "ArrayEnsure preserves outer-array encoding",
-  "RedactedFromValue / should decode a value", "OptionFromNullOr",
-  "OptionFromUndefinedOr", "OptionFromNullishOr / ...",
-  "OptionFromOptionalNullOr / ...", "Defect", "ErrorInstance and Defect
+  "OptionFromUndefinedOr", "OptionFromNullishOr / ...", "Defect", "ErrorInstance and Defect
   memoize equivalent options", "Error" (``ErrorInstance``), "Exit /
   Exit(FiniteFromString, String, Defect)", "Cause / strict encoding
   preserves the default wire format for every reason variant"
@@ -69,7 +61,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from pyfect import cause, exit
+from pyfect import cause, exit, redacted
 from pyfect import schema as S
 from pyfect.option import Option, Some
 from pyfect.redacted import Redacted
@@ -183,47 +175,51 @@ def test_tuple_with_rest_a_required_element_cannot_follow_an_optional_element():
 
 def test_tuple_with_rest_finite_from_string_string_plus_boolean_string():
     """TupleWithRest / [FiniteFromString, String] + [Boolean, String]"""
-    schema = S.TupleWithRest(S.Tuple(S.Finite, S.String), S.Boolean, S.String)
+    schema = S.TupleWithRest(S.Tuple(S.FiniteFromString, S.String), S.Boolean, S.String)
     asserts = SchemaAsserts(schema)
 
     decoding = asserts.decoding()
-    decoding.succeed([1, "a", "b"], (1, "a", "b"))
-    decoding.succeed([1, "a", True, "b"], (1, "a", True, "b"))
-    decoding.succeed([1, "a", True, True, "b"], (1, "a", True, True, "b"))
-    decoding.fail([1, "a"], "Missing key\n  at [2]")
-    decoding.fail([1, "a", True], "Expected string\n  at [2]")
-    decoding.fail([1, "a", "b", "c"], "Expected boolean\n  at [2]")
-    decoding.fail([1, "a", True, "b", "c"], "Expected boolean\n  at [3]")
+    decoding.succeed(["1", "a", "b"], (1, "a", "b"))
+    decoding.succeed(["1", "a", True, "b"], (1, "a", True, "b"))
+    decoding.succeed(["1", "a", True, True, "b"], (1, "a", True, True, "b"))
+    decoding.fail(["1", "a"], "Missing key\n  at [2]")
+    decoding.fail(["1", "a", True], "Expected string\n  at [2]")
+    decoding.fail(["1", "a", "b", "c"], "Expected boolean\n  at [2]")
+    decoding.fail(["1", "a", True, "b", "c"], "Expected boolean\n  at [3]")
 
     encoding = asserts.encoding()
-    encoding.succeed((1, "a", "b"))
-    encoding.succeed((1, "a", True, "b"))
+    encoding.succeed((1, "a", "b"), ("1", "a", "b"))
+    encoding.succeed((1, "a", True, "b"), ("1", "a", True, "b"))
 
 
 def test_tuple_with_rest_finite_from_string_string_plus_boolean_string_number():
     """TupleWithRest / [FiniteFromString, String] + [Boolean, String, Number]"""
-    schema = S.TupleWithRest(S.Tuple(S.Finite, S.String), S.Boolean, S.String, S.Finite)
+    schema = S.TupleWithRest(
+        S.Tuple(S.FiniteFromString, S.String), S.Boolean, S.String, S.FiniteFromString
+    )
     asserts = SchemaAsserts(schema)
 
     decoding = asserts.decoding()
-    decoding.succeed([1, "a", "b", 2], (1, "a", "b", 2))
-    decoding.succeed([1, "a", True, "b", 2], (1, "a", True, "b", 2))
-    decoding.succeed([1, "a", True, True, "b", 2], (1, "a", True, True, "b", 2))
-    decoding.fail([1, "a"], "Missing key\n  at [2]")
-    decoding.fail([1, "a", "b"], "Missing key\n  at [3]")
-    decoding.fail([1, "a", "b", float("inf")], "Expected a finite number\n  at [3]")
+    decoding.succeed(["1", "a", "b", "2"], (1, "a", "b", 2))
+    decoding.succeed(["1", "a", True, "b", "2"], (1, "a", True, "b", 2))
+    decoding.succeed(["1", "a", True, True, "b", "2"], (1, "a", True, True, "b", 2))
+    decoding.fail(["1", "a"], "Missing key\n  at [2]")
+    decoding.fail(["1", "a", "b"], "Missing key\n  at [3]")
+    decoding.fail(["1", "a", "b", "c"], "Expected a finite number\n  at [3]")
 
     encoding = asserts.encoding()
-    encoding.succeed((1, "a", "b", 2))
-    encoding.succeed((1, "a", True, "b", 2))
+    encoding.succeed((1, "a", "b", 2), ("1", "a", "b", "2"))
+    encoding.succeed((1, "a", True, "b", 2), ("1", "a", True, "b", "2"))
 
 
 def test_tuple_with_rest_validates_every_post_rest_index():
     """TupleWithRest / [String] + [Boolean, String, Number, Number] validates every post-rest index"""  # noqa: E501
-    schema = S.TupleWithRest(S.Tuple(S.String), S.Boolean, S.String, S.Finite, S.Finite)
+    schema = S.TupleWithRest(
+        S.Tuple(S.String), S.Boolean, S.String, S.FiniteFromString, S.FiniteFromString
+    )
     decoding = SchemaAsserts(schema).decoding()
-    decoding.fail(["a", True, "b", 1, float("nan")], "Expected a finite number\n  at [4]")
-    decoding.succeed(["a", True, "b", 1, 2], ("a", True, "b", 1, 2))
+    decoding.fail(["a", True, "b", "1", "x"], "Expected a finite number\n  at [4]")
+    decoding.succeed(["a", True, "b", "1", "2"], ("a", True, "b", 1, 2))
 
 
 # ----------------------------------------------------------------- suspend
@@ -238,25 +234,29 @@ def test_suspend_should_work():
     """suspend / should work"""
     category: S.Bottom[_Category, object] = S.Struct(
         _Category,
-        a=S.Finite.check(S.is_greater_than(0)),
+        a=S.FiniteFromString.check(S.is_greater_than(0)),
         categories=S.Array(S.suspend(lambda: category)),
     )
     asserts = SchemaAsserts(category)
 
     decoding = asserts.decoding()
-    decoding.succeed({"a": 1, "categories": []}, {"a": 1, "categories": ()})
+    decoding.succeed({"a": "1", "categories": []}, {"a": 1, "categories": ()})
     empty: list[object] = []
     decoding.succeed(
-        {"a": 1, "categories": [{"a": 2, "categories": empty}]},
+        {"a": "1", "categories": [{"a": "2", "categories": empty}]},
         {"a": 1, "categories": ({"a": 2, "categories": ()},)},
     )
     decoding.fail(
-        {"a": 1, "categories": [{"a": "a", "categories": empty}]},
-        'Expected number\n  at ["categories"][0]["a"]',
+        {"a": "1", "categories": [{"a": "a", "categories": empty}]},
+        'Expected a finite number\n  at ["categories"][0]["a"]',
     )
 
     encoding = asserts.encoding()
-    encoding.succeed({"a": 1, "categories": ()})
+    encoding.succeed({"a": 1, "categories": ()}, {"a": "1", "categories": ()})
+    encoding.succeed(
+        {"a": 1, "categories": ({"a": 2, "categories": ()},)},
+        {"a": "1", "categories": ({"a": "2", "categories": ()},)},
+    )
     encoding.fail(
         {"a": 1, "categories": ({"a": -1, "categories": ()},)},
         'Expected a value greater than 0\n  at ["categories"][0]["a"]',
@@ -292,18 +292,25 @@ def test_redacted_finite():
 
 def test_redacted_finite_from_string():
     """Redacted / Redacted(FiniteFromString)"""
-    schema = S.Redacted(S.Int)
+    schema = S.Redacted(S.FiniteFromString.check(S.is_int()))
     asserts = SchemaAsserts(schema)
-    decoded = S.decode_unknown_sync(schema)(Redacted(123, label="secret"))
-    assert decoded == Redacted(123)
+    decoding = asserts.decoding()
+    decoding.succeed(Redacted("123"), Redacted(123))
+    decoded = S.decode_unknown_sync(schema)(Redacted("123", label="secret"))
+    assert redacted.value(decoded) == 123
     assert decoded.label == "secret"
+    decoding.fail(None, "Expected Redacted")
+    for input in (Redacted(None), Redacted("a"), Redacted("1.2")):
+        decoding.fail(input, 'Expected a valid value\n  at ["value"]')
+
+    encoding = asserts.encoding()
+    encoding.succeed(Redacted(123), Redacted("123"))
     encoded = S.encode_sync(schema)(Redacted(123, label="secret"))
+    assert redacted.value(encoded) == "123"
     assert encoded.label == "secret"
-    for direction in (asserts.decoding(), asserts.encoding()):
-        direction.fail(None, "Expected Redacted")
-        direction.fail(Redacted(None), 'Expected a valid value\n  at ["value"]')
-        direction.fail(Redacted("a"), 'Expected a valid value\n  at ["value"]')
-        direction.fail(Redacted(1.2), 'Expected a valid value\n  at ["value"]')
+    encoding.fail(None, "Expected Redacted")
+    for input in (Redacted(None), Redacted("a"), Redacted(1.2)):
+        encoding.fail(input, 'Expected a valid value\n  at ["value"]')
 
 
 def test_redacted_with_label():
@@ -334,12 +341,17 @@ def test_option_should_expose_the_value():
 
 def test_option_finite_from_string():
     """Option / Option(FiniteFromString)"""
-    asserts = SchemaAsserts(S.Option(S.Finite))
-    for direction in (asserts.decoding(), asserts.encoding()):
-        direction.succeed(None)
-        direction.succeed(Some(123))
-        direction.fail(1, "Expected Option")
-        direction.fail(Some(None), 'Expected number\n  at ["value"]')
+    asserts = SchemaAsserts(S.Option(S.FiniteFromString))
+    decoding = asserts.decoding()
+    decoding.succeed(None)
+    decoding.succeed(Some("123"), Some(123))
+    decoding.fail(1, "Expected Option")
+    decoding.fail(Some(None), 'Expected string\n  at ["value"]')
+    encoding = asserts.encoding()
+    encoding.succeed(None)
+    encoding.succeed(Some(123), Some("123"))
+    encoding.fail(1, "Expected Option")
+    encoding.fail(Some(None), 'Expected number\n  at ["value"]')
 
 
 # ------------------------------------------------------------------ Result
@@ -356,16 +368,16 @@ def test_result_should_expose_the_values():
 
 def test_result_finite_from_string_finite_from_string():
     """Result / Result(FiniteFromString, FiniteFromString)"""
-    asserts = SchemaAsserts(S.Result(S.Finite, S.Finite))
+    asserts = SchemaAsserts(S.Result(S.FiniteFromString, S.FiniteFromString))
     decoding = asserts.decoding()
-    decoding.succeed(Ok(1))
-    decoding.succeed(Err(2))
+    decoding.succeed(Ok("1"), Ok(1))
+    decoding.succeed(Err("2"), Err(2))
     decoding.fail(None, "Expected Result")
-    decoding.fail(Ok(float("inf")), 'Expected a finite number\n  at ["value"]')
-    decoding.fail(Err(float("nan")), 'Expected a finite number\n  at ["error"]')
+    decoding.fail(Ok("a"), 'Expected a finite number\n  at ["value"]')
+    decoding.fail(Err("b"), 'Expected a finite number\n  at ["error"]')
     encoding = asserts.encoding()
-    encoding.succeed(Ok(1))
-    encoding.succeed(Err(2))
+    encoding.succeed(Ok(1), Ok("1"))
+    encoding.succeed(Err(2), Err("2"))
 
 
 # ------------------------------------------------------------ CauseReason
@@ -397,15 +409,18 @@ def test_cause_should_expose_the_values():
 def test_cause_finite_from_string_finite_from_string():
     """Cause / Cause(FiniteFromString, FiniteFromString)"""
     boom = ValueError("boom")
-    asserts = SchemaAsserts(S.Cause(S.Finite, S.instance_of(ValueError)))
-    for direction in (asserts.decoding(), asserts.encoding()):
-        direction.succeed(cause.fail(1))
-        direction.succeed(cause.die(boom))
-        direction.succeed(cause.interrupt(3))
-        direction.fail(cause.fail("a"), 'Expected number\n  at ["reasons"][0]["error"]')
-        direction.fail(
-            cause.die(TypeError("a")), 'Expected ValueError\n  at ["reasons"][0]["defect"]'
-        )
+    asserts = SchemaAsserts(S.Cause(S.FiniteFromString, S.instance_of(ValueError)))
+    decoding = asserts.decoding()
+    decoding.succeed(cause.fail("1"), cause.fail(1))
+    decoding.succeed(cause.die(boom))
+    decoding.succeed(cause.interrupt(3))
+    decoding.fail(cause.fail("a"), 'Expected a finite number\n  at ["reasons"][0]["error"]')
+    decoding.fail(cause.die(TypeError("a")), 'Expected ValueError\n  at ["reasons"][0]["defect"]')
+    encoding = asserts.encoding()
+    encoding.succeed(cause.fail(1), cause.fail("1"))
+    encoding.succeed(cause.die(boom))
+    encoding.succeed(cause.interrupt(3))
+    encoding.fail(cause.fail("a"), 'Expected number\n  at ["reasons"][0]["error"]')
 
 
 # -------------------------------------------------------------------- Exit
@@ -425,11 +440,12 @@ def test_exit_should_expose_the_values():
 
 def test_exit_finite_from_string_string_unknown():
     """Exit / Exit(FiniteFromString, String, Unknown)"""
-    decoding = SchemaAsserts(S.Exit(S.Finite, S.String, S.instance_of(Exception))).decoding()
-    decoding.succeed(exit.succeed(123))
+    schema = S.Exit(S.FiniteFromString, S.String, S.instance_of(Exception))
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed(exit.succeed("123"), exit.succeed(123))
     decoding.succeed(exit.fail("boom"))
     decoding.fail(None, "Expected Exit")
-    decoding.fail(exit.succeed("123"), 'Expected number\n  at ["value"]')
+    decoding.fail(exit.succeed(123), 'Expected string\n  at ["value"]')
     decoding.fail(exit.fail(None), 'Expected string\n  at ["cause"]["reasons"][0]["error"]')
 
 
@@ -438,55 +454,55 @@ def test_exit_finite_from_string_string_unknown():
 
 def test_readonly_set():
     """ReadonlySet"""
-    schema = S.FrozenSet(S.Finite)
-    assert schema.value is S.Finite
-    assert schema.annotate().value is S.Finite
+    schema = S.FrozenSet(S.FiniteFromString)
+    assert schema.value is S.FiniteFromString
+    assert schema.annotate().value is S.FiniteFromString
     decoding = SchemaAsserts(schema).decoding()
-    decoding.succeed({1, 2, 3}, frozenset({1, 2, 3}))
+    decoding.succeed(frozenset({"1", "2", "3"}), frozenset({1, 2, 3}))
     decoding.fail(None, "Expected frozenset")
-    decoding.fail(frozenset({None}), 'Expected number\n  at ["values"][0]')
+    decoding.fail(frozenset({None}), 'Expected string\n  at ["values"][0]')
 
 
 def test_hash_set():
     """HashSet"""
-    asserts = SchemaAsserts(S.FrozenSet(S.Finite))
-    asserts.decoding().succeed(frozenset({1, 2, 3}))
-    asserts.decoding().fail(frozenset({None}), 'Expected number\n  at ["values"][0]')
-    asserts.encoding().succeed(frozenset({1, 2, 3}))
+    asserts = SchemaAsserts(S.FrozenSet(S.FiniteFromString))
+    asserts.decoding().succeed(frozenset({"1", "2", "3"}), frozenset({1, 2, 3}))
+    asserts.decoding().fail(frozenset({None}), 'Expected string\n  at ["values"][0]')
+    asserts.encoding().succeed(frozenset({1, 2, 3}), frozenset({"1", "2", "3"}))
 
 
 def test_chunk():
     """Chunk"""
-    schema = S.Array(S.Finite)
-    assert schema.value is S.Finite
+    schema = S.Array(S.FiniteFromString)
+    assert schema.value is S.FiniteFromString
     asserts = SchemaAsserts(schema)
-    asserts.decoding().succeed((1, 2, 3))
+    asserts.decoding().succeed(("1", "2", "3"), (1, 2, 3))
     asserts.decoding().fail(None, "Expected array")
-    asserts.decoding().fail((None,), "Expected number\n  at [0]")
-    asserts.encoding().succeed((1, 2, 3))
+    asserts.decoding().fail((None,), "Expected string\n  at [0]")
+    asserts.encoding().succeed((1, 2, 3), ("1", "2", "3"))
 
 
 def test_readonly_map():
     """ReadonlyMap"""
-    schema = S.Map(S.String, S.Finite)
+    schema = S.Map(S.String, S.FiniteFromString)
     assert schema.key is S.String
     assert schema.annotate().key is S.String
-    assert schema.value is S.Finite
-    assert schema.annotate().value is S.Finite
+    assert schema.value is S.FiniteFromString
+    assert schema.annotate().value is S.FiniteFromString
     asserts = SchemaAsserts(schema)
     decoding = asserts.decoding()
-    decoding.succeed({"a": 1})
+    decoding.succeed({"a": "1"}, {"a": 1})
     decoding.fail(None, "Expected Mapping")
-    decoding.fail({"a": None}, 'Expected number\n  at ["entries"][0][1]')
-    asserts.encoding().succeed({"a": 1})
+    decoding.fail({"a": None}, 'Expected string\n  at ["entries"][0][1]')
+    asserts.encoding().succeed({"a": 1}, {"a": "1"})
 
 
 def test_hash_map():
     """HashMap"""
-    asserts = SchemaAsserts(S.Map(S.String, S.Finite))
-    asserts.decoding().succeed({"a": 1})
-    asserts.decoding().fail({"a": None}, 'Expected number\n  at ["entries"][0][1]')
-    asserts.encoding().succeed({"a": 1})
+    asserts = SchemaAsserts(S.Map(S.String, S.FiniteFromString))
+    asserts.decoding().succeed({"a": "1"}, {"a": 1})
+    asserts.decoding().fail({"a": None}, 'Expected string\n  at ["entries"][0][1]')
+    asserts.encoding().succeed({"a": 1}, {"a": "1"})
 
 
 # --------------------------------------------------- date-times and zones

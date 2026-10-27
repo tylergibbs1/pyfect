@@ -73,7 +73,7 @@ class UnionSchema(Bottom[A_co, I_co, RD_co, RE_co], Generic[A_co, I_co, RD_co, R
         return UnionSchema(node, members)
 
 
-def Union[A, I, RD, RE](
+def Union[A = Never, I = Never, RD = Never, RE = Never](
     *members: Codec[A, I, RD, RE], mode: ast.UnionMode = "any_of"
 ) -> UnionSchema[A, I, RD, RE]:
     """A value of any member, tried in order (``mode="one_of"``: of exactly

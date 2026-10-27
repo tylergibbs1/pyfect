@@ -6,15 +6,19 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, Never, TypeIs
 
+from pyfect._core import Effect
 from pyfect.exit import Exit, Success
 from pyfect.schema import ast
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom, Codec
 from pyfect.schema.issue import Issue
 
-type Parse[T = object] = Callable[[object, ast.Declaration, ParseOptions], Exit[T, Issue]]
+type Parse[T = object] = Callable[
+    [object, ast.Declaration, ParseOptions], Exit[T, Issue] | Effect[T, Issue, Any]
+]
 """A declaration's parser: the input, the declaration (for its issues) and
-the parse options."""
+the parse options. It gives an ``Exit``, or an ``Effect`` when a part's
+parse is one (``ast.then`` / ``ast.map_value`` keep either)."""
 
 
 def declare[T](guard: Callable[[object], TypeIs[T]], /, **annotations: object) -> Bottom[T]:

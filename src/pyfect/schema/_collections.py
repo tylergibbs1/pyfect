@@ -14,11 +14,9 @@ from collections.abc import Mapping, Set
 from dataclasses import dataclass
 from typing import Generic, TypeVar, cast
 
-from pyfect.exit import Exit, Success
 from pyfect.schema import ast
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom, Codec
-from pyfect.schema.issue import Issue
 
 # Explicit covariant parameters: a frozen dataclass's fields would make
 # inferred ones invariant (``tests/test_schema_variance.py``).
@@ -44,16 +42,15 @@ class FrozenSetSchema(
 def _set_run(nodes: tuple[ast.AST, ...]) -> ast.DeclarationParser:
     values = ast.Arrays((), nodes)
 
-    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> Exit[object, Issue]:
+    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
         if not isinstance(input, Set):
             return ast.invalid_type(node, input, options)
         values_in = cast("Set[object]", input)
         items = tuple(values_in)
-        match ast.parse_at_key(node, "values", values, items, input=values_in, options=options):
-            case Success(parsed):
-                return Success(frozenset(cast("tuple[object, ...]", parsed)))
-            case failure:
-                return failure
+        return ast.map_value(
+            ast.parse_at_key(node, "values", values, items, input=values_in, options=options),
+            lambda parsed: frozenset(cast("tuple[object, ...]", parsed)),
+        )
 
     return parse
 
@@ -82,16 +79,15 @@ class MapSchema(
 def _map_run(nodes: tuple[ast.AST, ...]) -> ast.DeclarationParser:
     entries = ast.Arrays((), (ast.Arrays(tuple(ast.Element(n) for n in nodes)),))
 
-    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> Exit[object, Issue]:
+    def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
         if not isinstance(input, Mapping):
             return ast.invalid_type(node, input, options)
         mapping = cast("Mapping[object, object]", input)
         pairs = tuple(mapping.items())
-        match ast.parse_at_key(node, "entries", entries, pairs, input=mapping, options=options):
-            case Success(parsed):
-                return Success(dict(cast("tuple[tuple[object, object], ...]", parsed)))
-            case failure:
-                return failure
+        return ast.map_value(
+            ast.parse_at_key(node, "entries", entries, pairs, input=mapping, options=options),
+            lambda parsed: dict(cast("tuple[tuple[object, object], ...]", parsed)),
+        )
 
     return parse
 

@@ -5,10 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
-from pyfect.exit import Exit
 from pyfect.schema._options import ParseOptions
 from pyfect.schema.ast._base import AST
-from pyfect.schema.issue import Issue
+from pyfect.schema.ast._result import ParseResult
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -29,17 +28,17 @@ class Suspend(AST):
     def get_expected(self) -> str:
         return self.target.expected()
 
-    def _parse(self, input: object, options: ParseOptions) -> Exit[object, Issue]:
+    def _parse(self, input: object, options: ParseOptions) -> ParseResult:
         return self.target.parse(input, options)
 
-    def flip(self) -> Suspend:
+    def _flip(self) -> Suspend:
         # Lazy: the target is not made until the flipped node is used.
         def flipped() -> AST:
             return self.target.flip()
 
         return replace(self, thunk=flipped)
 
-    def to_type(self) -> Suspend:
+    def _to_type(self) -> Suspend:
         def typed() -> AST:
             return self.target.to_type()
 

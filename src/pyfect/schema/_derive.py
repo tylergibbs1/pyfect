@@ -177,10 +177,39 @@ def typed_dict_fields(
     }
 
 
+def optional_keys(typed_dict: type[Mapping[str, object]]) -> frozenset[str]:
+    """The keys that may be missing. Python's ``__optional_keys__`` misses a
+    ``NotRequired`` / ``Required`` written as a string (``from __future__
+    import annotations``), so the evaluated annotations decide."""
+    optional = set(getattr(typed_dict, "__optional_keys__", frozenset[str]()))
+    for name, hint in get_type_hints(typed_dict, include_extras=True).items():
+        match _requiredness(hint):
+            case "required":
+                optional.discard(name)
+            case "not_required":
+                optional.add(name)
+            case None:
+                pass
+    return frozenset(optional)
+
+
+def _requiredness(hint: object) -> typing.Literal["required", "not_required"] | None:
+    """The ``Required`` / ``NotRequired`` wrapper of a key's annotation,
+    looking through ``ReadOnly`` and ``Annotated``."""
+    origin = get_origin(hint)
+    if origin is typing.NotRequired:
+        return "not_required"
+    if origin is typing.Required:
+        return "required"
+    if origin is typing.ReadOnly or origin is typing.Annotated:
+        return _requiredness(get_args(hint)[0])
+    return None
+
+
 def objects_of(
     typed_dict: type[Mapping[str, object]], fields: Mapping[str, AnyBottom]
 ) -> ast.Objects:
-    optional: frozenset[str] = getattr(typed_dict, "__optional_keys__", frozenset())
+    optional = optional_keys(typed_dict)
     return ast.Objects(
         tuple(
             ast.PropertySignature(name, schema.ast, optional=name in optional)
