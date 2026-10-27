@@ -156,6 +156,14 @@ function for `.pipe`) and run it with `run_collect`, `run_fold`, `run_for_each`,
 `run_head` or `to_pull`. `fx.stream.range(0, 3)` is `0, 1, 2`, as Python's `range`;
 `range_inclusive` is Effect's. `SubscriptionRef.changes()` is a stream.
 
+**Sinks.** `fx.Sink[A, In, L, E, R]` consumes a stream: it reads `In` items until it has
+what it needs, then succeeds with `A` and leaves over the `L` items it read but did not
+use. Build one with `fx.sink` (`collect()`, `sum()`, `take(n)`, `fold`, `reduce_while`,
+`take_while`, `for_each`, `from_queue`, `make`, ...), refine it with methods (`map`,
+`flat_map`, `map_input`, `catch_all`, `or_else`, ...) and use it with `stream.run(sink)`,
+`transduce`, `aggregate_within`, `grouped_within`, `pipe_through`, `tap_sink` or `peel`.
+A stream's own failures pass by a sink's error handlers, as in Effect.
+
 **Request batching.** A `fx.Request[A, E]` subclass (a frozen dataclass) describes one
 lookup; a `fx.RequestResolver` answers many at once. Requests made through one resolver in
 the same scheduler tick become one batch, so N concurrent `fx.request(GetUser(i), users)`

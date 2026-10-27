@@ -2512,3 +2512,111 @@ def check_stream_catch_removes_errors(source: _St[int, NotFound | ValueError]) -
         source.catch_if(_is_not_found, lambda _: fx.stream.make("x")),
         _St[int | str, NotFound | ValueError],
     )
+
+
+# --- sinks -----------------------------------------------------------------------
+
+type _Sk[A, In = object, L = Never, E = Never, R = Never] = fx.sink.Sink[A, In, L, E, R]
+
+
+def _add_one(n: int, item: int) -> fx.Effect[int, NotFound]: ...
+def _int_below(n: int) -> bool: ...
+def _keep_int(n: int) -> fx.Result[str, None]: ...
+def _int_check(n: int) -> fx.Effect[bool, NotFound, Primary]: ...
+def _str_len(s: str) -> int: ...
+def _plus(a: int, b: int) -> int: ...
+
+
+def check_sink_constructors(eff: fx.Effect[int, NotFound, Primary], word: str) -> None:
+    sk = fx.sink
+    assert_type(sk.succeed(word), _Sk[str])
+    assert_type(sk.succeed(word, (word,)), _Sk[str, object, str])
+    assert_type(sk.sync(lambda: "a"), _Sk[str])
+    assert_type(sk.fail(NotFound("k")), _Sk[Never, object, Never, NotFound])
+    assert_type(sk.die(ValueError()), _Sk[Never])
+    assert_type(sk.never, _Sk[Never])
+    assert_type(sk.drain, _Sk[None])
+    assert_type(sk.count, _Sk[int])
+    assert_type(sk.timed, _Sk[float])
+    assert_type(sk.from_effect(eff), _Sk[int, object, Never, NotFound, Primary])
+    assert_type(sk.fold(lambda: 0, _int_below, _add_one), _Sk[int, int, int, NotFound])
+    assert_type(sk.fold_until(lambda: 0, 3, _add_one), _Sk[int, int, int, NotFound])
+    assert_type(
+        sk.reduce_while_effect(lambda: 0, _int_below, _add_one), _Sk[int, int, int, NotFound]
+    )
+    assert_type(sk.reduce_effect(lambda: 0, _add_one), _Sk[int, int, Never, NotFound])
+    assert_type(sk.reduce(lambda: 0, _plus), _Sk[int, int])
+    assert_type(sk.every(_int_below), _Sk[bool, int, int])
+    assert_type(sk.take_while(_int_below), _Sk[list[int], int, int])
+    assert_type(sk.take_while(_is_int), _Sk[list[int], object, object])
+    assert_type(sk.take_while_filter(_keep_int), _Sk[list[str], int, int])
+    assert_type(sk.take_until_effect(_int_check), _Sk[list[int], int, int, NotFound, Primary])
+    assert_type(sk.find(_is_int), _Sk[fx.Option[int], object, object])
+    assert_type(sk.for_each(_int_check), _Sk[None, int, Never, NotFound, Primary])
+    assert_type(sk.from_queue(fx.Queue[int, fx.Done]()), _Sk[None, int])
+    sk.from_queue(fx.Queue[int]())  # pyright: ignore[reportArgumentType]
+
+
+def check_sink_inference(source: _St[int, ValueError, Replica], words: _Sk[list[str], str]) -> None:
+    sk = fx.sink
+    assert_type(source.run(sk.sum()), fx.Effect[int, ValueError, Replica])
+    assert_type(source.run(sk.collect()), fx.Effect[list[int], ValueError, Replica])
+    assert_type(source.run(sk.head()), fx.Effect[fx.Option[int], ValueError, Replica])
+    assert_type(source.run(sk.take(2)), fx.Effect[list[int], ValueError, Replica])
+    assert_type(source.run(sk.count), fx.Effect[int, ValueError, Replica])
+    source.run(words)  # pyright: ignore[reportArgumentType]
+
+
+def check_sink_methods(
+    taking: _Sk[list[int], int, int],
+    counting: _Sk[int, int],
+    failing: _Sk[int, int, Never, NotFound],
+) -> None:
+    assert_type(taking.map(len), _Sk[int, int, int])
+    assert_type(taking.as_("a"), _Sk[str, int, int])
+    assert_type(taking.map_effect(lambda _: fx.fail(NotFound("k"))), _Sk[Never, int, int, NotFound])
+    assert_type(counting.map_input(_str_len), _Sk[int, str])
+    assert_type(taking.map_leftover(str), _Sk[list[int], int, str])
+    assert_type(taking.ignore_leftover(), _Sk[list[int], int])
+    assert_type(taking.with_duration(), _Sk[tuple[list[int], float], int, int])
+    assert_type(taking.flat_map(lambda _: counting), _Sk[int, int, int])
+    assert_type(counting.flat_map(lambda _: taking), _Sk[list[int], int, int])
+    assert_type(failing.map_error(str), _Sk[int, int, Never, str])
+    assert_type(failing.catch_all(lambda _: fx.succeed("x")), _Sk[int | str, int])
+    assert_type(failing.catch_cause(lambda _: fx.succeed("x")), _Sk[int | str, int])
+    assert_type(failing.or_else(lambda _: taking), _Sk[int | list[int], int, int])
+    assert_type(failing.ensuring(fx.void), _Sk[int, int, Never, NotFound])
+
+
+def check_sink_services(needing: _Sk[int, int, Never, NotFound, Primary | Replica]) -> None:
+    assert_type(
+        needing.pipe(fx.sink.provide_service(Primary, GoodDb())),
+        _Sk[int, int, Never, NotFound, Replica],
+    )
+    built = fx.sink.unwrap(fx.succeed(fx.sink.count))
+    assert_type(built, _Sk[int])
+
+
+def check_stream_sink_methods(
+    source: _St[int, ValueError, Replica],
+    taking: _Sk[list[int], int, int, NotFound],
+    words: _Sk[list[str], str, str],
+) -> None:
+    assert_type(source.run(taking), fx.Effect[list[int], ValueError | NotFound, Replica])
+    assert_type(source.transduce(taking), _St[list[int], ValueError | NotFound, Replica])
+    assert_type(source.aggregate(taking), _St[list[int], ValueError | NotFound, Replica])
+    assert_type(
+        source.aggregate_within(taking, schedule.spaced(1)),
+        _St[list[int], ValueError | NotFound, Replica],
+    )
+    assert_type(source.grouped_within(3, 1), _St[list[int], ValueError, Replica])
+    assert_type(source.pipe_through(taking), _St[int, ValueError | NotFound, Replica])
+    assert_type(source.tap_sink(fx.sink.drain), _St[int, ValueError, Replica])
+    assert_type(
+        source.peel(taking),
+        fx.Effect[
+            tuple[list[int], _St[int, ValueError]], ValueError | NotFound, fx.Scope | Replica
+        ],
+    )
+    assert_type(fx.stream.empty.transduce(fx.sink.reduce(lambda: 0, _plus)), _St[int])
+    source.transduce(words)  # pyright: ignore[reportArgumentType]

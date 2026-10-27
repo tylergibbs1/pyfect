@@ -28,8 +28,10 @@ Not ported:
   step of M6.
 - The operator sections are in ``test_stream_filtering.py``,
   ``test_stream_errors.py``, ``test_stream_combining.py`` and
-  ``test_stream_timing.py``; the others (encoding, grouping, sinks,
-  sharing, partitioning) port with their M6 clusters.
+  ``test_stream_timing.py``, the sink sections (``transduce``,
+  ``aggregateWithin``, ``tapSink``, ``peel``) in ``test_stream_sinks.py``;
+  the others (encoding, grouping, sharing, partitioning) port with their
+  M6 clusters.
 """
 
 from dataclasses import dataclass

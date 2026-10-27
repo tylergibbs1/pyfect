@@ -19,7 +19,8 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 ``fx.Request``, ``fx.RequestResolver``, ``fx.request`` (``Entry`` and the rest in
 ``fx.batching``). Error reporting: ``eff.with_error_reporting()``, ``fx.ErrorReporter``
 (``make``, ``layer``, ``report`` in ``fx.error_reporter``). Streaming
-building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Channel``
+building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Sink``
+(constructors in ``fx.sink``), ``fx.Channel``
 (constructors in ``fx.channel``), ``fx.Pull`` (helpers in ``fx.pull``), ``fx.Take``
 (``fx.take``).
 """
@@ -44,6 +45,7 @@ from pyfect import (
     result,
     schedule,
     scheduler,
+    sink,
     stream,
     take,
     testing,
@@ -180,6 +182,7 @@ from pyfect.scope import (
 )
 from pyfect.scoped_ref import ScopedRef
 from pyfect.semaphore import Semaphore
+from pyfect.sink import Sink
 from pyfect.stream import Stream
 from pyfect.subscription_ref import SubscriptionRef
 from pyfect.synchronized_ref import SynchronizedRef
@@ -265,6 +268,7 @@ __all__ = [
     "ScopedCache",
     "ScopedRef",
     "Semaphore",
+    "Sink",
     "Some",
     "Stream",
     "SubscriptionRef",
@@ -364,6 +368,7 @@ __all__ = [
     "scoped",
     "scoped_with",
     "service_option",
+    "sink",
     "sleep",
     "stream",
     "succeed",

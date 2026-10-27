@@ -5,10 +5,10 @@ only surfaced as a defect inside the finalizer, where nothing reported it:
 the finalizer silently did nothing. Every public callable with an
 ``Effect`` parameter now rejects anything else at once, with a
 ``TypeError`` naming the parameter. ``Layer`` parameters are checked the
-same way (``require_layer``), and ``Channel`` and ``Stream`` parameters
-too (``require_channel``, ``require_stream``). The guard test below walks the public API, so
-a new combinator that forgets ``require_effect`` or ``require_layer`` fails
-here.
+same way (``require_layer``), and ``Channel``, ``Stream`` and ``Sink``
+parameters too (``require_channel``, ``require_stream``,
+``require_sink``). The guard test below walks the public API, so a new
+combinator that forgets ``require_effect`` or ``require_layer`` fails here.
 """
 
 from __future__ import annotations
@@ -146,12 +146,14 @@ _KINDS = {
     "Layer": re.compile(r"(?:_layer_core\.)?Layer(?:\[.*\])?"),
     "Channel": re.compile(r"(?:_channel\.)?Channel(?:\[.*\])?"),
     "Stream": re.compile(r"(?:_stream\.)?Stream(?:Base)?(?:\[.*\])?"),
+    "Sink": re.compile(r"(?:_sink\.)?Sink(?:\[.*\])?"),
 }
 _ARTICLES = {
     "Effect": "an Effect",
     "Layer": "a Layer",
     "Channel": "a Channel",
     "Stream": "a Stream",
+    "Sink": "a Sink",
 }
 
 
@@ -205,6 +207,7 @@ _VALID: dict[str, object] = {
     "Layer": fx.layer.empty,
     "Channel": fx.channel.empty,
     "Stream": fx.stream.empty,
+    "Sink": fx.sink.drain,
 }
 
 
@@ -222,6 +225,7 @@ def test_the_guard_finds_the_combinators_it_is_meant_to_check():
     assert ("merge", "layers") in names
     assert ("pipe_to", "that") in names
     assert ("scoped", "stream") in names
+    assert ("run", "sink") in names
     assert ("__call__", "eff") in names
     assert len(_CASES) > 50
 

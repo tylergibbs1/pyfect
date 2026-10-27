@@ -14,12 +14,13 @@ Adapted, with the reason:
 - "retry - retries a failing stream according to a schedule" reads the
   test clock in seconds where Effect reads ``new Date(ms).getSeconds()``.
 
+The three sink titles of the section ("run - upstream failures bypass sink
+error handlers", "run - sink onExit observes interruption on upstream
+failure", "pipeThrough - upstream failures bypass sink error handlers")
+are in ``test_stream_sinks.py``.
+
 Not ported:
 
-- "run - upstream failures bypass sink error handlers", "run - sink onExit
-  observes interruption on upstream failure", "pipeThrough - upstream
-  failures bypass sink error handlers": they need ``Sink``, the next M6
-  cluster.
 - The ``catchReason`` and ``catchReasons`` titles: reason errors
   (``catchReason`` / ``unwrapReason``) are not ported to ``Effect`` either.
 """

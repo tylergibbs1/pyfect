@@ -24,6 +24,7 @@ from pyfect.stream._error_methods import ErrorMethods
 from pyfect.stream._filter_methods import FilterMethods
 from pyfect.stream._map_methods import MapMethods
 from pyfect.stream._run_methods import RunMethods
+from pyfect.stream._sink_methods import SinkMethods
 from pyfect.stream._timing_methods import TimingMethods
 from pyfect.stream._zip_methods import ZipMethods
 
@@ -42,6 +43,7 @@ class Stream(
     ErrorMethods[A_co, E_co, R_co],
     TimingMethods[A_co, E_co, R_co],
     RunMethods[A_co, E_co, R_co],
+    SinkMethods[A_co, E_co, R_co],
 ):
     """``Stream[A, E, R]``: writes items of type ``A`` in non-empty tuples
     (chunks), then fails with ``E`` or ends; needs the services ``R``.
