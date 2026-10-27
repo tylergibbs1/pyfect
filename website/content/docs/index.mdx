@@ -8,12 +8,17 @@ pyfect is a Python port of [Effect](https://effect.website) (v4). You write prog
 fail and which services they need. pyright infers all three, and refuses to run a program that
 leaves an error unhandled or a service unprovided.
 
-```
+```text
 Effect[A, E, R]
        │  │  └── the services it needs (Never: none)
        │  └───── the errors it can fail with (Never: none)
        └──────── the value it succeeds with
 ```
+
+Handling an error removes it from `E`; providing a service removes it from `R`. An effect
+runs once both are `Never`:
+
+<Diagram name="effect-type" title="catch_tag removes NotFound from the error type; provide removes Db from the requirements" />
 
 ## Why
 
@@ -36,17 +41,21 @@ pyfect handles these in the runtime and the types:
 
 A user lookup with a timeout and retries:
 
-<Tabs items={['asyncio', 'pyfect']}>
-<Tab value="asyncio">
+<Tabs defaultValue="pyfect">
+<TabsList>
+<TabsTrigger value="pyfect">pyfect</TabsTrigger>
+<TabsTrigger value="asyncio">asyncio</TabsTrigger>
+</TabsList>
+<TabsContent value="asyncio">
 
 <include meta='title="with_asyncio.py"'>../../snippets/introduction/with_asyncio.py</include>
 
-</Tab>
-<Tab value="pyfect">
+</TabsContent>
+<TabsContent value="pyfect">
 
 <include meta='title="with_pyfect.py"'>../../snippets/introduction/with_pyfect.py</include>
 
-</Tab>
+</TabsContent>
 </Tabs>
 
 The pyfect version is not shorter. What changes is that `greet`'s type,
@@ -65,8 +74,5 @@ utilities. Schema, STM and the platform libraries (HTTP, SQL, ...) are not done 
 [PARITY.md](https://github.com/tylergibbs1/pyfect/blob/main/docs/PARITY.md) lists what is
 covered, what differs and why.
 
-<Cards>
-  <Card title="Installation" href="/docs/installation" />
-  <Card title="Effects and generators" href="/docs/effects" />
-  <Card title="API reference" href="/docs/reference" />
-</Cards>
+Start with [Installation](/docs/installation), then [Effects and generators](/docs/effects).
+The [API reference](/docs/reference) is generated from the code.

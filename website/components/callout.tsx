@@ -1,13 +1,25 @@
-import type { ReactNode } from 'react';
+import { cn } from '@/lib/cn';
+import { Alert, AlertDescription, AlertTitle } from './ui/alert';
 
-// After shadcn/ui's callout (apps/v4/components/callout.tsx, MIT): a quiet surface, no icon.
-export function Callout({ title, children }: { title?: ReactNode; children: ReactNode }) {
+// From shadcn/ui's callout (apps/v4/components/callout.tsx, MIT).
+export function Callout({
+  title,
+  children,
+  icon,
+  className,
+  ...props
+}: React.ComponentProps<typeof Alert> & { icon?: React.ReactNode }) {
   return (
-    <div data-slot="callout" className="rounded-xl border bg-fd-muted/60 px-4 py-3 text-[0.9375rem]">
-      {title ? <p className="font-medium">{title}</p> : null}
-      <div className="text-fd-muted-foreground [&_a]:font-medium [&_a]:underline [&_code]:font-mono [&_code]:text-[0.85em]">
-        {children}
-      </div>
-    </div>
+    <Alert
+      className={cn(
+        'not-typeset mt-6 w-auto rounded-2xl border-surface bg-surface text-surface-foreground md:-mx-1 **:[a]:font-medium **:[a]:underline **:[a]:decoration-current/30 **:[a]:hover:decoration-current **:[code]:border',
+        className,
+      )}
+      {...props}
+    >
+      {icon}
+      {title ? <AlertTitle>{title}</AlertTitle> : null}
+      <AlertDescription className="text-card-foreground/80">{children}</AlertDescription>
+    </Alert>
   );
 }

@@ -1,32 +1,35 @@
 import Link from 'next/link';
 import type { MDXComponents } from 'mdx/types';
 import type { ComponentProps, ReactNode } from 'react';
-import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Callout } from '@/components/callout';
 import { CodeBlock } from '@/components/code-block';
-import { Split, SplitCode, SplitProse } from '@/components/split';
+import { CodeOutput } from '@/components/code-output';
+import { Diagram } from '@/components/diagram';
+import { DocsTabs, DocsTabsContent, DocsTabsList, DocsTabsTrigger } from '@/components/docs-tabs';
+import { InstallCommand } from '@/components/install-command';
 import { cn } from '@/lib/cn';
 
-// The MDX component map, after shadcn/ui's apps/v4/mdx-components.tsx (MIT): headings
-// with hover anchors, code blocks with titles and copy buttons, steps, callouts, tabs.
+// The MDX component map, after shadcn/ui's apps/v4/mdx-components.tsx (MIT).
 
-type HeadingTag = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+function HeadingAnchor({ id, children }: { id?: string; children: ReactNode }) {
+  if (!id) return children;
+  return (
+    <a className="group no-underline" href={`#${id}`}>
+      <span className="underline-offset-4 group-hover:underline">{children}</span>
+      <span aria-hidden="true" className="ml-2 text-muted-foreground opacity-0 group-hover:opacity-100">
+        #
+      </span>
+    </a>
+  );
+}
 
-function heading(Tag: HeadingTag) {
-  return function Heading({ id, children, ...props }: ComponentProps<HeadingTag>) {
+function heading<Tag extends 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6'>(Tag: Tag) {
+  return function Heading({ children, id, ...props }: ComponentProps<Tag>) {
+    const Element = Tag as 'h2';
     return (
-      <Tag id={id} {...props}>
-        {id ? (
-          <a className="group no-underline" href={`#${id}`}>
-            {children}
-            <span aria-hidden className="ml-2 text-fd-muted-foreground opacity-0 group-hover:opacity-100">
-              #
-            </span>
-          </a>
-        ) : (
-          children
-        )}
-      </Tag>
+      <Element id={id} {...(props as ComponentProps<'h2'>)}>
+        <HeadingAnchor id={id}>{children}</HeadingAnchor>
+      </Element>
     );
   };
 }
@@ -37,30 +40,6 @@ function MdxLink({ href = '', ...props }: ComponentProps<'a'>) {
   return <a href={href} target="_blank" rel="noreferrer" {...props} />;
 }
 
-function Steps({ className, ...props }: ComponentProps<'div'>) {
-  return <div className={cn('steps', className)} {...props} />;
-}
-
-function Cards({ children }: { children: ReactNode }) {
-  return (
-    <div data-slot="cards" className="grid gap-3 sm:grid-cols-2">
-      {children}
-    </div>
-  );
-}
-
-function Card({ title, href, children }: { title: ReactNode; href: string; children?: ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className="block rounded-xl border p-4 transition-colors hover:bg-fd-accent/60"
-    >
-      <span className="font-medium">{title}</span>
-      {children ? <span className="mt-1 block text-sm text-fd-muted-foreground">{children}</span> : null}
-    </Link>
-  );
-}
-
 export const mdxComponents = {
   h1: heading('h1'),
   h2: heading('h2'),
@@ -69,22 +48,29 @@ export const mdxComponents = {
   h5: heading('h5'),
   h6: heading('h6'),
   a: MdxLink,
-  pre: CodeBlock,
+  // Typeset tables stay real tables and wrap to fit; wide ones scroll.
   table: (props: ComponentProps<'table'>) => (
-    <div className="typeset-scroll">
+    <div className="typeset-scroll no-scrollbar *:[table]:w-full">
       <table {...props} />
     </div>
   ),
-  Callout,
-  Card,
-  Cards,
+  pre: CodeBlock,
   Step: (props: ComponentProps<'h3'>) => <h3 {...props} />,
-  Steps,
-  Split,
-  SplitCode,
-  SplitProse,
-  Tab,
-  Tabs,
+  Steps: ({ className, ...props }: ComponentProps<'div'>) => (
+    <div
+      className={cn('steps mb-12 [counter-reset:step] md:ml-4 md:border-l md:pl-8 [&>h3]:step', className)}
+      {...props}
+    />
+  ),
+  Tabs: DocsTabs,
+  TabsList: DocsTabsList,
+  TabsTrigger: DocsTabsTrigger,
+  TabsContent: DocsTabsContent,
+  Callout,
+  CodeOutput,
+  Diagram,
+  InstallCommand,
+  Link,
 } satisfies MDXComponents;
 
 export function getMDXComponents(components?: MDXComponents) {

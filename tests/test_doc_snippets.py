@@ -4,8 +4,14 @@ Every Python block in `website/content/docs` is an `<include>` of a file under
 `website/snippets`, which pyright checks and these tests run (the site is built
 from `website/` alone, so guides can't include files outside it):
 a snippet asserts its own results, and `test_*.py` snippets are pytest files.
+
+A snippet that prints has its output next to it (`x.py` -> `x.out`), which guides show
+in "Output" tabs. The file must equal what running the snippet prints; regenerate with
+
+    UPDATE_SNIPPET_OUTPUT=1 uv run pytest tests/test_doc_snippets.py
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -23,6 +29,10 @@ PYTHON_FENCE = re.compile(r"^\s*(```|~~~)\s*(py|python|python3|pycon)\b", re.MUL
 
 def snippet_files() -> list[Path]:
     return sorted(SNIPPETS.rglob("*.py"))
+
+
+def output_files() -> list[Path]:
+    return sorted(SNIPPETS.rglob("*.out"))
 
 
 def guide_files() -> list[Path]:
@@ -60,6 +70,22 @@ TESTS = [p for p in snippet_files() if p.name.startswith("test_")]
 def test_snippet_runs(path: Path):
     done = run(str(path))
     assert done.returncode == 0, done.stderr
+    expected = path.with_suffix(".out")
+    if os.environ.get("UPDATE_SNIPPET_OUTPUT") and done.stdout:
+        expected.write_text(done.stdout)
+    if expected.exists():
+        assert done.stdout == expected.read_text(), (
+            f"{name(expected)} is stale: rerun with UPDATE_SNIPPET_OUTPUT=1"
+        )
+    else:
+        assert not done.stdout, (
+            f"{name(path)} prints; write {name(expected)} with UPDATE_SNIPPET_OUTPUT=1"
+        )
+
+
+@pytest.mark.parametrize("path", output_files(), ids=name)
+def test_outputs_belong_to_snippets(path: Path):
+    assert path.with_suffix(".py").is_file(), f"{name(path)} has no snippet"
 
 
 @pytest.mark.parametrize("path", TESTS, ids=name)
@@ -91,5 +117,17 @@ def test_guides_include_only_checked_files(guide: Path):
 
 def test_every_snippet_is_used_by_a_guide():
     used = {path for guide in guide_files() for path in included_files(guide)}
-    unused = [name(p) for p in snippet_files() if p.resolve() not in used]
+    unused = [name(p) for p in [*snippet_files(), *output_files()] if p.resolve() not in used]
     assert not unused, f"snippets no guide includes: {unused}"
+
+
+DIAGRAMS = ROOT / "website" / "diagrams"
+DIAGRAM = re.compile(r'<Diagram\s+name="([^"]+)"')
+
+
+def test_diagrams_exist_and_are_used():
+    """Guides draw diagrams from `website/diagrams/<name>.mmd` (rendered by pele at build)."""
+    used = {name for guide in guide_files() for name in DIAGRAM.findall(guide.read_text())}
+    files = {path.stem for path in DIAGRAMS.glob("*.mmd")}
+    assert used <= files, f"missing diagram files: {sorted(used - files)}"
+    assert files <= used, f"diagrams no guide uses: {sorted(files - used)}"

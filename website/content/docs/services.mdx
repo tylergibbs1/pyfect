@@ -1,10 +1,7 @@
 ---
 title: Services and layers
 description: "Declare what an effect needs; provide it with layers."
-full: true
 ---
-<Split>
-<SplitProse>
 
 A service is a dependency an effect asks for by **tag**: a database, a mailer, a clock. The
 effect's third type parameter lists the tags it needs, and it can't run until a **layer**
@@ -13,18 +10,9 @@ provides them.
 A tag's identity is separate from its shape, so two tags (`Primary`, `Replica`) can share one
 interface. `fx.Reference` is a tag with a default value, which needs no layer.
 
-</SplitProse>
-<SplitCode>
-
 <include meta='title="tags.py"'>../../snippets/services/tags.py</include>
 
-</SplitCode>
-</Split>
-
 ## Layers
-
-<Split>
-<SplitProse>
 
 A `Layer[ROut, E, RIn]` builds the services `ROut`, may fail with `E`, and needs `RIn` to do it.
 
@@ -39,13 +27,12 @@ A `Layer[ROut, E, RIn]` builds the services `ROut`, may fail with `E`, and needs
 For tests, `layer.mock(Tag, member=...)` stubs a service, and `testing.layer_fixture` builds a
 layer once per pytest scope (see [Testing](/docs/testing)).
 
-</SplitProse>
-<SplitCode>
-
 <include meta='title="layers.py"'>../../snippets/services/layers.py</include>
 
-</SplitCode>
-</Split>
+`layer.provide(DbLive)` wires `DbLive`'s output into what `UsersLive` needs, so `AppLive`
+builds `Db` first, then `Users`, and needs nothing itself:
+
+<Diagram name="layer-graph" title="DbLive builds Db, which UsersLive needs to build Users, which the program needs" />
 
 Reference: [`pyfect.layer`](/docs/reference/layer), [`pyfect.context`](/docs/reference/context),
 [`ManagedRuntime`](/docs/reference/managed_runtime).

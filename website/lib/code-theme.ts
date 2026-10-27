@@ -1,5 +1,5 @@
-/** Code panels are dark in both color schemes, as in Stripe's and OpenAI's docs. */
+/** shadcn/ui's code themes: GitHub light on a light surface, Vesper on a dark one. */
 export const codeThemes = {
-  light: 'github-dark-default',
-  dark: 'github-dark-default',
+  light: 'github-light-default',
+  dark: 'vesper',
 } as const;

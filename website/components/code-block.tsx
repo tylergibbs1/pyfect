@@ -3,8 +3,8 @@ import { cn } from '@/lib/cn';
 import { CopyButton } from './copy-button';
 
 /**
- * A code block from Fumadocs' rehype-code: a dark panel with an optional file-name
- * title and a copy button. Styling after shadcn/ui's code figures (MIT).
+ * A code block from Fumadocs' rehype-code (shiki), in the figure shadcn/ui's docs use for
+ * rehype-pretty-code output: a title bar with the language icon, the code, a copy button.
  */
 export function CodeBlock({
   title,
@@ -15,26 +15,30 @@ export function CodeBlock({
   ...props
 }: ComponentProps<'pre'> & { title?: string; icon?: string; allowCopy?: string | boolean }) {
   return (
-    <figure data-code-block="" data-not-typeset="" className="code-block">
+    <figure data-code-figure="" data-not-typeset="">
       {title ? (
-        <figcaption className="code-block-title">
+        <figcaption
+          data-code-title=""
+          className="flex items-center gap-2 text-code-foreground [&_svg]:size-4 [&_svg]:text-code-foreground [&_svg]:opacity-70"
+        >
           {icon ? (
-            <span
-              aria-hidden
-              className="[&_svg]:size-3.5"
-              // rehype-code's file icon: a static SVG string
-              dangerouslySetInnerHTML={{ __html: icon }}
-            />
+            // rehype-code's language icon: a static SVG string it generated
+            <span aria-hidden className="flex" dangerouslySetInnerHTML={{ __html: icon }} />
           ) : null}
-          <span className="truncate">{title}</span>
-          {allowCopy === 'false' ? null : <CopyButton className="ml-auto" />}
+          {title}
         </figcaption>
-      ) : allowCopy === 'false' ? null : (
-        <CopyButton className="absolute top-2 right-2 z-10" />
-      )}
-      <pre className={cn('code-block-pre', className)} {...props}>
+      ) : null}
+      <pre
+        className={cn(
+          'no-scrollbar min-w-0 overflow-x-auto overflow-y-auto overscroll-x-contain overscroll-y-auto px-4 py-3.5 outline-none',
+          className,
+        )}
+        {...props}
+        style={undefined}
+      >
         {children}
       </pre>
+      {allowCopy === 'false' || allowCopy === false ? null : <CopyButton />}
     </figure>
   );
 }

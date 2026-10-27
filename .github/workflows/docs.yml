@@ -35,3 +35,7 @@ jobs:
       - name: Build the site
         working-directory: website
         run: bun run build
+
+      - name: Check that every page uses the same frame and nothing shifts
+        working-directory: website
+        run: bun run check:layout

@@ -7,7 +7,13 @@ A `Stream[A, E, R]` emits any number of `A`s, then ends or fails with `E`. Strea
 nothing runs until a consumer asks for items, so a slow consumer slows the producer down
 (backpressure) and memory stays bounded.
 
+<CodeOutput>
+
 <include meta='title="basics.py"'>../../snippets/streams/basics.py</include>
+
+<include lang="text">../../snippets/streams/basics.out</include>
+
+</CodeOutput>
 
 Build streams with `stream.make`, `from_iterable`, `range`, `unfold`, `paginate`,
 `from_queue`, `from_async_iterable`, `tick`, ... and transform them with methods: `map`,
@@ -29,6 +35,12 @@ buffered so memory stays bounded, batched and written by a sink. `examples/strea
 in the repository is a longer version.
 
 <include meta='title="pipeline.py"'>../../snippets/streams/pipeline.py</include>
+
+Streams are pulled: nothing upstream runs until the sink asks for more. `map_effect` keeps
+at most four calls in flight and `buffer` lets pricing run at most eight items ahead of the
+writer, so a slow sink slows the whole pipeline instead of filling memory.
+
+<Diagram name="stream-pipeline" title="The pipeline's stages from byte chunks to the sink, which pulls from upstream" />
 
 `fx.encoding` has framers for NDJSON, JSON arrays and Server-Sent Events.
 

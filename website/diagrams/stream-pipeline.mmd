@@ -1,0 +1,7 @@
+flowchart LR
+  A["byte chunks"] --> B["ndjson.decode()"]
+  B --> C["map_effect(price, concurrency=4)"]
+  C --> D["buffer(capacity=8)"]
+  D --> E["grouped(2)"]
+  E --> F["sink.for_each(write)"]
+  F -.->|"pull"| A

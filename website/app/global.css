@@ -1,307 +1,384 @@
 @import 'tailwindcss';
-@import 'fumadocs-ui/css/neutral.css';
-@import 'fumadocs-ui/css/preset.css';
+@import 'tw-animate-css';
 @import 'fumadocs-python/preset.css';
 @import './typeset.css';
 
 /*
- * Calm and mostly monochrome, after Stripe's, OpenAI's and shadcn/ui's docs: near-white
- * and near-black surfaces, hairline borders, one restrained accent, dark code panels.
+ * Theme, base styles and code styles from shadcn/ui's docs (apps/v4/app/globals.css,
+ * MIT License, Copyright (c) 2023 shadcn), trimmed to what this site uses.
  */
 
-@theme {
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+@custom-variant dark (&:is(.dark *));
 
-  --color-fd-background: #ffffff;
-  --color-fd-foreground: #0d0d0f;
-  --color-fd-muted: #f5f5f6;
-  --color-fd-muted-foreground: #5d5d66;
-  --color-fd-popover: #ffffff;
-  --color-fd-popover-foreground: #0d0d0f;
-  --color-fd-card: #fafafa;
-  --color-fd-card-foreground: #0d0d0f;
-  --color-fd-border: #e7e7ea;
-  --color-fd-primary: #4f46e5;
-  --color-fd-primary-foreground: #ffffff;
-  --color-fd-secondary: #f4f4f5;
-  --color-fd-secondary-foreground: #0d0d0f;
-  --color-fd-accent: #f1f1f3;
-  --color-fd-accent-foreground: #0d0d0f;
-  --color-fd-ring: #a5b4fc;
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-heading: var(--font-heading);
+  --font-mono: var(--font-mono);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-code: var(--code);
+  --color-code-foreground: var(--code-foreground);
+  --color-code-highlight: var(--code-highlight);
+  --color-code-number: var(--code-number);
+  --color-selection: var(--selection);
+  --color-selection-foreground: var(--selection-foreground);
 
-  --color-code: #0d1117;
-  --color-code-border: #23272f;
-  --color-code-foreground: #c9d1d9;
-  --color-code-muted: #8b949e;
-}
-
-.dark {
-  --color-fd-background: #0b0b0d;
-  --color-fd-foreground: #ededef;
-  --color-fd-muted: #151518;
-  --color-fd-muted-foreground: #9b9ba3;
-  --color-fd-popover: #111114;
-  --color-fd-popover-foreground: #ededef;
-  --color-fd-card: #111114;
-  --color-fd-card-foreground: #ededef;
-  --color-fd-border: #232328;
-  --color-fd-primary: #a5b4fc;
-  --color-fd-primary-foreground: #0b0b0d;
-  --color-fd-secondary: #17171b;
-  --color-fd-secondary-foreground: #ededef;
-  --color-fd-accent: #1b1b20;
-  --color-fd-accent-foreground: #ededef;
-  --color-fd-ring: #6366f1;
-
-  --color-code-border: #26262c;
+  /* fumadocs-python's badges (module, class, ...) in the sidebar: neutral */
+  --color-fdpy-func: var(--muted-foreground);
+  --color-fdpy-class: var(--muted-foreground);
+  --color-fdpy-attribute: var(--muted-foreground);
+  --color-fdpy-module: var(--muted-foreground);
+  --color-fd-primary: var(--primary);
 }
 
 :root {
-  --header-height: 3.5rem;
-  --sidebar-width: 16rem;
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0% 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0% 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0% 0 0);
+  --primary: oklch(0% 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0% 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --surface: oklch(0.98 0 0);
+  --surface-foreground: var(--foreground);
+  --code: var(--surface);
+  --code-foreground: var(--surface-foreground);
+  --code-highlight: oklch(0.96 0 0);
+  --code-number: oklch(0.56 0 0);
+  --selection: oklch(0% 0 0);
+  --selection-foreground: oklch(1 0 0);
+
+  --header-height: calc(var(--spacing) * 14);
+  --sidebar-width: calc(var(--spacing) * 72);
+  --top-spacing: 0px;
 }
 
-html {
-  scroll-padding-top: var(--header-height);
+@media (min-width: 64rem) {
+  :root {
+    --header-height: calc(var(--spacing) * 16);
+    --top-spacing: calc(var(--spacing) * 4);
+  }
 }
 
-body {
-  background: var(--color-fd-background);
-  color: var(--color-fd-foreground);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.371 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+  --surface: oklch(0.2 0 0);
+  --surface-foreground: oklch(0.708 0 0);
+  --code: var(--surface);
+  --code-foreground: var(--surface-foreground);
+  --code-highlight: oklch(0.27 0 0);
+  --code-number: oklch(0.72 0 0);
+  --selection: oklch(0.922 0 0);
+  --selection-foreground: oklch(0.205 0 0);
 }
 
-* {
-  border-color: var(--color-fd-border);
+@layer base {
+  html {
+    scroll-padding-top: var(--header-height);
+    /* short and long pages keep the same width whether or not they scroll */
+    scrollbar-gutter: stable;
+    @apply overscroll-y-none;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  ::selection {
+    @apply bg-selection text-selection-foreground;
+  }
+
+  body {
+    position: relative;
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    @apply bg-background text-foreground;
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  a:active,
+  button:active {
+    @apply opacity-60 md:opacity-100;
+  }
 }
 
-/* Code panels (components/code-block.tsx): dark in both color schemes. */
-.code-block {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--color-code-border);
-  border-radius: 0.75rem;
-  background: var(--color-code);
-  color: var(--color-code-foreground);
+@utility container-wrapper {
+  @apply mx-auto w-full px-2;
 }
 
-.code-block-title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-height: 2.5rem;
-  padding: 0.25rem 0.5rem 0.25rem 1rem;
-  border-bottom: 1px solid var(--color-code-border);
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  color: var(--color-code-muted);
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
 }
 
-.code-block-pre {
-  overflow: auto;
-  max-height: 36rem;
-  padding: 0.875rem 1rem;
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  line-height: 1.65;
-  font-variant-ligatures: none;
-  background: transparent !important;
-}
-
-.code-block-pre code {
-  display: grid;
-}
-
-.code-block-pre .line span {
-  color: var(--shiki-dark);
-}
-
-/* Steps, after shadcn/ui's step counter (MIT). */
-.steps {
-  counter-reset: step;
-  border-left: 1px solid var(--color-fd-border);
-  margin-left: 0.75rem;
-  padding-left: 1.75rem;
-}
-
-.steps > h3 {
+@utility step {
   counter-increment: step;
-  position: relative;
-}
 
-.steps > h3::before {
-  content: counter(step);
-  position: absolute;
-  left: -2.55rem;
-  top: -0.1rem;
-  display: inline-flex;
-  width: 1.6rem;
-  height: 1.6rem;
-  align-items: center;
-  justify-content: center;
-  border: 4px solid var(--color-fd-background);
-  border-radius: 9999px;
-  background: var(--color-fd-muted);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-/* Two-column walkthrough sections (components/split.tsx). */
-.split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1.25rem 2.5rem;
-}
-
-.split-prose > :first-child {
-  margin-top: 0;
-}
-
-@media (min-width: 1280px) {
-  .split {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
-    align-items: start;
-  }
-
-  .split-code {
-    position: sticky;
-    top: calc(var(--header-height) + 1.5rem);
+  &:before {
+    @apply mr-2 inline-flex size-6 items-center justify-center rounded-full border-background bg-muted text-center -indent-px font-mono text-sm font-medium md:absolute md:mt-[-4px] md:ml-[-50px] md:size-9 md:border-4;
+    content: counter(step);
   }
 }
 
-/* API reference entries (components/reference.tsx). */
-@theme inline {
-  /* fumadocs-python's module/class badges: neutral, not four colors */
-  --color-fdpy-func: var(--color-fd-muted-foreground);
-  --color-fdpy-class: var(--color-fd-muted-foreground);
-  --color-fdpy-attribute: var(--color-fd-muted-foreground);
-  --color-fdpy-module: var(--color-fd-muted-foreground);
+@utility extend-touch-target {
+  @media (pointer: coarse) {
+    @apply relative touch-manipulation after:absolute after:-inset-2;
+  }
 }
 
-.typeset h3:has(+ .py-entry) {
-  margin-top: 3rem;
+@layer components {
+  .typeset a[data-slot] {
+    font-weight: inherit;
+    text-decoration-line: none;
+  }
+
+  .steps {
+    &:first-child {
+      @apply !mt-0;
+    }
+
+    &:first-child > h3:first-child {
+      @apply !mt-0;
+    }
+
+    > h3 {
+      @apply !mt-8;
+    }
+
+    > h3 + p {
+      @apply !mt-2;
+    }
+  }
+
+  /* Code figures (components/code-block.tsx). */
+  [data-code-figure] {
+    background-color: var(--color-code);
+    color: var(--color-code-foreground);
+    border-radius: var(--radius-2xl);
+    margin-top: calc(var(--spacing) * 6);
+    overflow: hidden;
+    font-size: var(--text-sm);
+    outline: none;
+    position: relative;
+    @apply -mx-1;
+
+    &:has([data-code-title]) [data-slot='copy-button'] {
+      top: calc(var(--spacing) * 1.5) !important;
+    }
+  }
+
+  [data-code-figure] code,
+  [data-code-figure] code span {
+    font-variant-ligatures: none;
+    font-feature-settings:
+      'liga' 0,
+      'calt' 0;
+  }
+
+  [data-code-title] {
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 30%, transparent);
+    padding-block: calc(var(--spacing) * 2.5);
+    padding-inline: calc(var(--spacing) * 4);
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    color: var(--color-code-foreground);
+  }
+
+  [data-code-figure] pre {
+    font-family: var(--font-mono);
+    line-height: 1.5;
+  }
+
+  /* Fumadocs' shiki output: `.line` spans with both themes as CSS variables. */
+  [data-code-figure] code {
+    display: grid;
+    min-width: 100%;
+  }
+
+  [data-code-figure] .line {
+    padding-block: calc(var(--spacing) * 0.25);
+    min-height: calc(var(--spacing) * 0.875);
+    width: 100%;
+    display: inline-block;
+  }
+
+  /* an empty line has no text, so it would collapse in the grid */
+  [data-code-figure] .line:empty::after {
+    content: ' ';
+  }
+
+  [data-code-figure] .line span {
+    color: var(--shiki-light);
+
+    @variant dark {
+      color: var(--shiki-dark) !important;
+    }
+  }
+
+  /* Text diagrams use box-drawing characters; per-line padding breaks connectors. */
+  [data-code-figure] pre[data-language='text'] .line {
+    padding-block: 0;
+    min-height: unset;
+  }
+
+  [data-code-figure] .line.highlighted {
+    position: relative;
+    background-color: var(--color-code-highlight);
+
+    &:after {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 2px;
+      height: 100%;
+      content: '';
+      background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+    }
+  }
+
+  [data-code-figure] pre:has(.highlighted) {
+    padding-inline: 0;
+
+    & .line {
+      padding-inline: calc(var(--spacing) * 4);
+    }
+  }
 }
 
-.typeset h3:has(+ .py-entry) code {
-  background: none;
+/* Diagrams (components/diagram.tsx): pele's colors from the theme. */
+@layer components {
+  .diagram {
+    margin-top: calc(var(--spacing) * 6);
+    padding: calc(var(--spacing) * 6) calc(var(--spacing) * 4);
+    border-radius: var(--radius-2xl);
+    border: 1px solid var(--border);
+    @apply -mx-1;
+
+    --pele-bg: var(--background);
+    --pele-fg: var(--foreground);
+    --pele-fg-on-light: oklch(0% 0 0);
+    --pele-fg-on-dark: oklch(1 0 0);
+    --pele-muted: var(--muted-foreground);
+    --pele-line: var(--muted-foreground);
+    --pele-surface: var(--surface);
+    --pele-surface-alt: var(--muted);
+    --pele-border: var(--border);
+    --pele-accent: var(--foreground);
+    --pele-font: var(--font-sans);
+    --pele-font-mono: var(--font-mono);
+    --pele-radius: var(--radius-md);
+    --pele-title-weight: 500;
+    --pele-heading-weight: 500;
+    --pele-series-1: var(--muted-foreground);
+  }
+
+  .dark .diagram {
+    --pele-border: oklch(1 0 0 / 18%);
+  }
+
+  .diagram svg {
+    display: block;
+    margin-inline: auto;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .diagram-wide {
+    display: none;
+  }
+
+  @media (min-width: 48rem) {
+    .diagram-wide {
+      display: block;
+    }
+
+    .diagram-narrow {
+      display: none;
+    }
+  }
+}
+
+/* fumadocs-python's "module" / "class" badges in the sidebar: quiet text, as shadcn
+   marks nothing there. */
+[data-slot='sidebar'] [class*='text-fdpy-'] {
   border: 0;
   padding: 0;
-  font-size: 1.05rem;
-  font-weight: 600;
-}
-
-.py-entry {
-  font-size: 0.9375rem;
-}
-
-.py-entry-name {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-
-.typeset .py-signature {
   background: none;
-  border: 0;
-  border-radius: 0;
-  display: block;
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  color: var(--color-fd-muted-foreground);
-  overflow-wrap: anywhere;
-  padding: 0 0 1rem;
-  border-bottom: 1px solid var(--color-fd-border);
-  margin-bottom: 1rem;
-}
-
-.py-entry-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  /* no row gap: the source panel spans many implicit rows */
-  gap: 0 2.5rem;
-  align-items: start;
-}
-
-.py-entry-body > * {
-  margin-top: 0 !important;
-  margin-bottom: 0.75rem;
-}
-
-.py-source pre {
-  max-height: 28rem;
-}
-
-@media (min-width: 1280px) {
-  .py-entry-body {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-
-  .py-entry-body > * {
-    grid-column: 1;
-  }
-
-  .py-entry-body > .py-source {
-    grid-column: 2;
-    grid-row: 1 / span 40;
-    position: sticky;
-    top: calc(var(--header-height) + 1.5rem);
-  }
-}
-
-.py-rows,
-.py-entry-body > div:has(> [data-parameter]) {
-  border-top: 1px solid var(--color-fd-border);
-}
-
-.py-row {
-  padding-block: 0.75rem;
-  border-bottom: 1px solid var(--color-fd-border);
-}
-
-.py-row-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.25rem 0.75rem;
-}
-
-.typeset .py-row-name,
-.typeset .py-row-type {
-  font-family: var(--font-mono);
-  background: none;
-  border: 0;
-  padding: 0;
-}
-
-.py-row-name {
-  font-weight: 600;
-  font-size: 0.875rem;
-}
-
-.py-row-type {
-  font-size: 0.8125rem;
-  color: var(--color-fd-muted-foreground);
-  overflow-wrap: anywhere;
-}
-
-.py-row-doc {
-  font-size: 0.875rem;
-  color: var(--color-fd-muted-foreground);
-}
-
-.py-row-doc:empty {
-  display: none;
-}
-
-.py-row-doc > :first-child {
-  margin-top: 0.375rem;
-}
-
-/* An untitled panel keeps its first line clear of the copy button. */
-.code-block:not(:has(.code-block-title)) .code-block-pre {
-  padding-right: 2.75rem;
+  font-weight: 400;
 }

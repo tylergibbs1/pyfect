@@ -1,40 +1,31 @@
-import Link from 'next/link';
 import { source } from '@/lib/source';
-import { appName, gitConfig } from '@/lib/shared';
-import { GitHubIcon } from './icons';
+import { navItems } from '@/lib/shared';
+import { CommandMenu } from './command-menu';
+import { GitHubLink } from './github-link';
+import { MainNav } from './main-nav';
 import { MobileNav } from './mobile-nav';
 import { ModeSwitcher } from './mode-switcher';
-import { SearchButton } from './search-button';
+import { Separator } from './ui/separator';
 
-// Structure after shadcn/ui's site header (apps/v4/components/site-header.tsx, MIT).
+// After shadcn/ui's site header (apps/v4/components/site-header.tsx, MIT).
 export function SiteHeader() {
+  const tree = source.getPageTree();
+
   return (
-    <header className="sticky top-0 z-40 w-full border-b bg-fd-background/95 backdrop-blur supports-[backdrop-filter]:bg-fd-background/80">
-      <div className="mx-auto flex h-(--header-height) w-full max-w-[90rem] items-center gap-2 px-4 lg:px-6">
-        <MobileNav tree={source.getPageTree()} className="lg:hidden" />
-        <Link href="/" className="font-semibold tracking-tight">
-          {appName}
-        </Link>
-        <nav className="ml-6 hidden items-center gap-5 text-sm text-fd-muted-foreground md:flex">
-          <Link href="/docs" className="transition-colors hover:text-fd-foreground">
-            Guide
-          </Link>
-          <Link href="/docs/reference" className="transition-colors hover:text-fd-foreground">
-            API reference
-          </Link>
-        </nav>
-        <div className="ml-auto flex items-center gap-1.5">
-          <SearchButton />
-          <a
-            href={`https://github.com/${gitConfig.user}/${gitConfig.repo}`}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex size-8 items-center justify-center rounded-md text-fd-muted-foreground transition-colors hover:bg-fd-accent hover:text-fd-foreground"
-          >
-            <GitHubIcon className="size-4" />
-            <span className="sr-only">GitHub</span>
-          </a>
-          <ModeSwitcher />
+    <header className="sticky top-0 z-50 w-full bg-background">
+      <div className="container-wrapper px-6">
+        <div className="flex h-(--header-height) items-center **:data-[slot=separator]:h-4!">
+          <MobileNav tree={tree} items={navItems} className="flex lg:hidden" />
+          <MainNav items={navItems} className="hidden lg:flex" />
+          <div className="ml-auto flex items-center gap-2 md:flex-1 md:justify-end">
+            <div className="hidden w-full flex-1 md:flex md:w-auto md:flex-none">
+              <CommandMenu tree={tree} navItems={navItems} />
+            </div>
+            <Separator orientation="vertical" className="ml-2 hidden lg:block" />
+            <GitHubLink />
+            <Separator orientation="vertical" />
+            <ModeSwitcher />
+          </div>
         </div>
       </div>
     </header>

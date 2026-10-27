@@ -5,28 +5,11 @@ description: "Install pyfect and set up pyright."
 
 pyfect needs Python 3.13 or newer and has no dependencies.
 
-<Tabs items={['uv', 'pip']}>
-<Tab value="uv">
-
-```sh
-uv add pyfect
-```
-
-</Tab>
-<Tab value="pip">
-
-```sh
-pip install pyfect
-```
-
-</Tab>
-</Tabs>
+<InstallCommand uv="uv add pyfect" pip="pip install pyfect" />
 
 The `otel` extra adds the OpenTelemetry bridge (`pyfect.otel`):
 
-```sh
-uv add 'pyfect[otel]'
-```
+<InstallCommand uv="uv add 'pyfect[otel]'" pip="pip install 'pyfect[otel]'" />
 
 ## Type checking
 

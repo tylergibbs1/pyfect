@@ -1,7 +1,6 @@
 ---
 title: Typed errors
 description: "Expected failures in the type, handled with catch_tag; defects kept apart."
-full: true
 ---
 
 pyfect separates two kinds of failure, as Effect does:
@@ -13,24 +12,12 @@ pyfect separates two kinds of failure, as Effect does:
 
 ## Defining and failing
 
-<Split>
-<SplitProse>
-
 Subclass `fx.TaggedError`, usually as a dataclass. Inside a generator, yielding an error fails
 the effect: `return (yield from NotFound(key))`. Outside one, use `fx.fail(error)`.
 
-</SplitProse>
-<SplitCode>
-
 <include meta='title="tagged.py"'>../../snippets/errors/tagged.py</include>
 
-</SplitCode>
-</Split>
-
 ## Handling errors
-
-<Split>
-<SplitProse>
 
 `catch_tag(ErrorClass, handler)` handles one error class and removes it from the type. Because it
 removes something, it is a function you use with `.pipe(...)`, one per call; pyright cannot infer
@@ -39,18 +26,9 @@ the removal from a method. `catch_all` handles every typed error.
 Other handlers: `catch_if`, `map_error`, `or_else_succeed`, `match`, `result` (an
 `Ok`/`Err` value), `ignore`, and `retry` (see [Schedules and retries](/docs/schedules)).
 
-</SplitProse>
-<SplitCode>
-
 <include meta='title="catch_tag.py"'>../../snippets/errors/catch_tag.py</include>
 
-</SplitCode>
-</Split>
-
 ## Defects
-
-<Split>
-<SplitProse>
 
 An exception raised inside `fx.sync` or a `map` is a defect. Use `fx.try_` (or `try_async`,
 `try_blocking`) with `catch=` to turn an exception you expect into a typed failure.
@@ -60,13 +38,7 @@ the defect wins and typed handlers don't run, so a bug is never mistaken for a h
 A failed run's `Exit` holds a `Cause`; `cause.pretty()` prints every failure, defect and
 interruption in it with tracebacks.
 
-</SplitProse>
-<SplitCode>
-
 <include meta='title="defects.py"'>../../snippets/errors/defects.py</include>
-
-</SplitCode>
-</Split>
 
 Reference: [`pyfect.errors`](/docs/reference/errors), [`pyfect.cause`](/docs/reference/cause),
 [`pyfect.exit`](/docs/reference/exit).

@@ -26,3 +26,10 @@ export function getPageImageUrl(page: { slugs: string[]; locale?: string }) {
 
   return { segments, url: getImageUrl(segments, page.locale) };
 }
+
+export const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
+
+export const navItems = [
+  { href: '/docs', label: 'Docs' },
+  { href: '/docs/reference', label: 'API reference' },
+];

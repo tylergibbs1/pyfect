@@ -1,0 +1,3 @@
+flowchart LR
+  A["Effect[User, NotFound | Timeout, Db]"] -->|"catch_tag(NotFound, ...)"| B["Effect[User, Timeout, Db]"]
+  B -->|"provide(DbLive)"| C["Effect[User, Timeout, Never]"]

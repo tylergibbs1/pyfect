@@ -9,9 +9,12 @@ def replica(name: str, delay: float) -> fx.Effect[str]:
 
 # The first to succeed wins; the loser is interrupted, and race waits for it.
 fastest = replica("eu", 0.01).race(replica("us", 1))
-assert fx.run_sync(fastest) == "eu"
-assert released == ["us"]
+winner = fx.run_sync(fastest)
+print(f"winner: {winner}, interrupted: {released}")
+assert winner == "eu" and released == ["us"]
 
 # timeout fails with TimeoutException, also interrupting the slow effect.
 slow = replica("ap", 1).timeout(0.01)
-assert isinstance(fx.run_sync_exit(slow), fx.Failure)
+exit = fx.run_sync_exit(slow)
+print(f"timeout: {type(exit).__name__}, interrupted: {released}")
+assert isinstance(exit, fx.Failure)

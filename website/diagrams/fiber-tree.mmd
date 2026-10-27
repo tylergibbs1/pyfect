@@ -1,0 +1,7 @@
+flowchart TB
+  P["program"] -->|"fork()"| A["child fiber"]
+  P -->|"fork()"| B["child fiber"]
+  A -->|"fork()"| C["grandchild fiber"]
+  P -.->|"interrupt"| A
+  P -.->|"interrupt"| B
+  A -.->|"interrupt"| C

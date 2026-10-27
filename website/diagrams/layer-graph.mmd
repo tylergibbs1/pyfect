@@ -1,0 +1,5 @@
+flowchart LR
+  subgraph AppLive["AppLive = UsersLive.pipe(layer.provide(DbLive))"]
+    DbLive["DbLive builds Db"] -->|"Db"| UsersLive["UsersLive builds Users"]
+  end
+  UsersLive -->|"Users"| P["program needs Users"]

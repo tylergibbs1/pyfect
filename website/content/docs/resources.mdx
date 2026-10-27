@@ -12,6 +12,8 @@ resource and registers its release on the current scope; its type then includes 
 The release runs whether the effect succeeds, fails or is interrupted, and acquisition can't be
 interrupted halfway. Finalizers run in reverse order of acquisition.
 
+<Diagram name="scope-finalizers" title="A scope releases the file, then the connection: the reverse of the order they were acquired" />
+
 ## Without a scope
 
 <include meta='title="finalizers.py"'>../../snippets/resources/finalizers.py</include>

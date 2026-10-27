@@ -1,12 +1,15 @@
 'use client';
+import { TextAlignJustify } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
+import { Button } from './ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 
-// After shadcn/ui's table of contents (apps/v4/components/docs-toc.tsx, MIT), without
-// its "On This Page" label: the list sits beside the page and needs no heading.
+// From shadcn/ui's table of contents (apps/v4/components/docs-toc.tsx, MIT). The active
+// link changes color only (no weight change), so the rail's text never rewraps.
 
 export interface TocItem {
-  title: ReactNode;
+  title?: ReactNode;
   url: string;
   depth: number;
 }
@@ -23,28 +26,14 @@ function useActiveItem(itemIds: string[]) {
       },
       { rootMargin: '0% 0% -80% 0%' },
     );
-    const elements = itemIds
-      .map((id) => document.getElementById(id))
-      .filter((element): element is HTMLElement => element !== null);
-    for (const element of elements) observer.observe(element);
+    for (const id of itemIds) {
+      const element = document.getElementById(id);
+      if (element) observer.observe(element);
+    }
     return () => observer.disconnect();
   }, [itemIds]);
 
   return activeId;
-}
-
-function Links({ toc, activeId }: { toc: TocItem[]; activeId: string | null }) {
-  return toc.map((item) => (
-    <a
-      key={item.url}
-      href={item.url}
-      data-active={item.url === `#${activeId}`}
-      data-depth={item.depth}
-      className="block py-1 text-[0.8125rem] text-fd-muted-foreground no-underline transition-colors hover:text-fd-foreground data-[active=true]:font-medium data-[active=true]:text-fd-foreground data-[depth=3]:pl-3 data-[depth=4]:pl-6"
-    >
-      {item.title}
-    </a>
-  ));
 }
 
 export function DocsTableOfContents({
@@ -53,33 +42,54 @@ export function DocsTableOfContents({
   className,
 }: {
   toc: TocItem[];
-  variant?: 'list' | 'dropdown';
+  variant?: 'dropdown' | 'list';
   className?: string;
 }) {
+  const [open, setOpen] = useState(false);
   const itemIds = useMemo(() => toc.map((item) => item.url.replace('#', '')), [toc]);
-  const activeId = useActiveItem(itemIds);
+  const activeHeading = useActiveItem(itemIds);
 
-  if (toc.length === 0) return null;
+  if (!toc.length) return null;
 
   if (variant === 'dropdown') {
     return (
-      <details className={cn('group rounded-lg border text-sm', className)}>
-        <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-fd-muted-foreground [&::-webkit-details-marker]:hidden">
-          On this page
-          <span aria-hidden className="transition-transform group-open:rotate-90">
-            ›
-          </span>
-        </summary>
-        <div className="max-h-[60svh] overflow-y-auto border-t px-3 py-2">
-          <Links toc={toc} activeId={activeId} />
-        </div>
-      </details>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className={cn('h-8 md:h-7', className)}>
+            <TextAlignJustify /> On This Page
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="no-scrollbar max-h-[70svh]">
+          {toc.map((item) => (
+            <DropdownMenuItem
+              key={item.url}
+              asChild
+              onClick={() => setOpen(false)}
+              data-depth={item.depth}
+              className="data-[depth=3]:pl-6 data-[depth=4]:pl-8"
+            >
+              <a href={item.url}>{item.title}</a>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   }
 
   return (
-    <nav className={cn('flex flex-col', className)}>
-      <Links toc={toc} activeId={activeId} />
-    </nav>
+    <div className={cn('flex flex-col gap-2 p-4 pt-0 text-sm', className)}>
+      <p className="h-6 bg-background text-xs font-medium text-muted-foreground">On This Page</p>
+      {toc.map((item) => (
+        <a
+          key={item.url}
+          href={item.url}
+          className="text-[0.8rem] text-muted-foreground no-underline transition-colors hover:text-foreground data-[active=true]:text-foreground data-[depth=3]:pl-4 data-[depth=4]:pl-6"
+          data-active={item.url === `#${activeHeading}`}
+          data-depth={item.depth}
+        >
+          {item.title}
+        </a>
+      ))}
+    </div>
   );
 }
