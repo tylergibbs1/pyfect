@@ -18,12 +18,15 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 ``timer``, ``snapshot``, ``prometheus_format``) and ``eff.track*``. Request batching:
 ``fx.Request``, ``fx.RequestResolver``, ``fx.request`` (``Entry`` and the rest in
 ``fx.batching``). Error reporting: ``eff.with_error_reporting()``, ``fx.ErrorReporter``
-(``make``, ``layer``, ``report`` in ``fx.error_reporter``).
+(``make``, ``layer``, ``report`` in ``fx.error_reporter``). Streaming
+building blocks: ``fx.Channel`` (constructors in ``fx.channel``), ``fx.Pull``
+(helpers in ``fx.pull``), ``fx.Take`` (``fx.take``).
 """
 
 from pyfect import (
     batching,
     cause,
+    channel,
     clock,
     console,
     cron,
@@ -35,10 +38,12 @@ from pyfect import (
     logger,
     metric,
     option,
+    pull,
     random,
     result,
     schedule,
     scheduler,
+    take,
     testing,
     tracer,
 )
@@ -52,6 +57,7 @@ from pyfect._root import NoRunError
 from pyfect.batching import Request, RequestResolver, request, request_unsafe
 from pyfect.cache import Cache, ScopedCache
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
+from pyfect.channel import Channel
 from pyfect.clock import Clock, sleep
 from pyfect.context import Context, MissingServiceError, Reference, Tag
 from pyfect.deferred import Deferred
@@ -139,6 +145,7 @@ from pyfect.option import Option, Some
 from pyfect.partitioned_semaphore import PartitionedSemaphore
 from pyfect.pool import Pool
 from pyfect.pubsub import PubSub
+from pyfect.pull import Pull
 from pyfect.queue import Dequeue, Enqueue, Queue
 from pyfect.random import Random
 from pyfect.rc_map import RcMap
@@ -173,6 +180,7 @@ from pyfect.scoped_ref import ScopedRef
 from pyfect.semaphore import Semaphore
 from pyfect.subscription_ref import SubscriptionRef
 from pyfect.synchronized_ref import SynchronizedRef
+from pyfect.take import Take
 from pyfect.tracer import (
     annotate_current_span,
     current_parent_span,
@@ -186,6 +194,7 @@ __all__ = [
     "AsyncioRequiredError",
     "Cache",
     "Cause",
+    "Channel",
     "Clock",
     "CloseableScope",
     "Concurrency",
@@ -236,6 +245,7 @@ __all__ = [
     "Pool",
     "PreventSchedulerYield",
     "PubSub",
+    "Pull",
     "Queue",
     "Random",
     "RcMap",
@@ -258,6 +268,7 @@ __all__ = [
     "SynchronizedRef",
     "Tag",
     "TaggedError",
+    "Take",
     "Teardown",
     "TimeoutException",
     "UnhandledError",
@@ -279,6 +290,7 @@ __all__ = [
     "catch_no_such_element",
     "catch_tag",
     "cause",
+    "channel",
     "clock",
     "console",
     "context",
@@ -329,6 +341,7 @@ __all__ = [
     "provide_context",
     "provide_service",
     "provide_service_effect",
+    "pull",
     "race_all",
     "race_all_first",
     "random",
@@ -351,6 +364,7 @@ __all__ = [
     "succeed",
     "suspend",
     "sync",
+    "take",
     "testing",
     "tracer",
     "transpose_option",

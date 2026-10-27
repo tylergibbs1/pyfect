@@ -7,7 +7,7 @@ pyright fails.
 """
 
 import asyncio
-from collections.abc import Callable, Hashable, Sequence, Sized
+from collections.abc import Callable, Generator, Hashable, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from types import CoroutineType
@@ -1969,3 +1969,161 @@ def check_otel_layers(
     )
     # An effect still needing the tracer provider cannot run.
     fx.run_sync(otel.tracer.current_otel_span().or_die().pipe(fx.provide(otel.tracer.layer)))  # pyright: ignore[reportArgumentType]
+
+
+# --- channels, pulls and takes ---------------------------------------------------
+
+type _Ch[O, E = Never, D = None, I = object, IE = object, ID = object, R = Never] = (
+    fx.channel.Channel[O, E, D, I, IE, ID, R]
+)
+
+
+def check_channel_constructors(eff: fx.Effect[int, NotFound, Primary]) -> None:
+    ch = fx.channel
+    assert_type(ch.succeed(1), _Ch[int])
+    assert_type(ch.sync(lambda: "a"), _Ch[str])
+    assert_type(ch.end(1), _Ch[Never, Never, int])
+    assert_type(ch.end_sync(lambda: 1), _Ch[Never, Never, int])
+    assert_type(ch.empty, _Ch[Never])
+    assert_type(ch.never, _Ch[Never, Never, Never])
+    assert_type(ch.fail(NotFound("k")), _Ch[Never, NotFound, Never])
+    assert_type(ch.die(RuntimeError()), _Ch[Never, Never, Never])
+    assert_type(ch.from_effect(eff), _Ch[int, NotFound, None, object, object, object, Primary])
+    assert_type(
+        ch.from_effect_done(eff), _Ch[Never, NotFound, int, object, object, object, Primary]
+    )
+    assert_type(ch.from_iterable([1, 2]), _Ch[int])
+    assert_type(ch.from_iterable_array([1, 2], 2), _Ch[tuple[int, ...]])
+    assert_type(ch.from_iterator(lambda: iter("ab")), _Ch[str])
+
+
+def _generator() -> Generator[int, None, str]:
+    yield 1
+    return "done"
+
+
+def check_channel_generators() -> None:
+    assert_type(fx.channel.from_iterable(_generator()), _Ch[int, Never, str])
+    assert_type(fx.channel.from_iterator(_generator), _Ch[int, Never, str])
+    assert_type(fx.channel.from_iterator_array(_generator), _Ch[tuple[int, ...], Never, str])
+
+
+def check_channel_from_pull(
+    p: fx.Effect[fx.Pull[int, NotFound, str, Primary], ValueError, Replica],
+    ends: fx.Effect[int, fx.Done[str]],
+) -> None:
+    assert_type(
+        fx.channel.from_pull(p),
+        _Ch[int, NotFound | ValueError, str, object, object, object, Primary | Replica],
+    )
+    assert_type(fx.channel.from_pull(fx.succeed(ends)), _Ch[int, Never, str])
+    assert_type(fx.channel.from_pull(fx.succeed(fx.succeed(1))), _Ch[int, Never, Never])
+
+
+def _transform(
+    up: fx.Pull[int, ValueError, str], scope: fx.CloseableScope
+) -> fx.Effect[fx.Pull[str, NotFound], KeyError, Primary]: ...
+
+
+def _plain_transform(up: fx.Pull[int], scope: fx.CloseableScope) -> fx.Effect[fx.Pull[str]]: ...
+
+
+def check_from_transform() -> None:
+    assert_type(
+        fx.channel.from_transform(_transform),
+        _Ch[str, NotFound | KeyError, None, int, ValueError, str, Primary],
+    )
+    assert_type(
+        fx.channel.from_transform(_plain_transform), _Ch[str, Never, None, int, Never, None]
+    )
+
+
+def check_channel_methods(
+    source: _Ch[int, ValueError, str, object, object, object, Replica],
+    other: _Ch[bytes, KeyError, float, object, object, object, Port],
+) -> None:
+    transform = fx.channel.from_transform(_transform)
+    assert_type(source.map(str), _Ch[str, ValueError, str, object, object, object, Replica])
+    assert_type(source.map_done(len), _Ch[int, ValueError, int, object, object, object, Replica])
+    assert_type(
+        source.map_done_effect(lambda d: fx.fail(NotFound(d))),
+        _Ch[int, ValueError | NotFound, Never, object, object, object, Replica],
+    )
+    assert_type(
+        source.concat(other),
+        _Ch[int | bytes, ValueError | KeyError, float, object, object, object, Replica | Port],
+    )
+    assert_type(
+        source.pipe_to(transform),
+        _Ch[str, NotFound | KeyError, None, object, object, object, Replica | Primary],
+    )
+    other.pipe_to(transform)  # pyright: ignore[reportArgumentType]
+
+
+def check_channel_runs(source: _Ch[int, ValueError, str, object, object, object, Replica]) -> None:
+    assert_type(source.run_collect(), fx.Effect[list[int], ValueError, Replica])
+    assert_type(source.run_drain(), fx.Effect[str, ValueError, Replica])
+    assert_type(
+        source.run_for_each(lambda _: fx.fail(KeyError())),
+        fx.Effect[str, ValueError | KeyError, Replica],
+    )
+    assert_type(
+        source.run_fold(lambda: "", lambda s, n: s + str(n)), fx.Effect[str, ValueError, Replica]
+    )
+    assert_type(source.run_count(), fx.Effect[int, ValueError, Replica])
+    assert_type(source.run_head(), fx.Effect[fx.Option[int], ValueError, Replica])
+    assert_type(
+        source.to_pull(), fx.Effect[fx.Pull[int, ValueError, str], Never, Replica | fx.Scope]
+    )
+    needs_input = fx.channel.from_transform(_transform)
+    needs_input.run_collect()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+def check_channel_unwrap(
+    made: fx.Effect[_Ch[int, NotFound, None, object, object, object, Primary], NotFound, fx.Scope],
+    made_with: fx.Effect[_Ch[int], NotFound, fx.Scope | Replica],
+) -> None:
+    assert_type(fx.channel.unwrap(made), _Ch[int, NotFound, None, object, object, object, Primary])
+    assert_type(
+        fx.channel.unwrap(made_with), _Ch[int, NotFound, None, object, object, object, Replica]
+    )
+
+
+def check_pull_helpers(
+    p: fx.Effect[int, NotFound | fx.Done[str], Primary], ends: fx.Effect[int, fx.Done[str]]
+) -> None:
+    assert_type(
+        fx.pull.catch_done(p, lambda left: fx.succeed(len(left))),
+        fx.Effect[int, NotFound, Primary],
+    )
+    assert_type(fx.pull.catch_done(ends, fx.succeed), fx.Effect[int | str])
+    assert_type(
+        fx.pull.match_effect(
+            p,
+            on_success=lambda n: fx.succeed(str(n)),
+            on_failure=lambda c: fx.succeed(str(c.failures)),
+            on_done=fx.succeed,
+        ),
+        fx.Effect[str, Never, Primary],
+    )
+    assert_type(fx.take.to_pull((1, 2)), fx.Effect[tuple[int, ...], fx.Done[None]])
+
+
+def check_channel_resources(
+    acquire: fx.Effect[int, NotFound, Primary],
+    takes: fx.Effect[fx.Take[str, KeyError, int], KeyError, Primary],
+) -> None:
+    assert_type(
+        fx.channel.acquire_use_release(
+            acquire, lambda n: fx.channel.succeed(str(n)), lambda _, __: fx.void
+        ),
+        _Ch[str, NotFound, None, object, object, object, Primary],
+    )
+    assert_type(
+        fx.channel.acquire_release(acquire, lambda _, __: fx.void),
+        _Ch[int, NotFound, None, object, object, object, Primary],
+    )
+    assert_type(
+        fx.channel.from_effect_take(takes),
+        _Ch[tuple[str, ...], KeyError, int, object, object, object, Primary],
+    )

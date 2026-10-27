@@ -136,6 +136,15 @@ to fibers (`get` for the current scope, `use(f)` for one effect), and
 items sit idle; `concurrency=` shares an item, `invalidate` retires one and `reserve` keeps
 one from new borrowers.
 
+**Channels.** `fx.Channel[OutElem, OutErr, OutDone, InElem, InErr, InDone, Env]` is
+Effect v4's pull-based building block for streams: each channel turns an upstream
+`fx.Pull` (an effect that yields an item, fails, or ends with `fx.Done(leftover)`) into
+its own. Build one with `fx.channel` (`from_iterable`, `from_iterable_array`,
+`from_transform`, `acquire_use_release`, `unwrap`, ...), transform it with `map`,
+`concat` and `pipe_to`, and run it with `run_collect`, `run_drain`, `run_fold` or
+`to_pull`. Pull loops run on the fiber's own stack, about 1M items/s one by one and
+20M+ in chunks (`benchmarks/channel.py`).
+
 **Request batching.** A `fx.Request[A, E]` subclass (a frozen dataclass) describes one
 lookup; a `fx.RequestResolver` answers many at once. Requests made through one resolver in
 the same scheduler tick become one batch, so N concurrent `fx.request(GetUser(i), users)`

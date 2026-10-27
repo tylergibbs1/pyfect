@@ -407,3 +407,16 @@ def test_tap_error_taps_the_first_error_even_beside_a_defect():
 def test_find_fail():
     assert (die(DEFECT) + fail("x")).find_fail() == Fail("x")
     assert (die(DEFECT) + interrupt(1)).find_fail() == die(DEFECT) + interrupt(1)
+
+
+def test_electing_defects_keeps_a_done_signal():
+    """Effect's ``causeElectDefects`` leaves ``Fail(Done)`` alone: a
+    producer's end beside a defect is still an end, which ``filter_done``
+    strips (``acquireUseRelease`` with a failing release relies on it)."""
+    done = fx.Done("leftover")
+    cause = fail(done) + fail(ERROR) + die(DEFECT)
+    assert cause.elect_defects().reasons == (Fail(done), Die(ERROR), Die(DEFECT))
+    assert merge(fail(done), die(DEFECT)).reasons == (Fail(done), Die(DEFECT))
+    recoverable = cause.find_recoverable_error()
+    assert isinstance(recoverable, Cause)
+    assert recoverable.reasons == (Fail(done), Die(ERROR), Die(DEFECT))

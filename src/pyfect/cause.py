@@ -161,12 +161,17 @@ class Cause(Generic[E_co]):
         return bool(self.reasons) and all(isinstance(r, Interrupt) for r in self.reasons)
 
     def elect_defects(self) -> Cause[E_co]:
-        """If there is a defect, every typed error becomes a defect too."""
+        """If there is a defect, every typed error becomes a defect too.
+        A ``Done`` stays a failure: it is a producer's end, not an error."""
         if not self.has_dies:
             return self
+        from pyfect.errors import Done
+
         return Cause(
             tuple(
-                Die(_as_exception(r.error), annotations=r.annotations) if isinstance(r, Fail) else r
+                Die(_as_exception(r.error), annotations=r.annotations)
+                if isinstance(r, Fail) and not isinstance(r.error, Done)
+                else r
                 for r in self.reasons
             )
         )
@@ -213,7 +218,10 @@ class Cause(Generic[E_co]):
             for r in self.reasons:
                 if isinstance(r, Fail):
                     return r
-        return self.elect_defects().without_failures()
+            return self.without_failures()
+        # Only a ``Done`` is left as a failure, and it is not recoverable.
+        elected: Cause[Any] = self.elect_defects()
+        return elected
 
     def without_failures(self) -> Cause[Never]:
         """Keep defects and interruptions; drop typed errors."""

@@ -5,7 +5,8 @@ only surfaced as a defect inside the finalizer, where nothing reported it:
 the finalizer silently did nothing. Every public callable with an
 ``Effect`` parameter now rejects anything else at once, with a
 ``TypeError`` naming the parameter. ``Layer`` parameters are checked the
-same way (``require_layer``). The guard test below walks the public API, so
+same way (``require_layer``), and ``Channel`` parameters too
+(``require_channel``). The guard test below walks the public API, so
 a new combinator that forgets ``require_effect`` or ``require_layer`` fails
 here.
 """
@@ -143,7 +144,9 @@ def _public_callables() -> Iterator[tuple[str, Callable[..., Any]]]:
 _KINDS = {
     "Effect": re.compile(r"(?:_core\.)?Effect(?:\[.*\])?"),
     "Layer": re.compile(r"(?:_layer_core\.)?Layer(?:\[.*\])?"),
+    "Channel": re.compile(r"(?:_channel\.)?Channel(?:\[.*\])?"),
 }
+_ARTICLES = {"Effect": "an Effect", "Layer": "a Layer", "Channel": "a Channel"}
 
 
 def _annotation_kinds(annotation: object) -> set[str]:
@@ -191,7 +194,11 @@ def _cases() -> list[tuple[str, Callable[..., Any], str]]:
 _CASES = _cases()
 
 
-_VALID: dict[str, object] = {"Effect": fx.void, "Layer": fx.layer.empty}
+_VALID: dict[str, object] = {
+    "Effect": fx.void,
+    "Layer": fx.layer.empty,
+    "Channel": fx.channel.empty,
+}
 
 
 def _not_an_effect() -> None:
@@ -206,6 +213,7 @@ def test_the_guard_finds_the_combinators_it_is_meant_to_check():
     assert ("all", "effects") in names
     assert ("fresh", "layer") in names
     assert ("merge", "layers") in names
+    assert ("pipe_to", "that") in names
     assert ("__call__", "eff") in names
     assert len(_CASES) > 50
 
@@ -235,7 +243,7 @@ def test_a_non_effect_argument_is_rejected_when_called(fn: Callable[..., Any], p
         if inspect.signature(fn).parameters[param].kind is (inspect.Parameter.VAR_POSITIONAL)
         else param
     )
-    kinds = " or ".join(("an Effect", "a Layer")[k == "Layer"] for k in sorted(checked[param]))
+    kinds = " or ".join(_ARTICLES[k] for k in sorted(checked[param]))
     with pytest.raises(TypeError, match=rf"^{re.escape(expected)} must be {kinds}\b.*, got"):
         result = fn(*args, **kwargs)
         if inspect.iscoroutine(result):  # an async run function checks when awaited
