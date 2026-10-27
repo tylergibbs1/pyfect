@@ -14,9 +14,11 @@ from types import CoroutineType
 from typing import Any, Never, Protocol, TypeIs, assert_type
 
 from _pytest.fixtures import FixtureFunctionDefinition
+from opentelemetry.trace import Span as OtelApiSpan
+from opentelemetry.trace import SpanContext
 
 import pyfect as fx
-from pyfect import layer, logger, schedule
+from pyfect import layer, logger, otel, schedule
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.context import ServiceEffect
@@ -1904,3 +1906,33 @@ def check_runtime_metrics(eff: fx.Effect[int, NotFound, Primary]) -> None:
     assert_type(metric.enable_runtime_metrics(eff), fx.Effect[int, NotFound, Primary])
     assert_type(eff.pipe(metric.disable_runtime_metrics), fx.Effect[int, NotFound, Primary])
     assert_type(metric.enable_runtime_metrics_layer, layer.Layer[metric.FiberRuntimeMetrics])
+
+
+# --- OpenTelemetry bridge ------------------------------------------------------
+
+
+def check_otel_layers(
+    config: fx.Effect[otel.sdk.Configuration, NotFound, Primary],
+    eff: fx.Effect[int, NotFound, Primary],
+    span_context: SpanContext,
+) -> None:
+    assert_type(
+        otel.tracer.layer,
+        layer.Layer[otel.tracer.OtelTracer, Never, otel.tracer.OtelTracerProvider],
+    )
+    assert_type(otel.tracer.layer_global, layer.Layer[otel.tracer.OtelTracer])
+    assert_type(otel.sdk.layer(otel.sdk.Configuration()), layer.Layer[otel.resource.OtelResource])
+    assert_type(otel.sdk.layer(config), layer.Layer[otel.resource.OtelResource, NotFound, Primary])
+    assert_type(
+        otel.metrics.layer(lambda: ()), layer.Layer[Never, Never, otel.resource.OtelResource]
+    )
+    assert_type(otel.logger.layer(), layer.Layer[Never, Never, otel.logger.OtelLoggerProvider])
+    assert_type(
+        otel.tracer.current_otel_span(),
+        fx.Effect[OtelApiSpan, fx.NoSuchElementException],
+    )
+    assert_type(
+        eff.pipe(otel.tracer.with_span_context(span_context)), fx.Effect[int, NotFound, Primary]
+    )
+    # An effect still needing the tracer provider cannot run.
+    fx.run_sync(otel.tracer.current_otel_span().or_die().pipe(fx.provide(otel.tracer.layer)))  # pyright: ignore[reportArgumentType]

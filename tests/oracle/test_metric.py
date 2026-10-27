@@ -21,10 +21,11 @@ Adapted, with the reason:
 
 Omitted, with the reason:
 
-- "uses collection interval starts for delta $name points" (three cases)
-  and "Counter > exports negative updates as deltas": they test the
-  OpenTelemetry and OTLP exporters, which are not ported (an OpenTelemetry
-  bridge is planned instead).
+- "uses collection interval starts for delta $name points" (three cases):
+  ported with the OpenTelemetry bridge, in ``tests/oracle/test_otel_metrics.py``.
+- "Counter > exports negative updates as deltas": it tests the OTLP
+  exporter, which is not ported (``pyfect[otel]`` exports through the
+  OpenTelemetry SDK instead).
 """
 
 import itertools

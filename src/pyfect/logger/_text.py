@@ -228,3 +228,11 @@ def to_json(value: object) -> Any:
 def json_text(value: object) -> str:
     """``value`` as compact JSON (``to_json``)."""
     return json.dumps(to_json(value), ensure_ascii=False, separators=(",", ":"))
+
+
+def to_string_unknown(value: object) -> str:
+    """Effect's ``toStringUnknown``: a string as it is, anything else as
+    JSON indented by two spaces (``to_json``)."""
+    if isinstance(value, str):
+        return value
+    return json.dumps(to_json(value), indent=2, ensure_ascii=False)

@@ -174,6 +174,15 @@ ends with its exit and is the parent of the spans made inside, forked fibers inc
 installs another, whose optional `context` hook runs around every fiber step (for an
 OpenTelemetry-style context).
 
+**OpenTelemetry.** The `otel` extra (`pip install 'pyfect[otel]'`) adds `pyfect.otel`, a
+bridge to the OpenTelemetry SDK like `@effect/opentelemetry`: spans become OpenTelemetry spans
+(and the current one is active in OpenTelemetry's context while a fiber runs), logs become log
+records correlated with their span, and the metric registry is collected by SDK metric readers.
+`otel.sdk.layer(otel.sdk.Configuration(span_processor=..., metric_reader=...,
+log_record_processor=...))` sets up each signal given somewhere to send it; `otel.tracer`,
+`otel.logger`, `otel.metrics` and `otel.resource` have the separate layers. `import pyfect`
+never imports OpenTelemetry.
+
 **Metrics.** `fx.metric.counter`, `gauge`, `frequency`, `histogram`, `summary` and `timer` are
 descriptions: `m.update(x)` finds the metric's series in the current `MetricRegistry`, with the
 `CurrentMetricAttributes` in scope merged into its own (`m.with_attributes(...)` adds more).

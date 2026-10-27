@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
-
 from pyfect.clock import Clock
 from pyfect.logger._model import Logger, Options
 from pyfect.logger._refs import CurrentLogAnnotations
-from pyfect.logger._text import to_json
+from pyfect.logger._text import to_string_unknown
 from pyfect.tracer._model import Ended, ExternalSpan
 from pyfect.tracer._refs import ParentSpan
 
@@ -15,10 +13,7 @@ from pyfect.tracer._refs import ParentSpan
 def _event_name(message: tuple[object, ...]) -> str:
     """Effect's ``toStringUnknown`` of the message (its one item, if it has
     one): a string as it is, anything else as indented JSON."""
-    value = message[0] if len(message) == 1 else list(message)
-    if isinstance(value, str):
-        return value
-    return json.dumps(to_json(value), indent=2, ensure_ascii=False)
+    return to_string_unknown(message[0] if len(message) == 1 else list(message))
 
 
 def _record(options: Options) -> None:

@@ -17,12 +17,19 @@ classifiers = [
 [project.entry-points.pytest11]
 pyfect = "pyfect.testing.plugin"
 
+[project.optional-dependencies]
+otel = [
+    "opentelemetry-api>=1.45",
+    "opentelemetry-sdk>=1.45",
+]
+
 [build-system]
 requires = ["uv_build>=0.12.15,<0.13.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "pyfect[otel]",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
     "ruff>=0.17.2",

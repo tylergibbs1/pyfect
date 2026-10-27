@@ -19,7 +19,8 @@ Omitted, with the reason:
 
 - "generates OTLP span identifiers", "should preserve nested span context
   with OtlpTracer" and the three "OtlpTracer span status" titles: the OTLP
-  exporter is not ported (an OpenTelemetry bridge is planned instead).
+  exporter is not ported (``pyfect[otel]`` exports through the
+  OpenTelemetry SDK instead).
 - "should capture only the span frame for a string failure": pyfect records
   no stack frames for spans, so ``Cause.pretty_errors`` has no span frame.
 """
