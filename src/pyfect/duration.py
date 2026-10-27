@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from datetime import timedelta
+from decimal import Decimal
 from typing import final
 
 type Duration = float | timedelta
@@ -40,6 +41,20 @@ def to_seconds(duration: Duration) -> Seconds:
     return Seconds(duration.total_seconds() if isinstance(duration, timedelta) else duration)
 
 
+def to_nanos(seconds: float) -> int:
+    """Whole nanoseconds (floored) in a finite number of seconds.
+
+    The float is read as the shortest decimal that prints it, so
+    ``1_000_000_000.001`` is exactly ``1_000_000_000_001_000_000``;
+    multiplying by ``1e9`` in floating point would be off by tens of
+    nanoseconds at epoch-sized values."""
+    return math.floor(_exact_nanos(seconds))
+
+
+def _exact_nanos(seconds: float) -> Decimal:
+    return Decimal(repr(float(seconds))) * 10**9
+
+
 _UNITS = (
     ("d", 86_400 * 10**9),
     ("h", 3_600 * 10**9),
@@ -53,7 +68,7 @@ def format_duration(seconds: Seconds) -> str:
     """Human-readable, as Effect's ``Duration.format``: ``"1s 500ms"``."""
     if math.isinf(seconds):
         return "Infinity" if seconds > 0 else "-Infinity"
-    nanos = round(abs(seconds) * 10**9)  # Effect keeps whole nanoseconds
+    nanos = round(_exact_nanos(abs(seconds)))  # Effect keeps whole nanoseconds
     if nanos == 0:
         return "0"
     pieces: list[str] = []

@@ -94,10 +94,68 @@ stores the effect itself. Ending or failing a queue keeps its items and waiting 
 until takers drain them; `offer_all` returns the items it could not add, `shutdown` returns
 whether it finished the queue, and `Semaphore.take`/`release` return permit counts.
 
-**Deterministic tests.** `fx.testing.run_test` uses a `TestClock`: time moves only when the
-test calls `adjust`, and every fiber settles before it moves again. A test that would hang
-fails with `StalledError` instead, and a fiber that never suspends makes `adjust` emit a
-`BusyFiberWarning` and move on rather than hang.
+**Deterministic tests.** `fx.testing` uses a `TestClock`: time moves only when the test
+calls `adjust` or `set_time`, and every fiber settles before it moves again. A test that
+would hang fails with `StalledError` instead, and a fiber that never suspends makes `adjust`
+emit a `BusyFiberWarning` and move on rather than hang. See [Testing](#testing).
+
+## Testing
+
+pyfect ships a pytest plugin (registered automatically on install). Write a test as a
+generator, like `@fx.gen`, and decorate it:
+
+```python
+import pyfect as fx
+from pyfect import testing
+
+
+@testing.effect
+def test_retry_backs_off():
+    fiber = yield from flaky_call.retry(fx.schedule.exponential(1).take(3)).fork()
+    yield from testing.adjust(7)  # virtual time: the test takes no real time
+    assert (yield from fiber.join()) == "ok"
+```
+
+- `@testing.effect` runs the test with a fresh `TestClock` and a `Scope` that closes when
+  the test ends; `@testing.live` uses the real clock. A test may also return an effect.
+  Any typed error or defect fails the test with its traceback; a failed `assert` keeps
+  pytest's explanation.
+- Each test has a real-time timeout (`@testing.effect(timeout=10)`, default from the
+  `pyfect_timeout` ini option, 5s; `0` disables it). When it passes, the test is
+  interrupted and its finalizers run before it fails with `TestTimeoutError`.
+- `@testing.effect(asyncio=True)` runs on an event loop, so `from_async` works on virtual
+  time. `await testing.run_test_async(eff)` does the same on the loop you are in.
+- `testing.layer_fixture(layer, scope="module")` builds a layer once per pytest scope and
+  releases it when the scope ends. Take it as the test's first parameter, annotated
+  `testing.Services[...]` with what the layer builds; the test may then use those services,
+  and pyright rejects a test that needs anything else (in a test class, put it right after
+  `self`). Tests sharing the fixture share its `TestClock`; with `live=True` the layer and
+  its `@testing.effect` tests use the real clock. `scope="class"` releases the layer when
+  the class's tests are done.
+- `testing.flaky(eff, timeout=30)` retries an effect that sometimes fails; if it never
+  passes, the last failure dies (typed errors become defects), like Effect's `flakyTest`.
+- `testing.with_live(eff)` runs part of a test on the real clock; `TestClock.layer()`
+  provides a test clock to any program; `set_time` may move wall time backwards while
+  monotonic time (`fx.clock.monotonic`, `timed`) only moves forward.
+- `testing.assert_exit_success(exit, value)` and friends print `Cause.pretty()` on failure,
+  and so does a failed `assert exit == fx.Success(...)`.
+- Decorated tests carry the `pyfect_effect` / `pyfect_live` markers: `-m "not pyfect_live"`
+  skips the ones that take real time.
+
+```python
+class Users(fx.Tag[UserStore]): ...
+
+
+users = testing.layer_fixture(UsersLive)  # built once for this module
+
+
+@testing.effect
+def test_finds_ada(users: testing.Services[Users]):
+    store = yield from Users()
+    assert (yield from store.find("1")) == "Ada"
+```
+
+`testing.run_test(eff)` runs a single effect with a `TestClock`, outside the decorators.
 
 ## Compared to effect-py
 

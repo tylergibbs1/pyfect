@@ -1010,3 +1010,19 @@ def test_delivers_a_pending_interrupt_when_interruptible_mask_restores_interrupt
     assert isinstance(ex, fx.Failure)
     assert ex.cause.interruptors == frozenset({123})
     assert events == ["masked", "interrupted", "resumed", "interruptibleMask"]
+
+
+@testing.effect
+def test_timed_uses_monotonic_time_when_wall_time_moves_backward():
+    """Effect.test.ts "timed > uses monotonic time when wall time moves backward"."""
+    yield from testing.set_time(1.0)
+
+    @fx.gen
+    def body():
+        yield from testing.adjust(0.1)
+        yield from testing.set_time(0)
+        return "done"
+
+    duration, result = yield from body.timed()
+    assert result == "done"
+    assert duration == pytest.approx(0.1)

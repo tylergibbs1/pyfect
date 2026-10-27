@@ -12,6 +12,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.testing._clock import _SETTLE_WARNING  # pyright: ignore[reportPrivateUsage]
 
 
 def test_timeout_repetition_of_uninterruptible_effect():
@@ -59,6 +60,7 @@ def test_adjust_warns_and_moves_on_when_a_woken_fiber_never_suspends():
     assert time.monotonic() - started < 1
 
 
+@testing.effect
 def test_adjust_waits_for_work_started_transitively_by_a_wake_up():
     """A woken fiber forks a child that sleeps again: the child's sleep is
     registered relative to the wake-up time and woken in the same adjust."""
@@ -75,13 +77,9 @@ def test_adjust_waits_for_work_started_transitively_by_a_wake_up():
         inner = yield from child.fork()
         yield from inner.join()
 
-    @fx.gen
-    def program():
-        fiber = yield from parent.fork()
-        yield from testing.adjust(2)
-        return fiber.unsafe_poll()
-
-    assert testing.run_test(program) == fx.Success(None)
+    fiber = yield from parent.fork()
+    yield from testing.adjust(2)
+    assert fiber.unsafe_poll() == fx.Success(None)
     assert log == [2.0]
 
 
@@ -106,29 +104,22 @@ def test_an_unrelated_busy_fiber_does_not_stall_each_wake_up():
 
     with pytest.warns(testing.BusyFiberWarning) as caught:
         testing.run_test(program, warning_delay=0.05)
-    assert [str(w.message) for w in caught] == [testing._SETTLE_WARNING]  # pyright: ignore[reportPrivateUsage]
+    assert [str(w.message) for w in caught] == [_SETTLE_WARNING]
     assert log == [1.0, 2.0, 3.0]
 
 
-def test_deadlines_add_up_exactly() -> None:
+@testing.effect
+def test_deadlines_add_up_exactly():
     """0.05 + 0.001 is 0.051000000000000004 in floats; the clock must still
     wake a sleep of 0.05 then 0.001 when moved by 0.051, as Effect's
     millisecond TestClock does."""
-
-    @fx.gen
-    def program():
-        fiber = yield from fx.sleep(0.05).and_then(fx.sleep(0.001)).as_("woke").fork()
-        yield from testing.adjust(0.051)
-        return fiber.unsafe_poll()
-
-    assert testing.run_test(program) == fx.Success("woke")
+    fiber = yield from fx.sleep(0.05).and_then(fx.sleep(0.001)).as_("woke").fork()
+    yield from testing.adjust(0.051)
+    assert fiber.unsafe_poll() == fx.Success("woke")
 
 
-def test_repeated_sleeps_end_at_their_exact_sum() -> None:
-    @fx.gen
-    def program():
-        fiber = yield from fx.sleep(0.1).replicate_effect(3).as_("woke").fork()
-        yield from testing.adjust(0.3)
-        return fiber.unsafe_poll()
-
-    assert testing.run_test(program) == fx.Success("woke")
+@testing.effect
+def test_repeated_sleeps_end_at_their_exact_sum():
+    fiber = yield from fx.sleep(0.1).replicate_effect(3).as_("woke").fork()
+    yield from testing.adjust(0.3)
+    assert fiber.unsafe_poll() == fx.Success("woke")

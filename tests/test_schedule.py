@@ -32,16 +32,12 @@ def test_retry_gives_up_with_the_last_error():
     assert len(attempts) == 3
 
 
+@fx.testing.effect
 def test_exponential_backoff_timing():
     attempts: list[float] = []
-
-    @fx.gen
-    def program():
-        fiber = yield from flaky(3, attempts).retry(schedule.exponential(1).take(5)).fork()
-        yield from fx.testing.adjust(100)
-        return (yield from fiber.join())
-
-    assert fx.testing.run_test_exit(program) == fx.Success("ok")
+    fiber = yield from flaky(3, attempts).retry(schedule.exponential(1).take(5)).fork()
+    yield from fx.testing.adjust(100)
+    assert (yield from fiber.join()) == "ok"
     assert attempts == [0, 1, 3, 7]
 
 
@@ -73,17 +69,13 @@ def test_repeat_spaced_with_take():
     assert ticks == [0, 2, 4, 6]
 
 
+@fx.testing.effect
 def test_fixed_keeps_a_beat_from_the_first_decision_regardless_of_work_time():
     ticks: list[float] = []
-
-    @fx.gen
-    def program():
-        work = fx.clock.monotonic().map(ticks.append).and_then(fx.sleep(1))
-        fiber = yield from work.repeat(schedule.fixed(3).take(2)).fork()
-        yield from fx.testing.adjust(20)
-        yield from fiber.join()
-
-    run(program)
+    work = fx.clock.monotonic().map(ticks.append).and_then(fx.sleep(1))
+    fiber = yield from work.repeat(schedule.fixed(3).take(2)).fork()
+    yield from fx.testing.adjust(20)
+    yield from fiber.join()
     # First run at 0 takes 1s; beats are then every 3s from t=1.
     assert ticks == [0, 4, 7]
 
@@ -100,16 +92,12 @@ def test_both_stops_when_either_stops():
     assert count == 3
 
 
+@fx.testing.effect
 def test_up_to_bounds_total_time():
     attempts: list[float] = []
-
-    @fx.gen
-    def program():
-        fiber = yield from flaky(100, attempts).retry(schedule.spaced(1).up_to(3)).exit().fork()
-        yield from fx.testing.adjust(10)
-        return (yield from fiber.join())
-
-    run(program)
+    fiber = yield from flaky(100, attempts).retry(schedule.spaced(1).up_to(3)).exit().fork()
+    yield from fx.testing.adjust(10)
+    yield from fiber.join()
     # Elapsed is measured from the first decision; at t=3 it is still <= 3.
     assert attempts == [0, 1, 2, 3, 4]
 

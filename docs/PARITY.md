@@ -129,7 +129,6 @@ Effect's own source runs under Node 24 without a build: write a `.ts` script tha
 - **`Cause +` dedupes with Python `==`**, so `fail(1) + fail(True)` collapse; Effect's `Equal.equals` keeps them apart.
 - **`sliding(0)` with a parked taker**: Effect's `offerUnsafe` sliding branch skips `releaseTakers`, so the taker stays parked next to the item; pyfect wakes it (`test_queue.py::test_offer_to_a_sliding_queue_of_capacity_zero_wakes_a_waiting_taker`).
 - **TaggedError**: pyright treats a plain `@dataclass` subclass as unhashable in set literals (runtime hashing works); `@dataclass(eq=False)` is hashable to both (pinned in `tests/type_checks.py`). A `dataclass_transform` base was tried and rejected: pyright then gives every plain subclass a field-only `__init__`, so `Boom("msg")` and `Done()`-style args errors stop type-checking, and making the runtime agree would re-run `@dataclass` on explicit dataclass subclasses (losing `default_factory` defaults). Frozen dataclass errors don't set `__cause__` and don't `copy.copy`; Python itself doesn't support frozen exceptions well, so don't freeze TaggedErrors.
-- **Concurrent `TestClock.adjust` calls** are not serialized (Effect uses `Semaphore(1)`); no deterministic repro.
 - Effect's `runMain` interrupts with the main fiber's id; pyfect uses `None`. Only visible in `Cause.pretty()` of an interrupt-only cause, which `run_main` never prints.
 
 ## 3. Milestone roadmap (dependency-ordered)

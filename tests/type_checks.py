@@ -6,9 +6,13 @@
 pyright fails.
 """
 
+from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
-from typing import Never, Protocol, TypeIs, assert_type
+from types import CoroutineType
+from typing import Any, Never, Protocol, TypeIs, assert_type
+
+from _pytest.fixtures import FixtureFunctionDefinition
 
 import pyfect as fx
 from pyfect import layer, schedule
@@ -513,3 +517,80 @@ class HashableNotFound(fx.TaggedError):
 
 hashable_errors = {HashableNotFound("k")}
 unhashable_to_pyright = {NotFound("k")}  # pyright: ignore[reportUnhashable]
+
+
+# --- testing ------------------------------------------------------------------------
+# A decorated test's body may need a Scope and, through a first parameter annotated
+# Services[...], what a layer_fixture builds. Needing anything else is an error at the
+# decorator, so a test can't be written that dies with a missing service.
+
+
+@fx.testing.effect
+def check_test_needs_nothing():
+    yield from fx.add_finalizer(lambda _: fx.void)
+
+
+@fx.testing.effect
+def check_test_takes_fixtures(n: int):
+    yield from fx.succeed(n)
+
+
+@fx.testing.live(timeout=1)
+def check_test_returns_an_effect() -> fx.Effect[int, str]:
+    return fx.fail("typed errors fail the test")
+
+
+@fx.testing.effect
+def check_test_uses_services(ports: fx.testing.Services[Port], n: int):
+    yield from Port()
+
+
+@fx.testing.effect  # pyright: ignore[reportCallIssue, reportArgumentType, reportUntypedFunctionDecorator]
+def check_test_missing_a_service():
+    yield from Port()
+
+
+@fx.testing.effect  # pyright: ignore[reportCallIssue, reportArgumentType, reportUntypedFunctionDecorator]
+def check_test_missing_a_service_its_fixture_lacks(ports: fx.testing.Services[Port]):
+    yield from Primary()
+
+
+class CheckTestClass:
+    """Test methods take the fixture right after ``self``."""
+
+    @fx.testing.effect
+    def check_method_uses_services(self, ports: fx.testing.Services[Port]):
+        yield from Port()
+
+    @fx.testing.live
+    def check_method_needs_nothing(self):
+        yield from fx.void
+
+    @fx.testing.effect  # pyright: ignore[reportCallIssue, reportArgumentType, reportUntypedFunctionDecorator]
+    def check_method_missing_a_service_its_fixture_lacks(self, ports: fx.testing.Services[Port]):
+        yield from Primary()
+
+
+def check_testing() -> None:
+    assert_type(
+        CheckTestClass.check_method_uses_services,
+        Callable[[CheckTestClass, fx.testing.Services[Port]], None],
+    )
+    assert_type(check_test_needs_nothing, Callable[[], None])
+    assert_type(check_test_takes_fixtures(1), None)
+    assert_type(check_test_returns_an_effect, Callable[[], None])
+    assert_type(fx.testing.effect(timeout=1, asyncio=True), fx.testing.TestDecorator)
+    assert_type(fx.testing.test_clock(), fx.Effect[fx.testing.TestClock])
+    assert_type(fx.testing.TestClock.layer(), fx.Layer[Never])
+    assert_type(fx.testing.with_live(Port()), fx.Effect[int, Never, Port])
+    assert_type(fx.testing.run_test_exit(fx.fail("e")), fx.Exit[Never, str])
+    coroutine = fx.testing.run_test_async(fx.succeed(1))
+    assert_type(coroutine, CoroutineType[Any, Any, int]).close()
+    assert_type(fx.testing.layer_fixture(port_live), FixtureFunctionDefinition)
+    fx.testing.run_test(fx.fail("e"))  # pyright: ignore[reportArgumentType]
+
+
+def check_flaky(scoped_int: fx.Effect[int, str, fx.Scope]) -> None:
+    assert_type(fx.testing.flaky(scoped_int), fx.Effect[int])
+    assert_type(fx.testing.flaky(Port().and_then(scoped_int)), fx.Effect[int, Never, Port])
+    fx.testing.run_test(fx.testing.flaky(scoped_int))

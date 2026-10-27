@@ -62,6 +62,7 @@ def test_schedules_treat_nan_as_zero():
         (0.0, "0"),
         (0.000_001_5, "1500ns"),
         (-5.0, "-5s"),
+        (1_000_000_000.001, "11574d 1h 46m 40s 1ms"),
         (math.inf, "Infinity"),
         (-math.inf, "-Infinity"),
     ],

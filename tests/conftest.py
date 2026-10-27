@@ -8,6 +8,8 @@ import pytest
 
 from pyfect import _fiber
 
+pytest_plugins = ["pytester"]
+
 
 @pytest.fixture
 def yield_budget(
