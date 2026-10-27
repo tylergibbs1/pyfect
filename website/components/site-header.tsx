@@ -6,6 +6,8 @@ import { MainNav } from './main-nav';
 import { MobileNav } from './mobile-nav';
 import { ModeSwitcher } from './mode-switcher';
 import { Separator } from './ui/separator';
+import { LogoMark } from './logo';
+import Link from 'next/link';
 
 // After shadcn/ui's site header (apps/v4/components/site-header.tsx, MIT).
 export function SiteHeader() {
@@ -16,6 +18,9 @@ export function SiteHeader() {
       <div className="container-wrapper px-6">
         <div className="flex h-(--header-height) items-center **:data-[slot=separator]:h-4!">
           <MobileNav tree={tree} items={navItems} className="flex lg:hidden" />
+          <Link href="/docs" aria-label="pyfect" className="ml-1 flex items-center lg:hidden">
+            <LogoMark />
+          </Link>
           <MainNav items={navItems} className="hidden lg:flex" />
           <div className="ml-auto flex items-center gap-2 md:flex-1 md:justify-end">
             <div className="hidden w-full flex-1 md:flex md:w-auto md:flex-none">

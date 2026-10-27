@@ -14,6 +14,14 @@ export async function GET(_req: Request, { params }: RouteContext<'/og/docs/[...
     title: page.data.title,
     description: page.data.description,
     site: appName,
+    primaryColor: 'rgba(250, 250, 250, 0.12)',
+    primaryTextColor: 'rgb(250, 250, 250)',
+    icon: (
+      <svg viewBox="0 0 24 24" width="48" height="48">
+        <path fill="white" fillRule="evenodd" d="M4 10a8 8 0 1 1 8 8h-1v3.5A2.5 2.5 0 0 1 8.5 24h-2A2.5 2.5 0 0 1 4 21.5zM12 6.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6z" />
+        <circle cx="12" cy="10" r="1.6" fill="white" />
+      </svg>
+    ),
   });
 }
 
