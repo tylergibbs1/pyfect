@@ -1,8 +1,7 @@
 """Ports of Effect's ``Fiber.test.ts``.
 
-Each test's docstring is the Effect test title. ``Latch`` is not ported yet,
-so a ``Deferred`` stands in for it (``open`` is ``succeed(None)``, ``await``
-is ``wait``). Omitted, with the reason:
+Each test's docstring is the Effect test title (Effect's ``Latch.await`` is
+``wait()``). Omitted, with the reason:
 
 - "is a fiber": ``Fiber.isFiber`` is ``isinstance(x, fx.Fiber)``.
 - "retains distinct target and interruptor stack frames": stack frames and
@@ -82,14 +81,14 @@ def test_stops_notifying_an_observer_once_it_is_removed():
 @testing.effect
 def test_join_all_leaves_other_joins_running_when_one_is_interrupted():
     """leaves other joins running when one is interrupted"""
-    latch = yield from fx.Deferred[None].make()
+    latch = yield from fx.Latch.make()
     fibers = yield from fx.for_each(
         [1, 2], lambda n: latch.wait().as_(n).fork(start_immediately=True)
     )
     interrupted = yield from fx.Fiber.join_all(fibers).fork(start_immediately=True)
     kept = yield from fx.Fiber.join_all(fibers).fork(start_immediately=True)
     yield from interrupted.interrupt()
-    yield from latch.succeed(None)
+    yield from latch.open()
     assert (yield from kept.join()) == [1, 2]
 
 
@@ -111,7 +110,7 @@ def test_join_all_cleans_up_observers_on_interruption():
 # --- interruptAll / interruptAllAs ----------------------------------------------------------
 
 
-def _cleanup_waits_for(latch: fx.Deferred[None], cleaned: list[bool]) -> fx.Effect[Never]:
+def _cleanup_waits_for(latch: fx.Latch, cleaned: list[bool]) -> fx.Effect[Never]:
     return fx.never.on_interrupt(latch.wait().and_then(fx.sync(lambda: cleaned.append(True))))
 
 
@@ -119,9 +118,9 @@ def _cleanup_waits_for(latch: fx.Deferred[None], cleaned: list[bool]) -> fx.Effe
 def test_interrupt_all_awaits_fibers_passed_as_a_one_shot_iterable():
     """interruptAll awaits fibers passed as a one-shot iterable"""
     cleaned: list[bool] = []
-    latch = yield from fx.Deferred[None].make()
+    latch = yield from fx.Latch.make()
     fiber = yield from _cleanup_waits_for(latch, cleaned).fork(start_immediately=True)
-    yield from latch.succeed(None).fork()
+    yield from latch.open().fork()
     yield from fx.Fiber.interrupt_all(f for f in [fiber])
     assert cleaned == [True]
 
@@ -130,9 +129,9 @@ def test_interrupt_all_awaits_fibers_passed_as_a_one_shot_iterable():
 def test_interrupt_all_as_awaits_fibers_passed_as_a_one_shot_iterable():
     """interruptAllAs awaits fibers passed as a one-shot iterable"""
     cleaned: list[bool] = []
-    latch = yield from fx.Deferred[None].make()
+    latch = yield from fx.Latch.make()
     fiber = yield from _cleanup_waits_for(latch, cleaned).fork(start_immediately=True)
-    yield from latch.succeed(None).fork()
+    yield from latch.open().fork()
     yield from fx.Fiber.interrupt_all_as((f for f in [fiber]), 0)
     assert cleaned == [True]
     exit_ = fiber.unsafe_poll()

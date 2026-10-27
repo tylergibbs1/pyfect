@@ -94,7 +94,8 @@ released in parallel when the program ends. A nested `provide` reuses layers the
 rebuilds a layer and everything under it.
 
 **Building blocks.** `Ref`, `Deferred`, `Queue` (bounded, rendezvous with capacity 0,
-dropping, sliding; endable), `Semaphore`, `Scope` with `acquire_release`, and `Schedule`
+dropping, sliding; endable), `Semaphore`, `PartitionedSemaphore` (permits shared
+round-robin across keys), `Latch`, `Scope` with `acquire_release`, and `Schedule`
 for `retry` and `repeat` (`exponential`, `spaced`, `fixed`, `fibonacci`, `take`, `up_to`,
 `jittered`, ...). Names follow Effect v4: `Deferred.done(exit)` completes with an exit,
 `complete(eff)` runs an effect once and stores its outcome, and `complete_with(eff)`

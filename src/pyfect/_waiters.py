@@ -6,6 +6,10 @@ the wake-up and the retry cannot lose anything. A woken fiber that is
 interrupted before retrying passes the wake-up on, so nobody sleeps
 through available work. Spurious wake-ups are harmless: a woken fiber that
 finds nothing simply waits again.
+
+``wait`` takes the condition the caller is waiting for and checks it again as
+the fiber parks: a fiber can pause between its own check and the park, and a
+notify landing in that gap would otherwise find nobody to wake.
 """
 # pyright: reportPrivateUsage=false
 
@@ -24,8 +28,14 @@ class WaitList:
     def __init__(self) -> None:
         self._waiters: deque[Callable[[], None]] = deque()
 
-    def wait(self) -> Effect[None]:
-        def register(resume: Callable[[Effect[None]], None]) -> Effect[None]:
+    def wait(self, ready: Callable[[], bool]) -> Effect[None]:
+        """Park until notified, or not at all if ``ready()`` already holds."""
+
+        def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
+            if ready():
+                resume(_Succeed(None))
+                return None
+
             def wake() -> None:
                 resume(_Succeed(None))
 

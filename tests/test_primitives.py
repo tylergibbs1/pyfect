@@ -228,3 +228,51 @@ def test_with_permits_takes_its_permits_uninterruptibly():
         for k in range(40):
             budgeted = program(k).pipe(fx.provide_service(fx.MaxOpsBeforeYield, budget))
             assert run(budgeted) == 1, (budget, k)
+
+
+@fx.testing.effect
+def test_semaphore_resize_wakes_waiters_and_shrinking_holds_takers_back():
+    sem = yield from fx.Semaphore.make(1)
+    yield from sem.take(1)
+    waiter = yield from sem.take(1).fork(start_immediately=True)
+
+    yield from sem.resize(2)
+    assert (yield from waiter.join()) == 1
+
+    yield from sem.resize(1)
+    assert (yield from sem.available) == -1
+    assert (yield from sem.take_if_available(1)) is False
+    assert (yield from sem.release_all()) == 1
+
+
+@fx.testing.effect
+def test_a_semaphore_waiter_paused_before_it_parks_still_sees_the_release():
+    # The budget pauses the waiter at every step in turn, including between its
+    # "not enough permits" check and its park; the release lands in that gap.
+    for budget in range(1, 20):
+        for use_take in (True, False):
+            sem = yield from fx.Semaphore.make(1)
+            yield from sem.take(1)
+            waiting = sem.take(1).as_void() if use_take else sem.with_permits(fx.void)
+            waiter = yield from waiting.pipe(fx.provide_service(fx.MaxOpsBeforeYield, budget)).fork(
+                start_immediately=True
+            )
+            yield from sem.release(1)
+            for _ in range(50):
+                yield from fx.yield_now()
+            assert waiter.unsafe_poll() is not None, budget
+
+
+@fx.testing.effect
+def test_a_queue_taker_paused_before_it_parks_still_sees_the_offer():
+    for budget in range(1, 20):
+        queue = yield from fx.Queue[int].bounded(4)
+        taker = (
+            yield from queue.take()
+            .pipe(fx.provide_service(fx.MaxOpsBeforeYield, budget))
+            .fork(start_immediately=True)
+        )
+        yield from queue.offer(1)
+        for _ in range(50):
+            yield from fx.yield_now()
+        assert taker.unsafe_poll() is not None, budget

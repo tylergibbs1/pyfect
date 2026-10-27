@@ -115,3 +115,55 @@ def test_poll_returns_the_stored_effect():
         return before, (yield from after)
 
     assert run(program) == (None, 3)
+
+
+@fx.testing.effect
+def test_into_runs_the_effect_even_when_already_done():
+    """Unlike ``complete``, Effect's ``Deferred.into`` runs its effect
+    whatever the state; only the first completion counts."""
+    log: list[str] = []
+    d = yield from fx.Deferred[int].make()
+    assert (yield from fx.succeed(1).pipe(d.into)) is True
+    assert (yield from fx.sync(lambda: log.append("ran") or 2).pipe(d.into)) is False
+    assert log == ["ran"]
+    assert (yield from d.wait()) == 1
+
+
+@fx.testing.effect
+def test_lazy_completions_evaluate_once_when_run():
+    calls: list[str] = []
+
+    def value() -> int:
+        calls.append("sync")
+        return 7
+
+    d = yield from fx.Deferred[int].make()
+    complete = d.sync(value)
+    assert calls == []
+    assert (yield from complete) is True
+    assert (yield from d.wait()) == 7
+    assert calls == ["sync"]
+
+
+@fx.testing.effect
+def test_failure_shorthands_store_the_matching_cause():
+    boom = ValueError("boom")
+    died = yield from fx.Deferred[int].make()
+    yield from died.die_sync(lambda: boom)
+    failed = yield from fx.Deferred[int, str].make()
+    yield from failed.fail_sync(lambda: "bad")
+    failed_cause = yield from fx.Deferred[int, str].make()
+    yield from failed_cause.fail_cause_sync(lambda: fx.cause.fail("worse"))
+
+    assert (yield from died.wait().exit()) == fx.exit.die(boom)
+    assert (yield from failed.wait().exit()) == fail_exit("bad")
+    assert (yield from failed_cause.wait().exit()) == fail_exit("worse")
+    assert died.unsafe_is_done()
+
+
+@fx.testing.effect
+def test_interrupt_is_attributed_to_the_current_fiber():
+    d = yield from fx.Deferred[int].make()
+    yield from d.interrupt()
+    me = yield from fx.fiber_id()
+    assert (yield from d.wait().exit()) == interrupt_exit(me)

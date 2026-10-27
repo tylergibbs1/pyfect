@@ -10,6 +10,8 @@ Completion, named as in Effect:
 - ``complete(eff)``: run ``eff`` once and complete with its outcome, even if
   the completing fiber is interrupted. Every waiter sees the same result.
 - ``complete_with(eff)``: store ``eff`` itself; each ``wait()`` runs it.
+- ``into(eff)``: run ``eff`` and complete with its outcome, whether or not
+  already completed (``eff.pipe(deferred.into)``).
 """
 # pyright: reportPrivateUsage=false
 
@@ -25,11 +27,14 @@ from pyfect._core import (
     _Succeed,
     _Suspend,
     _Sync,
+    _WithFiber,
     uninterruptible_mask,
 )
 from pyfect.cause import Cause
 from pyfect.exit import Exit, Failure, Success
+from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
+from pyfect.exit import interrupt as interrupt_exit
 
 
 class Deferred[A, E = Never]:
@@ -68,21 +73,51 @@ class Deferred[A, E = Never]:
     def fail_cause(self, cause: Cause[E]) -> Effect[bool]:
         return self.done(Failure(cause))
 
+    def sync(self, evaluate: Callable[[], A]) -> Effect[bool]:
+        """Succeed with ``evaluate()``, computed when this runs."""
+        return _Suspend(lambda: self.succeed(evaluate()))
+
+    def fail_sync(self, evaluate: Callable[[], E]) -> Effect[bool]:
+        return _Suspend(lambda: self.fail(evaluate()))
+
+    def fail_cause_sync(self, evaluate: Callable[[], Cause[E]]) -> Effect[bool]:
+        return _Suspend(lambda: self.fail_cause(evaluate()))
+
+    def die(self, defect: BaseException) -> Effect[bool]:
+        return self.done(die_exit(defect))
+
+    def die_sync(self, evaluate: Callable[[], BaseException]) -> Effect[bool]:
+        return _Suspend(lambda: self.die(evaluate()))
+
+    def interrupt(self) -> Effect[bool]:
+        """Complete with an interrupt by the current fiber."""
+        return _WithFiber(lambda fiber: self.interrupt_with(fiber.id))
+
+    def interrupt_with(self, fiber_id: int) -> Effect[bool]:
+        """Complete with an interrupt by the fiber with id ``fiber_id``."""
+        return self.done(interrupt_exit(fiber_id))
+
     def complete[R](self, eff: Effect[A, E, R]) -> Effect[bool, Never, R]:
         """Run ``eff`` and complete with its outcome. Does not run it if
         already completed; an interrupt while it runs completes with that
         interrupt."""
+        return _Suspend(lambda: _Succeed(False) if self._effect is not None else self.into(eff))
 
-        def run() -> Effect[bool, Never, R]:
-            if self._effect is not None:
-                return _Succeed(False)
-            return uninterruptible_mask(lambda restore: restore(eff).exit().flat_map(self.done))
-
-        return _Suspend(run)
+    def into[R](self, eff: Effect[A, E, R]) -> Effect[bool, Never, R]:
+        """Run ``eff`` and complete with its outcome, even if the running
+        fiber is interrupted (then with that interrupt). Runs ``eff`` even
+        when already completed; ``complete`` does not."""
+        return uninterruptible_mask(lambda restore: restore(eff).exit().flat_map(self.done))
 
     def complete_with(self, eff: Effect[A, E]) -> Effect[bool]:
         """Complete with ``eff`` itself, unrun: every ``wait()`` runs it."""
         return _Sync(lambda: self._settle(eff))
+
+    def is_done(self) -> Effect[bool]:
+        return _Sync(self.unsafe_is_done)
+
+    def unsafe_is_done(self) -> bool:
+        return self._effect is not None
 
     def poll(self) -> Effect[Effect[A, E] | None]:
         """The effect waiters will run, or ``None`` if not completed yet."""

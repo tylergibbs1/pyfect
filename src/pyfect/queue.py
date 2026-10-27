@@ -231,12 +231,19 @@ class Queue[A, E = Never]:
                     st.Open(takers=takers, offers=offers) | st.Closing(takers=takers, offers=offers)
                 ):
                     if wait and not self._items and not offers:
-                        return takers.wait().and_then(_Suspend(attempt))
+                        return takers.wait(self._takeable).and_then(_Suspend(attempt))
                     taken = grab(offers)
                     self._refill(offers, takers)
                     return _Succeed(taken)
 
         return _Suspend(attempt)
+
+    def _takeable(self) -> bool:
+        match self._state:
+            case st.Done():
+                return True
+            case st.Open(offers=offers) | st.Closing(offers=offers):
+                return bool(self._items or offers)
 
     def _take_one(self, offers: deque[st.Offer[A]]) -> A:
         """Buffered items come first; a rendezvous queue then takes straight

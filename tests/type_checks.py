@@ -6,7 +6,7 @@
 pyright fails.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from types import CoroutineType
@@ -439,6 +439,50 @@ def check_data_types(q: fx.Queue[int], endable: fx.Queue[int, fx.Done]) -> None:
 def check_semaphore(sem: fx.Semaphore) -> None:
     assert_type(sem.take(2), fx.Effect[int, Never, Never])
     assert_type(sem.release(1), fx.Effect[int, Never, Never])
+    assert_type(sem.take_if_available(2), fx.Effect[bool, Never, Never])
+    assert_type(sem.release_all(), fx.Effect[int, Never, Never])
+    assert_type(sem.resize(3), fx.Effect[None, Never, Never])
+    assert_type(sem.with_permits(nf_or_port()), fx.Effect[int, NotFound, Port])
+    assert_type(
+        sem.with_permits_if_available(nf_or_port()),
+        fx.Effect[fx.Some[int] | None, NotFound, Port],
+    )
+    assert_type(nf_or_port().pipe(sem.with_permits), fx.Effect[int, NotFound, Port])
+
+
+def check_partitioned_semaphore(
+    sem: fx.PartitionedSemaphore[str], any_key: fx.PartitionedSemaphore[Hashable]
+) -> None:
+    # Keys only go in (Effect's `in K`): a semaphore taking any key serves as a
+    # str-keyed one, not the other way round.
+    check_partitioned_semaphore(any_key, any_key)
+    check_partitioned_semaphore(sem, sem)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        fx.PartitionedSemaphore[str].make(2), fx.Effect[fx.PartitionedSemaphore[str], Never, Never]
+    )
+    assert_type(sem.take("a", 2), fx.Effect[None, Never, Never])
+    assert_type(sem.release(1), fx.Effect[int, Never, Never])
+    assert_type(sem.available, fx.Effect[int, Never, Never])
+    assert_type(sem.with_permits("a", nf_or_port()), fx.Effect[int, NotFound, Port])
+    assert_type(
+        sem.with_permits_if_available(nf_or_port()),
+        fx.Effect[fx.Some[int] | None, NotFound, Port],
+    )
+    # Keys are typed: a str-keyed semaphore rejects other keys.
+    sem.take(1, 1)  # pyright: ignore[reportArgumentType]
+    # Keys must be hashable.
+    fx.PartitionedSemaphore[list[int]]  # pyright: ignore[reportInvalidTypeArguments]
+
+
+def check_latch(latch: fx.Latch) -> None:
+    assert_type(fx.Latch.make(), fx.Effect[fx.Latch, Never, Never])
+    assert_type(latch.open(), fx.Effect[bool, Never, Never])
+    assert_type(latch.release(), fx.Effect[bool, Never, Never])
+    assert_type(latch.close(), fx.Effect[bool, Never, Never])
+    assert_type(latch.wait(), fx.Effect[None, Never, Never])
+    assert_type(latch.when_open(nf_or_port()), fx.Effect[int, NotFound, Port])
+    assert_type(latch.is_open(), bool)
+    assert_type(latch.unsafe_open(), bool)
 
 
 def check_deferred(d: fx.Deferred[int, str]) -> None:
@@ -447,6 +491,14 @@ def check_deferred(d: fx.Deferred[int, str]) -> None:
     assert_type(d.complete(Port().map(lambda _: 1)), fx.Effect[bool, Never, Port])
     assert_type(d.complete_with(fx.succeed(1)), fx.Effect[bool, Never, Never])
     assert_type(d.poll(), fx.Effect[fx.Effect[int, str, Never] | None, Never, Never])
+    assert_type(d.is_done(), fx.Effect[bool, Never, Never])
+    assert_type(d.interrupt(), fx.Effect[bool, Never, Never])
+    assert_type(d.die(ValueError()), fx.Effect[bool, Never, Never])
+    assert_type(d.sync(lambda: 1), fx.Effect[bool, Never, Never])
+    # into keeps the effect's requirements; its errors go into the deferred.
+    assert_type(Port().map(lambda _: 1).pipe(d.into), fx.Effect[bool, Never, Port])
+    d.into(fx.fail(1))  # pyright: ignore[reportArgumentType]
+    d.sync(lambda: "x")  # pyright: ignore[reportArgumentType]
     # The pre-Effect-v4 spelling `complete(exit)` is now an error: completing with an
     # exit is `done`.
     d.complete(fx.Success(1))  # pyright: ignore[reportArgumentType]
