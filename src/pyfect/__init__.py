@@ -4,8 +4,8 @@
 
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
-``fx.clock``, ``fx.console``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.schedule``,
-``fx.scheduler``,
+``fx.clock``, ``fx.config_provider``, ``fx.console``, ``fx.cron``, ``fx.date_time``,
+``fx.random``, ``fx.schedule``, ``fx.scheduler``,
 ``fx.Queue``, ``fx.PubSub``, ``fx.Pool``, ``fx.Cache``, ``fx.ScopedCache``, ``fx.Ref``,
 ``fx.SynchronizedRef``, ``fx.SubscriptionRef``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
@@ -30,6 +30,7 @@ from pyfect import (
     cause,
     channel,
     clock,
+    config_provider,
     console,
     cron,
     date_time,
@@ -64,6 +65,7 @@ from pyfect.cache import Cache, ScopedCache
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
 from pyfect.channel import Channel
 from pyfect.clock import Clock, sleep
+from pyfect.config_provider import ConfigProvider, CurrentConfigProvider
 from pyfect.context import Context, MissingServiceError, Reference, Tag
 from pyfect.deferred import Deferred
 from pyfect.duration import Duration
@@ -205,7 +207,9 @@ __all__ = [
     "Clock",
     "CloseableScope",
     "Concurrency",
+    "ConfigProvider",
     "Context",
+    "CurrentConfigProvider",
     "CurrentLogAnnotations",
     "CurrentLogLevel",
     "CurrentLogSpans",
@@ -301,6 +305,7 @@ __all__ = [
     "cause",
     "channel",
     "clock",
+    "config_provider",
     "console",
     "context",
     "cron",

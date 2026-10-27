@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 
 from pyfect._core import Effect
+from pyfect._js import js_number
 from pyfect.context import Context
 from pyfect.metric._metric import WithContext
-from pyfect.metric._number import js_number
 from pyfect.metric._refs import MetricRegistry
 from pyfect.metric._state import (
     CounterState,

@@ -9,9 +9,9 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 
 from pyfect._core import Effect
+from pyfect._js import js_number
 from pyfect.context import Context
 from pyfect.metric._metric import WithContext
-from pyfect.metric._number import js_number
 from pyfect.metric._snapshot import unsafe_snapshot
 from pyfect.metric._state import (
     CounterState,

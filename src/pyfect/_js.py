@@ -1,5 +1,8 @@
-"""Numbers as JavaScript's ``String(number)`` writes them, for ``dump`` and
-the Prometheus text: ``2`` not ``2.0``, ``1e+21``, ``1.5e-7``."""
+"""JavaScript's text rules for ports that must give Effect's exact strings:
+``String(number)`` (``2`` not ``2.0``, ``1e+21``, ``1.5e-7``), and the
+character sets behind JavaScript's regex ``\\s`` and line terminators,
+which differ from Python's (a regex copied from Effect must spell them with
+these, not ``\\s``, ``.``, ``^`` or ``$``)."""
 
 from __future__ import annotations
 
@@ -34,3 +37,20 @@ def js_number(value: float) -> str:
         mantissa = digits[0] + ("." + digits[1:] if k > 1 else "")
         body = f"{mantissa}e{'+' if n - 1 >= 0 else '-'}{abs(n - 1)}"
     return sign + body
+
+
+SPACE = "\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+"""The characters of JavaScript's ``\\s`` (and ``String.prototype.trim``), as a
+regex class body. Python's ``\\s`` also takes ``\\x1c``-``\\x1f`` and ``\\x85``
+and misses the byte-order mark."""
+
+LINE_END = "\n\r\u2028\u2029"
+"""JavaScript's line terminators, as a regex class body: what ``.`` excludes
+and where multiline ``^`` / ``$`` match."""
+
+_TRIM = SPACE.replace("\u2000-\u200a", "".join(map(chr, range(0x2000, 0x200B))))
+
+
+def trim(text: str) -> str:
+    """``String.prototype.trim``: strips JavaScript's whitespace only."""
+    return text.strip(_TRIM)

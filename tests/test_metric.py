@@ -10,7 +10,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import metric, testing
-from pyfect.metric._number import js_number
+from pyfect._js import js_number
 
 
 def _fresh[A, E](eff: fx.Effect[A, E]) -> fx.Effect[A, E]:

@@ -25,6 +25,7 @@ from opentelemetry.sdk.metrics.export import (
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 
+from pyfect._js import js_number
 from pyfect.context import Context
 from pyfect.metric import (
     CounterState,
@@ -35,7 +36,6 @@ from pyfect.metric import (
     SummaryState,
     unsafe_snapshot,
 )
-from pyfect.metric._number import js_number
 
 type TemporalityPreference = Literal["cumulative", "delta"]
 """``"cumulative"``: totals since the producer started (the default).

@@ -2886,3 +2886,27 @@ def check_stream_text_and_framers(
         ],
     )
     ndjson.duplex(to_text)  # pyright: ignore[reportArgumentType, reportCallIssue]
+
+
+# --- ConfigProvider --------------------------------------------------------------------
+
+
+def check_config_provider(needs_db: fx.Effect[fx.ConfigProvider, NotFound, Primary]) -> None:
+    from pyfect import config_provider as cp
+
+    provider = cp.from_env(env={"A": "1"})
+    assert_type(provider.load(["A"]), fx.Effect[cp.Node | None, cp.SourceError])
+    assert_type(provider.load(("A", 0)), fx.Effect[cp.Node | None, cp.SourceError])
+    provider.load("A")  # pyright: ignore[reportArgumentType]
+    assert_type(provider.or_else(cp.from_unknown({})).nested("APP"), cp.ConfigProvider)
+    assert_type(provider.constant_case().map_input(lambda path: (*path, "x")), cp.ConfigProvider)
+    assert_type(cp.make(lambda _path: fx.succeed(cp.Value("v"))), cp.ConfigProvider)
+    assert_type(cp.from_dot_env(), fx.Effect[cp.ConfigProvider, cp.SourceError])
+    assert_type(cp.from_dir("/run/secrets"), cp.ConfigProvider)
+    assert_type(fx.CurrentConfigProvider(), ServiceEffect[cp.ConfigProvider, Never])
+    assert_type(cp.layer(provider), fx.Layer[fx.CurrentConfigProvider])
+    assert_type(cp.layer(cp.from_dot_env()), fx.Layer[fx.CurrentConfigProvider, cp.SourceError])
+    assert_type(cp.layer(needs_db), fx.Layer[fx.CurrentConfigProvider, NotFound, Primary])
+    assert_type(cp.layer_add(provider, as_primary=True), fx.Layer[fx.CurrentConfigProvider])
+    assert_type(cp.layer_add(needs_db), fx.Layer[fx.CurrentConfigProvider, NotFound, Primary])
+    cp.Record({"A"})  # pyright: ignore[reportArgumentType]
