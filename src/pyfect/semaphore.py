@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pyfect._core import Effect, Restore, _Succeed, _Suspend, _Sync, uninterruptible_mask
+from pyfect._effect_args import require_effect
 from pyfect._waiters import WaitList
 from pyfect.option import Option, Some
 
@@ -81,6 +82,7 @@ class Semaphore:
         """Run ``eff`` holding ``n`` permits, releasing them however it ends.
         Only the wait is interruptible: once taken, the permits are guarded
         in the same step."""
+        require_effect(eff, "eff")
 
         def body(restore: Restore) -> Effect[A, E, R]:
             def acquire() -> Effect[A, E, R]:
@@ -99,6 +101,7 @@ class Semaphore:
     ) -> Effect[Option[A], E, R]:
         """Run ``eff`` holding ``n`` permits if they are free now (``Some``
         of its result); otherwise ``None`` without running it."""
+        require_effect(eff, "eff")
 
         def body(restore: Restore) -> Effect[Option[A], E, R]:
             def acquire() -> Effect[Option[A], E, R]:

@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Sync, _WithFiber
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect.context import Reference
 from pyfect.duration import Duration, Seconds, to_seconds
@@ -65,6 +66,8 @@ def monotonic() -> Effect[float]:
 
 
 def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[float, A], E, R]:
+    require_effect(eff, "eff")
+
     def body():
         start = yield from monotonic()
         value = yield from eff

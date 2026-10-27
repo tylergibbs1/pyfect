@@ -27,6 +27,7 @@ from pyfect._core import (
     _WithFiber,
     uninterruptible_mask,
 )
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber, Uninterruptible
 from pyfect.cause import merge
 from pyfect.context import Tag
@@ -187,6 +188,7 @@ def scoped[A, E](eff: Effect[A, E, Scope]) -> Effect[A, E]: ...
 def scoped[A, E, R](eff: Effect[A, E, Scope | R]) -> Effect[A, E, R]: ...
 def scoped(eff: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
     """Run ``eff`` in a new scope and close it when ``eff`` ends."""
+    require_effect(eff, "eff")
 
     def body() -> Effect[Any, Any, Any]:
         scope = CloseableScope()
@@ -221,6 +223,7 @@ def acquire_release[A, E = Never, RR = Never](
 ) -> Effect[A, E, RR | Scope]:
     """Acquire uninterruptibly and register ``release`` on the current
     scope."""
+    require_effect(acquire, "acquire")
 
     def body():
         a = yield from acquire
@@ -237,6 +240,7 @@ def acquire_use_release[A, B, EE = Never, RR = Never](
     release: Callable[[A, Exit[B, EE]], Effect[object, Never, RR]],
 ) -> Effect[B, EE, RR]:
     """Acquire, use, and always release, without needing a scope."""
+    require_effect(acquire, "acquire")
     return uninterruptible_mask(
         lambda restore: acquire.flat_map(
             lambda a: restore(_call_user(use, a)).on_exit(lambda ex: release(a, ex))
@@ -251,6 +255,7 @@ def fork_scoped[A, E, R](
     uninterruptible: Uninterruptible = False,
 ) -> Effect[Fiber[A, E], Never, R | Scope]:
     """Fork ``eff`` into the current scope (see ``fork_in``)."""
+    require_effect(eff, "eff")
     return Scope().flat_map(
         lambda scope: fork_in(
             eff, scope, start_immediately=start_immediately, uninterruptible=uninterruptible
@@ -269,6 +274,7 @@ def fork_in[A, E, R](
     when ``scope`` closes, and leaves the scope when it exits. Into a
     closed scope it gives an already-interrupted fiber that never ran
     ``eff``."""
+    require_effect(eff, "eff")
 
     def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
         if scope._closed is not None:

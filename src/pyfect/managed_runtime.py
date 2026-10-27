@@ -40,6 +40,7 @@ from typing import Any, Generic, Never, Self, TypeVar
 from weakref import WeakSet
 
 from pyfect._core import Effect, Restore, _Locally, _Succeed, _WithFiber, uninterruptible_mask
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber, current_fiber, current_run_scheduler
 from pyfect._root import new_root, start_root
 from pyfect.context import Context, Reference
@@ -168,6 +169,7 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
     ) -> Fiber[A, E | ER_co]:
         """Start ``eff`` with the layer's services and return its fiber
         (see the module docstring for where it runs)."""
+        require_effect(eff, "eff")
         current = current_run_scheduler()
         if current is not None:
             run: Scheduler = current
@@ -190,6 +192,7 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
     ) -> Interruptor:
         """``run_fork``, calling ``on_exit`` with the exit. Returns a
         function that interrupts the fiber."""
+        require_effect(eff, "eff")
         fiber = self.run_fork(eff, scheduler=scheduler, uninterruptible=uninterruptible)
         if on_exit is not None:
             fiber.unsafe_add_observer(on_exit)
@@ -200,6 +203,7 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         return interrupt
 
     def run_sync_exit[A, E = Never](self, eff: Effect[A, E, R_contra]) -> Exit[A, E | ER_co]:
+        require_effect(eff, "eff")
         # Called from one of the runtime's own sync fibers, driving its
         # scheduler would stall that fiber's run: the nested run gets its own.
         scheduler = SyncScheduler() if current_run_scheduler() is self._sync else self._sync
@@ -208,16 +212,19 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
             return drive(scheduler, fiber)
 
     def run_sync[A](self: ManagedRuntime[R_contra, Never], eff: Effect[A, Never, R_contra]) -> A:
+        require_effect(eff, "eff")
         return unwrap(self.run_sync_exit(eff))
 
     async def run_async_exit[A, E = Never](self, eff: Effect[A, E, R_contra]) -> Exit[A, E | ER_co]:
         """Run on the running loop. Cancelling the awaiting task interrupts
         the effect and waits for its finalizers."""
+        require_effect(eff, "eff")
         return await await_fiber(self._start(self._loop_scheduler(), eff))
 
     async def run_async[A](
         self: ManagedRuntime[R_contra, Never], eff: Effect[A, Never, R_contra]
     ) -> A:
+        require_effect(eff, "eff")
         return unwrap(await self.run_async_exit(eff))
 
     def _start[A, E](

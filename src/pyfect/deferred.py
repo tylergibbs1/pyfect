@@ -30,6 +30,7 @@ from pyfect._core import (
     _WithFiber,
     uninterruptible_mask,
 )
+from pyfect._effect_args import require_effect
 from pyfect.cause import Cause
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as die_exit
@@ -101,16 +102,19 @@ class Deferred[A, E = Never]:
         """Run ``eff`` and complete with its outcome. Does not run it if
         already completed; an interrupt while it runs completes with that
         interrupt."""
+        require_effect(eff, "eff")
         return _Suspend(lambda: _Succeed(False) if self._effect is not None else self.into(eff))
 
     def into[R](self, eff: Effect[A, E, R]) -> Effect[bool, Never, R]:
         """Run ``eff`` and complete with its outcome, even if the running
         fiber is interrupted (then with that interrupt). Runs ``eff`` even
         when already completed; ``complete`` does not."""
+        require_effect(eff, "eff")
         return uninterruptible_mask(lambda restore: restore(eff).exit().flat_map(self.done))
 
     def complete_with(self, eff: Effect[A, E]) -> Effect[bool]:
         """Complete with ``eff`` itself, unrun: every ``wait()`` runs it."""
+        require_effect(eff, "eff")
         return _Sync(lambda: self._settle(eff))
 
     def is_done(self) -> Effect[bool]:

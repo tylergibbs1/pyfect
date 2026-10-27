@@ -28,6 +28,7 @@ from pyfect._core import (
     _WithFiber,
     uninterruptible_mask,
 )
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._root import new_root, start_root
 from pyfect.clock import sleep
@@ -97,6 +98,7 @@ class RcRef(Generic[A_co, E_co]):
         """A ref that runs ``acquire`` (with the services in scope now, and
         a scope of its own) when first used. Without ``idle_time_to_live``
         the resource is released as soon as the last reference goes."""
+        require_effect(acquire, "acquire")
         ttl = None if idle_time_to_live is None else to_seconds(idle_time_to_live)
 
         def body(fiber: Fiber[Any, Any]) -> Effect[RcRef[T, X]]:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Never, overload
 
 from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect.cause import Cause, Die, Fail, _as_exception, from_reasons  # pyright: ignore[reportPrivateUsage]
 from pyfect.duration import Duration
 from pyfect.effect import fail_cause
@@ -23,6 +24,7 @@ def flaky(eff: Effect[Any, Any, Any], timeout: Duration = 30.0) -> Effect[Any, A
     included, up to 10 times while less than ``timeout`` has passed. Like
     Effect's ``flakyTest``, the last failure dies: its typed errors become
     defects, kept with their tracebacks."""
+    require_effect(eff, "eff")
     attempts: Effect[Any, Any, Any] = scoped(eff).sandbox().retry(recurs(10).up_to(timeout))
     return attempts.catch_all(lambda cause: fail_cause(_all_defects(cause)))
 

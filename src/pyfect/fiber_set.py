@@ -18,6 +18,7 @@ from collections.abc import Iterator
 from typing import Any, Never
 
 from pyfect._core import Effect, _AfterStarted, _Gen, _Succeed, _Suspend, _Sync, _WithFiber
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._fiber_collections import (
     INTERNAL_FIBER_ID,
@@ -103,6 +104,7 @@ class FiberSet[A = object, E = object]:
         """Fork ``eff`` into the set. It starts at once unless
         ``start_immediately=False``. A closed set gives back an interrupted
         fiber that never runs ``eff``."""
+        require_effect(eff, "eff")
 
         def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
             if self._fibers is None:

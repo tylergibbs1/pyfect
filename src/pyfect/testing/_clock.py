@@ -11,6 +11,7 @@ from collections.abc import Callable, Generator
 from typing import Any, Never
 
 from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Sync, _WithFiber, _YieldNow
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._wake_tracking import WakeTracker
 from pyfect.clock import Clock, ClockService, LiveClock
@@ -184,6 +185,7 @@ class TestClock:
 
     def with_live[A, E, R](self, eff: Effect[A, E, R]) -> Effect[A, E, R]:
         """Run ``eff`` with the live clock instead of this one."""
+        require_effect(eff, "eff")
         return eff.pipe(provide_service(Clock, self._live))
 
     def stop_warning(self) -> None:
@@ -285,6 +287,7 @@ def set_time(at: float) -> Effect[None]:
 def with_live[A, E, R](eff: Effect[A, E, R]) -> Effect[A, E, R]:
     """Run ``eff`` with the live clock. Under a ``TestClock`` that is the
     clock it replaced; otherwise the clock is already live."""
+    require_effect(eff, "eff")
 
     def run(clock: ClockService) -> Effect[A, E, R]:
         return clock.with_live(eff) if isinstance(clock, TestClock) else eff

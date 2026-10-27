@@ -8,6 +8,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Literal, Never, final
 
+from pyfect._effect_args import require_effect
 from pyfect.clock import Clock
 from pyfect.context import Context
 from pyfect.duration import Duration, to_seconds
@@ -94,6 +95,7 @@ def effect_fixture[A, E](
     The options are ``layer_fixture``'s. The value is a plain Python value,
     so any test can take it; to share services or forked fibers with
     ``effect`` tests, use ``layer_fixture``."""
+    require_effect(eff, "eff")
 
     def fixture() -> Generator[A]:
         with _held(

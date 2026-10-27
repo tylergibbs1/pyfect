@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Never
 
 from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect.clock import Clock
 from pyfect.context import Context
 from pyfect.duration import Duration, to_seconds
@@ -28,6 +29,7 @@ def run_test_exit[A, E](
     Raises ``StalledError`` when every fiber waits with nothing to wake it,
     and ``TestTimeoutError`` after ``timeout`` of real time; either way the
     effect is interrupted and its finalizers run first."""
+    require_effect(eff, "eff")
     clock = TestClock(warning_delay=warning_delay)
     limit = None if timeout is None else to_seconds(timeout)
     try:
@@ -58,6 +60,7 @@ async def run_test_async_exit[A, E](
     """Run ``eff`` on the running asyncio loop with a ``TestClock``, so
     ``from_async`` works on virtual time. Cancelling the awaiting task
     interrupts the effect and waits for its finalizers."""
+    require_effect(eff, "eff")
     clock = TestClock(warning_delay=warning_delay)
     limit = None if timeout is None else to_seconds(timeout)
     try:

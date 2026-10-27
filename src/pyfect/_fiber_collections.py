@@ -10,6 +10,7 @@ from collections.abc import Hashable, Iterator
 from typing import Any, TypeGuard
 
 from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._root import new_root, start_root
 from pyfect.context import Context
@@ -67,6 +68,7 @@ class CapturedRuntime:
         run it runs at once, up to its first wait, before the call returns
         (Effect evaluates it synchronously); from anywhere else it is
         scheduled."""
+        require_effect(eff, "eff")
         fiber: Fiber[A, E] = new_root(
             self.run_scheduler, self.context, scheduler=scheduler, uninterruptible=uninterruptible
         )

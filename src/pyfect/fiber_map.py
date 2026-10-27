@@ -28,6 +28,7 @@ from pyfect._core import (
     _Sync,
     _WithFiber,
 )
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._fiber_collections import (
     INTERNAL_FIBER_ID,
@@ -214,6 +215,7 @@ class FiberMap[K: Hashable, A = object, E = object]:
         ``start_immediately=False``. With ``only_if_missing`` and a fiber
         already there, gives back an interrupted fiber that never runs
         ``eff``. Running into a closed map interrupts the caller."""
+        require_effect(eff, "eff")
 
         def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
             if self._state is None:

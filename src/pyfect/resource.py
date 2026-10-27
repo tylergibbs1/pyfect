@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any, Never
 
 from pyfect._core import Effect, _FromExit, _Locally, _WithFiber
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._scheduled import scheduled
 from pyfect.exit import Exit, Success
@@ -37,6 +38,7 @@ class Resource[A, E = Never]:
     ) -> Effect[Resource[T, X], Never, Scope | R]:
         """A resource acquired now (with the services in scope now) and
         again on each ``refresh``."""
+        require_effect(acquire, "acquire")
 
         def body(fiber: Fiber[Any, Any]) -> Effect[Resource[T, X], Never, Scope]:
             captured = fiber._context
@@ -52,6 +54,7 @@ class Resource[A, E = Never]:
         """``manual``, refreshed each time ``policy`` recurs (first after its
         first delay) until the current scope closes. Failed refreshes are
         ignored."""
+        require_effect(acquire, "acquire")
         return Resource.manual(acquire).tap(
             lambda resource: scheduled(resource.refresh().ignore_cause(), policy).fork_scoped()
         )

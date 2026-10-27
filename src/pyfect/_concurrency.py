@@ -23,6 +23,7 @@ from pyfect._core import (
     _Suspend,
     _WithFiber,
 )
+from pyfect._effect_args import require_effects
 from pyfect._fiber import Fiber, interrupt_all
 from pyfect.cause import Cause, Interrupt, fail, merge
 from pyfect.duration import Duration, to_seconds
@@ -212,6 +213,7 @@ def race_first(a: Effect[Any, Any, Any], b: Effect[Any, Any, Any]) -> Effect[Any
 def race_all[A, EE = Never, RR = Never](*effects: Effect[A, EE, RR]) -> Effect[A, EE, RR]:
     """The first to succeed wins; the rest are interrupted. Fails only if
     all fail."""
+    require_effects(effects, "effects")
     if not effects:
         raise ValueError("race_all needs at least one effect")
     return _race(list(effects), first_exit_wins=False)
@@ -220,6 +222,7 @@ def race_all[A, EE = Never, RR = Never](*effects: Effect[A, EE, RR]) -> Effect[A
 def race_all_first[A, EE = Never, RR = Never](*effects: Effect[A, EE, RR]) -> Effect[A, EE, RR]:
     """The first to finish wins, success or failure; the rest are
     interrupted."""
+    require_effects(effects, "effects")
     if not effects:
         raise ValueError("race_all_first needs at least one effect")
     return _race(list(effects), first_exit_wins=True)

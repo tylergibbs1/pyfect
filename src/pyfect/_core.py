@@ -28,6 +28,7 @@ from __future__ import annotations
 from collections.abc import Callable, Generator
 from typing import TYPE_CHECKING, Any, Literal, Never, Self, TypeIs, overload
 
+from pyfect._effect_args import require_effect
 from pyfect._effect_base import SUSPEND, A_co, E_co, Frame, R_co, Step
 from pyfect._effect_concurrency import ConcurrencyMethods
 from pyfect._effect_errors import (
@@ -97,6 +98,7 @@ class Effect(
         self, that: Effect[B, E2, R2]
     ) -> Effect[B, E_co | E2, R_co | R2]:
         """Run ``that`` after this effect, keeping only its value."""
+        require_effect(that, "that")
         return _FlatMap(self, lambda _: that)
 
     def tap[E2 = Never, R2 = Never](
@@ -115,6 +117,7 @@ class Effect(
         self, that: Effect[B, E2, R2], *, concurrent: bool = False
     ) -> Effect[tuple[A_co, B], E_co | E2, R_co | R2]:
         """Pair the results: in order, or both at once with ``concurrent``."""
+        require_effect(that, "that")
         return self.zip_with(that, _pair, concurrent=concurrent)
 
     def zip_with[B, C, E2 = Never, R2 = Never](
@@ -122,6 +125,7 @@ class Effect(
     ) -> Effect[C, E_co | E2, R_co | R2]:
         """Combine the results with ``f``. With ``concurrent``, both run at
         once and the first failure interrupts the other."""
+        require_effect(that, "that")
         if not concurrent:
             return _FlatMap(self, lambda a: _Map(that, lambda b: f(a, b)))
         from pyfect._all import all
@@ -161,6 +165,7 @@ class Effect(
     ) -> Effect[Option[A_co], E_co | E2, R_co | R2]:
         """Run this effect only if ``condition`` succeeds with ``True``:
         ``Some(value)`` if it ran, ``None`` if it did not."""
+        require_effect(condition, "condition")
         from pyfect.option import Some
 
         return _FlatMap(condition, lambda run: _Map(self, Some) if run else _Succeed(None))

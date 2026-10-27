@@ -15,6 +15,7 @@ from types import TracebackType
 from typing import Any, Never
 
 from pyfect._core import Effect, _Sync
+from pyfect._effect_args import require_effect
 from pyfect.effect import from_async
 from pyfect.exit import Exit, Failure
 from pyfect.scope import Scope, acquire_release
@@ -29,6 +30,7 @@ def acquire_context[T, E = Never, R = Never](
 ) -> Effect[T, E, R | Scope]:
     """Enter the context manager ``acquire`` produces; exit it when the
     scope closes. If ``__enter__`` or ``__exit__`` raises, that is a defect."""
+    require_effect(acquire, "acquire")
 
     def enter(cm: AbstractContextManager[T]) -> Effect[tuple[AbstractContextManager[T], T]]:
         return _Sync(lambda: (cm, cm.__enter__()))
@@ -44,6 +46,7 @@ def acquire_async_context[T, E = Never, R = Never](
 ) -> Effect[T, E, R | Scope]:
     """``acquire_context`` for ``async with`` managers. Needs an asyncio
     loop (``run_async`` / ``run_main``), like ``from_async``."""
+    require_effect(acquire, "acquire")
 
     def enter(
         cm: AbstractAsyncContextManager[T],

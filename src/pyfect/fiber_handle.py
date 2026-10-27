@@ -27,6 +27,7 @@ from pyfect._core import (
     _WithFiber,
     uninterruptible_mask,
 )
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._fiber_collections import (
     INTERNAL_FIBER_ID,
@@ -177,6 +178,7 @@ class FiberHandle[A = object, E = object]:
         ``start_immediately=False``. With ``only_if_missing`` and a current
         fiber, gives back an interrupted fiber that never runs ``eff``.
         Running into a closed handle interrupts the caller."""
+        require_effect(eff, "eff")
 
         def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
             state = self._state

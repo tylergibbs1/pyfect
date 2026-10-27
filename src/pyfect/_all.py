@@ -14,6 +14,7 @@ from typing import Any, Literal, Never, overload
 
 from pyfect._concurrency import Concurrency, for_each
 from pyfect._core import Effect, _Suspend
+from pyfect._effect_args import require_effects
 from pyfect.result import Result
 
 type Mode = Literal["default", "result"]
@@ -168,6 +169,7 @@ def all(
     mode: Mode = "default",
 ) -> Effect[Any, Any, Any]:
     """Run effects and collect their results as a tuple, in order."""
+    require_effects(effects, "effects")
     collected = for_each(effects, _step_for(mode), concurrency=concurrency)
     return collected.as_void() if discard else collected.map(tuple)
 

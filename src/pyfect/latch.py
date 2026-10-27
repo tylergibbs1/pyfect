@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from pyfect._core import Effect, _Callback, _Succeed, _Sync, _WithFiber
+from pyfect._effect_args import require_effect
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
@@ -68,6 +69,7 @@ class Latch:
 
     def when_open[A, E, R](self, eff: Effect[A, E, R]) -> Effect[A, E, R]:
         """Run ``eff`` once the latch lets this fiber through."""
+        require_effect(eff, "eff")
         return self.wait().and_then(eff)
 
     def unsafe_open(self) -> bool:

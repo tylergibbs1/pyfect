@@ -40,6 +40,7 @@ from pyfect._core import (
     _Suspend,
     _WithFiber,
 )
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._layer_core import (
     CurrentMemoMap,
@@ -121,6 +122,7 @@ def effect[S, T, E = Never, R = Never](
 def effect(tag: TagLike[Any, Any], make: Effect[Any, Any, Any]) -> Layer[Any, Any, Any]:
     """Build a service with an effect. ``make`` may acquire resources
     (it runs with a ``Scope``); they are released with the layer."""
+    require_effect(make, "make")
     return effect_context(make.map(lambda service: Context.make(tag, service)))
 
 
@@ -133,6 +135,7 @@ def effect_discard[E = Never, R = Never](
 def effect_discard(make: Effect[object, Any, Any]) -> Layer[Any, Any, Any]:
     """Run ``make`` for its effects (and resources) when the layer builds.
     Builds no services."""
+    require_effect(make, "make")
     return effect_context(make.as_(Context.empty()))
 
 
@@ -155,6 +158,7 @@ def unwrap[O, EE = Never, RR = Never](
 def unwrap(eff: Effect[Layer[Any, Any, Any], Any, Any]) -> Layer[Any, Any, Any]:
     """Build the layer that ``eff`` makes. ``eff`` runs once per build, in
     the layer's scope."""
+    require_effect(eff, "eff")
     holder: Layer[_Unwrapped, Any, Any] = effect(_Unwrapped, eff)
     return holder.flat_map(lambda ctx: ctx.get(_Unwrapped))
 

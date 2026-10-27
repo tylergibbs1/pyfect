@@ -27,6 +27,7 @@ from pyfect._core import (
     _WithFiber,
     uninterruptible_mask,
 )
+from pyfect._effect_args import require_effect
 from pyfect._round_robin import RoundRobin
 from pyfect.cause import Cause
 from pyfect.effect import never
@@ -121,6 +122,7 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
     def with_permits[A, E, R](self, key: K, eff: Effect[A, E, R], n: int = 1) -> Effect[A, E, R]:
         """Run ``eff`` holding ``n`` permits taken in ``key``'s queue,
         releasing them however it ends."""
+        require_effect(eff, "eff")
         if n <= 0:
             return eff
         if self.capacity < n:
@@ -135,6 +137,7 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
     ) -> Effect[Option[A], E, R]:
         """Run ``eff`` holding ``n`` permits if they are free now (``Some``
         of its result); otherwise ``None`` without running it."""
+        require_effect(eff, "eff")
         if n <= 0:
             return eff.map(Some)
 

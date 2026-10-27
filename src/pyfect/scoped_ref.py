@@ -15,6 +15,7 @@ from collections.abc import Callable
 from typing import Any, Final, Never, overload
 
 from pyfect._core import Effect, _Gen, _Locally, _Sync
+from pyfect._effect_args import require_effect
 from pyfect.effect import interrupt
 from pyfect.effect import sync as sync_effect
 from pyfect.exit import Exit, Failure, Success
@@ -45,6 +46,7 @@ class ScopedRef[A]:
     ) -> Effect[ScopedRef[T], X, Scope | R]:
         """A ref holding what ``acquire`` gives, with its resources in the
         ref's first generation."""
+        require_effect(acquire, "acquire")
 
         def body():
             owner = yield from Scope()
@@ -79,6 +81,7 @@ class ScopedRef[A]:
         one. Sets run one at a time. If acquiring fails the old value
         stays; if releasing the old value fails, the new one is released
         too and the old one stays current."""
+        require_effect(acquire, "acquire")
 
         def body():
             generation = self._scope._fork_now()

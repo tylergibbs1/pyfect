@@ -36,6 +36,7 @@ from contextlib import contextmanager
 from typing import Any, Never, Protocol, overload
 
 from pyfect._core import Effect
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._root import ambient_run, new_root, start_root
 from pyfect.context import Context
@@ -54,6 +55,7 @@ def run_sync_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]: ...
 @overload
 def run_sync_exit[A, E, R](eff: Effect[A, E, R], *, context: Context[R]) -> Exit[A, E]: ...
 def run_sync_exit(eff: Effect[Any, Any, Any], *, context: Context = _EMPTY) -> Exit[Any, Any]:
+    require_effect(eff, "eff")
     scheduler = SyncScheduler()
     fiber: Fiber[Any, Any] = new_root(scheduler, context)
     fiber._start(eff)
@@ -90,6 +92,7 @@ async def run_async_exit[A, E, R](eff: Effect[A, E, R], *, context: Context[R]) 
 async def run_async_exit(
     eff: Effect[Any, Any, Any], *, context: Context = _EMPTY
 ) -> Exit[Any, Any]:
+    require_effect(eff, "eff")
     fiber: Fiber[Any, Any] = new_root(AsyncioScheduler.current(), context)
     fiber._start(eff)
     return await await_fiber(fiber)
@@ -130,6 +133,7 @@ def run_fork(
     runs it (driving it is up to the caller); without one this raises
     ``NoRunError``. Inside a run, ``scheduler`` is the fiber's
     ``CurrentScheduler``."""
+    require_effect(eff, "eff")
     run, now = ambient_run(scheduler)
     fiber: Fiber[Any, Any] = new_root(
         run,
@@ -210,6 +214,7 @@ def run_main[A, E](
     is not only an interrupt is reported first, unless
     ``disable_error_reporting``: with status 1 by raising the error (Python
     prints its traceback), with any other status by printing the cause."""
+    require_effect(eff, "eff")
     ex = asyncio.run(_run_main_exit(eff))
     code = teardown(ex)
     if isinstance(ex, Success):

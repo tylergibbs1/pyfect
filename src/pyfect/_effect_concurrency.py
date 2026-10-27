@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Never
 
 from pyfect import _core
+from pyfect._effect_args import require_effect
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
 from pyfect.duration import Duration
 
@@ -93,6 +94,7 @@ class ConcurrencyMethods(EffectBase[A_co, E_co, R_co]):
     ) -> Effect[A_co | B, E_co | E2, R_co | R2]:
         """The first to succeed wins and the other is interrupted. Fails
         only if both fail."""
+        require_effect(that, "that")
         from pyfect._concurrency import race
 
         return race(as_effect(self), that)
@@ -101,6 +103,7 @@ class ConcurrencyMethods(EffectBase[A_co, E_co, R_co]):
         self, that: Effect[B, E2, R2]
     ) -> Effect[A_co | B, E_co | E2, R_co | R2]:
         """The first to finish wins, success or failure."""
+        require_effect(that, "that")
         from pyfect._concurrency import race_first
 
         return race_first(as_effect(self), that)

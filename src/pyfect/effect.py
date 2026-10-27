@@ -36,6 +36,7 @@ from pyfect._core import (
     _WithFiber,
     _YieldNow,
 )
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
@@ -115,7 +116,10 @@ def transpose_option[A = Never, E = Never, R = Never](
     option: Option[Effect[A, E, R]],
 ) -> Effect[Option[A], E, R]:
     """Run the effect inside a ``Some``, keeping its value in a ``Some``."""
-    return _Succeed(None) if option is None else option.value.map(Some)
+    if option is None:
+        return _Succeed(None)
+    require_effect(option.value, "option.value")
+    return option.value.map(Some)
 
 
 @overload
@@ -360,6 +364,7 @@ def catch_no_such_element(eff: Effect[Any, Any, Any]) -> Effect[Option[Any], Any
 
     eff.pipe(catch_no_such_element)
     """
+    require_effect(eff, "eff")
     return eff.match_effect(
         on_failure=lambda e: _Succeed(None) if isinstance(e, NoSuchElementException) else fail(e),
         on_success=lambda a: _Succeed(Some(a)),

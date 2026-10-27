@@ -18,6 +18,7 @@ from collections.abc import Callable
 from typing import Any, Generic, Never, Self, TypeVar, overload
 
 from pyfect._core import Effect, _FailCause, _Locally, _Succeed, _Suspend, _WithFiber
+from pyfect._effect_args import require_effect
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.context import Context, Tag, TagLike
@@ -329,6 +330,7 @@ def effect_context[A, E = Never, R = Never](
 def effect_context(eff: Effect[Context, Any, Any]) -> Layer[Any, Any, Any]:
     """Build every service of the context ``eff`` makes. ``eff`` may acquire
     resources (it runs with a ``Scope``); they are released with the layer."""
+    require_effect(eff, "eff")
     return from_build_memo(lambda _memo, scope: _in_scope(eff, scope))
 
 

@@ -19,6 +19,7 @@ from collections.abc import Callable
 from typing import Any, Generic, TypeVar
 
 from pyfect._core import Effect, _FailCause, _Gen
+from pyfect._effect_args import require_effect
 from pyfect.cause import Fail, fail
 from pyfect.clock import monotonic, sleep
 from pyfect.duration import ZERO, Duration, Seconds, to_seconds
@@ -223,6 +224,8 @@ def fibonacci(one: Duration) -> Schedule[object, Seconds]:
 
 
 def retry[A, E, R](eff: Effect[A, E, R], schedule: Schedule[E, object]) -> Effect[A, E, R]:
+    require_effect(eff, "eff")
+
     def body():
         state = schedule.initial
         while True:
@@ -242,6 +245,8 @@ def retry[A, E, R](eff: Effect[A, E, R], schedule: Schedule[E, object]) -> Effec
 
 
 def repeat[A, B, E, R](eff: Effect[A, E, R], schedule: Schedule[A, B]) -> Effect[B, E, R]:
+    require_effect(eff, "eff")
+
     def body():
         state = schedule.initial
         while True:

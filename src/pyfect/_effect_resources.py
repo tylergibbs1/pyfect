@@ -11,6 +11,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Never
 
 from pyfect import _core
+from pyfect._effect_args import require_effect
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, Step, as_effect
 from pyfect.cause import Cause, merge
 from pyfect.exit import Exit, Failure, Success
@@ -39,6 +40,7 @@ class ResourceMethods(EffectBase[A_co, E_co, R_co]):
     def ensuring[R2 = Never](
         self, finalizer: Effect[object, Never, R2]
     ) -> Effect[A_co, E_co, R_co | R2]:
+        require_effect(finalizer, "finalizer")
         return self.on_exit(lambda _: finalizer)
 
     def on_error[R2 = Never](
@@ -52,6 +54,8 @@ class ResourceMethods(EffectBase[A_co, E_co, R_co]):
     def on_interrupt[R2 = Never](
         self, finalizer: Effect[object, Never, R2]
     ) -> Effect[A_co, E_co, R_co | R2]:
+        require_effect(finalizer, "finalizer")
+
         def handle(ex: Exit[A_co, E_co]) -> Effect[object, Never, R2]:
             if isinstance(ex, Failure) and ex.cause.has_interrupts:
                 return finalizer

@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any, Never, overload
 
 from pyfect._core import Effect, _Locally, _Succeed, _Suspend, _WithFiber
+from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect.context import Context, TagLike, tag_class
 from pyfect.exit import Exit
@@ -90,6 +91,7 @@ def provide_service_effect[S, T, E2 = Never, R2 = Never](
 
     eff.pipe(provide_service_effect(Database, connect()))
     """
+    require_effect(acquire, "acquire")
     return _ProvideServiceEffect(tag_class(tag), acquire)
 
 
