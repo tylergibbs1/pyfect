@@ -1729,3 +1729,19 @@ def check_logger_layer(make: fx.Effect[fx.Logger[str], NotFound, Primary]) -> No
     assert_type(
         logger.layer([make], merge_with_existing=True), layer.Layer[Never, NotFound, Primary]
     )
+
+
+def check_console(eff: fx.Effect[int, NotFound, Primary]) -> None:
+    assert_type(fx.console.log("a", 1), fx.Effect[None])
+    assert_type(fx.console.clear, fx.Effect[None])
+    assert_type(fx.console.group(label="g"), fx.Effect[None, Never, fx.Scope])
+    assert_type(fx.console.time(), fx.Effect[None, Never, fx.Scope])
+    assert_type(fx.console.with_group(eff, label="g"), fx.Effect[int, NotFound, Primary])
+    assert_type(fx.console.with_time(eff, "t"), fx.Effect[int, NotFound, Primary])
+    assert_type(fx.console.console_with(fx.succeed), fx.Effect[fx.console.Console])
+    assert_type(fx.testing.log_lines, fx.Effect[list[object]])
+    assert_type(fx.testing.test_console(), fx.Effect[fx.testing.TestConsole])
+    assert_type(fx.testing.TestConsole.layer(), layer.Layer[Never])
+    # A TestConsole is a Console; a partial console is not.
+    fx.void.pipe(fx.provide_service(fx.console.CurrentConsole, fx.testing.TestConsole()))
+    fx.void.pipe(fx.provide_service(fx.console.CurrentConsole, object()))  # pyright: ignore[reportArgumentType]

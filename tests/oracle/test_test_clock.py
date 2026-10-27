@@ -5,7 +5,8 @@ Time is in seconds (floats), as everywhere in pyfect; the clock reads a
 float as the decimal it was written as, so ``1_000_000_000.001`` is exactly
 1_000_000_000_001_000_000 nanoseconds. The warnings go to Python's
 ``warnings`` rather than a Console, so "warnings bypass TestConsole" checks
-that the warning is raised.
+that the warning is raised and the ``TestConsole`` holds only the ordinary
+output.
 """
 
 import math
@@ -29,6 +30,7 @@ def test_warnings_bypass_test_console(
     recwarn: pytest.WarningsRecorder,
 ):
     """TestClock.test.ts "warnings bypass TestConsole - ${warning}"."""
+    yield from fx.console.log("ordinary output")
     then = fx.yield_now().forever() if warning == "still running without suspending" else fx.void
     yield from fx.sleep(60).and_then(then).fork()
     if warning == "still running without suspending":
@@ -43,6 +45,7 @@ def test_warnings_bypass_test_console(
             yield from fx.sleep(0.01)
 
     yield from testing.with_live(wait_for_warning.timeout(3))
+    assert (yield from testing.log_lines) == ["ordinary output"]
     assert seen()
 
 

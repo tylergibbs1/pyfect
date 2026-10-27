@@ -12,7 +12,7 @@ take no real time::
         assert isinstance((yield from fiber.join()), fx.Failure)
 
 - ``effect`` / ``live``: pytest tests written as generators or effects,
-  with a ``TestClock`` (or the live clock) and a ``Scope``, a real-time
+  with a ``TestClock`` and ``TestConsole`` (or the live ones) and a ``Scope``, a real-time
   timeout that interrupts them and runs their finalizers, and
   ``asyncio=True`` for effects that need an event loop.
 - ``layer_fixture``: build a layer once per pytest scope; tests that take
@@ -24,6 +24,8 @@ take no real time::
   synchronously or on the running asyncio loop.
 - ``with_live``, ``TestClock.layer()``: the live clock inside a test, and a
   test clock inside any program.
+- ``TestConsole``: a console recording every call; ``effect`` tests run
+  with a fresh one, read back with ``log_lines`` / ``error_lines``.
 - ``assert_exit_success`` and friends: failures print ``Cause.pretty()``.
 
 If every fiber ends up waiting with nothing to wake them, synchronous runs
@@ -47,6 +49,13 @@ from pyfect.testing._clock import (
     test_clock,
     with_live,
 )
+from pyfect.testing._console import (
+    Entry,
+    TestConsole,
+    error_lines,
+    log_lines,
+    test_console,
+)
 from pyfect.testing._decorators import TestBody, TestDecorator, effect, live
 from pyfect.testing._flaky import flaky
 from pyfect.testing._layers import Services, effect_fixture, layer_fixture
@@ -56,10 +65,12 @@ from pyfect.testing._runtime import TestTimeoutError
 __all__ = [
     "BusyFiberWarning",
     "ClockNotAdvancedWarning",
+    "Entry",
     "Services",
     "StalledError",
     "TestBody",
     "TestClock",
+    "TestConsole",
     "TestDecorator",
     "TestTimeoutError",
     "adjust",
@@ -69,14 +80,17 @@ __all__ = [
     "assert_success",
     "effect",
     "effect_fixture",
+    "error_lines",
     "flaky",
     "layer_fixture",
     "live",
+    "log_lines",
     "run_test",
     "run_test_async",
     "run_test_async_exit",
     "run_test_exit",
     "set_time",
     "test_clock",
+    "test_console",
     "with_live",
 ]

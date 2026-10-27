@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal, Never, final
 from pyfect._effect_args import require_effect
 from pyfect._layer_core import require_layer
 from pyfect.clock import Clock
+from pyfect.console import CurrentConsole
 from pyfect.context import Context
 from pyfect.duration import Duration, to_seconds
 from pyfect.effect import Effect, provide_service
@@ -19,6 +20,7 @@ from pyfect.layer import Layer
 from pyfect.run import unwrap
 from pyfect.scope import CloseableScope, Scope
 from pyfect.testing._clock import TestClock
+from pyfect.testing._console import TestConsole
 from pyfect.testing._runtime import AsyncioRuntime, Runtime, SyncRuntime
 
 if TYPE_CHECKING:
@@ -60,9 +62,9 @@ def layer_fixture[RO, E](
     """A pytest fixture that builds ``layer`` once per ``scope`` and
     releases its resources when the scope ends.
 
-    The layer is built with a ``TestClock`` (shared by every test that uses
-    the fixture), unless ``live``: then it and its ``effect`` tests use the
-    live clock. Tests using the fixture run on the
+    The layer is built with a ``TestClock`` and a ``TestConsole`` (shared
+    by every test that uses the fixture), unless ``live``: then it and its
+    ``effect`` tests use the live clock and console. Tests using the fixture run on the
     fixture's runtime, so fibers the layer forks keep running; ``asyncio``
     picks an event loop for it, needed by ``from_async``. ``timeout``
     bounds building and releasing, in real time."""
@@ -134,7 +136,11 @@ def _held[T](
     limit = None if timeout is None else to_seconds(timeout)
     runtime: Runtime = AsyncioRuntime() if asyncio else SyncRuntime()
     clock = None if live else TestClock(warning_delay=warning_delay)
-    context = Context.empty() if clock is None else Context.empty().add(Clock, clock)
+    context = (
+        Context.empty()
+        if clock is None
+        else Context.empty().add(Clock, clock).add(CurrentConsole, TestConsole())
+    )
     resources = CloseableScope()
     try:
         built = unwrap(runtime.run(build(resources), context, timeout=limit))

@@ -16,40 +16,6 @@ from pyfect.console import CurrentConsole, LiveConsole
 from pyfect.logger._text import format_unknown, json_text
 
 
-class _Calls:
-    """A console recording each call as ``(method, args)``."""
-
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, tuple[object, ...]]] = []
-
-    def _record(self, method: str, args: tuple[object, ...]) -> None:
-        self.calls.append((method, args))
-
-    def log(self, *args: object) -> None:
-        self._record("log", args)
-
-    def info(self, *args: object) -> None:
-        self._record("info", args)
-
-    def debug(self, *args: object) -> None:
-        self._record("debug", args)
-
-    def warn(self, *args: object) -> None:
-        self._record("warn", args)
-
-    def error(self, *args: object) -> None:
-        self._record("error", args)
-
-    def trace(self, *args: object) -> None:
-        self._record("trace", args)
-
-    def group(self, *args: object) -> None:
-        self._record("group", args)
-
-    def group_end(self) -> None:
-        self._record("group_end", ())
-
-
 def _capture() -> tuple[list[logger.Options], fx.Logger[None]]:
     entries: list[logger.Options] = []
     return entries, fx.Logger.make(entries.append)
@@ -277,7 +243,7 @@ def test_annotate_logs_scoped_removes_an_object_annotation_on_close():
 
 @testing.effect
 def test_with_logger_adds_to_the_current_loggers_once():
-    console = _Calls()
+    console = testing.TestConsole()
     entries, capture = _capture()
     yield from (
         fx.log("x")
@@ -286,12 +252,12 @@ def test_with_logger_adds_to_the_current_loggers_once():
         .pipe(fx.provide_service(CurrentConsole, console))
     )
     assert len(entries) == 1
-    assert [method for method, _ in console.calls] == ["log"]
+    assert [method for method, _ in console.entries] == ["log"]
 
 
 @testing.effect
 def test_layer_replaces_the_loggers_unless_merging():
-    console = _Calls()
+    console = testing.TestConsole()
     entries, capture = _capture()
     yield from (
         fx.log("x")
@@ -299,14 +265,14 @@ def test_layer_replaces_the_loggers_unless_merging():
         .pipe(fx.provide_service(CurrentConsole, console))
     )
     assert len(entries) == 1
-    assert console.calls == []
+    assert console.entries == []
     yield from (
         fx.log("y")
         .pipe(fx.provide(logger.layer([capture], merge_with_existing=True)))
         .pipe(fx.provide_service(CurrentConsole, console))
     )
     assert len(entries) == 2
-    assert len(console.calls) == 1
+    assert len(console.entries) == 1
 
 
 @testing.effect
@@ -325,13 +291,13 @@ def test_layer_installs_each_logger_once():
 
 @testing.effect
 def test_an_empty_layer_silences_logging():
-    console = _Calls()
+    console = testing.TestConsole()
     yield from (
         fx.log("x")
         .pipe(fx.provide(logger.layer([])))
         .pipe(fx.provide_service(CurrentConsole, console))
     )
-    assert console.calls == []
+    assert console.entries == []
 
 
 @testing.effect
@@ -362,18 +328,18 @@ def test_batched_keeps_flushing_after_the_fiber_that_made_it_ends():
 
 @testing.effect
 def test_log_to_stderr_switches_the_console_method():
-    console = _Calls()
+    console = testing.TestConsole()
     yield from (
         fx.log("x")
         .pipe(fx.provide_service(CurrentConsole, console))
         .pipe(fx.provide_service(fx.LogToStderr, True))
     )
-    assert [method for method, _ in console.calls] == ["error"]
+    assert [method for method, _ in console.entries] == ["error"]
 
 
 @testing.effect
 def test_with_leveled_console_picks_the_method_by_level():
-    console = _Calls()
+    console = testing.TestConsole()
     leveled = logger.format_simple.with_leveled_console()
     yield from (
         fx.all(
@@ -389,7 +355,7 @@ def test_with_leveled_console_picks_the_method_by_level():
         .pipe(fx.provide_service(CurrentConsole, console))
         .pipe(fx.provide_service(fx.MinimumLogLevel, fx.LogLevel.ALL))
     )
-    assert [method for method, _ in console.calls] == [
+    assert [method for method, _ in console.entries] == [
         "trace",
         "debug",
         "info",
@@ -401,7 +367,7 @@ def test_with_leveled_console_picks_the_method_by_level():
 
 @testing.effect
 def test_console_pretty_writes_a_header_then_a_group():
-    console = _Calls()
+    console = testing.TestConsole()
     pretty = logger.console_pretty(colors=False, format_date=lambda _: "T")
     yield from (
         fx.log_warning("hello", {"n": 1}, fx.cause.fail("bad"))
@@ -409,21 +375,21 @@ def test_console_pretty_writes_a_header_then_a_group():
         .pipe(fx.provide(logger.layer([pretty])))
         .pipe(fx.provide_service(CurrentConsole, console))
     )
-    methods = [method for method, _ in console.calls]
+    methods = [method for method, _ in console.entries]
     assert methods == ["log", "group", "log", "log", "log", "group_end"]
-    header = str(console.calls[0][1][0])
+    header = str(console.entries[0][1][0])
     assert header.startswith("[T] WARN (#")
     assert header.endswith(": hello")
-    assert "bad" in str(console.calls[2][1][0])
-    assert console.calls[3][1] == ({"n": 1},)
-    assert console.calls[4][1] == ("user:", "ada")
+    assert "bad" in str(console.entries[2][1][0])
+    assert console.entries[3][1] == ({"n": 1},)
+    assert console.entries[4][1] == ("user:", "ada")
 
 
 @testing.effect
 def test_console_pretty_puts_a_logged_function_in_the_header():
     """Effect's ``structuredMessage`` turns a function into a string, so a
     function logged first joins the header line."""
-    console = _Calls()
+    console = testing.TestConsole()
 
     def handler() -> None: ...
 
@@ -433,32 +399,32 @@ def test_console_pretty_puts_a_logged_function_in_the_header():
         .pipe(fx.provide(logger.layer([pretty])))
         .pipe(fx.provide_service(CurrentConsole, console))
     )
-    assert str(console.calls[0][1][0]).endswith(f": {handler}")
-    assert [method for method, _ in console.calls] == ["log", "group", "group_end"]
+    assert str(console.entries[0][1][0]).endswith(f": {handler}")
+    assert [method for method, _ in console.entries] == ["log", "group", "group_end"]
 
 
 @testing.effect
 def test_console_pretty_colors_the_level():
-    console = _Calls()
+    console = testing.TestConsole()
     yield from (
         fx.log_error("x")
         .pipe(fx.provide(logger.layer([logger.console_pretty(colors=True)])))
         .pipe(fx.provide_service(CurrentConsole, console))
     )
-    header = str(console.calls[0][1][0])
+    header = str(console.entries[0][1][0])
     assert "\x1b[31mERROR\x1b[0m" in header
     assert "\x1b[1m\x1b[36mx\x1b[0m" in header
 
 
 @testing.effect
 def test_console_json_writes_one_json_line():
-    console = _Calls()
+    console = testing.TestConsole()
     yield from (
         fx.log("x")
         .pipe(fx.provide(logger.layer([logger.console_json])))
         .pipe(fx.provide_service(CurrentConsole, console))
     )
-    ((method, (line,)),) = console.calls
+    ((method, (line,)),) = console.entries
     assert method == "log"
     assert str(line).startswith('{"message":"x","level":"INFO"')
 

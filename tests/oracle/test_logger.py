@@ -1,8 +1,7 @@
 """Ports of Effect's ``Logger.test.ts``.
 
-Each test's docstring is the Effect test title. ``TestConsole.logLines`` is
-a recording console provided as ``CurrentConsole``; it keeps each argument
-of a console call, as ``logLines`` does. Fiber ids are global in pyfect, so
+Each test's docstring is the Effect test title. ``@testing.effect`` runs
+each test with a ``TestConsole``, as ``it.effect`` does. Fiber ids are global in pyfect, so
 ``(#1)`` is matched as ``(#\\d+)``. ``String(options.message)`` of a
 one-item message is the item, ``" ".join(...)`` here. Durations are
 seconds.
@@ -15,25 +14,9 @@ from collections.abc import Mapping, Sequence
 
 import pyfect as fx
 from pyfect import logger, testing
-from pyfect.console import CurrentConsole
 
 _HEADER = re.compile(r"\[\d{2}:\d{2}:\d{2}\.\d{3}\]\sINFO\s\(#\d+\)")
 _DONE = fx.Success(None)
-
-
-class _LogLines:
-    """A console that records every argument it is given, in order."""
-
-    def __init__(self) -> None:
-        self.lines: list[object] = []
-
-    def log(self, *args: object) -> None:
-        self.lines.extend(args)
-
-    info = debug = warn = error = trace = group = log
-
-    def group_end(self) -> None:
-        pass
 
 
 def _text(message: Sequence[object]) -> str:
@@ -54,14 +37,8 @@ def _collecting(
 @testing.effect
 def test_should_output_logs():
     """should output logs"""
-    console = _LogLines()
-    yield from (
-        fx.log_info("info", "message")
-        .annotate_logs("key", "value")
-        .with_log_span("span")
-        .pipe(fx.provide_service(CurrentConsole, console))
-    )
-    result = console.lines
+    yield from fx.log_info("info", "message").annotate_logs("key", "value").with_log_span("span")
+    result = yield from testing.log_lines
     assert re.match(_HEADER.pattern + r"\sspan=\dms:", str(result[0]))
     assert result[1] == "info"
     assert result[2] == "message"
@@ -233,11 +210,8 @@ def test_annotate_logs_scoped_restores_nan_annotations():
 @testing.effect
 def test_default_logger_preserves_message_item_order_when_logging_a_cause():
     """default logger preserves message item order when logging a cause"""
-    console = _LogLines()
-    yield from fx.log("first", fx.cause.fail("boom"), "second").pipe(
-        fx.provide_service(CurrentConsole, console)
-    )
-    result = console.lines
+    yield from fx.log("first", fx.cause.fail("boom"), "second")
+    result = yield from testing.log_lines
     assert re.match(_HEADER.pattern + ":", str(result[0]))
     assert result[1] == "first"
     assert result[2] == "second"

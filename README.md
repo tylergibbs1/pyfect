@@ -161,6 +161,12 @@ every entry to the standard library's `logging` with the clock's time and the ca
 `exc_info`. `ignore(log=True)` logs what it drops; pool and cache finalizer failures are logged at
 `UnhandledLogLevel`.
 
+**Console.** `fx.console.log(...)`, `warn`, `error`, `table`, `count`, `time_log`, ... are
+effects calling the `Console` in `CurrentConsole` (a `LiveConsole` printing like Node's
+`console` unless provided); `console.group(label=)` and `console.time(label)` stay open until
+the scope closes, `console.with_group(eff, label=)` / `with_time(eff)` wrap one effect. The
+console loggers write through the same service.
+
 **Deterministic tests.** `fx.testing` uses a `TestClock`: time moves only when the test
 calls `adjust` or `set_time`, and each fiber it wakes runs until it suspends before time
 moves on. A test that would hang fails with `StalledError` instead, and a woken fiber that
@@ -184,8 +190,8 @@ def test_retry_backs_off():
     assert (yield from fiber.join()) == "ok"
 ```
 
-- `@testing.effect` runs the test with a fresh `TestClock` and a `Scope` that closes when
-  the test ends; `@testing.live` uses the real clock. A test may also return an effect.
+- `@testing.effect` runs the test with a fresh `TestClock`, a `TestConsole` and a `Scope`
+  that closes when the test ends; `@testing.live` uses the real clock and console. A test may also return an effect.
   Any typed error or defect fails the test with its traceback; a failed `assert` keeps
   pytest's explanation.
 - Each test has a real-time timeout (`@testing.effect(timeout=10)`, default from the
@@ -204,6 +210,8 @@ def test_retry_backs_off():
   scope; any test can take its value, and the finalizers it added run when the scope ends.
 - `testing.flaky(eff, timeout=30)` retries an effect that sometimes fails; if it never
   passes, the last failure dies (typed errors become defects), like Effect's `flakyTest`.
+- `yield from testing.log_lines` / `error_lines` read back what the test (or a console
+  logger) wrote; `testing.TestConsole` keeps every call as an `Entry(method, parameters)`.
 - `testing.with_live(eff)` runs part of a test on the real clock; `TestClock.layer()`
   provides a test clock to any program; `set_time` may move wall time backwards while
   monotonic time (`fx.clock.monotonic`, `timed`) only moves forward.
@@ -225,7 +233,8 @@ def test_finds_ada(users: testing.Services[Users]):
     assert (yield from store.find("1")) == "Ada"
 ```
 
-`testing.run_test(eff)` runs a single effect with a `TestClock`, outside the decorators.
+`testing.run_test(eff)` runs a single effect with a `TestClock` and a `TestConsole`, outside
+the decorators.
 
 ## Compared to effect-py
 

@@ -9,11 +9,13 @@ from typing import Any, Concatenate, Literal, overload
 
 from pyfect._core import Effect, _Gen, _Suspend
 from pyfect.clock import Clock, LiveClock
+from pyfect.console import CurrentConsole
 from pyfect.context import Context
 from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.run import unwrap
 from pyfect.scope import Scope, scoped
 from pyfect.testing._clock import TestClock
+from pyfect.testing._console import TestConsole
 from pyfect.testing._layers import Services
 from pyfect.testing._runtime import AsyncioRuntime, Runtime, SyncRuntime
 
@@ -90,8 +92,8 @@ def effect(
     asyncio: bool = False,
     warning_delay: Duration = 1.0,
 ) -> Any:
-    """A pytest test written as an effect, run with a ``TestClock`` and a
-    ``Scope`` (closed when the test ends)::
+    """A pytest test written as an effect, run with a ``TestClock``, a
+    ``TestConsole`` and a ``Scope`` (closed when the test ends)::
 
         @effect
         def test_retries():
@@ -127,7 +129,8 @@ def live(
     timeout: Duration | None = None,
     asyncio: bool = False,
 ) -> Any:
-    """Like ``effect``, but with the live clock: sleeps take real time."""
+    """Like ``effect``, but with the live clock and console: sleeps take
+    real time and output is written."""
     decorator = TestDecorator(_Options("live", timeout, asyncio, 1.0))
     return decorator if f is None else decorator(f)
 
@@ -177,7 +180,8 @@ def _runtime_for(services: Services[Any] | None, options: _Options) -> Runtime:
 def _context_for(
     services: Services[Any] | None, options: _Options
 ) -> tuple[Context, TestClock | None]:
-    """The test's context, and the ``TestClock`` made for this test alone.
+    """The test's context, and the ``TestClock`` made for this test alone
+    (with a ``TestConsole`` of its own).
 
     Under a ``layer_fixture`` an ``effect`` test uses the fixture's clock:
     its ``TestClock``, or the live clock of a ``live=True`` fixture."""
@@ -187,7 +191,7 @@ def _context_for(
     if services is not None:
         return context, None
     clock = TestClock(warning_delay=options.warning_delay)
-    return context.add(Clock, clock), clock
+    return context.add(Clock, clock).add(CurrentConsole, TestConsole()), clock
 
 
 def _body(
