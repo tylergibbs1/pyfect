@@ -1,6 +1,6 @@
 """Effects over iterables of values or effects: ``first_success_of``,
-``filter``, ``partition``, ``validate``, ``reduce``, ``find_first``,
-``find_first_filter``."""
+``filter``, ``filter_map``, ``filter_map_effect``, ``partition``,
+``validate``, ``reduce``, ``find_first``, ``find_first_filter``."""
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
@@ -70,6 +70,43 @@ def filter(
     return for_each(items, keep, concurrency=concurrency).map(
         lambda checked: [item for passed, item in checked if passed]
     )
+
+
+def filter_map[A, B](
+    items: Iterable[A], filter: Callable[[A], Result[B, object]]
+) -> Effect[list[B]]:
+    """The values of the items ``filter`` maps to ``Ok(value)``, in order;
+    ``Err`` items are dropped. ``items`` is read each time the effect runs."""
+
+    def run() -> Effect[list[B]]:
+        return _Succeed([r.value for r in map(filter, items) if isinstance(r, Ok)])
+
+    return _Suspend(run)
+
+
+def filter_map_effect[A, B, E = Never, R = Never](
+    items: Iterable[A],
+    filter: Callable[[A], Effect[Result[B, object], E, R]],
+    *,
+    concurrency: Concurrency = None,
+) -> Effect[list[B], E, R]:
+    """``filter_map`` with an effectful filter, run like ``for_each``. The
+    values are collected as each filter finishes, so with ``concurrency``
+    they come in completion order, as in Effect."""
+
+    def run() -> Effect[list[B], E, R]:
+        out: list[B] = []
+
+        def keep(item: A) -> Effect[None, E, R]:
+            def record(result: Result[B, object]) -> None:
+                if isinstance(result, Ok):
+                    out.append(result.value)
+
+            return filter(item).map(record)
+
+        return for_each(items, keep, concurrency=concurrency).as_(out)
+
+    return _Suspend(run)
 
 
 def partition[T, B, E = Never, R = Never](

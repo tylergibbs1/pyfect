@@ -365,15 +365,14 @@ generators never use it. Parameters are still required to be annotated.
 ## Roadmap
 
 Concurrency and dependency injection (M2), time (M3), concurrent data structures (M4:
-Queue, PubSub, the Ref family, Pool, Cache, Request batching), observability (M5) and
-streams (M6: Pull, Channel, Stream, Sink, the text framers) are done; see
+Queue, PubSub, the Ref family, Pool, Cache, Request batching), observability (M5),
+streams (M6: Pull, Channel, Stream, Sink, the text framers) and config and data (M7: config
+providers, `Config`, `Redacted`, `ByteSize`, `Brand`, the case functions) are done; see
 [`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
 
-1. **Config and data**: config providers, `Config`, `Redacted`, `ByteSize`, `Brand` and the
-   case functions are in; `Config.schema` waits for Schema.
-2. **Schema**: built on what Python already has (dataclasses, pydantic) rather than a
-   reimplementation.
-3. **More building blocks**: `STM`.
+1. **Schema**: built on what Python already has (dataclasses, pydantic) rather than a
+   reimplementation. `Config.schema` and Brand's Schema checks come with it.
+2. **More building blocks**: `STM`.
 
 ## Development
 

@@ -17,6 +17,7 @@ from pyfect.cause import Cause, Fail, _as_exception
 from pyfect.cause import die as die_cause
 from pyfect.cause import fail as fail_cause
 from pyfect.exit import Success
+from pyfect.result import Err, Ok, Result
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
@@ -74,6 +75,41 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
         use ``pipe(catch_if(refinement, ...))`` with a ``TypeIs`` refinement."""
         return _core._MatchCause(as_effect(self), _catching_if(predicate, f, or_else), None)
 
+    @overload
+    def catch_filter[EB, B, X, E2 = Never, R2 = Never](
+        self, filter: Callable[[E_co], Result[EB, X]], f: Callable[[EB], Effect[B, E2, R2]]
+    ) -> Effect[A_co | B, E_co | E2, R_co | R2]: ...
+    @overload
+    def catch_filter[EB, X, B, C, EE = Never, RR = Never](
+        self,
+        filter: Callable[[E_co], Result[EB, X]],
+        f: Callable[[EB], Effect[B, EE, RR]],
+        *,
+        or_else: Callable[[X], Effect[C, EE, RR]],
+    ) -> Effect[A_co | B | C, EE, R_co | RR]: ...
+    def catch_filter(
+        self,
+        filter: Callable[[Any], Result[Any, Any]],
+        f: Callable[[Any], Effect[Any, Any, Any]],
+        *,
+        or_else: Callable[[Any], Effect[Any, Any, Any]] | None = None,
+    ) -> Effect[Any, Any, Any]:
+        """Recover with ``f(value)`` from a typed error ``filter`` maps to
+        ``Ok(value)``. One it maps to ``Err(rest)`` goes to ``or_else(rest)``,
+        or keeps failing with the original error."""
+
+        def handle(cause: Cause[Any]) -> Effect[Any, Any, Any]:
+            found = cause.find_recoverable_error()
+            if not isinstance(found, Fail):
+                return _core._FailCause(found)
+            match filter(found.error):
+                case Ok(value):
+                    return f(value)
+                case Err(rest):
+                    return _core._FailCause(cause) if or_else is None else or_else(rest)
+
+        return _core._MatchCause(as_effect(self), handle, None)
+
     def catch_cause[B, E2 = Never, R2 = Never](
         self, f: Callable[[Cause[E_co]], Effect[B, E2, R2]]
     ) -> Effect[A_co | B, E2, R_co | R2]:
@@ -90,6 +126,23 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
         return _core._MatchCause(
             as_effect(self), lambda c: f(c) if predicate(c) else _core._FailCause(c), None
         )
+
+    def catch_cause_filter[EB, X, B, E2 = Never, R2 = Never](
+        self,
+        filter: Callable[[Cause[E_co]], Result[EB, Cause[X]]],
+        f: Callable[[EB, Cause[E_co]], Effect[B, E2, R2]],
+    ) -> Effect[A_co | B, X | E2, R_co | R2]:
+        """Recover with ``f(value, cause)`` from a failure ``filter`` maps to
+        ``Ok(value)``; one it maps to ``Err(rest)`` fails with ``rest``."""
+
+        def handle(cause: Cause[E_co]) -> Effect[Any, Any, Any]:
+            match filter(cause):
+                case Ok(value):
+                    return f(value, cause)
+                case Err(rest):
+                    return _core._FailCause(rest)
+
+        return _core._MatchCause(as_effect(self), handle, None)
 
     def catch_defect[B, E2 = Never, R2 = Never](
         self, f: Callable[[BaseException], Effect[B, E2, R2]]
@@ -157,6 +210,23 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
             if not predicate(cause):
                 return _core._FailCause(cause)
             return _core._FlatMap(f(cause), lambda _: _core._FailCause(cause))
+
+        return _core._MatchCause(as_effect(self), on_failure, None)
+
+    def tap_cause_filter[EB, E2 = Never, R2 = Never](
+        self,
+        filter: Callable[[Cause[E_co]], Result[EB, object]],
+        f: Callable[[EB, Cause[E_co]], Effect[object, E2, R2]],
+    ) -> Effect[A_co, E_co | E2, R_co | R2]:
+        """Run ``f(value, cause)`` for a failure ``filter`` maps to
+        ``Ok(value)``, then keep failing with the cause."""
+
+        def on_failure(cause: Cause[E_co]) -> Effect[Any, Any, Any]:
+            match filter(cause):
+                case Ok(value):
+                    return _core._FlatMap(f(value, cause), lambda _: _core._FailCause(cause))
+                case Err():
+                    return _core._FailCause(cause)
 
         return _core._MatchCause(as_effect(self), on_failure, None)
 

@@ -62,6 +62,7 @@ RECOVERIES: dict[str, Callable[[fx.Effect[Any, MixedError]], fx.Effect[Any, Any]
     "catch_if refinement": lambda e: e.pipe(
         fx.catch_if(_is_mixed, lambda _: fx.succeed("recovered"))
     ),
+    "catch_filter": lambda e: e.catch_filter(fx.Ok, lambda _: fx.succeed("recovered")),
     "match_effect": lambda e: e.match_effect(
         on_failure=lambda _: fx.succeed("recovered"), on_success=fx.succeed
     ),

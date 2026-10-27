@@ -3,12 +3,6 @@
 Each test's docstring is the Effect test title. ``Resource.Resource`` is
 ``otel.resource.OtelResource`` (``fx.Resource`` is pyfect's cached value).
 The SDK's language is ``python``.
-
-Adapted, with the reason:
-
-- "preserves embedded equals signs and ignores empty attribute keys": the
-  environment is ``os.environ`` (pytest's ``monkeypatch``), as pyfect has
-  no ``ConfigProvider`` yet.
 """
 
 import pytest
@@ -16,7 +10,7 @@ import pytest
 pytest.importorskip("opentelemetry.sdk")
 
 import pyfect as fx
-from pyfect import otel, testing
+from pyfect import config_provider, otel, testing
 from pyfect.otel.resource import OtelResource
 
 
@@ -42,12 +36,14 @@ def test_lets_custom_attributes_override_sdk_defaults_but_not_the_service_option
 
 
 @testing.effect
-def test_preserves_embedded_equals_signs_and_ignores_empty_attribute_keys(
-    monkeypatch: pytest.MonkeyPatch,
-):
+def test_preserves_embedded_equals_signs_and_ignores_empty_attribute_keys():
     """preserves embedded equals signs and ignores empty attribute keys"""
-    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES", "key=value,encoded=abc=def==, =ignored")
-    resource = yield from OtelResource().pipe(fx.provide(otel.resource.layer_from_env()))
+    env = {"OTEL_RESOURCE_ATTRIBUTES": "key=value,encoded=abc=def==, =ignored"}
+    resource = yield from (
+        OtelResource()
+        .pipe(fx.provide(otel.resource.layer_from_env()))
+        .pipe(fx.provide(config_provider.layer(config_provider.from_env(env))))
+    )
     assert resource.attributes["key"] == "value"
     assert resource.attributes["encoded"] == "abc=def=="
     assert "" not in resource.attributes

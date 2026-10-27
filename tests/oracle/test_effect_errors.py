@@ -5,10 +5,6 @@ Each test's docstring is the Effect test title. Omitted, with the reason:
 - ``fromOption`` "from a none with a custom error data-last": Python has one
   call form, ``from_option(option, on_none)``.
 - ``match`` "passes only the outcome to handlers": counts JS ``arguments``.
-- ``catchCauseFilter``, ``tapCauseIf`` "filter match taps" / "filter no match
-  skips tap", ``filter`` "Filter.Filter overload maps pass values": the
-  ``Filter`` module is not ported; ``catch_cause_if`` / ``tap_cause_if`` /
-  ``filter`` take predicates.
 - ``tryPromise`` "does not allocate AbortController for zero-argument thunks":
   ``try_async`` cancels the task, so there is no signal to allocate.
 - "typed recovery with mixed causes": ported in ``tests/test_cause_recovery.py``,
@@ -655,6 +651,45 @@ def test_tap_cause_if_success_skips_tap() -> None:
     assert tapped == []
 
 
+def test_tap_cause_if_filter_match_taps() -> None:
+    """tapCauseIf > filter match taps"""
+    tapped: list[str] = []
+    eff = fx.fail("e1").tap_cause_filter(
+        fx.Ok, lambda c, _: fx.sync(lambda: tapped.append(c.failures[0]))
+    )
+    assert testing.run_test(eff.exit()) == fx.exit.fail("e1")
+    assert tapped == ["e1"]
+
+
+def test_tap_cause_if_filter_no_match_skips_tap() -> None:
+    """tapCauseIf > filter no match skips tap"""
+    tapped: list[str] = []
+    eff = fx.fail("e1").tap_cause_filter(fx.Err, lambda _v, _c: fx.sync(lambda: tapped.append("t")))
+    assert testing.run_test(eff.exit()) == fx.exit.fail("e1")
+    assert tapped == []
+
+
+# --- catchCauseFilter ---------------------------------------------------------------------
+
+
+def test_catch_cause_filter_first_argument_as_success() -> None:
+    """catchCauseFilter > first argument as success"""
+    eff = fx.succeed(1).catch_cause_filter(fx.Err, lambda _v, _c: fx.fail("e2"))
+    assert testing.run_test_exit(eff) == fx.Success(1)
+
+
+def test_catch_cause_filter_first_argument_as_failure_and_predicate_return_false() -> None:
+    """catchCauseFilter > first argument as failure and predicate return false"""
+    eff = fx.fail("e1").catch_cause_filter(fx.Err, lambda _v, _c: fx.fail("e2"))
+    assert testing.run_test(eff.flip()) == "e1"
+
+
+def test_catch_cause_filter_first_argument_as_failure_and_predicate_return_true() -> None:
+    """catchCauseFilter > first argument as failure and predicate return true"""
+    eff = fx.fail("e1").catch_cause_filter(fx.Ok, lambda _v, _c: fx.fail("e2"))
+    assert testing.run_test(eff.flip()) == "e2"
+
+
 # --- filter -------------------------------------------------------------------------------
 
 
@@ -698,6 +733,15 @@ def test_refinement_narrows_iterable() -> None:
     """filter with predicate/refinement > refinement narrows iterable"""
     mixed: list[int | str] = [1, "a", 2, "b", 3]
     assert testing.run_test(fx.filter(mixed, _is_int)) == [1, 2, 3]
+
+
+def test_filter_filter_overload_maps_pass_values() -> None:
+    """filter with predicate/refinement > Filter.Filter overload maps pass values"""
+
+    def even(n: int) -> fx.Result[str, int]:
+        return fx.Ok(f"n={n}") if n % 2 == 0 else fx.Err(n)
+
+    assert testing.run_test(fx.filter_map([1, 2, 3, 4], even)) == ["n=2", "n=4"]
 
 
 # --- catch / catchCause ---------------------------------------------------------------

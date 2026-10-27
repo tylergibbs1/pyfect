@@ -68,6 +68,8 @@ from pyfect._core import Effect, Restore, interruptible_mask, uninterruptible_ma
 from pyfect._fiber import Fiber
 from pyfect._iterables import (
     filter,
+    filter_map,
+    filter_map_effect,
     find_first,
     find_first_filter,
     first_success_of,
@@ -360,6 +362,8 @@ __all__ = [
     "fail_sync",
     "fiber_id",
     "filter",
+    "filter_map",
+    "filter_map_effect",
     "find_first",
     "find_first_filter",
     "first_success_of",

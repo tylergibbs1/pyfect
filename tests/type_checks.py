@@ -396,6 +396,54 @@ def check_error_combinators(eff: fx.Effect[int, NotFound | Invalid, Port]) -> No
     fx.succeed(1).flatten()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
 
 
+def check_filter_combinators(
+    items: list[int], eff: fx.Effect[int, NotFound | Invalid, Port]
+) -> None:
+    def not_found(e: NotFound | Invalid) -> fx.Result[str, Invalid]:
+        return fx.Ok("nf") if isinstance(e, NotFound) else fx.Err(e)
+
+    # Without or_else a rejected error keeps failing as it was, so E stays.
+    assert_type(
+        eff.catch_filter(not_found, lambda s: fx.succeed(0.5)),
+        fx.Effect[int | float, NotFound | Invalid, Port],
+    )
+
+    def from_invalid(e: Invalid) -> fx.Effect[None, Gone]:
+        return fx.fail(Gone())
+
+    assert_type(
+        eff.catch_filter(not_found, lambda s: fx.fail(Gone()), or_else=from_invalid),
+        fx.Effect[int | None, Gone, Port],
+    )
+    # or_else must accept what the filter rejects.
+    eff.catch_filter(not_found, fx.succeed, or_else=lambda e: fx.succeed(e.missing))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownArgumentType, reportUnknownLambdaType, reportUnknownMemberType]
+
+    def defects(c: fx.Cause[NotFound | Invalid]) -> fx.Result[BaseException, fx.Cause[Invalid]]:
+        return fx.Err(fx.cause.fail(Invalid("bad")))
+
+    assert_type(
+        eff.catch_cause_filter(defects, lambda d, c: fx.succeed(str(d))),
+        fx.Effect[int | str, Invalid, Port],
+    )
+    assert_type(
+        eff.tap_cause_filter(defects, lambda d, c: fx.fail(Gone())),
+        fx.Effect[int, NotFound | Invalid | Gone, Port],
+    )
+
+    def even(n: int) -> fx.Result[str, int]:
+        return fx.Ok(str(n)) if n % 2 == 0 else fx.Err(n)
+
+    assert_type(fx.filter_map(items, even), fx.Effect[list[str], Never, Never])
+
+    def even_effect(n: int) -> fx.Effect[fx.Result[str, int], Invalid, Port]:
+        return fx.succeed(even(n))
+
+    assert_type(
+        fx.filter_map_effect(items, even_effect, concurrency=2),
+        fx.Effect[list[str], Invalid, Port],
+    )
+
+
 def is_int(x: int | str) -> TypeIs[int]:
     return isinstance(x, int)
 

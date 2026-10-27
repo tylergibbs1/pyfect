@@ -3,21 +3,23 @@ logs and metrics (Effect's ``Resource``).
 
 ``layer(service_name=...)`` builds one from service metadata;
 ``layer_from_env()`` reads ``OTEL_SERVICE_NAME`` and
-``OTEL_RESOURCE_ATTRIBUTES``; ``layer_empty`` has no attributes.
+``OTEL_RESOURCE_ATTRIBUTES`` through ``Config``; ``layer_empty`` has no
+attributes.
 """
 
 from __future__ import annotations
 
-import os
 from collections.abc import Mapping
 from typing import Final
 
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.util.types import AttributeValue
 
+from pyfect import config
 from pyfect import layer as _layer
 from pyfect.context import Tag
 from pyfect.layer import Layer
+from pyfect.option import Option, Some
 from pyfect.otel._attributes import PYFECT_VERSION
 
 __all__ = ["OtelResource", "config_to_attributes", "layer", "layer_empty", "layer_from_env"]
@@ -88,17 +90,21 @@ def layer_from_env(
     additional_attributes: Mapping[str, AttributeValue] | None = None,
 ) -> Layer[OtelResource]:
     """A resource from the SDK defaults, then ``OTEL_RESOURCE_ATTRIBUTES``
-    and ``OTEL_SERVICE_NAME`` (read from ``os.environ`` when the layer
-    builds), then ``additional_attributes``, later ones winning."""
+    and ``OTEL_SERVICE_NAME`` (read through the ``CurrentConfigProvider``
+    when the layer builds; a config error is a defect), then
+    ``additional_attributes``, later ones winning."""
 
-    def make() -> Resource:
-        attributes = _env_attributes(os.environ.get("OTEL_RESOURCE_ATTRIBUTES", ""))
-        service_name = os.environ.get("OTEL_SERVICE_NAME")
-        if service_name is not None:
-            attributes["service.name"] = service_name
+    def make(service_name: Option[str], text: str) -> Resource:
+        attributes = _env_attributes(text)
+        if isinstance(service_name, Some):
+            attributes["service.name"] = service_name.value
         return Resource({**_sdk_attributes(), **attributes, **(additional_attributes or {})})
 
-    return _layer.sync(OtelResource, make)
+    read = config.all(
+        config.option(config.string("OTEL_SERVICE_NAME")),
+        config.string("OTEL_RESOURCE_ATTRIBUTES").with_default(""),
+    )
+    return _layer.effect(OtelResource, read.map(lambda pair: make(*pair)).or_die())
 
 
 layer_empty: Final[Layer[OtelResource]] = _layer.succeed(OtelResource, Resource.get_empty())

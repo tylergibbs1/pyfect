@@ -23,7 +23,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.trace import StatusCode, TraceFlags
 
 import pyfect as fx
-from pyfect import metric, otel, testing
+from pyfect import config_provider, metric, otel, testing
 from pyfect.context import Context
 from pyfect.otel._attributes import to_attribute_value
 from pyfect.otel.metrics import MetricProducer
@@ -51,6 +51,29 @@ def test_only_pyfect_otel_imports_opentelemetry():
         and any(m.split(".")[0] == "opentelemetry" for m in _imported_modules(path))
     ]
     assert offenders == []
+
+
+def _resource_from(provider: config_provider.ConfigProvider) -> Resource:
+    return testing.run_test(
+        otel.resource.OtelResource()
+        .pipe(fx.provide(otel.resource.layer_from_env({"extra": "x"})))
+        .pipe(fx.provide(config_provider.layer(provider)))
+    )
+
+
+def test_resource_from_env_reads_the_current_config_provider():
+    # Effect's layerFromEnv reads both variables through Config.
+    provider = config_provider.from_unknown(
+        {"OTEL_SERVICE_NAME": "svc", "OTEL_RESOURCE_ATTRIBUTES": "a=1"}
+    )
+    attributes = _resource_from(provider).attributes
+    assert (attributes["service.name"], attributes["a"], attributes["extra"]) == ("svc", "1", "x")
+
+
+def test_resource_from_env_treats_an_empty_service_name_as_absent():
+    # Checked under Node: fromEnv reads "" as absent, so Config.option gives None.
+    provider = config_provider.from_env({"OTEL_SERVICE_NAME": "", "OTEL_RESOURCE_ATTRIBUTES": ""})
+    assert "service.name" not in _resource_from(provider).attributes
 
 
 @pytest.mark.parametrize(
