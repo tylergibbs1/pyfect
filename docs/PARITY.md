@@ -170,7 +170,7 @@ Deferred from the M1 exit-criteria files, with the reason:
 - **Fiber:** fork options (`start_immediately`, `uninterruptible`), `fork_in`, `await_all_children`, `Fiber.await_all` / `join_all` / `interrupt_all(_as)` / `run_in` / `get_current`, observer removers.
 - **Sync primitives:** Latch; Deferred (`die`, `interrupt`, `sync`, `is_done`, `into`); Semaphore (`resize`, `take_if_available`, `with_permits_if_available`, `release_all`); PartitionedSemaphore.
 - **Fiber collections:** FiberSet → FiberMap → FiberHandle.
-- **Runtime:** `run_fork`, `run_callback`, `run_*` with a context argument, `run_main(teardown=)`, Scheduler and `MaxOpsBeforeYield` as References.
+- **Runtime:** `run_fork`, `run_callback`, `run_*` with a context argument, `run_main(teardown=)`, Scheduler and `MaxOpsBeforeYield` as References (done: `CurrentScheduler`, `MaxOpsBeforeYield` and `PreventSchedulerYield` in `pyfect.scheduler`, read from the fiber's context; `tests/test_scheduler_references.py`, `tests/oracle/test_scheduler.py`).
 - **Context and Layer:** typed `Context[T]` (`make` / `get` / `get_option` / `pick` / `omit` / `merge_all`), `fx.context()`, `provide_context`, `update_service`, `provide_service_effect`, `service_option`, `scoped_with`. Public MemoMap (refcounted, scope-owned), `build` / `build_with_scope`, Layer `suspend` / `unwrap` / `flat_map` / `tap*` / `catch*` / `or_die` / `launch` / `mock` / `from_build` / `effect_context` / `effect_discard`.
 - **Resources:** ManagedRuntime (sync and async context managers). RcRef → RcMap → ScopedRef → Resource → LayerRef → LayerMap.
 - **Exit criteria:** `Fiber.test.ts`, `Deferred.test.ts`, `Semaphore.test.ts`, `PartitionedSemaphore.test.ts`, `Latch.test.ts`, `FiberSet.test.ts`, `FiberMap.test.ts`, `FiberHandle.test.ts`, `Scope.test.ts`, `Layer.test.ts`, `ManagedRuntime.test.ts`, `RcRef.test.ts`, `RcMap.test.ts`, `LayerMap.test.ts`, `Effect.test.ts` (fork, context and runtime sections).
@@ -265,6 +265,9 @@ Deferred from the M1 exit-criteria files, with the reason:
 | Cause annotations, `annotate`, StackTrace, InterruptorStackTrace | deferred to tracing (M5) | Nothing records stack frames or spans yet; reasons carry no annotations |
 | Cause `isCause` / `is*Reason` / `make*Reason`, `findErrorOption` | `isinstance`, the reason classes, `find_error` | Classes are their own guards and constructors; `find_error` already returns `Ok` / `Err` |
 | Cause `findDie` / `findDefect` / `findInterrupt` / `filterInterruptors` return `Result<_, Cause>` | `find_die` / `find_defect` / `find_interrupt` / `filter_interruptors` return the value or `None` | The `Err` side is the cause itself, which the caller already holds; `find_error` keeps `Ok` / `Err` because a typed error may itself be `None` |
+| `Scheduler.Scheduler` (a Reference with the interface's name) | `CurrentScheduler` Reference over the `Scheduler` protocol | A Python class can't be both the protocol and the tag; Effect names its other references `Current*` |
+| `Scheduler.shouldYield(fiber)` and `makeDispatcher` | the fiber compares its step count with `MaxOpsBeforeYield`; schedulers only `schedule` tasks | A Python call per step costs too much; a budget sweep (`provide_service(MaxOpsBeforeYield, n)`) places a yield at every step instead |
+| `MaxOpsBeforeYield` of 2 or less never finishes (each resume spends its budget yielding again) | a budget below 1 counts as 1; any budget makes progress | A livelock is not behavior to copy |
 | `Cause.squash` / `prettyErrors` return a typed error as is | a non-exception typed error is wrapped in `UnhandledError` | The result must be raisable |
 
 ## 5. Open design questions (need a human decision)

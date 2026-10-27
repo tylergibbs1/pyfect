@@ -8,7 +8,7 @@ callback and parks (``SUSPEND``); the callback reschedules it.
 Interruption follows Effect's rules:
 
 - Interrupting a fiber records an ``Interrupt`` at once when the caller is
-  on the fiber's scheduler thread (otherwise via the scheduler). If the
+  a fiber of the same run (otherwise via the scheduler). If the
   fiber is interruptible and not running, it is unwound right away: a fiber
   that has not started never runs its body, and a parked fiber has its wait
   cancelled (running its canceler). A running fiber, including one that
@@ -29,6 +29,7 @@ before the fiber completes.
 from __future__ import annotations
 
 import itertools
+import math
 import threading
 from collections import deque
 from collections.abc import Callable
@@ -49,26 +50,33 @@ from pyfect._core import (
 )
 from pyfect.cause import Cause, Die
 from pyfect.cause import interrupt as interrupt_cause
-from pyfect.context import Context
+from pyfect.context import Context, Tag
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as exit_die
-from pyfect.scheduler import Scheduler
+from pyfect.scheduler import (
+    CurrentScheduler,
+    MaxOpsBeforeYield,
+    PreventSchedulerYield,
+    Scheduler,
+)
 
 A_co = TypeVar("A_co", covariant=True)
 E_co = TypeVar("E_co", covariant=True, default=Never)
 
-# How many steps a fiber takes before giving other fibers a turn.
-MAX_OPS_BEFORE_YIELD = 2048
+# Effect's ``maxInlineSteps``: how many continuations run back to back
+# before the loop may yield.
+_INLINE_STEPS = 32
 
 _fiber_ids = itertools.count(1)
 _resume_lock = threading.Lock()
 
 
 class _ThreadState(threading.local):
-    """The scheduler whose fiber is running on this thread, if any, and the
-    interrupted fibers waiting to unwind (while one is already unwinding)."""
+    """The run scheduler of the fiber running on this thread, if any, and
+    the interrupted fibers waiting to unwind (while one is already
+    unwinding)."""
 
-    scheduler: Scheduler | None = None
+    run_scheduler: Scheduler | None = None
     unwinds: deque[tuple[Fiber[Any, Any], Step]] | None = None
 
 
@@ -129,14 +137,16 @@ class Fiber(Generic[A_co, E_co]):
 
     __slots__ = (
         "_children",
-        "_context",
+        "_ctx",
         "_exit",
         "_interrupt",
         "_interruptible",
         "_interrupts_after_resume",
         "_observers",
+        "_ops_budget",
         "_parent",
         "_phase",
+        "_run_scheduler",
         "_scheduler",
         "_stack",
         "_waiting",
@@ -144,11 +154,12 @@ class Fiber(Generic[A_co, E_co]):
     )
 
     def __init__(
-        self, scheduler: Scheduler, context: Context, parent: Fiber[Any, Any] | None
+        self, run_scheduler: Scheduler, context: Context, parent: Fiber[Any, Any] | None
     ) -> None:
+        """A fiber of the run driven by ``run_scheduler``. It runs on
+        ``context``'s ``CurrentScheduler``."""
         self.id = next(_fiber_ids)
-        self._scheduler = scheduler
-        self._context = context
+        self._run_scheduler = run_scheduler
         self._parent = parent
         self._stack: list[Frame] = []
         self._interruptible = True
@@ -160,6 +171,7 @@ class Fiber(Generic[A_co, E_co]):
         self._exit: Exit[Any, Any] | None = None
         self._waiting: _Wait | None = None
         self._phase: _Phase = "pending"
+        self._set_context(context)
 
     def __repr__(self) -> str:
         return f"Fiber(#{self.id})"
@@ -208,7 +220,7 @@ class Fiber(Generic[A_co, E_co]):
         From a fiber on the same scheduler it takes effect at once (as
         Effect's ``interruptUnsafe``); elsewhere it goes through the
         scheduler."""
-        if _thread.scheduler is self._scheduler:
+        if _thread.run_scheduler is self._run_scheduler:
             self._deliver_interrupt(by)
         else:
             self._scheduler.schedule(lambda: self._deliver_interrupt(by))
@@ -223,6 +235,22 @@ class Fiber(Generic[A_co, E_co]):
 
     # --- runtime internals --------------------------------------------------
 
+    @property
+    def _context(self) -> Context:
+        return self._ctx
+
+    def _set_context(self, context: Context) -> None:
+        """Switch context, and with it the scheduler and step budget read
+        from it (Effect's fiber context cache)."""
+        if context.lookup(_RunScheduler)[1] is not self._run_scheduler:
+            context = _into_run(context, self._run_scheduler)
+        self._ctx = context
+        self._scheduler: Scheduler = context.lookup(CurrentScheduler)[1]
+        if context.lookup(PreventSchedulerYield)[1]:
+            self._ops_budget: float = math.inf
+        else:
+            self._ops_budget = max(1, context.lookup(MaxOpsBeforeYield)[1])
+
     def _start(self, effect: Effect[Any, Any, Any]) -> None:
         self._scheduler.schedule(lambda: self._run(effect))
 
@@ -235,14 +263,14 @@ class Fiber(Generic[A_co, E_co]):
     def _run(self, start: Step) -> None:
         if self._exit is not None:
             return  # finished early by an interrupt; a stale start or resume
-        outer = _thread.scheduler
-        _thread.scheduler = self._scheduler
+        outer = _thread.run_scheduler
+        _thread.run_scheduler = self._run_scheduler
         self._phase = "running"
         try:
             self._loop(start)
         finally:
             self._phase = "idle"
-            _thread.scheduler = outer
+            _thread.run_scheduler = outer
 
     def _loop(self, start: Step) -> None:
         cur: Step = start
@@ -253,8 +281,8 @@ class Fiber(Generic[A_co, E_co]):
 
             if isinstance(cur, Effect):
                 ops += 1
-                if ops > MAX_OPS_BEFORE_YIELD:
-                    self._scheduler.schedule(lambda paused=cur: self._run(paused))
+                if ops > self._ops_budget:
+                    self._pause(cur)
                     return
                 try:
                     cur = cur._step(self)
@@ -267,11 +295,24 @@ class Fiber(Generic[A_co, E_co]):
                         return
                     cur = nxt
                     continue
+                # A continuation counts as a step, but as in Effect a fiber
+                # may yield before one only every ``_INLINE_STEPS`` steps: a
+                # long chain of ``map``s still yields, while a primitive's
+                # result normally reaches its continuation in the same step.
+                ops += 1
+                if ops % _INLINE_STEPS == 0 and ops > self._ops_budget:
+                    self._pause(cur)
+                    return
                 cur = self._continue(self._stack.pop(), cur)
             elif cur is SUSPEND:
                 return  # a resume callback will call _run again
             else:  # untyped user code handed back something that is not an effect
                 cur = exit_die(TypeError(f"not a valid effect: {cur!r}"))
+
+    def _pause(self, cur: Step) -> None:
+        """The step budget is spent: let other fibers run, then go on with
+        ``cur``."""
+        self._scheduler.schedule(lambda: self._run(cur))
 
     def _continue(self, frame: Frame, ex: Exit[Any, Any]) -> Step:
         try:
@@ -308,7 +349,7 @@ class Fiber(Generic[A_co, E_co]):
             self._observers.remove(observer)
 
     def _fork(self, effect: Effect[Any, Any, Any], *, daemon: bool) -> Fiber[Any, Any]:
-        child: Fiber[Any, Any] = Fiber(self._scheduler, self._context, None if daemon else self)
+        child: Fiber[Any, Any] = Fiber(self._run_scheduler, self._ctx, None if daemon else self)
         if not daemon:
             self._children.add(child)
         child._start(effect)
@@ -411,6 +452,29 @@ class Fiber(Generic[A_co, E_co]):
         self._push(_RestoreInterruptible(True))
         self._interruptible = False
         return wait.canceler
+
+
+class _RunScheduler(Tag[Scheduler]):
+    """The scheduler of the run a context was made in."""
+
+
+def _into_run(context: Context, run_scheduler: Scheduler) -> Context:
+    """``context`` for a fiber of the run on ``run_scheduler``. A context
+    from another run (kept by a finalizer, say) keeps a scheduler it was
+    explicitly given, but not that run's own, which may no longer run."""
+    found, earlier = context.lookup(_RunScheduler)
+    in_run = context.add(_RunScheduler, run_scheduler)
+    if CurrentScheduler in context.tags():
+        given = context.lookup(CurrentScheduler)[1]
+        if not found or given is not earlier:
+            return in_run
+    return in_run.add(CurrentScheduler, run_scheduler)
+
+
+def root_fiber(scheduler: Scheduler, context: Context) -> Fiber[Any, Any]:
+    """A fiber with no parent, running on ``scheduler`` unless an effect
+    provides another ``CurrentScheduler``."""
+    return Fiber(scheduler, context, None)
 
 
 def interrupt_all(fibers: list[Fiber[Any, Any]], by: int | None) -> Effect[None, Never, Never]:

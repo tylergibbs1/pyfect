@@ -1,7 +1,5 @@
 """Queue lifecycle: Open -> Closing(cause) -> Done(cause), rendezvous, batch offers."""
 
-from collections.abc import Callable
-from contextlib import AbstractContextManager
 from typing import Never
 
 import pytest
@@ -346,9 +344,6 @@ def test_many_producers_and_consumers_lose_nothing(capacity: int):
     assert run(program) == list(range(40))
 
 
-type YieldBudget = Callable[[int], AbstractContextManager[None]]
-
-
 def _dequeue(name: str, q: fx.Queue[int, fx.Done]) -> fx.Effect[list[int], fx.Done]:
     match name:
         case "take":
@@ -363,7 +358,7 @@ def _dequeue(name: str, q: fx.Queue[int, fx.Done]) -> fx.Effect[list[int], fx.Do
 @pytest.mark.parametrize("capacity", [None, 0])
 @pytest.mark.parametrize("offer_first", [True, False])
 def test_a_take_interrupted_at_a_yield_keeps_its_message(
-    dequeue: str, capacity: int | None, offer_first: bool, yield_budget: YieldBudget
+    dequeue: str, capacity: int | None, offer_first: bool
 ):
     """Effect: Queue.test.ts '${name} interrupted at a yield keeps its message'."""
 
@@ -395,8 +390,9 @@ def test_a_take_interrupted_at_a_yield_keeps_its_message(
 
     for budget in range(1, 16):
         for delay in range(4):
-            with yield_budget(budget):
-                out, offered = run(program(delay))
+            out, offered = run(
+                program(delay).pipe(fx.provide_service(fx.MaxOpsBeforeYield, budget))
+            )
             assert out == ([1] if offered == fx.Success(True) else []), (budget, delay)
 
 

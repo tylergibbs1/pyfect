@@ -95,7 +95,7 @@ class _Cache[A, E, R]:
         ):
             return _FromExit(self.exit)
         self.exit = None
-        run = _Run(Fiber(fiber._scheduler, fiber._context, None))
+        run = _Run(Fiber(fiber._run_scheduler, fiber._context, None))
         self.current = run
         joined = self._join(fiber, run)
         run.fiber._start(

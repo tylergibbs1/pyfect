@@ -20,8 +20,9 @@ Omitted, with the reason:
   reference and fiber checks are ported.
 - "cached / cachedInvalidateWithTTL never strands a second caller when the
   owner yields before registering cleanup" sweeps a custom ``Scheduler``'s
-  ``shouldYield`` points, which pyfect has no service for; the case it
-  guards is covered in ``tests/test_structural_combinators.py``.
+  ``shouldYield`` points; pyfect's schedulers have no ``should_yield`` (the
+  budget is ``MaxOpsBeforeYield``), and the case it guards is covered in
+  ``tests/test_structural_combinators.py``.
 - ``cached`` "runs the effect once for concurrent callers" uses
   ``Fiber.awaitAll`` (M2); the fibers are awaited one by one instead.
 """

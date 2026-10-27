@@ -7,22 +7,30 @@ twice) get in."""
 import ast
 from pathlib import Path
 
+from pyfect._effect_base import Frame
+
 SRC = Path(__file__).parent.parent / "src" / "pyfect"
 LOOP_METHODS = {"_run", "_loop", "_continue", "_with_interrupt", "_deliver_interrupt"}
 
 
-def _core_primitive_names() -> set[str]:
-    tree = ast.parse((SRC / "_core.py").read_text())
-    return {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ClassDef)
-        and any(isinstance(b, ast.Name | ast.Subscript) for b in node.bases)
-    }
+def _frame_class_names() -> set[str]:
+    """Every primitive and continuation frame, wherever it is defined."""
+    found: set[str] = set()
+    pending: list[type] = [Frame]
+    while pending:
+        cls = pending.pop()
+        found.add(cls.__name__)
+        pending.extend(cls.__subclasses__())
+    return found
+
+
+def test_the_frame_scan_sees_primitives_in_every_module():
+    names = _frame_class_names()
+    assert {"_Succeed", "_MatchCause", "_RestoreContext", "ServiceEffect"} <= names
 
 
 def test_the_fiber_loop_names_no_primitive():
-    primitives = _core_primitive_names() - {"Effect", "Frame"}
+    primitives = _frame_class_names() - {"Effect", "Frame"}
     tree = ast.parse((SRC / "_fiber.py").read_text())
     fiber = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Fiber")
     methods = [n for n in fiber.body if isinstance(n, ast.FunctionDef) and n.name in LOOP_METHODS]
@@ -63,3 +71,16 @@ def test_a_fiber_run_is_entered_only_from_the_scheduler_or_the_unwind_queue():
 
     visit(tree, "<module>")
     assert offenders == []
+
+
+def test_every_effect_method_group_is_only_used_through_effect():
+    """``as_effect`` treats ``self`` in a method group as an ``Effect``.
+    That holds while ``Effect`` is the only class built on the groups."""
+    from pyfect._core import Effect
+    from pyfect._effect_base import EffectBase
+
+    base: type = EffectBase
+    groups = base.__subclasses__()
+    assert all(cls.__bases__ == (EffectBase,) for cls in groups)
+    users: set[type] = {sub for group in groups for sub in group.__subclasses__()}
+    assert users == {Effect}

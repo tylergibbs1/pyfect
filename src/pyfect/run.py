@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from typing import Any, Never
 
 from pyfect._core import Effect
-from pyfect._fiber import Fiber
+from pyfect._fiber import Fiber, root_fiber
 from pyfect.context import Context
 from pyfect.errors import TaggedError
 from pyfect.exit import Exit, Success
@@ -37,7 +37,7 @@ from pyfect.scheduler import AsyncioScheduler, SyncScheduler
 
 def run_sync_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]:
     scheduler = SyncScheduler()
-    fiber: Fiber[A, E] = Fiber(scheduler, Context.empty(), None)
+    fiber: Fiber[A, E] = root_fiber(scheduler, Context.empty())
     fiber._start(eff)
     try:
         scheduler.run_until(lambda: fiber._exit is not None)
@@ -109,7 +109,7 @@ def _interrupt_on_signals(fiber: Fiber[Any, Any]) -> Generator[None]:
 
 def _start_async[A, E](eff: Effect[A, E, Never]) -> tuple[Fiber[A, E], asyncio.Future[Exit[A, E]]]:
     loop = asyncio.get_running_loop()
-    fiber: Fiber[A, E] = Fiber(AsyncioScheduler(loop), Context.empty(), None)
+    fiber: Fiber[A, E] = root_fiber(AsyncioScheduler(loop), Context.empty())
     done: asyncio.Future[Exit[A, E]] = loop.create_future()
     fiber.unsafe_add_observer(done.set_result)
     fiber._start(eff)

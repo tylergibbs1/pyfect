@@ -12,7 +12,7 @@ import asyncio
 from typing import Any, Never, Protocol
 
 from pyfect._core import Effect
-from pyfect._fiber import Fiber
+from pyfect._fiber import Fiber, root_fiber
 from pyfect.clock import Clock
 from pyfect.context import Context
 from pyfect.duration import Seconds
@@ -82,7 +82,7 @@ def _note_sleepers(error: BaseException, context: Context) -> None:
 def _start[A, E](
     scheduler: Scheduler, eff: Effect[A, E, Never], context: Context, timeout: Seconds | None
 ) -> tuple[Fiber[A, E], _Deadline]:
-    fiber: Fiber[A, E] = Fiber(scheduler, context, None)
+    fiber: Fiber[A, E] = root_fiber(scheduler, context)
     fiber._start(eff)
     return fiber, _Deadline(fiber, timeout)
 

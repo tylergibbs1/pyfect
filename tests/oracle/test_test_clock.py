@@ -9,8 +9,6 @@ that the warning is raised.
 """
 
 import math
-from collections.abc import Callable
-from contextlib import AbstractContextManager
 from typing import Literal
 
 import pytest
@@ -255,9 +253,7 @@ def test_adjust_completes_when_a_nested_clock_wakes_a_busy_fiber():
 
 
 @testing.effect
-def test_adjust_waits_for_woken_fibers_when_the_advancing_fiber_yields_on_its_operation_budget(
-    yield_budget: Callable[[int], AbstractContextManager[None]],
-):
+def test_adjust_waits_for_woken_fibers_when_the_advancing_fiber_yields_on_its_operation_budget():
     """TestClock.test.ts "adjust - waits for woken fibers when the advancing fiber yields
     on its operation budget"."""
     done: list[bool] = []
@@ -269,8 +265,9 @@ def test_adjust_waits_for_woken_fibers_when_the_advancing_fiber_yields_on_its_op
         )
         yield from testing.adjust(1)
 
-    with yield_budget(4):
-        yield from program.pipe(fx.provide(TestClock.layer(warning_delay=math.inf)))
+    yield from program.pipe(fx.provide(TestClock.layer(warning_delay=math.inf))).pipe(
+        fx.provide_service(fx.MaxOpsBeforeYield, 4)
+    )
     assert done == [True]
 
 

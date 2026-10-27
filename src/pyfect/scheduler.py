@@ -14,6 +14,11 @@ from fibers, which always run on the scheduler's own thread.
 
 Both also serve the test clock: ``track`` counts the work a wake-up causes,
 and ``when_idle`` runs a task once no fiber has anything ready to run.
+
+A fiber reads its scheduler and its yield budget from its context, as
+Effect does, so they can be provided per effect::
+
+    eff.pipe(provide_service(MaxOpsBeforeYield, 16))
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from pyfect._wake_tracking import Tracking, WakeTracker
+from pyfect.context import Reference
 from pyfect.duration import Seconds
 
 type Task = Callable[[], None]
@@ -51,6 +57,36 @@ class Scheduler(Protocol):
         """Run ``f``, counting what it schedules (transitively) against
         ``tracker``."""
         ...
+
+
+class CurrentScheduler(Reference[Scheduler]):
+    """The scheduler the current fiber runs on. The run functions provide
+    it; providing another moves an effect's tasks, and its children's, onto
+    that scheduler. The run still drives only its own scheduler, so a
+    provided one must hand its tasks to it, as a wrapper around the current
+    scheduler does."""
+
+    @classmethod
+    def default(cls) -> Scheduler:
+        raise RuntimeError("no scheduler: run effects with run_sync, run_async or run_main")
+
+
+class MaxOpsBeforeYield(Reference[int]):
+    """How many steps a fiber takes before giving other fibers a turn. A
+    budget below 1 counts as 1, so a fiber always makes progress."""
+
+    @classmethod
+    def default(cls) -> int:
+        return 2048
+
+
+class PreventSchedulerYield(Reference[bool]):
+    """When ``True``, a fiber never yields because of its step budget. It
+    still yields when it waits or calls ``yield_now``."""
+
+    @classmethod
+    def default(cls) -> bool:
+        return False
 
 
 class _Timer:

@@ -239,7 +239,7 @@ class _Locally[A, E, R](Effect[A, E, R]):
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
         fiber._push(_RestoreContext(fiber._context))
-        fiber._context = self.f(fiber._context)
+        fiber._set_context(self.f(fiber._context))
         return self.inner
 
 
@@ -251,11 +251,11 @@ class _RestoreContext(Frame):
         self.context = context
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
-        fiber._context = self.context
+        fiber._set_context(self.context)
         return Success(value)
 
     def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
-        fiber._context = self.context
+        fiber._set_context(self.context)
         return Failure(cause)
 
 

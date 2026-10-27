@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from pyfect._core import Effect, _Succeed, _Suspend, _Sync, uninterruptible_mask
+from pyfect._core import Effect, Restore, _Succeed, _Suspend, _Sync, uninterruptible_mask
 from pyfect._waiters import WaitList
 
 
@@ -47,7 +47,17 @@ class Semaphore:
         return _Sync(run)
 
     def with_permits[A, E, R](self, eff: Effect[A, E, R], n: int = 1) -> Effect[A, E, R]:
-        """Run ``eff`` holding ``n`` permits, releasing them however it ends."""
-        return uninterruptible_mask(
-            lambda restore: restore(self.take(n)).and_then(restore(eff).ensuring(self.release(n)))
-        )
+        """Run ``eff`` holding ``n`` permits, releasing them however it ends.
+        Only the wait is interruptible: once taken, the permits are guarded
+        in the same step."""
+
+        def body(restore: Restore) -> Effect[A, E, R]:
+            def acquire() -> Effect[A, E, R]:
+                if self._available < n:
+                    return restore(self._waiters.wait()).and_then(_Suspend(acquire))
+                self._available -= n
+                return restore(eff).ensuring(self.release(n))
+
+            return _Suspend(acquire)
+
+        return uninterruptible_mask(body)

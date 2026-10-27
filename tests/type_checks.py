@@ -19,7 +19,7 @@ from pyfect import layer, schedule
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.context import ServiceEffect
 from pyfect.duration import Seconds, to_seconds
-from pyfect.scheduler import SyncScheduler
+from pyfect.scheduler import Scheduler, SyncScheduler
 
 
 class Db(Protocol):
@@ -278,6 +278,14 @@ def check_run_gate() -> None:
     fx.run_sync(lookup("k").pipe(fx.provide(layer.merge(primary_live, port_live))))  # pyright: ignore[reportArgumentType]
     fx.run_sync_exit(lookup("k").pipe(fx.provide(layer.merge(primary_live, port_live))))
     assert_type(fx.run_sync(Level()), int)
+    assert_type(fx.MaxOpsBeforeYield(), ServiceEffect[int, Never])
+    assert_type(fx.CurrentScheduler(), ServiceEffect[Scheduler, Never])
+    assert_type(
+        fx.succeed(1).pipe(fx.provide_service(fx.MaxOpsBeforeYield, 16)),
+        fx.Effect[int, Never, Never],
+    )
+    fx.provide_service(fx.MaxOpsBeforeYield, "16")  # pyright: ignore[reportArgumentType]
+    fx.provide_service(fx.CurrentScheduler, 1)  # pyright: ignore[reportArgumentType]
 
 
 # --- combining effects never widens to Unknown ---------------------------------------

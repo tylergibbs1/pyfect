@@ -4,11 +4,22 @@
 
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
-``fx.schedule``, ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
+``fx.schedule``, ``fx.scheduler``, ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.testing``.
 """
 
-from pyfect import cause, clock, duration, exit, layer, option, result, schedule, testing
+from pyfect import (
+    cause,
+    clock,
+    duration,
+    exit,
+    layer,
+    option,
+    result,
+    schedule,
+    scheduler,
+    testing,
+)
 from pyfect._all import all, all_dict
 from pyfect._concurrency import Concurrency, for_each, race_all, race_all_first
 from pyfect._context_managers import acquire_async_context, acquire_context
@@ -63,6 +74,7 @@ from pyfect.ref import Ref
 from pyfect.result import Err, Ok, Result
 from pyfect.run import run_async, run_async_exit, run_main, run_sync, run_sync_exit
 from pyfect.schedule import Schedule
+from pyfect.scheduler import CurrentScheduler, MaxOpsBeforeYield, PreventSchedulerYield
 from pyfect.scope import (
     CloseableScope,
     Scope,
@@ -80,6 +92,7 @@ __all__ = [
     "CloseableScope",
     "Concurrency",
     "Context",
+    "CurrentScheduler",
     "Deferred",
     "Done",
     "Duration",
@@ -91,10 +104,12 @@ __all__ = [
     "Fiber",
     "Interrupted",
     "Layer",
+    "MaxOpsBeforeYield",
     "MissingServiceError",
     "NoSuchElementException",
     "Ok",
     "Option",
+    "PreventSchedulerYield",
     "Queue",
     "Ref",
     "Reference",
@@ -160,6 +175,7 @@ __all__ = [
     "run_sync",
     "run_sync_exit",
     "schedule",
+    "scheduler",
     "scoped",
     "sleep",
     "succeed",

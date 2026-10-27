@@ -216,7 +216,7 @@ def _fork_in(
     eff: Effect[Any, Any, Any], scope: CloseableScope, parent: Fiber[Any, Any]
 ) -> Effect[Fiber[Any, Any]]:
     if scope._closed is not None:
-        fiber: Fiber[Any, Any] = Fiber(parent._scheduler, parent._context, None)
+        fiber: Fiber[Any, Any] = Fiber(parent._run_scheduler, parent._context, None)
         fiber.unsafe_interrupt_as(parent.id)
         return _Succeed(fiber)
     fiber = parent._fork(eff, daemon=True)

@@ -1,8 +1,5 @@
 """Ref, Deferred, Queue, Semaphore."""
 
-from collections.abc import Callable
-from contextlib import AbstractContextManager
-
 import pyfect as fx
 from pyfect.testing import run_test as run
 
@@ -192,9 +189,7 @@ def test_semaphore_take_and_release_return_counts():
     assert run(program) == (2, 2)
 
 
-def test_with_permits_interrupted_at_a_yield_gives_its_permit_back(
-    yield_budget: Callable[[int], AbstractContextManager[None]],
-):
+def test_with_permits_interrupted_at_a_yield_gives_its_permit_back():
     @fx.fn
     def program(delay: int):
         sem = yield from fx.Semaphore.make(1)
@@ -205,5 +200,31 @@ def test_with_permits_interrupted_at_a_yield_gives_its_permit_back(
 
     for budget in range(1, 16):
         for delay in range(5):
-            with yield_budget(budget):
-                assert run(program(delay)) == 1, (budget, delay)
+            budgeted = program(delay).pipe(fx.provide_service(fx.MaxOpsBeforeYield, budget))
+            assert run(budgeted) == 1, (budget, delay)
+
+
+def test_with_permits_takes_its_permits_uninterruptibly():
+    """As Effect's ``withPermits``: only the wait is interruptible, so no
+    yield between taking the permit and guarding it can lose it. ``maps``
+    steps before the take move it onto every yield point a budget allows,
+    including the ones between continuations."""
+
+    def maps(k: int) -> fx.Effect[None]:
+        eff = fx.void
+        for _ in range(k):
+            eff = eff.map(lambda x: x)
+        return eff
+
+    @fx.fn
+    def program(k: int):
+        sem = yield from fx.Semaphore.make(1)
+        holder = yield from maps(k).and_then(sem.with_permits(fx.never)).fork()
+        yield from fx.yield_now()
+        yield from holder.interrupt()
+        return (yield from sem.available)
+
+    for budget in (31, 63):
+        for k in range(40):
+            budgeted = program(k).pipe(fx.provide_service(fx.MaxOpsBeforeYield, budget))
+            assert run(budgeted) == 1, (budget, k)
