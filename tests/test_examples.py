@@ -35,3 +35,18 @@ def test_fastapi_style_opens_once_serves_and_closes():
         "request: interrupted",
         "pool: closed",
     ]
+
+
+def test_batching_sends_one_query_per_feed_and_none_once_cached():
+    assert run_example("batching.py").splitlines() == [
+        "db: SELECT id, author_id FROM posts",
+        "db: SELECT id, name FROM authors WHERE id IN (1, 2, 3, 4)",
+        "post 10 by Ada",
+        "post 11 by Grace",
+        "post 12 by Ada",
+        "post 13 by Linus",
+        "post 14 by Grace",
+        "post 15 by #4?",
+        "db: SELECT id, name FROM authors WHERE id IN (1, 2, 3, 4)",
+        "cached feed: 6 posts",
+    ]

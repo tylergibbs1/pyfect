@@ -9,10 +9,13 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 ``fx.SynchronizedRef``, ``fx.SubscriptionRef``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
-``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``.
+``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``. Request batching:
+``fx.Request``, ``fx.RequestResolver``, ``fx.request`` (``Entry`` and the rest in
+``fx.batching``).
 """
 
 from pyfect import (
+    batching,
     cause,
     clock,
     cron,
@@ -34,6 +37,7 @@ from pyfect._core import Effect, Restore, interruptible_mask, uninterruptible_ma
 from pyfect._fiber import Fiber
 from pyfect._iterables import filter, first_success_of, partition, validate
 from pyfect._root import NoRunError
+from pyfect.batching import Request, RequestResolver, request, request_unsafe
 from pyfect.cache import Cache, ScopedCache
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
 from pyfect.clock import Clock, sleep
@@ -186,6 +190,8 @@ __all__ = [
     "RcRef",
     "Ref",
     "Reference",
+    "Request",
+    "RequestResolver",
     "Resource",
     "Restore",
     "Result",
@@ -211,6 +217,7 @@ __all__ = [
     "add_finalizer",
     "all",
     "all_dict",
+    "batching",
     "blocking",
     "callback",
     "catch_if",
@@ -254,6 +261,8 @@ __all__ = [
     "race_all",
     "race_all_first",
     "random",
+    "request",
+    "request_unsafe",
     "result",
     "run_async",
     "run_async_exit",

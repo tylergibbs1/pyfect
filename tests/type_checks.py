@@ -17,6 +17,7 @@ from _pytest.fixtures import FixtureFunctionDefinition
 
 import pyfect as fx
 from pyfect import layer, schedule
+from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.context import ServiceEffect
 from pyfect.duration import Seconds, to_seconds
@@ -1573,3 +1574,104 @@ def check_pool_is_invariant(pool: fx.Pool[bool, Never]) -> None:
     # Effect declares Pool<in out A, in out E>: items go back in.
     widened: fx.Pool[int, NotFound] = pool  # pyright: ignore[reportAssignmentType]
     del widened
+
+
+# --- request batching -----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GetUser(fx.Request[str, NotFound]):
+    id: int
+
+
+@dataclass(frozen=True)
+class GetIds(fx.Request[list[int], Never, Port]):
+    pass
+
+
+def _users(entries: Sequence[Entry[GetUser]]) -> fx.Effect[None, Invalid]:
+    return fx.void
+
+
+def _both(entries: Sequence[Entry[GetUser | GetIds]]) -> fx.Effect[None]:
+    for entry in entries:
+        # A union's entries take either request's outcome.
+        entry.complete_unsafe(fx.Success("x"))
+        entry.complete_unsafe(fx.Success([1]))
+    return fx.void
+
+
+def check_request() -> None:
+    users = fx.RequestResolver(_users)
+    assert_type(users, fx.RequestResolver[GetUser, Invalid])
+    # The run's errors join the request's.
+    assert_type(fx.request(GetUser(1), users), fx.Effect[str, NotFound | Invalid])
+    assert_type(fx.request(GetUser(1), fx.succeed(users)), fx.Effect[str, NotFound | Invalid])
+    both = fx.RequestResolver(_both)
+    assert_type(fx.request(GetIds(), both), fx.Effect[list[int], Never, Port])
+    assert_type(fx.request(GetUser(1), both), fx.Effect[str, NotFound])
+    fx.request(GetIds(), users)  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
+def check_entry(entry: Entry[GetUser]) -> None:
+    assert_type(entry.request, GetUser)
+    assert_type(entry.complete(fx.Success("ok")), fx.Effect[None])
+    assert_type(entry.complete_effect(Port().as_("ok")), fx.Effect[None, Never, Port])
+    assert_type(entry.fail(NotFound("k")), fx.Effect[None])
+    entry.complete_unsafe(fx.Success(1))  # pyright: ignore[reportArgumentType]
+    entry.succeed(1)  # pyright: ignore[reportArgumentType]
+    entry.fail(Invalid("r"))  # pyright: ignore[reportArgumentType]
+
+
+def check_resolver_constructors() -> None:
+    # Named, the request type reaches a lambda's parameters (Effect's ``make<GetUser>``).
+    named = fx.RequestResolver[GetUser](lambda entries: entries[0].succeed("a"))
+    assert_type(named, fx.RequestResolver[GetUser])
+    assert_type(
+        fx.RequestResolver[GetUser].from_effect(lambda e: fx.succeed(str(e.request.id))),
+        fx.RequestResolver[GetUser],
+    )
+
+    def lookup(entry: Entry[GetUser]) -> fx.Effect[str, Invalid]:
+        return fx.succeed("a")
+
+    assert_type(fx.RequestResolver.from_effect(lookup), fx.RequestResolver[GetUser, Invalid])
+    assert_type(
+        fx.RequestResolver[GetUser].from_function(lambda e: str(e.request.id)),
+        fx.RequestResolver[GetUser],
+    )
+    assert_type(
+        fx.RequestResolver[GetUser].make_grouped(
+            key=lambda e: e.request.id % 2, resolver=lambda _entries, key: fx.succeed(None)
+        ),
+        fx.RequestResolver[GetUser],
+    )
+    assert_type(
+        fx.RequestResolver.from_effect_tagged({GetUser: lambda es: fx.succeed(["a"] * len(es))}),
+        fx.RequestResolver[GetUser],
+    )
+    assert_type(fx.RequestResolver.never(), fx.RequestResolver[object])
+    fx.RequestResolver[GetIds].from_effect(lookup)  # pyright: ignore[reportArgumentType]
+
+
+def check_resolver_combinators(users: fx.RequestResolver[GetUser, Invalid]) -> None:
+    assert_type(users.batch_n(10), fx.RequestResolver[GetUser, Invalid])
+    assert_type(users.grouped(lambda e: e.request.id), fx.RequestResolver[GetUser, Invalid])
+    assert_type(users.set_delay(0.01), fx.RequestResolver[GetUser, Invalid])
+    assert_type(
+        users.around(lambda _: fx.succeed(1), lambda _es, n: fx.fail(NotFound(str(n)))),
+        fx.RequestResolver[GetUser, Invalid | NotFound],
+    )
+    other = fx.RequestResolver[GetUser](lambda _: fx.void)
+    assert_type(users.race(other), fx.RequestResolver[GetUser, Invalid])
+    assert_type(users.with_cache(capacity=10), fx.Effect[fx.RequestResolver[GetUser, Invalid]])
+    users.with_cache(capacity=10, strategy="random")  # pyright: ignore[reportArgumentType]
+
+
+def check_resolver_is_contravariant(
+    both: fx.RequestResolver[GetUser | GetIds], users: fx.RequestResolver[GetUser]
+) -> None:
+    # A resolver of more requests stands in for one of fewer.
+    narrowed: fx.RequestResolver[GetUser] = both
+    widened: fx.RequestResolver[GetUser | GetIds] = users  # pyright: ignore[reportAssignmentType]
+    del narrowed, widened

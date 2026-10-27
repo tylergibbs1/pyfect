@@ -37,6 +37,13 @@ def start_root(fiber: Fiber[Any, Any], eff: Effect[Any, Any, Any], *, now: bool 
         fiber._start(eff)
 
 
+def run_identity(run_scheduler: Scheduler) -> object:
+    """What fibers of one run share: the asyncio loop for runs on a loop
+    (each ``run_async`` has a scheduler of its own, all driven by the
+    loop), else the run's scheduler, which stops when its run ends."""
+    return run_scheduler._loop if isinstance(run_scheduler, AsyncioScheduler) else run_scheduler
+
+
 def ambient_run(scheduler: Scheduler | None) -> tuple[Scheduler, bool]:
     """The run a root fiber started here joins, and whether it can start
     at once: the current fiber's (it can), else the running asyncio loop's

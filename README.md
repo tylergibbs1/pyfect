@@ -133,6 +133,13 @@ to fibers (`get` for the current scope, `use(f)` for one effect), and
 items sit idle; `concurrency=` shares an item, `invalidate` retires one and `reserve` keeps
 one from new borrowers.
 
+**Request batching.** A `fx.Request[A, E]` subclass (a frozen dataclass) describes one
+lookup; a `fx.RequestResolver` answers many at once. Requests made through one resolver in
+the same scheduler tick become one batch, so N concurrent `fx.request(GetUser(i), users)`
+calls make one query; `batch_n`, `grouped`, `set_delay`, `around`, `race` and
+`with_cache(capacity=)` shape the batches, and an interrupted caller leaves its batch. See
+[`examples/batching.py`](examples/batching.py).
+
 **Time.** `fx.cron` parses cron expressions (seconds, names, steps, a zone) and finds the
 `next` / `prev` match with Effect's DST rules; `schedule.cron("0 9 * * MON", "Europe/Berlin")`
 runs an effect on one. `fx.random` reads the `Random` service (`next_int_between`,
@@ -248,7 +255,7 @@ Concurrency, the runtime entry points and dependency injection (M2) are done; se
 
 1. **Streams**: `Stream`, `Sink`, `Channel` on top of `Queue`.
 2. **Observability**: `Logger`, spans via `@fx.fn`, OpenTelemetry bridge, metrics.
-3. **More building blocks**: `Cache`, `Request` batching, `STM`.
+3. **More building blocks**: `STM`.
 4. **Config and Schema**: typed config providers; schema built on what Python already has
    (dataclasses, pydantic) rather than a reimplementation.
 
