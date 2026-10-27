@@ -26,7 +26,7 @@ Effect (effect.website, v4 semantics) for Python. Python >= 3.13, pyright strict
 - New primitives implement `_step`; continuation frames implement `_on_success`/`_on_failure`.
   The loop in `_fiber.py` must stay ignorant of specific primitives.
   `tests/test_fiber_loop_invariants.py` enforces this and that `Fiber._run` is entered only
-  from the scheduler, `_resume` or `_unwind`.
+  from `Fiber._drain`.
 - Interrupts from the fiber's own scheduler thread are delivered synchronously (Effect's
   `interruptUnsafe`); from other threads they are scheduled.
 - A `_Suspend` thunk that claims state (takes an item, a permit) must return the result in
