@@ -9,6 +9,7 @@ from typing import Any
 
 from pyfect._core import Effect, _Gen, _Sync
 from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.random import next as next_double
 from pyfect.result import Err, Ok, Result
 from pyfect.schedule._model import (
     Continue,
@@ -21,7 +22,6 @@ from pyfect.schedule._model import (
     from_step,
     to_step,
 )
-from pyfect.schedule._random import next_double
 
 
 def _wrap[O, I, E, R, O2, E2, R2](

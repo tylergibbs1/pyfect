@@ -10,15 +10,13 @@ Omitted, with the reason:
 
 - "cron" / every title: ``Schedule.cron`` needs the ``Cron`` module, which
   is not ported yet.
-- "jittered" titles run without ``Random.withSeed``: pyfect has no
-  ``Random`` service yet. The bounds they check hold for any seed.
 """
 
 import math
 from collections.abc import Iterable
 
 import pyfect as fx
-from pyfect import schedule, testing
+from pyfect import random, schedule, testing
 from pyfect.duration import ZERO, Seconds
 from pyfect.result import Err, Ok
 from pyfect.schedule import Continue, Metadata, Schedule, Stop
@@ -321,7 +319,9 @@ def test_up_to_leaves_the_schedule_unchanged_when_no_options_are_specified():
 @testing.effect
 def test_jittered_keeps_delays_within_80_120_percent_of_the_original():
     """keeps delays within 80%-120% of the original"""
-    output = yield from run_delays(schedule.spaced(1).jittered(), nones(20))
+    output = yield from run_delays(schedule.spaced(1).jittered(), nones(20)).pipe(
+        random.with_seed("jittered-bounds")
+    )
     assert len(output) == 20
     assert all(0.8 <= d <= 1.2 for d in output)
 
@@ -329,7 +329,9 @@ def test_jittered_keeps_delays_within_80_120_percent_of_the_original():
 @testing.effect
 def test_jittered_does_not_change_completion_output():
     """does not change completion output"""
-    output = yield from run_delays(schedule.duration(1).jittered(), nones(5))
+    output = yield from run_delays(schedule.duration(1).jittered(), nones(5)).pipe(
+        random.with_seed("jittered-completion")
+    )
     assert len(output) == 2
     assert 0.8 <= output[0] <= 1.2
     assert output[1] == 0

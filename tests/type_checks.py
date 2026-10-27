@@ -1248,3 +1248,20 @@ def check_layer_map_service() -> None:
     )
     assert_type(PortMap.invalidate("a"), fx.Effect[None, Never, PortMap])
     PortMap.get(1)  # pyright: ignore[reportArgumentType]
+
+
+def check_random() -> None:
+    assert_type(fx.random.next(), fx.Effect[float])
+    assert_type(fx.random.next_int_between(1, 6, half_open=True), fx.Effect[int])
+    assert_type(fx.random.shuffle("abc"), fx.Effect[list[str]])
+    # A non-empty tuple can't be empty; any other iterable can.
+    assert_type(fx.random.choice((1, 2, 3)), fx.Effect[int])
+    assert_type(fx.random.choice([1, 2, 3]), fx.Effect[int, fx.NoSuchElementException])
+    assert_type(fx.random.choice(()), fx.Effect[Never, fx.NoSuchElementException])
+    # with_seed keeps the effect's type.
+    assert_type(
+        lookup("k").pipe(fx.random.with_seed("seed")),
+        fx.Effect[str, Invalid | NotFound, Port | Primary],
+    )
+    fx.provide_service(fx.Random, object())  # pyright: ignore[reportArgumentType]
+    fx.random.with_seed(b"seed")  # pyright: ignore[reportArgumentType]

@@ -4,7 +4,7 @@
 
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
-``fx.schedule``, ``fx.scheduler``, ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
+``fx.random``, ``fx.schedule``, ``fx.scheduler``, ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
 ``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``.
@@ -17,6 +17,7 @@ from pyfect import (
     exit,
     layer,
     option,
+    random,
     result,
     schedule,
     scheduler,
@@ -92,6 +93,7 @@ from pyfect.managed_runtime import ManagedRuntime
 from pyfect.option import Option, Some
 from pyfect.partitioned_semaphore import PartitionedSemaphore
 from pyfect.queue import Done, Queue
+from pyfect.random import Random
 from pyfect.rc_map import RcMap
 from pyfect.rc_ref import RcRef
 from pyfect.ref import Ref
@@ -162,6 +164,7 @@ __all__ = [
     "PartitionedSemaphore",
     "PreventSchedulerYield",
     "Queue",
+    "Random",
     "RcMap",
     "RcRef",
     "Ref",
@@ -228,6 +231,7 @@ __all__ = [
     "provide_service_effect",
     "race_all",
     "race_all_first",
+    "random",
     "result",
     "run_async",
     "run_async_exit",
