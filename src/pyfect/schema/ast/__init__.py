@@ -15,6 +15,7 @@ from its values. ``Undefined``, ``Void``, ``Symbol``, ``UniqueSymbol`` and
 every value an object) and are not ported.
 """
 
+from pyfect.schema.ast._arrays import Arrays, Element
 from pyfect.schema.ast._base import (
     AST,
     Annotations,
@@ -38,6 +39,13 @@ from pyfect.schema.ast._check import (
     normalize_filter_output,
 )
 from pyfect.schema.ast._class import Class, ClassShape, ClassSide, check_instance
+from pyfect.schema.ast._declaration import (
+    Declaration,
+    DeclarationParser,
+    DeclarationRun,
+    parse_at_key,
+)
+from pyfect.schema.ast._json import is_json, json
 from pyfect.schema.ast._keywords import (
     Any,
     BigInt,
@@ -73,6 +81,7 @@ __all__ = [
     "AST",
     "Annotations",
     "Any",
+    "Arrays",
     "BigInt",
     "Boolean",
     "Check",
@@ -80,6 +89,10 @@ __all__ = [
     "Class",
     "ClassShape",
     "ClassSide",
+    "Declaration",
+    "DeclarationParser",
+    "DeclarationRun",
+    "Element",
     "Enum",
     "EnumSide",
     "Filter",
@@ -110,13 +123,16 @@ __all__ = [
     "filter_of",
     "format_literal",
     "invalid_type",
+    "is_json",
     "issue_of",
+    "json",
     "make_filter",
     "make_filter_by_guard",
     "never",
     "normalize_filter_output",
     "null",
     "number",
+    "parse_at_key",
     "record",
     "same_literal",
     "string",

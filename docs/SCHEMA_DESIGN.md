@@ -26,6 +26,14 @@ from pyfect import schema as S
   a schema needing services is a type error there and works with `_effect`.
 - Methods that would put a covariant parameter in an argument position use a
   method TypeVar and a self type (`make[A](self: Bottom[A, ...], input: A)`).
+- Schema subclasses (`TupleSchema`, `OptionSchema`, ...) declare their
+  TypeVars (`TypeVar("RD_co", covariant=True)`, `Generic[...]`) rather than
+  using `class X[A, RD]` syntax: pyright infers a frozen dataclass's field
+  parameters as invariant, so a schema needing no services would not fit a
+  combinator that shares one `RD` (`TupleWithRest(Tuple(...), needs_db)`).
+  Keys of a `dict` / `Mapping` stay invariant, as do the literals of
+  `LiteralsSchema` (`pick` takes them). `tests/test_schema_variance.py`
+  fails on a schema class with inferred variance.
 
 ## Writing combinators
 
@@ -70,8 +78,10 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
   `object` Unknown, `Any` Any, `Literal[x]` Literal, `Literal[x, y]`
   Literals, `X | Y` Union, `dict[K, V]` / `Mapping[K, V]` Record, a
   TypedDict a Struct, an `Enum` Enum, a schema class itself (`Annotated`,
-  `NewType` and `type` aliases are unwrapped). `list[X]` / `tuple[...]`
-  come with Array and Tuple. Anything else raises `TypeError` on that first
+  `NewType` and `type` aliases are unwrapped). `list[X]` List, `tuple[X, ...]` /
+  `Sequence[X]` Array, `tuple[X, Y]` Tuple, `frozenset[X]` /
+  `AbstractSet[X]` FrozenSet, `Redacted[X]` Redacted, `timedelta` Duration
+  (a variadic `tuple[X, *tuple[Y, ...]]` needs `S.field(S.TupleWithRest(...))`). Anything else raises `TypeError` on that first
   use (a boundary error, not a parse error).
 - `S.field(schema, default=...)` gives any other schema (checks,
   transformations). It is a `dataclass_transform` field specifier returning
@@ -114,6 +124,20 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
 
 `S.Int` is the `int` schema with the messages of Effect's `Int` check;
 `S.BigInt` is also `int`, with Effect's `bigint` messages.
+
+## Tuples and arrays
+
+- `S.Tuple(a, b)` has exact overloads up to eight elements, so its Type
+  and Encoded are `tuple[A, B]` / `tuple[I, J]`. With more elements, or
+  any `optional_key` element (pyright has no optional tuple slot), it
+  falls back to `tuple[A | B, ...]` of the joined element types.
+- `S.TupleWithRest(schema, rest, *post)` has overloads for prefixes of up
+  to three elements and zero or one post-rest element, typing as
+  `tuple[A, *tuple[R, ...]]` / `tuple[A, *tuple[R, ...], P]`. A rest
+  schema is a `Codec`, never an `OptionalKey`, so Effect's "An optional
+  element cannot follow a rest element" is a type error, not a runtime one.
+- An array's Encoded is `Sequence[I]` (a list or a tuple is taken); its
+  Type is `tuple[A, ...]` (`S.Array`) or `list[A]` (`S.List`).
 
 ## Runtime
 

@@ -42,8 +42,6 @@ Omitted:
 - "Class / make applies constructor defaults only at a field occurrence",
   "Class / Struct with nested Class": ``withConstructorDefault`` on a
   schema; a default belongs to a class field.
-- "Class / make preserves Class instances in Array(Class) and
-  Array(Union(Class))": waits for arrays.
 - "Class / should be compatible with `immer` / ...": no immer.
 - "TaggedError / name matches tag", "... matches identifier", "...
   matches identifier after extend": a Python exception has no ``name``;
@@ -80,6 +78,29 @@ def test_class_make_preserves_existing_instances():
     assert option.value is instance
     assert fx.run_sync(A.make_effect(instance).or_die()) is instance
     assert len(constructions) == 1
+
+
+class _Row(S.Class):
+    value: str
+
+
+class _DirectTable(S.Class):
+    rows: tuple[_Row, ...]
+
+
+class _UnionTable(S.Class):
+    rows: tuple[_Row | None, ...] = S.field(S.Array(S.Union(_Row, S.Null)))
+
+
+def test_class_make_preserves_class_instances_in_array_class_and_array_union_class():
+    """Class / make preserves Class instances in Array(Class) and Array(Union(Class))"""
+    row = _Row(value="a")
+    assert _DirectTable(rows=(row,)).rows[0] is row
+    assert _UnionTable(rows=(row,)).rows[0] is row
+    bad: tuple[_Row, ...] = ({"value": 1},)  # pyright: ignore[reportAssignmentType]
+    for table in (_DirectTable, _UnionTable):
+        with pytest.raises(S.SchemaError):
+            table(rows=bad)
 
 
 def test_class_make_applies_defaults_source_checks_and_the_constructor_once():

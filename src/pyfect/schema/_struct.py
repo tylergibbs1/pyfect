@@ -13,18 +13,24 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Never, overload
+from typing import Any, Generic, Never, TypeVar, overload
 
 from pyfect.schema import ast
 from pyfect.schema._derive import typed_dict_ast, typed_dict_fields
 from pyfect.schema._schema import Bottom, Codec
 
+# Explicit covariant parameters: a frozen dataclass's fields would make
+# inferred ones invariant (``tests/test_schema_variance.py``).
+TD_co = TypeVar("TD_co", bound=Mapping[str, object], covariant=True)
+RD_co = TypeVar("RD_co", covariant=True)
+RE_co = TypeVar("RE_co", covariant=True)
+
 
 @dataclass(frozen=True, slots=True, eq=False)
-class StructSchema[TD: Mapping[str, object], RD, RE](Bottom[TD, Mapping[str, object], RD, RE]):
+class StructSchema(Bottom[TD_co, Mapping[str, object], RD_co, RE_co], Generic[TD_co, RD_co, RE_co]):
     """The schema of a TypedDict; ``fields`` maps each key to its schema."""
 
-    fields: Mapping[str, Bottom[object, object, RD, RE]]
+    fields: Mapping[str, Bottom[object, object, RD_co, RE_co]]
 
 
 @overload

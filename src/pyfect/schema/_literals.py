@@ -12,20 +12,36 @@ from __future__ import annotations
 import enum
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import LiteralString, Never, cast
+from typing import Generic, LiteralString, Never, TypeVar, cast
 
 from pyfect.schema import ast
 from pyfect.schema._schema import Bottom, Codec
 
+# Explicit covariant parameters: a frozen dataclass's fields would make
+# inferred ones invariant (``tests/test_schema_variance.py``).
+A_co = TypeVar("A_co", covariant=True)
+I_co = TypeVar("I_co", covariant=True)
+RD_co = TypeVar("RD_co", covariant=True)
+RE_co = TypeVar("RE_co", covariant=True)
+B = TypeVar("B")
+J = TypeVar("J")
+SD = TypeVar("SD")
+SE = TypeVar("SE")
+
 type LiteralValue = LiteralString | int | float | bool | None
 """What a literal may be: a string, a number, a boolean or ``None``."""
 
+L_co = TypeVar("L_co", bound=LiteralValue, covariant=True)
+L_ = TypeVar("L_", bound=LiteralValue)
+"""Invariant: ``LiteralsSchema.pick`` takes literals of the union's type."""
+E_co = TypeVar("E_co", bound=enum.Enum, covariant=True)
+
 
 @dataclass(frozen=True, slots=True, eq=False)
-class LiteralSchema[L: LiteralValue](Bottom[L, L, Never, Never]):
+class LiteralSchema(Bottom[L_co, L_co, Never, Never], Generic[L_co]):
     """The schema of one value; ``literal`` is that value."""
 
-    literal: L
+    literal: L_co
 
 
 def Literal[L: LiteralValue](literal: L, /) -> LiteralSchema[L]:
@@ -35,14 +51,14 @@ def Literal[L: LiteralValue](literal: L, /) -> LiteralSchema[L]:
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class UnionSchema[A, I, RD, RE](Bottom[A, I, RD, RE]):
+class UnionSchema(Bottom[A_co, I_co, RD_co, RE_co], Generic[A_co, I_co, RD_co, RE_co]):
     """A union; ``members`` are its schemas, in order."""
 
-    members: tuple[Codec[A, I, RD, RE], ...]
+    members: tuple[Codec[A_co, I_co, RD_co, RE_co], ...]
 
-    def map_members[B, J, SD, SE](
+    def map_members(
         self,
-        f: Callable[[tuple[Codec[A, I, RD, RE], ...]], Sequence[Codec[B, J, SD, SE]]],
+        f: Callable[[tuple[Codec[A_co, I_co, RD_co, RE_co], ...]], Sequence[Codec[B, J, SD, SE]]],
         /,
         *,
         unsafe_preserve_checks: bool = False,
@@ -67,22 +83,22 @@ def Union[A, I, RD, RE](
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class LiteralsSchema[L: LiteralValue](Bottom[L, L, Never, Never]):
+class LiteralsSchema(Bottom[L_, L_, Never, Never], Generic[L_]):
     """A union of literals; ``literals`` are the values, in order."""
 
-    literals: tuple[L, ...]
+    literals: tuple[L_, ...]
 
     @property
-    def members(self) -> tuple[LiteralSchema[L], ...]:
+    def members(self) -> tuple[LiteralSchema[L_], ...]:
         return tuple(LiteralSchema(ast.Literal(lit), lit) for lit in self.literals)
 
-    def pick(self, *literals: L) -> LiteralsSchema[L]:
+    def pick(self, *literals: L_) -> LiteralsSchema[L_]:
         """The union of ``literals`` only (each one of this union's)."""
         return Literals(*literals)
 
-    def map_members[A, I, RD, RE](
-        self, f: Callable[[tuple[LiteralSchema[L], ...]], Sequence[Codec[A, I, RD, RE]]], /
-    ) -> UnionSchema[A, I, RD, RE]:
+    def map_members(
+        self, f: Callable[[tuple[LiteralSchema[L_], ...]], Sequence[Codec[B, J, SD, SE]]], /
+    ) -> UnionSchema[B, J, SD, SE]:
         """The union of the schemas ``f`` makes from the members."""
         return Union(*f(self.members))
 
@@ -94,10 +110,10 @@ def Literals[L: LiteralValue](*literals: L) -> LiteralsSchema[L]:
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class EnumSchema[E: enum.Enum](Bottom[E, str | int | float, Never, Never]):
+class EnumSchema(Bottom[E_co, str | int | float, Never, Never], Generic[E_co]):
     """The members of the Python enum ``enums``, encoded as their values."""
 
-    enums: type[E]
+    enums: type[E_co]
 
 
 def Enum[E: enum.Enum](enums: type[E], /) -> EnumSchema[E]:

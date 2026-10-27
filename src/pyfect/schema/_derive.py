@@ -2,7 +2,10 @@
 classes: ``str`` String, ``int`` Int, ``float`` Number, ``bool`` Boolean,
 ``None`` Null, ``object`` Unknown, ``Any`` Any, ``Literal[x]`` Literal, ``Literal[x, y]`` Literals,
 ``X | Y`` Union, an ``Enum`` Enum, a ``TypedDict`` Struct, ``dict[K, V]`` /
-``Mapping[K, V]`` Record, a schema class itself; ``Annotated[T, ...]`` and
+``Mapping[K, V]`` Record, ``list[X]`` List, ``tuple[X, ...]`` /
+``Sequence[X]`` Array, ``tuple[X, Y]`` Tuple, ``frozenset[X]`` /
+``AbstractSet[X]`` FrozenSet, ``Redacted[X]`` Redacted, ``timedelta``
+Duration, a schema class itself; ``Annotated[T, ...]`` and
 a ``NewType`` stand for ``T``, a ``type`` alias for its value. Anything
 else raises ``TypeError``: give such a field its schema explicitly.
 """
@@ -10,19 +13,25 @@ else raises ``TypeError``: give such a field its schema explicitly.
 from __future__ import annotations
 
 import collections.abc
+import datetime
 import enum
 import types
 import typing
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, cast, get_args, get_origin, get_type_hints, is_typeddict
 from weakref import WeakKeyDictionary
 
+from pyfect.redacted import Redacted as _Redacted
 from pyfect.schema import ast
+from pyfect.schema._arrays import Array, List, Tuple
+from pyfect.schema._collections import FrozenSet
+from pyfect.schema._data import Redacted
 from pyfect.schema._literals import Enum, Literal, Literals, Union
 from pyfect.schema._primitives import Any as AnySchema
 from pyfect.schema._primitives import Boolean, Int, Null, Number, String, Unknown
 from pyfect.schema._record import Record
 from pyfect.schema._schema import Bottom, Codec
+from pyfect.schema._values import Duration
 
 type AnyBottom = Bottom[Any, Any, Any, Any]
 
@@ -35,9 +44,18 @@ _SIMPLE: dict[object, AnyBottom] = {
     type(None): Null,
     object: Unknown,
     Any: AnySchema,
+    datetime.timedelta: Duration,
 }
 
 _MAPPINGS = frozenset({dict, collections.abc.Mapping, collections.abc.MutableMapping})
+_OF_ONE: dict[object, Callable[[AnyBottom], AnyBottom]] = {
+    list: List,
+    collections.abc.Sequence: Array,
+    frozenset: FrozenSet,
+    collections.abc.Set: FrozenSet,
+    _Redacted: Redacted,
+}
+"""The schemas of the one-argument generic forms (``list[X]``, ...)."""
 
 
 def schema_of(annotation: object) -> AnyBottom:
@@ -60,7 +78,28 @@ def _of_form(annotation: object) -> AnyBottom | None:
         return Union(*map(schema_of, args))
     if origin in _MAPPINGS and len(args) == 2:
         return Record(schema_of(args[0]), schema_of(args[1]))
+    if origin is tuple:
+        return _of_tuple(args)
+    one = _OF_ONE.get(origin) if _hashable(origin) else None
+    if one is not None and len(args) == 1:
+        return one(schema_of(args[0]))
     return None
+
+
+def _of_tuple(args: tuple[object, ...]) -> AnyBottom | None:
+    """``tuple[X, ...]`` an Array, ``tuple[X, Y]`` / ``tuple[()]`` a Tuple."""
+    if len(args) == 2 and args[1] is Ellipsis:
+        return Array(schema_of(args[0]))
+    if any(_unpacked(a) or a is Ellipsis for a in args):
+        return None
+    return Tuple(*map(schema_of, args))
+
+
+def _unpacked(annotation: object) -> bool:
+    """``*tuple[X, ...]`` or ``Unpack[...]`` (a rest: no schema is derived)."""
+    return (
+        bool(getattr(annotation, "__unpacked__", False)) or get_origin(annotation) is typing.Unpack
+    )
 
 
 def _unwrap(annotation: object) -> object:

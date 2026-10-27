@@ -3634,3 +3634,136 @@ def check_schema_errors(failing: fx.Effect[int, _NotFound | _Invalid]) -> None:
     assert_type(S.decode_unknown_sync(_NotFound)(None), _NotFound)
     _NotFound(id=1).id = 2  # pyright: ignore[reportAttributeAccessIssue]
     _ = found
+
+
+def check_schema_composites(unknown: object) -> None:
+    """Tuples are exact up to eight elements; an optional element (or more
+    elements) joins them. Arrays decode to tuples, ``List`` to a list."""
+    from collections.abc import Mapping, Sequence
+    from datetime import datetime, timedelta, tzinfo
+
+    from pyfect import schema as S
+    from pyfect.byte_size import ByteSize
+    from pyfect.cause import Cause, Reason
+    from pyfect.option import Option
+    from pyfect.redacted import Redacted
+    from pyfect.result import Result
+
+    pair = S.Tuple(S.String, S.Number)
+    assert_type(pair, S.TupleSchema[tuple[str, float], tuple[str, float], Never, Never])
+    assert_type(S.decode_unknown_sync(pair)(unknown), tuple[str, float])
+    assert_type(S.Tuple(), S.TupleSchema[tuple[()], tuple[()], Never, Never])
+    assert_type(
+        S.Tuple(S.String, S.optional_key(S.Number)),
+        S.TupleSchema[tuple[str | float, ...], tuple[str | float, ...], Never, Never],
+    )
+    assert_type(
+        S.TupleWithRest(pair, S.Boolean),
+        S.TupleWithRestSchema[
+            tuple[str, float, *tuple[bool, ...]], tuple[str, float, *tuple[bool, ...]], Never, Never
+        ],
+    )
+    assert_type(
+        S.TupleWithRest(S.Tuple(S.String), S.Boolean, S.Number),
+        S.TupleWithRestSchema[
+            tuple[str, *tuple[bool, ...], float], tuple[str, *tuple[bool, ...], float], Never, Never
+        ],
+    )
+    # A rest element is never optional.
+    S.TupleWithRest(pair, S.optional_key(S.Boolean))  # pyright: ignore[reportCallIssue, reportArgumentType]
+    assert_type(
+        pair.map_elements(lambda es: (*es, S.Boolean)),
+        S.TupleSchema[tuple[object, ...], tuple[object, ...], Never, Never],
+    )
+
+    assert_type(S.decode_unknown_sync(S.Array(S.String))(unknown), tuple[str, ...])
+    assert_type(S.decode_sync(S.Array(S.Number)), S.Parser[Sequence[float], tuple[float, ...]])
+    assert_type(S.decode_unknown_sync(S.List(S.String))(unknown), list[str])
+    assert_type(
+        S.decode_unknown_sync(S.NonEmptyArray(S.String))(unknown), tuple[str, *tuple[str, ...]]
+    )
+    assert_type(S.Array(S.String).value, S.Codec[str, str, Never, Never])
+    assert_type(
+        S.UniqueArray(S.Int).check(S.is_min_length(1)),
+        S.ArraySchema[tuple[int, ...], int, int, Never, Never],
+    )
+    S.Array(S.String).check(S.is_trimmed())  # pyright: ignore[reportArgumentType]
+
+    assert_type(S.decode_unknown_sync(S.FrozenSet(S.Int))(unknown), frozenset[int])
+    assert_type(S.decode_unknown_sync(S.Map(S.Int, S.String))(unknown), dict[int, str])
+    assert_type(S.encode_sync(S.Map(S.Int, S.String)), S.Parser[dict[int, str], Mapping[int, str]])
+
+    assert_type(S.decode_unknown_sync(S.Option(S.Int))(unknown), Option[int])
+    assert_type(S.decode_unknown_sync(S.Result(S.Int, S.String))(unknown), Result[int, str])
+    exceptions = S.instance_of(Exception)
+    assert_type(exceptions, S.Bottom[Exception])
+    assert_type(S.decode_unknown_sync(S.Cause(S.String, exceptions))(unknown), Cause[str])
+    assert_type(S.decode_unknown_sync(S.CauseReason(S.String, exceptions))(unknown), Reason[str])
+    assert_type(
+        S.decode_unknown_sync(S.Exit(S.Int, S.String, exceptions))(unknown), fx.Exit[int, str]
+    )
+    # A Die holds an exception: the defect schema must make one.
+    S.Cause(S.String, S.Unknown)  # pyright: ignore[reportArgumentType]
+    assert_type(S.decode_unknown_sync(S.Redacted(S.String))(unknown), Redacted[str])
+
+    assert_type(S.Duration, S.Bottom[timedelta])
+    assert_type(S.DateTimeUtc, S.Bottom[datetime])
+    assert_type(S.TimeZone, S.Bottom[tzinfo])
+    assert_type(S.ByteSize, S.Bottom[ByteSize])
+    assert_type(S.decode_unknown_sync(S.Json)(unknown), S.JsonValue)
+    loaded: Json = {"a": [1, None]}
+    as_json: S.JsonValue = loaded
+    _ = as_json
+
+    def is_str(value: object) -> TypeIs[str]:
+        return isinstance(value, str)
+
+    assert_type(S.declare(is_str, expected="text"), S.Bottom[str])
+
+
+def check_schema_classes_are_covariant() -> None:
+    """A schema needing no services is a schema needing some, and a schema of
+    a narrower type one of a wider type: every schema class is covariant, so
+    combinators sharing one ``RD`` / ``RE`` accept parts that need fewer."""
+    from pyfect import schema as S
+
+    def pins(
+        *,
+        needs_db: S.Codec[int, str, Db, Never],
+        pair: S.TupleSchema[tuple[str, float], tuple[str, float], Never, Never],
+        rest: S.TupleWithRestSchema[tuple[str, *tuple[bool, ...]], tuple[str], Never, Never],
+        array: S.ArraySchema[tuple[str, ...], str, str, Never, Never],
+        frozen: S.FrozenSetSchema[str, str, Never, Never],
+        mapping: S.MapSchema[str, int, str, int, Never, Never],
+        record: S.RecordSchema[str, int, str, int, Never, Never],
+        struct: S.StructSchema[dict[str, int], Never, Never],
+        union: S.UnionSchema[str, str, Never, Never],
+        option: S.OptionSchema[str, str, Never, Never],
+        result: S.ResultSchema[str, int, str, int, Never, Never],
+        reason: S.CauseReasonSchema[str, str, Never, Never],
+        cause_: S.CauseSchema[str, str, Never, Never],
+        exit_: S.ExitSchema[str, int, str, int, Never, Never],
+        secret: S.RedactedSchema[str, str, Never, Never],
+    ) -> None:
+        assert_type(
+            S.TupleWithRest(S.Tuple(S.String), needs_db),
+            S.TupleWithRestSchema[
+                tuple[str, *tuple[int, ...]], tuple[str, *tuple[str, ...]], Db, Never
+            ],
+        )
+        _1: S.TupleSchema[tuple[object, object], tuple[object, ...], Db, object] = pair
+        _2: S.TupleWithRestSchema[tuple[object, ...], tuple[object, ...], Db, object] = rest
+        _3: S.ArraySchema[tuple[object, ...], object, object, Db, object] = array
+        _4: S.FrozenSetSchema[object, object, Db, object] = frozen
+        _5: S.MapSchema[str, int, str, object, Db, object] = mapping
+        _6: S.RecordSchema[str, int, str, object, Db, object] = record
+        _7: S.StructSchema[dict[str, int], Db, object] = struct
+        _8: S.UnionSchema[object, object, Db, object] = union
+        _11: S.OptionSchema[object, object, Db, object] = option
+        _12: S.ResultSchema[object, object, object, object, Db, object] = result
+        _13: S.CauseReasonSchema[object, object, Db, object] = reason
+        _14: S.CauseSchema[object, object, Db, object] = cause_
+        _15: S.ExitSchema[object, object, object, object, Db, object] = exit_
+        _16: S.RedactedSchema[object, object, Db, object] = secret
+
+    _ = pins

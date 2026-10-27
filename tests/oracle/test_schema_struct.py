@@ -49,7 +49,7 @@ Omitted:
 - "Record / Record(Enum, Number)": an ``S.Enum`` decodes values to members,
   so as a record key it is a key pattern (values in, members out), not a
   required key per value.
-- "annotateKey / ... / Tuple": waits for tuples.
+- "annotateKey / ... / Tuple": ported in ``test_schema_composites.py``.
 """
 
 from typing import NotRequired, TypedDict

@@ -4,17 +4,30 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Generic, TypeVar
 
 from pyfect.schema import ast
 from pyfect.schema._schema import Bottom, Codec
 
+# Explicit covariant parameters: a frozen dataclass's fields would make
+# inferred ones invariant (``tests/test_schema_variance.py``).
+K_ = TypeVar("K_")
+V_ = TypeVar("V_")
+KI_ = TypeVar("KI_")
+VI_co = TypeVar("VI_co", covariant=True)
+RD_co = TypeVar("RD_co", covariant=True)
+RE_co = TypeVar("RE_co", covariant=True)
+
 
 @dataclass(frozen=True, slots=True, eq=False)
-class RecordSchema[K, V, KI, VI, RD, RE](Bottom[dict[K, V], Mapping[KI, VI], RD, RE]):
+class RecordSchema(
+    Bottom[dict[K_, V_], Mapping[KI_, VI_co], RD_co, RE_co],
+    Generic[K_, V_, KI_, VI_co, RD_co, RE_co],
+):
     """A mapping of ``key`` values to ``value`` values."""
 
-    key: Codec[K, KI, RD, RE]
-    value: Codec[V, VI, RD, RE]
+    key: Codec[K_, KI_, RD_co, RE_co]
+    value: Codec[V_, VI_co, RD_co, RE_co]
 
 
 def Record[K, V, KI, VI, RD, RE](

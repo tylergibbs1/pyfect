@@ -2,9 +2,10 @@
 
 A member is a candidate by the input's kind (``"string"``, ``"object"``,
 ...), a ``Literal`` member only for its literal. Members that are mappings
-with required literal keys (``"_tag": "A"``, Effect's sentinels) are
-discriminated: an input mapping picks them by the values it holds under
-those keys, before any member is parsed.
+with required literal keys (``"_tag": "A"``) or tuples with required
+literal elements (``("a", ...)``), Effect's sentinels, are discriminated:
+an input picks them by the values it holds under those keys or indexes,
+before any member is parsed.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from pyfect.logger._text import format_unknown, json_quote
+from pyfect.schema.ast._arrays import Arrays
 from pyfect.schema.ast._base import AST
 from pyfect.schema.ast._class import Class
 from pyfect.schema.ast._keywords import BigInt, Boolean, Never, Null, Number, String, Unknown
@@ -23,6 +25,7 @@ from pyfect.schema.ast._suspend import Suspend
 
 ALL = frozenset({"null", "string", "number", "bigint", "boolean", "array", "object"})
 OBJECT = frozenset({"object"})
+ARRAY = frozenset({"array"})
 
 _VALUE_KINDS: tuple[tuple[type, frozenset[str]], ...] = (
     (type(None), frozenset({"null"})),
@@ -75,12 +78,14 @@ def kinds(ast: AST) -> frozenset[str]:
             return frozenset[str]().union(*(_literal_kind(m.value) for m in ast.enum))
         case Objects() | Class(side="decode" | "encoded"):
             return OBJECT
+        case Arrays():
+            return ARRAY
         case _:
             return next((kinds for t, kinds in _NODE_KINDS if isinstance(ast, t)), ALL)
 
 
 type Sentinel = tuple[Hashable, LiteralValue]
-"""A required key and the literal it must hold."""
+"""A required key (or a tuple's index) and the literal it must hold."""
 
 
 def _input_side(ast: AST) -> AST:
@@ -91,8 +96,9 @@ def _input_side(ast: AST) -> AST:
 
 
 def sentinels(ast: AST) -> tuple[Sentinel, ...]:
-    """The required literal keys of a mapping node (Effect's
-    ``collectSentinels``); a union's are those all its members share."""
+    """The required literal keys of a mapping node and the required literal
+    elements of a tuple, by index (Effect's ``collectSentinels``); a union's
+    are those all its members share."""
     members = _members(ast)
     if members is not None:
         if not members:
@@ -108,6 +114,12 @@ def sentinels(ast: AST) -> tuple[Sentinel, ...]:
             )
         case Class(side="encoded" | "decode"):
             return sentinels(ast.shape.encoded)
+        case Arrays(elements=elements):
+            return tuple(
+                (i, e.type.literal)
+                for i, e in enumerate(elements)
+                if not e.optional and isinstance(e.type, Literal)
+            )
         case _:
             return ()
 
@@ -136,6 +148,22 @@ def _member(ast: AST) -> _Member:
 _ABSENT = object()
 
 
+def _observed(
+    input: object, keys: tuple[Hashable, ...]
+) -> tuple[dict[Hashable, object], frozenset[str]] | None:
+    """The values ``input`` holds under the sentinel ``keys`` (a mapping's
+    keys, a list's or tuple's indexes) and its kind; ``None`` when it is
+    neither."""
+    if isinstance(input, Mapping):
+        mapping = cast("Mapping[object, object]", input)
+        return {key: mapping[key] for key in keys if key in mapping}, OBJECT
+    if isinstance(input, list | tuple):
+        items = cast("Sequence[object]", input)
+        n = len(items)
+        return {key: items[key] for key in keys if type(key) is int and 0 <= key < n}, ARRAY
+    return None
+
+
 class CandidateIndex:
     """The candidates of a union's members for an input."""
 
@@ -159,9 +187,11 @@ class CandidateIndex:
                 for i, m in enumerate(members)
                 if m.literal is not None and not m.never and same_literal(m.literal[0], input)
             ]
-        if not self._sentinel_keys or not isinstance(input, Mapping):
-            return self._by_kind(input)
-        return self._by_sentinels(cast("Mapping[object, object]", input))
+        if self._sentinel_keys:
+            observed = _observed(input, self._sentinel_keys)
+            if observed is not None:
+                return self._by_sentinels(*observed)
+        return self._by_kind(input)
 
     def _by_kind(self, input: object) -> list[int]:
         kind = kind_of(input)
@@ -175,17 +205,16 @@ class CandidateIndex:
             i for i, m in enumerate(self._members) if not m.never and not m.sentinels and takes(m)
         ]
 
-    def _by_sentinels(self, input: Mapping[object, object]) -> list[int]:
+    def _by_sentinels(self, observed: dict[Hashable, object], kind: frozenset[str]) -> list[int]:
         """Discriminated members whose sentinels the input does not
         contradict and that one of its sentinel values selects, plus the
-        other members taking a mapping. A missing key is neutral."""
-        observed = {key: input[key] for key in self._sentinel_keys if key in input}
+        other members taking the input's kind. A missing key is neutral."""
         selected: list[int] = []
         for i, m in enumerate(self._members):
             if m.never:
                 continue
             if not m.sentinels:
-                if not m.kinds.isdisjoint(OBJECT):
+                if not m.kinds.isdisjoint(kind):
                     selected.append(i)
                 continue
             matched = False
@@ -205,10 +234,16 @@ class CandidateIndex:
 
 def member_expected(ast: AST) -> str:
     """How a union names a member: a mapping with literal keys as
-    ``{ readonly "_tag": "A", ... }``, any other as it expects itself."""
+    ``{ readonly "_tag": "A", ... }``, a tuple with literal elements as
+    ``readonly [ "a", ... ]``, any other as it expects itself."""
     side = _input_side(ast)
     if isinstance(side, Class) and side.side == "encoded":
         side = side.shape.encoded
+    if isinstance(side, Arrays):
+        literals = [e for e in side.elements if isinstance(e.type, Literal)]
+        if literals:
+            entries = ", ".join(f"{e.type.expected()}{'?' if e.optional else ''}" for e in literals)
+            return f"{'' if side.mutable else 'readonly '}[ {entries}, ... ]"
     if isinstance(side, Objects):
         literals = [p for p in side.properties if isinstance(p.type, Literal)]
         if literals:

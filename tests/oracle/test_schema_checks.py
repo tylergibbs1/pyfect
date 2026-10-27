@@ -14,27 +14,26 @@ Omitted:
   isGreaterThan", "Checks / check / object-level checks are validated against
   the decoded value when encoding", "Checks / check / suspended checks are not
   supported": need ``transform``, ``decodeTo``, ``Struct`` or ``suspend``.
-- "Checks / refine": refines ``Option(String)``, a declaration; refine itself
-  is covered by tests/test_schema_checks.py.
 - "Checks / Record checks / isMinProperties with symbol keys", "... /
   isMaxProperties with symbol keys", "... / isBetweenProperties with symbol
   keys": Python has no symbols.
-- "Checks / Array checks / UniqueArray",
-  "Check / isStringFinite / rejects long digit runs in linear time" (its
-  record half), "Union / Void", "Union / Void | String",
-  "Union.mapMembers / evolve", "Union.mapMembers / Array", "Literals.mapMembers
-  / evolve": need ``Array`` or ``Void``; the size and key checks they
-  use are covered on mappings in tests/test_schema_checks.py.
+- "Check / isStringFinite / rejects long digit runs in linear time" (its
+  record half), "Union / Void", "Union / Void | String", "Literals.mapMembers
+  / evolve": need ``Void`` or a struct made from a literal member; the size
+  and key checks they use are covered on mappings in
+  tests/test_schema_checks.py.
+- "Checks / refine", "Checks / Array checks / UniqueArray",
+  "Union.mapMembers / evolve", "Union.mapMembers / Array", "Union / should
+  exclude members based on failed sentinels / string | tuple", "... /
+  tagged tuple union": ported in ``test_schema_composites.py``.
 - "Check / isStringSymbol", "Check / brand / ...": Python has no symbols, and
   a brand is a ``NewType``, not a schema identifier.
 - "Checks / String checks / isPattern with stateful RegExp flags": a Python
   pattern keeps no ``lastIndex``.
 - "Finite": only verifies arbitrary generation (no arbitraries yet).
-- "Union / mode: "oneOf" with Void", "Union / should exclude members based
-  on failed sentinels / string | tuple", "... / tagged tuple union", "Union /
-  preserves member order after sentinel dispatch", "... recovering members
-  during runtime type / sentinel dispatch": need ``Tuple``, ``Void`` or
-  transformations.
+- "Union / mode: "oneOf" with Void", "Union / preserves member order after
+  sentinel dispatch", "... recovering members during runtime type /
+  sentinel dispatch": need ``Void`` or transformations.
 - "Union / Struct({}) preserves its semantics in a union": an empty struct
   takes only mappings in pyfect (Effect's takes any non-nullish value).
 - "Union / does not start later members after an asynchronous success",
