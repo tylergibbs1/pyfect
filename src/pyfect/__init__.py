@@ -5,7 +5,8 @@
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
 ``fx.schedule``, ``fx.scheduler``, ``fx.Queue``, ``fx.Ref``, ``fx.Deferred``,
-``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.testing``.
+``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
+``fx.FiberMap``, ``fx.FiberHandle``, ``fx.testing``.
 """
 
 from pyfect import (
@@ -67,6 +68,9 @@ from pyfect.effect import (
 )
 from pyfect.errors import NoSuchElementException, TaggedError, TimeoutException, UnknownError
 from pyfect.exit import Exit, Failure, Success
+from pyfect.fiber_handle import FiberHandle
+from pyfect.fiber_map import FiberMap
+from pyfect.fiber_set import FiberSet
 from pyfect.latch import Latch
 from pyfect.layer import Layer, provide
 from pyfect.option import Option, Some
@@ -104,6 +108,9 @@ __all__ = [
     "Exit",
     "Failure",
     "Fiber",
+    "FiberHandle",
+    "FiberMap",
+    "FiberSet",
     "Interrupted",
     "Latch",
     "Layer",

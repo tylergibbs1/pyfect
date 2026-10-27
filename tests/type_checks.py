@@ -6,6 +6,7 @@
 pyright fails.
 """
 
+import asyncio
 from collections.abc import Callable, Hashable
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
@@ -19,6 +20,9 @@ from pyfect import layer, schedule
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.context import ServiceEffect
 from pyfect.duration import Seconds, to_seconds
+from pyfect.fiber_handle import FiberHandleRuntime
+from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
+from pyfect.fiber_set import FiberSetRuntime
 from pyfect.scheduler import Scheduler, SyncScheduler
 
 
@@ -694,3 +698,56 @@ def check_flaky(scoped_int: fx.Effect[int, str, fx.Scope]) -> None:
     assert_type(fx.testing.flaky(scoped_int), fx.Effect[int])
     assert_type(fx.testing.flaky(Port().and_then(scoped_int)), fx.Effect[int, Never, Port])
     fx.testing.run_test(fx.testing.flaky(scoped_int))
+
+
+def check_fiber_collections(port_int: fx.Effect[int, Never, Port]) -> None:
+    assert_type(fx.FiberSet.make(), fx.Effect[fx.FiberSet[object, object], Never, fx.Scope])
+    assert_type(fx.FiberSet[int, str].make(), fx.Effect[fx.FiberSet[int, str], Never, fx.Scope])
+    fiber_set: fx.FiberSet[int, str] = fx.FiberSet()
+    assert_type(fiber_set.run(port_int), fx.Effect[fx.Fiber[int, str], Never, Port])
+    assert_type(fiber_set.join(), fx.Effect[None, str])
+    assert_type(fiber_set.await_empty(), fx.Effect[None])
+    fiber_set.run(fx.succeed("x"))  # pyright: ignore[reportArgumentType]
+    assert_type(fiber_set.runtime(), fx.Effect[FiberSetRuntime[int, str, Never], Never, Never])
+    run_set = fiber_set.runtime(Port)
+    assert_type(run_set, fx.Effect[FiberSetRuntime[int, str, Port], Never, Port])
+    assert_type(
+        fx.FiberSet[int, str].make_runtime(Port, Primary),
+        fx.Effect[FiberSetRuntime[int, str, Port | Primary], Never, fx.Scope | Port | Primary],
+    )
+
+    fiber_map: fx.FiberMap[str, int, Never] = fx.FiberMap()
+    assert_type(fiber_map.run("a", fx.succeed(1)), fx.Effect[fx.Fiber[int, Never], Never, Never])
+    assert_type(fiber_map.get("a"), fx.Effect[fx.Fiber[int, Never] | None])
+    assert_type(fiber_map.unsafe_has("a"), bool)
+    assert_type(fiber_map.remove("a"), fx.Effect[None])
+    fiber_map.run(1, fx.succeed(1))  # pyright: ignore[reportArgumentType]
+    fx.FiberMap[list[int]].make()  # pyright: ignore[reportInvalidTypeArguments]
+    assert_type(
+        fx.FiberMap[str, int, Never].make_runtime(),
+        fx.Effect[FiberMapRuntime[str, int, Never, Never], Never, fx.Scope],
+    )
+    assert_type(
+        fiber_map.runtime_async(Port),
+        fx.Effect[FiberMapAsyncRuntime[str, int, Never, Port], Never, Port],
+    )
+
+    handle: fx.FiberHandle[int, str] = fx.FiberHandle()
+    assert_type(
+        fx.FiberHandle[int, str].make(), fx.Effect[fx.FiberHandle[int, str], Never, fx.Scope]
+    )
+    assert_type(handle.run(port_int), fx.Effect[fx.Fiber[int, str], Never, Port])
+    assert_type(handle.unsafe_get(), fx.Fiber[int, str] | None)
+    assert_type(handle.clear(), fx.Effect[None])
+    assert_type(handle.runtime(Port), fx.Effect[FiberHandleRuntime[int, str, Port], Never, Port])
+
+
+def check_fiber_set_runner(
+    run: FiberSetRuntime[int, str, Port], port_int: fx.Effect[int, Never, Port]
+) -> None:
+    assert_type(run(port_int), fx.Fiber[int, str])
+    run(Primary().as_(1))  # pyright: ignore[reportArgumentType]
+
+
+def check_fiber_map_async_runner(run: FiberMapAsyncRuntime[str, int, Never, Never]) -> None:
+    assert_type(run("a", fx.succeed(1), only_if_missing=True), asyncio.Future[int])

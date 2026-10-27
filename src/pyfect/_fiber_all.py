@@ -98,12 +98,14 @@ def join_all[A, E](fibers: Iterable[Fiber[A, E]]) -> Effect[list[A], E]:
 
 def interrupt_all_as(fibers: Iterable[Fiber[Any, Any]], by: int | None) -> Effect[None]:
     """Interrupt every fiber as the fiber with id ``by``, then wait for all
-    of them to finish."""
+    of them to finish. Each fiber is interrupted as it is drawn from
+    ``fibers``, so a lazy iterable sees what earlier interrupts changed."""
 
     def body() -> Effect[None]:
-        interrupted = list(fibers)
-        for fiber in interrupted:
+        interrupted: list[Fiber[Any, Any]] = []
+        for fiber in fibers:
             fiber.unsafe_interrupt_as(by)
+            interrupted.append(fiber)
         return await_all(interrupted).as_void()
 
     return _Suspend(body)
