@@ -20,7 +20,6 @@ from typing import Any, Literal, Never, Self, cast, overload
 
 from pyfect._core import Effect, _Gen, _Succeed, _WithFiber
 from pyfect._layer_core import Layer, effect_context, fork_or_create
-from pyfect._scheduled import scheduled
 from pyfect.context import Context, ServiceEffect, Tag
 from pyfect.duration import Duration
 from pyfect.layer import effect as layer_effect
@@ -41,29 +40,29 @@ class LayerRef[I, E = Never]:
 
     @overload
     @staticmethod
-    def make[I2, X = Never, R = Never](
-        layer: Layer[I2, X, R],
+    def make[I2, X = Never, RR = Never](
+        layer: Layer[I2, X, RR],
         *,
         idle_time_to_live: Duration | None = None,
         preload: Literal[False] = False,
-        invalidation_schedule: Schedule[object, object] | None = None,
-    ) -> Effect[LayerRef[I2, X], Never, Scope | R]: ...
+        invalidation_schedule: Schedule[object, object, object, RR] | None = None,
+    ) -> Effect[LayerRef[I2, X], Never, Scope | RR]: ...
     @overload
     @staticmethod
-    def make[I2, X = Never, R = Never](
-        layer: Layer[I2, X, R],
+    def make[I2, X = Never, RR = Never](
+        layer: Layer[I2, X, RR],
         *,
         idle_time_to_live: Duration | None = None,
         preload: bool,
-        invalidation_schedule: Schedule[object, object] | None = None,
-    ) -> Effect[LayerRef[I2, X], X, Scope | R]: ...
+        invalidation_schedule: Schedule[object, object, object, RR] | None = None,
+    ) -> Effect[LayerRef[I2, X], X, Scope | RR]: ...
     @staticmethod
     def make(
         layer: Layer[Any, Any, Any],
         *,
         idle_time_to_live: Duration | None = None,
         preload: bool = False,
-        invalidation_schedule: Schedule[object, object] | None = None,
+        invalidation_schedule: Schedule[object, object, object, Any] | None = None,
     ) -> Effect[LayerRef[Any, Any], Any, Any]:
         """A ref building ``layer`` (with the services in scope now, sharing
         what enclosing builds built) when first used. Released when the
@@ -81,7 +80,7 @@ class LayerRef[I, E = Never]:
                 yield from ref.refresh()
             if invalidation_schedule is not None:
                 on_recur = ref.refresh() if preload else ref.invalidate()
-                yield from scheduled(on_recur.ignore_cause(), invalidation_schedule).fork_scoped()
+                yield from on_recur.ignore_cause().schedule(invalidation_schedule).fork_scoped()
             return ref
 
         return _Gen(body)
@@ -117,24 +116,24 @@ class LayerRefService[I, E = Never](Tag[LayerRef[I, E]]):
 
     @overload
     @classmethod
-    def layer[R = Never](
+    def layer[RR = Never](
         cls,
-        layer: Layer[I, E, R],
+        layer: Layer[I, E, RR],
         *,
         idle_time_to_live: Duration | None = None,
         preload: Literal[False] = False,
-        invalidation_schedule: Schedule[object, object] | None = None,
-    ) -> Layer[Self, Never, R]: ...
+        invalidation_schedule: Schedule[object, object, object, RR] | None = None,
+    ) -> Layer[Self, Never, RR]: ...
     @overload
     @classmethod
-    def layer[R = Never](
+    def layer[RR = Never](
         cls,
-        layer: Layer[I, E, R],
+        layer: Layer[I, E, RR],
         *,
         idle_time_to_live: Duration | None = None,
         preload: bool,
-        invalidation_schedule: Schedule[object, object] | None = None,
-    ) -> Layer[Self, E, R]: ...
+        invalidation_schedule: Schedule[object, object, object, RR] | None = None,
+    ) -> Layer[Self, E, RR]: ...
     @classmethod
     def layer(
         cls,
@@ -142,7 +141,7 @@ class LayerRefService[I, E = Never](Tag[LayerRef[I, E]]):
         *,
         idle_time_to_live: Duration | None = None,
         preload: bool = False,
-        invalidation_schedule: Schedule[object, object] | None = None,
+        invalidation_schedule: Schedule[object, object, object, Any] | None = None,
     ) -> Layer[Self, Any, Any]:
         """A layer making the ``LayerRef`` (see ``LayerRef.make``). Provide
         its dependencies with ``.pipe(provide(...))``."""

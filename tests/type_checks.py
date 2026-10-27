@@ -513,12 +513,102 @@ def check_deferred(d: fx.Deferred[int, str]) -> None:
 def check_durations(scheduler: SyncScheduler) -> None:
     # Durations are parsed once, at the boundary, into Seconds (never NaN).
     assert_type(to_seconds(1.5), Seconds)
-    assert_type(schedule.fibonacci(1), schedule.Schedule[object, Seconds])
+    assert_type(schedule.fibonacci(1), schedule.Schedule[Seconds])
     # Past the boundary, a raw float is rejected: it must go through to_seconds.
     fx.testing.TestClock().sleep(1.0)  # pyright: ignore[reportArgumentType]
     scheduler.call_later(1.0, lambda: None)  # pyright: ignore[reportArgumentType]
-    # A schedule's decision is Seconds too, so custom steps can't return NaN.
-    schedule.Schedule(0, lambda _now, _v, n: (n, n, 1.0))  # pyright: ignore[reportArgumentType]
+    # A schedule's delay is Seconds too, so custom steps can't return NaN.
+    schedule.Continue(1, 1.0)  # pyright: ignore[reportArgumentType]
+
+
+# --- Schedule ---------------------------------------------------------------------------
+# Schedule[Out, In, E, R]: steps may fail with E and need R; combinators add to both.
+
+
+def check_schedule_constructors() -> None:
+    assert_type(schedule.spaced(1), schedule.Schedule[int, object, Never, Never])
+    assert_type(schedule.forever, schedule.Schedule[int])
+    assert_type(schedule.once, schedule.Schedule[None])
+    assert_type(schedule.exponential(1), schedule.Schedule[Seconds])
+    assert_type(schedule.during(1), schedule.Schedule[Seconds])
+    assert_type(schedule.max(schedule.spaced(1), schedule.recurs(2)), schedule.Schedule[Seconds])
+    ids: schedule.Schedule[str, str] = schedule.identity()
+    assert_type(ids.passthrough(), schedule.Schedule[str, str])
+    assert_type(ids.concat(schedule.spaced(1)), schedule.Schedule[str | int, str])
+    assert_type(ids.concat_result(schedule.spaced(1)), schedule.Schedule[fx.Result[int, str], str])
+
+    def step(now: float, n: int) -> fx.Effect[schedule.Decision[str], NotFound, Port]:
+        return Port().as_(schedule.Stop(str(n)))
+
+    custom = schedule.from_step(fx.succeed(step))
+    assert_type(custom, schedule.Schedule[str, int, NotFound, Port])
+    assert_type(
+        schedule.to_step(custom),
+        fx.Effect[schedule.StepFn[str, int, NotFound, Port], Never, Port],
+    )
+
+
+def check_schedule_combinators(s: schedule.Schedule[int, str]) -> None:
+    assert_type(s.map(lambda m: m.input), schedule.Schedule[str, str])
+    assert_type(
+        s.map_effect(lambda _: fx.fail(NotFound("k"))), schedule.Schedule[Never, str, NotFound]
+    )
+    assert_type(s.tap(lambda _: Port()), schedule.Schedule[int, str, Never, Port])
+    assert_type(s.while_(lambda m: m.attempt < 3), schedule.Schedule[int, str])
+    assert_type(
+        s.while_effect(lambda _: fx.fail(NotFound("k"))), schedule.Schedule[int, str, NotFound]
+    )
+    assert_type(s.modify_delay(lambda m: fx.succeed(m.duration)), schedule.Schedule[int, str])
+    assert_type(s.add_delay(lambda _: Port().as_(1.0)), schedule.Schedule[int, str, Never, Port])
+    assert_type(s.up_to(times=3, duration=1), schedule.Schedule[int, str])
+    assert_type(s.jittered(), schedule.Schedule[int, str])
+    assert_type(schedule.forever.pipe(schedule.set_input_type(str)), schedule.Schedule[int, str])
+    s.pipe(schedule.set_input_type(int))  # pyright: ignore[reportArgumentType]
+    # Decisions and metadata are immutable, so covariant.
+    _meta: schedule.Metadata[object, object] = schedule.Metadata[int, str](
+        input="a",
+        output=1,
+        duration=Seconds(0.0),
+        attempt=1,
+        start=0.0,
+        now=0.0,
+        elapsed=0.0,
+        elapsed_since_previous=0.0,
+    )
+    _decision: schedule.Decision[object] = schedule.Continue[int](1, Seconds(0.0))
+
+    # The predicate sees the schedule's own input and output types.
+    def on_int_inputs(m: schedule.Metadata[int, int]) -> bool:
+        return m.input > 0
+
+    s.while_(on_int_inputs)  # pyright: ignore[reportArgumentType]
+
+
+def check_schedule_effects(
+    eff: fx.Effect[int, NotFound, Port], only_str: schedule.Schedule[int, str]
+) -> None:
+    failing = schedule.recurs(3).while_effect(lambda _: fx.fail("boom"))
+    assert_type(eff.repeat(schedule.recurs(3)), fx.Effect[int, NotFound, Port])
+    assert_type(eff.repeat(failing), fx.Effect[int, NotFound | str, Port])
+    assert_type(eff.repeat(times=2), fx.Effect[int, NotFound, Port])
+    assert_type(eff.repeat(until=lambda n: fx.fail("x")), fx.Effect[int, NotFound | str, Port])
+    assert_type(eff.retry(schedule.recurs(3)), fx.Effect[int, NotFound, Port])
+    assert_type(eff.retry(failing), fx.Effect[int, NotFound | str, Port])
+    assert_type(eff.retry(while_=lambda e: e.key == "k"), fx.Effect[int, NotFound, Port])
+    assert_type(
+        eff.retry_or_else(schedule.recurs(3), lambda e, n: fx.succeed("gave up")),
+        fx.Effect[int | str, Never, Port],
+    )
+    assert_type(
+        eff.repeat_or_else(schedule.recurs(3), lambda e, m: fx.succeed("failed")),
+        fx.Effect[int | str, Never, Port],
+    )
+    assert_type(eff.schedule(schedule.spaced(1)), fx.Effect[int, NotFound, Port])
+    assert_type(eff.schedule_from(0, schedule.spaced(1)), fx.Effect[int, NotFound, Port])
+    assert_type(schedule.CurrentMetadata(), ServiceEffect[schedule.Metadata[object, object], Never])
+    # A retry policy must accept the effect's errors; a repeat schedule its values.
+    eff.retry(only_str)  # pyright: ignore[reportArgumentType]
+    eff.repeat(only_str)  # pyright: ignore[reportArgumentType]
 
 
 # --- Result, Exit and Option ------------------------------------------------------------
@@ -1002,6 +1092,13 @@ def check_resource() -> None:
     assert_type(manual, fx.Effect[fx.Resource[Never, NotFound], Never, fx.Scope | Port])
     auto = fx.Resource.auto(fx.succeed(1), schedule.spaced(1))
     assert_type(auto, fx.Effect[fx.Resource[int, Never], Never, fx.Scope])
+    # Effect's ``auto`` takes any policy: its requirements flow out, its errors end the
+    # refresh fiber.
+    needy = schedule.spaced(1).tap(lambda _: Port()).while_effect(lambda _: fx.fail("x"))
+    assert_type(
+        fx.Resource.auto(Primary().as_(1), needy),
+        fx.Effect[fx.Resource[int, Never], Never, fx.Scope | Primary | Port],
+    )
 
 
 def check_resource_methods(resource: fx.Resource[int, NotFound]) -> None:
@@ -1020,6 +1117,15 @@ def check_layer_ref() -> None:
     assert_type(
         fx.LayerRef.make(failing_port_live, preload=True, idle_time_to_live=1),
         fx.Effect[fx.LayerRef[Port, NotFound], NotFound, fx.Scope | Primary],
+    )
+    needy = schedule.spaced(1).tap(lambda _: Port()).while_effect(lambda _: fx.fail("x"))
+    assert_type(
+        fx.LayerRef.make(failing_port_live, invalidation_schedule=needy),
+        fx.Effect[fx.LayerRef[Port, NotFound], Never, fx.Scope | Primary | Port],
+    )
+    assert_type(
+        fx.LayerRef.make(failing_port_live, preload=True, invalidation_schedule=needy),
+        fx.Effect[fx.LayerRef[Port, NotFound], NotFound, fx.Scope | Primary | Port],
     )
 
 

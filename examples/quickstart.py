@@ -62,7 +62,7 @@ def program():
         lambda uid: (
             greet(uid)
             .timeout(1)
-            .retry(schedule.exponential(0.01).take(2))
+            .retry(schedule.exponential(0.01).up_to(times=2))
             .pipe(fx.catch_tag(UserNotFound, lambda e: fx.succeed(f"Who is {e.user_id}?")))
         ),
         concurrency=2,

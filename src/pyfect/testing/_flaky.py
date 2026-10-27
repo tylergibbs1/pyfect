@@ -25,7 +25,8 @@ def flaky(eff: Effect[Any, Any, Any], timeout: Duration = 30.0) -> Effect[Any, A
     Effect's ``flakyTest``, the last failure dies: its typed errors become
     defects, kept with their tracebacks."""
     require_effect(eff, "eff")
-    attempts: Effect[Any, Any, Any] = scoped(eff).sandbox().retry(recurs(10).up_to(timeout))
+    policy = recurs(10).up_to(duration=timeout)
+    attempts: Effect[Any, Any, Any] = scoped(eff).sandbox().retry(policy)
     return attempts.catch_all(lambda cause: fail_cause(_all_defects(cause)))
 
 

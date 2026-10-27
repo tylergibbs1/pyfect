@@ -1,22 +1,15 @@
-"""Ports of the ``repeat`` and ``retry`` sections of Effect's ``Effect.test.ts``
-that the current ``Schedule`` already supports.
+"""Ports of the ``repeat`` and ``retry`` sections of Effect's ``Effect.test.ts``.
 
-Each test's docstring is the Effect test title. Omitted, with the reason:
-
-- "preserves finalizer defects accompanying schedule completion",
-  "repeatOrElse passes source Done failures and iteration metadata to
-  orElse", "retry/schedule - CurrentMetadata": need ``Schedule.from_step``,
-  ``repeat_or_else`` and schedule metadata, which come with the M3
-  ``Schedule`` rewrite.
-- "repeat/until", "repeat/while", "repeat/times", "repeat/schedule",
-  "retry/until", "retry/while", "retry/schedule" (every title) and "nothing
-  on success" (``retry({ times })``): the ``repeat`` / ``retry`` option
-  forms are M3's Effect integration, ported with them.
+Each test's docstring is the Effect test title. Every title is ported.
+Effect's option objects (``{ times, while, until, schedule }``) are keyword
+arguments: ``eff.repeat(times=2)``, ``eff.retry(schedule=..., until=...)``.
 """
 
 import pyfect as fx
 from pyfect import schedule, testing
 from pyfect.cause import Die, Fail
+from pyfect.duration import ZERO
+from pyfect.schedule import CurrentMetadata, Decision, Metadata, Stop
 
 
 @testing.effect
@@ -58,3 +51,281 @@ def test_does_not_retry_typed_failures_accompanied_by_finalizer_defects():
     assert isinstance(first.defect, fx.UnhandledError)
     assert first.defect.error == "error"
     assert second == Die(cleanup_failed)
+
+
+@testing.effect
+def test_preserves_finalizer_defects_accompanying_schedule_completion():
+    """preserves finalizer defects accompanying schedule completion"""
+    cleanup_failed = RuntimeError("cleanup failed")
+
+    def step(_now: float, _input: object) -> fx.Effect[Decision[int]]:
+        return fx.succeed(Stop(42)).ensuring(fx.die(cleanup_failed))
+
+    policy = schedule.from_step(fx.succeed(step))
+    ex = yield from fx.void.repeat(policy).exit()
+    assert isinstance(ex, fx.Failure)
+    assert ex.cause.reasons == (Die(cleanup_failed),)
+
+
+@testing.effect
+def test_repeat_or_else_passes_source_done_failures_and_iteration_metadata_to_or_else():
+    """repeatOrElse passes source Done failures and iteration metadata to orElse"""
+    n = 0
+    seen: list[tuple[object, int | None]] = []
+
+    def source() -> fx.Effect[int, fx.Done]:
+        nonlocal n
+        n += 1
+        return fx.succeed(n) if n < 3 else fx.fail(fx.Done())
+
+    def or_else(error: fx.Done, meta: Metadata[int, int] | None) -> fx.Effect[int]:
+        seen.append((error, None if meta is None else meta.attempt))
+        return fx.succeed(-1)
+
+    result = yield from fx.suspend(source).repeat_or_else(schedule.recurs(10), or_else)
+    assert result == -1
+    assert n == 3
+    assert seen == [(fx.Done(), 2)]
+
+
+def countdown() -> tuple[fx.Effect[int], list[int]]:
+    """Effect's ``decrement.pipe(Effect.tap(increment))`` from 10: each run
+    returns the next lower number and counts itself."""
+    state = [10, 0]
+
+    def step() -> int:
+        state[0] -= 1
+        state[1] += 1
+        return state[0]
+
+    return fx.sync(step), state
+
+
+@testing.effect
+def test_repeat_until_repeats_until_a_condition_is_true():
+    """repeat/until - repeats until a condition is true"""
+    eff, state = countdown()
+    assert (yield from eff.repeat(until=lambda n: n == 0)) == 0
+    assert state[1] == 10
+
+
+@testing.effect
+def test_repeat_until_repeats_until_an_effectful_condition_is_true():
+    """repeat/until - repeats until an effectful condition is true"""
+    eff, state = countdown()
+    assert (yield from eff.repeat(until=lambda n: fx.succeed(n == 0))) == 0
+    assert state[1] == 10
+
+
+@testing.effect
+def test_repeat_until_always_evaluates_at_least_once():
+    """repeat/until - always evaluates at least once"""
+    eff, state = countdown()
+    yield from eff.repeat(until=lambda _: True)
+    assert state[1] == 1
+
+
+@testing.effect
+def test_repeat_while_repeats_while_a_condition_is_true():
+    """repeat/while - repeats while a condition is true"""
+    eff, state = countdown()
+    assert (yield from eff.repeat(while_=lambda n: n > 0)) == 0
+    assert state[1] == 10
+
+
+@testing.effect
+def test_repeat_while_repeats_while_an_effectful_condition_is_true():
+    """repeat/while - repeats while an effectful condition is true"""
+    eff, state = countdown()
+    assert (yield from eff.repeat(while_=lambda n: fx.succeed(n > 0))) == 0
+    assert state[1] == 10
+
+
+@testing.effect
+def test_repeat_while_always_evaluates_at_least_once():
+    """repeat/while - always evaluates at least once"""
+    eff, state = countdown()
+    yield from eff.repeat(while_=lambda _: False)
+    assert state[1] == 1
+
+
+def counter() -> tuple[fx.Effect[int], list[int]]:
+    """Effect's ``Effect.sync(() => ++n)``."""
+    n = [0]
+
+    def bump() -> int:
+        n[0] += 1
+        return n[0]
+
+    return fx.sync(bump), n
+
+
+@testing.effect
+def test_repeat_times():
+    """repeat/times"""
+    eff, n = counter()
+    assert (yield from eff.repeat(times=2)) == 3
+    assert n[0] == 3
+
+
+@testing.effect
+def test_repeat_schedule_repeats_according_to_the_specified_schedule():
+    """repeat/schedule - repeats according to the specified schedule"""
+    eff, _ = counter()
+    assert (yield from eff.repeat(schedule.recurs(3))) == 3
+
+
+@testing.effect
+def test_repeat_schedule_with_until():
+    """repeat/schedule - with until"""
+    eff, n = counter()
+    assert (yield from eff.repeat(schedule=schedule.recurs(3), until=lambda x: x == 3)) == 3
+    assert n[0] == 3
+
+
+@testing.effect
+def test_repeat_schedule_with_while():
+    """repeat/schedule - with while"""
+    eff, n = counter()
+    assert (yield from eff.repeat(schedule=schedule.recurs(3), while_=lambda x: x < 3)) == 3
+    assert n[0] == 3
+
+
+@testing.live
+def test_nothing_on_success():
+    """nothing on success"""
+    count = 0
+
+    def bump() -> None:
+        nonlocal count
+        count += 1
+
+    yield from fx.sync(bump).retry(times=10000)
+    assert count == 1
+
+
+@testing.effect
+def test_retry_until_retries_until_a_condition_is_true():
+    """retry/until - retries until a condition is true"""
+    eff, state = countdown()
+    assert (yield from eff.flip().retry(until=lambda n: n == 0).flip()) == 0
+    assert state[1] == 10
+
+
+@testing.effect
+def test_retry_until_retries_until_an_effectful_condition_is_true():
+    """retry/until - retries until an effectful condition is true"""
+    eff, state = countdown()
+    assert (yield from eff.flip().retry(until=lambda n: fx.succeed(n == 0)).flip()) == 0
+    assert state[1] == 10
+
+
+def failing_counter(start_after: bool) -> tuple[fx.Effect[None, int], list[int]]:
+    """Effect's ``Effect.failSync(() => n++)`` (or ``++n``)."""
+    n = [0]
+
+    def bump() -> int:
+        n[0] += 1
+        return n[0] if start_after else n[0] - 1
+
+    return fx.fail_sync(bump), n
+
+
+@testing.effect
+def test_retry_until_always_evaluates_at_least_once():
+    """retry/until - always evaluates at least once"""
+    eff, n = failing_counter(start_after=False)
+    yield from eff.retry(until=lambda _: True).flip()
+    assert n[0] == 1
+
+
+@testing.effect
+def test_retry_while_retries_while_a_condition_is_true():
+    """retry/while - retries while a condition is true"""
+    eff, state = countdown()
+    assert (yield from eff.flip().retry(while_=lambda n: n > 0).flip()) == 0
+    assert state[1] == 10
+
+
+@testing.effect
+def test_retry_while_retries_while_an_effectful_condition_is_true():
+    """retry/while - retries while an effectful condition is true"""
+    eff, state = countdown()
+    assert (yield from eff.flip().retry(while_=lambda n: fx.succeed(n > 0)).flip()) == 0
+    assert state[1] == 10
+
+
+@testing.effect
+def test_retry_while_always_evaluates_at_least_once():
+    """retry/while - always evaluates at least once"""
+    eff, n = failing_counter(start_after=False)
+    yield from eff.retry(while_=lambda _: False).flip()
+    assert n[0] == 1
+
+
+@testing.effect
+def test_retry_schedule_retries_according_to_the_specified_schedule():
+    """retry/schedule - retries according to the specified schedule"""
+    eff, n = failing_counter(start_after=False)
+    yield from eff.retry(schedule.recurs(3)).flip()
+    assert n[0] == 4
+
+
+@testing.effect
+def test_retry_schedule_with_until():
+    """retry/schedule - with until"""
+    eff, n = failing_counter(start_after=True)
+    yield from eff.retry(schedule=schedule.recurs(3), until=lambda x: x == 3).flip()
+    assert n[0] == 3
+
+
+@testing.effect
+def test_retry_schedule_until_errors():
+    """retry/schedule - until errors"""
+    eff, n = failing_counter(start_after=True)
+    result = yield from eff.retry(
+        schedule=schedule.recurs(3), until=lambda _: fx.fail("boom")
+    ).flip()
+    assert n[0] == 1
+    assert result == "boom"
+
+
+@testing.effect
+def test_retry_schedule_with_while():
+    """retry/schedule - with while"""
+    eff, n = failing_counter(start_after=True)
+    yield from eff.retry(schedule=schedule.recurs(3), while_=lambda x: x < 3).flip()
+    assert n[0] == 3
+
+
+@testing.effect
+def test_retry_schedule_while_errors():
+    """retry/schedule - while errors"""
+    eff, n = failing_counter(start_after=True)
+    result = yield from eff.retry(
+        schedule=schedule.recurs(3), while_=lambda _: fx.fail("boom")
+    ).flip()
+    assert n[0] == 1
+    assert result == "boom"
+
+
+@testing.effect
+def test_retry_schedule_current_metadata():
+    """retry/schedule - CurrentMetadata"""
+    metadata: list[Metadata[object, object]] = []
+    record = CurrentMetadata().flat_map(lambda m: fx.sync(lambda: metadata.append(m)))
+    yield from record.flip().retry(schedule.recurs(3)).flip()
+
+    def at(attempt: int, output: object) -> Metadata[object, object]:
+        return Metadata(
+            input=None,
+            output=output,
+            duration=ZERO,
+            attempt=attempt,
+            start=0.0,
+            now=0.0,
+            elapsed=0.0,
+            elapsed_since_previous=0.0,
+        )
+
+    assert metadata == [at(0, None), at(1, 0), at(2, 1), at(3, 2)]

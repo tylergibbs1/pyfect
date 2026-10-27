@@ -16,7 +16,6 @@ from typing import Any, Never
 from pyfect._core import Effect, _FromExit, _Locally, _WithFiber
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
-from pyfect._scheduled import scheduled
 from pyfect.exit import Exit, Success
 from pyfect.schedule import Schedule
 from pyfect.scope import Scope
@@ -48,15 +47,15 @@ class Resource[A, E = Never]:
         return _WithFiber(body)
 
     @staticmethod
-    def auto[T, X = Never, R = Never](
-        acquire: Effect[T, X, R], policy: Schedule[object, object]
-    ) -> Effect[Resource[T, X], Never, Scope | R]:
+    def auto[T, X = Never, RR = Never](
+        acquire: Effect[T, X, RR], policy: Schedule[object, object, object, RR]
+    ) -> Effect[Resource[T, X], Never, Scope | RR]:
         """``manual``, refreshed each time ``policy`` recurs (first after its
         first delay) until the current scope closes. Failed refreshes are
         ignored."""
         require_effect(acquire, "acquire")
         return Resource.manual(acquire).tap(
-            lambda resource: scheduled(resource.refresh().ignore_cause(), policy).fork_scoped()
+            lambda resource: resource.refresh().ignore_cause().schedule(policy).fork_scoped()
         )
 
     def get(self) -> Effect[A, E]:

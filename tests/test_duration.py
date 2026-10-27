@@ -41,9 +41,12 @@ def test_nan_timeout_fires_at_once():
 
 
 def test_schedules_treat_nan_as_zero():
-    s = schedule.spaced(float("nan"))
-    _, _, decision = s.run_step(0.0, None, s.initial)
-    assert decision == 0.0
+    @fx.gen
+    def first_decision():
+        step = yield from schedule.to_step(schedule.spaced(float("nan")))
+        return (yield from step(0.0, None))
+
+    assert fx.run_sync(first_decision) == schedule.Continue(0, Seconds(0.0))
 
 
 @pytest.mark.parametrize(
