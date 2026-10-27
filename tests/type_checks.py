@@ -3010,3 +3010,83 @@ def check_config_gen(port: fx.Config[int], db: fx.Effect[Db, Never, Primary]) ->
     def other_error():
         yield from fx.fail(NotFound("x"))
         return 1
+
+
+# --- Values: Redacted, ByteSize, Brand, case ---------------------------------------------
+
+
+def check_redacted() -> None:
+    from pyfect import redacted
+
+    secret = redacted.make("sk", label="key")
+    assert_type(secret, fx.Redacted[str])
+    assert_type(redacted.value(secret), str)
+    assert_type(secret.pipe(redacted.value), str)
+    wide: fx.Redacted[object] = secret
+    _ = wide
+    assert_type(redacted.wipe_unsafe(secret), bool)
+    secret.label = "other"  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def check_byte_size(unknown: object) -> None:
+    from pyfect import byte_size
+    from pyfect.byte_size import ByteSize
+
+    size = byte_size.mebibytes(1.5)
+    assert_type(size, ByteSize)
+    assert_type(byte_size.bytes(10), ByteSize)
+    assert_type(byte_size.from_string("1 kB"), ByteSize | None)
+    assert_type(byte_size.from_input(1.0), ByteSize | None)
+    assert_type(byte_size.sum(size, size), ByteSize)
+    assert_type(byte_size.subtract(size, size), ByteSize | None)
+    assert_type(byte_size.times(size, 2), ByteSize | None)
+    assert_type(byte_size.divide(size, 2), ByteSize | None)
+    assert_type(min(size, byte_size.zero), ByteSize)
+    assert_type(byte_size.to_unit(size, "KiB"), float)
+    assert_type(byte_size.format(size, unit="kB"), str)
+    assert_type(byte_size.format(size, system="decimal", unit="MB"), str)
+    byte_size.format(size, system="decimal", unit="MiB")  # pyright: ignore[reportCallIssue, reportArgumentType]
+    byte_size.format(size, system="binary", unit="MB")  # pyright: ignore[reportCallIssue, reportArgumentType]
+    byte_size.to_unit(size, "mb")  # pyright: ignore[reportArgumentType]
+    byte_size.bytes(1.5)  # pyright: ignore[reportArgumentType]
+    plain: int = size
+    _ = plain
+    if byte_size.is_byte_size(unknown):
+        assert_type(unknown, ByteSize)
+
+
+def check_brand(value: float) -> None:
+    from typing import NewType
+
+    from pyfect.brand import Brand, BrandError, Filter
+    from pyfect.option import Option
+    from pyfect.result import Result
+
+    Int = NewType("Int", float)
+    PositiveInt = NewType("PositiveInt", float)
+    to_int = Brand[float, Int].make(lambda n: n.is_integer())
+    assert_type(to_int, Brand[float, Int])
+    assert_type(to_int(1.0), Int)
+    assert_type(to_int.option(1.0), Option[Int])
+    assert_type(to_int.result(1.0), Result[Int, BrandError])
+    positive = Brand[float, Int].check(Filter[float](lambda n: n > 0).abort())
+    assert_type(Brand[float, PositiveInt].all(to_int, positive), Brand[float, PositiveInt])
+    assert_type(Brand[float, Int].nominal(), Brand[float, Int])
+    if to_int.is_(value):
+        assert_type(value, Int)
+    to_int("1")  # pyright: ignore[reportArgumentType]
+    Brand[float, Int].check()  # pyright: ignore[reportCallIssue]
+    Brand[str, Int].all(to_int)  # pyright: ignore[reportArgumentType]
+    Brand[float, Int].make(lambda n: n.upper())  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownLambdaType]
+    # Without the types named, nothing is known: strict mode rejects it.
+    Brand.make(lambda n: n)  # pyright: ignore[reportUnknownLambdaType, reportUnknownMemberType]
+
+
+def check_case() -> None:
+    import re
+
+    from pyfect import case
+
+    assert_type(case.snake_case("helloWorld"), str)
+    assert_type(case.no_case("a", split=[re.compile("(a)(b)")], transform=str.upper), str)
+    case.no_case("a", split="(a)(b)")  # pyright: ignore[reportArgumentType]

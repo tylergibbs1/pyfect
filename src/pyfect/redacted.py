@@ -1,8 +1,9 @@
 """``Redacted[A]``: a value that does not show itself (Effect's ``Redacted``).
 
-``str``, ``repr`` and logs print ``<redacted>`` (``<redacted:label>`` with a
-label); ``value(r)`` gives the value back. Two redacted values are equal when
-their values are::
+``str``, ``repr``, f-strings, logs (every ``fx.logger`` format, JSON
+included) and ``Cause.pretty`` print ``<redacted>`` (``<redacted:label>``
+with a label); ``value(r)`` gives the value back. Two redacted values are
+equal, and hash alike, when their values are::
 
     key = redacted.make("sk-123", label="api key")
     str(key)            # "<redacted:api key>"
@@ -11,7 +12,8 @@ their values are::
 
 from __future__ import annotations
 
-from typing import Final, Generic, TypeVar, final
+from collections.abc import Callable
+from typing import Final, Generic, Self, TypeVar, final
 
 A_co = TypeVar("A_co", covariant=True)
 
@@ -38,6 +40,13 @@ class Redacted(Generic[A_co]):
         return f"<redacted:{self.label}>" if self.label is not None else "<redacted>"
 
     __str__ = __repr__
+
+    def __format__(self, spec: str) -> str:
+        return format(repr(self), spec)
+
+    def pipe[B](self, f: Callable[[Self], B], /) -> B:
+        """``f(self)``: ``secret.pipe(redacted.value)``."""
+        return f(self)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Redacted):

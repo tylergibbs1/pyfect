@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import override
 
 from pyfect._core import Effect
-from pyfect.config_provider._case import config_case
+from pyfect.case import config_case
 from pyfect.config_provider._node import Node, Path, PathInput, SourceError, to_path
 from pyfect.context import Reference
 from pyfect.effect import succeed

@@ -204,6 +204,14 @@ Constructors: `string`, `integer`, `number`, `port`, `boolean`, `duration`, `lit
 `all_dict` and `@config.gen` combine them, and `map`, `flat_map`, `map_effect`, `or_else` and
 `nested` transform them.
 
+**Values.** `fx.redacted.make(secret, label="api key")` hides a secret from `str`, `repr`,
+every logger and `Cause.pretty` (`redacted.value` reads it, `wipe_unsafe` drops it).
+`fx.byte_size` parses and formats exact sizes (`from_string("1.5 kB")` is 1500,
+`format(bytes(1536))` is `"1.5 KiB"`). `fx.brand.Brand[float, Int].make(predicate)` gives a
+`NewType` a checked constructor (`BrandError` on failure, `.option` / `.result` / `.is_`
+to ask instead). `fx.case` converts between `camel_case`, `snake_case`, `kebab_case`,
+`pascal_case` and `constant_case`.
+
 **Logging.** `fx.log(...)`, `log_info`, `log_warning`, `log_error`, ... write to the loggers
 in `CurrentLoggers` (Effect's default console logger unless replaced), dropping anything below
 `MinimumLogLevel` (`INFO` by default; `fx.LogLevel` is an `IntEnum` sharing `logging`'s
@@ -361,8 +369,8 @@ Queue, PubSub, the Ref family, Pool, Cache, Request batching), observability (M5
 streams (M6: Pull, Channel, Stream, Sink, the text framers) are done; see
 [`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
 
-1. **Config and data**: config providers, `Config` and `Redacted` are in; `ByteSize`,
-   `Brand` and the case functions remain.
+1. **Config and data**: config providers, `Config`, `Redacted`, `ByteSize`, `Brand` and the
+   case functions are in; `Config.schema` waits for Schema.
 2. **Schema**: built on what Python already has (dataclasses, pydantic) rather than a
    reimplementation.
 3. **More building blocks**: `STM`.

@@ -6,7 +6,8 @@ Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
 ``fx.clock``, ``fx.config`` (``fx.Config``, ``fx.ConfigError``), ``fx.config_provider``,
 ``fx.console``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.redacted``
-(``fx.Redacted``), ``fx.byte_size``, ``fx.schedule``, ``fx.scheduler``,
+(``fx.Redacted``), ``fx.byte_size``, ``fx.brand``, ``fx.case`` (case
+conversion), ``fx.schedule``, ``fx.scheduler``,
 ``fx.Queue``, ``fx.PubSub``, ``fx.Pool``, ``fx.Cache``, ``fx.ScopedCache``, ``fx.Ref``,
 ``fx.SynchronizedRef``, ``fx.SubscriptionRef``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
@@ -28,7 +29,9 @@ building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Sink``
 
 from pyfect import (
     batching,
+    brand,
     byte_size,
+    case,
     cause,
     channel,
     clock,
@@ -307,8 +310,10 @@ __all__ = [
     "annotate_logs_scoped",
     "batching",
     "blocking",
+    "brand",
     "byte_size",
     "callback",
+    "case",
     "catch_if",
     "catch_no_such_element",
     "catch_tag",
