@@ -167,3 +167,23 @@ def test_a_fork_scoped_fiber_can_close_its_own_parallel_scope():
     closed, sibling_exit = run(program)
     assert closed == fx.Success("closed")
     assert isinstance(sibling_exit, fx.Failure) and sibling_exit.cause.has_interrupts
+
+
+def test_run_in_a_closed_scope_interrupts_the_fiber():
+    """Effect's ``fiberRunIn``: a fiber tied to a closed scope is interrupted
+    by itself, and a fiber that already exited is left alone."""
+    scope = CloseableScope()
+
+    @fx.gen
+    def program():
+        yield from scope.close(fx.exit.succeed(None))
+        running = yield from fx.never.fork(start_immediately=True)
+        done = yield from fx.succeed(1).fork(start_immediately=True)
+        assert running.run_in(scope) is running
+        assert done.run_in(scope) is done
+        return (yield from running.await_exit()), running.id, done.unsafe_poll()
+
+    ex, running_id, done_exit = run(program)
+    assert isinstance(ex, fx.Failure) and ex.cause.interruptors == frozenset({running_id})
+    assert done_exit == fx.Success(1)
+    assert scope.finalizer_count == 0

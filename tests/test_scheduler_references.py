@@ -27,9 +27,6 @@ class CountingScheduler:
     def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
         return self.inner.call_later(delay, task, daemon=daemon)
 
-    def when_idle(self, task: Task) -> Cancel:
-        return self.inner.when_idle(task)
-
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
         self.inner.track(tracker, f)
 
@@ -182,3 +179,30 @@ def test_a_scheduler_provided_in_an_earlier_run_is_kept():
     counting = fx.run_sync(add)
     fx.run_sync(scope.close(Success(None)))
     assert ran_on == [counting]
+
+
+class ImmediateScheduler(CountingScheduler):
+    """Runs each task the moment it is scheduled."""
+
+    def schedule(self, task: Task) -> None:
+        task()
+
+
+@testing.effect
+def test_a_scheduler_that_runs_tasks_at_once_does_not_nest_fibers():
+    """A task scheduled from inside a fiber's run waits for that run to end,
+    so a scheduled child still starts after its parent's step and a fiber's
+    own ``yield_now`` does not re-enter it."""
+    outer = yield from fx.CurrentScheduler()
+    log: list[str] = []
+
+    @fx.gen
+    def program():
+        child = yield from fx.sync(lambda: log.append("child")).fork()
+        log.append("parent")
+        yield from fx.yield_now()
+        log.append("after yield")
+        yield from child.join()
+
+    yield from program.pipe(fx.provide_service(fx.CurrentScheduler, ImmediateScheduler(outer)))
+    assert log == ["parent", "child", "after yield"]

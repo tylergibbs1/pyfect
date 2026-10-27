@@ -19,7 +19,7 @@ from pyfect.cause import die as die_cause
 from pyfect.exit import Exit, Failure, Success
 
 if TYPE_CHECKING:
-    from pyfect._fiber import Fiber
+    from pyfect._fiber import Fiber, Uninterruptible
     from pyfect.context import Context
 
 
@@ -261,14 +261,43 @@ class _RestoreContext(Frame):
 
 @final
 class _Fork[A, E, R](Effect[Any, Never, R]):
-    __slots__ = ("daemon", "inner")
+    __slots__ = ("daemon", "inner", "start_immediately", "start_uninterruptible")
 
-    def __init__(self, inner: Effect[A, E, R], *, daemon: bool) -> None:
+    def __init__(
+        self,
+        inner: Effect[A, E, R],
+        *,
+        daemon: bool,
+        start_immediately: bool,
+        uninterruptible: Uninterruptible,
+    ) -> None:
         self.inner = inner
         self.daemon = daemon
+        self.start_immediately = start_immediately
+        self.start_uninterruptible: Uninterruptible = uninterruptible
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
-        return Success(fiber._fork(self.inner, daemon=self.daemon))
+        child = fiber._fork(
+            self.inner,
+            daemon=self.daemon,
+            start_immediately=self.start_immediately,
+            uninterruptible=self.start_uninterruptible,
+        )
+        return fiber._after_started(Success(child))
+
+
+@final
+class _AfterStarted[A](Effect[A, Never, Never]):
+    """Succeed with ``value`` once the fibers this run started immediately
+    have run, up to their first wait or yield."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: A) -> None:
+        self.value = value
+
+    def _step(self, fiber: Fiber[Any, Any]) -> Step:
+        return fiber._after_started(Success(self.value))
 
 
 @final

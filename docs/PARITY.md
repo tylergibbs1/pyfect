@@ -90,7 +90,7 @@ Every item below was reproduced by running pyfect against Effect's source and te
 | 10 | Fixed | `test_scope_lifecycle.py::test_a_fork_scoped_fiber_can_close_its_own_scope` (+ parallel) |
 | 11 | Fixed | `test_scope_lifecycle.py::test_fork_scoped_into_a_closed_scope_does_not_run_the_work` |
 | 12 | Fixed for `for_each`/`all` | `tests/test_for_each_interruption.py` |
-| 13 | Fixed (bounded waits + `BusyFiberWarning`); see open note | `tests/test_test_clock.py` |
+| 13 | Fixed as in Effect: `adjust` forks one `yield_now` before moving time (no global idleness), then waits for each wake-up's work, with a `BusyFiberWarning` for a woken fiber that never suspends. Race, `for_each` and `cached` fibers start immediately, as in Effect | `tests/test_test_clock.py`, `tests/oracle/test_test_clock.py` |
 | 14 | Fixed. `duration.Seconds` parsed at the boundary | `tests/test_duration.py` |
 | 15 | Fixed | `test_layer_memo.py::test_fresh_*` |
 | 16 | Fixed. `CurrentMemoMap`, `MemoMap.fork`, `provide(local=True)` | `test_layer_memo.py` |
@@ -124,7 +124,6 @@ Effect's own source runs under Node 24 without a build: write a `.ts` script tha
 
 ### Still open
 
-- **#13**: before moving time, `TestClock.adjust` waits for global idleness (bounded by `warning_delay`) instead of Effect's single forked `yieldNow`. A busy fiber the clock did not wake costs `warning_delay` of real time plus a `BusyFiberWarning`, where Effect continues silently. Matching Effect needs forked and race children to start immediately.
 - A parent with children in an interrupt cascade finishes one scheduler turn later than in Effect.
 - **MemoMap scope refcounting** (Effect's `memoMapObserve`) is not ported; a layer reused from a parent map lives as long as the outer `provide`'s scope.
 - **`Cause +` dedupes with Python `==`**, so `fail(1) + fail(True)` collapse; Effect's `Equal.equals` keeps them apart.
@@ -155,7 +154,7 @@ Deferred from the M1 exit-criteria files, with the reason:
 - `Effect.ignore` / `ignoreCause` with `log` / `message`: they need the Logger (M5).
 - Cause `Done`, `IllegalArgumentError`, `ExceededCapacityError`: they come with `Pull` (M6) and the queue strategies (M4). Cause annotations and stack traces wait for tracing (M5).
 - Result `andThen`, `orElse`, `makeEquivalence`, `transposeMapOption` and the Do notation; most of the Option long tail: a `match` statement says each in a line (see the oracle docstrings).
-- The `cached` ports yield extra times where Effect uses `startImmediately`, and `race_all_first` has no `onWinner`. Both need M2's fork options.
+- `race_all_first` has no `onWinner`. (The `cached` ports now use `start_immediately` as Effect's do.)
 - The `timed` monotonic-time port compares with `pytest.approx`. It becomes exact once `ClockService` has nanosecond methods (M3).
 - TestConsole: there is no Console until M5. Property tests (`it.prop`) come with Hypothesis and Schema (M8).
 - `AsyncioRuntime` has no stall detection, so an asyncio test with the timeout disabled can hang where the sync runtime raises `StalledError`.
@@ -167,7 +166,7 @@ Deferred from the M1 exit-criteria files, with the reason:
 - **Exit criteria:** `Effect.test.ts` sections on constructors, error handling, cached, timeout and all; `Cause.test.ts`, `Exit.test.ts`, `Result.test.ts`, `Option.test.ts` (subset applicable to the Option decision).
 
 ### M2 — Concurrency, runtime and dependency injection (XL; depends on M0)
-- **Fiber:** fork options (`start_immediately`, `uninterruptible`), `fork_in`, `await_all_children`, `Fiber.await_all` / `join_all` / `interrupt_all(_as)` / `run_in` / `get_current`, observer removers.
+- **Fiber:** fork options (`start_immediately`, `uninterruptible`), `fork_in`, `await_all_children`, `Fiber.await_all` / `join_all` / `interrupt_all(_as)` / `run_in` / `get_current`, observer removers (done: `tests/oracle/test_fiber.py`, `tests/oracle/test_effect_fork.py`). A fiber started immediately runs right after the forking fiber's current step, before anything else, rather than nested inside it: `Fiber._drive` runs fibers one after another, so a chain of immediate forks cannot overflow Python's stack. Resumes still go through the scheduler, so a port yields once more where Effect's synchronous resume would already have run the woken fiber.
 - **Sync primitives:** Latch; Deferred (`die`, `interrupt`, `sync`, `is_done`, `into`); Semaphore (`resize`, `take_if_available`, `with_permits_if_available`, `release_all`); PartitionedSemaphore.
 - **Fiber collections:** FiberSet → FiberMap → FiberHandle.
 - **Runtime:** `run_fork`, `run_callback`, `run_*` with a context argument, `run_main(teardown=)`, Scheduler and `MaxOpsBeforeYield` as References (done: `CurrentScheduler`, `MaxOpsBeforeYield` and `PreventSchedulerYield` in `pyfect.scheduler`, read from the fiber's context; `tests/test_scheduler_references.py`, `tests/oracle/test_scheduler.py`).

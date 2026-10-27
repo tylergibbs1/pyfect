@@ -306,9 +306,35 @@ def check_combinators() -> None:
     assert_type(fx.succeed(1).race(fx.succeed("a")), fx.Effect[int | str, Never, Never])
 
 
-def check_fiber(fiber: fx.Fiber[int, Invalid]) -> None:
+def check_fiber(fiber: fx.Fiber[int, Invalid], other: fx.Fiber[str, NotFound]) -> None:
     assert_type(fiber.interrupt(), fx.Effect[None, Never, Never])
+    assert_type(fiber.interrupt_as(1), fx.Effect[None, Never, Never])
     assert_type(fiber.await_exit(), fx.Effect[fx.Exit[int, Invalid], Never, Never])
+    assert_type(fiber.run_in(fx.CloseableScope()), fx.Fiber[int, Invalid])
+    assert_type(fiber.unsafe_add_observer(lambda _: None), Callable[[], None])
+    assert_type(fx.Fiber.get_current(), fx.Fiber[Any, Any] | None)
+    assert_type(fx.Fiber.join_all([fiber]), fx.Effect[list[int], Invalid, Never])
+    assert_type(
+        fx.Fiber.join_all([fiber, other]), fx.Effect[list[int | str], Invalid | NotFound, Never]
+    )
+    assert_type(
+        fx.Fiber.await_all([fiber, other]),
+        fx.Effect[list[fx.Exit[int | str, Invalid | NotFound]], Never, Never],
+    )
+    assert_type(fx.Fiber.interrupt_all([fiber, other]), fx.Effect[None, Never, Never])
+    assert_type(fx.Fiber.interrupt_all_as([fiber], 1), fx.Effect[None, Never, Never])
+
+
+type _IntFiber = fx.Fiber[int, Invalid]
+
+
+def check_fork_options(eff: fx.Effect[int, Invalid, Port]) -> None:
+    assert_type(eff.fork(start_immediately=True), fx.Effect[_IntFiber, Never, Port])
+    assert_type(eff.fork_daemon(uninterruptible="inherit"), fx.Effect[_IntFiber, Never, Port])
+    assert_type(eff.fork_scoped(uninterruptible=True), fx.Effect[_IntFiber, Never, Port | fx.Scope])
+    assert_type(eff.fork_in(fx.CloseableScope()), fx.Effect[_IntFiber, Never, Port])
+    assert_type(eff.await_all_children(), fx.Effect[int, Invalid, Port])
+    eff.fork(uninterruptible="always")  # pyright: ignore[reportArgumentType]
 
 
 # --- structural combinators ----------------------------------------------------------

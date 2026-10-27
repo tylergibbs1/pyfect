@@ -2,8 +2,10 @@
 so sleeps are instant and ordering is deterministic."""
 
 from collections.abc import Callable
+from typing import Never
 
 import pyfect as fx
+from pyfect import testing
 from pyfect.cause import Interrupt
 from pyfect.testing import run_test as run
 
@@ -226,3 +228,51 @@ def test_a_busy_fiber_does_not_starve_others():
 
     run(program)
     assert log == ["other fiber ran", "spinner done"]
+
+
+@testing.effect
+def test_an_interrupted_await_all_removes_its_observer():
+    """As ``join_all`` (Effect's "cleans up observers on interruption"), an
+    abandoned ``await_all`` leaves no observer on the fiber it waited for."""
+    fibers = yield from fx.for_each([0, 1], lambda _: fx.never.fork())
+
+    def observer_counts() -> list[int]:
+        return [len(f._observers) for f in fibers]  # pyright: ignore[reportPrivateUsage]
+
+    before = observer_counts()
+    waiter = yield from fx.Fiber.await_all(fibers).fork(start_immediately=True)
+    assert observer_counts() == [before[0] + 1, before[1]]
+    yield from waiter.interrupt()
+    assert observer_counts() == before
+
+
+@testing.effect
+def test_join_all_stops_at_a_fiber_that_already_failed():
+    """Effect's ``fiberJoinAll`` stops adding observers once a fiber has
+    failed, so the fibers after it are left without one."""
+    failed = yield from fx.fail("boom").fork(start_immediately=True)
+    waiting = yield from fx.never.fork()
+    ex = yield from fx.Fiber.join_all([failed, waiting]).exit()
+    assert ex == fx.exit.fail("boom")
+    assert waiting._observers == []  # pyright: ignore[reportPrivateUsage]
+
+
+@testing.effect
+def test_a_finishing_parent_interrupts_its_children_in_fork_order():
+    """Effect keeps a fiber's children in an insertion-ordered ``Set``, so
+    their interrupt finalizers run in the order they were forked (checked
+    against Effect under Node)."""
+    log: list[int] = []
+
+    def child(i: int) -> fx.Effect[Never]:
+        return fx.never.on_interrupt(fx.sync(lambda: log.append(i)))
+
+    @fx.gen
+    def parent():
+        for i in range(50):
+            yield from child(i).fork(start_immediately=True)
+        yield from fx.never
+
+    fiber = yield from parent.fork(start_immediately=True)
+    yield from fiber.interrupt()
+    assert log == list(range(50))

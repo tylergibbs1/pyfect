@@ -23,6 +23,12 @@ Interruption follows Effect's rules:
 
 Supervision: a fiber's children (from ``fork``) are interrupted and awaited
 before the fiber completes.
+
+Fibers run one after another (``_drive``), not nested inside one another;
+only an interrupt sent from the same thread unwinds its target inside the
+sender's run (``_unwind``), and a cascade from there is queued again. A
+child started immediately runs right after the forking fiber's current
+step, before anything else queued, and the forking fiber goes on after it.
 """
 # pyright: reportPrivateUsage=false
 
@@ -32,8 +38,8 @@ import itertools
 import math
 import threading
 from collections import deque
-from collections.abc import Callable
-from typing import Any, Generic, Literal, Never, TypeVar
+from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING, Any, Generic, Literal, Never, TypeVar
 
 from pyfect._core import (
     SUSPEND,
@@ -45,6 +51,7 @@ from pyfect._core import (
     _FromExit,
     _RestoreInterruptible,
     _Succeed,
+    _Suspend,
     _Sync,
     _WithFiber,
 )
@@ -60,6 +67,9 @@ from pyfect.scheduler import (
     Scheduler,
 )
 
+if TYPE_CHECKING:
+    from pyfect.scope import CloseableScope
+
 A_co = TypeVar("A_co", covariant=True)
 E_co = TypeVar("E_co", covariant=True, default=Never)
 
@@ -71,16 +81,40 @@ _fiber_ids = itertools.count(1)
 _resume_lock = threading.Lock()
 
 
-class _ThreadState(threading.local):
-    """The run scheduler of the fiber running on this thread, if any, and
-    the interrupted fibers waiting to unwind (while one is already
-    unwinding)."""
+type _Run = tuple[Fiber[Any, Any], Step]
 
+
+class _Drain:
+    """The fiber runs of one run scheduler on this thread, one after
+    another: ``queue`` is what runs next, and ``first`` collects the runs
+    the current run hands over (children started immediately, then the
+    rest of the forking fiber), which go before everything queued. An
+    ``unwinding`` drain runs interrupted fibers inside the run that
+    interrupted them."""
+
+    __slots__ = ("first", "queue", "run_scheduler", "unwinding")
+
+    def __init__(self, run_scheduler: Scheduler, start: _Run, *, unwinding: bool) -> None:
+        self.run_scheduler = run_scheduler
+        self.queue = deque[_Run]([start])
+        self.first: list[_Run] = []
+        self.unwinding = unwinding
+
+
+class _ThreadState(threading.local):
+    """The fiber running on this thread and its run's scheduler, if any,
+    and the drain running fibers one after another."""
+
+    current: Fiber[Any, Any] | None = None
     run_scheduler: Scheduler | None = None
-    unwinds: deque[tuple[Fiber[Any, Any], Step]] | None = None
+    drain: _Drain | None = None
 
 
 _thread = _ThreadState()
+
+type Uninterruptible = bool | Literal["inherit"]
+"""A forked fiber's starting interruptibility: ``False`` (interruptible),
+``True``, or ``"inherit"`` the forking fiber's."""
 
 type _Phase = Literal["pending", "running", "idle"]
 """``pending``: forked, first run not yet started. ``running``: inside
@@ -154,7 +188,12 @@ class Fiber(Generic[A_co, E_co]):
     )
 
     def __init__(
-        self, run_scheduler: Scheduler, context: Context, parent: Fiber[Any, Any] | None
+        self,
+        run_scheduler: Scheduler,
+        context: Context,
+        parent: Fiber[Any, Any] | None,
+        *,
+        interruptible: bool = True,
     ) -> None:
         """A fiber of the run driven by ``run_scheduler``. It runs on
         ``context``'s ``CurrentScheduler``."""
@@ -162,11 +201,12 @@ class Fiber(Generic[A_co, E_co]):
         self._run_scheduler = run_scheduler
         self._parent = parent
         self._stack: list[Frame] = []
-        self._interruptible = True
+        self._interruptible = interruptible
         self._interrupt: Cause[Never] | None = None
         # Interrupts that arrived while a resume was queued (see _resume).
         self._interrupts_after_resume: list[int | None] = []
-        self._children: set[Fiber[Any, Any]] = set()
+        # A dict, not a set: children are interrupted in fork order, as in Effect.
+        self._children: dict[Fiber[Any, Any], None] = {}
         self._observers: list[Callable[[Exit[Any, Any]], None]] = []
         self._exit: Exit[Any, Any] | None = None
         self._waiting: _Wait | None = None
@@ -202,12 +242,65 @@ class Fiber(Generic[A_co, E_co]):
     def interrupt(self) -> Effect[None, Never, Never]:
         """Interrupt the fiber and wait until it has finished cleaning up.
         Read the outcome with ``await_exit``."""
+        return _WithFiber(lambda me: self.interrupt_as(me.id))
 
-        def body(me: Fiber[Any, Any]) -> Effect[None, Never, Never]:
-            self.unsafe_interrupt_as(me.id)
+    def interrupt_as(self, by: int | None) -> Effect[None, Never, Never]:
+        """``interrupt``, attributed to the fiber with id ``by``."""
+
+        def body() -> Effect[None, Never, Never]:
+            self.unsafe_interrupt_as(by)
             return self.await_exit().as_void()
 
-        return _WithFiber(body)
+        return _Suspend(body)
+
+    def run_in(self, scope: CloseableScope) -> Fiber[A_co, E_co]:
+        """Tie the fiber to ``scope``: closing it interrupts the fiber, and
+        the fiber leaves the scope when it exits. Registering again moves
+        the fiber's finalizer to the end, so it runs first. A fiber in an
+        already closed scope is interrupted. Call on the scheduler thread."""
+        if self._exit is not None:
+            return self
+        if scope._closed is not None:
+            self.unsafe_interrupt_as(self.id)
+        else:
+            scope._watch(self)
+        return self
+
+    @staticmethod
+    def get_current() -> Fiber[Any, Any] | None:
+        """The fiber running on this thread, if any."""
+        return _thread.current
+
+    @staticmethod
+    def await_all[A, E](fibers: Iterable[Fiber[A, E]]) -> Effect[list[Exit[A, E]], Never, Never]:
+        """Wait for every fiber; succeed with their exits in order."""
+        from pyfect._fiber_all import await_all
+
+        return await_all(fibers)
+
+    @staticmethod
+    def join_all[A, E](fibers: Iterable[Fiber[A, E]]) -> Effect[list[A], E, Never]:
+        """Wait for every fiber and succeed with their values in order, or
+        fail with the first failure (the others keep running)."""
+        from pyfect._fiber_all import join_all
+
+        return join_all(fibers)
+
+    @staticmethod
+    def interrupt_all(fibers: Iterable[Fiber[Any, Any]]) -> Effect[None, Never, Never]:
+        """Interrupt every fiber and wait for all of them to finish."""
+        from pyfect._fiber_all import interrupt_all
+
+        return interrupt_all(fibers)
+
+    @staticmethod
+    def interrupt_all_as(
+        fibers: Iterable[Fiber[Any, Any]], by: int | None
+    ) -> Effect[None, Never, Never]:
+        """``interrupt_all``, attributed to the fiber with id ``by``."""
+        from pyfect._fiber_all import interrupt_all_as
+
+        return interrupt_all_as(fibers, by)
 
     def unsafe_poll(self) -> Exit[A_co, E_co] | None:
         """The exit if the fiber is done. Only meaningful on the fiber's
@@ -225,13 +318,17 @@ class Fiber(Generic[A_co, E_co]):
         else:
             self._scheduler.schedule(lambda: self._deliver_interrupt(by))
 
-    def unsafe_add_observer(self, observer: Callable[[Exit[A_co, E_co]], None]) -> None:
+    def unsafe_add_observer(
+        self, observer: Callable[[Exit[A_co, E_co]], None]
+    ) -> Callable[[], None]:
         """Call ``observer`` with the exit once the fiber is done (at once if
-        it already is). Must be called on the scheduler thread."""
+        it already is). Returns a function that removes the observer. Must
+        be called on the scheduler thread."""
         if self._exit is not None:
             observer(self._exit)
-        else:
-            self._observers.append(observer)
+            return _no_op
+        self._observers.append(observer)
+        return lambda: self._remove_observer(observer)
 
     # --- runtime internals --------------------------------------------------
 
@@ -252,7 +349,7 @@ class Fiber(Generic[A_co, E_co]):
             self._ops_budget = max(1, context.lookup(MaxOpsBeforeYield)[1])
 
     def _start(self, effect: Effect[Any, Any, Any]) -> None:
-        self._scheduler.schedule(lambda: self._run(effect))
+        self._scheduler.schedule(lambda: self._drive(effect))
 
     def _push(self, frame: Frame) -> None:
         self._stack.append(frame)
@@ -263,14 +360,14 @@ class Fiber(Generic[A_co, E_co]):
     def _run(self, start: Step) -> None:
         if self._exit is not None:
             return  # finished early by an interrupt; a stale start or resume
-        outer = _thread.run_scheduler
-        _thread.run_scheduler = self._run_scheduler
+        outer, outer_scheduler = _thread.current, _thread.run_scheduler
+        _thread.current, _thread.run_scheduler = self, self._run_scheduler
         self._phase = "running"
         try:
             self._loop(start)
         finally:
             self._phase = "idle"
-            _thread.run_scheduler = outer
+            _thread.current, _thread.run_scheduler = outer, outer_scheduler
 
     def _loop(self, start: Step) -> None:
         cur: Step = start
@@ -312,7 +409,7 @@ class Fiber(Generic[A_co, E_co]):
     def _pause(self, cur: Step) -> None:
         """The step budget is spent: let other fibers run, then go on with
         ``cur``."""
-        self._scheduler.schedule(lambda: self._run(cur))
+        self._scheduler.schedule(lambda: self._drive(cur))
 
     def _continue(self, frame: Frame, ex: Exit[Any, Any]) -> Step:
         try:
@@ -338,25 +435,50 @@ class Fiber(Generic[A_co, E_co]):
             return interrupt_all(children, self.id)
         self._exit = ex
         if self._parent is not None:
-            self._parent._children.discard(self)
+            self._parent._children.pop(self, None)
         observers, self._observers = self._observers, []
         for observer in observers:
             observer(ex)
         return None
 
     def _remove_observer(self, observer: Callable[[Exit[Any, Any]], None]) -> None:
-        if observer in self._observers:
+        if self._exit is None and observer in self._observers:
             self._observers.remove(observer)
 
-    def _fork(self, effect: Effect[Any, Any, Any], *, daemon: bool) -> Fiber[Any, Any]:
-        child: Fiber[Any, Any] = Fiber(self._run_scheduler, self._ctx, None if daemon else self)
+    def _fork(
+        self,
+        effect: Effect[Any, Any, Any],
+        *,
+        daemon: bool,
+        start_immediately: bool = False,
+        uninterruptible: Uninterruptible = False,
+    ) -> Fiber[Any, Any]:
+        """A fiber running ``effect``, a child of this one unless ``daemon``.
+        With ``start_immediately`` it runs now, up to its first wait or
+        yield, before this fiber goes on; otherwise it is scheduled."""
+        interruptible = self._interruptible if uninterruptible == "inherit" else not uninterruptible
+        child: Fiber[Any, Any] = Fiber(
+            self._run_scheduler, self._ctx, None if daemon else self, interruptible=interruptible
+        )
         if not daemon:
-            self._children.add(child)
-        child._start(effect)
+            self._children[child] = None
+        if start_immediately:
+            child._drive_first(effect)
+        else:
+            child._start(effect)
         return child
 
+    def _after_started(self, then: Step) -> Step:
+        """Go on with ``then`` once the fibers this run started immediately
+        have run (up to their first wait or yield)."""
+        drain = _thread.drain
+        if drain is None or not drain.first:
+            return then
+        drain.first.append((self, then))
+        return SUSPEND
+
     def _yield_now(self) -> Step:
-        self._scheduler.schedule(lambda: self._run(Success(None)))
+        self._scheduler.schedule(lambda: self._drive(Success(None)))
         return SUSPEND
 
     def _suspend(self, register: Register[Any, Any, Any]) -> Step:
@@ -381,7 +503,7 @@ class Fiber(Generic[A_co, E_co]):
         once the resumed run has finished, parked or yielded."""
         if self._waiting is wait:
             self._waiting = None
-            self._run(effect)
+            self._drive(effect)
         deferred, self._interrupts_after_resume = self._interrupts_after_resume, []
         for by in deferred:
             self._deliver_interrupt(by)
@@ -414,23 +536,53 @@ class Fiber(Generic[A_co, E_co]):
         self._interrupt = cause
         return cause
 
+    def _drive(self, step: Step) -> None:
+        """Run this fiber with ``step`` now, or, while another fiber of the
+        run is running on this thread, right after it. Fibers never run
+        nested inside one another, so a chain of children started
+        immediately cannot overflow the stack."""
+        outer = _thread.drain
+        if outer is not None and outer.run_scheduler is self._run_scheduler:
+            outer.queue.append((self, step))
+        else:
+            self._drain((self, step), unwinding=False)
+
     def _unwind(self, step: Step) -> None:
-        """Run an interrupted fiber now. A cascade (each fiber interrupting
-        its children as it finishes) runs one fiber after another rather
-        than nested, so a deep tree of fibers cannot overflow the stack."""
-        queued = _thread.unwinds
-        if queued is not None:
-            queued.append((self, step))
-            return
-        queued = _thread.unwinds = deque[tuple[Fiber[Any, Any], Step]]([(self, step)])
+        """Run an interrupted fiber now, inside the run that interrupted
+        it (Effect's synchronous ``interruptUnsafe``). A cascade (each
+        fiber interrupting its children as it finishes) runs one fiber
+        after another rather than nested, so a deep tree of fibers cannot
+        overflow the stack."""
+        outer = _thread.drain
+        if outer is not None and outer.run_scheduler is self._run_scheduler and outer.unwinding:
+            outer.queue.append((self, step))
+        else:
+            self._drain((self, step), unwinding=True)
+
+    def _drain(self, start: _Run, *, unwinding: bool) -> None:
+        outer = _thread.drain
+        _thread.drain = drain = _Drain(self._run_scheduler, start, unwinding=unwinding)
+        queue = drain.queue
         try:
-            while queued:
-                fiber, nxt = queued.popleft()
+            while queue:
+                fiber, nxt = queue.popleft()
                 fiber._run(nxt)
+                if drain.first:
+                    queue.extendleft(reversed(drain.first))
+                    drain.first.clear()
         finally:
-            _thread.unwinds = None
-            for fiber, nxt in queued:  # only left over if a run raised
-                fiber._scheduler.schedule(lambda f=fiber, n=nxt: f._run(n))
+            _thread.drain = outer
+            for fiber, nxt in queue:  # only left over if a run raised
+                fiber._scheduler.schedule(lambda f=fiber, n=nxt: f._drive(n))
+
+    def _drive_first(self, step: Step) -> None:
+        """Run this fiber before anything else queued: right after the
+        current run, or now if no fiber of the run is running."""
+        drain = _thread.drain
+        if drain is not None and drain.run_scheduler is self._run_scheduler:
+            drain.first.append((self, step))
+        else:
+            self._drive(step)
 
     def _cancel_wait(self, wait: _Wait) -> Step:
         """An interrupted fiber just parked: abandon the wait, unless another
@@ -452,6 +604,10 @@ class Fiber(Generic[A_co, E_co]):
         self._push(_RestoreInterruptible(True))
         self._interruptible = False
         return wait.canceler
+
+
+def _no_op() -> None:
+    pass
 
 
 class _RunScheduler(Tag[Scheduler]):

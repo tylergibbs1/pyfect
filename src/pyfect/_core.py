@@ -222,6 +222,7 @@ def _pair[A, B](a: A, b: B) -> tuple[A, B]:
 from pyfect._primitives import (  # noqa: E402
     Register,
     Restore,
+    _AfterStarted,
     _Callback,
     _FailCause,
     _FlatMap,
@@ -251,6 +252,7 @@ __all__ = [
     "Register",
     "Restore",
     "Step",
+    "_AfterStarted",
     "_Callback",
     "_FailCause",
     "_FlatMap",

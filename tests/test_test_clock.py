@@ -1,18 +1,27 @@
 """TestClock.adjust: waits for the work each wake-up starts, and never
 hangs on a fiber that will not suspend.
 
-Before moving time, adjust lets every fiber settle (deeper than Effect's
-single yield, because pyfect starts forked children on the next scheduler
-turn rather than immediately). A fiber that never suspends cannot settle,
-so adjust gives up after ``warning_delay`` with a ``BusyFiberWarning``."""
+Before moving time, adjust lets the fibers that are ready run once (a
+forked ``yield_now``, as in Effect), so a busy fiber the clock did not wake
+costs nothing. A woken fiber that never suspends makes adjust give up after
+``warning_delay`` with a ``BusyFiberWarning``."""
 
 import time
+import warnings
+from collections.abc import Generator
+from contextlib import contextmanager
 
 import pytest
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.testing._clock import _SETTLE_WARNING  # pyright: ignore[reportPrivateUsage]
+
+
+@contextmanager
+def _no_busy_warning() -> Generator[None]:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", testing.BusyFiberWarning)
+        yield
 
 
 def test_timeout_repetition_of_uninterruptible_effect():
@@ -24,13 +33,13 @@ def test_timeout_repetition_of_uninterruptible_effect():
         yield from testing.adjust(0.01)
         return (yield from fiber.join())
 
-    with pytest.warns(testing.BusyFiberWarning, match="stopped waiting for every fiber"):
+    with _no_busy_warning():
         ex = testing.run_test(program, warning_delay=0.05)
     assert isinstance(ex, fx.Failure)
     assert isinstance(ex.cause.failures[0], fx.TimeoutException)
 
 
-def test_adjust_stops_waiting_for_a_busy_fiber_it_did_not_wake():
+def test_adjust_does_not_wait_for_a_busy_fiber_it_did_not_wake():
     @fx.gen
     def program():
         busy = yield from fx.yield_now().forever().fork()
@@ -40,8 +49,10 @@ def test_adjust_stops_waiting_for_a_busy_fiber_it_did_not_wake():
         yield from busy.interrupt()
         return woke
 
-    with pytest.warns(testing.BusyFiberWarning, match="stopped waiting for every fiber"):
-        assert testing.run_test(program, warning_delay=0.05) == "woke"
+    started = time.monotonic()
+    with _no_busy_warning():
+        assert testing.run_test(program, warning_delay=1) == "woke"
+    assert time.monotonic() - started < 0.5
 
 
 def test_adjust_warns_and_moves_on_when_a_woken_fiber_never_suspends():
@@ -85,7 +96,7 @@ def test_adjust_waits_for_work_started_transitively_by_a_wake_up():
 
 def test_an_unrelated_busy_fiber_does_not_stall_each_wake_up():
     """Only the work a wake-up causes is waited for, so a busy fiber the clock
-    never woke costs one settle warning, not one per sleeper woken."""
+    never woke costs no warning and no waiting."""
     log: list[float] = []
 
     def sleeper(seconds: float) -> fx.Effect[None]:
@@ -102,9 +113,8 @@ def test_an_unrelated_busy_fiber_does_not_stall_each_wake_up():
             yield from fiber.join()
         yield from busy.interrupt()
 
-    with pytest.warns(testing.BusyFiberWarning) as caught:
-        testing.run_test(program, warning_delay=0.05)
-    assert [str(w.message) for w in caught] == [_SETTLE_WARNING]
+    with _no_busy_warning():
+        testing.run_test(program, warning_delay=1)
     assert log == [1.0, 2.0, 3.0]
 
 

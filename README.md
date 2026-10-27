@@ -79,7 +79,10 @@ a typed error with `catch`, or into an `UnknownError` holding it when there is n
 `catch` that raises is a defect. `ignore` drops typed errors; `ignore_cause` drops defects
 and interrupts too.
 
-**Structured concurrency.** A fiber's children are interrupted when it finishes. `all` and
+**Structured concurrency.** A fiber's children are interrupted when it finishes.
+`fork`, `fork_daemon`, `fork_scoped` and `fork_in(scope)` take Effect's fork options
+(`start_immediately`, `uninterruptible`); `await_all_children` waits for the children an
+effect forked, and `Fiber.join_all` / `await_all` / `interrupt_all` handle several fibers. `all` and
 `for_each` take a concurrency limit and interrupt siblings on the first failure. `race`,
 `race_first`, `race_all` and `timeout` always wait for losers to clean up.
 
@@ -100,9 +103,10 @@ until takers drain them; `offer_all` returns the items it could not add, `shutdo
 whether it finished the queue, and `Semaphore.take`/`release` return permit counts.
 
 **Deterministic tests.** `fx.testing` uses a `TestClock`: time moves only when the test
-calls `adjust` or `set_time`, and every fiber settles before it moves again. A test that
-would hang fails with `StalledError` instead, and a fiber that never suspends makes `adjust`
-emit a `BusyFiberWarning` and move on rather than hang. See [Testing](#testing).
+calls `adjust` or `set_time`, and each fiber it wakes runs until it suspends before time
+moves on. A test that would hang fails with `StalledError` instead, and a woken fiber that
+never suspends makes `adjust` emit a `BusyFiberWarning` and move on rather than hang. See
+[Testing](#testing).
 
 ## Testing
 

@@ -98,7 +98,8 @@ class _Cache[A, E, R]:
         run = _Run(Fiber(fiber._run_scheduler, fiber._context, None))
         self.current = run
         joined = self._join(fiber, run)
-        run.fiber._start(
+        # Started at once, as in Effect: it runs right after this fiber parks.
+        run.fiber._drive_first(
             self.source.on_exit(lambda ex: _Sync(lambda: self._publish(run, ex, clock)))
         )
         return joined

@@ -12,8 +12,7 @@ it:
 ``schedule`` is safe to call from any thread. ``call_later`` is only called
 from fibers, which always run on the scheduler's own thread.
 
-Both also serve the test clock: ``track`` counts the work a wake-up causes,
-and ``when_idle`` runs a task once no fiber has anything ready to run.
+Both also serve the test clock: ``track`` counts the work a wake-up causes.
 
 A fiber reads its scheduler and its yield budget from its context, as
 Effect does, so they can be provided per effect::
@@ -46,11 +45,6 @@ class Scheduler(Protocol):
     def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
         """Run ``task`` after ``delay``. A ``daemon`` timer (a diagnostic)
         does not count as pending work: it never hides a stall."""
-        ...
-
-    def when_idle(self, task: Task) -> Cancel:
-        """Run ``task`` once no other task is ready. Call on the scheduler
-        thread."""
         ...
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
@@ -113,15 +107,9 @@ class SyncScheduler(Tracking):
         super().__init__()
         self._last_activity = time.monotonic()
         self._ready: deque[Task] = deque()
-        self._idle: deque[_Timer] = deque()
         self._timers: list[tuple[float, int, _Timer]] = []
         self._seq = itertools.count()
         self._cond = threading.Condition()
-
-    def when_idle(self, task: Task) -> Cancel:
-        waiter = _Timer(0.0, task)
-        self._idle.append(waiter)
-        return waiter.cancel
 
     def schedule(self, task: Task) -> None:
         task = self._tracked(task)
@@ -152,10 +140,6 @@ class SyncScheduler(Tracking):
         while not done():
             with self._cond:
                 self._move_due_timers()
-                while not self._ready and self._idle:
-                    waiter = self._idle.popleft()
-                    if waiter.alive:
-                        self._ready.append(waiter.task)
                 if not self._ready:
                     self._cond.wait(self._wait_time(stall_timeout))
                     continue
@@ -203,7 +187,6 @@ class AsyncioScheduler(Tracking):
         self._loop = loop
         self._thread = threading.get_ident()
         self._ready: deque[Task] = deque()
-        self._idle: deque[_Timer] = deque()
         self._draining_scheduled = False
 
     @classmethod
@@ -221,12 +204,6 @@ class AsyncioScheduler(Tracking):
     def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
         return self._loop.call_later(max(delay, 0.0), task).cancel
 
-    def when_idle(self, task: Task) -> Cancel:
-        waiter = _Timer(0.0, task)
-        self._idle.append(waiter)
-        self._drain_soon()
-        return waiter.cancel
-
     def _drain_soon(self) -> None:
         if not self._draining_scheduled:
             self._draining_scheduled = True
@@ -238,9 +215,5 @@ class AsyncioScheduler(Tracking):
         self._draining_scheduled = False
         for _ in range(len(self._ready)):
             self._ready.popleft()()
-        while not self._ready and self._idle:
-            waiter = self._idle.popleft()
-            if waiter.alive:
-                waiter.task()
         if self._ready:
             self._drain_soon()

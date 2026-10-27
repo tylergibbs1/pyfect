@@ -44,26 +44,23 @@ def test_the_fiber_loop_names_no_primitive():
     assert used == set()
 
 
-def test_a_fiber_run_is_entered_only_from_the_scheduler_or_the_unwind_queue():
+def test_a_fiber_run_is_entered_only_from_the_drain():
     """Running one fiber inside another nests their stacks; a cascade of
-    interrupts then overflows Python's stack and wedges fibers half-finished.
-    ``_run`` may be called from a scheduled task (a lambda), from ``_resume``
-    (which the scheduler calls) or from ``_unwind`` (which runs a cascade
-    one fiber at a time)."""
-    allowed = {"_resume", "_unwind"}
+    interrupts, or a chain of children started immediately, then overflows
+    Python's stack and wedges fibers half-finished. ``_run`` may only be
+    called from ``_drain``, which runs fibers one after another; everything
+    else (scheduled tasks included) goes through ``_drive`` or ``_unwind``."""
     tree = ast.parse((SRC / "_fiber.py").read_text())
     offenders: list[str] = []
 
     def visit(node: ast.AST, owner: str) -> None:
         if isinstance(node, ast.FunctionDef):
             owner = node.name
-        if isinstance(node, ast.Lambda):
-            return
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == "_run"
-            and owner not in allowed
+            and owner != "_drain"
         ):
             offenders.append(f"{owner}:{node.lineno}")
         for child in ast.iter_child_nodes(node):

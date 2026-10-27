@@ -42,12 +42,6 @@ _WAKE_WARNING = (
     "test clock stopped waiting for it. Sleeps it starts later may be scheduled "
     "relative to a later time."
 )
-_SETTLE_WARNING = (
-    "A fiber is still running without suspending, so TestClock.adjust stopped "
-    "waiting for every fiber to settle before moving time. Sleeps it starts later "
-    "may be scheduled relative to a later time."
-)
-
 _NANOS = 1_000_000_000
 
 
@@ -211,7 +205,9 @@ class TestClock:
         return _WithFiber(body)
 
     def _run(self, scheduler: Scheduler, step: Callable[[float], float]) -> Generator[Effect[None]]:
-        yield from self._wait_or_warn(scheduler, scheduler.when_idle, _SETTLE_WARNING)
+        # As Effect: let the fibers that are ready run once before moving.
+        settled = yield from _YieldNow().fork()
+        yield from settled.await_exit()
         end = step(self._timestamp_ns)
         while self._sleepers and self._sleepers[0][0] <= end:
             when, _, sleeper = heapq.heappop(self._sleepers)

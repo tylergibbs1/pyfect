@@ -111,7 +111,13 @@ def _for_each_concurrent[T, B, E, R](
                 results[i] = yield from f(items[i])
 
         def register(resume: Callable[[Effect[Any, Any, Any]], None]) -> Effect[None]:
-            workers = [parent._fork(_Gen(worker), daemon=False) for _ in range(min(limit, n))]
+            # Started at once, as in Effect, each as interruptible as the parent.
+            workers = [
+                parent._fork(
+                    _Gen(worker), daemon=False, start_immediately=True, uninterruptible="inherit"
+                )
+                for _ in range(min(limit, n))
+            ]
             remaining = len(workers)
             causes: list[Cause[Any]] = []
 
@@ -152,7 +158,8 @@ def _for_each_concurrent[T, B, E, R](
 def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Effect[Any, Any, Any]:
     def body(parent: Fiber[Any, Any]) -> Effect[Any, Any, Any]:
         def register(resume: Callable[[Effect[Any, Any, Any]], None]) -> Effect[None]:
-            fibers = [parent._fork(e, daemon=False) for e in effects]
+            # Started at once, as in Effect: they run before anything else.
+            fibers = [parent._fork(e, daemon=False, start_immediately=True) for e in effects]
             remaining = len(fibers)
             decided = False
             causes: list[Cause[Any]] = []

@@ -1,8 +1,9 @@
 """Deterministic tests, and a pytest plugin to write them as effects.
 
 A ``TestClock`` only moves when the test says so, with ``adjust`` or
-``set_time``; each move lets every fiber settle, so timing tests are exact
-and take no real time::
+``set_time``; each move lets ready fibers run, then wakes sleepers in order
+and waits for each woken fiber to suspend, so timing tests are exact and
+take no real time::
 
     @testing.effect
     def test_timeout():
@@ -26,8 +27,8 @@ and take no real time::
 - ``assert_exit_success`` and friends: failures print ``Cause.pretty()``.
 
 If every fiber ends up waiting with nothing to wake them, synchronous runs
-raise ``StalledError`` instead of hanging. A fiber that never suspends makes
-``adjust`` warn with ``BusyFiberWarning`` and move on.
+raise ``StalledError`` instead of hanging. A woken fiber that never suspends
+makes ``adjust`` warn with ``BusyFiberWarning`` and move on.
 """
 
 from pyfect.scheduler import StalledError

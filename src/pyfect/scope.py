@@ -16,6 +16,7 @@ from typing import Any, Literal, Never, overload
 from pyfect._concurrency import for_each
 from pyfect._core import (
     Effect,
+    _AfterStarted,
     _call_user,
     _FailCause,
     _Gen,
@@ -26,7 +27,7 @@ from pyfect._core import (
     _WithFiber,
     uninterruptible_mask,
 )
-from pyfect._fiber import Fiber
+from pyfect._fiber import Fiber, Uninterruptible
 from pyfect.cause import merge
 from pyfect.context import Tag
 from pyfect.exit import Exit, Failure
@@ -84,6 +85,16 @@ class CloseableScope:
 
     def _remove(self, key: object) -> None:
         self._finalizers.pop(key, None)
+
+    def _watch(self, fiber: Fiber[Any, Any]) -> None:
+        """Interrupt ``fiber`` on close (unless it is the fiber closing the
+        scope), until it exits. Watching again moves its finalizer last, so
+        it runs first. The scope must be open."""
+        self._remove(fiber)
+        self._add(
+            fiber, lambda _: _WithFiber(lambda current: _interrupt_unless_self(fiber, current))
+        )
+        fiber.unsafe_add_observer(lambda _: self._remove(fiber))
 
     def close(self, ex: Exit[Any, Any]) -> Effect[None]:
         """Run every finalizer, last added first (all at once in a parallel
@@ -205,24 +216,44 @@ def acquire_use_release[A, B, EE = Never, RR = Never](
     )
 
 
-def fork_scoped[A, E, R](eff: Effect[A, E, R]) -> Effect[Any, Never, R | Scope]:
-    """Fork ``eff`` into the current scope: interrupted when the scope
-    closes, and removed from it when it exits. Into a closed scope it gives
-    an already-interrupted fiber that never ran ``eff``."""
-    return Scope().flat_map(lambda scope: _WithFiber(lambda parent: _fork_in(eff, scope, parent)))
+def fork_scoped[A, E, R](
+    eff: Effect[A, E, R],
+    *,
+    start_immediately: bool = False,
+    uninterruptible: Uninterruptible = False,
+) -> Effect[Fiber[A, E], Never, R | Scope]:
+    """Fork ``eff`` into the current scope (see ``fork_in``)."""
+    return Scope().flat_map(
+        lambda scope: fork_in(
+            eff, scope, start_immediately=start_immediately, uninterruptible=uninterruptible
+        )
+    )
 
 
-def _fork_in(
-    eff: Effect[Any, Any, Any], scope: CloseableScope, parent: Fiber[Any, Any]
-) -> Effect[Fiber[Any, Any]]:
-    if scope._closed is not None:
-        fiber: Fiber[Any, Any] = Fiber(parent._run_scheduler, parent._context, None)
-        fiber.unsafe_interrupt_as(parent.id)
-        return _Succeed(fiber)
-    fiber = parent._fork(eff, daemon=True)
-    scope._add(fiber, lambda _: _WithFiber(lambda current: _interrupt_unless_self(fiber, current)))
-    fiber.unsafe_add_observer(lambda _: scope._remove(fiber))
-    return _Succeed(fiber)
+def fork_in[A, E, R](
+    eff: Effect[A, E, R],
+    scope: CloseableScope,
+    *,
+    start_immediately: bool = False,
+    uninterruptible: Uninterruptible = False,
+) -> Effect[Fiber[A, E], Never, R]:
+    """Fork ``eff`` on a fiber that outlives its parent but is interrupted
+    when ``scope`` closes, and leaves the scope when it exits. Into a
+    closed scope it gives an already-interrupted fiber that never ran
+    ``eff``."""
+
+    def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
+        if scope._closed is not None:
+            unstarted: Fiber[A, E] = Fiber(parent._run_scheduler, parent._context, None)
+            unstarted.unsafe_interrupt_as(parent.id)
+            return _Succeed(unstarted)
+        fiber: Fiber[A, E] = parent._fork(
+            eff, daemon=True, start_immediately=start_immediately, uninterruptible=uninterruptible
+        )
+        scope._watch(fiber)
+        return _AfterStarted(fiber)
+
+    return _WithFiber(body)
 
 
 def _interrupt_unless_self(fiber: Fiber[Any, Any], current: Fiber[Any, Any]) -> Effect[None]:

@@ -5,10 +5,7 @@ timeout, raceAllFirst, acquireDisposable) and of the ``interruptibleMask``
 case of ``Fiber.test.ts``.
 
 Each test's docstring is the Effect test title. Effect's
-``forkChild({ startImmediately: true })`` is ported as ``fork()`` followed by
-``yield_now()``, which lets the forked fiber run up to its first wait. A
-cache starts its run on a fiber of its own, scheduled rather than run at once
-as in Effect, so the cache tests yield once more where they count runs.
+``forkChild({ startImmediately: true })`` is ``fork(start_immediately=True)``.
 Omitted, with the reason:
 
 - ``all`` "iterable": ``fx.all`` is variadic; an iterable is spread
@@ -23,11 +20,10 @@ Omitted, with the reason:
   ``shouldYield`` points; pyfect's schedulers have no ``should_yield`` (the
   budget is ``MaxOpsBeforeYield``), and the case it guards is covered in
   ``tests/test_structural_combinators.py``.
-- ``cached`` "runs the effect once for concurrent callers" uses
-  ``Fiber.awaitAll`` (M2); the fibers are awaited one by one instead.
 """
 
 import asyncio
+import warnings
 from contextlib import contextmanager
 from types import TracebackType
 from typing import Any
@@ -314,12 +310,10 @@ def test_runs_the_effect_once_for_concurrent_callers() -> None:
     def program():
         release = yield from fx.Deferred[None].make()
         cached = yield from fx.sync(bump).tap(lambda _: release.wait()).cached()
-        fibers = yield from fx.for_each([1, 2, 3], lambda _: cached.fork())
-        yield from fx.yield_now()
-        yield from fx.yield_now()
+        fibers = yield from fx.for_each([1, 2, 3], lambda _: cached.fork(start_immediately=True))
         counted = count
         yield from release.succeed(None)
-        exits = yield from fx.for_each(fibers, lambda f: f.await_exit())
+        exits = yield from fx.Fiber.await_all(fibers)
         return counted, exits
 
     counted, exits = testing.run_test(program)
@@ -334,8 +328,7 @@ def test_shares_the_in_flight_run_when_the_body_synchronously_wakes_a_re_entrant
     def program():
         gate = yield from fx.Deferred[None].make()
         cached = yield from gate.succeed(None).as_(42).cached()
-        waiter = yield from gate.wait().and_then(cached).fork()
-        yield from fx.yield_now()
+        waiter = yield from gate.wait().and_then(cached).fork(start_immediately=True)
         first = yield from cached
         return first, (yield from waiter.join())
 
@@ -367,10 +360,9 @@ def test_interrupting_a_waiter_leaves_the_owner_running() -> None:
         started = yield from fx.Deferred[None].make()
         release = yield from fx.Deferred[None].make()
         cached = yield from started.succeed(None).and_then(release.wait()).as_(42).cached()
-        owner = yield from cached.fork()
+        owner = yield from cached.fork(start_immediately=True)
         yield from started.wait()
-        waiter = yield from cached.fork()
-        yield from fx.yield_now()
+        waiter = yield from cached.fork(start_immediately=True)
         yield from waiter.interrupt()
         waiter_exit = yield from waiter.await_exit()
         yield from release.succeed(None)
@@ -403,18 +395,16 @@ def test_shares_a_run_until_every_caller_is_interrupted_then_starts_fresh() -> N
             )
 
         cached = yield from fx.suspend(body).cached()
-        first = yield from cached.fork()
+        first = yield from cached.fork(start_immediately=True)
         yield from started.wait()
-        second = yield from cached.fork()
-        yield from fx.yield_now()
+        second = yield from cached.fork(start_immediately=True)
         yield from first.interrupt()
         finalizing_early = yield from finalizing.poll()
 
         # A call made while the abandoned run finalizes starts a fresh run.
-        interrupt_second = yield from second.interrupt().fork()
+        interrupt_second = yield from second.interrupt().fork(start_immediately=True)
         yield from finalizing.wait()
-        fresh = yield from cached.fork()
-        yield from fx.yield_now()
+        fresh = yield from cached.fork(start_immediately=True)
         yield from finish_finalizer.succeed(None)
         yield from interrupt_second.join()
         return finalizing_early, (yield from fresh.await_exit())
@@ -594,14 +584,10 @@ def test_keeps_existing_callers_on_the_invalidated_run_without_replacing_the_new
             return run
 
         cached, invalidate = yield from body.cached_invalidate_with_ttl(3600)
-        owner = yield from cached.fork()
-        yield from fx.yield_now()
-        yield from fx.yield_now()
+        owner = yield from cached.fork(start_immediately=True)
         seen = [runs]
         yield from invalidate
-        fresh = yield from cached.fork()
-        yield from fx.yield_now()
-        yield from fx.yield_now()
+        fresh = yield from cached.fork(start_immediately=True)
         seen.append(runs)
         seen.append((yield from fresh.join()))
         yield from release.succeed(None)
@@ -627,15 +613,12 @@ def test_interrupts_an_invalidated_run_when_its_last_caller_is_interrupted() -> 
     @fx.gen
     def program():
         cached, invalidate = yield from fx.suspend(body).cached_invalidate_with_ttl(3600)
-        first = yield from cached.fork()
-        yield from fx.yield_now()
+        first = yield from cached.fork(start_immediately=True)
         yield from invalidate
-        second = yield from cached.fork()
-        yield from fx.yield_now()
+        second = yield from cached.fork(start_immediately=True)
         yield from first.interrupt()
         seen: list[object] = [list(interrupted)]
-        third = yield from cached.fork()
-        yield from fx.yield_now()
+        third = yield from cached.fork(start_immediately=True)
         seen.append(runs)
         yield from second.interrupt()
         seen.append(list(interrupted))
@@ -860,8 +843,8 @@ def test_timeout_repetition_of_uninterruptible_effect() -> None:
         yield from testing.adjust(0.01)
         return (yield from fiber.join())
 
-    # The repeating fiber never suspends, so the test clock warns and moves on.
-    with pytest.warns(testing.BusyFiberWarning):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", testing.BusyFiberWarning)
         assert testing.run_test(program, warning_delay=0.01) is None
 
 
@@ -993,7 +976,7 @@ def test_delivers_a_pending_interrupt_when_interruptible_mask_restores_interrupt
             yield from resume.wait()
             return (yield from fx.interruptible_mask(lambda _restore: body()))
 
-        child = yield from child_body.uninterruptible().fork()
+        child = yield from child_body.uninterruptible().fork(start_immediately=True)
         yield from masked.wait()
         events.append("masked")
         yield from fx.sync(lambda: child.unsafe_interrupt_as(123))

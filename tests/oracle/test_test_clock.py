@@ -47,7 +47,6 @@ def test_warnings_bypass_test_console(
 
 
 @pytest.mark.parametrize("cancellation", ["interrupted sleep", "successful timeout"])
-@pytest.mark.filterwarnings("ignore::pyfect.testing.BusyFiberWarning")
 @testing.effect
 def test_adjust_skips_the_cancelled_deadline(
     cancellation: Literal["interrupted sleep", "successful timeout"],
