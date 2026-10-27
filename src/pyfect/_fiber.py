@@ -53,11 +53,11 @@ from pyfect._core import (
     _FromExit,
     _RestoreInterruptible,
     _Succeed,
-    _Suspend,
     _Sync,
     _WithFiber,
 )
 from pyfect._metric_ref import FiberRuntimeMetrics
+from pyfect._stack_frame import CurrentStackFrame, InterruptorStackTrace, StackFrame, StackTrace
 from pyfect._tracer_ref import CurrentTracer
 from pyfect.cause import Cause, Die
 from pyfect.cause import interrupt as interrupt_cause
@@ -214,6 +214,7 @@ class Fiber(Generic[A_co, E_co]):
         "_runtime_metrics",
         "_scheduler",
         "_stack",
+        "_stack_frame",
         "_tracer_hook",
         "_waiting",
         "id",
@@ -236,7 +237,7 @@ class Fiber(Generic[A_co, E_co]):
         self._interruptible = interruptible
         self._interrupt: Cause[Never] | None = None
         # Interrupts that arrived while a resume was queued (see _resume).
-        self._interrupts_after_resume: list[int | None] = []
+        self._interrupts_after_resume: list[tuple[int | None, Context | None]] = []
         # A dict, not a set: children are interrupted in fork order, as in Effect.
         self._children: dict[Fiber[Any, Any], None] = {}
         self._observers: list[Callable[[Exit[Any, Any]], None]] = []
@@ -276,16 +277,15 @@ class Fiber(Generic[A_co, E_co]):
     def interrupt(self) -> Effect[None, Never, Never]:
         """Interrupt the fiber and wait until it has finished cleaning up.
         Read the outcome with ``await_exit``."""
-        return _WithFiber(lambda me: self.interrupt_as(me.id))
+        return _WithFiber(lambda me: self._interrupt_from(me, me.id))
 
     def interrupt_as(self, by: int | None) -> Effect[None, Never, Never]:
         """``interrupt``, attributed to the fiber with id ``by``."""
+        return _WithFiber(lambda me: self._interrupt_from(me, by))
 
-        def body() -> Effect[None, Never, Never]:
-            self.unsafe_interrupt_as(by)
-            return self.await_exit().as_void()
-
-        return _Suspend(body)
+    def _interrupt_from(self, me: Fiber[Any, Any], by: int | None) -> Effect[None, Never, Never]:
+        self.unsafe_interrupt_as(by, me._interruptor_annotations())
+        return self.await_exit().as_void()
 
     def run_in(self, scope: CloseableScope) -> Fiber[A_co, E_co]:
         """Tie the fiber to ``scope``: closing it interrupts the fiber, and
@@ -347,16 +347,18 @@ class Fiber(Generic[A_co, E_co]):
         scheduler thread."""
         return self._exit
 
-    def unsafe_interrupt_as(self, by: int | None) -> None:
+    def unsafe_interrupt_as(self, by: int | None, annotations: Context | None = None) -> None:
         """Ask the fiber to stop. Safe from any thread; does not wait.
 
         From a fiber on the same scheduler it takes effect at once (as
         Effect's ``interruptUnsafe``); elsewhere it goes through the
-        scheduler."""
+        scheduler. The interruption carries ``annotations`` (the
+        interrupting fiber's ``InterruptorStackTrace``) and the frame this
+        fiber is in (``StackTrace``)."""
         if current_run_scheduler() is self._run_scheduler:
-            self._deliver_interrupt(by)
+            self._deliver_interrupt(by, annotations)
         else:
-            self._scheduler.schedule(lambda: self._deliver_interrupt(by))
+            self._scheduler.schedule(lambda: self._deliver_interrupt(by, annotations))
 
     def unsafe_add_observer(
         self, observer: Callable[[Exit[A_co, E_co]], None]
@@ -391,6 +393,12 @@ class Fiber(Generic[A_co, E_co]):
         self._ops_budget: float = view.ops_budget
         self._tracer_hook: ContextHook | None = view.tracer_hook
         self._runtime_metrics: FiberRuntimeMetricsService | None = view.runtime_metrics
+        self._stack_frame: StackFrame | None = view.stack_frame
+
+    def _interruptor_annotations(self) -> Context | None:
+        """What an interruption this fiber sends records about it."""
+        frame = self._stack_frame
+        return None if frame is None else Context.make(InterruptorStackTrace, frame)
 
     def _start(self, effect: Effect[Any, Any, Any]) -> None:
         self._scheduler.schedule(lambda: self._drive(effect))
@@ -429,6 +437,8 @@ class Fiber(Generic[A_co, E_co]):
                     cur = Failure(Cause((Die(exc),)))
             elif isinstance(cur, Success | Failure):
                 if not self._stack:
+                    if self._stack_frame is not None and isinstance(cur, Failure):
+                        cur = self._in_frame(cur, self._stack_frame)
                     nxt = self._finish(cur)
                     if nxt is None:
                         return
@@ -456,14 +466,28 @@ class Fiber(Generic[A_co, E_co]):
     def _continue(self, frame: Frame, ex: Exit[Any, Any]) -> Step:
         hook = self._tracer_hook
         try:
-            if hook is not None:
-                step: Callable[[], Step] = partial(_hand_over, frame, ex, self)
-                return hook(step, self)
             if isinstance(ex, Success):
-                return frame._on_success(ex.value, self)
-            return frame._on_failure(ex.cause, self)
+                if hook is None:
+                    return frame._on_success(ex.value, self)
+            else:
+                # A failure meets its next handler (or the end of the fiber,
+                # in _loop) annotated with the frame it failed in, as
+                # Effect's failure exits are.
+                if self._stack_frame is not None:
+                    ex = self._in_frame(ex, self._stack_frame)
+                if hook is None:
+                    return frame._on_failure(ex.cause, self)
+            step: Callable[[], Step] = partial(_hand_over, frame, ex, self)
+            return hook(step, self)
         except Exception as exc:
             return exit_die(exc)
+
+    @staticmethod
+    def _in_frame(failure: Failure[Any], frame: StackFrame) -> Failure[Any]:
+        """Effect's failure annotation: reasons without a ``StackTrace`` get
+        the frame the fiber fails in."""
+        annotated = failure.cause.annotate(Context.make(StackTrace, frame))
+        return failure if annotated is failure.cause else Failure(annotated)
 
     @staticmethod
     def _with_interrupt(cur: Step, cause: Cause[Never]) -> Step:
@@ -478,7 +502,7 @@ class Fiber(Generic[A_co, E_co]):
             children = list(self._children)
             self._interruptible = False
             self._push(_ReturnExit(ex))
-            return interrupt_all(children, self.id)
+            return interrupt_all(children, self.id, self._interruptor_annotations())
         self._exit = ex
         if self._runtime_metrics is not None:
             self._runtime_metrics.record_fiber_end(self._ctx, ex)
@@ -553,32 +577,36 @@ class Fiber(Generic[A_co, E_co]):
             self._waiting = None
             self._drive(effect)
         deferred, self._interrupts_after_resume = self._interrupts_after_resume, []
-        for by in deferred:
-            self._deliver_interrupt(by)
+        for by, interruptor in deferred:
+            self._deliver_interrupt(by, interruptor)
 
-    def _deliver_interrupt(self, by: int | None) -> None:
+    def _deliver_interrupt(self, by: int | None, annotations: Context | None) -> None:
         if self._exit is not None:
             return
         wait = self._waiting
         if wait is not None and self._interruptible and self._phase != "running":
             if not wait.claim():
-                self._interrupts_after_resume.append(by)
+                self._interrupts_after_resume.append((by, annotations))
                 return
-            self._record_interrupt(by)
+            self._record_interrupt(by, annotations)
             step = self._abandon_wait(wait)
             self._unwind(step)
             return
         if wait is not None and wait.done:
-            self._interrupts_after_resume.append(by)
+            self._interrupts_after_resume.append((by, annotations))
             return
-        interrupt = self._record_interrupt(by)
+        interrupt = self._record_interrupt(by, annotations)
         if self._interruptible and self._phase == "pending":
             self._unwind(Failure(interrupt))
         # Otherwise the loop raises it at its next interruptible step: the
         # fiber is running, uninterruptible, or queued to run.
 
-    def _record_interrupt(self, by: int | None) -> Cause[Never]:
+    def _record_interrupt(self, by: int | None, annotations: Context | None) -> Cause[Never]:
         cause = interrupt_cause(by)
+        if self._stack_frame is not None:
+            cause = cause.annotate(Context.make(StackTrace, self._stack_frame))
+        if annotations is not None:
+            cause = cause.annotate(annotations)
         if self._interrupt is not None:
             cause = self._interrupt.add_interrupts(cause)
         self._interrupt = cause
@@ -695,6 +723,7 @@ class _RunView:
     ops_budget: float
     tracer_hook: ContextHook | None
     runtime_metrics: FiberRuntimeMetricsService | None
+    stack_frame: StackFrame | None
 
     @staticmethod
     def of(given: Context, run_scheduler: Scheduler) -> _RunView:
@@ -708,7 +737,10 @@ class _RunView:
         scheduler = context.lookup(CurrentScheduler)[1]
         hook = context.lookup(CurrentTracer)[1].context
         runtime_metrics = context.lookup(FiberRuntimeMetrics)[1]
-        return _RunView(given, run_scheduler, context, scheduler, budget, hook, runtime_metrics)
+        frame = context.lookup(CurrentStackFrame)[1]
+        return _RunView(
+            given, run_scheduler, context, scheduler, budget, hook, runtime_metrics, frame
+        )
 
 
 # One entry: the view the last fiber switch computed.
@@ -734,7 +766,9 @@ def root_fiber(scheduler: Scheduler, context: Context) -> Fiber[Any, Any]:
     return Fiber(scheduler, context, None)
 
 
-def interrupt_all(fibers: list[Fiber[Any, Any]], by: int | None) -> Effect[None, Never, Never]:
+def interrupt_all(
+    fibers: list[Fiber[Any, Any]], by: int | None, annotations: Context | None
+) -> Effect[None, Never, Never]:
     """Interrupt every fiber and wait for all of them to finish."""
 
     def register(resume: Callable[[Effect[Any, Any, Any]], None]) -> None:
@@ -750,7 +784,7 @@ def interrupt_all(fibers: list[Fiber[Any, Any]], by: int | None) -> Effect[None,
                 resume(_Succeed(None))
 
         for f in fibers:
-            f.unsafe_interrupt_as(by)
+            f.unsafe_interrupt_as(by, annotations)
         for f in fibers:
             f.unsafe_add_observer(observer)
 

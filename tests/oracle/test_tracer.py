@@ -11,6 +11,11 @@ is ``fx.current_span()``, ``Tracer.make({ span })`` is
 
 Adapted, with the reason:
 
+- "should capture only the span frame for a string failure": a typed error
+  that is not an exception has no traceback, so ``Cause.pretty()`` shows its
+  ``UnhandledError`` line and the span frame alone (Effect checks
+  ``prettyErrors(cause)[0].stack``).
+
 - "should capture the stack trace": a Python exception gets its traceback
   where it is raised, so the defect is raised and caught first; the check
   is that the span keeps the traceback in ``Cause.pretty()``.
@@ -21,10 +26,9 @@ Omitted, with the reason:
   with OtlpTracer" and the three "OtlpTracer span status" titles: the OTLP
   exporter is not ported (``pyfect[otel]`` exports through the
   OpenTelemetry SDK instead).
-- "should capture only the span frame for a string failure": pyfect records
-  no stack frames for spans, so ``Cause.pretty_errors`` has no span frame.
 """
 
+import re
 from collections.abc import Callable, Sequence
 from datetime import timedelta
 from typing import Any
@@ -80,6 +84,18 @@ def test_generates_native_span_identifiers():
     assert _hex(root.span_id, 16)
     assert child.trace_id == root.trace_id
     assert _hex(child.span_id, 16)
+
+
+@testing.effect
+def test_should_capture_only_the_span_frame_for_a_string_failure():
+    """should capture only the span frame for a string failure"""
+    cause = yield from fx.fail("boom").with_span("test").sandbox().flip()
+
+    assert len(cause.pretty_errors()) == 1
+    assert re.fullmatch(
+        r"pyfect\.cause\.UnhandledError: 'boom'\n    at test \(.*test_tracer\.py:\d+\)",
+        cause.pretty(),
+    ), cause.pretty()
 
 
 @testing.effect

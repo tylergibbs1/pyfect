@@ -4,8 +4,6 @@ Each test's docstring is the Effect test title (Effect's ``Latch.await`` is
 ``wait()``). Omitted, with the reason:
 
 - "is a fiber": ``Fiber.isFiber`` is ``isinstance(x, fx.Fiber)``.
-- "retains distinct target and interruptor stack frames": stack frames and
-  cause annotations wait for tracing (M5).
 - "delivers a pending interrupt when interruptibleMask restores
   interruptibility" is ported in ``tests/oracle/test_effect_combinators.py``.
 """
@@ -14,6 +12,7 @@ from typing import Any, Never
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.tracer import CurrentStackFrame, InterruptorStackTrace, StackFrame, StackTrace
 
 
 def _interrupted(ex: fx.Exit[Any, Any] | None) -> bool:
@@ -189,3 +188,24 @@ def test_get_current_is_none_outside_a_fiber():
     assert fx.Fiber.get_current() is None
     fiber = fx.run_sync(fx.sync(fx.Fiber.get_current).fork().flat_map(lambda f: f.join()))
     assert isinstance(fiber, fx.Fiber)
+
+
+@testing.effect
+def test_retains_distinct_target_and_interruptor_stack_frames():
+    """retains distinct target and interruptor stack frames"""
+    target_frame = StackFrame("target-frame", lambda: "at target-call-site.py:1", None)
+    interruptor_frame = StackFrame(
+        "interruptor-frame", lambda: "at interruptor-call-site.py:2", None
+    )
+    target = yield from fx.never.pipe(fx.provide_service(CurrentStackFrame, target_frame)).fork(
+        start_immediately=True
+    )
+
+    yield from target.interrupt().pipe(fx.provide_service(CurrentStackFrame, interruptor_frame))
+
+    ex = yield from target.await_exit()
+    assert isinstance(ex, fx.Failure)
+    annotations = fx.cause.reason_annotations(ex.cause.reasons[0])
+    assert annotations.unsafe_get(StackTrace) is target_frame
+    assert annotations.unsafe_get(InterruptorStackTrace) is interruptor_frame
+    assert "interruptor-call-site.py:2" in ex.cause.pretty()

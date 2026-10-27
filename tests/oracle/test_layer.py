@@ -14,12 +14,11 @@ Omitted, with the reason:
 - "allows passing partial service in dual form": Python has one form,
   ``mock(tag, **members)``.
 - The ``Stream`` / ``Channel`` halves of the mock tests: no Stream yet (M6).
-- "withSpan forwards captureStackTrace to the layer stack frame": pyfect
-  records no stack frames for spans.
 
 ``Layer.withSpan`` / ``withParentSpan`` are the ``with_span`` /
 ``with_parent_span`` methods (one call form for Effect's data-first and
-data-last ones).
+data-last ones). Effect's ``captureStackTrace`` option is
+``capture_stack_trace``.
 """
 # pyright: reportPrivateUsage=false
 
@@ -28,7 +27,7 @@ from typing import Never
 import pyfect as fx
 from pyfect import layer, schedule, testing
 from pyfect.context import TagLike
-from pyfect.tracer import AnySpan, ExternalSpan, ParentSpan, Span
+from pyfect.tracer import AnySpan, CurrentStackFrame, ExternalSpan, ParentSpan, Span, StackFrame
 
 ACQUIRE1, ACQUIRE2, ACQUIRE3 = "Acquiring Module 1", "Acquiring Module 2", "Acquiring Module 3"
 RELEASE1, RELEASE2, RELEASE3 = "Releasing Module 1", "Releasing Module 2", "Releasing Module 3"
@@ -698,6 +697,41 @@ def test_forked_memo_maps_reuse_parent_layers_but_isolate_child_layers():
     yield from scope2.close(fx.Success(None))
     yield from scope1.close(fx.Success(None))
     assert log == [ACQUIRE1, ACQUIRE2, ACQUIRE2, RELEASE2, RELEASE2, RELEASE1]
+
+
+class Frame(fx.Tag[StackFrame | None]): ...
+
+
+@testing.effect
+def test_with_span_forwards_capture_stack_trace_to_the_layer_stack_frame():
+    """withSpan forwards captureStackTrace to the layer stack frame"""
+    frame_layer = layer.effect(Frame, CurrentStackFrame())
+
+    # By default the frame records this call site, not the layer's internals.
+    captured = yield from Frame().pipe(fx.provide(frame_layer.with_span("captured")))
+    assert captured is not None
+    assert "test_layer.py" in (captured.stack() or "")
+
+    disabled = yield from Frame().pipe(
+        fx.provide(frame_layer.with_span("disabled", capture_stack_trace=False))
+    )
+    assert disabled is not None
+    assert disabled.stack() is None
+
+    calls = 0
+
+    def construct() -> str:
+        nonlocal calls
+        calls += 1
+        return "at construct (app.py:1)"
+
+    supplied = yield from Frame().pipe(
+        fx.provide(frame_layer.with_span("supplied", capture_stack_trace=construct))
+    )
+    assert supplied is not None
+    assert calls == 0
+    assert supplied.stack() == "at construct (app.py:1)"
+    assert calls == 1
 
 
 class SpanName(fx.Tag[str]): ...

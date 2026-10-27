@@ -137,7 +137,7 @@ def _for_each_concurrent[T, B, E, R](
                         resume(_Succeed(results))
                 elif failed_first:
                     for w in workers:
-                        w.unsafe_interrupt_as(parent.id)
+                        w.unsafe_interrupt_as(parent.id, parent._interruptor_annotations())
 
             def cancel() -> Effect[None]:
                 # Interrupted from outside: report what the workers did too.
@@ -146,7 +146,9 @@ def _for_each_concurrent[T, B, E, R](
 
             for w in workers:
                 w.unsafe_add_observer(observer)
-            return interrupt_all(workers, parent.id).and_then(_Suspend(cancel))
+            return interrupt_all(workers, parent.id, parent._interruptor_annotations()).and_then(
+                _Suspend(cancel)
+            )
 
         return _Callback(register)
 
@@ -176,11 +178,12 @@ def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Eff
                         losers = [f for f in fibers if f is not me]
                         # At once, so a loser that has not started never does.
                         for loser in losers:
-                            loser.unsafe_interrupt_as(parent.id)
+                            loser.unsafe_interrupt_as(parent.id, parent._interruptor_annotations())
                         resume(
-                            _SetInterruptible(interrupt_all(losers, parent.id), False).and_then(
-                                _FromExit(ex)
-                            )
+                            _SetInterruptible(
+                                interrupt_all(losers, parent.id, parent._interruptor_annotations()),
+                                False,
+                            ).and_then(_FromExit(ex))
                         )
                         return
                     causes.append(ex.cause)
@@ -192,7 +195,7 @@ def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Eff
 
             for f in fibers:
                 f.unsafe_add_observer(observer_for(f))
-            return interrupt_all(fibers, parent.id)
+            return interrupt_all(fibers, parent.id, parent._interruptor_annotations())
 
         return _Callback(register)
 

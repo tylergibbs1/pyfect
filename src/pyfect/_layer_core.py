@@ -29,7 +29,8 @@ from pyfect.scope import CloseableScope, Scope, scoped
 
 if TYPE_CHECKING:
     from pyfect._layer_tracing import OnEnd
-    from pyfect.tracer import AnySpan, SpanOptions
+    from pyfect._stack_frame import CaptureStackTrace
+    from pyfect.tracer import AnySpan, TracedSpanOptions
 
 ROut_contra = TypeVar("ROut_contra", contravariant=True)
 E_co = TypeVar("E_co", covariant=True, default=Never)
@@ -315,21 +316,27 @@ class Layer(Generic[ROut_contra, E_co, RIn_co]):
         name: str,
         *,
         on_end: OnEnd | None = None,
-        **options: Unpack[SpanOptions],
+        **options: Unpack[TracedSpanOptions],
     ) -> Layer[ROut_contra, E_co, RIn_co]:
         """Build inside a new span, the parent of the spans made while
-        building. The span ends, and ``on_end`` runs, when the layer's scope
-        closes."""
+        building, and inside its stack frame (this call site unless
+        ``capture_stack_trace`` says otherwise). The span ends, and
+        ``on_end`` runs, when the layer's scope closes."""
         from pyfect._layer_tracing import with_span
+        from pyfect._stack_frame import stack_of
 
-        return with_span(self, name, on_end, options)
+        stack = stack_of(options.get("capture_stack_trace", True), 1)
+        return with_span(self, name, on_end, options, stack)
 
-    def with_parent_span(self, span: AnySpan) -> Layer[ROut_contra, E_co, RIn_co]:
+    def with_parent_span(
+        self, span: AnySpan, *, capture_stack_trace: CaptureStackTrace = True
+    ) -> Layer[ROut_contra, E_co, RIn_co]:
         """Build with ``span`` as the parent of the spans made while
-        building."""
+        building, and, unless it is external, inside its stack frame."""
         from pyfect._layer_tracing import with_parent_span
+        from pyfect._stack_frame import stack_of
 
-        return with_parent_span(self, span)
+        return with_parent_span(self, span, stack_of(capture_stack_trace, 1))
 
 
 def _in_scope[A, E](eff: Effect[A, E, Any], scope: CloseableScope) -> Effect[A, E, Any]:

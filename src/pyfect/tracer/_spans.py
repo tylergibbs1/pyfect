@@ -11,8 +11,9 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, Never, Unpack, final, overload
 
-from pyfect._core import Effect, Frame, Step, _FailCause, _Succeed, _WithFiber
+from pyfect._core import Effect, Frame, Step, _FailCause, _Locally, _Succeed, _WithFiber
 from pyfect._fiber import Fiber
+from pyfect._stack_frame import CurrentStackFrame, StackFrame
 from pyfect._tracer_ref import CurrentTracer
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
@@ -21,7 +22,14 @@ from pyfect.context import Context
 from pyfect.errors import NoSuchElementException
 from pyfect.exit import Exit, Failure, Success
 from pyfect.scope import Scope
-from pyfect.tracer._model import AnySpan, Ended, ExternalSpan, Span, SpanOptions, SpanRequest
+from pyfect.tracer._model import (
+    AnySpan,
+    Ended,
+    ExternalSpan,
+    Span,
+    SpanOptions,
+    SpanRequest,
+)
 from pyfect.tracer._native import NoopSpan
 from pyfect.tracer._refs import (
     CurrentTraceLevel,
@@ -96,6 +104,11 @@ def make_span(name: str, **options: Unpack[SpanOptions]) -> Effect[Span]:
 def make_span_scoped(name: str, **options: Unpack[SpanOptions]) -> Effect[Span, Never, Scope]:
     """A new span, ended when the current scope closes, with the scope's
     exit."""
+    return span_scoped(name, options)
+
+
+def span_scoped(name: str, options: SpanOptions) -> Effect[Span, Never, Scope]:
+    """``make_span_scoped`` taking its options as a dict."""
 
     def body(fiber: Fiber[Any, Any]) -> Effect[Span]:
         span = make_span_unsafe(fiber, name, options)
@@ -117,6 +130,35 @@ def use_span[A, E = Never, R = Never](
     ends (or when ``f`` raises). The span is not made the parent of spans
     inside; ``with_span`` does that."""
     return _UseSpan(name, f, options)
+
+
+def span_using[A, E, R](
+    name: str, f: Callable[[Span], Effect[A, E, R]], options: SpanOptions
+) -> Effect[A, E, R]:
+    """``use_span`` taking its options as a dict."""
+    return _UseSpan(name, f, options)
+
+
+def in_parent_span[A, E, R](eff: Effect[A, E, R], span: AnySpan) -> Effect[A, E, R]:
+    """Run ``eff`` with ``span`` as the parent of the spans made inside."""
+    return _Locally(eff, lambda ctx: ctx.add(ParentSpan, span))
+
+
+def in_span_frame[A, E, R](
+    eff: Effect[A, E, R], span: AnySpan, stack: Callable[[], str | None]
+) -> Effect[A, E, R]:
+    """``in_parent_span``, also inside a stack frame named after ``span``
+    at ``stack`` (an external span adds no frame), as Effect's
+    ``withParentSpan``."""
+    if isinstance(span, ExternalSpan):
+        return in_parent_span(eff, span)
+    name = span.name
+
+    def enter(ctx: Context) -> Context:
+        frame = StackFrame(name, stack, ctx.lookup(CurrentStackFrame)[1])
+        return ctx.add(ParentSpan, span).add(CurrentStackFrame, frame)
+
+    return _Locally(eff, enter)
 
 
 @final

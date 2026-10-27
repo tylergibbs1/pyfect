@@ -1802,6 +1802,36 @@ def check_span_effects(eff: fx.Effect[int, NotFound, Primary]) -> None:
     eff.with_span("a", colour="red")  # pyright: ignore[reportCallIssue]
 
 
+def check_stack_frames(eff: fx.Effect[int, NotFound, Primary], c: fx.Cause[NotFound]) -> None:
+    from pyfect.cause import Fail, reason_annotations
+    from pyfect.tracer import CurrentStackFrame, ExternalSpan, StackFrame, StackTrace
+
+    # capture_stack_trace is a with_span / with_span_scoped / with_parent_span
+    # option; it changes nothing in the type.
+    assert_type(eff.with_span("a", capture_stack_trace=False), fx.Effect[int, NotFound, Primary])
+    assert_type(
+        eff.with_span_scoped("a", capture_stack_trace=lambda: "at f (x.py:1)"),
+        fx.Effect[int, NotFound, Primary | fx.Scope],
+    )
+    assert_type(
+        eff.with_parent_span(ExternalSpan("s", "t"), capture_stack_trace=False),
+        fx.Effect[int, NotFound, Primary],
+    )
+    assert_type(CurrentStackFrame(), ServiceEffect[StackFrame | None, Never])
+    assert_type(
+        c.annotate(fx.Context.make(StackTrace, StackFrame("f", lambda: None))), fx.Cause[NotFound]
+    )
+    assert_type(c.annotations, fx.Context)
+    assert_type(Fail(NotFound("u")).annotate(fx.Context.empty()), Fail[NotFound])
+    assert_type(reason_annotations(c.reasons[0]), fx.Context)
+    # Spans that run no effect inside take no stack frame option.
+    fx.make_span("a", capture_stack_trace=False)  # pyright: ignore[reportCallIssue]
+    fx.use_span("a", lambda _span: eff, capture_stack_trace=False)  # pyright: ignore[reportCallIssue]
+    eff.with_span("a", capture_stack_trace="here")  # pyright: ignore[reportArgumentType]
+    # A frame's location is read lazily: a plain string is not one.
+    StackFrame("f", "at f (x.py:1)")  # pyright: ignore[reportArgumentType]
+
+
 def check_traced_fn() -> None:
     @fx.fn("find", kind="server")
     def find(user_id: str):
@@ -1823,6 +1853,9 @@ def check_layer_spans(built: layer.Layer[Primary, NotFound, Replica]) -> None:
     assert_type(layer.span("a"), layer.Layer[ParentSpan])
     assert_type(layer.parent_span(ExternalSpan("s", "t")), layer.Layer[ParentSpan])
     assert_type(built.with_span("a"), layer.Layer[Primary, NotFound, Replica])
+    assert_type(
+        built.with_span("a", capture_stack_trace=False), layer.Layer[Primary, NotFound, Replica]
+    )
     assert_type(
         built.with_parent_span(ExternalSpan("s", "t")), layer.Layer[Primary, NotFound, Replica]
     )

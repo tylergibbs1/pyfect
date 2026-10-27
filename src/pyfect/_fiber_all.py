@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any, Never
 
-from pyfect._core import Effect, _Callback, _FromExit, _Succeed, _Suspend, _Sync, _WithFiber
+from pyfect._core import Effect, _Callback, _FromExit, _Succeed, _Sync, _WithFiber
 from pyfect._fiber import Fiber
 from pyfect.exit import Exit, Failure
 
@@ -101,14 +101,15 @@ def interrupt_all_as(fibers: Iterable[Fiber[Any, Any]], by: int | None) -> Effec
     of them to finish. Each fiber is interrupted as it is drawn from
     ``fibers``, so a lazy iterable sees what earlier interrupts changed."""
 
-    def body() -> Effect[None]:
+    def body(me: Fiber[Any, Any]) -> Effect[None]:
+        annotations = me._interruptor_annotations()
         interrupted: list[Fiber[Any, Any]] = []
         for fiber in fibers:
-            fiber.unsafe_interrupt_as(by)
+            fiber.unsafe_interrupt_as(by, annotations)
             interrupted.append(fiber)
         return await_all(interrupted).as_void()
 
-    return _Suspend(body)
+    return _WithFiber(body)
 
 
 def interrupt_all(fibers: Iterable[Fiber[Any, Any]]) -> Effect[None]:

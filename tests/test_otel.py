@@ -28,7 +28,7 @@ from pyfect.context import Context
 from pyfect.otel._attributes import to_attribute_value
 from pyfect.otel.metrics import MetricProducer
 from pyfect.otel.tracer import OtelSpan, OtelTraceFlags, OtelTraceState
-from pyfect.tracer import DisablePropagation, Ended, SpanLink
+from pyfect.tracer import DisablePropagation, Ended, NativeSpan, SpanLink
 
 _SOURCE = Path(__file__).parent.parent / "src" / "pyfect"
 
@@ -218,6 +218,70 @@ def test_a_propagation_disabled_span_leaves_its_parent_active():
         assert active is outer.span
 
     yield from program.with_span("outer").pipe(fx.provide(tracing))
+
+
+@testing.effect
+def test_the_view_writes_attributes_events_links_and_exceptions_to_the_span():
+    """Effect's ``makeOtelSpan``: OpenTelemetry API calls on the current span
+    write through to the pyfect span, at the clock's time by default."""
+    linked = otel.tracer.make_external_span(trace_id="1" * 32, span_id="2" * 16)
+
+    @fx.gen
+    def program():
+        span = yield from fx.current_span()
+        view = yield from otel.tracer.current_otel_span()
+        assert isinstance(span, NativeSpan)
+        context = view.get_span_context()
+        assert (context.trace_id, context.span_id) == (
+            int(span.trace_id, 16),
+            int(span.span_id, 16),
+        )
+        assert view.is_recording()
+        view.update_name("ignored")
+        view.set_attribute("a", 1)
+        view.set_attributes({"b": "two", "c": True})
+        view.add_event("now", {"k": 1})
+        view.add_event("then", None, 7)
+        view.add_link(trace.SpanContext(int("1" * 32, 16), int("2" * 16, 16), False), {"r": 1})
+        view.record_exception(ValueError("bad"), timestamp=9)
+        view.end(11)
+        assert span.name == "native"
+        assert dict(span.attributes) == {"a": 1, "b": "two", "c": True}
+        events = [(name, time, dict(attributes)) for name, time, attributes in span.events]
+        assert events[:2] == [("now", 0, {"k": 1}), ("then", 7, {})]
+        name, time, attributes = events[2]
+        assert (name, time) == ("bad", 9)
+        assert attributes["exception.type"] == "ValueError"
+        assert attributes["exception.message"] == "bad"
+        assert "ValueError: bad" in str(attributes["exception.stacktrace"])
+        (link,) = span.links
+        assert (link.span.trace_id, link.span.span_id) == (linked.trace_id, linked.span_id)
+        assert dict(link.attributes) == {"r": 1}
+        status = span.status
+        assert isinstance(status, Ended)
+        assert (status.end_time, status.exit) == (11, fx.Success(None))
+
+    yield from program.with_span("native")
+
+
+@testing.effect
+def test_links_added_to_a_started_otel_span_are_exported():
+    exporter = InMemorySpanExporter()
+    tracing = otel.sdk.layer(otel.sdk.Configuration(span_processor=SimpleSpanProcessor(exporter)))
+    linked = otel.tracer.make_external_span(trace_id="1" * 32, span_id="2" * 16)
+
+    @fx.gen
+    def program():
+        span = yield from fx.current_span()
+        assert isinstance(span, OtelSpan)
+        span.add_links([SpanLink(linked, {"a": 1})])
+        assert [link.span for link in span.links] == [linked]
+
+    yield from program.with_span("work").pipe(fx.provide(tracing))
+    (exported,) = exporter.get_finished_spans()
+    (link,) = exported.links
+    assert (link.context.trace_id, link.context.span_id) == (int("1" * 32, 16), int("2" * 16, 16))
+    assert dict(link.attributes or {}) == {"a": 1}
 
 
 @testing.effect

@@ -17,6 +17,7 @@ from pyfect.tracer import (
     NoopSpan,
     Span,
     SpanRequest,
+    StackTrace,
     Tracer,
 )
 
@@ -65,10 +66,15 @@ def test_a_named_fn_ends_its_span_with_the_failure():
 
     tracer, spans = _recording()
     exit_ = yield from fails().with_tracer(tracer).exit()
-    assert exit_ == fx.exit.fail("boom")
+    assert isinstance(exit_, fx.Failure)
+    assert exit_.cause.failures == ("boom",)
+    frame = exit_.cause.annotations.unsafe_get(StackTrace)
+    assert frame.name == "fails"
+    assert frame.parent is not None
+    assert frame.parent.name == "fails (definition)"
     status = spans[0].status
     assert isinstance(status, Ended)
-    assert status.exit == fx.exit.fail("boom")
+    assert status.exit == exit_
 
 
 @testing.effect

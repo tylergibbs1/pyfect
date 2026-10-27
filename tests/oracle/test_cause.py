@@ -19,9 +19,9 @@ Omitted, with the reason:
 - ``pretty`` "cuts the stack ... internal frame" and the two
   "does not render internal frames" cases: ported in
   ``tests/test_cause_pretty.py`` where they apply.
-- ``annotate``, ``reasonAnnotations``, ``annotations``, ``StackTrace``,
-  ``InterruptorStackTrace``: reasons carry no annotations until tracing
-  exists (M5).
+- ``annotate`` "works in data-last (pipeable) form": ``annotate`` is a
+  method. ``StackTrace`` and ``InterruptorStackTrace`` are tags in
+  ``pyfect.tracer``, next to the stack frames they hold.
 - ``isNoSuchElementError``: ``isinstance`` is the guard.
 - ``isUnknownError`` and the ``*TypeId`` constants of the error classes:
   ``isinstance`` is the guard. ``UnknownError``'s cause is the ``Exception``
@@ -41,6 +41,7 @@ import pyfect as fx
 from pyfect import cause
 from pyfect.cause import Cause, Die, EmptyCauseError, Fail, Interrupt, UnhandledError
 from pyfect.result import Err, Ok
+from pyfect.tracer import InterruptorStackTrace, StackTrace
 
 
 def _reason(c: Cause[object]) -> object:
@@ -567,3 +568,57 @@ def test_creates_a_done_signal_with_a_value() -> None:
     done = fx.Done(42)
     assert isinstance(done, fx.Done)
     assert done.value == 42
+
+
+def test_annotate_attaches_annotations_to_a_cause_data_first():
+    """attaches annotations to a cause (data-first)"""
+    annotated = cause.fail("error").annotate(fx.Context.empty())
+    assert isinstance(annotated, Cause)
+    assert len(annotated.reasons) == 1
+
+
+def test_annotate_does_not_mutate_the_original_cause():
+    """does not mutate the original cause"""
+
+    class RequestId(fx.Tag[str]): ...
+
+    original = cause.fail("error")
+    original.annotate(fx.Context.make(RequestId, "req-1"))
+    assert len(original.reasons) == 1
+    assert original.annotations.get_option(RequestId) is None
+
+
+def test_reason_annotations_returns_annotations_from_a_reason():
+    """returns annotations from a reason"""
+
+    class RequestId(fx.Tag[str]): ...
+
+    reason = Fail("error").annotate(fx.Context.make(RequestId, "req-1"))
+    assert cause.reason_annotations(reason).unsafe_get(RequestId) == "req-1"
+    assert cause.reason_annotations(Fail("error")) == fx.Context.empty()
+
+
+def test_annotations_returns_merged_annotations_from_a_cause():
+    """returns merged annotations from a cause"""
+
+    class RequestId(fx.Tag[str]): ...
+
+    class UserId(fx.Tag[str]): ...
+
+    annotated = (cause.fail("a") + cause.die(ValueError("b"))).annotate(
+        fx.Context.make(RequestId, "req-1")
+    ) + cause.fail("c").annotate(fx.Context.make(UserId, "user-1"))
+    anns = annotated.annotations
+    assert anns.unsafe_get(RequestId) == "req-1"
+    assert anns.unsafe_get(UserId) == "user-1"
+    assert cause.fail("error").annotations == fx.Context.empty()
+
+
+def test_stack_trace_is_a_context_service():
+    """is a Context.Service"""
+    assert issubclass(StackTrace, fx.Tag)
+
+
+def test_interruptor_stack_trace_is_a_context_service():
+    """is a Context.Service"""
+    assert issubclass(InterruptorStackTrace, fx.Tag)

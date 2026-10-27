@@ -279,7 +279,7 @@ def fork_in[A, E, R](
     def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
         if scope._closed is not None:
             unstarted: Fiber[A, E] = Fiber(parent._run_scheduler, parent._context, None)
-            unstarted.unsafe_interrupt_as(parent.id)
+            unstarted.unsafe_interrupt_as(parent.id, parent._interruptor_annotations())
             return _Succeed(unstarted)
         fiber: Fiber[A, E] = parent._fork(
             eff, daemon=True, start_immediately=start_immediately, uninterruptible=uninterruptible

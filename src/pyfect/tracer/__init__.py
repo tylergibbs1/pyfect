@@ -16,8 +16,20 @@ The native tracer keeps spans in memory (``NativeSpan``) and exports
 nothing; install another with ``eff.with_tracer(tracer)`` or a layer
 providing ``CurrentTracer``. Logs inside a span are recorded as its events
 (``logger.tracer_logger``).
+
+Spans also record where they were written: a failure inside ``with_span``
+or an ``@fx.fn`` call carries the ``StackFrame`` chain as its ``StackTrace``
+annotation, and ``Cause.pretty()`` prints it under the traceback. Turn it
+off per span with ``capture_stack_trace=False``.
 """
 
+from pyfect._stack_frame import (
+    CaptureStackTrace,
+    CurrentStackFrame,
+    InterruptorStackTrace,
+    StackFrame,
+    StackTrace,
+)
 from pyfect._tracer_ref import CurrentTracer
 from pyfect.tracer._model import (
     AnySpan,
@@ -31,6 +43,7 @@ from pyfect.tracer._model import (
     SpanRequest,
     SpanStatus,
     Started,
+    TracedSpanOptions,
     Tracer,
 )
 from pyfect.tracer._native import NativeSpan, NoopSpan, SpanEvent, native_tracer
@@ -55,12 +68,15 @@ from pyfect.tracer._spans import (
 
 __all__ = [
     "AnySpan",
+    "CaptureStackTrace",
     "ContextHook",
+    "CurrentStackFrame",
     "CurrentTraceLevel",
     "CurrentTracer",
     "DisablePropagation",
     "Ended",
     "ExternalSpan",
+    "InterruptorStackTrace",
     "MinimumTraceLevel",
     "NativeSpan",
     "NoopSpan",
@@ -72,7 +88,10 @@ __all__ = [
     "SpanOptions",
     "SpanRequest",
     "SpanStatus",
+    "StackFrame",
+    "StackTrace",
     "Started",
+    "TracedSpanOptions",
     "Tracer",
     "TracerEnabled",
     "TracerSpanAnnotations",

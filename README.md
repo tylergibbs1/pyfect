@@ -172,7 +172,10 @@ ends with its exit and is the parent of the spans made inside, forked fibers inc
 `layer.span("startup")` and `built.with_span(...)`. Logs inside a span become its events
 (`logger.tracer_logger`). The native tracer keeps spans in memory; `eff.with_tracer(tracer)`
 installs another, whose optional `context` hook runs around every fiber step (for an
-OpenTelemetry-style context).
+OpenTelemetry-style context). A failure inside a span or an `@fx.fn("name")` call records where
+that span was written (`tracer.StackTrace` on the cause), and `cause.pretty()` prints it under
+the traceback as `at span (file:line)`; `capture_stack_trace=False` turns it off. The bare
+`@fx.fn` is Effect's `fnUntraced`: no span and no frames.
 
 **OpenTelemetry.** The `otel` extra (`pip install 'pyfect[otel]'`) adds `pyfect.otel`, a
 bridge to the OpenTelemetry SDK like `@effect/opentelemetry`: spans become OpenTelemetry spans

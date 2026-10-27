@@ -11,6 +11,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypedDict
 
+from pyfect._stack_frame import CaptureStackTrace
 from pyfect.context import Context
 from pyfect.exit import Exit
 
@@ -127,6 +128,17 @@ class SpanOptions(TypedDict, total=False):
     kind: SpanKind
     sampled: bool
     level: LogLevel
+
+
+class TracedSpanOptions(SpanOptions, total=False):
+    """``SpanOptions`` for the functions that also run inside the span's
+    stack frame (``with_span``, ``with_span_scoped``, ``Layer.with_span``).
+
+    - ``capture_stack_trace``: ``True`` (the default) records the call
+      site, ``False`` records no location, a function gives it lazily
+    """
+
+    capture_stack_trace: CaptureStackTrace
 
 
 @dataclass(frozen=True, slots=True)

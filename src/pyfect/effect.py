@@ -13,6 +13,7 @@ import asyncio
 import functools
 from collections.abc import Awaitable, Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
+from functools import partial
 from typing import TYPE_CHECKING, Any, Never, Unpack, overload
 
 from pyfect._catch import catch_if, catch_tag
@@ -38,11 +39,12 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._stack_frame import CurrentStackFrame, StackFrame, call_site
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.cause import fail as fail_cause_of
 from pyfect.cause import interrupt as interrupt_cause
-from pyfect.context import TagLike, tag_class
+from pyfect.context import Context, TagLike, tag_class
 from pyfect.errors import NoSuchElementException, UnknownError
 from pyfect.exit import Exit
 from pyfect.option import Option, Some
@@ -352,9 +354,14 @@ def fn(
 
     ``@fn("name")`` (with span options as keywords) also runs every call
     inside a span of that name, the parent of the spans made inside.
+
+    Each call of a named function also runs inside a stack frame for its
+    call site under one for the definition (``"name (definition)"``), so a
+    failure inside records both (``tracer.StackTrace``). The bare ``@fn``
+    is Effect's ``fnUntraced``: no span and no frames.
     """
     if isinstance(f, str):
-        return _Traced(f, options)
+        return _Traced(f, options, call_site(1))
 
     @functools.wraps(f)
     def wrapper(*args: Any, **kwargs: Any) -> Effect[Any, Any, Any]:
@@ -363,28 +370,54 @@ def fn(
     return wrapper
 
 
+def _traced(
+    f: Callable[..., Generator[Effect[Any, Any, Any], Any, Any]],
+    name: str,
+    definition: Callable[[], str | None],
+    span: SpanOptions,
+) -> Callable[..., Effect[Any, Any, Any]]:
+    """``f`` as a function returning an effect that runs inside a span
+    ``name`` and a stack frame for the call (``name`` at the call site)
+    under one for the definition."""
+    from pyfect.tracer._spans import in_parent_span, span_using
+
+    definition_name = f"{name} (definition)"
+
+    # Built apart from ``wrapper`` so the frame never holds the call's
+    # arguments, which forked fibers inheriting it would keep alive.
+    def enter_at(stack: Callable[[], str | None]) -> Callable[[Context], Context]:
+        def enter(ctx: Context) -> Context:
+            caller = ctx.lookup(CurrentStackFrame)[1]
+            frame = StackFrame(name, stack, StackFrame(definition_name, definition, caller))
+            return ctx.add(CurrentStackFrame, frame)
+
+        return enter
+
+    @functools.wraps(f)
+    def wrapper(*args: Any, **kwargs: Any) -> Effect[Any, Any, Any]:
+        body: Effect[Any, Any, Any] = _Gen(lambda: f(*args, **kwargs))
+        traced = span_using(name, partial(in_parent_span, body), span)
+        return _Locally(traced, enter_at(call_site(1)))
+
+    return wrapper
+
+
 class _Traced:
     """``@fn("name")``: the decorator that adds the span."""
 
-    __slots__ = ("name", "options")
+    __slots__ = ("definition", "name", "options")
 
-    def __init__(self, name: str, options: SpanOptions) -> None:
+    def __init__(
+        self, name: str, options: SpanOptions, definition: Callable[[], str | None]
+    ) -> None:
         self.name = name
         self.options = options
+        self.definition = definition
 
     def __call__[**P, A, E = Never, R = Never](
         self, f: Callable[P, Generator[Effect[Any, E, R], Any, A]], /
     ) -> Callable[P, Effect[A, E, R]]:
-        from pyfect.tracer import use_span
-
-        name, options = self.name, self.options
-
-        @functools.wraps(f)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> Effect[A, E, R]:
-            body: Effect[A, E, R] = _Gen(lambda: f(*args, **kwargs))
-            return use_span(name, body.with_parent_span, **options)
-
-        return wrapper
+        return functools.wraps(f)(_traced(f, self.name, self.definition, self.options))
 
 
 # --- combinators that remove types (use with .pipe) ---------------------------

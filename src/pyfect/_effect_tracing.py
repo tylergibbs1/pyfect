@@ -11,34 +11,48 @@ from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
+    from pyfect._stack_frame import CaptureStackTrace
     from pyfect.scope import Scope
-    from pyfect.tracer import AnySpan, SpanOptions, Tracer
+    from pyfect.tracer import AnySpan, TracedSpanOptions, Tracer
 
 
 class TracingMethods(EffectBase[A_co, E_co, R_co]):
     __slots__ = ()
 
-    def with_span(self, name: str, **options: Unpack[SpanOptions]) -> Effect[A_co, E_co, R_co]:
+    def with_span(
+        self, name: str, **options: Unpack[TracedSpanOptions]
+    ) -> Effect[A_co, E_co, R_co]:
         """Run inside a new span, the parent of the spans made inside. It
-        ends with this effect's exit."""
-        from pyfect.tracer._spans import use_span
+        ends with this effect's exit. Failures inside record the span's
+        stack frame: this call site unless ``capture_stack_trace`` says
+        otherwise."""
+        from pyfect._stack_frame import stack_of
+        from pyfect.tracer._spans import in_span_frame, span_using
 
-        return use_span(name, self.with_parent_span, **options)
+        eff = as_effect(self)
+        stack = stack_of(options.get("capture_stack_trace", True), 1)
+        return span_using(name, lambda span: in_span_frame(eff, span, stack), options)
 
     def with_span_scoped(
-        self, name: str, **options: Unpack[SpanOptions]
+        self, name: str, **options: Unpack[TracedSpanOptions]
     ) -> Effect[A_co, E_co, R_co | Scope]:
         """Run inside a new span that ends when the current scope closes."""
-        from pyfect.tracer._spans import make_span_scoped
+        from pyfect._stack_frame import stack_of
+        from pyfect.tracer._spans import in_span_frame, span_scoped
 
-        return make_span_scoped(name, **options).flat_map(self.with_parent_span)
+        eff = as_effect(self)
+        stack = stack_of(options.get("capture_stack_trace", True), 1)
+        return span_scoped(name, options).flat_map(lambda span: in_span_frame(eff, span, stack))
 
-    def with_parent_span(self, span: AnySpan) -> Effect[A_co, E_co, R_co]:
-        """Run with ``span`` as the parent of the spans made inside."""
-        from pyfect._core import _Locally
-        from pyfect.tracer._refs import ParentSpan
+    def with_parent_span(
+        self, span: AnySpan, *, capture_stack_trace: CaptureStackTrace = True
+    ) -> Effect[A_co, E_co, R_co]:
+        """Run with ``span`` as the parent of the spans made inside, and,
+        unless it is external, inside its stack frame."""
+        from pyfect._stack_frame import stack_of
+        from pyfect.tracer._spans import in_span_frame
 
-        return _Locally(as_effect(self), lambda ctx: ctx.add(ParentSpan, span))
+        return in_span_frame(as_effect(self), span, stack_of(capture_stack_trace, 1))
 
     @overload
     def annotate_spans(self, key: str, value: object, /) -> Effect[A_co, E_co, R_co]: ...
