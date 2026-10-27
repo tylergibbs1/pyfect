@@ -5,7 +5,8 @@
 Constructors and run functions live at the top level. Data types and
 their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.layer``,
 ``fx.clock``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.schedule``, ``fx.scheduler``,
-``fx.Queue``, ``fx.PubSub``, ``fx.Ref``, ``fx.Deferred``,
+``fx.Queue``, ``fx.PubSub``, ``fx.Ref``, ``fx.SynchronizedRef``, ``fx.SubscriptionRef``,
+``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
 ``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``.
@@ -130,6 +131,8 @@ from pyfect.scope import (
 )
 from pyfect.scoped_ref import ScopedRef
 from pyfect.semaphore import Semaphore
+from pyfect.subscription_ref import SubscriptionRef
+from pyfect.synchronized_ref import SynchronizedRef
 
 __all__ = [
     "AsyncioRequiredError",
@@ -187,7 +190,9 @@ __all__ = [
     "ScopedRef",
     "Semaphore",
     "Some",
+    "SubscriptionRef",
     "Success",
+    "SynchronizedRef",
     "Tag",
     "TaggedError",
     "Teardown",

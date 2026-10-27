@@ -109,7 +109,8 @@ a value refreshed by hand or on a schedule, and `LayerRef` / `LayerMap` cache bu
 layers (one, or one per key). `LayerRefService` and `LayerMapService` are tags for them,
 built with `layer(...)`.
 
-**Building blocks.** `Ref`, `Deferred`, `Queue` (bounded, rendezvous with capacity 0,
+**Building blocks.** `Ref`, `SynchronizedRef` (effectful updates that take turns),
+`SubscriptionRef` (subscribe to every value it stores), `Deferred`, `Queue` (bounded, rendezvous with capacity 0,
 dropping, sliding; endable), `Semaphore`, `PartitionedSemaphore` (permits shared
 round-robin across keys), `Latch`, `Scope` with `acquire_release`, and `Schedule`
 for `retry`, `repeat` and `schedule` (`exponential`, `spaced`, `fixed`, `windowed`,

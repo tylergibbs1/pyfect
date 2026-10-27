@@ -441,6 +441,40 @@ def check_data_types(q: fx.Queue[int], endable: fx.Queue[int, fx.Done]) -> None:
     assert_type(q.take_between(1, 0), fx.Effect[list[int], Never, Never])
 
 
+def check_refs(
+    ref: fx.Ref[int], sync: fx.SynchronizedRef[int], sub: fx.SubscriptionRef[bool]
+) -> None:
+    assert_type(ref.get_and_update_some(fx.Some), fx.Effect[int, Never, Never])
+    assert_type(ref.modify_some(lambda n: ("s", None)), fx.Effect[str, Never, Never])
+    assert_type(ref.update_some(lambda n: None), fx.Effect[None, Never, Never])
+    assert_type(fx.SynchronizedRef.make(0), fx.Effect[fx.SynchronizedRef[int], Never, Never])
+    assert_type(sync.update_effect(fx.succeed), fx.Effect[None, Never, Never])
+    assert_type(
+        sync.update_and_get_effect(lambda n: Port().map(lambda p: p + n)),
+        fx.Effect[int, Never, Port],
+    )
+    assert_type(
+        sync.modify_effect(lambda n: fx.fail(NotFound("k")).as_((str(n), n))),
+        fx.Effect[str, NotFound, Never],
+    )
+    assert_type(
+        sync.modify_some_effect(lambda n: fx.succeed((str(n), fx.Some(n)))),
+        fx.Effect[str, Never, Never],
+    )
+    assert_type(
+        sync.get_and_update_some_effect(lambda n: fx.succeed(fx.Some(n))),
+        fx.Effect[int, Never, Never],
+    )
+    assert_type(fx.SubscriptionRef.make(0), fx.Effect[fx.SubscriptionRef[int], Never, Never])
+    assert_type(sub.subscribe(), fx.Effect[Subscription[bool], Never, fx.Scope])
+    sub.set(1)  # pyright: ignore[reportArgumentType]
+    # Effect declares these ``in out``: a value can be put in as well as read.
+    widened: fx.SubscriptionRef[int] = sub  # pyright: ignore[reportAssignmentType]
+    narrowed: fx.SynchronizedRef[bool] = sync  # pyright: ignore[reportAssignmentType]
+    widened_ref: fx.Ref[object] = ref  # pyright: ignore[reportAssignmentType]
+    del widened, narrowed, widened_ref
+
+
 def check_queue(
     q: fx.Queue[int],
     endable: fx.Queue[int, fx.Done],
