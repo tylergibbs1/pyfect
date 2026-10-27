@@ -17,7 +17,8 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 ``fx.metric`` (``counter``, ``gauge``, ``histogram``, ``summary``, ``frequency``,
 ``timer``, ``snapshot``, ``prometheus_format``) and ``eff.track*``. Request batching:
 ``fx.Request``, ``fx.RequestResolver``, ``fx.request`` (``Entry`` and the rest in
-``fx.batching``).
+``fx.batching``). Error reporting: ``eff.with_error_reporting()``, ``fx.ErrorReporter``
+(``make``, ``layer``, ``report`` in ``fx.error_reporter``).
 """
 
 from pyfect import (
@@ -28,6 +29,7 @@ from pyfect import (
     cron,
     date_time,
     duration,
+    error_reporter,
     exit,
     layer,
     logger,
@@ -93,6 +95,7 @@ from pyfect.effect import (
     void,
     yield_now,
 )
+from pyfect.error_reporter import ErrorReporter
 from pyfect.errors import (
     Done,
     ExceededCapacityError,
@@ -200,6 +203,7 @@ __all__ = [
     "EmptyCauseError",
     "Enqueue",
     "Err",
+    "ErrorReporter",
     "ExceededCapacityError",
     "Exit",
     "Failure",
@@ -286,6 +290,7 @@ __all__ = [
     "default_teardown",
     "die",
     "duration",
+    "error_reporter",
     "exit",
     "fail",
     "fail_cause",

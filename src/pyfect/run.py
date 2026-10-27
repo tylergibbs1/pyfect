@@ -11,7 +11,8 @@
 - ``run_main``: for a script's main program, like Effect's ``runMain``.
   Runs on a fresh asyncio loop; SIGINT and SIGTERM interrupt the fiber so
   finalizers run. It accepts effects that can fail, as Effect's does: the
-  failure is reported, and ``teardown`` turns the exit into the process status;
+  failure is logged through the loggers, and ``teardown`` turns the exit into
+  the process status;
   ``default_teardown`` gives 0 on success, 130 when interrupted, or the
   error's ``exit_code`` (``TaggedError.exit_code``, default 1).
 
@@ -29,22 +30,24 @@ from __future__ import annotations
 
 import asyncio
 import signal
-import sys
 import threading
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from typing import Any, Never, Protocol, overload
 
-from pyfect._core import Effect
+from pyfect._core import Effect, _Succeed
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._root import ambient_run, new_root, start_root
+from pyfect.cause import Cause
 from pyfect.context import Context
 from pyfect.errors import TaggedError
 from pyfect.exit import Exit, Success
+from pyfect.logger import log_error
 from pyfect.scheduler import AsyncioScheduler, Scheduler, SyncScheduler
 
 _EMPTY: Context[Never] = Context.empty()
+_VOID: Effect[None] = _Succeed(None)
 
 type Teardown = Callable[[Exit[Any, Any]], int]
 """Turns ``run_main``'s exit into the process status."""
@@ -211,22 +214,23 @@ def run_main[A, E](
 
     Returns the value when the program succeeds and ``teardown`` gives 0;
     otherwise ends the process with ``teardown``'s status. A failure that
-    is not only an interrupt is reported first, unless
-    ``disable_error_reporting``: with status 1 by raising the error (Python
-    prints its traceback), with any other status by printing the cause."""
+    is not only an interrupt is first logged at ``ERROR`` through the
+    default loggers (its pretty cause), as Effect's ``runMain`` does,
+    unless ``disable_error_reporting`` or the squashed error's
+    ``error_reported`` is ``False``."""
     require_effect(eff, "eff")
-    ex = asyncio.run(_run_main_exit(eff))
+    main = eff if disable_error_reporting else eff.tap_cause(_log_failure)
+    ex = asyncio.run(_run_main_exit(main))
     code = teardown(ex)
-    if isinstance(ex, Success):
-        if code == 0:
-            return ex.value
-        raise SystemExit(code)
-    if ex.cause.has_interrupts_only or disable_error_reporting:
-        raise SystemExit(code)
-    if code == 1:
-        return unwrap(ex)
-    print(ex.cause.pretty(), file=sys.stderr)
+    if isinstance(ex, Success) and code == 0:
+        return ex.value
     raise SystemExit(code)
+
+
+def _log_failure(cause: Cause[object]) -> Effect[None]:
+    if cause.has_interrupts_only or getattr(cause.squash(), "error_reported", True) is False:
+        return _VOID
+    return log_error(cause)
 
 
 async def _run_main_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]:

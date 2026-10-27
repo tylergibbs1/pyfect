@@ -40,7 +40,7 @@ class Interrupt:
 type Reason[E] = Fail[E] | Die | Interrupt
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, weakref_slot=True)
 class Cause(Generic[E_co]):
     reasons: tuple[Reason[E_co], ...]
 

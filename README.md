@@ -67,7 +67,10 @@ many effects with it (`with` / `async with`, made for a web server's lifespan; s
 [`examples/fastapi_style.py`](examples/fastapi_style.py)).
 `run_main` interrupts the program on SIGINT/SIGTERM so finalizers run, then exits
 130 when the program was only interrupted, or with the error's `TaggedError.exit_code`
-(default 1) when it failed.
+(default 1) when it failed, after logging the failure's cause at `ERROR` through the default
+loggers, as Effect's `runMain` does. `eff.with_error_reporting()` sends failures to the
+reporters in `fx.error_reporter` (say, Sentry), which an error can opt out of or tag with a
+severity and attributes.
 
 **Interruption done properly.** Interrupting a fiber unwinds it; recovery handlers can't
 swallow it; finalizers always run. Uninterruptible regions (`uninterruptible`,

@@ -6,6 +6,7 @@ Signal handlers and exit codes belong to a process, so every test here runs
 """
 
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -23,7 +24,6 @@ READY = "ready"
 _PRELUDE = """\
 import sys
 from dataclasses import dataclass
-from typing import ClassVar
 from typing import ClassVar
 import pyfect as fx
 
@@ -100,14 +100,61 @@ def test_interrupt_only_exits_130_without_traceback(tmp_path: Path):
     """Effect Runtime.defaultTeardown: Exit.interrupt(123) exits 130."""
     done = run_main_process(tmp_path, "fx.run_main(fx.interrupt())\n")
     assert done.returncode == 130
+    assert done.stdout == ""
     assert done.stderr == ""
 
 
-def test_defect_exits_one_with_traceback(tmp_path: Path):
-    """Effect Runtime.defaultTeardown: Exit.fail("error") exits 1."""
+def test_defect_exits_one_and_is_logged_through_the_default_logger(tmp_path: Path):
+    """Effect Runtime.makeRunMain logs the failure with ``logError(cause)``:
+    the default logger prints ``[time] ERROR (#1): <pretty cause>`` on
+    stdout (``console.log``); defaultTeardown exits 1."""
     done = run_main_process(tmp_path, "fx.run_main(fx.die(ValueError('boom')))\n")
     assert done.returncode == 1
-    assert "ValueError: boom" in done.stderr
+    assert done.stderr == ""
+    assert re.fullmatch(r"\[\d\d:\d\d:\d\d\.\d{3}\] ERROR \(#1\): ValueError: boom\n", done.stdout)
+
+
+def test_every_error_of_the_cause_is_logged(tmp_path: Path):
+    """Effect: a failure whose finalizer dies logs both errors."""
+    program = "fx.run_main(fx.fail(ValueError('a')).ensuring(fx.die(KeyError('fin'))))\n"
+    done = run_main_process(tmp_path, program)
+    assert done.returncode == 1
+    assert "ValueError: a" in done.stdout
+    assert "KeyError: 'fin'" in done.stdout
+
+
+def test_an_error_marked_not_reported_is_not_logged(tmp_path: Path):
+    """Effect Runtime.getErrorReported: ``[errorReported]: false`` skips
+    the log; the exit code still applies."""
+    program = """
+    @dataclass
+    class Usage(fx.TaggedError):
+        exit_code: ClassVar[int] = 2
+        error_reported = False
+
+    fx.run_main(fx.fail(Usage()))
+    """
+    done = run_main_process(tmp_path, program)
+    assert done.returncode == 2
+    assert done.stdout == ""
+    assert done.stderr == ""
+
+
+def test_the_log_goes_through_the_loggers_of_the_run(tmp_path: Path):
+    """Effect logs outside the program, so a logger the program provides
+    itself does not see the failure, and the default logger still does."""
+    program = """
+    seen = []
+    capture = fx.Logger.make(lambda options: seen.append(options.log_level))
+    try:
+        fx.run_main(fx.fail(ValueError("x")).with_logger(capture))
+    except SystemExit as exit:
+        log(f"exit {exit.code}, program logger saw {seen}")
+    """
+    done = run_main_process(tmp_path, program)
+    *logged, last = done.stdout.splitlines()
+    assert last == "exit 1, program logger saw []"
+    assert " ERROR (#1): ValueError: x" in logged[0]
 
 
 def test_error_exit_code_sets_the_process_status(tmp_path: Path):
@@ -125,8 +172,8 @@ def test_error_exit_code_sets_the_process_status(tmp_path: Path):
     """
     done = run_main_process(tmp_path, program)
     assert done.returncode == 78
-    assert "ConfigMissing: no config" in done.stderr
-    assert "broken" in done.stderr
+    assert "ConfigMissing: no config" in done.stdout
+    assert "broken" in done.stdout
 
 
 def test_signal_handlers_are_restored_after_run_main(tmp_path: Path):
@@ -175,11 +222,12 @@ def test_a_custom_teardown_sets_the_status(tmp_path: Path):
     assert done.stdout == ""
 
 
-def test_disable_error_reporting_exits_without_a_traceback(tmp_path: Path):
+def test_disable_error_reporting_exits_without_logging(tmp_path: Path):
     """Effect Runtime.makeRunMain's ``disableErrorReporting`` option."""
     program = "fx.run_main(fx.die(ValueError('boom')), disable_error_reporting=True)\n"
     done = run_main_process(tmp_path, program)
     assert done.returncode == 1
+    assert done.stdout == ""
     assert done.stderr == ""
 
 
@@ -197,5 +245,5 @@ def test_a_typed_failure_exits_with_its_exit_code(tmp_path: Path):
     """
     done = run_main_process(tmp_path, program)
     assert done.returncode == 78
-    assert "ConfigMissing" in done.stderr
-    assert done.stdout == ""
+    assert "ConfigMissing" in done.stdout
+    assert "unreachable" not in done.stdout

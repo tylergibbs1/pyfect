@@ -1747,6 +1747,27 @@ def check_console(eff: fx.Effect[int, NotFound, Primary]) -> None:
     fx.void.pipe(fx.provide_service(fx.console.CurrentConsole, object()))  # pyright: ignore[reportArgumentType]
 
 
+# --- error reporting -----------------------------------------------------------
+
+
+def check_error_reporting(
+    eff: fx.Effect[int, NotFound, Primary],
+    make: fx.Effect[fx.ErrorReporter, NotFound, Primary],
+) -> None:
+    assert_type(eff.with_error_reporting(), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.with_error_reporting(defects_only=True), fx.Effect[int, NotFound, Primary])
+    reporter = fx.error_reporter.make(lambda report: None)
+    assert_type(reporter, fx.ErrorReporter)
+    assert_type(fx.error_reporter.report(fx.cause.fail(1)), fx.Effect[None])
+    assert_type(fx.error_reporter.layer([reporter]), layer.Layer[Never])
+    assert_type(
+        fx.error_reporter.layer([reporter, make], merge_with_existing=True),
+        layer.Layer[Never, NotFound, Primary],
+    )
+    fx.error_reporter.make(lambda report: assert_type(report.severity, fx.logger.Severity))
+    fx.error_reporter.layer([fx.succeed(1)])  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
 # --- tracing -------------------------------------------------------------------
 
 

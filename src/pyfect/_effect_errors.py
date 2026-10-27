@@ -20,6 +20,7 @@ from pyfect.exit import Success
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
+    from pyfect._fiber import Fiber
     from pyfect.logger import Severity
 
 
@@ -218,6 +219,20 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
         interrupts. ``log`` and ``message`` as for ``ignore``."""
         on_failure = _succeed_none if log is False else _cause_logger(log, message)
         return _core._MatchCause(as_effect(self), on_failure, _succeed_none)
+
+    def with_error_reporting(self, *, defects_only: bool = False) -> Effect[A_co, E_co, R_co]:
+        """Send the cause of a failure to the ``CurrentErrorReporters``
+        (with ``defects_only``, only a cause with a defect), then fail with
+        it as before."""
+        from pyfect.error_reporter import report_unsafe
+
+        def report(fiber: Fiber[Any, Any], cause: Cause[Any]) -> Effect[None]:
+            report_unsafe(fiber, cause, defects_only=defects_only)
+            return _core._Succeed(None)
+
+        return as_effect(self).on_error(
+            lambda cause: _core._WithFiber(lambda fiber: report(fiber, cause))
+        )
 
 
 def _cause_logger(

@@ -16,25 +16,40 @@ Like Effect's ``Data.TaggedError``, errors compare and hash structurally
 (same class, equal fields or ``args``), a ``message`` field is the string
 form, a ``cause`` field holding an exception becomes ``__cause__``, and
 ``exit_code`` is the process status ``run_main`` exits with when the error
-ends the program.
+ends the program. ``error_reported`` and the ``report_*`` attributes tune
+how ``run_main`` and the error reporters (``pyfect.error_reporter``) treat
+it.
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
 import builtins
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, fields, is_dataclass
-from typing import Any, ClassVar, Never, Self, TypeIs, overload
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, ClassVar, Never, Self, TypeIs, overload
 
 from pyfect._core import Effect, _FailCause
 from pyfect.cause import Cause, Fail, Interrupt, Reason, fail, from_reasons
 from pyfect.duration import Seconds, format_duration
 from pyfect.result import Err, Ok, Result
 
+if TYPE_CHECKING:
+    from pyfect.logger import Severity
+
 
 class TaggedError(Exception):
     exit_code: ClassVar[int] = 1
+    error_reported: bool = True
+    """``False``: ``run_main`` does not log this error when it ends the
+    program (Effect's ``Runtime.errorReported``)."""
+    report_ignored: bool = False
+    """``True``: error reporters skip this error."""
+    report_severity: Severity | None = None
+    """The severity error reporters give it (``None``: ``INFO``)."""
+    report_attributes: Mapping[str, object] = MappingProxyType({})
+    """Extra metadata for error reporters."""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
