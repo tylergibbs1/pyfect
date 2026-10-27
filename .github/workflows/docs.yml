@@ -1,0 +1,37 @@
+name: docs
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Check the guides' snippets (pyright, pytest)
+        run: |
+          uv run pyright website/snippets
+          uv run pytest -q tests/test_doc_snippets.py
+
+      - name: Install site dependencies
+        working-directory: website
+        run: bun install --frozen-lockfile
+
+      - name: Generate the API reference JSON
+        working-directory: website
+        run: bun run generate:api
+
+      - name: Build the site
+        working-directory: website
+        run: bun run build

@@ -1,0 +1,48 @@
+---
+title: Installation
+description: "Install pyfect and set up pyright."
+---
+
+pyfect needs Python 3.13 or newer and has no dependencies.
+
+<Tabs items={['uv', 'pip']}>
+<Tab value="uv">
+
+```sh
+uv add pyfect
+```
+
+</Tab>
+<Tab value="pip">
+
+```sh
+pip install pyfect
+```
+
+</Tab>
+</Tabs>
+
+The `otel` extra adds the OpenTelemetry bridge (`pyfect.otel`):
+
+```sh
+uv add 'pyfect[otel]'
+```
+
+## Type checking
+
+pyright is the type checker pyfect is built for; its inference is what makes errors and services
+part of the type. Use strict mode, with one setting turned off: pyright infers an unannotated
+generator's send type as `Unknown` ([pyright#10279](https://github.com/microsoft/pyright/issues/10279)),
+and effect generators never use it.
+
+```toml title="pyproject.toml"
+[tool.pyright]
+typeCheckingMode = "strict"
+reportUnknownParameterType = false
+```
+
+## Check it works
+
+<include meta='title="hello.py"'>../../snippets/installation/hello.py</include>
+
+Next: [Effects and generators](/docs/effects).

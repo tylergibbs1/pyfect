@@ -1,0 +1,66 @@
+---
+title: Concurrency and interruption
+description: "Fibers, structured concurrency, races and timeouts."
+full: true
+---
+
+Every effect runs on a **fiber**, a lightweight thread on pyfect's scheduler. The same program
+runs with `run_sync` (no event loop) or on asyncio with `run_async`.
+
+## Running effects concurrently
+
+<Split>
+<SplitProse>
+
+`fx.for_each` and `fx.all` take a `concurrency` limit (a number or `"unbounded"`; sequential by
+default). The first failure interrupts the others.
+
+</SplitProse>
+<SplitCode>
+
+<include meta='title="for_each.py"'>../../snippets/concurrency/for_each.py</include>
+
+</SplitCode>
+</Split>
+
+## Fibers
+
+<Split>
+<SplitProse>
+
+`eff.fork()` starts a child fiber. `join` waits for its result, `interrupt` stops it and waits
+for its finalizers. A fiber's children are interrupted when it finishes, so forked work never
+outlives the code that started it (`fork_daemon` opts out).
+
+Interruption is not an exception you can catch: handlers like `catch_all` don't see it, and
+`on_interrupt`, `ensuring` and scope finalizers always run. Code that must not be interrupted
+halfway goes in `fx.uninterruptible_mask`.
+
+</SplitProse>
+<SplitCode>
+
+<include meta='title="fibers.py"'>../../snippets/concurrency/fibers.py</include>
+
+</SplitCode>
+</Split>
+
+## Races and timeouts
+
+<Split>
+<SplitProse>
+
+`race`, `race_all` and `timeout` always wait for the losers to finish cleaning up before
+returning.
+
+Coordinating fibers: `Ref`, `Deferred`, `Queue`, `PubSub`, `Semaphore`, `Latch`, `FiberSet`.
+
+</SplitProse>
+<SplitCode>
+
+<include meta='title="race.py"'>../../snippets/concurrency/race.py</include>
+
+</SplitCode>
+</Split>
+
+Reference: [`Fiber`](/docs/reference/Fiber), [`pyfect.queue`](/docs/reference/queue),
+[`for_each`](/docs/reference).

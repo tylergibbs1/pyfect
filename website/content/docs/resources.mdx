@@ -1,0 +1,26 @@
+---
+title: Resources and scopes
+description: "Acquire and release resources safely with acquire_release and scopes."
+---
+
+A **scope** collects finalizers and runs them when it closes. `fx.acquire_release` acquires a
+resource and registers its release on the current scope; its type then includes `Scope`, and
+`fx.scoped` provides a scope that closes when the effect ends.
+
+<include meta='title="acquire_release.py"'>../../snippets/resources/acquire_release.py</include>
+
+The release runs whether the effect succeeds, fails or is interrupted, and acquisition can't be
+interrupted halfway. Finalizers run in reverse order of acquisition.
+
+## Without a scope
+
+<include meta='title="finalizers.py"'>../../snippets/resources/finalizers.py</include>
+
+## In layers
+
+A layer built with `layer.effect(Tag, acquire_release(...))` owns its resource: it is acquired
+when the layer is built and released when the program using it ends. This is how a connection
+pool lives for a whole program (see `examples/fastapi_style.py` in the repository).
+
+Shared and cached resources: `RcRef`, `RcMap`, `ScopedRef`, `Resource`, `Pool`, `Cache`.
+Reference: [`pyfect.scope`](/docs/reference/scope), [`pyfect.pool`](/docs/reference/pool).

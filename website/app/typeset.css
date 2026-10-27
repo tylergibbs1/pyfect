@@ -1,0 +1,162 @@
+/*
+ * Prose styles, adapted from shadcn/typeset (shadcn/ui, apps/v4/app/(app)/(typeset)/typeset.css,
+ * MIT License, Copyright (c) 2023 shadcn). Trimmed to what these docs use; h5/h6 are not
+ * uppercase (no eyebrow labels).
+ */
+
+@layer components {
+  .typeset {
+    --typeset-flow: 1.25em;
+    --typeset-muted: var(--color-fd-muted-foreground);
+    --typeset-rule: var(--color-fd-border);
+
+    font-size: 1rem;
+    line-height: 1.75;
+    color: var(--color-fd-foreground);
+    overflow-wrap: break-word;
+  }
+
+  .typeset
+    *:not(
+      :where(
+        .not-typeset,
+        [data-not-typeset],
+        .not-typeset *,
+        [data-not-typeset] *,
+        .typeset [data-slot],
+        .typeset [data-slot] *
+      )
+    ) {
+    &:where(p) {
+      margin-block: var(--typeset-flow) 0;
+    }
+
+    &:where(h1, h2, h3, h4, h5, h6) {
+      color: var(--color-fd-foreground);
+      font-weight: 600;
+      letter-spacing: -0.01em;
+      margin-block-end: 0;
+      scroll-margin-block-start: calc(var(--header-height) + 1.5rem);
+    }
+    &:where(h2) {
+      font-size: 1.375em;
+      line-height: 1.35;
+      margin-block-start: calc(var(--typeset-flow) * 2.2);
+    }
+    &:where(h3) {
+      font-size: 1.125em;
+      line-height: 1.45;
+      margin-block-start: calc(var(--typeset-flow) * 1.6);
+    }
+    &:where(h4, h5, h6) {
+      font-size: 1em;
+      line-height: 1.5;
+      margin-block-start: var(--typeset-flow);
+    }
+    &:where(h1 + *, h2 + *, h3 + *, h4 + *, h5 + *, h6 + *) {
+      margin-block-start: 0.75em;
+    }
+    &:where(:is(h1, h2, h3, h4) :is(code)) {
+      font-size: 0.9em;
+    }
+
+    &:where(a) {
+      color: inherit;
+      font-weight: 500;
+      text-decoration-line: underline;
+      text-underline-offset: 0.2em;
+      text-decoration-color: color-mix(in oklab, currentColor 30%, transparent);
+    }
+    &:where(a:hover) {
+      text-decoration-color: currentColor;
+    }
+    &:where(:is(h1, h2, h3, h4, h5, h6) :is(a)) {
+      font-weight: inherit;
+      text-decoration-line: none;
+    }
+    &:where(strong, b) {
+      font-weight: 600;
+    }
+
+    &:where(ul) {
+      list-style-type: disc;
+    }
+    &:where(ol) {
+      list-style-type: decimal;
+    }
+    &:where(ul, ol) {
+      margin-block: var(--typeset-flow) 0;
+      padding-inline-start: 1.5em;
+    }
+    &:where(li) {
+      margin-block-start: 0.5em;
+      padding-inline-start: 0.25em;
+    }
+    &:where(li > p, li > ul, li > ol) {
+      margin-block-start: 0.5em;
+    }
+    &:where(li)::marker {
+      color: var(--typeset-muted);
+    }
+
+    &:where(:not(pre) > code) {
+      background-color: var(--color-fd-muted);
+      border: 1px solid var(--typeset-rule);
+      font-family: var(--font-mono);
+      font-size: 0.85em;
+      border-radius: 0.35em;
+      padding: 0.1em 0.3em;
+    }
+
+    &:where(blockquote) {
+      border-inline-start: 2px solid var(--typeset-rule);
+      padding-inline-start: 1em;
+      margin: var(--typeset-flow) 0 0;
+      color: var(--typeset-muted);
+    }
+    &:where(hr) {
+      border: 0;
+      border-block-start: 1px solid var(--typeset-rule);
+      margin-block: calc(var(--typeset-flow) * 2) 0;
+    }
+
+    &:where(table) {
+      font-size: 0.9375em;
+      line-height: 1.5;
+      border-collapse: separate;
+      border-spacing: 0;
+      border-block-end: 1px solid var(--typeset-rule);
+      margin-block: var(--typeset-flow) 0;
+    }
+    &:where(.typeset-scroll) {
+      overflow-x: auto;
+      margin-block-start: var(--typeset-flow);
+    }
+    &:where(.typeset-scroll > *) {
+      margin-block-start: 0;
+    }
+    &:where(thead th) {
+      font-weight: 500;
+      text-align: start;
+      white-space: nowrap;
+      padding: 0.6em 1em;
+    }
+    &:where(:is(tbody, tfoot) :is(td, th)) {
+      padding: 0.65em 1em;
+      text-align: start;
+      vertical-align: top;
+      border-block-start: 1px solid var(--typeset-rule);
+    }
+    &:where(th:first-child, td:first-child) {
+      padding-inline-start: 0;
+    }
+  }
+
+  /* Components (data-slot / not-typeset) keep their own styles and get paragraph spacing. */
+  .typeset > :where([data-slot], [data-not-typeset], .not-typeset, .split, .steps, .py-entry) {
+    margin-block-start: var(--typeset-flow);
+  }
+  .typeset > :first-child {
+    margin-block-start: var(--typeset-flow);
+  }
+}
