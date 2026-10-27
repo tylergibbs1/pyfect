@@ -284,3 +284,17 @@ def test_a_waiting_take_is_interrupted_by_the_fiber_that_unsubscribes():
     ex = yield from taker.await_exit()
     assert isinstance(ex, fx.Failure)
     assert ex.cause.interruptors == {closer.id}
+
+
+@testing.effect
+def test_a_take_woken_with_a_message_gets_it_when_the_pubsub_then_shuts_down():
+    # Effect resumes the woken take at once, so the shutdown comes after it
+    # has its message.
+    pubsub = yield from PubSub[int].unbounded()
+    sub = yield from pubsub.subscribe()
+    single = yield from sub.take().fork(start_immediately=True)
+    batch = yield from sub.take_all().fork(start_immediately=True)
+    yield from pubsub.publish_all([1, 2, 3])
+    yield from pubsub.shutdown()
+    assert (yield from single.join()) == 1
+    assert (yield from batch.join()) == [2, 3]

@@ -12,7 +12,8 @@ from pyfect._effect_args import require_effect
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.cause import fail as fail_cause_of
-from pyfect.channel._channel import AnyPull, Channel, from_transform
+from pyfect.channel._base import AnyChannel, AnyPull, end_with
+from pyfect.channel._channel import Channel, from_transform
 from pyfect.channel._loop import ChunkPull, IteratorPull
 from pyfect.channel._run import ENDED
 from pyfect.effect import provide_service
@@ -29,10 +30,6 @@ DEFAULT_CHUNK_SIZE = 4096
 """How many items ``from_iterable_array`` puts in a tuple by default."""
 
 type _AnyChannel = Channel[Any, Any, Any, Any, Any, Any, Any]
-
-
-def _end_with(leftover: object) -> Effect[Never, Done[Any]]:
-    return _FailCause(fail_cause_of(Done(leftover)))
 
 
 # --- values and failures -------------------------------------------------------
@@ -64,7 +61,7 @@ def from_effect_done[A, E = Never, R = Never](
 ) -> Channel[Never, E, A, object, object, object, R]:
     """Write nothing and end with what ``eff`` succeeds with."""
     require_effect(eff, "eff")
-    pull = eff.flat_map(_end_with)
+    pull = eff.flat_map(end_with)
     return Channel(lambda _upstream, _scope: _Succeed(pull))
 
 
@@ -100,14 +97,14 @@ def sync[A](thunk: Callable[[], A]) -> Channel[A]:
 
 def end[L](value: L) -> Channel[Never, Never, L]:
     """Write nothing and end with ``value``."""
-    pull = _end_with(value)
+    pull = end_with(value)
     return Channel(lambda _upstream, _scope: _Succeed(pull))
 
 
 def end_sync[L](thunk: Callable[[], L]) -> Channel[Never, Never, L]:
     """Write nothing and end with ``thunk()``, computed when the channel
     runs."""
-    return Channel(lambda _upstream, _scope: _Sync(lambda: _end_with(thunk())))
+    return Channel(lambda _upstream, _scope: _Sync(lambda: end_with(thunk())))
 
 
 empty: Channel[Never] = end(None)
@@ -229,10 +226,10 @@ def unwrap(eff: Effect[_AnyChannel, Any, Any]) -> _AnyChannel:
     runs with the channel's ``Scope``, so its resources live as long as
     the channel's."""
     require_effect(eff, "eff")
-    return _unwrap(eff)
+    return unwrap_effect(eff)
 
 
-def _unwrap(eff: Effect[_AnyChannel, Any, Any]) -> _AnyChannel:
+def unwrap_effect(eff: Effect[AnyChannel, Any, Any]) -> _AnyChannel:
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
         pull: AnyPull | None = None
 
@@ -293,10 +290,10 @@ def from_transform_bracket(
     """``from_transform`` with a third argument: a child of the channel's
     scope, closed as soon as the channel fails or ends (with the end's
     leftover as a success), so resources can go before the run ends."""
-    return _bracket(f)
+    return bracket(f)
 
 
-def _bracket(
+def bracket(
     f: Callable[[AnyPull, CloseableScope, CloseableScope], Effect[AnyPull, Any, Any]],
 ) -> _AnyChannel:
 
@@ -321,7 +318,7 @@ def acquire_use_release[A, O, D, I, IE, ID, EE = Never, RR = Never](
     release with its exit as soon as it fails or ends (or the run ends)."""
     require_effect(acquire, "acquire")
 
-    def bracket(
+    def build(
         upstream: AnyPull, scope: CloseableScope, forked: CloseableScope
     ) -> Effect[AnyPull, Any, Any]:
         resource: Option[A] = None
@@ -340,7 +337,7 @@ def acquire_use_release[A, O, D, I, IE, ID, EE = Never, RR = Never](
             .flat_map(lambda value: use(value)._transform(upstream, scope))
         )
 
-    return _bracket(bracket)
+    return bracket(build)
 
 
 def acquire_release[A, E = Never, RR = Never](
@@ -349,4 +346,4 @@ def acquire_release[A, E = Never, RR = Never](
 ) -> Channel[A, E, None, object, object, object, RR]:
     """Write the acquired resource, then end; ``release`` runs when the
     channel's scope closes."""
-    return _unwrap(_acquire_release(acquire, release).map(succeed))
+    return unwrap_effect(_acquire_release(acquire, release).map(succeed))

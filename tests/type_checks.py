@@ -27,6 +27,7 @@ from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
 from pyfect.fiber_set import FiberSetRuntime
 from pyfect.pubsub import Atomic, Subscription
+from pyfect.queue import Dequeue
 from pyfect.scheduler import Scheduler, SyncScheduler
 
 
@@ -2127,3 +2128,158 @@ def check_channel_resources(
         fx.channel.from_effect_take(takes),
         _Ch[tuple[str, ...], KeyError, int, object, object, object, Primary],
     )
+
+
+def check_channel_transforms(
+    source: _Ch[int, ValueError, str, object, object, object, Replica],
+    other: _Ch[bytes, KeyError, float, object, object, object, Port],
+) -> None:
+    assert_type(
+        source.map_effect(lambda n: fx.fail(NotFound(str(n))), concurrency=4),
+        _Ch[Never, ValueError | NotFound, str, object, object, object, Replica],
+    )
+    assert_type(
+        source.flat_map(lambda _: other, concurrency="unbounded"),
+        _Ch[bytes, ValueError | KeyError, str, object, object, object, Replica | Port],
+    )
+    assert_type(
+        source.filter(lambda n: n > 0), _Ch[int, ValueError, str, object, object, object, Replica]
+    )
+    assert_type(
+        source.scan("", lambda s, n: s + str(n)),
+        _Ch[str, ValueError, str, object, object, object, Replica],
+    )
+    assert_type(
+        source.map_accum(lambda: 0, lambda s, n: (s + n, [str(n)])),
+        _Ch[str, ValueError, str, object, object, object, Replica],
+    )
+    assert_type(source.drain(), _Ch[Never, ValueError, str, object, object, object, Replica])
+
+
+def check_channel_failures(
+    source: _Ch[int, NotFound | Invalid, str, object, object, object, Replica],
+) -> None:
+    assert_type(
+        source.catch_all(fx.channel.succeed),
+        _Ch[int | NotFound | Invalid, Never, str | None, object, object, object, Replica],
+    )
+    assert_type(
+        source.catch_cause(lambda _: fx.channel.fail(KeyError())),
+        _Ch[int, KeyError, str, object, object, object, Replica],
+    )
+    assert_type(
+        source.catch_if(is_not_found, lambda _: fx.channel.succeed("x")),
+        _Ch[int | str, NotFound | Invalid, str | None, object, object, object, Replica],
+    )
+    assert_type(
+        source.pipe(fx.channel.catch_tag(NotFound, lambda _: fx.channel.succeed("x"))),
+        _Ch[int | str, Invalid, str | None, object, object, object, Replica],
+    )
+    assert_type(
+        source.pipe(fx.channel.catch_if(is_not_found, lambda _: fx.channel.empty)),
+        _Ch[int, Invalid, str | None, object, object, object, Replica],
+    )
+    assert_type(
+        source.map_error(lambda _: KeyError()),
+        _Ch[int, KeyError, str, object, object, object, Replica],
+    )
+    assert_type(source.or_die(), _Ch[int, Never, str, object, object, object, Replica])
+    assert_type(source.ignore(), _Ch[int, Never, str | None, object, object, object, Replica])
+    assert_type(
+        source.retry(schedule.recurs(2)),
+        _Ch[int, NotFound | Invalid, str, object, object, object, Replica],
+    )
+
+
+def check_channel_services(
+    source: _Ch[int, ValueError, str, object, object, object, Replica | Port],
+) -> None:
+    assert_type(
+        source.pipe(fx.channel.provide_service(Port, 1)),
+        _Ch[int, ValueError, str, object, object, object, Replica],
+    )
+    assert_type(
+        source.pipe(fx.channel.provide_service_effect(Port, fx.fail(KeyError()).as_(1))),
+        _Ch[int, ValueError | KeyError, str, object, object, object, Replica],
+    )
+    assert_type(
+        source.update_service(Primary, lambda db: db),
+        _Ch[int, ValueError, str, object, object, object, Replica | Port | Primary],
+    )
+    scoped = fx.channel.from_effect(fx.add_finalizer(lambda _: fx.void))
+    assert_type(scoped, _Ch[None, Never, None, object, object, object, fx.Scope])
+    assert_type(fx.channel.scoped(scoped), _Ch[None])
+    source.pipe(fx.channel.provide_service(Port, "not an int"))  # pyright: ignore[reportArgumentType]
+
+
+def check_channel_lifecycle(
+    source: _Ch[int, ValueError, str, object, object, object, Replica],
+) -> None:
+    assert_type(
+        source.on_end(fx.fail(KeyError())),
+        _Ch[int, ValueError | KeyError, str, object, object, object, Replica],
+    )
+    assert_type(
+        source.ensuring(fx.void), _Ch[int, ValueError, str, object, object, object, Replica]
+    )
+    assert_type(source.forever(), _Ch[int, ValueError, Never, object, object, object, Replica])
+    assert_type(
+        source.repeat(schedule.recurs(2)),
+        _Ch[int, ValueError, str, object, object, object, Replica],
+    )
+    assert_type(
+        source.schedule(schedule.recurs(2)),
+        _Ch[int, ValueError, str | int, object, object, object, Replica],
+    )
+
+
+def check_channel_concurrency(
+    source: _Ch[int, ValueError, str, object, object, object, Replica],
+    other: _Ch[bytes, KeyError, float, object, object, object, Port],
+    halt: fx.Effect[bool, NotFound],
+) -> None:
+    assert_type(
+        source.merge(other, halt_strategy="either"),
+        _Ch[
+            int | bytes, ValueError | KeyError, str | float, object, object, object, Replica | Port
+        ],
+    )
+    assert_type(
+        source.interrupt_when(halt),
+        _Ch[int, ValueError | NotFound, str | bool, object, object, object, Replica],
+    )
+    assert_type(
+        source.switch_map(lambda _: other),
+        _Ch[bytes, ValueError | KeyError, str, object, object, object, Replica | Port],
+    )
+    assert_type(
+        source.buffer(capacity=4, strategy="sliding"),
+        _Ch[int, ValueError, str, object, object, object, Replica],
+    )
+    nested = fx.channel.succeed(other)
+    assert_type(
+        nested.merge_all(concurrency=2), _Ch[bytes, KeyError, None, object, object, object, Port]
+    )
+    source.merge_all(concurrency=2)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+def _offer_one(queue: fx.Queue[int, fx.Done]) -> fx.Effect[bool]:
+    return queue.offer(1).and_then(queue.end())
+
+
+def check_channel_io(
+    queue: fx.Queue[int, NotFound | fx.Done],
+    pubsub: fx.PubSub[str],
+    chunks: _Ch[tuple[bytes, ...], ValueError, str],
+) -> None:
+    assert_type(fx.channel.from_queue(queue), _Ch[int, NotFound])
+    assert_type(fx.channel.from_pubsub(pubsub), _Ch[str])
+    assert_type(fx.channel.from_schedule(schedule.recurs(2)), _Ch[int, Never, int])
+    assert_type(fx.channel.callback(_offer_one), _Ch[int])
+    assert_type(chunks.run_bytes(), fx.Effect[bytes, ValueError])
+    assert_type(chunks.pipe_to(fx.channel.decode_text()), _Ch[tuple[str, ...], ValueError, str])
+    assert_type(
+        fx.channel.from_iterable([1]).to_queue(capacity="unbounded"),
+        fx.Effect[Dequeue[int, fx.Done], Never, fx.Scope],
+    )
+    chunks.run_into_queue(queue)  # pyright: ignore[reportArgumentType]

@@ -155,9 +155,14 @@ class Hub[A]:
         reader.unsubscribed = True
         reader.closed_by = by
         del self.readers[reader]
+        if reader.owed:
+            # Effect runs a woken take before the unsubscribe goes on, so
+            # it still gets its message and, for a batch, what is left.
+            reader.claimed.extend(reader.backing.poll_up_to(reader.backing.size()))
+        else:
+            reader.claimed.clear()
         reader.backing.unsubscribe()
         reader.replay.close()
-        reader.claimed.clear()
         reader.wake_all()
         self.deliver()
 

@@ -16,7 +16,7 @@ from pyfect._context_effects import provide_context
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend, _Sync, _WithFiber
 from pyfect._fiber import Fiber
 from pyfect.cause import fail
-from pyfect.channel._channel import AnyPull, Channel
+from pyfect.channel._base import AnyChannel, AnyPull
 from pyfect.channel._loop import PullLoop
 from pyfect.errors import Done
 from pyfect.option import Option, Some
@@ -24,7 +24,6 @@ from pyfect.pull import catch_done
 from pyfect.scope import CloseableScope, Scope
 from pyfect.semaphore import Semaphore
 
-type AnyChannel = Channel[Any, Any, Any, Any, Any, Any, Any]
 type AnyEffect = Effect[Any, Any, Any]
 
 ENDED: AnyPull = _FailCause(fail(Done()))

@@ -4,7 +4,8 @@ A subscription reads its replayed messages first, then what was published
 after it subscribed. Once the hub has ended, a subscription that has read
 everything gets the final message from every ``take`` (``take_up_to`` never
 waits, so it gets nothing). Once unsubscribed (its scope closed, or the hub
-shut down), every take is interrupted.
+shut down), every take is interrupted, but for one already woken with a
+message, which gets it (Effect runs that take before the unsubscribe).
 
 The subscription only gives ``A``s, so it is covariant (Effect's ``out
 A``): its state is kept as ``Any`` and typed by the methods, and batches
@@ -211,10 +212,10 @@ class _Collect[A, X](Frame):
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
         reader = self.reader
-        if reader.unsubscribed:
-            return Failure(interrupt_cause(reader.closed_by))
         if self.ticket.claimed:
             return Success(self.then(reader.collect(self.ticket)))
+        if reader.unsubscribed:
+            return Failure(interrupt_cause(reader.closed_by))
         return self.again()
 
     def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
