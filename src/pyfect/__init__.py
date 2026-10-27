@@ -13,7 +13,9 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 ``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``. Logging:
 ``fx.log`` and its levels, ``fx.LogLevel``, ``fx.Logger`` (formatters and layers in
 ``fx.logger``). Tracing: ``eff.with_span``, ``fx.fn("name")``, ``fx.use_span``,
-``fx.current_span`` and the rest; spans and tracers in ``fx.tracer``. Request batching:
+``fx.current_span`` and the rest; spans and tracers in ``fx.tracer``. Metrics:
+``fx.metric`` (``counter``, ``gauge``, ``histogram``, ``summary``, ``frequency``,
+``timer``, ``snapshot``, ``prometheus_format``) and ``eff.track*``. Request batching:
 ``fx.Request``, ``fx.RequestResolver``, ``fx.request`` (``Entry`` and the rest in
 ``fx.batching``).
 """
@@ -29,6 +31,7 @@ from pyfect import (
     exit,
     layer,
     logger,
+    metric,
     option,
     random,
     result,
@@ -128,6 +131,7 @@ from pyfect.logger import (
     log_with_level,
 )
 from pyfect.managed_runtime import ManagedRuntime
+from pyfect.metric import Metric
 from pyfect.option import Option, Some
 from pyfect.partitioned_semaphore import PartitionedSemaphore
 from pyfect.pool import Pool
@@ -217,6 +221,7 @@ __all__ = [
     "Logger",
     "ManagedRuntime",
     "MaxOpsBeforeYield",
+    "Metric",
     "MinimumLogLevel",
     "MissingServiceError",
     "NoRunError",
@@ -311,6 +316,7 @@ __all__ = [
     "logger",
     "make_span",
     "make_span_scoped",
+    "metric",
     "never",
     "option",
     "partition",

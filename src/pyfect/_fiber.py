@@ -57,6 +57,7 @@ from pyfect._core import (
     _Sync,
     _WithFiber,
 )
+from pyfect._metric_ref import FiberRuntimeMetrics
 from pyfect._tracer_ref import CurrentTracer
 from pyfect.cause import Cause, Die
 from pyfect.cause import interrupt as interrupt_cause
@@ -71,6 +72,7 @@ from pyfect.scheduler import (
 )
 
 if TYPE_CHECKING:
+    from pyfect._metric_ref import FiberRuntimeMetricsService
     from pyfect.scope import CloseableScope
     from pyfect.tracer import ContextHook
 
@@ -209,6 +211,7 @@ class Fiber(Generic[A_co, E_co]):
         "_parent",
         "_phase",
         "_run_scheduler",
+        "_runtime_metrics",
         "_scheduler",
         "_stack",
         "_tracer_hook",
@@ -241,6 +244,8 @@ class Fiber(Generic[A_co, E_co]):
         self._waiting: _Wait | None = None
         self._phase: _Phase = "pending"
         self._set_context(context)
+        if self._runtime_metrics is not None:
+            self._runtime_metrics.record_fiber_start(self._ctx)
 
     def __repr__(self) -> str:
         return f"Fiber(#{self.id})"
@@ -385,6 +390,7 @@ class Fiber(Generic[A_co, E_co]):
         self._scheduler: Scheduler = view.scheduler
         self._ops_budget: float = view.ops_budget
         self._tracer_hook: ContextHook | None = view.tracer_hook
+        self._runtime_metrics: FiberRuntimeMetricsService | None = view.runtime_metrics
 
     def _start(self, effect: Effect[Any, Any, Any]) -> None:
         self._scheduler.schedule(lambda: self._drive(effect))
@@ -474,6 +480,8 @@ class Fiber(Generic[A_co, E_co]):
             self._push(_ReturnExit(ex))
             return interrupt_all(children, self.id)
         self._exit = ex
+        if self._runtime_metrics is not None:
+            self._runtime_metrics.record_fiber_end(self._ctx, ex)
         if self._parent is not None:
             self._parent._children.pop(self, None)
         observers, self._observers = self._observers, []
@@ -686,6 +694,7 @@ class _RunView:
     scheduler: Scheduler
     ops_budget: float
     tracer_hook: ContextHook | None
+    runtime_metrics: FiberRuntimeMetricsService | None
 
     @staticmethod
     def of(given: Context, run_scheduler: Scheduler) -> _RunView:
@@ -698,7 +707,8 @@ class _RunView:
             budget = max(1, context.lookup(MaxOpsBeforeYield)[1])
         scheduler = context.lookup(CurrentScheduler)[1]
         hook = context.lookup(CurrentTracer)[1].context
-        return _RunView(given, run_scheduler, context, scheduler, budget, hook)
+        runtime_metrics = context.lookup(FiberRuntimeMetrics)[1]
+        return _RunView(given, run_scheduler, context, scheduler, budget, hook, runtime_metrics)
 
 
 # One entry: the view the last fiber switch computed.

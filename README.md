@@ -171,6 +171,14 @@ ends with its exit and is the parent of the spans made inside, forked fibers inc
 installs another, whose optional `context` hook runs around every fiber step (for an
 OpenTelemetry-style context).
 
+**Metrics.** `fx.metric.counter`, `gauge`, `frequency`, `histogram`, `summary` and `timer` are
+descriptions: `m.update(x)` finds the metric's series in the current `MetricRegistry`, with the
+`CurrentMetricAttributes` in scope merged into its own (`m.with_attributes(...)` adds more).
+`eff.track(m)`, `track_successes`, `track_errors`, `track_defects` and `track_duration` update a
+metric as an effect ends. `metric.snapshot` reads every series, `metric.dump` prints them, and
+`metric.prometheus_format()` writes the Prometheus text format for any HTTP framework to serve.
+`metric.enable_runtime_metrics(eff)` counts the fibers `eff` starts.
+
 **Console.** `fx.console.log(...)`, `warn`, `error`, `table`, `count`, `time_log`, ... are
 effects calling the `Console` in `CurrentConsole` (a `LiveConsole` printing like Node's
 `console` unless provided); `console.group(label=)` and `console.time(label)` stay open until

@@ -7,7 +7,7 @@ pyright fails.
 """
 
 import asyncio
-from collections.abc import Callable, Hashable, Sequence
+from collections.abc import Callable, Hashable, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from types import CoroutineType
@@ -1803,3 +1803,83 @@ def check_layer_spans(built: layer.Layer[Primary, NotFound, Replica]) -> None:
     assert_type(
         built.with_parent_span(ExternalSpan("s", "t")), layer.Layer[Primary, NotFound, Replica]
     )
+
+
+# --- metrics -------------------------------------------------------------------
+
+
+def check_metric_constructors() -> None:
+    from datetime import timedelta
+
+    from pyfect import metric
+
+    assert_type(metric.counter("c"), metric.Metric[float, metric.CounterState[float]])
+    assert_type(metric.counter("c", bigint=True), metric.Metric[int, metric.CounterState[int]])
+    assert_type(metric.gauge("g"), metric.Metric[float, metric.GaugeState[float]])
+    assert_type(metric.gauge("g", bigint=True), metric.Metric[int, metric.GaugeState[int]])
+    assert_type(metric.frequency("f"), metric.Metric[str, metric.FrequencyState])
+    assert_type(
+        metric.histogram("h", boundaries=[1, 2]), metric.Metric[float, metric.HistogramState]
+    )
+    assert_type(
+        metric.summary("s", max_age=1, max_size=1, quantiles=[0.5]),
+        metric.Metric[float, metric.SummaryState],
+    )
+    assert_type(
+        metric.summary_with_timestamp("s", max_age=1, max_size=1, quantiles=[0.5]),
+        metric.Metric[tuple[float, float], metric.SummaryState],
+    )
+    assert_type(metric.timer("t"), metric.Metric[float | timedelta, metric.HistogramState])
+    assert_type(metric.linear_boundaries(start=0, width=1, count=3), tuple[float, ...])
+    metric.counter("c", attributes={"k": 1})  # pyright: ignore[reportArgumentType]
+    metric.histogram("h")  # pyright: ignore[reportCallIssue]
+
+
+def check_metric_methods() -> None:
+    from pyfect import metric
+
+    counter = metric.counter("c")
+    assert_type(counter.update(1), fx.Effect[None])
+    assert_type(counter.modify(1.5), fx.Effect[None])
+    assert_type(counter.value(), fx.Effect[metric.CounterState[float]])
+    assert_type(counter.remove(), fx.Effect[None])
+    assert_type(counter.map_input(len), metric.Metric[Sized, metric.CounterState[float]])
+    assert_type(counter.with_constant_input(1), metric.Metric[object, metric.CounterState[float]])
+    assert_type(
+        counter.with_attributes({"k": "v"}), metric.Metric[float, metric.CounterState[float]]
+    )
+    assert_type(metric.snapshot, fx.Effect[list[metric.Snapshot]])
+    assert_type(metric.dump, fx.Effect[str])
+    assert_type(metric.prometheus_format(prefix="app"), fx.Effect[str])
+    # An int counter takes no floats; a frequency takes only strings.
+    metric.counter("c", bigint=True).update(1.5)  # pyright: ignore[reportArgumentType]
+    metric.frequency("f").update(1)  # pyright: ignore[reportArgumentType]
+    # Metrics are contravariant in their input and covariant in their state.
+    _floats: metric.Metric[int, metric.CounterState[float]] = counter
+    _ints: metric.Metric[float, object] = metric.counter("c", bigint=True)  # pyright: ignore[reportAssignmentType]
+
+
+def check_track_methods(eff: fx.Effect[int, NotFound, Primary]) -> None:
+    from pyfect import metric
+
+    counter = metric.counter("c")
+    errors = metric.frequency("errors")
+    assert_type(eff.track(counter.with_constant_input(1)), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.track(errors, lambda ex: type(ex).__name__), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.track_successes(counter), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.track_errors(errors, lambda e: e.key), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.track_defects(errors, repr), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.track_duration(metric.timer("t")), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.track_duration(counter, lambda d: d * 2), fx.Effect[int, NotFound, Primary])
+    # A metric must take what it is given.
+    eff.track_successes(errors)  # pyright: ignore[reportArgumentType]
+    eff.track_errors(counter)  # pyright: ignore[reportArgumentType]
+    eff.track(counter)  # pyright: ignore[reportArgumentType]
+
+
+def check_runtime_metrics(eff: fx.Effect[int, NotFound, Primary]) -> None:
+    from pyfect import metric
+
+    assert_type(metric.enable_runtime_metrics(eff), fx.Effect[int, NotFound, Primary])
+    assert_type(eff.pipe(metric.disable_runtime_metrics), fx.Effect[int, NotFound, Primary])
+    assert_type(metric.enable_runtime_metrics_layer, layer.Layer[metric.FiberRuntimeMetrics])

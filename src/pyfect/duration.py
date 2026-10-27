@@ -51,6 +51,19 @@ def to_nanos(seconds: float) -> int:
     return math.floor(_exact_nanos(seconds))
 
 
+def to_millis(duration: Duration) -> float:
+    """Milliseconds in ``duration``, read as the shortest decimal that
+    prints it (as ``to_nanos`` does), so a duration measured in whole
+    nanoseconds gives ``nanos / 1e6`` as Effect's ``Duration.toMillis``
+    does, not a float product one ulp off."""
+    if isinstance(duration, timedelta):
+        return duration / timedelta(milliseconds=1)
+    seconds = to_seconds(duration)
+    if math.isinf(seconds):
+        return float(seconds)
+    return float(Decimal(repr(float(seconds))) * 1000)
+
+
 def _exact_nanos(seconds: float) -> Decimal:
     return Decimal(repr(float(seconds))) * 10**9
 
