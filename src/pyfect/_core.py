@@ -22,7 +22,19 @@ from these.
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from typing import TYPE_CHECKING, Any, Final, Generic, Never, Self, TypeIs, TypeVar, final, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Final,
+    Generic,
+    Literal,
+    Never,
+    Self,
+    TypeIs,
+    TypeVar,
+    final,
+    overload,
+)
 
 from pyfect.cause import Cause, Fail, _as_exception, merge
 from pyfect.cause import die as die_cause
@@ -32,6 +44,7 @@ from pyfect.exit import Exit, Failure, Success
 from pyfect.result import Err, Ok
 
 if TYPE_CHECKING:
+    from pyfect._concurrency import Concurrency
     from pyfect._fiber import Fiber
     from pyfect.errors import NoSuchElementException, TimeoutException
     from pyfect.option import Option
@@ -123,11 +136,39 @@ class Effect(Frame, Generic[A_co, E_co, R_co]):
         return _Map(self, _to_none)
 
     def zip[B, E2 = Never, R2 = Never](
-        self, that: Effect[B, E2, R2]
+        self, that: Effect[B, E2, R2], *, concurrent: bool = False
     ) -> Effect[tuple[A_co, B], E_co | E2, R_co | R2]:
-        """Run both in order and pair the results. For concurrency use
-        ``pyfect.all(a, b, concurrency="unbounded")``."""
-        return _FlatMap(self, lambda a: _Map(that, lambda b: (a, b)))
+        """Pair the results: in order, or both at once with ``concurrent``."""
+        return self.zip_with(that, _pair, concurrent=concurrent)
+
+    def zip_with[B, C, E2 = Never, R2 = Never](
+        self, that: Effect[B, E2, R2], f: Callable[[A_co, B], C], *, concurrent: bool = False
+    ) -> Effect[C, E_co | E2, R_co | R2]:
+        """Combine the results with ``f``. With ``concurrent``, both run at
+        once and the first failure interrupts the other."""
+        if not concurrent:
+            return _FlatMap(self, lambda a: _Map(that, lambda b: f(a, b)))
+        from pyfect._all import all
+
+        return all(self, that, concurrency=2).map(lambda ab: f(*ab))
+
+    @overload
+    def replicate_effect(
+        self, n: int, *, concurrency: Concurrency = None, discard: Literal[False] = False
+    ) -> Effect[list[A_co], E_co, R_co]: ...
+    @overload
+    def replicate_effect(
+        self, n: int, *, concurrency: Concurrency = None, discard: Literal[True]
+    ) -> Effect[None, E_co, R_co]: ...
+    def replicate_effect(
+        self, n: int, *, concurrency: Concurrency = None, discard: bool = False
+    ) -> Effect[Any, E_co, R_co]:
+        """Run this effect ``n`` times, like ``for_each``, collecting the
+        values (or none, with ``discard``)."""
+        from pyfect._concurrency import for_each
+
+        repeated = for_each([self] * n, _identity, concurrency=concurrency)
+        return repeated.as_void() if discard else repeated
 
     def forever(self) -> Effect[Never, E_co, R_co]:
         loop: Effect[Never, E_co, R_co] = _Suspend(lambda: _FlatMap(self, lambda _: loop))
@@ -497,6 +538,23 @@ class Effect(Frame, Generic[A_co, E_co, R_co]):
 
         return timeout(self, duration)
 
+    def timeout_option(self, duration: Duration) -> Effect[Option[A_co], E_co, R_co]:
+        """``Some(value)``, or ``None`` if this takes longer than
+        ``duration``. The effect is interrupted when time runs out."""
+        from pyfect._concurrency import timeout_option
+
+        return timeout_option(self, duration)
+
+    def timeout_or_else[B, E2 = Never, R2 = Never](
+        self, duration: Duration, or_else: Callable[[], Effect[B, E2, R2]]
+    ) -> Effect[A_co | B, E_co | E2, R_co | R2]:
+        """Continue with ``or_else()`` if this takes longer than
+        ``duration``. ``or_else`` runs once this effect has been
+        interrupted and has finished cleaning up."""
+        from pyfect._concurrency import timeout_or_else
+
+        return timeout_or_else(self, duration, or_else)
+
     def delay(self, duration: Duration) -> Effect[A_co, E_co, R_co]:
         from pyfect.clock import sleep
 
@@ -507,6 +565,37 @@ class Effect(Frame, Generic[A_co, E_co, R_co]):
         from pyfect.clock import timed
 
         return timed(self)
+
+    # --- caching --------------------------------------------------------
+
+    def cached(self) -> Effect[Effect[A_co, E_co, R_co]]:
+        """An effect that runs this one on first use and then replays its
+        exit. Concurrent callers share one run; an interrupted run is not
+        cached (see ``cached_invalidate_with_ttl``)."""
+        from pyfect._cached import cached
+
+        return cached(self)
+
+    def cached_with_ttl(
+        self, time_to_live: Duration | Callable[[Exit[A_co, E_co]], Duration]
+    ) -> Effect[Effect[A_co, E_co, R_co]]:
+        """``cached``, but each exit is replayed only for ``time_to_live``
+        (or ``time_to_live(exit)``) after it was produced."""
+        from pyfect._cached import cached_invalidate_with_ttl
+
+        return cached_invalidate_with_ttl(self, time_to_live).map(lambda pair: pair[0])
+
+    def cached_invalidate_with_ttl(
+        self, time_to_live: Duration | Callable[[Exit[A_co, E_co]], Duration]
+    ) -> Effect[tuple[Effect[A_co, E_co, R_co], Effect[None]]]:
+        """``cached_with_ttl`` plus an effect that drops the cached exit.
+
+        Callers already waiting on a run keep waiting on it; later callers
+        start a fresh run. A run is interrupted once every caller waiting on
+        it has gone, and an interrupted run is never cached."""
+        from pyfect._cached import cached_invalidate_with_ttl
+
+        return cached_invalidate_with_ttl(self, time_to_live)
 
     def retry(self, schedule: Schedule[E_co, object]) -> Effect[A_co, E_co, R_co]:
         """Retry on typed failure, as long as ``schedule`` allows."""
@@ -531,6 +620,10 @@ def _to_none(_: object) -> None:
 
 def _identity[T](value: T) -> T:
     return value
+
+
+def _pair[A, B](a: A, b: B) -> tuple[A, B]:
+    return (a, b)
 
 
 def _fail[E](error: E) -> Effect[Never, E]:
@@ -619,6 +712,7 @@ from pyfect._primitives import (  # noqa: E402
     _Sync,
     _WithFiber,
     _YieldNow,
+    interruptible_mask,
     uninterruptible_mask,
 )
 
@@ -652,5 +746,6 @@ __all__ = [
     "_run_finalizer",
     "_succeed_none",
     "_to_none",
+    "interruptible_mask",
     "uninterruptible_mask",
 ]

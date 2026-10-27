@@ -9,10 +9,12 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 """
 
 from pyfect import cause, clock, duration, exit, layer, option, result, schedule, testing
-from pyfect._concurrency import Concurrency, all, for_each, race_all
-from pyfect._core import Effect, Restore, uninterruptible_mask
+from pyfect._all import all, all_dict
+from pyfect._concurrency import Concurrency, for_each, race_all, race_all_first
+from pyfect._context_managers import acquire_async_context, acquire_context
+from pyfect._core import Effect, Restore, interruptible_mask, uninterruptible_mask
 from pyfect._fiber import Fiber
-from pyfect._iterables import filter, first_success_of
+from pyfect._iterables import filter, first_success_of, partition, validate
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
 from pyfect.clock import Clock, sleep
 from pyfect.context import Context, MissingServiceError, Reference, Tag
@@ -108,10 +110,13 @@ __all__ = [
     "TimeoutException",
     "UnhandledError",
     "UnknownError",
+    "acquire_async_context",
+    "acquire_context",
     "acquire_release",
     "acquire_use_release",
     "add_finalizer",
     "all",
+    "all_dict",
     "blocking",
     "callback",
     "catch_if",
@@ -139,12 +144,15 @@ __all__ = [
     "from_result",
     "gen",
     "interrupt",
+    "interruptible_mask",
     "layer",
     "never",
     "option",
+    "partition",
     "provide",
     "provide_service",
     "race_all",
+    "race_all_first",
     "result",
     "run_async",
     "run_async_exit",
@@ -163,6 +171,7 @@ __all__ = [
     "try_async",
     "try_blocking",
     "uninterruptible_mask",
+    "validate",
     "void",
     "yield_now",
 ]

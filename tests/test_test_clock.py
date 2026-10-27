@@ -108,3 +108,27 @@ def test_an_unrelated_busy_fiber_does_not_stall_each_wake_up():
         testing.run_test(program, warning_delay=0.05)
     assert [str(w.message) for w in caught] == [testing._SETTLE_WARNING]  # pyright: ignore[reportPrivateUsage]
     assert log == [1.0, 2.0, 3.0]
+
+
+def test_deadlines_add_up_exactly() -> None:
+    """0.05 + 0.001 is 0.051000000000000004 in floats; the clock must still
+    wake a sleep of 0.05 then 0.001 when moved by 0.051, as Effect's
+    millisecond TestClock does."""
+
+    @fx.gen
+    def program():
+        fiber = yield from fx.sleep(0.05).and_then(fx.sleep(0.001)).as_("woke").fork()
+        yield from testing.adjust(0.051)
+        return fiber.unsafe_poll()
+
+    assert testing.run_test(program) == fx.Success("woke")
+
+
+def test_repeated_sleeps_end_at_their_exact_sum() -> None:
+    @fx.gen
+    def program():
+        fiber = yield from fx.sleep(0.1).replicate_effect(3).as_("woke").fork()
+        yield from testing.adjust(0.3)
+        return fiber.unsafe_poll()
+
+    assert testing.run_test(program) == fx.Success("woke")

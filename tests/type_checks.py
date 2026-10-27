@@ -6,6 +6,7 @@
 pyright fails.
 """
 
+from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from typing import Never, Protocol, TypeIs, assert_type
 
@@ -285,6 +286,81 @@ def check_combinators() -> None:
 def check_fiber(fiber: fx.Fiber[int, Invalid]) -> None:
     assert_type(fiber.interrupt(), fx.Effect[None, Never, Never])
     assert_type(fiber.await_exit(), fx.Effect[fx.Exit[int, Invalid], Never, Never])
+
+
+# --- structural combinators ----------------------------------------------------------
+
+
+def check_structural() -> None:
+    nf = fx.fail(NotFound("k"))
+    inv = fx.fail(Invalid("r"))
+    num = fx.succeed(1)
+    assert_type(num.zip(inv, concurrent=True), fx.Effect[tuple[int, Never], Invalid, Never])
+    assert_type(
+        num.zip_with(fx.succeed("a"), lambda n, s: s * n, concurrent=True),
+        fx.Effect[str, Never, Never],
+    )
+    assert_type(num.replicate_effect(3), fx.Effect[list[int], Never, Never])
+    assert_type(num.replicate_effect(3, discard=True), fx.Effect[None, Never, Never])
+    assert_type(
+        fx.all(num, nf, mode="result"),
+        fx.Effect[tuple[fx.Result[int, NotFound], fx.Result[Never, NotFound]], Never, Never],
+    )
+    assert_type(fx.all(num, nf, discard=True), fx.Effect[None, NotFound, Never])
+    assert_type(fx.all(num, nf, discard=True, mode="result"), fx.Effect[None, Never, Never])
+    assert_type(fx.all_dict({"a": num, "b": nf}), fx.Effect[dict[str, int], NotFound, Never])
+    assert_type(
+        fx.all_dict({"a": num, "b": inv}, mode="result"),
+        fx.Effect[dict[str, fx.Result[int, Invalid]], Never, Never],
+    )
+    assert_type(fx.all_dict({"a": num}, discard=True), fx.Effect[None, Never, Never])
+    assert_type(
+        fx.partition([1, 2], lambda n: inv if n else num),
+        fx.Effect[tuple[list[int], list[Invalid]], Never, Never],
+    )
+    assert_type(
+        fx.validate([1, 2], lambda n: inv if n else num),
+        fx.Effect[list[int], tuple[Invalid, *tuple[Invalid, ...]], Never],
+    )
+    assert_type(
+        fx.validate([1], lambda _: lookup("k"), discard=True),
+        fx.Effect[None, tuple[NotFound | Invalid, *tuple[NotFound | Invalid, ...]], Primary | Port],
+    )
+    assert_type(fx.validate([1], fx.succeed), fx.Effect[list[int], Never, Never])
+    assert_type(fx.validate([1], fx.succeed, discard=True), fx.Effect[None, Never, Never])
+    assert_type(fx.race_all_first(num, inv), fx.Effect[int, Invalid, Never])
+    assert_type(
+        lookup("k").timeout_option(1), fx.Effect[fx.Option[str], NotFound | Invalid, Primary | Port]
+    )
+    assert_type(num.timeout_or_else(1, lambda: inv), fx.Effect[int, Invalid, Never])
+    assert_type(lookup("k").cached(), fx.Effect[fx.Effect[str, NotFound | Invalid, Primary | Port]])
+    assert_type(
+        num.cached_with_ttl(lambda ex: 0 if isinstance(ex, fx.Failure) else 1),
+        fx.Effect[fx.Effect[int]],
+    )
+    assert_type(
+        num.cached_invalidate_with_ttl(1), fx.Effect[tuple[fx.Effect[int], fx.Effect[None]]]
+    )
+    assert_type(
+        fx.interruptible_mask(lambda restore: restore(lookup("k"))),
+        fx.Effect[str, NotFound | Invalid, Primary | Port],
+    )
+    num.replicate_effect(2, discard=1)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    fx.all(num, mode="validate")  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
+def check_context_managers(
+    cm: AbstractContextManager[int], acm: AbstractAsyncContextManager[str]
+) -> None:
+    assert_type(fx.acquire_context(fx.succeed(cm)), fx.Effect[int, Never, fx.Scope])
+    assert_type(
+        fx.acquire_async_context(fx.succeed(acm).zip(nf_or_port()).map(lambda p: p[0])),
+        fx.Effect[str, NotFound, Port | fx.Scope],
+    )
+
+
+def nf_or_port() -> fx.Effect[int, NotFound, Port]:
+    return Port().flat_map(lambda p: fx.fail(NotFound("k")) if p < 0 else fx.succeed(p))
 
 
 # --- scopes ---------------------------------------------------------------------------

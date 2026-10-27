@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import heapq
 import itertools
+import math
 import warnings
 from collections.abc import Callable, Generator
 from typing import Any, Never
@@ -79,6 +80,9 @@ class _Sleeper:
 class TestClock:
     """A clock that only moves when told to.
 
+    Time is kept in whole nanoseconds, so deadlines add up exactly
+    (``0.05 + 0.001`` is reached by moving ``0.051``).
+
     ``warning_delay`` is how long (in real time) ``adjust`` waits for a
     woken fiber to suspend before warning with ``BusyFiberWarning`` and
     moving on."""
@@ -86,16 +90,16 @@ class TestClock:
     __test__ = False  # not a pytest test class
 
     def __init__(self, start: float = 0.0, *, warning_delay: Duration = 1.0) -> None:
-        self._now = start
+        self._now_ns = _nanos(Seconds(start))
         self._sleepers: list[tuple[float, int, _Sleeper]] = []
         self._seq = itertools.count()
         self._warning_delay = to_seconds(warning_delay)
 
     def unsafe_now(self) -> float:
-        return self._now
+        return self._now_ns / _NANOS
 
     def unsafe_monotonic(self) -> float:
-        return self._now
+        return self._now_ns / _NANOS
 
     def sleep(self, seconds: Seconds) -> Effect[None]:
         def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
@@ -103,7 +107,9 @@ class TestClock:
                 resume(_Succeed(None))
                 return None
             sleeper = _Sleeper(lambda: resume(_Succeed(None)))
-            heapq.heappush(self._sleepers, (self._now + seconds, next(self._seq), sleeper))
+            heapq.heappush(
+                self._sleepers, (self._now_ns + _nanos(seconds), next(self._seq), sleeper)
+            )
 
             def cancel() -> None:
                 sleeper.alive = False
@@ -127,18 +133,18 @@ class TestClock:
 
     def _run(self, scheduler: TrackingScheduler, seconds: Seconds) -> Generator[Effect[None]]:
         yield from self._wait_or_warn(scheduler, scheduler.inner.when_idle, _SETTLE_WARNING)
-        target = self._now + seconds
+        target = self._now_ns + _nanos(seconds)
         while self._sleepers and self._sleepers[0][0] <= target:
             when, _, sleeper = heapq.heappop(self._sleepers)
             if not sleeper.alive:
                 continue
-            self._now = when
+            self._now_ns = when
             tracker = WakeTracker()
             scheduler.track(tracker, sleeper.wake)
             if tracker.pending:
                 yield from self._wait_or_warn(scheduler, tracker.when_idle, _WAKE_WARNING)
             yield from _YieldNow()
-        self._now = target
+        self._now_ns = target
 
     def _wait_or_warn(
         self, scheduler: TrackingScheduler, arm: Callable[[Task], Cancel], message: str
@@ -167,6 +173,14 @@ class TestClock:
             return _Sync(cancel)
 
         return _Callback(register)
+
+
+_NANOS = 1_000_000_000
+
+
+def _nanos(seconds: Seconds) -> float:
+    """Whole nanoseconds; infinities stay infinite (a sleep that never wakes)."""
+    return seconds if math.isinf(seconds) else round(seconds * _NANOS)
 
 
 def _test_clock() -> Effect[TestClock]:

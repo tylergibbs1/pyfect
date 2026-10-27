@@ -10,7 +10,7 @@ and awaited before the failure is reported. Nothing outlives the call.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, Literal, Never, overload
+from typing import Any, Literal, Never
 
 from pyfect._core import (
     Effect,
@@ -28,6 +28,7 @@ from pyfect.cause import Cause, Interrupt, fail, merge
 from pyfect.duration import Duration, to_seconds
 from pyfect.errors import TimeoutException
 from pyfect.exit import Exit, Failure, Success
+from pyfect.option import Option, Some
 
 type Concurrency = int | Literal["unbounded"] | None
 """``None`` runs one at a time; an ``int`` caps how many run at once."""
@@ -145,57 +146,6 @@ def _for_each_concurrent[T, B, E, R](
     return _WithFiber(body)
 
 
-@overload
-def all[A1, EE = Never, RR = Never](
-    e1: Effect[A1, EE, RR], /, *, concurrency: Concurrency = None
-) -> Effect[tuple[A1], EE, RR]: ...
-@overload
-def all[A1, A2, EE = Never, RR = Never](
-    e1: Effect[A1, EE, RR], e2: Effect[A2, EE, RR], /, *, concurrency: Concurrency = None
-) -> Effect[tuple[A1, A2], EE, RR]: ...
-@overload
-def all[A1, A2, A3, EE = Never, RR = Never](
-    e1: Effect[A1, EE, RR],
-    e2: Effect[A2, EE, RR],
-    e3: Effect[A3, EE, RR],
-    /,
-    *,
-    concurrency: Concurrency = None,
-) -> Effect[tuple[A1, A2, A3], EE, RR]: ...
-@overload
-def all[A1, A2, A3, A4, EE = Never, RR = Never](
-    e1: Effect[A1, EE, RR],
-    e2: Effect[A2, EE, RR],
-    e3: Effect[A3, EE, RR],
-    e4: Effect[A4, EE, RR],
-    /,
-    *,
-    concurrency: Concurrency = None,
-) -> Effect[tuple[A1, A2, A3, A4], EE, RR]: ...
-@overload
-def all[A1, A2, A3, A4, A5, EE = Never, RR = Never](
-    e1: Effect[A1, EE, RR],
-    e2: Effect[A2, EE, RR],
-    e3: Effect[A3, EE, RR],
-    e4: Effect[A4, EE, RR],
-    e5: Effect[A5, EE, RR],
-    /,
-    *,
-    concurrency: Concurrency = None,
-) -> Effect[tuple[A1, A2, A3, A4, A5], EE, RR]: ...
-@overload
-def all[A, EE = Never, RR = Never](
-    *effects: Effect[A, EE, RR], concurrency: Concurrency = None
-) -> Effect[tuple[A, ...], EE, RR]: ...
-def all(*effects: Effect[Any, Any, Any], concurrency: Concurrency = None) -> Effect[Any, Any, Any]:
-    """Run effects and collect their results as a tuple, in order."""
-    return for_each(effects, _identity, concurrency=concurrency).map(tuple)
-
-
-def _identity[T](x: T) -> T:
-    return x
-
-
 # --- racing -------------------------------------------------------------------
 
 
@@ -216,6 +166,9 @@ def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Eff
                     if isinstance(ex, Success) or first_exit_wins:
                         decided = True
                         losers = [f for f in fibers if f is not me]
+                        # At once, so a loser that has not started never does.
+                        for loser in losers:
+                            loser.unsafe_interrupt_as(parent.id)
                         resume(
                             _SetInterruptible(interrupt_all(losers, parent.id), False).and_then(
                                 _FromExit(ex)
@@ -257,9 +210,31 @@ def race_all[A, EE = Never, RR = Never](*effects: Effect[A, EE, RR]) -> Effect[A
     return _race(list(effects), first_exit_wins=False)
 
 
-def timeout(eff: Effect[Any, Any, Any], duration: Duration) -> Effect[Any, Any, Any]:
+def race_all_first[A, EE = Never, RR = Never](*effects: Effect[A, EE, RR]) -> Effect[A, EE, RR]:
+    """The first to finish wins, success or failure; the rest are
+    interrupted."""
+    if not effects:
+        raise ValueError("race_all_first needs at least one effect")
+    return _race(list(effects), first_exit_wins=True)
+
+
+# The public types of the timeouts live on the ``Effect`` methods.
+
+
+def timeout_option[A, E, R](eff: Effect[A, E, R], duration: Duration) -> Effect[Option[A], E, R]:
     from pyfect.clock import sleep
 
+    return race_first(eff.map(Some), sleep(duration).as_(None))
+
+
+def timeout_or_else(
+    eff: Effect[Any, Any, Any], duration: Duration, or_else: Callable[[], Effect[Any, Any, Any]]
+) -> Effect[Any, Any, Any]:
+    return timeout_option(eff, duration).flat_map(
+        lambda found: or_else() if found is None else _Succeed(found.value)
+    )
+
+
+def timeout(eff: Effect[Any, Any, Any], duration: Duration) -> Effect[Any, Any, Any]:
     seconds = to_seconds(duration)
-    timer = sleep(seconds).and_then(_FailCause(fail(TimeoutException(seconds))))
-    return race_first(eff, timer)
+    return timeout_or_else(eff, seconds, lambda: _FailCause(fail(TimeoutException(seconds))))

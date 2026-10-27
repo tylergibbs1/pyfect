@@ -343,3 +343,31 @@ def uninterruptible_mask[A, E, R](f: Callable[[Restore], Effect[A, E, R]]) -> Ef
         return _SetInterruptible(_Suspend(lambda: f(restore)), False)
 
     return _WithFiber(body)
+
+
+def interruptible_mask[A, E, R](f: Callable[[Restore], Effect[A, E, R]]) -> Effect[A, E, R]:
+    """Run ``f`` interruptibly. ``f`` receives ``restore``, which runs an
+    inner effect with the interruptibility the caller had. An interrupt that
+    arrived while the caller was uninterruptible lands at once."""
+
+    def body(fiber: Fiber[Any, Any]) -> Effect[A, E, R]:
+        if fiber._interruptible:
+            return f(_keep_interruptibility)
+        # As in Effect, ``f`` runs even when an interrupt is already waiting.
+        return _SetInterruptible(f(_uninterruptible), True)
+
+    return _WithFiber(body)
+
+
+class _KeepInterruptibility:
+    def __call__[A, E, R](self, eff: Effect[A, E, R], /) -> Effect[A, E, R]:
+        return eff
+
+
+class _Uninterruptible:
+    def __call__[A, E, R](self, eff: Effect[A, E, R], /) -> Effect[A, E, R]:
+        return _SetInterruptible(eff, False)
+
+
+_keep_interruptibility = _KeepInterruptibility()
+_uninterruptible = _Uninterruptible()
