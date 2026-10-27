@@ -14,21 +14,21 @@ from urllib.parse import SplitResult, urlsplit
 from pyfect._js import SPACE, js_number
 from pyfect.byte_size import ByteSize
 from pyfect.byte_size import from_string as byte_size_from_string
-from pyfect.config._issue import Composite, InvalidType, InvalidValue, Issue
-from pyfect.config._leaf import Scalar
+from pyfect.config._leaf import EXPECTED_STRING, Scalar, composite, expected
 from pyfect.duration import Seconds
 from pyfect.logger import LogLevel
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok, Result
+from pyfect.schema.issue import InvalidValue, Issue
 
 type LiteralValue = str | int | float | bool | None
 
-_STRING = InvalidType("string")
+_STRING = EXPECTED_STRING
 _FINITE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?")
-_NOT_FINITE_STRING = InvalidValue("Expected a string representing a finite number")
+_NOT_FINITE_STRING = InvalidValue({"message": "Expected a string representing a finite number"})
 _NON_FINITE = {"Infinity": math.inf, "-Infinity": -math.inf, "NaN": math.nan}
 _NON_FINITE_EXPECTED = " | ".join(json.dumps(k) for k in _NON_FINITE)
-_INTEGER = InvalidValue("Expected an integer")
+_INTEGER = InvalidValue({"message": "Expected an integer"})
 
 
 def _ok[A](value: A) -> Result[A, Issue]:
@@ -39,7 +39,11 @@ string = Scalar[str](_STRING, _ok)
 
 
 def _non_empty(text: str) -> Result[str, Issue]:
-    return Ok(text) if text else Err(InvalidValue("Expected a value with a length of at least 1"))
+    return (
+        Ok(text)
+        if text
+        else Err(InvalidValue({"message": "Expected a value with a length of at least 1"}))
+    )
 
 
 non_empty_string = Scalar(_STRING, _non_empty)
@@ -49,7 +53,11 @@ def _finite(text: str) -> Result[float, Issue]:
     if not _FINITE.fullmatch(text):
         return Err(_NOT_FINITE_STRING)
     value = float(text)
-    return Ok(value) if math.isfinite(value) else Err(InvalidValue("Expected a finite number"))
+    return (
+        Ok(value)
+        if math.isfinite(value)
+        else Err(InvalidValue({"message": "Expected a finite number"}))
+    )
 
 
 finite = Scalar(_STRING, _finite)
@@ -60,10 +68,10 @@ def _number(text: str) -> Result[float, Issue]:
         return Ok(_NON_FINITE[text])
     if _FINITE.fullmatch(text):
         return Ok(float(text))
-    return Err(Composite((_NOT_FINITE_STRING, InvalidType(_NON_FINITE_EXPECTED))))
+    return Err(composite(_NOT_FINITE_STRING, expected(_NON_FINITE_EXPECTED)))
 
 
-number = Scalar(InvalidType(f"string | {_NON_FINITE_EXPECTED}"), _number)
+number = Scalar(expected(f"string | {_NON_FINITE_EXPECTED}"), _number)
 
 
 def _integer(text: str) -> Result[int, Issue]:
@@ -81,7 +89,7 @@ integer = Scalar(_STRING, _integer)
 def _port(text: str) -> Result[int, Issue]:
     match _integer(text):
         case Ok(value) if not 1 <= value <= 65535:
-            return Err(InvalidValue("Expected a value between 1 and 65535"))
+            return Err(InvalidValue({"message": "Expected a value between 1 and 65535"}))
         case decoded:
             return decoded
 
@@ -92,15 +100,17 @@ port = Scalar(_STRING, _port)
 def _choices[A](pairs: Sequence[tuple[str, A]]) -> Scalar[A]:
     """A decoder accepting exactly the given spellings, the first match
     winning; missing and invalid input both list them."""
-    expected = InvalidType(" | ".join(json.dumps(text, ensure_ascii=False) for text, _ in pairs))
+    expected_choice = expected(
+        " | ".join(json.dumps(text, ensure_ascii=False) for text, _ in pairs)
+    )
     table: dict[str, A] = {}
     for text, value in pairs:
         table.setdefault(text, value)
 
     def decode(text: str) -> Result[A, Issue]:
-        return Ok(table[text]) if text in table else Err(expected)
+        return Ok(table[text]) if text in table else Err(expected_choice)
 
-    return Scalar(expected, decode)
+    return Scalar(expected_choice, decode)
 
 
 boolean = _choices(
@@ -163,7 +173,7 @@ def _duration(text: str) -> Result[Seconds, Issue]:
         return Ok(Seconds(-math.inf))
     match = _DURATION.fullmatch(text)
     if match is None:
-        return Err(InvalidValue("Expected a valid Duration string"))
+        return Err(InvalidValue({"message": "Expected a valid Duration string"}))
     amount, unit = match.groups()
     return Ok(Seconds(float(Decimal(amount) * _UNIT_SECONDS[unit.removesuffix("s")])))
 
@@ -173,7 +183,11 @@ duration = Scalar(_STRING, _duration)
 
 def _byte_size(text: str) -> Result[ByteSize, Issue]:
     size = byte_size_from_string(text)
-    return Err(InvalidValue("Expected a valid ByteSize string")) if size is None else Ok(size)
+    return (
+        Err(InvalidValue({"message": "Expected a valid ByteSize string"}))
+        if size is None
+        else Ok(size)
+    )
 
 
 byte_size = Scalar(_STRING, _byte_size)
@@ -183,7 +197,7 @@ def _date_time(text: str) -> Result[datetime, Issue]:
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
-        return Err(InvalidValue("Expected a valid Date"))
+        return Err(InvalidValue({"message": "Expected a valid Date"}))
     return Ok(parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC))
 
 
@@ -191,7 +205,7 @@ date_time = Scalar(_STRING, _date_time)
 
 _SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.\-]*")
 _SPECIAL_SCHEMES = frozenset({"http", "https", "ws", "wss", "ftp"})
-_INVALID_URL = InvalidValue("Expected a valid URL string")
+_INVALID_URL = InvalidValue({"message": "Expected a valid URL string"})
 
 
 def _url(text: str) -> Result[SplitResult, Issue]:

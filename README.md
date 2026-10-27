@@ -370,8 +370,10 @@ streams (M6: Pull, Channel, Stream, Sink, the text framers) and config and data 
 providers, `Config`, `Redacted`, `ByteSize`, `Brand`, the case functions) are done; see
 [`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
 
-1. **Schema**: built on what Python already has (dataclasses, pydantic) rather than a
-   reimplementation. `Config.schema` and Brand's Schema checks come with it.
+1. **Schema** (in progress, `fx.schema`): a native AST-based Schema with Effect's issue tree,
+   typed as in [`docs/SCHEMA_DESIGN.md`](docs/SCHEMA_DESIGN.md); pydantic, msgspec and
+   Hypothesis become boundary adapters. The parser core and primitives are done.
+   `Config.schema` and Brand's Schema checks come with it.
 2. **More building blocks**: `STM`.
 
 ## Development

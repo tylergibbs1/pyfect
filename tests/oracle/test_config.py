@@ -72,7 +72,7 @@ def checked(name: str, ok: Callable[[str], bool], message: str) -> Config[str]:
         return (
             fx.succeed(value)
             if ok(value)
-            else fx.fail(schema_error((name,), InvalidValue(message)))
+            else fx.fail(schema_error((name,), InvalidValue({"message": message})))
         )
 
     return config.string(name).map_effect(check)
@@ -157,7 +157,9 @@ def test_preserves_provider_defects_and_interruption_reasons():
 def test_fail_creates_an_always_failing_config():
     """fail creates an always-failing config"""
     assert_failure(
-        config.fail(SchemaError(Forbidden("failure message"))), unknown({}), "failure message"
+        config.fail(SchemaError(Forbidden({"message": "failure message"}))),
+        unknown({}),
+        "failure message",
     )
 
 
@@ -274,7 +276,7 @@ def test_map_or_fail_supports_effectful_validation():
 
     def f(s: str) -> fx.Effect[str, ConfigError]:
         if s == "":
-            return fx.fail(ConfigError(SchemaError(InvalidValue("empty"))))
+            return fx.fail(ConfigError(SchemaError(InvalidValue({"message": "empty"}))))
         return fx.succeed(s.upper())
 
     assert_success(config.string().map_effect(f), unknown("value"), "VALUE")
@@ -500,7 +502,7 @@ def test_defers_user_callbacks_until_the_config_effect_is_executed():
         .parse(provider)
     )
     recovered = (
-        config.fail(SchemaError(Forbidden("failure")))
+        config.fail(SchemaError(Forbidden({"message": "failure"})))
         .or_else(lambda _: count("or_else", config.succeed(1)))
         .parse(provider)
     )
@@ -938,7 +940,7 @@ def test_propagates_an_or_else_fallback_source_error_after_recovering_invalid_in
 @testing.effect
 def test_recovers_an_absent_sibling_after_or_else_handles_map_effect_failure():
     """recovers an absent sibling after orElse handles mapEffect failure"""
-    validation_error = ConfigError(SchemaError(Forbidden("invalid value")))
+    validation_error = ConfigError(SchemaError(Forbidden({"message": "invalid value"})))
     fallback = {"recovered": "default", "required": "default"}
 
     def reject(_: str) -> fx.Effect[Never, ConfigError]:

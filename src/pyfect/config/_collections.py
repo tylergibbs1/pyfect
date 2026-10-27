@@ -18,11 +18,12 @@ from pyfect._core import Effect
 from pyfect.cause import Cause, Fail
 from pyfect.config._config import Config, Resolution, require_config
 from pyfect.config._error import ConfigError
-from pyfect.config._issue import Composite, InvalidType, Issue, SchemaError
-from pyfect.config._leaf import at, load
+from pyfect.config._leaf import EXPECTED_STRING, at, composite, expected, load
 from pyfect.config_provider import Array, ConfigProvider, Node, Path, Record, Value, make
 from pyfect.effect import fail, fail_cause, succeed
 from pyfect.result import Err, Ok, Result
+from pyfect.schema import SchemaError
+from pyfect.schema.issue import Issue
 
 type Decoded[A] = Result[A, Issue]
 """A reading's value, or the issue that rules it out."""
@@ -41,13 +42,13 @@ def list_of[A](
     def from_string(provider: ConfigProvider, path: Path, node: Node | None) -> Effect[Any, Any]:
         text = None if node is None else node.value
         if text is None:
-            return succeed(Err(at(path, InvalidType("string"))))
+            return succeed(Err(at(path, EXPECTED_STRING)))
         pieces = _split(text, separator) if text else []
         return _read_pieces(element, [((*path, i), piece) for i, piece in enumerate(pieces)])
 
     def from_array(provider: ConfigProvider, path: Path, node: Node | None) -> Effect[Any, Any]:
         if not isinstance(node, Array):
-            return succeed(Err(at(path, InvalidType("array"))))
+            return succeed(Err(at(path, expected("array"))))
         children = _load_children(provider, [(*path, i) for i in range(node.length)])
         return children.flat_map(lambda items: _read_children(element, provider, items))
 
@@ -71,14 +72,14 @@ def dict_of[A](
 
     def from_record(provider: ConfigProvider, path: Path, node: Node | None) -> Effect[Any, Any]:
         if not isinstance(node, Record):
-            return succeed(Err(at(path, InvalidType("object"))))
+            return succeed(Err(at(path, expected("object"))))
         children = _load_children(provider, [(*path, k) for k in sorted(node.keys)])
         return children.flat_map(lambda items: _read_present(value, provider, items))
 
     def from_string(provider: ConfigProvider, path: Path, node: Node | None) -> Effect[Any, Any]:
         text = None if node is None else node.value
         if text is None:
-            return succeed(Err(at(path, InvalidType("string"))))
+            return succeed(Err(at(path, EXPECTED_STRING)))
         pairs = _split_key_value(text, separator, key_value_separator)
         keys = list(pairs)
         return _read_pieces(value, [((*path, k), pairs[k]) for k in keys]).map(_keyed(keys))
@@ -127,7 +128,7 @@ def _container[A](
                         case Ok(values):
                             return succeed(Ok(build(values)))
                         case Err(second_issue):
-                            error = ConfigError(SchemaError(Composite((issue, second_issue))))
+                            error = ConfigError(SchemaError(composite(issue, second_issue)))
                             return succeed(Err(error)) if not has_input(node) else fail(error)
 
                 return second(provider, path, node).flat_map(settle)

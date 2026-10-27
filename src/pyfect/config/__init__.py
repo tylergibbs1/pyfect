@@ -41,14 +41,14 @@ from pyfect.config._constructors import (
     url,
 )
 from pyfect.config._error import ConfigError
-from pyfect.config._issue import (
+from pyfect.schema import SchemaError
+from pyfect.schema.issue import (
     Composite,
     Forbidden,
     InvalidType,
     InvalidValue,
     Issue,
     Pointer,
-    SchemaError,
 )
 
 __all__ = [

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pyfect.config._issue import SchemaError
 from pyfect.config_provider import SourceError
 from pyfect.errors import TaggedError
+from pyfect.schema import SchemaError
 
 
 @dataclass(eq=False)

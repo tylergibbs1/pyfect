@@ -18,11 +18,11 @@ from pyfect._core import Effect, _Suspend
 from pyfect._effect_base import A_co
 from pyfect.cause import Cause, Fail
 from pyfect.config._error import ConfigError
-from pyfect.config._issue import SchemaError
 from pyfect.config_provider import ConfigProvider, CurrentConfigProvider, Path, SourceError
 from pyfect.effect import fail_cause, succeed, sync
 from pyfect.option import Option, Some
 from pyfect.result import Err, Ok, Result
+from pyfect.schema import SchemaError
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber

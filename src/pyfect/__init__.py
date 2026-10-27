@@ -7,7 +7,8 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 ``fx.clock``, ``fx.config`` (``fx.Config``, ``fx.ConfigError``), ``fx.config_provider``,
 ``fx.console``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.redacted``
 (``fx.Redacted``), ``fx.byte_size``, ``fx.brand``, ``fx.case`` (case
-conversion), ``fx.schedule``, ``fx.scheduler``,
+conversion), ``fx.schema`` (schemas: decode, validate, encode), ``fx.schedule``,
+``fx.scheduler``,
 ``fx.Queue``, ``fx.PubSub``, ``fx.Pool``, ``fx.Cache``, ``fx.ScopedCache``, ``fx.Ref``,
 ``fx.SynchronizedRef``, ``fx.SubscriptionRef``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
@@ -55,6 +56,7 @@ from pyfect import (
     result,
     schedule,
     scheduler,
+    schema,
     sink,
     stream,
     take,
@@ -415,6 +417,7 @@ __all__ = [
     "run_sync_exit",
     "schedule",
     "scheduler",
+    "schema",
     "scoped",
     "scoped_with",
     "service_option",

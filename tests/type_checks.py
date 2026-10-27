@@ -3179,7 +3179,9 @@ def check_config_constructors() -> None:
     assert_type(env, fx.Config[Literal["dev", "prod"]])
     config.literal([1], name="A")  # pyright: ignore[reportArgumentType]
     assert_type(config.succeed(1), fx.Config[int])
-    assert_type(config.fail(config.SchemaError(config.Forbidden("no"))), fx.Config[Never])
+    assert_type(
+        config.fail(config.SchemaError(config.Forbidden({"message": "no"}))), fx.Config[Never]
+    )
     assert_type(config.list_of(config.integer(), "PORTS"), fx.Config[list[int]])
     assert_type(config.dict_of(config.finite(), "W", separator=";"), fx.Config[dict[str, float]])
     config.list_of(config.integer, "PORTS")  # pyright: ignore[reportArgumentType]
@@ -3328,3 +3330,97 @@ def check_case() -> None:
     assert_type(case.snake_case("helloWorld"), str)
     assert_type(case.no_case("a", split=[re.compile("(a)(b)")], transform=str.upper), str)
     case.no_case("a", split="(a)(b)")  # pyright: ignore[reportArgumentType]
+
+
+# --- Schema ------------------------------------------------------------------------------
+# The contract later schema clusters build on (docs/SCHEMA_DESIGN.md).
+
+
+def check_schema_parameters() -> None:
+    from typing import Any as TAny
+
+    from pyfect import schema as S
+
+    # Codec[T, E = T, RD = Never, RE = Never]
+    assert_type(S.String, S.Bottom[str, str, Never, Never])
+    assert_type(S.Number, S.Bottom[float])
+    assert_type(S.BigInt, S.Bottom[int])
+    assert_type(S.Boolean, S.Bottom[bool])
+    assert_type(S.Null, S.Bottom[None])
+    assert_type(S.Unknown, S.Bottom[object])
+    assert_type(S.Any, S.Bottom[TAny])
+    assert_type(S.Never, S.Bottom[Never])
+    # Covariant in all four: a narrower schema is a wider one.
+    wide: S.Bottom[object, object, object, object] = S.String
+    narrow: S.Bottom[str] = S.Unknown  # pyright: ignore[reportAssignmentType]
+    # Schema[T] / Decoder[T, RD] / Encoder[E, RE] leave the rest open.
+    as_schema: S.Schema[str] = S.String
+    as_decoder: S.Decoder[float] = S.Number
+    as_encoder: S.Encoder[float] = S.Number
+    not_str: S.Schema[str] = S.Number  # pyright: ignore[reportAssignmentType]
+    _ = (wide, narrow, as_schema, as_decoder, as_encoder, not_str)
+    assert_type(S.String.annotate(title="name"), S.Bottom[str])
+    assert_type(S.String.pipe(lambda s: s.ast), S.ast.AST)
+
+
+def check_schema_decoders(unknown: object) -> None:
+    from pyfect import schema as S
+    from pyfect.option import Option
+    from pyfect.result import Result
+
+    assert_type(S.decode_unknown_sync(S.String), S.Parser[object, str])
+    assert_type(S.decode_unknown_sync(S.String)(unknown, errors="all"), str)
+    assert_type(S.decode_sync(S.String)("a"), str)
+    S.decode_sync(S.String)(1)  # pyright: ignore[reportArgumentType]
+    assert_type(S.decode_unknown_exit(S.String)(unknown), fx.Exit[str, S.SchemaError])
+    assert_type(S.decode_unknown_option(S.String)(unknown), Option[str])
+    assert_type(S.decode_unknown_result(S.String)(unknown), Result[str, S.SchemaError])
+    assert_type(S.decode_unknown_effect(S.String)(unknown), fx.Effect[str, S.SchemaError, Never])
+    assert_type(S.encode_sync(S.Number), S.Parser[float, float])
+    assert_type(S.encode_unknown_result(S.Number)(unknown), Result[float, S.SchemaError])
+    S.encode_sync(S.Number)("a")  # pyright: ignore[reportArgumentType]
+    S.decode_unknown_sync(S.String, errors="some")  # pyright: ignore[reportArgumentType]
+    S.decode_unknown_sync(S.String, exact=True)  # pyright: ignore[reportCallIssue]
+    guard = S.is_(S.String)
+    if guard(unknown):
+        assert_type(unknown, str)
+    assert_type(S.String.make("a"), str)
+    S.String.make(1)  # pyright: ignore[reportArgumentType]
+    assert_type(S.String.make_option("a"), Option[str])
+    assert_type(S.String.make_effect("a"), fx.Effect[str, S.issue.Issue])
+
+
+def check_schema_services(unknown: object) -> None:
+    from pyfect import schema as S
+
+    # A schema needing a service to decode (Primary) and to encode (Port).
+    needs: S.Bottom[int, str, Primary, Port] = S.Bottom(S.ast.unknown)
+    assert_type(S.decode_unknown_effect(needs)(unknown), fx.Effect[int, S.SchemaError, Primary])
+    assert_type(S.decode_effect(needs), S.Parser[str, fx.Effect[int, S.SchemaError, Primary]])
+    assert_type(S.encode_effect(needs), S.Parser[int, fx.Effect[str, S.SchemaError, Port]])
+    # The synchronous adapters run no services: such a schema is rejected.
+    S.decode_unknown_sync(needs)  # pyright: ignore[reportArgumentType]
+    S.encode_unknown_exit(needs)  # pyright: ignore[reportArgumentType]
+    fx.testing.SchemaAsserts(needs)  # pyright: ignore[reportArgumentType]
+    decode_only: S.Bottom[int, str, Primary] = S.Bottom(S.ast.unknown)
+    assert_type(S.encode_unknown_sync(decode_only)(unknown), str)
+
+
+def check_schema_codec_protocol(unknown: object) -> None:
+    """A class is a schema through a ``__codec__`` classmethod: the shape
+    schema classes (``S.Class``) will have."""
+    from collections.abc import Mapping
+    from typing import Self
+
+    from pyfect import schema as S
+
+    class Record:
+        @classmethod
+        def __codec__(cls) -> S.Bottom[Self, Mapping[str, object]]:
+            return S.Bottom(S.ast.unknown)
+
+    assert_type(S.decode_unknown_sync(Record)(unknown), Record)
+    assert_type(S.decode_sync(Record), S.Parser[Mapping[str, object], Record])
+    assert_type(S.encode_sync(Record), S.Parser[Record, Mapping[str, object]])
+    as_schema: S.Schema[Record] = Record
+    _ = as_schema

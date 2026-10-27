@@ -27,6 +27,7 @@ take no real time::
 - ``TestConsole``: a console recording every call; ``effect`` tests run
   with a fresh one, read back with ``log_lines`` / ``error_lines``.
 - ``assert_exit_success`` and friends: failures print ``Cause.pretty()``.
+- ``SchemaAsserts``: decode, encode and make assertions for a schema.
 
 If every fiber ends up waiting with nothing to wake them, synchronous runs
 raise ``StalledError`` instead of hanging. A woken fiber that never suspends
@@ -61,11 +62,14 @@ from pyfect.testing._flaky import flaky
 from pyfect.testing._layers import Services, effect_fixture, layer_fixture
 from pyfect.testing._runners import run_test, run_test_async, run_test_async_exit, run_test_exit
 from pyfect.testing._runtime import TestTimeoutError
+from pyfect.testing._schema import SchemaAsserts, SchemaCheck
 
 __all__ = [
     "BusyFiberWarning",
     "ClockNotAdvancedWarning",
     "Entry",
+    "SchemaAsserts",
+    "SchemaCheck",
     "Services",
     "StalledError",
     "TestBody",

@@ -11,10 +11,12 @@ from pyfect._core import Effect
 from pyfect.cause import Cause, Die, Fail, Interrupt, Reason
 from pyfect.config._config import Config, Resolution
 from pyfect.config._error import ConfigError
-from pyfect.config._issue import Issue, Pointer, SchemaError
 from pyfect.config_provider import ConfigProvider, Node, Path, SourceError
 from pyfect.effect import fail, fail_cause, succeed
 from pyfect.result import Err, Ok, Result
+from pyfect.schema import SchemaError
+from pyfect.schema.ast import Unknown, string
+from pyfect.schema.issue import Composite, InvalidType, Issue, Pointer
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,3 +76,17 @@ def invalid(path: Path, issue: Issue) -> ConfigError:
 
 def absent(path: Path, issue: Issue) -> Resolution[Never]:
     return Err(invalid(path, issue))
+
+
+EXPECTED_STRING = InvalidType(string)
+
+
+def expected(text: str) -> InvalidType:
+    """``Expected <text>`` for a node with no schema of its own: an
+    ``Unknown`` node named by its ``identifier``."""
+    return InvalidType(Unknown(annotations={"identifier": text}))
+
+
+def composite(first: Issue, second: Issue) -> Composite:
+    """The issues of two readings of one string."""
+    return Composite(string, (first, second))

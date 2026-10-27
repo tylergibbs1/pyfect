@@ -1,0 +1,272 @@
+"""Decoding and encoding (Effect's ``Schema.decode*`` / ``encode*``).
+
+Each function takes a schema (and parse options) and returns a ``Parser``:
+call it with the input (and options overriding the first ones). The
+result style is in the name: ``_effect`` (an ``Effect`` failing with
+``SchemaError``, keeping the schema's services), ``_exit``, ``_option``
+(``Some`` / ``None``), ``_result`` (``Ok`` / ``Err``) and ``_sync`` (the
+value, or raises ``SchemaError``). The ``_unknown`` forms take any input;
+the others take the schema's Encoded type (to decode) or Type (to encode).
+
+Only schema failures become ``None`` / ``Err`` / ``SchemaError``: a defect
+raised while parsing is raised as it is.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Never, Protocol, TypeIs, Unpack, cast
+
+from pyfect._core import Effect
+from pyfect.effect import from_exit
+from pyfect.exit import Exit, Success
+from pyfect.option import Option, Some
+from pyfect.result import Err, Ok, Result
+from pyfect.schema._adapters import (
+    ASSERTION,
+    GUARD,
+    OPTION,
+    RESULT,
+    SYNC,
+    raise_schema_failure,
+    schema_error_of,
+)
+from pyfect.schema._error import SchemaError
+from pyfect.schema._options import ParseOptions
+from pyfect.schema._schema import Codec, Top
+from pyfect.schema.ast import AST
+
+
+class Parser[I, O](Protocol):
+    """A decoder or encoder: ``parser(input, **options)``."""
+
+    def __call__(self, input: I, /, **options: Unpack[ParseOptions]) -> O: ...
+
+
+class Guard[A](Protocol):
+    def __call__(self, input: object, /) -> TypeIs[A]: ...
+
+
+type _Run[O] = Callable[[object, ParseOptions], Exit[O, SchemaError]]
+
+
+def _runner[O](ast: AST, base: ParseOptions) -> _Run[O]:
+    """Parse with ``ast``. The node is the schema's, so its output is the
+    side's type: the one cast of this module."""
+
+    def run(input: object, options: ParseOptions) -> Exit[O, SchemaError]:
+        exit = ast.parse(input, {**base, **options} if options else base)
+        return cast("Exit[O, SchemaError]", exit.map_error(SchemaError))
+
+    return run
+
+
+def _decoding[A](schema: Codec[A, object, object, object], options: ParseOptions) -> _Run[A]:
+    return _runner(schema.__codec__().ast, options)
+
+
+def _encoding[I](schema: Codec[object, I, object, object], options: ParseOptions) -> _Run[I]:
+    return _runner(schema.__codec__().ast.flip(), options)
+
+
+def _as_effect[O](run: _Run[O]) -> Parser[object, Effect[O, SchemaError]]:
+    def parse(input: object, /, **options: Unpack[ParseOptions]) -> Effect[O, SchemaError]:
+        return from_exit(run(input, options))
+
+    return parse
+
+
+def _as_exit[O](run: _Run[O]) -> Parser[object, Exit[O, SchemaError]]:
+    def parse(input: object, /, **options: Unpack[ParseOptions]) -> Exit[O, SchemaError]:
+        return run(input, options)
+
+    return parse
+
+
+def _as_option[O](run: _Run[O]) -> Parser[object, Option[O]]:
+    def parse(input: object, /, **options: Unpack[ParseOptions]) -> Option[O]:
+        match run(input, options):
+            case Success(value):
+                return Some(value)
+            case failure:
+                schema_error_of(failure.cause, OPTION)
+                return None
+
+    return parse
+
+
+def _as_result[O](run: _Run[O]) -> Parser[object, Result[O, SchemaError]]:
+    def parse(input: object, /, **options: Unpack[ParseOptions]) -> Result[O, SchemaError]:
+        match run(input, options):
+            case Success(value):
+                return Ok(value)
+            case failure:
+                return Err(schema_error_of(failure.cause, RESULT))
+
+    return parse
+
+
+def _as_sync[O](run: _Run[O]) -> Parser[object, O]:
+    def parse(input: object, /, **options: Unpack[ParseOptions]) -> O:
+        match run(input, options):
+            case Success(value):
+                return value
+            case failure:
+                raise_schema_failure(failure.cause, SYNC)
+
+    return parse
+
+
+# ---------------------------------------------------------------- decoding
+
+
+def decode_unknown_effect[A, R](
+    schema: Codec[A, object, R, object], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Effect[A, SchemaError, R]]:
+    return _as_effect(_decoding(schema, options))
+
+
+def decode_effect[A, I, R](
+    schema: Codec[A, I, R, object], /, **options: Unpack[ParseOptions]
+) -> Parser[I, Effect[A, SchemaError, R]]:
+    return _as_effect(_decoding(schema, options))
+
+
+def decode_unknown_exit[A](
+    schema: Codec[A, object, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Exit[A, SchemaError]]:
+    return _as_exit(_decoding(schema, options))
+
+
+def decode_exit[A, I](
+    schema: Codec[A, I, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[I, Exit[A, SchemaError]]:
+    return _as_exit(_decoding(schema, options))
+
+
+def decode_unknown_option[A](
+    schema: Codec[A, object, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Option[A]]:
+    return _as_option(_decoding(schema, options))
+
+
+def decode_option[A, I](
+    schema: Codec[A, I, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[I, Option[A]]:
+    return _as_option(_decoding(schema, options))
+
+
+def decode_unknown_result[A](
+    schema: Codec[A, object, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Result[A, SchemaError]]:
+    return _as_result(_decoding(schema, options))
+
+
+def decode_result[A, I](
+    schema: Codec[A, I, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[I, Result[A, SchemaError]]:
+    return _as_result(_decoding(schema, options))
+
+
+def decode_unknown_sync[A](
+    schema: Codec[A, object, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[object, A]:
+    return _as_sync(_decoding(schema, options))
+
+
+def decode_sync[A, I](
+    schema: Codec[A, I, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[I, A]:
+    return _as_sync(_decoding(schema, options))
+
+
+# ---------------------------------------------------------------- encoding
+
+
+def encode_unknown_effect[I, R](
+    schema: Codec[object, I, object, R], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Effect[I, SchemaError, R]]:
+    return _as_effect(_encoding(schema, options))
+
+
+def encode_effect[A, I, R](
+    schema: Codec[A, I, object, R], /, **options: Unpack[ParseOptions]
+) -> Parser[A, Effect[I, SchemaError, R]]:
+    return _as_effect(_encoding(schema, options))
+
+
+def encode_unknown_exit[I](
+    schema: Codec[object, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Exit[I, SchemaError]]:
+    return _as_exit(_encoding(schema, options))
+
+
+def encode_exit[A, I](
+    schema: Codec[A, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[A, Exit[I, SchemaError]]:
+    return _as_exit(_encoding(schema, options))
+
+
+def encode_unknown_option[I](
+    schema: Codec[object, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Option[I]]:
+    return _as_option(_encoding(schema, options))
+
+
+def encode_option[A, I](
+    schema: Codec[A, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[A, Option[I]]:
+    return _as_option(_encoding(schema, options))
+
+
+def encode_unknown_result[I](
+    schema: Codec[object, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Result[I, SchemaError]]:
+    return _as_result(_encoding(schema, options))
+
+
+def encode_result[A, I](
+    schema: Codec[A, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[A, Result[I, SchemaError]]:
+    return _as_result(_encoding(schema, options))
+
+
+def encode_unknown_sync[I](
+    schema: Codec[object, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[object, I]:
+    return _as_sync(_encoding(schema, options))
+
+
+def encode_sync[A, I](
+    schema: Codec[A, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[A, I]:
+    return _as_sync(_encoding(schema, options))
+
+
+# ------------------------------------------------------------------ guards
+
+
+def is_[A](schema: Codec[A, object, object, object], /) -> Guard[A]:
+    """A type guard for the schema's decoded side (Effect's ``is``)."""
+    run: _Run[A] = _runner(schema.__codec__().ast.to_type(), {})
+
+    def guard(input: object, /) -> TypeIs[A]:
+        match run(input, {}):
+            case Success():
+                return True
+            case failure:
+                schema_error_of(failure.cause, GUARD)
+                return False
+
+    return guard
+
+
+def asserts(schema: Top, input: object, /) -> None:
+    """Raise ``SchemaError`` unless ``input`` is a value of the schema's
+    decoded side."""
+    run: _Run[object] = _runner(schema.__codec__().ast.to_type(), {})
+    match run(input, {}):
+        case Success():
+            return
+        case failure:
+            raise_schema_failure(failure.cause, ASSERTION)
