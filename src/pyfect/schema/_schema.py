@@ -44,6 +44,28 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
         On a schema with checks they annotate the last check."""
         return replace(self, ast=annotate(self.ast, annotations))
 
+    def override_to_equivalence[A, E, RD, RE](
+        self: Bottom[A, E, RD, RE], f: Callable[[], Callable[[A, A], bool]], /
+    ) -> Bottom[A, E, RD, RE]:
+        """This schema compared by ``f()`` in ``S.to_equivalence`` (Effect's
+        ``overrideToEquivalence``)."""
+
+        def derive(_: tuple[object, ...]) -> Callable[[A, A], bool]:
+            return f()
+
+        return self.annotate(to_equivalence=derive)
+
+    def override_to_formatter[A, E, RD, RE](
+        self: Bottom[A, E, RD, RE], f: Callable[[], Callable[[A], str]], /
+    ) -> Bottom[A, E, RD, RE]:
+        """This schema written by ``f()`` in ``S.to_formatter`` (Effect's
+        ``overrideToFormatter``)."""
+
+        def derive(_: tuple[object, ...]) -> Callable[[A], str]:
+            return f()
+
+        return self.annotate(to_formatter=derive)
+
     def annotate_key(self, **annotations: object) -> Self:
         """This schema with annotations for the struct key holding it
         (Effect's ``annotateKey``): ``message_missing_key`` replaces

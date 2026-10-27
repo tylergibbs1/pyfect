@@ -3831,3 +3831,75 @@ def check_schema_transformations(db: Db) -> None:
     assert_type(with_db, S.DecodeToSchema[float, str, Primary, Never])
     S.FiniteFromString.pipe(S.with_decoding_default_key(fx.succeed(1)))  # pyright: ignore[reportArgumentType]
     _ = db
+
+
+# --- JSON Pointer, JSON Patch, JSON Schema -------------------------------------------------
+
+
+def json_tools() -> None:
+    from typing import Literal
+
+    from pyfect import json_patch, json_pointer, json_schema
+
+    assert_type(json_pointer.parse_uri_fragment("#/a"), list[str] | None)
+    assert_type(json_pointer.format_uri_fragment(["a"]), str)
+    patch = json_patch.get({"a": 1}, {"a": 2})
+    assert_type(patch, list[json_patch.JsonPatchOperation])
+    assert_type(json_patch.apply(patch, {"a": 1}), json_patch.JsonValue)
+    json_patch.apply([{"op": "move", "path": "/a"}], {})  # pyright: ignore[reportArgumentType]
+
+    doc = json_schema.from_schema_draft_07({"type": "string"})
+    assert_type(doc, json_schema.Document[Literal["draft-2020-12"]])
+    assert_type(json_schema.to_document_draft_07(doc), json_schema.Document[Literal["draft-07"]])
+    assert_type(json_schema.to_document_draft_04(doc), json_schema.Document[Literal["draft-04"]])
+    draft_07 = json_schema.to_document_draft_07(doc)
+    json_schema.to_document_draft_04(draft_07)  # pyright: ignore[reportArgumentType]
+    multi = json_schema.MultiDocument("draft-2020-12", (doc.schema,), {})
+    assert_type(
+        json_schema.to_multi_document_open_api_3_1(multi),
+        json_schema.MultiDocument[Literal["openapi-3.1"]],
+    )
+
+
+def schema_equivalence_and_formatter() -> None:
+    from collections.abc import Callable
+    from datetime import timedelta
+
+    from pyfect import schema as S
+
+    # Both derivations are typed by the schema's decoded side.
+    assert_type(S.to_equivalence(S.FiniteFromString), Callable[[float, float], bool])
+    assert_type(S.to_formatter(S.Duration), Callable[[timedelta], str])
+    # An override is checked against the schema's values.
+    assert_type(
+        S.String.override_to_equivalence(lambda: lambda a, b: a[:1] == b[:1]),
+        S.Bottom[str, str, Never, Never],
+    )
+    S.String.override_to_formatter(lambda: lambda n: f"{n + 1}")  # pyright: ignore[reportOperatorIssue]
+    S.Number.override_to_equivalence(lambda: str.__eq__)  # pyright: ignore[reportArgumentType]
+    S.to_equivalence(1)  # pyright: ignore[reportArgumentType]
+
+
+def schema_json() -> None:
+    from datetime import timedelta
+    from typing import Literal
+
+    from pyfect import json_schema
+    from pyfect import schema as S
+    from pyfect.json_patch import JsonValue
+
+    # The JSON codec keeps the type and requirements; its encoded side is JSON.
+    assert_type(S.to_codec_json(S.Duration), S.Bottom[timedelta, JsonValue, Never, Never])
+    assert_type(S.to_codec_json(S.FiniteFromString), S.Bottom[float, JsonValue, Never, Never])
+    assert_type(
+        S.to_json_schema_document(S.String),
+        json_schema.Document[Literal["draft-2020-12"]],
+    )
+    assert_type(
+        S.to_json_schema_multi_document((S.String, S.Number)),
+        json_schema.MultiDocument[Literal["draft-2020-12"]],
+    )
+    # A multi-document has at least one root (Effect's non-empty tuple).
+    S.to_json_schema_multi_document(())  # pyright: ignore[reportArgumentType]
+    S.to_json_schema_document(S.String, on_excess_property="strip")  # pyright: ignore[reportArgumentType]
+    S.to_codec_json(1)  # pyright: ignore[reportArgumentType]

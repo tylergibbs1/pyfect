@@ -14,7 +14,9 @@ from collections.abc import Mapping, Set
 from dataclasses import dataclass
 from typing import Generic, TypeVar, cast
 
+from pyfect.schema import _instances as _inst
 from pyfect.schema import ast
+from pyfect.schema._codec_links import link
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom, Codec
 
@@ -55,12 +57,24 @@ def _set_run(nodes: tuple[ast.AST, ...]) -> ast.DeclarationParser:
     return parse
 
 
+def _set_codec(nodes: tuple[ast.AST, ...]) -> ast.Link:
+    # Written as an array of its values, as Effect does.
+    return link(ast.Arrays(rest=nodes), decode=frozenset, encode=tuple)
+
+
 def FrozenSet[A, I, RD, RE](value: Codec[A, I, RD, RE], /) -> FrozenSetSchema[A, I, RD, RE]:
     """A ``set`` or ``frozenset`` of ``value``'s values, decoded to a
     ``frozenset`` (Effect's ``ReadonlySet``). Anything else is ``Expected
     frozenset``."""
     node = ast.Declaration(
-        (value.__codec__().ast,), _set_run, annotations={"expected": "frozenset"}
+        (value.__codec__().ast,),
+        _set_run,
+        annotations={
+            "expected": "frozenset",
+            "to_codec": _set_codec,
+            "to_equivalence": _inst.set_equivalence,
+            "to_formatter": _inst.set_formatter,
+        },
     )
     return FrozenSetSchema(node, value)
 
@@ -92,6 +106,16 @@ def _map_run(nodes: tuple[ast.AST, ...]) -> ast.DeclarationParser:
     return parse
 
 
+def _entries(mapping: Mapping[object, object]) -> tuple[tuple[object, object], ...]:
+    return tuple(mapping.items())
+
+
+def _map_codec(nodes: tuple[ast.AST, ...]) -> ast.Link:
+    # Written as an array of ``[key, value]`` pairs, as Effect does.
+    entry = ast.Arrays(tuple(ast.Element(n) for n in nodes))
+    return link(ast.Arrays(rest=(entry,)), decode=dict, encode=_entries)
+
+
 def Map[K, V, KI, VI, RD, RE](
     key: Codec[K, KI, RD, RE], value: Codec[V, VI, RD, RE], /
 ) -> MapSchema[K, V, KI, VI, RD, RE]:
@@ -99,5 +123,11 @@ def Map[K, V, KI, VI, RD, RE](
     ``dict`` (Effect's ``ReadonlyMap``). Anything else is ``Expected
     Mapping``."""
     nodes = (key.__codec__().ast, value.__codec__().ast)
-    node = ast.Declaration(nodes, _map_run, annotations={"expected": "Mapping"})
+    annotations = {
+        "expected": "Mapping",
+        "to_codec": _map_codec,
+        "to_equivalence": _inst.map_equivalence,
+        "to_formatter": _inst.map_formatter,
+    }
+    node = ast.Declaration(nodes, _map_run, annotations=annotations)
     return MapSchema(node, key, value)

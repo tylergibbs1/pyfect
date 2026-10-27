@@ -13,6 +13,26 @@ from pyfect.date_time._zones import parse_offset, zone_from_string, zone_of, zon
 _ZONED = re.compile(r"^(.{17,35})\[(.+)\]$")
 
 
+def format_iso(dt: datetime) -> str:
+    """``dt`` in UTC to the millisecond, as JavaScript's ``toISOString``
+    (Effect's ``DateTime.formatIso``): ``2024-01-01T00:00:00.000Z``."""
+    utc = dt.astimezone(UTC)
+    return utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc.microsecond // 1000:03d}Z"
+
+
+def zone_to_string(zone: tzinfo) -> str:
+    """A named zone's IANA key, else its offset as ``+03:00`` (Effect's
+    ``DateTime.zoneToString``)."""
+    if isinstance(zone, ZoneInfo):
+        return zone.key
+    offset = zone.utcoffset(None)
+    if offset is None:
+        return str(zone)
+    sign = "-" if offset.total_seconds() < 0 else "+"
+    minutes = abs(int(offset.total_seconds())) // 60
+    return f"{sign}{minutes // 60:02d}:{minutes % 60:02d}"
+
+
 def format_iso_zoned(dt: datetime) -> str:
     """``dt.isoformat()``, followed by ``[zone]`` when ``dt``'s zone is a
     named ``ZoneInfo``."""

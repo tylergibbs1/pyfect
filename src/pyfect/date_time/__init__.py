@@ -27,7 +27,12 @@ from pyfect.date_time._current import (
     with_current_zone_offset,
     zone_named_effect,
 )
-from pyfect.date_time._iso import format_iso_zoned, make_zoned_from_string
+from pyfect.date_time._iso import (
+    format_iso,
+    format_iso_zoned,
+    make_zoned_from_string,
+    zone_to_string,
+)
 from pyfect.date_time._zones import (
     Disambiguation,
     make_zoned,
@@ -43,6 +48,7 @@ __all__ = [
     "Unit",
     "add",
     "end_of",
+    "format_iso",
     "format_iso_zoned",
     "is_future",
     "is_past",
@@ -67,4 +73,5 @@ __all__ = [
     "zone_named",
     "zone_named_effect",
     "zone_offset",
+    "zone_to_string",
 ]

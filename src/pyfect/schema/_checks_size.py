@@ -228,7 +228,11 @@ def is_property_names(key_schema: Top, /, **annotations: object) -> Filter[Mappi
         run,
         {
             "expected": "an object with property names matching the schema",
-            "representation": {"id": "effect/schema/isPropertyNames", "payload": None},
+            "representation": {
+                "id": "effect/schema/isPropertyNames",
+                "payload": None,
+                "schemas": (key_schema.__codec__().ast,),
+            },
             **annotations,
         },
     )

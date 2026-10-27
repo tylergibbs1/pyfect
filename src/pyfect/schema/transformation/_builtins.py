@@ -8,14 +8,21 @@ a zone a ``ZoneInfo`` / ``timezone``, an ``Option`` is ``Some | None``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime, tzinfo
+from datetime import datetime, tzinfo
 from typing import Any
 from urllib.parse import SplitResult, urlunsplit
 from zoneinfo import ZoneInfo
 
 from pyfect import byte_size
 from pyfect._url import parse_url
-from pyfect.date_time import format_iso_zoned, make_zoned_from_string, zone_from_string, zone_named
+from pyfect.date_time import (
+    format_iso,
+    format_iso_zoned,
+    make_zoned_from_string,
+    zone_from_string,
+    zone_named,
+    zone_to_string,
+)
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.option import Option, Some
@@ -148,13 +155,8 @@ def _utc_from_string(text: str) -> datetime | None:
     return to_utc(text)
 
 
-def _iso_utc(value: datetime) -> str:
-    utc = value.astimezone(UTC)
-    return utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc.microsecond // 1000:03d}Z"
-
-
 date_time_utc_from_string: Transformation[datetime, str] = transform_effect(
-    decode=_parsed(_utc_from_string, "a valid UTC DateTime string"), encode=_done(_iso_utc)
+    decode=_parsed(_utc_from_string, "a valid UTC DateTime string"), encode=_done(format_iso)
 )
 """A UTC ``datetime`` and its ISO 8601 text, in milliseconds as
 ``DateTime.formatIso`` (Effect's ``dateTimeUtcFromString``)."""
@@ -177,19 +179,8 @@ time_zone_named_from_string: Transformation[ZoneInfo, str] = transform_effect(
 """A named zone and its IANA identifier (Effect's ``timeZoneNamedFromString``)."""
 
 
-def _zone_to_string(zone: tzinfo) -> str:
-    if isinstance(zone, ZoneInfo):
-        return zone.key
-    offset = zone.utcoffset(None)
-    if offset is None:
-        return str(zone)
-    sign = "-" if offset.total_seconds() < 0 else "+"
-    minutes = abs(int(offset.total_seconds())) // 60
-    return f"{sign}{minutes // 60:02d}:{minutes % 60:02d}"
-
-
 time_zone_from_string: Transformation[tzinfo, str] = transform_effect(
-    decode=_parsed(zone_from_string, "a valid time zone"), encode=_done(_zone_to_string)
+    decode=_parsed(zone_from_string, "a valid time zone"), encode=_done(zone_to_string)
 )
 """A zone and its text: an IANA identifier or an offset like ``+03:00``
 (Effect's ``timeZoneFromString``)."""

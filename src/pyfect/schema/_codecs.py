@@ -19,11 +19,13 @@ from pyfect.byte_size import ByteSize as _ByteSize
 from pyfect.option import Option as _Option
 from pyfect.option import Some as _Some
 from pyfect.redacted import Redacted as _Redacted
+from pyfect.schema import ast
 from pyfect.schema import transformation as T
 from pyfect.schema._arrays import optional_key
 from pyfect.schema._checks_string import is_string_big_int
 from pyfect.schema._data import Option, Redacted
 from pyfect.schema._declare import instance_of
+from pyfect.schema._instances import URL_INSTANCES
 from pyfect.schema._literals import Literals, LiteralsSchema, Union
 from pyfect.schema._primitives import (
     BigInt,
@@ -38,6 +40,7 @@ from pyfect.schema._primitives import (
 )
 from pyfect.schema._schema import Bottom, Codec
 from pyfect.schema._transform import DecodeToSchema, decode_to, to_type
+from pyfect.schema._value_codecs import string_codec
 from pyfect.schema._values import (
     ByteSize,
     DateTimeUtc,
@@ -56,10 +59,22 @@ from pyfect.schema.getter import (
     transform_optional,
 )
 
-URL: Bottom[SplitResult] = instance_of(SplitResult, expected="URL")
+URL: Bottom[SplitResult] = instance_of(
+    SplitResult,
+    expected="URL",
+    to_codec_json=string_codec(T.url_from_string),
+    **URL_INSTANCES,
+)
 """A parsed URL, a ``urllib.parse.SplitResult`` (Effect's ``URL``)."""
 
-Bytes: Bottom[bytes] = instance_of(bytes)
+_BASE64_STRING = ast.annotate(ast.string, {"format": "byte", "content_encoding": "base64"})
+
+
+def _bytes_codec(_: tuple[ast.AST, ...]) -> ast.Link:
+    return ast.Link(_BASE64_STRING, T.bytes_from_base64_string)
+
+
+Bytes: Bottom[bytes] = instance_of(bytes, to_codec_json=_bytes_codec)
 """``bytes`` (Effect's ``Uint8Array``)."""
 
 

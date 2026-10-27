@@ -1,0 +1,148 @@
+"""The links of Effect's canonical JSON codec (``Schema.toCodecJson``): what
+a node decodes from when its values are not JSON.
+
+A declaration says how it is written in JSON with a ``to_codec_json``
+annotation (or ``to_codec``, its form for every codec): a ``CodecLink``,
+given the encoded sides of its type parameters, returns the link from the
+node it decodes from, or ``None`` when its values are JSON already.
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from collections.abc import Callable
+from dataclasses import replace
+
+from pyfect._js import js_number
+from pyfect.json_schema import JsonSchema
+from pyfect.schema import ast
+from pyfect.schema import transformation as T
+from pyfect.schema._checks_number import is_finite
+from pyfect.schema._checks_string import is_string_big_int
+from pyfect.schema.getter._coerce import to_number, to_string
+
+type CodecLink = Callable[[tuple[ast.AST, ...]], ast.Link | None]
+"""A declaration's ``to_codec_json`` / ``to_codec`` annotation."""
+
+
+def link[T2, E2](
+    to: ast.AST, *, decode: Callable[[E2], T2], encode: Callable[[T2], E2]
+) -> ast.Link:
+    """``to``'s values decoded with ``decode``, encoded back with ``encode``."""
+    return ast.Link(to, T.transform(decode=decode, encode=encode))
+
+
+def tagged(tag: str, **fields: ast.AST) -> ast.Objects:
+    """``{"_tag": tag, **fields}``: one member of a tagged union."""
+    properties = (ast.PropertySignature("_tag", ast.Literal(tag)),)
+    return ast.Objects(
+        (*properties, *(ast.PropertySignature(name, node) for name, node in fields.items()))
+    )
+
+
+FINITE = ast.append_checks(ast.number, (is_finite(),))
+NON_FINITE = ast.Union((ast.Literal("Infinity"), ast.Literal("-Infinity"), ast.Literal("NaN")))
+
+
+def _number_of(value: object) -> float:
+    # A JSON number is kept as it is (an ``int`` stays one); only the
+    # non-finite spellings are read.
+    return value if isinstance(value, int | float) else to_number(value)
+
+
+def _json_number(value: float) -> float | str:
+    return value if isinstance(value, int) or math.isfinite(value) else js_number(value)
+
+
+NUMBER_TO_JSON = link(ast.Union((FINITE, NON_FINITE)), decode=_number_of, encode=_json_number)
+"""A number, its non-finite values as ``"NaN"``, ``"Infinity"``, ``"-Infinity"``."""
+
+BIG_INT_STRING = ast.append_checks(
+    ast.string, (is_string_big_int(expected="a string representing a bigint"),)
+)
+BIG_INT_TO_STRING = ast.Link(BIG_INT_STRING, T.big_int_from_string)
+"""A bigint as its digits."""
+
+_PASSTHROUGH: T.Transformation[object, object] = T.passthrough()
+UNKNOWN_TO_JSON = ast.Link(ast.json, _PASSTHROUGH)
+"""Any JSON value, unchanged: what an opaque declaration is written as."""
+
+
+def _int_of(text: str) -> int:
+    return int(text)
+
+
+_INT_TO_STRING = ast.Link(BIG_INT_STRING, T.transform(decode=_int_of, encode=str))
+_FINITE_TEXT = r"[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[Ee][+-]?\d+)?"
+NUMBER_KEY_PATTERN = f"^(?:{_FINITE_TEXT}|Infinity|-Infinity|NaN)$"
+"""The text of any number (a JavaScript pattern): a number-keyed mapping's keys."""
+_NUMBER_KEY = re.compile(f"^(?:{_FINITE_TEXT}|Infinity|-Infinity|NaN)\\Z", re.ASCII)
+
+
+def _number_key_schema(_: object) -> JsonSchema:
+    return {"pattern": NUMBER_KEY_PATTERN}
+
+
+_NUMBER_TEXT = ast.append_checks(
+    ast.string,
+    (
+        ast.filter_of(
+            lambda text: _NUMBER_KEY.search(text) is not None,
+            {"expected": "a string representing a number", "to_json_schema": _number_key_schema},
+        ),
+    ),
+)
+_NUMBER_TO_STRING = link(_NUMBER_TEXT, decode=to_number, encode=js_number)
+
+
+def _literal_to_string(node: ast.Literal) -> ast.AST:
+    literal = node.literal
+    text = to_string(literal)
+    return ast.decode_to(
+        ast.Literal(text), node, T.transform(decode=lambda _: literal, encode=lambda _: text)
+    )
+
+
+def _has_check(node: ast.AST, id: str) -> bool:
+    for check in node.checks or ():
+        representation = (check.annotations or {}).get("representation")
+        if isinstance(representation, dict) and representation.get("id") == id:  # pyright: ignore[reportUnknownMemberType]
+            return True
+    return False
+
+
+def is_finite_number(node: ast.AST) -> bool:
+    """A ``Number`` node whose checks keep it finite (``Finite``, ``Int``)."""
+    return _has_check(node, "effect/schema/isFinite") or _has_check(node, "effect/schema/isInt")
+
+
+def key_from_string(node: ast.AST) -> ast.AST:
+    """An index signature's key schema read from JSON text: a mapping's keys
+    are strings in JSON, while a Python mapping may have ``int`` keys
+    (Effect's keys are strings already)."""
+    if node.encoding is not None:
+        *init, last = node.encoding
+        to = key_from_string(last.to)
+        if to is last.to:
+            return node
+        return replace(node, encoding=(*init, ast.Link(to, last.transformation)))
+    return _key_node(node)
+
+
+def _key_node(node: ast.AST) -> ast.AST:
+    match node:
+        case ast.Number() | ast.BigInt() if _has_check(node, "effect/schema/isInt") or isinstance(
+            node, ast.BigInt
+        ):
+            return replace(node, encoding=(_INT_TO_STRING,))
+        case ast.Number():
+            return replace(node, encoding=(_NUMBER_TO_STRING,))
+        case ast.Literal() if not isinstance(node.literal, str):
+            return _literal_to_string(node)
+        case ast.Union():
+            types = tuple(map(key_from_string, node.types))
+            same = all(a is b for a, b in zip(types, node.types, strict=True))
+            return node if same else replace(node, types=types)
+        case _:
+            return node

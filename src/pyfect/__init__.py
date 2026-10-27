@@ -7,7 +7,8 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.lay
 ``fx.clock``, ``fx.config`` (``fx.Config``, ``fx.ConfigError``), ``fx.config_provider``,
 ``fx.console``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.redacted``
 (``fx.Redacted``), ``fx.byte_size``, ``fx.brand``, ``fx.case`` (case
-conversion), ``fx.schema`` (schemas: decode, validate, encode), ``fx.schedule``,
+conversion), ``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema``
+(JSON Schema dialects), ``fx.json_pointer``, ``fx.json_patch``, ``fx.schedule``,
 ``fx.scheduler``,
 ``fx.Queue``, ``fx.PubSub``, ``fx.Pool``, ``fx.Cache``, ``fx.ScopedCache``, ``fx.Ref``,
 ``fx.SynchronizedRef``, ``fx.SubscriptionRef``, ``fx.Deferred``,
@@ -46,6 +47,9 @@ from pyfect import (
     error_reporter,
     execution_plan,
     exit,
+    json_patch,
+    json_pointer,
+    json_schema,
     layer,
     logger,
     metric,
@@ -379,6 +383,9 @@ __all__ = [
     "gen",
     "interrupt",
     "interruptible_mask",
+    "json_patch",
+    "json_pointer",
+    "json_schema",
     "layer",
     "log",
     "log_debug",

@@ -18,6 +18,13 @@ take parse options as keyword arguments (``errors="all"``,
 called. They fail with ``SchemaError``, whose ``issue`` (``pyfect.schema.issue``)
 says what was wrong and where; the AST is in ``pyfect.schema.ast``.
 
+``to_codec_json(schema)`` reads and writes the schema's values as JSON
+(non-finite numbers as text, bigints as digits, ``Option`` as a tagged
+object, ...); ``to_json_schema_document(schema)`` is the JSON Schema of that
+JSON form. ``to_equivalence(schema)`` compares two decoded values and
+``to_formatter(schema)`` writes one as text (``some(1)``, ``{ "a": 1 }``);
+``override_to_equivalence`` / ``override_to_formatter`` replace a schema's.
+
 See docs/SCHEMA_DESIGN.md for how schemas are typed.
 """
 
@@ -155,6 +162,16 @@ from pyfect.schema._data import (
 )
 from pyfect.schema._declare import Parse, declare, declare_constructor, instance_of
 from pyfect.schema._error import SchemaError
+from pyfect.schema._jsonschema import (
+    CheckContext,
+    CheckOutput,
+    OnExcessProperty,
+    ReferenceCandidate,
+    ReferencePolicy,
+    ToJsonSchema,
+    to_json_schema_document,
+    to_json_schema_multi_document,
+)
 from pyfect.schema._literals import (
     Enum,
     EnumSchema,
@@ -244,6 +261,9 @@ from pyfect.schema._schema import (
     is_schema,
 )
 from pyfect.schema._struct import Struct, StructSchema, suspend
+from pyfect.schema._to_codec_json import to_codec_json
+from pyfect.schema._to_equivalence import Equivalence, to_equivalence
+from pyfect.schema._to_formatter import Formatter, OnBefore, to_formatter
 from pyfect.schema._transform import (
     Decode,
     DecodeTo,
@@ -302,6 +322,8 @@ __all__ = [
     "CauseSchema",
     "Char",
     "Check",
+    "CheckContext",
+    "CheckOutput",
     "Class",
     "Codec",
     "DateTimeUtc",
@@ -321,6 +343,7 @@ __all__ = [
     "EncodingStrategy",
     "Enum",
     "EnumSchema",
+    "Equivalence",
     "Error",
     "Exit",
     "ExitSchema",
@@ -330,6 +353,7 @@ __all__ = [
     "Finite",
     "FiniteFromString",
     "FlipSchema",
+    "Formatter",
     "FromBrand",
     "FrozenSet",
     "FrozenSetSchema",
@@ -356,6 +380,8 @@ __all__ = [
     "NullOr",
     "Number",
     "NumberFromString",
+    "OnBefore",
+    "OnExcessProperty",
     "Option",
     "OptionFromNullOr",
     "OptionFromOptionalKey",
@@ -371,6 +397,8 @@ __all__ = [
     "Redacted",
     "RedactedFromValue",
     "RedactedSchema",
+    "ReferenceCandidate",
+    "ReferencePolicy",
     "Refine",
     "Result",
     "ResultSchema",
@@ -391,6 +419,7 @@ __all__ = [
     "TimeZoneNamed",
     "TimeZoneNamedFromString",
     "TimeZoneOffset",
+    "ToJsonSchema",
     "Top",
     "Trim",
     "Trimmed",
@@ -513,7 +542,12 @@ __all__ = [
     "refine",
     "resolve_annotations",
     "suspend",
+    "to_codec_json",
     "to_encoded",
+    "to_equivalence",
+    "to_formatter",
+    "to_json_schema_document",
+    "to_json_schema_multi_document",
     "to_type",
     "transformation",
     "with_decoding_default_key",

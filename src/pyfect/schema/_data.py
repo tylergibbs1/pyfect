@@ -20,14 +20,27 @@ from pyfect.cause import Die, Fail, Interrupt, Reason
 from pyfect.exit import Exit as _Exit
 from pyfect.exit import Failure, Success
 from pyfect.exit import fail as fail_exit
+from pyfect.logger._text import format_unknown
 from pyfect.option import Option as _Option
 from pyfect.option import Some
 from pyfect.redacted import Redacted as _Redacted
 from pyfect.result import Err, Ok
 from pyfect.result import Result as _Result
+from pyfect.schema import _instances as _inst
 from pyfect.schema import ast
+from pyfect.schema._codec_links import CodecLink
+from pyfect.schema._data_codecs import (
+    cause_link,
+    exit_link,
+    option_link,
+    reason_link,
+    redacted_link,
+    result_link,
+)
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom, Codec
+from pyfect.schema._to_equivalence import EquivalenceAnnotation
+from pyfect.schema._to_formatter import FormatterAnnotation
 from pyfect.schema.issue import Composite, InvalidValue, Issue, Pointer, reported
 
 # Explicit covariant parameters: a frozen dataclass's fields would make
@@ -47,9 +60,19 @@ def _node(
     parameters: tuple[Codec[object, object, object, object], ...],
     run: Callable[[tuple[ast.AST, ...]], _Parser],
     expected: str,
+    to_codec: CodecLink,
+    *,
+    to_equivalence: EquivalenceAnnotation,
+    to_formatter: FormatterAnnotation,
 ) -> ast.Declaration:
     nodes = tuple(p.__codec__().ast for p in parameters)
-    return ast.Declaration(nodes, run, annotations={"expected": expected})
+    annotations = {
+        "expected": expected,
+        "to_codec": to_codec,
+        "to_equivalence": to_equivalence,
+        "to_formatter": to_formatter,
+    }
+    return ast.Declaration(nodes, run, annotations=annotations)
 
 
 def _wrap(result: ast.ParseResult, f: Callable[[object], object]) -> ast.ParseResult:
@@ -88,7 +111,17 @@ def _option_run(nodes: tuple[ast.AST, ...]) -> _Parser:
 def Option[A, I, RD, RE](value: Codec[A, I, RD, RE], /) -> OptionSchema[A, I, RD, RE]:
     """An ``Option``: ``None``, or ``Some`` of a value of ``value`` (Effect's
     ``Option``). Anything else is ``Expected Option``."""
-    return OptionSchema(_node((value,), _option_run, "Option"), value)
+    return OptionSchema(
+        _node(
+            (value,),
+            _option_run,
+            "Option",
+            lambda ps: option_link(*ps),
+            to_equivalence=_inst.option_equivalence,
+            to_formatter=_inst.option_formatter,
+        ),
+        value,
+    )
 
 
 # ------------------------------------------------------------------ Result
@@ -127,7 +160,18 @@ def Result[A, E, AI, EI, RD, RE](
 ) -> ResultSchema[A, E, AI, EI, RD, RE]:
     """A ``Result``: ``Ok`` of a ``success`` value, ``Err`` of a ``failure``
     one (Effect's ``Result``; issues at ``["value"]`` / ``["error"]``)."""
-    return ResultSchema(_node((success, failure), _result_run, "Result"), success, failure)
+    return ResultSchema(
+        _node(
+            (success, failure),
+            _result_run,
+            "Result",
+            lambda ps: result_link(*ps),
+            to_equivalence=_inst.result_equivalence,
+            to_formatter=_inst.result_formatter,
+        ),
+        success,
+        failure,
+    )
 
 
 # ------------------------------------------------------------------ Cause
@@ -175,7 +219,14 @@ def CauseReason[E, EI, RD, RE](
     error ``error`` takes, a ``Die`` whose defect ``defect`` takes, or an
     ``Interrupt`` (kept as it is). The parsed reason has no annotations, as
     in Effect. Anything else is ``Expected Cause.Reason``."""
-    node = _node((error, defect), _reason_run, "Cause.Reason")
+    node = _node(
+        (error, defect),
+        _reason_run,
+        "Cause.Reason",
+        _reason_codec,
+        to_equivalence=_inst.reason_equivalence,
+        to_formatter=_inst.reason_formatter,
+    )
     return CauseReasonSchema(node, error, defect)
 
 
@@ -204,7 +255,24 @@ def _cause_run(nodes: tuple[ast.AST, ...]) -> _Parser:
     return parse
 
 
-_REASON = {"expected": "Cause.Reason"}
+def _reason_codec(nodes: tuple[ast.AST, ...]) -> ast.Link:
+    error, defect = nodes
+    return reason_link(error, defect)
+
+
+_REASON = {"expected": "Cause.Reason", "to_codec": _reason_codec}
+
+
+def _cause_codec(nodes: tuple[ast.AST, ...]) -> ast.Link:
+    return cause_link(ast.Declaration(nodes, _reason_run, annotations=_REASON))
+
+
+_CAUSE = {"expected": "Cause", "to_codec": _cause_codec}
+
+
+def _exit_codec(nodes: tuple[ast.AST, ...]) -> ast.Link:
+    value, *causes = nodes
+    return exit_link(value, ast.Declaration(tuple(causes), _cause_run, annotations=_CAUSE))
 
 
 def Cause[E, EI, RD, RE](
@@ -213,7 +281,18 @@ def Cause[E, EI, RD, RE](
     """A ``Cause`` (Effect's ``Cause``): each reason is parsed by
     ``CauseReason(error, defect)``, issues at ``["reasons"][i]``. Anything
     else is ``Expected Cause``."""
-    return CauseSchema(_node((error, defect), _cause_run, "Cause"), error, defect)
+    return CauseSchema(
+        _node(
+            (error, defect),
+            _cause_run,
+            "Cause",
+            _cause_codec,
+            to_equivalence=_inst.cause_equivalence,
+            to_formatter=_inst.cause_formatter,
+        ),
+        error,
+        defect,
+    )
 
 
 # -------------------------------------------------------------------- Exit
@@ -234,7 +313,7 @@ class ExitSchema(
 
 def _exit_run(nodes: tuple[ast.AST, ...]) -> _Parser:
     value, *causes = nodes
-    cause = ast.Declaration(tuple(causes), _cause_run, annotations={"expected": "Cause"})
+    cause = ast.Declaration(tuple(causes), _cause_run, annotations=_CAUSE)
 
     def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
         if isinstance(input, Success):
@@ -258,7 +337,14 @@ def Exit[A, E, AI, EI, RD, RE](
     """An ``Exit`` (Effect's ``Exit``): a ``Success`` of a ``value`` value
     (issues at ``["value"]``), or a ``Failure`` whose cause
     ``Cause(error, defect)`` takes (at ``["cause"]``)."""
-    node = _node((value, error, defect), _exit_run, "Exit")
+    node = _node(
+        (value, error, defect),
+        _exit_run,
+        "Exit",
+        _exit_codec,
+        to_equivalence=_inst.exit_equivalence,
+        to_formatter=_inst.exit_formatter,
+    )
     return ExitSchema(node, value, error, defect)
 
 
@@ -310,6 +396,11 @@ def _redacted_run(label: str | None) -> Callable[[tuple[ast.AST, ...]], _Parser]
     return run
 
 
+def _format_redacted(_: tuple[object, ...]) -> Callable[[object], str]:
+    # The secret's own text, ``<redacted>``: never its value.
+    return format_unknown
+
+
 def Redacted[A, I, RD, RE](
     value: Codec[A, I, RD, RE], /, *, label: str | None = None
 ) -> RedactedSchema[A, I, RD, RE]:
@@ -318,5 +409,12 @@ def Redacted[A, I, RD, RE](
     ``["value"]``, never with its own message (that would show it); with a
     ``label``, a secret labelled otherwise is ``Expected "<label>"`` at
     ``["label"]``. The parsed secret keeps the input's label."""
-    node = _node((value,), _redacted_run(label), "Redacted")
+    node = _node(
+        (value,),
+        _redacted_run(label),
+        "Redacted",
+        lambda ps: redacted_link(ps[0], label),
+        to_equivalence=_inst.redacted_equivalence,
+        to_formatter=_format_redacted,
+    )
     return RedactedSchema(node, value, label)

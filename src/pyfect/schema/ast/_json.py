@@ -73,5 +73,17 @@ def _run(_: tuple[object, ...]) -> DeclarationParser:
     return parse
 
 
-json = Declaration((), _run, annotations={"expected": "JSON value"})
+def _already_json(_: tuple[object, ...]) -> None:
+    return None
+
+
+json = Declaration(
+    (),
+    _run,
+    annotations={
+        "expected": "JSON value",
+        "representation": {"id": "effect/schema/Json", "payload": None},
+        "to_codec_json": _already_json,
+    },
+)
 """Any JSON value (``is_json``), unchanged."""

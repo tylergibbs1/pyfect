@@ -10,6 +10,12 @@ import math
 from decimal import Decimal
 
 
+def js_sort_key(text: str) -> bytes:
+    """The key sorting strings as JavaScript's ``sort()`` does: by UTF-16
+    code units, not code points (``"\\U00010000"`` before ``"\\uffff"``)."""
+    return text.encode("utf-16-be", "surrogatepass")
+
+
 def js_number(value: float) -> str:
     """``value`` as JavaScript prints it. An ``int`` (Effect's ``bigint``)
     prints in full."""
