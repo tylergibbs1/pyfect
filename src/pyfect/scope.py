@@ -59,6 +59,11 @@ class CloseableScope:
         """How many finalizers are registered and not yet run."""
         return len(self._finalizers)
 
+    @property
+    def is_closed(self) -> bool:
+        """Whether ``close`` has started (later finalizers run at once)."""
+        return self._closed is not None
+
     def add_finalizer(
         self, f: Callable[[Exit[Any, Any]], Effect[object, Never, Any]]
     ) -> Effect[None]:
@@ -102,18 +107,25 @@ class CloseableScope:
         """Run every finalizer, last added first (all at once in a parallel
         scope). Closing twice is a no-op."""
 
-        def body() -> Effect[None]:
-            if self._closed is not None:
-                return _Succeed(None)
-            self._closed = ex
-            if self._parent is not None:
-                self._parent._remove(self)
-            entries = list(reversed(self._finalizers.items()))
-            self._finalizers = {}
-            run = _run_parallel if self._strategy == "parallel" else _run_sequential
-            return run(entries, ex).uninterruptible()
+        # Uninterruptible before the scope is marked closed, so an interrupt
+        # can't land between marking it and running its finalizers.
+        return _Suspend(lambda: self.close_unsafe(ex) or _Succeed(None)).uninterruptible()
 
-        return _Suspend(body)
+    def close_unsafe(self, ex: Exit[Any, Any]) -> Effect[None] | None:
+        """Mark the scope closed now and return the effect that runs its
+        finalizers, or ``None`` if it was closed already or had none. The
+        caller must run the effect uninterruptibly (Effect's ``closeUnsafe``)."""
+        if self._closed is not None:
+            return None
+        self._closed = ex
+        if self._parent is not None:
+            self._parent._remove(self)
+        if not self._finalizers:
+            return None
+        entries = list(reversed(self._finalizers.items()))
+        self._finalizers = {}
+        run = _run_parallel if self._strategy == "parallel" else _run_sequential
+        return run(entries, ex)
 
     def fork(self, strategy: Strategy = "sequential") -> Effect[CloseableScope]:
         """A child scope, closed when this one closes (if not before). The

@@ -34,7 +34,7 @@ addopts = "-q"
 
 [tool.pyright]
 typeCheckingMode = "strict"
-include = ["src", "tests", "examples"]
+include = ["src", "tests", "examples", "benchmarks"]
 reportUnnecessaryTypeIgnoreComment = true
 exclude = ["research"]
 pythonVersion = "3.13"

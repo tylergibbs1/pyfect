@@ -39,6 +39,7 @@ import math
 import threading
 from collections import deque
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Literal, Never, TypeVar
 
 from pyfect._core import (
@@ -92,25 +93,48 @@ class _Drain:
     ``unwinding`` drain runs interrupted fibers inside the run that
     interrupted them."""
 
-    __slots__ = ("first", "queue", "run_scheduler", "unwinding")
+    __slots__ = ("current", "first", "queue", "run_scheduler", "unwinding")
 
-    def __init__(self, run_scheduler: Scheduler, start: _Run, *, unwinding: bool) -> None:
+    def __init__(self, run_scheduler: Scheduler, *, unwinding: bool) -> None:
         self.run_scheduler = run_scheduler
-        self.queue = deque[_Run]([start])
-        self.first: list[_Run] = []
         self.unwinding = unwinding
+        self.current: Fiber[Any, Any] | None = None
+        # Made on first use: most drains run one fiber once.
+        self.queue: deque[_Run] | None = None
+        self.first: list[_Run] | None = None
+
+    def push(self, run: _Run) -> None:
+        if self.queue is None:
+            self.queue = deque()
+        self.queue.append(run)
+
+    def push_first(self, run: _Run) -> None:
+        if self.first is None:
+            self.first = []
+        self.first.append(run)
 
 
 class _ThreadState(threading.local):
-    """The fiber running on this thread and its run's scheduler, if any,
-    and the drain running fibers one after another."""
+    """The drain running fibers on this thread, if any. It also knows the
+    fiber running now, so a fiber switch costs no thread-local writes."""
 
-    current: Fiber[Any, Any] | None = None
-    run_scheduler: Scheduler | None = None
     drain: _Drain | None = None
 
 
 _thread = _ThreadState()
+
+
+def current_fiber() -> Fiber[Any, Any] | None:
+    """The fiber running on this thread, if any."""
+    drain = _thread.drain
+    return None if drain is None else drain.current
+
+
+def current_run_scheduler() -> Scheduler | None:
+    """The scheduler of the run whose fiber is running on this thread."""
+    drain = _thread.drain
+    return None if drain is None or drain.current is None else drain.run_scheduler
+
 
 type Uninterruptible = bool | Literal["inherit"]
 """A forked fiber's starting interruptibility: ``False`` (interruptible),
@@ -270,7 +294,7 @@ class Fiber(Generic[A_co, E_co]):
     @staticmethod
     def get_current() -> Fiber[Any, Any] | None:
         """The fiber running on this thread, if any."""
-        return _thread.current
+        return current_fiber()
 
     @staticmethod
     def await_all[A, E](fibers: Iterable[Fiber[A, E]]) -> Effect[list[Exit[A, E]], Never, Never]:
@@ -314,7 +338,7 @@ class Fiber(Generic[A_co, E_co]):
         From a fiber on the same scheduler it takes effect at once (as
         Effect's ``interruptUnsafe``); elsewhere it goes through the
         scheduler."""
-        if _thread.run_scheduler is self._run_scheduler:
+        if current_run_scheduler() is self._run_scheduler:
             self._deliver_interrupt(by)
         else:
             self._scheduler.schedule(lambda: self._deliver_interrupt(by))
@@ -340,14 +364,16 @@ class Fiber(Generic[A_co, E_co]):
     def _set_context(self, context: Context) -> None:
         """Switch context, and with it the scheduler and step budget read
         from it (Effect's fiber context cache)."""
-        if context.lookup(_RunScheduler)[1] is not self._run_scheduler:
-            context = _into_run(context, self._run_scheduler)
-        self._ctx = context
-        self._scheduler: Scheduler = context.lookup(CurrentScheduler)[1]
-        if context.lookup(PreventSchedulerYield)[1]:
-            self._ops_budget: float = math.inf
-        else:
-            self._ops_budget = max(1, context.lookup(MaxOpsBeforeYield)[1])
+        view = _last_view[0]
+        if (
+            view is None
+            or view.given is not context
+            or view.run_scheduler is not self._run_scheduler
+        ):
+            view = _last_view[0] = _RunView.of(context, self._run_scheduler)
+        self._ctx = view.context
+        self._scheduler: Scheduler = view.scheduler
+        self._ops_budget: float = view.ops_budget
 
     def _start(self, effect: Effect[Any, Any, Any]) -> None:
         self._scheduler.schedule(lambda: self._drive(effect))
@@ -361,14 +387,11 @@ class Fiber(Generic[A_co, E_co]):
     def _run(self, start: Step) -> None:
         if self._exit is not None:
             return  # finished early by an interrupt; a stale start or resume
-        outer, outer_scheduler = _thread.current, _thread.run_scheduler
-        _thread.current, _thread.run_scheduler = self, self._run_scheduler
         self._phase = "running"
         try:
             self._loop(start)
         finally:
             self._phase = "idle"
-            _thread.current, _thread.run_scheduler = outer, outer_scheduler
 
     def _loop(self, start: Step) -> None:
         cur: Step = start
@@ -475,7 +498,7 @@ class Fiber(Generic[A_co, E_co]):
         drain = _thread.drain
         if drain is None or not drain.first:
             return then
-        drain.first.append((self, then))
+        drain.push_first((self, then))
         return SUSPEND
 
     def _yield_now(self) -> Step:
@@ -544,7 +567,7 @@ class Fiber(Generic[A_co, E_co]):
         immediately cannot overflow the stack."""
         outer = _thread.drain
         if outer is not None and outer.run_scheduler is self._run_scheduler:
-            outer.queue.append((self, step))
+            outer.push((self, step))
         else:
             self._drain((self, step), unwinding=False)
 
@@ -556,24 +579,33 @@ class Fiber(Generic[A_co, E_co]):
         overflow the stack."""
         outer = _thread.drain
         if outer is not None and outer.run_scheduler is self._run_scheduler and outer.unwinding:
-            outer.queue.append((self, step))
+            outer.push((self, step))
         else:
             self._drain((self, step), unwinding=True)
 
     def _drain(self, start: _Run, *, unwinding: bool) -> None:
         outer = _thread.drain
-        _thread.drain = drain = _Drain(self._run_scheduler, start, unwinding=unwinding)
-        queue = drain.queue
+        _thread.drain = drain = _Drain(self._run_scheduler, unwinding=unwinding)
+        fiber, nxt = start
         try:
-            while queue:
-                fiber, nxt = queue.popleft()
+            while True:
+                drain.current = fiber
                 fiber._run(nxt)
-                if drain.first:
-                    queue.extendleft(reversed(drain.first))
-                    drain.first.clear()
+                drain.current = None
+                first = drain.first
+                if first:
+                    drain.first = None
+                    if drain.queue is None:
+                        drain.queue = deque(first)
+                    else:
+                        drain.queue.extendleft(reversed(first))
+                queue = drain.queue
+                if not queue:
+                    break
+                fiber, nxt = queue.popleft()
         finally:
             _thread.drain = outer
-            for fiber, nxt in queue:  # only left over if a run raised
+            for fiber, nxt in drain.queue or ():  # only left over if a run raised
                 fiber._scheduler.schedule(lambda f=fiber, n=nxt: f._drive(n))
 
     def _drive_first(self, step: Step) -> None:
@@ -581,7 +613,7 @@ class Fiber(Generic[A_co, E_co]):
         current run, or now if no fiber of the run is running."""
         drain = _thread.drain
         if drain is not None and drain.run_scheduler is self._run_scheduler:
-            drain.first.append((self, step))
+            drain.push_first((self, step))
         else:
             self._drive(step)
 
@@ -613,6 +645,34 @@ def _no_op() -> None:
 
 class _RunScheduler(Tag[Scheduler]):
     """The scheduler of the run a context was made in."""
+
+
+@dataclass(frozen=True, slots=True)
+class _RunView:
+    """What a fiber of the run on ``run_scheduler`` reads from ``given``.
+    Contexts are immutable, so the last one computed is kept for the next
+    fiber switching to the same context (every fork does)."""
+
+    given: Context
+    run_scheduler: Scheduler
+    context: Context
+    scheduler: Scheduler
+    ops_budget: float
+
+    @staticmethod
+    def of(given: Context, run_scheduler: Scheduler) -> _RunView:
+        context = given
+        if context.lookup(_RunScheduler)[1] is not run_scheduler:
+            context = _into_run(context, run_scheduler)
+        if context.lookup(PreventSchedulerYield)[1]:
+            budget = math.inf
+        else:
+            budget = max(1, context.lookup(MaxOpsBeforeYield)[1])
+        return _RunView(given, run_scheduler, context, context.lookup(CurrentScheduler)[1], budget)
+
+
+# One entry: the view the last fiber switch computed.
+_last_view: list[_RunView | None] = [None]
 
 
 def _into_run(context: Context, run_scheduler: Scheduler) -> Context:

@@ -40,7 +40,7 @@ from typing import Any, Generic, Never, Self, TypeVar
 from weakref import WeakSet
 
 from pyfect._core import Effect, Restore, _Locally, _Succeed, _WithFiber, uninterruptible_mask
-from pyfect._fiber import Fiber, _thread
+from pyfect._fiber import Fiber, current_fiber, current_run_scheduler
 from pyfect._root import new_root, start_root
 from pyfect.context import Context, Reference
 from pyfect.deferred import Deferred
@@ -168,8 +168,9 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
     ) -> Fiber[A, E | ER_co]:
         """Start ``eff`` with the layer's services and return its fiber
         (see the module docstring for where it runs)."""
-        if _thread.run_scheduler is not None:
-            run: Scheduler = _thread.run_scheduler
+        current = current_run_scheduler()
+        if current is not None:
+            run: Scheduler = current
         elif _loop_running():
             run = self._loop_scheduler()
         else:
@@ -201,7 +202,7 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
     def run_sync_exit[A, E = Never](self, eff: Effect[A, E, R_contra]) -> Exit[A, E | ER_co]:
         # Called from one of the runtime's own sync fibers, driving its
         # scheduler would stall that fiber's run: the nested run gets its own.
-        scheduler = SyncScheduler() if _thread.run_scheduler is self._sync else self._sync
+        scheduler = SyncScheduler() if current_run_scheduler() is self._sync else self._sync
         fiber = self._start(scheduler, eff)
         with self._sync_lock:
             return drive(scheduler, fiber)
@@ -348,7 +349,7 @@ def _lineage(fiber: Fiber[Any, Any]) -> Iterator[Fiber[Any, Any]]:
 
 
 def _refuse_to_block(call: str, on_a_loop: str) -> None:
-    if _thread.current is not None:
+    if current_fiber() is not None:
         raise RuntimeError(f"{call} blocks, and this thread is running a fiber: use dispose_effect")
     if _loop_running():
         raise RuntimeError(f"{call} blocks the running asyncio loop: use {on_a_loop}")

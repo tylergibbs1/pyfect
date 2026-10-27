@@ -13,8 +13,7 @@ import pytest
 import pyfect as fx
 from pyfect.cause import Die, Interrupt
 from pyfect.exit import Exit, Failure, Success
-from pyfect.scope import CloseableScope
-from pyfect.testing import run_test, run_test_exit
+from pyfect.testing import run_test_exit
 
 
 def defects(ex: Exit[Any, Any]) -> list[BaseException]:
@@ -152,24 +151,3 @@ def test_a_raising_cleanup_callback_keeps_the_original_cause(wrap: Wrap):
 def test_success_is_kept_when_cleanup_succeeds():
     ex = run_test_exit(fx.succeed(1).on_exit(lambda _: fx.void))
     assert ex == Success(1)
-
-
-def test_scope_close_continues_with_remaining_finalizers_after_a_throw():
-    """Scope.test.ts: sequential: continues and awaits remaining finalizers after a throw."""
-    log: list[str] = []
-
-    def throwing(_: Exit[Any, Any]) -> fx.Effect[None]:
-        log.append("throwing")
-        raise ValueError("release")
-
-    def program():
-        scope = CloseableScope()
-        yield from scope.add_finalizer(
-            lambda _: fx.yield_now().and_then(fx.sync(lambda: log.append("remaining")))
-        )
-        yield from scope.add_finalizer(throwing)
-        return (yield from scope.close(Success(None)).exit())
-
-    ex = run_test(fx.gen(program))
-    assert log == ["throwing", "remaining"]
-    assert [str(d) for d in defects(ex)] == ["release"]

@@ -2,18 +2,18 @@
 
 ## 1. Verdict
 
-**No, pyfect is not 1:1 with Effect.** Weighted overall parity is about **25%** after M1 (16% at the audit). Counting only the runtime core (no platform libraries), it is about **27%** (18% at the audit).
+**No, pyfect is not 1:1 with Effect.** Weighted overall parity is about **34%** after M2 (27% after M1, 16% at the audit). Counting only the runtime core (no platform libraries), it is about **37%** (30% after M1, 18% at the audit).
 
-The fiber runtime itself (fiber loop, `gen`, interruption regions, supervision) is close to v4 and well designed. Its error, finalizer and interruption semantics differ from Effect in roughly 20 confirmed places. About 75% of the v4 module surface does not exist yet: Stream, Schema, STM, observability, Config, PubSub, Cache, Pool, Request batching and ManagedRuntime.
+The fiber runtime itself (fiber loop, `gen`, interruption regions, supervision) is close to v4 and well designed. Its error, finalizer and interruption semantics differ from Effect in roughly 20 confirmed places. About two thirds of the v4 module surface does not exist yet: Stream, Schema, STM, observability, Config, PubSub, Cache, Pool and Request batching.
 
 How to read the numbers: a Python-native equivalent (for example `timedelta` for Duration) counts as covered. Weights reflect how much downstream code depends on each area.
 
 | Area | Coverage | Weight | Biggest gap |
 |---|---|---|---|
 | Effect core A (constructors, errors, Exit, Cause, Result) | 70% (was 30%) | 10 | Filter-based combinators, `catchReason(s)` / `unwrapReason`, `onErrorIf` / `onExitIf`, Cause annotations |
-| Effect core B (concurrency, resources, runtime entry) | 55% (was 40%) | 10 | `run_fork`, fork options (`startImmediately`), `awaitAllChildren`, `reduce` / `findFirst` |
-| Fibers and sync primitives | 30% | 6 | FiberSet/Map/Handle, Latch, interrupt delivery |
-| Context, Layer, Scope, ManagedRuntime | 55% (was 25%) | 8 | Layer tracing (M5) |
+| Effect core B (concurrency, resources, runtime entry) | 65% (was 55%) | 10 | `reduce` / `findFirst` / `head`, `onErrorIf` / `onExitIf`, `repeat` / `retry` option forms, `Effect.fn` extras |
+| Fibers and sync primitives | 85% (was 30%) | 6 | `Scheduler.shouldYield` hook, synchronous resumes |
+| Context, Layer, Scope, ManagedRuntime | 85% (was 55%) | 8 | Layer tracing (M5), `Scope.use` / `provide` spelled as `provide_service(Scope, …)` |
 | Queue, PubSub, Ref, Pool, Cache, Request | 12% | 7 | Queue Closing state, PubSub, Cache/Pool, batching |
 | Stream, Channel, Sink, Pull | 2% | 10 | Everything |
 | Schedule, Clock, DateTime, Cron, Random | 22% | 5 | Effectful Schedule with metadata, Random, Cron |
@@ -24,7 +24,7 @@ How to read the numbers: a Python-native equivalent (for example `timedelta` for
 | Collections and pure utilities | 50% (mostly native) | 3 | ByteSize, Crypto, case conversion |
 | Platform and libraries (survey) | 1% | 10 | Everything; blocked on core |
 | Testing support | 70% (was 20%) | 5 | TestConsole (M5), property tests (M8) |
-| **Weighted total** | **≈27%** (was ≈16%) | 100 | |
+| **Weighted total** | **≈34%** (was ≈27% after M1) | 100 | |
 
 ## 2. Confirmed bugs and divergences in existing code (fix first)
 
@@ -166,6 +166,21 @@ Deferred from the M1 exit-criteria files, with the reason:
 - **Exit criteria:** `Effect.test.ts` sections on constructors, error handling, cached, timeout and all; `Cause.test.ts`, `Exit.test.ts`, `Result.test.ts`, `Option.test.ts` (subset applicable to the Option decision).
 
 ### M2 — Concurrency, runtime and dependency injection (XL; depends on M0)
+
+**Status (2026-10-27): done.** Every item below exists, is exported and has `assert_type` pins. About 300 oracle test functions (more with parametrized cases) port every title of the exit-criteria files below, apart from the omissions each file's docstring lists. Two ports were added in the completeness pass. `tests/oracle/test_scope.py` covers every `Scope.test.ts` title and adds `CloseableScope.close_unsafe` and `is_closed`. `tests/oracle/test_effect_interruption.py` and `test_effect_cleanup_registration.py` cover the fork and interruption cases of `Effect.test.ts`: races, `forEach` interruption, `acquireRelease`, and "interruption before cleanup registration" as a `MaxOpsBeforeYield` sweep. The full suite has 1,171 tests.
+
+The completeness pass also found and fixed a bug. `CloseableScope.close` marked the scope closed before it became uninterruptible, so an interrupt that landed on a step-budget yield between the two left a closed scope whose finalizers never ran. `close` is now uninterruptible from its first step, as Effect's `scopeClose` is (`test_scope.py::test_an_interrupt_landing_anywhere_in_close_never_skips_the_finalizers`, which failed at budget 7 before the fix).
+
+Performance (`uv run python benchmarks/runtime.py`, best of 5, CPython 3.14 on an M-series Mac): map chain 3.4M steps/s, generator steps 2.35M steps/s, fork + join 175k/s. M1 on the same machine measured 3.6M, 2.46M and 200k. During M2, fork + join had fallen to 136k/s: the step-budget references and the run-after-the-step drain each cost a fiber switch more. The completeness pass brought it back by caching the last context's run view (Effect's fiber context cache), keeping the running fiber on the drain instead of in thread-locals, and creating drain queues only when needed. The remaining ~7% on map chains comes from counting continuations against the step budget, which Effect requires.
+
+Deferred from M2, with the reason:
+
+- `Scheduler.shouldYield` / `makeDispatcher`: they would add a call to every fiber step. Effect tests that pause a fiber with a custom `shouldYield` sweep `MaxOpsBeforeYield` budgets instead.
+- Synchronous resumes: a resume goes through the scheduler, while Effect runs the woken fiber at once. Some ports yield once more, and interrupt cascades finish one scheduler turn later.
+- `Scope.use` / `Scope.provide`: these are spelled `provide_service(fx.Scope, scope)`, plus `scoped_with` or `on_exit(scope.close)`.
+- Layer tracing (`withSpan`, `withParentSpan`) waits for M5.
+- `RunOptions.signal` / `onFiberStart`, `makeRunMain`: these are JS-specific (see Runtime below).
+- `Effect.test.ts` cases outside the fork, context and runtime sections: `repeat` / `retry` option forms (M3), `reduce` / `findFirst` / `head`, `onErrorIf` / `onExitIf`, `catchReason(s)`, transactions (M9) and `Effect.fn` extras. Of `Effect.test.ts`'s 324 titles, about 175 are now ported by title.
 - **Fiber:** fork options (`start_immediately`, `uninterruptible`), `fork_in`, `await_all_children`, `Fiber.await_all` / `join_all` / `interrupt_all(_as)` / `run_in` / `get_current`, observer removers (done: `tests/oracle/test_fiber.py`, `tests/oracle/test_effect_fork.py`). A fiber started immediately runs right after the forking fiber's current step, before anything else, rather than nested inside it: `Fiber._drive` runs fibers one after another, so a chain of immediate forks cannot overflow Python's stack. Resumes still go through the scheduler, so a port yields once more where Effect's synchronous resume would already have run the woken fiber.
 - **Sync primitives:** Latch; Deferred (`die`, `interrupt`, `sync`, `is_done`, `into`); Semaphore (`resize`, `take_if_available`, `with_permits_if_available`, `release_all`); PartitionedSemaphore. (done: `tests/oracle/test_latch.py`, `test_deferred.py`, `test_semaphore.py`, `test_partitioned_semaphore.py`, every title ported). `Latch` uses `wait()` for Effect's `await` (a keyword). Effect's tests that interrupt a fiber from a custom `shouldYield` sweep `MaxOpsBeforeYield` budgets instead. Unlike Effect's, PartitionedSemaphore's `with_permits` takes its permits uninterruptibly with only the wait restored (as `Semaphore` does), because pyfect raises a pending interrupt at any continuation; a standalone `take` keeps Effect's give-back-until-it-returns guard. `PartitionedSemaphore[K]` is contravariant in `K` (Effect's `in K`). PartitionedSemaphore's infinite-capacity branch is not ported: permits are an `int`.
 - **Fiber collections:** FiberSet → FiberMap → FiberHandle (done: `tests/oracle/test_fiber_set.py`, `test_fiber_map.py`, `test_fiber_handle.py`, every title of `FiberSet.test.ts`, `FiberSetRuntimePropagation.test.ts`, `FiberMap.test.ts` and `FiberHandle.test.ts` ported). `runtime(*tags)` takes the tags its runner's effects need in place of Effect's `runtime(self)<R>()`; the runner forks a root fiber on the calling fiber's run and, called from a fiber of that run, runs it at once up to its first wait (Effect's synchronous `runForkWith`), otherwise schedules it. `runtimePromise` / `makeRuntimePromise` are `runtime_async` / `make_runtime_async`, whose runner returns an asyncio future. Run options take `uninterruptible` and `scheduler`; `signal` and `onFiberStart` are not ported (the runner returns the fiber). The collections are invariant in `A` and `E`, so `run` gives back `Fiber[A, E]` rather than Effect's narrower `Fiber<XA, XE>` (a method's type parameter cannot be bounded by the class's). `clear` walks the live collection as Effect's `Set`/`Map` iteration does, so a fiber that a finalizer adds while clearing is interrupted too; `Fiber.interrupt_all(_as)` interrupts each fiber as it draws it from the iterable. Edge cases checked against Effect under Node (clear with re-entrant finalizers, `propagate_interruption` with the collection's own interrupts, closing, an interruptible `FiberHandle.clear`) are in `tests/test_fiber_collections.py`.
@@ -296,6 +311,6 @@ Deferred from the M1 exit-criteria files, with the reason:
 - **No divergence checks possible:** Stream, Schema, STM and collections have no existing code, so only missing APIs were listed. Platform was surveyed, not audited per API: only the `run_main` behaviors were executed.
 - **Type-level parity:** every M1 API has `assert_type` pins in `tests/type_checks.py`. Combinators older than M1 are only partly pinned.
 - **Scheduler parity under asyncio vs threads:** mostly exercised through SyncScheduler. Asyncio-specific interleavings (cancellation races, `from_async` interruption) are thinly covered.
-- **Effect.test.ts long tail:** of its 324 test titles, about 140 appear by title in pyfect's tests (the M1 sections, plus earlier ports). The rest belong to later milestones (forking, interruption, finalization, repeat/retry, transactions, `Effect.fn`) or to the deferred list under M1.
-- **Not audited:** performance (ops/sec, yield fairness), memory beyond the scope-finalizer leak, and Cause annotations / stack frames.
+- **Effect.test.ts long tail:** of its 324 test titles, about 175 appear by title in pyfect's tests (the M1 and M2 sections, plus earlier ports). The rest belong to later milestones (repeat/retry, transactions, `Effect.fn`, tracing), to the M1 and M2 deferred lists, or are interruption and finalization edge cases ported under other names in M0.
+- **Not audited:** memory beyond the scope-finalizer leak, and Cause annotations / stack frames. Throughput is tracked by `benchmarks/runtime.py` (numbers under M2), with no comparison against Effect itself.
 - **Thinly covered modules:** Exit, Result and Request batching were checked against source only, not run against oracle tests.

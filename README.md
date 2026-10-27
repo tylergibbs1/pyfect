@@ -220,11 +220,13 @@ generators never use it. Parameters are still required to be annotated.
 
 ## Roadmap
 
+Concurrency, the runtime entry points and dependency injection (M2) are done; see
+[`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
+
 1. **Streams**: `Stream`, `Sink`, `Channel` on top of `Queue`.
 2. **Observability**: `Logger`, spans via `@fx.fn`, OpenTelemetry bridge, metrics.
-3. **Runtime integration**: `fx.launch` for long-running layers.
-4. **More building blocks**: `PubSub`, `Pool`, `Cache`, `Request` batching, `STM`.
-5. **Config and Schema**: typed config providers; schema built on what Python already has
+3. **More building blocks**: `PubSub`, `Pool`, `Cache`, `Request` batching, `STM`.
+4. **Config and Schema**: typed config providers; schema built on what Python already has
    (dataclasses, pydantic) rather than a reimplementation.
 
 ## Development
@@ -233,4 +235,6 @@ generators never use it. Parameters are still required to be annotated.
 uv run ruff format . && uv run ruff check . && uv run pyright && uv run pytest
 ```
 
-`research/typing/` holds the pyright experiments behind the API's shape.
+`benchmarks/runtime.py` measures fiber throughput; run it before and after touching the
+fiber loop or the scheduler. `research/typing/` holds the pyright experiments behind the
+API's shape.

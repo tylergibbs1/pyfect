@@ -7,7 +7,7 @@ import asyncio
 from typing import Any
 
 from pyfect._core import Effect
-from pyfect._fiber import Fiber, _thread
+from pyfect._fiber import Fiber, current_run_scheduler
 from pyfect.context import Context
 from pyfect.scheduler import AsyncioScheduler, CurrentScheduler, Scheduler
 
@@ -31,7 +31,7 @@ def start_root(fiber: Fiber[Any, Any], eff: Effect[Any, Any, Any], *, now: bool 
     ``now`` (the caller is on the run's thread and no fiber of it is
     running), it runs at once, up to its first wait, before this returns
     (Effect evaluates it synchronously); otherwise it is scheduled."""
-    if now or _thread.run_scheduler is fiber._run_scheduler:
+    if now or current_run_scheduler() is fiber._run_scheduler:
         fiber._drain((fiber, eff), unwinding=False)
     else:
         fiber._start(eff)
@@ -42,8 +42,9 @@ def ambient_run(scheduler: Scheduler | None) -> tuple[Scheduler, bool]:
     at once: the current fiber's (it can), else the running asyncio loop's
     (it can: this is the loop's thread), else ``scheduler``, which the
     caller then drives (it is scheduled)."""
-    if _thread.run_scheduler is not None:
-        return _thread.run_scheduler, True
+    run = current_run_scheduler()
+    if run is not None:
+        return run, True
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:

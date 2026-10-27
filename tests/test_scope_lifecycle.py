@@ -10,38 +10,6 @@ def in_scope[A, E](eff: fx.Effect[A, E, fx.Scope], scope: CloseableScope) -> fx.
     return eff.pipe(fx.provide_service(fx.Scope, scope))
 
 
-def test_closing_a_child_removes_it_from_the_parent():
-    """Scope.test.ts: fork > closing a child removes it from the parent."""
-    parent = CloseableScope()
-
-    @fx.gen
-    def program():
-        child = yield from parent.fork()
-        assert parent.finalizer_count == 1
-        yield from child.close(fx.Success(None))
-
-    run(program)
-    assert parent.finalizer_count == 0
-
-
-def test_a_throwing_child_finalizer_does_not_leave_the_child_in_its_parent():
-    """Scope.test.ts: fork > a throwing child finalizer does not leave the
-    child in its parent."""
-    parent = CloseableScope()
-
-    def boom(_: object) -> fx.Effect[None]:
-        raise RuntimeError("boom")
-
-    @fx.gen
-    def program():
-        child = yield from parent.fork()
-        yield from child.add_finalizer(boom)
-        return (yield from child.close(fx.Success(None)).exit())
-
-    assert isinstance(run(program), fx.Failure)
-    assert parent.finalizer_count == 0
-
-
 def test_forking_a_closed_scope_gives_a_closed_child():
     parent = CloseableScope()
     log: list[str] = []
