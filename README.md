@@ -127,7 +127,11 @@ and read-only (covariant) views, and `fx.Done(value)` is the end-of-input signal
 with once ended. `PubSub` (bounded, dropping, sliding, unbounded, each with `replay=`)
 delivers every message to every subscriber: `subscribe()` gives a scoped `Subscription`
 with `take` / `take_all` / `take_up_to` / `take_between`, and `end(value)` makes drained
-subscribers take `value` from then on.
+subscribers take `value` from then on. `Pool.make(acquire, size=)` lends scoped resources
+to fibers (`get` for the current scope, `use(f)` for one effect), and
+`Pool.make_with_ttl(acquire, min=, max=, time_to_live=)` grows with demand and shrinks once
+items sit idle; `concurrency=` shares an item, `invalidate` retires one and `reserve` keeps
+one from new borrowers.
 
 **Time.** `fx.cron` parses cron expressions (seconds, names, steps, a zone) and finds the
 `next` / `prev` match with Effect's DST rules; `schedule.cron("0 9 * * MON", "Europe/Berlin")`
@@ -244,7 +248,7 @@ Concurrency, the runtime entry points and dependency injection (M2) are done; se
 
 1. **Streams**: `Stream`, `Sink`, `Channel` on top of `Queue`.
 2. **Observability**: `Logger`, spans via `@fx.fn`, OpenTelemetry bridge, metrics.
-3. **More building blocks**: `Pool`, `Cache`, `Request` batching, `STM`.
+3. **More building blocks**: `Cache`, `Request` batching, `STM`.
 4. **Config and Schema**: typed config providers; schema built on what Python already has
    (dataclasses, pydantic) rather than a reimplementation.
 

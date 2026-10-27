@@ -1467,3 +1467,41 @@ def check_cron() -> None:
     assert_type(schedule.cron(c), schedule.Schedule[Seconds, object, CronParseError])
     # A Cron carries its own zone, so a zone next to one is rejected (Effect's overloads).
     schedule.cron(c, "UTC")  # pyright: ignore[reportArgumentType]
+
+
+def check_pool() -> None:
+    sized = fx.Pool.make(fx.acquire_release(fx.succeed(1), lambda _a, _e: fx.void), size=2)
+    assert_type(sized, fx.Effect[fx.Pool[int, Never], Never, fx.Scope])
+    failing = fx.Pool.make_with_ttl(
+        Port().flat_map(lambda _: fx.fail(NotFound("k"))).as_("conn"),
+        min=0,
+        max=4,
+        time_to_live=60,
+        time_to_live_strategy="creation",
+    )
+    assert_type(failing, fx.Effect[fx.Pool[str, NotFound], Never, fx.Scope | Port])
+    fx.Pool.make_with_ttl(
+        fx.succeed(1),
+        min=0,
+        max=1,
+        time_to_live=1,
+        time_to_live_strategy="idle",  # pyright: ignore[reportArgumentType]
+    )
+
+
+def check_pool_methods(pool: fx.Pool[str, NotFound]) -> None:
+    assert_type(pool.get(), fx.Effect[str, NotFound, fx.Scope])
+    assert_type(pool.use(lambda s: fx.succeed(len(s))), fx.Effect[int, NotFound])
+    assert_type(
+        pool.use(lambda _: Port().flat_map(lambda _: fx.fail(Invalid("r")))),
+        fx.Effect[Never, NotFound | Invalid, Port],
+    )
+    assert_type(pool.invalidate("conn"), fx.Effect[None])
+    assert_type(pool.reserve("conn"), fx.Effect[None, Never, fx.Scope])
+    pool.invalidate(1)  # pyright: ignore[reportArgumentType]
+
+
+def check_pool_is_invariant(pool: fx.Pool[bool, Never]) -> None:
+    # Effect declares Pool<in out A, in out E>: items go back in.
+    widened: fx.Pool[int, NotFound] = pool  # pyright: ignore[reportAssignmentType]
+    del widened
