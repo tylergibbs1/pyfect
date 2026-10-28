@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import codecs
 import math
+import re
 from decimal import Decimal
 
 
@@ -115,3 +116,42 @@ def same_value(a: object, b: object) -> bool:
             return math.isnan(b)
         return a == b and math.copysign(1.0, a) == math.copysign(1.0, b)
     return a == b
+
+
+_ESCAPES = re.compile(r"(?:%[0-9A-Fa-f]{2})+")
+_URI_RESERVED = frozenset(";/?:@&=+$,#")
+
+
+def _decode_escapes(text: str, keep: frozenset[str]) -> str:
+    if "%" in _ESCAPES.sub("", text):
+        raise ValueError("URI malformed")
+
+    def run(match: re.Match[str]) -> str:
+        escaped = match.group(0)
+        data = bytes.fromhex(escaped.replace("%", ""))
+        out: list[str] = []
+        index = 0
+        while index < len(data):
+            lead = data[index]
+            width = 1 if lead < 0x80 else 2 if lead >> 5 == 6 else 3 if lead >> 4 == 14 else 4
+            try:
+                char = data[index : index + width].decode()
+            except UnicodeDecodeError as error:
+                raise ValueError("URI malformed") from error
+            out.append(escaped[index * 3 : index * 3 + 3] if char in keep else char)
+            index += width
+        return "".join(out)
+
+    return _ESCAPES.sub(run, text)
+
+
+def decode_uri_component(text: str) -> str:
+    """``decodeURIComponent``: a stray ``%`` or bad UTF-8 raises
+    ``ValueError`` (JavaScript's ``URIError``)."""
+    return _decode_escapes(text, frozenset())
+
+
+def decode_uri(text: str) -> str:
+    """``decodeURI``: as ``decode_uri_component``, but escapes of the
+    reserved characters ``;/?:@&=+$,#`` stay escaped."""
+    return _decode_escapes(text, _URI_RESERVED)

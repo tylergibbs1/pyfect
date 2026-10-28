@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pyfect import testing
+from pyfect import run_sync, testing
 from pyfect._core import Effect
 from pyfect.effect import gen, succeed, sync, void
 from pyfect.net.net_address import InetAddressV4
@@ -157,3 +157,29 @@ def _echo(sock: SocketService) -> Effect[None]:
             yield from writer.write_all((yield from reader.pull))
 
     return scoped(gen(body)).catch_all(lambda _: void)
+
+
+def test_a_server_effect_run_twice_listens_twice():
+    # An effect is a description: each run of ``make`` gets its own
+    # accepted-connection queue, so a second run is not fed into the
+    # first, closed, one.
+    listening = server.make(host="127.0.0.1")
+
+    def echo_once():
+        srv = yield from listening
+        yield from srv.run(_echo).fork_scoped()
+        address = srv.address
+        assert isinstance(address, InetAddressV4)
+        client = make_net(address.port, "127.0.0.1")
+        writer = yield from client.writer
+        reader = yield from client.reader
+        yield from writer.write("hi")
+        received = b""
+        while len(received) < 2:
+            received += b"".join(
+                c if isinstance(c, bytes) else c.encode() for c in (yield from reader.pull)
+            )
+        return received
+
+    for _ in range(2):
+        assert run_sync(scoped(gen(echo_once)).timeout(10).or_die()) == b"hi"

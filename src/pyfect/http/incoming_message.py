@@ -7,6 +7,8 @@ from collections.abc import Callable
 from typing import Protocol, Unpack
 
 from pyfect._json_text import Json
+from pyfect.byte_size import ByteSize
+from pyfect.context import Reference
 from pyfect.effect import Effect
 from pyfect.http.headers import Headers
 from pyfect.http.url_params import UrlParams
@@ -42,6 +44,15 @@ class HttpIncomingMessage[E](Protocol):
     def bytes_(self) -> Effect[bytes, E]: ...
     @property
     def stream(self) -> Stream[bytes, E]: ...
+
+
+class MaxBodySize(Reference[ByteSize | None]):
+    """The most bytes a body read takes (``None``: no limit); a larger body
+    fails as ``BodyTooLarge``."""
+
+    @classmethod
+    def default(cls) -> ByteSize | None:
+        return None
 
 
 class MessageDecoder[T, RD](Protocol):
@@ -118,6 +129,7 @@ def schema_headers[T, RD](
 
 __all__ = [
     "HttpIncomingMessage",
+    "MaxBodySize",
     "MessageDecoder",
     "Reviver",
     "revive",

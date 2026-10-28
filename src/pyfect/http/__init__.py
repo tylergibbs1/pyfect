@@ -1,4 +1,6 @@
-"""HTTP (Effect's ``effect/http`` client modules).
+"""HTTP (Effect's ``effect/http``).
+
+Client:
 
 - ``client``: the ``HttpClient`` service, its combinators, ``make`` and
   ``layer_test``
@@ -8,6 +10,17 @@
   the values they are made of
 - ``error``: ``HttpClientError`` and its reasons
 - ``trace_context``: ``traceparent`` / ``b3`` headers
+
+Server:
+
+- ``server``: the ``HttpServer`` service, ``serve`` and the test client;
+  ``live_server``: the stdlib HTTP/1.1 server behind it
+- ``server_request`` / ``server_response`` / ``server_error`` /
+  ``server_respondable``: what a handler reads, returns and fails with
+- ``router`` (on ``find_my_way``), ``middleware``, ``http_effect``,
+  ``web_handler``: building and running apps
+- ``platform``, ``static_server``, ``multipart``, ``etag``, ``mime``,
+  ``template``, ``status``
 
 ::
 
@@ -27,14 +40,32 @@ from pyfect.http import (
     client,
     cookies,
     error,
+    etag,
+    find_my_way,
     headers,
+    http_effect,
     incoming_message,
+    live_server,
     method,
+    middleware,
+    mime,
+    multipart,
+    platform,
     request,
     response,
+    router,
+    server,
+    server_error,
+    server_request,
+    server_respondable,
+    server_response,
+    static_server,
+    status,
+    template,
     trace_context,
     url,
     url_params,
+    web_handler,
 )
 from pyfect.http.client import HttpClient, HttpClientService
 from pyfect.http.error import HttpClientError
@@ -52,12 +83,30 @@ __all__ = [
     "client",
     "cookies",
     "error",
+    "etag",
+    "find_my_way",
     "headers",
+    "http_effect",
     "incoming_message",
+    "live_server",
     "method",
+    "middleware",
+    "mime",
+    "multipart",
+    "platform",
     "request",
     "response",
+    "router",
+    "server",
+    "server_error",
+    "server_request",
+    "server_respondable",
+    "server_response",
+    "static_server",
+    "status",
+    "template",
     "trace_context",
     "url",
     "url_params",
+    "web_handler",
 ]

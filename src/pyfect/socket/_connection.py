@@ -60,6 +60,11 @@ class Signal:
 
         return os_wait(register)  # pyright: ignore[reportReturnType]
 
+    def wait_until(self, ready: Callable[[], bool]) -> Effect[None]:
+        """Wait, retrying after each wake, until ``ready`` holds (``wait``
+        returns at the first wake)."""
+        return self.wait(ready).flat_map(lambda _: void if ready() else self.wait_until(ready))
+
     def notify_locked(self) -> list[Callable[[], None]]:
         """Take the waiters (holding ``lock``); call them after releasing
         it."""
@@ -150,6 +155,9 @@ class Connection(asyncio.Protocol):
     def connection_lost(self, exc: Exception | None) -> None:
         with self.lock:
             self.lost = True
+            waiters = self.signal.notify_locked()
+        for wake in waiters:
+            wake()
         if self._tls is not None and not self._tls.handshake.done():
             self._tls.handshake.set_exception(exc or ConnectionError("socket closed"))
         if exc is None:
@@ -255,16 +263,55 @@ class Connection(asyncio.Protocol):
     def pull(self) -> Effect[tuple[bytes, ...], SocketError]:
         """The buffered chunks, waiting for some; the read side's error once
         the buffer is empty."""
+        return self.pull_into(lambda chunks: chunks)
 
-        def step() -> Effect[tuple[bytes, ...], SocketError]:
+    def pull_into[A](self, take: Callable[[tuple[bytes, ...]], A]) -> Effect[A, SocketError]:
+        """``take`` of the buffered chunks, called in the step that takes
+        them, so an interrupt cannot lose them."""
+
+        def step() -> Effect[A, SocketError]:
             taken = self._take()
             if isinstance(taken, tuple):
-                return succeed(taken)
+                return succeed(take(taken))
             if taken is not None:
                 return fail(taken)
-            return self.signal.wait(self._readable).flat_map(lambda _: self.pull())
+            return self.signal.wait(self._readable).flat_map(lambda _: suspend(step))
 
         return suspend(step)
+
+    def closed(self) -> Effect[None]:
+        """Wait until the transport is lost."""
+        return self.signal.wait_until(lambda: self.lost)
+
+    def read_ended(self) -> Effect[None]:
+        """Wait until the read side has ended or failed."""
+        return self.signal.wait_until(lambda: self._error is not None)
+
+    def discard_input(self) -> None:
+        """Drop what was received and everything received from now on,
+        reading on (a server ignoring the rest of a request it rejected)."""
+
+        def run() -> None:
+            with self.lock:
+                self._discard = True
+                self._chunks.clear()
+                self._size = 0
+                resume = self._reading_paused
+                self._reading_paused = False
+            transport = self.transport
+            if resume and transport is not None and not transport.is_closing():
+                transport.resume_reading()
+
+        call_soon(run)
+
+    def peer_name(self) -> object:
+        """The transport's ``peername``, ``None`` before it is made."""
+        transport = self.transport
+        return None if transport is None else transport.get_extra_info("peername")
+
+    @property
+    def encrypted(self) -> bool:
+        return self._tls is not None or self._server_tls is not None
 
     def write(self, chunks: tuple[bytes, ...]) -> Effect[None, SocketError]:
         """Write ``chunks`` on the loop, then wait while the transport's

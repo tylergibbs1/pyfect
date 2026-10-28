@@ -43,10 +43,21 @@ from pyfect.errors import TaggedError
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
 from pyfect.fiber_set import FiberSetRuntime
+from pyfect.http import middleware as http_middleware
+from pyfect.http import router as http_router
+from pyfect.http import server as http_server
+from pyfect.http import server_response as http_server_response
+from pyfect.http.platform import HttpPlatform
+from pyfect.http.router import HttpRouter, Raises, Requires
+from pyfect.http.server import HttpServer
+from pyfect.http.server_error import HttpServerError
+from pyfect.http.server_request import HttpServerRequest, ServerRequest
+from pyfect.http.server_response import HttpServerResponse
 from pyfect.net import address_resolver, dns, net_address
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.scheduler import Scheduler, SyncScheduler
+from pyfect.scope import Scope
 from pyfect.socket import datagram as dg
 from pyfect.sql import client as sql_client
 from pyfect.sql import migrator as sql_migrator
@@ -4835,3 +4846,149 @@ assert_type(
     cli_needs_db.pipe(command.provide(cli_db_layer)), Command[CliClone, Config, Never, Never]
 )
 cli_needs_db.pipe(command.provide(cli_db_from_deploy))  # pyright: ignore[reportArgumentType]
+
+
+# --- HttpRouter: route handler errors and requirements flow into the app -------------
+
+
+class RouteDb(Tag[str]): ...
+
+
+class RouteCache(Tag[int]): ...
+
+
+class RouteNotAllowed(Exception): ...
+
+
+class RouteMissing(Exception): ...
+
+
+def route_db_handler(
+    request: ServerRequest,
+) -> fx.Effect[HttpServerResponse, RouteNotAllowed, RouteDb]:
+    return RouteDb().map(lambda name: http_server_response.text(name + request.url))
+
+
+def route_cache_effect() -> fx.Effect[
+    HttpServerResponse, RouteMissing, RouteCache | HttpServerRequest
+]: ...
+
+
+route_cache_handler = route_cache_effect()
+
+# The services the router provides (the request, scope, params) are removed.
+assert_type(
+    http_router.add("GET", "/db", route_db_handler),
+    fx.Layer[Never, Never, HttpRouter | Requires[RouteDb] | Raises[RouteNotAllowed]],
+)
+assert_type(
+    http_router.add("GET", "/cache", route_cache_handler),
+    fx.Layer[Never, Never, HttpRouter | Requires[RouteCache] | Raises[RouteMissing]],
+)
+# A handler needing nothing adds nothing.
+assert_type(
+    http_router.add("GET", "/", http_server_response.text("ok")),
+    fx.Layer[Never, Never, HttpRouter],
+)
+assert_type(
+    http_router.route("GET", "/db", route_db_handler),
+    http_router.Route[RouteNotAllowed, RouteDb],
+)
+
+route_app = http_router.use(
+    lambda r: r.add("GET", "/db", route_db_handler).and_then(
+        r.add("GET", "/cache", route_cache_handler)
+    )
+)
+assert_type(
+    route_app,
+    fx.Layer[
+        Never,
+        Never,
+        HttpRouter
+        | Requires[RouteDb]
+        | Raises[RouteNotAllowed]
+        | Requires[RouteCache]
+        | Raises[RouteMissing],
+    ],
+)
+assert_type(
+    http_router.to_http_effect(route_app),
+    fx.Effect[
+        fx.Effect[
+            HttpServerResponse,
+            RouteNotAllowed | RouteMissing | HttpServerError,
+            Scope | HttpServerRequest | RouteDb | RouteCache,
+        ],
+        Never,
+        Scope,
+    ],
+)
+# Served, the handlers' requirements are the server layer's.
+assert_type(
+    http_router.serve(route_app).pipe(layer.provide(layer.succeed(RouteDb, "db"))),
+    fx.Layer[Never, Never, HttpServer | RouteCache],
+)
+assert_type(
+    http_router.serve(http_router.add("GET", "/", http_server_response.text("ok"))),
+    fx.Layer[Never, Never, HttpServer],
+)
+assert_type(
+    http_router.use(lambda r: r.add("GET", "/db", route_db_handler)),
+    fx.Layer[Never, Never, HttpRouter | Requires[RouteDb] | Raises[RouteNotAllowed]],
+)
+
+
+# --- HttpServer.serve: middleware keeps the app's requirements -----------------------
+
+
+def served_app() -> fx.Effect[HttpServerResponse, RouteNotAllowed, RouteDb | HttpServerRequest]: ...
+
+
+def served_plain() -> fx.Effect[HttpServerResponse, RouteNotAllowed, HttpServerRequest]: ...
+
+
+assert_type(http_server.serve(served_app()), fx.Layer[Never, Never, HttpServer | RouteDb])
+assert_type(
+    http_server.serve(served_app(), http_middleware.logger),
+    fx.Layer[Never, Never, HttpServer | RouteDb],
+)
+assert_type(
+    http_server.serve(served_app(), http_middleware.cors()),
+    fx.Layer[Never, Never, HttpServer | RouteDb],
+)
+# A middleware's own requirements join the app's.
+assert_type(
+    http_server.serve(served_app(), http_middleware.compression()),
+    fx.Layer[Never, Never, HttpServer | RouteDb | HttpPlatform],
+)
+assert_type(
+    http_server.serve(served_plain(), http_middleware.decompression()),
+    fx.Layer[Never, Never, HttpServer],
+)
+assert_type(
+    http_server.serve_effect(served_app(), http_middleware.tracer),
+    fx.Effect[None, Never, Scope | HttpServer | RouteDb],
+)
+assert_type(
+    http_router.serve(route_app, middleware=http_middleware.cors()),
+    fx.Layer[Never, Never, HttpServer | RouteDb | RouteCache],
+)
+assert_type(
+    http_router.serve(route_app, middleware=http_middleware.logger),
+    fx.Layer[Never, Never, HttpServer | RouteDb | RouteCache],
+)
+assert_type(
+    http_router.serve(
+        http_router.add("GET", "/", http_server_response.text("ok")),
+        middleware=http_middleware.compression(),
+    ),
+    fx.Layer[Never, Never, HttpServer | HttpPlatform],
+)
+assert_type(
+    http_router.serve(
+        http_router.add("GET", "/", http_server_response.text("ok")),
+        middleware=http_middleware.logger,
+    ),
+    fx.Layer[Never, Never, HttpServer],
+)

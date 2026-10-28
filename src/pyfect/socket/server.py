@@ -159,7 +159,13 @@ def _address(server: asyncio.Server) -> SocketAddress:
 def _listen(
     listen: Listen, tls: ssl.SSLContext | None = None
 ) -> Effect[SocketServerService, SocketServerError, Scope]:
-    accepted = Accepted()
+    """Each run listens anew, with connections accepted of its own."""
+    return suspend(lambda: _listen_with(Accepted(), listen, tls))
+
+
+def _listen_with(
+    accepted: Accepted, listen: Listen, tls: ssl.SSLContext | None
+) -> Effect[SocketServerService, SocketServerError, Scope]:
 
     def made(conn: Connection) -> None:
         accepted.add(_NetIncoming(conn))
