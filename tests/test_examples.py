@@ -73,3 +73,35 @@ def test_schema_example_answers_each_body_by_its_typed_error():
         "400 'Expected a value with a length of at least 1\\n  at [\"customer\"]'",
         "400 'Expected a valid JSON string'",
     ]
+
+
+def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(EXAMPLES / "cli.py"), *args],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def test_cli_dispatches_subcommands_with_shared_flags_before_or_after():
+    assert run_cli("add", "write docs", "-p", "2", "--verbose").stdout.splitlines() == [
+        "adding with priority 2",
+        "added: write docs",
+    ]
+    assert run_cli("--verbose", "list", "--done", "--format", "json").stdout.splitlines() == [
+        "3 items",
+        '["write docs", "ship it", "plan release"]',
+    ]
+
+
+def test_cli_prints_help_and_suggests_and_fails_on_a_mistyped_subcommand():
+    done = run_cli("lst")
+    assert done.returncode == 1
+    assert 'Unknown subcommand "lst" for "todo"\n\n  Did you mean this?\n    list' in done.stderr
+    assert "SUBCOMMANDS" in done.stdout
+
+
+def test_cli_prints_its_version():
+    assert run_cli("--version").stdout.strip() == "todo v1.0.0"

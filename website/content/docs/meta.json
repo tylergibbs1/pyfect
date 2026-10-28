@@ -16,6 +16,8 @@
     "schema",
     "transactions",
     "platform",
+    "sql",
+    "cli",
     "observability",
     "testing",
     "---Reference---",

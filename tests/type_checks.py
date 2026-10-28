@@ -11,20 +11,35 @@ from collections.abc import Callable, Generator, Hashable, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from types import CoroutineType
-from typing import Any, Never, Protocol, TypeIs, assert_type
+from typing import Any, Literal, Never, Protocol, TypeIs, assert_type
 
 from _pytest.fixtures import FixtureFunctionDefinition
 from opentelemetry.trace import Span as OtelApiSpan
 from opentelemetry.trace import SpanContext
 
 import pyfect as fx
-from pyfect import channel, execution_plan, layer, logger, otel, schedule, stream
+from pyfect import channel, execution_plan, layer, logger, otel, reactivity, schedule, stream
 from pyfect import socket as socket_module
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
-from pyfect.context import ServiceEffect
+from pyfect.cli import (
+    Argument,
+    CliError,
+    Command,
+    CommandContext,
+    Config,
+    Flag,
+    Setting,
+    command,
+    group,
+    nested,
+)
+from pyfect.cli._environment import Environment as CliEnvironment
+from pyfect.cli.global_flag import LogLevel
+from pyfect.context import ServiceEffect, Tag
 from pyfect.duration import Seconds, to_seconds
 from pyfect.encoding import Json, json_array, ndjson, sse
+from pyfect.errors import TaggedError
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
 from pyfect.fiber_set import FiberSetRuntime
@@ -33,6 +48,16 @@ from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.scheduler import Scheduler, SyncScheduler
 from pyfect.socket import datagram as dg
+from pyfect.sql import client as sql_client
+from pyfect.sql import migrator as sql_migrator
+from pyfect.sql import pg as sql_pg
+from pyfect.sql import resolver as sql_resolver
+from pyfect.sql import schema as sql_schema
+from pyfect.sql import sqlite as sql_sqlite
+from pyfect.sql.connection import Row, ValueRow
+from pyfect.sql.error import ResultLengthMismatch, SqlError
+from pyfect.sql.statement import Fragment, Statement
+from pyfect.sql.statement import Literal as SqlLiteral
 from pyfect.stream import Stream
 
 
@@ -4572,3 +4597,241 @@ def check_datagram_socket(
     both = (dg.Peer(dg.HostPort("a", 1)), dg.Connect(dg.HostPort("a", 1)))
     dg.Options(remote=both)  # pyright: ignore[reportArgumentType]
     dg.ReceiveBuffer(8, "blocking")  # pyright: ignore[reportArgumentType]
+
+
+def sql_statements(
+    sql: sql_client.SqlClientService, sqlite_sql: sql_sqlite.SqliteClientService, table: str
+) -> None:
+    """SQL text must be a literal: a runtime string cannot be a template, so
+    values cannot be spliced into SQL by accident."""
+    from pyfect import schema as S
+
+    statement = sql("SELECT * FROM users WHERE id = {}", 1)
+    assert_type(statement, Statement[Row])
+    assert_type(statement.values, fx.Effect[list[ValueRow], SqlError])
+    assert_type(statement.raw, fx.Effect[object, SqlError])
+    assert_type(statement.stream, Stream[Row, SqlError])
+    sql(table)  # pyright: ignore[reportArgumentType]
+    sql("SELECT * FROM " + table)  # pyright: ignore[reportArgumentType]
+    sql.unsafe("SELECT * FROM " + table)
+    sql("SELECT * FROM {}", sql.identifier(table))
+    # A segment placed in a template is SQL text too, so it takes a literal.
+    sql("SELECT {}", SqlLiteral(table))  # pyright: ignore[reportArgumentType]
+    Fragment([SqlLiteral("SELECT " + table)])  # pyright: ignore[reportArgumentType]
+    sql("SELECT {}", SqlLiteral("1"))
+
+    assert_type(sql.with_transaction(fx.succeed(1)), fx.Effect[int, SqlError])
+    assert_type(sql.with_transaction(fx.fail("e")), fx.Effect[Never, str | SqlError])
+    assert_type(sql.after_commit(fx.void), fx.Effect[None])
+    sql.after_commit(fx.fail("e"))  # pyright: ignore[reportArgumentType]
+    assert_type(
+        reactivity.mutation(statement, ["users"]),
+        fx.Effect[list[Row], SqlError, reactivity.Reactivity],
+    )
+    assert_type(sqlite_sql.backup("copy.db"), fx.Effect[sql_sqlite.BackupMetadata, SqlError])
+    # SQLite has no UPDATE ... FROM (VALUES ...): Effect types updateValues as `never`.
+    sqlite_sql.update_values([{"id": 1}], "u")  # pyright: ignore[reportDeprecated]
+    assert_type(
+        sql_sqlite.layer_config({"filename": fx.config.string("DATABASE_PATH")}),
+        fx.Layer[sql_sqlite.SqliteClient | sql_client.SqlClient, fx.ConfigError | SqlError],
+    )
+    assert_type(
+        sql_sqlite.make(sql_sqlite.SqliteClientConfig(filename=":memory:")),
+        fx.Effect[sql_sqlite.SqliteClientService, SqlError, fx.Scope | reactivity.Reactivity],
+    )
+
+    find = sql_schema.find_one_option(
+        request=S.Number, result=S.String, execute=lambda _id: fx.succeed([])
+    )
+    assert_type(find, Callable[[float], fx.Effect[fx.Option[str], S.SchemaError]])
+    ordered = sql_resolver.ordered(request=S.Number, result=S.String, execute=lambda _: statement)
+    assert_type(
+        sql_resolver.request(1, ordered),
+        fx.Effect[str, SqlError | ResultLengthMismatch | S.SchemaError],
+    )
+    assert_type(
+        sql_migrator.make()(loader=sql_migrator.from_record({})),
+        fx.Effect[
+            list[tuple[int, str]],
+            sql_migrator.MigrationError | SqlError,
+            sql_client.SqlClient,
+        ],
+    )
+
+
+def sql_pg_driver(
+    pg_sql: sql_pg.PgClientService,
+    pool: sql_pg.PgPoolService,
+    conn: sql_pg.PgConnection,
+    queue: Dequeue[sql_pg.Notification, SqlError],
+) -> None:
+    """The PostgreSQL driver's services keep their error and requirement
+    types; a listener's queue is read-only."""
+    notifications = pg_sql.listen("events")
+    assert_type(
+        notifications,
+        fx.Effect[Dequeue[sql_pg.Notification, SqlError], SqlError, fx.Scope],
+    )
+    assert_type(pg_sql.notify("events", "hi"), fx.Effect[None, SqlError])
+    assert_type(conn.query("SELECT 1"), fx.Effect[sql_pg.Result, SqlError])
+    assert_type(conn.pin, fx.Effect[sql_pg.PgConnection, Never, fx.Scope])
+    assert_type(pool.get, fx.Effect[sql_pg.PgConnection, SqlError, fx.Scope])
+    assert_type(pool.use(lambda c: fx.succeed(c.process_id)), fx.Effect[int, SqlError])
+    assert_type(
+        sql_pg.make(sql_pg.PgPoolConfig()),
+        fx.Effect[sql_pg.PgClientService, SqlError, fx.Scope | reactivity.Reactivity],
+    )
+    assert_type(
+        sql_pg.layer(sql_pg.PgPoolConfig()),
+        fx.Layer[sql_pg.PgClient | sql_client.SqlClient, SqlError],
+    )
+    assert_type(conn.stream("SELECT 1"), Stream[dict[str, Any], SqlError])
+    assert_type(conn.query_values("SELECT 1"), fx.Effect[list[tuple[Any, ...]], SqlError])
+    assert_type(pool.use(lambda _: fx.fail(KeyError("k"))), fx.Effect[Never, KeyError | SqlError])
+    assert_type(
+        sql_pg.make_client(sql_pg.PgClientConfig()),
+        fx.Effect[sql_pg.PgClientService, SqlError, fx.Scope | reactivity.Reactivity],
+    )
+    assert_type(
+        sql_pg.layer_config({}),
+        fx.Layer[sql_pg.PgClient | sql_client.SqlClient, fx.ConfigError | SqlError],
+    )
+    sql_pg.PgConnectionConfig(port="5432")  # pyright: ignore[reportArgumentType]
+    sql_pg.PgConnectionConfig(password="secret")  # pyright: ignore[reportArgumentType]
+    queue.offer(sql_pg.Notification(1, "events", ""))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+# --- cli ---
+
+
+class CliUsers(Tag[str]): ...
+
+
+class CliDatabase(Config):
+    host = Flag.string("db-host")
+    port = Flag.integer("db-port")
+
+
+class CliDeploy(Config):
+    service = Argument.string("service")
+    files = Argument.string("files").variadic()
+    retries = Flag.integer("retries").optional()
+    branch = Flag.string("branch").with_default("main")
+    database = nested(CliDatabase)
+
+
+def cli_read(config: CliDeploy) -> None:
+    assert_type(config.service, str)
+    assert_type(config.files, tuple[str, ...])
+    assert_type(config.retries, int | None)
+    assert_type(config.branch, str)
+    assert_type(config.database.port, int)
+    assert_type(CliDeploy.branch, Flag[str])
+    assert_type(Flag.literals("format", ("text", "json")), Flag[Literal["text", "json"]])
+    assert_type(Argument.literals("env", ("dev", "prod")), Argument[Literal["dev", "prod"]])
+
+
+class CliShared(Config):
+    verbose = Flag.boolean("verbose")
+
+
+class CliClone(Config):
+    repository = Argument.string("repository")
+
+
+class CliNotFound(TaggedError): ...
+
+
+cli_root = command.make("git").with_shared_flags(CliShared)
+assert_type(cli_root, Command[CliShared, CliShared])
+
+
+def cli_clone_handler(config: CliClone):
+    @fx.gen
+    def body():
+        shared = yield from cli_root
+        assert_type(shared, CliShared)
+        users = yield from CliUsers()
+        level = yield from LogLevel()
+        if shared.verbose and level and users:
+            yield from fx.fail(CliNotFound())
+
+    return body
+
+
+cli_clone = command.make("clone", CliClone, cli_clone_handler)
+assert_type(cli_clone, Command[CliClone, Config, CliNotFound, CommandContext[CliShared] | CliUsers])
+
+
+def cli_status_handler():
+    shared = yield from cli_root
+    return shared
+
+
+cli_status = command.make("status", Config, lambda _: fx.gen(cli_status_handler))
+assert_type(cli_status, Command[Config, Config, Never, CommandContext[CliShared]])
+
+cli_app = cli_root.with_subcommands(cli_clone, cli_status)
+assert_type(cli_app, Command[CliShared, CliShared, CliNotFound, CliUsers])
+
+cli_grouped = cli_root.with_subcommands(group("Remote", cli_clone), cli_status)
+assert_type(cli_grouped, Command[CliShared, CliShared, CliNotFound, CliUsers])
+
+cli_only_context = cli_root.with_subcommands(cli_status)
+assert_type(cli_only_context, Command[CliShared, CliShared, Never, Never])
+
+cli_handled = command.make("plain", CliClone).with_handler(lambda c: fx.succeed(c.repository))
+assert_type(cli_handled, Command[CliClone, Config, Never, Never])
+
+
+class CliTool(CliShared):
+    model = Flag.string("model")
+
+
+cli_tool = command.make("tool", CliTool).with_shared_flags(CliShared)
+assert_type(cli_tool, Command[CliTool, CliShared])
+
+
+class CliRegion(Setting[str]):
+    flag = Flag.string("region").with_default("us-east-1")
+
+
+def cli_region_handler(_: Config):
+    return CliRegion().as_void()
+
+
+cli_regional = command.make("deploy", Config, cli_region_handler)
+assert_type(cli_regional, Command[Config, Config, Never, CliRegion])
+assert_type(
+    cli_regional.pipe(command.with_global_flags(CliRegion)), Command[Config, Config, Never, Never]
+)
+assert_type(
+    command.make("users", Config, lambda _: CliUsers().map(len).as_void()).pipe(
+        command.provide_sync(CliUsers, "ada")
+    ),
+    Command[Config, Config, Never, Never],
+)
+assert_type(
+    command.run_with(cli_app, version="1.0.0"),
+    Callable[[Sequence[str]], fx.Effect[None, CliNotFound | CliError, CliUsers | CliEnvironment]],
+)
+command.make("bad", CliClone, lambda c: fx.succeed(c.missing))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownArgumentType, reportUnknownLambdaType, reportUnknownMemberType]
+
+
+class CliDb(Tag[str]): ...
+
+
+def cli_db_layer(config: CliClone) -> fx.Layer[CliDb]:
+    return layer.succeed(CliDb, config.repository)
+
+
+def cli_db_from_deploy(config: CliDeploy) -> fx.Layer[CliDb]:
+    return layer.succeed(CliDb, config.service)
+
+
+cli_needs_db = command.make("db", CliClone, lambda _: CliDb().as_void())
+assert_type(cli_needs_db, Command[CliClone, Config, Never, CliDb])
+assert_type(
+    cli_needs_db.pipe(command.provide(cli_db_layer)), Command[CliClone, Config, Never, Never]
+)
+cli_needs_db.pipe(command.provide(cli_db_from_deploy))  # pyright: ignore[reportArgumentType]

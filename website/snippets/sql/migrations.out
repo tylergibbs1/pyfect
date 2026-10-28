@@ -1,0 +1,3 @@
+[(1, 'create_users'), (2, 'add_email')]
+[]
+[{'migration_id': 1, 'name': 'create_users'}, {'migration_id': 2, 'name': 'add_email'}]

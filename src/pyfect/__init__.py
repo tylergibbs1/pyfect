@@ -36,6 +36,8 @@ Platform: ``fx.FileSystem`` (``fx.file_system``), ``fx.Path`` (``fx.path``),
 ``fx.Stdio`` (``fx.stdio``), ``fx.Terminal`` (``fx.terminal``), child processes
 (``fx.process``: ``make``, ``ChildProcessSpawner``), ``fx.PlatformError``
 (``fx.platform_error``) and all five live services in ``fx.platform.layer``.
+Command-line apps in ``fx.cli`` (``Command``, ``Flag``, ``Argument``, prompts,
+help and shell completions).
 HTTP clients in ``fx.http`` (``HttpClient``, requests, responses, headers,
 cookies, URLs).
 Optional adapters, each behind its extra and never imported here: pydantic
@@ -52,6 +54,7 @@ from pyfect import (
     cause,
     channel,
     channel_schema,
+    cli,
     clock,
     config,
     config_provider,
@@ -79,12 +82,14 @@ from pyfect import (
     process,
     pull,
     random,
+    reactivity,
     redacted,
     result,
     schedule,
     scheduler,
     schema,
     sink,
+    sql,
     stdio,
     stream,
     take,
@@ -408,6 +413,7 @@ __all__ = [
     "cause",
     "channel",
     "channel_schema",
+    "cli",
     "clock",
     "config",
     "config_provider",
@@ -480,6 +486,7 @@ __all__ = [
     "race_all",
     "race_all_first",
     "random",
+    "reactivity",
     "redacted",
     "reduce",
     "request",
@@ -500,6 +507,7 @@ __all__ = [
     "service_option",
     "sink",
     "sleep",
+    "sql",
     "stdio",
     "stream",
     "succeed",

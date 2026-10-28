@@ -135,12 +135,17 @@ layer, concurrency, retries and timeouts.
   out of logs. [Config →](https://pyfect.dev/docs/config)
 - **Observability.** Logging, spans, metrics and an OpenTelemetry bridge.
   [Observability →](https://pyfect.dev/docs/observability)
+- **SQL.** Statements built from literal templates, so values are always bound parameters;
+  transactions with savepoints, batching resolvers and migrations, on SQLite (standard
+  library) or PostgreSQL (psycopg). [SQL →](https://pyfect.dev/docs/sql)
+- **CLI.** Typed commands, flags and arguments with subcommands, generated help, shell
+  completions and interactive prompts. [CLI →](https://pyfect.dev/docs/cli)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
-pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 7,500 tests, and
-about 76% of Effect's API so far, including the platform services (files, child processes, an
-HTTP client, TCP, TLS, WebSocket and UDP sockets). [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
+pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 8,500 tests, and
+about 77% of Effect's API so far, including the platform services (files, child processes, an
+HTTP client, TCP, TLS, WebSocket and UDP sockets), SQL and the CLI library. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
 what is next.
 
 ## Installation
@@ -152,7 +157,8 @@ uv add git+https://github.com/tylergibbs1/pyfect
 ```
 
 Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `httpx` (the
-HTTP client backend) and `websockets` (WebSocket clients and servers), for example
+HTTP client backend), `websockets` (WebSocket clients and servers) and `pg` (the PostgreSQL
+driver, on psycopg), for example
 `uv add "pyfect[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add

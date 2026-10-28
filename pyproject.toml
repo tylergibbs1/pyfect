@@ -37,6 +37,9 @@ httpx = [
 websockets = [
     "websockets>=15",
 ]
+pg = [
+    "psycopg>=3.3",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.15,<0.13.0"]
@@ -50,6 +53,8 @@ dev = [
     "pyfect[msgspec]",
     "pyfect[httpx]",
     "pyfect[websockets]",
+    "pyfect[pg]",
+    "psycopg[binary]>=3.3",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
     "ruff>=0.17.2",

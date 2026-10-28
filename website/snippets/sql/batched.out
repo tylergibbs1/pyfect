@@ -1,0 +1,4 @@
+query for [3, 1]
+({'id': 3, 'name': 'Grace'}, {'id': 1, 'name': 'Ada'}, {'id': 3, 'name': 'Grace'})
+query for [9]
+NoSuchElementException
