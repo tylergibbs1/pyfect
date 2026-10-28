@@ -3,7 +3,7 @@ name = "pyfect"
 version = "0.1.0"
 description = "Effect-TS for Python: typed effects, a real fiber runtime, structured concurrency, services and layers."
 readme = "README.md"
-authors = [{ name = "Tyler Gibbs", email = "tylergibbs049@gmail.com" }]
+authors = [{ name = "Tyler Gibbs", email = "tylergibbs048@gmail.com" }]
 license = "MIT"
 requires-python = ">=3.13"
 dependencies = []

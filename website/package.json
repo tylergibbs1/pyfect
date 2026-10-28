@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "generate:api": "cd .. && uv run --with ./website/node_modules/fumadocs-python python website/scripts/generate_api.py website/.generated",
+    "generate:api": "cd .. && uv run --with ./website/node_modules/fumadocs-python --with 'griffe-typingdoc<0.3' python website/scripts/generate_api.py website/.generated",
     "predev": "npm run generate:api",
     "dev": "next dev",
     "prebuild": "node scripts/check-api.mjs",
