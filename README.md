@@ -373,10 +373,12 @@ providers, `Config`, `Redacted`, `ByteSize`, `Brand`, the case functions) and Sc
 `fx.schema`, a native AST-based Schema with Effect's issue tree, typed as in
 [`docs/SCHEMA_DESIGN.md`](docs/SCHEMA_DESIGN.md); JSON codecs, JSON Schema, JSON
 Patch / Pointer, `S.to_strategy` with `pyfect[hypothesis]`, `fx.optic`, `Config.schema`,
-`ChannelSchema`, and pydantic / msgspec adapters) are done; see
+`ChannelSchema`, and pydantic / msgspec adapters) and STM (M9: `fx.tx`, `tx_retry`, `TxRef`
+and the `Tx*` collections, queues, semaphore, locks and pubsub) are done; see
 [`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
 
-1. **More building blocks**: `STM`.
+1. **Platform** (M10+): FileSystem, Stdio, ChildProcess, HttpClient, sql, cli, http
+   server.
 2. **Schema's long tail**: `TemplateLiteral`, `BigDecimal`, the network schemas, and
    `SchemaRepresentation`.
 
