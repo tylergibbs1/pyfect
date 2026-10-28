@@ -4166,3 +4166,61 @@ def check_transactions() -> None:
     ref.set("a")  # pyright: ignore[reportArgumentType]
     widened_tx_ref: fx.TxRef[object] = ref  # pyright: ignore[reportAssignmentType]
     del widened_tx_ref
+
+
+def check_tx_collections(
+    chunk: fx.TxChunk[int],
+    tx_map: fx.TxHashMap[str, int],
+    tx_set: fx.TxHashSet[str],
+    optional_map: fx.TxHashMap[str, fx.option.Option[bytes]],
+) -> None:
+    assert_type(fx.TxChunk.make([1, 2]), fx.Effect[fx.TxChunk[int], Never, Never])
+    assert_type(fx.TxChunk[str].empty(), fx.Effect[fx.TxChunk[str], Never, Never])
+    assert_type(chunk.get(), fx.Effect[tuple[int, ...], Never, Never])
+    assert_type(chunk.modify(lambda c: (len(c), c)), fx.Effect[int, Never, Never])
+    assert_type(chunk.concat(chunk), fx.Effect[None, Never, Never])
+    chunk.append("a")  # pyright: ignore[reportArgumentType]
+    widened_chunk: fx.TxChunk[object] = chunk  # pyright: ignore[reportAssignmentType]
+    del widened_chunk
+
+    assert_type(fx.TxHashMap.make(("a", 1)), fx.Effect[fx.TxHashMap[str, int], Never, Never])
+    assert_type(fx.TxHashMap[str, int].empty(), fx.Effect[fx.TxHashMap[str, int], Never, Never])
+    assert_type(tx_map.get("a"), fx.Effect[fx.option.Option[int], Never, Never])
+    assert_type(tx_map.remove("a"), fx.Effect[bool, Never, Never])
+    assert_type(tx_map.modify("a", lambda n: n + 1), fx.Effect[fx.option.Option[int], Never, Never])
+    assert_type(tx_map.entries(), fx.Effect[list[tuple[str, int]], Never, Never])
+    assert_type(
+        tx_map.find_first(lambda v, k: v > 1), fx.Effect[tuple[str, int] | None, Never, Never]
+    )
+    assert_type(tx_map.map(lambda v, k: str(v)), fx.Effect[fx.TxHashMap[str, str], Never, Never])
+    assert_type(
+        tx_map.filter_map(lambda v, k: fx.Ok(float(v)) if v else fx.Err(k)),
+        fx.Effect[fx.TxHashMap[str, float], Never, Never],
+    )
+    assert_type(optional_map.compact(), fx.Effect[fx.TxHashMap[str, bytes], Never, Never])
+    tx_map.compact()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    assert_type(tx_map.for_each(lambda v, k: fx.fail(k).zip(Port())), fx.Effect[None, str, Port])
+    assert_type(
+        tx_map.flat_map(lambda v, k: fx.fail(1).and_then(fx.TxHashMap.make((k, str(v))))),
+        fx.Effect[fx.TxHashMap[str, str], int, Never],
+    )
+    assert_type(tx_map.reduce(0.0, lambda acc, v, k: acc + v), fx.Effect[float, Never, Never])
+    tx_map.set("a", "b")  # pyright: ignore[reportArgumentType]
+
+    def is_bool(value: int | bool, key: str) -> TypeIs[bool]:
+        return isinstance(value, bool)
+
+    mixed = fx.TxHashMap[str, int | bool](fx.TxRef({}))
+    assert_type(mixed.filter(is_bool), fx.Effect[fx.TxHashMap[str, bool], Never, Never])
+
+    assert_type(fx.TxHashSet.make("a"), fx.Effect[fx.TxHashSet[str], Never, Never])
+    assert_type(fx.TxHashSet[int].empty(), fx.Effect[fx.TxHashSet[int], Never, Never])
+    assert_type(tx_set.to_hash_set(), fx.Effect[frozenset[str], Never, Never])
+    assert_type(tx_set.remove("a"), fx.Effect[bool, Never, Never])
+    assert_type(
+        tx_set.union(fx.TxHashSet[int](fx.TxRef(frozenset()))),
+        fx.Effect[fx.TxHashSet[str | int], Never, Never],
+    )
+    assert_type(tx_set.map(len), fx.Effect[fx.TxHashSet[int], Never, Never])
+    assert_type(tx_set.reduce(0, lambda acc, v: acc + len(v)), fx.Effect[int, Never, Never])
+    tx_set.add(1)  # pyright: ignore[reportArgumentType]

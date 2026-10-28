@@ -16,7 +16,7 @@ conversion), ``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
 ``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``. Transactions:
 ``fx.tx``, ``fx.tx_retry``, ``fx.Transaction`` (metadata types in ``fx.transaction``),
-``fx.TxRef``. Logging:
+``fx.TxRef``, ``fx.TxChunk``, ``fx.TxHashMap``, ``fx.TxHashSet``. Logging:
 ``fx.log`` and its levels, ``fx.LogLevel``, ``fx.Logger`` (formatters and layers in
 ``fx.logger``). Tracing: ``eff.with_span``, ``fx.fn("name")``, ``fx.use_span``,
 ``fx.current_span`` and the rest; spans and tracers in ``fx.tracer``. Metrics:
@@ -239,6 +239,9 @@ from pyfect.tracer import (
     use_span,
 )
 from pyfect.transaction import Transaction, tx, tx_retry
+from pyfect.tx_chunk import TxChunk
+from pyfect.tx_hash_map import TxHashMap
+from pyfect.tx_hash_set import TxHashSet
 from pyfect.tx_ref import TxRef
 
 __all__ = [
@@ -332,6 +335,9 @@ __all__ = [
     "Teardown",
     "TimeoutException",
     "Transaction",
+    "TxChunk",
+    "TxHashMap",
+    "TxHashSet",
     "TxRef",
     "UnhandledError",
     "UnhandledLogLevel",
