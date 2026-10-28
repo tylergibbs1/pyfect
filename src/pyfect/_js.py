@@ -92,6 +92,16 @@ def trim(text: str) -> str:
     return text.strip(_TRIM)
 
 
+def trim_start(text: str) -> str:
+    """``String.prototype.trimStart``."""
+    return text.lstrip(_TRIM)
+
+
+def trim_end(text: str) -> str:
+    """``String.prototype.trimEnd``."""
+    return text.rstrip(_TRIM)
+
+
 def same_value(a: object, b: object) -> bool:
     """JavaScript's ``Object.is``: the same object, or numbers, strings or
     bytes of one type with one value. ``-0.0`` is not ``0.0``, NaN is NaN,

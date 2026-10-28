@@ -194,20 +194,32 @@ def _takes_a_function(annotation: object) -> bool:
     )
 
 
+def _takes_any_value(annotation: object, type_params: set[str]) -> bool:
+    """Whether any value is a valid argument (``B | Effect[B, ...]``, a
+    value or an effect giving one): then a function is a value, not a
+    misplaced effect."""
+    return any(part in type_params | {"Any", "object"} for part in _top_level_parts(annotation))
+
+
 def _checked_parameters(fn: Callable[..., Any]) -> dict[str, set[str]]:
     """Each Effect- or Layer-typed parameter with the kinds it accepts."""
-    signatures = [inspect.signature(getattr(o, "__func__", o)) for o in typing.get_overloads(fn)]
-    signatures.append(inspect.signature(fn))
+    functions = [getattr(o, "__func__", o) for o in typing.get_overloads(fn)]
+    functions.append(fn)
     kinds: dict[str, set[str]] = {}
-    for sig in signatures:
-        for name, p in sig.parameters.items():
-            if name != "self":
-                kinds.setdefault(name, set()).update(_annotation_kinds(p.annotation))
+    any_value: set[str] = set()
+    for function in functions:
+        type_params = {t.__name__ for t in getattr(function, "__type_params__", ())}
+        for name, p in inspect.signature(function).parameters.items():
+            if name == "self":
+                continue
+            kinds.setdefault(name, set()).update(_annotation_kinds(p.annotation))
+            if _takes_any_value(p.annotation, type_params):
+                any_value.add(name)
     impl = inspect.signature(fn).parameters
     return {
         name: kinds[name]
         for name, p in impl.items()
-        if kinds.get(name) and not _takes_a_function(p.annotation)
+        if kinds.get(name) and name not in any_value and not _takes_a_function(p.annotation)
     }
 
 

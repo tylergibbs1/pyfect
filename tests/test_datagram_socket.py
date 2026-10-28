@@ -61,6 +61,19 @@ def pull_text(reader: Reader) -> Effect[list[str], Exception]:
     return reader.pull.timeout(2).map(lambda batch: [d.payload.decode() for d in batch])
 
 
+def pull_texts(reader: Reader, count: int) -> Effect[list[str], Exception]:
+    """Pulls until ``count`` datagrams arrived: two sends may land in
+    separate batches."""
+
+    def body():
+        texts: list[str] = []
+        while len(texts) < count:
+            texts += yield from pull_text(reader)
+        return texts
+
+    return gen(body)
+
+
 def test_receive_buffer_capacity_must_be_positive():
     with pytest.raises(ValueError, match="positive integer"):
         ReceiveBuffer(0)
@@ -111,7 +124,7 @@ def test_a_hand_built_datagram_is_a_destination():
     _, writer = yield from open_udp(Options(bind=LOOPBACK))
     yield from writer.write(Datagram(b"echo", server.address))
     yield from writer.write(OutgoingDatagram("reply", Datagram(b"", server.address)))
-    assert (yield from pull_text(server)) == ["echo", "reply"]
+    assert (yield from pull_texts(server, 2)) == ["echo", "reply"]
 
 
 @live

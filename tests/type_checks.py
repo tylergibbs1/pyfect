@@ -11,7 +11,7 @@ from collections.abc import Callable, Generator, Hashable, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from types import CoroutineType
-from typing import Any, Never, Protocol, TypeIs, assert_type
+from typing import Any, Literal, Never, Protocol, TypeIs, assert_type
 
 from _pytest.fixtures import FixtureFunctionDefinition
 from opentelemetry.trace import Span as OtelApiSpan
@@ -22,9 +22,24 @@ from pyfect import channel, execution_plan, layer, logger, otel, reactivity, sch
 from pyfect import socket as socket_module
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
-from pyfect.context import ServiceEffect
+from pyfect.cli import (
+    Argument,
+    CliError,
+    Command,
+    CommandContext,
+    Config,
+    Flag,
+    Setting,
+    command,
+    group,
+    nested,
+)
+from pyfect.cli._environment import Environment as CliEnvironment
+from pyfect.cli.global_flag import LogLevel
+from pyfect.context import ServiceEffect, Tag
 from pyfect.duration import Seconds, to_seconds
 from pyfect.encoding import Json, json_array, ndjson, sse
+from pyfect.errors import TaggedError
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
 from pyfect.fiber_set import FiberSetRuntime
@@ -4682,3 +4697,139 @@ def sql_pg_driver(
     sql_pg.PgConnectionConfig(port="5432")  # pyright: ignore[reportArgumentType]
     sql_pg.PgConnectionConfig(password="secret")  # pyright: ignore[reportArgumentType]
     queue.offer(sql_pg.Notification(1, "events", ""))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+# --- cli ---
+
+
+class CliUsers(Tag[str]): ...
+
+
+class CliDatabase(Config):
+    host = Flag.string("db-host")
+    port = Flag.integer("db-port")
+
+
+class CliDeploy(Config):
+    service = Argument.string("service")
+    files = Argument.string("files").variadic()
+    retries = Flag.integer("retries").optional()
+    branch = Flag.string("branch").with_default("main")
+    database = nested(CliDatabase)
+
+
+def cli_read(config: CliDeploy) -> None:
+    assert_type(config.service, str)
+    assert_type(config.files, tuple[str, ...])
+    assert_type(config.retries, int | None)
+    assert_type(config.branch, str)
+    assert_type(config.database.port, int)
+    assert_type(CliDeploy.branch, Flag[str])
+    assert_type(Flag.literals("format", ("text", "json")), Flag[Literal["text", "json"]])
+    assert_type(Argument.literals("env", ("dev", "prod")), Argument[Literal["dev", "prod"]])
+
+
+class CliShared(Config):
+    verbose = Flag.boolean("verbose")
+
+
+class CliClone(Config):
+    repository = Argument.string("repository")
+
+
+class CliNotFound(TaggedError): ...
+
+
+cli_root = command.make("git").with_shared_flags(CliShared)
+assert_type(cli_root, Command[CliShared, CliShared])
+
+
+def cli_clone_handler(config: CliClone):
+    @fx.gen
+    def body():
+        shared = yield from cli_root
+        assert_type(shared, CliShared)
+        users = yield from CliUsers()
+        level = yield from LogLevel()
+        if shared.verbose and level and users:
+            yield from fx.fail(CliNotFound())
+
+    return body
+
+
+cli_clone = command.make("clone", CliClone, cli_clone_handler)
+assert_type(cli_clone, Command[CliClone, Config, CliNotFound, CommandContext[CliShared] | CliUsers])
+
+
+def cli_status_handler():
+    shared = yield from cli_root
+    return shared
+
+
+cli_status = command.make("status", Config, lambda _: fx.gen(cli_status_handler))
+assert_type(cli_status, Command[Config, Config, Never, CommandContext[CliShared]])
+
+cli_app = cli_root.with_subcommands(cli_clone, cli_status)
+assert_type(cli_app, Command[CliShared, CliShared, CliNotFound, CliUsers])
+
+cli_grouped = cli_root.with_subcommands(group("Remote", cli_clone), cli_status)
+assert_type(cli_grouped, Command[CliShared, CliShared, CliNotFound, CliUsers])
+
+cli_only_context = cli_root.with_subcommands(cli_status)
+assert_type(cli_only_context, Command[CliShared, CliShared, Never, Never])
+
+cli_handled = command.make("plain", CliClone).with_handler(lambda c: fx.succeed(c.repository))
+assert_type(cli_handled, Command[CliClone, Config, Never, Never])
+
+
+class CliTool(CliShared):
+    model = Flag.string("model")
+
+
+cli_tool = command.make("tool", CliTool).with_shared_flags(CliShared)
+assert_type(cli_tool, Command[CliTool, CliShared])
+
+
+class CliRegion(Setting[str]):
+    flag = Flag.string("region").with_default("us-east-1")
+
+
+def cli_region_handler(_: Config):
+    return CliRegion().as_void()
+
+
+cli_regional = command.make("deploy", Config, cli_region_handler)
+assert_type(cli_regional, Command[Config, Config, Never, CliRegion])
+assert_type(
+    cli_regional.pipe(command.with_global_flags(CliRegion)), Command[Config, Config, Never, Never]
+)
+assert_type(
+    command.make("users", Config, lambda _: CliUsers().map(len).as_void()).pipe(
+        command.provide_sync(CliUsers, "ada")
+    ),
+    Command[Config, Config, Never, Never],
+)
+assert_type(
+    command.run_with(cli_app, version="1.0.0"),
+    Callable[[Sequence[str]], fx.Effect[None, CliNotFound | CliError, CliUsers | CliEnvironment]],
+)
+command.make("bad", CliClone, lambda c: fx.succeed(c.missing))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownArgumentType, reportUnknownLambdaType, reportUnknownMemberType]
+
+
+class CliDb(Tag[str]): ...
+
+
+def cli_db_layer(config: CliClone) -> fx.Layer[CliDb]:
+    return layer.succeed(CliDb, config.repository)
+
+
+def cli_db_from_deploy(config: CliDeploy) -> fx.Layer[CliDb]:
+    return layer.succeed(CliDb, config.service)
+
+
+cli_needs_db = command.make("db", CliClone, lambda _: CliDb().as_void())
+assert_type(cli_needs_db, Command[CliClone, Config, Never, CliDb])
+assert_type(
+    cli_needs_db.pipe(command.provide(cli_db_layer)), Command[CliClone, Config, Never, Never]
+)
+cli_needs_db.pipe(command.provide(cli_db_from_deploy))  # pyright: ignore[reportArgumentType]
