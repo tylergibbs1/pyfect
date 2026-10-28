@@ -1,0 +1,9 @@
+sequenceDiagram
+  participant P as program
+  participant S as Scope
+  P->>S: acquire connection, register its release
+  P->>S: acquire file, register its release
+  Note over P: use both
+  P->>S: close (success, failure or interruption)
+  S->>S: release file
+  S->>S: release connection

@@ -1,0 +1,25 @@
+---
+title: Schedules and retries
+description: "Retry failures and repeat work with composable schedules."
+---
+
+A **schedule** decides whether to try again and how long to wait. `retry` uses one to re-run an
+effect after a failure; `repeat` re-runs it after a success.
+
+<include meta='title="retry.py"'>../../snippets/schedules/retry.py</include>
+
+The waits of `policy` above, before each of its five retries:
+
+<Diagram name="retry-delays" title="Waits of 10, 20, 40, 80 and 160 milliseconds before retries 1 to 5" />
+
+`retry` and `repeat` take a schedule, or the keywords `schedule=`, `times=`, `while_=` and
+`until=`. When retries run out, the effect fails with the last error.
+
+<include meta='title="repeat.py"'>../../snippets/schedules/repeat.py</include>
+
+Constructors: `spaced`, `fixed`, `exponential`, `fibonacci`, `windowed`, `recurs`, `cron`.
+Combinators: `up_to(times=, duration=)`, `jittered`, `while_`, `max` / `min`, `concat`, and
+more. Schedules use the `Clock` service, so tests can run them on virtual time
+([Testing](/docs/testing)).
+
+Reference: [`pyfect.schedule`](/docs/reference/schedule).

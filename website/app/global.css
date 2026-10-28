@@ -1,0 +1,384 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'fumadocs-python/preset.css';
+@import './typeset.css';
+
+/*
+ * Theme, base styles and code styles from shadcn/ui's docs (apps/v4/app/globals.css,
+ * MIT License, Copyright (c) 2023 shadcn), trimmed to what this site uses.
+ */
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-heading: var(--font-heading);
+  --font-mono: var(--font-mono);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-code: var(--code);
+  --color-code-foreground: var(--code-foreground);
+  --color-code-highlight: var(--code-highlight);
+  --color-code-number: var(--code-number);
+  --color-selection: var(--selection);
+  --color-selection-foreground: var(--selection-foreground);
+
+  /* fumadocs-python's badges (module, class, ...) in the sidebar: neutral */
+  --color-fdpy-func: var(--muted-foreground);
+  --color-fdpy-class: var(--muted-foreground);
+  --color-fdpy-attribute: var(--muted-foreground);
+  --color-fdpy-module: var(--muted-foreground);
+  --color-fd-primary: var(--primary);
+}
+
+:root {
+  --radius: 0.625rem;
+  --background: oklch(1 0 0);
+  --foreground: oklch(0% 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0% 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0% 0 0);
+  --primary: oklch(0% 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0% 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+  --surface: oklch(0.98 0 0);
+  --surface-foreground: var(--foreground);
+  --code: var(--surface);
+  --code-foreground: var(--surface-foreground);
+  --code-highlight: oklch(0.96 0 0);
+  --code-number: oklch(0.56 0 0);
+  --selection: oklch(0% 0 0);
+  --selection-foreground: oklch(1 0 0);
+
+  --header-height: calc(var(--spacing) * 14);
+  --sidebar-width: calc(var(--spacing) * 72);
+  --top-spacing: 0px;
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --header-height: calc(var(--spacing) * 16);
+    --top-spacing: calc(var(--spacing) * 4);
+  }
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.371 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+  --surface: oklch(0.2 0 0);
+  --surface-foreground: oklch(0.708 0 0);
+  --code: var(--surface);
+  --code-foreground: var(--surface-foreground);
+  --code-highlight: oklch(0.27 0 0);
+  --code-number: oklch(0.72 0 0);
+  --selection: oklch(0.922 0 0);
+  --selection-foreground: oklch(0.205 0 0);
+}
+
+@layer base {
+  html {
+    scroll-padding-top: var(--header-height);
+    /* short and long pages keep the same width whether or not they scroll */
+    scrollbar-gutter: stable;
+    @apply overscroll-y-none;
+  }
+
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  ::selection {
+    @apply bg-selection text-selection-foreground;
+  }
+
+  body {
+    position: relative;
+    font-family: var(--font-sans);
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
+    @apply bg-background text-foreground;
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  a:active,
+  button:active {
+    @apply opacity-60 md:opacity-100;
+  }
+}
+
+@utility container-wrapper {
+  @apply mx-auto w-full px-2;
+}
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility step {
+  counter-increment: step;
+
+  &:before {
+    @apply mr-2 inline-flex size-6 items-center justify-center rounded-full border-background bg-muted text-center -indent-px font-mono text-sm font-medium md:absolute md:mt-[-4px] md:ml-[-50px] md:size-9 md:border-4;
+    content: counter(step);
+  }
+}
+
+@utility extend-touch-target {
+  @media (pointer: coarse) {
+    @apply relative touch-manipulation after:absolute after:-inset-2;
+  }
+}
+
+@layer components {
+  .typeset a[data-slot] {
+    font-weight: inherit;
+    text-decoration-line: none;
+  }
+
+  .steps {
+    &:first-child {
+      @apply !mt-0;
+    }
+
+    &:first-child > h3:first-child {
+      @apply !mt-0;
+    }
+
+    > h3 {
+      @apply !mt-8;
+    }
+
+    > h3 + p {
+      @apply !mt-2;
+    }
+  }
+
+  /* Code figures (components/code-block.tsx). */
+  [data-code-figure] {
+    background-color: var(--color-code);
+    color: var(--color-code-foreground);
+    border-radius: var(--radius-2xl);
+    margin-top: calc(var(--spacing) * 6);
+    overflow: hidden;
+    font-size: var(--text-sm);
+    outline: none;
+    position: relative;
+    @apply -mx-1;
+
+    &:has([data-code-title]) [data-slot='copy-button'] {
+      top: calc(var(--spacing) * 1.5) !important;
+    }
+  }
+
+  [data-code-figure] code,
+  [data-code-figure] code span {
+    font-variant-ligatures: none;
+    font-feature-settings:
+      'liga' 0,
+      'calt' 0;
+  }
+
+  [data-code-title] {
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 30%, transparent);
+    padding-block: calc(var(--spacing) * 2.5);
+    padding-inline: calc(var(--spacing) * 4);
+    font-size: var(--text-sm);
+    font-family: var(--font-mono);
+    color: var(--color-code-foreground);
+  }
+
+  [data-code-figure] pre {
+    font-family: var(--font-mono);
+    line-height: 1.5;
+  }
+
+  /* Fumadocs' shiki output: `.line` spans with both themes as CSS variables. */
+  [data-code-figure] code {
+    display: grid;
+    min-width: 100%;
+  }
+
+  [data-code-figure] .line {
+    padding-block: calc(var(--spacing) * 0.25);
+    min-height: calc(var(--spacing) * 0.875);
+    width: 100%;
+    display: inline-block;
+  }
+
+  /* an empty line has no text, so it would collapse in the grid */
+  [data-code-figure] .line:empty::after {
+    content: ' ';
+  }
+
+  [data-code-figure] .line span {
+    color: var(--shiki-light);
+
+    @variant dark {
+      color: var(--shiki-dark) !important;
+    }
+  }
+
+  /* Text diagrams use box-drawing characters; per-line padding breaks connectors. */
+  [data-code-figure] pre[data-language='text'] .line {
+    padding-block: 0;
+    min-height: unset;
+  }
+
+  [data-code-figure] .line.highlighted {
+    position: relative;
+    background-color: var(--color-code-highlight);
+
+    &:after {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 2px;
+      height: 100%;
+      content: '';
+      background-color: color-mix(in oklab, var(--muted-foreground) 50%, transparent);
+    }
+  }
+
+  [data-code-figure] pre:has(.highlighted) {
+    padding-inline: 0;
+
+    & .line {
+      padding-inline: calc(var(--spacing) * 4);
+    }
+  }
+}
+
+/* Diagrams (components/diagram.tsx): pele's colors from the theme. */
+@layer components {
+  .diagram {
+    margin-top: calc(var(--spacing) * 6);
+    padding: calc(var(--spacing) * 6) calc(var(--spacing) * 4);
+    border-radius: var(--radius-2xl);
+    border: 1px solid var(--border);
+    @apply -mx-1;
+
+    --pele-bg: var(--background);
+    --pele-fg: var(--foreground);
+    --pele-fg-on-light: oklch(0% 0 0);
+    --pele-fg-on-dark: oklch(1 0 0);
+    --pele-muted: var(--muted-foreground);
+    --pele-line: var(--muted-foreground);
+    --pele-surface: var(--surface);
+    --pele-surface-alt: var(--muted);
+    --pele-border: var(--border);
+    --pele-accent: var(--foreground);
+    --pele-font: var(--font-sans);
+    --pele-font-mono: var(--font-mono);
+    --pele-radius: var(--radius-md);
+    --pele-title-weight: 500;
+    --pele-heading-weight: 500;
+    --pele-series-1: var(--muted-foreground);
+  }
+
+  .dark .diagram {
+    --pele-border: oklch(1 0 0 / 18%);
+  }
+
+  .diagram svg {
+    display: block;
+    margin-inline: auto;
+    max-width: 100%;
+    height: auto;
+  }
+
+  .diagram-wide {
+    display: none;
+  }
+
+  @media (min-width: 48rem) {
+    .diagram-wide {
+      display: block;
+    }
+
+    .diagram-narrow {
+      display: none;
+    }
+  }
+}
+
+/* fumadocs-python's "module" / "class" badges in the sidebar: quiet text, as shadcn
+   marks nothing there. */
+[data-slot='sidebar'] [class*='text-fdpy-'] {
+  border: 0;
+  padding: 0;
+  background: none;
+  font-weight: 400;
+}

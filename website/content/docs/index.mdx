@@ -1,0 +1,78 @@
+---
+title: Introduction
+description: "Effect for Python: typed errors and services, a fiber runtime with structured concurrency."
+---
+
+pyfect is a Python port of [Effect](https://effect.website) (v4). You write programs as
+**effects**: values that describe work and say, in their type, what they produce, how they can
+fail and which services they need. pyright infers all three, and refuses to run a program that
+leaves an error unhandled or a service unprovided.
+
+```text
+Effect[A, E, R]
+       │  │  └── the services it needs (Never: none)
+       │  └───── the errors it can fail with (Never: none)
+       └──────── the value it succeeds with
+```
+
+Handling an error removes it from `E`; providing a service removes it from `R`. An effect
+runs once both are `Never`:
+
+<Diagram name="effect-type" title="catch_tag removes NotFound from the error type; provide removes Db from the requirements" />
+
+## Why
+
+Plain asyncio gets you concurrency. It leaves the rest to discipline: exceptions a signature
+doesn't mention, `CancelledError` that a broad `except` swallows, tasks that outlive the
+function that started them, and dependencies passed by hand or patched in tests.
+
+pyfect handles these in the runtime and the types:
+
+- **Errors are values in the type.** `Effect[str, NotFound | Forbidden]` says what can go wrong;
+  handling one removes it from the type. Bugs (defects) are kept apart from expected failures.
+- **Services are requirements in the type.** An effect that needs a `Database` says so, and a
+  `Layer` provides it: real in production, a stub in tests.
+- **Structured concurrency.** Fibers run on pyfect's own scheduler. A fiber's children are
+  interrupted when it finishes, interruption can't be swallowed, and finalizers always run.
+- **Retries, timeouts, resources, streams, config, logs, spans and metrics** are built in and
+  compose with each other.
+
+## Compared with asyncio
+
+A user lookup with a timeout and retries:
+
+<Tabs defaultValue="pyfect">
+<TabsList>
+<TabsTrigger value="pyfect">pyfect</TabsTrigger>
+<TabsTrigger value="asyncio">asyncio</TabsTrigger>
+</TabsList>
+<TabsContent value="asyncio">
+
+<include meta='title="with_asyncio.py"'>../../snippets/introduction/with_asyncio.py</include>
+
+</TabsContent>
+<TabsContent value="pyfect">
+
+<include meta='title="with_pyfect.py"'>../../snippets/introduction/with_pyfect.py</include>
+
+</TabsContent>
+</Tabs>
+
+The pyfect version is not shorter. What changes is that `greet`'s type,
+`Effect[str, TimeoutException]`, tells the caller exactly what it still has to handle, and
+pyright checks that they do.
+
+When plain asyncio is the better choice: a small script, a codebase that does not want a new
+programming model, or code that mostly awaits one library. pyfect runs on asyncio
+(`run_async`, `from_async`), so you can adopt it one function at a time.
+
+## Status
+
+pyfect is alpha. It covers about 64% of Effect v4 (about 71% of the runtime core): effects,
+errors, fibers, layers, scopes, schedules, streams, config, logging, tracing, metrics and test
+utilities. Schema, STM and the platform libraries (HTTP, SQL, ...) are not done yet.
+[PARITY.md](https://github.com/tylergibbs1/pyfect/blob/main/docs/PARITY.md) lists what is
+covered, what differs and why.
+
+Start with [Installation](/docs/installation), then [Effects and generators](/docs/effects).
+The [API reference](/docs/reference) is generated from the code.

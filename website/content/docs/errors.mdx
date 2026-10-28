@@ -1,0 +1,44 @@
+---
+title: Typed errors
+description: "Expected failures in the type, handled with catch_tag; defects kept apart."
+---
+
+pyfect separates two kinds of failure, as Effect does:
+
+- **Failures** are expected: a user is not found, a request times out. They are values of the
+  error type `E`, and the type tells callers which ones to handle.
+- **Defects** are bugs: a `ZeroDivisionError`, a broken invariant. They are not in the type and
+  ordinary handlers don't see them.
+
+## Defining and failing
+
+Subclass `fx.TaggedError`, usually as a dataclass. Inside a generator, yielding an error fails
+the effect: `return (yield from NotFound(key))`. Outside one, use `fx.fail(error)`.
+
+<include meta='title="tagged.py"'>../../snippets/errors/tagged.py</include>
+
+## Handling errors
+
+`catch_tag(ErrorClass, handler)` handles one error class and removes it from the type. Because it
+removes something, it is a function you use with `.pipe(...)`, one per call; pyright cannot infer
+the removal from a method. `catch_all` handles every typed error.
+
+Other handlers: `catch_if`, `map_error`, `or_else_succeed`, `match`, `result` (an
+`Ok`/`Err` value), `ignore`, and `retry` (see [Schedules and retries](/docs/schedules)).
+
+<include meta='title="catch_tag.py"'>../../snippets/errors/catch_tag.py</include>
+
+## Defects
+
+An exception raised inside `fx.sync` or a `map` is a defect. Use `fx.try_` (or `try_async`,
+`try_blocking`) with `catch=` to turn an exception you expect into a typed failure.
+
+When a failure and a defect happen together (a finalizer crashed while handling an error),
+the defect wins and typed handlers don't run, so a bug is never mistaken for a handled error.
+A failed run's `Exit` holds a `Cause`; `cause.pretty()` prints every failure, defect and
+interruption in it with tracebacks.
+
+<include meta='title="defects.py"'>../../snippets/errors/defects.py</include>
+
+Reference: [`pyfect.errors`](/docs/reference/errors), [`pyfect.cause`](/docs/reference/cause),
+[`pyfect.exit`](/docs/reference/exit).

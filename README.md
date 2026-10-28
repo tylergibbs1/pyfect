@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.svg" width="64" height="64" alt="pyfect"></p>
+
 # pyfect
 
 [Effect](https://effect.website) for Python: typed errors and dependencies, a real fiber

@@ -1,0 +1,45 @@
+---
+title: Effects and generators
+description: "Build effects, compose them with generators, and run them."
+---
+
+An `Effect[A, E, R]` describes a computation. Building one runs nothing; a **run function**
+(`run_sync`, `run_async`, `run_main`) executes it on a fiber.
+
+<include meta='title="values.py"'>../../snippets/effects/values.py</include>
+
+- `fx.succeed(value)` wraps a value; `fx.sync(f)` calls `f` each time the effect runs.
+- `map` transforms the value; `flat_map` continues with another effect.
+
+## Generators
+
+Chains of `flat_map` get hard to read. Write the effect as a generator instead: `yield from`
+an effect to get its value. `@fx.gen` makes an effect from a generator; `@fx.fn` makes a
+function that returns one.
+
+<include meta='title="generators.py"'>../../snippets/effects/generators.py</include>
+
+pyright infers the success type from `return`, the errors from every effect that can fail and
+the services from every service used. You rarely write `Effect[...]` yourself, except on
+function signatures you want to pin.
+
+## Running effects
+
+| Function | Use it for |
+| --- | --- |
+| `run_sync(eff)` | scripts and tests: no event loop needed, sleeps and forks work |
+| `run_sync_exit(eff)` | the same, returning an `Exit` (`Success` or `Failure`) instead of raising |
+| `await run_async(eff)` | inside asyncio code |
+| `run_main(eff)` | a program's entry point: handles SIGINT/SIGTERM, logs failures, sets the exit code |
+| `ManagedRuntime.make(layer)` | building services once and running many effects with them (web servers) |
+
+The run functions accept only effects whose error and service types are `Never`, so an unhandled
+error or a missing service is a type error at the call site.
+
+<include meta='title="running.py"'>../../snippets/effects/running.py</include>
+
+`fx.from_async` and `fx.try_async` wrap coroutines; `fx.blocking` and `fx.try_blocking` move
+blocking calls to a thread.
+
+See the reference for [`Effect`](/docs/reference/Effect-class) (its methods) and
+[`pyfect.effect`](/docs/reference/effect) (constructors).

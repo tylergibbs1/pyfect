@@ -1,0 +1,29 @@
+---
+title: Config
+description: "Read typed configuration from environment variables, .env files and more."
+---
+
+A `Config[A]` says which keys to read and how to decode them. Configs are effects that fail with
+`ConfigError`, so they compose with everything else.
+
+<include meta='title="read.py"'>../../snippets/config/read.py</include>
+
+Missing data is **absent**: `with_default` and `config.option` recover it. Data that is present
+but invalid **fails**, so a typo in `PORT` is an error, not a silent default.
+
+## Sources and secrets
+
+A `ConfigProvider` is where values come from: `from_env` (the default), `from_dot_env`,
+`from_dir`, `from_unknown` (nested dicts) or your own lookup. Install one with
+`config_provider.layer`. `nested` reads a config under a prefix, and `config.redacted` keeps a
+secret out of logs and error messages.
+
+<include meta='title="secrets.py"'>../../snippets/config/secrets.py</include>
+
+Constructors: `string`, `integer`, `number`, `boolean`, `port`, `url`, `duration`, `literal`,
+`log_level`, `byte_size`, `date_time`, `redacted`, `list_of`, `dict_of`; combine with
+`config.all`, `all_dict` or `@config.gen`.
+
+Reference: [`pyfect.config`](/docs/reference/config),
+[`pyfect.config_provider`](/docs/reference/config_provider),
+[`pyfect.redacted`](/docs/reference/redacted).

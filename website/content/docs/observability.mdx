@@ -1,0 +1,40 @@
+---
+title: Observability
+description: "Logging, tracing and metrics, built into the runtime."
+---
+
+## Logging
+
+`fx.log_info(...)`, `log_debug`, `log_warning`, `log_error` write to the loggers in
+`CurrentLoggers`, skipping entries below `MinimumLogLevel` (`INFO` by default). Annotations and
+log spans add context to every entry inside an effect.
+
+<include meta='title="log_entries.py"'>../../snippets/observability/log_entries.py</include>
+
+`logger.layer([...])` replaces the loggers: `console_pretty`, `console_logfmt`, `console_json`,
+`batched(...)`, your own `fx.Logger.make(...)`, or `logger.to_logging("app")` to hand entries to
+the standard library's `logging`.
+
+## Tracing
+
+`eff.with_span(name)` runs an effect inside a span; `@fx.fn("name")` does the same for every call
+of a function. Spans nest across forked fibers, and logs inside a span become its events.
+
+<include meta='title="tracing.py"'>../../snippets/observability/tracing.py</include>
+
+The native tracer keeps spans in memory. To export them, install the OpenTelemetry bridge
+(`pyfect[otel]`) with `otel.sdk.layer(...)`: spans, logs and metrics go to OpenTelemetry's SDK
+exporters.
+
+## Metrics
+
+Metrics are descriptions: `counter`, `gauge`, `histogram`, `summary`, `frequency`, `timer`.
+`track`, `track_errors` and `track_duration` update one as an effect ends.
+
+<include meta='title="metrics.py"'>../../snippets/observability/metrics.py</include>
+
+`metric.prometheus_format()` writes the registry in the Prometheus text format for any HTTP
+framework to serve.
+
+Reference: [`pyfect.logger`](/docs/reference/logger), [`pyfect.tracer`](/docs/reference/tracer),
+[`pyfect.metric`](/docs/reference/metric), [`pyfect.otel`](/docs/reference/otel).

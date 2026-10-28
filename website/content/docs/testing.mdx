@@ -1,0 +1,34 @@
+---
+title: Testing
+description: "Deterministic tests with a virtual clock and a pytest plugin."
+---
+
+pyfect ships a pytest plugin, registered when you install the package. Decorate a generator
+test with `@testing.effect` and write it like `@fx.gen`.
+
+## The test clock
+
+`@testing.effect` runs the test with a `TestClock`: time only moves when the test calls
+`testing.adjust` or `set_time`, and every fiber woken by a move runs until it waits again. Tests
+of retries, timeouts and schedules are exact and take no real time.
+
+A test that would wait forever fails with `StalledError` instead of hanging, and each test has a
+real-time timeout (`@testing.effect(timeout=10)`, 5 seconds by default) that interrupts it and
+runs its finalizers.
+
+<include meta='title="test_retry.py"'>../../snippets/testing/test_retry.py</include>
+
+## Services in tests
+
+`testing.layer_fixture(layer, scope=...)` builds a layer once per pytest scope. A test takes the
+fixture as its first parameter, annotated `testing.Services[...]` with what the layer builds;
+pyright rejects a test that needs anything else. The test console records what was logged.
+
+More: `@testing.live` (real clock and console), `@testing.effect(asyncio=True)`,
+`testing.effect_fixture`, `testing.flaky`, `testing.with_live`, and `assert_exit_success` and
+friends, which print the full cause on failure. Run only fast tests with
+`pytest -m "not pyfect_live"`.
+
+<include meta='title="test_services.py"'>../../snippets/testing/test_services.py</include>
+
+Reference: [`pyfect.testing`](/docs/reference/testing).

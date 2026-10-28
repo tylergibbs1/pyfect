@@ -1,0 +1,21 @@
+{
+  "title": "pyfect",
+  "pages": [
+    "---Get started---",
+    "index",
+    "installation",
+    "---Guides---",
+    "effects",
+    "errors",
+    "services",
+    "concurrency",
+    "resources",
+    "schedules",
+    "streams",
+    "config",
+    "observability",
+    "testing",
+    "---Reference---",
+    "reference"
+  ]
+}

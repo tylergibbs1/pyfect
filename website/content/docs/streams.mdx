@@ -1,0 +1,48 @@
+---
+title: Streams
+description: "Pull-based streams with backpressure, concurrency and sinks."
+---
+
+A `Stream[A, E, R]` emits any number of `A`s, then ends or fails with `E`. Streams are pulled:
+nothing runs until a consumer asks for items, so a slow consumer slows the producer down
+(backpressure) and memory stays bounded.
+
+<CodeOutput>
+
+<include meta='title="basics.py"'>../../snippets/streams/basics.py</include>
+
+<include lang="text">../../snippets/streams/basics.out</include>
+
+</CodeOutput>
+
+Build streams with `stream.make`, `from_iterable`, `range`, `unfold`, `paginate`,
+`from_queue`, `from_async_iterable`, `tick`, ... and transform them with methods: `map`,
+`map_effect`, `filter`, `take`, `scan`, `grouped`, `zip`, `merge`, `buffer`, `debounce`,
+`throttle`, `retry`, `timeout`. The ones that remove an error or a service (`stream.catch_tag`,
+`stream.provide`) are functions for `.pipe`, as for effects.
+
+## Sinks
+
+A `Sink` consumes a stream and produces a result; `run_collect`, `run_fold` and
+`run_for_each` are shortcuts for common ones.
+
+<include meta='title="sinks.py"'>../../snippets/streams/sinks.py</include>
+
+## A pipeline
+
+NDJSON records arriving in byte chunks, priced by a flaky service four at a time with retries,
+buffered so memory stays bounded, batched and written by a sink. `examples/stream_pipeline.py`
+in the repository is a longer version.
+
+<include meta='title="pipeline.py"'>../../snippets/streams/pipeline.py</include>
+
+Streams are pulled: nothing upstream runs until the sink asks for more. `map_effect` keeps
+at most four calls in flight and `buffer` lets pricing run at most eight items ahead of the
+writer, so a slow sink slows the whole pipeline instead of filling memory.
+
+<Diagram name="stream-pipeline" title="The pipeline's stages from byte chunks to the sink, which pulls from upstream" />
+
+`fx.encoding` has framers for NDJSON, JSON arrays and Server-Sent Events.
+
+Reference: [`pyfect.stream`](/docs/reference/stream), [`pyfect.sink`](/docs/reference/sink),
+[`pyfect.channel`](/docs/reference/channel).

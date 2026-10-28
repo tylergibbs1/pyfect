@@ -1,0 +1,47 @@
+{
+  "name": "pyfect-docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "generate:api": "cd .. && uv run --with ./website/node_modules/fumadocs-python python website/scripts/generate_api.py website/.generated",
+    "predev": "npm run generate:api",
+    "dev": "next dev",
+    "prebuild": "node scripts/check-api.mjs",
+    "build": "next build",
+    "postbuild": "node scripts/check-links.mjs",
+    "start": "next start",
+    "check:layout": "node scripts/check-layout.mjs",
+    "types:check": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "class-variance-authority": "0.7.1",
+    "cmdk": "1.1.1",
+    "cn": "0.5.0",
+    "fumadocs-core": "16.17.8",
+    "fumadocs-mdx": "15.4.10",
+    "fumadocs-python": "1.0.5",
+    "fumadocs-ui": "npm:@fumadocs/base-ui@16.17.8",
+    "lucide-react": "1.62.0",
+    "next": "16.4.2",
+    "next-themes": "0.4.6",
+    "pele": "1.12.0",
+    "radix-ui": "1.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "shiki": "4.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/mdast": "4.0.4",
+    "@types/mdx": "2.0.14",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "mdast-util-mdx-jsx": "3.2.0",
+    "playwright-core": "1.64.1",
+    "postcss": "8.5.32",
+    "tailwindcss": "4.3.3",
+    "tw-animate-css": "1.4.0",
+    "typescript": "7.0.2"
+  }
+}
