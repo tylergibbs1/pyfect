@@ -4629,6 +4629,8 @@ def sql_statements(
         fx.Effect[list[Row], SqlError, reactivity.Reactivity],
     )
     assert_type(sqlite_sql.backup("copy.db"), fx.Effect[sql_sqlite.BackupMetadata, SqlError])
+    # SQLite has no UPDATE ... FROM (VALUES ...): Effect types updateValues as `never`.
+    sqlite_sql.update_values([{"id": 1}], "u")  # pyright: ignore[reportDeprecated]
     assert_type(
         sql_sqlite.layer_config({"filename": fx.config.string("DATABASE_PATH")}),
         fx.Layer[sql_sqlite.SqliteClient | sql_client.SqlClient, fx.ConfigError | SqlError],

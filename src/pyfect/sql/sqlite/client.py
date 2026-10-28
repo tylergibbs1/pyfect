@@ -13,6 +13,7 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Never, Unpack
+from warnings import deprecated
 
 from pyfect._core import Effect, _Suspend, _WithFiber
 from pyfect.clock import Clock, sleep
@@ -101,8 +102,10 @@ class SqliteClientService(SqlClientService):
         return scoped(self.reserve.flat_map(lambda _: conn.load_extension(path)))
 
     @staticmethod
+    @deprecated("update_values is not supported by SQLite")
     def update_values(value: Sequence[Mapping[str, object]], alias: str) -> RecordUpdateHelper:
-        """Not supported by SQLite."""
+        """Not supported by SQLite: a type error (Effect's ``never``), and a
+        ``TypeError`` when called anyway."""
         raise TypeError("update_values is not supported by SQLite")
 
 
