@@ -16,7 +16,9 @@ conversion), ``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
 ``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``. Transactions:
 ``fx.tx``, ``fx.tx_retry``, ``fx.Transaction`` (metadata types in ``fx.transaction``),
-``fx.TxRef``, ``fx.TxChunk``, ``fx.TxHashMap``, ``fx.TxHashSet``. Logging:
+``fx.TxRef``, ``fx.TxChunk``, ``fx.TxHashMap``, ``fx.TxHashSet``, ``fx.TxQueue``
+(views ``fx.TxEnqueue`` / ``fx.TxDequeue``), ``fx.TxDeferred``, ``fx.TxSemaphore``,
+``fx.TxReentrantLock``, ``fx.TxPriorityQueue``. Logging:
 ``fx.log`` and its levels, ``fx.LogLevel``, ``fx.Logger`` (formatters and layers in
 ``fx.logger``). Tracing: ``eff.with_span``, ``fx.fn("name")``, ``fx.use_span``,
 ``fx.current_span`` and the rest; spans and tracers in ``fx.tracer``. Metrics:
@@ -240,9 +242,14 @@ from pyfect.tracer import (
 )
 from pyfect.transaction import Transaction, tx, tx_retry
 from pyfect.tx_chunk import TxChunk
+from pyfect.tx_deferred import TxDeferred
 from pyfect.tx_hash_map import TxHashMap
 from pyfect.tx_hash_set import TxHashSet
+from pyfect.tx_priority_queue import TxPriorityQueue
+from pyfect.tx_queue import TxDequeue, TxEnqueue, TxQueue
+from pyfect.tx_reentrant_lock import TxReentrantLock
 from pyfect.tx_ref import TxRef
+from pyfect.tx_semaphore import TxSemaphore
 
 __all__ = [
     "AsyncioRequiredError",
@@ -336,9 +343,16 @@ __all__ = [
     "TimeoutException",
     "Transaction",
     "TxChunk",
+    "TxDeferred",
+    "TxDequeue",
+    "TxEnqueue",
     "TxHashMap",
     "TxHashSet",
+    "TxPriorityQueue",
+    "TxQueue",
+    "TxReentrantLock",
     "TxRef",
+    "TxSemaphore",
     "UnhandledError",
     "UnhandledLogLevel",
     "UnknownError",

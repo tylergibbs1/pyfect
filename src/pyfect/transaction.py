@@ -204,6 +204,25 @@ def tx(eff: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
     )
 
 
+def tx_restoring[A, E](restore: Restore, eff: Effect[A, E, Transaction]) -> Effect[A, E]:
+    """``tx(eff)`` called from an uninterruptible region: the body and its
+    ``tx_retry`` wait run under ``restore``, while the commit and what the
+    caller does next stay uninterruptible, so an interrupt cannot land
+    between committing a claim (a permit, a lock) and guarding it."""
+    require_effect(eff, "eff")
+    return _tx_restoring(restore, eff)
+
+
+def _tx_restoring(restore: Restore, eff: Effect[Any, Any, Any]) -> Effect[Any, Any]:
+    return _WithFiber(
+        lambda fiber: (
+            restore(eff)
+            if active_transaction(fiber) is not None
+            else _boundary(fiber, eff, restore)
+        )
+    )
+
+
 def transactional[A](f: Callable[[TransactionMeta], A]) -> Effect[A]:
     """``f`` applied to the running transaction, in a transaction of its
     own when none is running. The building block of ``TxRef``."""
@@ -227,7 +246,12 @@ tx_retry: Effect[Never, Never, Transaction] = Transaction().flat_map(_retry)
 it read has been written."""
 
 
-def _boundary[A, E](fiber: Fiber[Any, Any], eff: Effect[A, E, Any]) -> Effect[A, E]:
+def _boundary[A, E](
+    fiber: Fiber[Any, Any], eff: Effect[A, E, Any], restore: Restore | None = None
+) -> Effect[A, E]:
+    """Run ``eff`` as the outermost transaction. With ``restore``, the
+    caller is already uninterruptible and ``restore`` makes the body
+    interruptible again; without it, the boundary masks itself."""
     clock = fiber.get_ref(Clock)
     state = TransactionMeta(clock.unsafe_now_nanos())
 
@@ -250,7 +274,7 @@ def _boundary[A, E](fiber: Fiber[Any, Any], eff: Effect[A, E, Any]) -> Effect[A,
 
         return attempt.flat_map(step)
 
-    return uninterruptible_mask(run)
+    return uninterruptible_mask(run) if restore is None else run(restore)
 
 
 _VOID: Effect[None] = _Succeed(None)

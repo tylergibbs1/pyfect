@@ -4224,3 +4224,84 @@ def check_tx_collections(
     assert_type(tx_set.map(len), fx.Effect[fx.TxHashSet[int], Never, Never])
     assert_type(tx_set.reduce(0, lambda acc, v: acc + len(v)), fx.Effect[int, Never, Never])
     tx_set.add(1)  # pyright: ignore[reportArgumentType]
+
+
+def check_tx_queue(
+    queue: fx.TxQueue[int, str],
+    ended: fx.TxQueue[int, fx.Done],
+    mixed: fx.TxQueue[int, str | fx.Done],
+) -> None:
+    assert_type(fx.TxQueue[int].bounded(2), fx.Effect[fx.TxQueue[int, Never], Never, Never])
+    assert_type(
+        fx.TxQueue[int, fx.Done].unbounded(), fx.Effect[fx.TxQueue[int, fx.Done], Never, Never]
+    )
+    assert_type(queue.offer(1), fx.Effect[bool, Never, Never])
+    assert_type(queue.offer_all([1, 2]), fx.Effect[list[int], Never, Never])
+    assert_type(queue.take(), fx.Effect[int, str, Never])
+    assert_type(queue.poll(), fx.Effect[fx.option.Option[int], Never, Never])
+    assert_type(queue.take_n(2), fx.Effect[list[int], str, Never])
+    assert_type(queue.clear(), fx.Effect[list[int], str, Never])
+    assert_type(ended.clear(), fx.Effect[list[int], Never, Never])
+    assert_type(mixed.clear(), fx.Effect[list[int], str, Never])
+    assert_type(ended.end(), fx.Effect[bool, Never, Never])
+    assert_type(mixed.end(), fx.Effect[bool, Never, Never])
+    assert_type(queue.await_completion(), fx.Effect[None, Never, Never])
+    queue.end()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    queue.offer("a")  # pyright: ignore[reportArgumentType]
+
+    def drain(dequeue: fx.TxDequeue[float, object]) -> None:
+        assert_type(dequeue.take_all(), fx.Effect[Sequence[float], object, Never])
+
+    def clear_view(
+        ended_view: fx.TxDequeue[int, fx.Done], mixed_view: fx.TxDequeue[int, str | fx.Done]
+    ) -> None:
+        assert_type(ended_view.clear(), fx.Effect[Sequence[int], Never, Never])
+        assert_type(mixed_view.clear(), fx.Effect[Sequence[int], str, Never])
+
+    clear_view(ended, mixed)
+
+    def produce(enqueue: fx.TxEnqueue[bool, str]) -> None:
+        assert_type(enqueue.offer(True), fx.Effect[bool, Never, Never])
+
+    drain(queue)
+    produce(queue)
+    widened_queue: fx.TxQueue[object, str] = queue  # pyright: ignore[reportAssignmentType]
+    del widened_queue
+
+
+def check_tx_coordination(
+    deferred: fx.TxDeferred[int, str],
+    semaphore: fx.TxSemaphore,
+    lock: fx.TxReentrantLock,
+    pq: fx.TxPriorityQueue[str],
+) -> None:
+    assert_type(fx.TxDeferred[int].make(), fx.Effect[fx.TxDeferred[int, Never], Never, Never])
+    assert_type(deferred.wait(), fx.Effect[int, str, Never])
+    assert_type(deferred.poll(), fx.Effect[fx.option.Option[fx.Result[int, str]], Never, Never])
+    assert_type(deferred.done(fx.Err("e")), fx.Effect[bool, Never, Never])
+    deferred.fail(1)  # pyright: ignore[reportArgumentType]
+
+    assert_type(fx.TxSemaphore.make(2), fx.Effect[fx.TxSemaphore, Never, Never])
+    assert_type(
+        semaphore.with_permit(fx.fail("e").zip(Port())), fx.Effect[tuple[Never, int], str, Port]
+    )
+    assert_type(semaphore.with_permit_scoped(), fx.Effect[None, Never, fx.Scope])
+
+    assert_type(lock.acquire_read(), fx.Effect[int, Never, Never])
+    assert_type(lock.write_lock(), fx.Effect[int, Never, fx.Scope])
+    assert_type(
+        lock.with_read_lock(fx.succeed("a").zip(Port())), fx.Effect[tuple[str, int], Never, Port]
+    )
+
+    assert_type(fx.TxPriorityQueue.make(3, 1), fx.Effect[fx.TxPriorityQueue[int], Never, Never])
+    assert_type(
+        fx.TxPriorityQueue.from_iterable([b"a"], key=len),
+        fx.Effect[fx.TxPriorityQueue[bytes], Never, Never],
+    )
+    assert_type(fx.TxPriorityQueue[str].empty(), fx.Effect[fx.TxPriorityQueue[str], Never, Never])
+    assert_type(pq.take(), fx.Effect[str, Never, Never])
+    assert_type(pq.take_up_to(2), fx.Effect[list[str], Never, Never])
+    assert_type(pq.peek_option(), fx.Effect[fx.option.Option[str], Never, Never])
+    fx.TxPriorityQueue.make(object())  # pyright: ignore[reportArgumentType]
+    fx.TxPriorityQueue[object].empty()  # pyright: ignore[reportCallIssue]
+    pq.offer(1)  # pyright: ignore[reportArgumentType]
