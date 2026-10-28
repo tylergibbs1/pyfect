@@ -29,6 +29,7 @@ See docs/SCHEMA_DESIGN.md for how schemas are typed.
 """
 
 from pyfect.schema import ast, getter, issue, transformation
+from pyfect.schema._arbitrary_constraint import ArbitraryConstraint
 from pyfect.schema._arrays import (
     Array,
     ArraySchema,
@@ -264,6 +265,7 @@ from pyfect.schema._struct import Struct, StructSchema, suspend
 from pyfect.schema._to_codec_json import to_codec_json
 from pyfect.schema._to_equivalence import Equivalence, to_equivalence
 from pyfect.schema._to_formatter import Formatter, OnBefore, to_formatter
+from pyfect.schema._to_strategy import to_strategy
 from pyfect.schema._transform import (
     Decode,
     DecodeTo,
@@ -297,6 +299,7 @@ from pyfect.schema.ast import Check, Filter, FilterGroup, FilterOutput, make_fil
 __all__ = [
     "URL",
     "Any",
+    "ArbitraryConstraint",
     "Array",
     "ArraySchema",
     "Between",
@@ -548,6 +551,7 @@ __all__ = [
     "to_formatter",
     "to_json_schema_document",
     "to_json_schema_multi_document",
+    "to_strategy",
     "to_type",
     "transformation",
     "with_decoding_default_key",

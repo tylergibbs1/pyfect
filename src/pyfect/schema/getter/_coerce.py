@@ -13,6 +13,7 @@ from typing import Any
 
 from pyfect._js import js_number
 from pyfect._js import trim as js_trim
+from pyfect.date_time._epoch import from_epoch_millis
 from pyfect.encoding import _json
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
@@ -169,7 +170,7 @@ def to_utc(value: object) -> datetime | None:
             return _as_utc(value)
         case int() | float():
             try:
-                return datetime.fromtimestamp(value / 1000, UTC)
+                return from_epoch_millis(value)
             except (OverflowError, OSError, ValueError):
                 return None
         case str():

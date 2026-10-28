@@ -17,6 +17,7 @@ class Suspend(AST):
 
     thunk: Callable[[], AST]
     _memo: list[AST] = field(default_factory=list[AST], init=False, repr=False)
+    _typed: list[Suspend] = field(default_factory=list["Suspend"], init=False, repr=False)
     tag = "Suspend"
 
     @property
@@ -39,7 +40,14 @@ class Suspend(AST):
         return replace(self, thunk=flipped)
 
     def _to_type(self) -> Suspend:
-        def typed() -> AST:
-            return self.target.to_type()
+        # Made once, so the decoded side of a recursive schema refers back
+        # to itself: a finite graph, as the schema is.
+        if not self._typed:
 
-        return replace(self, thunk=typed)
+            def typed() -> AST:
+                return self.target.to_type()
+
+            decoded = replace(self, thunk=typed)
+            decoded._typed.append(decoded)
+            self._typed.append(decoded)
+        return self._typed[0]

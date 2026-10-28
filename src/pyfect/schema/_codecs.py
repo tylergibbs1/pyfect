@@ -16,9 +16,11 @@ from zoneinfo import ZoneInfo
 
 from pyfect import redacted as _redacted
 from pyfect.byte_size import ByteSize as _ByteSize
+from pyfect.date_time._epoch import to_epoch_millis
 from pyfect.option import Option as _Option
 from pyfect.option import Some as _Some
 from pyfect.redacted import Redacted as _Redacted
+from pyfect.schema import _arbitrary_links as _arb
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
 from pyfect.schema._arrays import optional_key
@@ -62,6 +64,7 @@ from pyfect.schema.getter import (
 URL: Bottom[SplitResult] = instance_of(
     SplitResult,
     expected="URL",
+    to_codec_arbitrary=_arb.url,
     to_codec_json=string_codec(T.url_from_string),
     **URL_INSTANCES,
 )
@@ -74,7 +77,9 @@ def _bytes_codec(_: tuple[ast.AST, ...]) -> ast.Link:
     return ast.Link(_BASE64_STRING, T.bytes_from_base64_string)
 
 
-Bytes: Bottom[bytes] = instance_of(bytes, to_codec_json=_bytes_codec)
+Bytes: Bottom[bytes] = instance_of(
+    bytes, to_codec_json=_bytes_codec, to_codec_arbitrary=_arb.bytes_
+)
 """``bytes`` (Effect's ``Uint8Array``)."""
 
 
@@ -154,12 +159,8 @@ DateTimeUtcFromString: DecodeToSchema[datetime, str] = _expecting(
 ``DateTime.formatIso`` (milliseconds, ``Z``)."""
 
 
-def _millis(value: datetime) -> int:
-    return round(value.timestamp() * 1000)
-
-
 DateTimeUtcFromMillis: DecodeToSchema[datetime, int] = Int.pipe(
-    decode_to(DateTimeUtc, T.Transformation(date_time_utc_from_input(), transform(_millis)))
+    decode_to(DateTimeUtc, T.Transformation(date_time_utc_from_input(), transform(to_epoch_millis)))
 )
 """A UTC ``datetime`` from epoch milliseconds."""
 

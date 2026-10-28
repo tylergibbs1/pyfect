@@ -35,3 +35,13 @@ def test_base64_url_decoding_follows_effect(text: str, decoded: str | None):
         assert isinstance(exit, Failure)
     else:
         assert exit == Success(decoded)
+
+
+@pytest.mark.parametrize("millis", [10574017066748, -62135596800000, 253402300799999, 1])
+def test_date_time_utc_from_millis_is_exact(millis: int):
+    """Epoch milliseconds decode to that exact instant and encode back:
+    dividing by 1000 as a float lost a microsecond (found by a Hypothesis
+    round trip, ``tests/test_schema_round_trip.py``)."""
+    decoded = S.decode_unknown_sync(S.DateTimeUtcFromMillis)(millis)
+    assert decoded.microsecond % 1000 == 0
+    assert S.encode_sync(S.DateTimeUtcFromMillis)(decoded) == millis

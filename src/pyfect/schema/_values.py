@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from pyfect._json_value import JsonValue
 from pyfect.byte_size import ByteSize as _ByteSize
 from pyfect.byte_size import is_byte_size
+from pyfect.schema import _arbitrary_links as _arb
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
 from pyfect.schema._declare import declare, instance_of
@@ -53,6 +54,7 @@ def _is_zoned(value: object) -> TypeIs[datetime]:
 DateTimeUtc: Bottom[datetime] = declare(
     _is_utc,
     expected="DateTime.Utc",
+    to_codec_arbitrary=_arb.date_time_utc,
     to_codec_json=string_codec(T.date_time_utc_from_string),
     to_formatter=DATE_TIME_UTC_FORMATTER,
 )
@@ -60,6 +62,7 @@ DateTimeUtc: Bottom[datetime] = declare(
 DateTimeZoned: Bottom[datetime] = declare(
     _is_zoned,
     expected="DateTime.Zoned",
+    to_codec_arbitrary=_arb.date_time_zoned,
     to_codec_json=string_codec(T.date_time_zoned_from_string),
     to_formatter=DATE_TIME_ZONED_FORMATTER,
 )
@@ -68,6 +71,7 @@ rejected."""
 TimeZoneNamed: Bottom[ZoneInfo] = instance_of(
     ZoneInfo,
     expected="DateTime.TimeZone.Named",
+    to_codec_arbitrary=_arb.time_zone_named,
     to_codec_json=string_codec(T.time_zone_named_from_string),
     to_formatter=ZONE_FORMATTER,
 )
@@ -75,6 +79,7 @@ TimeZoneNamed: Bottom[ZoneInfo] = instance_of(
 TimeZoneOffset: Bottom[timezone] = instance_of(
     timezone,
     expected="DateTime.TimeZone.Offset",
+    to_codec_arbitrary=_arb.time_zone_offset,
     to_codec_json=time_zone_offset_codec,
     to_formatter=ZONE_FORMATTER,
 )
@@ -88,6 +93,7 @@ def _is_zone(value: object) -> TypeIs[tzinfo]:
 TimeZone: Bottom[tzinfo] = declare(
     _is_zone,
     expected="DateTime.TimeZone",
+    to_codec_arbitrary=_arb.time_zone,
     to_codec_json=string_codec(T.time_zone_from_string),
     to_formatter=ZONE_FORMATTER,
 )

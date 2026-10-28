@@ -14,6 +14,7 @@ from collections.abc import Mapping, Set
 from dataclasses import dataclass
 from typing import Generic, TypeVar, cast
 
+from pyfect.schema import _arbitrary_links as _arb
 from pyfect.schema import _instances as _inst
 from pyfect.schema import ast
 from pyfect.schema._codec_links import link
@@ -72,6 +73,7 @@ def FrozenSet[A, I, RD, RE](value: Codec[A, I, RD, RE], /) -> FrozenSetSchema[A,
         annotations={
             "expected": "frozenset",
             "to_codec": _set_codec,
+            "to_codec_arbitrary": _arb.frozen_set,
             "to_equivalence": _inst.set_equivalence,
             "to_formatter": _inst.set_formatter,
         },
@@ -126,6 +128,7 @@ def Map[K, V, KI, VI, RD, RE](
     annotations = {
         "expected": "Mapping",
         "to_codec": _map_codec,
+        "to_codec_arbitrary": _arb.map_,
         "to_equivalence": _inst.map_equivalence,
         "to_formatter": _inst.map_formatter,
     }

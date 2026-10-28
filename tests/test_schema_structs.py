@@ -3,7 +3,7 @@ from annotations, defaults, frozen errors, union dispatch by tag)."""
 
 import copy
 import pickle
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, Never, NotRequired, TypedDict
 
 import pytest
 
@@ -188,3 +188,28 @@ def test_disable_checks_skips_the_class_checks_when_decoding():
     decoded = S.decode_unknown_sync(_Range)({"low": 2, "high": 1}, disable_checks=True)
     assert (decoded.low, decoded.high) == (2, 1)
     SchemaAsserts(_Range).decoding().fail({"low": 2, "high": 1}, "low above high")
+
+
+class _Chain(TypedDict):
+    value: int
+    next: "_Chain | None"
+
+
+def test_the_decoded_side_of_a_recursive_schema_refers_back_to_itself():
+    # Each use of a suspend's decoded side is the same node, so walking the
+    # decoded side of a recursive schema ends (``to_strategy`` walks it).
+    chain: S.StructSchema[_Chain, Never, Never] = S.Struct(
+        _Chain, next=S.NullOr(S.suspend(lambda: chain))
+    )
+    typed = S.to_type(chain).ast
+    assert isinstance(typed, S.ast.Objects)
+    nullable = typed.properties[1].type
+    assert isinstance(nullable, S.ast.Union)
+    suspend = nullable.types[0]
+    assert isinstance(suspend, S.ast.Suspend)
+    assert suspend.to_type() is suspend
+    again = suspend.target
+    assert isinstance(again, S.ast.Objects)
+    inner = again.properties[1].type
+    assert isinstance(inner, S.ast.Union)
+    assert inner.types[0] is suspend

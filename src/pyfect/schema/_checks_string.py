@@ -40,7 +40,7 @@ def _search(regex: re.Pattern[str]) -> Callable[[str], bool]:
     return lambda s: regex.search(s) is not None
 
 
-def _js_regex(source: str) -> re.Pattern[str]:
+def js_regex(source: str) -> re.Pattern[str]:
     """A JavaScript pattern of Effect's as Python reads it: ``$`` only at
     the very end, ASCII ``\\d``."""
     return re.compile(source.replace("$", r"\Z"), re.ASCII)
@@ -115,7 +115,7 @@ def is_uuid(version: UUIDVersion | None = None, /, **annotations: object) -> Fil
         "-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$"
     )
     return string_filter(
-        _search(_js_regex(source)),
+        _search(js_regex(source)),
         "a UUID" if version is None else f"a UUID v{version}",
         "isUUID",
         {"version": version},
@@ -128,13 +128,13 @@ _ULID = "^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$"
 
 
 def is_guid(**annotations: object) -> Filter[str]:
-    return string_filter(_search(_js_regex(_GUID)), "a GUID", "isGUID", None, annotations)
+    return string_filter(_search(js_regex(_GUID)), "a GUID", "isGUID", None, annotations)
 
 
 def is_ulid(**annotations: object) -> Filter[str]:
     """A ULID; it fails with the pattern's text, as in Effect."""
     return string_filter(
-        _search(_js_regex(_ULID)),
+        _search(js_regex(_ULID)),
         f"a string matching the RegExp {_ULID}",
         "isULID",
         None,

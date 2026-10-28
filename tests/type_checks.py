@@ -3903,3 +3903,46 @@ def schema_json() -> None:
     S.to_json_schema_multi_document(())  # pyright: ignore[reportArgumentType]
     S.to_json_schema_document(S.String, on_excess_property="strip")  # pyright: ignore[reportArgumentType]
     S.to_codec_json(1)  # pyright: ignore[reportArgumentType]
+
+
+# --- Hypothesis strategies, optics ----------------------------------------------------------
+
+
+def schema_strategies() -> None:
+    from hypothesis.strategies import SearchStrategy
+
+    from pyfect import schema as S
+
+    assert_type(S.to_strategy(S.Int), SearchStrategy[int])
+    assert_type(S.to_strategy(S.NumberFromString), SearchStrategy[float])
+    assert_type(S.to_strategy(S.Array(S.String)), SearchStrategy[tuple[str, ...]])
+
+
+def optics() -> None:
+    from typing import TypedDict
+
+    from pyfect import optic
+    from pyfect.option import Option
+    from pyfect.result import Result
+
+    class Point(TypedDict):
+        x: int
+        tags: list[str]
+
+    point = optic.Id[Point]()
+    assert_type(point, optic.Id[Point])
+    x = point.key("x")
+    assert_type(x.get({"x": 1, "tags": []}), Any)
+    positive = optic.Id[int]().check(fx.schema.is_greater_than(0))
+    assert_type(positive, optic.Prism[int, int])
+    assert_type(x.compose(optic.Id[Any]()), optic.Lens[Point, Any])
+    maybe = optic.Id[int | None]().not_none()
+    assert_type(maybe, optic.Prism[int | None, int])
+    some = optic.Id[Option[int]]().compose(optic.some())
+    assert_type(some, optic.Prism[Option[int], int])
+    success = optic.Id[Result[int, str]]().compose(optic.success())
+    assert_type(success, optic.Prism[Result[int, str], int])
+    each = optic.Id[list[int]]().for_each(lambda item: item.check(fx.schema.is_int()))
+    assert_type(each.get_all([1]), list[int])
+    positive.get(1)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    x.set(1)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
