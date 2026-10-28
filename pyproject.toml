@@ -40,6 +40,10 @@ websockets = [
 pg = [
     "psycopg>=3.3",
 ]
+server = [
+    "uvicorn>=0.38",
+    "websockets>=15",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.15,<0.13.0"]
@@ -54,6 +58,7 @@ dev = [
     "pyfect[httpx]",
     "pyfect[websockets]",
     "pyfect[pg]",
+    "pyfect[server]",
     "psycopg[binary]>=3.3",
     "pyright>=1.1.414",
     "pytest>=9.1.1",

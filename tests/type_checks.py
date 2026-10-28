@@ -4992,3 +4992,39 @@ assert_type(
     ),
     fx.Layer[Never, Never, HttpServer],
 )
+
+
+# --- ASGI ------------------------------------------------------------------------------
+
+
+def check_asgi(
+    needs_port: fx.Effect[HttpServerResponse, HttpServerError, Port | HttpServerRequest | Scope],
+    plain: fx.Effect[HttpServerResponse, HttpServerError, HttpServerRequest],
+    host: fx.http.asgi.AsgiApplication,
+) -> None:
+    from pyfect.http import asgi, uvicorn_server
+    from pyfect.http.client import HttpClient
+    from pyfect.http.etag import Generator
+    from pyfect.path import Path
+    from pyfect.socket.server import SocketServerError
+
+    assert_type(asgi.to_asgi(plain), asgi.AsgiApp)
+    assert_type(asgi.to_asgi(needs_port, port_live), asgi.AsgiApp)
+    # A layer building more than the app needs is fine.
+    assert_type(asgi.to_asgi(needs_port, layer.merge(port_live, primary_live)), asgi.AsgiApp)
+    # The app's services must come from the layer.
+    asgi.to_asgi(needs_port)  # pyright: ignore[reportArgumentType]
+    asgi.to_asgi(needs_port, primary_live)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        asgi.from_asgi(host),
+        fx.Effect[HttpServerResponse, HttpServerError, HttpServerRequest],
+    )
+    assert_type(asgi.lifespan(host), fx.Effect[dict[str, Any], asgi.AsgiLifespanError, Scope])
+    assert_type(
+        uvicorn_server.layer_test(),
+        fx.Layer[
+            HttpServer | Path | HttpPlatform | fx.FileSystem | Generator | HttpClient,
+            SocketServerError,
+        ],
+    )
+    assert_type(uvicorn_server.layer_server(port=8080), fx.Layer[HttpServer, SocketServerError])

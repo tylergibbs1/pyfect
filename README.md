@@ -135,7 +135,8 @@ layer, concurrency, retries and timeouts.
   out of logs. [Config →](https://pyfect.dev/docs/config)
 - **Observability.** Logging, spans, metrics and an OpenTelemetry bridge.
   [Observability →](https://pyfect.dev/docs/observability)
-- **Platform.** Files, child processes, an HTTP client (httpx), and TCP, TLS, WebSocket
+- **Platform.** Files, child processes, an HTTP client (httpx), an HTTP server (standard library,
+  uvicorn or any ASGI server), and TCP, TLS, WebSocket
   and UDP sockets, all as services you can swap in tests. [Platform →](https://pyfect.dev/docs/platform)
 - **SQL.** Statements built from literal templates, so values are always bound parameters;
   transactions with savepoints, batching resolvers and migrations, on SQLite (standard

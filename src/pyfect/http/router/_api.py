@@ -15,6 +15,7 @@ from pyfect._layer_core import Layer, MemoMap, fork_or_create, require_layer
 from pyfect.context import Context
 from pyfect.effect import succeed
 from pyfect.http import find_my_way, server
+from pyfect.http.asgi._app import AsgiApp, to_asgi_with
 from pyfect.http.http_effect import HttpMiddleware
 from pyfect.http.incoming_message import Reviver, revive
 from pyfect.http.middleware import logger as http_logger
@@ -418,5 +419,25 @@ def to_web_handler(
         _with_router(app_layer, router_config),
         lambda ctx: succeed(ctx.unsafe_get(HttpRouter).as_http_effect()),
         _app_middleware(middleware, disable_logger),
+        memo_map=memo_map,
+    )
+
+
+def to_asgi(
+    app_layer: Layer[Any, Any, Any],
+    *,
+    middleware: Callable[[Any], Effect[HttpServerResponse, Any, Any]] | None = None,
+    router_config: find_my_way.RouterConfig | None = None,
+    disable_logger: bool = False,
+    memo_map: MemoMap | None = None,
+) -> AsgiApp:
+    """An ASGI 3 application for the routes ``app_layer`` adds
+    (``asgi.to_asgi_with``): the layer is built at the server's lifespan
+    startup and released at its shutdown."""
+    require_layer(app_layer, "app_layer")
+    return to_asgi_with(
+        _with_router(app_layer, router_config),
+        lambda ctx: ctx.unsafe_get(HttpRouter).as_http_effect(),
+        middleware=_app_middleware(middleware, disable_logger),
         memo_map=memo_map,
     )

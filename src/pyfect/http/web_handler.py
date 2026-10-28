@@ -51,6 +51,13 @@ from pyfect.scope import CloseableScope, Scope
 from pyfect.stream import Stream, from_async_iterable
 from pyfect.stream import succeed as stream_succeed
 
+type Fork = Callable[[Effect[None, Never, Any], Context[Any]], Fiber[None, Never]]
+"""Starts a request's fiber: the handled app and the request's services."""
+
+
+def _run_fork(handled: Effect[None, Never, Any], context: Context[Any]) -> Fiber[None, Never]:
+    return run_fork(handled, context=context)
+
 
 class WebHandler(Protocol):
     """Answers one request; ``context`` adds services for this request."""
@@ -251,6 +258,8 @@ def _handle(
     static: Context[Any],
     request: WebRequest,
     extra: Context[Any] | None,
+    *,
+    fork: Fork,
 ) -> Awaitable[WebResponse]:
     loop = asyncio.get_running_loop()
     result: asyncio.Future[WebResponse] = loop.create_future()
@@ -280,7 +289,7 @@ def _handle(
     handled = to_handled(app, handle_response, middleware)
     context = static if extra is None else static.merge(extra)
     context = context.add(HttpServerRequest, request_from_web(request))
-    fiber = run_fork(handled, context=context)
+    fiber = fork(handled, context)
 
     def on_exit(exit: Exit[Any, Any]) -> None:
         if not result.done():
@@ -303,10 +312,11 @@ def _handle(
 
 
 def to_web_handler_with(
-    context: Context[Any],
+    context: Context[Any], *, fork: Fork = _run_fork
 ) -> Callable[[Effect[HttpServerResponse, Any, Any], HttpMiddleware | None], WebHandler]:
     """``to_web_handler`` for an app needing the services of ``context``
-    (each request may add more)."""
+    (each request may add more). ``fork`` starts each request's fiber (a
+    root fiber by default)."""
 
     def make(
         app: Effect[HttpServerResponse, Any, Any], middleware: HttpMiddleware | None = None
@@ -314,7 +324,7 @@ def to_web_handler_with(
         def handler(
             request: WebRequest, extra: Context[Any] | None = None
         ) -> Awaitable[WebResponse]:
-            return _handle(app, middleware, context, request, extra)
+            return _handle(app, middleware, context, request, extra, fork=fork)
 
         return handler
 
@@ -436,6 +446,7 @@ def from_web_handler(
 
 
 __all__ = [
+    "Fork",
     "WebHandler",
     "WebHandlerLayer",
     "from_web_handler",

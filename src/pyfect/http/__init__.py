@@ -14,7 +14,10 @@ Client:
 Server:
 
 - ``server``: the ``HttpServer`` service, ``serve`` and the test client;
-  ``live_server``: the stdlib HTTP/1.1 server behind it
+  ``live_server``: the stdlib HTTP/1.1 server behind it;
+  ``uvicorn_server``: one on uvicorn (``pyfect[server]``)
+- ``asgi``: apps as ASGI applications (``to_asgi``), and ASGI applications
+  (FastAPI, Starlette) as apps (``from_asgi``)
 - ``server_request`` / ``server_response`` / ``server_error`` /
   ``server_respondable``: what a handler reads, returns and fails with
 - ``router`` (on ``find_my_way``), ``middleware``, ``http_effect``,
@@ -36,6 +39,7 @@ Server:
 
 from pyfect.http import (
     abort,
+    asgi,
     body,
     client,
     cookies,
@@ -79,6 +83,7 @@ __all__ = [
     "HttpClientResponse",
     "HttpClientService",
     "abort",
+    "asgi",
     "body",
     "client",
     "cookies",
