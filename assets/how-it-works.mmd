@@ -1,0 +1,4 @@
+flowchart TD
+  E["@fx.fn builds Effect[A, E, R]"] -->|"catch_tag removes an error"| E2["Effect[A, Never, R]"]
+  E2 -->|"provide(layer) removes a service"| E3["Effect[A, Never, Never]"]
+  E3 -->|"run_sync / run_async / run_main"| X["Exit: success or cause"]

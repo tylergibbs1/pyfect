@@ -11,6 +11,7 @@
     "postbuild": "node scripts/check-links.mjs",
     "start": "next start",
     "check:layout": "node scripts/check-layout.mjs",
+    "diagram:readme": "node scripts/readme-diagram.mjs",
     "types:check": "next typegen && tsc --noEmit"
   },
   "dependencies": {

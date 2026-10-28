@@ -28,6 +28,10 @@ jobs:
         working-directory: website
         run: bun install --frozen-lockfile
 
+      - name: Check the README diagram matches its source
+        working-directory: website
+        run: node scripts/readme-diagram.mjs --check
+
       - name: Generate the API reference JSON
         working-directory: website
         run: bun run generate:api

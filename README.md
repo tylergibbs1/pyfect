@@ -91,14 +91,12 @@ layer, concurrency, retries and timeouts.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    G["@fx.fn generator"] --> E["Effect[A, E, R]<br/>value · errors · services"]
-    E -- "catch_tag removes an error" --> E2["Effect[A, Never, R]"]
-    E2 -- "provide(layer) removes a service" --> E3["Effect[A, Never, Never]"]
-    E3 -- "run_sync / run_async / run_main" --> F["fiber runtime"]
-    F --> X["Exit: success or cause"]
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/how-it-works-dark.svg">
+    <img src="assets/how-it-works-light.svg" alt="An @fx.fn generator builds Effect[A, E, R]; catch_tag removes an error, provide(layer) removes a service, and run_sync runs the Effect[A, Never, Never] to an Exit." width="225">
+  </picture>
+</p>
 
 1. **Describe.** A generator decorated with `@fx.fn` builds an `Effect[A, E, R]`: a value
    that describes the work. Nothing runs yet, and pyright infers all three types with no
