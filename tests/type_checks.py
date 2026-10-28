@@ -3918,6 +3918,87 @@ def check_schema_transformations(db: Db) -> None:
     _ = db
 
 
+def schema_errors_and_tagged_unions() -> None:
+    from collections.abc import Mapping
+    from typing import Literal, TypedDict, assert_never
+
+    from pyfect import schema as S
+    from pyfect.cause import Cause
+
+    unknown: object = None
+
+    # Errors in JSON decode to data (S.ErrorInstance), never to a class the
+    # input names; a defect is a DecodedDefect, since a Die holds an exception.
+    assert_type(S.decode_unknown_sync(S.ErrorInstance)(unknown), BaseException | S.ErrorInstance)
+    assert_type(
+        S.ErrorInstance.schema(include_stack=True), S.Bottom[BaseException | S.ErrorInstance]
+    )
+    assert_type(S.Defect(), S.DecodeToSchema[BaseException, S.JsonValue, Never, Never])
+    assert_type(S.decode_unknown_sync(S.Cause(S.String, S.Defect()))(unknown), Cause[str])
+    assert_type(
+        S.decode_unknown_sync(S.Exit(S.Int, S.ErrorInstance, S.Defect()))(unknown),
+        fx.Exit[int, BaseException | S.ErrorInstance],
+    )
+    assert_type(S.DecodedDefect("a").value, S.ErrorInstance | S.JsonValue)
+
+    class Circle(TypedDict):
+        _tag: Literal["Circle"]
+        radius: float
+
+    class Square(TypedDict):
+        _tag: Literal["Square"]
+        side: float
+
+    class Point(S.TaggedClass):
+        x: int
+
+    circle = S.TaggedStruct(Circle)
+    assert_type(circle, S.TaggedStructSchema[Circle, Never, Never])
+    assert_type(
+        S.TaggedStruct(Square, side=S.FiniteFromString), S.TaggedStructSchema[Square, Never, Never]
+    )
+    shapes = S.TaggedUnion(circle, S.TaggedStruct(Square))
+    assert_type(shapes, S.TaggedUnionSchema[Circle | Square, Mapping[str, object], Never, Never])
+    assert_type(
+        S.Union(circle, S.Struct(Square)).pipe(S.to_tagged_union("_tag")),
+        S.TaggedUnionSchema[Circle | Square, Mapping[str, object], Never, Never],
+    )
+    assert_type(
+        S.TaggedUnion(Point, circle),
+        S.TaggedUnionSchema[Point | Circle, Mapping[str, object], Never, Never],
+    )
+    assert_type(shapes.is_any_of("Circle"), Callable[[Circle | Square], bool])
+    shape = S.decode_unknown_sync(shapes)(unknown)
+    if shapes.guards["Circle"](unknown):
+        assert_type(unknown, Circle | Square)
+
+    # Exhaustive matching is Python's match statement: a missing case is an error.
+    def area(shape: Circle | Square) -> float:
+        match shape:
+            case {"_tag": "Circle"}:
+                return 3.14 * shape["radius"] ** 2
+            case {"_tag": "Square"}:
+                return shape["side"] ** 2
+            case _:
+                assert_never(shape)
+
+    def partial(shape: Circle | Square) -> float:
+        match shape:
+            case {"_tag": "Circle"}:
+                return shape["radius"]
+            case _:
+                assert_never(shape)  # pyright: ignore[reportArgumentType]
+
+    _ = (area(shape), partial(shape))
+    assert_type(S.tag_default_omit("A"), S.DecodeToSchema[Literal["A"], Literal["A"], Never, Never])
+
+    # StructWithRest keeps the struct's TypedDict (an open type); PEP 728's
+    # extra_items types the other keys.
+    with_rest = S.StructWithRest(S.Struct(Circle), S.Record(S.String, S.Number))
+    assert_type(with_rest, S.StructWithRestSchema[Circle, Never, Never])
+    S.StructWithRest(S.Record(S.String, S.Number), S.Record(S.String, S.Number))  # pyright: ignore[reportArgumentType]
+
+
 # --- JSON Pointer, JSON Patch, JSON Schema -------------------------------------------------
 
 

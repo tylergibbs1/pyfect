@@ -177,8 +177,9 @@ def Result[A, E, AI, EI, RD, RE](
 # ------------------------------------------------------------------ Cause
 
 
-type Defect[RD, RE] = Codec[BaseException, BaseException, RD, RE]
-"""A defect's schema: a ``Die`` holds a ``BaseException`` on both sides."""
+type DefectCodec[RD, RE] = Codec[BaseException, object, RD, RE]
+"""A defect's schema: a ``Die`` holds a ``BaseException`` (``S.Defect()``
+writes one as JSON)."""
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -189,7 +190,7 @@ class CauseReasonSchema(
     ``Interrupt``."""
 
     error: Codec[E_co, EI_co, RD_co, RE_co]
-    defect: Defect[RD_co, RE_co]
+    defect: DefectCodec[RD_co, RE_co]
 
 
 def _reason_run(nodes: tuple[ast.AST, ...]) -> _Parser:
@@ -213,7 +214,7 @@ def _reason_run(nodes: tuple[ast.AST, ...]) -> _Parser:
 
 
 def CauseReason[E, EI, RD, RE](
-    error: Codec[E, EI, RD, RE], defect: Defect[RD, RE], /
+    error: Codec[E, EI, RD, RE], defect: DefectCodec[RD, RE], /
 ) -> CauseReasonSchema[E, EI, RD, RE]:
     """A reason of a ``Cause`` (Effect's ``CauseReason``): a ``Fail`` whose
     error ``error`` takes, a ``Die`` whose defect ``defect`` takes, or an
@@ -237,7 +238,7 @@ class CauseSchema(
     """A ``Cause`` whose reasons ``CauseReason(error, defect)`` takes."""
 
     error: Codec[E_co, EI_co, RD_co, RE_co]
-    defect: Defect[RD_co, RE_co]
+    defect: DefectCodec[RD_co, RE_co]
 
 
 def _cause_run(nodes: tuple[ast.AST, ...]) -> _Parser:
@@ -276,7 +277,7 @@ def _exit_codec(nodes: tuple[ast.AST, ...]) -> ast.Link:
 
 
 def Cause[E, EI, RD, RE](
-    error: Codec[E, EI, RD, RE], defect: Defect[RD, RE], /
+    error: Codec[E, EI, RD, RE], defect: DefectCodec[RD, RE], /
 ) -> CauseSchema[E, EI, RD, RE]:
     """A ``Cause`` (Effect's ``Cause``): each reason is parsed by
     ``CauseReason(error, defect)``, issues at ``["reasons"][i]``. Anything
@@ -308,7 +309,7 @@ class ExitSchema(
 
     value: Codec[A_co, AI_co, RD_co, RE_co]
     error: Codec[E_co, EI_co, RD_co, RE_co]
-    defect: Defect[RD_co, RE_co]
+    defect: DefectCodec[RD_co, RE_co]
 
 
 def _exit_run(nodes: tuple[ast.AST, ...]) -> _Parser:
@@ -332,7 +333,7 @@ def _exit_run(nodes: tuple[ast.AST, ...]) -> _Parser:
 
 
 def Exit[A, E, AI, EI, RD, RE](
-    value: Codec[A, AI, RD, RE], error: Codec[E, EI, RD, RE], defect: Defect[RD, RE], /
+    value: Codec[A, AI, RD, RE], error: Codec[E, EI, RD, RE], defect: DefectCodec[RD, RE], /
 ) -> ExitSchema[A, E, AI, EI, RD, RE]:
     """An ``Exit`` (Effect's ``Exit``): a ``Success`` of a ``value`` value
     (issues at ``["value"]``), or a ``Failure`` whose cause

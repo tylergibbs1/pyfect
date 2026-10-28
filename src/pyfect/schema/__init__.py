@@ -153,7 +153,6 @@ from pyfect.schema._data import (
     CauseReason,
     CauseReasonSchema,
     CauseSchema,
-    Defect,
     Exit,
     ExitSchema,
     Option,
@@ -165,6 +164,7 @@ from pyfect.schema._data import (
 )
 from pyfect.schema._declare import Parse, declare, declare_constructor, instance_of
 from pyfect.schema._error import SchemaError
+from pyfect.schema._error_instance import DecodedDefect, Defect, DefectSchema, ErrorInstance
 from pyfect.schema._jsonschema import (
     CheckContext,
     CheckOutput,
@@ -264,7 +264,22 @@ from pyfect.schema._schema import (
     Top,
     is_schema,
 )
-from pyfect.schema._struct import Struct, StructSchema, suspend
+from pyfect.schema._struct import (
+    Struct,
+    StructSchema,
+    StructWithRest,
+    StructWithRestSchema,
+    suspend,
+)
+from pyfect.schema._tagged import (
+    TaggedStruct,
+    TaggedStructSchema,
+    TaggedUnion,
+    TaggedUnionSchema,
+    ToTaggedUnion,
+    tag_default_omit,
+    to_tagged_union,
+)
 from pyfect.schema._to_codec_json import to_codec_json
 from pyfect.schema._to_codec_string_tree import StringTree, to_codec_string_tree
 from pyfect.schema._to_equivalence import Equivalence, to_equivalence
@@ -342,8 +357,10 @@ __all__ = [
     "Decode",
     "DecodeTo",
     "DecodeToSchema",
+    "DecodedDefect",
     "Decoder",
     "Defect",
+    "DefectSchema",
     "Duration",
     "Encode",
     "EncodeTo",
@@ -353,6 +370,7 @@ __all__ = [
     "EnumSchema",
     "Equivalence",
     "Error",
+    "ErrorInstance",
     "Exit",
     "ExitSchema",
     "Filter",
@@ -421,14 +439,21 @@ __all__ = [
     "StringTree",
     "Struct",
     "StructSchema",
+    "StructWithRest",
+    "StructWithRestSchema",
     "TaggedClass",
     "TaggedError",
+    "TaggedStruct",
+    "TaggedStructSchema",
+    "TaggedUnion",
+    "TaggedUnionSchema",
     "TimeZone",
     "TimeZoneFromString",
     "TimeZoneNamed",
     "TimeZoneNamedFromString",
     "TimeZoneOffset",
     "ToJsonSchema",
+    "ToTaggedUnion",
     "Top",
     "Trim",
     "Trimmed",
@@ -552,6 +577,7 @@ __all__ = [
     "resolve_annotations",
     "resolve_annotations_key",
     "suspend",
+    "tag_default_omit",
     "to_codec_json",
     "to_codec_string_tree",
     "to_encoded",
@@ -560,6 +586,7 @@ __all__ = [
     "to_json_schema_document",
     "to_json_schema_multi_document",
     "to_strategy",
+    "to_tagged_union",
     "to_type",
     "transformation",
     "with_decoding_default_key",

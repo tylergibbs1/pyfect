@@ -8,7 +8,8 @@ collecting values (``sample``), a ``checkEffect`` that always fails is
 ``SampleError`` after too many discards is Hypothesis giving up
 (``Unsatisfiable`` or a failed filter health check). ``Uint8Array`` is
 ``Bytes``, ``ReadonlySet`` / ``ReadonlyMap`` are ``FrozenSet`` / ``Map``,
-``ErrorInstance`` is ``S.Error``; code-point bounds are lengths
+a defect schema is ``S.Defect()`` (a ``Die`` holds an exception, so
+Effect's ``String`` defects are not one); code-point bounds are lengths
 (``len`` counts code points). Patterns end in ``\\Z`` where Effect's end
 in ``$``: Python's ``$`` also matches before a final newline.
 
@@ -86,10 +87,6 @@ from pyfect.schema import transformation as T
 
 GAVE_UP = (Unsatisfiable, FailedHealthCheck)
 """What Hypothesis raises where Effect reports a ``SampleError``."""
-
-
-class Boom(S.Error):
-    message: str
 
 
 def _value_errors(_: tuple[Any, ...]) -> st.SearchStrategy[ValueError]:
@@ -288,10 +285,10 @@ def test_derives_built_in_and_canonical_declarations():
             ("ReadonlySet", S.FrozenSet(S.Number)),
             ("ReadonlyMap", S.Map(S.String, S.Number)),
             ("Redacted", S.Redacted(S.String, label="password")),
-            ("CauseReason", S.CauseReason(S.String, DEFECTS)),
-            ("Cause", S.Cause(S.String, DEFECTS)),
-            ("ErrorInstance", Boom),
-            ("Exit", S.Exit(S.Number, S.String, DEFECTS)),
+            ("CauseReason", S.CauseReason(S.String, S.Defect())),
+            ("Cause", S.Cause(S.String, S.Defect())),
+            ("ErrorInstance", S.ErrorInstance),
+            ("Exit", S.Exit(S.Number, S.String, S.Defect())),
         ]
     )
 

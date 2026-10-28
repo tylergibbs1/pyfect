@@ -32,13 +32,10 @@ Omitted:
 - JavaScript's ``Date``: "DateTimeUtcFromValidDate", "Date";
   "DateTimeUtcFromString" and "DateTimeUtcFromMillis" are ported in
   ``test_schema_codecs.py``.
-- ``ErrorInstance`` and ``Defect`` (Effect's JSON form of an ``Error``): "Defect",
-  "ErrorInstance and Defect memoize equivalent options", "Error", "Exit /
-  Exit(FiniteFromString, String, Defect)", "Cause / strict encoding
-  preserves the default wire format for every reason variant" (it also
-  dies with ``42``; a Python ``Die`` holds an exception). Not ported: how
-  a decoded ``{ name, message }`` becomes a Python exception is an open
-  design question (``docs/PARITY.md`` §5, question 11).
+- Ported in ``test_schema_errors.py``: "Defect", "ErrorInstance and Defect
+  memoize equivalent options", "Error", "Exit / Exit(FiniteFromString,
+  String, Defect)", "Cause / strict encoding preserves the default wire
+  format for every reason variant".
 - "CauseReason / CauseReason(FiniteFromString, FiniteFromString)": only
   draws values, and a defect schema here is an ``instance_of`` an
   exception class, which has no strategy.

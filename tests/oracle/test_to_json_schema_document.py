@@ -28,8 +28,11 @@ Omitted:
   surrogate-pair boundary", "does not use approximate literal patterns as
   record selectors", "exports the tightest code-point bounds that accept
   every valid string" (Python lengths are exact).
-- Not yet ported schemas: ``TemplateLiteral`` and ``StructWithRest`` (every
-  title naming them), ``ErrorInstance``, ``RegExp``, ``Date``,
+- Ported in ``test_schema_errors.py`` ("Declaration / Error") and
+  ``test_schema_struct_with_rest.py`` (the ``StructWithRest`` titles; the
+  surrogate-pair and template ones stay omitted, see above and below).
+- Not yet ported schemas: ``TemplateLiteral`` (every title naming it),
+  ``RegExp``, ``Date``,
   ``MutableJson``, ``JsonObject``, ``fromJsonString`` (its ``contentSchema``
   derivation) and every "fromJsonString" title.
 - Validation-only titles: "exports both applicable bounds when the input

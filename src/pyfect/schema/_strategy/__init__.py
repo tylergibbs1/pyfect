@@ -11,10 +11,11 @@ Recursion is bounded by a budget spent on each cyclic ``Suspend``.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from typing import Any
 
 from hypothesis import strategies as st
+from hypothesis.errors import InvalidArgument
 
 from pyfect.exit import Success
 from pyfect.schema import ast
@@ -36,6 +37,7 @@ RECURSION_DEPTH = 4
 the schema's finite values need more)."""
 
 _REJECTED = object()
+_SCALARS = (ast.String, ast.Number, ast.BigInt)
 
 
 def derive(root: ast.AST) -> _Strategy:
@@ -152,20 +154,52 @@ class _Derivation:
     def _objects(
         self, node: ast.Objects, budget: int, constraint: ArbitraryConstraint
     ) -> _Strategy:
+        signatures = node.index_signatures
+
+        def fits_indexes(key: object, value: object) -> bool:
+            # A key an index signature takes holds a value of its type too
+            # (a declared key included), whichever part drew it.
+            return all(_parses(i.type, value) for i in signatures if i.selects(key))
+
+        def prop(p: ast.PropertySignature) -> tuple[Hashable, _Strategy]:
+            selecting = [i for i in signatures if i.selects(p.name)]
+            if not selecting:
+                return p.name, self(p.type, budget)
+            strategy = self._within(p.type, [i.type for i in selecting], budget)
+            return p.name, strategy.filter(lambda value: fits_indexes(p.name, value))
+
         plan = ObjectsPlan(
-            required=[(p.name, self(p.type, budget)) for p in node.properties if not p.optional],
+            required=[prop(p) for p in node.properties if not p.optional],
             optional=[
-                (p.name, self(p.type, budget))
-                for p in node.properties
-                if p.optional and self._fits(p.type, budget)
+                prop(p) for p in node.properties if p.optional and self._fits(p.type, budget)
             ],
             indexes=[
                 Index(self(i.parameter, budget), self(i.type, budget))
-                for i in node.index_signatures
+                for i in signatures
                 if self._fits(i.parameter, budget) and self._fits(i.type, budget)
             ],
+            fits_indexes=fits_indexes,
         )
         return objects(plan, constraint)
+
+    def _within(self, node: ast.AST, others: list[ast.AST], budget: int) -> _Strategy:
+        """``node``'s strategy, drawn within the checks of the scalar
+        ``others`` of its kind too (Effect combines a fixed field's
+        constraints with the index signatures taking its key); the caller
+        filters by the rest."""
+        merged = node
+        for other in others:
+            if type(other) is type(merged) and isinstance(merged, _SCALARS) and other.checks:
+                merged = ast.append_checks(merged, other.checks)
+        if merged is not node:
+            try:
+                strategy = self._checked(merged, budget)
+                strategy.validate()
+            except (InvalidArgument, ValueError):
+                pass  # No value fits both: the caller's filter gives up when drawing.
+            else:
+                return strategy
+        return self(node, budget)
 
     def _class(self, node: ast.Class, budget: int) -> _Strategy:
         shape = node.shape

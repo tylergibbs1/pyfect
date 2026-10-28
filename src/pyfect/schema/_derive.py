@@ -15,6 +15,7 @@ from __future__ import annotations
 import collections.abc
 import datetime
 import enum
+import sys
 import types
 import typing
 from collections.abc import Callable, Mapping
@@ -210,9 +211,43 @@ def objects_of(
     typed_dict: type[Mapping[str, object]], fields: Mapping[str, AnyBottom]
 ) -> ast.Objects:
     optional = optional_keys(typed_dict)
+    extra = extra_items(typed_dict)
     return ast.Objects(
         tuple(
             ast.PropertySignature(name, schema.ast, optional=name in optional)
             for name, schema in fields.items()
-        )
+        ),
+        () if extra is None else (_extra_items_signature(frozenset(fields), extra),),
     )
+
+
+def _extra_items_signature(declared: frozenset[str], extra: object) -> ast.IndexSignature:
+    """The keys ``declared`` leaves out, with values of ``extra`` (PEP 728:
+    unlike a TypeScript index signature, it does not cover the declared
+    keys)."""
+
+    def undeclared(key: str) -> bool:
+        return key not in declared
+
+    key = ast.append_checks(
+        ast.string, (ast.make_filter(undeclared, expected="an undeclared key"),)
+    )
+    return ast.IndexSignature(key, schema_of(extra).ast)
+
+
+def _no_extra_items() -> tuple[object, ...]:
+    """PEP 728's ``NoExtraItems`` markers (``typing`` from Python 3.15, else
+    ``typing_extensions``, when loaded)."""
+    modules = (typing, sys.modules.get("typing_extensions"))
+    markers = (getattr(m, "NoExtraItems", None) for m in modules)
+    return tuple(marker for marker in markers if marker is not None)
+
+
+def extra_items(typed_dict: type[Mapping[str, object]]) -> object | None:
+    """The type of the keys ``typed_dict`` does not declare (PEP 728's
+    ``extra_items=``, Effect's ``StructWithRest`` of a string record), or
+    ``None`` when it declares none (or is ``closed``)."""
+    extra = getattr(typed_dict, "__extra_items__", None)
+    if extra is None or extra is typing.Never or extra in _no_extra_items():
+        return None
+    return get_args(extra)[0] if get_origin(extra) is typing.ReadOnly else extra

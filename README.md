@@ -377,8 +377,8 @@ Patch / Pointer, `S.to_strategy` with `pyfect[hypothesis]`, `fx.optic`, `Config.
 [`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
 
 1. **More building blocks**: `STM`.
-2. **Schema's long tail**: `TemplateLiteral`, `TaggedUnion`, `BigDecimal`, the error and
-   network schemas, and `SchemaRepresentation`.
+2. **Schema's long tail**: `TemplateLiteral`, `BigDecimal`, the network schemas, and
+   `SchemaRepresentation`.
 
 ## Development
 

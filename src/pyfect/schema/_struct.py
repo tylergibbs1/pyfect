@@ -11,12 +11,14 @@ spell Effect's ``extend``, ``partial`` / ``required`` and ``pick`` / ``omit``.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Generic, Never, TypeVar, overload
 
 from pyfect.schema import ast
 from pyfect.schema._derive import typed_dict_ast, typed_dict_fields
+from pyfect.schema._record import RecordSchema
 from pyfect.schema._schema import Bottom, Codec
 
 # Explicit covariant parameters: a frozen dataclass's fields would make
@@ -50,6 +52,44 @@ def Struct(
     schemas = typed_dict_fields(typed_dict, given)
     node = typed_dict_ast(typed_dict, schemas if given else None)
     return StructSchema(node, schemas)
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class StructWithRestSchema(
+    Bottom[TD_co, Mapping[str, object], RD_co, RE_co], Generic[TD_co, RD_co, RE_co]
+):
+    """A struct whose other keys ``records`` take."""
+
+    schema: StructSchema[TD_co, RD_co, RE_co]
+    records: tuple[RecordSchema[Any, Any, Any, Any, RD_co, RE_co], ...]
+
+
+def StructWithRest[TD: Mapping[str, object], RD, RE](
+    schema: StructSchema[TD, RD, RE], /, *records: RecordSchema[Any, Any, Any, Any, RD, RE]
+) -> StructWithRestSchema[TD, RD, RE]:
+    """``schema``'s keys, and any other key one of ``records`` takes, with
+    its value (Effect's ``StructWithRest``); the checks of all of them run.
+    A TypedDict is open, so its type allows the other keys; declare their
+    type with ``extra_items=`` (PEP 728, ``typing_extensions.TypedDict``),
+    which ``Struct`` reads as a string record by itself. A key both declare
+    raises ``ValueError``, as does a struct or record with an encoding of
+    its own."""
+    nodes = [schema.ast, *(r.ast for r in records)]
+    objects = [node for node in nodes if isinstance(node, ast.Objects) and node.encoding is None]
+    if len(objects) != len(nodes):
+        raise ValueError("StructWithRest does not support encodings")
+    properties = list(objects[0].properties)
+    index_signatures = list(objects[0].index_signatures)
+    checks = objects[0].checks
+    for record in objects[1:]:
+        for p in record.properties:
+            if any(q.name == p.name for q in properties):
+                raise ValueError(f"Duplicate identifier: {json.dumps(p.name)}. ts(2300)")
+        properties += record.properties
+        index_signatures += record.index_signatures
+        checks = ast.join_checks(checks, record.checks)
+    node = ast.Objects(tuple(properties), tuple(index_signatures), checks=checks)
+    return StructWithRestSchema(node, schema, records)
 
 
 def suspend[T, E, RD, RE](f: Callable[[], Codec[T, E, RD, RE]], /) -> Bottom[T, E, RD, RE]:

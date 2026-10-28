@@ -6,8 +6,9 @@ adapter's.
 
 Ported in part: "keeps synchronous decode and encode effects eager" (a
 pyfect ``Exit`` is not an ``Effect``, so the ``_effect`` adapters wrap the
-parse's exit with ``from_exit``; the results are checked), "isSchema" (the
-``Opaque`` half waits for ``Opaque``; a schema class is a schema), "toString" (Python's
+parse's exit with ``from_exit``; the results are checked), "isSchema" (Effect's
+``Opaque`` is ``S.Class``, see ``test_schema_tagged.py``, so both halves are
+the schema class), "toString" (Python's
 ``str(error)`` is the message; Effect prints ``Fail(SchemaError(<message>))``),
 "SchemaError / extends Error and exposes the issue" (``isSchemaError`` is
 ``isinstance``; there is no ``name`` property).

@@ -16,8 +16,8 @@ Omitted:
   "Record(Symbol, Date)", "Struct with an explicitly encoded Symbol property
   name", "ReadonlyMap(Option(Symbol), Date)".
 - "exposes the source schema": the derived codec is a plain ``Bottom``.
-- Not yet ported schemas: ``TemplateLiteral``, ``Error`` / ``Defect`` /
-  ``ErrorInstance``, ``URLSearchParams``, ``RegExp``, ``HashMap``,
+- Ported in ``test_schema_errors.py``: the ``Error`` / ``Defect`` titles.
+- Not yet ported schemas: ``TemplateLiteral``, ``URLSearchParams``, ``RegExp``, ``HashMap``,
   ``brand``, ``MutableJson``, ``withDecodingDefaultKey`` and every title
   naming them, "StandardSchemaV1FailureResult".
 - Context-level details with no Python counterpart (a key's context is its

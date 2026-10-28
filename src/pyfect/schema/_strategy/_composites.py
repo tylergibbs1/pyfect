@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -89,6 +89,8 @@ class ObjectsPlan:
     required: Sequence[tuple[Hashable, Strategy]]
     optional: Sequence[tuple[Hashable, Strategy]]
     indexes: Sequence[Index]
+    fits_indexes: Callable[[Hashable, Any], bool]
+    """Whether an entry's value fits every index signature taking its key."""
 
 
 def objects(plan: ObjectsPlan, constraint: ArbitraryConstraint) -> Strategy:
@@ -99,7 +101,7 @@ def objects(plan: ObjectsPlan, constraint: ArbitraryConstraint) -> Strategy:
     low, high = constraint.min_properties or 0, constraint.max_properties
     entries = (
         st.one_of([st.tuples(i.key, i.value) for i in plan.indexes]).filter(
-            lambda entry: entry[0] not in declared
+            lambda entry: entry[0] not in declared and plan.fits_indexes(*entry)
         )
         if plan.indexes
         else None

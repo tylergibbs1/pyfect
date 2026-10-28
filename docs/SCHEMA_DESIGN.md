@@ -122,6 +122,20 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
   suspended member is a candidate for any input and is not made to select
   candidates (it may be the union itself).
 
+- Tagged unions: a case is a TypedDict struct with a `_tag: Literal["A"]`
+  key (`S.TaggedStruct`) or a `TaggedClass`; `S.TaggedUnion(*cases)` /
+  `S.to_tagged_union(tag)` keep `cases` / `guards` by literal, and a value
+  is matched with Python's `match` statement, which pyright checks for
+  exhaustiveness (`case {"_tag": "A"}:` for a TypedDict: a mapping pattern
+  that also captures keys does not narrow). A guard is a `TypeGuard` of the
+  whole union (no negative narrowing). Effect's `Opaque` is `S.Class`.
+- `S.StructWithRest(struct, *records)` keeps the struct's TypedDict as its
+  Type (TypedDicts are open); PEP 728's `extra_items=` types the other keys,
+  and `S.Struct` reads it as an index signature over the undeclared keys.
+- Errors in JSON decode to `S.ErrorInstance` (data, never a class the input
+  names); `S.Defect()` decodes to `S.DecodedDefect`, since a `Die` holds an
+  exception.
+
 `S.Int` is the `int` schema with the messages of Effect's `Int` check;
 `S.BigInt` is also `int`, with Effect's `bigint` messages.
 
