@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from enum import IntEnum, auto
 from typing import ClassVar, Literal, Never
 
-from pyfect.encoding._json import PARSE_ERRORS, Json, parse
+from pyfect._json_text import PARSE_ERRORS, Json, parse
 from pyfect.errors import TaggedError
 
 

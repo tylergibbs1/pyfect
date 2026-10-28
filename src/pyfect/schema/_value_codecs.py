@@ -71,3 +71,13 @@ _DURATION = ast.Union((tagged("Nanos", value=ast.big_int), tagged("Millis", valu
 
 def duration_codec(_: tuple[ast.AST, ...]) -> ast.Link:
     return link(_DURATION, decode=_duration_of, encode=_duration_to)
+
+
+_BYTE_SIZE_STRING = ast.annotate(
+    ast.string, {"expected": "a string that will be decoded as a ByteSize"}
+)
+
+
+def byte_size_string_tree_codec(_: tuple[ast.AST, ...]) -> ast.Link:
+    """A byte size in a string tree: its text (``"10 MB"``), as Effect's."""
+    return ast.Link(_BYTE_SIZE_STRING, T.byte_size_from_string)

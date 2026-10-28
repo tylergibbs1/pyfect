@@ -6,7 +6,7 @@ import os
 from pathlib import Path as FilePath
 
 from pyfect._core import Effect
-from pyfect.config_provider._node import Node, Path, Record, SourceError, Value
+from pyfect.config_provider._node import Keys, Node, Path, Record, SourceError, Value
 from pyfect.config_provider._provider import ConfigProvider, make
 from pyfect.effect import try_blocking
 
@@ -50,4 +50,4 @@ def _read(full: str, preserve_empty_strings: bool) -> Node | None:
 
 
 def _directory(full: str) -> Record:
-    return Record(frozenset(os.listdir(full)))
+    return Record(Keys(os.listdir(full)))

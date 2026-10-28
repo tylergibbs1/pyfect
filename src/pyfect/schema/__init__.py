@@ -20,8 +20,9 @@ says what was wrong and where; the AST is in ``pyfect.schema.ast``.
 
 ``to_codec_json(schema)`` reads and writes the schema's values as JSON
 (non-finite numbers as text, bigints as digits, ``Option`` as a tagged
-object, ...); ``to_json_schema_document(schema)`` is the JSON Schema of that
-JSON form. ``to_equivalence(schema)`` compares two decoded values and
+object, ...), ``to_codec_string_tree(schema)`` as a tree of strings;
+``to_json_schema_document(schema)`` is the JSON Schema of that JSON form.
+``to_equivalence(schema)`` compares two decoded values and
 ``to_formatter(schema)`` writes one as text (``some(1)``, ``{ "a": 1 }``);
 ``override_to_equivalence`` / ``override_to_formatter`` replace a schema's.
 
@@ -263,6 +264,7 @@ from pyfect.schema._schema import (
 )
 from pyfect.schema._struct import Struct, StructSchema, suspend
 from pyfect.schema._to_codec_json import to_codec_json
+from pyfect.schema._to_codec_string_tree import StringTree, to_codec_string_tree
 from pyfect.schema._to_equivalence import Equivalence, to_equivalence
 from pyfect.schema._to_formatter import Formatter, OnBefore, to_formatter
 from pyfect.schema._to_strategy import to_strategy
@@ -413,6 +415,7 @@ __all__ = [
     "StringFromBase64Url",
     "StringFromHex",
     "StringFromUriComponent",
+    "StringTree",
     "Struct",
     "StructSchema",
     "TaggedClass",
@@ -546,6 +549,7 @@ __all__ = [
     "resolve_annotations",
     "suspend",
     "to_codec_json",
+    "to_codec_string_tree",
     "to_encoded",
     "to_equivalence",
     "to_formatter",

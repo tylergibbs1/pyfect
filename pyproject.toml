@@ -25,6 +25,12 @@ otel = [
 hypothesis = [
     "hypothesis>=6.140",
 ]
+pydantic = [
+    "pydantic>=2.11",
+]
+msgspec = [
+    "msgspec>=0.19",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.15,<0.13.0"]
@@ -34,6 +40,8 @@ build-backend = "uv_build"
 dev = [
     "pyfect[otel]",
     "pyfect[hypothesis]",
+    "pyfect[pydantic]",
+    "pyfect[msgspec]",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
     "ruff>=0.17.2",

@@ -54,7 +54,7 @@ from pyfect.schema.ast._encoding import (
     optional_key,
     to_encoded,
 )
-from pyfect.schema.ast._json import is_json, json
+from pyfect.schema.ast._json import is_json, is_string_tree, json, string_tree
 from pyfect.schema.ast._keywords import (
     Any,
     BigInt,
@@ -158,6 +158,7 @@ __all__ = [
     "invalid_type",
     "is_exit",
     "is_json",
+    "is_string_tree",
     "issue_of",
     "join_checks",
     "json",
@@ -175,6 +176,7 @@ __all__ = [
     "run_now",
     "same_literal",
     "string",
+    "string_tree",
     "then",
     "to_effect",
     "to_encoded",

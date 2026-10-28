@@ -8,8 +8,9 @@ encoders write each chunk of values as lines. Lines may span chunks, and
 
     values = byte_stream.pipe_through_channel(ndjson.decode())
 
-The schema variants (``decodeSchema``, ``encodeSchema``, ...) come with
-``Schema``.
+The schema variants (``decode_schema``, ``encode_schema``, ``duplex_schema``
+and their ``_string`` forms) decode each parsed value with a schema, or
+encode each value before writing it, failing with ``SchemaError``.
 """
 # pyright: reportPrivateUsage=false
 
@@ -18,26 +19,34 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Literal, Never, overload
+from typing import Any, Literal, Never, Unpack, overload
 
+from pyfect import channel_schema
+from pyfect._json_text import PARSE_ERRORS, STRINGIFY_ERRORS, Json, parse, stringify
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.channel import Channel, from_transform, split_lines
 from pyfect.channel._base import AnyPull, end_with, require_channel
-from pyfect.encoding._json import PARSE_ERRORS, STRINGIFY_ERRORS, Json, parse, stringify
 from pyfect.errors import TaggedError
 from pyfect.pull import match_effect
+from pyfect.schema import Codec, ParseOptions, SchemaError
 from pyfect.scope import CloseableScope
 
 __all__ = [
     "NdjsonError",
     "NdjsonErrorReason",
     "decode",
+    "decode_schema",
+    "decode_schema_string",
     "decode_string",
     "duplex",
+    "duplex_schema",
+    "duplex_schema_string",
     "duplex_string",
     "encode",
+    "encode_schema",
+    "encode_schema_string",
     "encode_string",
 ]
 
@@ -364,3 +373,88 @@ def duplex_string(
         ignore_empty_lines=ignore_empty_lines
     )
     return outgoing.pipe_to(channel).pipe_to(incoming)
+
+
+# --- schemas ----------------------------------------------------------------------
+
+type _AnyChannel = Channel[Any, Any, Any, Any, Any, Any, Any]
+
+
+def encode_schema[T, I, RE, E = Never, D = None](
+    schema: Codec[T, I, object, RE], /
+) -> Channel[tuple[bytes, ...], E | NdjsonError | SchemaError, D, tuple[T, ...], E, D, RE]:
+    """``encode`` of each value encoded with ``schema`` first."""
+    encoded: _AnyChannel = channel_schema.encode(schema)
+    return encoded.pipe_to(encode())
+
+
+def encode_schema_string[T, I, RE, E = Never, D = None](
+    schema: Codec[T, I, object, RE], /
+) -> Channel[tuple[str, ...], E | NdjsonError | SchemaError, D, tuple[T, ...], E, D, RE]:
+    """``encode_string`` of each value encoded with ``schema`` first."""
+    encoded: _AnyChannel = channel_schema.encode(schema)
+    return encoded.pipe_to(encode_string())
+
+
+def decode_schema[T, RD, E = Never, D = None](
+    schema: Codec[T, object, RD, object],
+    /,
+    *,
+    ignore_empty_lines: bool = False,
+    max_line_bytes: int | None = None,
+    **options: Unpack[ParseOptions],
+) -> Channel[tuple[T, ...], E | NdjsonError | SchemaError, D, tuple[bytes, ...], E, D, RD]:
+    """``decode``, each parsed value then decoded with ``schema``."""
+    lines: _AnyChannel = decode(
+        ignore_empty_lines=ignore_empty_lines, max_line_bytes=max_line_bytes
+    )
+    return lines.pipe_to(channel_schema.decode_unknown(schema, **options))
+
+
+def decode_schema_string[T, RD, E = Never, D = None](
+    schema: Codec[T, object, RD, object],
+    /,
+    *,
+    ignore_empty_lines: bool = False,
+    **options: Unpack[ParseOptions],
+) -> Channel[tuple[T, ...], E | NdjsonError | SchemaError, D, tuple[str, ...], E, D, RD]:
+    """``decode_string``, each parsed value then decoded with ``schema``."""
+    lines: _AnyChannel = decode_string(ignore_empty_lines=ignore_empty_lines)
+    return lines.pipe_to(channel_schema.decode_unknown(schema, **options))
+
+
+def duplex_schema[TI, TO, OE, OD, ID, RR, IE = Never](
+    channel: Channel[_Bytes, OE, OD, _Bytes, IE | NdjsonError | SchemaError, ID, RR],
+    /,
+    *,
+    input_schema: Codec[TI, object, object, RR],
+    output_schema: Codec[TO, object, RR, object],
+    ignore_empty_lines: bool = False,
+    max_line_bytes: int | None = None,
+) -> Channel[tuple[TO, ...], NdjsonError | SchemaError | OE, OD, tuple[TI, ...], IE, ID, RR]:
+    """``duplex`` with values encoded by ``input_schema`` on the way in and
+    decoded by ``output_schema`` on the way out."""
+    require_channel(channel, "channel")
+    framed: _AnyChannel = duplex(
+        channel, ignore_empty_lines=ignore_empty_lines, max_line_bytes=max_line_bytes
+    )
+    return channel_schema.duplex_unknown(
+        framed, input_schema=input_schema, output_schema=output_schema
+    )
+
+
+def duplex_schema_string[TI, TO, OE, OD, ID, RR, IE = Never](
+    channel: Channel[_Strings, OE, OD, _Strings, IE | NdjsonError | SchemaError, ID, RR],
+    /,
+    *,
+    input_schema: Codec[TI, object, object, RR],
+    output_schema: Codec[TO, object, RR, object],
+    ignore_empty_lines: bool = False,
+) -> Channel[tuple[TO, ...], NdjsonError | SchemaError | OE, OD, tuple[TI, ...], IE, ID, RR]:
+    """``duplex_string`` with values encoded by ``input_schema`` on the way
+    in and decoded by ``output_schema`` on the way out."""
+    require_channel(channel, "channel")
+    framed: _AnyChannel = duplex_string(channel, ignore_empty_lines=ignore_empty_lines)
+    return channel_schema.duplex_unknown(
+        framed, input_schema=input_schema, output_schema=output_schema
+    )

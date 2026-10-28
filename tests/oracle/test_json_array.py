@@ -20,22 +20,18 @@ Adapted, with the reason:
   has a ``TypeError`` cause (Effect's ``undefined`` and function have
   none: ``JSON.stringify`` returns ``undefined`` instead of throwing).
 - ``JsonArray.isJsonArrayError`` is ``isinstance``.
-
-Not ported:
-
-- The ``schemas`` section ("decodeSchema decodes elements",
-  "decodeSchemaString fails with a SchemaError", "encodeSchema round trips
-  through decodeSchema"): the schema variants need ``ChannelSchema`` (M8).
 """
 
 import json
 from collections.abc import Iterator
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, TypedDict
 
 import pytest
 
 import pyfect as fx
 from pyfect import channel, stream, testing
+from pyfect import schema as S
 from pyfect.encoding import Json, json_array
 from pyfect.encoding.json_array import JsonArrayError
 
@@ -229,3 +225,57 @@ def test_fails_for_values_without_a_json_representation():
         assert error.kind == "Encode"
         assert error.offset is None
         assert isinstance(error.cause, TypeError)
+
+
+# --- schemas ----------------------------------------------------------------------
+
+
+class _Item(TypedDict):
+    id: float
+    at: datetime
+
+
+Item = S.Struct(_Item, at=S.DateTimeUtcFromString)
+
+
+@testing.effect
+def test_schemas_decode_schema_decodes_elements():
+    """schemas: decodeSchema decodes elements"""
+    body = b'{"items": [{"id": 1, "at": "2024-01-01T00:00:00Z"}]}'
+    values = yield from (
+        stream.make(body)
+        .pipe_through_channel(json_array.decode_schema(Item, pointer="/items"))
+        .run_collect()
+    )
+    assert values[0]["id"] == 1
+    assert values[0]["at"] == datetime(2024, 1, 1, tzinfo=UTC)
+
+
+@testing.effect
+def test_schemas_decode_schema_string_fails_with_a_schema_error():
+    """schemas: decodeSchemaString fails with a SchemaError"""
+    error = yield from (
+        stream.make('[{"id": "1", "at": "2024-01-01T00:00:00Z"}]')
+        .pipe_through_channel(json_array.decode_schema_string(Item))
+        .run_collect()
+        .flip()
+    )
+    assert isinstance(error, S.SchemaError)
+
+
+@testing.effect
+def test_schemas_encode_schema_round_trips_through_decode_schema():
+    """schemas: encodeSchema round trips through decodeSchema"""
+    decoded = yield from S.decode_effect(Item)({"id": 1, "at": "2024-01-01T00:00:00Z"})
+    value: _Item = {"id": 1, "at": decoded["at"]}
+    text = yield from (
+        stream.make(value).pipe_through_channel(json_array.encode_schema_string(Item)).run_string()
+    )
+    assert text == '[{"id":1,"at":"2024-01-01T00:00:00.000Z"}]'
+    values = yield from (
+        stream.make(value)
+        .pipe_through_channel(json_array.encode_schema(Item))
+        .pipe_through_channel(json_array.decode_schema(Item))
+        .run_collect()
+    )
+    assert values == [value]

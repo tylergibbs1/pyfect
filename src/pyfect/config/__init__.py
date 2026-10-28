@@ -16,7 +16,8 @@ invalid *fails* (only ``or_else`` recovers it). Constructors read one string
 (``list_of``, ``dict_of``); ``all`` / ``all_dict`` group configs, ``gen``
 builds one from a generator, and the methods ``map``, ``flat_map``,
 ``map_effect``, ``or_else``, ``with_default`` and ``nested`` transform one.
-Schema-based configs (Effect's ``Config.schema``) come with Schema.
+``schema(codec, path)`` reads any shape a schema describes (Effect's
+``Config.schema``).
 """
 
 from pyfect.config._all import all, all_dict
@@ -41,6 +42,7 @@ from pyfect.config._constructors import (
     url,
 )
 from pyfect.config._error import ConfigError
+from pyfect.config._schema import schema
 from pyfect.schema import SchemaError
 from pyfect.schema.issue import (
     Composite,
@@ -80,6 +82,7 @@ __all__ = [
     "option",
     "port",
     "redacted",
+    "schema",
     "string",
     "succeed",
     "unwrap",

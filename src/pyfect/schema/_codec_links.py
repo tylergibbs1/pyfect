@@ -19,7 +19,7 @@ from pyfect.json_schema import JsonSchema
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
 from pyfect.schema._checks_number import is_finite
-from pyfect.schema._checks_string import is_string_big_int
+from pyfect.schema._checks_string import is_string_big_int, is_string_finite
 from pyfect.schema.getter._coerce import to_number, to_string
 
 type CodecLink = Callable[[tuple[ast.AST, ...]], ast.Link | None]
@@ -96,7 +96,8 @@ _NUMBER_TEXT = ast.append_checks(
 _NUMBER_TO_STRING = link(_NUMBER_TEXT, decode=to_number, encode=js_number)
 
 
-def _literal_to_string(node: ast.Literal) -> ast.AST:
+def literal_to_string(node: ast.Literal) -> ast.AST:
+    """``node`` decoded from its text (``"1"``, ``"true"``, ``"null"``)."""
     literal = node.literal
     text = to_string(literal)
     return ast.decode_to(
@@ -139,10 +140,65 @@ def _key_node(node: ast.AST) -> ast.AST:
         case ast.Number():
             return replace(node, encoding=(_NUMBER_TO_STRING,))
         case ast.Literal() if not isinstance(node.literal, str):
-            return _literal_to_string(node)
+            return literal_to_string(node)
         case ast.Union():
             types = tuple(map(key_from_string, node.types))
             same = all(a is b for a, b in zip(types, node.types, strict=True))
             return node if same else replace(node, types=types)
         case _:
             return node
+
+
+# --- the canonical StringTree codec (``Schema.toCodecStringTree``) ------------------
+
+UNKNOWN_TO_STRING_TREE = ast.Link(ast.string_tree, _PASSTHROUGH)
+"""Any string tree, unchanged: what an opaque value is written as."""
+
+
+def _null_of(_: str) -> None:
+    return None
+
+
+def _null_text(_: None) -> str:
+    return "null"
+
+
+NULL_TO_STRING = link(ast.Literal("null"), decode=_null_of, encode=_null_text)
+"""``None`` as ``"null"``."""
+
+
+def _boolean_of(text: str) -> bool:
+    return text == "true"
+
+
+BOOLEAN_TO_STRING = link(
+    ast.Union((ast.Literal("true"), ast.Literal("false"))), decode=_boolean_of, encode=to_string
+)
+"""A boolean as ``"true"`` / ``"false"``."""
+
+_SAFE_INTEGER = 2**53 - 1
+
+
+def _text_to_number(text: str) -> float:
+    # An integral value within the safe integers is an ``int``, as
+    # ``json.loads`` gives for one: ``S.Int`` takes only an ``int``.
+    value = to_number(text)
+    if value.is_integer() and abs(value) <= _SAFE_INTEGER:
+        return int(value)
+    return value
+
+
+FINITE_STRING = ast.append_checks(ast.string, (is_string_finite(),))
+FINITE_TO_STRING = link(FINITE_STRING, decode=_text_to_number, encode=js_number)
+"""A finite number as its text."""
+NUMBER_TO_STRING = link(
+    ast.Union((FINITE_STRING, NON_FINITE)), decode=_text_to_number, encode=js_number
+)
+"""A number as its text, ``"NaN"`` / ``"Infinity"`` / ``"-Infinity"`` included."""
+
+
+def enum_to_string(node: ast.Enum) -> ast.AST:
+    """An enum with a numeric value decoded from the text of its values."""
+    coercions = {to_string(member.value): member.value for member in node.enum}
+    texts = ast.Union(tuple(ast.Literal(text) for text in coercions))
+    return replace(node, encoding=(link(texts, decode=coercions.__getitem__, encode=to_string),))

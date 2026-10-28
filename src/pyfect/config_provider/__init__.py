@@ -21,6 +21,7 @@ from pyfect.config_provider._env import from_env, from_env_record
 from pyfect.config_provider._layers import layer, layer_add
 from pyfect.config_provider._node import (
     Array,
+    Keys,
     Node,
     Path,
     PathInput,
@@ -36,6 +37,7 @@ __all__ = [
     "Array",
     "ConfigProvider",
     "CurrentConfigProvider",
+    "Keys",
     "Node",
     "Path",
     "PathInput",

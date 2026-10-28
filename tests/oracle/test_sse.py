@@ -2,18 +2,17 @@
 
 Each test's docstring is the Effect test title. ``Sse.Event`` is the
 ``sse.Event`` dataclass (no ``_tag``), ``encoder.write`` is ``sse.write``,
-and the parser's callback appends to a list.
-
-Not ported:
-
-- "Event preserves string payloads", "EventEncoded consumers can
-  explicitly decode json payloads" and "decodeDataSchema decodes json
-  payload from SSE stream": ``Sse.Event`` / ``Sse.EventEncoded`` as schemas
-  and the schema channels need ``Schema`` and ``ChannelSchema`` (M8).
+and the parser's callback appends to a list. The ``Sse.Event`` schema is
+``sse.EventSchema``, which decodes and encodes ``Event`` values (Effect's
+decodes the tagged object the parser writes); ``Sse.EventEncoded.fields``
+spread into a struct is ``S.Struct(sse.EventFields, data=...)``.
 """
+
+from typing import NotRequired, TypedDict
 
 import pytest
 
+from pyfect import schema as S
 from pyfect import stream, testing
 from pyfect.encoding import sse
 from pyfect.encoding.sse import AnyEvent, Event
@@ -180,3 +179,48 @@ def test_parses_well_formed_events_split_across_chunks():
     texts = stream.make("id: 1\nevent: up", "date\ndata: hel", "lo\n", "\n")
     events = yield from texts.pipe_through_channel(sse.decode()).run_collect()
     assert events == [Event(event="update", id="1", data="hello")]
+
+
+def test_event_preserves_string_payloads():
+    """Event preserves string payloads"""
+    decode = S.decode_unknown_sync(sse.EventSchema)
+    encode = S.encode_sync(sse.EventSchema)
+
+    event = decode(Event(event="message", id=None, data='{"type":"ok"}'))
+
+    assert event.data == '{"type":"ok"}'
+    assert encode(event) == Event(event="message", id=None, data='{"type":"ok"}')
+
+
+class _Payload(TypedDict):
+    type: str
+
+
+class _EventWithJsonPayload(TypedDict):
+    event: str
+    data: _Payload
+    id: NotRequired[str]
+
+
+def test_event_encoded_consumers_can_explicitly_decode_json_payloads():
+    """EventEncoded consumers can explicitly decode json payloads"""
+    event_with_json_payload = S.Struct(
+        _EventWithJsonPayload, data=S.from_json_string(S.Struct(_Payload))
+    )
+    decode = S.decode_unknown_sync(event_with_json_payload)
+
+    event = decode({"event": "message", "data": '{"type":"ok"}'})
+
+    assert event["data"] == {"type": "ok"}
+
+
+@testing.effect
+def test_decode_data_schema_decodes_json_payload_from_sse_stream():
+    """decodeDataSchema decodes json payload from SSE stream"""
+    events = yield from (
+        stream.make('event: message\ndata: {"type":"ok"}\n\n')
+        .pipe_through_channel(sse.decode_data_schema(S.Struct(_Payload)))
+        .run_collect()
+    )
+
+    assert events == [{"event": "message", "id": None, "data": {"type": "ok"}}]

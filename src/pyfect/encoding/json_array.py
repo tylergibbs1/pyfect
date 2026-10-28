@@ -12,32 +12,40 @@ one array::
 
     users = body.pipe_through_channel(json_array.decode(pointer="/data"))
 
-The schema variants (``decodeSchema``, ``encodeSchema``, ...) come with
-``Schema``.
+The schema variants (``decode_schema``, ``decode_schema_string``,
+``encode_schema``, ``encode_schema_string``) decode each element with a
+schema, or encode each value before writing it, failing with
+``SchemaError``.
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, Never
+from typing import Any, Never, Unpack
 
+from pyfect import channel_schema
+from pyfect._json_text import STRINGIFY_ERRORS, Json, stringify
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.channel import Channel, decode_text, from_transform
 from pyfect.channel._base import AnyPull, end_with
-from pyfect.encoding._json import STRINGIFY_ERRORS, Json, stringify
 from pyfect.encoding._json_array_scanner import Config, JsonArrayError, Scanner, make_config
 from pyfect.pull import match_effect
+from pyfect.schema import Codec, ParseOptions, SchemaError
 
 __all__ = [
     "DEFAULT_MAX_DEPTH",
     "DEFAULT_MAX_ELEMENT_SIZE",
     "JsonArrayError",
     "decode",
+    "decode_schema",
+    "decode_schema_string",
     "decode_string",
     "encode",
+    "encode_schema",
+    "encode_schema_string",
     "encode_string",
 ]
 
@@ -178,3 +186,56 @@ def encode[E = Never, D = None]() -> Channel[
         encode_string()
     )
     return strings.map(lambda chunk: tuple(text.encode() for text in chunk))
+
+
+# --- schemas ----------------------------------------------------------------------
+
+type _AnyChannel = Channel[Any, Any, Any, Any, Any, Any, Any]
+
+
+def decode_schema_string[T, RD, E = Never, D = None](
+    schema: Codec[T, object, RD, object],
+    /,
+    *,
+    pointer: str = "",
+    max_depth: int = DEFAULT_MAX_DEPTH,
+    max_element_size: float = DEFAULT_MAX_ELEMENT_SIZE,
+    **options: Unpack[ParseOptions],
+) -> Channel[tuple[T, ...], E | JsonArrayError | SchemaError, D, tuple[str, ...], E, D, RD]:
+    """``decode_string``, each element then decoded with ``schema``."""
+    elements: _AnyChannel = decode_string(
+        pointer=pointer, max_depth=max_depth, max_element_size=max_element_size
+    )
+    return elements.pipe_to(channel_schema.decode_unknown(schema, **options))
+
+
+def decode_schema[T, RD, E = Never, D = None](
+    schema: Codec[T, object, RD, object],
+    /,
+    *,
+    pointer: str = "",
+    max_depth: int = DEFAULT_MAX_DEPTH,
+    max_element_size: float = DEFAULT_MAX_ELEMENT_SIZE,
+    **options: Unpack[ParseOptions],
+) -> Channel[tuple[T, ...], E | JsonArrayError | SchemaError, D, tuple[bytes, ...], E, D, RD]:
+    """``decode``, each element then decoded with ``schema``."""
+    elements: _AnyChannel = decode(
+        pointer=pointer, max_depth=max_depth, max_element_size=max_element_size
+    )
+    return elements.pipe_to(channel_schema.decode_unknown(schema, **options))
+
+
+def encode_schema_string[T, I, RE, E = Never, D = None](
+    schema: Codec[T, I, object, RE], /
+) -> Channel[tuple[str, ...], E | JsonArrayError | SchemaError, D, tuple[T, ...], E, D, RE]:
+    """``encode_string`` of each value encoded with ``schema`` first."""
+    encoded: _AnyChannel = channel_schema.encode(schema)
+    return encoded.pipe_to(encode_string())
+
+
+def encode_schema[T, I, RE, E = Never, D = None](
+    schema: Codec[T, I, object, RE], /
+) -> Channel[tuple[bytes, ...], E | JsonArrayError | SchemaError, D, tuple[T, ...], E, D, RE]:
+    """``encode`` of each value encoded with ``schema`` first."""
+    encoded: _AnyChannel = channel_schema.encode(schema)
+    return encoded.pipe_to(encode())

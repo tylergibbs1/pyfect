@@ -11,10 +11,10 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
+from pyfect import _json_text as _json
 from pyfect._js import js_number
 from pyfect._js import trim as js_trim
 from pyfect.date_time._epoch import from_epoch_millis
-from pyfect.encoding import _json
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions

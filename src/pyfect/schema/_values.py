@@ -32,6 +32,7 @@ from pyfect.schema._record import Record, RecordSchema
 from pyfect.schema._schema import Bottom
 from pyfect.schema._value_codecs import (
     byte_size_codec,
+    byte_size_string_tree_codec,
     duration_codec,
     string_codec,
     time_zone_offset_codec,
@@ -99,7 +100,10 @@ TimeZone: Bottom[tzinfo] = declare(
 )
 """A ``ZoneInfo`` or a ``datetime.timezone`` (Effect's ``TimeZone``)."""
 ByteSize: Bottom[_ByteSize] = declare(
-    is_byte_size, expected="ByteSize", to_codec_json=byte_size_codec
+    is_byte_size,
+    expected="ByteSize",
+    to_codec_json=byte_size_codec,
+    to_codec_string_tree=byte_size_string_tree_codec,
 )
 """A ``byte_size.ByteSize``: a non-negative ``int`` (Effect's ``ByteSize``)."""
 

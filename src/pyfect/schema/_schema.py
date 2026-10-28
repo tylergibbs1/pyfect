@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from typing import Generic, Never, Protocol, Self, TypeIs, TypeVar, Unpack, cast
+from typing import Any, Generic, Never, Protocol, Self, TypeIs, TypeVar, Unpack, cast
 
 from pyfect._core import Effect
 from pyfect.exit import Success
@@ -36,6 +36,21 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
     def pipe[B](self, f: Callable[[Self], B], /) -> B:
         """``f(self)``. One function per call, as ``Effect.pipe``."""
         return f(self)
+
+    def __get_pydantic_core_schema__(
+        self: Bottom[Any, Any, Never, Never], source: object, handler: object
+    ) -> object:
+        """This schema as a pydantic field type (``pyfect.pydantic``)."""
+        from pyfect import pydantic
+
+        return pydantic.get_pydantic_core_schema(self, source, cast("Any", handler))
+
+    def __get_pydantic_json_schema__(
+        self: Bottom[Any, Any, Never, Never], core: object, handler: object
+    ) -> object:
+        from pyfect import pydantic
+
+        return pydantic.get_pydantic_json_schema(self, cast("Any", core), cast("Any", handler))
 
     def annotate(self, **annotations: object) -> Self:
         """This schema with annotations merged over its own: ``identifier``

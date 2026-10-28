@@ -3126,6 +3126,61 @@ def check_stream_text_and_framers(
     ndjson.duplex(to_text)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
 
+# --- ChannelSchema and the schema framers ------------------------------------------------
+
+
+def check_channel_schema(
+    *,
+    texts: _St[str, ValueError, Replica],
+    numbers: _St[float],
+    data: _St[bytes, ValueError],
+    sse_text: _St[str],
+    wire: fx.Channel[
+        tuple[str, ...], KeyError, int, tuple[str, ...], ValueError | fx.schema.SchemaError, str
+    ],
+) -> None:
+    from pyfect import channel_schema
+    from pyfect import schema as S
+
+    # The channel reads the schema's Encoded and writes its Type.
+    assert_type(
+        channel_schema.decode(S.NumberFromString),
+        fx.Channel[tuple[float, ...], S.SchemaError, None, tuple[str, ...], Never, None],
+    )
+    assert_type(
+        channel_schema.decode_unknown(S.NumberFromString),
+        fx.Channel[tuple[float, ...], S.SchemaError, None, tuple[object, ...], Never, None],
+    )
+    assert_type(
+        channel_schema.encode(S.NumberFromString),
+        fx.Channel[tuple[str, ...], S.SchemaError, None, tuple[float, ...], Never, None],
+    )
+    assert_type(
+        texts.pipe_through_channel(channel_schema.decode(S.NumberFromString)),
+        _St[float, ValueError | S.SchemaError, Replica],
+    )
+    assert_type(
+        channel_schema.duplex(
+            wire, input_schema=S.NumberFromString, output_schema=S.NumberFromString
+        ),
+        fx.Channel[
+            tuple[float, ...], S.SchemaError | KeyError, int, tuple[float, ...], ValueError, str
+        ],
+    )
+    assert_type(
+        data.pipe_through_channel(ndjson.decode_schema(S.NumberFromString)),
+        _St[float, ValueError | ndjson.NdjsonError | S.SchemaError],
+    )
+    assert_type(
+        numbers.pipe_through_channel(json_array.encode_schema_string(S.NumberFromString)),
+        _St[str, json_array.JsonArrayError | S.SchemaError],
+    )
+    assert_type(
+        sse_text.pipe_through_channel(sse.decode_data_schema(S.Int)),
+        _St[sse.DataEvent[int], sse.Retry | sse.SseError | S.SchemaError],
+    )
+
+
 # --- ConfigProvider --------------------------------------------------------------------
 
 
@@ -3185,6 +3240,27 @@ def check_config_constructors() -> None:
     assert_type(config.list_of(config.integer(), "PORTS"), fx.Config[list[int]])
     assert_type(config.dict_of(config.finite(), "W", separator=";"), fx.Config[dict[str, float]])
     config.list_of(config.integer, "PORTS")  # pyright: ignore[reportArgumentType]
+
+
+def check_config_schema() -> None:
+    import typing
+
+    from pyfect import config
+    from pyfect import schema as S
+
+    class Db(typing.TypedDict):
+        host: str
+        port: int
+
+    # ``config.schema`` decodes to the schema's type, whatever it encodes to.
+    assert_type(config.schema(S.Int, "PORT"), fx.Config[int])
+    assert_type(config.schema(S.Struct(Db), "db"), fx.Config[Db])
+    assert_type(config.schema(S.Array(S.Finite), ("a", 0)), fx.Config[tuple[float, ...]])
+    # A collection reads its items with a config or with a schema.
+    assert_type(config.list_of(S.Finite, "PORTS"), fx.Config[list[float]])
+    assert_type(config.dict_of(S.Int, "W"), fx.Config[dict[str, int]])
+    config.schema(config.integer(), "PORT")  # pyright: ignore[reportArgumentType]
+    config.schema(S.Int, 1)  # pyright: ignore[reportArgumentType]
 
 
 def check_config_combinators(port: fx.Config[int], host: fx.Config[str]) -> None:
@@ -3903,6 +3979,33 @@ def schema_json() -> None:
     S.to_json_schema_multi_document(())  # pyright: ignore[reportArgumentType]
     S.to_json_schema_document(S.String, on_excess_property="strip")  # pyright: ignore[reportArgumentType]
     S.to_codec_json(1)  # pyright: ignore[reportArgumentType]
+    # The string-tree codec keeps the type; its encoded side is a string tree.
+    assert_type(S.to_codec_string_tree(S.Int), S.Bottom[int, S.StringTree, Never, Never])
+    assert_type(S.to_codec_string_tree(S.Duration), S.Bottom[timedelta, S.StringTree, Never, Never])
+    S.to_codec_string_tree("x")  # pyright: ignore[reportArgumentType]
+
+
+def check_schema_adapters() -> None:
+    import msgspec
+    import pydantic
+
+    from pyfect import msgspec as M
+    from pyfect import pydantic as P
+    from pyfect import schema as S
+    from pyfect.json_patch import JsonValue
+
+    class Item(pydantic.BaseModel):
+        sku: str
+
+    class Line(msgspec.Struct):
+        sku: str
+
+    # Each adapter is a schema of the library's type, read from JSON values.
+    assert_type(P.from_model(Item), S.Bottom[Item, JsonValue])
+    assert_type(M.from_struct(Line), S.Bottom[Line, JsonValue])
+    assert_type(S.decode_unknown_sync(S.Array(M.from_struct(Line)))([]), tuple[Line, ...])
+    P.from_model(Line)  # pyright: ignore[reportArgumentType]
+    M.from_struct(Item)  # pyright: ignore[reportArgumentType]
 
 
 # --- Hypothesis strategies, optics ----------------------------------------------------------

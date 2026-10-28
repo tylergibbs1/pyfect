@@ -26,7 +26,11 @@ conversion), ``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema
 building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Sink``
 (constructors in ``fx.sink``), ``fx.Channel``
 (constructors in ``fx.channel``), ``fx.Pull`` (helpers in ``fx.pull``), ``fx.Take``
-(``fx.take``); framers (NDJSON, JSON arrays, Server-Sent Events) in ``fx.encoding``.
+(``fx.take``); framers (NDJSON, JSON arrays, Server-Sent Events) in ``fx.encoding``;
+channels decoding and encoding chunks with a schema in ``fx.channel_schema``.
+Optional adapters, each behind its extra and never imported here: pydantic
+(``pyfect.pydantic``, ``pyfect[pydantic]``) and msgspec (``pyfect.msgspec``,
+``pyfect[msgspec]``).
 """
 
 from pyfect import (
@@ -36,6 +40,7 @@ from pyfect import (
     case,
     cause,
     channel,
+    channel_schema,
     clock,
     config,
     config_provider,
@@ -346,6 +351,7 @@ __all__ = [
     "catch_tag",
     "cause",
     "channel",
+    "channel_schema",
     "clock",
     "config",
     "config_provider",

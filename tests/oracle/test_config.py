@@ -4,36 +4,23 @@ Each test's docstring is the Effect test title. Effect's ``Config.Array`` and
 ``Config.Record`` are ``config.list_of`` and ``config.dict_of``; a
 ``Schema.String.check(filter)`` is ``config.string(name).map_effect(check)``.
 
-Ported in part (the ``Config.schema`` half waits for Schema, M8): "default
-wholly absent nested configurations", "distinguish an explicit empty schema
-container from an absent all group", "validates partial schema objects and
-recovers absent all children", "rejects invalid input alongside missing
-fields in either field order", "leaves scalar-to-array parsing to the
-explicit Config.Array constructor". "recognizes SourceError defects from a
-reloaded module copy" checks a provider dying with a ``SourceError`` (Python
-has no second copy of a module to load).
-
-Omitted, because they test ``Config.schema`` over Schema codecs (M8):
-"uses the default unless a plain Array schema receives an array
-representation", "defaults absent named containers and preserves explicit
-empty containers", "preserves values successfully decoded from undefined",
-"wraps successfully decoded undefined in Some", "rejects present containers
-with incompatible shapes", "reports missing redacted input", "loads matching
-numeric record keys", every title under "materialization" but the
-``Config.Record`` / ``Config.Array`` ones ported below ("Encoded shapes",
-"Objects" with schemas, "Opaque schemas", "Union"), and every title under
-"fromEnv provider" and "fromUnknown provider".
+"recognizes SourceError defects from a reloaded module copy" checks a
+provider dying with a ``SourceError`` (Python has no second copy of a module
+to load). The titles that are mostly about ``Config.schema`` (the schema
+container titles, "materialization", "fromEnv provider" and "fromUnknown
+provider") are in ``test_config_schema.py``.
 """
 
 import math
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any, Never, cast
+from typing import Any, Never, TypedDict, cast
 from urllib.parse import urlsplit
 
 import pyfect as fx
 from pyfect import config, testing
 from pyfect import config_provider as cp
+from pyfect import schema as S
 from pyfect.byte_size import ByteSize
 from pyfect.config import Config, ConfigError, Forbidden, InvalidValue, Pointer, SchemaError
 from pyfect.config_provider import Array, Record, SourceError, Value
@@ -706,21 +693,38 @@ _ALL_DATABASE = config.all_dict(
 ).nested("database")
 
 
+class _Database(TypedDict):
+    host: str
+    port: float
+
+
+_SCHEMA_DATABASE = config.schema(S.Struct(_Database, port=S.Finite)).nested("database")
+
+
 def test_default_wholly_absent_nested_configurations():
     """default wholly absent nested configurations"""
+    assert_success(_SCHEMA_DATABASE.with_default(_FALLBACK), unknown({}), _FALLBACK)
     assert_success(_ALL_DATABASE.with_default(_FALLBACK), unknown({}), _FALLBACK)
 
 
 def test_distinguish_an_explicit_empty_schema_container_from_an_absent_all_group():
     """distinguish an explicit empty schema container from an absent all group"""
     provider = unknown({"database": {}})
+    missing_host = 'Missing key\n  at ["database"]["host"]'
+    assert_failure(_SCHEMA_DATABASE.with_default(_FALLBACK), provider, missing_host)
     assert_success(_ALL_DATABASE.with_default(_FALLBACK), provider, _FALLBACK)
+    assert_failure(config.option(_SCHEMA_DATABASE), provider, missing_host)
     assert_success(config.option(_ALL_DATABASE), provider, None)
 
 
 def test_validates_partial_schema_objects_and_recovers_absent_all_children():
     """validates partial schema objects and recovers absent all children"""
     provider = unknown({"database": {"host": "localhost"}})
+    assert_failure(
+        _SCHEMA_DATABASE.with_default(_FALLBACK),
+        provider,
+        'Missing key\n  at ["database"]["port"]',
+    )
     assert_success(_ALL_DATABASE.with_default(_FALLBACK), provider, _FALLBACK)
     assert_success(config.option(_ALL_DATABASE), provider, None)
 
@@ -745,7 +749,18 @@ def test_recovers_an_absent_child_alongside_a_successfully_decoded_undefined():
 def test_rejects_invalid_input_alongside_missing_fields_in_either_field_order():
     """rejects invalid input alongside missing fields in either field order"""
     provider = unknown({"invalid": "not-a-number"})
-    configs = [
+
+    class MissingFirst(TypedDict):
+        missing: str
+        invalid: float
+
+    class InvalidFirst(TypedDict):
+        invalid: float
+        missing: str
+
+    configs: list[Config[Mapping[str, object]]] = [
+        config.schema(S.Struct(MissingFirst, invalid=S.Finite)),
+        config.schema(S.Struct(InvalidFirst, invalid=S.Finite)),
         config.all_dict({"missing": config.string("missing"), "invalid": config.finite("invalid")}),
         config.all_dict({"invalid": config.finite("invalid"), "missing": config.string("missing")}),
     ]
@@ -1320,7 +1335,8 @@ def test_preserves_missing_array_positions_as_undefined_values():
 def test_leaves_scalar_to_array_parsing_to_the_explicit_config_array_constructor():
     """leaves scalar-to-array parsing to the explicit Config.Array constructor"""
     provider = env({"values": "1,2", "values_0": "3"})
-    assert (yield from config.list_of(config.finite(), "values").parse(provider)) == [1, 2]
+    assert (yield from config.list_of(S.Finite, "values").parse(provider)) == [1, 2]
+    assert (yield from config.schema(S.Array(S.Finite), "values").parse(provider)) == (3,)
 
 
 @testing.effect

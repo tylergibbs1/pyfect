@@ -7,7 +7,7 @@ import os
 import re
 from collections.abc import Mapping
 
-from pyfect.config_provider._node import Array, Node, Path, Record, Value
+from pyfect.config_provider._node import Array, Keys, Node, Path, Record, Value
 from pyfect.config_provider._provider import ConfigProvider, make
 from pyfect.effect import succeed
 
@@ -73,7 +73,7 @@ def _node_at(
         return None if leaf is None else Value(leaf)
     if all(_is_index(child) for child in node):
         return Array(max(int(child) for child in node) + 1, leaf)
-    return Record(frozenset(node), leaf)
+    return Record(Keys(node), leaf)
 
 
 def _is_index(key: str) -> bool:

@@ -5,19 +5,25 @@
 directive fails it with ``Retry`` (after the events before it), so the
 caller can reconnect after ``Retry.duration``. ``encode`` writes events as
 SSE text and ends with a ``retry:`` line when its upstream fails with
-``Retry``. ``make_parser`` is the push parser both build on. The schema
-variants (``decodeSchema``, ``decodeDataSchema``, ``encodeSchema``) come
-with ``Schema``.
+``Retry``. ``make_parser`` is the push parser both build on.
+
+``decode_schema`` / ``encode_schema`` decode or encode each event's
+``{"event", "data", "id"}`` fields (``EventFields``) with a schema;
+``decode_data_schema`` reads each event's ``data`` as JSON decoded with a
+schema. ``EventSchema`` is the schema of ``Event`` values and
+``EventEncoded`` the schema of their fields.
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Never
+from typing import Any, Never, NotRequired, TypedDict, Unpack, cast
 
+from pyfect import channel_schema
+from pyfect import schema as S
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
 from pyfect.cause import fail as fail_cause
 from pyfect.channel import Channel, from_transform
@@ -25,18 +31,27 @@ from pyfect.channel._base import AnyPull, end_with
 from pyfect.duration import Duration, Seconds, to_millis
 from pyfect.errors import TaggedError
 from pyfect.pull import catch_done
+from pyfect.schema import transformation as T
 
 __all__ = [
     "DEFAULT_MAX_EVENT_SIZE",
     "AnyEvent",
+    "DataEvent",
     "Event",
+    "EventEncoded",
+    "EventFields",
+    "EventSchema",
     "EventTooLarge",
     "Parser",
     "Retry",
     "SseError",
     "decode",
+    "decode_data_schema",
+    "decode_schema",
     "encode",
+    "encode_schema",
     "make_parser",
+    "transform_event",
     "write",
 ]
 
@@ -320,3 +335,114 @@ def encode[E = Never, D = None]() -> Channel[
         lambda upstream, _scope: _Sync(lambda: build(upstream))
     )
     return channel
+
+
+# --- schemas ----------------------------------------------------------------------
+
+
+class EventFields(TypedDict):
+    """An event as a schema reads it: no ``id`` before any was seen."""
+
+    event: str
+    data: str
+    id: NotRequired[str]
+
+
+class DataEvent[A](TypedDict):
+    """An event whose ``data`` was decoded (``decode_data_schema``)."""
+
+    event: str
+    id: str | None
+    data: A
+
+
+class _JsonDataFields(TypedDict):
+    event: str
+    data: object
+    id: NotRequired[str]
+
+
+EventSchema: S.Bottom[Event] = S.instance_of(Event)
+"""``Event`` values, as the decoders write them (Effect's ``Sse.Event``)."""
+
+EventEncoded = S.Struct(EventFields)
+"""An event's fields (Effect's ``Sse.EventEncoded``): build a schema for
+``decode_schema`` on them, ``S.Struct(EventFields, data=...)`` to decode
+``data`` too."""
+
+
+def _fields(event: Event) -> Mapping[str, object]:
+    if event.id is None:
+        return {"event": event.event, "data": event.data}
+    return {"id": event.id, "event": event.event, "data": event.data}
+
+
+def _event(fields: Mapping[str, object]) -> Event:
+    return Event(
+        event=cast("str", fields.get("event", "message")),
+        id=cast("str | None", fields.get("id")),
+        data=cast("str", fields["data"]),
+    )
+
+
+transform_event: T.Transformation[Mapping[str, object], Event] = T.transform(
+    decode=_fields, encode=_event
+)
+"""``Event`` to its fields and back (Effect's ``Sse.transformEvent``): an
+absent ``id`` is left out, an absent ``event`` is ``"message"``."""
+
+type _AnyChannel = Channel[Any, Any, Any, Any, Any, Any, Any]
+
+
+def decode_schema[A, RD, E = Never, D = None](
+    schema: S.Codec[A, Mapping[str, object], RD, object],
+    /,
+    *,
+    max_event_size: int = DEFAULT_MAX_EVENT_SIZE,
+    dispatch_empty_named_events: bool = False,
+    **options: Unpack[S.ParseOptions],
+) -> Channel[tuple[A, ...], E | Retry | SseError | S.SchemaError, D, tuple[str, ...], E, D, RD]:
+    """``decode``, each event's fields then decoded with ``schema``. An
+    event with no ID has no ``id`` key (declare it ``NotRequired``)."""
+    events: _AnyChannel = decode(
+        max_event_size=max_event_size, dispatch_empty_named_events=dispatch_empty_named_events
+    )
+    codec = EventSchema.pipe(S.decode_to(schema, transform_event))
+    return events.pipe_to(channel_schema.decode(codec, **options))
+
+
+def decode_data_schema[A, RD, E = Never, D = None](
+    schema: S.Codec[A, object, RD, object],
+    /,
+    *,
+    max_event_size: int = DEFAULT_MAX_EVENT_SIZE,
+    dispatch_empty_named_events: bool = False,
+) -> Channel[
+    tuple[DataEvent[A], ...], E | Retry | SseError | S.SchemaError, D, tuple[str, ...], E, D, RD
+]:
+    """``decode``, each event's ``data`` then parsed as JSON and decoded
+    with ``schema``; ``id`` is ``None`` before any was seen."""
+    events: _AnyChannel = decode(
+        max_event_size=max_event_size, dispatch_empty_named_events=dispatch_empty_named_events
+    )
+    fields = S.Struct(_JsonDataFields, data=S.from_json_string(schema))
+    codec = EventSchema.pipe(S.decode_to(fields, transform_event))
+    decoded: _AnyChannel = channel_schema.decode(codec)
+    return events.pipe_to(decoded.map(_with_id))
+
+
+def _with_id(chunk: tuple[Mapping[str, Any], ...]) -> tuple[DataEvent[Any], ...]:
+    return tuple(
+        DataEvent(event=fields["event"], id=fields.get("id"), data=fields["data"])
+        for fields in chunk
+    )
+
+
+def encode_schema[A, RE, E = Never, D = None](
+    schema: S.Codec[A, Mapping[str, object], object, RE], /
+) -> Channel[tuple[str, ...], E | S.SchemaError, None, tuple[A, ...], E | Retry, D, RE]:
+    """``encode`` of each value encoded with ``schema`` into an event's
+    fields first (no ``event`` is ``"message"``)."""
+    codec = EventSchema.pipe(S.decode_to(schema, transform_event))
+    encoded: _AnyChannel = channel_schema.encode(codec)
+    return encoded.pipe_to(encode())

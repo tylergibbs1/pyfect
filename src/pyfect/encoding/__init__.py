@@ -13,7 +13,7 @@ one with ``Stream.pipe_through_channel``::
     records = byte_stream.pipe_through_channel(ndjson.decode())
 """
 
+from pyfect._json_text import Json
 from pyfect.encoding import json_array, ndjson, sse
-from pyfect.encoding._json import Json
 
 __all__ = ["Json", "json_array", "ndjson", "sse"]

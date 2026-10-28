@@ -314,6 +314,15 @@ class _SchemaClass:
         return _shape_of(cls).codec
 
     @classmethod
+    def __get_pydantic_core_schema__(cls, source: object, handler: object) -> object:
+        """The class as a pydantic field type (``pyfect.pydantic``)."""
+        return cls.__codec__().__get_pydantic_core_schema__(source, handler)
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core: object, handler: object) -> object:
+        return cls.__codec__().__get_pydantic_json_schema__(core, handler)
+
+    @classmethod
     def fields(cls) -> Mapping[str, Bottom[object, object, Never, Never]]:
         """Each field's schema, the tag's first in a tagged class."""
         shape = _shape_of(cls)

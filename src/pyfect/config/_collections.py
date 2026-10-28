@@ -11,7 +11,7 @@ the node held something either reading could use.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, Never
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
@@ -19,10 +19,11 @@ from pyfect.cause import Cause, Fail
 from pyfect.config._config import Config, Resolution, require_config
 from pyfect.config._error import ConfigError
 from pyfect.config._leaf import EXPECTED_STRING, at, composite, expected, load
+from pyfect.config._schema import schema
 from pyfect.config_provider import Array, ConfigProvider, Node, Path, Record, Value, make
 from pyfect.effect import fail, fail_cause, succeed
 from pyfect.result import Err, Ok, Result
-from pyfect.schema import SchemaError
+from pyfect.schema import Codec, SchemaError, is_schema
 from pyfect.schema.issue import Issue
 
 type Decoded[A] = Result[A, Issue]
@@ -32,12 +33,16 @@ type Reading[A] = Callable[[ConfigProvider, Path, Node | None], Effect[Decoded[A
 
 
 def list_of[A](
-    element: Config[A], name: str | None = None, *, separator: str = ","
+    element: Config[A] | Codec[A, object, Never, object],
+    name: str | None = None,
+    *,
+    separator: str = ",",
 ) -> Config[list[A]]:
-    """A list whose items are read with ``element``: from a separated
-    string (``"1,2"``; ``""`` is empty), else from an array node
-    (``PORTS_0``, ``PORTS_1`` in ``from_env``)."""
-    require_config(element, "element")
+    """A list whose items are read with ``element`` (a config, or a schema
+    read as ``schema(element)``): from a separated string (``"1,2"``;
+    ``""`` is empty), else from an array node (``PORTS_0``, ``PORTS_1`` in
+    ``from_env``)."""
+    element = _as_config(element, "element")
 
     def from_string(provider: ConfigProvider, path: Path, node: Node | None) -> Effect[Any, Any]:
         text = None if node is None else node.value
@@ -59,21 +64,22 @@ def list_of[A](
 
 
 def dict_of[A](
-    value: Config[A],
+    value: Config[A] | Codec[A, object, Never, object],
     name: str | None = None,
     *,
     separator: str = ",",
     key_value_separator: str = "=",
 ) -> Config[dict[str, A]]:
-    """A dict whose values are read with ``value``: from a record node
-    (its keys that hold something), else from a separated string (``"a=1,b=2"``; a pair with
+    """A dict whose values are read with ``value`` (a config, or a schema
+    read as ``schema(value)``): from a record node (its keys that hold
+    something), else from a separated string (``"a=1,b=2"``; a pair with
     no separator, an empty key or an empty value is skipped)."""
-    require_config(value, "value")
+    value = _as_config(value, "value")
 
     def from_record(provider: ConfigProvider, path: Path, node: Node | None) -> Effect[Any, Any]:
         if not isinstance(node, Record):
             return succeed(Err(at(path, expected("object"))))
-        children = _load_children(provider, [(*path, k) for k in sorted(node.keys)])
+        children = _load_children(provider, [(*path, k) for k in node.keys])
         return children.flat_map(lambda items: _read_present(value, provider, items))
 
     def from_string(provider: ConfigProvider, path: Path, node: Node | None) -> Effect[Any, Any]:
@@ -88,6 +94,13 @@ def dict_of[A](
         return isinstance(node, Record) or (node is not None and node.value is not None)
 
     return _container(name, (from_record, from_string), has_input, _as_dict)
+
+
+def _as_config[A](element: Config[A] | Codec[A, object, Never, object], name: str) -> Config[A]:
+    if is_schema(element):
+        return schema(element)
+    require_config(element, name)
+    return element
 
 
 def _keyed[A](keys: list[str]) -> Callable[[Decoded[list[A]]], Decoded[dict[str, A]]]:

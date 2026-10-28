@@ -1,4 +1,4 @@
-"""JSON as the framers read and write it: ``JSON.parse`` and
+"""JSON as the framers and schema getters read and write it: ``JSON.parse`` and
 ``JSON.stringify`` semantics on top of the ``json`` module."""
 
 from __future__ import annotations

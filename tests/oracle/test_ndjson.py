@@ -12,16 +12,12 @@ Adapted, with the reason:
   ``undefined`` for them).
 - "identifies Ndjson errors" checks with ``isinstance``: type guards are
   ``isinstance`` in pyfect, so there is no ``is_ndjson_error``.
-
-Not ported:
-
-- "decodeSchema decodes records split across Uint8Array chunks": the
-  schema variants need ``ChannelSchema`` (M8).
 """
 
-from typing import Any
+from typing import Any, TypedDict
 
 import pyfect as fx
+from pyfect import schema as S
 from pyfect import stream, testing
 from pyfect.encoding import Json, ndjson
 
@@ -76,3 +72,18 @@ def test_identifies_ndjson_errors():
     assert isinstance(error, ndjson.NdjsonError)
     assert not isinstance({"_tag": "NdjsonError"}, ndjson.NdjsonError)
     assert not isinstance(None, ndjson.NdjsonError)
+
+
+class _Foo(TypedDict):
+    foo: str
+
+
+@testing.effect
+def test_decode_schema_decodes_records_split_across_uint8_array_chunks():
+    """decodeSchema decodes records split across Uint8Array chunks"""
+    messages = yield from (
+        stream.make(b'{"foo":"bar"}\n')
+        .pipe_through_channel(ndjson.decode_schema(S.Struct(_Foo)))
+        .run_collect()
+    )
+    assert messages == [{"foo": "bar"}]

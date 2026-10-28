@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 from pyfect._js import js_number
-from pyfect.config_provider._node import Array, Node, Path, Record, Value
+from pyfect.config_provider._node import Array, Keys, Node, Path, Record, Value
 from pyfect.config_provider._provider import ConfigProvider, make
 from pyfect.effect import succeed
 
@@ -47,7 +47,7 @@ def _describe(value: object, preserve_empty_strings: bool) -> Node | None:
         case list() | tuple():
             return Array(len(cast(tuple[Any, ...], value)))
         case Mapping():
-            return Record(frozenset(str(k) for k in cast(Mapping[object, object], value)))
+            return Record(Keys(str(k) for k in cast(Mapping[object, object], value)))
         case _:
             return Value(_scalar_text(value))
 
