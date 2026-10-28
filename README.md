@@ -135,6 +135,8 @@ layer, concurrency, retries and timeouts.
   out of logs. [Config →](https://pyfect.dev/docs/config)
 - **Observability.** Logging, spans, metrics and an OpenTelemetry bridge.
   [Observability →](https://pyfect.dev/docs/observability)
+- **Platform.** Files, child processes, an HTTP client (httpx), and TCP, TLS, WebSocket
+  and UDP sockets, all as services you can swap in tests. [Platform →](https://pyfect.dev/docs/platform)
 - **SQL.** Statements built from literal templates, so values are always bound parameters;
   transactions with savepoints, batching resolvers and migrations, on SQLite (standard
   library) or PostgreSQL (psycopg). [SQL →](https://pyfect.dev/docs/sql)
@@ -144,8 +146,7 @@ layer, concurrency, retries and timeouts.
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
 pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 8,500 tests, and
-about 77% of Effect's API so far, including the platform services (files, child processes, an
-HTTP client, TCP, TLS, WebSocket and UDP sockets), SQL and the CLI library. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
+about 77% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
 what is next.
 
 ## Installation
