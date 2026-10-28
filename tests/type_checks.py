@@ -4397,3 +4397,37 @@ def check_platform(
         numbers.to_file("x")  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
 
     del lines
+
+
+def check_process(
+    handle: fx.process.ChildProcessHandle, spawner: fx.process.ChildProcessSpawnerService
+) -> None:
+    from pyfect import process
+    from pyfect.process import ChildProcessHandle, ChildProcessSpawner, ExitCode
+
+    command = process.make("echo", ["hello"], cwd="/tmp", force_kill_after=0.5)
+    assert_type(command, process.StandardCommand)
+    assert_type(command.options.force_kill_after, Seconds | None)
+    assert_type(command.pipe_to(process.make("cat"), from_="stderr"), process.PipedCommand)
+    assert_type(command.set_cwd("/"), process.Command)
+    spawned: fx.Effect[ChildProcessHandle, fx.PlatformError, ChildProcessSpawner | fx.Scope] = (
+        command
+    )
+    del spawned
+    assert_type(
+        fx.scoped(command.flat_map(lambda h: h.exit_code)),
+        fx.Effect[ExitCode, fx.PlatformError, ChildProcessSpawner],
+    )
+    assert_type(handle.exit_code, fx.Effect[ExitCode, fx.PlatformError, Never])
+    assert_type(handle.stdout, fx.Stream[bytes, fx.PlatformError, Never])
+    assert_type(handle.stdin, fx.Sink[None, bytes, Never, fx.PlatformError, Never])
+    assert_type(handle.kill(force_kill_after=1), fx.Effect[None, fx.PlatformError, Never])
+    assert_type(handle.unref, fx.Effect[fx.Effect[None, fx.PlatformError], fx.PlatformError, Never])
+    assert_type(spawner.string(command), fx.Effect[str, fx.PlatformError, Never])
+    assert_type(spawner.lines(command), fx.Effect[list[str], fx.PlatformError, Never])
+    assert_type(spawner.stream_lines(command), fx.Stream[str, fx.PlatformError, Never])
+    assert_type(process.layer, fx.Layer[ChildProcessSpawner, Never, fx.FileSystem | fx.Path])
+    process.make("echo", stdin="closed")  # pyright: ignore[reportArgumentType]
+    process.make("echo", stdout=stream.make(b"x"))  # pyright: ignore[reportArgumentType]
+    command.pipe_to(command, from_="stdin")  # pyright: ignore[reportArgumentType]
+    handle.kill(kill_signal="SIGKILL")  # pyright: ignore[reportArgumentType]

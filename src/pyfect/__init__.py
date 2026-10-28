@@ -33,8 +33,9 @@ building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Sink``
 (``fx.take``); framers (NDJSON, JSON arrays, Server-Sent Events) in ``fx.encoding``;
 channels decoding and encoding chunks with a schema in ``fx.channel_schema``.
 Platform: ``fx.FileSystem`` (``fx.file_system``), ``fx.Path`` (``fx.path``),
-``fx.Stdio`` (``fx.stdio``), ``fx.Terminal`` (``fx.terminal``), ``fx.PlatformError``
-(``fx.platform_error``) and all four live services in ``fx.platform.layer``.
+``fx.Stdio`` (``fx.stdio``), ``fx.Terminal`` (``fx.terminal``), child processes
+(``fx.process``: ``make``, ``ChildProcessSpawner``), ``fx.PlatformError``
+(``fx.platform_error``) and all five live services in ``fx.platform.layer``.
 Optional adapters, each behind its extra and never imported here: pydantic
 (``pyfect.pydantic``, ``pyfect[pydantic]``) and msgspec (``pyfect.msgspec``,
 ``pyfect[msgspec]``).
@@ -71,6 +72,7 @@ from pyfect import (
     path,
     platform,
     platform_error,
+    process,
     pull,
     random,
     redacted,
@@ -464,6 +466,7 @@ __all__ = [
     "path",
     "platform",
     "platform_error",
+    "process",
     "provide",
     "provide_context",
     "provide_service",
