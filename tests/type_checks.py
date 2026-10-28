@@ -4305,3 +4305,23 @@ def check_tx_coordination(
     fx.TxPriorityQueue.make(object())  # pyright: ignore[reportArgumentType]
     fx.TxPriorityQueue[object].empty()  # pyright: ignore[reportCallIssue]
     pq.offer(1)  # pyright: ignore[reportArgumentType]
+
+
+def check_tx_pubsub(hub: fx.TxPubSub[int], ref: fx.TxSubscriptionRef[str]) -> None:
+    assert_type(fx.TxPubSub[int].bounded(2), fx.Effect[fx.TxPubSub[int], Never, Never])
+    assert_type(hub.capacity, int | None)
+    assert_type(hub.publish(1), fx.Effect[bool, Never, Never])
+    assert_type(hub.publish_all(iter([1, 2])), fx.Effect[bool, Never, Never])
+    assert_type(hub.subscribe(), fx.Effect[fx.TxDequeue[int, Never], Never, fx.Scope])
+    assert_type(hub.acquire_subscriber(), fx.Effect[fx.TxDequeue[int, Never], Never, Never])
+    assert_type(hub.await_shutdown(), fx.Effect[None, Never, Never])
+    hub.publish("a")  # pyright: ignore[reportArgumentType]
+    widened_hub: fx.TxPubSub[object] = hub  # pyright: ignore[reportAssignmentType]
+    del widened_hub
+
+    assert_type(fx.TxSubscriptionRef.make(1), fx.Effect[fx.TxSubscriptionRef[int], Never, Never])
+    assert_type(ref.modify(lambda s: (len(s), s + "!")), fx.Effect[int, Never, Never])
+    assert_type(ref.update_and_get(str.upper), fx.Effect[str, Never, Never])
+    assert_type(ref.changes(), fx.Effect[fx.TxDequeue[str, Never], Never, fx.Scope])
+    assert_type(ref.changes_stream(), fx.Stream[str, Never, Never])
+    ref.set(1)  # pyright: ignore[reportArgumentType]

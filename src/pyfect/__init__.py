@@ -18,7 +18,7 @@ conversion), ``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema
 ``fx.tx``, ``fx.tx_retry``, ``fx.Transaction`` (metadata types in ``fx.transaction``),
 ``fx.TxRef``, ``fx.TxChunk``, ``fx.TxHashMap``, ``fx.TxHashSet``, ``fx.TxQueue``
 (views ``fx.TxEnqueue`` / ``fx.TxDequeue``), ``fx.TxDeferred``, ``fx.TxSemaphore``,
-``fx.TxReentrantLock``, ``fx.TxPriorityQueue``. Logging:
+``fx.TxReentrantLock``, ``fx.TxPriorityQueue``, ``fx.TxPubSub``, ``fx.TxSubscriptionRef``. Logging:
 ``fx.log`` and its levels, ``fx.LogLevel``, ``fx.Logger`` (formatters and layers in
 ``fx.logger``). Tracing: ``eff.with_span``, ``fx.fn("name")``, ``fx.use_span``,
 ``fx.current_span`` and the rest; spans and tracers in ``fx.tracer``. Metrics:
@@ -246,10 +246,12 @@ from pyfect.tx_deferred import TxDeferred
 from pyfect.tx_hash_map import TxHashMap
 from pyfect.tx_hash_set import TxHashSet
 from pyfect.tx_priority_queue import TxPriorityQueue
+from pyfect.tx_pubsub import TxPubSub
 from pyfect.tx_queue import TxDequeue, TxEnqueue, TxQueue
 from pyfect.tx_reentrant_lock import TxReentrantLock
 from pyfect.tx_ref import TxRef
 from pyfect.tx_semaphore import TxSemaphore
+from pyfect.tx_subscription_ref import TxSubscriptionRef
 
 __all__ = [
     "AsyncioRequiredError",
@@ -349,10 +351,12 @@ __all__ = [
     "TxHashMap",
     "TxHashSet",
     "TxPriorityQueue",
+    "TxPubSub",
     "TxQueue",
     "TxReentrantLock",
     "TxRef",
     "TxSemaphore",
+    "TxSubscriptionRef",
     "UnhandledError",
     "UnhandledLogLevel",
     "UnknownError",
