@@ -168,3 +168,9 @@ def test_with_scope_ties_only_its_own_request_to_the_scope() -> None:
     assert signals[0].aborted
     assert not signals[1].aborted
     assert _run(kept[0].text) == "body"
+
+
+def test_transient_statuses_are_effects_list_not_every_5xx() -> None:
+    request = req.get("http://test/")
+    transient = {s for s in range(100, 600) if c.is_transient_response(res.make(request, status=s))}
+    assert transient == {408, 429, 500, 502, 503, 504}

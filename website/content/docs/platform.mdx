@@ -1,0 +1,80 @@
+---
+title: Platform
+description: "Files, child processes and HTTP requests as services you can swap in tests."
+---
+
+Programs reach the operating system through services: `FileSystem` and `Path` for files,
+`ChildProcessSpawner` for processes, `HttpClient` for HTTP. Your code asks for the service and
+the layer you provide decides what answers, so a test can swap the network or the disk for a
+stand-in. Every file and process operation fails with a typed `PlatformError` whose reason
+says what went wrong (`NotFound`, `PermissionDenied`, `AlreadyExists`, ...).
+
+<Diagram name="platform-layers" title="platform.layer provides the file system, path, process, stdio and terminal services; an HTTP client comes from httpx_client.layer, or layer_test in tests" />
+
+## Files
+
+`fs.read_file_string` and `fs.write_file_string` read and write a whole file; `fs.stream`
+reads one as a stream of byte chunks, so memory stays bounded however large it is, and
+`fs.sink` writes one from a stream. `make_temp_directory_scoped` gives a directory that is
+removed, with everything in it, when its scope closes.
+
+<CodeOutput>
+
+<include meta='title="files.py"'>../../snippets/platform/files.py</include>
+
+<include lang="text">../../snippets/platform/files.out</include>
+
+</CodeOutput>
+
+These programs run with `fx.run_main` rather than `run_sync`, which only takes effects that
+cannot fail: `run_main` logs a failure and exits the process with a nonzero status.
+
+## Child processes
+
+`process.make(command, args)` describes a process. Running it in a scope starts the process
+and gives a handle whose `stdout` and `stderr` are byte streams and whose `stdin` is a sink.
+When the scope closes, a process still running is killed. The spawner's `string`, `lines`
+and `stream_lines` start a command, read its output and clean up in one call.
+
+<CodeOutput>
+
+<include meta='title="child.py"'>../../snippets/platform/child.py</include>
+
+<include lang="text">../../snippets/platform/child.out</include>
+
+</CodeOutput>
+
+`pipe_to` feeds one command's output into the next, as `|` does in a shell.
+
+## HTTP requests
+
+An `HttpClient` is a value: methods like `filter_status_ok`, `retry_transient` and `transform`
+each give back a new client. `retry_transient` retries timeouts, transport errors and the
+statuses worth retrying (408, 429, 500, 502, 503 and 504), and waits at least as long as a
+response's `Retry-After` asks. `response.schema_body_json` decodes the body with a
+[schema](/docs/schema), so a payload of the wrong shape fails with a `SchemaError`.
+
+This program runs against `client.layer_test`, which answers each request with a function.
+In production, provide `httpx_client.layer` instead (install the `pyfect[httpx]` extra).
+
+<CodeOutput>
+
+<include meta='title="todos.py"'>../../snippets/platform/todos.py</include>
+
+<include lang="text">../../snippets/platform/todos.out</include>
+
+</CodeOutput>
+
+Every request runs in a client span and sends trace headers (see
+[observability](/docs/observability)); interrupting a request aborts it.
+
+## A mocked client in tests
+
+`layer_test` makes the stand-in server a one-line fixture. Under `testing.effect` the clock
+is virtual, so a test of a five-second timeout finishes at once.
+
+<include meta='title="test_todos.py"'>../../snippets/platform/test_todos.py</include>
+
+Reference: [`pyfect.file_system`](/docs/reference/file_system),
+[`pyfect.process`](/docs/reference/process), [`pyfect.http`](/docs/reference/http),
+[`pyfect.platform`](/docs/reference/platform).

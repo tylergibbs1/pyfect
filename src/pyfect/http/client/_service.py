@@ -256,8 +256,8 @@ class HttpClientService[E, R = Never]:
         schedule: Schedule[Any, Any, Any, Any] | None = None,
         times: int | None = None,
     ) -> HttpClientService[Any, Any]:
-        """Retry transient failures (timeouts, transport errors, 408 / 429 /
-        5xx statuses) and repeat on transient responses, waiting at least
+        """Retry transient failures (timeouts, transport errors, 408, 429,
+        500, 502, 503 and 504 statuses) and repeat on transient responses, waiting at least
         each response's ``Retry-After``. ``retry_on`` limits it to errors
         or to responses; ``while_`` adds errors to retry."""
         from pyfect.http.client._retry import retry_transient

@@ -1,0 +1,5 @@
+flowchart LR
+  P["platform.layer"] -->|"FileSystem, Path"| A["your program"]
+  P -->|"ChildProcessSpawner"| A
+  P -->|"Stdio, Terminal"| A
+  H["httpx_client.layer, or layer_test in tests"] -->|"HttpClient"| A

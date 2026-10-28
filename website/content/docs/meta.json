@@ -15,6 +15,7 @@
     "config",
     "schema",
     "transactions",
+    "platform",
     "observability",
     "testing",
     "---Reference---",
