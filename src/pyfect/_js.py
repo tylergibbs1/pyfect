@@ -6,6 +6,7 @@ these, not ``\\s``, ``.``, ``^`` or ``$``)."""
 
 from __future__ import annotations
 
+import codecs
 import math
 from decimal import Decimal
 
@@ -30,6 +31,19 @@ def text_encode(text: str) -> bytes:
     """``TextEncoder.encode``: UTF-8 where a surrogate pair is one character
     and a lone surrogate becomes U+FFFD (Python's ``encode`` raises)."""
     return to_well_formed(text).encode()
+
+
+def text_decoder(
+    encoding: str = "utf-8", *, fatal: bool = False, ignore_bom: bool = False
+) -> codecs.IncrementalDecoder:
+    """``new TextDecoder(encoding, { fatal, ignoreBOM })`` as an incremental
+    decoder: bad bytes become U+FFFD (or raise with ``fatal``), and a UTF-8
+    byte-order mark is dropped unless ``ignore_bom``, again after each
+    ``reset``."""
+    name = codecs.lookup(encoding).name
+    if name == "utf-8" and not ignore_bom:
+        name = "utf-8-sig"
+    return codecs.getincrementaldecoder(name)("strict" if fatal else "replace")
 
 
 def js_number(value: float) -> str:

@@ -85,6 +85,10 @@ CASES = [
     ("file://LOCALHOST/x", None, "file:///x"),
     ("file://1.1/x", None, "file://1.0.0.1/x"),
     ("http://user@1.1:8080/", None, "http://user@1.0.0.1:8080/"),
+    ("file://127.0.0.1:80", None, None),
+    ("file://host:/x", None, None),
+    ("file://u@host/x", None, None),
+    ("file://[::1]:80/x", None, None),
 ]
 
 

@@ -19,6 +19,7 @@ from opentelemetry.trace import SpanContext
 
 import pyfect as fx
 from pyfect import channel, execution_plan, layer, logger, otel, schedule, stream
+from pyfect import socket as socket_module
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.context import ServiceEffect
@@ -27,6 +28,7 @@ from pyfect.encoding import Json, json_array, ndjson, sse
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
 from pyfect.fiber_set import FiberSetRuntime
+from pyfect.net import address_resolver, dns, net_address
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.scheduler import Scheduler, SyncScheduler
@@ -4481,3 +4483,54 @@ def check_http_client(service: fx.http.HttpClientService[fx.http.HttpClientError
     request.get("/", method="GET")  # pyright: ignore[reportCallIssue]
     request.make("FETCH", "/")  # pyright: ignore[reportArgumentType]
     request.post("/").compress_body("brotli")  # pyright: ignore[reportArgumentType]
+
+
+def check_net_socket(
+    service: dns.DnsService,
+    resolver: address_resolver.AddressResolverService,
+    sock: socket_module.SocketService,
+    srv: socket_module.server.SocketServerService,
+) -> None:
+    from ipaddress import IPv4Address, IPv6Address
+
+    assert_type(
+        service.lookup("example.com", family="IPv4"),
+        fx.Effect[tuple[IPv4Address, ...], dns.DnsError],
+    )
+    assert_type(
+        service.lookup("example.com", family="IPv6"),
+        fx.Effect[tuple[IPv6Address, ...], dns.DnsError],
+    )
+    assert_type(service.resolve("example.com", dns.Mx), fx.Effect[tuple[dns.Mx, ...], dns.DnsError])
+    assert_type(
+        resolver.resolve("db:5432", family="IPv4"),
+        fx.Effect[
+            tuple[net_address.InetAddressV4, ...], net_address.NetAddressError | dns.DnsError
+        ],
+    )
+    assert_type(
+        socket_module.reader_bytes(sock),
+        fx.Effect[
+            fx.Effect[tuple[bytes, ...], socket_module.SocketError],
+            socket_module.SocketError,
+            fx.Scope,
+        ],
+    )
+    assert_type(socket_module.to_stream(sock), Stream[bytes, socket_module.SocketError])
+    assert_type(
+        srv.run(lambda s: s.reader.as_void()),
+        fx.Effect[Never, socket_module.server.SocketServerError, fx.Scope],
+    )
+    assert_type(
+        socket_module.make_web_socket("ws://localhost:8080"),
+        fx.Effect[socket_module.SocketService, Never, socket_module.WebSocketConstructor],
+    )
+    assert_type(
+        socket_module.from_web_socket(
+            fx.fail(socket_module.SocketError(socket_module.SocketCloseError(1006)))
+        ),
+        socket_module.SocketService,
+    )
+    socket_module.from_web_socket(fx.succeed(1))  # pyright: ignore[reportArgumentType]
+    service.resolve("example.com", str)  # pyright: ignore[reportArgumentType]
+    service.lookup("example.com", family="IPv5")  # pyright: ignore[reportArgumentType, reportCallIssue]

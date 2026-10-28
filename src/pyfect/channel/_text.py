@@ -5,22 +5,15 @@ non-empty arrays) and passes upstream's failure and end through."""
 
 from __future__ import annotations
 
-import codecs
 from typing import Any, Never
 
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend, _Sync
+from pyfect._js import text_decoder
 from pyfect.cause import Cause
 from pyfect.channel._base import AnyPull, end_with
 from pyfect.channel._channel import Channel, from_transform
 from pyfect.pull import catch_done, match_effect
 from pyfect.scope import CloseableScope
-
-
-def _decoder(encoding: str, fatal: bool, ignore_bom: bool) -> codecs.IncrementalDecoder:
-    name = codecs.lookup(encoding).name
-    if name == "utf-8" and not ignore_bom:
-        name = "utf-8-sig"
-    return codecs.getincrementaldecoder(name)("strict" if fatal else "replace")
 
 
 def decode_text[E = Never, D = None](
@@ -33,7 +26,7 @@ def decode_text[E = Never, D = None](
 
     def transform(upstream: AnyPull, _scope: CloseableScope) -> Effect[AnyPull]:
         def build() -> AnyPull:
-            decoder = _decoder(encoding, fatal, ignore_bom)
+            decoder = text_decoder(encoding, fatal=fatal, ignore_bom=ignore_bom)
             pull: AnyPull
 
             def decoded(chunks: tuple[bytes, ...]) -> tuple[str, ...]:

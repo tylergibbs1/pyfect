@@ -169,7 +169,18 @@ def _ipv4(domain: str) -> str:
     return str(ipaddress.IPv4Address(address))
 
 
+def _file_host(authority: str) -> str:
+    """A file URL's host: the whole authority, which has no userinfo or
+    port (their ``@`` and ``:`` make it an invalid host)."""
+    if not authority:
+        return ""
+    host = _host(authority, special=True)
+    return "" if host == "localhost" else host
+
+
 def _authority(scheme: str, authority: str) -> str:
+    if scheme == "file":
+        return _file_host(authority)
     special = scheme in _SPECIAL_PORTS
     userinfo, at, host_port = authority.rpartition("@")
     if host_port.startswith("["):
@@ -183,14 +194,12 @@ def _authority(scheme: str, authority: str) -> str:
     else:
         raw_host, _, port = host_port.partition(":")
     if not raw_host:
-        if special and scheme != "file":
+        if special:
             raise ValueError("Missing host")
         if at or port:
             raise ValueError("Invalid host")
         return ""
     host = _host(raw_host, special)
-    if scheme == "file" and host == "localhost":
-        host = ""
     if port:
         if not port.isdigit() or not port.isascii() or int(port) > 65535:
             raise ValueError("Invalid port")
