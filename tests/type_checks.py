@@ -18,7 +18,7 @@ from opentelemetry.trace import Span as OtelApiSpan
 from opentelemetry.trace import SpanContext
 
 import pyfect as fx
-from pyfect import channel, execution_plan, layer, logger, otel, schedule, stream
+from pyfect import channel, execution_plan, layer, logger, otel, reactivity, schedule, stream
 from pyfect import socket as socket_module
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
@@ -33,6 +33,15 @@ from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.scheduler import Scheduler, SyncScheduler
 from pyfect.socket import datagram as dg
+from pyfect.sql import client as sql_client
+from pyfect.sql import migrator as sql_migrator
+from pyfect.sql import resolver as sql_resolver
+from pyfect.sql import schema as sql_schema
+from pyfect.sql import sqlite as sql_sqlite
+from pyfect.sql.connection import Row, ValueRow
+from pyfect.sql.error import ResultLengthMismatch, SqlError
+from pyfect.sql.statement import Fragment, Statement
+from pyfect.sql.statement import Literal as SqlLiteral
 from pyfect.stream import Stream
 
 
@@ -4572,3 +4581,61 @@ def check_datagram_socket(
     both = (dg.Peer(dg.HostPort("a", 1)), dg.Connect(dg.HostPort("a", 1)))
     dg.Options(remote=both)  # pyright: ignore[reportArgumentType]
     dg.ReceiveBuffer(8, "blocking")  # pyright: ignore[reportArgumentType]
+
+
+def sql_statements(
+    sql: sql_client.SqlClientService, sqlite_sql: sql_sqlite.SqliteClientService, table: str
+) -> None:
+    """SQL text must be a literal: a runtime string cannot be a template, so
+    values cannot be spliced into SQL by accident."""
+    from pyfect import schema as S
+
+    statement = sql("SELECT * FROM users WHERE id = {}", 1)
+    assert_type(statement, Statement[Row])
+    assert_type(statement.values, fx.Effect[list[ValueRow], SqlError])
+    assert_type(statement.raw, fx.Effect[object, SqlError])
+    assert_type(statement.stream, Stream[Row, SqlError])
+    sql(table)  # pyright: ignore[reportArgumentType]
+    sql("SELECT * FROM " + table)  # pyright: ignore[reportArgumentType]
+    sql.unsafe("SELECT * FROM " + table)
+    sql("SELECT * FROM {}", sql.identifier(table))
+    # A segment placed in a template is SQL text too, so it takes a literal.
+    sql("SELECT {}", SqlLiteral(table))  # pyright: ignore[reportArgumentType]
+    Fragment([SqlLiteral("SELECT " + table)])  # pyright: ignore[reportArgumentType]
+    sql("SELECT {}", SqlLiteral("1"))
+
+    assert_type(sql.with_transaction(fx.succeed(1)), fx.Effect[int, SqlError])
+    assert_type(sql.with_transaction(fx.fail("e")), fx.Effect[Never, str | SqlError])
+    assert_type(sql.after_commit(fx.void), fx.Effect[None])
+    sql.after_commit(fx.fail("e"))  # pyright: ignore[reportArgumentType]
+    assert_type(
+        reactivity.mutation(statement, ["users"]),
+        fx.Effect[list[Row], SqlError, reactivity.Reactivity],
+    )
+    assert_type(sqlite_sql.backup("copy.db"), fx.Effect[sql_sqlite.BackupMetadata, SqlError])
+    assert_type(
+        sql_sqlite.layer_config({"filename": fx.config.string("DATABASE_PATH")}),
+        fx.Layer[sql_sqlite.SqliteClient | sql_client.SqlClient, fx.ConfigError | SqlError],
+    )
+    assert_type(
+        sql_sqlite.make(sql_sqlite.SqliteClientConfig(filename=":memory:")),
+        fx.Effect[sql_sqlite.SqliteClientService, SqlError, fx.Scope | reactivity.Reactivity],
+    )
+
+    find = sql_schema.find_one_option(
+        request=S.Number, result=S.String, execute=lambda _id: fx.succeed([])
+    )
+    assert_type(find, Callable[[float], fx.Effect[fx.Option[str], S.SchemaError]])
+    ordered = sql_resolver.ordered(request=S.Number, result=S.String, execute=lambda _: statement)
+    assert_type(
+        sql_resolver.request(1, ordered),
+        fx.Effect[str, SqlError | ResultLengthMismatch | S.SchemaError],
+    )
+    assert_type(
+        sql_migrator.make()(loader=sql_migrator.from_record({})),
+        fx.Effect[
+            list[tuple[int, str]],
+            sql_migrator.MigrationError | SqlError,
+            sql_client.SqlClient,
+        ],
+    )

@@ -1,5 +1,7 @@
 """Ref, Deferred, Queue, Semaphore."""
 
+import time
+
 import pyfect as fx
 from pyfect.testing import run_test as run
 
@@ -136,6 +138,67 @@ def test_a_taker_interrupted_right_after_its_wake_up_passes_it_on():
         return (yield from survivor.join())
 
     assert run(program) == "item"
+
+
+@fx.testing.effect
+def test_a_semaphore_waiter_interrupted_right_after_its_wake_up_passes_it_on():
+    """A release wakes only the waiters its permits serve, so a woken waiter
+    interrupted before it retries must hand the wake-up to the next one.
+    A one-step budget makes it yield between the wake-up and the retry."""
+    for use_take in (True, False):
+        sem = yield from fx.Semaphore.make(1)
+        yield from sem.take(1)
+        waiting = sem.take(1).as_void() if use_take else sem.with_permits(fx.void)
+        doomed = yield from waiting.pipe(fx.provide_service(fx.MaxOpsBeforeYield, 1)).fork()
+        for _ in range(20):  # one step per turn, until it parks
+            yield from fx.yield_now()
+        survivor = yield from waiting.fork(start_immediately=True)
+
+        yield from sem.release(1).and_then(fx.sync(lambda d=doomed: d.unsafe_interrupt_as(None)))
+        for _ in range(20):
+            yield from fx.yield_now()
+
+        assert isinstance(doomed.unsafe_poll(), fx.Failure), use_take
+        assert isinstance(survivor.unsafe_poll(), fx.Success), use_take
+
+
+@fx.testing.effect
+def test_a_semaphore_waiter_too_large_for_a_release_keeps_its_place():
+    sem = yield from fx.Semaphore.make(3)
+    yield from sem.take(3)
+    order: list[str] = []
+
+    def waiter(name: str, n: int) -> fx.Effect[None]:
+        return sem.with_permits(fx.sync(lambda: order.append(name)).and_then(fx.never), n)
+
+    for name, n in (("a", 2), ("b", 1), ("c", 2)):
+        yield from waiter(name, n).fork(start_immediately=True)
+
+    yield from sem.release(1)  # serves b; a needs two
+    yield from fx.yield_now()
+    yield from sem.release(2)  # a is still ahead of c
+    yield from fx.yield_now()
+
+    assert order == ["b", "a"]
+
+
+def test_a_release_wakes_only_the_waiters_its_permits_can_serve():
+    """Waking every waiter on each release makes N contending fibers cost
+    O(N^2): each woken fiber that finds the permit taken parks again. Effect
+    resumes a waiter at once, so the first one takes the permit and the rest
+    stay parked; here a release wakes as many as its free permits serve."""
+
+    @fx.gen
+    def program():
+        sem = yield from fx.Semaphore.make(1)
+        yield from fx.all(
+            *[sem.with_permits(fx.yield_now()) for _ in range(3000)], concurrency="unbounded"
+        )
+
+    start = time.perf_counter()
+    run(program)
+    # Linear is about 0.1 s here; waking every waiter took over 20 s.
+    assert time.perf_counter() - start < 3
 
 
 def test_semaphore_limits_concurrency():
