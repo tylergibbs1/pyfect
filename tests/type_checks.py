@@ -3194,11 +3194,16 @@ def check_config_provider(needs_db: fx.Effect[fx.ConfigProvider, NotFound, Prima
     assert_type(provider.or_else(cp.from_unknown({})).nested("APP"), cp.ConfigProvider)
     assert_type(provider.constant_case().map_input(lambda path: (*path, "x")), cp.ConfigProvider)
     assert_type(cp.make(lambda _path: fx.succeed(cp.Value("v"))), cp.ConfigProvider)
-    assert_type(cp.from_dot_env(), fx.Effect[cp.ConfigProvider, cp.SourceError])
-    assert_type(cp.from_dir("/run/secrets"), cp.ConfigProvider)
+    assert_type(cp.from_dot_env(), fx.Effect[cp.ConfigProvider, fx.PlatformError, fx.FileSystem])
+    assert_type(
+        cp.from_dir("/run/secrets"), fx.Effect[cp.ConfigProvider, Never, fx.Path | fx.FileSystem]
+    )
     assert_type(fx.CurrentConfigProvider(), ServiceEffect[cp.ConfigProvider, Never])
     assert_type(cp.layer(provider), fx.Layer[fx.CurrentConfigProvider])
-    assert_type(cp.layer(cp.from_dot_env()), fx.Layer[fx.CurrentConfigProvider, cp.SourceError])
+    assert_type(
+        cp.layer(cp.from_dot_env()),
+        fx.Layer[fx.CurrentConfigProvider, fx.PlatformError, fx.FileSystem],
+    )
     assert_type(cp.layer(needs_db), fx.Layer[fx.CurrentConfigProvider, NotFound, Primary])
     assert_type(cp.layer_add(provider, as_primary=True), fx.Layer[fx.CurrentConfigProvider])
     assert_type(cp.layer_add(needs_db), fx.Layer[fx.CurrentConfigProvider, NotFound, Primary])
@@ -4325,3 +4330,70 @@ def check_tx_pubsub(hub: fx.TxPubSub[int], ref: fx.TxSubscriptionRef[str]) -> No
     assert_type(ref.changes(), fx.Effect[fx.TxDequeue[str, Never], Never, fx.Scope])
     assert_type(ref.changes_stream(), fx.Stream[str, Never, Never])
     ref.set(1)  # pyright: ignore[reportArgumentType]
+
+
+def check_platform(
+    fs: fx.file_system.FileSystemService,
+    file: fx.file_system.File,
+    paths: fx.path.PathService,
+    io: fx.stdio.StdioService,
+    term: fx.terminal.TerminalService,
+) -> None:
+    from pyfect import file_system, platform, platform_error, stdio, terminal
+
+    assert_type(fx.FileSystem(), ServiceEffect[file_system.FileSystemService, fx.FileSystem])
+    assert_type(fs.read_file("a"), fx.Effect[bytes, fx.PlatformError, Never])
+    assert_type(fs.read_file_string("a"), fx.Effect[str, fx.PlatformError, Never])
+    assert_type(fs.exists("a"), fx.Effect[bool, fx.PlatformError, Never])
+    assert_type(fs.stat("a"), fx.Effect[file_system.FileInfo, fx.PlatformError, Never])
+    assert_type(fs.open("a", flag="a+"), fx.Effect[file_system.File, fx.PlatformError, fx.Scope])
+    assert_type(fs.make_temp_directory_scoped(), fx.Effect[str, fx.PlatformError, fx.Scope])
+    assert_type(fs.stream("a"), fx.Stream[bytes, fx.PlatformError, Never])
+    assert_type(fs.sink("a"), fx.Sink[None, bytes, Never, fx.PlatformError, Never])
+    assert_type(fs.watch("a"), fx.Stream[file_system.WatchEvent, fx.PlatformError, Never])
+    assert_type(file.read_alloc(5), fx.Effect[bytes | None, fx.PlatformError, Never])
+    assert_type(file.seek(5, "current"), fx.Effect[int, fx.PlatformError, Never])
+    fs.open("a", flag="rw")  # pyright: ignore[reportArgumentType]
+    fs.read_file(1)  # pyright: ignore[reportArgumentType]
+    file.seek(0, "end")  # pyright: ignore[reportArgumentType]
+    assert_type(file_system.layer, fx.Layer[fx.FileSystem])
+    assert_type(file_system.layer_noop(), fx.Layer[fx.FileSystem])
+
+    error = platform_error.system_error("NotFound", module="FileSystem", method="stat")
+    assert_type(error, fx.PlatformError)
+    assert_type(error.reason, platform_error.BadArgument | platform_error.SystemError)
+    platform_error.system_error("Missing", module="m", method="m")  # pyright: ignore[reportArgumentType]
+    assert_type(
+        fs.read_file_string("a").pipe(
+            fx.catch_reason(
+                fx.PlatformError, platform_error.NotFound, lambda _r, _e: fx.succeed("")
+            )
+        ),
+        fx.Effect[str, fx.PlatformError, Never],
+    )
+
+    assert_type(paths.join("a", "b"), str)
+    assert_type(paths.resolve_within("/srv", "a"), str | None)
+    assert_type(paths.from_file_url("file:///a"), fx.Effect[str, platform_error.BadArgument, Never])
+    assert_type(fx.path.layer, fx.Layer[fx.Path])
+
+    assert_type(io.args, fx.Effect[tuple[str, ...], Never, Never])
+    assert_type(io.stdout(), fx.Sink[None, str | bytes, Never, fx.PlatformError, Never])
+    assert_type(io.stdin, fx.Stream[bytes, fx.PlatformError, Never])
+    assert_type(stdio.layer_test(), fx.Layer[fx.Stdio])
+
+    assert_type(term.read_line, fx.Effect[str, terminal.QuitError, Never])
+    assert_type(
+        term.read_input, fx.Effect[fx.Dequeue[terminal.UserInput, fx.Done], Never, fx.Scope]
+    )
+    assert_type(term.display("x"), fx.Effect[None, fx.PlatformError, Never])
+    assert_type(platform.layer, fx.Layer[platform.PlatformServices])
+
+    def lines(logger: fx.Logger[str], numbers: fx.Logger[int]) -> None:
+        assert_type(
+            logger.to_file("app.log"),
+            fx.Effect[fx.Logger[None], fx.PlatformError, fx.Scope | fx.FileSystem],
+        )
+        numbers.to_file("x")  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+    del lines

@@ -1,21 +1,19 @@
 """Ports of Effect's ``ConfigProvider.test.ts``.
 
 Each test's docstring is the Effect test title. Effect's ``fromDotEnv`` and
-``fromDir`` tests mock a ``FileSystem`` service; pyfect has none yet, so the
-ports write real files under ``tmp_path``, and a read error is a
-``SourceError`` holding the ``OSError`` where Effect has a ``PlatformError``.
+``fromDir`` tests mock the ``FileSystem`` service with ``layerNoop``; here
+they subclass ``NoopFileSystem``.
 """
 
-import os
-import sys
-from pathlib import Path
-
-import pytest
+from collections.abc import Callable
 
 import pyfect as fx
 from pyfect import config_provider as cp
-from pyfect import testing
+from pyfect import file_system, layer, testing
 from pyfect.config_provider import Array, Record, SourceError, Value
+from pyfect.file_system import FileSystem, NoopFileSystem
+from pyfect.path import layer_posix as path_layer_posix
+from pyfect.platform_error import PlatformError, system_error
 
 
 def _load(
@@ -928,98 +926,128 @@ def test_expands_long_sequences_of_adjacent_references_without_overflowing():
 # --- from_dot_env -----------------------------------------------------------------------
 
 
-def _from_dot_env(eff: fx.Effect[cp.ConfigProvider, SourceError]) -> cp.ConfigProvider:
-    result = fx.run_sync(eff.result())
+def _from_dot_env(
+    eff: fx.Effect[cp.ConfigProvider, PlatformError, FileSystem], fs: NoopFileSystem
+) -> cp.ConfigProvider:
+    result = fx.run_sync(eff.result().pipe(fx.provide(file_system.layer_noop(fs))))
     assert isinstance(result, fx.Ok)
     return result.value
 
 
-def test_should_load_configuration_from_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+class _DotEnv(NoopFileSystem):
+    """Reads every path as ``contents(path)``."""
+
+    def __init__(self, contents: Callable[[str], str]) -> None:
+        self.contents = contents
+
+    def read_file_string(self, path: str, encoding: str = "utf-8") -> fx.Effect[str, PlatformError]:
+        return fx.succeed(self.contents(path))
+
+
+def test_should_load_configuration_from_env_file():
     """should load configuration from .env file"""
-    (tmp_path / ".env").write_text("PATH=.env\nA=1")
-    monkeypatch.chdir(tmp_path)
-    provider = _from_dot_env(cp.from_dot_env())
+    provider = _from_dot_env(cp.from_dot_env(), _DotEnv(lambda path: f"PATH={path}\nA=1"))
 
     assert_success(provider, ["PATH"], Value(".env"))
     assert_success(provider, ["A"], Value("1"))
 
 
-def test_should_support_path_option_to_specify_the_path_to_the_env_file(tmp_path: Path):
+def test_should_support_path_option_to_specify_the_path_to_the_env_file():
     """should support `path` option to specify the path to the .env file"""
-    path = tmp_path / "custom.env"
-    path.write_text(f"CUSTOM_PATH={path}\nA=1")
-    provider = _from_dot_env(cp.from_dot_env(path))
+    provider = _from_dot_env(
+        cp.from_dot_env("custom.env"), _DotEnv(lambda path: f"CUSTOM_PATH={path}\nA=1")
+    )
 
-    assert_success(provider, ["CUSTOM_PATH"], Value(str(path)))
+    assert_success(provider, ["CUSTOM_PATH"], Value("custom.env"))
     assert_success(provider, ["A"], Value("1"))
 
 
-def test_should_support_expand_variables_option(tmp_path: Path):
+def test_should_support_expand_variables_option():
     """should support `expandVariables` option"""
-    path = tmp_path / ".env"
-    path.write_text("PASSWORD=value\nDB_PASS=$PASSWORD")
-    provider = _from_dot_env(cp.from_dot_env(path, expand_variables=True))
+    provider = _from_dot_env(
+        cp.from_dot_env(expand_variables=True),
+        _DotEnv(lambda _: "PASSWORD=value\nDB_PASS=$PASSWORD"),
+    )
 
     assert_success(provider, ["DB_PASS"], Value("value"))
 
 
-def test_should_treat_empty_string_values_as_missing_while_preserving_structure_by_default(
-    tmp_path: Path,
-):
+def test_should_treat_empty_string_values_as_missing_while_preserving_structure_by_default():
     """should treat empty string values as missing while preserving structure by default"""
-    path = tmp_path / ".env"
-    path.write_text("A=")
-    provider = _from_dot_env(cp.from_dot_env(path))
+    provider = _from_dot_env(cp.from_dot_env(), _DotEnv(lambda _: "A="))
 
     assert_success(provider, [], Record(keys("A")))
     assert_missing(provider, ["A"])
 
 
-def test_should_support_preserve_empty_strings_option(tmp_path: Path):
+def test_should_support_preserve_empty_strings_option():
     """should support `preserveEmptyStrings` option"""
-    path = tmp_path / ".env"
-    path.write_text("A=")
-    provider = _from_dot_env(cp.from_dot_env(path, preserve_empty_strings=True))
+    provider = _from_dot_env(cp.from_dot_env(preserve_empty_strings=True), _DotEnv(lambda _: "A="))
 
     assert_success(provider, ["A"], Value(""))
 
 
-_ROOT = sys.platform != "win32" and os.geteuid() == 0
-
-
-@pytest.mark.skipif(sys.platform == "win32" or _ROOT, reason="needs POSIX permissions enforced")
-def test_fails_with_the_file_system_error_when_the_file_cannot_be_read(tmp_path: Path):
+def test_fails_with_the_file_system_error_when_the_file_cannot_be_read():
     """fails with the FileSystem error when the file cannot be read"""
-    path = tmp_path / ".env"
-    path.write_text("A=1")
-    path.chmod(0)
-    try:
-        result = fx.run_sync(cp.from_dot_env(path).result())
-    finally:
-        path.chmod(0o600)
+    error = system_error("PermissionDenied", module="FileSystem", method="read_file_string")
 
-    assert isinstance(result, fx.Err)
-    assert result.error.message == f"Failed to read file at {path}"
-    assert isinstance(result.error.cause, PermissionError)
+    class Denied(NoopFileSystem):
+        def read_file_string(
+            self, path: str, encoding: str = "utf-8"
+        ) -> fx.Effect[str, PlatformError]:
+            return fx.fail(error)
+
+    result = fx.run_sync(
+        cp.from_dot_env().result().pipe(fx.provide(file_system.layer_noop(Denied())))
+    )
+
+    assert result == fx.Err(error)
 
 
 # --- from_dir ---------------------------------------------------------------------------
 
 
-def _write(root: Path, files: dict[str, str]) -> None:
-    for name, content in files.items():
-        target = root / name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
+def _not_found(method: str) -> PlatformError:
+    return system_error("NotFound", module="FileSystem", method=method)
 
 
-def test_reads_trimmed_file_contents_at_root_and_nested_paths(tmp_path: Path):
-    """reads trimmed file contents at root and nested paths"""
-    _write(
-        tmp_path,
-        {"secret": "keepitsafe\n", "SHOUTING": "value", "integer": "123", "nested/config": "hello"},
+class _Files(NoopFileSystem):
+    """Files and directories held in dicts; anything else is ``NotFound``."""
+
+    def __init__(self, files: dict[str, str], dirs: dict[str, list[str]] | None = None) -> None:
+        self.files = files
+        self.dirs = dirs or {}
+
+    def read_file_string(self, path: str, encoding: str = "utf-8") -> fx.Effect[str, PlatformError]:
+        if path in self.files:
+            return fx.succeed(self.files[path])
+        return fx.fail(_not_found("read_file_string"))
+
+    def read_directory(
+        self, path: str, *, recursive: bool = False
+    ) -> fx.Effect[list[str], PlatformError]:
+        if path in self.dirs:
+            return fx.succeed(list(self.dirs[path]))
+        return fx.fail(_not_found("read_directory"))
+
+
+def _from_dir(fs: NoopFileSystem, root_path: str = "/", **options: bool) -> cp.ConfigProvider:
+    return fx.run_sync(
+        cp.from_dir(root_path, **options).pipe(
+            fx.provide(layer.merge(file_system.layer_noop(fs), path_layer_posix))
+        )
     )
-    provider = cp.from_dir(tmp_path)
+
+
+def test_reads_trimmed_file_contents_at_root_and_nested_paths():
+    """reads trimmed file contents at root and nested paths"""
+    files = {
+        "/secret": "keepitsafe\n",
+        "/SHOUTING": "value",
+        "/integer": "123",
+        "/nested/config": "hello",
+    }
+    provider = _from_dir(_Files(files))
 
     assert_success(provider, ["secret"], Value("keepitsafe"))
     assert_success(provider, ["SHOUTING"], Value("value"))
@@ -1028,45 +1056,48 @@ def test_reads_trimmed_file_contents_at_root_and_nested_paths(tmp_path: Path):
     assert_missing(provider, ["missing"])
 
 
-def test_treats_empty_files_as_missing_by_default(tmp_path: Path):
+def test_treats_empty_files_as_missing_by_default():
     """treats empty files as missing by default"""
-    _write(tmp_path, {"empty": ""})
-    provider = cp.from_dir(tmp_path)
+    provider = _from_dir(_Files({"/empty": ""}, {"/": ["empty"]}))
 
     assert_success(provider, [], Record(keys("empty")))
     assert_missing(provider, ["empty"])
 
 
-def test_preserves_empty_files_when_requested(tmp_path: Path):
+def test_preserves_empty_files_when_requested():
     """preserves empty files when requested"""
-    _write(tmp_path, {"empty": "\n"})
-    provider = cp.from_dir(tmp_path, preserve_empty_strings=True)
+    provider = _from_dir(_Files({"/empty": "\n"}), preserve_empty_strings=True)
 
     assert_success(provider, ["empty"], Value(""))
 
 
-def test_reads_directory_entries_as_a_record(tmp_path: Path):
+def test_reads_directory_entries_as_a_record():
     """reads directory entries as a record"""
-    _write(tmp_path, {"app/host": "localhost", "app/port": "8080"})
-    provider = cp.from_dir(tmp_path)
+    provider = _from_dir(_Files({}, {"/app": ["host", "port"]}))
 
     assert_success(provider, ["app"], Record(keys("host", "port")))
 
 
-@pytest.mark.skipif(sys.platform == "win32" or _ROOT, reason="needs POSIX permissions enforced")
-def test_wraps_non_not_found_failures_in_source_error(tmp_path: Path):
+def test_wraps_non_not_found_failures_in_source_error():
     """wraps non-NotFound failures in SourceError"""
-    root = tmp_path / "config"
-    _write(root, {"secret": "value"})
-    (root / "secret").chmod(0)
-    try:
-        result = _load(cp.from_dir(root), ["secret"])
-    finally:
-        (root / "secret").chmod(0o600)
+    cause = system_error("PermissionDenied", module="FileSystem", method="read_file_string")
 
-    assert isinstance(result, fx.Err)
-    assert result.error.message == f"Failed to read file at {root}/secret"
-    assert isinstance(result.error.cause, PermissionError)
+    class Denied(NoopFileSystem):
+        def read_file_string(
+            self, path: str, encoding: str = "utf-8"
+        ) -> fx.Effect[str, PlatformError]:
+            return fx.fail(cause)
+
+        def read_directory(
+            self, path: str, *, recursive: bool = False
+        ) -> fx.Effect[list[str], PlatformError]:
+            return fx.fail(_not_found("read_directory"))
+
+    provider = _from_dir(Denied(), "/config")
+
+    assert_failure(
+        provider, ["secret"], SourceError("Failed to read file at /config/secret", cause)
+    )
 
 
 # --- layers -----------------------------------------------------------------------------

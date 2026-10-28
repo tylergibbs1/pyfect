@@ -3,51 +3,77 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path as FilePath
+from collections.abc import Generator
+from typing import Any, Never
 
+from pyfect import _js
 from pyfect._core import Effect
 from pyfect.config_provider._node import Keys, Node, Path, Record, SourceError, Value
 from pyfect.config_provider._provider import ConfigProvider, make
-from pyfect.effect import try_blocking
+from pyfect.effect import fail, gen, succeed
+from pyfect.file_system import FileSystem, FileSystemService
+from pyfect.path import Path as PathTag
+from pyfect.path import PathService
+from pyfect.platform_error import NotFound, PlatformError
 
 
 def from_dir(
     root_path: str | os.PathLike[str] = "/", *, preserve_empty_strings: bool = False
-) -> ConfigProvider:
-    """A provider over the files under ``root_path``: the path ``("db",
-    "password")`` reads the file ``<root_path>/db/password`` (trimmed) as a
-    value, and a directory is a record of its entry names. A missing path is
-    absent; any other read error (a permission error, say) fails with a
-    ``SourceError``. An empty file is absent unless ``preserve_empty_strings``.
-    Files are read on a worker thread at each lookup."""
+) -> Effect[ConfigProvider, Never, PathTag | FileSystem]:
+    """A provider over the files under ``root_path``, read through the
+    ``FileSystem`` and ``Path`` services: the path ``("db", "password")``
+    reads the file ``<root_path>/db/password`` (trimmed) as a value, and a
+    directory is a record of its entry names. A path missing both as a file
+    and as a directory is absent; any other failure is a ``SourceError``
+    holding the ``PlatformError``. An empty file is absent unless
+    ``preserve_empty_strings``. Files are read at each lookup."""
+
     root = os.fspath(root_path)
-    return make(lambda path: _load(root, path, preserve_empty_strings))
+
+    def build() -> Generator[Effect[Any, Never, PathTag | FileSystem], Any, ConfigProvider]:
+        paths = yield from PathTag()
+        fs = yield from FileSystem()
+        return make(lambda path: _load(paths, fs, root, path, preserve_empty_strings))
+
+    return gen(build)
 
 
-def _load(root: str, path: Path, preserve_empty_strings: bool) -> Effect[Node | None, SourceError]:
-    # Like Node's path.join: a segment is joined below the root even when it
-    # starts with a separator.
-    full = os.path.normpath(os.path.join(root, *(str(seg).lstrip("/\\") for seg in path)))
-    return try_blocking(
-        lambda: _read(full, preserve_empty_strings),
-        lambda error: SourceError(f"Failed to read file at {full}", error),
+def _load(
+    paths: PathService,
+    fs: FileSystemService,
+    root: str,
+    path: Path,
+    preserve_empty_strings: bool,
+) -> Effect[Node | None, SourceError]:
+    # Like Node's path.join, a segment is joined below the root even when
+    # it starts with a separator.
+    segments = (str(segment).lstrip("/" + paths.sep) for segment in path)
+    full = paths.normalize(paths.join(root, *segments))
+
+    def as_file(content: str) -> Node | None:
+        value = _js.trim(content)
+        return None if value == "" and not preserve_empty_strings else Value(value)
+
+    def as_directory(entries: list[str]) -> Node | None:
+        return Record(Keys(paths.basename(entry) for entry in entries))
+
+    def after_file(file_error: PlatformError) -> Effect[Node | None, PlatformError]:
+        return (
+            fs.read_directory(full)
+            .map(as_directory)
+            .catch_all(lambda dir_error: _absent_or(file_error, dir_error))
+        )
+
+    return (
+        fs.read_file_string(full)
+        .map(as_file)
+        .catch_all(after_file)
+        .map_error(lambda cause: SourceError(f"Failed to read file at {full}", cause))
     )
 
 
-def _read(full: str, preserve_empty_strings: bool) -> Node | None:
-    try:
-        content = FilePath(full).read_text(encoding="utf-8").strip()
-    except OSError as file_error:
-        try:
-            return _directory(full)
-        except OSError as dir_error:
-            if not isinstance(file_error, FileNotFoundError):
-                raise file_error from None
-            if not isinstance(dir_error, FileNotFoundError):
-                raise
-            return None
-    return None if content == "" and not preserve_empty_strings else Value(content)
-
-
-def _directory(full: str) -> Record:
-    return Record(Keys(os.listdir(full)))
+def _absent_or(file_error: PlatformError, dir_error: PlatformError) -> Effect[None, PlatformError]:
+    file_missing = isinstance(file_error.reason, NotFound)
+    if file_missing and isinstance(dir_error.reason, NotFound):
+        return succeed(None)
+    return fail(dir_error if file_missing else file_error)

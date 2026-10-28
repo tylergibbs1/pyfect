@@ -4,12 +4,15 @@ Effect under Node where Effect has the same case)."""
 
 import math
 from pathlib import Path
+from typing import Never
 
 import pytest
 
 import pyfect as fx
 from pyfect import config_provider as cp
+from pyfect import layer
 from pyfect.config_provider import Array, Record, SourceError, Value
+from pyfect.platform_error import BadResource, NotFound
 
 
 def _load(
@@ -74,37 +77,50 @@ def test_record_nodes_compare_by_keys_and_value():
     assert Record(frozenset({"a"})) != Record(frozenset({"a"}), "")
 
 
-def test_from_dot_env_fails_with_a_source_error_for_a_missing_file(tmp_path: Path):
+def _live[A, E](eff: fx.Effect[A, E, fx.FileSystem | fx.Path]) -> fx.Effect[A, E]:
+    return eff.pipe(fx.provide(layer.merge(fx.file_system.layer, fx.path.layer)))
+
+
+def _provider(
+    eff: fx.Effect[cp.ConfigProvider, Never, fx.FileSystem | fx.Path],
+) -> cp.ConfigProvider:
+    return fx.run_sync(_live(eff))
+
+
+def test_from_dot_env_fails_with_not_found_for_a_missing_file(tmp_path: Path):
     path = tmp_path / "absent.env"
-    result = fx.run_sync(cp.from_dot_env(path).result())
+    result = fx.run_sync(_live(cp.from_dot_env(path).result()))
 
     assert isinstance(result, fx.Err)
-    assert result.error.message == f"Failed to read file at {path}"
+    assert isinstance(result.error.reason, NotFound)
+    assert result.error.reason.path_or_descriptor == str(path)
     assert isinstance(result.error.cause, FileNotFoundError)
 
 
 def test_from_dir_fails_when_a_path_descends_through_a_file(tmp_path: Path):
     # Effect: ENOTDIR is a BadResource error, not NotFound, so it is a SourceError.
     (tmp_path / "secret").write_text("value")
-    result = _load(cp.from_dir(tmp_path), ["secret", "inner"])
+    result = _load(_provider(cp.from_dir(tmp_path)), ["secret", "inner"])
 
     assert isinstance(result, fx.Err)
     assert result.error.message == f"Failed to read file at {tmp_path}/secret/inner"
-    assert isinstance(result.error.cause, NotADirectoryError)
+    assert isinstance(result.error.cause, fx.PlatformError)
+    assert isinstance(result.error.cause.reason, BadResource)
+    assert isinstance(result.error.cause.cause, NotADirectoryError)
 
 
 def test_from_dir_joins_a_segment_starting_with_a_separator_below_the_root(tmp_path: Path):
     # As Node's path.join("/root", "/name") is "/root/name".
     (tmp_path / "name").write_text("inside")
 
-    assert _load(cp.from_dir(tmp_path), ["/name"]) == fx.Ok(Value("inside"))
+    assert _load(_provider(cp.from_dir(tmp_path)), ["/name"]) == fx.Ok(Value("inside"))
 
 
 def test_from_dir_reads_the_root_as_a_record_of_entries(tmp_path: Path):
     (tmp_path / "a").write_text("1")
     (tmp_path / "b").mkdir()
 
-    assert _load(cp.from_dir(tmp_path), []) == fx.Ok(Record(frozenset({"a", "b"})))
+    assert _load(_provider(cp.from_dir(tmp_path)), []) == fx.Ok(Record(frozenset({"a", "b"})))
 
 
 def test_constant_case_follows_effects_config_case():
@@ -208,7 +224,7 @@ def test_dot_env_whitespace_and_line_ends_are_javascripts():
 def test_from_dot_env_reads_a_file_with_a_byte_order_mark(tmp_path: Path):
     path = tmp_path / ".env"
     path.write_text("A=1\n", encoding="utf-8-sig")
-    loaded = fx.run_sync(cp.from_dot_env(path).result())
+    loaded = fx.run_sync(_live(cp.from_dot_env(path).result()))
 
     assert isinstance(loaded, fx.Ok)
     assert _load(loaded.value, ["A"]) == fx.Ok(Value("1"))

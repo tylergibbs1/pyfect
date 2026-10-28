@@ -14,8 +14,9 @@ but invalid **fails**, so a typo in `PORT` is an error, not a silent default.
 ## Sources and secrets
 
 A `ConfigProvider` is where values come from: `from_env` (the default), `from_dot_env`,
-`from_dir`, `from_unknown` (nested dicts) or your own lookup. Install one with
-`config_provider.layer`. `nested` reads a config under a prefix, and `config.redacted` keeps a
+`from_dir`, `from_unknown` (nested dicts) or your own lookup. `from_dot_env` and `from_dir`
+read through the `FileSystem` service (and `Path`), so provide `platform.layer` or a test
+file system. Install one with `config_provider.layer`. `nested` reads a config under a prefix, and `config.redacted` keeps a
 secret out of logs and error messages.
 
 <include meta='title="sources.py"'>../../snippets/config/sources.py</include>

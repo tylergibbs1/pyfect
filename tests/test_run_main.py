@@ -247,3 +247,37 @@ def test_a_typed_failure_exits_with_its_exit_code(tmp_path: Path):
     assert done.returncode == 78
     assert "ConfigMissing" in done.stdout
     assert "unreachable" not in done.stdout
+
+
+def test_a_signal_interrupts_as_the_main_fiber(tmp_path: Path):
+    """Effect's ``runMain`` interrupts the main fiber with its own id
+    (``fiber.interruptUnsafe(fiber.id)``)."""
+    program = """
+    def report(ex):
+        return fx.sync(lambda: log(ex.cause.interruptors == {main[0]}))
+
+    main = []
+    program = (
+        fx.fiber_id()
+        .flat_map(lambda id: fx.sync(lambda: main.append(id)))
+        .and_then(fx.sync(ready))
+        .and_then(fx.never)
+        .on_exit(report)
+    )
+    fx.run_main(program)
+    """
+    done = run_main_process(tmp_path, program, send=signal.SIGTERM)
+    assert done.stdout.splitlines() == ["True"]
+    assert done.returncode == 130
+
+
+def test_a_signal_ends_the_process_even_when_the_teardown_gives_zero(tmp_path: Path):
+    """Effect's Node ``runMain`` exits on a signal with the teardown's
+    status, 0 included, instead of returning to the caller."""
+    program = """
+    fx.run_main(fx.sync(ready).and_then(fx.never), teardown=lambda ex: 0)
+    log("unreachable")
+    """
+    done = run_main_process(tmp_path, program, send=signal.SIGINT)
+    assert done.returncode == 0
+    assert done.stdout == ""

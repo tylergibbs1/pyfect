@@ -3,15 +3,15 @@
 
 from __future__ import annotations
 
+import os
 import re
-from pathlib import Path
 
 from pyfect import _js
 from pyfect._core import Effect
 from pyfect.config_provider._env import from_env_record
-from pyfect.config_provider._node import SourceError
 from pyfect.config_provider._provider import ConfigProvider
-from pyfect.effect import try_blocking
+from pyfect.file_system import FileSystem
+from pyfect.platform_error import PlatformError
 
 # Effect's regexes with JavaScript's \s, ".", and multiline "^" / "$".
 _S = f"[{_js.SPACE}]"
@@ -42,22 +42,22 @@ def from_dot_env_contents(
 
 
 def from_dot_env(
-    path: str | Path = ".env",
+    path: str | os.PathLike[str] = ".env",
     *,
     expand_variables: bool = False,
     preserve_empty_strings: bool = False,
-) -> Effect[ConfigProvider, SourceError]:
-    """Read ``path`` (UTF-8, on a worker thread) and build
-    ``from_dot_env_contents`` from it. A file that cannot be read fails with
-    a ``SourceError`` whose ``cause`` is the ``OSError``."""
-    return try_blocking(
-        lambda: Path(path).read_text(encoding="utf-8"),
-        lambda error: SourceError(f"Failed to read file at {path}", error),
-    ).map(
-        lambda contents: from_dot_env_contents(
-            contents,
-            expand_variables=expand_variables,
-            preserve_empty_strings=preserve_empty_strings,
+) -> Effect[ConfigProvider, PlatformError, FileSystem]:
+    """Read ``path`` with the ``FileSystem`` service and build
+    ``from_dot_env_contents`` from it; a file that cannot be read fails
+    with the file system's ``PlatformError``."""
+    file = os.fspath(path)
+    return FileSystem().flat_map(
+        lambda fs: fs.read_file_string(file).map(
+            lambda contents: from_dot_env_contents(
+                contents,
+                expand_variables=expand_variables,
+                preserve_empty_strings=preserve_empty_strings,
+            )
         )
     )
 

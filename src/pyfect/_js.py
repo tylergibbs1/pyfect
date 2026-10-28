@@ -16,6 +16,15 @@ def js_sort_key(text: str) -> bytes:
     return text.encode("utf-16-be", "surrogatepass")
 
 
+def text_encode(text: str) -> bytes:
+    """``TextEncoder.encode``: UTF-8 where a surrogate pair is one character
+    and a lone surrogate becomes U+FFFD (Python's ``encode`` raises)."""
+    try:
+        return text.encode()
+    except UnicodeEncodeError:
+        return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode()
+
+
 def js_number(value: float) -> str:
     """``value`` as JavaScript prints it. An ``int`` (Effect's ``bigint``)
     prints in full."""

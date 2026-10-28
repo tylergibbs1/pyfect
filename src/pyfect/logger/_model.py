@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from pyfect._fiber import Fiber
     from pyfect.console import Console
     from pyfect.duration import Duration
+    from pyfect.file_system import FileSystem, OpenFlag
+    from pyfect.platform_error import PlatformError
     from pyfect.scope import Scope
 
 O_co = TypeVar("O_co", covariant=True)
@@ -130,6 +132,22 @@ class Logger(Generic[O_co]):
         from pyfect.logger._batched import batched
 
         return batched(self, window, flush)
+
+    def to_file(
+        self: Logger[str],
+        path: str,
+        *,
+        flag: OpenFlag = "a+",
+        mode: int = 0o666,
+        batch_window: Duration = 1.0,
+    ) -> Effect[Logger[None], PlatformError, Scope | FileSystem]:
+        """A logger appending this one's lines to the file at ``path``
+        (opened with ``flag`` until the scope closes), written in batches
+        every ``batch_window``; a failed write is dropped (Effect's
+        ``Logger.toFile``)."""
+        from pyfect.logger._file import to_file
+
+        return to_file(self, path, flag=flag, mode=mode, batch_window=batch_window)
 
     def __repr__(self) -> str:
         return f"Logger({self._log!r})"

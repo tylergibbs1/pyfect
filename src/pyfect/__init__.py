@@ -32,6 +32,9 @@ building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Sink``
 (constructors in ``fx.channel``), ``fx.Pull`` (helpers in ``fx.pull``), ``fx.Take``
 (``fx.take``); framers (NDJSON, JSON arrays, Server-Sent Events) in ``fx.encoding``;
 channels decoding and encoding chunks with a schema in ``fx.channel_schema``.
+Platform: ``fx.FileSystem`` (``fx.file_system``), ``fx.Path`` (``fx.path``),
+``fx.Stdio`` (``fx.stdio``), ``fx.Terminal`` (``fx.terminal``), ``fx.PlatformError``
+(``fx.platform_error``) and all four live services in ``fx.platform.layer``.
 Optional adapters, each behind its extra and never imported here: pydantic
 (``pyfect.pydantic``, ``pyfect[pydantic]``) and msgspec (``pyfect.msgspec``,
 ``pyfect[msgspec]``).
@@ -56,6 +59,7 @@ from pyfect import (
     error_reporter,
     execution_plan,
     exit,
+    file_system,
     json_patch,
     json_pointer,
     json_schema,
@@ -64,6 +68,9 @@ from pyfect import (
     metric,
     optic,
     option,
+    path,
+    platform,
+    platform_error,
     pull,
     random,
     redacted,
@@ -72,8 +79,10 @@ from pyfect import (
     scheduler,
     schema,
     sink,
+    stdio,
     stream,
     take,
+    terminal,
     testing,
     tracer,
     transaction,
@@ -163,6 +172,7 @@ from pyfect.exit import Exit, Failure, Success
 from pyfect.fiber_handle import FiberHandle
 from pyfect.fiber_map import FiberMap
 from pyfect.fiber_set import FiberSet
+from pyfect.file_system import FileSystem
 from pyfect.latch import Latch
 from pyfect.layer import Layer, provide
 from pyfect.layer_map import LayerMap, LayerMapService
@@ -191,6 +201,8 @@ from pyfect.managed_runtime import ManagedRuntime
 from pyfect.metric import Metric
 from pyfect.option import Option, Some
 from pyfect.partitioned_semaphore import PartitionedSemaphore
+from pyfect.path import Path
+from pyfect.platform_error import PlatformError
 from pyfect.pool import Pool
 from pyfect.pubsub import PubSub
 from pyfect.pull import Pull
@@ -228,10 +240,12 @@ from pyfect.scope import (
 from pyfect.scoped_ref import ScopedRef
 from pyfect.semaphore import Semaphore
 from pyfect.sink import Sink
+from pyfect.stdio import Stdio
 from pyfect.stream import Stream
 from pyfect.subscription_ref import SubscriptionRef
 from pyfect.synchronized_ref import SynchronizedRef
 from pyfect.take import Take
+from pyfect.terminal import Terminal
 from pyfect.tracer import (
     annotate_current_span,
     current_parent_span,
@@ -288,6 +302,7 @@ __all__ = [
     "FiberHandle",
     "FiberMap",
     "FiberSet",
+    "FileSystem",
     "HasReason",
     "IllegalArgumentError",
     "Interrupted",
@@ -311,6 +326,8 @@ __all__ = [
     "Ok",
     "Option",
     "PartitionedSemaphore",
+    "Path",
+    "PlatformError",
     "Pool",
     "PreventSchedulerYield",
     "PubSub",
@@ -334,6 +351,7 @@ __all__ = [
     "Semaphore",
     "Sink",
     "Some",
+    "Stdio",
     "Stream",
     "SubscriptionRef",
     "Success",
@@ -342,6 +360,7 @@ __all__ = [
     "TaggedError",
     "Take",
     "Teardown",
+    "Terminal",
     "TimeoutException",
     "Transaction",
     "TxChunk",
@@ -405,6 +424,7 @@ __all__ = [
     "fail_cause_sync",
     "fail_sync",
     "fiber_id",
+    "file_system",
     "filter",
     "filter_map",
     "filter_map_effect",
@@ -441,6 +461,9 @@ __all__ = [
     "optic",
     "option",
     "partition",
+    "path",
+    "platform",
+    "platform_error",
     "provide",
     "provide_context",
     "provide_service",
@@ -469,11 +492,13 @@ __all__ = [
     "service_option",
     "sink",
     "sleep",
+    "stdio",
     "stream",
     "succeed",
     "suspend",
     "sync",
     "take",
+    "terminal",
     "testing",
     "tracer",
     "transaction",

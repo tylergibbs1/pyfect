@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import math
 
+from pyfect._js import text_encode
+
 _MASK = 0xFFFFFFFF
 _GOLDEN = 0x9E3779B9
 _MAX_SAFE = 2**53 - 1
@@ -29,16 +31,10 @@ def _uint32(seed: float) -> int:
     return int(x) & _MASK if math.isfinite(x) else 0
 
 
-def _utf8(seed: str) -> bytes:
-    """``TextEncoder.encode``: a surrogate pair is one character and a lone
-    surrogate becomes U+FFFD."""
-    return seed.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode()
-
-
 def _seed_words(seed: str | float) -> list[int]:
     if not isinstance(seed, str):
         return [_uint32(seed)]
-    data = _utf8(seed)
+    data = text_encode(seed)
     return [int.from_bytes(data[i : i + 4], "little") for i in range(0, len(data), 4)]
 
 

@@ -220,11 +220,23 @@ def run_main[A, E](
     ``error_reported`` is ``False``."""
     require_effect(eff, "eff")
     main = eff if disable_error_reporting else eff.tap_cause(_log_failure)
-    ex = asyncio.run(_run_main_exit(main))
+    signalled = _Signalled()
+    ex = asyncio.run(_run_main_exit(main, signalled))
     code = teardown(ex)
-    if isinstance(ex, Success) and code == 0:
+    if isinstance(ex, Success) and code == 0 and not signalled.received:
         return ex.value
     raise SystemExit(code)
+
+
+class _Signalled:
+    """Whether SIGINT or SIGTERM arrived: then ``run_main`` ends the process
+    with the teardown's status even when it is 0, as Node's ``runMain``
+    exits on a signal."""
+
+    __slots__ = ("received",)
+
+    def __init__(self) -> None:
+        self.received = False
 
 
 def _log_failure(cause: Cause[object]) -> Effect[None]:
@@ -233,25 +245,27 @@ def _log_failure(cause: Cause[object]) -> Effect[None]:
     return log_error(cause)
 
 
-async def _run_main_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]:
+async def _run_main_exit[A, E](eff: Effect[A, E, Never], signalled: _Signalled) -> Exit[A, E]:
     fiber: Fiber[A, E] = new_root(AsyncioScheduler.current(), Context.empty())
     fiber._start(eff)
-    with _interrupt_on_signals(fiber):
+    with _interrupt_on_signals(fiber, signalled):
         return await await_fiber(fiber)
 
 
 @contextmanager
-def _interrupt_on_signals(fiber: Fiber[Any, Any]) -> Generator[None]:
-    """While open, SIGINT and SIGTERM interrupt ``fiber`` (from the loop, not
-    inside the signal handler). Python only delivers signals to the main
-    thread, so elsewhere this does nothing."""
+def _interrupt_on_signals(fiber: Fiber[Any, Any], signalled: _Signalled) -> Generator[None]:
+    """While open, SIGINT and SIGTERM interrupt ``fiber`` as itself, as
+    Effect's ``runMain`` does (from the loop, not inside the signal
+    handler). Python only delivers signals to the main thread, so elsewhere
+    this does nothing."""
     if threading.current_thread() is not threading.main_thread():
         yield
         return
     loop = asyncio.get_running_loop()
 
     def on_signal(_signum: int, _frame: object) -> None:
-        loop.call_soon_threadsafe(fiber.unsafe_interrupt_as, None)
+        signalled.received = True
+        loop.call_soon_threadsafe(fiber.unsafe_interrupt_as, fiber.id)
 
     previous = {sig: signal.signal(sig, on_signal) for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
