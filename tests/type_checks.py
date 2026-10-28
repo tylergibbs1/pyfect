@@ -4139,3 +4139,30 @@ def optics() -> None:
     assert_type(each.get_all([1]), list[int])
     positive.get(1)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     x.set(1)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+def check_transactions() -> None:
+    ref = fx.TxRef(1)
+    assert_type(ref, fx.TxRef[int])
+    assert_type(fx.TxRef.make("a"), fx.Effect[fx.TxRef[str], Never, Never])
+    assert_type(ref.get(), fx.Effect[int, Never, Never])
+    assert_type(ref.set(2), fx.Effect[None, Never, Never])
+    assert_type(ref.update(lambda n: n + 1), fx.Effect[None, Never, Never])
+    assert_type(ref.modify(lambda n: (str(n), n + 1)), fx.Effect[str, Never, Never])
+    assert_type(fx.tx_retry, fx.Effect[Never, Never, fx.Transaction])
+
+    @fx.fn
+    def retrying():
+        meta = yield from fx.Transaction()
+        assert_type(meta.retry_reason, fx.transaction.TransactionRetryReason | None)
+        if (yield from ref.get()) == 0:
+            return (yield from fx.tx_retry)
+        return meta.attempt
+
+    assert_type(retrying(), fx.Effect[int, Never, fx.Transaction])
+    assert_type(fx.tx(retrying()), fx.Effect[int, Never, Never])
+    assert_type(fx.tx(retrying().zip(Port())), fx.Effect[tuple[int, int], Never, Port])
+    assert_type(fx.tx(ref.get()), fx.Effect[int, Never, Never])
+    ref.set("a")  # pyright: ignore[reportArgumentType]
+    widened_tx_ref: fx.TxRef[object] = ref  # pyright: ignore[reportAssignmentType]
+    del widened_tx_ref

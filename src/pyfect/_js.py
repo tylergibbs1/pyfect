@@ -60,3 +60,18 @@ _TRIM = SPACE.replace("\u2000-\u200a", "".join(map(chr, range(0x2000, 0x200B))))
 def trim(text: str) -> str:
     """``String.prototype.trim``: strips JavaScript's whitespace only."""
     return text.strip(_TRIM)
+
+
+def same_value(a: object, b: object) -> bool:
+    """JavaScript's ``Object.is``: the same object, or numbers, strings or
+    bytes of one type with one value. ``-0.0`` is not ``0.0``, NaN is NaN,
+    and ``1`` is not ``1.0`` or ``True``."""
+    if a is b:
+        return True
+    if type(a) is not type(b) or not isinstance(a, str | int | float | bytes):
+        return False
+    if isinstance(a, float) and isinstance(b, float):
+        if math.isnan(a):
+            return math.isnan(b)
+        return a == b and math.copysign(1.0, a) == math.copysign(1.0, b)
+    return a == b

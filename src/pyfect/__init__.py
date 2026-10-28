@@ -14,7 +14,9 @@ conversion), ``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema
 ``fx.SynchronizedRef``, ``fx.SubscriptionRef``, ``fx.Deferred``,
 ``fx.Semaphore``, ``fx.PartitionedSemaphore``, ``fx.Latch``, ``fx.FiberSet``,
 ``fx.FiberMap``, ``fx.FiberHandle``, ``fx.RcRef``, ``fx.RcMap``, ``fx.ScopedRef``,
-``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``. Logging:
+``fx.Resource``, ``fx.LayerRef``, ``fx.LayerMap``, ``fx.testing``. Transactions:
+``fx.tx``, ``fx.tx_retry``, ``fx.Transaction`` (metadata types in ``fx.transaction``),
+``fx.TxRef``. Logging:
 ``fx.log`` and its levels, ``fx.LogLevel``, ``fx.Logger`` (formatters and layers in
 ``fx.logger``). Tracing: ``eff.with_span``, ``fx.fn("name")``, ``fx.use_span``,
 ``fx.current_span`` and the rest; spans and tracers in ``fx.tracer``. Metrics:
@@ -72,6 +74,7 @@ from pyfect import (
     take,
     testing,
     tracer,
+    transaction,
 )
 from pyfect._all import all, all_dict
 from pyfect._concurrency import Concurrency, for_each, race_all, race_all_first
@@ -235,6 +238,8 @@ from pyfect.tracer import (
     make_span_scoped,
     use_span,
 )
+from pyfect.transaction import Transaction, tx, tx_retry
+from pyfect.tx_ref import TxRef
 
 __all__ = [
     "AsyncioRequiredError",
@@ -326,6 +331,8 @@ __all__ = [
     "Take",
     "Teardown",
     "TimeoutException",
+    "Transaction",
+    "TxRef",
     "UnhandledError",
     "UnhandledLogLevel",
     "UnknownError",
@@ -445,10 +452,13 @@ __all__ = [
     "take",
     "testing",
     "tracer",
+    "transaction",
     "transpose_option",
     "try_",
     "try_async",
     "try_blocking",
+    "tx",
+    "tx_retry",
     "uninterruptible_mask",
     "unwrap_reason",
     "update_service_scoped",
