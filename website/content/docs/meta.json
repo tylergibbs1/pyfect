@@ -13,6 +13,8 @@
     "schedules",
     "streams",
     "config",
+    "schema",
+    "transactions",
     "observability",
     "testing",
     "---Reference---",

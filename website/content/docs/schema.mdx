@@ -1,0 +1,108 @@
+---
+title: Schema
+description: "Describe data once, then decode, validate and encode it with typed errors."
+---
+
+A schema describes a value once. From it you get a decoder that checks untrusted input and
+returns typed data, an encoder back to the wire form, a JSON Schema and Hypothesis strategies.
+`pyfect.schema` follows Effect's `Schema`; import it as `S`.
+
+## Decode and encode a payload
+
+`S.Struct(TypedDict)` takes its fields from the TypedDict's annotations. Keyword arguments give
+a field a stricter schema, such as a checked `S.Int`.
+
+<CodeOutput>
+
+<include meta='title="decode.py"'>../../snippets/schema/decode.py</include>
+
+<include lang="text">../../snippets/schema/decode.out</include>
+
+</CodeOutput>
+
+Each decoder and encoder comes in several forms: `_sync` raises, `_result` and `_exit` return
+the outcome, `_effect` fails in the error channel. `decode_unknown_*` accepts any input, while
+`decode_*` expects the encoded type. They all take parse options such as `errors="all"`.
+
+## Classes
+
+A subclass of `S.Class` is an immutable class with a keyword constructor, and a schema. Its annotations are its
+fields, `S.field(schema)` gives a field its own schema, and a default makes the key optional.
+`S.from_json_string` wraps any schema so it reads and writes JSON text.
+
+<CodeOutput>
+
+<include meta='title="classes.py"'>../../snippets/schema/classes.py</include>
+
+<include lang="text">../../snippets/schema/classes.out</include>
+
+</CodeOutput>
+
+## Unions
+
+`S.TaggedClass` adds a `"_tag"` key, and `S.TaggedUnion` uses it to pick the member, so an
+error message talks about one member rather than all of them. The decoded value is a plain
+Python union, so `match` on it and pyright checks that every case is handled. `S.Union`
+tries its members in order.
+
+<CodeOutput>
+
+<include meta='title="unions.py"'>../../snippets/schema/unions.py</include>
+
+<include lang="text">../../snippets/schema/unions.out</include>
+
+</CodeOutput>
+
+## Transformations
+
+A codec decodes one type from another: `NumberFromString`, `Trim`, `DateTimeUtcFromString`,
+`BytesFromBase64` and so on. `S.decode_to(target, transformation)` builds your own codec
+from a function each way, and codecs compose inside structs and classes.
+
+<CodeOutput>
+
+<include meta='title="transformations.py"'>../../snippets/schema/transformations.py</include>
+
+<include lang="text">../../snippets/schema/transformations.out</include>
+
+</CodeOutput>
+
+## Typed errors
+
+In an effect, use `decode_effect` and `encode_effect`: they put `SchemaError` in the error
+type rather than raising it, so `catch_tag` handles it like any other error. `S.TaggedError`
+is an error class that is also a schema, so it can be sent over the wire.
+
+<CodeOutput>
+
+<include meta='title="errors.py"'>../../snippets/schema/errors.py</include>
+
+<include lang="text">../../snippets/schema/errors.out</include>
+
+</CodeOutput>
+
+## JSON Schema
+
+`S.to_json_schema_document(schema)` describes the JSON that `S.to_codec_json(schema)` reads
+and writes, in draft 2020-12. Checks become keywords where JSON Schema has one.
+`pyfect.json_schema` converts documents to draft-07, draft-04 and OpenAPI.
+
+<CodeOutput>
+
+<include meta='title="json_schema.py"'>../../snippets/schema/json_schema.py</include>
+
+<include lang="text">../../snippets/schema/json_schema.out</include>
+
+</CodeOutput>
+
+## Property tests
+
+`S.to_strategy(schema)` is a Hypothesis strategy that only produces values passing the
+schema's checks. Install it with the `pyfect[hypothesis]` extra. Round-trip tests like this
+catch codecs that fail to encode what they decode.
+
+<include meta='title="test_strategies.py"'>../../snippets/schema/test_strategies.py</include>
+
+Reference: [`pyfect.schema`](/docs/reference/schema),
+[`pyfect.schema.transformation`](/docs/reference/schema/transformation),
+[`pyfect.json_schema`](/docs/reference/json_schema).

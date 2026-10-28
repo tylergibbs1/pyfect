@@ -1,0 +1,36 @@
+{
+  "schema": {
+    "$ref": "#/$defs/SignupEncoded"
+  },
+  "definitions": {
+    "SignupEncoded": {
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "age": {
+          "type": "integer",
+          "minimum": 13
+        },
+        "referrer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "username",
+        "age"
+      ],
+      "additionalProperties": true
+    }
+  }
+}

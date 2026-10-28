@@ -1,0 +1,2 @@
+User(id=2, name='Grace', tags=('navy',))
+{"id":2,"name":"Grace","tags":["navy"]}

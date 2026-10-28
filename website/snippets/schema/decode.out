@@ -1,0 +1,6 @@
+Expected a value between 1 and 99
+  at ["quantity"]
+Expected string
+  at ["sku"]
+Missing key
+  at ["quantity"]

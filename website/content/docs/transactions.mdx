@@ -1,0 +1,67 @@
+---
+title: Transactions
+description: "Change several values atomically with TxRef, tx and tx_retry."
+---
+
+`fx.tx(eff)` runs `eff` as a transaction. It reads and writes `TxRef`s through a journal,
+then commits every write at once. If another fiber changed a ref the transaction read before
+it could commit, the body runs again. No locks are held, so transactions don't deadlock and
+compose freely: a `tx` inside another `tx` joins the outer one.
+
+## TxRef
+
+A `TxRef[A]` is a mutable cell. `get`, `set`, `update` and `modify` join the running
+transaction, or run as a transaction of their own when there is none.
+
+<CodeOutput>
+
+<include meta='title="txref.py"'>../../snippets/transactions/txref.py</include>
+
+<include lang="text">../../snippets/transactions/txref.out</include>
+
+</CodeOutput>
+
+The body can run more than once, so keep side effects other than `Tx*` operations, such as
+logging or requests, outside `tx`.
+
+## Waiting with tx_retry
+
+`fx.tx_retry` abandons the current attempt and waits until another transaction commits to one
+of the refs this one read, then runs the body again. This is how you wait for a
+condition, with no polling and no condition variables.
+
+<CodeOutput>
+
+<include meta='title="retry.py"'>../../snippets/transactions/retry.py</include>
+
+<include lang="text">../../snippets/transactions/retry.out</include>
+
+</CodeOutput>
+
+<Diagram name="transaction-commit" title="A transaction commits when nothing it read has changed, reruns on a conflict, and parks on tx_retry until a ref it read commits" />
+
+## A bank transfer
+
+A transfer deposits into one account and withdraws from another. A typed failure inside `tx`
+discards every write the transaction made, so a failed withdrawal undoes the deposit before
+it. Two hundred transfers run concurrently, and the total balance stays the same.
+
+<include meta='title="bank.py"'>../../snippets/transactions/bank.py</include>
+
+## Transactional collections
+
+`TxQueue`, `TxHashMap`, `TxHashSet`, `TxChunk`, `TxPriorityQueue`, `TxPubSub`,
+`TxSemaphore`, `TxReentrantLock`, `TxDeferred` and `TxSubscriptionRef` are built on `TxRef`,
+so they can all take part in the same transaction. A `take` from an empty queue, or an
+`offer` to a full bounded one, waits through `tx_retry`.
+
+<CodeOutput>
+
+<include meta='title="jobs.py"'>../../snippets/transactions/jobs.py</include>
+
+<include lang="text">../../snippets/transactions/jobs.out</include>
+
+</CodeOutput>
+
+Reference: [`pyfect.transaction`](/docs/reference/transaction),
+[`pyfect.tx_ref`](/docs/reference/tx_ref), [`pyfect.tx_queue`](/docs/reference/tx_queue).

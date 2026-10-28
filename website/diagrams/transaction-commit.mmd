@@ -1,0 +1,6 @@
+flowchart LR
+  A["run the body against a journal"] --> B{"refs it read unchanged?"}
+  B -->|"yes"| C["commit every write at once"]
+  B -->|"no: conflict"| A
+  A -->|"tx_retry"| D["park on the refs it read"]
+  D -->|"one of them commits"| A

@@ -83,6 +83,16 @@ def test_snippet_runs(path: Path):
         )
 
 
+@pytest.mark.parametrize("path", snippet_files(), ids=name)
+def test_snippet_names_do_not_shadow_the_standard_library(path: Path):
+    """Readers run `python file.py`, which puts the file's directory first on sys.path:
+    a snippet named `queue.py` would hide the stdlib module and break `import pyfect`.
+    `run` uses -P, so test_snippet_runs can't see this."""
+    assert path.stem not in sys.stdlib_module_names, (
+        f"{name(path)} shadows the standard-library module {path.stem!r}: rename it"
+    )
+
+
 @pytest.mark.parametrize("path", output_files(), ids=name)
 def test_outputs_belong_to_snippets(path: Path):
     assert path.with_suffix(".py").is_file(), f"{name(path)} has no snippet"
