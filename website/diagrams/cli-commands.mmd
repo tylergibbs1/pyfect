@@ -1,0 +1,5 @@
+flowchart LR
+  T["todo: shared --verbose"] --> A["add: title, --priority"]
+  T --> L["list: --done, --format"]
+  A -->|"Add config"| H1["add handler"]
+  L -->|"List config"| H2["list_items handler"]

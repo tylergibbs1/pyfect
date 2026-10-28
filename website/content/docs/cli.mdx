@@ -1,0 +1,66 @@
+---
+title: CLI
+description: "Commands with typed flags, arguments and subcommands, with help, errors and prompts built in."
+---
+
+A command's parameters are a `Config` class whose attributes are `Flag`s and `Argument`s.
+The handler receives an instance with each attribute parsed to its type, so
+`config.priority` is an `int` and pyright knows it. `command.make(name, Config, handler)`
+builds a command, and `command.run(app, version=...)` parses the process's arguments and
+runs the handler that matches them, with `--help`, `--version`, `--completions`,
+`--log-level` and `--wizard` built in.
+
+## Flags and subcommands
+
+`Flag.string`, `integer`, `finite`, `boolean`, `literals`, `file`, `date`, ... make flags, and
+methods refine them: `with_alias`, `with_default`, `optional`, `with_description`,
+`with_fallback_config` (read a [config](/docs/config) value when the flag is missing).
+`Argument` does the same for positional arguments.
+
+`with_subcommands` turns a command into a group. Flags every subcommand accepts go in the
+parent's config with `with_shared_flags`, and a handler reads them by yielding the parent
+command.
+
+<Diagram name="cli-commands" title="The todo command holds the shared --verbose flag; its add and list subcommands each parse their own config and run their own handler" />
+
+<CodeOutput>
+
+<include meta='title="todo.py"'>../../snippets/cli/todo.py</include>
+
+<include lang="text">../../snippets/cli/todo.out</include>
+
+</CodeOutput>
+
+A program calls `fx.run_main(command.run(app, version="1.0.0").pipe(fx.provide(platform.layer)))`;
+`platform.layer` gives the CLI the files, terminal and standard streams it reads.
+
+## Help output
+
+Help is generated from the config: each flag's type, alias, choices and description, the
+command's description and examples. `--help` prints it for any command or subcommand, and
+a command line that doesn't parse prints the error and a suggestion (`Did you mean this?
+--force`) to standard error, then exits with status 1.
+
+<CodeOutput>
+
+<include meta='title="deploy_help.py"'>../../snippets/cli/deploy_help.py</include>
+
+<include lang="text">../../snippets/cli/deploy_help.out</include>
+
+</CodeOutput>
+
+## Prompts
+
+`prompt.string`, `integer`, `confirm`, `select`, `multi_select`, `date`, `file`, `password`
+and the others ask the user in the terminal; a prompt is an effect, so a handler yields it.
+`with_fallback_prompt(prompt)` asks for a flag only when it was left out and the terminal can
+prompt; in a script or a pipe, the flag is required instead.
+
+Prompts read key presses from the `Terminal` service, so a test provides a terminal whose
+user types a fixed string. `terminal.decode` turns the string, escape sequences included,
+into key presses.
+
+<include meta='title="test_init.py"'>../../snippets/cli/test_init.py</include>
+
+Reference: [`pyfect.cli`](/docs/reference/cli), [`pyfect.cli.command`](/docs/reference/cli/command),
+[`pyfect.cli.flag`](/docs/reference/cli/flag), [`pyfect.cli.prompt`](/docs/reference/cli/prompt).

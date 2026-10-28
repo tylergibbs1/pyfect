@@ -1,0 +1,3 @@
+('SELECT name FROM users WHERE role = ? ORDER BY id', ('dev',))
+[{'name': 'Linus'}, {'name': "Robert'); DROP TABLE users;--"}]
+[{'id': 1, 'name': 'Ada'}, {'id': 3, 'name': "Robert'); DROP TABLE users;--"}]

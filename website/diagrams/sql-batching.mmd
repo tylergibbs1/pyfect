@@ -1,0 +1,6 @@
+flowchart LR
+  A["user_by_id(3)"] --> R["find_by_id resolver"]
+  B["user_by_id(1)"] --> R
+  C["user_by_id(3)"] --> R
+  R -->|"ids 3, 1"| Q["SELECT ... WHERE id IN (3, 1)"]
+  Q -->|"rows, matched by id"| R

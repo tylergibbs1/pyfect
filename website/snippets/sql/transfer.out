@@ -1,0 +1,2 @@
+InsufficientFunds(account='ada')
+[{'name': 'ada', 'balance': 70}, {'name': 'bob', 'balance': 30}]

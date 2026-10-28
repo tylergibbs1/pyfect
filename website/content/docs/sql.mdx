@@ -1,0 +1,101 @@
+---
+title: SQL
+description: "Parameterized statements, batched lookups, transactions and migrations, with SQLite built in."
+---
+
+`SqlClient` is a service: call it with SQL and it gives back a statement, an effect that
+runs on a connection from the client and succeeds with the rows as dicts. `sqlite.layer`
+provides one on the standard library's `sqlite3`. For PostgreSQL, install the `pyfect[pg]`
+extra and provide `pyfect.sql.pg.layer` instead; the code that uses `SqlClient` stays the
+same. Every failure is a `SqlError` whose `reason` says what went wrong (`UniqueViolation`,
+`SqlSyntaxError`, `LockTimeoutError`, ...).
+
+## Safe statements
+
+Placeholders are `str.format` fields (`{}`, `{0}`, `{name}`), and their values are always
+bound parameters. The template is typed `LiteralString`, so pyright rejects SQL text built at
+runtime: `sql(f"... WHERE name = '{name}'")` is a type error. Text that has to be built at
+runtime goes through `sql.unsafe(text, params)`, which is easy to search for. On Python 3.14
+the template can also be a t-string: `sql(t"SELECT * FROM users WHERE id = {user_id}")`.
+
+<CodeOutput>
+
+<include meta='title="statements.py"'>../../snippets/sql/statements.py</include>
+
+<include lang="text">../../snippets/sql/statements.out</include>
+
+</CodeOutput>
+
+Helpers build the parts that change shape: `sql.insert` for one or many rows, `sql.in_`
+for lists, `sql.update` for `SET` clauses, `sql.and_` / `sql.or_` for conditions and
+`sql.identifier` for an escaped name. `statement.compile()` shows the text and parameters
+the driver receives.
+
+## A resolver that batches lookups
+
+Code that loads one user at a time, from many fibers, makes one query per user. A
+resolver collects the requests made together and runs one query for all of them:
+`find_by_id` matches the rows back to requests by id, each request gets its own result,
+and duplicates are asked for once. `ordered` and `grouped` cover queries whose results come
+back in request order or in groups, and `void` covers writes.
+
+<Diagram name="sql-batching" title="Three concurrent user_by_id requests go to one resolver, which runs a single query for ids 3 and 1 and gives each request its row" />
+
+<CodeOutput>
+
+<include meta='title="batched.py"'>../../snippets/sql/batched.py</include>
+
+<include lang="text">../../snippets/sql/batched.out</include>
+
+</CodeOutput>
+
+Requests and results are decoded with [schemas](/docs/schema), so a row of the wrong shape
+fails with a `SchemaError`. Requests made inside a transaction are batched with requests from
+the same transaction only.
+
+## Transactions
+
+`sql.with_transaction(effect)` runs every statement of `effect` on one connection. It
+commits when the effect succeeds and rolls back when it fails, dies or is interrupted, so an
+error raised half way through undoes the half that ran. Nested, it uses a savepoint.
+`sql.after_commit(effect)` runs `effect` only once the outermost transaction commits.
+
+<CodeOutput>
+
+<include meta='title="transfer.py"'>../../snippets/sql/transfer.py</include>
+
+<include lang="text">../../snippets/sql/transfer.out</include>
+
+</CodeOutput>
+
+## Migrations
+
+A migration is an effect that uses `SqlClient`. `migrator.run` creates the
+`effect_sql_migrations` table if needed, runs the migrations newer than the last one
+recorded, and succeeds with the ids and names it ran. The new migrations run in one
+transaction, so if one fails none of them stay applied, and the error is a `MigrationError`.
+Two processes starting at once don't run them twice.
+
+<CodeOutput>
+
+<include meta='title="migrations.py"'>../../snippets/sql/migrations.py</include>
+
+<include lang="text">../../snippets/sql/migrations.out</include>
+
+</CodeOutput>
+
+`migrator.from_file_system(directory)` loads `<id>_<name>.py` modules instead, each with its
+migration as `default`. `migrator.layer(loader=...)` runs the migrations when the layer is
+built, so the app's layer can migrate before anything else uses the database.
+
+## SQLite in tests
+
+An in-memory database is fast enough to create for every test. Here the test layer runs the
+migrations on a fresh one, and `testing.layer_fixture(..., scope="function")` builds it anew
+for each test, so no test sees another's rows.
+
+<include meta='title="test_users.py"'>../../snippets/sql/test_users.py</include>
+
+Reference: [`pyfect.sql`](/docs/reference/sql), [`pyfect.sql.sqlite`](/docs/reference/sql/sqlite),
+[`pyfect.sql.resolver`](/docs/reference/sql/resolver),
+[`pyfect.sql.migrator`](/docs/reference/sql/migrator).
