@@ -4431,3 +4431,53 @@ def check_process(
     process.make("echo", stdout=stream.make(b"x"))  # pyright: ignore[reportArgumentType]
     command.pipe_to(command, from_="stdin")  # pyright: ignore[reportArgumentType]
     handle.kill(kill_signal="SIGKILL")  # pyright: ignore[reportArgumentType]
+
+
+def check_http_client(service: fx.http.HttpClientService[fx.http.HttpClientError]) -> None:
+    from typing import TypedDict
+
+    from pyfect import schema as S
+    from pyfect.http import client, httpx_client, request, response
+    from pyfect.http.error import HttpClientError, TransportError
+    from pyfect.http.response import HttpClientResponse
+
+    class Todo(TypedDict):
+        id: int
+
+    assert_type(
+        client.HttpClient(),
+        ServiceEffect[client.HttpClientService[HttpClientError], client.HttpClient],
+    )
+    assert_type(
+        client.get("/todos"), fx.Effect[HttpClientResponse, HttpClientError, client.HttpClient]
+    )
+    assert_type(service.get("/"), fx.Effect[HttpClientResponse, HttpClientError, Never])
+    assert_type(service.filter_status_ok(), client.HttpClientService[HttpClientError])
+    assert_type(service.retry_transient(times=3), client.HttpClientService[HttpClientError, Never])
+    assert_type(
+        service.catch_all(lambda e: fx.succeed(e.response or response.make(e.request))),
+        client.HttpClientService[Never],
+    )
+    assert_type(
+        service.map_request_effect(lambda r: fx.fail(KeyError()).as_(r)),
+        client.HttpClientService[HttpClientError | KeyError],
+    )
+    tagged = service.map_request_effect(lambda r: fx.fail(KeyError()).as_(r)).pipe(
+        client.catch_tag(KeyError, lambda _: fx.succeed(response.make(request.get("/"))))
+    )
+    assert_type(tagged, client.HttpClientService[HttpClientError])
+    assert_type(
+        service.pipe(client.transform_response(lambda eff: eff.map_error(lambda _: "failed"))),
+        client.HttpClientService[str],
+    )
+    assert_type(
+        service.get("/").flat_map(response.schema_body_json(S.Struct(Todo))),
+        fx.Effect[Todo, HttpClientError | S.SchemaError, Never],
+    )
+    assert_type(request.post("/").body_text("x"), request.HttpClientRequest)
+    assert_type(request.post("/").compress_body("gzip"), fx.Effect[request.HttpClientRequest])
+    assert_type(httpx_client.layer, fx.Layer[client.HttpClient])
+    assert_type(TransportError(request.get("/")).request, request.HttpClientRequest)
+    request.get("/", method="GET")  # pyright: ignore[reportCallIssue]
+    request.make("FETCH", "/")  # pyright: ignore[reportArgumentType]
+    request.post("/").compress_body("brotli")  # pyright: ignore[reportArgumentType]

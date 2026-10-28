@@ -36,9 +36,12 @@ Platform: ``fx.FileSystem`` (``fx.file_system``), ``fx.Path`` (``fx.path``),
 ``fx.Stdio`` (``fx.stdio``), ``fx.Terminal`` (``fx.terminal``), child processes
 (``fx.process``: ``make``, ``ChildProcessSpawner``), ``fx.PlatformError``
 (``fx.platform_error``) and all five live services in ``fx.platform.layer``.
+HTTP clients in ``fx.http`` (``HttpClient``, requests, responses, headers,
+cookies, URLs).
 Optional adapters, each behind its extra and never imported here: pydantic
-(``pyfect.pydantic``, ``pyfect[pydantic]``) and msgspec (``pyfect.msgspec``,
-``pyfect[msgspec]``).
+(``pyfect.pydantic``, ``pyfect[pydantic]``), msgspec (``pyfect.msgspec``,
+``pyfect[msgspec]``) and the httpx HTTP client (``pyfect.http.httpx_client``,
+``pyfect[httpx]``).
 """
 
 from pyfect import (
@@ -61,6 +64,7 @@ from pyfect import (
     execution_plan,
     exit,
     file_system,
+    http,
     json_patch,
     json_pointer,
     json_schema,
@@ -441,6 +445,7 @@ __all__ = [
     "from_optional",
     "from_result",
     "gen",
+    "http",
     "interrupt",
     "interruptible_mask",
     "json_patch",

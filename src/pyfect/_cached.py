@@ -36,7 +36,13 @@ _FOREVER: Final = Seconds(math.inf)
 
 
 def cached[A, E, R](source: Effect[A, E, R]) -> Effect[Effect[A, E, R]]:
-    return _Sync(lambda: _Cache(source, lambda _: _FOREVER).get)
+    return _Sync(lambda: memoize(source))
+
+
+def memoize[A, E, R](source: Effect[A, E, R]) -> Effect[A, E, R]:
+    """``cached`` made now: an effect that runs ``source`` once, the first
+    time it runs, and then gives back its exit."""
+    return _Cache(source, lambda _: _FOREVER).get
 
 
 def cached_invalidate_with_ttl[A, E, R](

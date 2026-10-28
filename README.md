@@ -152,7 +152,8 @@ pyfect needs Python 3.13 or later and has no required dependencies.
 uv add git+https://github.com/tylergibbs1/pyfect
 ```
 
-Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic` and `msgspec`, for example
+Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec` and `httpx` (the
+HTTP client backend), for example
 `uv add "pyfect[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add

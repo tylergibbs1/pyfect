@@ -16,13 +16,20 @@ def js_sort_key(text: str) -> bytes:
     return text.encode("utf-16-be", "surrogatepass")
 
 
+def to_well_formed(text: str) -> str:
+    """``String.prototype.toWellFormed``: a surrogate pair becomes its
+    character and a lone surrogate U+FFFD."""
+    try:
+        text.encode()
+    except UnicodeEncodeError:
+        return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace")
+    return text
+
+
 def text_encode(text: str) -> bytes:
     """``TextEncoder.encode``: UTF-8 where a surrogate pair is one character
     and a lone surrogate becomes U+FFFD (Python's ``encode`` raises)."""
-    try:
-        return text.encode()
-    except UnicodeEncodeError:
-        return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace").encode()
+    return to_well_formed(text).encode()
 
 
 def js_number(value: float) -> str:
