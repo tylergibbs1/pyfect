@@ -39,25 +39,29 @@ Omitted:
   "Struct / assign / Struct & check & unsafePreserveChecks: true", "Struct
   / pick / Struct", "Struct / omit / Struct", every "Struct.mapFields"
   title, "fieldsAssign".
-- Transformations, templates and effectful values (later clusters):
-  ``{ readonly "a": <transformation> }``, ``{ readonly "a"?: <transformation> }``,
-  "Record / sequential parsing resumes without replaying entries", "Record /
-  Record(SnakeToCamel, NumberFromString)", "Record / Record(Number,
-  String)", "Record / Record(Int, String)", "Record / Record(TemplateLiteral
-  ...)", ``Record(Union(Number, "a"), FiniteFromString)``, the "Optional
-  Fields" titles, "parse options / applies errors with encoding checks".
+- ``undefined`` and ``Schema.optional``: "Optional Fields / Optional
+  Property", "... / Optional Property with Nullability", "... / Optional
+  Property to Exact Optional Property", "... / Optional Property with
+  Nullability to Optional Property".
+- ``TemplateLiteral`` (not ported): "Record / Record(TemplateLiteral ...)",
+  "Record / Record(`a${string}`, Number)".
 - "Record / Record(Enum, Number)": an ``S.Enum`` decodes values to members,
   so as a record key it is a key pattern (values in, members out), not a
   required key per value.
 - "annotateKey / ... / Tuple": ported in ``test_schema_composites.py``.
 """
 
+import math
 from typing import NotRequired, TypedDict
 
 import pytest
 
+import pyfect as fx
 from pyfect import schema as S
+from pyfect import testing
 from pyfect.exit import Failure, Success
+from pyfect.schema import getter as G
+from pyfect.schema import transformation as T
 from pyfect.testing import SchemaAsserts
 
 # ------------------------------------------------------------------ Struct
@@ -313,3 +317,148 @@ def test_annotate_key_message_missing_key_struct():
     """annotateKey / the messageMissingKey annotation should be used as a error message / Struct"""
     schema = S.Struct(A, a=S.String.annotate_key(message_missing_key="this field is required"))
     SchemaAsserts(schema).decoding().fail({}, 'this field is required\n  at ["a"]')
+
+
+# ------------------------------------------------- transformations in structs
+
+
+class _Finite(TypedDict):
+    a: float
+
+
+class _OptionalFinite(TypedDict):
+    a: NotRequired[float]
+
+
+class _OptionalNullableFinite(TypedDict):
+    a: NotRequired[float | None]
+
+
+def test_readonly_a_transformation():
+    """Struct / { readonly "a": <transformation> }"""
+    asserts = SchemaAsserts(S.Struct(_Finite, a=S.FiniteFromString))
+    decoding = asserts.decoding()
+    decoding.succeed({"a": "1"}, {"a": 1})
+    decoding.fail({"a": "a"}, 'Expected a finite number\n  at ["a"]')
+    encoding = asserts.encoding()
+    encoding.succeed({"a": 1}, {"a": "1"})
+    encoding.fail({"a": "a"}, 'Expected number\n  at ["a"]')
+
+
+def test_readonly_a_optional_transformation():
+    """Struct / { readonly "a"?: <transformation> }"""
+    asserts = SchemaAsserts(S.Struct(_OptionalFinite, a=S.FiniteFromString))
+    decoding = asserts.decoding()
+    decoding.succeed({"a": "1"}, {"a": 1})
+    decoding.succeed({})
+    # Effect's ``{ a: undefined }``: ``None`` is not a string.
+    decoding.fail({"a": None}, 'Expected string\n  at ["a"]')
+    encoding = asserts.encoding()
+    encoding.succeed({"a": 1}, {"a": "1"})
+    encoding.succeed({})
+
+
+class _AB(TypedDict):
+    a: str
+    b: str
+
+
+def test_parse_options_applies_errors_with_encoding_checks():
+    """Struct / parse options / applies errors with encoding checks"""
+    schema = S.flip(S.flip(S.Struct(_AB)).check(S.is_max_properties(1)))
+    node = schema.__codec__().ast
+    assert isinstance(node, S.ast.Objects)
+    assert node.checks is None
+    assert node.encoding_checks is not None
+    assert len(node.encoding_checks) == 1
+    SchemaAsserts(schema).decoding(errors="all").fail(
+        {}, 'Missing key\n  at ["a"]\nMissing key\n  at ["b"]'
+    )
+
+
+def test_optional_fields_exact_optional_property():
+    """Optional Fields / Exact Optional Property"""
+    asserts = SchemaAsserts(S.Struct(_OptionalFinite, a=S.FiniteFromString))
+    decoding = asserts.decoding()
+    decoding.succeed({"a": "1"}, {"a": 1})
+    decoding.succeed({})
+    encoding = asserts.encoding()
+    encoding.succeed({"a": 1}, {"a": "1"})
+    encoding.succeed({})
+
+
+def test_optional_fields_exact_optional_property_with_nullability():
+    """Optional Fields / Exact Optional Property with Nullability"""
+    schema = S.Struct(_OptionalNullableFinite, a=S.NullOr(S.FiniteFromString))
+    asserts = SchemaAsserts(schema)
+    decoding = asserts.decoding()
+    decoding.succeed({"a": "1"}, {"a": 1})
+    decoding.succeed({})
+    decoding.succeed({"a": None})
+    encoding = asserts.encoding()
+    encoding.succeed({"a": 1}, {"a": "1"})
+    encoding.succeed({})
+    encoding.succeed({"a": None})
+
+
+# ------------------------------------------------- transformations in records
+
+
+@testing.effect
+def test_record_sequential_parsing_resumes_without_replaying_entries():
+    """Record / sequential parsing resumes without replaying entries"""
+    calls: list[str] = []
+
+    def run(value: str, _: object) -> fx.Effect[str]:
+        calls.append(value)
+        return fx.yield_now().as_(value) if value == "b" else fx.succeed(value)
+
+    value = S.String.pipe(S.decode(T.Transformation(G.transform_effect(run), G.passthrough())))
+    input = {"a": "a", "b": "b", "c": "c"}
+    assert (yield from S.decode_unknown_effect(S.Record(S.String, value))(input)) == input
+    assert calls == ["a", "b", "c"]
+
+
+def test_record_snake_to_camel_number_from_string():
+    """Record / Record(SnakeToCamel, NumberFromString)"""
+    snake_to_camel = S.String.pipe(S.decode(T.snake_to_camel()))
+    asserts = SchemaAsserts(S.Record(snake_to_camel, S.NumberFromString))
+    decoding = asserts.decoding()
+    decoding.succeed({"a": "1"}, {"a": 1})
+    decoding.succeed({"a_b": "1"}, {"aB": 1})
+    decoding.succeed({"a_b": "1", "aB": "2"}, {"aB": 2})
+    encoding = asserts.encoding()
+    encoding.succeed({"a": 1}, {"a": "1"})
+    encoding.succeed({"aB": 1}, {"a_b": "1"})
+    encoding.succeed({"a_b": 1, "aB": 2}, {"a_b": "2"})
+
+
+def test_record_number_string():
+    """Record / Record(Number, String)"""
+    # Python keys keep their type: a number key is a ``float`` or ``int``,
+    # not its text (``NaN`` is left out: it is never equal to itself).
+    decoding = SchemaAsserts(S.Record(S.Number, S.FiniteFromString)).decoding()
+    decoding.succeed(
+        {1: "1", 2.2: "2", math.inf: "3", -math.inf: "5"},
+        {1: 1, 2.2: 2, math.inf: 3, -math.inf: 5},
+    )
+    decoding.fail({1: None}, "Expected string\n  at [1]")
+    decoding.fail({1: "a"}, "Expected a finite number\n  at [1]")
+
+
+def test_record_int_string():
+    """Record / Record(Int, String)"""
+    decoding = SchemaAsserts(S.Record(S.Int, S.FiniteFromString)).decoding()
+    decoding.succeed({1: "1"}, {1: 1})
+    decoding.succeed({1: "1", 1.1: "ignored", math.inf: "ignored"}, {1: 1})
+    decoding.fail({1: None}, "Expected string\n  at [1]")
+    decoding.fail({1: "a"}, "Expected a finite number\n  at [1]")
+
+
+def test_record_union_number_a_finite_from_string():
+    """Record / Record(Union(Number, "a"), FiniteFromString)"""
+    schema = S.Record(S.Union(S.Number, S.Literal("a")), S.FiniteFromString)
+    SchemaAsserts(schema).decoding().succeed(
+        {"a": "-1", 1: "1", 2.2: "2", math.inf: "3", -math.inf: "5"},
+        {"a": -1, 1: 1, 2.2: 2, math.inf: 3, -math.inf: 5},
+    )

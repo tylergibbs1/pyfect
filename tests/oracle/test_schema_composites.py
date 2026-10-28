@@ -25,29 +25,27 @@ FiniteFromString)": a ``Die`` holds an exception, so its defect schema is
 Omitted:
 - Ported in ``test_schema_transform.py``: "RedactedFromValue / should
   decode a value", "OptionFromNullOr", "OptionFromOptionalNullOr / ...".
-- Transformations and codecs (later clusters): "mutable / supports
-  encodings on array elements" (``List`` over a transformation), "mutable /
-  supports withDecodingDefaultType after mutable", "... does not support
-  withDecodingDefaultType before mutable", "mutable / preserves
-  annotations, checks, encoding checks, and context" (no encoding checks;
-  ``List`` is its own schema), "ArrayEnsure", "ArrayEnsure roundtrips
-  array-valued elements", "ArrayEnsure preserves outer-array encoding",
-  "OptionFromUndefinedOr", "OptionFromNullishOr / ...", "Defect", "ErrorInstance and Defect
-  memoize equivalent options", "Error" (``ErrorInstance``), "Exit /
+- Python's ``List`` is its own schema, not ``mutable(...)`` of another:
+  "mutable / does not support withDecodingDefaultType before mutable",
+  "mutable / preserves annotations, checks, encoding checks, and context".
+- ``undefined``: "OptionFromUndefinedOr", "OptionFromNullishOr / ...".
+- JavaScript's ``Date``: "DateTimeUtcFromValidDate", "Date";
+  "DateTimeUtcFromString" and "DateTimeUtcFromMillis" are ported in
+  ``test_schema_codecs.py``.
+- ``ErrorInstance`` and ``Defect`` (Effect's JSON form of an ``Error``): "Defect",
+  "ErrorInstance and Defect memoize equivalent options", "Error", "Exit /
   Exit(FiniteFromString, String, Defect)", "Cause / strict encoding
-  preserves the default wire format for every reason variant"
-  (``toCodecJson``), "DateTimeUtcFromValidDate", "DateTimeUtcFromString",
-  "DateTimeUtcFromMillis", "Date" (a JavaScript ``Date``).
-- Arbitraries only (Hypothesis comes later): "CauseReason /
-  CauseReason(FiniteFromString, FiniteFromString)", "Duration"; "ByteSize"
-  tests only the arbitrary and ``toCodecJson``.
+  preserves the default wire format for every reason variant" (it also
+  dies with ``42``; a Python ``Die`` holds an exception). Not ported: how
+  a decoded ``{ name, message }`` becomes a Python exception is an open
+  design question (``docs/PARITY.md`` §5, question 11).
+- "CauseReason / CauseReason(FiniteFromString, FiniteFromString)": only
+  draws values, and a defect schema here is an ``instance_of`` an
+  exception class, which has no strategy.
 - "withConstructorDefault / Tuple / Tuple & Some", "... / nested defaults
   (Struct)", "... / inner defaults (Tuple)", "... / nested defaults
   (Tuple)": no ``withConstructorDefault`` (a struct's defaults are field
   defaults; a tuple's elements have none).
-- "flip / Tuple & flip & check & flip should apply the check to the
-  encoded side": ``Schema.flip`` and encoding checks come with
-  transformations.
 - "Tuple / A required element cannot follow an optional element" with
   ``Schema.optional`` and "TupleWithRest / An optional element cannot
   follow a rest element": ``optional`` is ``optionalKey`` of ``UndefinedOr``
@@ -61,7 +59,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from pyfect import cause, exit, redacted
+from pyfect import byte_size, cause, exit, redacted
+from pyfect import effect as fx
 from pyfect import schema as S
 from pyfect.option import Option, Some
 from pyfect.redacted import Redacted
@@ -709,3 +708,113 @@ def test_checks_refine():
     decoding.succeed(Some("a"))
     decoding.fail(Some(""), "Expected length > 0")
     decoding.fail(None, "Expected isSome")
+
+
+# --------------------------------------------------------------- ArrayEnsure
+
+
+def test_array_ensure():
+    """ArrayEnsure"""
+    asserts = SchemaAsserts(S.ArrayEnsure(S.FiniteFromString))
+    decoding = asserts.decoding()
+    decoding.succeed("1", (1,))
+    decoding.succeed(["1", "2"], (1, 2))
+    decoding.succeed([], ())
+    decoding.fail(None, "Expected string | array")
+    decoding.fail("a", "Expected a finite number")
+    decoding.fail(["a"], "Expected a finite number\n  at [0]")
+
+    encoding = asserts.encoding()
+    encoding.succeed((), ())
+    encoding.succeed((1,), "1")
+    encoding.succeed((1, 2), ("1", "2"))
+
+
+def test_array_ensure_roundtrips_array_valued_elements():
+    """ArrayEnsure roundtrips array-valued elements"""
+    schema = S.ArrayEnsure(S.Tuple(S.Number, S.Number))
+    encoded = S.encode_sync(schema)(((1, 2),))
+    assert encoded == (1, 2)
+    assert S.decode_sync(schema)(encoded) == ((1, 2),)
+
+
+def test_array_ensure_preserves_outer_array_encoding():
+    """ArrayEnsure preserves outer-array encoding"""
+    schema = S.ArrayEnsure(S.from_json_string(S.Unknown))
+    assert S.encode_sync(schema)((1, 2)) == ("1", "2")
+
+
+# ------------------------------------------------------------------- mutable
+
+
+def test_mutable_supports_encodings_on_array_elements():
+    """mutable / supports encodings on array elements"""
+    asserts = SchemaAsserts(S.List(S.FiniteFromString))
+    asserts.decoding().succeed(["1"], [1])
+    asserts.encoding().succeed([1], ["1"])
+
+
+class _Values(TypedDict):
+    value: list[str]
+
+
+def test_mutable_supports_with_decoding_default_type_after_mutable():
+    """mutable / supports withDecodingDefaultType after mutable"""
+    value = S.List(S.String).pipe(S.with_decoding_default_type_key(fx.succeed(["default"])))
+    asserts = SchemaAsserts(S.Struct(_Values, value=value))
+    asserts.decoding().succeed({}, {"value": ["default"]})
+    asserts.decoding().succeed({"value": ["a"]})
+    asserts.encoding().succeed({"value": ["a"]})
+
+
+# ---------------------------------------------------------------------- flip
+
+
+def _head_longer_than_one(pair: tuple[str]) -> bool:
+    return len(pair[0]) > 1
+
+
+def test_flip_tuple_and_flip_and_check_and_flip_should_apply_the_check_to_the_encoded_side():
+    """flip / Tuple & flip & check & flip should apply the check to the encoded side"""
+    check = S.make_filter(_head_longer_than_one, expected="head length > 1")
+    schema = S.flip(S.flip(S.Tuple(S.String)).check(check))
+    node = schema.__codec__().ast
+    assert isinstance(node, S.ast.Arrays)
+    assert node.checks is None
+    assert node.encoding_checks is not None
+    assert len(node.encoding_checks) == 1
+    asserts = SchemaAsserts(schema)
+    asserts.decoding().fail(["a"], "Expected head length > 1")
+    asserts.decoding().succeed(["aa"], ("aa",))
+    asserts.encoding().fail(("a",), "Expected head length > 1")
+    asserts.encoding().succeed(("aa",))
+
+
+# ------------------------------------------------- arbitraries and JSON codecs
+
+
+def _draws_valid_values(schema: S.Bottom[object]) -> None:
+    pytest.importorskip("hypothesis")
+    from hypothesis import given, settings
+
+    is_valid = S.is_(schema)
+
+    @settings(max_examples=50, deadline=None)
+    @given(S.to_strategy(schema))
+    def check(value: object) -> None:
+        assert is_valid(value)
+
+    check()
+
+
+def test_duration():
+    """Duration"""
+    _draws_valid_values(S.Duration)
+
+
+def test_byte_size():
+    """ByteSize"""
+    _draws_valid_values(S.ByteSize)
+    json = SchemaAsserts(S.to_codec_json(S.ByteSize))
+    json.decoding().succeed("9007199254740993", byte_size.bytes(9_007_199_254_740_993))
+    json.encoding().succeed(byte_size.bytes(9_007_199_254_740_993), "9007199254740993")

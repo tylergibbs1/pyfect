@@ -24,11 +24,11 @@ Omitted:
 - Literal(s), Enum, Union of primitives, checks, Int, Natural, Trimmed,
   Finite, fromBrand and resolveAnnotations: ported in test_schema_checks.py.
 - Struct, Record and class titles are in test_schema_struct.py and
-  test_schema_class.py. Every other title waits for the schema kinds it
-  exercises: Tuple, Array, transformations, declarations and the built-in
-  codecs. Ported parse-option titles are in test_schema_struct.py; the
-  adapter titles ("is", "asserts", "decodeUnknownOption /
-  encodeUnknownOption", ...) use ``FiniteFromString`` or effectful getters.
+  test_schema_class.py; tuples, arrays and data types in
+  test_schema_composites.py; transformations, codecs and the decoding /
+  encoding adapter titles ("decodeUnknownOption", "makeOption", ...) in
+  test_schema_transform.py; the parser titles ("is", "asserts", the
+  laziness and retry titles) in test_schema_parser.py.
 """
 
 from dataclasses import dataclass, field

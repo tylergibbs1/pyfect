@@ -70,6 +70,12 @@ class Transformation(Generic[T, E, RD_co, RE_co]):
 type _Parse[A, R] = Effect[Option[A], Issue, R]
 
 
+def unchanged[A, R](parse: _Parse[A, R], options: ParseOptions, /) -> _Parse[A, R]:
+    """The side of a ``Middleware`` that leaves the parse as it is (Effect's
+    ``identity`` in ``middlewareDecoding`` / ``middlewareEncoding``)."""
+    return parse
+
+
 @dataclass(frozen=True, slots=True, eq=False)
 class Middleware(Generic[T, E, RD_co, RE_co]):
     """A function of the whole parse each way: ``decode(effect, options)``
@@ -83,7 +89,7 @@ class Middleware(Generic[T, E, RD_co, RE_co]):
 
     @property
     def sees_failures(self) -> bool:
-        return True
+        return self.decode is not unchanged
 
     def flip(self) -> Middleware[E, T, RE_co, RD_co]:
         return Middleware(self.encode, self.decode)

@@ -25,6 +25,7 @@ from pyfect.schema._transform import DecodeToSchema, decode_to, encode_to, to_en
 from pyfect.schema.getter import Getter, Outcome, omit, passthrough, with_default
 from pyfect.schema.issue import Issue
 from pyfect.schema.transformation import Middleware, Transformation
+from pyfect.schema.transformation._transformation import unchanged
 
 A = TypeVar("A")
 R_co = TypeVar("R_co", covariant=True)
@@ -33,10 +34,6 @@ RI_contra = TypeVar("RI_contra", contravariant=True)
 type Parse[A, R] = Effect[Option[A], Issue, R]
 """A parse as a middleware sees it: ``Some(value)``, ``None`` for a
 missing value, or the failure."""
-
-
-def _same(effect: Parse[Any, Any], options: ParseOptions) -> Parse[Any, Any]:
-    return effect
 
 
 class MiddlewareDecoding(Generic[A, RI_contra, R_co]):
@@ -53,7 +50,7 @@ class MiddlewareDecoding(Generic[A, RI_contra, R_co]):
         self, schema: Codec[A, E, RI_contra, RE], /
     ) -> Bottom[A, E, R_co, RE]:
         node = schema.__codec__().ast
-        return Bottom(ast.decode_to(node, node.to_type(), Middleware(self._f, _same)))
+        return Bottom(ast.decode_to(node, node.to_type(), Middleware(self._f, unchanged)))
 
 
 def middleware_decoding[T, RI = Never, R = Never](
@@ -78,7 +75,7 @@ class MiddlewareEncoding(Generic[A, RI_contra, R_co]):
         self, schema: Codec[T, A, RD, RI_contra], /
     ) -> Bottom[T, A, RD, R_co]:
         node = schema.__codec__().ast
-        return Bottom(ast.decode_to(ast.to_encoded(node), node, Middleware(_same, self._f)))
+        return Bottom(ast.decode_to(ast.to_encoded(node), node, Middleware(unchanged, self._f)))
 
 
 def middleware_encoding[E, RI = Never, R = Never](

@@ -11,17 +11,21 @@ before any member is parsed.
 from __future__ import annotations
 
 from collections.abc import Hashable, Mapping, Sequence
-from dataclasses import dataclass
-from typing import cast
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, cast
 
 from pyfect.logger._text import format_unknown, json_quote
 from pyfect.schema.ast._arrays import Arrays
 from pyfect.schema.ast._base import AST
 from pyfect.schema.ast._class import Class
+from pyfect.schema.ast._encoding import Encoding, to_encoded
 from pyfect.schema.ast._keywords import BigInt, Boolean, Never, Null, Number, String, Unknown
 from pyfect.schema.ast._literal import Enum, Literal, LiteralValue, same_literal
 from pyfect.schema.ast._objects import Objects
 from pyfect.schema.ast._suspend import Suspend
+
+if TYPE_CHECKING:
+    from pyfect.schema.ast._union import Union
 
 ALL = frozenset({"null", "string", "number", "bigint", "boolean", "array", "object"})
 OBJECT = frozenset({"object"})
@@ -92,7 +96,38 @@ def _input_side(ast: AST) -> AST:
     """The node of what the member takes as input (Effect's ``toCandidate``).
     A suspended member takes anything: selecting candidates never makes it
     (it may be the union itself)."""
-    return Unknown() if isinstance(ast, Suspend) else ast.flip().to_type()
+    return Unknown() if isinstance(ast, Suspend) else _settled(ast).flip().to_type()
+
+
+def _settled(ast: AST) -> AST:
+    """``ast`` with every part whose failures a middleware sees (and may
+    recover from, as ``catch_decoding`` does) taken as ``Unknown``: such a
+    part may take any input and holds no sentinel (Effect's ``toCandidate``)."""
+    encoding = ast.encoding
+    if encoding is not None:
+        return _settled_encoding(ast, encoding)
+    members = _members(ast)
+    if members is not None:
+        return cast("Union", ast).map_types(_settled)
+    match ast:
+        case Objects(properties=properties):
+            types = [_settled(p.type) for p in properties]
+            if all(t is p.type for t, p in zip(types, properties, strict=True)):
+                return ast
+            settled = (replace(p, type=t) for t, p in zip(types, properties, strict=True))
+            return replace(ast, properties=tuple(settled))
+        case Arrays():
+            return ast.map_types(_settled)
+        case _:
+            return ast
+
+
+def _settled_encoding(ast: AST, encoding: Encoding) -> AST:
+    if any(link.transformation.sees_failures for link in encoding):
+        return Unknown()
+    *links, last = encoding
+    source = _settled(last.to)
+    return ast if source is last.to else replace(ast, encoding=(*links, replace(last, to=source)))
 
 
 def sentinels(ast: AST) -> tuple[Sentinel, ...]:
@@ -235,8 +270,9 @@ class CandidateIndex:
 def member_expected(ast: AST) -> str:
     """How a union names a member: a mapping with literal keys as
     ``{ readonly "_tag": "A", ... }``, a tuple with literal elements as
-    ``readonly [ "a", ... ]``, any other as it expects itself."""
-    side = _input_side(ast)
+    ``readonly [ "a", ... ]``, any other as its encoded side expects (what
+    the union decodes from)."""
+    side = to_encoded(ast)
     if isinstance(side, Class) and side.side == "encoded":
         side = side.shape.encoded
     if isinstance(side, Arrays):
@@ -252,7 +288,7 @@ def member_expected(ast: AST) -> str:
                 for p in literals
             )
             return f"{{ {entries}, ... }}"
-    return ast.expected()
+    return side.expected()
 
 
 def _format_key(key: Hashable) -> str:

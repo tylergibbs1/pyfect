@@ -31,8 +31,8 @@ class LinkTransformation(Protocol):
 
     @property
     def sees_failures(self) -> bool:
-        """It runs on failures too (a middleware), so a union cannot pick
-        its member by the source's kind."""
+        """Its decoding runs on failures too (a middleware that may recover),
+        so a union cannot pick its member by the source's kind or literals."""
         ...
 
     def flip(self) -> LinkTransformation: ...

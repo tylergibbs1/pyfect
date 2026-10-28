@@ -65,7 +65,9 @@ class Arrays(AST):
         run = _Run(self, cast("Sequence[object]", input), options)
         return run_steps(run, options.get("concurrency"))
 
-    def _map(self, f: Callable[[AST], AST]) -> Arrays:
+    def map_types(self, f: Callable[[AST], AST]) -> Arrays:
+        """The node with ``f`` applied to each element and rest type (itself
+        when none changes)."""
         elements = tuple(Element(f(e.type), e.optional) for e in self.elements)
         rest = tuple(map(f, self.rest))
         same = all(a.type is b.type for a, b in zip(elements, self.elements, strict=True)) and all(
@@ -75,13 +77,13 @@ class Arrays(AST):
 
     def _flip(self) -> Arrays:
         # Checks describe the decoded side: flipped, they check the input.
-        flipped = self._map(lambda t: t.flip())
+        flipped = self.map_types(lambda t: t.flip())
         if self.checks is None and self.encoding_checks is None:
             return flipped
         return replace(flipped, checks=self.encoding_checks, encoding_checks=self.checks)
 
     def _to_type(self) -> Arrays:
-        typed = self._map(lambda t: t.to_type())
+        typed = self.map_types(lambda t: t.to_type())
         if self.encoding_checks is None:
             return typed
         # The encoded side's checks hold for the decoded one when no part

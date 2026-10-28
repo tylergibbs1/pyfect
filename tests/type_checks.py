@@ -3799,6 +3799,15 @@ def check_schema_composites(unknown: object) -> None:
     assert_type(S.declare(is_str, expected="text"), S.Bottom[str])
 
 
+def check_schema_completeness_pass() -> None:
+    from pyfect import schema as S
+
+    ensured = S.ArrayEnsure(S.FiniteFromString)
+    assert_type(ensured, S.DecodeToSchema[tuple[float, ...], str | tuple[str, ...], Never, Never])
+    assert_type(S.FiniteFromString.annotate_encoded(title="t"), S.DecodeToSchema[float, str])
+    assert_type(S.resolve_annotations_key(S.String), S.ast.Annotations | None)
+
+
 def check_schema_classes_are_covariant() -> None:
     """A schema needing no services is a schema needing some, and a schema of
     a narrower type one of a wider type: every schema class is covariant, so

@@ -366,16 +366,17 @@ generators never use it. Parameters are still required to be annotated.
 
 Concurrency and dependency injection (M2), time (M3), concurrent data structures (M4:
 Queue, PubSub, the Ref family, Pool, Cache, Request batching), observability (M5),
-streams (M6: Pull, Channel, Stream, Sink, the text framers) and config and data (M7: config
-providers, `Config`, `Redacted`, `ByteSize`, `Brand`, the case functions) are done; see
+streams (M6: Pull, Channel, Stream, Sink, the text framers), config and data (M7: config
+providers, `Config`, `Redacted`, `ByteSize`, `Brand`, the case functions) and Schema (M8:
+`fx.schema`, a native AST-based Schema with Effect's issue tree, typed as in
+[`docs/SCHEMA_DESIGN.md`](docs/SCHEMA_DESIGN.md); JSON codecs, JSON Schema, JSON
+Patch / Pointer, `S.to_strategy` with `pyfect[hypothesis]`, `fx.optic`, `Config.schema`,
+`ChannelSchema`, and pydantic / msgspec adapters) are done; see
 [`docs/PARITY.md`](docs/PARITY.md) for coverage against Effect v4 and what is deferred.
 
-1. **Schema** (in progress, `fx.schema`): a native AST-based Schema with Effect's issue tree,
-   typed as in [`docs/SCHEMA_DESIGN.md`](docs/SCHEMA_DESIGN.md); pydantic, msgspec and
-   Hypothesis become boundary adapters. The parser core and primitives are done, and
-   `S.to_strategy` (with `pyfect[hypothesis]`) and `fx.optic` (lenses over plain data) are in.
-   `Config.schema` and Brand's Schema checks come with it.
-2. **More building blocks**: `STM`.
+1. **More building blocks**: `STM`.
+2. **Schema's long tail**: `TemplateLiteral`, `TaggedUnion`, `BigDecimal`, the error and
+   network schemas, and `SchemaRepresentation`.
 
 ## Development
 

@@ -116,6 +116,7 @@ from pyfect.schema._checks_string import (
 from pyfect.schema._class import Class, Error, TaggedClass, TaggedError, class_check, field
 from pyfect.schema._codecs import (
     URL,
+    ArrayEnsure,
     BigIntFromString,
     BooleanFromBit,
     Bytes,
@@ -252,6 +253,7 @@ from pyfect.schema._refine import (
     make_filter_group,
     refine,
     resolve_annotations,
+    resolve_annotations_key,
 )
 from pyfect.schema._schema import (
     Bottom,
@@ -303,6 +305,7 @@ __all__ = [
     "Any",
     "ArbitraryConstraint",
     "Array",
+    "ArrayEnsure",
     "ArraySchema",
     "Between",
     "BigInt",
@@ -547,6 +550,7 @@ __all__ = [
     "optional_key",
     "refine",
     "resolve_annotations",
+    "resolve_annotations_key",
     "suspend",
     "to_codec_json",
     "to_codec_string_tree",

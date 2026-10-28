@@ -77,7 +77,8 @@ class Union(AST):
             return resume(run, n, Pending(result, _Run.member_at(n)))
         return fail_exit(AnyOf(self, tuple(issues), reported(input, options)))
 
-    def _map_types(self, f: Callable[[AST], AST]) -> Union:
+    def map_types(self, f: Callable[[AST], AST]) -> Union:
+        """The union with ``f`` applied to each member (itself when none changes)."""
         types = tuple(map(f, self.types))
         if all(a is b for a, b in zip(types, self.types, strict=True)):
             return self
@@ -85,13 +86,13 @@ class Union(AST):
 
     def _flip(self) -> Union:
         # Checks describe the decoded side: flipped, they check the input.
-        flipped = self._map_types(lambda t: t.flip())
+        flipped = self.map_types(lambda t: t.flip())
         if self.checks is None and self.encoding_checks is None:
             return flipped
         return replace(flipped, checks=self.encoding_checks, encoding_checks=self.checks)
 
     def _to_type(self) -> Union:
-        typed = self._map_types(lambda t: t.to_type())
+        typed = self.map_types(lambda t: t.to_type())
         if self.encoding_checks is None:
             return typed
         checks = join_checks(self.checks, self.encoding_checks) if typed is self else self.checks

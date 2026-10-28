@@ -59,6 +59,12 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
         On a schema with checks they annotate the last check."""
         return replace(self, ast=annotate(self.ast, annotations))
 
+    def annotate_encoded(self, **annotations: object) -> Self:
+        """This schema with annotations on its encoded side (Effect's
+        ``annotateEncoded``); a schema without a transformation is its own
+        encoded side."""
+        return replace(self, ast=annotate(self.ast.flip(), annotations).flip())
+
     def override_to_equivalence[A, E, RD, RE](
         self: Bottom[A, E, RD, RE], f: Callable[[], Callable[[A, A], bool]], /
     ) -> Bottom[A, E, RD, RE]:

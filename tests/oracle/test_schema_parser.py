@@ -6,14 +6,16 @@ an ``Error`` whose cause is the issue); pyfect has one family of adapters,
 ``Schema``'s, failing with ``SchemaError``, which holds the issue. These
 ports go through them, and ``Bottom.make`` raises ``SchemaError``.
 
-Ported in part: "decodeUnknownExit / preserves values that use Effect data
-protocols" (the ``Union([Unknown])`` half waits for unions).
-
 Ported through ``ast.parse``: "keeps synchronous transformations eager" and
 "keeps synchronous product parsers eager". Effect's ``Exit`` is an
 ``Effect``, so its eager parse is visible through ``decodeUnknownEffect``;
 pyfect's ``Exit`` is not, so the port checks that the AST parse returns an
 ``Exit`` rather than an effect.
+
+The ``make`` / ``makeOption`` defect titles fail a ``withConstructorDefault``
+in Effect; pyfect's field defaults are plain values, so a declaration's
+parser gives the same cause. Titles Effect builds for two causes ("not an
+Issue" and "both an Issue and a defect") are one parametrized test.
 
 Omitted: "makeEffect / defers deriving the type AST until the maker is
 called and derives it once" (``make_effect`` is a method of an immutable
@@ -21,15 +23,19 @@ schema: there is no maker whose ``ast`` could be swapped); the
 ``decodeUnknownPromise`` titles and "Promise adapters reject with defects
 instead of throwing" (pyfect has no Promise adapters; ``run_async`` of
 ``decode_unknown_effect`` is the asyncio form); "product concurrency /
-applies concurrency to constructor defaults" (no ``withConstructorDefault``
-yet). The titles on inherited properties, ``__proto__``, Suspend and
-Declaration parser compilation, adapter defects from constructor defaults
-and declarations, and mixed causes in union candidates come with the
-struct, declaration and suspend ports; ``tests/test_schema_parser.py``
-covers the adapter defect messages.
+applies concurrency to constructor defaults" (field defaults are plain
+values, not effects); the inherited-property titles ("decodes inherited
+struct properties", "decodes inherited string, number, and symbol fields",
+"distinguishes an inherited undefined property from a missing property",
+"selects union members using inherited discriminants", "decodes inherited
+Object.prototype properties", "requires __proto__ to be an own property",
+"keeps dynamic record properties own-only while finite record keys are
+declared": a Python ``Mapping`` has no prototype chain); "distinguishes
+missing tuple elements from undefined" (Python has no ``undefined``);
+"preserves missing optional template literals" (no ``TemplateLiteral``).
 """
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterator, Mapping
 from typing import Any, Literal, Never, TypedDict
 
 import pytest
@@ -37,10 +43,12 @@ import pytest
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
+from pyfect.cause import Cause, Die, Fail
 from pyfect.deferred import Deferred
 from pyfect.exit import Exit, Failure, Success, die, fail, succeed
 from pyfect.option import Option, Some
 from pyfect.ref import Ref
+from pyfect.result import Ok
 from pyfect.schema import getter as G
 from pyfect.schema import transformation as T
 from pyfect.schema.issue import AnyOf, Composite, InvalidValue, Issue, Pointer
@@ -92,6 +100,11 @@ def test_decode_unknown_exit_preserves_values_that_use_effect_data_protocols():
         assert isinstance(result, Success)
         assert result.value is value
     assert executions == 0
+
+    failure = fail("a")
+    union_result = S.decode_unknown_exit(S.Union(S.Unknown))(failure)
+    assert isinstance(union_result, Success)
+    assert union_result.value is failure
 
 
 # ------------------------------------------------- effectful parsing (M8 transformations)
@@ -574,3 +587,446 @@ def test_keeps_encoding_link_parser_compilation_lazy_for_suspend():
     assert evaluations == 1
     assert isinstance(decode("b"), Success)
     assert evaluations == 1
+
+
+# ------------------------------------------------- adapters meeting a defect
+
+_MIXED: Cause[Issue] = Cause((Fail(InvalidValue({"message": "schema issue"})), Die(_DEFECT)))
+
+
+def _failing_declaration(cause: Cause[Issue]) -> S.Bottom[str]:
+    def parser(input: object, node: object, options: object) -> fx.Effect[str, Issue]:
+        return fx.fail_cause(cause)
+
+    return S.declare_constructor((), lambda _: parser)
+
+
+_DIES = Cause[Issue]((Die(_DEFECT),))
+
+
+def _raises_with_defect(message: str, run: Callable[[], object]) -> None:
+    with pytest.raises(RuntimeError) as raised:
+        run()
+    assert raised.value.args == (message,)
+    assert raised.value.__cause__ is _DEFECT
+
+
+def _transformed(cause: Cause[Issue]) -> tuple[S.Bottom[str, str], S.Bottom[str, str]]:
+    getter: G.Getter[str, str] = G.transform_optional_effect(lambda _, __: fx.fail_cause(cause))
+    decoding = S.String.pipe(S.decode(T.Transformation(getter, G.passthrough())))
+    encoding = S.String.pipe(S.encode(T.Transformation(G.passthrough(), getter)))
+    return decoding, encoding
+
+
+def test_make_should_throw_an_error_when_the_cause_contains_both_an_issue_and_a_defect():
+    """make / should throw an error when the cause contains both an Issue and a defect"""
+    # Effect fails a ``withConstructorDefault``; pyfect's field defaults are
+    # plain values, so a declaration's parser gives the mixed cause.
+    schema = _failing_declaration(_MIXED)
+    _raises_with_defect(
+        "Constructor adapter can only throw schema issues", lambda: schema.make("a")
+    )
+
+
+def test_make_option_should_throw_an_error_when_the_cause_is_not_an_issue():
+    """makeOption / should throw an error when the cause is not an Issue"""
+    schema = _failing_declaration(_DIES)
+    _raises_with_defect(
+        "Option adapter can only return none for schema issues", lambda: schema.make_option("a")
+    )
+
+
+def test_make_option_should_throw_an_error_when_the_cause_contains_both_an_issue_and_a_defect():
+    """makeOption / should throw an error when the cause contains both an Issue and a defect"""
+    schema = _failing_declaration(_MIXED)
+    _raises_with_defect(
+        "Option adapter can only return none for schema issues", lambda: schema.make_option("a")
+    )
+
+
+def test_sync_should_throw_an_error_when_the_cause_contains_both_an_issue_and_a_defect():
+    """decodeUnknownSync / encodeUnknownSync / should throw an error when the cause contains both an Issue and a defect"""  # noqa: E501
+    decoding, encoding = _transformed(_MIXED)
+    message = "Sync adapter can only throw schema errors"
+    _raises_with_defect(message, lambda: S.decode_unknown_sync(decoding)("a"))
+    _raises_with_defect(message, lambda: S.encode_unknown_sync(encoding)("a"))
+
+
+@pytest.mark.parametrize("cause", [_DIES, _MIXED], ids=["not an Issue", "an Issue and a defect"])
+def test_option_should_throw_an_error_when_the_cause_is_not_only_issues(cause: Cause[Issue]):
+    """decodeUnknownOption / encodeUnknownOption / should throw an error when the cause is not an Issue
+    decodeUnknownOption / encodeUnknownOption / should throw an error when the cause contains both an Issue and a defect"""  # noqa: E501
+    decoding, encoding = _transformed(cause)
+    message = "Option adapter can only return none for schema issues"
+    _raises_with_defect(message, lambda: S.decode_unknown_option(decoding)("a"))
+    _raises_with_defect(message, lambda: S.encode_unknown_option(encoding)("a"))
+
+
+@pytest.mark.parametrize("cause", [_DIES, _MIXED], ids=["not an Issue", "an Issue and a defect"])
+def test_is_should_throw_an_error_when_the_cause_is_not_only_issues(cause: Cause[Issue]):
+    """is / should throw an error when the cause is not an Issue
+    is / should throw an error when the cause contains both an Issue and a defect"""
+    guard = S.is_(_failing_declaration(cause))
+    _raises_with_defect(
+        "Type guard adapter can only return false for schema issues", lambda: guard("a")
+    )
+
+
+class _StringsAB(TypedDict):
+    a: str
+    b: str
+
+
+def test_asserts_should_use_the_default_parse_options():
+    """asserts / should use the default parse options"""
+    schema = S.Struct(_StringsAB)
+    # ``errors="all"`` would report both keys.
+    with pytest.raises(S.SchemaError, match=r'^Expected string\n  at \["a"\]$'):
+        S.asserts(schema, {"a": 1, "b": 2})
+    # ``on_excess_property="error"`` would reject the excess key.
+    S.asserts(schema, {"a": "a", "b": "b", "c": 1})
+
+
+class _FiniteA(TypedDict):
+    a: float
+
+
+def test_asserts_should_assert_the_type_side_of_the_schema():
+    """asserts / should assert the type side of the schema"""
+    schema = S.Struct(_FiniteA, a=S.FiniteFromString)
+    S.asserts(schema, {"a": 1})
+    with pytest.raises(S.SchemaError, match=r'^Expected number\n  at \["a"\]$'):
+        S.asserts(schema, {"a": "1"})
+
+
+@pytest.mark.parametrize("cause", [_DIES, _MIXED], ids=["not an Issue", "an Issue and a defect"])
+def test_asserts_should_throw_an_error_when_the_cause_is_not_only_issues(cause: Cause[Issue]):
+    """asserts / should throw an error when the cause is not an Issue
+    asserts / should throw an error when the cause contains both an Issue and a defect"""
+    schema = _failing_declaration(cause)
+    _raises_with_defect(
+        "Assertion adapter can only throw schema issues", lambda: S.asserts(schema, "a")
+    )
+
+
+@pytest.mark.parametrize("cause", [_DIES, _MIXED], ids=["not an Issue", "an Issue and a defect"])
+def test_result_should_throw_an_error_when_the_cause_is_not_only_issues(cause: Cause[Issue]):
+    """decodeUnknownResult / encodeUnknownResult / should throw an error when the cause is not an Issue
+    decodeUnknownResult / encodeUnknownResult / should throw an error when the cause contains both an Issue and a defect"""  # noqa: E501
+    decoding, encoding = _transformed(cause)
+    message = "Result adapter can only return schema issues"
+    _raises_with_defect(message, lambda: S.decode_unknown_result(decoding)("a"))
+    _raises_with_defect(message, lambda: S.encode_unknown_result(encoding)("a"))
+
+
+# ------------------------------------------------- decodeUnknownExit internals
+
+
+class _CountingMapping(Mapping[str, object]):
+    """A mapping whose ``value`` is ``"a"`` on its first read only (Effect's
+    getter property)."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    def __getitem__(self, key: str) -> object:
+        if key != "value":
+            raise KeyError(key)
+        self.reads += 1
+        return "a" if self.reads == 1 else 1
+
+    def __contains__(self, key: object) -> bool:
+        return key == "value"
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(("value",))
+
+    def __len__(self) -> int:
+        return 1
+
+
+class _Value(TypedDict):
+    value: str
+
+
+def test_reads_property_and_index_values_once():
+    """decodeUnknownExit / reads property and index values once"""
+    property = _CountingMapping()
+    assert S.decode_unknown_exit(S.Struct(_Value))(property) == succeed({"value": "a"})
+    assert property.reads == 1
+
+    index = _CountingMapping()
+    assert S.decode_unknown_exit(S.Record(S.String, S.String))(index) == succeed({"value": "a"})
+    assert index.reads == 1
+
+    rejected_getter: G.Getter[str, str] = G.transform_optional_effect(
+        lambda _, __: fx.fail(InvalidValue())
+    )
+    rejected_key = S.String.pipe(S.decode(T.Transformation(rejected_getter, G.passthrough())))
+    rejected = _CountingMapping()
+    exit = S.decode_unknown_exit(S.Record(rejected_key, S.String))(rejected)
+    assert isinstance(exit, Failure)
+    assert rejected.reads == 0
+
+
+def test_rejects_an_invalid_root_without_compiling_deeply_nested_structural_parsers():
+    """decodeUnknownExit / rejects an invalid root without compiling deeply nested structural parsers"""  # noqa: E501
+    array: S.Bottom[Any, Any] = S.String
+    struct: S.Bottom[Any, Any] = S.String
+    for _ in range(5_000):
+        array = S.Array(array)
+        struct = S.Struct(_Value, value=struct)
+    assert isinstance(S.decode_unknown_exit(array)(None), Failure)
+    assert isinstance(S.decode_unknown_exit(struct)(None), Failure)
+
+
+def test_stops_outer_checks_after_an_aborting_check_in_a_filter_group():
+    """decodeUnknownExit / stops outer checks after an aborting check in a FilterGroup"""
+    inner_runs = 0
+    outer_runs = 0
+
+    def inner(_: str) -> bool:
+        nonlocal inner_runs
+        inner_runs += 1
+        return False
+
+    def outer(_: str) -> bool:
+        nonlocal outer_runs
+        outer_runs += 1
+        return False
+
+    def fails(_: str) -> bool:
+        return False
+
+    group = S.make_filter(fails).abort().and_(S.make_filter(inner))
+    schema = S.String.check(group, S.make_filter(outer))
+    assert isinstance(S.decode_unknown_exit(schema, errors="all")("value"), Failure)
+    assert inner_runs == 0
+    assert outer_runs == 0
+
+
+class _Field(TypedDict):
+    field: str
+
+
+def test_converts_synchronous_property_parser_throws_into_defects():
+    """decodeUnknownExit / converts synchronous property parser throws into defects"""
+    field: S.Bottom[str] = S.declare_constructor((), lambda _: _raise)
+    exit = S.decode_unknown_exit(S.Struct(_Field, field=field))({"field": "value"})
+    assert exit == die(_DEFECT)
+
+
+def test_keeps_direct_suspend_parser_compilation_lazy():
+    """decodeUnknownExit / keeps direct Suspend parser compilation lazy"""
+    evaluations = 0
+
+    def make() -> S.Bottom[str]:
+        nonlocal evaluations
+        evaluations += 1
+        return S.String
+
+    decode = S.decode_unknown_exit(S.suspend(make))
+    assert evaluations == 0
+    assert isinstance(decode("a"), Success)
+    assert evaluations == 1
+    assert isinstance(decode("b"), Success)
+    assert evaluations == 1
+
+
+class _A(TypedDict):
+    _tag: Literal["A"]
+    next: "str | _B"
+
+
+class _B(TypedDict):
+    _tag: Literal["B"]
+    next: "str | _A"
+
+
+def test_supports_mutually_recursive_suspend_parsers():
+    """decodeUnknownExit / supports mutually recursive Suspend parsers"""
+    a: S.Bottom[_A, Any] = S.Struct(_A, next=S.Union(S.String, S.suspend(lambda: b)))
+    b: S.Bottom[_B, Any] = S.Struct(_B, next=S.Union(S.String, S.suspend(lambda: a)))
+    input = {"_tag": "A", "next": {"_tag": "B", "next": {"_tag": "A", "next": "end"}}}
+    assert S.decode_unknown_exit(a)(input) == succeed(input)
+
+
+def _unchanged(input: object, *_: object) -> Exit[object, Never]:
+    return succeed(input)
+
+
+def _counting_declaration() -> tuple[S.Bottom[object], Callable[[], int]]:
+    evaluations = 0
+
+    def run(_: object) -> Callable[..., Exit[object, Never]]:
+        nonlocal evaluations
+        evaluations += 1
+        return _unchanged
+
+    return S.declare_constructor((), run), lambda: evaluations
+
+
+def test_keeps_declaration_parser_compilation_lazy_and_shared_by_ast_identity():
+    """decodeUnknownExit / keeps Declaration parser compilation lazy and shared by AST identity"""
+    schema, evaluations = _counting_declaration()
+    decode = S.decode_unknown_exit(schema)
+    decode_again = S.decode_unknown_exit(schema)
+    assert evaluations() == 0
+    assert isinstance(decode("a"), Success)
+    assert evaluations() == 1
+    assert isinstance(decode_again("b"), Success)
+    assert evaluations() == 1
+
+
+def test_keeps_untried_declaration_union_members_lazy():
+    """decodeUnknownExit / keeps untried Declaration union members lazy"""
+    declaration, evaluations = _counting_declaration()
+    decode = S.decode_unknown_exit(S.Union(S.Literal("a"), declaration))
+    assert isinstance(decode("a"), Success)
+    assert evaluations() == 0
+    assert isinstance(decode("b"), Success)
+    assert evaluations() == 1
+
+
+def test_keeps_encode_side_declaration_and_suspend_parser_compilation_lazy():
+    """decodeUnknownExit / keeps encode-side Declaration and Suspend parser compilation lazy"""
+    declaration, declaration_evaluations = _counting_declaration()
+    suspend_evaluations = 0
+
+    def make() -> S.Bottom[str]:
+        nonlocal suspend_evaluations
+        suspend_evaluations += 1
+        return S.String
+
+    encode_declaration = S.encode_unknown_exit(declaration)
+    encode_suspend = S.encode_unknown_exit(S.suspend(make))
+    assert (declaration_evaluations(), suspend_evaluations) == (0, 0)
+    assert isinstance(encode_declaration("a"), Success)
+    assert isinstance(encode_suspend("a"), Success)
+    assert (declaration_evaluations(), suspend_evaluations) == (1, 1)
+    assert isinstance(encode_declaration("b"), Success)
+    assert isinstance(encode_suspend("b"), Success)
+    assert (declaration_evaluations(), suspend_evaluations) == (1, 1)
+
+
+class _FactoryDefect(Exception):
+    pass
+
+
+@pytest.mark.parametrize("operation", ["decode", "encode"])
+def test_retries_failed_factories_and_reuses_eager_parsers_after_defects(operation: str):
+    """decodeUnknownExit / ${operation} retries failed factories and reuses eager parsers after defects"""  # noqa: E501
+    factory_defect = _FactoryDefect("factory defect")
+    parser_defect = _Defect("parser defect")
+    factories = 0
+    calls: list[object] = []
+
+    def parser(input: object, *_: object) -> Exit[object, Never]:
+        calls.append(input)
+        if input == "bad":
+            raise parser_defect
+        return succeed(input)
+
+    def run(_: object) -> Callable[..., Exit[object, Never]]:
+        nonlocal factories
+        factories += 1
+        if factories == 1:
+            raise factory_defect
+        return parser
+
+    def passes(_: object) -> bool:
+        return True
+
+    declared: S.Bottom[object] = S.declare_constructor((), run)
+    schema = declared.check(S.make_filter(passes))
+    parse = (
+        S.decode_unknown_effect(schema)
+        if operation == "decode"
+        else S.encode_unknown_effect(schema)
+    )
+    assert factories == 0
+    with pytest.raises(_FactoryDefect) as raised:
+        parse("value")
+    assert raised.value is factory_defect
+    assert S.decode_unknown_exit(schema)("bad") == die(parser_defect)
+    assert S.decode_unknown_exit(schema)("good") == succeed("good")
+    assert calls == ["bad", "good"]
+    assert factories == 2
+
+
+@pytest.mark.parametrize("kind", ["Declaration", "Suspend"])
+@pytest.mark.parametrize("operation", ["decode", "encode"])
+def test_retries_failed_child_factories_inside_option_callbacks(operation: str, kind: str):
+    """decodeUnknownExit / ${operation} retries failed child ${kind} factories inside Option callbacks"""  # noqa: E501
+    factory_defect = _FactoryDefect("factory defect")
+    factories = 0
+
+    def failing_first() -> None:
+        nonlocal factories
+        factories += 1
+        if factories == 1:
+            raise factory_defect
+
+    def run(_: object) -> Callable[..., Exit[object, Never]]:
+        failing_first()
+        return _unchanged
+
+    def thunk() -> S.Bottom[str]:
+        failing_first()
+        return S.String
+
+    child: S.Bottom[object] = (
+        S.declare_constructor((), run) if kind == "Declaration" else S.suspend(thunk)
+    )
+    schema = S.Option(child)
+    parse = (
+        S.decode_unknown_exit(schema) if operation == "decode" else S.encode_unknown_exit(schema)
+    )
+    assert factories == 0
+    assert parse(Some("value")) == die(factory_defect)
+    assert factories == 1
+    assert parse(Some("value")) == succeed(Some("value"))
+    assert factories == 2
+
+
+def test_retries_lazy_suspend_parser_compilation_after_a_synchronous_thunk_failure():
+    """decodeUnknownExit / retries lazy Suspend parser compilation after a synchronous thunk failure"""  # noqa: E501
+    evaluations = 0
+
+    def thunk() -> S.Bottom[str]:
+        nonlocal evaluations
+        evaluations += 1
+        if evaluations == 1:
+            raise _Defect("thunk failure")
+        return S.String
+
+    decode = S.decode_unknown_exit(S.suspend(thunk))
+    with pytest.raises(_Defect, match=r"^thunk failure$"):
+        decode("a")
+    assert isinstance(decode("b"), Success)
+    assert isinstance(decode("c"), Success)
+    assert evaluations == 2
+
+
+class _KindA(TypedDict):
+    kind: Literal["a"]
+    value: str
+
+
+class _KindB(TypedDict):
+    kind: Literal["b"]
+    value: str
+
+
+def test_should_preserve_mixed_causes_in_union_candidates_instead_of_trying_later_candidates():
+    """decodeUnknownExit / should preserve mixed causes in union candidates instead of trying later candidates"""  # noqa: E501
+    failure, _ = _transformed(_MIXED)
+    schema = S.Union(failure, S.Literal("a"))
+    tagged = S.Union(S.Struct(_KindA, value=failure), S.Struct(_KindB))
+    for exit in (
+        S.decode_unknown_exit(schema)("a"),
+        S.decode_unknown_exit(tagged)({"kind": "a", "value": "a"}),
+    ):
+        assert isinstance(exit, Failure)
+        assert any(isinstance(r, Die) for r in exit.cause.reasons)
+        assert isinstance(exit.cause.find_error(), Ok)

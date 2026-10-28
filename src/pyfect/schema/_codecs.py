@@ -9,8 +9,9 @@ in UTC, an ``Option`` ``Some | None``.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, tzinfo
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib.parse import SplitResult
 from zoneinfo import ZoneInfo
 
@@ -23,7 +24,7 @@ from pyfect.redacted import Redacted as _Redacted
 from pyfect.schema import _arbitrary_links as _arb
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
-from pyfect.schema._arrays import optional_key
+from pyfect.schema._arrays import Array, Tuple, optional_key
 from pyfect.schema._checks_string import is_string_big_int
 from pyfect.schema._data import Option, Redacted
 from pyfect.schema._declare import instance_of
@@ -206,6 +207,30 @@ UnknownFromJsonString: DecodeToSchema[object, str] = from_json_string(Unknown)
 def NullOr[A, I, RD, RE](schema: Codec[A, I, RD, RE], /) -> Bottom[A | None, I | None, RD, RE]:
     """``schema``'s values or ``None`` (Effect's ``NullOr``)."""
     return Union(schema, Null)
+
+
+def _one[V](value: V) -> tuple[V]:
+    return (value,)
+
+
+def _only[V](values: tuple[V]) -> V:
+    return values[0]
+
+
+def ArrayEnsure[A, I, RD, RE](
+    schema: Codec[A, I, RD, RE], /
+) -> DecodeToSchema[tuple[A, ...], I | tuple[I, ...], RD, RE]:
+    """One value of ``schema`` or a sequence of them, decoded as a tuple; a
+    one-element tuple encodes as its element (Effect's ``ArrayEnsure``). The
+    single value is tried first, so a ``schema`` that takes sequences
+    decodes one as a single value."""
+    one_or_many: T.Transformation[tuple[object], object] = T.transform(decode=_one, encode=_only)
+    one = schema.__codec__().pipe(decode_to(Tuple(Unknown), one_or_many))
+    many = Array(schema)
+    # ``one`` decodes to a one-element tuple of ``A`` (typed ``object`` by
+    # its ``Tuple(Unknown)`` target), so the union's Type is a sequence of ``A``.
+    source = cast("Bottom[Sequence[A], I | tuple[I, ...], RD, RE]", Union(one, many))
+    return source.pipe(decode_to(Array(to_type(schema))))
 
 
 def OptionFromNullOr[A, I, RD, RE](

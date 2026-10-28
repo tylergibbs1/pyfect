@@ -72,3 +72,10 @@ def resolve_annotations(schema: Top, /) -> Annotations | None:
     """The annotations describing ``schema``: its last check's when it has
     checks, else its own; ``None`` without any."""
     return schema.__codec__().ast.resolve()
+
+
+def resolve_annotations_key(schema: Top, /) -> Annotations | None:
+    """The annotations of the struct key or tuple element holding
+    ``schema`` (``annotate_key``); ``None`` without any (Effect's
+    ``resolveAnnotationsKey``)."""
+    return schema.__codec__().ast.key_annotations

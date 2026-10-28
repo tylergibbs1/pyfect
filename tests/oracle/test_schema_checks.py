@@ -46,12 +46,25 @@ Omitted:
 """
 
 import enum
+from collections.abc import Callable
 from typing import Literal, Never, NewType, TypedDict
 
 import pytest
 
+import pyfect as fx
 from pyfect import schema as S
+from pyfect import testing
 from pyfect.brand import Brand
+from pyfect.cause import Fail
+from pyfect.deferred import Deferred
+from pyfect.effect import Effect, suspend
+from pyfect.exit import Failure, succeed
+from pyfect.option import Option, Some
+from pyfect.result import Ok
+from pyfect.run import run_sync_exit
+from pyfect.schema import getter as G
+from pyfect.schema import transformation as T
+from pyfect.schema.issue import AnyOf, Forbidden, Issue, OneOf
 from pyfect.testing import SchemaAsserts
 
 # --------------------------------------------------------------- Literal
@@ -328,6 +341,125 @@ def test_union_does_not_force_a_recursive_suspended_member_after_an_earlier_succ
     recursive.append(S.Union(S.Literal("end"), S.suspend(make)))
     SchemaAsserts(recursive[0]).decoding().succeed("end", "end")
     assert evaluations == [0]
+
+
+def _fallback[T](value: T) -> Callable[[Issue], Effect[Option[T], Issue]]:
+    return lambda _: fx.succeed(Some(value))
+
+
+def test_union_preserves_recovering_members_during_runtime_type_dispatch():
+    """Union / preserves recovering members during runtime type dispatch"""
+    decoding_fallback = S.String.pipe(S.catch_decoding(_fallback("fallback")))
+    encoding_fallback = S.String.pipe(S.catch_encoding(_fallback("fallback")))
+    transformed_fallback = S.NumberFromString.pipe(S.catch_decoding(_fallback(0.0)))
+    nested_fallback = S.Union(decoding_fallback, S.Number)
+    literal_fallback = S.Literal("a").pipe(S.catch_decoding(_fallback("a")))
+    record = S.Record(decoding_fallback, S.String)
+
+    SchemaAsserts(S.Union(decoding_fallback, S.Null)).decoding().succeed(None, "fallback")
+    SchemaAsserts(S.Union(transformed_fallback, S.Null)).decoding().succeed(None, 0)
+    SchemaAsserts(S.Union(nested_fallback, S.Null)).decoding().succeed(None, "fallback")
+    SchemaAsserts(S.Union(record, S.Null)).decoding().succeed(None, None)
+    SchemaAsserts(S.Union(literal_fallback, S.Literal("b"))).decoding().succeed("b", "a")
+    SchemaAsserts(S.Union(decoding_fallback, S.Null, mode="one_of")).decoding().fail(
+        None, "Expected exactly one member to match"
+    )
+    SchemaAsserts(S.Union(encoding_fallback, S.Null)).encoding().succeed(None, "fallback")
+    SchemaAsserts(S.Union(encoding_fallback, S.Null, mode="one_of")).encoding().fail(
+        None, "Expected exactly one member to match"
+    )
+
+
+class _KindA(TypedDict):
+    kind: Literal["a"]
+
+
+class _KindB(TypedDict):
+    kind: Literal["b"]
+
+
+def test_union_preserves_recovering_members_during_sentinel_dispatch():
+    """Union / preserves recovering members during sentinel dispatch"""
+    decoding_tag = S.Literal("a").pipe(S.catch_decoding(_fallback("a")))
+    encoding_tag = S.Literal("a").pipe(S.catch_encoding(_fallback("a")))
+    decoding_first = S.Struct(_KindA, kind=decoding_tag)
+    encoding_first = S.Struct(_KindA, kind=encoding_tag)
+    decoding_root = S.Struct(_KindA).pipe(S.catch_decoding(_fallback(_KindA(kind="a"))))
+    second = S.Struct(_KindB)
+    input = {"kind": "b"}
+
+    SchemaAsserts(S.Union(decoding_first, second)).decoding().succeed(input, {"kind": "a"})
+    SchemaAsserts(S.Union(decoding_root, second)).decoding().succeed(input, {"kind": "a"})
+    SchemaAsserts(S.Union(decoding_first, second, mode="one_of")).decoding().fail(
+        input, "Expected exactly one member to match"
+    )
+    SchemaAsserts(S.Union(encoding_first, second)).encoding().succeed(input, {"kind": "a"})
+    SchemaAsserts(S.Union(encoding_first, second, mode="one_of")).encoding().fail(
+        input, "Expected exactly one member to match"
+    )
+
+
+def test_union_any_of_does_not_reuse_a_previous_success_when_all_members_now_fail():
+    """Union / mode: "anyOf" does not reuse a previous success when all members now fail"""
+    succeeds = [True]
+
+    def first_run(value: str, _: object) -> Effect[str, Issue]:
+        return suspend(
+            lambda: (
+                fx.succeed(value)
+                if succeeds[0]
+                else fx.fail(Forbidden({"message": "first failed"}))
+            )
+        )
+
+    first = S.String.pipe(
+        S.decode(T.Transformation(G.transform_effect(first_run), G.passthrough()))
+    )
+    effect = S.decode_unknown_effect(S.Union(first, S.String.check(S.is_min_length(5))))("a")
+    assert run_sync_exit(effect) == succeed("a")
+    succeeds[0] = False
+    exit = run_sync_exit(effect)
+    assert isinstance(exit, Failure)
+    match exit.cause.find_error():
+        case Ok(error):
+            assert isinstance(error.issue, AnyOf)
+        case other:
+            raise AssertionError(other)
+
+
+@testing.effect
+def test_union_one_of_detects_asynchronous_successes_in_member_order():
+    """Union / mode: "oneOf" detects asynchronous successes in member order"""
+    first_started = yield from Deferred[None].make()
+    first_latch = yield from Deferred[None].make()
+    second_calls = [0]
+
+    def first_run(_: str, __: object) -> Effect[str]:
+        return first_started.succeed(None).and_then(first_latch.wait()).as_("first")
+
+    def second_run(_: str) -> str:
+        second_calls[0] += 1
+        return "second"
+
+    first = S.String.pipe(
+        S.decode(T.Transformation(G.transform_effect(first_run), G.passthrough()))
+    )
+    second = S.String.pipe(S.decode(T.Transformation(G.transform(second_run), G.passthrough())))
+    union = S.Union(first, second, mode="one_of")
+    fiber = yield from S.decode_unknown_effect(union)("value").exit().fork()
+
+    yield from first_started.wait()
+    yield from fx.yield_now()
+    assert second_calls == [0]
+    yield from first_latch.succeed(None)
+    exit = yield from fiber.join()
+    assert second_calls == [1]
+    assert isinstance(exit, Failure)
+    reason = exit.cause.reasons[0]
+    assert isinstance(reason, Fail)
+    issue = reason.error.issue
+    assert isinstance(issue, OneOf)
+    assert issue.successes == (first.ast, second.ast)
 
 
 # ----------------------------------------------------------- Record checks
@@ -981,6 +1113,20 @@ def test_resolve_annotations_returns_annotations_from_the_last_check():
     annotations = S.resolve_annotations(schema)
     assert annotations is not None
     assert annotations["title"] == "check"
+
+
+# ------------------------------------------------- resolveAnnotationsKey
+
+
+def test_resolve_annotations_key_returns_undefined_for_a_schema_without_key_annotations():
+    """resolveAnnotationsKey / returns undefined for a schema without key annotations"""
+    assert S.resolve_annotations_key(S.String) is None
+
+
+def test_resolve_annotations_key_returns_key_annotations():
+    """resolveAnnotationsKey / returns key annotations"""
+    schema = S.String.annotate_key(message_missing_key="required")
+    assert S.resolve_annotations_key(schema) == {"message_missing_key": "required"}
 
 
 # ------------------------------------------------------ Schema.makeFilter

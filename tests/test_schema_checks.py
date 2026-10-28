@@ -9,10 +9,12 @@ from typing import Literal, Never, NewType, TypeIs
 
 import pytest
 
+from pyfect import effect as fx
 from pyfect import schema as S
 from pyfect.brand import Brand, BrandError
 from pyfect.cause import Die
 from pyfect.exit import Failure
+from pyfect.option import Some
 from pyfect.testing import SchemaAsserts
 
 type AnyCodec = S.Codec[object, object, Never, Never]
@@ -384,3 +386,32 @@ def test_is_min_size_checks_any_sized_value():
     decoding = SchemaAsserts(Items.check(S.is_min_size(2))).decoding()
     decoding.succeed([1, 2])
     decoding.fail([1], "Expected a value with a size of at least 2")
+
+
+def _recovered(_: object) -> fx.Effect[Some[str]]:
+    return fx.succeed(Some("x"))
+
+
+def test_only_a_decoding_middleware_makes_a_union_member_take_any_input():
+    # Printed by Effect under Node: a member whose decoding a middleware sees
+    # may recover from any input; an encoding middleware changes nothing.
+    encoding = S.Union(S.String.pipe(S.catch_encoding(_recovered)), S.Null)
+    decoding = S.Union(S.String.pipe(S.catch_decoding(_recovered)), S.Null)
+    SchemaAsserts(encoding).decoding().fail(1, "Expected string | null")
+    SchemaAsserts(decoding).decoding().succeed(1, "x")
+
+
+@pytest.mark.parametrize(
+    ("schema", "message"),
+    [
+        (S.Union(S.NumberFromString, S.Null), "Expected string | null"),
+        (S.Union(S.FiniteFromString, S.Null), "Expected string | null"),
+        (S.Union(S.String.annotate(identifier="Id"), S.Null), "Expected Id | null"),
+        (S.Union(S.NumberFromString.annotate(identifier="NFS"), S.Null), "Expected string | null"),
+        (S.Union(S.Finite, S.Null), "Expected number | null"),
+    ],
+)
+def test_a_union_names_its_members_by_their_encoded_side(schema: AnyCodec, message: str):
+    # Printed by Effect under Node: a union expects what its members decode
+    # from, so a member's decoded-side identifier is not shown.
+    SchemaAsserts(schema).decoding().fail(True, message)

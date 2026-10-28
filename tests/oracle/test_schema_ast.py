@@ -19,8 +19,10 @@ Omitted:
   ``Uint8Array``, null-prototype and cross-realm objects: JavaScript
   values; their Python counterparts (a ``datetime``, a ``set``, an
   object) are in the "isJson" port.
-- "isStringTree", "isStringTree is stack safe", "Schema.toCodecJson rejects
-  non-JSON objects": the string-tree and JSON codecs come later.
+- "isStringTree" sparse arrays, inherited values, ``Map``, ``Date`` and
+  class instances: JavaScript values (a ``set``, a ``datetime`` and an
+  ``object`` stand for them); ``null`` is ``None``, a missing leaf, so
+  ``None`` is a string tree here.
 - "collectSentinels / ...": internal; each case is covered through
   ``candidates`` and union decoding (``tests/oracle/test_schema_checks.py``
   and ``test_schema_composites.py``). "... / Declaration / ~sentinels" and
@@ -43,6 +45,7 @@ from datetime import UTC, datetime
 from typing import Literal, TypedDict
 
 from pyfect import schema as S
+from pyfect.exit import Failure
 
 
 def _candidates(node: S.ast.AST) -> Callable[[object], list[int]]:
@@ -110,6 +113,45 @@ def test_is_json_is_stack_safe():
         invalid = [invalid]
     assert S.ast.is_json(valid)
     assert not S.ast.is_json(invalid)
+
+
+def test_schema_to_codec_json_rejects_non_json_objects():
+    """Schema.toCodecJson rejects non-JSON objects"""
+    encode = S.encode_unknown_exit(S.to_codec_json(S.Unknown))
+    assert isinstance(encode({1: "a"}), Failure)
+    assert isinstance(encode({"a", "b"}), Failure)
+
+
+def test_is_string_tree():
+    """isStringTree"""
+    # ``None`` is Effect's ``undefined`` (a missing leaf).
+    for value in (None, "string", [], ["a"], ["a", None], {}, {"a": "b"}, {"a": None}, ("a",)):
+        assert S.ast.is_string_tree(value), value
+    for value in (True, False, 1, 10**30, 1.5, ["a", 1], {"a": "b", "c": 1}, {1: "a"}, object()):
+        assert not S.ast.is_string_tree(value), value
+    assert not S.ast.is_string_tree(datetime(1970, 1, 1, tzinfo=UTC))
+    # nested
+    assert S.ast.is_string_tree({"a": {"b": "c"}})
+    assert S.ast.is_string_tree({"a": ["b", {"c": "d"}]})
+    assert not S.ast.is_string_tree({"a": {"b": 1}})
+    # DAG
+    shared = {"value": "a"}
+    assert S.ast.is_string_tree({"left": shared, "right": shared})
+    # circular reference
+    circular: dict[str, object] = {}
+    circular["self"] = circular
+    assert not S.ast.is_string_tree(circular)
+
+
+def test_is_string_tree_is_stack_safe():
+    """isStringTree is stack safe"""
+    valid: object = "value"
+    invalid: object = 1
+    for _ in range(25_000):
+        valid = {"value": valid}
+        invalid = {"value": invalid}
+    assert S.ast.is_string_tree(valid)
+    assert not S.ast.is_string_tree(invalid)
 
 
 def test_get_candidate_index_should_exclude_never():
