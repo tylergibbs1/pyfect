@@ -35,6 +35,7 @@ from pyfect.scheduler import Scheduler, SyncScheduler
 from pyfect.socket import datagram as dg
 from pyfect.sql import client as sql_client
 from pyfect.sql import migrator as sql_migrator
+from pyfect.sql import pg as sql_pg
 from pyfect.sql import resolver as sql_resolver
 from pyfect.sql import schema as sql_schema
 from pyfect.sql import sqlite as sql_sqlite
@@ -4639,3 +4640,45 @@ def sql_statements(
             sql_client.SqlClient,
         ],
     )
+
+
+def sql_pg_driver(
+    pg_sql: sql_pg.PgClientService,
+    pool: sql_pg.PgPoolService,
+    conn: sql_pg.PgConnection,
+    queue: Dequeue[sql_pg.Notification, SqlError],
+) -> None:
+    """The PostgreSQL driver's services keep their error and requirement
+    types; a listener's queue is read-only."""
+    notifications = pg_sql.listen("events")
+    assert_type(
+        notifications,
+        fx.Effect[Dequeue[sql_pg.Notification, SqlError], SqlError, fx.Scope],
+    )
+    assert_type(pg_sql.notify("events", "hi"), fx.Effect[None, SqlError])
+    assert_type(conn.query("SELECT 1"), fx.Effect[sql_pg.Result, SqlError])
+    assert_type(conn.pin, fx.Effect[sql_pg.PgConnection, Never, fx.Scope])
+    assert_type(pool.get, fx.Effect[sql_pg.PgConnection, SqlError, fx.Scope])
+    assert_type(pool.use(lambda c: fx.succeed(c.process_id)), fx.Effect[int, SqlError])
+    assert_type(
+        sql_pg.make(sql_pg.PgPoolConfig()),
+        fx.Effect[sql_pg.PgClientService, SqlError, fx.Scope | reactivity.Reactivity],
+    )
+    assert_type(
+        sql_pg.layer(sql_pg.PgPoolConfig()),
+        fx.Layer[sql_pg.PgClient | sql_client.SqlClient, SqlError],
+    )
+    assert_type(conn.stream("SELECT 1"), Stream[dict[str, Any], SqlError])
+    assert_type(conn.query_values("SELECT 1"), fx.Effect[list[tuple[Any, ...]], SqlError])
+    assert_type(pool.use(lambda _: fx.fail(KeyError("k"))), fx.Effect[Never, KeyError | SqlError])
+    assert_type(
+        sql_pg.make_client(sql_pg.PgClientConfig()),
+        fx.Effect[sql_pg.PgClientService, SqlError, fx.Scope | reactivity.Reactivity],
+    )
+    assert_type(
+        sql_pg.layer_config({}),
+        fx.Layer[sql_pg.PgClient | sql_client.SqlClient, fx.ConfigError | SqlError],
+    )
+    sql_pg.PgConnectionConfig(port="5432")  # pyright: ignore[reportArgumentType]
+    sql_pg.PgConnectionConfig(password="secret")  # pyright: ignore[reportArgumentType]
+    queue.offer(sql_pg.Notification(1, "events", ""))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
