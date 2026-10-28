@@ -32,6 +32,7 @@ from pyfect.net import address_resolver, dns, net_address
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.scheduler import Scheduler, SyncScheduler
+from pyfect.socket import datagram as dg
 from pyfect.stream import Stream
 
 
@@ -4534,3 +4535,40 @@ def check_net_socket(
     socket_module.from_web_socket(fx.succeed(1))  # pyright: ignore[reportArgumentType]
     service.resolve("example.com", str)  # pyright: ignore[reportArgumentType]
     service.lookup("example.com", family="IPv5")  # pyright: ignore[reportArgumentType, reportCallIssue]
+
+
+def check_datagram_socket(
+    udp: dg.DatagramSocketService, reader: dg.Reader, writer: dg.Writer
+) -> None:
+    from ipaddress import IPv4Address, IPv6Address
+
+    assert_type(dg.make_udp(), fx.Effect[dg.DatagramSocketService])
+    assert_type(udp.reader, fx.Effect[dg.Reader, dg.DatagramSocketError, fx.Scope])
+    assert_type(reader.pull, fx.Effect[tuple[dg.Datagram, ...], dg.DatagramSocketError])
+    assert_type(writer.write(dg.OutgoingDatagram("hi")), fx.Effect[None, dg.DatagramSocketError])
+    assert_type(
+        reader.join_multicast(IPv6Address("ff02::1"), interface=2),
+        fx.Effect[None, dg.DatagramSocketError, fx.Scope],
+    )
+
+    def open_scoped(
+        _events: dg.BackingEvents,
+    ) -> fx.Effect[dg.BackingSocket, dg.DatagramSocketError, fx.Scope]: ...
+
+    def open_needing_clock(
+        _events: dg.BackingEvents,
+    ) -> fx.Effect[dg.BackingSocket, dg.DatagramSocketError, fx.Scope | fx.Clock]: ...
+
+    # The reader's Scope is provided by the core; other services remain.
+    assert_type(dg.make_from_backing_socket(open_scoped), fx.Effect[dg.DatagramSocketService])
+    assert_type(
+        dg.make_from_backing_socket(open_needing_clock),
+        fx.Effect[dg.DatagramSocketService, Never, fx.Clock],
+    )
+    # An IPv4 group takes an IPv4 interface address, an IPv6 group an index.
+    reader.join_multicast(IPv4Address("239.0.0.1"), interface=2)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    reader.join_multicast(IPv6Address("ff02::1"), interface=IPv4Address("127.0.0.1"))  # pyright: ignore[reportCallIssue, reportArgumentType]
+    # peer and connect cannot be combined: the remote is one or the other.
+    both = (dg.Peer(dg.HostPort("a", 1)), dg.Connect(dg.HostPort("a", 1)))
+    dg.Options(remote=both)  # pyright: ignore[reportArgumentType]
+    dg.ReceiveBuffer(8, "blocking")  # pyright: ignore[reportArgumentType]

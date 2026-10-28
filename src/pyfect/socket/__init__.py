@@ -20,13 +20,14 @@ connection; writing a ``CloseEvent`` closes it::
 ``to_channel`` and ``to_stream`` turn a socket into a channel (input
 written, output read) or a stream. The live sockets run on an asyncio loop
 of their own, on a background thread, so they work under ``run_sync`` too.
-``pyfect.socket.server`` listens for connections. ``from_web_socket``
+``pyfect.socket.server`` listens for connections and
+``pyfect.socket.datagram`` sends and receives UDP packets. ``from_web_socket``
 adapts a browser-style WebSocket and ``make_web_socket`` opens a client
 through the ``WebSocketConstructor`` service, which ``pyfect.socket.ws``
 provides on the ``websockets`` library (extra ``pyfect[websockets]``).
 """
 
-from pyfect.socket import server
+from pyfect.socket import datagram, server
 from pyfect.socket._errors import (
     CloseEvent,
     OpenErrorKind,
@@ -116,6 +117,7 @@ __all__ = [
     "Write",
     "WriteAll",
     "Writer",
+    "datagram",
     "from_socket",
     "from_web_socket",
     "is_clean_close",

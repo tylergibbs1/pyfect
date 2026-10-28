@@ -140,8 +140,9 @@ flowchart LR
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
-pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 6,000 tests, and
-about 75% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
+pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 7,500 tests, and
+about 76% of Effect's API so far, including the platform services (files, child processes, an
+HTTP client, TCP, TLS, WebSocket and UDP sockets). [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
 what is next.
 
 ## Installation
@@ -152,8 +153,8 @@ pyfect needs Python 3.13 or later and has no required dependencies.
 uv add git+https://github.com/tylergibbs1/pyfect
 ```
 
-Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec` and `httpx` (the
-HTTP client backend), for example
+Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `httpx` (the
+HTTP client backend) and `websockets` (WebSocket clients and servers), for example
 `uv add "pyfect[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add
