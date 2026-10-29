@@ -9,13 +9,11 @@ server of ``_redis`` (skipped without one), emptied before each test:
 - the ``CircuitBreakerRedisTest`` suite (``test/persistence``),
 - the file's own titles.
 
-Each test's docstring is the Effect test title. Not ported: the
+Each test's docstring is the Effect test title. The
 ``PersistedQueueTest`` suite and the ``PersistedQueue (NodeRedis)`` titles
-about queues (``moves exhausted elements to the failed list``, ``recovers
-elements from crashed workers``, ``dead-letters elements from workers that
-crashed on the final attempt``): ``PersistedQueue`` belongs to another
-module's port. Adapted: ``uses the node-redis protocol default`` checks
-redis-py's (RESP2, no ``protocol`` option).
+about queues are in ``test_redis_py_persisted_queue.py``. Adapted: ``uses
+the node-redis protocol default`` checks redis-py's (RESP2, no
+``protocol`` option).
 """
 
 from __future__ import annotations

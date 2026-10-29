@@ -174,6 +174,20 @@ def test_ndjson_rejects_nan_both_ways():
     assert isinstance(written.error, ndjson.NdjsonError) and written.error.kind == "Pack"
 
 
+@testing.effect
+def test_ndjson_encode_escapes_lone_surrogates_as_json_stringify_does():
+    """``JSON.stringify("\\ud83d")`` is ``'"\\\\ud83d"'`` (checked under Node):
+    a lone surrogate is escaped, so the line encodes to UTF-8 and parses
+    back to the same string; a pair is written as is."""
+    lone = "\ud83d"
+    written = yield from _run(
+        stream.make({"s": lone, "pair": "\U0001f600"}).pipe_through_channel(ndjson.encode())
+    )
+    assert written == Outcome([b'{"s":"\\ud83d","pair":"\xf0\x9f\x98\x80"}\n'], [1])
+    parsed = yield from _run(stream.make(*written.values).pipe_through_channel(ndjson.decode()))
+    assert parsed.values == [{"s": lone, "pair": "\U0001f600"}]
+
+
 type _Duplexed[T] = fx.Channel[
     tuple[T, ...], ndjson.NdjsonError, None, tuple[T, ...], ndjson.NdjsonError, None
 ]

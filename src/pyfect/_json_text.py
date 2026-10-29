@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Never
 
 type Json = bool | int | float | str | list[Json] | dict[str, Json] | None
@@ -27,6 +28,16 @@ def parse(text: str) -> Json:
     return value
 
 
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+
+
+def _escape_surrogate(match: re.Match[str]) -> str:
+    return f"\\u{ord(match.group()):04x}"
+
+
 def stringify(value: object) -> str:
-    """Compact JSON, non-ASCII kept as is; ``NaN`` and infinities raise."""
-    return json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    """Compact JSON, non-ASCII kept as is but lone surrogates escaped
+    (``"\\ud83d"``, as ``JSON.stringify`` writes them, so the text encodes to
+    UTF-8); ``NaN`` and infinities raise."""
+    text = json.dumps(value, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    return _LONE_SURROGATE.sub(_escape_surrogate, text)

@@ -78,6 +78,7 @@ from pyfect.persistence import (
 )
 from pyfect.persistence import circuit_breaker as cb
 from pyfect.persistence import key_value_store as kvs
+from pyfect.persistence import persisted_queue as pq
 from pyfect.persistence import persistence as persistence_module
 from pyfect.persistence import rate_limiter as rl
 from pyfect.persistence import redis as redis_module
@@ -90,6 +91,7 @@ from pyfect.schema import SchemaError
 from pyfect.scope import Scope
 from pyfect.socket import datagram as dg
 from pyfect.sql import client as sql_client
+from pyfect.sql import error as sql_error
 from pyfect.sql import migrator as sql_migrator
 from pyfect.sql import pg as sql_pg
 from pyfect.sql import resolver as sql_resolver
@@ -5582,3 +5584,52 @@ def check_resilience(
         persistence_module.layer_redis,
         fx.Layer[persistence_module.Persistence, Never, redis_module.Redis],
     )
+
+
+def check_persisted_queue(
+    queue: pq.PersistedQueue[int],
+    service_schema: S.Codec[str, str, PersistedLookup, PersistedLookup],
+) -> None:
+    # A queue's values are its schema's; its services the schema's.
+    assert_type(
+        pq.make(name="q", schema=S.Int),
+        fx.Effect[pq.PersistedQueue[int], Never, pq.PersistedQueueFactory],
+    )
+    assert_type(
+        pq.make(name="q", schema=service_schema),
+        fx.Effect[pq.PersistedQueue[str, PersistedLookup], Never, pq.PersistedQueueFactory],
+    )
+    assert_type(queue.offer(1), fx.Effect[str, pq.PersistedQueueError | S.SchemaError])
+    queue.offer("one")  # pyright: ignore[reportArgumentType]
+
+    # take adds PersistedQueueError to the handler's errors.
+    def handle(value: int, meta: pq.Metadata) -> fx.Effect[str, ValueError, PersistedLookup]:
+        return fx.fail(ValueError(meta.id))
+
+    assert_type(
+        queue.take(handle),
+        fx.Effect[str, ValueError | pq.PersistedQueueError, PersistedLookup],
+    )
+
+    def shout(value: str, _meta: pq.Metadata) -> fx.Effect[str]:
+        return fx.succeed(value.upper())
+
+    queue.take(shout)  # pyright: ignore[reportArgumentType]
+
+    assert_type(pq.layer, fx.Layer[pq.PersistedQueueFactory, Never, pq.PersistedQueueStore])
+    assert_type(pq.layer_cleanup(), fx.Layer[Never, Never, pq.PersistedQueueStore])
+    assert_type(pq.layer_store_memory, fx.Layer[pq.PersistedQueueStore])
+    assert_type(pq.layer_store_redis(), fx.Layer[pq.PersistedQueueStore, Never, redis_module.Redis])
+    assert_type(
+        pq.layer_store_sql(),
+        fx.Layer[pq.PersistedQueueStore, sql_error.SqlError, sql_client.SqlClient],
+    )
+    assert_type(
+        pq.make_store_sql(),
+        fx.Effect[
+            pq.PersistedQueueStoreService, sql_error.SqlError, sql_client.SqlClient | fx.Scope
+        ],
+    )
+    pq.make(name="q", schema=S.Int, max_attempts="10")  # pyright: ignore[reportArgumentType]
+    # an error's cause is the exception the backend raised, not a Cause
+    pq.PersistedQueueError(message="m", cause=fx.cause.die(ValueError()))  # pyright: ignore[reportArgumentType]

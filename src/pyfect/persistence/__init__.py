@@ -8,6 +8,8 @@ requests whose outcomes are stored, and caches over them.
 - ``persistence``: ``Persistence``, request outcomes stored by those
   schemas in memory, a ``KeyValueStore`` or SQL.
 - ``persisted_cache``: ``PersistedCache``, a ``Cache`` in front of a store.
+- ``persisted_queue``: ``PersistedQueue``, durable at-least-once queues in
+  memory, SQL or Redis.
 - ``user_directories``: ``UserDirectories``, where a program keeps its
   files per user.
 - ``rate_limiter``: ``RateLimiter``, limits per key by fixed window or
@@ -26,6 +28,7 @@ from pyfect.persistence import (
     key_value_store,
     persistable,
     persisted_cache,
+    persisted_queue,
     persistence,
     rate_limiter,
     redis,
@@ -36,6 +39,7 @@ from pyfect.persistence.circuit_breaker import CircuitBreaker, CircuitBreakerErr
 from pyfect.persistence.key_value_store import KeyValueStore, KeyValueStoreError
 from pyfect.persistence.persistable import Persistable
 from pyfect.persistence.persisted_cache import PersistedCache
+from pyfect.persistence.persisted_queue import PersistedQueue, PersistedQueueError
 from pyfect.persistence.persistence import BackingPersistence, Persistence
 from pyfect.persistence.rate_limiter import RateLimiter, RateLimiterError
 from pyfect.persistence.redis import Redis, RedisError
@@ -49,6 +53,8 @@ __all__ = [
     "KeyValueStoreError",
     "Persistable",
     "PersistedCache",
+    "PersistedQueue",
+    "PersistedQueueError",
     "Persistence",
     "PersistenceError",
     "RateLimiter",
@@ -60,6 +66,7 @@ __all__ = [
     "key_value_store",
     "persistable",
     "persisted_cache",
+    "persisted_queue",
     "persistence",
     "rate_limiter",
     "redis",
