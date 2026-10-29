@@ -16,6 +16,7 @@ from pyfect._core import Effect
 from pyfect.duration import Seconds
 from pyfect.effect import gen, suspend, sync
 from pyfect.exit import Success
+from pyfect.http.live_server._timers import timeout_option
 from pyfect.net.net_address import (
     SocketAddress,
     inet_address_from_native_unsafe,
@@ -136,7 +137,7 @@ class Listener:
             for conn in pending + idle:
                 conn.close(graceful=True)
 
-        drained = self.signal.wait_until(lambda: not self._serving).timeout_option(timeout)
+        drained = timeout_option(self.signal.wait_until(lambda: not self._serving), timeout)
         return sync(start).flat_map(lambda _: drained).as_void()
 
 

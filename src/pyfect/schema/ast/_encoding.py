@@ -84,15 +84,20 @@ def decode_to[A: AST](from_: AST, to: A, transformation: LinkTransformation) -> 
     """``to``, decoding from values of ``from_`` through ``transformation``
     (Effect's ``decodeTo``): a link appended to ``to``'s encoding."""
     link = Link(from_, transformation)
-    return replace(to, encoding=(*to.encoding, link) if to.encoding else (link,))
+    out = replace(to, encoding=(*to.encoding, link) if to.encoding else (link,))
+    object.__setattr__(out, "body_owner", to.body_owner or to.owner())
+    return out
 
 
 def optional_key[A: AST](ast: A) -> A:
     """``ast`` as a struct key that may be missing on the encoded side, down
     to its most encoded node (Effect's ``optionalKey``)."""
+    # _base imports this module.
+    from pyfect.schema.ast._base import replace_context
+
     encoding = ast.encoding
     if encoding is None:
-        return ast if ast.optional_key else replace(ast, optional_key=True)
+        return ast if ast.optional_key else replace_context(ast, optional_key=True)
     last = encoding[-1]
     chain: Encoding = (*encoding[:-1], Link(optional_key(last.to), last.transformation))
     return replace(ast, encoding=chain, optional_key=True)

@@ -103,6 +103,15 @@ class CodecDerivation(ABC):
         hit = self._done.get(id(node))
         if hit is not None:
             return hit[1]
+        owner = node.owner()
+        if owner is not node:
+            # A copy with another key context: the owner's codec, in this context.
+            derived = self(owner)
+            out = ast.replace_context(
+                derived, key_annotations=node.key_annotations, optional_key=node.optional_key
+            )
+            self._done[id(node)] = (node, out)
+            return out
         out = self._last_link(node)
         self._done[id(node)] = (node, out)
         self._done[id(out)] = (out, out)

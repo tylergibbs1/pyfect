@@ -49,7 +49,19 @@ class AST(ABC):
     """A struct key holding this node may be missing (Effect's
     ``optionalKey`` context): set on the source of a transformation, so a
     key is optional on the encoded side only."""
+    context_owner: AST | None = field(default=None, init=False, repr=False, compare=False)
+    """The node this one copies with only its key context changed (see
+    ``replace_context``); any other ``replace`` drops it."""
+    body_owner: AST | None = field(default=None, init=False, repr=False, compare=False)
+    """The node this one copies with an encoding added (``decode_to``):
+    the schema whose values a JSON string holds, say."""
     tag: ClassVar[str]
+
+    def owner(self) -> AST:
+        """The node whose body this one shares (Effect's
+        ``getContextOwner``): copies that change only the key context are
+        one schema to derivations and JSON Schema definitions."""
+        return self.context_owner or self
 
     @abstractmethod
     def get_expected(self) -> str:
@@ -197,3 +209,17 @@ def issue_of(failure: Failure[Issue]) -> Issue | None:
         first = reasons[0]
         return first.error if isinstance(first, Fail) else None
     return None
+
+
+def replace_context[A: AST](
+    node: A, *, key_annotations: Annotations | None = None, optional_key: bool | None = None
+) -> A:
+    """``node`` with another key context: the copy shares ``node``'s body
+    (its ``owner``)."""
+    out = replace(
+        node,
+        key_annotations=node.key_annotations if key_annotations is None else key_annotations,
+        optional_key=node.optional_key if optional_key is None else optional_key,
+    )
+    object.__setattr__(out, "context_owner", node.owner())
+    return out

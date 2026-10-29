@@ -280,6 +280,7 @@ from pyfect.schema._tagged import (
     tag_default_omit,
     to_tagged_union,
 )
+from pyfect.schema._to_codec_array_from_single import to_codec_array_from_single
 from pyfect.schema._to_codec_json import to_codec_json
 from pyfect.schema._to_codec_string_tree import StringTree, to_codec_string_tree
 from pyfect.schema._to_equivalence import Equivalence, to_equivalence
@@ -578,6 +579,7 @@ __all__ = [
     "resolve_annotations_key",
     "suspend",
     "tag_default_omit",
+    "to_codec_array_from_single",
     "to_codec_json",
     "to_codec_string_tree",
     "to_encoded",

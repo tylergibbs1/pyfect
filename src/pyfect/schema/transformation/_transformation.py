@@ -37,6 +37,16 @@ RD_co = TypeVar("RD_co", covariant=True, default=Never)
 RE_co = TypeVar("RE_co", covariant=True, default=Never)
 
 
+@dataclass(frozen=True, slots=True)
+class Content:
+    """The document a getter writes: its ``media_type``, and whether the
+    schema of its content is that of the values it encodes
+    (``preserve_schema``)."""
+
+    media_type: str
+    preserve_schema: bool
+
+
 @dataclass(frozen=True, slots=True, eq=False)
 class Transformation(Generic[T, E, RD_co, RE_co]):
     """``decode`` turns an ``E`` into a ``T``, ``encode`` back, needing the
@@ -44,6 +54,11 @@ class Transformation(Generic[T, E, RD_co, RE_co]):
 
     decode: Getter[T, E, RD_co]
     encode: Getter[E, T, RE_co]
+    content: Content | None = None
+    """What ``encode`` writes, when it writes a document of a media type
+    (JSON text): JSON Schema says it with ``contentMediaType``."""
+    decode_content: Content | None = None
+    """``content`` of ``decode``, carried for ``flip``."""
 
     @property
     def sees_failures(self) -> bool:
@@ -51,7 +66,7 @@ class Transformation(Generic[T, E, RD_co, RE_co]):
 
     def flip(self) -> Transformation[E, T, RE_co, RD_co]:
         """The transformation the other way."""
-        return Transformation(self.encode, self.decode)
+        return Transformation(self.encode, self.decode, self.decode_content, self.content)
 
     def pipe[B](self, f: Callable[[Self], B], /) -> B:
         return f(self)

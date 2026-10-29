@@ -75,6 +75,16 @@ def test_schema_example_answers_each_body_by_its_typed_error():
     ]
 
 
+def test_http_api_serves_its_handlers_to_the_derived_client():
+    assert run_example("http_api.py").splitlines() == [
+        "created User(id=2, name='Grace')",
+        "found User(id=2, name='Grace')",
+        "no user 99",
+        "all ['Ada', 'Grace']",
+        'openapi paths ["/users", "/users/{id}"]',
+    ]
+
+
 def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(EXAMPLES / "cli.py"), *args],

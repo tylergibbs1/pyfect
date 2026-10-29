@@ -20,6 +20,7 @@ from pyfect.http.live_server._exchange import MAX_DRAIN_BYTES, Exchange
 from pyfect.http.live_server._head import HeadError, RequestHead, parse_head
 from pyfect.http.live_server._inbound import HeadTooLarge, Inbound
 from pyfect.http.live_server._listener import ConnectionState, Listener
+from pyfect.http.live_server._timers import timeout_option
 from pyfect.http.live_server._upgrade import upgrade
 from pyfect.http.server_error import CLIENT_ABORT_ANNOTATION
 from pyfect.http.server_request import RequestProtocol, SourceRequest
@@ -30,7 +31,7 @@ from pyfect.socket._errors import SocketError
 MAX_HEAD_SIZE = 16 * 1024
 """Node's ``maxHeaderSize``: a longer head is answered with 431."""
 
-CLOSE_GRACE_PERIOD = 0.5
+CLOSE_GRACE_PERIOD = Seconds(0.5)
 """How long a closing connection waits for the client to stop sending
 before it is torn down (so the response is not lost to a reset)."""
 
@@ -67,7 +68,7 @@ def _close(conn: Connection) -> Effect[None]:
         conn.end_writing()
         conn.discard_input()
 
-    waited = conn.closed().timeout_option(CLOSE_GRACE_PERIOD)
+    waited = timeout_option(conn.closed(), CLOSE_GRACE_PERIOD)
     return (
         sync(start)
         .flat_map(lambda _: waited)
@@ -168,19 +169,16 @@ def serve_connection(
     def next_head(first: bool) -> Effect[bytes | int | None]:
         """The next head, or the status to reject it with; ``None`` to
         close quietly."""
-        head = (
-            inbound.read_head(MAX_HEAD_SIZE)
-            .catch_all(head_failed)
-            .timeout_option(timeouts.headers)
-            .map(within_headers_timeout)
-        )
+        head = timeout_option(
+            inbound.read_head(MAX_HEAD_SIZE).catch_all(head_failed), timeouts.headers
+        ).map(within_headers_timeout)
         if first:
             return head
 
         def started(_: SocketError) -> Effect[None]:
             return void  # the head read sees the failure
 
-        waited = inbound.wait_data().catch_all(started).timeout_option(timeouts.keep_alive)
+        waited = timeout_option(inbound.wait_data().catch_all(started), timeouts.keep_alive)
         return waited.flat_map(lambda found: succeed(None) if found is None else head)
 
     def parsed(data: bytes | int | None) -> RequestHead | int | None:

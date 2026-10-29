@@ -26,6 +26,7 @@ from pyfect.schema.ast._base import (
     invalid_type,
     issue_of,
     join_checks,
+    replace_context,
 )
 from pyfect.schema.ast._check import (
     Check,
@@ -173,6 +174,7 @@ __all__ = [
     "optional_key",
     "parse_at_key",
     "record",
+    "replace_context",
     "run_now",
     "same_literal",
     "string",

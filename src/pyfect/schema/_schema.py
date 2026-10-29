@@ -13,7 +13,15 @@ from pyfect.option import Option, Some
 from pyfect.schema._adapters import CONSTRUCTOR, OPTION, raise_schema_failure, schema_error_of
 from pyfect.schema._error import SchemaError
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast import AST, Check, annotate, append_checks, run_now, to_effect
+from pyfect.schema.ast import (
+    AST,
+    Check,
+    annotate,
+    append_checks,
+    replace_context,
+    run_now,
+    to_effect,
+)
 from pyfect.schema.issue import Issue
 
 T_co = TypeVar("T_co", covariant=True)
@@ -92,7 +100,7 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
         (Effect's ``annotateKey``): ``message_missing_key`` replaces
         ``"Missing key"``."""
         key_annotations = {**(self.ast.key_annotations or {}), **annotations}
-        return replace(self, ast=replace(self.ast, key_annotations=key_annotations))
+        return replace(self, ast=replace_context(self.ast, key_annotations=key_annotations))
 
     def check(self, first: Check[T_co], /, *rest: Check[T_co]) -> Self:
         """This schema with checks run, in order, on each value it accepts

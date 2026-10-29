@@ -121,6 +121,8 @@ class _Shape:
         tag: str | None,
         init: Callable[..., None],
         checks: ast.Checks | None,
+        *,
+        annotations: Mapping[str, object] | None,
     ) -> None:
         self.cls = cls
         self.identifier = identifier
@@ -129,7 +131,7 @@ class _Shape:
         self.checks = checks
         self.field_names = tuple(f.name for f in dataclasses.fields(cast("Any", cls)) if f.init)
         self.codec = Bottom[Any, Mapping[str, object]](
-            ast.Class(self, annotations={"identifier": identifier})
+            ast.Class(self, annotations={"identifier": identifier, **(annotations or {})})
         )
         self._built: tuple[dict[str, AnyBottom], ast.Objects, ast.AST, ast.AST] | None = None
 
@@ -248,7 +250,13 @@ def _checks_of(cls: type) -> ast.Checks | None:
 
 
 def _define(
-    cls: type, *, identifier: str | None, tag: str | None, frozen: bool, error: bool
+    cls: type,
+    *,
+    identifier: str | None,
+    tag: str | None,
+    frozen: bool,
+    error: bool,
+    annotations: Mapping[str, object] | None,
 ) -> None:
     """Make ``cls`` a dataclass whose constructor validates, and its schema."""
     # Errors keep pyfect.errors.TaggedError's structural equality and hash.
@@ -259,7 +267,9 @@ def _define(
         type.__setattr__(cls, "__setattr__", _error_setattr)
         type.__setattr__(cls, "__delattr__", _error_delattr)
     init = _linking_cause(cls.__dict__["__init__"]) if error else cls.__dict__["__init__"]
-    shape = _Shape(cls, identifier or cls.__name__, tag, init, _checks_of(cls))
+    shape = _Shape(
+        cls, identifier or cls.__name__, tag, init, _checks_of(cls), annotations=annotations
+    )
     type.__setattr__(cls, _SHAPE, shape)
 
     @functools.wraps(init)
@@ -364,13 +374,26 @@ class _SchemaClass:
 @dataclass_transform(kw_only_default=True, frozen_default=True, field_specifiers=(field,))
 class Class(_SchemaClass):
     """A schema class (Effect's ``Schema.Class``); see ``pyfect.schema``.
-    ``identifier=`` names it in messages (default: the class name)."""
+    ``identifier=`` names it in messages (default: the class name) and
+    ``annotations=`` annotate its schema."""
 
     def __init_subclass__(
-        cls, *, identifier: str | None = None, frozen: bool = True, **kwargs: Any
+        cls,
+        *,
+        identifier: str | None = None,
+        frozen: bool = True,
+        annotations: Mapping[str, object] | None = None,
+        **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
-        _define(cls, identifier=identifier, tag=None, frozen=frozen, error=False)
+        _define(
+            cls,
+            identifier=identifier,
+            tag=None,
+            frozen=frozen,
+            error=False,
+            annotations=annotations,
+        )
 
 
 @dataclass_transform(kw_only_default=True, frozen_default=True, field_specifiers=(field,))
@@ -387,10 +410,18 @@ class TaggedClass(_SchemaClass):
         tag: str | None = None,
         identifier: str | None = None,
         frozen: bool = True,
+        annotations: Mapping[str, object] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
-        _define(cls, identifier=identifier, tag=_tag_for(cls, tag), frozen=frozen, error=False)
+        _define(
+            cls,
+            identifier=identifier,
+            tag=_tag_for(cls, tag),
+            frozen=frozen,
+            error=False,
+            annotations=annotations,
+        )
 
 
 @dataclass_transform(kw_only_default=True, frozen_default=True, field_specifiers=(field,))
@@ -401,10 +432,22 @@ class Error(_SchemaClass, errors.TaggedError):
     ``__cause__``."""
 
     def __init_subclass__(
-        cls, *, identifier: str | None = None, frozen: bool = True, **kwargs: Any
+        cls,
+        *,
+        identifier: str | None = None,
+        frozen: bool = True,
+        annotations: Mapping[str, object] | None = None,
+        **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
-        _define(cls, identifier=identifier, tag=None, frozen=frozen, error=True)
+        _define(
+            cls,
+            identifier=identifier,
+            tag=None,
+            frozen=frozen,
+            error=True,
+            annotations=annotations,
+        )
 
 
 @dataclass_transform(kw_only_default=True, frozen_default=True, field_specifiers=(field,))
@@ -420,7 +463,15 @@ class TaggedError(_SchemaClass, errors.TaggedError):
         tag: str | None = None,
         identifier: str | None = None,
         frozen: bool = True,
+        annotations: Mapping[str, object] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
-        _define(cls, identifier=identifier, tag=_tag_for(cls, tag), frozen=frozen, error=True)
+        _define(
+            cls,
+            identifier=identifier,
+            tag=_tag_for(cls, tag),
+            frozen=frozen,
+            error=True,
+            annotations=annotations,
+        )

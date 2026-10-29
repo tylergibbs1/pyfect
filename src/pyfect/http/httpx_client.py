@@ -46,6 +46,23 @@ if TYPE_CHECKING:
     import httpx
 
 _NO_BODY_STATUSES = frozenset((204, 205, 304))
+_EMPTY_FORM_BOUNDARY = "pyfect-empty-form"
+
+
+def _form_content(form: _body.FormData) -> dict[str, Any]:
+    if not form.entries:
+        # httpx sends an empty ``files`` list as no body at all.
+        return {"content": f"--{_EMPTY_FORM_BOUNDARY}--\r\n".encode()}
+    files = [
+        (
+            name,
+            (None, value.encode())
+            if isinstance(value, str)
+            else (value.name, value.content, value.content_type),
+        )
+        for name, value in form.entries
+    ]
+    return {"files": files}
 
 
 def _future[A](
@@ -120,16 +137,7 @@ class _Backend:
             case _body.Raw():
                 return {"content": body.body}
             case _body.FormData():
-                files = [
-                    (
-                        name,
-                        (None, value.encode())
-                        if isinstance(value, str)
-                        else (value.name, value.content, value.content_type),
-                    )
-                    for name, value in body.entries
-                ]
-                return {"files": files}
+                return _form_content(body)
             case _body.Stream():
                 chunks = body.stream.tap_error(lambda error: sync(lambda: failures.append(error)))
                 iterable = chunks.to_async_iterable_with(fiber._context)
@@ -160,6 +168,9 @@ class _Backend:
         headers = request.headers
         if isinstance(request.body, _body.FormData):
             headers = headers.remove("content-type")
+            if not request.body.entries:
+                content_type = f"multipart/form-data; boundary={_EMPTY_FORM_BOUNDARY}"
+                headers = headers.set("content-type", content_type)
 
         async def send() -> httpx.Response:
             built = self.client.build_request(

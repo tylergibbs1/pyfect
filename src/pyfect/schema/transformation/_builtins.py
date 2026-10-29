@@ -75,6 +75,7 @@ from pyfect.schema.getter import (
 from pyfect.schema.getter._coerce import to_utc
 from pyfect.schema.issue import InvalidValue, Issue, reported
 from pyfect.schema.transformation._transformation import (
+    Content,
     Transformation,
     transform,
     transform_effect,
@@ -248,7 +249,9 @@ string_from_uri_component: Transformation[str, str] = Transformation(
 def from_json_string(*, space: int | str | None = None) -> Transformation[object, str]:
     """A JSON value and its text, indented by ``space`` (Effect's
     ``fromJsonString``)."""
-    return Transformation(parse_json(), stringify_json(space=space))
+    return Transformation(
+        parse_json(), stringify_json(space=space), Content("application/json", preserve_schema=True)
+    )
 
 
 def option_from_null_or[T]() -> Transformation[Option[T], T | None]:

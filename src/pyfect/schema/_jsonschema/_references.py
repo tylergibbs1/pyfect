@@ -20,9 +20,7 @@ from pyfect.schema._jsonschema._annotations import ReferenceCandidate, Reference
 from pyfect.schema._jsonschema._checks import schemas_of
 
 
-def _next(node: ast.AST) -> ast.AST | None:
-    if node.encoding is not None:
-        return node.encoding[-1].to
+def _class_next(node: ast.AST) -> ast.AST | None:
     if isinstance(node, ast.Class):
         if node.side == "decode":
             return node.shape.fields
@@ -31,11 +29,26 @@ def _next(node: ast.AST) -> ast.AST | None:
     return None
 
 
+def _next(node: ast.AST) -> ast.AST | None:
+    if node.encoding is not None:
+        return node.encoding[-1].to
+    return _class_next(node)
+
+
 def encoded_node(node: ast.AST) -> ast.AST:
     """The node at the end of ``node``'s encoding chain."""
     while (next_node := _next(node)) is not None:
         node = next_node
     return node
+
+
+@dataclass(frozen=True, slots=True)
+class Content:
+    """The document a string holds (JSON text): its media type and the
+    candidate of the values it encodes."""
+
+    media_type: str
+    schema: Candidate | None
 
 
 def _identifier(node: ast.AST) -> str | None:
@@ -51,6 +64,7 @@ class Candidate:
     identifier: str | None
     fallback: str | None
     """The identifier of the node it was reached from, when it has none."""
+    content: Content | None = None
     occurrences: int = 0
     visiting: bool = False
     recursive: bool = False
@@ -119,8 +133,32 @@ class References:
         self._used.add(reference)
         return reference
 
-    def candidate(self, input: ast.AST) -> Candidate:
-        node = encoded_node(input)
+    def candidate(self, input: ast.AST, links: int | None = None) -> Candidate:
+        """The candidate of ``input`` through its first ``links`` encoding
+        links (all of them by default)."""
+        node = input
+        length = len(node.encoding or ()) if links is None else links
+        content: Content | None = None
+        while True:
+            if node.encoding is not None and length > 0:
+                last = node.encoding[length - 1]
+                found = getattr(last.transformation, "content", None)
+                # Only the link writing the final string says what it holds.
+                if found is not None and last.to.encoding is None and last.to.tag == "String":
+                    held = self.candidate(node, length - 1) if found.preserve_schema else None
+                    content = Content(found.media_type, held)
+                node = last.to
+                length = len(node.encoding or ())
+                continue
+            following = _class_next(node)
+            if following is None:
+                break
+            node = following
+            length = len(node.encoding or ())
+        if node.encoding is not None and node.body_owner is not None:
+            # Stopped before an encoding: the schema it was added to.
+            node = node.body_owner
+        node = node.owner()
         identifier = _identifier(node)
         fallback = None
         if identifier is None and node is not input:
@@ -129,14 +167,16 @@ class References:
                 identifier = f"{fallback}Encoded"
         variants = self._candidates.setdefault(id(node), [])
         for candidate in variants:
-            if candidate.identifier == identifier:
+            if candidate.identifier == identifier and candidate.content == content:
                 return candidate
-        candidate = Candidate(node, identifier, fallback)
+        candidate = Candidate(node, identifier, fallback, content)
         variants.append(candidate)
         return candidate
 
     def _visit(self, input: ast.AST) -> None:
-        candidate = self.candidate(input)
+        self._visit_candidate(self.candidate(input))
+
+    def _visit_candidate(self, candidate: Candidate) -> None:
         candidate.occurrences += 1
         if candidate.visiting:
             candidate.recursive = True
@@ -144,6 +184,8 @@ class References:
         if candidate.occurrences > 1:
             return
         candidate.visiting = True
+        if candidate.content is not None and candidate.content.schema is not None:
+            self._visit_candidate(candidate.content.schema)
         self._visit_checks(candidate.ast.checks)
         for child in children(candidate.ast):
             self._visit(child)

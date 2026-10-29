@@ -32,7 +32,7 @@ from pyfect.schema._jsonschema._merge import (
     has_only_keywords,
 )
 from pyfect.schema._jsonschema._objects import compile_objects
-from pyfect.schema._jsonschema._references import Candidate, References
+from pyfect.schema._jsonschema._references import Candidate, Content, References
 
 _JSON_TYPES = frozenset({"string", "number", "boolean", "array", "object", "null", "integer"})
 
@@ -171,12 +171,14 @@ class Compiler:
         return schema
 
     def recur(self, node: ast.AST, dependencies: list[Exactness]) -> JsonSchema:
-        candidate = self.references.candidate(node)
+        return self.recur_candidate(self.references.candidate(node), dependencies)
+
+    def recur_candidate(self, candidate: Candidate, dependencies: list[Exactness]) -> JsonSchema:
         if candidate.reference is not None:
             definition = self._definition(candidate, candidate.reference)
             dependencies.append(definition.dependencies)
             return {"$ref": definition_reference(candidate.reference)}
-        return self.compile(candidate.ast, dependencies)
+        return self.compile(candidate.ast, dependencies, candidate.content)
 
     def definition_of(self, candidate: Candidate) -> None:
         """Compile ``candidate``'s definition (if it has one) now."""
@@ -192,14 +194,21 @@ class Compiler:
         self._definitions[key] = definition
         if candidate.fallback is not None:
             self._fallbacks[key] = candidate.fallback
-        definition.schema = self.compile(candidate.ast, definition.dependencies)
+        definition.schema = self.compile(candidate.ast, definition.dependencies, candidate.content)
         self._order.append(key)
         return definition
 
-    def compile(self, node: ast.AST, dependencies: list[Exactness]) -> JsonSchema:
+    def compile(
+        self, node: ast.AST, dependencies: list[Exactness], content: Content | None = None
+    ) -> JsonSchema:
         local: list[Exactness] = []
         dependencies.append(local)
         output = {**self._on(node, local), **collect(node.annotations, self.options)}
+        if content is not None and node.tag == "String":
+            output["contentMediaType"] = content.media_type
+            output.pop("contentSchema", None)
+            if content.schema is not None:
+                output["contentSchema"] = self.recur_candidate(content.schema, [])
         checks = () if isinstance(node, ast.Suspend) else node.checks or ()
         for check in checks:
             kind = output.get("type")

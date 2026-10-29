@@ -11,7 +11,7 @@ from collections.abc import Callable, Generator, Hashable, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from types import CoroutineType
-from typing import Any, Literal, Never, Protocol, TypeIs, assert_type
+from typing import Any, Literal, Never, Protocol, TypedDict, TypeIs, assert_type
 
 from _pytest.fixtures import FixtureFunctionDefinition
 from opentelemetry.trace import Span as OtelApiSpan
@@ -47,16 +47,29 @@ from pyfect.http import middleware as http_middleware
 from pyfect.http import router as http_router
 from pyfect.http import server as http_server
 from pyfect.http import server_response as http_server_response
+from pyfect.http.client import HttpClient
+from pyfect.http.error import HttpClientError
 from pyfect.http.platform import HttpPlatform
 from pyfect.http.router import HttpRouter, Raises, Requires
 from pyfect.http.server import HttpServer
 from pyfect.http.server_error import HttpServerError
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
 from pyfect.http.server_response import HttpServerResponse
+from pyfect.http_api import (
+    Handlers,
+    HttpApi,
+    HttpApiEndpoint,
+    HttpApiGroup,
+    HttpApiMiddleware,
+    HttpApiRequest,
+)
+from pyfect.http_api import endpoint as api_endpoint
+from pyfect.http_api import error as api_error
 from pyfect.net import address_resolver, dns, net_address
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.scheduler import Scheduler, SyncScheduler
+from pyfect.schema import SchemaError
 from pyfect.scope import Scope
 from pyfect.socket import datagram as dg
 from pyfect.sql import client as sql_client
@@ -5028,3 +5041,185 @@ def check_asgi(
         ],
     )
     assert_type(uvicorn_server.layer_server(port=8080), fx.Layer[HttpServer, SocketServerError])
+
+
+# --- HttpApi ---------------------------------------------------------------------------
+# research/typing/httpapi_1_endpoint.py, httpapi_2_middleware.py
+
+
+class ApiUser(fx.schema.Class, identifier="ApiUser"):
+    id: int
+    name: str
+
+
+class ApiUserParams(TypedDict):
+    id: int
+
+
+class ApiNewUser(TypedDict):
+    name: str
+
+
+class ApiCurrentUser(Tag[ApiUser]): ...
+
+
+class ApiDb(Tag[int]): ...
+
+
+class ApiAuth(HttpApiMiddleware[ApiCurrentUser, api_error.Unauthorized]):
+    error = api_error.Unauthorized
+
+
+api_get_user = api_endpoint.get(
+    "getUser",
+    "/users/:id",
+    params=fx.schema.Struct(ApiUserParams),
+    success=ApiUser,
+    error=api_error.NotFound,
+)
+api_create_user = api_endpoint.post(
+    "createUser", "/users", payload=fx.schema.Struct(ApiNewUser), success=ApiUser
+)
+api_health = api_endpoint.get("health", "/health")
+api_guarded = api_get_user.middleware(ApiAuth)
+
+
+class ApiUsers(HttpApiGroup, identifier="users"):
+    get_user = api_get_user
+    create_user = api_create_user
+    health = api_health
+    guarded = api_guarded
+
+
+class ApiAdmin(HttpApiGroup[ApiAuth], identifier="admin"):
+    get_user = api_get_user
+
+
+type ApiClientErrors = HttpClientError | SchemaError
+
+
+def check_http_api(
+    users: ApiUsers,
+    admin: ApiAdmin,
+    find: Callable[
+        [HttpApiRequest[ApiUserParams, None, None, None]],
+        fx.Effect[ApiUser, api_error.NotFound, ApiCurrentUser | ApiDb],
+    ],
+) -> None:
+    from pyfect.http_api import builder as api_builder
+    from pyfect.http_api import client as api_client
+    from pyfect.http_api._handlers import GroupHandlers
+
+    assert_type(
+        api_get_user,
+        HttpApiEndpoint[
+            ApiUserParams, None, None, None, None, ApiUser, ApiUser, api_error.NotFound, Never
+        ],
+    )
+    assert_type(
+        api_guarded,
+        HttpApiEndpoint[
+            ApiUserParams,
+            None,
+            None,
+            None,
+            None,
+            ApiUser,
+            ApiUser,
+            api_error.NotFound,
+            ApiAuth,
+            ApiAuth,
+        ],
+    )
+    # On a client's group, an endpoint is its client method, typed by its declaration.
+    assert_type(
+        users.get_user(params={"id": 1}),
+        fx.Effect[ApiUser, api_error.NotFound | ApiClientErrors],
+    )
+    assert_type(users.create_user(payload={"name": "a"}), fx.Effect[ApiUser, ApiClientErrors])
+    assert_type(users.health(), fx.Effect[None, ApiClientErrors])
+    # The middleware's errors are the client's too, on the endpoint or on its group.
+    assert_type(
+        users.guarded(params={"id": 1}),
+        fx.Effect[ApiUser, api_error.NotFound | api_error.Unauthorized | ApiClientErrors],
+    )
+    assert_type(
+        admin.get_user(params={"id": 1}),
+        fx.Effect[ApiUser, api_error.NotFound | api_error.Unauthorized | ApiClientErrors],
+    )
+    users.get_user()  # pyright: ignore[reportCallIssue]
+    users.get_user(params={"id": "1"})  # pyright: ignore[reportArgumentType]
+    users.health(params={"id": 1})  # pyright: ignore[reportArgumentType]
+
+    handlers: GroupHandlers[ApiUsers] = GroupHandlers(ApiUsers)
+    admin_handlers: GroupHandlers[ApiAdmin] = GroupHandlers(ApiAdmin)
+    # A handler's requirements are the group layer's; what its middleware
+    # provides is not, the middleware is.
+    assert_type(
+        handlers.handle(ApiUsers.get_user)(find), Handlers[Never, Never, ApiCurrentUser | ApiDb]
+    )
+    assert_type(handlers.handle(ApiUsers.guarded)(find), Handlers[Never, Never, ApiAuth | ApiDb])
+    assert_type(
+        admin_handlers.handle(ApiAdmin.get_user)(find),
+        Handlers[ApiCurrentUser, api_error.Unauthorized, ApiAuth | ApiDb],
+    )
+    assert_type(
+        handlers.handle(ApiUsers.health)(lambda _request: fx.succeed(None)),
+        Handlers[Never, Never, Never],
+    )
+    # An undeclared error or success is rejected.
+    handlers.handle(ApiUsers.get_user)(  # pyright: ignore[reportCallIssue]
+        lambda _request: fx.fail(api_error.Unauthorized())  # pyright: ignore[reportArgumentType]
+    )
+    handlers.handle(ApiUsers.health)(  # pyright: ignore[reportCallIssue]
+        lambda _request: fx.succeed(1)  # pyright: ignore[reportArgumentType]
+    )
+
+    # builder.handler returns its callback, typed by the endpoint, for a later handle.
+    assert_type(
+        api_builder.handler(ApiUsers.get_user, find),
+        Callable[
+            [HttpApiRequest[ApiUserParams, None, None, None]],
+            fx.Effect[
+                ApiUser | HttpServerResponse,
+                api_error.NotFound
+                | api_error.HttpApiSchemaError
+                | api_error.HttpApiPayloadTooLarge,
+                ApiCurrentUser | ApiDb,
+            ],
+        ],
+    )
+    created = api_builder.handler(
+        ApiUsers.create_user, lambda r: fx.succeed(ApiUser(id=1, name=r.payload["name"]))
+    )
+    assert_type(handlers.handle(ApiUsers.create_user)(created), Handlers[Never, Never, Never])
+    assert_type(
+        handlers.handle(ApiUsers.guarded)(api_builder.handler(ApiUsers.guarded, find)),
+        Handlers[Never, Never, ApiAuth | ApiDb],
+    )
+    api_builder.handler(  # pyright: ignore[reportCallIssue]
+        ApiUsers.health,
+        lambda _r: fx.succeed(1),  # pyright: ignore[reportArgumentType]
+    )
+
+    api = HttpApi.make("api").add(ApiUsers, ApiAdmin)
+    assert_type(api, HttpApi[ApiUsers | ApiAdmin])
+    assert_type(
+        api_builder.group(
+            api,
+            ApiUsers,
+            lambda h: (
+                h.handle(ApiUsers.get_user)(find)
+                .handle(ApiUsers.create_user)(
+                    lambda r: fx.succeed(ApiUser(id=1, name=r.payload["name"]))
+                )
+                .handle(ApiUsers.health)(lambda _r: fx.succeed(None))
+                .handle(ApiUsers.guarded)(find)
+            ),
+        ),
+        fx.Layer[ApiUsers, Never, ApiCurrentUser | ApiDb | ApiAuth],
+    )
+    assert_type(api_builder.layer(api), fx.Layer[Never, Never, HttpRouter | ApiUsers | ApiAdmin])
+    assert_type(
+        api_client.make(api), fx.Effect[api_client.Client[ApiUsers | ApiAdmin], Never, HttpClient]
+    )
