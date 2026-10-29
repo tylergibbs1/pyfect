@@ -15,7 +15,10 @@ Omitted:
   ...", "should accept cancellation ...", "should backpressure STDIO sends
   ..."): pyfect has no stdio protocol.
 - the SchemaBinary cases: pyfect has no SchemaBinary serialization.
-- the framed HTTP response buffer cases and "should continue sending to
+- the framed HTTP response buffer cases ("applies backpressure to framed
+  HTTP responses by default", "uses the configured framed HTTP response
+  buffer size", "allows unbounded framed HTTP response buffering", "keeps
+  non-framed HTTP responses unbounded") and "should continue sending to
   other clients when a backpressured HTTP client disconnects": they rely
   on reading a Web response's body lazily from a JS ``ReadableStream``.
 - "closes a socket when the serialization buffer limit is exceeded":
@@ -37,6 +40,7 @@ from pyfect import effect, layer, schedule, stream
 from pyfect import error_reporter as ErrorReporter
 from pyfect import exit as Exit
 from pyfect import schema as S
+from pyfect.cause import Die
 from pyfect.http import router, uvicorn_server
 from pyfect.http.web import WebRequest, WebResponse
 from pyfect.layer import Layer
@@ -45,6 +49,7 @@ from pyfect.rpc import client as rpc_client
 from pyfect.rpc import serialization as rs
 from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
+from pyfect.rpc.message import FromServer, Request, ResponseExit
 from pyfect.rpc.middleware import SuccessValue
 from pyfect.schema import DecodedDefect
 from pyfect.tracer import CurrentTracer, Ended, NativeSpan, SpanRequest, Tracer
@@ -436,3 +441,64 @@ def test_with_disable_fatal_defects_a_handler_defect_fails_only_its_own_request(
         return run
 
     _ticker_survives(Booming, server.pipe(layer.provide(rs.layer_ndjson)), boom)
+
+
+class Throwing(RpcGroup):
+    pending = make("pending", success=S.String)
+    throws = make("throws", success=S.String)
+    throws_stream = make("throwsStream", success=S.String, stream=True)
+
+
+def test_isolates_synchronous_handler_throws_when_fatal_defects_are_disabled() -> None:
+    """RpcServer / isolates synchronous handler throws when fatal defects are disabled"""
+
+    def throws(_: object) -> fx.Effect[str]:
+        raise RuntimeError("boom")
+
+    def throws_stream(_: object) -> stream.Stream[str]:
+        raise RuntimeError("boom stream")
+
+    def summarize(response: FromServer) -> object:
+        if not isinstance(response, ResponseExit):
+            return [type(response).__name__]
+        if isinstance(response.exit, Exit.Success):
+            return [response.request_id, ["Success", response.exit.value]]
+        return [
+            response.request_id,
+            [
+                ["Die", str(reason.defect)] if isinstance(reason, Die) else [type(reason).__name__]
+                for reason in response.exit.cause.reasons
+            ],
+        ]
+
+    def body():
+        started = fx.Deferred[None]()
+        release = fx.Deferred[None]()
+        messages = yield from fx.Queue.unbounded()
+        handlers = Throwing.to_layer(
+            Throwing.handlers()
+            .handle(Throwing.pending)(
+                lambda _: started.succeed(None).flat_map(lambda _: release.wait()).as_("served")
+            )
+            .handle(Throwing.throws)(throws)
+            .handle(Throwing.throws_stream)(throws_stream)
+        )
+        server = yield from rpc_server.make_no_serialization(
+            Throwing,
+            lambda response: messages.offer(response).as_void(),
+            rpc_server.ServerOptions(disable_fatal_defects=True),
+        ).pipe(fx.provide(handlers))
+
+        def request(id: str, tag: str) -> Request:
+            return Request(id, tag, None)
+
+        yield from server.write(1, request("1", "pending"))
+        yield from started.wait()
+        yield from server.write(1, request("2", "throws"))
+        yield from server.write(1, request("3", "throwsStream"))
+        assert summarize((yield from messages.take())) == ["2", [["Die", "boom"]]]
+        assert summarize((yield from messages.take())) == ["3", [["Die", "boom stream"]]]
+        yield from release.succeed(None)
+        assert summarize((yield from messages.take())) == ["1", ["Success", "served"]]
+
+    fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die())

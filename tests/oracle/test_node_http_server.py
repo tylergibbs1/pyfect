@@ -47,6 +47,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import effect, layer, stream
+from pyfect import exit as Exit
 from pyfect.byte_size import ByteSize
 from pyfect.http import body as http_body
 from pyfect.http import router, server, server_response, url_params
@@ -800,3 +801,115 @@ def test_keeps_routes_isolated_between_independent_servers() -> None:
         lambda public: checks(public).pipe(fx.provide(served(internal_app)))
     ).pipe(fx.provide(served(public_app)))
     assert fx.run_sync(program.or_die()) == [200, 200, 200, 200, 404, 404]
+
+
+def _raw_requests(paths: list[str], method: str = "GET") -> bytes:
+    """Effect's ``rawGet``: pipelined requests, the last one closing."""
+    return b"".join(
+        f"{method} {path} HTTP/1.1\r\nhost: 127.0.0.1\r\n{'connection: close\r\n' if index == len(paths) - 1 else ''}\r\n".encode()  # noqa: E501
+        for index, path in enumerate(paths)
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "status"),
+    [("GET", 204), ("GET", 205), ("GET", 304), ("HEAD", 204), ("HEAD", 205)],
+)
+def test_sends_no_body_for_method_with_status(method: str, status: int) -> None:
+    """sends no body for $method with status $status"""
+    app = effect.succeed(server_response.text("x", status=status))
+
+    @fx.fn
+    def program():
+        at = yield from _serve(app)
+        return (yield from until_close(at, _raw_requests(["/"], method)))
+
+    received = run_live(program()).decode("latin-1")
+    assert re.match(rf"^HTTP/1.1 {status} ", received)
+    assert received.endswith("\r\n\r\n")
+    # 304 describes the representation, 204 and 205 have no content.
+    if status == 304:
+        assert re.search(r"\r\ncontent-length: 1\r\n", received, re.I)
+    else:
+        assert not re.search(r"\r\ncontent-length:", received, re.I)
+
+
+class _Chunks:
+    """An async iterable raw body that records whether it was closed
+    (Node's ``Readable.destroyed``)."""
+
+    def __init__(self, *chunks: bytes) -> None:
+        self._chunks = list(chunks)
+        self.closed = False
+
+    def __aiter__(self) -> _Chunks:
+        return self
+
+    async def __anext__(self) -> bytes:
+        if self.closed or not self._chunks:
+            raise StopAsyncIteration
+        return self._chunks.pop(0)
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def _mismatched(body: str) -> tuple[Callable[[], HttpServerResponse], int]:
+    match body:
+        case "bytes":
+            return (lambda: server_response.text("hello").set_header("content-length", "3")), 3
+        case "raw async iterable":
+            return (lambda: server_response.raw(_Chunks(b"lorem ipsum"), content_length=3)), 3
+        case "FormData":
+            form = http_body.FormData().append("text", "hello")
+            return (lambda: server_response.form_data(form, headers={"content-length": "3"})), 3
+        case _:
+            return (lambda: server_response.stream(stream.make(b"hello"), content_length=10)), 10
+
+
+@pytest.mark.parametrize("body", ["bytes", "raw async iterable", "FormData", "Stream"])
+def test_aborts_the_connection_when_a_body_doesnt_match_content_length(body: str) -> None:
+    """aborts the connection when a $body body doesn't match content-length"""
+    response, content_length = _mismatched(body)
+    app = router.add_all(
+        [
+            router.route("GET", "/mismatch", effect.sync(response)),
+            router.route("GET", "/next", server_response.text("next")),
+        ]
+    )
+
+    @fx.fn
+    def program():
+        at = yield from port
+        return (yield from until_close(at, _raw_requests(["/mismatch", "/next"])))
+
+    received = run_live(_routed(app, program())).decode("latin-1")
+    # The client must neither wait for the declared body nor read the next
+    # response as part of it.
+    head_end = received.find("\r\n\r\n")
+    rest = "" if head_end == -1 else received[head_end + 4 :]
+    assert len(rest) < content_length
+
+
+@pytest.mark.parametrize(("method", "status"), [("GET", 103), ("GET", 600), ("HEAD", 600)])
+def test_answers_a_response_with_an_invalid_status_with_a_500_and_closes_the_raw_body(
+    method: str, status: int
+) -> None:
+    """when writeHead throws answers a $method response with status $status with a 500 and destroys the raw body"""  # noqa: E501
+    chunks = _Chunks(b"ok")
+    observed: list[Exit.Exit[Any, Any]] = []
+    app = effect.succeed(server_response.raw(chunks, status=status))
+
+    @fx.fn
+    def program():
+        yield from server.serve(
+            app,
+            lambda inner: inner.on_exit(lambda exit: effect.sync(lambda: observed.append(exit))),
+        ).build()
+        at = yield from port
+        return (yield from until_close(at, _raw_requests(["/"], method)))
+
+    [response] = parse_responses(run_live(program()), head=method == "HEAD")
+    assert response.status == 500
+    assert len(observed) == 1 and isinstance(observed[0], Exit.Failure)
+    assert chunks.closed

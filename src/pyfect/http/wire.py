@@ -101,8 +101,14 @@ def _raw_body(value: object) -> WireBody:
 _closing: set[asyncio.Task[None]] = set()
 
 
+def cancel_body(body: _body.HttpBody) -> None:
+    """Close the async iterable of a raw body left unsent (Effect's
+    ``cancelResponseBody``, Web ``ReadableStream.cancel``)."""
+    if isinstance(body, _body.Raw):
+        _cancel(body.body)
+
+
 def _cancel(value: object) -> None:
-    """Close a raw body left unsent (Web ``ReadableStream.cancel``)."""
     close = getattr(value, "aclose", None)
     if not isinstance(value, AsyncIterable) or close is None:
         return
@@ -148,8 +154,7 @@ def to_wire(response: HttpServerResponse, *, without_body: bool = False) -> Wire
         return WireResponse(status, status_text, tuple(merged), None if no_body else _web_body(raw))
     status_text = response.status_text or ""
     if no_body:
-        if isinstance(body, _body.Raw):
-            _cancel(body.body)
+        cancel_body(body)
         if omits_content_length(response.status):
             headers = _without(headers, "content-length")
         return WireResponse(response.status, status_text, tuple(headers), None)
@@ -196,4 +201,12 @@ def with_body(wire: WireResponse, body: WireBody) -> WireResponse:
     return replace(wire, body=body)
 
 
-__all__ = ["WireBody", "WireResponse", "from_wire", "raw_bytes", "to_wire", "with_body"]
+__all__ = [
+    "WireBody",
+    "WireResponse",
+    "cancel_body",
+    "from_wire",
+    "raw_bytes",
+    "to_wire",
+    "with_body",
+]

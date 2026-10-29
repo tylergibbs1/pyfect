@@ -6,7 +6,9 @@ As Node's server: a response gets ``date`` and ``connection`` headers, a
 stream without a length is chunked (closed-delimited for HTTP/1.0), a
 response whose headers cannot be written becomes a 500, and a body that
 fails once sent aborts the connection, so the client never sees it as
-complete.
+complete. A body that does not match its declared ``content-length``
+aborts the connection too (Node's ``strictContentLength``, which Effect
+sets).
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from pyfect.http.live_server._inbound import Inbound
 from pyfect.http.server_error import HttpServerError, cause_response
 from pyfect.http.server_request import ServerRequest
 from pyfect.http.server_response import HttpServerResponse
-from pyfect.http.wire import WireResponse, to_wire
+from pyfect.http.wire import WireBody, WireResponse, cancel_body, to_wire
 from pyfect.socket._connection import Connection
 from pyfect.socket._errors import SocketError
 from pyfect.stream import Stream
@@ -44,6 +46,20 @@ _CONTINUE = b"HTTP/1.1 100 Continue\r\n\r\n"
 
 class InvalidResponse(Exception):
     """A response the server cannot write (Node's ``writeHead`` throws)."""
+
+
+class ContentLengthMismatch(Exception):
+    """A body longer or shorter than its ``content-length``."""
+
+    def __init__(self, declared: int) -> None:
+        super().__init__(f"Response body doesn't match content-length of {declared}")
+
+
+def _declared_length(headers: Sequence[tuple[str, str]]) -> int | None:
+    for name, value in headers:
+        if name == "content-length" and value.isdigit():
+            return int(value)
+    return None
 
 
 def _reason(status: int, text: str) -> str:
@@ -171,7 +187,7 @@ class Exchange:
         if not no_body:
             headers = _without(headers, "transfer-encoding")
             has_length = any(name == "content-length" for name, _ in headers)
-            if isinstance(wire.body, bytes) or wire.body is None:
+            if wire.body is None or (isinstance(wire.body, bytes) and not has_length):
                 size = 0 if wire.body is None else len(wire.body)
                 headers = [*_without(headers, "content-length"), ("content-length", str(size))]
             elif streaming and not has_length:
@@ -209,30 +225,62 @@ class Exchange:
             try:
                 head = _encode_head(wire.status, wire.status_text, headers)
             except InvalidResponse as defect:
+                cancel_body(response.body)
                 return self._failed(response, die_cause(defect))
             self.headers_sent = True
-            body = wire.body
-            if body is None or without_body or omits_body_status(wire.status):
+            if without_body or omits_body_status(wire.status):
                 return self._write(head).map(self._done)
-            if isinstance(body, bytes):
-                return self._write(head, body).map(self._done)
-            return self._write(head).flat_map(lambda _: self._stream(response, body, chunked))
+            declared = None if chunked else _declared_length(headers)
+            return self._send(response, head, wire.body, chunked, declared)
 
         return suspend(step)
+
+    def _send(
+        self,
+        response: HttpServerResponse,
+        head: bytes,
+        body: WireBody,
+        chunked: bool,
+        declared: int | None,
+    ) -> Effect[None, Any]:
+        if body is None:
+            return self._write(head).map(self._done)
+        if isinstance(body, bytes):
+            if declared is not None and declared != len(body):
+                # As Node: the head is never flushed, the connection is aborted.
+                return self._failed(response, die_cause(ContentLengthMismatch(declared)))
+            return self._write(head, body).map(self._done)
+        return self._write(head).flat_map(lambda _: self._stream(response, body, chunked, declared))
 
     def _done(self, _: object = None) -> None:
         self.finished = True
 
     def _stream(
-        self, response: HttpServerResponse, body: Stream[bytes, object], chunked: bool
+        self,
+        response: HttpServerResponse,
+        body: Stream[bytes, object],
+        chunked: bool,
+        declared: int | None,
     ) -> Effect[None, Any]:
+        """Write ``body``; with a ``declared`` length, more or fewer bytes
+        than it abort the connection before the excess is written."""
+        mismatch = None if declared is None else die_cause(ContentLengthMismatch(declared))
+        left = declared or 0
+
         def write(chunks: tuple[bytes, ...]) -> Effect[None]:
+            nonlocal left
             data = b"".join(chunks)
             if not data:
                 return void
+            if mismatch is not None:
+                left -= len(data)
+                if left < 0:
+                    return fail_cause(mismatch)
             return self._write(_chunk(data) if chunked else data)
 
-        def end(_: object) -> Effect[None]:
+        def end(_: object) -> Effect[None, Any]:
+            if mismatch is not None and left:
+                return self._failed(response, mismatch)
             return (self._write(b"0\r\n\r\n") if chunked else void).map(self._done)
 
         written: Effect[None, Any] = body.run_for_each_array(write).interruptible()

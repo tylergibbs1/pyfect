@@ -152,8 +152,8 @@ layer, concurrency, retries and timeouts.
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
-pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 8,500 tests, and
-about 77% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
+pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 9,700 tests, and
+about 79% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
 what is next.
 
 ## Installation
