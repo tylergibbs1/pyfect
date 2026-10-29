@@ -23,16 +23,15 @@ Adapted, with the reason:
   call forms; the body (the same as Effect's) runs as is.
 - "compares StructuralProto values when hashes collide": ``hash(-1) ==
   hash(-2)`` in CPython gives two requests with equal hashes.
+- "persisted stores synchronous resolver failures": the resolver raises
+  ``RuntimeError("backend defect")`` (a defect must be an exception), and
+  the stored defect comes back as a ``DecodedDefect`` with the same
+  message, so the two exits are compared by their defect's text.
 
 Omitted, with the reason:
 
 - "preserves __proto__ as an own constructor property", "copies
   enumerable symbol properties in Class": JavaScript object model.
-- "withCache accepts refreshed results from stale-while-revalidate",
-  the three "persisted stale-while-revalidate persists only refresh
-  results" titles, "persisted propagates failures to unfinished
-  requests", "persisted stores synchronous resolver failures":
-  persistence (``RequestResolver.persisted``) is not ported.
 """
 # pyright: reportPrivateUsage=false
 
@@ -44,7 +43,9 @@ import pytest
 
 import pyfect as fx
 from pyfect import batching, exit, testing
+from pyfect import schema as S
 from pyfect.batching import Entry
+from pyfect.persistence import PersistenceError, persistable, persistence
 
 # --- fixtures (Effect's module-level helpers) -----------------------------------
 
@@ -736,6 +737,157 @@ def test_with_cache_preserves_the_race_winner_when_the_losing_resolver_is_interr
     assert interruptions[0] == 1
     assert (yield from fx.request(GetNameById(1), resolver).exit()) == fx.Success("Alice")
     assert calls[0] == 1
+
+
+@dataclass(frozen=True)
+class GetName(persistable.Class(success=S.String)):
+    def primary_key(self) -> str:
+        return "name"
+
+
+@testing.effect
+def test_with_cache_accepts_refreshed_results_from_stale_while_revalidate():
+    """withCache accepts refreshed results from stale-while-revalidate"""
+
+    def body():
+        store = yield from (yield from persistence.Persistence()).make(store_id="names")
+        yield from store.set(GetName(), fx.Success("Alice"))
+        finished = yield from fx.Deferred[None].make()
+        calls = [0]
+
+        def answer(_entry: Entry[GetName]) -> str:
+            calls[0] += 1
+            return "Bob"
+
+        persisted = (
+            yield from fx.RequestResolver[GetName]
+            .from_function(answer)
+            .persisted(store_id="names", stale_while_revalidate=lambda _exit, _req: True)
+        )
+        resolver = yield from persisted.around(
+            lambda _: fx.void, lambda _entries, _b: finished.succeed(None)
+        ).with_cache(capacity=10)
+
+        assert (yield from fx.request(GetName(), resolver)) == "Alice"
+        yield from finished.wait()
+        assert (yield from fx.request(GetName(), resolver)) == "Bob"
+        assert calls[0] == 1
+
+    yield from fx.gen(body).pipe(fx.provide(persistence.layer_memory))
+
+
+@dataclass(frozen=True)
+class GetStaleValue(persistable.Class(success=S.String, error=PersistenceError)):
+    def primary_key(self) -> str:
+        return "value"
+
+
+def _one_second(_exit: object, _req: object) -> float:
+    return 1
+
+
+@pytest.mark.parametrize("refresh", ["per-entry failure", "whole-batch failure", "no completions"])
+@testing.effect
+def test_persisted_stale_while_revalidate_persists_only_refresh_results(refresh: str):
+    """persisted stale-while-revalidate persists only refresh results: ${refresh}"""
+
+    def body():
+        request = GetStaleValue()
+        error = PersistenceError(message="backend failed")
+        options: dict[str, Any] = {"store_id": "stale-refresh", "time_to_live": _one_second}
+        store = yield from (yield from persistence.Persistence()).make(**options)
+        yield from store.set(request, fx.Success("Alice"))
+        finished = yield from fx.Deferred[None].make()
+
+        def run_all(entries: Sequence[Entry[GetStaleValue]]) -> fx.Effect[None, PersistenceError]:
+            match refresh:
+                case "whole-batch failure":
+                    return fx.fail(error)
+                case "per-entry failure":
+
+                    def complete() -> None:
+                        for entry in entries:
+                            entry.complete_unsafe(exit.fail(error))
+
+                    return fx.sync(complete)
+                case _:
+                    return fx.void
+
+        resolver = yield from fx.RequestResolver(run_all).persisted(
+            **options, stale_while_revalidate=lambda _exit, _req: True
+        )
+        persisted = resolver.around(lambda _: fx.void, lambda _entries, _b: finished.succeed(None))
+
+        yield from testing.adjust(0.5)
+        assert (yield from fx.request(request, persisted)) == "Alice"
+        yield from finished.wait()
+        # Past the original expiry, but within the TTL of any refreshed result.
+        yield from testing.adjust(0.6)
+        expected = None if refresh == "no completions" else exit.fail(error)
+        assert (yield from store.get(request)) == expected
+
+    yield from fx.gen(body).pipe(fx.provide(persistence.layer_memory))
+
+
+@dataclass(frozen=True)
+class GetValue(persistable.Class(success=S.String, error=PersistenceError)):
+    id: int
+
+    def primary_key(self) -> str:
+        return str(self.id)
+
+
+@testing.effect
+def test_persisted_propagates_failures_to_unfinished_requests():
+    """persisted propagates failures to unfinished requests"""
+
+    def body():
+        request = GetValue(1)
+        error = PersistenceError(message="backend failed")
+
+        def run_all(entries: Sequence[Entry[GetValue]]) -> fx.Effect[None, PersistenceError]:
+            entries[0].complete_unsafe(fx.Success("first"))
+            return fx.fail(error)
+
+        persisted = yield from fx.RequestResolver(run_all).persisted(store_id="resolver-failure")
+        exits = yield from fx.for_each(
+            [request, request, GetValue(2)],
+            lambda req: fx.request(req, persisted).exit(),
+            concurrency="unbounded",
+        )
+        assert exits == [fx.Success("first"), exit.fail(error), exit.fail(error)]
+
+    yield from fx.gen(body).pipe(fx.provide(persistence.layer_memory))
+
+
+@dataclass(frozen=True)
+class ThrowingValue(persistable.Class(success=S.String)):
+    def primary_key(self) -> str:
+        return "value"
+
+
+@testing.effect
+def test_persisted_stores_synchronous_resolver_failures():
+    """persisted stores synchronous resolver failures"""
+
+    def body():
+        calls = [0]
+
+        def run_all(_entries: Sequence[Entry[ThrowingValue]]) -> fx.Effect[None]:
+            calls[0] += 1
+            raise RuntimeError("backend defect")
+
+        persisted = yield from fx.RequestResolver(run_all).persisted(store_id="resolver-throw")
+        request = ThrowingValue()
+        first = yield from fx.request(request, persisted).exit()
+        assert isinstance(first, fx.Failure)
+        assert str(first.cause.find_defect()) == "backend defect"
+        second = yield from fx.request(request, persisted).exit()
+        assert isinstance(second, fx.Failure)
+        assert str(second.cause.find_defect()) == "backend defect"
+        assert calls[0] == 1
+
+    yield from fx.gen(body).pipe(fx.provide(persistence.layer_memory))
 
 
 @testing.effect

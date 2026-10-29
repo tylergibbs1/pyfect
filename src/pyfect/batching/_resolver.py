@@ -34,6 +34,12 @@ from pyfect.exit import Failure, Success
 
 if TYPE_CHECKING:
     from pyfect.batching._engine import Batch, Slot
+    from pyfect.exit import Exit
+    from pyfect.persistence import PersistenceError
+    from pyfect.persistence.persistable import AnyPersistable
+    from pyfect.persistence.persistence import Persistence
+    from pyfect.schema import SchemaError
+    from pyfect.scope import Scope
     from pyfect.tracer import SpanOptions
 
 
@@ -432,6 +438,25 @@ class RequestResolver(Generic[Q_contra, E_co]):
         from pyfect.batching._with_cache import with_cache
 
         return _Sync(lambda: with_cache(self, capacity, strategy))
+
+    def persisted[Q: AnyPersistable](
+        self: RequestResolver[Q, E_co],
+        *,
+        store_id: str,
+        time_to_live: Callable[[Exit[Any, Any], Q], Duration] | None = None,
+        stale_while_revalidate: Callable[[Exit[Any, Any], Q], bool] | None = None,
+    ) -> Effect[
+        RequestResolver[Q, E_co | PersistenceError | SchemaError], Never, Persistence | Scope
+    ]:
+        """A resolver answering persistable requests from the persistence
+        store ``store_id`` first: the requests it has no outcome for run in
+        a batch here, and their outcomes are stored, kept for
+        ``time_to_live`` (default: forever). A stored outcome that
+        ``stale_while_revalidate`` calls stale answers its request at once
+        and the request runs again, to store the fresh outcome."""
+        from pyfect.batching._persisted import persisted
+
+        return persisted(self, store_id, time_to_live, stale_while_revalidate)
 
     def __repr__(self) -> str:
         return f"RequestResolver(pending={len(self._batches)})"

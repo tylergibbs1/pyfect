@@ -14,11 +14,6 @@ Adapted, with the reason:
 
 - "does not retain prior equal object keys on cache hits": the keys are
   frozen dataclasses, collected with ``gc.collect()``.
-
-Omitted, with the reason:
-
-- "PersistedCache > persists synchronous lookup defects": persistence is
-  not ported.
 """
 # pyright: reportPrivateUsage=false
 
@@ -32,6 +27,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import exit, testing
+from pyfect.persistence import persistable, persisted_cache, persistence
 from pyfect.tracer import ExternalSpan, Span
 
 _HOUR = 3600.0
@@ -1488,3 +1484,40 @@ def test_with_different_key_types_complex_object_keys():
     assert (yield from cache.get(key2)) == "test-2"
     assert (yield from cache.get(key3)) == "test-1"
     assert len(lookups) == 2
+
+
+# --- PersistedCache ----------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _LookupRequest(persistable.Class()):
+    def primary_key(self) -> str:
+        return "lookup"
+
+
+def _an_hour(_exit: object, _req: object) -> float:
+    return _HOUR
+
+
+@testing.effect
+def test_persists_synchronous_lookup_defects():
+    """PersistedCache / persists synchronous lookup defects"""
+    calls = [0]
+
+    def lookup(_key: _LookupRequest) -> fx.Effect[None]:
+        calls[0] += 1
+        raise RuntimeError("lookup defect")
+
+    def body():
+        options: dict[str, Any] = {
+            "store_id": "synchronous-lookup-defect",
+            "time_to_live": _an_hour,
+        }
+        key = _LookupRequest()
+        cache = yield from persisted_cache.make(lookup, **options)
+        yield from cache.get(key).exit()
+        recreated = yield from persisted_cache.make(lookup, **options)
+        yield from recreated.get(key).exit()
+        assert calls[0] == 1
+
+    yield from fx.gen(body).pipe(fx.provide(persistence.layer_memory))

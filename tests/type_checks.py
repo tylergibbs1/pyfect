@@ -19,7 +19,9 @@ from opentelemetry.trace import SpanContext
 
 import pyfect as fx
 from pyfect import channel, execution_plan, layer, logger, otel, reactivity, rpc, schedule, stream
+from pyfect import schema as S
 from pyfect import socket as socket_module
+from pyfect._json_value import JsonValue
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.cli import (
@@ -66,6 +68,10 @@ from pyfect.http_api import (
 from pyfect.http_api import endpoint as api_endpoint
 from pyfect.http_api import error as api_error
 from pyfect.net import address_resolver, dns, net_address
+from pyfect.option import Option
+from pyfect.persistence import PersistenceError, persistable, persisted_cache, user_directories
+from pyfect.persistence import key_value_store as kvs
+from pyfect.persistence import persistence as persistence_module
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.rpc import client as rpc_client
@@ -80,6 +86,7 @@ from pyfect.sql import pg as sql_pg
 from pyfect.sql import resolver as sql_resolver
 from pyfect.sql import schema as sql_schema
 from pyfect.sql import sqlite as sql_sqlite
+from pyfect.sql.client import SqlClient
 from pyfect.sql.connection import Row, ValueRow
 from pyfect.sql.error import ResultLengthMismatch, SqlError
 from pyfect.sql.statement import Fragment, Statement
@@ -5362,3 +5369,146 @@ def check_rpc(users: RpcUsers) -> None:
     assert_type(
         rpc_client.make(RpcUsers), fx.Effect[RpcUsers, Never, Scope | rpc_client.ClientProtocol]
     )
+
+
+# --- persistence -------------------------------------------------------------------------
+
+
+class PersistedUser(S.Class):
+    id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class GetPersistedUser(persistable.Class(success=PersistedUser, error=S.String)):
+    id: int
+
+    def primary_key(self) -> str:
+        return f"GetPersistedUser:{self.id}"
+
+
+@dataclass(frozen=True)
+class PingPersisted(persistable.Class()):
+    def primary_key(self) -> str:
+        return "ping"
+
+
+@dataclass(frozen=True)
+class NoPrimaryKey(persistable.Class(success=S.String)):
+    id: int
+
+
+class PersistedLookup(Tag[str]): ...
+
+
+def check_persisted_cache(
+    cache: persisted_cache.PersistedCache[GetPersistedUser, PersistedLookup],
+) -> None:
+    assert_type(
+        cache.get(GetPersistedUser(1)),
+        fx.Effect[PersistedUser, str | PersistenceError | S.SchemaError, PersistedLookup],
+    )
+    assert_type(cache.invalidate(GetPersistedUser(1)), fx.Effect[None, PersistenceError])
+
+
+def check_persistence(
+    kv: kvs.KeyValueStoreService,
+    store: persistence_module.PersistenceStore,
+    users: fx.RequestResolver[GetPersistedUser],
+) -> None:
+    # The request's success and error come from its schemas.
+    assert_type(
+        fx.request(GetPersistedUser(1), fx.RequestResolver[GetPersistedUser].never()),
+        fx.Effect[PersistedUser, str | PersistenceError | S.SchemaError],
+    )
+    assert_type(
+        fx.request(PingPersisted(), fx.RequestResolver[PingPersisted].never()),
+        fx.Effect[None, PersistenceError | S.SchemaError],
+    )
+    NoPrimaryKey(1)  # pyright: ignore[reportAbstractUsage]
+
+    persisted = users.persisted(store_id="users", time_to_live=lambda _exit, _req: 60)
+    assert_type(
+        persisted,
+        fx.Effect[
+            fx.RequestResolver[GetPersistedUser, PersistenceError | S.SchemaError],
+            Never,
+            persistence_module.Persistence | fx.Scope,
+        ],
+    )
+
+    def lookup(req: GetPersistedUser) -> fx.Effect[PersistedUser, str]: ...
+
+    def needs_service(req: GetPersistedUser) -> fx.Effect[PersistedUser, str, PersistedLookup]: ...
+
+    made = persisted_cache.make(lookup, store_id="users", time_to_live=lambda _e, _r: 60)
+    assert_type(
+        made,
+        fx.Effect[
+            persisted_cache.PersistedCache[GetPersistedUser],
+            Never,
+            persistence_module.Persistence | fx.Scope,
+        ],
+    )
+    assert_type(
+        persisted_cache.make(needs_service, store_id="users", time_to_live=lambda _e, _r: 60),
+        fx.Effect[
+            persisted_cache.PersistedCache[GetPersistedUser],
+            Never,
+            PersistedLookup | persistence_module.Persistence | fx.Scope,
+        ],
+    )
+    at_lookup = persisted_cache.make(
+        needs_service,
+        store_id="users",
+        time_to_live=lambda _e, _r: 60,
+        require_services_at="lookup",
+    )
+    assert_type(
+        at_lookup,
+        fx.Effect[
+            persisted_cache.PersistedCache[GetPersistedUser, PersistedLookup],
+            Never,
+            persistence_module.Persistence | fx.Scope,
+        ],
+    )
+
+    assert_type(
+        store.get(GetPersistedUser(1)),
+        fx.Effect[fx.Exit[PersistedUser, str] | None, PersistenceError | S.SchemaError],
+    )
+    assert_type(
+        store.get_many([GetPersistedUser(1)]),
+        fx.Effect[list[fx.Exit[PersistedUser, str] | None], PersistenceError | S.SchemaError],
+    )
+    assert_type(
+        persistable.serialize_exit(GetPersistedUser(1), fx.exit.fail("missing")),
+        fx.Effect[JsonValue, S.SchemaError],
+    )
+
+    assert_type(kv.get("k"), fx.Effect[str | None, kvs.KeyValueStoreError])
+    assert_type(kv.get_bytes("k"), fx.Effect[bytes | None, kvs.KeyValueStoreError])
+    assert_type(kv.prefix("p/"), kvs.KeyValueStoreService)
+    users_store = kv.to_schema_store(PersistedUser)
+    assert_type(
+        users_store.get("k"),
+        fx.Effect[Option[PersistedUser], kvs.KeyValueStoreError | S.SchemaError],
+    )
+    users_store.set("k", "not a user")  # pyright: ignore[reportArgumentType]
+
+    assert_type(kvs.layer_memory, fx.Layer[kvs.KeyValueStore])
+    assert_type(kvs.layer_sql(), fx.Layer[kvs.KeyValueStore, Never, SqlClient])
+    assert_type(
+        kvs.layer_file_system("/tmp/store"),
+        fx.Layer[kvs.KeyValueStore, fx.PlatformError, fx.FileSystem | fx.Path],
+    )
+    assert_type(persistence_module.layer_memory, fx.Layer[persistence_module.Persistence])
+    assert_type(
+        persistence_module.layer_sql,
+        fx.Layer[persistence_module.Persistence, Never, SqlClient],
+    )
+    assert_type(
+        persistence_module.layer_kvs,
+        fx.Layer[persistence_module.Persistence, Never, kvs.KeyValueStore],
+    )
+    assert_type(user_directories.make().config("app"), fx.Effect[str, fx.PlatformError])
