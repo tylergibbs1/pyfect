@@ -109,6 +109,22 @@ from pyfect.workers.python_worker import ThreadWorker
 from pyfect.workers.worker import Spawner, Worker, WorkerPlatform
 from pyfect.workers.worker_error import WorkerError
 from pyfect.workers.worker_runner import WorkerRunner, WorkerRunnerPlatform
+from pyfect.workflow import (
+    Activity,
+    Complete,
+    DurableDeferred,
+    Suspended,
+    Workflow,
+    WorkflowEngine,
+    WorkflowInstance,
+    WorkflowInstanceService,
+    activity,
+    durable_clock,
+    durable_deferred,
+    durable_queue,
+    workflow,
+    workflow_engine,
+)
 
 
 class Db(Protocol):
@@ -5719,4 +5735,113 @@ def check_workers(worker: Worker[int, str], runner: WorkerRunner[int, str]) -> N
     assert_type(
         rpc_server.layer_protocol_worker_runner,
         fx.Layer[rpc_server.ServerProtocol, WorkerError, WorkerRunnerPlatform],
+    )
+
+
+# --- workflow ------------------------------------------------------------------------------
+
+
+class WorkflowOrder(TypedDict):
+    id: str
+    amount: float
+
+
+def check_workflow() -> None:
+    # Payload, success and error come from the schemas.
+    order = workflow.make(
+        "Order",
+        payload=S.Struct(WorkflowOrder),
+        success=S.String,
+        error=S.Number,
+        idempotency_key=lambda o: o["id"],
+    )
+    assert_type(order, Workflow[WorkflowOrder, str, float])
+    assert_type(
+        workflow.make("Void", payload=S.Struct(WorkflowOrder), idempotency_key=lambda o: o["id"]),
+        Workflow[WorkflowOrder, None, Never],
+    )
+    assert_type(order.execute({"id": "a", "amount": 1}), fx.Effect[str, float, WorkflowEngine])
+    assert_type(
+        order.execute({"id": "a", "amount": 1}, discard=True), fx.Effect[str, Never, WorkflowEngine]
+    )
+    assert_type(
+        order.poll("id"),
+        fx.Effect[Complete[str, float] | Suspended | None, Never, WorkflowEngine],
+    )
+    order.execute({"id": "a"})  # pyright: ignore[reportArgumentType]
+
+    # to_layer keeps only the handler's own requirements.
+    assert_type(
+        order.to_layer(lambda o, _id: fx.succeed(o["id"])), fx.Layer[Never, Never, WorkflowEngine]
+    )
+    assert_type(
+        order.to_layer(lambda o, _id: PersistedLookup().map(lambda s: s + o["id"])),
+        fx.Layer[Never, Never, PersistedLookup | WorkflowEngine],
+    )
+
+    def wrong_success(o: WorkflowOrder, _id: str) -> fx.Effect[float]:
+        return fx.succeed(o["amount"])
+
+    order.to_layer(wrong_success)  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+    # An activity's execute must match its schemas.
+    assert_type(
+        activity.make(name="charge", execute=fx.succeed("ch_1"), success=S.String),
+        Activity[str, Never, Never],
+    )
+    assert_type(
+        activity.make(name="note", execute=PersistedLookup().as_void()),
+        Activity[None, Never, PersistedLookup],
+    )
+    activity.make(name="charge", execute=fx.succeed(1), success=S.String)  # pyright: ignore[reportArgumentType, reportCallIssue]
+    activity.make(name="charge", success=S.String, execute=fx.succeed(1))  # pyright: ignore[reportArgumentType, reportCallIssue]
+
+    # Compensation sees the step's value and the workflow's cause.
+    charged = activity.make(name="charge", execute=fx.succeed("ch_1"), success=S.String)
+    assert_type(
+        order.with_compensation(charged, lambda charge_id, cause: fx.void),
+        fx.Effect[str, Never, WorkflowEngine | WorkflowInstance | fx.Scope],
+    )
+
+    gate = durable_deferred.make("gate", success=S.Number, error=S.String)
+    assert_type(gate, DurableDeferred[float, str])
+    assert_type(gate.wait(), fx.Effect[float, str, WorkflowEngine | WorkflowInstance])
+    assert_type(
+        durable_clock.sleep(name="wait", duration=60),
+        fx.Effect[None, Never, WorkflowEngine | WorkflowInstance],
+    )
+
+    emails = durable_queue.make(
+        name="emails",
+        payload=S.Struct(WorkflowOrder),
+        success=S.String,
+        idempotency_key=lambda o: o["id"],
+    )
+    assert_type(
+        emails.worker(lambda o: PersistedLookup().map(lambda s: s + o["id"])),
+        fx.Layer[Never, Never, WorkflowEngine | pq.PersistedQueueFactory | PersistedLookup],
+    )
+    emails.worker(lambda o: fx.succeed(o["amount"]))  # pyright: ignore[reportArgumentType]
+
+    # Running a body that needs nothing but its scope leaves no Unknown requirement.
+    assert_type(
+        workflow.into_result(fx.succeed(1)),
+        fx.Effect[Complete[int, Never] | Suspended, Never, WorkflowInstance],
+    )
+    assert_type(
+        workflow.into_result(PersistedLookup()),
+        fx.Effect[Complete[str, Never] | Suspended, Never, PersistedLookup | WorkflowInstance],
+    )
+    assert_type(workflow.provide_scope(fx.succeed(1)), fx.Effect[int, Never, WorkflowInstance])
+    assert_type(
+        workflow.provide_scope(PersistedLookup()),
+        fx.Effect[str, Never, PersistedLookup | WorkflowInstance],
+    )
+
+
+def check_workflow_deferred_state(instance: WorkflowInstanceService) -> None:
+    state = workflow_engine.DeferredState()
+    assert_type(state.track_run(instance, fx.succeed(1)), fx.Effect[int, Never, Never])
+    assert_type(
+        state.track_run(instance, PersistedLookup()), fx.Effect[str, Never, PersistedLookup]
     )

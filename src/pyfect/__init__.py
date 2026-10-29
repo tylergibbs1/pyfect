@@ -40,6 +40,8 @@ Command-line apps in ``fx.cli`` (``Command``, ``Flag``, ``Argument``, prompts,
 help and shell completions).
 HTTP clients in ``fx.http`` (``HttpClient``, requests, responses, headers,
 cookies, URLs).
+Durable workflows in ``fx.workflow`` (``Workflow``, activities, durable
+deferreds, clocks and queues, ``WorkflowEngine`` and its in-memory layer).
 Optional adapters, each behind its extra and never imported here: pydantic
 (``pyfect.pydantic``, ``pyfect[pydantic]``), msgspec (``pyfect.msgspec``,
 ``pyfect[msgspec]``) and the httpx HTTP client (``pyfect.http.httpx_client``,
@@ -99,6 +101,7 @@ from pyfect import (
     tracer,
     transaction,
     workers,
+    workflow,
 )
 from pyfect._all import all, all_dict
 from pyfect._concurrency import Concurrency, for_each, race_all, race_all_first
@@ -535,5 +538,6 @@ __all__ = [
     "void",
     "with_execution_plan",
     "workers",
+    "workflow",
     "yield_now",
 ]
