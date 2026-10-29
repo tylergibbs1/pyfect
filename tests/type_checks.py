@@ -69,9 +69,18 @@ from pyfect.http_api import endpoint as api_endpoint
 from pyfect.http_api import error as api_error
 from pyfect.net import address_resolver, dns, net_address
 from pyfect.option import Option
-from pyfect.persistence import PersistenceError, persistable, persisted_cache, user_directories
+from pyfect.persistence import (
+    PersistenceError,
+    persistable,
+    persisted_cache,
+    redis_py,
+    user_directories,
+)
+from pyfect.persistence import circuit_breaker as cb
 from pyfect.persistence import key_value_store as kvs
 from pyfect.persistence import persistence as persistence_module
+from pyfect.persistence import rate_limiter as rl
+from pyfect.persistence import redis as redis_module
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.rpc import client as rpc_client
@@ -5512,3 +5521,64 @@ def check_persistence(
         fx.Layer[persistence_module.Persistence, Never, kvs.KeyValueStore],
     )
     assert_type(user_directories.make().config("app"), fx.Effect[str, fx.PlatformError])
+
+
+def _key_param(key: str) -> list[str | float]:
+    return [key]
+
+
+def check_resilience(
+    limiter: rl.RateLimiterService,
+    breaker: cb.CircuitBreakerService,
+    redis: redis_module.RedisService,
+    call: fx.Effect[int, str, PersistedLookup],
+) -> None:
+    assert_type(
+        limiter.consume(key="k", limit=5, window=60),
+        fx.Effect[rl.ConsumeResult, rl.RateLimiterError],
+    )
+    limiter.consume(key="k", limit=5, window=60, algorithm="sliding")  # pyright: ignore[reportArgumentType]
+    assert_type(rl.sleep(limiter), rl.Sleep)
+    assert_type(
+        rl.sleep(limiter, key="k", limit=5, window=60),
+        fx.Effect[rl.ConsumeResult, rl.RateLimiterError],
+    )
+    assert_type(rl.make, fx.Effect[rl.RateLimiterService, Never, rl.RateLimiterStore])
+    assert_type(rl.layer_store_memory, fx.Layer[rl.RateLimiterStore])
+    assert_type(rl.layer_store_redis(), fx.Layer[rl.RateLimiterStore, Never, redis_module.Redis])
+    assert_type(rl.make_with_rate_limiter, fx.Effect[rl.WithRateLimiter, Never, rl.RateLimiter])
+    with_limit = rl.WithRateLimiter(limiter)(key="k", limit=5, window=60)
+    assert_type(call.pipe(with_limit), fx.Effect[int, str | rl.RateLimiterError, PersistedLookup])
+
+    # execute adds CircuitBreakerError, directly or for .pipe.
+    assert_type(
+        breaker.execute(call, key="k"),
+        fx.Effect[int, str | cb.CircuitBreakerError, PersistedLookup],
+    )
+    assert_type(
+        call.pipe(breaker.execute(key="k")),
+        fx.Effect[int, str | cb.CircuitBreakerError, PersistedLookup],
+    )
+    assert_type(breaker.state("k"), fx.Effect[cb.State, cb.CircuitBreakerError])
+    assert_type(breaker.transitions, fx.Stream[cb.Transition])
+    assert_type(
+        cb.make(trip_policy=cb.consecutive(3), open_duration=fx.schedule.exponential(1)),
+        fx.Effect[cb.CircuitBreakerService, Never, cb.CircuitBreakerStore | fx.Scope],
+    )
+    cb.make(trip_policy=cb.consecutive(3), open_duration=60, on_store_error="retry")  # pyright: ignore[reportArgumentType]
+    assert_type(cb.layer_store_memory(), fx.Layer[cb.CircuitBreakerStore])
+    assert_type(cb.layer_store_redis(), fx.Layer[cb.CircuitBreakerStore, Never, redis_module.Redis])
+
+    # A script's arguments are its params function's; its result its decoder's.
+    key_script = redis_module.script(_key_param, lua="return KEYS[1]", number_of_keys=1, decode=str)
+    assert_type(redis.eval(key_script)("k"), fx.Effect[str, redis_module.RedisError])
+    redis.eval(key_script)(1)  # pyright: ignore[reportArgumentType]
+    assert_type(redis.send("GET", "k"), fx.Effect[redis_module.RedisReply, redis_module.RedisError])
+    assert_type(
+        redis_py.layer("redis://localhost"),
+        fx.Layer[redis_module.Redis | redis_py.RedisPy, redis_module.RedisError],
+    )
+    assert_type(
+        persistence_module.layer_redis,
+        fx.Layer[persistence_module.Persistence, Never, redis_module.Redis],
+    )

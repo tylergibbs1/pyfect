@@ -1,4 +1,6 @@
-"""JavaScript's text rules for ports that must give Effect's exact strings:
+"""JavaScript's text and number rules for ports that must give Effect's
+exact results: arithmetic that gives infinities and NaN where Python raises
+(``divide``, ``floor``, ``ceil``), and the text rules:
 ``String(number)`` (``2`` not ``2.0``, ``1e+21``, ``1.5e-7``), and the
 character sets behind JavaScript's regex ``\\s`` and line terminators,
 which differ from Python's (a regex copied from Effect must spell them with
@@ -74,6 +76,26 @@ def js_number(value: float) -> str:
         mantissa = digits[0] + ("." + digits[1:] if k > 1 else "")
         body = f"{mantissa}e{'+' if n - 1 >= 0 else '-'}{abs(n - 1)}"
     return sign + body
+
+
+def divide(dividend: float, divisor: float) -> float:
+    """JavaScript's ``/``: dividing by zero gives a signed infinity, or NaN
+    for ``0 / 0`` (Python raises ``ZeroDivisionError``)."""
+    if divisor != 0:
+        return dividend / divisor
+    if dividend == 0 or math.isnan(dividend):
+        return math.nan
+    return math.copysign(math.inf, dividend) * math.copysign(1.0, divisor)
+
+
+def floor(value: float) -> float:
+    """``Math.floor``: an infinity or NaN stays as it is (Python raises)."""
+    return float(math.floor(value)) if math.isfinite(value) else value
+
+
+def ceil(value: float) -> float:
+    """``Math.ceil``: an infinity or NaN stays as it is (Python raises)."""
+    return float(math.ceil(value)) if math.isfinite(value) else value
 
 
 SPACE = "\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
