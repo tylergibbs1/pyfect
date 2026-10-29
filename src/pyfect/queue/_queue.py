@@ -342,6 +342,11 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
     def unsafe_is_full(self) -> bool:
         return self.unsafe_size() == self._capacity
 
+    def unsafe_is_done(self) -> bool:
+        """Whether the queue has ended, failed or shut down and has no items
+        left (Effect's ``queue.state._tag === "Done"``)."""
+        return isinstance(self._state, st.Done)
+
     # --- internals --------------------------------------------------------
 
     def _free(self, takers: WaitList) -> int:

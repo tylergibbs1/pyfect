@@ -574,3 +574,18 @@ def test_a_waiter_interrupted_between_its_wake_up_and_its_retry_strands_no_item(
 
     for delay in range(3):
         assert any(run(program(delay))), f"item stranded at delay {delay}"
+
+
+def test_unsafe_is_done_once_ended_values_are_drained():
+    """An ended queue is done only after its buffered values are taken."""
+
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int, fx.Done].unbounded()
+        yield from q.offer(1)
+        yield from q.end()
+        before = q.unsafe_is_done()
+        yield from q.take().or_die()
+        return before, q.unsafe_is_done()
+
+    assert run(program) == (False, True)

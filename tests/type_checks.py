@@ -18,7 +18,7 @@ from opentelemetry.trace import Span as OtelApiSpan
 from opentelemetry.trace import SpanContext
 
 import pyfect as fx
-from pyfect import channel, execution_plan, layer, logger, otel, reactivity, schedule, stream
+from pyfect import channel, execution_plan, layer, logger, otel, reactivity, rpc, schedule, stream
 from pyfect import socket as socket_module
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
@@ -68,6 +68,8 @@ from pyfect.http_api import error as api_error
 from pyfect.net import address_resolver, dns, net_address
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
+from pyfect.rpc import client as rpc_client
+from pyfect.rpc import test as rpc_test
 from pyfect.scheduler import Scheduler, SyncScheduler
 from pyfect.schema import SchemaError
 from pyfect.scope import Scope
@@ -5222,4 +5224,85 @@ def check_http_api(
     assert_type(api_builder.layer(api), fx.Layer[Never, Never, HttpRouter | ApiUsers | ApiAdmin])
     assert_type(
         api_client.make(api), fx.Effect[api_client.Client[ApiUsers | ApiAdmin], Never, HttpClient]
+    )
+
+
+# --- rpc ---------------------------------------------------------------------------
+
+
+class RpcUser(fx.schema.Class, identifier="RpcUser"):
+    id: str
+
+
+class RpcCurrentUser(Tag[RpcUser]): ...
+
+
+class RpcUnauthorized(fx.schema.TaggedError): ...
+
+
+class RpcAuth(rpc.RpcMiddleware[RpcCurrentUser, RpcUnauthorized]):
+    error = RpcUnauthorized
+
+
+class RpcDb(Tag[int]): ...
+
+
+class RpcNotFound(fx.schema.TaggedError): ...
+
+
+class RpcUsers(rpc.RpcGroup):
+    get = rpc.make("Get", payload=fx.schema.String, success=RpcUser, error=RpcNotFound)
+    ping = rpc.make("Ping")
+    stream = rpc.make("Stream", success=fx.schema.Number, stream=True)
+    me = rpc.make("Me", success=RpcUser).middleware(RpcAuth)
+    never_fails = rpc.make(
+        "NeverFails", success=rpc.rpc_schema.Stream(fx.schema.String, fx.schema.Never)
+    )
+    both_fail = rpc.make(
+        "BothFail",
+        success=rpc.rpc_schema.Stream(fx.schema.String, fx.schema.Number),
+        error=fx.schema.String,
+    )
+
+
+def check_rpc(users: RpcUsers) -> None:
+    # a stream schema's error and the RPC's error share one TypeVar, so a
+    # `Never` stream error stays `Never` instead of widening to Unknown
+    assert_type(RpcUsers.never_fails, rpc.StreamRpc[None, str, Never])
+    assert_type(RpcUsers.both_fail, rpc.StreamRpc[None, str, float | str])
+    assert_type(RpcUsers.get, rpc.Rpc[str, RpcUser, RpcNotFound])
+    assert_type(RpcUsers.ping, rpc.Rpc[None, None, Never])
+    assert_type(RpcUsers.stream, rpc.StreamRpc[None, float, Never])
+    assert_type(RpcUsers.me, rpc.Rpc[None, RpcUser, Never, RpcAuth, RpcAuth])
+    # A client method fails with the RPC's error, its middleware's, or the client's.
+    assert_type(users.get("1"), fx.Effect[RpcUser, RpcNotFound | rpc.RpcClientError])
+    assert_type(users.ping(), fx.Effect[None, rpc.RpcClientError])
+    assert_type(users.me(), fx.Effect[RpcUser, RpcUnauthorized | rpc.RpcClientError])
+    assert_type(users.stream(), Stream[float, rpc.RpcClientError])
+    assert_type(users.get.discard("1"), fx.Effect[None, rpc.RpcClientError])
+    assert_type(users.ping.discard(), fx.Effect[None, rpc.RpcClientError])
+    # A stream RPC without a payload can be read as a queue too.
+    assert_type(
+        users.stream(as_queue=True),
+        fx.Effect[Dequeue[float, rpc.RpcClientError | fx.Done], Never, Scope],
+    )
+    users.get(1)  # pyright: ignore[reportArgumentType]
+    # Handlers need their services; a middleware's are provided, the middleware is needed.
+    handlers = (
+        RpcUsers.handlers()
+        .handle(RpcUsers.get)(lambda r: RpcDb().map(lambda _: RpcUser(id=r.payload)))
+        .handle(RpcUsers.ping)(lambda _r: fx.succeed(None))
+        .handle(RpcUsers.stream)(lambda _r: fx.stream.make(1.0, 2.0))
+        .handle(RpcUsers.me)(lambda _r: RpcCurrentUser())
+    )
+    assert_type(
+        RpcUsers.to_layer(handlers), fx.Layer[rpc.HandlersFor[RpcUsers], Never, RpcDb | RpcAuth]
+    )
+    RpcUsers.handlers().handle(RpcUsers.get)(lambda _r: fx.succeed(1))  # pyright: ignore[reportCallIssue, reportArgumentType]
+    assert_type(
+        rpc_test.make_client(RpcUsers),
+        fx.Effect[RpcUsers, Never, Scope | rpc.HandlersFor[RpcUsers]],
+    )
+    assert_type(
+        rpc_client.make(RpcUsers), fx.Effect[RpcUsers, Never, Scope | rpc_client.ClientProtocol]
     )
