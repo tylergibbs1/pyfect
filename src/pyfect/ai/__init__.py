@@ -1,6 +1,6 @@
 """AI services (Effect's ``effect/ai``): prompts, responses, tools and
-toolkits, and the provider-neutral ``LanguageModel`` and
-``EmbeddingModel`` services.
+toolkits, the provider-neutral ``LanguageModel`` and ``EmbeddingModel``
+services, and the Model Context Protocol (``mcp_server``, ``mcp_client``).
 
 Each module is Effect's of the same name::
 
@@ -12,6 +12,11 @@ from pyfect.ai import (
     embedding_model,
     id_generator,
     language_model,
+    mcp_client,
+    mcp_client_error,
+    mcp_protocol,
+    mcp_schema,
+    mcp_server,
     model,
     prompt,
     response,
@@ -22,14 +27,25 @@ from pyfect.ai import (
 )
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.language_model import LanguageModel
+from pyfect.ai.mcp_client import McpClient
+from pyfect.ai.mcp_client_error import McpClientError
+from pyfect.ai.mcp_server import McpServer
 
 __all__ = [
     "AiError",
     "LanguageModel",
+    "McpClient",
+    "McpClientError",
+    "McpServer",
     "ai_error",
     "embedding_model",
     "id_generator",
     "language_model",
+    "mcp_client",
+    "mcp_client_error",
+    "mcp_protocol",
+    "mcp_schema",
+    "mcp_server",
     "model",
     "prompt",
     "response",

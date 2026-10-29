@@ -23,6 +23,8 @@ from pyfect import schema as S
 from pyfect import socket as socket_module
 from pyfect._json_value import JsonValue
 from pyfect.ai import language_model as lm
+from pyfect.ai import mcp_client as mcp_client_module
+from pyfect.ai import mcp_schema as mcp_schema_module
 from pyfect.ai import response as ai_response
 from pyfect.ai import tool as ai_tool
 from pyfect.ai import toolkit as ai_toolkit
@@ -5948,3 +5950,79 @@ def check_ai_result_narrowing(
                 assert_type(part.result, int | AiError)
             case _:
                 pass
+
+
+def check_mcp() -> None:
+    from pyfect import stdio as mcp_stdio
+    from pyfect.ai import mcp_client as mcp_c
+    from pyfect.ai import mcp_protocol as mcp_p
+    from pyfect.ai import mcp_server as mcp_m
+    from pyfect.ai.mcp_client_error import McpClientError as McpErr
+    from pyfect.errors import IllegalArgumentError as Illegal
+    from pyfect.http.router import HttpRouter as Router
+    from pyfect.platform_error import PlatformError as PlatformErr
+    from pyfect.process import ChildProcessSpawner as Spawner
+    from pyfect.process import make as command
+    from pyfect.scope import Scope as McpScope
+
+    weather = ai_tool.make(
+        "Weather", parameters=S.Struct(AiWeatherParams), success=S.Struct(AiWeather)
+    )
+    kit = ai_toolkit.make(weather)
+    assert_type(mcp_m.make(), fx.Effect[mcp_m.McpServerService])
+    assert_type(
+        mcp_m.register_toolkit(kit),
+        fx.Effect[None, Never, mcp_m.McpServer | ai_toolkit.Handlers[Literal["Weather"]]],
+    )
+    assert_type(mcp_m.toolkit(kit), fx.Layer[Never, Never, ai_toolkit.Handlers[Literal["Weather"]]])
+    assert_type(
+        mcp_m.run_stdio(name="s", version="1", protocols=(mcp_p.v2025_11_25,)),
+        fx.Effect[None, Illegal | PlatformErr, mcp_m.McpServer | mcp_stdio.Stdio],
+    )
+    assert_type(
+        mcp_m.layer_http(name="s", version="1", path="/mcp", protocols=(mcp_p.v2025_11_25,)),
+        fx.Layer[mcp_m.McpServer, Illegal, Router],
+    )
+    assert_type(
+        mcp_m.register_resource(uri="demo://a", name="a", content=fx.succeed("text")),
+        fx.Effect[None, Never, mcp_m.McpServer],
+    )
+    template = mcp_m.uri_template("demo://items/", S.Int)
+    assert_type(template, mcp_m.UriTemplate[int])
+    mcp_m.register_resource_template(
+        template, name="item", content=lambda uri, n: fx.succeed(f"{uri}{n + 1}")
+    )
+    mcp_m.register_resource_template(
+        template,
+        name="item",
+        content=lambda _, n: fx.succeed(n),  # pyright: ignore[reportArgumentType]
+    )
+    assert_type(
+        mcp_m.register_prompt(
+            name="p", content=lambda p: fx.succeed(p["city"]), parameters=S.Struct(AiWeatherParams)
+        ),
+        fx.Effect[None, Never, mcp_m.McpServer],
+    )
+
+    client = mcp_c.make(name="c", version="1")
+    assert_type(client, fx.Effect[mcp_c.McpClientService, McpErr, mcp_c.Transport | McpScope])
+    assert_type(
+        mcp_c.layer_stdio(
+            name="c", version="1", command=command("server"), protocol=mcp_p.v2025_11_25
+        ),
+        fx.Layer[mcp_c.McpClient, McpErr, Spawner],
+    )
+    # The client speaks only the two newest revisions.
+    modern: mcp_c.ClientProtocol = mcp_p.v2026_07_28
+    assert_type(modern, mcp_p.ProtocolAdapter[Literal["2026-07-28"]])
+    _june: mcp_c.ClientProtocol = mcp_p.v2025_06_18  # pyright: ignore[reportAssignmentType]
+
+
+def check_mcp_client_calls(
+    service: mcp_client_module.McpClientService, tool: mcp_schema_module.Tool
+) -> None:
+    from pyfect.ai.mcp_client_error import McpClientError as McpErr
+
+    assert_type(service.call_tool(tool), fx.Effect[mcp_schema_module.CallToolResult, McpErr])
+    assert_type(service.call_tool(tool, schema=S.Struct(AiWeather)), fx.Effect[AiWeather, McpErr])
+    assert_type(service.list_tools(), fx.Effect[list[mcp_schema_module.Tool], McpErr])

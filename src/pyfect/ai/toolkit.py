@@ -136,17 +136,26 @@ class WithHandler(Generic[N_co, RP_co, HE_co, R_co]):
     services: Context[Any] = field(repr=False)
 
     def handle(
-        self, name: str, params: object, tool_call_id: str | None = None
+        self,
+        name: str,
+        params: object,
+        tool_call_id: str | None = None,
+        options: S.ParseOptions | None = None,
     ) -> Effect[Stream[HandlerResult, HE_co | AiError, R_co], AiError, R_co]:
         """The results of calling the tool ``name`` with ``params`` (as the
-        model sent them): preliminary values, then the final one. Invalid
-        parameters, a handler failure or an invalid result fail the stream
-        in ``"error"`` mode and are a failed result in ``"return"`` mode."""
-        return cast("Any", _handle(self, name, params, tool_call_id))
+        model sent them, decoded with ``options``): preliminary values, then
+        the final one. Invalid parameters, a handler failure or an invalid
+        result fail the stream in ``"error"`` mode and are a failed result in
+        ``"return"`` mode."""
+        return cast("Any", _handle(self, name, params, tool_call_id, options or {}))
 
 
 def _handle(
-    kit: WithHandler[Any, Any, Any, Any], name: str, params: object, tool_call_id: str | None
+    kit: WithHandler[Any, Any, Any, Any],
+    name: str,
+    params: object,
+    tool_call_id: str | None,
+    options: S.ParseOptions,
 ) -> Effect[Stream[HandlerResult, Any, Any], AiError, Any]:
     tool = kit.tools.get(name)
     annotate = fx.annotate_current_span({"tool": name, "parameters": params})
@@ -272,7 +281,7 @@ def _handle(
         return source.map_effect(encode).ensuring(fiber.interrupt())
 
     decode = (
-        S.decode_unknown_effect(tool.parameters_schema)(params)
+        S.decode_unknown_effect(tool.parameters_schema, **options)(params)
         .exit()
         .flat_map(
             lambda exit: (
