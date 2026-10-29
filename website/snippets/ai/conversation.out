@@ -1,0 +1,5 @@
+> Hello!
+< I was sent 3 messages
+> What is my name?
+< I was sent 5 messages
+['system', 'user', 'user', 'assistant', 'user', 'assistant']

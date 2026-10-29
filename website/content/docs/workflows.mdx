@@ -1,0 +1,76 @@
+---
+title: Workflows
+description: "Long-running processes that survive waiting: steps run once, waits suspend, and failures undo what already happened."
+---
+
+A workflow is an effect the engine can stop and replay. Each step's result is stored, so
+when a workflow waits for a person, a timer or another system, it suspends; when the answer
+comes, the engine runs it again from the start, reading back what already happened
+instead of doing it twice. `pyfect.workflow` follows Effect's `effect/workflow`.
+
+## Define and run
+
+`workflow.make(tag, payload=..., success=..., error=..., idempotency_key=...)` declares a
+workflow: its payload, result and error schemas, and the key that names an execution, so
+executing the same payload twice joins one execution. `to_layer(handler)` registers the
+handler, a function of the payload and the execution id, on a `WorkflowEngine`.
+`workflow_engine.layer_memory` keeps executions in memory, for tests and one-process
+programs.
+
+`execute(payload)` runs the workflow and waits for its result, retrying while it is
+suspended. `execute(payload, discard=True)` starts it and gives its execution id, which
+`poll` (a `Complete` with its `Exit`, a `Suspended`, or `None`), `interrupt` and `resume`
+take.
+
+<Diagram name="workflow-replay" title="Each run reuses the stored results of the steps it already took, and suspends where an answer is missing" />
+
+<CodeOutput>
+
+<include meta='title="orders.py"'>../../snippets/workflows/orders.py</include>
+
+<include lang="text">../../snippets/workflows/orders.out</include>
+
+</CodeOutput>
+
+## Activities
+
+`activity.make(name=..., success=..., execute=...)` is a step whose `Exit` the engine
+stores, under a name unique in its workflow. pyright checks `execute` against the
+schemas. A replay gets the stored result, so code with side effects (a charge, an email)
+belongs in an activity, and plain code between activities runs again on each replay.
+An activity interrupted by a replay runs again; `activity.retry(times=n)` retries a failed
+one with a fresh attempt, and `activity.idempotency_key(name)` gives a key, stable across
+replays, to send to the system it calls.
+
+## Durable clocks and deferreds
+
+`durable_clock.sleep(name=..., duration=...)` waits inside a workflow. A sleep up to
+`in_memory_threshold` (60 seconds) is an activity that sleeps; a longer one schedules a
+wake-up with the engine and suspends, so nothing waits in memory.
+
+`durable_deferred.make(name, success=..., error=...)` is a named wait point. `wait()`
+suspends the workflow until something outside completes it with `succeed`, `fail` or
+`done`, by a token: `token_from_payload` or `token_from_execution_id` from outside,
+`token()` from inside, to send along with a request for approval. The answer is stored,
+so it may arrive before the workflow reaches `wait()`. `durable_deferred.race_all` and
+`activity.race_all` race steps so that a replay gets the same winner.
+
+## Compensation
+
+`Workflow.with_compensation(compensation)`, used with `.pipe` on a step, runs
+`compensation(value, cause)` if the whole workflow later fails, with the value the step
+produced. Compensations run once, in reverse order, after the failure; a replay does not
+add them twice. Only top-level steps are compensated, not effects inside an activity. In
+`orders.py`, the rejected order is refunded.
+
+`workflow.add_finalizer(f)` runs `f(exit)` once the execution completes, not each time a
+run suspends, and `durable_queue` hands work to [`PersistedQueue`](/docs/persistence) workers
+and waits for their results. `workflow_proxy` and `workflow_proxy_server` expose
+workflows as [RPC](/docs/rpc) or [HttpApi](/docs/http-api) groups that execute, discard
+and resume them. `import pyfect` leaves them out, so import them as
+`from pyfect.workflow import workflow_proxy`.
+
+Reference: [`pyfect.workflow`](/docs/reference/workflow),
+[`workflow`](/docs/reference/workflow/workflow),
+[`activity`](/docs/reference/workflow/activity),
+[`durable_deferred`](/docs/reference/workflow/durable_deferred).

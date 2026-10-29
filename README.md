@@ -157,6 +157,14 @@ layer, concurrency, retries and timeouts.
   headers. [Rate limiting →](https://pyfect.dev/docs/rate-limiting)
 - **Workers.** Run code on threads or in child processes and talk to it by messages or
   typed RPC calls over a pool. [Workers →](https://pyfect.dev/docs/workers)
+- **Workflows.** Durable workflows whose steps run once and are replayed, with durable
+  sleeps, waits completed from outside and compensation on failure.
+  [Workflows →](https://pyfect.dev/docs/workflows)
+- **AI.** A provider-neutral `LanguageModel` for text, structured output, streaming and
+  typed tools, with Anthropic and OpenAI-compatible providers over the HTTP client.
+  [AI →](https://pyfect.dev/docs/ai)
+- **MCP.** Serve a toolkit over the Model Context Protocol on HTTP or stdio, and call any
+  MCP server's tools. [MCP →](https://pyfect.dev/docs/mcp)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 

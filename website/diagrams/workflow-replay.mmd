@@ -1,0 +1,10 @@
+flowchart LR
+  E["PlaceOrder.execute(order)"] --> R["run the handler"]
+  R --> A{"activity result stored?"}
+  A -->|"yes"| U["reuse it"]
+  A -->|"no"| X["run it, store its Exit"]
+  U --> W{"deferred answered?"}
+  X --> W
+  W -->|"no"| S["Suspended"]
+  W -->|"yes"| C["Complete, or compensate on failure"]
+  S -->|"answer or clock wakes it: replay"| R

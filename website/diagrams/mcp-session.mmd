@@ -1,0 +1,5 @@
+flowchart LR
+  C["McpClient: list_tools, call_tool"] -->|"JSON-RPC over HTTP or stdio"| S["McpServer at /mcp"]
+  S --> K["Calculator handlers"]
+  K -->|"structured result"| S
+  S --> C

@@ -1,0 +1,116 @@
+---
+title: AI
+description: "Generate text and objects, call tools and stream responses through a LanguageModel service any provider can fill."
+---
+
+`pyfect.ai` follows Effect's `effect/ai`. A program asks the `LanguageModel` service for
+text, a decoded object or a stream, and a provider's layer supplies the service. So the
+same program runs on Claude, on any OpenAI-compatible API, or on a scripted model in a
+test. Failures are an `AiError` whose `reason` says what went wrong (a rate limit, an
+invalid request, output that does not match its schema).
+
+## Language models and providers
+
+`language_model.generate_text(prompt)` needs a `LanguageModel` and gives a
+`GenerateTextResponse`: its `content` parts, with `text`, `tool_calls`, `tool_results`,
+`finish_reason` and `usage`. A prompt is a string, a list of messages or a `Prompt`.
+
+`pyfect.ai.anthropic` calls Anthropic's Messages API and `pyfect.ai.openai_compat` any
+Chat Completions API (OpenAI, a local server, a gateway). Each has a `client` layer, with
+the API key as a `Redacted` (or from `Config` with `layer_config`), and a `language_model`
+whose `model(name).layer` provides the `LanguageModel`. Both send their requests through
+the [`HttpClient`](/docs/platform) service, so they need no vendor SDK: provide
+`httpx_client.layer` (the `pyfect[httpx]` extra) in production, or a test client, as here.
+
+<CodeOutput>
+
+<include meta='title="generate.py"'>../../snippets/ai/generate.py</include>
+
+<include lang="text">../../snippets/ai/generate.out</include>
+
+</CodeOutput>
+
+`language_model.make(generate_text=..., stream_text=...)` builds a `LanguageModel` from two
+functions of a request's `ProviderOptions` (its prompt, tools and response format). The
+examples below use it to script the model's answers, as a test does.
+
+## Tools and toolkits
+
+`tool.make(name, parameters=..., success=..., failure=...)` declares a tool; the model
+sees its description and its parameters' JSON Schema. `toolkit.make(*tools)` groups tools,
+and `to_layer(*handlers)` provides their handlers: pyright checks `GetWeather.handler(f)`
+against the tool's schemas and the services it declares in `dependencies`.
+
+With `toolkit=Tools`, `generate_text` offers the tools, decodes each call's parameters,
+runs its handler and adds the results to the response. A handler's failure fails
+`generate_text`, or, for a tool made with `failure_mode="return"`, goes back to the model
+as a failure result. `tool_choice` is `"auto"`, `"none"`, `"required"`, `{"tool": name}` or
+`{"one_of": names}`, and a tool with `needs_approval` gives an approval request in place
+of running.
+
+<Diagram name="ai-tool-call" title="The model's tool calls are decoded and handled by the toolkit's handlers, and their results join the response" />
+
+<CodeOutput>
+
+<include meta='title="tools.py"'>../../snippets/ai/tools.py</include>
+
+<include lang="text">../../snippets/ai/tools.out</include>
+
+</CodeOutput>
+
+## Structured output
+
+`language_model.generate_object(prompt, schema=...)` asks for JSON matching a
+[schema](/docs/schema) and decodes it into `value`, typed by the schema. The provider gets
+the schema's JSON Schema, named `object_name`; output that does not decode fails with an
+`AiError`.
+
+<CodeOutput>
+
+<include meta='title="structured.py"'>../../snippets/ai/structured.py</include>
+
+<include lang="text">../../snippets/ai/structured.out</include>
+
+</CodeOutput>
+
+## Streaming
+
+`language_model.stream_text(prompt)` is a [stream](/docs/streams) of the response's
+parts as they arrive: text, reasoning and tool-parameter deltas, tool calls, then their
+results, then the finish part. With a toolkit, each handler starts as soon as the stream
+moves past its call.
+
+<CodeOutput>
+
+<include meta='title="streaming.py"'>../../snippets/ai/streaming.py</include>
+
+<include lang="text">../../snippets/ai/streaming.out</include>
+
+</CodeOutput>
+
+## Conversations
+
+A conversation is a `Prompt` that grows: `concat` adds the next user message, and
+`prompt.from_response_parts(reply.content)` turns a reply, with its tool calls and
+results, into the messages that continue it. `set_system` replaces the system message.
+pyfect does not have Effect's `Chat` service yet, so a program keeps its history itself.
+
+<CodeOutput>
+
+<include meta='title="conversation.py"'>../../snippets/ai/conversation.py</include>
+
+<include lang="text">../../snippets/ai/conversation.out</include>
+
+</CodeOutput>
+
+An `EmbeddingModel`'s `embed(text)` and `embed_many(texts)` give vectors, and
+concurrent `embed` calls are sent as one batch;
+`openai_compat.embedding_model.model(name, dimensions=n).layer` provides one. Each call
+runs in a span, such as `LanguageModel.generateText`, that
+[tracing](/docs/observability) records.
+
+Reference: [`pyfect.ai`](/docs/reference/ai),
+[`language_model`](/docs/reference/ai/language_model),
+[`tool`](/docs/reference/ai/tool), [`toolkit`](/docs/reference/ai/toolkit),
+[`pyfect.ai.anthropic`](/docs/reference/ai/anthropic),
+[`pyfect.ai.openai_compat`](/docs/reference/ai/openai_compat).

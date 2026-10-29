@@ -1,0 +1,3 @@
+offered ['GetWeather']
+call GetWeather {'city': 'Lisbon'}
+result GetWeather {'degrees': 21.5}

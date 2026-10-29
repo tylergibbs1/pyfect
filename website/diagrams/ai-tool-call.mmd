@@ -1,0 +1,6 @@
+flowchart LR
+  G["generate_text(prompt, toolkit=Tools)"] --> M["LanguageModel: a provider"]
+  M -->|"text, tool calls, finish"| D["decode the calls' parameters"]
+  D --> H["Tools handlers"]
+  H -->|"tool results"| RR["GenerateTextResponse"]
+  M -->|"text"| RR

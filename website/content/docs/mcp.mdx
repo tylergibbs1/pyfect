@@ -1,0 +1,55 @@
+---
+title: MCP
+description: "Serve a toolkit, resources and prompts over the Model Context Protocol, and call another server's tools."
+---
+
+The [Model Context Protocol](https://modelcontextprotocol.io) lets an AI application use
+tools, resources and prompts that another program serves. `pyfect.ai.mcp_server` serves
+them from the same [toolkits](/docs/ai#tools-and-toolkits) a `LanguageModel` uses, and
+`pyfect.ai.mcp_client` connects to any MCP server. Both speak the protocol's revisions
+from 2024-11-05 to the stateless 2026-07-28.
+
+## Serve a toolkit
+
+`mcp_server.toolkit(Calculator)` registers a toolkit's tools, with its handlers' layer
+provided. Each tool is listed with its description, its parameters' JSON Schema and an
+output schema; `tool.Readonly`, `Destructive`, `Idempotent` and `OpenWorld` annotations
+become its hints. Invalid arguments and declared failures come back as tool errors the
+model can read, and any other failure as an internal error that leaks no details.
+`mcp_server.resource`, `resource_template` and `prompt` add resources and prompts the same
+way, as layers.
+
+A transport layer serves them. `mcp_server.layer_http(name=..., version=..., path=...,
+protocols=...)` adds MCP's Streamable HTTP transport to an
+[HTTP router](/docs/http-server), with sessions and JSON or Server-Sent Event replies.
+`mcp_server.run_stdio(...)` serves on standard input and output until the input ends, for
+a server that a client starts as a child process; see
+[`examples/mcp_server.py`](https://github.com/tylergibbs1/pyfect/blob/main/examples/mcp_server.py).
+
+<Diagram name="mcp-session" title="The client's requests reach the server's toolkit handlers over HTTP or stdio, and each tool call comes back as a structured result" />
+
+## Connect a client
+
+`mcp_client.layer_http(name=..., version=..., url=..., protocol=...)` connects to a server
+over HTTP, and `layer_stdio(command=process.make(...), ...)` starts one as a child process.
+The `McpClient` then has the server's `server_info` and `instructions`, `list_tools`,
+`list_prompts` and `list_resources`, `call_tool(tool, arguments, schema=...)` decoding the
+result's structured content, `get_prompt` and `read_resource`. Failures are an
+`McpClientError` whose `reason` says which: a tool error, a timeout (60 seconds by
+default), a transport or protocol error.
+
+<CodeOutput>
+
+<include meta='title="calculator.py"'>../../snippets/mcp/calculator.py</include>
+
+<include lang="text">../../snippets/mcp/calculator.out</include>
+
+</CodeOutput>
+
+`mcp_client.toolkit(client, prefix)` gives the server's tools as a toolkit with their
+handlers, so `generate_text(prompt, toolkit=...)` lets a model call another program's
+tools, named with `prefix` to keep them apart from local ones.
+
+Reference: [`mcp_server`](/docs/reference/ai/mcp_server),
+[`mcp_client`](/docs/reference/ai/mcp_client),
+[`mcp_protocol`](/docs/reference/ai/mcp_protocol).

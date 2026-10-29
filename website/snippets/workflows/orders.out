@@ -1,0 +1,5 @@
+charge a1
+a1 Success(value='ch_a1')
+charge b2
+refund ch_b2
+b2 Failure(cause=Cause(reasons=(Fail(error='rejected'),)))
