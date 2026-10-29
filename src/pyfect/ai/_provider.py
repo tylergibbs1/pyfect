@@ -16,6 +16,7 @@ from typing import Any, Never, cast
 import pyfect as fx
 from pyfect import schema as S
 from pyfect._core import Effect
+from pyfect._js import or_default
 from pyfect.ai.ai_error import (
     AiError,
     HttpContext,
@@ -91,12 +92,6 @@ def http_context(
     if body is not None:
         context["body"] = body
     return context
-
-
-def or_default[A, B](value: A | None, default: B) -> A | B:
-    """``value`` unless it is ``None`` (JavaScript's ``??``: an empty
-    string is kept, unlike ``value or default``)."""
-    return default if value is None else value
 
 
 def parse_number(raw: str | None) -> int | float | None:

@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+from pyfect._js import or_default
 from pyfect._json_value import JsonValue
 from pyfect.ai.mcp_schema import CallToolResult
 from pyfect.errors import TaggedError
@@ -41,7 +42,7 @@ class TransportError(McpClientErrorReason):
 
     @property
     def message(self) -> str:
-        return self.description or "MCP transport failed"
+        return or_default(self.description, "MCP transport failed")
 
 
 @dataclass(eq=False)
@@ -56,7 +57,7 @@ class ProtocolError(McpClientErrorReason):
 
     @property
     def message(self) -> str:
-        message = self.description or "MCP protocol error"
+        message = or_default(self.description, "MCP protocol error")
         return message if self.code is None else f"{message} (code {self.code})"
 
 
@@ -104,7 +105,7 @@ class ClosedError(McpClientErrorReason):
     def message(self) -> str:
         if self.session_expired:
             return "MCP session expired"
-        return self.description or "MCP connection closed"
+        return or_default(self.description, "MCP connection closed")
 
 
 @dataclass(eq=False)

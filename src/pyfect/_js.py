@@ -14,6 +14,13 @@ import re
 from decimal import Decimal
 
 
+def or_default[A, B](value: A | None, default: B) -> A | B:
+    """``value`` unless it is ``None``: JavaScript's ``value ?? default``.
+    Python's ``value or default`` is JavaScript's ``||`` (it replaces an
+    empty string too), so a port of ``??`` uses this."""
+    return default if value is None else value
+
+
 def js_sort_key(text: str) -> bytes:
     """The key sorting strings as JavaScript's ``sort()`` does: by UTF-16
     code units, not code points (``"\\U00010000"`` before ``"\\uffff"``)."""

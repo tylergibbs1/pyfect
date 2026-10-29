@@ -76,6 +76,13 @@ type ToolChoice = Literal["auto", "none", "required"] | ToolChoiceTool | ToolCho
 ``{"tool": name}`` or ``{"one_of": names, "mode": ...}``."""
 
 
+type ToolCallValidation = Literal["strict", "deferred"]
+"""How tool calls are checked with ``disable_tool_call_resolution``:
+``"strict"`` decodes each against its tool; ``"deferred"`` returns them as
+the provider sent them, calls to tools outside the toolkit included (a
+provider-executed call is still checked)."""
+
+
 @dataclass(frozen=True)
 class TextFormat:
     type: Literal["text"] = "text"
@@ -102,6 +109,7 @@ class ProviderOptions:
     previous_response_id: str | None = None
     incremental_prompt: P.Prompt | None = None
     incremental_fallback: bool = False
+    tool_call_validation: ToolCallValidation = "strict"
 
 
 type EncodedPart = Mapping[str, object]
@@ -215,6 +223,14 @@ def _annotate(
     span.attribute("effect.ai.concurrency", "unbounded" if concurrency is None else concurrency)
 
 
+_UNDECLARED_TOOL_CALL = R.tool_call_part_schema(S.String, S.Unknown)
+
+
+def _validation(disable: bool, validation: ToolCallValidation) -> ToolCallValidation:
+    """Validation is deferred only with tool call resolution disabled."""
+    return validation if disable else "strict"
+
+
 def _decoded_toolkit(kit: K.WithHandler[Any, Any, Any, Any], encoded: bool) -> K.AnyToolkit:
     tools = [
         tool.set_parameters(S.to_encoded(tool.parameters_schema) if encoded else S.Unknown)
@@ -281,7 +297,7 @@ def _approval_request(tool_call_id: str) -> Effect[R.ToolApprovalRequestPart, Ne
 
 
 def _validate_provider_executed(
-    kit: K.WithHandler[Any, Any, Any, Any], parts: Sequence[EncodedPart]
+    kit: K.WithHandler[Any, Any, Any, Any], parts: Sequence[EncodedPart], encoded: bool = False
 ) -> Effect[None, SchemaError]:
     checks: list[Effect[object, SchemaError]] = []
     for part in parts:
@@ -289,7 +305,8 @@ def _validate_provider_executed(
             continue
         tool = kit.tools.get(cast("str", part.get("name")))
         if tool is not None:
-            decode = cast("Any", S.decode_unknown_effect(tool.parameters_schema))
+            params = S.to_encoded(tool.parameters_schema) if encoded else tool.parameters_schema
+            decode = cast("Any", S.decode_unknown_effect(params))
             checks.append(decode(part.get("params")))
     return fx.for_each(checks, lambda check: check).as_(None)
 
@@ -340,15 +357,21 @@ class Service:
     codec_transformer: CodecTransformer = default_codec_transformer
     supports_system_messages_in_history: Effect[bool] | None = None
     id_generator: IdService = default_id_generator
-    _decoders: dict[tuple[bool, bool], tuple[tuple[AnyTool, ...], Any]] = field(
-        default_factory=dict[tuple[bool, bool], tuple[tuple[AnyTool, ...], Any]]
+    _decoders: dict[tuple[bool, bool, bool], tuple[tuple[AnyTool, ...], Any]] = field(
+        default_factory=dict[tuple[bool, bool, bool], tuple[tuple[AnyTool, ...], Any]]
     )
 
     def _decoder(
-        self, kit: K.WithHandler[Any, Any, Any, Any] | None, encoded: bool, stream: bool
+        self,
+        kit: K.WithHandler[Any, Any, Any, Any] | None,
+        encoded: bool,
+        stream: bool,
+        deferred: bool = False,
     ) -> Callable[[Sequence[EncodedPart]], Effect[list[Any], SchemaError]]:
+        """Decodes a response's parts; ``deferred`` also takes calls to
+        tools outside ``kit``."""
         tools = () if kit is None else tuple(kit.tools.values())
-        key = (encoded, stream)
+        key = (encoded, stream, deferred)
         cached = self._decoders.get(key)
         if (
             cached is not None
@@ -358,6 +381,8 @@ class Service:
             return cached[1]
         toolkit = K.empty if kit is None else _decoded_toolkit(kit, encoded)
         part = R.stream_part(toolkit) if stream else R.part(toolkit)
+        if deferred:
+            part = S.Union(part, _UNDECLARED_TOOL_CALL)
         decoder = cast("Any", S.decode_unknown_effect(S.Array(part)))
         self._decoders[key] = (tools, decoder)
         return decoder
@@ -413,6 +438,8 @@ class Service:
             kit_effect = _as_kit_effect(toolkit)
             return kit_effect.flat_map(lambda kit: run(kit, tracker))
 
+        deferred = options.tool_call_validation == "deferred"
+
         def run(kit: K.WithHandler[Any, Any, Any, Any] | None, tracker: Tracker | None) -> Any:
             approvals = A.collect(options.prompt.content)
             error = A.pending_check(approvals, kit, "generateText")
@@ -420,7 +447,7 @@ class Service:
                 return fx.fail(error)
             if kit is None or not kit.tools:
                 request = _prepared(tracker, options)
-                decode = self._decoder(None, False, False)
+                decode = self._decoder(None, False, False, deferred)
                 return (
                     self._request(request)
                     .flat_map(decode)
@@ -443,7 +470,9 @@ class Service:
             prompt = A.strip_resolved(A.with_results(options.prompt, pre), approvals)
             with_prompt = replace(options, prompt=prompt)
             request = _prepared(tracker, _with_tools(with_prompt, kit, tool_choice))
-            decode = self._decoder(kit, disable_tool_call_resolution, False)
+            decode = self._decoder(
+                kit, disable_tool_call_resolution and not deferred, False, deferred
+            )
 
             def resolve(raw: Sequence[EncodedPart]) -> Effect[list[Any], Any, Any]:
                 def results(content: list[Any]) -> Effect[list[Any], Any, Any]:
@@ -474,7 +503,9 @@ class Service:
                     )
 
                 validate = (
-                    fx.void
+                    _validate_provider_executed(kit, raw, encoded=True)
+                    if deferred
+                    else fx.void
                     if disable_tool_call_resolution
                     else _validate_provider_executed(kit, raw)
                 )
@@ -498,13 +529,20 @@ class Service:
         tool_choice: ToolChoice = "auto",
         concurrency: Concurrency = "unbounded",
         disable_tool_call_resolution: bool = False,
+        tool_call_validation: ToolCallValidation = "strict",
     ) -> Effect[GenerateTextResponse[Any, Any], Any, Any]:
         """See the module's ``generate_text``."""
         return self._spanned(
             "LanguageModel.generateText",
             "generateText",
             lambda span: self._content(
-                ProviderOptions(P.make(prompt), span=span),
+                ProviderOptions(
+                    P.make(prompt),
+                    span=span,
+                    tool_call_validation=_validation(
+                        disable_tool_call_resolution, tool_call_validation
+                    ),
+                ),
                 toolkit,
                 tool_choice,
                 concurrency,
@@ -523,13 +561,19 @@ class Service:
         tool_choice: ToolChoice = "auto",
         concurrency: Concurrency = "unbounded",
         disable_tool_call_resolution: bool = False,
+        tool_call_validation: ToolCallValidation = "strict",
     ) -> Effect[GenerateObjectResponse[Any, Any, Any], Any, Any]:
         """See the module's ``generate_object``."""
         name = get_object_name(object_name, schema)
 
         def body(span: Span) -> Effect[GenerateObjectResponse[Any, Any, Any], Any, Any]:
             options = ProviderOptions(
-                P.make(prompt), response_format=JsonFormat(name, schema), span=span
+                P.make(prompt),
+                response_format=JsonFormat(name, schema),
+                span=span,
+                tool_call_validation=_validation(
+                    disable_tool_call_resolution, tool_call_validation
+                ),
             )
             content = self._content(
                 options, toolkit, tool_choice, concurrency, disable_tool_call_resolution
@@ -597,13 +641,20 @@ class Service:
         tool_choice: ToolChoice = "auto",
         concurrency: Concurrency = "unbounded",
         disable_tool_call_resolution: bool = False,
+        tool_call_validation: ToolCallValidation = "strict",
     ) -> Stream[Any, Any, Any]:
         """See the module's ``stream_text``."""
         from pyfect.stream import provide_service
         from pyfect.tracer._spans import make_span_scoped
 
         def with_span(span: Span) -> Effect[Stream[Any, Any, Any], Any, Any]:
-            options = ProviderOptions(P.make(prompt), span=span)
+            options = ProviderOptions(
+                P.make(prompt),
+                span=span,
+                tool_call_validation=_validation(
+                    disable_tool_call_resolution, tool_call_validation
+                ),
+            )
             _annotate(span, "text", tool_choice, concurrency)
             return fx.service_option(ResponseIdTracker).flat_map(
                 lambda found: with_tracker(options, found.value if found is not None else None)
@@ -617,7 +668,8 @@ class Service:
                 if error is not None:
                     return fx.fail(error)
                 request = _prepared(tracker, options)
-                return fx.succeed(self._stream_parts(request, None, tracker, False))
+                deferred = options.tool_call_validation == "deferred"
+                return fx.succeed(self._stream_parts(request, None, tracker, False, deferred))
             return _as_kit_effect(toolkit).flat_map(
                 lambda kit: self._stream_with(
                     kit,
@@ -645,17 +697,22 @@ class Service:
         kit: K.WithHandler[Any, Any, Any, Any] | None,
         tracker: Tracker | None,
         encoded: bool,
+        deferred: bool = False,
     ) -> Stream[Any, Any, Any]:
         """The provider's parts, decoded; ``request`` is already prepared
-        by the tracker."""
-        decode = self._decoder(kit, encoded, True)
+        by the tracker. ``deferred`` also checks provider-executed calls
+        against ``kit``'s encoded parameters."""
+        decode = self._decoder(kit, encoded, True, deferred)
 
         def decode_chunk(chunk: Sequence[EncodedPart]) -> Effect[tuple[Any, ...], Any, Any]:
             def marked(parts: list[Any]) -> tuple[Any, ...]:
                 _mark(tracker, request.prompt, parts)
                 return tuple(parts)
 
-            return decode(chunk).map(marked)
+            decoded = decode(chunk).map(marked)
+            if deferred and kit is not None:
+                return _validate_provider_executed(kit, chunk, encoded=True).and_then(decoded)
+            return decoded
 
         return self._request_stream(request).map_array_effect(decode_chunk)
 
@@ -673,9 +730,10 @@ class Service:
         error = A.pending_check(approvals, kit, "streamText")
         if error is not None:
             return fx.fail(error)
+        deferred = options.tool_call_validation == "deferred"
         if not kit.tools:
             request = _prepared(tracker, options)
-            return fx.succeed(self._stream_parts(request, None, tracker, False))
+            return fx.succeed(self._stream_parts(request, None, tracker, False, deferred))
 
         def with_pre(pre: list[R.AnyToolResultPart]) -> Effect[Stream[Any, Any, Any], Any, Any]:
             prompt = A.strip_resolved(A.with_results(options.prompt, pre), approvals)
@@ -683,7 +741,7 @@ class Service:
                 tracker, _with_tools(replace(options, prompt=prompt), kit, tool_choice)
             )
             if disable_tool_call_resolution:
-                return fx.succeed(self._stream_parts(request, kit, tracker, True))
+                return fx.succeed(self._stream_parts(request, kit, tracker, not deferred, deferred))
             decode = self._decoder(kit, False, True)
             # Pre-resolved results are emitted so a chat keeps them in its
             # history, their encoded form as the result.
@@ -769,7 +827,18 @@ def generate_text(
     toolkit: None = None,
     tool_choice: ToolChoice = "auto",
     concurrency: Concurrency = "unbounded",
+    disable_tool_call_resolution: Literal[True],
+    tool_call_validation: Literal["deferred"],
+) -> Effect[GenerateTextResponse[str, Never], AiError, LanguageModel]: ...
+@overload
+def generate_text(
+    prompt: P.RawInput,
+    *,
+    toolkit: None = None,
+    tool_choice: ToolChoice = "auto",
+    concurrency: Concurrency = "unbounded",
     disable_tool_call_resolution: bool = False,
+    tool_call_validation: Literal["strict"] = "strict",
 ) -> Effect[GenerateTextResponse[Never, Never], AiError, LanguageModel]: ...
 @overload
 def generate_text[NN: LiteralString, RP, EE, RR](
@@ -778,7 +847,18 @@ def generate_text[NN: LiteralString, RP, EE, RR](
     toolkit: _ToolkitInput[NN, RP, EE, RR],
     tool_choice: ToolChoice = "auto",
     concurrency: Concurrency = "unbounded",
+    disable_tool_call_resolution: Literal[True],
+    tool_call_validation: Literal["deferred"],
+) -> Effect[GenerateTextResponse[str, RP], AiError | EE, LanguageModel | RR]: ...
+@overload
+def generate_text[NN: LiteralString, RP, EE, RR](
+    prompt: P.RawInput,
+    *,
+    toolkit: _ToolkitInput[NN, RP, EE, RR],
+    tool_choice: ToolChoice = "auto",
+    concurrency: Concurrency = "unbounded",
     disable_tool_call_resolution: bool = False,
+    tool_call_validation: Literal["strict"] = "strict",
 ) -> Effect[GenerateTextResponse[NN, RP], AiError | EE, LanguageModel | RR]: ...
 def generate_text(
     prompt: P.RawInput,
@@ -787,6 +867,7 @@ def generate_text(
     tool_choice: ToolChoice = "auto",
     concurrency: Concurrency = "unbounded",
     disable_tool_call_resolution: bool = False,
+    tool_call_validation: ToolCallValidation = "strict",
 ) -> Effect[GenerateTextResponse[Any, Any], Any, Any]:
     """Generate a response to ``prompt``. With a ``toolkit`` (its handlers
     or the toolkit itself), the model may call its tools: their results
@@ -799,6 +880,7 @@ def generate_text(
             tool_choice=tool_choice,
             concurrency=concurrency,
             disable_tool_call_resolution=disable_tool_call_resolution,
+            tool_call_validation=tool_call_validation,
         )
     )
 
@@ -812,7 +894,20 @@ def generate_object[A](
     toolkit: None = None,
     tool_choice: ToolChoice = "auto",
     concurrency: Concurrency = "unbounded",
+    disable_tool_call_resolution: Literal[True],
+    tool_call_validation: Literal["deferred"],
+) -> Effect[GenerateObjectResponse[str, Never, A], AiError, LanguageModel]: ...
+@overload
+def generate_object[A](
+    prompt: P.RawInput,
+    *,
+    schema: S.Codec[A, Any, Any, Any],
+    object_name: str | None = None,
+    toolkit: None = None,
+    tool_choice: ToolChoice = "auto",
+    concurrency: Concurrency = "unbounded",
     disable_tool_call_resolution: bool = False,
+    tool_call_validation: Literal["strict"] = "strict",
 ) -> Effect[GenerateObjectResponse[Never, Never, A], AiError, LanguageModel]: ...
 @overload
 def generate_object[A, NN: LiteralString, RP, EE, RR](
@@ -823,7 +918,20 @@ def generate_object[A, NN: LiteralString, RP, EE, RR](
     toolkit: _ToolkitInput[NN, RP, EE, RR],
     tool_choice: ToolChoice = "auto",
     concurrency: Concurrency = "unbounded",
+    disable_tool_call_resolution: Literal[True],
+    tool_call_validation: Literal["deferred"],
+) -> Effect[GenerateObjectResponse[str, RP, A], AiError | EE, LanguageModel | RR]: ...
+@overload
+def generate_object[A, NN: LiteralString, RP, EE, RR](
+    prompt: P.RawInput,
+    *,
+    schema: S.Codec[A, Any, Any, Any],
+    object_name: str | None = None,
+    toolkit: _ToolkitInput[NN, RP, EE, RR],
+    tool_choice: ToolChoice = "auto",
+    concurrency: Concurrency = "unbounded",
     disable_tool_call_resolution: bool = False,
+    tool_call_validation: Literal["strict"] = "strict",
 ) -> Effect[GenerateObjectResponse[NN, RP, A], AiError | EE, LanguageModel | RR]: ...
 def generate_object(
     prompt: P.RawInput,
@@ -834,6 +942,7 @@ def generate_object(
     tool_choice: ToolChoice = "auto",
     concurrency: Concurrency = "unbounded",
     disable_tool_call_resolution: bool = False,
+    tool_call_validation: ToolCallValidation = "strict",
 ) -> Effect[GenerateObjectResponse[Any, Any, Any], Any, Any]:
     """Generate a JSON object matching ``schema`` (named ``object_name``,
     else the schema's identifier) and decode it into ``value``."""
@@ -846,6 +955,7 @@ def generate_object(
             tool_choice=tool_choice,
             concurrency=concurrency,
             disable_tool_call_resolution=disable_tool_call_resolution,
+            tool_call_validation=tool_call_validation,
         )
     )
 
@@ -857,7 +967,18 @@ def stream_text(
     toolkit: None = None,
     tool_choice: ToolChoice = "auto",
     concurrency: Concurrency = "unbounded",
+    disable_tool_call_resolution: Literal[True],
+    tool_call_validation: Literal["deferred"],
+) -> Stream[R.StreamPart[str, Never], AiError, LanguageModel]: ...
+@overload
+def stream_text(
+    prompt: P.RawInput,
+    *,
+    toolkit: None = None,
+    tool_choice: ToolChoice = "auto",
+    concurrency: Concurrency = "unbounded",
     disable_tool_call_resolution: bool = False,
+    tool_call_validation: Literal["strict"] = "strict",
 ) -> Stream[R.StreamPart[Never, Never], AiError, LanguageModel]: ...
 @overload
 def stream_text[NN: LiteralString, RP, EE, RR](
@@ -866,7 +987,18 @@ def stream_text[NN: LiteralString, RP, EE, RR](
     toolkit: _ToolkitInput[NN, RP, EE, RR],
     tool_choice: ToolChoice = "auto",
     concurrency: Concurrency = "unbounded",
+    disable_tool_call_resolution: Literal[True],
+    tool_call_validation: Literal["deferred"],
+) -> Stream[R.StreamPart[str, RP], AiError | EE, LanguageModel | RR]: ...
+@overload
+def stream_text[NN: LiteralString, RP, EE, RR](
+    prompt: P.RawInput,
+    *,
+    toolkit: _ToolkitInput[NN, RP, EE, RR],
+    tool_choice: ToolChoice = "auto",
+    concurrency: Concurrency = "unbounded",
     disable_tool_call_resolution: bool = False,
+    tool_call_validation: Literal["strict"] = "strict",
 ) -> Stream[R.StreamPart[NN, RP], AiError | EE, LanguageModel | RR]: ...
 def stream_text(
     prompt: P.RawInput,
@@ -875,6 +1007,7 @@ def stream_text(
     tool_choice: ToolChoice = "auto",
     concurrency: Concurrency = "unbounded",
     disable_tool_call_resolution: bool = False,
+    tool_call_validation: ToolCallValidation = "strict",
 ) -> Stream[Any, Any, Any]:
     """Stream a response to ``prompt``: the model's parts as they come,
     then its tool calls' results (preliminary ones included), then the
@@ -887,6 +1020,7 @@ def stream_text(
                 tool_choice=tool_choice,
                 concurrency=concurrency,
                 disable_tool_call_resolution=disable_tool_call_resolution,
+                tool_call_validation=tool_call_validation,
             )
         )
     )

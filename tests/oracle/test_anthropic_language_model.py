@@ -3,11 +3,7 @@ Each docstring is the Effect test title (with its ``describe``). Responses
 are recorded JSON or Server-Sent Events answered by a mocked
 ``HttpClient``; no test reaches the Anthropic API.
 
-Omitted:
-
-- ``streamText / streams undeclared tool calls when tool call validation is
-  deferred``: ``toolCallValidation: "deferred"`` is not ported to the core
-  ``LanguageModel``.
+Every title is ported.
 """
 
 from __future__ import annotations
@@ -1039,3 +1035,31 @@ def test_client_tool_parameters_compile(name: str):
     turns the parameters into the JSON Schema the request sends."""
     schema = T.get_json_schema(_CLIENT_TOOLS[name]())
     assert schema
+
+
+class _ReadParams(TypedDict):
+    path: str
+
+
+@testing.effect
+def test_stream_undeclared_calls_when_deferred():
+    """streamText / streams undeclared tool calls when tool call validation is deferred"""
+    read = T.make("Read", parameters=S.Struct(_ReadParams), success=S.String)
+    toolkit = K.make(read)
+    block = {"type": "tool_use", "id": "toolu_test_1", "name": "Write", "input": {}}
+    mock = mock_sse(_tool_events(block, json.dumps({"path": "a"})))
+    parts = yield from _provided(
+        lm.stream_text(
+            "use the tools",
+            toolkit=toolkit,
+            disable_tool_call_resolution=True,
+            tool_call_validation="deferred",
+        ).run_collect(),
+        mock,
+        _LEGACY,
+        None,
+        toolkit.to_layer(read.handler(lambda _, __: fx.succeed(""))),
+    )
+    assert [(p.name, p.params) for p in parts if isinstance(p, R.ToolCallPart)] == [
+        ("Write", {"path": "a"})
+    ]

@@ -18,8 +18,10 @@ Omitted, with the reason:
   mismatches, request metadata validation, ``input_required`` multi
   round-trips), none of which is ported.
 - ``v2024_11_05`` / ``v2025_03_26`` / ``v2025_06_18`` / ``v2025_11_25.test.ts``:
-  conformance-suite runs; the 2025-03-26 ones are about JSON-RPC batches,
-  which are not ported.
+  conformance-suite runs (not ported, as above), except their own titles
+  ``MUST NOT advertise completions`` (2024-11-05) and ``does not expose
+  experimental Tasks without an extension`` (2025-11-25), which are here;
+  the 2025-03-26 ones are about JSON-RPC batches, which are not ported.
 - ``Workerd.test.ts``: Cloudflare's workerd runtime, inapplicable.
 - ``LayerHttpRequestScoped.test.ts``: ``layerHttpRequestScoped`` is not
   ported.
@@ -450,3 +452,20 @@ def test_accepts_cancellation_notifications_without_request_metadata():
     )
     assert response.status == 202
     assert (yield from response.text) == ""
+
+
+@testing.effect
+def test_2024_11_05_does_not_advertise_completions():
+    """Mcp Conformance (2024-11-05) / Completion / Capabilities / MUST NOT advertise completions"""
+    harness = yield from stdio_harness(P.v2024_11_05, None, *_FEATURES)
+    initialized = yield from harness.initialize()
+    assert "completions" not in initialized["result"]["capabilities"]
+
+
+@testing.effect
+def test_2025_11_25_does_not_expose_tasks():
+    """Mcp Conformance (2025-11-25) / Tools / does not expose experimental Tasks without an extension"""  # noqa: E501
+    harness = yield from stdio_harness(P.v2025_11_25, None, *_FEATURES)
+    yield from harness.initialize()
+    reply = yield from harness.send_request("tasks/get", {"taskId": "task-1"})
+    assert reply["error"]["code"] == MS.METHOD_NOT_FOUND_ERROR_CODE

@@ -7,10 +7,6 @@ keyword arguments (``tool_choice={"one_of": [...]}``,
 
 Omitted:
 
-- ``toolCallValidation: "deferred"`` cases (``ignores deferred tool call
-  validation ...``, ``returns tool calls without a toolkit when ...``,
-  ``validates provider-executed tool calls when tool call validation is
-  deferred``): deferred validation is not ported.
 - ``resolves the canonical top-level $ref for class schemas in
   defaultCodecTransformer``: pyfect's class schemas have no separate
   ``PersonEncoded`` definition.
@@ -1681,3 +1677,106 @@ def test_tracker_with_resolution_disabled():
     )
     _assert_tracked(recording, seen)
     _assert_no_approvals(recording.prepared[0])
+
+
+# --- deferred tool call validation ------------------------------------------------------
+
+_MY_TOOLKIT = K.make(MyTool)
+_MY_LAYER = _MY_TOOLKIT.to_layer(
+    MyTool.handler(lambda _, __: fx.succeed(MySuccess(testSuccess="test-success")))
+)
+_WRITE_CALL: lm.EncodedPart = {
+    "type": "tool-call",
+    "id": "call_1",
+    "name": "Write",
+    "params": {"path": "a"},
+}
+
+
+@testing.effect
+def test_ignores_deferred_validation_with_resolution():
+    """generateText / ignores deferred tool call validation when tool call resolution is enabled"""
+    # The types reject deferred validation without disable_tool_call_resolution.
+    generate: Any = lm.generate_text
+    error = yield from _provided(
+        generate([], toolkit=_MY_TOOLKIT, tool_call_validation="deferred")
+        .pipe(fx.provide(_MY_LAYER))
+        .flip(),
+        generate_text=[_WRITE_CALL],
+    )
+    assert isinstance(error, E.AiError)
+    assert isinstance(error.reason, E.InvalidOutputError)
+
+
+@testing.effect
+def test_returns_tool_calls_without_toolkit_when_deferred():
+    """generateText / returns tool calls without a toolkit when tool call validation is deferred"""
+    seen: list[str] = []
+
+    def generate(options: lm.ProviderOptions) -> list[lm.EncodedPart]:
+        seen.append(options.tool_call_validation)
+        return [_WRITE_CALL]
+
+    response = yield from _provided(
+        lm.generate_text([], disable_tool_call_resolution=True, tool_call_validation="deferred"),
+        generate_text=generate,
+    )
+    assert [(c.name, c.params) for c in response.tool_calls] == [("Write", {"path": "a"})]
+    assert seen == ["deferred"]
+
+
+@testing.effect
+def test_validates_provider_executed_calls_when_deferred():
+    """streamText / validates provider-executed tool calls when tool call validation is deferred"""
+    call = {**_CALL, "id": "call_1", "params": {"testParam": 42}, "providerExecuted": True}
+    error = yield from _provided(
+        lm.stream_text(
+            [],
+            toolkit=_MY_TOOLKIT,
+            disable_tool_call_resolution=True,
+            tool_call_validation="deferred",
+        )
+        .run_drain()
+        .pipe(fx.provide(_MY_LAYER))
+        .flip(),
+        stream_text=[call],
+    )
+    assert isinstance(error, E.AiError)
+    assert isinstance(error.reason, E.InvalidOutputError)
+
+
+@testing.effect
+def test_deferred_keeps_invalid_and_undeclared_calls():
+    """Not an Effect title: the core half of the OpenAI-compatible
+    ``returns invalid and undeclared tool calls when tool call validation is
+    deferred``: a call with invalid parameters and a call to an undeclared
+    tool come back as the provider sent them (generateText and streamText)."""
+    invalid = {**_CALL, "params": {"testParam": 42}}
+    response = yield from _provided(
+        lm.generate_text(
+            [],
+            toolkit=_MY_TOOLKIT,
+            disable_tool_call_resolution=True,
+            tool_call_validation="deferred",
+        ).pipe(fx.provide(_MY_LAYER)),
+        generate_text=[invalid, _WRITE_CALL],
+    )
+    assert [(c.name, c.params) for c in response.tool_calls] == [
+        ("MyTool", {"testParam": 42}),
+        ("Write", {"path": "a"}),
+    ]
+    parts = yield from _provided(
+        lm.stream_text(
+            [],
+            toolkit=_MY_TOOLKIT,
+            disable_tool_call_resolution=True,
+            tool_call_validation="deferred",
+        )
+        .run_collect()
+        .pipe(fx.provide(_MY_LAYER)),
+        stream_text=[invalid, _WRITE_CALL],
+    )
+    assert [(p.name, p.params) for p in parts if isinstance(p, R.ToolCallPart)] == [
+        ("MyTool", {"testParam": 42}),
+        ("Write", {"path": "a"}),
+    ]

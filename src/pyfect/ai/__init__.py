@@ -9,6 +9,7 @@ Each module is Effect's of the same name::
 
 from pyfect.ai import (
     ai_error,
+    chat,
     embedding_model,
     id_generator,
     language_model,
@@ -26,6 +27,7 @@ from pyfect.ai import (
     toolkit,
 )
 from pyfect.ai.ai_error import AiError
+from pyfect.ai.chat import Chat
 from pyfect.ai.language_model import LanguageModel
 from pyfect.ai.mcp_client import McpClient
 from pyfect.ai.mcp_client_error import McpClientError
@@ -33,11 +35,13 @@ from pyfect.ai.mcp_server import McpServer
 
 __all__ = [
     "AiError",
+    "Chat",
     "LanguageModel",
     "McpClient",
     "McpClientError",
     "McpServer",
     "ai_error",
+    "chat",
     "embedding_model",
     "id_generator",
     "language_model",

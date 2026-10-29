@@ -12,10 +12,6 @@ Omitted:
   optional structured fields``: Effect's ``OpenAiStructuredOutput`` codec
   (records as key/value arrays, optional keys as nullable) is not ported;
   pyfect sends the default JSON Schema.
-- ``returns invalid and undeclared tool calls when tool call validation is
-  deferred`` and ``streams undeclared tool calls when tool call validation
-  is deferred``: ``toolCallValidation: "deferred"`` is not ported to the
-  core ``LanguageModel``.
 """
 
 from __future__ import annotations
@@ -1060,3 +1056,57 @@ def test_library_fields_not_leaked():
     assert "strict_json_schema" not in body
     assert "strictJsonSchema" not in body
     assert body["temperature"] == 0.5
+
+
+# toolCallValidation: "deferred" ----------------------------------------------------------
+
+
+@testing.effect
+def test_deferred_returns_invalid_and_undeclared_calls():
+    """generateText / returns invalid and undeclared tool calls when tool call validation is deferred"""  # noqa: E501
+    mock = mock_json(
+        _calls(("call_1", "TestTool", {"input": 42}), ("call_2", "Write", {"path": "a"}))
+    )
+    result = yield from _provided(
+        lm.generate_text(
+            "use the tools",
+            toolkit=TestToolkit,
+            disable_tool_call_resolution=True,
+            tool_call_validation="deferred",
+        ),
+        mock,
+        "gpt-4o-mini",
+        None,
+        TestLayer,
+    )
+    assert [(c.name, c.params) for c in result.tool_calls] == [
+        ("TestTool", {"input": 42}),
+        ("Write", {"path": "a"}),
+    ]
+
+
+@testing.effect
+def test_deferred_streams_undeclared_calls():
+    """streamText / streams undeclared tool calls when tool call validation is deferred"""
+    call = {
+        "index": 0,
+        "id": "call_1",
+        "type": "function",
+        "function": {"name": "Write", "arguments": json.dumps({"path": "a"})},
+    }
+    events = [chunk("chatcmpl_undeclared", {"tool_calls": [call]}, "tool_calls"), "[DONE]"]
+    parts = yield from _provided(
+        lm.stream_text(
+            "use the tools",
+            toolkit=TestToolkit,
+            disable_tool_call_resolution=True,
+            tool_call_validation="deferred",
+        ).run_collect(),
+        mock_sse(events),
+        "gpt-4o-mini",
+        None,
+        TestLayer,
+    )
+    assert [(p.name, p.params) for p in parts if isinstance(p, R.ToolCallPart)] == [
+        ("Write", {"path": "a"})
+    ]

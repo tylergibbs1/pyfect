@@ -93,13 +93,28 @@ moves past its call.
 A conversation is a `Prompt` that grows: `concat` adds the next user message, and
 `prompt.from_response_parts(reply.content)` turns a reply, with its tool calls and
 results, into the messages that continue it. `set_system` replaces the system message.
-pyfect does not have Effect's `Chat` service yet, so a program keeps its history itself.
 
 <CodeOutput>
 
 <include meta='title="conversation.py"'>../../snippets/ai/conversation.py</include>
 
 <include lang="text">../../snippets/ai/conversation.out</include>
+
+</CodeOutput>
+
+`pyfect.ai.chat` does this for you. A chat (`chat.empty`, `chat.from_prompt(prompt)`)
+has the same `generate_text`, `generate_object` and `stream_text`; each call sends the
+history plus the new prompt and adds the reply, and calls on one chat run one at a time.
+`export_json` and `chat.from_json` save and restore a history. `chat.Persistence`, from
+`chat.layer_persisted(store_id=...)` over any [persistence](/docs/persistence) backing
+store, keeps chats by id: `get_or_create(id, time_to_live=...)` opens one and every call
+saves it.
+
+<CodeOutput>
+
+<include meta='title="chat.py"'>../../snippets/ai/chat.py</include>
+
+<include lang="text">../../snippets/ai/chat.out</include>
 
 </CodeOutput>
 

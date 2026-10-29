@@ -161,15 +161,15 @@ layer, concurrency, retries and timeouts.
   sleeps, waits completed from outside and compensation on failure.
   [Workflows →](https://pyfect.dev/docs/workflows)
 - **AI.** A provider-neutral `LanguageModel` for text, structured output, streaming and
-  typed tools, with Anthropic and OpenAI-compatible providers over the HTTP client.
-  [AI →](https://pyfect.dev/docs/ai)
+  typed tools, chats that keep their history, and Anthropic and OpenAI-compatible
+  providers over the HTTP client. [AI →](https://pyfect.dev/docs/ai)
 - **MCP.** Serve a toolkit over the Model Context Protocol on HTTP or stdio, and call any
   MCP server's tools. [MCP →](https://pyfect.dev/docs/mcp)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
 pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 10,000 tests, and
-about 80% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
+about 82% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
 what is next.
 
 ## Installation

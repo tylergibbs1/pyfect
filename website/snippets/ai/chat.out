@@ -1,0 +1,5 @@
+> My name is Ada.
+< I was sent 1 messages
+> What is my name?
+< I was sent 3 messages
+['user', 'assistant', 'user', 'assistant']

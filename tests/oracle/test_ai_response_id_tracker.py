@@ -94,12 +94,22 @@ def test_keeps_latest_response_id():
 
 @testing.effect
 def test_none_after_clear():
-    """ResponseIdTracker / returns None after clear (and after explicit clear)"""
+    """ResponseIdTracker / returns None after clear"""
     t = yield from tracker.make
     msg1, asst, msg2 = user("msg1"), assistant("done"), user("msg2")
     t.mark_parts([msg1], "resp_123")
     t.clear_unsafe()
     assert t.prepare_unsafe(prompt(msg1, asst, msg2)) is None
+
+
+@testing.effect
+def test_none_after_explicit_clear():
+    """ResponseIdTracker / returns None after explicit clear"""
+    t = yield from tracker.make
+    sys, user1, asst1, user2 = system("sys"), user("user1"), assistant("assistant1"), user("user2")
+    t.mark_parts([sys, user1], "resp_1")
+    t.clear_unsafe()
+    assert t.prepare_unsafe(prompt(sys, user1, asst1, user2)) is None
 
 
 @testing.effect
@@ -210,18 +220,40 @@ def test_empty_prompt():
 
 
 @testing.effect
-def test_changed_prefix():
-    """ResponseIdTracker / returns None when system prompt object changes / when user message object changes / when multiple prefix messages diverge / for structurally-equal but identity-different prefix message"""  # noqa: E501
+def test_none_when_system_prompt_changes():
+    """ResponseIdTracker / returns None when system prompt object changes"""
+    t = yield from tracker.make
     sys, user1, asst1, user2 = system("sys"), user("user1"), assistant("assistant1"), user("user2")
-    for changed in (
-        (system("sys-new"), user1),
-        (sys, user("user1-edited")),
-        (system("sys-new"), user("user1-edited")),
-        (sys, user("user1")),
-    ):
-        t = yield from tracker.make
-        t.mark_parts([sys, user1], "resp_1")
-        assert t.prepare_unsafe(prompt(*changed, asst1, user2)) is None
+    t.mark_parts([sys, user1], "resp_1")
+    assert t.prepare_unsafe(prompt(system("sys-new"), user1, asst1, user2)) is None
+
+
+@testing.effect
+def test_none_when_user_message_changes():
+    """ResponseIdTracker / returns None when user message object changes"""
+    t = yield from tracker.make
+    sys, user1, asst1, user2 = system("sys"), user("user1"), assistant("assistant1"), user("user2")
+    t.mark_parts([sys, user1], "resp_1")
+    assert t.prepare_unsafe(prompt(sys, user("user1-edited"), asst1, user2)) is None
+
+
+@testing.effect
+def test_none_when_multiple_prefix_messages_diverge():
+    """ResponseIdTracker / returns None when multiple prefix messages diverge"""
+    t = yield from tracker.make
+    sys, user1, asst1, user2 = system("sys"), user("user1"), assistant("assistant1"), user("user2")
+    t.mark_parts([sys, user1], "resp_1")
+    changed = prompt(system("sys-new"), user("user1-edited"), asst1, user2)
+    assert t.prepare_unsafe(changed) is None
+
+
+@testing.effect
+def test_none_for_identity_different_prefix_message():
+    """ResponseIdTracker / returns None for structurally-equal but identity-different prefix message"""  # noqa: E501
+    t = yield from tracker.make
+    msg1, asst1, msg2 = user("msg1"), assistant("assistant1"), user("msg2")
+    t.mark_parts([msg1], "resp_1")
+    assert t.prepare_unsafe(prompt(user("msg1"), asst1, msg2)) is None
 
 
 @testing.effect

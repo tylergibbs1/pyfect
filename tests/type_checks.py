@@ -23,6 +23,7 @@ from pyfect import schema as S
 from pyfect import socket as socket_module
 from pyfect._json_value import JsonValue
 from pyfect.ai import ai_error as ai_error_module
+from pyfect.ai import chat as ai_chat
 from pyfect.ai import embedding_model as ai_embedding_model
 from pyfect.ai import language_model as lm
 from pyfect.ai import mcp_client as mcp_client_module
@@ -5947,6 +5948,68 @@ def check_ai_toolkit() -> None:
             lm.LanguageModel | AiDb | ai_toolkit.Handlers[Literal["Weather", "Clock"]],
         ],
     )
+
+
+def check_ai_chat(chat: ai_chat.Service, persisted: ai_chat.PersistenceService) -> None:
+    from pyfect.persistence.persistence import BackingPersistence
+
+    weather = ai_tool.make(
+        "Weather", parameters=S.Struct(AiWeatherParams), success=S.Struct(AiWeather)
+    )
+    kit = ai_toolkit.make(weather)
+    assert_type(
+        chat.generate_text("hi"),
+        fx.Effect[lm.GenerateTextResponse[Never, Never], AiError, lm.LanguageModel],
+    )
+    assert_type(
+        chat.generate_text("hi", toolkit=kit),
+        fx.Effect[
+            lm.GenerateTextResponse[
+                Literal["Weather"],
+                ai_response.ToolResultPart[Literal["Weather"], AiWeather, AiError],
+            ],
+            AiError,
+            lm.LanguageModel | ai_toolkit.Handlers[Literal["Weather"]],
+        ],
+    )
+    assert_type(
+        chat.generate_object("hi", schema=S.Struct(AiWeather)),
+        fx.Effect[lm.GenerateObjectResponse[Never, Never, AiWeather], AiError, lm.LanguageModel],
+    )
+    assert_type(
+        chat.stream_text("hi"),
+        Stream[ai_response.StreamPart[Never, Never], AiError, lm.LanguageModel],
+    )
+    assert_type(chat.export_json, fx.Effect[str, AiError])
+    # Deferred validation returns calls to any tool name, and needs tool call
+    # resolution disabled.
+    assert_type(
+        lm.generate_text("hi", disable_tool_call_resolution=True, tool_call_validation="deferred"),
+        fx.Effect[lm.GenerateTextResponse[str, Never], AiError, lm.LanguageModel],
+    )
+    assert_type(
+        chat.stream_text(
+            "hi", toolkit=kit, disable_tool_call_resolution=True, tool_call_validation="deferred"
+        ),
+        Stream[
+            ai_response.StreamPart[
+                str,
+                ai_response.ToolResultPart[Literal["Weather"], AiWeather, AiError],
+            ],
+            AiError,
+            lm.LanguageModel | ai_toolkit.Handlers[Literal["Weather"]],
+        ],
+    )
+    lm.generate_text("hi", tool_call_validation="deferred")  # pyright: ignore[reportArgumentType]
+    assert_type(
+        persisted.get("1"),
+        fx.Effect[ai_chat.Persisted, ai_chat.ChatNotFoundError | PersistenceError],
+    )
+    assert_type(
+        ai_chat.layer_persisted(store_id="chat"),
+        fx.Layer[ai_chat.Persistence, Never, BackingPersistence],
+    )
+    chat.generate_text(1)  # pyright: ignore[reportArgumentType]
 
 
 def check_ai_result_narrowing(

@@ -74,9 +74,12 @@ def transform_params(
     module: str, options: lm.ProviderOptions, tool_name: str, params: object
 ) -> Effect[object, AiError, Any]:
     """Valid parameters in the tool's standard encoded form; invalid ones
-    unchanged, for the toolkit to report. An unknown tool fails."""
+    unchanged, for the toolkit to report. An unknown tool fails, unless
+    tool call validation is deferred (its parameters are kept)."""
     tool = next((t for t in options.tools if t.name == tool_name), None)
     if tool is None:
+        if options.tool_call_validation == "deferred":
+            return fx.succeed(params)
         return fx.fail(
             AiError(
                 module=module,
