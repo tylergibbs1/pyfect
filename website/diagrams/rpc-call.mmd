@@ -1,0 +1,5 @@
+flowchart LR
+  C["client.get_todo(1)"] -->|"Request"| P["protocol: HTTP or WebSocket, NDJSON or JSON"]
+  P --> S["server: Todos handlers"]
+  S -->|"Exit, or a Chunk per batch of stream values"| P
+  P --> C

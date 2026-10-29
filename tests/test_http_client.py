@@ -53,6 +53,40 @@ def test_unread_response_is_aborted_when_collected() -> None:
     assert signals[0].aborted
 
 
+def test_unread_response_is_aborted_as_soon_as_it_is_dropped() -> None:
+    """Without waiting for the cycle collector: a response kept in a reference
+    cycle stays open until a collection, so a server shutting down waits for
+    its connection."""
+    signals: list[AbortSignal] = []
+
+    def send(
+        request: req.HttpClientRequest, _url: SplitResult, signal: AbortSignal, _fiber: Any
+    ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
+        signals.append(signal)
+        return fx.succeed(res.make(request, "unread"))
+
+    gc.disable()
+    try:
+        _run(c.make(send).get("http://test/").as_void())
+        assert signals[0].aborted
+    finally:
+        gc.enable()
+
+
+def test_a_read_response_stays_readable() -> None:
+    signals: list[AbortSignal] = []
+
+    def send(
+        request: req.HttpClientRequest, _url: SplitResult, signal: AbortSignal, _fiber: Any
+    ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
+        signals.append(signal)
+        return fx.succeed(res.make(request, "body"))
+
+    reads = c.make(send).get("http://test/").flat_map(lambda r: r.text.zip(r.text))
+    assert _run(reads) == ("body", "body")
+    assert not signals[0].aborted
+
+
 class _Hanging(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     closed = threading.Event()

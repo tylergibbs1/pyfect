@@ -1,0 +1,74 @@
+---
+title: HTTP server
+description: "Routes, middleware and a server on uvicorn, with each handler an effect."
+---
+
+A handler is an effect that gives an `HttpServerResponse`. Routes are added to the
+`HttpRouter` by layers, so a route's handler can ask for any service and the layer's type
+says which ones the server must provide. `router.serve(routes)` serves them on the
+`HttpServer` in the context; `uvicorn_server.layer(port=...)` is one on uvicorn (install the
+`pyfect[server]` extra), and `live_server.layer` one on the standard library.
+
+## Routes
+
+`router.use(f)` is a layer that calls `f` with the router; `routes.add(method, path, handler)`
+adds a route. A path matches `:name` segments and `*` wildcards; `router.params` gives the
+matched values, and `router.schema_path_params`, `schema_params` and `schema_json` decode the
+path, the query and the JSON body with a [schema](/docs/schema). A request that matches no
+route gets a 404, and a handler that fails gets a 500 unless it handles the error itself.
+
+<CodeOutput>
+
+<include meta='title="routes.py"'>../../snippets/http_server/routes.py</include>
+
+<include lang="text">../../snippets/http_server/routes.out</include>
+
+</CodeOutput>
+
+`uvicorn_server.layer_test()` runs the server on a free local port and gives an `HttpClient`
+whose relative URLs go to it, so the program above sends real requests.
+
+## Middleware
+
+A middleware is a function of the handler it wraps. `router.middleware(f)` makes route
+middleware, provided to the route layers it should wrap with `layer.provide(m.layer)`, and
+`router.middleware(f, global_=True)` a layer that wraps every request. `router.cors(...)`
+answers preflight requests and adds the CORS headers; `serve(..., middleware=...)` takes the
+app-wide middleware of `pyfect.http.middleware`, such as `compression()`. Each request is
+logged unless `disable_logger=True`.
+
+<Diagram name="http-server-request" title="Global middleware wraps every request; the router matches it and runs the route middleware of the matched route, then its handler" />
+
+<CodeOutput>
+
+<include meta='title="middleware.py"'>../../snippets/http_server/middleware.py</include>
+
+<include lang="text">../../snippets/http_server/middleware.out</include>
+
+</CodeOutput>
+
+## Serving with uvicorn
+
+`router.serve(routes)` is a layer, so a program serves until it is interrupted by
+launching it: `fx.run_main(Main.launch())`. On Ctrl-C the server stops accepting connections
+and gives the requests in flight `graceful_shutdown_timeout` (20 seconds) before
+interrupting them. `router.to_asgi(routes)` is the same app as an ASGI application, for
+`uvicorn main:app` or any other ASGI server; its layers are built at the server's startup and
+released at its shutdown.
+
+<include meta='title="main.py"'>../../snippets/http_server/main.py</include>
+
+`asgi.from_asgi(app)` goes the other way: it mounts an ASGI application, such as a FastAPI or
+Starlette one, as a route.
+
+## Testing routes
+
+A test serves the routes on `layer_test` and sends requests with the `HttpClient` it gives.
+
+<include meta='title="test_routes.py"'>../../snippets/http_server/test_routes.py</include>
+
+Reference: [`pyfect.http.router`](/docs/reference/http/router),
+[`pyfect.http.server_response`](/docs/reference/http/server_response),
+[`pyfect.http.middleware`](/docs/reference/http/middleware),
+[`pyfect.http.uvicorn_server`](/docs/reference/http/uvicorn_server),
+[`pyfect.http.asgi`](/docs/reference/http/asgi).

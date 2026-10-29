@@ -1,0 +1,70 @@
+---
+title: HttpApi
+description: "Declare an HTTP API once, then serve it, call it with a typed client and document it with OpenAPI."
+---
+
+An `HttpApi` is a declaration: groups of endpoints, each with its method, path and the
+schemas of its params, query, payload, headers, success and errors. The server's handlers,
+the client's methods and the OpenAPI document all come from it, so they can't disagree, and
+pyright checks a handler's return value and a client call's arguments against the same
+schemas.
+
+<Diagram name="http-api-declaration" title="One HttpApi declaration gives the handlers' types, the derived client's methods and the OpenAPI document" />
+
+## Declare and implement an API
+
+`endpoint.get`, `post`, `put`, `patch`, `delete`, ... declare endpoints; a class extending
+`HttpApiGroup` holds them, and `HttpApi.make(name).add(Group)` collects the groups. An error
+schema's `http_api_status` annotation is the status it is sent with.
+
+A handler takes an `HttpApiRequest` with the decoded `params`, `query`, `payload` and
+`headers`, and gives the success value or fails with a declared error.
+`builder.group(api, Group, ...)` is the layer of a group's handlers; building it dies if an
+endpoint has no handler. `builder.layer(api)` adds every group's routes to the
+[router](/docs/http-server) and needs each group's layer, which pyright checks, so
+`router.serve` serves the API like any other routes.
+
+`client.make(api)` derives a client: `api_client[Users].get_user(params={"id": 1})` encodes
+the request, sends it with the `HttpClient` and decodes the response, failing with the
+endpoint's declared errors as values of their own classes.
+
+<CodeOutput>
+
+<include meta='title="users.py"'>../../snippets/http_api/users.py</include>
+
+<include lang="text">../../snippets/http_api/users.out</include>
+
+</CodeOutput>
+
+A request whose params or payload don't match the schemas gets a 400 before any handler
+runs.
+
+## OpenAPI documentation
+
+`openapi.from_api(api)` is the API's OpenAPI 3.1 document, with a JSON Schema for each
+schema. Annotations add to it: `openapi.Title`, `Version` and `Description` on the API,
+`Summary`, `Description` and `Deprecated` on an endpoint. `builder.layer(api,
+openapi_path="/openapi.json")` serves the document, and `swagger.layer(api)` and
+`scalar.layer(api)` serve documentation pages for it, bundled so they need no network.
+
+<CodeOutput>
+
+<include meta='title="docs.py"'>../../snippets/http_api/docs.py</include>
+
+<include lang="text">../../snippets/http_api/docs.out</include>
+
+</CodeOutput>
+
+## Testing handlers
+
+`test.groups(api, (Users,))` gives a client whose requests the handlers answer in memory:
+no server or port, but the same encoding, decoding and statuses as over the network. The
+handlers' own services come from whatever layer the test provides.
+
+<include meta='title="test_users.py"'>../../snippets/http_api/test_users.py</include>
+
+Reference: [`pyfect.http_api`](/docs/reference/http_api),
+[`pyfect.http_api.endpoint`](/docs/reference/http_api/endpoint),
+[`pyfect.http_api.builder`](/docs/reference/http_api/builder),
+[`pyfect.http_api.client`](/docs/reference/http_api/client),
+[`pyfect.http_api.openapi`](/docs/reference/http_api/openapi).

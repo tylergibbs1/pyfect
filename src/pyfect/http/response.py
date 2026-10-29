@@ -91,7 +91,7 @@ class HttpClientResponse:
         self._url = url
         self._set_cookie = tuple(set_cookie)
         self._remote_address = remote_address
-        self._bytes = memoize(suspend(self._read))
+        self._bytes: Effect[bytes, HttpClientError] | None = None
 
     def __repr__(self) -> str:
         return f"HttpClientResponse({self.status}, {self.request!r})"
@@ -135,6 +135,11 @@ class HttpClientResponse:
     @property
     def bytes_(self) -> Effect[bytes, HttpClientError]:
         """The whole body, read once (Effect's ``arrayBuffer``)."""
+        # Made on first use: it refers back to the response, and a response in
+        # a reference cycle outlives its last reference, so dropping it unread
+        # would not abort its request until the cycle collector runs.
+        if self._bytes is None:
+            self._bytes = memoize(suspend(self._read))
         return self._bytes
 
     @property
@@ -200,10 +205,15 @@ class _InterruptibleResponse(HttpClientResponse):
     def to_json(self) -> dict[str, object]:
         return self.original.to_json()
 
-    def _interruptible[A](self, eff: Effect[A, HttpClientError]) -> Effect[A, HttpClientError]:
+    def _interruptible[A](
+        self, read: Callable[[HttpClientResponse], Effect[A, HttpClientError]]
+    ) -> Effect[A, HttpClientError]:
+        """``read`` of the original, made only once it runs (see
+        ``HttpClientResponse.bytes_``)."""
+
         def run() -> Effect[A, HttpClientError]:
             self._release()
-            return eff.on_interrupt(sync(self._abort))
+            return read(self.original).on_interrupt(sync(self._abort))
 
         return suspend(run)
 
@@ -221,19 +231,19 @@ class _InterruptibleResponse(HttpClientResponse):
 
     @property
     def bytes_(self) -> Effect[bytes, HttpClientError]:
-        return self._interruptible(self.original.bytes_)
+        return self._interruptible(lambda original: original.bytes_)
 
     @property
     def text(self) -> Effect[str, HttpClientError]:
-        return self._interruptible(self.original.text)
+        return self._interruptible(lambda original: original.text)
 
     @property
     def json(self) -> Effect[Json, HttpClientError]:
-        return self._interruptible(self.original.json)
+        return self._interruptible(lambda original: original.json)
 
     @property
     def url_params_body(self) -> Effect[UrlParams, HttpClientError]:
-        return self._interruptible(self.original.url_params_body)
+        return self._interruptible(lambda original: original.url_params_body)
 
     @property
     def stream(self) -> Stream[bytes, HttpClientError]:

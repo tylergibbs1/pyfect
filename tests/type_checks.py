@@ -50,7 +50,7 @@ from pyfect.http import server_response as http_server_response
 from pyfect.http.client import HttpClient
 from pyfect.http.error import HttpClientError
 from pyfect.http.platform import HttpPlatform
-from pyfect.http.router import HttpRouter, Raises, Requires
+from pyfect.http.router import GlobalRaises, GlobalRequires, HttpRouter, Raises, Requires
 from pyfect.http.server import HttpServer
 from pyfect.http.server_error import HttpServerError
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
@@ -4951,6 +4951,62 @@ assert_type(
 assert_type(
     http_router.use(lambda r: r.add("GET", "/db", route_db_handler)),
     fx.Layer[Never, Never, HttpRouter | Requires[RouteDb] | Raises[RouteNotAllowed]],
+)
+
+
+# Router middleware: what it adds to the routes' errors and requirements, and
+# nothing (not Unknown) when it adds nothing.
+type _RouteIn = fx.Effect[HttpServerResponse, http_router.Unhandled]
+
+
+def mw_plain(
+    h: _RouteIn,
+) -> fx.Effect[HttpServerResponse, http_router.Unhandled, HttpServerRequest]: ...
+def mw_none(h: _RouteIn) -> fx.Effect[HttpServerResponse, http_router.Unhandled]: ...
+def mw_fails(
+    h: _RouteIn,
+) -> fx.Effect[HttpServerResponse, http_router.Unhandled | RouteNotAllowed, Scope]: ...
+def mw_needs(
+    h: _RouteIn,
+) -> fx.Effect[HttpServerResponse, http_router.Unhandled, HttpServerRequest | RouteDb]: ...
+def mw_both(
+    h: _RouteIn,
+) -> fx.Effect[HttpServerResponse, http_router.Unhandled | RouteNotAllowed, RouteDb]: ...
+
+
+assert_type(http_router.middleware(mw_plain), http_router.Middleware[Never, Never])
+assert_type(http_router.middleware(mw_none), http_router.Middleware[Never, Never])
+assert_type(http_router.middleware(mw_fails), http_router.Middleware[RouteNotAllowed, Never])
+assert_type(http_router.middleware(mw_needs), http_router.Middleware[Never, RouteDb])
+assert_type(http_router.middleware(mw_both), http_router.Middleware[RouteNotAllowed, RouteDb])
+assert_type(http_router.middleware(fx.succeed(mw_plain)), http_router.Middleware[Never, Never])
+assert_type(
+    http_router.middleware(mw_plain).layer,
+    fx.Layer[Never, Never, Requires[Never] | Raises[Never]],
+)
+assert_type(
+    http_router.middleware(mw_plain, global_=True),
+    fx.Layer[Never, Never, HttpRouter | GlobalRaises[Never]],
+)
+assert_type(
+    http_router.middleware(mw_none, global_=True),
+    fx.Layer[Never, Never, HttpRouter | GlobalRaises[Never]],
+)
+assert_type(
+    http_router.middleware(mw_needs, global_=True),
+    fx.Layer[Never, Never, HttpRouter | GlobalRequires[RouteDb] | GlobalRaises[Never]],
+)
+assert_type(
+    http_router.middleware(mw_fails, global_=True),
+    fx.Layer[Never, Never, HttpRouter | GlobalRaises[RouteNotAllowed]],
+)
+assert_type(
+    http_router.serve(
+        http_router.add("GET", "/", http_server_response.text("ok")).pipe(
+            layer.provide_merge(http_router.middleware(mw_plain, global_=True))
+        )
+    ),
+    fx.Layer[Never, Never, HttpServer],
 )
 
 

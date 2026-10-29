@@ -1,0 +1,7 @@
+flowchart LR
+  C["request"] --> G["global middleware: cors, served_by"]
+  G --> R["router: match method and path"]
+  R -->|"/admin/*"| M["route middleware: RequireKey"]
+  M --> A["admin handler"]
+  R -->|"/health"| H["public handler"]
+  R -->|"no match"| N["404"]

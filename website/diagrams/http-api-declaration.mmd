@@ -1,0 +1,5 @@
+flowchart LR
+  D["HttpApi: groups of endpoints and their schemas"] --> S["builder: handlers typed by each endpoint"]
+  D --> C["client.make: methods typed by each endpoint"]
+  D --> O["openapi.from_api: the OpenAPI document"]
+  C -->|"HTTP"| S

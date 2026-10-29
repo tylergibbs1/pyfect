@@ -1,0 +1,54 @@
+---
+title: RPC
+description: "Typed remote procedure calls over HTTP or WebSockets, with streaming results."
+---
+
+An `RpcGroup` declares procedures: each has a tag, and the schemas of its payload, success
+and error. The server runs a handler per procedure; the client is an instance of the group
+whose attributes call them, typed by the same schemas. Calls are messages, so one connection
+carries many at once, and a procedure can answer with a stream of values.
+
+<Diagram name="rpc-call" title="A call sends a Request through the protocol to the server's handler; the answer comes back as an Exit, after a Chunk for each batch of a stream's values" />
+
+## Define, serve and call a group
+
+`rpc.make(tag, payload=..., success=..., error=...)` declares a procedure; a success of
+`rpc_schema.Stream(values, error)` makes it a stream. `Group.handlers().handle(Group.rpc)(f)`
+adds a handler, which takes an `RpcRequest` with the decoded `payload` and gives the success
+value (or a `Stream` of them) or fails with the declared error. `Group.to_layer(handlers)` is
+their layer.
+
+`rpc_server.layer_http(Group, path=...)` serves the group on a route of the
+[router](/docs/http-server), over WebSockets by default or HTTP POSTs with
+`protocol="http"`. Messages are encoded by the `RpcSerialization` in the context:
+`serialization.layer_ndjson` or `layer_json`, or JSON-RPC 2.0 with `layer_json_rpc()` and
+`layer_nd_json_rpc()`.
+
+`rpc_client.make(Group)` is the client, over the `ClientProtocol` in the context:
+`layer_protocol_http(url)` sends calls as POSTs, and `layer_protocol_socket()` over a
+`Socket`, such as a WebSocket. A call fails with the procedure's error or an
+`RpcClientError`; a stream procedure gives a `Stream`.
+
+<CodeOutput>
+
+<include meta='title="todos.py"'>../../snippets/rpc/todos.py</include>
+
+<include lang="text">../../snippets/rpc/todos.out</include>
+
+</CodeOutput>
+
+`RpcMiddleware` runs around the handlers of the procedures that name it with
+`.middleware(...)`, for authentication say, and can provide them a service such as the
+current user.
+
+## Testing handlers
+
+`pyfect.rpc.test.make_client(Group)` calls the handlers in memory, without a server or
+serialization; the handlers and their services come from the test.
+
+<include meta='title="test_todos.py"'>../../snippets/rpc/test_todos.py</include>
+
+Reference: [`pyfect.rpc`](/docs/reference/rpc), [`pyfect.rpc.group`](/docs/reference/rpc/group),
+[`pyfect.rpc.server`](/docs/reference/rpc/server),
+[`pyfect.rpc.client`](/docs/reference/rpc/client),
+[`pyfect.rpc.serialization`](/docs/reference/rpc/serialization).

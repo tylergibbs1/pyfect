@@ -144,6 +144,21 @@ def _uvicorn(app: Any) -> tuple[uvicorn.Server, threading.Thread, int]:
     return server_, thread, at
 
 
+def test_shutdown_does_not_wait_for_a_response_the_client_left_unread() -> None:
+    big = server_response.text("x" * 2_000_000)
+    routes = router.add("GET", "/", big)
+
+    @fx.fn
+    def program():
+        client = yield from HttpClient()
+        response = yield from client.get("/")
+        return response.status
+
+    started = time.monotonic()
+    assert _run(_serving(routes, program()), graceful_shutdown_timeout=10) == 200
+    assert time.monotonic() - started < 5
+
+
 def test_uvicorn_runs_a_to_asgi_app_and_its_lifespan() -> None:
     events: list[str] = []
     services = layer.effect(

@@ -1,0 +1,9 @@
+/health 200 ok
+  x-served-by: pyfect
+  access-control-allow-origin: https://example.com
+/admin/stats 401 unauthorized
+  x-served-by: pyfect
+  access-control-allow-origin: https://example.com
+/admin/stats 200 42 users
+  x-served-by: pyfect
+  access-control-allow-origin: https://example.com

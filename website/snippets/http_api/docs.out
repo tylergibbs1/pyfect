@@ -1,0 +1,5 @@
+{'title': 'Users API', 'version': '0.0.1'}
+GET /users/{id} Find a user by id ['200', '404']
+{"type": "object", "properties": {"id": {"type": "integer"}, "name": {"type": "string"}}, "required": ["id", "name"], "additionalProperties": false}
+/openapi.json 200 application/json True
+/docs 200 text/html True

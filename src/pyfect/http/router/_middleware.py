@@ -100,29 +100,45 @@ def _global_layer(fn: object) -> Layer[Never, Any, Any]:
     )
 
 
+# Requirements only the router provides (or none) come first: pyright cannot
+# solve ``R`` in ``R | Provided`` from ``Never``.
 @overload
-def middleware[E, R](
+def middleware[E = Never](
+    fn: Callable[[_In], Effect[HttpServerResponse, E | Unhandled, Provided]],
+    /,
+    *,
+    global_: Literal[False] = False,
+) -> Middleware[E]: ...
+@overload
+def middleware[E = Never, R = Never](
     fn: Callable[[_In], Effect[HttpServerResponse, E | Unhandled, R | Provided]],
     /,
     *,
     global_: Literal[False] = False,
 ) -> Middleware[E, R]: ...
 @overload
-def middleware[E, R, LE, LR](
+def middleware[LE, LR, E = Never, R = Never](
     fn: Effect[Callable[[_In], Effect[HttpServerResponse, E | Unhandled, R | Provided]], LE, LR],
     /,
     *,
     global_: Literal[False] = False,
 ) -> Middleware[E, R, LE, LR]: ...
 @overload
-def middleware[E, R](
+def middleware[E = Never](
+    fn: Callable[[_In], Effect[HttpServerResponse, E | Unhandled, GlobalProvided]],
+    /,
+    *,
+    global_: Literal[True],
+) -> Layer[Never, Never, HttpRouter | GlobalRaises[E]]: ...
+@overload
+def middleware[E = Never, R = Never](
     fn: Callable[[_In], Effect[HttpServerResponse, E | Unhandled, R | GlobalProvided]],
     /,
     *,
     global_: Literal[True],
 ) -> Layer[Never, Never, HttpRouter | GlobalRequires[R] | GlobalRaises[E]]: ...
 @overload
-def middleware[E, R, LE, LR](
+def middleware[LE, LR, E = Never, R = Never](
     fn: Effect[
         Callable[[_In], Effect[HttpServerResponse, E | Unhandled, R | GlobalProvided]], LE, LR
     ],
