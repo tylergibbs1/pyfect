@@ -4,6 +4,8 @@
 the context: an instance of the group whose RPC attributes call them.
 ``layer_protocol_http(url)`` and ``layer_protocol_socket()`` give the
 protocol; the serialization (``RpcSerialization``) comes from the context.
+``layer_protocol_worker(size=)`` calls a pool of workers instead (their
+messages are values, so it needs no serialization).
 """
 
 from __future__ import annotations
@@ -37,6 +39,7 @@ from pyfect.rpc.client._transports import (
     default_retry_policy,
     make_protocol_socket,
 )
+from pyfect.rpc.client._worker import layer_protocol_worker, make_protocol_worker
 from pyfect.rpc.serialization import RpcSerialization
 from pyfect.socket import Socket
 
@@ -85,10 +88,12 @@ __all__ = [
     "default_retry_policy",
     "layer_protocol_http",
     "layer_protocol_socket",
+    "layer_protocol_worker",
     "make",
     "make_no_serialization",
     "make_protocol_http",
     "make_protocol_socket",
+    "make_protocol_worker",
     "with_headers",
     "with_run_client",
 ]

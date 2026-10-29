@@ -147,8 +147,8 @@ layer, concurrency, retries and timeouts.
   uvicorn or as an ASGI app. [HTTP server →](https://pyfect.dev/docs/http-server)
 - **HttpApi.** Declare an API once with schemas, then serve it, call it with a derived client
   and document it with OpenAPI and Swagger UI. [HttpApi →](https://pyfect.dev/docs/http-api)
-- **RPC.** Typed procedures over HTTP or WebSockets, with streamed results and an in-memory
-  test client. [RPC →](https://pyfect.dev/docs/rpc)
+- **RPC.** Typed procedures over HTTP, WebSockets or workers (threads and child processes),
+  with streamed results and an in-memory test client. [RPC →](https://pyfect.dev/docs/rpc)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 

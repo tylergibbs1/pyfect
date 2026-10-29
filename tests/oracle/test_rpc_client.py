@@ -13,8 +13,6 @@ Omitted:
   rests on JS's synchronous ``interruptUnsafe`` of a running fiber.
 - "decodes responses with the ParseOptions annotation": pyfect has no
   request resolvers inside schema transformations.
-- "releases a worker pool slot when the worker run fails": pyfect has no
-  workers.
 - "preserves RpcClientError failures from a reloaded module copy": Python
   has no module copies with their own classes.
 """
@@ -25,7 +23,7 @@ Omitted:
 
 import json
 from collections.abc import Callable
-from typing import Any, TypedDict
+from typing import Any, Never, TypedDict
 
 import pytest
 
@@ -65,6 +63,8 @@ from pyfect.socket import (
 )
 from pyfect.socket import make as socket_make
 from pyfect.tracer import CurrentTracer, NativeSpan, SpanRequest, Tracer
+from pyfect.workers.worker import Spawner, Worker, WorkerPlatform, WorkerPlatformService
+from pyfect.workers.worker_error import WorkerError, WorkerReceiveError
 
 
 class TestGroup(RpcGroup):
@@ -1172,3 +1172,61 @@ def test_interrupts_batches_started_while_the_client_is_shutting_down():
     yield from closing.join()
     # every HTTP request that started was interrupted by the shutdown
     assert len(interrupted) == started[0]
+
+
+@testing.effect
+def test_releases_a_worker_pool_slot_when_the_worker_run_fails():
+    """RpcClient / releases a worker pool slot when the worker run fails"""
+    run_failure = yield from Deferred[Never, WorkerError].make()
+    first_request_sent = yield from Deferred[None].make()
+    second_request_sent = yield from Deferred[None].make()
+    protocol_error_received = yield from Deferred[None].make()
+    sent_request_ids: list[object] = []
+    run_count = [0]
+    sent_for = {1: first_request_sent, 2: second_request_sent}
+
+    def send(message: Any, _transfers: Any) -> Effect[None, WorkerError]:
+        if message["_tag"] != "Request":
+            return effect.succeed(None)
+        sent_request_ids.append(message["id"])
+        found = sent_for.get(message["id"])
+        return effect.succeed(None) if found is None else found.succeed(None).as_void()
+
+    def run(_handler: Any, _on_spawn: Any) -> Effect[Never, Any, Any]:
+        run_count[0] += 1
+        return run_failure.wait() if run_count[0] == 1 else effect.never
+
+    backing = Worker[Any, Any](send=send, run=run)
+    platform = WorkerPlatformService(lambda _: effect.succeed(backing))
+    protocol = yield from (
+        rpc_client.make_protocol_worker(size=1, concurrency=1)
+        .pipe(effect.provide_service(WorkerPlatform, platform))
+        .pipe(effect.provide_service(Spawner, lambda _: None))
+    )
+    yield from protocol.run(
+        0,
+        lambda response: (
+            protocol_error_received.succeed(None).as_void()
+            if response["_tag"] == "ClientProtocolError"
+            else effect.succeed(None)
+        ),
+    ).fork_scoped()
+
+    def request(id: int) -> dict[str, Any]:
+        return {"_tag": "Request", "id": id, "tag": "Test", "payload": None, "headers": []}
+
+    first = yield from protocol.send(0, request(1)).fork()
+    yield from first_request_sent.wait()
+    yield from run_failure.fail(WorkerError(reason=WorkerReceiveError(message="worker exited")))
+    yield from protocol_error_received.wait()
+
+    first_completed = yield from first.join().timeout(1).fork()
+    yield from testing.adjust(1)
+    yield from first_completed.join()
+
+    second = yield from protocol.send(0, request(2)).fork()
+    second_sent = yield from second_request_sent.wait().timeout(1).fork()
+    yield from testing.adjust(1)
+    yield from second_sent.join()
+    yield from second.interrupt()
+    assert sent_request_ids == [1, 2]

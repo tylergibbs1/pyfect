@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Never
 
 from pyfect._core import Effect
 from pyfect.context import Context, Tag
 from pyfect.effect import context, gen, never, provide_context, succeed, suspend
+from pyfect.option import Option
 from pyfect.queue import Queue
 from pyfect.rpc.serialization import CodecFor
 from pyfect.semaphore import Semaphore
@@ -19,11 +20,17 @@ type Message = Mapping[str, Any]
 type WriteRequest = Callable[[int, Message], Effect[None]]
 
 
+def _no_initial_message() -> Effect[Option[object]]:
+    return succeed(None)
+
+
 @dataclass(frozen=True, slots=True)
 class ServerProtocolService:
     """A server transport: ``run`` hands each message of a client to the
     server (and never returns); ``send`` writes a response to a client,
-    ``end`` closes it; ``disconnects`` yields the clients that left."""
+    ``end`` closes it; ``disconnects`` yields the clients that left.
+    ``initial_message`` is the value a worker client sent first
+    (``rpc.worker.initial_message``); other transports have none."""
 
     run: Callable[[WriteRequest], Effect[Never]]
     disconnects: Queue[int]
@@ -32,6 +39,7 @@ class ServerProtocolService:
     supports_ack: bool
     supports_span_propagation: bool
     codec_for: CodecFor
+    initial_message: Effect[Option[object]] = field(default_factory=_no_initial_message)
 
 
 class ServerProtocol(Tag[ServerProtocolService], key="effect/rpc/RpcServer/Protocol"):
@@ -48,6 +56,7 @@ class ProtocolParts:
     supports_ack: bool
     supports_span_propagation: bool
     codec_for: CodecFor
+    initial_message: Effect[Option[object]] = field(default_factory=_no_initial_message)
 
 
 def with_run[EX, RX](
@@ -93,6 +102,7 @@ def with_run[EX, RX](
             parts.supports_ack,
             parts.supports_span_propagation,
             parts.codec_for,
+            parts.initial_message,
         )
 
     return make(write).map(build)

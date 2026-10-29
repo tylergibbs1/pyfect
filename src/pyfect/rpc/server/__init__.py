@@ -4,7 +4,8 @@
 in the context; ``layer_http(Group, path=...)`` serves it on an
 ``HttpRouter`` route, over WebSockets (the default) or HTTP POSTs;
 ``layer_protocol_socket_server`` over the connections of a
-``SocketServer``. The serialization (``RpcSerialization``) and the
+``SocketServer``; ``layer_protocol_worker_runner`` inside a worker,
+serving its parent. The serialization (``RpcSerialization``) and the
 group's handlers come from the context.
 """
 
@@ -36,6 +37,10 @@ from pyfect.rpc.server._transports import (
     make_protocol_with_http_effect,
     make_protocol_with_http_effect_websocket,
     make_socket_protocol,
+)
+from pyfect.rpc.server._worker import (
+    layer_protocol_worker_runner,
+    make_protocol_worker_runner,
 )
 from pyfect.scope import Scope, fork_scoped
 from pyfect.socket.server import SocketServer
@@ -156,6 +161,7 @@ __all__ = [
     "layer_protocol_http",
     "layer_protocol_socket_server",
     "layer_protocol_websocket",
+    "layer_protocol_worker_runner",
     "make",
     "make_no_serialization",
     "make_protocol_http",
@@ -163,6 +169,7 @@ __all__ = [
     "make_protocol_websocket",
     "make_protocol_with_http_effect",
     "make_protocol_with_http_effect_websocket",
+    "make_protocol_worker_runner",
     "make_socket_protocol",
     "to_http_effect",
     "to_http_effect_websocket",

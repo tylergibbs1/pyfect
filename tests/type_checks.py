@@ -85,6 +85,7 @@ from pyfect.persistence import redis as redis_module
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.rpc import client as rpc_client
+from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.scheduler import Scheduler, SyncScheduler
 from pyfect.schema import SchemaError
@@ -103,6 +104,11 @@ from pyfect.sql.error import ResultLengthMismatch, SqlError
 from pyfect.sql.statement import Fragment, Statement
 from pyfect.sql.statement import Literal as SqlLiteral
 from pyfect.stream import Stream
+from pyfect.workers import python_worker, python_worker_runner
+from pyfect.workers.python_worker import ThreadWorker
+from pyfect.workers.worker import Spawner, Worker, WorkerPlatform
+from pyfect.workers.worker_error import WorkerError
+from pyfect.workers.worker_runner import WorkerRunner, WorkerRunnerPlatform
 
 
 class Db(Protocol):
@@ -5633,3 +5639,41 @@ def check_persisted_queue(
     pq.make(name="q", schema=S.Int, max_attempts="10")  # pyright: ignore[reportArgumentType]
     # an error's cause is the exception the backend raised, not a Cause
     pq.PersistedQueueError(message="m", cause=fx.cause.die(ValueError()))  # pyright: ignore[reportArgumentType]
+
+
+def check_workers(worker: Worker[int, str], runner: WorkerRunner[int, str]) -> None:
+    # A worker sends I and handles O; run adds WorkerError to the handler's.
+    assert_type(worker.send("hi"), fx.Effect[None, WorkerError])
+    worker.send(1)  # pyright: ignore[reportArgumentType]
+
+    def handle(reply: int) -> fx.Effect[None, ValueError, PersistedLookup]:
+        return fx.fail(ValueError(reply))
+
+    assert_type(worker.run(handle), fx.Effect[Never, ValueError | WorkerError, PersistedLookup])
+
+    def shout(reply: str) -> fx.Effect[None]:
+        return fx.void
+
+    worker.run(shout)  # pyright: ignore[reportArgumentType]
+
+    # A runner handles I and sends O.
+    def serve(port: int, message: str) -> fx.Effect[None, Never, PersistedLookup]:
+        return runner.send(port, len(message))
+
+    assert_type(runner.run(serve), fx.Effect[None, WorkerError, PersistedLookup])
+    runner.send(0, "no")  # pyright: ignore[reportArgumentType]
+
+    assert_type(
+        python_worker.layer(lambda _: ThreadWorker(lambda: None)),
+        fx.Layer[WorkerPlatform | Spawner],
+    )
+    assert_type(python_worker_runner.layer, fx.Layer[WorkerRunnerPlatform])
+    assert_type(
+        rpc_client.layer_protocol_worker(size=2),
+        fx.Layer[rpc_client.ClientProtocol, WorkerError, WorkerPlatform | Spawner],
+    )
+    rpc_client.layer_protocol_worker(size=2, min_size=1)  # pyright: ignore[reportCallIssue]
+    assert_type(
+        rpc_server.layer_protocol_worker_runner,
+        fx.Layer[rpc_server.ServerProtocol, WorkerError, WorkerRunnerPlatform],
+    )

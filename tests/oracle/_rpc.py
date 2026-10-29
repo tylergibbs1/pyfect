@@ -11,10 +11,14 @@ e2e suite runs over.
 on each RPC; Effect's metrics in ``TimingMiddleware`` are plain counters.
 """
 
+import os
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Any, TypedDict
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, TypedDict, cast
 
+import pyfect as fx
 from pyfect import effect, layer
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -33,11 +37,18 @@ from pyfect.rpc import middleware as rpc_middleware
 from pyfect.rpc import serialization as rs
 from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
-from pyfect.rpc.server import ServerOptions, ServerProtocol
+from pyfect.rpc.server import ServerOptions, ServerProtocol, ServerProtocolService
 from pyfect.scope import fork_scoped
 from pyfect.socket import layer_net, ws
 from pyfect.socket import server as socket_server
 from pyfect.socket.server import SocketServer
+from pyfect.workers import (
+    ProcessWorker,
+    ThreadWorker,
+    WorkerHandle,
+    python_worker,
+    python_worker_runner,
+)
 
 
 class User(S.Class):
@@ -299,6 +310,42 @@ def tcp_suite(serialization: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
     return client.pipe(layer.provide_merge(server)).pipe(layer.provide(serialization))
 
 
+def worker_main() -> Layer[Any, Any, Any]:
+    """Effect's fixtures/rpc-worker.ts: the server inside a worker."""
+    return (
+        rpc_layer()
+        .pipe(layer.provide(rpc_server.layer_protocol_worker_runner))
+        .pipe(layer.provide(python_worker_runner.layer))
+    )
+
+
+def run_worker() -> None:
+    """A worker's program: serve until the parent closes it."""
+    fx.run_sync_exit(worker_main().launch())
+
+
+_TESTS = Path(__file__).parent.parent
+
+
+def _process_worker() -> WorkerHandle:
+    path = os.pathsep.join(filter(None, [str(_TESTS), os.environ.get("PYTHONPATH")]))
+    return ProcessWorker(["-m", "oracle._rpc_worker"], env={**os.environ, "PYTHONPATH": path})
+
+
+_ACKING_PROTOCOL = cast("ServerProtocolService", SimpleNamespace(supports_ack=True))
+"""Effect's ``{ supportsAck: true } as any``: the e2e tests read
+``ServerProtocol().supports_ack``, and the worker's server is elsewhere."""
+
+
+def worker_suite(spawn: Callable[[], WorkerHandle]) -> Layer[Any, Any, Any]:
+    client = (
+        users_client_layer()
+        .pipe(layer.provide(rpc_client.layer_protocol_worker(size=1)))
+        .pipe(layer.provide(python_worker.layer(lambda _: spawn())))
+    )
+    return layer.merge(client, layer.succeed(ServerProtocol, _ACKING_PROTOCOL))
+
+
 SUITES: dict[str, Callable[[], Layer[Any, Any, Any]]] = {
     "e2e http ndjson": lambda: http_suite(rs.layer_ndjson),
     "e2e http jsonrpc": lambda: http_suite(rs.layer_nd_json_rpc()),
@@ -307,6 +354,8 @@ SUITES: dict[str, Callable[[], Layer[Any, Any, Any]]] = {
     "e2e ws jsonrpc": lambda: ws_suite(rs.layer_json_rpc()),
     "e2e tcp ndjson": lambda: tcp_suite(rs.layer_ndjson),
     "e2e tcp jsonrpc": lambda: tcp_suite(rs.layer_nd_json_rpc()),
+    "e2e worker thread": lambda: worker_suite(lambda: ThreadWorker(run_worker)),
+    "e2e worker process": lambda: worker_suite(_process_worker),
 }
 
 __all__ = ["SUITES", "ServerProtocol", "User", "UserRpcs", "UsersClient"]

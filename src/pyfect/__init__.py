@@ -98,6 +98,7 @@ from pyfect import (
     testing,
     tracer,
     transaction,
+    workers,
 )
 from pyfect._all import all, all_dict
 from pyfect._concurrency import Concurrency, for_each, race_all, race_all_first
@@ -533,5 +534,6 @@ __all__ = [
     "validate",
     "void",
     "with_execution_plan",
+    "workers",
     "yield_now",
 ]

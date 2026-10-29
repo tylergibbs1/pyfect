@@ -1,6 +1,6 @@
 """Remote procedure calls (Effect's ``effect/rpc``)."""
 
-from pyfect.rpc import client_error, message, middleware, serialization
+from pyfect.rpc import client_error, message, middleware, serialization, worker
 from pyfect.rpc import schema as rpc_schema
 from pyfect.rpc._methods import CallOptions, StreamMethod, UnaryMethod
 from pyfect.rpc._rpc import (
@@ -55,5 +55,6 @@ __all__ = [
     "serialization",
     "to_layer_handler",
     "uninterruptible",
+    "worker",
     "wrap",
 ]
