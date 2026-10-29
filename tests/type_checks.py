@@ -22,6 +22,11 @@ from pyfect import channel, execution_plan, layer, logger, otel, reactivity, rpc
 from pyfect import schema as S
 from pyfect import socket as socket_module
 from pyfect._json_value import JsonValue
+from pyfect.ai import language_model as lm
+from pyfect.ai import response as ai_response
+from pyfect.ai import tool as ai_tool
+from pyfect.ai import toolkit as ai_toolkit
+from pyfect.ai.ai_error import AiError
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.cli import (
@@ -5845,3 +5850,101 @@ def check_workflow_deferred_state(instance: WorkflowInstanceService) -> None:
     assert_type(
         state.track_run(instance, PersistedLookup()), fx.Effect[str, Never, PersistedLookup]
     )
+
+
+# AI: a toolkit's tool names, results and failures flow into responses ----------------
+
+
+class AiWeatherParams(TypedDict):
+    city: str
+
+
+class AiWeather(TypedDict):
+    degrees: float
+
+
+class AiDb(Tag[int]):
+    pass
+
+
+class AiOther(Tag[int]):
+    pass
+
+
+type AiResults = (
+    ai_response.ToolResultSuccess[Literal["Weather"], AiWeather]
+    | ai_response.ToolResultFailure[Literal["Weather"], str | AiError]
+    | ai_response.ToolResultSuccess[Literal["Clock"], int]
+    | ai_response.ToolResultFailure[Literal["Clock"], int | AiError]
+)
+
+
+def check_ai_toolkit() -> None:
+    weather = ai_tool.make(
+        "Weather",
+        parameters=S.Struct(AiWeatherParams),
+        success=S.Struct(AiWeather),
+        failure=S.String,
+    )
+    clock = ai_tool.make(
+        "Clock", success=S.Int, failure=S.Int, failure_mode="return", dependencies=[AiDb]
+    )
+    assert_type(
+        weather,
+        ai_tool.Tool[Literal["Weather"], AiWeatherParams, AiWeather, str, str, Never],
+    )
+    assert_type(clock, ai_tool.Tool[Literal["Clock"], dict[str, Never], int, int, Never, AiDb])
+
+    # A handler is checked against its tool's types.
+    ok = weather.handler(lambda params, _: fx.succeed(AiWeather(degrees=len(params["city"]))))
+    assert_type(ok, ai_tool.Handler[Literal["Weather"]])
+    weather.handler(lambda _, __: fx.succeed(1))  # pyright: ignore[reportArgumentType]
+    weather.handler(lambda _, __: fx.fail(1))  # pyright: ignore[reportArgumentType]
+    clock.handler(lambda _, __: AiDb())
+    clock.handler(lambda _, __: AiOther())  # pyright: ignore[reportArgumentType]
+
+    kit = ai_toolkit.make(weather, clock)
+    assert_type(
+        kit,
+        ai_toolkit.Toolkit[Literal["Weather", "Clock"], AiResults, str, AiDb],
+    )
+    assert_type(kit.to_layer(ok), fx.Layer[ai_toolkit.Handlers[Literal["Weather", "Clock"]]])
+
+    text = lm.generate_text("hi", toolkit=kit)
+    assert_type(
+        text,
+        fx.Effect[
+            lm.GenerateTextResponse[Literal["Weather", "Clock"], AiResults],
+            AiError | str,
+            lm.LanguageModel | AiDb | ai_toolkit.Handlers[Literal["Weather", "Clock"]],
+        ],
+    )
+    assert_type(
+        lm.generate_text("hi"),
+        fx.Effect[lm.GenerateTextResponse[Never, Never], AiError, lm.LanguageModel],
+    )
+    assert_type(
+        lm.generate_object("hi", schema=S.Struct(AiWeather)),
+        fx.Effect[lm.GenerateObjectResponse[Never, Never, AiWeather], AiError, lm.LanguageModel],
+    )
+    assert_type(
+        lm.stream_text("hi", toolkit=kit),
+        Stream[
+            ai_response.StreamPart[Literal["Weather", "Clock"], AiResults],
+            AiError | str,
+            lm.LanguageModel | AiDb | ai_toolkit.Handlers[Literal["Weather", "Clock"]],
+        ],
+    )
+
+
+def check_ai_result_narrowing(
+    response: lm.GenerateTextResponse[Literal["Weather", "Clock"], AiResults],
+) -> None:
+    for part in response.tool_results:
+        match part:
+            case ai_response.ToolResultSuccess(name="Weather"):
+                assert_type(part.result, AiWeather)
+            case ai_response.ToolResultFailure(name="Clock"):
+                assert_type(part.result, int | AiError)
+            case _:
+                pass

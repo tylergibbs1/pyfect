@@ -151,7 +151,9 @@ class Command(Generic[I, C, E, R]):
     def with_handler[EH = Never, RH = Never](
         self, handler: Callable[[I], Effect[object, EH, LogLevel | RH]]
     ) -> Command[I, C, EH, RH]: ...
-    def with_handler(self, handler: Callable[[I], Effect[object, Any, Any]]) -> Command[I, C, Any, Any]: ...
+    def with_handler(
+        self, handler: Callable[[I], Effect[object, Any, Any]]
+    ) -> Command[I, C, Any, Any]: ...
 
     @overload
     def with_subcommands[ES = Never](
@@ -161,10 +163,14 @@ class Command(Generic[I, C, E, R]):
     def with_subcommands[ES = Never, RS = Never](
         self, *subcommands: Command[Any, Any, ES, CommandContext[C] | RS]
     ) -> Command[I, C, E | ES, R | RS]: ...
-    def with_subcommands(self, *subcommands: Command[Any, Any, Any, Any]) -> Command[I, C, Any, Any]: ...
+    def with_subcommands(
+        self, *subcommands: Command[Any, Any, Any, Any]
+    ) -> Command[I, C, Any, Any]: ...
 
     @overload
-    def with_shared_flags[S: Config](self: Command[Config, Config, E, R], shared: type[S]) -> Command[S, S, E, R]: ...
+    def with_shared_flags[S: Config](
+        self: Command[Config, Config, E, R], shared: type[S]
+    ) -> Command[S, S, E, R]: ...
     @overload
     def with_shared_flags[S: Config](self, shared: type[S]) -> Command[I, S, E, R]: ...
     def with_shared_flags(self, shared: type[Config]) -> Command[Any, Any, E, R]: ...
@@ -212,6 +218,7 @@ def clone_handler(config: Clone):
 
 clone = make("clone", Clone, lambda config: gen(lambda: clone_handler(config)))
 assert_type(clone, Command[Clone, Config, NotFound, CommandContext[Shared] | Users])
+
 
 def status_handler():
     shared = yield from root

@@ -59,9 +59,13 @@ class ClientMethod(Generic[P, Q, B, H, S, E]):
     @overload
     def __call__(self: ClientMethod[None, None, None, None, S, E]) -> Effect[S, E]: ...
     @overload
-    def __call__[P1](self: ClientMethod[P1, None, None, None, S, E], *, params: P1) -> Effect[S, E]: ...
+    def __call__[P1](
+        self: ClientMethod[P1, None, None, None, S, E], *, params: P1
+    ) -> Effect[S, E]: ...
     @overload
-    def __call__[B1](self: ClientMethod[None, None, B1, None, S, E], *, payload: B1) -> Effect[S, E]: ...
+    def __call__[B1](
+        self: ClientMethod[None, None, B1, None, S, E], *, payload: B1
+    ) -> Effect[S, E]: ...
     @overload
     def __call__[P1, B1](
         self: ClientMethod[P1, None, B1, None, S, E], *, params: P1, payload: B1
@@ -85,7 +89,9 @@ class Endpoint(Generic[P, Q, B, H, S_inv, E_inv]):
     @overload
     def __get__(self, instance: None, owner: type[object]) -> Self: ...
     @overload
-    def __get__(self, instance: Group, owner: type[object]) -> ClientMethod[P, Q, B, H, S_inv, E_inv]: ...
+    def __get__(
+        self, instance: Group, owner: type[object]
+    ) -> ClientMethod[P, Q, B, H, S_inv, E_inv]: ...
     def __get__(self, instance: object, owner: type[object]) -> Any: ...
 
 
@@ -154,8 +160,16 @@ forbidden: Codec[Forbidden, Any, Never, Never] = struct(Forbidden)
 
 
 class Users(Group):
-    get_user = get("getUser", "/users/:id", params=struct(UserParams), success=user, error=not_found)
-    create = post("create", "/users", payload=struct(NewUser), success=(user, admin), error=(not_found, forbidden))
+    get_user = get(
+        "getUser", "/users/:id", params=struct(UserParams), success=user, error=not_found
+    )
+    create = post(
+        "create",
+        "/users",
+        payload=struct(NewUser),
+        success=(user, admin),
+        error=(not_found, forbidden),
+    )
     health = get("health", "/health")
 
 
@@ -197,7 +211,9 @@ class Handlers(Generic[R_co]):
     def handle[P1, Q1, B1, H1, S1, E1, R1](
         self,
         endpoint: Endpoint[P1, Q1, B1, H1, S1, E1],
-        handler: Callable[[Request[P1, Q1, B1, H1]], Effect[S1 | HttpServerResponse, E1, R1 | Provided]],
+        handler: Callable[
+            [Request[P1, Q1, B1, H1]], Effect[S1 | HttpServerResponse, E1, R1 | Provided]
+        ],
     ) -> Handlers[R_co | R1]: ...
     def handle(self, endpoint: Any, handler: Any) -> Any: ...
 
@@ -209,7 +225,9 @@ handlers: Handlers[Never] = Handlers()
 assert_type(handlers.handle(Users.get_user, find), Handlers[Db])
 assert_type(handlers.handle(Users.health, lambda req: succeed(None)), Handlers[Never])
 assert_type(
-    handlers.handle(Users.get_user, lambda req: succeed(User()) if req.params["id"] else fail(NotFound())),
+    handlers.handle(
+        Users.get_user, lambda req: succeed(User()) if req.params["id"] else fail(NotFound())
+    ),
     Handlers[Never],
 )
 handlers.handle(Users.get_user, lambda req: fail(Forbidden()))  # pyright: ignore[reportArgumentType, reportCallIssue]

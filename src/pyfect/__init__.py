@@ -42,6 +42,8 @@ HTTP clients in ``fx.http`` (``HttpClient``, requests, responses, headers,
 cookies, URLs).
 Durable workflows in ``fx.workflow`` (``Workflow``, activities, durable
 deferreds, clocks and queues, ``WorkflowEngine`` and its in-memory layer).
+AI services in ``fx.ai`` (prompts, responses, tools, toolkits and the
+provider-neutral ``LanguageModel``).
 Optional adapters, each behind its extra and never imported here: pydantic
 (``pyfect.pydantic``, ``pyfect[pydantic]``), msgspec (``pyfect.msgspec``,
 ``pyfect[msgspec]``) and the httpx HTTP client (``pyfect.http.httpx_client``,
@@ -49,6 +51,7 @@ Optional adapters, each behind its extra and never imported here: pydantic
 """
 
 from pyfect import (
+    ai,
     batching,
     brand,
     byte_size,
@@ -400,6 +403,7 @@ __all__ = [
     "acquire_release",
     "acquire_use_release",
     "add_finalizer",
+    "ai",
     "all",
     "all_dict",
     "annotate_current_span",

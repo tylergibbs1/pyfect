@@ -51,7 +51,9 @@ class Unhandled(Exception): ...
 
 
 class MiddlewareFn(Generic[MP, ME]):
-    def __call__(self, effect: Effect[HttpServerResponse, Unhandled, Any]) -> Effect[HttpServerResponse, Any, Any]: ...
+    def __call__(
+        self, effect: Effect[HttpServerResponse, Unhandled, Any]
+    ) -> Effect[HttpServerResponse, Any, Any]: ...
 
 
 class Middleware(Tag[MiddlewareFn[MP, ME]], Generic[MP, ME]):
@@ -87,7 +89,9 @@ class Endpoint(Generic[P, S, E, ME_inv, MP_inv, MT]):
     @overload
     def __get__(self, instance: None, owner: type[object]) -> Self: ...
     @overload
-    def __get__(self, instance: Group[Never], owner: type[object]) -> ClientMethod[P, S, E | ME_inv]: ...
+    def __get__(
+        self, instance: Group[Never], owner: type[object]
+    ) -> ClientMethod[P, S, E | ME_inv]: ...
     @overload
     def __get__[GE](
         self, instance: Group[Middleware[Any, GE]], owner: type[object]
@@ -98,7 +102,9 @@ class Endpoint(Generic[P, S, E, ME_inv, MP_inv, MT]):
         self, middleware: type[T], provides: type[MP2], error: type[ME2]
     ) -> Endpoint[P, S, E, ME_inv | ME2, MP_inv | MP2, MT | T]: ...
 
-    def use[MP2, ME2](self, middleware: type[Middleware[MP2, ME2]]) -> Endpoint[P, S, E, ME_inv | ME2, MP_inv | MP2, MT]: ...
+    def use[MP2, ME2](
+        self, middleware: type[Middleware[MP2, ME2]]
+    ) -> Endpoint[P, S, E, ME_inv | ME2, MP_inv | MP2, MT]: ...
 
 
 def get[P1 = None, S1 = None, E1 = Never](
@@ -149,7 +155,9 @@ class WrongAuth(Middleware[CurrentUser, Unauthorized]):
 
 # --- M1, M2 ------------------------------------------------------------------
 
-base = get("getUser", "/users/:id", params=struct(UserParams), success=struct(User), error=struct(NotFound))
+base = get(
+    "getUser", "/users/:id", params=struct(UserParams), success=struct(User), error=struct(NotFound)
+)
 guarded = base.use(Auth)
 assert_type(guarded, Endpoint[UserParams, User, NotFound, Unauthorized, CurrentUser, Never])
 
@@ -183,7 +191,9 @@ class Handlers(Generic[R_co]):
     def handle[P1, S1, E1, ME1, MP1, MT1, R1](
         self,
         endpoint: Endpoint[P1, S1, E1, ME1, MP1, MT1],
-        handler: Callable[[Request[P1]], Effect[S1 | HttpServerResponse, E1 | ME1, MP1 | Provided | R1]],
+        handler: Callable[
+            [Request[P1]], Effect[S1 | HttpServerResponse, E1 | ME1, MP1 | Provided | R1]
+        ],
     ) -> Handlers[R_co | MT1 | R1]: ...
     def handle(self, endpoint: Any, handler: Any) -> Any: ...
 
@@ -214,11 +224,15 @@ class Bound(Generic[P_x, S_x, E_x, MP_x, R_co]):
 
     @overload
     def __call__(
-        self, handler: Callable[[Request[P_x]], Effect[S_x | HttpServerResponse, E_x, MP_x | Provided]]
+        self,
+        handler: Callable[[Request[P_x]], Effect[S_x | HttpServerResponse, E_x, MP_x | Provided]],
     ) -> Handlers[R_co]: ...
     @overload
     def __call__[R1](
-        self, handler: Callable[[Request[P_x]], Effect[S_x | HttpServerResponse, E_x, R1 | MP_x | Provided]]
+        self,
+        handler: Callable[
+            [Request[P_x]], Effect[S_x | HttpServerResponse, E_x, R1 | MP_x | Provided]
+        ],
     ) -> Handlers[R_co | R1]: ...
     def __call__(self, handler: Any) -> Any: ...
 

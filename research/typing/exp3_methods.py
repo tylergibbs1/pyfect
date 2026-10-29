@@ -1,4 +1,5 @@
 """Exp 3: can subtraction combinators be METHODS (overloaded self-types)?"""
+
 from __future__ import annotations
 from collections.abc import Callable, Generator
 from typing import Any, Never, Self, TypeVar, Generic, overload, reveal_type
@@ -9,7 +10,9 @@ R = TypeVar("R", covariant=True, default=Never)
 ROut = TypeVar("ROut", contravariant=True)
 RIn = TypeVar("RIn", covariant=True, default=Never)
 
+
 class Layer(Generic[ROut, E, RIn]): ...
+
 
 class Effect(Generic[A, E, R]):
     def __iter__(self) -> Generator[Effect[object, E, R], object, A]: ...
@@ -36,22 +39,40 @@ class Effect(Generic[A, E, R]):
 
     def map[AA, EE, RR, B](self: Effect[AA, EE, RR], f: Callable[[AA], B]) -> Effect[B, EE, RR]: ...
 
+
 class A1: ...
+
+
 class B1: ...
+
+
 class C1: ...
+
+
 class NotFound(Exception): ...
+
+
 class Timeout(Exception): ...
+
+
 class Other(Exception): ...
+
+
 def succeed[T](v: T) -> Effect[T]: ...
+
 
 def two() -> Effect[int, NotFound | Timeout | Other, A1 | B1 | C1]: ...
 def one() -> Effect[int, NotFound, A1]: ...
+
+
 lay_ab: Layer[A1 | B1, ValueError] = Layer()
 lay_a: Layer[A1] = Layer()
 lay_x: Layer[C1 | A1 | B1] = Layer()
 
 reveal_type(two().catch_tag(NotFound, lambda e: succeed("x")))
-reveal_type(two().catch_tag(NotFound, lambda e: succeed("x")).catch_tag(Timeout, lambda e: succeed(1.0)))
+reveal_type(
+    two().catch_tag(NotFound, lambda e: succeed("x")).catch_tag(Timeout, lambda e: succeed(1.0))
+)
 reveal_type(one().catch_tag(NotFound, lambda e: succeed("x")))
 reveal_type(two().provide(lay_ab))
 reveal_type(two().provide(lay_ab).provide(lay_x))
