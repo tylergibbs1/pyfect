@@ -1,0 +1,7 @@
+flowchart LR
+  C["rpc_client.make(Primes)"] -->|"Request"| W["layer_protocol_worker: a pool of workers"]
+  W -->|"message"| P1["worker process 1: Primes handlers"]
+  W -->|"message"| P2["worker process 2: Primes handlers"]
+  P1 -->|"Exit"| W
+  P2 -->|"Exit"| W
+  W --> C

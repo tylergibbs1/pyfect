@@ -1,0 +1,4 @@
+attempt 1: Welcome to ada@example.com
+failed: SMTP timeout
+attempt 2: Welcome to ada@example.com
+sent: welcome-ada

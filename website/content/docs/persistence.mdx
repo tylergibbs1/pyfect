@@ -1,0 +1,79 @@
+---
+title: Persistence
+description: "Key-value stores, caches whose results outlive the process, and durable queues, in memory, files, SQL or Redis."
+---
+
+`pyfect.persistence` keeps data outside a fiber's memory behind services, so a program
+picks where it lives by the layer it provides: memory in tests, a directory or a SQL
+table on one machine, Redis when several processes share it. The code that reads and
+writes stays the same.
+
+## Key-value stores
+
+`KeyValueStore` holds text and bytes by string key. `get` gives `None` for a missing key,
+`prefix(p)` gives a view whose keys all start with `p`, and `to_schema_store(schema)`
+holds one [schema](/docs/schema)'s values as JSON text, so `get` gives an `Option` of
+the decoded value. `key_value_store.layer_memory` keeps a dict, `layer_file_system(dir)`
+a file per key, `layer_sql(table=...)` a table of the `SqlClient`, and
+`layer_storage(f)` any `MutableMapping[str, str]`.
+
+<CodeOutput>
+
+<include meta='title="key_value.py"'>../../snippets/persistence/key_value.py</include>
+
+<include lang="text">../../snippets/persistence/key_value.out</include>
+
+</CodeOutput>
+
+## Cached results that survive a restart
+
+A persistable request is a frozen dataclass on `persistable.Class(success=..., error=...)`
+with a `primary_key()`: the schemas say how to write its outcome, and the key says where.
+`persisted_cache.make(lookup, store_id=..., time_to_live=...)` is a cache in front of the
+`Persistence` service. `get` answers from memory, then from the store, and only then runs
+`lookup` and stores its `Exit`, so failures are cached too, for as long as `time_to_live`
+gives for that outcome.
+
+<Diagram name="persisted-cache" title="get looks in memory, then in the Persistence store, and only runs lookup when neither has the outcome" />
+
+<CodeOutput>
+
+<include meta='title="cached_users.py"'>../../snippets/persistence/cached_users.py</include>
+
+<include lang="text">../../snippets/persistence/cached_users.out</include>
+
+</CodeOutput>
+
+`persistence.layer_memory`, `layer_kvs` (over a `KeyValueStore`), `layer_sql`,
+`layer_sql_multi_table` and `layer_redis` provide `Persistence`. A stored outcome the
+request's schemas no longer decode is looked up again and replaced, so changing a
+schema doesn't break old entries. `RequestResolver.persisted` stores a
+batching resolver's outcomes the same way.
+
+## Durable queues
+
+`persisted_queue.make(name=..., schema=...)` is a queue of schema-typed values. `offer`
+stores a value under an id (a new UUID, or one you give, in which case offering it again
+adds nothing). `take(handler)` runs `handler` on the next value with its `Metadata`: if it
+succeeds the value is done; if it fails, `take` fails and the value goes back on the
+queue after the retry schedule's delay, until `max_attempts` runs out and it is marked
+failed. Delivery is at least once, so handlers must be safe to run twice.
+
+<CodeOutput>
+
+<include meta='title="emails.py"'>../../snippets/persistence/emails.py</include>
+
+<include lang="text">../../snippets/persistence/emails.out</include>
+
+</CodeOutput>
+
+A consumer is usually `queue.take(handler).forever()` on a fiber of its own.
+`layer_store_sql` (any `SqlClient`) and `layer_store_redis` keep queues across restarts
+and let several processes take from one queue: a value taken by a process that dies is
+released for another once its lock expires. `persisted_queue.layer_cleanup` removes old
+completed values.
+
+Reference: [`pyfect.persistence`](/docs/reference/persistence),
+[`key_value_store`](/docs/reference/persistence/key_value_store),
+[`persisted_cache`](/docs/reference/persistence/persisted_cache),
+[`persisted_queue`](/docs/reference/persistence/persisted_queue).

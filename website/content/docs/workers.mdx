@@ -1,0 +1,60 @@
+---
+title: Workers
+description: "Run code on other threads or in child processes and talk to it with messages, or with typed RPC calls."
+---
+
+A worker is code running elsewhere, on a thread or in a child process, that the parent
+talks to only by messages. Child processes run Python code in parallel with the parent,
+which is what CPU-bound work needs. `pyfect.workers` gives both sides as services:
+`WorkerPlatform` spawns workers in the parent, and `WorkerRunnerPlatform` starts the
+worker's end inside it.
+
+## Workers and runners
+
+`python_worker.layer(spawn)` provides the parent's platform, with `spawn` giving the
+worker for each id: a `ThreadWorker(function)` or a `ProcessWorker(args)` running
+`python <args>`. `platform.spawn(id)` gives a `Worker`: `send` posts it a message and
+`run(handler)` starts it and handles its replies until the scope closes. Inside the
+worker, `python_worker_runner.layer` provides the runner, which handles the parent's
+messages with `run` and answers with `send`.
+
+<CodeOutput>
+
+<include meta='title="squares.py"'>../../snippets/workers/squares.py</include>
+
+<include lang="text">../../snippets/workers/squares.out</include>
+
+</CodeOutput>
+
+A worker that fails to start or exits fails `run`, and a message that can't be posted
+fails `send` (or `run`, if it was sent before the worker was ready), with a
+`WorkerError` whose `reason` is `WorkerSpawnError`, `WorkerSendError`,
+`WorkerReceiveError` or `WorkerUnknownError`. Messages to a process worker are pickled.
+
+## RPC over workers
+
+Most programs want typed calls, not raw messages: serve an [RPC](/docs/rpc) group in the
+worker and call it from the parent. In the worker, `rpc_server.layer(Group)` over
+`rpc_server.layer_protocol_worker_runner` serves the handlers. In the parent,
+`rpc_client.layer_protocol_worker(size=n)` is a `ClientProtocol` over a pool of `n`
+workers, so `rpc_client.make(Group)` gives the same client as over HTTP, and its calls
+are spread over the pool.
+
+<Diagram name="rpc-worker" title="The client sends each request to a worker of the pool, whose handlers answer with an Exit" />
+
+<CodeOutput>
+
+<include meta='title="primes.py"'>../../snippets/workers/primes.py</include>
+
+<include lang="text">../../snippets/workers/primes.out</include>
+
+</CodeOutput>
+
+A pool can also grow and shrink: `min_size`, `max_size` and `time_to_live` in place of
+`size`. `rpc.worker.layer_initial_message(schema, build)` sends each worker a value before
+any request, such as its settings, which the worker reads with
+`rpc.worker.initial_message(schema)`.
+
+Reference: [`pyfect.workers`](/docs/reference/workers),
+[`python_worker`](/docs/reference/workers/python_worker),
+[`pyfect.rpc.worker`](/docs/reference/rpc/worker).

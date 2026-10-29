@@ -1,0 +1,59 @@
+---
+title: Rate limiting and circuit breakers
+description: "Limit how often each key is used and stop calling what keeps failing, in memory or shared through Redis."
+---
+
+`RateLimiter` and `CircuitBreaker` guard calls by key: a user id, an API, a host. Their
+counters live in a store, in memory for one process or in Redis for every process that
+uses it, so a limit of 100 requests a minute holds across a whole fleet.
+
+## Rate limits
+
+`limiter.consume(key=..., limit=..., window=...)` charges a token to `key`, allowed `limit`
+per `window` seconds. The `"fixed-window"` algorithm (the default) counts tokens per
+window; `"token-bucket"` refills them steadily. Over the limit, it fails with a
+`RateLimiterError` whose `reason` is `RateLimitExceeded` (with its `retry_after`), or,
+with `on_exceeded="delay"`, succeeds with the `delay` to wait.
+
+`rate_limiter.make_with_rate_limiter` gives a function for `.pipe` that limits any
+effect, waiting out the delay when there is one. `adaptive_consume` and
+`adaptive_feedback` learn an upstream server's limit from its `429` responses.
+
+## Circuit breakers
+
+`breaker.execute(key=...)` runs an effect through `key`'s circuit. While it is closed,
+calls run and count toward the trip policy: `circuit_breaker.consecutive(n)` failures in
+a row, or a share of the last calls failing, with `circuit_breaker.rate(threshold=...)`.
+Once it trips, calls fail at once with `CircuitOpen` for `open_duration` (or a schedule of
+longer openings), and then one probe call decides whether it closes again. `classify`
+decides how a call counts, so a `404` can be a success and a `503` a failure.
+`breaker.transitions` is a stream of the changes.
+
+<Diagram name="circuit-breaker" title="A closed circuit opens when the trip policy says, lets one probe through once the open time passes, and closes when the probe succeeds" />
+
+<CodeOutput>
+
+<include meta='title="limits.py"'>../../snippets/persistence/limits.py</include>
+
+<include lang="text">../../snippets/persistence/limits.out</include>
+
+</CodeOutput>
+
+## Sharing them through Redis
+
+The `pyfect[redis]` extra adds `redis_py.layer(url)`, the `Redis` service on redis-py.
+Over it, `rate_limiter.layer_store_redis()` and `circuit_breaker.layer_store_redis()`
+keep counters and circuit states in Redis, updated atomically by Lua scripts, and
+`persistence.layer_redis` and `persisted_queue.layer_store_redis()` do the same for the
+[persistence](/docs/persistence) services. Swap the memory stores for these and nothing
+else changes.
+
+<include meta='title="redis_live.py"'>../../snippets/persistence/redis_live.py</include>
+
+The layer connects when it is built and fails with a `RedisError` if the server can't be
+reached. `redis_py.layer_config` reads its options from [config](/docs/config).
+
+Reference: [`rate_limiter`](/docs/reference/persistence/rate_limiter),
+[`circuit_breaker`](/docs/reference/persistence/circuit_breaker),
+[`redis`](/docs/reference/persistence/redis),
+[`redis_py`](/docs/reference/persistence/redis_py).

@@ -1,0 +1,5 @@
+flowchart LR
+  C["Closed: calls run and are counted"] -->|"trip policy: too many failures"| O["Open: calls fail with CircuitOpen"]
+  O -->|"open_duration passes"| H["HalfOpen: one probe runs"]
+  H -->|"probe succeeds"| C
+  H -->|"probe fails"| O

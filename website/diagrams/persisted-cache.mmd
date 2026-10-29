@@ -1,0 +1,7 @@
+flowchart LR
+  G["users.get(GetUser(1))"] --> M{"in memory?"}
+  M -->|"no"| P{"in the Persistence store?"}
+  P -->|"no"| L["lookup, then store its Exit"]
+  M -->|"yes"| R["the outcome: User or UserNotFound"]
+  P -->|"yes"| R
+  L --> R

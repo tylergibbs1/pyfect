@@ -1,0 +1,10 @@
+allowed, 1 left
+allowed, 0 left
+limited: RateLimitExceeded
+pong
+failed: 503
+failed: 503
+CircuitOpen
+Open
+200
+Closed

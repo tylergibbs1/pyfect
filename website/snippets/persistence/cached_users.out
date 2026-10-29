@@ -1,0 +1,5 @@
+User(id=1, name='Ada')
+UserNotFound(id=2)
+User(id=1, name='Ada')
+UserNotFound(id=2)
+lookups: [1, 2]

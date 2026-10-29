@@ -149,6 +149,13 @@ layer, concurrency, retries and timeouts.
   and document it with OpenAPI and Swagger UI. [HttpApi →](https://pyfect.dev/docs/http-api)
 - **RPC.** Typed procedures over HTTP, WebSockets or workers (threads and child processes),
   with streamed results and an in-memory test client. [RPC →](https://pyfect.dev/docs/rpc)
+- **Persistence.** Key-value stores, caches whose results outlive the process and durable
+  at-least-once queues, in memory, files, SQL or Redis.
+  [Persistence →](https://pyfect.dev/docs/persistence)
+- **Rate limiting and circuit breakers.** Limits and breakers per key, in memory or shared
+  by every process through Redis. [Rate limiting →](https://pyfect.dev/docs/rate-limiting)
+- **Workers.** Run code on threads or in child processes and talk to it by messages or
+  typed RPC calls over a pool. [Workers →](https://pyfect.dev/docs/workers)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
@@ -165,9 +172,9 @@ uv add git+https://github.com/tylergibbs1/pyfect
 ```
 
 Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `httpx` (the
-HTTP client backend), `websockets` (WebSocket clients and servers) and `pg` (the PostgreSQL
-driver, on psycopg), for example
-`uv add "pyfect[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
+HTTP client backend), `websockets` (WebSocket clients and servers), `server` (the uvicorn
+HTTP server), `pg` (the PostgreSQL driver, on psycopg) and `redis` (the Redis client, on
+redis-py), for example `uv add "pyfect[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add
 `reportUnknownParameterType = false`: pyright reads an unannotated generator's send type as
