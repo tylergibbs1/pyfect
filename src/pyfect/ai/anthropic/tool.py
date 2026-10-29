@@ -1,0 +1,501 @@
+"""Anthropic's provider-defined tools (Effect's ``AnthropicTool``).
+
+Each constant is a tool's constructor: call it with the tool's arguments
+to put it in a toolkit. Tools Anthropic runs (code execution, web search,
+web fetch, tool search) need no handler; the client tools (bash, the text
+editor, computer use, memory) do::
+
+    kit = toolkit.make(tool.WebSearch_20250305(max_uses=3), tool.Bash_20250124())
+
+Arguments use Effect's camelCase names (``maxUses``, ``displayWidthPx``)
+as keywords or a mapping. The results of server tools are Anthropic's
+JSON blocks, unchanged.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Literal, NotRequired, TypedDict
+
+from pyfect import schema as S
+from pyfect.ai import tool as T
+
+_BLOCK = S.Record(S.String, S.Unknown)
+"""A JSON block Anthropic returns, kept whole."""
+
+# Bash ----------------------------------------------------------------------------------
+
+
+class BashParameters(TypedDict):
+    command: str
+    restart: NotRequired[bool]
+
+
+Bash_20241022 = T.provider_defined(
+    id="anthropic.bash_20241022",
+    custom_name="AnthropicBash",
+    provider_name="bash",
+    requires_handler=True,
+    parameters=S.Struct(BashParameters),
+    success=S.String,
+)
+Bash_20250124 = T.provider_defined(
+    id="anthropic.bash_20250124",
+    custom_name="AnthropicBash",
+    provider_name="bash",
+    requires_handler=True,
+    parameters=S.Struct(BashParameters),
+    success=S.String,
+)
+
+# Code execution ------------------------------------------------------------------------
+
+
+class CodeExecutionProgrammaticToolCall(TypedDict):
+    type: Literal["programmatic-tool-call"]
+    code: str
+
+
+class CodeExecutionBashCommand(TypedDict):
+    type: Literal["bash_code_execution"]
+    command: str
+
+
+class CodeExecutionTextEditorView(TypedDict):
+    type: Literal["text_editor_code_execution"]
+    command: Literal["view"]
+    path: str
+
+
+class CodeExecutionTextEditorCreate(TypedDict):
+    type: Literal["text_editor_code_execution"]
+    command: Literal["create"]
+    path: str
+    file_text: NotRequired[str | None]
+
+
+class CodeExecutionTextEditorStrReplace(TypedDict):
+    type: Literal["text_editor_code_execution"]
+    command: Literal["str_replace"]
+    path: str
+    old_str: str
+    new_str: str
+
+
+class CodeExecution_20250825_Parameters(TypedDict):
+    code: str
+
+
+CodeExecution_20250522 = T.provider_defined(
+    id="anthropic.code_execution_20250522",
+    custom_name="AnthropicCodeExecution",
+    provider_name="code_execution",
+    parameters=S.Union(
+        S.Struct(CodeExecutionProgrammaticToolCall),
+        S.Struct(CodeExecutionBashCommand),
+        S.Struct(CodeExecutionTextEditorView),
+        S.Struct(CodeExecutionTextEditorCreate),
+        S.Struct(CodeExecutionTextEditorStrReplace),
+    ),
+    success=_BLOCK,
+    failure=_BLOCK,
+)
+CodeExecution_20250825 = T.provider_defined(
+    id="anthropic.code_execution_20250825",
+    custom_name="AnthropicCodeExecution",
+    provider_name="code_execution",
+    parameters=S.Struct(CodeExecution_20250825_Parameters),
+    success=_BLOCK,
+    failure=_BLOCK,
+)
+
+# Computer use --------------------------------------------------------------------------
+
+type Coordinate = tuple[int, int]
+type Region = tuple[int, int, int, int]
+
+
+class ComputerUseArgs(TypedDict):
+    displayWidthPx: int
+    displayHeightPx: int
+    displayNumber: NotRequired[int]
+
+
+class ComputerUse_20251124_Args(ComputerUseArgs):
+    enableZoom: NotRequired[bool]
+
+
+class KeyAction(TypedDict):
+    action: Literal["key"]
+    text: str
+
+
+class LeftClickAction(TypedDict):
+    action: Literal["left_click"]
+    coordinate: NotRequired[Coordinate]
+
+
+class MouseMoveAction(TypedDict):
+    action: Literal["mouse_move"]
+    coordinate: Coordinate
+
+
+class ScreenshotAction(TypedDict):
+    action: Literal["screenshot"]
+
+
+class TypeAction(TypedDict):
+    action: Literal["type"]
+    text: str
+
+
+class DoubleClickAction(TypedDict):
+    action: Literal["double_click"]
+    coordinate: NotRequired[Coordinate]
+
+
+class HoldKeyAction(TypedDict):
+    action: Literal["hold_key"]
+    text: str
+    duration: float
+
+
+class LeftClickDragAction(TypedDict):
+    action: Literal["left_click_drag"]
+    start_coordinate: Coordinate
+    coordinate: Coordinate
+
+
+class LeftMouseDownAction(TypedDict):
+    action: Literal["left_mouse_down"]
+    coordinate: NotRequired[Coordinate]
+
+
+class LeftMouseUpAction(TypedDict):
+    action: Literal["left_mouse_up"]
+    coordinate: NotRequired[Coordinate]
+
+
+class MiddleClickAction(TypedDict):
+    action: Literal["middle_click"]
+    coordinate: NotRequired[Coordinate]
+
+
+class RightClickAction(TypedDict):
+    action: Literal["right_click"]
+    coordinate: NotRequired[Coordinate]
+
+
+class ScrollAction(TypedDict):
+    action: Literal["scroll"]
+    coordinate: NotRequired[Coordinate]
+    scroll_direction: Literal["up", "down", "left", "right"]
+    scroll_amount: int
+
+
+class TripleClickAction(TypedDict):
+    action: Literal["triple_click"]
+    coordinate: NotRequired[Coordinate]
+
+
+class WaitAction(TypedDict):
+    action: Literal["wait"]
+    duration: float
+
+
+class ZoomAction(TypedDict):
+    action: Literal["zoom"]
+    region: Region
+
+
+_ACTIONS_20241022 = (
+    S.Struct(KeyAction),
+    S.Struct(LeftClickAction),
+    S.Struct(MouseMoveAction),
+    S.Struct(ScreenshotAction),
+    S.Struct(TypeAction),
+)
+_ACTIONS_20250124 = (
+    *_ACTIONS_20241022,
+    S.Struct(DoubleClickAction),
+    S.Struct(HoldKeyAction),
+    S.Struct(LeftClickDragAction),
+    S.Struct(LeftMouseDownAction),
+    S.Struct(LeftMouseUpAction),
+    S.Struct(MiddleClickAction),
+    S.Struct(RightClickAction),
+    S.Struct(ScrollAction),
+    S.Struct(TripleClickAction),
+    S.Struct(WaitAction),
+)
+
+type ComputerUse_20241022_Action = (
+    KeyAction | LeftClickAction | MouseMoveAction | ScreenshotAction | TypeAction
+)
+type ComputerUse_20250124_Action = (
+    ComputerUse_20241022_Action
+    | DoubleClickAction
+    | HoldKeyAction
+    | LeftClickDragAction
+    | LeftMouseDownAction
+    | LeftMouseUpAction
+    | MiddleClickAction
+    | RightClickAction
+    | ScrollAction
+    | TripleClickAction
+    | WaitAction
+)
+type ComputerUse_20251124_Action = ComputerUse_20250124_Action | ZoomAction
+
+_COMPUTER_20241022: S.Codec[ComputerUse_20241022_Action, Any, Any, Any] = S.Union(
+    *_ACTIONS_20241022
+)
+_COMPUTER_20250124: S.Codec[ComputerUse_20250124_Action, Any, Any, Any] = S.Union(
+    *_ACTIONS_20250124
+)
+_COMPUTER_20251124: S.Codec[ComputerUse_20251124_Action, Any, Any, Any] = S.Union(
+    *_ACTIONS_20250124, S.Struct(ZoomAction)
+)
+
+ComputerUse_20241022 = T.provider_defined(
+    id="anthropic.computer_use_20241022",
+    custom_name="AnthropicComputerUse",
+    provider_name="computer_use",
+    requires_handler=True,
+    args=S.Struct(ComputerUseArgs),
+    parameters=_COMPUTER_20241022,
+    success=S.String,
+)
+ComputerUse_20250124 = T.provider_defined(
+    id="anthropic.computer_20250124",
+    custom_name="AnthropicComputerUse",
+    provider_name="computer",
+    requires_handler=True,
+    args=S.Struct(ComputerUseArgs),
+    parameters=_COMPUTER_20250124,
+    success=S.String,
+)
+ComputerUse_20251124 = T.provider_defined(
+    id="anthropic.computer_20251124",
+    custom_name="AnthropicComputerUse",
+    provider_name="computer",
+    requires_handler=True,
+    args=S.Struct(ComputerUse_20251124_Args),
+    parameters=_COMPUTER_20251124,
+    success=S.String,
+)
+
+# Memory and the text editor ------------------------------------------------------------
+
+type ViewRange = tuple[int, int]
+
+
+class MemoryCreateCommand(TypedDict):
+    command: Literal["create"]
+    path: str
+    file_text: str
+
+
+class MemoryDeleteCommand(TypedDict):
+    command: Literal["delete"]
+    path: str
+
+
+class MemoryInsertCommand(TypedDict):
+    command: Literal["insert"]
+    path: str
+    insert_line: int
+    insert_text: str
+
+
+class MemoryRenameCommand(TypedDict):
+    command: Literal["rename"]
+    old_path: str
+    new_path: str
+
+
+class StrReplaceCommand(TypedDict):
+    command: Literal["str_replace"]
+    path: str
+    old_str: str
+    new_str: str
+
+
+class ViewCommand(TypedDict):
+    command: Literal["view"]
+    path: str
+    view_range: NotRequired[ViewRange]
+
+
+type MemoryCommand = (
+    MemoryCreateCommand
+    | MemoryDeleteCommand
+    | MemoryInsertCommand
+    | MemoryRenameCommand
+    | StrReplaceCommand
+    | ViewCommand
+)
+
+_MEMORY: S.Codec[MemoryCommand, Any, Any, Any] = S.Union(
+    S.Struct(MemoryCreateCommand),
+    S.Struct(MemoryDeleteCommand),
+    S.Struct(MemoryInsertCommand),
+    S.Struct(MemoryRenameCommand),
+    S.Struct(StrReplaceCommand),
+    S.Struct(ViewCommand),
+)
+
+Memory_20250818 = T.provider_defined(
+    id="anthropic.memory_20250818",
+    custom_name="AnthropicMemory",
+    provider_name="memory",
+    requires_handler=True,
+    parameters=_MEMORY,
+    success=S.String,
+)
+
+
+class CreateCommand(TypedDict):
+    command: Literal["create"]
+    path: str
+    file_text: str
+
+
+class InsertCommand(TypedDict):
+    command: Literal["insert"]
+    path: str
+    insert_line: int
+    new_str: str
+
+
+class UndoEditCommand(TypedDict):
+    command: Literal["undo_edit"]
+    path: str
+
+
+class TextEditorArgs(TypedDict):
+    max_characters: NotRequired[int]
+
+
+type StrReplaceBasedEditCommand = ViewCommand | CreateCommand | StrReplaceCommand | InsertCommand
+type StrReplaceEditorCommand = StrReplaceBasedEditCommand | UndoEditCommand
+
+_BASED_EDIT = (
+    S.Struct(ViewCommand),
+    S.Struct(CreateCommand),
+    S.Struct(StrReplaceCommand),
+    S.Struct(InsertCommand),
+)
+_STR_REPLACE_EDITOR: S.Codec[StrReplaceEditorCommand, Any, Any, Any] = S.Union(
+    *_BASED_EDIT, S.Struct(UndoEditCommand)
+)
+_STR_REPLACE_BASED_EDIT: S.Codec[StrReplaceBasedEditCommand, Any, Any, Any] = S.Union(*_BASED_EDIT)
+
+TextEditor_20241022 = T.provider_defined(
+    id="anthropic.text_editor_20241022",
+    custom_name="AnthropicTextEditor",
+    provider_name="str_replace_editor",
+    requires_handler=True,
+    parameters=_STR_REPLACE_EDITOR,
+    success=S.String,
+)
+TextEditor_20250124 = T.provider_defined(
+    id="anthropic.text_editor_20250124",
+    custom_name="AnthropicTextEditor",
+    provider_name="str_replace_editor",
+    requires_handler=True,
+    parameters=_STR_REPLACE_EDITOR,
+    success=S.String,
+)
+TextEditor_20250429 = T.provider_defined(
+    id="anthropic.text_editor_20250429",
+    custom_name="AnthropicTextEditor",
+    provider_name="str_replace_based_edit_tool",
+    requires_handler=True,
+    args=S.Struct(TextEditorArgs),
+    parameters=_STR_REPLACE_BASED_EDIT,
+    success=S.String,
+)
+TextEditor_20250728 = T.provider_defined(
+    id="anthropic.text_editor_20250728",
+    custom_name="AnthropicTextEditor",
+    provider_name="str_replace_based_edit_tool",
+    requires_handler=True,
+    args=S.Struct(TextEditorArgs),
+    parameters=_STR_REPLACE_BASED_EDIT,
+    success=S.String,
+)
+
+# Web search, web fetch and tool search ----------------------------------------------------
+
+
+class WebSearchUserLocation(TypedDict):
+    type: Literal["approximate"]
+    city: NotRequired[str]
+    region: NotRequired[str]
+    country: NotRequired[str]
+    timezone: NotRequired[str]
+
+
+class WebSearch_20250305_Args(TypedDict, total=False):
+    maxUses: int
+    allowedDomains: list[str]
+    blockedDomains: list[str]
+    userLocation: WebSearchUserLocation
+
+
+class QueryParameters(TypedDict):
+    query: str
+
+
+WebSearch_20250305 = T.provider_defined(
+    id="anthropic.web_search_20250305",
+    custom_name="AnthropicWebSearch",
+    provider_name="web_search",
+    args=S.Struct(WebSearch_20250305_Args),
+    parameters=S.Struct(QueryParameters),
+    success=S.Array(_BLOCK),
+    failure=_BLOCK,
+)
+
+
+class WebFetchCitationsConfig(TypedDict):
+    enabled: bool
+
+
+class WebFetch_20250910_Args(TypedDict, total=False):
+    maxUses: int
+    allowedDomains: list[str]
+    blockedDomains: list[str]
+    citations: WebFetchCitationsConfig
+    maxContentTokens: int
+
+
+class WebFetchParameters(TypedDict):
+    url: str
+
+
+WebFetch_20250910 = T.provider_defined(
+    id="anthropic.web_fetch_20250910",
+    custom_name="AnthropicWebFetch",
+    provider_name="web_fetch",
+    args=S.Struct(WebFetch_20250910_Args),
+    parameters=S.Struct(WebFetchParameters),
+    success=_BLOCK,
+    failure=_BLOCK,
+)
+ToolSearchRegex_20251119 = T.provider_defined(
+    id="anthropic.tool_search_tool_regex_20251119",
+    custom_name="AnthropicToolSearchRegex",
+    provider_name="tool_search_tool_regex",
+    parameters=S.Struct(QueryParameters),
+    success=S.Array(_BLOCK),
+    failure=_BLOCK,
+)
+ToolSearchBM25_20251119 = T.provider_defined(
+    id="anthropic.tool_search_tool_bm25_20251119",
+    custom_name="AnthropicToolSearchBM25",
+    provider_name="tool_search_tool_bm25",
+    parameters=S.Struct(QueryParameters),
+    success=S.Array(_BLOCK),
+    failure=_BLOCK,
+)

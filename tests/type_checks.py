@@ -22,13 +22,21 @@ from pyfect import channel, execution_plan, layer, logger, otel, reactivity, rpc
 from pyfect import schema as S
 from pyfect import socket as socket_module
 from pyfect._json_value import JsonValue
+from pyfect.ai import ai_error as ai_error_module
+from pyfect.ai import embedding_model as ai_embedding_model
 from pyfect.ai import language_model as lm
 from pyfect.ai import mcp_client as mcp_client_module
 from pyfect.ai import mcp_schema as mcp_schema_module
+from pyfect.ai import model as ai_model
 from pyfect.ai import response as ai_response
 from pyfect.ai import tool as ai_tool
 from pyfect.ai import toolkit as ai_toolkit
 from pyfect.ai.ai_error import AiError
+from pyfect.ai.anthropic import client as anthropic_client
+from pyfect.ai.anthropic import language_model as anthropic_lm
+from pyfect.ai.openai_compat import client as compat_client
+from pyfect.ai.openai_compat import embedding_model as compat_em
+from pyfect.ai.openai_compat import language_model as compat_lm
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.cli import (
@@ -59,6 +67,7 @@ from pyfect.http import server_response as http_server_response
 from pyfect.http.client import HttpClient
 from pyfect.http.error import HttpClientError
 from pyfect.http.platform import HttpPlatform
+from pyfect.http.response import HttpClientResponse as HttpResponse
 from pyfect.http.router import GlobalRaises, GlobalRequires, HttpRouter, Raises, Requires
 from pyfect.http.server import HttpServer
 from pyfect.http.server_error import HttpServerError
@@ -91,6 +100,7 @@ from pyfect.persistence import rate_limiter as rl
 from pyfect.persistence import redis as redis_module
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
+from pyfect.redacted import make as redact
 from pyfect.rpc import client as rpc_client
 from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
@@ -6026,3 +6036,48 @@ def check_mcp_client_calls(
     assert_type(service.call_tool(tool), fx.Effect[mcp_schema_module.CallToolResult, McpErr])
     assert_type(service.call_tool(tool, schema=S.Struct(AiWeather)), fx.Effect[AiWeather, McpErr])
     assert_type(service.list_tools(), fx.Effect[list[mcp_schema_module.Tool], McpErr])
+
+
+def check_ai_providers() -> None:
+    # Provider layers need their client; the client layers need an HttpClient.
+    key = redact("sk")
+    assert_type(
+        anthropic_client.layer(api_key=key),
+        fx.Layer[anthropic_client.AnthropicClient, Never, HttpClient],
+    )
+    assert_type(
+        anthropic_lm.model("claude-opus-5-5"),
+        ai_model.Model[lm.LanguageModel, anthropic_client.AnthropicClient],
+    )
+    assert_type(
+        compat_client.layer(api_key=key, api_url="https://api.example.test/v1"),
+        fx.Layer[compat_client.OpenAiClient, Never, HttpClient],
+    )
+    assert_type(
+        compat_lm.model("llama-3.3-70b"),
+        ai_model.Model[lm.LanguageModel, compat_client.OpenAiClient],
+    )
+    assert_type(
+        compat_em.model("text-embedding-3-small", dimensions=1536),
+        ai_model.Model[
+            ai_embedding_model.EmbeddingModel | ai_embedding_model.Dimensions,
+            compat_client.OpenAiClient,
+        ],
+    )
+
+    # A config override keeps the effect's type; a misspelled option is rejected.
+    program = lm.generate_text("hi")
+    assert_type(
+        program.pipe(anthropic_lm.with_config_override({"max_tokens": 10})),
+        fx.Effect[lm.GenerateTextResponse[Never, Never], ai_error_module.AiError, lm.LanguageModel],
+    )
+    anthropic_lm.with_config_override({"max_token": 10})  # pyright: ignore[reportArgumentType]
+    compat_lm.with_config_override({"strict_json_schema": "yes"})  # pyright: ignore[reportArgumentType]
+
+
+def check_ai_provider_client(service: anthropic_client.Service) -> None:
+    # The client calls fail only with AiError.
+    assert_type(
+        service.create_message({"model": "claude-haiku-5-5", "max_tokens": 1, "messages": []}),
+        fx.Effect[tuple[anthropic_client.Message, HttpResponse], ai_error_module.AiError],
+    )
