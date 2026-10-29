@@ -5592,6 +5592,49 @@ def check_resilience(
     )
 
 
+def _classify_response(
+    exit: fx.Exit[fx.http.HttpClientResponse, HttpClientError],
+) -> fx.Effect[cb.Outcome, Never, PersistedLookup]:
+    return fx.succeed(cb.success)
+
+
+def check_http_client_resilience(
+    service: fx.http.HttpClientService[HttpClientError],
+    limiter: rl.RateLimiterService,
+    breaker: cb.CircuitBreakerService,
+) -> None:
+    from pyfect.http import client
+
+    # with_rate_limiter adds RateLimiterError; with_circuit_breaker adds
+    # CircuitBreakerError and the classifier's services.
+    assert_type(
+        service.with_rate_limiter(limiter=limiter, key="k", limit=5, window=60),
+        client.HttpClientService[HttpClientError | rl.RateLimiterError],
+    )
+    service.with_rate_limiter(limiter=limiter, key="k", limit=5, window=60, algorithm="sliding")  # pyright: ignore[reportArgumentType]
+    service.with_rate_limiter(
+        limiter=limiter,
+        key="k",
+        limit=5,
+        window=60,
+        response_headers={"limits": "x-limit"},  # pyright: ignore[reportArgumentType]
+    )
+    assert_type(
+        service.with_circuit_breaker(breaker=breaker),
+        client.HttpClientService[HttpClientError | cb.CircuitBreakerError],
+    )
+    assert_type(
+        service.with_circuit_breaker(breaker=breaker, classify=_classify_response),
+        client.HttpClientService[HttpClientError | cb.CircuitBreakerError, PersistedLookup],
+    )
+    assert_type(
+        client.circuit_breaker_classifier(
+            fx.exit.succeed(fx.http.response.make(fx.http.request.get("/")))
+        ),
+        fx.Effect[cb.Outcome],
+    )
+
+
 def check_persisted_queue(
     queue: pq.PersistedQueue[int],
     service_schema: S.Codec[str, str, PersistedLookup, PersistedLookup],

@@ -23,6 +23,7 @@ from collections.abc import Callable
 
 from pyfect.effect import Effect
 from pyfect.http.abort import AbortController, AbortSignal
+from pyfect.http.client._circuit_breaker import circuit_breaker_classifier
 from pyfect.http.client._make import (
     Phase,
     Send,
@@ -32,6 +33,7 @@ from pyfect.http.client._make import (
     TracerPropagationEnabled,
     make,
 )
+from pyfect.http.client._rate_limit import RateLimitHeaders
 from pyfect.http.client._retry import (
     is_transient_error,
     is_transient_response,
@@ -80,6 +82,7 @@ __all__ = [
     "Phase",
     "Postprocess",
     "Preprocess",
+    "RateLimitHeaders",
     "RetryOn",
     "Send",
     "SpanNameGenerator",
@@ -87,6 +90,7 @@ __all__ = [
     "TracerHeaderFilter",
     "TracerPropagationEnabled",
     "catch_tag",
+    "circuit_breaker_classifier",
     "delete",
     "execute",
     "get",

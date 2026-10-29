@@ -39,6 +39,17 @@ decides how a call counts, so a `404` can be a success and a `503` a failure.
 
 </CodeOutput>
 
+## HTTP clients
+
+`client.with_rate_limiter(limiter=..., key=..., limit=..., window=...)` sends each request
+of an [`HttpClient`](/docs/platform) through a limiter. It follows the server's
+`ratelimit-*` and `x-ratelimit-*` headers, holds requests once a reported budget runs
+out, and retries a `429` after its `Retry-After`. `client.with_circuit_breaker(breaker=...)`
+gives each origin its own circuit, and `circuit_breaker_classifier` counts timeouts,
+transport errors and 408, 500, 502, 503 and 504 responses as failures and leaves 429s
+to the limiter. Apply the breaker last, after `retry_transient`, so it sees each
+request's final outcome.
+
 ## Sharing them through Redis
 
 The `pyfect[redis]` extra adds `redis_py.layer(url)`, the `Redis` service on redis-py.

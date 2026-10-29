@@ -42,7 +42,12 @@ def retry_after_of(input: object, now_millis: float) -> Seconds | None:
     response = input.response if isinstance(input, HttpClientError) else input
     if not isinstance(response, HttpClientResponse):
         return None
-    header = response.headers.get("retry-after")
+    return retry_after_from_header(response.headers.get("retry-after"), now_millis)
+
+
+def retry_after_from_header(header: str | None, now_millis: float) -> Seconds | None:
+    """The delay a ``Retry-After`` value asks for, at least a millisecond;
+    ``None`` for a missing or invalid one (RFC 9110 treats it as absent)."""
     if header is None:
         return None
     match parse_retry_after(header):
@@ -98,4 +103,10 @@ def retry_transient(
     return apply
 
 
-__all__ = ["is_transient_error", "is_transient_response", "retry_after_of", "with_retry_after"]
+__all__ = [
+    "is_transient_error",
+    "is_transient_response",
+    "retry_after_from_header",
+    "retry_after_of",
+    "with_retry_after",
+]

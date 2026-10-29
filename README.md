@@ -153,14 +153,15 @@ layer, concurrency, retries and timeouts.
   at-least-once queues, in memory, files, SQL or Redis.
   [Persistence →](https://pyfect.dev/docs/persistence)
 - **Rate limiting and circuit breakers.** Limits and breakers per key, in memory or shared
-  by every process through Redis. [Rate limiting →](https://pyfect.dev/docs/rate-limiting)
+  by every process through Redis, and HTTP clients that follow a server's rate limit
+  headers. [Rate limiting →](https://pyfect.dev/docs/rate-limiting)
 - **Workers.** Run code on threads or in child processes and talk to it by messages or
   typed RPC calls over a pool. [Workers →](https://pyfect.dev/docs/workers)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
-pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 9,700 tests, and
-about 79% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
+pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 10,000 tests, and
+about 80% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
 what is next.
 
 ## Installation

@@ -15,6 +15,14 @@ from pyfect.http.request import HttpClientRequest, RequestOptions, UrlInput
 from pyfect.http.response import HttpClientResponse
 
 if TYPE_CHECKING:
+    from pyfect.duration import Duration
+    from pyfect.http.client._rate_limit import RateLimitHeaders
+    from pyfect.persistence.circuit_breaker import (
+        CircuitBreakerError,
+        CircuitBreakerService,
+        Classify,
+    )
+    from pyfect.persistence.rate_limiter import Algorithm, RateLimiterError, RateLimiterService
     from pyfect.ref import Ref
     from pyfect.schedule import Schedule
     from pyfect.scope import Scope
@@ -270,6 +278,64 @@ class HttpClientService[E, R = Never]:
                 times=None if policy is not None else times,
             )
         )
+
+    def with_rate_limiter(
+        self,
+        *,
+        limiter: RateLimiterService,
+        window: Duration,
+        limit: float,
+        key: str | Callable[[HttpClientRequest], str],
+        algorithm: Algorithm = "fixed-window",
+        tokens: float | Callable[[HttpClientRequest], float] = 1,
+        times: int | None = None,
+        response_headers: RateLimitHeaders | None = None,
+        disable_response_inspection: bool = False,
+        disable_adaptive_learning: bool = False,
+    ) -> HttpClientService[E | RateLimiterError, R]:
+        """Send each request through ``limiter``: ``limit`` requests (each
+        costing ``tokens``, at least 1) per ``window`` for each ``key``,
+        waiting when over it. The rate limit headers of responses update the
+        limit and window, and a reported remaining budget of zero holds
+        requests until its reset. A ``429`` response (or ``HttpClientError``
+        wrapping one) is retried through the limiter after its
+        ``Retry-After``, ``times`` times at most (unbounded by default), and
+        teaches the limiter's adaptive pacing for the key.
+        ``disable_response_inspection`` ignores the headers (429s are still
+        retried; ``times=0`` stops that); ``disable_adaptive_learning`` only
+        stops the pacing."""
+        from pyfect.http.client._rate_limit import RateLimitOptions, with_rate_limiter
+
+        options = RateLimitOptions(
+            limiter=limiter,
+            window=window,
+            limit=limit,
+            key=key,
+            algorithm=algorithm,
+            tokens=tokens,
+            times=times,
+            response_headers={} if response_headers is None else response_headers,
+            disable_response_inspection=disable_response_inspection,
+            disable_adaptive_learning=disable_adaptive_learning,
+        )
+        return self.transform(with_rate_limiter(options))
+
+    def with_circuit_breaker[R2 = Never](
+        self,
+        *,
+        breaker: CircuitBreakerService,
+        key: str | Callable[[HttpClientRequest], str] | None = None,
+        classify: Classify[HttpClientResponse, E, R2] | None = None,
+    ) -> HttpClientService[E | CircuitBreakerError, R | R2]:
+        """Send each request through ``breaker``'s circuit for ``key``
+        (default the request's origin, or its raw URL when it has none),
+        each outcome counted by ``classify`` (default
+        ``circuit_breaker_classifier``). Apply it after ``with_rate_limiter``
+        and ``retry_transient`` so the breaker sees their final outcome;
+        ``retry_transient`` never retries a ``CircuitBreakerError``."""
+        from pyfect.http.client._circuit_breaker import with_circuit_breaker
+
+        return self.transform(with_circuit_breaker(breaker, key, classify))
 
     def with_cookies_ref(self, ref: Ref[Cookies]) -> HttpClientService[E, R]:
         """Send the cookies in ``ref`` and merge in the cookies each response

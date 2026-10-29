@@ -24,8 +24,9 @@ Omitted, with the reason:
   response``: JavaScript runtime registries and web ``Response`` objects;
   an unread response here is aborted by ``weakref.finalize`` (checked in
   ``tests/test_http_client.py``).
-- every ``withRateLimiter`` and ``withCircuitBreaker`` test: the
-  persistence modules (``RateLimiter``, ``CircuitBreaker``) are not ported.
+
+The ``withRateLimiter`` and ``withCircuitBreaker`` blocks are in
+``test_http_client_resilience.py``.
 """
 
 from collections.abc import Callable
