@@ -166,6 +166,20 @@ DateTimeUtcFromMillis: DecodeToSchema[datetime, int] = Int.pipe(
 """A UTC ``datetime`` from epoch milliseconds."""
 
 
+def _same_instant(value: datetime) -> datetime:
+    return value
+
+
+DateTimeUtcFromDate: DecodeToSchema[datetime, datetime] = DateTimeZoned.annotate(
+    expected="Date"
+).pipe(
+    decode_to(DateTimeUtc, T.Transformation(date_time_utc_from_input(), transform(_same_instant)))
+)
+"""A UTC ``datetime`` from an aware ``datetime`` in any zone (Effect's
+``DateTimeUtcFromDate``, a JavaScript ``Date`` being an instant); encodes
+as the UTC ``datetime``. A naive ``datetime`` is rejected."""
+
+
 DateTimeZonedFromString: DecodeToSchema[datetime, str] = _expecting(
     "a zoned DateTime string (e.g. 2024-01-01T00:00:00.000+00:00[Europe/London])"
 ).pipe(decode_to(DateTimeZoned, T.date_time_zoned_from_string))

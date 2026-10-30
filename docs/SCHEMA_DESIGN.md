@@ -174,3 +174,29 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
   `RuntimeError("<Kind> adapter can only ...")` chained from the defect.
   `Undefined`, `Void`, `Symbol`, `UniqueSymbol` and `ObjectKeyword` have no
   Python counterpart. The Promise adapters wait for effectful parsers.
+
+## Variant schemas and models
+
+Decided by `research/typing/model_1_variants.py`.
+
+- A variant class (`S.model.Class`, a `S.variant_schema` toolkit's `Class`)
+  is an `S.Class` of the default variant: annotated fields, the class's
+  validation and subclassing. `Model.field(spec)` (a variant field, a
+  variant struct, or a schema that may need services) is a field specifier
+  returning the default variant's Type, so the annotation is checked
+  against it. A field the default variant lacks is assigned without an
+  annotation and is no dataclass field.
+- Variant keys cannot be computed (no mapped types). `Model.Class[Insert,
+  Update, Json, JsonCreate, JsonUpdate]` takes TypedDicts, read back by
+  non-data descriptors whose `__get__` solves the owner's type arguments
+  (`User.insert: VariantStructSchema[UserInsert]`); when the class is made,
+  each TypedDict must have the variant's keys, `NotRequired` only for a key
+  with a constructor default. Without arguments a variant is
+  `Mapping[str, object]`.
+- An extracted variant is a `VariantStructSchema[TD]` (a `StructSchema`
+  whose Encoded is `Mapping[str, object]`), whose `make` / `make_effect`
+  fill constructor defaults (`with_constructor_default`, `Overrideable`).
+- `sql.model.make_repository(User, ...)` reads `User.__model_variants__()`
+  (`ModelVariants[Self, Insert, Update]`) through a protocol, so the
+  repository is `Repository[User, UserInsert, UserUpdate]`.
+

@@ -11,10 +11,6 @@ connects to a port nothing listens on (libpq opens its own socket; there is
 no ``stream`` factory). The ``PgClient listen`` block runs on a two-session
 pool without ``multiplex`` (not ported: psycopg runs one statement at a time
 per session), so a listener still reserves one session of two.
-
-Omitted:
-- "round trips Model.DateTimeInsertFromDate through a repository":
-  ``SqlModel`` and ``Model`` are not ported.
 """
 # pyright: reportPrivateUsage=false
 
@@ -28,9 +24,12 @@ pytest.importorskip("psycopg")
 
 import pyfect as fx
 from pyfect import case, schedule, scope, stream, testing
+from pyfect import schema as S
 from pyfect.context import Reference, Tag
 from pyfect.option import Some
+from pyfect.schema import model as Model
 from pyfect.sql import SqlClient, pg
+from pyfect.sql import model as sql_model
 from pyfect.sql.error import SqlError
 from pyfect.sql.statement import default_transforms
 
@@ -57,6 +56,42 @@ def _with_single(
 
 
 # --- PgClient ------------------------------------------------------------------
+
+
+class _Entry(Model.Class):
+    id: int = Model.field(Model.field_except(["insert"])(S.Int))
+    created_at: datetime = Model.field(Model.DateTimeInsertFromDate)
+
+
+@testing.effect
+def test_round_trips_model_date_time_insert_from_date_through_a_repository(pg_server: PgServer):
+    """round trips Model.DateTimeInsertFromDate through a repository"""
+
+    def body():
+        sql = yield from pg.PgClient()
+        repo = yield from sql_model.make_repository(
+            _Entry, table_name="model_timestamp", id_column="id", span_prefix="EntryRepository"
+        )
+        instant = datetime(2024, 5, 6, 7, 8, 9, 123000, tzinfo=UTC)
+
+        def transaction():
+            yield from sql("SET LOCAL TIME ZONE 'Europe/Berlin'")
+            yield from sql(
+                "CREATE TEMP TABLE model_timestamp (id SERIAL PRIMARY KEY, created_at TIMESTAMPTZ)"
+                " ON COMMIT DROP"
+            )
+            inserted = yield from repo.insert(
+                _Entry.insert.make({"created_at": Model.override(instant)})
+            )
+            assert inserted.created_at == instant
+            assert inserted.created_at.tzinfo is UTC
+            selected = yield from repo.find_by_id(inserted.id)
+            assert selected == inserted
+            assert selected.created_at == instant
+
+        yield from sql.with_transaction(fx.gen(transaction))
+
+    yield from _with_pool(pg_server, body)
 
 
 @testing.effect

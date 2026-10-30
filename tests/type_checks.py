@@ -7,11 +7,12 @@ pyright fails.
 """
 
 import asyncio
-from collections.abc import Callable, Generator, Hashable, Sequence, Sized
+from collections.abc import Callable, Generator, Hashable, Mapping, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from types import CoroutineType
-from typing import Any, Literal, Never, Protocol, TypedDict, TypeIs, assert_type
+from typing import Any, Literal, Never, NotRequired, Protocol, TypedDict, TypeIs, assert_type
 
 from _pytest.fixtures import FixtureFunctionDefinition
 from opentelemetry.trace import Span as OtelApiSpan
@@ -107,11 +108,14 @@ from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.scheduler import Scheduler, SyncScheduler
 from pyfect.schema import SchemaError
+from pyfect.schema import model as Model
+from pyfect.schema import variant_schema as VS
 from pyfect.scope import Scope
 from pyfect.socket import datagram as dg
 from pyfect.sql import client as sql_client
 from pyfect.sql import error as sql_error
 from pyfect.sql import migrator as sql_migrator
+from pyfect.sql import model as sql_model
 from pyfect.sql import pg as sql_pg
 from pyfect.sql import resolver as sql_resolver
 from pyfect.sql import schema as sql_schema
@@ -6144,3 +6148,104 @@ def check_ai_provider_client(service: anthropic_client.Service) -> None:
         service.create_message({"model": "claude-haiku-5-5", "max_tokens": 1, "messages": []}),
         fx.Effect[tuple[anthropic_client.Message, HttpResponse], ai_error_module.AiError],
     )
+
+
+# --- Model / VariantSchema / SqlModel -----------------------------------------------------
+
+
+class ModelUserInsert(TypedDict):
+    name: str
+    created_at: NotRequired[datetime]
+
+
+class ModelUserUpdate(TypedDict):
+    id: int
+    name: str
+
+
+class ModelUser(Model.Class[ModelUserInsert, ModelUserUpdate]):
+    id: int = Model.field(Model.field_except(["insert"])(S.Int))
+    name: str
+    created_at: datetime = Model.field(Model.DateTimeInsert)
+    password = Model.Sensitive(S.String)  # not in select: no annotation, no field
+
+
+class ModelPlain(Model.Class):
+    name: str
+
+
+def check_model() -> None:
+    # Each variant is the TypedDict given for it; untyped ones are mappings.
+    assert_type(ModelUser.insert, VS.VariantStructSchema[ModelUserInsert])
+    assert_type(ModelUser.update, VS.VariantStructSchema[ModelUserUpdate])
+    assert_type(ModelUser.json, VS.VariantStructSchema[Mapping[str, object]])
+    assert_type(ModelPlain.insert, VS.VariantStructSchema[Mapping[str, object]])
+    assert_type(Model.extract(ModelUser, "insert"), VS.VariantStructSchema[ModelUserInsert])
+    assert_type(Model.extract(ModelUser, "select"), type[ModelUser])
+    assert_type(ModelUser.insert.make({"name": "a"}), ModelUserInsert)
+    ModelUser.insert.make({"nam": "a"})  # pyright: ignore[reportArgumentType]
+    assert_type(S.decode_unknown_sync(ModelUser.update)({}), ModelUserUpdate)
+
+    # The class is the select variant; a field select lacks is not a parameter.
+    ModelUser(id=1, name="a", created_at=datetime.now(UTC))
+    ModelUser(id=1, name="a", created_at=datetime.now(UTC), password="x")  # pyright: ignore[reportCallIssue]
+
+    # A variant field's select Type must fit the annotation.
+    assert_type(Model.GeneratedByDb(S.Int), VS.Field[int])
+    assert_type(Model.FieldOption(S.String), VS.Field[Option[str]])
+    assert_type(Model.Field(insert=S.String), VS.Field[Model.NotSelected])
+    assert_type(Model.DateTimeInsert, VS.Field[datetime])
+
+    class Wrong(Model.Class):  # pyright: ignore[reportUnusedClass]
+        id: str = Model.field(Model.GeneratedByDb(S.Int))  # pyright: ignore[reportAssignmentType]
+        hidden: int = Model.field(Model.Field(insert=S.Int))  # pyright: ignore[reportAssignmentType]
+
+    # Variant names are checked; a bare string is not a list of them.
+    Model.field_only(["insert", "json_create"])
+    Model.field_only(["jsonCreate"])  # pyright: ignore[reportArgumentType]
+    Model.field_only("insert")  # pyright: ignore[reportArgumentType]
+
+
+def check_sql_model() -> None:
+    repository = sql_model.make_repository(
+        ModelUser, table_name="users", span_prefix="Users", id_column="id"
+    )
+    assert_type(
+        repository,
+        fx.Effect[
+            sql_model.Repository[ModelUser, ModelUserInsert, ModelUserUpdate], Never, SqlClient
+        ],
+    )
+
+    def use(repo: sql_model.Repository[ModelUser, ModelUserInsert, ModelUserUpdate]) -> None:
+        # insert / update take their variant and return the model.
+        assert_type(repo.insert({"name": "a"}), fx.Effect[ModelUser, S.SchemaError | SqlError])
+        assert_type(
+            repo.update({"id": 1, "name": "b"}), fx.Effect[ModelUser, S.SchemaError | SqlError]
+        )
+        repo.insert({"id": 1, "name": "a"})  # pyright: ignore[reportArgumentType]
+        repo.update({"name": "b"})  # pyright: ignore[reportArgumentType]
+        assert_type(
+            repo.find_by_id(1),
+            fx.Effect[ModelUser, fx.NoSuchElementException | S.SchemaError | SqlError],
+        )
+        assert_type(repo.delete(1), fx.Effect[None, S.SchemaError | SqlError])
+
+    resolvers = sql_model.make_resolvers(
+        ModelUser, table_name="users", span_prefix="Users", id_column="id"
+    )
+    assert_type(
+        resolvers, fx.Effect[sql_model.Resolvers[ModelUser, ModelUserInsert], Never, SqlClient]
+    )
+
+    def use_resolvers(r: sql_model.Resolvers[ModelUser, ModelUserInsert]) -> None:
+        payload: ModelUserInsert = {"name": "a"}
+        assert_type(
+            sql_resolver.request(payload, r.insert),
+            fx.Effect[ModelUser, ResultLengthMismatch | S.SchemaError | SqlError, Any],
+        )
+
+    # Only a model class has variants to make a repository of.
+    sql_model.make_repository(ModelPlain, table_name="t", span_prefix="T", id_column="name")
+    sql_model.make_repository(S.String, table_name="t", span_prefix="T", id_column="id")  # pyright: ignore[reportArgumentType]
+    del use, use_resolvers

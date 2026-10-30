@@ -29,7 +29,7 @@ object, ...), ``to_codec_string_tree(schema)`` as a tree of strings;
 See docs/SCHEMA_DESIGN.md for how schemas are typed.
 """
 
-from pyfect.schema import ast, getter, issue, transformation
+from pyfect.schema import ast, getter, issue, model, transformation, variant_schema
 from pyfect.schema._arbitrary_constraint import ArbitraryConstraint
 from pyfect.schema._arrays import (
     Array,
@@ -126,6 +126,7 @@ from pyfect.schema._codecs import (
     ByteSizeFromBigInt,
     ByteSizeFromNumber,
     ByteSizeFromString,
+    DateTimeUtcFromDate,
     DateTimeUtcFromMillis,
     DateTimeUtcFromString,
     DateTimeZonedFromString,
@@ -351,6 +352,7 @@ __all__ = [
     "Class",
     "Codec",
     "DateTimeUtc",
+    "DateTimeUtcFromDate",
     "DateTimeUtcFromMillis",
     "DateTimeUtcFromString",
     "DateTimeZoned",
@@ -573,6 +575,7 @@ __all__ = [
     "make_is_multiple_of",
     "middleware_decoding",
     "middleware_encoding",
+    "model",
     "optional_key",
     "refine",
     "resolve_annotations",
@@ -591,6 +594,7 @@ __all__ = [
     "to_tagged_union",
     "to_type",
     "transformation",
+    "variant_schema",
     "with_decoding_default_key",
     "with_decoding_default_type_key",
 ]

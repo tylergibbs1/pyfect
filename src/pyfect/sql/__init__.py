@@ -12,11 +12,22 @@ extra and is not imported here.
 - ``schema``: queries typed by schemas (``SqlSchema``)
 - ``stream``: streams from drivers that push rows (``SqlStream``)
 - ``migrator``: migrations
+- ``model``: repositories of ``pyfect.schema.model`` classes (``SqlModel``)
 - ``sqlite``: the SQLite client (``pyfect.sql.sqlite.migrator`` runs its
   migrations)
 """
 
-from pyfect.sql import client, connection, error, migrator, resolver, schema, statement, stream
+from pyfect.sql import (
+    client,
+    connection,
+    error,
+    migrator,
+    model,
+    resolver,
+    schema,
+    statement,
+    stream,
+)
 from pyfect.sql.client import BeginTransaction, SafeIntegers, SqlClient, SqlClientService
 from pyfect.sql.connection import Connection, Row
 from pyfect.sql.error import SqlError
@@ -40,6 +51,7 @@ __all__ = [
     "connection",
     "error",
     "migrator",
+    "model",
     "resolver",
     "schema",
     "statement",
