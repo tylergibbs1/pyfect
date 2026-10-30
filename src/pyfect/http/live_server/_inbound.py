@@ -4,10 +4,13 @@ read."""
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 
 from pyfect._core import Effect
+from pyfect.duration import Seconds
 from pyfect.effect import fail, succeed, suspend
+from pyfect.http.live_server._timers import timeout_option
 from pyfect.socket._connection import Connection
 from pyfect.socket._errors import SocketError, is_clean_close, read_error
 
@@ -16,16 +19,22 @@ class HeadTooLarge(Exception):
     """The head did not end within the limit."""
 
 
+class RequestTimeout(Exception):
+    """The request did not arrive whole within the request timeout."""
+
+
 class Inbound:
     """``read`` gives ``b""`` once the peer ended the stream cleanly; a
-    connection that failed fails the read."""
+    connection that failed fails the read. Once ``deadline`` is set (a
+    ``time.monotonic()``), a wait for bytes past it fails the read."""
 
-    __slots__ = ("_conn", "_ended", "_pending")
+    __slots__ = ("_conn", "_ended", "_pending", "deadline")
 
     def __init__(self, conn: Connection) -> None:
         self._conn = conn
         self._pending = bytearray()
         self._ended = False
+        self.deadline: float | None = None
 
     @property
     def has_pending(self) -> bool:
@@ -53,7 +62,15 @@ class Inbound:
             self._ended = True
             return succeed(False)
 
-        return self._conn.pull_into(received).catch_all(ended)
+        pulled = self._conn.pull_into(received).catch_all(ended)
+        if self.deadline is None:
+            return pulled
+        left = self.deadline - time.monotonic()
+        if left <= 0:
+            return fail(read_error(RequestTimeout()))
+        return timeout_option(pulled, Seconds(left)).flat_map(
+            lambda more: fail(read_error(RequestTimeout())) if more is None else succeed(more.value)
+        )
 
     def wait_data(self) -> Effect[None, SocketError]:
         """Wait until some bytes are received (or the stream ends)."""

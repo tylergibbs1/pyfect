@@ -67,6 +67,10 @@ class Options(TypedDict):
     headers_timeout: NotRequired[Duration]
     """How long a request head may take to arrive (Node's
     ``headersTimeout``, 60s); a started one is answered with 408."""
+    request_timeout: NotRequired[Duration]
+    """How long a whole request (head and body) may take to arrive (Node's
+    ``requestTimeout``, 300s); a body that does not fails its read and the
+    connection is closed."""
 
 
 class TlsOptions(Options):
@@ -79,6 +83,7 @@ def _serve(listener: Listener, protocol: RequestProtocol, options: Options) -> H
     timeouts = Timeouts(
         keep_alive=to_seconds(options.get("keep_alive_timeout", 5)),
         headers=to_seconds(options.get("headers_timeout", 60)),
+        request=to_seconds(options.get("request_timeout", 300)),
     )
 
     def serve(app: HttpApp, middleware: Middleware | None) -> Effect[None, Any, Scope]:

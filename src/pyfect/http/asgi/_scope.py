@@ -5,6 +5,14 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
+from pyfect.http._authority import (
+    LOCALHOST,
+    Authority,
+    OriginForm,
+    absolute_url,
+    parse_authority,
+    parse_origin_form,
+)
 from pyfect.http.asgi._types import Scope
 
 # What ``quote`` keeps of a path: RFC 3986 ``pchar``s and ``/``.
@@ -17,15 +25,16 @@ def _strip_prefix(path: str, prefix: str) -> str:
     return path
 
 
-def target(scope: Scope) -> str:
+def target(scope: Scope) -> OriginForm | None:
     """The path and query, without the ``root_path`` the app is mounted at
-    (servers and Starlette's ``Mount`` keep it in ``path``)."""
+    (servers and Starlette's ``Mount`` keep it in ``path``); ``None`` when
+    the path has no leading ``/`` (a server may hand on a raw target)."""
     root = quote(scope.get("root_path", ""), safe=_PATH_SAFE)
     raw: bytes | None = scope.get("raw_path")
     path = raw.decode("latin-1") if raw else quote(scope["path"], safe=_PATH_SAFE)
     path = _strip_prefix(path.split("?", 1)[0], root) or "/"
     query: bytes = scope.get("query_string", b"")
-    return f"{path}?{query.decode('latin-1')}" if query else path
+    return parse_origin_form(f"{path}?{query.decode('latin-1')}" if query else path)
 
 
 def header_lines(scope: Scope) -> list[tuple[str, str]]:
@@ -33,22 +42,29 @@ def header_lines(scope: Scope) -> list[tuple[str, str]]:
     return [(name.decode("latin-1").lower(), value.decode("latin-1")) for name, value in pairs]
 
 
-def _host(scope: Scope, lines: list[tuple[str, str]]) -> str:
+def _host(scope: Scope, lines: list[tuple[str, str]]) -> Authority:
+    """The ``host`` header, or the server's address when there is none or
+    it is no authority (the routed path comes from the scope alone)."""
     for name, value in lines:
         if name == "host":
-            return value
+            authority = parse_authority(value)
+            if authority is not None:
+                return authority
+            break
     server: tuple[str, int | None] | None = scope.get("server")
     if server is None:
-        return "localhost"
+        return LOCALHOST
     host, port = server
     host = f"[{host}]" if ":" in host else host
-    return host if port is None else f"{host}:{port}"
+    return parse_authority(host if port is None else f"{host}:{port}") or LOCALHOST
 
 
-def url(scope: Scope, lines: list[tuple[str, str]]) -> str:
-    """The absolute URL: ``http`` or ``https`` (``ws`` and ``wss`` too)."""
+def url(scope: Scope, lines: list[tuple[str, str]]) -> str | None:
+    """The absolute URL: ``http`` or ``https`` (``ws`` and ``wss`` too);
+    ``None`` when the target is not origin-form (answered with 400)."""
     scheme = "https" if scope.get("scheme") in ("https", "wss") else "http"
-    return f"{scheme}://{_host(scope, lines)}{target(scope)}"
+    origin = target(scope)
+    return None if origin is None else absolute_url(scheme, _host(scope, lines), origin)
 
 
 def remote_address(scope: Scope) -> str | None:

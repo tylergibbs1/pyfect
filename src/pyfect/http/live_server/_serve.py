@@ -5,16 +5,17 @@ response, a shutdown)."""
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any
-from urllib.parse import urlsplit
 
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
 from pyfect.duration import Seconds
 from pyfect.effect import gen, succeed, sync, void
+from pyfect.http._authority import LOCALHOST, absolute_url
 from pyfect.http.headers import Headers
 from pyfect.http.live_server._exchange import MAX_DRAIN_BYTES, Exchange
 from pyfect.http.live_server._head import HeadError, RequestHead, parse_head
@@ -41,12 +42,15 @@ type Handle = Callable[[SourceRequest, Exchange], Effect[None]]
 @dataclass(frozen=True, slots=True)
 class Timeouts:
     """Node's ``keepAliveTimeout`` (an idle connection between requests is
-    closed) and ``headersTimeout`` (a head must arrive within it once it
-    is awaited, or started after a keep-alive wait; a started one is
-    answered with 408)."""
+    closed), ``headersTimeout`` (a head must arrive within it once it is
+    awaited, or started after a keep-alive wait; a started one is answered
+    with 408) and ``requestTimeout`` (the body must have arrived within it
+    of the head arriving, or its read fails, the response drain
+    included, and the connection closes)."""
 
     keep_alive: Seconds
     headers: Seconds
+    request: Seconds
 
 
 def _reject(conn: Connection, status: int) -> Effect[None]:
@@ -83,26 +87,11 @@ def _peer_address(conn: Connection) -> str | None:
     return None
 
 
-def _target(head: RequestHead) -> tuple[str, Headers]:
-    """The path and query, and the headers, an absolute-form target
-    replacing ``host`` (RFC 9112 §3.2.2)."""
-    target = head.target
-    if target.startswith("/") or target == "*" or head.method == "CONNECT":
-        return target, head.headers
-    parts = urlsplit(target)
-    path = parts.path or "/"
-    url = f"{path}?{parts.query}" if parts.query else path
-    entries = dict(head.headers.items())
-    entries["host"] = parts.netloc
-    return url, Headers(entries)
-
-
 def _request(
     exchange: Exchange, protocol: RequestProtocol, remote_address: str | None
 ) -> SourceRequest:
     head = exchange.head
-    url, headers = _target(head)
-    host = headers.get("host", "localhost")
+    url = head.target
     body = exchange.body
     request: SourceRequest | None = None
 
@@ -112,8 +101,8 @@ def _request(
 
     request = SourceRequest(
         head.method,
-        url if url == "*" else f"{protocol}://{host}{url}",
-        headers,
+        url if url == "*" else absolute_url(protocol, head.authority or LOCALHOST, url),
+        head.headers,
         None if body.complete else body.stream,
         source=exchange,
         remote_address=remote_address,
@@ -206,7 +195,9 @@ def serve_connection(
         # timeout (or the graceful shutdown timeout ends).
         while True:
             state.idle = True
+            inbound.deadline = None
             data = yield from next_head(first)
+            inbound.deadline = time.monotonic() + timeouts.request
             first = False
             state.idle = False
             head = parsed(data)

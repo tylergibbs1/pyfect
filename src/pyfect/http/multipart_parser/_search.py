@@ -4,6 +4,7 @@ number of needles seen before it."""
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from collections.abc import Callable
 
 
@@ -63,9 +64,9 @@ class Search:
             indexes = self._indexes.get(last)
             if indexes is not None:
                 earliest = -1
-                for i, index in enumerate(indexes):
-                    at = length - 1 - index
-                    if at >= 0 and chunk[at] == self._first_byte and i > earliest:
+                # Only the indexes (ascending) that fit in the chunk.
+                for i, index in enumerate(indexes[: bisect_left(indexes, length)]):
+                    if chunk[length - 1 - index] == self._first_byte and i > earliest:
                         earliest = index
                 if earliest == -1:
                     self._callback(self._match_index, chunk[pos:])

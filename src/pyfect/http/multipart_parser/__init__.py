@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import codecs
 import math
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import ClassVar, Literal, Protocol
@@ -282,10 +283,11 @@ def make(
     max_field_size: byte_size.Input | None = None,
 ) -> Parser:
     """A parser of the body ``headers`` describe. Without a boundary in
-    the content type it reports ``InvalidBoundary`` at once and ignores
-    every write."""
+    the content type, or with one RFC 2046 does not allow (1 to 70
+    characters; Effect takes any), it reports ``InvalidBoundary`` at once
+    and ignores every write."""
     boundary = ct.parse(headers.get("content-type")).parameters.get("boundary")
-    if boundary is None:
+    if boundary is None or not _BOUNDARY.fullmatch(boundary):
         on_error(InvalidBoundary())
         return _Noop()
     return _Parser(
@@ -301,6 +303,10 @@ def make(
         _limit(max_field_size, 1024 * 1024),
     )
 
+
+_BOUNDARY = re.compile(r"[0-9A-Za-z'()+_,\-./:=? ]{0,69}[0-9A-Za-z'()+_,\-./:=?]")
+"""RFC 2046 §5.1.1: ``bchars``, at most 70, not ending in a space. The
+search for it costs its length on every write, so the bound matters."""
 
 _WINDOWS_1252 = frozenset({"iso-8859-1", "latin1", "latin-1", "l1", "ascii", "us-ascii"})
 

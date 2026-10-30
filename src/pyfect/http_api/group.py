@@ -74,17 +74,14 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co]):
         cls.top_level = top_level
         cls.annotations = annotations if annotations is not None else Context.empty()
         cls.origin = cls
-        middlewares = _declared_middlewares(cls)
         endpoints: dict[str, AnyEndpoint] = {}
         for base in reversed(cls.__mro__[1:]):
             endpoints |= getattr(base, "endpoints", {})
         for value in vars(cls).values():
             if isinstance(value, HttpApiEndpoint):
                 endpoint = cast("AnyEndpoint", value)
-                for middleware in middlewares:
-                    endpoint = endpoint.middleware(middleware)
                 endpoints[endpoint.identifier] = endpoint
-        cls.endpoints = endpoints
+        cls.endpoints = _wrapped(cls, endpoints)
 
     def method(self, identifier: str, /) -> Any:
         """On a client's group, the client method of the endpoint
@@ -105,7 +102,7 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co]):
         derived = types.new_class(cls.__name__, (cls,))
         derived.__qualname__ = cls.__qualname__
         derived.__module__ = cls.__module__
-        derived.endpoints = cls.endpoints if endpoints is None else endpoints
+        derived.endpoints = cls.endpoints if endpoints is None else _wrapped(derived, endpoints)
         derived.annotations = cls.annotations if annotations is None else annotations
         return derived
 
@@ -163,6 +160,20 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co]):
 
 
 type AnyGroup = type[HttpApiGroup[Any]]
+
+
+def _wrapped(cls: type, endpoints: Mapping[str, AnyEndpoint]) -> Mapping[str, AnyEndpoint]:
+    """``endpoints`` each wrapped by the middleware ``cls`` declares. Every
+    assignment of a group's ``endpoints`` goes through here, so no class
+    method can bring in an endpoint that skips it."""
+    middlewares = _declared_middlewares(cls)
+    out: dict[str, AnyEndpoint] = {}
+    for identifier, endpoint in endpoints.items():
+        wrapped = endpoint
+        for middleware in middlewares:
+            wrapped = wrapped.middleware(middleware)
+        out[identifier] = wrapped
+    return out
 
 
 def _declared_middlewares(cls: type) -> tuple[AnyMiddleware, ...]:

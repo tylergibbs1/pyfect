@@ -86,22 +86,25 @@ _PAYLOAD_TOO_LARGE = empty(status=413, headers={"connection": "close"})
 
 def decode_payload(
     decoders: PayloadDecoders, request: ServerRequest, query: Mapping[str, object]
-) -> Effect[Any, SchemaError, Any] | HttpServerResponse:
-    """The payload's decoding, or the response refusing the request."""
+) -> Effect[Any, SchemaError, Any]:
+    """The payload, or the response refusing the request."""
     body = has_body(request.method)
+    declared = request.headers.get("content-type")
     content_type = (
-        media_type.normalize(request.headers.get("content-type") or "application/json")
+        media_type.normalize(declared or "application/json")
         if body
         else "application/x-www-form-urlencoded"
     )
     decoder = decoders.get(content_type)
     if decoder is None:
-        return text_response(f"Unsupported content-type: {content_type}", status=415)
+        return succeed(_unsupported(content_type))
+    if body and not declared:
+        return _undeclared(decoder, request, query)
     match decoder:
         case _Stream():
             length = _content_length(request)
             if decoder.max_bytes is not None and length is not None and length > decoder.max_bytes:
-                return _PAYLOAD_TOO_LARGE
+                return succeed(_PAYLOAD_TOO_LARGE)
             # The stream can be read after the handler returns, inside a
             # streaming response, so it carries the services with it.
             stream_decode = decoder.decode
@@ -112,6 +115,26 @@ def decode_payload(
             return _multipart(decoder, request)
         case _Buffered():
             return _buffered(decoder, request, query, body)
+
+
+def _undeclared(
+    decoder: PayloadDecoder, request: ServerRequest, query: Mapping[str, object]
+) -> Effect[Any, SchemaError, Any]:
+    """A body with no content-type. Effect decodes it as JSON; pyfect takes
+    only an empty one, as a cross-site "simple" request may carry a body
+    without a content-type and must not reach a JSON endpoint."""
+    unsupported = _unsupported("")
+    if not isinstance(decoder, _Buffered):
+        return succeed(unsupported)
+    return request.text.or_die().flat_map(
+        lambda text: (
+            _buffered(decoder, request, query, True) if text == "" else succeed(unsupported)
+        )
+    )
+
+
+def _unsupported(content_type: str) -> HttpServerResponse:
+    return text_response(f"Unsupported content-type: {content_type}", status=415)
 
 
 def _content_length(request: ServerRequest) -> int | None:

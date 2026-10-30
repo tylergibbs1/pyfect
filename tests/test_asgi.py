@@ -639,3 +639,80 @@ def test_websocket_upgrades_with_custom_headers_fail() -> None:
 
     _start, body = asyncio.run(main())
     assert body["body"] == b"failed"
+
+
+def test_a_host_header_that_is_not_an_authority_does_not_change_the_routed_path() -> None:
+    admin = effect.succeed(server_response.text("ADMIN"))
+
+    def echo(request: ServerRequest) -> fx.Effect[HttpServerResponse]:
+        return effect.succeed(server_response.text(f"{request.url} {request.original_url}"))
+
+    routes = router.add("GET", "/admin", admin).pipe(
+        layer.provide_merge(router.add("GET", "/public", _app(echo)))
+    )
+    app = router.to_asgi(routes, disable_logger=True)
+
+    async def main() -> list[bytes]:
+        bodies: list[bytes] = []
+        async with app.lifespan():
+            for host in ("x/admin?", "x?role=admin&", "u@x", "x#f"):
+                scope = _scope("/public")
+                scope["headers"] = [(b"host", host.encode())]
+                bodies.append((await _request(app, scope)).body())
+        return bodies
+
+    assert asyncio.run(main()) == [b"/public http://test:80/public"] * 4
+
+
+def test_a_host_header_that_is_not_an_authority_does_not_change_to_url() -> None:
+    """``to_url`` (what a web handler and the tracer read) never resolves
+    the request's path against a client-sent host."""
+    from pyfect.http.server_request import to_url
+
+    def full(request: ServerRequest) -> fx.Effect[HttpServerResponse]:
+        url = to_url(request)
+        return effect.succeed(server_response.text("None" if url is None else url.geturl()))
+
+    app = asgi.to_asgi(_app(full))
+
+    async def main() -> list[bytes]:
+        bodies: list[bytes] = []
+        for host in ("x/admin/", "x/a/b?", "u@x", "[1]"):
+            scope = _scope("/public")
+            scope["headers"] = [(b"host", host.encode())]
+            bodies.append((await _request(app, scope)).body())
+        return bodies
+
+    assert asyncio.run(main()) == [b"None"] * 4
+
+
+def test_a_path_that_is_not_origin_form_is_a_400() -> None:
+    """A server may hand on a raw request-target without a leading ``/``
+    (uvicorn's h11 protocol does); it must neither run into the host nor
+    be routed as if it had one."""
+    admin = effect.succeed(server_response.text("ADMIN"))
+    routes = router.add("GET", "/admin", admin).pipe(
+        layer.provide_merge(router.add("*", "*", effect.succeed(server_response.text("ANY"))))
+    )
+    app = router.to_asgi(routes, disable_logger=True)
+
+    async def main() -> list[tuple[int, bytes]]:
+        responses: list[tuple[int, bytes]] = []
+        async with app.lifespan():
+            for path in ("evil.com/admin", "admin", "http://evil/admin"):
+                response = await _request(app, _scope(path))
+                responses.append((response.status(), response.body()))
+        return responses
+
+    assert asyncio.run(main()) == [(400, b"")] * 3
+
+
+def test_a_websocket_path_that_is_not_origin_form_is_refused() -> None:
+    app = asgi.to_asgi(_app(_echo))
+
+    async def main() -> list[Message]:
+        peer = _Peer({"type": "websocket.connect"})
+        await asyncio.wait_for(app(_scope("evil/ws", type="websocket"), peer.receive, peer.send), 5)
+        return peer.sent
+
+    assert asyncio.run(main()) == [{"type": "websocket.close", "code": 1008}]

@@ -102,10 +102,14 @@ class _Inbound:
 
 def request_of(
     scope: Scope, body: AsyncIterator[bytes] | None, controller: AbortController
-) -> WebRequest:
+) -> WebRequest | None:
+    """The request, or ``None`` when its target is not origin-form."""
     lines = _scope.header_lines(scope)
+    url = _scope.url(scope, lines)
+    if url is None:
+        return None
     return WebRequest(
-        _scope.url(scope, lines),
+        url,
         method=scope.get("method", "GET"),
         headers=lines,
         body=body if _scope.has_body(scope, lines) else None,
@@ -178,7 +182,8 @@ async def serve_http(handler: WebHandler, scope: Scope, receive: Receive, send: 
     controller = AbortController()
     inbound = _Inbound(receive, controller)
     try:
-        response = await handler(request_of(scope, inbound.chunks(), controller))
+        request = request_of(scope, inbound.chunks(), controller)
+        response = await handler(request) if request is not None else WebResponse(status=400)
         await send_response(send, response, inbound)
     except asyncio.CancelledError:
         controller.abort()

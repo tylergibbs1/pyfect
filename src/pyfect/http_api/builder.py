@@ -286,9 +286,9 @@ def handler_to_http_effect(
             upgrader = _upgrader(request, encode_upgrade_headers)
         if payload_by is not None:
             decoded = decode_payload(payload_by, request, query)
-            if isinstance(decoded, HttpServerResponse):
-                return decoded
             payload = yield from HttpApiSchemaError.wrap("Payload", decoded)
+            if isinstance(payload, HttpServerResponse):
+                return payload
         response = yield from handler(
             HttpApiRequest(
                 params, query_value, payload, headers, request, endpoint, group, upgrader

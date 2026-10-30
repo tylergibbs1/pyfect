@@ -4,14 +4,13 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Sequence
 from typing import Any
-from urllib.parse import urlsplit
 
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
 from pyfect._primitives import _Locally
+from pyfect.http._authority import parse_authority
 from pyfect.http.middleware._types import AppMiddleware
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
 from pyfect.http.server_response import HttpServerResponse
@@ -57,21 +56,6 @@ def _address(text: str | None) -> IpAddress | None:
             return None
 
 
-_HOST_SHAPE = re.compile(r"^(?:\[[0-9a-f:.]+\]|[a-z0-9._-]+)(?::\d{1,5})?$", re.IGNORECASE)
-
-
-def _valid_host(host: str) -> bool:
-    """The shape check rules out paths, userinfo and lists; the URL parser
-    then rejects bad IP literals and ports."""
-    if _HOST_SHAPE.match(host) is None:
-        return False
-    try:
-        port = urlsplit(f"http://{host}").port
-    except ValueError:
-        return False
-    return port is None or port <= 65535
-
-
 def _apply(request: ServerRequest, trusted: Callable[[IpAddress], bool]) -> ServerRequest:
     peer = _address(request.peer_address)
     if peer is None or not trusted(peer):
@@ -92,7 +76,7 @@ def _apply(request: ServerRequest, trusted: Callable[[IpAddress], bool]) -> Serv
             remote_address=format_ip(address),
             peer_address=request.peer_address,
             headers=request.headers.set("host", host)
-            if host is not None and _valid_host(host)
+            if host is not None and parse_authority(host) is not None
             else None,
             protocol="https" if protocol == "https" else "http" if protocol == "http" else None,
         )

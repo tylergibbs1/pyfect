@@ -105,10 +105,11 @@ def authorization_credential(authorization: str | None, scheme: str) -> str | No
 def security_set_cookie(
     security: ApiKey, value: str | Redacted[str], **options: Unpack[CookieOptionsInput]
 ) -> Effect[None, Never, HttpServerRequest]:
-    """Set ``security``'s cookie on the response (secure and HTTP-only
-    unless ``options`` say otherwise)."""
+    """Set ``security``'s cookie on the response (secure, HTTP-only and
+    ``SameSite=Lax`` unless ``options`` say otherwise; Effect sets no
+    ``SameSite``)."""
     text = value if isinstance(value, str) else redacted.value(value)
-    cookie: CookieOptionsInput = {"secure": True, "http_only": True, **options}
+    cookie: CookieOptionsInput = {"secure": True, "http_only": True, "same_site": "lax", **options}
 
     def handler(
         _request: ServerRequest, response: HttpServerResponse

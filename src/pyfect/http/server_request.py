@@ -31,6 +31,7 @@ from pyfect.file_system import FileSystem
 from pyfect.http import _form_data, incoming_message
 from pyfect.http import body as _body
 from pyfect.http import url as _url
+from pyfect.http._authority import ROOT, absolute_url, parse_authority, parse_origin_form
 from pyfect.http.cookies import parse_header as parse_cookie_header
 from pyfect.http.headers import Headers
 from pyfect.http.headers import Input as HeadersInput
@@ -262,15 +263,20 @@ def search_params_from_url(url: SplitResult) -> dict[str, str | list[str]]:
 
 def to_url(request: ServerRequest) -> SplitResult | None:
     """The request's full URL, from its ``host`` header (``localhost``
-    without one) and protocol; ``None`` when that is no valid URL."""
-    host = request.headers.get("host", "localhost")
+    without one) and protocol; ``None`` when that is no valid URL, or the
+    host is no authority (so it cannot change the path or query)."""
+    authority = parse_authority(request.headers.get("host") or "localhost")
+    if authority is None:
+        return None
     protocol = request.protocol or (
         "https" if request.original_url[:6].lower() == "https:" else "http"
     )
     url = request.url
+    origin = parse_origin_form(url)
     try:
-        # A leading "." keeps a path starting with "//" from replacing the host.
-        return _url.parse(f".{url}" if url.startswith("/") else url, f"{protocol}://{host}")
+        if origin is not None:
+            return _url.parse(absolute_url(protocol, authority, origin))
+        return _url.parse(url, absolute_url(protocol, authority, ROOT))
     except ValueError:
         return None
 

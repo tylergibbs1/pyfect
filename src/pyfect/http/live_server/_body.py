@@ -10,14 +10,19 @@ from typing import Literal
 from pyfect._core import Effect
 from pyfect.effect import fail, succeed, suspend
 from pyfect.errors import Done
-from pyfect.http.live_server._head import Chunked, Framing
+from pyfect.http.live_server._head import Chunked, Framing, HeadError, parse_field_line
 from pyfect.http.live_server._inbound import Inbound
 from pyfect.socket._errors import SocketError
 from pyfect.stream import Stream, from_pull
 
 _READ_SIZE = 64 * 1024
 _LINE_LIMIT = 4096
-_CHUNK_SIZE = re.compile(rb"([0-9A-Fa-f]{1,16})[ \t]*(?:;.*)?\Z")
+_TRAILERS_LIMIT = 16 * 1024
+"""The most bytes of trailer lines, as the head's limit."""
+_CHUNK_SIZE = re.compile(rb"([0-9A-Fa-f]{1,16})[ \t]*(?:;[\t\x20-\x7e\x80-\xff]*)?\Z")
+"""A chunk size and its extensions, which hold no CR, NUL or other control
+character (a parser that ends a line at a bare CR would read another
+message)."""
 
 
 class BodyError(Exception):
@@ -32,7 +37,16 @@ class BodyReader:
     """The request body. ``before_read`` runs before the first read (the
     ``100 Continue``); ``bytes_read`` counts body bytes."""
 
-    __slots__ = ("_before_read", "_failed", "_inbound", "_left", "_state", "bytes_read", "started")
+    __slots__ = (
+        "_before_read",
+        "_failed",
+        "_inbound",
+        "_left",
+        "_state",
+        "_trailer_bytes",
+        "bytes_read",
+        "started",
+    )
 
     def __init__(
         self, inbound: Inbound, framing: Framing, before_read: Callable[[], Effect[None]]
@@ -45,6 +59,7 @@ class BodyReader:
             self._state, self._left = "size", 0
         else:
             self._state, self._left = ("length", framing.size) if framing.size else ("done", 0)
+        self._trailer_bytes = 0
         self.bytes_read = 0
         self.started = False
 
@@ -112,6 +127,16 @@ class BodyReader:
             return self._fail("the body ended within its trailers").as_(b"")
         if line == b"":
             self._state = "done"
+            return succeed(b"")
+        # Trailers are field lines as a head's are, so a bare CR or LF
+        # cannot end the message early for one parser and not another.
+        self._trailer_bytes += len(line) + 2
+        if self._trailer_bytes > _TRAILERS_LIMIT:
+            return self._fail("the trailers are too large").as_(b"")
+        try:
+            parse_field_line(line)
+        except HeadError:
+            return self._fail("invalid trailer field").as_(b"")
         return succeed(b"")
 
     def stream(self) -> Stream[bytes, BodyError | SocketError]:

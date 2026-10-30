@@ -232,7 +232,7 @@ async def _send_response(send: Send, scope: Scope, response: WebResponse) -> Non
     await send({"type": "websocket.http.response.body", "body": body})
 
 
-def _request(ws: AsgiWebSocket, scope: Scope) -> SourceRequest:
+def _request(ws: AsgiWebSocket, scope: Scope, url: str) -> SourceRequest:
     lines = _scope.header_lines(scope)
     joined: dict[str, str] = {}
     for name, value in lines:
@@ -246,7 +246,7 @@ def _request(ws: AsgiWebSocket, scope: Scope) -> SourceRequest:
 
     return SourceRequest(
         "GET",
-        _scope.url(scope, lines),
+        url,
         Headers(joined),
         None,
         source=scope,
@@ -268,6 +268,10 @@ async def serve_websocket(
     """Answer one ``websocket`` scope with ``app``."""
     if (await receive())["type"] != "websocket.connect":
         return
+    url = _scope.url(scope, _scope.header_lines(scope))
+    if url is None:
+        await _send_response(send, scope, WebResponse(status=400))
+        return
     ws = AsgiWebSocket(receive, send)
 
     def respond(_request: ServerRequest, response: HttpServerResponse) -> Effect[object, Never]:
@@ -283,7 +287,8 @@ async def serve_websocket(
         return _WithFiber(body)
 
     fiber = fork(
-        to_handled(app, respond, middleware), context.add(HttpServerRequest, _request(ws, scope))
+        to_handled(app, respond, middleware),
+        context.add(HttpServerRequest, _request(ws, scope, url)),
     )
     loop = asyncio.get_running_loop()
     done: asyncio.Future[None] = loop.create_future()
