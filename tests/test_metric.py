@@ -362,13 +362,13 @@ def test_exponential_boundaries_overflow_to_infinity_as_in_javascript():
 def test_a_registration_is_removed_only_while_it_is_current():
     context = fx.Context.make(metric.MetricRegistry, {})
     gauge = metric.gauge("g").with_attributes({"k": "v"})
-    first = metric.unsafe_register(gauge, context, lambda _: metric.GaugeState(1))
-    second = metric.unsafe_register(gauge, context, lambda _: metric.GaugeState(2))
+    first = metric.register_unsafe(gauge, context, lambda _: metric.GaugeState(1))
+    second = metric.register_unsafe(gauge, context, lambda _: metric.GaugeState(2))
     first.remove()
-    assert gauge.unsafe_value(context) == metric.GaugeState(2)
+    assert gauge.value_unsafe(context) == metric.GaugeState(2)
     second.remove()
     second.remove()
-    assert metric.unsafe_snapshot(context) == []
+    assert metric.snapshot_unsafe(context) == []
 
 
 def test_a_metric_is_its_own_description():

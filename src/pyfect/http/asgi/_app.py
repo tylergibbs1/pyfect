@@ -132,7 +132,7 @@ class _ServedApp(Tag[Effect[HttpServerResponse, Any, Any]], key="pyfect/http/asg
 
 
 def _served(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, Any, Any]:
-    return fiber._context.unsafe_get(_ServedApp)
+    return fiber._context.get_unsafe(_ServedApp)
 
 
 def to_asgi_with[LE](

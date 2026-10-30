@@ -95,7 +95,7 @@ def test_a_write_waits_for_a_reader():
     writer = yield from client.writer
     pending = yield from writer.write(OutgoingDatagram("late", server.address)).fork()
     yield from yield_now()
-    assert pending.unsafe_poll() is None
+    assert pending.poll_unsafe() is None
     yield from client.reader
     yield from pending.join()
     assert (yield from pull_text(server)) == ["late"]

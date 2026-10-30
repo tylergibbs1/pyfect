@@ -839,7 +839,7 @@ def test_replays_each_remote_batch_in_one_transaction():
 
         def on_invalidate() -> None:
             timeline.append("invalidate")
-            invalidated.unsafe_offer(None)
+            invalidated.offer_unsafe(None)
 
         reactivity.register_unsafe(["users"], on_invalidate)
         changes = yield from _changes_queue()

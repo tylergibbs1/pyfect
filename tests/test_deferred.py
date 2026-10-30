@@ -158,7 +158,7 @@ def test_failure_shorthands_store_the_matching_cause():
     assert (yield from died.wait().exit()) == fx.exit.die(boom)
     assert (yield from failed.wait().exit()) == fail_exit("bad")
     assert (yield from failed_cause.wait().exit()) == fail_exit("worse")
-    assert died.unsafe_is_done()
+    assert died.is_done_unsafe()
 
 
 @fx.testing.effect

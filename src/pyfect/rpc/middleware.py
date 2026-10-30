@@ -154,7 +154,7 @@ def layer_client_effect[M: RpcMiddleware[Any, Any, Any], E, R, EX, RX](
 
     def build(fn: ClientMiddlewareFn[E, R]) -> Effect[Context[Any], Never, Any]:
         def with_services(services: Context[Any]) -> Context[Any]:
-            kept = Context({t: s for t, s in services.unsafe_map.items() if t is not Scope})
+            kept = Context({t: s for t, s in services.map_unsafe.items() if t is not Scope})
 
             def run(options: ClientMiddlewareOptions) -> Effect[SuccessValue, Any, Any]:
                 return fn(options).pipe(provide_context(kept))

@@ -189,6 +189,11 @@ class AsyncioScheduler(Tracking):
         self._ready: deque[Task] = deque()
         self._draining_scheduled = False
 
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop:
+        """The loop this scheduler runs tasks on."""
+        return self._loop
+
     @classmethod
     def current(cls) -> AsyncioScheduler:
         """The scheduler for the running loop. Must be called on the loop."""
@@ -217,3 +222,16 @@ class AsyncioScheduler(Tracking):
             self._ready.popleft()()
         if self._ready:
             self._drain_soon()
+
+
+__all__ = [
+    "AsyncioScheduler",
+    "Cancel",
+    "CurrentScheduler",
+    "MaxOpsBeforeYield",
+    "PreventSchedulerYield",
+    "Scheduler",
+    "StalledError",
+    "SyncScheduler",
+    "Task",
+]

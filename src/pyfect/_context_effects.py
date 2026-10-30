@@ -108,7 +108,7 @@ def update_service_scoped[S, T](
     """
 
     def update(fiber: Fiber[Any, Any]) -> Effect[None]:
-        original = fiber._context.unsafe_get(tag)
+        original = fiber._context.get_unsafe(tag)
         updated = f(original)
         fiber._set_context(fiber._context.add(tag, updated))
 
@@ -123,7 +123,7 @@ def update_service_scoped[S, T](
         def finalizer(_ex: Exit[Any, Any]) -> Effect[None]:
             return _Suspend(put_back)
 
-        scope = fiber._context.unsafe_get(Scope)
+        scope = fiber._context.get_unsafe(Scope)
         if scope._closed is not None:
             return finalizer(scope._closed)
         # Not ``add_finalizer``: it restores the closing fiber's services

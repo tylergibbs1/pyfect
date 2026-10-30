@@ -185,6 +185,23 @@ def test_the_not_advancing_warning_does_not_delay_a_stall() -> None:
     assert time.monotonic() - started < 1
 
 
+def test_blocking_work_longer_than_the_stall_timeout_is_not_a_stall() -> None:
+    # A thread still running ``blocking`` work will resume its fiber.
+    work = fx.blocking(lambda: (time.sleep(0.2), 42)[1])
+    assert testing.run_test(work, stall_timeout=0.05) == 42
+
+
+def test_try_blocking_work_longer_than_the_stall_timeout_is_not_a_stall() -> None:
+    work = fx.try_blocking(lambda: (time.sleep(0.2), 7)[1]).or_die()
+    assert testing.run_test(work, stall_timeout=0.05) == 7
+
+
+def test_a_stall_after_blocking_work_finished_is_still_reported() -> None:
+    work = fx.blocking(lambda: None).and_then(fx.never)
+    with pytest.raises(testing.StalledError):
+        testing.run_test(work, stall_timeout=0.05)
+
+
 def test_run_test_times_out_in_real_time() -> None:
     with pytest.raises(testing.TestTimeoutError):
         testing.run_test(testing.with_live(fx.sleep(10)), timeout=0.05)

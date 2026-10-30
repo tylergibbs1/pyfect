@@ -96,7 +96,7 @@ def make_sqlite_acquirers[C: Connection](
     available = connection.flat_map(check)
 
     def lease_body(fiber: Any) -> Effect[C, SqlError, Scope]:
-        scope: CloseableScope = fiber._context.unsafe_get(Scope)
+        scope: CloseableScope = fiber._context.get_unsafe(Scope)
         return uninterruptible_mask(
             lambda restore: (
                 restore(semaphore.take(1))

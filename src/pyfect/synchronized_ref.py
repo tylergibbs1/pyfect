@@ -22,3 +22,6 @@ class SynchronizedRef[A](LockedRef[A]):
     @staticmethod
     def make[T](value: T) -> Effect[SynchronizedRef[T]]:
         return _Sync(lambda: SynchronizedRef(value))
+
+
+__all__ = ["SynchronizedRef"]

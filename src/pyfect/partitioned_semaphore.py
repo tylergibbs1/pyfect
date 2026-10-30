@@ -204,3 +204,6 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
             if waiter.missing == 0:
                 self._waiters.remove(key, waiter)
                 waiter.wake()
+
+
+__all__ = ["PartitionedSemaphore"]

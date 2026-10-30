@@ -20,6 +20,7 @@ builds one from a generator, and the methods ``map``, ``flat_map``,
 ``Config.schema``).
 """
 
+from pyfect._public import publish
 from pyfect.config._all import all, all_dict
 from pyfect.config._collections import dict_of, list_of
 from pyfect.config._config import Config, gen, option, unwrap
@@ -88,3 +89,5 @@ __all__ = [
     "unwrap",
     "url",
 ]
+
+publish(globals())

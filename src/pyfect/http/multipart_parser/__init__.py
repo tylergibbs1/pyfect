@@ -335,6 +335,7 @@ __all__ = [
     "EndNotReached",
     "InvalidBoundary",
     "InvalidDisposition",
+    "Limit",
     "MultipartError",
     "OnChunk",
     "Parser",

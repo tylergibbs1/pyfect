@@ -141,7 +141,7 @@ class LifecycleMethods(
         channel then needs."""
         from pyfect.channel import _context
 
-        return _context.update_context_with(self, lambda ctx: ctx.add(tag, f(ctx.unsafe_get(tag))))
+        return _context.update_context_with(self, lambda ctx: ctx.add(tag, f(ctx.get_unsafe(tag))))
 
     # --- repetition -----------------------------------------------------------
 

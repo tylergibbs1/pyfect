@@ -89,4 +89,4 @@ def method_of(instance: object, operation: AnyOperation) -> object:
     return cast("GraphQLGroup[Any]", instance)._methods[operation]  # pyright: ignore[reportPrivateUsage]
 
 
-__all__ = ["GraphQLGroup", "GroupTypes"]
+__all__ = ["GraphQLGroup", "GroupTypes", "group_middlewares", "method_of", "operations_of"]

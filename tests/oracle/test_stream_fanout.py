@@ -265,7 +265,7 @@ def _check_backpressure():
     fiber = yield from evens.tap(record).run_drain().fork()
     yield from latch.wait()
     result1 = yield from ref.get()
-    blocked = fiber.unsafe_poll() is None
+    blocked = fiber.poll_unsafe() is None
     result2 = yield from odds.run_collect()
     yield from fiber.await_exit()
     result3 = yield from ref.get()

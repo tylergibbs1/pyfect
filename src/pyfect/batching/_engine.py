@@ -162,7 +162,7 @@ def add_entry(
     if resolver.collect_while(batch.entries.keys()):
         return entry
     assert batch.fiber is not None
-    batch.fiber.unsafe_interrupt_as(origin.fiber_id)
+    batch.fiber.interrupt_as_unsafe(origin.fiber_id)
     first = batch.origin
     start_root(new_root(first.run_scheduler, first.context), batch.take(), now=origin.now)
     return entry
@@ -186,7 +186,7 @@ def remove_entry(resolver: RequestResolver[Any, Any], entry: Entry[Any], origin:
     # The wait's finalizers may make requests, so complete the entry first.
     entry._complete(exit_interrupt())
     if abandoned is not None:
-        abandoned.unsafe_interrupt_as(None)
+        abandoned.interrupt_as_unsafe(None)
 
 
 def request_with(req: object, resolver: RequestResolver[Any, Any]) -> Effect[Any, Any, Any]:

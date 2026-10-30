@@ -140,7 +140,7 @@ def test_refreshes_locks_for_acquired_elements(pg_server: PgServer) -> None:
         second = yield from fx.scoped(store2.take(take_options)).fork_scoped()
 
         yield from fx.sleep(1.5)
-        assert second.unsafe_poll() is None
+        assert second.poll_unsafe() is None
 
         yield from first.interrupt()
         received = yield from second.join()
@@ -279,7 +279,7 @@ def test_dead_letters_elements_from_workers_that_crashed_on_the_final_attempt(
         row = yield from state()
         assert row["state"] == "failed"
         assert "Lock expired after final attempt" in str(row["last_failure"] or "")
-        assert fiber.unsafe_poll() is None
+        assert fiber.poll_unsafe() is None
 
     _run(pg_server, body, "effect_queue_crash_exhausted")
 

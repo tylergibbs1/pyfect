@@ -14,7 +14,7 @@ Adapted, with the reason:
 
 - "registerUnsafe reads on snapshot and removes only its own
   registration", "registerUnsafe ignores update and modify through an
-  input-changing transform": ``unsafe_register`` takes only the ``get``
+  input-changing transform": ``register_unsafe`` takes only the ``get``
   hook (Effect ignores the ``update`` and ``modify`` it is given), so the
   second checks that updates through the transform leave the registered
   value alone.
@@ -24,7 +24,7 @@ Omitted, with the reason:
 - "uses collection interval starts for delta $name points" (three cases):
   ported with the OpenTelemetry bridge, in ``tests/oracle/test_otel_metrics.py``.
 - "Counter > exports negative updates as deltas": it tests the OTLP
-  exporter, which is not ported (``pyfect[otel]`` exports through the
+  exporter, which is not ported (``pyfect-dev[otel]`` exports through the
   OpenTelemetry SDK instead).
 """
 
@@ -292,14 +292,14 @@ def test_register_unsafe_reads_on_snapshot_and_removes_only_its_own_registration
     size = 1
 
     def values() -> list[metric.MetricState]:
-        return [s.state for s in metric.unsafe_snapshot(context)]
+        return [s.state for s in metric.snapshot_unsafe(context)]
 
-    first = metric.unsafe_register(gauge, context, lambda _: metric.GaugeState(size))
+    first = metric.register_unsafe(gauge, context, lambda _: metric.GaugeState(size))
     assert values() == [metric.GaugeState(1)]
     size = 2
     assert values() == [metric.GaugeState(2)]
 
-    second = metric.unsafe_register(gauge, context, lambda _: metric.GaugeState(3))
+    second = metric.register_unsafe(gauge, context, lambda _: metric.GaugeState(3))
     first.remove()
     assert values() == [metric.GaugeState(3)]
     second.remove()
@@ -311,11 +311,11 @@ def test_register_unsafe_ignores_update_and_modify_through_an_input_changing_tra
     context = fx.Context.make(metric.MetricRegistry, {})
     lengths = metric.gauge(_next_id()).map_input(len)
 
-    metric.unsafe_register(lengths, context, lambda _: metric.GaugeState(1))
-    lengths.unsafe_update("hello", context)
-    lengths.unsafe_modify("hi", context)
+    metric.register_unsafe(lengths, context, lambda _: metric.GaugeState(1))
+    lengths.update_unsafe("hello", context)
+    lengths.modify_unsafe("hi", context)
 
-    assert lengths.unsafe_value(context) == metric.GaugeState(1)
+    assert lengths.value_unsafe(context) == metric.GaugeState(1)
 
 
 @testing.effect

@@ -82,7 +82,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         and drops new items."""
 
         def register(resume: Callable[[Effect[bool]], None]) -> Effect[None] | None:
-            if self.unsafe_offer(item):
+            if self.offer_unsafe(item):
                 resume(_Succeed(True))
             elif isinstance(self._state, st.Open) and self._strategy == "suspend":
                 return self._park(self._state.offers, st.OfferOne(item, resume))
@@ -92,7 +92,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
         return _Callback(register)
 
-    def unsafe_offer(self, item: A) -> bool:
+    def offer_unsafe(self, item: A) -> bool:
         """``offer`` without waiting, from outside an effect: ``False`` if it
         would have to wait. Call on the queue's fibers' scheduler thread."""
         match self._state:
@@ -112,7 +112,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         what is left if the queue is finished meanwhile."""
 
         def register(resume: Callable[[Effect[list[T]]], None]) -> Effect[None] | None:
-            rest = self.unsafe_offer_all(items)
+            rest = self.offer_all_unsafe(items)
             if rest and isinstance(self._state, st.Open) and self._strategy == "suspend":
                 return self._park(self._state.offers, st.OfferMany(rest, resume))
             resume(_Succeed(rest))
@@ -120,7 +120,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
         return _Callback(register)
 
-    def unsafe_offer_all[T](self: Queue[T, Any], items: Iterable[T]) -> list[T]:
+    def offer_all_unsafe[T](self: Queue[T, Any], items: Iterable[T]) -> list[T]:
         """``offer_all`` without waiting: the items that did not fit."""
         batch = list(items)
         match self._state:
@@ -136,8 +136,8 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         Only available on queues whose error type includes ``Done``."""
         return self.fail_cause(fail_cause(Done()))
 
-    def unsafe_end(self: Queue[Any, Done]) -> bool:
-        return self.unsafe_fail_cause(fail_cause(Done()))
+    def end_unsafe(self: Queue[Any, Done]) -> bool:
+        return self.fail_cause_unsafe(fail_cause(Done()))
 
     def fail(self, error: E) -> Effect[bool]:
         """Takers fail with ``error`` once the queue drains."""
@@ -150,9 +150,9 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
     def fail_cause(self, cause: Cause[E]) -> Effect[bool]:
         """``False`` if the queue was already ended, failed or shut down."""
-        return _Sync(lambda: self.unsafe_fail_cause(cause))
+        return _Sync(lambda: self.fail_cause_unsafe(cause))
 
-    def unsafe_fail_cause(self, cause: Cause[E]) -> bool:
+    def fail_cause_unsafe(self, cause: Cause[E]) -> bool:
         match self._state:
             case st.Open(takers=takers, offers=offers, awaiters=awaiters):
                 self._state = st.Closing(takers, offers, awaiters, cause)
@@ -167,9 +167,9 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         """Drop all items and waiting offers; takers are interrupted (or see
         the failure of a queue that was closing). ``False`` if the queue was
         already done."""
-        return _Sync(self.unsafe_shutdown)
+        return _Sync(self.shutdown_unsafe)
 
-    def unsafe_shutdown(self) -> bool:
+    def shutdown_unsafe(self) -> bool:
         match self._state:
             case st.Done():
                 return False
@@ -197,12 +197,12 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         """Wait for an item."""
 
         def attempt() -> Effect[A, E]:
-            ex = self.unsafe_take()
+            ex = self.take_unsafe()
             return self._wait_then(1, attempt) if ex is None else _FromExit(ex)
 
         return _Suspend(attempt)
 
-    def unsafe_take(self) -> Exit[A, E] | None:
+    def take_unsafe(self) -> Exit[A, E] | None:
         """An item, the failure of a finished queue, or ``None`` if ``take``
         would wait."""
         match self._state:
@@ -236,7 +236,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         finished."""
 
         def attempt() -> Effect[Option[A]]:
-            ex = self.unsafe_take()
+            ex = self.take_unsafe()
             return _Succeed(Some(ex.value) if isinstance(ex, Success) else None)
 
         return _Suspend(attempt)
@@ -330,19 +330,19 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
     def size(self) -> Effect[int]:
         """How many items the queue holds (0 once it is finished)."""
-        return _Sync(self.unsafe_size)
+        return _Sync(self.size_unsafe)
 
-    def unsafe_size(self) -> int:
+    def size_unsafe(self) -> int:
         return 0 if isinstance(self._state, st.Done) else len(self._items)
 
     def is_full(self) -> Effect[bool]:
         """Whether the queue holds ``capacity`` items."""
-        return _Sync(self.unsafe_is_full)
+        return _Sync(self.is_full_unsafe)
 
-    def unsafe_is_full(self) -> bool:
-        return self.unsafe_size() == self._capacity
+    def is_full_unsafe(self) -> bool:
+        return self.size_unsafe() == self._capacity
 
-    def unsafe_is_done(self) -> bool:
+    def is_done_unsafe(self) -> bool:
         """Whether the queue has ended, failed or shut down and has no items
         left (Effect's ``queue.state._tag === "Done"``)."""
         return isinstance(self._state, st.Done)

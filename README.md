@@ -183,17 +183,19 @@ what is next.
 
 ## Installation
 
-pyfect needs Python 3.13 or later and has no required dependencies.
+pyfect needs Python 3.13 or later; its one dependency is `typing-extensions`. It is not on PyPI
+yet: install the `pyfect-dev` distribution from GitHub and `import pyfect` (PyPI's `pyfect` is
+an unrelated project).
 
 ```sh
-uv add git+https://github.com/tylergibbs1/pyfect
+uv add "pyfect-dev @ git+https://github.com/tylergibbs1/pyfect"
 ```
 
 Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `httpx` (the
 HTTP client backend), `websockets` (WebSocket clients and servers), `server` (the uvicorn
 HTTP server), `pg` (the PostgreSQL driver, on psycopg), `redis` (the Redis client, on
 redis-py) and `eventlog` (the event log's encryption, on cryptography), for example
-`uv add "pyfect[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
+`uv add "pyfect-dev[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add
 `reportUnknownParameterType = false`: pyright reads an unannotated generator's send type as

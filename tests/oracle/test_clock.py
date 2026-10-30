@@ -22,20 +22,20 @@ def test_keeps_wall_time_aligned_while_exposing_the_monotonic_source(
     monkeypatch.setattr(time, "monotonic_ns", lambda: monotonic)
     clock = yield from fx.Clock()
 
-    assert clock.unsafe_now_nanos() == wall
-    assert clock.unsafe_monotonic_nanos() == monotonic
+    assert clock.now_nanos_unsafe() == wall
+    assert clock.monotonic_nanos_unsafe() == monotonic
 
     wall += 250_000_000
     monotonic += 250_000_000
-    assert clock.unsafe_now_nanos() == wall
+    assert clock.now_nanos_unsafe() == wall
 
     wall += 5_000_000_000
-    before_suspend = clock.unsafe_monotonic_nanos()
-    assert clock.unsafe_now_nanos() == wall
-    assert clock.unsafe_monotonic_nanos() == before_suspend
+    before_suspend = clock.monotonic_nanos_unsafe()
+    assert clock.now_nanos_unsafe() == wall
+    assert clock.monotonic_nanos_unsafe() == before_suspend
 
     wall -= 3_000_000_000
     monotonic += 100_000_000
-    assert clock.unsafe_now_nanos() == wall
-    assert clock.unsafe_monotonic_nanos() > before_suspend
-    assert clock.unsafe_now() == wall / 1e9
+    assert clock.now_nanos_unsafe() == wall
+    assert clock.monotonic_nanos_unsafe() > before_suspend
+    assert clock.now_unsafe() == wall / 1e9

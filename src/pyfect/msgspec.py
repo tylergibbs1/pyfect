@@ -1,5 +1,5 @@
 """msgspec structs as pyfect schemas. Needs the ``msgspec`` extra
-(``pip install 'pyfect[msgspec]'``).
+(``pyfect-dev[msgspec]``).
 
 ``from_struct(Item)`` is a pyfect schema of the struct: it decodes JSON
 values with ``msgspec.convert`` and encodes with ``msgspec.to_builtins``, so
@@ -24,10 +24,12 @@ from __future__ import annotations
 import re
 from typing import cast
 
+from pyfect._extras import missing_extra
+
 try:
     import msgspec
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise ImportError("pyfect.msgspec needs msgspec: pip install 'pyfect[msgspec]'") from error
+    raise missing_extra("pyfect.msgspec", "msgspec") from error
 
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit

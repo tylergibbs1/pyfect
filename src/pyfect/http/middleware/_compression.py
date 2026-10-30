@@ -141,7 +141,7 @@ def compression(
         app: Effect[HttpServerResponse, E, R],
     ) -> Effect[HttpServerResponse, E, R | HttpServerRequest | HttpPlatform]:
         def body(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, E, R]:
-            platform = fiber._context.unsafe_get(HttpPlatform).compression
+            platform = fiber._context.get_unsafe(HttpPlatform).compression
 
             def pre_response(
                 request: ServerRequest, response: HttpServerResponse

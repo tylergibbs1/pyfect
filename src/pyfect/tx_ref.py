@@ -66,3 +66,6 @@ class TxRef[A]:
 
     def __repr__(self) -> str:
         return f"TxRef({self._value!r})"
+
+
+__all__ = ["TxRef"]

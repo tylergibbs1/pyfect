@@ -125,13 +125,13 @@ class Isaac:
             self._generation -= 1
         return self._result[self._generation]
 
-    def unsafe_next_double(self) -> float:
+    def next_double_unsafe(self) -> float:
         hi = self._next_word() & 0x1FFFFF
         lo = self._next_word()
         return (hi * 4294967296 + lo) / 2**53
 
-    def unsafe_next_int(self) -> int:
-        return safe_int_of(self.unsafe_next_double())
+    def next_int_unsafe(self) -> int:
+        return safe_int_of(self.next_double_unsafe())
 
 
 def safe_int_of(draw: float) -> int:

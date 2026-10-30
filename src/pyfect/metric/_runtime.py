@@ -39,15 +39,15 @@ class _FiberRuntimeMetrics:
     __slots__ = ()
 
     def record_fiber_start(self, context: Context) -> None:
-        _fibers_started.unsafe_update(1, context)
-        _fibers_active.unsafe_modify(1, context)
+        _fibers_started.update_unsafe(1, context)
+        _fibers_active.modify_unsafe(1, context)
 
     def record_fiber_end(self, context: Context, exit: Exit[Any, Any]) -> None:
-        _fibers_active.unsafe_modify(-1, context)
+        _fibers_active.modify_unsafe(-1, context)
         if isinstance(exit, Success):
-            _fiber_successes.unsafe_update(1, context)
+            _fiber_successes.update_unsafe(1, context)
         else:
-            _fiber_failures.unsafe_update(1, context)
+            _fiber_failures.update_unsafe(1, context)
 
 
 fiber_runtime_metrics: Final[FiberRuntimeMetricsService] = _FiberRuntimeMetrics()

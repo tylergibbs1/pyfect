@@ -54,7 +54,7 @@ def test_scoped_ref_set_in_flight_when_the_owner_closes_is_interrupted():
     yield from gate.succeed(None)
     ex = yield from setter.await_exit()
     assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
-    assert ref.unsafe_get() == 0
+    assert ref.get_unsafe() == 0
 
 
 @testing.effect
@@ -97,7 +97,7 @@ def test_scoped_ref_sets_run_one_at_a_time():
     yield from first.join()
     yield from second.join()
     assert log == ["start 1", "open", "end 1", "start 2", "end 2", "release 1"]
-    assert ref.unsafe_get() == 2
+    assert ref.get_unsafe() == 2
 
 
 class _Dep(fx.Tag[int]): ...

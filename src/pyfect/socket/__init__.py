@@ -24,9 +24,10 @@ of their own, on a background thread, so they work under ``run_sync`` too.
 ``pyfect.socket.datagram`` sends and receives UDP packets. ``from_web_socket``
 adapts a browser-style WebSocket and ``make_web_socket`` opens a client
 through the ``WebSocketConstructor`` service, which ``pyfect.socket.ws``
-provides on the ``websockets`` library (extra ``pyfect[websockets]``).
+provides on the ``websockets`` library (extra ``pyfect-dev[websockets]``).
 """
 
+from pyfect._public import publish
 from pyfect.socket import datagram, server
 from pyfect.socket._errors import (
     CloseEvent,
@@ -141,3 +142,5 @@ __all__ = [
     "to_stream",
     "unsupported_upgrade",
 ]
+
+publish(globals())

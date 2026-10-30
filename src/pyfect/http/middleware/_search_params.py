@@ -27,7 +27,7 @@ def search_params_parser[E, R](
     require_effect(app, "app")
 
     def body(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, E, R]:
-        request = fiber._context.unsafe_get(HttpServerRequest)
+        request = fiber._context.get_unsafe(HttpServerRequest)
         params = search_params_from_url(parse(request.original_url, "http://localhost"))
         return _Locally(app, lambda ctx: ctx.add(ParsedSearchParams, params))
 

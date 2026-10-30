@@ -61,7 +61,7 @@ class Latch:
 
     def close(self) -> Effect[bool]:
         """Close the latch. ``False`` if it was already closed."""
-        return _Sync(self.unsafe_close)
+        return _Sync(self.close_unsafe)
 
     def wait(self) -> Effect[None]:
         """Wait until the latch is open or released (Effect's ``await``)."""
@@ -72,7 +72,7 @@ class Latch:
         require_effect(eff, "eff")
         return self.wait().and_then(eff)
 
-    def unsafe_open(self) -> bool:
+    def open_unsafe(self) -> bool:
         """Open the latch from outside an effect, resuming waiters at once.
         Call on the fibers' scheduler thread."""
         if self._is_open:
@@ -86,7 +86,7 @@ class Latch:
             resume(_VOID)
         return True
 
-    def unsafe_close(self) -> bool:
+    def close_unsafe(self) -> bool:
         if not self._is_open:
             return False
         self._is_open = False
@@ -122,3 +122,6 @@ class Latch:
         waiters, self._scheduled = self._scheduled, None
         for resume in waiters:
             resume(_VOID)
+
+
+__all__ = ["Latch"]

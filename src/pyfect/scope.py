@@ -108,7 +108,7 @@ class CloseableScope:
         self._add(
             fiber, lambda _: _WithFiber(lambda current: _interrupt_unless_self(fiber, current))
         )
-        fiber.unsafe_add_observer(lambda _: self._remove(fiber))
+        fiber.add_observer_unsafe(lambda _: self._remove(fiber))
 
     def close(self, ex: Exit[Any, Any]) -> Effect[None]:
         """Run every finalizer, last added first (all at once in a parallel
@@ -285,7 +285,7 @@ def fork_in[A, E, R](
     def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
         if scope._closed is not None:
             unstarted: Fiber[A, E] = Fiber(parent._run_scheduler, parent._context, None)
-            unstarted.unsafe_interrupt_as(parent.id, parent._interruptor_annotations())
+            unstarted.interrupt_as_unsafe(parent.id, parent._interruptor_annotations())
             return _Succeed(unstarted)
         fiber: Fiber[A, E] = parent._fork(
             eff, daemon=True, start_immediately=start_immediately, uninterruptible=uninterruptible
@@ -298,3 +298,18 @@ def fork_in[A, E, R](
 
 def _interrupt_unless_self(fiber: Fiber[Any, Any], current: Fiber[Any, Any]) -> Effect[None]:
     return _Succeed(None) if current is fiber else fiber.interrupt()
+
+
+__all__ = [
+    "CloseableScope",
+    "Finalizer",
+    "Scope",
+    "Strategy",
+    "acquire_release",
+    "acquire_use_release",
+    "add_finalizer",
+    "fork_in",
+    "fork_scoped",
+    "scoped",
+    "scoped_with",
+]

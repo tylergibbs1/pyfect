@@ -5,6 +5,7 @@ them (or ``to_web_handler`` / ``to_http_effect``). A handler's errors and
 requirements flow into the served app's types through the route layers'
 requirements (``Requires`` / ``Raises``)."""
 
+from pyfect._public import publish
 from pyfect.http.router._api import (
     add,
     add_all,
@@ -73,3 +74,5 @@ __all__ = [
     "to_web_handler",
     "use",
 ]
+
+publish(globals())

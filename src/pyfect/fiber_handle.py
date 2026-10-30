@@ -89,7 +89,7 @@ class FiberHandle[A = object, E = object]:
             return "FiberHandle(closed)"
         return f"FiberHandle({self._state.current!r})"
 
-    def unsafe_set(
+    def set_unsafe(
         self,
         fiber: Fiber[A, E],
         *,
@@ -102,20 +102,20 @@ class FiberHandle[A = object, E = object]:
         thread."""
         state = self._state
         if state is None:
-            fiber.unsafe_interrupt_as(INTERNAL_FIBER_ID)
+            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
             return
         previous = state.current
         if previous is fiber:
             return
         if previous is not None and only_if_missing:
-            fiber.unsafe_interrupt_as(INTERNAL_FIBER_ID)
+            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
             return
         # Install the replacement before the interrupt can re-enter the
         # handle through a finalizer.
         state.current = fiber
         state.owned[fiber] = None
         if previous is not None:
-            previous.unsafe_interrupt_as(INTERNAL_FIBER_ID)
+            previous.interrupt_as_unsafe(INTERNAL_FIBER_ID)
 
         def observer(ex: Exit[A, E]) -> None:
             state = self._state
@@ -124,9 +124,9 @@ class FiberHandle[A = object, E = object]:
                 if state.current is fiber:
                     state.current = None
             if reports_failure(ex, propagate_interruption):
-                self.deferred.unsafe_done(ex)
+                self.deferred.done_unsafe(ex)
 
-        fiber.unsafe_add_observer(observer)
+        fiber.add_observer_unsafe(observer)
 
     def set(
         self,
@@ -136,25 +136,25 @@ class FiberHandle[A = object, E = object]:
         propagate_interruption: bool = False,
     ) -> Effect[None]:
         return _Sync(
-            lambda: self.unsafe_set(
+            lambda: self.set_unsafe(
                 fiber,
                 only_if_missing=only_if_missing,
                 propagate_interruption=propagate_interruption,
             )
         )
 
-    def unsafe_get(self) -> Fiber[A, E] | None:
+    def get_unsafe(self) -> Fiber[A, E] | None:
         return None if self._state is None else self._state.current
 
     def get(self) -> Effect[Fiber[A, E] | None]:
-        return _Sync(self.unsafe_get)
+        return _Sync(self.get_unsafe)
 
     def clear(self) -> Effect[None]:
         """Interrupt the current fiber, if any, and wait for it. A fiber set
         meanwhile stays current."""
 
         def body(restore: Restore) -> Effect[None]:
-            fiber = self.unsafe_get()
+            fiber = self.get_unsafe()
             if fiber is None:
                 return _Succeed(None)
 
@@ -187,7 +187,7 @@ class FiberHandle[A = object, E = object]:
             if only_if_missing and state.current is not None:
                 return _Succeed(interrupted_fiber(parent._run_scheduler, parent._context))
             fiber: Fiber[A, E] = parent._fork(eff, daemon=True, start_immediately=start_immediately)
-            self.unsafe_set(
+            self.set_unsafe(
                 fiber,
                 only_if_missing=only_if_missing,
                 propagate_interruption=propagate_interruption,
@@ -219,7 +219,7 @@ class FiberHandle[A = object, E = object]:
         """Wait for the current fiber, if any."""
 
         def body() -> Effect[None]:
-            fiber = self.unsafe_get()
+            fiber = self.get_unsafe()
             return _Succeed(None) if fiber is None else fiber.await_exit().as_void()
 
         return _Suspend(body)
@@ -264,7 +264,7 @@ class FiberHandleRuntime[A, E, R]:
         if handle._state is None or (only_if_missing and handle._state.current is not None):
             return self._runtime.interrupted()
         fiber = self._runtime.fork(eff, uninterruptible=uninterruptible, scheduler=scheduler)
-        handle.unsafe_set(
+        handle.set_unsafe(
             fiber, only_if_missing=only_if_missing, propagate_interruption=propagate_interruption
         )
         return fiber
@@ -298,3 +298,6 @@ class FiberHandleAsyncRuntime[A, E, R]:
                 scheduler=scheduler,
             )
         )
+
+
+__all__ = ["FiberHandle", "FiberHandleAsyncRuntime", "FiberHandleRuntime"]

@@ -15,6 +15,7 @@ States live in a ``CircuitBreakerStore``: ``layer_store_memory``, or
 ``layer_store_redis`` (shared by every process using that Redis).
 """
 
+from pyfect._public import publish
 from pyfect.persistence.circuit_breaker._breaker import (
     CircuitBreaker,
     CircuitBreakerService,
@@ -115,3 +116,5 @@ __all__ = [
     "rate",
     "success",
 ]
+
+publish(globals())

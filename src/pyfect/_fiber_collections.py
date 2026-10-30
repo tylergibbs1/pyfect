@@ -83,7 +83,7 @@ class CapturedRuntime:
 
 def interrupted_fiber(run_scheduler: Scheduler, context: Context) -> Fiber[Any, Any]:
     fiber: Fiber[Any, Any] = Fiber(run_scheduler, context, None)
-    fiber.unsafe_interrupt_as(fiber.id)
+    fiber.interrupt_as_unsafe(fiber.id)
     return fiber
 
 
@@ -100,5 +100,5 @@ def future_of[A](fiber: Fiber[A, Any]) -> asyncio.Future[A]:
         else:
             future.set_exception(ex.cause.squash())
 
-    fiber.unsafe_add_observer(settle)
+    fiber.add_observer_unsafe(settle)
     return future

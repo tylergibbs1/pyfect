@@ -13,7 +13,7 @@ SignupJson = S.from_json_string(Signup)
 
 
 # to_strategy draws values that satisfy every check; Hypothesis shrinks a failure
-# to the smallest example. Needs the pyfect[hypothesis] extra.
+# to the smallest example. Needs the pyfect-dev[hypothesis] extra.
 @given(S.to_strategy(Signup))
 def test_signups_survive_json(signup: Signup):
     text = S.encode_sync(SignupJson)(signup)

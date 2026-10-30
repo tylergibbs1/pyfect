@@ -567,24 +567,24 @@ class _ShiftedClock:
     wall_offset: float = 0
     early: float = 0
 
-    def unsafe_now(self) -> float:
-        return self.base.unsafe_now() + self.wall_offset
+    def now_unsafe(self) -> float:
+        return self.base.now_unsafe() + self.wall_offset
 
-    def unsafe_monotonic(self) -> float:
-        return self.unsafe_monotonic_nanos() / 1e9
+    def monotonic_unsafe(self) -> float:
+        return self.monotonic_nanos_unsafe() / 1e9
 
-    def unsafe_now_nanos(self) -> int:
-        return self.base.unsafe_now_nanos() + round(self.wall_offset * 1e9)
+    def now_nanos_unsafe(self) -> int:
+        return self.base.now_nanos_unsafe() + round(self.wall_offset * 1e9)
 
-    def unsafe_monotonic_nanos(self) -> int:
-        return self.base.unsafe_monotonic_nanos() + self.monotonic_offset
+    def monotonic_nanos_unsafe(self) -> int:
+        return self.base.monotonic_nanos_unsafe() + self.monotonic_offset
 
     def sleep(self, seconds: Seconds) -> fx.Effect[None]:
         return self.base.sleep(Seconds(seconds - self.early))
 
 
 def _millis(clock: ClockService) -> fx.Effect[int]:
-    return fx.sync(lambda: round(clock.unsafe_now() * 1000))
+    return fx.sync(lambda: round(clock.now_unsafe() * 1000))
 
 
 @testing.effect

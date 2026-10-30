@@ -47,9 +47,9 @@ def test_executes_finalizers_in_parallel():
     for _ in range(3):
         yield from scope.add_finalizer(lambda _: fx.sleep(1.0))
     fiber = yield from scope.close(fx.Success(None)).fork(start_immediately=True)
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from testing.adjust(1.0)
-    assert fiber.unsafe_poll() is not None
+    assert fiber.poll_unsafe() is not None
 
 
 @pytest.mark.parametrize("strategy", STRATEGIES)
@@ -110,7 +110,7 @@ def test_completes_direct_close_after_interruption(strategy: Strategy):
         yield from other_started.wait()
     interrupting = yield from closing.interrupt().fork(start_immediately=True)
     yield from fx.yield_now()
-    assert interrupting.unsafe_poll() is None
+    assert interrupting.poll_unsafe() is None
     yield from release.succeed(None)
     yield from interrupting.join()
     yield from closing.await_exit()

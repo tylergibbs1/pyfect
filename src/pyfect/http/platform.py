@@ -531,12 +531,17 @@ whole."""
 
 
 __all__ = [
+    "CompressResponse",
     "Compression",
     "CompressionAlgorithm",
     "FileOptions",
+    "FileResponseImpl",
     "FileWebOptions",
+    "FileWebResponseImpl",
     "HttpPlatform",
     "HttpPlatformService",
+    "PlatformName",
+    "Transform",
     "compression_one_shot",
     "compression_stdlib",
     "layer",

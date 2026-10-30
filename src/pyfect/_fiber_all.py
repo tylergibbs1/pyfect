@@ -29,7 +29,7 @@ def await_all[A, E](fibers: Iterable[Fiber[A, E]]) -> Effect[list[Exit[A, E]]]:
         def loop() -> None:
             nonlocal remove
             for fiber in remaining:
-                ex = fiber.unsafe_poll()
+                ex = fiber.poll_unsafe()
                 if ex is not None:
                     exits.append(ex)
                     continue
@@ -38,7 +38,7 @@ def await_all[A, E](fibers: Iterable[Fiber[A, E]]) -> Effect[list[Exit[A, E]]]:
                     exits.append(ex)
                     loop()
 
-                remove = fiber.unsafe_add_observer(observer)
+                remove = fiber.add_observer_unsafe(observer)
                 return
             resume(_Succeed(exits))
 
@@ -90,7 +90,7 @@ def join_all[A, E](fibers: Iterable[Fiber[A, E]]) -> Effect[list[A], E]:
         for index, fiber in enumerate(joined):
             if failed:
                 break
-            removers.append(fiber.unsafe_add_observer(observer_for(index)))
+            removers.append(fiber.add_observer_unsafe(observer_for(index)))
         return _Sync(stop)
 
     return _Callback(register)
@@ -105,7 +105,7 @@ def interrupt_all_as(fibers: Iterable[Fiber[Any, Any]], by: int | None) -> Effec
         annotations = me._interruptor_annotations()
         interrupted: list[Fiber[Any, Any]] = []
         for fiber in fibers:
-            fiber.unsafe_interrupt_as(by, annotations)
+            fiber.interrupt_as_unsafe(by, annotations)
             interrupted.append(fiber)
         return await_all(interrupted).as_void()
 

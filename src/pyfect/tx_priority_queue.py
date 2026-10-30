@@ -197,4 +197,4 @@ class TxPriorityQueue[A]:
         return "TxPriorityQueue()"
 
 
-__all__ = ["TxPriorityQueue"]
+__all__ = ["Key", "TxPriorityQueue"]

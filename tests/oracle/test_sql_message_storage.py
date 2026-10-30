@@ -154,7 +154,7 @@ class _FixedIds:
     def __init__(self) -> None:
         self.next = 9007199254740993
 
-    def unsafe_next(self) -> Snowflake:
+    def next_unsafe(self) -> Snowflake:
         value = Snowflake(self.next)
         self.next += 2
         return value

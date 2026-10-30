@@ -12,10 +12,11 @@
 ``EVALSHA`` (loading each once), delivers a channel's messages through
 ``subscribe`` and lends a connection of its own for blocking commands
 with ``reserve``. ``make`` builds the service over any client;
-``pyfect.persistence.redis_py`` (the ``pyfect[redis]`` extra) provides it
+``pyfect.persistence.redis_py`` (the ``pyfect-dev[redis]`` extra) provides it
 on redis-py.
 """
 
+from pyfect._public import publish
 from pyfect.persistence.redis._error import RedisError
 from pyfect.persistence.redis._make import make
 from pyfect.persistence.redis._script import RedisReply, Script, script
@@ -47,3 +48,5 @@ __all__ = [
     "make",
     "script",
 ]
+
+publish(globals())

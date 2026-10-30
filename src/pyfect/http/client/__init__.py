@@ -1,7 +1,7 @@
 """HTTP clients (Effect's ``HttpClient``).
 
 ``HttpClient`` is the service; ``httpx_client.layer`` provides one backed by
-httpx (the ``pyfect[httpx]`` extra), and ``layer_test`` one answering from a
+httpx (the ``pyfect-dev[httpx]`` extra), and ``layer_test`` one answering from a
 function. A client is a value: its methods send requests and build new
 clients::
 

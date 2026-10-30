@@ -48,7 +48,7 @@ _VOID: Effect[None] = _Succeed(None)
 def _propagating(span: AnySpan | None) -> AnySpan | None:
     """``span``, or the nearest ancestor of it whose annotations do not
     disable propagation."""
-    while span is not None and span.annotations.unsafe_get(DisablePropagation):
+    while span is not None and span.annotations.get_unsafe(DisablePropagation):
         span = None if isinstance(span, ExternalSpan) else span.parent
     return span
 
@@ -58,7 +58,7 @@ def make_span_unsafe(fiber: Fiber[Any, Any], name: str, options: SpanOptions) ->
     ``options`` say otherwise."""
     annotations = options.get("annotations")
     disabled = not fiber.get_ref(TracerEnabled) or (
-        annotations is not None and annotations.unsafe_get(DisablePropagation)
+        annotations is not None and annotations.get_unsafe(DisablePropagation)
     )
     parent = options.get("parent")
     if parent is None and not options.get("root", False):
@@ -82,7 +82,7 @@ def make_span_unsafe(fiber: Fiber[Any, Any], name: str, options: SpanOptions) ->
             parent=parent,
             annotations=annotations,
             links=[*fiber.get_ref(TracerSpanLinks), *options.get("links", ())],
-            start_time=fiber.get_ref(Clock).unsafe_now_nanos() if timing else 0,
+            start_time=fiber.get_ref(Clock).now_nanos_unsafe() if timing else 0,
             kind=options.get("kind", "internal"),
             root=options.get("root", False),
             sampled=sampled,
@@ -118,7 +118,7 @@ def span_scoped(name: str, options: SpanOptions) -> Effect[Span, Never, Scope]:
             end(ex)
             return _VOID
 
-        return fiber._context.unsafe_get(Scope).add_finalizer(finalizer).as_(span)
+        return fiber._context.get_unsafe(Scope).add_finalizer(finalizer).as_(span)
 
     return _WithFiber(body).uninterruptible()
 
@@ -175,7 +175,7 @@ class _SpanEnder:
 
     def __call__(self, ex: Exit[object, object]) -> None:
         if not isinstance(self.span.status, Ended):
-            self.span.end(self.clock.unsafe_now_nanos() if self.timing else 0, ex)
+            self.span.end(self.clock.now_nanos_unsafe() if self.timing else 0, ex)
 
 
 @final

@@ -141,10 +141,10 @@ def _tool_annotations(annotations: Context[Any]) -> ToolAnnotations:
     title = annotations.get_option(Tool.Title)
     if title is not None:
         out["title"] = title.value
-    out["readOnlyHint"] = annotations.unsafe_get(Tool.Readonly)
-    out["destructiveHint"] = annotations.unsafe_get(Tool.Destructive)
-    out["idempotentHint"] = annotations.unsafe_get(Tool.Idempotent)
-    out["openWorldHint"] = annotations.unsafe_get(Tool.OpenWorld)
+    out["readOnlyHint"] = annotations.get_unsafe(Tool.Readonly)
+    out["destructiveHint"] = annotations.get_unsafe(Tool.Destructive)
+    out["idempotentHint"] = annotations.get_unsafe(Tool.Idempotent)
+    out["openWorldHint"] = annotations.get_unsafe(Tool.OpenWorld)
     return out
 
 
@@ -182,7 +182,7 @@ def register_toolkit[N: LiteralString, RP, HE, R](
 
         entries: list[ToolEntry] = []
         for tool in kit.tools.values():
-            strict = tool.annotations.unsafe_get(Tool.Strict) is True
+            strict = tool.annotations.get_unsafe(Tool.Strict) is True
             if strict and isinstance(tool, Tool.Dynamic) and tool.json_schema is not None:
                 yield from fx.die(
                     ValueError(
@@ -229,7 +229,7 @@ def _tool_handler(
         S.encode_unknown_effect(tool.failure_schema),
     )
     is_declared_failure = S.is_(tool.failure_schema)
-    strict = tool.annotations.unsafe_get(Tool.Strict) is True
+    strict = tool.annotations.get_unsafe(Tool.Strict) is True
     options: S.ParseOptions = {
         "errors": "all",
         "on_excess_property": "error" if strict else "ignore",

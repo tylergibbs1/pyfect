@@ -41,7 +41,7 @@ def offer[A, E](queue: Queue[A, E], items: Sequence[A], behind: Callable[[], E])
     waiting; when they do not all fit, fail
     ``queue`` with ``behind()`` and give ``False``: stop delivering. Call on
     the queue's fibers' scheduler thread."""
-    if not queue.unsafe_offer_all(items):
+    if not queue.offer_all_unsafe(items):
         return True
-    queue.unsafe_fail_cause(fail_cause(behind()))
+    queue.fail_cause_unsafe(fail_cause(behind()))
     return False

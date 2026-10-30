@@ -91,10 +91,10 @@ class MetricMethods(EffectBase[A_co, E_co, R_co]):
 
         def body(fiber: Fiber[Any, Any]) -> Effect[A_co, E_co, R_co]:
             clock = fiber.get_ref(Clock)
-            start = clock.unsafe_monotonic_nanos()
+            start = clock.monotonic_nanos_unsafe()
 
             def record(_: object) -> Effect[None]:
-                elapsed = Seconds((clock.unsafe_monotonic_nanos() - start) / 1_000_000_000)
+                elapsed = Seconds((clock.monotonic_nanos_unsafe() - start) / 1_000_000_000)
                 return metric.update(elapsed if f is None else f(elapsed))
 
             return inner.on_exit(record)

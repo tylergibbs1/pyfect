@@ -206,7 +206,7 @@ def test_grouped_within_does_not_emit_empty_arrays_when_upstream_is_idle():
         idle.grouped_within(25, 0.05).take(5).run_collect().fork(start_immediately=True)
     )
     yield from testing.adjust(1)
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
 
 
 @testing.effect

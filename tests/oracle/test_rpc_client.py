@@ -199,7 +199,7 @@ def test_ignores_late_replies_after_terminal_failures() -> None:
             yield from handle(terminal)
             # Resumes go through the scheduler: let the caller run.
             yield from effect.yield_now()
-            exit = caller.unsafe_poll()
+            exit = caller.poll_unsafe()
             assert exit is not None, f"{terminal['_tag']} delivery must complete the caller"
             expected = "connection defect" if terminal["_tag"] == "Defect" else error
             assert _squash_message(exit) == expected
@@ -271,7 +271,7 @@ def test_preserves_cancellation_and_the_server_interrupt_during_chunk_failure_cl
         assert isinstance((yield from reader.await_exit()), Exit.Failure)
 
         me = yield from effect.fiber_id()
-        receiver.unsafe_interrupt_as(me)
+        receiver.interrupt_as_unsafe(me)
         yield from release_interrupt.succeed(None)
         receive_exit = yield from receiver.await_exit()
         assert (yield from sent.clear()) == [{"_tag": "Interrupt", "requestId": request_id}]
@@ -298,7 +298,7 @@ def test_releases_a_chunk_blocked_on_a_full_buffer_when_its_consumer_is_interrup
             {"_tag": "Chunk", "requestId": request_id, "values": ["a", "b", "c"]}
         ).fork()
         yield from consuming.wait()
-        assert receiver.unsafe_poll() is None
+        assert receiver.poll_unsafe() is None
         yield from reader.interrupt()
         assert isinstance((yield from receiver.await_exit()), Exit.Success)
         assert (yield from sent.take()) == {"_tag": "Interrupt", "requestId": request_id}
@@ -647,7 +647,7 @@ def test_reports_transient_socket_open_errors_without_failing_in_flight_streams(
     assert len(errors) == 3
     for error in errors:
         assert isinstance(error.reason, SocketOpenError)
-    assert stream_fiber.unsafe_poll() is None
+    assert stream_fiber.poll_unsafe() is None
 
 
 @testing.effect
@@ -691,12 +691,12 @@ def test_keeps_in_flight_streams_alive_on_non_pong_frames_without_any_pongs():
     yield from request_sent.wait()
     for event in ["first", "second", "third"]:
         yield from testing.adjust(4)
-        assert stream_fiber.unsafe_poll() is None
+        assert stream_fiber.poll_unsafe() is None
         chunk = {"_tag": "Chunk", "requestId": "0", "values": [event]}
         yield from frames.offer(json.dumps(chunk) + "\n")
         assert (yield from events.take()) == event
     yield from testing.adjust(4)
-    assert stream_fiber.unsafe_poll() is None
+    assert stream_fiber.poll_unsafe() is None
 
 
 @testing.effect
@@ -716,13 +716,13 @@ def test_allows_a_delayed_pong_within_a_custom_ping_timeout_but_fails_after_sile
     stream_fiber = yield from client.events().run_drain().exit().fork()
     yield from request_sent.wait()
     yield from testing.adjust(12)
-    assert stream_fiber.unsafe_poll() is None
+    assert stream_fiber.poll_unsafe() is None
     yield from frames.offer(json.dumps({"_tag": "Pong"}) + "\n")
     yield from frame_read.wait()
     yield from testing.adjust(14)
-    assert stream_fiber.unsafe_poll() is None
+    assert stream_fiber.poll_unsafe() is None
     yield from testing.adjust(2)
-    assert stream_fiber.unsafe_poll() is not None
+    assert stream_fiber.poll_unsafe() is not None
     exit = yield from stream_fiber.join()
     error = _squash_message(exit)
     assert isinstance(error, RpcClientError)
@@ -863,17 +863,17 @@ class _LateClock:
     def __init__(self, clock: ClockService) -> None:
         self._clock = clock
 
-    def unsafe_now(self) -> float:
-        return self._clock.unsafe_now()
+    def now_unsafe(self) -> float:
+        return self._clock.now_unsafe()
 
-    def unsafe_monotonic(self) -> float:
-        return self._clock.unsafe_monotonic()
+    def monotonic_unsafe(self) -> float:
+        return self._clock.monotonic_unsafe()
 
-    def unsafe_now_nanos(self) -> int:
-        return self._clock.unsafe_now_nanos()
+    def now_nanos_unsafe(self) -> int:
+        return self._clock.now_nanos_unsafe()
 
-    def unsafe_monotonic_nanos(self) -> int:
-        return self._clock.unsafe_monotonic_nanos()
+    def monotonic_nanos_unsafe(self) -> int:
+        return self._clock.monotonic_nanos_unsafe()
 
     def sleep(self, seconds: Seconds) -> Effect[None]:
         return self._clock.sleep(Seconds(seconds + 0.001))
@@ -928,7 +928,7 @@ def test_closes_the_client_scope_when_a_malformed_chunk_arrives_as_the_socket_cl
         connections[0] += 1
         if connections[0] > 1:
             return effect.never
-        open_.unsafe_open()
+        open_.open_unsafe()
         return effect.succeed(Reader(frames.take().map(lambda frame: (frame,))))
 
     socket = _socket(
@@ -952,11 +952,11 @@ def test_closes_the_client_scope_when_a_malformed_chunk_arrives_as_the_socket_cl
     request_id = json.loads((yield from writes.take()))["id"]
 
     def drop() -> None:
-        frames.unsafe_offer(
+        frames.offer_unsafe(
             json.dumps({"_tag": "Chunk", "requestId": request_id, "values": [None]})
         )
-        open_.unsafe_close()
-        frames.unsafe_fail_cause(Exit.fail(SocketError(SocketCloseError(1012))).cause)
+        open_.close_unsafe()
+        frames.fail_cause_unsafe(Exit.fail(SocketError(SocketCloseError(1012))).cause)
 
     yield from effect.sync(drop)
     assert isinstance((yield from bad.join()), Exit.Failure)

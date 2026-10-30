@@ -21,6 +21,7 @@ the socket loop's thread, so they work under ``run_sync`` too);
 contract other transports implement.
 """
 
+from pyfect._public import publish
 from pyfect.socket.datagram._core import OnError, make_from_backing_socket
 from pyfect.socket.datagram._errors import (
     DatagramSocketClosedError,
@@ -105,3 +106,5 @@ __all__ = [
     "make_from_backing_socket",
     "make_udp",
 ]
+
+publish(globals())

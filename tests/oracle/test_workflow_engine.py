@@ -606,7 +606,7 @@ def test_layer_memory_releases_a_pending_child_registration(mode: str):
         if p["index"] == 1:
             if mode == "failure":
                 raise RuntimeError("cannot compute the execution id")
-            computing_id.unsafe_open()
+            computing_id.open_unsafe()
         return _num(p["index"])
 
     Child = workflow.make(
@@ -747,10 +747,10 @@ def test_layer_memory_wakes_a_suspended_caller_when_its_workflow_completes():
             polled = yield from wf.poll(execution_id)
         assert isinstance(polled, Complete), "workflow must complete"
         for _ in range(1000):
-            if fiber.unsafe_poll() is not None:
+            if fiber.poll_unsafe() is not None:
                 break
             yield from testing.adjust(0.001)
-        assert fiber.unsafe_poll() is not None, "completion must wake the caller"
+        assert fiber.poll_unsafe() is not None, "completion must wake the caller"
         assert (yield from fiber.join()) == "done"
 
     yield from fx.gen(program).pipe(_with_engine(wf.to_layer(lambda _p, _id: gate.wait())))
@@ -808,10 +808,10 @@ def test_layer_memory_does_not_spend_a_retry_when_a_replay_suspends_again():
         assert runs == 2 and isinstance(polled, Suspended), "replay must suspend again"
         yield from complete(second, execution_id, "second")
         for _ in range(1000):
-            if fiber.unsafe_poll() is not None:
+            if fiber.poll_unsafe() is not None:
                 break
             yield from testing.adjust(0.001)
-        assert fiber.unsafe_poll() is not None, "completion must wake the caller"
+        assert fiber.poll_unsafe() is not None, "completion must wake the caller"
         assert (yield from fiber.join()) == "first/second"
 
     yield from fx.gen(program).pipe(_with_engine(wf.to_layer(handler)))
@@ -852,16 +852,16 @@ def test_layer_memory_does_not_wake_a_caller_from_a_run_that_died_before_a_resum
                 break
             yield from testing.adjust(0.001)
         assert retrying.is_open(), "caller must wait on its retry schedule"
-        assert fiber.unsafe_poll() is None, "the died run must not wake the caller"
+        assert fiber.poll_unsafe() is None, "the died run must not wake the caller"
         yield from gate.succeed(
             token=gate.token_from_execution_id(workflow=wf, execution_id=execution_id),
             value="done",
         )
         for _ in range(1000):
-            if fiber.unsafe_poll() is not None:
+            if fiber.poll_unsafe() is not None:
                 break
             yield from testing.adjust(0.001)
-        assert fiber.unsafe_poll() is not None, "completion must wake the caller"
+        assert fiber.poll_unsafe() is not None, "completion must wake the caller"
         assert (yield from fiber.join()) == "done"
 
     yield from fx.gen(program).pipe(_with_engine(wf.to_layer(handler)))
@@ -908,7 +908,7 @@ def test_layer_memory_runs_compensations_when_the_engine_is_shut_down():
             yield from Stuck.with_compensation(
                 fx.succeed("a"), lambda value, _cause: fx.sync(lambda: compensated.append(value))
             )
-            ready.unsafe_open()
+            ready.open_unsafe()
             return (yield from fx.never)
 
         return fx.gen(body)

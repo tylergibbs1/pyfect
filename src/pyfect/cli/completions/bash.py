@@ -295,3 +295,6 @@ def generate(executable: str, descriptor: CommandDescriptor) -> str:
     lines.append(f"complete -F _{safe} {name}")
     lines.append(f"###-end-{name}-completions-###")
     return "\n".join(lines)
+
+
+__all__ = ["CHOICES_HELPER", "CHOICES_HELPER_NAME", "INIT_COMPLETION_FALLBACK", "generate"]

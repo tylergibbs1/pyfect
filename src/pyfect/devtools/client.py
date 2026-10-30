@@ -24,7 +24,7 @@ from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.layer import provide as layer_provide
 from pyfect.logger._log import log_debug
-from pyfect.metric._snapshot import unsafe_snapshot
+from pyfect.metric._snapshot import snapshot_unsafe
 from pyfect.metric._state import (
     CounterState,
     FrequencyState,
@@ -61,8 +61,8 @@ class DevToolsClientService:
     def __init__(self, requests: Queue[D.Request, Any]) -> None:
         self._requests = requests
 
-    def unsafe_send(self, request: D.Span | D.SpanEvent) -> None:
-        self._requests.unsafe_offer(request)
+    def send_unsafe(self, request: D.Span | D.SpanEvent) -> None:
+        self._requests.offer_unsafe(request)
 
 
 class DevToolsClient(Tag[DevToolsClientService], key="effect/devtools/DevToolsClient"):
@@ -103,7 +103,7 @@ def _metric(snapshot: Snapshot) -> D.Metric:
 
 
 def _metrics_snapshot(services: Context[Any]) -> D.MetricsSnapshot:
-    return {"_tag": "MetricsSnapshot", "metrics": tuple(map(_metric, unsafe_snapshot(services)))}
+    return {"_tag": "MetricsSnapshot", "metrics": tuple(map(_metric, snapshot_unsafe(services)))}
 
 
 def _make():
@@ -125,7 +125,7 @@ def _make():
         )
 
     transport: SocketService = make_socket(socket.reader, suspend(writer))
-    offer_metrics = sync(lambda: requests.unsafe_offer(_metrics_snapshot(services)))
+    offer_metrics = sync(lambda: requests.offer_unsafe(_metrics_snapshot(services)))
 
     def handle(response: D.Response) -> Effect[None]:
         if response["_tag"] == "MetricsRequest":
@@ -274,7 +274,7 @@ class _DevToolsSpan:
         if isinstance(self._span.status, Ended):
             return
         self._span.end(end_time, exit)
-        self._client.unsafe_send(_snapshot(self))
+        self._client.send_unsafe(_snapshot(self))
 
     def attribute(self, key: str, value: object, /) -> None:
         self._span.attribute(key, value)
@@ -284,7 +284,7 @@ class _DevToolsSpan:
     ) -> None:
         if isinstance(self._span.status, Ended):
             return
-        self._client.unsafe_send(
+        self._client.send_unsafe(
             {
                 "_tag": "SpanEvent",
                 "traceId": self.trace_id,
@@ -306,7 +306,7 @@ def _make_tracer():
 
     def span(request: SpanRequest) -> Span:
         wrapped = _DevToolsSpan(current.span(request), client)
-        client.unsafe_send(_snapshot(wrapped))
+        client.send_unsafe(_snapshot(wrapped))
         return wrapped
 
     return Tracer.make(span, current.context)

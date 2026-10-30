@@ -20,7 +20,7 @@ Chat Completions API (OpenAI, a local server, a gateway). Each has a `client` la
 the API key as a `Redacted` (or from `Config` with `layer_config`), and a `language_model`
 whose `model(name).layer` provides the `LanguageModel`. Both send their requests through
 the [`HttpClient`](/docs/platform) service, so they need no vendor SDK: provide
-`httpx_client.layer` (the `pyfect[httpx]` extra) in production, or a test client, as here.
+`httpx_client.layer` (the `pyfect-dev[httpx]` extra) in production, or a test client, as here.
 
 <CodeOutput>
 

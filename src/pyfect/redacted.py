@@ -78,3 +78,6 @@ def wipe_unsafe(redacted: Redacted[object]) -> bool:
         return False
     object.__setattr__(redacted, "_value", _WIPED)
     return True
+
+
+__all__ = ["Redacted", "make", "value", "wipe_unsafe"]

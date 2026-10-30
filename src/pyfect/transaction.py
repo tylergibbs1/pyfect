@@ -253,7 +253,7 @@ def _boundary[A, E](
     caller is already uninterruptible and ``restore`` makes the body
     interruptible again; without it, the boundary masks itself."""
     clock = fiber.get_ref(Clock)
-    state = TransactionMeta(clock.unsafe_now_nanos())
+    state = TransactionMeta(clock.now_nanos_unsafe())
 
     def run(restore: Restore) -> Effect[A, E]:
         attempt = (
@@ -264,7 +264,7 @@ def _boundary[A, E](
 
         def step(ex: Exit[A, E]) -> Effect[A, E]:
             if state._retry or not state._consistent():
-                state._next_attempt(clock.unsafe_now_nanos())
+                state._next_attempt(clock.now_nanos_unsafe())
                 return attempt.flat_map(step)
             if isinstance(ex, Success):
                 state._commit()
@@ -332,6 +332,9 @@ __all__ = [
     "Transaction",
     "TransactionMeta",
     "TransactionRetryReason",
+    "active_transaction",
+    "transactional",
     "tx",
+    "tx_restoring",
     "tx_retry",
 ]

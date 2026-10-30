@@ -95,3 +95,6 @@ def format_uri_fragment(path: Sequence[str]) -> str:
     the empty path is ``"#"``. A token with a lone surrogate raises
     ``ValueError``."""
     return "#" + "".join(f"/{_format_uri_fragment_token(token)}" for token in path)
+
+
+__all__ = ["escape_token", "format_uri_fragment", "parse_uri_fragment", "unescape_token"]

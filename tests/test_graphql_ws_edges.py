@@ -45,7 +45,7 @@ def test_an_answered_keep_alive_ping_keeps_the_connection():
         assert (yield from connection.received.take()) == {"type": "ping"}
         yield from connection.send({"type": "pong"})
 
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     assert not (yield from connection.closed.is_done())
 
 

@@ -92,7 +92,7 @@ def _listen(options: ListenOptions[_Port]) -> Effect[None]:
     events = options.port.worker.events
 
     def failed(error: WorkerError) -> None:
-        options.deferred.unsafe_done(Exit.fail(error))
+        options.deferred.done_unsafe(Exit.fail(error))
 
     @gen
     def pump():

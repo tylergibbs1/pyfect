@@ -82,9 +82,9 @@ def test_runtime():
 def test_runs_fibers_concurrently_and_await_empty_waits_for_completion():
     """runs fibers concurrently and awaitEmpty waits for completion"""
     fiber_set = yield from fx.FiberSet[None, str].make()
-    fiber_set.unsafe_add((yield from fx.void.fork_daemon(start_immediately=True)))
-    fiber_set.unsafe_add((yield from fx.void.fork_daemon(start_immediately=True)))
-    fiber_set.unsafe_add((yield from fx.fail("fail").fork_daemon(start_immediately=True)))
+    fiber_set.add_unsafe((yield from fx.void.fork_daemon(start_immediately=True)))
+    fiber_set.add_unsafe((yield from fx.void.fork_daemon(start_immediately=True)))
+    fiber_set.add_unsafe((yield from fx.fail("fail").fork_daemon(start_immediately=True)))
     assert (yield from fiber_set.join().flip()) == "fail"
 
 
@@ -93,8 +93,8 @@ def test_size():
     """size"""
     scope = fx.CloseableScope()
     fiber_set = yield from fx.FiberSet.make().pipe(fx.provide_service(fx.Scope, scope))
-    fiber_set.unsafe_add((yield from fx.never.fork_daemon(start_immediately=True)))
-    fiber_set.unsafe_add((yield from fx.never.fork_daemon(start_immediately=True)))
+    fiber_set.add_unsafe((yield from fx.never.fork_daemon(start_immediately=True)))
+    fiber_set.add_unsafe((yield from fx.never.fork_daemon(start_immediately=True)))
     assert (yield from fiber_set.size()) == 2
     yield from scope.close(fx.Success(None))
     assert (yield from fiber_set.size()) == 0
@@ -129,9 +129,9 @@ def test_await_empty():
 
     fiber = yield from fiber_set.await_empty().fork()
     yield from testing.adjust(0.5)
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from testing.adjust(0.5)
-    assert fiber.unsafe_poll() is not None
+    assert fiber.poll_unsafe() is not None
 
 
 @testing.effect(asyncio=True)

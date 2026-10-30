@@ -90,7 +90,7 @@ class TestClock:
     ``set_time``. Each move wakes due sleepers in order and waits for the
     work each wake-up starts.
 
-    Wall time (``unsafe_now``) and monotonic time (``unsafe_monotonic``)
+    Wall time (``now_unsafe``) and monotonic time (``monotonic_unsafe``)
     are kept apart: ``set_time`` may move wall time backwards, but
     monotonic time only ever moves forward. Time is kept in whole
     nanoseconds, so deadlines add up exactly.
@@ -136,20 +136,20 @@ class TestClock:
 
     # --- the Clock service ------------------------------------------------------------
 
-    def unsafe_now(self) -> float:
+    def now_unsafe(self) -> float:
         # As Effect's ``currentTimeMillis``: infinite once time is moved to
         # infinity (the nanosecond clocks stay at the last finite time).
         if math.isinf(self._timestamp_ns):
             return self._timestamp_ns
         return self._wall_ns / _NANOS
 
-    def unsafe_monotonic(self) -> float:
+    def monotonic_unsafe(self) -> float:
         return self._monotonic_ns / _NANOS
 
-    def unsafe_now_nanos(self) -> int:
+    def now_nanos_unsafe(self) -> int:
         return self._wall_ns
 
-    def unsafe_monotonic_nanos(self) -> int:
+    def monotonic_nanos_unsafe(self) -> int:
         return self._monotonic_ns
 
     def sleep(self, seconds: Seconds) -> Effect[None]:

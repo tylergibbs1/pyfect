@@ -2,7 +2,7 @@
 
 Each test's docstring is the Effect test title. ``Scope.provide(scope)`` is
 ``provide_service(fx.Scope, scope)``, ``forkChild({ startImmediately })``
-is ``fork(start_immediately=True)``, ``pollUnsafe`` is ``unsafe_poll`` and
+is ``fork(start_immediately=True)``, ``pollUnsafe`` is ``poll_unsafe`` and
 durations are seconds. Effect pins some interleavings with a custom
 ``Scheduler.shouldYield``; pyfect has no such hook (see PARITY.md), so
 those ports hold the fiber's resumes on a ``TaskQueue`` scheduler or sweep
@@ -163,7 +163,7 @@ def test_blocks_when_item_not_available():
     yield from fx.all(*[pool.get()] * 10)
     fiber = yield from fx.scoped(pool.get()).fork(start_immediately=True)
     yield from fx.sleep(0.01)
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
 
 
 @testing.effect
@@ -305,17 +305,17 @@ class _FrozenClock:
         self._inner = inner
         self._now_nanos = now_nanos
 
-    def unsafe_now(self) -> float:
+    def now_unsafe(self) -> float:
         return self._now_nanos / 1e9
 
-    def unsafe_monotonic(self) -> float:
-        return self._inner.unsafe_monotonic()
+    def monotonic_unsafe(self) -> float:
+        return self._inner.monotonic_unsafe()
 
-    def unsafe_now_nanos(self) -> int:
+    def now_nanos_unsafe(self) -> int:
         return self._now_nanos
 
-    def unsafe_monotonic_nanos(self) -> int:
-        return self._inner.unsafe_monotonic_nanos()
+    def monotonic_nanos_unsafe(self) -> int:
+        return self._inner.monotonic_nanos_unsafe()
 
     def sleep(self, seconds: fx.duration.Seconds) -> fx.Effect[None]:
         return self._inner.sleep(seconds)
@@ -429,7 +429,7 @@ def test_releasing_a_shared_borrower_preserves_an_active_reservation():
 
     yield from borrower.close(_DONE)
     following = yield from pool.use(fx.succeed).fork(start_immediately=True)
-    before_release = following.unsafe_poll()
+    before_release = following.poll_unsafe()
     yield from reservation.close(_DONE)
     result = yield from following.join()
     yield from owner.close(_DONE)
@@ -452,7 +452,7 @@ def test_overlapping_reservations_keep_an_item_reserved_until_both_close():
     yield from first.close(_DONE)
     assert pool.state.usage == 2
     following = yield from pool.use(fx.succeed).fork(start_immediately=True)
-    before_release = following.unsafe_poll()
+    before_release = following.poll_unsafe()
     yield from second.close(_DONE)
     result = yield from following.join()
     yield from owner.close(_DONE)
@@ -473,10 +473,10 @@ def test_releasing_a_reservation_wakes_all_available_slots_after_borrowers_retur
 
     first = yield from _in(borrowers, pool.get()).fork(start_immediately=True)
     second = yield from _in(borrowers, pool.get()).fork(start_immediately=True)
-    before_release = [first.unsafe_poll(), second.unsafe_poll()]
+    before_release = [first.poll_unsafe(), second.poll_unsafe()]
     yield from reservation.close(_DONE)
     yield from testing.adjust(0)
-    after_release = [first.unsafe_poll(), second.unsafe_poll()]
+    after_release = [first.poll_unsafe(), second.poll_unsafe()]
     yield from first.interrupt()
     yield from second.interrupt()
     yield from borrowers.close(_DONE)
@@ -506,7 +506,7 @@ def test_usage_ttl_preserves_reservations_and_waits_for_capacity():
     first = yield from _in(owner, pool.get())
     second = yield from _in(owner, pool.get())
     following = yield from pool.use(fx.succeed).fork(start_immediately=True)
-    assert following.unsafe_poll() is None
+    assert following.poll_unsafe() is None
     yield from reservation.close(_DONE)
     result = yield from following.join()
     yield from owner.close(_DONE)
@@ -528,7 +528,7 @@ def test_reserve_is_a_no_op_with_concurrency_one():
     yield from owner.close(_DONE)
 
     following = yield from pool.use(fx.succeed).fork(start_immediately=True)
-    before_release = following.unsafe_poll()
+    before_release = following.poll_unsafe()
     yield from reservation.close(_DONE)
     yield from following.interrupt()
 
@@ -637,7 +637,7 @@ def test_get_is_interruptible():
     yield from pool.get().repeat(times=9)
     fiber = yield from pool.get().fork()
     yield from fiber.interrupt()
-    assert fiber.unsafe_poll() == fx.Failure(fx.cause.interrupt(me))
+    assert fiber.poll_unsafe() == fx.Failure(fx.cause.interrupt(me))
 
 
 @testing.effect
@@ -736,7 +736,7 @@ def test_an_interrupted_use_returns_its_lease():
         yield from fiber.interrupt()
         assert pool.state.usage == 0, f"MaxOpsBeforeYield {budget}"
         following = yield from pool.use(fx.succeed).fork(start_immediately=True)
-        assert following.unsafe_poll() is not None, f"MaxOpsBeforeYield {budget}"
+        assert following.poll_unsafe() is not None, f"MaxOpsBeforeYield {budget}"
 
 
 @testing.effect
@@ -746,7 +746,7 @@ def test_use_waits_for_an_available_item():
     scope = fx.CloseableScope()
     yield from _in(scope, pool.get())
     fiber = yield from pool.use(fx.succeed).fork(start_immediately=True)
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from scope.close(_DONE)
     assert (yield from fiber.join()) == "resource"
     assert pool.state.usage == 0
@@ -843,7 +843,7 @@ def _drain_while[A](held: TaskQueue, eff: fx.Effect[A]) -> fx.Effect[A]:
     @fx.gen
     def body():
         fiber = yield from eff.fork(start_immediately=True)
-        while fiber.unsafe_poll() is None:
+        while fiber.poll_unsafe() is None:
             yield from held.run_all()
             yield from fx.yield_now()
         return (yield from fiber.join())
@@ -892,7 +892,7 @@ def test_wakes_the_next_waiter_when_a_waiter_is_woken_during_its_interruption():
         yield from _wait_until(lambda pool=pool: len(pool.state.waiters) == 1)
         second = yield from pool.use(fx.succeed).fork(start_immediately=True)
         yield from owner.close(_DONE)
-        first.unsafe_interrupt_as(None)
+        first.interrupt_as_unsafe(None)
         assert (yield from second.join()) == "resource", f"MaxOpsBeforeYield {budget}"
 
 

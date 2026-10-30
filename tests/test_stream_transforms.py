@@ -142,7 +142,7 @@ def test_zip_latest_all_waits_for_every_stream_before_writing():
     yield from queues[0].offer(1)
     yield from queues[1].offer("a")
     yield from _settle()
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from queues[2].offer(True)
     yield from _settle()
     yield from queues[0].offer(2)
@@ -178,7 +178,7 @@ def test_throttle_shape_caps_the_bucket_at_units_plus_burst():
     seen: list[tuple[int, float]] = []
 
     def record(n: int) -> fx.Effect[None]:
-        return fx.sync(lambda: seen.append((n, clock.unsafe_now())))
+        return fx.sync(lambda: seen.append((n, clock.now_unsafe())))
 
     throttled = stream.from_queue(queue).throttle(
         cost=len, units=1, duration=1, burst=2, strategy="shape"

@@ -299,7 +299,7 @@ def test_a_write_of_negative_zero_over_zero_is_published_and_wakes_its_waiters()
     yield from fx.tx(zero.set(-0.0))
 
     yield from _yield_times(10)
-    assert negative_zero.unsafe_poll() == fx.Success(-math.inf), "-0 over 0 never woke its waiter"
+    assert negative_zero.poll_unsafe() == fx.Success(-math.inf), "-0 over 0 never woke its waiter"
 
 
 # --- transaction metadata -----------------------------------------------------
@@ -312,18 +312,18 @@ class _AdvancingClock:
         self._base = base
         self._ms = 1000
 
-    def unsafe_now_nanos(self) -> int:
+    def now_nanos_unsafe(self) -> int:
         self._ms += 1
         return (self._ms - 1) * 1_000_000
 
-    def unsafe_now(self) -> float:
-        return self.unsafe_now_nanos() / 1_000_000_000
+    def now_unsafe(self) -> float:
+        return self.now_nanos_unsafe() / 1_000_000_000
 
-    def unsafe_monotonic(self) -> float:
-        return self._base.unsafe_monotonic()
+    def monotonic_unsafe(self) -> float:
+        return self._base.monotonic_unsafe()
 
-    def unsafe_monotonic_nanos(self) -> int:
-        return self._base.unsafe_monotonic_nanos()
+    def monotonic_nanos_unsafe(self) -> int:
+        return self._base.monotonic_nanos_unsafe()
 
     def sleep(self, seconds: fx.duration.Seconds) -> fx.Effect[None]:
         return self._base.sleep(seconds)

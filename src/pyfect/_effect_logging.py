@@ -42,7 +42,7 @@ class LoggingMethods(EffectBase[A_co, E_co, R_co]):
         inner = as_effect(self)
 
         def body(fiber: Fiber[Any, Any]) -> Effect[A_co, E_co, R_co]:
-            span = LogSpan(label, fiber.get_ref(Clock).unsafe_now_nanos() // 1_000_000)
+            span = LogSpan(label, fiber.get_ref(Clock).now_nanos_unsafe() // 1_000_000)
             return inner.update_service(CurrentLogSpans, lambda spans: (span, *spans))
 
         return _core._WithFiber(body)

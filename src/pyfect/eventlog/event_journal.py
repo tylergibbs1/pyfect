@@ -143,7 +143,7 @@ def warn_if_ahead(clock: ClockService, ids: Iterable[EntryId]) -> Effect[None]:
     latest = _max_entry_id(ids)
     if latest is None:
         return succeed(None)
-    ahead = entry_id_millis(latest) - clock.unsafe_now() * 1000
+    ahead = entry_id_millis(latest) - clock.now_unsafe() * 1000
     if ahead <= _MAX_CLOCK_SKEW_MILLIS:
         return succeed(None)
     return log_warning(

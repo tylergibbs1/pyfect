@@ -85,6 +85,7 @@ __all__ = [
     "CurrentHeaders",
     "OnFromClient",
     "SocketOptions",
+    "TransformClient",
     "default_retry_policy",
     "layer_protocol_http",
     "layer_protocol_socket",

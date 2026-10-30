@@ -1,6 +1,6 @@
 """OpenTelemetry for pyfect (Effect's ``@effect/opentelemetry``): spans,
 logs and metrics sent through the OpenTelemetry SDK. Needs the ``otel``
-extra (``pip install 'pyfect[otel]'``); ``pyfect`` itself never imports
+extra (``pyfect-dev[otel]``); ``pyfect`` itself never imports
 it.
 
 - ``otel.sdk.layer(Configuration(...))``: everything in one layer
@@ -10,12 +10,12 @@ it.
 - ``otel.resource``: the resource describing the service
 """
 
+from pyfect._extras import missing_extra
+
 try:
     import opentelemetry.sdk  # noqa: F401  # pyright: ignore[reportUnusedImport]
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise ImportError(
-        "pyfect.otel needs the OpenTelemetry SDK: pip install 'pyfect[otel]'"
-    ) from error
+    raise missing_extra("pyfect.otel", "otel") from error
 
 from pyfect.otel import logger, metrics, resource, sdk, tracer
 

@@ -126,6 +126,7 @@ def deserialize_exit[A, E, R](
 
 
 __all__ = [
+    "AnyCodec",
     "AnyPersistable",
     "Class",
     "Persistable",

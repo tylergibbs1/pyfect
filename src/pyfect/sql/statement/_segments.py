@@ -61,7 +61,7 @@ def is_fragment(u: object) -> TypeIs[Fragment]:
 class Literal:
     """SQL text, inserted as it is, followed by its bound ``params``. The
     text is a ``LiteralString``, so pyright rejects text built at runtime
-    here too; ``unsafe_literal`` is the explicit way to make one from it."""
+    here too; ``literal_unsafe`` is the explicit way to make one from it."""
 
     value: LiteralString
     params: tuple[object, ...] | None = None
@@ -73,7 +73,7 @@ def literal(value: LiteralString, params: Sequence[object] | None = None) -> Lit
     return Literal(value, None if params is None else tuple(params))
 
 
-def unsafe_literal(value: str, params: Sequence[object] | None = None) -> Literal:
+def literal_unsafe(value: str, params: Sequence[object] | None = None) -> Literal:
     """SQL text from any string: never build it from untrusted input."""
     return Literal(cast("LiteralString", value), None if params is None else tuple(params))
 
@@ -475,13 +475,13 @@ __all__ = [
     "is_segment",
     "join",
     "literal",
+    "literal_unsafe",
     "or_",
     "parameter",
     "record_insert_helper",
     "record_update_helper",
     "record_update_helper_single",
     "segments_of",
-    "unsafe_literal",
     "update",
     "update_values",
 ]

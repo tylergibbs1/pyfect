@@ -24,7 +24,7 @@ def test_replicate_effect_discard_and_concurrency() -> None:
     def program():
         fiber = yield from fx.sleep(1).replicate_effect(4, concurrency=2, discard=True).fork()
         yield from testing.adjust(1)
-        first = fiber.unsafe_poll()
+        first = fiber.poll_unsafe()
         yield from testing.adjust(1)
         return first, (yield from fiber.join())
 

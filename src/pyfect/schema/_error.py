@@ -19,3 +19,8 @@ class SchemaError(TaggedError):
     @property
     def message(self) -> str:
         return format_issue(self.issue)
+
+    def __repr__(self) -> str:
+        # The issue holds the schema's AST; its repr runs to thousands of
+        # characters. ``issue`` is still there to inspect.
+        return f"{type(self).__name__}({self.message!r})"

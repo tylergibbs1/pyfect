@@ -1,9 +1,11 @@
 """AES-GCM and Ed25519 on the ``cryptography`` package (the extra
-``pyfect[eventlog]``), where Effect uses WebCrypto. Imported by the
+``pyfect-dev[eventlog]``), where Effect uses WebCrypto. Imported by the
 functions that need it, so the rest of ``pyfect.eventlog`` works without
 the extra."""
 
 from __future__ import annotations
+
+from pyfect._extras import missing_extra
 
 try:
     from cryptography.exceptions import InvalidSignature
@@ -14,10 +16,7 @@ try:
     )
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise ImportError(
-        "pyfect.eventlog encryption and session auth need the cryptography package: "
-        "install pyfect[eventlog]"
-    ) from error
+    raise missing_extra("pyfect.eventlog encryption and session auth", "eventlog") from error
 
 
 def ed25519_public_key(seed: bytes) -> bytes:

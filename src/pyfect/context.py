@@ -80,8 +80,18 @@ class ServiceEffect(Effect[S_inv, Never, T_co]):
         return Failure(Cause((Die(MissingServiceError(_missing(self.tag, fiber._context))),)))
 
 
+def _is_runtime_setting(tag: type[Tag[Any]]) -> bool:
+    """A reference (it has a default, so it is never missing) or a tag the
+    runtime keeps for itself: noise in a missing-service message."""
+    module = tag.__module__.split(".")
+    return issubclass(tag, Reference) or (
+        module[0] == "pyfect" and any(part.startswith("_") for part in module)
+    )
+
+
 def _missing(tag: type[Tag[Any]], ctx: Context) -> str:
-    available = ", ".join(t.key for t in ctx.tags()) or "none"
+    provided = [t.key for t in ctx.tags() if not _is_runtime_setting(t)]
+    available = ", ".join(provided) or "none"
     return f"Service {tag.key} was not provided (available: {available})"
 
 
@@ -96,6 +106,7 @@ class Tag[S]:
         cls.key = key or f"{cls.__module__}.{cls.__qualname__}"
 
     def __new__(cls) -> ServiceEffect[S, Self]:
+        _require_subclass(cls)
         return ServiceEffect(cls)
 
 
@@ -108,11 +119,20 @@ class Reference[S](Tag[S]):
             raise TypeError(f"Reference {cls.__qualname__} must define a 'default' classmethod")
 
     def __new__(cls) -> ServiceEffect[S, Never]:
+        _require_subclass(cls)
         return ServiceEffect(cls)
 
     @classmethod
     def default(cls) -> S:
         raise NotImplementedError
+
+
+def _require_subclass(cls: type[Tag[Any]]) -> None:
+    if cls is Tag or cls is Reference:
+        raise TypeError(
+            f"{cls.__name__} is a base class: subclass it (class Db({cls.__name__}[str]): ...) "
+            "and call the subclass"
+        )
 
 
 class TagLike[S, T](Protocol):
@@ -209,9 +229,9 @@ class Context(Generic[R_contra]):
     def get[S, T](self: Context[T], tag: TagLike[S, T]) -> S:
         """The service of ``tag``, which the context's type must hold (a
         reference falls back to its default)."""
-        return self.unsafe_get(tag)
+        return self.get_unsafe(tag)
 
-    def unsafe_get[S, T](self, tag: TagLike[S, T]) -> S:
+    def get_unsafe[S, T](self, tag: TagLike[S, T]) -> S:
         """``get`` without the type check: raises ``MissingServiceError`` if
         the service is absent."""
         found, value = self.lookup(tag_class(tag))
@@ -247,7 +267,7 @@ class Context(Generic[R_contra]):
         return tuple(self._services)
 
     @property
-    def unsafe_map(self) -> Mapping[type[Tag[Any]], Any]:
+    def map_unsafe(self) -> Mapping[type[Tag[Any]], Any]:
         """The services by tag, in insertion order, untyped (Effect's
         ``mapUnsafe``)."""
         return MappingProxyType(self._services)
@@ -320,3 +340,14 @@ def tag_class[S, T](tag: TagLike[S, T]) -> type[Tag[S]]:
     if isinstance(tag, type) and issubclass(tag, Tag):
         return tag  # pyright: ignore[reportUnknownVariableType]
     raise TypeError(f"{tag!r} is not a Tag class")
+
+
+__all__ = [
+    "Context",
+    "MissingServiceError",
+    "Reference",
+    "ServiceEffect",
+    "Tag",
+    "TagLike",
+    "tag_class",
+]

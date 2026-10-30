@@ -261,3 +261,6 @@ class Semaphore:
     def _discard(self, waiter: _Waiter) -> None:
         with contextlib.suppress(ValueError):
             self._waiters.remove(waiter)
+
+
+__all__ = ["Semaphore"]

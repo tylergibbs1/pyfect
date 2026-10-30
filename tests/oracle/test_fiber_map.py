@@ -95,7 +95,7 @@ def test_retains_ownership_of_replacements_made_by_a_synchronous_finalizer():
     yield from scope.close(fx.Success(None))
 
     for fiber in fibers:
-        assert fiber.unsafe_poll() is not None
+        assert fiber.poll_unsafe() is not None
 
 
 @testing.effect
@@ -150,12 +150,12 @@ def test_get_and_get_unsafe():
     """get and getUnsafe"""
     fiber_map = yield from fx.FiberMap[str, str].make()
 
-    assert fiber_map.unsafe_get("a") is None
+    assert fiber_map.get_unsafe("a") is None
     assert (yield from fiber_map.get("a")) is None
 
     fiber = yield from fiber_map.run("a", fx.never)
 
-    assert fiber_map.unsafe_get("a") is fiber
+    assert fiber_map.get_unsafe("a") is fiber
     assert (yield from fiber_map.get("a")) is fiber
 
 
@@ -163,10 +163,10 @@ def test_get_and_get_unsafe():
 def test_join():
     """join"""
     fiber_map = yield from fx.FiberMap[str].make()
-    fiber_map.unsafe_set("a", (yield from fx.void.fork_daemon(start_immediately=True)))
-    fiber_map.unsafe_set("b", (yield from fx.void.fork_daemon(start_immediately=True)))
-    fiber_map.unsafe_set("c", (yield from fx.fail("fail").fork_daemon(start_immediately=True)))
-    fiber_map.unsafe_set("d", (yield from fx.fail("ignored").fork_daemon(start_immediately=True)))
+    fiber_map.set_unsafe("a", (yield from fx.void.fork_daemon(start_immediately=True)))
+    fiber_map.set_unsafe("b", (yield from fx.void.fork_daemon(start_immediately=True)))
+    fiber_map.set_unsafe("c", (yield from fx.fail("fail").fork_daemon(start_immediately=True)))
+    fiber_map.set_unsafe("d", (yield from fx.fail("ignored").fork_daemon(start_immediately=True)))
     assert (yield from fiber_map.join().flip()) == "fail"
 
 
@@ -175,8 +175,8 @@ def test_size():
     """size"""
     scope = fx.CloseableScope()
     fiber_map = yield from fx.FiberMap[str].make().pipe(fx.provide_service(fx.Scope, scope))
-    fiber_map.unsafe_set("a", (yield from fx.never.fork_daemon(start_immediately=True)))
-    fiber_map.unsafe_set("b", (yield from fx.never.fork_daemon(start_immediately=True)))
+    fiber_map.set_unsafe("a", (yield from fx.never.fork_daemon(start_immediately=True)))
+    fiber_map.set_unsafe("b", (yield from fx.never.fork_daemon(start_immediately=True)))
     assert (yield from fiber_map.size()) == 2
     yield from scope.close(fx.Success(None))
     assert (yield from fiber_map.size()) == 0
@@ -192,7 +192,7 @@ def test_only_if_missing():
     yield from fx.yield_now()
     assert _interrupted((yield from fiber_b.await_exit()))
     assert _interrupted((yield from fiber_c.await_exit()))
-    assert fiber_a.unsafe_poll() is None
+    assert fiber_a.poll_unsafe() is None
 
 
 @testing.effect
@@ -200,11 +200,11 @@ def test_only_if_missing_keeps_the_same_registered_fiber():
     """onlyIfMissing keeps the same registered fiber"""
     fiber_map = yield from fx.FiberMap[str].make()
     worker, cleanups = yield from _make_worker
-    fiber_map.unsafe_set("key", worker)
-    fiber_map.unsafe_set("key", worker, only_if_missing=True)
+    fiber_map.set_unsafe("key", worker)
+    fiber_map.set_unsafe("key", worker, only_if_missing=True)
 
-    assert fiber_map.unsafe_get("key") is worker
-    assert worker.unsafe_poll() is None
+    assert fiber_map.get_unsafe("key") is worker
+    assert worker.poll_unsafe() is None
     assert (yield from cleanups.get()) == 0
 
 
@@ -214,8 +214,8 @@ def test_same_fiber_registration_preserves_propagate_interruption(propagate_inte
     """same-fiber registration preserves propagateInterruption: ${propagateInterruption}"""
     fiber_map = yield from fx.FiberMap[str].make()
     worker, _ = yield from _make_worker
-    fiber_map.unsafe_set("key", worker, propagate_interruption=propagate_interruption)
-    fiber_map.unsafe_set(
+    fiber_map.set_unsafe("key", worker, propagate_interruption=propagate_interruption)
+    fiber_map.set_unsafe(
         "key", worker, only_if_missing=True, propagate_interruption=not propagate_interruption
     )
 
@@ -233,7 +233,7 @@ def test_runtime_only_if_missing():
     yield from fx.yield_now()
     assert _interrupted((yield from fiber_b.await_exit()))
     assert _interrupted((yield from fiber_c.await_exit()))
-    assert fiber_a.unsafe_poll() is None
+    assert fiber_a.poll_unsafe() is None
 
 
 @testing.effect
@@ -265,9 +265,9 @@ def test_await_empty():
 
     fiber = yield from fiber_map.await_empty().fork()
     yield from testing.adjust(0.5)
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from testing.adjust(0.5)
-    assert fiber.unsafe_poll() is not None
+    assert fiber.poll_unsafe() is not None
 
 
 @testing.effect(asyncio=True)

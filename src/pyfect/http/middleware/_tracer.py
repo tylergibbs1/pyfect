@@ -86,7 +86,7 @@ def _response_span_exit(
 
 
 def _end(fiber: Fiber[Any, Any], span: Span, request: ServerRequest, exit: Exit[Any, Any]) -> None:
-    end_time = fiber.get_ref(Clock).unsafe_now_nanos()
+    end_time = fiber.get_ref(Clock).now_nanos_unsafe()
     if isinstance(exit, Success) and (
         not span.sampled or fiber.get_ref(CurrentTracer) is native_tracer
     ):
@@ -132,7 +132,7 @@ def tracer[E, R](
     def body(
         fiber: Fiber[Any, Any], restore: Restore
     ) -> Effect[HttpServerResponse, E, R | HttpServerRequest]:
-        request = fiber._context.unsafe_get(HttpServerRequest)
+        request = fiber._context.get_unsafe(HttpServerRequest)
         if is_tracer_disabled_unsafe(fiber, request):
             return restore(app)
         parent = trace_context.from_headers(request.headers)

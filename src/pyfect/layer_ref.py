@@ -179,3 +179,6 @@ class LayerRefService[I, E = Never](Tag[LayerRef[I, E]]):
     @classmethod
     def refresh(cls) -> Effect[None, E, Self]:
         return cls._service().flat_map(lambda ref: ref.refresh())
+
+
+__all__ = ["LayerRef", "LayerRefService"]

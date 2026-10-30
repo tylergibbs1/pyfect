@@ -118,7 +118,7 @@ def test_checks_for_yielding_between_suspended_parts():
     drained = stream.empty.concat(_nested(1_000)).run_drain()
     fiber = yield from drained.pipe(fx.provide_service(fx.MaxOpsBeforeYield, 16)).fork()
     turns = 0
-    while fiber.unsafe_poll() is None:
+    while fiber.poll_unsafe() is None:
         turns += 1
         yield from fx.yield_now()
     assert turns >= 100, f"only {turns} turns for 1000 suspended parts"
@@ -300,7 +300,7 @@ def _outer_failure(
         )
 
         def make_inner(_: int) -> Stream[Any]:
-            started.unsafe_open()
+            started.open_unsafe()
             body: Stream[Any] = (
                 stream.never if inner == "never" else stream.from_effect(fx.sleep(3600))
             )

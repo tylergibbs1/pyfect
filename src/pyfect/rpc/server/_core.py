@@ -149,7 +149,7 @@ class RpcServer:
                     self._run(self._end_client(client), self._services)
                     continue
                 for fiber in list(client.fibers.values()):
-                    fiber.unsafe_interrupt_as(parent.id)
+                    fiber.interrupt_as_unsafe(parent.id)
             return _VOID if not self._clients else self._shutdown.wait()
 
         return _WithFiber(body)
@@ -168,7 +168,7 @@ class RpcServer:
             client = self._clients.pop(client_id, None)
             if client is not None:
                 for fiber in list(client.fibers.values()):
-                    fiber.unsafe_interrupt_as(parent.id)
+                    fiber.interrupt_as_unsafe(parent.id)
             return _VOID
 
         return _WithFiber(body)
@@ -234,7 +234,7 @@ class RpcServer:
                     return self._on_from_server(
                         ResponseExit(client.id, request_id, Exit.interrupt())
                     )
-                fiber.unsafe_interrupt_as(request_fiber.id, ClientAbort.annotation)
+                fiber.interrupt_as_unsafe(request_fiber.id, ClientAbort.annotation)
                 return _VOID
             case Eof():
                 client.ended = True
@@ -364,7 +364,7 @@ class RpcServer:
             gate = latch
             if gate is None:
                 return write
-            gate.unsafe_close()
+            gate.close_unsafe()
             return write.flat_map(lambda _: gate.wait())
 
         if isinstance(stream, Stream):
@@ -444,7 +444,7 @@ class _RequestRun:
     def watch(self, fiber: Fiber[Any, Any]) -> None:
         fiber.run_in(self.server._track)
         self.client.fibers[self.request.id] = fiber
-        fiber.unsafe_add_observer(self._observe)
+        fiber.add_observer_unsafe(self._observe)
 
     def _observe(self, exit: Exit.Exit[Any, Any]) -> None:
         server, client = self.server, self.client
@@ -453,7 +453,7 @@ class _RequestRun:
             self.deferred = None
             waiting = server._run(deferred.wait().on_exit(self.respond), self.context)
             client.fibers[self.request.id] = waiting
-            waiting.unsafe_add_observer(self._observe)
+            waiting.add_observer_unsafe(self._observe)
             return
         if not self.responded and isinstance(exit, Exit.Failure):
             server._run(self.respond(Exit.interrupt()), self.context)

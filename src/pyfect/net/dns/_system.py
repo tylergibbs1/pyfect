@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from ipaddress import ip_address
 
 from pyfect._core import Effect
+from pyfect._os_wait import Resume, os_wait
 from pyfect.effect import fail, succeed
 from pyfect.layer import Layer
 from pyfect.layer import succeed as layer_succeed
@@ -24,7 +25,6 @@ from pyfect.net.dns._error import DnsError, DnsErrorReason, DnsMethod
 from pyfect.net.dns._service import Dns, DnsService, make
 from pyfect.net.host import DomainName
 from pyfect.net.net_address._ip import IpAddress, IpFamily, format_ip
-from pyfect.process._os import Resume, os_wait
 
 _REASON_NAMES: list[tuple[str, DnsErrorReason]] = [
     ("EAI_NONAME", "NotFound"),

@@ -284,7 +284,7 @@ class Fiber(Generic[A_co, E_co]):
         return _WithFiber(lambda me: self._interrupt_from(me, by))
 
     def _interrupt_from(self, me: Fiber[Any, Any], by: int | None) -> Effect[None, Never, Never]:
-        self.unsafe_interrupt_as(by, me._interruptor_annotations())
+        self.interrupt_as_unsafe(by, me._interruptor_annotations())
         return self.await_exit().as_void()
 
     def run_in(self, scope: CloseableScope) -> Fiber[A_co, E_co]:
@@ -295,7 +295,7 @@ class Fiber(Generic[A_co, E_co]):
         if self._exit is not None:
             return self
         if scope._closed is not None:
-            self.unsafe_interrupt_as(self.id)
+            self.interrupt_as_unsafe(self.id)
         else:
             scope._watch(self)
         return self
@@ -304,7 +304,7 @@ class Fiber(Generic[A_co, E_co]):
         """The value of ``reference`` in this fiber's current context (its
         default when nobody provided one). Loggers read the log annotations
         and spans with it."""
-        return self._ctx.unsafe_get(reference)
+        return self._ctx.get_unsafe(reference)
 
     @staticmethod
     def get_current() -> Fiber[Any, Any] | None:
@@ -342,12 +342,12 @@ class Fiber(Generic[A_co, E_co]):
 
         return interrupt_all_as(fibers, by)
 
-    def unsafe_poll(self) -> Exit[A_co, E_co] | None:
+    def poll_unsafe(self) -> Exit[A_co, E_co] | None:
         """The exit if the fiber is done. Only meaningful on the fiber's
         scheduler thread."""
         return self._exit
 
-    def unsafe_interrupt_as(self, by: int | None, annotations: Context | None = None) -> None:
+    def interrupt_as_unsafe(self, by: int | None, annotations: Context | None = None) -> None:
         """Ask the fiber to stop. Safe from any thread; does not wait.
 
         From a fiber on the same scheduler it takes effect at once (as
@@ -360,7 +360,7 @@ class Fiber(Generic[A_co, E_co]):
         else:
             self._scheduler.schedule(lambda: self._deliver_interrupt(by, annotations))
 
-    def unsafe_add_observer(
+    def add_observer_unsafe(
         self, observer: Callable[[Exit[A_co, E_co]], None]
     ) -> Callable[[], None]:
         """Call ``observer`` with the exit once the fiber is done (at once if
@@ -784,8 +784,8 @@ def interrupt_all(
                 resume(_Succeed(None))
 
         for f in fibers:
-            f.unsafe_interrupt_as(by, annotations)
+            f.interrupt_as_unsafe(by, annotations)
         for f in fibers:
-            f.unsafe_add_observer(observer)
+            f.add_observer_unsafe(observer)
 
     return _Callback(register)

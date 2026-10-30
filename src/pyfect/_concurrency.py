@@ -137,7 +137,7 @@ def _for_each_concurrent[T, B, E, R](
                         resume(_Succeed(results))
                 elif failed_first:
                     for w in workers:
-                        w.unsafe_interrupt_as(parent.id, parent._interruptor_annotations())
+                        w.interrupt_as_unsafe(parent.id, parent._interruptor_annotations())
 
             def cancel() -> Effect[None]:
                 # Interrupted from outside: report what the workers did too.
@@ -145,7 +145,7 @@ def _for_each_concurrent[T, B, E, R](
                 return _FailCause(failed) if failed.reasons else _Succeed(None)
 
             for w in workers:
-                w.unsafe_add_observer(observer)
+                w.add_observer_unsafe(observer)
             return interrupt_all(workers, parent.id, parent._interruptor_annotations()).and_then(
                 _Suspend(cancel)
             )
@@ -178,7 +178,7 @@ def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Eff
                         losers = [f for f in fibers if f is not me]
                         # At once, so a loser that has not started never does.
                         for loser in losers:
-                            loser.unsafe_interrupt_as(parent.id, parent._interruptor_annotations())
+                            loser.interrupt_as_unsafe(parent.id, parent._interruptor_annotations())
                         resume(
                             _SetInterruptible(
                                 interrupt_all(losers, parent.id, parent._interruptor_annotations()),
@@ -194,7 +194,7 @@ def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Eff
                 return observer
 
             for f in fibers:
-                f.unsafe_add_observer(observer_for(f))
+                f.add_observer_unsafe(observer_for(f))
             return interrupt_all(fibers, parent.id, parent._interruptor_annotations())
 
         return _Callback(register)

@@ -195,7 +195,7 @@ class _Batcher:
                 batch.requests.append(request)
             if len(batch.requests) == self._options.max_size:
                 self._close_batch(client_id, batch)
-                batch.full.unsafe_open()
+                batch.full.open_unsafe()
             pending = yield from batch.done.wait()
             return (yield from _request_exit(request, pending))
 

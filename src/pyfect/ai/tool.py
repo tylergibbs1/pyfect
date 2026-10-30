@@ -467,7 +467,7 @@ class Strict(Reference[bool | None], key="effect/ai/Tool/Strict"):
 
 
 def get_strict_mode(tool: AnyTool) -> bool | None:
-    return tool.annotations.unsafe_get(Strict)
+    return tool.annotations.get_unsafe(Strict)
 
 
 # Secure JSON --------------------------------------------------------------------------
@@ -496,3 +496,41 @@ def unsafe_secure_json_parse(text: str) -> object:
         elif isinstance(node, list):
             pending.extend(cast("list[object]", node))
     return value
+
+
+__all__ = [
+    "EMPTY_PARAMS",
+    "EXECUTION_FAILURE",
+    "AnyTool",
+    "CodecTransformer",
+    "Destructive",
+    "Dynamic",
+    "ExecutionFailureDict",
+    "FailureMode",
+    "FailureOrigin",
+    "Handler",
+    "HandlerContext",
+    "Idempotent",
+    "Meta",
+    "NameMapper",
+    "NeedsApproval",
+    "NeedsApprovalContext",
+    "OpenWorld",
+    "ProviderDefined",
+    "Readonly",
+    "Strict",
+    "Title",
+    "Tool",
+    "dynamic",
+    "failure_result_schema",
+    "get_description",
+    "get_json_schema",
+    "get_json_schema_from_schema",
+    "get_strict_mode",
+    "is_dynamic",
+    "is_provider_defined",
+    "is_user_defined",
+    "make",
+    "provider_defined",
+    "unsafe_secure_json_parse",
+]

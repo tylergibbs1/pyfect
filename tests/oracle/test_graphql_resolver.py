@@ -516,7 +516,7 @@ def test_batch_key_applies_batch_n_per_key_for_interleaved_lookups():
             api.repo_nodes,
             variables=lambda ids: {"ids": list(ids)},
             path=("nodes",),
-            batch_key=lambda context: context.unsafe_get(CurrentUser),
+            batch_key=lambda context: context.get_unsafe(CurrentUser),
         ).batch_n(2)
     )
 
@@ -583,7 +583,7 @@ def look_up_on_two_hosts(url: Any, limit: int | None = None) -> Effect[list[str]
 
 
 def _host_url(options: Any) -> str:
-    return f"http://{options.context.unsafe_get(GitHubHost)}/graphql"
+    return f"http://{options.context.get_unsafe(GitHubHost)}/graphql"
 
 
 def _async_host_url() -> Effect[str]:

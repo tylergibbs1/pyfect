@@ -75,7 +75,7 @@ def to_handled[E, R, EH = Never, RH = Never](
 
     def body(fiber: Fiber[Any, Any]) -> Effect[None, Never, Any]:
         previous = fiber._context
-        request = previous.unsafe_get(HttpServerRequest)
+        request = previous.get_unsafe(HttpServerRequest)
         state = RequestState()
         scope = CloseableScope()
         failed: list[Cause[Any]] = []

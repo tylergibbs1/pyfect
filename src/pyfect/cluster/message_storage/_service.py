@@ -156,7 +156,7 @@ class _ReplyHandler:
 
 def _abandon(fiber: Fiber[Any, Any]) -> Effect[Never]:
     def register(_resume: Callable[[Effect[Never]], None]) -> None:
-        fiber.unsafe_interrupt_as(fiber.id, ABANDON_ANNOTATION)
+        fiber.interrupt_as_unsafe(fiber.id, ABANDON_ANNOTATION)
 
     return callback(register).interruptible()
 

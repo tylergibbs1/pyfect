@@ -48,7 +48,7 @@ def test_awaits_children_forked_by_the_wrapped_effect():
 
     fiber = yield from body.await_all_children().fork(start_immediately=True)
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from latch.succeed(None)
     assert (yield from fiber.join()) == 1
 
@@ -89,11 +89,11 @@ def _interrupt_while_awaiting_children(
         fiber = yield from awaiting.fork(start_immediately=True)
         child = yield from child_fiber.wait()
         yield from child_started.wait()
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         yield from fx.yield_now()
         yield from fx.yield_now()
-        polled = fiber.unsafe_poll()
-        child_polled = child.unsafe_poll()
+        polled = fiber.poll_unsafe()
+        child_polled = child.poll_unsafe()
         yield from release_child.succeed(None)
         final = yield from fiber.await_exit()
         return polled, child_polled, final
@@ -136,7 +136,7 @@ def test_does_not_await_children_forked_outside_the_wrapped_effect():
     preexisting = yield from fx.never.fork(start_immediately=True)
     fiber = yield from fx.succeed(1).await_all_children().fork(start_immediately=True)
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() == fx.Success(1)
+    assert fiber.poll_unsafe() == fx.Success(1)
     yield from preexisting.interrupt()
 
 
@@ -166,11 +166,11 @@ def test_does_not_await_preexisting_children_in_the_same_fiber():
 
     fiber = yield from outer.fork(start_immediately=True)
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from scoped_latch.succeed(None)
     yield from fx.yield_now()
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() == fx.Success(1)
+    assert fiber.poll_unsafe() == fx.Success(1)
 
 
 # --- fork / forkDaemon ----------------------------------------------------------------------
@@ -316,7 +316,7 @@ def test_uninterruptible_sets_how_the_child_starts(
     fork = latch.wait().fork(uninterruptible=uninterruptible)
     fiber = yield from (fork.uninterruptible() if parent_uninterruptible else fork)
     yield from fx.yield_now()
-    fiber.unsafe_interrupt_as(None)
+    fiber.interrupt_as_unsafe(None)
     yield from latch.succeed(None)
     assert _interrupted((yield from fiber.await_exit())) == expected
 
@@ -334,5 +334,5 @@ def test_start_immediately_on_asyncio():
 def test_interrupt_as_attributes_the_interrupt():
     fiber = yield from fx.never.fork(start_immediately=True)
     yield from fiber.interrupt_as(7)
-    ex = fiber.unsafe_poll()
+    ex = fiber.poll_unsafe()
     assert isinstance(ex, fx.Failure) and ex.cause.interruptors == frozenset({7})

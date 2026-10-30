@@ -136,7 +136,7 @@ def test_await_interrupting_a_waiter_after_completion_does_not_die():
     # runs between it and the interrupt.
     yield from d.complete_with(fx.yield_now().as_(42))
     assert _waiters(d) == 0
-    interrupted.unsafe_interrupt_as(None)
+    interrupted.interrupt_as_unsafe(None)
 
     ex = yield from interrupted.await_exit()
     assert isinstance(ex, fx.Failure)

@@ -2,7 +2,8 @@
 
 - ``run_sync``: on the calling thread, with pyfect's own scheduler. Sleeps,
   forks, races and ``blocking`` all work; ``from_async`` does not (there is
-  no asyncio loop).
+  no asyncio loop; called from a coroutine, ``run_sync`` blocks its loop,
+  so ``from_async`` dies with ``AsyncioRequiredError`` instead of hanging).
 - ``run_async``: inside a running asyncio loop. Cancelling the awaiting
   task interrupts the fiber and waits for its finalizers.
 - ``run_fork``: start the effect and get its ``Fiber`` back at once, on the
@@ -80,7 +81,7 @@ def drive[A, E](scheduler: SyncScheduler, fiber: Fiber[A, E]) -> Exit[A, E]:
     try:
         scheduler.run_until(lambda: fiber._exit is not None)
     except KeyboardInterrupt:
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         scheduler.run_until(lambda: fiber._exit is not None)
         raise
     ex = fiber._exit
@@ -184,10 +185,10 @@ def run_callback(
     done. Returns a function that interrupts the fiber."""
     fiber = run_fork(eff, context=context, scheduler=scheduler, uninterruptible=uninterruptible)
     if on_exit is not None:
-        fiber.unsafe_add_observer(on_exit)
+        fiber.add_observer_unsafe(on_exit)
 
     def interrupt(by: int | None = None, /) -> None:
-        fiber.unsafe_interrupt_as(by)
+        fiber.interrupt_as_unsafe(by)
 
     return interrupt
 
@@ -265,7 +266,7 @@ def _interrupt_on_signals(fiber: Fiber[Any, Any], signalled: _Signalled) -> Gene
 
     def on_signal(_signum: int, _frame: object) -> None:
         signalled.received = True
-        loop.call_soon_threadsafe(fiber.unsafe_interrupt_as, fiber.id)
+        loop.call_soon_threadsafe(fiber.interrupt_as_unsafe, fiber.id)
 
     previous = {sig: signal.signal(sig, on_signal) for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
@@ -279,11 +280,11 @@ async def await_fiber[A, E](fiber: Fiber[A, E]) -> Exit[A, E]:
     """Wait on the running loop for ``fiber``, whose run is the loop's.
     Cancelling the awaiting task interrupts the fiber and waits for it."""
     done: asyncio.Future[Exit[A, E]] = asyncio.get_running_loop().create_future()
-    fiber.unsafe_add_observer(done.set_result)
+    fiber.add_observer_unsafe(done.set_result)
     try:
         return await asyncio.shield(done)
     except asyncio.CancelledError:
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         await done
         raise
 
@@ -297,3 +298,20 @@ def unwrap[A](ex: Exit[A, Any]) -> A:
     if len(ex.cause.reasons) > 1:
         error.add_note("Full cause:\n" + ex.cause.pretty())
     raise error
+
+
+__all__ = [
+    "Interruptor",
+    "Teardown",
+    "await_fiber",
+    "default_teardown",
+    "drive",
+    "run_async",
+    "run_async_exit",
+    "run_callback",
+    "run_fork",
+    "run_main",
+    "run_sync",
+    "run_sync_exit",
+    "unwrap",
+]

@@ -257,7 +257,7 @@ def decompression(
         app: Effect[HttpServerResponse, E, R],
     ) -> Effect[HttpServerResponse, E, R | HttpServerRequest]:
         def body(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, E, R]:
-            request = fiber._context.unsafe_get(HttpServerRequest)
+            request = fiber._context.get_unsafe(HttpServerRequest)
             encoding = request.headers.get("content-encoding")
             if encoding is None or not has_body(request.method):
                 return app

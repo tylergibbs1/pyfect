@@ -51,3 +51,6 @@ def make[Provides, Requires](
 ) -> Model[Provides, Requires]:
     names = L.succeed_context(Context.make(ProviderName, provider).add(ModelName, model_name))
     return Model(provider, cast("Any", L.merge(cast("Any", layer), names)))
+
+
+__all__ = ["Model", "ModelName", "ProviderName", "make"]

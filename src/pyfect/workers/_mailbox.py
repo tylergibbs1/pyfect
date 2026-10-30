@@ -13,8 +13,8 @@ from collections import deque
 from typing import Never
 
 from pyfect._core import Effect
+from pyfect._os_wait import Cancel, Resume, os_wait
 from pyfect.effect import succeed, suspend
-from pyfect.process._os import Cancel, Resume, os_wait
 
 
 class Mailbox[A]:

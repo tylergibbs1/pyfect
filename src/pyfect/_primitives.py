@@ -11,7 +11,7 @@ Import these through ``pyfect._core``, which loads this module once
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from typing import TYPE_CHECKING, Any, Never, Protocol, final
+from typing import TYPE_CHECKING, Any, Never, Protocol, cast, final
 
 from pyfect._core import Effect, Frame, Step
 from pyfect.cause import Cause, merge
@@ -330,7 +330,14 @@ class _Gen[A, E, R](Effect[A, E, R]):
         self.factory = factory
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
-        return _GenFrame(self.factory())._on_success(None, fiber)
+        gen = cast(object, self.factory())  # a lambda may return anything
+        if not isinstance(gen, Generator):
+            return Failure(
+                die_cause(TypeError(f"gen expected a generator, got {type(gen).__name__}"))
+            )
+        return _GenFrame(cast("Generator[Effect[Any, Any, Any], Any, Any]", gen))._on_success(
+            None, fiber
+        )
 
 
 @final

@@ -707,7 +707,7 @@ def connect_stdio(protocol: C.ClientProtocol) -> fx.Effect[StdioServer, Any, Any
         result = INITIALIZE_RESULT if legacy else DISCOVER_RESULT
         yield from server.send({"jsonrpc": "2.0", "id": initial["id"], "result": result})
         context = yield from building.join()
-        server.client = context.unsafe_get(C.McpClient)
+        server.client = context.get_unsafe(C.McpClient)
         if legacy:
             assert (yield from server.receive) == {
                 "jsonrpc": "2.0",
@@ -783,7 +783,7 @@ def test_applies_no_default_deadline_to_calls_prompts_or_reads():
     for _ in fibers:
         yield from server.receive
     yield from testing.adjust(600)
-    assert all(fiber.unsafe_poll() is None for fiber in fibers)
+    assert all(fiber.poll_unsafe() is None for fiber in fibers)
     for fiber in fibers:
         yield from fiber.interrupt()
 

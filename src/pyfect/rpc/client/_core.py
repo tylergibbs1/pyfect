@@ -168,7 +168,7 @@ class ClientCore:
                     if isinstance(exit, Exit.Failure):
                         yield from entry.queue.fail_cause(exit.cause)
                     else:
-                        entry.queue.unsafe_end()
+                        entry.queue.end_unsafe()
                 else:
                     entry.resume(exit)
 
@@ -266,8 +266,8 @@ class ClientCore:
 
         def done(exit: Exit.Exit[Any, Any]) -> None:
             resume(from_exit(exit))
-            if sender and sender[0].unsafe_poll() is None:
-                sender[0].unsafe_interrupt_as(parent.id)
+            if sender and sender[0].poll_unsafe() is None:
+                sender[0].interrupt_as_unsafe(parent.id)
 
         self._entries[id] = _EffectEntry(rpc, context, done)
         fiber = parent._fork(send, daemon=True)
@@ -278,7 +278,7 @@ class ClientCore:
                 self._entries.pop(id, None)
                 resume(from_exit(exit))
 
-        fiber.unsafe_add_observer(observe)
+        fiber.add_observer_unsafe(observe)
 
         def cancel() -> Effect[None]:
             self._entries.pop(id, None)
@@ -304,11 +304,11 @@ class ClientCore:
                 )
             fiber = _current_fiber()
             id = self._next_id()
-            scope = fiber._context.unsafe_get(Scope)
+            scope = fiber._context.get_unsafe(Scope)
             queue = yield from Queue[Any, Any].bounded(call.stream_buffer_size)
 
             def finalize(exit: Exit.Exit[Any, Any]) -> Effect[None]:
-                queue.unsafe_shutdown()
+                queue.shutdown_unsafe()
                 if id not in self._entries:
                     return _VOID
                 del self._entries[id]
@@ -360,7 +360,7 @@ class ClientCore:
             return _VOID
         if isinstance(exit, Exit.Failure):
             return entry.queue.fail_cause(exit.cause).as_void()
-        entry.queue.unsafe_end()
+        entry.queue.end_unsafe()
         return _VOID
 
     def _offer(

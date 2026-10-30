@@ -412,7 +412,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
             links = list(opts.get("links", ()))
             seen: set[int] = set()
             for entry in entries:
-                span = entry.context.unsafe_get(ParentSpan)
+                span = entry.context.get_unsafe(ParentSpan)
                 if span is not None and id(span) not in seen:
                     seen.add(id(span))
                     links.append(SpanLink(span))

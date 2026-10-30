@@ -231,3 +231,6 @@ class LayerMapService[K: Hashable, I, E = Never](Tag[LayerMap[K, I, E]]):
     @classmethod
     def invalidate(cls, key: K) -> Effect[None, Never, Self]:
         return cls._service().flat_map(lambda m: m.invalidate(key))
+
+
+__all__ = ["LayerMap", "LayerMapService"]

@@ -333,8 +333,8 @@ class _HttpHandler:
 
             def leave(_: object) -> Effect[None]:
                 self._clients.pop(client_id, None)
-                self._disconnects.unsafe_offer(client_id)
-                if queue.unsafe_is_done():
+                self._disconnects.offer_unsafe(client_id)
+                if queue.is_done_unsafe():
                     return _VOID
                 write = self._writes[0]
 
@@ -370,7 +370,7 @@ class _HttpHandler:
             )
             initial: list[Any] = yield from take_all.interruptible()
             chunks = [encode_text(c) for c in initial]
-            if queue.unsafe_is_done():
+            if queue.is_done_unsafe():
                 return text("".join(c.decode() for c in chunks), content_type=content_type)
             body: Stream[bytes, Never] = from_iterable(chunks).concat(
                 from_queue(queue).map(encode_text)

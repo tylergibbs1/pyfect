@@ -49,12 +49,12 @@ def run_poller[T](
         while True:
             yield from mailbox.poll_latch.wait()
             yield from yield_now()
-            nudge.unsafe_close()
+            nudge.close_unsafe()
             results: Sequence[T] = [] if mailbox.takers == 0 else (yield from poll(mailbox.takers))
             if not results:
                 yield from sleep(poll_interval).race(nudge.wait())
                 continue
-            mailbox.taken_latch.unsafe_close()
+            mailbox.taken_latch.close_unsafe()
             yield from mailbox.queue.offer_all(results)
             yield from mailbox.taken_latch.wait()
             yield from yield_now()
@@ -84,15 +84,15 @@ def take_from[K, T, A, E](
         def wait(mailbox: Mailbox[T]) -> Effect[T, Never]:
             mailbox.takers += 1
             if mailbox.takers == 1:
-                mailbox.poll_latch.unsafe_open()
+                mailbox.poll_latch.open_unsafe()
 
             def leave() -> None:
                 mailbox.takers -= 1
                 if mailbox.takers == 0:
-                    mailbox.poll_latch.unsafe_close()
-                    mailbox.taken_latch.unsafe_open()
-                elif mailbox.queue.unsafe_size() == 0:
-                    mailbox.taken_latch.unsafe_open()
+                    mailbox.poll_latch.close_unsafe()
+                    mailbox.taken_latch.open_unsafe()
+                elif mailbox.queue.size_unsafe() == 0:
+                    mailbox.taken_latch.open_unsafe()
 
             return restore(mailbox.queue.take()).on_exit(lambda _: sync(leave))
 

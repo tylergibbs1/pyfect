@@ -594,7 +594,7 @@ def test_reason_annotations_returns_annotations_from_a_reason():
     class RequestId(fx.Tag[str]): ...
 
     reason = Fail("error").annotate(fx.Context.make(RequestId, "req-1"))
-    assert cause.reason_annotations(reason).unsafe_get(RequestId) == "req-1"
+    assert cause.reason_annotations(reason).get_unsafe(RequestId) == "req-1"
     assert cause.reason_annotations(Fail("error")) == fx.Context.empty()
 
 
@@ -609,8 +609,8 @@ def test_annotations_returns_merged_annotations_from_a_cause():
         fx.Context.make(RequestId, "req-1")
     ) + cause.fail("c").annotate(fx.Context.make(UserId, "user-1"))
     anns = annotated.annotations
-    assert anns.unsafe_get(RequestId) == "req-1"
-    assert anns.unsafe_get(UserId) == "user-1"
+    assert anns.get_unsafe(RequestId) == "req-1"
+    assert anns.get_unsafe(UserId) == "user-1"
     assert cause.fail("error").annotations == fx.Context.empty()
 
 

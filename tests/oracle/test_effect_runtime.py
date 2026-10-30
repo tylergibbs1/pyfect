@@ -3,7 +3,7 @@ functions.
 
 Each test's docstring is the Effect test title. ``runFork`` is
 ``run_fork``, ``runPromise`` is ``run_async``, ``fiber.interruptUnsafe()``
-is ``fiber.unsafe_interrupt_as(None)``. Durations are seconds.
+is ``fiber.interrupt_as_unsafe(None)``. Durations are seconds.
 
 Omitted:
 
@@ -60,7 +60,7 @@ def test_acquire_use_release_interrupt():
 
     async def main() -> fx.Exit[int, object]:
         fiber = fx.run_fork(_acquire_use_release(flags))
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         return await fx.run_async(fiber.await_exit())
 
     ex = asyncio.run(main())
@@ -75,7 +75,7 @@ def test_acquire_use_release_uninterruptible():
 
     async def main() -> fx.Exit[int, object]:
         fiber = fx.run_fork(_acquire_use_release(flags).uninterruptible())
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         return await fx.run_async(fiber.await_exit())
 
     ex = asyncio.run(main())

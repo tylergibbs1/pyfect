@@ -26,7 +26,7 @@ def suspend(instance: WorkflowInstanceService) -> Effect[Never]:
     def register(fiber: Fiber[Any, Any]) -> Effect[Never]:
         def park(_resume: Callable[[Effect[Never]], None]) -> None:
             instance.suspended = True
-            fiber.unsafe_interrupt_as(fiber.id)
+            fiber.interrupt_as_unsafe(fiber.id)
 
         return _Callback(park)
 
@@ -50,7 +50,7 @@ class _PendingActivityRegistration(
 def _register(instance: WorkflowInstanceService) -> _Registration:
     state = instance.activity_state
     if state.count == 0:
-        state.latch.unsafe_close()
+        state.latch.close_unsafe()
     state.count += 1
     return _Registration(instance)
 
@@ -75,7 +75,7 @@ def _release(registration: _Registration) -> None:
     state = registration.instance.activity_state
     state.count -= 1
     if state.count == 0:
-        state.latch.unsafe_open()
+        state.latch.open_unsafe()
 
 
 def _wait_for_zero(instance: WorkflowInstanceService) -> Effect[None]:
@@ -104,7 +104,7 @@ def wrap_activity_result[A, E, R](
     require_effect(effect, "effect")
 
     def with_context(ctx: Context[Any]) -> Effect[A, E, R]:
-        instance = ctx.unsafe_get(WorkflowInstance)
+        instance = ctx.get_unsafe(WorkflowInstance)
 
         def release(registration: _Registration, ex: Exit[A, E]) -> Effect[None]:
             _release(registration)

@@ -31,7 +31,7 @@ class SubscriptionRef[A](LockedRef[A]):
     def __init__(self, value: A) -> None:
         super().__init__(value)
         self._pubsub = PubSub(Atomic[A].unbounded(replay=1), "dropping")
-        self._pubsub.unsafe_publish(value)
+        self._pubsub.publish_unsafe(value)
 
     @staticmethod
     def make[T](value: T) -> Effect[SubscriptionRef[T]]:
@@ -39,7 +39,7 @@ class SubscriptionRef[A](LockedRef[A]):
 
     def _store(self, value: A) -> None:
         self._value = value
-        self._pubsub.unsafe_publish(value)
+        self._pubsub.publish_unsafe(value)
 
     def subscribe(self) -> Effect[Subscription[A], Never, Scope]:
         """Subscribe until the current scope closes: the current value, then
@@ -52,3 +52,6 @@ class SubscriptionRef[A](LockedRef[A]):
         from pyfect.stream import from_pubsub
 
         return from_pubsub(self._pubsub)
+
+
+__all__ = ["SubscriptionRef"]

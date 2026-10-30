@@ -68,7 +68,7 @@ def test_a_named_fn_ends_its_span_with_the_failure():
     exit_ = yield from fails().with_tracer(tracer).exit()
     assert isinstance(exit_, fx.Failure)
     assert exit_.cause.failures == ("boom",)
-    frame = exit_.cause.annotations.unsafe_get(StackTrace)
+    frame = exit_.cause.annotations.get_unsafe(StackTrace)
     assert frame.name == "fails"
     assert frame.parent is not None
     assert frame.parent.name == "fails (definition)"

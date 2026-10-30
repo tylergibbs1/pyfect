@@ -277,7 +277,11 @@ class EventLogRemoteRpcs(RpcGroup):
 
 
 __all__ = [
+    "CHANGES_ENCRYPTED_CODEC",
+    "CHANGES_UNENCRYPTED_CODEC",
     "CHUNK_SIZE",
+    "WRITE_ENTRIES_CODEC",
+    "WRITE_ENTRIES_UNENCRYPTED_CODEC",
     "Authenticate",
     "AuthenticateRpc",
     "ChangesPayload",

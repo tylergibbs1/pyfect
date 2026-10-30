@@ -1,4 +1,4 @@
-"""PostgreSQL on psycopg 3 (Effect's ``@effect/sql-pg``; the ``pyfect[pg]``
+"""PostgreSQL on psycopg 3 (Effect's ``@effect/sql-pg``; the ``pyfect-dev[pg]``
 extra, never imported by ``pyfect``).
 
 psycopg's asyncio API runs on a loop thread of its own, so the client works
@@ -25,6 +25,13 @@ Values are adapted by psycopg (Effect's ``PgTypes``): ``bytea`` reads as
 ``str``; ``config.types`` takes a psycopg ``AdaptersMap`` for more, and
 psycopg's wrappers (``Jsonb``, ``Int4``, ...) type a parameter.
 """
+
+from pyfect._extras import missing_extra
+
+try:
+    import psycopg  # noqa: F401  # pyright: ignore[reportUnusedImport]
+except ImportError as error:  # pragma: no cover - depends on the environment
+    raise missing_extra("pyfect.sql.pg", "pg") from error
 
 from pyfect.sql.pg import client, config, connection, error, migrator, pool
 from pyfect.sql.pg.client import (

@@ -565,8 +565,8 @@ def test_a_waiter_interrupted_between_its_wake_up_and_its_retry_strands_no_item(
             yield from fx.for_each(range(delay), lambda _: fx.yield_now())
             yield from woken.interrupt()
             yield from _settle()
-            took_first = first != "peek" and isinstance(woken.unsafe_poll(), fx.Success)
-            took_behind = isinstance(behind.unsafe_poll(), fx.Success)
+            took_first = first != "peek" and isinstance(woken.poll_unsafe(), fx.Success)
+            took_behind = isinstance(behind.poll_unsafe(), fx.Success)
             yield from behind.interrupt()
             return took_first, took_behind
 
@@ -584,8 +584,8 @@ def test_unsafe_is_done_once_ended_values_are_drained():
         q = yield from fx.Queue[int, fx.Done].unbounded()
         yield from q.offer(1)
         yield from q.end()
-        before = q.unsafe_is_done()
+        before = q.is_done_unsafe()
         yield from q.take().or_die()
-        return before, q.unsafe_is_done()
+        return before, q.is_done_unsafe()
 
     assert run(program) == (False, True)

@@ -184,3 +184,6 @@ def generate(executable: str, descriptor: CommandDescriptor) -> str:
     lines.append("fi")
     lines.append(f"###-end-{executable}-completions-###")
     return "\n".join(lines)
+
+
+__all__ = ["generate"]

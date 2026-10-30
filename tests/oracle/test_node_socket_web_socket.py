@@ -255,7 +255,7 @@ def test_passes_headers():
     authorization = yield from Deferred[str | None].make()
 
     def process_request(_connection: Any, request: Any) -> None:
-        authorization.unsafe_done(Success(request.headers.get("Authorization")))
+        authorization.done_unsafe(Success(request.headers.get("Authorization")))
 
     srv = yield from ws_platform.make_server(0, "127.0.0.1", process_request=process_request)
     construct = yield from WebSocketConstructor().pipe(with_constructor)

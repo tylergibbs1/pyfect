@@ -37,6 +37,24 @@ def start_root(fiber: Fiber[Any, Any], eff: Effect[Any, Any, Any], *, now: bool 
         fiber._start(eff)
 
 
+def run_loop() -> asyncio.AbstractEventLoop | None:
+    """The asyncio loop driving the run of the fiber running on this thread,
+    or ``None`` (no fiber, or a ``run_sync`` run). A loop merely running on
+    this thread does not count: ``run_sync`` blocks it until it returns, so
+    nothing scheduled on it runs before then."""
+    run = current_run_scheduler()
+    return run.loop if isinstance(run, AsyncioScheduler) else None
+
+
+def loop_running_here() -> bool:
+    """Whether an asyncio loop is running on this thread."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
 def run_identity(run_scheduler: Scheduler) -> object:
     """What fibers of one run share: the asyncio loop for runs on a loop
     (each ``run_async`` has a scheduler of its own, all driven by the

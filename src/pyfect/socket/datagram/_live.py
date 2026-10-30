@@ -24,6 +24,7 @@ from typing import Literal, Never, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._os_wait import Resume, os_wait
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -34,7 +35,6 @@ from pyfect.net.net_address import (
     format_ip,
     format_native_host,
 )
-from pyfect.process._os import Resume, os_wait
 from pyfect.scope import Scope
 from pyfect.socket._loop import call_soon, get_loop
 from pyfect.socket.datagram._core import OnError, make_from_backing_socket

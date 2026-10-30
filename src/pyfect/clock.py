@@ -22,19 +22,19 @@ from pyfect.effect import never
 
 
 class ClockService(Protocol):
-    def unsafe_now(self) -> float:
+    def now_unsafe(self) -> float:
         """Wall-clock time, seconds since the epoch."""
         ...
 
-    def unsafe_monotonic(self) -> float:
+    def monotonic_unsafe(self) -> float:
         """A clock that never goes backwards, in seconds."""
         ...
 
-    def unsafe_now_nanos(self) -> int:
+    def now_nanos_unsafe(self) -> int:
         """Wall-clock time, whole nanoseconds since the epoch."""
         ...
 
-    def unsafe_monotonic_nanos(self) -> int:
+    def monotonic_nanos_unsafe(self) -> int:
         """Monotonic time in whole nanoseconds."""
         ...
 
@@ -48,16 +48,16 @@ class LiveClock:
     """The system clock. A sleep of zero or less yields once; an infinite
     sleep never wakes and holds no timer (as Effect's)."""
 
-    def unsafe_now(self) -> float:
+    def now_unsafe(self) -> float:
         return time.time_ns() / _NANOS
 
-    def unsafe_monotonic(self) -> float:
+    def monotonic_unsafe(self) -> float:
         return time.monotonic_ns() / _NANOS
 
-    def unsafe_now_nanos(self) -> int:
+    def now_nanos_unsafe(self) -> int:
         return time.time_ns()
 
-    def unsafe_monotonic_nanos(self) -> int:
+    def monotonic_nanos_unsafe(self) -> int:
         return time.monotonic_ns()
 
     def sleep(self, seconds: Seconds) -> Effect[None]:
@@ -89,22 +89,22 @@ def sleep(duration: Duration) -> Effect[None]:
 
 def now() -> Effect[float]:
     """Wall-clock time, seconds since the epoch."""
-    return Clock().map(lambda c: c.unsafe_now())
+    return Clock().map(lambda c: c.now_unsafe())
 
 
 def monotonic() -> Effect[float]:
     """Monotonic time in seconds."""
-    return Clock().map(lambda c: c.unsafe_monotonic())
+    return Clock().map(lambda c: c.monotonic_unsafe())
 
 
 def now_nanos() -> Effect[int]:
     """Wall-clock time, whole nanoseconds since the epoch."""
-    return Clock().map(lambda c: c.unsafe_now_nanos())
+    return Clock().map(lambda c: c.now_nanos_unsafe())
 
 
 def monotonic_nanos() -> Effect[int]:
     """Monotonic time in whole nanoseconds."""
-    return Clock().map(lambda c: c.unsafe_monotonic_nanos())
+    return Clock().map(lambda c: c.monotonic_nanos_unsafe())
 
 
 def clock_with[A, E = Never, R = Never](
@@ -126,3 +126,17 @@ def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[float, A], E, R]:
         return ((end - start) / _NANOS, value)
 
     return _Gen(body)
+
+
+__all__ = [
+    "Clock",
+    "ClockService",
+    "LiveClock",
+    "clock_with",
+    "monotonic",
+    "monotonic_nanos",
+    "now",
+    "now_nanos",
+    "sleep",
+    "timed",
+]

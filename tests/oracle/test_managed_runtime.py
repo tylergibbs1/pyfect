@@ -136,7 +136,7 @@ def test_fibers_are_interrupted_on_dispose():
         runtime = fx.ManagedRuntime.make(layer.empty)
         fiber = runtime.run_fork(fx.never)
         await runtime.dispose_async()
-        return fiber.unsafe_poll()
+        return fiber.poll_unsafe()
 
     ex = _run(main())
     assert isinstance(ex, fx.Failure)

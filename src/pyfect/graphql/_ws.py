@@ -171,11 +171,11 @@ class _Transport:
         conn.error = error
         if self.connection is conn:
             self.connection = None
-        conn.ack.unsafe_done(exit_fail(error))
+        conn.ack.done_unsafe(exit_fail(error))
         for id, operation in list(self.operations.items()):
             if operation.connection is conn:
                 del self.operations[id]
-                operation.queue.unsafe_fail_cause(cause_fail(error))
+                operation.queue.fail_cause_unsafe(cause_fail(error))
 
     def invalid(self, message: Invalid) -> Effect[Never, TransportError]:
         # An invalid server message closes the connection with 4400, which
@@ -197,7 +197,7 @@ class _Transport:
             case Invalid():
                 return self.invalid(message)
             case Ack():
-                conn.ack.unsafe_done(Success(None))
+                conn.ack.done_unsafe(Success(None))
                 return fx.void
             case Ping():
                 return self.send({"type": "pong"})
@@ -214,14 +214,14 @@ class _Transport:
         if operation is None or operation.connection is not conn:
             return
         if isinstance(message, Next):
-            operation.queue.unsafe_offer(Answer(body=message.payload))
+            operation.queue.offer_unsafe(Answer(body=message.payload))
             return
         del self.operations[message.id]
         if isinstance(message, Error):
             # The server rejected the operation; the client fails it with a
             # ResponseError.
-            operation.queue.unsafe_offer(Answer(body={"errors": message.payload}))
-        operation.queue.unsafe_fail_cause(cause_fail(Done()))
+            operation.queue.offer_unsafe(Answer(body={"errors": message.payload}))
+        operation.queue.fail_cause_unsafe(cause_fail(Done()))
 
     def pinger(self, conn: _Connection) -> Effect[Never, TransportError]:
         interval = self.timing.keep_alive

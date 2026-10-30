@@ -258,7 +258,7 @@ class _RedisStore:
         def nudge() -> None:
             state = self._states.peek(name)
             if state is not None:
-                state.nudge.unsafe_open()
+                state.nudge.open_unsafe()
 
         return suspend(send).map_error(_offer_failed).flat_map(lambda _: sync(nudge))
 

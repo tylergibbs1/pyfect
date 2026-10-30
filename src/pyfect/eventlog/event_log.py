@@ -73,12 +73,16 @@ if TYPE_CHECKING:
 
 __all__ = [
     "BatchCompaction",
+    "CompactFn",
+    "CompactWrite",
     "Compaction",
     "CompactionItem",
+    "Conflict",
     "CurrentStoreId",
     "EventLog",
     "EventLogSchema",
     "EventLogService",
+    "HandlerFn",
     "HandlerInput",
     "HandlerItem",
     "HandlerTransaction",
@@ -89,6 +93,8 @@ __all__ = [
     "Registry",
     "RegistryService",
     "TaggedPayload",
+    "Transaction",
+    "WriteEvent",
     "decode_identity_string",
     "encode_identity_string",
     "group",
@@ -366,7 +372,7 @@ def group[Ev: AnyEvent, RR = Never, EX = Never](
     def register():
         registry = yield from Registry()
         services = yield from context()
-        services = Context({t: s for t, s in services.unsafe_map.items() if t is not Scope})
+        services = Context({t: s for t, s in services.map_unsafe.items() if t is not Scope})
         built = build(Handlers(group, {}, services))
         handlers: Handlers[Any] = (yield from built) if isinstance(built, Effect) else built
         missing = [tag for tag in group.events if tag not in handlers.by_tag]

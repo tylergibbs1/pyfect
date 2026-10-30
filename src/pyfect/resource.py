@@ -69,3 +69,6 @@ class Resource[A, E = Never]:
 
     def __repr__(self) -> str:
         return "Resource()"
+
+
+__all__ = ["Resource"]

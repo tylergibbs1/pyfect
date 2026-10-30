@@ -264,11 +264,11 @@ def unsafe_ttl_to_expires(clock: ClockService, ttl: Seconds | None) -> int | Non
     milliseconds (``None``: never)."""
     if ttl is None:
         return None
-    return clock.unsafe_now_nanos() // 1_000_000 + math.ceil(ttl * 1000)
+    return clock.now_nanos_unsafe() // 1_000_000 + math.ceil(ttl * 1000)
 
 
 def now_millis(clock: ClockService) -> int:
-    return clock.unsafe_now_nanos() // 1_000_000
+    return clock.now_nanos_unsafe() // 1_000_000
 
 
 def to_json(value: object) -> str:

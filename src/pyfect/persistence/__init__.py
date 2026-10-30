@@ -17,12 +17,13 @@ requests whose outcomes are stored, and caches over them.
 - ``circuit_breaker``: ``CircuitBreaker``, stops calling a key that keeps
   failing.
 - ``redis``: the ``Redis`` service the Redis stores run on, made over a
-  client by ``redis.make``; ``redis_py`` (extra ``pyfect[redis]``, imported
+  client by ``redis.make``; ``redis_py`` (extra ``pyfect-dev[redis]``, imported
   on its own) provides it on redis-py.
 
 ``RequestResolver.persisted`` stores a resolver's outcomes.
 """
 
+from pyfect._public import publish
 from pyfect.persistence import (
     circuit_breaker,
     key_value_store,
@@ -72,3 +73,5 @@ __all__ = [
     "redis",
     "user_directories",
 ]
+
+publish(globals())

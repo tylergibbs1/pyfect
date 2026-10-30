@@ -79,14 +79,14 @@ def map_effect_concurrent(
             def on_exit(ex: Exit[Any, Any]) -> None:
                 if isinstance(ex, Failure):
                     failed.append(ex.cause)
-                    results.unsafe_fail_cause(ex.cause)
+                    results.fail_cause_unsafe(ex.cause)
 
             def run(item: Any) -> Effect[Any, Any, Any]:
                 if failed:
                     return _FailCause(failed[0])
 
                 def started(fiber: Fiber[Any, Any]) -> Effect[Any]:
-                    fiber.unsafe_add_observer(on_exit)
+                    fiber.add_observer_unsafe(on_exit)
                     return joins.offer(fiber.join())
 
                 return fork_in(_Suspend(lambda: f(item)), forked, start_immediately=True).flat_map(

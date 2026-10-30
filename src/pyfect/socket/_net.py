@@ -86,7 +86,7 @@ def from_connection(
             def run_release() -> None:
                 # Resume a pull parked in another fiber before detaching.
                 conn.fail(close_error(1006))
-                current.latch.unsafe_close()
+                current.latch.close_unsafe()
                 current.connection = None
                 state["upgradable"] = False
 
@@ -94,7 +94,7 @@ def from_connection(
 
         yield from scope.add_finalizer(release)
         current.connection = conn
-        current.latch.unsafe_open()
+        current.latch.open_unsafe()
 
         def upgrade(options: TlsUpgradeOptions | None) -> Effect[None, SocketError]:
             def start() -> Effect[None, SocketError]:

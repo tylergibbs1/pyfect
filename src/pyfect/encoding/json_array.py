@@ -27,6 +27,7 @@ from typing import Any, Never, Unpack
 from pyfect import channel_schema
 from pyfect._json_text import STRINGIFY_ERRORS, Json, stringify
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
+from pyfect._public import publish
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.channel import Channel, decode_text, from_transform
@@ -239,3 +240,6 @@ def encode_schema[T, I, RE, E = Never, D = None](
     """``encode`` of each value encoded with ``schema`` first."""
     encoded: _AnyChannel = channel_schema.encode(schema)
     return encoded.pipe_to(encode())
+
+
+publish(globals())

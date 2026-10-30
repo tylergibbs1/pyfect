@@ -992,14 +992,14 @@ def test_delivers_a_pending_interrupt_when_interruptible_mask_restores_interrupt
         child = yield from child_body.uninterruptible().fork(start_immediately=True)
         yield from masked.wait()
         events.append("masked")
-        yield from fx.sync(lambda: child.unsafe_interrupt_as(123))
+        yield from fx.sync(lambda: child.interrupt_as_unsafe(123))
         events.append("interrupted")
-        polled_early = child.unsafe_poll()
+        polled_early = child.poll_unsafe()
         yield from resume.succeed(None)
         events.append("resumed")
         yield from fx.yield_now()
         yield from fx.yield_now()
-        return polled_early, child.unsafe_poll()
+        return polled_early, child.poll_unsafe()
 
     polled_early, ex = testing.run_test(program)
     assert polled_early is None

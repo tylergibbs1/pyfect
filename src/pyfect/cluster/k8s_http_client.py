@@ -267,6 +267,7 @@ pod's status once ready."""
 __all__ = [
     "API_URL",
     "POD",
+    "POD_CONDITION",
     "POD_STATUS",
     "TOKEN_PATH",
     "CreatePod",

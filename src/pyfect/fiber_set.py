@@ -71,12 +71,12 @@ class FiberSet[A = object, E = object]:
     def __repr__(self) -> str:
         return "FiberSet(closed)" if self._fibers is None else f"FiberSet(size={len(self._fibers)})"
 
-    def unsafe_add(self, fiber: Fiber[A, E], *, propagate_interruption: bool = False) -> None:
+    def add_unsafe(self, fiber: Fiber[A, E], *, propagate_interruption: bool = False) -> None:
         """Add a running fiber; it leaves the set when it completes. Into a
         closed set the fiber is interrupted. Call on the scheduler thread."""
         fibers = self._fibers
         if fibers is None:
-            fiber.unsafe_interrupt_as(INTERNAL_FIBER_ID)
+            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
             return
         if fiber in fibers:
             return
@@ -87,12 +87,12 @@ class FiberSet[A = object, E = object]:
                 return
             self._fibers.pop(fiber, None)
             if reports_failure(ex, propagate_interruption):
-                self.deferred.unsafe_done(ex)
+                self.deferred.done_unsafe(ex)
 
-        fiber.unsafe_add_observer(observer)
+        fiber.add_observer_unsafe(observer)
 
     def add(self, fiber: Fiber[A, E], *, propagate_interruption: bool = False) -> Effect[None]:
-        return _Sync(lambda: self.unsafe_add(fiber, propagate_interruption=propagate_interruption))
+        return _Sync(lambda: self.add_unsafe(fiber, propagate_interruption=propagate_interruption))
 
     def run[R = Never](
         self,
@@ -110,7 +110,7 @@ class FiberSet[A = object, E = object]:
             if self._fibers is None:
                 return _Succeed(interrupted_fiber(parent._run_scheduler, parent._context))
             fiber: Fiber[A, E] = parent._fork(eff, daemon=True, start_immediately=start_immediately)
-            self.unsafe_add(fiber, propagate_interruption=propagate_interruption)
+            self.add_unsafe(fiber, propagate_interruption=propagate_interruption)
             return _AfterStarted(fiber)
 
         return _WithFiber(body)
@@ -194,7 +194,7 @@ class FiberSetRuntime[A, E, R]:
         if self._set._fibers is None:
             return self._runtime.interrupted()
         fiber = self._runtime.fork(eff, uninterruptible=uninterruptible, scheduler=scheduler)
-        self._set.unsafe_add(fiber, propagate_interruption=propagate_interruption)
+        self._set.add_unsafe(fiber, propagate_interruption=propagate_interruption)
         return fiber
 
 
@@ -224,3 +224,6 @@ class FiberSetAsyncRuntime[A, E, R]:
                 scheduler=scheduler,
             )
         )
+
+
+__all__ = ["FiberSet", "FiberSetAsyncRuntime", "FiberSetRuntime"]

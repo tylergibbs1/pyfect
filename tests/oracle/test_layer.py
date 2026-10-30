@@ -561,8 +561,8 @@ def test_interrupting_a_build_does_not_hang_current_or_later_requesters():
             start_immediately=True
         )
         yield from _settle
-        assert waiter.unsafe_poll() is not None, f"waiter hung with {ops} ops"
-        assert later.unsafe_poll() is not None, f"later requester hung with {ops} ops"
+        assert waiter.poll_unsafe() is not None, f"waiter hung with {ops} ops"
+        assert later.poll_unsafe() is not None, f"later requester hung with {ops} ops"
 
 
 @testing.effect

@@ -165,8 +165,8 @@ def _make_resolver(
         def with_current(current: Context[Any]) -> Effect[None, Any, Any]:
             # A span opened around the batch (``with_span``'s), rather than
             # the one the batch fiber inherited from a caller.
-            span = current.unsafe_get(ParentSpan)
-            if span is current.unsafe_get(_QueuedSpan):
+            span = current.get_unsafe(ParentSpan)
+            if span is current.get_unsafe(_QueuedSpan):
                 span = None
 
             def grouped(urls: list[str | None]) -> Effect[None, Any, Any]:

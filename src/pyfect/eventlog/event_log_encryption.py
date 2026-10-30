@@ -7,7 +7,7 @@ derived from the identity's root secret. The additional data binds a
 batch to its store and entry ids, so a server cannot move it to another
 store or relabel it. ``layer_subtle`` (Effect's name, for WebCrypto's
 ``crypto.subtle``) runs on the ``cryptography`` package, the extra
-``pyfect[eventlog]``.
+``pyfect-dev[eventlog]``.
 """
 
 from __future__ import annotations

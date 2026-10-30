@@ -155,7 +155,7 @@ class TestWebSocket:
     ) -> None:
         self.listeners.setdefault(type, []).append((listener, once))
         if type == "open":
-            self.open_listener_attached.unsafe_open()
+            self.open_listener_attached.open_unsafe()
 
     def remove_event_listener(self, type: WebSocketEventType, listener: Listener) -> None:
         entries = self.listeners.get(type, [])

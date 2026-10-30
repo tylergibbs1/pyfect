@@ -52,7 +52,7 @@ def test_an_external_interrupt_keeps_a_recorded_sibling_failure():
 
         fiber = yield from fx.for_each([0, 1], work, concurrency=2).fork()
         yield from cleanup_started.wait()
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         yield from release.succeed(None)
         return (yield from fiber.await_exit())
 

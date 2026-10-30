@@ -31,7 +31,7 @@ from pyfect.path import Path
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.error import ConstraintError, SqlError, UniqueViolation
 from pyfect.sql.statement import Fragment
-from pyfect.sql.statement._segments import unsafe_literal
+from pyfect.sql.statement._segments import literal_unsafe
 
 type MigrationKind = Literal["BadState", "ImportError", "Failed", "Duplicates", "Locked"]
 
@@ -83,7 +83,7 @@ class Runner[RD](Protocol):
 
 def _nstring(text: str) -> Fragment:
     """``text`` as a SQL Server ``N'...'`` string literal, quotes doubled."""
-    return Fragment((unsafe_literal("N'" + text.replace("'", "''") + "'"),))
+    return Fragment((literal_unsafe("N'" + text.replace("'", "''") + "'"),))
 
 
 def _ensure_table(sql: SqlClientService, table: str) -> Effect[object, SqlError]:

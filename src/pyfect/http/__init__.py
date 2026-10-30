@@ -4,7 +4,7 @@ Client:
 
 - ``client``: the ``HttpClient`` service, its combinators, ``make`` and
   ``layer_test``
-- ``httpx_client``: an ``HttpClient`` on httpx (``pyfect[httpx]``)
+- ``httpx_client``: an ``HttpClient`` on httpx (``pyfect-dev[httpx]``)
 - ``request`` / ``response``: requests and responses
 - ``body``, ``headers``, ``url_params``, ``url``, ``cookies``, ``method``:
   the values they are made of
@@ -15,7 +15,7 @@ Server:
 
 - ``server``: the ``HttpServer`` service, ``serve`` and the test client;
   ``live_server``: the stdlib HTTP/1.1 server behind it;
-  ``uvicorn_server``: one on uvicorn (``pyfect[server]``)
+  ``uvicorn_server``: one on uvicorn (``pyfect-dev[server]``)
 - ``asgi``: apps as ASGI applications (``to_asgi``), and ASGI applications
   (FastAPI, Starlette) as apps (``from_asgi``)
 - ``server_request`` / ``server_response`` / ``server_error`` /

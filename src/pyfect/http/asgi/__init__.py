@@ -25,9 +25,10 @@ The other way round, ``from_asgi(fastapi_app)`` is an app answering with
 another framework's application, mountable under a router prefix
 (``root_path`` is the prefix), and ``lifespan(fastapi_app)`` runs its
 startup and shutdown in a scope. ``pyfect.http.uvicorn_server`` serves an
-app on a port with uvicorn (extra ``pyfect[server]``).
+app on a port with uvicorn (extra ``pyfect-dev[server]``).
 """
 
+from pyfect._public import publish
 from pyfect.http.asgi._app import AsgiApp, to_asgi, to_asgi_with
 from pyfect.http.asgi._http import HIGH_WATER_MARK, ClientDisconnectedError
 from pyfect.http.asgi._mount import AsgiLifespanError, AsgiNoResponseError, from_asgi, lifespan
@@ -54,3 +55,5 @@ __all__ = [
     "to_asgi",
     "to_asgi_with",
 ]
+
+publish(globals())

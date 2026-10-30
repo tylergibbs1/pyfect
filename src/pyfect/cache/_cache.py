@@ -121,7 +121,7 @@ class Cache[K: Hashable, A, E = Never, R = Never]:
 
         def body(fiber: Fiber[Any, Any]) -> Effect[Option[A]]:
             entry = self._find(fiber, key, touch=True)
-            ex = None if entry is None else entry.fiber.unsafe_poll()
+            ex = None if entry is None else entry.fiber.poll_unsafe()
             return _Succeed(Some(ex.value) if isinstance(ex, Success) else None)
 
         return _WithFiber(body)
@@ -204,7 +204,7 @@ class Cache[K: Hashable, A, E = Never, R = Never]:
         def body(fiber: Fiber[Any, Any]) -> Effect[list[tuple[K, A]]]:
             pairs: list[tuple[K, A]] = []
             for key, entry in self._live(fiber):
-                ex = entry.fiber.unsafe_poll()
+                ex = entry.fiber.poll_unsafe()
                 if isinstance(ex, Success):
                     pairs.append((key, ex.value))
             return _Succeed(pairs)
@@ -237,10 +237,10 @@ class Cache[K: Hashable, A, E = Never, R = Never]:
             else:
                 entry.expires_at = deadline(clock, ttl)
 
-        entry.fiber.unsafe_add_observer(observe)
+        entry.fiber.add_observer_unsafe(observe)
         # The lookup has run up to its first wait: a lookup that finished
         # interrupted or with a zero time to live is never cached.
-        ex = entry.fiber.unsafe_poll()
+        ex = entry.fiber.poll_unsafe()
         if not skip and (ex is None or not _interrupted(ex)):
             entries[key] = entry
         self._evict_overflow()
@@ -271,7 +271,7 @@ class Cache[K: Hashable, A, E = Never, R = Never]:
                 self._entries[key] = entry
                 self._evict_overflow()
 
-        entry.fiber.unsafe_add_observer(observe)
+        entry.fiber.add_observer_unsafe(observe)
         return entry.await_from(fiber)
 
     def _start(self, fiber: Fiber[Any, Any], key: K) -> _Entry[A, E]:
@@ -346,7 +346,7 @@ class _Entry[A, E]:
         """``fiber`` waits for the lookup. It is counted in the same step,
         so it leaves however its wait ends, even interrupted before
         starting."""
-        ex = self.fiber.unsafe_poll()
+        ex = self.fiber.poll_unsafe()
         if ex is not None:
             return _FromExit(ex)
         self.awaiters += 1
@@ -357,7 +357,7 @@ class _Entry[A, E]:
         """A caller stopped waiting. Gives the effect that abandons the
         lookup if that caller was the last one."""
         self.awaiters -= 1
-        if self.awaiters > 0 or self.fiber.unsafe_poll() is not None:
+        if self.awaiters > 0 or self.fiber.poll_unsafe() is not None:
             return None
         # Detached first, so a get made while the lookup's finalizers run
         # starts a new lookup.
@@ -401,4 +401,4 @@ def _interrupted(ex: Exit[Any, Any]) -> bool:
 
 
 def _now(fiber: Fiber[Any, Any]) -> int:
-    return clock_of(fiber).unsafe_now_nanos()
+    return clock_of(fiber).now_nanos_unsafe()

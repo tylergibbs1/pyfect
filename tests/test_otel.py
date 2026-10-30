@@ -183,8 +183,8 @@ def test_external_span_keeps_flags_and_trace_state():
         trace_id="1" * 32, span_id="2" * 16, trace_flags=0, trace_state="vendor=value"
     )
     assert not span.sampled
-    assert span.annotations.unsafe_get(OtelTraceFlags) == TraceFlags(0)
-    assert span.annotations.unsafe_get(OtelTraceState).to_header() == "vendor=value"
+    assert span.annotations.get_unsafe(OtelTraceFlags) == TraceFlags(0)
+    assert span.annotations.get_unsafe(OtelTraceState).to_header() == "vendor=value"
     yield from fx.void
 
 

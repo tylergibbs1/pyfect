@@ -128,22 +128,22 @@ class ReactivityService:
 
         def body(fiber: Fiber[Any, Any]) -> Effect[Dequeue[A, E | Done], Never, R | Scope]:
             services: Context[Any] = fiber._context
-            scope: CloseableScope = services.unsafe_get(Scope)
+            scope: CloseableScope = services.get_unsafe(Scope)
             results: Queue[A, E | Done] = Queue()
             state = {"running": False, "pending": False, "stopped": False}
 
             def fork() -> None:
                 child = run_fork(effect, context=services)
                 child.run_in(scope)
-                child.unsafe_add_observer(handle_exit)
+                child.add_observer_unsafe(handle_exit)
 
             def handle_exit(exit_: Exit[A, E]) -> None:
                 if isinstance(exit_, Failure):
                     state.update(stopped=True, pending=False, running=False)
                     cancel()
-                    results.unsafe_fail_cause(exit_.cause)
+                    results.fail_cause_unsafe(exit_.cause)
                     return
-                results.unsafe_offer(exit_.value)
+                results.offer_unsafe(exit_.value)
                 if state["pending"]:
                     state["pending"] = False
                     fork()

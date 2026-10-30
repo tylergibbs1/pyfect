@@ -287,6 +287,6 @@ def populate_context(
 def propagated_span(span: AnySpan | None) -> AnySpan | None:
     """``span``, or its nearest ancestor, that does not disable
     propagation."""
-    while span is not None and span.annotations.unsafe_get(DisablePropagation):
+    while span is not None and span.annotations.get_unsafe(DisablePropagation):
         span = None if isinstance(span, ExternalSpan) else span.parent
     return span

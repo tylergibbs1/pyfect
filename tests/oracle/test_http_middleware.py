@@ -284,7 +284,7 @@ def test_restores_parent_span_and_ends_the_span_if_interrupted_before_handler_re
         spans.append(span)
         fiber = fx.Fiber.get_current()
         assert fiber is not None
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         return span
 
     def remember(name: str) -> fx.Effect[None]:

@@ -34,6 +34,7 @@ raise ``StalledError`` instead of hanging. A woken fiber that never suspends
 makes ``adjust`` warn with ``BusyFiberWarning`` and move on.
 """
 
+from pyfect._public import publish
 from pyfect.scheduler import StalledError
 from pyfect.testing._assertions import (
     assert_exit_failure,
@@ -98,3 +99,5 @@ __all__ = [
     "test_console",
     "with_live",
 ]
+
+publish(globals())

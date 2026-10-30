@@ -37,9 +37,9 @@ from pyfect.sql.statement._segments import (
     insert,
     join,
     literal,
+    literal_unsafe,
     or_,
     segments_of,
-    unsafe_literal,
     update,
     update_values,
 )
@@ -129,7 +129,7 @@ def _record_connection_wait(span: Span, clock: ClockService) -> None:
     # covers compiling the statement and running a ``CurrentTransformer``.
     span.attribute(
         _ATTR_DB_CLIENT_CONNECTION_WAIT_TIME,
-        (clock.unsafe_now_nanos() - span.status.start_time) / 1e6,
+        (clock.now_nanos_unsafe() - span.status.start_time) / 1e6,
     )
 
 
@@ -392,7 +392,7 @@ class Constructor:
     def unsafe(self, sql: str, params: Sequence[object] | None = None) -> Statement[Row]:
         """A statement of SQL text built at runtime, with ``params`` bound to
         its placeholders. Never build the text from untrusted input."""
-        return self._statement((unsafe_literal(sql, params),))
+        return self._statement((literal_unsafe(sql, params),))
 
     @staticmethod
     def literal(sql: LiteralString) -> Fragment:

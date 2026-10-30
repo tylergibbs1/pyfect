@@ -141,7 +141,7 @@ class Pool[A, E = Never]:
         def body(restore: Restore) -> Effect[Pool[T, X]]:
             def with_fiber(fiber: Fiber[Any, Any]) -> Effect[Pool[T, X]]:
                 context = fiber._context
-                scope = context.unsafe_get(Scope)
+                scope = context.get_unsafe(Scope)
                 config = PoolConfig(
                     acquire=_Locally(acquire, context.merge),
                     concurrency=concurrency,
@@ -294,7 +294,7 @@ class Pool[A, E = Never]:
 
     def _lease_scoped(self, item: PoolItem[A, E], value: A, fiber: Fiber[Any, Any]) -> Effect[A]:
         self._bookkeep(item)
-        scope = fiber._context.unsafe_get(Scope)
+        scope = fiber._context.get_unsafe(Scope)
         if scope.is_closed:
             fiber._push(_Release(self._release_item(item)))
         else:
@@ -393,7 +393,7 @@ class Pool[A, E = Never]:
             item.ref_count -= 1
             state.usage -= 1
             if item.ref_count == 0:
-                item.idle_since = self._clock.unsafe_now_nanos()
+                item.idle_since = self._clock.now_nanos_unsafe()
             if item in state.invalidated:
                 return self._invalidate_item(item)
             # Every release frees one slot, so it admits one waiter.
@@ -529,7 +529,7 @@ class Pool[A, E = Never]:
         item = PoolItem(
             ex,
             scope.close(ex).catch_cause(_report_finalizer_failure),
-            self._clock.unsafe_now_nanos(),
+            self._clock.now_nanos_unsafe(),
         )
 
         def on_acquire() -> Effect[None]:

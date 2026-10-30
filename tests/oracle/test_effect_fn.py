@@ -105,7 +105,7 @@ def test_terminal_root_failure_captures_stack_frame():
 def test_caught_sandboxed_failure_captures_stack_frame():
     """caught sandboxed failure captures stack frame"""
     cause = yield from fx.fail_cause(die(Exception("boom"))).with_span("test span").sandbox().flip()
-    assert cause.annotations.unsafe_get(StackTrace).name == "test span"
+    assert cause.annotations.get_unsafe(StackTrace).name == "test span"
 
 
 def test_failure_without_a_current_frame_has_no_stack_annotation_and_reuses_the_original_exit():

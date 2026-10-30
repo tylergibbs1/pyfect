@@ -43,7 +43,7 @@ from pyfect._core import Effect, Restore, _Locally, _Succeed, _WithFiber, uninte
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber, current_fiber, current_run_scheduler
 from pyfect._layer_core import require_layer
-from pyfect._root import new_root, start_root
+from pyfect._root import loop_running_here, new_root, start_root
 from pyfect.context import Context, Reference
 from pyfect.deferred import Deferred
 from pyfect.effect import die
@@ -175,7 +175,7 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         current = current_run_scheduler()
         if current is not None:
             run: Scheduler = current
-        elif _loop_running():
+        elif loop_running_here():
             run = self._loop_scheduler()
         else:
             # Another thread may be driving the runtime's scheduler: queue it.
@@ -197,10 +197,10 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         require_effect(eff, "eff")
         fiber = self.run_fork(eff, scheduler=scheduler, uninterruptible=uninterruptible)
         if on_exit is not None:
-            fiber.unsafe_add_observer(on_exit)
+            fiber.add_observer_unsafe(on_exit)
 
         def interrupt(by: int | None = None, /) -> None:
-            fiber.unsafe_interrupt_as(by)
+            fiber.interrupt_as_unsafe(by)
 
         return interrupt
 
@@ -360,13 +360,8 @@ def _lineage(fiber: Fiber[Any, Any]) -> Iterator[Fiber[Any, Any]]:
 def _refuse_to_block(call: str, on_a_loop: str) -> None:
     if current_fiber() is not None:
         raise RuntimeError(f"{call} blocks, and this thread is running a fiber: use dispose_effect")
-    if _loop_running():
+    if loop_running_here():
         raise RuntimeError(f"{call} blocks the running asyncio loop: use {on_a_loop}")
 
 
-def _loop_running() -> bool:
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return False
-    return True
+__all__ = ["ManagedRuntime"]

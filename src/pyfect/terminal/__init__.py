@@ -9,6 +9,7 @@ key presses from the user, and text shown to them::
 another quit key); ``TerminalService(...)`` builds one for tests.
 """
 
+from pyfect._public import publish
 from pyfect.layer import Layer
 from pyfect.layer import sync as _layer_sync
 from pyfect.terminal._keys import decode
@@ -36,3 +37,5 @@ __all__ = [
     "layer",
     "live",
 ]
+
+publish(globals())

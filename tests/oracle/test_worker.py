@@ -2,8 +2,8 @@
 is the Effect test title, prefixed by its describe block.
 
 Effect's ``Deferred.doneUnsafe(deferred, error)`` is
-``deferred.unsafe_done(Exit.fail(error))``; ``fiber.pollUnsafe()`` is
-``fiber.unsafe_poll()``.
+``deferred.done_unsafe(Exit.fail(error))``; ``fiber.pollUnsafe()`` is
+``fiber.poll_unsafe()``.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ _exit_error = WorkerError(reason=WorkerReceiveError(message="The worker has exit
 
 
 def _exit(deferred: Deferred[None, WorkerError]) -> None:
-    deferred.unsafe_done(Exit.fail(_exit_error))
+    deferred.done_unsafe(Exit.fail(_exit_error))
 
 
 def _void(_: object) -> Effect[None]:
@@ -71,8 +71,8 @@ def test_run_fails_when_the_worker_exits_while_waiting_for_ready():
     platform = _make_platform(lambda o: found.append(o.deferred))
     worker = yield from platform.spawn(0).pipe(fx.provide(_spawner_layer))
     fiber = yield from worker.run(_void).fork(start_immediately=True)
-    assert fiber.unsafe_poll() is None
-    found[0].unsafe_done(Exit.fail(_exit_error))
+    assert fiber.poll_unsafe() is None
+    found[0].done_unsafe(Exit.fail(_exit_error))
     exit = yield from fiber.await_exit()
     assert Exit.is_failure(exit)
 
@@ -84,7 +84,7 @@ def test_run_is_interruptible_while_waiting_for_ready():
     platform = _make_platform(lambda _: None)
     worker = yield from platform.spawn(0).pipe(fx.provide(_spawner_layer))
     fiber = yield from worker.run(_void).fork(start_immediately=True)
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from fiber.interrupt()
     exit = yield from fiber.await_exit()
     assert isinstance(exit, Exit.Failure)
@@ -103,7 +103,7 @@ def test_run_still_fails_on_worker_exit_after_ready():
     platform = _make_platform(on_listen)
     worker = yield from platform.spawn(0).pipe(fx.provide(_spawner_layer))
     fiber = yield from worker.run(_void).fork(start_immediately=True)
-    assert fiber.unsafe_poll() is None
-    found[0].unsafe_done(Exit.fail(_exit_error))
+    assert fiber.poll_unsafe() is None
+    found[0].done_unsafe(Exit.fail(_exit_error))
     exit = yield from fiber.await_exit()
     assert Exit.is_failure(exit)

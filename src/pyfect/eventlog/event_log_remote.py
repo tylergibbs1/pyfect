@@ -62,10 +62,15 @@ from pyfect.schema import SchemaError
 from pyfect.scope import Scope, fork_scoped
 
 __all__ = [
+    "Changes",
+    "DecodeChanges",
+    "EncodeWrite",
     "EventLogRemote",
     "EventLogRemoteClient",
     "EventLogRemoteError",
     "EventLogRemoteService",
+    "WriteFn",
+    "layer_client",
     "layer_encrypted",
     "layer_unencrypted",
     "make_encrypted",

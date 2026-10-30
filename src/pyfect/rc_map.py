@@ -122,7 +122,7 @@ class RcMap[K: Hashable, A, E = Never]:
 
         def body(fiber: Fiber[Any, Any]) -> Effect[RcMap[Any, Any, Any]]:
             context = fiber._context
-            scope = context.unsafe_get(Scope)
+            scope = context.get_unsafe(Scope)
             rc_map = RcMap(lookup, context, scope, ttl, bound)
             return scope.add_finalizer(lambda _: rc_map._close()).as_(rc_map)
 
@@ -189,7 +189,7 @@ class RcMap[K: Hashable, A, E = Never]:
             entry = None if self._entries is None else self._entries.get(key)
             if entry is not None and entry.idle_time_to_live != 0:
                 clock: ClockService = fiber._context.lookup(Clock)[1]
-                entry.expires_at = clock.unsafe_monotonic() + entry.idle_time_to_live
+                entry.expires_at = clock.monotonic_unsafe() + entry.idle_time_to_live
             return _VOID
 
         return _WithFiber(body)
@@ -230,7 +230,7 @@ class RcMap[K: Hashable, A, E = Never]:
         """Hold ``entry`` until the caller's scope closes, then run ``then``."""
         if not counted:
             entry.ref_count += 1
-        scope = fiber._context.unsafe_get(Scope)
+        scope = fiber._context.get_unsafe(Scope)
         return scope.add_finalizer(lambda _: entry.finalizer).and_then(then)
 
     def _start_lookup(self, parent: Fiber[Any, Any], key: K, entry: _Entry[A, E]) -> None:
@@ -242,11 +242,11 @@ class RcMap[K: Hashable, A, E = Never]:
             # looks the key up afresh.
             if isinstance(ex, Failure) and ex.cause.has_interrupts:
                 self._remove_interrupted(fiber, key, entry)
-            entry.deferred.unsafe_done(ex)
+            entry.deferred.done_unsafe(ex)
 
         start_root(fiber, _call_user(self._lookup, key))
         fiber.run_in(entry.scope)
-        fiber.unsafe_add_observer(observe)
+        fiber.add_observer_unsafe(observe)
 
     def _remove_interrupted(self, lookup: Fiber[Any, Any], key: K, entry: _Entry[A, E]) -> None:
         entries = self._entries
@@ -276,13 +276,13 @@ class RcMap[K: Hashable, A, E = Never]:
         if math.isinf(ttl):
             return _VOID
         clock: ClockService = fiber._context.lookup(Clock)[1]
-        entry.expires_at = clock.unsafe_monotonic() + ttl
+        entry.expires_at = clock.monotonic_unsafe() + ttl
         if entry.fiber is not None:
             return _VOID
 
         def expire_when_due(restore: Restore) -> Effect[None]:
             def check() -> Effect[None]:
-                remaining = entry.expires_at - clock.unsafe_monotonic()
+                remaining = entry.expires_at - clock.monotonic_unsafe()
                 if remaining > 0:
                     return restore(clock.sleep(Seconds(remaining))).and_then(_Suspend(check))
                 current = self._entries
@@ -327,3 +327,6 @@ def _idle_time_to_live[K](ttl: IdleTimeToLive[K] | None) -> Callable[[K], Second
         return lambda key: to_seconds(pick(key))
     fixed = to_seconds(0.0 if ttl is None else ttl)
     return lambda _: fixed
+
+
+__all__ = ["IdleTimeToLive", "RcMap"]

@@ -143,12 +143,12 @@ class Subscription[A]:
         """How many messages there are to take now."""
 
         def attempt() -> Effect[int]:
-            count = self.unsafe_remaining()
+            count = self.remaining_unsafe()
             return _interrupt() if count is None else _Succeed(count)
 
         return _Suspend(attempt)
 
-    def unsafe_remaining(self) -> int | None:
+    def remaining_unsafe(self) -> int | None:
         """``remaining`` now; ``None`` once unsubscribed."""
         reader = self._reader
         if reader.unsubscribed:

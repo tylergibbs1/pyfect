@@ -113,7 +113,7 @@ class ScopedCache[K: Hashable, A, E = Never, R = Never]:
         def body(fiber: Fiber[Any, Any]) -> Effect[ScopedCache[Any, Any, Any, Any]]:
             context = fiber._context
             cache = ScopedCache(lookup, context, bound, ttl)
-            closing = context.unsafe_get(Scope).add_finalizer(lambda _: _WithFiber(cache._close))
+            closing = context.get_unsafe(Scope).add_finalizer(lambda _: _WithFiber(cache._close))
             return closing.as_(cache)
 
         return _WithFiber(body)
@@ -346,7 +346,7 @@ class ScopedCache[K: Hashable, A, E = Never, R = Never]:
             self._remove(key, entry)
 
             def report(_: None) -> Effect[None]:
-                ex = lookup.unsafe_poll()
+                ex = lookup.poll_unsafe()
                 if isinstance(ex, Failure) and ex.cause.has_dies:
                     return _FailCause(ex.cause.without_failures())
                 return _VOID
@@ -468,7 +468,7 @@ class _Entry[A, E]:
 
     def complete(self, ex: Exit[A, E]) -> None:
         self.exit = ex
-        self.deferred.unsafe_done(ex)
+        self.deferred.done_unsafe(ex)
 
 
 def _release_all(fiber: Fiber[Any, Any], entries: dict[Any, _Entry[Any, Any]]) -> Effect[None]:
@@ -510,4 +510,4 @@ def _interrupted(ex: Exit[Any, Any]) -> bool:
 
 
 def _now(fiber: Fiber[Any, Any]) -> int:
-    return clock_of(fiber).unsafe_now_nanos()
+    return clock_of(fiber).now_nanos_unsafe()

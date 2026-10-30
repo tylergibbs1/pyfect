@@ -23,6 +23,7 @@ from typing import Literal, Never, Protocol, runtime_checkable
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._js import text_encode
+from pyfect._os_wait import Resume, os_wait
 from pyfect.channel import Channel
 from pyfect.channel import unwrap as unwrap_channel
 from pyfect.context import Tag
@@ -32,7 +33,6 @@ from pyfect.exit import Exit
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
-from pyfect.process._os import Resume, os_wait
 from pyfect.scope import Scope, acquire_release
 from pyfect.socket._connection import Signal
 from pyfect.socket._errors import (
@@ -404,7 +404,7 @@ def from_web_socket(
         def release(_: Exit[object, object]) -> Effect[None]:
             def run_release() -> None:
                 buffer.detach()
-                current.latch.unsafe_close()
+                current.latch.close_unsafe()
                 current.ws = None
 
             return sync(run_release)
@@ -416,7 +416,7 @@ def from_web_socket(
             yield from buffer.wait_open().timeout_or_else(timeout, _open_timeout)
         buffer.started()
         current.ws = ws
-        current.latch.unsafe_open()
+        current.latch.open_unsafe()
         return Reader(buffer.pull(), unsupported_upgrade)
 
     def write(chunk: Chunk | CloseEvent) -> Effect[None, SocketError]:

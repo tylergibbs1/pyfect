@@ -99,7 +99,7 @@ def test_provide_takes_a_context_too():
 @testing.effect
 def test_update_context_builds_the_stream_with_new_services():
     def from_greeting(ctx: fx.Context[Greeting]) -> fx.Context[Counter]:
-        return ctx.add(Counter, len(ctx.unsafe_get(Greeting) + " x"))
+        return ctx.add(Counter, len(ctx.get_unsafe(Greeting) + " x"))
 
     provided = (
         stream.service(Counter)

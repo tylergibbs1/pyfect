@@ -1,5 +1,5 @@
 """Pydantic and pyfect schemas, each usable in the other. Needs the
-``pydantic`` extra (``pip install 'pyfect[pydantic]'``).
+``pydantic`` extra (``pyfect-dev[pydantic]``).
 
 A pyfect schema is a pydantic field type: annotate the field with it::
 
@@ -29,11 +29,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, Never, cast
 
+from pyfect._extras import missing_extra
+
 try:
     from pydantic import BaseModel, GetCoreSchemaHandler, GetJsonSchemaHandler, ValidationError
     from pydantic_core import CoreSchema, PydanticCustomError, core_schema
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise ImportError("pyfect.pydantic needs pydantic: pip install 'pyfect[pydantic]'") from error
+    raise missing_extra("pyfect.pydantic", "pydantic") from error
 
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
@@ -56,7 +58,13 @@ from pyfect.schema import ast as schema_ast
 from pyfect.schema import transformation as T
 from pyfect.schema.issue import Composite, InvalidValue, Issue, MissingKey, Pointer
 
-__all__ = ["core_schema_of", "from_model", "json_schema_of"]
+__all__ = [
+    "core_schema_of",
+    "from_model",
+    "get_pydantic_core_schema",
+    "get_pydantic_json_schema",
+    "json_schema_of",
+]
 
 type _Codec = Codec[Any, Any, Never, Never]
 

@@ -45,69 +45,15 @@ deferreds, clocks and queues, ``WorkflowEngine`` and its in-memory layer).
 AI services in ``fx.ai`` (prompts, responses, tools, toolkits and the
 provider-neutral ``LanguageModel``).
 Optional adapters, each behind its extra and never imported here: pydantic
-(``pyfect.pydantic``, ``pyfect[pydantic]``), msgspec (``pyfect.msgspec``,
-``pyfect[msgspec]``) and the httpx HTTP client (``pyfect.http.httpx_client``,
-``pyfect[httpx]``).
+(``pyfect.pydantic``, ``pyfect-dev[pydantic]``), msgspec (``pyfect.msgspec``,
+``pyfect-dev[msgspec]``) and the httpx HTTP client (``pyfect.http.httpx_client``,
+``pyfect-dev[httpx]``).
 """
 
-from pyfect import (
-    ai,
-    batching,
-    brand,
-    byte_size,
-    case,
-    cause,
-    channel,
-    channel_schema,
-    cli,
-    clock,
-    config,
-    config_provider,
-    console,
-    cron,
-    date_time,
-    devtools,
-    duration,
-    encoding,
-    error_reporter,
-    execution_plan,
-    exit,
-    file_system,
-    graphql,
-    http,
-    json_patch,
-    json_pointer,
-    json_schema,
-    layer,
-    logger,
-    metric,
-    optic,
-    option,
-    path,
-    persistence,
-    platform,
-    platform_error,
-    process,
-    pull,
-    random,
-    reactivity,
-    redacted,
-    result,
-    schedule,
-    scheduler,
-    schema,
-    sink,
-    sql,
-    stdio,
-    stream,
-    take,
-    terminal,
-    testing,
-    tracer,
-    transaction,
-    workers,
-    workflow,
-)
+import importlib as _importlib
+import typing as _typing
+from types import ModuleType as _ModuleType
+
 from pyfect._all import all, all_dict
 from pyfect._concurrency import Concurrency, for_each, race_all, race_all_first
 from pyfect._context_managers import acquire_async_context, acquire_context
@@ -124,6 +70,7 @@ from pyfect._iterables import (
     reduce,
     validate,
 )
+from pyfect._public import publish
 from pyfect._reasons import HasReason
 from pyfect._root import NoRunError
 from pyfect.batching import Request, RequestResolver, request, request_unsafe
@@ -145,7 +92,6 @@ from pyfect.effect import (
     catch_reason,
     catch_reasons,
     catch_tag,
-    context,
     current_fiber,
     die,
     fail,
@@ -287,6 +233,152 @@ from pyfect.tx_reentrant_lock import TxReentrantLock
 from pyfect.tx_ref import TxRef
 from pyfect.tx_semaphore import TxSemaphore
 from pyfect.tx_subscription_ref import TxSubscriptionRef
+
+_SUBMODULES = frozenset(
+    (
+        "ai",
+        "batching",
+        "brand",
+        "byte_size",
+        "case",
+        "cause",
+        "channel",
+        "channel_schema",
+        "cli",
+        "clock",
+        "config",
+        "config_provider",
+        "console",
+        "cron",
+        "date_time",
+        "devtools",
+        "duration",
+        "encoding",
+        "error_reporter",
+        "execution_plan",
+        "exit",
+        "file_system",
+        "graphql",
+        "http",
+        "json_patch",
+        "json_pointer",
+        "json_schema",
+        "layer",
+        "logger",
+        "metric",
+        "optic",
+        "option",
+        "path",
+        "persistence",
+        "platform",
+        "platform_error",
+        "process",
+        "pull",
+        "random",
+        "reactivity",
+        "redacted",
+        "result",
+        "schedule",
+        "scheduler",
+        "schema",
+        "sink",
+        "sql",
+        "stdio",
+        "stream",
+        "take",
+        "terminal",
+        "testing",
+        "tracer",
+        "transaction",
+        "workers",
+        "workflow",
+    )
+)
+"""The subpackages ``fx.<name>`` reaches, imported when first used so that
+``import pyfect`` (and the pytest plugin) stays fast."""
+
+if _typing.TYPE_CHECKING:
+    from pyfect import (
+        ai,
+        batching,
+        brand,
+        byte_size,
+        case,
+        cause,
+        channel,
+        channel_schema,
+        cli,
+        clock,
+        config,
+        config_provider,
+        console,
+        cron,
+        date_time,
+        devtools,
+        duration,
+        encoding,
+        error_reporter,
+        execution_plan,
+        exit,
+        file_system,
+        graphql,
+        http,
+        json_patch,
+        json_pointer,
+        json_schema,
+        layer,
+        logger,
+        metric,
+        optic,
+        option,
+        path,
+        persistence,
+        platform,
+        platform_error,
+        process,
+        pull,
+        random,
+        reactivity,
+        redacted,
+        result,
+        schedule,
+        scheduler,
+        schema,
+        sink,
+        sql,
+        stdio,
+        stream,
+        take,
+        terminal,
+        testing,
+        tracer,
+        transaction,
+        workers,
+        workflow,
+    )
+
+
+if not _typing.TYPE_CHECKING:  # pyright would accept any ``fx.<name>`` through it
+
+    def __getattr__(name: str) -> _ModuleType:
+        if name in _SUBMODULES:
+            return _importlib.import_module(f"pyfect.{name}")
+        raise AttributeError(f"module 'pyfect' has no attribute {name!r}")
+
+
+if _typing.TYPE_CHECKING:
+    from pyfect._context_effects import context
+else:
+    # ``pyfect.context`` is both the module and the effect ``fx.context(...)``
+    # (Effect's ``Context`` and ``Effect.context``): the module is made
+    # callable, so neither shadows the other (tests/test_package_namespace.py).
+    from pyfect._context_effects import context as _context_effect
+
+    class _ContextModule(_ModuleType):
+        def __call__(self, *tags: _typing.Any) -> _typing.Any:
+            return _context_effect(*tags)
+
+    context.__class__ = _ContextModule
 
 __all__ = [
     "AsyncioRequiredError",
@@ -549,3 +641,5 @@ __all__ = [
     "workflow",
     "yield_now",
 ]
+
+publish(globals())

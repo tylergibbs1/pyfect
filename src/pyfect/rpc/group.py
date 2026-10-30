@@ -181,7 +181,7 @@ class RpcGroup:
             raise ValueError(f"{cls.__name__} has no handler for {', '.join(missing)}")
 
         def entries(services: Context[Any]) -> Context[Any]:
-            kept = Context({t: s for t, s in services.unsafe_map.items() if t is not Scope})
+            kept = Context({t: s for t, s in services.map_unsafe.items() if t is not Scope})
             return Context(
                 {
                     handler_tag(rpc): HandlerEntry(rpc.tag, handlers.by_tag[rpc.tag], kept)
@@ -208,7 +208,7 @@ def to_layer_handler[P, S, E, R2](
     runs with the services of the layer's context."""
 
     def entry(services: Context[Any]) -> Context[Any]:
-        kept = Context({t: s for t, s in services.unsafe_map.items() if t is not Scope})
+        kept = Context({t: s for t, s in services.map_unsafe.items() if t is not Scope})
         return Context({handler_tag(rpc): HandlerEntry(rpc.tag, handler, kept)})
 
     return layer_effect_context(context().map(entry))
@@ -221,7 +221,7 @@ def access_handler[P, S, E](
     services (Effect's ``accessHandler``)."""
 
     def found(services: Context[Any]) -> Callable[[RpcRequest[P]], Effect[S, E]]:
-        entry: HandlerEntry = services.unsafe_get(handler_tag(rpc))
+        entry: HandlerEntry = services.get_unsafe(handler_tag(rpc))
 
         def run(request: RpcRequest[P]) -> Effect[S, E]:
             return cast("Effect[S, E]", entry.handler(request)).pipe(provide_context(entry.context))
@@ -236,6 +236,7 @@ def access_handler[P, S, E](
 
 __all__ = [
     "Bound",
+    "HandlerFn",
     "HandlerOf",
     "Handlers",
     "HandlersFor",

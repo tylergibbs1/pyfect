@@ -265,7 +265,7 @@ class _MemoryStorage(StorageService):
                 journal.next_sequence += len(ids)
                 journal.batches.append(stored_batch)
                 stored.append(stored_batch)
-                pubsub.unsafe_publish(stored_batch)
+                pubsub.publish_unsafe(stored_batch)
             return stored
 
         return scoped(self._pubsubs.get(key).map(store))

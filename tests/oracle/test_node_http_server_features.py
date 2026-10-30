@@ -397,7 +397,7 @@ def test_uninterruptible_routes() -> None:
         fiber = Fiber.get_current()
         assert fiber is not None
         yield from (
-            effect.sync(lambda: fiber.unsafe_interrupt_as(fiber.id)).delay(0.01).fork_daemon()
+            effect.sync(lambda: fiber.interrupt_as_unsafe(fiber.id)).delay(0.01).fork_daemon()
         )
         yield from sleep(0.05)
         return server_response.empty()

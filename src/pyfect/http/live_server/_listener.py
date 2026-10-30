@@ -94,7 +94,7 @@ class Listener:
                 for state in self._take():
                     conn = state.conn
                     fiber = yield from fork_in(serve(state), scope)
-                    fiber.unsafe_add_observer(lambda _, s=state, c=conn: self._release(s, c))
+                    fiber.add_observer_unsafe(lambda _, s=state, c=conn: self._release(s, c))
 
             hand_over = gen(fork_taken).uninterruptible()
 

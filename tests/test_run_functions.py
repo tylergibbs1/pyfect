@@ -48,9 +48,9 @@ def test_run_fork_without_a_fiber_loop_or_scheduler_raises():
 def test_run_fork_on_a_given_scheduler_runs_when_driven():
     scheduler = SyncScheduler()
     fiber = fx.run_fork(Name(), context=services, scheduler=scheduler)
-    assert fiber.unsafe_poll() is None
-    scheduler.run_until(lambda: fiber.unsafe_poll() is not None)
-    assert fiber.unsafe_poll() == fx.Success("ada")
+    assert fiber.poll_unsafe() is None
+    scheduler.run_until(lambda: fiber.poll_unsafe() is not None)
+    assert fiber.poll_unsafe() == fx.Success("ada")
 
 
 @testing.effect
@@ -58,7 +58,7 @@ def test_run_fork_from_a_fiber_runs_at_once_and_outlives_it():
     log: list[str] = []
     fiber = fx.run_fork(fx.sync(lambda: log.append("ran")).and_then(fx.sleep(1)))
     assert log == ["ran"]
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from fiber.interrupt()
 
 
@@ -66,7 +66,7 @@ def test_run_fork_on_a_loop_runs_at_once():
     async def main() -> list[str]:
         log: list[str] = []
         fiber = fx.run_fork(fx.sync(lambda: log.append("ran")))
-        assert fiber.unsafe_poll() == fx.Success(None)
+        assert fiber.poll_unsafe() == fx.Success(None)
         return log
 
     assert asyncio.run(main()) == ["ran"]

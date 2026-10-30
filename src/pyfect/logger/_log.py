@@ -49,7 +49,7 @@ def log_with_level(level: Severity | None, *message: object) -> Effect[None]:
             return _VOID
         loggers = fiber.get_ref(CurrentLoggers)
         if loggers:
-            nanos = fiber.get_ref(Clock).unsafe_now_nanos()
+            nanos = fiber.get_ref(Clock).now_nanos_unsafe()
             date = _EPOCH + timedelta(microseconds=nanos // 1000)
             options = Options(logged, at, cause, fiber, date)
             for logger in loggers:

@@ -83,7 +83,7 @@ def layer_rpc_handlers(
     prefix=prefix)`` declares."""
 
     def entries(services: Context[Any]) -> Context[Any]:
-        kept = Context({t: s for t, s in services.unsafe_map.items() if t is not Scope})
+        kept = Context({t: s for t, s in services.map_unsafe.items() if t is not Scope})
         found: dict[Any, HandlerEntry] = {}
         for workflow in workflows:
             tag = f"{prefix}{workflow.tag}"
@@ -114,4 +114,4 @@ def layer_rpc_handlers(
     return layer_effect_context(context().map(entries))
 
 
-__all__ = ["layer_http_api", "layer_rpc_handlers"]
+__all__ = ["AnyWorkflow", "Request", "layer_http_api", "layer_rpc_handlers"]

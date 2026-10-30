@@ -293,7 +293,7 @@ def test_treats_url_connect_timeout_0_as_no_timeout():
     url = f"postgres://test@127.0.0.1:{port}/db?connect_timeout=0"
     fiber = yield from _connect_error(pg.PgConnectionConfig(url=redacted.make(url))).fork()
     yield from testing.adjust(6)
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     silent.close()
     error = yield from fiber.join()
     assert isinstance(error.reason, ConnectionError)

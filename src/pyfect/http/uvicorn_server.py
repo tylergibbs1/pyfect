@@ -1,4 +1,4 @@
-"""An ``HttpServer`` on uvicorn (extra ``pyfect[server]``; the counterpart
+"""An ``HttpServer`` on uvicorn (extra ``pyfect-dev[server]``; the counterpart
 of Effect's ``NodeHttpServer.layer``)::
 
     main = server.serve(app).pipe(layer.provide(uvicorn_server.layer(port=8080)))
@@ -23,10 +23,17 @@ from collections.abc import Callable, Coroutine, Mapping
 from concurrent.futures import Future
 from typing import Any, Never, NotRequired, TypedDict, Unpack
 
-import uvicorn
+from pyfect._extras import missing_extra
+
+try:
+    import uvicorn
+except ImportError as error:  # pragma: no cover - depends on the environment
+    raise missing_extra("pyfect.http.uvicorn_server", "server") from error
 
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
+from pyfect._os_wait import Resume, os_wait
+from pyfect._root import run_loop
 from pyfect.context import Context
 from pyfect.duration import Duration, to_seconds
 from pyfect.effect import fail, succeed, suspend, sync
@@ -44,7 +51,6 @@ from pyfect.layer import Layer, merge, provide_merge
 from pyfect.layer import effect as layer_effect
 from pyfect.net.net_address import inet_address_from_native_unsafe
 from pyfect.path import Path
-from pyfect.process._os import Resume, os_wait
 from pyfect.run import run_fork
 from pyfect.scope import CloseableScope, acquire_release
 from pyfect.scope import Scope as ScopeTag
@@ -104,13 +110,6 @@ def _loop_thread() -> asyncio.AbstractEventLoop:
 
     threading.Thread(target=run, name="pyfect-uvicorn", daemon=True).start()
     return loop
-
-
-def _running_loop() -> asyncio.AbstractEventLoop | None:
-    try:
-        return asyncio.get_running_loop()
-    except RuntimeError:
-        return None
 
 
 def _wait[A](future: Future[A]) -> Effect[A, BaseException]:
@@ -187,7 +186,7 @@ def _serve(
     def serve(app: HttpApp, middleware: Middleware | None) -> Effect[None, Never, ScopeTag]:
         def body(fiber: Fiber[Any, Any]) -> Effect[None, Never, ScopeTag]:
             context: Context[Any] = fiber._context
-            serve_scope = context.unsafe_get(ScopeTag)
+            serve_scope = context.get_unsafe(ScopeTag)
             requests: CloseableScope = serve_scope._fork_now("parallel")
 
             def fork(
@@ -226,7 +225,7 @@ def make(**options: Unpack[Options]) -> Effect[HttpServerService, SocketServerEr
         dispatch = _Dispatch()
 
         def start() -> Effect[_Running, SocketServerError]:
-            current = _running_loop()
+            current = run_loop()
             loop = current or _loop_thread()
             running = _Running(_uvicorn(dispatch, options), loop, owned=current is None)
             return (

@@ -91,7 +91,7 @@ def test_adjust_waits_for_work_started_transitively_by_a_wake_up():
 
     fiber = yield from parent.fork()
     yield from testing.adjust(2)
-    assert fiber.unsafe_poll() == fx.Success(None)
+    assert fiber.poll_unsafe() == fx.Success(None)
     assert log == [2.0]
 
 
@@ -126,14 +126,14 @@ def test_deadlines_add_up_exactly():
     millisecond TestClock does."""
     fiber = yield from fx.sleep(0.05).and_then(fx.sleep(0.001)).as_("woke").fork()
     yield from testing.adjust(0.051)
-    assert fiber.unsafe_poll() == fx.Success("woke")
+    assert fiber.poll_unsafe() == fx.Success("woke")
 
 
 @testing.effect
 def test_repeated_sleeps_end_at_their_exact_sum():
     fiber = yield from fx.sleep(0.1).replicate_effect(3).as_("woke").fork()
     yield from testing.adjust(0.3)
-    assert fiber.unsafe_poll() == fx.Success("woke")
+    assert fiber.poll_unsafe() == fx.Success("woke")
 
 
 @testing.effect

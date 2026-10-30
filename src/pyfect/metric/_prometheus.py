@@ -12,7 +12,7 @@ from pyfect._core import Effect
 from pyfect._js import js_number
 from pyfect.context import Context
 from pyfect.metric._metric import WithContext
-from pyfect.metric._snapshot import unsafe_snapshot
+from pyfect.metric._snapshot import snapshot_unsafe
 from pyfect.metric._state import (
     CounterState,
     FrequencyState,
@@ -40,13 +40,13 @@ def prometheus_format(
     """The current registry as Prometheus text. Metric names go through
     ``metric_name_mapper``, are sanitized and get ``prefix_`` in front."""
     return WithContext(
-        lambda context: unsafe_prometheus_format(
+        lambda context: prometheus_format_unsafe(
             context, prefix=prefix, metric_name_mapper=metric_name_mapper
         )
     )
 
 
-def unsafe_prometheus_format(
+def prometheus_format_unsafe(
     context: Context,
     *,
     prefix: str | None = None,
@@ -55,7 +55,7 @@ def unsafe_prometheus_format(
     """``prometheus_format`` for ``context``'s registry."""
     start = _metric_name(prefix) + "_" if prefix else ""
     families: dict[str, list[Snapshot]] = {}
-    for metric in unsafe_snapshot(context):
+    for metric in snapshot_unsafe(context):
         mapped = metric.id if metric_name_mapper is None else metric_name_mapper(metric.id)
         families.setdefault(start + _metric_name(mapped), []).append(metric)
     lines: list[str] = []

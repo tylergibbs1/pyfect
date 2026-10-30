@@ -81,21 +81,21 @@ class _Pinger:
     def __init__(self, clock: Any, timeout: float) -> None:
         self._clock = clock
         self._timeout = timeout
-        self._last_seen = clock.unsafe_monotonic()
+        self._last_seen = clock.monotonic_unsafe()
         self._awaiting = False
         self.latch = Latch(False)
 
     def on_frame(self) -> None:
-        self._last_seen = self._clock.unsafe_monotonic()
+        self._last_seen = self._clock.monotonic_unsafe()
         self._awaiting = False
 
     def reset(self) -> None:
         self.on_frame()
-        self.latch.unsafe_close()
+        self.latch.close_unsafe()
 
     def tick(self, write_ping: Effect[None, Any]) -> Effect[None, Any]:
         def body() -> Effect[None, Any]:
-            if self._awaiting and self._clock.unsafe_monotonic() - self._last_seen > self._timeout:
+            if self._awaiting and self._clock.monotonic_unsafe() - self._last_seen > self._timeout:
                 return self.latch.open().as_void()
             self._awaiting = True
             return write_ping

@@ -7,7 +7,7 @@ A handler is an effect that gives an `HttpServerResponse`. Routes are added to t
 `HttpRouter` by layers, so a route's handler can ask for any service and the layer's type
 says which ones the server must provide. `router.serve(routes)` serves them on the
 `HttpServer` in the context; `uvicorn_server.layer(port=...)` is one on uvicorn (install the
-`pyfect[server]` extra), and `live_server.layer` one on the standard library.
+`pyfect-dev[server]` extra), and `live_server.layer` one on the standard library.
 
 ## Routes
 

@@ -161,7 +161,7 @@ def group(
 
 
 def _omit_scope(services: Context[Any]) -> Context[Any]:
-    return Context({tag: s for tag, s in services.unsafe_map.items() if tag is not Scope})
+    return Context({tag: s for tag, s in services.map_unsafe.items() if tag is not Scope})
 
 
 def _group_context(
@@ -381,7 +381,7 @@ def _apply_middleware(
 ) -> Effect[Any, Any, Any]:
     options = MiddlewareOptions(endpoint, group)
     for middleware in endpoint.middlewares:
-        service: Any = services.unsafe_get(middleware)
+        service: Any = services.get_unsafe(middleware)
         securities = middleware.security
         apply = service if securities is None else security_middleware(securities, service)
         handler = apply(handler, options)

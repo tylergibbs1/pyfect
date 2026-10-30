@@ -24,7 +24,7 @@ Omitted, with the reason:
 
 - "generates OTLP span identifiers", "should preserve nested span context
   with OtlpTracer" and the three "OtlpTracer span status" titles: the OTLP
-  exporter is not ported (``pyfect[otel]`` exports through the
+  exporter is not ported (``pyfect-dev[otel]`` exports through the
   OpenTelemetry SDK instead).
 """
 

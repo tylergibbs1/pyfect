@@ -172,6 +172,6 @@ def test_dead_letters_elements_from_workers_that_crashed_on_the_final_attempt() 
 
         pending = yield from redis.send("HLEN", f"{prefix}crash-exhausted:pending")
         assert int(str(pending)) == 0
-        assert fiber.unsafe_poll() is None
+        assert fiber.poll_unsafe() is None
 
     _run(body, live=True)

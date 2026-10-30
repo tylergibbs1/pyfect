@@ -127,7 +127,7 @@ def _run_request(exchange: Exchange, handled: Effect[None]) -> Effect[None]:
             if exchange.finished:
                 return void
             exchange.close_after = True
-            return sync(lambda: fiber.unsafe_interrupt_as(None, CLIENT_ABORT_ANNOTATION))
+            return sync(lambda: fiber.interrupt_as_unsafe(None, CLIENT_ABORT_ANNOTATION))
 
         watcher = yield from gone.flat_map(abort).fork()
         yield from fiber.await_exit()

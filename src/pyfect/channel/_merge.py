@@ -70,7 +70,7 @@ def merge_all(
             fiber, fiber_scope = next(iter(fibers.items()))
             del fibers[fiber]
             if not fibers:
-                done_latch.unsafe_open()
+                done_latch.open_unsafe()
             # A worker interrupted before it starts never closes its own
             # scope; failures of replaced workers' finalizers are dropped.
             closed = fiber_scope.close(interrupted()).ignore_cause()
@@ -98,7 +98,7 @@ def merge_all(
                         del fibers[fiber]
                         freed = _VOID if permits is None else permits.release(1).as_void()
                         if not fibers:
-                            done_latch.unsafe_open()
+                            done_latch.open_unsafe()
                         return freed
 
                     return report.and_then(_Suspend(release))
@@ -115,7 +115,7 @@ def merge_all(
 
                 def started(fiber: Fiber[Any, Any]) -> None:
                     fiber_box.append(fiber)
-                    done_latch.unsafe_close()
+                    done_latch.close_unsafe()
                     fibers[fiber] = child_scope
 
                 return evict().and_then(worker.fork()).map(started)
@@ -200,7 +200,7 @@ def halt_when(self: AnyChannel, eff: Effect[Any, Any, Any]) -> Channel_:
         def with_pull(pull: AnyPull) -> Effect[AnyPull]:
             def watch(fiber: Fiber[Any, Any]) -> AnyPull:
                 def next_pull() -> AnyPull:
-                    ex = fiber.unsafe_poll()
+                    ex = fiber.poll_unsafe()
                     if ex is None:
                         return pull
                     return _FailCause(ex.cause) if isinstance(ex, Failure) else end_with(ex.value)

@@ -22,20 +22,20 @@ from pyfect.errors import NoSuchElementException
 
 
 class RandomService(Protocol):
-    def unsafe_next_int(self) -> int:
+    def next_int_unsafe(self) -> int:
         """A random integer between ``-(2**53 - 1)`` and ``2**53 - 1``, both inclusive."""
         ...
 
-    def unsafe_next_double(self) -> float:
+    def next_double_unsafe(self) -> float:
         """A random float in ``[0, 1)``."""
         ...
 
 
 class LiveRandom:
-    def unsafe_next_int(self) -> int:
+    def next_int_unsafe(self) -> int:
         return safe_int_of(random.random())
 
-    def unsafe_next_double(self) -> float:
+    def next_double_unsafe(self) -> float:
         return random.random()
 
 
@@ -51,16 +51,16 @@ def _random_with[A](f: Callable[[RandomService], A]) -> Effect[A]:
 
 def next() -> Effect[float]:
     """A random float in ``[0, 1)``."""
-    return _random_with(lambda r: r.unsafe_next_double())
+    return _random_with(lambda r: r.next_double_unsafe())
 
 
 def next_boolean() -> Effect[bool]:
-    return _random_with(lambda r: r.unsafe_next_double() > 0.5)
+    return _random_with(lambda r: r.next_double_unsafe() > 0.5)
 
 
 def next_int() -> Effect[int]:
     """A random integer between ``-(2**53 - 1)`` and ``2**53 - 1``, both inclusive."""
-    return _random_with(lambda r: r.unsafe_next_int())
+    return _random_with(lambda r: r.next_int_unsafe())
 
 
 def _between(low: float, high: float, draw: float) -> float:
@@ -73,7 +73,7 @@ def _between(low: float, high: float, draw: float) -> float:
 
 def next_between(low: float, high: float) -> Effect[float]:
     """A random float in ``[low, high)``."""
-    return _random_with(lambda r: _between(low, high, r.unsafe_next_double()))
+    return _random_with(lambda r: _between(low, high, r.next_double_unsafe()))
 
 
 def next_int_between(low: float, high: float, *, half_open: bool = False) -> Effect[int]:
@@ -81,7 +81,7 @@ def next_int_between(low: float, high: float, *, half_open: bool = False) -> Eff
     ``half_open``."""
     low_int, high_int = math.ceil(low), math.floor(high)
     span = high_int - low_int + (0 if half_open else 1)
-    return _random_with(lambda r: math.floor(r.unsafe_next_double() * span) + low_int)
+    return _random_with(lambda r: math.floor(r.next_double_unsafe() * span) + low_int)
 
 
 def shuffle[A](elements: Iterable[A]) -> Effect[list[A]]:
@@ -90,7 +90,7 @@ def shuffle[A](elements: Iterable[A]) -> Effect[list[A]]:
     def go(r: RandomService) -> list[A]:
         buffer = list(elements)
         for i in range(len(buffer) - 1, 0, -1):
-            j = min(i, math.floor(r.unsafe_next_double() * (i + 1)))
+            j = min(i, math.floor(r.next_double_unsafe() * (i + 1)))
             buffer[i], buffer[j] = buffer[j], buffer[i]
         return buffer
 
@@ -110,7 +110,7 @@ def choice[A](elements: Iterable[A]) -> Effect[A, NoSuchElementException]:
             lambda: NoSuchElementException("Cannot select a random element from an empty array")
         )
     n = len(buffer)
-    return _random_with(lambda r: buffer[min(n - 1, math.floor(r.unsafe_next_double() * n))])
+    return _random_with(lambda r: buffer[min(n - 1, math.floor(r.next_double_unsafe() * n))])
 
 
 class _WithSeed:
@@ -136,3 +136,18 @@ def with_seed(seed: str | float) -> _WithSeed:
     eff.pipe(random.with_seed("my-seed"))
     """
     return _WithSeed(seed)
+
+
+__all__ = [
+    "LiveRandom",
+    "Random",
+    "RandomService",
+    "choice",
+    "next",
+    "next_between",
+    "next_boolean",
+    "next_int",
+    "next_int_between",
+    "shuffle",
+    "with_seed",
+]

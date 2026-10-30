@@ -60,20 +60,20 @@ class Metric(ABC, Generic[In_contra, State_co]):
         self.attributes: Final = attributes
 
     @abstractmethod
-    def unsafe_value(self, context: Context) -> State_co:
+    def value_unsafe(self, context: Context) -> State_co:
         """The state of the series ``context`` selects."""
 
     @abstractmethod
-    def unsafe_update(self, input: In_contra, context: Context) -> None:
+    def update_unsafe(self, input: In_contra, context: Context) -> None:
         """Update the series ``context`` selects."""
 
     @abstractmethod
-    def unsafe_modify(self, input: In_contra, context: Context) -> None:
+    def modify_unsafe(self, input: In_contra, context: Context) -> None:
         """Modify the series ``context`` selects (a gauge adds ``input``;
         the other kinds update)."""
 
     @abstractmethod
-    def unsafe_remove(self, context: Context) -> None:
+    def remove_unsafe(self, context: Context) -> None:
         """Drop the series ``context`` selects from its registry."""
 
     @abstractmethod
@@ -81,22 +81,22 @@ class Metric(ABC, Generic[In_contra, State_co]):
 
     def value(self) -> Effect[State_co]:
         """The state of this metric's series in the current registry."""
-        return WithContext(self.unsafe_value)
+        return WithContext(self.value_unsafe)
 
     def update(self, input: In_contra) -> Effect[None]:
         """Update the series: a counter adds, a gauge sets, a frequency
         counts the word, a histogram or summary records the value."""
-        return WithContext(lambda context: self.unsafe_update(input, context))
+        return WithContext(lambda context: self.update_unsafe(input, context))
 
     def modify(self, input: In_contra) -> Effect[None]:
         """Modify the series: a gauge adds ``input`` to its value; the
         other kinds update."""
-        return WithContext(lambda context: self.unsafe_modify(input, context))
+        return WithContext(lambda context: self.modify_unsafe(input, context))
 
     def remove(self) -> Effect[None]:
         """Drop the series for the current attributes; the next update
         starts it afresh."""
-        return WithContext(self.unsafe_remove)
+        return WithContext(self.remove_unsafe)
 
     def map_input[In2](self, f: Callable[[In2], In_contra]) -> Metric[In2, State_co]:
         """The same series, updated with ``f(input)``."""
@@ -115,7 +115,7 @@ class Metric(ABC, Generic[In_contra, State_co]):
         return f(self)
 
 
-def unsafe_register[S](
+def register_unsafe[S](
     metric: Metric[Any, S], context: Context, get: Callable[[Context], S]
 ) -> Registration:
     """Make ``get`` the series ``context`` selects: snapshots and values
@@ -166,24 +166,24 @@ class Series(Metric[In_contra, State_co]):
     @abstractmethod
     def _create_hooks(self) -> Hooks: ...
 
-    def unsafe_value(self, context: Context) -> State_co:
+    def value_unsafe(self, context: Context) -> State_co:
         return self._hooks(context).get(context)
 
-    def unsafe_update(self, input: In_contra, context: Context) -> None:
+    def update_unsafe(self, input: In_contra, context: Context) -> None:
         self._hooks(context).update(input, context)
 
-    def unsafe_modify(self, input: In_contra, context: Context) -> None:
+    def modify_unsafe(self, input: In_contra, context: Context) -> None:
         self._hooks(context).modify(input, context)
 
-    def unsafe_remove(self, context: Context) -> None:
+    def remove_unsafe(self, context: Context) -> None:
         key, _ = self._series(context)
-        context.unsafe_get(MetricRegistry).pop(key, None)
+        context.get_unsafe(MetricRegistry).pop(key, None)
 
     def _register(self, context: Context, get: Callable[[Context], Any]) -> Registration:
         key, attributes = self._series(context)
         # The registry of registration time, so removing does not depend
         # on where ``remove`` is called.
-        registry = context.unsafe_get(MetricRegistry)
+        registry = context.get_unsafe(MetricRegistry)
         metadata = self._metadata(attributes, Hooks(get, _ignore, _ignore))
         registry[key] = metadata
         return Registration(registry, key, metadata)
@@ -191,7 +191,7 @@ class Series(Metric[In_contra, State_co]):
     def _hooks(self, context: Context) -> Hooks:
         # The registry owns the series, so it is looked up on every update.
         key, attributes = self._series(context)
-        registry = context.unsafe_get(MetricRegistry)
+        registry = context.get_unsafe(MetricRegistry)
         metadata = registry.get(key)
         if metadata is None:
             metadata = registry.setdefault(key, self._metadata(attributes, self._create_hooks()))
@@ -200,7 +200,7 @@ class Series(Metric[In_contra, State_co]):
     def _series(self, context: Context) -> tuple[MetricKey, Mapping[str, str] | None]:
         """The key and attributes of the series ``context`` selects, merged
         once per contextual attribute set."""
-        extra = context.unsafe_get(CurrentMetricAttributes)
+        extra = context.get_unsafe(CurrentMetricAttributes)
         seen, key, attributes = self._cache
         if extra is not seen or key is None:
             merged = merge(self.attributes, extra)
@@ -233,19 +233,19 @@ class _Transform(Metric[In_contra, State_co]):
         self._map_input = map_input
         self._map_context = map_context
 
-    def unsafe_value(self, context: Context) -> State_co:
-        return self._metric.unsafe_value(self._map_context(context))
+    def value_unsafe(self, context: Context) -> State_co:
+        return self._metric.value_unsafe(self._map_context(context))
 
-    def unsafe_update(self, input: In_contra, context: Context) -> None:
+    def update_unsafe(self, input: In_contra, context: Context) -> None:
         mapped = self._map_context(context)
-        self._metric.unsafe_update(self._map_input(input, mapped), mapped)
+        self._metric.update_unsafe(self._map_input(input, mapped), mapped)
 
-    def unsafe_modify(self, input: In_contra, context: Context) -> None:
+    def modify_unsafe(self, input: In_contra, context: Context) -> None:
         mapped = self._map_context(context)
-        self._metric.unsafe_modify(self._map_input(input, mapped), mapped)
+        self._metric.modify_unsafe(self._map_input(input, mapped), mapped)
 
-    def unsafe_remove(self, context: Context) -> None:
-        self._metric.unsafe_remove(self._map_context(context))
+    def remove_unsafe(self, context: Context) -> None:
+        self._metric.remove_unsafe(self._map_context(context))
 
     def _register(self, context: Context, get: Callable[[Context], Any]) -> Registration:
         return self._metric._register(self._map_context(context), get)
@@ -267,7 +267,7 @@ def _adding(attributes: Attributes) -> Callable[[Context], Context]:
 
     def map_context(context: Context) -> Context:
         nonlocal cache
-        extra = context.unsafe_get(CurrentMetricAttributes)
+        extra = context.get_unsafe(CurrentMetricAttributes)
         seen, merged = cache
         if extra is not seen:
             merged = merge(extra, added)

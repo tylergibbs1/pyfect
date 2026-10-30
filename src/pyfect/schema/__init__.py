@@ -29,6 +29,7 @@ object, ...), ``to_codec_string_tree(schema)`` as a tree of strings;
 See docs/SCHEMA_DESIGN.md for how schemas are typed.
 """
 
+from pyfect._public import publish
 from pyfect.schema import ast, getter, issue, model, transformation, variant_schema
 from pyfect.schema._arbitrary_constraint import ArbitraryConstraint
 from pyfect.schema._arrays import (
@@ -598,3 +599,5 @@ __all__ = [
     "with_decoding_default_key",
     "with_decoding_default_type_key",
 ]
+
+publish(globals())

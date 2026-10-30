@@ -24,10 +24,10 @@ from typing import Never
 from pyfect import sink as sink_
 from pyfect import stream as stream_
 from pyfect._core import Effect
+from pyfect._os_wait import Cancel, Resume, os_wait
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.errors import Done
 from pyfect.platform_error import PlatformError
-from pyfect.process._os import Cancel, Resume, os_wait
 from pyfect.sink import Sink
 from pyfect.stream import Stream
 

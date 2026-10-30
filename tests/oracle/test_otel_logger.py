@@ -221,16 +221,16 @@ _MONOTONIC_NANOS = 123_456_789
 
 
 class _SkewedClock:
-    def unsafe_now(self) -> float:
+    def now_unsafe(self) -> float:
         return _WALL_NANOS / 1e9
 
-    def unsafe_monotonic(self) -> float:
+    def monotonic_unsafe(self) -> float:
         return _MONOTONIC_NANOS / 1e9
 
-    def unsafe_now_nanos(self) -> int:
+    def now_nanos_unsafe(self) -> int:
         return _WALL_NANOS
 
-    def unsafe_monotonic_nanos(self) -> int:
+    def monotonic_nanos_unsafe(self) -> int:
         return _MONOTONIC_NANOS
 
     def sleep(self, seconds: Seconds) -> fx.Effect[None]:

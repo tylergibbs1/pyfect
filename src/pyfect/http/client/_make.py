@@ -223,7 +223,7 @@ def _send(
             if 400 <= response.status < 600:
                 span.attribute("error.type", str(response.status))
                 now = (
-                    fiber.get_ref(Clock).unsafe_now_nanos()
+                    fiber.get_ref(Clock).now_nanos_unsafe()
                     if fiber.get_ref(TracerTimingEnabled)
                     else 0
                 )

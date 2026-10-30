@@ -144,7 +144,7 @@ class _Core:
         return result, exceeded
 
     def _dispatch(self, fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, Any, Any]:
-        request = fiber._context.unsafe_get(HttpServerRequest)
+        request = fiber._context.get_unsafe(HttpServerRequest)
         result, exceeded = self._find(request)
         if result is None:
             limit = self.config.max_param_length

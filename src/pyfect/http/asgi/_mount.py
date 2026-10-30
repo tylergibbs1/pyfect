@@ -173,7 +173,7 @@ def from_asgi(
     Interrupting the app cancels the call."""
 
     def run(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, HttpServerError]:
-        request = fiber._context.unsafe_get(HttpServerRequest)
+        request = fiber._context.get_unsafe(HttpServerRequest)
         controller = AbortController()
         match request_to_web(request, signal=controller.signal, context=fiber._context):
             case Err(reason):

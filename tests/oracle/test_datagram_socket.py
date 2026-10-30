@@ -163,7 +163,7 @@ def test_waits_for_orphaned_open():
 
             pending.append(resolve)
             started = first_started if len(pending) == 1 else second_started
-            started.unsafe_done(Success(None))
+            started.done_unsafe(Success(None))
 
         return callback(register)
 
@@ -172,7 +172,7 @@ def test_waits_for_orphaned_open():
     yield from first_started.wait()
     interrupted = yield from first.interrupt().fork(start_immediately=True)
     yield from yield_now()
-    assert interrupted.unsafe_poll() is not None, "interruption must finish before open resolves"
+    assert interrupted.poll_unsafe() is not None, "interruption must finish before open resolves"
     second = yield from scoped(socket.reader.as_void()).fork(start_immediately=True)
     yield from yield_now()
     assert len(pending) == 1, "a retry must not overlap an orphaned open"
@@ -195,7 +195,7 @@ def test_resumes_parked_pull():
         lambda batch: sync(lambda: received.extend(texts(batch)))
     ).fork(start_immediately=True)
     yield from yield_now()
-    assert pull.unsafe_poll() is None, "the pull must be parked before delivery"
+    assert pull.poll_unsafe() is None, "the pull must be parked before delivery"
     handles[0].packet("inline")
     yield from yield_now()
     assert received == ["inline"]
@@ -215,8 +215,8 @@ def test_fails_every_parked_pull_on_scope_close():
     yield from scope.close(Success(None))
     assert handles[0].closes == 1
     yield from yield_now()
-    assert first.unsafe_poll() is not None, "scope close must wake the first waiter"
-    assert second.unsafe_poll() is not None, "scope close must wake the second waiter"
+    assert first.poll_unsafe() is not None, "scope close must wake the first waiter"
+    assert second.poll_unsafe() is not None, "scope close must wake the second waiter"
     for fiber in (first, second):
         exit = yield from fiber.join()
         assert isinstance(exit, Failure)
@@ -232,14 +232,14 @@ def test_fails_slot_and_queued_waiters():
     reader = yield from socket.reader
     first = yield from reader.pull.exit().fork(start_immediately=True)
     yield from yield_now()
-    assert first.unsafe_poll() is None, "the first pull occupies the waiter slot"
+    assert first.poll_unsafe() is None, "the first pull occupies the waiter slot"
     second = yield from reader.pull.exit().fork(start_immediately=True)
     yield from yield_now()
-    assert second.unsafe_poll() is None, "the second pull waits behind the slot"
+    assert second.poll_unsafe() is None, "the second pull waits behind the slot"
     handles[0].error(failure())
     yield from yield_now()
-    assert first.unsafe_poll() is not None, "read error must wake the first waiter"
-    assert second.unsafe_poll() is not None, "read error must wake the second waiter"
+    assert first.poll_unsafe() is not None, "read error must wake the first waiter"
+    assert second.poll_unsafe() is not None, "read error must wake the second waiter"
     a = yield from first.join()
     b = yield from second.join()
     assert isinstance(a, Failure)
@@ -267,8 +267,8 @@ def test_keeps_fifo_order():
     handle = handles[0]
     handle.packet("first")
     assert texts((yield from first.join())) == ["first"]
-    assert second.unsafe_poll() is None
-    assert third.unsafe_poll() is None
+    assert second.poll_unsafe() is None
+    assert third.poll_unsafe() is None
     handle.packet("second")
     assert texts((yield from second.join())) == ["second"]
     handle.packet("third")
@@ -390,7 +390,7 @@ def test_resumes_parked_write_all():
         .fork(start_immediately=True)
     )
     yield from yield_now()
-    assert first.unsafe_poll() is None, "writeAll must wait for the runtime to report the batch"
+    assert first.poll_unsafe() is None, "writeAll must wait for the runtime to report the batch"
     assert len(handle.pending) == 1
     handle.pending.pop(0)()
     assert isinstance((yield from first.join()), Success)
@@ -408,7 +408,7 @@ def test_resumes_parked_write_all():
         .fork(start_immediately=True)
     )
     yield from yield_now()
-    assert second.unsafe_poll() is None
+    assert second.poll_unsafe() is None
     handle.pending.pop(0)()
     exit: Exit[None, DatagramSocketError] = yield from second.join()
     assert isinstance(exit, Failure)

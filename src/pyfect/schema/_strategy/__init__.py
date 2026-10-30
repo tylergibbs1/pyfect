@@ -14,8 +14,13 @@ from __future__ import annotations
 from collections.abc import Callable, Hashable
 from typing import Any
 
-from hypothesis import strategies as st
-from hypothesis.errors import InvalidArgument
+from pyfect._extras import missing_extra
+
+try:
+    from hypothesis import strategies as st
+    from hypothesis.errors import InvalidArgument
+except ImportError as error:  # pragma: no cover - depends on the environment
+    raise missing_extra("to_strategy", "hypothesis") from error
 
 from pyfect.exit import Success
 from pyfect.schema import ast

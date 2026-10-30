@@ -35,11 +35,11 @@ from pyfect.metric._kinds import (
     summary_with_timestamp,
     timer,
 )
-from pyfect.metric._metric import Metric, Registration, unsafe_register
+from pyfect.metric._metric import Metric, Registration, register_unsafe
 from pyfect.metric._prometheus import (
     MetricNameMapper,
     prometheus_format,
-    unsafe_prometheus_format,
+    prometheus_format_unsafe,
 )
 from pyfect.metric._refs import (
     Attributes,
@@ -57,7 +57,7 @@ from pyfect.metric._runtime import (
     enable_runtime_metrics_layer,
     fiber_runtime_metrics,
 )
-from pyfect.metric._snapshot import dump, snapshot, unsafe_snapshot
+from pyfect.metric._snapshot import dump, snapshot, snapshot_unsafe
 from pyfect.metric._state import (
     CounterState,
     FrequencyState,
@@ -109,11 +109,11 @@ __all__ = [
     "histogram",
     "linear_boundaries",
     "prometheus_format",
+    "prometheus_format_unsafe",
+    "register_unsafe",
     "snapshot",
+    "snapshot_unsafe",
     "summary",
     "summary_with_timestamp",
     "timer",
-    "unsafe_prometheus_format",
-    "unsafe_register",
-    "unsafe_snapshot",
 ]

@@ -494,7 +494,7 @@ def test_annotate_keeps_provider_identity():
     """Provider Defined / annotate preserves the provider-defined tool identity"""
     tool = NoHandlerRequired({"testArg": "x"}).annotate(T.Title, "Title")
     assert T.is_provider_defined(tool)
-    assert tool.annotations.unsafe_get(T.Title) == "Title"
+    assert tool.annotations.get_unsafe(T.Title) == "Title"
 
 
 _JSON_PARAMS: JsonSchema = {

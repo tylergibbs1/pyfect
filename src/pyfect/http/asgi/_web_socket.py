@@ -315,15 +315,15 @@ async def serve_websocket(
     def finished(_exit: Exit[Any, Any]) -> None:
         loop.call_soon_threadsafe(lambda: None if done.done() else done.set_result(None))
 
-    fiber.unsafe_add_observer(finished)
+    fiber.add_observer_unsafe(finished)
     lost = loop.create_task(ws.lost.wait())
     try:
         await asyncio.wait((done, lost), return_when=asyncio.FIRST_COMPLETED)
         if not done.done():
-            fiber.unsafe_interrupt_as(None, CLIENT_ABORT_ANNOTATION)
+            fiber.interrupt_as_unsafe(None, CLIENT_ABORT_ANNOTATION)
             await done
     except asyncio.CancelledError:
-        fiber.unsafe_interrupt_as(None, CLIENT_ABORT_ANNOTATION)
+        fiber.interrupt_as_unsafe(None, CLIENT_ABORT_ANNOTATION)
         raise
     finally:
         lost.cancel()

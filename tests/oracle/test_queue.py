@@ -52,10 +52,10 @@ def _completes(fiber: fx.Fiber[Any, Any]):
     """Effect's ``assertCompletes``: yield until the fiber is done (at most
     200 times), interrupt it, and report whether it finished."""
     for _ in range(200):
-        if fiber.unsafe_poll() is not None:
+        if fiber.poll_unsafe() is not None:
             break
         yield from fx.yield_now()
-    done = fiber.unsafe_poll() is not None
+    done = fiber.poll_unsafe() is not None
     yield from fiber.interrupt()
     return done
 
@@ -126,15 +126,15 @@ def test_bounded_offer_all_waits_until_capacity_is_released():
     queue = yield from fx.Queue[int].bounded(2)
     fiber = yield from queue.offer_all([1, 2, 3, 4]).fork()
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
 
     assert (yield from queue.take_all()) == [1, 2]
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() is not None
+    assert fiber.poll_unsafe() is not None
 
     assert (yield from queue.take_all()) == [3, 4]
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() == fx.Success([])
+    assert fiber.poll_unsafe() == fx.Success([])
 
 
 @testing.effect
@@ -143,7 +143,7 @@ def test_interrupting_a_suspended_offer_after_end_withdraws_its_message():
     queue = yield from fx.Queue[int, fx.Done].bounded(1)
     yield from queue.offer(1)
     producer = yield from queue.offer(2).fork(start_immediately=True)
-    assert producer.unsafe_poll() is None, "offer must be suspended before end"
+    assert producer.poll_unsafe() is None, "offer must be suspended before end"
 
     yield from queue.end()
     yield from producer.interrupt()
@@ -156,11 +156,11 @@ def test_interrupting_a_suspended_offer_all_after_end_completes_an_empty_queue()
     """interrupting a suspended offerAll after end completes an empty queue"""
     queue = yield from fx.Queue[int, fx.Done].bounded(0)
     producer = yield from queue.offer_all([1, 2]).fork(start_immediately=True)
-    assert producer.unsafe_poll() is None, "offerAll must be suspended before end"
+    assert producer.poll_unsafe() is None, "offerAll must be suspended before end"
 
     yield from queue.end()
     awaiter = yield from queue.await_done().fork(start_immediately=True)
-    assert awaiter.unsafe_poll() is None, "await must wait for the pending offer"
+    assert awaiter.poll_unsafe() is None, "await must wait for the pending offer"
 
     yield from producer.interrupt()
     yield from awaiter.join()
@@ -212,7 +212,7 @@ def test_zero_capacity_take_reserves_the_message_before_resuming_method(method: 
             first = yield from queue.take_all()
         case _:
             first = yield from queue.clear()
-    producer_exit = producer.unsafe_poll()
+    producer_exit = producer.poll_unsafe()
     yield from queue.shutdown()
 
     assert (first, producer_exit) == ([1], None)
@@ -232,8 +232,8 @@ def test_resuming_method_can_shut_down_the_queue_with_another_blocked_producer(m
 
     producer = yield from produce.fork(start_immediately=True)
     pending = yield from queue.offer(2).fork(start_immediately=True)
-    assert producer.unsafe_poll() is None, "first producer must be suspended"
-    assert pending.unsafe_poll() is None, "second producer must be suspended"
+    assert producer.poll_unsafe() is None, "first producer must be suspended"
+    assert pending.poll_unsafe() is None, "second producer must be suspended"
 
     ex = yield from queue.take().exit()
     yield from producer.join()
@@ -258,7 +258,7 @@ def test_resuming_method_does_not_overfill_the_queue_with_reentrant_offers(metho
     yield from queue.offer(4).fork(start_immediately=True)
 
     first = yield from queue.take_all()
-    size = queue.unsafe_size()
+    size = queue.size_unsafe()
     yield from queue.shutdown()
 
     assert first == [0, 1]
@@ -289,11 +289,11 @@ def test_take_n_on_a_partial_batch_does_not_wake_its_taker():
     batch = yield from queue.take_n(2).fork(start_immediately=True)
     single = yield from queue.take().fork(start_immediately=True)
 
-    assert queue.unsafe_offer(1)
+    assert queue.offer_unsafe(1)
     yield from _settle()
 
-    assert batch.unsafe_poll() is None
-    assert single.unsafe_poll() == fx.Success(1)
+    assert batch.poll_unsafe() is None
+    assert single.poll_unsafe() == fx.Success(1)
     yield from queue.offer_all([2, 3])
     assert (yield from batch.join()) == [2, 3]
 
@@ -323,10 +323,10 @@ def test_name_does_not_miss_an_offer_during_the_check_to_registration_yield(
         for _ in range(20):
             yield from fx.yield_now()
 
-        ex = taker.unsafe_poll()
+        ex = taker.poll_unsafe()
         size = yield from queue.size()
         yield from queue.shutdown()
-        assert offerer.unsafe_poll() == fx.Success(True), ops
+        assert offerer.poll_unsafe() == fx.Success(True), ops
         assert ex == fx.Success(1 if name in ("take", "peek") else [1]), ops
         assert size == (1 if name == "peek" else 0), ops
 
@@ -344,8 +344,8 @@ def test_take_n_and_take_between_keep_waiting_on_a_partial_batch():
 
     for _ in range(20):
         yield from fx.yield_now()
-    assert take_n.unsafe_poll() is None
-    assert take_between.unsafe_poll() is None
+    assert take_n.poll_unsafe() is None
+    assert take_between.poll_unsafe() is None
 
     yield from take_n_queue.offer_all([2, 3])
     yield from take_between_queue.offer_all([2, 3])
@@ -371,7 +371,7 @@ def test_take_between_drains_a_waiting_batch_on_failure():
     queue = yield from fx.Queue[int, str].unbounded()
     yield from queue.offer_all([1, 2])
     taker = yield from queue.take_between(5, 8).fork(start_immediately=True)
-    assert taker.unsafe_poll() is None
+    assert taker.poll_unsafe() is None
 
     yield from queue.fail("boom")
     assert (yield from taker.join()) == [1, 2]
@@ -655,25 +655,25 @@ def test_shutdown_unsafe_interrupts_waiting_takers_synchronously():
     queue = yield from fx.Queue[int].unbounded()
     taker = yield from queue.take().fork(start_immediately=True)
 
-    queue.unsafe_shutdown()
+    queue.shutdown_unsafe()
     # The taker resumes through the scheduler, so it finishes on its next turn.
     yield from fx.yield_now()
 
-    assert _interrupted(taker.unsafe_poll())
+    assert _interrupted(taker.poll_unsafe())
 
 
 @testing.effect
 def test_shutdown_unsafe_clears_buffered_messages_and_settles_pending_offers_synchronously():
     """shutdownUnsafe clears buffered messages and settles pending offers synchronously"""
     queue = yield from fx.Queue[int].bounded(1)
-    queue.unsafe_offer(1)
+    queue.offer_unsafe(1)
     offerer = yield from queue.offer(2).fork(start_immediately=True)
 
-    queue.unsafe_shutdown()
+    queue.shutdown_unsafe()
     yield from fx.yield_now()
 
-    assert queue.unsafe_size() == 0
-    assert offerer.unsafe_poll() == fx.Success(False)
+    assert queue.size_unsafe() == 0
+    assert offerer.poll_unsafe() == fx.Success(False)
 
 
 @testing.effect
@@ -683,20 +683,20 @@ def test_shutdown_unsafe_resumes_batch_offers_with_their_unaccepted_suffix():
     producer = yield from queue.offer_all([1, 2, 3]).fork(start_immediately=True)
     assert (yield from queue.take()) == 1
 
-    queue.unsafe_shutdown()
+    queue.shutdown_unsafe()
     yield from fx.yield_now()
 
-    assert producer.unsafe_poll() == fx.Success([3])
+    assert producer.poll_unsafe() == fx.Success([3])
 
 
 @testing.effect
 def test_shutdown_unsafe_returns_true_and_preserves_an_existing_failure():
     """shutdownUnsafe returns true and preserves an existing failure"""
     queue = yield from fx.Queue[int, str].unbounded()
-    queue.unsafe_offer(1)
-    queue.unsafe_fail_cause(fx.cause.fail("boom"))
+    queue.offer_unsafe(1)
+    queue.fail_cause_unsafe(fx.cause.fail("boom"))
 
-    assert queue.unsafe_shutdown()
+    assert queue.shutdown_unsafe()
     assert (yield from queue.take().flip()) == "boom"
 
 
@@ -704,8 +704,8 @@ def test_shutdown_unsafe_returns_true_and_preserves_an_existing_failure():
 def test_shutdown_unsafe_returns_false_when_already_shut_down():
     """shutdownUnsafe returns false when already shut down"""
     queue = yield from fx.Queue[int].unbounded()
-    assert queue.unsafe_shutdown()
-    assert not queue.unsafe_shutdown()
+    assert queue.shutdown_unsafe()
+    assert not queue.shutdown_unsafe()
     assert _interrupted((yield from queue.await_done().exit()))
 
 
@@ -713,7 +713,7 @@ def test_shutdown_unsafe_returns_false_when_already_shut_down():
 def test_shutdown_returns_false_and_preserves_a_completed_queues_failure():
     """shutdown returns false and preserves a completed queue's failure"""
     queue = yield from fx.Queue[int, str].unbounded()
-    queue.unsafe_fail_cause(fx.cause.fail("boom"))
+    queue.fail_cause_unsafe(fx.cause.fail("boom"))
 
     assert (yield from queue.shutdown()) is False
     assert (yield from queue.take().flip()) == "boom"
@@ -748,11 +748,11 @@ def test_await_waits_for_no_items():
     yield from queue.end()
 
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     assert (yield from queue.take_all()) == [1]
     yield from queue.take_all().flip()
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() is not None
+    assert fiber.poll_unsafe() is not None
 
 
 @testing.effect
@@ -831,7 +831,7 @@ def test_zero_capacity_offer_all_drains_in_order_and_completes_a_closing_queue()
     second = yield from queue.clear()
     third = yield from queue.poll()
     yield from fx.yield_now()
-    producer_exit = producer.unsafe_poll()
+    producer_exit = producer.poll_unsafe()
     done = yield from queue.await_done().exit()
 
     assert first == [1]

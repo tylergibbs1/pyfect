@@ -99,7 +99,7 @@ def test_update_and_get_stores_and_returns_the_computed_value():
     """updateAndGet stores and returns the computed value"""
     ref = yield from fx.Ref.make(CURRENT)
     assert (yield from ref.update_and_get(lambda _: UPDATE)) == UPDATE
-    assert ref.unsafe_get() == UPDATE
+    assert ref.get_unsafe() == UPDATE
 
 
 @testing.effect

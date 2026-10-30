@@ -15,6 +15,7 @@ The counters live in a ``RateLimiterStore``: ``layer_store_memory``, or
 ``layer_store_redis`` (shared by every process using that Redis).
 """
 
+from pyfect._public import publish
 from pyfect.persistence.rate_limiter._errors import (
     RATE_LIMITER_ERROR_REASON,
     RateLimiterError,
@@ -77,3 +78,5 @@ __all__ = [
     "make_with_rate_limiter",
     "sleep",
 ]
+
+publish(globals())

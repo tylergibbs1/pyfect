@@ -51,7 +51,7 @@ class _Deadline:
 
         def expire() -> None:
             self.expired = True
-            fiber.unsafe_interrupt_as(None)
+            fiber.interrupt_as_unsafe(None)
 
         # A daemon timer: a stalled test still fails fast with StalledError.
         self._cancel = fiber._scheduler.call_later(timeout, expire, daemon=True)
@@ -120,7 +120,7 @@ class SyncRuntime:
     def _drain(self, fiber: Fiber[Any, Any]) -> None:
         """Interrupt ``fiber`` and let its finalizers run, unless they stall
         too."""
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         try:
             self.scheduler.run_until(
                 lambda: fiber._exit is not None, stall_timeout=self._stall_timeout

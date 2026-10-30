@@ -327,7 +327,7 @@ class Connection:
             request_id = params.get("requestId")
             fiber = self._inflight.get(cast("RequestId", request_id))
             if fiber is not None:
-                return sync(lambda: fiber.unsafe_interrupt_as(None))
+                return sync(lambda: fiber.interrupt_as_unsafe(None))
         return _VOID
 
     def _answered(self, body: JsonObject) -> Effect[None]:

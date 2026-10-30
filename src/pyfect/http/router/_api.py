@@ -64,14 +64,14 @@ def schema_params[T, RD](
 
 def _request_fields(fiber: Fiber[Any, Any]) -> dict[str, object]:
     context = fiber._context
-    request = context.unsafe_get(HttpServerRequest)
+    request = context.get_unsafe(HttpServerRequest)
     return {
         "method": request.method,
         "url": request.url,
         "headers": dict(request.headers),
         "cookies": dict(request.cookies),
-        "pathParams": dict(context.unsafe_get(RouteContext).params),
-        "searchParams": dict(context.unsafe_get(ParsedSearchParams)),
+        "pathParams": dict(context.get_unsafe(RouteContext).params),
+        "searchParams": dict(context.get_unsafe(ParsedSearchParams)),
     }
 
 
@@ -101,7 +101,7 @@ def schema_json[T, RD](
 
     def body(fiber: Fiber[Any, Any]) -> Effect[T, HttpServerError | SchemaError, RD]:
         fields = _request_fields(fiber)
-        request = fiber._context.unsafe_get(HttpServerRequest)
+        request = fiber._context.get_unsafe(HttpServerRequest)
         return request.json.flat_map(lambda json: decode({**fields, "body": parsed(json)}))
 
     return _WithFiber(body)
@@ -254,9 +254,9 @@ def to_http_effect(app_layer: Layer[Any, Any, Any]) -> Effect[Any, Any, Any]:
     def body(fiber: Fiber[Any, Any]) -> Effect[Any, Any, Any]:
         context = fiber._context
         built: Effect[Context[Any], Any, Any] = _with_router(app_layer, None).build_with_memo_map(
-            fork_or_create(context), context.unsafe_get(Scope)
+            fork_or_create(context), context.get_unsafe(Scope)
         )
-        return built.map(lambda ctx: ctx.unsafe_get(HttpRouter).as_http_effect())
+        return built.map(lambda ctx: ctx.get_unsafe(HttpRouter).as_http_effect())
 
     return _WithFiber(body)
 
@@ -333,11 +333,11 @@ def serve(
     def body(fiber: Fiber[Any, Any]) -> Effect[Layer[Any, Any, Any], Any, Any]:
         context = fiber._context
         built: Effect[Context[Any], Any, Any] = with_router.build_with_memo_map(
-            fork_or_create(context), context.unsafe_get(Scope)
+            fork_or_create(context), context.get_unsafe(Scope)
         )
 
         def serving(ctx: Context[Any]) -> Layer[Any, Any, Any]:
-            app = ctx.unsafe_get(HttpRouter).as_http_effect()
+            app = ctx.get_unsafe(HttpRouter).as_http_effect()
             served: Layer[Any, Any, Any] = (
                 server.serve(app) if app_middleware is None else server.serve(app, app_middleware)
             )
@@ -417,7 +417,7 @@ def to_web_handler(
     require_layer(app_layer, "app_layer")
     return to_web_handler_layer_with(
         _with_router(app_layer, router_config),
-        lambda ctx: succeed(ctx.unsafe_get(HttpRouter).as_http_effect()),
+        lambda ctx: succeed(ctx.get_unsafe(HttpRouter).as_http_effect()),
         _app_middleware(middleware, disable_logger),
         memo_map=memo_map,
     )
@@ -437,7 +437,7 @@ def to_asgi(
     require_layer(app_layer, "app_layer")
     return to_asgi_with(
         _with_router(app_layer, router_config),
-        lambda ctx: ctx.unsafe_get(HttpRouter).as_http_effect(),
+        lambda ctx: ctx.get_unsafe(HttpRouter).as_http_effect(),
         middleware=_app_middleware(middleware, disable_logger),
         memo_map=memo_map,
     )

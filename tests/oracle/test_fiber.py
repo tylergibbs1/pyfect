@@ -56,9 +56,9 @@ def test_notifies_all_observers_when_an_observer_cancels_during_exit():
         observed.append(1)
         cancel()
 
-    cancel = fiber.unsafe_add_observer(cancelling)
-    fiber.unsafe_add_observer(lambda _: observed.append(2))
-    fiber.unsafe_interrupt_as(None)
+    cancel = fiber.add_observer_unsafe(cancelling)
+    fiber.add_observer_unsafe(lambda _: observed.append(2))
+    fiber.interrupt_as_unsafe(None)
     assert observed == [1, 2]
 
 
@@ -67,10 +67,10 @@ def test_stops_notifying_an_observer_once_it_is_removed():
     """stops notifying an observer once it is removed"""
     fiber = yield from fx.never.fork_daemon()
     observed: list[int] = []
-    cancels = [fiber.unsafe_add_observer(lambda _, i=i: observed.append(i)) for i in range(3)]
+    cancels = [fiber.add_observer_unsafe(lambda _, i=i: observed.append(i)) for i in range(3)]
     cancels[1]()
     cancels[1]()
-    fiber.unsafe_interrupt_as(None)
+    fiber.interrupt_as_unsafe(None)
     assert observed == [0, 2]
 
 
@@ -133,7 +133,7 @@ def test_interrupt_all_as_awaits_fibers_passed_as_a_one_shot_iterable():
     yield from latch.open().fork()
     yield from fx.Fiber.interrupt_all_as((f for f in [fiber]), 0)
     assert cleaned == [True]
-    exit_ = fiber.unsafe_poll()
+    exit_ = fiber.poll_unsafe()
     assert isinstance(exit_, fx.Failure) and exit_.cause.interruptors == frozenset({0})
 
 
@@ -147,7 +147,7 @@ def test_delivers_a_synchronous_self_interrupt_instead_of_completing_to_success(
     def interrupt_self() -> int:
         current = fx.Fiber.get_current()
         assert current is not None
-        current.unsafe_interrupt_as(None)
+        current.interrupt_as_unsafe(None)
         return 42
 
     child = yield from fx.sync(interrupt_self).fork(start_immediately=True)
@@ -162,7 +162,7 @@ def test_runs_an_async_interrupt_finalizer_exactly_once_in_order():
     def acquire() -> fx.Effect[None]:
         current = fx.Fiber.get_current()
         assert current is not None
-        current.unsafe_interrupt_as(None)
+        current.interrupt_as_unsafe(None)
         events.append("acquired")
         return fx.void
 
@@ -206,6 +206,6 @@ def test_retains_distinct_target_and_interruptor_stack_frames():
     ex = yield from target.await_exit()
     assert isinstance(ex, fx.Failure)
     annotations = fx.cause.reason_annotations(ex.cause.reasons[0])
-    assert annotations.unsafe_get(StackTrace) is target_frame
-    assert annotations.unsafe_get(InterruptorStackTrace) is interruptor_frame
+    assert annotations.get_unsafe(StackTrace) is target_frame
+    assert annotations.get_unsafe(InterruptorStackTrace) is interruptor_frame
     assert "interruptor-call-site.py:2" in ex.cause.pretty()

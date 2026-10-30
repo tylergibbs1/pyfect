@@ -12,7 +12,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 
-from pyfect._core import Effect, _Callback, _FailCause, _Succeed
+from pyfect._core import Effect, _FailCause, _Succeed
+from pyfect._os_wait import os_wait
 from pyfect.cause import die, fail
 from pyfect.sql.error import SqlError
 
@@ -47,7 +48,7 @@ class Worker:
         def register(resume: Callable[[Effect[A, SqlError]], None]) -> None:
             self._executor.submit(outcome).add_done_callback(lambda f: resume(f.result()))
 
-        return _Callback(register)
+        return os_wait(register)
 
     def shutdown(self) -> None:
         """Stop the thread once its queued calls ran."""

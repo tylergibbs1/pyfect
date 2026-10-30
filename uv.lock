@@ -653,9 +653,12 @@ wheels = [
 ]
 
 [[package]]
-name = "pyfect"
+name = "pyfect-dev"
 version = "0.1.0"
 source = { editable = "." }
+dependencies = [
+    { name = "typing-extensions" },
+]
 
 [package.optional-dependencies]
 eventlog = [
@@ -694,7 +697,7 @@ websockets = [
 [package.dev-dependencies]
 dev = [
     { name = "psycopg", extra = ["binary"] },
-    { name = "pyfect", extra = ["eventlog", "httpx", "hypothesis", "msgspec", "otel", "pg", "pydantic", "redis", "server", "websockets"] },
+    { name = "pyfect-dev", extra = ["eventlog", "httpx", "hypothesis", "msgspec", "otel", "pg", "pydantic", "redis", "server", "websockets"] },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -714,6 +717,7 @@ requires-dist = [
     { name = "psycopg", marker = "extra == 'pg'", specifier = ">=3.3" },
     { name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.11" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=8.1" },
+    { name = "typing-extensions", specifier = ">=4.13" },
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.38" },
     { name = "websockets", marker = "extra == 'server'", specifier = ">=15" },
     { name = "websockets", marker = "extra == 'websockets'", specifier = ">=15" },
@@ -723,16 +727,16 @@ provides-extras = ["otel", "hypothesis", "pydantic", "msgspec", "httpx", "websoc
 [package.metadata.requires-dev]
 dev = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3" },
-    { name = "pyfect", extras = ["eventlog"] },
-    { name = "pyfect", extras = ["httpx"] },
-    { name = "pyfect", extras = ["hypothesis"] },
-    { name = "pyfect", extras = ["msgspec"] },
-    { name = "pyfect", extras = ["otel"] },
-    { name = "pyfect", extras = ["pg"] },
-    { name = "pyfect", extras = ["pydantic"] },
-    { name = "pyfect", extras = ["redis"] },
-    { name = "pyfect", extras = ["server"] },
-    { name = "pyfect", extras = ["websockets"] },
+    { name = "pyfect-dev", extras = ["eventlog"] },
+    { name = "pyfect-dev", extras = ["httpx"] },
+    { name = "pyfect-dev", extras = ["hypothesis"] },
+    { name = "pyfect-dev", extras = ["msgspec"] },
+    { name = "pyfect-dev", extras = ["otel"] },
+    { name = "pyfect-dev", extras = ["pg"] },
+    { name = "pyfect-dev", extras = ["pydantic"] },
+    { name = "pyfect-dev", extras = ["redis"] },
+    { name = "pyfect-dev", extras = ["server"] },
+    { name = "pyfect-dev", extras = ["websockets"] },
     { name = "pyright", specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "ruff", specifier = ">=0.17.2" },

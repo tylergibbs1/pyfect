@@ -208,7 +208,7 @@ class _Summary(Series[Any, Any]):
             high = max(high, value)
 
         def get(context: Context) -> SummaryState:
-            now = context.unsafe_get(Clock).unsafe_now_nanos()
+            now = context.get_unsafe(Clock).now_nanos_unsafe()
             samples = sorted(
                 observed[1]
                 for observed in observations
@@ -367,7 +367,7 @@ def summary(
         attributes=attributes,
     )
     return map_input_with_context(
-        inner, lambda value, context: (value, context.unsafe_get(Clock).unsafe_now_nanos())
+        inner, lambda value, context: (value, context.get_unsafe(Clock).now_nanos_unsafe())
     )
 
 

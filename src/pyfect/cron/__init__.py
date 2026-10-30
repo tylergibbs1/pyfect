@@ -9,6 +9,7 @@ seconds first. Times are aware ``datetime`` values; a cron without a zone
 runs in the zone of the datetime it is given. ``schedule.cron`` repeats an
 effect on a cron."""
 
+from pyfect._public import publish
 from pyfect.cron._model import Cron, make
 from pyfect.cron._search import match, next, prev, sequence
 from pyfect.cron._text import CronParseError, format, parse, parse_unsafe
@@ -25,3 +26,5 @@ __all__ = [
     "prev",
     "sequence",
 ]
+
+publish(globals())

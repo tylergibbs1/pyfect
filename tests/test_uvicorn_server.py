@@ -214,3 +214,13 @@ def test_closing_the_serving_scope_stops_the_server() -> None:
         return served, (yield from effect.blocking(lambda: accepts(at)))
 
     assert _run(program()) == ((200, "ok"), False)
+
+
+def test_under_run_sync_inside_a_running_loop_the_server_runs_on_a_loop_of_its_own() -> None:
+    # run_sync blocks the coroutine's loop, so uvicorn must not be put on it.
+    routes = router.add("GET", "/", server_response.text("ok"))
+
+    async def main() -> tuple[int, str]:
+        return _run(_serving(routes, _get("/")))
+
+    assert asyncio.run(main()) == (200, "ok")

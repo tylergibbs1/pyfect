@@ -9,7 +9,7 @@ key), ``makeWith`` is the same constructor with keyword arguments, and
 the combinators are methods. ``Request.complete(entry, exit)`` is
 ``entry.complete(exit)``. ``Effect.promise(setTimeout(0))`` is
 ``yield_now``, ``forkChild({ startImmediately })`` is
-``fork(start_immediately=True)``, ``pollUnsafe`` is ``unsafe_poll``,
+``fork(start_immediately=True)``, ``pollUnsafe`` is ``poll_unsafe``,
 ``Fiber.await`` is ``await_exit`` and ``Effect.requestUnsafe`` is
 ``batching.request_unsafe``. Where Effect polls a fiber after one
 ``yieldNow``, the ports yield a few times (``_settle``): pyfect resumes
@@ -416,7 +416,7 @@ def test_cancelling_a_pending_batch_does_not_poison_requests(cached: bool):
     # Allow execution only after cancelling the first batch and retrying.
     yield from gate.succeed(None)
     yield from _settle
-    ex = nxt.unsafe_poll()
+    ex = nxt.poll_unsafe()
     yield from nxt.interrupt()
     assert ex == fx.Success("Alice")
 
@@ -450,12 +450,12 @@ def test_with_cache_removes_cancelled_entries_from_a_surviving_batch():
     yield from first.interrupt()
     yield from gate.succeed(None)
     yield from _settle
-    assert other.unsafe_poll() == fx.Success("2")
+    assert other.poll_unsafe() == fx.Success("2")
     assert batches == [[2]]
 
     retry = yield from fx.request(GetNameById(1), resolver).fork(start_immediately=True)
     yield from _settle
-    assert retry.unsafe_poll() == fx.Success("1")
+    assert retry.poll_unsafe() == fx.Success("1")
     assert batches == [[2], [1]]
 
 
@@ -495,7 +495,7 @@ def test_with_cache_preserves_coalesced_requests_when_a_caller_cancels(cancel_fi
     yield from gate.succeed(None)
     yield from _settle
 
-    assert remaining.unsafe_poll() == fx.Success("Alice")
+    assert remaining.poll_unsafe() == fx.Success("Alice")
     assert (yield from fx.request(GetNameById(1), resolver)) == "Alice"
     assert batches == [1]
 
@@ -519,7 +519,7 @@ def test_with_cache_completes_many_coalesced_requests_for_one_cache_entry():
 
     assert batches == [1]
     for fiber in fibers:
-        assert fiber.unsafe_poll() == fx.Success("Alice")
+        assert fiber.poll_unsafe() == fx.Success("Alice")
 
 
 @testing.effect
@@ -657,8 +657,8 @@ def test_with_cache_cancellation_does_not_evict_a_replacement_entry():
     yield from gate.succeed(None)
     yield from _settle
 
-    assert replacement.unsafe_poll() == fx.Success("Alice")
-    assert coalesced.unsafe_poll() == fx.Success("Alice")
+    assert replacement.poll_unsafe() == fx.Success("Alice")
+    assert coalesced.poll_unsafe() == fx.Success("Alice")
     assert batches == [[2], [1]]
 
 

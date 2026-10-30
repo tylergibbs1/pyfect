@@ -51,7 +51,7 @@ def test_a_synchronous_self_interrupt_stops_the_fiber():
     @fx.gen
     def child():
         me = yield from fx.current_fiber()
-        me.unsafe_interrupt_as(None)
+        me.interrupt_as_unsafe(None)
         return 42
 
     @fx.gen
@@ -70,7 +70,7 @@ def test_a_map_callback_that_interrupts_its_own_fiber_skips_the_next_map():
     eff = (
         fx.succeed(0)
         .flat_map(lambda _: fx.current_fiber())
-        .map(lambda me: me.unsafe_interrupt_as(None))
+        .map(lambda me: me.interrupt_as_unsafe(None))
         .map(lambda _: ran.append(1))
     )
     ex = fx.testing.run_test_exit(eff)
@@ -85,7 +85,7 @@ def test_a_self_interrupt_runs_the_interrupt_finalizer_once_in_order():
 
     def acquire(me: fx.Fiber[object, object]) -> fx.Effect[None]:
         def body() -> fx.Effect[None]:
-            me.unsafe_interrupt_as(None)
+            me.interrupt_as_unsafe(None)
             events.append("acquired")
             return fx.void
 
@@ -124,9 +124,9 @@ def test_a_parked_fiber_is_finished_before_interrupt_returns_control():
     def program():
         fiber = yield from fx.never.ensuring(fx.sync(lambda: log.append("finalizer"))).fork()
         yield from fx.yield_now()
-        yield from fx.sync(lambda: fiber.unsafe_interrupt_as(None))
+        yield from fx.sync(lambda: fiber.interrupt_as_unsafe(None))
         log.append("next step")
-        return fiber.unsafe_poll()
+        return fiber.poll_unsafe()
 
     ex = run(program)
     assert log == ["finalizer", "next step"]
@@ -155,10 +155,10 @@ def test_the_exit_is_final_once_an_interrupt_finishes_a_fiber():
     @fx.gen
     def program():
         fiber = yield from fx.never.fork()
-        fiber.unsafe_interrupt_as(None)
-        first = fiber.unsafe_poll()
+        fiber.interrupt_as_unsafe(None)
+        first = fiber.poll_unsafe()
         yield from fx.yield_now()
-        return first, fiber.unsafe_poll()
+        return first, fiber.poll_unsafe()
 
     first, later = run(program)
     assert first is not None and later is first
@@ -214,7 +214,7 @@ def test_a_resume_that_lands_before_the_interrupt_keeps_its_failure_alone():
         fiber = yield from fx.callback(register).fork()
         yield from fx.yield_now()
         resumes[0](fx.fail("boom"))
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         return (yield from fiber.await_exit())
 
     ex = run(program)
@@ -235,7 +235,7 @@ def _resumed_then_interrupted[A](
         fiber = yield from fx.callback(register).and_then(after_resume).fork()
         yield from fx.yield_now()
         resumes[0](resume_with)
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         return (yield from fiber.await_exit())
 
     return run(program)
@@ -276,7 +276,7 @@ def test_an_uninterruptible_wait_resumed_before_an_interrupt_finishes_its_run():
         fiber = yield from body.fork()
         yield from fx.yield_now()
         resumes[0](fx.void)
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         return (yield from fiber.await_exit())
 
     assert run(program) == fx.Success("done")

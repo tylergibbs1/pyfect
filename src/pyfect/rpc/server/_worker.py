@@ -65,7 +65,7 @@ def make_protocol_worker_runner() -> Effect[
                 return write(client_id, message)
 
             def end_program(_: object) -> Effect[None]:
-                return sync(lambda: scheduler.schedule(lambda: fiber.unsafe_interrupt_as(fiber.id)))
+                return sync(lambda: scheduler.schedule(lambda: fiber.interrupt_as_unsafe(fiber.id)))
 
             yield from fork_scoped(
                 backing.run(on_message).tap_cause(log_error).on_exit(end_program)

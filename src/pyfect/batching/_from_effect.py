@@ -36,7 +36,7 @@ def from_effect[Q, E](f: Callable[[Entry[Q]], Effect[object, E]]) -> RequestReso
                         if remaining == 0:
                             resume(_Succeed(None))
 
-                    child.unsafe_add_observer(observe)
+                    child.add_observer_unsafe(observe)
 
             return _Callback(register)
 

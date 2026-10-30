@@ -109,3 +109,6 @@ class Brand[A, B]:
     def is_(self, value: A) -> TypeGuard[B]:
         """``value`` passes the checks (and so is already a ``B`` at run time)."""
         return isinstance(self.result(value), Ok)
+
+
+__all__ = ["Brand", "BrandError"]

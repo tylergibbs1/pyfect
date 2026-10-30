@@ -83,7 +83,7 @@ def test_an_interrupted_take_does_not_count_its_attempt(tmp_path: Path, store: S
         seen.append((yield from fail))
         last = yield from queue.take(lambda _v, meta: fx.succeed(meta.attempts)).fork_scoped()
         yield from fx.testing.with_live(fx.sleep(0.2))
-        seen.append("waiting" if last.unsafe_poll() is None else "delivered")
+        seen.append("waiting" if last.poll_unsafe() is None else "delivered")
 
     suite.run(store(tmp_path), body)
     assert seen == [("held", 1), ("held", 1), 1, 2, "waiting"]
@@ -171,9 +171,9 @@ def test_retry_delays_replay_the_schedule_on_simulated_time() -> None:
         for delay in (1, 2, 2):
             fiber = yield from take_fail.fork_scoped()
             yield from fx.testing.adjust(delay - 0.1)
-            early = fiber.unsafe_poll() is not None
+            early = fiber.poll_unsafe() is not None
             yield from fx.testing.adjust(0.1)
-            on_time = fiber.unsafe_poll() is not None
+            on_time = fiber.poll_unsafe() is not None
             gaps.append(f"{delay}s early={early} on_time={on_time}")
             yield from fiber.join()
 

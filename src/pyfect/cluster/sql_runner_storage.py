@@ -138,7 +138,7 @@ class _Storage:
             )
 
             def stop() -> Effect[None]:
-                if fiber.unsafe_poll() is not None:
+                if fiber.poll_unsafe() is not None:
                     return void
                 return fork_in(
                     fiber.interrupt(), self.layer_scope, start_immediately=True
@@ -149,7 +149,7 @@ class _Storage:
         return gen(body)
 
     def rebuild_lock_conn(self, from_: _Held | None = None) -> Effect[None]:
-        rebuild = None if self.lock_conn is None else self.lock_conn.unsafe_rebuild(from_=from_)
+        rebuild = None if self.lock_conn is None else self.lock_conn.rebuild_unsafe(from_=from_)
         if rebuild is None:
             return void
         # A stalled release must not block later rebuilds.
@@ -195,12 +195,12 @@ class _Storage:
         at entry is replaced (or a failed rebuild retried)."""
 
         def run() -> Effect[A, E]:
-            ready = None if self.lock_conn is None else self.lock_conn.unsafe_get()
+            ready = None if self.lock_conn is None else self.lock_conn.get_unsafe()
 
             def failed(_: Any) -> Effect[None]:
                 if ready is not None:
                     return self.rebuild_lock_conn(ready)
-                if self.lock_conn is not None and self.lock_conn.unsafe_get() is None:
+                if self.lock_conn is not None and self.lock_conn.get_unsafe() is None:
                     return self.rebuild_lock_conn()
                 return void
 

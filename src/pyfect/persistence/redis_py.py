@@ -1,4 +1,4 @@
-"""``Redis`` on redis-py (``pip install pyfect[redis]``), Effect's
+"""``Redis`` on redis-py (the ``pyfect-dev[redis]`` extra), Effect's
 ``NodeRedis``::
 
     layer = redis_py.layer("redis://localhost:6379")
@@ -25,11 +25,19 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
+from pyfect._extras import missing_extra
+
+try:
+    import redis  # noqa: F401  # pyright: ignore[reportUnusedImport]
+except ImportError as error:  # pragma: no cover - depends on the environment
+    raise missing_extra("pyfect.persistence.redis_py", "redis") from error
+
 from pyfect._core import Effect
+from pyfect._os_wait import os_wait
 from pyfect.config import Config, ConfigError
 from pyfect.config._config import unwrap
 from pyfect.context import Context, Tag
-from pyfect.effect import callback, fail, gen, succeed, sync
+from pyfect.effect import fail, gen, succeed, sync
 from pyfect.layer import Layer, effect_context
 from pyfect.persistence.redis import (
     OpenConnection,
@@ -78,7 +86,7 @@ class _Loop:
     def run[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Effect[A, RedisError]:
         """Run ``make()`` on the loop; interrupting cancels it."""
 
-        def register(resume: Callable[[Effect[A, RedisError]], None]) -> Effect[None]:
+        def register(resume: Callable[[Effect[A, RedisError]], None]) -> Callable[[], bool]:
             future: Future[A] = asyncio.run_coroutine_threadsafe(make(), self.loop)
 
             def done(finished: Future[A]) -> None:
@@ -92,9 +100,9 @@ class _Loop:
                     resume(fail(RedisError(cause=_with_code(error))))
 
             future.add_done_callback(done)
-            return sync(future.cancel).as_void()
+            return future.cancel
 
-        return callback(register)
+        return os_wait(register)
 
     def stop(self) -> Effect[None]:
         return sync(lambda: self.loop.call_soon_threadsafe(self.loop.stop)).as_void()

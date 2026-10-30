@@ -12,6 +12,7 @@ reverse lookup); ``layer_static`` answers from a fixed zone, for tests;
 validated frozen dataclasses; ``make_record`` builds one as a ``Result``.
 """
 
+from pyfect._public import publish
 from pyfect.net.dns._error import DnsError, DnsErrorReason, DnsMethod
 from pyfect.net.dns._records import (
     A,
@@ -87,3 +88,5 @@ __all__ = [
     "record_types",
     "reverse_name",
 ]
+
+publish(globals())

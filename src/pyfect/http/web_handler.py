@@ -301,18 +301,18 @@ def _handle(
             error = exit.cause.squash() if not isinstance(exit, Success) else None
             result.set_exception(error or RuntimeError("the app sent no response"))
 
-    fiber.unsafe_add_observer(on_exit)
-    if fiber.unsafe_poll() is None and signal is not None:
+    fiber.add_observer_unsafe(on_exit)
+    if fiber.poll_unsafe() is None and signal is not None:
 
         def abort() -> None:
-            fiber.unsafe_interrupt_as(None, CLIENT_ABORT_ANNOTATION)
+            fiber.interrupt_as_unsafe(None, CLIENT_ABORT_ANNOTATION)
 
         remove = signal.add_listener(abort)
 
         def stop_listening(_exit: Exit[Any, Any]) -> None:
             remove()
 
-        fiber.unsafe_add_observer(stop_listening)
+        fiber.add_observer_unsafe(stop_listening)
     return result
 
 
@@ -425,7 +425,7 @@ def from_web_handler(
     interrupting it fires the Web request's signal. Needs an asyncio run."""
 
     def run(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, HttpServerError]:
-        request = fiber._context.unsafe_get(HttpServerRequest)
+        request = fiber._context.get_unsafe(HttpServerRequest)
         controller = AbortController()
         match request_to_web(request, signal=controller.signal, context=fiber._context):
             case Err(reason):

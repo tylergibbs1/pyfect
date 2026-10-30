@@ -80,7 +80,7 @@ class _MemoryStore:
             entry = _Entry(id, element, 0, "pending", visible_at, now)
             queue.entries[id] = entry
             queue.pending[entry] = None
-            queue.latch.unsafe_open()
+            queue.latch.open_unsafe()
 
         return sync(run)
 
@@ -97,7 +97,7 @@ class _MemoryStore:
         def requeue() -> None:
             entry.state = "pending"
             queue.pending[entry] = None
-            queue.latch.unsafe_open()
+            queue.latch.open_unsafe()
 
         def retry_after(delay: Seconds) -> None:
             entry.visible_at = now + to_millis(delay)
@@ -120,7 +120,7 @@ class _MemoryStore:
         entry.state = "processing"
         entry.attempts += 1
         del queue.pending[entry]
-        queue.latch.unsafe_open()
+        queue.latch.open_unsafe()
         return add_finalizer(lambda exit_: self._settle(queue, entry, options, exit_)).as_(
             TakenElement(entry.id, entry.attempts, entry.element)
         )
@@ -130,7 +130,7 @@ class _MemoryStore:
             queue = self._queue(options.name)
             while True:
                 # close before scanning, so a change after the scan reopens it
-                queue.latch.unsafe_close()
+                queue.latch.close_unsafe()
                 now = now_millis(self._clock)
                 next_visible_at = math.inf
                 item: _Entry | None = None

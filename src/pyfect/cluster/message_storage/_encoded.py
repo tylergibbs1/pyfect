@@ -118,7 +118,7 @@ class EncodedStorage(Protocol):
 
 
 def now_millis(clock: ClockService) -> int:
-    return clock.unsafe_now_nanos() // 1_000_000
+    return clock.now_nanos_unsafe() // 1_000_000
 
 
 def json_copy[T](value: T) -> T:
@@ -298,7 +298,7 @@ class _EncodedBase:
                 except S.SchemaError as error:
                     request_id = Snowflake(int(item.envelope["requestId"]))
                     defect = ReplyWithContext.from_defect(
-                        id=self._snowflakes.unsafe_next(),
+                        id=self._snowflakes.next_unsafe(),
                         request_id=request_id,
                         defect=_envelope_defect(error),
                     )
@@ -344,7 +344,7 @@ class _EncodedBase:
                 ignored.add(request_id)
                 replies.append(
                     WithExit(
-                        id=self._snowflakes.unsafe_next(),
+                        id=self._snowflakes.next_unsafe(),
                         request_id=Snowflake(int(request_id)),
                         exit=exit_.die(decoded.error),
                     )

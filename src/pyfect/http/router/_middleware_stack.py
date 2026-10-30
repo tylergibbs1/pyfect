@@ -39,7 +39,7 @@ def middleware_of(context: Context[Any]) -> list[MiddlewareFn]:
     """Every stack's functions, innermost first, each once: a function
     shared by several stacks runs at its outermost position."""
     stacks = [
-        value for tag, value in context.unsafe_map.items() if issubclass(tag, MiddlewareStack)
+        value for tag, value in context.map_unsafe.items() if issubclass(tag, MiddlewareStack)
     ]
     if not stacks:
         return []

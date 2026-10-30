@@ -42,7 +42,7 @@ def test_set_clear_interrupts_a_fiber_a_finalizer_adds_meanwhile():
     yield from fiber_set.clear()
 
     assert (yield from fiber_set.size()) == 0
-    assert added[0].unsafe_poll() is not None
+    assert added[0].poll_unsafe() is not None
 
 
 @testing.effect
@@ -55,7 +55,7 @@ def test_map_clear_interrupts_a_fiber_a_finalizer_adds_under_a_new_key():
     yield from fiber_map.clear()
 
     assert (yield from fiber_map.size()) == 0
-    assert added[0].unsafe_poll() is not None
+    assert added[0].poll_unsafe() is not None
 
 
 @testing.effect
@@ -67,8 +67,8 @@ def test_map_clear_keeps_a_fiber_a_finalizer_puts_under_a_cleared_key():
 
     yield from fiber_map.clear()
 
-    assert fiber_map.unsafe_get("a") is added[0]
-    assert added[0].unsafe_poll() is None
+    assert fiber_map.get_unsafe("a") is added[0]
+    assert added[0].poll_unsafe() is None
 
 
 @testing.effect
@@ -81,7 +81,7 @@ def test_map_clear_visits_a_key_that_left_and_was_set_again_meanwhile():
 
     yield from fiber_map.clear()
 
-    assert added[0].unsafe_poll() is not None
+    assert added[0].poll_unsafe() is not None
     assert (yield from fiber_map.size()) == 0
 
 
@@ -144,8 +144,8 @@ def test_handle_clear_can_be_interrupted_while_waiting():
     interrupting = yield from clearing.interrupt().fork(start_immediately=True)
     yield from testing.adjust(0.01)
 
-    assert clearing.unsafe_poll() is not None
-    assert interrupting.unsafe_poll() is not None
-    assert handle.unsafe_get() is not None
+    assert clearing.poll_unsafe() is not None
+    assert interrupting.poll_unsafe() is not None
+    assert handle.get_unsafe() is not None
     yield from testing.adjust(2)
-    assert handle.unsafe_get() is None
+    assert handle.get_unsafe() is None

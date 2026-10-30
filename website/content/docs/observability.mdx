@@ -23,7 +23,7 @@ of a function. Spans nest across forked fibers, and logs inside a span become it
 <include meta='title="tracing.py"'>../../snippets/observability/tracing.py</include>
 
 The native tracer keeps spans in memory. To export them, install the OpenTelemetry bridge
-(`pyfect[otel]`) with `otel.sdk.layer(...)`: spans, logs and metrics go to OpenTelemetry's SDK
+(`pyfect-dev[otel]`) with `otel.sdk.layer(...)`: spans, logs and metrics go to OpenTelemetry's SDK
 exporters.
 
 ## Metrics

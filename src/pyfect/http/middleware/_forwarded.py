@@ -105,7 +105,7 @@ def x_forwarded_headers(
         app: Effect[HttpServerResponse, E, R],
     ) -> Effect[HttpServerResponse, E, R | HttpServerRequest]:
         def body(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, E, R]:
-            request = _apply(fiber._context.unsafe_get(HttpServerRequest), trusted)
+            request = _apply(fiber._context.get_unsafe(HttpServerRequest), trusted)
             return _Locally(app, lambda ctx: ctx.add(HttpServerRequest, request))
 
         return _WithFiber(body)

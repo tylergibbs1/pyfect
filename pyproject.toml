@@ -1,18 +1,27 @@
 [project]
-name = "pyfect"
+name = "pyfect-dev"
 version = "0.1.0"
 description = "Effect-TS for Python: typed effects, a real fiber runtime, structured concurrency, services and layers."
 readme = "README.md"
 authors = [{ name = "Tyler Gibbs", email = "tylergibbs048@gmail.com" }]
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    # TypedDict extra_items (PEP 728) for the GraphQL error schemas.
+    "typing-extensions>=4.13",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
+
+[project.urls]
+Homepage = "https://pyfect.dev"
+Repository = "https://github.com/tylergibbs1/pyfect"
+Documentation = "https://pyfect.dev/docs"
 
 [project.entry-points.pytest11]
 pyfect = "pyfect.testing.plugin"
@@ -55,18 +64,22 @@ eventlog = [
 requires = ["uv_build>=0.12.15,<0.13.0"]
 build-backend = "uv_build"
 
+[tool.uv.build-backend]
+# The distribution is pyfect-dev (PyPI's pyfect is another project); the import name is pyfect.
+module-name = "pyfect"
+
 [dependency-groups]
 dev = [
-    "pyfect[otel]",
-    "pyfect[hypothesis]",
-    "pyfect[pydantic]",
-    "pyfect[msgspec]",
-    "pyfect[httpx]",
-    "pyfect[websockets]",
-    "pyfect[pg]",
-    "pyfect[server]",
-    "pyfect[redis]",
-    "pyfect[eventlog]",
+    "pyfect-dev[otel]",
+    "pyfect-dev[hypothesis]",
+    "pyfect-dev[pydantic]",
+    "pyfect-dev[msgspec]",
+    "pyfect-dev[httpx]",
+    "pyfect-dev[websockets]",
+    "pyfect-dev[pg]",
+    "pyfect-dev[server]",
+    "pyfect-dev[redis]",
+    "pyfect-dev[eventlog]",
     "psycopg[binary]>=3.3",
     "pyright>=1.1.414",
     "pytest>=9.1.1",

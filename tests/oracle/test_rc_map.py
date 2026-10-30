@@ -219,7 +219,7 @@ def test_an_invalidated_entrys_idle_timer_cannot_remove_its_replacement():
     assert released == []
     assert (yield from _in(new_scope, rc_map.get("key"))) == 2
     yield from old_scope.close(fx.Success(None))
-    assert _interrupted(idle_fiber.unsafe_poll())
+    assert _interrupted(idle_fiber.poll_unsafe())
     yield from testing.adjust(1.0)
     replacement = yield from fx.scoped(rc_map.get_option("key"))
     after_timer = list(released)

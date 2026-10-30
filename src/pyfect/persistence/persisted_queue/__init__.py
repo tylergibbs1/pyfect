@@ -18,6 +18,7 @@ Queues come from ``PersistedQueueFactory`` (``layer``) over a
 completed (and, optionally, failed) elements.
 """
 
+from pyfect._public import publish
 from pyfect.persistence.persisted_queue._error import PersistedQueueError
 from pyfect.persistence.persisted_queue._memory import layer_store_memory, make_store_memory
 from pyfect.persistence.persisted_queue._queue import (
@@ -70,3 +71,5 @@ __all__ = [
     "make_store_redis",
     "make_store_sql",
 ]
+
+publish(globals())

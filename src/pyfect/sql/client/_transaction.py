@@ -273,7 +273,7 @@ class WithTransaction:
             body: Effect[A, E, R] = _Locally(restore(effect), lambda _: inner)
 
             def finish(exit_: Exit[A, E]) -> Effect[A, E | SqlError, R]:
-                end = self._end(conn, depth, exit_, span, clock.unsafe_now_nanos())
+                end = self._end(conn, depth, exit_, span, clock.now_nanos_unsafe())
 
                 def done(_: object) -> Effect[A, E]:
                     nonlocal committed
@@ -324,7 +324,7 @@ class WithTransaction:
         settled = _on_exit(transaction, settle)
         if parent is None:
             return settled
-        semaphore: Semaphore = services.unsafe_get(self._semaphore_tag)
+        semaphore: Semaphore = services.get_unsafe(self._semaphore_tag)
         return semaphore.with_permits(settled)
 
     def _end(

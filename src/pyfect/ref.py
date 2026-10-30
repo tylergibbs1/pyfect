@@ -26,7 +26,7 @@ class Ref[A]:
     def make[T](value: T) -> Effect[Ref[T]]:
         return _Sync(lambda: Ref(value))
 
-    def unsafe_get(self) -> A:
+    def get_unsafe(self) -> A:
         return self._value
 
     def get(self) -> Effect[A]:
@@ -116,3 +116,6 @@ class Ref[A]:
             return result
 
         return _Sync(run)
+
+
+__all__ = ["Ref"]

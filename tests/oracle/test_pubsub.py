@@ -323,7 +323,7 @@ def test_publish_does_not_increase_size_while_no_subscribers():
     pubsub = yield from PubSub[int].dropping(2)
     yield from pubsub.publish(1)
     yield from pubsub.publish(2)
-    assert pubsub.unsafe_size() == 0
+    assert pubsub.size_unsafe() == 0
 
 
 @testing.effect
@@ -331,7 +331,7 @@ def test_publish_all_does_not_increase_size_while_no_subscribers():
     """publishAll does not increase size while no subscribers"""
     pubsub = yield from PubSub[int].dropping(2)
     yield from pubsub.publish_all([1, 2])
-    assert pubsub.unsafe_size() == 0
+    assert pubsub.size_unsafe() == 0
 
 
 @pytest.mark.parametrize("capacity", [0, -1])
@@ -609,10 +609,10 @@ def test_a_take_that_starts_waiting_after_unsubscribe_is_interrupted(ops: int):
     fiber = yield from _budget(subscription.take(), ops).fork(start_immediately=True)
     yield from scope.close(fx.Success(None))
     for _ in range(100):
-        if fiber.unsafe_poll() is not None:
+        if fiber.poll_unsafe() is not None:
             break
         yield from fx.yield_now()
-    assert _interrupted(fiber.unsafe_poll())
+    assert _interrupted(fiber.poll_unsafe())
 
 
 @pytest.mark.parametrize("ops", _BUDGETS)
@@ -644,7 +644,7 @@ def test_stream_from_pub_sub_completes_after_shutdown():
     pubsub = yield from PubSub[int].unbounded()
     fiber = yield from stream.from_pubsub(pubsub).run_collect().fork()
     yield from fx.yield_now()
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from pubsub.shutdown()
     assert (yield from fiber.join()) == []
 
@@ -677,8 +677,8 @@ def test_end_take_delivers_data_published_during_waiter_registration_before_the_
     pubsub = yield from PubSub[int].unbounded()
     subscription = yield from pubsub.subscribe()
     fiber = yield from _budget(subscription.take(), ops).fork(start_immediately=True)
-    pubsub.unsafe_publish(1)
-    pubsub.unsafe_end(0)
+    pubsub.publish_unsafe(1)
+    pubsub.end_unsafe(0)
 
     first = yield from fiber.join()
     last = yield from subscription.take()
@@ -694,8 +694,8 @@ def test_end_take_all_delivers_data_published_during_waiter_registration_before_
     pubsub = yield from PubSub[int].unbounded()
     subscription = yield from pubsub.subscribe()
     fiber = yield from _budget(subscription.take_all(), ops).fork(start_immediately=True)
-    pubsub.unsafe_publish(1)
-    pubsub.unsafe_end(0)
+    pubsub.publish_unsafe(1)
+    pubsub.end_unsafe(0)
 
     first = yield from fiber.join()
     last = yield from subscription.take_all()
@@ -713,7 +713,7 @@ def test_end_delivers_buffered_messages_before_the_final_message_and_rejects_lat
     assert (yield from pubsub.end(-1)) is False
     assert (yield from pubsub.publish(3)) is False
     assert (yield from pubsub.publish_all([3])) is False
-    assert pubsub.unsafe_publish(3) is False
+    assert pubsub.publish_unsafe(3) is False
 
     assert (yield from subscription.take_all()) == [1, 2]
     assert (yield from subscription.take()) == 0
@@ -804,7 +804,7 @@ def test_end_rejects_a_backpressured_publish_that_yields_before_registering_its_
     yield from pubsub.publish(1)
     publisher = yield from _budget(pubsub.publish(2), ops).fork(start_immediately=True)
 
-    pubsub.unsafe_end(0)
+    pubsub.end_unsafe(0)
     yield from fx.yield_now()
 
     assert (yield from subscription.take()) == 1

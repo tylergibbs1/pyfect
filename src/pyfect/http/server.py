@@ -182,8 +182,10 @@ layer_services: Layer[Path | HttpPlatform | FileSystem | Generator] = merge(
 ``FileSystem``."""
 
 __all__ = [
+    "HttpApp",
     "HttpServer",
     "HttpServerService",
+    "Middleware",
     "address_formatted_with",
     "format_address",
     "layer_services",

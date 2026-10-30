@@ -158,7 +158,7 @@ def _make_handlers() -> Any:
 
     def deferred_user(_: Any) -> Any:
         deferred = Deferred[User, Any]()
-        deferred.unsafe_done(effect.succeed(User(id="1", name="John")))  # pyright: ignore[reportArgumentType]
+        deferred.done_unsafe(effect.succeed(User(id="1", name="John")))  # pyright: ignore[reportArgumentType]
         return effect.succeed(deferred)
 
     def stream_users(request: Any) -> Any:

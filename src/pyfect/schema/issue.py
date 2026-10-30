@@ -295,3 +295,30 @@ def _expected_message(expected: str, input: Option[object]) -> str:
 
 def _show(input: Some[object]) -> str:
     return format_unknown(input.value)
+
+
+__all__ = [
+    "AnyOf",
+    "Composite",
+    "Encoding",
+    "Filter",
+    "Forbidden",
+    "InvalidType",
+    "InvalidValue",
+    "Issue",
+    "IssueAnnotations",
+    "Leaf",
+    "MissingKey",
+    "OneOf",
+    "Path",
+    "PathKey",
+    "Pointer",
+    "UnexpectedKey",
+    "filter_message",
+    "format_check",
+    "format_issue",
+    "format_path",
+    "is_issue",
+    "leaf_message",
+    "reported",
+]

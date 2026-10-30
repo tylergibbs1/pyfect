@@ -22,6 +22,7 @@ from pyfect._context_effects import context, provide_context
 from pyfect._core import Effect, Restore, uninterruptible_mask
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
+from pyfect._os_wait import Resume, os_wait
 from pyfect.context import Context
 from pyfect.effect import fail, gen, succeed, suspend, sync, void
 from pyfect.exit import Exit, Success
@@ -33,7 +34,6 @@ from pyfect.net.net_address import (
     inet_address_from_native_unsafe,
     is_multicast,
 )
-from pyfect.process._os import Resume, os_wait
 from pyfect.scope import Scope, acquire_release
 from pyfect.socket._connection import Signal
 from pyfect.socket.datagram._errors import (
@@ -389,15 +389,15 @@ class _Shared:
         def settled(exit: Exit[BackingSocket, Any]) -> None:
             if isinstance(exit, Success):
                 exit.value.close()
-            self.free.unsafe_open()
+            self.free.open_unsafe()
 
-        opening.unsafe_add_observer(settled)
+        opening.add_observer_unsafe(settled)
 
     def release(self, state: ReaderState) -> None:
         state.close()
         self.current = None
-        self.latch.unsafe_close()
-        self.free.unsafe_open()
+        self.latch.close_unsafe()
+        self.free.open_unsafe()
 
 
 def _build(
@@ -409,7 +409,7 @@ def _build(
     shared = _Shared()
 
     def acquire(restore: Restore) -> Generator[Effect[Any, Any, Any], Any, Reader]:
-        while not shared.free.unsafe_close():
+        while not shared.free.close_unsafe():
             yield from restore(shared.free.wait())
         scope = yield from Scope()
         state = ReaderState(buffer, on_error)
@@ -424,7 +424,7 @@ def _build(
         state.opened(handle)
         opened = _Open(state, handle)
         shared.current = opened
-        shared.latch.unsafe_open()
+        shared.latch.open_unsafe()
         yield from scope.add_finalizer(lambda _: sync(lambda: shared.release(state)))
         return _StateReader(opened)
 

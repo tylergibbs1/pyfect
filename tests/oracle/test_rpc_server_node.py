@@ -143,7 +143,7 @@ def test_never(suite: str) -> None:
         client = yield from UsersClient()
         fiber = yield from client.never().fork()
         yield from sleep(0.5)
-        assert fiber.unsafe_poll() is None
+        assert fiber.poll_unsafe() is None
         yield from fiber.interrupt()
         yield from sleep(0.1)
         protocol = yield from ServerProtocol()

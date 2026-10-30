@@ -66,11 +66,11 @@ class ScopedRef[A]:
         """A ref holding ``evaluate()``, which has no resources."""
         return ScopedRef.from_acquire(sync_effect(evaluate))
 
-    def unsafe_get(self) -> A:
+    def get_unsafe(self) -> A:
         return self._current[1]
 
     def get(self) -> Effect[A]:
-        return _Sync(self.unsafe_get)
+        return _Sync(self.get_unsafe)
 
     @overload
     def set[X](self, acquire: Effect[A, X, Scope]) -> Effect[None, X]: ...
@@ -99,3 +99,6 @@ class ScopedRef[A]:
 
     def __repr__(self) -> str:
         return f"ScopedRef({self._current[1]!r})"
+
+
+__all__ = ["ScopedRef"]

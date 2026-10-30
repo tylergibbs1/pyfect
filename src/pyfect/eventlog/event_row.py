@@ -41,6 +41,7 @@ __all__ = [
     "PatchPayload",
     "Payload",
     "RemovePayload",
+    "Row",
     "SetPayload",
     "compaction",
     "handler",

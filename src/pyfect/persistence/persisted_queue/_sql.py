@@ -188,7 +188,7 @@ class _SqlStore:
         def nudge() -> None:
             state = self._states.peek(name)
             if state is not None:
-                state.nudge.unsafe_open()
+                state.nudge.open_unsafe()
 
         # wake takers once the offer is committed
         return (

@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
+from pyfect._extras import missing_extra
 from pyfect.http.request import HttpClientRequest
 
 REQUEST_DEFAULT_OPTIONS: Final = frozenset(("headers", "params", "cookies", "auth"))
@@ -80,25 +81,40 @@ def _cookie_header(cookies: object) -> tuple[tuple[str, str], ...]:
             )
 
 
+def import_httpx():  # the inferred return type is the httpx module
+    """The ``httpx`` module, imported when a client is made, so that
+    ``pyfect.http`` imports without the ``httpx`` extra."""
+    try:
+        import httpx
+    except ImportError as error:
+        raise missing_extra("pyfect.http.httpx_client", "httpx") from error
+    return httpx
+
+
+def _header_pairs(headers: Any) -> tuple[tuple[str, str], ...]:
+    if headers is None:
+        return ()
+    return tuple(
+        (name.lower(), value) for name, value in import_httpx().Headers(headers).multi_items()
+    )
+
+
+def _param_pairs(params: Any) -> tuple[tuple[str, str], ...]:
+    if params is None:
+        return ()
+    return tuple(import_httpx().QueryParams(params).multi_items())
+
+
 def split_options(options: Mapping[str, Any]) -> tuple[RequestDefaults, dict[str, Any]]:
     """``options`` split into the request defaults and the rest (passed to
     ``httpx.AsyncClient``). Raises ``TypeError`` for a default pyfect could
     not keep from following a redirect to another origin."""
-    import httpx
-
     transport = {
         name: value for name, value in options.items() if name not in REQUEST_DEFAULT_OPTIONS
     }
-    headers = options.get("headers")
-    params = options.get("params")
-    header_pairs = (
-        ()
-        if headers is None
-        else tuple((name.lower(), value) for name, value in httpx.Headers(headers).multi_items())
-    )
     defaults = RequestDefaults(
-        headers=header_pairs + _cookie_header(options.get("cookies")),
-        params=() if params is None else tuple(httpx.QueryParams(params).multi_items()),
+        headers=_header_pairs(options.get("headers")) + _cookie_header(options.get("cookies")),
+        params=_param_pairs(options.get("params")),
         basic_auth=_basic_auth(options.get("auth")),
     )
     return defaults, transport

@@ -118,7 +118,7 @@ def stdio_harness(
                 text = chunk.decode() if isinstance(chunk, bytes) else chunk
                 return fx.sync(
                     lambda: [
-                        stdout.unsafe_offer(json.loads(line)) for line in text.splitlines() if line
+                        stdout.offer_unsafe(json.loads(line)) for line in text.splitlines() if line
                     ]
                 ).as_void()
 

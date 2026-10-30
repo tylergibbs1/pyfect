@@ -157,7 +157,7 @@ class _Serialized:
         self._entries[message.id] = entry
 
         def send(payload: object) -> Effect[None, Any]:
-            if self._closing.unsafe_is_done():
+            if self._closing.is_done_unsafe():
                 self._entries.pop(message.id, None)
                 return interrupt()
             encoded: dict[str, Any] = {

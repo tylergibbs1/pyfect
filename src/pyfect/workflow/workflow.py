@@ -331,8 +331,8 @@ def into_result[A, E, R](
     require_effect(effect, "effect")
 
     def with_instance(instance: WorkflowInstanceService) -> Effect[Result[A, E], Never, R]:
-        capture_defects = instance.workflow.annotations.unsafe_get(CaptureDefects)
-        suspend_on_failure = instance.workflow.annotations.unsafe_get(SuspendOnFailure)
+        capture_defects = instance.workflow.annotations.get_unsafe(CaptureDefects)
+        suspend_on_failure = instance.workflow.annotations.get_unsafe(SuspendOnFailure)
 
         # Run on a child, so an external interrupt can suspend the workflow.
         body: Effect[A, E, R | Scope] = (

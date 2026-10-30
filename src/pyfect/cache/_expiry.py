@@ -62,7 +62,7 @@ def deadline(clock: ClockService, time_to_live: Seconds) -> int | None:
     never."""
     if math.isinf(time_to_live):
         return None
-    return clock.unsafe_now_nanos() + to_nanos(time_to_live)
+    return clock.now_nanos_unsafe() + to_nanos(time_to_live)
 
 
 def is_expired(expires_at: int | None, now: int) -> bool:

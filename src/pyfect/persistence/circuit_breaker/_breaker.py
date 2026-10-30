@@ -82,7 +82,7 @@ def _open_duration(open_duration: OpenDuration) -> Callable[[int], Effect[Second
     def replay(openings: int) -> Effect[Seconds]:
         def body(clock: ClockService) -> Generator[Effect[Any], Any, Seconds]:
             step = yield from to_step(schedule)
-            now = clock.unsafe_now()
+            now = clock.now_unsafe()
             delay = ZERO
             for attempt in range(1, openings + 1):
                 decision = yield from step(now, attempt)

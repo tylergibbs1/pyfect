@@ -139,7 +139,7 @@ class MemoMap:
 
             def settle(ex: Exit[Any, Any]) -> Effect[None]:
                 for deferred in published:
-                    deferred.unsafe_done(ex)
+                    deferred.done_unsafe(ex)
                 return _VOID
 
             # ``settle`` is in place before the entry is published, so even
@@ -199,7 +199,7 @@ class Layer(Generic[ROut_contra, E_co, RIn_co]):
         built."""
         return _WithFiber(
             lambda fiber: self.build_with_memo_map(
-                fork_or_create(fiber._context), fiber._context.unsafe_get(Scope)
+                fork_or_create(fiber._context), fiber._context.get_unsafe(Scope)
             )
         )
 

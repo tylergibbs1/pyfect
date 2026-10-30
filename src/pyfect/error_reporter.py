@@ -44,6 +44,7 @@ __all__ = [
     "layer",
     "make",
     "report",
+    "report_unsafe",
 ]
 
 
@@ -225,7 +226,7 @@ def report_unsafe(
     reporters = fiber.get_ref(CurrentErrorReporters)
     if not reporters or (defects_only and not cause.defects):
         return
-    timestamp = fiber.get_ref(Clock).unsafe_now_nanos()
+    timestamp = fiber.get_ref(Clock).now_nanos_unsafe()
     for reporter in reporters:
         reporter.report(cause=cause, fiber=fiber, timestamp=timestamp)
 

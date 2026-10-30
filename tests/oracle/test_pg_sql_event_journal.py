@@ -79,7 +79,7 @@ def _wait_until_blocked_by(
     ``holder`` directly or behind one that is, or ``fiber`` succeeds."""
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        exit_ = fiber.unsafe_poll() if fiber is not None else None
+        exit_ = fiber.poll_unsafe() if fiber is not None else None
         if exit_ is not None:
             yield from fx.from_exit(exit_)
             return
@@ -494,7 +494,7 @@ def test_an_import_waits_for_a_local_write_in_flight_on_another_connection(pg_se
         ).fork()
         waited = False
         for _ in range(500):
-            if import_a.unsafe_poll() is not None:
+            if import_a.poll_unsafe() is not None:
                 break
             waited = (yield from _lock_waits(sql)) > 0
             if waited:

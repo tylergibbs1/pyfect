@@ -1,7 +1,7 @@
 """SQL (Effect's ``effect/sql``): statements built from string literals
 with bound parameters, a client with transactions, batched resolvers,
 schema-typed queries, migrations, and a SQLite driver on ``sqlite3``. The
-PostgreSQL driver, ``pyfect.sql.pg`` on psycopg 3, is the ``pyfect[pg]``
+PostgreSQL driver, ``pyfect.sql.pg`` on psycopg 3, is the ``pyfect-dev[pg]``
 extra and is not imported here.
 
 - ``statement``: fragments, helpers and compilers

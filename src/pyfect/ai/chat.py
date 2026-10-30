@@ -526,3 +526,20 @@ def make_persisted(
 def layer_persisted(*, store_id: str) -> Layer[Persistence, Never, BackingPersistence]:
     """``Persistence`` in the backing store ``store_id``."""
     return layer_effect(Persistence, make_persisted(store_id=store_id))
+
+
+__all__ = [
+    "PERSISTENCE_KEY",
+    "Chat",
+    "ChatNotFoundError",
+    "Persisted",
+    "Persistence",
+    "PersistenceService",
+    "Service",
+    "empty",
+    "from_export",
+    "from_json",
+    "from_prompt",
+    "layer_persisted",
+    "make_persisted",
+]

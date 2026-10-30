@@ -417,6 +417,7 @@ def show_help(command: AnyCommand, path: Sequence[str] | None = None) -> Effect[
 
 
 __all__ = [
+    "AnyCommand",
     "Command",
     "CommandContext",
     "Config",

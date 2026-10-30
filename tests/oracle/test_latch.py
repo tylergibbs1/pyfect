@@ -26,12 +26,12 @@ def test_release_wakes_current_waiters_and_keeps_the_latch_closed():
     """release wakes current waiters and keeps the latch closed"""
     latch = yield from fx.Latch.make(False)
     waiter = yield from latch.wait().fork(start_immediately=True)
-    assert waiter.unsafe_poll() is None
+    assert waiter.poll_unsafe() is None
 
     yield from latch.release()
     yield from _yield_twice()
 
-    assert waiter.unsafe_poll() is not None
+    assert waiter.poll_unsafe() is not None
     assert not latch.is_open()
 
 
@@ -58,8 +58,8 @@ def test_open_then_close_does_not_resume_waiters_registered_after_close():
     after = yield from latch.wait().fork(start_immediately=True)
     yield from _yield_twice()
 
-    assert before.unsafe_poll() is not None
-    assert after.unsafe_poll() is None
+    assert before.poll_unsafe() is not None
+    assert after.poll_unsafe() is None
 
 
 @testing.effect
@@ -92,8 +92,8 @@ def test_release_does_not_resume_waiters_registered_after_the_release():
     late = yield from latch.wait().fork(start_immediately=True)
     yield from _yield_twice()
 
-    assert covered.unsafe_poll() is not None
-    assert late.unsafe_poll() is None
+    assert covered.poll_unsafe() is not None
+    assert late.poll_unsafe() is None
 
 
 @testing.effect
@@ -106,21 +106,21 @@ def test_unsafe_open_does_not_resume_waiters_registered_after_a_reentrant_close(
     @fx.gen
     def first():
         yield from latch.wait()
-        latch.unsafe_close()
+        latch.close_unsafe()
         second.append((yield from latch.wait().fork(start_immediately=True)))
         return (yield from fx.never)
 
     yield from first.fork(start_immediately=True)
     yield from queue.provide(latch.release())
-    latch.unsafe_open()
-    # Effect runs the first waiter inside unsafe_open; here it runs next.
+    latch.open_unsafe()
+    # Effect runs the first waiter inside open_unsafe; here it runs next.
     yield from _yield_twice()
-    assert second[0].unsafe_poll() is None
+    assert second[0].poll_unsafe() is None
     assert len(queue.tasks) == 1
 
     queue.run_next()
     yield from _yield_twice()
-    assert second[0].unsafe_poll() is None
+    assert second[0].poll_unsafe() is None
 
 
 @testing.effect
@@ -155,7 +155,7 @@ def test_await_is_interruptible_and_cleans_up_interrupted_waiters():
     interrupted = yield from latch.when_open(fx.sync(lambda: resumed.append("interrupted"))).fork(
         start_immediately=True
     )
-    assert interrupted.unsafe_poll() is None
+    assert interrupted.poll_unsafe() is None
 
     yield from interrupted.interrupt()
     assert _interrupted((yield from interrupted.await_exit()))
@@ -166,11 +166,11 @@ def test_await_is_interruptible_and_cleans_up_interrupted_waiters():
     live = yield from latch.when_open(fx.sync(lambda: resumed.append("live"))).fork(
         start_immediately=True
     )
-    assert live.unsafe_poll() is None
+    assert live.poll_unsafe() is None
 
     yield from queue.provide(latch.release())
     assert len(queue.tasks) == 1
-    assert live.unsafe_poll() is None
+    assert live.poll_unsafe() is None
 
     queue.run_next()
     yield from live.join()

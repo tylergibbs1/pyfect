@@ -85,10 +85,10 @@ class ResourceMap[K: Hashable, A, E]:
 
         return _Suspend(body)
 
-    def unsafe_has(self, key: K) -> bool:
+    def has_unsafe(self, key: K) -> bool:
         return key in self._entries
 
-    def unsafe_keys(self) -> list[K]:
+    def keys_unsafe(self) -> list[K]:
         return list(self._entries)
 
     def get(self, key: K) -> Effect[A, E]:
@@ -122,13 +122,13 @@ class ResourceMap[K: Hashable, A, E]:
         return uninterruptible_mask(body)
 
     def _await_entry(self, key: K, entry: _Entry[A, E], restore: Restore) -> Effect[A, E]:
-        if entry.deferred.unsafe_is_done():
+        if entry.deferred.is_done_unsafe():
             return entry.deferred.wait()
         entry.awaiters += 1
 
         def on_exit(_: Exit[A, E]) -> Effect[None]:
             entry.awaiters -= 1
-            if entry.awaiters > 0 or entry.deferred.unsafe_is_done() or entry.fiber is None:
+            if entry.awaiters > 0 or entry.deferred.is_done_unsafe() or entry.fiber is None:
                 return _Succeed(None)
             self._delete_entry(key, entry)
             return entry.fiber.interrupt()

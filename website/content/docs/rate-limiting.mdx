@@ -52,7 +52,7 @@ request's final outcome.
 
 ## Sharing them through Redis
 
-The `pyfect[redis]` extra adds `redis_py.layer(url)`, the `Redis` service on redis-py.
+The `pyfect-dev[redis]` extra adds `redis_py.layer(url)`, the `Redis` service on redis-py.
 Over it, `rate_limiter.layer_store_redis()` and `circuit_breaker.layer_store_redis()`
 keep counters and circuit states in Redis, updated atomically by Lua scripts, and
 `persistence.layer_redis` and `persisted_queue.layer_store_redis()` do the same for the

@@ -60,7 +60,7 @@ def async_pause_resume[A, E, R](
             def offer(items: Sequence[A]) -> None:
                 if not items:
                     return
-                full = queue.unsafe_is_full()
+                full = queue.is_full_unsafe()
                 if not full or paused[0]:
                     run_fork(queue.offer_all(items), scheduler=scheduler)
                     return
@@ -71,8 +71,8 @@ def async_pause_resume[A, E, R](
             emit = Emit[A, E](
                 single=lambda item: offer((item,)),
                 array=offer,
-                fail=lambda error: _discard(queue.unsafe_fail_cause(fail(error))),
-                end=lambda: _discard(queue.unsafe_fail_cause(fail(Done()))),
+                fail=lambda error: _discard(queue.fail_cause_unsafe(fail(error))),
+                end=lambda: _discard(queue.fail_cause_unsafe(fail(Done()))),
             )
             return register(emit).map(callbacks.append)
 

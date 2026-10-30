@@ -19,4 +19,4 @@ def test_preserves_annotations_on_mapped_failures():
         .map(lambda error: error.upper())
     )
     assert mapped.failures == ("ERROR",)
-    assert mapped.annotations.unsafe_get(RequestId) == "request-1"
+    assert mapped.annotations.get_unsafe(RequestId) == "request-1"

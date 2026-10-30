@@ -218,6 +218,7 @@ def layer_config(
 
 __all__ = [
     "DEFAULT_API_URL",
+    "ERRORS",
     "ChatCompletion",
     "EmbeddingResponse",
     "OpenAiClient",

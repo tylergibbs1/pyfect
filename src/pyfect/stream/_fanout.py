@@ -61,16 +61,16 @@ def partition_queue(
                         case ok:
                             passed.append(ok.value)
                 pass_fiber: Fiber[Any, Any] | None = None
-                if passed and (rest := passes.unsafe_offer_all(passed)):
+                if passed and (rest := passes.offer_all_unsafe(passed)):
                     pass_fiber = yield passes.offer_all(rest).fork()
-                if failed and (rest := fails.unsafe_offer_all(failed)):
+                if failed and (rest := fails.offer_all_unsafe(failed)):
                     yield fails.offer_all(rest)
                 if pass_fiber is not None:
                     yield pass_fiber.join()
 
         def fail_both(cause: Cause[Any]) -> AnyEffect:
-            passes.unsafe_fail_cause(cause)
-            fails.unsafe_fail_cause(cause)
+            passes.fail_cause_unsafe(cause)
+            fails.fail_cause_unsafe(cause)
             return _VOID
 
         yield fork_in(_Gen(feed).on_error(fail_both), scope)

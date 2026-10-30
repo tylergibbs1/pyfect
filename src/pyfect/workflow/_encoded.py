@@ -102,7 +102,7 @@ class DeferredState:
             instance, fiber = run
             if (
                 fiber is current
-                or fiber.unsafe_poll() is not None
+                or fiber.poll_unsafe() is not None
                 or name not in instance.awaited_deferreds
             ):
                 return succeed(None)

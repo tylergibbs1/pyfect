@@ -109,7 +109,7 @@ def test_requesting_more_permits_than_total_returns_never():
 
     yield from testing.adjust(10)
 
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
 
 
 @testing.effect
@@ -233,7 +233,7 @@ def test_partial_permit_allocation():
     fiber = yield from sem.with_permits("partition-2", _push(messages, "second"), 2).fork()
     yield from testing.adjust(0.1)
 
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     assert messages == []
 
     yield from testing.adjust(3)
@@ -277,13 +277,13 @@ def test_take_interruption_does_not_leak_permits():
     yield from queue.run_all()
 
     yield from sem.release(1)
-    assert waiter.unsafe_poll() is None
+    assert waiter.poll_unsafe() is None
 
     queue.run_next()
     yield from fx.yield_now()
-    assert waiter.unsafe_poll() is None
+    assert waiter.poll_unsafe() is None
 
-    waiter.unsafe_interrupt_as(None)
+    waiter.interrupt_as_unsafe(None)
     yield from queue.run_all()
     ex = yield from waiter.await_exit()
     assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
@@ -299,7 +299,7 @@ def test_with_permits_interruption_does_not_leak_permits():
     waiter = yield from sem.with_permits(fx.sync(lambda: acquired.append(True)), 2).fork()
 
     yield from fx.yield_now()
-    assert waiter.unsafe_poll() is None
+    assert waiter.poll_unsafe() is None
 
     yield from waiter.interrupt()
     assert acquired == []
@@ -321,7 +321,7 @@ def test_with_permits_interrupted_at_any_operation_does_not_leak_permits():
         holder = yield from _with_budget(
             sem.with_permits(fx.sync(lambda b=budget: ran.append(b))), budget
         ).fork(start_immediately=True)
-        holder.unsafe_interrupt_as(None)
+        holder.interrupt_as_unsafe(None)
         yield from holder.await_exit()
         recovered.append((yield from sem.with_permits_if_available(fx.void)) is not None)
 
@@ -346,7 +346,7 @@ def test_queued_with_permits_interrupted_at_any_operation_does_not_leak_permits(
         ).fork(start_immediately=True)
         yield from holder.interrupt()
         yield from fx.yield_now()
-        queued.unsafe_interrupt_as(None)
+        queued.interrupt_as_unsafe(None)
         yield from queued.await_exit()
 
         recovered.append((yield from sem.with_permits_if_available(fx.void)) is not None)

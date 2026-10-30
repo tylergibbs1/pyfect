@@ -948,6 +948,7 @@ __all__ = [
     "AnyEndpoint",
     "BufferedPayload",
     "HttpApiEndpoint",
+    "HttpMethod",
     "PayloadEntry",
     "PayloadMap",
     "StreamPayload",
@@ -963,4 +964,6 @@ __all__ = [
     "put",
     "query",
     "success_schemas",
+    "to_codec_http_properties",
+    "transform_response",
 ]

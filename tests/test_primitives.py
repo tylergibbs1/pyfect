@@ -133,7 +133,7 @@ def test_a_taker_interrupted_right_after_its_wake_up_passes_it_on():
         yield from fx.yield_now()
         # In one step: queue the interrupt, then wake `doomed`. The interrupt
         # lands after the wake-up but before `doomed` can retry its take.
-        yield from fx.sync(lambda: doomed.unsafe_interrupt_as(None)).and_then(q.offer("item"))
+        yield from fx.sync(lambda: doomed.interrupt_as_unsafe(None)).and_then(q.offer("item"))
         assert isinstance((yield from doomed.await_exit()), fx.Failure)
         return (yield from survivor.join())
 
@@ -154,12 +154,12 @@ def test_a_semaphore_waiter_interrupted_right_after_its_wake_up_passes_it_on():
             yield from fx.yield_now()
         survivor = yield from waiting.fork(start_immediately=True)
 
-        yield from sem.release(1).and_then(fx.sync(lambda d=doomed: d.unsafe_interrupt_as(None)))
+        yield from sem.release(1).and_then(fx.sync(lambda d=doomed: d.interrupt_as_unsafe(None)))
         for _ in range(20):
             yield from fx.yield_now()
 
-        assert isinstance(doomed.unsafe_poll(), fx.Failure), use_take
-        assert isinstance(survivor.unsafe_poll(), fx.Success), use_take
+        assert isinstance(doomed.poll_unsafe(), fx.Failure), use_take
+        assert isinstance(survivor.poll_unsafe(), fx.Success), use_take
 
 
 @fx.testing.effect
@@ -323,7 +323,7 @@ def test_a_semaphore_waiter_paused_before_it_parks_still_sees_the_release():
             yield from sem.release(1)
             for _ in range(50):
                 yield from fx.yield_now()
-            assert waiter.unsafe_poll() is not None, budget
+            assert waiter.poll_unsafe() is not None, budget
 
 
 @fx.testing.effect
@@ -338,4 +338,4 @@ def test_a_queue_taker_paused_before_it_parks_still_sees_the_offer():
         yield from queue.offer(1)
         for _ in range(50):
             yield from fx.yield_now()
-        assert taker.unsafe_poll() is not None, budget
+        assert taker.poll_unsafe() is not None, budget

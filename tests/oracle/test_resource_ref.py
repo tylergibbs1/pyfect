@@ -93,24 +93,24 @@ def test_rebuilds_only_the_current_generation():
     parent = CloseableScope()
     acquire = _make_acquire()
     ref = yield from ResourceRef.make(parent, acquire.acquire)
-    assert ref.unsafe_get() == 1
+    assert ref.get_unsafe() == 1
 
-    first = ref.unsafe_rebuild(from_=1)
+    first = ref.rebuild_unsafe(from_=1)
     assert first is not None
     yield from first
-    assert ref.unsafe_get() == 2
-    assert ref.unsafe_rebuild(from_=1) is None
+    assert ref.get_unsafe() == 2
+    assert ref.rebuild_unsafe(from_=1) is None
 
-    rebuild = ref.unsafe_rebuild()
+    rebuild = ref.rebuild_unsafe()
     assert rebuild is not None
     yield from rebuild
-    assert ref.unsafe_get() == 3
-    assert ref.unsafe_rebuild(from_=2) is None
+    assert ref.get_unsafe() == 3
+    assert ref.rebuild_unsafe(from_=2) is None
 
     yield from parent.close(_void)
-    assert ref.unsafe_get() is None
-    assert ref.unsafe_rebuild(from_=3) is None
-    assert ref.unsafe_rebuild() is None
+    assert ref.get_unsafe() is None
+    assert ref.rebuild_unsafe(from_=3) is None
+    assert ref.rebuild_unsafe() is None
     assert _interrupted((yield from ref.await_.exit()))
 
 
@@ -121,20 +121,20 @@ def test_refuses_second_rebuild_of_a_generation():
     acquire = _make_acquire(gated=(2,))
     ref = yield from ResourceRef.make(parent, acquire.acquire)
 
-    accepted = ref.unsafe_rebuild(from_=1)
+    accepted = ref.rebuild_unsafe(from_=1)
     assert accepted is not None
-    assert ref.unsafe_get() is None
-    assert ref.unsafe_rebuild(from_=1) is None
-    assert ref.unsafe_rebuild() is None
+    assert ref.get_unsafe() is None
+    assert ref.rebuild_unsafe(from_=1) is None
+    assert ref.rebuild_unsafe() is None
 
     rebuild = yield from accepted.fork()
     yield from acquire.gated[2].reached.wait()
-    assert ref.unsafe_rebuild(from_=1) is None
-    assert ref.unsafe_rebuild() is None
+    assert ref.rebuild_unsafe(from_=1) is None
+    assert ref.rebuild_unsafe() is None
 
     yield from acquire.gated[2].open.succeed(None)
     assert (yield from rebuild.await_exit()) == _void
-    assert ref.unsafe_get() == 2
+    assert ref.get_unsafe() == 2
     assert (yield from ref.await_) == 2
 
 
@@ -149,7 +149,7 @@ def test_interrupts_prepare_when_generation_replaced():
 
     def prepare(value: int) -> fx.Effect[None]:
         def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
-            replaced = ref.unsafe_rebuild(from_=value)
+            replaced = ref.rebuild_unsafe(from_=value)
             assert replaced is not None
             newer.append(replaced)
             yield from fx.yield_now()
@@ -157,7 +157,7 @@ def test_interrupts_prepare_when_generation_replaced():
 
         return fx.gen(body)
 
-    rebuild = ref.unsafe_rebuild(from_=1, prepare=prepare)
+    rebuild = ref.rebuild_unsafe(from_=1, prepare=prepare)
     assert rebuild is not None
     superseded = yield from rebuild.fork()
     assert _interrupted((yield from superseded.await_exit()))
@@ -166,12 +166,12 @@ def test_interrupts_prepare_when_generation_replaced():
 
     waiter = yield from ref.await_.fork()
     yield from fx.yield_now()
-    assert ref.unsafe_get() is None
-    assert waiter.unsafe_poll() is None
+    assert ref.get_unsafe() is None
+    assert waiter.poll_unsafe() is None
 
     yield from newer[0]
     assert (yield from waiter.join()) == 3
-    assert ref.unsafe_get() == 3
+    assert ref.get_unsafe() == 3
 
 
 @testing.effect
@@ -181,7 +181,7 @@ def test_closes_replaced_generation_whose_rebuild_never_ran():
     acquire = _make_acquire()
     ref = yield from ResourceRef.make(parent, acquire.acquire)
 
-    rebuild = ref.unsafe_rebuild(from_=1)
+    rebuild = ref.rebuild_unsafe(from_=1)
     assert rebuild is not None
     waiter = yield from ref.await_.fork()
     yield from fx.yield_now()
@@ -201,7 +201,7 @@ def test_no_teardown_leak_when_rebuild_discarded():
     address = _address("resource-ref-discard", "ResourceRefDiscard")
     acquire = _make_acquire()
     ref = yield from ResourceRef.make(parent, acquire.acquire, address)
-    assert ref.unsafe_rebuild(from_=1) is not None
+    assert ref.rebuild_unsafe(from_=1) is not None
     assert not is_active(address)
     yield from parent.close(_void)
     assert not is_active(address)
@@ -214,7 +214,7 @@ def test_no_teardown_leak_when_rebuild_interrupted():
     address = _address("resource-ref-interrupt", "ResourceRefInterrupt")
     acquire = _make_acquire(gated_release=(1,))
     ref = yield from ResourceRef.make(parent, acquire.acquire, address)
-    rebuild = ref.unsafe_rebuild(from_=1)
+    rebuild = ref.rebuild_unsafe(from_=1)
     assert rebuild is not None
     fiber = yield from rebuild.fork()
     yield from fiber.interrupt()
@@ -230,13 +230,13 @@ def test_stays_rebuildable_when_failed_replacement_cannot_be_released():
     ref = yield from ResourceRef.make(parent, acquire.acquire)
 
     def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
-        rebuild = ref.unsafe_rebuild(from_=1)
+        rebuild = ref.rebuild_unsafe(from_=1)
         assert rebuild is not None
         fiber = yield from rebuild.fork()
         yield from acquire.gated[2].reached.wait()
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         yield from _settle()
-        assert ref.unsafe_rebuild() is not None, "a hung release must not block the next rebuild"
+        assert ref.rebuild_unsafe() is not None, "a hung release must not block the next rebuild"
 
     yield from fx.gen(body).ensuring(acquire.gated_release[2].open.succeed(None))
 
@@ -248,14 +248,14 @@ def test_interrupts_acquiring_rebuild_when_ref_closes():
     acquire = _make_acquire(gated=(2,))
     ref = yield from ResourceRef.make(parent, acquire.acquire)
 
-    rebuild = ref.unsafe_rebuild(from_=1)
+    rebuild = ref.rebuild_unsafe(from_=1)
     assert rebuild is not None
     fiber = yield from rebuild.fork()
     yield from acquire.gated[2].reached.wait()
     waiter = yield from ref.await_.fork()
     yield from parent.close(_void)
     yield from _settle()
-    exit = fiber.unsafe_poll()
+    exit = fiber.poll_unsafe()
     assert exit is not None, "closing the ref must interrupt acquisition"
     assert _interrupted(exit)
     assert _interrupted((yield from waiter.await_exit()))
@@ -283,12 +283,12 @@ def test_rebuild_from_compares_resources_by_identity():
         assert isinstance(parent, CloseableScope)
         ref = yield from ResourceRef.make(parent, acquire)
         stale = yield from ref.await_
-        rebuild = ref.unsafe_rebuild(from_=stale)
+        rebuild = ref.rebuild_unsafe(from_=stale)
         assert rebuild is not None
         yield from rebuild
         current = yield from ref.await_
         assert current is not stale and current == stale
-        assert ref.unsafe_rebuild(from_=stale) is None
+        assert ref.rebuild_unsafe(from_=stale) is None
         assert len(acquired) == 2
 
     yield from fx.scoped(fx.gen(body))

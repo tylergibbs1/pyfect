@@ -212,7 +212,7 @@ class _Spawned[P: Port]:
             def emit(data: PlatformMessage) -> None:
                 if data[0] == 0:
                     if on_spawn is None:
-                        ready.unsafe_open()
+                        ready.open_unsafe()
                     else:
                         run(on_spawn.ensuring(ready.open()))
                     return

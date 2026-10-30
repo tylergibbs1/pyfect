@@ -107,7 +107,7 @@ def test_removes_queued_interrupt_when_clearing_address():
         yield from storage.save_request(request)
         yield from storage.save_envelope(
             OutgoingEnvelope.interrupt(
-                id=snowflakes.unsafe_next(),
+                id=snowflakes.next_unsafe(),
                 request_id=request.envelope.request_id,
                 address=request.envelope.address,
             )
@@ -434,7 +434,7 @@ def test_reply_handlers_receive_persisted_defect_fallback():
         yield from storage.save_reply(
             ReplyWithContext(
                 WithExit(
-                    id=snowflakes.unsafe_next(),
+                    id=snowflakes.next_unsafe(),
                     request_id=request.envelope.request_id,
                     exit=fx.exit.succeed(ValueError("not json encodable")),
                 ),

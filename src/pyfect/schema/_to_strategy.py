@@ -2,7 +2,7 @@
 (Effect's ``Arbitrary.schema``; Hypothesis is the runner, so Effect's
 ``checkEffect`` / ``sampleEffect`` are ``@given`` and ``.example()``).
 
-Needs the ``pyfect[hypothesis]`` extra; importing ``pyfect.schema`` does
+Needs the ``pyfect-dev[hypothesis]`` extra; importing ``pyfect.schema`` does
 not import Hypothesis.
 """
 
@@ -25,10 +25,6 @@ def to_strategy[T](schema: Codec[T, object, object, object], /) -> SearchStrateg
     strategy out), else through its ``to_codec_arbitrary``, ``to_codec_json``
     or ``to_codec`` link. Raises ``ValueError`` when the schema has no
     finite value or a declaration says neither."""
-    try:
-        from pyfect.schema._strategy import derive
-    except ModuleNotFoundError as missing:  # pragma: no cover - depends on the install
-        raise ModuleNotFoundError(
-            "to_strategy needs Hypothesis: install pyfect[hypothesis]"
-        ) from missing
+    from pyfect.schema._strategy import derive
+
     return derive(schema.__codec__().ast)

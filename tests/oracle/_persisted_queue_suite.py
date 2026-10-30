@@ -75,17 +75,17 @@ class PersistedQueueSuite:
         moment, then check the forked take still waits."""
         yield from testing.adjust(1)
         yield from live_sleep(self.live)
-        assert fiber.unsafe_poll() is None
+        assert fiber.poll_unsafe() is None
 
     def await_delivery[A](self, fiber: fx.Fiber[A, Any]) -> Generator[Any, Any, A]:
         """Advance both clocks until the forked take completes, its
         acknowledgement included."""
         for _ in range(8):
-            if fiber.unsafe_poll() is not None:
+            if fiber.poll_unsafe() is not None:
                 break
             yield from testing.adjust(1)
             yield from live_sleep(0.7 * self.live)
-        assert fiber.unsafe_poll() is not None
+        assert fiber.poll_unsafe() is not None
         return (yield from fiber.join())
 
     def advance_past_ttl(self) -> Generator[Any, Any]:
@@ -231,7 +231,7 @@ class PersistedQueueSuite:
             # not redelivered before the retry delay elapses
             yield from testing.adjust(0.1)
             yield from live_sleep(0.1 * self.live)
-            assert fiber.unsafe_poll() is None
+            assert fiber.poll_unsafe() is None
             assert (yield from self.await_delivery(fiber)) == 2
 
         self.run(body)
@@ -501,7 +501,7 @@ class PersistedQueueSuite:
                         return fx.fail("transient")
                     succeeded.add(n)
                     if len(succeeded) == total:
-                        completed.unsafe_open()
+                        completed.open_unsafe()
                     return fx.void
 
                 return fx.suspend(run)

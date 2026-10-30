@@ -108,9 +108,9 @@ def test_retains_ownership_of_a_replacement_made_by_a_synchronous_finalizer():
 
     yield from scope.close(fx.Success(None))
 
-    assert previous.unsafe_poll() is not None
-    assert replacement.unsafe_poll() is not None
-    assert fibers[0].unsafe_poll() is not None
+    assert previous.poll_unsafe() is not None
+    assert replacement.poll_unsafe() is not None
+    assert fibers[0].poll_unsafe() is not None
 
 
 @testing.effect
@@ -142,12 +142,12 @@ def test_get_and_get_unsafe():
     """get and getUnsafe"""
     handle = yield from fx.FiberHandle[str].make()
 
-    assert handle.unsafe_get() is None
+    assert handle.get_unsafe() is None
     assert (yield from handle.get()) is None
 
     fiber = yield from handle.run(fx.never)
 
-    assert handle.unsafe_get() is fiber
+    assert handle.get_unsafe() is fiber
     assert (yield from handle.get()) is fiber
 
 
@@ -155,8 +155,8 @@ def test_get_and_get_unsafe():
 def test_join_ignores_managed_replacement_interruptions_and_fails_with_child_errors():
     """join ignores managed replacement interruptions and fails with child errors"""
     handle = yield from fx.FiberHandle.make()
-    handle.unsafe_set((yield from fx.void.fork_daemon(start_immediately=True)))
-    handle.unsafe_set((yield from fx.fail("fail").fork_daemon(start_immediately=True)))
+    handle.set_unsafe((yield from fx.void.fork_daemon(start_immediately=True)))
+    handle.set_unsafe((yield from fx.fail("fail").fork_daemon(start_immediately=True)))
     assert (yield from handle.join().flip()) == "fail"
 
 
@@ -170,7 +170,7 @@ def test_only_if_missing_keeps_the_current_fiber_and_interrupts_rejected_starts(
     yield from fx.yield_now()
     assert _interrupted((yield from fiber_b.await_exit()))
     assert _interrupted((yield from fiber_c.await_exit()))
-    assert fiber_a.unsafe_poll() is None
+    assert fiber_a.poll_unsafe() is None
 
 
 @testing.effect
@@ -178,11 +178,11 @@ def test_only_if_missing_keeps_the_same_registered_fiber():
     """onlyIfMissing keeps the same registered fiber"""
     handle = yield from fx.FiberHandle.make()
     worker, cleanups = yield from _make_worker
-    handle.unsafe_set(worker)
-    handle.unsafe_set(worker, only_if_missing=True)
+    handle.set_unsafe(worker)
+    handle.set_unsafe(worker, only_if_missing=True)
 
-    assert handle.unsafe_get() is worker
-    assert worker.unsafe_poll() is None
+    assert handle.get_unsafe() is worker
+    assert worker.poll_unsafe() is None
     assert (yield from cleanups.get()) == 0
 
 
@@ -192,8 +192,8 @@ def test_same_fiber_registration_preserves_propagate_interruption(propagate_inte
     """same-fiber registration preserves propagateInterruption: ${propagateInterruption}"""
     handle = yield from fx.FiberHandle.make()
     worker, _ = yield from _make_worker
-    handle.unsafe_set(worker, propagate_interruption=propagate_interruption)
-    handle.unsafe_set(
+    handle.set_unsafe(worker, propagate_interruption=propagate_interruption)
+    handle.set_unsafe(
         worker, only_if_missing=True, propagate_interruption=not propagate_interruption
     )
 
@@ -213,8 +213,8 @@ def test_clear_does_not_remove_a_newer_fiber_installed_while_interrupting_the_pr
     yield from testing.adjust(0.2)
     yield from clear_fiber.join()
 
-    assert handle.unsafe_get() is next_fiber
-    assert next_fiber.unsafe_poll() is None
+    assert handle.get_unsafe() is next_fiber
+    assert next_fiber.poll_unsafe() is None
 
 
 @testing.effect
@@ -227,7 +227,7 @@ def test_runtime_only_if_missing():
     yield from fx.yield_now()
     assert _interrupted((yield from fiber_b.await_exit()))
     assert _interrupted((yield from fiber_c.await_exit()))
-    assert fiber_a.unsafe_poll() is None
+    assert fiber_a.poll_unsafe() is None
 
 
 @testing.effect
@@ -258,9 +258,9 @@ def test_await_empty():
 
     fiber = yield from handle.await_empty().fork()
     yield from testing.adjust(0.5)
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     yield from testing.adjust(0.5)
-    assert fiber.unsafe_poll() is not None
+    assert fiber.poll_unsafe() is not None
 
 
 @testing.effect(asyncio=True)

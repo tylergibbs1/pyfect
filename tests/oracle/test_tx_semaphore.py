@@ -246,7 +246,7 @@ def test_can_be_interrupted_while_waiting_for_permits(
     yield from fx.yield_now()
     yield from fx.yield_now()
 
-    interrupted = interruptor.unsafe_poll() is not None
+    interrupted = interruptor.poll_unsafe() is not None
     available = yield from semaphore.available()
     yield from semaphore.release_n(2)
     yield from interruptor.join()

@@ -106,7 +106,7 @@ class EventEmitter:
                 self.step_attempt = 0
             self.step_attempt += 1
             state = AttemptState(
-                meta.attempt, self.step_attempt, meta.step_index, clock.unsafe_monotonic_nanos()
+                meta.attempt, self.step_attempt, meta.step_index, clock.monotonic_nanos_unsafe()
             )
             event = AttemptStart(state.attempt, state.step_attempt, state.step_index)
             return self._emit(event).as_(state)
@@ -115,7 +115,7 @@ class EventEmitter:
 
     def end(self, state: AttemptState, ex: Exit[Any, Any]) -> Effect[None, Never, Any]:
         def finish(clock: ClockService) -> Effect[None, Never, Any]:
-            duration = Seconds((clock.unsafe_monotonic_nanos() - state.start_nanos) / 1_000_000_000)
+            duration = Seconds((clock.monotonic_nanos_unsafe() - state.start_nanos) / 1_000_000_000)
             event: Event[Any] = (
                 AttemptFailure(
                     state.attempt, state.step_attempt, state.step_index, duration, ex.cause

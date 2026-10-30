@@ -52,7 +52,7 @@ def test_an_update_waits_for_the_running_effectful_update():
         start_immediately=True
     )
     fast = yield from ref.update(lambda s: s + "c").fork(start_immediately=True)
-    assert fast.unsafe_poll() is None
+    assert fast.poll_unsafe() is None
     yield from gate.succeed(None)
     yield from slow.join()
     yield from fast.join()
@@ -196,7 +196,7 @@ def test_operations_match_ref(
     make: Callable[[int], _Locked], name: str, plain: _Plain, effectful: _Effectful
 ):
     def outcome(ref: fx.Ref[int] | _Locked, op: Callable[[Any], fx.Effect[object]]):
-        return fx.run_sync(op(ref)), ref.unsafe_get()
+        return fx.run_sync(op(ref)), ref.get_unsafe()
 
     expected = outcome(fx.Ref(1), plain)
     assert outcome(make(1), plain) == expected, name

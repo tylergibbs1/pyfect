@@ -165,7 +165,7 @@ def test_acquire_n_waits_until_that_many_permits_are_free():
     semaphore = yield from fx.TxSemaphore.make(2)
     yield from semaphore.acquire()
     waiter = yield from semaphore.acquire_n(2).fork(start_immediately=True)
-    assert waiter.unsafe_poll() is None
+    assert waiter.poll_unsafe() is None
     assert (yield from semaphore.available()) == 1
     yield from semaphore.release()
     yield from waiter.join()

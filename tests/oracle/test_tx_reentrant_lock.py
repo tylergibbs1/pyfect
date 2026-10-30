@@ -38,7 +38,7 @@ def test_can_be_interrupted_while_another_fiber_holds_the_write_lock(
     yield from fx.yield_now()
     yield from fx.yield_now()
 
-    interrupted = interruptor.unsafe_poll() is not None
+    interrupted = interruptor.poll_unsafe() is not None
     write_locks = yield from lock.write_locks()
     yield from lock.release_write()
     yield from interruptor.join()

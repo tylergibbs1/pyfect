@@ -149,7 +149,7 @@ def test_run_in_a_closed_scope_interrupts_the_fiber():
         done = yield from fx.succeed(1).fork(start_immediately=True)
         assert running.run_in(scope) is running
         assert done.run_in(scope) is done
-        return (yield from running.await_exit()), running.id, done.unsafe_poll()
+        return (yield from running.await_exit()), running.id, done.poll_unsafe()
 
     ex, running_id, done_exit = run(program)
     assert isinstance(ex, fx.Failure) and ex.cause.interruptors == frozenset({running_id})

@@ -37,6 +37,7 @@ Interrupting a caller takes its request out of its batch; a batch nobody
 waits for does not run.
 """
 
+from pyfect._public import publish
 from pyfect.batching._api import request, request_unsafe
 from pyfect.batching._engine import UncompletedRequestError
 from pyfect.batching._request import Entry, Request, TypedRequest
@@ -53,3 +54,5 @@ __all__ = [
     "request",
     "request_unsafe",
 ]
+
+publish(globals())

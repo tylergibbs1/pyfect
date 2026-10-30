@@ -33,7 +33,7 @@ class EffectSpanView(trace.Span):
         )
 
     def _time(self, nanos: int | None) -> int:
-        return self._clock.unsafe_now_nanos() if nanos is None else nanos
+        return self._clock.now_nanos_unsafe() if nanos is None else nanos
 
     def get_span_context(self) -> SpanContext:
         return self._context

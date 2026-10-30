@@ -1,4 +1,4 @@
-"""An ``HttpClient`` backed by httpx (the ``pyfect[httpx]`` extra).
+"""An ``HttpClient`` backed by httpx (the ``pyfect-dev[httpx]`` extra).
 
 ``layer`` provides the client; ``layer_with(**options)`` passes options to
 ``httpx.AsyncClient`` (``verify``, ``proxy``, ``limits``, ...). The httpx
@@ -25,11 +25,12 @@ from typing import TYPE_CHECKING, Any, Never
 from urllib.parse import SplitResult
 
 from pyfect._fiber import Fiber
-from pyfect.effect import Effect, callback, fail, succeed, sync
+from pyfect._os_wait import os_wait
+from pyfect.effect import Effect, fail, succeed, sync
 from pyfect.errors import Done
 from pyfect.http import body as _body
 from pyfect.http import url as _url
-from pyfect.http._httpx_options import RequestDefaults, split_options
+from pyfect.http._httpx_options import RequestDefaults, import_httpx, split_options
 from pyfect.http.abort import AbortSignal
 from pyfect.http.client import HttpClient, HttpClientService
 from pyfect.http.client import make as make_client
@@ -72,7 +73,7 @@ def _future[A](
     """Wait for the future ``start()`` gives; interrupting (or aborting
     ``signal``) cancels it."""
 
-    def register(resume: Callable[[Effect[A, BaseException]], None]) -> Effect[None]:
+    def register(resume: Callable[[Effect[A, BaseException]], None]) -> Callable[[], bool]:
         future = start()
         remove = (lambda: None) if signal is None else signal.add_listener(future.cancel)
 
@@ -85,9 +86,9 @@ def _future[A](
             resume(succeed(finished.result()) if error is None else fail(error))
 
         future.add_done_callback(done)
-        return sync(future.cancel).as_void()
+        return future.cancel
 
-    return callback(register)
+    return os_wait(register)
 
 
 class _Backend:
@@ -95,10 +96,8 @@ class _Backend:
     its own."""
 
     def __init__(self, options: dict[str, Any]) -> None:
-        import httpx
-
         options.setdefault("timeout", None)
-        self.client = httpx.AsyncClient(**options)
+        self.client = import_httpx().AsyncClient(**options)
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self._run, name="pyfect-httpx", daemon=True).start()
 

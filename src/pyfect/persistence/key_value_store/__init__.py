@@ -15,6 +15,7 @@
 Bytes read as text come back as Base64, text read as bytes as UTF-8.
 """
 
+from pyfect._public import publish
 from pyfect.persistence.key_value_store._layers import (
     layer_file_system,
     layer_memory,
@@ -46,3 +47,5 @@ __all__ = [
     "make_memory",
     "make_string_only",
 ]
+
+publish(globals())

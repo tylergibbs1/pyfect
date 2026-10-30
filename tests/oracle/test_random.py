@@ -26,10 +26,10 @@ class FixedDraws:
     def __init__(self, *draws: float) -> None:
         self._draws = iter(draws)
 
-    def unsafe_next_int(self) -> int:
+    def next_int_unsafe(self) -> int:
         return 0
 
-    def unsafe_next_double(self) -> float:
+    def next_double_unsafe(self) -> float:
         return next(self._draws, 0.0)
 
 

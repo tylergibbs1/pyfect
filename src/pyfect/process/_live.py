@@ -293,7 +293,7 @@ def _wire(
     def exit_code(code: int) -> Effect[ExitCode, PlatformError]:
         # A failed input stream cut the child's input short, so its failure
         # wins over the exit status.
-        if input_failure.unsafe_is_done():
+        if input_failure.is_done_unsafe():
             return input_failure.wait()
         if code < 0:
             return child.exit_code_error(code)

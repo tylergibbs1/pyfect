@@ -34,6 +34,7 @@ from pyfect.scope import Scope, acquire_release
 
 __all__ = [
     "MetricProducer",
+    "Readers",
     "TemporalityPreference",
     "layer",
     "make_producer",

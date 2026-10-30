@@ -184,7 +184,7 @@ def test_blocking_dispose_on_a_running_loop_raises():
         with pytest.raises(RuntimeError, match="async with"), runtime:
             pytest.fail("unreachable")
         await runtime.dispose_async()
-        assert isinstance(fiber.unsafe_poll(), fx.Failure)
+        assert isinstance(fiber.poll_unsafe(), fx.Failure)
 
     _within(5, lambda: asyncio.run(main()))
 

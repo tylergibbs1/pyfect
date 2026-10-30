@@ -22,4 +22,4 @@ class ServiceMethods(EffectBase[A_co, E_co, R_co]):
     ) -> Effect[A_co, E_co, R_co | T]:
         """Run with ``f`` applied to the service of ``tag``, which this
         effect then needs."""
-        return _core._Locally(as_effect(self), lambda ctx: ctx.add(tag, f(ctx.unsafe_get(tag))))
+        return _core._Locally(as_effect(self), lambda ctx: ctx.add(tag, f(ctx.get_unsafe(tag))))

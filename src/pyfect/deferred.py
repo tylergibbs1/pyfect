@@ -63,7 +63,7 @@ class Deferred[A, E = Never]:
         return _Callback(register)
 
     def done(self, ex: Exit[A, E]) -> Effect[bool]:
-        return _Sync(lambda: self.unsafe_done(ex))
+        return _Sync(lambda: self.done_unsafe(ex))
 
     def succeed(self, value: A) -> Effect[bool]:
         return self.done(Success(value))
@@ -118,16 +118,16 @@ class Deferred[A, E = Never]:
         return _Sync(lambda: self._settle(eff))
 
     def is_done(self) -> Effect[bool]:
-        return _Sync(self.unsafe_is_done)
+        return _Sync(self.is_done_unsafe)
 
-    def unsafe_is_done(self) -> bool:
+    def is_done_unsafe(self) -> bool:
         return self._effect is not None
 
     def poll(self) -> Effect[Effect[A, E] | None]:
         """The effect waiters will run, or ``None`` if not completed yet."""
         return _Suspend(lambda: _Succeed(self._effect))
 
-    def unsafe_done(self, ex: Exit[A, E]) -> bool:
+    def done_unsafe(self, ex: Exit[A, E]) -> bool:
         """Complete from outside an effect. Call on the fiber's scheduler
         thread (e.g. inside ``sync``)."""
         return self._settle(_FromExit(ex))
@@ -140,3 +140,6 @@ class Deferred[A, E = Never]:
         for resume in waiters:
             resume(effect)
         return True
+
+
+__all__ = ["Deferred"]

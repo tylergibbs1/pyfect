@@ -94,7 +94,7 @@ class SocketServerService:
                     # The fiber owns the connection even if it is interrupted
                     # before it starts, when the handler's own release never
                     # gets registered.
-                    fiber.unsafe_add_observer(lambda _, i=incoming: i.release())
+                    fiber.add_observer_unsafe(lambda _, i=incoming: i.release())
 
             # Taking and forking is one step: an interrupt between them would
             # drop the taken connections.
@@ -239,3 +239,20 @@ def layer_tls(
     *, cert: PemInput, key: Redacted[PemInput] | PemInput, port: int = 0, host: str | None = None
 ) -> Layer[SocketServer, SocketServerError]:
     return layer_effect(SocketServer, make_tls(cert=cert, key=key, port=port, host=host))
+
+
+__all__ = [
+    "Listen",
+    "SocketServer",
+    "SocketServerError",
+    "SocketServerErrorReason",
+    "SocketServerOpenError",
+    "SocketServerService",
+    "SocketServerUnknownError",
+    "layer",
+    "layer_tls",
+    "make",
+    "make_tls",
+    "make_unix",
+    "report_unhandled",
+]

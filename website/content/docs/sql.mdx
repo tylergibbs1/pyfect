@@ -5,7 +5,7 @@ description: "Parameterized statements, batched lookups, transactions and migrat
 
 `SqlClient` is a service: call it with SQL and it gives back a statement, an effect that
 runs on a connection from the client and succeeds with the rows as dicts. `sqlite.layer`
-provides one on the standard library's `sqlite3`. For PostgreSQL, install the `pyfect[pg]`
+provides one on the standard library's `sqlite3`. For PostgreSQL, install the `pyfect-dev[pg]`
 extra and provide `pyfect.sql.pg.layer` instead; the code that uses `SqlClient` stays the
 same. Every failure is a `SqlError` whose `reason` says what went wrong (`UniqueViolation`,
 `SqlSyntaxError`, `LockTimeoutError`, ...).

@@ -333,7 +333,7 @@ def to_step_with_metadata[Out, In, E, R](
 
         def run(input: In) -> Effect[Metadata[Out, In] | Stop[Out], E, R]:
             def body() -> Any:
-                now = clock.unsafe_now()
+                now = clock.now_unsafe()
                 decision = yield from step(now, input)
                 if isinstance(decision, Stop):
                     return decision

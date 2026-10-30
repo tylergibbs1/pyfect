@@ -44,7 +44,7 @@ class _Annotated:
     def annotate(self, annotations: Context, *, overwrite: bool = False) -> Self:
         """A copy carrying ``annotations`` too. Keys it already has keep
         their value unless ``overwrite``; with nothing new, ``self``."""
-        merged = _merge_annotations(self.annotations, annotations.unsafe_map, overwrite)
+        merged = _merge_annotations(self.annotations, annotations.map_unsafe, overwrite)
         return self if merged is None else replace(self, annotations=merged)  # pyright: ignore[reportArgumentType, reportUnknownVariableType]
 
 
@@ -105,7 +105,7 @@ class Cause(Generic[E_co]):
 
     def annotate(self, annotations: Context, *, overwrite: bool = False) -> Cause[E_co]:
         """Every reason carrying ``annotations`` too (see ``Fail.annotate``)."""
-        if not annotations.unsafe_map:
+        if not annotations.map_unsafe:
             return self
         reasons = tuple(r.annotate(annotations, overwrite=overwrite) for r in self.reasons)
         changed = any(a is not b for a, b in zip(reasons, self.reasons, strict=True))
@@ -377,3 +377,23 @@ def die(defect: BaseException) -> Cause[Never]:
 
 def interrupt(fiber_id: int | None = None) -> Cause[Never]:
     return Cause((Interrupt(fiber_id),))
+
+
+__all__ = [
+    "Annotations",
+    "Cause",
+    "Die",
+    "EmptyCauseError",
+    "Fail",
+    "Interrupt",
+    "Interrupted",
+    "Reason",
+    "UnhandledError",
+    "die",
+    "empty",
+    "fail",
+    "from_reasons",
+    "interrupt",
+    "merge",
+    "reason_annotations",
+]

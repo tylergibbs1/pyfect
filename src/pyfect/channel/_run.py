@@ -140,7 +140,7 @@ def to_pull(self: AnyChannel) -> AnyEffect:
     def build(fiber: Fiber[Any, Any]) -> AnyEffect:
         context = fiber._context
         turns = Semaphore(1)
-        return self._transform(ENDED, context.unsafe_get(Scope)).map(
+        return self._transform(ENDED, context.get_unsafe(Scope)).map(
             lambda pull: turns.with_permits(pull.pipe(provide_context(context)))
         )
 

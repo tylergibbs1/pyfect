@@ -686,7 +686,7 @@ def check_fiber(fiber: fx.Fiber[int, Invalid], other: fx.Fiber[str, NotFound]) -
     assert_type(fiber.interrupt_as(1), fx.Effect[None, Never, Never])
     assert_type(fiber.await_exit(), fx.Effect[fx.Exit[int, Invalid], Never, Never])
     assert_type(fiber.run_in(fx.CloseableScope()), fx.Fiber[int, Invalid])
-    assert_type(fiber.unsafe_add_observer(lambda _: None), Callable[[], None])
+    assert_type(fiber.add_observer_unsafe(lambda _: None), Callable[[], None])
     assert_type(fx.Fiber.get_current(), fx.Fiber[Any, Any] | None)
     assert_type(fx.Fiber.join_all([fiber]), fx.Effect[list[int], Invalid, Never])
     assert_type(
@@ -860,7 +860,7 @@ def check_queue(
     assert_type(q.is_full(), fx.Effect[bool, Never, Never])
     assert_type(q.capacity, int | None)
     assert_type(q.interrupt(), fx.Effect[bool, Never, Never])
-    assert_type(q.unsafe_take(), fx.Exit[int, Never] | None)
+    assert_type(q.take_unsafe(), fx.Exit[int, Never] | None)
     # clear / collect / await_done take Done out of the error type.
     assert_type(endable.clear(), fx.Effect[list[int], Never, Never])
     assert_type(failing.clear(), fx.Effect[list[int], str, Never])
@@ -917,7 +917,7 @@ def check_pubsub(ps: fx.PubSub[int], sub: Subscription[int]) -> None:
     assert_type(sub.take_all(), fx.Effect[Sequence[int], Never, Never])
     assert_type(sub.take_up_to(2), fx.Effect[Sequence[int], Never, Never])
     assert_type(sub.take_between(1, 2), fx.Effect[Sequence[int], Never, Never])
-    assert_type(sub.unsafe_remaining(), int | None)
+    assert_type(sub.remaining_unsafe(), int | None)
     assert_type(Atomic[int].unbounded().subscribe().poll(), fx.Option[int])
     ps.publish("x")  # pyright: ignore[reportArgumentType]
     ps.end("x")  # pyright: ignore[reportArgumentType]
@@ -973,7 +973,7 @@ def check_latch(latch: fx.Latch) -> None:
     assert_type(latch.wait(), fx.Effect[None, Never, Never])
     assert_type(latch.when_open(nf_or_port()), fx.Effect[int, NotFound, Port])
     assert_type(latch.is_open(), bool)
-    assert_type(latch.unsafe_open(), bool)
+    assert_type(latch.open_unsafe(), bool)
 
 
 def check_deferred(d: fx.Deferred[int, str]) -> None:
@@ -1338,7 +1338,7 @@ def check_fiber_collections(port_int: fx.Effect[int, Never, Port]) -> None:
     fiber_map: fx.FiberMap[str, int, Never] = fx.FiberMap()
     assert_type(fiber_map.run("a", fx.succeed(1)), fx.Effect[fx.Fiber[int, Never], Never, Never])
     assert_type(fiber_map.get("a"), fx.Effect[fx.Fiber[int, Never] | None])
-    assert_type(fiber_map.unsafe_has("a"), bool)
+    assert_type(fiber_map.has_unsafe("a"), bool)
     assert_type(fiber_map.remove("a"), fx.Effect[None])
     fiber_map.run(1, fx.succeed(1))  # pyright: ignore[reportArgumentType]
     fx.FiberMap[list[int]].make()  # pyright: ignore[reportInvalidTypeArguments]
@@ -1356,7 +1356,7 @@ def check_fiber_collections(port_int: fx.Effect[int, Never, Port]) -> None:
         fx.FiberHandle[int, str].make(), fx.Effect[fx.FiberHandle[int, str], Never, fx.Scope]
     )
     assert_type(handle.run(port_int), fx.Effect[fx.Fiber[int, str], Never, Port])
-    assert_type(handle.unsafe_get(), fx.Fiber[int, str] | None)
+    assert_type(handle.get_unsafe(), fx.Fiber[int, str] | None)
     assert_type(handle.clear(), fx.Effect[None])
     assert_type(handle.runtime(Port), fx.Effect[FiberHandleRuntime[int, str, Port], Never, Port])
 
@@ -1425,7 +1425,7 @@ def check_context_operations(
     assert_type(both.get(Primary), Db)
     assert_type(both.get(Level), int)  # a reference is always there
     both.get(Replica)  # pyright: ignore[reportArgumentType]
-    assert_type(both.unsafe_get(Replica), Db)
+    assert_type(both.get_unsafe(Replica), Db)
     assert_type(both.get_option(Replica), fx.Option[Db])
     assert_type(both.get_or_else(Replica, lambda: None), Db | None)
     assert_type(both.pipe(fx.Context.pick(Port)), fx.Context[Port])
@@ -1825,13 +1825,13 @@ def check_random() -> None:
 def check_clock() -> None:
     assert_type(fx.clock.now_nanos(), fx.Effect[int])
     assert_type(fx.clock.monotonic_nanos(), fx.Effect[int])
-    assert_type(fx.clock.clock_with(lambda c: fx.succeed(c.unsafe_now_nanos())), fx.Effect[int])
+    assert_type(fx.clock.clock_with(lambda c: fx.succeed(c.now_nanos_unsafe())), fx.Effect[int])
 
     class SecondsOnly:
-        def unsafe_now(self) -> float:
+        def now_unsafe(self) -> float:
             return 0.0
 
-        def unsafe_monotonic(self) -> float:
+        def monotonic_unsafe(self) -> float:
             return 0.0
 
         def sleep(self, seconds: Seconds) -> fx.Effect[None]:
@@ -2212,6 +2212,14 @@ def check_traced_fn() -> None:
     assert_type(find("u"), fx.Effect[str, NotFound, Primary])
     find(1)  # pyright: ignore[reportArgumentType]
     fx.fn("find", kind="sideways")  # pyright: ignore[reportArgumentType]
+
+    # Effect.fn("name")'s body may return an effect instead of yielding.
+    @fx.fn("lookup")
+    def lookup(user_id: str) -> fx.Effect[str, NotFound, Primary]:
+        return find(user_id)
+
+    assert_type(lookup("u"), fx.Effect[str, NotFound, Primary])
+    lookup(1)  # pyright: ignore[reportArgumentType]
 
 
 def check_layer_spans(built: layer.Layer[Primary, NotFound, Replica]) -> None:
@@ -6579,3 +6587,12 @@ def cluster_storage_types() -> None:
             k8s_http_client.K8sHttpClient,
         ],
     )
+
+
+def package_namespace() -> None:
+    # fx.<subpackage> is imported lazily at runtime; the type checker still
+    # knows each one and rejects a name the package does not have.
+    assert_type(fx.http.client.HttpClient, type[HttpClient])
+    fx.not_a_module  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # noqa: B018
+    # import pyfect.context reaches the module; fx.context is the effect.
+    assert_type(fx.context(), fx.Effect[fx.Context[Never]])

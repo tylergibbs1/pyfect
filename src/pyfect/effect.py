@@ -11,10 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
 from collections.abc import Awaitable, Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from functools import partial
-from typing import TYPE_CHECKING, Any, Never, Unpack, overload
+from typing import TYPE_CHECKING, Any, Never, Unpack, cast, overload
 
 from pyfect._catch import catch_if, catch_tag
 from pyfect._catch_reason import catch_reason, catch_reasons, unwrap_reason
@@ -40,6 +41,8 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._os_wait import os_wait
+from pyfect._root import loop_running_here, run_loop
 from pyfect._stack_frame import CurrentStackFrame, StackFrame, call_site
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
@@ -208,12 +211,14 @@ def _await[A, E](
     make: Callable[[], Awaitable[A]], catch: Callable[[Exception], E] | None
 ) -> Effect[A, E]:
     def start() -> Effect[A, E]:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
+        loop = run_loop()
+        if loop is None:
             raise AsyncioRequiredError(
-                "from_async/try_async need an asyncio loop; run with run_async or run_main"
-            ) from None
+                "from_async/try_async need an asyncio loop, and run_sync blocks this thread's "
+                "loop until it returns; use await run_async(...) inside a coroutine"
+                if loop_running_here()
+                else "from_async/try_async need an asyncio loop; run with run_async or run_main"
+            )
         try:
             awaitable = make()
         except BaseException as exc:
@@ -290,7 +295,7 @@ def _blocking[A, E](thunk: Callable[[], A], catch: Callable[[Exception], E] | No
 
         _pool().submit(thunk).add_done_callback(done)
 
-    return _Callback(register)
+    return os_wait(register)
 
 
 never: Effect[Never] = _Callback(lambda _resume: None)
@@ -331,6 +336,7 @@ def gen[A, E = Never, R = Never](
             user = yield from find_user("u1")
             return user.name
     """
+    _generator_function(f, "gen")
     return _Gen(f)
 
 
@@ -363,6 +369,7 @@ def fn(
     """
     if isinstance(f, str):
         return _Traced(f, options, call_site(1))
+    _generator_function(f, "fn")
 
     @functools.wraps(f)
     def wrapper(*args: Any, **kwargs: Any) -> Effect[Any, Any, Any]:
@@ -372,7 +379,7 @@ def fn(
 
 
 def _traced(
-    f: Callable[..., Generator[Effect[Any, Any, Any], Any, Any]],
+    f: Callable[..., Generator[Effect[Any, Any, Any], Any, Any] | Effect[Any, Any, Any]],
     name: str,
     definition: Callable[[], str | None],
     span: SpanOptions,
@@ -394,9 +401,26 @@ def _traced(
 
         return enter
 
+    def run_body(result: object) -> Effect[Any, Any, Any]:
+        # Effect.fn's ``isEffect(iter) ? iter : fromIteratorUnsafe(iter)``.
+        if isinstance(result, Effect):
+            return cast("Effect[Any, Any, Any]", result)
+        if isinstance(result, Generator):
+            generator = cast("Generator[Effect[Any, Any, Any], Any, Any]", result)
+            return _Gen(lambda: generator)
+        return _FailCause(
+            die_cause(
+                TypeError(
+                    f"fn({name!r}): {f.__qualname__} returned {type(result).__name__}, "
+                    "not an effect or a generator; an effect inside it runs only with "
+                    "`yield from effect`"
+                )
+            )
+        )
+
     @functools.wraps(f)
     def wrapper(*args: Any, **kwargs: Any) -> Effect[Any, Any, Any]:
-        body: Effect[Any, Any, Any] = _Gen(lambda: f(*args, **kwargs))
+        body: Effect[Any, Any, Any] = _Suspend(lambda: run_body(f(*args, **kwargs)))
         traced = span_using(name, partial(in_parent_span, body), span)
         return _Locally(traced, enter_at(call_site(1)))
 
@@ -415,10 +439,32 @@ class _Traced:
         self.options = options
         self.definition = definition
 
+    @overload
     def __call__[**P, A, E = Never, R = Never](
         self, f: Callable[P, Generator[Effect[Any, E, R], Any, A]], /
-    ) -> Callable[P, Effect[A, E, R]]:
+    ) -> Callable[P, Effect[A, E, R]]: ...
+    @overload
+    def __call__[**P, A, E = Never, R = Never](
+        self, f: Callable[P, Effect[A, E, R]], /
+    ) -> Callable[P, Effect[A, E, R]]: ...
+    def __call__(
+        self,
+        f: Callable[..., Generator[Effect[Any, Any, Any], Any, Any] | Effect[Any, Any, Any]],
+        /,
+    ) -> Callable[..., Effect[Any, Any, Any]]:
+        # Effect.fn's body may return an effect, so it is checked when it runs.
         return functools.wraps(f)(_traced(f, self.name, self.definition, self.options))
+
+
+def _generator_function(f: Callable[..., Any], api: str) -> None:
+    """``f``, checked to be a generator function when it is a ``def``: one
+    with no ``yield`` would run its effects' constructors and none of them.
+    (A lambda returning a generator is checked when it runs.)"""
+    if inspect.isfunction(f) and f.__name__ != "<lambda>" and not inspect.isgeneratorfunction(f):
+        raise TypeError(
+            f"{api}: {f.__qualname__} is not a generator function; an effect inside it "
+            "runs only with `yield from effect`"
+        )
 
 
 # --- combinators that remove types (use with .pipe) ---------------------------

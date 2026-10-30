@@ -222,7 +222,7 @@ def make[G, T](
     def build(protocol: GraphQLProtocolService, context: Context[Any]) -> G:
         methods: dict[AnyOperation, object] = {}
         for operation in operations_of(cls):
-            middlewares = [context.unsafe_get(tag) for tag in (*added, *operation.middlewares)]
+            middlewares = [context.get_unsafe(tag) for tag in (*added, *operation.middlewares)]
             chain = _Chain(operation, Codec(operation), middlewares, protocol)
             methods[operation] = _make_method(chain, retry)
         return cast("G", cls(methods))

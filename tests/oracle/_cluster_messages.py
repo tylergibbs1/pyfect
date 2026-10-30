@@ -62,7 +62,7 @@ def make_request(
     def build(snowflakes: Any) -> OutgoingRequest:
         return OutgoingRequest(
             envelope=envelope.make_request(
-                request_id=snowflakes.unsafe_next(),
+                request_id=snowflakes.next_unsafe(),
                 address=entity_address.make(
                     shard_id=shard_id.make("default", 1) if shard is None else shard,
                     entity_type=EntityType("test"),
@@ -89,7 +89,7 @@ def make_reply(request: OutgoingRequest) -> fx.Effect[ReplyWithContext, Never, G
     return Generator().map(
         lambda snowflakes: ReplyWithContext(
             WithExit(
-                id=snowflakes.unsafe_next(),
+                id=snowflakes.next_unsafe(),
                 request_id=request.envelope.request_id,
                 exit=fx.exit.succeed(None),
             ),
@@ -105,7 +105,7 @@ def make_chunk_reply(
     return Generator().map(
         lambda snowflakes: ReplyWithContext(
             Chunk(
-                id=snowflakes.unsafe_next(),
+                id=snowflakes.next_unsafe(),
                 request_id=request.envelope.request_id,
                 sequence=sequence,
                 values=(None,),
@@ -122,7 +122,7 @@ def make_ack_chunk(
     return Generator().map(
         lambda snowflakes: OutgoingEnvelope(
             envelope=AckChunk(
-                id=snowflakes.unsafe_next(),
+                id=snowflakes.next_unsafe(),
                 address=request.envelope.address,
                 request_id=chunk.reply.request_id,
                 reply_id=chunk.reply.id,

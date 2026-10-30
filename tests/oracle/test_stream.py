@@ -49,7 +49,7 @@ def test_with_take():
     def register(queue: fx.Queue[int, fx.Done]) -> fx.Effect[None]:
         def offer_all() -> None:
             for n in array:
-                queue.unsafe_offer(n)
+                queue.offer_unsafe(n)
 
         return fx.sync(offer_all)
 
@@ -86,7 +86,7 @@ def test_signals_the_end_of_the_stream():
     """signals the end of the stream"""
 
     def register(queue: fx.Queue[int, fx.Done]) -> fx.Effect[None]:
-        queue.unsafe_end()
+        queue.end_unsafe()
         return fx.void
 
     result = yield from stream.callback(register).run_collect()
@@ -99,7 +99,7 @@ def test_handles_errors():
     error = ValueError("boom")
 
     def register(queue: fx.Queue[int, ValueError | fx.Done]) -> fx.Effect[None]:
-        queue.unsafe_fail_cause(fx.cause.fail(error))
+        queue.fail_cause_unsafe(fx.cause.fail(error))
         return fx.void
 
     result = yield from stream.callback(register).run_collect().exit()
@@ -159,9 +159,9 @@ def test_register_effect_has_run_when_the_stream_starts_pulling():
     fiber = yield from (
         stream.callback(register).take(1).run_collect().fork(start_immediately=True)
     )
-    assert fiber.unsafe_poll() is None
+    assert fiber.poll_unsafe() is None
     assert emit, "register effect has not run"
-    emit[0].unsafe_offer(1)
+    emit[0].offer_unsafe(1)
     assert (yield from fiber.join()) == [1]
 
 

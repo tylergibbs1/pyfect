@@ -163,7 +163,7 @@ def _transport_error(clock: ClockService) -> Callable[[object], TransportError]:
     def convert(error: object) -> TransportError:
         if isinstance(error, http_error.HttpClientError):
             return TransportError.from_http_client_error(
-                error, now_millis=clock.unsafe_now() * 1000
+                error, now_millis=clock.now_unsafe() * 1000
             )
         return cast("TransportError", error)
 

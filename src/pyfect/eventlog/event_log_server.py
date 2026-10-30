@@ -57,8 +57,10 @@ from pyfect.stream._base import require_stream
 
 __all__ = [
     "AuthenticatedIdentities",
+    "Changes",
     "ChunkedMessageState",
     "ConnectionWrites",
+    "OnWrite",
     "layer_auth_middleware",
     "layer_rpc_handlers",
 ]

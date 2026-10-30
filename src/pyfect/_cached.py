@@ -97,7 +97,7 @@ class _Cache[A, E, R]:
             return run.fiber.join() if run.fiber is fiber else self._join(fiber, run)
         clock: ClockService = fiber._context.lookup(Clock)[1]
         if self.exit is not None and (
-            self.expires_at == _FOREVER or clock.unsafe_monotonic() < self.expires_at
+            self.expires_at == _FOREVER or clock.monotonic_unsafe() < self.expires_at
         ):
             return _FromExit(self.exit)
         self.exit = None
@@ -123,7 +123,7 @@ class _Cache[A, E, R]:
         if isinstance(ex, Failure) and ex.cause.has_interrupts:
             return  # abandoned, not a result
         ttl = self.ttl(ex)
-        self.expires_at = _FOREVER if ttl == _FOREVER else clock.unsafe_monotonic() + ttl
+        self.expires_at = _FOREVER if ttl == _FOREVER else clock.monotonic_unsafe() + ttl
         self.exit = ex
 
     def leave(self, run: _Run) -> Effect[None] | None:

@@ -89,7 +89,7 @@ def test_interrupts_the_loser_when_interrupted_while_starting(name: str):
         parent = fx.Fiber.get_current()
         assert parent is not None
         loser = _on_interrupt(
-            fx.sync(lambda: parent.unsafe_interrupt_as(None)).and_then(fx.never),
+            fx.sync(lambda: parent.interrupt_as_unsafe(None)).and_then(fx.never),
             interrupted,
             "loser",
         )
@@ -154,7 +154,7 @@ def test_releases_on_interrupt():
             fx.succeed("foo").delay(0.1), lambda _a, _ex: fx.sync(lambda: released.append(True))
         )
     ).fork(start_immediately=True)
-    fiber.unsafe_interrupt_as(None)
+    fiber.interrupt_as_unsafe(None)
     yield from fiber.await_exit()
     assert released == [True]
 
@@ -184,7 +184,7 @@ def test_sync_forever_is_interruptible():
     """sync forever is interruptible"""
     fiber = yield from fx.succeed(1).forever().fork()
     yield from fiber.interrupt()
-    assert _interrupted(fiber.unsafe_poll())
+    assert _interrupted(fiber.poll_unsafe())
 
 
 @testing.effect
@@ -192,7 +192,7 @@ def test_interrupt_of_never_is_interrupted_with_cause():
     """interrupt of never is interrupted with cause"""
     fiber = yield from fx.never.fork()
     yield from fiber.interrupt()
-    assert _interrupted(fiber.unsafe_poll())
+    assert _interrupted(fiber.poll_unsafe())
 
 
 @testing.live

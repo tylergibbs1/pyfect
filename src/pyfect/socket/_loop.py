@@ -12,8 +12,8 @@ from concurrent.futures import Future
 from typing import Any
 
 from pyfect._core import Effect
+from pyfect._os_wait import Resume, os_wait
 from pyfect.effect import fail, succeed
-from pyfect.process._os import Resume, os_wait
 
 
 class _Shared:

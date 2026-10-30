@@ -247,13 +247,13 @@ class FakeWebSocket:
             entry[1](event)
 
     def send(self, data: bytes | str) -> None:
-        self.inbox.unsafe_offer(json.loads(data))
+        self.inbox.offer_unsafe(json.loads(data))
 
     def close(self, code: int | None = None, reason: str | None = None) -> None:
         if self.state >= 2:
             return
         self.state = 3
-        self.closed.unsafe_done(Success(1005 if code is None else code))
+        self.closed.done_unsafe(Success(1005 if code is None else code))
         self.dispatch("close", WebSocketEvent(code=1005 if code is None else code, reason=reason))
 
     def server_close(self, code: int, reason: str | None = None) -> None:
@@ -306,7 +306,7 @@ class WsServer:
 
         def construct(url: str, options: WebSocketClientOptions) -> FakeWebSocket:
             ws = FakeWebSocket(Queue(), Deferred())
-            self.connections.unsafe_offer(WsConnection(url, options, ws))
+            self.connections.offer_unsafe(WsConnection(url, options, ws))
             return ws
 
         self.layer: Layer[WebSocketConstructor] = layer.succeed(WebSocketConstructor, construct)

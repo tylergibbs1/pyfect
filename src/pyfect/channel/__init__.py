@@ -20,6 +20,7 @@ method. Pull loops run on the fiber's own stack,
 so channels of millions of items never touch Python's recursion limit.
 """
 
+from pyfect._public import publish
 from pyfect.channel._catch import catch_if, catch_tag
 from pyfect.channel._catch_reason import catch_reason, catch_reasons, unwrap_reason
 from pyfect.channel._channel import (
@@ -148,3 +149,5 @@ __all__ = [
     "unwrap_reason",
     "update_context",
 ]
+
+publish(globals())

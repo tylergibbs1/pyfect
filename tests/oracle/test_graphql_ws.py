@@ -147,7 +147,7 @@ def test_a_close_while_connection_params_is_pending():
     connection = yield from server.connections.take()
     yield from connection.close(1006)
     yield from testing.adjust(60)
-    assert fiber.unsafe_poll() is not None
+    assert fiber.poll_unsafe() is not None
     assert (yield from fiber.join()).close_code == 1006
 
 

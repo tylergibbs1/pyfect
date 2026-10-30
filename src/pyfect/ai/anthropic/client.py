@@ -275,6 +275,8 @@ __all__ = [
     "DEFAULT_API_URL",
     "DEFAULT_API_VERSION",
     "AnthropicClient",
+    "CreateMessage",
+    "CreateMessageStream",
     "Message",
     "MessageParams",
     "MessageStreamEvent",

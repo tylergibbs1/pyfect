@@ -19,20 +19,20 @@ from pyfect.metric._state import (
 )
 
 
-def unsafe_snapshot(context: Context) -> list[Snapshot]:
+def snapshot_unsafe(context: Context) -> list[Snapshot]:
     """Every series in ``context``'s registry, in registration order."""
     return [
         Snapshot(m.id, m.type, m.description, m.attributes, m.hooks.get(context))
-        for m in list(context.unsafe_get(MetricRegistry).values())
+        for m in list(context.get_unsafe(MetricRegistry).values())
     ]
 
 
-snapshot: Effect[list[Snapshot]] = WithContext(unsafe_snapshot)
+snapshot: Effect[list[Snapshot]] = WithContext(snapshot_unsafe)
 """Every series in the current registry, in registration order."""
 
 
 def _dump(context: Context) -> str:
-    metrics = unsafe_snapshot(context)
+    metrics = snapshot_unsafe(context)
     if not metrics:
         return ""
     name_width = max(len(m.id) for m in metrics) + 2

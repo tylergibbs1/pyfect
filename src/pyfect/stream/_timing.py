@@ -91,12 +91,12 @@ def timeout_or_else(
 
         def started(pull: AnyEffect) -> AnyEffect:
             def start() -> AnyEffect:
-                deadline[:] = [clock.unsafe_now() + seconds]
-                waiting.unsafe_open()
+                deadline[:] = [clock.now_unsafe() + seconds]
+                waiting.open_unsafe()
                 return pull
 
             def arrived(chunk: Chunk) -> AnyEffect:
-                waiting.unsafe_close()
+                waiting.close_unsafe()
                 deadline.clear()
                 return _Succeed(chunk)
 
@@ -107,8 +107,8 @@ def timeout_or_else(
                 yield waiting.wait()
                 if not deadline:
                     continue
-                yield sleep(deadline[0] - clock.unsafe_now())
-                if not deadline or deadline[0] - clock.unsafe_now() > 0:
+                yield sleep(deadline[0] - clock.now_unsafe())
+                if not deadline or deadline[0] - clock.now_unsafe() > 0:
                     continue
                 yield _FailCause(die_cause(marker))
 
@@ -142,17 +142,17 @@ def debounce(self: AnyStream, duration: Duration) -> AnyStream_:
 
             def got(chunk: Chunk) -> AnyEffect:
                 nonlocal last, emit_at
-                emitting.unsafe_open()
+                emitting.open_unsafe()
                 last = chunk
-                emit_at = clock.unsafe_now() + wait
+                emit_at = clock.now_unsafe() + wait
                 return _VOID
 
             def failed(cause: Cause[Any]) -> AnyEffect:
                 nonlocal stopped, emit_at
                 stopped = cause
-                emit_at = clock.unsafe_now()
-                emitting.unsafe_open()
-                ended.unsafe_open()
+                emit_at = clock.now_unsafe()
+                emitting.open_unsafe()
+                ended.open_unsafe()
                 return _VOID
 
             yield pulling.when_open(pull).flat_map(got).forever().on_error(failed).fork_in(scope)
@@ -163,16 +163,16 @@ def debounce(self: AnyStream, duration: Duration) -> AnyStream_:
                 return _Succeed((chunk[-1],))
 
             def loop() -> AnyEffect:
-                now = clock.unsafe_now()
+                now = clock.now_unsafe()
                 delay = wait if emit_at < now else min(wait, emit_at - now)
                 return _FlatMap(sleep(Seconds(delay)).race_first(ended.wait()), after)
 
             def after(_: object) -> AnyEffect:
-                if clock.unsafe_now() < emit_at:
+                if clock.now_unsafe() < emit_at:
                     return loop()
                 if last is not None:
-                    emitting.unsafe_close()
-                    pulling.unsafe_close()
+                    emitting.close_unsafe()
+                    pulling.close_unsafe()
                     return take_last(last)
                 if stopped is not None:
                     return _FailCause(stopped)
@@ -183,7 +183,7 @@ def debounce(self: AnyStream, duration: Duration) -> AnyStream_:
             def next_pull() -> AnyEffect:
                 if stopped is not None:
                     return take_last(last) if last is not None else _FailCause(stopped)
-                pulling.unsafe_open()
+                pulling.open_unsafe()
                 return emitting.when_open(sleep_loop)
 
             return _Suspend(next_pull)
@@ -230,12 +230,12 @@ def _throttle_enforce(
 ) -> AnyStream_:
     def with_clock(pull: AnyEffect, clock: ClockService) -> AnyEffect:
         tokens = units
-        stamp = clock.unsafe_now_nanos()
+        stamp = clock.now_nanos_unsafe()
 
         def loop(chunk: Chunk) -> AnyEffect:
             def weighed(weight: float) -> AnyEffect:
                 nonlocal tokens, stamp
-                now = clock.unsafe_now_nanos()
+                now = clock.now_nanos_unsafe()
                 total = _refilled(tokens, now - stamp, period_ns, units)
                 available = cap if total < 0 else min(total, cap)
                 if weight <= available:
@@ -258,12 +258,12 @@ def _throttle_shape(
 ) -> AnyStream_:
     def with_clock(pull: AnyEffect, clock: ClockService) -> AnyEffect:
         tokens = units
-        stamp = clock.unsafe_monotonic_nanos()
+        stamp = clock.monotonic_nanos_unsafe()
 
         def admit(chunk: Chunk) -> AnyEffect:
             def weighed(weight: float) -> AnyEffect:
                 nonlocal tokens, stamp
-                now = clock.unsafe_monotonic_nanos()
+                now = clock.monotonic_nanos_unsafe()
                 remaining = min(_refilled(tokens, now - stamp, period_ns, units), cap) - weight
 
                 def keep(_: object = None) -> AnyEffect:

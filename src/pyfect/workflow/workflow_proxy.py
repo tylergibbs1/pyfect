@@ -100,6 +100,7 @@ def to_http_api_group(name: str, workflows: Sequence[AnyWorkflow]) -> type[HttpA
 
 __all__ = [
     "RESUME_PAYLOAD",
+    "AnyWorkflow",
     "ResumePayload",
     "tag_to_path",
     "to_http_api_group",

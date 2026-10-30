@@ -196,7 +196,7 @@ class PersistedQueueSqlSuite:
             # longer than lock_expiration: the stale settlement must neither
             # release the replacement nor unregister its lock refresh
             yield from testing.with_live(fx.sleep(1.5))
-            assert duplicate.unsafe_poll() is None
+            assert duplicate.poll_unsafe() is None
 
             yield from replacement.interrupt()
             redelivered = yield from testing.with_live(duplicate.join().timeout(5))

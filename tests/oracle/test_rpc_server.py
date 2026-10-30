@@ -361,7 +361,7 @@ def _ticker_survives[G: TickerClient | Booming](
         yield from failing_call(client)
         yield from fx.sleep(0.3)
         after = len(received)
-        status = ticker.unsafe_poll()
+        status = ticker.poll_unsafe()
         yield from ticker.interrupt()
         assert status is None, "Ticker stream must still be running"
         assert after > before, "Ticker stream must keep emitting"

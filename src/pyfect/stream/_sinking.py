@@ -112,7 +112,7 @@ def tap_sink(self: AnyStream, sink: AnySink) -> AnyStream_:
                 return ENDED
             taken, chunk = chunk, None
             if not stream_done:
-                upstream_latch.unsafe_close()
+                upstream_latch.close_unsafe()
             return sink_latch.open().as_(taken)
 
         sink_upstream = upstream_latch.when_open(_Suspend(hand_over))
@@ -133,8 +133,8 @@ def tap_sink(self: AnyStream, sink: AnySink) -> AnyStream_:
             if sink_done:
                 return _Succeed(next_chunk)
             chunk = next_chunk
-            sink_latch.unsafe_close()
-            upstream_latch.unsafe_open()
+            sink_latch.close_unsafe()
+            upstream_latch.open_unsafe()
             return sink_latch.wait().as_(next_chunk)
 
         def stream_ended(_: object) -> AnyEffect:
@@ -144,8 +144,8 @@ def tap_sink(self: AnyStream, sink: AnySink) -> AnyStream_:
             if sink_done:
                 return ENDED
             stream_done = True
-            sink_latch.unsafe_close()
-            upstream_latch.unsafe_open()
+            sink_latch.close_unsafe()
+            upstream_latch.open_unsafe()
             return sink_latch.wait().and_then(
                 _Suspend(lambda: ENDED if sink_cause is None else _FailCause(sink_cause))
             )
@@ -199,7 +199,7 @@ def aggregate_within(
             buffer: Queue[Any, Any] = Queue(0)
 
             def offer(chunk: Chunk) -> AnyEffect:
-                pull_latch.unsafe_close()
+                pull_latch.close_unsafe()
                 return buffer.offer(chunk)
 
             producer = pull_latch.when_open(pull).flat_map(offer).forever()
@@ -209,15 +209,15 @@ def aggregate_within(
             clock: ClockService = yield Clock()
             step = yield to_step(policy)
             has_input = Latch()
-            schedule_time = clock.unsafe_now()
+            schedule_time = clock.now_unsafe()
             opened_at = 0.0
             last_output: Option[Any] = None
             leftover: Chunk | None = None
 
             def on_input(chunk: Chunk) -> AnyEffect:
                 nonlocal opened_at
-                if has_input.unsafe_open():
-                    opened_at = clock.unsafe_now()
+                if has_input.open_unsafe():
+                    opened_at = clock.now_unsafe()
                 return _Succeed(chunk)
 
             def decided(decision: object) -> AnyEffect:
@@ -243,7 +243,7 @@ def aggregate_within(
                     chunk, leftover = leftover, None
                     return on_input(chunk)
                 if isinstance(buffer._state, queue_state.Open):
-                    pull_latch.unsafe_open()
+                    pull_latch.open_unsafe()
                 return buffer.take().flat_map(take_input)
 
             sink_upstream = _Suspend(next_input)
@@ -251,7 +251,7 @@ def aggregate_within(
             def emit(end: AnyEnd) -> AnyEffect:
                 nonlocal schedule_time, last_output, leftover
                 if has_input.is_open():
-                    schedule_time += clock.unsafe_now() - opened_at
+                    schedule_time += clock.now_unsafe() - opened_at
                 elif isinstance(buffer._state, queue_state.Done):
                     return ENDED
                 last_output = Some(end[0])
@@ -262,7 +262,7 @@ def aggregate_within(
                 state = buffer._state
                 if isinstance(state, queue_state.Done) and leftover is None:
                     return _FailCause(state.cause)
-                has_input.unsafe_close()
+                has_input.close_unsafe()
                 aggregated = _Suspend(lambda: run_sink(sink, sink_upstream, scope)).flat_map(emit)
                 if isinstance(state, queue_state.Open):
                     return aggregated.race_first(step_to_buffer)

@@ -157,3 +157,21 @@ def make(
         return Service(resolver.with_span("EmbeddingModel.resolver"), embed_many)
 
     return fx.sync(build)
+
+
+__all__ = [
+    "EMBEDDING_USAGE",
+    "EMBED_MANY_RESPONSE",
+    "EMBED_RESPONSE",
+    "Dimensions",
+    "EmbedMany",
+    "EmbedManyResponse",
+    "EmbedResponse",
+    "EmbeddingModel",
+    "EmbeddingRequest",
+    "EmbeddingUsage",
+    "ProviderOptions",
+    "ProviderResponse",
+    "Service",
+    "make",
+]

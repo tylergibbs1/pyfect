@@ -194,7 +194,7 @@ def test_a_url_function_routes_by_context_and_operation():
         return graphql_response(request, data)
 
     def route(options: UrlOptions) -> str:
-        host = options.context.unsafe_get(GitHubHost)
+        host = options.context.get_unsafe(GitHubHost)
         return f"http://{host}/graphql?route={options.kind}.{options.operation_name}"
 
     protocol = layer_http(url=route, query_method="GET").pipe(

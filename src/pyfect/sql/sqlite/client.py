@@ -127,10 +127,10 @@ def _enable_wal(conn: SqliteConnection, busy_timeout: int) -> Effect[None, SqlEr
 
     def body(fiber: Any) -> Effect[None, SqlError]:
         clock = fiber.get_ref(Clock)
-        deadline = clock.unsafe_monotonic_nanos() + busy_timeout * 1_000_000
+        deadline = clock.monotonic_nanos_unsafe() + busy_timeout * 1_000_000
 
         def remaining() -> int:
-            return max(0, (deadline - clock.unsafe_monotonic_nanos()) // 1_000_000)
+            return max(0, (deadline - clock.monotonic_nanos_unsafe()) // 1_000_000)
 
         def retry(error: SqlError) -> Effect[None, SqlError]:
             return sleep(_WAL_RETRY).and_then(_Suspend(attempt))

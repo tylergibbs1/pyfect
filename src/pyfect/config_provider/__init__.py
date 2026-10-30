@@ -15,6 +15,7 @@ Sources: ``from_env`` (``os.environ`` by default), ``from_env_record``,
 the provider configuration is read from (``from_env()`` unless a ``layer``
 or ``layer_add`` installs another)."""
 
+from pyfect._public import publish
 from pyfect.config_provider._dir import from_dir
 from pyfect.config_provider._dotenv import from_dot_env, from_dot_env_contents
 from pyfect.config_provider._env import from_env, from_env_record
@@ -55,3 +56,5 @@ __all__ = [
     "layer_add",
     "make",
 ]
+
+publish(globals())

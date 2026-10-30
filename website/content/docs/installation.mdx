@@ -1,15 +1,27 @@
 ---
 title: Installation
-description: "Install pyfect and set up pyright."
+description: "Install pyfect from GitHub and set up pyright."
 ---
 
-pyfect needs Python 3.13 or newer and has no dependencies.
+pyfect needs Python 3.13 or newer; its one dependency is `typing-extensions`. It is not on PyPI
+yet, so install it from GitHub. The distribution is named `pyfect-dev` and you import `pyfect`.
+The PyPI package called `pyfect` is an unrelated project.
 
-<InstallCommand uv="uv add pyfect" pip="pip install pyfect" />
+<InstallCommand
+  uv='uv add "pyfect-dev @ git+https://github.com/tylergibbs1/pyfect"'
+  pip='pip install "pyfect-dev @ git+https://github.com/tylergibbs1/pyfect"'
+/>
 
-The `otel` extra adds the OpenTelemetry bridge (`pyfect.otel`):
+Extras add integrations: `otel` (OpenTelemetry, `pyfect.otel`), `hypothesis`, `pydantic`,
+`msgspec`, `httpx` (the HTTP client backend), `websockets`, `server` (the uvicorn HTTP server),
+`pg` (PostgreSQL on psycopg), `redis` and `eventlog` (event log encryption). For example:
 
-<InstallCommand uv="uv add 'pyfect[otel]'" pip="pip install 'pyfect[otel]'" />
+<InstallCommand
+  uv='uv add "pyfect-dev[otel] @ git+https://github.com/tylergibbs1/pyfect"'
+  pip='pip install "pyfect-dev[otel] @ git+https://github.com/tylergibbs1/pyfect"'
+/>
+
+Importing a module whose extra is missing raises an `ImportError` with the command that installs it.
 
 ## Type checking
 

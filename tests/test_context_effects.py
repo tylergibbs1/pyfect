@@ -81,7 +81,7 @@ def test_scoped_with_closes_its_scope_however_the_effect_ends():
 
 def test_unsafe_get_of_a_missing_service_raises():
     with pytest.raises(fx.MissingServiceError, match="Port"):
-        fx.Context.empty().unsafe_get(Port)
+        fx.Context.empty().get_unsafe(Port)
 
 
 @testing.effect

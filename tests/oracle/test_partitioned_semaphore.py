@@ -20,7 +20,7 @@ def _with_budget[A, E](eff: fx.Effect[A, E], budget: int) -> fx.Effect[A, E]:
 
 
 def _succeeded(fiber: fx.Fiber[Any, Any]) -> bool:
-    return isinstance(fiber.unsafe_poll(), fx.Success)
+    return isinstance(fiber.poll_unsafe(), fx.Success)
 
 
 @testing.effect
@@ -156,7 +156,7 @@ def test_interrupting_an_immediately_satisfied_take_before_completion_restores_p
             take = _maps(k).and_then(sem.take("a", 1))
             taker = yield from _with_budget(take, budget).fork(start_immediately=True)
             inside = _inside_take(taker)
-            taker.unsafe_interrupt_as(None)
+            taker.interrupt_as_unsafe(None)
             ex = yield from taker.await_exit()
 
             if inside:
@@ -201,7 +201,7 @@ def test_interrupting_with_permits_if_available_before_cleanup_is_installed_rest
         fiber = yield from _with_budget(sem.with_permits_if_available(user), budget).fork(
             start_immediately=True
         )
-        fiber.unsafe_interrupt_as(None)
+        fiber.interrupt_as_unsafe(None)
         ex = yield from fiber.await_exit()
 
         assert isinstance(ex, fx.Failure) or ran, budget
@@ -225,9 +225,9 @@ def _interrupt_resumed_waiter(key: str, budget: int, *, bare_take: bool):
     for _ in range(3):
         yield from fx.yield_now()
 
-    ex = nxt.unsafe_poll()
+    ex = nxt.poll_unsafe()
     yield from nxt.interrupt()
-    return first.unsafe_poll(), ex
+    return first.poll_unsafe(), ex
 
 
 def _check_resumed_waiter_interrupts(key: str) -> fx.Effect[None]:

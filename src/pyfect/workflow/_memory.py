@@ -111,7 +111,7 @@ class _MemoryEngine:
             state = self.executions.get(execution_id)
             if state is None:
                 return
-            ex = None if state.fiber is None else state.fiber.unsafe_poll()
+            ex = None if state.fiber is None else state.fiber.poll_unsafe()
             if isinstance(ex, Success) and _is_unwakeable(ex.value, mode):
                 return
             if state.fiber is not None and ex is None:
@@ -143,7 +143,7 @@ class _MemoryEngine:
             state.instance.workflow, state.instance.execution_id, scope=state.scope._fork_now()
         )
         state.instance = instance
-        suspend_on_failure = instance.workflow.annotations.unsafe_get(SuspendOnFailure)
+        suspend_on_failure = instance.workflow.annotations.get_unsafe(SuspendOnFailure)
 
         def on_run_exit(ex: Exit[Any, Any]) -> Effect[None]:
             # A safe interrupt takes effect only when the run would suspend;
@@ -324,7 +324,7 @@ class _MemoryEngine:
     def poll(self, workflow: AnyWorkflow, execution_id: str) -> Effect[Result[Any, Any] | None]:
         def run() -> Effect[Result[Any, Any] | None]:
             state = self._owned(workflow, execution_id)
-            ex = None if state is None or state.fiber is None else state.fiber.unsafe_poll()
+            ex = None if state is None or state.fiber is None else state.fiber.poll_unsafe()
             if ex is None:
                 return succeed(None)
             if isinstance(ex, Success):

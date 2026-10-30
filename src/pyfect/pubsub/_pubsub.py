@@ -64,7 +64,7 @@ class PubSub[A]:
 
         def register(resume: Callable[[Effect[bool]], None]) -> Effect[None] | None:
             hub = self._hub
-            if self.unsafe_publish(value):
+            if self.publish_unsafe(value):
                 resume(_Succeed(True))
             elif not hub.accepts() or hub.strategy == "dropping":
                 resume(_Succeed(False))
@@ -76,7 +76,7 @@ class PubSub[A]:
 
         return _Callback(register)
 
-    def unsafe_publish(self, value: A) -> bool:
+    def publish_unsafe(self, value: A) -> bool:
         """Publish without waiting, sliding or dropping: ``False`` if the
         store is full. Call on the scheduler thread of the hub's fibers."""
         hub = self._hub
@@ -112,9 +112,9 @@ class PubSub[A]:
         """Publish nothing more. Subscribers take what they have not read,
         then ``value`` from every take; waiting publishes return ``False``.
         ``False`` if the hub already ended or shut down."""
-        return _Sync(lambda: self.unsafe_end(value))
+        return _Sync(lambda: self.end_unsafe(value))
 
-    def unsafe_end(self, value: A) -> bool:
+    def end_unsafe(self, value: A) -> bool:
         hub = self._hub
         if not hub.accepts():
             return False
@@ -162,27 +162,27 @@ class PubSub[A]:
         return _WithFiber(body).uninterruptible()
 
     def is_shutdown(self) -> Effect[bool]:
-        return _Sync(self.unsafe_is_shutdown)
+        return _Sync(self.is_shutdown_unsafe)
 
-    def unsafe_is_shutdown(self) -> bool:
+    def is_shutdown_unsafe(self) -> bool:
         return self._hub.is_shutdown
 
     def await_shutdown(self) -> Effect[None]:
         """Wait until the hub is shut down."""
-        return _Suspend(lambda: self._hub.shutdown_waiters.wait(self.unsafe_is_shutdown))
+        return _Suspend(lambda: self._hub.shutdown_waiters.wait(self.is_shutdown_unsafe))
 
     def size(self) -> Effect[int]:
         """How many messages are stored unread (0 once shut down)."""
-        return _Sync(self.unsafe_size)
+        return _Sync(self.size_unsafe)
 
-    def unsafe_size(self) -> int:
+    def size_unsafe(self) -> int:
         return 0 if self._hub.is_shutdown else self._hub.atomic.size()
 
     def is_full(self) -> Effect[bool]:
-        return _Sync(lambda: self.unsafe_size() == self.capacity)
+        return _Sync(lambda: self.size_unsafe() == self.capacity)
 
     def is_empty(self) -> Effect[bool]:
-        return _Sync(lambda: self.unsafe_size() == 0)
+        return _Sync(lambda: self.size_unsafe() == 0)
 
     # --- internals --------------------------------------------------------
 

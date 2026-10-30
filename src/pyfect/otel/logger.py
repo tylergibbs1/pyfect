@@ -106,7 +106,7 @@ def _record(options: Options, observed: int) -> LogRecord:
 
 def _logger(provider: sdk_logs.LoggerProvider, clock: ClockService) -> Logger[None]:
     otel_logger = provider.get_logger("pyfect", PYFECT_VERSION)
-    return Logger(lambda options: otel_logger.emit(_record(options, clock.unsafe_now_nanos())))
+    return Logger(lambda options: otel_logger.emit(_record(options, clock.now_nanos_unsafe())))
 
 
 @gen

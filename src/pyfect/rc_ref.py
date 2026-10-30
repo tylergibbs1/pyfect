@@ -103,7 +103,7 @@ class RcRef(Generic[A_co, E_co]):
 
         def body(fiber: Fiber[Any, Any]) -> Effect[RcRef[T, X]]:
             context = fiber._context
-            scope = context.unsafe_get(Scope)
+            scope = context.get_unsafe(Scope)
             ref = RcRef(acquire, context, scope, ttl)
             return scope.add_finalizer(lambda _: ref._close()).as_(ref)
 
@@ -114,7 +114,7 @@ class RcRef(Generic[A_co, E_co]):
 
         def body(restore: Restore) -> Effect[A_co, E_co, Scope]:
             def with_fiber(fiber: Fiber[Any, Any]) -> Effect[A_co, E_co]:
-                scope = fiber._context.unsafe_get(Scope)
+                scope = fiber._context.get_unsafe(Scope)
                 return self._get_state(fiber, restore).flat_map(
                     lambda state: scope.add_finalizer(lambda _: self._release(state)).as_(
                         state.value
@@ -138,7 +138,7 @@ class RcRef(Generic[A_co, E_co]):
             if state.ref_count > 0:
                 return _VOID
             if state.fiber is not None:
-                state.fiber.unsafe_interrupt_as(None)
+                state.fiber.interrupt_as_unsafe(None)
             return state.scope.close(_DONE)
 
         return _Suspend(body).uninterruptible()
@@ -252,3 +252,6 @@ class RcRef(Generic[A_co, E_co]):
         if isinstance(state, _Acquiring):
             return state.fiber.interrupt()
         return _VOID
+
+
+__all__ = ["RcRef"]

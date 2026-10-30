@@ -386,7 +386,7 @@ def test_compresses_unknown_length_streams_incrementally() -> None:
         chunks = response.chunks()
         # The first compressed chunk arrives while the source is still open.
         received = [await anext(chunks)]
-        latch.unsafe_open()
+        latch.open_unsafe()
         received.extend([chunk async for chunk in chunks])
         return b"".join(received)
 

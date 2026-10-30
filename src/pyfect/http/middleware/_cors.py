@@ -118,7 +118,7 @@ def cors(
         app: Effect[HttpServerResponse, E, R],
     ) -> Effect[HttpServerResponse, E, R | HttpServerRequest]:
         def body(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, E, R]:
-            request = fiber._context.unsafe_get(HttpServerRequest)
+            request = fiber._context.get_unsafe(HttpServerRequest)
             if request.method == "OPTIONS":
                 return succeed(empty(status=204, headers=from_preflight(request)))
             append_pre_response_handler_unsafe(fiber._context, pre_response)

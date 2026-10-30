@@ -1,7 +1,7 @@
 """Ports of Effect's ``Context.test.ts``.
 
 Each test's docstring is the Effect test title. ``Context.Service<number>(key)``
-is a ``Tag[int]`` subclass, ``mapUnsafe`` is ``unsafe_map`` (keyed by tag
+is a ``Tag[int]`` subclass, ``mapUnsafe`` is ``map_unsafe`` (keyed by tag
 class, not by key string) and ``toJSON`` is ``repr``.
 
 Omitted, with the reason:
@@ -32,11 +32,11 @@ class C(fx.Tag[int], key="ContextTest/C"): ...
 
 
 def _keys(ctx: fx.Context) -> list[str]:
-    return [tag.key for tag in ctx.unsafe_map]
+    return [tag.key for tag in ctx.map_unsafe]
 
 
 def _entries(ctx: fx.Context) -> list[tuple[str, object]]:
-    return [(tag.key, value) for tag, value in ctx.unsafe_map.items()]
+    return [(tag.key, value) for tag, value in ctx.map_unsafe.items()]
 
 
 def test_keeps_the_source_immutable_across_additions():
@@ -80,11 +80,11 @@ def test_distinguishes_an_undefined_service_from_an_absent_service():
     context = fx.Context.make(Undefined, 1).add(Undefined, None).add(Ref, None)
     assert context.get_option(Undefined) == fx.Some(None)
     assert context.get_option(Missing) is None
-    assert context.unsafe_get(Undefined) is None
+    assert context.get_unsafe(Undefined) is None
     assert context.get_or_else(Undefined, lambda: 1) is None
     assert context.get_option(Ref) == fx.Some(None)
     assert _entries(context.pipe(fx.Context.pick(Undefined))) == [(Undefined.key, None)]
-    assert _entries(fx.Context(context.unsafe_map).pipe(fx.Context.pick(Missing))) == []
+    assert _entries(fx.Context(context.map_unsafe).pipe(fx.Context.pick(Missing))) == []
     assert context.get(Ref) is None
 
 
@@ -94,17 +94,17 @@ def test_bounds_deep_overlay_chains_without_changing_values_or_order():
     context: fx.Context = fx.Context.empty()
     for i, key in enumerate(keys):
         context = context.add(key, i)
-    assert len(context.unsafe_map) == 20
+    assert len(context.map_unsafe) == 20
     assert _keys(context) == [key.key for key in keys]
     for i, key in enumerate(keys):
-        assert context.unsafe_get(key) == i
+        assert context.get_unsafe(key) == i
 
 
 def test_rebases_a_shadowing_overlay_chain_from_a_cold_or_warm_parent():
     """rebases a shadowing overlay chain from a cold or warm parent"""
     keys = [type(f"Rebase{i}", (Tag,), {}, key=f"ContextTest/Rebase{i}") for i in range(8)]
     base = fx.Context.make(A, 1).add(B, 2)
-    flat = fx.Context(base.unsafe_map)
+    flat = fx.Context(base.map_unsafe)
     parent: fx.Context = flat.add(A, 10)
     for i in range(7):
         parent = parent.add(keys[i], i)
@@ -128,16 +128,16 @@ def test_rebases_a_large_base_without_warming_the_pre_rebase_contexts_flat_cache
     context = fx.Context({key: i for i, key in enumerate(base_keys)})
     for i, key in enumerate(push_keys):
         context = context.add(key, i)
-    assert len(context.unsafe_map) == 59
+    assert len(context.map_unsafe) == 59
     for i, key in enumerate(base_keys):
-        assert context.unsafe_get(key) == i
+        assert context.get_unsafe(key) == i
     for i, key in enumerate(push_keys):
-        assert context.unsafe_get(key) == i
+        assert context.get_unsafe(key) == i
 
 
 def test_supports_the_readonly_map_surface_through_map_unsafe():
     """supports the ReadonlyMap surface through mapUnsafe"""
-    services = fx.Context.make(A, 1).add(B, 2).unsafe_map
+    services = fx.Context.make(A, 1).add(B, 2).map_unsafe
     assert len(services) == 2
     assert A in services
     assert services[B] == 2

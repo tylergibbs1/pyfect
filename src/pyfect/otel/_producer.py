@@ -34,7 +34,7 @@ from pyfect.metric import (
     HistogramState,
     Snapshot,
     SummaryState,
-    unsafe_snapshot,
+    snapshot_unsafe,
 )
 
 type TemporalityPreference = Literal["cumulative", "delta"]
@@ -126,7 +126,7 @@ class MetricProducer:
             start_times=self._start_times,
             previous=self._totals,
         )
-        for snapshot in unsafe_snapshot(self.context):
+        for snapshot in snapshot_unsafe(self.context):
             run.add(snapshot)
         # Only series in this snapshot carry their delta state forward, so a
         # removed series does not report a negative delta when recreated.

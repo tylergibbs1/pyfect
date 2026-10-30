@@ -50,7 +50,7 @@ class LockedRef[A]:
 
     # --- reading ----------------------------------------------------------
 
-    def unsafe_get(self) -> A:
+    def get_unsafe(self) -> A:
         return self._value
 
     def get(self) -> Effect[A]:

@@ -24,8 +24,8 @@ from collections import deque
 from collections.abc import Callable
 
 from pyfect._core import Effect
+from pyfect._os_wait import Resume, os_wait
 from pyfect.effect import fail, succeed, suspend, void
-from pyfect.process._os import Resume, os_wait
 from pyfect.socket._errors import SocketError, close_error, read_error, write_error
 from pyfect.socket._loop import call_soon
 from pyfect.socket._tls_session import Received, TlsSession

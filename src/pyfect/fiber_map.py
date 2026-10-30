@@ -106,7 +106,7 @@ class FiberMap[K: Hashable, A = object, E = object]:
             return "FiberMap(closed)"
         return f"FiberMap(size={len(self._state.by_key)})"
 
-    def unsafe_set(
+    def set_unsafe(
         self,
         key: K,
         fiber: Fiber[A, E],
@@ -120,13 +120,13 @@ class FiberMap[K: Hashable, A = object, E = object]:
         thread."""
         state = self._state
         if state is None:
-            fiber.unsafe_interrupt_as(INTERNAL_FIBER_ID)
+            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
             return
         entry = state.by_key.get(key)
         if entry is not None and entry.fiber is fiber:
             return
         if entry is not None and only_if_missing:
-            fiber.unsafe_interrupt_as(INTERNAL_FIBER_ID)
+            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
             return
         state.owned[fiber] = None
         if entry is None:
@@ -135,7 +135,7 @@ class FiberMap[K: Hashable, A = object, E = object]:
             # Install the replacement before the interrupt can re-enter the
             # map through a finalizer.
             previous, entry.fiber = entry.fiber, fiber
-            previous.unsafe_interrupt_as(INTERNAL_FIBER_ID)
+            previous.interrupt_as_unsafe(INTERNAL_FIBER_ID)
 
         def observer(ex: Exit[A, E]) -> None:
             state = self._state
@@ -146,9 +146,9 @@ class FiberMap[K: Hashable, A = object, E = object]:
             if entry is not None and entry.fiber is fiber:
                 del state.by_key[key]
             if reports_failure(ex, propagate_interruption):
-                self.deferred.unsafe_done(ex)
+                self.deferred.done_unsafe(ex)
 
-        fiber.unsafe_add_observer(observer)
+        fiber.add_observer_unsafe(observer)
 
     def set(
         self,
@@ -159,7 +159,7 @@ class FiberMap[K: Hashable, A = object, E = object]:
         propagate_interruption: bool = False,
     ) -> Effect[None]:
         return _Sync(
-            lambda: self.unsafe_set(
+            lambda: self.set_unsafe(
                 key,
                 fiber,
                 only_if_missing=only_if_missing,
@@ -167,24 +167,24 @@ class FiberMap[K: Hashable, A = object, E = object]:
             )
         )
 
-    def unsafe_get(self, key: K) -> Fiber[A, E] | None:
+    def get_unsafe(self, key: K) -> Fiber[A, E] | None:
         entry = None if self._state is None else self._state.by_key.get(key)
         return None if entry is None else entry.fiber
 
     def get(self, key: K) -> Effect[Fiber[A, E] | None]:
-        return _Sync(lambda: self.unsafe_get(key))
+        return _Sync(lambda: self.get_unsafe(key))
 
-    def unsafe_has(self, key: K) -> bool:
+    def has_unsafe(self, key: K) -> bool:
         return self._state is not None and key in self._state.by_key
 
     def has(self, key: K) -> Effect[bool]:
-        return _Sync(lambda: self.unsafe_has(key))
+        return _Sync(lambda: self.has_unsafe(key))
 
     def remove(self, key: K) -> Effect[None]:
         """Interrupt the fiber under ``key``, if any, and wait for it."""
 
         def body() -> Effect[None]:
-            fiber = self.unsafe_get(key)
+            fiber = self.get_unsafe(key)
             return _Succeed(None) if fiber is None else fiber.interrupt_as(INTERNAL_FIBER_ID)
 
         return _Suspend(body)
@@ -220,10 +220,10 @@ class FiberMap[K: Hashable, A = object, E = object]:
         def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
             if self._state is None:
                 return interrupt()
-            if only_if_missing and self.unsafe_has(key):
+            if only_if_missing and self.has_unsafe(key):
                 return _Succeed(interrupted_fiber(parent._run_scheduler, parent._context))
             fiber: Fiber[A, E] = parent._fork(eff, daemon=True, start_immediately=start_immediately)
-            self.unsafe_set(
+            self.set_unsafe(
                 key,
                 fiber,
                 only_if_missing=only_if_missing,
@@ -301,10 +301,10 @@ class FiberMapRuntime[K: Hashable, A, E, R]:
         that never runs ``eff``."""
         require_effect(eff, "eff")
         fiber_map = self._map
-        if fiber_map._state is None or (only_if_missing and fiber_map.unsafe_has(key)):
+        if fiber_map._state is None or (only_if_missing and fiber_map.has_unsafe(key)):
             return self._runtime.interrupted()
         fiber = self._runtime.fork(eff, uninterruptible=uninterruptible, scheduler=scheduler)
-        fiber_map.unsafe_set(
+        fiber_map.set_unsafe(
             key,
             fiber,
             only_if_missing=only_if_missing,
@@ -343,3 +343,6 @@ class FiberMapAsyncRuntime[K: Hashable, A, E, R]:
                 scheduler=scheduler,
             )
         )
+
+
+__all__ = ["FiberMap", "FiberMapAsyncRuntime", "FiberMapRuntime"]

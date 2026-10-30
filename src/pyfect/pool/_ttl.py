@@ -45,7 +45,7 @@ def creation_ttl(ttl: Seconds) -> Effect[Strategy[Any, Any]]:
                 def body() -> Effect[None]:
                     if item not in pool.state.items or item in pool.state.invalidated:
                         return _VOID
-                    remaining = ttl_nanos - (clock.unsafe_now_nanos() - created[item])
+                    remaining = ttl_nanos - (clock.now_nanos_unsafe() - created[item])
                     if remaining > 0:
                         return process(item).delay(remaining / 1e9)
                     return pool._invalidate_item(item)
@@ -56,7 +56,7 @@ def creation_ttl(ttl: Seconds) -> Effect[Strategy[Any, Any]]:
 
         def on_acquire(item: _Item) -> Effect[None]:
             def body() -> Effect[None]:
-                created[item] = clock.unsafe_now_nanos()
+                created[item] = clock.now_nanos_unsafe()
                 return queue.offer(item).as_void()
 
             return _Suspend(body)
@@ -83,7 +83,7 @@ def usage_ttl(ttl: Seconds) -> Effect[Strategy[Any, Any]]:
             def retire() -> Effect[None]:
                 if pool._active_size() <= pool._target_size():
                     return _VOID
-                expired = clock.unsafe_now_nanos() - ttl_nanos
+                expired = clock.now_nanos_unsafe() - ttl_nanos
                 oldest: _Item | None = None
                 for item in state.items:
                     if item.ref_count > 0 or item.idle_since > expired:

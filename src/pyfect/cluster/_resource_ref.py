@@ -2,7 +2,7 @@
 ``internal/resourceRef``): SQL runner storage keeps its reserved lock
 connection in one, replacing it when a statement on it fails.
 
-``await_`` waits for the current resource; ``unsafe_rebuild`` releases it
+``await_`` waits for the current resource; ``rebuild_unsafe`` releases it
 (in the background, so a stalled release cannot block) and acquires a new
 one; a failed acquisition leaves the ref ``Failed`` until the next
 rebuild. Closing the parent scope closes the ref and wakes its waiters
@@ -86,7 +86,7 @@ class ResourceRef[A]:
 
         return gen(body)
 
-    def unsafe_get(self) -> A | None:
+    def get_unsafe(self) -> A | None:
         """The resource, when one is ready."""
         state = self._state
         return state.value if isinstance(state, _Ready) else None
@@ -107,7 +107,7 @@ class ResourceRef[A]:
 
         return suspend(run)
 
-    def unsafe_rebuild(
+    def rebuild_unsafe(
         self,
         *,
         from_: A | None = None,
@@ -132,7 +132,7 @@ class ResourceRef[A]:
                 if from_ is None or state.value is not from_:
                     return None
                 if state.work is not None:
-                    state.work.unsafe_interrupt_as(None)
+                    state.work.interrupt_as_unsafe(None)
                 pending = self._pending(state.scope, state.ready)
         return self._run(pending, prepare)
 
@@ -145,7 +145,7 @@ class ResourceRef[A]:
 
     def _publish(self, pending: _Pending[A], value: A) -> None:
         self._state = _Ready(pending.scope, value)
-        pending.ready.unsafe_done(Success(value))
+        pending.ready.done_unsafe(Success(value))
 
     def _run(
         self, pending: _Pending[A], prepare: Callable[[A], Effect[None]] | None
@@ -196,7 +196,7 @@ class ResourceRef[A]:
                 if self._state is not pending:
                     return
                 self._state = _Failed(Deferred[A](), releasing)
-                pending.ready.unsafe_done(Failure(cause))
+                pending.ready.done_unsafe(Failure(cause))
 
             return self._release(pending.scope).map(failed)
 
@@ -211,7 +211,7 @@ class ResourceRef[A]:
             pending.work = fiber
             # Replaced or closed before the fiber existed.
             if self._state is not pending:
-                fiber.unsafe_interrupt_as(None)
+                fiber.interrupt_as_unsafe(None)
             return fiber.join()
 
         return work.fork(start_immediately=True).flat_map(started)
@@ -233,11 +233,11 @@ class ResourceRef[A]:
             case _Ready():
                 return state.scope.close(exit)
             case _Failed():
-                return sync(lambda: state.ready.unsafe_done(_INTERRUPTED)).as_void()
+                return sync(lambda: state.ready.done_unsafe(_INTERRUPTED)).as_void()
             case _Pending():
-                state.ready.unsafe_done(_INTERRUPTED)
+                state.ready.done_unsafe(_INTERRUPTED)
                 if state.work is not None:
-                    state.work.unsafe_interrupt_as(None)
+                    state.work.interrupt_as_unsafe(None)
                 close = state.scope.close(exit)
                 releases = state.releases
                 if isinstance(releases, CloseableScope):

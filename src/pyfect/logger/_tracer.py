@@ -26,7 +26,7 @@ def _record(options: Options) -> None:
     attributes["effect.logLevel"] = options.log_level.name
     if options.cause.reasons:
         attributes["effect.cause"] = options.cause.pretty()
-    span.event(_event_name(options.message), fiber.get_ref(Clock).unsafe_now_nanos(), attributes)
+    span.event(_event_name(options.message), fiber.get_ref(Clock).now_nanos_unsafe(), attributes)
 
 
 tracer_logger: Logger[None] = Logger(_record)

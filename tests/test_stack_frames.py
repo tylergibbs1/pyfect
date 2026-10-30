@@ -223,4 +223,4 @@ def test_annotations_take_part_in_equality_but_not_the_hash():
     overwritten = annotated.annotate(
         fx.Context.make(StackTrace, StackFrame("g", lambda: None)), overwrite=True
     )
-    assert overwritten.annotations.unsafe_get(StackTrace).name == "g"
+    assert overwritten.annotations.get_unsafe(StackTrace).name == "g"

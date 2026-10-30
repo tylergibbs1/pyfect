@@ -121,7 +121,7 @@ def _number(value: str | None) -> float | None:
 
 
 def _now_millis(clock: ClockService) -> int:
-    return clock.unsafe_now_nanos() // 1_000_000
+    return clock.now_nanos_unsafe() // 1_000_000
 
 
 def _reset_after(value: str | None) -> Seconds | None:

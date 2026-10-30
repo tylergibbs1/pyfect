@@ -77,7 +77,7 @@ def test_scoped_closes_its_scope_when_interrupted_after_installing_it(
     @fx.gen
     def program():
         child = yield from _fork_paused(_observing(body, observed), budget)
-        child.unsafe_interrupt_as(None)
+        child.interrupt_as_unsafe(None)
         yield from child.await_exit()
 
     testing.run_test(program)
@@ -108,7 +108,7 @@ def test_provide_service_restores_the_original_context_if_interrupted_before_its
     child = yield from _fork_paused(
         _observing(body, observed).pipe(fx.provide_service(Value, 1)), budget
     )
-    child.unsafe_interrupt_as(None)
+    child.interrupt_as_unsafe(None)
     yield from child.await_exit()
     if original:
         assert observed == original

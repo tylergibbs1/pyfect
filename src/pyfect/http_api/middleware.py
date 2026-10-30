@@ -209,3 +209,22 @@ def client_tag(middleware: AnyMiddleware) -> type[Tag[Any]]:
         found = type(f"{middleware.__name__}Client", (Tag,), {}, key=key)
         _client_tags[key] = found
     return found
+
+
+__all__ = [
+    "AnyMiddleware",
+    "ClientMiddlewareFn",
+    "ClientMiddlewareOptions",
+    "ForClient",
+    "HttpApiMiddleware",
+    "MiddlewareFn",
+    "MiddlewareOptions",
+    "MiddlewareService",
+    "SecurityMiddlewareFn",
+    "SecurityOptions",
+    "client_key",
+    "client_tag",
+    "layer_client",
+    "layer_client_effect",
+    "layer_schema_error_transform",
+]

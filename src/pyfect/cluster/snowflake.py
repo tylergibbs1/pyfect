@@ -80,7 +80,7 @@ class SnowflakeGenerator:
         self._sequence_at = self._now()
 
     def _now(self) -> int:
-        return math.floor(self._clock.unsafe_now() * 1000)
+        return math.floor(self._clock.now_unsafe() * 1000)
 
     def set_machine_id(self, machine_id: MachineId) -> Effect[None]:
         def run() -> None:
@@ -88,7 +88,7 @@ class SnowflakeGenerator:
 
         return sync(run)
 
-    def unsafe_next(self) -> Snowflake:
+    def next_unsafe(self) -> Snowflake:
         now = self._now()
         if now < self._sequence_at:
             pass

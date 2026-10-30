@@ -1,4 +1,4 @@
-"""WebSockets on the ``websockets`` library (extra ``pyfect[websockets]``;
+"""WebSockets on the ``websockets`` library (extra ``pyfect-dev[websockets]``;
 Effect's ``NodeSocket.layerWebSocketConstructorWS`` and
 ``NodeSocketServer.makeWebSocket``).
 
@@ -23,12 +23,17 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any, Never
 
-from websockets.asyncio.client import connect
-from websockets.asyncio.connection import Connection as WsConnection
-from websockets.asyncio.server import Server, ServerConnection, serve
-from websockets.exceptions import ConnectionClosed
-from websockets.http11 import Request
-from websockets.typing import Subprotocol
+from pyfect._extras import missing_extra
+
+try:
+    from websockets.asyncio.client import connect
+    from websockets.asyncio.connection import Connection as WsConnection
+    from websockets.asyncio.server import Server, ServerConnection, serve
+    from websockets.exceptions import ConnectionClosed
+    from websockets.http11 import Request
+    from websockets.typing import Subprotocol
+except ImportError as error:  # pragma: no cover - depends on the environment
+    raise missing_extra("pyfect.socket.ws", "websockets") from error
 
 from pyfect._core import Effect
 from pyfect._js import to_well_formed

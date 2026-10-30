@@ -45,7 +45,7 @@ def logger[E, R](
     require_effect(app, "app")
 
     def body(fiber: Fiber[Any, Any]) -> Effect[HttpServerResponse, E, R | HttpServerRequest]:
-        request = fiber._context.unsafe_get(HttpServerRequest)
+        request = fiber._context.get_unsafe(HttpServerRequest)
         state = _request_state.get(fiber._context)
         path = strip_search_and_hash(request.url)
 

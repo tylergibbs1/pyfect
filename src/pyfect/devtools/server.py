@@ -17,7 +17,7 @@ from pyfect.socket import SocketChannel, SocketService, to_channel_string
 from pyfect.socket.server import SocketServer, SocketServerError
 from pyfect.stream import from_queue
 
-__all__ = ["Client", "run"]
+__all__ = ["Client", "RequestWithoutPing", "run"]
 
 type RequestWithoutPing = D.Span | D.SpanEvent | D.MetricsSnapshot
 

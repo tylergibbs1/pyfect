@@ -85,7 +85,7 @@ def resolve_stream(
     run live in."""
 
     def start(queue: Queue[Any, Any]) -> Effect[Stream[Any, Any, Any], Any, Any]:
-        queue.unsafe_offer_all(emitted)
+        queue.offer_all_unsafe(emitted)
 
         def run(fibers: FiberSet[None, Any], semaphore: Semaphore | None) -> Effect[Any, Any, Any]:
             resolution = _Resolution(kit, queue, fibers, semaphore, messages)
@@ -139,7 +139,7 @@ class _Resolution:
 
         def request(approval_id: str) -> None:
             part = R.ToolApprovalRequestPart(approval_id=approval_id, tool_call_id=id)
-            self.queue.unsafe_offer(part)
+            self.queue.offer_unsafe(part)
             self.pending.pop(id, None)
 
         def run(needed: bool) -> Effect[None, Any, Any]:
@@ -153,7 +153,7 @@ class _Resolution:
     def _run_handler(self, id: str, name: str, call: EncodedPart) -> Effect[None, Any, Any]:
         def offer(result: K.HandlerResult) -> Effect[None]:
             def run() -> None:
-                self.queue.unsafe_offer(result_part(id, name, result))
+                self.queue.offer_unsafe(result_part(id, name, result))
                 if not result.preliminary:
                     self.pending.pop(id, None)
 

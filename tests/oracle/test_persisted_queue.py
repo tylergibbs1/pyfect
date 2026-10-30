@@ -54,7 +54,7 @@ def test_derives_growing_delays_from_the_persisted_attempt_count() -> None:
 
         fiber = yield from take_fail.fork_scoped()
         yield from testing.adjust(0.5)
-        assert fiber.unsafe_poll() is None
+        assert fiber.poll_unsafe() is None
         yield from testing.adjust(0.5)
         assert (yield from fiber.join()) == "boom"
 
@@ -62,7 +62,7 @@ def test_derives_growing_delays_from_the_persisted_attempt_count() -> None:
         # next delay is 2s
         fiber2 = yield from take_fail.fork_scoped()
         yield from testing.adjust(1.5)
-        assert fiber2.unsafe_poll() is None
+        assert fiber2.poll_unsafe() is None
         yield from testing.adjust(0.6)
         assert (yield from fiber2.join()) == "boom"
 
@@ -89,7 +89,7 @@ def test_prunes_completed_elements_on_the_configured_interval() -> None:
         yield from queue.offer({"n": 2}, id="cleanup-layer-id")
         fiber = yield from queue.take(_succeed).fork_scoped()
         yield from testing.adjust(1)
-        assert fiber.unsafe_poll() is None
+        assert fiber.poll_unsafe() is None
 
         # after the ttl a cleanup run prunes the entry and the id can be reused
         yield from testing.adjust(7200)

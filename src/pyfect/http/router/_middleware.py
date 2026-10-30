@@ -62,12 +62,12 @@ class Middleware[E = Never, R = Never, LE = Never, LR = Never]:
 
         def build(fiber: Fiber[Any, Any]) -> Effect[Context[Any], Any, Any]:
             context = fiber._context
-            stack: list[MiddlewareFn] = [context.unsafe_get(MiddlewareFnTag)]
+            stack: list[MiddlewareFn] = [context.get_unsafe(MiddlewareFnTag)]
             if dependencies is None:
                 return succeed(Context({stack_tag: stack}))
             found, memo = context.lookup(CurrentMemoMap)
             built = dependencies.build_with_memo_map(
-                memo if found else fork_or_create(context), context.unsafe_get(Scope)
+                memo if found else fork_or_create(context), context.get_unsafe(Scope)
             )
             return built.map(lambda deps: Context({stack_tag: [*stack, *middleware_of(deps)]}))
 

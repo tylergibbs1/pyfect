@@ -122,6 +122,7 @@ def validate_channel_name(channel: str, operation: str) -> SqlError | None:
 
 
 __all__ = [
+    "CHANNEL_TOO_LONG",
     "catch",
     "classify",
     "classify_sql_state",

@@ -585,7 +585,7 @@ def _make_replica(compact: bool = False) -> Generator[Any, Any, _Replica]:
         .pipe(fx.layer.provide(fx.layer.merge(fx.layer.succeed(J.EventJournal, journal), identity)))
         .build()
     )
-    registry = context.unsafe_get(L.Registry)
+    registry = context.get_unsafe(L.Registry)
     if compact:
         yield from (
             R.compaction(Groceries, Grocery)
@@ -602,7 +602,7 @@ def _make_replica(compact: bool = False) -> Generator[Any, Any, _Replica]:
     yield from registry.register_remote(
         EventLogRemoteService(id=J.make_remote_id_unsafe(), changes=open_changes, write=no_write)
     )
-    return _Replica(storage, journal, context.unsafe_get(L.EventLog), changes)
+    return _Replica(storage, journal, context.get_unsafe(L.EventLog), changes)
 
 
 def _random_op(rng: random.Random) -> Payload:

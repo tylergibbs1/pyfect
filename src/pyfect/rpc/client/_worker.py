@@ -90,14 +90,14 @@ class _WorkerClient:
             return _VOID
         if response["_tag"] == "Defect":
             for entry in self._entries.values():
-                entry.latch.unsafe_open()
+                entry.latch.open_unsafe()
             self._entries.clear()
             return self._broadcast(response)
         request_id = response["requestId"]
         if response["_tag"] == "Exit":
             entry = self._entries.pop(request_id, None)
             if entry is not None:
-                entry.latch.unsafe_open()
+                entry.latch.open_unsafe()
         else:
             entry = self._entries.get(request_id)
         if entry is not None:
@@ -109,7 +109,7 @@ class _WorkerClient:
         for request_id, entry in list(self._entries.items()):
             if entry.worker is backing:
                 del self._entries[request_id]
-                entry.latch.unsafe_open()
+                entry.latch.open_unsafe()
         return self._broadcast({"_tag": "ClientProtocolError", "error": RpcClientError(reason)})
 
     def _on_cause(self, backing: _Backing, cause: Cause[Any]) -> Effect[None]:
@@ -148,7 +148,7 @@ class _WorkerClient:
 
     def close(self) -> None:
         for entry in self._entries.values():
-            entry.latch.unsafe_open()
+            entry.latch.open_unsafe()
         self._entries.clear()
 
     def send_with(self, pool: Pool[_Backing, WorkerError]) -> Any:
@@ -167,7 +167,7 @@ class _WorkerClient:
                     entry = self._entries.pop(request["requestId"], None)
                     if entry is None:
                         return _VOID
-                    entry.latch.unsafe_open()
+                    entry.latch.open_unsafe()
                     return entry.worker.send(request).or_die()
                 if tag == "Ack":
                     entry = self._entries.get(request["requestId"])
