@@ -6514,3 +6514,23 @@ def eventlog_checks() -> None:
     )
     pong: devtools_schema.Response = {"_tag": "Pong"}
     del pong
+
+
+def cluster_core_types() -> None:
+    from pyfect.cluster import cluster_error, runner_storage, shard_id, sharding_config, snowflake
+    from pyfect.hash_ring import HashRing
+
+    # Persistence failures of any effect become the cluster's PersistenceError.
+    assert_type(
+        cluster_error.PersistenceError.refail(fx.fail(ValueError())),
+        fx.Effect[Never, cluster_error.PersistenceError],
+    )
+    assert_type(
+        sharding_config.layer_from_env(), fx.Layer[sharding_config.ShardingConfig, fx.ConfigError]
+    )
+    assert_type(runner_storage.layer_memory, fx.Layer[runner_storage.RunnerStorage])
+    assert_type(snowflake.layer_generator, fx.Layer[snowflake.Generator])
+    ring = HashRing[shard_id.ShardId]()
+    assert_type(ring.get("x"), shard_id.ShardId | None)
+    # A ring holds only nodes with a primary key.
+    HashRing[int]()  # pyright: ignore[reportInvalidTypeArguments]

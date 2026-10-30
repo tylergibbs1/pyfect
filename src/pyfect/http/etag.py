@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import ClassVar, Literal
 
 from pyfect._core import Effect
 from pyfect.context import Tag
+from pyfect.date_time._epoch import EPOCH
 from pyfect.effect import sync
 from pyfect.file_system import FileInfo
 from pyfect.http.file_like import FileLike
@@ -41,7 +42,8 @@ def to_string(etag: Etag) -> str:
 
 
 def _milliseconds(moment: datetime) -> int:
-    return int(moment.timestamp() * 1000)
+    # Whole milliseconds, as JavaScript's Date keeps an mtime.
+    return (moment - EPOCH) // timedelta(milliseconds=1)
 
 
 def value_from_file_info(info: FileInfo) -> str:
