@@ -44,6 +44,19 @@ with 403; `layer.succeed(AllowedOrigins, origin.allow("https://app.example"))` (
 `.middleware(...)`, for authentication say, and can provide them a service such as the
 current user.
 
+## Security defaults
+
+- A WebSocket handshake or HTTP call from a browser page of another origin gets a 403 unless
+  `AllowedOrigins` lists it.
+- Headers the transport carries, such as those of the HTTP request or the WebSocket
+  upgrade, win over headers of the same name inside a message, so a client cannot claim a
+  header that a proxy or gateway set. A message's headers must be string pairs or an object
+  of strings; any other shape fails only that request.
+- The client checks every message from the server before routing it, so a malformed or
+  forged message fails the waiting call with an `RpcClientError` and the connection keeps
+  working. Closing a client's scope sends an Interrupt for each call still running and drops
+  late replies for it.
+
 ## Testing handlers
 
 `pyfect.rpc.test.make_client(Group)` calls the handlers in memory, without a server or

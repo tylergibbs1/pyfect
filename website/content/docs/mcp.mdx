@@ -50,6 +50,20 @@ default), a transport or protocol error.
 handlers, so `generate_text(prompt, toolkit=...)` lets a model call another program's
 tools, named with `prefix` to keep them apart from local ones.
 
+## Security defaults
+
+- `mcp_server.layer_http` keeps at most `max_sessions` (1000) sessions and answers 503 when
+  they are all in use; a session idle for `session_idle_timeout` (30 minutes) expires. A
+  message larger than `max_message_bytes` (4 MiB, and never more than the app's
+  `MaxBodySize`) gets a 413.
+- A defect in a tool, resource, prompt or completion handler is logged and the client gets
+  "Internal server error"; a declared failure sends its message, never its fields.
+- Replies to the server's own requests (roots, sampling, elicitation) are decoded with their
+  result schema; a malformed elicitation reply counts as declined.
+- The client reads each server message under `max_message_bytes` (16 MiB by default) and
+  fails with a `LimitError` reason past it. JSON nested too deeply to parse is a parse
+  error on both sides, not a crash.
+
 Reference: [`mcp_server`](/docs/reference/ai/mcp_server),
 [`mcp_client`](/docs/reference/ai/mcp_client),
 [`mcp_protocol`](/docs/reference/ai/mcp_protocol).

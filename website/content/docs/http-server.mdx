@@ -61,6 +61,40 @@ released at its shutdown.
 `asgi.from_asgi(app)` goes the other way: it mounts an ASGI application, such as a FastAPI or
 Starlette one, as a route.
 
+## Security defaults
+
+The server refuses unsafe input without any setting, and each limit can be changed where an
+app needs more room.
+
+- A whole-body read (`request.text`, `json`, `schema_json`, HttpApi payloads, multipart) stops
+  at `MaxBodySize`, 10 MiB by default, with a 413. Provide a larger `ByteSize`, or `None`, on
+  the routes that need it. A streamed body (`request.stream`) is read as far as the handler
+  reads it.
+- `live_server.layer` closes a connection whose request has not fully arrived after
+  `request_timeout` (300 seconds). It answers 400 to a `Host` that is not a host and port, to
+  a request target that is not a path, `*` or an absolute `http(s)` URL, to framing headers
+  padded with anything but spaces and tabs, and to malformed trailers or chunk extensions.
+- Behind ASGI, a request URL is built only from a valid `Host` (else the server's address),
+  and a path that does not start with `/` is a 400. An app mounted with `asgi.from_asgi` or
+  `from_web_handler` keeps `%2F` encoded and never gets a `.` or `..` segment.
+- WebSocket upgrades from a browser page of another origin get a 403; list more origins with
+  `layer.succeed(AllowedOrigins, origin.allow(...))` from `pyfect.http.origin`. A WebSocket
+  write waits while more than 64 KiB are unsent.
+- The decompression middleware counts every decoded byte against the body limit and accepts
+  at most two stacked codings. `router.cors(credentials=True)` needs a list of origins
+  without `*`. A multipart boundary must follow RFC 2046 (1 to 70 characters). A response
+  header with a control character is never sent.
+- In [HttpApi](/docs/http-api), a body without a `Content-Type` gets a 415 instead of being
+  read as JSON, and `security_set_cookie` sets `Secure`, `HttpOnly` and `SameSite=Lax`.
+
+<CodeOutput>
+
+<include meta='title="limits.py"'>../../snippets/http_server/limits.py</include>
+
+<include lang="text">../../snippets/http_server/limits.out</include>
+
+</CodeOutput>
+
 ## Testing routes
 
 A test serves the routes on `layer_test` and sends requests with the `HttpClient` it gives.
