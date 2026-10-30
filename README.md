@@ -173,12 +173,12 @@ layer, concurrency, retries and timeouts.
 - **Event log.** Events written to a local journal, replayed through handlers and synced
   with a server, encrypted end to end if you like. [Event log →](https://pyfect.dev/docs/eventlog)
 - **Cluster.** The base of Effect's cluster: shards over runners, snowflake ids, and
-  message and runner storage in memory or SQL. [Cluster →](https://pyfect.dev/docs/cluster)
+  message and runner storage in memory or SQL; entities and sharding come next. [Cluster →](https://pyfect.dev/docs/cluster)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
-pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 10,000 tests, and
-about 82% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
+pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 11,000 tests, and
+about 83% of Effect's API so far. [`docs/PARITY.md`](docs/PARITY.md) tracks what is done and
 what is next.
 
 ## Installation

@@ -32,9 +32,11 @@ from pyfect.layer import Layer, unwrap
 from pyfect.layer import effect as layer_effect
 from pyfect.layer import provide as layer_provide
 from pyfect.pubsub import PubSub
+from pyfect.rc_map import RcMap
 from pyfect.rpc.group import HandlersFor
 from pyfect.rpc.server import ServerProtocol
 from pyfect.rpc.server import layer as rpc_server_layer
+from pyfect.scope import Scope, acquire_release, scoped
 from pyfect.stream import Stream, from_iterable, from_subscription
 from pyfect.stream import unwrap as stream_unwrap
 
@@ -220,25 +222,21 @@ class _Journal:
         self.next_sequence = 0
 
 
+def _open_pubsub(_key: tuple[str, str]) -> Effect[PubSub[EncryptedRemoteBatch], Never, Scope]:
+    return acquire_release(PubSub[EncryptedRemoteBatch].unbounded(), lambda p, _: p.shutdown())
+
+
 class _MemoryStorage(StorageService):
-    def __init__(self) -> None:
+    def __init__(self, pubsubs: RcMap[tuple[str, str], PubSub[EncryptedRemoteBatch]]) -> None:
         self._journals: dict[tuple[str, str], _Journal] = {}
-        self._pubsubs: dict[tuple[str, str], PubSub[EncryptedRemoteBatch]] = {}
+        # A pubsub per store, shut down a minute after its last user or
+        # when the storage's scope closes.
+        self._pubsubs = pubsubs
         self._bindings: dict[str, bytes] = {}
         self._remote_id = make_remote_id_unsafe()
 
     def _journal(self, key: tuple[str, str]) -> _Journal:
         return self._journals.setdefault(key, _Journal())
-
-    def _pubsub(self, key: tuple[str, str]) -> Effect[PubSub[EncryptedRemoteBatch]]:
-        found = self._pubsubs.get(key)
-        if found is not None:
-            return succeed(found)
-        return (
-            PubSub[EncryptedRemoteBatch]
-            .unbounded()
-            .map(lambda pubsub: self._pubsubs.setdefault(key, pubsub))
-        )
 
     @property
     def get_id(self) -> Effect[RemoteId]:
@@ -270,7 +268,7 @@ class _MemoryStorage(StorageService):
                 pubsub.unsafe_publish(stored_batch)
             return stored
 
-        return self._pubsub(key).map(store)
+        return scoped(self._pubsubs.get(key).map(store))
 
     def entry_sequences(
         self, public_key: str, store_id: StoreId, entry_ids: Sequence[EntryId], /
@@ -291,7 +289,7 @@ class _MemoryStorage(StorageService):
         key = (public_key, store_id)
 
         def open_changes():
-            pubsub = yield from self._pubsub(key)
+            pubsub = yield from self._pubsubs.get(key)
             subscription = yield from pubsub.subscribe()
             backlog = [
                 b
@@ -303,8 +301,10 @@ class _MemoryStorage(StorageService):
         return stream_unwrap(gen(open_changes))
 
 
-make_storage_memory: Effect[StorageService] = sync(_MemoryStorage)
-"""Storage kept in memory."""
+make_storage_memory: Effect[StorageService, Never, Scope] = RcMap.make(
+    _open_pubsub, idle_time_to_live=60
+).map(_MemoryStorage)
+"""Storage kept in memory, its pubsubs shut down when the scope closes."""
 
 layer_storage_memory: Layer[Storage] = layer_effect(Storage, make_storage_memory)
 """``Storage`` kept in memory."""

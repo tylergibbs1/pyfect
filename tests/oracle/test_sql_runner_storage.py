@@ -19,6 +19,9 @@ Omitted:
   is ``ResourceRef``'s, covered by ``test_resource_ref.py``.
 - "pg (no advisory) does not deadlock acquisition with refresh or bulk
   release": a timing stress test on triggers delaying each row.
+- ``sql-pglite``'s "does not starve the shared PGlite connection": PGlite
+  (PostgreSQL compiled to WebAssembly, one connection) has no Python
+  counterpart.
 """
 
 from __future__ import annotations

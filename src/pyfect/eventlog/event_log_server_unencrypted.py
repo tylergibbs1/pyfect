@@ -58,11 +58,13 @@ from pyfect.layer import provide as layer_provide
 from pyfect.layer import succeed as layer_succeed
 from pyfect.logger._log import log_debug
 from pyfect.pubsub import PubSub
+from pyfect.rc_map import RcMap
 from pyfect.redacted import make as redacted
 from pyfect.rpc.group import HandlersFor
 from pyfect.rpc.server import ServerProtocol
 from pyfect.rpc.server import layer as rpc_server_layer
 from pyfect.schema import decode_effect, encode_effect
+from pyfect.scope import Scope, acquire_release, scoped
 from pyfect.semaphore import Semaphore
 from pyfect.stream import Stream, from_iterable, from_subscription
 from pyfect.stream import unwrap as stream_unwrap
@@ -524,25 +526,17 @@ class _MemoryStore:
 class _MemoryStorage(StorageService):
     first_sequence = 1
 
-    def __init__(self, semaphore: Semaphore) -> None:
+    def __init__(self, semaphore: Semaphore, pubsubs: RcMap[str, PubSub[RemoteEntry]]) -> None:
         self._stores: dict[str, _MemoryStore] = {}
-        self._pubsubs: dict[str, PubSub[RemoteEntry]] = {}
+        # A pubsub per store, shut down a minute after its last user or
+        # when the storage's scope closes.
+        self._pubsubs = pubsubs
         self._bindings: dict[str, bytes] = {}
         self._remote_id = make_remote_id_unsafe()
         self._semaphore = semaphore
 
     def _store(self, store_id: StoreId) -> _MemoryStore:
         return self._stores.setdefault(store_id, _MemoryStore())
-
-    def _pubsub(self, store_id: StoreId) -> Effect[PubSub[RemoteEntry]]:
-        found = self._pubsubs.get(store_id)
-        if found is not None:
-            return succeed(found)
-        return (
-            PubSub[RemoteEntry]
-            .unbounded()
-            .map(lambda pubsub: self._pubsubs.setdefault(store_id, pubsub))
-        )
 
     @property
     def get_id(self) -> Effect[RemoteId]:
@@ -591,11 +585,11 @@ class _MemoryStorage(StorageService):
                 store.journal.append(remote_entry)
                 store.by_id[entry.id] = remote_entry
                 store.by_key.setdefault((entry.event, entry.primary_key), []).append(remote_entry)
-            pubsub = yield from self._pubsub(store_id)
+            pubsub = yield from self._pubsubs.get(store_id)
             yield from pubsub.publish_all(committed)
             return committed
 
-        return gen(body)
+        return scoped(gen(body))
 
     def changes(
         self,
@@ -605,7 +599,7 @@ class _MemoryStorage(StorageService):
         /,
     ) -> Stream[RemoteEntry]:
         def open_changes():
-            pubsub = yield from self._pubsub(store_id)
+            pubsub = yield from self._pubsubs.get(store_id)
             subscription = yield from pubsub.subscribe()
             journal = self._store(store_id).journal
             # The journal is append-only with strictly increasing sequences.
@@ -622,8 +616,19 @@ class _MemoryStorage(StorageService):
         return self._semaphore.with_permits(effect)
 
 
-make_storage_memory: Effect[StorageService] = Semaphore.make(1).map(_MemoryStorage)
-"""Storage kept in memory (sequences start at 1)."""
+def _open_pubsub(_store_id: str) -> Effect[PubSub[RemoteEntry], Never, Scope]:
+    return acquire_release(PubSub[RemoteEntry].unbounded(), lambda p, _: p.shutdown())
+
+
+def _make_storage_memory():
+    semaphore = yield from Semaphore.make(1)
+    pubsubs = yield from RcMap.make(_open_pubsub, idle_time_to_live=60)
+    return _MemoryStorage(semaphore, pubsubs)
+
+
+make_storage_memory: Effect[StorageService, Never, Scope] = gen(_make_storage_memory)
+"""Storage kept in memory (sequences start at 1), its pubsubs shut down when
+the scope closes."""
 
 layer_storage_memory: Layer[Storage] = layer_effect(Storage, make_storage_memory)
 
