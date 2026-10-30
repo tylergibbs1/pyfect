@@ -29,6 +29,7 @@ from pyfect.rpc.client._protocol import (
 )
 from pyfect.rpc.client._transports import ConnectionHooks
 from pyfect.rpc.client_error import RpcClientDefect, RpcClientError
+from pyfect.rpc.message import MalformedMessage, ServerMessage, decode_from_server
 from pyfect.rpc.serialization import CodecFor
 from pyfect.rpc.worker import InitialMessage
 from pyfect.scope import Scope, add_finalizer, fork_scoped, scoped
@@ -77,35 +78,47 @@ class _WorkerClient:
 
         return deliver
 
-    def _on_response(self, backing: _Backing, response: Message) -> Effect[None]:
-        tag = response.get("_tag")
-        if tag == "Exit":
-            entry = self._entries.pop(response["requestId"], None)
-            if entry is not None:
-                entry.latch.unsafe_open()
-                return self._write(entry.client_id, response)
-        elif tag == "Defect":
+    def _on_message(self, backing: _Backing, message: object) -> Effect[None]:
+        try:
+            responses = decode_from_server([message])
+        except MalformedMessage as cause:
+            return self._fail(backing, RpcClientDefect("Error decoding message", cause))
+        return _VOID if not responses else self._on_response(responses[0])
+
+    def _on_response(self, response: ServerMessage) -> Effect[None]:
+        if response["_tag"] == "Pong":
+            return _VOID
+        if response["_tag"] == "Defect":
             for entry in self._entries.values():
                 entry.latch.unsafe_open()
             self._entries.clear()
             return self._broadcast(response)
-        elif "requestId" in response:
-            entry = self._entries.get(response["requestId"])
+        request_id = response["requestId"]
+        if response["_tag"] == "Exit":
+            entry = self._entries.pop(request_id, None)
             if entry is not None:
-                return self._write(entry.client_id, response)
+                entry.latch.unsafe_open()
+        else:
+            entry = self._entries.get(request_id)
+        if entry is not None:
+            return self._write(entry.client_id, response)
         return self._broadcast(response)
 
-    def _on_cause(self, backing: _Backing, cause: Cause[Any]) -> Effect[None]:
+    def _fail(self, backing: _Backing, reason: Any) -> Effect[None]:
+        """Release the requests on ``backing`` and fail the clients'."""
         for request_id, entry in list(self._entries.items()):
             if entry.worker is backing:
                 del self._entries[request_id]
                 entry.latch.unsafe_open()
+        return self._broadcast({"_tag": "ClientProtocolError", "error": RpcClientError(reason)})
+
+    def _on_cause(self, backing: _Backing, cause: Cause[Any]) -> Effect[None]:
         found = cause.find_error()
         if isinstance(found, Ok) and isinstance(found.value, WorkerError):
             reason: Any = found.value.reason
         else:
             reason = RpcClientDefect("Error in worker", cause.squash())
-        return self._broadcast({"_tag": "ClientProtocolError", "error": RpcClientError(reason)})
+        return self._fail(backing, reason)
 
     def acquire(self) -> Effect[_Backing, WorkerError, Any]:
         @gen
@@ -122,9 +135,7 @@ class _WorkerClient:
                 )
             )
             running = (
-                backing.run(
-                    lambda response: self._on_response(backing, response), on_spawn=on_spawn
-                )
+                backing.run(lambda message: self._on_message(backing, message), on_spawn=on_spawn)
                 .tap_cause(lambda cause: self._on_cause(backing, cause))
                 .retry(schedule.spaced(1.0))
                 .annotate_logs({"module": "RpcClient", "method": "makeProtocolWorker"})

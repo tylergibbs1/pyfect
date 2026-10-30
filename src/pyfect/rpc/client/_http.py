@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Never, cast
+from typing import Any, Never
 
 from pyfect import exit as Exit
 from pyfect._core import Effect
@@ -27,7 +27,7 @@ from pyfect.rpc.client._protocol import (
     with_run_client,
 )
 from pyfect.rpc.client_error import RpcClientDefect, RpcClientError
-from pyfect.rpc.message import is_terminal_response
+from pyfect.rpc.message import ServerMessage, decode_from_server
 from pyfect.rpc.serialization import Frame, RpcSerialization, RpcSerializationService
 from pyfect.scope import CloseableScope, fork_in
 
@@ -81,22 +81,22 @@ class _HttpExchange:
         pending = {str(request["id"]) for request in requests}
         seen: list[bool] = []
 
-        def on_response(response: Message) -> Effect[None]:
+        def on_response(response: ServerMessage) -> Effect[None]:
             seen.append(True)
-            if response.get("_tag") == "Exit":
-                pending.discard(str(response.get("requestId")))
-            elif is_terminal_response(cast("Any", response)):
-                # Defects and protocol errors end every request of the client.
+            if response["_tag"] == "Exit":
+                pending.discard(str(response["requestId"]))
+            elif response["_tag"] == "Defect":
+                # A defect ends every request of the client.
                 pending.clear()
             return self._write(client_id, response)
 
-        def decode(frame: Frame) -> Effect[list[Message], RpcClientError]:
+        def decode(frame: Frame) -> Effect[list[ServerMessage], RpcClientError]:
             try:
-                return succeed(cast("list[Message]", parser.decode(frame)))
+                return succeed(decode_from_server(parser.decode(frame)))
             except Exception as cause:
                 return fail(_defect("Error decoding HTTP response", cause))
 
-        def each(responses: list[Message]) -> Effect[None]:
+        def each(responses: list[ServerMessage]) -> Effect[None]:
             @gen
             def run():
                 for response in responses:

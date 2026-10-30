@@ -23,7 +23,7 @@ from pyfect.rpc.client._protocol import (
     with_run_client,
 )
 from pyfect.rpc.client_error import RpcClientDefect, RpcClientError
-from pyfect.rpc.message import PING
+from pyfect.rpc.message import PING, ServerMessage, decode_from_server
 from pyfect.rpc.serialization import Frame, Parser, RpcSerialization, RpcSerializationService
 from pyfect.schedule import Schedule
 from pyfect.scope import Scope, fork_scoped, scoped
@@ -175,7 +175,7 @@ class _SocketClient:
 
     def _process(self, data: Frame) -> Effect[None]:
         try:
-            responses = cast("list[Message]", self._parser.decode(data))
+            responses = decode_from_server(self._parser.decode(data))
         except Exception as cause:
             return self._broadcast(
                 {"_tag": "ClientProtocolError", "error": _defect("Error decoding message", cause)}
@@ -191,17 +191,18 @@ class _SocketClient:
 
         return each
 
-    def _route(self, response: Message) -> Effect[None]:
-        if response.get("_tag") == "Pong":
+    def _route(self, response: ServerMessage) -> Effect[None]:
+        if response["_tag"] == "Pong":
             return _VOID
-        if "requestId" in response:
-            request_id = response["requestId"]
-            client_id = self._requests.get(_key(request_id))
-            if client_id is not None:
-                if response.get("_tag") == "Exit":
-                    self._requests.pop(_key(request_id), None)
-                return self._write(client_id, response)
-        return self._broadcast(response)
+        if response["_tag"] == "Defect":
+            return self._broadcast(response)
+        key = _key(response["requestId"])
+        client_id = self._requests.get(key)
+        if client_id is None:
+            return self._broadcast(response)
+        if response["_tag"] == "Exit":
+            self._requests.pop(key, None)
+        return self._write(client_id, response)
 
     def connection(
         self, socket: SocketService, hooks: ConnectionHooksService | None

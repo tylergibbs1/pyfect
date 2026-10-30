@@ -30,6 +30,7 @@ from pyfect.rpc.message import (
     ResponseChunk,
     ResponseDefect,
     ResponseExit,
+    is_request_id,
     response_defect_encoded,
 )
 from pyfect.rpc.schema import get_stream_schemas
@@ -246,7 +247,7 @@ class _Serialized:
     def _request(self, client: _Client, message: Message) -> Effect[None]:
         tag = message.get("tag", "")
         request_id = message.get("id")
-        if not isinstance(request_id, str | int) or isinstance(request_id, bool):
+        if not is_request_id(request_id):
             return self._send_defect(client, DecodedDefect(f"Invalid request id: {request_id}"))
         rpc = self._group.rpcs.get(tag) if isinstance(tag, str) else None
         if rpc is None:

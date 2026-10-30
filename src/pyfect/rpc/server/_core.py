@@ -12,7 +12,7 @@ from typing import Any, Literal, Never, cast
 
 from pyfect import cause as Cause
 from pyfect import exit as Exit
-from pyfect._core import Effect, _WithFiber
+from pyfect._core import Effect, _AfterStarted, _WithFiber
 from pyfect._fiber import Fiber
 from pyfect.context import Context
 from pyfect.deferred import Deferred
@@ -272,13 +272,16 @@ class RpcServer:
         if not (options is not None and options.fork) and self._semaphore is not None:
             effect = self._semaphore.with_permits(effect)
         run.context = entry.context.merge(request_fiber._context).add(Scope, run.scope)
+        # Started at once, as Effect's ``runForkWith``: an ``Interrupt``
+        # written next finds the handler's ``on_interrupt`` in place.
         fiber = request_fiber._fork(
             effect.pipe(provide_context(run.context)),
             daemon=True,
+            start_immediately=True,
             uninterruptible=options is not None and options.uninterruptible,
         )
         run.watch(fiber)
-        return _VOID
+        return _AfterStarted(None)
 
     def _unknown_request(self, client: _Client, request: Request) -> Effect[None]:
         write = self._on_from_server(

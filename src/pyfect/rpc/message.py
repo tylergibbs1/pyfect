@@ -10,9 +10,9 @@ so a pyfect peer and an Effect peer understand each other.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, TypeIs, cast
 
 from pyfect.exit import Exit
 from pyfect.http.headers import Headers
@@ -192,6 +192,53 @@ PONG: Pong = {"_tag": "Pong"}
 EOF_ENCODED: EofEncoded = {"_tag": "Eof"}
 
 
+type ServerMessage = ResponseChunkEncoded | ResponseExitEncoded | ResponseDefectEncoded | Pong
+"""A message a client reads from a server, checked by ``decode_from_server``."""
+
+
+class MalformedMessage(ValueError):
+    """A server message that parsed but is not one a server sends."""
+
+
+def is_request_id(value: object) -> TypeIs[RequestId]:
+    """Whether ``value`` is a ``RequestId`` (a string or an int, not a bool)."""
+    return isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))
+
+
+_READ: dict[str, tuple[str, ...]] = {
+    "Chunk": ("requestId", "values"),
+    "Exit": ("requestId", "exit"),
+    "Defect": ("defect",),
+    "Pong": (),
+}
+_NEVER_SENT = frozenset({"ClientProtocolError"})
+
+
+def decode_from_server(messages: Iterable[object]) -> list[ServerMessage]:
+    """The messages a client reads among the parsed ``messages`` of a
+    server, each with its keys and a valid ``requestId``. A tag a client
+    does not read is left out (Effect's clients ignore it); anything else
+    raises ``MalformedMessage``. Every client protocol reads through this."""
+    decoded: list[ServerMessage] = []
+    for message in messages:
+        if not isinstance(message, Mapping):
+            raise MalformedMessage(f"a server message is an object, not {type(message).__name__}")
+        fields = cast("Mapping[object, object]", message)
+        tag = fields.get("_tag")
+        if not isinstance(tag, str) or tag in _NEVER_SENT:
+            raise MalformedMessage(f"a server does not send the tag {tag!r:.40}")
+        required = _READ.get(tag)
+        if required is None:
+            continue
+        missing = [key for key in required if key not in fields]
+        if missing:
+            raise MalformedMessage(f"a server's {tag} message has no {', '.join(missing)}")
+        if "requestId" in required and not is_request_id(fields["requestId"]):
+            raise MalformedMessage(f"a server's {tag} message has an invalid requestId")
+        decoded.append(cast("ServerMessage", message))
+    return decoded
+
+
 def response_defect_encoded(defect: object) -> ResponseDefectEncoded:
     return {"_tag": "Defect", "defect": defect}
 
@@ -229,6 +276,7 @@ __all__ = [
     "FromServerEncoded",
     "Interrupt",
     "InterruptEncoded",
+    "MalformedMessage",
     "Ping",
     "Pong",
     "Request",
@@ -240,6 +288,9 @@ __all__ = [
     "ResponseDefectEncoded",
     "ResponseExit",
     "ResponseExitEncoded",
+    "ServerMessage",
+    "decode_from_server",
+    "is_request_id",
     "is_terminal_response",
     "response_defect_encoded",
     "response_exit_die_encoded",

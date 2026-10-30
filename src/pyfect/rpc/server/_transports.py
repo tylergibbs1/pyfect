@@ -44,11 +44,23 @@ type RequestHeaders = tuple[tuple[str, str], ...]
 
 
 def _with_headers(message: Message, headers: RequestHeaders) -> Message:
-    """A request with the transport's headers before its own."""
+    """A request with the transport's headers added to its own. A name the
+    transport carries replaces the request's: a proxy vouches for the
+    transport's headers, while the message is the caller's (Effect lets the
+    message's win)."""
     if message.get("_tag") != "Request" or not headers:
         return message
-    own = cast("list[Any]", list(message.get("headers") or ()))
-    return {**message, "headers": [*headers, *own]}
+    carried = {name.lower() for name, _ in headers}
+    own = [
+        pair
+        for pair in cast("list[Any]", list(message.get("headers") or ()))
+        if not (_is_pair(pair) and str(pair[0]).lower() in carried)
+    ]
+    return {**message, "headers": [*own, *headers]}
+
+
+def _is_pair(pair: object) -> bool:
+    return isinstance(pair, list | tuple) and len(cast("tuple[object, ...]", pair)) == 2
 
 
 # --- sockets ---------------------------------------------------------------------------

@@ -338,12 +338,18 @@ _ACKING_PROTOCOL = cast("ServerProtocolService", SimpleNamespace(supports_ack=Tr
 
 
 def worker_suite(spawn: Callable[[], WorkerHandle]) -> Layer[Any, Any, Any]:
+    """The worker suites wait for one reply before a test starts: messages
+    sent before a worker is ready are held until it is, and a process
+    worker can take seconds to start on a loaded machine, longer than the
+    fixed waits of Effect's tests (``sleep(0.5)``, ``sleep(2.0)``)."""
     client = (
         users_client_layer()
         .pipe(layer.provide(rpc_client.layer_protocol_worker(size=1)))
         .pipe(layer.provide(python_worker.layer(lambda _: spawn())))
     )
-    return layer.merge(client, layer.succeed(ServerProtocol, _ACKING_PROTOCOL))
+    ready = layer.effect_discard(UsersClient().flat_map(lambda c: c.get_interrupts()))
+    started = ready.pipe(layer.provide_merge(client))
+    return layer.merge(started, layer.succeed(ServerProtocol, _ACKING_PROTOCOL))
 
 
 SUITES: dict[str, Callable[[], Layer[Any, Any, Any]]] = {

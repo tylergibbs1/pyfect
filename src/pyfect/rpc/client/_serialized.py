@@ -20,7 +20,7 @@ from pyfect.rpc._rpc import AnyRpc, exit_schema, parse_options
 from pyfect.rpc.client._core import ClientCore, ClientOptions, OnFromClient
 from pyfect.rpc.client._core import make_no_serialization as make_core
 from pyfect.rpc.client._protocol import ClientProtocol, ClientProtocolService, Message
-from pyfect.rpc.client_error import RpcClientError
+from pyfect.rpc.client_error import RpcClientDefect, RpcClientError
 from pyfect.rpc.group import RpcGroup
 from pyfect.rpc.message import (
     Ack,
@@ -105,6 +105,29 @@ class _Serialized:
             found = self._cache[rpc.tag] = _schemas(self._protocol, rpc)
         return found
 
+    def close(self) -> Effect[None]:
+        """Stop sending requests, and tell the server to interrupt the ones
+        still waiting: a call or stream consumed outside the client's scope
+        is resumed by the core, not interrupted, so it sends no ``Interrupt``
+        itself (Effect leaves them running on the server)."""
+
+        @gen
+        def interrupt_all():
+            for request_id in list(self._entries):
+                yield from self._interrupt_request(request_id).exit()
+
+        return self._closing.succeed(None).flat_map(
+            lambda _: interrupt_all.timeout(1.0).exit().as_void()
+        )
+
+    def _defect_of(self, encoded: object) -> BaseException:
+        """The defect a server sent, or why it could not be decoded: this
+        runs in the client's read fiber, which a raise would end."""
+        try:
+            return cast("BaseException", self._decode_defect(encoded))
+        except S.SchemaError as error:
+            return RpcClientDefect("Error decoding defect", error)
+
     def _interrupt_request(self, request_id: RequestId) -> Effect[None, RpcClientError]:
         if self._entries.pop(request_id, None) is None:
             return _VOID
@@ -170,9 +193,7 @@ class _Serialized:
             case "Defect":
                 self._entries.clear()
                 return suspend(
-                    lambda: core.write(
-                        ResponseDefect(0, self._decode_defect(message.get("defect")))
-                    )
+                    lambda: core.write(ResponseDefect(0, self._defect_of(message.get("defect"))))
                 )
             case "ClientProtocolError":
                 error = cast("RpcClientError", message["error"])
@@ -269,7 +290,8 @@ def make[G: RpcGroup](
         listen = protocol.run(state._id, state.on_response)  # pyright: ignore[reportPrivateUsage]
         yield from fork_scoped(listen.catch_cause(lambda _: _VOID).interruptible())
         scope = yield from Scope()
-        yield from scope.add_finalizer(lambda _: state._closing.succeed(None))  # pyright: ignore[reportPrivateUsage]
+        # Finalizers run in reverse order: this runs while the client still runs.
+        yield from scope.add_finalizer(lambda _: state.close())
         return client
 
     return run
