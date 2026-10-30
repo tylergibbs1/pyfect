@@ -4,10 +4,14 @@ messages (Effect's ``ClusterSchema``). Set them with ``rpc.annotate``."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
 
+from pyfect._stack_frame import StackFrame, StackTrace
 from pyfect.cluster.entity_id import EntityId
-from pyfect.context import Context, Reference
+from pyfect.context import Context, Reference, Tag
+
+if TYPE_CHECKING:
+    from pyfect.cluster.envelope import Request
 
 
 class Persisted(Reference[bool], key="effect/cluster/ClusterSchema/Persisted"):
@@ -85,8 +89,43 @@ class ClientTracingEnabled(
         return True
 
 
+class Abandon(Tag[bool], key="effect/cluster/ClusterSchema/Abandon"):
+    """The annotation of an interruption that abandons a request: the
+    runner is shutting down and another runner will retry it."""
+
+
+def _no_stack() -> None:
+    return None
+
+
+ABANDON_ANNOTATION: Context[Any] = Context.make(Abandon, True).add(
+    StackTrace, StackFrame("ClusterAbandon", _no_stack)
+)
+"""What an abandoning interruption is annotated with."""
+
+
+type DynamicAnnotations = Callable[[Context[Any], Request[Any]], Context[Any]]
+
+
+def _same_annotations(annotations: Context[Any], _request: Request[Any]) -> Context[Any]:
+    return annotations
+
+
+class Dynamic(Reference[DynamicAnnotations], key="effect/cluster/ClusterSchema/Dynamic"):
+    """Annotations computed per request from the RPC's annotations (default:
+    the RPC's annotations)."""
+
+    @classmethod
+    def default(cls) -> DynamicAnnotations:
+        return _same_annotations
+
+
 __all__ = [
+    "ABANDON_ANNOTATION",
+    "Abandon",
     "ClientTracingEnabled",
+    "Dynamic",
+    "DynamicAnnotations",
     "InterruptOnTermination",
     "Persisted",
     "ShardGroup",

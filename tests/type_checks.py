@@ -6534,3 +6534,48 @@ def cluster_core_types() -> None:
     assert_type(ring.get("x"), shard_id.ShardId | None)
     # A ring holds only nodes with a primary key.
     HashRing[int]()  # pyright: ignore[reportInvalidTypeArguments]
+
+
+def cluster_storage_types() -> None:
+    from pyfect.cluster import (
+        k8s_http_client,
+        message_storage,
+        sql_message_storage,
+        sql_runner_storage,
+    )
+    from pyfect.cluster.runner_storage import RunnerStorage, RunnerStorageService
+    from pyfect.cluster.sharding_config import ShardingConfig
+    from pyfect.file_system import FileSystem
+    from pyfect.http.client import HttpClient
+    from pyfect.http.error import HttpClientError
+    from pyfect.schema import SchemaError
+    from pyfect.sql.client import SqlClient
+
+    assert_type(
+        message_storage.layer_memory,
+        fx.Layer[message_storage.MessageStorage | message_storage.MemoryDriver],
+    )
+    # SQL storages need only a client and the sharding configuration.
+    assert_type(
+        sql_message_storage.layer,
+        fx.Layer[message_storage.MessageStorage, Never, SqlClient | ShardingConfig],
+    )
+    assert_type(
+        sql_runner_storage.layer, fx.Layer[RunnerStorage, Never, SqlClient | ShardingConfig]
+    )
+    assert_type(
+        sql_runner_storage.make(prefix="p"),
+        fx.Effect[RunnerStorageService, Never, SqlClient | ShardingConfig | fx.Scope],
+    )
+    assert_type(
+        k8s_http_client.layer,
+        fx.Layer[k8s_http_client.K8sHttpClient, Never, HttpClient | FileSystem],
+    )
+    assert_type(
+        k8s_http_client.make_get_pods(),
+        fx.Effect[
+            fx.Effect[dict[str, k8s_http_client.Pod], HttpClientError | SchemaError],
+            Never,
+            k8s_http_client.K8sHttpClient,
+        ],
+    )

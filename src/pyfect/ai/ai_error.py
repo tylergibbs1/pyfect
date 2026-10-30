@@ -20,7 +20,7 @@ from typing import Any, ClassVar, Literal, NotRequired, Self, TypedDict, cast
 
 from pyfect import schema as S
 from pyfect._json_value import JsonValue
-from pyfect.ai._wire import Const, Key, key, wire_codec
+from pyfect._wire_codec import Const, Key, key, wire_codec
 from pyfect.duration import format_duration, to_seconds
 from pyfect.errors import TaggedError
 from pyfect.http import error as http_error

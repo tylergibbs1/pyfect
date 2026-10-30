@@ -15,8 +15,8 @@ from typing import Any
 import pyfect as fx
 from pyfect import schema as S
 from pyfect._core import Effect
+from pyfect._wire_codec import key, wire_codec
 from pyfect.ai import ai_error as E
-from pyfect.ai._wire import key, wire_codec
 from pyfect.batching import Entry, Request, RequestResolver
 from pyfect.batching import request as _request
 from pyfect.context import Context, Tag

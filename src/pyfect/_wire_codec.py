@@ -1,11 +1,10 @@
 """Schemas of frozen dataclasses whose wire keys differ from their
 attribute names.
 
-Effect's AI values travel as JSON with camelCase keys (``mediaType``,
-``toolCallId``); the Python classes have snake_case attributes. A
+Effect's values travel as JSON with camelCase keys (``mediaType``,
+``requestId``); the Python classes have snake_case attributes. A
 ``wire_codec`` reads and writes such a class through a mapping keyed by the
-wire names, so ``Prompt`` exports, tool results and errors keep Effect's
-format.
+wire names, so AI prompts and cluster envelopes keep Effect's format.
 """
 
 from __future__ import annotations

@@ -21,6 +21,13 @@ def or_default[A, B](value: A | None, default: B) -> A | B:
     return default if value is None else value
 
 
+def js_length(text: str) -> int:
+    """``text.length``: UTF-16 code units, so a character outside the BMP
+    counts twice (Python's ``len`` counts code points). A port comparing a
+    string's length with a limit from Effect uses this."""
+    return len(text.encode("utf-16-le", "surrogatepass")) // 2
+
+
 def js_sort_key(text: str) -> bytes:
     """The key sorting strings as JavaScript's ``sort()`` does: by UTF-16
     code units, not code points (``"\\U00010000"`` before ``"\\uffff"``)."""

@@ -27,7 +27,7 @@ from urllib.parse import SplitResult
 
 from pyfect import schema as S
 from pyfect._json_value import JsonValue
-from pyfect.ai._wire import Const, Key, key, wire_codec
+from pyfect._wire_codec import Const, Key, key, wire_codec
 from pyfect.exit import Success
 from pyfect.schema import getter as G
 from pyfect.schema import issue as I
