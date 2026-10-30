@@ -16,20 +16,26 @@ each accepted WebSocket (also as the ``WebSocket`` service)::
 from __future__ import annotations
 
 import asyncio
+import inspect
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from http import HTTPStatus
 from typing import Any, Never
 
 from websockets.asyncio.client import connect
 from websockets.asyncio.connection import Connection as WsConnection
 from websockets.asyncio.server import Server, ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
+from websockets.http11 import Request
 from websockets.typing import Subprotocol
 
 from pyfect._core import Effect
 from pyfect._js import to_well_formed
 from pyfect.duration import Duration
 from pyfect.effect import provide_service, succeed, sync
+from pyfect.http._authority import parse_authority
+from pyfect.http.origin import AllowedOrigins, OriginPolicy
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.layer import provide as layer_provide
@@ -53,6 +59,7 @@ from pyfect.socket._web_socket import (
     WebSocketLike,
     from_web_socket,
 )
+from pyfect.socket._web_socket import Outgoing as _Outgoing
 from pyfect.socket._web_socket import (
     layer_web_socket as layer_web_socket_with,
 )
@@ -65,17 +72,25 @@ from pyfect.socket.server import (
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _Close:
+    code: int
+    reason: str
+
+
 class WsWebSocket:
     """A browser-style WebSocket over a ``websockets`` connection. Methods
     may be called from any thread; listeners run on the socket loop.
-    ``pause`` stops reading messages until ``resume``."""
+    ``pause`` stops reading messages until ``resume``; ``buffered_amount``
+    counts what was sent but has not reached the transport."""
 
     def __init__(self, *, paused: bool = False) -> None:
         self._lock = threading.Lock()
         self._listeners: dict[WebSocketEventType, list[tuple[Listener, bool]]] = {}
         self._state = CONNECTING
         self._paused = paused
-        self._outgoing: asyncio.Queue[bytes | str | tuple[int, str]] = asyncio.Queue()
+        self._outgoing: asyncio.Queue[tuple[bytes | str, int] | _Close] = asyncio.Queue()
+        self._unsent = _Outgoing()
         self._flowing = asyncio.Event()
         if not paused:
             self._flowing.set()
@@ -98,6 +113,13 @@ class WsWebSocket:
     @property
     def is_paused(self) -> bool:
         return self._paused
+
+    @property
+    def buffered_amount(self) -> int:
+        return self._unsent.amount
+
+    def when_drained(self, below: int, callback: Callable[[], None]) -> Callable[[], None]:
+        return self._unsent.when_drained(below, callback)
 
     @property
     def connection(self) -> WsConnection | None:
@@ -124,7 +146,8 @@ class WsWebSocket:
         if state == OPEN:
             # A browser sends a USVString: lone surrogates become U+FFFD.
             message = to_well_formed(data) if isinstance(data, str) else data
-            get_loop().call_soon_threadsafe(self._outgoing.put_nowait, message)
+            size = self._unsent.queued(message)
+            get_loop().call_soon_threadsafe(self._outgoing.put_nowait, (message, size))
 
     def close(self, code: int | None = None, reason: str | None = None) -> None:
         """Start the closing handshake; as in a browser, ``code`` must be
@@ -178,7 +201,7 @@ class WsWebSocket:
                 self._task.cancel()
         elif self._state == OPEN:
             self._state = CLOSING
-            self._outgoing.put_nowait((code, reason))
+            self._outgoing.put_nowait(_Close(code, reason))
 
     def _begin(self, url: str, options: WebSocketClientOptions) -> None:
         task = get_loop().create_task(self._connect(url, options))
@@ -219,6 +242,7 @@ class WsWebSocket:
 
     def _closed_before_open(self, error: BaseException) -> None:
         self._state = CLOSED
+        self._unsent.close()
         self._dispatch("error", WebSocketEvent(type="error", data=error))
         self._dispatch("close", WebSocketEvent(type="close", code=1006, reason=""))
 
@@ -238,6 +262,7 @@ class WsWebSocket:
         finally:
             sender.cancel()
             self._state = CLOSED
+            self._unsent.close()
         code = connection.close_code
         self._dispatch(
             "close",
@@ -265,10 +290,12 @@ class WsWebSocket:
         try:
             while True:
                 item = await self._outgoing.get()
-                if isinstance(item, tuple):
-                    await connection.close(*item)
+                if isinstance(item, _Close):
+                    await connection.close(item.code, item.reason)
                     return
-                await connection.send(item)
+                message, size = item
+                await connection.send(message)
+                self._unsent.sent(size)
         except ConnectionClosed:
             pass
         except Exception as error:
@@ -344,8 +371,27 @@ def make_server(
 ) -> Effect[SocketServerService, SocketServerError, Scope]:
     """A WebSocket server listening on ``host:port`` (port 0: any free
     port), closed with the scope; ``serve_options`` go to ``websockets``'
-    ``serve`` (``process_request``, ``subprotocols``, ...)."""
+    ``serve`` (``process_request``, ``subprotocols``, ...). A handshake
+    whose ``Origin`` ``AllowedOrigins`` does not allow (same-origin by
+    default) is refused with 403 before ``process_request`` runs."""
+    return AllowedOrigins().flat_map(lambda policy: _make_server(port, host, policy, serve_options))
+
+
+def _make_server(
+    port: int, host: str | None, policy: OriginPolicy, serve_options: dict[str, Any]
+) -> Effect[SocketServerService, SocketServerError, Scope]:
     accepted = Accepted()
+    serve_options = dict(serve_options)
+    then = serve_options.pop("process_request", None)
+
+    async def process_request(connection: ServerConnection, request: Request) -> Any:
+        own = parse_authority(request.headers.get("Host", ""))
+        if not policy.allows(request.headers.get("Origin"), own):
+            return connection.respond(HTTPStatus.FORBIDDEN, "Origin not allowed\n")
+        if then is None:
+            return None
+        answer = then(connection, request)
+        return (await answer) if inspect.isawaitable(answer) else answer
 
     async def on_connection(connection: ServerConnection) -> None:
         ws = WsWebSocket(paused=True)
@@ -353,7 +399,9 @@ def make_server(
         await ws._serve(connection)  # pyright: ignore[reportPrivateUsage]
 
     async def start() -> Server:
-        return await serve(on_connection, host, port, **serve_options)
+        return await serve(
+            on_connection, host, port, process_request=process_request, **serve_options
+        )
 
     def stop(server: Server, _exit: object) -> Effect[None]:
         async def close() -> None:

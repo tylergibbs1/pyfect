@@ -33,7 +33,7 @@ from pyfect.effect import Effect, fail, gen, succeed
 from pyfect.terminal import UserInput
 
 _INT_PREFIX = re.compile(r"\s*([+-]?\d+)")
-_FLOAT_PREFIX = re.compile(r"\s*([+-]?(?:Infinity|(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?))")
+_FLOAT_PREFIX = re.compile(r"\s*([+-]?(?:Infinity|(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?))")
 
 
 def parse_int(text: str) -> int | None:

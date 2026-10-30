@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import zlib
+from collections.abc import Callable
 from functools import cached_property
 from typing import Any, Literal
 
@@ -30,11 +31,15 @@ type Coding = Literal["gzip", "deflate"]
 
 _DEFAULT_MAX = mebibytes(10)
 _WBITS: dict[Coding, int] = {"gzip": 31, "deflate": 15}
+MAX_CODINGS = 2
+"""How many codings may be stacked on one body."""
+_PIECE = 64 * 1024
 
 
 def parse_content_encoding(header: str) -> tuple[Coding, ...] | None:
     """The codings of a ``content-encoding`` header in the order applied
-    (``identity`` dropped); ``None`` when one is not supported."""
+    (``identity`` dropped); ``None`` when one is not supported or more than
+    ``MAX_CODINGS`` are stacked."""
     codings: list[Coding] = []
     for member in header.split(","):
         coding = member.strip().lower()
@@ -43,7 +48,55 @@ def parse_content_encoding(header: str) -> tuple[Coding, ...] | None:
         if coding not in ("gzip", "deflate"):
             return None
         codings.append("gzip" if coding == "gzip" else "deflate")
-    return tuple(codings)
+    return tuple(codings) if len(codings) <= MAX_CODINGS else None
+
+
+class _TooLarge(Exception):
+    pass
+
+
+class _Decoders:
+    """Stacked decoders that inflate at most ``_PIECE`` bytes per call, each
+    coding's total output counted against ``limit``: a bomb fails before
+    more than about ``limit`` bytes exist."""
+
+    def __init__(self, codings: tuple[Coding, ...], limit: int) -> None:
+        # The coding applied last is decoded first.
+        self._decoders = [zlib.decompressobj(_WBITS[coding]) for coding in reversed(codings)]
+        self._produced = [0] * len(self._decoders)
+        self._limit = limit
+
+    def feed(self, data: bytes) -> bytes:
+        output: list[bytes] = []
+        self._run(0, data, output)
+        return b"".join(output)
+
+    def finish(self) -> bytes | None:
+        """The rest of the body; ``None`` when a coding is truncated."""
+        output: list[bytes] = []
+        for level, decoder in enumerate(self._decoders):
+            self._emit(level, decoder.flush(), output)
+            if not decoder.eof:
+                return None
+        return b"".join(output)
+
+    def _run(self, level: int, data: bytes, output: list[bytes]) -> None:
+        decoder = self._decoders[level]
+        while True:
+            piece = decoder.decompress(data, _PIECE)
+            data = decoder.unconsumed_tail
+            self._emit(level, piece, output)
+            if not data and len(piece) < _PIECE:
+                return
+
+    def _emit(self, level: int, piece: bytes, output: list[bytes]) -> None:
+        self._produced[level] += len(piece)
+        if self._produced[level] > self._limit:
+            raise _TooLarge
+        if level + 1 < len(self._decoders):
+            self._run(level + 1, piece, output)
+        elif piece:
+            output.append(piece)
 
 
 class DecompressedRequest(ServerRequest):
@@ -133,35 +186,25 @@ class DecompressedRequest(ServerRequest):
 
         def make(fiber: Fiber[Any, Any]) -> Effect[Stream[bytes, HttpServerError]]:
             limit = self.max_decompressed_size or fiber.get_ref(MaxBodySize) or _DEFAULT_MAX
-            # The coding applied last is decoded first.
-            decoders = [zlib.decompressobj(_WBITS[coding]) for coding in reversed(self.codings)]
-            size = [0]
+            decoders = _Decoders(self.codings, limit)
 
-            def counted(data: bytes) -> Effect[bytes, HttpServerError]:
-                size[0] += len(data)
-                if size[0] > limit:
+            def decode(step: Callable[[], bytes | None]) -> Effect[bytes, HttpServerError]:
+                try:
+                    data = step()
+                except zlib.error as cause:
+                    return fail(self._error(cause))
+                except _TooLarge:
                     description = f"Decompressed request body exceeds {limit} bytes"
                     return fail(self._error(None, description, "BodyTooLarge"))
+                if data is None:
+                    return fail(self._error(None, "Truncated compressed body"))
                 return succeed(data)
 
             def feed(chunk: bytes) -> Effect[bytes, HttpServerError]:
-                try:
-                    for decoder in decoders:
-                        chunk = decoder.decompress(chunk)
-                except zlib.error as cause:
-                    return fail(self._error(cause))
-                return counted(chunk)
+                return decode(lambda: decoders.feed(chunk))
 
             def finish() -> Effect[bytes, HttpServerError]:
-                data = b""
-                try:
-                    for decoder in decoders:
-                        data = decoder.decompress(data) + decoder.flush()
-                        if not decoder.eof:
-                            return fail(self._error(None, "Truncated compressed body"))
-                except zlib.error as cause:
-                    return fail(self._error(cause))
-                return counted(data)
+                return decode(decoders.finish)
 
             decoded = self.inner.stream.map_effect(feed).concat(
                 from_effect(_WithFiber(lambda _: finish()))

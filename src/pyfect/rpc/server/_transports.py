@@ -10,6 +10,7 @@ from typing import Any, Literal, Never, cast
 from pyfect._core import Effect
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.errors import Done
+from pyfect.http.origin import origin_allowed
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.http.server_response import HttpServerResponse, empty, text
 from pyfect.http.server_response import stream as stream_response
@@ -200,6 +201,8 @@ def make_protocol_with_http_effect_websocket() -> Effect[HttpProtocol, Never, Rp
         @gen
         def handle():
             request = yield from HttpServerRequest()
+            if not (yield from origin_allowed(request)):
+                return empty(status=403)
             socket = yield from request.upgrade.or_die()
             yield from made.on_socket(socket, _request_headers(request))
             return empty()
@@ -305,6 +308,8 @@ class _HttpHandler:
         @gen
         def run():
             request = yield from HttpServerRequest()
+            if not (yield from origin_allowed(request)):
+                return empty(status=403)
             scope = yield from Scope()
             data = yield from request.text.or_die()
             client_id: int = next(self._ids)

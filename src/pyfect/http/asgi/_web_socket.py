@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections.abc import Callable
 from typing import Any, Never
 
 from pyfect._core import Effect, _WithFiber
@@ -42,6 +43,7 @@ from pyfect.socket._web_socket import (
     CONNECTING,
     OPEN,
     Listener,
+    Outgoing,
     WebSocketEvent,
     WebSocketEventType,
     from_web_socket,
@@ -57,7 +59,8 @@ _LOST = (1005, 1006)
 class AsgiWebSocket:
     """A browser-style WebSocket over an ASGI ``websocket`` connection.
     Methods may be called from any thread; listeners run on the server's
-    loop. Messages wait (one at a time) while paused."""
+    loop. Messages wait (one at a time) while paused; ``buffered_amount``
+    counts what was sent but the server has not taken."""
 
     def __init__(self, receive: Receive, send: Send) -> None:
         self._loop = asyncio.get_running_loop()
@@ -68,7 +71,8 @@ class AsgiWebSocket:
         self._state = CONNECTING
         self._paused = True
         self._flowing = asyncio.Event()
-        self._outgoing: asyncio.Queue[Message | None] = asyncio.Queue()
+        self._outgoing: asyncio.Queue[tuple[Message, int] | None] = asyncio.Queue()
+        self._unsent = Outgoing()
         self._writer: asyncio.Task[None] | None = None
         self._closing = False
         self.lost: asyncio.Event = asyncio.Event()
@@ -84,6 +88,13 @@ class AsgiWebSocket:
     @property
     def is_paused(self) -> bool:
         return self._paused
+
+    @property
+    def buffered_amount(self) -> int:
+        return self._unsent.amount
+
+    def when_drained(self, below: int, callback: Callable[[], None]) -> Callable[[], None]:
+        return self._unsent.when_drained(below, callback)
 
     def add_event_listener(
         self, type: WebSocketEventType, listener: Listener, *, once: bool = False
@@ -107,7 +118,8 @@ class AsgiWebSocket:
                 if isinstance(data, str)
                 else {"type": "websocket.send", "bytes": data}
             )
-            self._loop.call_soon_threadsafe(self._outgoing.put_nowait, message)
+            size = self._unsent.queued(data)
+            self._loop.call_soon_threadsafe(self._outgoing.put_nowait, (message, size))
 
     def close(self, code: int | None = None, reason: str | None = None) -> None:
         self._loop.call_soon_threadsafe(self._close, 1000 if code is None else code, reason or "")
@@ -150,7 +162,8 @@ class AsgiWebSocket:
     def _close(self, code: int, reason: str) -> None:
         if self._state == OPEN:
             self._state = CLOSING
-            self._outgoing.put_nowait({"type": "websocket.close", "code": code, "reason": reason})
+            close: Message = {"type": "websocket.close", "code": code, "reason": reason}
+            self._outgoing.put_nowait((close, 0))
 
     async def _read(self) -> None:
         while True:
@@ -174,19 +187,25 @@ class AsgiWebSocket:
         if not self._closing and (code in _LOST or not opened):
             self.lost.set()
         self._outgoing.put_nowait(None)
+        self._unsent.close()
         self._dispatch("close", WebSocketEvent(type="close", code=code, reason=reason))
 
     async def _write(self) -> None:
-        while (message := await self._outgoing.get()) is not None:
-            closing = message["type"] == "websocket.close"
-            # Set first: the server reports our own close as a disconnect.
-            self._closing = self._closing or closing
-            try:
-                await self._send(message)
-            except OSError:
-                return
-            if closing:
-                return
+        try:
+            while (item := await self._outgoing.get()) is not None:
+                message, size = item
+                closing = message["type"] == "websocket.close"
+                # Set first: the server reports our own close as a disconnect.
+                self._closing = self._closing or closing
+                try:
+                    await self._send(message)
+                except OSError:
+                    return
+                self._unsent.sent(size)
+                if closing:
+                    return
+        finally:
+            self._unsent.close()
 
     async def finish(self) -> None:
         """Once the handler is done: close the connection if it is still

@@ -17,6 +17,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 from typing import Any, Never, Protocol
+from urllib.parse import urlsplit
 
 from pyfect._core import Effect, _WithFiber
 from pyfect._effect_args import require_effect
@@ -27,6 +28,7 @@ from pyfect.effect import fail, succeed, try_async, void
 from pyfect.exit import Exit, Success
 from pyfect.http import _request_state
 from pyfect.http import body as _body
+from pyfect.http._foreign_path import has_dot_segment
 from pyfect.http.abort import AbortController, AbortSignal
 from pyfect.http.http_effect import HttpMiddleware, to_handled
 from pyfect.http.server_error import (
@@ -131,7 +133,10 @@ def request_to_web(
     context: Context[Any] | None = None,
 ) -> Result[WebRequest, RequestParseError]:
     """``request`` as a ``WebRequest`` (its source, if it is one); the body
-    is read when the Web body is read."""
+    is read when the Web body is read. A path with a dot segment fails: the
+    router matched it literally, and the handler may resolve it."""
+    if has_dot_segment(urlsplit(request.original_url).path):
+        return Err(RequestParseError(request, "Dot segment in the request path"))
     if isinstance(request.source, WebRequest):
         return Ok(request.source)
     url = to_url(request)

@@ -377,7 +377,9 @@ def uri_template(*parts: Any) -> UriTemplate[*tuple[Any, ...]]:
         uri_template("users://", param("id", S.Int), "/profile")
 
     A parameter is one path segment, decoded from its text; a bare schema
-    is named ``param<index>``."""
+    is named ``param<index>``, and ends at the first character of the text
+    after it (so matching never backtracks); two parameters need text
+    between them."""
     texts: list[str] = [parts[0]]
     names: list[str] = []
     schemas: list[S.Top] = []
@@ -390,7 +392,9 @@ def uri_template(*parts: Any) -> UriTemplate[*tuple[Any, ...]]:
         names.append(name)
         schemas.append(S.to_codec_string_tree(cast("S.Codec[Any, Any, Any, Any]", schema)))
         texts.append(f"{{{name}}}{literal}")
-        regex += "([^/]+)" + re.escape(literal)
+        if literal == "" and index + 2 < len(parts):
+            raise ValueError(f"uri_template: parameter {name!r} needs text before the next one")
+        regex += f"([^/{re.escape(literal[:1])}]++)" + re.escape(literal)
     return UriTemplate("".join(texts), tuple(names), tuple(schemas), re.compile(regex))
 
 

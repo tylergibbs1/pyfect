@@ -22,6 +22,8 @@ Server:
   ``server_respondable``: what a handler reads, returns and fails with
 - ``router`` (on ``find_my_way``), ``middleware``, ``http_effect``,
   ``web_handler``: building and running apps
+- ``origin``: which browser origins may open WebSockets and call RPCs
+  (same-origin by default)
 - ``platform``, ``static_server``, ``multipart``, ``etag``, ``mime``,
   ``template``, ``status``
 
@@ -54,6 +56,7 @@ from pyfect.http import (
     middleware,
     mime,
     multipart,
+    origin,
     platform,
     request,
     response,
@@ -98,6 +101,7 @@ __all__ = [
     "middleware",
     "mime",
     "multipart",
+    "origin",
     "platform",
     "request",
     "response",

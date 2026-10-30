@@ -11,12 +11,13 @@ import asyncio
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
 from pyfect.effect import fail, from_async, try_async
 from pyfect.errors import TaggedError
+from pyfect.http._foreign_path import decode_path
 from pyfect.http.abort import AbortController
 from pyfect.http.asgi._types import AsgiApplication, Message
 from pyfect.http.server_error import HttpServerError, InternalError
@@ -63,9 +64,9 @@ def _scope(request: ServerRequest, state: Mapping[str, Any] | None) -> dict[str,
         "http_version": "1.1",
         "method": request.method,
         "scheme": scheme,
-        "path": unquote(original),
+        "path": decode_path(original),
         "raw_path": original.encode("latin-1", "replace"),
-        "root_path": unquote(root),
+        "root_path": decode_path(root),
         "query_string": query.encode("latin-1", "replace"),
         "headers": [
             (name.encode("latin-1"), value.encode("latin-1"))

@@ -20,7 +20,10 @@ their layer.
 
 `rpc_server.layer_http(Group, path=...)` serves the group on a route of the
 [router](/docs/http-server), over WebSockets by default or HTTP POSTs with
-`protocol="http"`. Messages are encoded by the `RpcSerialization` in the context:
+`protocol="http"`. A call or handshake from a browser page of another origin is refused
+with 403; `layer.succeed(AllowedOrigins, origin.allow("https://app.example"))` (from
+`pyfect.http.origin`) lists the origins to accept too. Messages are encoded by the
+`RpcSerialization` in the context:
 `serialization.layer_ndjson` or `layer_json`, or JSON-RPC 2.0 with `layer_json_rpc()` and
 `layer_nd_json_rpc()`.
 

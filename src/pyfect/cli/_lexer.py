@@ -42,7 +42,7 @@ class LexResult:
     trailing_operands: tuple[str, ...]
 
 
-_NEGATIVE_NUMBER = re.compile(r"-(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_NEGATIVE_NUMBER = re.compile(r"-(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
 def lex(argv: Sequence[str]) -> LexResult:

@@ -716,3 +716,66 @@ def test_a_websocket_path_that_is_not_origin_form_is_refused() -> None:
         return peer.sent
 
     assert asyncio.run(main()) == [{"type": "websocket.close", "code": 1008}]
+
+
+def test_from_asgi_keeps_an_encoded_slash_the_router_did_not_split_on() -> None:
+    """The mounted app routes on what pyfect routed on: ``%2F`` stayed
+    inside one segment for the router, so it stays encoded in the scope's
+    ``path`` (a guard on a more specific route cannot be bypassed)."""
+    guarded = router.route(
+        "*", "/admin/*", effect.succeed(server_response.text("denied", status=403))
+    ).pipe(router.prefix_route("/legacy"))
+    public = router.route("*", "*", asgi.from_asgi(_echo_asgi)).pipe(router.prefix_route("/legacy"))
+    app = router.to_asgi(router.add_all([public, guarded]), disable_logger=True)
+
+    async def main() -> list[tuple[int, bytes, bytes]]:
+        seen: list[tuple[int, bytes, bytes]] = []
+        async with app.lifespan():
+            for path in ("/legacy/admin/users", "/legacy/admin%2Fusers", "/legacy/a%2fb%20c"):
+                peer = await _request(app, _scope(path))
+                headers = dict(peer.sent[0]["headers"])
+                seen.append(
+                    (peer.status(), headers.get(b"x-root", b""), headers.get(b"x-path", b""))
+                )
+        return seen
+
+    assert asyncio.run(main()) == [
+        (403, b"", b""),
+        (201, b"/legacy", b"/legacy/admin%2Fusers"),
+        (201, b"/legacy", b"/legacy/a%2fb c"),
+    ]
+
+
+def test_a_foreign_handler_never_sees_a_dot_segment_the_router_matched_literally() -> None:
+    """The router matches ``..`` as a literal segment, while a mounted app
+    (Starlette's ``StaticFiles``, a WHATWG ``URL``) resolves it: such a
+    path is refused before either bridge, so ``/x/../admin`` cannot reach
+    what a guard on ``/admin/*`` protects. Browsers never send one."""
+    from pyfect.http.web import WebRequest, WebResponse
+    from pyfect.http.web_handler import from_web_handler
+
+    called: list[str] = []
+
+    async def web(request: WebRequest) -> WebResponse:
+        called.append(request.url)
+        return WebResponse("ok")
+
+    guarded = router.route(
+        "*", "/admin/*", effect.succeed(server_response.text("denied", status=403))
+    ).pipe(router.prefix_route("/legacy"))
+    on_asgi = router.route("*", "/asgi/*", asgi.from_asgi(_echo_asgi))
+    on_web = router.route("*", "/web/*", from_web_handler(web))
+    mounted = [route.pipe(router.prefix_route("/legacy")) for route in (on_asgi, on_web)]
+    app = router.to_asgi(router.add_all([*mounted, guarded]), disable_logger=True)
+    paths = [
+        f"/legacy/{bridge}/{dots}/admin/users"
+        for bridge in ("asgi", "web")
+        for dots in ("..", "%2E%2e", ".%2e/.", "x\\..\\..")
+    ]
+
+    async def main() -> list[int]:
+        async with app.lifespan():
+            return [(await _request(app, _scope(path))).status() for path in paths]
+
+    assert asyncio.run(main()) == [400] * len(paths)
+    assert called == []

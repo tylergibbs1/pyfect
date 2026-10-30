@@ -21,7 +21,7 @@ from pyfect.schema._options import ParseOptions
 from pyfect.schema.getter._getter import Getter, Transform, TransformEffect
 from pyfect.schema.issue import InvalidValue, Issue, reported
 
-_DECIMAL = re.compile(r"[+-]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 _INTEGER = re.compile(r"[+-]?[0-9]+")
 _RADIX = re.compile(r"0([xXoObB])([0-9a-fA-F]+)")
 _BASES = {"x": 16, "o": 8, "b": 2}

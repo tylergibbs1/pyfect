@@ -29,13 +29,11 @@ type _Record = dict[str, object]
 _IS_SPACE = re.compile(f"[{SPACE}]")
 _ANCHOR_NAME_END = re.compile(f"[{SPACE},\\[\\]{{}}]")
 _ALIAS_END = re.compile(f"[,\\]}}{SPACE}]")
+_BLANKS = " \t"
 _FLOW_SCALAR_END = re.compile(r"[,\]}]")
 _FLOW_KEY_END = re.compile(":")
 _OPEN_BRACKET = re.compile(r"[\[{]")
 _CLOSE_BRACKET = re.compile(r"[\]}]")
-_FLOW_FOLD = re.compile(r"[ \t]*\n((?:[ \t]*\n)*)[ \t]*")
-_TRAILING_BACKSLASHES = re.compile(r"\\*\Z")
-_TRAILING_BLANKS = re.compile(r"[ \t]+\Z")
 _NULL = re.compile(r"(?:null|~)", re.IGNORECASE)
 _TRUE = re.compile("true", re.IGNORECASE)
 _FALSE = re.compile("false", re.IGNORECASE)
@@ -45,7 +43,7 @@ _HEX = re.compile(r"[+-]?0x[0-9a-f]+", re.IGNORECASE)
 _OCTAL = re.compile(r"[+-]?0o[0-7]+", re.IGNORECASE)
 _INT = re.compile(r"[+-]?(?:0|[1-9][0-9]*)")
 _FLOAT = re.compile(
-    r"[+-]?(?:(?:0|[1-9][0-9]*)?\.[0-9]+|(?:0|[1-9][0-9]*)\.?[0-9]*[eE][+-]?[0-9]+)"
+    r"[+-]?(?:(?:0|[1-9][0-9]*)?\.[0-9]+|(?:[0-9]+|(?:0|[1-9][0-9]*)\.[0-9]*)[eE][+-]?[0-9]+)"
 )
 _NODE_ANCHOR = re.compile(f"&([^{SPACE},\\[\\]{{}}]+)(?:[{SPACE}]+([^{LINE_END}]*))?")
 _BLOCK_INDICATOR = re.compile(r"[|>](?:[1-9]?[+-]?|[+-]?[1-9]?)")
@@ -160,22 +158,34 @@ def _fold_line_break(blank_lines: int) -> str:
 
 
 def _fold_flow_lines(text: str) -> str:
-    """Folds the line breaks of a multiline plain flow scalar."""
-    return _FLOW_FOLD.sub(lambda m: _fold_line_break(m.group(1).count("\n")), text)
+    """Folds the line breaks of a multiline plain flow scalar: blanks around
+    a break go, and blank lines between two lines become line breaks."""
+    lines = text.split("\n")
+    output = lines[0].rstrip(_BLANKS)
+    blank_lines = 0
+    for index in range(1, len(lines)):
+        last = index == len(lines) - 1
+        body = lines[index].lstrip(_BLANKS)
+        body = body if last else body.rstrip(_BLANKS)
+        if body == "" and not last:
+            blank_lines += 1
+            continue
+        output += _fold_line_break(blank_lines) + body
+        blank_lines = 0
+    return output
 
 
 def _ends_with_escape(text: str) -> bool:
-    match = _TRAILING_BACKSLASHES.search(text)
-    return match is not None and len(match.group()) % 2 == 1
+    return (len(text) - len(text.rstrip("\\"))) % 2 == 1
 
 
 def _trim_folded_end(line: str, quote: str) -> str:
     """Escaped trailing spaces are content, not folding whitespace."""
-    trailing = _TRAILING_BLANKS.search(line)
-    if trailing is None:
+    end = len(line.rstrip(_BLANKS))
+    if end == len(line):
         return line
-    escaped = quote == '"' and _ends_with_escape(line[: trailing.start()])
-    return line[: trailing.start() + (1 if escaped else 0)]
+    escaped = quote == '"' and _ends_with_escape(line[:end])
+    return line[: end + (1 if escaped else 0)]
 
 
 def _parse_double_quoted(text: str) -> str:

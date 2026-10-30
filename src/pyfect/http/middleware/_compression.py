@@ -50,7 +50,7 @@ def parse_accept_encoding(header: str) -> dict[str, float] | None:
         return None
     accepted: dict[str, float] = {}
     for part in trimmed.split(","):
-        member = re.sub(r"[ \t]*;[ \t]*", ";", part.strip().lower())
+        member = ";".join(piece.strip(" \t") for piece in part.strip().lower().split(";"))
         match = _ACCEPT_MEMBER.match(member)
         if match is None:
             return None

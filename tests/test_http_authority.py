@@ -43,8 +43,9 @@ def test_anything_else_is_not_an_authority(text: str) -> None:
 
 
 # Where a ``scheme://{...}`` f-string does not take a client-sent host: the
-# Authority module itself, URL parsing, and the server's own listen address.
-_NOT_A_REQUEST_HOST = {"_authority.py", "url.py", "server.py"}
+# Authority module itself, URL parsing, the server's own listen address, and
+# an ``Origin`` serialized for comparison once its authority was parsed.
+_NOT_A_REQUEST_HOST = {"_authority.py", "url.py", "server.py", "origin.py"}
 
 
 def test_servers_join_a_host_into_a_url_only_through_absolute_url() -> None:

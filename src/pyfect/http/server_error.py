@@ -76,6 +76,14 @@ class RouteNotFound(_RequestReason):
 
 
 @dataclass(eq=False)
+class OriginNotAllowed(_RequestReason):
+    """A browser page of an origin ``AllowedOrigins`` does not list sent the
+    request: a WebSocket upgrade or RPC call is refused (403)."""
+
+    status: ClassVar[int] = 403
+
+
+@dataclass(eq=False)
 class InternalError(_RequestReason):
     """The server failed handling the request (500)."""
 
@@ -102,7 +110,7 @@ class ResponseError(TaggedError):
         return succeed(empty(status=500))
 
 
-type RequestError = RequestParseError | RouteNotFound | InternalError
+type RequestError = RequestParseError | RouteNotFound | OriginNotAllowed | InternalError
 type HttpServerErrorReason = RequestError | ResponseError
 
 
@@ -239,6 +247,7 @@ __all__ = [
     "HttpServerError",
     "HttpServerErrorReason",
     "InternalError",
+    "OriginNotAllowed",
     "RequestError",
     "RequestParseError",
     "ResponseError",

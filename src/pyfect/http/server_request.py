@@ -428,10 +428,13 @@ class SourceRequest(ServerRequest):
         if self._upgrade is None:
             return super().upgrade_with(headers=headers)
         from pyfect.http.headers import from_input
+        from pyfect.http.origin import require_allowed_origin
 
-        return self._upgrade(from_input(headers)).map_error(
+        upgrade = self._upgrade
+        upgraded = upgrade(from_input(headers)).map_error(
             lambda cause: request_parse_error(self, None, cause)
         )
+        return require_allowed_origin(self).and_then(upgraded)
 
     def _copy(self) -> ServerRequest:
         copy = SourceRequest.__new__(SourceRequest)
