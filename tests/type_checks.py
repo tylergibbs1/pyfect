@@ -6390,3 +6390,127 @@ def graphql_checks() -> None:
     )
     ws_options = WebSocketOptions(url="ws://localhost/graphql")
     make_http(url=lambda options: "http://x/graphql", web_socket=ws_options)  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
+def eventlog_sql_checks() -> None:
+    from pyfect.eventlog import event_journal as ev_journal
+    from pyfect.eventlog import event_log_server_encrypted as ev_encrypted
+    from pyfect.eventlog import event_log_server_unencrypted as ev_unencrypted
+    from pyfect.eventlog import sql_event_journal as ev_sql_journal
+    from pyfect.eventlog import sql_event_log_server_encrypted as ev_sql_encrypted
+    from pyfect.eventlog import sql_event_log_server_unencrypted as ev_sql_unencrypted
+    from pyfect.eventlog.event_log_encryption import EventLogEncryption as EvEncryption
+    from pyfect.layer import Layer
+    from pyfect.sql.client import SqlClient as EvSqlClient
+    from pyfect.sql.error import SqlError as EvSqlError
+
+    # SQL journal and storages: they need a SqlClient (and the encrypted one
+    # EventLogEncryption, to hash scope keys); the journal opens its tables
+    # once.
+    assert_type(
+        ev_sql_journal.layer(),
+        Layer[ev_journal.EventJournal, EvSqlError, EvSqlClient],
+    )
+    assert_type(
+        ev_sql_encrypted.layer_storage(),
+        Layer[ev_encrypted.Storage, EvSqlError, EvSqlClient | EvEncryption],
+    )
+    assert_type(
+        ev_sql_unencrypted.layer_storage(insert_batch_size=50),
+        Layer[ev_unencrypted.Storage, EvSqlError, EvSqlClient],
+    )
+
+
+def eventlog_checks() -> None:
+    from pyfect.devtools import client as devtools_client
+    from pyfect.devtools import schema as devtools_schema
+    from pyfect.devtools import server as devtools_server
+    from pyfect.eventlog import event as ev_event
+    from pyfect.eventlog import event_group as ev_group
+    from pyfect.eventlog import event_journal as ev_journal
+    from pyfect.eventlog import event_log as ev_log
+    from pyfect.eventlog import event_log_server_encrypted as ev_encrypted
+    from pyfect.eventlog import event_log_server_unencrypted as ev_unencrypted
+    from pyfect.eventlog import event_row as ev_row
+    from pyfect.layer import Layer
+    from pyfect.socket import Socket as EvSocket
+    from pyfect.socket.server import SocketServer as EvSocketServer
+    from pyfect.socket.server import SocketServerError as EvSocketServerError
+
+    class EvUser(TypedDict):
+        id: str
+
+    user_created = ev_event.make(
+        "UserCreated", primary_key=lambda p: p["id"], payload=S.Struct(EvUser)
+    )
+    assert_type(user_created, ev_event.Event[EvUser, None, Never])
+    group = ev_group.empty.add(user_created)
+    assert_type(group, ev_group.EventGroup[ev_event.Event[EvUser, None, Never]])
+
+    def use(log: ev_log.EventLogService) -> None:
+        assert_type(
+            log.write(user_created, {"id": "u1"}), fx.Effect[None, ev_journal.EventJournalError]
+        )
+        log.write(user_created, {"name": "u1"})  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+    del use
+
+    handlers = ev_log.group(
+        group,
+        lambda h: h.handle(user_created, lambda i: fx.sync(lambda: i.payload["id"]).as_void()),
+    )
+    assert_type(handlers, Layer[Never, Never, ev_log.Registry])
+    assert_type(
+        ev_log.layer(ev_log.schema(group), handlers),
+        Layer[
+            ev_log.EventLog | ev_log.Registry,
+            Never,
+            ev_log.Registry | ev_journal.EventJournal | ev_log.Identity,
+        ],
+    )
+
+    # Rows: the payload is a set / patch / remove of the row's TypedDict.
+    class EvGrocery(TypedDict):
+        id: str
+        name: str
+
+    grocery = ev_row.make("grocery", key="id", schema=S.Struct(EvGrocery))
+    assert_type(grocery, ev_row.EventRow[EvGrocery, Any])
+    assert_type(
+        grocery.set({"id": "g1", "name": "milk"}),
+        ev_event.Write[ev_row.Payload[EvGrocery, Any], None, Never],
+    )
+    grocery.set({"id": "g1"})  # pyright: ignore[reportArgumentType]
+    row_handler = ev_row.handler(
+        grocery,
+        set=lambda row, _key: fx.sync(lambda: row["name"]),
+        patch=lambda _key, _fields: fx.void,
+        remove=lambda _key: fx.void,
+    )
+    assert_type(
+        row_handler,
+        Callable[[ev_log.HandlerInput[ev_row.Payload[EvGrocery, Any]]], fx.Effect[None]],
+    )
+    assert_type(
+        ev_row.compaction(ev_group.empty.add(grocery), grocery),
+        Layer[Never, Never, ev_log.Registry],
+    )
+
+    # Servers over memory storage.
+    assert_type(ev_encrypted.layer_storage_memory, Layer[ev_encrypted.Storage])
+    assert_type(ev_unencrypted.layer_storage_memory, Layer[ev_unencrypted.Storage])
+
+    # DevTools: the tracer layer needs only a socket; the server needs a
+    # socket server.
+    assert_type(fx.devtools.layer(), Layer[Never])
+    assert_type(fx.devtools.layer_socket, Layer[Never, Never, EvSocket])
+    assert_type(
+        devtools_client.make,
+        fx.Effect[devtools_client.DevToolsClientService, Never, fx.Scope | EvSocket],
+    )
+    assert_type(
+        devtools_server.run(lambda client: client.send({"_tag": "MetricsRequest"})),
+        fx.Effect[Never, EvSocketServerError, EvSocketServer],
+    )
+    pong: devtools_schema.Response = {"_tag": "Pong"}
+    del pong

@@ -47,6 +47,9 @@ server = [
 redis = [
     "redis>=8.1",
 ]
+eventlog = [
+    "cryptography>=46",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.15,<0.13.0"]
@@ -63,6 +66,7 @@ dev = [
     "pyfect[pg]",
     "pyfect[server]",
     "pyfect[redis]",
+    "pyfect[eventlog]",
     "psycopg[binary]>=3.3",
     "pyright>=1.1.414",
     "pytest>=9.1.1",
