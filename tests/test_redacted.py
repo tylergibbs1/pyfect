@@ -11,6 +11,7 @@ import pytest
 import pyfect as fx
 from pyfect import logger, redacted, testing
 from pyfect.console import CurrentConsole
+from pyfect.http import headers as headers_
 
 SECRET = "sk-live-0123456789"
 
@@ -102,3 +103,12 @@ def test_wiping_one_copy_leaves_an_equal_copy_readable():
     first, second = secret(), secret()
     redacted.wipe_unsafe(first)
     assert redacted.value(second) == SECRET
+
+
+@pytest.mark.parametrize(
+    "name", ["authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key"]
+)
+def test_credential_headers_are_redacted_by_default(name: str):
+    secret = headers_.from_input({name: "s3cret"})
+    assert secret.to_json() == {name: "<redacted>"}
+    assert "s3cret" not in repr(secret)

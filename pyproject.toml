@@ -68,6 +68,7 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.2",
 ]
+docs = ["griffe-typingdoc==0.2.9"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -10,11 +10,11 @@ Effect's address rules); a bare address takes the full-width prefix unless
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Mapping
 from ipaddress import IPv4Address, IPv4Interface, IPv6Address, IPv6Interface
 from typing import Literal, TypedDict, overload
 
+from pyfect._digits import parse_digits
 from pyfect.net._errors import NetAddressError, address_error
 from pyfect.net.net_address._ip import (
     IpAddress,
@@ -46,8 +46,6 @@ class IpInterfaceParts[A = IpAddressInput](TypedDict):
 type IpInterfaceInput = IpInterface | str | IpInterfaceParts[IpAddressInput]
 type Ipv4InterfaceInput = IPv4Interface | str | IpInterfaceParts[Ipv4AddressInput]
 type Ipv6InterfaceInput = IPv6Interface | str | IpInterfaceParts[Ipv6AddressInput]
-
-_PREFIX = re.compile(r"0|[1-9][0-9]*")
 
 
 @overload
@@ -90,9 +88,10 @@ def split_prefix(text: str, prefix: Prefix) -> Result[tuple[str, int | None], Ne
     if slash <= 0 or slash != text.rfind("/") or slash == len(text) - 1:
         return address_error(text, "expected an address and prefix length separated by one slash")
     digits = text[slash + 1 :]
-    if not _PREFIX.fullmatch(digits):
+    length = parse_digits(digits, unpadded=True)
+    if length is None:
         return address_error(text, "prefix length must be an unpadded ASCII decimal integer")
-    return Ok((text[:slash], int(digits)))
+    return Ok((text[:slash], length))
 
 
 def _parse[A: IpAddress](

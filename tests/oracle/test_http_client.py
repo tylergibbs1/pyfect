@@ -446,8 +446,10 @@ def test_redirect_cross_origin_credentials():
 @testing.effect
 def test_redirect_scheme_downgrade():
     """strips credential headers on scheme downgrade redirects"""
+    # pyfect does not follow a downgrade at all (decisions table); Effect
+    # follows it without the credential headers.
     requests, client = _redirect_client(302, "http://origin.test/destination")
-    yield from client.get(
+    response = yield from client.get(
         "https://origin.test/start",
         headers={
             "Authorization": "Bearer secret",
@@ -455,10 +457,8 @@ def test_redirect_scheme_downgrade():
             "Proxy-Authorization": "Basic secret",
         },
     )
-    redirected = requests[1].headers
-    assert "authorization" not in redirected
-    assert "cookie" not in redirected
-    assert "proxy-authorization" not in redirected
+    assert response.status == 302
+    assert len(requests) == 1
 
 
 @testing.effect

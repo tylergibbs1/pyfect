@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import NotRequired, TypedDict, overload
 from urllib.parse import SplitResult
 
+from pyfect._digits import is_digits, parse_digits
 from pyfect.net._errors import NetAddressError, address_error
 from pyfect.net.net_address._ip import (
     IpAddress,
@@ -21,9 +21,6 @@ from pyfect.net.net_address._ip import (
     ip_from_string,
 )
 from pyfect.result import Err, Ok, Result
-
-_DIGITS = re.compile(r"[0-9]+")
-_PORT_TEXT = re.compile(r"0|[1-9][0-9]*")
 
 
 def _check_port(port: object) -> bool:
@@ -160,7 +157,7 @@ def inet_address_from_native_unsafe(
         return InetAddressV4(address, port)
     scope_id = 0
     if zone:
-        found = int(zone) if _DIGITS.fullmatch(zone) else (scope_ids or {}).get(zone)
+        found = parse_digits(zone) if is_digits(zone) else (scope_ids or {}).get(zone)
         if found is None:
             raise ValueError(f"unknown IPv6 interface: {zone}")
         scope_id = found
@@ -176,7 +173,7 @@ def inet_address_from_host_string(
     if separator:
         if not zone or "%" in zone:
             return address_error(host, "invalid IPv6 scope identifier")
-        if not _DIGITS.fullmatch(zone):
+        if not is_digits(zone):
             scope_id = (scope_ids or {}).get(zone)
             if scope_id is None:
                 return address_error(host, f"unknown IPv6 interface: {zone}")
@@ -217,11 +214,12 @@ def _split_inet(text: str) -> Result[tuple[str, str, int, bool], NetAddressError
         head, separator, scope_text = host.partition("%")
         scope_id = 0
         if separator:
-            if "%" in scope_text or not _DIGITS.fullmatch(scope_text):
+            if "%" in scope_text or not is_digits(scope_text):
                 return address_error(text, "scope identifier must be decimal")
-            scope_id = int(scope_text)
-            if scope_id > 0xFFFFFFFF:
+            number = parse_digits(scope_text)
+            if number is None or number > 0xFFFFFFFF:
                 return address_error(text, "scope identifier must be an unsigned 32-bit integer")
+            scope_id = number
         return Ok((head, port_text, scope_id, True))
     separator = text.rfind(":")
     if separator < 0:
@@ -239,15 +237,16 @@ def inet_address_from_string(text: str) -> Result[InetAddress, NetAddressError]:
             return error
         case Ok((host, port_text, scope_id, bracketed)):
             pass
-    if not _PORT_TEXT.fullmatch(port_text):
+    port = parse_digits(port_text, unpadded=True)
+    if port is None:
         return address_error(text, "port must be an unpadded decimal integer")
 
     def build(address: IpAddress) -> Result[InetAddress, NetAddressError]:
         if bracketed != isinstance(address, IPv6Address):
             return address_error(text, "only IPv6 addresses use brackets")
         if isinstance(address, IPv6Address):
-            return inet_address_v6(address, int(port_text), scope_id=scope_id)
-        return inet_address_v4(address, int(port_text))
+            return inet_address_v6(address, port, scope_id=scope_id)
+        return inet_address_v4(address, port)
 
     return ip_from_string(host).flat_map(build)
 

@@ -23,7 +23,10 @@ from pyfect.logger._model import LogSpan
 
 _LABEL_UNSAFE = re.compile(r'[\s="]')
 _TEXT_ONLY = re.compile(r'^[^\s"=]*$')
-_UNESCAPED_QUOTE = re.compile(r'\\([\s\S])|(")')
+# Every character ``str.splitlines`` breaks a line at.
+_LINE_BREAK = "\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
+_UNESCAPED_QUOTE = re.compile(r'\\([\s\S])|(["' + _LINE_BREAK + "])")
+_RAW_LINE_BREAK = re.compile("[\x85\u2028\u2029]")
 
 
 def format_label(key: str) -> str:
@@ -39,13 +42,34 @@ def is_text_only(value: str) -> bool:
     return _TEXT_ONLY.match(value) is not None
 
 
+_ESCAPED = {"\r": "r", "\n": "n"}
+
+
+def _escaped(char: str) -> str:
+    if char in _ESCAPED:
+        return "\\" + _ESCAPED[char]
+    return f"\\u{ord(char):04x}" if char in _LINE_BREAK else "\\" + char
+
+
+def _escape(match: re.Match[str]) -> str:
+    return _escaped(match[1] or match[2])
+
+
 def escape_double_quotes(value: str) -> str:
-    """``value`` in double quotes, its unescaped quotes escaped."""
-    return '"' + _UNESCAPED_QUOTE.sub(lambda m: "\\" + (m[1] or "") + (m[2] or ""), value) + '"'
+    """``value`` in double quotes, its unescaped quotes escaped and its line
+    breaks written ``\\r`` / ``\\n`` (``\\uXXXX`` for the other line
+    separators), so one entry stays one line (Effect leaves them raw)."""
+    return '"' + _UNESCAPED_QUOTE.sub(_escape, value) + '"'
 
 
 def json_quote(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
+
+
+def json_quote_line(value: str) -> str:
+    """``json_quote`` that also escapes U+0085, U+2028 and U+2029, which
+    JSON leaves raw and line readers split at."""
+    return _RAW_LINE_BREAK.sub(lambda m: f"\\u{ord(m[0]):04x}", json_quote(value))
 
 
 def iso_millis(when: datetime) -> str:

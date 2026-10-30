@@ -363,3 +363,18 @@ def test_sse_encode_lets_other_failures_pass_by_with_pipe_through_channel_or_fai
 
 def test_sse_write_keeps_fractions_of_a_millisecond():
     assert sse.write(sse.Retry(timedelta(microseconds=1500))) == "retry: 1.5\n\n"
+
+
+@pytest.mark.parametrize("field", ["event", "id"])
+@pytest.mark.parametrize("value", ["a\nevent: failure", "a\rretry: 1", "a\r\ndata: x"])
+def test_an_sse_event_name_or_id_cannot_hold_a_line_break(field: str, value: str):
+    # A line break would start another field: an injected data:, retry: or event:.
+    with pytest.raises(ValueError, match=field):
+        if field == "event":
+            sse.Event(data="x", event=value)
+        else:
+            sse.Event(data="x", id=value)
+
+
+def test_sse_event_data_lines_are_each_written_as_data():
+    assert sse.write(sse.Event(data="a\nretry: 1", id="7")) == "id: 7\ndata: a\ndata: retry: 1\n\n"

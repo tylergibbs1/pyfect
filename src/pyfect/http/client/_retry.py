@@ -5,19 +5,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from pyfect.duration import Seconds
+from pyfect.duration import Seconds, to_millis
 from pyfect.effect import Effect
 from pyfect.errors import TimeoutException
 from pyfect.http.client._service import RetryOn
 from pyfect.http.error import HttpClientError, StatusCodeError, TransportError
 from pyfect.http.headers import parse_retry_after, retry_after_delay
 from pyfect.http.response import HttpClientResponse
+from pyfect.persistence._seconds import millis
+from pyfect.persistence.rate_limiter._store import clamp_adaptive_millis
 from pyfect.result import Ok
 from pyfect.schedule import Continue, Schedule, forever, from_step, to_step
 from pyfect.schedule._model import Decision, StepFn
 
 _TRANSIENT_STATUSES = frozenset((408, 429, 500, 502, 503, 504))
-_MIN_RETRY_AFTER = Seconds(0.001)
 
 
 def is_transient_response(response: HttpClientResponse) -> bool:
@@ -46,13 +47,15 @@ def retry_after_of(input: object, now_millis: float) -> Seconds | None:
 
 
 def retry_after_from_header(header: str | None, now_millis: float) -> Seconds | None:
-    """The delay a ``Retry-After`` value asks for, at least a millisecond;
-    ``None`` for a missing or invalid one (RFC 9110 treats it as absent)."""
+    """The delay a ``Retry-After`` value asks for, from a millisecond to an
+    hour (Effect leaves it unbounded, so one response could park a request
+    for good); ``None`` for a missing or invalid one (RFC 9110 treats it as
+    absent)."""
     if header is None:
         return None
     match parse_retry_after(header):
         case Ok(value):
-            return max(retry_after_delay(value, now_millis), _MIN_RETRY_AFTER)
+            return millis(clamp_adaptive_millis(to_millis(retry_after_delay(value, now_millis))))
         case _:
             return None
 

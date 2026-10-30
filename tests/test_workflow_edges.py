@@ -323,3 +323,25 @@ def test_an_abandoned_run_skips_workflow_finalizers(
     assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts_only
     assert instance.abandoned is abandoned_after
     assert seen == events
+
+
+@testing.effect
+def test_a_deferred_refuses_a_token_naming_another_deferred():
+    """A token minted for one deferred cannot complete another through it
+    (Effect writes the value into whatever deferred the token names)."""
+    gate = durable_deferred.make("gate", success=S.String)
+    other = durable_deferred.make("other", success=S.String)
+    wf = workflow.make("Gated", payload=EMPTY, success=S.String, idempotency_key=lambda _: "g")
+
+    def handler(_p: Empty, _id: str):
+        return gate.wait()
+
+    def program():
+        execution_id = yield from wf.execute({}, discard=True)
+        yield from _poll_until_suspended(wf, execution_id)
+        token = gate.token_from_execution_id(workflow=wf, execution_id=execution_id)
+        exit = yield from other.succeed(token=token, value="forged").exit()
+        assert isinstance(exit, fx.Failure)
+        assert isinstance((yield from wf.poll(execution_id)), Suspended)
+
+    yield from fx.gen(program).pipe(_with_engine(wf.to_layer(handler)))

@@ -112,3 +112,8 @@ def test_every_decompress_call_in_pyfect_is_bounded() -> None:
         and len(node.args) + len(node.keywords) < 2
     ]
     assert unbounded == []
+
+
+def test_a_zero_limit_admits_no_decompressed_byte() -> None:
+    assert _post(_gzip(b"x"), "gzip", limit=0)[0] == 413
+    assert _post(_gzip(b""), "gzip", limit=0)[:2] == (200, b"0")

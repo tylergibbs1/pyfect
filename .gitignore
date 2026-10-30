@@ -11,3 +11,12 @@ wheels/
 .pytest_cache/
 .ruff_cache/
 .vercel
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# Throwaway localhost keys for the test suite
+!tests/**/fixtures/**/*.pem

@@ -222,8 +222,9 @@ def make(
     - ``env``: the environment; it replaces the parent's unless
       ``extend_env``, which adds it over the parent's. A ``None`` value
       removes the variable.
-    - ``shell``: run ``command args...``, joined by spaces, with ``/bin/sh``
-      (``cmd.exe`` on Windows) or the shell given.
+    - ``shell``: run ``command`` as a line of shell with ``/bin/sh``
+      (``cmd.exe`` on Windows) or the shell given; each of ``args`` is
+      quoted and appended as one literal word.
     - ``detached``: start a process group of its own, so killing the
       command kills its descendants (the default except on Windows).
     - ``windows_hide``: hide the console window on Windows (the default

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from datetime import tzinfo
 
+from pyfect._digits import parse_digits
 from pyfect.cron._model import Cron
 from pyfect.date_time import zone_from_string
 from pyfect.errors import TaggedError
@@ -93,12 +93,9 @@ def parse_unsafe(expression: str, tz: tzinfo | str | None = None) -> Cron:
     return parse(expression, tz).get_or_raise()
 
 
-_DIGITS = re.compile(r"[0-9]+")
-
-
 def _number(text: str) -> int | None:
     """A plain decimal integer, or ``None`` (Effect's ``NaN``)."""
-    return int(text) if _DIGITS.fullmatch(text) else None
+    return parse_digits(text)
 
 
 def _split_step(text: str) -> tuple[str, bool, int | None]:

@@ -4,6 +4,8 @@ cases Effect's own tests leave open (each kills a mutation that survived
 
 from __future__ import annotations
 
+import pytest
+
 import pyfect as fx
 from pyfect import layer, testing
 from pyfect.cause import Fail, from_reasons
@@ -96,3 +98,68 @@ def test_a_request_costs_at_least_one_token_of_its_resolved_key() -> None:
             fx.provide(rl.layer.pipe(layer.provide(rl.layer_store_memory)))
         )
     )
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"ratelimit-remaining": "0", "ratelimit-reset-after": "9999999999999"},
+        {"ratelimit-remaining": "0", "ratelimit-reset": "999999999"},
+    ],
+)
+def test_a_reset_learned_from_a_response_holds_a_key_for_an_hour_at_most(
+    headers: dict[str, str],
+) -> None:
+    """A peer's reset hint is clamped like the adaptive limiter's and the
+    circuit breaker's (an hour), so one response cannot stall a key for
+    the life of the process."""
+    attempts = [0]
+
+    def send(request: req.HttpClientRequest, *_: object) -> fx.Effect[res.HttpClientResponse]:
+        def answer() -> res.HttpClientResponse:
+            attempts[0] += 1
+            return res.make(request, status=200, headers=headers)
+
+        return fx.sync(answer)
+
+    def body():
+        limiter = yield from rl.RateLimiter()
+        client = c.make(send).with_rate_limiter(
+            limiter=limiter, key="hint", limit=10, window=60, disable_adaptive_learning=True
+        )
+        yield from client.get("http://test/")
+        fiber = yield from client.get("http://test/").fork(start_immediately=True)
+        yield from testing.adjust(3600)
+        assert attempts[0] == 2
+        yield from fiber.interrupt()
+
+    testing.run_test(
+        fx.scoped(fx.gen(body).or_die()).pipe(
+            fx.provide(rl.layer.pipe(layer.provide(rl.layer_store_memory)))
+        )
+    )
+
+
+@pytest.mark.parametrize("retry_after", ["99999999999", "Fri, 31 Dec 9999 23:59:59 GMT"])
+def test_retry_transient_waits_an_hour_at_most_for_a_retry_after(retry_after: str) -> None:
+    """A peer's ``Retry-After`` is clamped like the rate limiter's hints,
+    so one response cannot park a request for the life of the process."""
+    statuses = iter([503, 200])
+    attempts = [0]
+
+    def send(request: req.HttpClientRequest, *_: object) -> fx.Effect[res.HttpClientResponse]:
+        def answer() -> res.HttpClientResponse:
+            attempts[0] += 1
+            return res.make(request, status=next(statuses), headers={"retry-after": retry_after})
+
+        return fx.sync(answer)
+
+    def body():
+        client = c.make(send).retry_transient(retry_on="response-only", times=1)
+        fiber = yield from client.get("http://test/").fork(start_immediately=True)
+        yield from testing.adjust(3600)
+        assert attempts[0] == 2
+        response = yield from fiber.join()
+        assert response.status == 200
+
+    testing.run_test(fx.scoped(fx.gen(body).or_die()))

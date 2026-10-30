@@ -8,6 +8,8 @@ import asyncio
 from collections.abc import Sequence
 from typing import Any
 
+import pytest
+
 import pyfect as fx
 from pyfect import effect, layer, stream
 from pyfect.context import Tag
@@ -15,6 +17,7 @@ from pyfect.deferred import Deferred
 from pyfect.exit import fail as exit_fail
 from pyfect.http import asgi, router, server_response
 from pyfect.http.asgi import Message, Receive, Scope, Send
+from pyfect.http.asgi._http import InvalidResponseHeaderError
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
 from pyfect.http.server_response import HttpServerResponse
 from pyfect.scope import acquire_release
@@ -779,3 +782,15 @@ def test_a_foreign_handler_never_sees_a_dot_segment_the_router_matched_literally
 
     assert asyncio.run(main()) == [400] * len(paths)
     assert called == []
+
+
+def test_a_response_header_value_with_a_control_character_is_never_sent() -> None:
+    # The same field-value grammar as the live server: tab, visible ASCII, obs-text.
+    for value in ("a\x01b", "a\x0bb", "a\x0cb", "a\x7fb", "a\nb"):
+        response = server_response.text("ok").set_header("x-value", value)
+        app = asgi.to_asgi(effect.succeed(response))
+        peer = _Peer({"type": "http.request", "body": b"", "more_body": False})
+        with pytest.raises(InvalidResponseHeaderError):
+            asyncio.run(app(_scope(), peer.receive, peer.send))
+        starts = [m for m in peer.sent if m["type"] == "http.response.start"]
+        assert [(m["status"], m["headers"]) for m in starts] == [(500, [])]

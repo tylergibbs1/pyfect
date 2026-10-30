@@ -34,7 +34,18 @@ def cors(
     """Middleware answering preflight ``OPTIONS`` requests (204) and adding
     the CORS headers to every response. With no ``allowed_origins`` every
     origin is allowed (``*``); with several (or a test) the request's
-    origin is echoed when allowed, and responses vary by ``Origin``."""
+    origin is echoed when allowed, and responses vary by ``Origin``. A
+    request from an origin that is not allowed is still served: only the
+    browser withholds the response, so CORS is no access control.
+    ``credentials`` needs ``allowed_origins`` without ``*``: browsers refuse
+    credentials with ``*``, so that combination raises ``ValueError`` here (Effect
+    sends it)."""
+    if (
+        credentials
+        and not callable(allowed_origins)
+        and (not allowed_origins or "*" in allowed_origins)
+    ):
+        raise ValueError("cors(credentials=True) needs allowed_origins; browsers refuse '*'")
     is_allowed: Callable[[str], bool]
     if callable(allowed_origins):
         is_allowed = allowed_origins

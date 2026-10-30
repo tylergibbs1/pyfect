@@ -13,11 +13,11 @@ on.
 from __future__ import annotations
 
 import asyncio
-import re
 from collections import deque
 from collections.abc import AsyncIterator
 from typing import Any
 
+from pyfect.http._field import is_field_value, is_token
 from pyfect.http.abort import AbortController
 from pyfect.http.asgi import _scope
 from pyfect.http.asgi._types import Message, Receive, Scope, Send
@@ -118,10 +118,6 @@ def request_of(
     )
 
 
-_TOKEN = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
-_FIELD_VALUE = re.compile(r"[^\x00\r\n]*")
-
-
 class InvalidResponseHeaderError(ValueError):
     """A response header that cannot be sent (Node's ``writeHead`` throws)."""
 
@@ -131,7 +127,7 @@ def encode_headers(lines: tuple[tuple[str, str], ...]) -> list[tuple[bytes, byte
     ``InvalidResponseHeaderError``."""
     encoded: list[tuple[bytes, bytes]] = []
     for name, value in lines:
-        if not _TOKEN.fullmatch(name) or not _FIELD_VALUE.fullmatch(value):
+        if not is_token(name) or not is_field_value(value):
             raise InvalidResponseHeaderError(f"Invalid response header: {name}")
         try:
             encoded.append((name.encode("latin-1"), value.encode("latin-1")))

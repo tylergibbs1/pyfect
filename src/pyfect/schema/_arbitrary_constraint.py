@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Literal, cast
 
+from pyfect._digits import parse_signed_digits
 from pyfect.schema._checks_string import js_regex
 from pyfect.schema._jsonschema._checks import BUILTINS, CheckContext
 from pyfect.schema.ast import Check, FilterGroup
@@ -133,8 +134,9 @@ def _builtin(annotations: Mapping[str, object]) -> ArbitraryConstraint:
 def _bound(text: object) -> Any:
     """A payload bound: a bigint's digits and a date's ISO text are read back."""
     if isinstance(text, str):
-        if re.fullmatch(r"-?\d+", text):
-            return int(text)
+        number = None if text.startswith("+") else parse_signed_digits(text)
+        if number is not None:
+            return number
         return datetime.fromisoformat(text)
     return text
 

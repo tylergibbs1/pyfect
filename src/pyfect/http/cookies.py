@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, fields
 from datetime import UTC, datetime
@@ -19,6 +20,7 @@ from email.utils import parsedate_to_datetime
 from typing import Literal, TypedDict, Unpack, final
 from urllib.parse import quote, unquote
 
+from pyfect._digits import parse_signed_digits
 from pyfect._js import text_encode
 from pyfect.duration import Duration, to_seconds
 from pyfect.errors import TaggedError
@@ -117,6 +119,7 @@ _NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 _DOMAIN = re.compile(r"[\t\x20-\x3a\x3c-\x7e\x80-\xff]+")
 _PATH = re.compile(r"[\x20-\x3a\x3c-\x7e]+")
 _LEADING_INT = re.compile(r"\s*([+-]?\d+)")
+_MAX_SECONDS = int(sys.float_info.max)
 _BAD_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
 
@@ -244,8 +247,10 @@ def _parse_set_cookie(header: str) -> Cookie | None:  # noqa: PLR0912
                     options["expires"] = date
             case "max-age" if attribute is not None:
                 found = _LEADING_INT.match(attribute)
-                if found is not None:
-                    options["max_age"] = float(int(found[1]))
+                seconds = None if found is None else parse_signed_digits(found[1])
+                # Past what a float holds the attribute is ignored.
+                if seconds is not None and abs(seconds) <= _MAX_SECONDS:
+                    options["max_age"] = float(seconds)
             case "path" if attribute is not None and attribute.startswith("/"):
                 options["path"] = attribute
             case "priority" if attribute is not None and attribute.lower() in (

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import IntEnum, auto
 from typing import ClassVar, Literal, Never
 
+from pyfect._digits import parse_digits
 from pyfect._json_text import PARSE_ERRORS, Json, parse
 from pyfect.errors import TaggedError
 
@@ -44,7 +45,6 @@ class JsonArrayError(TaggedError):
 
 
 _POINTER = re.compile(r"(?:/(?:[^~/]|~[01])*)*")
-_INDEX = re.compile(r"0|[1-9][0-9]*")
 
 
 @dataclass(frozen=True)
@@ -67,8 +67,13 @@ def make_config(pointer: str, max_depth: int, max_element_size: float) -> Config
     if not max_element_size >= 1:
         raise ValueError(f"max_element_size must be at least 1, got {max_element_size}")
     tokens = tuple(unescape(token) for token in pointer.split("/")[1:])
-    indices = tuple(int(token) if _INDEX.fullmatch(token) else -1 for token in tokens)
+    indices = tuple(_index(token) for token in tokens)
     return Config(tokens, indices, max_depth, max_element_size)
+
+
+def _index(token: str) -> int:
+    index = parse_digits(token, unpadded=True)
+    return -1 if index is None else index
 
 
 def unescape(token: str) -> str:

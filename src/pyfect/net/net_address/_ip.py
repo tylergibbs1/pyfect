@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from ipaddress import IPv4Address, IPv6Address
 from typing import Literal, NewType, overload
 
+from pyfect._digits import is_digits, parse_digits
 from pyfect.net._errors import NetAddressError, address_error
 from pyfect.result import Err, Ok, Result
 
@@ -42,7 +43,6 @@ ipv4_broadcast = IPv4Address(0xFFFFFFFF)
 
 _DECIMAL_OCTET = re.compile(r"[0-9]{1,3}")
 _HEX_SEGMENT = re.compile(r"[0-9a-fA-F]{1,4}")
-_DIGITS = re.compile(r"[0-9]+")
 _ZONE_FORBIDDEN = re.compile(r"[%\[\]/\s\x00-\x1f\x7f-\x9f]")
 
 
@@ -231,10 +231,11 @@ def scoped_ipv6_literal_from_string(text: str) -> Result[ScopedIpv6Literal, NetA
         return address_error(text, "expected an IPv6 zone")
     if not zone or _ZONE_FORBIDDEN.search(zone):
         return address_error(text, "invalid IPv6 scope identifier")
-    if _DIGITS.fullmatch(zone):
-        if int(zone) > 0xFFFFFFFF:
+    if is_digits(zone):
+        number = parse_digits(zone)
+        if number is None or number > 0xFFFFFFFF:
             return address_error(text, "scope identifier must be an unsigned 32-bit integer")
-        zone = str(int(zone))
+        zone = str(number)
     return ipv6_from_string(address).map(lambda ip: ScopedIpv6Literal(f"{format_ip(ip)}%{zone}"))
 
 

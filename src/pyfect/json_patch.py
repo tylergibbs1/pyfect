@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from collections.abc import Mapping, Sequence
 from typing import Literal, NotRequired, TypedDict, cast
 
+from pyfect._digits import parse_digits
 from pyfect._js import js_sort_key
 from pyfect._json_value import JsonValue
 from pyfect.json_pointer import escape_token, unescape_token
@@ -135,13 +135,11 @@ def _tokenize(pointer: str) -> list[str]:
     return [unescape_token(token) for token in pointer.split("/")[1:]]
 
 
-_ARRAY_INDEX = re.compile(r"0|[1-9][0-9]*")
-
-
 def _array_index(token: str) -> int:
-    if not _ARRAY_INDEX.fullmatch(token):
+    index = parse_digits(token, unpadded=True)
+    if index is None:
         raise ValueError(f'Invalid array index: "{token}"')
-    return int(token)
+    return index
 
 
 def _not_a_container(operation: JsonPatchOperation) -> ValueError:

@@ -81,21 +81,22 @@ class Runner[RD](Protocol):
     ) -> Effect[list[tuple[int, str]], MigrationError | SqlError, SqlClient | RD | R2]: ...
 
 
-def _unsafe(sql: str) -> Fragment:
-    return Fragment((unsafe_literal(sql),))
+def _nstring(text: str) -> Fragment:
+    """``text`` as a SQL Server ``N'...'`` string literal, quotes doubled."""
+    return Fragment((unsafe_literal("N'" + text.replace("'", "''") + "'"),))
 
 
 def _ensure_table(sql: SqlClientService, table: str) -> Effect[object, SqlError]:
     name = sql.identifier(table)
     return sql.on_dialect_or_else(
         mssql=lambda: sql(
-            "IF OBJECT_ID(N'{literal}', N'U') IS NULL\n"
+            "IF OBJECT_ID({literal}, N'U') IS NULL\n"
             "  CREATE TABLE {table} (\n"
             "    migration_id INT NOT NULL PRIMARY KEY,\n"
             "    name VARCHAR(255) NOT NULL,\n"
             "    created_at DATETIME NOT NULL DEFAULT GETDATE()\n"
             "  )",
-            literal=_unsafe(table),
+            literal=_nstring(table),
             table=name,
         ),
         mysql=lambda: sql(

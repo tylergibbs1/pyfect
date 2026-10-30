@@ -4,14 +4,13 @@ tree, each ``_`` in a name starting a new path segment."""
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Mapping
 
+from pyfect._digits import parse_digits
 from pyfect.config_provider._node import Array, Keys, Node, Path, Record, Value
 from pyfect.config_provider._provider import ConfigProvider, make
 from pyfect.effect import succeed
 
-_CANONICAL_INDEX = re.compile(r"0|[1-9][0-9]*")
 _MAX_INDEX = 2**32 - 1
 
 
@@ -77,4 +76,5 @@ def _node_at(
 
 
 def _is_index(key: str) -> bool:
-    return _CANONICAL_INDEX.fullmatch(key) is not None and int(key) < _MAX_INDEX
+    index = parse_digits(key, unpadded=True)
+    return index is not None and index < _MAX_INDEX

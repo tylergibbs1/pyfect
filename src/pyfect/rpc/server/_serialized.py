@@ -3,7 +3,7 @@ the requests a ``ServerProtocol`` hands it and encodes the responses."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Never, cast
 
@@ -79,11 +79,29 @@ def encode_defect_for(codec_for: CodecFor) -> Callable[[object], object]:
     return _defect_codecs(codec_for)[0]
 
 
-def _headers(encoded: object) -> Headers:
-    if isinstance(encoded, Headers):
-        return encoded
-    pairs = cast("Sequence[Sequence[str]]", encoded or ())
-    return Headers({str(pair[0]).lower(): str(pair[1]) for pair in pairs})
+def _headers(encoded: object) -> Headers | None:
+    """A request's ``headers``: absent, pairs of strings or an object of
+    strings (Effect's ``Headers.fromInput``); ``None`` for any other shape."""
+    if encoded is None or isinstance(encoded, Headers):
+        return encoded or Headers({})
+    if isinstance(encoded, Mapping):
+        pairs: list[object] = [
+            list(item) for item in cast("Mapping[object, object]", encoded).items()
+        ]
+    elif isinstance(encoded, list | tuple):
+        pairs = list(cast("Sequence[object]", encoded))
+    else:
+        return None
+    out: dict[str, str] = {}
+    for pair in pairs:
+        if not isinstance(pair, list | tuple):
+            return None
+        match cast("Sequence[object]", pair):
+            case [str() as name, str() as value]:
+                out[name.lower()] = value
+            case _:
+                return None
+    return Headers(out)
 
 
 @dataclass(slots=True, eq=False)
@@ -255,6 +273,11 @@ class _Serialized:
                 client, request_id, self._unknown_exit, unknown_tag(tag)
             )
         codecs = self._codecs(rpc)
+        headers = _headers(message.get("headers"))
+        if headers is None:
+            return self._send_request_defect(
+                client, request_id, codecs.encode_exit, DecodedDefect("Invalid request headers")
+            )
 
         def decoded(payload: object) -> Effect[None]:
             client.codecs[request_id] = codecs
@@ -262,7 +285,7 @@ class _Serialized:
                 request_id,
                 rpc.tag,
                 payload,
-                _headers(message.get("headers")),
+                headers,
                 message.get("traceId"),
                 message.get("spanId"),
                 message.get("sampled"),

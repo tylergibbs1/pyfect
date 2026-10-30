@@ -177,3 +177,14 @@ def test_sse_encode_schema_writes_events_and_a_retry():
         .run_string()
     )
     assert text == "data: x\n\n"
+
+
+@testing.effect
+def test_sse_encode_schema_fails_with_a_schema_error_for_a_line_break_in_the_name():
+    error = yield from (
+        stream.make(_Named(event="a\ndata: forged", data="x"))
+        .pipe_through_channel_or_fail(sse.encode_schema(S.Struct(_Named)))
+        .run_string()
+        .flip()
+    )
+    assert isinstance(error, S.SchemaError)

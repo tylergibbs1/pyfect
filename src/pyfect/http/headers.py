@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from typing import ClassVar, Literal, cast, final
 
+from pyfect._digits import is_digits, parse_digits
 from pyfect.context import Reference
 from pyfect.duration import ZERO, Duration, Seconds, to_seconds
 from pyfect.errors import TaggedError
@@ -138,11 +140,12 @@ def is_redacted_name(name: str, patterns: Sequence[Pattern]) -> bool:
 
 
 class CurrentRedactedNames(Reference[tuple[Pattern, ...]]):
-    """The header names whose values logs and spans hide."""
+    """The header names whose values logs and spans hide (Effect's
+    default, plus ``proxy-authorization``)."""
 
     @classmethod
     def default(cls) -> tuple[Pattern, ...]:
-        return ("authorization", "cookie", "set-cookie", "x-api-key")
+        return ("authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key")
 
 
 def current_redacted_names() -> tuple[Pattern, ...]:
@@ -278,15 +281,19 @@ def retry_after_date_time(date_time: datetime) -> RetryAfterDateTime:
     return RetryAfterDateTime(date_time)
 
 
-_WHOLE_SECONDS = re.compile(r"\d+", re.ASCII)
+_MAX_SECONDS = int(sys.float_info.max)
 
 
 def parse_retry_after(input: str) -> Result[RetryAfter, HeaderParseError]:
     """Whole seconds or an HTTP date; anything else (negative, fractional,
     exponent forms) is an ``InvalidRetryAfter``."""
     trimmed = input.strip()
-    if _WHOLE_SECONDS.fullmatch(trimmed):
-        return Ok(RetryAfterDuration(Seconds(float(int(trimmed)))))
+    if is_digits(trimmed):
+        # More seconds than a float holds (or than int() reads) is invalid.
+        whole = parse_digits(trimmed)
+        if whole is None or whole > _MAX_SECONDS:
+            return Err(HeaderParseError.from_reason("InvalidRetryAfter", input))
+        return Ok(RetryAfterDuration(Seconds(float(whole))))
     parsed = _http_date(trimmed)
     if parsed is None:
         return Err(HeaderParseError.from_reason("InvalidRetryAfter", input))

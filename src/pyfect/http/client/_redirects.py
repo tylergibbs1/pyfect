@@ -31,19 +31,23 @@ def _next_request(
     response: HttpClientResponse, request: HttpClientRequest
 ) -> HttpClientRequest | None:
     """The request following ``response``, or ``None`` when its
-    ``Location`` is not a URL."""
+    ``Location`` is not a URL or leaves ``https`` for ``http`` (Effect
+    follows a downgrade; its body and URL would travel in plain text)."""
     location = response.headers["location"]
     match _url.from_string(location, response.request.url):
         case Ok(url):
             pass
         case _:
             return None
+    previous = _url.parse(response.request.url)
+    if previous.scheme == "https" and url.scheme != "https":
+        return None
     status = response.status
     if ((status in (301, 302)) and request.method == "POST") or (
         status == 303 and request.method not in ("GET", "HEAD")
     ):
         request = request.set_method("GET").set_body(_body.EMPTY)
-    if _url.origin(url) != _url.origin(_url.parse(response.request.url)):
+    if _url.origin(url) != _url.origin(previous):
         request = request.update_headers(_without_credentials)
     return HttpClientRequest(
         request.method,

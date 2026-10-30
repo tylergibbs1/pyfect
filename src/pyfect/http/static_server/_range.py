@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Literal
 
-_DIGITS = re.compile(r"\d+\Z", re.ASCII)
+from pyfect._digits import parse_digits
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +17,7 @@ class ByteRange:
 
 
 def _integer(value: str) -> int | None:
-    return int(value) if _DIGITS.match(value) else None
+    return parse_digits(value)
 
 
 def parse_range(header: str, file_size: int) -> ByteRange | Literal["unsatisfiable"] | None:  # noqa: PLR0911

@@ -24,8 +24,11 @@ from pyfect.ai.mcp_protocol import AnyProtocolAdapter, Registry
 from pyfect.ai.mcp_schema import (
     CALL_TOOL_PARAMS,
     COMPLETE_PARAMS,
+    CREATE_MESSAGE_RESULT,
+    ELICIT_RESULT,
     GET_PROMPT,
     INITIALIZE_PARAMS,
+    LIST_ROOTS_RESULT,
     LIST_TOOLS,
     METHOD_NOT_FOUND_ERROR_CODE,
     READ_RESOURCE,
@@ -410,30 +413,36 @@ class Connection:
                 return unsupported(f"Client did not advertise the {capability} capability")
             return None
 
-        def request(
+        def request[A](
             operation: ReverseOperation,
             capability: Literal["roots", "sampling", "elicitation"],
             params: Mapping[str, Any],
-        ) -> Effect[JsonObject, ReverseError]:
+            result: S.Codec[A, Any],
+        ) -> Effect[A, ReverseError]:
+            """The client's answer, decoded with ``result`` (a malformed one
+            is an ``McpReverseOperationError``, never taken as is)."""
             error = refused(operation, capability)
             if error is not None:
                 return fail(error)
-            return self._reverse_request(operation, params, out)
+            decode = cast(
+                "Callable[[object], Effect[A, S.SchemaError]]", S.decode_unknown_effect(result)
+            )
+            return self._reverse_request(operation, params, out).flat_map(
+                lambda reply: decode(reply).map_error(
+                    lambda invalid: McpReverseOperationError(operation, invalid)
+                )
+            )
 
         def list_roots() -> Effect[ListRootsResult, ReverseError]:
-            return request("roots/list", "roots", {}).map(lambda r: cast("ListRootsResult", r))
+            return request("roots/list", "roots", {}, LIST_ROOTS_RESULT)
 
         def create_message(
             params: CreateMessageParams,
         ) -> Effect[CreateMessageResult, ReverseError]:
-            return request("sampling/createMessage", "sampling", params).map(
-                lambda r: cast("CreateMessageResult", r)
-            )
+            return request("sampling/createMessage", "sampling", params, CREATE_MESSAGE_RESULT)
 
         def elicit(params: ElicitRequestFormParams) -> Effect[ElicitResult, ReverseError]:
-            return request("elicitation/create", "elicitation", params).map(
-                lambda r: cast("ElicitResult", r)
-            )
+            return request("elicitation/create", "elicitation", params, ELICIT_RESULT)
 
         return ReverseClient(list_roots, create_message, elicit)
 

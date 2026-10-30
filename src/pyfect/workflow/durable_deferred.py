@@ -200,11 +200,16 @@ class DurableDeferred[A, E = Never]:
 
     def done(self, *, token: str, exit: Exit[A, E]) -> Effect[None, Never, WorkflowEngine]:
         """Record ``exit`` as the result of the deferred ``token`` names,
-        waking its execution."""
+        waking its execution. A token naming another deferred is a defect
+        (Effect writes ``exit`` into that deferred, with this one's schema)."""
 
         def body() -> Generator[Effect[Any, Never, Any], Any]:
             engine = yield from WorkflowEngine()
             parsed = TokenParsed.from_string(token)
+            if parsed.deferred_name != self.name:
+                raise ValueError(
+                    f"token names the deferred {parsed.deferred_name!r}, not {self.name!r}"
+                )
             yield from engine.deferred_done(
                 self,
                 workflow_name=parsed.workflow_name,

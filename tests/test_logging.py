@@ -601,3 +601,36 @@ def test_json_text_drops_cycles_and_writes_exceptions_by_name():
     assert json_text(cyclic) == '{"a":1}'
     assert json_text([math.inf, _Point(1, 2)]) == '[null,{"x":1,"y":2}]'
     assert json_text(KeyError("k")) == '{"name":"KeyError","message":"\'k\'"}'
+
+
+@pytest.mark.parametrize("format", [logger.format_simple, logger.format_logfmt])
+@testing.effect
+def test_line_breaks_in_logged_values_cannot_start_a_new_log_line(format: fx.Logger[str]):
+    lines: list[str] = []
+    yield from (
+        fx.log("ok\nlevel=ERROR forged", "\r\nlevel=ERROR")
+        .annotate_logs("user", "a\r\nb")
+        .pipe(fx.provide(logger.layer([format.map(lines.append)])))
+    )
+    assert len(lines) == 1
+    assert "\n" not in lines[0]
+    assert "\r" not in lines[0]
+    assert '"ok\\nlevel=ERROR forged"' in lines[0]
+    assert 'user="a\\r\\nb"' in lines[0]
+
+
+@pytest.mark.parametrize("format", [logger.format_simple, logger.format_logfmt])
+@pytest.mark.parametrize(
+    "brk", ["\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"]
+)
+@testing.effect
+def test_no_line_separator_in_a_logged_value_reaches_the_line(format: fx.Logger[str], brk: str):
+    # str.splitlines (and many log readers) also break lines at these.
+    lines: list[str] = []
+    yield from (
+        fx.log(f"ok{brk}level=ERROR forged")
+        .annotate_logs("user", f"a{brk}b")
+        .pipe(fx.provide(logger.layer([format.map(lines.append)])))
+    )
+    assert len(lines) == 1
+    assert lines[0].splitlines() == [lines[0]]

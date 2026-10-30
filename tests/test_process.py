@@ -100,15 +100,27 @@ def test_stdin_is_a_sink(process_services: Services[Platform]):
 
 
 @testing.effect
-def test_shell_joins_the_command_and_runs_it_with_sh(process_services: Services[Platform]):
+def test_shell_runs_the_command_line_with_sh(process_services: Services[Platform]):
     handle = yield from make(
-        "echo",
-        ["$PYFECT_SHELL_TEST", "|", "tr", "a-z", "A-Z"],
+        "echo $PYFECT_SHELL_TEST | tr a-z A-Z",
         shell=True,
         env={"PYFECT_SHELL_TEST": "shell"},
         extend_env=True,
     )
     assert (yield from _text(handle.stdout)) == "SHELL\n"
+
+
+@testing.effect
+def test_shell_passes_each_argument_as_one_literal_word(process_services: Services[Platform]):
+    words = ["a b", "$PYFECT_SHELL_TEST", "; echo injected", "it's", "`id`", ""]
+    handle = yield from make(
+        "printf '[%s]\\n'",
+        words,
+        shell=True,
+        env={"PYFECT_SHELL_TEST": "expanded"},
+        extend_env=True,
+    )
+    assert (yield from _text(handle.stdout)) == "".join(f"[{word}]\n" for word in words)
 
 
 @testing.effect

@@ -16,7 +16,7 @@ from pyfect.logger._text import (
     format_unknown,
     is_text_only,
     iso_millis,
-    json_quote,
+    json_quote_line,
     json_text,
     structured_message,
 )
@@ -53,7 +53,7 @@ def _key_values(quote: Callable[[str], str]) -> Callable[[Options], str]:
 format_simple: Logger[str] = Logger(_key_values(escape_double_quotes))
 """``key=value`` pairs; values with spaces, ``=`` or ``"`` are quoted."""
 
-format_logfmt: Logger[str] = Logger(_key_values(json_quote))
+format_logfmt: Logger[str] = Logger(_key_values(json_quote_line))
 """The logfmt format: ``key=value`` pairs, values that need it quoted as
 JSON strings."""
 

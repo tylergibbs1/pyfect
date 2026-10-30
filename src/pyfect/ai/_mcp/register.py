@@ -57,24 +57,45 @@ from pyfect.ai.mcp_schema import (
 )
 from pyfect.ai.mcp_schema import Tool as McpTool
 from pyfect.ai.toolkit import FailureOriginAnnotation, HandlerResult, Handlers, Toolkit
-from pyfect.cause import Cause, Fail
+from pyfect.cause import Cause, Fail, UnhandledError
 from pyfect.context import Context
 from pyfect.effect import fail, fail_cause, gen, succeed, suspend
 
 INTERNAL_TOOL_ERROR_MESSAGE = "Tool execution failed due to an internal server error."
+INTERNAL_ERROR_MESSAGE = "Internal server error"
 
 type ResourceContent = ReadResourceResult | str | bytes
 """What a resource handler gives: a result, a text or binary contents."""
 
 
 def _first_message(cause: Cause[object]) -> str:
+    """The first error's text for the peer: a typed error that is no
+    exception gives itself when a string, else its ``message`` (not its
+    ``repr``, which shows every field)."""
     errors = cause.pretty_errors()
-    return str(errors[0]) if errors else "Internal error"
+    if not errors:
+        return "Internal error"
+    first = errors[0]
+    if isinstance(first, UnhandledError):
+        error = first.error
+        message = error if isinstance(error, str) else getattr(error, "message", None)
+        return message if isinstance(message, str) else "Internal error"
+    return str(first)
 
 
 def _internal[A](effect: Effect[A, Any, Any]) -> Effect[A, InternalError, Any]:
-    """``effect`` with every failure an ``InternalError`` of its message."""
-    return effect.catch_cause(lambda cause: fail(InternalError(_first_message(cause))))
+    """``effect`` with every failure an ``InternalError`` of its message. A
+    defect is logged and reported, and its text stays here: the peer gets
+    ``INTERNAL_ERROR_MESSAGE``, as for a tool (Effect sends the defect's
+    message)."""
+
+    def answer(cause: Cause[object]) -> Effect[A, InternalError]:
+        if not cause.has_dies:
+            return fail(InternalError(_first_message(cause)))
+        reported = fx.log_error(cause).and_then(error_reporter.report(cause))
+        return reported.and_then(fail(InternalError(INTERNAL_ERROR_MESSAGE)))
+
+    return effect.catch_cause(answer)
 
 
 def _json_text(value: object) -> str:
@@ -318,7 +339,8 @@ def register_resource[E = Never, R = Never](
     annotations: Context[Never] | None = None,
 ) -> Effect[None, Never, McpServer | R]:
     """Serve ``content`` at ``uri``: a string is its text, bytes its blob.
-    A failure is answered as an internal error with its message."""
+    A failure is answered as an internal error with its message, a defect
+    with a generic one."""
     require_effect(content, "content")
 
     @gen

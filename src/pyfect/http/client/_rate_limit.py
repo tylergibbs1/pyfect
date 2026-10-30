@@ -21,6 +21,7 @@ from pyfect.http.headers import Headers
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
 from pyfect.persistence._seconds import millis
+from pyfect.persistence.rate_limiter._store import clamp_adaptive_millis
 
 if TYPE_CHECKING:
     from pyfect.persistence.rate_limiter import (
@@ -155,7 +156,9 @@ class _Inspector:
 
     def window(self, now: float, headers: Headers) -> Seconds | None:
         after = _reset_after(_header(headers, self._names.reset_after))
-        return after if after is not None else _reset(now, _header(headers, self._names.reset))
+        return _clamp(
+            after if after is not None else _reset(now, _header(headers, self._names.reset))
+        )
 
     def limits(self, current: _Limits, now: float, headers: Headers, tokens: float) -> _Limits:
         limit = self._limit(current, headers, tokens)
@@ -177,6 +180,12 @@ class _Inspector:
 
     def retry_after(self, now: float, headers: Headers) -> Seconds | None:
         return retry_after_from_header(_header(headers, self._names.retry_after), now)
+
+
+def _clamp(hint: Seconds | None) -> Seconds | None:
+    """A peer's reset hint, at most an hour, as ``Retry-After`` and the
+    adaptive limiter's own are (Effect leaves it unbounded)."""
+    return None if hint is None else millis(clamp_adaptive_millis(to_millis(hint)))
 
 
 def _too_many_requests(error: object) -> HttpClientResponse | None:

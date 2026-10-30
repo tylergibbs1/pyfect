@@ -268,3 +268,23 @@ def test_from_env_record_reads_its_names_when_made_and_its_values_at_each_lookup
     assert _load(provider, ["A", "C"]) == fx.Ok(Value("2"))
     assert _load(provider, ["X"]) == fx.Ok(Value("3"))
     assert _load(provider, ["X", "Y"]) == fx.Ok(Value("4"))
+
+
+@pytest.mark.parametrize(
+    "path", [("..",), ("..", "outside"), ("inner", "..", "..", "outside"), ("inner/../../outside",)]
+)
+def test_from_dir_does_not_read_above_the_root(tmp_path: Path, path: tuple[str, ...]):
+    (tmp_path / "outside").write_text("secret")
+    root = tmp_path / "root"
+    (root / "inner").mkdir(parents=True)
+
+    assert _load(_provider(cp.from_dir(root)), path) == fx.Ok(None)
+
+
+def test_from_dir_reads_a_dot_dot_that_stays_below_the_root(tmp_path: Path):
+    (tmp_path / "inner").mkdir()
+    (tmp_path / "name").write_text("inside")
+
+    assert _load(_provider(cp.from_dir(tmp_path)), ["inner", "..", "name"]) == fx.Ok(
+        Value("inside")
+    )

@@ -11,7 +11,6 @@ addresses pass through, checked against ``family`` when given::
 
 from __future__ import annotations
 
-import re
 import socket
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ from ipaddress import IPv4Address, IPv6Address
 from typing import Literal, Never, cast, overload
 
 from pyfect._core import Effect
+from pyfect._digits import is_digits
 from pyfect.context import Tag
 from pyfect.effect import fail, from_result, succeed, sync
 from pyfect.layer import Layer
@@ -42,8 +42,6 @@ type ScopeIdLookup = Callable[[str], Effect[int | None, NetAddressError]]
 """The scope ID of the network interface named ``name``, or ``None``."""
 
 type ResolveError = DnsError | NetAddressError
-
-_DIGITS = re.compile(r"[0-9]+")
 
 
 def _in_family(
@@ -120,7 +118,7 @@ class AddressResolverService:
             return from_result(inet_address(host, port))
         zone = host[host.index("%") + 1 :]
         lookup = self._scope_id
-        if lookup is None or _DIGITS.fullmatch(zone):
+        if lookup is None or is_digits(zone):
             return from_result(inet_address_from_host_string(host, port))
 
         def with_scope(scope_id: int | None) -> Effect[InetAddress, NetAddressError]:

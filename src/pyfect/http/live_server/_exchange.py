@@ -13,7 +13,6 @@ sets).
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -24,6 +23,7 @@ from pyfect._digits import parse_digits
 from pyfect.cause import Cause, UnhandledError, merge
 from pyfect.cause import die as die_cause
 from pyfect.effect import fail_cause, succeed, suspend, void
+from pyfect.http._field import is_field_value, is_token
 from pyfect.http.headers import format_http_date
 from pyfect.http.live_server._body import BodyReader
 from pyfect.http.live_server._head import Length, RequestHead
@@ -40,8 +40,6 @@ MAX_DRAIN_BYTES = 256 * 1024
 """Unread request body discarded after the response to keep the
 connection alive; past this it closes."""
 
-_TOKEN = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+\Z")
-_VALUE = re.compile(r"[\t\x20-\x7e\x80-\xff]*\Z")
 _CONTINUE = b"HTTP/1.1 100 Continue\r\n\r\n"
 
 
@@ -76,9 +74,9 @@ def encode_fields(start_line: str, fields: Sequence[tuple[str, str]]) -> bytes:
     """A head: ``start_line`` and the fields, values as Latin-1."""
     lines = [start_line]
     for name, value in fields:
-        if not _TOKEN.match(name):
+        if not is_token(name):
             raise InvalidResponse(f'Header name must be a valid HTTP token ["{name}"]')
-        if not _VALUE.match(value):
+        if not is_field_value(value):
             raise InvalidResponse(f'Invalid character in header content ["{name}"]')
         lines.append(f"{name}: {value}")
     try:
@@ -93,7 +91,7 @@ def _encode_head(status: int, text: str, headers: Sequence[tuple[str, str]]) -> 
     if not 200 <= status <= 599:
         raise InvalidResponse(f"Invalid final response status: {status}")
     reason = _reason(status, text)
-    if not _VALUE.match(reason):
+    if not is_field_value(reason):
         raise InvalidResponse("Invalid character in statusMessage")
     return encode_fields(f"HTTP/1.1 {status} {reason}", headers)
 

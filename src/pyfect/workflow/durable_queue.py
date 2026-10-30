@@ -34,6 +34,7 @@ from typing import Any, Never, TypedDict, cast
 
 from pyfect._core import Effect
 from pyfect.effect import die, fail, gen, never
+from pyfect.exit import Exit
 from pyfect.layer import Layer, effect_discard
 from pyfect.logger import log_warning
 from pyfect.persistence import persisted_queue
@@ -44,7 +45,7 @@ from pyfect.scope import Scope
 from pyfect.tracer import ExternalSpan, Span, use_span
 from pyfect.workflow._services import WorkflowEngine, WorkflowInstance
 from pyfect.workflow.activity import idempotency_key as activity_idempotency_key
-from pyfect.workflow.durable_deferred import DurableDeferred, Token, TokenSchema
+from pyfect.workflow.durable_deferred import DurableDeferred, Token, TokenParsed, TokenSchema
 from pyfect.workflow.durable_deferred import make as make_deferred
 
 
@@ -97,6 +98,19 @@ class DurableQueue[P, A = None, E = Never]:
     def __repr__(self) -> str:
         return f"DurableQueue({self.name!r})"
 
+    def _item_deferred(self, name: str) -> DurableDeferred[A, E]:
+        """The deferred one queued item answers through."""
+        return DurableDeferred(
+            name, success=self.deferred.success_schema, error=self.deferred.error_schema
+        )
+
+    def _item_done(self, token: Token, exit: Exit[A, E]) -> Effect[None, Never, WorkflowEngine]:
+        """Answer the item ``token`` names, through its own deferred (a
+        deferred refuses a token naming another one)."""
+        return self._item_deferred(TokenParsed.from_string(token).deferred_name).done(
+            token=token, exit=exit
+        )
+
     def process(
         self, payload: P, *, retry_schedule: Schedule[Any, Any, Any, Any] | None = None
     ) -> Effect[A, E, WorkflowEngine | WorkflowInstance | PersistedQueueFactory]:
@@ -113,11 +127,7 @@ class DurableQueue[P, A = None, E = Never]:
             item_id = yield from activity_idempotency_key(
                 f"{queue_name}/{self.idempotency_key(made)}"
             )
-            deferred: DurableDeferred[A, E] = DurableDeferred(
-                f"{self.deferred.name}/{item_id}",
-                success=self.deferred.success_schema,
-                error=self.deferred.error_schema,
-            )
+            deferred = self._item_deferred(f"{self.deferred.name}/{item_id}")
             token = yield from deferred.token()
 
             def offer(span: Span) -> Effect[None]:
@@ -180,7 +190,7 @@ class DurableQueue[P, A = None, E = Never]:
                 return (
                     f(payload)
                     .exit()
-                    .flat_map(lambda ex: self.deferred.done(token=item["token"], exit=ex))
+                    .flat_map(lambda ex: self._item_done(item["token"], ex))
                     .with_span(
                         f"DurableQueue/{self.name}/worker",
                         capture_stack_trace=False,

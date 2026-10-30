@@ -25,7 +25,8 @@ def from_dir(
     reads the file ``<root_path>/db/password`` (trimmed) as a value, and a
     directory is a record of its entry names. A path missing both as a file
     and as a directory is absent; any other failure is a ``SourceError``
-    holding the ``PlatformError``. An empty file is absent unless
+    holding the ``PlatformError``. A path leading above ``root_path`` (``..``)
+    is absent. An empty file is absent unless
     ``preserve_empty_strings``. Files are read at each lookup."""
 
     root = os.fspath(root_path)
@@ -47,8 +48,12 @@ def _load(
 ) -> Effect[Node | None, SourceError]:
     # Like Node's path.join, a segment is joined below the root even when
     # it starts with a separator.
-    segments = (str(segment).lstrip("/" + paths.sep) for segment in path)
+    segments = [str(segment).lstrip("/" + paths.sep) for segment in path]
     full = paths.normalize(paths.join(root, *segments))
+    # Unlike Effect, a path whose ``..`` segments lead above the root is
+    # absent rather than read.
+    if segments and paths.resolve_within(root, paths.join(*segments)) is None:
+        return succeed(None)
 
     def as_file(content: str) -> Node | None:
         value = _js.trim(content)

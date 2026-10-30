@@ -14,6 +14,7 @@ in kills it when it closes (see ``_child``).
 from __future__ import annotations
 
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -80,12 +81,13 @@ def _platform() -> str:
 
 
 def _argv(command: StandardCommand, shell: bool | str) -> list[str]:
-    """Node's ``shell`` option: the command and its arguments joined by
-    spaces, run by the shell."""
+    """Node's ``shell`` option: the command is a line of shell, run by the
+    shell. Unlike Node (which joins them unquoted, DEP0190), each argument
+    is quoted, so it reaches the command as one literal word."""
     if shell is False:
         return [command.command, *command.args]
-    line = " ".join((command.command, *command.args))
     if os.name == "nt":
+        line = " ".join((command.command, *(_cmd_quote(arg) for arg in command.args)))
         return [
             shell if isinstance(shell, str) else os.environ.get("COMSPEC", "cmd.exe"),
             "/d",
@@ -93,7 +95,13 @@ def _argv(command: StandardCommand, shell: bool | str) -> list[str]:
             "/c",
             f'"{line}"',
         ]
+    line = " ".join((command.command, *(shlex.quote(arg) for arg in command.args)))
     return [shell if isinstance(shell, str) else "/bin/sh", "-c", line]
+
+
+def _cmd_quote(arg: str) -> str:
+    """``arg`` as one quoted word of a ``cmd.exe`` line."""
+    return '"' + arg.replace('"', '""') + '"'
 
 
 def _environment(options: CommandOptions) -> dict[str, str] | None:

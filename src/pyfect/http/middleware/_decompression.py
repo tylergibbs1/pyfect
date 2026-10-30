@@ -185,7 +185,11 @@ class DecompressedRequest(ServerRequest):
         """Read from the inner body only once pulled."""
 
         def make(fiber: Fiber[Any, Any]) -> Effect[Stream[bytes, HttpServerError]]:
-            limit = self.max_decompressed_size or fiber.get_ref(MaxBodySize) or _DEFAULT_MAX
+            limit = self.max_decompressed_size
+            if limit is None:
+                limit = fiber.get_ref(MaxBodySize)
+            if limit is None:
+                limit = _DEFAULT_MAX
             decoders = _Decoders(self.codings, limit)
 
             def decode(step: Callable[[], bytes | None]) -> Effect[bytes, HttpServerError]:

@@ -12,6 +12,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any
 
 from pyfect import _json_text as _json
+from pyfect._digits import parse_signed_digits
 from pyfect._js import js_number
 from pyfect._js import trim as js_trim
 from pyfect.date_time._epoch import from_epoch_millis
@@ -22,7 +23,6 @@ from pyfect.schema.getter._getter import Getter, Transform, TransformEffect
 from pyfect.schema.issue import InvalidValue, Issue, reported
 
 _DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
-_INTEGER = re.compile(r"[+-]?[0-9]+")
 _RADIX = re.compile(r"0([xXoObB])([0-9a-fA-F]+)")
 _BASES = {"x": 16, "o": 8, "b": 2}
 
@@ -89,9 +89,11 @@ def to_big_int(value: object) -> int | None:
     if not isinstance(value, str):
         return None
     text = js_trim(value)
-    if text == "" or _INTEGER.fullmatch(text):
-        return int(text or "0")
-    return _radix(text)
+    if text == "":
+        return 0
+    # Unlike JavaScript, a BigInt of more than MAX_DIGITS digits is invalid.
+    signed = parse_signed_digits(text)
+    return signed if signed is not None else _radix(text)
 
 
 def string() -> Getter[str, object]:

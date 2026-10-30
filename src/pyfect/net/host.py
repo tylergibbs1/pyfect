@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv6Address
 from typing import NewType, TypedDict
 
+from pyfect._digits import parse_digits
 from pyfect.net._errors import NetAddressError, address_error
 from pyfect.net.net_address._ip import (
     IpAddress,
@@ -49,7 +50,6 @@ _LABEL = re.compile(r"[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?")
 _NUMERIC_LABEL = re.compile(r"[0-9]+|0x[0-9a-f]*")
 _DOMAIN_TEXT = re.compile(r"[a-z0-9_.-]+")
 _NUMERIC_HOST = re.compile(r"[0-9.]+")
-_PORT_TEXT = re.compile(r"0|[1-9][0-9]*")
 
 
 def _validate(name: str) -> str | None:  # noqa: PLR0911
@@ -222,9 +222,9 @@ def host_port_from_string(text: str) -> Result[HostPort, NetAddressError]:  # no
         if text.find(":") != separator:
             return address_error(text, "IPv6 addresses must be bracketed")
         host_text, port_text = text[:separator], text[separator + 1 :]
-    if not _PORT_TEXT.fullmatch(port_text):
+    port = parse_digits(port_text, unpadded=True)
+    if port is None:
         return address_error(text, "port must be an unpadded decimal integer")
-    port = int(port_text)
     if not _is_port(port):
         return address_error(text, "port must be an integer from 0 through 65535")
     return host_from_string(host_text).map(lambda host: HostPort(host, port))

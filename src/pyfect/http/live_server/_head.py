@@ -11,12 +11,12 @@ from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlsplit
 
+from pyfect._digits import parse_digits
 from pyfect.http._authority import ROOT, Authority, OriginForm, parse_authority, parse_origin_form
 from pyfect.http.headers import Headers
 
 _TOKEN = re.compile(rb"[!#$%&'*+\-.^_`|~0-9A-Za-z]+\Z")
 _VERSION = re.compile(rb"HTTP/(\d)\.(\d)\Z")
-_DIGITS = re.compile(r"[0-9]+")
 _OWS = " \t"
 _FIELD_VALUE = re.compile(rb"[\t\x20-\x7e\x80-\xff]*\Z")
 _TARGET = re.compile(rb"[\x21-\x7e\x80-\xff]+\Z")
@@ -91,10 +91,10 @@ def _framing(headers: dict[str, str], version: tuple[int, int]) -> Framing:
     values = set(_items(content_length))
     if len(values) != 1:
         raise HeadError(400, "Invalid Content-Length")
-    value = values.pop()
-    if not _DIGITS.fullmatch(value):
+    length = parse_digits(values.pop())
+    if length is None:
         raise HeadError(400, "Invalid Content-Length")
-    return Length(int(value))
+    return Length(length)
 
 
 def _add(headers: dict[str, str], name: str, value: str) -> None:
