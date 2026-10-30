@@ -3,7 +3,7 @@ Messages were printed by Effect under Node first (``report_input``, missing
 positions under ``errors="all"``, checks kept by ``TupleWithRest``)."""
 
 import enum
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from types import MappingProxyType
@@ -149,6 +149,27 @@ def test_a_variadic_tuple_annotation_has_no_derived_schema():
 
     with pytest.raises(TypeError, match="No schema for the annotation"):
         S.Struct(Rest)
+
+
+type _Tree = int | Sequence[_Tree]
+
+
+def test_a_json_value_annotation_is_the_json_schema():
+    class Event(TypedDict):
+        payload: S.JsonValue
+        extensions: Mapping[str, S.JsonValue]
+
+    SchemaAsserts(S.Struct(Event)).decoding().succeed(
+        {"payload": {"a": [1, None, "x"]}, "extensions": {"code": "E"}}
+    )
+
+
+def test_a_self_referring_type_alias_is_a_type_error_naming_it():
+    class Shape(TypedDict):
+        tree: _Tree
+
+    with pytest.raises(TypeError, match="_Tree refers to itself"):
+        S.Struct(Shape)
 
 
 class _Node(S.Class):

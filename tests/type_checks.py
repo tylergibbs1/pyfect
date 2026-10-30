@@ -19,7 +19,18 @@ from opentelemetry.trace import Span as OtelApiSpan
 from opentelemetry.trace import SpanContext
 
 import pyfect as fx
-from pyfect import channel, execution_plan, layer, logger, otel, reactivity, rpc, schedule, stream
+from pyfect import (
+    channel,
+    execution_plan,
+    graphql,
+    layer,
+    logger,
+    otel,
+    reactivity,
+    rpc,
+    schedule,
+    stream,
+)
 from pyfect import schema as S
 from pyfect import socket as socket_module
 from pyfect._json_value import JsonValue
@@ -6249,3 +6260,133 @@ def check_sql_model() -> None:
     sql_model.make_repository(ModelPlain, table_name="t", span_prefix="T", id_column="name")
     sql_model.make_repository(S.String, table_name="t", span_prefix="T", id_column="id")  # pyright: ignore[reportArgumentType]
     del use, use_resolvers
+
+
+# --- graphql ---------------------------------------------------------------------
+
+
+class GqlLogin(TypedDict):
+    login: str
+
+
+class GqlViewer(TypedDict):
+    viewer: GqlLogin
+
+
+class GqlIssueId(TypedDict):
+    id: str
+
+
+class GqlTokenExpired(fx.TaggedError): ...
+
+
+class GqlCurrentUser(fx.Tag[str]): ...
+
+
+class GqlAuth(graphql.GraphQLMiddleware[GqlTokenExpired, GqlCurrentUser]): ...
+
+
+def graphql_checks() -> None:
+    from pyfect.graphql.client_error import GraphQLClientError as GqlError
+    from pyfect.graphql.protocol import GraphQLProtocol as GqlProtocol
+
+    viewer_op = graphql.query(
+        "Viewer", document="query Viewer{viewer{login}}", result=S.Struct(GqlViewer)
+    )
+    assert_type(viewer_op, graphql.Operation[graphql.NoVariables, GqlViewer])
+    by_id_op = graphql.query(
+        "ById",
+        document="query ById($id:ID!){viewer{login}}",
+        result=S.Struct(GqlViewer),
+        variables=S.Struct(GqlIssueId),
+    )
+    assert_type(by_id_op, graphql.Operation[GqlIssueId, GqlViewer])
+    updated_op = graphql.subscription(
+        "Updated", document="subscription Updated{viewer{login}}", result=S.Struct(GqlViewer)
+    )
+    assert_type(
+        viewer_op.middleware(GqlAuth),
+        graphql.Operation[graphql.NoVariables, GqlViewer, GqlTokenExpired, GqlCurrentUser],
+    )
+
+    class Plain(graphql.GraphQLGroup):
+        viewer = viewer_op
+        by_id = by_id_op
+        updated = updated_op
+
+    class Authed(graphql.GraphQLGroup[GqlAuth]):
+        viewer = viewer_op
+
+    class Merged(graphql.GraphQLGroup):
+        viewer = Authed.viewer
+
+    assert_type(graphql.make(Plain), fx.Effect[Plain, Never, GqlProtocol])
+    assert_type(graphql.make(Authed), fx.Effect[Authed, Never, GqlProtocol | GqlAuth])
+
+    def use(plain: Plain, authed: Authed, merged: Merged) -> None:
+        assert_type(plain.viewer(), fx.Effect[GqlViewer, GqlError])
+        assert_type(
+            plain.viewer(partial=True), fx.Effect[graphql.PartialResult[GqlViewer], GqlError]
+        )
+        assert_type(plain.by_id({"id": "1"}), fx.Effect[GqlViewer, GqlError])
+        plain.by_id()  # pyright: ignore[reportCallIssue]
+        plain.by_id({"id": 1})  # pyright: ignore[reportArgumentType]
+        assert_type(plain.updated(), fx.Stream[GqlViewer, GqlError])
+        assert_type(
+            authed.viewer(), fx.Effect[GqlViewer, GqlError | GqlTokenExpired, GqlCurrentUser]
+        )
+        assert_type(
+            merged.viewer(), fx.Effect[GqlViewer, GqlError | GqlTokenExpired, GqlCurrentUser]
+        )
+
+        # Resolvers: the key type comes from ``variables`` (or, for
+        # ``aliased``, is the operation's variables); a miss is a
+        # NoSuchElementException.
+        def first_id(ids: Sequence[str]) -> GqlIssueId:
+            return {"id": ids[0]}
+
+        by_ids = graphql.resolver.ordered(plain.by_id, variables=first_id, path=("viewer",))
+        get_one = graphql.resolver.request(by_ids)
+        assert_type(get_one, Callable[[str], fx.Effect[Any, GqlError | fx.NoSuchElementException]])
+        get_by = graphql.resolver.request(graphql.resolver.aliased(plain.by_id))
+        assert_type(get_by, Callable[[GqlIssueId], fx.Effect[GqlViewer, GqlError]])
+        get_by({"id": 1})  # pyright: ignore[reportArgumentType]
+        authed_get = graphql.resolver.request(graphql.resolver.aliased(authed.viewer))
+        assert_type(
+            authed_get,
+            Callable[
+                [graphql.NoVariables],
+                fx.Effect[GqlViewer, GqlError | GqlTokenExpired, GqlCurrentUser],
+            ],
+        )
+
+    del use
+
+    # Transports: subscriptions over graphql-ws add the WebSocket
+    # constructor, the scope and the connection params' requirements.
+    from pyfect.graphql.protocol import WebSocketOptions, make_http, make_web_socket
+    from pyfect.http.client import HttpClient as GqlHttpClient
+    from pyfect.socket import WebSocketConstructor as GqlWsConstructor
+
+    assert_type(
+        make_http(url="http://localhost/graphql"),
+        fx.Effect[graphql.protocol.GraphQLProtocolService, Never, GqlHttpClient],
+    )
+    params = GqlCurrentUser().map(lambda user: {"token": user})
+    assert_type(
+        make_http(
+            url="http://localhost/graphql",
+            web_socket=WebSocketOptions(url="ws://localhost/graphql", connection_params=params),
+        ),
+        fx.Effect[
+            graphql.protocol.GraphQLProtocolService,
+            Never,
+            GqlHttpClient | GqlWsConstructor | fx.Scope | GqlCurrentUser,
+        ],
+    )
+    assert_type(
+        make_web_socket(WebSocketOptions(url="ws://localhost/graphql")),
+        fx.Effect[graphql.protocol.GraphQLProtocolService, Never, GqlWsConstructor | fx.Scope],
+    )
+    ws_options = WebSocketOptions(url="ws://localhost/graphql")
+    make_http(url=lambda options: "http://x/graphql", web_socket=ws_options)  # pyright: ignore[reportCallIssue, reportArgumentType]
