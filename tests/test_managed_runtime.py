@@ -2,9 +2,10 @@
 the per-request pattern of a web server's lifespan."""
 
 import asyncio
+import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Never
 
@@ -104,6 +105,49 @@ def test_sync_runs_from_several_threads_share_one_build():
     runtime.dispose()
     assert results == ["svc"] * 8
     assert builds == ["acquire", "release"]
+
+
+def test_a_sync_run_and_a_loop_on_another_thread_first_using_it_share_one_build(
+    fast_thread_switches: None,
+):
+    """The build is claimed under a lock: two threads using the runtime for
+    the first time at once (a sync run here, an asyncio loop there) used to
+    build the layer twice, about once in 30 tries with frequent thread
+    switches."""
+    for _ in range(200):
+        log: list[str] = []
+        runtime = fx.ManagedRuntime.make(tracked(log))
+        assert _first_used_from_two_threads(runtime) == ["svc", "svc"]
+        assert log == ["acquire", "release"]
+
+
+def _first_used_from_two_threads(runtime: fx.ManagedRuntime[Name]) -> list[object]:
+    """A loop thread and this thread run on ``runtime`` at the same moment;
+    then it is disposed."""
+    results: list[object] = []
+    go = threading.Barrier(2)
+
+    async def main() -> None:
+        go.wait()
+        results.append(await asyncio.wait_for(runtime.run_async(Name()), 5))
+
+    thread = threading.Thread(target=lambda: asyncio.run(main()))
+    thread.start()
+    go.wait()
+    results.append(runtime.run_sync(Name()))
+    thread.join(10)
+    runtime.dispose()
+    return results
+
+
+@pytest.fixture
+def fast_thread_switches() -> Iterator[None]:
+    previous = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        yield
+    finally:
+        sys.setswitchinterval(previous)
 
 
 def test_lifespan_and_per_request_runs():

@@ -477,6 +477,8 @@ def _run_handler(entry: HandlerEntry, request: RpcRequest[Any]) -> Any:
     """A raise in the handler is a defect of the request."""
     try:
         return entry.handler(request)
+    except KeyboardInterrupt:
+        raise  # Ctrl-C: the loop interrupts the fiber (Fiber._raised)
     except BaseException as defect:
         return die(defect)
 

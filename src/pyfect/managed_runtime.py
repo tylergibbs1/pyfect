@@ -74,6 +74,7 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
 
     __slots__ = (
         "_build_fiber",
+        "_build_lock",
         "_cached",
         "_context_effect",
         "_disposed",
@@ -103,6 +104,7 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         self._managed: WeakSet[Fiber[Any, Any]] = WeakSet()
         self._disposing: WeakSet[Fiber[Any, Any]] = WeakSet()
         self._build_fiber: Fiber[Context, Any] | None = None
+        self._build_lock = threading.Lock()
         self._disposed: Deferred[None] | None = None
         self._cached: Context | None = None
         self._context_effect: Effect[Context, Any] = _WithFiber(self._context_in)
@@ -131,19 +133,28 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         return unwrap(await self._run_async_unmanaged(self._context_effect))
 
     def _context_in(self, fiber: Fiber[Any, Any]) -> Effect[Context, Any]:
-        if self._build_fiber is None:
+        # Runs from sync runs on any thread and from loops: one build only.
+        with self._build_lock:
+            builder = self._build_fiber
+            if builder is None:
+                # On the requesting fiber's run and scheduler, as Effect's build.
+                builder = new_root(
+                    fiber._run_scheduler, Context.empty(), scheduler=fiber._scheduler
+                )
+                self._build_fiber = builder
+                start = True
+            else:
+                start = False
+        if start:
             build = self._layer.build_with_memo_map(self.memo_map, self._layer_scope).map(
                 self._cache
             )
-            # On the requesting fiber's run and scheduler, as Effect's build.
-            builder = new_root(fiber._run_scheduler, Context.empty(), scheduler=fiber._scheduler)
             start_root(builder, build)
-            self._build_fiber = builder
             # Unlike a request, the build joins the fiber scope even if it
             # disposed the runtime, so disposal still interrupts it.
             self._managed.add(builder)
             builder.run_in(self._fiber_scope)
-        return self._build_fiber.join()
+        return builder.join()
 
     def _cache(self, context: Context) -> Context:
         self._cached = context

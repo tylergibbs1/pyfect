@@ -110,6 +110,12 @@ class SyncScheduler(Tracking):
         self._timers: list[tuple[float, int, _Timer]] = []
         self._seq = itertools.count()
         self._cond = threading.Condition()
+        # The thread inside ``run_until``, if any.
+        self._driver: int | None = None
+
+    def runs_here(self) -> bool:
+        """Whether this thread is the one running the scheduler's tasks."""
+        return self._driver == threading.get_ident()
 
     def schedule(self, task: Task) -> None:
         task = self._tracked(task)
@@ -137,6 +143,13 @@ class SyncScheduler(Tracking):
         decides how to unwind.
         """
         self._last_activity = time.monotonic()
+        driver, self._driver = self._driver, threading.get_ident()
+        try:
+            self._run_until(done, stall_timeout)
+        finally:
+            self._driver = driver
+
+    def _run_until(self, done: Callable[[], bool], stall_timeout: float | None) -> None:
         while not done():
             with self._cond:
                 self._move_due_timers()
@@ -144,8 +157,13 @@ class SyncScheduler(Tracking):
                     self._cond.wait(self._wait_time(stall_timeout))
                     continue
                 batch, self._ready = self._ready, deque()
-            for task in batch:
-                task()
+            try:
+                while batch:
+                    batch.popleft()()
+            finally:
+                if batch:  # a task raised (Ctrl-C): the rest still runs first
+                    with self._cond:
+                        self._ready.extendleft(reversed(batch))
 
     def _wait_time(self, stall_timeout: float | None) -> float | None:
         """How long to block with nothing ready; raises once stalled."""
@@ -194,6 +212,10 @@ class AsyncioScheduler(Tracking):
         """The loop this scheduler runs tasks on."""
         return self._loop
 
+    def runs_here(self) -> bool:
+        """Whether this thread is the one running the scheduler's tasks."""
+        return threading.get_ident() == self._thread and self._loop.is_running()
+
     @classmethod
     def current(cls) -> AsyncioScheduler:
         """The scheduler for the running loop. Must be called on the loop."""
@@ -218,10 +240,13 @@ class AsyncioScheduler(Tracking):
         # Run only what was queued before this tick so asyncio callbacks
         # (I/O, other tasks) are never starved by a busy fiber.
         self._draining_scheduled = False
-        for _ in range(len(self._ready)):
-            self._ready.popleft()()
-        if self._ready:
-            self._drain_soon()
+        try:
+            for _ in range(len(self._ready)):
+                self._ready.popleft()()
+        finally:
+            # Also when a task raised (Ctrl-C): what is left still runs.
+            if self._ready:
+                self._drain_soon()
 
 
 __all__ = [

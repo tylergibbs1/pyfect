@@ -221,6 +221,8 @@ def _await[A, E](
             )
         try:
             awaitable = make()
+        except KeyboardInterrupt:
+            raise  # Ctrl-C: the loop interrupts the fiber (Fiber._raised)
         except BaseException as exc:
             return _failure_of(catch, exc)
         return _Callback(lambda resume: register(loop, awaitable, resume))
@@ -237,6 +239,8 @@ def _await[A, E](
                 resume(_FailCause(interrupt_cause()))
                 return
             exc = t.exception()
+            if isinstance(exc, _Exited):
+                exc = exc.exit
             resume(_Succeed(t.result()) if exc is None else _failure_of(catch, exc))
 
         task.add_done_callback(done)
@@ -246,7 +250,20 @@ def _await[A, E](
 
 
 async def _as_coroutine[A](aw: Awaitable[A]) -> A:
-    return await aw
+    try:
+        return await aw
+    except SystemExit as exc:
+        # asyncio would re-raise it out of the loop, past the fiber.
+        raise _Exited(exc) from None
+
+
+class _Exited(Exception):
+    """A ``SystemExit`` raised by an awaited coroutine, on its way to the
+    fiber, which makes it a defect as from any other user code."""
+
+    def __init__(self, exit: SystemExit) -> None:
+        super().__init__(exit)
+        self.exit = exit
 
 
 def _cancel_task(task: asyncio.Task[Any]) -> Effect[None]:

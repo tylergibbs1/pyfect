@@ -47,6 +47,11 @@ class Tracking:
     def __init__(self) -> None:
         self._tracking = _Current()
 
+    def runs_here(self) -> bool:
+        """Whether this thread is the one running the scheduler's tasks
+        now. An interrupt sent from there is delivered at once."""
+        return False
+
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
         """Run ``f``, counting what it schedules against ``tracker``."""
         previous = self._tracking.tracker

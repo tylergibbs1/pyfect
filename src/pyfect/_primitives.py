@@ -363,7 +363,9 @@ class _GenFrame(Frame):
     def _on_failure(self, cause: Cause[Any], fiber: Fiber[Any, Any]) -> Step:
         try:
             self.gen.close()
-        except Exception as exc:
+        except KeyboardInterrupt:
+            raise  # Ctrl-C: the loop interrupts the fiber (Fiber._raised)
+        except BaseException as exc:
             return Failure(merge(cause, die_cause(exc)))
         return Failure(cause)
 

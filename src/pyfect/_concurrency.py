@@ -57,6 +57,16 @@ def _drop_own_interrupts(causes: list[Cause[Any]], by: int) -> Cause[Any]:
     )
 
 
+def _with_late_failure(failure: Cause[Any] | None, late: Cause[Any]) -> Cause[Any] | None:
+    """Add a failure that came after the first (or after the caller was
+    interrupted): its interrupts are dropped, as Effect's ``forEach`` does,
+    since they only report how the sibling was stopped."""
+    reasons = tuple(r for r in late.reasons if not isinstance(r, Interrupt))
+    if not reasons:
+        return failure
+    return Cause(reasons) if failure is None else merge(failure, Cause(reasons))
+
+
 def for_each[T, B, E = Never, R = Never](
     items: Iterable[T],
     f: Callable[[T], Effect[B, E, R]],
@@ -103,10 +113,17 @@ def _for_each_concurrent[T, B, E, R](
             return _Succeed([])
         results: list[Any] = [None] * n
         next_index = 0
+        # Once an item fails (or the caller is interrupted), no worker takes
+        # another item, as Effect's forEach starts no item after its
+        # terminal exit; this matters where the workers cannot be
+        # interrupted (inside ``uninterruptible``).
+        stopped = False
+        # The first failure's cause, then what later failures add.
+        failure: Cause[Any] | None = None
 
         def worker():
             nonlocal next_index
-            while next_index < n:
+            while not stopped and next_index < n:
                 i = next_index
                 next_index += 1
                 results[i] = yield from f(items[i])
@@ -120,35 +137,39 @@ def _for_each_concurrent[T, B, E, R](
                 for _ in range(min(limit, n))
             ]
             remaining = len(workers)
-            causes: list[Cause[Any]] = []
 
             def observer(ex: Exit[Any, Any]) -> None:
                 # Record first: interrupting siblings finishes them (and
                 # re-enters this observer) before the loop below returns.
-                nonlocal remaining
+                nonlocal remaining, stopped, failure
                 remaining -= 1
-                failed_first = isinstance(ex, Failure) and not causes
+                failed_first = False
                 if isinstance(ex, Failure):
-                    causes.append(ex.cause)
-                if remaining == 0:
-                    if causes:
-                        resume(_FailCause(_drop_own_interrupts(causes, parent.id)))
+                    if not stopped:
+                        stopped = failed_first = True
+                        failure = ex.cause
                     else:
-                        resume(_Succeed(results))
+                        failure = _with_late_failure(failure, ex.cause)
+                if remaining == 0:
+                    resume(_Succeed(results) if failure is None else _FailCause(failure))
                 elif failed_first:
                     for w in workers:
                         w.interrupt_as_unsafe(parent.id, parent._interruptor_annotations())
 
             def cancel() -> Effect[None]:
                 # Interrupted from outside: report what the workers did too.
-                failed = _drop_own_interrupts(causes, parent.id)
-                return _FailCause(failed) if failed.reasons else _Succeed(None)
+                nonlocal stopped
+                stopped = True
+                return interrupt_all(
+                    workers, parent.id, parent._interruptor_annotations()
+                ).and_then(_Suspend(report))
+
+            def report() -> Effect[None]:
+                return _Succeed(None) if failure is None else _FailCause(failure)
 
             for w in workers:
                 w.add_observer_unsafe(observer)
-            return interrupt_all(workers, parent.id, parent._interruptor_annotations()).and_then(
-                _Suspend(cancel)
-            )
+            return _Suspend(cancel)
 
         return _Callback(register)
 

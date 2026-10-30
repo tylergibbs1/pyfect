@@ -202,7 +202,17 @@ def default_teardown(ex: Exit[Any, Any]) -> int:
     if ex.cause.has_interrupts_only:
         return 130
     error = ex.cause.squash()
+    if isinstance(error, SystemExit):
+        return _exit_status(error)
     return error.exit_code if isinstance(error, TaggedError) else 1
+
+
+def _exit_status(exit: SystemExit) -> int:
+    """The status Python exits with for ``exit``: its code, 0 for none,
+    1 for anything else (which Python prints)."""
+    if exit.code is None:
+        return 0
+    return exit.code if isinstance(exit.code, int) else 1
 
 
 def run_main[A, E](
@@ -222,7 +232,16 @@ def run_main[A, E](
     require_effect(eff, "eff")
     main = eff if disable_error_reporting else eff.tap_cause(_log_failure)
     signalled = _Signalled()
-    ex = asyncio.run(_run_main_exit(main, signalled))
+    started: list[Fiber[A, E]] = []
+    try:
+        ex = asyncio.run(_run_main_exit(main, signalled, started))
+    except KeyboardInterrupt:
+        # Ctrl-C (or a raised KeyboardInterrupt) while user code ran: the
+        # fiber was interrupted and finished as asyncio.run shut down.
+        ex = started[0]._exit if started else None
+        if ex is None:
+            raise
+        signalled.received = True
     code = teardown(ex)
     if isinstance(ex, Success) and code == 0 and not signalled.received:
         return ex.value
@@ -241,13 +260,22 @@ class _Signalled:
 
 
 def _log_failure(cause: Cause[object]) -> Effect[None]:
-    if cause.has_interrupts_only or getattr(cause.squash(), "error_reported", True) is False:
+    error = cause.squash()
+    # ``sys.exit`` ends the program with its status; it is no error to log.
+    if (
+        cause.has_interrupts_only
+        or isinstance(error, SystemExit)
+        or getattr(error, "error_reported", True) is False
+    ):
         return _VOID
     return log_error(cause)
 
 
-async def _run_main_exit[A, E](eff: Effect[A, E, Never], signalled: _Signalled) -> Exit[A, E]:
+async def _run_main_exit[A, E](
+    eff: Effect[A, E, Never], signalled: _Signalled, started: list[Fiber[A, E]]
+) -> Exit[A, E]:
     fiber: Fiber[A, E] = new_root(AsyncioScheduler.current(), Context.empty())
+    started.append(fiber)
     fiber._start(eff)
     with _interrupt_on_signals(fiber, signalled):
         return await await_fiber(fiber)

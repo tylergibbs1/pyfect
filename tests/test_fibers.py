@@ -1,6 +1,8 @@
 """Forking, joining, interruption, supervision. Runs under the test clock,
 so sleeps are instant and ordering is deterministic."""
 
+import threading
+import time
 from collections.abc import Callable
 from typing import Never
 
@@ -276,3 +278,44 @@ def test_a_finishing_parent_interrupts_its_children_in_fork_order():
     fiber = yield from parent.fork(start_immediately=True)
     yield from fiber.interrupt()
     assert log == list(range(50))
+
+
+def test_a_join_from_another_thread_sees_an_exit_landing_as_it_registers():
+    """The fiber finishes on its own run's thread while a run on another
+    thread is registering its wait: the waiter checks the exit again once
+    registered, so it is not left with an observer nobody calls."""
+    started = threading.Event()
+    release = threading.Event()
+    holder: list[fx.Fiber[int, Never]] = []
+
+    def owner() -> None:
+        def body():
+            fiber = yield from fx.sync(release.wait).as_(7).fork()
+            holder.append(fiber)
+            started.set()
+            # Not a join: that would go through the list patched below.
+            while fiber.poll_unsafe() is None:
+                yield from fx.sleep(0.001)
+
+        fx.run_sync(fx.gen(body))
+
+    thread = threading.Thread(target=owner)
+    thread.start()
+    started.wait(5)
+    fiber = holder[0]
+
+    class FinishingAsAppended(list[object]):
+        """The observer list the joiner appends to: the fiber finishes (on
+        its own thread) between the joiner's check and its append."""
+
+        def append(self, item: object) -> None:
+            release.set()
+            deadline = time.monotonic() + 5
+            while fiber.poll_unsafe() is None and time.monotonic() < deadline:
+                time.sleep(0.001)
+            super().append(item)
+
+    fiber._observers = FinishingAsAppended(fiber._observers)  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
+    ex = fx.run_sync_exit(fiber.await_exit().timeout(2))
+    thread.join(5)
+    assert ex == fx.Success(fx.Success(7))

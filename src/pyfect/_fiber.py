@@ -59,7 +59,8 @@ from pyfect._core import (
 from pyfect._metric_ref import FiberRuntimeMetrics
 from pyfect._stack_frame import CurrentStackFrame, InterruptorStackTrace, StackFrame, StackTrace
 from pyfect._tracer_ref import CurrentTracer
-from pyfect.cause import Cause, Die
+from pyfect._wake_tracking import Tracking
+from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.context import Context, Reference, Tag
 from pyfect.exit import Exit, Failure, Success
@@ -265,6 +266,11 @@ class Fiber(Generic[A_co, E_co]):
                 resume(_Succeed(ex))
 
             self._observers.append(observer)
+            if self._exit is not None:
+                # It finished on another thread (a fiber of another run)
+                # between the check and the append; resume counts once.
+                resume(_Succeed(self._exit))
+                return None
             return _Sync(lambda: self._remove_observer(observer))
 
         return _Callback(register)
@@ -350,12 +356,14 @@ class Fiber(Generic[A_co, E_co]):
     def interrupt_as_unsafe(self, by: int | None, annotations: Context | None = None) -> None:
         """Ask the fiber to stop. Safe from any thread; does not wait.
 
-        From a fiber on the same scheduler it takes effect at once (as
-        Effect's ``interruptUnsafe``); elsewhere it goes through the
+        From the thread running the fiber's run (a fiber of it, or code
+        outside any fiber there) it takes effect at once (as Effect's
+        ``interruptUnsafe``); from other threads it goes through the
         scheduler. The interruption carries ``annotations`` (the
         interrupting fiber's ``InterruptorStackTrace``) and the frame this
         fiber is in (``StackTrace``)."""
-        if current_run_scheduler() is self._run_scheduler:
+        run = self._run_scheduler
+        if current_run_scheduler() is run or (isinstance(run, Tracking) and run.runs_here()):
             self._deliver_interrupt(by, annotations)
         else:
             self._scheduler.schedule(lambda: self._deliver_interrupt(by, annotations))
@@ -433,8 +441,8 @@ class Fiber(Generic[A_co, E_co]):
                 try:
                     hook = self._tracer_hook
                     cur = cur._step(self) if hook is None else _run_hooked(hook, cur, self)
-                except Exception as exc:
-                    cur = Failure(Cause((Die(exc),)))
+                except BaseException as exc:
+                    cur = self._raised(exc)
             elif isinstance(cur, Success | Failure):
                 if not self._stack:
                     if self._stack_frame is not None and isinstance(cur, Failure):
@@ -479,8 +487,23 @@ class Fiber(Generic[A_co, E_co]):
                     return frame._on_failure(ex.cause, self)
             step: Callable[[], Step] = partial(_hand_over, frame, ex, self)
             return hook(step, self)
-        except Exception as exc:
-            return exit_die(exc)
+        except BaseException as exc:
+            return self._raised(exc)
+
+    def _raised(self, exc: BaseException) -> Step:
+        """What the fiber goes on with when user code (a step or a
+        continuation) raised ``exc``: a defect, as Effect makes anything
+        thrown, whatever the exception's class.
+
+        Ctrl-C is not the program's own error: the step it cut short ends
+        as interrupted (the fiber goes on with that on its next turn), and
+        the ``KeyboardInterrupt`` goes on to the runner, which interrupts
+        the main fiber and waits for its finalizers, as when Ctrl-C lands
+        while every fiber is parked."""
+        if isinstance(exc, KeyboardInterrupt):
+            self._pause(Failure(self._record_interrupt(None, None)))
+            raise exc
+        return exit_die(exc)
 
     @staticmethod
     def _in_frame(failure: Failure[Any], frame: StackFrame) -> Failure[Any]:
@@ -509,8 +532,16 @@ class Fiber(Generic[A_co, E_co]):
         if self._parent is not None:
             self._parent._children.pop(self, None)
         observers, self._observers = self._observers, []
+        raised: BaseException | None = None
         for observer in observers:
-            observer(ex)
+            # One raising observer must not keep the exit from the rest
+            # (joiners would hang); its exception still surfaces after them.
+            try:
+                observer(ex)
+            except BaseException as exc:
+                raised = raised or exc
+        if raised is not None:
+            raise raised
         return None
 
     def _remove_observer(self, observer: Callable[[Exit[Any, Any]], None]) -> None:
@@ -657,7 +688,9 @@ class Fiber(Generic[A_co, E_co]):
                 fiber, nxt = queue.popleft()
         finally:
             _thread.drain = outer
-            for fiber, nxt in drain.queue or ():  # only left over if a run raised
+            # Only left over if a run raised (Ctrl-C): queue the rest, so no
+            # fiber is lost.
+            for fiber, nxt in [*(drain.first or ()), *(drain.queue or ())]:
                 fiber._scheduler.schedule(lambda f=fiber, n=nxt: f._drive(n))
 
     def _drive_first(self, step: Step) -> None:
