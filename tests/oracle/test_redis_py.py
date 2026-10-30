@@ -35,6 +35,7 @@ from pyfect.persistence import circuit_breaker as cb
 from pyfect.persistence import persistence, redis_py
 from pyfect.persistence import rate_limiter as rl
 from pyfect.persistence.redis import (
+    DEFAULT_SUBSCRIBE_CAPACITY,
     Redis,
     RedisConnection,
     RedisError,
@@ -149,8 +150,10 @@ class _Partition:
         run = self._redis.eval(script)
         return lambda *args, **kwargs: self._gate(run(*args, **kwargs))
 
-    def subscribe(self, channel: str) -> fx.Effect[Dequeue[RedisMessage, RedisError], Never, Scope]:
-        return self._redis.subscribe(channel)
+    def subscribe(
+        self, channel: str, *, capacity: int = DEFAULT_SUBSCRIBE_CAPACITY
+    ) -> fx.Effect[Dequeue[RedisMessage, RedisError], Never, Scope]:
+        return self._redis.subscribe(channel, capacity=capacity)
 
     @property
     def reserve(self) -> fx.Effect[RedisConnection, RedisError, Scope]:

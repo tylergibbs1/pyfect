@@ -10,6 +10,7 @@ from typing import Any, Never
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend, _Sync
 from pyfect._js import text_decoder
 from pyfect.cause import Cause
+from pyfect.cause import fail as fail_cause
 from pyfect.channel._base import AnyPull, end_with
 from pyfect.channel._channel import Channel, from_transform
 from pyfect.pull import catch_done, match_effect
@@ -64,11 +65,21 @@ class _LineSplitter:
     unfinished line (and a ``\\r`` that may start a ``\\r\\n``) across
     chunks."""
 
-    __slots__ = ("mid_crlf", "pending")
+    __slots__ = ("_pending", "mid_crlf", "pending_length")
 
     def __init__(self) -> None:
-        self.pending = ""
+        self._pending: list[str] = []  # pieces, joined once the line ends: linear time
+        self.pending_length = 0
         self.mid_crlf = False
+
+    def _line(self, end: str) -> str:
+        if not self._pending:
+            return end
+        self._pending.append(end)
+        line = "".join(self._pending)
+        self._pending = []
+        self.pending_length = 0
+        return line
 
     def split(self, chunks: tuple[str, ...]) -> tuple[str, ...]:
         lines: list[str] = []
@@ -86,28 +97,35 @@ class _LineSplitter:
                 if cr == -1 and lf == -1:
                     break
                 if cr == -1 or (lf != -1 and lf < cr):
-                    lines.append(self.pending + text[start:lf])
+                    lines.append(self._line(text[start:lf]))
                     start = lf + 1
                 else:
-                    lines.append(self.pending + text[start:cr])
+                    lines.append(self._line(text[start:cr]))
                     if cr + 1 == len(text):
                         self.mid_crlf = True
                         start = len(text)
                     else:
                         start = cr + (2 if lf == cr + 1 else 1)
-                self.pending = ""
-            self.pending += text[start:]
+            if start < len(text):
+                self._pending.append(text[start:])
+                self.pending_length += len(text) - start
         return tuple(lines)
 
     def flush(self) -> str:
-        last, self.pending, self.mid_crlf = self.pending, "", False
+        last = self._line("")
+        self.mid_crlf = False
         return last
 
 
-def split_lines[E = Never, D = None]() -> Channel[tuple[str, ...], E, D, tuple[str, ...], E, D]:
-    """Split chunks of text into lines, without their line breaks; the
-    text after the last break is the last line."""
+class LineTooLongError(Exception):
+    """A line passed ``split_lines_within``'s limit."""
 
+    def __init__(self, max_length: int) -> None:
+        super().__init__(f"Line exceeds {max_length} characters")
+        self.max_length = max_length
+
+
+def _splitter(max_length: int | None) -> Channel[Any, Any, Any, Any, Any, Any, Any]:
     def transform(upstream: AnyPull, _scope: CloseableScope) -> Effect[AnyPull]:
         def build() -> AnyPull:
             lines = _LineSplitter()
@@ -115,6 +133,11 @@ def split_lines[E = Never, D = None]() -> Channel[tuple[str, ...], E, D, tuple[s
 
             def written(chunks: tuple[str, ...]) -> AnyPull:
                 split = lines.split(chunks)
+                if max_length is not None and (
+                    lines.pending_length > max_length
+                    or any(len(line) > max_length for line in split)
+                ):
+                    return _FailCause(fail_cause(LineTooLongError(max_length)))
                 return _Succeed(split) if split else pull_or_flush
 
             def done(leftover: Any) -> AnyPull:
@@ -135,5 +158,19 @@ def split_lines[E = Never, D = None]() -> Channel[tuple[str, ...], E, D, tuple[s
 
         return _Sync(build)
 
-    channel: Channel[tuple[str, ...], E, D, tuple[str, ...], E, D] = from_transform(transform)
-    return channel
+    return from_transform(transform)
+
+
+def split_lines[E = Never, D = None]() -> Channel[tuple[str, ...], E, D, tuple[str, ...], E, D]:
+    """Split chunks of text into lines, without their line breaks; the
+    text after the last break is the last line."""
+    return _splitter(None)
+
+
+def split_lines_within[E = Never, D = None](
+    max_length: int,
+) -> Channel[tuple[str, ...], E | LineTooLongError, D, tuple[str, ...], E, D]:
+    """``split_lines`` for text from a peer you do not control: a line
+    longer than ``max_length`` characters fails with ``LineTooLongError``
+    as soon as that much of it has arrived, so memory stays bounded."""
+    return _splitter(max_length)

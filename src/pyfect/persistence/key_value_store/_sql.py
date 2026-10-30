@@ -11,6 +11,7 @@ from pyfect.effect import fail, gen, succeed
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.persistence._columns import column_bytes, column_int
+from pyfect.persistence._sql_keys import MSSQL_KEY, MYSQL_KEY, key_equals, mssql_match
 from pyfect.persistence.key_value_store._store import (
     KeyValueStore,
     KeyValueStoreError,
@@ -39,7 +40,7 @@ def _build(table_name: str) -> Generator[Effect[Any, Any, SqlClient], Any, KeyVa
     table = sql.identifier(table_name)
     yield from sql.on_dialect_or_else(
         mysql=lambda: sql(
-            "CREATE TABLE IF NOT EXISTS {} (id VARCHAR(191) PRIMARY KEY, value BLOB NOT NULL, "
+            f"CREATE TABLE IF NOT EXISTS {{}} (id {MYSQL_KEY} PRIMARY KEY, value BLOB NOT NULL, "
             "value_type SMALLINT NOT NULL)",
             table,
         ),
@@ -50,7 +51,7 @@ def _build(table_name: str) -> Generator[Effect[Any, Any, SqlClient], Any, KeyVa
         ),
         mssql=lambda: sql(
             "IF NOT EXISTS (SELECT * FROM sysobjects WHERE name={} AND xtype='U') "
-            "CREATE TABLE {} (id NVARCHAR(450) PRIMARY KEY, value VARBINARY(MAX) NOT NULL, "
+            f"CREATE TABLE {{}} (id {MSSQL_KEY} PRIMARY KEY, value VARBINARY(MAX) NOT NULL, "
             "value_type SMALLINT NOT NULL)",
             table_name,
             table,
@@ -70,7 +71,7 @@ def _build(table_name: str) -> Generator[Effect[Any, Any, SqlClient], Any, KeyVa
 
     def select(method: str, key: str) -> Effect[Row | None, KeyValueStoreError]:
         return (
-            sql("SELECT value, value_type FROM {} WHERE id = {}", table, key)
+            sql("SELECT value, value_type FROM {} WHERE {}", table, key_equals(sql, "id", key))
             .map(lambda rows: rows[0] if rows else None)
             .map_error(failed(method, key, f"Unable to get item with key {key}"))
         )
@@ -118,7 +119,7 @@ def _build(table_name: str) -> Generator[Effect[Any, Any, SqlClient], Any, KeyVa
 
     def remove(key: str) -> Effect[None, KeyValueStoreError]:
         return (
-            sql("DELETE FROM {} WHERE id = {}", table, key)
+            sql("DELETE FROM {} WHERE {}", table, key_equals(sql, "id", key))
             .map_error(failed("remove", key, f"Unable to remove item with key {key}"))
             .as_void()
         )
@@ -166,7 +167,7 @@ def _upsert(sql: SqlClientService, table: Identifier) -> _Upsert:
     def mssql() -> _Upsert:
         return lambda key, value, value_type: sql(
             "MERGE {} AS target USING (SELECT {} AS id, {} AS value, {} AS value_type) AS source "
-            "ON target.id = source.id "
+            f"ON {mssql_match('id')} "
             "WHEN MATCHED THEN UPDATE SET value = source.value, value_type = source.value_type "
             "WHEN NOT MATCHED THEN INSERT (id, value, value_type) "
             "VALUES (source.id, source.value, source.value_type);",

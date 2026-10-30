@@ -188,7 +188,9 @@ def make(
             def send(request: dict[str, Any]) -> Effect[Stream[Part, AiError, Any], AiError]:
                 _annotate_request(options.span, request)
                 return client.create_response_stream(request).map(
-                    lambda sent: make_stream_response(options, sent[1], sent[0], names)
+                    lambda sent: make_stream_response(
+                        options, sent[1], sent[0], names, client.max_response_bytes
+                    )
                 )
 
             built: Effect[Stream[Part, AiError, Any], AiError] = (

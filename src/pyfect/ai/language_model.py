@@ -29,6 +29,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.ai import _approvals as A
+from pyfect.ai import _tool_call_ids as Ids
 from pyfect.ai import prompt as P
 from pyfect.ai import response as R
 from pyfect.ai import toolkit as K
@@ -388,6 +389,15 @@ class Service:
         return decoder
 
     def _request(self, options: ProviderOptions) -> Effect[Sequence[EncodedPart], AiError, Any]:
+        def admitted(parts: Sequence[EncodedPart]) -> Effect[Sequence[EncodedPart], AiError]:
+            error = Ids.Ledger(options.prompt.content).admit(parts, "generateText")
+            return fx.succeed(parts) if error is None else fx.fail(error)
+
+        return self._provider_request(options).flat_map(admitted)
+
+    def _provider_request(
+        self, options: ProviderOptions
+    ) -> Effect[Sequence[EncodedPart], AiError, Any]:
         first = self._generate(options)
         if options.incremental_prompt is None:
             return first
@@ -400,6 +410,18 @@ class Service:
         )
 
     def _request_stream(self, options: ProviderOptions) -> Stream[EncodedPart, AiError, Any]:
+        def checked() -> Stream[EncodedPart, AiError, Any]:
+            ledger = Ids.Ledger(options.prompt.content)
+
+            def admit(chunk: tuple[EncodedPart, ...]) -> Effect[tuple[EncodedPart, ...], AiError]:
+                error = ledger.admit(chunk, "streamText")
+                return fx.succeed(chunk) if error is None else fx.fail(error)
+
+            return self._provider_stream(options).map_array_effect(admit)
+
+        return StreamC.suspend(checked)
+
+    def _provider_stream(self, options: ProviderOptions) -> Stream[EncodedPart, AiError, Any]:
         first = self._stream(options)
         if options.incremental_prompt is None:
             return first

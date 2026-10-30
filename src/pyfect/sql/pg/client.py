@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Never, Unpack, cast
 
 from pyfect._core import Effect, _Locally, _WithFiber
 from pyfect._effect_args import require_effect
+from pyfect._subscriber_queue import check_capacity
 from pyfect.config import Config, ConfigError, unwrap
 from pyfect.context import Context, Tag
 from pyfect.effect import fail, succeed, void
@@ -31,7 +32,7 @@ from pyfect.sql.connection import Acquirer, Borrower, Connection, Row, Transform
 from pyfect.sql.error import SqlError, UnknownError
 from pyfect.sql.pg import pool as pg_pool
 from pyfect.sql.pg.config import PgClientConfig, PgPoolConfig
-from pyfect.sql.pg.connection import Notification, PgConnection, Result
+from pyfect.sql.pg.connection import DEFAULT_LISTEN_CAPACITY, Notification, PgConnection, Result
 from pyfect.sql.pg.connection import make as make_connection
 from pyfect.sql.pg.error import validate_channel_name
 from pyfect.sql.statement import (
@@ -160,12 +161,19 @@ class PgClientService(SqlClientService):
         ``transform_query_names`` when ``transform_json``)."""
         return Fragment((Custom("PgJson", value, None, None),))
 
-    def listen(self, channel: str) -> Effect[Dequeue[Notification, SqlError], SqlError, Scope]:
+    def listen(
+        self, channel: str, *, capacity: int = DEFAULT_LISTEN_CAPACITY
+    ) -> Effect[Dequeue[Notification, SqlError], SqlError, Scope]:
         """A queue of ``channel``'s notifications once ``LISTEN`` is
         confirmed; the listener holds a session until the scope closes. If
         the session fails, the queue fails with its error; closing the
-        scope interrupts the queue's takers."""
-        return self._listen_acquirer.flat_map(lambda connection: connection.listen(channel))
+        scope interrupts the queue's takers. The queue holds at most
+        ``capacity`` notifications not yet taken; one more fails it (after
+        those) with an error saying the listener fell behind."""
+        check_capacity(capacity)
+        return self._listen_acquirer.flat_map(
+            lambda connection: connection.listen(channel, capacity=capacity)
+        )
 
     def notify(self, channel: str, payload: str) -> Effect[None, SqlError]:
         """Send ``payload`` on ``channel`` (``pg_notify``)."""

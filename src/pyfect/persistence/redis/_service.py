@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Never, Protocol
+from typing import Final, Never, Protocol
 
 from pyfect._core import Effect
+from pyfect._subscriber_queue import DEFAULT_CAPACITY
 from pyfect.context import Tag
 from pyfect.duration import Duration
 from pyfect.persistence.redis._error import RedisError
 from pyfect.persistence.redis._script import RedisReply, Script
 from pyfect.queue import Dequeue
 from pyfect.scope import Scope
+
+DEFAULT_SUBSCRIBE_CAPACITY: Final = DEFAULT_CAPACITY
+"""How many messages a ``subscribe`` dequeue holds untaken by default."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,9 +44,13 @@ class RedisService(RedisConnection, Protocol):
     """A Redis client: commands and scripts on shared connections,
     subscriptions, and connections of its own (``reserve``)."""
 
-    def subscribe(self, channel: str) -> Effect[Dequeue[RedisMessage, RedisError], Never, Scope]:
+    def subscribe(
+        self, channel: str, *, capacity: int = DEFAULT_SUBSCRIBE_CAPACITY
+    ) -> Effect[Dequeue[RedisMessage, RedisError], Never, Scope]:
         """Messages published to ``channel`` until the scope closes; a
-        failed subscription fails the dequeue."""
+        failed subscription fails the dequeue. The dequeue holds at most
+        ``capacity`` messages not yet taken; one more fails it (after
+        those) with an error saying the subscriber fell behind."""
         ...
 
     @property
@@ -87,8 +95,10 @@ class OpenConnection:
 
 
 type Subscribe = Callable[
-    [str, Callable[[RedisMessage], object]], Effect[Effect[None, RedisError], RedisError, Scope]
+    [str, Callable[[RedisMessage], bool]], Effect[Effect[None, RedisError], RedisError, Scope]
 ]
 """``subscribe(channel, on_message)``: subscribes until the scope closes
 and gives the effect that delivers its messages to ``on_message`` (on the
-fiber running it) until the subscription fails."""
+fiber running it) until the subscription fails, or until ``on_message``
+gives ``False`` (the subscriber fell behind): then it stops reading, and
+the effect ends."""

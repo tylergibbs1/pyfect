@@ -10,6 +10,8 @@ from typing import Any, Never
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._subscriber_queue import FellBehind, check_capacity
+from pyfect._subscriber_queue import offer as offer_to_subscriber
 from pyfect.cache import Cache
 from pyfect.cause import Cause
 from pyfect.duration import Seconds, to_seconds
@@ -18,6 +20,7 @@ from pyfect.exit import Exit, Failure, Success
 from pyfect.persistence.redis._error import RedisError
 from pyfect.persistence.redis._script import RedisReply, Script
 from pyfect.persistence.redis._service import (
+    DEFAULT_SUBSCRIBE_CAPACITY,
     OpenConnection,
     PoolOptions,
     RedisConnection,
@@ -71,11 +74,17 @@ class _Redis(_Connection):
         self._subscribe = subscribe
         self._reserve = reserve
 
-    def subscribe(self, channel: str) -> Effect[Dequeue[RedisMessage, RedisError], Never, Scope]:
+    def subscribe(
+        self, channel: str, *, capacity: int = DEFAULT_SUBSCRIBE_CAPACITY
+    ) -> Effect[Dequeue[RedisMessage, RedisError], Never, Scope]:
         subscribe = self._subscribe
+        check_capacity(capacity)
+
+        def behind() -> RedisError:
+            return RedisError(cause=FellBehind("Redis.subscribe", capacity))
 
         def body() -> Generator[Effect[Any, Any, Any], Any, Dequeue[RedisMessage, RedisError]]:
-            queue = yield from Queue[RedisMessage, RedisError].unbounded()
+            queue = yield from Queue[RedisMessage, RedisError].dropping(capacity)
             scope = yield from Scope()
             yield from scope.add_finalizer(lambda _: queue.shutdown())
 
@@ -86,7 +95,9 @@ class _Redis(_Connection):
                 return run.catch_cause(on_failure).fork_scoped()
 
             yield from (
-                subscribe(channel, queue.unsafe_offer).flat_map(listen).catch_cause(on_failure)
+                subscribe(channel, lambda message: offer_to_subscriber(queue, [message], behind))
+                .flat_map(listen)
+                .catch_cause(on_failure)
             )
             return queue
 

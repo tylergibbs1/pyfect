@@ -22,8 +22,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, LiteralString, Never
 
+from pyfect import byte_size
 from pyfect._core import Effect
 from pyfect.ai._mcp import http as _http
+from pyfect.ai._mcp import sessions as _sessions
 from pyfect.ai._mcp import stdio as _stdio
 from pyfect.ai._mcp.core import (
     McpServer,
@@ -51,6 +53,7 @@ from pyfect.ai.mcp_protocol import AnyProtocolAdapter, make_registry
 from pyfect.ai.mcp_schema import CompletionContext, Icon, PromptMessage, Role
 from pyfect.ai.toolkit import Handlers, Toolkit
 from pyfect.context import Context
+from pyfect.duration import Duration
 from pyfect.effect import succeed
 from pyfect.errors import IllegalArgumentError
 from pyfect.http.router import HttpRouter
@@ -164,12 +167,18 @@ def layer_http(
     extensions: Mapping[str, Any] | None = None,
     allowed_origins: Sequence[str] | None = None,
     allow_session_termination: bool = False,
+    max_sessions: int = _sessions.DEFAULT_MAX_SESSIONS,
+    session_idle_timeout: Duration = _sessions.DEFAULT_IDLE_TIMEOUT,
+    max_message_bytes: byte_size.Input = _sessions.DEFAULT_MAX_MESSAGE_BYTES,
 ) -> Layer[McpServer, IllegalArgumentError, HttpRouter]:
     """Serve MCP's Streamable HTTP transport at ``path`` of the router.
 
     A request with an ``Origin`` header not in ``allowed_origins`` is
     refused (403); one without an ``Origin`` is served. With
-    ``allow_session_termination`` a client ends its session with DELETE."""
+    ``allow_session_termination`` a client ends its session with DELETE.
+    At most ``max_sessions`` sessions are open (an ``initialize`` past
+    that gets 503); a session idle for ``session_idle_timeout`` seconds
+    ends; a message larger than ``max_message_bytes`` gets 413."""
     info = _info(
         name,
         version,
@@ -180,13 +189,17 @@ def layer_http(
         instructions=instructions,
         extensions=extensions,
     )
-    routes = make_registry(protocols).flat_map(
-        lambda registry: _http.serve(
-            info,
-            registry,
-            path=path,
-            allowed_origins=allowed_origins,
-            allow_session_termination=allow_session_termination,
+    limits = _sessions.limits(max_sessions, session_idle_timeout, max_message_bytes)
+    routes = limits.flat_map(
+        lambda parsed: make_registry(protocols).flat_map(
+            lambda registry: _http.serve(
+                info,
+                registry,
+                path=path,
+                allowed_origins=allowed_origins,
+                allow_session_termination=allow_session_termination,
+                limits=parsed,
+            )
         )
     )
     return effect_discard(routes).pipe(provide_merge(layer))

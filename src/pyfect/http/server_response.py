@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING, ClassVar, Never, TypedDict, Unpack, cast, final
 
 from pyfect._core import Effect
+from pyfect._digits import parse_digits
 from pyfect.cause import UnhandledError
 from pyfect.effect import die, from_async, from_result, succeed
 from pyfect.http import _form_data
@@ -501,10 +502,8 @@ def _is_empty_body_error(error: HttpClientError) -> bool:
 def parse_content_length(value: str | None) -> int | None:
     """A ``content-length`` value of digits only, as an exact JavaScript
     number; anything else is unknown."""
-    if value is None or not value.isascii() or not value.isdigit():
-        return None
-    parsed = int(value)
-    return parsed if parsed <= 2**53 - 1 else None
+    parsed = None if value is None else parse_digits(value)
+    return parsed if parsed is not None and parsed <= 2**53 - 1 else None
 
 
 def from_client_response(response: HttpClientResponse) -> HttpServerResponse:

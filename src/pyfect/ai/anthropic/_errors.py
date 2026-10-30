@@ -28,6 +28,8 @@ from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
 
 MODULE = "AnthropicClient"
+SECRET_HEADERS = ("x-api-key",)
+"""The headers carrying the API key: never shown, never sent across origins."""
 
 
 def parse_rate_limit_headers(
@@ -110,7 +112,7 @@ def _fail(
             headers=response.headers,
             message=message,
             metadata=metadata,
-            http=P.http_context(request, response, body),
+            http=P.http_context(request, response, body, secret_headers=SECRET_HEADERS),
         )
         return fx.fail(AiError(module=MODULE, method=method, reason=reason))
 

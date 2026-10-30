@@ -61,6 +61,13 @@ class _Keys:
     delayed: str
     attempts: str
     ids: str
+    lock_prefix: str
+
+    def lock(self, id: str) -> str:
+        """The claim lock of element ``id`` of this queue. Ids are unique per
+        queue only, so the lock is too: the queue name, length-prefixed so
+        no other queue's name and id spell the same key."""
+        return f"{self.lock_prefix}{id}:lock"
 
 
 def _offer_failed(error: RedisError) -> PersistedQueueError:
@@ -101,10 +108,8 @@ class _Settings:
             f"{base}:delayed",
             f"{base}:attempts",
             f"{base}:ids",
+            f"{self.prefix}{len(name)}:{name}:",
         )
-
-    def lock_key(self, id: str) -> str:
-        return f"{self.prefix}{id}:lock"
 
 
 class _Scripts:
@@ -154,7 +159,7 @@ def _lookup(
                 lambda e: run.requeue(
                     keys.queue,
                     keys.pending,
-                    settings.lock_key(e.id),
+                    keys.lock(e.id),
                     keys.attempts,
                     e.id,
                     e.payload,
@@ -169,7 +174,7 @@ def _lookup(
                 keys.attempts,
                 keys.failed,
                 keys.ids,
-                settings.prefix,
+                keys.lock_prefix,
                 state.max_attempts,
                 now_millis(clock),
             )
@@ -182,7 +187,7 @@ def _lookup(
                     keys.pending,
                     keys.delayed,
                     keys.attempts,
-                    settings.prefix,
+                    keys.lock_prefix,
                     settings.worker_id,
                     size,
                     settings.lock_expiration_millis,
@@ -259,7 +264,8 @@ class _RedisStore:
 
     def take(self, options: TakeOptions) -> Effect[TakenElement, PersistedQueueError, Scope]:
         def claimed(element: _Element) -> Effect[TakenElement, Never, Scope]:
-            self._active_locks[self._settings.lock_key(element.id)] = None
+            lock = self._settings.keys(options.name).lock(element.id)
+            self._active_locks[lock] = None
             return add_finalizer(lambda exit_: self._settle(options, element, exit_)).as_(
                 TakenElement(element.id, element.attempts, element.element)
             )
@@ -274,7 +280,7 @@ class _RedisStore:
         self, options: TakeOptions, element: _Element, exit_: Exit[Any, Any]
     ) -> Effect[None]:
         keys = self._settings.keys(options.name)
-        lock = self._settings.lock_key(element.id)
+        lock = keys.lock(element.id)
         now = now_millis(self._clock)
         run = self._run
 

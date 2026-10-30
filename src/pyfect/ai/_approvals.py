@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Never, cast
 import pyfect as fx
 from pyfect import schema as S
 from pyfect._core import Effect
+from pyfect.ai import _tool_call_ids as Ids
 from pyfect.ai import ai_error as E
 from pyfect.ai import prompt as P
 from pyfect.ai import response as R
@@ -46,6 +47,10 @@ class Approvals:
     denied: tuple[Approval, ...] = ()
     pending_approved: tuple[Approval, ...] = ()
     pending_denied: tuple[Approval, ...] = ()
+    ambiguous: frozenset[str] = frozenset()
+    """Approval ids of answers that cannot say which call they approve:
+    more than one request in the prompt uses the approval id, or more than
+    one tool call uses its call id."""
 
     @property
     def pending(self) -> tuple[Approval, ...]:
@@ -85,7 +90,16 @@ def collect(messages: Sequence[P.Message]) -> Approvals:
         (approved if response.approved else denied).append(approval)
         if call_id not in results:
             (pending_approved if response.approved else pending_denied).append(approval)
-    return Approvals(tuple(approved), tuple(denied), tuple(pending_approved), tuple(pending_denied))
+    repeated_calls = Ids.repeated(Ids.in_history(messages, Ids.CALL))
+    repeated_approvals = Ids.repeated(Ids.in_history(messages, Ids.APPROVAL))
+    ambiguous = frozenset(
+        a.approval_id
+        for a in (*approved, *denied)
+        if a.tool_call_id in repeated_calls or a.approval_id in repeated_approvals
+    )
+    return Approvals(
+        tuple(approved), tuple(denied), tuple(pending_approved), tuple(pending_denied), ambiguous
+    )
 
 
 def strip_resolved(prompt: P.Prompt, approvals: Approvals) -> P.Prompt:
@@ -150,7 +164,12 @@ def pending_check(
     approvals: Approvals, kit: K.WithHandler[Any, Any, Any, Any] | None, method: str
 ) -> E.AiError | None:
     """The error a prompt's pending approvals raise: without a toolkit to
-    answer them, or approving a tool the toolkit lacks."""
+    answer them, approving a tool the toolkit lacks, or not naming exactly
+    one call."""
+    if approvals.ambiguous:
+        ids = ", ".join(sorted(repr(id) for id in approvals.ambiguous))
+        description = f"tool approvals do not name exactly one tool call: {ids}"
+        return _error(method, E.InvalidUserInputError(description=description))
     if kit is None or not kit.tools:
         if not approvals.pending:
             return None

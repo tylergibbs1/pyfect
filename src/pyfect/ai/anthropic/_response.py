@@ -17,6 +17,7 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import prompt as Pr
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import _schema as W
+from pyfect.ai.anthropic._errors import SECRET_HEADERS
 from pyfect.ai.anthropic._prompt import is_citation_part
 from pyfect.ai.id_generator import IdGenerator
 from pyfect.ai.response import FinishReason
@@ -415,7 +416,7 @@ class _Response:
                 "id": self.message["id"],
                 "modelId": self.message["model"],
                 "timestamp": self.timestamp,
-                "request": P.request_details(self.response.request),
+                "request": P.request_details(self.response.request, secret_headers=SECRET_HEADERS),
             }
         )
         skip_text = self.has_response_tool()

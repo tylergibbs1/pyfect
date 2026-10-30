@@ -23,8 +23,13 @@ def _reject_constant(name: str) -> Never:
 
 
 def parse(text: str) -> Json:
-    """``json.loads`` without the ``NaN`` / ``Infinity`` extensions."""
-    value: Json = json.loads(text, parse_constant=_reject_constant)
+    """``json.loads`` without the ``NaN`` / ``Infinity`` extensions. Text
+    that is not JSON raises ``ValueError``, also when it nests too deeply
+    to decode (where ``json.loads`` raises ``RecursionError``)."""
+    try:
+        value: Json = json.loads(text, parse_constant=_reject_constant)
+    except RecursionError as cause:
+        raise ValueError("JSON is nested too deeply") from cause
     return value
 
 

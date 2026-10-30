@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import SplitResult, unquote_to_bytes
 
+from pyfect._digits import parse_digits
 from pyfect._js import text_encode
 from pyfect.errors import IllegalArgumentError, TaggedError
 from pyfect.http import url_params as _params
@@ -150,7 +151,7 @@ def _ends_in_number(domain: str) -> bool:
     if parts[-1] == "" and len(parts) > 1:
         parts.pop()
     last = parts[-1]
-    return last != "" and ((last.isascii() and last.isdigit()) or _ipv4_number(last) is not None)
+    return last != "" and (parse_digits(last) is not None or _ipv4_number(last) is not None)
 
 
 def _ipv4(domain: str) -> str:
@@ -201,9 +202,10 @@ def _authority(scheme: str, authority: str) -> str:
         return ""
     host = _host(raw_host, special)
     if port:
-        if not port.isdigit() or not port.isascii() or int(port) > 65535:
+        number = parse_digits(port)
+        if number is None or number > 65535:
             raise ValueError("Invalid port")
-        port = "" if int(port) == _SPECIAL_PORTS.get(scheme, -1) else str(int(port))
+        port = "" if number == _SPECIAL_PORTS.get(scheme, -1) else str(number)
     credentials = ""
     if at:
         username, colon, password = userinfo.partition(":")

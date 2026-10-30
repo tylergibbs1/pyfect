@@ -21,3 +21,12 @@ def column_bytes(value: object) -> bytes:
             return bytes(cast("bytearray", value))
         case _:
             raise TypeError(f"expected a binary column value, got {type(value).__name__}")
+
+
+def column_text(value: object) -> str:
+    """A text column, or a ``VARBINARY`` one holding UTF-8 (a MySQL key)."""
+    match value:
+        case bytes() | bytearray() | memoryview():
+            return bytes(cast("bytes", value)).decode()
+        case _:
+            return str(value)

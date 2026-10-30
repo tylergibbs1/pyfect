@@ -18,8 +18,10 @@ from functools import cached_property
 from typing import Literal, Unpack, cast, final
 
 from pyfect._cached import memoize
+from pyfect._digits import parse_digits
 from pyfect._effect_args import require_effect
 from pyfect._json_text import PARSE_ERRORS, Json, parse
+from pyfect.byte_size import ByteSize
 from pyfect.effect import Effect, fail, succeed, suspend, sync
 from pyfect.http import url as _url
 from pyfect.http.cookies import Cookies, from_set_cookie
@@ -254,6 +256,86 @@ class _InterruptibleResponse(HttpClientResponse):
         return suspend_stream(make)
 
 
+class ResponseTooLargeError(Exception):
+    """The cause of the ``DecodeError`` of a body read past its limit."""
+
+    def __init__(self, max_bytes: int) -> None:
+        super().__init__(f"Response body exceeds {max_bytes} bytes")
+        self.max_bytes = max_bytes
+
+
+def is_too_large(error: HttpClientError) -> bool:
+    """Whether ``error`` is a ``with_body_limit`` read stopping at its limit."""
+    return isinstance(error.reason, DecodeError) and isinstance(
+        error.reason.cause, ResponseTooLargeError
+    )
+
+
+@final
+class _LimitedResponse(HttpClientResponse):
+    """``original`` with a body that fails once it passes ``max_bytes``."""
+
+    def __init__(self, original: HttpClientResponse, max_bytes: int) -> None:
+        super().__init__(original.request, original.status, original.headers, None)
+        self.original = original
+        self._body = suspend_stream(lambda: self._capped(max_bytes))
+
+    def _too_large(self, max_bytes: int) -> HttpClientError:
+        cause = ResponseTooLargeError(max_bytes)
+        return HttpClientError(DecodeError(self.request, self, cause, str(cause)))
+
+    def _capped(self, max_bytes: int) -> Stream[bytes, object]:
+        declared = parse_digits(self.headers.get("content-length") or "")
+        if declared is not None and declared > max_bytes:
+            return fail_stream(self._too_large(max_bytes))
+        seen = 0
+
+        def count(chunk: bytes) -> Effect[bytes, HttpClientError]:
+            nonlocal seen
+            seen += len(chunk)
+            return fail(self._too_large(max_bytes)) if seen > max_bytes else succeed(chunk)
+
+        def keep_empty(error: HttpClientError) -> Stream[bytes, HttpClientError]:
+            if isinstance(error.reason, EmptyBodyError):
+                return succeed_stream(b"")
+            return fail_stream(error)
+
+        return self.original.stream.catch_all(keep_empty).map_effect(count)
+
+    def _error(self, cause: object, description: str | None = None) -> HttpClientError:
+        if isinstance(cause, HttpClientError):
+            return cause
+        return super()._error(cause, description)
+
+    def __repr__(self) -> str:
+        return repr(self.original)
+
+    def to_json(self) -> dict[str, object]:
+        return self.original.to_json()
+
+    @property
+    def url(self) -> str:
+        return self.original.url
+
+    @property
+    def remote_address(self) -> str | None:
+        return self.original.remote_address
+
+    @cached_property
+    def cookies(self) -> Cookies:
+        return self.original.cookies
+
+
+def with_body_limit(response: HttpClientResponse, max_bytes: ByteSize) -> HttpClientResponse:
+    """``response`` with a body that is read only until it passes
+    ``max_bytes``: then the read (``bytes_``, ``text``, ``json``,
+    ``stream``) stops and fails (``is_too_large``), and a declared
+    ``content-length`` over the limit fails before anything is read. Use it
+    for a server you do not control; ``response`` itself holds whatever
+    the server sends."""
+    return _LimitedResponse(response, max_bytes)
+
+
 def make(
     request: HttpClientRequest,
     body: ResponseBody | str = None,
@@ -363,9 +445,11 @@ def schema_no_body[T, RD](
 __all__ = [
     "HttpClientResponse",
     "ResponseBody",
+    "ResponseTooLargeError",
     "StatusRange",
     "filter_status",
     "filter_status_ok",
+    "is_too_large",
     "make",
     "match_status",
     "schema_body_json",
@@ -374,4 +458,5 @@ __all__ = [
     "schema_json",
     "schema_no_body",
     "stream",
+    "with_body_limit",
 ]

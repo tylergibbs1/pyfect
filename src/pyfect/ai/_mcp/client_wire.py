@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from pyfect._core import Effect
+from pyfect._json_text import parse as parse_json_text
 from pyfect.ai.mcp_client_error import (
     AnyReason,
     LimitError,
@@ -90,7 +91,7 @@ def parse_message(text: str, max_bytes: int) -> Effect[JsonObject, McpClientErro
     if len(text.encode()) > max_bytes:
         return fail(limit_error("MCP message exceeds maxMessageBytes"))
     try:
-        parsed: object = json.loads(text)
+        parsed: object = parse_json_text(text)
     except ValueError as cause:
         return fail(failure(ProtocolError(description="Invalid MCP JSON", cause=cause)))
     if not _is_message(parsed):

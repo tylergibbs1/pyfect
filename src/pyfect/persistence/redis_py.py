@@ -204,7 +204,7 @@ def make(
             return OpenConnection(reserved.send, reserved.close)
 
         def subscribe(
-            channel: str, on_message: Callable[[RedisMessage], object]
+            channel: str, on_message: Callable[[RedisMessage], bool]
         ) -> Effect[Effect[None, RedisError], RedisError, Scope]:
             async def open_subscription() -> PubSub:
                 subscription: PubSub = untyped.pubsub()
@@ -226,8 +226,10 @@ def make(
                 def body() -> Generator[Effect[Any, RedisError], Any]:
                     while True:
                         message = yield from loop.run(next_message)
-                        if message is not None and message["type"] == "message":
-                            on_message(RedisMessage(message["channel"], message["data"]))
+                        if message is None or message["type"] != "message":
+                            continue
+                        if not on_message(RedisMessage(message["channel"], message["data"])):
+                            return
 
                 return gen(body)
 

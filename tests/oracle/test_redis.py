@@ -44,7 +44,7 @@ class _FakeRedis:
         return self._eval(script)
 
     def subscribe(
-        self, channel: str
+        self, channel: str, *, capacity: int = R.DEFAULT_SUBSCRIBE_CAPACITY
     ) -> fx.Effect[fx.Dequeue[RedisMessage, RedisError], Never, fx.Scope]:
         return fx.Queue[RedisMessage, RedisError].unbounded()
 

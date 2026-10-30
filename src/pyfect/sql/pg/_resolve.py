@@ -12,6 +12,7 @@ from typing import Literal
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 from pyfect._core import Effect
+from pyfect._digits import parse_digits
 from pyfect.duration import Seconds, to_seconds
 from pyfect.effect import fail, succeed
 from pyfect.redacted import Redacted, make
@@ -70,9 +71,10 @@ def _decode(value: str, what: str) -> str:
 
 
 def _port(value: str, what: str) -> int:
-    if not value.isdigit() or not 1 <= int(value) <= 65535:
+    port = parse_digits(value)
+    if port is None or not 1 <= port <= 65535:
         raise _Invalid(f'Invalid port in URL {what}: "{value}"')
-    return int(value)
+    return port
 
 
 _SSLMODES: dict[str, bool | Literal["prefer"]] = {
@@ -102,9 +104,9 @@ def _query(url: _Url, key: str, value: str) -> None:
         case "options":
             url.options = value
         case "connect_timeout":
-            if not value.isdigit():
+            seconds = parse_digits(value)
+            if seconds is None:
                 raise _Invalid(f'Invalid connect_timeout in URL: "{value}"')
-            seconds = int(value)
             url.connect_timeout = Seconds(math.inf if seconds == 0 else seconds)
         case "sslmode":
             if value not in _SSLMODES:

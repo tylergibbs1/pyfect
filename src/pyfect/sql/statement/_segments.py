@@ -20,6 +20,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, LiteralString, Self, TypeIs, cast, overload
 
+from pyfect._digits import parse_digits
+
 if sys.version_info >= (3, 14):
     from string.templatelib import Interpolation, Template
 
@@ -289,10 +291,10 @@ class _Values:
             index = self.auto
             self.auto += 1
             return self._positional(index)
-        if name.isdigit():
+        if (position := parse_digits(name)) is not None:
             if self.auto is not None:
                 raise ValueError("cannot mix automatic and numbered placeholders")
-            return self._positional(int(name))
+            return self._positional(position)
         if name.isidentifier():
             if name not in self.kwargs:
                 raise KeyError(f"no value for placeholder {{{name}}}")

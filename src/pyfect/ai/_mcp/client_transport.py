@@ -33,6 +33,8 @@ from pyfect.ai.mcp_client_error import (
 )
 from pyfect.ai.mcp_protocol import ProtocolAdapter
 from pyfect.ai.mcp_schema import JsonObject, RequestId, Tool
+from pyfect.byte_size import ByteSize
+from pyfect.channel import LineTooLongError, split_lines_within
 from pyfect.deferred import Deferred
 from pyfect.duration import Seconds
 from pyfect.effect import fail, gen, succeed, suspend, sync
@@ -40,7 +42,8 @@ from pyfect.encoding import sse
 from pyfect.errors import Done
 from pyfect.http import request as http_request
 from pyfect.http.client import HttpClient
-from pyfect.http.response import HttpClientResponse
+from pyfect.http.error import HttpClientError
+from pyfect.http.response import HttpClientResponse, is_too_large, with_body_limit
 from pyfect.process import ChildProcessSpawner, Command
 from pyfect.queue import Queue
 from pyfect.scope import Scope, add_finalizer
@@ -64,11 +67,11 @@ class TransportService:
     is_callable: Callable[[Tool], bool]
 
 
-def message_limit(max_message_bytes: int | None) -> Effect[int, McpClientError]:
+def message_limit(max_message_bytes: int | None) -> Effect[ByteSize, McpClientError]:
     limit = DEFAULT_MAX_MESSAGE_BYTES if max_message_bytes is None else max_message_bytes
     if limit <= 0:
         return fail(failure(ConfigurationError("maxMessageBytes must be a positive safe integer")))
-    return succeed(limit)
+    return succeed(ByteSize(limit))
 
 
 class _Closing:
@@ -138,6 +141,8 @@ def stdio(
         def as_client_error(cause: object) -> McpClientError:
             if isinstance(cause, McpClientError):
                 return cause
+            if isinstance(cause, LineTooLongError):
+                return limit_error("MCP message exceeds maxMessageBytes")
             return failure(TransportError("MCP stdout failed", cause))
 
         yield from (
@@ -153,7 +158,7 @@ def stdio(
         drained = Deferred[None]()
         yield from (
             process.stdout.decode_text()
-            .split_lines()
+            .pipe_through_channel(split_lines_within(max_bytes))
             .run_for_each(line)
             .map_error(as_client_error)
             .and_then(fail(failure(TransportError("MCP server closed stdout"))))
@@ -204,7 +209,9 @@ def stdio(
     return run
 
 
-def _read_failed(cause: object) -> McpClientError:
+def _read_failed(cause: HttpClientError) -> McpClientError:
+    if is_too_large(cause):
+        return limit_error("MCP message exceeds maxMessageBytes")
     return failure(TransportError("Cannot read MCP response", cause))
 
 
@@ -253,7 +260,8 @@ def http(  # noqa: PLR0915
             if media_type(response.headers) != "application/json":
                 return with_remote(None)
             remote = (
-                response.text.map_error(lambda _: None)
+                with_body_limit(response, max_bytes)
+                .text.map_error(lambda _: None)
                 .flat_map(lambda text: parse_message(text, max_bytes))
                 .map(lambda message: cast("Mapping[str, Any] | None", message.get("error")))
                 .or_else_succeed(lambda _: None)
@@ -319,7 +327,8 @@ def http(  # noqa: PLR0915
             kind = media_type(response.headers)
             if kind == "application/json":
                 return (
-                    response.text.map_error(_read_failed)
+                    with_body_limit(response, max_bytes)
+                    .text.map_error(_read_failed)
                     .flat_map(lambda text: parse_message(text, max_bytes))
                     .flat_map(lambda message: match(message, request))
                     .flat_map(lambda found: fail(ended) if found is None else succeed(found))

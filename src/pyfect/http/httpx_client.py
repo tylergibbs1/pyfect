@@ -29,6 +29,7 @@ from pyfect.effect import Effect, callback, fail, succeed, sync
 from pyfect.errors import Done
 from pyfect.http import body as _body
 from pyfect.http import url as _url
+from pyfect.http._httpx_options import RequestDefaults, split_options
 from pyfect.http.abort import AbortSignal
 from pyfect.http.client import HttpClient, HttpClientService
 from pyfect.http.client import make as make_client
@@ -229,15 +230,29 @@ class _Backend:
 
 def make(**options: Any) -> Effect[HttpClientService[HttpClientError], Never, Scope]:
     """A client on a new ``httpx.AsyncClient(**options)``, closed with the
-    scope."""
+    scope.
+
+    The request defaults (``headers``, ``params``, ``cookies``, ``auth``)
+    are added to each request by the pyfect client, not by httpx, so
+    ``follow_redirects`` drops their credentials on a hop to another origin
+    as it does a request's own. ``auth`` is a ``(username, password)`` pair
+    and ``cookies`` a mapping; set any other credential per request."""
+    defaults, transport = split_options(options)
     backend = acquire_release(
-        sync(lambda: _Backend(dict(options))), lambda backend, _exit: backend.close()
+        sync(lambda: _Backend(dict(transport))), lambda backend, _exit: backend.close()
     )
-    return backend.map(lambda backend: make_client(backend.send))
+    return backend.map(lambda backend: _with_defaults(make_client(backend.send), defaults))
+
+
+def _with_defaults(
+    client: HttpClientService[HttpClientError], defaults: RequestDefaults
+) -> HttpClientService[HttpClientError]:
+    return client if defaults.is_empty() else client.map_request(defaults.apply)
 
 
 def layer_with(**options: Any) -> Layer[HttpClient]:
-    """``layer`` with options for ``httpx.AsyncClient``."""
+    """``layer`` with options for ``httpx.AsyncClient`` (see ``make``)."""
+    split_options(options)
     return layer_effect(HttpClient, make(**options))
 
 

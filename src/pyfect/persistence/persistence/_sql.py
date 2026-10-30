@@ -15,8 +15,15 @@ from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.logger import log_warning
-from pyfect.persistence._columns import column_int
+from pyfect.persistence._columns import column_int, column_text
 from pyfect.persistence._error import PersistenceError
+from pyfect.persistence._sql_keys import (
+    MSSQL_KEY,
+    MSSQL_PAIR_KEY,
+    MYSQL_KEY,
+    key_equals,
+    mssql_match,
+)
 from pyfect.persistence.persistence._service import (
     BackingEntry,
     BackingPersistence,
@@ -41,7 +48,7 @@ _CLEANUP_BATCH_DELAY: Final = 0.01
 _CLEANUP_INTERVAL: Final = 300.0
 
 type _Upsert = Callable[[list[dict[str, object]]], Effect[object, SqlError]]
-type _Key = Mapping[str, object]
+type _Key = Mapping[str, str]
 """The columns naming a store's rows: none for a table of its own,
 ``store_id`` in the shared table."""
 
@@ -62,7 +69,7 @@ def _make_store(
     """A store over the rows of ``table`` matching ``scope``."""
 
     def where(*clauses: Fragment) -> Fragment:
-        owned = [sql("{} = {}", sql.identifier(column), value) for column, value in scope.items()]
+        owned = [key_equals(sql, column, value) for column, value in scope.items()]
         return sql.and_([*owned, *clauses])
 
     def live() -> Fragment:
@@ -80,7 +87,9 @@ def _make_store(
         return (
             suspend(
                 lambda: sql(
-                    "SELECT value FROM {} WHERE {}", table, where(sql("id = {}", key), live())
+                    "SELECT value FROM {} WHERE {}",
+                    table,
+                    where(key_equals(sql, "id", key), live()),
                 )
             )
             .map_error(
@@ -96,7 +105,7 @@ def _make_store(
             values: dict[str, object] = {}
             for row in rows:
                 try:
-                    values[str(row["id"])] = json.loads(str(row["value"]))
+                    values[column_text(row["id"])] = json.loads(str(row["value"]))
                 except ValueError:
                     continue
             return [values.get(key) for key in keys]
@@ -162,7 +171,7 @@ def _make_store(
 
     def remove(key: str) -> Effect[None, PersistenceError]:
         return (
-            sql("DELETE FROM {} WHERE {}", table, where(sql("id = {}", key)))
+            sql("DELETE FROM {} WHERE {}", table, where(key_equals(sql, "id", key)))
             .map_error(
                 lambda cause: PersistenceError(
                     message=f"Failed to remove key {key} from backing store", cause=cause
@@ -214,7 +223,7 @@ def _upsert(sql: SqlClientService, table: Identifier, *, single_table: bool) -> 
             return sql(
                 "MERGE {} AS target USING (SELECT {} AS store_id, {} AS id, {} AS value, "
                 "{} AS expires) AS source "
-                "ON target.store_id = source.store_id AND target.id = source.id "
+                f"ON {mssql_match('store_id')} AND {mssql_match('id')} "
                 "WHEN MATCHED THEN UPDATE SET value = source.value, expires = source.expires "
                 "WHEN NOT MATCHED THEN INSERT (store_id, id, value, expires) "
                 "VALUES (source.store_id, source.id, source.value, source.expires);",
@@ -226,7 +235,7 @@ def _upsert(sql: SqlClientService, table: Identifier, *, single_table: bool) -> 
             )
         return sql(
             "MERGE {} AS target USING (SELECT {} AS id, {} AS value, {} AS expires) AS source "
-            "ON target.id = source.id "
+            f"ON {mssql_match('id')} "
             "WHEN MATCHED THEN UPDATE SET value = source.value, expires = source.expires "
             "WHEN NOT MATCHED THEN INSERT (id, value, expires) "
             "VALUES (source.id, source.value, source.expires);",
@@ -267,7 +276,7 @@ def _build_multi_table() -> Generator[
         table = sql.identifier(table_name)
         yield from sql.on_dialect_or_else(
             mysql=lambda: sql(
-                "CREATE TABLE IF NOT EXISTS {} (id VARCHAR(191) PRIMARY KEY, "
+                f"CREATE TABLE IF NOT EXISTS {{}} (id {MYSQL_KEY} PRIMARY KEY, "
                 "value TEXT NOT NULL, expires BIGINT)",
                 table,
             ),
@@ -278,8 +287,8 @@ def _build_multi_table() -> Generator[
             ),
             mssql=lambda: sql(
                 "IF NOT EXISTS (SELECT * FROM sysobjects WHERE name={} AND xtype='U') "
-                "CREATE TABLE {} (id NVARCHAR(450) PRIMARY KEY, value NVARCHAR(MAX) NOT NULL, "
-                "expires BIGINT)",
+                f"CREATE TABLE {{}} (id {MSSQL_KEY} PRIMARY KEY, "
+                "value NVARCHAR(MAX) NOT NULL, expires BIGINT)",
                 table_name,
                 table,
             ),
@@ -316,8 +325,8 @@ def _build_single_table() -> Generator[
     table = sql.identifier("effect_persistence")
     yield from sql.on_dialect_or_else(
         mysql=lambda: sql(
-            "CREATE TABLE IF NOT EXISTS {} (store_id VARCHAR(191) NOT NULL, "
-            "id VARCHAR(191) NOT NULL, value TEXT NOT NULL, expires BIGINT, "
+            f"CREATE TABLE IF NOT EXISTS {{}} (store_id {MYSQL_KEY} NOT NULL, "
+            f"id {MYSQL_KEY} NOT NULL, value TEXT NOT NULL, expires BIGINT, "
             "PRIMARY KEY (store_id, id))",
             table,
         ),
@@ -328,7 +337,8 @@ def _build_single_table() -> Generator[
         ),
         mssql=lambda: sql(
             "IF NOT EXISTS (SELECT * FROM sysobjects WHERE name={} AND xtype='U') "
-            "CREATE TABLE {} (store_id NVARCHAR(191) NOT NULL, id NVARCHAR(191) NOT NULL, "
+            f"CREATE TABLE {{}} (store_id {MSSQL_PAIR_KEY} NOT NULL, "
+            f"id {MSSQL_PAIR_KEY} NOT NULL, "
             "value NVARCHAR(MAX) NOT NULL, expires BIGINT, PRIMARY KEY (store_id, id))",
             "effect_persistence",
             table,

@@ -9,11 +9,22 @@ from pyfect.http import body as _body
 from pyfect.http import url as _url
 from pyfect.http import url_params as _url_params
 from pyfect.http.client._service import HttpClientService
+from pyfect.http.headers import Headers, current_redacted_names, is_redacted_name
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
 from pyfect.result import Ok
 
 _CREDENTIALS = ("authorization", "proxy-authorization", "cookie")
+
+
+def _without_credentials(headers: Headers) -> Headers:
+    """``headers`` for another origin: without the credential headers and
+    without any header ``CurrentRedactedNames`` marks as secret (an API
+    key such as ``x-api-key``). Effect drops only ``authorization`` and
+    ``proxy-authorization``."""
+    secret = current_redacted_names()
+    drop = [name for name in headers if is_redacted_name(name, secret)]
+    return headers.remove_many((*_CREDENTIALS, *drop))
 
 
 def _next_request(
@@ -33,7 +44,7 @@ def _next_request(
     ):
         request = request.set_method("GET").set_body(_body.EMPTY)
     if _url.origin(url) != _url.origin(_url.parse(response.request.url)):
-        request = request.update_headers(lambda headers: headers.remove_many(_CREDENTIALS))
+        request = request.update_headers(_without_credentials)
     return HttpClientRequest(
         request.method,
         _url.href(url._replace(fragment="")),

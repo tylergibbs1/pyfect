@@ -26,7 +26,6 @@ for their parameters.
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -45,6 +44,7 @@ from typing import (
 )
 
 from pyfect import schema as S
+from pyfect._json_text import parse as parse_json_text
 from pyfect.ai.ai_error import AiError, AnyReason
 from pyfect.context import Context, Reference, Tag
 from pyfect.json_schema._model import JsonSchema
@@ -479,7 +479,7 @@ def unsafe_secure_json_parse(text: str) -> object:
     """``json.loads``, refusing an object with a ``__proto__`` key or a
     ``constructor`` object holding ``prototype`` (raises ``ValueError``):
     JavaScript would let such keys reach a prototype."""
-    value: object = json.loads(text)
+    value: object = parse_json_text(text)
     if _SUSPECT.search(text) is None:
         return value
     pending: list[object] = [value]

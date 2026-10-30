@@ -8,15 +8,17 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Any, Never, cast
 
 import pyfect as fx
+from pyfect import byte_size
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._js import or_default
+from pyfect._json_text import parse as parse_json_text
 from pyfect.ai.ai_error import (
     AiError,
     HttpContext,
@@ -26,10 +28,11 @@ from pyfect.ai.ai_error import (
     InvalidResponseError,
     NetworkError,
 )
+from pyfect.byte_size import ByteSize, mebibytes
 from pyfect.context import Tag
 from pyfect.encoding import sse
 from pyfect.http import headers as H
-from pyfect.http.client import HttpClientService
+from pyfect.http.client import HttpClientService, transform_response
 from pyfect.http.error import (
     DecodeError,
     EmptyBodyError,
@@ -41,7 +44,7 @@ from pyfect.http.error import (
 )
 from pyfect.http.headers import CurrentRedactedNames, current_redacted_names
 from pyfect.http.request import HttpClientRequest
-from pyfect.http.response import HttpClientResponse
+from pyfect.http.response import HttpClientResponse, with_body_limit
 from pyfect.result import Ok
 from pyfect.stream import Stream
 
@@ -59,18 +62,43 @@ def arr(value: object) -> list[Any]:
     return cast("list[Any]", value) if isinstance(value, list) else []
 
 
-def _plain_headers(headers: H.Headers) -> dict[str, str]:
-    return {k: str(v) for k, v in headers.redact(current_redacted_names()).items()}
+DEFAULT_MAX_RESPONSE_BYTES: ByteSize = mebibytes(256)
+"""The largest response body (or streamed tool call's parameters) a
+provider client reads by default: room for a large embedding batch, but
+not for a server that never stops sending."""
+
+MAX_ERROR_BODY_BYTES: ByteSize = mebibytes(1)
+"""The most of a failed response's body read into its ``AiError``."""
 
 
-def request_details(request: HttpClientRequest) -> HttpRequestDetails:
+def response_limit(max_response_bytes: byte_size.Input | None) -> ByteSize:
+    """``max_response_bytes`` parsed (the default when ``None``); raises
+    ``ValueError`` when it is not a positive byte size."""
+    if max_response_bytes is None:
+        return DEFAULT_MAX_RESPONSE_BYTES
+    size = byte_size.from_input_unsafe(max_response_bytes)
+    if byte_size.is_zero(size):
+        raise ValueError("max_response_bytes must be positive")
+    return size
+
+
+def _plain_headers(headers: H.Headers, secret_headers: Sequence[str]) -> dict[str, str]:
+    names = (*current_redacted_names(), *secret_headers)
+    return {k: str(v) for k, v in headers.redact(names).items()}
+
+
+def request_details(
+    request: HttpClientRequest, *, secret_headers: Sequence[str]
+) -> HttpRequestDetails:
     """The request as an error or a response part shows it, its secret
-    headers redacted."""
+    headers redacted: the current redacted names and the provider's
+    ``secret_headers``, which are named here because a response part is
+    built after the client's redaction scope has ended."""
     details: HttpRequestDetails = {
         "method": request.method,
         "url": request.url,
         "urlParams": [(k, str(v)) for k, v in request.url_params],
-        "headers": _plain_headers(request.headers),
+        "headers": _plain_headers(request.headers, secret_headers),
     }
     if request.hash is not None:
         details["hash"] = request.hash
@@ -78,15 +106,17 @@ def request_details(request: HttpClientRequest) -> HttpRequestDetails:
 
 
 def response_details(response: HttpClientResponse) -> HttpResponseDetails:
-    return {"status": response.status, "headers": _plain_headers(response.headers)}
+    return {"status": response.status, "headers": _plain_headers(response.headers, ())}
 
 
 def http_context(
     request: HttpClientRequest,
     response: HttpClientResponse | None = None,
     body: str | None = None,
+    *,
+    secret_headers: Sequence[str],
 ) -> HttpContext:
-    context: HttpContext = {"request": request_details(request)}
+    context: HttpContext = {"request": request_details(request, secret_headers=secret_headers)}
     if response is not None:
         context["response"] = response_details(response)
     if body is not None:
@@ -124,7 +154,7 @@ def parse_json(text: str | None) -> object:
     if text is None:
         return None
     try:
-        return json.loads(text)
+        return parse_json_text(text)
     except ValueError:
         return None
 
@@ -192,6 +222,20 @@ class ErrorMapper:
         return handle
 
 
+def limit_responses(
+    client: HttpClientService[HttpClientError], max_bytes: ByteSize
+) -> HttpClientService[HttpClientError]:
+    """``client`` reading each response body under a limit: ``max_bytes``
+    for a success, ``MAX_ERROR_BODY_BYTES`` for a failure (its body goes
+    into an ``AiError``). Every provider request goes through it."""
+
+    def limit(response: HttpClientResponse) -> HttpClientResponse:
+        ok = 200 <= response.status < 300
+        return with_body_limit(response, max_bytes if ok else MAX_ERROR_BODY_BYTES)
+
+    return client.pipe(transform_response(lambda sending: sending.map(limit)))
+
+
 def status_body(reason: StatusCodeError) -> Effect[str | None]:
     """The body of a failed response: its description when that is JSON,
     else the response's text."""
@@ -201,6 +245,40 @@ def status_body(reason: StatusCodeError) -> Effect[str | None]:
     return reason.response.text.option().map(
         lambda text: text.value if text is not None and text.value else description
     )
+
+
+class TextBuffer:
+    """Text built from streamed deltas (a tool call's parameters), in
+    linear time and at most ``max_chars`` characters."""
+
+    __slots__ = ("_max_chars", "_parts", "_size")
+
+    def __init__(self, initial: str, max_chars: int) -> None:
+        self._parts = [initial] if initial else []
+        self._size = len(initial)
+        self._max_chars = max_chars
+
+    def add(self, delta: str) -> bool:
+        """Append ``delta``; ``False`` (and nothing kept) past the limit."""
+        if self._size + len(delta) > self._max_chars:
+            return False
+        self._parts.append(delta)
+        self._size += len(delta)
+        return True
+
+    @property
+    def empty(self) -> bool:
+        return self._size == 0
+
+    def text(self) -> str:
+        if len(self._parts) > 1:
+            self._parts = ["".join(self._parts)]
+        return self._parts[0] if self._parts else ""
+
+
+def too_large(module: str, method: str, max_chars: int) -> AiError:
+    description = f"Streamed tool call parameters exceed {max_chars} characters"
+    return AiError(module=module, method=method, reason=InvalidOutputError(description=description))
 
 
 def header(headers: Mapping[str, str], name: str) -> str | None:

@@ -10,6 +10,7 @@ from typing import Any, Literal, cast
 
 from pyfect import schema as S
 from pyfect._core import Effect
+from pyfect._digits import parse_digits
 from pyfect._json_text import PARSE_ERRORS, parse
 from pyfect.effect import context, fail, provide_context, succeed
 from pyfect.encoding import ndjson
@@ -138,11 +139,7 @@ def _unsupported(content_type: str) -> HttpServerResponse:
 
 
 def _content_length(request: ServerRequest) -> int | None:
-    value = request.headers.get("content-length")
-    try:
-        return None if value is None else int(value)
-    except ValueError:
-        return None
+    return parse_digits(request.headers.get("content-length") or "")
 
 
 def _multipart(decoder: _Multipart, request: ServerRequest) -> Effect[Any, SchemaError, Any]:

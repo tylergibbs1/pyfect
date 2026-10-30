@@ -18,20 +18,22 @@ as an ``UnknownEvent``.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Never
 
 import pyfect as fx
+from pyfect import byte_size
 from pyfect import layer as L
 from pyfect import stream as St
 from pyfect._core import Effect
+from pyfect._json_text import parse as parse_json_text
 from pyfect.ai import _openai_errors as OE
 from pyfect.ai import _provider as P
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.openai_compat import _schema as W
 from pyfect.ai.openai_compat.config import ClientTransform, OpenAiConfig
+from pyfect.byte_size import ByteSize
 from pyfect.config import Config, ConfigError
 from pyfect.context import Tag
 from pyfect.encoding import sse
@@ -51,7 +53,7 @@ UnknownEvent = W.UnknownEvent
 
 DEFAULT_API_URL = "https://api.openai.com/v1"
 ERRORS = OE.error_mapper(OE.COMPAT)
-_redacted = P.with_redacted_headers(("openai-organization", "openai-project"))
+_redacted = P.with_redacted_headers(OE.COMPAT.secret_headers)
 
 type Payload = Mapping[str, Any]
 """A Chat Completions or Embeddings request body."""
@@ -69,6 +71,7 @@ class Service:
         [Payload], Effect[tuple[HttpClientResponse, Stream[W.StreamEvent, AiError]], AiError]
     ]
     create_embedding: Callable[[Payload], Effect[W.EmbeddingResponse, AiError]]
+    max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES
 
 
 class OpenAiClient(Tag[Service], key="@effect/ai-openai-compat/OpenAiClient"):
@@ -79,7 +82,7 @@ def _event(event: sse.Event) -> Result[W.StreamEvent, None]:
     if event.data == "[DONE]":
         return Ok("[DONE]")
     try:
-        parsed = json.loads(event.data)
+        parsed = parse_json_text(event.data)
     except ValueError:
         return Err(None)
     return Ok(P.obj(parsed) if W.is_chunk(parsed) else W.UnknownEvent(parsed))  # pyright: ignore[reportReturnType]
@@ -100,10 +103,14 @@ def make(
     organization_id: Redacted[str] | None = None,
     project_id: Redacted[str] | None = None,
     transform_client: ClientTransform | None = None,
+    max_response_bytes: byte_size.Input | None = None,
 ) -> Effect[Service, Never, HttpClient]:
     """A client over the ``HttpClient`` service. Requests go to ``api_url``
     (``https://api.openai.com/v1``); ``transform_client`` changes the
-    underlying client (and so does an ``OpenAiConfig``, per call)."""
+    underlying client (and so does an ``OpenAiConfig``, per call). A
+    response body, or a streamed tool call's arguments, larger than
+    ``max_response_bytes`` (256 MiB) fails the call."""
+    limit = P.response_limit(max_response_bytes)
 
     def prepare(request: http_request.HttpClientRequest) -> http_request.HttpClientRequest:
         request = request.prepend_url(api_url or DEFAULT_API_URL)
@@ -118,10 +125,11 @@ def make(
     def build(base: HttpClientService[HttpClientError]) -> Service:
         mapped = base.map_request(prepare)
         http_client = mapped if transform_client is None else transform_client(mapped)
+        limited = P.limit_responses(http_client, limit)
 
         def send(path: str, payload: Payload) -> Effect[HttpClientResponse, HttpClientError]:
             request = http_request.post(path).body_json_unsafe(payload)
-            return P.resolve_client(OpenAiConfig, http_client).flat_map(
+            return P.resolve_client(OpenAiConfig, limited).flat_map(
                 lambda client: client.filter_status_ok().execute(request)
             )
 
@@ -150,7 +158,9 @@ def make(
             )
             return sent.catch_all(ERRORS.catch("createEmbedding")).pipe(_redacted)
 
-        return Service(http_client, create_response, create_response_stream, create_embedding)
+        return Service(
+            http_client, create_response, create_response_stream, create_embedding, limit
+        )
 
     return HttpClient().map(build)
 
@@ -162,6 +172,7 @@ def layer(
     organization_id: Redacted[str] | None = None,
     project_id: Redacted[str] | None = None,
     transform_client: ClientTransform | None = None,
+    max_response_bytes: byte_size.Input | None = None,
 ) -> L.Layer[OpenAiClient, Never, HttpClient]:
     """``OpenAiClient`` from these options (see ``make``)."""
     return L.effect(
@@ -172,6 +183,7 @@ def layer(
             organization_id=organization_id,
             project_id=project_id,
             transform_client=transform_client,
+            max_response_bytes=max_response_bytes,
         ),
     )
 
@@ -183,6 +195,7 @@ def layer_config(
     organization_id: Config[Redacted[str]] | Config[Redacted[str] | None] | None = None,
     project_id: Config[Redacted[str]] | Config[Redacted[str] | None] | None = None,
     transform_client: ClientTransform | None = None,
+    max_response_bytes: byte_size.Input | None = None,
 ) -> L.Layer[OpenAiClient, ConfigError, HttpClient]:
     """``OpenAiClient`` with its options read from ``Config``."""
     built: Effect[Service, ConfigError, HttpClient] = fx.all(
@@ -197,6 +210,7 @@ def layer_config(
             organization_id=values[2],
             project_id=values[3],
             transform_client=transform_client,
+            max_response_bytes=max_response_bytes,
         )
     )
     return L.effect(OpenAiClient, built)

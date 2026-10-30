@@ -20,6 +20,7 @@ from http import HTTPStatus
 from typing import Any
 
 from pyfect._core import Effect
+from pyfect._digits import parse_digits
 from pyfect.cause import Cause, UnhandledError, merge
 from pyfect.cause import die as die_cause
 from pyfect.effect import fail_cause, succeed, suspend, void
@@ -57,8 +58,8 @@ class ContentLengthMismatch(Exception):
 
 def _declared_length(headers: Sequence[tuple[str, str]]) -> int | None:
     for name, value in headers:
-        if name == "content-length" and value.isdigit():
-            return int(value)
+        if name == "content-length" and (length := parse_digits(value)) is not None:
+            return length
     return None
 
 

@@ -24,6 +24,7 @@ from typing import Any, Never, NotRequired, TypedDict, Unpack, cast
 
 from pyfect import channel_schema
 from pyfect import schema as S
+from pyfect._digits import parse_digits
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
 from pyfect.cause import fail as fail_cause
 from pyfect.channel import Channel, from_transform
@@ -219,8 +220,8 @@ class Parser:
             self._event_name = value
         elif field == "id" and "\0" not in value:
             self._last_event_id = value
-        elif field == "retry" and value.isascii() and value.isdigit():
-            self._on_parse(Retry(Seconds(int(value) / 1000), self._last_event_id))
+        elif field == "retry" and (millis := parse_digits(value)) is not None:
+            self._on_parse(Retry(Seconds(millis / 1000), self._last_event_id))
 
 
 def make_parser(

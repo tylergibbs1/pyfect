@@ -106,9 +106,18 @@ class Dialect:
     metadata_key: str
     read_body: Callable[[object], BodyInfo]
     is_quota: Callable[[ErrorMetadata], bool]
+    secret_headers: tuple[str, ...]
+    """The headers carrying credentials: never shown, never sent across
+    origins."""
 
 
-COMPAT = Dialect("OpenAiClient", "openai-compat", compat_body, compat_quota)
+COMPAT = Dialect(
+    "OpenAiClient",
+    "openai-compat",
+    compat_body,
+    compat_quota,
+    ("authorization", "openai-organization", "openai-project"),
+)
 
 
 def parse_rate_limit_headers(headers: Mapping[str, str], now: float) -> tuple[Any, dict[str, Any]]:
@@ -197,7 +206,9 @@ def status_code_mapper(
                 headers=response.headers,
                 message=info.message,
                 metadata=metadata,
-                http=P.http_context(reason.request, response, body),
+                http=P.http_context(
+                    reason.request, response, body, secret_headers=dialect.secret_headers
+                ),
             )
             return fx.fail(AiError(module=dialect.module, method=method, reason=mapped))
 

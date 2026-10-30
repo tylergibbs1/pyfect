@@ -254,6 +254,11 @@ class Connection:
             case "invalid":
                 return out(error_response(classified.id, InvalidRequest("Invalid Request")))
 
+    @property
+    def busy(self) -> bool:
+        """Whether a request is still being served."""
+        return bool(self._inflight)
+
     def close(self) -> Effect[None]:
         """Interrupt the requests still being served."""
 

@@ -38,10 +38,17 @@ from pyfect.sql.pg.client import (
     make_compiler,
 )
 from pyfect.sql.pg.config import PgClientConfig, PgConnectionConfig, PgPoolConfig
-from pyfect.sql.pg.connection import Field, Notification, PgConnection, Result
+from pyfect.sql.pg.connection import (
+    DEFAULT_LISTEN_CAPACITY,
+    Field,
+    Notification,
+    PgConnection,
+    Result,
+)
 from pyfect.sql.pg.pool import PgPool, PgPoolService
 
 __all__ = [
+    "DEFAULT_LISTEN_CAPACITY",
     "Field",
     "Notification",
     "PgClient",

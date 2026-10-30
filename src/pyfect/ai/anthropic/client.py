@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any, Never, Protocol, TypedDict
 
 import pyfect as fx
+from pyfect import byte_size
 from pyfect import layer as L
 from pyfect import schema as S
 from pyfect import stream as St
@@ -29,8 +30,9 @@ from pyfect._core import Effect
 from pyfect.ai import _provider as P
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import _schema as W
-from pyfect.ai.anthropic._errors import ERRORS, map_client_error
+from pyfect.ai.anthropic._errors import ERRORS, SECRET_HEADERS, map_client_error
 from pyfect.ai.anthropic.config import AnthropicConfig, ClientTransform
+from pyfect.byte_size import ByteSize
 from pyfect.config import Config, ConfigError
 from pyfect.context import Tag
 from pyfect.http import body as http_body
@@ -47,8 +49,7 @@ Message = W.Message
 
 DEFAULT_API_URL = "https://api.anthropic.com"
 DEFAULT_API_VERSION = "2023-06-01"
-_REDACTED = ("x-api-key",)
-_redacted = P.with_redacted_headers(_REDACTED)
+_redacted = P.with_redacted_headers(SECRET_HEADERS)
 _decode_json = S.decode_unknown_effect(S.UnknownFromJsonString)
 
 
@@ -82,6 +83,7 @@ class Service:
     http_client: HttpClientService[HttpClientError]
     create_message: CreateMessage
     create_message_stream: CreateMessageStream
+    max_response_bytes: ByteSize = P.DEFAULT_MAX_RESPONSE_BYTES
 
 
 class AnthropicClient(Tag[Service], key="@effect/ai-anthropic/AnthropicClient"):
@@ -157,13 +159,17 @@ def make(
     api_url: str | None = None,
     api_version: str | None = None,
     transform_client: ClientTransform | None = None,
+    max_response_bytes: byte_size.Input | None = None,
 ) -> Effect[Service, Never, HttpClient]:
     """An Anthropic client over the ``HttpClient`` service. Requests go to
     ``api_url`` (``https://api.anthropic.com``) with ``api_key`` as
     ``x-api-key`` (none when omitted, for proxies) and ``api_version`` as
     ``anthropic-version`` (``2023-06-01``); ``transform_client`` changes
-    the underlying client (and so does an ``AnthropicConfig``, per call)."""
+    the underlying client (and so does an ``AnthropicConfig``, per call).
+    A response body, or a streamed tool call's parameters, larger than
+    ``max_response_bytes`` (256 MiB) fails the call."""
     version = api_version or DEFAULT_API_VERSION
+    limit = P.response_limit(max_response_bytes)
 
     def prepare(request: http_request.HttpClientRequest) -> http_request.HttpClientRequest:
         request = request.prepend_url(api_url or DEFAULT_API_URL)
@@ -174,8 +180,9 @@ def make(
     def build(base: HttpClientService[HttpClientError]) -> Service:
         mapped = base.map_request(prepare)
         http_client = mapped if transform_client is None else transform_client(mapped)
-        generated = http_client.pipe(transform_response(_gateway_check))
-        client_ok = http_client.filter_status_ok()
+        limited = P.limit_responses(http_client, limit)
+        generated = limited.pipe(transform_response(_gateway_check))
+        client_ok = limited.filter_status_ok()
 
         def resolved() -> Effect[HttpClientService[HttpClientError]]:
             return P.resolve_client(AnthropicConfig, generated)
@@ -215,7 +222,7 @@ def make(
             )
             return sent.catch_all(ERRORS.catch("createMessageStream")).pipe(_redacted)
 
-        return Service(http_client, create_message, create_message_stream)
+        return Service(http_client, create_message, create_message_stream, limit)
 
     return HttpClient().map(build)
 
@@ -226,6 +233,7 @@ def layer(
     api_url: str | None = None,
     api_version: str | None = None,
     transform_client: ClientTransform | None = None,
+    max_response_bytes: byte_size.Input | None = None,
 ) -> L.Layer[AnthropicClient, Never, HttpClient]:
     """``AnthropicClient`` from these options (see ``make``)."""
     return L.effect(
@@ -235,6 +243,7 @@ def layer(
             api_url=api_url,
             api_version=api_version,
             transform_client=transform_client,
+            max_response_bytes=max_response_bytes,
         ),
     )
 
@@ -245,6 +254,7 @@ def layer_config(
     api_url: Config[str] | None = None,
     api_version: Config[str] | None = None,
     transform_client: ClientTransform | None = None,
+    max_response_bytes: byte_size.Input | None = None,
 ) -> L.Layer[AnthropicClient, ConfigError, HttpClient]:
     """``AnthropicClient`` with its options read from ``Config``."""
     built: Effect[Service, ConfigError, HttpClient] = fx.all(
@@ -255,6 +265,7 @@ def layer_config(
             api_url=values[1],
             api_version=values[2],
             transform_client=transform_client,
+            max_response_bytes=max_response_bytes,
         )
     )
     return L.effect(AnthropicClient, built)

@@ -79,11 +79,18 @@ from pyfect.channel._sources import (
     from_subscription,
     from_subscription_array,
 )
-from pyfect.channel._text import decode_text, encode_text, split_lines
+from pyfect.channel._text import (
+    LineTooLongError,
+    decode_text,
+    encode_text,
+    split_lines,
+    split_lines_within,
+)
 
 __all__ = [
     "DEFAULT_CHUNK_SIZE",
     "Channel",
+    "LineTooLongError",
     "acquire_release",
     "acquire_use_release",
     "callback",
@@ -131,6 +138,7 @@ __all__ = [
     "provide_service_effect",
     "scoped",
     "split_lines",
+    "split_lines_within",
     "succeed",
     "suspend",
     "sync",

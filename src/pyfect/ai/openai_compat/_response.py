@@ -15,6 +15,7 @@ from pyfect._core import Effect
 from pyfect.ai import _provider as P
 from pyfect.ai import _provider_tools as PT
 from pyfect.ai import language_model as lm
+from pyfect.ai._openai_errors import COMPAT
 from pyfect.ai.ai_error import AiError, ToolParameterValidationError
 from pyfect.ai.openai_compat import _schema as W
 from pyfect.ai.openai_compat._prompt import KEY, MODULE
@@ -145,7 +146,7 @@ def _make_response(
             "id": completion["id"],
             "modelId": completion["model"],
             "timestamp": _timestamp(completion["created"]),
-            "request": P.request_details(response.request),
+            "request": P.request_details(response.request, secret_headers=COMPAT.secret_headers),
         }
     ]
     choice = completion["choices"][0] if completion["choices"] else None
@@ -194,7 +195,7 @@ def make_response(
 class _ToolCall:
     id: str
     name: str
-    arguments: str
+    arguments: P.TextBuffer
     extra_content: object
 
 
@@ -210,6 +211,8 @@ class _Stream:
     options: lm.ProviderOptions
     response: HttpClientResponse
     names: NameMapper
+    max_chars: int
+    too_large: bool = False
     service_tier: str | None = None
     usage: W.Usage | None = None
     finish_reason: str | None = None
@@ -239,7 +242,9 @@ class _Stream:
                 {"type": "text-end", "id": self.text_id, "metadata": self._item(self.text_id)}
             )
         for call in _record_order(self.tool_calls):
-            raw = yield from _parse_params(call.name, call.arguments or "{}", "makeStreamResponse")
+            raw = yield from _parse_params(
+                call.name, call.arguments.text() or "{}", "makeStreamResponse"
+            )
             params = yield from PT.transform_params(MODULE, self.options, call.name, raw)
             parts.append({"type": "tool-params-end", "id": call.id})
             parts.append(
@@ -312,11 +317,13 @@ class _Stream:
                 name = self.names.get_custom_name("unknown_tool")
             arguments = function.get("arguments") or ""
             if active is None:
-                self.tool_calls[index] = _ToolCall(id, name, arguments, delta.get("extra_content"))
+                buffer = P.TextBuffer("", self.max_chars)
+                self.too_large = self.too_large or not buffer.add(arguments)
+                self.tool_calls[index] = _ToolCall(id, name, buffer, delta.get("extra_content"))
                 parts.append({"type": "tool-params-start", "id": id, "name": name})
             else:
                 active.name = name
-                active.arguments += arguments
+                self.too_large = self.too_large or not active.arguments.add(arguments)
                 if delta.get("extra_content") is not None:
                     active.extra_content = delta.get("extra_content")
             if arguments:
@@ -339,7 +346,9 @@ class _Stream:
                     "id": chunk["id"],
                     "modelId": chunk["model"],
                     "timestamp": _timestamp(chunk["created"]),
-                    "request": P.request_details(self.response.request),
+                    "request": P.request_details(
+                        self.response.request, secret_headers=COMPAT.secret_headers
+                    ),
                 }
             )
         if not chunk["choices"]:
@@ -366,7 +375,10 @@ class _Stream:
             return fx.gen(self.done)
         if isinstance(event, W.UnknownEvent):
             return fx.succeed([])
-        return fx.succeed(self.chunk(event))
+        parts = self.chunk(event)
+        if self.too_large:
+            return fx.fail(P.too_large(MODULE, "makeStreamResponse", self.max_chars))
+        return fx.succeed(parts)
 
 
 def make_stream_response(
@@ -374,6 +386,8 @@ def make_stream_response(
     events: Stream[W.StreamEvent, AiError],
     response: HttpClientResponse,
     names: NameMapper,
+    max_chars: int,
 ) -> Stream[Part, AiError, Any]:
-    state = _Stream(options, response, names)
+    """``max_chars`` bounds each tool call's streamed parameters."""
+    state = _Stream(options, response, names, max_chars)
     return events.map_effect(state.event).flatten_iterable()

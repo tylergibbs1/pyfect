@@ -338,27 +338,35 @@ class HttpClientService[E, R = Never]:
         return self.transform(with_circuit_breaker(breaker, key, classify))
 
     def with_cookies_ref(self, ref: Ref[Cookies]) -> HttpClientService[E, R]:
-        """Send the cookies in ``ref`` and merge in the cookies each response
-        sets."""
+        """Keep the cookies each response sets in ``ref`` and send them back
+        the way a browser does: to the host that set them (or its
+        ``Domain``), on their ``Path``, over https only when ``Secure``. A
+        response cannot set or replace a cookie for a domain it is not part
+        of. Cookies the program puts in ``ref`` without a ``Domain`` go to
+        every request."""
+        from pyfect.http.client import _cookie_jar
+
         pre = self._preprocess
         post = self._postprocess
 
+        def send(request: HttpClientRequest, jar: Cookies) -> HttpClientRequest:
+            cookies = _cookie_jar.for_request(jar, request.url)
+            if cookies.is_empty():
+                return request
+            return request.set_header("cookie", cookies.to_cookie_header())
+
         def with_cookies(request: HttpClientRequest) -> Effect[HttpClientRequest, Any, Any]:
             return pre(request).flat_map(
-                lambda request: ref.get().map(
-                    lambda cookies: (
-                        request
-                        if cookies.is_empty()
-                        else request.set_header("cookie", cookies.to_cookie_header())
-                    )
-                )
+                lambda request: ref.get().map(lambda jar: send(request, jar))
             )
 
         def store(
             requests: Effect[HttpClientRequest, Any, Any],
         ) -> Effect[HttpClientResponse, E, R]:
             return post(requests).tap(
-                lambda response: ref.update(lambda cookies: cookies.merge(response.cookies))
+                lambda response: ref.update(
+                    lambda jar: _cookie_jar.store(jar, response.request.url, response.cookies)
+                )
             )
 
         return HttpClientService(store, with_cookies)

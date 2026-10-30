@@ -17,10 +17,12 @@ after the cancel closes the session.
 from __future__ import annotations
 
 from collections.abc import Callable, Coroutine, Sequence
-from typing import TYPE_CHECKING, Any, Never
+from typing import TYPE_CHECKING, Any, Final, Never
 
 from pyfect._core import Effect, _Suspend
 from pyfect._primitives import Restore, uninterruptible_mask
+from pyfect._subscriber_queue import DEFAULT_CAPACITY, FellBehind, check_capacity
+from pyfect._subscriber_queue import offer as offer_to_subscriber
 from pyfect.clock import sleep
 from pyfect.effect import fail, provide_service, succeed, sync, void
 from pyfect.errors import Done
@@ -28,10 +30,17 @@ from pyfect.exit import Failure
 from pyfect.queue import Dequeue, Queue
 from pyfect.scope import CloseableScope, Scope, add_finalizer, fork_in
 from pyfect.semaphore import Semaphore
-from pyfect.sql.error import SqlError
+from pyfect.sql.error import SqlError, UnknownError
 from pyfect.sql.pg._loop import call
 from pyfect.sql.pg._resolve import ResolvedConfig, resolve, resolve_password
-from pyfect.sql.pg._session import Field, Notification, Result, Session, next_notification
+from pyfect.sql.pg._session import (
+    Field,
+    Mailbox,
+    Notification,
+    Result,
+    Session,
+    next_notification,
+)
 from pyfect.sql.pg.config import PgConnectionConfig
 from pyfect.sql.pg.error import catch, connection_error, validate_channel_name
 
@@ -41,6 +50,16 @@ if TYPE_CHECKING:
 type Row = dict[str, Any]
 
 _UNLISTEN_TIMEOUT = 5.0
+
+DEFAULT_LISTEN_CAPACITY: Final = DEFAULT_CAPACITY
+"""How many notifications a ``listen`` queue holds untaken by default."""
+
+
+def _fell_behind(capacity: int) -> SqlError:
+    behind = FellBehind("PgConnection.listen", capacity)
+    return SqlError(reason=UnknownError(cause=behind, message=str(behind), operation="listen"))
+
+
 _catch_query = catch("PgConnection: Query failed", "query")
 _catch_connect = catch("PgConnection: Failed to connect", "connect")
 
@@ -347,13 +366,18 @@ class PgConnection:
 
     # --- notifications --------------------------------------------------------
 
-    def listen(self, channel: str) -> Effect[Dequeue[Notification, SqlError], SqlError, Scope]:
+    def listen(
+        self, channel: str, *, capacity: int = DEFAULT_LISTEN_CAPACITY
+    ) -> Effect[Dequeue[Notification, SqlError], SqlError, Scope]:
         """Listen on ``channel``: a queue of its notifications, once
         PostgreSQL confirmed ``LISTEN``. The session stays pinned until the
         scope closes, which runs ``UNLISTEN`` (closing a session that does
         not answer within five seconds) and shuts the queue down,
         interrupting its takers. If the session fails, the queue fails with
-        its error."""
+        its error. The queue holds at most ``capacity`` notifications not
+        yet taken; one more fails it (after those) with an error saying the
+        listener fell behind."""
+        check_capacity(capacity)
         error = validate_channel_name(channel, "listen")
         if error is not None:
             return fail(error)
@@ -362,9 +386,9 @@ class PgConnection:
         def body(restore: Restore) -> Effect[Dequeue[Notification, SqlError], SqlError, Scope]:
             def in_scope(parent: CloseableScope) -> Effect[Any, SqlError, Scope]:
                 return parent.fork().flat_map(
-                    lambda scope: restore(connection._listen_in(channel, scope)).tap_cause(
-                        lambda cause: scope.close(Failure(cause))
-                    )
+                    lambda scope: restore(
+                        connection._listen_in(channel, capacity, scope)
+                    ).tap_cause(lambda cause: scope.close(Failure(cause)))
                 )
 
             return Scope().flat_map(in_scope)
@@ -372,7 +396,7 @@ class PgConnection:
         return uninterruptible_mask(body)
 
     def _listen_in(
-        self, channel: str, scope: CloseableScope
+        self, channel: str, capacity: int, scope: CloseableScope
     ) -> Effect[Dequeue[Notification, SqlError], SqlError]:
         shared = self._shared
         session = shared.session
@@ -390,7 +414,7 @@ class PgConnection:
                 queue: Queue[Notification, SqlError],
             ) -> Effect[Dequeue[Notification, SqlError], SqlError]:
                 async def subscribe() -> Any:
-                    return session.subscribe(channel)
+                    return session.subscribe(channel, capacity)
 
                 async def drop(mailbox: Any) -> None:
                     session.unsubscribe(channel, mailbox)
@@ -417,28 +441,34 @@ class PgConnection:
                 )
                 return subscribed.flat_map(started)
 
-            return Queue[Notification, SqlError].unbounded().flat_map(with_queue)
+            return Queue[Notification, SqlError].dropping(capacity).flat_map(with_queue)
 
         return self.pin.flat_map(registered).pipe(provide_service(Scope, scope))
 
-    def _deliver(self, mailbox: Any, queue: Queue[Notification, SqlError]) -> Effect[None]:
+    def _deliver(self, mailbox: Mailbox, queue: Queue[Notification, SqlError]) -> Effect[None]:
         """Move notifications from the loop into ``queue``; the session's
         failure fails it."""
         shared = self._shared
 
+        def behind() -> SqlError:
+            return _fell_behind(mailbox.capacity)
+
         def handle(batch: list[Notification | BaseException]) -> Effect[bool]:
             notes = [item for item in batch if isinstance(item, Notification)]
-            offered: Effect[object] = queue.offer_all(notes) if notes else void
+            if not offer_to_subscriber(queue, notes, behind):
+                return succeed(False)
             failures = [item for item in batch if not isinstance(item, Notification)]
             if not failures:
-                return offered.as_(True)
+                return succeed(True)
+            if isinstance(failures[0], FellBehind):
+                return queue.fail(behind()).as_(False)
             error = _catch_query(failures[0])
 
             def failed() -> Effect[bool]:
                 dead = shared.dead_with or error
                 return queue.fail(dead).as_(False)
 
-            return offered.and_then(shared.fatal(error)).and_then(_Suspend(failed))
+            return shared.fatal(error).and_then(_Suspend(failed))
 
         def loop(_: object = None) -> Effect[None]:
             pulled = call(lambda: next_notification(mailbox), _catch_query).flat_map(handle)
@@ -530,4 +560,12 @@ def make(config: PgConnectionConfig) -> Effect[PgConnection, SqlError, Scope]:
     return resolve(config).flat_map(opened)
 
 
-__all__ = ["Field", "Notification", "PgConnection", "Result", "Row", "make"]
+__all__ = [
+    "DEFAULT_LISTEN_CAPACITY",
+    "Field",
+    "Notification",
+    "PgConnection",
+    "Result",
+    "Row",
+    "make",
+]

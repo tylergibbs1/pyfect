@@ -12,6 +12,7 @@ from pyfect.ai import _provider as P
 from pyfect.ai import language_model as lm
 from pyfect.ai.ai_error import AiError, ToolParameterValidationError
 from pyfect.ai.anthropic import _schema as W
+from pyfect.ai.anthropic._errors import SECRET_HEADERS
 from pyfect.ai.anthropic._response import (
     Gen,
     Part,
@@ -45,7 +46,7 @@ _SEARCH_CALLS = frozenset({"tool_search_tool_bm25", "tool_search_tool_regex"})
 class _ToolBlock:
     id: str
     name: str
-    params: str
+    params: P.TextBuffer
     first_delta: bool
     provider_name: str | None = None
     provider_executed: bool | None = None
@@ -65,6 +66,7 @@ class _State:
     options: lm.ProviderOptions
     response: HttpClientResponse
     results: ServerResults
+    max_chars: int
     container: Any = None
     context_management: Any = None
     finish_reason: FinishReason = "unknown"
@@ -100,7 +102,7 @@ class _State:
                 "id": message["id"],
                 "modelId": message["model"],
                 "timestamp": timestamp,
-                "request": P.request_details(self.response.request),
+                "request": P.request_details(self.response.request, secret_headers=SECRET_HEADERS),
             }
         ]
         for block in message["content"]:
@@ -175,7 +177,11 @@ class _State:
         initial = P.dumps(input) if input else ""
         name = self.names.get_custom_name(block["name"])
         self.blocks[index] = _ToolBlock(
-            block["id"], name, initial, len(initial) > 0, caller=caller_metadata(block)
+            block["id"],
+            name,
+            P.TextBuffer(initial, self.max_chars),
+            len(initial) > 0,
+            caller=caller_metadata(block),
         )
         return [{"type": "tool-params-start", "id": block["id"], "name": name}]
 
@@ -189,7 +195,9 @@ class _State:
         else:
             return []
         name = self.names.get_custom_name(custom)
-        self.blocks[index] = _ToolBlock(block["id"], name, "", True, provider, True)
+        self.blocks[index] = _ToolBlock(
+            block["id"], name, P.TextBuffer("", self.max_chars), True, provider, True
+        )
         return [
             {"type": "tool-params-start", "id": block["id"], "name": name, "providerExecuted": True}
         ]
@@ -238,7 +246,7 @@ class _State:
                 parts = yield from self.results.result_parts(block)
                 return parts or []
 
-    def _input_json_delta(self, index: int, delta: str) -> list[Part]:
+    def _input_json_delta(self, index: int, delta: str) -> Gen[list[Part]]:
         block = self.blocks.get(index)
         if not delta or not isinstance(block, _ToolBlock):
             return []
@@ -247,7 +255,9 @@ class _State:
             "text_editor_code_execution",
         ):
             delta = f'{{"type":{P.dumps(block.provider_name)},{delta[1:]}'
-        block.params += delta
+        if not block.params.add(delta):
+            error = P.too_large("AnthropicLanguageModel", "makeStreamResponse", self.max_chars)
+            return (yield from fx.fail(error))
         block.first_delta = False
         return [{"type": "tool-params-delta", "id": block.id, "delta": delta}]
 
@@ -276,7 +286,7 @@ class _State:
                     }
                 ]
             case "input_json_delta":
-                return self._input_json_delta(index, delta.get("partial_json", ""))
+                return (yield from self._input_json_delta(index, delta.get("partial_json", "")))
             case "citations_delta":
                 source = yield from citation_source(delta["citation"], self.results.documents)
                 return [] if source is None else [source]
@@ -284,7 +294,7 @@ class _State:
                 return []
 
     def _tool_call(self, block: _ToolBlock) -> Gen[Part]:
-        text = block.params or "{}"
+        text = block.params.text() or "{}"
         if block.provider_name == "code_execution":
             try:
                 parsed = P.obj(unsafe_secure_json_parse(text))
@@ -355,8 +365,11 @@ def make_stream_response(
     events: Stream[W.MessageStreamEvent, AiError],
     response: HttpClientResponse,
     names: NameMapper,
+    max_chars: int,
 ) -> Stream[Part, AiError, Any]:
-    state = _State(options, response, ServerResults(names, citable_documents(options.prompt)))
+    """``max_chars`` bounds each tool call's streamed parameters."""
+    results = ServerResults(names, citable_documents(options.prompt))
+    state = _State(options, response, results, max_chars)
 
     def convert(event: W.MessageStreamEvent) -> Effect[list[Part], AiError, Any]:
         return fx.gen(lambda: state.event(event))

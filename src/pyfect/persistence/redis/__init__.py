@@ -20,6 +20,7 @@ from pyfect.persistence.redis._error import RedisError
 from pyfect.persistence.redis._make import make
 from pyfect.persistence.redis._script import RedisReply, Script, script
 from pyfect.persistence.redis._service import (
+    DEFAULT_SUBSCRIBE_CAPACITY,
     OpenConnection,
     PoolOptions,
     Redis,
@@ -31,6 +32,7 @@ from pyfect.persistence.redis._service import (
 )
 
 __all__ = [
+    "DEFAULT_SUBSCRIBE_CAPACITY",
     "OpenConnection",
     "PoolOptions",
     "Redis",

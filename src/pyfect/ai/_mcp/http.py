@@ -16,6 +16,8 @@ from typing import Any, cast
 
 from pyfect import stream
 from pyfect._core import Effect
+from pyfect._json_text import parse as parse_json_text
+from pyfect.ai._mcp import sessions as S
 from pyfect.ai._mcp.core import McpServer, McpServerService
 from pyfect.ai._mcp.dispatch import (
     Classified,
@@ -27,13 +29,17 @@ from pyfect.ai._mcp.dispatch import (
 )
 from pyfect.ai.mcp_protocol import Registry
 from pyfect.ai.mcp_schema import InvalidRequest, JsonObject, ParseError
+from pyfect.byte_size import ByteSize
+from pyfect.clock import monotonic
 from pyfect.effect import gen, succeed
 from pyfect.errors import Done
 from pyfect.http import server_response as response
+from pyfect.http.incoming_message import MaxBodySize
 from pyfect.http.router import HttpRouter
-from pyfect.http.server_request import ServerRequest
-from pyfect.http.server_response import HttpServerResponse
+from pyfect.http.server_request import BodyTooLargeError, ServerRequest, read_limited
+from pyfect.http.server_response import HttpServerResponse, parse_content_length
 from pyfect.queue import Queue
+from pyfect.result import Ok
 
 SESSION_HEADER = "mcp-session-id"
 VERSION_HEADER = "mcp-protocol-version"
@@ -70,11 +76,13 @@ def _event(message: JsonObject) -> bytes:
 
 
 class _Sessions:
-    def __init__(self, server: McpServerService, info: ServerInfo, registry: Registry) -> None:
+    def __init__(
+        self, server: McpServerService, info: ServerInfo, registry: Registry, limits: S.Limits
+    ) -> None:
         self.server = server
         self.info = info
         self.registry = registry
-        self.sessions: dict[str, Connection] = {}
+        self.sessions = S.Table(server, limits)
 
     def connection(self) -> Connection:
         return Connection(
@@ -131,12 +139,76 @@ def _sessionless(
     return succeed(_empty(400))
 
 
+def _close_all(connections: Sequence[Connection]) -> Effect[None]:
+    @gen
+    def run():
+        for connection in connections:
+            yield from connection.close()
+
+    return run
+
+
+def _read(request: ServerRequest, limit: ByteSize) -> Effect[str | HttpServerResponse | None]:
+    """The body as text (``None`` when unreadable), or 413 past ``limit``
+    or the app's ``MaxBodySize``, whichever is smaller. Read here, not
+    through ``request.text``, so the limit holds for every request type."""
+
+    @gen
+    def run():
+        app_limit = yield from MaxBodySize()
+        bound = limit if app_limit is None else min(limit, app_limit)
+        content_length = parse_content_length(request.headers.get("content-length"))
+        result = yield from read_limited(request.stream, content_length, bound).result()
+        if isinstance(result, Ok):
+            return result.value.decode("utf-8-sig", "replace")
+        if isinstance(result.error, BodyTooLargeError):
+            return _empty(413)
+        return None
+
+    return run
+
+
+def _open_session(
+    sessions: _Sessions, classified: Classified, now: float
+) -> Effect[HttpServerResponse]:
+    """Answer ``initialize`` in a new session: 503 when the table is full
+    once the idle sessions are gone."""
+    table = sessions.sessions
+
+    @gen
+    def run():
+        yield from _close_all(table.sweep(now))
+        if table.full():
+            return _empty(503)
+        connection = sessions.connection()
+        reply = yield from connection.answer(
+            cast("Any", classified.id), "initialize", classified.params, lambda _: _VOID
+        )
+        if reply is None or "error" in reply or connection.protocol is None:
+            return response.json_unsafe(reply)
+        new_id = uuid.uuid4().hex
+        if not table.open(new_id, connection, now):
+            yield from connection.close()
+            return _empty(503)
+        return response.json_unsafe(
+            reply,
+            headers={SESSION_HEADER: new_id, VERSION_HEADER: connection.protocol.protocol_version},
+        )
+
+    return run
+
+
 def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerResponse]:
+    table = sessions.sessions
+
     @gen
     def run():  # noqa: PLR0911
-        text = yield from request.text.option()
+        text = yield from _read(request, table.limits.max_message_bytes)
+        if isinstance(text, HttpServerResponse):
+            return text
+        now = yield from monotonic()
         try:
-            message: Any = json.loads(text.value) if text is not None else None
+            message: Any = parse_json_text(text) if text is not None else None
         except ValueError:
             return response.json_unsafe(error_response(None, ParseError("Parse error")), status=400)
         if isinstance(message, list):
@@ -160,25 +232,12 @@ def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerRespo
         if classified.method == "initialize" and classified.kind == "request":
             if session_id is not None:
                 return _empty(400)
-            connection = sessions.connection()
-            reply = yield from connection.answer(
-                cast("Any", classified.id), "initialize", classified.params, lambda _: _VOID
-            )
-            if reply is None or "error" in reply or connection.protocol is None:
-                return response.json_unsafe(reply)
-            new_id = uuid.uuid4().hex
-            sessions.sessions[new_id] = connection
-            sessions.server.connect(connection)
-            return response.json_unsafe(
-                reply,
-                headers={
-                    SESSION_HEADER: new_id,
-                    VERSION_HEADER: connection.protocol.protocol_version,
-                },
-            )
+            return (yield from _open_session(sessions, classified, now))
         if session_id is None:
             return (yield from _sessionless(sessions, classified, request))
-        connection = sessions.sessions.get(session_id)
+        connection, expired = table.get(session_id, now)
+        if expired is not None:
+            yield from expired.close()
         if connection is None or connection.protocol is None:
             return _empty(404)
         protocol_version = connection.protocol.protocol_version
@@ -198,10 +257,9 @@ def _delete(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerRes
     session_id = request.headers.get(SESSION_HEADER)
     if session_id is None:
         return succeed(_empty(400))
-    connection = sessions.sessions.pop(session_id, None)
+    connection = sessions.sessions.pop(session_id)
     if connection is None:
         return succeed(_empty(404))
-    sessions.server.disconnect(connection.client_id)
     return connection.close().as_(_empty(204))
 
 
@@ -212,6 +270,7 @@ def serve(
     path: str,
     allowed_origins: Sequence[str] | None,
     allow_session_termination: bool,
+    limits: S.Limits,
 ) -> Effect[None, Any, McpServer | HttpRouter]:
     """Add the MCP endpoint at ``path`` to the router."""
 
@@ -219,7 +278,7 @@ def serve(
     def run():
         server = yield from McpServer()
         router = yield from HttpRouter()
-        sessions = _Sessions(server, info, registry)
+        sessions = _Sessions(server, info, registry, limits)
         terminate = allow_session_termination and any(
             not p.is_stateless for p in registry.protocols
         )

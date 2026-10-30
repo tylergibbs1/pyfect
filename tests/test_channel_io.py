@@ -5,10 +5,15 @@ Expected values were printed by Effect's ``Channel.ts`` under Node (see
 docs/PARITY.md).
 """
 
+import time
+
+import pytest
+
 import pyfect as fx
 from pyfect import channel, schedule, testing
 from pyfect.pubsub import PubSub
 from pyfect.queue import Queue
+from pyfect.result import Err
 
 # --- sources ------------------------------------------------------------------------
 
@@ -115,6 +120,35 @@ def test_split_lines_splits_at_every_kind_of_line_break():
 def test_split_lines_keeps_empty_lines():
     lines = channel.from_iterable([("\n\n", "x")]).pipe_to(channel.split_lines())
     assert (yield from lines.run_collect()) == [("", ""), ("x",)]
+
+
+@testing.effect
+def test_split_lines_within_fails_on_an_unfinished_line_past_the_limit():
+    lines = channel.from_iterable([("ab",), ("cd",), ("e\n",)]).pipe_to(
+        channel.split_lines_within(4)
+    )
+    result = yield from lines.run_collect().result()
+    assert isinstance(result, Err)
+    assert isinstance(result.error, channel.LineTooLongError)
+
+
+@testing.effect
+def test_split_lines_within_keeps_lines_at_the_limit():
+    lines = channel.from_iterable([("ab", "cd\n"), ("x",)]).pipe_to(channel.split_lines_within(4))
+    assert (yield from lines.run_collect()) == [("abcd",), ("x",)]
+
+
+@pytest.mark.parametrize("within", [False, True])
+@testing.effect
+def test_split_lines_is_linear_in_tiny_pieces(within: bool):
+    """A peer sending one character at a time must not make the unfinished
+    line cost quadratic time (800k pieces took about 7 s that way)."""
+    pieces = ("a",) * 800_000
+    split = channel.split_lines_within(10**7) if within else channel.split_lines()
+    start = time.perf_counter()
+    lines = yield from channel.from_iterable([pieces]).pipe_to(split).run_collect()
+    assert time.perf_counter() - start < 2
+    assert lines == [("a" * 800_000,)]
 
 
 @testing.effect

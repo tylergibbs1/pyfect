@@ -98,11 +98,13 @@ def _reset_queue_params(  # noqa: PLR0917
     key_attempts: str,
     key_failed: str,
     key_ids: str,
-    prefix: str,
+    lock_prefix: str,
     max_attempts: int,
     now: float,
 ) -> list[str | float]:
-    return [key_queue, key_pending, key_attempts, key_failed, key_ids, prefix, max_attempts, now]
+    return [
+        key_queue, key_pending, key_attempts, key_failed, key_ids, lock_prefix, max_attempts, now
+    ]  # fmt: skip
 
 
 RESET_QUEUE = script(
@@ -114,7 +116,7 @@ local key_pending = KEYS[2]
 local key_attempts = KEYS[3]
 local key_failed = KEYS[4]
 local key_ids = KEYS[5]
-local prefix = ARGV[1]
+local lock_prefix = ARGV[1]
 local max_attempts = tonumber(ARGV[2])
 local now = ARGV[3]
 
@@ -122,7 +124,7 @@ local entries = redis.call("HGETALL", key_pending)
 for i = 1, #entries, 2 do
   local id = entries[i]
   local payload = entries[i + 1]
-  local lock_key = prefix .. id .. ":lock"
+  local lock_key = lock_prefix .. id .. ":lock"
   local exists = redis.call("EXISTS", lock_key)
   if exists == 0 then
     local attempts = tonumber(redis.call("HGET", key_attempts, id) or "0")
@@ -263,7 +265,7 @@ def _take_params(  # noqa: PLR0917
     key_pending: str,
     key_delayed: str,
     key_attempts: str,
-    prefix: str,
+    lock_prefix: str,
     worker_id: str,
     batch_size: int,
     pttl: float,
@@ -274,7 +276,7 @@ def _take_params(  # noqa: PLR0917
         key_pending,
         key_delayed,
         key_attempts,
-        prefix,
+        lock_prefix,
         worker_id,
         batch_size,
         pttl,
@@ -291,7 +293,7 @@ local key_queue = KEYS[1]
 local key_pending = KEYS[2]
 local key_delayed = KEYS[3]
 local key_attempts = KEYS[4]
-local prefix = ARGV[1]
+local lock_prefix = ARGV[1]
 local worker_id = ARGV[2]
 local batch_size = tonumber(ARGV[3])
 local pttl = ARGV[4]
@@ -324,7 +326,7 @@ redis.call("LTRIM", key_queue, #payloads, -1)
 local result = {}
 for i, id in ipairs(ids) do
   local payload = payloads[i]
-  local key_lock = prefix .. id .. ":lock"
+  local key_lock = lock_prefix .. id .. ":lock"
   redis.call("SET", key_lock, worker_id, "PX", pttl)
   redis.call("HSET", key_pending, id, payload)
   local attempts = redis.call("HINCRBY", key_attempts, id, 1)

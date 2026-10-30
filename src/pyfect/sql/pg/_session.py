@@ -24,6 +24,9 @@ import psycopg
 from psycopg import AsyncRawCursor, pq
 from psycopg.rows import dict_row, tuple_row
 
+from pyfect._digits import parse_digits
+from pyfect._subscriber_queue import FellBehind
+
 if TYPE_CHECKING:
     from psycopg.adapt import AdaptersMap
 
@@ -91,7 +94,7 @@ def parse_command_tag(tag: str) -> tuple[str, int, int | None]:
     if command == "INSERT" and second_space:
         return command, int(last), int(first)
     count = last if second_space else first
-    return command, int(count) if count.isdigit() else 0, None
+    return command, parse_digits(count) or 0, None
 
 
 class Session:
@@ -120,7 +123,7 @@ class Session:
         self._busy = 0
         self._failure: BaseException | None = None
         self._pump: asyncio.Task[None] | None = None
-        self._subscribers: dict[str, set[asyncio.Queue[Notification | BaseException]]] = {}
+        self._subscribers: dict[str, set[Mailbox]] = {}
         self._fatal: tuple[str, str] | None = None
         conn.add_notice_handler(self._on_notice)
 
@@ -280,15 +283,16 @@ class Session:
 
     # --- notifications --------------------------------------------------------
 
-    def subscribe(self, channel: str) -> asyncio.Queue[Notification | BaseException]:
-        """A queue of ``channel``'s notifications (and of the error that
-        ended the session). The caller sends ``LISTEN`` first."""
-        mailbox: asyncio.Queue[Notification | BaseException] = asyncio.Queue()
+    def subscribe(self, channel: str, capacity: int) -> Mailbox:
+        """A mailbox of ``channel``'s notifications (and of the error that
+        ended the session), holding at most ``capacity``. The caller sends
+        ``LISTEN`` first."""
+        mailbox = Mailbox(capacity)
         self._subscribers.setdefault(channel, set()).add(mailbox)
         self._start_pump()
         return mailbox
 
-    def unsubscribe(self, channel: str, mailbox: asyncio.Queue[Any]) -> bool:
+    def unsubscribe(self, channel: str, mailbox: Mailbox) -> bool:
         """Remove a subscriber; ``True`` when it was the channel's last."""
         subscribers = self._subscribers.get(channel)
         if subscribers is None:
@@ -313,14 +317,14 @@ class Session:
             async for notify in self.conn.notifies():
                 note = Notification(notify.pid, notify.channel, notify.payload)
                 for mailbox in self._subscribers.get(notify.channel, ()):
-                    mailbox.put_nowait(note)
+                    mailbox.deliver(note)
         except psycopg.Error as error:
             self.fail_subscribers(self.explain(error))
 
     def fail_subscribers(self, error: BaseException) -> None:
         for subscribers in self._subscribers.values():
             for mailbox in subscribers:
-                mailbox.put_nowait(error)
+                mailbox.items.put_nowait(error)
 
     async def close(self) -> None:
         await self._stop_pump()
@@ -332,19 +336,42 @@ async def _cancel(task: asyncio.Task[Any]) -> None:
     await asyncio.wait([task])
 
 
-async def next_notification(
-    mailbox: asyncio.Queue[Notification | BaseException],
-) -> list[Notification | BaseException]:
+class Mailbox:
+    """One listener's notifications on their way from the session's loop
+    to its queue. Past ``capacity`` waiting it takes no more and holds a
+    ``FellBehind`` instead, so a publisher outpacing the listener cannot
+    grow it without limit."""
+
+    __slots__ = ("behind", "capacity", "items")
+
+    def __init__(self, capacity: int) -> None:
+        self.capacity = capacity
+        self.behind = False
+        self.items: asyncio.Queue[Notification | BaseException] = asyncio.Queue()
+
+    def deliver(self, note: Notification) -> None:
+        if self.behind:
+            return
+        if self.items.qsize() >= self.capacity:
+            self.behind = True
+            self.items.put_nowait(FellBehind("PgConnection.listen", self.capacity))
+            return
+        self.items.put_nowait(note)
+
+
+async def next_notification(mailbox: Mailbox) -> list[Notification | BaseException]:
     """The notifications waiting in ``mailbox``, at least one."""
-    first = await mailbox.get()
+    items = mailbox.items
+    first = await items.get()
     batch = [first]
-    while not mailbox.empty():
-        batch.append(mailbox.get_nowait())
+    while not items.empty():
+        batch.append(items.get_nowait())
     return batch
 
 
 __all__ = [
     "Field",
+    "Mailbox",
     "Notification",
     "Result",
     "Session",

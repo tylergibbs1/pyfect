@@ -232,16 +232,24 @@ class _MemoryEngine:
 
         return cast("Effect[Result[Any, Any] | None]", gen(run))
 
-    def await_complete(self, _workflow: AnyWorkflow, execution_id: str) -> Effect[None]:
+    def _owned(self, workflow: AnyWorkflow, execution_id: str) -> _Execution | None:
+        """The execution ``execution_id`` when it is one of ``workflow``: an
+        operation called through one workflow never reaches another's."""
+        state = self.executions.get(execution_id)
+        if state is None or state.instance.workflow.tag != workflow.tag:
+            return None
+        return state
+
+    def await_complete(self, workflow: AnyWorkflow, execution_id: str) -> Effect[None]:
         def run() -> Effect[None]:
-            state = self.executions.get(execution_id)
+            state = self._owned(workflow, execution_id)
             return never if state is None else state.done.wait()
 
         return suspend_effect(run)
 
-    def interrupt(self, _workflow: AnyWorkflow, execution_id: str) -> Effect[None]:
+    def interrupt(self, workflow: AnyWorkflow, execution_id: str) -> Effect[None]:
         def run() -> Effect[None]:
-            state = self.executions.get(execution_id)
+            state = self._owned(workflow, execution_id)
             if state is None:
                 return succeed(None)
             state.interrupted = True
@@ -249,9 +257,9 @@ class _MemoryEngine:
 
         return suspend_effect(run)
 
-    def interrupt_unsafe(self, _workflow: AnyWorkflow, execution_id: str) -> Effect[None]:
+    def interrupt_unsafe(self, workflow: AnyWorkflow, execution_id: str) -> Effect[None]:
         def run() -> Generator[Effect[Any, Never, Any], Any]:
-            state = self.executions.get(execution_id)
+            state = self._owned(workflow, execution_id)
             if state is None:
                 return
             state.interrupted = True
@@ -263,8 +271,14 @@ class _MemoryEngine:
 
         return gen(run)
 
-    def resume_explicit(self, _workflow: AnyWorkflow, execution_id: str) -> Effect[None]:
-        return self.resume(execution_id, "explicit")
+    def resume_explicit(self, workflow: AnyWorkflow, execution_id: str) -> Effect[None]:
+        return suspend_effect(
+            lambda: (
+                succeed(None)
+                if self._owned(workflow, execution_id) is None
+                else self.resume(execution_id, "explicit")
+            )
+        )
 
     def activity_execute(
         self, activity: Activity[Any, Any, Any], attempt: int
@@ -307,9 +321,9 @@ class _MemoryEngine:
 
         return cast("Effect[Result[Any, Any], Never, WorkflowInstance]", gen(run))
 
-    def poll(self, _workflow: AnyWorkflow, execution_id: str) -> Effect[Result[Any, Any] | None]:
+    def poll(self, workflow: AnyWorkflow, execution_id: str) -> Effect[Result[Any, Any] | None]:
         def run() -> Effect[Result[Any, Any] | None]:
-            state = self.executions.get(execution_id)
+            state = self._owned(workflow, execution_id)
             ex = None if state is None or state.fiber is None else state.fiber.unsafe_poll()
             if ex is None:
                 return succeed(None)
