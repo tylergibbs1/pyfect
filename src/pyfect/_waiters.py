@@ -13,6 +13,11 @@ as Effect's ``releaseTakers`` does. There is no "wake exactly one": a woken
 fiber can pause for its step budget before it retries and be interrupted
 there, and a wake-up spent on it would leave the waiter behind it parked next
 to the item it was waiting for.
+
+A wake-up resumes the fiber at once (fibers resume synchronously, as in
+Effect). Where Effect defers it to a scheduled task instead (a queue's
+``scheduleReleaseTaker``, a semaphore release), use ``notify_ready_soon``
+or ``wake_soon``, so the notifier finishes its step first.
 """
 # pyright: reportPrivateUsage=false
 
@@ -33,11 +38,26 @@ class _Waiter:
         self.wake = wake
 
 
+def wake_soon(task: Callable[[], None]) -> None:
+    """Run ``task`` in a task scheduled on the running fiber's scheduler
+    (Effect's ``fiber.currentDispatcher.scheduleTask``), or now when no
+    fiber is running here."""
+    from pyfect._fiber import current_fiber
+
+    fiber = current_fiber()
+    if fiber is None:
+        task()
+    else:
+        fiber._scheduler.schedule(task)
+
+
 class WaitList:
-    __slots__ = ("_waiters",)
+    __slots__ = ("_soon", "_waiters")
 
     def __init__(self) -> None:
         self._waiters: deque[_Waiter] = deque()
+        # Whether a ``notify_ready_soon`` task is pending.
+        self._soon = False
 
     def wait(self, ready: Callable[[], bool]) -> Effect[None]:
         """Park until notified, or not at all if ``ready()`` already holds."""
@@ -62,6 +82,19 @@ class WaitList:
         self._waiters = parked
         for waiter in ready:
             waiter.wake()
+
+    def notify_ready_soon(self) -> None:
+        """``notify_ready`` in a scheduled task (``wake_soon``); several calls
+        before it runs share it, as Effect's ``scheduleReleaseTaker``."""
+        if self._soon or not self._waiters:
+            return
+        self._soon = True
+
+        def flush() -> None:
+            self._soon = False
+            self.notify_ready()
+
+        wake_soon(flush)
 
     def notify_all(self) -> None:
         waiters, self._waiters = self._waiters, deque()

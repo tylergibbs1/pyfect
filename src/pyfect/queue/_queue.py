@@ -99,8 +99,11 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
             case st.Open(takers=takers):
                 if self._free(takers) > 0 or self._strategy == "sliding":
                     # As Effect's ``offerUnsafe``: a full sliding queue
-                    # swaps its oldest item for this one, even at capacity 0.
-                    self._push([item], takers, keep_at_least=1)
+                    # swaps its oldest item for this one, even at capacity 0,
+                    # and a rendezvous queue hands the item to its waiting
+                    # takers at once.
+                    rendezvous = self._capacity == 0 and self._strategy != "sliding"
+                    self._push([item], takers, keep_at_least=1, now=rendezvous)
                     return True
                 return False
             case st.Closing() | st.Done():
@@ -157,7 +160,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
             case st.Open(takers=takers, offers=offers, awaiters=awaiters):
                 self._state = st.Closing(takers, offers, awaiters, cause)
                 # A batch take waiting for its minimum can now drain the rest.
-                takers.notify_ready()
+                takers.notify_ready_soon()
                 self._finish_if_drained()
                 return True
             case st.Closing() | st.Done():
@@ -358,19 +361,30 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
             return len(takers)
         return max(0, self._capacity - len(self._items))
 
-    def _push(self, batch: list[A], takers: WaitList, *, keep_at_least: int = 0) -> None:
+    def _push(
+        self, batch: list[A], takers: WaitList, *, keep_at_least: int = 0, now: bool = False
+    ) -> None:
         """Add ``batch``; a sliding queue then drops its oldest items down to
-        its capacity (or ``keep_at_least``, if larger)."""
+        its capacity (or ``keep_at_least``, if larger). Takers are woken in a
+        scheduled task (Effect's ``scheduleReleaseTaker``), so an offerer
+        parks what did not fit before a taker makes room; ``now`` wakes
+        them at once (Effect's rendezvous offer)."""
         self._items.extend(batch)
         if self._strategy == "sliding" and self._capacity is not None:
             for _ in range(len(self._items) - max(self._capacity, keep_at_least)):
                 self._items.popleft()
-        takers.notify_ready()
+        if now:
+            takers.notify_ready()
+        else:
+            takers.notify_ready_soon()
 
     def _shut(self, cause: Cause[E], offers: deque[st.Offer[A]]) -> None:
         self._items.clear()
         self._finish(cause)
-        for entry in offers:
+        # A rejected offerer runs at once and may touch the queue again.
+        rejected = list(offers)
+        offers.clear()
+        for entry in rejected:
             st.reject(entry)
 
     def _park(self, offers: deque[st.Offer[A]], entry: st.Offer[A]) -> Effect[None]:
@@ -455,7 +469,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         match self._state:
             case st.Open(offers=offers) | st.Closing(offers=offers):
                 if self._capacity is not None:
-                    st.admit(offers, self._items, self._capacity - len(self._items))
+                    st.admit(offers, self._items, self._capacity)
                 self._finish_if_drained()
             case st.Done():
                 pass

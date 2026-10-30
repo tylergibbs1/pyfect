@@ -14,7 +14,7 @@ group hand ``self`` to the primitives, which take an ``Effect``.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Final, Generic, Never, TypeVar, cast, final
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Generic, Never, TypeVar, cast, final
 
 from pyfect.cause import Cause
 from pyfect.exit import Failure, Success
@@ -42,9 +42,14 @@ type Step = Effect[Any, Any, Any] | Success[Any] | Failure[Any] | _SuspendMarker
 
 
 class Frame:
-    """A continuation on the fiber's stack. Defaults pass results through."""
+    """A continuation on the fiber's stack. Defaults pass results through.
+
+    A frame that claims state (takes a permit) and returns the result as an
+    ``Exit`` sets ``claims``: the loop then hands that exit on with no pause
+    in between, as it does for a step's exit."""
 
     __slots__ = ()
+    claims: ClassVar[bool] = False
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
         return Success(value)

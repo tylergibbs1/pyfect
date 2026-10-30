@@ -269,7 +269,7 @@ def _check_backpressure():
     result2 = yield from odds.run_collect()
     yield from fiber.await_exit()
     result3 = yield from ref.get()
-    assert result1 == [4, 2, 0]
+    assert result1 == [2, 0]
     assert blocked
     assert result2 == [1, 3, 5]
     assert result3 == [4, 2, 0]

@@ -23,7 +23,7 @@ def test_an_external_interrupt_keeps_a_worker_defect():
                 return started.succeed(None).and_then(fx.callback(lambda _: fx.die(defect)))
             return fx.never
 
-        fiber = yield from fx.for_each([0, 1], work, concurrency=2).fork()
+        fiber = yield from fx.for_each([0, 1], work, concurrency=2).fork(start_immediately=True)
         yield from started.wait()
         yield from fiber.interrupt()
         return (yield from fiber.await_exit())
@@ -50,7 +50,7 @@ def test_an_external_interrupt_keeps_a_recorded_sibling_failure():
                 return started.succeed(None).and_then(fx.never).on_interrupt(cleanup)
             return started.wait().and_then(fx.fail("sibling failure"))
 
-        fiber = yield from fx.for_each([0, 1], work, concurrency=2).fork()
+        fiber = yield from fx.for_each([0, 1], work, concurrency=2).fork(start_immediately=True)
         yield from cleanup_started.wait()
         fiber.interrupt_as_unsafe(None)
         yield from release.succeed(None)
@@ -72,7 +72,7 @@ def test_an_external_interrupt_waits_for_every_worker_to_finish():
 
     @fx.gen
     def program():
-        fiber = yield from fx.for_each([0, 1], work, concurrency=2).fork()
+        fiber = yield from fx.for_each([0, 1], work, concurrency=2).fork(start_immediately=True)
         yield from fx.yield_now()
         interrupter = yield from fiber.interrupt().fork()
         yield from fx.testing.adjust(2)

@@ -109,7 +109,7 @@ def merge_all(
                 worker = (
                     child_pull.tap(lambda _: yield_now())
                     .flat_map(queue.offer)
-                    .forever()
+                    .forever(disable_yield=True)
                     .on_error(finished)
                 )
 
@@ -128,7 +128,7 @@ def merge_all(
             return queue.fail_cause(cause).as_void()
 
         def with_pull(pull: AnyPull) -> Effect[AnyPull, Any, Any]:
-            loop = _Suspend(lambda: next_channel(pull)).flat_map(start).forever()
+            loop = _Suspend(lambda: next_channel(pull)).flat_map(start).forever(disable_yield=True)
             return fork_in(loop.catch_cause(stopped), forked).as_(queue.take())
 
         return (
@@ -224,7 +224,7 @@ def buffer(self: AnyChannel, capacity: Capacity, strategy: Strategy, *, array: b
         offer: Callable[[Any], Effect[Any]] = queue.offer_all if array else queue.offer
 
         def with_pull(pull: AnyPull) -> Effect[AnyPull]:
-            run = pull.flat_map(offer).forever().on_error(queue.fail_cause)
+            run = pull.flat_map(offer).forever(disable_yield=True).on_error(queue.fail_cause)
             take = queue.take_all().map(tuple) if array else queue.take()
             return fork_in(run, scope).as_(take)
 

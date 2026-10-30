@@ -155,7 +155,8 @@ def debounce(self: AnyStream, duration: Duration) -> AnyStream_:
                 ended.open_unsafe()
                 return _VOID
 
-            yield pulling.when_open(pull).flat_map(got).forever().on_error(failed).fork_in(scope)
+            producer = pulling.when_open(pull).flat_map(got).forever(disable_yield=True)
+            yield producer.on_error(failed).fork_in(scope)
 
             def take_last(chunk: Chunk) -> AnyEffect:
                 nonlocal last

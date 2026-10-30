@@ -173,8 +173,10 @@ class Hub[A]:
         publishers that are done."""
         done: list[Publish[A]] = []
         while True:
-            for reader in self.readers:
-                reader.dispatch()
+            # A woken take runs at once and may subscribe or unsubscribe.
+            for reader in list(self.readers):
+                if not reader.unsubscribed:
+                    reader.dispatch()
             if not self._admit(done):
                 break
         for entry in done:
@@ -182,7 +184,7 @@ class Hub[A]:
 
     def wake_takers(self) -> None:
         """The hub ended: every waiting take looks again."""
-        for reader in self.readers:
+        for reader in list(self.readers):
             reader.wake_all()
 
     def _admit(self, done: list[Publish[A]]) -> bool:

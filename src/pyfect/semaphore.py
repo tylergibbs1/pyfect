@@ -15,10 +15,12 @@ from pyfect._core import (
     _Succeed,
     _Suspend,
     _Sync,
+    run_known,
     uninterruptible_mask,
 )
 from pyfect._effect_args import require_effect
 from pyfect._effect_base import Frame, Step
+from pyfect._waiters import wake_soon
 from pyfect.option import Option, Some
 
 if TYPE_CHECKING:
@@ -47,6 +49,11 @@ def _no_resume(_: Effect[None]) -> None:
     return None
 
 
+def _resume_all(waiters: list[_Waiter]) -> None:
+    for waiter in waiters:
+        waiter.resume(_Succeed(None))
+
+
 def _as_is[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:
     return effect
 
@@ -61,6 +68,8 @@ class _Turn(Frame):
     wake-up on, so the permits counted for it are never stranded."""
 
     __slots__ = ("checked", "semaphore", "then", "waiter")
+    # The retry takes the permits here and returns them as an exit.
+    claims = True
 
     def __init__(
         self, semaphore: Semaphore, waiter: _Waiter, then: Callable[[], Effect[Any, Any, Any]]
@@ -76,7 +85,9 @@ class _Turn(Frame):
             fiber._push(self)
             return _CHECKPOINT
         self.semaphore._settle(self.waiter)
-        return self.then()
+        # The retry may take the permits now: they reach the caller with no
+        # pause in between (``claims``), or a yield could strand them.
+        return run_known(self.then())
 
     def _on_failure(self, cause: Any, fiber: Fiber[Any, Any]) -> Step:
         if self.waiter.woken:
@@ -175,7 +186,7 @@ class Semaphore:
 
         def run() -> None:
             self._permits = permits
-            self._wake()
+            self._wake(soon=True)
 
         return _Sync(run)
 
@@ -216,7 +227,7 @@ class Semaphore:
 
     def _release(self, n: int) -> int:
         self._taken -= n
-        self._wake()
+        self._wake(soon=True)
         return self._free
 
     # --- waiting ---------------------------------------------------------------
@@ -231,9 +242,11 @@ class Semaphore:
 
         return register
 
-    def _wake(self) -> None:
+    def _wake(self, *, soon: bool = False) -> None:
         """Wake, in order, the waiters the free permits not yet counted for
-        a woken waiter can serve."""
+        a woken waiter can serve. The permits are counted for them now; with
+        ``soon`` (a release or resize, as Effect's ``releaseUnsafe``) they
+        are resumed in a scheduled task, after the releasing step."""
         spare = self._free - self._waking
         waiters = self._waiters
         woken: list[_Waiter] = []
@@ -249,8 +262,12 @@ class Semaphore:
         for waiter in woken:
             waiter.woken = True
             self._waking += waiter.n
-        for waiter in woken:
-            waiter.resume(_Succeed(None))
+        if not woken:
+            return
+        if soon:
+            wake_soon(lambda: _resume_all(woken))
+        else:
+            _resume_all(woken)
 
     def _settle(self, waiter: _Waiter) -> None:
         """A woken waiter retries (or gives up): its permits are no longer

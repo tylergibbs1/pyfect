@@ -824,9 +824,14 @@ def test_wakes_the_next_waiter_when_a_woken_waiter_is_interrupted_before_it_take
     pool = yield from fx.Pool.make(fx.succeed("resource"), size=1)
     owner = fx.CloseableScope()
     yield from _in(owner, pool.get())
-    # `first` runs on its own task queue: once woken, its resume waits there.
+    # Effect lets `first` yield once as soon as it is woken (a custom
+    # ``shouldYield``). Here `first` yields after every step onto its own
+    # task queue: run until it parks, then once woken it pauses there.
     held = TaskQueue()
-    first = yield from held.provide(pool.use(fx.succeed)).fork(start_immediately=True)
+    first = yield from held.provide(_with_budget(pool.use(fx.succeed), 1)).fork(
+        start_immediately=True
+    )
+    yield from held.run_all()
     second = yield from pool.use(fx.succeed).fork(start_immediately=True)
     yield from owner.close(_DONE)
     yield from fx.yield_now()
@@ -835,6 +840,10 @@ def test_wakes_the_next_waiter_when_a_woken_waiter_is_interrupted_before_it_take
     assert (yield from second.join()) == "resource"
     assert _interrupted((yield from first.await_exit()))
     assert pool.state.usage == 0
+
+
+def _with_budget[A, E](eff: fx.Effect[A, E], budget: int) -> fx.Effect[A, E]:
+    return eff.pipe(fx.provide_service(fx.MaxOpsBeforeYield, budget))
 
 
 def _drain_while[A](held: TaskQueue, eff: fx.Effect[A]) -> fx.Effect[A]:

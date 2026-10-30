@@ -276,7 +276,9 @@ def test_take_interruption_does_not_leak_permits():
     yield from fx.yield_now()
     yield from queue.run_all()
 
-    yield from sem.release(1)
+    # As in Effect, the release wakes the waiter in a task on the
+    # releasing fiber's scheduler.
+    yield from queue.provide(sem.release(1))
     assert waiter.poll_unsafe() is None
 
     queue.run_next()

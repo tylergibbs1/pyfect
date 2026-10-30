@@ -81,21 +81,21 @@ def take_offer[A](offers: deque[Offer[A]]) -> A:
             return item
 
 
-def admit[A](offers: deque[Offer[A]], buffer: deque[A], free: int) -> None:
-    """Move up to ``free`` parked items into ``buffer``, oldest first,
-    resuming each offer once all of its items are in."""
-    while offers and free > 0:
+def admit[A](offers: deque[Offer[A]], buffer: deque[A], capacity: int) -> None:
+    """Move parked items into ``buffer`` while it holds fewer than
+    ``capacity``, oldest first, resuming each offer once all of its items
+    are in. A resumed offerer runs at once and may offer again, so the free
+    space is read again after each resume (Effect's ``releaseCapacity``)."""
+    while offers and len(buffer) < capacity:
         match offers[0]:
             case OfferOne(item=item, resume=resume):
                 buffer.append(item)
-                free -= 1
                 offers.popleft()
                 resume(_Succeed(True))
             case OfferMany() as entry:
-                n = min(free, len(entry.items) - entry.admitted)
+                n = min(capacity - len(buffer), len(entry.items) - entry.admitted)
                 buffer.extend(entry.items[entry.admitted : entry.admitted + n])
                 entry.admitted += n
-                free -= n
                 if entry.admitted < len(entry.items):
                     return
                 offers.popleft()

@@ -102,17 +102,16 @@ def test_sliding_publish_drops_the_oldest_and_unsafe_publish_does_not_slide():
 
 
 @testing.effect
-def test_sliding_publish_all_slides_only_a_full_store():
-    """pyfect's own (Effect gives ``[1, [4]]``): Effect slides before each
-    surplus message even when a waiting subscriber just made room, since its
-    subscriber has already run by then. A subscriber here reads later, so
-    sliding an unfull store would lose messages Effect delivers."""
+def test_sliding_publish_all_slides_before_each_surplus_message():
+    """Effect 4.0.6 under Node gives ``[1, [4]]``: its ``SlidingStrategy``
+    slides before each surplus message, even when a waiting subscriber
+    has just read one and made room."""
     pubsub = yield from PubSub[int].sliding(2)
     sub = yield from pubsub.subscribe()
     taker = yield from sub.take().fork(start_immediately=True)
     yield from pubsub.publish_all([1, 2, 3, 4])
     assert (yield from taker.join()) == 1
-    assert (yield from sub.take_all()) == [3, 4]
+    assert (yield from sub.take_all()) == [4]
 
 
 @testing.effect

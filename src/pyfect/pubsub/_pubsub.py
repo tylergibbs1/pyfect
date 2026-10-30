@@ -194,15 +194,12 @@ class PubSub[A]:
         return canceler
 
     def _slide_in(self, items: list[A]) -> bool:
-        """Publish each item, dropping the oldest stored message when the
-        store is full (Effect's ``SlidingStrategy``). Effect slides before
-        every item; a woken subscriber there has already read what the
-        publish freed, so it loses nothing. Here it reads later, so only a
-        full store slides."""
+        """Publish each item after dropping the oldest stored message, as
+        Effect's ``SlidingStrategy`` does (also when a waiting subscriber
+        has just read one and made room)."""
         atomic = self._hub.atomic
         for item in items:
-            if atomic.is_full():
-                atomic.slide()
+            atomic.slide()
             atomic.publish(item)
         self._hub.deliver()
         return True

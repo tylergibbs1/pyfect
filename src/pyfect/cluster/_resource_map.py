@@ -112,8 +112,11 @@ class ResourceMap[K: Hashable, A, E]:
                 return entry.deferred.done(ex).and_then(entry.scope.close(ex))
 
             def start(fiber: Fiber[Any, Any]) -> Effect[A, E]:
+                # Effect's ``runForkWith`` runs the lookup at once.
                 entry.fiber = fiber._fork(
-                    self._lookup(key, entry.scope).on_exit(on_exit), daemon=True
+                    self._lookup(key, entry.scope).on_exit(on_exit),
+                    daemon=True,
+                    start_immediately=True,
                 )
                 return self._await_entry(key, entry, restore)
 

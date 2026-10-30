@@ -83,7 +83,9 @@ def _group_by(
 
             make_groups = RcMap.make(lookup, idle_time_to_live=ttl)
             groups: Groups = yield make_groups.pipe(provide_service(Scope, forked))
-            run = _FlatMap(pull, lambda chunk: offer_chunk(chunk, groups, open_queues)).forever()
+            run = _FlatMap(pull, lambda chunk: offer_chunk(chunk, groups, open_queues)).forever(
+                disable_yield=True
+            )
             yield fork_in(run.catch_cause(out.fail_cause), scope)
             return out.take_all().map(tuple)
 

@@ -110,14 +110,17 @@ class Pings(RpcGroup):
 @testing.effect
 def test_a_socket_connection_defect_fails_the_calls_in_flight():
     """Effect's socket protocol taps every cause of a connection, so a
-    defect (here in ``onConnect``) fails the calls waiting with an
-    ``RpcClientDefect`` instead of leaving them waiting."""
+    defect (here in ``onConnect``, once a call is in flight) fails the calls
+    waiting with an ``RpcClientDefect`` instead of leaving them waiting.
+    (Checked against Effect 4.0.6: a defect before the client runs reaches
+    no client, there as here.)"""
+    gate = fx.Deferred[None]()
     socket = socket_make(
         effect.succeed(Reader(effect.never)),
         effect.succeed(Writer(lambda _d: effect.succeed(None), lambda _c: effect.succeed(None))),
     )
     hooks = rpc_client.ConnectionHooksService(
-        effect.die(RuntimeError("hook died")), effect.succeed(None)
+        gate.wait().and_then(effect.die(RuntimeError("hook died"))), effect.succeed(None)
     )
     protocol = yield from (
         rpc_client.make_protocol_socket()
@@ -128,7 +131,10 @@ def test_a_socket_connection_defect_fails_the_calls_in_flight():
     client = yield from rpc_client.make(Pings).pipe(
         effect.provide_service(rpc_client.ClientProtocol, protocol)
     )
-    error = yield from client.events().run_drain().flip()
+    calling = yield from client.events().run_drain().flip().fork()
+    yield from fx.yield_now()
+    yield from gate.succeed(None)
+    error = yield from calling.join()
     assert isinstance(error, RpcClientError)
     assert isinstance(error.reason, RpcClientDefect)
     assert error.reason.message == "Unknown socket error"

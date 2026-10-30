@@ -980,12 +980,14 @@ def test_delivers_a_pending_interrupt_when_interruptible_mask_restores_interrupt
 
     @fx.gen
     def program():
-        masked = yield from fx.Deferred[None].make()
-        resume = yield from fx.Deferred[None].make()
+        # Latches, as in Effect: ``open`` wakes its waiters in a scheduled
+        # task, so "resumed" is logged before the child goes on.
+        masked = yield from fx.Latch.make()
+        resume = yield from fx.Latch.make()
 
         @fx.gen
         def child_body():
-            yield from masked.succeed(None)
+            yield from masked.open()
             yield from resume.wait()
             return (yield from fx.interruptible_mask(lambda _restore: body()))
 
@@ -995,7 +997,7 @@ def test_delivers_a_pending_interrupt_when_interruptible_mask_restores_interrupt
         yield from fx.sync(lambda: child.interrupt_as_unsafe(123))
         events.append("interrupted")
         polled_early = child.poll_unsafe()
-        yield from resume.succeed(None)
+        yield from resume.open()
         events.append("resumed")
         yield from fx.yield_now()
         yield from fx.yield_now()

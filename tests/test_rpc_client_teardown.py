@@ -163,9 +163,11 @@ def test_responses_for_a_closed_client_are_not_kept() -> None:
 
 
 def test_http_responses_for_a_closed_client_are_not_kept() -> None:
-    """An HTTP exchange started by a call outside the client's scope keeps
-    writing what the server streams after the client closed; the protocol
-    drops it (the HTTP transport has no ``Interrupt`` to stop the server)."""
+    """An HTTP exchange sent from outside the client's own fiber keeps
+    writing what the server streams after the client stopped running; the
+    protocol drops it (the HTTP transport has no ``Interrupt`` to stop the
+    server). The RPC client interrupts its own requests when it closes, so
+    this drives the protocol directly."""
     messages: dict[str, _Message] = {}
 
     def body():
@@ -189,15 +191,12 @@ def test_http_responses_for_a_closed_client_are_not_kept() -> None:
                 .pipe(layer.provide_merge(layer.succeed(HttpClient, http_client.make(send))))
             )
         )
-        client_scope = CloseableScope()
-        client = (
-            yield from rpc_client.make(Calls, ClientOptions(generate_request_id=lambda: "stream"))
-            .pipe(effect.provide_service(ClientProtocol, protocol))
-            .pipe(effect.provide_service(Scope, client_scope))
-        )
-        yield from client.events().run_drain().ignore().pipe(fx.scoped).fork()
+        running = yield from protocol.run(1, lambda _: effect.void).fork()
+        request: dict[str, Any] = {"_tag": "Request", "id": "stream", "tag": "Events"}
+        request |= {"payload": None, "headers": []}
+        exchange = yield from protocol.send(1, request).ignore().fork()
         yield from posted.take()
-        yield from client_scope.close(fx.exit.succeed(None))
+        yield from running.interrupt()
         refs = [
             _late(messages, f"chunk{n}", {"_tag": "Chunk", "requestId": "stream", "values": ["x"]})
             for n in range(5)
@@ -207,7 +206,10 @@ def test_http_responses_for_a_closed_client_are_not_kept() -> None:
         for _ in range(50):
             yield from effect.yield_now()
         gc.collect()
-        return [ref() is not None for ref in refs]
+        kept = [ref() is not None for ref in refs]
+        yield from frames.shutdown()
+        yield from exchange.await_exit()
+        return kept
 
     kept = fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die())
     assert kept == [False] * len(kept)

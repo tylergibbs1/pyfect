@@ -2,10 +2,10 @@
 
 A waiter is woken to retry, or handed an acquisition failure; it stays in
 line until it takes an item or leaves, so a woken waiter keeps its place
-and later borrowers queue behind it. Waking goes one waiter per scheduler
-task: in Effect a woken fiber runs inside the wake (its resume is
-synchronous), so whatever it does, such as interrupting the waiter behind
-it, happens before the next waiter is woken.
+and later borrowers queue behind it. As in Effect, waking runs in one task
+scheduled on the waking fiber's scheduler, and each woken fiber runs at
+once (resumes are synchronous), so whatever it does, such as interrupting
+the waiter behind it, happens before the next waiter is woken.
 """
 # pyright: reportPrivateUsage=false
 
@@ -81,32 +81,32 @@ class PoolWaiters:
 
     def wake(self, scheduler: Scheduler, count: int, available: Callable[[], bool]) -> None:
         """Wake up to ``count`` sleeping waiters, in order, while
-        ``available()`` holds."""
+        ``available()`` holds (Effect's ``wakeWaiters``)."""
         if not self._line:
             return
 
-        def wake(remaining: int) -> None:
-            waiter = self.first_sleeping() if available() else None
-            if waiter is None:
-                return
-            waiter()
-            if remaining > 1:
-                scheduler.schedule(lambda: wake(remaining - 1))
+        def wake() -> None:
+            # The live line: a waiter that leaves meanwhile uses up no wake.
+            remaining = count
+            for waiter in list(self._line):
+                if remaining <= 0 or not available():
+                    break
+                if waiter in self._line and waiter.is_sleeping:
+                    remaining -= 1
+                    waiter()
 
-        scheduler.schedule(lambda: wake(count))
+        scheduler.schedule(wake)
 
     def wake_all(self, scheduler: Scheduler) -> None:
-        """Wake everyone in line now to retry."""
-        waiters = list(self._line)
-        if not waiters:
+        """Wake everyone in line now to retry (Effect's ``wakeAll``)."""
+        if not self._line:
             return
 
-        def wake(index: int) -> None:
-            waiters[index]()
-            if index + 1 < len(waiters):
-                scheduler.schedule(lambda: wake(index + 1))
+        def wake() -> None:
+            for waiter in list(self._line):
+                waiter()
 
-        scheduler.schedule(lambda: wake(0))
+        scheduler.schedule(wake)
 
     def release_all(self) -> None:
         """Empty the line, waking everyone at once (the pool shuts down)."""

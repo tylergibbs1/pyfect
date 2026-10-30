@@ -62,7 +62,7 @@ def map_effect_concurrent(
                 )
                 return fork_in(handled, forked, start_immediately=True).as_void()
 
-            loop = permits.take(1).and_then(pull).flat_map(run).forever()
+            loop = permits.take(1).and_then(pull).flat_map(run).forever(disable_yield=True)
             stopped = loop.catch_cause(
                 lambda cause: permits.with_permits(results.fail_cause(cause), n - 1)
             )
@@ -97,12 +97,12 @@ def map_effect_concurrent(
                 joins.take()
                 .flatten()
                 .flat_map(results.offer)
-                .forever()
+                .forever(disable_yield=True)
                 .catch_cause(results.fail_cause)
             )
             producer = (
                 pull.flat_map(run)
-                .forever()
+                .forever(disable_yield=True)
                 .catch_cause(
                     lambda cause: joins.offer(_FailCause(cause)).and_then(joins.fail_cause(cause))
                 )

@@ -21,7 +21,13 @@ Effect (effect.website, v4 semantics) for Python. Python >= 3.13, pyright strict
 
 ## Runtime rules
 
-- Fibers never block. Waiting = `_Callback` + resume; resumes go through the scheduler.
+- Fibers never block. Waiting = `_Callback` + resume. As in Effect, a resume, an interrupt or
+  a `start_immediately` fork made on the run's own thread runs the fiber at once, nested in the
+  caller (up to `_MAX_NESTED_RUNS` deep, then right after the innermost run, so it stays
+  stack safe); from other threads it goes through the scheduler. Wakes Effect defers to a
+  scheduled task (Semaphore release, Queue offers, Pool wakes) use `wake_soon` /
+  `WaitList.notify_ready_soon` (`_waiters.py`). Pinned by `tests/oracle/test_synchronous_resume.py`;
+  the register/resume race under free-threaded 3.14t by `tests/test_free_threaded.py`.
 - Woken waiters retry; never hand a value to a parked fiber (see `_waiters.py`).
 - New primitives implement `_step`; continuation frames implement `_on_success`/`_on_failure`.
   The loop in `_fiber.py` must stay ignorant of specific primitives.
@@ -29,8 +35,13 @@ Effect (effect.website, v4 semantics) for Python. Python >= 3.13, pyright strict
   from `Fiber._drain`.
 - Interrupts from the fiber's own scheduler thread are delivered synchronously (Effect's
   `interruptUnsafe`); from other threads they are scheduled.
-- A `_Suspend` thunk that claims state (takes an item, a permit) must return the result in
-  the same thunk; an already-decided result runs in the same step, so no yield can lose it.
+- A thunk or frame that claims state (takes an item, a permit) returns the result in the same
+  step, as an `Exit` or through `run_known(...)`, never as an effect for a later step; a frame
+  that does so (or passes such a result straight on) sets `claims = True`. The loop never
+  pauses (step budget) between a step's `Exit`, or a `claims` frame's, and its continuation,
+  so no yield or interrupt can lose an already-decided result. `tests/test_decided_results.py`
+  interrupts every claiming primitive at each yield, also with every continuation a possible
+  pause, and fails if one breaks this; add new claiming primitives to its cases.
 - User callbacks (finalizers, `use`, `on_exit` functions) run through `_core._call_user`, so a
   raise becomes a Die where it happens.
 

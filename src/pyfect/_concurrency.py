@@ -129,14 +129,12 @@ def _for_each_concurrent[T, B, E, R](
                 results[i] = yield from f(items[i])
 
         def register(resume: Callable[[Effect[Any, Any, Any]], None]) -> Effect[None]:
-            # Started at once, as in Effect, each as interruptible as the parent.
-            workers = [
-                parent._fork(
-                    _Gen(worker), daemon=False, start_immediately=True, uninterruptible="inherit"
-                )
-                for _ in range(min(limit, n))
-            ]
-            remaining = len(workers)
+            workers: list[Fiber[Any, Any]] = []
+            remaining = 0
+            forking = True
+
+            def result() -> Effect[Any, Any, Any]:
+                return _Succeed(results) if failure is None else _FailCause(failure)
 
             def observer(ex: Exit[Any, Any]) -> None:
                 # Record first: interrupting siblings finishes them (and
@@ -150,11 +148,27 @@ def _for_each_concurrent[T, B, E, R](
                         failure = ex.cause
                     else:
                         failure = _with_late_failure(failure, ex.cause)
-                if remaining == 0:
-                    resume(_Succeed(results) if failure is None else _FailCause(failure))
+                if remaining == 0 and not forking:
+                    resume(result())
                 elif failed_first:
                     for w in workers:
                         w.interrupt_as_unsafe(parent.id, parent._interruptor_annotations())
+
+            # Started at once, as in Effect, each as interruptible as the
+            # parent; a worker runs before the next is forked, so once an
+            # item has failed no further worker starts.
+            for _ in range(min(limit, n)):
+                if stopped or next_index >= n:
+                    break
+                w = parent._fork(
+                    _Gen(worker), daemon=False, start_immediately=True, uninterruptible="inherit"
+                )
+                workers.append(w)
+                remaining += 1
+                w.add_observer_unsafe(observer)
+            forking = False
+            if remaining == 0:
+                resume(result())
 
             def cancel() -> Effect[None]:
                 # Interrupted from outside: report what the workers did too.
@@ -167,8 +181,6 @@ def _for_each_concurrent[T, B, E, R](
             def report() -> Effect[None]:
                 return _Succeed(None) if failure is None else _FailCause(failure)
 
-            for w in workers:
-                w.add_observer_unsafe(observer)
             return _Suspend(cancel)
 
         return _Callback(register)
@@ -182,9 +194,8 @@ def _for_each_concurrent[T, B, E, R](
 def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Effect[Any, Any, Any]:
     def body(parent: Fiber[Any, Any]) -> Effect[Any, Any, Any]:
         def register(resume: Callable[[Effect[Any, Any, Any]], None]) -> Effect[None]:
-            # Started at once, as in Effect: they run before anything else.
-            fibers = [parent._fork(e, daemon=False, start_immediately=True) for e in effects]
-            remaining = len(fibers)
+            fibers: list[Fiber[Any, Any]] = []
+            remaining = len(effects)
             decided = False
             causes: list[Cause[Any]] = []
 
@@ -196,15 +207,19 @@ def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Eff
                         return
                     if isinstance(ex, Success) or first_exit_wins:
                         decided = True
-                        losers = [f for f in fibers if f is not me]
-                        # At once, so a loser that has not started never does.
-                        for loser in losers:
-                            loser.interrupt_as_unsafe(parent.id, parent._interruptor_annotations())
+
+                        def stop_losers() -> Effect[None]:
+                            # Read when the parent goes on, as Effect's
+                            # exit hook does: a loser still starting when
+                            # this one won (it may be what settled the
+                            # race) is in ``fibers`` by then.
+                            losers = [f for f in fibers if f is not me]
+                            return interrupt_all(
+                                losers, parent.id, parent._interruptor_annotations()
+                            )
+
                         resume(
-                            _SetInterruptible(
-                                interrupt_all(losers, parent.id, parent._interruptor_annotations()),
-                                False,
-                            ).and_then(_FromExit(ex))
+                            _SetInterruptible(_Suspend(stop_losers), False).and_then(_FromExit(ex))
                         )
                         return
                     causes.append(ex.cause)
@@ -214,7 +229,13 @@ def _race(effects: list[Effect[Any, Any, Any]], *, first_exit_wins: bool) -> Eff
 
                 return observer
 
-            for f in fibers:
+            # Started at once, as in Effect: each runs before the next is
+            # forked, and once one has decided the race no other starts.
+            for e in effects:
+                if decided:
+                    break
+                f = parent._fork(e, daemon=False, start_immediately=True)
+                fibers.append(f)
                 f.add_observer_unsafe(observer_for(f))
             return interrupt_all(fibers, parent.id, parent._interruptor_annotations())
 

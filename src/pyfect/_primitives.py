@@ -73,6 +73,16 @@ def known_exit[A, E](eff: Effect[A, E, Any]) -> Exit[A, E] | None:
     return None
 
 
+def run_known(eff: Effect[Any, Any, Any]) -> Step:
+    """``eff``'s outcome if it is nothing but that (``known_exit``), else
+    ``eff``. A step or continuation that has just claimed state returns
+    this, so the claimed result reaches its continuation in the same step:
+    returned as an effect, it would run in a later step, and a yield in
+    between could let an interrupt drop it."""
+    ex = known_exit(eff)
+    return eff if ex is None else ex
+
+
 @final
 class _Sync[A](Effect[A, Never, Never]):
     """Run a side-effecting thunk. If it raises, that is a defect."""
@@ -99,10 +109,7 @@ class _Suspend[A, E, R](Effect[A, E, R]):
         # A thunk that has already decided its result (a queue take, a permit
         # grab) hands it on in this same step: as a separate step it could be
         # parked at a yield, where an interrupt would drop it.
-        nxt = self.thunk()
-        if isinstance(nxt, _Succeed | _FailCause | _FromExit):
-            return nxt._step(fiber)
-        return nxt
+        return run_known(self.thunk())
 
 
 @final

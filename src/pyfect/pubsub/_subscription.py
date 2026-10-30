@@ -195,6 +195,8 @@ class _Collect[A, X](Frame):
     before collecting), leave the message to the next take."""
 
     __slots__ = ("again", "hub", "reader", "then", "ticket")
+    # Collecting claims the message; it reaches the caller with no pause.
+    claims = True
 
     def __init__(
         self,

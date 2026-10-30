@@ -158,9 +158,17 @@ class Effect(
         repeated = for_each([self] * n, _identity, concurrency=concurrency)
         return repeated.as_void() if discard else repeated
 
-    def forever(self) -> Effect[Never, E_co, R_co]:
-        loop: Effect[Never, E_co, R_co] = _Suspend(lambda: _FlatMap(self, lambda _: loop))
-        return loop
+    def forever(self, *, disable_yield: bool = False) -> Effect[Never, E_co, R_co]:
+        """Run this effect again and again, until it fails. As in Effect,
+        the fiber yields after each run (so a loop of steps that never wait
+        lets other fibers in between), unless ``disable_yield``."""
+        if disable_yield:
+            loop: Effect[Never, E_co, R_co] = _Suspend(lambda: _FlatMap(self, lambda _: loop))
+            return loop
+        yielding: Effect[Never, E_co, R_co] = _Suspend(
+            lambda: _FlatMap(self, lambda _: _FlatMap(_YieldNow(), lambda _: yielding))
+        )
+        return yielding
 
     def flatten[B, E2, R2](
         self: Effect[Effect[B, E2, R2], E_co, R_co],
@@ -272,6 +280,7 @@ from pyfect._primitives import (  # noqa: E402
     _WithFiber,
     _YieldNow,
     interruptible_mask,
+    run_known,
     uninterruptible_mask,
 )
 
@@ -310,5 +319,6 @@ __all__ = [
     "_succeed_none",
     "_to_none",
     "interruptible_mask",
+    "run_known",
     "uninterruptible_mask",
 ]

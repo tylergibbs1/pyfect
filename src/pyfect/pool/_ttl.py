@@ -52,7 +52,7 @@ def creation_ttl(ttl: Seconds) -> Effect[Strategy[Any, Any]]:
 
                 return _Suspend(body)
 
-            return queue.take().flat_map(process).forever()
+            return queue.take().flat_map(process).forever(disable_yield=True)
 
         def on_acquire(item: _Item) -> Effect[None]:
             def body() -> Effect[None]:
@@ -97,7 +97,7 @@ def usage_ttl(ttl: Seconds) -> Effect[Strategy[Any, Any]]:
                 return pool._invalidate_item(oldest).and_then(process)
 
             process: Effect[None] = _Suspend(retire)
-            return process.delay(ttl).forever()
+            return process.delay(ttl).forever(disable_yield=True)
 
         def on_acquire(_: _Item) -> Effect[None]:
             return _VOID

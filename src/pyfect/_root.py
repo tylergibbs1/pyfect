@@ -32,7 +32,7 @@ def start_root(fiber: Fiber[Any, Any], eff: Effect[Any, Any, Any], *, now: bool 
     running), it runs at once, up to its first wait, before this returns
     (Effect evaluates it synchronously); otherwise it is scheduled."""
     if now or current_run_scheduler() is fiber._run_scheduler:
-        fiber._drain((fiber, eff), unwinding=False)
+        fiber._evaluate(eff)
     else:
         fiber._start(eff)
 

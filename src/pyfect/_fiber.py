@@ -3,32 +3,39 @@
 A fiber runs one effect. It keeps an explicit stack of continuation frames
 (so deep chains never hit Python's recursion limit) and runs on a
 ``Scheduler``. It never blocks: when it has to wait, it registers a resume
-callback and parks (``SUSPEND``); the callback reschedules it.
+callback and parks (``SUSPEND``).
+
+Resumes follow Effect's ``evaluate``: a resume, an interrupt or a start
+called on the thread running the fiber's run runs the fiber at once,
+nested in the caller, up to its next wait or yield, before the call
+returns. A fork with ``start_immediately`` runs the child before the fork
+returns. Nesting is bounded (``_MAX_NESTED_RUNS``): deeper than that, the
+fiber runs right after the innermost running fiber's run instead, so a
+chain of wake-ups cannot overflow the stack. Calls from other threads go
+through the fiber's scheduler.
 
 Interruption follows Effect's rules:
 
 - Interrupting a fiber records an ``Interrupt`` at once when the caller is
-  a fiber of the same run (otherwise via the scheduler). If the
+  on the thread of the fiber's run (otherwise via the scheduler). If the
   fiber is interruptible and not running, it is unwound right away: a fiber
-  that has not started never runs its body, and a parked fiber has its wait
-  cancelled (running its canceler). A running fiber, including one that
-  interrupts itself, stops at its next step. A fiber whose resume is
-  already queued gets the interrupt after that resumed run, since in
-  Effect the resume would already have run.
+  that has not started never runs its body, a parked fiber has its wait
+  cancelled (running its canceler), and a fiber queued after a yield or a
+  step-budget pause is unwound instead of resuming. A running fiber,
+  including one that interrupts itself, stops at its next step. A fiber
+  whose resume another thread already queued gets the interrupt after that
+  resumed run, since in Effect the resume would already have run.
 - While interruptible and interrupted, the loop turns whatever comes next
   into a failure, so the stack unwinds. Recovery handlers are skipped;
-  finalizers run, because they run in uninterruptible regions.
+  finalizers run, because they run in uninterruptible regions. The exit a
+  step returns reaches its continuation with no pause in between, so a
+  result the step decided (a taken item, an applied update) is never
+  dropped by an interrupt landing at a yield.
 - Inside an uninterruptible region the interrupt waits until the region
   ends.
 
 Supervision: a fiber's children (from ``fork``) are interrupted and awaited
 before the fiber completes.
-
-Fibers run one after another (``_drive``), not nested inside one another;
-only an interrupt sent from the same thread unwinds its target inside the
-sender's run (``_unwind``), and a cascade from there is queued again. A
-child started immediately runs right after the forking fiber's current
-step, before anything else queued, and the forking fiber goes on after it.
 """
 # pyright: reportPrivateUsage=false
 
@@ -84,6 +91,11 @@ E_co = TypeVar("E_co", covariant=True, default=Never)
 # before the loop may yield.
 _INLINE_STEPS = 32
 
+# How many fiber runs may nest on one thread (a resume running the woken
+# fiber inside the resumer's step, and so on). Past it, a run waits for the
+# innermost one to finish, so the Python stack stays bounded.
+_MAX_NESTED_RUNS = 16
+
 _fiber_ids = itertools.count(1)
 _resume_lock = threading.Lock()
 
@@ -92,18 +104,18 @@ type _Run = tuple[Fiber[Any, Any], Step]
 
 
 class _Drain:
-    """The fiber runs of one run scheduler on this thread, one after
-    another: ``queue`` is what runs next, and ``first`` collects the runs
-    the current run hands over (children started immediately, then the
-    rest of the forking fiber), which go before everything queued. An
-    ``unwinding`` drain runs interrupted fibers inside the run that
-    interrupted them."""
+    """Fiber runs of one run scheduler on this thread, nested ``depth``
+    runs deep: the fiber running now, then ``queue``, the runs that came in
+    while it ran but could not nest any deeper. ``first`` collects the runs
+    the current run hands over that way (children started immediately,
+    then the rest of the forking fiber), which go before everything
+    queued."""
 
-    __slots__ = ("current", "first", "queue", "run_scheduler", "unwinding")
+    __slots__ = ("current", "depth", "first", "queue", "run_scheduler")
 
-    def __init__(self, run_scheduler: Scheduler, *, unwinding: bool) -> None:
+    def __init__(self, run_scheduler: Scheduler, depth: int) -> None:
         self.run_scheduler = run_scheduler
-        self.unwinding = unwinding
+        self.depth = depth
         self.current: Fiber[Any, Any] | None = None
         # Made on first use: most drains run one fiber once.
         self.queue: deque[_Run] | None = None
@@ -153,7 +165,12 @@ type _Phase = Literal["pending", "running", "idle"]
 
 class _Wait:
     """One suspension. ``resume`` is safe to call from any thread, any
-    number of times; only the first call counts."""
+    number of times; only the first call counts. ``done``, ``registering``
+    and ``sync_result`` change together under ``_resume_lock``: a resume
+    racing the end of registration on another thread (free-threaded
+    builds have no GIL to order them) either lands in ``sync_result``
+    before registration reads it, or sees registration over and resumes
+    the parked fiber."""
 
     __slots__ = ("canceler", "done", "fiber", "registering", "sync_result")
 
@@ -171,14 +188,36 @@ class _Wait:
             self.done = True
             return True
 
+    def end_registration(self) -> Effect[Any, Any, Any] | None:
+        """Registration is over; the effect a resume during it left."""
+        with _resume_lock:
+            self.registering = False
+            return self.sync_result
+
     def resume(self, effect: Effect[Any, Any, Any]) -> None:
-        if not self.claim():
-            return
-        if self.registering:
-            self.sync_result = effect
-            return
+        with _resume_lock:
+            if self.done:
+                return
+            self.done = True
+            if self.registering:
+                self.sync_result = effect
+                return
         fiber = self.fiber
-        fiber._scheduler.schedule(lambda: fiber._resume(self, effect))
+        if fiber._on_run_thread():
+            fiber._resume(self, effect)
+        else:
+            fiber._scheduler.schedule(lambda: fiber._resume(self, effect))
+
+
+class _Yielded:
+    """A run queued on the scheduler after a yield or a step-budget pause.
+    An interrupt takes it over (``Fiber._deliver_interrupt``); the queued
+    task then finds it gone and does nothing."""
+
+    __slots__ = ("step",)
+
+    def __init__(self, step: Step) -> None:
+        self.step = step
 
 
 class _ReturnExit(Frame):
@@ -218,6 +257,7 @@ class Fiber(Generic[A_co, E_co]):
         "_stack_frame",
         "_tracer_hook",
         "_waiting",
+        "_yielded",
         "id",
     )
 
@@ -244,6 +284,7 @@ class Fiber(Generic[A_co, E_co]):
         self._observers: list[Callable[[Exit[Any, Any]], None]] = []
         self._exit: Exit[Any, Any] | None = None
         self._waiting: _Wait | None = None
+        self._yielded: _Yielded | None = None
         self._phase: _Phase = "pending"
         self._set_context(context)
         if self._runtime_metrics is not None:
@@ -362,8 +403,7 @@ class Fiber(Generic[A_co, E_co]):
         scheduler. The interruption carries ``annotations`` (the
         interrupting fiber's ``InterruptorStackTrace``) and the frame this
         fiber is in (``StackTrace``)."""
-        run = self._run_scheduler
-        if current_run_scheduler() is run or (isinstance(run, Tracking) and run.runs_here()):
+        if self._on_run_thread():
             self._deliver_interrupt(by, annotations)
         else:
             self._scheduler.schedule(lambda: self._deliver_interrupt(by, annotations))
@@ -403,6 +443,13 @@ class Fiber(Generic[A_co, E_co]):
         self._runtime_metrics: FiberRuntimeMetricsService | None = view.runtime_metrics
         self._stack_frame: StackFrame | None = view.stack_frame
 
+    def _on_run_thread(self) -> bool:
+        """Whether this thread runs this fiber's run now: one of its fibers
+        is running here, or its scheduler is running tasks here. Resumes
+        and interrupts from here run the fiber at once."""
+        run = self._run_scheduler
+        return current_run_scheduler() is run or (isinstance(run, Tracking) and run.runs_here())
+
     def _interruptor_annotations(self) -> Context | None:
         """What an interruption this fiber sends records about it."""
         frame = self._stack_frame
@@ -429,6 +476,11 @@ class Fiber(Generic[A_co, E_co]):
     def _loop(self, start: Step) -> None:
         cur: Step = start
         ops = 0
+        # Whether ``cur`` is the exit a step (or a frame that ``claims``)
+        # just returned: a result it decided (a taken item, an applied
+        # update) reaches its continuation with no pause in between, where
+        # an interrupt could drop it.
+        decided = False
         while True:
             if self._interrupt is not None and self._interruptible:
                 cur = self._with_interrupt(cur, self._interrupt)
@@ -443,6 +495,7 @@ class Fiber(Generic[A_co, E_co]):
                     cur = cur._step(self) if hook is None else _run_hooked(hook, cur, self)
                 except BaseException as exc:
                     cur = self._raised(exc)
+                decided = True
             elif isinstance(cur, Success | Failure):
                 if not self._stack:
                     if self._stack_frame is not None and isinstance(cur, Failure):
@@ -457,10 +510,12 @@ class Fiber(Generic[A_co, E_co]):
                 # long chain of ``map``s still yields, while a primitive's
                 # result normally reaches its continuation in the same step.
                 ops += 1
-                if ops % _INLINE_STEPS == 0 and ops > self._ops_budget:
+                if not decided and ops % _INLINE_STEPS == 0 and ops > self._ops_budget:
                     self._pause(cur)
                     return
-                cur = self._continue(self._stack.pop(), cur)
+                frame = self._stack.pop()
+                decided = frame.claims
+                cur = self._continue(frame, cur)
             elif cur is SUSPEND:
                 return  # a resume callback will call _run again
             else:  # untyped user code handed back something that is not an effect
@@ -469,7 +524,17 @@ class Fiber(Generic[A_co, E_co]):
     def _pause(self, cur: Step) -> None:
         """The step budget is spent: let other fibers run, then go on with
         ``cur``."""
-        self._scheduler.schedule(lambda: self._drive(cur))
+        self._queue_yielded(_Yielded(cur))
+
+    def _queue_yielded(self, yielded: _Yielded) -> None:
+        self._yielded = yielded
+
+        def go_on() -> None:
+            if self._yielded is yielded:
+                self._yielded = None
+                self._drive(yielded.step)
+
+        self._scheduler.schedule(go_on)
 
     def _continue(self, frame: Frame, ex: Exit[Any, Any]) -> Step:
         hook = self._tracer_hook
@@ -529,6 +594,14 @@ class Fiber(Generic[A_co, E_co]):
         self._exit = ex
         if self._runtime_metrics is not None:
             self._runtime_metrics.record_fiber_end(self._ctx, ex)
+        view = _last_view[0]
+        if view is not None and view.context is self._ctx:
+            parent = self._parent
+            if parent is None or parent._ctx is not self._ctx:
+                # Keep the context of a fiber that is done alive no longer
+                # than a fiber that still uses it (a closed scope's exit,
+                # say), as Effect, whose cache is per fiber.
+                _last_view[0] = None
         if self._parent is not None:
             self._parent._children.pop(self, None)
         observers, self._observers = self._observers, []
@@ -581,7 +654,7 @@ class Fiber(Generic[A_co, E_co]):
         return SUSPEND
 
     def _yield_now(self) -> Step:
-        self._scheduler.schedule(lambda: self._drive(Success(None)))
+        self._queue_yielded(_Yielded(Success(None)))
         return SUSPEND
 
     def _suspend(self, register: Register[Any, Any, Any]) -> Step:
@@ -591,9 +664,9 @@ class Fiber(Generic[A_co, E_co]):
         except BaseException:
             wait.claim()
             raise
-        wait.registering = False
-        if wait.sync_result is not None:
-            return wait.sync_result
+        sync_result = wait.end_registration()
+        if sync_result is not None:
+            return sync_result
         wait.canceler = canceler
         self._waiting = wait
         if self._interrupted_and_interruptible():
@@ -601,12 +674,13 @@ class Fiber(Generic[A_co, E_co]):
         return SUSPEND
 
     def _resume(self, wait: _Wait, effect: Effect[Any, Any, Any]) -> None:
-        """Run a claimed resume. In Effect a resume runs the fiber at once,
-        so an interrupt that arrived while this one was queued lands only
-        once the resumed run has finished, parked or yielded."""
+        """Run a claimed resume now. In Effect a resume runs the fiber at
+        once, so an interrupt that arrived while another thread's resume
+        was queued lands only once the resumed run has finished, parked or
+        yielded."""
         if self._waiting is wait:
             self._waiting = None
-            self._drive(effect)
+            self._evaluate(effect)
         deferred, self._interrupts_after_resume = self._interrupts_after_resume, []
         for by, interruptor in deferred:
             self._deliver_interrupt(by, interruptor)
@@ -621,16 +695,24 @@ class Fiber(Generic[A_co, E_co]):
                 return
             self._record_interrupt(by, annotations)
             step = self._abandon_wait(wait)
-            self._unwind(step)
+            self._evaluate(step)
             return
         if wait is not None and wait.done:
             self._interrupts_after_resume.append((by, annotations))
             return
         interrupt = self._record_interrupt(by, annotations)
-        if self._interruptible and self._phase == "pending":
-            self._unwind(Failure(interrupt))
-        # Otherwise the loop raises it at its next interruptible step: the
-        # fiber is running, uninterruptible, or queued to run.
+        if not self._interruptible or self._phase == "running":
+            return  # the loop raises it at its next interruptible step
+        yielded = self._yielded
+        if yielded is not None:
+            # Queued after a yield or a pause: unwind now (Effect's
+            # evaluate of a yielded fiber); the queued task does nothing.
+            self._yielded = None
+            self._evaluate(yielded.step)
+        elif self._phase == "pending":
+            self._evaluate(Failure(interrupt))
+        # Otherwise it is queued to run on this thread, nested deeper than
+        # runs may go, and meets the interrupt at its first step.
 
     def _record_interrupt(self, by: int | None, annotations: Context | None) -> Cause[Never]:
         cause = interrupt_cause(by)
@@ -643,32 +725,31 @@ class Fiber(Generic[A_co, E_co]):
         self._interrupt = cause
         return cause
 
+    def _evaluate(self, step: Step) -> None:
+        """Run this fiber with ``step`` now, nested in whatever runs on this
+        thread (Effect's ``evaluate``). Past ``_MAX_NESTED_RUNS`` nested
+        runs of this run it runs right after the innermost one instead."""
+        outer = _thread.drain
+        if outer is None:
+            self._drain((self, step), 0)
+        elif outer.depth >= _MAX_NESTED_RUNS and outer.run_scheduler is self._run_scheduler:
+            outer.push((self, step))
+        else:
+            self._drain((self, step), outer.depth + 1)
+
     def _drive(self, step: Step) -> None:
-        """Run this fiber with ``step`` now, or, while another fiber of the
-        run is running on this thread, right after it. Fibers never run
-        nested inside one another, so a chain of children started
-        immediately cannot overflow the stack."""
+        """Run this fiber from a scheduled task: now, or, if the scheduler
+        runs its tasks inside a fiber of the run, right after that fiber's
+        run."""
         outer = _thread.drain
         if outer is not None and outer.run_scheduler is self._run_scheduler:
             outer.push((self, step))
         else:
-            self._drain((self, step), unwinding=False)
+            self._evaluate(step)
 
-    def _unwind(self, step: Step) -> None:
-        """Run an interrupted fiber now, inside the run that interrupted
-        it (Effect's synchronous ``interruptUnsafe``). A cascade (each
-        fiber interrupting its children as it finishes) runs one fiber
-        after another rather than nested, so a deep tree of fibers cannot
-        overflow the stack."""
+    def _drain(self, start: _Run, depth: int) -> None:
         outer = _thread.drain
-        if outer is not None and outer.run_scheduler is self._run_scheduler and outer.unwinding:
-            outer.push((self, step))
-        else:
-            self._drain((self, step), unwinding=True)
-
-    def _drain(self, start: _Run, *, unwinding: bool) -> None:
-        outer = _thread.drain
-        _thread.drain = drain = _Drain(self._run_scheduler, unwinding=unwinding)
+        _thread.drain = drain = _Drain(self._run_scheduler, depth)
         fiber, nxt = start
         try:
             while True:
@@ -694,13 +775,18 @@ class Fiber(Generic[A_co, E_co]):
                 fiber._scheduler.schedule(lambda f=fiber, n=nxt: f._drive(n))
 
     def _drive_first(self, step: Step) -> None:
-        """Run this fiber before anything else queued: right after the
-        current run, or now if no fiber of the run is running."""
+        """Start this fiber now, nested in the running one (Effect's
+        ``startImmediately``); past ``_MAX_NESTED_RUNS`` nested runs, right
+        after the current run, before anything else queued."""
         drain = _thread.drain
-        if drain is not None and drain.run_scheduler is self._run_scheduler:
+        if (
+            drain is not None
+            and drain.run_scheduler is self._run_scheduler
+            and drain.depth >= _MAX_NESTED_RUNS
+        ):
             drain.push_first((self, step))
         else:
-            self._drive(step)
+            self._evaluate(step)
 
     def _cancel_wait(self, wait: _Wait) -> Step:
         """An interrupted fiber just parked: abandon the wait, unless another

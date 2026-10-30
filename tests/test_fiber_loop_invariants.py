@@ -45,11 +45,12 @@ def test_the_fiber_loop_names_no_primitive():
 
 
 def test_a_fiber_run_is_entered_only_from_the_drain():
-    """Running one fiber inside another nests their stacks; a cascade of
-    interrupts, or a chain of children started immediately, then overflows
-    Python's stack and wedges fibers half-finished. ``_run`` may only be
-    called from ``_drain``, which runs fibers one after another; everything
-    else (scheduled tasks included) goes through ``_drive`` or ``_unwind``."""
+    """Running one fiber inside another nests their stacks; unbounded, a
+    cascade of interrupts or a chain of children started immediately
+    overflows Python's stack and wedges fibers half-finished. ``_run`` may
+    only be called from ``_drain``, which bounds the nesting
+    (``_MAX_NESTED_RUNS``); everything else (scheduled tasks included) goes
+    through ``_evaluate`` or ``_drive``."""
     tree = ast.parse((SRC / "_fiber.py").read_text())
     offenders: list[str] = []
 

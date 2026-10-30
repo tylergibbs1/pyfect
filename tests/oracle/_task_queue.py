@@ -1,9 +1,9 @@
 """A scheduler that only collects its tasks, for ports of Effect tests that
 hand a fiber a dispatcher whose tasks the test runs by hand.
 
-A task run from inside a fiber that resumes another fiber only queues that
-fiber behind the running one (fibers never nest), so ``run_all`` yields
-between tasks to let them run, as Effect's synchronous resume would.
+A task that resumes a fiber runs it at once, as Effect's synchronous
+resume does; ``run_all`` yields between tasks so fibers queued on the run's
+own scheduler get their turn too.
 """
 
 from collections.abc import Callable

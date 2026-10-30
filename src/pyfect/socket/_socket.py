@@ -194,7 +194,7 @@ def _to_channel_with_reader[A: Chunk, IE](
 
             writing = (
                 upstream.flat_map(lambda chunk: _write_chunk(writer, chunk))
-                .forever()
+                .forever(disable_yield=True)
                 .catch_cause_filter(filter_no_done, on_write_failure)
                 .ensuring(write_scope.close(Success(None)))
             )
