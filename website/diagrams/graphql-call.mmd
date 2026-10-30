@@ -1,0 +1,7 @@
+flowchart LR
+  C["github.repo_stars(variables)"] --> V["encode the variables"]
+  V --> M["middleware: group, then operation"]
+  M --> T["GraphQLProtocol: HTTP, SSE or WebSocket"]
+  T --> A{"errors in the answer?"}
+  A -->|"no"| D["decode data: the result"]
+  A -->|"yes"| E["GraphQLClientError: ResponseError"]

@@ -28,7 +28,8 @@ the outcome, `_effect` fails in the error channel. `decode_unknown_*` accepts an
 
 A subclass of `S.Class` is an immutable class with a keyword constructor, and a schema. Its annotations are its
 fields, `S.field(schema)` gives a field its own schema, and a default makes the key optional.
-`S.from_json_string` wraps any schema so it reads and writes JSON text.
+`S.from_json_string` wraps any schema so it reads and writes JSON text. A class whose
+fields differ between the database and a JSON API is a [model](/docs/models).
 
 <CodeOutput>
 

@@ -1,0 +1,6 @@
+flowchart LR
+  W["log.write(event, payload)"] --> J["local journal"]
+  J --> H["handler updates the read model"]
+  J -->|"remote: unsent entries"| S["event log server"]
+  S -->|"changes from other clients"| R["replay through the handlers"]
+  R --> J

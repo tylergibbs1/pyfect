@@ -1,0 +1,81 @@
+---
+title: Event log
+description: "Event sourcing that works offline: write events to a local journal, replay them through handlers, and sync with a server, encrypted end to end if you like."
+---
+
+An event log stores what happened, not the current state. Each write appends an event to a
+journal and runs its handler, which updates the read model the program queries. A remote
+syncs the journal with a server, so several clients (a phone, a laptop, a browser tab)
+apply the same events and converge, even after writing while offline. `pyfect.eventlog`
+follows Effect's `effect/eventlog`; import it as a submodule, since `import pyfect` does
+not load it.
+
+## Events and handlers
+
+`event.make(tag, primary_key=..., payload=..., success=..., error=...)` declares an
+event: its payload schema and a function giving the key its conflicts are found by.
+`event_group.empty.add(A).add(B)` collects events, and `event_log.group(group, lambda h:
+h.handle(A, fa).handle(B, fb))` registers a handler for each, checked by pyright against
+the payload. A handler gets a `HandlerInput`: the decoded `payload`, the journal `entry`
+and its `conflicts`, the stored entries of the same event and key that are newer than it,
+which a late entry from another client has to respect.
+
+`event_log.layer(event_log.schema(group), handlers)` builds the `EventLog`, which needs an
+`EventJournal` and an `Identity`, the owner of the log. `log.write(event, payload)`
+appends the event, runs its handler and succeeds with the handler's result;
+`write_many([...])` writes several under one lock; `log.entries` reads the journal.
+
+<CodeOutput>
+
+<include meta='title="groceries.py"'>../../snippets/eventlog/groceries.py</include>
+
+<include lang="text">../../snippets/eventlog/groceries.out</include>
+
+</CodeOutput>
+
+The identity in this example comes from `make_identity`, which uses
+`event_log_encryption.layer_subtle`: install the `pyfect[eventlog]` extra
+(`cryptography`) for it and for anything encrypted.
+
+## Rows
+
+`grocery = event_row.make("grocery", key="id", schema=S.Struct(Grocery))` is an event that
+sets, patches or removes one row: `grocery.set(row)`, `grocery.patch(key, fields)` and
+`grocery.remove(key)` give writes for `write_many`.
+`event_row.handler(row, set=..., patch=..., remove=...)` turns three callbacks into its
+handler, resolving a late entry against the newer ones already stored, so clients that
+apply the same entries in any order end with the same rows. `event_row.compaction(group,
+row)` drops entries that newer ones make redundant.
+
+## Journals
+
+`event_journal.layer_memory` keeps entries in memory. `sql_event_journal.layer()` keeps
+them in a [SQL](/docs/sql) database (SQLite or PostgreSQL), with local writes serialized
+across processes. Entry ids are UUID v7, so the journal is ordered by time.
+
+## Sync with a server
+
+<Diagram name="eventlog-sync" title="Each client writes to its own journal; the remote sends new entries to the server and replays what other clients wrote" />
+
+`event_log_remote.layer_encrypted` and `layer_unencrypted` connect the log to a server
+over the [RPC](/docs/rpc) protocol in `event_log_message`. A remote sends what the journal
+has not sent yet, in chunks, and replays the server's changes through the handlers,
+running `group_compaction` / `group_batch_compaction` compactors on the way in.
+`group_reactivity(group, keys)` invalidates `pyfect.reactivity` keys as entries are
+handled, so reactive queries rerun.
+
+The encrypted server, `event_log_server_encrypted.layer`, stores AES-GCM batches it cannot
+read: only clients holding the identity's key can. The unencrypted one,
+`event_log_server_unencrypted.layer(...)`, runs the handlers itself, maps identities to
+stores, checks an `EventLogServerAuthorization` and can compact the backlog. Both have
+memory storage for tests and SQL storage (`sql_event_log_server_encrypted`,
+`sql_event_log_server_unencrypted`). Clients authenticate by signing a challenge with an
+Ed25519 key derived from their identity.
+
+Payloads travel as their schemas' JSON: Effect's MessagePack codec is not ported, so pyfect
+clients and servers talk to each other but not to Effect's.
+
+Reference: [`pyfect.eventlog`](/docs/reference/eventlog),
+[`event_log`](/docs/reference/eventlog/event_log),
+[`event_row`](/docs/reference/eventlog/event_row),
+[`event_log_remote`](/docs/reference/eventlog/event_log_remote).

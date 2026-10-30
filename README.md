@@ -165,6 +165,15 @@ layer, concurrency, retries and timeouts.
   providers over the HTTP client. [AI →](https://pyfect.dev/docs/ai)
 - **MCP.** Serve a toolkit over the Model Context Protocol on HTTP or stdio, and call any
   MCP server's tools. [MCP →](https://pyfect.dev/docs/mcp)
+- **Models.** One class for a table's row and its insert, update and JSON variants, with
+  typed repositories on any SQL client. [Models →](https://pyfect.dev/docs/models)
+- **GraphQL.** Typed queries, mutations and subscriptions over HTTP, Server-Sent Events or
+  WebSockets, with middleware, pagination and batched lookups.
+  [GraphQL →](https://pyfect.dev/docs/graphql)
+- **Event log.** Events written to a local journal, replayed through handlers and synced
+  with a server, encrypted end to end if you like. [Event log →](https://pyfect.dev/docs/eventlog)
+- **Cluster.** The base of Effect's cluster: shards over runners, snowflake ids, and
+  message and runner storage in memory or SQL. [Cluster →](https://pyfect.dev/docs/cluster)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
@@ -182,8 +191,9 @@ uv add git+https://github.com/tylergibbs1/pyfect
 
 Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `httpx` (the
 HTTP client backend), `websockets` (WebSocket clients and servers), `server` (the uvicorn
-HTTP server), `pg` (the PostgreSQL driver, on psycopg) and `redis` (the Redis client, on
-redis-py), for example `uv add "pyfect[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
+HTTP server), `pg` (the PostgreSQL driver, on psycopg), `redis` (the Redis client, on
+redis-py) and `eventlog` (the event log's encryption, on cryptography), for example
+`uv add "pyfect[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add
 `reportUnknownParameterType = false`: pyright reads an unannotated generator's send type as

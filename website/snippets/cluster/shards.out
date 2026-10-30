@@ -1,0 +1,5 @@
+shards per group: 300
+[('runner-a', 75), ('runner-b', 75), ('runner-c', 150)]
+[('runner-a', 100), ('runner-c', 200)]
+moved: 83
+True 7 1

@@ -1,0 +1,70 @@
+---
+title: Models
+description: "One class for a table's row and the variants a database and a JSON API read and write, with repositories on any SQL client."
+---
+
+A row is rarely one shape. The database assigns its id, so an insert has none; a password
+is written but never sent to a browser; a creation time is set once and not updated. A
+model declares each field's variants in one class, and `pyfect.sql.model` builds a
+repository on it. `pyfect.schema.model` follows Effect's `Model`, and
+`pyfect.sql.model` its `SqlModel`.
+
+## Variants
+
+A model has six variants: `select` (a row read from the database), `insert`, `update`,
+`json` (what a JSON API sends), `json_create` and `json_update` (what it receives). The
+class is the `select` variant, a [schema class](/docs/schema#classes); `User.insert`,
+`User.json` and the others are struct schemas whose `make` fills constructor defaults.
+
+A plainly annotated field is in every variant. `Model.field(...)` gives a field variants
+of its own:
+
+- `GeneratedByDb(schema)`: made by the database, in `select` and `json` only.
+- `GeneratedByApp(schema)`: made by the application, never sent by a JSON client.
+- `Sensitive(schema)`: in the database variants only, never in JSON.
+- `FieldOption(schema)`: an `Option`, stored as `NULL`, optional in JSON.
+- `DateTimeInsert`, `DateTimeUpdate` and their `FromDate` / `FromNumber` forms: set to the
+  `Clock`'s now on insert, or on every write.
+- `UuidV4Insert`, `UuidV7Insert` and the `...WithGenerate` forms: a generated id.
+- `field_only([...])`, `field_except([...])` and `Field(select=..., insert=..., ...)`: any
+  other set of variants.
+
+pyright cannot compute a variant's keys from the fields, so a model names them:
+`Model.Class[Insert, Update, Json, JsonCreate, JsonUpdate]` takes a TypedDict per variant,
+each `Mapping[str, object]` when left out. When the class is made, each TypedDict is
+checked against the fields, and only a field with a constructor default may be
+`NotRequired`; a mismatch is a `TypeError`, so a stale TypedDict fails at import. A field
+the `select` variant leaves out is assigned without an annotation.
+
+<Diagram name="model-variants" title="One class gives each variant its own fields, and the repository reads and writes the database ones" />
+
+## Repositories
+
+`sql_model.make_repository(Model, table_name=..., id_column=..., span_prefix=...)` needs a
+[`SqlClient`](/docs/sql) and gives a typed `Repository`: `insert` takes the `insert`
+variant and returns the row the database stored (`RETURNING *`), `update` takes the
+`update` variant, `find_by_id` fails with `NoSuchElementException` when there is no row,
+and `delete` removes one. `insert_void` and `update_void` skip reading the row back. Each
+call runs in a span named `<span_prefix>.insert`, `<span_prefix>.findById` and so on. With
+`soft_delete_column="deleted_at"`, `delete` sets that column to `CURRENT_TIMESTAMP` and
+the reads skip rows where it is set.
+
+<CodeOutput>
+
+<include meta='title="users.py"'>../../snippets/models/users.py</include>
+
+<include lang="text">../../snippets/models/users.out</include>
+
+</CodeOutput>
+
+`sql_model.make_resolvers(...)` gives the same operations as
+[batching resolvers](/docs/sql#a-resolver-that-batches-lookups): `insert`, `find_by_id`
+and `delete` requests made together run as one statement.
+
+`S.variant_schema.make(variants=..., default_variant=...)` builds a toolkit like `Model`'s
+for any other set of variants, with `Struct`, `Field`, `Union`, `extract` and a `Class`
+base.
+
+Reference: [`pyfect.schema.model`](/docs/reference/schema/model),
+[`pyfect.schema.variant_schema`](/docs/reference/schema/variant_schema),
+[`pyfect.sql.model`](/docs/reference/sql/model).

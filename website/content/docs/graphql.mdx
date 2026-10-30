@@ -1,0 +1,76 @@
+---
+title: GraphQL
+description: "Typed queries, mutations and subscriptions over HTTP, Server-Sent Events or WebSockets, with middleware, pagination and batched lookups."
+---
+
+`pyfect.graphql` is a GraphQL client: an operation carries its printed document and the
+schemas of its variables and result, and a client sends it through a transport and decodes
+the answer. There is no GraphQL parser at runtime. It follows Effect's own
+`effect/graphql` client, which does not use graphql-js either.
+
+## Operations and clients
+
+`query(name, document=..., variables=..., result=...)`, `mutation(...)` and
+`subscription(...)` declare operations; `variables` is left out for an operation without
+any. A subclass of `GraphQLGroup` collects them as attributes, and `client.make(Group)`
+gives an instance whose methods are typed by each operation: call `group.repo_stars(
+variables)` and get the decoded result. Each call also takes `headers`, `url_params`, a
+per-call `context`, and `partial=True`, which gives a `PartialResult` with the `data` and
+the `errors` instead of failing on GraphQL errors.
+
+A failure is a `GraphQLClientError` naming the operation, with a `reason`:
+`ResponseError` (the server's `errors`, the status and headers), `TransportError`,
+`EncodeError`, `DecodeError` or `PaginationError`. `is_retryable` holds for a 429, a 5xx
+or a valid `Retry-After`, and `retry_after` reads that header.
+
+<Diagram name="graphql-call" title="A call encodes its variables, runs the middleware, sends through the transport and decodes the answer" />
+
+<CodeOutput>
+
+<include meta='title="repos.py"'>../../snippets/graphql/repos.py</include>
+
+<include lang="text">../../snippets/graphql/repos.out</include>
+
+</CodeOutput>
+
+## Transports
+
+`layer_http(url=...)` sends through the [HTTP client](/docs/platform): POST by default, or
+GET for queries with `query_method="GET"`. The URL is a string, an `Effect`, or a function
+of the call's context and operation. Subscriptions use graphql-sse over the same URL, or a
+graphql-transport-ws connection with `web_socket=protocol.WebSocketOptions(...)`.
+`layer_web_socket(options)` runs every operation over one shared graphql-transport-ws
+connection, opened on the first call, with `connection_params`, keep-alive pings and an
+idle timeout. Subscriptions are [streams](/docs/streams), retried on retryable errors by
+`client.default_subscription_retry` (or `client.make(Group, subscription_retry=...)`).
+
+## Middleware
+
+A subclass of `GraphQLMiddleware[E, R]` is a service tag. Declare a group as
+`GraphQLGroup[Auth]`, or attach one to an operation with `.middleware(Auth)`, and the
+client runs the middleware provided for it around each call, group middleware outermost.
+`map_request(f)` rewrites the request, adding a token for example, and its failures `E`
+reach the caller; `Implementation(execute=..., subscribe=...)` wraps the whole call and
+sees the transport's status.
+
+## Pagination and batching
+
+`client.pages(group.issues, variables=..., connection=...)` follows a Relay connection's
+`endCursor`, sending it as `$after` until `hasNextPage` is false, as a stream of pages;
+`client.items` streams their nodes. `pyfect.graphql.resolver` batches lookups like a
+[SQL resolver](/docs/sql#a-resolver-that-batches-lookups): `ordered` reads one item per
+key by position (`nodes(ids:)`), `find_by_id` matches items by a key, and `aliased`
+repeats an operation under aliases, up to 10 per request. `resolver.request(r)(key)` is
+one lookup; lookups made together become one request.
+
+## Testing
+
+`client.make_test(Group, repo_stars=handler)` gives a client whose operations call
+handlers instead of a server, and `client.layer_test(Tag, Group, ...)` provides it through
+a service tag. An operation without a handler dies with an `UnimplementedError`.
+
+Reference: [`pyfect.graphql`](/docs/reference/graphql),
+[`client`](/docs/reference/graphql/client),
+[`operation`](/docs/reference/graphql/operation),
+[`protocol`](/docs/reference/graphql/protocol),
+[`resolver`](/docs/reference/graphql/resolver).

@@ -1,0 +1,8 @@
+flowchart LR
+  M["class User(Model.Class)"] --> S["select: id, name, password, created_at"]
+  M --> I["insert: name, password, created_at = now"]
+  M --> U["update: id, name, password"]
+  M --> J["json: id, name, created_at"]
+  S --> R["make_repository: insert, update, find_by_id, delete"]
+  I --> R
+  U --> R

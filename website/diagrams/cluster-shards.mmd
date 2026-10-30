@@ -1,0 +1,7 @@
+flowchart LR
+  E["entity id"] -->|"hash mod shards_per_group"| S["ShardId(group, n)"]
+  S --> H["HashRing of runner addresses"]
+  H --> A["runner-a"]
+  H --> C["runner-c: weight 2"]
+  A --> L["shard lock in RunnerStorage"]
+  C --> L
