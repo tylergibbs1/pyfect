@@ -46,7 +46,9 @@ def struct_unpack[TD: TypedDict](  # pyright: ignore[reportInvalidTypeForm]
 def field[T](schema: S.Codec[T, Any, Any, Any]) -> T: ...
 
 
-def struct_spec[**P](typed_dict: Callable[P, object], *args: P.args, **fields: P.kwargs) -> None: ...
+def struct_spec[**P](
+    typed_dict: Callable[P, object], *args: P.args, **fields: P.kwargs
+) -> None: ...
 
 
 struct_spec(Line, sku=field(S.String), quantity=field(S.Int))  # pyright: ignore[reportArgumentType]

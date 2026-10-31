@@ -20,6 +20,7 @@ from pyfect.exit import Exit, Failure
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.queue import Dequeue, Queue
+from pyfect.reactivity._live import live_keys
 from pyfect.run import run_fork
 from pyfect.scope import CloseableScope, Scope
 
@@ -33,7 +34,9 @@ type Keys = Sequence[object] | Mapping[str, Sequence[object]]
 type _Hash = str | int
 
 
-class _PendingInvalidation(Tag[set[_Hash]], key="effect/reactivity/Reactivity/PendingInvalidation"):
+class _PendingInvalidation(
+    Tag[dict[_Hash, None]], key="effect/reactivity/Reactivity/PendingInvalidation"
+):
     """The invalidations ``with_batch`` collects."""
 
 
@@ -70,11 +73,14 @@ class ReactivityService:
         self._handlers: dict[_Hash, dict[Callable[[], None], None]] = {}
 
     def _run_handlers(self, hashes: Iterable[_Hash]) -> None:
-        ran: set[Callable[[], None]] = set()
+        ran: dict[Callable[[], None], None] = {}
         for hash_ in hashes:
-            for handler in list(self._handlers.get(hash_, ())):
+            handlers = self._handlers.get(hash_)
+            if handlers is None:
+                continue
+            for handler in live_keys(handlers):
                 if handler not in ran:
-                    ran.add(handler)
+                    ran[handler] = None
                     handler()
 
     def invalidate_unsafe(self, keys: Keys) -> None:
@@ -106,7 +112,7 @@ class ReactivityService:
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
             found, pending = fiber._context.lookup(_PendingInvalidation)
             if found:
-                pending.update(_keys_to_hashes(keys))
+                pending.update(dict.fromkeys(_keys_to_hashes(keys)))
             else:
                 self.invalidate_unsafe(keys)
             return _Succeed(None)
@@ -184,7 +190,8 @@ class ReactivityService:
         require_effect(effect, "effect")
 
         def body() -> Effect[A, E, R]:
-            pending: set[_Hash] = set()
+            # ordered: handlers run in the order keys were invalidated
+            pending: dict[_Hash, None] = {}
             batched: Effect[A, E, R] = _Locally(
                 effect, lambda ctx: ctx.add(_PendingInvalidation, pending)
             )

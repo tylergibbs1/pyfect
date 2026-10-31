@@ -6959,3 +6959,78 @@ def cluster_runner_layer_types() -> None:
         http_runner.layer_client_protocol_http(path="/runner"),
         fx.Layer[RpcClientProtocol, Never, RpcSerialization | HttpClient],
     )
+
+
+def atom_types() -> None:
+    from pyfect.reactivity import async_result, atom, atom_registry
+    from pyfect.reactivity.async_result import AsyncResult
+    from pyfect.reactivity.atom_registry import AtomRegistry
+
+    counter = atom.make(0)
+    assert_type(counter, atom.Writable[int, int])
+    doubled = atom.make(lambda get: get(counter) * 2)
+    assert_type(doubled, atom.Atom[int])
+    assert_type(atom.make(lambda get: get.get(counter) + 1), atom.Atom[int])
+    assert_type(atom.make(fx.succeed(1)), atom.Atom[AsyncResult[int, Never]])
+
+    def needs_registry() -> fx.Effect[int, str, AtomRegistry]: ...
+
+    failing = needs_registry()
+    assert_type(atom.make(failing), atom.Atom[AsyncResult[int, str]])
+    assert_type(atom.make(lambda get: fx.succeed(get(counter))), atom.Atom[AsyncResult[int, Never]])
+    assert_type(
+        atom.make(fx.stream.make(1, 2)),
+        atom.Atom[AsyncResult[int, fx.NoSuchElementException]],
+    )
+
+    class Other(fx.Tag[int], key="type_checks/atom/Other"):
+        pass
+
+    def needs_other() -> fx.Effect[int, Never, Other]: ...
+
+    other = needs_other()
+    atom.make(other)  # pyright: ignore[reportDeprecated]
+
+    # kind-preserving combinators are methods; a writable atom stays writable
+    assert_type(counter.keep_alive(), atom.Writable[int, int])
+    assert_type(counter.map(str), atom.Writable[str, int])
+    assert_type(doubled.map(str), atom.Atom[str])
+    results = atom.make(fx.succeed(1))
+    assert_type(results.map_result(str), atom.Atom[AsyncResult[str, Never]])
+    assert_type(counter.debounce(0.1), atom.Writable[int, int])
+
+    def plus_one(n: int, _get: atom.FnContext) -> fx.Effect[int, str]: ...
+
+    adder = atom.fn(plus_one)
+    assert_type(
+        adder, atom.Writable[AsyncResult[int, str], int | atom.ResetSignal | atom.InterruptSignal]
+    )
+
+    def double(n: int, _get: atom.FnContext) -> int: ...
+
+    assert_type(atom.fn_sync(double), atom.Writable[fx.Option[int], int])
+    assert_type(atom.fn_sync(double, initial_value=0), atom.Writable[int, int])
+    assert_type(atom.get(counter), fx.Effect[int, Never, AtomRegistry])
+
+    def counter_of(n: int) -> atom.Writable[int, int]:
+        return atom.make(n)
+
+    assert_type(atom.family(counter_of), Callable[[int], atom.Writable[int, int]])
+
+    # a runtime carries its layer's services and error into its atoms
+    other_layer = fx.layer.effect(Other, fx.fail("no other"))
+    runtime = atom.runtime(other_layer)
+    assert_type(runtime, atom.AtomRuntime[Other, str])
+    assert_type(runtime.atom(other), atom.Atom[AsyncResult[int, str]])
+
+    def uses_other(n: int, _get: atom.FnContext) -> fx.Effect[int, bool, Other]: ...
+
+    assert_type(
+        runtime.fn(uses_other),
+        atom.Writable[AsyncResult[int, bool | str], int | atom.ResetSignal | atom.InterruptSignal],
+    )
+
+    registry = atom_registry.make()
+    assert_type(registry.get(doubled), int)
+    assert_type(atom_registry.get_result(registry, results), fx.Effect[int, Never, Never])
+    assert_type(async_result.success(1), async_result.Success[int, Never])

@@ -1,5 +1,7 @@
 """Reactivity: invalidating keys reruns registered handlers and queries."""
 
+from collections.abc import Callable
+
 import pyfect as fx
 from pyfect import reactivity, testing
 
@@ -93,3 +95,37 @@ def test_a_query_invalidated_while_running_runs_once_more_after():
     assert (yield from results.take()) == 2
     yield from fx.yield_now()
     assert runs[0] == 2
+
+
+def test_handlers_follow_javascript_set_iteration():
+    # Printed by Effect's Reactivity.ts under Node: a handler registered on
+    # the invalidated key while its handlers run is run in the same pass,
+    # one unregistered and registered again is run once.
+    service = reactivity.ReactivityService()
+    log: list[str] = []
+
+    def first() -> None:
+        log.append("h1")
+        if len(log) < 2:
+            service.register_unsafe(["k"], lambda: log.append("h2"))
+
+    service.register_unsafe(["k"], first)
+    service.invalidate_unsafe(["k"])
+    assert log == ["h1", "h2"]
+
+    log.clear()
+    service = reactivity.ReactivityService()
+    unregister: list[Callable[[], None]] = []
+
+    def again() -> None:
+        log.append("h")
+
+    def moves() -> None:
+        log.append("g")
+        unregister[0]()
+        unregister[0] = service.register_unsafe(["k"], again)
+
+    service.register_unsafe(["k"], moves)
+    unregister.append(service.register_unsafe(["k"], again))
+    service.invalidate_unsafe(["k"])
+    assert log == ["g", "h"]

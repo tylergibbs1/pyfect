@@ -65,7 +65,9 @@ class Rpc(Generic[P, S, E]):
     def __get__(self, instance: object, owner: type[object], /) -> Any: ...
 
 
-def make_rpc[P1, S1, E1 = Never](payload: P1, success: S1, error: E1 | None = None) -> Rpc[P1, S1, E1]: ...
+def make_rpc[P1, S1, E1 = Never](
+    payload: P1, success: S1, error: E1 | None = None
+) -> Rpc[P1, S1, E1]: ...
 
 
 class Entity(Group, ClientErrors[MailboxFull]):

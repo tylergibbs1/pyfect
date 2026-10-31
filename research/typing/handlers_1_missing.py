@@ -34,9 +34,13 @@ class Endpoint[N: str]:
 
 class Handlers[Rest]:
     @overload
-    def handle[N: str](self: "Handlers[Endpoint[N]]", endpoint: Endpoint[N]) -> "Handlers[Never]": ...
+    def handle[N: str](
+        self: "Handlers[Endpoint[N]]", endpoint: Endpoint[N]
+    ) -> "Handlers[Never]": ...
     @overload
-    def handle[N: str, R](self: "Handlers[Endpoint[N] | R]", endpoint: Endpoint[N]) -> "Handlers[R]": ...
+    def handle[N: str, R](
+        self: "Handlers[Endpoint[N] | R]", endpoint: Endpoint[N]
+    ) -> "Handlers[R]": ...
     def handle(self, endpoint: object) -> "Handlers[Any]":
         return Handlers()
 
