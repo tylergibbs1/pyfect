@@ -12,8 +12,10 @@ A pyfect schema is a pydantic field type: annotate the field with it::
     class Order(BaseModel):
         total: Annotated[float, S.FiniteFromString]
 
-Python input is decoded with the schema (a value the schema's decoded side
-already accepts is kept), JSON input with ``S.to_codec_json(schema)``;
+Python input the schema's decoded side accepts is kept as it is (so
+pydantic's revalidation and ``validate_assignment`` never decode twice);
+other Python input is decoded with the schema, JSON input with
+``S.to_codec_json(schema)``;
 dumping encodes the same way, and the JSON Schema is the schema's. A schema
 class (``S.Class``) works as a field type directly. A failure is one
 pydantic error, the pyfect message. Only schemas that need no services can
@@ -73,17 +75,16 @@ def core_schema_of(schema: _Codec, /) -> CoreSchema:
     """The pydantic core schema validating and serializing with ``schema``
     (what ``__get_pydantic_core_schema__`` of a pyfect schema returns)."""
     json_codec = to_codec_json(schema)
-    typed = schema.__codec__()
+    decoded_side = schema.__codec__().ast.to_type()
 
     def decode_python(input: object) -> object:
-        decoded = decode_unknown_result(schema)(input)
-        if isinstance(decoded, Ok):
-            return decoded.value
-        match schema_ast.run_now(typed.ast.to_type().parse(input, {})):
+        # A decoded value is kept first, so validating again (pydantic's
+        # revalidation and assignment) never decodes a value twice.
+        match schema_ast.run_now(decoded_side.parse(input, {})):
             case Success(value):
                 return value
             case Failure():
-                return _raise(decoded.error)
+                return _unwrap(decode_unknown_result(schema)(input))
 
     def decode_json(input: object) -> object:
         return _unwrap(decode_unknown_result(json_codec)(input))

@@ -19,12 +19,12 @@ model's parts.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal, LiteralString, Never, TypedDict, cast, overload
 
 import pyfect as fx
+from pyfect import _json_text
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -198,13 +198,13 @@ def _tool_choice_attribute(tool_choice: ToolChoice) -> str:
     if isinstance(tool_choice, str):
         return tool_choice
     if "tool" in tool_choice:
-        return json.dumps(tool_choice, separators=(",", ":"))
+        return _json_text.stringify(tool_choice)
     choice = tool_choice
     encoded: dict[str, object] = {}
     if "mode" in choice:
         encoded["mode"] = choice["mode"]
     encoded["oneOf"] = list(choice.get("one_of", ()))
-    return json.dumps(encoded, separators=(",", ":"))
+    return _json_text.stringify(encoded)
 
 
 def _error(method: str, reason: Any) -> AiError:

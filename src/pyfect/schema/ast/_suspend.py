@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
+from pyfect._stack import stack_nearly_full, with_fresh_stack
 from pyfect.schema._options import ParseOptions
 from pyfect.schema.ast._base import AST
 from pyfect.schema.ast._result import ParseResult
@@ -30,7 +31,11 @@ class Suspend(AST):
         return self.target.expected()
 
     def _parse(self, input: object, options: ParseOptions) -> ParseResult:
-        return self.target.parse(input, options)
+        # The one node through which a parse recurses as deep as its input.
+        target = self.target
+        if not stack_nearly_full():
+            return target.parse(input, options)
+        return with_fresh_stack(lambda: target.parse(input, options))
 
     def _flip(self) -> Suspend:
         # Lazy: the target is not made until the flipped node is used.

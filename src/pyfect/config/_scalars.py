@@ -3,7 +3,6 @@ messages (Effect's StringTree encodings of its schemas)."""
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from collections.abc import Callable, Sequence
@@ -11,6 +10,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from urllib.parse import SplitResult
 
+from pyfect import _json_text
 from pyfect._js import SPACE, js_number
 from pyfect._url import parse_url
 from pyfect.byte_size import ByteSize
@@ -28,7 +28,7 @@ _STRING = EXPECTED_STRING
 _FINITE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[Ee][+-]?[0-9]+)?")
 _NOT_FINITE_STRING = InvalidValue({"message": "Expected a string representing a finite number"})
 _NON_FINITE = {"Infinity": math.inf, "-Infinity": -math.inf, "NaN": math.nan}
-_NON_FINITE_EXPECTED = " | ".join(json.dumps(k) for k in _NON_FINITE)
+_NON_FINITE_EXPECTED = " | ".join(_json_text.stringify(k) for k in _NON_FINITE)
 _INTEGER = InvalidValue({"message": "Expected an integer"})
 
 
@@ -101,9 +101,7 @@ port = Scalar(_STRING, _port)
 def _choices[A](pairs: Sequence[tuple[str, A]]) -> Scalar[A]:
     """A decoder accepting exactly the given spellings, the first match
     winning; missing and invalid input both list them."""
-    expected_choice = expected(
-        " | ".join(json.dumps(text, ensure_ascii=False) for text, _ in pairs)
-    )
+    expected_choice = expected(" | ".join(_json_text.stringify(text) for text, _ in pairs))
     table: dict[str, A] = {}
     for text, value in pairs:
         table.setdefault(text, value)

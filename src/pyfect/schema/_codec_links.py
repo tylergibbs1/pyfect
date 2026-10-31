@@ -15,12 +15,16 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from pyfect._js import js_number
+from pyfect.exit import Exit, Success
+from pyfect.exit import fail as fail_exit
 from pyfect.json_schema import JsonSchema
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
 from pyfect.schema._checks_number import is_finite
 from pyfect.schema._checks_string import is_string_big_int, is_string_finite
+from pyfect.schema._options import ParseOptions
 from pyfect.schema.getter._coerce import to_number, to_string
+from pyfect.schema.issue import InvalidValue, Issue, reported
 
 type CodecLink = Callable[[tuple[ast.AST, ...]], ast.Link | None]
 """A declaration's ``to_codec_json`` / ``to_codec`` annotation."""
@@ -31,6 +35,23 @@ def link[T2, E2](
 ) -> ast.Link:
     """``to``'s values decoded with ``decode``, encoded back with ``encode``."""
     return ast.Link(to, T.transform(decode=decode, encode=encode))
+
+
+def partial_link[T2, E2](
+    to: ast.AST, *, decode: Callable[[E2], T2 | None], encode: Callable[[T2], E2], expected: str
+) -> ast.Link:
+    """``link`` for an encoded value with no decoded form (``decode`` gives
+    ``None``): it is an ``InvalidValue`` expecting ``expected``."""
+
+    def run(value: E2, options: ParseOptions) -> Exit[T2, Issue]:
+        out = decode(value)
+        if out is None:
+            return fail_exit(InvalidValue({"expected": expected}, reported(value, options)))
+        return Success(out)
+
+    return ast.Link(
+        to, T.transform_effect(decode=run, encode=lambda value, _: Success(encode(value)))
+    )
 
 
 def tagged(tag: str, **fields: ast.AST) -> ast.Objects:
@@ -106,11 +127,7 @@ def literal_to_string(node: ast.Literal) -> ast.AST:
 
 
 def _has_check(node: ast.AST, id: str) -> bool:
-    for check in node.checks or ():
-        representation = (check.annotations or {}).get("representation")
-        if isinstance(representation, dict) and representation.get("id") == id:  # pyright: ignore[reportUnknownMemberType]
-            return True
-    return False
+    return ast.has_check(node.checks, id)
 
 
 def is_finite_number(node: ast.AST) -> bool:

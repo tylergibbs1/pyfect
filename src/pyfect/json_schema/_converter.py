@@ -10,12 +10,12 @@ source can be rewritten to point into the target.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import cast
 from urllib.parse import quote, urldefrag, urljoin, urlsplit, urlunsplit
 
+from pyfect import _json_text
 from pyfect._url import parse_url
 from pyfect.json_pointer import format_uri_fragment, parse_uri_fragment
 from pyfect.json_schema._model import (
@@ -98,7 +98,7 @@ def _relocate_reference(reference: str, target_path: Path) -> str:
 
 
 def _location_key(resource: str, pointer: Path) -> str:
-    return f"{resource}\x00{json.dumps(list(pointer), ensure_ascii=False)}"
+    return f"{resource}\x00{_json_text.stringify(list(pointer))}"
 
 
 @dataclass(frozen=True, slots=True)

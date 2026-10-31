@@ -15,10 +15,10 @@ from ``hashlib`` (Effect reads a ``Crypto`` service).
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Generator, Mapping, Sequence
 from typing import Any, Never
 
+from pyfect import _json_text
 from pyfect import layer as layer_
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -89,14 +89,14 @@ def _reply_from_row(row: Row) -> Encoded:
             "_tag": "WithExit",
             "id": _str(row["id"]),
             "requestId": _str(row["request_id"]),
-            "exit": json.loads(str(row["payload"])),
+            "exit": _parse(str(row["payload"])),
         }
         return exit_reply
     chunk: ChunkEncoded = {
         "_tag": "Chunk",
         "id": _str(row["id"]),
         "requestId": _str(row["request_id"]),
-        "values": json.loads(str(row["payload"])),
+        "values": _parse(str(row["payload"])),
         "sequence": int(str(row["sequence"])),
     }
     return chunk
@@ -110,8 +110,8 @@ def _message_from_row(row: Row) -> EncodedMessage:
             "requestId": _str(row["id"]),
             "address": _address(row),
             "tag": row["tag"],
-            "payload": json.loads(str(row["payload"])),
-            "headers": json.loads(str(row["headers"])),
+            "payload": _parse(str(row["payload"])),
+            "headers": _parse(str(row["headers"])),
         }
         if row["trace_id"]:
             envelope["traceId"] = row["trace_id"]
@@ -124,7 +124,7 @@ def _message_from_row(row: Row) -> EncodedMessage:
                 "id": _str(row["reply_reply_id"]),
                 "requestId": _str(row["request_id"]),
                 "sequence": int(str(row["reply_sequence"])),
-                "values": json.loads(str(row["reply_payload"])),
+                "values": _parse(str(row["reply_payload"])),
             }
         return EncodedMessage(envelope, last)
     if kind == _ACK_CHUNK:
@@ -260,8 +260,8 @@ class _Storage:
                     **common,
                     "kind": _REQUEST,
                     "tag": envelope["tag"],
-                    "payload": json.dumps(envelope["payload"], separators=(",", ":")),
-                    "headers": json.dumps(dict(envelope["headers"]), separators=(",", ":")),
+                    "payload": _json_text.stringify(envelope["payload"]),
+                    "headers": _json_text.stringify(dict(envelope["headers"])),
                     "trace_id": envelope.get("traceId"),
                     "span_id": envelope.get("spanId"),
                     "sampled": self.sampled(envelope.get("sampled")),
@@ -519,7 +519,7 @@ class _Storage:
                         "_tag": "WithExit",
                         "id": _str(row["reply_id"]),
                         "requestId": _str(row["id"]),
-                        "exit": json.loads(str(row["reply_payload"])),
+                        "exit": _parse(str(row["reply_payload"])),
                     }
                 else:
                     last = {
@@ -527,7 +527,7 @@ class _Storage:
                         "id": _str(row["reply_id"]),
                         "requestId": _str(row["id"]),
                         "sequence": int(str(row["reply_sequence"])),
-                        "values": json.loads(str(row["reply_payload"])),
+                        "values": _parse(str(row["reply_payload"])),
                     }
             return DuplicateEncoded(
                 original_id=Snowflake(int(str(row["id"]))), last_received_reply=last
@@ -541,7 +541,7 @@ class _Storage:
         def run() -> Effect[object, SqlError]:
             if reply["_tag"] == "WithExit":
                 kind: object = _WITH_EXIT
-                payload = json.dumps(reply["exit"], separators=(",", ":"))
+                payload = _json_text.stringify(reply["exit"])
                 sequence: object = None
                 update = sql(
                     "UPDATE {} SET processed = {}, last_reply_id = {} WHERE request_id = {}",
@@ -552,7 +552,7 @@ class _Storage:
                 )
             else:
                 kind = None
-                payload = json.dumps(list(reply["values"]), separators=(",", ":"))
+                payload = _json_text.stringify(list(reply["values"]))
                 sequence = reply["sequence"]
                 update = sql(
                     "UPDATE {} SET last_reply_id = {} WHERE id = {}",
@@ -993,3 +993,8 @@ __all__ = [
     "migrations",
     "run_migrations",
 ]
+
+
+def _parse(text: str) -> Any:
+    """A stored JSON column (written by ``_json_text.stringify``)."""
+    return _json_text.parse(text)

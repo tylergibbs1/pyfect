@@ -19,11 +19,11 @@ can complete the right wait point.
 from __future__ import annotations
 
 import base64
-import json
 from collections.abc import Generator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Never, NewType, cast
 from weakref import WeakKeyDictionary
 
+from pyfect import _json_text
 from pyfect._concurrency import race_all as race_all_effects
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -81,11 +81,7 @@ class TokenParsed(Class):
     def as_token(self) -> Token:
         """The token: base64url of the JSON ``[workflow, execution,
         deferred]``, as Effect writes it."""
-        text = json.dumps(
-            [self.workflow_name, self.execution_id, self.deferred_name],
-            separators=(",", ":"),
-            ensure_ascii=False,
-        )
+        text = _json_text.stringify([self.workflow_name, self.execution_id, self.deferred_name])
         return Token(base64.urlsafe_b64encode(text.encode()).decode().rstrip("="))
 
     @staticmethod

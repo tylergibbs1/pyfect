@@ -12,11 +12,11 @@ approximation, and a ``one_of`` union with an approximate member is written
 from __future__ import annotations
 
 import copy
-import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import cast
 
+from pyfect import _json_text
 from pyfect.json_pointer import format_uri_fragment, parse_uri_fragment
 from pyfect.json_schema import JsonSchema, rewrite_refs
 from pyfect.schema import ast
@@ -128,7 +128,9 @@ class Compiler:
             path = parse_uri_fragment(reference) if reference.startswith("#") else None
             if path is None:
                 if reference[:2] == "#/" or reference[:4].lower() == "#%2f":
-                    raise ValueError(f"Invalid JSON Pointer URI fragment {json.dumps(reference)}")
+                    raise ValueError(
+                        f"Invalid JSON Pointer URI fragment {_json_text.stringify(reference)}"
+                    )
                 return reference
             canonical = aliases.get(path[1]) if len(path) > 1 and path[0] == "$defs" else None
             if canonical is None:

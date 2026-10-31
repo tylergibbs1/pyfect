@@ -9,14 +9,19 @@ start a comment in an unquoted value unless escaped."""
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, cast
 
-_SECTION = re.compile(r"\[([^\]]*)\]\s*")
-_PROPERTY = re.compile(r"([^=]+)(=(.*))?", re.DOTALL)
+from pyfect import _json_text
+from pyfect._js import LINE_END, SPACE, js_string
+from pyfect._js import trim as js_trim
+
+# JavaScript's ``\s`` and ``trim``, not Python's (U+FEFF is space, U+001C is not).
+_SECTION = re.compile(f"\\[([^\\]]*)\\][{SPACE}]*")
+_PROPERTY = re.compile(f"([^=]+)(=([^{LINE_END}]*))?")
 _LINES = re.compile(r"[\r\n]+")
-_BLANK_OR_COMMENT = re.compile(r"\s*(?:[;#]|$)")
+_BLANK_OR_COMMENT = re.compile(f"[{SPACE}]*(?:[;#]|$)")
+_PROTO = "__proto__"
 
 
 def _split_sections(value: str) -> list[str]:
@@ -34,11 +39,7 @@ def _split_sections(value: str) -> list[str]:
 
 def _key(value: object) -> str:
     """A parsed key as JavaScript's ``String`` writes it."""
-    if isinstance(value, str):
-        return value
-    if value is None:
-        return "null"
-    return json.dumps(value)
+    return js_string(value) if isinstance(value, str | bool | int | float | None) else str(value)
 
 
 def _is_quoted(value: str) -> bool:
@@ -51,13 +52,13 @@ def _is_quoted(value: str) -> bool:
 def _unquote(text: str | None) -> object:
     """The value of ``text``: a quoted one read as JSON when it parses (so
     ``'5'`` is ``5``, as in Effect), an unquoted one up to its comment."""
-    value = (text or "").strip()
+    value = js_trim(text or "")
     if _is_quoted(value):
         if value[0] == "'":
             value = value[1:-1]
         try:
-            return json.loads(value)
-        except ValueError:
+            return _json_text.parse(value)
+        except _json_text.PARSE_ERRORS:
             return value
     escaped = False
     output = ""
@@ -73,7 +74,7 @@ def _unquote(text: str | None) -> object:
             output += character
     if escaped:
         output += "\\"
-    return output.strip()
+    return js_trim(output)
 
 
 _LITERALS: dict[str, object] = {"true": True, "false": False, "null": None}
@@ -92,8 +93,7 @@ def _parse_lines(text: str) -> dict[str, Any]:
             continue
         section_match = _SECTION.fullmatch(line)
         if section_match is not None:
-            section = _key(_unquote(section_match.group(1)))
-            current = cast("dict[str, Any]", output.setdefault(section, {}))
+            current = _section(output, _key(_unquote(section_match.group(1))))
             continue
         property_match = _PROPERTY.fullmatch(line)
         if property_match is None:
@@ -101,6 +101,8 @@ def _parse_lines(text: str) -> dict[str, Any]:
         raw_key = _key(_unquote(property_match.group(1)))
         is_list = len(raw_key) > 2 and raw_key.endswith("[]")
         key = raw_key[:-2] if is_list else raw_key
+        if key == _PROTO:
+            continue
         raw_value: object = (
             True if property_match.group(2) is None else _unquote(property_match.group(3))
         )
@@ -122,6 +124,42 @@ def _parse_lines(text: str) -> dict[str, Any]:
     return output
 
 
+class _ValueSection(dict[str, Any]):
+    """A ``[section]`` over a plain value: JavaScript keeps the value and
+    throws only when a property is set on it."""
+
+    def __init__(self, value: object) -> None:
+        super().__init__()
+        self._value = value
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        kind = (
+            "boolean"
+            if isinstance(self._value, bool)
+            else "string"
+            if isinstance(self._value, str)
+            else "number"
+        )
+        raise ValueError(f"Cannot create property '{key}' on {kind} '{js_string(self._value)}'")
+
+
+def _section(output: dict[str, Any], section: str) -> dict[str, Any]:
+    """Where a ``[section]``'s properties go (Effect's
+    ``output[section] ??= {}``): a fresh mapping for ``null`` or a new name,
+    a throwaway one for ``__proto__`` or a list (JavaScript sets them as
+    properties the array does not show); setting a property in a section
+    over any other value raises ``ValueError`` (JavaScript's ``TypeError``)."""
+    existing = output.get(section)
+    if section == _PROTO or isinstance(existing, list):
+        return {}
+    if existing is None:
+        output[section] = {}
+        return cast("dict[str, Any]", output[section])
+    if not isinstance(existing, dict):
+        return _ValueSection(existing)
+    return cast("dict[str, Any]", existing)
+
+
 def _nest_sections(output: dict[str, Any]) -> dict[str, Any]:
     """Moves each dotted section (``[a.b]``) under its parents."""
     remove: list[str] = []
@@ -133,6 +171,8 @@ def _nest_sections(output: dict[str, Any]) -> dict[str, Any]:
         key = last.replace("\\.", ".")
         current = output
         for part in parts:
+            if part == _PROTO:
+                continue
             if not isinstance(current.get(part), dict):
                 current[part] = {}
             current = cast("dict[str, Any]", current[part])

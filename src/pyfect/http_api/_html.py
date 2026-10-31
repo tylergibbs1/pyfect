@@ -1,13 +1,14 @@
 """Escaping for the documentation pages (Effect's ``internal/html``)."""
 
-import json
 from collections.abc import Callable
 from importlib import resources
+
+from pyfect import _json_text
 
 
 def escape_json(value: object) -> str:
     """``value`` as JSON safe inside a ``<script>`` element."""
-    text = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    text = _json_text.stringify(value)
     return text.replace("<", "\\u003c").replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
 
 

@@ -5,17 +5,18 @@ Structs, tuples and arrays compare part by part with their parts'
 equivalences, a union with the member both values belong to, a class by
 its fields; a ``to_equivalence`` annotation replaces a node's own (the
 built-in declarations carry one: ``Option``, ``Result``, ``Cause``, sets,
-maps, ``Redacted``...). Anything else is ``equals``: Python ``==``, except
-that ``bool`` is not a number and ``NaN`` equals ``NaN``, as Effect's
-``Equal.equals``.
+maps, ``Redacted``...). Anything else is ``pyfect._equal.equals``: Python
+``==``, except that ``bool`` is not a number and ``NaN`` equals ``NaN``, as
+Effect's ``Equal.equals``.
 """
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any, cast
 
+from pyfect._equal import equals
+from pyfect._stack import with_fresh_stack
 from pyfect.schema import ast
 from pyfect.schema._schema import Codec
 from pyfect.schema._type_walk import annotation_of, index_keys, member_selector
@@ -32,18 +33,6 @@ def to_equivalence[T](schema: Codec[T, object, object, object], /) -> Equivalenc
     """When two values of ``schema``'s decoded side are the same (Effect's
     ``toEquivalence``)."""
     return _Derivation()(schema.__codec__().ast)
-
-
-def equals(a: object, b: object) -> bool:
-    """Effect's ``Equal.equals`` on Python values: ``==``, but ``True`` is
-    not ``1`` and ``NaN`` is ``NaN``."""
-    if a is b:
-        return True
-    if isinstance(a, bool) or isinstance(b, bool):
-        return type(a) is type(b) and a == b
-    if isinstance(a, float) and isinstance(b, float) and math.isnan(a) and math.isnan(b):
-        return True
-    return bool(a == b)
 
 
 def same_items[A](equivalence: Equivalence[A]) -> Equivalence[Iterable[A]]:
@@ -70,6 +59,7 @@ class _Derivation:
 
     def __init__(self) -> None:
         self._done: dict[int, tuple[ast.AST, Equivalence[Any]]] = {}
+        self._classes: dict[int, tuple[object, Equivalence[Any]]] = {}
 
     def __call__(self, node: ast.AST) -> Equivalence[Any]:
         hit = self._done.get(id(node))
@@ -170,15 +160,27 @@ class _Derivation:
         def equivalent(a: object, b: object) -> bool:
             if not target:
                 target.append(self(node.target))
-            return target[0](a, b)
+            return with_fresh_stack(lambda: target[0](a, b))
 
         return equivalent
 
     def _class(self, node: ast.Class) -> Equivalence[Any]:
         match node.side:
             case "decode" | "type":
-                fields = self(node.shape.fields.to_type())
-                values_of = node.shape.values_of
-                return lambda a, b: fields(values_of(a), values_of(b))
+                # Derived on first use, once per class: a class may hold itself.
+                shape = node.shape
+                hit = self._classes.get(id(shape))
+                if hit is not None:
+                    return hit[1]
+                fields: list[Equivalence[Any]] = []
+
+                def equivalent(a: Any, b: Any) -> bool:
+                    if not fields:
+                        fields.append(self(shape.fields.to_type()))
+                    values_of = shape.values_of
+                    return with_fresh_stack(lambda: fields[0](values_of(a), values_of(b)))
+
+                self._classes[id(shape)] = (shape, equivalent)
+                return equivalent
             case "encode" | "encoded":
                 return self(node.shape.encoded)

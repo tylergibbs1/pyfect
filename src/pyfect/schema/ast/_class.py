@@ -4,9 +4,11 @@ fields (Effect's class declaration, linked to its struct)."""
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from functools import partial
 from typing import Literal as _Literal
 from typing import Protocol, cast
 
+from pyfect._stack import stack_nearly_full, with_fresh_stack
 from pyfect.exit import Exit, Success
 from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
@@ -72,9 +74,12 @@ class Class(AST):
         return AST.expected(self)
 
     def parse(self, input: object, options: ParseOptions) -> ParseResult:
-        if self.encoding is not None:
-            return AST.parse(self, input, options)
-        return self.parse_local(input, options)
+        # A class may hold itself (its fields are made on first use), so a
+        # parse recurses through it as deep as its input.
+        parse = self.parse_local if self.encoding is None else partial(AST.parse, self)
+        if not stack_nearly_full():
+            return parse(input, options)
+        return with_fresh_stack(lambda: parse(input, options))
 
     def parse_local(self, input: object, options: ParseOptions) -> ParseResult:
         if self.side != "encode":

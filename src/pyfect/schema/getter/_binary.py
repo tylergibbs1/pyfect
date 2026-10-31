@@ -10,6 +10,7 @@ import binascii
 import re
 from collections.abc import Callable
 
+from pyfect._js import text_encode
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
@@ -18,7 +19,7 @@ from pyfect.schema.issue import InvalidValue, Issue, reported
 
 
 def _bytes(value: bytes | str) -> bytes:
-    return value.encode() if isinstance(value, str) else value
+    return text_encode(value) if isinstance(value, str) else value
 
 
 def base64_decode(text: str) -> bytes | None:

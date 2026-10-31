@@ -11,13 +11,12 @@ the operations on it; the next operation opens a new one.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Never
 
+from pyfect import _json_text, stream
 from pyfect import effect as fx
-from pyfect import stream
 from pyfect._all import all as fx_all
 from pyfect._concurrency import for_each
 from pyfect._fiber import Fiber
@@ -133,7 +132,7 @@ def _connection_error(cause: Cause[object]) -> TransportError:
 
 def _encode(message: Mapping[str, object]) -> str:
     # Unset fields are left out, as JSON.stringify drops undefined.
-    return json.dumps({key: value for key, value in message.items() if value is not None})
+    return _json_text.stringify({key: value for key, value in message.items() if value is not None})
 
 
 def _no_ack() -> Effect[Never, TransportError]:

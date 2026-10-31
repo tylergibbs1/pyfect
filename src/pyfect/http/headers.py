@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 from typing import ClassVar, Literal, cast, final
 
+from pyfect import _json_text
 from pyfect._digits import is_digits, parse_digits
 from pyfect.context import Reference
 from pyfect.duration import ZERO, Duration, Seconds, to_seconds
@@ -179,9 +180,7 @@ class HeaderParseError(TaggedError):
 
     @property
     def message(self) -> str:
-        import json
-
-        return f"{self.reason.tag}: {json.dumps(self.reason.input, ensure_ascii=False)}"
+        return f"{self.reason.tag}: {_json_text.stringify(self.reason.input)}"
 
 
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")

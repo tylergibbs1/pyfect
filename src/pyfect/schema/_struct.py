@@ -11,11 +11,11 @@ spell Effect's ``extend``, ``partial`` / ``required`` and ``pick`` / ``omit``.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Generic, Never, TypeVar, overload
 
+from pyfect import _json_text
 from pyfect.schema import ast
 from pyfect.schema._derive import typed_dict_ast, typed_dict_fields
 from pyfect.schema._record import RecordSchema
@@ -84,7 +84,7 @@ def StructWithRest[TD: Mapping[str, object], RD, RE](
     for record in objects[1:]:
         for p in record.properties:
             if any(q.name == p.name for q in properties):
-                raise ValueError(f"Duplicate identifier: {json.dumps(p.name)}. ts(2300)")
+                raise ValueError(f"Duplicate identifier: {_json_text.stringify(p.name)}. ts(2300)")
         properties += record.properties
         index_signatures += record.index_signatures
         checks = ast.join_checks(checks, record.checks)

@@ -67,7 +67,7 @@ def test_stream_pipeline_writes_every_well_formed_order_in_batches_under_backpre
 
 def test_schema_example_answers_each_body_by_its_typed_error():
     assert run_example("schema.py").splitlines() == [
-        '201 {"order_id":"ada-1","total":1.0}',
+        '201 {"order_id":"ada-1","total":1}',
         "404 unknown product plum",
         '400 \'Expected an integer\\n  at ["lines"][0]["quantity"]\'',
         "400 'Expected a value with a length of at least 1\\n  at [\"customer\"]'",

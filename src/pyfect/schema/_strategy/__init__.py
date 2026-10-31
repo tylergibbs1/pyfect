@@ -22,7 +22,7 @@ try:
 except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("to_strategy", "hypothesis") from error
 
-from pyfect.exit import Success
+from pyfect.exit import Failure, Success
 from pyfect.schema import ast
 from pyfect.schema._arbitrary_constraint import ArbitraryConstraint, constraint_of
 from pyfect.schema._arbitrary_graph import INFINITE, Graph, Json, Linked, Strategy
@@ -53,7 +53,10 @@ def derive(root: ast.AST) -> _Strategy:
             "Unable to derive an arbitrary for a schema without a finite generation path"
             f" ({graph.root.expected()})"
         )
-    return _Derivation(graph)(graph.root, max(RECURSION_DEPTH, int(cost)))
+    drawn = _Derivation(graph)(graph.root, max(RECURSION_DEPTH, int(cost)))
+    # Only values the schema also encodes (a JSON string holds no NaN, say).
+    encoder = root.flip()
+    return drawn.filter(lambda value: not isinstance(encoder.parse(value, {}), Failure))
 
 
 def _parses(node: ast.AST, value: object) -> bool:

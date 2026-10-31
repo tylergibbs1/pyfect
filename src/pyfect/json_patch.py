@@ -14,11 +14,11 @@ every other value as it is. An operation that cannot be applied raises
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Mapping, Sequence
 from typing import Literal, NotRequired, TypedDict, cast
 
+from pyfect import _json_text
 from pyfect._digits import parse_digits
 from pyfect._js import js_sort_key
 from pyfect._json_value import JsonValue
@@ -131,7 +131,9 @@ def _tokenize(pointer: str) -> list[str]:
     if not pointer:
         return []
     if not pointer.startswith("/"):
-        raise ValueError(f'Invalid JSON Pointer, it must start with "/": {json.dumps(pointer)}')
+        raise ValueError(
+            f'Invalid JSON Pointer, it must start with "/": {_json_text.stringify(pointer)}'
+        )
     return [unescape_token(token) for token in pointer.split("/")[1:]]
 
 

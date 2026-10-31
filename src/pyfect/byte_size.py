@@ -17,11 +17,11 @@ that can leave the range (``subtract``, ``times``, ``divide``) gives
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable
 from typing import Literal, NewType, TypeIs, overload
 
+from pyfect import _json_text
 from pyfect._js import SPACE, js_number
 
 ByteSize = NewType("ByteSize", int)
@@ -309,7 +309,7 @@ def _format_with(size: int, symbol: Unit, precision: int, trailing_zeros: bool) 
 
 
 def _quote(text: str) -> str:
-    return json.dumps(text, ensure_ascii=False)
+    return _json_text.stringify(text)
 
 
 __all__ = [

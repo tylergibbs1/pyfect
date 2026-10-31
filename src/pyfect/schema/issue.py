@@ -172,23 +172,37 @@ def _format_key(key: PathKey) -> str:
 
 
 def _format(issue: Issue, path: str, override: str | None) -> str:
-    match issue:
-        case Filter(issue=inner):
-            return _format(inner, path, override if override is not None else filter_message(issue))
-        case Encoding(issue=inner):
-            return _format(inner, path, override)
-        case Pointer(segments, inner):
-            return _format(inner, path + format_path(segments), override)
-        case Composite(issues=issues):
-            return "\n".join(_format(i, path, override) for i in issues)
-        case AnyOf(issues=issues) if issues:
-            return "\n".join(_format(i, path, override) for i in issues)
-        case AnyOf(ast=ast):
-            found = override if override is not None else _find_message(issue)
-            message = found if found is not None else _expected_message(ast.expected(), issue.input)
-        case _:
-            message = override if override is not None else leaf_message(issue)
-    return f"{message}\n  at {path}" if path else message
+    # A loop over an explicit stack: an issue tree is as deep as the input.
+    lines: list[str] = []
+    stack: list[tuple[Issue, str, str | None]] = [(issue, path, override)]
+    while stack:
+        issue, path, override = stack.pop()
+        match issue:
+            case Filter(issue=inner):
+                found = override if override is not None else filter_message(issue)
+                stack.append((inner, path, found))
+                continue
+            case Encoding(issue=inner):
+                stack.append((inner, path, override))
+                continue
+            case Pointer(segments, inner):
+                stack.append((inner, path + format_path(segments), override))
+                continue
+            case Composite(issues=issues) | AnyOf(issues=issues) if issues:
+                stack.extend((i, path, override) for i in reversed(issues))
+                continue
+            case Composite():
+                lines.append("")
+                continue
+            case AnyOf(ast=ast):
+                found = override if override is not None else _find_message(issue)
+                message = (
+                    found if found is not None else _expected_message(ast.expected(), issue.input)
+                )
+            case _:
+                message = override if override is not None else leaf_message(issue)
+        lines.append(f"{message}\n  at {path}" if path else message)
+    return "\n".join(lines)
 
 
 def leaf_message(issue: Leaf) -> str:

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Generator
 from typing import Any, Never, cast
 
+from pyfect import _json_text
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect.clock import Clock, ClockService
@@ -40,7 +40,7 @@ def _store(
             if text is None:
                 return succeed(None)
             try:
-                parsed: object = json.loads(text)
+                parsed: object = _json_text.parse(text)
             except ValueError as cause:
                 return fail(
                     PersistenceError(

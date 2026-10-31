@@ -20,13 +20,14 @@ from typing import Any, cast
 from urllib.parse import SplitResult, urlsplit
 from zoneinfo import ZoneInfo
 
+from pyfect._equal import dict_of, frozenset_of
 from pyfect.date_time._epoch import EPOCH, from_epoch_millis, to_epoch_millis
 from pyfect.schema import ast
 from pyfect.schema._arbitrary_constraint import ArbitraryConstraint
 from pyfect.schema._checks_number import int_value, is_between
 from pyfect.schema._checks_size import is_between_length, is_max_length, is_min_length
 from pyfect.schema._checks_string import is_pattern
-from pyfect.schema._codec_links import link
+from pyfect.schema._codec_links import link, partial_link
 
 _FIRST = to_epoch_millis(datetime(1, 1, 1, tzinfo=UTC))
 _LAST = to_epoch_millis(datetime(9999, 12, 31, 23, 59, 59, 999000, tzinfo=UTC))
@@ -159,9 +160,9 @@ def bytes_(_: tuple[ast.AST, ...], constraint: ArbitraryConstraint) -> ast.Link:
 
 def frozen_set(parameters: tuple[ast.AST, ...], constraint: ArbitraryConstraint) -> ast.Link:
     (value,) = parameters
-    return link(
-        _sized(value, constraint.min_size, constraint.max_size), decode=frozenset, encode=tuple
-    )
+    sized = _sized(value, constraint.min_size, constraint.max_size)
+    # Draws Python would merge (``1`` and ``True``) fail, so they are redrawn.
+    return partial_link(sized, decode=frozenset_of, encode=tuple, expected="distinct items")
 
 
 def _entries(mapping: Mapping[object, object]) -> tuple[tuple[object, object], ...]:
@@ -170,6 +171,5 @@ def _entries(mapping: Mapping[object, object]) -> tuple[tuple[object, object], .
 
 def map_(parameters: tuple[ast.AST, ...], constraint: ArbitraryConstraint) -> ast.Link:
     entry = ast.Arrays(tuple(ast.Element(p) for p in parameters))
-    return link(
-        _sized(entry, constraint.min_size, constraint.max_size), decode=dict, encode=_entries
-    )
+    sized = _sized(entry, constraint.min_size, constraint.max_size)
+    return partial_link(sized, decode=dict_of, encode=_entries, expected="distinct keys")

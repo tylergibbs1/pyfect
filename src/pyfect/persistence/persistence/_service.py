@@ -4,12 +4,12 @@
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Callable, Generator, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Never, Protocol
 
+from pyfect import _json_text
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.clock import ClockService
@@ -273,4 +273,4 @@ def now_millis(clock: ClockService) -> int:
 
 def to_json(value: object) -> str:
     """``JSON.stringify``: compact, non-ASCII kept."""
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+    return _json_text.stringify(value)

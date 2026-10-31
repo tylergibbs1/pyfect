@@ -3,10 +3,9 @@ input and output."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from pyfect import stream
+from pyfect import _json_text, stream
 from pyfect._core import Effect
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai._mcp.core import McpServer
@@ -23,7 +22,7 @@ _VOID: Effect[None] = succeed(None)
 
 
 def _encode(message: JsonObject) -> str:
-    return json.dumps(message, separators=(",", ":"), ensure_ascii=False) + "\n"
+    return _json_text.stringify(message) + "\n"
 
 
 def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, McpServer | Stdio]:

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Callable, Generator, Mapping, Sequence
 from typing import Any, Never
 
+from pyfect import _json_text
 from pyfect._core import Effect
 from pyfect.duration import Seconds, to_millis
 from pyfect.effect import fail, gen, succeed, suspend, void
@@ -75,7 +75,7 @@ def _store(redis: RedisService, prefix: str) -> BackingPersistenceStore:
         if reply is None:
             return succeed(None)
         try:
-            return succeed(json.loads(str(reply)))
+            return succeed(_json_text.parse(str(reply)))
         except ValueError as cause:
             return fail(PersistenceError(message="Failed to parse value from Redis", cause=cause))
 
@@ -85,7 +85,7 @@ def _store(redis: RedisService, prefix: str) -> BackingPersistenceStore:
         for index in range(len(keys)):
             value = values[index] if index < len(values) else None
             try:
-                out.append(None if value is None else json.loads(str(value)))
+                out.append(None if value is None else _json_text.parse(str(value)))
             except ValueError:
                 out.append(None)
         return out

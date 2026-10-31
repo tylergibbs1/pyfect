@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Generator, Mapping, Sequence
 from typing import Any, Final, Never
 
+from pyfect import _json_text
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect.clock import Clock, ClockService, now_nanos
@@ -80,7 +80,7 @@ def _make_store(
             if not rows:
                 return succeed(None)
             try:
-                return succeed(json.loads(str(rows[0]["value"])))
+                return succeed(_json_text.parse(str(rows[0]["value"])))
             except ValueError as cause:
                 return fail(_parse_failed(key, cause))
 
@@ -105,7 +105,7 @@ def _make_store(
             values: dict[str, object] = {}
             for row in rows:
                 try:
-                    values[column_text(row["id"])] = json.loads(str(row["value"]))
+                    values[column_text(row["id"])] = _json_text.parse(str(row["value"]))
                 except ValueError:
                     continue
             return [values.get(key) for key in keys]

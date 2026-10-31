@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence, Sized
 from typing import Any
 
+from pyfect._equal import dedupe
 from pyfect.exit import Success
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Top
@@ -239,19 +240,12 @@ def is_property_names(key_schema: Top, /, **annotations: object) -> Filter[Mappi
 
 
 def _all_unique(items: Sequence[object]) -> bool:
-    try:
-        return len(set(items)) == len(items)
-    except TypeError:
-        seen: list[object] = []
-        for item in items:
-            if item in seen:
-                return False
-            seen.append(item)
-        return True
+    return len(dedupe(items)) == len(items)
 
 
 def is_unique(**annotations: object) -> Filter[Sequence[object]]:
-    """A sequence with no two equal (``==``) items."""
+    """A sequence with no two items ``Equal.equals`` calls equal (``True``
+    is not ``1``, NaN is NaN)."""
     return filter_of(
         _all_unique,
         {

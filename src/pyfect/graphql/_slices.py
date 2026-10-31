@@ -3,11 +3,11 @@ helpers resolvers use to compare keys and walk results."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, cast
 
+from pyfect import _json_text
 from pyfect.graphql._types import ExecutionResult
 from pyfect.graphql.client_error import GraphQLError
 from pyfect.graphql.template import DocumentTemplate
@@ -16,7 +16,7 @@ from pyfect.graphql.template import DocumentTemplate
 def canonical_json(value: object) -> str:
     """JSON with object keys sorted, so equal JSON values give equal
     strings."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return _json_text.stringify(value, sort_keys=True, default=str)
 
 
 def frozen(value: object) -> Hashable:

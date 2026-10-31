@@ -4,11 +4,11 @@ envelopes and replies only; this module encodes and decodes them."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Generator, Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
+from pyfect import _json_text
 from pyfect import exit as exit_
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -123,7 +123,7 @@ def now_millis(clock: ClockService) -> int:
 
 def json_copy[T](value: T) -> T:
     """``value`` after a trip through JSON text, as stored."""
-    return json.loads(json.dumps(value))
+    return cast("T", _json_text.parse(_json_text.stringify(value)))
 
 
 class _EncodedBase:
@@ -366,7 +366,7 @@ def _json_checked(encoded: reply_.Encoded) -> Effect[reply_.Encoded, MalformedMe
     """``encoded`` if it is JSON (a reply a driver can store)."""
 
     def check() -> reply_.Encoded:
-        json.dumps(encoded)
+        _json_text.stringify(encoded)
         return encoded
 
     return MalformedMessage.refail(try_(check))

@@ -5,12 +5,12 @@ the text a tool result shows a model."""
 from __future__ import annotations
 
 import base64
-import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
+from pyfect import _json_text
 from pyfect._core import Effect
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai.mcp_client_error import (
@@ -68,7 +68,7 @@ def limit_error(description: str) -> McpClientError:
 
 def encode_message(message: Mapping[str, Any], max_bytes: int) -> Effect[str, McpClientError]:
     try:
-        text = json.dumps(message, separators=(",", ":"), ensure_ascii=False)
+        text = _json_text.stringify(message)
     except (TypeError, ValueError) as cause:
         return fail(failure(TransportError("Cannot encode MCP message", cause)))
     if len(text.encode()) > max_bytes:
@@ -261,7 +261,7 @@ def to_text(result: CallToolResult) -> Effect[str, McpClientError]:
         else:
             return unsupported(f"{block['type']} content")
     if not parts and "structuredContent" in result:
-        return succeed(json.dumps(result["structuredContent"], separators=(",", ":")))
+        return succeed(_json_text.stringify(result["structuredContent"]))
     return succeed("\n".join(parts))
 
 

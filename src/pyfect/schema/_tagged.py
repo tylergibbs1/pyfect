@@ -35,6 +35,7 @@ from typing import (
 )
 from typing import Literal as TypingLiteral
 
+from pyfect._js import js_number
 from pyfect.effect import succeed
 from pyfect.schema._derive import optional_keys
 from pyfect.schema._literals import Literal, Union, UnionSchema
@@ -130,7 +131,7 @@ def _key(literal: object) -> str | None:
     if isinstance(literal, str):
         return literal
     if isinstance(literal, int | float) and not isinstance(literal, bool):
-        return str(int(literal)) if float(literal).is_integer() else repr(literal)
+        return js_number(literal)
     return None
 
 

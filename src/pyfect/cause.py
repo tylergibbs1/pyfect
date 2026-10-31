@@ -16,12 +16,14 @@ in equality, as in Effect, but not in the hash.
 
 from __future__ import annotations
 
+import operator
 import traceback
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, cast
 
+from pyfect._equal import dedupe
 from pyfect.result import Err, Ok, Result
 
 if TYPE_CHECKING:
@@ -90,7 +92,10 @@ class Cause(Generic[E_co]):
         if not other.reasons:
             return self
         combined = _dedupe((*self.reasons, *other.reasons))
-        return self if combined == self.reasons else Cause(combined)
+        unchanged = len(combined) == len(self.reasons) and all(
+            map(operator.is_, combined, self.reasons)
+        )
+        return self if unchanged else Cause(combined)
 
     def add_interrupts(self, interrupts: Cause[Never]) -> Cause[E_co]:
         """Add each interruption not recorded yet: one per interrupting
@@ -327,26 +332,19 @@ def _as_exception(error: object) -> BaseException:
 
 
 def _dedupe[E](reasons: tuple[Reason[E], ...]) -> tuple[Reason[E], ...]:
-    """Drop repeated reasons, keeping order. Like Effect's dedupeReasons,
-    reasons are bucketed by hash so only collisions are compared. Errors
-    that can't be hashed are compared against everything kept so far."""
-    kept: list[Reason[E]] = []
-    buckets: dict[int, list[Reason[E]]] = {}
-    unhashable: list[Reason[E]] = []
-    for r in reasons:
-        try:
-            h = hash(r)
-        except TypeError:
-            if r in kept:
-                continue
-            unhashable.append(r)
-        else:
-            bucket = buckets.setdefault(h, [])
-            if r in bucket or r in unhashable:
-                continue
-            bucket.append(r)
-        kept.append(r)
-    return tuple(kept)
+    """Drop repeated reasons, keeping order, as Effect's dedupeReasons:
+    reasons of one kind whose payloads ``Equal.equals`` calls equal
+    (``fail(1)`` and ``fail(True)`` stay apart) and whose annotations match."""
+    if len(reasons) < 2:
+        return reasons
+    return tuple(dedupe(reasons, _reason_key))
+
+
+def _reason_key(reason: Reason[object]) -> object:
+    match reason:
+        case Fail(error=payload) | Die(defect=payload) | Interrupt(fiber_id=payload):
+            annotations = reason.annotations
+            return (type(reason).__name__, payload, dict(annotations) if annotations else None)
 
 
 def merge[E](*causes: Cause[E]) -> Cause[E]:

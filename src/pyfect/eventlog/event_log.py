@@ -21,11 +21,11 @@ from __future__ import annotations
 
 import base64
 import binascii
-import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Never, cast, overload
 
+from pyfect import _json_text
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._layer_core import require_layer
@@ -311,12 +311,11 @@ def _b64url(data: bytes) -> str:
 
 def encode_identity_string(identity: IdentityService) -> str:
     """The identity as base64url JSON text (its private key as base64)."""
-    text = json.dumps(
+    text = _json_text.stringify(
         {
             "publicKey": identity.public_key,
             "privateKey": base64.b64encode(reveal(identity.private_key)).decode(),
-        },
-        separators=(",", ":"),
+        }
     )
     return _b64url(text.encode())
 
@@ -325,7 +324,7 @@ def decode_identity_string(value: str) -> IdentityService:
     """The identity of ``encode_identity_string``'s text; ``ValueError``
     when it is not one."""
     try:
-        decoded = json.loads(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+        decoded: Any = _json_text.parse(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
         public_key = decoded["publicKey"]
         private_key = base64.b64decode(decoded["privateKey"], validate=True)
     except (binascii.Error, ValueError, KeyError, TypeError) as cause:

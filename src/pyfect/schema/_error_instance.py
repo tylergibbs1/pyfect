@@ -14,14 +14,15 @@ value (an ``ErrorInstance``, or any other JSON value as it was).
 
 from __future__ import annotations
 
-import json
 import traceback
 from collections.abc import Mapping, Sequence
 from dataclasses import KW_ONLY, dataclass
 from functools import cache
 from typing import Never, TypeIs, cast
 
+from pyfect import _json_text
 from pyfect._json_value import JsonValue
+from pyfect.logger._text import format_unknown
 from pyfect.option import Option, Some
 from pyfect.schema import ast
 from pyfect.schema._codec_links import link
@@ -63,6 +64,14 @@ class ErrorInstance:
         return _error_schema(include_stack, exclude_cause)
 
 
+def _text_of(value: JsonValue) -> str:
+    # JSON text, or (for a non-finite number) as Effect's formatter writes it.
+    try:
+        return _json_text.stringify(value)
+    except _json_text.STRINGIFY_ERRORS:
+        return format_unknown(value)
+
+
 class DecodedDefect(Exception):
     """A defect read from its JSON form: ``value`` is the decoded
     ``ErrorInstance``, or the JSON value when it was not an error. Its text
@@ -71,7 +80,7 @@ class DecodedDefect(Exception):
     value: ErrorInstance | JsonValue
 
     def __init__(self, value: ErrorInstance | JsonValue) -> None:
-        text = value.message if isinstance(value, ErrorInstance) else json.dumps(value)
+        text = value.message if isinstance(value, ErrorInstance) else _text_of(value)
         super().__init__(text)
         self.value = value
 

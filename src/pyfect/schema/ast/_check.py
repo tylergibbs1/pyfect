@@ -11,9 +11,9 @@ marked ``abort()`` fails.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from pyfect.schema import issue as _issue
 from pyfect.schema.issue import Composite, InvalidValue, Issue, Path, Pointer, is_issue, reported
@@ -73,6 +73,20 @@ class FilterGroup(Generic[T_contra]):
 
 
 type Check[T] = Filter[T] | FilterGroup[T]
+
+
+def has_check(checks: Sequence[Check[Any]] | None, id: str) -> bool:
+    """Whether a check with the ``representation`` id ``id`` is among
+    ``checks`` or the groups inside them (Effect's ``hasCheck``)."""
+    for check in checks or ():
+        if isinstance(check, FilterGroup):
+            if has_check(check.checks, id):
+                return True
+            continue
+        representation = (check.annotations or {}).get("representation")
+        if isinstance(representation, Mapping) and representation.get("id") == id:  # pyright: ignore[reportUnknownMemberType]
+            return True
+    return False
 
 
 def make_filter[T](

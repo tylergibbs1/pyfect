@@ -4,13 +4,12 @@ graphql-sse in distinct connections mode."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, Never, cast
 
+from pyfect import _json_text, stream
 from pyfect import effect as fx
-from pyfect import stream
 from pyfect.clock import ClockService, clock_with
 from pyfect.context import Context
 from pyfect.duration import Seconds, to_seconds
@@ -112,9 +111,9 @@ def _get(url: str, request: GraphQLRequest, accept: str) -> HttpClientRequest:
     ]
     params: dict[str, str] = {"query": request.query, "operationName": request.operation_name}
     if request.variables is not None:
-        params["variables"] = json.dumps(request.variables, separators=(",", ":"))
+        params["variables"] = _json_text.stringify(request.variables)
     if request.extensions is not None:
-        params["extensions"] = json.dumps(request.extensions, separators=(",", ":"))
+        params["extensions"] = _json_text.stringify(request.extensions)
     return (
         http_request.get(path + hash_mark + fragment)
         .set_headers(request.headers)
@@ -202,7 +201,7 @@ def _sse_answers(response: HttpClientResponse) -> Stream[Answer, TransportError]
 
         def answer(event: sse.Event) -> Effect[Answer, TransportError]:
             try:
-                body: object = json.loads(event.data)
+                body: object = _json_text.parse(event.data)
             except ValueError as cause:
                 return fx.fail(
                     TransportError(

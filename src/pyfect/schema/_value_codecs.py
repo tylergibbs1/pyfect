@@ -18,7 +18,7 @@ from typing import Any
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
 from pyfect.schema._checks_number import int_value, is_greater_than_or_equal_to_big_int
-from pyfect.schema._codec_links import CodecLink, link, tagged
+from pyfect.schema._codec_links import CodecLink, partial_link, tagged
 
 _INT = ast.append_checks(ast.number, (int_value(),))
 _US_PER_MS = 1000
@@ -34,8 +34,12 @@ def string_codec(transformation: T.Transformation[Any, str]) -> CodecLink:
     return make
 
 
-def _offset_of(millis: int) -> timezone:
-    return timezone(timedelta(milliseconds=millis))
+_DAY_MS = 86_400_000
+
+
+def _offset_of(millis: int) -> timezone | None:
+    # Python's offsets are strictly inside a day (Effect's are not bounded).
+    return timezone(timedelta(milliseconds=millis)) if abs(millis) < _DAY_MS else None
 
 
 def _offset_to(zone: timezone) -> int:
@@ -43,7 +47,12 @@ def _offset_to(zone: timezone) -> int:
 
 
 def time_zone_offset_codec(_: tuple[ast.AST, ...]) -> ast.Link:
-    return link(_INT, decode=_offset_of, encode=_offset_to)
+    return partial_link(
+        _INT,
+        decode=_offset_of,
+        encode=_offset_to,
+        expected="an offset strictly between -24 and +24 hours",
+    )
 
 
 _NON_NEGATIVE_BIG_INT = ast.append_checks(ast.big_int, (is_greater_than_or_equal_to_big_int(0),))
@@ -53,10 +62,14 @@ def byte_size_codec(_: tuple[ast.AST, ...]) -> ast.Link:
     return ast.Link(_NON_NEGATIVE_BIG_INT, T.byte_size_from_big_int)
 
 
-def _duration_of(encoded: Mapping[str, Any]) -> timedelta:
-    if encoded["_tag"] == "Millis":
-        return timedelta(milliseconds=encoded["value"])
-    return timedelta(microseconds=round(Fraction(encoded["value"], _NS_PER_US)))
+def _duration_of(encoded: Mapping[str, Any]) -> timedelta | None:
+    # A ``timedelta`` holds less than a billion days (Effect's are not bounded).
+    try:
+        if encoded["_tag"] == "Millis":
+            return timedelta(milliseconds=encoded["value"])
+        return timedelta(microseconds=round(Fraction(encoded["value"], _NS_PER_US)))
+    except OverflowError:
+        return None
 
 
 def _duration_to(duration: timedelta) -> Mapping[str, object]:
@@ -70,7 +83,12 @@ _DURATION = ast.Union((tagged("Nanos", value=ast.big_int), tagged("Millis", valu
 
 
 def duration_codec(_: tuple[ast.AST, ...]) -> ast.Link:
-    return link(_DURATION, decode=_duration_of, encode=_duration_to)
+    return partial_link(
+        _DURATION,
+        decode=_duration_of,
+        encode=_duration_to,
+        expected="a duration a timedelta can hold",
+    )
 
 
 _BYTE_SIZE_STRING = ast.annotate(

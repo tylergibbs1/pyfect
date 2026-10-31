@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-import math
-from collections.abc import Callable, Hashable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from hypothesis import strategies as st
 
+from pyfect._equal import equal_key
 from pyfect.schema._arbitrary_constraint import ArbitraryConstraint
 
 type Strategy = st.SearchStrategy[Any]
@@ -27,22 +27,12 @@ class ArraysPlan:
 
 
 def unique_key(value: object) -> Hashable:
-    """A key equal for values ``Equal.equals`` calls equal: containers by
-    their items, ``True`` apart from ``1``, ``NaN`` equal to itself."""
-    match value:
-        case bool():
-            return (bool, value)
-        case float() if math.isnan(value):
-            return (float, "nan")
-        case list() | tuple():
-            return (tuple, tuple(map(unique_key, cast("Sequence[object]", value))))
-        case Mapping():
-            items = cast("Mapping[object, object]", value).items()
-            return (dict, frozenset((unique_key(k), unique_key(v)) for k, v in items))
-        case Hashable():
-            return value
-        case _:
-            return (id, id(value))
+    """A key equal for values ``Equal.equals`` calls equal
+    (``pyfect._equal.equal_key``); a value with no key is only itself."""
+    try:
+        return equal_key(value)
+    except TypeError:
+        return (id, id(value))
 
 
 def arrays(plan: ArraysPlan, constraint: ArbitraryConstraint) -> Strategy:

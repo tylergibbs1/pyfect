@@ -9,10 +9,10 @@ with ``", "``, and only ``set-cookie`` repeats in a response.
 
 from __future__ import annotations
 
-import json as _json
 from collections.abc import AsyncIterable, AsyncIterator, Iterable, Mapping
 from typing import Any, cast, final
 
+from pyfect import _json_text
 from pyfect.http.abort import AbortSignal
 from pyfect.http.headers import Headers
 
@@ -86,7 +86,7 @@ class _Message:
         return (await self.read()).decode("utf-8", "replace")
 
     async def json(self) -> Any:
-        return _json.loads(await self.read())
+        return _json_text.parse(await self.read())
 
     def chunks(self) -> AsyncIterator[bytes]:
         """The body, chunk by chunk."""
@@ -155,7 +155,7 @@ class WebResponse(_Message):
     def json_of(cls, value: object, *, status: int = 200) -> WebResponse:
         """A JSON response (Web ``Response.json``)."""
         return cls(
-            _json.dumps(value, separators=(",", ":")).encode(),
+            _json_text.stringify(value).encode(),
             status=status,
             headers={"content-type": "application/json"},
         )

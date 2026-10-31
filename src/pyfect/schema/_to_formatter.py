@@ -15,6 +15,7 @@ import enum
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
+from pyfect._stack import with_fresh_stack
 from pyfect.logger._text import format_unknown, json_quote
 from pyfect.schema import ast
 from pyfect.schema._schema import Codec
@@ -55,6 +56,7 @@ class _Derivation:
     def __init__(self, on_before: OnBefore | None) -> None:
         self._on_before = on_before
         self._done: dict[int, tuple[ast.AST, Formatter[Any]]] = {}
+        self._classes: dict[int, tuple[object, Formatter[Any]]] = {}
 
     def __call__(self, node: ast.AST) -> Formatter[Any]:
         hit = self._done.get(id(node))
@@ -150,16 +152,29 @@ class _Derivation:
         def format(value: object) -> str:
             if not target:
                 target.append(self(node.target))
-            return target[0](value)
+            return with_fresh_stack(lambda: target[0](value))
 
         return format
 
     def _class(self, node: ast.Class) -> Formatter[Any]:
         match node.side:
             case "decode" | "type":
-                fields = self(node.shape.fields.to_type())
-                values_of = node.shape.values_of
+                # Derived on first use, once per class: a class may hold itself.
+                shape = node.shape
+                hit = self._classes.get(id(shape))
+                if hit is not None:
+                    return hit[1]
+                fields: list[Formatter[Any]] = []
                 name = class_name(node)
-                return lambda instance: f"{name}({fields(values_of(instance))})"
+
+                def format(instance: Any) -> str:
+                    if not fields:
+                        fields.append(self(shape.fields.to_type()))
+                    return with_fresh_stack(
+                        lambda: f"{name}({fields[0](shape.values_of(instance))})"
+                    )
+
+                self._classes[id(shape)] = (shape, format)
+                return format
             case "encode" | "encoded":
                 return self(node.shape.encoded)

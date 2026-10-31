@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import re
 from datetime import UTC, datetime
@@ -13,7 +12,7 @@ from typing import Any
 
 from pyfect import _json_text as _json
 from pyfect._digits import parse_signed_digits
-from pyfect._js import js_number
+from pyfect._js import js_string
 from pyfect._js import trim as js_trim
 from pyfect.date_time._epoch import from_epoch_millis
 from pyfect.exit import Exit, Success
@@ -62,15 +61,7 @@ def _text_number(text: str) -> float:
 
 def to_string(value: object) -> str:
     """JavaScript's ``String(value)`` for the values schemas hold."""
-    match value:
-        case bool():
-            return "true" if value else "false"
-        case None:
-            return "null"
-        case float() | int():
-            return js_number(value)
-        case _:
-            return str(value)
+    return js_string(value)
 
 
 def to_boolean(value: object) -> bool:
@@ -146,19 +137,12 @@ def stringify_json(*, space: int | str | None = None) -> Getter[str, object]:
 
     def run(value: object, options: ParseOptions) -> Exit[str, Issue]:
         try:
-            if space is None:
-                return Success(_json.stringify(value))
-            return Success(_indented(value, space))
+            return Success(_json.stringify(value, indent=space))
         except _json.STRINGIFY_ERRORS:
             expected = {"expected": "a JSON-serializable value"}
             return fail_exit(InvalidValue(expected, reported(value, options)))
 
     return TransformEffect(run)
-
-
-def _indented(value: object, space: int | str) -> str:
-    indent = space if isinstance(space, str) else min(space, 10)
-    return json.dumps(value, ensure_ascii=False, allow_nan=False, indent=indent or None)
 
 
 def to_utc(value: object) -> datetime | None:

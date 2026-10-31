@@ -9,12 +9,11 @@ before it (progress, log messages, requests to the client).
 
 from __future__ import annotations
 
-import json
 import uuid
 from collections.abc import Sequence
 from typing import Any, cast
 
-from pyfect import stream
+from pyfect import _json_text, stream
 from pyfect._core import Effect
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai._mcp import sessions as S
@@ -68,7 +67,7 @@ def _media_types(header: str | None) -> list[str]:
 
 
 def _json(message: JsonObject) -> str:
-    return json.dumps(message, separators=(",", ":"), ensure_ascii=False)
+    return _json_text.stringify(message)
 
 
 def _event(message: JsonObject) -> bytes:

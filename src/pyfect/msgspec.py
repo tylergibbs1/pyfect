@@ -61,7 +61,7 @@ def from_struct[S: msgspec.Struct](
     return Json.pipe(decode_to(target, T.transform_effect(decode=decode, encode=encode)))
 
 
-_LOCATED = re.compile(r"^(?P<message>.*) - at `\$(?P<path>[^`]*)`$", re.DOTALL)
+_LOCATED = re.compile(r"^(?P<message>.*) - at (?P<key>`key` in )?`\$(?P<path>[^`]*)`$", re.DOTALL)
 _MISSING = re.compile(r"^Object missing required field `(?P<field>[^`]*)`$")
 _SEGMENT = re.compile(r"\.(?P<key>[^.\[]+)|\[(?P<index>\d+)\]|\[(?P<quoted>\"[^\"]*\")\]")
 
@@ -73,7 +73,7 @@ def _issue_of(error: msgspec.ValidationError) -> Issue:
     path: Path = ()
     located = _LOCATED.match(text)
     if located is not None:
-        text = located["message"]
+        text = located["message"] + (" (in a key)" if located["key"] else "")
         path = _path_of(located["path"])
     missing = _MISSING.match(text)
     if missing is not None:
@@ -83,12 +83,16 @@ def _issue_of(error: msgspec.ValidationError) -> Issue:
 
 
 def _path_of(text: str) -> Path:
+    """The path msgspec writes as ``.a[0]["b"]``, up to the first segment it
+    does not name (``[...]``: some value of a mapping)."""
     path: list[str | int] = []
-    for segment in _SEGMENT.finditer(text):
+    position = 0
+    while (segment := _SEGMENT.match(text, position)) is not None:
         if segment["index"] is not None:
             path.append(int(segment["index"]))
         elif segment["quoted"] is not None:
             path.append(segment["quoted"][1:-1])
         else:
             path.append(segment["key"])
+        position = segment.end()
     return tuple(path)

@@ -17,7 +17,8 @@ if TYPE_CHECKING:
 
 
 def to_strategy[T](schema: Codec[T, object, object, object], /) -> SearchStrategy[T]:
-    """Values of ``schema``'s decoded side that pass its checks.
+    """Values of ``schema``'s decoded side that pass its checks and that
+    ``schema`` encodes (a JSON string holds no ``NaN``, say).
 
     Common checks (bounds, lengths, sizes, patterns, integers) shape what is
     drawn; every check also filters it. A declaration is drawn with its

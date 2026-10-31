@@ -3,8 +3,8 @@ the loggers use, read for Python values.
 
 ``format_unknown`` writes one line of JSON-like text (strings quoted,
 ``None`` as ``null``) and names the type of anything that is not a plain
-``dict`` or ``list``. ``to_json`` turns a value into what ``json.dumps``
-accepts: exceptions become ``{"name", "message"}`` (plus their
+``dict`` or ``list``. ``to_json`` turns a value into what
+``pyfect._json_text.stringify`` accepts: exceptions become ``{"name", "message"}`` (plus their
 attributes), and circular references are dropped.
 """
 
@@ -12,13 +12,15 @@ from __future__ import annotations
 
 import dataclasses
 import inspect
-import json
 import math
 import re
 from collections.abc import Callable, Iterable, Mapping
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
+from pyfect import _json_text as _json
+from pyfect._js import js_number, js_string
+from pyfect._stack import with_fresh_stack
 from pyfect.logger._model import LogSpan
 
 _LABEL_UNSAFE = re.compile(r'[\s="]')
@@ -63,7 +65,7 @@ def escape_double_quotes(value: str) -> str:
 
 
 def json_quote(value: str) -> str:
-    return json.dumps(value, ensure_ascii=False)
+    return _json.quote(value)
 
 
 def json_quote_line(value: str) -> str:
@@ -102,14 +104,6 @@ def _exception_text(error: BaseException) -> str:
     return f"{type(error).__name__}: {message}" if message else type(error).__name__
 
 
-def _number(value: float) -> str:
-    if math.isnan(value):
-        return "NaN"
-    if math.isinf(value):
-        return "Infinity" if value > 0 else "-Infinity"
-    return repr(value)
-
-
 def _scalar_text(value: object) -> str | None:
     match value:
         case str():
@@ -118,16 +112,14 @@ def _scalar_text(value: object) -> str | None:
             return "null"
         case bool():
             return "true" if value else "false"
-        case int():
-            return str(value)
-        case float():
-            return _number(value)
+        case int() | float():
+            return js_number(value)
         case _:
             return None
 
 
 def _key(k: object) -> str:
-    return json_quote(k) if isinstance(k, str) else str(k)
+    return json_quote(k) if isinstance(k, str) else js_string(k)
 
 
 def format_unknown(value: object) -> str:
@@ -161,7 +153,7 @@ def format_unknown(value: object) -> str:
         elif (fields := _fields(v)) is not None:
             text = f"{name}({entries(fields.items())})"
         else:
-            text = repr(v)
+            text = f"{name}({{}})"
         return text
 
     def recur(v: object) -> str:
@@ -187,7 +179,8 @@ def structured_message(value: object) -> object:
     if _is_function(value):
         return str(value)
     if isinstance(value, list | tuple):
-        return [structured_message(v) for v in cast("Iterable[object]", value)]
+        items = cast("Iterable[object]", value)
+        return with_fresh_stack(lambda: [structured_message(v) for v in items])
     return value
 
 
@@ -204,7 +197,7 @@ def to_json(value: object) -> Any:
         for k, x in pairs:
             converted = recur(x)
             if converted is not _DROP:
-                out[k if isinstance(k, str) else str(k)] = converted
+                out[js_string(k)] = converted
         return out
 
     def sequence(values: Iterable[object]) -> list[object]:
@@ -215,7 +208,7 @@ def to_json(value: object) -> Any:
             return _DROP
         ancestors.add(identity)
         try:
-            return convert()
+            return with_fresh_stack(convert)  # as deep as the value
         finally:
             ancestors.discard(identity)
 
@@ -251,7 +244,7 @@ def to_json(value: object) -> Any:
 
 def json_text(value: object) -> str:
     """``value`` as compact JSON (``to_json``)."""
-    return json.dumps(to_json(value), ensure_ascii=False, separators=(",", ":"))
+    return _json.stringify(to_json(value))
 
 
 def to_string_unknown(value: object) -> str:
@@ -259,4 +252,4 @@ def to_string_unknown(value: object) -> str:
     JSON indented by two spaces (``to_json``)."""
     if isinstance(value, str):
         return value
-    return json.dumps(to_json(value), indent=2, ensure_ascii=False)
+    return _json.stringify(to_json(value), indent=2)

@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Never, TypeIs, overload
 
+from pyfect._equal import equals
 from pyfect.result import Ok, Result
 from pyfect.stream._base import A_co, E_co, R_co, StreamBase
 
@@ -177,10 +178,11 @@ class FilterMethods(StreamBase[A_co, E_co, R_co]):
     # --- repeats --------------------------------------------------------------
 
     def changes(self) -> Stream[A_co, E_co, R_co]:
-        """Drop each item equal (``==``) to the one written before it."""
+        """Drop each item ``Equal.equals`` calls equal to the one written
+        before it (``True`` is not ``1``, NaN is NaN)."""
         from pyfect.stream import _taking
 
-        return _taking.changes_with(self, _equal)
+        return _taking.changes_with(self, equals)
 
     def changes_with(self, f: Callable[[A_co, A_co], bool]) -> Stream[A_co, E_co, R_co]:
         """Drop each item ``f(item, last_written)`` calls the same."""
@@ -199,7 +201,3 @@ class FilterMethods(StreamBase[A_co, E_co, R_co]):
 
 def _not(value: bool) -> bool:
     return not value
-
-
-def _equal(a: object, b: object) -> bool:
-    return a == b

@@ -14,11 +14,11 @@ entries in any order converge to the fold of all entries in id order.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Never, TypedDict, cast
 
+from pyfect import _json_text
 from pyfect import schema as S
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
@@ -119,7 +119,7 @@ def _json_key(fields: Sequence[tuple[str, _Codec]], *, single: bool) -> Callable
             if isinstance(value, str):
                 return value
         encoded = [encode(row[name]) for name, encode in encoders]
-        return json.dumps(encoded, separators=(",", ":"), ensure_ascii=False)
+        return _json_text.stringify(encoded)
 
     return primary_key
 

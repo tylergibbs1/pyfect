@@ -124,10 +124,10 @@ def test_zone_strings_that_do_not_parse_give_none():
 def test_format_iso_zoned_names_only_named_zones():
     instant = datetime(2024, 7, 21, 8, 12, 34, tzinfo=UTC)
     assert date_time.format_iso_zoned(instant.astimezone(NEW_YORK)) == (
-        "2024-07-21T04:12:34-04:00[America/New_York]"
+        "2024-07-21T04:12:34.000-04:00[America/New_York]"
     )
     fixed = instant.astimezone(timezone(timedelta(hours=5, minutes=30)))
-    assert date_time.format_iso_zoned(fixed) == "2024-07-21T13:42:34+05:30"
+    assert date_time.format_iso_zoned(fixed) == "2024-07-21T13:42:34.000+05:30"
     bracketed_utc = date_time.make_zoned_from_string("2024-07-21T08:12:34[UTC]")
     assert bracketed_utc == instant
 

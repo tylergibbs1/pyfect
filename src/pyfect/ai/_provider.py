@@ -6,7 +6,6 @@ and ``Retry-After`` read from headers, and the SSE events of a response.
 
 from __future__ import annotations
 
-import json
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -14,7 +13,7 @@ from datetime import timedelta
 from typing import Any, Never, cast
 
 import pyfect as fx
-from pyfect import byte_size
+from pyfect import _json_text, byte_size
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._js import or_default
@@ -161,7 +160,7 @@ def parse_json(text: str | None) -> object:
 
 def dumps(value: object) -> str:
     """JSON as JavaScript's ``JSON.stringify`` writes it."""
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+    return _json_text.stringify(value)
 
 
 def with_redacted_headers[A, E, R](

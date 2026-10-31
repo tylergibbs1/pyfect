@@ -63,20 +63,43 @@ def text_decoder(
     return codecs.getincrementaldecoder(name)("strict" if fatal else "replace")
 
 
+_SHORT_INT_BITS = 3000
+"""Ints below ``2 ** 3000`` (about 900 digits) are well under Python's
+4300-digit ``str`` limit."""
+
+
+def int_text(value: int) -> str:
+    """``str(value)`` for an ``int`` of any size: JavaScript's ``BigInt``
+    prints in full, where Python's ``str`` raises past 4300 digits. The
+    digits are split in halves until each part is short."""
+    if value < 0:
+        return "-" + int_text(-value)
+    if value.bit_length() <= _SHORT_INT_BITS:
+        return str(int(value))
+    half = int(value.bit_length() * 0.30102999566398) // 2  # log10(2): digits / 2
+    high, low = divmod(value, 10**half)
+    return int_text(high) + int_text(low).rjust(half, "0")
+
+
 def js_number(value: float) -> str:
-    """``value`` as JavaScript prints it. An ``int`` (Effect's ``bigint``)
-    prints in full."""
+    """``value`` as JavaScript prints it (``String(value)``): ``2`` not
+    ``2.0``, ``1e-7``, ``0`` for ``-0.0``. An ``int`` (Effect's ``bigint``)
+    prints in full, however long."""
     if isinstance(value, int):
-        return str(value)
+        return int_text(value)
     if math.isnan(value):
         return "NaN"
     if math.isinf(value):
         return "Infinity" if value > 0 else "-Infinity"
     if value == 0.0:
         return "0"
+    text = repr(value)  # the shortest round-tripping decimal, as JavaScript's
+    if "e" not in text:
+        # Python writes 1e-4 <= |value| < 1e16 without an exponent, as
+        # JavaScript does, but with ``.0`` on a whole number.
+        return text.removesuffix(".0")
     sign = "-" if value < 0 else ""
-    # repr is the shortest round-tripping decimal, as JavaScript's.
-    exact = Decimal(repr(abs(value))).normalize().as_tuple()
+    exact = Decimal(text.removeprefix("-")).normalize().as_tuple()
     digits = "".join(map(str, exact.digits))
     k = len(digits)
     n = k + int(exact.exponent)  # value = 0.digits * 10**n
@@ -90,6 +113,23 @@ def js_number(value: float) -> str:
         mantissa = digits[0] + ("." + digits[1:] if k > 1 else "")
         body = f"{mantissa}e{'+' if n - 1 >= 0 else '-'}{abs(n - 1)}"
     return sign + body
+
+
+def js_string(value: object) -> str:
+    """``String(value)`` for Python values: ``true`` / ``false``, ``null``
+    for ``None``, numbers as ``js_number``, a string as it is, anything else
+    ``str(value)``."""
+    match value:
+        case str():
+            return value
+        case bool():
+            return "true" if value else "false"
+        case None:
+            return "null"
+        case int() | float():
+            return js_number(value)
+        case _:
+            return str(value)
 
 
 def divide(dividend: float, divisor: float) -> float:

@@ -9,13 +9,13 @@ characters of the decoded text after a leading byte-order mark.
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum, auto
 from typing import ClassVar, Literal, Never
 
+from pyfect import _json_text
 from pyfect._digits import parse_digits
 from pyfect._json_text import PARSE_ERRORS, Json, parse
 from pyfect.errors import TaggedError
@@ -157,7 +157,7 @@ class Scanner:
 
     def pointer_prefix(self, length: int, *rest: str) -> str:
         tokens = (*self.config.tokens[:length], *rest)
-        return json.dumps("".join("/" + escape(token) for token in tokens), ensure_ascii=False)
+        return _json_text.stringify("".join("/" + escape(token) for token in tokens))
 
     def subject(self) -> str:
         """The value being captured, for limit errors."""
@@ -201,7 +201,7 @@ class Scanner:
         message = (
             "Unexpected content after the document"
             if state is _State.END
-            else f"Unexpected character {json.dumps(text[i], ensure_ascii=False)}"
+            else f"Unexpected character {_json_text.stringify(text[i])}"
         )
         raise self.fail("Syntax", message, self.base + i)
 
@@ -236,7 +236,7 @@ class Scanner:
         frame = self.frames[-1]
         if self.key == self.config.tokens[len(self.frames) - 1]:
             if frame.found:
-                message = f"Duplicate key {json.dumps(self.key)} along the pointer"
+                message = f"Duplicate key {_json_text.stringify(self.key)} along the pointer"
                 raise self.fail("Pointer", message, self.base + i)
             frame.found = True
             self.state = _State.VALUE

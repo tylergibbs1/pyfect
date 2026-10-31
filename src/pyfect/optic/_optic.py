@@ -14,10 +14,10 @@ Id[User]().key("name")``.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Hashable, Sequence
 from typing import Any, TypeIs, cast, overload
 
+from pyfect import _json_text
 from pyfect.optic import _data
 from pyfect.optic._steps import (
     Kind,
@@ -144,7 +144,7 @@ class Optional[S, A]:
     def tag(self: Optional[S, A], tag: ast.LiteralValue, /) -> Optional[S, A]: ...
     def tag(self, tag: ast.LiteralValue, /) -> Any:
         """Only a focus whose ``_tag`` (a key or an attribute) is ``tag``."""
-        issue: Err[Issue] = Err(InvalidValue({"expected": f"{json.dumps(tag)} tag"}))
+        issue: Err[Issue] = Err(InvalidValue({"expected": f"{_json_text.stringify(tag)} tag"}))
 
         def get(s: object) -> Result[object, Issue]:
             found = _data.get(s, "_tag") if _data.has(s, "_tag") else None

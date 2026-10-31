@@ -54,3 +54,21 @@ def test_lax_mode_reads_numbers_from_strings():
     schema = M.from_struct(Item, strict=False)
 
     assert S.decode_unknown_sync(schema)({"sku": "a", "qty": "2"}) == Item("a", 2)
+
+
+class _Mapping(msgspec.Struct):
+    m: dict[str, int]
+    rows: list[dict[str, int]] = msgspec.field(default_factory=list[dict[str, int]])
+
+
+def test_an_error_inside_a_mapping_value_stops_the_path_at_the_mapping():
+    """msgspec writes ``$.m[...]`` (some value of ``m``); QA schema-data F10."""
+    with pytest.raises(S.SchemaError) as error:
+        S.decode_unknown_sync(M.from_struct(_Mapping))({"m": {"k": "x"}})
+    assert str(error.value) == 'Expected `int`, got `str`\n  at ["m"]'
+
+
+def test_an_error_inside_a_listed_mapping_keeps_the_index():
+    with pytest.raises(S.SchemaError) as error:
+        S.decode_unknown_sync(M.from_struct(_Mapping))({"m": {}, "rows": [{"a": "x"}]})
+    assert str(error.value) == 'Expected `int`, got `str`\n  at ["rows"][0]'

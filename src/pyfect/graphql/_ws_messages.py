@@ -4,11 +4,11 @@ ones."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TypeIs, cast
 
+from pyfect import _json_text
 from pyfect.socket._socket import Chunk
 
 
@@ -75,7 +75,7 @@ def _formatted_errors(payload: object) -> Sequence[Mapping[str, object]] | None:
 
 
 def _type_name(message: Mapping[str, object]) -> str:
-    return json.dumps(message["type"]) if "type" in message else "undefined"
+    return _json_text.stringify(message["type"]) if "type" in message else "undefined"
 
 
 def _keep_alive(kind: str, payload: object) -> ServerMessage | Invalid:
@@ -107,7 +107,7 @@ def parse(frame: Chunk) -> ServerMessage | Invalid:
     """The server message ``frame`` holds. The shape is checked before
     any id lookup, so an unknown id does not excuse an invalid message."""
     try:
-        parsed: object = json.loads(frame if isinstance(frame, str) else bytes(frame))
+        parsed: object = _json_text.parse(frame if isinstance(frame, str) else bytes(frame))
     except ValueError as cause:
         return Invalid(str(cause), cause)
     if not _is_object(parsed):

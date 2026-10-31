@@ -135,11 +135,39 @@ def test_every_exported_check_is_in_the_catalog():
     assert checks == set(_CHECKED)
 
 
+def _as_js_numbers(value: object) -> object:
+    """``value`` with every number a float: JSON text has JavaScript's
+    numbers, so a float past ``2 ** 53`` is written as the digits
+    ``JSON.stringify`` writes (``30077077691360010``) and read back as that
+    int, the same double (PARITY §4)."""
+    match value:
+        case bool() | None | str():
+            return value
+        case int() | float():
+            return float(value)
+        case list() | tuple():
+            return [_as_js_numbers(v) for v in cast("list[object]", value)]
+        case dict():
+            items = cast("dict[str, object]", value).items()
+            return {k: _as_js_numbers(v) for k, v in items}
+        case _:
+            return value
+
+
+_JSON_TEXT = {"UnknownFromJsonString"}
+
+
 @pytest.mark.parametrize("name", sorted(_CATALOG))
 def test_decoding_an_encoded_value_gives_it_back(name: str):
     schema = _CATALOG[name]
     is_ = S.is_(schema)
-    equivalent = S.to_equivalence(schema)
+    same = S.to_equivalence(schema)
+
+    def equivalent(a: object, b: object) -> bool:
+        if name in _JSON_TEXT:
+            return same(_as_js_numbers(a), _as_js_numbers(b))
+        return same(a, b)
+
     codecs = (schema, S.to_codec_json(schema))
     round_trips = [(S.encode_sync(c), S.decode_unknown_sync(c)) for c in codecs]
 

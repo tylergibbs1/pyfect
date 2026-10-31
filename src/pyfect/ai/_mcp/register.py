@@ -4,14 +4,13 @@ asking the client for input (``elicit``)."""
 from __future__ import annotations
 
 import base64
-import json
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, LiteralString, Never, cast, overload
 
 import pyfect as fx
-from pyfect import error_reporter
+from pyfect import _json_text, error_reporter
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -98,8 +97,8 @@ def _internal[A](effect: Effect[A, Any, Any]) -> Effect[A, InternalError, Any]:
     return effect.catch_cause(answer)
 
 
-def _json_text(value: object) -> str:
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+def _stringify(value: object) -> str:
+    return _json_text.stringify(value)
 
 
 def _tool_error_result(message: str) -> CallToolResult:
@@ -107,7 +106,7 @@ def _tool_error_result(message: str) -> CallToolResult:
 
 
 def _content_of(encoded: object) -> list[ContentBlock]:
-    return [] if encoded is None else [{"type": "text", "text": _json_text(encoded)}]
+    return [] if encoded is None else [{"type": "text", "text": _stringify(encoded)}]
 
 
 # --- tools ---------------------------------------------------------------------------------

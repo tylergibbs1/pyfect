@@ -3,10 +3,10 @@ with the fields the revision's schema lacks left out."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Any, cast
 
+from pyfect import _json_text
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter
 from pyfect.ai.mcp_schema import (
     Annotations,
@@ -150,7 +150,7 @@ def _unwrap_string(result: CallToolResult) -> list[ContentBlock]:
     if not isinstance(structured, str) or len(blocks) != 1:
         return blocks
     block = blocks[0]
-    if block["type"] == "text" and block["text"] == json.dumps(structured, separators=(",", ":")):
+    if block["type"] == "text" and block["text"] == _json_text.stringify(structured):
         return [{**block, "text": structured}]
     return blocks
 
