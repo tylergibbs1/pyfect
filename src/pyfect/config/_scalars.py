@@ -6,10 +6,11 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Callable, Sequence
-from datetime import UTC, datetime
+from datetime import datetime
 from decimal import Decimal
 from urllib.parse import SplitResult
 
+from pyfect import _js_date as js_date
 from pyfect import _json_text
 from pyfect._js import SPACE, js_number
 from pyfect._url import parse_url
@@ -193,11 +194,10 @@ byte_size = Scalar(_STRING, _byte_size)
 
 
 def _date_time(text: str) -> Result[datetime, Issue]:
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
+    parsed = js_date.parse_input(text)
+    if parsed is None:
         return Err(InvalidValue({"message": "Expected a valid Date"}))
-    return Ok(parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC))
+    return Ok(parsed)
 
 
 date_time = Scalar(_STRING, _date_time)

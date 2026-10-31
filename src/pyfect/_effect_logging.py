@@ -36,13 +36,13 @@ class LoggingMethods(EffectBase[A_co, E_co, R_co]):
     def with_log_span(self, label: str) -> Effect[A_co, E_co, R_co]:
         """Run inside a log span: logs show ``label=<elapsed>ms``, timed by
         the ``Clock`` from when this effect starts."""
-        from pyfect.clock import Clock
+        from pyfect.clock import Clock, now_millis_unsafe
         from pyfect.logger import CurrentLogSpans, LogSpan
 
         inner = as_effect(self)
 
         def body(fiber: Fiber[Any, Any]) -> Effect[A_co, E_co, R_co]:
-            span = LogSpan(label, fiber.get_ref(Clock).now_nanos_unsafe() // 1_000_000)
+            span = LogSpan(label, now_millis_unsafe(fiber.get_ref(Clock)))
             return inner.update_service(CurrentLogSpans, lambda spans: (span, *spans))
 
         return _core._WithFiber(body)

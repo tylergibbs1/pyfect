@@ -27,7 +27,7 @@ from pyfect._core import (
 from pyfect._fiber import Fiber
 from pyfect.cause import Cause
 from pyfect.clock import Clock, ClockService
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, Seconds, nanos_or_infinite, to_seconds
 from pyfect.exit import Exit, Failure, Success
 
 type TimeToLive[A, E] = Duration | Callable[[Exit[A, E]], Duration]
@@ -84,7 +84,7 @@ class _Cache[A, E, R]:
         self.source = source
         self.ttl = ttl
         self.exit: Exit[A, E] | None = None
-        self.expires_at = 0.0
+        self.expires_at: int | float = 0  # monotonic nanoseconds
         self.current: _Run | None = None
         self.get: Effect[A, E, R] = _WithFiber(self._get)
         self.invalidate: Effect[None] = _Sync(self._invalidate)
@@ -96,9 +96,7 @@ class _Cache[A, E, R]:
             # would keep the run alive after every real caller left.
             return run.fiber.join() if run.fiber is fiber else self._join(fiber, run)
         clock: ClockService = fiber._context.lookup(Clock)[1]
-        if self.exit is not None and (
-            self.expires_at == _FOREVER or clock.monotonic_unsafe() < self.expires_at
-        ):
+        if self.exit is not None and (clock.monotonic_nanos_unsafe() < self.expires_at):
             return _FromExit(self.exit)
         self.exit = None
         run = _Run(Fiber(fiber._run_scheduler, fiber._context, None))
@@ -123,7 +121,7 @@ class _Cache[A, E, R]:
         if isinstance(ex, Failure) and ex.cause.has_interrupts:
             return  # abandoned, not a result
         ttl = self.ttl(ex)
-        self.expires_at = _FOREVER if ttl == _FOREVER else clock.monotonic_unsafe() + ttl
+        self.expires_at = clock.monotonic_nanos_unsafe() + nanos_or_infinite(ttl)
         self.exit = ex
 
     def leave(self, run: _Run) -> Effect[None] | None:

@@ -97,6 +97,13 @@ def monotonic() -> Effect[float]:
     return Clock().map(lambda c: c.monotonic_unsafe())
 
 
+def now_millis_unsafe(clock: ClockService) -> int:
+    """``clock``'s wall-clock time in whole milliseconds since the epoch
+    (Effect's ``currentTimeMillisUnsafe``), floored from its nanoseconds:
+    ``now_unsafe() * 1000`` floors 1.001 s to 1000 ms."""
+    return clock.now_nanos_unsafe() // 1_000_000
+
+
 def now_nanos() -> Effect[int]:
     """Wall-clock time, whole nanoseconds since the epoch."""
     return Clock().map(lambda c: c.now_nanos_unsafe())
@@ -136,6 +143,7 @@ __all__ = [
     "monotonic",
     "monotonic_nanos",
     "now",
+    "now_millis_unsafe",
     "now_nanos",
     "sleep",
     "timed",

@@ -4,7 +4,6 @@ then a 10-bit machine id and a 12-bit sequence."""
 
 from __future__ import annotations
 
-import math
 import random
 from dataclasses import dataclass
 from datetime import datetime
@@ -14,7 +13,7 @@ from pyfect import layer as layer_
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.brand import Brand
-from pyfect.clock import Clock, ClockService
+from pyfect.clock import Clock, ClockService, now_millis_unsafe
 from pyfect.cluster.machine_id import MachineId
 from pyfect.context import Tag
 from pyfect.date_time._epoch import from_epoch_millis
@@ -80,7 +79,7 @@ class SnowflakeGenerator:
         self._sequence_at = self._now()
 
     def _now(self) -> int:
-        return math.floor(self._clock.now_unsafe() * 1000)
+        return now_millis_unsafe(self._clock)
 
     def set_machine_id(self, machine_id: MachineId) -> Effect[None]:
         def run() -> None:

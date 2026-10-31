@@ -35,6 +35,7 @@ class Seconds(float):
 
 
 ZERO: Seconds = Seconds(0.0)
+_NANOS = 1_000_000_000
 
 
 def to_seconds(duration: Duration) -> Seconds:
@@ -49,6 +50,28 @@ def to_nanos(seconds: float) -> int:
     multiplying by ``1e9`` in floating point would be off by tens of
     nanoseconds at epoch-sized values."""
     return math.floor(_exact_nanos(seconds))
+
+
+def nanos_or_infinite(seconds: Seconds) -> int | float:
+    """``to_nanos``, keeping an infinite duration infinite (a timer that
+    never fires). Deadlines are ``now_nanos + nanos_or_infinite(d)``."""
+    return float(seconds) if math.isinf(seconds) else to_nanos(seconds)
+
+
+def from_nanos(nanos: int | float) -> Seconds:
+    """A sleep of ``nanos`` whole nanoseconds; ``to_nanos`` reads it back
+    exactly (below 10**15 ns, about 11 days), so a timer computed in
+    nanoseconds never floors to a 0 ns sleep that leaves time unmoved."""
+    return Seconds(nanos / _NANOS)
+
+
+def round_nanos(nanos: float) -> int:
+    """The whole nanoseconds nearest ``nanos``, ties away from zero
+    (Effect's ``roundTiesAwayFromZero``, as ``Math.round`` on the size)."""
+    size = abs(nanos)
+    whole = math.floor(size)
+    rounded = whole + 1 if size - whole >= 0.5 else whole
+    return -rounded if nanos < 0 else rounded
 
 
 def to_millis(duration: Duration) -> float:
@@ -68,6 +91,14 @@ def _exact_nanos(seconds: float) -> Decimal:
     return Decimal(repr(float(seconds))) * 10**9
 
 
+def _effect_nanos(seconds: float) -> int:
+    """Whole nanoseconds in Effect's ``Duration.seconds(seconds)``: the
+    milliseconds ``seconds * 1000``, kept whole, else rounded to the
+    nanosecond with ties away from zero (``2.5e-9`` is 3 ns)."""
+    millis = seconds * 1000
+    return int(millis) * 10**6 if millis.is_integer() else round_nanos(millis * 1_000_000)
+
+
 _UNITS = (
     ("d", 86_400 * 10**9),
     ("h", 3_600 * 10**9),
@@ -81,7 +112,7 @@ def format_duration(seconds: Seconds) -> str:
     """Human-readable, as Effect's ``Duration.format``: ``"1s 500ms"``."""
     if math.isinf(seconds):
         return "Infinity" if seconds > 0 else "-Infinity"
-    nanos = round(_exact_nanos(abs(seconds)))  # Effect keeps whole nanoseconds
+    nanos = _effect_nanos(abs(seconds))
     if nanos == 0:
         return "0"
     pieces: list[str] = []
@@ -94,4 +125,15 @@ def format_duration(seconds: Seconds) -> str:
     return ("-" if seconds < 0 else "") + " ".join(pieces)
 
 
-__all__ = ["ZERO", "Duration", "Seconds", "format_duration", "to_millis", "to_nanos", "to_seconds"]
+__all__ = [
+    "ZERO",
+    "Duration",
+    "Seconds",
+    "format_duration",
+    "from_nanos",
+    "nanos_or_infinite",
+    "round_nanos",
+    "to_millis",
+    "to_nanos",
+    "to_seconds",
+]

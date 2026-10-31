@@ -10,7 +10,7 @@ from typing import Any, Literal, Never, cast
 
 from pyfect import _json_text, stream
 from pyfect import effect as fx
-from pyfect.clock import ClockService, clock_with
+from pyfect.clock import ClockService, clock_with, now_millis_unsafe
 from pyfect.context import Context
 from pyfect.duration import Seconds, to_seconds
 from pyfect.effect import Effect
@@ -161,9 +161,7 @@ def _read_answer(
 def _transport_error(clock: ClockService) -> Callable[[object], TransportError]:
     def convert(error: object) -> TransportError:
         if isinstance(error, http_error.HttpClientError):
-            return TransportError.from_http_client_error(
-                error, now_millis=clock.now_unsafe() * 1000
-            )
+            return TransportError.from_http_client_error(error, now_millis=now_millis_unsafe(clock))
         return cast("TransportError", error)
 
     return convert

@@ -35,7 +35,14 @@ from pyfect._root import new_root, start_root
 from pyfect.clock import Clock, ClockService
 from pyfect.context import Context
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import (
+    Duration,
+    Seconds,
+    from_nanos,
+    nanos_or_infinite,
+    to_nanos,
+    to_seconds,
+)
 from pyfect.effect import fail, from_exit, interrupt
 from pyfect.errors import ExceededCapacityError
 from pyfect.exit import Exit, Failure, Success, as_void_all
@@ -66,7 +73,7 @@ class _Entry[A, E]:
         self.idle_time_to_live = idle_time_to_live
         self.finalizer: Effect[None] = _VOID  # set once the entry's key is known
         self.fiber: Fiber[None, Never] | None = None  # the idle timer
-        self.expires_at = 0.0
+        self.expires_at: int | float = 0  # monotonic nanoseconds
         self.ref_count = 1
 
 
@@ -189,7 +196,9 @@ class RcMap[K: Hashable, A, E = Never]:
             entry = None if self._entries is None else self._entries.get(key)
             if entry is not None and entry.idle_time_to_live != 0:
                 clock: ClockService = fiber._context.lookup(Clock)[1]
-                entry.expires_at = clock.monotonic_unsafe() + entry.idle_time_to_live
+                entry.expires_at = clock.monotonic_nanos_unsafe() + nanos_or_infinite(
+                    entry.idle_time_to_live
+                )
             return _VOID
 
         return _WithFiber(body)
@@ -276,15 +285,15 @@ class RcMap[K: Hashable, A, E = Never]:
         if math.isinf(ttl):
             return _VOID
         clock: ClockService = fiber._context.lookup(Clock)[1]
-        entry.expires_at = clock.monotonic_unsafe() + ttl
+        entry.expires_at = clock.monotonic_nanos_unsafe() + to_nanos(ttl)
         if entry.fiber is not None:
             return _VOID
 
         def expire_when_due(restore: Restore) -> Effect[None]:
             def check() -> Effect[None]:
-                remaining = entry.expires_at - clock.monotonic_unsafe()
+                remaining = entry.expires_at - clock.monotonic_nanos_unsafe()
                 if remaining > 0:
-                    return restore(clock.sleep(Seconds(remaining))).and_then(_Suspend(check))
+                    return restore(clock.sleep(from_nanos(remaining))).and_then(_Suspend(check))
                 current = self._entries
                 if current is None or entry.ref_count > 0 or current.get(key) is not entry:
                     return _VOID

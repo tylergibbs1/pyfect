@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
+from pyfect import _js_date as js_date
 from pyfect import _json_text as _json
 from pyfect._digits import parse_signed_digits
 from pyfect._js import js_string
@@ -172,10 +173,9 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _parse_date(text: str) -> datetime | None:
-    try:
-        return _as_utc(datetime.fromisoformat(text))
-    except ValueError:
-        pass
+    parsed = js_date.parse_input(text)
+    if parsed is not None:
+        return parsed.astimezone(UTC)
     try:
         return _as_utc(parsedate_to_datetime(text))
     except (TypeError, ValueError, IndexError):

@@ -11,7 +11,7 @@ from pyfect._core import Effect
 from pyfect.cause import Cause
 from pyfect.clock import Clock
 from pyfect.context import Reference
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Duration, Seconds, nanos_or_infinite, to_seconds
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.latch import Latch
 from pyfect.result import Ok
@@ -78,15 +78,15 @@ def default_retry_policy() -> Schedule[Any, Any, Never, Never]:
 class _Pinger:
     __slots__ = ("_awaiting", "_clock", "_last_seen", "_timeout", "latch")
 
-    def __init__(self, clock: Any, timeout: float) -> None:
+    def __init__(self, clock: Any, timeout: Seconds) -> None:
         self._clock = clock
-        self._timeout = timeout
-        self._last_seen = clock.monotonic_unsafe()
+        self._timeout = nanos_or_infinite(timeout)
+        self._last_seen = clock.monotonic_nanos_unsafe()
         self._awaiting = False
         self.latch = Latch(False)
 
     def on_frame(self) -> None:
-        self._last_seen = self._clock.monotonic_unsafe()
+        self._last_seen = self._clock.monotonic_nanos_unsafe()
         self._awaiting = False
 
     def reset(self) -> None:
@@ -95,7 +95,8 @@ class _Pinger:
 
     def tick(self, write_ping: Effect[None, Any]) -> Effect[None, Any]:
         def body() -> Effect[None, Any]:
-            if self._awaiting and self._clock.monotonic_unsafe() - self._last_seen > self._timeout:
+            elapsed = self._clock.monotonic_nanos_unsafe() - self._last_seen
+            if self._awaiting and elapsed > self._timeout:
                 return self.latch.open().as_void()
             self._awaiting = True
             return write_ping

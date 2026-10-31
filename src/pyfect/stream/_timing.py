@@ -13,7 +13,7 @@ from pyfect.cause import Cause, Die
 from pyfect.cause import die as die_cause
 from pyfect.channel import transform_pull
 from pyfect.clock import Clock, ClockService, sleep
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_nanos, nanos_or_infinite, round_nanos, to_seconds
 from pyfect.latch import Latch
 from pyfect.schedule import Schedule
 from pyfect.schedule._model import Stop, to_step_with_sleep
@@ -83,15 +83,17 @@ def timeout_or_else(
     if seconds <= 0:
         return suspend(fallback)
     marker = _TimedOut()
+    timeout_ns = nanos_or_infinite(seconds)
 
     def with_clock(clock: ClockService) -> AnyStream_:
-        # When the pull in flight times out; empty while no pull waits.
-        deadline: list[float] = []
+        # When the pull in flight times out (clock nanoseconds); empty while
+        # no pull waits.
+        deadline: list[int | float] = []
         waiting = Latch()
 
         def started(pull: AnyEffect) -> AnyEffect:
             def start() -> AnyEffect:
-                deadline[:] = [clock.now_unsafe() + seconds]
+                deadline[:] = [clock.now_nanos_unsafe() + timeout_ns]
                 waiting.open_unsafe()
                 return pull
 
@@ -107,8 +109,8 @@ def timeout_or_else(
                 yield waiting.wait()
                 if not deadline:
                     continue
-                yield sleep(deadline[0] - clock.now_unsafe())
-                if not deadline or deadline[0] - clock.now_unsafe() > 0:
+                yield sleep(from_nanos(deadline[0] - clock.now_nanos_unsafe()))
+                if not deadline or deadline[0] - clock.now_nanos_unsafe() > 0:
                     continue
                 yield _FailCause(die_cause(marker))
 
@@ -128,14 +130,14 @@ def timeout_or_else(
 
 
 def debounce(self: AnyStream, duration: Duration) -> AnyStream_:
-    wait = to_seconds(duration)
+    wait_ns = nanos_or_infinite(to_seconds(duration))
 
     def build(pull: AnyEffect, scope: CloseableScope) -> AnyEffect:
         def body() -> Generator[AnyEffect, Any, AnyEffect]:
             clock: ClockService = yield Clock()
             last: Chunk | None = None
             stopped: Cause[Any] | None = None
-            emit_at = math.inf
+            emit_at: int | float = math.inf  # clock nanoseconds
             pulling = Latch()
             emitting = Latch()
             ended = Latch()
@@ -144,13 +146,13 @@ def debounce(self: AnyStream, duration: Duration) -> AnyStream_:
                 nonlocal last, emit_at
                 emitting.open_unsafe()
                 last = chunk
-                emit_at = clock.now_unsafe() + wait
+                emit_at = clock.now_nanos_unsafe() + wait_ns
                 return _VOID
 
             def failed(cause: Cause[Any]) -> AnyEffect:
                 nonlocal stopped, emit_at
                 stopped = cause
-                emit_at = clock.now_unsafe()
+                emit_at = clock.now_nanos_unsafe()
                 emitting.open_unsafe()
                 ended.open_unsafe()
                 return _VOID
@@ -164,12 +166,12 @@ def debounce(self: AnyStream, duration: Duration) -> AnyStream_:
                 return _Succeed((chunk[-1],))
 
             def loop() -> AnyEffect:
-                now = clock.now_unsafe()
-                delay = wait if emit_at < now else min(wait, emit_at - now)
-                return _FlatMap(sleep(Seconds(delay)).race_first(ended.wait()), after)
+                now = clock.now_nanos_unsafe()
+                delay = wait_ns if emit_at < now else min(wait_ns, emit_at - now)
+                return _FlatMap(sleep(from_nanos(delay)).race_first(ended.wait()), after)
 
             def after(_: object) -> AnyEffect:
-                if clock.now_unsafe() < emit_at:
+                if clock.now_nanos_unsafe() < emit_at:
                     return loop()
                 if last is not None:
                     emitting.close_unsafe()
@@ -207,7 +209,7 @@ def throttle(
     strategy: str,
 ) -> AnyStream_:
     seconds = to_seconds(duration)
-    period_ns = seconds if math.isinf(seconds) else round(seconds * 1e9)
+    period_ns = nanos_or_infinite(seconds)
     cap = math.inf if units + burst < 0 else units + burst
     if strategy == "enforce":
         return _throttle_enforce(self, cost, units, period_ns, cap)
@@ -276,8 +278,12 @@ def _throttle_shape(
                 if remaining >= 0:
                     return keep()
                 cycles = math.inf if units == 0 else -remaining / units
-                delay = max(0.0, cycles * period_ns / 1e9)
-                return _FlatMap(sleep(Seconds(delay)), keep) if delay > 0 else keep()
+                delay = max(0.0, cycles * period_ns)
+                if delay <= 0:
+                    return keep()
+                # Effect sleeps fractional milliseconds rounded to the nanosecond.
+                wait = from_nanos(delay if math.isinf(delay) else round_nanos(delay))
+                return _FlatMap(sleep(wait), keep)
 
             return _FlatMap(cost(chunk), weighed)
 

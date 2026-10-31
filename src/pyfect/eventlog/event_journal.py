@@ -21,7 +21,7 @@ from typing import Any, NewType, Protocol, cast
 
 from pyfect import schema as S
 from pyfect._core import Effect
-from pyfect.clock import Clock, ClockService
+from pyfect.clock import Clock, ClockService, now_millis_unsafe
 from pyfect.context import Tag
 from pyfect.date_time._epoch import from_epoch_millis
 from pyfect.effect import gen, succeed, suspend, sync, try_
@@ -143,7 +143,7 @@ def warn_if_ahead(clock: ClockService, ids: Iterable[EntryId]) -> Effect[None]:
     latest = _max_entry_id(ids)
     if latest is None:
         return succeed(None)
-    ahead = entry_id_millis(latest) - clock.now_unsafe() * 1000
+    ahead = entry_id_millis(latest) - now_millis_unsafe(clock)
     if ahead <= _MAX_CLOCK_SKEW_MILLIS:
         return succeed(None)
     return log_warning(

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from pyfect import testing
 from pyfect.cluster import deliver_at, machine_id, shard_id, snowflake
 
 
@@ -45,3 +46,12 @@ def test_shard_id_from_string_round_trips_and_keeps_colons_in_the_group() -> Non
 def test_shard_id_from_string_rejects_non_numbers(text: str) -> None:
     with pytest.raises(ValueError, match="ShardId"):
         shard_id.from_string(text)
+
+
+@testing.effect
+def test_snowflake_generator_reads_whole_clock_milliseconds():
+    """Effect's generator reads ``currentTimeMillisUnsafe``. Float seconds
+    times 1000 floors 1.001 s to 1000 ms."""
+    yield from testing.adjust(1.001)
+    generator = yield from snowflake.make_generator()
+    assert snowflake.timestamp(generator.next_unsafe()) == 1001

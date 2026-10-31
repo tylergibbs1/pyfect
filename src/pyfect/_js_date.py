@@ -1,12 +1,16 @@
 """Dates as JavaScript's ``Date`` reads them from the ECMAScript date-time
-string format (the CLI's ``Date`` primitive decodes with ``new Date(text)``).
+string format: every Effect API that parses with ``new Date(text)`` (the
+CLI's ``Date`` primitive, ``DateTime.makeZonedFromString``) parses here,
+never with ``datetime.fromisoformat``, which takes and rejects different
+text (``tests/test_js_date_guard.py``).
 
 ``YYYY``, ``YYYY-MM`` or ``YYYY-MM-DD`` (or a signed six-digit year), then
 optionally ``THH:mm``, ``:ss`` and a fraction, then ``Z`` or an offset. A
 date alone is midnight UTC; a date-time without an offset is local time.
-V8 also takes a space for ``T``, lowercase ``t`` / ``z`` and ``+HHmm``
-offsets, so these are read too. Its other, implementation-defined formats
-(``Jan 15 2024``) are not.
+V8 also takes a space for ``T``, lowercase ``t`` / ``z``, ``+HHmm``
+offsets, a ``Z`` after a date alone, and any day up to 31 (``02-30`` is
+March 1st), so these are read too. Its other, implementation-defined
+formats (``Jan 15 2024``) are not.
 """
 
 from __future__ import annotations
@@ -18,7 +22,7 @@ _FORMAT = re.compile(
     r"(?P<year>[0-9]{4}|[+-][0-9]{6})(?:-(?P<month>[0-9]{2})(?:-(?P<day>[0-9]{2}))?)?"
     r"(?:[Tt ](?P<hour>[0-9]{2}):(?P<minute>[0-9]{2})"
     r"(?::(?P<second>[0-9]{2})(?:\.(?P<fraction>[0-9]+))?)?"
-    r"(?P<zone>[Zz]|[+-][0-9]{2}:?[0-9]{2})?)?"
+    r"(?P<zone>[Zz]|[+-][0-9]{2}:?[0-9]{2})?|[Zz])?"
 )
 
 
@@ -32,6 +36,18 @@ def _offset(zone: str) -> timezone | None:
         return None
     delta = timedelta(hours=hours, minutes=minutes)
     return timezone(-delta if zone[0] == "-" else delta)
+
+
+_HAS_ZONE = re.compile(r"Z|GMT|[+-]\d{2}$|[+-]\d{2}:?\d{2}$|\]$")
+_ENDS_IN_ZONE = re.compile(r"(?:z|gmt)$", re.IGNORECASE)
+
+
+def parse_input(text: str) -> datetime | None:
+    """A ``DateTime.Input`` string, as Effect's ``DateTime.makeUnsafe``
+    reads it: ``parse``, with a ``Z`` added when ``text`` names no zone,
+    so a date-time without an offset is UTC rather than local time."""
+    has_zone = _HAS_ZONE.search(text) is not None or _ENDS_IN_ZONE.search(text) is not None
+    return parse(text if has_zone else text + "Z")
 
 
 def parse(text: str) -> datetime | None:
@@ -49,19 +65,20 @@ def parse(text: str) -> datetime | None:
     tz = UTC if match["hour"] is None else (None if zone is None else _offset(zone))
     if zone is not None and tz is None:
         return None
+    day = int(match["day"] or 1)
+    if not 1 <= day <= 31:
+        return None
     try:
         parsed = datetime(
             int(match["year"]),
             int(match["month"] or 1),
-            int(match["day"] or 1),
+            1,
             0 if end_of_day else hour,
             minute,
             second,
             micro,
             tzinfo=tz,
-        )
-    except ValueError:
+        ) + timedelta(days=day - 1 + end_of_day)
+    except (ValueError, OverflowError):
         return None
-    if end_of_day:
-        parsed += timedelta(days=1)
     return parsed if parsed.tzinfo is not None else parsed.astimezone()

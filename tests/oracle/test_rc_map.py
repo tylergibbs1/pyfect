@@ -9,6 +9,7 @@ map's ``state`` is its private ``_entries`` dict (``None`` once closed).
 # pyright: reportPrivateUsage=false
 
 import math
+import warnings
 from dataclasses import dataclass
 from typing import Any, Never
 
@@ -616,3 +617,26 @@ def test_drops_an_interrupted_lookup_and_closes_its_scope():
 
     assert (yield from fx.scoped(rc_map.get("key"))) == 2
     yield from finalized.wait()
+
+
+@testing.effect
+def test_idle_entry_is_released_exactly_when_its_ttl_ends():
+    """Not an Effect title (checked against Effect's millisecond deadline):
+    released at 100 ms with a 200 ms TTL, the entry closes at 300 ms. In
+    float seconds ``0.1 + 0.2 > 0.3`` left a 0 ns sleep that spun."""
+    closed: list[int] = []
+
+    def lookup(key: str) -> fx.Effect[str, Never, fx.Scope]:
+        return fx.acquire_release(
+            fx.succeed(key), lambda _a, _e: fx.clock.now_nanos().map(closed.append)
+        )
+
+    rc_map = yield from fx.RcMap.make(lookup, idle_time_to_live=0.2)
+    yield from testing.adjust(0.1)
+    scope = fx.CloseableScope()
+    yield from _in(scope, rc_map.get("a"))
+    yield from scope.close(fx.Success(None))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", testing.BusyFiberWarning)
+        yield from testing.adjust(1.0)
+    assert closed == [300_000_000]

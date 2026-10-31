@@ -99,7 +99,7 @@ class ResponseError(S.TaggedError, identifier="effect/graphql/GraphQLClientError
     def __post_init__(self) -> None:
         header = None if self.headers is None else self.headers.get("retry-after")
         object.__setattr__(
-            self, "_retry_after", parse_retry_after_header(header, time.time() * 1000)
+            self, "_retry_after", parse_retry_after_header(header, time.time_ns() // 1_000_000)
         )
 
     @property
@@ -160,7 +160,7 @@ class TransportError(S.TaggedError, identifier="effect/graphql/GraphQLClientErro
         default the wall clock)."""
         response = error.response
         headers = None if response is None else response.headers
-        now = time.time() * 1000 if now_millis is None else now_millis
+        now = time.time_ns() // 1_000_000 if now_millis is None else now_millis
         return TransportError(
             description=error.message,
             status=None if response is None else response.status,

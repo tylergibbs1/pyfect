@@ -8,8 +8,9 @@ from __future__ import annotations
 import os
 import re
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
+from functools import cache
 from typing import Literal, overload
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 type Disambiguation = Literal["compatible", "earlier", "later", "reject"]
 """How ``make_zoned`` resolves a wall-clock time that a DST change skips
@@ -64,11 +65,18 @@ def make_zoned(
 
 
 def zone_named(zone_id: str) -> ZoneInfo | None:
-    """The IANA zone ``zone_id``, or ``None`` if there is no such zone."""
+    """The IANA zone ``zone_id`` under its canonical name (any casing:
+    ``europe/london`` is ``Europe/London``, as ``Intl`` gives it), or
+    ``None`` if there is no such zone."""
     try:
-        return ZoneInfo(zone_id)
+        return ZoneInfo(_canonical_names().get(zone_id.lower(), zone_id))
     except (ZoneInfoNotFoundError, ValueError):
         return None
+
+
+@cache
+def _canonical_names() -> dict[str, str]:
+    return {name.lower(): name for name in available_timezones()}
 
 
 def zone_offset(offset: timedelta) -> timezone | None:

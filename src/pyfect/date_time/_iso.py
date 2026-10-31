@@ -1,6 +1,6 @@
 """RFC 9557 strings (``2024-07-21T20:12:34+12:00[Pacific/Auckland]``):
-ISO 8601 plus the zone's name, which ``isoformat`` / ``fromisoformat``
-leave out."""
+ISO 8601 plus the zone's name, which ``isoformat`` leaves out. The ISO
+part is read as JavaScript's ``Date`` reads it (``_js_date``)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import re
 from datetime import UTC, datetime, timedelta, tzinfo
 from zoneinfo import ZoneInfo
 
+from pyfect import _js_date as js_date
 from pyfect.date_time._zones import parse_offset, zone_from_string, zone_of, zone_offset
 
 _ZONED = re.compile(r"^(.{17,35})\[(.+)\]$")
@@ -67,7 +68,7 @@ def make_zoned_from_string(text: str) -> datetime | None:
         zone = None if offset is None else zone_offset(offset)
     else:
         iso, zone = found[1], zone_from_string(found[2])
-    instant = _parse_instant(iso)
+    instant = js_date.parse_input(iso)
     if zone is None or instant is None:
         return None
     exact = _exact_wall_clock(instant, zone)
@@ -89,11 +90,3 @@ def _exact_wall_clock(written: datetime, zone: tzinfo) -> datetime | None:
         if _offset_text(local_offset // timedelta(milliseconds=1)) == text:
             return local
     return None
-
-
-def _parse_instant(iso: str) -> datetime | None:
-    try:
-        parsed = datetime.fromisoformat(iso)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)

@@ -13,7 +13,7 @@ from pyfect import exit as exit_
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect.clock import Clock, ClockService
+from pyfect.clock import Clock, ClockService, now_millis_unsafe
 from pyfect.cluster import deliver_at, envelope
 from pyfect.cluster import reply as reply_
 from pyfect.cluster.cluster_error import MalformedMessage, PersistenceError
@@ -115,10 +115,6 @@ class EncodedStorage(Protocol):
     def reset_shards(self, shard_ids: Sequence[str], /) -> Effect[None, PersistenceError]: ...
 
     def with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]: ...
-
-
-def now_millis(clock: ClockService) -> int:
-    return clock.now_nanos_unsafe() // 1_000_000
 
 
 def json_copy[T](value: T) -> T:
@@ -247,7 +243,7 @@ class _EncodedBase:
             return succeed([])
         return suspend(
             lambda: self._encoded.unprocessed_messages(
-                shards, now_millis(self._clock), limit=limit, addresses=addresses
+                shards, now_millis_unsafe(self._clock), limit=limit, addresses=addresses
             )
         ).flat_map(self._decode_messages)
 
@@ -258,7 +254,7 @@ class _EncodedBase:
         if not ids:
             return succeed([])
         return suspend(
-            lambda: self._encoded.unprocessed_messages_by_id(ids, now_millis(self._clock))
+            lambda: self._encoded.unprocessed_messages_by_id(ids, now_millis_unsafe(self._clock))
         ).flat_map(self._decode_messages)
 
     def reset_shards(self, shard_ids: Iterable[ShardId], /) -> Effect[None, PersistenceError]:
@@ -393,5 +389,4 @@ __all__ = [
     "SaveResultEncoded",
     "json_copy",
     "make_encoded",
-    "now_millis",
 ]

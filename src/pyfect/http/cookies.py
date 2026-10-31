@@ -20,6 +20,7 @@ from email.utils import parsedate_to_datetime
 from typing import Literal, TypedDict, Unpack, final
 from urllib.parse import quote, unquote
 
+from pyfect import _js_date as js_date
 from pyfect._digits import parse_signed_digits
 from pyfect._js import text_encode
 from pyfect.duration import Duration, to_seconds
@@ -217,10 +218,7 @@ def _parse_date(value: str) -> datetime | None:
     try:
         parsed = parsedate_to_datetime(value)
     except (TypeError, ValueError):
-        try:
-            parsed = datetime.fromisoformat(value)
-        except ValueError:
-            return None
+        return js_date.parse(value)
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 

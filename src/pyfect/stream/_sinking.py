@@ -17,6 +17,7 @@ from pyfect._core import Effect, _FailCause, _Gen, _Succeed, _Suspend
 from pyfect.cause import Cause, fail
 from pyfect.channel._upstream import restore_upstream_failure, upstream_failure_to_defect
 from pyfect.clock import Clock, ClockService, sleep
+from pyfect.duration import from_nanos
 from pyfect.effect import never
 from pyfect.exit import Exit, Failure
 from pyfect.latch import Latch
@@ -209,15 +210,15 @@ def aggregate_within(
             clock: ClockService = yield Clock()
             step = yield to_step(policy)
             has_input = Latch()
-            schedule_time = clock.now_unsafe()
-            opened_at = 0.0
+            schedule_time = clock.now_nanos_unsafe()
+            opened_at = 0
             last_output: Option[Any] = None
             leftover: Chunk | None = None
 
             def on_input(chunk: Chunk) -> AnyEffect:
                 nonlocal opened_at
                 if has_input.open_unsafe():
-                    opened_at = clock.now_unsafe()
+                    opened_at = clock.now_nanos_unsafe()
                 return _Succeed(chunk)
 
             def decided(decision: object) -> AnyEffect:
@@ -229,7 +230,7 @@ def aggregate_within(
 
             step_to_buffer = (
                 has_input.wait()
-                .flat_map(lambda _: step(schedule_time, last_output))
+                .flat_map(lambda _: step(from_nanos(schedule_time), last_output))
                 .flat_map(decided)
                 .and_then(never)
             )
@@ -251,7 +252,7 @@ def aggregate_within(
             def emit(end: AnyEnd) -> AnyEffect:
                 nonlocal schedule_time, last_output, leftover
                 if has_input.is_open():
-                    schedule_time += clock.now_unsafe() - opened_at
+                    schedule_time += clock.now_nanos_unsafe() - opened_at
                 elif isinstance(buffer._state, queue_state.Done):
                     return ENDED
                 last_output = Some(end[0])

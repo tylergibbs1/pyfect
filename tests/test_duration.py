@@ -66,6 +66,13 @@ def test_schedules_treat_nan_as_zero():
         (0.000_001_5, "1500ns"),
         (-5.0, "-5s"),
         (1_000_000_000.001, "11574d 1h 46m 40s 1ms"),
+        # Half-nanosecond ties round away from zero, from the milliseconds
+        # ``seconds * 1000`` (checked under Node).
+        (2.5e-9, "3ns"),
+        (-2.5e-9, "-3ns"),
+        (7.0000000005, "7s 1ns"),
+        (1.0000000005, "1s 1ns"),
+        (0.5e-9 * 3, "2ns"),
         (math.inf, "Infinity"),
         (-math.inf, "-Infinity"),
     ],

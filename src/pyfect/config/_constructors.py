@@ -80,7 +80,7 @@ def byte_size(name: str | None = None) -> Config[ByteSize]:
 
 
 def date_time(name: str | None = None) -> Config[datetime]:
-    """An ISO 8601 date or date-time (``datetime.fromisoformat``); one with
+    """An ISO 8601 date or date-time (read as JavaScript's ``Date`` reads it); one with
     no offset is UTC (Effect's ``Config.Date``)."""
     return scalar_config(_scalars.date_time, name)
 

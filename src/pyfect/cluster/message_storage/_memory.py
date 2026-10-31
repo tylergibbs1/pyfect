@@ -11,7 +11,7 @@ from typing import Any
 from pyfect import layer as layer_
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect.clock import Clock, ClockService
+from pyfect.clock import Clock, ClockService, now_millis_unsafe
 from pyfect.cluster import reply as reply_
 from pyfect.cluster import snowflake
 from pyfect.cluster.cluster_error import PersistenceError
@@ -24,7 +24,6 @@ from pyfect.cluster.message_storage._encoded import (
     SaveResultEncoded,
     json_copy,
     make_encoded,
-    now_millis,
 )
 from pyfect.cluster.message_storage._service import (
     SAVE_SUCCESS,
@@ -267,7 +266,7 @@ class MemoryEncoded:
 
     def _unprocessed_with(self, keep: Callable[[EnvelopeEncoded], bool]) -> list[EncodedMessage]:
         messages: list[EncodedMessage] = []
-        now = now_millis(self._clock)
+        now = now_millis_unsafe(self._clock)
         for envelope in self.unprocessed.values():
             if not keep(envelope):
                 continue

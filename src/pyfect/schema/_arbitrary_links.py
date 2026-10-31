@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from pyfect._equal import dict_of, frozenset_of
 from pyfect.date_time._epoch import EPOCH, from_epoch_millis, to_epoch_millis
+from pyfect.date_time._zones import zone_named
 from pyfect.schema import ast
 from pyfect.schema._arbitrary_constraint import ArbitraryConstraint
 from pyfect.schema._checks_number import int_value, is_between
@@ -68,7 +69,9 @@ _ZONE = ast.Union((_OFFSET_MINUTES, ast.Union(tuple(map(ast.Literal, _NAMED_ZONE
 
 
 def _zone_of(value: int | str) -> tzinfo:
-    return ZoneInfo(value) if isinstance(value, str) else timezone(timedelta(minutes=value))
+    if isinstance(value, str):
+        return cast("ZoneInfo", zone_named(value))  # one of _NAMED_ZONES
+    return timezone(timedelta(minutes=value))
 
 
 def _zone_to(zone: tzinfo) -> int | str:

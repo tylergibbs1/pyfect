@@ -748,3 +748,65 @@ def test_disambiguation(case: Case):
     assert iso(date_time.make_zoned(naive, tz)) == case.compatible
     rejected = date_time.make_zoned(naive, tz, disambiguation="reject")
     assert (None if rejected is None else iso(rejected)) == case.reject
+
+
+# --- zone names and RFC 9557 strings, checked under Node ----------------------------
+
+
+@pytest.mark.parametrize(
+    ("written", "canonical"),
+    [("europe/london", "Europe/London"), ("utc", "UTC"), ("AMERICA/NEW_YORK", "America/New_York")],
+)
+def test_zone_named_gives_the_canonical_name(written: str, canonical: str):
+    """Not an Effect title: ``zoneMakeNamed`` takes any casing and keeps
+    ``Intl``'s canonical name (link resolution, ``Asia/Kolkata`` to
+    ``Asia/Calcutta``, follows ICU's data and is not copied)."""
+    zone = date_time.zone_named(written)
+    assert zone is not None
+    assert date_time.zone_to_string(zone) == canonical
+
+
+def test_make_zoned_from_string_canonicalizes_the_zone_name():
+    """Not an Effect title: ``[europe/london]`` reads as ``Europe/London``."""
+    parsed = date_time.make_zoned_from_string("2024-07-01T00:00:00Z[europe/london]")
+    assert parsed is not None
+    assert date_time.format_iso_zoned(parsed) == "2024-07-01T01:00:00.000+01:00[Europe/London]"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "2024-01-01T00:00:00,5Z[UTC]",
+        "2024-W01-1T00:00:00Z[UTC]",
+        "2024-001T00:00:00Z[UTC]",
+        "2024-01-01T00:00:00+05:30:15[UTC]",
+        "2024-01-01T00Z[UTC]",
+        "20240101T000000Z[UTC]",
+        "2024-01-01T00:00:00+24:00",
+    ],
+)
+def test_make_zoned_from_string_rejects_what_javascript_date_rejects(text: str):
+    """Not an Effect title: the ISO part is read by ``new Date``."""
+    assert date_time.make_zoned_from_string(text) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "iso"),
+    [
+        ("2024-01-01T00:00:00z[UTC]", "2024-01-01T00:00:00.000Z"),
+        ("2024-01-01t00:00:00Z[UTC]", "2024-01-01T00:00:00.000Z"),
+        ("+002024-01-01T00:00:00Z[UTC]", "2024-01-01T00:00:00.000Z"),
+        ("2024-01-01 00:00:00Z[UTC]", "2024-01-01T00:00:00.000Z"),
+        ("2024-01-01T00:00Z[UTC]", "2024-01-01T00:00:00.000Z"),
+        ("2024-02-30T00:00:00Z[UTC]", "2024-03-01T00:00:00.000Z"),
+        ("2024-01-01T24:00:00Z[UTC]", "2024-01-02T00:00:00.000Z"),
+        ("2024-01-01T00:00:00[Europe/London]", "2024-01-01T00:00:00.000Z"),
+        ("2024-01-01T00:00:00-0130", "2024-01-01T01:30:00.000Z"),
+    ],
+)
+def test_make_zoned_from_string_reads_what_javascript_date_reads(text: str, iso: str):
+    """Not an Effect title: the ISO part is read by ``new Date`` (a ``Z``
+    added when it names no zone)."""
+    parsed = date_time.make_zoned_from_string(text)
+    assert parsed is not None
+    assert date_time.format_iso(parsed) == iso

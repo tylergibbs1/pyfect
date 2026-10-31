@@ -1025,3 +1025,16 @@ def test_timed_uses_monotonic_time_when_wall_time_moves_backward():
     duration, result = yield from body.timed()
     assert result == "done"
     assert duration == 0.1
+
+
+@testing.effect
+def test_cached_with_ttl_expires_exactly_at_the_deadline():
+    """Not an Effect title (checked against Effect's millisecond deadline,
+    ``now < expiresAt``): computed at 100 ms with a 200 ms TTL, the value
+    is recomputed at 300 ms. In float seconds ``0.1 + 0.2 > 0.3`` kept it."""
+    runs: list[int] = []
+    cached = yield from fx.sync(lambda: runs.append(1) or len(runs)).cached_with_ttl(0.2)
+    yield from testing.adjust(0.1)
+    assert (yield from cached) == 1
+    yield from testing.adjust(0.2)
+    assert (yield from cached) == 2

@@ -16,11 +16,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Generic, Literal, Never, TypeVar
 
+from pyfect import _js_date as js_date
 from pyfect import redacted as redacted_
 from pyfect import schema as S
 from pyfect._json_text import parse as parse_json
 from pyfect._json_text import stringify
-from pyfect.cli import _date as js_date
 from pyfect.cli._environment import Environment
 from pyfect.effect import Effect, fail, gen, succeed
 from pyfect.encoding import ini, yaml
