@@ -4,18 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal, Never, overload
+from typing import Any, Literal, Never, overload
 
 from pyfect._core import Effect
 from pyfect.context import Context
 from pyfect.errors import Done
 from pyfect.http.headers import Input as HeadersInput
 from pyfect.queue import Dequeue
+from pyfect.rpc.client_error import RpcClientError
 from pyfect.scope import Scope
 from pyfect.stream import Stream
-
-if TYPE_CHECKING:
-    from pyfect.rpc.client_error import RpcClientError
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,9 +32,10 @@ type CallFn = Callable[[object, CallOptions], Effect[Any, Any]]
 type StreamFn = Callable[[object, CallOptions], Effect[Dequeue[Any, Any], Never, Scope]]
 
 
-class UnaryMethod[P, S, E]:
+class UnaryMethod[P, S, E, TE = RpcClientError]:
     """Calls an RPC with a payload ``P``: succeeds with ``S`` or fails with
-    ``E`` or an ``RpcClientError``."""
+    ``E`` or the client's transport error ``TE`` (an ``RpcClientError``,
+    or a cluster entity client's errors)."""
 
     __slots__ = ("_call",)
 
@@ -45,13 +44,13 @@ class UnaryMethod[P, S, E]:
 
     @overload
     def __call__(
-        self: UnaryMethod[None, S, E],
+        self: UnaryMethod[None, S, E, TE],
         payload: None = None,
         /,
         *,
         headers: HeadersInput | None = None,
         context: Context[Any] | None = None,
-    ) -> Effect[S, E | RpcClientError]: ...
+    ) -> Effect[S, E | TE]: ...
     @overload
     def __call__(
         self,
@@ -60,7 +59,7 @@ class UnaryMethod[P, S, E]:
         *,
         headers: HeadersInput | None = None,
         context: Context[Any] | None = None,
-    ) -> Effect[S, E | RpcClientError]: ...
+    ) -> Effect[S, E | TE]: ...
     def __call__(
         self,
         payload: object = None,
@@ -73,13 +72,13 @@ class UnaryMethod[P, S, E]:
 
     @overload
     def discard(
-        self: UnaryMethod[None, S, E],
+        self: UnaryMethod[None, S, E, TE],
         payload: None = None,
         /,
         *,
         headers: HeadersInput | None = None,
         context: Context[Any] | None = None,
-    ) -> Effect[None, RpcClientError]: ...
+    ) -> Effect[None, TE]: ...
     @overload
     def discard(
         self,
@@ -88,7 +87,7 @@ class UnaryMethod[P, S, E]:
         *,
         headers: HeadersInput | None = None,
         context: Context[Any] | None = None,
-    ) -> Effect[None, RpcClientError]: ...
+    ) -> Effect[None, TE]: ...
     def discard(
         self,
         payload: object = None,
@@ -96,15 +95,15 @@ class UnaryMethod[P, S, E]:
         *,
         headers: HeadersInput | None = None,
         context: Context[Any] | None = None,
-    ) -> Effect[None, RpcClientError]:
+    ) -> Effect[None, TE]:
         """Send the request without waiting for its result (Effect's
         ``discard: true``)."""
         return self._call(payload, CallOptions(headers, context, discard=True))
 
 
-class StreamMethod[P, A, E]:
+class StreamMethod[P, A, E, TE = RpcClientError]:
     """Calls a streaming RPC with a payload ``P``: a stream of ``A`` items
-    failing with ``E`` or an ``RpcClientError``. With ``as_queue=True`` it
+    failing with ``E`` or the client's transport error ``TE``. With ``as_queue=True`` it
     is a scoped queue of the items instead."""
 
     __slots__ = ("_open",)
@@ -114,7 +113,7 @@ class StreamMethod[P, A, E]:
 
     @overload
     def __call__(
-        self: StreamMethod[None, A, E],
+        self: StreamMethod[None, A, E, TE],
         payload: None = None,
         /,
         *,
@@ -122,7 +121,7 @@ class StreamMethod[P, A, E]:
         context: Context[Any] | None = None,
         stream_buffer_size: int = 16,
         as_queue: Literal[False] = False,
-    ) -> Stream[A, E | RpcClientError]: ...
+    ) -> Stream[A, E | TE]: ...
     @overload
     def __call__(
         self,
@@ -133,10 +132,10 @@ class StreamMethod[P, A, E]:
         context: Context[Any] | None = None,
         stream_buffer_size: int = 16,
         as_queue: Literal[False] = False,
-    ) -> Stream[A, E | RpcClientError]: ...
+    ) -> Stream[A, E | TE]: ...
     @overload
     def __call__(
-        self: StreamMethod[None, A, E],
+        self: StreamMethod[None, A, E, TE],
         payload: None = None,
         /,
         *,
@@ -144,7 +143,7 @@ class StreamMethod[P, A, E]:
         context: Context[Any] | None = None,
         stream_buffer_size: int = 16,
         as_queue: Literal[True],
-    ) -> Effect[Dequeue[A, E | RpcClientError | Done], Never, Scope]: ...
+    ) -> Effect[Dequeue[A, E | TE | Done], Never, Scope]: ...
     @overload
     def __call__(
         self,
@@ -155,7 +154,7 @@ class StreamMethod[P, A, E]:
         context: Context[Any] | None = None,
         stream_buffer_size: int = 16,
         as_queue: Literal[True],
-    ) -> Effect[Dequeue[A, E | RpcClientError | Done], Never, Scope]: ...
+    ) -> Effect[Dequeue[A, E | TE | Done], Never, Scope]: ...
     def __call__(
         self,
         payload: object = None,

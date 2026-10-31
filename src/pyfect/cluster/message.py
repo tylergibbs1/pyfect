@@ -31,7 +31,7 @@ from pyfect.rpc import make as make_rpc
 from pyfect.rpc.serialization import CodecFor
 
 if TYPE_CHECKING:
-    from pyfect.scope import Scope
+    from pyfect.scope import CloseableScope
 
 
 def codec_for_json(schema: S.Top) -> S.Codec[Any, Any, Any, Any]:
@@ -54,7 +54,7 @@ class IncomingRequest:
     last_sent_reply: ReplyEncoded | None
     respond: Callable[[ReplyWithContext], Effect[None, MalformedMessage | PersistenceError]]
     codec_for: CodecFor
-    caller_scope: Scope | None = None
+    caller_scope: CloseableScope | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -65,7 +65,7 @@ class IncomingRequestLocal[P = Any]:
     last_sent_reply: Reply | None
     respond: Callable[[Reply], Effect[None, MalformedMessage | PersistenceError]]
     annotations: Context[Any]
-    caller_scope: Scope | None = None
+    caller_scope: CloseableScope | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

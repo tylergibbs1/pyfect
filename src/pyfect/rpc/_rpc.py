@@ -42,6 +42,7 @@ M_co = TypeVar("M_co", covariant=True, default=Never)
 MT_co = TypeVar("MT_co", covariant=True, default=M_co)
 A_co = TypeVar("A_co", covariant=True)
 R_co = TypeVar("R_co", covariant=True)
+TE_co = TypeVar("TE_co", covariant=True)
 
 _KEY_PREFIX = "effect/rpc/Rpc/"
 
@@ -68,6 +69,14 @@ class ServerClient:
     def annotate[A, T](self, tag: TagLike[A, T], value: A) -> Self:
         self.annotations = self.annotations.add(tag, value)
         return self
+
+
+class ClientErrors(Generic[TE_co]):
+    """A base marking a client class whose calls fail with ``TE`` in place
+    of ``RpcClientError`` (a cluster entity's client: Effect's
+    ``RpcClient.From<Rpcs, E>``). Type-level only."""
+
+    __slots__ = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +145,17 @@ class Rpc(AnyRpc, Generic[P_co, S_, E, M_co, MT_co]):
     @overload
     def __get__(self, instance: None, owner: type[object], /) -> Self: ...
     @overload
+    def __get__[TE](
+        self: Rpc[P_co, S_, E, Never], instance: ClientErrors[TE], owner: type[object], /
+    ) -> UnaryMethod[P_co, S_, E, TE]: ...
+    @overload
+    def __get__[ME, TE](
+        self: Rpc[P_co, S_, E, RpcMiddleware[Any, ME, Any]],
+        instance: ClientErrors[TE],
+        owner: type[object],
+        /,
+    ) -> UnaryMethod[P_co, S_, E | ME, TE]: ...
+    @overload
     def __get__(
         self: Rpc[P_co, S_, E, Never], instance: RpcGroup, owner: type[object], /
     ) -> UnaryMethod[P_co, S_, E]: ...
@@ -182,6 +202,20 @@ class StreamRpc(AnyRpc, Generic[P_co, A_co, E, M_co, MT_co]):
 
     @overload
     def __get__(self, instance: None, owner: type[object], /) -> Self: ...
+    @overload
+    def __get__[TE](
+        self: StreamRpc[P_co, A_co, E, Never],
+        instance: ClientErrors[TE],
+        owner: type[object],
+        /,
+    ) -> StreamMethod[P_co, A_co, E, TE]: ...
+    @overload
+    def __get__[ME, TE](
+        self: StreamRpc[P_co, A_co, E, RpcMiddleware[Any, ME, Any]],
+        instance: ClientErrors[TE],
+        owner: type[object],
+        /,
+    ) -> StreamMethod[P_co, A_co, E | ME, TE]: ...
     @overload
     def __get__(
         self: StreamRpc[P_co, A_co, E, Never], instance: RpcGroup, owner: type[object], /
@@ -428,6 +462,7 @@ def handler_tag(rpc: AnyRpc) -> type[Tag[HandlerEntry]]:
 
 __all__ = [
     "AnyRpc",
+    "ClientErrors",
     "HandlerEntry",
     "ParseOptions",
     "Rpc",

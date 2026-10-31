@@ -5,6 +5,7 @@ from pyfect.rpc import schema as rpc_schema
 from pyfect.rpc._methods import CallOptions, StreamMethod, UnaryMethod
 from pyfect.rpc._rpc import (
     AnyRpc,
+    ClientErrors,
     ParseOptions,
     Rpc,
     RpcRequest,
@@ -30,6 +31,7 @@ from pyfect.rpc.middleware import RpcMiddleware
 __all__ = [
     "AnyRpc",
     "CallOptions",
+    "ClientErrors",
     "HandlerOf",
     "Handlers",
     "HandlersFor",

@@ -6716,6 +6716,103 @@ def cluster_storage_types() -> None:
     )
 
 
+def cluster_entity_types() -> None:
+    from pyfect.cluster import entity_resource, runner_health, runner_server, runners, singleton
+    from pyfect.cluster.cluster_error import (
+        AlreadyProcessingMessage,
+        EntityNotAssignedToRunner,
+        MailboxFull,
+        PersistenceError,
+    )
+    from pyfect.cluster.entity import (
+        ClusterClientError,
+        CurrentAddress,
+        Entity,
+        EntityHandlers,
+        Request,
+        make_test_client,
+    )
+    from pyfect.cluster.message_storage import MessageStorage
+    from pyfect.cluster.sharding import Sharding
+    from pyfect.cluster.sharding_config import ShardingConfig
+    from pyfect.rpc import RpcGroup
+    from pyfect.rpc import make as make_rpc
+    from pyfect.rpc.client_error import RpcClientError
+    from pyfect.rpc.server import ServerProtocol
+    from pyfect.stream import Stream
+
+    class Counter(Entity):
+        increment = make_rpc("Increment", payload=S.Int, success=S.String, error=S.String)
+        watch = make_rpc("Watch", success=S.Int, stream=True)
+
+    class PlainCounter(RpcGroup):
+        increment = make_rpc("Increment", payload=S.Int, success=S.String)
+
+    def check(counter: Counter, plain: PlainCounter) -> None:
+        # Entity clients carry the cluster's client errors, plain RPC
+        # clients the transport's; payload and success come from the RPC.
+        assert_type(counter.increment(1), fx.Effect[str, str | ClusterClientError])
+        assert_type(counter.watch(), Stream[int, ClusterClientError])
+        assert_type(plain.increment(1), fx.Effect[str, RpcClientError])
+        counter.increment("one")  # pyright: ignore[reportArgumentType]
+        # ClusterClientError is the four errors a cluster send can fail with.
+        assert_type(
+            counter.increment(1).pipe(fx.catch_tag(MailboxFull, lambda _: fx.succeed("full"))),
+            fx.Effect[
+                str,
+                str | AlreadyProcessingMessage | PersistenceError | EntityNotAssignedToRunner,
+            ],
+        )
+
+    _ = check
+
+    def increment(request: Request[int]) -> fx.Effect[str, str]:
+        return fx.succeed(str(request.payload))
+
+    handlers = (
+        Counter.handlers()
+        .handle(Counter.increment)(increment)
+        .handle(Counter.watch)(lambda _: fx.stream.make(1))
+    )
+    assert_type(handlers, EntityHandlers[Counter, Never])
+    layer = Counter.to_layer(handlers)
+    assert_type(layer, fx.Layer[Never, Never, Sharding])
+    assert_type(
+        make_test_client(Counter, layer),
+        fx.Effect[
+            Callable[[str], fx.Effect[Counter]],
+            Never,
+            fx.Scope | ShardingConfig,
+        ],
+    )
+    assert_type(CurrentAddress, type[CurrentAddress])
+
+    assert_type(
+        runners.layer_noop, fx.Layer[runners.Runners, Never, ShardingConfig | MessageStorage]
+    )
+    assert_type(
+        runners.layer_rpc,
+        fx.Layer[
+            runners.Runners, Never, MessageStorage | runners.RpcClientProtocol | ShardingConfig
+        ],
+    )
+    assert_type(
+        runner_health.layer_ping, fx.Layer[runner_health.RunnerHealth, Never, runners.Runners]
+    )
+    assert_type(
+        runner_server.layer, fx.Layer[Never, Never, ServerProtocol | Sharding | MessageStorage]
+    )
+    assert_type(singleton.make("leader", fx.void), fx.Layer[Never, Never, Sharding])
+    assert_type(
+        entity_resource.make(fx.succeed(1)),
+        fx.Effect[
+            entity_resource.EntityResource[int, Never],
+            Never,
+            fx.Scope | Sharding | CurrentAddress,
+        ],
+    )
+
+
 def package_namespace() -> None:
     # fx.<subpackage> is imported lazily at runtime; the type checker still
     # knows each one and rejects a name the package does not have.
