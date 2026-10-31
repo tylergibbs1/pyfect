@@ -1,12 +1,6 @@
 """Ports of Effect's ``test/cluster/Runners.test.ts``. Each test's
 docstring is the Effect test title.
 
-Omitted:
-- RunnerServer "a reply that fails to serialize fails only its own
-  request" and "a stream reply that fails to serialize ends the stream with
-  the defect": they build ``Sharding.layer``, which is not ported yet;
-  ``tests/test_runner_server.py`` pins the same replies with a sharding
-  that answers directly.
 """
 
 from __future__ import annotations
@@ -14,13 +8,13 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
-from typing import Any, Never, cast
+from typing import Any, Never, TypedDict, cast
 from urllib.parse import SplitResult
 
 import pyfect as fx
 from pyfect import exit as Exit
 from pyfect import schema as S
-from pyfect import testing
+from pyfect import stream, testing
 from pyfect.cluster import envelope, http_runner, sharding_config, snowflake
 from pyfect.cluster.cluster_error import (
     MalformedMessage,
@@ -28,6 +22,7 @@ from pyfect.cluster.cluster_error import (
     RunnerUnavailable,
 )
 from pyfect.cluster.cluster_schema import Persisted
+from pyfect.cluster.entity import Entity
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.entity_type import EntityType
@@ -45,6 +40,7 @@ from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.runners import (
     RpcClientProtocol,
     RpcClientProtocolService,
+    Rpcs,
     Runners,
     layer_rpc,
 )
@@ -55,6 +51,7 @@ from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.snowflake import Generator, Snowflake
 from pyfect.context import Context
 from pyfect.deferred import Deferred
+from pyfect.errors import Done
 from pyfect.http import client as http_client
 from pyfect.http import response as http_response
 from pyfect.http.client import HttpClient
@@ -62,13 +59,16 @@ from pyfect.http.request import HttpClientRequest
 from pyfect.layer import Layer
 from pyfect.rpc import client as rpc_client
 from pyfect.rpc import make as make_rpc
-from pyfect.rpc import serialization
+from pyfect.rpc import rpc_schema, serialization
 from pyfect.rpc.client import ClientProtocolService
 from pyfect.rpc.client_error import RpcClientError
 from pyfect.rpc.group import RpcGroup
 from pyfect.rpc.serialization import CodecFor
+from pyfect.rpc.test import make_client
 from pyfect.scope import fork_scoped
 from pyfect.socket import SocketCloseError, WebSocketConstructor
+
+from ._runner_server_handlers import make_handlers, make_request
 
 runner_address = RunnerAddress(host="localhost", port=42_000)
 
@@ -576,3 +576,86 @@ def test_http_runner_preserves_a_leading_slash_in_websocket_client_paths():
         )
 
     yield from body
+
+
+# --- RunnerServer ----------------------------------------------------------------------
+
+
+class _IdPayload(TypedDict):
+    id: float
+
+
+class BadReplyEntity(Entity, type="BadReplyEntity"):
+    """An entity whose replies cannot be serialized: the handlers return
+    non-integers for an ``S.Int`` success schema, so ``Reply.serialize``
+    fails on encode."""
+
+    bad_reply = make_rpc("BadReply", success=S.Int, payload=S.Struct(_IdPayload))
+    bad_stream = make_rpc(
+        "BadStream", success=rpc_schema.Stream(S.Int, S.Never), payload=S.Struct(_IdPayload)
+    )
+
+
+BadReplyEntityVolatile = BadReplyEntity.annotate_rpcs(Persisted, False)
+
+_bad_reply_handlers = make_handlers(
+    BadReplyEntityVolatile.to_layer(
+        BadReplyEntityVolatile.handlers()
+        .handle(BadReplyEntityVolatile.bad_reply)(lambda _: fx.succeed(cast("int", 1.5)))
+        .handle(BadReplyEntityVolatile.bad_stream)(lambda _: stream.make(cast("int", 2.5)))
+    )
+)
+
+
+@testing.effect
+def test_a_reply_that_fails_to_serialize_fails_only_its_own_request():
+    """a reply that fails to serialize fails only its own request"""
+
+    @fx.gen
+    def body():
+        yield from testing.adjust(0.001)
+        client = yield from make_client(Rpcs)
+        request = yield from make_request(BadReplyEntityVolatile, "bad-1", tag="BadReply")
+        exit = yield from client.effect({"request": request, "persisted": False}).exit()
+        assert isinstance(exit, Exit.Success), (
+            "Effect rpc must not defect on a reply serialization failure"
+        )
+        reply = cast("dict[str, Any]", exit.value)
+        assert reply["_tag"] == "WithExit"
+        assert reply["exit"]["_tag"] == "Failure", "expected a WithExit reply with a failure exit"
+        assert reply["requestId"] == str(request.request_id)
+        dies = [r for r in reply["exit"]["cause"] if r["_tag"] == "Die"]
+        assert dies, "the reply exit must carry the encode failure as a defect"
+        assert "MalformedMessage" in json.dumps(dies[0]), (
+            "the defect must identify the encode failure"
+        )
+
+    yield from fx.scoped(body).pipe(fx.provide(_bad_reply_handlers))
+
+
+@testing.effect
+def test_a_stream_reply_that_fails_to_serialize_ends_the_stream_with_the_defect():
+    """a stream reply that fails to serialize ends the stream with the defect"""
+
+    @fx.gen
+    def body():
+        yield from testing.adjust(0.001)
+        client = yield from make_client(Rpcs)
+        request = yield from make_request(BadReplyEntityVolatile, "bad-2", tag="BadStream")
+        queue = yield from client.stream({"request": request, "persisted": False}, as_queue=True)
+        replies: list[Any] = []
+        yield from (
+            queue.take().map(replies.append).forever().pipe(fx.catch_tag(Done, lambda _: fx.void))
+        )
+        assert len(replies) == 1
+        last = cast("dict[str, Any]", replies[0])
+        assert last["_tag"] == "WithExit"
+        assert last["exit"]["_tag"] == "Failure", (
+            "expected a terminal WithExit reply with a failure exit"
+        )
+        assert last["requestId"] == str(request.request_id)
+        assert "MalformedMessage" in json.dumps(last["exit"]["cause"]), (
+            "the defect must identify the encode failure"
+        )
+
+    yield from fx.scoped(body).pipe(fx.provide(_bad_reply_handlers))

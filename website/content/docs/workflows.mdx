@@ -15,7 +15,8 @@ workflow: its payload, result and error schemas, and the key that names an execu
 executing the same payload twice joins one execution. `to_layer(handler)` registers the
 handler, a function of the payload and the execution id, on a `WorkflowEngine`.
 `workflow_engine.layer_memory` keeps executions in memory, for tests and one-process
-programs.
+programs; [`cluster_workflow_engine.layer`](/docs/cluster#workflows) persists them on a
+cluster, where they survive restarts.
 
 `execute(payload)` runs the workflow and waits for its result, retrying while it is
 suspended. `execute(payload, discard=True)` starts it and gives its execution id, which

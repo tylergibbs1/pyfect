@@ -268,12 +268,24 @@ class Cause(Generic[E_co]):
         return "\n\n".join(
             "\n".join(
                 [
-                    "".join(traceback.format_exception(e)).rstrip(),
+                    _render_error(e),
                     *render(_frame(r.annotations, StackTrace)),
                 ]
             )
             for e, r in zip(errors, reasons, strict=True)
         )
+
+
+def _render_error(error: BaseException) -> str:
+    """``error`` with its traceback and cause chain; a defect decoded from
+    JSON as Effect renders the decoded error, under the name it was written
+    with."""
+    from pyfect.schema import DecodedDefect, ErrorInstance
+
+    if isinstance(error, DecodedDefect) and isinstance(error.value, ErrorInstance):
+        decoded = error.value
+        return decoded.stack or f"{decoded.name}: {decoded.message}"
+    return "".join(traceback.format_exception(error)).rstrip()
 
 
 class UnhandledError(Exception):

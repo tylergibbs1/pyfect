@@ -1,50 +1,35 @@
 """Ports of Effect's ``test/cluster/Sharding.test.ts``. Each test's
-docstring is the Effect test title.
+docstring is the Effect test title. The groups of that file live in:
+``test_sharding_transactions`` (WithTransaction and storage-less replays),
+``test_sharding_defect_recovery`` (entity-manager generations and mailbox
+size), ``test_sharding_active_teardowns``, ``test_sharding_claims``,
+``test_sharding_shutdown`` (live-clock shutdown cases) and
+``test_sharding_failover`` (shard lock failover over Effect's
+``FailoverStorage``); the shared fixtures are in ``_sharding_fixtures``.
 
 Not ported yet, with the reason:
 
-- The claim-release regressions (keeps the claim of an active request
-  replayed after an entity defect / of an active uninterruptible request
-  after restarting / of an active stream after an acknowledged chunk;
-  releases capped addresses even when targeted claim release fails;
-  redelivers a request reset while an asynchronous storage read is
-  pending), the entity-manager generation cases (restarts again when a
-  replayed request defects synchronously, replays unfinished requests
-  before arrivals during acquisition, finishes shutdown when replacement
-  acquisition completes, interrupts a queued arrival when shutdown starts
-  during replacement acquisition, replays a durable caller parked on a
-  queued request when its target closes, interrupts an entity whose id is
-  also active on a shard that was interrupted first) and the active
-  teardown cases (swallows persisted interrupts ...; treats node shutdown
-  interrupts as transient via isShutdown; forwards ... interrupts; returns
-  registry size to baseline after entity reap storms): they drive
-  ``EntityManager`` directly or through Effect's storage fakes
-  (``RestartSharding``, ``BlockedRebuildSharding``), not ported in this pass.
-- The shard lock failover, shard handoff and singleton cases (from
-  "interrupts entities and reacquires shards after lock storage recovers"
-  to "persists a discard send and delivers it once the shard lock is
-  acquired", and "initializes singleton synchronization before startup
-  fibers run"): they need Effect's ``FailoverStorage`` / singleton storage
-  fakes over ``RunnerStorage``, not ported in this pass.
-- reports the largest mailbox size across entities sharing an id on
-  different shards, keeps reporting the largest mailbox size until entities
-  drain on shutdown: they build an entity manager directly over Effect's
-  ``BlockedRebuildSharding`` fake, not ported in this pass.
-- The shutdown-deadlock cases (shutdown completes when a finalizing entity
-  sends an outgoing message / awaits a reply from an unroutable entity;
-  fails a stream when its chunk acknowledgement is abandoned during
-  shutdown) and "defects instead of hanging when persisted failures contain
-  non-JSON Error values": live-clock cases, not ported in this pass.
-- reprocesses a completed volatile request id without MessageStorage and
-  five of the six WithTransaction cases: they need Effect's
-  ``RollbackMemoryStorage`` (a driver discarding replies saved in a failed
-  transaction), not ported in this pass.
+- replays a durable caller parked on a queued request when its target
+  closes (both variants): they restart a runner over shared, unread
+  storage through Effect's ``RestartSharding`` fake, not ported.
+- initializes singleton synchronization before startup fibers run: it
+  hooks ``Scheduler.shouldYield``, which pyfect's scheduler does not
+  expose.
+- The remaining shard lock failover cases (keeps the graceful timeout and
+  records release duration across retries; delivers a client interrupt to /
+  acknowledges stream chunks from a request still draining on the lock
+  holder), the shard handoff group (holds a remote request on the new owner
+  ... through waits for singleton teardown before handing off their shards)
+  and the singleton reassignment group (closes a singleton registration ...
+  through persists a discard send and delivers it once the shard lock is
+  acquired): they need Effect's two-runner handoff, singleton storage and
+  forced-release fakes on top of ``FailoverStorage``; the fake is ported
+  (``_failover_storage``), the rest is a follow-up.
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
-import copy
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Any, Never, cast
@@ -76,12 +61,10 @@ from pyfect.cluster.entity import Entity, EntityOptions
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.envelope import Interrupt as EnvelopeInterrupt
-from pyfect.cluster.envelope import make_request
-from pyfect.cluster.message import Outgoing, OutgoingRequest, codec_for_json
+from pyfect.cluster.message import Outgoing, codec_for_json
 from pyfect.cluster.message_storage import (
     MemoryDriver,
     MemoryDriverService,
-    MessageStorage,
     MessageStorageService,
 )
 from pyfect.cluster.runner import Runner
@@ -109,46 +92,24 @@ from ._cluster_entities import (
     test_entity_no_state,
     test_entity_state_layer,
 )
+from ._sharding_fixtures import (
+    capped,
+    make_config,
+    patched,
+    restart_env,
+    restart_storage,
+    save_get_user_request,
+    series,
+    test_config,
+    test_sharding,
+    test_sharding_without_runners,
+    test_sharding_without_storage,
+    unregistered,
+    update_storage,
+    without_storage_updated,
+)
 
 EntityState = entities.TestEntityState
-
-test_config = sharding_config.layer(
-    replace(
-        sharding_config.DEFAULTS,
-        entity_mailbox_capacity=10,
-        entity_termination_timeout=Seconds(0),
-        entity_message_poll_interval=Seconds(5),
-        send_retry_interval=Seconds(0.1),
-        refresh_assignments_interval=Seconds(0),
-    )
-)
-
-test_sharding_without_state = (
-    test_entity_no_state.pipe(fx.layer.provide_merge(sharding.layer))
-    .pipe(fx.layer.provide(runner_health.layer_noop))
-    .pipe(fx.layer.provide(runner_storage.layer_memory))
-)
-
-test_sharding_without_runners = test_sharding_without_state.pipe(
-    fx.layer.provide_merge(test_entity_state_layer)
-)
-
-test_sharding_without_storage = test_sharding_without_runners.pipe(
-    fx.layer.provide(runners.layer_noop)
-).pipe(fx.layer.provide(test_config))
-
-restart_env = test_sharding_without_state.pipe(fx.layer.provide(runners.layer_noop)).pipe(
-    fx.layer.provide(test_config)
-)
-"""A runner over storage and entity state that outlive it."""
-
-restart_storage = fx.layer.merge(
-    message_storage.layer_memory.pipe(fx.layer.provide(test_config)), test_entity_state_layer
-)
-
-test_sharding = test_sharding_without_storage.pipe(
-    fx.layer.provide_merge(message_storage.layer_memory)
-).pipe(fx.layer.provide(test_config))
 
 
 @testing.effect
@@ -442,7 +403,7 @@ def test_interrupts_are_sent_for_volatile_messages_on_shutdown():
         )
         .pipe(
             fx.layer.provide_merge(
-                _config(
+                make_config(
                     entity_termination_timeout=Seconds(30),
                     refresh_assignments_interval=Seconds(0.1),
                 )
@@ -623,81 +584,6 @@ def test_replays_in_flight_requests_when_restarting_after_a_defect():
     yield from body.pipe(fx.provide(test_sharding))
 
 
-# --- storage and config variants -------------------------------------------------------------
-
-
-def _config(**changes: Any) -> fx.Layer[ShardingConfig]:
-    defaults: dict[str, Any] = {
-        "entity_mailbox_capacity": 10,
-        "entity_termination_timeout": Seconds(0),
-        "entity_message_poll_interval": Seconds(5),
-        "send_retry_interval": Seconds(0.1),
-        "refresh_assignments_interval": Seconds(0),
-    }
-    return sharding_config.layer(replace(sharding_config.DEFAULTS, **(defaults | changes)))
-
-
-def _patched[S](service: S, **methods: Callable[..., Any]) -> S:
-    """``service`` with ``methods`` replaced, sharing its state (Effect's
-    ``{ ...storage, method }``)."""
-    patched: Any = copy.copy(service)
-    namespace: dict[str, Any] = {"__slots__": ()}
-    for name, method in methods.items():
-        namespace[name] = _delegate(method)
-    patched.__class__ = type("Patched", (type(service),), namespace)
-    return patched
-
-
-def _delegate(method: Callable[..., Any]) -> Callable[..., Any]:
-    def call(_self: object, *args: Any, **kwargs: Any) -> Any:
-        return method(*args, **kwargs)
-
-    return call
-
-
-def _update_storage(
-    transform: Callable[[MessageStorageService], MessageStorageService],
-) -> fx.Layer[MessageStorage, Never, MessageStorage]:
-    """Effect's ``Layer.updateService(MessageStorage, transform)``."""
-    return fx.layer.effect(MessageStorage, MessageStorage().map(transform))
-
-
-def _capped(
-    transform: Callable[[MessageStorageService], MessageStorageService] | None = None,
-    **changes: Any,
-) -> fx.Layer[Any, Never, Never]:
-    config = _config(**changes)
-    built = test_sharding_without_runners.pipe(fx.layer.provide(runners.layer_noop)).pipe(
-        fx.layer.provide(config)
-    )
-    if transform is not None:
-        built = built.pipe(fx.layer.provide(_update_storage(transform)))
-    return built.pipe(fx.layer.provide_merge(message_storage.layer_memory)).pipe(
-        fx.layer.provide(config)
-    )
-
-
-def _unregistered(**changes: Any) -> fx.Layer[Any, Never, Never]:
-    config = _config(**changes)
-    return (
-        sharding.layer.pipe(fx.layer.provide(runner_storage.layer_memory))
-        .pipe(fx.layer.provide(runner_health.layer_noop))
-        .pipe(fx.layer.provide(runners.layer_noop))
-        .pipe(fx.layer.provide_merge(message_storage.layer_memory))
-        .pipe(fx.layer.provide(config))
-    )
-
-
-def _without_storage_updated(
-    transform: Callable[[MessageStorageService], MessageStorageService],
-) -> fx.Layer[Any, Never, Never]:
-    return (
-        test_sharding_without_storage.pipe(fx.layer.provide(_update_storage(transform)))
-        .pipe(fx.layer.provide_merge(message_storage.layer_memory))
-        .pipe(fx.layer.provide(test_config))
-    )
-
-
 @testing.effect
 def test_malformed_message_in_storage():
     """malformed message in storage"""
@@ -744,7 +630,7 @@ def _spy_unprocessed_by_id(
             requested.offer_unsafe(ids)
             return storage.unprocessed_messages_by_id(ids)
 
-        return _patched(storage, unprocessed_messages_by_id=by_id)
+        return patched(storage, unprocessed_messages_by_id=by_id)
 
     return transform
 
@@ -784,7 +670,7 @@ def test_durable_messages_are_retried_when_mailbox_is_full():
         # No more ids were asked for.
         assert requested.size_unsafe() == 0
 
-    yield from body.pipe(fx.provide(_without_storage_updated(_spy_unprocessed_by_id(requested))))
+    yield from body.pipe(fx.provide(without_storage_updated(_spy_unprocessed_by_id(requested))))
 
 
 @testing.effect
@@ -823,7 +709,7 @@ def test_durable_stream_while_mailbox_is_full():
         assert len(driver.encoded.journal) == 13 + 3 + 1
         assert len(driver.encoded.reply_ids) == 1 + 4
 
-    yield from body.pipe(fx.provide(_without_storage_updated(_spy_unprocessed_by_id(requested))))
+    yield from body.pipe(fx.provide(without_storage_updated(_spy_unprocessed_by_id(requested))))
 
 
 def _late_env(
@@ -843,7 +729,7 @@ def _late_env(
         .pipe(fx.layer.provide(config))
     )
     if transform is not None:
-        built = built.pipe(fx.layer.provide(_update_storage(transform)))
+        built = built.pipe(fx.layer.provide(update_storage(transform)))
     return built
 
 
@@ -865,7 +751,7 @@ def _send_request_with_key(key: str):
 @testing.effect
 def test_holds_durable_messages_while_entity_layers_are_still_building():
     """holds durable messages while entity layers are still building"""
-    config = _config(
+    config = make_config(
         entity_registration_timeout=Seconds(6), entity_message_poll_interval=Seconds(0.1)
     )
 
@@ -898,7 +784,7 @@ def test_holds_durable_messages_while_entity_layers_are_still_building():
 @testing.effect
 def test_reads_durable_messages_from_storage_when_a_late_entity_registers():
     """reads durable messages from storage when a late entity registers"""
-    config = _config(
+    config = make_config(
         entity_registration_timeout=Seconds(6), entity_message_poll_interval=Seconds(3600)
     )
     reset_started = Deferred[None, Never]()
@@ -914,7 +800,7 @@ def test_reads_durable_messages_from_storage_when_a_late_entity_registers():
         def reset_addresses(addresses: list[EntityAddress]) -> fx.Effect[None, Any]:
             return gate(storage.reset_addresses(addresses))
 
-        return _patched(storage, reset_address=reset_address, reset_addresses=reset_addresses)
+        return patched(storage, reset_address=reset_address, reset_addresses=reset_addresses)
 
     @fx.gen
     def body():
@@ -946,7 +832,7 @@ def test_reads_durable_messages_from_storage_when_a_late_entity_registers():
 @testing.effect
 def test_defects_durable_messages_when_no_entity_ever_registers():
     """defects durable messages when no entity ever registers"""
-    config = _config(
+    config = make_config(
         entity_registration_timeout=Seconds(1), entity_message_poll_interval=Seconds(0.1)
     )
     no_entities = (
@@ -1024,7 +910,7 @@ def test_bounds_local_sends_while_entity_registration_is_missing():
             == "Entity type 'MissingRegistrationEntity' not registered"
         )
 
-    yield from body.pipe(fx.provide(_capped(entity_registration_timeout=Seconds(1))))
+    yield from body.pipe(fx.provide(capped(entity_registration_timeout=Seconds(1))))
 
 
 @testing.effect
@@ -1058,7 +944,7 @@ def test_recomputes_the_missing_entity_deadline_when_registration_starts():
             == "Entity type 'MissingRegistrationEntity' not registered"
         )
 
-    yield from scoped(body.pipe(fx.provide(_unregistered(entity_registration_timeout=Seconds(1)))))
+    yield from scoped(body.pipe(fx.provide(unregistered(entity_registration_timeout=Seconds(1)))))
 
 
 @testing.effect
@@ -1090,7 +976,7 @@ def test_keeps_a_shared_registration_latch_when_one_waiter_is_interrupted():
         assert exit.cause.has_interrupts_only
         yield from remaining.join()
 
-    yield from scoped(body.pipe(fx.provide(_unregistered(entity_registration_timeout=Seconds(1)))))
+    yield from scoped(body.pipe(fx.provide(unregistered(entity_registration_timeout=Seconds(1)))))
 
 
 @testing.effect
@@ -1117,7 +1003,7 @@ def test_bounds_client_interruption_while_entity_registration_is_missing():
         assert isinstance(exit, Exit.Failure)
         assert exit.cause.has_interrupts_only
 
-    yield from body.pipe(fx.provide(_capped(entity_registration_timeout=Seconds(1))))
+    yield from body.pipe(fx.provide(capped(entity_registration_timeout=Seconds(1))))
 
 
 # --- Sharding residency cap ------------------------------------------------------------------
@@ -1146,7 +1032,7 @@ def test_bounds_resident_entities_to_max_resident_entities():
         assert [user.id for user in users] == [1, 2, 3, 4, 5, 6]
 
     yield from body.pipe(
-        fx.provide(_capped(max_resident_entities=2, entity_max_idle_time=Seconds(1)))
+        fx.provide(capped(max_resident_entities=2, entity_max_idle_time=Seconds(1)))
     )
 
 
@@ -1173,7 +1059,7 @@ def test_volatile_sends_to_new_entities_fail_with_mailbox_full_at_the_cap():
         assert len(driver.encoded.unprocessed) == 1
         assert len(driver.encoded.reply_ids) == 0
 
-    yield from body.pipe(fx.provide(_capped(max_resident_entities=1)))
+    yield from body.pipe(fx.provide(capped(max_resident_entities=1)))
 
 
 @testing.effect
@@ -1204,7 +1090,7 @@ def test_keeps_delivering_to_resident_entities_at_the_cap():
         assert len(driver.encoded.reply_ids) == 1
 
     yield from body.pipe(
-        fx.provide(_capped(max_resident_entities=1, unprocessed_message_batch_size=2))
+        fx.provide(capped(max_resident_entities=1, unprocessed_message_batch_size=2))
     )
 
 
@@ -1222,35 +1108,7 @@ def test_unbounded_max_resident_entities_does_not_limit_spawning():
         yield from testing.adjust(0.001)
         assert (yield from service.active_entity_count) == 15
 
-    yield from body.pipe(fx.provide(_capped(max_resident_entities="unbounded")))
-
-
-@fx.fn
-def _save_get_user_request(entity_id: str, id: int):
-    storage = yield from MessageStorage()
-    service = yield from sharding.Sharding()
-    rpc = TestEntity.rpcs["GetUser"]
-    entity = EntityId(entity_id)
-    request_id = yield from service.get_snowflake
-    yield from storage.save_request(
-        OutgoingRequest(
-            envelope=make_request(
-                request_id=request_id,
-                address=EntityAddress(
-                    shard_id=service.get_shard_id(entity, "default"),
-                    entity_type=TestEntity.type,
-                    entity_id=entity,
-                ),
-                tag="GetUser",
-                payload={"id": id},
-            ),
-            annotations=rpc.annotations,
-            context=Context.empty(),
-            rpc=rpc,
-            last_received_reply=None,
-            respond=lambda _: fx.void,
-        )
-    )
+    yield from body.pipe(fx.provide(capped(max_resident_entities="unbounded")))
 
 
 @testing.effect
@@ -1262,13 +1120,13 @@ def test_drains_a_full_batch_without_waiting_for_the_poll_interval():
         yield from testing.adjust(0.001)
         driver = yield from MemoryDriver()
         for i in range(1, 6):
-            yield from _save_get_user_request(str(i), i)
+            yield from save_get_user_request(str(i), i)
         assert len(driver.encoded.reply_ids) == 0
         # One poll drains the whole backlog in batches of 2.
         yield from testing.adjust(5)
         assert len(driver.encoded.reply_ids) == 5
 
-    yield from body.pipe(fx.provide(_capped(unprocessed_message_batch_size=2)))
+    yield from body.pipe(fx.provide(capped(unprocessed_message_batch_size=2)))
 
 
 @testing.effect
@@ -1285,7 +1143,7 @@ def test_advances_past_in_flight_memory_requests_when_reading_bounded_batches():
         yield from testing.adjust(5)
         assert (yield from fiber.join()) == User(id=3, name="User 3")
 
-    yield from body.pipe(fx.provide(_capped(unprocessed_message_batch_size=2)))
+    yield from body.pipe(fx.provide(capped(unprocessed_message_batch_size=2)))
 
 
 @testing.effect
@@ -1299,7 +1157,7 @@ def test_keeps_full_sized_storage_reads_when_approaching_the_entity_cap():
                 limits.append(limit)
             return storage.unprocessed_messages(shard_ids, limit=limit, **options)
 
-        return _patched(storage, unprocessed_messages=unprocessed)
+        return patched(storage, unprocessed_messages=unprocessed)
 
     @fx.gen
     def body():
@@ -1312,13 +1170,13 @@ def test_keeps_full_sized_storage_reads_when_approaching_the_entity_cap():
         assert (yield from service.active_entity_count) == 4
         limits.clear()
         for i in range(10):
-            yield from _save_get_user_request(str(i % 4 + 1), i)
+            yield from save_get_user_request(str(i % 4 + 1), i)
         yield from testing.adjust(5)
         assert limits
         assert set(limits) == {100}
 
     yield from body.pipe(
-        fx.provide(_capped(transform, max_resident_entities=5, unprocessed_message_batch_size=100))
+        fx.provide(capped(transform, max_resident_entities=5, unprocessed_message_batch_size=100))
     )
 
 
@@ -1336,7 +1194,7 @@ def test_normalizes_programmatic_batch_sizes_below_one():
             assert fiber.poll_unsafe() is not None
             assert (yield from fiber.join()) == User(id=1, name="User 1")
 
-        yield from body.pipe(fx.provide(_capped(unprocessed_message_batch_size=batch_size)))
+        yield from body.pipe(fx.provide(capped(unprocessed_message_batch_size=batch_size)))
 
 
 @testing.effect
@@ -1349,7 +1207,7 @@ def test_does_not_busy_poll_storage_at_the_cap():
             reads.append(1)
             return storage.unprocessed_messages(shard_ids, **options)
 
-        return _patched(storage, unprocessed_messages=unprocessed)
+        return patched(storage, unprocessed_messages=unprocessed)
 
     @fx.gen
     def body():
@@ -1365,7 +1223,7 @@ def test_does_not_busy_poll_storage_at_the_cap():
         yield from testing.adjust(4)
         assert len(reads) - before <= 1
 
-    yield from body.pipe(fx.provide(_capped(transform, max_resident_entities=1)))
+    yield from body.pipe(fx.provide(capped(transform, max_resident_entities=1)))
 
 
 # --- context ---------------------------------------------------------------------------------
@@ -1446,14 +1304,6 @@ def test_with_transaction_persists_a_client_interrupt_instead_of_replaying_the_r
     yield from body.pipe(fx.provide(test_sharding))
 
 
-def _series(registry: dict[Any, Any], metric_id: str) -> list[tuple[Any, Any]]:
-    """``(attributes, state)`` of every series of ``metric_id``, sorted by
-    attributes, as Effect's tests read ``Metric.snapshotUnsafe``."""
-    snapshots = metric.snapshot_unsafe(Context.make(metric.MetricRegistry, registry))
-    found = [(dict(s.attributes or {}), s.state) for s in snapshots if s.id == metric_id]
-    return sorted(found, key=lambda pair: sorted(pair[0].items()))
-
-
 def _wait_for_idle_reap(service: sharding.ShardingService, remaining: int) -> fx.Effect[None]:
     @fx.gen
     def run():
@@ -1472,7 +1322,7 @@ def test_reports_entity_mailbox_sizes_until_entities_are_released():
     registry: dict[Any, Any] = {}
 
     def sizes() -> list[tuple[Any, Any]]:
-        return _series(registry, cluster_metrics.entity_mailbox_size.id)
+        return series(registry, cluster_metrics.entity_mailbox_size.id)
 
     @fx.gen
     def body():
@@ -1499,7 +1349,7 @@ def test_reports_entity_mailbox_sizes_until_entities_are_released():
         ]
 
     yield from body.pipe(
-        fx.provide(_capped(entity_mailbox_metrics=True, entity_max_idle_time=Seconds(0.001)))
+        fx.provide(capped(entity_mailbox_metrics=True, entity_max_idle_time=Seconds(0.001)))
     ).pipe(fx.provide_service(metric.MetricRegistry, registry))
     # Shutting down releases every shard, tearing down the remaining entity.
     assert sizes() == []
@@ -1518,7 +1368,7 @@ def test_creates_no_entity_mailbox_series_by_default():
         yield from make_client("1").never_volatile().fork()
         yield from testing.adjust(0.001)
         assert (yield from service.active_entity_count) == 1
-        assert _series(registry, cluster_metrics.entity_mailbox_size.id) == []
+        assert series(registry, cluster_metrics.entity_mailbox_size.id) == []
 
     yield from body.pipe(fx.provide(test_sharding)).pipe(
         fx.provide_service(metric.MetricRegistry, registry)
@@ -1533,7 +1383,7 @@ def test_reports_the_active_entity_count_on_snapshot_until_the_entity_manager_cl
     def counts() -> list[Any]:
         return [
             state
-            for attributes, state in _series(registry, cluster_metrics.entities.id)
+            for attributes, state in series(registry, cluster_metrics.entities.id)
             if attributes.get("type") == "TestEntity"
         ]
 
@@ -1561,7 +1411,7 @@ def test_reports_the_largest_entity_mailbox_size_per_type_by_default():
     registry: dict[Any, Any] = {}
 
     def size_max() -> list[tuple[Any, Any]]:
-        return _series(registry, cluster_metrics.entity_mailbox_size_max.id)
+        return series(registry, cluster_metrics.entity_mailbox_size_max.id)
 
     @fx.gen
     def body():
@@ -1578,7 +1428,7 @@ def test_reports_the_largest_entity_mailbox_size_per_type_by_default():
         yield from _wait_for_idle_reap(service, 1)
         assert size_max() == [({"type": "TestEntity"}, metric.GaugeState(1))]
 
-    yield from body.pipe(fx.provide(_capped(entity_max_idle_time=Seconds(0.001)))).pipe(
+    yield from body.pipe(fx.provide(capped(entity_max_idle_time=Seconds(0.001)))).pipe(
         fx.provide_service(metric.MetricRegistry, registry)
     )
     # Shutting down closes the entity manager, which removes the series.

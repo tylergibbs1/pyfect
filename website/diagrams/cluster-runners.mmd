@@ -1,0 +1,11 @@
+flowchart LR
+  C["client on runner-a"] -->|"Counter b: Increment"| RA
+  subgraph RA["runner-a"]
+    SA["a's shard"] --> EA["Counter a"]
+  end
+  subgraph RB["runner-b"]
+    SB["b's shard"] --> EB["Counter b"]
+  end
+  RA -->|"socket or HTTP"| SB
+  RA -->|"store, lock"| D["SQL: messages, shard locks"]
+  RB -->|"store, lock"| D

@@ -869,7 +869,7 @@ def test_retries_a_deferred_wake_after_a_transient_run_reset_failure():
             return storage.clear_replies(request_id, **options)
         reset_attempts[0] += 1
         if reset_attempts[0] == 1:
-            return fx.fail(PersistenceError(cause="transient reset failure"))
+            return fx.fail(PersistenceError(cause=RuntimeError("transient reset failure")))
         return storage.clear_replies(request_id, **options)
 
     storage_layer = W.storage_layer_of(W.override_storage(storage, clear_replies=clear_replies))
@@ -2170,7 +2170,7 @@ def test_reacquires_shards_after_a_forced_release_abandons_a_parent_waking_from_
     def wrap(storage: Any) -> Any:
         def refresh(address: Any, shard_ids: Any) -> fx.Effect[Any, Any]:
             if storage_down[0]:
-                return fx.fail(PersistenceError(cause="runner storage outage"))
+                return fx.fail(PersistenceError(cause=RuntimeError("runner storage outage")))
             return storage.refresh(address, shard_ids)
 
         return replace(storage, refresh=refresh)
@@ -2555,7 +2555,9 @@ def test_applies_a_persisted_interrupt_when_a_fresh_owner_replays_a_failure_susp
             and options["id"] == "Workflow/InterruptSignal"
         ):
             lookup_failed[0] = True
-            return fx.fail(PersistenceError(cause="transient interrupt lookup failure"))
+            return fx.fail(
+                PersistenceError(cause=RuntimeError("transient interrupt lookup failure"))
+            )
         return storage.request_id_for_primary_key(**options)
 
     flaky_storage = W.storage_layer_of(

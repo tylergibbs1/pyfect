@@ -52,3 +52,13 @@ def test_interrupt_only_cause_says_so():
 def test_empty_cause_renders_a_string():
     """Effect Cause.test.ts "returns a string for empty cause"."""
     assert isinstance(cause.Cause(()).pretty(), str)
+
+
+def test_a_defect_decoded_from_json_renders_with_the_name_it_was_written_with():
+    """A defect that crossed a JSON boundary renders as Effect renders the
+    decoded error: ``name: message``, the name it was written with."""
+    from pyfect.schema import DecodedDefect, ErrorInstance
+
+    decoded = DecodedDefect(ErrorInstance("cause=boom", name="MalformedMessage"))
+    rendered = cause.die(decoded).pretty()
+    assert rendered.startswith("MalformedMessage: cause=boom")

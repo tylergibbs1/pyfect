@@ -23,10 +23,10 @@ class EntityNotAssignedToRunner(S.TaggedError, identifier=f"{_ID}/EntityNotAssig
 class MalformedMessage(S.TaggedError, identifier=f"{_ID}/MalformedMessage"):
     """A message could not be decoded or encoded."""
 
-    cause: object = S.field(S.Defect())
+    cause: BaseException = S.field(S.Defect())
 
     @staticmethod
-    def refail[A, R](effect: Effect[A, object, R]) -> Effect[A, MalformedMessage, R]:
+    def refail[A, R](effect: Effect[A, BaseException, R]) -> Effect[A, MalformedMessage, R]:
         """``effect`` with its failure wrapped in ``MalformedMessage``."""
         require_effect(effect, "effect")
         return effect.map_error(lambda cause: MalformedMessage(cause=cause))
@@ -35,7 +35,7 @@ class MalformedMessage(S.TaggedError, identifier=f"{_ID}/MalformedMessage"):
 class PersistenceError(S.TaggedError, identifier=f"{_ID}/PersistenceError"):
     """Message or runner storage failed."""
 
-    cause: object = S.field(S.Defect())
+    cause: BaseException = S.field(S.Defect())
 
     @staticmethod
     def refail[A, R](effect: Effect[A, object, R]) -> Effect[A, PersistenceError, R]:

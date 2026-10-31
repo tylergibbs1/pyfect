@@ -1,6 +1,6 @@
 ---
 title: Cluster
-description: "The foundation of Effect's cluster: shards spread over runners, snowflake ids, persisted messages and runner storage in memory or SQL."
+description: "Entities sharded over runners that talk over sockets or HTTP, with persisted messages, shard locks in SQL, singletons, cron jobs that run once per cluster and durable workflows."
 ---
 
 Effect's cluster runs entities, small stateful services addressed by a type and an id,
@@ -10,12 +10,31 @@ reaches the one runner that holds it. Messages can be persisted, so a request su
 runner restarting, and runners take shards over from each other when one leaves.
 `pyfect.cluster` follows Effect's `effect/cluster`; import it as a submodule.
 
-The port is partial. Shards, runner addresses, ids, configuration, envelopes, message
-storage and runner storage are here. Entities, `Sharding`, the socket and HTTP runners,
-singletons, `ClusterCron` and the cluster workflow engine are not ported yet;
-[PARITY.md](https://github.com/tylergibbs1/pyfect/blob/main/docs/PARITY.md) tracks them.
-Until then, [workflows](/docs/workflows) run on one process with
-`workflow_engine.layer_memory`.
+## Entities
+
+An entity type is a subclass of `Entity` whose attributes are [RPCs](/docs/rpc). Its
+handlers are built when an entity id gets its first message, and that instance keeps
+running, holding its state, until it has been idle for `max_idle_time`. An entity handles
+one message at a time unless `to_layer` is given a `concurrency`. `Counter.client()` is an
+effect giving a function from an entity id to a client whose methods are the RPCs, with
+payload, result and error typed from their schemas; it works the same from any runner.
+
+<CodeOutput>
+
+<include meta='title="entities.py"'>../../snippets/cluster/entities.py</include>
+
+<include lang="text">../../snippets/cluster/entities.out</include>
+
+</CodeOutput>
+
+An RPC annotated `Persisted` is stored before it runs and its reply is stored when it
+finishes: a sender waits on the stored reply, a request with the same primary key is
+answered once, and a request a runner had not finished when it stopped runs again on the
+runner that takes its shard over. A volatile RPC goes straight to the runner and is lost if
+that runner dies. Handlers read their own address from `CurrentAddress` and their runner's
+from `CurrentRunnerAddress`. `to_layer` takes the handlers directly, `to_layer_effect` the
+effect that builds them, and `to_layer_queue` gives a mailbox to read messages from instead.
+`entity.make_test_client` calls an entity's handlers without a cluster, for unit tests.
 
 ## Shards and runners
 
@@ -40,6 +59,86 @@ pyfect ring assigns shards as Effect's would. A runner with weight 2 gets twice 
 sharding_config.DEFAULTS, ...)`), and `layer_from_env()` reads them from the environment
 in CONSTANT_CASE (`SHARDS_PER_GROUP`, `HOST`, `PORT`), with Effect's defaults for the
 rest. Durations are [`duration.Seconds`](/docs/reference/duration).
+
+## Running a cluster
+
+`Sharding` is the service at the center of a runner: it registers entities and singletons,
+takes shard locks, routes each message to the runner holding its shard and retries when a
+shard moves. Three layers build it with everything it needs:
+
+- `test_runner.layer`: one runner in memory, for tests and examples.
+- `single_runner.layer(...)`: one runner whose messages are in SQL, for a single process
+  that should still survive restarts.
+- `cluster_socket.layer(...)` and `cluster_http.layer(transport="http" | "websocket", ...)`:
+  a runner that listens on its `runner_address` and talks to the others over TCP, HTTP or
+  WebSockets, with messages and shard locks in SQL (`storage="sql"`, the default), in
+  memory (`storage="local"`) or in storage layers you provide (`storage="byo"`). Import
+  them on their own (`from pyfect.cluster import cluster_socket`), as Effect keeps them in
+  platform-node.
+
+<Diagram name="cluster-runners" title="A message for Counter b goes from runner-a to runner-b, which holds b's shard; both share SQL storage" />
+
+Every runner of a cluster points at the same database. When a runner joins, the hash ring
+gives it a share of the shards, and the runners holding them release their locks; when one
+leaves, or stops renewing its locks, the others take its shards and run its unfinished
+persisted messages. Here two runners in one process share a SQLite file:
+
+<CodeOutput>
+
+<include meta='title="runners.py"'>../../snippets/cluster/runners.py</include>
+
+<include lang="text">../../snippets/cluster/runners.out</include>
+
+</CodeOutput>
+
+`sharding_config` takes a function that updates the settings read from the environment.
+`client_only=True` makes a runner that sends messages but holds no shards, for a web server
+in front of the cluster. `runner_health="k8s"` checks whether a runner that stopped
+answering is still alive by reading its pod from the Kubernetes API, where the default
+pings it. The layers serialize messages as newline-delimited JSON, where Effect's default is
+its binary format, which is not ported, so a pyfect runner cannot join an Effect cluster.
+Lower level pieces are there too: `socket_runner` and `http_runner` (the protocols and servers), `runner_server`,
+`runners` and `runner_health`. `entity_proxy` exposes an entity as an RPC group or an
+[HTTP API](/docs/http-api) group, and `entity_proxy_server` serves it.
+
+## Singletons and cron jobs
+
+`singleton.make(name, effect)` runs an effect on exactly one runner of the cluster, the one
+holding the singleton's shard, and starts it again on another runner when that shard moves.
+`cluster_cron.make` runs a job on a [cron](/docs/reference/cron) schedule once per instant
+across the whole cluster: each run is a persisted message delivered at its instant, which
+schedules the next one, so a run is not lost while runners come and go. The job reads its
+instant from `CurrentScheduledTime`. With `calculate_next_run_from_previous=True` one entity
+runs the instants in order and catches up on missed ones; runs older than
+`skip_if_older_than` (a day) are skipped.
+
+<CodeOutput>
+
+<include meta='title="cron.py"'>../../snippets/cluster/cron.py</include>
+
+<include lang="text">../../snippets/cluster/cron.out</include>
+
+</CodeOutput>
+
+Messages due later, like the next cron run, are read from storage every
+`entity_message_poll_interval` (10 seconds, as in Effect), so lower it for a job that runs
+more often.
+
+## Workflows
+
+[Workflows](/docs/workflows) run on one process with `workflow_engine.layer_memory`.
+`cluster_workflow_engine.layer` runs the same workflows on the cluster: each execution is an
+entity, its activity results, deferred completions and durable clocks are persisted
+messages, and an execution suspended on a runner that stops resumes on the runner that takes
+its shard, replaying its completed activities from storage instead of running them again.
+
+<CodeOutput>
+
+<include meta='title="workflows.py"'>../../snippets/cluster/workflows.py</include>
+
+<include lang="text">../../snippets/cluster/workflows.out</include>
+
+</CodeOutput>
 
 ## Messages
 
@@ -66,9 +165,13 @@ with `shard_lock_disable_advisory`), renewed every `shard_lock_refresh_interval`
 
 `k8s_http_client.layer` is a Kubernetes API client for runners in a cluster: it reads the
 pod's service-account token and lists or creates pods, and `Pod.is_ready` reads a pod's
-conditions, which Effect's runner health check uses.
+conditions, which the runner health check uses.
 
 Reference: [`pyfect.cluster`](/docs/reference/cluster),
+[`entity`](/docs/reference/cluster/entity),
+[`sharding`](/docs/reference/cluster/sharding),
+[`cluster_cron`](/docs/reference/cluster/cluster_cron),
+[`cluster_workflow_engine`](/docs/reference/cluster/cluster_workflow_engine),
 [`pyfect.hash_ring`](/docs/reference/hash_ring),
 [`sharding_config`](/docs/reference/cluster/sharding_config),
 [`message_storage`](/docs/reference/cluster/message_storage).

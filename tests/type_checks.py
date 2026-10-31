@@ -6660,6 +6660,11 @@ def cluster_core_types() -> None:
         cluster_error.PersistenceError.refail(fx.fail(ValueError())),
         fx.Effect[Never, cluster_error.PersistenceError],
     )
+    # A cluster error's cause is a defect, an exception, as its schema checks
+    # when it is made.
+    cluster_error.PersistenceError(cause="down")  # pyright: ignore[reportArgumentType]
+    cluster_error.MalformedMessage(cause=1)  # pyright: ignore[reportArgumentType]
+    cluster_error.MalformedMessage.refail(fx.fail("not an exception"))  # pyright: ignore[reportArgumentType]
     assert_type(
         sharding_config.layer_from_env(), fx.Layer[sharding_config.ShardingConfig, fx.ConfigError]
     )

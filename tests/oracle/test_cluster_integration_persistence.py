@@ -4,10 +4,6 @@ throwaway PostgreSQL server where Effect uses PostgreSQL and MySQL. Each
 test's docstring is the Effect test title, without its backend prefix.
 
 Adapted, with the reason:
-- The ``MalformedMessage`` checks: Effect reads the error's name in
-  ``Cause.pretty`` text; a defect that crossed the wire is a
-  ``DecodedDefect`` here, whose ``ErrorInstance`` carries that name
-  (``malformed``).
 - "persists a non-JSON Error as a serializable defect": the handler fails
   with a ``RuntimeError`` (Effect's ``new Error``), which the ``Unknown``
   error schema cannot write as JSON.
@@ -33,7 +29,6 @@ from pyfect.context import Context
 from pyfect.latch import Latch
 from pyfect.rpc import make as make_rpc
 from pyfect.rpc import rpc_schema
-from pyfect.schema import DecodedDefect, ErrorInstance
 from pyfect.scope import Scope
 
 from ._cluster_harness import ClusterDatabase, MessageCounts, make
@@ -123,15 +118,7 @@ def now_millis() -> fx.Effect[float]:
 def malformed(cause: Cause[Any]) -> bool:
     """The cause is a ``MalformedMessage`` defect, read back from storage or
     the wire."""
-    return (
-        any(
-            isinstance(defect, DecodedDefect)
-            and isinstance(defect.value, ErrorInstance)
-            and defect.value.name == "MalformedMessage"
-            for defect in cause.defects
-        )
-        or "MalformedMessage" in cause.pretty()
-    )
+    return "MalformedMessage" in cause.pretty()
 
 
 def assert_stored_as_defect(request: fx.Effect[Any, Any], tag: str, id: str) -> fx.Effect[None]:
