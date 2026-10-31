@@ -1,0 +1,115 @@
+---
+title: Atoms
+description: "Reactive values kept in a registry: derived atoms that update when what they read changes, atoms backed by effects and streams, families, RPC and HTTP API queries, and state handed from a server to a client."
+---
+
+An atom is a recipe for a value: a constant, a function of other atoms, an effect or a
+stream. An atom holds nothing itself. A registry builds the atoms you read, keeps their
+values while something uses them, and rebuilds an atom when an atom it read changes.
+`pyfect.reactivity` follows Effect's `effect/reactivity`: `atom`, `atom_registry`,
+`atom_rpc`, `atom_http_api` and `hydration` are submodules of it.
+
+## Atoms and derived atoms
+
+`atom.make(1)` is a writable atom holding `1`. `atom.make(lambda get: get(count) * 2)` is a
+derived atom: `get` reads another atom and records it as a dependency, so setting `count`
+rebuilds `doubled` and notifies its subscribers. `atom.family(f)` gives one atom per key,
+compared with `Equal`, so `todo(1)` is the same atom each time it is called.
+
+<CodeOutput>
+
+<include meta='title="atoms.py"'>../../snippets/atoms/atoms.py</include>
+
+<include lang="text">../../snippets/atoms/atoms.out</include>
+
+</CodeOutput>
+
+`atom_registry.make()` creates a registry on the running fiber's scheduler.
+`registry.get`, `set`, `update` and `subscribe` work on it directly, and `subscribe`
+returns the function that unsubscribes. An atom that no subscriber, mount or other live
+atom uses is removed from the registry, and built again when it is read next;
+`keep_alive()` keeps it, and `set_idle_ttl(seconds)` keeps it for a while after its last
+use. Methods like `map`, `with_fallback` and `debounce` derive a new atom from one.
+
+<Diagram name="atom-registry" title="Setting count invalidates doubled; the registry rebuilds it and notifies its subscribers, and an effect atom's fiber writes its result to its node" />
+
+## Effect and stream atoms
+
+An atom made from an effect holds an `AsyncResult`: `Initial` while the effect runs, then
+`Success` or `Failure`. The registry runs the effect when the atom is built and interrupts
+it when the atom is removed. A stream atom holds a result of the stream's latest item.
+`atom.fn(f)` is a function atom: writing an argument to it runs `f(arg, get)`, and a new
+write interrupts the run in progress. `atom.runtime(layer)` builds a layer once per
+registry, and its `atom` and `fn` make atoms whose effects use that layer's services.
+
+The effects `atom.get`, `atom.set` and `atom.get_result` use the registry that
+`atom_registry.layer` provides. `get_result` waits for an atom's first `Success` or
+`Failure`, and with `suspend_on_waiting=True` for one that is not still running.
+
+<CodeOutput>
+
+<include meta='title="effects.py"'>../../snippets/atoms/effects.py</include>
+
+<include lang="text">../../snippets/atoms/effects.out</include>
+
+</CodeOutput>
+
+## RPC and HTTP API atoms
+
+`atom_rpc.make(Tag, group=..., protocol=...)` turns an [RPC](/docs/rpc) group into atoms.
+`client.query(rpc, payload)` is an atom of the call's result, one per payload, and
+`client.mutation(rpc)` a function atom taking a `MutationRequest`. A query's
+`reactivity_keys` tie it to the mutations that change it: a mutation written with the same
+keys refreshes those queries once it succeeds. A query also takes `headers`,
+`time_to_live` and a `serialization_key` for hydration.
+
+<CodeOutput>
+
+<include meta='title="rpc.py"'>../../snippets/atoms/rpc.py</include>
+
+<include lang="text">../../snippets/atoms/rpc.out</include>
+
+</CodeOutput>
+
+`atom_http_api.make(Tag, api=..., http_client=...)` does the same for an
+[HTTP API](/docs/http-api): `query(Group, endpoint, params=..., payload=...)` and
+`mutation(Group, endpoint)`, typed from the endpoint's schemas. Both clients build their
+transport in an atom runtime, which does not see the program's services, so the layer you
+pass provides all of it: here it wraps the program's HTTP client, which knows the test
+server's address.
+
+<CodeOutput>
+
+<include meta='title="http_api.py"'>../../snippets/atoms/http_api.py</include>
+
+<include lang="text">../../snippets/atoms/http_api.out</include>
+
+</CodeOutput>
+
+## Hydration
+
+`atom.serializable(key=..., schema=...)` marks an atom whose value can leave the process.
+`hydration.dehydrate(registry)` encodes the serializable atoms a registry holds, and
+`DehydratedAtom.to_json()` writes each entry as Effect does, so a Python server can hand
+state to an Effect client and back. `hydration.hydrate(registry, entries)` preloads another
+registry by key before its atoms are read. An effect atom still runs once it is built
+unless it is marked `skip_initial_run=True`, which keeps the hydrated value until the
+atom is refreshed or a dependency changes. `async_result.Schema` encodes an `AsyncResult`
+the way Effect's `AsyncResult.Schema` does.
+
+<CodeOutput>
+
+<include meta='title="hydration.py"'>../../snippets/atoms/hydration.py</include>
+
+<include lang="text">../../snippets/atoms/hydration.out</include>
+
+</CodeOutput>
+
+Effect's React, Solid and Vue bindings are JavaScript UI adapters and are not ported.
+
+Reference: [`pyfect.reactivity.atom`](/docs/reference/reactivity/atom),
+[`atom_registry`](/docs/reference/reactivity/atom_registry),
+[`async_result`](/docs/reference/reactivity/async_result),
+[`atom_rpc`](/docs/reference/reactivity/atom_rpc),
+[`atom_http_api`](/docs/reference/reactivity/atom_http_api),
+[`hydration`](/docs/reference/reactivity/hydration).

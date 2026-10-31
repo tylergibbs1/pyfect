@@ -176,6 +176,9 @@ layer, concurrency, retries and timeouts.
   WebSockets, with messages and shard locks in SQL, singletons and cron jobs that run once
   across the cluster, and durable workflows that resume on another runner when one stops.
   [Cluster →](https://pyfect.dev/docs/cluster)
+- **Atoms.** Reactive values in a registry: derived atoms that update when what they read
+  changes, effect, stream and RPC or HTTP API atoms, and state handed from a server to a
+  client by hydration. [Atoms →](https://pyfect.dev/docs/atoms)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 

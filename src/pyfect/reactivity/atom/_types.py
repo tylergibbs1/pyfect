@@ -12,10 +12,10 @@ methods, and a writable atom's return writable atoms.
 from __future__ import annotations
 
 import copy
-import math
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Generic, Literal, Never, Protocol, Self, TypeVar, cast
 
+from pyfect._js import same_value
 from pyfect.duration import Duration, Seconds
 from pyfect.option import Option
 
@@ -34,25 +34,6 @@ W_contra = TypeVar("W_contra", contravariant=True)
 type Refresh = Callable[[Callable[[Atom[Any]], None]], None]
 """How an atom refreshes: it gets the registry's refresh, and refreshes the
 atoms it stands for (``withFallback`` refreshes its primary)."""
-
-
-def _same_value(a: object, b: object) -> bool:
-    """JavaScript's ``Object.is``: numbers and strings by value (``NaN`` is
-    ``NaN``, ``0.0`` is not ``-0.0``), anything else by identity."""
-    if a is b:
-        return True
-    kind = type(a)
-    if kind is not type(b) or kind not in _VALUE_TYPES:
-        return False
-    if kind is float:
-        x, y = float(a), float(b)  # pyright: ignore[reportArgumentType]
-        if math.isnan(x):
-            return math.isnan(y)
-        return x == y and (x != 0.0 or str(x) == str(y))
-    return a == b
-
-
-_VALUE_TYPES: tuple[type, ...] = (int, float, str, bytes, bool, complex)
 
 
 class Atom(Generic[A_co]):
@@ -80,7 +61,7 @@ class Atom(Generic[A_co]):
         self.refresh: Refresh | None = refresh
         self.kept_alive = False
         self.lazy = True
-        self.equals: Callable[[Any, Any], bool] = _same_value
+        self.equals: Callable[[Any, Any], bool] = same_value
         self.label: tuple[str, str] | None = None
         self.idle_ttl: Seconds | None = None
         self.initial_value_target: Atom[Any] | None = None

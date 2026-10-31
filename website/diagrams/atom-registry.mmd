@@ -1,0 +1,8 @@
+flowchart LR
+  W["registry.set(count, 5)"] --> NC
+  subgraph R["registry"]
+    NC["count node: 5"] -->|"invalidates"| ND["doubled node: 10"]
+    F["effect fiber"] -->|"Success"| NU["user node: AsyncResult"]
+  end
+  ND -->|"new value"| S["subscribers"]
+  NU -->|"new value"| S
