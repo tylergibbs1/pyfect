@@ -23,12 +23,14 @@ fails later.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Mapping
 from typing import Any, Literal, Never, cast, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._primitives import uninterruptible_mask
+from pyfect._wire_codec import Const, wire_codec
+from pyfect._wire_codec import key as wire_key
 from pyfect.cause import Cause, Interrupt, from_reasons
 from pyfect.cause import die as die_cause
 from pyfect.context import Context, Reference, TagLike
@@ -37,7 +39,9 @@ from pyfect.effect import suspend as suspend_effect
 from pyfect.exit import Exit, Failure, Success
 from pyfect.layer import Layer, effect_discard
 from pyfect.schedule import Schedule
-from pyfect.schema import Codec
+from pyfect.schema import Boolean, Bottom, Codec, Defect, Union
+from pyfect.schema import Cause as CauseSchema
+from pyfect.schema import Exit as ExitSchema
 from pyfect.schema import Never as NeverSchema
 from pyfect.schema import Null as NullSchema
 from pyfect.scope import CloseableScope, Scope, scoped
@@ -453,6 +457,34 @@ def with_compensation[A, E, R, R2 = Never](
     return uninterruptible_mask(lambda restore: restore(effect).tap(compensate))
 
 
+def result_schema[A, E](
+    *, success: Codec[A, Any, Any, Any], error: Codec[E, Any, Any, Any]
+) -> Bottom[Result[A, E], Mapping[str, object]]:
+    """The schema of a ``Result`` (Effect's ``Workflow.Result``): a
+    ``Complete`` encoded as ``{"_tag": "Complete", "exit": ...}`` with an
+    exit of ``success`` / ``error``, or a ``Suspended`` as
+    ``{"_tag": "Suspended", "cause"?: ..., "failed"?: true}``."""
+    complete: Bottom[Any, Mapping[str, object]] = wire_codec(
+        cast("type[Any]", Complete),
+        [
+            Const("_tag", "Complete"),
+            wire_key("exit", "exit", ExitSchema(success, error, Defect())),
+        ],
+        identifier="Workflow.Complete",
+    )
+    suspended = wire_codec(
+        Suspended,
+        [
+            Const("_tag", "Suspended"),
+            wire_key("cause", "cause", CauseSchema(NeverSchema, Defect()), optional=True),
+            # Effect sets ``failed`` only when true; ``False`` is its unset value.
+            wire_key("failed", "failed", Boolean, optional=True, unset=False),
+        ],
+        identifier="effect/workflow/Workflow/Suspended",
+    )
+    return cast("Bottom[Result[A, E], Mapping[str, object]]", Union(complete, suspended))
+
+
 suspend = suspend_run
 """Mark the run suspended and interrupt the current fiber (Effect's
 ``Workflow.suspend``)."""
@@ -469,6 +501,7 @@ __all__ = [
     "is_result",
     "make",
     "provide_scope",
+    "result_schema",
     "scope",
     "suspend",
     "with_compensation",

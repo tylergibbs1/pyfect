@@ -67,13 +67,14 @@ class _NoopBase:
         shard_ids: Iterable[ShardId],
         /,
         *,
+        responder: MessageStorageService,
         limit: int | None = None,
         addresses: Sequence[EntityAddress] | None = None,
     ) -> Effect[list[Incoming], PersistenceError]:
         return succeed([])
 
     def unprocessed_messages_by_id(
-        self, message_ids: Iterable[Snowflake], /
+        self, message_ids: Iterable[Snowflake], /, *, responder: MessageStorageService
     ) -> Effect[list[Incoming], PersistenceError]:
         return succeed([])
 

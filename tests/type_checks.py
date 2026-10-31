@@ -6880,3 +6880,42 @@ def package_namespace() -> None:
     fx.not_a_module  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]  # noqa: B018
     # import pyfect.context reaches the module; fx.context is the effect.
     assert_type(fx.context(), fx.Effect[fx.Context[Never]])
+
+
+def cluster_cron_workflow_types() -> None:
+    from pyfect.cluster import cluster_cron, cluster_workflow_engine
+    from pyfect.cluster.message_storage import MessageStorage
+    from pyfect.cluster.sharding import Sharding
+    from pyfect.cron import parse_unsafe
+    from pyfect.workflow import Result, workflow
+    from pyfect.workflow.workflow_engine import WorkflowEngine
+
+    class Mailer(fx.Tag[str], key="Mailer"):
+        pass
+
+    # The scheduled time and the run's scope are provided by the cron.
+    assert_type(
+        cluster_cron.make(
+            name="tick",
+            cron=parse_unsafe("* * * * *"),
+            execute=cluster_cron.CurrentScheduledTime().as_void(),
+        ),
+        fx.Layer[Never, Never, Sharding],
+    )
+    # Other services of execute stay required.
+    assert_type(
+        cluster_cron.make(
+            name="mail",
+            cron=parse_unsafe("* * * * *"),
+            execute=Mailer().as_void(),
+        ),
+        fx.Layer[Never, Never, Sharding | Mailer],
+    )
+    assert_type(
+        cluster_workflow_engine.layer,
+        fx.Layer[WorkflowEngine, Never, Sharding | MessageStorage],
+    )
+    assert_type(
+        workflow.result_schema(success=fx.schema.String, error=fx.schema.Number),
+        fx.schema.Bottom[Result[str, float], Mapping[str, object]],
+    )

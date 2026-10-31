@@ -98,12 +98,17 @@ class StorageBase(Protocol):
         shard_ids: Iterable[ShardId],
         /,
         *,
+        responder: MessageStorageService,
         limit: int | None = None,
         addresses: Sequence[EntityAddress] | None = None,
-    ) -> Effect[list[Incoming], PersistenceError]: ...
+    ) -> Effect[list[Incoming], PersistenceError]:
+        """The unprocessed messages; ``responder`` (the storage reading
+        them, Effect's ``this``) saves their replies and the defects of
+        malformed ones."""
+        ...
 
     def unprocessed_messages_by_id(
-        self, message_ids: Iterable[Snowflake], /
+        self, message_ids: Iterable[Snowflake], /, *, responder: MessageStorageService
     ) -> Effect[list[Incoming], PersistenceError]: ...
 
     def reset_shards(self, shard_ids: Iterable[ShardId], /) -> Effect[None, PersistenceError]: ...
@@ -215,12 +220,14 @@ class MessageStorageService:
         limit: int | None = None,
         addresses: Sequence[EntityAddress] | None = None,
     ) -> Effect[list[Incoming], PersistenceError]:
-        return self.base.unprocessed_messages(shard_ids, limit=limit, addresses=addresses)
+        return self.base.unprocessed_messages(
+            shard_ids, responder=self, limit=limit, addresses=addresses
+        )
 
     def unprocessed_messages_by_id(
         self, message_ids: Iterable[Snowflake], /
     ) -> Effect[list[Incoming], PersistenceError]:
-        return self.base.unprocessed_messages_by_id(message_ids)
+        return self.base.unprocessed_messages_by_id(message_ids, responder=self)
 
     def reset_shards(self, shard_ids: Iterable[ShardId], /) -> Effect[None, PersistenceError]:
         return self.base.reset_shards(shard_ids)

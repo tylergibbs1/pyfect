@@ -4,13 +4,17 @@ errors and RPC annotations, envelopes, messages and replies, message and
 runner storage (in memory and in SQL), the Kubernetes API client,
 entities and their resources, singletons, the runner protocol
 (``Runners``, ``RunnerServer``, ``RunnerHealth``), ``Sharding`` itself,
-one-runner setups (``test_runner``, ``single_runner``) and entity proxies
-(``entity_proxy``, ``entity_proxy_server``)."""
+one-runner setups (``test_runner``, ``single_runner``), entity proxies
+(``entity_proxy``, ``entity_proxy_server``), cron jobs run once across the
+cluster (``cluster_cron``) and durable workflows on cluster entities
+(``cluster_workflow_engine``)."""
 
 from pyfect.cluster import (
+    cluster_cron,
     cluster_error,
     cluster_metrics,
     cluster_schema,
+    cluster_workflow_engine,
     deliver_at,
     entity,
     entity_address,
@@ -104,9 +108,11 @@ __all__ = [
     "ShardingService",
     "SingletonAddress",
     "Snowflake",
+    "cluster_cron",
     "cluster_error",
     "cluster_metrics",
     "cluster_schema",
+    "cluster_workflow_engine",
     "deliver_at",
     "entity",
     "entity_address",

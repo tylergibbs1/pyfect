@@ -20,14 +20,15 @@ from pyfect.schema import Bottom, Top, ast
 class Key:
     """A wire key ``key`` holding the attribute ``attr``, read with
     ``schema``. ``optional``: the key may be missing and is left out when
-    the attribute is ``None``. ``default``: a missing key decodes to
-    ``default()`` (the key is still written)."""
+    the attribute is ``unset`` (``None`` unless given). ``default``: a
+    missing key decodes to ``default()`` (the key is still written)."""
 
     key: str
     attr: str
     schema: Top
     optional: bool = False
     default: Callable[[], object] | None = None
+    unset: object = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +60,7 @@ class _Shape:
                 match spec:
                     case Const(key, value):
                         properties.append(ast.PropertySignature(key, ast.Literal(value)))
-                    case Key(key, _, schema, optional, default):
+                    case Key(key, _, schema, optional, default, _):
                         properties.append(
                             ast.PropertySignature(
                                 key, schema.__codec__().ast, optional=optional, default=default
@@ -94,9 +95,9 @@ class _Shape:
             match spec:
                 case Const(key, value):
                     values[key] = value
-                case Key(key, attr, _, optional, _):
+                case Key(key, attr, _, optional, _, unset):
                     value = getattr(instance, attr)
-                    if not (optional and value is None):
+                    if not (optional and value is unset):
                         values[key] = value
         return values
 
@@ -117,5 +118,6 @@ def key(
     *,
     optional: bool = False,
     default: Callable[[], object] | None = None,
+    unset: object = None,
 ) -> Key:
-    return Key(name, attr, schema, optional, default)
+    return Key(name, attr, schema, optional, default, unset)

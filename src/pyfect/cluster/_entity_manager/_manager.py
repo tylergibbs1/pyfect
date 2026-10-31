@@ -40,6 +40,7 @@ from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.sharding_config import ShardingConfig
 from pyfect.cluster.snowflake import Generator
 from pyfect.context import Context
+from pyfect.duration import to_millis
 from pyfect.effect import context, die, fail, gen, succeed, suspend, sync
 from pyfect.exit import Exit as ExitT
 from pyfect.logger import CurrentLogAnnotations
@@ -402,7 +403,7 @@ def make(
         )
         if math.isfinite(max_idle):
             yield from reaper.register(
-                max_idle_millis=max_idle * 1000,
+                max_idle_millis=to_millis(max_idle),
                 servers=core.active_servers,
                 entities=entities,
             )

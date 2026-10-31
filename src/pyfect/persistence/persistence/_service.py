@@ -14,7 +14,7 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.clock import ClockService
 from pyfect.context import Tag
-from pyfect.duration import Seconds, to_seconds
+from pyfect.duration import Seconds, to_millis, to_seconds
 from pyfect.effect import fail, gen, succeed, suspend, void
 from pyfect.exit import Exit, Failure
 from pyfect.layer import Layer
@@ -264,7 +264,7 @@ def unsafe_ttl_to_expires(clock: ClockService, ttl: Seconds | None) -> int | Non
     milliseconds (``None``: never)."""
     if ttl is None:
         return None
-    return clock.now_nanos_unsafe() // 1_000_000 + math.ceil(ttl * 1000)
+    return clock.now_nanos_unsafe() // 1_000_000 + math.ceil(to_millis(ttl))
 
 
 def now_millis(clock: ClockService) -> int:

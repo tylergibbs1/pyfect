@@ -125,10 +125,7 @@ def json_copy[T](value: T) -> T:
 class _EncodedBase:
     """The ``StorageBase`` of an encoded driver."""
 
-    __slots__ = ("_clock", "_encoded", "_snowflakes", "storage")
-
-    storage: MessageStorageService
-    """The storage on this base, which answers decoded requests."""
+    __slots__ = ("_clock", "_encoded", "_snowflakes")
 
     def __init__(
         self, encoded: EncodedStorage, snowflakes: Snowflakes, clock: ClockService
@@ -235,6 +232,7 @@ class _EncodedBase:
         shard_ids: Iterable[ShardId],
         /,
         *,
+        responder: MessageStorageService,
         limit: int | None = None,
         addresses: Sequence[EntityAddress] | None = None,
     ) -> Effect[list[Incoming], PersistenceError]:
@@ -245,17 +243,17 @@ class _EncodedBase:
             lambda: self._encoded.unprocessed_messages(
                 shards, now_millis_unsafe(self._clock), limit=limit, addresses=addresses
             )
-        ).flat_map(self._decode_messages)
+        ).flat_map(lambda encoded: self._decode_messages(encoded, responder))
 
     def unprocessed_messages_by_id(
-        self, message_ids: Iterable[Snowflake], /
+        self, message_ids: Iterable[Snowflake], /, *, responder: MessageStorageService
     ) -> Effect[list[Incoming], PersistenceError]:
         ids = list(message_ids)
         if not ids:
             return succeed([])
         return suspend(
             lambda: self._encoded.unprocessed_messages_by_id(ids, now_millis_unsafe(self._clock))
-        ).flat_map(self._decode_messages)
+        ).flat_map(lambda encoded: self._decode_messages(encoded, responder))
 
     def reset_shards(self, shard_ids: Iterable[ShardId], /) -> Effect[None, PersistenceError]:
         shards = [str(s) for s in shard_ids]
@@ -281,10 +279,12 @@ class _EncodedBase:
 
     # --- decoding ---------------------------------------------------------------------
 
-    def _decode_messages(self, encoded: list[EncodedMessage]) -> Effect[list[Incoming]]:
-        """The messages that decode; a malformed request is answered with a
-        defect (in the background) and left out."""
-        storage = self.storage
+    def _decode_messages(
+        self, encoded: list[EncodedMessage], storage: MessageStorageService
+    ) -> Effect[list[Incoming]]:
+        """The messages that decode, answered through ``storage``; a
+        malformed request is answered with a defect (in the background) and
+        left out."""
 
         def body() -> Generator[Effect[Any, Any, Any], Any, list[Incoming]]:
             messages: list[Incoming] = []
@@ -375,9 +375,7 @@ def make_encoded(encoded: EncodedStorage) -> Effect[MessageStorageService, Any, 
         snowflakes = yield from SnowflakeGenerator()
         clock = yield from Clock()
         base = _EncodedBase(encoded, snowflakes, clock)
-        storage = yield from make(base)
-        base.storage = storage
-        return storage
+        return (yield from make(base))
 
     return gen(body)
 

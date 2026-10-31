@@ -32,7 +32,7 @@ from pyfect.cluster.sharding_config import ShardGroups, ShardingConfigService
 from pyfect.cluster.sharding_registration_event import ShardingRegistrationEvent
 from pyfect.cluster.snowflake import Snowflake, SnowflakeGenerator
 from pyfect.context import Context
-from pyfect.duration import Seconds
+from pyfect.duration import Seconds, to_millis
 from pyfect.effect import die, succeed, suspend
 from pyfect.latch import Latch
 from pyfect.pubsub import PubSub
@@ -256,7 +256,7 @@ class ShardingState:
         first missing entity seen starts a fallback window of two
         timeouts, shared by the storage loop and local sends."""
         now = self.now_millis()
-        timeout = int(self.config.entity_registration_timeout * 1000)
+        timeout = int(to_millis(self.config.entity_registration_timeout))
         started = self.registration_start_millis
         if started is None:
             if self.registration_fallback_start_millis is None:
