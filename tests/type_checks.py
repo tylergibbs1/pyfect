@@ -7034,3 +7034,80 @@ def atom_types() -> None:
     assert_type(registry.get(doubled), int)
     assert_type(atom_registry.get_result(registry, results), fx.Effect[int, Never, Never])
     assert_type(async_result.success(1), async_result.Success[int, Never])
+
+
+def atom_rpc_types() -> None:
+    from pyfect.reactivity import async_result, atom, atom_rpc, hydration
+    from pyfect.reactivity.async_result import AsyncResult
+    from pyfect.rpc import RpcClientError, RpcGroup, RpcMiddleware
+    from pyfect.rpc import make as make_rpc
+
+    class Failure(fx.TaggedError):
+        pass
+
+    class ClientSide(RpcMiddleware[Never, Failure], required_for_client=True):
+        pass
+
+    class Group(RpcGroup):
+        get_user = make_rpc("getUser", payload=fx.schema.Number, success=fx.schema.String)
+        guarded = make_rpc("guarded", success=fx.schema.String).middleware(ClientSide)
+        events = make_rpc("events", success=fx.schema.String, stream=True).middleware(ClientSide)
+
+    class Client(fx.Tag[Group], key="type_checks/atom_rpc/Client"):
+        pass
+
+    client = atom_rpc.make(Client, group=Group, protocol=fx.layer.empty)
+    assert_type(client, atom_rpc.AtomRpcClient[Group, Client])
+    assert_type(client.runtime, atom.AtomRuntime[Client, Never])
+    assert_type(client.query(Group.get_user, 1), atom.Atom[AsyncResult[str, RpcClientError]])
+    # client middleware errors reach the atoms' failures
+    assert_type(
+        client.mutation(Group.guarded),
+        atom.AtomResultFn[atom_rpc.MutationRequest[None], str, Failure | RpcClientError],
+    )
+    assert_type(
+        client.query(Group.guarded, None),
+        atom.Atom[AsyncResult[str, Failure | RpcClientError]],
+    )
+    assert_type(
+        client.query(Group.events, None),
+        atom.Writable[atom.PullResult[str, Failure | RpcClientError], None],
+    )
+    assert_type(
+        async_result.Schema(success=fx.schema.Number, error=fx.schema.String),
+        async_result.AsyncResultSchema[float, str, float, str, Never, Never],
+    )
+    registry = fx.reactivity.atom_registry.make()
+    assert_type(hydration.dehydrate(registry), list[hydration.DehydratedAtom])
+
+
+def atom_http_api_types() -> None:
+    from pyfect.http.response import HttpClientResponse
+    from pyfect.http_api import client as api_client
+    from pyfect.http_api import endpoint as ep
+    from pyfect.http_api.api import HttpApi
+    from pyfect.http_api.group import HttpApiGroup
+    from pyfect.reactivity import atom, atom_http_api
+    from pyfect.reactivity.async_result import AsyncResult
+
+    class Users(HttpApiGroup, identifier="users"):
+        create = ep.post("create", "/users", payload=fx.schema.String, success=fx.schema.Number)
+
+    api = HttpApi.make("api").add(Users)
+
+    class Client(fx.Tag[api_client.Client[Users]], key="type_checks/atom_http_api/Client"):
+        pass
+
+    client = atom_http_api.make(Client, api=api, http_client=fx.layer.empty)
+    assert_type(client, atom_http_api.AtomHttpApiClient[Client])
+    assert_type(
+        client.query(Users, Users.create, payload="x"), atom.Atom[AsyncResult[float, Never]]
+    )
+    assert_type(
+        client.query(Users, Users.create, payload="x", response_mode="response-only"),
+        atom.Atom[AsyncResult[HttpClientResponse, Never]],
+    )
+    assert_type(
+        client.mutation(Users, Users.create),
+        atom.AtomResultFn[atom_http_api.MutationRequest[None, None, str, None], float, Never],
+    )

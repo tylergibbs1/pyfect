@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pyfect.option import Option, Some
 from pyfect.reactivity._live import live_keys
+from pyfect.reactivity.async_result import Initial
 from pyfect.reactivity.atom_registry import _batch
 from pyfect.reactivity.atom_registry._batch import run_all
 
@@ -227,6 +228,15 @@ class Node[A]:
                 self.announce()
             return
         self.set_value(value)
+
+    def release_hydrated_initial(self) -> None:
+        """Drop a hydrated ``Initial`` (kept through
+        ``preserve_initial_value_on_build`` while unbuilt) so the atom
+        computes its own value. A newer value is left alone."""
+        if not isinstance(self._value, Initial):
+            return
+        self.preserve_initial_value_on_build = False
+        self.invalidate()
 
     def set_value(self, value: A) -> None:
         # dependents that failed along with this node get another try

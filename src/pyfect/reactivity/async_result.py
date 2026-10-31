@@ -634,9 +634,11 @@ def builder[A, E](self: AsyncResult[A, E]) -> Builder[Never, A, E]:
 
 __all__ = [
     "AsyncResult",
+    "AsyncResultSchema",
     "Builder",
     "Failure",
     "Initial",
+    "Schema",
     "Success",
     "all",
     "builder",
@@ -671,4 +673,7 @@ __all__ = [
     "waiting",
     "waiting_from",
 ]
+
+from pyfect.reactivity._async_result_schema import AsyncResultSchema, Schema  # noqa: E402
+
 publish(globals())
