@@ -92,11 +92,21 @@ CHUNK_SIZE = 512_000
 type JoinState = dict[int, _Parts]
 
 
+_MAX_ARRAY_LENGTH = 2**32 - 1
+
+
 class _Parts:
-    __slots__ = ("bytes", "count", "parts")
+    """The parts of one message received so far, by index: held as they
+    arrive, so a declared total reserves nothing (Effect's sparse array of
+    ``length`` slots, the first total or past the highest index)."""
+
+    __slots__ = ("bytes", "count", "length", "parts")
 
     def __init__(self, total: int) -> None:
-        self.parts: list[bytes | None] = [None] * total
+        if total > _MAX_ARRAY_LENGTH:
+            raise ValueError("Invalid array length")
+        self.parts: dict[int, bytes] = {}
+        self.length = total
         self.count = 0
         self.bytes = 0
 
@@ -138,15 +148,19 @@ class ChunkedMessage(
         entry = state.get(part.id)
         if entry is None:
             entry = state[part.id] = _Parts(total)
-        if entry.parts[index] is not None:
+        if index in entry.parts:
             return None
         entry.parts[index] = part.data
+        entry.length = max(entry.length, index + 1)
         entry.count += 1
         entry.bytes += len(part.data)
         if entry.count != total:
             return None
+        if len(entry.parts) != entry.length:
+            # Effect joins every slot, and an empty one throws (keeping the entry).
+            raise ValueError("Chunked message is missing a part")
         del state[part.id]
-        return b"".join(p for p in entry.parts if p is not None)
+        return b"".join(entry.parts[i] for i in range(entry.length))
 
 
 class WriteAck(S.Class, identifier="effect/eventlog/EventLogMessage/WriteAck"):

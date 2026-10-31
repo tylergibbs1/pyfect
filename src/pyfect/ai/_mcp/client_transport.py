@@ -32,7 +32,7 @@ from pyfect.ai.mcp_client_error import (
     TransportError,
 )
 from pyfect.ai.mcp_protocol import ProtocolAdapter
-from pyfect.ai.mcp_schema import JsonObject, RequestId, Tool
+from pyfect.ai.mcp_schema import JsonObject, RequestId, Tool, parse_request_id
 from pyfect.byte_size import ByteSize
 from pyfect.channel import LineTooLongError, split_lines_within
 from pyfect.deferred import Deferred
@@ -123,14 +123,14 @@ def stdio(
                 return write(reply_to_server(message))
             if not is_response(message):
                 return _VOID
-            id = message.get("id")
+            id = parse_request_id(message.get("id"))
             if id is None:
                 return fail(
                     failure(
                         ProtocolError(description="Server returned an uncorrelated JSON-RPC error")
                     )
                 )
-            response = pending.get(cast("RequestId", id))
+            response = pending.get(id)
             return _VOID if response is None else response.succeed(message).as_void()
 
         def line(text: str) -> Effect[None, McpClientError]:

@@ -25,6 +25,7 @@ from collections.abc import Callable
 from typing import Any, Never, Unpack
 
 from pyfect import channel_schema
+from pyfect._js import text_encode
 from pyfect._json_text import STRINGIFY_ERRORS, Json, stringify
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
 from pyfect._public import publish
@@ -186,7 +187,7 @@ def encode[E = Never, D = None]() -> Channel[
     strings: Channel[tuple[str, ...], E | JsonArrayError, D, tuple[object, ...], E, D] = (
         encode_string()
     )
-    return strings.map(lambda chunk: tuple(text.encode() for text in chunk))
+    return strings.map(lambda chunk: tuple(text_encode(text) for text in chunk))
 
 
 # --- schemas ----------------------------------------------------------------------

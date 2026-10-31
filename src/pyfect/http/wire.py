@@ -14,6 +14,7 @@ from collections.abc import AsyncIterable, Callable, Coroutine, Iterable, Sequen
 from dataclasses import dataclass, field, replace
 from typing import cast
 
+from pyfect._js import text_encode
 from pyfect.http import _form_data
 from pyfect.http import body as _body
 from pyfect.http.cookies import from_set_cookie
@@ -128,7 +129,7 @@ def raw_bytes(value: object) -> bytes:
     if isinstance(value, bytes | bytearray):
         return bytes(value)
     if isinstance(value, str):
-        return value.encode()
+        return text_encode(value)
     raise TypeError(f"a raw body of type {type(value).__name__} cannot be written")
 
 

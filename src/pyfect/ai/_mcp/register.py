@@ -4,7 +4,6 @@ asking the client for input (``elicit``)."""
 from __future__ import annotations
 
 import base64
-import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, LiteralString, Never, cast, overload
@@ -59,6 +58,7 @@ from pyfect.ai.toolkit import FailureOriginAnnotation, HandlerResult, Handlers, 
 from pyfect.cause import Cause, Fail, UnhandledError
 from pyfect.context import Context
 from pyfect.effect import fail, fail_cause, gen, succeed, suspend
+from pyfect.http.find_my_way import Router, RouterConfig
 
 INTERNAL_TOOL_ERROR_MESSAGE = "Tool execution failed due to an internal server error."
 INTERNAL_ERROR_MESSAGE = "Internal server error"
@@ -366,16 +366,26 @@ def register_resource[E = Never, R = Never](
 @dataclass(frozen=True, slots=True)
 class UriTemplate[*Ts]:
     """A resource URI template with typed parameters (Effect's tagged
-    template ``registerResource`...```), made by ``uri_template``."""
+    template ``registerResource`...```), made by ``uri_template``. A URI is
+    matched as Effect matches it, by find-my-way on ``/`` + the URI: each
+    parameter one percent-decoded path segment, the query and fragment
+    left out, duplicate and trailing slashes ignored."""
 
     uri_template: str
     names: tuple[str, ...]
     schemas: tuple[S.Top, ...]
-    pattern: re.Pattern[str]
+    router: Router[None]
 
     def match(self, uri: str) -> Mapping[str, str] | None:
-        found = self.pattern.fullmatch(uri)
-        return None if found is None else dict(zip(self.names, found.groups(), strict=True))
+        found = self.router.find("GET", f"/{uri}")
+        if found is None:
+            return None
+        return {self.names[int(index)]: value for index, value in found.params.items()}
+
+
+def _router_text(text: str) -> str:
+    # Effect's ``segment.replace(":", "::")``: JavaScript replaces the first one only.
+    return text.replace(":", "::", 1)
 
 
 type _Part[A] = S.Codec[A, Any, Any, Any] | Param[A]
@@ -397,14 +407,13 @@ def uri_template(*parts: Any) -> UriTemplate[*tuple[Any, ...]]:
         uri_template("file:///notes/", S.String)              # file:///notes/{param0}
         uri_template("users://", param("id", S.Int), "/profile")
 
-    A parameter is one path segment, decoded from its text; a bare schema
-    is named ``param<index>``, and ends at the first character of the text
-    after it (so matching never backtracks); two parameters need text
-    between them."""
+    A parameter is one path segment, percent-decoded, then decoded from its
+    text by its schema; a bare schema is named ``param<index>``; two
+    parameters need text between them."""
     texts: list[str] = [parts[0]]
     names: list[str] = []
     schemas: list[S.Top] = []
-    regex = re.escape(parts[0])
+    path = _router_text(parts[0])
     for index in range(1, len(parts), 2):
         part = parts[index]
         name = part.name if isinstance(part, Param) else f"param{index // 2}"
@@ -415,8 +424,10 @@ def uri_template(*parts: Any) -> UriTemplate[*tuple[Any, ...]]:
         texts.append(f"{{{name}}}{literal}")
         if literal == "" and index + 2 < len(parts):
             raise ValueError(f"uri_template: parameter {name!r} needs text before the next one")
-        regex += f"([^/{re.escape(literal[:1])}]++)" + re.escape(literal)
-    return UriTemplate("".join(texts), tuple(names), tuple(schemas), re.compile(regex))
+        path += f":{index // 2}{_router_text(literal)}"
+    router = Router[None](RouterConfig(case_sensitive=True))
+    router.on("GET", f"/{path}", None)
+    return UriTemplate("".join(texts), tuple(names), tuple(schemas), router)
 
 
 type CompletionFunction = Callable[[str, CompletionContext], Effect[Sequence[Any], Any, Any]]

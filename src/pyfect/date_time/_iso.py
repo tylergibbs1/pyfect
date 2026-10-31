@@ -21,6 +21,12 @@ def format_iso(dt: datetime) -> str:
     return utc.strftime("%Y-%m-%dT%H:%M:%S.") + f"{utc.microsecond // 1000:03d}Z"
 
 
+def utc_to_string(dt: datetime) -> str:
+    """A ``DateTime.Utc`` as JavaScript's ``String(...)`` writes it:
+    ``DateTime.Utc(2024-01-01T00:00:00.000Z)``."""
+    return f"DateTime.Utc({format_iso(dt)})"
+
+
 def zone_to_string(zone: tzinfo) -> str:
     """A named zone's IANA key, else its offset as ``+03:00`` (Effect's
     ``DateTime.zoneToString``)."""

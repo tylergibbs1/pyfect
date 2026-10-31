@@ -21,6 +21,7 @@ from collections.abc import Sequence
 from typing import Never
 
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect.effect import fail, succeed, suspend, sync, void
 from pyfect.exit import Exit
 from pyfect.http._field import is_token
@@ -64,7 +65,7 @@ class _Refused(Exception):
         self.extra = extra
 
     def response(self) -> bytes:
-        body = str(self).encode()
+        body = text_encode(str(self))
         fields = [
             ("Connection", "close"),
             ("Content-Type", "text/html"),
@@ -224,7 +225,7 @@ class _Session:
         reason = chunk.reason or ""
         if not is_valid_close_code(chunk.code):
             return fail(write_error(TypeError("First argument must be a valid error code number")))
-        if len(reason.encode()) > 123:
+        if len(text_encode(reason)) > 123:
             return fail(write_error(ValueError("The message must not be greater than 123 bytes")))
         if not self.claim_close():
             return void

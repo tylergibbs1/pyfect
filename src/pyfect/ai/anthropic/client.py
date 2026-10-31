@@ -193,7 +193,7 @@ def make(
                 return response.json.flat_map(W.decode_message).map(lambda body: (body, response))
             if 400 <= status < 500:
                 return response.json.flat_map(
-                    lambda body: S.decode_unknown_effect(W.ERROR_RESPONSE)(body).flat_map(
+                    lambda body: W.decode_error_response(body).flat_map(
                         lambda _: map_client_error(body, response, "createMessage")  # pyright: ignore[reportArgumentType]
                     )
                 )

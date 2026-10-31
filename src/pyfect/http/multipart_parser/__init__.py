@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import ClassVar, Literal, Protocol
 
 from pyfect import byte_size
+from pyfect._js import text_encode
 from pyfect.http.multipart_parser import _content_type as ct
 from pyfect.http.multipart_parser._headers import Failure, HeadersParser, Parsed, PartHeaders
 from pyfect.http.multipart_parser._search import Search
@@ -132,7 +133,7 @@ class _Parser:
         self._max_part_size = max_part_size
         self._max_field_size = max_field_size
         self._header_parser = HeadersParser()
-        self._split = Search(f"\r\n--{boundary}".encode(), self._on_split, _CRLF, 2)
+        self._split = Search(text_encode(f"\r\n--{boundary}"), self._on_split, _CRLF, 2)
         self._reset()
 
     def _reset(self) -> None:

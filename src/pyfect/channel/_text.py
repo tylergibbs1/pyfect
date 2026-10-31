@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any, Never
 
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend, _Sync
-from pyfect._js import text_decoder
+from pyfect._js import text_decoder, text_encode
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
 from pyfect.channel._base import AnyPull, end_with
@@ -52,7 +52,7 @@ def encode_text[E = Never, D = None]() -> Channel[tuple[bytes, ...], E, D, tuple
     """Encode chunks of text as UTF-8."""
 
     def encoded(chunks: tuple[str, ...]) -> tuple[bytes, ...]:
-        return tuple(chunk.encode() for chunk in chunks)
+        return tuple(text_encode(chunk) for chunk in chunks)
 
     channel: Channel[tuple[bytes, ...], E, D, tuple[str, ...], E, D] = from_transform(
         lambda upstream, _scope: _Succeed(upstream.map(encoded))

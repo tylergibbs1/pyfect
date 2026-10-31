@@ -20,6 +20,7 @@ from typing import Literal, Unpack, cast, final
 from pyfect._cached import memoize
 from pyfect._digits import parse_digits
 from pyfect._effect_args import require_effect
+from pyfect._js import text_encode
 from pyfect._json_text import PARSE_ERRORS, Json, parse
 from pyfect.byte_size import ByteSize
 from pyfect.effect import Effect, fail, succeed, suspend, sync
@@ -346,7 +347,7 @@ def make(
 ) -> HttpClientResponse:
     """A response to ``request``. A ``str`` body is sent as UTF-8; repeated
     ``set-cookie`` headers are kept apart when given as pairs or a list."""
-    data = body.encode() if isinstance(body, str) else body
+    data = text_encode(body) if isinstance(body, str) else body
     return HttpClientResponse(
         request,
         status,

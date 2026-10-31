@@ -27,6 +27,7 @@ from pyfect import _json_text
 from pyfect._concurrency import race_all as race_all_effects
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._js import text_encode
 from pyfect.brand import Brand
 from pyfect.cause import Cause, Interrupt, from_reasons
 from pyfect.effect import from_exit, gen, provide_service, succeed, sync
@@ -82,7 +83,7 @@ class TokenParsed(Class):
         """The token: base64url of the JSON ``[workflow, execution,
         deferred]``, as Effect writes it."""
         text = _json_text.stringify([self.workflow_name, self.execution_id, self.deferred_name])
-        return Token(base64.urlsafe_b64encode(text.encode()).decode().rstrip("="))
+        return Token(base64.urlsafe_b64encode(text_encode(text)).decode().rstrip("="))
 
     @staticmethod
     def from_string(token: str) -> TokenParsed:

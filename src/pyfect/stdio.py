@@ -24,6 +24,7 @@ from pyfect import sink as sink_
 from pyfect import stream as stream_
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
+from pyfect._js import text_encode
 from pyfect.context import Tag
 from pyfect.effect import fail, succeed, sync, try_blocking
 from pyfect.errors import Done
@@ -169,7 +170,7 @@ def _read_chunk() -> bytes:
         return b""
     binary: IO[bytes] | None = getattr(target, "buffer", None)
     if binary is None:
-        return str(target.readline()).encode()
+        return text_encode(str(target.readline()))
     read1: Callable[[int], bytes] | None = getattr(binary, "read1", None)
     return binary.read(65536) if read1 is None else read1(65536)
 

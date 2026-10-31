@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from pyfect import schema as S
-from pyfect._core import Effect
+from pyfect.ai._provider import wire_decoder, wire_match
 
 type ContentBlock = dict[str, Any]
 
@@ -136,38 +136,71 @@ type MessageStreamEvent = (
 )
 """An event of a streamed message (Effect's ``MessageStreamEvent``)."""
 
-MESSAGE = S.Struct(Message)
+BLOCK_TYPES = frozenset(
+    {
+        "text",
+        "thinking",
+        "redacted_thinking",
+        "tool_use",
+        "server_tool_use",
+        "web_search_tool_result",
+        "web_fetch_tool_result",
+        "code_execution_tool_result",
+        "bash_code_execution_tool_result",
+        "text_editor_code_execution_tool_result",
+        "tool_search_tool_result",
+        "mcp_tool_use",
+        "mcp_tool_result",
+        "container_upload",
+        "compaction",
+        "fallback",
+    }
+)
+"""The content blocks Effect's ``BetaContentBlock`` knows; another fails
+the response."""
+DELTA_TYPES = frozenset(
+    {
+        "text_delta",
+        "input_json_delta",
+        "citations_delta",
+        "thinking_delta",
+        "signature_delta",
+        "compaction_delta",
+    }
+)
+"""The deltas Effect's ``BetaContentBlockDeltaEvent`` (what its stream
+reads) knows."""
+
+
+def _tagged(types: frozenset[str], title: str) -> S.Codec[dict[str, Any], Any, Any, Any]:
+    def known(value: dict[str, Any]) -> bool:
+        return value.get("type") in types
+
+    expected = f"a {title} of type {' | '.join(sorted(types))}"
+    return S.Record(S.String, S.Any).check(S.make_filter(known, expected=expected))
+
+
+CONTENT_BLOCK = _tagged(BLOCK_TYPES, "content block")
+DELTA = _tagged(DELTA_TYPES, "delta")
+MESSAGE = S.Struct(Message, content=S.List(CONTENT_BLOCK))
 ERROR_RESPONSE = S.Struct(ErrorResponse)
 STREAM_EVENT = S.Union(
     S.Struct(PingEvent),
-    S.Struct(MessageStartEvent),
+    S.Struct(MessageStartEvent, message=MESSAGE),
     S.Struct(MessageDeltaEvent),
     S.Struct(MessageStopEvent),
-    S.Struct(ContentBlockStartEvent),
-    S.Struct(ContentBlockDeltaEvent),
+    S.Struct(ContentBlockStartEvent, content_block=CONTENT_BLOCK),
+    S.Struct(ContentBlockDeltaEvent, delta=DELTA),
     S.Struct(ContentBlockStopEvent),
     ERROR_RESPONSE,
 )
 
-_check_message = S.decode_unknown_effect(MESSAGE)
-_check_event = S.decode_unknown_effect(STREAM_EVENT)
-_is_error_response = S.is_(ERROR_RESPONSE)
-
-
-def decode_message(json: object) -> Effect[Message, S.SchemaError]:
-    return _check_message(json).map(lambda _: cast("Message", json))
-
-
-def decode_event(json: object) -> Effect[MessageStreamEvent | PingEvent, S.SchemaError]:
-    return _check_event(json).map(lambda _: cast("MessageStreamEvent | PingEvent", json))
+decode_message = wire_decoder(MESSAGE, Message)
+decode_event = wire_decoder(STREAM_EVENT, cast("type[MessageStreamEvent | PingEvent]", dict))
+decode_error_response = wire_decoder(ERROR_RESPONSE, ErrorResponse)
+_match_error_response = wire_match(ERROR_RESPONSE, ErrorResponse)
+error_body = wire_match(S.Struct(ErrorBody), ErrorBody)
 
 
 def is_error_response(json: object) -> bool:
-    return _is_error_response(json)
-
-
-_is_error_body = S.is_(S.Struct(ErrorBody))
-
-
-def error_body(json: object) -> ErrorBody | None:
-    return json if _is_error_body(json) else None
+    return _match_error_response(json) is not None

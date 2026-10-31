@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect.effect import sync, yield_now
 
 
@@ -14,7 +15,7 @@ def make_hash_digest(original: str) -> Effect[str]:
     awaits ``crypto.subtle.digest``, it lets other fibers run first."""
 
     def digest() -> str:
-        return hashlib.sha256(original.encode()).digest()[:16].hex()
+        return hashlib.sha256(text_encode(original)).digest()[:16].hex()
 
     return yield_now().and_then(sync(digest))
 

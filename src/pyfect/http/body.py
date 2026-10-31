@@ -17,7 +17,7 @@ from typing import ClassVar, Literal, Unpack, cast, final
 
 from pyfect import byte_size
 from pyfect._js import js_number, text_encode
-from pyfect._json_text import STRINGIFY_ERRORS, stringify
+from pyfect._json_text import STRINGIFY_ERRORS, js_stringify
 from pyfect.effect import Effect, fail, succeed, suspend
 from pyfect.errors import TaggedError
 from pyfect.file_system import FileInfo, FileSystem, FileSystemService
@@ -203,8 +203,9 @@ def text(body: str, content_type: str | None = None) -> Bytes:
 
 
 def json_unsafe(body: object, content_type: str | None = None) -> Bytes:
-    """``body`` as JSON; raises when it has no JSON form."""
-    return text(stringify(body), content_type or "application/json")
+    """``body`` as ``JSON.stringify`` writes it (``NaN`` as ``null``);
+    raises when it has no JSON form."""
+    return text(js_stringify(body), content_type or "application/json")
 
 
 def json(body: object, content_type: str | None = None) -> Effect[Bytes, HttpBodyError]:

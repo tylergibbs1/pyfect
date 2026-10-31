@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any, Never
 from urllib.parse import SplitResult
 
 from pyfect._fiber import Fiber
+from pyfect._js import text_encode
 from pyfect._os_wait import os_wait
 from pyfect.effect import Effect, fail, succeed, sync
 from pyfect.errors import Done
@@ -54,11 +55,11 @@ _EMPTY_FORM_BOUNDARY = "pyfect-empty-form"
 def _form_content(form: _body.FormData) -> dict[str, Any]:
     if not form.entries:
         # httpx sends an empty ``files`` list as no body at all.
-        return {"content": f"--{_EMPTY_FORM_BOUNDARY}--\r\n".encode()}
+        return {"content": text_encode(f"--{_EMPTY_FORM_BOUNDARY}--\r\n")}
     files = [
         (
             name,
-            (None, value.encode())
+            (None, text_encode(value))
             if isinstance(value, str)
             else (value.name, value.content, value.content_type),
         )

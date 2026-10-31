@@ -21,6 +21,7 @@ from typing import Any, ClassVar, Literal, NotRequired, Self, TypedDict, cast
 from pyfect import schema as S
 from pyfect._json_value import JsonValue
 from pyfect._wire_codec import Const, Key, key, wire_codec
+from pyfect.date_time._iso import utc_to_string
 from pyfect.duration import format_duration, to_seconds
 from pyfect.errors import TaggedError
 from pyfect.http import error as http_error
@@ -190,7 +191,7 @@ class RateLimitError(AiErrorReason):
     @property
     def message(self) -> str:
         msg = "Rate limit exceeded"
-        if self.retry_after:
+        if self.retry_after is not None:
             msg += f". Retry after {format_duration(to_seconds(self.retry_after))}"
         return msg
 
@@ -207,13 +208,9 @@ class QuotaExhaustedError(AiErrorReason):
     @property
     def message(self) -> str:
         msg = "Quota exhausted"
-        if self.reset_at:
-            msg += f". Resets at {_iso(self.reset_at)}"
+        if self.reset_at is not None:
+            msg += f". Resets at {utc_to_string(self.reset_at)}"
         return f"{msg}. Check your account billing and usage limits."
-
-
-def _iso(at: datetime) -> str:
-    return at.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 type AuthenticationKind = Literal[

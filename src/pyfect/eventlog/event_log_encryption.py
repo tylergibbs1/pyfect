@@ -21,6 +21,7 @@ from typing import Protocol
 
 from pyfect import schema as S
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect.context import Tag
 from pyfect.effect import die, gen, sync
 from pyfect.eventlog._binary import BytesCodec, to_codec
@@ -83,7 +84,7 @@ def _to_batches(entries: Sequence[Entry]) -> list[list[Entry]]:
 
 def _additional_data(store_id: str, entry_ids: Sequence[bytes]) -> bytes:
     # The store id is length-prefixed, followed by the 16-byte entry ids.
-    store = store_id.encode()
+    store = text_encode(store_id)
     return len(store).to_bytes(4) + store + b"".join(entry_ids)
 
 

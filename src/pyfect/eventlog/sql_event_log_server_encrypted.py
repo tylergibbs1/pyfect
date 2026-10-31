@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect.effect import gen, succeed
 from pyfect.eventlog.event_journal import EntryId, RemoteId, StoreId, make_remote_id_unsafe
 from pyfect.eventlog.event_log_encryption import (
@@ -134,7 +135,7 @@ def _open_scope(
     scope_key: str,
 ) -> Effect[_Scope, SqlError, Scope]:
     def body():
-        digest = yield from encryption.sha256_string(scope_key.encode())
+        digest = yield from encryption.sha256_string(text_encode(scope_key))
         name = f"{prefix}_{digest[:16]}"
         table = sql.identifier(name)
         ids_table = sql.identifier(f"{name}_ids")

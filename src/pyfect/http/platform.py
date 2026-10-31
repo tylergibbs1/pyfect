@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Never, Protocol, TypedDict, Unpack, cast
 
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect.byte_size import ByteSize
 from pyfect.byte_size import Input as ByteSizeInput
 from pyfect.byte_size import from_input as byte_size_from_input
@@ -172,7 +173,7 @@ def make_compression_stream(
                 if raw is None:
                     return succeed(response)
                 if isinstance(raw, str):
-                    raw = raw.encode()
+                    raw = text_encode(raw)
                 if isinstance(raw, bytes | bytearray):
                     chunks = stream_succeed(bytes(raw))
                 elif hasattr(raw, "__aiter__"):

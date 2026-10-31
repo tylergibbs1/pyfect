@@ -20,6 +20,7 @@ from typing import Any, Never, cast
 from pyfect import layer as layer_
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
+from pyfect._js import text_encode
 from pyfect.cluster._resource_ref import ResourceRef
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.runner_storage import (
@@ -44,7 +45,7 @@ def postgres_lock_namespace(prefix: str) -> int:
     ``effect-cluster:<prefix>`` as a signed 32-bit integer. A persistent
     wire format shared with Effect: it must never change."""
     h = 0x811C9DC5
-    for byte in f"effect-cluster:{prefix}".encode():
+    for byte in text_encode(f"effect-cluster:{prefix}"):
         h = ((h ^ byte) * 0x01000193) & 0xFFFFFFFF
     return h - 0x1_0000_0000 if h >= 0x8000_0000 else h
 

@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Never, Unpack, overload
 
 from pyfect import channel_schema
+from pyfect._js import text_encode
 from pyfect._json_text import PARSE_ERRORS, STRINGIFY_ERRORS, Json, parse, stringify
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
 from pyfect.cause import Cause
@@ -101,7 +102,7 @@ def encode[E = Never, D = None]() -> Channel[
     strings: Channel[tuple[str, ...], E | NdjsonError, D, tuple[object, ...], E, D] = (
         encode_string()
     )
-    return strings.map(lambda chunk: tuple(text.encode() for text in chunk))
+    return strings.map(lambda chunk: tuple(text_encode(text) for text in chunk))
 
 
 # --- decoding ---------------------------------------------------------------------

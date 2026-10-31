@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from pyfect import schema as S
+from pyfect._js import text_encode
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema import getter as G
@@ -28,7 +29,7 @@ def _decode_utf8(data: bytes, options: S.ParseOptions) -> Exit[str, Issue]:
 
 
 _UTF8: T.Transformation[str, bytes] = T.Transformation(
-    G.TransformEffect(_decode_utf8), G.transform(lambda text: text.encode())
+    G.TransformEffect(_decode_utf8), G.transform(text_encode)
 )
 _TEXT = S.Bytes.pipe(S.decode_to(S.String, _UTF8))
 

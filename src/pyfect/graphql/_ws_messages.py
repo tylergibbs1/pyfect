@@ -75,7 +75,7 @@ def _formatted_errors(payload: object) -> Sequence[Mapping[str, object]] | None:
 
 
 def _type_name(message: Mapping[str, object]) -> str:
-    return _json_text.stringify(message["type"]) if "type" in message else "undefined"
+    return _json_text.js_stringify(message["type"]) if "type" in message else "undefined"
 
 
 def _keep_alive(kind: str, payload: object) -> ServerMessage | Invalid:

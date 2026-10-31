@@ -85,7 +85,8 @@ def _event(event: sse.Event) -> Result[W.StreamEvent, None]:
         parsed = parse_json_text(event.data)
     except ValueError:
         return Err(None)
-    return Ok(P.obj(parsed) if W.is_chunk(parsed) else W.UnknownEvent(parsed))  # pyright: ignore[reportReturnType]
+    chunk = W.match_chunk(parsed)
+    return Ok(W.UnknownEvent(parsed) if chunk is None else chunk)
 
 
 def _events(response: HttpClientResponse) -> Stream[W.StreamEvent, AiError]:

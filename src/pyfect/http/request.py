@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, TypedDict, Unpack, final
 from urllib.parse import SplitResult
 
 from pyfect import byte_size
+from pyfect._js import text_encode
 from pyfect.effect import Effect, succeed
 from pyfect.http import body as _body
 from pyfect.http import url as _url
@@ -160,7 +161,7 @@ class HttpClientRequest:
     def basic_auth(
         self, username: str | Redacted[str], password: str | Redacted[str]
     ) -> HttpClientRequest:
-        credentials = f"{_plain(username)}:{_plain(password)}".encode()
+        credentials = text_encode(f"{_plain(username)}:{_plain(password)}")
         return self.set_header(
             "Authorization", f"Basic {base64.b64encode(credentials).decode('ascii')}"
         )

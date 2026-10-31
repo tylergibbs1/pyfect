@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from pyfect import _json_text
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai.mcp_client_error import (
     AnyReason,
@@ -71,7 +72,7 @@ def encode_message(message: Mapping[str, Any], max_bytes: int) -> Effect[str, Mc
         text = _json_text.stringify(message)
     except (TypeError, ValueError) as cause:
         return fail(failure(TransportError("Cannot encode MCP message", cause)))
-    if len(text.encode()) > max_bytes:
+    if len(text_encode(text)) > max_bytes:
         return fail(limit_error("MCP message exceeds maxMessageBytes"))
     return succeed(text)
 
@@ -88,7 +89,7 @@ def _is_message(value: object) -> bool:
 
 
 def parse_message(text: str, max_bytes: int) -> Effect[JsonObject, McpClientError]:
-    if len(text.encode()) > max_bytes:
+    if len(text_encode(text)) > max_bytes:
         return fail(limit_error("MCP message exceeds maxMessageBytes"))
     try:
         parsed: object = parse_json_text(text)
@@ -137,7 +138,7 @@ def header_value(value: str) -> str:
     )
     if plain:
         return value
-    return f"{BASE64_PREFIX}{base64.b64encode(value.encode()).decode('ascii')}{BASE64_SUFFIX}"
+    return f"{BASE64_PREFIX}{base64.b64encode(text_encode(value)).decode('ascii')}{BASE64_SUFFIX}"
 
 
 @dataclass(frozen=True, slots=True)

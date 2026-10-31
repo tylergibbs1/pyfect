@@ -148,6 +148,35 @@ def retry_after(raw: str | None, now_millis: float) -> timedelta | None:
     return timedelta(seconds=H.retry_after_delay(parsed.value, now_millis))
 
 
+def wire_decoder[T](schema: S.Top, _type: type[T]) -> Callable[[object], Effect[T, S.SchemaError]]:
+    """The check of a provider's JSON against ``schema``, giving the JSON
+    itself (so fields the schema leaves out stay readable) with its whole
+    numbers as ints, as JavaScript reads them: ``1.0`` is an integer to
+    Effect's ``Schema.Int``. Every provider wire schema is read through
+    this or ``wire_match``."""
+    check = cast(
+        "Callable[[object], Effect[object, S.SchemaError]]", S.decode_unknown_effect(schema)
+    )
+
+    def decode(json: object) -> Effect[T, S.SchemaError]:
+        normalized = _json_text.whole_numbers_as_ints(cast("_json_text.Json", json))
+        return check(normalized).as_(cast("T", normalized))
+
+    return decode
+
+
+def wire_match[T](schema: S.Top, _type: type[T]) -> Callable[[object], T | None]:
+    """A provider's JSON when it fits ``schema``, its whole numbers as ints
+    (see ``wire_decoder``), else ``None``."""
+    is_ = S.is_(schema)
+
+    def match(json: object) -> T | None:
+        normalized = _json_text.whole_numbers_as_ints(cast("_json_text.Json", json))
+        return cast("T", normalized) if is_(normalized) else None
+
+    return match
+
+
 def parse_json(text: str | None) -> object:
     """``text`` as JSON, or ``None``."""
     if text is None:

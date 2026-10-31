@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.errors import TaggedError
 
@@ -74,10 +75,10 @@ def _check_signing_public_key(key: bytes) -> EventLogSessionAuthError | None:
 def _encode(payload: SessionAuthPayload) -> bytes:
     remote_id = payload.remote_id if isinstance(payload.remote_id, str) else payload.remote_id.hex()
     fields = [
-        AUTH_PAYLOAD_CONTEXT.encode(),
-        remote_id.encode(),
+        text_encode(AUTH_PAYLOAD_CONTEXT),
+        text_encode(remote_id),
         payload.challenge,
-        payload.public_key.encode(),
+        text_encode(payload.public_key),
         payload.signing_public_key,
     ]
     return b"".join(len(field).to_bytes(_LENGTH_PREFIX_BYTES) + field for field in fields)

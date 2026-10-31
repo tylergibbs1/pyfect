@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import secrets
 
+from pyfect._js import text_encode
 from pyfect.http import body as _body
 
 
@@ -17,17 +18,17 @@ def encode(form: _body.FormData) -> tuple[bytes, str]:
     boundary = f"----formdata-pyfect-{secrets.token_hex(12)}"
     out = bytearray()
     for name, value in form.entries:
-        out += f"--{boundary}\r\n".encode()
+        out += text_encode(f"--{boundary}\r\n")
         if isinstance(value, str):
-            out += f'Content-Disposition: form-data; name="{_quote(name)}"\r\n\r\n'.encode()
-            out += value.encode() + b"\r\n"
+            out += text_encode(f'Content-Disposition: form-data; name="{_quote(name)}"\r\n\r\n')
+            out += text_encode(value) + b"\r\n"
         else:
             disposition = (
                 f'Content-Disposition: form-data; name="{_quote(name)}"; '
                 f'filename="{_quote(value.name)}"\r\n'
             )
-            out += disposition.encode()
-            out += f"Content-Type: {value.content_type}\r\n\r\n".encode()
+            out += text_encode(disposition)
+            out += text_encode(f"Content-Type: {value.content_type}\r\n\r\n")
             out += value.content + b"\r\n"
-    out += f"--{boundary}--\r\n".encode()
+    out += text_encode(f"--{boundary}--\r\n")
     return bytes(out), f"multipart/form-data; boundary={boundary}"

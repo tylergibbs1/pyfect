@@ -24,6 +24,7 @@ from urllib.parse import SplitResult
 
 from pyfect._cached import memoize
 from pyfect._core import Effect, _WithFiber
+from pyfect._js import text_encode
 from pyfect._json_text import PARSE_ERRORS, Json, parse
 from pyfect.context import Tag
 from pyfect.effect import fail, succeed, suspend
@@ -543,9 +544,9 @@ def _raw_bytes(value: object) -> bytes | None:
     if isinstance(value, bytearray):
         return bytes(value)
     if isinstance(value, str):
-        return value.encode()
+        return text_encode(value)
     if isinstance(value, UrlParams):
-        return url_params_to_string(value).encode()
+        return text_encode(url_params_to_string(value))
     return None
 
 

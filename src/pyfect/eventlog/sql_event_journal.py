@@ -359,31 +359,26 @@ class _SqlJournal(EventJournalService):
             ).as_void()
         return succeed(None)
 
-    def _insert_entries(self, entries: Sequence[Entry]) -> Effect[object, SqlError]:
+    def _insert(self, table: object, rows: list[dict[str, object]]) -> Effect[object, SqlError]:
+        """Insert ``rows`` (none is nothing to do: ``sql.insert`` needs one)."""
+        if not rows:
+            return succeed(None)
         sql = self._sql
-        return sql(
-            "INSERT INTO {} {} ON CONFLICT DO NOTHING",
-            self._t.entries,
-            sql.insert([_to_entry_row(entry) for entry in entries]),
-        )
+        return sql("INSERT INTO {} {} ON CONFLICT DO NOTHING", table, sql.insert(rows))
+
+    def _insert_entries(self, entries: Sequence[Entry]) -> Effect[object, SqlError]:
+        return self._insert(self._t.entries, [_to_entry_row(entry) for entry in entries])
 
     def _insert_sequence(self, entries: Sequence[Entry]) -> Effect[object, SqlError]:
-        sql = self._sql
-        return sql(
-            "INSERT INTO {} {} ON CONFLICT DO NOTHING",
-            self._t.sequence,
-            sql.insert([{"entry_id": entry.id} for entry in entries]),
-        )
+        return self._insert(self._t.sequence, [{"entry_id": entry.id} for entry in entries])
 
     def _insert_sources(
         self, entries: Sequence[Entry], remote_id: RemoteId
     ) -> Effect[object, SqlError]:
-        sql = self._sql
-        return sql(
-            "INSERT INTO {} {} ON CONFLICT DO NOTHING",
-            self._t.sources,
-            sql.insert([{"entry_id": entry.id, "remote_id": remote_id} for entry in entries]),
-        )
+        rows: list[dict[str, object]] = [
+            {"entry_id": entry.id, "remote_id": remote_id} for entry in entries
+        ]
+        return self._insert(self._t.sources, rows)
 
     def _read_cursor(self, remote_id: RemoteId) -> Effect[int, SqlError]:
         return self._sql(

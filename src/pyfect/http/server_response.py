@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, ClassVar, Never, TypedDict, Unpack, cast, fina
 
 from pyfect._core import Effect
 from pyfect._digits import parse_digits
+from pyfect._js import text_encode
 from pyfect.cause import UnhandledError
 from pyfect.effect import die, from_async, from_result, succeed
 from pyfect.http import _form_data
@@ -474,7 +475,7 @@ def _raw_content(value: object) -> bytes | Stream[bytes, object]:
     if isinstance(value, bytes):
         return value
     if isinstance(value, str):
-        return value.encode()
+        return text_encode(value)
     if isinstance(value, WebResponse):
         web = value
         if web.body is None or isinstance(web.body, bytes):

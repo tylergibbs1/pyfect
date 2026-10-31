@@ -132,7 +132,9 @@ def _connection_error(cause: Cause[object]) -> TransportError:
 
 def _encode(message: Mapping[str, object]) -> str:
     # Unset fields are left out, as JSON.stringify drops undefined.
-    return _json_text.stringify({key: value for key, value in message.items() if value is not None})
+    return _json_text.js_stringify(
+        {key: value for key, value in message.items() if value is not None}
+    )
 
 
 def _no_ack() -> Effect[Never, TransportError]:

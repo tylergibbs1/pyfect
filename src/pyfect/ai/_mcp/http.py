@@ -15,12 +15,14 @@ from typing import Any, cast
 
 from pyfect import _json_text, stream
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai._mcp import sessions as S
 from pyfect.ai._mcp.core import McpServer, McpServerService
 from pyfect.ai._mcp.dispatch import (
     Classified,
     Connection,
+    Request,
     ServerInfo,
     classify,
     error_response,
@@ -71,7 +73,7 @@ def _json(message: JsonObject) -> str:
 
 
 def _event(message: JsonObject) -> bytes:
-    return f"data: {_json(message)}\n\n".encode()
+    return text_encode(f"data: {_json(message)}\n\n")
 
 
 class _Sessions:
@@ -99,7 +101,7 @@ def _empty(status: int, headers: dict[str, str] | None = None) -> HttpServerResp
 
 
 def _answer(
-    connection: Connection, request: Classified, headers: dict[str, str]
+    connection: Connection, request: Request, headers: dict[str, str]
 ) -> Effect[HttpServerResponse]:
     """The answer to one request: JSON when it is the only message, else
     an event stream of what came before it, then it."""
@@ -129,8 +131,8 @@ def _sessionless(
     sessions: _Sessions, classified: Classified, request: ServerRequest
 ) -> Effect[HttpServerResponse]:
     """A message with no session that is neither stateless nor ``initialize``."""
-    if classified.kind == "request" and classified.method == "ping":
-        return _answer(sessions.connection(), classified, {})
+    if classified.request is not None and classified.request.method == "ping":
+        return _answer(sessions.connection(), classified.request, {})
     header = sessions.registry.find(request.headers.get(VERSION_HEADER) or "")
     if header is not None and header.is_stateless:
         # A stateless client's notification or response: nothing to route it to.
@@ -168,7 +170,7 @@ def _read(request: ServerRequest, limit: ByteSize) -> Effect[str | HttpServerRes
 
 
 def _open_session(
-    sessions: _Sessions, classified: Classified, now: float
+    sessions: _Sessions, initialize: Request, now: float
 ) -> Effect[HttpServerResponse]:
     """Answer ``initialize`` in a new session: 503 when the table is full
     once the idle sessions are gone."""
@@ -181,7 +183,7 @@ def _open_session(
             return _empty(503)
         connection = sessions.connection()
         reply = yield from connection.answer(
-            cast("Any", classified.id), "initialize", classified.params, lambda _: _VOID
+            initialize.id, "initialize", initialize.params, lambda _: _VOID
         )
         if reply is None or "error" in reply or connection.protocol is None:
             return response.json_unsafe(reply)
@@ -219,19 +221,19 @@ def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerRespo
         session_id = request.headers.get(SESSION_HEADER)
         version = requested_protocol_version(classified.params)
         stateless = sessions.registry.find(version) if version is not None else None
-        if classified.kind == "request" and (
+        if classified.request is not None and (
             (stateless is not None and stateless.is_stateless)
             or (version is not None and session_id is None and stateless is None)
         ):
-            return (yield from _answer(sessions.connection(), classified, {}))
+            return (yield from _answer(sessions.connection(), classified.request, {}))
         if classified.kind == "invalid":
             return response.json_unsafe(
                 error_response(classified.id, InvalidRequest("Invalid Request")), status=400
             )
-        if classified.method == "initialize" and classified.kind == "request":
+        if classified.request is not None and classified.request.method == "initialize":
             if session_id is not None:
                 return _empty(400)
-            return (yield from _open_session(sessions, classified, now))
+            return (yield from _open_session(sessions, classified.request, now))
         if session_id is None:
             return (yield from _sessionless(sessions, classified, request))
         connection, expired = table.get(session_id, now)
@@ -244,8 +246,8 @@ def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerRespo
         if sent_version is not None and sent_version != protocol_version:
             return _empty(400)
         headers = {VERSION_HEADER: protocol_version}
-        if classified.kind == "request":
-            return (yield from _answer(connection, classified, headers))
+        if classified.request is not None:
+            return (yield from _answer(connection, classified.request, headers))
         yield from connection.dispatch(message, lambda _: _VOID)
         return _empty(202, headers)
 

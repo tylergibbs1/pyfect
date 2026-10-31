@@ -36,7 +36,7 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.socket.ws", "websockets") from error
 
 from pyfect._core import Effect
-from pyfect._js import to_well_formed
+from pyfect._js import text_encode, to_well_formed
 from pyfect.duration import Duration
 from pyfect.effect import provide_service, succeed, sync
 from pyfect.http._authority import parse_authority
@@ -173,7 +173,7 @@ class WsWebSocket:
         if code is not None and code != 1000 and not 3000 <= code <= 4999:
             raise ValueError(f"invalid WebSocket close code: {code}")
         text = to_well_formed(reason or "")
-        if len(text.encode()) > 123:
+        if len(text_encode(text)) > 123:
             raise ValueError("WebSocket close reason is longer than 123 bytes")
         call_soon(lambda: self._close(1000 if code is None else code, text))
 

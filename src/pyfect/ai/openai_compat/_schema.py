@@ -7,10 +7,10 @@ leaves out (``prompt_tokens_details``, provider extras) stay readable."""
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, NotRequired, TypedDict, cast
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pyfect import schema as S
-from pyfect._core import Effect
+from pyfect.ai._provider import wire_decoder, wire_match
 
 
 class ToolFunction(TypedDict):
@@ -77,19 +77,14 @@ class EmbeddingResponse(TypedDict):
 
 
 CHAT_COMPLETION = S.Struct(ChatCompletion)
-EMBEDDING_RESPONSE = S.Struct(EmbeddingResponse)
+EMBEDDING_RESPONSE = S.Struct(
+    EmbeddingResponse,
+    data=S.List(S.Struct(Embedding, embedding=S.Union(S.List(S.Finite), S.String))),
+)
 
-_check_completion = S.decode_unknown_effect(CHAT_COMPLETION)
-_check_embedding = S.decode_unknown_effect(EMBEDDING_RESPONSE)
-is_chunk = S.is_(CHAT_COMPLETION)
-
-
-def decode_completion(json: object) -> Effect[ChatCompletion, S.SchemaError]:
-    return _check_completion(json).map(lambda _: cast("ChatCompletion", json))
-
-
-def decode_embedding(json: object) -> Effect[EmbeddingResponse, S.SchemaError]:
-    return _check_embedding(json).map(lambda _: cast("EmbeddingResponse", json))
+decode_completion = wire_decoder(CHAT_COMPLETION, ChatCompletion)
+decode_embedding = wire_decoder(EMBEDDING_RESPONSE, EmbeddingResponse)
+match_chunk = wire_match(CHAT_COMPLETION, ChatCompletion)
 
 
 @dataclass(frozen=True)

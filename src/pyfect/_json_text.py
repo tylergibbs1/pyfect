@@ -49,6 +49,23 @@ def parse(text: str | bytes | bytearray) -> Json:
     return value
 
 
+_SAFE_INTEGER = 2**53 - 1
+
+
+def whole_numbers_as_ints(value: Json) -> Json:
+    """``value`` with each whole float within the safe integers as an
+    ``int`` (``1.0`` as ``1``, ``-0.0`` as ``0``): JavaScript has one number,
+    so ``1.0`` from the wire is an integer to Effect's ``Schema.Int``."""
+    if type(value) is float:
+        return int(value) if value.is_integer() and abs(value) <= _SAFE_INTEGER else value
+    if type(value) is list:
+        return [whole_numbers_as_ints(item) for item in cast("list[Json]", value)]
+    if type(value) is dict:
+        pairs = cast("dict[str, Json]", value).items()
+        return {key: whole_numbers_as_ints(item) for key, item in pairs}
+    return value
+
+
 _LONE_SURROGATE = re.compile("[\ud800-\udfff]")
 _FLOAT_TOKEN = re.compile("[0-9][.eE]")
 
@@ -65,10 +82,12 @@ def quote(text: str) -> str:
     return encoded if text.isascii() else _LONE_SURROGATE.sub(_escape_surrogate, encoded)
 
 
-def _number(value: int | float) -> str:
+def _number(value: int | float, null_non_finite: bool = False) -> str:
     if isinstance(value, int):
         return int_text(value)
     if not math.isfinite(value):
+        if null_non_finite:
+            return "null"
         raise ValueError(f"{js_number(value)} is not JSON")
     return js_number(value)
 
@@ -92,15 +111,20 @@ _STACK_CHECK = 64
 
 
 class _Writer:
-    __slots__ = ("ancestors", "default", "indent", "out", "sort_keys")
+    __slots__ = ("ancestors", "default", "indent", "null_non_finite", "out", "sort_keys")
 
     def __init__(
-        self, indent: str | None, sort_keys: bool, default: Callable[[object], object] | None
+        self,
+        indent: str | None,
+        sort_keys: bool,
+        default: Callable[[object], object] | None,
+        null_non_finite: bool = False,
     ) -> None:
         self.out: list[str] = []
         self.indent = indent
         self.sort_keys = sort_keys
         self.default = default
+        self.null_non_finite = null_non_finite
         self.ancestors: set[int] = set()
 
     def write(self, value: object, depth: int) -> None:
@@ -114,7 +138,7 @@ class _Writer:
         elif kind is bool:
             self.out.append("true" if value else "false")
         elif kind is int or kind is float:
-            self.out.append(_number(cast("float", value)))
+            self.out.append(_number(cast("float", value), self.null_non_finite))
         else:
             self._other(value, depth)
 
@@ -125,7 +149,7 @@ class _Writer:
             case bool():
                 self.out.append("true" if value else "false")
             case int() | float():
-                self.out.append(_number(value))
+                self.out.append(_number(value, self.null_non_finite))
             case list() | tuple() | Mapping():
                 self._container(cast("object", value), depth)
             case _ if self.default is not None:
@@ -183,15 +207,16 @@ def stringify(
     indent: int | str | None = None,
     sort_keys: bool = False,
     default: Callable[[object], object] | None = None,
+    null_non_finite: bool = False,
 ) -> str:
     """``JSON.stringify(value, null, indent)``: compact unless ``indent`` (a
     number of spaces, at most 10, or the text itself, as JavaScript's
     ``space``), numbers as JavaScript writes them, ints in full, non-ASCII
     kept and lone surrogates escaped; keys sorted when ``sort_keys``; any
     other object written as ``default`` of it (when given).
-    ``NaN`` and infinities raise ``ValueError`` (JavaScript writes
-    ``null``), a value with no JSON form ``TypeError``, a cycle
-    ``ValueError``."""
+    ``NaN`` and infinities raise ``ValueError``, or are written ``null`` as
+    JavaScript writes them when ``null_non_finite``; a value with no JSON
+    form raises ``TypeError``, a cycle ``ValueError``."""
     space = (" " * min(indent, 10) if isinstance(indent, int) else (indent or "")[:10]) or None
 
     # Python's own encoder writes what JavaScript writes, but for floats
@@ -214,10 +239,17 @@ def stringify(
         if _FLOAT_TOKEN.search(text) is not None:
             text = dumps(_plain(value))
     except (*STRINGIFY_ERRORS, _NeedsWriter):
-        writer = _Writer(space, sort_keys, default)
+        writer = _Writer(space, sort_keys, default, null_non_finite)
         writer.write(value, 0)
         return "".join(writer.out)
     return text if text.isascii() else _LONE_SURROGATE.sub(_escape_surrogate, text)
+
+
+def js_stringify(value: object) -> str:
+    """Exactly ``JSON.stringify(value)``: ``stringify`` with ``NaN`` and the
+    infinities written ``null``. For JSON sent where Effect sends
+    ``JSON.stringify``'s text (request bodies, protocol frames)."""
+    return stringify(value, null_non_finite=True)
 
 
 class _NeedsWriter(Exception):

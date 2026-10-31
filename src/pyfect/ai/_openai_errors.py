@@ -56,7 +56,11 @@ class ErrorBody(TypedDict):
     error: _ErrorDetail
 
 
-is_error_body = S.is_(S.Struct(ErrorBody))
+_match_error_body = P.wire_match(S.Struct(ErrorBody), ErrorBody)
+
+
+def is_error_body(json: object) -> bool:
+    return _match_error_body(json) is not None
 
 
 @dataclass(frozen=True)

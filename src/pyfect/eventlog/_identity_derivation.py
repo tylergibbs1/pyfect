@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from pyfect._core import Effect
+from pyfect._js import text_encode
 from pyfect.effect import sync
 from pyfect.eventlog._identity import IdentityService
 from pyfect.redacted import Redacted
@@ -34,7 +35,7 @@ class IdentityRootSecretMaterial:
 
 
 def derive_secret_bytes(root_secret: bytes, label: str) -> bytes:
-    return hashlib.sha256(label.encode() + b"\x00" + root_secret).digest()
+    return hashlib.sha256(text_encode(label) + b"\x00" + root_secret).digest()
 
 
 def derive_identity_root_secret_material(root_secret: bytes) -> IdentityRootSecretMaterial:

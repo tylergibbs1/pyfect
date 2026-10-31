@@ -6,14 +6,15 @@ declarations: Effect's ``toEquivalence`` / ``toFormatter`` cases for
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from datetime import datetime, tzinfo
+from datetime import tzinfo
 from typing import Any, cast
 from urllib.parse import SplitResult, urlunsplit
 
 from pyfect import redacted
 from pyfect._js import js_sort_key
 from pyfect.cause import Cause, Die, Fail, Interrupt, Reason
-from pyfect.date_time import format_iso, format_iso_zoned, zone_to_string
+from pyfect.date_time import format_iso_zoned, zone_to_string
+from pyfect.date_time._iso import utc_to_string
 from pyfect.exit import Exit, Success
 from pyfect.option import Option, Some
 from pyfect.result import Ok, Result
@@ -234,10 +235,6 @@ URL_INSTANCES: dict[str, object] = {
 }
 
 
-def _utc_text(dt: datetime) -> str:
-    return f"DateTime.Utc({format_iso(dt)})"
-
-
-DATE_TIME_UTC_FORMATTER = _fixed(_utc_text)
+DATE_TIME_UTC_FORMATTER = _fixed(utc_to_string)
 DATE_TIME_ZONED_FORMATTER = _fixed(format_iso_zoned)
 ZONE_FORMATTER: Callable[[tuple[object, ...]], Formatter[tzinfo]] = _fixed(zone_to_string)

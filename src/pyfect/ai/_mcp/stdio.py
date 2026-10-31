@@ -12,8 +12,9 @@ from pyfect.ai._mcp.core import McpServer
 from pyfect.ai._mcp.dispatch import Connection, ServerInfo, error_response
 from pyfect.ai.mcp_protocol import Registry
 from pyfect.ai.mcp_schema import InvalidRequest, JsonObject, ParseError
-from pyfect.effect import gen, succeed, sync
+from pyfect.effect import gen, provide_service, succeed, sync
 from pyfect.errors import Done
+from pyfect.logger import LogToStderr
 from pyfect.platform_error import PlatformError
 from pyfect.queue import Queue
 from pyfect.stdio import Stdio
@@ -27,7 +28,9 @@ def _encode(message: JsonObject) -> str:
 
 def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, McpServer | Stdio]:
     """Serve the client on standard input until it ends, then let the
-    requests still running finish."""
+    requests still running finish. Standard output carries only the
+    protocol: the console loggers write to standard error (``LogToStderr``),
+    so a logged defect cannot corrupt it."""
 
     @gen
     def run():
@@ -65,4 +68,4 @@ def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, M
         )
         yield from writer.join()
 
-    return run
+    return run.pipe(provide_service(LogToStderr, True))

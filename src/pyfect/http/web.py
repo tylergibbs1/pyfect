@@ -13,6 +13,7 @@ from collections.abc import AsyncIterable, AsyncIterator, Iterable, Mapping
 from typing import Any, cast, final
 
 from pyfect import _json_text
+from pyfect._js import text_encode
 from pyfect.http.abort import AbortSignal
 from pyfect.http.headers import Headers
 
@@ -30,7 +31,7 @@ def _lines(headers: HeaderLines | None) -> tuple[tuple[str, str], ...]:
 
 
 def _body_of(body: bytes | str | AsyncIterable[bytes] | None) -> WebBody:
-    return body.encode() if isinstance(body, str) else body
+    return text_encode(body) if isinstance(body, str) else body
 
 
 async def _read(body: WebBody) -> bytes:
@@ -155,7 +156,7 @@ class WebResponse(_Message):
     def json_of(cls, value: object, *, status: int = 200) -> WebResponse:
         """A JSON response (Web ``Response.json``)."""
         return cls(
-            _json_text.stringify(value).encode(),
+            text_encode(_json_text.stringify(value)),
             status=status,
             headers={"content-type": "application/json"},
         )

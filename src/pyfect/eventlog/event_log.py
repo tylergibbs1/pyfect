@@ -19,8 +19,6 @@ which are compacted by the registered compactors, then replayed.
 
 from __future__ import annotations
 
-import base64
-import binascii
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Never, cast, overload
@@ -65,6 +63,12 @@ from pyfect.result import Ok
 from pyfect.schedule import exponential, spaced
 from pyfect.schedule import min as schedule_min
 from pyfect.schema import decode_effect, encode_effect
+from pyfect.schema.getter._binary import (
+    base64_decode,
+    base64_encode,
+    base64_url_decode,
+    base64_url_encode,
+)
 from pyfect.scope import Scope, acquire_release, add_finalizer, scoped
 
 if TYPE_CHECKING:
@@ -305,31 +309,28 @@ class HandlerTransaction(Reference[Transaction], key="effect/eventlog/EventLog/H
 # --- identities ----------------------------------------------------------------------
 
 
-def _b64url(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
-
-
 def encode_identity_string(identity: IdentityService) -> str:
     """The identity as base64url JSON text (its private key as base64)."""
     text = _json_text.stringify(
         {
             "publicKey": identity.public_key,
-            "privateKey": base64.b64encode(reveal(identity.private_key)).decode(),
+            "privateKey": base64_encode(reveal(identity.private_key)),
         }
     )
-    return _b64url(text.encode())
+    return base64_url_encode(text)
 
 
 def decode_identity_string(value: str) -> IdentityService:
     """The identity of ``encode_identity_string``'s text; ``ValueError``
     when it is not one."""
+    text = base64_url_decode(value)
     try:
-        decoded: Any = _json_text.parse(base64.urlsafe_b64decode(value + "=" * (-len(value) % 4)))
+        decoded: Any = _json_text.parse(b"" if text is None else text)
         public_key = decoded["publicKey"]
-        private_key = base64.b64decode(decoded["privateKey"], validate=True)
-    except (binascii.Error, ValueError, KeyError, TypeError) as cause:
+        private_key = base64_decode(decoded["privateKey"])
+    except (ValueError, KeyError, TypeError, AttributeError) as cause:
         raise ValueError("Invalid identity string") from cause
-    if not isinstance(public_key, str):
+    if text is None or not isinstance(public_key, str) or private_key is None:
         raise ValueError("Invalid identity string")
     return IdentityService(public_key, redacted(private_key))
 

@@ -219,25 +219,89 @@ def _make_execute[A, E](activity: Activity[A, E, Any]) -> Effect[A, E, Any]:
     return gen(body).with_span(activity.name, capture_stack_trace=False)
 
 
-# Without the first overload, an ``execute`` needing nothing beyond the
-# workflow's own services leaves ``R`` unsolved (Unknown, not its default).
+# An omitted ``success`` is ``None`` and an omitted ``error`` none, so
+# ``execute`` must then succeed with ``None`` / never fail: inferring ``A``
+# from ``execute`` alone let ``execute=fx.succeed(5)`` type-check and die
+# encoding 5 as ``None``. Each case comes twice: without the first, an
+# ``execute`` needing nothing beyond the workflow's own services leaves
+# ``R`` unsolved (Unknown, not its default).
 @overload
-def make[A = None, E = Never](
+def make(
+    *,
+    name: str,
+    execute: Effect[None, Never, WorkflowEngine | WorkflowInstance | Scope],
+    success: None = None,
+    error: None = None,
+    interrupt_retry_policy: InterruptRetryPolicy | None = None,
+    annotations: Context[Any] | None = None,
+) -> Activity[None, Never, Never]: ...
+@overload
+def make[R](
+    *,
+    name: str,
+    execute: Effect[None, Never, R | WorkflowEngine | WorkflowInstance | Scope],
+    success: None = None,
+    error: None = None,
+    interrupt_retry_policy: InterruptRetryPolicy | None = None,
+    annotations: Context[Any] | None = None,
+) -> Activity[None, Never, R]: ...
+@overload
+def make[A](
+    *,
+    name: str,
+    execute: Effect[A, Never, WorkflowEngine | WorkflowInstance | Scope],
+    success: Exactly[A],
+    error: None = None,
+    interrupt_retry_policy: InterruptRetryPolicy | None = None,
+    annotations: Context[Any] | None = None,
+) -> Activity[A, Never, Never]: ...
+@overload
+def make[A, R](
+    *,
+    name: str,
+    execute: Effect[A, Never, R | WorkflowEngine | WorkflowInstance | Scope],
+    success: Exactly[A],
+    error: None = None,
+    interrupt_retry_policy: InterruptRetryPolicy | None = None,
+    annotations: Context[Any] | None = None,
+) -> Activity[A, Never, R]: ...
+@overload
+def make[E](
+    *,
+    name: str,
+    execute: Effect[None, E, WorkflowEngine | WorkflowInstance | Scope],
+    success: None = None,
+    error: Exactly[E],
+    interrupt_retry_policy: InterruptRetryPolicy | None = None,
+    annotations: Context[Any] | None = None,
+) -> Activity[None, E, Never]: ...
+@overload
+def make[E, R](
+    *,
+    name: str,
+    execute: Effect[None, E, R | WorkflowEngine | WorkflowInstance | Scope],
+    success: None = None,
+    error: Exactly[E],
+    interrupt_retry_policy: InterruptRetryPolicy | None = None,
+    annotations: Context[Any] | None = None,
+) -> Activity[None, E, R]: ...
+@overload
+def make[A, E](
     *,
     name: str,
     execute: Effect[A, E, WorkflowEngine | WorkflowInstance | Scope],
-    success: Exactly[A] | None = None,
-    error: Exactly[E] | None = None,
+    success: Exactly[A],
+    error: Exactly[E],
     interrupt_retry_policy: InterruptRetryPolicy | None = None,
     annotations: Context[Any] | None = None,
 ) -> Activity[A, E, Never]: ...
 @overload
-def make[A = None, E = Never, R = Never](
+def make[A, E, R](
     *,
     name: str,
     execute: Effect[A, E, R | WorkflowEngine | WorkflowInstance | Scope],
-    success: Exactly[A] | None = None,
-    error: Exactly[E] | None = None,
+    success: Exactly[A],
+    error: Exactly[E],
     interrupt_retry_policy: InterruptRetryPolicy | None = None,
     annotations: Context[Any] | None = None,
 ) -> Activity[A, E, R]: ...

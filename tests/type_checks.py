@@ -5941,6 +5941,15 @@ def check_workflow() -> None:
     )
     activity.make(name="charge", execute=fx.succeed(1), success=S.String)  # pyright: ignore[reportArgumentType, reportCallIssue]
     activity.make(name="charge", success=S.String, execute=fx.succeed(1))  # pyright: ignore[reportArgumentType, reportCallIssue]
+    # Omitted, success is None and error none (QA ai-workflow WF-1).
+    assert_type(activity.make(name="void", execute=fx.void), Activity[None, Never, Never])
+    assert_type(
+        activity.make(name="fails", execute=fx.fail("no"), error=S.String),
+        Activity[None, str, Never],
+    )
+    activity.make(name="v", execute=fx.succeed(5))  # pyright: ignore[reportArgumentType, reportCallIssue]
+    activity.make(name="e", execute=fx.fail("nope"))  # pyright: ignore[reportArgumentType, reportCallIssue]
+    activity.make(name="e", execute=fx.fail("nope"), success=S.Null)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
     # Compensation sees the step's value and the workflow's cause.
     charged = activity.make(name="charge", execute=fx.succeed("ch_1"), success=S.String)

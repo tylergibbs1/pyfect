@@ -16,9 +16,10 @@ such as ``mcp_server.elicit``).
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Literal, Never, NotRequired, TypedDict
+from typing import Any, ClassVar, Literal, Never, NotRequired, TypedDict, cast
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -38,10 +39,26 @@ UNSUPPORTED_PROTOCOL_VERSION_ERROR_CODE = -32022
 RESOURCE_NOT_FOUND_ERROR_CODE = -32002
 """What revisions before 2026-07-28 answer an unknown resource with."""
 
-type RequestId = str | int
+type RequestId = str | int | float
+"""A JSON-RPC id: a string or a finite number, never a boolean. Read one
+from a message only through ``parse_request_id``."""
 type JsonObject = dict[str, JsonValue]
 
-REQUEST_ID = S.Union(S.String, S.Int)
+REQUEST_ID = S.Union(S.String, S.Finite)
+
+
+def parse_request_id(value: object) -> RequestId | None:
+    """``value`` as a request id (Effect's ``RequestId``: a string or a finite
+    number), else ``None``. ``True`` is not ``1``, and a list or an object
+    is no id at all."""
+    kind = type(value)
+    if kind is str or kind is int:
+        return cast("str | int", value)
+    if kind is float and math.isfinite(cast("float", value)):
+        return cast("float", value)
+    return None
+
+
 JSON_OBJECT = S.Record(S.String, S.Json)
 
 
@@ -94,7 +111,7 @@ JSON_RPC_MESSAGE = S.Union(
 
 
 class _ProgressMeta(TypedDict):
-    progressToken: NotRequired[str | int]
+    progressToken: NotRequired[RequestId]
 
 
 REQUEST_META_OBJECT = S.StructWithRest(
@@ -1151,4 +1168,5 @@ __all__ = [
     "UntitledMultiSelectEnum",
     "UntitledSingleSelectEnum",
     "param",
+    "parse_request_id",
 ]

@@ -47,7 +47,10 @@ def to_well_formed(text: str) -> str:
 def text_encode(text: str) -> bytes:
     """``TextEncoder.encode``: UTF-8 where a surrogate pair is one character
     and a lone surrogate becomes U+FFFD (Python's ``encode`` raises)."""
-    return to_well_formed(text).encode()
+    try:
+        return text.encode()
+    except UnicodeEncodeError:
+        return to_well_formed(text).encode()
 
 
 def text_decoder(

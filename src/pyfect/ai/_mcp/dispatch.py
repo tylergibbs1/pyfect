@@ -63,6 +63,7 @@ from pyfect.ai.mcp_schema import (
     ReverseOperation,
     ServerCapabilities,
     ServerClient,
+    parse_request_id,
 )
 from pyfect.cause import Cause, Fail
 from pyfect.deferred import Deferred
@@ -131,30 +132,36 @@ def notification(method: str, params: JsonObject) -> JsonObject:
     return {"jsonrpc": "2.0", "method": method, "params": params}
 
 
-def _is_request_id(value: object) -> bool:
-    return isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))
-
-
 type Kind = Literal["request", "notification", "response", "invalid"]
 
 
 @dataclass(frozen=True, slots=True)
+class Request:
+    """A request to serve: its id was parsed, so it is one."""
+
+    id: RequestId
+    method: str
+    params: JsonObject
+
+
+@dataclass(frozen=True, slots=True)
 class Classified:
-    """What a parsed JSON value is, with the id to answer it with."""
+    """What a parsed JSON value is, with the id to answer it with (and the
+    request, when it is one)."""
 
     kind: Kind
     id: RequestId | None = None
     method: str = ""
     params: JsonObject = field(default_factory=dict[str, Any])
     body: JsonObject = field(default_factory=dict[str, Any])
+    request: Request | None = None
 
 
 def classify(message: object) -> Classified:  # noqa: PLR0911
     if not isinstance(message, dict):
         return Classified("invalid")
     body = cast("JsonObject", message)
-    raw_id = body.get("id")
-    id = cast("RequestId", raw_id) if _is_request_id(raw_id) else None
+    id = parse_request_id(body.get("id"))
     if body.get("jsonrpc") != "2.0":
         return Classified("invalid", id)
     method = body.get("method")
@@ -167,7 +174,9 @@ def classify(message: object) -> Classified:  # noqa: PLR0911
             return Classified("notification", None, method, params_object)
         if id is None:
             return Classified("invalid", None, method)
-        return Classified("request", id, method, params_object)
+        return Classified(
+            "request", id, method, params_object, request=Request(id, method, params_object)
+        )
     if "method" not in body and ("result" in body or "error" in body):
         return Classified("response", id, body=body)
     return Classified("invalid", id)
@@ -242,19 +251,20 @@ class Connection:
         """Handle one message; a request is answered through ``out`` from
         its own fiber."""
         classified = classify(message)
-        match classified.kind:
-            case "request" if classified.method == "initialize":
+        request = classified.request
+        if request is not None:
+            if request.method == "initialize":
                 # Answered before the next message, which may rely on it.
-                return self.answer(
-                    cast("RequestId", classified.id), classified.method, classified.params, out
-                ).flat_map(lambda reply: _VOID if reply is None else out(reply))
-            case "request":
-                return self.start(classified, out).as_void()
+                return self.answer(request.id, request.method, request.params, out).flat_map(
+                    lambda reply: _VOID if reply is None else out(reply)
+                )
+            return self.start(request, out).as_void()
+        match classified.kind:
             case "notification":
                 return self._notified(classified.method, classified.params)
             case "response":
                 return self._answered(classified.body)
-            case "invalid":
+            case _:
                 return out(error_response(classified.id, InvalidRequest("Invalid Request")))
 
     @property
@@ -282,10 +292,10 @@ class Connection:
 
         return run
 
-    def start(self, request: Classified, out: Send) -> Effect[Fiber[None, Never]]:
+    def start(self, request: Request, out: Send) -> Effect[Fiber[None, Never]]:
         """Serve ``request`` on its own fiber, which ends once its response
         is written or it is cancelled (writing nothing)."""
-        id = cast("RequestId", request.id)
+        id = request.id
 
         def done() -> None:
             self._inflight.pop(id, None)
@@ -324,15 +334,15 @@ class Connection:
         if method == "notifications/initialized" and self.protocol is not None:
             return sync(lambda: setattr(self, "initialized", True))
         if method == "notifications/cancelled":
-            request_id = params.get("requestId")
-            fiber = self._inflight.get(cast("RequestId", request_id))
+            request_id = parse_request_id(params.get("requestId"))
+            fiber = None if request_id is None else self._inflight.get(request_id)
             if fiber is not None:
                 return sync(lambda: fiber.interrupt_as_unsafe(None))
         return _VOID
 
     def _answered(self, body: JsonObject) -> Effect[None]:
-        raw_id = body.get("id")
-        deferred = self._pending.get(cast("RequestId", raw_id)) if _is_request_id(raw_id) else None
+        id = parse_request_id(body.get("id"))
+        deferred = None if id is None else self._pending.get(id)
         return _VOID if deferred is None else deferred.succeed(body).as_void()
 
     # --- notifications -----------------------------------------------------------------
