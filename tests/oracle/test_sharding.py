@@ -3,28 +3,14 @@ docstring is the Effect test title. The groups of that file live in:
 ``test_sharding_transactions`` (WithTransaction and storage-less replays),
 ``test_sharding_defect_recovery`` (entity-manager generations and mailbox
 size), ``test_sharding_active_teardowns``, ``test_sharding_claims``,
-``test_sharding_shutdown`` (live-clock shutdown cases) and
-``test_sharding_failover`` (shard lock failover over Effect's
-``FailoverStorage``); the shared fixtures are in ``_sharding_fixtures``.
-
-Not ported yet, with the reason:
-
-- replays a durable caller parked on a queued request when its target
-  closes (both variants): they restart a runner over shared, unread
-  storage through Effect's ``RestartSharding`` fake, not ported.
-- initializes singleton synchronization before startup fibers run: it
-  hooks ``Scheduler.shouldYield``, which pyfect's scheduler does not
-  expose.
-- The remaining shard lock failover cases (keeps the graceful timeout and
-  records release duration across retries; delivers a client interrupt to /
-  acknowledges stream chunks from a request still draining on the lock
-  holder), the shard handoff group (holds a remote request on the new owner
-  ... through waits for singleton teardown before handing off their shards)
-  and the singleton reassignment group (closes a singleton registration ...
-  through persists a discard send and delivers it once the shard lock is
-  acquired): they need Effect's two-runner handoff, singleton storage and
-  forced-release fakes on top of ``FailoverStorage``; the fake is ported
-  (``_failover_storage``), the rest is a follow-up.
+``test_sharding_shutdown`` (live-clock shutdown cases),
+``test_sharding_failover`` and ``test_sharding_forced_release`` (shard
+lock failover over Effect's ``FailoverStorage``, ``_failover_storage``),
+``test_sharding_handoff`` (shard handoff, singleton cancellation and
+persisted sends to a shard awaiting its lock), ``test_sharding_restart``
+(a runner restarted over shared, partly unread storage) and
+``test_sharding_startup``; the shared fixtures are in
+``_sharding_fixtures``. Every title of the file is ported.
 """
 # pyright: reportPrivateUsage=false
 

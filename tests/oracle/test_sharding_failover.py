@@ -2,8 +2,8 @@
 ``test/cluster/Sharding.test.ts`` (and the active-teardown case that
 releases a shard through the same runner storage fake), over Effect's
 ``FailoverStorage`` (``_failover_storage``). Each test's docstring is the
-Effect test title. The cases of this group not ported yet are listed in
-``test_sharding.py``."""
+Effect test title. The rest of this group is in
+``test_sharding_forced_release``."""
 
 from __future__ import annotations
 

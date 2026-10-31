@@ -1,12 +1,9 @@
 """Ports of the "Sharding defect recovery" cases of Effect's
 ``test/cluster/Sharding.test.ts``, and of the mailbox-size cases that drive
 an ``EntityManager`` directly over Effect's ``BlockedRebuildSharding``. Each
-test's docstring is the Effect test title.
-
-Not ported yet, with the reason: "replays a durable caller parked on a
-queued request when its target closes" (both ``preemptiveShutdown`` cases):
-it restarts a runner over Effect's ``RestartSharding`` with a shared,
-partly unread storage (``makeSharedMemoryStorage`` / ``unreadStorage``).
+test's docstring is the Effect test title. The "replays a durable caller
+parked on a queued request when its target closes" cases of this group are
+in ``test_sharding_restart``.
 """
 
 from __future__ import annotations

@@ -53,8 +53,9 @@ class FailoverState:
     other_runner_healthy: bool = False
     release_all_duration: float = 0
     """Test clock seconds ``release_all`` stays in flight for."""
-    release_failures: int = 0
-    """Number of ``release`` calls that fail before succeeding."""
+    release_failures: float = 0
+    """Number of ``release`` calls that fail before succeeding (``math.inf``
+    for every call)."""
     runner: Runner | None = None
     acquire_denied: list[ShardId] = field(default_factory=list[ShardId])
     """Shards ``acquire`` does not grant, as if another runner holds them."""
