@@ -3,7 +3,8 @@ free-threaded CPython. With the GIL, thread switches land only between
 bytecodes, which hides races such as a resume from another thread racing
 the end of callback registration (QA concurrency 2: the run hung on
 3.14t). Skipped when no free-threaded build is installed
-(``uv python install 3.14t``)."""
+(``uv python install 3.14t``), unless ``PYFECT_REQUIRE_FREE_THREADED`` is
+set, as the free-threaded CI job sets it."""
 
 import os
 import shutil
@@ -34,6 +35,8 @@ def _free_threaded_python() -> str | None:
 def test_the_cross_thread_stress_passes_without_the_gil(tmp_path: Path):
     python = _free_threaded_python()
     if python is None:
+        if os.environ.get("PYFECT_REQUIRE_FREE_THREADED"):
+            pytest.fail("PYFECT_REQUIRE_FREE_THREADED is set but uv finds no CPython 3.14t")
         pytest.skip("no free-threaded CPython 3.14t (uv python install 3.14t)")
     import typing_extensions
 
