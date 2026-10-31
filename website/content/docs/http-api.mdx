@@ -24,9 +24,10 @@ endpoint has no handler. `builder.layer(api)` adds every group's routes to the
 [router](/docs/http-server) and needs each group's layer, which pyright checks, so
 `router.serve` serves the API like any other routes.
 
-`client.make(api)` derives a client: `api_client[Users].get_user(params={"id": 1})` encodes
-the request, sends it with the `HttpClient` and decodes the response, failing with the
-endpoint's declared errors as values of their own classes.
+`client.make(api)` derives a client: `get_group(api_client, Users).get_user(params={"id": 1})`
+encodes the request, sends it with the `HttpClient` and decodes the response, failing with
+the endpoint's declared errors as values of their own classes. `get_group` is typed as the
+group you name, and a group the API lacks is a pyright error.
 
 <CodeOutput>
 
@@ -57,9 +58,17 @@ openapi_path="/openapi.json")` serves the document, and `swagger.layer(api)` and
 
 ## Testing handlers
 
-`test.groups(api, (Users,))` gives a client whose requests the handlers answer in memory:
-no server or port, but the same encoding, decoding and statuses as over the network. The
-handlers' own services come from whatever layer the test provides.
+`test.groups(api, (Users,), layer=TestUsers)` gives a client whose requests the handlers
+answer in memory: no server or port, but the same encoding, decoding and statuses as over the
+network. The handlers' own services come from the layer the test passes, which stays open
+until the test's scope closes, so a scoped resource in it (a database pool, a `FiberMap`)
+is still there when a handler runs. Pyright checks that the layer provides every served
+group.
+
+Pass the layer to `groups` rather than piping `fx.provide(TestUsers)` onto it: that releases
+the layer as soon as the client is made, and the handlers then run against closed services.
+A `FiberMap` or `Scope` used after it closes interrupts the caller and says which one was
+closed.
 
 <include meta='title="test_users.py"'>../../snippets/http_api/test_users.py</include>
 

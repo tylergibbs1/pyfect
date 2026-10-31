@@ -28,6 +28,7 @@ from pyfect._fiber_collections import (
     live_items,
     reports_failure,
 )
+from pyfect._interrupt_reason import closed
 from pyfect.context import TagLike
 from pyfect.deferred import Deferred
 from pyfect.exit import Exit
@@ -76,7 +77,7 @@ class FiberSet[A = object, E = object]:
         closed set the fiber is interrupted. Call on the scheduler thread."""
         fibers = self._fibers
         if fibers is None:
-            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
+            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID, closed("FiberSet"))
             return
         if fiber in fibers:
             return
@@ -108,7 +109,9 @@ class FiberSet[A = object, E = object]:
 
         def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
             if self._fibers is None:
-                return _Succeed(interrupted_fiber(parent._run_scheduler, parent._context))
+                return _Succeed(
+                    interrupted_fiber(parent._run_scheduler, parent._context, closed("FiberSet"))
+                )
             fiber: Fiber[A, E] = parent._fork(eff, daemon=True, start_immediately=start_immediately)
             self.add_unsafe(fiber, propagate_interruption=propagate_interruption)
             return _AfterStarted(fiber)
@@ -192,7 +195,7 @@ class FiberSetRuntime[A, E, R]:
         gives back an interrupted fiber that never runs ``eff``."""
         require_effect(eff, "eff")
         if self._set._fibers is None:
-            return self._runtime.interrupted()
+            return self._runtime.interrupted(closed("FiberSet"))
         fiber = self._runtime.fork(eff, uninterruptible=uninterruptible, scheduler=scheduler)
         self._set.add_unsafe(fiber, propagate_interruption=propagate_interruption)
         return fiber

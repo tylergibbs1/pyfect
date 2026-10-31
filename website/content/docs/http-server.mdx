@@ -6,7 +6,8 @@ description: "Routes, middleware and a server on uvicorn, with each handler an e
 A handler is an effect that gives an `HttpServerResponse`. Routes are added to the
 `HttpRouter` by layers, so a route's handler can ask for any service and the layer's type
 says which ones the server must provide. `router.serve(routes)` serves them on the
-`HttpServer` in the context; `uvicorn_server.layer(port=...)` is one on uvicorn (install the
+`HttpServer` in the context, and needs whatever else the routes' layer needs, so its
+services can be provided to the server layer; `uvicorn_server.layer(port=...)` is one on uvicorn (install the
 `pyfect-dev[server]` extra), and `live_server.layer` one on the standard library.
 
 ## Routes

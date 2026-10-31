@@ -71,7 +71,7 @@ def to_http_api_group(name: str, workflows: Sequence[AnyWorkflow]) -> type[HttpA
     """An ``HttpApiGroup`` with identifier ``name`` holding the execute,
     discard and resume endpoints of each workflow (``POST /<tag>``,
     ``/<tag>/discard``, ``/<tag>/resume``). A client calls them with
-    ``client[Group].method("<Tag>")``."""
+    ``get_group(client, Group).method("<Tag>")``."""
     if not workflows:
         raise ValueError("to_http_api_group needs at least one workflow")
     group: type[HttpApiGroup[Never]] = types.new_class(name, (HttpApiGroup,), {"identifier": name})

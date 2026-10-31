@@ -9,7 +9,7 @@ A group is a class whose attributes are its endpoints::
         ...  # every endpoint is wrapped by the Authorization middleware
 
 A group is also the tag of its handlers: ``HttpApiBuilder.group(api, Users,
-...)`` is a ``Layer[Users]``. Read on a client's group (``client[Users]``)
+...)`` is a ``Layer[Users]``. Read on a client's group (``get_group(client, Users)``)
 an endpoint attribute is its client method. ``top_level=True`` puts a
 group's methods on the client itself in OpenAPI-style tools; a Python
 client always reads them through the group.
@@ -91,7 +91,7 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co], base=True):
         declared as attributes (which type their methods)."""
         methods: Mapping[str, Any] | None = getattr(self, "_http_api_client", None)
         if methods is None:
-            raise TypeError("method() reads a client's group (client[Group])")
+            raise TypeError("method() reads a client's group (get_group(client, Group))")
         return methods[identifier]
 
     @classmethod

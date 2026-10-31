@@ -95,12 +95,16 @@ addopts = "-q"
 filterwarnings = [
     "error:coroutine .*was never awaited:RuntimeWarning",
     "error::pytest.PytestUnraisableExceptionWarning",
+    # `client[Group]` is deprecated; `cast` hides it from pyright, this does not.
+    "error:client\\[Group\\]:DeprecationWarning",
 ]
 
 [tool.pyright]
 typeCheckingMode = "strict"
 include = ["src", "tests", "examples", "benchmarks", "website/snippets"]
 reportUnnecessaryTypeIgnoreComment = true
+# Calling a deprecated API is an error.
+reportDeprecated = "error"
 exclude = ["research"]
 pythonVersion = "3.13"
 # Pyright infers the *send* type of an unannotated generator as Unknown

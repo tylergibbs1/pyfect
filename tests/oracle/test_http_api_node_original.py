@@ -29,7 +29,7 @@ from pyfect.http.error import DecodeError, HttpClientError
 from pyfect.http.server_request import HttpServerRequest, ParsedSearchParams
 from pyfect.http.web import WebRequest
 from pyfect.http.web_handler import request_from_web
-from pyfect.http_api import builder, client, openapi, security
+from pyfect.http_api import builder, client, get_group, openapi, security
 from pyfect.http_api import endpoint as ep
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api import test as api_test
@@ -331,7 +331,11 @@ def test_payload_is_decoded_encoded() -> None:
         create = yield from client.endpoint(
             Api, http_client=http, group=Users, endpoint=Users.endpoints["create"]
         )
-        for method in (api_client[Users].method("create"), users_client.method("create"), create):
+        for method in (
+            get_group(api_client, Users).method("create"),
+            users_client.method("create"),
+            create,
+        ):
             user = yield from method(query={"id": 123}, payload={"name": "Joe"})
             assert user == _expected_user()
 
@@ -346,7 +350,7 @@ def test_payload_multipart() -> None:
     """HttpApi / original tests / payload / multipart"""
 
     def program() -> Any:
-        upload = (yield from client.make(Api))[Users].method("upload")
+        upload = get_group((yield from client.make(Api)), Users).method("upload")
         result = yield from upload(payload=_hello_form(), params={})
         assert result == {"contentType": "text/plain", "length": 5}
 
@@ -357,7 +361,7 @@ def test_payload_multipart_stream() -> None:
     """HttpApi / original tests / payload / multipart stream"""
 
     def program() -> Any:
-        upload = (yield from client.make(Api))[Users].method("uploadStream")
+        upload = get_group((yield from client.make(Api)), Users).method("uploadStream")
         result = yield from upload(payload=_hello_form())
         assert result == {"contentType": "text/plain", "length": 5}
 
@@ -379,14 +383,14 @@ def test_headers_should_accept_a_record_of_schemas() -> None:
     )
 
     def program() -> Any:
-        get = (yield from client.make(api))[group].method("get")
+        get = get_group((yield from client.make(api)), group).method("get")
         assert (yield from get(headers={"id": 1})) == "User 1"
 
     run_served(api_layer(api, live), effect.gen(program))
 
 
 def _list_page_one() -> Any:
-    list_users = (yield from client.make(Api))[Users].method("list")
+    list_users = get_group((yield from client.make(Api)), Users).method("list")
     return (yield from list_users(headers={"page": 1}, query={}))
 
 
@@ -415,7 +419,7 @@ def test_errors_empty_errors_decode() -> None:
     """HttpApi / original tests / errors / empty errors decode"""
 
     def program() -> Any:
-        find = (yield from client.make(Api))[Groups].method("findById")
+        find = get_group((yield from client.make(Api)), Groups).method("findById")
         assert (yield from find(params={"id": 0}).flip()) == GroupError()
 
     _run(program)
@@ -447,7 +451,7 @@ def test_errors_bad_request() -> None:
     """HttpApi / original tests / errors / BadRequest"""
 
     def program() -> Any:
-        upload = (yield from client.make(Api))[Users].method("upload")
+        upload = get_group((yield from client.make(Api)), Users).method("upload")
         error = yield from upload(params={}, payload=http_body.FormData()).flip()
         assert isinstance(error, HttpClientError)
         assert isinstance(error.reason, DecodeError)
@@ -478,7 +482,7 @@ def test_custom_client_context() -> None:
     def program() -> Any:
         http = (yield from http_client.HttpClient()).tap_request(tap)
         api_client = yield from client.make_with(Api, http_client=http)
-        list_users = api_client[Users].method("list")
+        list_users = get_group(api_client, Users).method("list")
         users = yield from list_users(headers={"page": 1}, query={}).pipe(
             fx.provide_service(CurrentUser, _expected_user("foo", 1))
         )
@@ -494,7 +498,9 @@ def test_security_middleware_sets_current_user() -> None:
     def program() -> Any:
         jar = yield from Ref.make(cookies.EMPTY.set_unsafe("token", "foo"))
         http = (yield from http_client.HttpClient()).with_cookies_ref(jar)
-        find = (yield from client.make_with(Api, http_client=http))[Users].method("findById")
+        find = get_group((yield from client.make_with(Api, http_client=http)), Users).method(
+            "findById"
+        )
         user = yield from find(params={"id": -1})
         assert user.name == "foo"
 
@@ -526,7 +532,7 @@ def test_client_response_mode_decoded_and_response() -> None:
     """HttpApi / original tests / client responseMode decoded-and-response"""
 
     def program() -> Any:
-        list_users = (yield from client.make(Api))[Users].method("list")
+        list_users = get_group((yield from client.make(Api)), Users).method("list")
         users, response = yield from list_users.with_response(headers={"page": 1}, query={})
         assert users[0].name == "page 1"
         assert response.status == 200
@@ -549,7 +555,7 @@ def test_client_response_mode_response_only_skips_decoding() -> None:
     )
 
     def program() -> Any:
-        bad = (yield from client.make(api))[group].method("bad")
+        bad = get_group((yield from client.make(api)), group).method("bad")
         yield from bad().flip()
         response = yield from bad.response_only()
         assert response.status == 200
@@ -562,7 +568,7 @@ def test_multiple_payload_types() -> None:
     """HttpApi / original tests / multiple payload types"""
 
     def program() -> Any:
-        create = (yield from client.make(Api))[Groups].method("create")
+        create = get_group((yield from client.make(Api)), Groups).method("create")
         group, response = yield from create.with_response(payload={"name": "Some group"})
         assert group == Group(id=1, name="Some group")
         assert response.status == 200
@@ -580,7 +586,7 @@ def test_handle_can_return_http_server_response() -> None:
     """HttpApi / original tests / .handle can return HttpServerResponse"""
 
     def program() -> Any:
-        handle = (yield from client.make(Api))[Groups].method("handle")
+        handle = get_group((yield from client.make(Api)), Groups).method("handle")
         response = yield from handle(params={"id": 1}, payload={"name": "Some group"})
         assert response == {"id": 1, "name": "Some group"}
 
@@ -591,7 +597,7 @@ def test_handle_raw_can_manually_process_body() -> None:
     """HttpApi / original tests / .handleRaw can manually process body"""
 
     def program() -> Any:
-        handle = (yield from client.make(Api))[Groups].method("handleRaw")
+        handle = get_group((yield from client.make(Api)), Groups).method("handleRaw")
         response = yield from handle(params={"id": 1}, payload={"name": "Some group"})
         assert response == {"id": 1, "name": "Some group"}
 
@@ -661,7 +667,7 @@ def test_error_from_plain_text() -> None:
     )
 
     def program() -> Any:
-        error = (yield from client.make(api))[group].method("error")
+        error = get_group((yield from client.make(api)), group).method("error")
         assert (yield from error().flip()) == RateLimitError(message="Rate limit exceeded")
 
     run_served(api_layer(api, live), effect.gen(program))
@@ -687,7 +693,7 @@ def test_http_api_test_works() -> None:
 
     def program() -> Any:
         api_client = yield from api_test.groups(Api, [Groups])
-        find = api_client[Groups].method("findById")
+        find = get_group(api_client, Groups).method("findById")
         assert (yield from find(params={"id": 0})) == Group(id=1, name="foo")
 
     exit_ = fx.run_sync(

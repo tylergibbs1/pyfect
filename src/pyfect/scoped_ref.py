@@ -16,7 +16,7 @@ from typing import Any, Final, Never, overload
 
 from pyfect._core import Effect, _Gen, _Locally, _Sync
 from pyfect._effect_args import require_effect
-from pyfect.effect import interrupt
+from pyfect._interrupt_reason import interrupt_closed
 from pyfect.effect import sync as sync_effect
 from pyfect.exit import Exit, Failure, Success
 from pyfect.scope import CloseableScope, Scope
@@ -56,7 +56,7 @@ class ScopedRef[A]:
                 lambda cause: scope.close(Failure(cause))
             )
             if generation._closed is not None:
-                return (yield from interrupt())
+                return (yield from interrupt_closed("Scope"))
             return ScopedRef(scope, generation, value)
 
         return _Gen(body).uninterruptible()
@@ -92,7 +92,7 @@ class ScopedRef[A]:
             value = yield from _in_scope(acquire, generation).tap_cause(discard)
             yield from self._current[0].close(_DONE).tap_cause(discard)
             if generation._closed is not None:
-                return (yield from interrupt())
+                return (yield from interrupt_closed("Scope"))
             self._current = (generation, value)
 
         return self._lock.with_permits(_Gen(body).uninterruptible())

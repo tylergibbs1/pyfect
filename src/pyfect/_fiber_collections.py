@@ -75,15 +75,17 @@ class CapturedRuntime:
         start_root(fiber, eff)
         return fiber
 
-    def interrupted(self) -> Fiber[Any, Any]:
+    def interrupted(self, annotations: Context | None = None) -> Fiber[Any, Any]:
         """A fiber that never runs anything: what a closed collection hands
         back (Effect's ``constInterruptedFiber``)."""
-        return interrupted_fiber(self.run_scheduler, self.context)
+        return interrupted_fiber(self.run_scheduler, self.context, annotations)
 
 
-def interrupted_fiber(run_scheduler: Scheduler, context: Context) -> Fiber[Any, Any]:
+def interrupted_fiber(
+    run_scheduler: Scheduler, context: Context, annotations: Context | None = None
+) -> Fiber[Any, Any]:
     fiber: Fiber[Any, Any] = Fiber(run_scheduler, context, None)
-    fiber.interrupt_as_unsafe(fiber.id)
+    fiber.interrupt_as_unsafe(fiber.id, annotations)
     return fiber
 
 

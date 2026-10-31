@@ -305,14 +305,17 @@ class EmptyCauseError(Exception):
 
 
 def _interrupted(cause: Cause[object]) -> Interrupted:
+    from pyfect._interrupt_reason import InterruptReason
     from pyfect._stack_frame import InterruptorStackTrace, render
 
     error = Interrupted("All fibers interrupted without error")
     for r in cause.reasons:
         if isinstance(r, Interrupt):
             by = "externally" if r.fiber_id is None else f"by fiber #{r.fiber_id}"
+            reason = r.annotations.get(InterruptReason)
+            because = "" if reason is None else f" because {reason}"
             frames = render(_frame(r.annotations, InterruptorStackTrace))
-            error.add_note("\n".join([f"interrupted {by}", *frames]))
+            error.add_note("\n".join([f"interrupted {by}{because}", *frames]))
     return error
 
 

@@ -27,7 +27,8 @@ OpenAPI.
 
     api = HttpApi.make("app").add(Users)
     UsersLive = builder.group(api, Users, lambda h: h.handle(Users.get_user)(get_user))
-    user = yield from client[Users].get_user(params={"id": 1})
+    api_client = yield from client.make(api)
+    user = yield from get_group(api_client, Users).get_user(params={"id": 1})
 """
 
 from pyfect.http_api import (
@@ -47,7 +48,7 @@ from pyfect.http_api import (
 )
 from pyfect.http_api._handlers import Handlers, HttpApiRequest
 from pyfect.http_api.api import HttpApi
-from pyfect.http_api.client import Client
+from pyfect.http_api.client import Client, get_group
 from pyfect.http_api.endpoint import HttpApiEndpoint
 from pyfect.http_api.error import HttpApiPayloadTooLarge, HttpApiSchemaError
 from pyfect.http_api.group import HttpApiGroup
@@ -70,6 +71,7 @@ __all__ = [
     "client",
     "endpoint",
     "error",
+    "get_group",
     "group",
     "middleware",
     "openapi",

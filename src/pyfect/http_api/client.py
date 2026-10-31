@@ -1,10 +1,10 @@
 """Clients derived from an ``HttpApi`` (Effect's ``HttpApiClient``).
 
-``make(api)`` gives a ``Client``; ``client[Users]`` is the ``Users`` group
-whose endpoint attributes are client methods::
+``make(api)`` gives a ``Client``; ``get_group(client, Users)`` is the
+``Users`` group whose endpoint attributes are client methods::
 
-    client = yield from http_api.client.make(api, base_url="http://localhost:3000")
-    user = yield from client[Users].get_user(params={"id": 1})
+    api_client = yield from http_api.client.make(api, base_url="http://localhost:3000")
+    user = yield from get_group(api_client, Users).get_user(params={"id": 1})
 
 A method encodes the request parts with the endpoint's schemas, runs the
 client middleware, sends the request and decodes the response: a declared
@@ -18,6 +18,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Generic, Never, TypeVar, cast
 from urllib.parse import quote
+from warnings import deprecated
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -61,16 +62,29 @@ type _Call = Callable[[Mapping[str, Any], ResponseMode], Effect[Any, Any, Any]]
 
 
 class Client(Generic[G_contra]):
-    """The client of an API with the groups ``G``: ``client[Users]`` is the
-    group whose endpoint attributes are client methods."""
+    """The client of an API with the groups ``G``: ``get_group(client,
+    Users)`` is the group whose endpoint attributes are client methods."""
 
     __slots__ = ("_groups",)
 
     def __init__(self, groups: Mapping[AnyGroup, HttpApiGroup[Any]]) -> None:
         self._groups = groups
 
-    def __getitem__[G1: HttpApiGroup[Any, Any]](self: Client[G1], group: type[G1]) -> G1:
-        return cast("G1", self._groups[cast("AnyGroup", group).origin])
+    @deprecated("client[Group] is typed as every group of the API; use get_group(client, Group)")
+    def __getitem__(self, group: Never) -> object:
+        """Deprecated: ``get_group(client, Group)``. Typed to reject every
+        group, since pyright does not report a deprecated ``[]``."""
+        return get_group(cast("Client[Any]", self), group)
+
+
+def get_group[G: HttpApiGroup[Any, Any]](client: Client[G], group: type[G], /) -> G:
+    """The group ``group`` of ``client``: its endpoint attributes are client
+    methods. A group the client's API lacks is a type error.
+
+    A function, not a method: pyright solves a method's type variables from
+    ``self`` first, so ``client[Users]`` on a client of ``Users | Status``
+    would be typed ``Users | Status``."""
+    return cast("G", client._groups[cast("AnyGroup", group).origin])  # pyright: ignore[reportPrivateUsage]
 
 
 def _group_client(group: AnyGroup, methods: Mapping[str, Any]) -> HttpApiGroup[Any]:
@@ -452,6 +466,7 @@ __all__ = [
     "UrlBuilder",
     "compile_path",
     "endpoint",
+    "get_group",
     "group",
     "make",
     "make_with",

@@ -13,6 +13,7 @@ from pyfect.cluster import entity_proxy, entity_proxy_server
 from pyfect.cluster.entity import Entity
 from pyfect.cluster.entity_proxy import to_rpc_group
 from pyfect.http import server as http_server
+from pyfect.http_api import get_group
 from pyfect.http_api import test as api_test
 from pyfect.http_api.api import HttpApi
 from pyfect.rpc import AnyRpc, RpcGroup
@@ -103,7 +104,7 @@ def test_serves_the_proxy_http_api_through_the_entity_client():
     def body():
         yield from testing.adjust(0.001)
         client = yield from api_test.groups(api, [group])
-        methods: Any = client[group]
+        methods: Any = get_group(client, group)
         get_user: Callable[..., fx.Effect[Any, Any]] = methods.method("GetUser")
         user = yield from get_user(params={"entityId": "1"}, payload={"id": 7})
         assert user == User(id=7, name="User 7")

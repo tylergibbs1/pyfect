@@ -12,7 +12,7 @@ from pyfect._core import Effect, _WithFiber
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._layer_core import Layer, MemoMap, fork_or_create, require_layer
-from pyfect.context import Context
+from pyfect.context import Context, Tag
 from pyfect.effect import succeed
 from pyfect.http import find_my_way, server
 from pyfect.http.asgi._app import AsgiApp, to_asgi_with
@@ -237,18 +237,19 @@ type _Routed[RE, R] = Effect[
 
 
 @overload
-def to_http_effect[A, LE](
-    app_layer: Layer[A, LE, HttpRouter],
-) -> Effect[_Routed[Never, Never], LE, Scope]: ...
+def to_http_effect[A, LE, X: Tag[Any] = Never](
+    app_layer: Layer[A, LE, HttpRouter | X],
+) -> Effect[_Routed[Never, Never], LE, Scope | X]: ...
 @overload
-def to_http_effect[A, LE, E = Never, R = Never, GE = Never, GR = Never](
+def to_http_effect[A, LE, E = Never, R = Never, GE = Never, GR = Never, X: Tag[Any] = Never](
     app_layer: Layer[
-        A, LE, HttpRouter | Requires[R] | Raises[E] | GlobalRequires[GR] | GlobalRaises[GE]
+        A, LE, HttpRouter | Requires[R] | Raises[E] | GlobalRequires[GR] | GlobalRaises[GE] | X
     ],
-) -> Effect[_Routed[E | GE, R | GR], LE, Scope]: ...
+) -> Effect[_Routed[E | GE, R | GR], LE, Scope | X]: ...
 def to_http_effect(app_layer: Layer[Any, Any, Any]) -> Effect[Any, Any, Any]:
     """Build ``app_layer`` with a router (into the current scope) and give
-    the app serving its routes."""
+    the app serving its routes. The layer's other services are the outer
+    effect's requirements (Effect's ``Exclude<R, HttpRouter>``)."""
     require_layer(app_layer, "app_layer")
 
     def body(fiber: Fiber[Any, Any]) -> Effect[Any, Any, Any]:
@@ -262,26 +263,26 @@ def to_http_effect(app_layer: Layer[Any, Any, Any]) -> Effect[Any, Any, Any]:
 
 
 @overload
-def serve[A, LE](
-    app_layer: Layer[A, LE, HttpRouter],
+def serve[A, LE, X: Tag[Any] = Never](
+    app_layer: Layer[A, LE, HttpRouter | X],
     *,
     router_config: find_my_way.RouterConfig | None = None,
     disable_logger: bool = False,
     disable_listen_log: bool = False,
-) -> Layer[A, LE, HttpServer]: ...
+) -> Layer[A, LE, HttpServer | X]: ...
 @overload
-def serve[A, LE, E = Never, R = Never, GE = Never, GR = Never](
+def serve[A, LE, E = Never, R = Never, GE = Never, GR = Never, X: Tag[Any] = Never](
     app_layer: Layer[
-        A, LE, HttpRouter | Requires[R] | Raises[E] | GlobalRequires[GR] | GlobalRaises[GE]
+        A, LE, HttpRouter | Requires[R] | Raises[E] | GlobalRequires[GR] | GlobalRaises[GE] | X
     ],
     *,
     router_config: find_my_way.RouterConfig | None = None,
     disable_logger: bool = False,
     disable_listen_log: bool = False,
-) -> Layer[A, LE, HttpServer | R | GR]: ...
+) -> Layer[A, LE, HttpServer | R | GR | X]: ...
 @overload
-def serve[A, LE, HE, HR = Never](
-    app_layer: Layer[A, LE, HttpRouter],
+def serve[A, LE, HE, HR = Never, X: Tag[Any] = Never](
+    app_layer: Layer[A, LE, HttpRouter | X],
     *,
     middleware: Callable[
         [_Routed[Never, Never]], Effect[HttpServerResponse, HE, HR | HttpServerRequest | Scope]
@@ -289,10 +290,10 @@ def serve[A, LE, HE, HR = Never](
     router_config: find_my_way.RouterConfig | None = None,
     disable_logger: bool = False,
     disable_listen_log: bool = False,
-) -> Layer[A, LE, HttpServer | HR]: ...
+) -> Layer[A, LE, HttpServer | HR | X]: ...
 @overload
-def serve[A, LE, HE, E = Never, R = Never, HR = Never](
-    app_layer: Layer[A, LE, HttpRouter | Requires[R] | Raises[E]],
+def serve[A, LE, HE, E = Never, R = Never, HR = Never, X: Tag[Any] = Never](
+    app_layer: Layer[A, LE, HttpRouter | Requires[R] | Raises[E] | X],
     *,
     middleware: Callable[
         [_Routed[E, R]], Effect[HttpServerResponse, HE, HR | HttpServerRequest | Scope]
@@ -300,11 +301,11 @@ def serve[A, LE, HE, E = Never, R = Never, HR = Never](
     router_config: find_my_way.RouterConfig | None = None,
     disable_logger: bool = False,
     disable_listen_log: bool = False,
-) -> Layer[A, LE, HttpServer | HR]: ...
+) -> Layer[A, LE, HttpServer | HR | X]: ...
 @overload
-def serve[A, LE, HE, HR, E = Never, R = Never, GE = Never, GR = Never](
+def serve[A, LE, HE, HR, E = Never, R = Never, GE = Never, GR = Never, X: Tag[Any] = Never](
     app_layer: Layer[
-        A, LE, HttpRouter | Requires[R] | Raises[E] | GlobalRequires[GR] | GlobalRaises[GE]
+        A, LE, HttpRouter | Requires[R] | Raises[E] | GlobalRequires[GR] | GlobalRaises[GE] | X
     ],
     *,
     middleware: Callable[
@@ -313,7 +314,7 @@ def serve[A, LE, HE, HR, E = Never, R = Never, GE = Never, GR = Never](
     router_config: find_my_way.RouterConfig | None = None,
     disable_logger: bool = False,
     disable_listen_log: bool = False,
-) -> Layer[A, LE, HttpServer | HR]: ...
+) -> Layer[A, LE, HttpServer | HR | X]: ...
 def serve(
     app_layer: Layer[Any, Any, Any],
     *,
@@ -324,8 +325,8 @@ def serve(
 ) -> Layer[Any, Any, Any]:
     """Serve the routes ``app_layer`` adds on the ``HttpServer``, logging
     each request (unless ``disable_logger``) and the address (unless
-    ``disable_listen_log``). The layer's other requirements must be
-    provided before serving."""
+    ``disable_listen_log``). The layer's other services are the server
+    layer's requirements (Effect's ``Exclude<R, HttpRouter>``)."""
     require_layer(app_layer, "app_layer")
     app_middleware = _app_middleware(middleware, disable_logger)
     with_router = _with_router(app_layer, router_config)

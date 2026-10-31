@@ -33,6 +33,8 @@ class HttpApi(Generic[G_co]):
     if TYPE_CHECKING:
         # The groups seen contravariantly, for ``ApiWith``.
         def _has_group(self, group: type[G_co], /) -> None: ...  # pyright: ignore[reportGeneralTypeIssues]
+        # The groups seen covariantly, for ``ApiServing``.
+        def _group_types(self) -> type[G_co]: ...
 
     @staticmethod
     def make(identifier: str) -> HttpApi[Never]:
@@ -94,6 +96,15 @@ class ApiWith[G](Protocol):
     api's groups bound ``G`` from above, so a group it lacks is an error."""
 
     def _has_group(self, group: type[G], /) -> None: ...
+
+
+class ApiServing[G, S](Protocol):
+    """An ``HttpApi`` of the groups ``G`` that has the groups ``S``: ``G``
+    is read from the api, and ``S`` bounded by it from above as in
+    ``ApiWith``, so a function can take both from one argument."""
+
+    def _has_group(self, group: type[S], /) -> None: ...
+    def _group_types(self) -> type[G]: ...
 
 
 def api_of(api: ApiWith[Any]) -> AnyApi:
@@ -236,6 +247,7 @@ def get_slot_parse_options(annotations: Context[Any]) -> SlotParseOptions:
 __all__ = [
     "AdditionalSchemas",
     "AnyApi",
+    "ApiServing",
     "ApiWith",
     "ErrorParseOptions",
     "HeadersParseOptions",

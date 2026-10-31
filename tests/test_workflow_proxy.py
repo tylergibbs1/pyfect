@@ -9,6 +9,7 @@ from typing import Any, TypedDict, cast
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
+from pyfect.http_api import get_group
 from pyfect.http_api import test as api_test
 from pyfect.http_api.api import HttpApi
 from pyfect.rpc import test as rpc_test
@@ -120,7 +121,7 @@ def test_http_api_handlers_execute_discard_and_resume():
 
     def program():
         client = yield from api_test.groups(api, [group])
-        methods = client[group]
+        methods = get_group(client, group)
         assert (yield from methods.method("Increment")(payload={"value": 2})) == 3
         assert (yield from methods.method("Increment")(payload={"value": -2}).flip()) == "negative"
 

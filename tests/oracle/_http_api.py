@@ -12,7 +12,7 @@ from pyfect.http import live_server, router, server
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.http.web import WebRequest
 from pyfect.http.web_handler import request_from_web
-from pyfect.http_api import builder
+from pyfect.http_api import builder, get_group
 from pyfect.http_api import test as api_test
 from pyfect.http_api.api import HttpApi
 from pyfect.layer import Layer
@@ -72,7 +72,7 @@ def call_group(
 
     def program() -> Any:
         api_client = yield from api_test.groups(api, [group])
-        return (yield from use(api_client[group]))
+        return (yield from use(get_group(api_client, group)))
 
     out: _AnyEffect = scoped(effect.gen(program)).pipe(fx.provide(live))
     for provided in around:

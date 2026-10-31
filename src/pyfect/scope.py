@@ -29,6 +29,7 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber, Uninterruptible
+from pyfect._interrupt_reason import closed
 from pyfect.cause import merge
 from pyfect.context import Tag
 from pyfect.exit import Exit, Failure
@@ -285,7 +286,9 @@ def fork_in[A, E, R](
     def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
         if scope._closed is not None:
             unstarted: Fiber[A, E] = Fiber(parent._run_scheduler, parent._context, None)
-            unstarted.interrupt_as_unsafe(parent.id, parent._interruptor_annotations())
+            unstarted.interrupt_as_unsafe(
+                parent.id, closed("Scope", parent._interruptor_annotations())
+            )
             return _Succeed(unstarted)
         fiber: Fiber[A, E] = parent._fork(
             eff, daemon=True, start_immediately=start_immediately, uninterruptible=uninterruptible

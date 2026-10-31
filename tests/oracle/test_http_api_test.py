@@ -8,7 +8,7 @@ from pyfect import effect, scope, stream
 from pyfect import schema as S
 from pyfect.exit import Failure
 from pyfect.http.server_error import HttpServerError, RequestParseError
-from pyfect.http_api import builder
+from pyfect.http_api import builder, get_group
 from pyfect.http_api import endpoint as ep
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api import test as api_test
@@ -56,7 +56,7 @@ def test_passes_each_payload_element_through_before_the_source_produces_the_next
             .concat(stream.from_effect(first.wait().as_(2.0)))
             .concat(stream.from_effect(second.wait().as_(3.0)))
         )
-        response = yield from client[Test].upload(payload=source)
+        response = yield from get_group(client, Test).upload(payload=source)
         assert seen == [1, 2, 3]
         assert list(response) == [1, 2, 3]
 
@@ -77,7 +77,7 @@ def test_dies_with_the_body_read_failure_when_the_payload_source_fails() -> None
     def program() -> Any:
         client = yield from api_test.groups(api, (Test,)).pipe(fx.provide(group))
         source = stream.make(b"\x01").concat(stream.fail("SourceError"))
-        exit_ = yield from client[Test].upload(payload=source).exit()
+        exit_ = yield from get_group(client, Test).upload(payload=source).exit()
         assert isinstance(exit_, Failure)
         error = exit_.cause.squash()
         assert isinstance(error, HttpServerError), f"Expected HttpServerError, got {error!r}"
@@ -114,7 +114,7 @@ def test_keeps_handler_resources_alive_after_the_call_until_the_response_stream_
 
     def program() -> Any:
         client = yield from api_test.groups(api, (Test,)).pipe(fx.provide(group))
-        response = yield from client[Test].download()
+        response = yield from get_group(client, Test).download()
         assert not closed
         chunks = yield from response.run_collect()
         assert list(chunks) == [b"\x01\x02\x03"]

@@ -36,9 +36,9 @@ from pyfect._fiber_collections import (
     interrupted_fiber,
     reports_failure,
 )
+from pyfect._interrupt_reason import closed, interrupt_closed
 from pyfect.context import TagLike
 from pyfect.deferred import Deferred
-from pyfect.effect import interrupt
 from pyfect.exit import Exit
 from pyfect.scheduler import Scheduler
 from pyfect.scope import Scope, acquire_release
@@ -102,7 +102,7 @@ class FiberHandle[A = object, E = object]:
         thread."""
         state = self._state
         if state is None:
-            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
+            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID, closed("FiberHandle"))
             return
         previous = state.current
         if previous is fiber:
@@ -183,7 +183,7 @@ class FiberHandle[A = object, E = object]:
         def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
             state = self._state
             if state is None:
-                return interrupt()
+                return interrupt_closed("FiberHandle")
             if only_if_missing and state.current is not None:
                 return _Succeed(interrupted_fiber(parent._run_scheduler, parent._context))
             fiber: Fiber[A, E] = parent._fork(eff, daemon=True, start_immediately=start_immediately)
@@ -261,7 +261,9 @@ class FiberHandleRuntime[A, E, R]:
         interrupted fiber that never runs ``eff``."""
         require_effect(eff, "eff")
         handle = self._handle
-        if handle._state is None or (only_if_missing and handle._state.current is not None):
+        if handle._state is None:
+            return self._runtime.interrupted(closed("FiberHandle"))
+        if only_if_missing and handle._state.current is not None:
             return self._runtime.interrupted()
         fiber = self._runtime.fork(eff, uninterruptible=uninterruptible, scheduler=scheduler)
         handle.set_unsafe(

@@ -12,9 +12,10 @@ response is decoded" (httpx sends the whole request body before it reads
 the response, so an endless upload never sees it; Node's clients read the
 response while uploading).
 
-``client.group.a()`` is ``client[Group].a()`` for a declared endpoint
-attribute and ``client[group].method("a")()`` for one added with ``add``; ``Layer.succeed(M, fn)``
-for a middleware is ``layer.succeed(M, fn)`` with ``fn(effect, options)``.
+``client.group.a()`` is ``get_group(client, Group).a()`` for a declared
+endpoint attribute and ``get_group(client, group).method("a")()`` for one
+added with ``add``; ``Layer.succeed(M, fn)`` for a middleware is
+``layer.succeed(M, fn)`` with ``fn(effect, options)``.
 """
 
 import asyncio
@@ -31,7 +32,7 @@ from pyfect.http import multipart, request, router, server
 from pyfect.http.error import DecodeError, HttpClientError
 from pyfect.http.response import HttpClientResponse
 from pyfect.http.web import WebRequest
-from pyfect.http_api import builder, client, security
+from pyfect.http_api import builder, client, get_group, security
 from pyfect.http_api import endpoint as ep
 from pyfect.http_api import error as api_error
 from pyfect.http_api import schema as api_schema
@@ -100,7 +101,7 @@ def test_catch_all_path() -> None:
         assert (yield from _get("/")) == (200, '"/"')
         assert (yield from _get("/a/b/c")) == (200, '"/a/b/c"')
         api_client = yield from client.make(api)
-        assert (yield from api_client[group].method("catchAll")()) == "/*"
+        assert (yield from get_group(api_client, group).method("catchAll")()) == "/*"
 
     run_served(api_layer(api, live), effect.gen(program))
 
@@ -121,7 +122,7 @@ def test_middleware_error() -> None:
     def program() -> Any:
         assert (yield from _get("/a")) == (405, "error")
         api_client = yield from client.make(api)
-        assert (yield from _flip(api_client[group].method("a")())) == "error"
+        assert (yield from _flip(get_group(api_client, group).method("a")())) == "error"
 
     run_served(api_layer(api, live, m_live), effect.gen(program))
 
@@ -161,9 +162,11 @@ def test_middleware_error_array() -> None:
         assert (yield from _get("/forbidden")) == (403, "")
         api_client = yield from client.make(api)
         assert (
-            yield from _flip(api_client[group].method("unauthorized")())
+            yield from _flip(get_group(api_client, group).method("unauthorized")())
         ) == api_error.Unauthorized()
-        assert (yield from _flip(api_client[group].method("forbidden")())) == api_error.Forbidden()
+        assert (
+            yield from _flip(get_group(api_client, group).method("forbidden")())
+        ) == api_error.Forbidden()
 
     run_served(api_layer(api, live, m_live), effect.gen(program))
 
@@ -206,7 +209,7 @@ def test_client_middleware_modifies_request_and_receives_metadata() -> None:
         api_client = yield from client.make(api).pipe(
             fx.provide(layer_client(M, client_middleware))
         )
-        assert (yield from api_client[group].method("a")()) == "from-client"
+        assert (yield from get_group(api_client, group).method("a")()) == "from-client"
         assert metadata == [{"group": "group", "endpoint": "a"}]
 
     run_served(api_layer(api, live, layer.succeed(M, _pass_through)), effect.gen(program))
@@ -248,7 +251,7 @@ def test_client_middleware_chain_order_is_lifo() -> None:
 
     def program() -> Any:
         api_client = yield from client.make(api).pipe(fx.provide(clients))
-        assert (yield from api_client[group].method("a")()) == "11"
+        assert (yield from get_group(api_client, group).method("a")()) == "11"
         assert order == ["m2-before", "m1-before", "m1-after", "m2-after"]
 
     servers = (layer.succeed(M1, _pass_through), layer.succeed(M2, _pass_through))
@@ -281,7 +284,7 @@ def test_required_client_middleware_can_fail_with_typed_client_error() -> None:
     def program() -> Any:
         m_client = layer_client(M, lambda _options: effect.fail(ClientFailure()))
         api_client = yield from client.make(api).pipe(fx.provide(m_client))
-        assert (yield from _flip(api_client[group].method("a")())) == ClientFailure()
+        assert (yield from _flip(get_group(api_client, group).method("a")())) == ClientFailure()
         assert handled == []
 
     run_served(api_layer(api, live, layer.succeed(M, _pass_through)), effect.gen(program))
@@ -297,7 +300,7 @@ def test_optional_client_middleware_is_skipped_when_not_provided() -> None:
 
     def program() -> Any:
         api_client = yield from client.make(api)
-        assert (yield from api_client[group].method("a")()) == "missing"
+        assert (yield from get_group(api_client, group).method("a")()) == "missing"
 
     run_served(api_layer(api, live, layer.succeed(M, _pass_through)), effect.gen(program))
 
@@ -324,7 +327,7 @@ def test_layer_client_supports_effectful_construction() -> None:
             .pipe(fx.provide(m_client))
             .pipe(fx.provide_service(HeaderValue, "from-effect"))
         )
-        assert (yield from api_client[group].method("a")()) == "from-effect"
+        assert (yield from get_group(api_client, group).method("a")()) == "from-effect"
 
     run_served(api_layer(api, live, layer.succeed(M, _pass_through)), effect.gen(program))
 
@@ -357,12 +360,12 @@ def test_security_middleware_can_be_implemented_with_layer_client() -> None:
 
     def program() -> Any:
         api_client = yield from client.make(api)
-        assert (yield from api_client[group].method("a")()) == ""
+        assert (yield from get_group(api_client, group).method("a")()) == ""
         m_client = layer_client(
             M, lambda options: options.next(options.request.set_header("authorization", "token"))
         )
         authed = yield from client.make(api).pipe(fx.provide(m_client))
-        assert (yield from authed[group].method("a")()) == "token"
+        assert (yield from get_group(authed, group).method("a")()) == "token"
 
     run_served(api_layer(api, live, m_live), effect.gen(program))
 
@@ -397,7 +400,7 @@ def test_basic_security_round_trips_non_ascii_credentials() -> None:
             M, lambda options: options.next(options.request.basic_auth("usér", "pässword€"))
         )
         api_client = yield from client.make(api).pipe(fx.provide(m_client))
-        assert (yield from api_client[group].method("a")()) == "usér:pässword€"
+        assert (yield from get_group(api_client, group).method("a")()) == "usér:pässword€"
 
     run_served(api_layer(api, live, layer.succeed(M, {"basic": basic})), effect.gen(program))
 
@@ -599,7 +602,7 @@ def test_payload_option_get_query_parameters() -> None:
             200,
             {"required": 1, "optional": 0},
         )
-        a = (yield from client.make(api))[group].method("a")
+        a = get_group((yield from client.make(api)), group).method("a")
         assert (yield from a(payload={"required": 1})) == {"required": 1}
         assert (yield from a(payload={"required": 1, "optionalKey": 1})) == {
             "required": 1,
@@ -633,7 +636,7 @@ def test_payload_option_array_of_schemas_with_different_encodings() -> None:
         assert (yield from _post_json("/a", body=http_body.text("text"))) == (200, "text")
         # ``Any`` encodes bytes as the JSON of their Base64 text where a
         # JavaScript Uint8Array is an object of indices.
-        a = (yield from client.make(api))[group].method("a")
+        a = get_group((yield from client.make(api)), group).method("a")
         assert (yield from a(payload={"a": "text"})) == {"a": "text"}
         assert (yield from a(payload="text")) == "text"
 
@@ -706,7 +709,7 @@ def test_streaming_uploads_a_callers_stream() -> None:
     group, app, api = _streaming_api()
 
     def program() -> Any:
-        methods = (yield from client.make(api))[group]
+        methods = get_group((yield from client.make(api)), group)
         items = yield from methods.method("ndjson")(
             payload=stream.make({"n": 1}, {"n": 2}, {"n": 3})
         )
@@ -722,7 +725,7 @@ def test_streaming_fails_with_an_http_client_error_when_the_source_fails() -> No
     group, app, api = _streaming_api()
 
     def program() -> Any:
-        methods = (yield from client.make(api))[group]
+        methods = get_group((yield from client.make(api)), group)
         source = stream.make({"n": 1}).concat(stream.fail("SourceError"))
         error = yield from methods.method("ndjson")(payload=source).flip()
         assert isinstance(error, HttpClientError)
@@ -743,7 +746,9 @@ def test_streaming_replays_the_stream_on_retry() -> None:
         api_client = yield from client.make(
             api, transform_client=lambda c: c.retry_transient(times=1)
         )
-        items = yield from api_client[group].method("flaky")(payload=stream.suspend(source))
+        items = yield from get_group(api_client, group).method("flaky")(
+            payload=stream.suspend(source)
+        )
         assert list(items) == [{"n": 1}, {"n": 2}]
         assert len(runs) == 2
 
@@ -755,7 +760,7 @@ def test_streaming_sends_the_buffered_or_streaming_member_of_a_mixed_payload() -
     group, app, api = _streaming_api()
 
     def program() -> Any:
-        mixed = (yield from client.make(api))[group].method("mixed")
+        mixed = get_group((yield from client.make(api)), group).method("mixed")
         assert (yield from mixed(payload=[{"n": 1}, {"n": 2}])) == "array:2"
         assert (yield from mixed(payload=stream.make({"n": 1}, {"n": 2}))) == "stream:2"
 
@@ -778,7 +783,7 @@ def test_params_option_should_accept_a_record_of_schemas() -> None:
 
     def program() -> Any:
         assert (yield from _get_json("/1")) == (200, "User 1")
-        get = (yield from client.make(api))[group].method("get")
+        get = get_group((yield from client.make(api)), group).method("get")
         assert (yield from get(params={"id": 1})) == "User 1"
 
     run_served(api_layer(api, live), effect.gen(program))
@@ -800,7 +805,7 @@ def test_query_option_should_accept_a_record_of_schemas() -> None:
 
     def program() -> Any:
         assert (yield from _get_json("/?id=1")) == (200, "User 1")
-        get = (yield from client.make(api))[group].method("get")
+        get = get_group((yield from client.make(api)), group).method("get")
         assert (yield from get(query={"id": 1})) == "User 1"
 
     run_served(api_layer(api, live), effect.gen(program))
@@ -829,7 +834,7 @@ def test_success_option_no_content() -> None:
         assert (yield from _get("/a")) == (200, "")
         assert (yield from _get("/b")) == (204, "")
         assert (yield from _get("/c")) == (200, "")
-        methods = (yield from client.make(api))[group]
+        methods = get_group((yield from client.make(api)), group)
         assert (yield from methods.method("a")()) is None
         assert (yield from methods.method("b")()) is None
         assert (yield from methods.method("c")()) == "c"
@@ -928,7 +933,7 @@ def test_success_option_encodings_as_json_custom_content_type() -> None:
         response = yield from http_client.get("/a")
         assert (yield from _json(response)) == (200, "a")
         assert response.headers.get("content-type") == "application/scim+json"
-        assert (yield from (yield from client.make(api))[group].method("a")()) == "a"
+        assert (yield from get_group((yield from client.make(api)), group).method("a")()) == "a"
 
     run_served(api_layer(api, live), effect.gen(program))
 
@@ -958,7 +963,7 @@ def test_stream_ndjson_server_failure_mid_stream_is_a_body_read_error() -> None:
     )
 
     def program() -> Any:
-        body = yield from (yield from client.make(api))[group].method("failing")()
+        body = yield from get_group((yield from client.make(api)), group).method("failing")()
         delivered: list[object] = []
 
         def record(value: object) -> fx.Effect[bool]:
@@ -1011,7 +1016,7 @@ def test_error_option_no_content() -> None:
         assert (yield from _get("/d")) == (400, "")
         assert (yield from _get("/e")) == (401, "")
         assert (yield from _get("/f")) == (400, "")
-        methods = (yield from client.make(api))[group]
+        methods = get_group((yield from client.make(api)), group)
         assert (yield from _flip(methods.method("a")())) is None
         assert (yield from _flip(methods.method("b")())) is None
         assert (yield from _flip(methods.method("c")())) == "c"

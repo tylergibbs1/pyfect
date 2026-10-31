@@ -29,7 +29,7 @@ from pyfect.http.client import TracerDisabledWhen
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.http.web import WebRequest
 from pyfect.http.web_handler import request_from_web
-from pyfect.http_api import builder, security
+from pyfect.http_api import builder, get_group, security
 from pyfect.http_api import endpoint as ep
 from pyfect.http_api import middleware as mw
 from pyfect.http_api import schema as api_schema
@@ -179,7 +179,7 @@ def test_executes_effectful_handler_builders() -> None:
 
     def program() -> Any:
         api_client = yield from api_test.groups(api, [group])
-        get_user = api_client[group].method("getUser")
+        get_user = get_group(api_client, group).method("getUser")
         return (yield from get_user(params={"id": "user-1"}))
 
     result = fx.run_sync(
@@ -897,7 +897,7 @@ def test_runs_pre_response_handlers_once_per_response_across_retries() -> None:
     def program() -> Any:
         c = yield from api_test.groups(api, [g], base_url="")
         return (
-            yield from c[g]
+            yield from get_group(c, g)
             .method("get")
             .response_only()
             .pipe(fx.provide_service(TracerDisabledWhen, lambda _r: True))

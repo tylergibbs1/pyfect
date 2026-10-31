@@ -63,6 +63,7 @@ from pyfect._core import (
     _Sync,
     _WithFiber,
 )
+from pyfect._interrupt_reason import closed
 from pyfect._metric_ref import FiberRuntimeMetrics
 from pyfect._stack_frame import CurrentStackFrame, InterruptorStackTrace, StackFrame, StackTrace
 from pyfect._tracer_ref import CurrentTracer
@@ -342,7 +343,7 @@ class Fiber(Generic[A_co, E_co]):
         if self._exit is not None:
             return self
         if scope._closed is not None:
-            self.interrupt_as_unsafe(self.id)
+            self.interrupt_as_unsafe(self.id, closed("Scope"))
         else:
             scope._watch(self)
         return self

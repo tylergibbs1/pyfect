@@ -4,7 +4,15 @@ import pyfect as fx
 from pyfect import layer
 from pyfect import schema as S
 from pyfect.http import router, uvicorn_server
-from pyfect.http_api import HttpApi, HttpApiGroup, HttpApiRequest, builder, client, endpoint
+from pyfect.http_api import (
+    HttpApi,
+    HttpApiGroup,
+    HttpApiRequest,
+    builder,
+    client,
+    endpoint,
+    get_group,
+)
 
 
 # The declaration: each endpoint's path, inputs, success and errors are schemas.
@@ -69,10 +77,10 @@ ApiLive = builder.layer(api).pipe(layer.provide(UsersLive))
 @fx.fn
 def program():
     api_client = yield from client.make(api)
-    created = yield from api_client[Users].create_user(payload={"name": "Grace"})
+    created = yield from get_group(api_client, Users).create_user(payload={"name": "Grace"})
     print("created", created)
-    print("found", (yield from api_client[Users].get_user(params={"id": created.id})))
-    missing = yield from api_client[Users].get_user(params={"id": 99}).flip()
+    print("found", (yield from get_group(api_client, Users).get_user(params={"id": created.id})))
+    missing = yield from get_group(api_client, Users).get_user(params={"id": 99}).flip()
     print("missing", repr(missing))
 
 

@@ -38,9 +38,9 @@ from pyfect._fiber_collections import (
     live_items,
     reports_failure,
 )
+from pyfect._interrupt_reason import closed, interrupt_closed
 from pyfect.context import TagLike
 from pyfect.deferred import Deferred
-from pyfect.effect import interrupt
 from pyfect.exit import Exit
 from pyfect.scheduler import Scheduler
 from pyfect.scope import Scope, acquire_release
@@ -120,7 +120,7 @@ class FiberMap[K: Hashable, A = object, E = object]:
         thread."""
         state = self._state
         if state is None:
-            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID)
+            fiber.interrupt_as_unsafe(INTERNAL_FIBER_ID, closed("FiberMap"))
             return
         entry = state.by_key.get(key)
         if entry is not None and entry.fiber is fiber:
@@ -219,7 +219,7 @@ class FiberMap[K: Hashable, A = object, E = object]:
 
         def body(parent: Fiber[Any, Any]) -> Effect[Fiber[A, E]]:
             if self._state is None:
-                return interrupt()
+                return interrupt_closed("FiberMap")
             if only_if_missing and self.has_unsafe(key):
                 return _Succeed(interrupted_fiber(parent._run_scheduler, parent._context))
             fiber: Fiber[A, E] = parent._fork(eff, daemon=True, start_immediately=start_immediately)
@@ -301,7 +301,9 @@ class FiberMapRuntime[K: Hashable, A, E, R]:
         that never runs ``eff``."""
         require_effect(eff, "eff")
         fiber_map = self._map
-        if fiber_map._state is None or (only_if_missing and fiber_map.has_unsafe(key)):
+        if fiber_map._state is None:
+            return self._runtime.interrupted(closed("FiberMap"))
+        if only_if_missing and fiber_map.has_unsafe(key):
             return self._runtime.interrupted()
         fiber = self._runtime.fork(eff, uninterruptible=uninterruptible, scheduler=scheduler)
         fiber_map.set_unsafe(

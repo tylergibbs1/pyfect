@@ -5089,6 +5089,64 @@ assert_type(
 )
 
 
+# The routes layer's other requirements pass through `serve` and `to_http_effect`
+# (Effect's `Exclude<R, HttpRouter>`, DOGFOOD beacon 5).
+class RouteStore(Tag[str]): ...
+
+
+class RouteGroup(Tag[int]): ...
+
+
+def check_serve_passes_requirements_through(
+    plain: fx.Layer[Never, Never, HttpRouter | RouteStore],
+    routes: fx.Layer[
+        Never,
+        Never,
+        HttpRouter
+        | Requires[RouteDb]
+        | Raises[RouteNotAllowed]
+        | Requires[RouteCache]
+        | Raises[RouteMissing]
+        | RouteStore,
+    ],
+    groups: fx.Layer[Never, RouteMissing, HttpRouter | RouteGroup | RouteStore],
+) -> None:
+    assert_type(http_router.serve(plain), fx.Layer[Never, Never, HttpServer | RouteStore])
+    assert_type(
+        http_router.serve(routes),
+        fx.Layer[Never, Never, HttpServer | RouteDb | RouteCache | RouteStore],
+    )
+    assert_type(
+        http_router.serve(groups),
+        fx.Layer[Never, RouteMissing, HttpServer | RouteGroup | RouteStore],
+    )
+    assert_type(
+        http_router.serve(routes, middleware=http_middleware.logger),
+        fx.Layer[Never, Never, HttpServer | RouteDb | RouteCache | RouteStore],
+    )
+    assert_type(
+        http_router.serve(plain, middleware=http_middleware.compression()),
+        fx.Layer[Never, Never, HttpServer | HttpPlatform | RouteStore],
+    )
+    assert_type(
+        http_router.to_http_effect(routes),
+        fx.Effect[
+            fx.Effect[
+                HttpServerResponse,
+                RouteNotAllowed | RouteMissing | HttpServerError,
+                Scope | HttpServerRequest | RouteDb | RouteCache,
+            ],
+            Never,
+            Scope | RouteStore,
+        ],
+    )
+    # Provided afterwards, the requirement is gone.
+    assert_type(
+        http_router.serve(plain).pipe(layer.provide(layer.succeed(RouteStore, "s"))),
+        fx.Layer[Never, Never, HttpServer],
+    )
+
+
 # Router middleware: what it adds to the routes' errors and requirements, and
 # nothing (not Unknown) when it adds nothing.
 type _RouteIn = fx.Effect[HttpServerResponse, http_router.Unhandled]
@@ -5440,6 +5498,69 @@ def check_http_api(
         assert_type(api_client.group(api, ApiAdmin, http_client=http), fx.Effect[ApiAdmin])
 
     del admin_client
+
+
+def check_http_api_clients() -> None:
+    from pyfect.http_api import builder as api_builder
+    from pyfect.http_api import client as api_client
+    from pyfect.http_api import get_group
+    from pyfect.http_api import test as api_test
+
+    api = HttpApi.make("api").add(ApiUsers, ApiAdmin)
+    users_only = HttpApi.make("users").add(ApiUsers)
+
+    # A group of a two-group client is that group, not the union (DOGFOOD beacon 8):
+    # `get_group` is a function because pyright solves a method's type variables
+    # from `self` first. `client[Group]` is deprecated and typed to reject any group.
+    def two_groups(
+        both: api_client.Client[ApiUsers | ApiAdmin], users: api_client.Client[ApiUsers]
+    ) -> None:
+        assert_type(get_group(both, ApiUsers), ApiUsers)
+        assert_type(get_group(both, ApiAdmin), ApiAdmin)
+        get_group(users, ApiAdmin)  # pyright: ignore[reportArgumentType]
+        both[ApiUsers]  # pyright: ignore[reportArgumentType]
+
+        def pick[G: HttpApiGroup[Any, Any]](client: api_client.Client[G], group: type[G]) -> G:
+            return get_group(client, group)
+
+        assert_type(pick(both, ApiAdmin), ApiAdmin)
+        pick(users, ApiAdmin)  # pyright: ignore[reportArgumentType]
+
+    del two_groups
+
+    # The in-memory client needs the served groups' layers and a Scope (DOGFOOD
+    # beacon 10); given `layer`, it needs what the layer needs.
+    assert_type(
+        api_test.groups(api, (ApiUsers,)),
+        fx.Effect[api_client.Client[ApiUsers | ApiAdmin], Never, ApiUsers | Scope],
+    )
+    assert_type(
+        api_test.groups(api, (ApiUsers, ApiAdmin)),
+        fx.Effect[api_client.Client[ApiUsers | ApiAdmin], Never, ApiUsers | ApiAdmin | Scope],
+    )
+    api_test.groups(users_only, (ApiAdmin,))  # pyright: ignore[reportArgumentType]
+
+    def with_layer(
+        users_live: fx.Layer[ApiUsers, api_error.NotFound, ApiDb],
+        both_live: fx.Layer[ApiUsers | ApiAdmin, Never, ApiDb | ApiAuth],
+    ) -> None:
+        assert_type(
+            api_test.groups(api, (ApiUsers,), layer=users_live),
+            fx.Effect[api_client.Client[ApiUsers | ApiAdmin], api_error.NotFound, ApiDb | Scope],
+        )
+        assert_type(
+            api_test.groups(api, (ApiUsers,), layer=both_live),
+            fx.Effect[api_client.Client[ApiUsers | ApiAdmin], Never, ApiDb | ApiAuth | Scope],
+        )
+        # A layer that lacks a served group is rejected.
+        api_test.groups(api, (ApiUsers, ApiAdmin), layer=users_live)  # pyright: ignore[reportArgumentType]
+        # Served, the groups' requirements are the server's (DOGFOOD beacon 5).
+        assert_type(
+            http_router.serve(api_builder.layer(api).pipe(layer.provide(both_live))),
+            fx.Layer[Never, Never, HttpServer | ApiDb | ApiAuth],
+        )
+
+    del with_layer
 
 
 # --- rpc ---------------------------------------------------------------------------

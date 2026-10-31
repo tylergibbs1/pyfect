@@ -3,7 +3,15 @@ from typing import TypedDict
 import pyfect as fx
 from pyfect import layer, testing
 from pyfect import schema as S
-from pyfect.http_api import HttpApi, HttpApiGroup, HttpApiRequest, builder, endpoint, test
+from pyfect.http_api import (
+    HttpApi,
+    HttpApiGroup,
+    HttpApiRequest,
+    builder,
+    endpoint,
+    get_group,
+    test,
+)
 
 
 class User(S.Class, identifier="User"):
@@ -42,16 +50,24 @@ def get_user(request: HttpApiRequest[UserParams, None, None, None]):
 
 UsersLive = builder.group(api, Users, lambda handlers: handlers.handle(Users.get_user)(get_user))
 
-# The handlers' own services come from a layer the test picks.
-TestUsers = UsersLive.pipe(layer.provide(layer.succeed(Directory, {1: "Ada"})))
+
+def close(names: dict[int, str], _exit: object) -> fx.Effect[None]:
+    return fx.sync(names.clear)
+
+
+# The handlers' own services come from a layer the test picks. This one is a scoped
+# resource, like a database pool: released, the directory is emptied.
+TestDirectory = layer.effect(Directory, fx.acquire_release(fx.sync(lambda: {1: "Ada"}), close))
+TestUsers = UsersLive.pipe(layer.provide(TestDirectory))
 
 
 @fx.fn
 def users_client():
     """A client of the API whose requests the handlers answer in memory: no server, no port,
-    but the same encoding, decoding and status codes."""
-    api_client = yield from test.groups(api, (Users,)).pipe(fx.provide(TestUsers))
-    return api_client[Users]
+    but the same encoding, decoding and status codes. `layer=` keeps the handlers' layer
+    open until the test's scope closes."""
+    api_client = yield from test.groups(api, (Users,), layer=TestUsers)
+    return get_group(api_client, Users)
 
 
 @testing.effect

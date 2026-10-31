@@ -31,6 +31,7 @@ from pyfect.http_api import (
     builder,
     client,
     endpoint,
+    get_group,
     openapi,
 )
 
@@ -126,7 +127,7 @@ app = router.to_asgi(AppLive, disable_logger=True)
 @fx.fn
 def program():
     api_client = yield from client.make(api, base_url="http://example")
-    users = api_client[Users]
+    users = get_group(api_client, Users)
 
     created = yield from users.create_user(payload={"name": "Grace"})
     print("created", created)

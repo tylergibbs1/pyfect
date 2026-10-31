@@ -31,7 +31,7 @@ from pyfect.http.client import make as make_http_client
 from pyfect.http.error import DecodeError, HttpClientError, StatusCodeError
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
-from pyfect.http_api import client
+from pyfect.http_api import client, get_group
 from pyfect.http_api import endpoint as ep
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api.api import (
@@ -202,7 +202,7 @@ def _exit(api: Any, http: HttpClientService[Any], use: Any) -> Exit[Any, Any]:
 
     def program() -> Any:
         c = yield from client.make_with(api, http_client=http, base_url="http://test")
-        return (yield from use(c[api.groups["test"]]))
+        return (yield from use(get_group(c, api.groups["test"])))
 
     return _run(effect.gen(program).exit())
 
@@ -815,7 +815,7 @@ def _sent_urls(
         c = yield from client.make_with(
             api, http_client=_responding(status=204, sent=sent), base_url=base_url
         )
-        return (yield from use(c[api.groups[group]]))
+        return (yield from use(get_group(c, api.groups[group])))
 
     exit_ = _run(effect.gen(program).exit())
     return exit_, [url for _, url in sent]
@@ -1068,7 +1068,7 @@ def test_stores_proto_client_identifiers_as_own_properties() -> None:
     def program() -> Any:
         whole = yield from client.make_with(api, http_client=http, base_url="http://test")
         alone = yield from client.group(api, group, http_client=http, base_url="http://test")
-        yield from whole[group].method("__proto__")()
+        yield from get_group(whole, group).method("__proto__")()
         yield from alone.method("__proto__")()
 
     assert isinstance(_run(effect.gen(program).exit()), Success)

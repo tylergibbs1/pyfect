@@ -138,7 +138,7 @@ class AtomHttpApiClient[T]:
         declared, _ = self._endpoint(group, endpoint)
 
         def call(client: api_client.Client[Any]) -> Effect[Any, Any, Any]:
-            method = cast("Any", client)[declared].method(endpoint)
+            method = cast("Any", api_client.get_group(client, declared)).method(endpoint)
             match mode:
                 case "decoded-only":
                     send = method
