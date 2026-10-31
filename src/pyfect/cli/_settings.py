@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from pyfect.cli._command import Command
 
 
-class Setting[A](Tag[A]):
+class Setting[A](Tag[A], base=True):
     """A global flag read in handlers as a service. Subclass it with the
     flag; ``yield from Region()`` reads the value::
 

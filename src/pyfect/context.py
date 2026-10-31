@@ -95,22 +95,45 @@ def _missing(tag: type[Tag[Any]], ctx: Context) -> str:
     return f"Service {tag.key} was not provided (available: {available})"
 
 
+def _require_base_parents(cls: type[Tag[Any]]) -> None:
+    """``cls``'s tag parents must be bases (see ``Tag``)."""
+    for parent in cls.__mro__[1:]:
+        if issubclass(parent, Tag) and not parent.__dict__.get("__tag_base__", False):
+            raise TypeError(
+                f"{cls.__qualname__} subclasses the tag {parent.__qualname__}, which would "
+                f"count as providing it: declare a tag of its own "
+                f"(class {cls.__qualname__}(Tag[...]): ...)"
+            )
+
+
 class Tag[S]:
     """A service identifier with shape ``S``. Subclass it; never
-    instantiate it."""
+    instantiate it.
+
+    A tag is its class, and ``R`` holds tag classes, which pyright matches
+    by subclassing: a subclass of a tag would count as provided by its
+    parent. So a tag cannot be subclassed, unless it is declared a base
+    with ``base=True`` (a generic family such as ``RpcMiddleware``): then
+    each subclass is a tag of its own."""
 
     key: ClassVar[str]
+    __tag_base__: ClassVar[bool] = True
 
-    def __init_subclass__(cls, *, key: str | None = None, **kwargs: Any) -> None:
+    def __init_subclass__(
+        cls, *, key: str | None = None, base: bool = False, _alias: bool = False, **kwargs: Any
+    ) -> None:
         super().__init_subclass__(**kwargs)
+        if not _alias:
+            _require_base_parents(cls)
         cls.key = key or f"{cls.__module__}.{cls.__qualname__}"
+        cls.__tag_base__ = base
 
     def __new__(cls) -> ServiceEffect[S, Self]:
         _require_subclass(cls)
         return ServiceEffect(cls)
 
 
-class Reference[S](Tag[S]):
+class Reference[S](Tag[S], base=True):
     """A tag with a default value. Override ``default``."""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
@@ -128,7 +151,7 @@ class Reference[S](Tag[S]):
 
 
 def _require_subclass(cls: type[Tag[Any]]) -> None:
-    if cls is Tag or cls is Reference:
+    if cls.__dict__.get("__tag_base__", False):
         raise TypeError(
             f"{cls.__name__} is a base class: subclass it (class Db({cls.__name__}[str]): ...) "
             "and call the subclass"
@@ -338,7 +361,9 @@ def tag_class[S, T](tag: TagLike[S, T]) -> type[Tag[S]]:
     """The class behind a ``TagLike``. Every ``TagLike`` is a tag class;
     the protocol only exists so signatures can name its shape and tag."""
     if isinstance(tag, type) and issubclass(tag, Tag):
-        return tag  # pyright: ignore[reportUnknownVariableType]
+        cls: type[Tag[S]] = tag  # pyright: ignore[reportUnknownVariableType]
+        _require_subclass(cls)
+        return cls
     raise TypeError(f"{tag!r} is not a Tag class")
 
 

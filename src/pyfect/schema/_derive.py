@@ -25,6 +25,7 @@ from weakref import WeakKeyDictionary
 from pyfect.redacted import Redacted as _Redacted
 from pyfect.schema import ast
 from pyfect.schema._arrays import Array, List, Tuple
+from pyfect.schema._assignable import assignable
 from pyfect.schema._collections import FrozenSet
 from pyfect.schema._data import Redacted
 from pyfect.schema._literals import Enum, Literal, Literals, Union
@@ -186,10 +187,34 @@ def typed_dict_fields(
     unknown = [name for name in overrides if name not in hints]
     if unknown:
         raise TypeError(f"{typed_dict.__name__} has no key {unknown[0]!r}")
+    for name, schema in overrides.items():
+        _require_fits(typed_dict, name, hints[name], schema)
     return {
         name: overrides[name] if name in overrides else schema_of(hint)
         for name, hint in hints.items()
     }
+
+
+def _require_fits(
+    typed_dict: type[Mapping[str, object]], name: str, hint: object, schema: AnyBottom
+) -> None:
+    """``schema``'s decoded values must be values of the key's annotation
+    (pyright cannot check a keyword argument against a TypedDict key). An
+    annotation with no schema of its own, or a pair ``assignable`` cannot
+    judge, passes."""
+    try:
+        declared = schema_of(hint)
+    except TypeError:
+        return
+    if assignable(schema.ast, declared.ast) is False:
+        raise TypeError(
+            f"{typed_dict.__name__}[{name!r}] is {_type_name(hint)}, but its schema decodes to "
+            f"{schema.ast.to_type().expected()}"
+        )
+
+
+def _type_name(hint: object) -> str:
+    return hint.__name__ if isinstance(hint, type) else repr(hint).replace("typing.", "")
 
 
 def optional_keys(typed_dict: type[Mapping[str, object]]) -> frozenset[str]:

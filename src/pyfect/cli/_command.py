@@ -34,7 +34,7 @@ E_co = TypeVar("E_co", covariant=True, default=Never)
 R_co = TypeVar("R_co", covariant=True, default=Never)
 
 
-class CommandContext[S](Tag[S]):
+class CommandContext[S](Tag[S], base=True):
     """A parent command's parsed shared flags, as a requirement of the
     subcommand handlers that read them (``yield from parent``)."""
 

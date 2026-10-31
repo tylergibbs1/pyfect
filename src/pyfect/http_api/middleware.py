@@ -81,7 +81,9 @@ type MiddlewareService[P, E, R] = (
 )
 
 
-class HttpApiMiddleware(Tag[MiddlewareService[P_co, E_co, R_co]], Generic[P_co, E_co, R_co]):
+class HttpApiMiddleware(
+    Tag[MiddlewareService[P_co, E_co, R_co]], Generic[P_co, E_co, R_co], base=True
+):
     """A middleware tag providing ``P`` to the handlers, failing with ``E``
     (encoded by ``error``) and needing ``R``. The class keyword
     ``security`` makes it a security middleware; ``required_for_client``

@@ -53,7 +53,7 @@ from pyfect.http_api._security import (
     security_middleware,
     security_set_cookie,
 )
-from pyfect.http_api.api import AnyApi, HttpApi, get_slot_parse_options
+from pyfect.http_api.api import AnyApi, ApiWith, HttpApi, api_of, get_slot_parse_options
 from pyfect.http_api.endpoint import AnyEndpoint, HttpApiEndpoint
 from pyfect.http_api.error import HttpApiPayloadTooLarge, HttpApiSchemaError
 from pyfect.http_api.group import AnyGroup, GroupService, HttpApiGroup
@@ -113,27 +113,27 @@ def _openapi_document(api: AnyApi) -> HttpServerResponse:
 
 @overload
 def group[G: HttpApiGroup[Any, Any]](
-    api: HttpApi[Any],
+    api: ApiWith[G],
     group: type[G],
     build: Callable[[GroupHandlers[G]], GroupHandlers[G]],
     /,
 ) -> Layer[G]: ...
 @overload
 def group[G: HttpApiGroup[Any, Any], R](
-    api: HttpApi[Any],
+    api: ApiWith[G],
     group: type[G],
     build: Callable[[GroupHandlers[G]], Handlers[Any, Any, R]],
     /,
 ) -> Layer[G, Never, R]: ...
 @overload
-def group[G: HttpApiGroup[Any, Any], R, EX, RX](
-    api: HttpApi[Any],
+def group[G: HttpApiGroup[Any, Any], EX, RR = Never](
+    api: ApiWith[G],
     group: type[G],
-    build: Callable[[GroupHandlers[G]], Effect[Handlers[Any, Any, R], EX, RX]],
+    build: Callable[[GroupHandlers[G]], Effect[Handlers[Any, Any, RR], EX, RR]],
     /,
-) -> Layer[G, EX, R | RX]: ...
+) -> Layer[G, EX, RR]: ...
 def group(
-    api: HttpApi[Any],
+    given: ApiWith[Any],
     group: AnyGroup,
     build: Callable[[GroupHandlers[Any]], Any],
     /,
@@ -141,8 +141,10 @@ def group(
     """The layer of ``group``'s handlers in ``api``: ``build`` gets the
     empty handlers and returns them with one for each endpoint (or an
     effect making them; it runs when the layer is built). A group with an
-    endpoint left unhandled, or not in ``api``, is a defect of the layer.
-    The handlers run with the services of the layer's context."""
+    endpoint left unhandled is a defect of the layer (a group not in
+    ``api`` is a type error, and a ``ValueError``). The handlers run with
+    the services of the layer's context."""
+    api = api_of(given)
     declared = api.groups.get(group.identifier)
     if declared is None:
         raise ValueError(
@@ -173,9 +175,30 @@ def _group_context(
     entries: Mapping[str, HandlerEntry] = handlers.entries if isinstance(handlers, Handlers) else {}
     missing = [identifier for identifier in group.endpoints if identifier not in entries]
     if missing:
-        return die(RuntimeError(f"Endpoint not handled: {', '.join(missing)}"))
+        return die(RuntimeError(_unhandled_message(group, missing)))
     routes = tuple(handler_to_route(api, group, entry, services) for entry in entries.values())
     return succeed(Context({group.origin: GroupService(routes, entries)}))
+
+
+def _unhandled_message(group: AnyGroup, missing: list[str]) -> str:
+    """Names each endpoint left without a handler, with the attribute that
+    declares it (Effect rejects such a group at compile time; pyright
+    cannot name the endpoints not yet handled)."""
+    attributes: dict[str, str] = {}
+    for klass in reversed(group.origin.__mro__):
+        for name, value in vars(klass).items():
+            if isinstance(value, HttpApiEndpoint):
+                attributes[cast("AnyEndpoint", value).identifier] = name
+    named = [
+        f'"{identifier}"'
+        + (
+            f" ({group.origin.__name__}.{attributes[identifier]})"
+            if identifier in attributes
+            else ""
+        )
+        for identifier in missing
+    ]
+    return f'HttpApiGroup "{group.identifier}" has no handler for {", ".join(named)}'
 
 
 type _Handler[X, S, E, R] = Callable[[X], Effect[S | HttpServerResponse, E | PayloadErrors, R]]

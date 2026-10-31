@@ -73,7 +73,7 @@ type MiddlewareFn[P, E, R] = Callable[
 middleware provides) and returns the effect to run instead."""
 
 
-class RpcMiddleware(Tag[MiddlewareFn[P_co, E_co, R_co]], Generic[P_co, E_co, R_co]):
+class RpcMiddleware(Tag[MiddlewareFn[P_co, E_co, R_co]], Generic[P_co, E_co, R_co], base=True):
     """A middleware tag providing ``P`` to the handlers, failing with ``E``
     (encoded by ``error``) and needing ``R``. The class keyword
     ``required_for_client`` makes a client of its RPCs run its client
@@ -145,14 +145,14 @@ def layer_client[M: RpcMiddleware[Any, Any, Any], E, R](
     return layer_client_effect(middleware, succeed(service))
 
 
-def layer_client_effect[M: RpcMiddleware[Any, Any, Any], E, R, EX, RX](
-    middleware: type[M], made: Effect[ClientMiddlewareFn[E, R], EX, RX]
-) -> Layer[ForClient[M], EX, R | RX]:
+def layer_client_effect[M: RpcMiddleware[Any, Any, Any], E, EX, RR = Never](
+    middleware: type[M], made: Effect[ClientMiddlewareFn[E, RR], EX, RR]
+) -> Layer[ForClient[M], EX, RR]:
     """``layer_client`` with the client middleware made by an effect; it
     runs with the services of the layer's context."""
     require_effect(made, "made")
 
-    def build(fn: ClientMiddlewareFn[E, R]) -> Effect[Context[Any], Never, Any]:
+    def build(fn: ClientMiddlewareFn[E, RR]) -> Effect[Context[Any], Never, Any]:
         def with_services(services: Context[Any]) -> Context[Any]:
             kept = Context({t: s for t, s in services.map_unsafe.items() if t is not Scope})
 

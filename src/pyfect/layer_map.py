@@ -136,7 +136,7 @@ class LayerMap[K: Hashable, I, E = Never]:
         return f"LayerMap({self.rc_map!r})"
 
 
-class LayerMapService[K: Hashable, I, E = Never](Tag[LayerMap[K, I, E]]):
+class LayerMapService[K: Hashable, I, E = Never](Tag[LayerMap[K, I, E]], base=True):
     """A tag for a ``LayerMap`` from ``K`` to the services ``I``::
 
     class Tenants(LayerMapService[str, Database]): ...

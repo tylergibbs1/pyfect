@@ -515,7 +515,7 @@ def schema_json[T, RD](
     then = decode_unknown_effect(schema, **options)
 
     def decode(persisted: Persisted, field: str) -> Effect[T, SchemaError, RD]:
-        fields: Any = cast("Any", TypedDict)("Fields", {field: str})
+        fields: Any = cast("Any", TypedDict)("Fields", {field: object})
         struct: Any = Struct(fields, **{field: from_json})
         decoded = decode_unknown_effect(struct, **options)(persisted)
         if reviver is None:

@@ -8,10 +8,11 @@ request, the result, or fail with its own error ``E`` while needing ``R``::
 
     AuthLive = layer.succeed(Auth, map_request(add_token))
 
-Attach it to an operation with ``op.middleware(Auth)`` or to every
-operation of a group with ``class Api(GraphQLGroup[Auth]): ...``. Group
-middleware runs outside operation middleware; within a level, in attach
-order.
+Attach it to an operation with ``op.middleware(Auth)`` (and declare it on
+the group, ``class Api(GraphQLGroup[Never, Auth])``, so ``make`` requires
+it) or to every operation of a group with ``class Api(GraphQLGroup[Auth]):
+...``. Group middleware runs outside operation middleware; within a level,
+in attach order.
 """
 
 from __future__ import annotations
@@ -64,7 +65,7 @@ class Implementation(Generic[E_co, R_co]):
     ]
 
 
-class GraphQLMiddleware(Tag[Implementation[E_co, R_co]], Generic[E_co, R_co]):
+class GraphQLMiddleware(Tag[Implementation[E_co, R_co]], Generic[E_co, R_co], base=True):
     """A middleware tag failing with ``E`` and needing ``R``. Subclass it
     once per middleware."""
 

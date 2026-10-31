@@ -8,7 +8,9 @@ effect's third type parameter lists the tags it needs, and it can't run until a 
 provides them.
 
 A tag's identity is separate from its shape, so two tags (`Primary`, `Replica`) can share one
-interface. `fx.Reference` is a tag with a default value, which needs no layer.
+interface. `fx.Reference` is a tag with a default value, which needs no layer. A tag can't be
+subclassed (a subclass would type-check as provided by its parent): declare each tag from
+`fx.Tag` or `fx.Reference`.
 
 <include meta='title="tags.py"'>../../snippets/services/tags.py</include>
 

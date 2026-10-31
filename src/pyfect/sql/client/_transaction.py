@@ -45,7 +45,7 @@ class TransactionLevel:
     depth: int
 
 
-class TransactionConnection(Tag[TransactionLevel]):
+class TransactionConnection(Tag[TransactionLevel], base=True):
     """The open transaction of one client. Each client has its own subclass
     (``transaction_connection``), so transactions of different clients
     don't mix."""

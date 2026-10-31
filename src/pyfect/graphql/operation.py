@@ -246,18 +246,18 @@ class Operation(OperationInfo, Generic[V, A_co, ME_co, MR_co]):
     ``Method``; on a group class, it carries the group's middleware."""
 
     @overload
-    def __get__(self, instance: None, owner: type[GraphQLGroup[Never]], /) -> Self: ...
+    def __get__(self, instance: None, owner: type[GraphQLGroup[Never, object]], /) -> Self: ...
     @overload
     def __get__[GE, GR](
-        self, instance: None, owner: type[GraphQLGroup[GraphQLMiddleware[GE, GR]]], /
+        self, instance: None, owner: type[GraphQLGroup[GraphQLMiddleware[GE, GR], object]], /
     ) -> Operation[V, A_co, ME_co | GE, MR_co | GR]: ...
     @overload
     def __get__(
-        self, instance: GraphQLGroup[Never], owner: type[object], /
+        self, instance: GraphQLGroup[Never, object], owner: type[object], /
     ) -> Method[V, A_co, ME_co, MR_co]: ...
     @overload
     def __get__[GE, GR](
-        self, instance: GraphQLGroup[GraphQLMiddleware[GE, GR]], owner: type[object], /
+        self, instance: GraphQLGroup[GraphQLMiddleware[GE, GR], object], owner: type[object], /
     ) -> Method[V, A_co, ME_co | GE, MR_co | GR]: ...
     def __get__(self, instance: object, owner: type[object], /) -> Any:
         return self._for_owner(owner) if instance is None else self._method(instance)
@@ -276,18 +276,18 @@ class Subscription(OperationInfo, Generic[V, A_co, ME_co, MR_co]):
     ``SubscriptionMethod``."""
 
     @overload
-    def __get__(self, instance: None, owner: type[GraphQLGroup[Never]], /) -> Self: ...
+    def __get__(self, instance: None, owner: type[GraphQLGroup[Never, object]], /) -> Self: ...
     @overload
     def __get__[GE, GR](
-        self, instance: None, owner: type[GraphQLGroup[GraphQLMiddleware[GE, GR]]], /
+        self, instance: None, owner: type[GraphQLGroup[GraphQLMiddleware[GE, GR], object]], /
     ) -> Subscription[V, A_co, ME_co | GE, MR_co | GR]: ...
     @overload
     def __get__(
-        self, instance: GraphQLGroup[Never], owner: type[object], /
+        self, instance: GraphQLGroup[Never, object], owner: type[object], /
     ) -> SubscriptionMethod[V, A_co, ME_co, MR_co]: ...
     @overload
     def __get__[GE, GR](
-        self, instance: GraphQLGroup[GraphQLMiddleware[GE, GR]], owner: type[object], /
+        self, instance: GraphQLGroup[GraphQLMiddleware[GE, GR], object], owner: type[object], /
     ) -> SubscriptionMethod[V, A_co, ME_co | GE, MR_co | GR]: ...
     def __get__(self, instance: object, owner: type[object], /) -> Any:
         return self._for_owner(owner) if instance is None else self._method(instance)

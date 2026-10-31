@@ -168,7 +168,7 @@ def _signals(config: Configuration) -> Layer[OtelResource]:
     )
     merged: Layer[Never, Never, OtelResource] = _layer.empty
     for signal in signals:
-        merged = cast("Layer[Never, Never, OtelResource]", _layer.merge(merged, signal))
+        merged = _layer.merge(merged, signal)
     return merged.pipe(_layer.provide_merge(resource_layer))
 
 

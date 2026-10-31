@@ -1,6 +1,8 @@
 """GraphQLGroup classes: which operations a group (and a subclass) holds."""
 
-from typing import TypedDict
+from typing import Never, TypedDict
+
+import pytest
 
 from pyfect import schema as S
 from pyfect.graphql import GraphQLGroup, GraphQLMiddleware, client, query, subscription
@@ -22,12 +24,12 @@ IssueUpdated = subscription(
 )
 
 
-class IssuesGroup(GraphQLGroup):
+class Count(GraphQLMiddleware): ...
+
+
+class IssuesGroup(GraphQLGroup[Never, Count]):
     repo_issues = RepoIssues
     issue_updated = IssueUpdated
-
-
-class Count(GraphQLMiddleware): ...
 
 
 def test_a_subclass_overriding_an_operation_replaces_it():
@@ -46,14 +48,47 @@ def test_a_subclass_keeps_the_operations_it_does_not_override():
     assert client.make_test(Counted).repo_issues.operation.name == "RepoIssues"
 
 
-def test_two_attributes_with_one_operation_name_are_rejected():
-    class Twice(GraphQLGroup):
-        first = IssueUpdated
-        second = IssueUpdated.middleware(Count)
+def test_two_attributes_with_one_operation_name_are_rejected_when_the_class_is_made():
+    with pytest.raises(ValueError, match="IssueUpdated"):
 
-    try:
-        client.make_test(Twice)
-    except ValueError as error:
-        assert "IssueUpdated" in str(error)
-    else:
-        raise AssertionError("expected a ValueError")
+        class Twice(GraphQLGroup[Never, Count]):  # pyright: ignore[reportUnusedClass]
+            first = IssueUpdated
+            second = IssueUpdated.middleware(Count)
+
+
+class Auth(GraphQLMiddleware[Never, Never]): ...
+
+
+class Authed(GraphQLGroup[Auth]):
+    viewer = RepoIssues
+
+
+def test_middleware_an_operation_runs_must_be_declared_for_make_to_require_it():
+    # QA types 4: make() read the operation's middleware from the context
+    # while its type left it out of R.
+    with pytest.raises(TypeError, match=r"Undeclared's operations run middleware .*: Auth"):
+
+        class Undeclared(GraphQLGroup):  # pyright: ignore[reportUnusedClass]
+            viewer = RepoIssues.middleware(Auth)
+
+    with pytest.raises(TypeError, match="does not declare: Auth"):
+
+        class Taken(GraphQLGroup):  # pyright: ignore[reportUnusedClass]
+            viewer = Authed.viewer
+
+    class Declared(GraphQLGroup[Never, Auth]):
+        viewer = RepoIssues.middleware(Auth)
+
+    class Merged(GraphQLGroup[Never, Auth]):
+        viewer = Authed.viewer
+
+    assert client.make_test(Declared).viewer.operation.middlewares == (Auth,)
+    assert client.make_test(Merged).viewer.operation.middlewares == (Auth,)
+
+
+def test_a_subclass_of_a_group_keeps_its_group_middleware():
+    class More(Authed):
+        other = IssueUpdated
+
+    # Read on the class, an operation carries the group's middleware.
+    assert More.other.middlewares == (Auth,)

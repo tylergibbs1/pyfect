@@ -43,7 +43,7 @@ class GraphQLError(TypedDict, extra_items=S.JsonValue):
 
     message: str
     locations: NotRequired[Sequence[Location]]
-    path: NotRequired[Sequence[str | int]]
+    path: NotRequired[Sequence[str | float]]
     extensions: NotRequired[Mapping[str, S.JsonValue]]
 
 

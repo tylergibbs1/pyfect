@@ -10,7 +10,8 @@ returns typed data, an encoder back to the wire form, a JSON Schema and Hypothes
 ## Decode and encode a payload
 
 `S.Struct(TypedDict)` takes its fields from the TypedDict's annotations. Keyword arguments give
-a field a stricter schema, such as a checked `S.Int`.
+a field a stricter schema, such as a checked `S.Int`. That schema must decode to the key's type:
+`quantity=S.String` for `quantity: int` is a `TypeError` when the struct is made.
 
 <CodeOutput>
 

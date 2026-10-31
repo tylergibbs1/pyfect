@@ -56,11 +56,11 @@ from pyfect.schedule._model import Decision, Metadata, Stop
 from pyfect.stream import Stream
 
 
-class GroupClass[G, T](Protocol):
-    """A ``GraphQLGroup`` subclass: its instances are clients ``G`` and its
-    middleware tags ``T``."""
+class GroupClass[G, T, OT](Protocol):
+    """A ``GraphQLGroup`` subclass: its instances are clients ``G``, its
+    middleware tags ``T`` (every operation) and ``OT`` (some operations)."""
 
-    def __graphql_group__(self) -> GroupTypes[G, T]: ...
+    def __graphql_group__(self) -> GroupTypes[G, T, OT]: ...
 
 
 def _retry_delay(metadata: Metadata[Seconds, GraphQLClientError]) -> Effect[Seconds]:
@@ -205,15 +205,15 @@ def _make_method(chain: _Chain, retry: Schedule[Any, object, Any, Any]) -> objec
     return Method[Any, Any, Any, Any](operation, call, raw)
 
 
-def make[G, T](
-    group: GroupClass[G, T],
+def make[G, T, OT](
+    group: GroupClass[G, T, OT],
     *,
     subscription_retry: Schedule[object, GraphQLClientError, Any, Any] | None = None,
-) -> Effect[G, Never, GraphQLProtocol | T]:
+) -> Effect[G, Never, GraphQLProtocol | T | OT]:
     """A client of ``group``'s operations, sending through the
     ``GraphQLProtocol`` and running the middleware services the context
-    holds."""
-    cls = cast("type[GraphQLGroup[Any]]", group)
+    holds (the group's and its operations' own)."""
+    cls = cast("type[GraphQLGroup[Any, Any]]", group)
     retry = retryable_only(
         default_subscription_retry if subscription_retry is None else subscription_retry
     )
@@ -375,12 +375,12 @@ def _test_method(operation: AnyOperation, handler: TestHandler | None) -> object
     return Method[Any, Any, Any, Any](operation, method)
 
 
-def make_test[G, T](group: GroupClass[G, T], /, **handlers: TestHandler) -> G:
+def make_test[G](group: GroupClass[G, Any, Any], /, **handlers: TestHandler) -> G:
     """A client of ``group`` whose methods call ``handlers`` (keyed by the
     group's attribute names) instead of a transport; an operation without
     a handler dies with an ``UnimplementedError``. ``partial=True`` gives
     the handler's value with no errors."""
-    cls = cast("type[GraphQLGroup[Any]]", group)
+    cls = cast("type[GraphQLGroup[Any, Any]]", group)
     declared = {name: _raw_attribute(cls, name) for name in handlers}
     unknown = [
         name for name, op in declared.items() if not isinstance(op, Operation | Subscription)
@@ -401,8 +401,8 @@ def _raw_attribute(cls: type, name: str) -> object:
     return None
 
 
-def layer_test[G, T, I](
-    tag: TagLike[G, I], group: GroupClass[G, T], /, **handlers: TestHandler
+def layer_test[G, I](
+    tag: TagLike[G, I], group: GroupClass[G, Any, Any], /, **handlers: TestHandler
 ) -> Layer[I]:
     """A layer providing ``make_test(group, **handlers)`` as ``tag``'s
     service."""

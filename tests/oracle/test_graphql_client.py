@@ -3,7 +3,9 @@ GraphQLClient.makeTest.test.ts and GraphQLClient.subscriptions.test.ts. Each
 test's docstring is the Effect test title, prefixed by its describe blocks.
 
 Groups are classes: ``ViewerGroup.middleware(Auth)`` is a group class
-declared ``GraphQLGroup[Auth]``; ``make_test`` handlers are keyed by the
+declared ``GraphQLGroup[Auth]``, and middleware of single operations is
+declared as its second type argument (``GraphQLGroup[Never, Auth]``) so that
+``make`` requires it, as Effect's ``make`` does; ``make_test`` handlers are keyed by the
 group's attribute names. The makeTest check of an operation named after an
 ``Object.prototype`` method has no Python counterpart (attribute names are
 plain identifiers) and is left out of that test.
@@ -139,7 +141,7 @@ def test_group_middleware_runs_outside_operation_middleware():
 
         return map_request(step)
 
-    class Group(GraphQLGroup[GroupA | GroupB]):
+    class Group(GraphQLGroup[GroupA | GroupB, OpA | OpB]):
         viewer = Viewer.middleware(OpA).middleware(OpB)
 
     protocol, _ = execute_layer(VIEWER_DATA)

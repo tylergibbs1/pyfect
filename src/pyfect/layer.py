@@ -26,7 +26,7 @@ Layer methods add to a layer (``build``, ``tap``, ``catch_all``, ...);
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from typing import Any, Literal, Never, overload
+from typing import Any, Literal, Never, Protocol, cast, overload
 
 from pyfect._concurrency import for_each
 from pyfect._context_effects import _ProvideContext, provide_context
@@ -57,7 +57,7 @@ from pyfect._layer_core import (
 from pyfect._layer_tracing import parent_span, span
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
-from pyfect.context import Context, Tag, TagLike, tag_class
+from pyfect.context import Context, Tag, TagLike, _Holding, tag_class
 from pyfect.effect import sync as sync_effect
 from pyfect.scope import CloseableScope, Scope
 
@@ -221,6 +221,43 @@ class _Unimplemented(Effect[Never]):
 # --- combining ------------------------------------------------------------------
 
 
+class _Builds[O, E, R](Protocol):
+    """A layer building ``O``, matched covariantly: ``_Builds[Never, ...]``
+    is a layer that builds nothing, which ``Layer[Never]`` cannot say (every
+    layer is one, its services being contravariant). ``merge`` takes those
+    first, as two separately solved ``Never`` services join to ``Unknown``
+    (``research/typing/workflow_2_exact_schemas.py``). Keep ``O`` a
+    parameter: pyright caches a failed match of a non-generic protocol
+    against ``Layer`` and then rejects ``Layer[Never]`` too."""
+
+    def build_with_scope(self, scope: CloseableScope, /) -> Effect[_Holding[O], E, R]: ...
+
+
+@overload
+def merge[EE = Never, RR = Never](
+    l1: _Builds[Never, EE, RR], l2: _Builds[Never, EE, RR], /
+) -> Layer[Never, EE, RR]: ...
+@overload
+def merge[EE = Never, RR = Never](
+    l1: _Builds[Never, EE, RR], l2: _Builds[Never, EE, RR], l3: _Builds[Never, EE, RR], /
+) -> Layer[Never, EE, RR]: ...
+@overload
+def merge[EE = Never, RR = Never](
+    l1: _Builds[Never, EE, RR],
+    l2: _Builds[Never, EE, RR],
+    l3: _Builds[Never, EE, RR],
+    l4: _Builds[Never, EE, RR],
+    /,
+) -> Layer[Never, EE, RR]: ...
+@overload
+def merge[EE = Never, RR = Never](
+    l1: _Builds[Never, EE, RR],
+    l2: _Builds[Never, EE, RR],
+    l3: _Builds[Never, EE, RR],
+    l4: _Builds[Never, EE, RR],
+    l5: _Builds[Never, EE, RR],
+    /,
+) -> Layer[Never, EE, RR]: ...
 @overload
 def merge[O1, O2, EE = Never, RR = Never](
     l1: Layer[O1, EE, RR], l2: Layer[O2, EE, RR], /
@@ -242,15 +279,16 @@ def merge[O1, O2, O3, O4, O5, EE = Never, RR = Never](
     l5: Layer[O5, EE, RR],
     /,
 ) -> Layer[O1 | O2 | O3 | O4 | O5, EE, RR]: ...
-def merge(*layers: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
+def merge(*layers: _Builds[Any, Any, Any] | Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
     """Build all layers, concurrently, and provide everything they build.
     Their resources are released concurrently too."""
     require_layers(layers, "layers")
+    built_layers = cast("tuple[Layer[Any, Any, Any], ...]", layers)
 
     def build(memo: MemoMap, scope: CloseableScope) -> Effect[Context, Any, Any]:
         parallel = scope._fork_now("parallel")
         built = for_each(
-            layers,
+            built_layers,
             lambda layer: layer._build(memo, parallel._fork_now()),
             concurrency="unbounded",
         )

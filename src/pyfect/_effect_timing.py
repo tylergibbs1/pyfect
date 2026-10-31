@@ -70,13 +70,7 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         /,
     ) -> Effect[A, E | EE, R | RR]: ...
     @overload
-    def retry[E2, EE = Never, RR = Never](
-        self,
-        /,
-        *,
-        until: Callable[[E_co], TypeIs[E2]],
-        while_: Callable[[E_co], bool | Effect[bool, EE, RR]] | None = None,
-    ) -> Effect[A_co, E2 | EE, R_co | RR]: ...
+    def retry[E2](self, /, *, until: Callable[[E_co], TypeIs[E2]]) -> Effect[A_co, E2, R_co]: ...
     @overload
     def retry[EE = Never, RR = Never](
         self,
@@ -109,7 +103,8 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         ``times`` times, only while ``while_(error)`` holds, until
         ``until(error)`` holds, on ``schedule``'s delays. Predicates may
         return a bool or an effect of one; with a ``TypeIs`` predicate as
-        ``until`` (and no ``schedule`` or ``times``), the error narrows."""
+        ``until`` and no other keyword, the error narrows (``while_`` can
+        stop on any error, so with it nothing narrows)."""
         from pyfect.schedule._drive import resolve_policy, retry
 
         policy = resolve_policy(policy, schedule, times, while_, until)
@@ -137,13 +132,7 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         /,
     ) -> Effect[B, E | EE, R | RR]: ...
     @overload
-    def repeat[B, EE = Never, RR = Never](
-        self,
-        /,
-        *,
-        until: Callable[[A_co], TypeIs[B]],
-        while_: Callable[[A_co], bool | Effect[bool, EE, RR]] | None = None,
-    ) -> Effect[B, E_co | EE, R_co | RR]: ...
+    def repeat[B](self, /, *, until: Callable[[A_co], TypeIs[B]]) -> Effect[B, E_co, R_co]: ...
     @overload
     def repeat[EE = Never, RR = Never](
         self,
@@ -172,7 +161,7 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         ``times`` times, only while ``while_(value)`` holds, until
         ``until(value)`` holds, on ``schedule``'s delays. That form
         succeeds with the last value, narrowed by a ``TypeIs`` predicate
-        as ``until`` (with no ``schedule`` or ``times``). Predicates may
+        as ``until`` when it is the only keyword. Predicates may
         return a bool or an effect of one."""
         from pyfect.schedule._drive import repeat, resolve_policy
 

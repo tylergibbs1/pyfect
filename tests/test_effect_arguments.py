@@ -21,7 +21,7 @@ import re
 import types
 import typing
 from collections.abc import Callable, Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -61,7 +61,7 @@ def test_provide_names_both_kinds_of_source_it_accepts():
 
 def test_a_function_passed_as_a_layer_suggests_layer_suspend():
     with pytest.raises(TypeError, match=r"layers\[1\] must be a Layer.*fx\.layer\.suspend\(f\)"):
-        fx.layer.merge(fx.layer.empty, lambda: fx.layer.empty)  # pyright: ignore[reportArgumentType]
+        fx.layer.merge(fx.layer.empty, cast("Any", lambda: fx.layer.empty))
 
 
 def test_a_provided_layer_rejects_a_non_effect_target_when_piped():

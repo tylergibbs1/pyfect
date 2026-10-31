@@ -26,38 +26,81 @@ from pyfect.graphql.middleware import AnyMiddleware, GraphQLMiddleware
 from pyfect.graphql.operation import AnyOperation, Operation, OperationInfo, Subscription
 
 GM_co = TypeVar("GM_co", covariant=True, default=Never)
+OM_co = TypeVar("OM_co", covariant=True, default=Never)
 G_co = TypeVar("G_co", covariant=True)
+GT_co = TypeVar("GT_co", covariant=True)
+OT_co = TypeVar("OT_co", covariant=True)
 
 
-class GroupTypes(Generic[G_co, GM_co]):
-    """The client type and middleware tags of a group, for ``make``."""
+class GroupTypes(Generic[G_co, GT_co, OT_co]):
+    """The client type and the middleware tags of a group (run by every
+    operation, by some), for ``make``. Kept apart: a union of two class
+    TypeVars that are both ``Never`` is ``Unknown``."""
 
 
-class GraphQLGroup(Generic[GM_co]):
+class GraphQLGroup(Generic[GM_co, OM_co]):
     """A group of operations; subclass it with the operations as class
     attributes. Clients are made by ``client.make`` and
-    ``client.make_test``, not by calling the class."""
+    ``client.make_test``, not by calling the class.
+
+    ``GM`` is the middleware every operation runs; ``OM`` the middleware
+    some operations run (``op.middleware(M)``, or an operation taken from a
+    group with middleware), which ``make`` needs too. Pyright cannot gather
+    it from the class attributes, so it is declared, and a group whose
+    operations run middleware it does not declare is a ``TypeError``."""
 
     __slots__ = ("_methods",)
 
     def __init__(self, methods: Mapping[AnyOperation, object]) -> None:
         self._methods = dict(methods)
 
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        declared = {*group_middlewares(cls), *operation_middlewares(cls)}
+        undeclared: dict[AnyMiddleware, None] = {}
+        for operation in operations_of(cls):
+            for middleware in operation.middlewares:
+                if middleware not in declared:
+                    undeclared[middleware] = None
+        if undeclared:
+            names = " | ".join(m.__qualname__ for m in undeclared)
+            raise TypeError(
+                f"{cls.__qualname__}'s operations run middleware it does not declare: {names}. "
+                f"Declare it as the second type argument (class {cls.__qualname__}"
+                f"(GraphQLGroup[..., {names}])) so that make() requires it"
+            )
+
     @classmethod
-    def __graphql_group__(cls) -> GroupTypes[Self, GM_co]:
+    def __graphql_group__(cls) -> GroupTypes[Self, GM_co, OM_co]:
         return GroupTypes()
 
 
-def group_middlewares(owner: type) -> tuple[AnyMiddleware, ...]:
-    """The middleware classes of ``class G(GraphQLGroup[M])``, outermost
-    first; none for any other class."""
-    for base in getattr(owner, "__orig_bases__", ()):
-        if get_origin(base) is GraphQLGroup:
-            return _middleware_classes(get_args(base)[0])
+def _group_arguments(owner: type) -> tuple[object, ...]:
+    """The type arguments of the ``GraphQLGroup[...]`` base nearest
+    ``owner`` in its MRO; none for a bare ``GraphQLGroup``."""
+    for cls in owner.__mro__:
+        for base in getattr(cls, "__orig_bases__", ()):
+            if get_origin(base) is GraphQLGroup:
+                return get_args(base)
     return ()
 
 
+def group_middlewares(owner: type) -> tuple[AnyMiddleware, ...]:
+    """The middleware classes of ``class G(GraphQLGroup[M])`` (or of a
+    subclass of it), outermost first; none for any other class."""
+    arguments = _group_arguments(owner)
+    return _middleware_classes(arguments[0]) if arguments else ()
+
+
+def operation_middlewares(owner: type) -> tuple[AnyMiddleware, ...]:
+    """The middleware classes declared as ``GraphQLGroup[M, OM]``'s ``OM``."""
+    arguments = _group_arguments(owner)
+    return _middleware_classes(arguments[1]) if len(arguments) > 1 else ()
+
+
 def _middleware_classes(argument: object) -> tuple[AnyMiddleware, ...]:
+    if argument is Never:
+        return ()
     if get_origin(argument) in (Union, types.UnionType):
         return tuple(m for arg in get_args(argument) for m in _middleware_classes(arg))
     if isinstance(argument, type) and issubclass(argument, GraphQLMiddleware):
@@ -65,7 +108,7 @@ def _middleware_classes(argument: object) -> tuple[AnyMiddleware, ...]:
     raise TypeError(f"GraphQLGroup[...] takes middleware classes, got {argument!r}")
 
 
-def operations_of(group: type[GraphQLGroup[Any]]) -> list[AnyOperation]:
+def operations_of(group: type[GraphQLGroup[Any, Any]]) -> list[AnyOperation]:
     """The operations of ``group``'s attributes, each once; an attribute a
     subclass overrides holds the subclass's operation. Raises
     ``ValueError`` for two operations with one name."""
@@ -86,7 +129,14 @@ def operations_of(group: type[GraphQLGroup[Any]]) -> list[AnyOperation]:
 
 def method_of(instance: object, operation: AnyOperation) -> object:
     """The method of ``operation`` on a client."""
-    return cast("GraphQLGroup[Any]", instance)._methods[operation]  # pyright: ignore[reportPrivateUsage]
+    return cast("GraphQLGroup[Any, Any]", instance)._methods[operation]  # pyright: ignore[reportPrivateUsage]
 
 
-__all__ = ["GraphQLGroup", "GroupTypes", "group_middlewares", "method_of", "operations_of"]
+__all__ = [
+    "GraphQLGroup",
+    "GroupTypes",
+    "group_middlewares",
+    "method_of",
+    "operation_middlewares",
+    "operations_of",
+]

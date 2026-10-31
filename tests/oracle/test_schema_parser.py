@@ -769,13 +769,17 @@ def test_reads_property_and_index_values_once():
     assert rejected.reads == 0
 
 
+class _Nested(TypedDict):
+    value: object
+
+
 def test_rejects_an_invalid_root_without_compiling_deeply_nested_structural_parsers():
     """decodeUnknownExit / rejects an invalid root without compiling deeply nested structural parsers"""  # noqa: E501
     array: S.Bottom[Any, Any] = S.String
     struct: S.Bottom[Any, Any] = S.String
     for _ in range(5_000):
         array = S.Array(array)
-        struct = S.Struct(_Value, value=struct)
+        struct = S.Struct(_Nested, value=struct)
     assert isinstance(S.decode_unknown_exit(array)(None), Failure)
     assert isinstance(S.decode_unknown_exit(struct)(None), Failure)
 

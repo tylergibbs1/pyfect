@@ -49,6 +49,9 @@ idle timeout. Subscriptions are [streams](/docs/streams), retried on retryable e
 A subclass of `GraphQLMiddleware[E, R]` is a service tag. Declare a group as
 `GraphQLGroup[Auth]`, or attach one to an operation with `.middleware(Auth)`, and the
 client runs the middleware provided for it around each call, group middleware outermost.
+A group whose operations bring their own middleware names it as its second type argument,
+`GraphQLGroup[Never, Auth]`, so that `client.make` requires it; leaving it out is a
+`TypeError` when the class is made.
 `map_request(f)` rewrites the request, adding a token for example, and its failures `E`
 reach the caller; `Implementation(execute=..., subscribe=...)` wraps the whole call and
 sees the transport's status.

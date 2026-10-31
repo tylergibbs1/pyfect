@@ -741,5 +741,8 @@ def layer_no_rpc_server[E, R](
     """The RPC handlers of an unencrypted server, without the server."""
     require_layer(handlers, "handlers")
     del schema
-    rpc_handlers = cast("Layer[Any, E, Any]", layer_rpc_handlers)
+    rpc_handlers = cast(
+        "Layer[HandlersFor[EventLogRemoteRpcs] | EventLogAuthentication, E, Any]",
+        layer_rpc_handlers,
+    )
     return merge(rpc_handlers, handlers).pipe(layer_provide(layer_server))

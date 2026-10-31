@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Generic, Never, Self, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, Never, Protocol, Self, TypeVar, overload
 
 from pyfect.context import Context, Tag, TagLike
 from pyfect.http_api import schema as api_schema
@@ -29,6 +29,10 @@ class HttpApi(Generic[G_co]):
     identifier: str
     groups: Mapping[str, AnyGroup] = field(default_factory=dict[str, AnyGroup])
     annotations: Context[Any] = field(default_factory=Context.empty)
+
+    if TYPE_CHECKING:
+        # The groups seen contravariantly, for ``ApiWith``.
+        def _has_group(self, group: type[G_co], /) -> None: ...  # pyright: ignore[reportGeneralTypeIssues]
 
     @staticmethod
     def make(identifier: str) -> HttpApi[Never]:
@@ -81,6 +85,22 @@ class HttpApi(Generic[G_co]):
 
 
 type AnyApi = HttpApi[Any]
+
+
+class ApiWith[G](Protocol):
+    """An ``HttpApi`` that has the group ``G``. A parameter ``api:
+    HttpApi[G]`` beside ``group: type[G]`` would widen ``G`` to take any
+    group (``HttpApi`` is covariant); matched through ``_has_group``, the
+    api's groups bound ``G`` from above, so a group it lacks is an error."""
+
+    def _has_group(self, group: type[G], /) -> None: ...
+
+
+def api_of(api: ApiWith[Any]) -> AnyApi:
+    """The ``HttpApi`` behind an ``ApiWith`` (every one is an ``HttpApi``)."""
+    if not isinstance(api, HttpApi):
+        raise TypeError(f"api must be an HttpApi, got {type(api).__name__}")
+    return api
 
 
 # --- reflection ----------------------------------------------------------------------
@@ -216,6 +236,7 @@ def get_slot_parse_options(annotations: Context[Any]) -> SlotParseOptions:
 __all__ = [
     "AdditionalSchemas",
     "AnyApi",
+    "ApiWith",
     "ErrorParseOptions",
     "HeadersParseOptions",
     "HttpApi",
@@ -226,6 +247,7 @@ __all__ = [
     "ReflectedEndpoint",
     "SlotParseOptions",
     "SuccessParseOptions",
+    "api_of",
     "get_slot_parse_options",
     "reflect",
 ]

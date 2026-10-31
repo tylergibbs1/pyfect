@@ -23,7 +23,7 @@ class MiddlewareFnTag(Tag[MiddlewareFn], key="effect/http/HttpRouter/MiddlewareF
     """The function a ``Middleware`` layer wraps routes with."""
 
 
-class MiddlewareStack(Tag[list[MiddlewareFn]], key="effect/http/HttpRouter/Middleware"):
+class MiddlewareStack(Tag[list[MiddlewareFn]], key="effect/http/HttpRouter/Middleware", base=True):
     """The base of each middleware's own stack tag."""
 
 

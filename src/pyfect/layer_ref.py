@@ -107,7 +107,7 @@ class LayerRef[I, E = Never]:
         return f"LayerRef({self.rc_ref!r})"
 
 
-class LayerRefService[I, E = Never](Tag[LayerRef[I, E]]):
+class LayerRefService[I, E = Never](Tag[LayerRef[I, E]], base=True):
     """A tag for a ``LayerRef`` building the services ``I``::
 
     class Database(LayerRefService[Connection, DbError]): ...

@@ -26,7 +26,7 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.context import Context
 from pyfect.deferred import Deferred
-from pyfect.effect import context, provide_context, succeed
+from pyfect.effect import context, die, provide_context, succeed
 from pyfect.errors import Done
 from pyfect.layer import Layer
 from pyfect.layer import effect_context as layer_effect_context
@@ -163,22 +163,38 @@ class RpcGroup:
     @classmethod
     def to_layer[R](cls, handlers: Handlers[Self, R], /) -> Layer[HandlersFor[Self], Never, R]:
         """The layer of the group's handlers (Effect's ``toLayer``). Each
-        handler runs with the services of the layer's context."""
+        handler runs with the services of the layer's context. An RPC left
+        without a handler is a ``ValueError`` here (Effect rejects it at
+        compile time; pyright cannot name the RPCs not yet handled)."""
+        message = cls._missing_handlers(handlers)
+        if message is not None:
+            raise ValueError(message)
         return cls.to_layer_effect(succeed(handlers))
 
     @classmethod
-    def to_layer_effect[R, EX, RX](
-        cls, handlers: Effect[Handlers[Self, R], EX, RX], /
-    ) -> Layer[HandlersFor[Self], EX, R | RX]:
+    def _missing_handlers(cls, handlers: Handlers[Any, Any]) -> str | None:
+        missing = [
+            f"{tag} ({cls.__name__}.{_attribute_of(cls, rpc)})"
+            for tag, rpc in cls.rpcs.items()
+            if tag not in handlers.by_tag
+        ]
+        if not missing:
+            return None
+        return f"{cls.__name__} has no handler for {', '.join(missing)}"
+
+    @classmethod
+    def to_layer_effect[EX, RR = Never](
+        cls, handlers: Effect[Handlers[Self, RR], EX, RR], /
+    ) -> Layer[HandlersFor[Self], EX, RR]:
         """``to_layer`` with the handlers made by an effect."""
         require_effect(handlers, "handlers")
         return layer_effect_context(handlers.flat_map(cls._handler_context))
 
     @classmethod
     def _handler_context(cls, handlers: Handlers[Any, Any]) -> Effect[Context[Any]]:
-        missing = [tag for tag in cls.rpcs if tag not in handlers.by_tag]
-        if missing:
-            raise ValueError(f"{cls.__name__} has no handler for {', '.join(missing)}")
+        message = cls._missing_handlers(handlers)
+        if message is not None:
+            return die(ValueError(message))
 
         def entries(services: Context[Any]) -> Context[Any]:
             kept = Context({t: s for t, s in services.map_unsafe.items() if t is not Scope})
@@ -190,6 +206,15 @@ class RpcGroup:
             )
 
         return context().map(entries)
+
+
+def _attribute_of(group: type, rpc: AnyRpc) -> str:
+    """The attribute name ``rpc`` has on ``group`` (its tag if none)."""
+    for klass in group.__mro__:
+        for name, value in vars(klass).items():
+            if value is rpc:
+                return name
+    return rpc.tag
 
 
 class HandlerOf[T]:

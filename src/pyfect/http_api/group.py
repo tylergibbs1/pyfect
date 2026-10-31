@@ -44,7 +44,7 @@ class GroupService:
         self.handlers = handlers
 
 
-class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co]):
+class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co], base=True):
     """A group of endpoints wrapped by the middleware ``M`` (a middleware
     class, or a union of them). Leave out ``MT``: it repeats ``M`` so that
     the builder can read both the middleware and what it provides."""
@@ -66,8 +66,10 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co]):
         **kwargs: Any,
     ) -> None:
         if identifier is None:
-            # A derived group: the methods below set its endpoints.
-            super().__init_subclass__(key=cls.key, **kwargs)
+            # A derived group: the methods below set its endpoints. It is
+            # the same tag as the group it derives from (typed ``type[Self]``,
+            # looked up through ``origin``).
+            super().__init_subclass__(key=cls.key, _alias=True, **kwargs)
             return
         super().__init_subclass__(key=_KEY_PREFIX + identifier, **kwargs)
         cls.identifier = identifier

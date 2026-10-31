@@ -232,6 +232,30 @@ def check_catch_tag() -> None:
     assert_type(caught_all, fx.Effect[str | None, Never, Primary | Port])
 
 
+class HttpProblem(fx.TaggedError): ...
+
+
+class Missing(HttpProblem): ...
+
+
+class Denied(HttpProblem): ...
+
+
+def check_catch_tag_parent(only_http: fx.Effect[str, Missing | Denied]) -> None:
+    # A parent class removes its subclasses when they are all of E. Mixed with
+    # other errors, pyright keeps one subclass (QA types 7, PARITY "Still open"):
+    # name the subclasses to remove each.
+    assert_type(
+        only_http.pipe(fx.catch_tag(HttpProblem, lambda e: fx.succeed("x"))),
+        fx.Effect[str, Never, Never],
+    )
+    mixed: fx.Effect[str, Missing | Denied | Invalid] = fx.fail(Invalid("x"))
+    assert_type(
+        mixed.pipe(fx.catch_tag((Missing, Denied), lambda e: fx.succeed("x"))),
+        fx.Effect[str, Invalid, Never],
+    )
+
+
 # --- error combinators: the type-removing ones remove exactly what they catch -------
 
 
@@ -627,6 +651,24 @@ def check_provide() -> None:
     assert_type(lookup("k").pipe(fx.provide(merged)), fx.Effect[str, NotFound | Invalid, Never])
     local = lookup("k").pipe(fx.provide(merged, local=True))
     assert_type(local, fx.Effect[str, NotFound | Invalid, Never])
+
+
+def check_merge_of_layers_building_nothing() -> None:
+    # Layers that build nothing merge to Layer[Never], not Unknown (QA types 9),
+    # keeping their errors and requirements; one that builds something still wins.
+    startup = layer.effect_discard(fx.log_info("starting"))
+    failing = layer.effect_discard(fx.fail(Invalid("bad")))
+    needs_port = layer.effect_discard(Port())
+    assert_type(layer.merge(startup, startup), layer.Layer[Never, Never, Never])
+    assert_type(layer.merge(startup, failing, needs_port), layer.Layer[Never, Invalid, Port])
+    assert_type(
+        layer.merge(startup, startup, startup, startup, failing), layer.Layer[Never, Invalid, Never]
+    )
+    assert_type(layer.merge(startup, port_live), layer.Layer[Port, Never, Never])
+    assert_type(layer.merge(port_live, startup, startup), layer.Layer[Port, Never, Never])
+    assert_type(
+        fx.succeed(1).pipe(fx.provide(layer.merge(startup, startup))), fx.Effect[int, Never, Never]
+    )
 
 
 def check_layer_dependencies() -> None:
@@ -1136,6 +1178,18 @@ def check_schedule_refinements(
     )
     assert_type(
         eff.retry(until=lambda e: isinstance(e, NotFound)),
+        fx.Effect[int | str, NotFound | Invalid, Port],
+    )
+    # `while_` can stop on an error `until` never accepted (QA types 3): no narrowing,
+    # so recovering only the narrowed error leaves the rest in E.
+    retried = eff.retry(until=only_not_found, while_=lambda e: isinstance(e, Invalid))
+    assert_type(retried, fx.Effect[int | str, NotFound | Invalid, Port])
+    assert_type(
+        retried.pipe(fx.catch_tag(NotFound, lambda e: fx.succeed(0))),
+        fx.Effect[int | str, Invalid, Port],
+    )
+    assert_type(
+        eff.repeat(until=is_positive_int, while_=lambda v: False),
         fx.Effect[int | str, NotFound | Invalid, Port],
     )
 
@@ -5362,6 +5416,30 @@ def check_http_api(
     assert_type(
         api_client.make(api), fx.Effect[api_client.Client[ApiUsers | ApiAdmin], Never, HttpClient]
     )
+    # A group the api lacks is a type error for the builder and the client (QA types 5).
+    users_only = HttpApi.make("users").add(ApiUsers)
+    api_builder.group(users_only, ApiAdmin, lambda h: h)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    assert_type(api_builder.group(api, ApiAdmin, lambda h: h), fx.Layer[ApiAdmin])
+
+    # Handlers made by an effect that needs nothing need nothing (two solved
+    # `Never` requirements joined as `R | RX` come out Unknown).
+    def health(h: GroupHandlers[ApiUsers]) -> Handlers[Any, Any, Never]:
+        return h.handle(ApiUsers.health)(lambda _r: fx.succeed(None))
+
+    assert_type(
+        api_builder.group(api, ApiUsers, lambda h: fx.succeed(health(h))),
+        fx.Layer[ApiUsers, Never, Never],
+    )
+    assert_type(
+        api_builder.group(api, ApiUsers, lambda h: ApiDb().map(lambda _: health(h))),
+        fx.Layer[ApiUsers, Never, ApiDb],
+    )
+
+    def admin_client(http: fx.http.HttpClientService[Any, Any]) -> None:
+        api_client.group(users_only, ApiAdmin, http_client=http)  # pyright: ignore[reportArgumentType]
+        assert_type(api_client.group(api, ApiAdmin, http_client=http), fx.Effect[ApiAdmin])
+
+    del admin_client
 
 
 # --- rpc ---------------------------------------------------------------------------
@@ -5434,6 +5512,33 @@ def check_rpc(users: RpcUsers) -> None:
     )
     assert_type(
         RpcUsers.to_layer(handlers), fx.Layer[rpc.HandlersFor[RpcUsers], Never, RpcDb | RpcAuth]
+    )
+    assert_type(
+        RpcUsers.to_layer_effect(fx.succeed(handlers)),
+        fx.Layer[rpc.HandlersFor[RpcUsers], Never, RpcDb | RpcAuth],
+    )
+    assert_type(
+        RpcUsers.to_layer_effect(RpcCurrentUser().map(lambda _: handlers)),
+        fx.Layer[rpc.HandlersFor[RpcUsers], Never, RpcDb | RpcAuth | RpcCurrentUser],
+    )
+
+    def pass_through(
+        options: rpc.middleware.ClientMiddlewareOptions,
+    ) -> fx.Effect[rpc.middleware.SuccessValue, rpc.middleware.Unhandled]:
+        return options.next(options.request)
+
+    assert_type(
+        rpc.middleware.layer_client_effect(RpcAuth, fx.succeed(pass_through)),
+        fx.Layer[rpc.middleware.ForClient[RpcAuth], Never, Never],
+    )
+    assert_type(
+        rpc.middleware.layer_client_effect(RpcAuth, RpcDb().map(lambda _: pass_through)),
+        fx.Layer[rpc.middleware.ForClient[RpcAuth], Never, RpcDb],
+    )
+    pinged = RpcUsers.handlers().handle(RpcUsers.ping)(lambda _r: fx.succeed(None))
+    assert_type(
+        RpcUsers.to_layer_effect(fx.succeed(pinged)),
+        fx.Layer[rpc.HandlersFor[RpcUsers], Never, Never],
     )
     RpcUsers.handlers().handle(RpcUsers.get)(lambda _r: fx.succeed(1))  # pyright: ignore[reportCallIssue, reportArgumentType]
     assert_type(
@@ -6325,13 +6430,23 @@ def graphql_checks() -> None:
     class Authed(graphql.GraphQLGroup[GqlAuth]):
         viewer = viewer_op
 
-    class Merged(graphql.GraphQLGroup):
+    class Merged(graphql.GraphQLGroup[Never, GqlAuth]):
         viewer = Authed.viewer
+
+    # Middleware of single operations is declared as the second type argument
+    # (a TypeError otherwise), so make() requires it (QA types 4).
+    class OpOnly(graphql.GraphQLGroup[Never, GqlAuth]):
+        viewer = viewer_op.middleware(GqlAuth)
 
     assert_type(graphql.make(Plain), fx.Effect[Plain, Never, GqlProtocol])
     assert_type(graphql.make(Authed), fx.Effect[Authed, Never, GqlProtocol | GqlAuth])
+    assert_type(graphql.make(Merged), fx.Effect[Merged, Never, GqlProtocol | GqlAuth])
+    assert_type(graphql.make(OpOnly), fx.Effect[OpOnly, Never, GqlProtocol | GqlAuth])
+    only_protocol = graphql.make(OpOnly).pipe(fx.provide(layer.mock(GqlProtocol)))
+    assert_type(only_protocol, fx.Effect[OpOnly, Never, GqlAuth])
+    fx.run_sync(only_protocol)  # pyright: ignore[reportArgumentType]
 
-    def use(plain: Plain, authed: Authed, merged: Merged) -> None:
+    def use(plain: Plain, authed: Authed, merged: Merged, op_only: OpOnly) -> None:
         assert_type(plain.viewer(), fx.Effect[GqlViewer, GqlError])
         assert_type(
             plain.viewer(partial=True), fx.Effect[graphql.PartialResult[GqlViewer], GqlError]
@@ -6345,6 +6460,9 @@ def graphql_checks() -> None:
         )
         assert_type(
             merged.viewer(), fx.Effect[GqlViewer, GqlError | GqlTokenExpired, GqlCurrentUser]
+        )
+        assert_type(
+            op_only.viewer(), fx.Effect[GqlViewer, GqlError | GqlTokenExpired, GqlCurrentUser]
         )
 
         # Resolvers: the key type comes from ``variables`` (or, for

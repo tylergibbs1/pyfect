@@ -37,7 +37,15 @@ from pyfect.http_api import schema as api_schema
 from pyfect.http_api._client_method import EndpointClient, ResponseMode, SseOptions
 from pyfect.http_api._client_payload import payload_encoder, stream_payload_encoder
 from pyfect.http_api._client_response import ResponseDecoder, decoders, undeclared_status
-from pyfect.http_api.api import AnyApi, HttpApi, ReflectedEndpoint, get_slot_parse_options, reflect
+from pyfect.http_api.api import (
+    AnyApi,
+    ApiWith,
+    HttpApi,
+    ReflectedEndpoint,
+    api_of,
+    get_slot_parse_options,
+    reflect,
+)
 from pyfect.http_api.endpoint import AnyEndpoint, HttpApiEndpoint, payload_schemas
 from pyfect.http_api.group import AnyGroup, HttpApiGroup
 from pyfect.http_api.middleware import ClientMiddlewareOptions, client_tag
@@ -115,19 +123,21 @@ def make_with[G](
 
 
 def group[G: HttpApiGroup[Any, Any]](
-    api: HttpApi[Any],
+    api: ApiWith[G],
     group: type[G],
     *,
     http_client: HttpClientService[Any, Any],
     transform_response: TransformResponse | None = None,
     base_url: str | None = None,
 ) -> Effect[G]:
-    """The client of one group of ``api``."""
+    """The client of one group of ``api`` (a group it lacks is a type
+    error)."""
     declared = cast("AnyGroup", group)
+    the_api = api_of(api)
 
     def build(services: Context[Any]) -> G:
         calls = _reflect_calls(
-            api,
+            the_api,
             services,
             _Options(http_client, transform_response, base_url),
             predicate=lambda g, _e: g.identifier == declared.identifier,
@@ -135,7 +145,7 @@ def group[G: HttpApiGroup[Any, Any]](
         methods: dict[str, Any] = {
             reflected.endpoint.identifier: EndpointClient(call) for reflected, call in calls
         }
-        return cast("G", _group_client(api.groups[declared.identifier], methods))
+        return cast("G", _group_client(the_api.groups[declared.identifier], methods))
 
     return context().map(build)
 
