@@ -159,7 +159,7 @@ class RpcServer:
         fiber = Fiber.get_current()
         if fiber is None:
             raise RuntimeError("an RPC server runs on a fiber")
-        child = fiber._fork(eff.pipe(provide_context(ctx)), daemon=True)
+        child = fiber._fork(eff.pipe(provide_context(ctx)), daemon=True, start_immediately=True)
         child.run_in(self._track)
         return child
 

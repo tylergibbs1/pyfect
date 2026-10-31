@@ -1,10 +1,4 @@
-"""The service that routes messages to entities (Effect's ``Sharding``):
-it maps entity ids to shards, registers entities and singletons, makes
-entity clients and hands incoming messages to the local entities.
-
-``Entity.to_layer``, ``Singleton.make`` and the runner server reach it
-through the ``Sharding`` tag.
-"""
+"""The ``Sharding`` service interface and tag."""
 
 from __future__ import annotations
 
@@ -26,12 +20,19 @@ from pyfect.context import Tag
 
 if TYPE_CHECKING:
     from pyfect.cluster.entity import Entity, EntityHandlers, EntityOptions
+    from pyfect.cluster.sharding_registration_event import ShardingRegistrationEvent
+    from pyfect.stream import Stream
 
 
 class ShardingService(Protocol):
     """What ``Sharding`` provides. ``send`` delivers a message to a local
     entity, ``notify`` tells it a persisted message is waiting, and
     ``send_outgoing`` routes a message from a client."""
+
+    @property
+    def get_registration_events(self) -> Stream[ShardingRegistrationEvent]:
+        """The entities and singletons registered from now on."""
+        ...
 
     def get_shard_id(self, entity_id: EntityId, group: str, /) -> ShardId: ...
 

@@ -6813,6 +6813,66 @@ def cluster_entity_types() -> None:
     )
 
 
+def cluster_sharding_types() -> None:
+    from pyfect.cluster import (
+        entity_proxy,
+        entity_proxy_server,
+        sharding,
+        single_runner,
+        test_runner,
+    )
+    from pyfect.cluster.entity import Entity
+    from pyfect.cluster.message_storage import MemoryDriver, MessageStorage
+    from pyfect.cluster.runner_health import RunnerHealth
+    from pyfect.cluster.runner_storage import RunnerStorage
+    from pyfect.cluster.runners import Runners
+    from pyfect.cluster.sharding import Sharding, ShardingService
+    from pyfect.cluster.sharding_config import ShardingConfig
+    from pyfect.cluster.sharding_registration_event import ShardingRegistrationEvent
+    from pyfect.config import ConfigError
+    from pyfect.http_api.api import HttpApi
+    from pyfect.http_api.group import HttpApiGroup
+    from pyfect.rpc import RpcGroup
+    from pyfect.rpc.group import HandlersFor
+    from pyfect.sql.client import SqlClient
+    from pyfect.stream import Stream
+
+    assert_type(
+        sharding.layer,
+        fx.Layer[
+            Sharding,
+            Never,
+            ShardingConfig | Runners | MessageStorage | RunnerStorage | RunnerHealth,
+        ],
+    )
+    assert_type(test_runner.layer, fx.Layer[Sharding | Runners | MessageStorage | MemoryDriver])
+    assert_type(
+        single_runner.layer(),
+        fx.Layer[Sharding | Runners | MessageStorage, ConfigError, SqlClient],
+    )
+
+    def events(service: ShardingService) -> None:
+        assert_type(service.get_registration_events, Stream[ShardingRegistrationEvent])
+
+    class Counter(Entity):
+        pass
+
+    assert_type(entity_proxy.to_rpc_group(Counter), type[RpcGroup])
+    assert_type(
+        entity_proxy_server.layer_rpc_handlers(Counter),
+        fx.Layer[HandlersFor[Any], Never, Sharding],
+    )
+    proxy_group = entity_proxy.to_http_api_group("counter", Counter)
+    assert_type(proxy_group, type[HttpApiGroup[Any]])
+    assert_type(
+        entity_proxy_server.layer_http_api(
+            HttpApi.make("Api").add(proxy_group), proxy_group, Counter
+        ),
+        fx.Layer[HttpApiGroup[Any], Never, Sharding],
+    )
+    del events
+
+
 def package_namespace() -> None:
     # fx.<subpackage> is imported lazily at runtime; the type checker still
     # knows each one and rejects a name the package does not have.

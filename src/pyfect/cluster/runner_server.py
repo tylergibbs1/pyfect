@@ -152,7 +152,9 @@ class _Handlers:
                 notified = self.sharding.notify(message, wait_until_read=True).pipe(
                     catch_tag(AlreadyProcessingMessage, _ignore_already_processing)
                 )
-                parent._fork(notified, daemon=True).add_observer_unsafe(on_exit)
+                parent._fork(notified, daemon=True, start_immediately=True).add_observer_unsafe(
+                    on_exit
+                )
                 return handler.interrupt()
 
             return callback(register)

@@ -626,12 +626,14 @@ class Fiber(Generic[A_co, E_co]):
         effect: Effect[Any, Any, Any],
         *,
         daemon: bool,
-        start_immediately: bool = False,
+        start_immediately: bool,
         uninterruptible: Uninterruptible = False,
     ) -> Fiber[Any, Any]:
         """A fiber running ``effect``, a child of this one unless ``daemon``.
         With ``start_immediately`` it runs now, up to its first wait or
-        yield, before this fiber goes on; otherwise it is scheduled."""
+        yield, before this fiber goes on (Effect's ``runForkWith``, and
+        ``fork*`` with ``startImmediately``); otherwise it is scheduled.
+        Required, so each port states which of the two Effect does."""
         interruptible = self._interruptible if uninterruptible == "inherit" else not uninterruptible
         child: Fiber[Any, Any] = Fiber(
             self._run_scheduler, self._ctx, None if daemon else self, interruptible=interruptible

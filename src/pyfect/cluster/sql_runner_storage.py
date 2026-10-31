@@ -22,6 +22,7 @@ from pyfect._core import Effect
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
 from pyfect.cluster._resource_ref import ResourceRef
+from pyfect.cluster._shard_lock import effective_interval
 from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.runner_storage import (
     RunnerStorage,
@@ -48,12 +49,6 @@ def postgres_lock_namespace(prefix: str) -> int:
     for byte in text_encode(f"effect-cluster:{prefix}"):
         h = ((h ^ byte) * 0x01000193) & 0xFFFFFFFF
     return h - 0x1_0000_0000 if h >= 0x8000_0000 else h
-
-
-def effective_interval(config: ShardingConfigService) -> Seconds:
-    """How long a lock operation may take: the refresh interval, at most a
-    third of the lock expiration (Effect's ``internal/shardLock``)."""
-    return Seconds(min(config.shard_lock_refresh_interval, config.shard_lock_expiration / 3))
 
 
 type _Held = tuple[Connection, int]

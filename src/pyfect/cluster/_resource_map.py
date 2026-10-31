@@ -152,3 +152,15 @@ class ResourceMap[K: Hashable, A, E]:
             return entry.scope.close(Success(None))
 
         return _Suspend(body)
+
+    def remove_ignore(self, key: K) -> Effect[None]:
+        """``remove``, logging a failed close at debug level."""
+
+        def logged(cause: Any) -> Effect[None]:
+            from pyfect.logger import log_debug
+
+            return log_debug(cause).annotate_logs(
+                {"module": "ResourceMap", "method": "removeIgnore", "key": key}
+            )
+
+        return self.remove(key).catch_cause(logged)

@@ -35,10 +35,13 @@ from pyfect.rpc.message import FromServer
 from pyfect.rpc.server._core import ServerOptions
 from pyfect.rpc.server._core import make_no_serialization as make_server_core
 from pyfect.scope import Scope
+from pyfect.stream import Stream
+from pyfect.stream import die as stream_die
 
 if TYPE_CHECKING:
     from pyfect.cluster.entity._entity import Entity
     from pyfect.cluster.entity._handlers import Concurrency, EntityHandlers, EntityOptions
+    from pyfect.cluster.sharding_registration_event import ShardingRegistrationEvent
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +86,14 @@ class _TestSharding:
 
     def has_shard_id(self, shard_id: ShardId, /) -> bool:
         return True
+
+    @property
+    def get_registration_events(self) -> Stream[ShardingRegistrationEvent]:
+        return stream_die(
+            RuntimeError(
+                "Sharding.get_registration_events is not available to Entity.make_test_client"
+            )
+        )
 
     @property
     def get_snowflake(self) -> Effect[Snowflake]:

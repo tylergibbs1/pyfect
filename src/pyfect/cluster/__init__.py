@@ -2,16 +2,21 @@
 runner addresses, snowflake ids, the sharding configuration, cluster
 errors and RPC annotations, envelopes, messages and replies, message and
 runner storage (in memory and in SQL), the Kubernetes API client,
-entities and their resources, singletons, and the runner protocol
-(``Runners``, ``RunnerServer``, ``RunnerHealth``)."""
+entities and their resources, singletons, the runner protocol
+(``Runners``, ``RunnerServer``, ``RunnerHealth``), ``Sharding`` itself,
+one-runner setups (``test_runner``, ``single_runner``) and entity proxies
+(``entity_proxy``, ``entity_proxy_server``)."""
 
 from pyfect.cluster import (
     cluster_error,
+    cluster_metrics,
     cluster_schema,
     deliver_at,
     entity,
     entity_address,
     entity_id,
+    entity_proxy,
+    entity_proxy_server,
     entity_resource,
     entity_type,
     envelope,
@@ -30,11 +35,14 @@ from pyfect.cluster import (
     shard_id,
     sharding,
     sharding_config,
+    sharding_registration_event,
+    single_runner,
     singleton,
     singleton_address,
     snowflake,
     sql_message_storage,
     sql_runner_storage,
+    test_runner,
 )
 from pyfect.cluster.cluster_error import (
     AlreadyProcessingMessage,
@@ -97,11 +105,14 @@ __all__ = [
     "SingletonAddress",
     "Snowflake",
     "cluster_error",
+    "cluster_metrics",
     "cluster_schema",
     "deliver_at",
     "entity",
     "entity_address",
     "entity_id",
+    "entity_proxy",
+    "entity_proxy_server",
     "entity_resource",
     "entity_type",
     "envelope",
@@ -120,9 +131,12 @@ __all__ = [
     "shard_id",
     "sharding",
     "sharding_config",
+    "sharding_registration_event",
+    "single_runner",
     "singleton",
     "singleton_address",
     "snowflake",
     "sql_message_storage",
     "sql_runner_storage",
+    "test_runner",
 ]

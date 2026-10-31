@@ -23,7 +23,6 @@ from pyfect.effect import (
     interrupt,
     provide_service,
     succeed,
-    suspend,
 )
 from pyfect.http.headers import Headers, from_input
 from pyfect.queue import Queue
@@ -210,8 +209,10 @@ class ClientCore:
             return Request(id, rpc.tag, payload, headers)
         return Request(id, rpc.tag, payload, headers, span.trace_id, span.span_id, _sampled(span))
 
-    def _send_interrupt(self, request_id: RequestId, context: Context[Any]) -> Effect[None]:
-        sent = self._send(OnFromClient(Interrupt(request_id), context, False))
+    def _send_interrupt(
+        self, request_id: RequestId, context: Context[Any], interruptors: tuple[int, ...]
+    ) -> Effect[None]:
+        sent = self._send(OnFromClient(Interrupt(request_id, interruptors), context, False))
         return sent.timeout(1.0).exit().as_void()
 
     # --- unary calls -----------------------------------------------------------------
@@ -246,9 +247,27 @@ class ClientCore:
                 send = send.with_parent_span(span, capture_stack_trace=False)
             if call.discard:
                 return send.as_void()
-            return callback(
-                lambda resume: self._register(parent, rpc, id, context, send=send, resume=resume)
+            sender: list[Fiber[Any, Any]] = []
+
+            def on_exit(exit: Exit.Exit[Any, Any]) -> Effect[None]:
+                # Effect's ``onInterrupt``: any interruption, also the
+                # client closing or the server's interrupted exit.
+                if not (isinstance(exit, Exit.Failure) and exit.cause.has_interrupts):
+                    return _VOID
+                self._entries.pop(id, None)
+                interruptors = tuple(sorted(exit.cause.interruptors))
+                return (
+                    sender[0]
+                    .interrupt()
+                    .flat_map(lambda _: self._send_interrupt(id, context, interruptors))
+                )
+
+            waiting: Effect[Any, Any] = callback(
+                lambda resume: self._register(
+                    parent, rpc, id, context, send=send, resume=resume, sender=sender
+                )
             )
+            return waiting.on_exit(on_exit)
 
         return _WithFiber(body)
 
@@ -261,16 +280,18 @@ class ClientCore:
         *,
         send: Effect[Any, Any],
         resume: Callable[[Effect[Any, Any]], None],
-    ) -> Effect[None]:
-        sender: list[Fiber[Any, Any]] = []
-
+        sender: list[Fiber[Any, Any]],
+    ) -> None:
         def done(exit: Exit.Exit[Any, Any]) -> None:
             resume(from_exit(exit))
             if sender and sender[0].poll_unsafe() is None:
-                sender[0].interrupt_as_unsafe(parent.id)
+                # Deferred to a task, as Effect's: the sender may be the
+                # fiber delivering this reply.
+                fiber = sender[0]
+                parent._scheduler.schedule(lambda: fiber.interrupt_as_unsafe(parent.id))
 
         self._entries[id] = _EffectEntry(rpc, context, done)
-        fiber = parent._fork(send, daemon=True)
+        fiber = parent._fork(send, daemon=True, start_immediately=True)
         sender.append(fiber)
 
         def observe(exit: Exit.Exit[Any, Any]) -> None:
@@ -279,12 +300,6 @@ class ClientCore:
                 resume(from_exit(exit))
 
         fiber.add_observer_unsafe(observe)
-
-        def cancel() -> Effect[None]:
-            self._entries.pop(id, None)
-            return fiber.interrupt().flat_map(lambda _: self._send_interrupt(id, context))
-
-        return suspend(cancel)
 
     # --- stream calls ------------------------------------------------------------------
 
@@ -312,7 +327,10 @@ class ClientCore:
                 if id not in self._entries:
                     return _VOID
                 del self._entries[id]
-                return self._send_interrupt(id, context)
+                interruptors = (
+                    tuple(sorted(exit.cause.interruptors)) if isinstance(exit, Exit.Failure) else ()
+                )
+                return self._send_interrupt(id, context, interruptors)
 
             yield from scope.add_finalizer(finalize)
             self._entries[id] = _QueueEntry(rpc, queue, context)
