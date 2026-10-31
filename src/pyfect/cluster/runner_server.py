@@ -2,13 +2,15 @@
 handlers for the ``Runners.Rpcs`` that other runners send, handing each
 message to ``Sharding`` and answering persisted requests from
 ``MessageStorage``. ``layer`` serves them over the ``ServerProtocol`` in
-the context."""
+the context; ``layer_with_clients`` adds ``Sharding`` and the RPC
+``Runners``, and ``layer_client_only`` gives a process that serves
+nothing and owns no shards its own ``Sharding`` and ``Runners``."""
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Never, cast
 
 from pyfect import layer as layer_
@@ -17,6 +19,8 @@ from pyfect._fiber import Fiber
 from pyfect.cause import Cause
 from pyfect.cluster import envelope as envelope_
 from pyfect.cluster import reply as reply_
+from pyfect.cluster import runner_health, runners
+from pyfect.cluster import sharding as sharding_
 from pyfect.cluster.cluster_error import (
     AlreadyProcessingMessage,
     EntityNotAssignedToRunner,
@@ -25,8 +29,18 @@ from pyfect.cluster.cluster_error import (
 from pyfect.cluster.message import Incoming, IncomingEnvelope, IncomingRequest
 from pyfect.cluster.message_storage import MessageStorage, MessageStorageService
 from pyfect.cluster.reply import ReplyWithContext
-from pyfect.cluster.runners import EnvelopePayload, NotifyPayload, RequestPayload, Rpcs
+from pyfect.cluster.runner_health import RunnerHealth
+from pyfect.cluster.runner_storage import RunnerStorage
+from pyfect.cluster.runners import (
+    EnvelopePayload,
+    NotifyPayload,
+    RequestPayload,
+    RpcClientProtocol,
+    Rpcs,
+    Runners,
+)
 from pyfect.cluster.sharding import Sharding, ShardingService
+from pyfect.cluster.sharding_config import ShardingConfig, ShardingConfigService
 from pyfect.effect import callback, catch_tag, fail_cause, gen, service_option, succeed
 from pyfect.errors import Done
 from pyfect.exit import Exit, Failure
@@ -237,4 +251,36 @@ layer: Layer[Never, Never, ServerProtocol | Sharding | MessageStorage] = server_
 ``RunnerServer.layer``): it answers pings and hands the messages of other
 runners to ``Sharding``."""
 
-__all__ = ["layer", "layer_handlers"]
+
+layer_with_clients: Layer[
+    Sharding | Runners,
+    Never,
+    ServerProtocol
+    | ShardingConfig
+    | RpcClientProtocol
+    | MessageStorage
+    | RunnerStorage
+    | RunnerHealth,
+] = layer.pipe(layer_.provide_merge(sharding_.layer)).pipe(layer_.provide_merge(runners.layer_rpc))
+"""A runner server with the ``Sharding`` and RPC ``Runners`` it serves
+(Effect's ``layerWithClients``)."""
+
+
+def _client_only(config: ShardingConfigService) -> ShardingConfigService:
+    return replace(config, runner_address=None)
+
+
+layer_client_only: Layer[
+    Sharding | Runners,
+    Never,
+    ShardingConfig | RpcClientProtocol | MessageStorage | RunnerStorage,
+] = (
+    sharding_.layer.pipe(layer_.provide_merge(runners.layer_rpc))
+    .pipe(layer_.provide(runner_health.layer_noop))
+    .pipe(layer_.provide(layer_.effect(ShardingConfig, ShardingConfig().map(_client_only))))
+)
+"""``Sharding`` and ``Runners`` for a process that sends to the cluster
+but serves no runner RPCs and owns no shards: its ``runner_address`` is
+cleared (Effect's ``layerClientOnly``)."""
+
+__all__ = ["layer", "layer_client_only", "layer_handlers", "layer_with_clients"]

@@ -172,8 +172,9 @@ layer, concurrency, retries and timeouts.
   [GraphQL →](https://pyfect.dev/docs/graphql)
 - **Event log.** Events written to a local journal, replayed through handlers and synced
   with a server, encrypted end to end if you like. [Event log →](https://pyfect.dev/docs/eventlog)
-- **Cluster.** The base of Effect's cluster: shards over runners, snowflake ids, and
-  message and runner storage in memory or SQL; entities and sharding come next. [Cluster →](https://pyfect.dev/docs/cluster)
+- **Cluster.** Entities sharded over runners that talk over TCP, HTTP or WebSockets, with
+  messages and shard locks in SQL, cron jobs that run once across the cluster and durable
+  workflows. [Cluster →](https://pyfect.dev/docs/cluster)
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 

@@ -6919,3 +6919,38 @@ def cluster_cron_workflow_types() -> None:
         workflow.result_schema(success=fx.schema.String, error=fx.schema.Number),
         fx.schema.Bottom[Result[str, float], Mapping[str, object]],
     )
+
+
+def cluster_runner_layer_types() -> None:
+    from pyfect.cluster import cluster_http, cluster_socket, http_runner
+    from pyfect.cluster.message_storage import MessageStorage
+    from pyfect.cluster.runner_storage import RunnerStorage
+    from pyfect.cluster.runners import RpcClientProtocol, Runners
+    from pyfect.cluster.sharding import Sharding
+    from pyfect.config import ConfigError
+    from pyfect.http.client import HttpClient
+    from pyfect.rpc.serialization import RpcSerialization
+    from pyfect.socket.server import SocketServerError
+    from pyfect.sql.client import SqlClient
+
+    # SQL storage (the default) needs a SqlClient; a runner can fail to listen.
+    assert_type(
+        cluster_socket.layer(),
+        fx.Layer[Sharding | Runners | MessageStorage, SocketServerError | ConfigError, SqlClient],
+    )
+    # Local storage needs nothing; a client never listens.
+    assert_type(
+        cluster_socket.layer(client_only=True, storage="local"),
+        fx.Layer[Sharding | Runners | MessageStorage, ConfigError],
+    )
+    # Bring-your-own storage leaves both storages required.
+    assert_type(
+        cluster_http.layer(transport="websocket", storage="byo"),
+        fx.Layer[
+            Sharding | Runners, SocketServerError | ConfigError, MessageStorage | RunnerStorage
+        ],
+    )
+    assert_type(
+        http_runner.layer_client_protocol_http(path="/runner"),
+        fx.Layer[RpcClientProtocol, Never, RpcSerialization | HttpClient],
+    )

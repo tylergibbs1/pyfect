@@ -2,9 +2,6 @@
 docstring is the Effect test title.
 
 Omitted:
-- HttpRunner "preserves a leading slash in HTTP client paths" and
-  "preserves a leading slash in WebSocket client paths": ``HttpRunner`` is
-  not ported yet (it comes with the socket and HTTP runners of M10g).
 - RunnerServer "a reply that fails to serialize fails only its own
   request" and "a stream reply that fails to serialize ends the stream with
   the defect": they build ``Sharding.layer``, which is not ported yet;
@@ -18,12 +15,13 @@ import json
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import Any, Never, cast
+from urllib.parse import SplitResult
 
 import pyfect as fx
 from pyfect import exit as Exit
 from pyfect import schema as S
 from pyfect import testing
-from pyfect.cluster import envelope, sharding_config, snowflake
+from pyfect.cluster import envelope, http_runner, sharding_config, snowflake
 from pyfect.cluster.cluster_error import (
     MalformedMessage,
     PersistenceError,
@@ -56,13 +54,21 @@ from pyfect.cluster.runners import (
 from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.snowflake import Generator, Snowflake
 from pyfect.context import Context
+from pyfect.deferred import Deferred
+from pyfect.http import client as http_client
+from pyfect.http import response as http_response
+from pyfect.http.client import HttpClient
+from pyfect.http.request import HttpClientRequest
 from pyfect.layer import Layer
+from pyfect.rpc import client as rpc_client
 from pyfect.rpc import make as make_rpc
+from pyfect.rpc import serialization
 from pyfect.rpc.client import ClientProtocolService
 from pyfect.rpc.client_error import RpcClientError
+from pyfect.rpc.group import RpcGroup
 from pyfect.rpc.serialization import CodecFor
 from pyfect.scope import fork_scoped
-from pyfect.socket import SocketCloseError
+from pyfect.socket import SocketCloseError, WebSocketConstructor
 
 runner_address = RunnerAddress(host="localhost", port=42_000)
 
@@ -485,3 +491,88 @@ def test_encodes_the_entity_payload_with_the_protocol_codec_and_leaves_the_hole_
 
     protocol = _layer_fake_protocol(on_request, _codec_for_json_string)
     yield from body.pipe(fx.provide(_layer_runners(protocol)))
+
+
+class _PingRpcs(RpcGroup):
+    ping = make_rpc("Ping", success=S.String)
+
+
+_http_runner_address = RunnerAddress(host="localhost", port=8080)
+
+
+@testing.effect
+def test_http_runner_preserves_a_leading_slash_in_http_client_paths():
+    """preserves a leading slash in HTTP client paths"""
+    urls: list[str] = []
+
+    def send(request: HttpClientRequest, url: SplitResult, _signal: Any, _fiber: Any) -> Any:
+        def respond() -> Any:
+            urls.append(request.url)
+            body = '[{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":"pong"}}]'
+            return http_response.make(request, body)
+
+        return fx.sync(respond)
+
+    @fx.gen
+    def body():
+        runner_protocol = yield from RpcClientProtocol()
+        protocol = yield from runner_protocol.make(_http_runner_address)
+        client = yield from rpc_client.make(
+            _PingRpcs, rpc_client.ClientOptions(generate_request_id=lambda: "0")
+        ).pipe(fx.provide_service(rpc_client.ClientProtocol, protocol))
+        yield from client.ping()
+        assert urls == ["http://localhost:8080/runner/"]
+
+    yield from fx.scoped(
+        body.pipe(fx.provide(http_runner.layer_client_protocol_http(path="/runner")))
+        .pipe(fx.provide(serialization.layer_json))
+        .pipe(fx.provide_service(HttpClient, http_client.make(send)))
+    )
+
+
+class _OpenWebSocket:
+    ready_state = 1
+
+    def add_event_listener(self, type: Any, listener: Any, *, once: bool = False) -> None:
+        pass
+
+    def remove_event_listener(self, type: Any, listener: Any) -> None:
+        pass
+
+    def close(self, code: int | None = None, reason: str | None = None) -> None:
+        pass
+
+    def send(self, data: bytes | str) -> None:
+        pass
+
+
+@testing.effect
+def test_http_runner_preserves_a_leading_slash_in_websocket_client_paths():
+    """preserves a leading slash in WebSocket client paths"""
+    urls: list[str] = []
+
+    def construct(url: str, _options: Any) -> _OpenWebSocket:
+        urls.append(url)
+        return _OpenWebSocket()
+
+    @fx.gen
+    def body():
+        connected = yield from Deferred[None, Never].make()
+        hooks = rpc_client.ConnectionHooksService(connected.succeed(None).as_void(), fx.void)
+
+        @fx.gen
+        def connect():
+            runner_protocol = yield from RpcClientProtocol()
+            protocol = yield from runner_protocol.make(_http_runner_address)
+            yield from fork_scoped(protocol.run(0, lambda _: fx.void))
+            yield from connected.wait()
+            assert urls == ["ws://localhost:8080/runner"]
+
+        yield from fx.scoped(
+            connect.pipe(fx.provide(http_runner.layer_client_protocol_websocket(path="/runner")))
+            .pipe(fx.provide(serialization.layer_json))
+            .pipe(fx.provide_service(WebSocketConstructor, construct))
+            .pipe(fx.provide_service(rpc_client.ConnectionHooks, hooks))
+        )
+
+    yield from body

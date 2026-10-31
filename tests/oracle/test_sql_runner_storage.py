@@ -202,3 +202,41 @@ def test_postgres_lock_namespace_matches_effect():
     assert SqlRunnerStorage.postgres_lock_namespace("cluster") == -1455371005
     assert SqlRunnerStorage.postgres_lock_namespace("other") == -153440585
     assert SqlRunnerStorage.postgres_lock_namespace("\u00fcn\u00ef") == 1675597136
+
+
+@testing.live
+def test_an_interrupted_lock_operation_keeps_the_reserved_connection(pg_server: Any):
+    """pyfect: an interrupted lock operation is not a broken connection, so
+    the reserved connection is kept. Replacing it releases the old one in a
+    fiber of the storage's scope; when that rebuild comes from a runner
+    shutting down, closing the scope interrupts the release before
+    ``pg_advisory_unlock_all``, and the old session goes back to the pool
+    still holding every shard lock (seen as shards no runner could acquire in
+    the cluster-integration restart tests)."""
+    from ._cluster_harness import _LockFaultController  # pyright: ignore[reportPrivateUsage]
+
+    def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
+        client = yield from _pg(pg_server)
+        faults = _LockFaultController(client)
+        reserve = faults.client.reserve
+        reserves = [0]
+
+        def counted() -> Any:
+            reserves[0] += 1
+            return reserve
+
+        faults.client.reserve = fx.suspend(counted)
+        storage = yield from _storage(faults.client, _prefix("interrupted"))
+        shard = shard_id.make("default", 1)
+        assert (yield from storage.acquire(runner_address1, [shard])) == [shard]
+        assert reserves == [1]
+
+        yield from faults.set("blackhole")
+        refresh = yield from storage.refresh(runner_address1, [shard]).fork()
+        yield from fx.sleep(0.05)
+        yield from refresh.interrupt()
+        yield from faults.set("clear")
+        yield from fx.sleep(0.2)
+        assert reserves == [1]
+
+    yield from fx.gen(body)

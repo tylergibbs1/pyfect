@@ -6,8 +6,11 @@ entities and their resources, singletons, the runner protocol
 (``Runners``, ``RunnerServer``, ``RunnerHealth``), ``Sharding`` itself,
 one-runner setups (``test_runner``, ``single_runner``), entity proxies
 (``entity_proxy``, ``entity_proxy_server``), cron jobs run once across the
-cluster (``cluster_cron``) and durable workflows on cluster entities
-(``cluster_workflow_engine``)."""
+cluster (``cluster_cron``), durable workflows on cluster entities
+(``cluster_workflow_engine``) and runners served over sockets or HTTP
+(``socket_runner``, ``http_runner``). The ready-made runner layers of
+Effect's platform-node, ``cluster_socket`` and ``cluster_http``, are
+imported on their own (``from pyfect.cluster import cluster_socket``)."""
 
 from pyfect.cluster import (
     cluster_cron,
@@ -24,6 +27,7 @@ from pyfect.cluster import (
     entity_resource,
     entity_type,
     envelope,
+    http_runner,
     k8s_http_client,
     k8s_types,
     machine_id,
@@ -44,6 +48,7 @@ from pyfect.cluster import (
     singleton,
     singleton_address,
     snowflake,
+    socket_runner,
     sql_message_storage,
     sql_runner_storage,
     test_runner,
@@ -122,6 +127,7 @@ __all__ = [
     "entity_resource",
     "entity_type",
     "envelope",
+    "http_runner",
     "k8s_http_client",
     "k8s_types",
     "machine_id",
@@ -142,6 +148,7 @@ __all__ = [
     "singleton",
     "singleton_address",
     "snowflake",
+    "socket_runner",
     "sql_message_storage",
     "sql_runner_storage",
     "test_runner",

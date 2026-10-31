@@ -21,6 +21,7 @@ from pyfect import layer as layer_
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
+from pyfect.cause import Cause
 from pyfect.cluster._resource_ref import ResourceRef
 from pyfect.cluster._shard_lock import effective_interval
 from pyfect.cluster.cluster_error import PersistenceError
@@ -153,16 +154,28 @@ class _Storage:
             self.with_deadline(rebuild).exit(), self.layer_scope, start_immediately=True
         ).as_void()
 
+    @staticmethod
+    def _rebuild_on_failure[A, E](
+        operation: Effect[A, E], rebuild: Callable[[], Effect[None]]
+    ) -> Effect[A, E]:
+        """``operation``, running ``rebuild`` when it fails. An interrupt
+        is not a broken connection: a rebuild on shutdown can lose its
+        ``pg_advisory_unlock_all`` and pool a session holding the locks."""
+
+        def failed(cause: Cause[Any]) -> Effect[None]:
+            return void if cause.has_interrupts_only else rebuild()
+
+        return operation.on_error(failed)
+
     def use_lock_conn[A, E](self, f: Callable[[Connection, int], Effect[A, E]]) -> Effect[A, E]:
         """``f`` on the reserved connection (PostgreSQL and MySQL, which
-        always have one); a failure (not an interrupt) replaces it."""
+        always have one); a failure replaces it."""
         lock_conn = cast("ResourceRef[_Held]", self.lock_conn)
 
         def run(held: _Held) -> Effect[A, E]:
-            def failed(cause: Any) -> Effect[None]:
-                return void if cause.has_interrupts_only else self.rebuild_lock_conn(held)
-
-            return f(held[0], held[1]).on_error(failed)
+            return self._rebuild_on_failure(
+                f(held[0], held[1]), lambda: self.rebuild_lock_conn(held)
+            )
 
         return lock_conn.await_.flat_map(run)
 
@@ -193,14 +206,14 @@ class _Storage:
         def run() -> Effect[A, E]:
             ready = None if self.lock_conn is None else self.lock_conn.get_unsafe()
 
-            def failed(_: Any) -> Effect[None]:
+            def rebuild() -> Effect[None]:
                 if ready is not None:
                     return self.rebuild_lock_conn(ready)
                 if self.lock_conn is not None and self.lock_conn.get_unsafe() is None:
                     return self.rebuild_lock_conn()
                 return void
 
-            return self.with_deadline(operation).on_error(failed)
+            return self._rebuild_on_failure(self.with_deadline(operation), rebuild)
 
         return suspend(run)
 
