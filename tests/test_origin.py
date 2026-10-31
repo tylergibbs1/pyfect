@@ -132,7 +132,8 @@ def test_a_live_server_upgrade_from_another_origin_is_refused() -> None:
             at = yield from port
             head = (
                 f"GET /ws HTTP/1.1\r\nHost: 127.0.0.1:{at}\r\nConnection: Upgrade\r\n"
-                f"Upgrade: websocket\r\nOrigin: {sent_origin.format(at=at)}\r\n\r\n"
+                "Upgrade: websocket\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                f"Sec-WebSocket-Version: 13\r\nOrigin: {sent_origin.format(at=at)}\r\n\r\n"
             )
             return (yield from exchange(at, [head.encode()]))
 

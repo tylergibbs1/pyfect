@@ -313,3 +313,61 @@ def test_elapsed_times_are_formatted_as_node_formats_them(ms: float, text: str):
 def test_clear_writes_nothing_when_stdout_is_not_a_tty(capsys: pytest.CaptureFixture[str]):
     LiveConsole().clear()
     assert capsys.readouterr().out == ""
+
+
+# --- flushing ---------------------------------------------------------------------
+
+
+class _PipeStream(io.StringIO):
+    """A non-TTY stream (a pipe, a file): what is written is only seen by
+    the reader once flushed."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.seen = ""
+
+    def isatty(self) -> bool:
+        return False
+
+    def flush(self) -> None:
+        self.seen = self.getvalue()
+
+
+_CALLS: dict[str, tuple[object, ...]] = {
+    "log": ("l",),
+    "info": ("i",),
+    "debug": ("d",),
+    "warn": ("w",),
+    "error": ("e",),
+    "trace": ("t",),
+    "assert_": (False, "a"),
+    "count": ("c",),
+    "dir": ({"a": 1},),
+    "group": ("g",),
+    "group_collapsed": ("gc",),
+    "table": ([1, 2],),
+    "time_log": ("timer",),
+    "time_end": ("timer",),
+}
+"""A call of each ``LiveConsole`` method that writes a line."""
+
+_SILENT = {"clear", "count_reset", "group_end", "time"}
+"""Methods that write no line (``clear`` writes only to a TTY)."""
+
+
+def test_every_live_console_line_is_flushed_to_a_non_tty_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Node writes ``console`` output to files and pipes synchronously, so
+    logs reach ``docker logs`` or ``tee`` as they are written."""
+    methods = {name for name in dir(LiveConsole) if not name.startswith("_")}
+    assert methods == set(_CALLS) | _SILENT
+    out, err = _PipeStream(), _PipeStream()
+    monkeypatch.setattr("sys.stdout", out)
+    monkeypatch.setattr("sys.stderr", err)
+    live = LiveConsole()
+    live.time("timer")
+    for name, args in _CALLS.items():
+        getattr(live, name)(*args)
+        assert (out.seen, err.seen) == (out.getvalue(), err.getvalue()), name
+    assert out.getvalue() and err.getvalue()

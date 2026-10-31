@@ -22,7 +22,7 @@ class LiveConsole:
     """Writes like Node's ``console``: ``log`` / ``info`` / ``debug`` /
     ``count`` / ``time_*`` / ``table`` / ``dir`` to stdout, ``warn`` /
     ``error`` / ``trace`` / ``assert_`` to stderr, each line indented two
-    spaces per open group. Streams are read at each call, so pytest's
+    spaces per open group, and flushed. Streams are read at each call, so pytest's
     capture and ``contextlib.redirect_stdout`` see the output. Misused
     counters and timers warn with ``RuntimeWarning`` (Node's process
     warnings)."""
@@ -38,6 +38,9 @@ class LiveConsole:
         line = prefix + " ".join(text(a) for a in args)
         with self._lock:
             stream.write("".join(pad + part + "\n" for part in line.split("\n")))
+            # Node writes to files and pipes synchronously: a log reaches
+            # ``docker logs`` or ``tee`` when it is written, not at exit.
+            stream.flush()
 
     def log(self, *args: object) -> None:
         self._write(sys.stdout, args)
@@ -69,6 +72,7 @@ class LiveConsole:
         if sys.stdout.isatty():
             with self._lock:
                 sys.stdout.write(_CLEAR)
+                sys.stdout.flush()
 
     def count(self, label: str = "default") -> None:
         n = self._counts.get(label, 0) + 1

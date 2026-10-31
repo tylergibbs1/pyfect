@@ -23,7 +23,7 @@ from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
 from pyfect.context import Context
 from pyfect.effect import fail, from_async, succeed, sync, try_async, void
-from pyfect.exit import Exit, Success
+from pyfect.exit import Exit
 from pyfect.http.asgi import _scope
 from pyfect.http.asgi._http import encode_headers
 from pyfect.http.asgi._types import Message, Receive, Scope, Send
@@ -46,6 +46,7 @@ from pyfect.socket._web_socket import (
     Outgoing,
     WebSocketEvent,
     WebSocketEventType,
+    close_code,
     from_web_socket,
 )
 
@@ -214,12 +215,6 @@ class AsgiWebSocket:
         if self._writer is not None:
             await self._writer
         self._reader.cancel()
-
-
-def close_code(exit: Exit[Any, Any]) -> int:
-    if isinstance(exit, Success):
-        return 1000
-    return 1001 if exit.cause.has_interrupts_only else 1011
 
 
 def _socket(ws: AsgiWebSocket, scope: Scope) -> SocketService:

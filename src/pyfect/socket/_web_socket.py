@@ -29,7 +29,7 @@ from pyfect.channel import unwrap as unwrap_channel
 from pyfect.context import Tag
 from pyfect.duration import Duration
 from pyfect.effect import fail, gen, succeed, suspend, sync, void
-from pyfect.exit import Exit
+from pyfect.exit import Exit, Success
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -57,6 +57,9 @@ from pyfect.socket._socket import (
 
 DEFAULT_HIGH_WATER_MARK = 64 * 1024
 DEFAULT_OPEN_TIMEOUT = 10.0
+DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024
+"""The longest message pyfect's WebSocket servers and clients take (uvicorn's
+``ws_max_size``); a longer one closes the connection with 1009."""
 
 CONNECTING, OPEN, CLOSING, CLOSED = 0, 1, 2, 3
 
@@ -188,6 +191,15 @@ class WebSocketConstructor(
 
 class WebSocket(Tag[WebSocketLike], key="~effect/socket/Socket/WebSocket"):
     """The native WebSocket a server hands to its handler."""
+
+
+def close_code(exit: Exit[object, object]) -> int:
+    """The code a server closes an upgraded WebSocket with when its
+    handler's scope ends (Effect's ``closeCode``): 1000 on success, 1001
+    when interrupted, 1011 on failure."""
+    if isinstance(exit, Success):
+        return 1000
+    return 1001 if exit.cause.has_interrupts_only else 1011
 
 
 def _byte_length(data: bytes | str) -> int:

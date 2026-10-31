@@ -432,7 +432,11 @@ class SourceRequest(ServerRequest):
 
         upgrade = self._upgrade
         upgraded = upgrade(from_input(headers)).map_error(
-            lambda cause: request_parse_error(self, None, cause)
+            lambda cause: (
+                cause
+                if isinstance(cause, HttpServerError)
+                else request_parse_error(self, None, cause)
+            )
         )
         return require_allowed_origin(self).and_then(upgraded)
 

@@ -99,12 +99,32 @@ class _Backend:
         options.setdefault("timeout", None)
         self.client = import_httpx().AsyncClient(**options)
         self.loop = asyncio.new_event_loop()
+        self._closing: set[asyncio.Task[None]] = set()
+        """Responses being closed (touched on the loop only)."""
         threading.Thread(target=self._run, name="pyfect-httpx", daemon=True).start()
 
     def _run(self) -> None:
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
+        self.loop.run_until_complete(self._settle())
+        self.loop.run_until_complete(self.loop.shutdown_asyncgens())
         self.loop.close()
+
+    def _close_response(self, response: httpx.Response) -> None:
+        task = self.loop.create_task(response.aclose())
+        self._closing.add(task)
+        task.add_done_callback(self._closing.discard)
+
+    async def _settle(self) -> None:
+        """Wait for the responses being closed."""
+        while self._closing:
+            closing = list(self._closing)
+            self._closing.clear()
+            await asyncio.gather(*closing, return_exceptions=True)
+
+    async def _shutdown(self) -> None:
+        await self._settle()
+        await self.client.aclose()
 
     def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
         return asyncio.run_coroutine_threadsafe(make(), self.loop)
@@ -120,7 +140,7 @@ class _Backend:
 
     def close(self) -> Effect[None]:
         """Close the httpx client, then stop the loop."""
-        closing = _future(None, lambda: self.submit(self.client.aclose)).ignore()
+        closing = _future(None, lambda: self.submit(self._shutdown)).ignore()
         return closing.flat_map(
             lambda _: sync(lambda: self.loop.call_soon_threadsafe(self.loop.stop)).as_void()
         )
@@ -193,7 +213,7 @@ class _Backend:
         self, request: HttpClientRequest, response: httpx.Response, signal: AbortSignal
     ) -> HttpClientResponse:
         def close() -> None:
-            self._call_soon(lambda: self.loop.create_task(response.aclose()))
+            self._call_soon(lambda: self._close_response(response))
 
         signal.add_listener(close)
         headers = Headers(

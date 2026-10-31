@@ -4,6 +4,7 @@ read."""
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 
@@ -17,6 +18,13 @@ from pyfect.socket._errors import SocketError, is_clean_close, read_error
 
 class HeadTooLarge(Exception):
     """The head did not end within the limit."""
+
+
+class BareLineFeed(Exception):
+    """A head line ended in LF without CR (``llhttp`` answers 400 at once)."""
+
+
+_BARE_LF = re.compile(rb"(?<!\r)\n")
 
 
 class RequestTimeout(Exception):
@@ -78,15 +86,21 @@ class Inbound:
             return succeed(None)
         return self._fill().as_void()
 
-    def read_head(self, limit: int) -> Effect[bytes | None, SocketError | HeadTooLarge]:
+    def read_head(
+        self, limit: int
+    ) -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
         """The next head without its blank line; ``None`` at a clean end
-        before any of it. Blank lines before a head are skipped (RFC 9112
-        §2.2)."""
+        before any of it. Blank lines (CRLF or LF, as ``llhttp``) before a
+        head are skipped (RFC 9112 §2.2)."""
 
-        def step() -> Effect[bytes | None, SocketError | HeadTooLarge]:
-            while self._pending.startswith(b"\r\n"):
-                del self._pending[:2]
+        def step() -> Effect[bytes | None, SocketError | HeadTooLarge | BareLineFeed]:
+            pending = self._pending
+            while pending.startswith((b"\n", b"\r\n")):
+                del pending[: 1 if pending.startswith(b"\n") else 2]
             end = self._pending.find(b"\r\n\r\n")
+            bare = _BARE_LF.search(self._pending, 0, len(self._pending) if end == -1 else end)
+            if bare is not None:
+                return fail(BareLineFeed())
             if end != -1:
                 if end > limit:
                     return fail(HeadTooLarge())
@@ -122,14 +136,18 @@ class Inbound:
     def read_line[A, E](
         self, limit: int, take: Callable[[bytes | None], Effect[A, E]]
     ) -> Effect[A, SocketError | E]:
-        """``take`` of the next line without its CRLF (``None`` at the end
-        or past ``limit``), taken and handed over in one step."""
+        """``take`` of the next line without its CRLF (``None`` at the end,
+        past ``limit``, or at a line ending in a bare LF, which ``llhttp``
+        fails at once), taken and handed over in one step."""
 
         def step() -> Effect[A, SocketError | E]:
-            end = self._pending.find(b"\r\n")
-            if end != -1:
-                line = bytes(self._pending[:end])
-                del self._pending[: end + 2]
+            pending = self._pending
+            lf = pending.find(b"\n")
+            if lf != -1:
+                if lf == 0 or pending[lf - 1] != 0x0D:
+                    return take(None)
+                line = bytes(pending[: lf - 1])
+                del pending[: lf + 1]
                 return take(line)
             if len(self._pending) > limit or self._ended:
                 return take(None)

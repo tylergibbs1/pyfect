@@ -19,7 +19,7 @@ from pyfect.http._authority import LOCALHOST, absolute_url
 from pyfect.http.headers import Headers
 from pyfect.http.live_server._exchange import MAX_DRAIN_BYTES, Exchange
 from pyfect.http.live_server._head import HeadError, RequestHead, parse_head
-from pyfect.http.live_server._inbound import HeadTooLarge, Inbound
+from pyfect.http.live_server._inbound import BareLineFeed, HeadTooLarge, Inbound
 from pyfect.http.live_server._listener import ConnectionState, Listener
 from pyfect.http.live_server._timers import timeout_option
 from pyfect.http.live_server._upgrade import upgrade
@@ -88,7 +88,10 @@ def _peer_address(conn: Connection) -> str | None:
 
 
 def _request(
-    exchange: Exchange, protocol: RequestProtocol, remote_address: str | None
+    exchange: Exchange,
+    protocol: RequestProtocol,
+    remote_address: str | None,
+    websocket_max_message_size: int,
 ) -> SourceRequest:
     head = exchange.head
     url = head.target
@@ -97,7 +100,7 @@ def _request(
 
     def upgrade_request(upgrade_headers: Headers) -> Effect[Any, Any]:
         assert request is not None
-        return upgrade(exchange, request, upgrade_headers)
+        return upgrade(exchange, request, upgrade_headers, websocket_max_message_size)
 
     request = SourceRequest(
         head.method,
@@ -127,6 +130,7 @@ def _run_request(exchange: Exchange, handled: Effect[None]) -> Effect[None]:
             if exchange.finished:
                 return void
             exchange.close_after = True
+            exchange.aborted = True
             return sync(lambda: fiber.interrupt_as_unsafe(None, CLIENT_ABORT_ANNOTATION))
 
         watcher = yield from gone.flat_map(abort).fork()
@@ -142,13 +146,19 @@ def serve_connection(
     handle: Handle,
     protocol: RequestProtocol,
     timeouts: Timeouts,
+    *,
+    websocket_max_message_size: int,
 ) -> Effect[None]:
     conn = state.conn
     inbound = Inbound(conn)
     remote_address = _peer_address(conn)
 
-    def head_failed(error: SocketError | HeadTooLarge) -> Effect[bytes | int | None]:
-        return succeed(431 if isinstance(error, HeadTooLarge) else None)
+    def head_failed(
+        error: SocketError | HeadTooLarge | BareLineFeed,
+    ) -> Effect[bytes | int | None]:
+        if isinstance(error, HeadTooLarge):
+            return succeed(431)
+        return succeed(400 if isinstance(error, BareLineFeed) else None)
 
     def within_headers_timeout(found: Option[bytes | int | None]) -> bytes | int | None:
         if found is None:
@@ -207,7 +217,7 @@ def serve_connection(
                 yield from _reject(conn, head)
                 return
             exchange = Exchange(conn, inbound, head, int(timeouts.keep_alive))
-            request = _request(exchange, protocol, remote_address)
+            request = _request(exchange, protocol, remote_address, websocket_max_message_size)
             yield from _run_request(exchange, handle(request, exchange))
             if not (yield from after(exchange)):
                 return

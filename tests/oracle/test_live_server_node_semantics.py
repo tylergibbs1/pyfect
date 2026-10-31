@@ -4,20 +4,27 @@ keep-alive connection is closed after ``keep_alive_timeout`` (advertised
 as ``keep-alive: timeout=<seconds>``); a head that does not arrive within
 ``headers_timeout`` is answered with 408 if it started, else the
 connection is closed; responses are ``HTTP/1.1`` whatever the request's
-version; and each build of a server layer listens anew."""
+version; each build of a server layer listens anew; a client that
+half-closes gets no response; and a head with a bare-LF line ending is a
+400 at once (a bare LF before the request line is skipped)."""
 
 from __future__ import annotations
 
 import socket
+import threading
 import time
 from typing import Any
 
+import pytest
+
 import pyfect as fx
+from pyfect import effect
 from pyfect.http import live_server, server, server_response
 from pyfect.http.server import HttpServer
+from pyfect.http.server_request import HttpServerRequest
 from pyfect.scope import Scope, scoped
 
-from ._live_http import TIMEOUT, parse_responses, port, run_live, with_socket
+from ._live_http import TIMEOUT, exchange, parse_responses, port, run_live, until_close, with_socket
 
 
 def _serve_ok() -> fx.Effect[int, Any, HttpServer | Scope]:
@@ -164,3 +171,105 @@ def test_answers_an_http_1_0_request_with_an_http_1_1_status_line() -> None:
     [response] = parse_responses(received)
     assert response.header("connection") == "close"
     assert response.body == b"ok"
+
+
+def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeout_ends() -> None:
+    """``graceful_shutdown_timeout`` bounds the shutdown even while a bytes
+    body waits for a client that stopped reading (uvicorn exits on time)."""
+    started = threading.Event()
+
+    def stall(at: int) -> None:
+        conn = socket.socket()
+        conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+        conn.connect(("127.0.0.1", at))
+        conn.sendall(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
+        conn.recv(1)
+        started.set()
+        time.sleep(TIMEOUT)
+        conn.close()
+
+    @fx.fn
+    def serving():
+        at = yield from server.serve_effect(
+            fx.succeed(server_response.bytes_(b"z" * 20_000_000))
+        ).flat_map(lambda _: port)
+        yield from effect.blocking(lambda: stall(at)).fork_daemon()
+        yield from effect.blocking(lambda: started.wait(TIMEOUT))
+
+    layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout=0.3)
+    program = scoped(serving()).pipe(fx.provide(layer_live))
+    started_at = time.monotonic()
+    fx.run_sync(program.timeout(TIMEOUT).or_die())
+    assert time.monotonic() - started_at < 2.5
+
+
+def test_writes_nothing_to_a_client_that_half_closed_before_the_response() -> None:
+    """Node's server does not allow half-open connections: a client that
+    ends its side aborts the request and gets no response (not a 499)."""
+
+    @fx.fn
+    def program():
+        slow = fx.sleep(0.3).as_(server_response.text("late"))
+        at = yield from server.serve_effect(slow).flat_map(lambda _: port)
+        return (yield from exchange(at, [b"GET / HTTP/1.1\r\nhost: x\r\n\r\n"]))
+
+    assert run_live(program()) == b""
+
+
+@pytest.mark.parametrize(
+    "head",
+    [
+        b"GET / HTTP/1.1\nhost: x\nconnection: close\n\n",
+        b"GET / HTTP/1.1\r\nhost: x\nconnection: close\r\n\r\n",
+    ],
+    ids=["every line", "one line"],
+)
+def test_answers_a_head_with_a_bare_lf_line_ending_with_400_at_once(head: bytes) -> None:
+    @fx.fn
+    def program():
+        at = yield from _serve_ok()
+        started = time.monotonic()
+        received = yield from until_close(at, head)
+        return received, time.monotonic() - started
+
+    received, elapsed = run_live(program())
+    [response] = parse_responses(received)
+    assert response.status == 400
+    assert elapsed < TIMEOUT / 2
+
+
+def test_skips_a_bare_lf_before_the_request_line() -> None:
+    @fx.fn
+    def program():
+        at = yield from _serve_ok()
+        return (
+            yield from until_close(at, b"\nGET / HTTP/1.1\r\nhost: x\r\nconnection: close\r\n\r\n")
+        )
+
+    [response] = parse_responses(run_live(program()))
+    assert response.status == 200
+
+
+@pytest.mark.parametrize(
+    "body",
+    [b"5\n", b"5\r\nhello\n", b"5\r\nhello\r\n0\r\nx: y\n"],
+    ids=["size line", "data end", "trailer"],
+)
+def test_answers_a_chunked_body_with_a_bare_lf_line_ending_with_400_at_once(body: bytes) -> None:
+    """llhttp fails a chunked body line ending in a bare LF at once
+    (``HPE_CR_EXPECTED``), checked under Node 24."""
+
+    @fx.fn
+    def program():
+        read = HttpServerRequest().flat_map(lambda request: request.text)
+        yield from server.serve_effect(read.as_(server_response.text("ok")))
+        at = yield from port
+        head = b"POST / HTTP/1.1\r\nhost: x\r\ntransfer-encoding: chunked\r\n\r\n"
+        started = time.monotonic()
+        received = yield from until_close(at, head + body)
+        return received, time.monotonic() - started
+
+    received, elapsed = run_live(program())
+    [response] = parse_responses(received)
+    assert response.status == 400
+    assert elapsed < TIMEOUT / 2

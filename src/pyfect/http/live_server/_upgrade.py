@@ -1,8 +1,10 @@
-"""Upgrading a connection to another protocol (RFC 9110 §7.8): the
-handler's ``request.upgrade`` answers ``101 Switching Protocols`` once it
-takes the socket's reader, after the request body has ended (its unread
-rest discarded, up to ``MaxBodySize``), and the socket reads the bytes the
-client sent after the request first."""
+"""Upgrading a connection to another protocol (RFC 9110 §7.8), as
+Effect's ``NodeHttpServer.makeUpgradeHandler``: ``Upgrade: websocket`` is a
+WebSocket (``_websocket``, which takes no custom response headers); for
+any other protocol the handler's ``request.upgrade`` answers ``101
+Switching Protocols`` once it takes the socket's reader, after the request
+body has ended (its unread rest discarded, up to ``MaxBodySize``), and the
+raw socket reads the bytes the client sent after the request first."""
 
 from __future__ import annotations
 
@@ -19,7 +21,8 @@ from pyfect.http.live_server._exchange import (
     InvalidResponse,
     encode_fields,
 )
-from pyfect.http.server_error import HttpServerError, request_parse_error
+from pyfect.http.live_server._websocket import web_socket
+from pyfect.http.server_error import HttpServerError, InternalError, request_parse_error
 from pyfect.http.server_request import ServerRequest
 from pyfect.http.server_response import empty
 from pyfect.scope import Scope
@@ -36,20 +39,32 @@ def _head(protocol: str, headers: Headers) -> bytes:
     return encode_fields("HTTP/1.1 101 Switching Protocols", fields)
 
 
+def _upgrade_error(
+    request: ServerRequest, description: str, cause: object = None
+) -> HttpServerError:
+    """Effect's ``upgradeError``: an ``InternalError``."""
+    return HttpServerError(InternalError(request, description, cause))
+
+
 def upgrade(
-    exchange: Exchange, request: ServerRequest, headers: Headers
+    exchange: Exchange, request: ServerRequest, headers: Headers, websocket_max_message_size: int
 ) -> Effect[SocketService, HttpServerError]:
-    """The raw connection of an ``Upgrade`` request."""
+    """The connection of an ``Upgrade`` request: a WebSocket or raw."""
     protocol = exchange.head.upgrade
     if protocol is None:
         return fail(request_parse_error(request, "Not an upgradeable ServerRequest"))
+    if protocol.lower() == "websocket":
+        if headers:
+            message = "WebSocket upgrades do not support custom response headers"
+            return fail(_upgrade_error(request, message))
+        return succeed(web_socket(exchange, websocket_max_message_size))
     reserved = sorted(_RESERVED.intersection(headers))
     if reserved:
-        return fail(request_parse_error(request, f"Reserved upgrade header: {reserved[0]}"))
+        return fail(_upgrade_error(request, f"Reserved upgrade header: {reserved[0]}"))
     try:
         head = _head(protocol, headers)
     except InvalidResponse as cause:
-        return fail(request_parse_error(request, str(cause), cause))
+        return fail(_upgrade_error(request, str(cause), cause))
     conn = exchange.conn
 
     def switch() -> Effect[None, SocketError]:

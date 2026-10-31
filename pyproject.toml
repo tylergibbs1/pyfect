@@ -90,6 +90,12 @@ docs = ["griffe-typingdoc==0.2.9"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+# A coroutine left pending (a close never awaited before a loop stopped) or
+# an exception raised where nothing can catch it fails the test that left it.
+filterwarnings = [
+    "error:coroutine .*was never awaited:RuntimeWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 
 [tool.pyright]
 typeCheckingMode = "strict"

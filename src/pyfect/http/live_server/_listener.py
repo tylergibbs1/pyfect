@@ -1,8 +1,8 @@
 """Listening for HTTP connections on the socket loop, and the graceful
 shutdown Node's server does when its scope closes: stop accepting, close
 idle connections, let the busy ones finish (they close once idle for the
-keep-alive timeout) for ``graceful_shutdown_timeout``, then close every
-connection."""
+keep-alive timeout) for ``graceful_shutdown_timeout``, then interrupt them
+and abort the connections that do not end at once."""
 
 from __future__ import annotations
 
@@ -28,6 +28,11 @@ from pyfect.socket._loop import get_loop, run
 from pyfect.socket.server import SocketServerError, SocketServerOpenError
 
 type Listen = Callable[[Callable[[], Connection]], Any]
+
+ABORT_GRACE_PERIOD = Seconds(0.5)
+"""How long the requests still running when the graceful shutdown timeout
+ends may take to stop once interrupted before their connections are
+aborted."""
 
 
 class ConnectionState:
@@ -105,9 +110,28 @@ class Listener:
 
             return gen(forever)
 
+        def close_all(scope: CloseableScope) -> Effect[None]:
+            """As Node's ``closeAllConnections``: interrupt the requests still
+            running, and abort the connections that do not end within the
+            grace period (a write waiting on a client that stopped reading,
+            which an interrupt cannot end)."""
+            serving = self.serving()
+
+            def abort() -> None:
+                for conn in serving:
+                    conn.close(graceful=False)
+
+            def body():
+                closing = yield from scope.close(Success(None)).fork()
+                if (yield from timeout_option(closing.await_exit(), ABORT_GRACE_PERIOD)) is None:
+                    abort()
+                    yield from closing.await_exit()
+
+            return gen(body)
+
         def body():
             scope = CloseableScope()
-            closed = self.shutdown(shutdown_timeout).flat_map(lambda _: scope.close(Success(None)))
+            closed = self.shutdown(shutdown_timeout).and_then(suspend(lambda: close_all(scope)))
             return (yield from loop(scope).ensuring(closed))
 
         return gen(body)
@@ -115,6 +139,11 @@ class Listener:
     def _release(self, state: ConnectionState, conn: Connection) -> None:
         conn.close(graceful=True)
         self.done(state)
+
+    def serving(self) -> list[Connection]:
+        """The connections being served."""
+        with self.lock:
+            return [state.conn for state in self._serving]
 
     def close(self) -> None:
         """Close connections made from now on."""

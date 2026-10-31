@@ -18,12 +18,11 @@ Omitted:
   for drain after a streaming write applies backpressure": emit Node
   stream events on mocked ``ServerResponse`` objects.
 - WebSocket cases ("logs and traces status 101 after an upgraded
-  WebSocket closes", "websocket options are forwarded to the
-  WebSocketServer", "closes a WebSocket with the handler's ... code", "an
+  WebSocket closes", "closes a WebSocket with the handler's ... code", "an
   upgrade connection reset by the peer does not crash the process", "fails
-  refused websocket handshakes without hanging shutdown"): the live
-  server's upgrade hands over the raw connection; WebSocket framing is
-  ``pyfect.socket.ws``'s.
+  refused websocket handshakes without hanging shutdown", and the WebSocket
+  form of "does not write the HTTP response to an upgraded connection"):
+  in ``test_live_server_websocket.py``.
 - "xForwardedHeaders trusts an IPv4-mapped peer and keeps provenance after
   modify": the middleware's cases are in ``test_http_middleware.py``; the
   live server listens on one address family, so it sees no IPv4-mapped

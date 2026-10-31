@@ -24,7 +24,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.context import Tag
 from pyfect.deferred import Deferred
-from pyfect.http import router, uvicorn_server
+from pyfect.http import live_server, router, uvicorn_server
 from pyfect.http.client import HttpClientService
 from pyfect.http.server import HttpServer
 from pyfect.layer import Layer
@@ -264,19 +264,26 @@ def _served(app: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
     return router.serve(app, disable_logger=True, disable_listen_log=True)
 
 
-def http_suite(serialization: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
+type ServerLayer = Callable[[], Layer[Any, Any, Any]]
+
+
+def http_suite(
+    serialization: Layer[Any, Any, Any], server_layer: ServerLayer = uvicorn_server.layer_test
+) -> Layer[Any, Any, Any]:
     server = _served(rpc_layer().pipe(layer.provide_merge(rpc_server.layer_protocol_http("/rpc"))))
     client = users_client_layer().pipe(
         layer.provide(rpc_client.layer_protocol_http("", transform_client=_append_rpc))
     )
     return (
         client.pipe(layer.provide_merge(server))
-        .pipe(layer.provide(uvicorn_server.layer_test()))
+        .pipe(layer.provide(server_layer()))
         .pipe(layer.provide(serialization))
     )
 
 
-def ws_suite(serialization: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
+def ws_suite(
+    serialization: Layer[Any, Any, Any], server_layer: ServerLayer = uvicorn_server.layer_test
+) -> Layer[Any, Any, Any]:
     server = _served(
         rpc_layer().pipe(layer.provide_merge(rpc_server.layer_protocol_websocket("/rpc")))
     )
@@ -290,7 +297,7 @@ def ws_suite(serialization: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
     )
     return (
         client.pipe(layer.provide_merge(server))
-        .pipe(layer.provide(uvicorn_server.layer_test()))
+        .pipe(layer.provide(server_layer()))
         .pipe(layer.provide(serialization))
     )
 
@@ -358,6 +365,10 @@ SUITES: dict[str, Callable[[], Layer[Any, Any, Any]]] = {
     "e2e ws ndjson": lambda: ws_suite(rs.layer_ndjson),
     "e2e ws json": lambda: ws_suite(rs.layer_json),
     "e2e ws jsonrpc": lambda: ws_suite(rs.layer_json_rpc()),
+    "e2e live http ndjson": lambda: http_suite(rs.layer_ndjson, live_server.layer_test),
+    "e2e live ws ndjson": lambda: ws_suite(rs.layer_ndjson, live_server.layer_test),
+    "e2e live ws json": lambda: ws_suite(rs.layer_json, live_server.layer_test),
+    "e2e live ws jsonrpc": lambda: ws_suite(rs.layer_json_rpc(), live_server.layer_test),
     "e2e tcp ndjson": lambda: tcp_suite(rs.layer_ndjson),
     "e2e tcp jsonrpc": lambda: tcp_suite(rs.layer_nd_json_rpc()),
     "e2e worker thread": lambda: worker_suite(lambda: ThreadWorker(run_worker)),

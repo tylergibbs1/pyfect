@@ -54,6 +54,7 @@ from pyfect.path import Path
 from pyfect.run import run_fork
 from pyfect.scope import CloseableScope, acquire_release
 from pyfect.scope import Scope as ScopeTag
+from pyfect.socket._web_socket import DEFAULT_MAX_MESSAGE_SIZE
 from pyfect.socket.server import SocketServerError, SocketServerOpenError
 
 
@@ -174,6 +175,7 @@ def _uvicorn(dispatch: _Dispatch, options: Options) -> uvicorn.Server:
     config: dict[str, Any] = {
         "log_config": None,
         "server_header": False,
+        "ws_max_size": DEFAULT_MAX_MESSAGE_SIZE,
         **options.get("config", {}),
     }
     config.update(app=dispatch, lifespan="off", timeout_graceful_shutdown=graceful)

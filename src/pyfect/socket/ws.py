@@ -54,11 +54,13 @@ from pyfect.socket._web_socket import (
     CLOSED,
     CLOSING,
     CONNECTING,
+    DEFAULT_MAX_MESSAGE_SIZE,
     OPEN,
     Listener,
     WebSocket,
     WebSocketClientOptions,
     WebSocketConstructor,
+    WebSocketConstructorService,
     WebSocketEvent,
     WebSocketEventType,
     WebSocketLike,
@@ -89,7 +91,10 @@ class WsWebSocket:
     ``pause`` stops reading messages until ``resume``; ``buffered_amount``
     counts what was sent but has not reached the transport."""
 
-    def __init__(self, *, paused: bool = False) -> None:
+    def __init__(
+        self, *, paused: bool = False, max_message_size: int | None = DEFAULT_MAX_MESSAGE_SIZE
+    ) -> None:
+        self._max_message_size = max_message_size
         self._lock = threading.Lock()
         self._listeners: dict[WebSocketEventType, list[tuple[Listener, bool]]] = {}
         self._state = CONNECTING
@@ -103,9 +108,17 @@ class WsWebSocket:
         self._connection: WsConnection | None = None
 
     @classmethod
-    def connect(cls, url: str, options: WebSocketClientOptions) -> WsWebSocket:
-        """Open a client connection to ``url``."""
-        ws = cls()
+    def connect(
+        cls,
+        url: str,
+        options: WebSocketClientOptions,
+        *,
+        max_message_size: int | None = DEFAULT_MAX_MESSAGE_SIZE,
+    ) -> WsWebSocket:
+        """Open a client connection to ``url``; a message longer than
+        ``max_message_size`` bytes (``None``: no limit) closes it with
+        1009."""
+        ws = cls(max_message_size=max_message_size)
         call_soon(lambda: ws._begin(url, options))
         return ws
 
@@ -235,6 +248,7 @@ class WsWebSocket:
                 additional_headers=None if options.headers is None else dict(options.headers),
                 open_timeout=None,
                 proxy=None,
+                max_size=self._max_message_size,
             )
         except Exception as error:
             self._closed_before_open(error)
@@ -315,10 +329,31 @@ def _closed_while_connecting() -> Exception:
     return RuntimeError("WebSocket was closed before the connection was established")
 
 
-layer_web_socket_constructor: Layer[WebSocketConstructor] = layer_succeed(
-    WebSocketConstructor, WsWebSocket.connect
-)
-"""``WebSocketConstructor`` on the ``websockets`` client."""
+def web_socket_constructor(
+    *, max_message_size: int | None = DEFAULT_MAX_MESSAGE_SIZE
+) -> WebSocketConstructorService:
+    """``WsWebSocket.connect`` with ``max_message_size`` (16 MiB by default,
+    what pyfect's servers take; ``None``: no limit)."""
+
+    def construct(url: str, options: WebSocketClientOptions) -> WebSocketLike:
+        return WsWebSocket.connect(url, options, max_message_size=max_message_size)
+
+    return construct
+
+
+def layer_web_socket_constructor_with(
+    *, max_message_size: int | None = DEFAULT_MAX_MESSAGE_SIZE
+) -> Layer[WebSocketConstructor]:
+    """``WebSocketConstructor`` on the ``websockets`` client, taking messages
+    up to ``max_message_size`` bytes."""
+    return layer_succeed(
+        WebSocketConstructor, web_socket_constructor(max_message_size=max_message_size)
+    )
+
+
+layer_web_socket_constructor: Layer[WebSocketConstructor] = layer_web_socket_constructor_with()
+"""``WebSocketConstructor`` on the ``websockets`` client (messages up to
+16 MiB)."""
 
 
 def layer_web_socket(
@@ -328,8 +363,10 @@ def layer_web_socket(
     protocols: str | Sequence[str] | None = None,
     headers: Mapping[str, str] | None = None,
     high_water_mark: int | None = None,
+    max_message_size: int | None = DEFAULT_MAX_MESSAGE_SIZE,
 ) -> Layer[Socket]:
-    """``Socket`` as a WebSocket client on the ``websockets`` library."""
+    """``Socket`` as a WebSocket client on the ``websockets`` library; a
+    message longer than ``max_message_size`` bytes closes it with 1009."""
     client = layer_web_socket_with(
         url,
         open_timeout=open_timeout,
@@ -337,7 +374,8 @@ def layer_web_socket(
         headers=headers,
         high_water_mark=high_water_mark,
     )
-    return client.pipe(layer_provide(layer_web_socket_constructor))
+    constructor = layer_web_socket_constructor_with(max_message_size=max_message_size)
+    return client.pipe(layer_provide(constructor))
 
 
 # --- server -----------------------------------------------------------------
@@ -376,7 +414,8 @@ def make_server(
 ) -> Effect[SocketServerService, SocketServerError, Scope]:
     """A WebSocket server listening on ``host:port`` (port 0: any free
     port), closed with the scope; ``serve_options`` go to ``websockets``'
-    ``serve`` (``process_request``, ``subprotocols``, ...). A handshake
+    ``serve`` (``process_request``, ``subprotocols``, ``max_size``, 16 MiB
+    by default, ...). A handshake
     whose ``Origin`` ``AllowedOrigins`` does not allow (same-origin by
     default) is refused with 403 before ``process_request`` runs."""
     return AllowedOrigins().flat_map(lambda policy: _make_server(port, host, policy, serve_options))
@@ -386,7 +425,7 @@ def _make_server(
     port: int, host: str | None, policy: OriginPolicy, serve_options: dict[str, Any]
 ) -> Effect[SocketServerService, SocketServerError, Scope]:
     accepted = Accepted()
-    serve_options = dict(serve_options)
+    serve_options = {"max_size": DEFAULT_MAX_MESSAGE_SIZE, **serve_options}
     then = serve_options.pop("process_request", None)
 
     async def process_request(connection: ServerConnection, request: Request) -> Any:
@@ -436,5 +475,7 @@ __all__ = [
     "layer_server",
     "layer_web_socket",
     "layer_web_socket_constructor",
+    "layer_web_socket_constructor_with",
     "make_server",
+    "web_socket_constructor",
 ]

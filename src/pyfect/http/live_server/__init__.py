@@ -7,7 +7,8 @@ library's asyncio streams: no ASGI server needed.
 
 Requests are read with keep-alive, ``Content-Length`` or chunked bodies,
 ``Expect: 100-continue`` (the ``100`` is sent when the app first reads the
-body) and upgrades; responses get Node's framing and headers. When the
+body) and upgrades (``Upgrade: websocket`` speaks RFC 6455, as ``ws``
+does under Node); responses get Node's framing and headers. When the
 serving scope closes the server stops accepting, closes idle connections
 and gives the busy ones ``graceful_shutdown_timeout`` to finish: as Node's
 server does, they go on answering keep-alive requests until they have been
@@ -29,7 +30,7 @@ from pyfect.http.etag import layer_weak as etag_layer_weak
 from pyfect.http.http_effect import to_handled
 from pyfect.http.httpx_client import layer as httpx_layer
 from pyfect.http.live_server._exchange import Exchange
-from pyfect.http.live_server._listener import Listen, Listener, listen
+from pyfect.http.live_server._listener import ConnectionState, Listen, Listener, listen
 from pyfect.http.live_server._serve import Timeouts, serve_connection
 from pyfect.http.platform import HttpPlatform
 from pyfect.http.platform import layer_live as platform_layer_live
@@ -51,6 +52,7 @@ from pyfect.scope import Scope
 from pyfect.socket._loop import get_loop
 from pyfect.socket._socket import PemInput, TlsUpgradeOptions
 from pyfect.socket._tls import server_context
+from pyfect.socket._web_socket import DEFAULT_MAX_MESSAGE_SIZE
 from pyfect.socket.server import SocketServerError, SocketServerOpenError
 
 
@@ -71,6 +73,9 @@ class Options(TypedDict):
     """How long a whole request (head and body) may take to arrive (Node's
     ``requestTimeout``, 300s); a body that does not fails its read and the
     connection is closed."""
+    websocket_max_message_size: NotRequired[int]
+    """The longest WebSocket message a client may send (16 MiB, as uvicorn's
+    ``ws_max_size``); a longer one closes the connection with 1009."""
 
 
 class TlsOptions(Options):
@@ -85,15 +90,19 @@ def _serve(listener: Listener, protocol: RequestProtocol, options: Options) -> H
         headers=to_seconds(options.get("headers_timeout", 60)),
         request=to_seconds(options.get("request_timeout", 300)),
     )
+    max_message = options.get("websocket_max_message_size", DEFAULT_MAX_MESSAGE_SIZE)
 
     def serve(app: HttpApp, middleware: Middleware | None) -> Effect[None, Any, Scope]:
         def handle(request: SourceRequest, exchange: Exchange) -> Effect[None]:
             handled = to_handled(app, exchange.respond, middleware)
             return handled.pipe(provide_service(HttpServerRequest, request))
 
-        served = listener.run(
-            lambda state: serve_connection(listener, state, handle, protocol, timeouts), timeout
-        )
+        def serve_one(state: ConnectionState) -> Effect[None]:
+            return serve_connection(
+                listener, state, handle, protocol, timeouts, websocket_max_message_size=max_message
+            )
+
+        served = listener.run(serve_one, timeout)
         return served.fork_scoped().as_void()
 
     assert listener.address is not None

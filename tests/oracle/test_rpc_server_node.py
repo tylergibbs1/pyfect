@@ -3,7 +3,9 @@
 the Effect test title, prefixed by its ``describe`` blocks; ``{suite}`` is
 the suite name, one of ``SUITES``.
 
-The HTTP suites run on the uvicorn test server, which serves WebSockets.
+The HTTP suites run on the uvicorn test server; the "e2e live" suites run
+the same cases on the live server (Effect's suites run on Node's server),
+WebSockets included.
 The "e2e worker thread" and "e2e worker process" suites are the browser
 and Deno ``RpcWorker.test.ts`` ("e2e worker", commented out in
 platform-node's file) on a ``ThreadWorker`` and a ``ProcessWorker``; they

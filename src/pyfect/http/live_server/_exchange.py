@@ -109,6 +109,7 @@ class Exchange:
 
     __slots__ = (
         "_inbound",
+        "aborted",
         "body",
         "close_after",
         "conn",
@@ -138,6 +139,8 @@ class Exchange:
         self.close_after = not head.keep_alive or head.upgrade is not None
         self.keep_alive_seconds = keep_alive_seconds
         self.upgraded: HttpServerResponse | None = None
+        self.aborted = False
+        """The client went first (Node's server then writes nothing more)."""
 
     # --- writing ----------------------------------------------------------------
 
@@ -216,7 +219,7 @@ class Exchange:
         def step() -> Effect[object, Any]:
             if self.upgraded is not None:
                 return succeed(self.upgraded)
-            if self.headers_sent:
+            if self.headers_sent or self.aborted:
                 return void
             without_body = request.method == "HEAD"
             wire = to_wire(response, without_body=without_body)
