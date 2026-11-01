@@ -39,8 +39,11 @@ pytest.importorskip("psycopg")
 
 import pyfect as fx
 from pyfect import scope, testing
+from pyfect.cause import Interrupted
+from pyfect.exit import Failure
 from pyfect.scope import Scope
 from pyfect.sql import pg
+from pyfect.sql.client import SqlClient
 from pyfect.sql.error import SqlError
 from pyfect.sql.pg.connection import PgConnection, Result
 
@@ -628,3 +631,19 @@ def test_fails_a_checkout_that_waits_on_an_exhausted_pool_past_acquire_timeout(
             assert error.reason.operation == "acquireConnection"
 
     yield from fx.scoped(fx.gen(body)).pipe(fx.provide(fx.reactivity.layer))
+
+
+def test_a_released_client_interrupts_naming_the_closed_pool(pg_server: PgServer) -> None:
+    """pyfect: a ``SqlClient`` kept past its layer (``.pipe(provide(layer))``)
+    interrupts as Effect's ``Pool.get`` does, and says the pool is closed."""
+
+    @fx.fn
+    def program():
+        sql = yield from SqlClient().pipe(fx.provide(pg.client.layer(_config(pg_server))))
+        return (yield from sql("SELECT 1").timeout(5).exit())
+
+    exit_ = fx.run_sync(scope.scoped(program()).or_die())
+    assert isinstance(exit_, Failure) and exit_.cause.has_interrupts_only, exit_
+    error = exit_.cause.squash()
+    assert isinstance(error, Interrupted)
+    assert "because the Pool is closed" in "\n".join(error.__notes__)

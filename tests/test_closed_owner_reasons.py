@@ -1,11 +1,13 @@
 """Every place the runtime interrupts because an owner (a ``Scope``,
-``FiberMap``, ``FiberSet``, ``FiberHandle``) is closed says so with
-``closed(...)`` / ``interrupt_closed(...)`` (DOGFOOD beacon 11).
+``FiberMap``, ``FiberSet``, ``FiberHandle``, ``Pool``, RPC client) is closed
+says so with ``closed(...)`` / ``interrupt_closed(...)`` (DOGFOOD beacon 11,
+trawl 1 and 2).
 
 Walks ``src/pyfect``: an ``if`` that tests whether an owner is closed
-(``x._closed is not None``, or a collection's ``_state`` / ``_fibers`` being
-``None``) and interrupts in its body must name the owner, so a new closed
-path can't interrupt without a reason.
+(``x._closed is not None``, a collection's ``_state`` / ``_fibers`` being
+``None``, or a shutdown flag such as ``state.is_shutting_down``) and
+interrupts in its body must name the owner, so a new closed path can't
+interrupt without a reason.
 """
 
 import ast
@@ -16,7 +18,14 @@ SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
 _CLOSED_STATE = {"_closed"}
 _COLLECTION_STATE = {"_state", "_fibers", "state", "fibers"}
 _COLLECTIONS = {"fiber_map.py", "fiber_set.py", "fiber_handle.py"}
-_INTERRUPTS = {"interrupt_as_unsafe", "interrupt", "interrupted", "interrupted_fiber"}
+_SHUTDOWN_FLAGS = {"is_shutting_down", "is_shutdown", "_is_shutdown"}
+_INTERRUPTS = {
+    "interrupt_as_unsafe",
+    "interrupt",
+    "interrupted",
+    "interrupted_fiber",
+    "interrupt_cause",
+}
 _REASONS = {"closed", "interrupt_closed"}
 
 
@@ -29,6 +38,8 @@ def _name(node: ast.expr) -> str | None:
 
 
 def _tests_closed(test: ast.expr, collection: bool) -> bool:
+    if _name(test) in _SHUTDOWN_FLAGS:
+        return True
     if not (isinstance(test, ast.Compare) and len(test.ops) == 1):
         return False
     subject, op, other = test.left, test.ops[0], test.comparators[0]

@@ -28,15 +28,36 @@ with 403; `layer.succeed(AllowedOrigins, origin.allow("https://app.example"))` (
 `layer_nd_json_rpc()`.
 
 `rpc_client.make(Group)` is the client, over the `ClientProtocol` in the context:
-`layer_protocol_http(url)` sends calls as POSTs, and `layer_protocol_socket()` over a
-`Socket`, such as a WebSocket. A call fails with the procedure's error or an
-`RpcClientError`; a stream procedure gives a `Stream`.
+`layer_protocol_http(url)` sends calls as POSTs, and `layer_protocol_socket()` over the
+`Socket` in the context. A call fails with the procedure's error or an `RpcClientError`;
+a stream procedure gives a `Stream`.
+
+The client is valid while the protocol is. Provide the protocol around the code that uses
+the client, or pass it as `rpc_client.make(Group, layer=protocol)`, which builds it into the
+caller's scope. `rpc_client.make(Group).pipe(fx.provide(protocol))` releases the protocol
+(and its WebSocket) as soon as the client is made; every call on that client then fails
+with an `RpcClientError` saying the protocol is closed.
 
 <CodeOutput>
 
 <include meta='title="todos.py"'>../../snippets/rpc/todos.py</include>
 
 <include lang="text">../../snippets/rpc/todos.out</include>
+
+</CodeOutput>
+
+### Over a WebSocket
+
+`pyfect.socket.ws.layer_web_socket(url)` is a client `Socket` on the `websockets` library,
+installed with the extra: `pip install "pyfect-dev[websockets]"`. Under
+`layer_protocol_socket()` it gives a protocol that sends every call over one connection,
+reconnecting when it drops.
+
+<CodeOutput>
+
+<include meta='title="todos_ws.py"'>../../snippets/rpc/todos_ws.py</include>
+
+<include lang="text">../../snippets/rpc/todos_ws.out</include>
 
 </CodeOutput>
 
@@ -59,8 +80,10 @@ current user.
 
 ## Testing handlers
 
-`pyfect.rpc.test.make_client(Group)` calls the handlers in memory, without a server or
-serialization; the handlers and their services come from the test.
+`pyfect.rpc.test.make_client(Group, layer=GroupLive)` calls the handlers in memory,
+without a server or serialization. The layer is built into the test's scope, so a database
+or forked workers in it stay open while the client is used; provided to `make_client(...)`
+alone, it would be released once the client is made.
 
 <include meta='title="test_todos.py"'>../../snippets/rpc/test_todos.py</include>
 

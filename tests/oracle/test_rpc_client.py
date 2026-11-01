@@ -384,9 +384,9 @@ def test_fails_request_on_empty_http_response(serialization: Any, body: str) -> 
     """RpcClient / fails request on empty HTTP response for ${unframed/framed} serialization"""
 
     def program():
-        client = yield from rpc_client.make(TestGroup).pipe(
-            fx.provide(_http_protocol(serialization, body))
-        )
+        # Effect provides the layer to make alone; pyfect's protocol is closed with its
+        # scope (PARITY.md), so the layer goes in through layer=.
+        client = yield from rpc_client.make(TestGroup, layer=_http_protocol(serialization, body))
         exit = yield from client.ping().timeout(1).exit()
         error = _squash_message(exit)
         assert isinstance(error, RpcClientError)
@@ -402,8 +402,10 @@ def test_defects_request_when_framed_http_response_closes_before_request_complet
 
     def program():
         client = yield from rpc_client.make(
-            TestGroup, ClientOptions(generate_request_id=lambda: "0")
-        ).pipe(fx.provide(_http_protocol(rs.layer_ndjson, body)))
+            TestGroup,
+            ClientOptions(generate_request_id=lambda: "0"),
+            layer=_http_protocol(rs.layer_ndjson, body),
+        )
         exit = yield from client.events().run_drain().timeout(1).exit()
         error = _squash_message(exit)
         assert isinstance(error, RpcClientError)
@@ -1151,9 +1153,7 @@ def test_interrupts_batches_started_while_the_client_is_shutting_down():
     )
     scope = CloseableScope()
     client = yield from (
-        rpc_client.make(GatedEcho)
-        .pipe(fx.provide(protocol))
-        .pipe(effect.provide_service(Scope, scope))
+        rpc_client.make(GatedEcho, layer=protocol).pipe(effect.provide_service(Scope, scope))
     )
     yield from client.echo({"value": "first"}).fork()
     # admitted before shutdown, but still encoding its payload

@@ -1,5 +1,5 @@
 import pyfect as fx
-from pyfect import layer, stream, testing
+from pyfect import layer, scope, stream, testing
 from pyfect import schema as S
 from pyfect.rpc import RpcGroup, RpcRequest, make, rpc_schema
 from pyfect.rpc import test as rpc_test
@@ -37,13 +37,26 @@ def countdown(request: RpcRequest[int]):
 TodosLive = Todos.to_layer(
     Todos.handlers().handle(Todos.get_todo)(get_todo).handle(Todos.countdown)(countdown)
 )
-# The handlers' services come from the test.
-TestTodos = TodosLive.pipe(layer.provide(layer.succeed(Store, {1: Todo(id=1, title="Test")})))
+
+
+def open_store():
+    """A store that is cleared when its scope closes, like a database connection."""
+
+    def close(store: dict[int, Todo], _exit: object):
+        return fx.sync(store.clear)
+
+    return scope.acquire_release(fx.sync(lambda: {1: Todo(id=1, title="Test")}), close)
+
+
+# The handlers' services come from the test; the store is a scoped resource.
+TestTodos = TodosLive.pipe(layer.provide(layer.effect(Store, open_store())))
 
 
 def todos_client():
-    """A client calling the handlers in memory: no server, no serialization."""
-    return rpc_test.make_client(Todos).pipe(fx.provide(TestTodos))
+    """A client calling the handlers in memory: no server, no serialization. `layer=`
+    builds TestTodos into the test's scope, so the store stays open while the client is
+    used. (`make_client(Todos).pipe(fx.provide(TestTodos))` would close it at once.)"""
+    return rpc_test.make_client(Todos, layer=TestTodos)
 
 
 @testing.effect

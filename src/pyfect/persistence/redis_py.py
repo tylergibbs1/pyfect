@@ -34,6 +34,7 @@ except ImportError as error:  # pragma: no cover - depends on the environment
 
 from pyfect._core import Effect
 from pyfect._os_wait import os_wait
+from pyfect._released import Lifetime
 from pyfect.config import Config, ConfigError
 from pyfect.config._config import unwrap
 from pyfect.context import Context, Tag
@@ -70,12 +71,14 @@ def _with_code(error: BaseException) -> BaseException:
 
 
 class _Loop:
-    """An asyncio loop on a thread of its own."""
+    """An asyncio loop on a thread of its own; a call once it stopped
+    fails with a ``RedisError`` saying the client is closed."""
 
-    __slots__ = ("loop",)
+    __slots__ = ("_lifetime", "loop")
 
     def __init__(self) -> None:
         self.loop = asyncio.new_event_loop()
+        self._lifetime = Lifetime("Redis client")
         threading.Thread(target=self._run, name="pyfect-redis", daemon=True).start()
 
     def _run(self) -> None:
@@ -87,7 +90,9 @@ class _Loop:
         """Run ``make()`` on the loop; interrupting cancels it."""
 
         def register(resume: Callable[[Effect[A, RedisError]], None]) -> Callable[[], bool]:
-            future: Future[A] = asyncio.run_coroutine_threadsafe(make(), self.loop)
+            future: Future[A] = self._lifetime.submit(
+                lambda: asyncio.run_coroutine_threadsafe(make(), self.loop)
+            )
 
             def done(finished: Future[A]) -> None:
                 if finished.cancelled():
@@ -105,7 +110,11 @@ class _Loop:
         return os_wait(register)
 
     def stop(self) -> Effect[None]:
-        return sync(lambda: self.loop.call_soon_threadsafe(self.loop.stop)).as_void()
+        def stop() -> None:
+            self._lifetime.close()
+            self.loop.call_soon_threadsafe(self.loop.stop)
+
+        return sync(stop)
 
 
 @dataclass(frozen=True, slots=True)

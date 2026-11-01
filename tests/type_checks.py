@@ -5586,6 +5586,10 @@ class RpcDb(Tag[int]): ...
 class RpcNotFound(fx.schema.TaggedError): ...
 
 
+class RpcOther(rpc.RpcGroup):
+    pong = rpc.make("Pong")
+
+
 class RpcUsers(rpc.RpcGroup):
     get = rpc.make("Get", payload=fx.schema.String, success=RpcUser, error=RpcNotFound)
     ping = rpc.make("Ping")
@@ -5669,6 +5673,22 @@ def check_rpc(users: RpcUsers) -> None:
     assert_type(
         rpc_client.make(RpcUsers), fx.Effect[RpcUsers, Never, Scope | rpc_client.ClientProtocol]
     )
+    # layer= builds the handlers or protocol into the caller's scope (DOGFOOD trawl 1, 2).
+    users_handlers = RpcUsers.to_layer(handlers)
+    assert_type(
+        rpc_test.make_client(RpcUsers, layer=users_handlers),
+        fx.Effect[RpcUsers, Never, RpcDb | RpcAuth | Scope],
+    )
+    other_handlers = RpcOther.to_layer(
+        RpcOther.handlers().handle(RpcOther.pong)(lambda _r: fx.succeed(None))
+    )
+    rpc_test.make_client(RpcUsers, layer=other_handlers)  # pyright: ignore[reportArgumentType]
+    http_protocol = rpc_client.layer_protocol_http("http://localhost/rpc")
+    assert_type(
+        rpc_client.make(RpcUsers, layer=http_protocol),
+        fx.Effect[RpcUsers, Never, rpc.serialization.RpcSerialization | HttpClient | Scope],
+    )
+    rpc_client.make(RpcUsers, layer=users_handlers)  # pyright: ignore[reportArgumentType]
 
 
 # --- persistence -------------------------------------------------------------------------

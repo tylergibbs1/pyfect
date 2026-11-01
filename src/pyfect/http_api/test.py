@@ -19,9 +19,9 @@ from collections.abc import Sequence
 from typing import Any, Never, overload
 
 from pyfect._core import Effect
-from pyfect._layer_core import require_layer
+from pyfect._layer_for_life import with_layer
 from pyfect.context import Context
-from pyfect.effect import context, die, gen, provide_context, provide_service, succeed
+from pyfect.effect import context, die, gen, provide_service, succeed
 from pyfect.exit import Exit, Success
 from pyfect.http._request_state import CurrentRequestState, RequestState
 from pyfect.http.client import make as make_http_client
@@ -68,12 +68,7 @@ def groups(
     groups' layers are ``layer``, built into the caller's ``Scope``, or
     else come from the context; the client is valid until that scope
     closes."""
-    if layer is not None:
-        require_layer(layer, "layer")
-    made = _groups(api_of(api), served, base_url)
-    if layer is None:
-        return made
-    return layer.build().flat_map(lambda built: made.pipe(provide_context(built)))
+    return with_layer(lambda: _groups(api_of(api), served, base_url), layer)
 
 
 def _groups(

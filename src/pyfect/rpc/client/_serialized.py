@@ -6,12 +6,14 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Never, cast
+from typing import Any, Never, cast, overload
 
 from pyfect import exit as Exit
 from pyfect import schema as S
 from pyfect._core import Effect, uninterruptible_mask
 from pyfect._fiber import Fiber
+from pyfect._layer_core import Layer
+from pyfect._layer_for_life import with_layer
 from pyfect.cause import Cause
 from pyfect.context import Context
 from pyfect.deferred import Deferred
@@ -266,13 +268,32 @@ class _Serialized:
         )
 
 
+@overload
 def make[G: RpcGroup](
     group: type[G], options: ClientOptions | None = None
-) -> Effect[G, Never, Scope | ClientProtocol]:
+) -> Effect[G, Never, Scope | ClientProtocol]: ...
+@overload
+def make[G: RpcGroup, E, R](
+    group: type[G], options: ClientOptions | None = None, *, layer: Layer[ClientProtocol, E, R]
+) -> Effect[G, E, R | Scope]: ...
+def make(
+    group: type[RpcGroup],
+    options: ClientOptions | None = None,
+    *,
+    layer: Layer[ClientProtocol, Any, Any] | None = None,
+) -> Effect[Any, Any, Any]:
     """A client of ``group`` over the ``ClientProtocol`` in the context
-    (Effect's ``RpcClient.make``). Client middleware comes from the
-    context too (``middleware.layer_client``)."""
+    (Effect's ``RpcClient.make``), or over ``layer``, built into the
+    caller's ``Scope``. The client is valid until that scope closes; a
+    protocol provided to ``make(...)`` alone is released once the client
+    is made, and its calls then fail with an ``RpcClientError``. Client
+    middleware comes from the context too (``middleware.layer_client``)."""
+    return with_layer(lambda: _make(group, options), layer)
 
+
+def _make(
+    group: type[RpcGroup], options: ClientOptions | None
+) -> Effect[RpcGroup, Never, Scope | ClientProtocol]:
     @gen
     def run():
         protocol = yield from ClientProtocol()

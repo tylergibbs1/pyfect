@@ -14,6 +14,7 @@ from pyfect import cause as Cause
 from pyfect import exit as Exit
 from pyfect._core import Effect, _AfterStarted, _WithFiber
 from pyfect._fiber import Fiber
+from pyfect._interrupt_reason import interrupt_closed
 from pyfect.context import Context
 from pyfect.deferred import Deferred
 from pyfect.effect import (
@@ -202,7 +203,7 @@ class RpcServer:
 
         def body(request_fiber: Fiber[Any, Any]) -> Effect[None]:
             if self._is_shutdown:
-                return interrupt()
+                return interrupt_closed("RPC server")
             client = self._clients.get(client_id)
             if client is None:
                 client = _Client(client_id, ServerClient(client_id))

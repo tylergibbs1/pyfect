@@ -14,13 +14,13 @@ from typing import Any, Never
 from pyfect import exit as Exit
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
+from pyfect._interrupt_reason import interrupt_closed
 from pyfect.context import Context, Reference
 from pyfect.effect import (
     callback,
     context,
     from_exit,
     gen,
-    interrupt,
     provide_service,
     succeed,
 )
@@ -236,7 +236,7 @@ class ClientCore:
 
         def body(parent: Fiber[Any, Any]) -> Effect[Any, Any]:
             if self._is_shutdown:
-                return interrupt()
+                return interrupt_closed("RPC client")
             id = self._next_id()
             send = self._with_middleware(
                 rpc,
@@ -311,7 +311,7 @@ class ClientCore:
         @gen
         def open():
             if self._is_shutdown:
-                yield from interrupt()
+                yield from interrupt_closed("RPC client")
             span = None
             if not self._options.disable_tracing:
                 span = yield from make_span_scoped(

@@ -184,13 +184,14 @@ def test_http_responses_for_a_closed_client_are_not_kept() -> None:
             chunks = stream.from_queue(frames)
             return posted.offer(None).as_(http_response.make(request, chunks))
 
-        protocol = yield from ClientProtocol().pipe(
-            fx.provide(
-                rpc_client.layer_protocol_http("http://localhost/rpc")
-                .pipe(layer.provide_merge(layer.succeed(rs.RpcSerialization, serialization)))
-                .pipe(layer.provide_merge(layer.succeed(HttpClient, http_client.make(send))))
-            )
+        # Built into the test's scope: the protocol is closed with the scope it is made in.
+        built = yield from (
+            rpc_client.layer_protocol_http("http://localhost/rpc")
+            .pipe(layer.provide_merge(layer.succeed(rs.RpcSerialization, serialization)))
+            .pipe(layer.provide_merge(layer.succeed(HttpClient, http_client.make(send))))
+            .build()
         )
+        protocol = built.get_unsafe(ClientProtocol)
         running = yield from protocol.run(1, lambda _: effect.void).fork()
         request: dict[str, Any] = {"_tag": "Request", "id": "stream", "tag": "Events"}
         request |= {"payload": None, "headers": []}

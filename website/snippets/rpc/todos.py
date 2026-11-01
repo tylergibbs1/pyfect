@@ -54,11 +54,12 @@ def client_protocol(url: str):
     return rpc_client.layer_protocol_http(url).pipe(layer.provide(serialization.layer_ndjson))
 
 
-# The client: an instance of the group whose attributes call the server.
+# The client: an instance of the group whose attributes call the server. `layer=` builds
+# the protocol into this scope, so it lives as long as the client.
 @fx.fn
 def program():
     url = yield from server.address_formatted_with(lambda origin: fx.succeed(f"{origin}/rpc"))
-    todos_client = yield from rpc_client.make(Todos).pipe(fx.provide(client_protocol(url)))
+    todos_client = yield from rpc_client.make(Todos, layer=client_protocol(url))
     print((yield from todos_client.get_todo(1)))
     print(repr((yield from todos_client.get_todo(2).flip())))
     print((yield from todos_client.countdown(3).run_collect()))

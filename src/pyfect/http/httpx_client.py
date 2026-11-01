@@ -27,6 +27,7 @@ from urllib.parse import SplitResult
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
 from pyfect._os_wait import os_wait
+from pyfect._released import Lifetime
 from pyfect.effect import Effect, fail, succeed, sync
 from pyfect.errors import Done
 from pyfect.http import body as _body
@@ -100,6 +101,7 @@ class _Backend:
         options.setdefault("timeout", None)
         self.client = import_httpx().AsyncClient(**options)
         self.loop = asyncio.new_event_loop()
+        self._lifetime = Lifetime("HTTP client")
         self._closing: set[asyncio.Task[None]] = set()
         """Responses being closed (touched on the loop only)."""
         threading.Thread(target=self._run, name="pyfect-httpx", daemon=True).start()
@@ -128,7 +130,9 @@ class _Backend:
         await self.client.aclose()
 
     def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
-        return asyncio.run_coroutine_threadsafe(make(), self.loop)
+        """Run ``make()`` on the loop; once the client is closed, a future
+        failed with ``Released``."""
+        return self._lifetime.submit(lambda: asyncio.run_coroutine_threadsafe(make(), self.loop))
 
     def _call_soon(self, f: Callable[[], object]) -> None:
         """Run ``f`` on the loop; once the backend has closed (and with it
@@ -141,7 +145,13 @@ class _Backend:
 
     def close(self) -> Effect[None]:
         """Close the httpx client, then stop the loop."""
-        closing = _future(None, lambda: self.submit(self._shutdown)).ignore()
+
+        def shutdown() -> Future[None]:
+            future = self.submit(self._shutdown)
+            self._lifetime.close()
+            return future
+
+        closing = _future(None, shutdown).ignore()
         return closing.flat_map(
             lambda _: sync(lambda: self.loop.call_soon_threadsafe(self.loop.stop)).as_void()
         )

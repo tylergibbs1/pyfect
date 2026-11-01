@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any, Never
 
 from pyfect._core import Effect, _FailCause, _WithFiber
+from pyfect._released import closed_message
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.context import Context, Tag
 
@@ -23,9 +24,7 @@ class InterruptReason(Tag[str]):
 
 def closed(owner: str, annotations: Context[Any] | None = None) -> Context[Any]:
     """``annotations`` with the reason "``owner`` is closed"."""
-    reason = Context.make(
-        InterruptReason, f"the {owner} is closed (used after the scope that owns it closed)"
-    )
+    reason = Context.make(InterruptReason, closed_message(owner))
     return reason if annotations is None else annotations.merge(reason)
 
 

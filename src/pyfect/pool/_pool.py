@@ -27,6 +27,7 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._interrupt_reason import closed
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.clock import Clock, ClockService
@@ -339,7 +340,7 @@ class Pool[A, E = Never]:
             def attempt(fiber: Fiber[Any, Any]) -> Effect[X, Any, R]:
                 if state.is_shutting_down:
                     state.usage -= 1
-                    return _FailCause(interrupt_cause(fiber.id))
+                    return _FailCause(interrupt_cause(fiber.id).annotate(closed("Pool")))
                 # A borrower that has not waited yet queues behind those
                 # already waiting, who keep their place until they take an
                 # item.
@@ -362,7 +363,7 @@ class Pool[A, E = Never]:
             def grow(fiber: Fiber[Any, Any]) -> Effect[X, Any, R]:
                 if state.is_shutting_down:
                     state.usage -= 1
-                    return _FailCause(interrupt_cause(fiber.id))
+                    return _FailCause(interrupt_cause(fiber.id).annotate(closed("Pool")))
                 if self._target_size() <= self._active_size():
                     return step
                 resize = fork_in(self._resize().interruptible(), state.scope)

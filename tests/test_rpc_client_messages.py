@@ -155,8 +155,8 @@ def test_a_malformed_http_response_fails_its_request_with_an_rpc_error(name: str
 
     def body():
         client = yield from rpc_client.make(
-            Echo, ClientOptions(generate_request_id=lambda: "1")
-        ).pipe(fx.provide(protocol))
+            Echo, ClientOptions(generate_request_id=lambda: "1"), layer=protocol
+        )
         _assert_rpc_error((yield from client.ping().exit()))
 
     _run(body)

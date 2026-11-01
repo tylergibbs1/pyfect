@@ -1,6 +1,7 @@
-"""Using a ``FiberMap``, ``FiberSet``, ``FiberHandle`` or ``Scope`` after it
-closed interrupts, as in Effect, and the interruption names what was
-closed (DOGFOOD beacon 11): every way of putting a fiber into one."""
+"""Using a ``FiberMap``, ``FiberSet``, ``FiberHandle``, ``Scope``, ``Pool`` or
+RPC client after it closed interrupts, as in Effect, and the interruption
+names what was closed (DOGFOOD beacon 11, trawl 1 and 2): every way of
+putting a fiber into one."""
 
 from collections.abc import Callable
 from typing import Any, Never
@@ -9,11 +10,15 @@ import pytest
 
 import pyfect as fx
 from pyfect import exit, scope
+from pyfect import schema as S
 from pyfect.cause import Interrupted
 from pyfect.exit import Exit, Failure
 from pyfect.fiber_handle import FiberHandle
 from pyfect.fiber_map import FiberMap
 from pyfect.fiber_set import FiberSet
+from pyfect.pool import Pool
+from pyfect.rpc import RpcGroup, make
+from pyfect.rpc import test as rpc_test
 from pyfect.scoped_ref import ScopedRef
 
 type _Use = Callable[[Any], fx.Effect[Exit[Any, Any]]]
@@ -45,6 +50,18 @@ def _forked(add: Callable[[fx.Fiber[Any, Any]], fx.Effect[None]]) -> fx.Effect[E
     return run()
 
 
+class Calls(RpcGroup):
+    ping = make("Ping", success=S.String)
+    ticks = make("Ticks", success=S.Int, stream=True)
+
+
+CallsLive = Calls.to_layer(
+    Calls.handlers()
+    .handle(Calls.ping)(lambda _r: fx.succeed("pong"))
+    .handle(Calls.ticks)(lambda _r: fx.stream.make(1, 2))
+)
+
+
 CASES: list[tuple[str, fx.Effect[Any, Any, scope.Scope], _Use]] = [
     ("FiberMap", FiberMap[str, None, Any].make(), lambda m: m.run("k", fx.never).exit()),
     (
@@ -73,6 +90,17 @@ CASES: list[tuple[str, fx.Effect[Any, Any, scope.Scope], _Use]] = [
     ),
     ("Scope", scope.Scope(), lambda s: scope.fork_in(fx.never, s).flat_map(_join)),
     ("Scope", scope.Scope(), lambda s: _forked(lambda f: fx.sync(lambda: f.run_in(s)).as_void())),
+    ("Pool", Pool.make(fx.succeed(1), size=1), lambda p: scope.scoped(p.get()).exit()),
+    (
+        "RPC client",
+        rpc_test.make_client(Calls, layer=CallsLive),
+        lambda c: c.ping().exit(),
+    ),
+    (
+        "RPC client",
+        rpc_test.make_client(Calls, layer=CallsLive),
+        lambda c: c.ticks().run_collect().exit(),
+    ),
 ]
 
 
