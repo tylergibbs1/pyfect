@@ -20,8 +20,10 @@ cluster, where they survive restarts.
 
 `execute(payload)` runs the workflow and waits for its result, retrying while it is
 suspended. `execute(payload, discard=True)` starts it and gives its execution id, which
-`poll` (a `Complete` with its `Exit`, a `Suspended`, or `None`), `interrupt` and `resume`
-take.
+`poll`, `interrupt` and `resume` take. `poll` gives a `Complete` with its `Exit` once the
+execution has finished, a `Suspended` while it waits for a deferred or a scheduled wake-up,
+and `None` both while a run is in progress and for an id it has no execution for, as in
+Effect.
 
 <Diagram name="workflow-replay" title="Each run reuses the stored results of the steps it already took, and suspends where an answer is missing" />
 
@@ -46,8 +48,11 @@ replays, to send to the system it calls.
 ## Durable clocks and deferreds
 
 `durable_clock.sleep(name=..., duration=...)` waits inside a workflow. A sleep up to
-`in_memory_threshold` (60 seconds) is an activity that sleeps; a longer one schedules a
-wake-up with the engine and suspends, so nothing waits in memory.
+`in_memory_threshold` (60 seconds) is an activity that sleeps, so the execution keeps
+running (`poll` gives `None`) and races including it are live; a longer one schedules a
+wake-up with the engine and suspends (`poll` gives `Suspended`), so nothing waits in memory.
+Both sleep on the `Clock`, so the [test clock](/docs/testing) moves them; let the run reach
+its sleep (a short `adjust` first) before moving past it.
 
 `durable_deferred.make(name, success=..., error=...)` is a named wait point. `wait()`
 suspends the workflow until something outside completes it with `succeed`, `fail` or
@@ -68,7 +73,14 @@ add them twice. Only top-level steps are compensated, not effects inside an acti
 run suspends, and `durable_queue` hands work to [`PersistedQueue`](/docs/persistence) workers
 and waits for their results. `workflow_proxy` and `workflow_proxy_server` expose
 workflows as [RPC](/docs/rpc) or [HttpApi](/docs/http-api) groups that execute, discard
-and resume them. `import pyfect` leaves them out, so import them as
+and resume them. `to_rpc_group` and `to_http_api_group` build the groups at run time, so
+their clients call operations by name; declare `workflow_proxy.rpcs(W)` or
+`workflow_proxy.http_endpoints(W)` in a group class of your own
+(`submit, submit_discard, submit_resume = workflow_proxy.http_endpoints(SubmitExpense)`) to
+type them, and serve that group with `workflow_proxy_server.layer_rpc_handlers` or
+`handle_http` next to its other endpoints. As in Effect, there is no operation that completes
+a deferred: expose `succeed` on a deferred's token through an endpoint of your own.
+`import pyfect` leaves them out, so import them as
 `from pyfect.workflow import workflow_proxy`.
 
 Reference: [`pyfect.workflow`](/docs/reference/workflow),

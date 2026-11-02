@@ -9,7 +9,7 @@ from typing import Any
 
 from pyfect._core import Effect
 from pyfect.clock import sleep
-from pyfect.cluster import _cluster_abandon
+from pyfect.cluster import _cluster_abandon, deliver_at
 from pyfect.cluster.cluster_error import (
     AlreadyProcessingMessage,
     EntityNotAssignedToRunner,
@@ -19,7 +19,7 @@ from pyfect.cluster.cluster_error import (
     RunnerUnavailable,
 )
 from pyfect.cluster.cluster_schema import Persisted
-from pyfect.cluster.envelope import AckChunk
+from pyfect.cluster.envelope import AckChunk, Request
 from pyfect.cluster.message import (
     Incoming,
     IncomingEnvelope,
@@ -115,6 +115,7 @@ class Routing:
         def notify_now() -> Effect[None, EntityNotAssignedToRunner]:
             if not state.storage_enabled:
                 return die(RuntimeError("Sharding.notifyLocal: storage is disabled"))
+            _read_when_due(state, message)
             return state.storage_read_latch.open().as_void()
 
         def notify_storage(_: IncomingLocal) -> Effect[None, EntityNotAssignedToRunner]:
@@ -272,6 +273,20 @@ class Routing:
         return self._state.storage.clear_replies(
             request_id, expected_reply_id=expected_reply_id
         ).match_cause(on_failure=lambda _: False, on_success=lambda _: True)
+
+
+def _read_when_due(state: ShardingState, message: Outgoing | Incoming) -> None:
+    """For a request due later (``DeliverAt``, such as a durable clock's
+    wake-up), also read storage when it falls due, on the ``Clock``: the
+    storage poll alone finds it up to ``entity_message_poll_interval`` late
+    (pyfect-only; the poll stays the fallback for another runner's messages)."""
+    request = message.envelope
+    if not isinstance(request, Request):
+        return
+    due = deliver_at.to_millis(request.payload)
+    wait = None if due is None else due - state.now_millis()
+    if wait is not None and wait > 0:
+        state.run_fork(sleep(Seconds(wait / 1000)).and_then(state.storage_read_latch.open()))
 
 
 def _die(error: MalformedMessage) -> Effect[Any]:

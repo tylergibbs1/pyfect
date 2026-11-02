@@ -44,6 +44,37 @@ def _is_unwakeable(result: Result[Any, Any], mode: WakeMode) -> bool:
     return isinstance(result, Complete) or (mode == "automatic" and result.failed)
 
 
+def _read_run_exit(
+    ex: Exit[Result[Any, Any], Any], instance: WorkflowInstanceService
+) -> Exit[Result[Any, Any], Any]:
+    if isinstance(ex, Failure) and ex.cause.has_interrupts_only and instance.suspended:
+        return Success(Suspended())
+    return ex
+
+
+@dataclass(frozen=True, slots=True)
+class _Run:
+    """One run of an execution: its fiber and the instance it runs with.
+    Its exit is read only through ``poll`` / ``await_exit``, which read a run
+    that a deferred completion preempted (``DeferredState.deferred_done``:
+    interrupted, its instance suspended) as ``Suspended``, so no reader can
+    take a preemption for the end of the execution and close its scope (and
+    skip its compensations)."""
+
+    instance: WorkflowInstanceService
+    _fiber: Fiber[Result[Any, Any], Any]
+
+    def poll(self) -> Exit[Result[Any, Any], Any] | None:
+        ex = self._fiber.poll_unsafe()
+        return None if ex is None else _read_run_exit(ex, self.instance)
+
+    def await_exit(self) -> Effect[Exit[Result[Any, Any], Any]]:
+        return self._fiber.await_exit().map(lambda ex: _read_run_exit(ex, self.instance))
+
+    def interrupt(self) -> Effect[None]:
+        return self._fiber.interrupt()
+
+
 @dataclass(slots=True)
 class _Registered:
     workflow: AnyWorkflow
@@ -66,7 +97,7 @@ class _Execution:
     interrupted_unsafe: bool = False
     # The strongest wake asked for while a run was still finishing.
     resume_requested: WakeMode | None = None
-    fiber: Fiber[Result[Any, Any], Any] | None = None
+    run: _Run | None = None
 
 
 @dataclass(slots=True)
@@ -111,13 +142,13 @@ class _MemoryEngine:
             state = self.executions.get(execution_id)
             if state is None:
                 return
-            ex = None if state.fiber is None else state.fiber.poll_unsafe()
+            ex = None if state.run is None else state.run.poll()
             if isinstance(ex, Success) and _is_unwakeable(ex.value, mode):
                 return
-            if state.fiber is not None and ex is None:
+            if state.run is not None and ex is None:
                 yield from self._queue_wake(state, execution_id, mode)
                 return
-            state.fiber = yield from self._start_run(state)
+            state.run = yield from self._start_run(state)
 
         return gen(run)
 
@@ -125,7 +156,7 @@ class _MemoryEngine:
         # Queue wakes until the run finishes cleanup; explicit wakes take priority.
         requested = state.resume_requested
         state.resume_requested = mode if mode == "explicit" else (requested or mode)
-        if requested is not None or state.fiber is None:
+        if requested is not None or state.run is None:
             return succeed(None)
 
         def again(_: object) -> Effect[None]:
@@ -133,9 +164,9 @@ class _MemoryEngine:
             state.resume_requested = None
             return succeed(None) if queued is None else self.resume(execution_id, queued)
 
-        return state.fiber.await_exit().flat_map(again).fork_in(self.engine_scope).as_void()
+        return state.run.await_exit().flat_map(again).fork_in(self.engine_scope).as_void()
 
-    def _start_run(self, state: _Execution) -> Effect[Fiber[Result[Any, Any], Any]]:
+    def _start_run(self, state: _Execution) -> Effect[_Run]:
         entry = self.workflows[state.instance.workflow.tag]
         # Each run gets a fresh scope, so a replay rebuilds its compensations
         # instead of registering them again.
@@ -181,7 +212,12 @@ class _MemoryEngine:
                 state.execute(state.payload, instance.execution_id).on_exit(on_run_exit)
             ).pipe(provide_service(WorkflowEngine, self.service)),
         )
-        return tracked.tap(wake_parent).on_exit(finish).fork_in(entry.scope)
+        return (
+            tracked.tap(wake_parent)
+            .on_exit(lambda ex: finish(_read_run_exit(ex, instance)))
+            .fork_in(entry.scope)
+            .map(lambda fiber: _Run(instance, fiber))
+        )
 
     # --- the Encoded operations ----------------------------------------------------------
 
@@ -221,14 +257,11 @@ class _MemoryEngine:
                 yield from self.resume(execution_id, "explicit")
             if discard:
                 return None
-            # Read both now, so a wake swapping in a replay cannot desync them.
-            instance, fiber = state.instance, state.fiber
-            assert fiber is not None, "resume starts the first run"
-            ex = yield from fiber.await_exit()
-            if isinstance(ex, Failure) and ex.cause.has_interrupts_only and instance.suspended:
-                # A completion preempted the run; the caller retries into the replay.
-                return Suspended()
-            return (yield from from_exit(ex))
+            # Read the run now, so a wake swapping in a replay cannot desync it.
+            current = state.run
+            assert current is not None, "resume starts the first run"
+            # A preempted run gives ``Suspended``; the caller retries into the replay.
+            return (yield from from_exit((yield from current.await_exit())))
 
         return cast("Effect[Result[Any, Any] | None]", gen(run))
 
@@ -264,8 +297,8 @@ class _MemoryEngine:
                 return
             state.interrupted = True
             state.interrupted_unsafe = True
-            if state.fiber is not None:
-                yield from state.fiber.interrupt()
+            if state.run is not None:
+                yield from state.run.interrupt()
             # Replay after a hard interrupt to record a terminal result.
             yield from self.resume(execution_id, "explicit")
 
@@ -324,7 +357,7 @@ class _MemoryEngine:
     def poll(self, workflow: AnyWorkflow, execution_id: str) -> Effect[Result[Any, Any] | None]:
         def run() -> Effect[Result[Any, Any] | None]:
             state = self._owned(workflow, execution_id)
-            ex = None if state is None or state.fiber is None else state.fiber.poll_unsafe()
+            ex = None if state is None or state.run is None else state.run.poll()
             if ex is None:
                 return succeed(None)
             if isinstance(ex, Success):

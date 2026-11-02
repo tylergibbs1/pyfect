@@ -76,6 +76,19 @@ shard moves. Three layers build it with everything it needs:
   them on their own (`from pyfect.cluster import cluster_socket`), as Effect keeps them in
   platform-node.
 
+`single_runner.layer()` needs only a `SqlClient`; `sharding_config=` updates the settings it
+reads from the environment, and `runner_storage_kind="memory"` keeps the shard locks in
+memory. Here a workflow engine runs on it over a SQLite file, and a second run on the same
+file reads the stored result:
+
+<CodeOutput>
+
+<include meta='title="single_runner.py"'>../../snippets/cluster/single_runner.py</include>
+
+<include lang="text">../../snippets/cluster/single_runner.out</include>
+
+</CodeOutput>
+
 <Diagram name="cluster-runners" title="A message for Counter b goes from runner-a to runner-b, which holds b's shard; both share SQL storage" />
 
 Every runner of a cluster points at the same database. When a runner joins, the hash ring
@@ -120,9 +133,12 @@ runs the instants in order and catches up on missed ones; runs older than
 
 </CodeOutput>
 
-Messages due later, like the next cron run, are read from storage every
-`entity_message_poll_interval` (10 seconds, as in Effect), so lower it for a job that runs
-more often.
+Messages due later, like the next cron run or a durable clock's wake-up, are read from
+storage when they fall due on the runner that stored them, and by every runner every
+`entity_message_poll_interval` (10 seconds, as in Effect), which also finds messages another
+runner stored. Under the [test clock](/docs/testing) each poll, shard-lock refresh and
+assignment check is a wake-up, so adjusting by days costs real time; adjust by what the test
+needs.
 
 ## Workflows
 

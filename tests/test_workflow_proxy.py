@@ -9,10 +9,13 @@ from typing import Any, TypedDict, cast
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
-from pyfect.http_api import get_group
+from pyfect.http_api import endpoint, get_group
 from pyfect.http_api import test as api_test
 from pyfect.http_api.api import HttpApi
+from pyfect.http_api.builder import group as group_layer
+from pyfect.http_api.group import HttpApiGroup
 from pyfect.rpc import test as rpc_test
+from pyfect.rpc.group import RpcGroup
 from pyfect.workflow import (
     Complete,
     Suspended,
@@ -161,3 +164,79 @@ def test_importing_pyfect_loads_neither_rpc_nor_http_api():
         check=True,
     ).stdout.strip()
     assert loaded == "[]"
+
+
+# --- typed operations declared in your own groups (DOGFOOD outlay #7) ---------------------
+
+
+class TypedRpcs(RpcGroup):
+    increment, increment_discard, increment_resume = workflow_proxy.rpcs(Increment)
+
+
+class TypedGroup(HttpApiGroup, identifier="typed"):
+    increment, increment_discard, increment_resume = workflow_proxy.http_endpoints(Increment)
+    health = endpoint.get("health", "/health", success=S.String)
+
+
+def test_typed_operations_are_the_ones_the_runtime_groups_declare():
+    assert workflow_proxy.rpcs(Increment, prefix="Wf").discard.tag == "WfIncrementDiscard"
+    built = workflow_proxy.to_http_api_group("workflows", [Increment])
+    assert {k: (e.method, e.path) for k, e in TypedGroup.endpoints.items() if k != "health"} == {
+        k: (e.method, e.path) for k, e in built.endpoints.items()
+    }
+
+
+@testing.effect
+def test_a_typed_rpc_client_executes_discards_and_resumes():
+    handlers = workflow_proxy_server.layer_rpc_handlers([Increment])
+
+    def program():
+        client = yield from rpc_test.make_client(TypedRpcs)
+        assert (yield from client.increment({"value": 4})) == 5
+        assert (yield from client.increment({"value": -4}).flip()) == "negative"
+        execution_id = yield from client.increment_discard({"value": 0})
+        assert execution_id == (yield from Increment.execution_id({"value": 0}))
+        yield from _poll_until_suspended(execution_id)
+        yield from client.increment_resume({"executionId": execution_id})
+
+    yield from fx.gen(program).pipe(fx.provide(handlers.pipe(fx.layer.provide_merge(WORKFLOWS))))
+
+
+@testing.effect
+def test_a_typed_http_group_serves_workflows_next_to_its_own_endpoints():
+    api = HttpApi.make("api").add(TypedGroup)
+    handlers = group_layer(
+        api,
+        TypedGroup,
+        lambda h: workflow_proxy_server.handle_http(
+            h.handle(TypedGroup.health)(lambda _: fx.succeed("ok")), [Increment]
+        ),
+    )
+
+    def program():
+        client = get_group((yield from api_test.groups(api, [TypedGroup])), TypedGroup)
+        assert (yield from client.health()) == "ok"
+        assert (yield from client.increment(payload={"value": 6})) == 7
+        assert (yield from client.increment(payload={"value": -6}).flip()) == "negative"
+        execution_id = yield from client.increment_discard(payload={"value": 0})
+        assert execution_id == (yield from Increment.execution_id({"value": 0}))
+
+    yield from fx.gen(program).pipe(fx.provide(handlers.pipe(fx.layer.provide_merge(WORKFLOWS))))
+
+
+class HealthOnly(HttpApiGroup, identifier="health-only"):
+    health = endpoint.get("health", "/health", success=S.String)
+
+
+def test_handle_http_names_the_workflow_endpoints_a_group_lacks():
+    """The group is the one being handled, so it cannot be another group's;
+    one without the workflow's endpoints fails when the handlers are built."""
+    api = HttpApi.make("api").add(HealthOnly)
+    layer = group_layer(
+        api, HealthOnly, lambda h: workflow_proxy_server.handle_http(h, [Increment])
+    )
+    exit_ = fx.run_sync_exit(fx.scoped(layer.pipe(fx.layer.provide_merge(WORKFLOWS)).build()))
+    assert isinstance(exit_, fx.exit.Failure)
+    defect = exit_.cause.squash()
+    assert isinstance(defect, ValueError)
+    assert "Increment, IncrementDiscard, IncrementResume" in str(defect)

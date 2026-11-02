@@ -6188,6 +6188,52 @@ def check_workflow() -> None:
     )
 
 
+def check_workflow_proxy_typed_operations() -> None:
+    """``workflow_proxy.rpcs`` / ``http_endpoints`` declared in a group type
+    the client's methods by the workflow (DOGFOOD outlay #7)."""
+    from pyfect.http_api import HttpApi, get_group
+    from pyfect.http_api import test as api_test
+    from pyfect.http_api.group import HttpApiGroup
+    from pyfect.rpc import RpcClientError
+    from pyfect.rpc.group import RpcGroup
+    from pyfect.schema import SchemaError
+    from pyfect.workflow import workflow_proxy
+
+    order = workflow.make(
+        "Order",
+        payload=S.Struct(WorkflowOrder),
+        success=S.String,
+        error=S.Number,
+        idempotency_key=lambda o: o["id"],
+    )
+
+    class OrderRpcs(RpcGroup):
+        place, place_discard, place_resume = workflow_proxy.rpcs(order)
+
+    class Orders(HttpApiGroup, identifier="orders"):
+        place, place_discard, place_resume = workflow_proxy.http_endpoints(order)
+
+    payload: WorkflowOrder = {"id": "o", "amount": 1}
+
+    def rpc_client():
+        client = yield from rpc_test.make_client(OrderRpcs)
+        assert_type(client.place(payload), fx.Effect[str, float | RpcClientError])
+        assert_type(client.place_discard(payload), fx.Effect[str, RpcClientError])
+        assert_type(client.place_resume({"executionId": "e"}), fx.Effect[None, RpcClientError])
+
+    def http_client():
+        api = HttpApi.make("api").add(Orders)
+        client = get_group((yield from api_test.groups(api, [Orders])), Orders)
+        assert_type(
+            client.place(payload=payload), fx.Effect[str, float | HttpClientError | SchemaError]
+        )
+        assert_type(
+            client.place_discard(payload=payload), fx.Effect[str, HttpClientError | SchemaError]
+        )
+
+    _ = (rpc_client, http_client)
+
+
 def check_workflow_deferred_state(instance: WorkflowInstanceService) -> None:
     state = workflow_engine.DeferredState()
     assert_type(state.track_run(instance, fx.succeed(1)), fx.Effect[int, Never, Never])

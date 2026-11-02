@@ -345,3 +345,28 @@ def test_a_deferred_refuses_a_token_naming_another_deferred():
         assert isinstance((yield from wf.poll(execution_id)), Suspended)
 
     yield from fx.gen(program).pipe(_with_engine(wf.to_layer(handler)))
+
+
+@testing.live(timeout=10)
+def test_poll_gives_none_for_an_unknown_and_for_a_running_execution():
+    """As Effect's ``poll`` (``Option.none()`` for both, printed under Node):
+    a run inside a short (in-memory) durable sleep is running, not suspended
+    (DOGFOOD outlay #9)."""
+    gate = durable_deferred.make("poll-gate")
+    wf = workflow.make("Polled", payload=EMPTY, success=S.String, idempotency_key=lambda _: "a")
+
+    def handler(_p: Empty, _id: str):
+        def body():
+            yield from durable_clock.sleep(name="short", duration=0.05)
+            yield from gate.wait()
+            return "done"
+
+        return fx.gen(body)
+
+    def program():
+        assert (yield from wf.poll("unknown")) is None
+        execution_id = yield from wf.execute({}, discard=True)
+        assert (yield from wf.poll(execution_id)) is None
+        assert (yield from _poll_until_suspended(wf, execution_id)) == Suspended()
+
+    yield from fx.gen(program).pipe(_with_engine(wf.to_layer(handler)))
