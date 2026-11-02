@@ -203,6 +203,42 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
     assert time.monotonic() - started_at < 2.5
 
 
+def test_aborts_a_streamed_body_still_open_when_the_shutdown_timeout_ends() -> None:
+    """``NodeHttpServer``'s preemptive shutdown interrupts a request whose
+    body never ends (an SSE stream) and destroys the response: the client
+    has the chunks sent so far, no last chunk, and the connection closes
+    (dogfood beacon #12)."""
+    received: list[bytes] = []
+    started = threading.Event()
+
+    def read(at: int) -> None:
+        with socket.create_connection(("127.0.0.1", at), timeout=TIMEOUT) as conn:
+            conn.sendall(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
+            started.set()
+            received.append(_until_close(conn, time.monotonic())[0])
+
+    endless = fx.stream.make(b"data: 1\n\n").concat(fx.stream.never)
+
+    @fx.fn
+    def serving():
+        sse = server_response.stream(endless, content_type="text/event-stream")
+        at = yield from server.serve_effect(fx.succeed(sse)).flat_map(lambda _: port)
+        reader = threading.Thread(target=read, args=(at,))
+        reader.start()
+        yield from effect.blocking(lambda: started.wait(TIMEOUT))
+        yield from fx.sleep(0.1)
+        return reader
+
+    layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout=0.3)
+    program = scoped(serving()).pipe(fx.provide(layer_live))
+    started_at = time.monotonic()
+    reader = fx.run_sync(program.timeout(TIMEOUT).or_die())
+    reader.join(TIMEOUT)
+    assert time.monotonic() - started_at < 2.5
+    [body] = received
+    assert body.endswith(b"9\r\ndata: 1\n\n\r\n")
+
+
 def test_writes_nothing_to_a_client_that_half_closed_before_the_response() -> None:
     """Node's server does not allow half-open connections: a client that
     ends its side aborts the request and gets no response (not a 499)."""

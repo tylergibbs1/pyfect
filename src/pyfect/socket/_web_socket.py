@@ -405,7 +405,7 @@ def from_web_socket(
         def register(resume: Resume[None, SocketError]) -> Callable[[], None]:
             return ws.when_drained(write_limit, lambda: resume(void))
 
-        return os_wait(register)
+        return os_wait(register, waits_for="event")
 
     def reader():
         scope = yield from Scope()

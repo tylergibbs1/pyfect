@@ -89,6 +89,9 @@ class _StartupLast:
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
         self._inner.track(tracker, f)
 
+    def outside_work(self) -> WakeTracker:
+        return self._inner.outside_work()
+
 
 def _cause_logger(causes: list[str]) -> fx.Logger[None]:
     def log(options: Options) -> None:

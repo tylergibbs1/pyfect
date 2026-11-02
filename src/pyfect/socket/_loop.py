@@ -65,4 +65,4 @@ def run[A](make: Callable[[], Coroutine[Any, Any, A]]) -> Effect[A, BaseExceptio
 
         return cancel
 
-    return os_wait(register)
+    return os_wait(register, waits_for="work")

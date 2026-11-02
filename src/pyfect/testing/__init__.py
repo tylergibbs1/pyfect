@@ -31,7 +31,10 @@ take no real time::
 
 If every fiber ends up waiting with nothing to wake them, synchronous runs
 raise ``StalledError`` instead of hanging. A woken fiber that never suspends
-makes ``adjust`` warn with ``BusyFiberWarning`` and move on.
+makes ``adjust`` warn with ``BusyFiberWarning`` and move on. ``adjust``
+waits for work handed to threads (``blocking``, SQLite, HTTP calls), not for
+events that may never come (socket reads, Postgres or Redis notifications,
+blocking Redis commands, worker messages, a child's exit).
 """
 
 from pyfect._public import publish

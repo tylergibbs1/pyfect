@@ -4,16 +4,23 @@ itself. Clients connect to localhost only."""
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
+import signal
 import socket
+import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 import uvicorn
 
 import pyfect as fx
-from pyfect import effect, layer
+from pyfect import effect, layer, stream
 from pyfect.clock import sleep
 from pyfect.context import Tag
 from pyfect.http import asgi, router, server, server_response, uvicorn_server
@@ -101,6 +108,83 @@ def test_serves_on_the_programs_loop_under_run_async() -> None:
     assert loops == [loop]
 
 
+def test_leaves_the_programs_signal_handlers_alone_on_the_main_thread() -> None:
+    """uvicorn on the main thread's loop would take SIGINT / SIGTERM and shut
+    itself down, cancelling streamed responses at its timeout before the
+    program (``run_main``) is interrupted and closes the server's scope
+    (dogfood beacon #12)."""
+    handlers: list[object] = []
+
+    def record() -> None:
+        handlers.extend(signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM))
+
+    routes = router.add("GET", "/", effect.sync(record).as_(server_response.text("ok")))
+    provided = scoped(_serving(routes, _get("/"))).pipe(fx.provide(uvicorn_server.layer_test()))
+
+    async def main() -> tuple[tuple[int, str], list[object]]:
+        before: list[object] = [signal.getsignal(s) for s in (signal.SIGINT, signal.SIGTERM)]
+        return await fx.run_async(provided.or_die()), before
+
+    result, before = asyncio.run(main())
+    assert result == (200, "ok")
+    assert handlers == before
+
+
+_SSE_UNTIL_CTRL_C = """
+import socket, threading
+import pyfect as fx
+from pyfect import layer, stream
+from pyfect.http import router, server, server_response, uvicorn_server
+
+received = bytearray()
+
+def read(at):
+    with socket.create_connection(("127.0.0.1", at), timeout=10) as conn:
+        conn.sendall(b"GET /events HTTP/1.1\\r\\nhost: x\\r\\n\\r\\n")
+        received.extend(conn.recv(65536))
+        print("ready", flush=True)
+        while chunk := conn.recv(65536):
+            received.extend(chunk)
+    print(received.endswith(b"0\\r\\n\\r\\n"), flush=True)
+
+def start(srv):
+    # Not a daemon: the process exits once it has read the end.
+    threading.Thread(target=read, args=(srv.address.port,)).start()
+
+body = stream.make(b"data: 1\\n\\n").concat(stream.never)
+routes = router.add("GET", "/events", server_response.stream(body))
+serving = router.serve(routes, disable_logger=True).pipe(
+    layer.provide_merge(uvicorn_server.layer(host="127.0.0.1", graceful_shutdown_timeout=0.3))
+)
+main = server.HttpServer().map(start).and_then(fx.never)
+fx.run_main(main.pipe(fx.provide(serving)))
+"""
+
+
+def test_ctrl_c_under_run_main_ends_an_open_stream_quietly(tmp_path: Path) -> None:
+    """Ctrl-C with an SSE response open: the program's shutdown, not
+    uvicorn's, ends it after ``graceful_shutdown_timeout``; the client gets
+    the last chunk and nothing is printed (dogfood beacon #12)."""
+    script = tmp_path / "main.py"
+    script.write_text(_SSE_UNTIL_CTRL_C)
+    proc = subprocess.Popen(
+        [sys.executable, str(script)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    try:
+        assert proc.stdout is not None
+        while (line := proc.stdout.readline()) and line != "ready\n":
+            assert "Listening on" in line
+        started = time.monotonic()
+        os.kill(proc.pid, signal.SIGINT)
+        stdout, stderr = proc.communicate(timeout=20)
+    finally:
+        proc.kill()
+    elapsed = time.monotonic() - started
+    assert (stdout, stderr) == ("True\n", "")
+    assert elapsed < 3
+    assert proc.returncode == 130
+
+
 def test_graceful_shutdown_cancels_requests_still_running_after_the_timeout() -> None:
     interrupted: list[bool] = []
 
@@ -142,6 +226,43 @@ def _uvicorn(app: Any) -> tuple[uvicorn.Server, threading.Thread, int]:
     while not server_.started and time.monotonic() < deadline:
         time.sleep(0.01)
     return server_, thread, at
+
+
+def test_shutdown_ends_a_streamed_response_still_open_after_the_timeout(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An endless body (an SSE stream) open when the server closes ends once
+    ``graceful_shutdown_timeout`` has passed, before uvicorn's own timeout
+    cancels the request: the client reads the last chunk and nothing is
+    logged as an error (dogfood beacon #12)."""
+    received = bytearray()
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def request() -> None:
+            with socket.create_connection(("127.0.0.1", at), timeout=5) as conn:
+                conn.sendall(b"GET /events HTTP/1.1\r\nhost: x\r\n\r\n")
+                while chunk := conn.recv(65536):
+                    received.extend(chunk)
+
+        yield from effect.blocking(request).fork_daemon()
+        yield from sleep(0.2)
+
+    body = stream.make(b"data: 1\n\n").concat(stream.never)
+    routes = router.add(
+        "GET", "/events", server_response.stream(body, content_type="text/event-stream")
+    )
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING):
+        _run(_serving(routes, program()), graceful_shutdown_timeout=0.3)
+        deadline = time.monotonic() + 2
+        while not received.endswith(b"0\r\n\r\n") and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert time.monotonic() - started < 2
+    assert received.endswith(b"data: 1\n\n\r\n0\r\n\r\n")
+    assert [r.getMessage() for r in caplog.records if r.name.startswith("uvicorn")] == []
 
 
 def test_shutdown_does_not_wait_for_a_response_the_client_left_unread() -> None:

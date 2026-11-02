@@ -52,6 +52,11 @@ class Scheduler(Protocol):
         ``tracker``."""
         ...
 
+    def outside_work(self) -> WakeTracker:
+        """Counts fibers waiting on work handed to another thread, and the
+        tasks their resumes schedule (``pyfect._os_wait``)."""
+        ...
+
 
 class CurrentScheduler(Reference[Scheduler]):
     """The scheduler the current fiber runs on. The run functions provide

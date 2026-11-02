@@ -58,7 +58,7 @@ class Signal:
                 return None
             return lambda: self._forget(wake)
 
-        return os_wait(register)  # pyright: ignore[reportReturnType]
+        return os_wait(register, waits_for="event")  # pyright: ignore[reportReturnType]
 
     def wait_until(self, ready: Callable[[], bool]) -> Effect[None]:
         """Wait, retrying after each wake, until ``ready`` holds (``wait``
@@ -215,7 +215,7 @@ class Connection(asyncio.Protocol):
 
             call_soon(begin)
 
-        return os_wait(register)
+        return os_wait(register, waits_for="work")
 
     # --- either side ----------------------------------------------------------
 
@@ -335,7 +335,7 @@ class Connection(asyncio.Protocol):
 
             call_soon(run)
 
-        return os_wait(register).flat_map(lambda _: self._drained())
+        return os_wait(register, waits_for="work").flat_map(lambda _: self._drained())
 
     def _drained(self) -> Effect[None, SocketError]:
         def ready() -> bool:

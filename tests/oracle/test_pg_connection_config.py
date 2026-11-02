@@ -282,6 +282,9 @@ def test_lets_explicit_fields_override_url_connection_and_startup_values(pg_serv
     assert settings["client_encoding"] == "UTF8"
 
 
+# The connect is work on psycopg's loop that never ends, so adjust waits
+# warning_delay for it and warns before moving time.
+@pytest.mark.filterwarnings("ignore::pyfect.testing.BusyFiberWarning")
 @testing.effect
 def test_treats_url_connect_timeout_0_as_no_timeout():
     """treats URL connect_timeout=0 as no timeout"""

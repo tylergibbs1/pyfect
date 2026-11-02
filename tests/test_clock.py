@@ -31,6 +31,9 @@ class TimerRecordingScheduler:
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
         self.inner.track(tracker, f)
 
+    def outside_work(self) -> WakeTracker:
+        return self.inner.outside_work()
+
 
 def _timer_delays(eff: fx.Effect[object]) -> fx.Effect[list[float]]:
     def run(inner: Scheduler) -> fx.Effect[list[float]]:

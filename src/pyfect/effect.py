@@ -312,7 +312,7 @@ def _blocking[A, E](thunk: Callable[[], A], catch: Callable[[Exception], E] | No
 
         _pool().submit(thunk).add_done_callback(done)
 
-    return os_wait(register)
+    return os_wait(register, waits_for="work")
 
 
 never: Effect[Never] = _Callback(lambda _resume: None)

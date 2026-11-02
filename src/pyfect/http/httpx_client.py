@@ -90,7 +90,7 @@ def _future[A](
         future.add_done_callback(done)
         return future.cancel
 
-    return os_wait(register)
+    return os_wait(register, waits_for="work")
 
 
 class _Backend:

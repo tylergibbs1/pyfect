@@ -9,14 +9,17 @@ The socket is bound when the server is made, so ``address`` is known (port
 request runs on its own fiber on that loop, through ``pyfect.http.asgi``
 (streamed bodies, client aborts, WebSocket upgrades). Requests that arrive
 while no app is served get a 503. When the serving scope closes, uvicorn
-stops accepting and gives requests in flight ``graceful_shutdown_timeout``
-before cancelling them.
+stops accepting and gives requests in flight ``graceful_shutdown_timeout``;
+then their fibers are interrupted and streamed bodies end where they are
+(ASGI cannot abort a started response quietly, so it ends complete).
 """
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
 
 import asyncio
+import collections.abc
+import contextlib
 import socket
 import threading
 from collections.abc import Callable, Coroutine, Mapping
@@ -32,11 +35,12 @@ except ImportError as error:  # pragma: no cover - depends on the environment
 
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
-from pyfect._os_wait import Resume, os_wait
+from pyfect._os_wait import Resume, WaitsFor, os_wait
 from pyfect._root import run_loop
 from pyfect.context import Context
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.effect import fail, succeed, suspend, sync
+from pyfect.exit import Exit
 from pyfect.file_system import FileSystem
 from pyfect.http.asgi._serve import AsgiHandler
 from pyfect.http.asgi._types import Receive, Scope, Send
@@ -44,6 +48,7 @@ from pyfect.http.client import HttpClient
 from pyfect.http.etag import Generator
 from pyfect.http.httpx_client import layer as httpx_layer
 from pyfect.http.live_server import layer_services
+from pyfect.http.live_server._listener import ABORT_GRACE_PERIOD
 from pyfect.http.platform import HttpPlatform
 from pyfect.http.server import HttpApp, HttpServer, HttpServerService, Middleware, layer_test_client
 from pyfect.http.server import make as make_server
@@ -113,7 +118,7 @@ def _loop_thread() -> asyncio.AbstractEventLoop:
     return loop
 
 
-def _wait[A](future: Future[A]) -> Effect[A, BaseException]:
+def _wait[A](future: Future[A], waits_for: WaitsFor) -> Effect[A, BaseException]:
     """Wait for ``future`` (done on any thread) without blocking."""
 
     def register(resume: Resume[A, BaseException]) -> None:
@@ -126,16 +131,21 @@ def _wait[A](future: Future[A]) -> Effect[A, BaseException]:
 
         future.add_done_callback(done)
 
-    return os_wait(register)
+    return os_wait(register, waits_for=waits_for)
 
 
 class _Running:
     """uvicorn serving on ``loop`` until ``stop``."""
 
     def __init__(
-        self, server: uvicorn.Server, loop: asyncio.AbstractEventLoop, owned: bool
+        self,
+        server: uvicorn.Server,
+        loop: asyncio.AbstractEventLoop,
+        owned: bool,
+        graceful: Seconds,
     ) -> None:
         self.server = server
+        self.graceful = graceful
         self.loop = loop
         self.owned = owned
         self.served: Future[None] | None = None
@@ -154,13 +164,43 @@ class _Running:
                 served.result()
                 raise RuntimeError("uvicorn stopped while starting")
 
-        return _wait(self.submit(started))
+        return _wait(self.submit(started), "work")
 
     def stop(self) -> Effect[None]:
+        """Stop accepting and wait for uvicorn to exit (its own
+        ``timeout_graceful_shutdown`` cancels what is still running)."""
+
         def body() -> Effect[None]:
             self.server.should_exit = True
             assert self.served is not None
-            return _wait(self.served).ignore().ensuring(sync(self._release))
+            return _wait(self.served, "event").ignore().ensuring(sync(self._release))
+
+        return suspend(body)
+
+    def shut_down(
+        self, handler: AsgiHandler, requests: CloseableScope, exit: Exit[Any, Any]
+    ) -> Effect[None]:
+        """As ``NodeHttpServer``'s preemptive shutdown: stop accepting and
+        give requests in flight ``graceful`` seconds, then interrupt the
+        request fibers (``requests``) and end the bodies still streaming, so
+        uvicorn exits before its own timeout would cancel them."""
+
+        def end_responses() -> Effect[None]:
+            async def end() -> None:
+                handler.end_responses()
+
+            return _wait(self.submit(end), "work").ignore()
+
+        def body() -> Effect[None]:
+            self.server.should_exit = True
+            assert self.served is not None
+            served = _wait(self.served, "event").ignore()
+            return (
+                served.timeout_option(self.graceful)
+                .and_then(requests.close(exit))
+                .and_then(suspend(end_responses))
+                .and_then(self.stop())
+            )
 
         return suspend(body)
 
@@ -170,16 +210,33 @@ class _Running:
             self.loop.call_soon_threadsafe(self.loop.stop)
 
 
+class _Server(uvicorn.Server):
+    """uvicorn without its signal handlers: the program owns SIGINT and
+    SIGTERM (``run_main`` interrupts it, which closes the server's scope and
+    runs ``_Running.shut_down``). uvicorn's would shut it down on its own,
+    cancelling streamed responses at its timeout."""
+
+    @contextlib.contextmanager
+    def capture_signals(self) -> collections.abc.Generator[None]:
+        yield
+
+
+def _graceful(options: Options) -> Seconds:
+    return to_seconds(options.get("graceful_shutdown_timeout", 20))
+
+
 def _uvicorn(dispatch: _Dispatch, options: Options) -> uvicorn.Server:
-    graceful = to_seconds(options.get("graceful_shutdown_timeout", 20))
     config: dict[str, Any] = {
         "log_config": None,
         "server_header": False,
         "ws_max_size": DEFAULT_MAX_MESSAGE_SIZE,
         **options.get("config", {}),
     }
-    config.update(app=dispatch, lifespan="off", timeout_graceful_shutdown=graceful)
-    return uvicorn.Server(uvicorn.Config(**config))
+    # uvicorn's own timeout only backs up ``_Running.shut_down``, which ends
+    # the requests first: its cancel is logged with a traceback.
+    backstop = _graceful(options) + ABORT_GRACE_PERIOD
+    config.update(app=dispatch, lifespan="off", timeout_graceful_shutdown=backstop)
+    return _Server(uvicorn.Config(**config))
 
 
 def _serve(
@@ -199,12 +256,12 @@ def _serve(
             handler = AsgiHandler(app, middleware, context, fork)
             dispatch.current = handler
 
-            def unserve(_exit: object) -> Effect[None]:
+            def unserve(exit: Exit[Any, Any]) -> Effect[None]:
                 def remove() -> None:
                     if dispatch.current is handler:
                         dispatch.current = None
 
-                return running.stop().ensuring(sync(remove))
+                return running.shut_down(handler, requests, exit).ensuring(sync(remove))
 
             return serve_scope.add_finalizer(unserve)
 
@@ -229,7 +286,12 @@ def make(**options: Unpack[Options]) -> Effect[HttpServerService, SocketServerEr
         def start() -> Effect[_Running, SocketServerError]:
             current = run_loop()
             loop = current or _loop_thread()
-            running = _Running(_uvicorn(dispatch, options), loop, owned=current is None)
+            running = _Running(
+                _uvicorn(dispatch, options),
+                loop,
+                owned=current is None,
+                graceful=_graceful(options),
+            )
             return (
                 running.start(sock)
                 .as_(running)

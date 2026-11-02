@@ -134,7 +134,11 @@ class _Shared:
                 effect = effect.and_then(queue.shutdown())
             return effect.as_void()
 
-        return call(session.close, _catch_query).ignore().and_then(_Suspend(shut_listeners))
+        return (
+            call(session.close, _catch_query, waits_for="work")
+            .ignore()
+            .and_then(_Suspend(shut_listeners))
+        )
 
 
 class _Lease:
@@ -241,9 +245,9 @@ class PgConnection:
             if lease is not None and lease.released:
                 return fail(_pin_released())
             session = shared.session
-            run = call(lambda: make(session), _catch_query, session.cancel_query).tap_error(
-                shared.check
-            )
+            run = call(
+                lambda: make(session), _catch_query, session.cancel_query, waits_for="work"
+            ).tap_error(shared.check)
             if lease is None:
                 return shared.owner.with_permits(run)
             held = lease
@@ -292,7 +296,7 @@ class PgConnection:
         def body() -> Effect[None]:
             if lease is not None and lease.released:
                 return void
-            return call(shared.session.interrupt, _catch_query).ignore()
+            return call(shared.session.interrupt, _catch_query, waits_for="work").ignore()
 
         return _Suspend(body)
 
@@ -330,7 +334,7 @@ class PgConnection:
                         lease.in_flight -= 1
 
                 return (
-                    call(lambda: session.close_stream(rows), _catch_query)
+                    call(lambda: session.close_stream(rows), _catch_query, waits_for="work")
                     .ignore()
                     .and_then(sync(done))
                 )
@@ -340,7 +344,7 @@ class PgConnection:
                     return succeed(tuple(found)) if found else fail(Done())
 
                 pull = (
-                    call(lambda: session.next_rows(rows), _catch_query)
+                    call(lambda: session.next_rows(rows), _catch_query, waits_for="work")
                     .tap_error(shared.check)
                     .flat_map(chunk)
                 )
@@ -350,7 +354,10 @@ class PgConnection:
                 return add_finalizer(lambda _: finish(rows)).as_(stream)
 
             opened = call(
-                lambda: session.open_stream(sql, params), _catch_query, release=session.close_stream
+                lambda: session.open_stream(sql, params),
+                _catch_query,
+                release=session.close_stream,
+                waits_for="work",
             )
             return uninterruptible_mask(lambda restore: restore(opened).flat_map(build))
 
@@ -435,9 +442,9 @@ class PgConnection:
                 # The mailbox is subscribed and its cleanup registered as one
                 # step, so an interrupt cannot leave it behind.
                 subscribed: Effect[Any, SqlError] = uninterruptible_mask(
-                    lambda restore: restore(call(subscribe, _catch_query, release=drop)).flat_map(
-                        registered
-                    )
+                    lambda restore: restore(
+                        call(subscribe, _catch_query, release=drop, waits_for="work")
+                    ).flat_map(registered)
                 )
                 return subscribed.flat_map(started)
 
@@ -471,7 +478,9 @@ class PgConnection:
             return shared.fatal(error).and_then(_Suspend(failed))
 
         def loop(_: object = None) -> Effect[None]:
-            pulled = call(lambda: next_notification(mailbox), _catch_query).flat_map(handle)
+            pulled = call(
+                lambda: next_notification(mailbox), _catch_query, waits_for="event"
+            ).flat_map(handle)
             stopped = pulled.catch_all(lambda _: succeed(False))
             return stopped.flat_map(lambda more: loop() if more else void)
 
@@ -505,6 +514,7 @@ class PgConnection:
                 lambda: session.query(f"UNLISTEN {identifier}", (), False),
                 _catch_query,
                 session.cancel_query,
+                waits_for="work",
             )
             # The timeout runs once UNLISTEN is sent; a session that does not
             # answer is closed, which ends the statement at once.
@@ -521,7 +531,9 @@ class PgConnection:
             return statement.ignore().race_first(unanswered).ensuring(sync(done))
 
         unlisten = (
-            call(unsubscribe, _catch_query).catch_all(lambda _: succeed(False)).flat_map(after)
+            call(unsubscribe, _catch_query, waits_for="work")
+            .catch_all(lambda _: succeed(False))
+            .flat_map(after)
         )
         return unlisten.and_then(queue.shutdown()).as_void()
 
@@ -534,6 +546,7 @@ def _open(config: PgConnectionConfig, resolved: ResolvedConfig) -> Effect[PgConn
             lambda: Session.connect(resolved.params, password, config.types, cache),
             _catch_connect,
             release=Session.close,
+            waits_for="work",
         )
         return session.map(lambda s: _Shared(s, config).base)
 

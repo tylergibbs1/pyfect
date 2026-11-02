@@ -60,7 +60,7 @@ class Worker:
             submitted = self._lifetime.submit(lambda: self._executor.submit(outcome))
             submitted.add_done_callback(lambda done: resume(settle(done)))
 
-        return os_wait(register)
+        return os_wait(register, waits_for="work")
 
     def shutdown(self) -> None:
         """Stop the thread once its queued calls ran."""

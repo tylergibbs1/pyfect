@@ -52,7 +52,7 @@ class Child:
         self.pid = popen.pid
         self.command_line = command_line
         self.referenced = True
-        self._exit: Latch[int] = Latch()
+        self._exit: Latch[int] = Latch(waits_for="event")
         threading.Thread(target=self._watch, name="pyfect-process-exit", daemon=True).start()
 
     # --- state ------------------------------------------------------------------

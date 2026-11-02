@@ -17,13 +17,14 @@ is a ``400``, a response that does not encode a ``500``.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable, Generator, Mapping
 from typing import Any, Never, cast, overload
 
 from pyfect import schema as S
 from pyfect._core import Effect
-from pyfect.context import Context
-from pyfect.effect import context, die, gen, provide_context, succeed, sync
+from pyfect.context import Context, Reference
+from pyfect.effect import context, die, gen, provide_context, provide_service, succeed, sync
 from pyfect.http.router import HttpRouter, HttpRouterService, Route, RouteContext, route, use
 from pyfect.http.server_request import HttpServerRequest, ParsedSearchParams, ServerRequest
 from pyfect.http.server_respondable import is_respondable, to_response
@@ -66,11 +67,15 @@ _GROUP_KEY_PREFIX = "effect/http-api/HttpApiGroup/"
 
 
 def layer[G](
-    api: HttpApi[G], *, openapi_path: str | None = None
+    api: HttpApi[G], *, openapi_path: str | None = None, schema_error_details: bool = False
 ) -> Layer[Never, Never, HttpRouter | G]:
     """Adds the routes of every group of ``api`` to the router (each
     group's layer must be provided), and ``GET openapi_path`` answering
-    with the API's OpenAPI document."""
+    with the API's OpenAPI document.
+
+    A request whose params, headers, query or payload do not decode gets an
+    empty 400, as in Effect; ``schema_error_details=True`` sends the schema
+    issue in it (``{"_tag": "HttpApiSchemaError", "kind", "message"}``)."""
 
     def add(router: HttpRouterService) -> Effect[None, Never, Any]:
         def with_services(services: Context[Any]) -> Effect[None, Never, Any]:
@@ -81,6 +86,9 @@ def layer[G](
                     return die(RuntimeError(_missing_group(group, services)))
                 service: GroupService = found.value
                 routes.extend(service.routes)
+            if schema_error_details:
+                detailed = provide_service(_SchemaErrorDetails, True)
+                routes = [dataclasses.replace(r, handler=detailed(r.handler)) for r in routes]
             added = router.add_all(routes)
             if openapi_path is None:
                 return added
@@ -91,6 +99,14 @@ def layer[G](
         return context().flat_map(with_services)
 
     return use(add)
+
+
+class _SchemaErrorDetails(Reference[bool]):
+    """Set by ``layer(api, schema_error_details=True)`` on its routes."""
+
+    @classmethod
+    def default(cls) -> bool:
+        return False
 
 
 def _missing_group(group: AnyGroup, services: Context[Any]) -> str:
@@ -332,7 +348,14 @@ def handler_to_http_effect(
         return (yield from HttpApiSchemaError.wrap("Body", encoding))
 
     def on_error(error: object) -> Effect[HttpServerResponse, Never, Any]:
-        if isinstance(error, HttpApiSchemaError | HttpApiPayloadTooLarge):
+        if isinstance(error, HttpApiSchemaError):
+            schema_error = error
+
+            def with_details(details: bool) -> Effect[HttpServerResponse, Never, Any]:
+                return die(dataclasses.replace(schema_error, details=details))
+
+            return _SchemaErrorDetails().flat_map(with_details)
+        if isinstance(error, HttpApiPayloadTooLarge):
             return die(error)
 
         def unencodable(schema_error: object) -> Effect[HttpServerResponse, Never, Any]:

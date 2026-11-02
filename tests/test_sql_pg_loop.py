@@ -34,7 +34,7 @@ def test_a_result_that_lands_as_the_fiber_is_interrupted_is_released():
         gate.set_result("session")
         time.sleep(0.1)
 
-    child = yield from call(make, catch("m", "query"), release=release).fork()
+    child = yield from call(make, catch("m", "query"), release=release, waits_for="work").fork()
     yield from fx.yield_now()
     yield from fx.sync(lambda: loop.call_soon_threadsafe(finish_then_hold_the_loop))
     yield from child.interrupt()

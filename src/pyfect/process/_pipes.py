@@ -95,7 +95,7 @@ class Reader:
                 return None
             return lambda: self._forget(resume)
 
-        return os_wait(register)
+        return os_wait(register, waits_for="event")
 
     def _take(self) -> _Pull | None:
         if self._chunks:
@@ -229,7 +229,7 @@ class Writer:
                 return None
             return request.cancel
 
-        return os_wait(register)
+        return os_wait(register, waits_for="work")
 
     def close(self) -> None:
         """End the pipe: a write in progress stops, queued ones fail."""

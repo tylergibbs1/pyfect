@@ -285,7 +285,25 @@ def _render_error(error: BaseException) -> str:
     if isinstance(error, DecodedDefect) and isinstance(error.value, ErrorInstance):
         decoded = error.value
         return decoded.stack or f"{decoded.name}: {decoded.message}"
-    return "".join(traceback.format_exception(error)).rstrip()
+    if error.__traceback__ is not None:
+        return "".join(traceback.format_exception(error)).rstrip()
+    return _render_value(error, "", {id(error)})
+
+
+def _render_value(error: BaseException, prefix: str, seen: set[int]) -> str:
+    """An error that was never raised (a typed failure is a value) as
+    Effect's ``renderPrettyError`` renders one: its line (as Python names
+    it), then its ``__cause__`` nested in ``{ [cause]: ... }``. Python's chain would put
+    the cause first and end with the error that was logged."""
+    lines = "".join(traceback.format_exception(error, chain=False)).rstrip().splitlines()
+    if prefix:
+        lines = [f"{prefix}[cause]: {lines[0]}", *(prefix + line for line in lines[1:])]
+    cause = error.__cause__
+    if cause is None or id(cause) in seen:
+        return "\n".join(lines)
+    seen.add(id(cause))
+    inner = _render_value(cause, prefix + "  ", seen)
+    return "\n".join(lines) + f" {{\n{inner}\n{prefix}}}"
 
 
 class UnhandledError(Exception):

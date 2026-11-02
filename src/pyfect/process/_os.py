@@ -4,7 +4,8 @@ Threads watch a child process: one waits for it to exit and one per pipe
 reads or writes when a fiber asks. Each wait has a thread of its own: a
 shared, bounded pool would let waits that depend on each other (the two
 writes of a pipeline) queue behind each other for good. A
-fiber waiting for them suspends in ``pyfect._os_wait.os_wait``.
+fiber waiting for them suspends in ``pyfect._os_wait.os_wait``: a child
+exiting or writing is an event; a write to it is work.
 """
 
 from __future__ import annotations
@@ -14,16 +15,19 @@ from collections.abc import Callable
 from typing import Never
 
 from pyfect._core import Effect
-from pyfect._os_wait import Cancel, Resume, os_wait
+from pyfect._os_wait import Cancel, Resume, WaitsFor, os_wait
 from pyfect.effect import succeed
 
 
 class Latch[A]:
-    """A value set once, from any thread, that fibers wait for."""
+    """A value set once, from any thread, that fibers wait for.
+    ``waits_for`` says what sets it: work the waiter started, or an event
+    (see ``pyfect._os_wait``)."""
 
-    __slots__ = ("_callbacks", "_lock", "_value", "_waiters")
+    __slots__ = ("_callbacks", "_lock", "_value", "_waiters", "_waits_for")
 
-    def __init__(self) -> None:
+    def __init__(self, *, waits_for: WaitsFor) -> None:
+        self._waits_for: WaitsFor = waits_for
         self._lock = threading.Lock()
         self._value: tuple[A] | None = None
         self._waiters: list[Resume[A, Never]] = []
@@ -66,7 +70,7 @@ class Latch[A]:
                 return None
             return lambda: self._forget(resume)
 
-        return os_wait(register)
+        return os_wait(register, waits_for=self._waits_for)
 
     def _forget(self, resume: Resume[A, Never]) -> None:
         with self._lock:

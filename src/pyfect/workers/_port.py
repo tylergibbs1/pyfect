@@ -61,7 +61,7 @@ class WorkerPort(ABC):
 
     def __init__(self) -> None:
         self.events: Mailbox[WorkerEvent] = Mailbox()
-        self.exited: Latch[int] = Latch()
+        self.exited: Latch[int] = Latch(waits_for="event")
         self._finished = threading.Lock()
 
     @abstractmethod

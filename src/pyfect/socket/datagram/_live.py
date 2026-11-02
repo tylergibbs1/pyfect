@@ -344,7 +344,7 @@ def _in_thread(
 
         threading.Thread(target=run, name=name, daemon=True).start()
 
-    return os_wait(register)
+    return os_wait(register, waits_for="work")
 
 
 def _open(options: Options, events: BackingEvents) -> Effect[BackingSocket, DatagramSocketError]:

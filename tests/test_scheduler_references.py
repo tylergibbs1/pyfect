@@ -30,6 +30,9 @@ class CountingScheduler:
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
         self.inner.track(tracker, f)
 
+    def outside_work(self) -> WakeTracker:
+        return self.inner.outside_work()
+
 
 def _two_workers(log: list[str]) -> fx.Effect[None]:
     def worker(name: str) -> fx.Effect[None]:

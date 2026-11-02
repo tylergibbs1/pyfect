@@ -14,7 +14,7 @@ from pyfect._effect_args import require_effect
 from pyfect.byte_size import ByteSize
 from pyfect.effect import succeed
 from pyfect.errors import TaggedError
-from pyfect.http.server_response import HttpServerResponse, empty
+from pyfect.http.server_response import HttpServerResponse, empty, json_unsafe
 from pyfect.http_api.schema import as_no_content
 
 _STATUSES = (400, 401, 403, 404, 405, 406, 408, 409, 410, 413, 422, 500, 501, 503)
@@ -200,6 +200,10 @@ class HttpApiSchemaError(TaggedError):
 
     kind: SchemaErrorKind
     cause: S.SchemaError
+    details: bool = field(default=False, kw_only=True, repr=False, compare=False)
+    """The 400 sends ``{"_tag", "kind", "message"}``, the message being the
+    schema issue (``builder.layer(api, schema_error_details=True)``). A 500
+    stays empty."""
     report_ignored: bool = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -210,7 +214,12 @@ class HttpApiSchemaError(TaggedError):
         return self.kind
 
     def __http_response__(self) -> Effect[HttpServerResponse]:
-        return succeed(_RESPONSES[400 if self.report_ignored else 500])
+        if not self.report_ignored:
+            return succeed(_RESPONSES[500])
+        if not self.details:
+            return succeed(_RESPONSES[400])
+        body = {"_tag": "HttpApiSchemaError", "kind": self.kind, "message": str(self.cause)}
+        return succeed(json_unsafe(body, status=400))
 
     @staticmethod
     def wrap[A, R](

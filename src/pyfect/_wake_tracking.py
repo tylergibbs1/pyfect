@@ -6,6 +6,11 @@ against the wake's ``WakeTracker``. When the count drops to zero the woken
 fiber (and anything it resumed or forked) has suspended, so the clock can
 move on. Unrelated fibers are never counted, so a busy one cannot stall it.
 
+A scheduler also counts outside work: a fiber waiting on work it handed
+to a thread (``pyfect._os_wait``), and what that work's resume schedules.
+The test clock waits for it to be idle before moving time, so thread-backed
+work takes no virtual time, as Effect's synchronous drivers do.
+
 Every scheduler tracks, so a ``TestClock`` works on whatever runs it.
 """
 
@@ -35,6 +40,12 @@ class WakeTracker:
 
         return cancel
 
+    def finish_one(self) -> None:
+        """One counted task finished; runs ``on_idle`` once none is left."""
+        self.pending -= 1
+        if self.pending == 0 and self.on_idle is not None:
+            self.on_idle()
+
 
 class _Current(threading.local):
     tracker: WakeTracker | None = None
@@ -46,11 +57,17 @@ class Tracking:
 
     def __init__(self) -> None:
         self._tracking = _Current()
+        self._outside = WakeTracker()
 
     def runs_here(self) -> bool:
         """Whether this thread is the one running the scheduler's tasks
         now. An interrupt sent from there is delivered at once."""
         return False
+
+    def outside_work(self) -> WakeTracker:
+        """Counts fibers waiting on work handed to another thread, and the
+        tasks their resumes schedule."""
+        return self._outside
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
         """Run ``f``, counting what it schedules against ``tracker``."""
@@ -71,8 +88,6 @@ class Tracking:
             try:
                 self.track(tracker, task)
             finally:
-                tracker.pending -= 1
-                if tracker.pending == 0 and tracker.on_idle is not None:
-                    tracker.on_idle()
+                tracker.finish_one()
 
         return tracked

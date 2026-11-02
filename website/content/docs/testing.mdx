@@ -18,6 +18,24 @@ runs its finalizers.
 
 <include meta='title="test_retry.py"'>../../snippets/testing/test_retry.py</include>
 
+### What the test clock waits for
+
+Work handed to another thread takes no virtual time: before `adjust` moves time, and after each
+wake-up, it waits for `fx.blocking` and `try_blocking` calls, SQLite and Postgres queries, HTTP
+client requests, Redis commands, DNS lookups, writes to a socket or a child process, and the
+fibers they resume. A loop of a SQLite write then `fx.sleep(10)` runs once per `adjust(10)`.
+
+It does not wait for things that may never come: a socket or WebSocket read, a Postgres `listen` or
+Redis `subscribe` notification, a blocking Redis command (`BLPOP`, `XREAD BLOCK`), a message from a
+worker (process-worker replies included), a child process's output or exit. A fiber waiting on one
+of those counts as suspended, and time moves on without it. When a test needs them answered on time,
+run it with `@testing.live`, or provide an in-memory layer of the service in place of the real one.
+
+Work that is still running after `warning_delay` (one second) makes `adjust` warn with
+`BusyFiberWarning` and move on. That happens when the work itself waits on the test clock, such as a
+request to a server in the same test whose handler sleeps: the request cannot finish until time
+moves. Test such a handler without the server in between, or use `@testing.live`.
+
 ## Services in tests
 
 `testing.layer_fixture(layer, scope=...)` builds a layer once per pytest scope. A test takes the

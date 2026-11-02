@@ -205,7 +205,7 @@ class _Open:
 
             self.handle.send(payload, destination, _once(done))
 
-        return os_wait(register)
+        return os_wait(register, waits_for="work")
 
     def write_all(self, datagrams: Sequence[Outgoing]) -> Effect[None, DatagramSocketError]:
         failure = self.state.failure
@@ -232,7 +232,7 @@ class _Open:
 
             self.handle.send_many(payloads, destinations, _once(done))
 
-        return os_wait(register)
+        return os_wait(register, waits_for="work")
 
     def _destination(
         self, target: InetAddress | ReceivedDatagram | None

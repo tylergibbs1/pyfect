@@ -40,6 +40,9 @@ class Dispatcher:
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
         self.scheduler.track(tracker, f)
 
+    def outside_work(self) -> WakeTracker:
+        return self.scheduler.outside_work()
+
     def run_flushed(self, start: Callable[[], None]) -> None:
         """Run ``start``, then what it scheduled on this thread, until
         nothing is left."""

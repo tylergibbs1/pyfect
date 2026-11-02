@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import time
+import warnings
 from collections.abc import Callable, Generator
 from typing import Any, Literal, Never
 
@@ -526,3 +527,43 @@ def test_runs_blocking_reads_on_a_reserved_connection_without_delaying_shared_co
         assert "value" in json.dumps((yield from read.join()))
 
     _with_redis(body, live=True)
+
+
+def test_an_idle_subscription_does_not_hold_the_test_clock() -> None:
+    """A subscription waits for messages that may never come: ``adjust``
+    must not wait for it (DOGFOOD beacon #9)."""
+
+    def body():
+        redis = yield from Redis()
+        yield from redis.subscribe("effect-test")
+        started = time.monotonic()
+        yield from testing.adjust(10)
+        assert time.monotonic() - started < 0.5
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", testing.BusyFiberWarning)
+        _with_redis(body)
+
+
+def test_a_blocking_read_does_not_hold_the_test_clock() -> None:
+    """A blocking command waits for data that may never come: ``adjust``
+    must not wait for it, while plain commands are still waited for
+    (DOGFOOD beacon #9)."""
+
+    def body():
+        redis = yield from Redis()
+        yield from redis.reserve.flat_map(
+            lambda connection: connection.send(
+                "XREAD", "BLOCK", "0", "STREAMS", "effect-test-idle", "$"
+            )
+        ).fork()
+        yield from redis.send("CLIENT", "LIST").repeat(
+            until=lambda clients: "cmd=xread" in str(clients)
+        )
+        started = time.monotonic()
+        yield from testing.adjust(10)
+        assert time.monotonic() - started < 0.5
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", testing.BusyFiberWarning)
+        _with_redis(body)

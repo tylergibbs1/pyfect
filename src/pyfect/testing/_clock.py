@@ -43,6 +43,11 @@ _WAKE_WARNING = (
     "test clock stopped waiting for it. Sleeps it starts later may be scheduled "
     "relative to a later time."
 )
+_OUTSIDE_WARNING = (
+    "Work on another thread (fx.blocking, a SQLite or HTTP call) is still running, "
+    "so the test clock stopped waiting for it. Sleeps started after it may be "
+    "scheduled relative to a later time."
+)
 _NANOS = 1_000_000_000
 
 
@@ -176,8 +181,9 @@ class TestClock:
 
     def adjust(self, duration: Duration) -> Effect[None]:
         """Move time forward by ``duration``, waking sleepers in order.
-        After each wake-up, wait for the woken fiber and the work it starts
-        to suspend."""
+        Before moving, and after each wake-up, wait for the woken fiber and
+        the work it starts to suspend, work on other threads included
+        (``fx.blocking``, SQLite and HTTP calls)."""
         delta = _nanos(to_seconds(duration))
         return self._move(lambda now: now + delta)
 
@@ -214,6 +220,7 @@ class TestClock:
         # As Effect: let the fibers that are ready run once before moving.
         settled = yield from _YieldNow().fork()
         yield from settled.await_exit()
+        yield from self._outside_done(scheduler)
         end = step(self._timestamp_ns)
         while self._sleepers and self._sleepers[0][0] <= end:
             when, _, sleeper = heapq.heappop(self._sleepers)
@@ -224,8 +231,16 @@ class TestClock:
             scheduler.track(tracker, sleeper.wake)
             if tracker.pending:
                 yield from self._wait_or_warn(scheduler, tracker.when_idle, _WAKE_WARNING)
+            yield from self._outside_done(scheduler)
             yield from _YieldNow()
         self._advance_to(end)
+
+    def _outside_done(self, scheduler: Scheduler) -> Generator[Effect[None]]:
+        """Wait for work fibers handed to other threads, and for the fibers
+        it resumes to suspend: thread-backed work takes no virtual time."""
+        outside = scheduler.outside_work()
+        if outside.pending:
+            yield from self._wait_or_warn(scheduler, outside.when_idle, _OUTSIDE_WARNING)
 
     def _advance_to(self, timestamp: float) -> None:
         delta = timestamp - self._timestamp_ns

@@ -62,3 +62,27 @@ def test_a_defect_decoded_from_json_renders_with_the_name_it_was_written_with():
     decoded = DecodedDefect(ErrorInstance("cause=boom", name="MalformedMessage"))
     rendered = cause.die(decoded).pretty()
     assert rendered.startswith("MalformedMessage: cause=boom")
+
+
+def test_an_error_never_raised_renders_its_causes_nested_after_it():
+    """Effect's ``renderPrettyError``: the error first, then each cause in
+    ``{ [cause]: ... }`` (Python's chain would end with the logged error)."""
+    inner = Wrapped("Missing key\n  at ['url']", ValueError("deepest"))
+    rendered = cause.fail(Wrapped("Payload", inner)).pretty()
+    assert rendered == (
+        "test_cause_pretty.Wrapped: Payload {\n"
+        "  [cause]: test_cause_pretty.Wrapped: Missing key\n"
+        "    at ['url'] {\n"
+        "    [cause]: ValueError: deepest\n"
+        "  }\n"
+        "}"
+    )
+
+
+def test_a_raised_error_keeps_its_traceback_and_chain():
+    with pytest.raises(Wrapped) as caught:
+        raise Wrapped("outer", ValueError("inner"))
+    rendered = cause.die(caught.value).pretty()
+    assert rendered.startswith("ValueError: inner")
+    assert "direct cause" in rendered
+    assert "Traceback (most recent call last)" in rendered

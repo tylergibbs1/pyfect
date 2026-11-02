@@ -173,9 +173,15 @@ async def send_response(send: Send, response: WebResponse, inbound: _Inbound) ->
         await _aclose(chunks)
 
 
-async def serve_http(handler: WebHandler, scope: Scope, receive: Receive, send: Send) -> None:
-    """Answer one ``http`` scope with ``handler``."""
-    controller = AbortController()
+async def serve_http(
+    handler: WebHandler,
+    scope: Scope,
+    receive: Receive,
+    send: Send,
+    controller: AbortController,
+) -> None:
+    """Answer one ``http`` scope with ``handler``. ``controller`` aborts the
+    request: it interrupts the app and ends a streamed body."""
     inbound = _Inbound(receive, controller)
     try:
         request = request_of(scope, inbound.chunks(), controller)

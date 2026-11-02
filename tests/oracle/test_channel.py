@@ -268,6 +268,9 @@ class _CountingScheduler:
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
         self.inner.track(tracker, f)
 
+    def outside_work(self) -> WakeTracker:
+        return self.inner.outside_work()
+
 
 def _take_drain(source: channel.Channel[Any, Any, Any], n: int) -> fx.Effect[None, Any]:
     taken = 0

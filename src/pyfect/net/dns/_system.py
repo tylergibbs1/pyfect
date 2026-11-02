@@ -60,7 +60,7 @@ def _on_thread[A](method: DnsMethod, hostname: str, call: Callable[[], A]) -> Ef
 
         threading.Thread(target=run, name=f"pyfect-dns-{method}", daemon=True).start()
 
-    return os_wait(register)
+    return os_wait(register, waits_for="work")
 
 
 def _lookup(host: DomainName, family: IpFamily | None) -> Effect[Sequence[IpAddress], DnsError]:

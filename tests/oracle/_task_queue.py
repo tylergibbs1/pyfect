@@ -17,6 +17,7 @@ from pyfect.scheduler import Cancel, Task
 class TaskQueue:
     def __init__(self) -> None:
         self.tasks: list[Task] = []
+        self._outside = WakeTracker()
 
     def schedule(self, task: Task) -> None:
         self.tasks.append(task)
@@ -26,6 +27,9 @@ class TaskQueue:
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
         f()
+
+    def outside_work(self) -> WakeTracker:
+        return self._outside
 
     def run_next(self) -> None:
         self.tasks.pop(0)()

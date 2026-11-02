@@ -37,8 +37,12 @@ group you name, and a group the API lacks is a pyright error.
 
 </CodeOutput>
 
-A request whose params or payload don't match the schemas gets a 400 before any handler
-runs.
+A request whose params or payload don't match the schemas gets an empty 400 before any
+handler runs, and the server logs the `HttpApiSchemaError` with the schema issue. To tell
+the client what was wrong, build the routes with
+`builder.layer(api, schema_error_details=True)`: the 400 then carries
+`{"_tag": "HttpApiSchemaError", "kind": "Payload", "message": "Missing key\n  at [\"url\"]"}`.
+It is off by default, as in Effect, since the message describes your schemas.
 
 ## OpenAPI documentation
 

@@ -33,7 +33,7 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.persistence.redis_py", "redis") from error
 
 from pyfect._core import Effect
-from pyfect._os_wait import os_wait
+from pyfect._os_wait import WaitsFor, os_wait
 from pyfect._released import Lifetime
 from pyfect.config import Config, ConfigError
 from pyfect.config._config import unwrap
@@ -70,6 +70,22 @@ def _with_code(error: BaseException) -> BaseException:
     return error
 
 
+_BLOCKING = frozenset(
+    {"BLPOP", "BRPOP", "BRPOPLPUSH", "BLMOVE", "BLMPOP", "BZPOPMIN", "BZPOPMAX", "BZMPOP"}
+)
+
+
+def _command_waits_for(command: str, args: tuple[str, ...]) -> WaitsFor:
+    """A blocking command waits for data that may never come (an event);
+    any other is work that answers on its own."""
+    name = command.upper()
+    if name in _BLOCKING:
+        return "event"
+    if name in ("XREAD", "XREADGROUP") and any(arg.upper() == "BLOCK" for arg in args):
+        return "event"
+    return "work"
+
+
 class _Loop:
     """An asyncio loop on a thread of its own; a call once it stopped
     fails with a ``RedisError`` saying the client is closed."""
@@ -86,8 +102,12 @@ class _Loop:
         self.loop.run_forever()
         self.loop.close()
 
-    def run[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Effect[A, RedisError]:
-        """Run ``make()`` on the loop; interrupting cancels it."""
+    def run[A](
+        self, make: Callable[[], Coroutine[Any, Any, A]], *, waits_for: WaitsFor
+    ) -> Effect[A, RedisError]:
+        """Run ``make()`` on the loop; interrupting cancels it. ``waits_for``
+        says whether ``make()`` is work or waits for an event that may never
+        come (``pyfect._os_wait``)."""
 
         def register(resume: Callable[[Effect[A, RedisError]], None]) -> Callable[[], bool]:
             future: Future[A] = self._lifetime.submit(
@@ -107,7 +127,7 @@ class _Loop:
             future.add_done_callback(done)
             return future.cancel
 
-        return os_wait(register)
+        return os_wait(register, waits_for=waits_for)
 
     def stop(self) -> Effect[None]:
         def stop() -> None:
@@ -132,7 +152,7 @@ class RedisPyService:
         async def run() -> A:
             return await f(self.client)
 
-        return self._loop.run(run)
+        return self._loop.run(run, waits_for="work")
 
 
 class RedisPy(Tag[RedisPyService], key="pyfect/persistence/RedisPy"):
@@ -168,11 +188,11 @@ class _Reserved:
                 await self._connection.send_command(command, *args)
                 return cast("RedisReply", await self._connection.read_response())
 
-        return self._loop.run(run)
+        return self._loop.run(run, waits_for=_command_waits_for(command, args))
 
     @property
     def close(self) -> Effect[None]:
-        return self._loop.run(self._connection.disconnect).ignore()
+        return self._loop.run(self._connection.disconnect, waits_for="work").ignore()
 
 
 def _client(url: str | None, options: dict[str, Any]) -> AsyncRedis:
@@ -198,15 +218,15 @@ def make(
     def build() -> Generator[Effect[Any, RedisError, Any], Any, Context[Redis | RedisPy]]:
         loop = yield from acquire_release(sync(_Loop), lambda loop, _: loop.stop())
         client = yield from acquire_release(
-            loop.run(lambda: _make_client(url, dict(options))),
-            lambda client, _: loop.run(client.aclose).ignore(),
+            loop.run(lambda: _make_client(url, dict(options)), waits_for="work"),
+            lambda client, _: loop.run(client.aclose, waits_for="work").ignore(),
         )
 
         async def probe() -> None:
             connection = await _open_connection(client)
             await connection.disconnect()
 
-        yield from loop.run(probe)
+        yield from loop.run(probe, waits_for="work")
         # redis-py leaves some of these signatures untyped.
         untyped: Any = client
 
@@ -214,7 +234,7 @@ def make(
             async def run() -> RedisReply:
                 return cast("RedisReply", await untyped.execute_command(command, *args))
 
-            return loop.run(run)
+            return loop.run(run, waits_for=_command_waits_for(command, args))
 
         async def connect() -> OpenConnection:
             reserved = _Reserved(loop, await _open_connection(client))
@@ -242,7 +262,7 @@ def make(
 
                 def body() -> Generator[Effect[Any, RedisError], Any]:
                     while True:
-                        message = yield from loop.run(next_message)
+                        message = yield from loop.run(next_message, waits_for="event")
                         if message is None or message["type"] != "message":
                             continue
                         if not on_message(RedisMessage(message["channel"], message["data"])):
@@ -251,12 +271,12 @@ def make(
                 return gen(body)
 
             return acquire_release(
-                loop.run(open_subscription),
-                lambda subscription, _: loop.run(subscription.aclose).ignore(),
+                loop.run(open_subscription, waits_for="work"),
+                lambda subscription, _: loop.run(subscription.aclose, waits_for="work").ignore(),
             ).map(deliver)
 
         redis = yield from make_redis(
-            send=send, subscribe=subscribe, connect=loop.run(connect), pool=pool
+            send=send, subscribe=subscribe, connect=loop.run(connect, waits_for="work"), pool=pool
         )
         return Context.empty().add(Redis, redis).add(RedisPy, RedisPyService(client, loop))
 

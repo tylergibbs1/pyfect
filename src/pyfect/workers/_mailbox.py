@@ -43,7 +43,7 @@ class Mailbox[A]:
                 return None
             return lambda: self._forget(resume)
 
-        return os_wait(register)
+        return os_wait(register, waits_for="event")
 
     def _forget(self, resume: Resume[A, Never]) -> None:
         with self._lock:

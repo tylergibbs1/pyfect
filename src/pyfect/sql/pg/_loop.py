@@ -20,6 +20,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any, Never
 
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend
+from pyfect._os_wait import WaitsFor
 from pyfect.cause import die, fail
 from pyfect.effect import sync
 from pyfect.process._os import Latch
@@ -68,14 +69,18 @@ def call[A](
     catch: Callable[[BaseException], SqlError],
     stop: Stop = cancel_task,
     release: Callable[[A], Coroutine[Any, Any, None]] | None = None,
+    *,
+    waits_for: WaitsFor,
 ) -> Effect[A, SqlError]:
     """Run ``make()`` on the loop; an exception it raises fails with
     ``catch`` of it. Interrupting runs ``stop`` on the task and waits; a
-    value ``make()`` produced all the same goes to ``release``."""
+    value ``make()`` produced all the same goes to ``release``.
+    ``waits_for`` says whether ``make()`` is work (a statement) or waits
+    for an event (a notification), as ``pyfect._os_wait`` explains."""
 
     def start() -> Effect[A, SqlError]:
         loop = get_loop()
-        settled: Latch[Effect[A, SqlError]] = Latch()
+        settled: Latch[Effect[A, SqlError]] = Latch(waits_for=waits_for)
         tasks: list[asyncio.Task[None]] = []
 
         async def run() -> None:
@@ -95,7 +100,7 @@ def call[A](
             task.add_done_callback(lambda _: settled.set(_FailCause(die(asyncio.CancelledError()))))
             tasks.append(task)
 
-        stopped: Latch[None] = Latch()
+        stopped: Latch[None] = Latch(waits_for="work")
 
         async def stopping() -> None:
             try:
