@@ -21,7 +21,8 @@ the effect: `return (yield from NotFound(key))`. Outside one, use `fx.fail(error
 
 `catch_tag(ErrorClass, handler)` handles one error class and removes it from the type. Because it
 removes something, it is a function you use with `.pipe(...)`, one per call; pyright cannot infer
-the removal from a method. `catch_all` handles every typed error.
+the removal from a method. `catch_all` handles every typed error, as a method or, for `.pipe`,
+`fx.catch_all(handler)` (annotate the handler's parameter).
 
 Other handlers: `catch_if`, `map_error`, `or_else_succeed`, `match`, `result` (an
 `Ok`/`Err` value), `ignore`, and `retry` (see [Schedules and retries](/docs/schedules)).

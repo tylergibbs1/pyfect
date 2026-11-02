@@ -5,6 +5,9 @@ by a ``TypeIs`` refinement. Both remove exactly what they catch::
 
     eff.pipe(catch_tag((NotFound, Invalid), lambda e: succeed(None)))
 
+``catch_all`` is the method of that name for ``.pipe`` (Effect's
+``catch``): it removes every typed error.
+
 ``or_else`` handles every other error. Annotate its parameter with those
 errors (it must be a ``def``; a lambda's parameter can't be inferred here)
 and pyright checks that it covers all of them.
@@ -48,6 +51,27 @@ class _CatchAll[EC, EO, B, C, EE, RR]:
 
     def __call__[A, R = Never](self, eff: Effect[A, EC | EO, R]) -> Effect[A | B | C, EE, R | RR]:
         return _MatchCause(eff, self.handle, None)
+
+
+class _CatchEvery[E, B, E2, R2]:
+    """Handles every typed error ``E`` of an effect."""
+
+    __slots__ = ("f",)
+
+    def __init__(self, f: Callable[[E], Effect[B, E2, R2]]) -> None:
+        self.f = f
+
+    def __call__[A, R = Never](self, eff: Effect[A, E, R]) -> Effect[A | B, E2, R | R2]:
+        return eff.catch_all(self.f)
+
+
+def catch_all[E, B, E2 = Never, R2 = Never](
+    f: Callable[[E], Effect[B, E2, R2]],
+) -> _CatchEvery[E, B, E2, R2]:
+    """``eff.catch_all(f)`` for ``.pipe``: recover from every typed error.
+    Defects and interruptions pass through. Annotate ``f``'s parameter (a
+    ``def``): pyright checks it covers every error of the effect."""
+    return _CatchEvery(f)
 
 
 @overload

@@ -17,7 +17,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from functools import partial
 from typing import TYPE_CHECKING, Any, Never, Unpack, cast, overload
 
-from pyfect._catch import catch_if, catch_tag
+from pyfect._catch import catch_all, catch_if, catch_tag
 from pyfect._catch_reason import catch_reason, catch_reasons, unwrap_reason
 from pyfect._context_effects import (
     context,
@@ -537,6 +537,7 @@ __all__ = [
     "AsyncioRequiredError",
     "blocking",
     "callback",
+    "catch_all",
     "catch_if",
     "catch_no_such_element",
     "catch_reason",

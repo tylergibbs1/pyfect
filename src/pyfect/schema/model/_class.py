@@ -195,9 +195,14 @@ def _check_typed_dict(cls: type[VariantClass], variant: str, typed_dict: Any) ->
         ),
     ]
     if problems:
+        expected = ", ".join(
+            f"{k!r} (may be NotRequired)" if has_default else repr(k)
+            for k, has_default in present.items()
+        )
         raise TypeError(
             f"{cls.__name__}: {typed_dict.__name__} is not its {variant!r} variant: "
             + ", ".join(problems)
+            + f"; the {variant!r} variant has keys: {expected or '(none)'}"
         )
 
 

@@ -8,7 +8,8 @@ A `Config[A]` says which keys to read and how to decode them. Configs are effect
 
 <include meta='title="read.py"'>../../snippets/config/read.py</include>
 
-Missing data is **absent**: `with_default` and `config.option` recover it. Data that is present
+Missing data is **absent**: `with_default` and `option` (`cfg.option()` or `config.option(cfg)`)
+recover it. Data that is present
 but invalid **fails**, so a typo in `PORT` is an error, not a silent default.
 
 ## Sources and secrets

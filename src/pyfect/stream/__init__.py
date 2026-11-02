@@ -12,6 +12,7 @@ at a time while its functions take one item at a time::
 
 Constructors are functions here, and so are the combinators that remove
 something from a stream's type (``scoped``, ``catch_tag``, ``catch_if``,
+``catch_all`` (also a method),
 ``provide``, ``provide_service``, ``provide_context``, ``update_context``, ...),
 used with ``.pipe``, and the ones combining any number of streams
 (``merge_all``, ``zip_latest_all``, ``race_all``); the rest (``map``,
@@ -24,8 +25,8 @@ used with ``.pipe``, and the ones combining any number of streams
 """
 
 from pyfect.stream._async_iterable import StreamAsyncIterable, StreamAsyncIterator
+from pyfect.stream._catch import catch_all, catch_tag
 from pyfect.stream._catch import catch_if_refinement as catch_if
-from pyfect.stream._catch import catch_tag
 from pyfect.stream._catch_reason import catch_reason, catch_reasons, unwrap_reason
 from pyfect.stream._constructors import (
     DEFAULT_CHUNK_SIZE,
@@ -94,6 +95,7 @@ __all__ = [
     "StreamAsyncIterable",
     "StreamAsyncIterator",
     "callback",
+    "catch_all",
     "catch_if",
     "catch_reason",
     "catch_reasons",

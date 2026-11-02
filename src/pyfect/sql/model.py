@@ -102,20 +102,46 @@ class _Table:
         return self.model.fields()[self.id_column]
 
 
-def _table(
-    sql: SqlClientService,
+@dataclass(frozen=True, slots=True)
+class _Columns:
+    """A model's table and columns, checked against its variants when
+    ``make_repository`` / ``make_resolvers`` is called."""
+
+    model: Any
+    table: str
+    id_column: str
+    soft_delete_column: str | None
+
+    def on(self, sql: SqlClientService) -> _Table:
+        return _Table(sql, self.model, self.table, self.id_column, self.soft_delete_column)
+
+
+def _columns(
     variants: ModelVariants[Any, Any, Any],
     table_name: str,
     id_column: str,
     soft_delete_column: str | None,
-) -> _Table:
+) -> _Columns:
+    """Effect checks ``id_column`` against the update variant's keys at
+    compile time; pyright has no ``keyof`` for a TypedDict, so it is checked
+    here, before any effect runs."""
     model: Any = variants.model
     selected = model.fields()
-    if id_column not in selected or id_column not in variants.update.fields:
-        raise ValueError(f"{model.__name__} has no {id_column!r} field in select and update")
+    update = variants.update.fields
+    if id_column not in selected or id_column not in update:
+        hint = (
+            " (a GeneratedByDb field is in select and json only: declare the id with"
+            " Model.field_only(['select', 'update', 'json'])(...))"
+            if id_column in selected
+            else ""
+        )
+        raise ValueError(
+            f"{model.__name__}: id_column {id_column!r} must be a field of the select and"
+            f" update variants; the 'update' variant has: {', '.join(map(repr, update))}{hint}"
+        )
     if soft_delete_column is not None and soft_delete_column not in selected:
         raise ValueError(f"{model.__name__} has no {soft_delete_column!r} field")
-    return _Table(sql, model, table_name, id_column, soft_delete_column)
+    return _Columns(model, table_name, id_column, soft_delete_column)
 
 
 def make_repository[A, In, Up](
@@ -129,12 +155,12 @@ def make_repository[A, In, Up](
     """A repository of ``model`` on ``table_name`` (Effect's
     ``makeRepository``); spans are named ``<span_prefix>.insert`` and so on.
     ``id_column`` must be a field of the ``select`` and ``update`` variants
-    (``ValueError``)."""
+    (``ValueError`` when called)."""
     variants = model.__model_variants__()
+    columns = _columns(variants, table_name, id_column, soft_delete_column)
 
     def build(sql: SqlClientService) -> Repository[A, In, Up]:
-        t = _table(sql, variants, table_name, id_column, soft_delete_column)
-        return _repository(t, variants, span_prefix)
+        return _repository(columns.on(sql), variants, span_prefix)
 
     return SqlClient().map(build)
 
@@ -232,10 +258,10 @@ def make_resolvers[A, In, Up](
     as batched resolvers (Effect's ``makeResolvers``): the requests of one
     scheduler tick (within one transaction) run as one statement."""
     variants = model.__model_variants__()
+    columns = _columns(variants, table_name, id_column, soft_delete_column)
 
     def build(sql: SqlClientService) -> Resolvers[A, In]:
-        t = _table(sql, variants, table_name, id_column, soft_delete_column)
-        return _resolvers(t, variants, span_prefix)
+        return _resolvers(columns.on(sql), variants, span_prefix)
 
     return SqlClient().map(build)
 

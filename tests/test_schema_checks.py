@@ -3,6 +3,7 @@ values. Messages were printed by Effect's ``Schema`` under Node where Effect
 has the same case."""
 
 import enum
+import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Never, NewType, TypeIs
@@ -415,3 +416,22 @@ def test_a_union_names_its_members_by_their_encoded_side(schema: AnyCodec, messa
     # Printed by Effect under Node: a union expects what its members decode
     # from, so a member's decoded-side identifier is not shown.
     SchemaAsserts(schema).decoding().fail(True, message)
+
+
+def test_literals_takes_a_sequence_as_effect_does():
+    # DOGFOOD B1: Effect v4 writes ``Schema.Literals(["a", "b"])``.
+    for schema in (S.Literals(["up", "down"]), S.Literals(("up", "down"))):
+        assert schema.literals == ("up", "down")
+        assert S.decode_unknown_sync(schema)("down") == "down"
+        with pytest.raises(S.SchemaError, match=re.escape('Expected "up" | "down"')):
+            S.decode_unknown_sync(schema)("x")
+    assert S.Literals("a", "b", "c").pick(["a", "c"]).literals == ("a", "c")
+
+
+def test_union_takes_a_sequence_as_effect_does():
+    # The sibling of B1: Effect v4 writes ``Schema.Union([A, B])``.
+    for schema in (S.Union([S.String, S.Int]), S.Union((S.String, S.Int))):
+        assert S.decode_unknown_sync(schema)(3) == 3
+        assert S.decode_unknown_sync(schema)("a") == "a"
+        with pytest.raises(S.SchemaError, match=re.escape("Expected string | number")):
+            S.decode_unknown_sync(schema)(None)

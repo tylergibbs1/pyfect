@@ -66,6 +66,7 @@ __all__ = [
     "Layer",
     "MemoMap",
     "UnimplementedError",
+    "catch_all",
     "catch_tag",
     "effect",
     "effect_context",
@@ -434,6 +435,29 @@ class _CatchTag[EC, O, E2, R2]:
         return Layer(
             lambda memo, scope: _MatchCause(target._build(memo, scope), handle(memo, scope), None)
         )
+
+
+class _CatchEvery[O, E, E2, R2]:
+    """Handles every typed error ``E`` of a layer's build."""
+
+    __slots__ = ("f",)
+
+    def __init__(self, f: Callable[[E], Layer[O, E2, R2]]) -> None:
+        self.f = f
+
+    def __call__[R = Never](self, target: Layer[O, E, R]) -> Layer[O, E2, R | R2]:
+        require_layer(target, "target")
+        return target.catch_all(self.f)
+
+
+def catch_all[O, E, E2 = Never, R2 = Never](
+    f: Callable[[E], Layer[O, E2, R2]],
+) -> _CatchEvery[O, E, E2, R2]:
+    """``target.catch_all(f)`` for ``.pipe`` (Effect's ``Layer.catch``):
+    build ``f(error)`` instead when the build fails with any typed error.
+    Annotate ``f``'s parameter (a ``def``): pyright checks it covers every
+    error."""
+    return _CatchEvery(f)
 
 
 @overload

@@ -7,7 +7,7 @@ where a test says it pins a Pythonic difference (docs/PARITY.md, section 4).
 import math
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
@@ -410,12 +410,28 @@ def test_flat_map_into_a_plain_effect_gives_an_effect():
     assert fx.run_sync(eff.pipe(fx.provide(cp.layer(cp.from_unknown({"N": "21"})))).or_die()) == 42
 
 
-def test_option_keeps_invalid_data_failing_where_effect_option_does_not():
-    provider = cp.layer(cp.from_unknown({"N": "x"}))
-    assert isinstance(
-        fx.run_sync(config.option(config.integer("N")).pipe(fx.provide(provider)).result()), fx.Err
+def test_the_option_method_keeps_invalid_data_failing():
+    # DOGFOOD B3: ``cfg.option()`` was the inherited ``Effect.option``, so an
+    # invalid value silently became ``None``.
+    invalid = cp.from_unknown({"N": "x"})
+    assert _parse(config.integer("N").option(), invalid) == fx.Err(
+        'Expected a string representing a finite number\n  at ["N"]'
     )
-    assert fx.run_sync(config.integer("N").option().pipe(fx.provide(provider))) is None
+    assert _parse(config.option(config.integer("N")), invalid) == _parse(
+        config.integer("N").option(), invalid
+    )
+
+
+def test_the_option_method_gives_none_when_absent_and_some_when_present():
+    assert _parse(config.integer("N").option(), cp.from_unknown({})) == fx.Ok(None)
+    assert _parse(config.integer("N").option(), cp.from_unknown({"N": "3"})) == fx.Ok(fx.Some(3))
+
+
+def test_the_option_method_is_a_config():
+    # It composes as a config: absence under ``nested`` and ``with_default``.
+    cfg = config.integer("N").option().nested("app")
+    assert isinstance(cfg, Config)
+    assert _parse(cfg, cp.from_unknown({"app": {"N": "4"}})) == fx.Ok(fx.Some(4))
 
 
 def test_combinators_reject_a_non_config_when_called():
@@ -453,3 +469,12 @@ def test_wipe_unsafe_drops_the_value():
     assert not redacted.wipe_unsafe(secret)
     with pytest.raises(ValueError, match='Unable to get redacted value with label: "key"'):
         redacted.value(secret)
+
+
+def test_literal_takes_a_sequence_as_effect_does():
+    # The sibling of B1: Effect v4 writes ``Config.Literals(["dev", "prod"], name)``.
+    env: Config[Literal["dev", "prod"]] = config.literal(["dev", "prod"], name="ENV")
+    assert _parse(env, cp.from_unknown({"ENV": "prod"})) == fx.Ok("prod")
+    assert _parse(env, cp.from_unknown({"ENV": "x"})) == _parse(
+        config.literal("dev", "prod", name="ENV"), cp.from_unknown({"ENV": "x"})
+    )

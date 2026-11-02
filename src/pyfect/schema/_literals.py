@@ -12,8 +12,9 @@ from __future__ import annotations
 import enum
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Generic, LiteralString, Never, TypeVar, cast
+from typing import Any, Generic, LiteralString, Never, TypeVar, cast, overload
 
+from pyfect._one_or_many import one_or_many
 from pyfect.schema import ast
 from pyfect.schema._schema import Bottom, Codec
 
@@ -73,11 +74,22 @@ class UnionSchema(Bottom[A_co, I_co, RD_co, RE_co], Generic[A_co, I_co, RD_co, R
         return UnionSchema(node, members)
 
 
+@overload
+def Union[A = Never, I = Never, RD = Never, RE = Never](
+    members: list[Codec[A, I, RD, RE]] | tuple[Codec[A, I, RD, RE], ...],
+    /,
+    *,
+    mode: ast.UnionMode = "any_of",
+) -> UnionSchema[A, I, RD, RE]: ...
+@overload
 def Union[A = Never, I = Never, RD = Never, RE = Never](
     *members: Codec[A, I, RD, RE], mode: ast.UnionMode = "any_of"
-) -> UnionSchema[A, I, RD, RE]:
+) -> UnionSchema[A, I, RD, RE]: ...
+def Union(*members: Any, mode: ast.UnionMode = "any_of") -> UnionSchema[Any, Any, Any, Any]:
     """A value of any member, tried in order (``mode="one_of"``: of exactly
-    one, failing when several match)."""
+    one, failing when several match). The members are given as arguments
+    or, as in Effect, as one list or tuple."""
+    members = one_or_many(members)
     node = ast.Union(tuple(m.__codec__().ast for m in members), mode)
     return UnionSchema(node, members)
 
@@ -92,8 +104,13 @@ class LiteralsSchema(Bottom[L_, L_, Never, Never], Generic[L_]):
     def members(self) -> tuple[LiteralSchema[L_], ...]:
         return tuple(LiteralSchema(ast.Literal(lit), lit) for lit in self.literals)
 
-    def pick(self, *literals: L_) -> LiteralsSchema[L_]:
-        """The union of ``literals`` only (each one of this union's)."""
+    @overload
+    def pick(self, literals: list[L_] | tuple[L_, ...], /) -> LiteralsSchema[L_]: ...
+    @overload
+    def pick(self, *literals: L_) -> LiteralsSchema[L_]: ...
+    def pick(self, *literals: Any) -> LiteralsSchema[L_]:
+        """The union of ``literals`` only (each one of this union's), given
+        as arguments or, as in Effect, as one list or tuple."""
         return Literals(*literals)
 
     def map_members(
@@ -103,9 +120,15 @@ class LiteralsSchema(Bottom[L_, L_, Never, Never], Generic[L_]):
         return Union(*f(self.members))
 
 
-def Literals[L: LiteralValue](*literals: L) -> LiteralsSchema[L]:
+@overload
+def Literals[L: LiteralValue](literals: list[L] | tuple[L, ...], /) -> LiteralsSchema[L]: ...
+@overload
+def Literals[L: LiteralValue](*literals: L) -> LiteralsSchema[L]: ...
+def Literals(*literals: Any) -> LiteralsSchema[Any]:
     """Accepts any of ``literals`` (Effect's ``Literals``, a union of
-    ``Literal`` members): ``Expected "a" | "b"`` otherwise."""
+    ``Literal`` members): ``Expected "a" | "b"`` otherwise. The literals are
+    given as arguments or, as in Effect, as one list or tuple."""
+    literals = one_or_many(literals)
     return LiteralsSchema(ast.Union(tuple(ast.Literal(lit) for lit in literals)), literals)
 
 

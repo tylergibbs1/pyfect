@@ -21,6 +21,7 @@ Run effects on a schedule with the ``Effect`` methods ``retry``,
 ``schedule_from``.
 """
 
+from pyfect.schedule._combinators import jittered, passthrough
 from pyfect.schedule._constructors import (
     duration,
     during,
@@ -75,9 +76,11 @@ __all__ = [
     "from_step",
     "from_step_with_metadata",
     "identity",
+    "jittered",
     "max",
     "min",
     "once",
+    "passthrough",
     "recurs",
     "set_input_type",
     "spaced",

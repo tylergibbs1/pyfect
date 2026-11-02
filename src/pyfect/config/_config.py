@@ -39,8 +39,9 @@ class Config(Effect[A_co, ConfigError]):
 
     A config is an effect: running it (``yield from port`` inside
     ``fx.gen``) reads the ``CurrentConfigProvider``. ``parse(provider)``
-    reads a given one. The methods build new configs; ``option`` and the
-    constructors are in ``pyfect.config``."""
+    reads a given one. The methods build new configs (an ``Effect`` method
+    that ``Effect``'s ``Config`` module also defines, such as ``option``,
+    has the ``Config`` meaning); the constructors are in ``pyfect.config``."""
 
     __slots__ = ("_evaluate",)
 
@@ -143,6 +144,13 @@ class Config(Effect[A_co, ConfigError]):
 
         return Config(lambda provider, prefix: evaluate(provider, prefix).map(recover))
 
+    @override
+    def option(self) -> Config[Option[A_co]]:  # pyright: ignore[reportIncompatibleMethodOverride]
+        """``Some(value)``, or ``None`` when the value is absent (Effect's
+        ``Config.option``). Invalid data and source errors still fail: this
+        is not ``Effect.option``, which would turn them into ``None``."""
+        return self.map(Some).with_default(None)
+
     def nested(self, name: str) -> Config[A_co]:
         """Read this config under ``name``: an object level in
         ``from_unknown``, a ``name_`` prefix in ``from_env``. The outermost
@@ -190,10 +198,9 @@ def fail_config(error: SourceError | SchemaError) -> Config[Never]:
 
 
 def option[A](config: Config[A]) -> Config[Option[A]]:
-    """``Some(value)``, or ``None`` when the value is absent. Invalid data
-    and source errors still fail. (``config.option()`` is
-    ``Effect.option``, which turns every failure into ``None``.)"""
-    return config.map(Some).with_default(None)
+    """``config.option()``: ``Some(value)``, or ``None`` when the value is
+    absent. Invalid data and source errors still fail."""
+    return config.option()
 
 
 def gen[A](f: Callable[[], Generator[Effect[Any, ConfigError, Never], Any, A]]) -> Config[A]:

@@ -49,6 +49,12 @@ call runs in a span named `<span_prefix>.insert`, `<span_prefix>.findById` and s
 `soft_delete_column="deleted_at"`, `delete` sets that column to `CURRENT_TIMESTAMP` and
 the reads skip rows where it is set.
 
+`id_column` must be a field of both the `select` and the `update` variants: `update`
+finds the row by it. `GeneratedByDb` leaves a field out of `update`, so a database-made id
+is declared with `field_only(["select", "update", "json"])`, as below. pyright cannot check
+a column name against a TypedDict's keys, so `make_repository` raises `ValueError` when
+called with an id outside `update`, naming the keys `update` has.
+
 <CodeOutput>
 
 <include meta='title="users.py"'>../../snippets/models/users.py</include>

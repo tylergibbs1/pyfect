@@ -5,8 +5,10 @@ none."""
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any, overload
 from urllib.parse import SplitResult
 
+from pyfect._one_or_many import one_or_many
 from pyfect.byte_size import ByteSize
 from pyfect.config import _scalars
 from pyfect.config._config import Config
@@ -55,11 +57,18 @@ def boolean(name: str | None = None) -> Config[bool]:
     return scalar_config(_scalars.boolean, name)
 
 
-def literal[L: LiteralValue](*values: L, name: str | None = None) -> Config[L]:
-    """One of ``values``, written as Effect writes literals (``True`` is
-    ``"true"``, ``None`` is ``"null"``). Annotate the result to keep the
-    literal types: ``env: Config[Literal["dev", "prod"]] = config.literal("dev", "prod")``."""
-    return scalar_config(_scalars.literal(values), name)
+@overload
+def literal[L: LiteralValue](
+    values: list[L] | tuple[L, ...], /, *, name: str | None = None
+) -> Config[L]: ...
+@overload
+def literal[L: LiteralValue](*values: L, name: str | None = None) -> Config[L]: ...
+def literal(*values: Any, name: str | None = None) -> Config[Any]:
+    """One of ``values`` (as arguments or, as in Effect, one list or tuple),
+    written as Effect writes literals (``True`` is ``"true"``, ``None`` is
+    ``"null"``). Annotate the result to keep the literal types:
+    ``env: Config[Literal["dev", "prod"]] = config.literal("dev", "prod")``."""
+    return scalar_config(_scalars.literal(one_or_many(values)), name)
 
 
 def log_level(name: str | None = None) -> Config[LogLevel]:

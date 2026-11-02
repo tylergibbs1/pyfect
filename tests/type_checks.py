@@ -276,6 +276,10 @@ def handle_too_little(e: Gone) -> fx.Effect[int]:
     return fx.succeed(0)
 
 
+def handle_any(e: NotFound | Invalid) -> fx.Effect[int]:
+    return fx.succeed(0)
+
+
 def check_error_removal(three: fx.Effect[str, NotFound | Invalid | Gone]) -> None:
     assert_type(
         three.pipe(fx.catch_tag((NotFound, Invalid), lambda e: fx.succeed(type(e).__name__))),
@@ -300,6 +304,9 @@ def check_error_removal(three: fx.Effect[str, NotFound | Invalid | Gone]) -> Non
         fx.Effect[str | int, Never, Never],
     )
     two.pipe(fx.catch_tag(NotFound, lambda e: fx.succeed(1), or_else=handle_too_little))  # pyright: ignore[reportArgumentType]
+    # catch_all for .pipe (DOGFOOD B7): the handler must cover every error.
+    assert_type(two.pipe(fx.catch_all(handle_any)), fx.Effect[str | int, Never, Never])
+    two.pipe(fx.catch_all(handle_rest))  # pyright: ignore[reportArgumentType]
     maybe = fx.from_optional(1 if two else None).flat_map(lambda n: fx.fail(Invalid(str(n))))
     assert_type(maybe.pipe(fx.catch_no_such_element), fx.Effect[fx.Option[Never], Invalid, Never])
     assert_type(
@@ -1091,6 +1098,8 @@ def check_schedule_combinators(s: schedule.Schedule[int, str]) -> None:
     assert_type(s.add_delay(lambda _: Port().as_(1.0)), schedule.Schedule[int, str, Never, Port])
     assert_type(s.up_to(times=3, duration=1), schedule.Schedule[int, str])
     assert_type(s.jittered(), schedule.Schedule[int, str])
+    assert_type(s.pipe(schedule.jittered), schedule.Schedule[int, str])
+    assert_type(s.pipe(schedule.passthrough), schedule.Schedule[str, str])
     assert_type(schedule.forever.pipe(schedule.set_input_type(str)), schedule.Schedule[int, str])
     s.pipe(schedule.set_input_type(int))  # pyright: ignore[reportArgumentType]
     # Decisions and metadata are immutable, so covariant.
@@ -3426,7 +3435,7 @@ def check_config_constructors() -> None:
     assert_type(config.literal(1, 2, name="A"), fx.Config[int])
     env: fx.Config[Literal["dev", "prod"]] = config.literal("dev", "prod", name="ENV")
     assert_type(env, fx.Config[Literal["dev", "prod"]])
-    config.literal([1], name="A")  # pyright: ignore[reportArgumentType]
+    config.literal([object()], name="A")  # pyright: ignore[reportArgumentType, reportCallIssue]
     assert_type(config.succeed(1), fx.Config[int])
     assert_type(
         config.fail(config.SchemaError(config.Forbidden({"message": "no"}))), fx.Config[Never]
@@ -3474,7 +3483,8 @@ def check_config_combinators(port: fx.Config[int], host: fx.Config[str]) -> None
         fx.Effect[Never, config.ConfigError | NotFound],
     )
     assert_type(config.option(port), fx.Config[fx.Option[int]])
-    assert_type(port.option(), fx.Effect[fx.Option[int]])
+    # The method is Config.option too (DOGFOOD B3), not Effect.option.
+    assert_type(port.option(), fx.Config[fx.Option[int]])
     assert_type(config.all(port, host), fx.Config[tuple[int, str]])
     assert_type(config.all(*[port, port]), fx.Config[tuple[int, ...]])
     assert_type(config.all(), fx.Config[tuple[()]])
@@ -3700,6 +3710,49 @@ def check_schema_codec_protocol(unknown: object) -> None:
     _ = as_schema
 
 
+def stream_any(e: NotFound | Invalid) -> stream.Stream[int]:
+    return stream.succeed(0)
+
+
+def stream_rest(e: Invalid) -> stream.Stream[int]:
+    return stream.succeed(0)
+
+
+def layer_any(e: NotFound | Invalid) -> layer.Layer[Port]:
+    return layer.succeed(Port, 0)
+
+
+def layer_rest(e: Invalid) -> layer.Layer[Port]:
+    return layer.succeed(Port, 0)
+
+
+def check_catch_all_pipeables(
+    s: stream.Stream[str, NotFound | Invalid], live: layer.Layer[Port, NotFound | Invalid]
+) -> None:
+    # Stream and Layer spell catch_all as Effect does (both a method and a pipeable).
+    assert_type(s.pipe(stream.catch_all(stream_any)), stream.Stream[str | int, Never, Never])
+    s.pipe(stream.catch_all(stream_rest))  # pyright: ignore[reportArgumentType]
+    assert_type(live.pipe(layer.catch_all(layer_any)), layer.Layer[Port, Never, Never])
+    live.pipe(layer.catch_all(layer_rest))  # pyright: ignore[reportArgumentType]
+
+
+def check_literals_sequence_form() -> None:
+    # Effect's sequence form (DOGFOOD B1) keeps the literals too.
+    assert_type(S.Literals(["a", "b"]), S.LiteralsSchema[Literal["a", "b"]])
+    assert_type(S.Literals(("a", "b")), S.LiteralsSchema[Literal["a", "b"]])
+    assert_type(S.Literals("a", "b").pick(["a"]), S.LiteralsSchema[Literal["a", "b"]])
+    S.Literals([object()])  # pyright: ignore[reportArgumentType, reportCallIssue]
+    S.Literals("a", "b").pick(["c"])  # pyright: ignore[reportArgumentType, reportCallIssue]
+    # Union and config.literal take Effect's sequence form too.
+    assert_type(S.Union([S.String, S.Int]), S.UnionSchema[str | int, str | int, Never, Never])
+    assert_type(S.Union((S.String,)), S.UnionSchema[str, str, Never, Never])
+    S.Union([1])  # pyright: ignore[reportArgumentType, reportCallIssue]
+    from pyfect import config
+
+    env: fx.Config[Literal["dev", "prod"]] = config.literal(["dev", "prod"], name="ENV")
+    _ = env
+
+
 def check_schema_checks(unknown: object) -> None:
     import enum
     from collections.abc import Mapping, Sized
@@ -3736,7 +3789,7 @@ def check_schema_checks(unknown: object) -> None:
     # Literals keep their values; numbers need the type written out.
     assert_type(S.Literal("a"), S.LiteralSchema[Literal["a"]])
     assert_type(S.Literals("a", "b"), S.LiteralsSchema[Literal["a", "b"]])
-    S.Literals("a", "b").pick("c")  # pyright: ignore[reportArgumentType]
+    S.Literals("a", "b").pick("c")  # pyright: ignore[reportArgumentType, reportCallIssue]
     assert_type(S.decode_unknown_sync(S.Literals("a", "b"))(unknown), Literal["a", "b"])
     assert_type(S.Literals(1, 2), S.LiteralsSchema[int])
     ones: S.LiteralsSchema[Literal[1, 2]] = S.Literals(1, 2)

@@ -19,7 +19,7 @@ The waits of `policy` above, before each of its five retries:
 
 Constructors: `spaced`, `fixed`, `exponential`, `fibonacci`, `windowed`, `recurs`, `cron`.
 Combinators: `up_to(times=, duration=)`, `jittered`, `while_`, `max` / `min`, `concat`, and
-more. Schedules use the `Clock` service, so tests can run them on virtual time
+more. They are methods; `jittered` and `passthrough` also pipe (`s.pipe(schedule.jittered)`). Schedules use the `Clock` service, so tests can run them on virtual time
 ([Testing](/docs/testing)).
 
 Reference: [`pyfect.schedule`](/docs/reference/schedule).

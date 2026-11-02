@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Never, TypeIs, overload
 
+from pyfect.channel import _errors
 from pyfect.channel._base import AnyChannel, ChannelBase
 from pyfect.channel._channel import Channel
 
@@ -153,3 +154,26 @@ def catch_tag(
     if or_else is None:
         return _CatchSome[Any, Any, Any, Any, Any, Any, Any, Any](predicate, f, None)
     return _CatchAll[Any, Any, Any, Any, Any, Any, Any, Any, Any, Any, Any](predicate, f, or_else)
+
+
+class _CatchEvery[E, O2, E2, D2, I, IE, ID, R2]:
+    """Handles every typed error ``E`` of a channel."""
+
+    __slots__ = ("f",)
+
+    def __init__(self, f: Callable[[E], _Ch[O2, E2, D2, I, IE, ID, R2]]) -> None:
+        self.f = f
+
+    def __call__[O, D, R = Never](
+        self, channel: ChannelBase[O, E, D, I, IE, ID, R]
+    ) -> Channel[O | O2, E2, D | D2, I, IE, ID, R | R2]:
+        return _errors.catch_all(channel, self.f)
+
+
+def catch_all[E, O2, D2 = None, I = object, IE = object, ID = object, E2 = Never, R2 = Never](
+    f: Callable[[E], _Ch[O2, E2, D2, I, IE, ID, R2]],
+) -> _CatchEvery[E, O2, E2, D2, I, IE, ID, R2]:
+    """``channel.catch_all(f)`` for ``.pipe`` (Effect's ``Channel.catch``):
+    go on with ``f(error)`` after any typed failure. Annotate ``f``'s
+    parameter (a ``def``): pyright checks it covers every error."""
+    return _CatchEvery(f)

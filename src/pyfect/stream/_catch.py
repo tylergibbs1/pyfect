@@ -70,6 +70,28 @@ class _CatchAll[EC, EO, A2, A3, EE, RR]:
 type _S[A, E, R] = StreamBase[A, E, R]
 
 
+class _CatchEvery[E, A2, E2, R2]:
+    """Handles every typed error ``E`` of a stream."""
+
+    __slots__ = ("f",)
+
+    def __init__(self, f: Callable[[E], _S[A2, E2, R2]]) -> None:
+        self.f = f
+
+    def __call__[A, R = Never](self, stream: StreamBase[A, E, R]) -> Stream[A | A2, E2, R | R2]:
+        f = self.f
+        return Stream(stream._channel.catch_all(lambda error: f(error)._channel))
+
+
+def catch_all[E, A2, E2 = Never, R2 = Never](
+    f: Callable[[E], _S[A2, E2, R2]],
+) -> _CatchEvery[E, A2, E2, R2]:
+    """``stream.catch_all(f)`` for ``.pipe`` (Effect's ``Stream.catch``):
+    go on with ``f(error)`` after any typed failure. Annotate ``f``'s
+    parameter (a ``def``): pyright checks it covers every error."""
+    return _CatchEvery(f)
+
+
 @overload
 def catch_if_refinement[EB, A2, E2 = Never, R2 = Never](
     refinement: Callable[[Any], TypeIs[EB]], f: Callable[[EB], _S[A2, E2, R2]]

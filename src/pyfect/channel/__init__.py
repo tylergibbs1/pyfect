@@ -14,6 +14,7 @@ until the end::
 
 Constructors are functions here, and so are the combinators that remove
 something from a channel's type (``catch_tag``, ``catch_if``, the
+``catch_all`` pipeable (also a method),
 ``provide*`` functions, ``scoped``), used with ``.pipe``; everything else
 (``map``, ``merge``, ``catch_all``, the ``run_*`` functions, ...) is a
 method. Pull loops run on the fiber's own stack,
@@ -21,7 +22,7 @@ so channels of millions of items never touch Python's recursion limit.
 """
 
 from pyfect._public import publish
-from pyfect.channel._catch import catch_if, catch_tag
+from pyfect.channel._catch import catch_all, catch_if, catch_tag
 from pyfect.channel._catch_reason import catch_reason, catch_reasons, unwrap_reason
 from pyfect.channel._channel import (
     Channel,
@@ -96,6 +97,7 @@ __all__ = [
     "acquire_use_release",
     "callback",
     "callback_array",
+    "catch_all",
     "catch_if",
     "catch_reason",
     "catch_reasons",
