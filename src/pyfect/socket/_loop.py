@@ -12,6 +12,7 @@ from concurrent.futures import Future
 from typing import Any
 
 from pyfect._core import Effect
+from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import Resume, os_wait
 from pyfect.effect import fail, succeed
 
@@ -32,10 +33,7 @@ def _quiet(loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
 def get_loop() -> asyncio.AbstractEventLoop:
     with _Shared.lock:
         if _Shared.loop is None:
-            loop = asyncio.new_event_loop()
-            loop.set_exception_handler(_quiet)
-            threading.Thread(target=loop.run_forever, name="pyfect-net", daemon=True).start()
-            _Shared.loop = loop
+            _Shared.loop = LoopThread("pyfect-net", exception_handler=_quiet).loop
         return _Shared.loop
 
 

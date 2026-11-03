@@ -1,3 +1,3 @@
 """Shared fixtures."""
 
-pytest_plugins = ["pytester", "_timeout"]
+pytest_plugins = ["pytester", "_timeout", "_asyncio_reports"]

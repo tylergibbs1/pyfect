@@ -5,9 +5,10 @@ queues, pubsubs, schedules and async iterables."""
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterable, AsyncIterator, Callable, Coroutine
 from typing import Any, Never, overload
 
+from pyfect import _background as background
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend, _Sync
 from pyfect.channel._base import AnyPull, end_with
 from pyfect.channel._channel import Channel, from_pull, from_transform
@@ -182,24 +183,26 @@ def from_async_iterable[A, E](
 
     def transform(_upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
         iterator: AsyncIterator[A] = aiter(iterable)
-        pulling = False
+        pulling_on: asyncio.AbstractEventLoop | None = None
+        """The loop of the ``__anext__`` in flight, if one is."""
 
         async def next_item() -> tuple[bool, A | None]:
-            nonlocal pulling
-            pulling = True
+            nonlocal pulling_on
+            pulling_on = asyncio.get_running_loop()
             try:
                 return False, await anext(iterator)
             except StopAsyncIteration:
                 return True, None
             finally:
-                pulling = False
+                pulling_on = None
 
         def close() -> Effect[None, Any, Any]:
             aclose = getattr(iterator, "aclose", None)
             if aclose is None:
                 return _Succeed(None)
-            if pulling:
-                return _Sync(lambda: _discard_task(aclose))
+            loop = pulling_on
+            if loop is not None:
+                return _Sync(lambda: _discard_task(aclose, loop))
             return try_async(aclose).ignore()
 
         def written(result: tuple[bool, A | None]) -> AnyPull:
@@ -220,8 +223,10 @@ def from_async_iterable_array[A, E](
     return from_async_iterable(iterable, on_error).map(lambda item: (item,))
 
 
-def _discard_task(aclose: Callable[[], Awaitable[object]]) -> None:
-    asyncio.ensure_future(aclose()).add_done_callback(_retrieve)
+def _discard_task(
+    aclose: Callable[[], Coroutine[Any, Any, object]], loop: asyncio.AbstractEventLoop
+) -> None:
+    background.start(aclose(), loop).add_done_callback(_retrieve)
 
 
 def _retrieve(task: asyncio.Future[object]) -> None:

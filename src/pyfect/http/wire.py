@@ -14,6 +14,7 @@ from collections.abc import AsyncIterable, Callable, Coroutine, Iterable, Sequen
 from dataclasses import dataclass, field, replace
 from typing import cast
 
+from pyfect import _background as background
 from pyfect._js import text_encode
 from pyfect.http import _form_data
 from pyfect.http import body as _body
@@ -99,9 +100,6 @@ def _raw_body(value: object) -> WireBody:
     return raw_bytes(value)
 
 
-_closing: set[asyncio.Task[None]] = set()
-
-
 def cancel_body(body: _body.HttpBody) -> None:
     """Close the async iterable of a raw body left unsent (Effect's
     ``cancelResponseBody``, Web ``ReadableStream.cancel``)."""
@@ -119,9 +117,7 @@ def _cancel(value: object) -> None:
     except RuntimeError:
         asyncio.run(closed())
         return
-    task = loop.create_task(closed())
-    _closing.add(task)
-    task.add_done_callback(_closing.discard)
+    background.start(closed(), loop)
 
 
 def raw_bytes(value: object) -> bytes:

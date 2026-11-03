@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any, Never, Protocol
 from urllib.parse import urlsplit
 
+from pyfect import _background as background
 from pyfect._core import Effect, _WithFiber
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
@@ -101,9 +102,6 @@ def request_from_web(request: WebRequest) -> ServerRequest:
     )
 
 
-_closing: set[asyncio.Task[None]] = set()
-
-
 class _DetachedClose:
     """Chunks whose ``aclose`` closes the source in the background."""
 
@@ -121,9 +119,7 @@ class _DetachedClose:
     async def aclose(self) -> None:
         close = getattr(self._chunks, "aclose", None)
         if close is not None:
-            task: asyncio.Task[None] = asyncio.ensure_future(close())
-            _closing.add(task)
-            task.add_done_callback(_closing.discard)
+            background.start(close(), asyncio.get_running_loop())
 
 
 def request_to_web(

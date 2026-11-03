@@ -19,7 +19,6 @@ command on the shared client holds a connection of its pool.
 from __future__ import annotations
 
 import asyncio
-import threading
 from collections.abc import Awaitable, Callable, Coroutine, Generator, Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
@@ -33,6 +32,7 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.persistence.redis_py", "redis") from error
 
 from pyfect._core import Effect
+from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import WaitsFor, os_wait
 from pyfect._released import Lifetime
 from pyfect.config import Config, ConfigError
@@ -90,17 +90,11 @@ class _Loop:
     """An asyncio loop on a thread of its own; a call once it stopped
     fails with a ``RedisError`` saying the client is closed."""
 
-    __slots__ = ("_lifetime", "loop")
+    __slots__ = ("_lifetime", "_thread")
 
     def __init__(self) -> None:
-        self.loop = asyncio.new_event_loop()
+        self._thread = LoopThread("pyfect-redis")
         self._lifetime = Lifetime("Redis client")
-        threading.Thread(target=self._run, name="pyfect-redis", daemon=True).start()
-
-    def _run(self) -> None:
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_forever()
-        self.loop.close()
 
     def run[A](
         self, make: Callable[[], Coroutine[Any, Any, A]], *, waits_for: WaitsFor
@@ -110,9 +104,7 @@ class _Loop:
         come (``pyfect._os_wait``)."""
 
         def register(resume: Callable[[Effect[A, RedisError]], None]) -> Callable[[], bool]:
-            future: Future[A] = self._lifetime.submit(
-                lambda: asyncio.run_coroutine_threadsafe(make(), self.loop)
-            )
+            future: Future[A] = self._lifetime.submit(lambda: self._thread.submit(make))
 
             def done(finished: Future[A]) -> None:
                 if finished.cancelled():
@@ -132,7 +124,7 @@ class _Loop:
     def stop(self) -> Effect[None]:
         def stop() -> None:
             self._lifetime.close()
-            self.loop.call_soon_threadsafe(self.loop.stop)
+            self._thread.stop()
 
         return sync(stop)
 

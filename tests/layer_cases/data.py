@@ -714,6 +714,10 @@ def _no_changes(*_: Any) -> Any:
     return fx.stream.empty
 
 
+def _no_latest_sequence(*_: Any) -> fx.Effect[int | None, Any]:
+    return fx.succeed(None)
+
+
 def _hello_handlers():
     client = yield from rpc_test.make_client(M.EventLogRemoteRpcs)
     hello = yield from client.hello()
@@ -827,6 +831,7 @@ _EVENTLOG: dict[str, Case] = {
             get_or_create_session_auth_binding=lambda _key, signing: fx.succeed(signing),
             on_write=_no_writes,
             changes=_no_changes,
+            latest_sequence=_no_latest_sequence,
         ),
         use=_gen(_hello_handlers),
     ),

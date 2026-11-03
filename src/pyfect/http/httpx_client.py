@@ -18,7 +18,6 @@ pulled as httpx sends it. httpx applies no timeout by default here, as
 from __future__ import annotations
 
 import asyncio
-import threading
 from collections.abc import AsyncIterator, Callable, Coroutine
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, Never
@@ -26,6 +25,7 @@ from urllib.parse import SplitResult
 
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
+from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import WaitsFor, os_wait
 from pyfect._released import Lifetime
 from pyfect.effect import Effect, fail, succeed, sync
@@ -102,18 +102,11 @@ class _Backend:
     def __init__(self, options: dict[str, Any]) -> None:
         options.setdefault("timeout", None)
         self.client = import_httpx().AsyncClient(**options)
-        self.loop = asyncio.new_event_loop()
+        self._thread = LoopThread("pyfect-httpx")
+        self.loop = self._thread.loop
         self._lifetime = Lifetime("HTTP client")
         self._closing: set[asyncio.Task[None]] = set()
         """Responses being closed (touched on the loop only)."""
-        threading.Thread(target=self._run, name="pyfect-httpx", daemon=True).start()
-
-    def _run(self) -> None:
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_forever()
-        self.loop.run_until_complete(self._settle())
-        self.loop.run_until_complete(self.loop.shutdown_asyncgens())
-        self.loop.close()
 
     def _close_response(self, response: httpx.Response) -> None:
         task = self.loop.create_task(response.aclose())
@@ -134,7 +127,7 @@ class _Backend:
     def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
         """Run ``make()`` on the loop; once the client is closed, a future
         failed with ``Released``."""
-        return self._lifetime.submit(lambda: asyncio.run_coroutine_threadsafe(make(), self.loop))
+        return self._lifetime.submit(lambda: self._thread.submit(make))
 
     def _call_soon(self, f: Callable[[], object]) -> None:
         """Run ``f`` on the loop; once the backend has closed (and with it
@@ -146,17 +139,20 @@ class _Backend:
                 raise
 
     def close(self) -> Effect[None]:
-        """Close the httpx client, then stop the loop."""
+        """Close the httpx client, then stop the loop and wait until it has
+        closed (with it every response body httpx left open)."""
 
         def shutdown() -> Future[None]:
             future = self.submit(self._shutdown)
             self._lifetime.close()
             return future
 
+        def stop() -> Future[None]:
+            self._thread.stop()
+            return self._thread.stopped
+
         closing = _future(None, shutdown, waits_for="work").ignore()
-        return closing.flat_map(
-            lambda _: sync(lambda: self.loop.call_soon_threadsafe(self.loop.stop)).as_void()
-        )
+        return closing.and_then(_future(None, stop, waits_for="work").ignore())
 
     def _content(
         self, request: HttpClientRequest, fiber: Fiber[Any, Any], failures: list[object]

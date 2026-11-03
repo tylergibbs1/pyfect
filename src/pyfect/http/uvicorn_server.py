@@ -29,6 +29,7 @@ from concurrent.futures import Future
 from typing import Any, Never, NotRequired, TypedDict, Unpack
 
 from pyfect._extras import missing_extra
+from pyfect._loop_thread import LoopThread
 
 try:
     import uvicorn
@@ -121,9 +122,7 @@ def _loop_thread() -> asyncio.AbstractEventLoop:
     strand it: interrupting it would wait for ever (DOGFOOD pulse #5)."""
     with _Shared.lock:
         if _Shared.loop is None:
-            loop = asyncio.new_event_loop()
-            threading.Thread(target=loop.run_forever, name="pyfect-uvicorn", daemon=True).start()
-            _Shared.loop = loop
+            _Shared.loop = LoopThread("pyfect-uvicorn").loop
         return _Shared.loop
 
 

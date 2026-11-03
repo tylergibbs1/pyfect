@@ -19,7 +19,9 @@ import threading
 from collections.abc import Callable, Coroutine
 from typing import Any, Never
 
+from pyfect import _background as background
 from pyfect._core import Effect, _FailCause, _Succeed, _Suspend
+from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import WaitsFor
 from pyfect.cause import die, fail
 from pyfect.effect import sync
@@ -35,9 +37,7 @@ class _Shared:
 def get_loop() -> asyncio.AbstractEventLoop:
     with _Shared.lock:
         if _Shared.loop is None:
-            loop = asyncio.new_event_loop()
-            threading.Thread(target=loop.run_forever, name="pyfect-pg", daemon=True).start()
-            _Shared.loop = loop
+            _Shared.loop = LoopThread("pyfect-pg").loop
         return _Shared.loop
 
 
@@ -116,7 +116,7 @@ def call[A](
 
         def interrupted() -> None:
             # Calls run in order, so ``begin`` has run by now.
-            loop.call_soon_threadsafe(lambda: loop.create_task(stopping()))
+            loop.call_soon_threadsafe(lambda: background.start(stopping(), loop))
 
         loop.call_soon_threadsafe(begin)
         result = settled.wait().flat_map(lambda effect: effect)
@@ -128,7 +128,7 @@ def call[A](
 def submit[A](make: Callable[[], Coroutine[Any, Any, A]]) -> None:
     """Start ``make()`` on the loop without waiting for it."""
     loop = get_loop()
-    loop.call_soon_threadsafe(lambda: loop.create_task(make()))
+    loop.call_soon_threadsafe(lambda: background.start(make(), loop))
 
 
 __all__ = ["Stop", "call", "cancel_task", "get_loop", "submit"]
