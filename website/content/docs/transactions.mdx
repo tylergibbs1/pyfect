@@ -63,5 +63,18 @@ so they can all take part in the same transaction. A `take` from an empty queue,
 
 </CodeOutput>
 
+A `TxPriorityQueue` keeps its items sorted by `key=`, smallest first, as `sorted(key=...)`
+would. Items with equal keys come out in the order they went in, and items without a
+`key=` must be comparable themselves.
+
+<CodeOutput>
+
+<include meta='title="priority.py"'>../../snippets/transactions/priority.py</include>
+
+<include lang="text">../../snippets/transactions/priority.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.transaction`](/docs/reference/transaction),
-[`pyfect.tx_ref`](/docs/reference/tx_ref), [`pyfect.tx_queue`](/docs/reference/tx_queue).
+[`pyfect.tx_ref`](/docs/reference/tx_ref), [`pyfect.tx_queue`](/docs/reference/tx_queue),
+[`pyfect.tx_priority_queue`](/docs/reference/tx_priority_queue).

@@ -37,13 +37,19 @@ function unwrapTabs(nodes: RootContent[]): RootContent[] {
 }
 
 /**
- * Shapes fumadocs-python's pages like the guides: a module's tabs become sections, and
- * each function or method gets its own heading, so all of them are linkable and listed
- * in the table of contents. A function entry then leaves out its own title.
+ * Shapes fumadocs-python's pages like the guides: a module's tabs become sections, its
+ * values get a "Values" section, and each function or method gets its own heading, so
+ * all of them are linkable and listed in the table of contents. A function entry then
+ * leaves out its own title.
  */
 export function remarkReferenceHeadings() {
   return (tree: Root) => {
-    tree.children = unwrapTabs(tree.children).flatMap((node): RootContent[] => {
+    tree.children = unwrapTabs(tree.children).flatMap((node, i, nodes): RootContent[] => {
+      // A module's values (layers, effects, constants) come untitled; a class's attributes
+      // already follow their own heading.
+      if (isElement(node, 'PyAttributes') && nodes[i - 1]?.type !== 'heading') {
+        return [heading(2, 'Values', 'values'), node];
+      }
       if (!isElement(node, 'PyFunction')) return [node];
       const name = attribute(node, 'name');
       if (!name) return [node];

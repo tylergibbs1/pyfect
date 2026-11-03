@@ -42,5 +42,36 @@ Coordinating fibers: `Ref`, `Deferred`, `Queue`, `PubSub`, `Semaphore`, `Latch`,
 
 </CodeOutput>
 
+## Fiber sets
+
+A `FiberSet` holds fibers that live as long as a scope: each one leaves the set when it
+completes, and those still running are interrupted when the scope closes. `join` fails with
+the first failure of a fiber in the set. Give the set its fibers' success and error types,
+`FiberSet[A, E].make()`: a bare `FiberSet.make()` is a `FiberSet[object, object]`, and its
+`join` fails with `object`. `FiberMap` and `FiberHandle` key their fibers, or hold one.
+
+<CodeOutput>
+
+<include meta='title="fiber_set.py"'>../../snippets/concurrency/fiber_set.py</include>
+
+<include lang="text">../../snippets/concurrency/fiber_set.out</include>
+
+</CodeOutput>
+
+## Limits per key
+
+A `Semaphore` caps how many fibers run a section at once. A `PartitionedSemaphore[K]` is one
+pool of permits shared by keys, such as hosts: each fiber waits in its key's line, and freed
+permits go round-robin across the keys, so a key with many waiters can't starve the others.
+
+<CodeOutput>
+
+<include meta='title="per_host.py"'>../../snippets/concurrency/per_host.py</include>
+
+<include lang="text">../../snippets/concurrency/per_host.out</include>
+
+</CodeOutput>
+
 Reference: [`Fiber`](/docs/reference/Fiber), [`pyfect.queue`](/docs/reference/queue),
-[`for_each`](/docs/reference).
+[`for_each`](/docs/reference), [`pyfect.fiber_set`](/docs/reference/fiber_set),
+[`pyfect.partitioned_semaphore`](/docs/reference/partitioned_semaphore).

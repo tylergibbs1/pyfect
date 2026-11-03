@@ -1,0 +1,46 @@
+---
+title: Optics and JSON Patch
+description: "Read and update a part of a value without changing it, and diff and patch JSON values."
+---
+
+## Optics
+
+An optic is a path into a value that reads the part it points at and builds a changed copy
+of the whole, leaving the original as it was. Start a path with `optic.Id[T]()` and add
+steps: `key` for a key that is always there, `at` and `optional_key` for one that may be
+missing, `tag`, `check`, `not_none`, `pick`, `omit`, and `for_each` for every element of a
+list. `get_result` returns `Ok(part)` or `Err(issue)`, with the issue saying where the path
+broke, as a [schema](/docs/schema) failure does. `replace`, `modify` and `modify_all` return
+new values. Optics copy dicts, lists, tuples, dataclasses and schema classes.
+
+<CodeOutput>
+
+<include meta='title="optics.py"'>../../snippets/optics/optics.py</include>
+
+<include lang="text">../../snippets/optics/optics.out</include>
+
+</CodeOutput>
+
+`Iso`, `Lens`, `Prism` and `Optional` are Effect's kinds of optic: a lens always finds its
+part, a prism may not but can build a whole from it, an optional may fail both ways. A path
+has the kind of its weakest step, so `optic.Id[T]().key("a")` is a `Lens` and `.at("a")` an
+`Optional`.
+
+## JSON Patch
+
+`json_patch.get(before, after)` computes the [RFC 6902](https://www.rfc-editor.org/rfc/rfc6902)
+operations (`add`, `remove` and `replace`) that turn one JSON value into another, and
+`json_patch.apply(patch, value)` applies them to a copy. An operation that does not fit the
+value raises `ValueError`. Patches are plain dicts, ready to store or send as JSON.
+
+<CodeOutput>
+
+<include meta='title="patches.py"'>../../snippets/optics/patches.py</include>
+
+<include lang="text">../../snippets/optics/patches.out</include>
+
+</CodeOutput>
+
+Reference: [`pyfect.optic`](/docs/reference/optic),
+[`pyfect.json_patch`](/docs/reference/json_patch),
+[`pyfect.json_pointer`](/docs/reference/json_pointer).

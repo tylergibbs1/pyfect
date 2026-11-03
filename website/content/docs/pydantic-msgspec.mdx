@@ -1,0 +1,29 @@
+---
+title: Pydantic and msgspec
+description: "Use pydantic models and msgspec structs as pyfect schemas, and pyfect schemas in pydantic."
+---
+
+The `pydantic` and `msgspec` extras (`pyfect-dev[pydantic]`, `pyfect-dev[msgspec]`) let you
+keep the models you have and still decode with [schemas](/docs/schema).
+
+`pyfect.pydantic.from_model(Model)` is a schema of a pydantic model: it decodes JSON values
+with `Model.model_validate` and encodes with `model_dump(mode="json")`, and each pydantic
+error becomes an issue at its path, so `errors="all"` reports every problem at once.
+`pyfect.msgspec.from_struct(Struct)` does the same for a msgspec struct with
+`msgspec.convert` and `msgspec.to_builtins` (msgspec stops at the first error). Both compose
+like any schema: in `S.Array`, under `S.from_json_string`, or as a
+[config](/docs/config) value.
+
+Going the other way, a pyfect schema is a pydantic field type: annotate a field with it, and
+pydantic decodes, encodes and writes the JSON Schema with it.
+
+<CodeOutput>
+
+<include meta='title="models.py"'>../../snippets/pydantic_msgspec/models.py</include>
+
+<include lang="text">../../snippets/pydantic_msgspec/models.out</include>
+
+</CodeOutput>
+
+Reference: [`pyfect.pydantic`](/docs/reference/pydantic),
+[`pyfect.msgspec`](/docs/reference/msgspec).
