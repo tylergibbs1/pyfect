@@ -1,6 +1,6 @@
 ---
 title: Resources and scopes
-description: "Acquire and release resources safely with acquire_release and scopes."
+description: "Acquire and release resources safely with scopes, and share them with caches, pools and maps."
 ---
 
 A **scope** collects finalizers and runs them when it closes. `fx.acquire_release` acquires a
@@ -24,5 +24,58 @@ A layer built with `layer.effect(Tag, acquire_release(...))` owns its resource: 
 when the layer is built and released when the program using it ends. This is how a connection
 pool lives for a whole program (see `examples/fastapi_style.py` in the repository).
 
-Shared and cached resources: `RcRef`, `RcMap`, `ScopedRef`, `Resource`, `Pool`, `Cache`.
-Reference: [`pyfect.scope`](/docs/reference/scope), [`pyfect.pool`](/docs/reference/pool).
+## Caching lookups
+
+`fx.Cache.make(lookup, capacity=..., time_to_live=...)` runs `lookup(key)` the first time a
+key is asked for and shares the outcome with every later caller, including callers that ask
+while the lookup is still running. The least recently used entries go first once there are
+`capacity` of them, and an entry expires after its time to live.
+
+<include meta='title="cache.py"'>../../snippets/resources/cache.py</include>
+
+`ScopedCache` is the same for lookups that hold resources: each entry's resources are
+released when it leaves the cache.
+
+## Pooling connections
+
+`fx.Pool.make(acquire, size=...)` acquires `size` items with a scoped effect and lends them
+out: `pool.use(f)` borrows one for as long as `f`'s effect runs, and borrowers wait in line
+for a free one. All the items are released when the pool's scope closes.
+`Pool.make_with_ttl(acquire, min=..., max=..., time_to_live=...)` grows with demand and
+shrinks back once items have been idle.
+
+<include meta='title="pool.py"'>../../snippets/resources/pool.py</include>
+
+## Sharing by key
+
+`fx.RcMap.make(lookup)` acquires `lookup(key)` for the first scope that asks for a key and
+shares it with every other scope that asks while it is held. When the last one closes, the
+resource is released, at once or after `idle_time_to_live`. `RcRef` is the same for a single
+resource.
+
+<include meta='title="rc_map.py"'>../../snippets/resources/rc_map.py</include>
+
+`fx.LayerMapService` does this for whole layers: `Greeters.layer(lookup)` builds
+`lookup(key)` the first time `Greeters.get(key)` is provided, and shares its services while
+they are in use. It suits a service per tenant, or per model.
+
+<include meta='title="layer_map.py"'>../../snippets/resources/layer_map.py</include>
+
+## Swapping and refreshing
+
+`fx.ScopedRef.from_acquire(acquire)` holds a value with resources. `set(acquire)` acquires
+the next value, then releases the one it replaces, and keeps the current one if acquiring
+fails.
+
+<include meta='title="scoped_ref.py"'>../../snippets/resources/scoped_ref.py</include>
+
+`fx.Resource.manual(acquire)` caches what `acquire` gives; `get` reads it and `refresh`
+acquires anew. `Resource.auto(acquire, schedule)` refreshes it on a schedule.
+
+<include meta='title="refreshed.py"'>../../snippets/resources/refreshed.py</include>
+
+Reference: [`pyfect.scope`](/docs/reference/scope), [`pyfect.cache`](/docs/reference/cache),
+[`pyfect.pool`](/docs/reference/pool), [`pyfect.rc_map`](/docs/reference/rc_map),
+[`pyfect.layer_map`](/docs/reference/layer_map),
+[`pyfect.scoped_ref`](/docs/reference/scoped_ref),
+[`pyfect.resource`](/docs/reference/resource).

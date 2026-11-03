@@ -23,8 +23,17 @@ of a function. Spans nest across forked fibers, and logs inside a span become it
 <include meta='title="tracing.py"'>../../snippets/observability/tracing.py</include>
 
 The native tracer keeps spans in memory. To export them, install the OpenTelemetry bridge
-(`pyfect-dev[otel]`) with `otel.sdk.layer(...)`: spans, logs and metrics go to OpenTelemetry's SDK
-exporters.
+(`pyfect-dev[otel]`) and provide `otel.sdk.layer(otel.sdk.Configuration(...))`. Its
+`resource` names the service; each signal is on once it has somewhere to go: spans with a
+`span_processor`, metrics with a `metric_reader`, logs with a `log_record_processor`. The
+providers flush and shut down when the layer is released, so spans still buffered when the
+program ends are sent.
+
+<include meta='title="otel_sdk.py"'>../../snippets/observability/otel_sdk.py</include>
+
+In production the processor is usually `BatchSpanProcessor(OTLPSpanExporter())` from
+`opentelemetry-exporter-otlp`, with `PeriodicExportingMetricReader(OTLPMetricExporter())` for
+metrics.
 
 ## Metrics
 

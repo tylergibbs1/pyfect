@@ -390,14 +390,26 @@ def test_projects_non_object_toolkit_outputs_only_for_the_july_protocol():
             "structuredContent": {"answer": "a"},
             "isError": False,
         },
-        "Arr": {"content": [{"type": "text", "text": "[1,2]"}], "isError": False},
+        # Diverges from Effect, which drops Arr's structured result and output schema
+        # here: pyfect wraps them as {"result": ...} (PARITY.md, DOGFOOD atlas #4).
+        "Arr": {
+            "content": [{"type": "text", "text": "[1,2]"}],
+            "structuredContent": {"result": [1, 2]},
+            "isError": False,
+        },
+    }
+    wrapped_arr = {
+        "type": "object",
+        "properties": {"result": {"type": "array", "items": {"type": "integer"}}},
+        "required": ["result"],
+        "x-fastmcp-wrap-result": True,
     }
     for protocol in (P.v2025_06_18, P.v2025_11_25):
         harness = yield from stdio_harness(protocol, None, registration)
         yield from harness.initialize()
         listed = (yield from harness.send_request("tools/list", {}))["result"]["tools"]
         schemas = {tool["name"]: tool.get("outputSchema") for tool in listed}
-        assert schemas == {"Str": None, "Untyped": None, "Obj": OBJECT_SCHEMA, "Arr": None}
+        assert schemas == {"Str": None, "Untyped": None, "Obj": OBJECT_SCHEMA, "Arr": wrapped_arr}
         for name, expected in expected_calls.items():
             reply = yield from harness.send_request("tools/call", {"name": name, "arguments": {}})
             assert reply["result"] == expected, name

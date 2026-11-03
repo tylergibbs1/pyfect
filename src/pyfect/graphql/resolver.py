@@ -9,7 +9,7 @@
         resolver.ordered(
             api.repo_nodes,
             variables=lambda ids: {"ids": ids},
-            path=("nodes",),
+            items=lambda data: data["nodes"],
             typename="Repository",
         )
     )
@@ -22,15 +22,18 @@ run. ``batch_key`` keeps lookups with different services (a middleware's
 requirements) in separate batches, and lookups whose protocol URLs differ
 go in separate batches too; ``batch_n`` limits each batch.
 
-The item type is not read from ``path`` (Effect checks the path at the
-type level): lookups succeed with ``Any``.
+``items`` picks the list out of the operation's result by indexing its
+fields (``lambda data: data["search"]["nodes"]``), so lookups succeed with
+the list's item type; it is run once, on a stand-in, to learn the path.
+Effect's form, a ``path`` of field names, is kept, and its lookups succeed
+with ``Any``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Generic, Never, TypeVar, cast
+from typing import Any, Generic, Never, TypeVar, cast, overload
 from weakref import WeakKeyDictionary
 
 from pyfect import effect as fx
@@ -322,6 +325,53 @@ def _complete_ordered(
     return fx.void
 
 
+type Items[A, T] = Callable[[A], Sequence[T | None] | None]
+"""Where a result's list is: ``lambda data: data["nodes"]``."""
+
+
+class _Recorder:
+    """Stands in for a result to learn which fields ``items`` indexes."""
+
+    __slots__ = ("path",)
+
+    def __init__(self, path: tuple[str, ...]) -> None:
+        self.path = path
+
+    def __getitem__(self, name: object) -> _Recorder:
+        if not isinstance(name, str):
+            raise TypeError(f"a field name, not {name!r}")
+        return _Recorder((*self.path, name))
+
+
+def _path_of(items: Items[Any, Any] | None, path: Sequence[str] | None) -> tuple[str, ...]:
+    if (items is None) == (path is None):
+        raise TypeError("give one of items or path")
+    if path is not None:
+        return tuple(path)
+    try:
+        found = cast("object", cast("Items[Any, Any]", items)(_Recorder(())))
+    except Exception as error:
+        raise ValueError(_ITEMS_SHAPE) from error
+    if not isinstance(found, _Recorder) or not found.path:
+        raise ValueError(_ITEMS_SHAPE)
+    return found.path
+
+
+_ITEMS_SHAPE = (
+    'items must only index the result\'s fields, like lambda data: data["search"]["nodes"]'
+)
+
+
+@overload
+def ordered[V, A, ME, MR, K, T](
+    method: Method[V, A, ME, MR],
+    *,
+    variables: Callable[[Sequence[K]], V],
+    items: Items[A, T],
+    typename: str | None = None,
+    batch_key: BatchKey | None = None,
+) -> Resolver[K, T, GraphQLClientError | ME | NoSuchElementException, MR]: ...
+@overload
 def ordered[V, A, ME, MR, K](
     method: Method[V, A, ME, MR],
     *,
@@ -329,22 +379,43 @@ def ordered[V, A, ME, MR, K](
     path: Sequence[str],
     typename: str | None = None,
     batch_key: BatchKey | None = None,
-) -> Resolver[K, Any, GraphQLClientError | ME | NoSuchElementException, MR]:
+) -> Resolver[K, Any, GraphQLClientError | ME | NoSuchElementException, MR]: ...
+def ordered(
+    method: Method[Any, Any, Any, Any],
+    *,
+    variables: Callable[[Sequence[Any]], Any],
+    items: Items[Any, Any] | None = None,
+    path: Sequence[str] | None = None,
+    typename: str | None = None,
+    batch_key: BatchKey | None = None,
+) -> Resolver[Any, Any, Any, Any]:
     """Looks keys up by position: ``variables`` turns the batch's distinct
-    keys into the operation's variables, and the list at ``path`` holds
-    one item per key, in order (GitHub's ``nodes(ids:)``). A null item, or
-    one whose ``__typename`` is not ``typename``, is a miss."""
-    path = tuple(path)
+    keys into the operation's variables, and the list ``items`` picks (or
+    the one at ``path``) holds one item per key, in order (GitHub's
+    ``nodes(ids:)``). A null item, or one whose ``__typename`` is not
+    ``typename``, is a miss."""
+    found_at = _path_of(items, path)
     codec = Codec(method.operation)
 
     def run_all(entries: Sequence[_AnyEntry]) -> Effect[None, Any, Any]:
-        return _call_batch(
-            method, entries, cast("Callable[[Sequence[Any]], V]", variables)
-        ).flat_map(lambda batch: _complete_ordered(codec, batch, path, typename))
+        return _call_batch(method, entries, variables).flat_map(
+            lambda batch: _complete_ordered(codec, batch, found_at, typename)
+        )
 
     return _make_resolver(method, batch_key, run_all)
 
 
+@overload
+def find_by_id[V, A, ME, MR, K, T](
+    method: Method[V, A, ME, MR],
+    *,
+    variables: Callable[[Sequence[K]], V],
+    items: Items[A, T],
+    key: Callable[[T], K],
+    typename: str | None = None,
+    batch_key: BatchKey | None = None,
+) -> Resolver[K, T, GraphQLClientError | ME | NoSuchElementException, MR]: ...
+@overload
 def find_by_id[V, A, ME, MR, K](
     method: Method[V, A, ME, MR],
     *,
@@ -353,11 +424,21 @@ def find_by_id[V, A, ME, MR, K](
     key: Callable[[Any], K],
     typename: str | None = None,
     batch_key: BatchKey | None = None,
-) -> Resolver[K, Any, GraphQLClientError | ME | NoSuchElementException, MR]:
-    """Looks keys up by ``key``: the list at ``path`` may hold the items in
-    any order (a search). A key no item has is a miss; any error fails the
-    batch."""
-    path = tuple(path)
+) -> Resolver[K, Any, GraphQLClientError | ME | NoSuchElementException, MR]: ...
+def find_by_id(
+    method: Method[Any, Any, Any, Any],
+    *,
+    variables: Callable[[Sequence[Any]], Any],
+    key: Callable[[Any], Any],
+    items: Items[Any, Any] | None = None,
+    path: Sequence[str] | None = None,
+    typename: str | None = None,
+    batch_key: BatchKey | None = None,
+) -> Resolver[Any, Any, Any, Any]:
+    """Looks keys up by ``key``: the list ``items`` picks (or the one at
+    ``path``) may hold the items in any order (a search). A key no item
+    has is a miss; any error fails the batch."""
+    path = _path_of(items, path)
     codec = Codec(method.operation)
 
     def complete(batch: _Batch) -> Effect[None, Any]:
@@ -376,9 +457,7 @@ def find_by_id[V, A, ME, MR, K](
         return _complete_all(list(pending.values()))
 
     def run_all(entries: Sequence[_AnyEntry]) -> Effect[None, Any, Any]:
-        return _call_batch(
-            method, entries, cast("Callable[[Sequence[Any]], V]", variables)
-        ).flat_map(complete)
+        return _call_batch(method, entries, variables).flat_map(complete)
 
     return _make_resolver(method, batch_key, run_all)
 
@@ -483,4 +562,13 @@ def aliased[V, A, ME, MR](
     return _make_resolver(method, batch_key, run_all).batch_n(10)
 
 
-__all__ = ["BatchKey", "KeyRequest", "Resolver", "aliased", "find_by_id", "ordered", "request"]
+__all__ = [
+    "BatchKey",
+    "Items",
+    "KeyRequest",
+    "Resolver",
+    "aliased",
+    "find_by_id",
+    "ordered",
+    "request",
+]

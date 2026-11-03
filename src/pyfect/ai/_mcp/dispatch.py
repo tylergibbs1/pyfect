@@ -324,7 +324,14 @@ class Connection:
             answered = fail(_unsupported_version(version, self.registry))
         else:
             answered = self._stateful(method, params, out)
-        replied: Effect[JsonObject] = answered.catch_cause(_as_mcp_error).match(
+        # Effect's McpServer is an RpcServer with spanPrefix "McpServer".
+        traced = answered.with_span(
+            f"McpServer.{method}",
+            kind="server",
+            capture_stack_trace=False,
+            attributes={"rpc.system.name": "effect_rpc", "rpc.method": method},
+        )
+        replied: Effect[JsonObject] = traced.catch_cause(_as_mcp_error).match(
             on_failure=lambda error: error_response(id, error),
             on_success=lambda result: response(id, result),
         )
@@ -695,8 +702,10 @@ def _call_tool(
     protocol error; the tool's own failures are ``isError`` results when the
     revision reports them so (Effect's per-revision ``tools/call``)."""
     name = call["name"]
-    if server.find_tool(name, context) is None:
+    found = server.find_tool(name, context)
+    if found is None:
         return fail(InvalidParams(f"Tool '{name}' not found"))
+    wrap = projection.wraps_result(protocol, found.tool)
     called = server.call_tool_for(call, context)
     if protocol.reports_tool_errors_as_results:
         called = called.catch_all(
@@ -707,7 +716,7 @@ def _call_tool(
                 )
             )
         )
-    return called.map(lambda result: projection.call_tool_result(protocol, result))
+    return called.map(lambda result: projection.call_tool_result(protocol, result, wrap))
 
 
 def _wire(value: Mapping[str, Any]) -> Wire:

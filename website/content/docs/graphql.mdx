@@ -63,8 +63,11 @@ sees the transport's status.
 `client.items` streams their nodes. `pyfect.graphql.resolver` batches lookups like a
 [SQL resolver](/docs/sql#a-resolver-that-batches-lookups): `ordered` reads one item per
 key by position (`nodes(ids:)`), `find_by_id` matches items by a key, and `aliased`
-repeats an operation under aliases, up to 10 per request. `resolver.request(r)(key)` is
-one lookup; lookups made together become one request.
+repeats an operation under aliases, up to 10 per request. `ordered` and `find_by_id` take
+`items=lambda data: data["search"]["nodes"]`, which picks the list out of the result and
+gives the lookups its item type (Effect's `path=("search", "nodes")` also works, with
+lookups typed `Any`). `resolver.request(r)(key)` is one lookup; lookups made together
+become one request.
 
 ## Testing
 

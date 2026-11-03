@@ -34,6 +34,7 @@ from pyfect.ai._mcp.client_transport import (
 from pyfect.ai._mcp.client_transport import http as _http
 from pyfect.ai._mcp.client_transport import stdio as _stdio
 from pyfect.ai._mcp.client_wire import failure, limit_error, requires_tasks, to_text
+from pyfect.ai._mcp.projection import WRAP_RESULT
 from pyfect.ai.mcp_client_error import (
     ClosedError,
     ConfigurationError,
@@ -242,8 +243,10 @@ class McpClientService:
         timeout: Duration | None = None,
     ) -> Effect[Any, McpClientError, Any]:
         """Call ``tool``. With ``schema``, its ``structuredContent`` decoded
-        (a tool error then fails with ``ToolError``); else the whole
-        result. Unbounded unless given a ``timeout``."""
+        (unwrapped from ``{"result": ...}`` when ``tool``'s output schema has
+        ``x-fastmcp-wrap-result``; a tool error then fails with
+        ``ToolError``); else the whole result. Unbounded unless given a
+        ``timeout``."""
         params: JsonObject = {"name": tool["name"]}
         if arguments is not None:
             params["arguments"] = dict(arguments)
@@ -257,7 +260,7 @@ class McpClientService:
                 "Callable[[object], Effect[Any, S.SchemaError, Any]]",
                 S.decode_unknown_effect(schema),
             )
-            return decode(result.get("structuredContent")).map_error(
+            return decode(_structured(tool, result)).map_error(
                 lambda cause: failure(
                     ValidationError("MCP structured result validation failed", cause)
                 )
@@ -271,8 +274,31 @@ class McpClientService:
         return self._deadline(called, "tools/call", _optional_seconds(timeout))
 
 
+def _structured(tool: McpTool, result: CallToolResult) -> object:
+    """``result``'s ``structuredContent``, unwrapped when ``tool``'s output
+    schema says the server wrapped it as ``{"result": ...}``."""
+    structured = result.get("structuredContent")
+    schema: Mapping[str, Any] = tool.get("outputSchema") or {}
+    if schema.get(WRAP_RESULT) is True and isinstance(structured, Mapping):
+        return cast("Mapping[str, Any]", structured).get("result")
+    return structured
+
+
 class McpClient(Tag[McpClientService], key="effect/ai/McpClient"):
     """The MCP client a program uses."""
+
+
+def _traced[A](
+    request: Effect[A, McpClientError], method: str, tool: McpTool | None
+) -> Effect[A, McpClientError]:
+    """``request`` in a client span naming its method and tool (the server's
+    is ``McpServer.<method>``, as Effect's)."""
+    attributes: dict[str, object] = {"rpc.system.name": "jsonrpc", "rpc.method": method}
+    if tool is not None:
+        attributes["tool"] = tool["name"]
+    return request.with_span(
+        f"McpClient.{method}", kind="client", capture_stack_trace=False, attributes=attributes
+    )
 
 
 def _optional_seconds(timeout: Duration | None) -> Seconds | None:
@@ -376,7 +402,7 @@ def make(  # noqa: PLR0915
                     )
                 return succeed(body)
 
-            return transport.request(message, tool).flat_map(answered)
+            return _traced(transport.request(message, tool).flat_map(answered), method, tool)
 
         def deadline(
             effect: Effect[Any, McpClientError], operation: str, duration: Seconds | None
@@ -465,12 +491,26 @@ def make(  # noqa: PLR0915
     return run
 
 
+@overload
 def toolkit(
-    client: McpClientService, prefix: str = ""
-) -> Effect[Toolkit.WithHandler[Any, Any, McpClientError, Never], McpClientError]:
-    """The server's tools as a toolkit with handlers: model tool names are
-    ``prefix`` and the tool's name (at most 64 letters, digits, ``_`` and
-    ``-``), and a call's result is the text of the tool result."""
+    client: McpClientService, prefix: str = "", *, failure_mode: Literal["error"] = "error"
+) -> Effect[Toolkit.WithHandler[Any, Any, McpClientError, Never], McpClientError]: ...
+@overload
+def toolkit(
+    client: McpClientService, prefix: str = "", *, failure_mode: Literal["return"]
+) -> Effect[Toolkit.WithHandler[Any, Any, Never, Never], McpClientError]: ...
+def toolkit(
+    client: McpClientService, prefix: str = "", *, failure_mode: Tool.FailureMode = "error"
+) -> Effect[Toolkit.WithHandler[Any, Any, Any, Never], McpClientError]:
+    """The server's tools as a toolkit with handlers. A model tool's name
+    is ``prefix`` and the tool's name joined as they are (pass
+    ``"docs__"``, not ``"docs"``), at most 64 letters, digits, ``_`` and
+    ``-``; a call's result is the text of the tool result.
+
+    With ``failure_mode="error"`` (Effect's) a tool error (``isError``)
+    or a failed request fails the call with ``McpClientError``. With
+    ``"return"`` it goes back to the model as a failed result: the tool
+    error's text, or the request's error message."""
 
     @gen
     def run():
@@ -491,18 +531,25 @@ def toolkit(
                         )
                     )
                 )
-            dynamic = Tool.dynamic(
-                cast("Any", model_name),
-                parameters=cast("Any", descriptor["inputSchema"]),
-                description=descriptor.get("description"),
-                success=S.String,
-                failure=S.Unknown,
-            ).annotate(Tool.Strict, False)
+            dynamic = cast(
+                "Tool.AnyTool",
+                Tool.dynamic(
+                    cast("Any", model_name),
+                    parameters=cast("Any", descriptor["inputSchema"]),
+                    description=descriptor.get("description"),
+                    success=S.String,
+                    failure=S.Unknown if failure_mode == "error" else S.String,
+                    failure_mode=cast("Any", failure_mode),
+                ).annotate(Tool.Strict, False),
+            )
+            handle = _tool_handler(client, descriptor)
+            if failure_mode == "return":
+                handle = _returning(handle)
             tools.append(dynamic)
-            handlers.append(dynamic.handler(_tool_handler(client, descriptor)))
+            handlers.append(dynamic.handler(handle))
         kit = Toolkit.make(*tools)
         context: Context[Any] = yield from kit.to_handlers(*handlers)
-        built: Toolkit.WithHandler[Any, Any, McpClientError, Never] = yield from cast(
+        built: Toolkit.WithHandler[Any, Any, Any, Never] = yield from cast(
             "Effect[Any, Never, Never]", kit
         ).pipe(provide_context(context))
         return built
@@ -526,6 +573,27 @@ def _tool_handler(
         return client.call_tool(descriptor, arguments).flat_map(text)
 
     return handle
+
+
+def _returning(
+    handle: Callable[[Any, Any], Effect[str, McpClientError]],
+) -> Callable[[Any, Any], Effect[str, str]]:
+    """``handle`` failing with what the model is told: a tool error's text
+    (or its message, when the text has none), any other error's message."""
+
+    def told(error: McpClientError) -> Effect[str, McpClientError]:
+        reason = error.reason
+        if isinstance(reason, ToolError):
+            return to_text(reason.result).map(lambda text: text or reason.message)
+        return succeed(error.message)
+
+    def run(params: Any, context: Any) -> Effect[str, str]:
+        attempt = handle(params, context)
+        return attempt.catch_all(
+            lambda error: told(error).catch_all(lambda _: succeed(error.message)).flat_map(fail)
+        )
+
+    return run
 
 
 def stdio(
