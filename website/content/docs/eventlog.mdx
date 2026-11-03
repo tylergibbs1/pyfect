@@ -51,6 +51,17 @@ handler, resolving a late entry against the newer ones already stored, so client
 apply the same entries in any order end with the same rows. `event_row.compaction(group,
 row)` drops entries that newer ones make redundant.
 
+Pass `key_type`: without it the key is `object`, so a callback that types its key
+(`def remove(key: str)`) doesn't fit the handler and pyright rejects it.
+
+<CodeOutput>
+
+<include meta='title="rows.py"'>../../snippets/eventlog/rows.py</include>
+
+<include lang="text">../../snippets/eventlog/rows.out</include>
+
+</CodeOutput>
+
 ## Journals
 
 `event_journal.layer_memory` keeps entries in memory. `sql_event_journal.layer()` keeps

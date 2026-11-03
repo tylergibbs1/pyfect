@@ -28,6 +28,9 @@ jobs:
         working-directory: website
         run: bun install --frozen-lockfile
 
+      - name: Check the API reference documents every module, value and overload
+        run: uv run pytest -q tests/test_api_reference.py
+
       - name: Check the README diagram matches its source
         working-directory: website
         run: node scripts/readme-diagram.mjs --check

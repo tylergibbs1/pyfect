@@ -28,6 +28,20 @@ A `Sink` consumes a stream and produces a result; `run_collect`, `run_fold` and
 
 <include meta='title="sinks.py"'>../../snippets/streams/sinks.py</include>
 
+## Batches
+
+`grouped(n)` emits lists of `n` items. `grouped_within(n, duration)` also ends a batch once
+`duration` has passed since its first item, so a burst goes out in full batches and a
+straggler is not held back waiting for more. Here a queue's items are posted three at a time.
+
+<CodeOutput>
+
+<include meta='title="batches.py"'>../../snippets/streams/batches.py</include>
+
+<include lang="text">../../snippets/streams/batches.out</include>
+
+</CodeOutput>
+
 ## A pipeline
 
 NDJSON records arriving in byte chunks, priced by a flaky service four at a time with retries,

@@ -1,0 +1,9 @@
+timezone='UTC' jobs=[Job(name='countries', schedule='*/5 * * * *')]
+Missing key
+  at ["timezone"]
+Missing key
+  at ["jobs"][0]["name"]
+Input should be a valid string
+  at ["jobs"][0]["schedule"]
+[{"key":"fr","op":"add"}]
+9.5

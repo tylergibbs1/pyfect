@@ -55,6 +55,19 @@ pyfect ring assigns shards as Effect's would. A runner with weight 2 gets twice 
 
 </CodeOutput>
 
+A `HashRing` works outside a cluster too. `ring.get(key)` places a key at the node nearest
+its hash, so it is only as even as the node keys hash: two nodes named `a` and `b` split
+600 keys 97 / 503, as Effect's ring does. To split keys evenly, do what the cluster does:
+hash each key to one of a fixed number of shards and let `get_shards` place the shards.
+
+<CodeOutput>
+
+<include meta='title="hash_ring.py"'>../../snippets/cluster/hash_ring.py</include>
+
+<include lang="text">../../snippets/cluster/hash_ring.out</include>
+
+</CodeOutput>
+
 `sharding_config.layer(settings)` provides settings (start from `dataclasses.replace(
 sharding_config.DEFAULTS, ...)`), and `layer_from_env()` reads them from the environment
 in CONSTANT_CASE (`SHARDS_PER_GROUP`, `HOST`, `PORT`), with Effect's defaults for the
@@ -118,7 +131,7 @@ Lower level pieces are there too: `socket_runner` and `http_runner` (the protoco
 
 `singleton.make(name, effect)` runs an effect on exactly one runner of the cluster, the one
 holding the singleton's shard, and starts it again on another runner when that shard moves.
-`cluster_cron.make` runs a job on a [cron](/docs/reference/cron) schedule once per instant
+`cluster_cron.make` runs a job on a [cron](/docs/schedules#cron) schedule once per instant
 across the whole cluster: each run is a persisted message delivered at its instant, which
 schedules the next one, so a run is not lost while runners come and go. The job reads its
 instant from `CurrentScheduledTime`. With `calculate_next_run_from_previous=True` one entity

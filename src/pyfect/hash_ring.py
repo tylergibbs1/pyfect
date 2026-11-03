@@ -10,6 +10,12 @@ per unit of weight::
 
 Hashes are Effect's ``Hash.string``, so the same nodes give the same
 assignment as Effect's ring.
+
+``get`` is only as even as the node keys hash: with short keys such as ``a``
+and ``b``, 600 inputs ``job-0`` to ``job-599`` split 97 / 503 (Effect's ring
+gives the same counts). For an even split, hash each input to one of a fixed
+number of shards and place the shards with ``get_shards``, as the cluster
+does.
 """
 
 from __future__ import annotations
@@ -101,7 +107,10 @@ class HashRing[A: PrimaryKey]:
         return node.primary_key() in self._nodes
 
     def get(self, input: str) -> A | None:
-        """The node nearest ``input``'s hash; ``None`` on an empty ring."""
+        """The node nearest ``input``'s hash; ``None`` on an empty ring.
+
+        Only as even as the node keys hash, so short keys can split inputs
+        very unevenly; ``get_shards`` with a shard per input is balanced."""
         if not self._ring:
             return None
         index = self._index_for(string_hash(input), None)[0]
