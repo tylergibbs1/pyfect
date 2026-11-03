@@ -12,6 +12,7 @@ _AI = Path(__file__).parent.parent / "src" / "pyfect" / "ai"
 _PROVIDER_FILES = [
     *sorted((_AI / "openai_compat").glob("*.py")),
     *sorted((_AI / "anthropic").glob("*.py")),
+    *sorted((_AI / "openai").glob("*.py")),
     _AI / "_openai_errors.py",
 ]
 _RAW_CHECKS = {

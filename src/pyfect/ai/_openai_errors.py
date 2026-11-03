@@ -104,6 +104,14 @@ def compat_quota(metadata: ErrorMetadata) -> bool:
     )
 
 
+def _status_body(reason: StatusCodeError) -> Effect[str | None]:
+    """The failed response's text; when it cannot be read, its description
+    if that is JSON."""
+    description = reason.description
+    fallback = description if description and description.startswith("{") else None
+    return reason.response.text.or_else_succeed(lambda _: fallback)
+
+
 @dataclass(frozen=True)
 class Dialect:
     module: str
@@ -113,6 +121,10 @@ class Dialect:
     secret_headers: tuple[str, ...]
     """The headers carrying credentials: never shown, never sent across
     origins."""
+    status_body: Callable[[StatusCodeError], Effect[str | None]] = _status_body
+    """The body a failed response's error shows."""
+    quota_statuses: frozenset[int] = frozenset()
+    """Statuses that always mean an exhausted quota (OpenAI's 402)."""
 
 
 COMPAT = Dialect(
@@ -157,6 +169,8 @@ def map_status_code_to_reason(  # noqa: PLR0911
         body=http.get("body"),
     )
     meta: dict[str, Any] = {dialect.metadata_key: {**metadata}}
+    if status in dialect.quota_statuses:
+        return QuotaExhaustedError(metadata=meta, http=http)
     match status:
         case 400 | 404 | 409 | 422:
             return InvalidRequestError(description=description, metadata=meta, http=http)
@@ -180,14 +194,6 @@ def map_status_code_to_reason(  # noqa: PLR0911
             )
         case _:
             return UnknownError(description=message, metadata=meta, http=http)
-
-
-def _status_body(reason: StatusCodeError) -> Effect[str | None]:
-    """The failed response's text; when it cannot be read, its description
-    if that is JSON."""
-    description = reason.description
-    fallback = description if description and description.startswith("{") else None
-    return reason.response.text.or_else_succeed(lambda _: fallback)
 
 
 def status_code_mapper(
@@ -216,7 +222,7 @@ def status_code_mapper(
             )
             return fx.fail(AiError(module=dialect.module, method=method, reason=mapped))
 
-        return _status_body(reason).flat_map(
+        return dialect.status_body(reason).flat_map(
             lambda body: clock.now().flat_map(lambda seconds: build(body, seconds * 1000))
         )
 

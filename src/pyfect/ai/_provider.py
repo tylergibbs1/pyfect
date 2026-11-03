@@ -165,9 +165,39 @@ def wire_decoder[T](schema: S.Top, _type: type[T]) -> Callable[[object], Effect[
     return decode
 
 
+def wire_parser[T](schema: S.Top, _type: type[T]) -> Callable[[object], Effect[T, S.SchemaError]]:
+    """The decoding of a provider's JSON by ``schema``, its whole numbers
+    read as ints first (see ``wire_decoder``): unlike ``wire_decoder`` it
+    gives the decoded value, so the keys the schema does not declare are
+    dropped, as Effect's decoding drops them."""
+    decode = cast("Callable[[object], Effect[T, S.SchemaError]]", S.decode_unknown_effect(schema))
+    return lambda json: decode(_json_text.whole_numbers_as_ints(cast("_json_text.Json", json)))
+
+
+def wire_parser_option[T](schema: S.Top, _type: type[T]) -> Callable[[object], T | None]:
+    """``wire_parser``'s decoding, run at once: the decoded value, or
+    ``None`` when the JSON does not fit ``schema``."""
+    decode = S.decode_unknown_option(cast("S.Codec[T, object, Never, object]", schema))
+
+    def parse(json: object) -> T | None:
+        found = decode(_json_text.whole_numbers_as_ints(cast("_json_text.Json", json)))
+        return None if found is None else found.value
+
+    return parse
+
+
+def wire_parse_sync[T](schema: S.Top, _type: type[T]) -> Callable[[object], T]:
+    """``wire_parser``'s decoding, run at once: the decoded value; raises
+    ``SchemaError`` when the JSON does not fit ``schema``."""
+    decode = S.decode_unknown_sync(cast("S.Codec[T, object, Never, object]", schema))
+    return lambda json: decode(_json_text.whole_numbers_as_ints(cast("_json_text.Json", json)))
+
+
 def wire_match[T](schema: S.Top, _type: type[T]) -> Callable[[object], T | None]:
     """A provider's JSON when it fits ``schema``, its whole numbers as ints
-    (see ``wire_decoder``), else ``None``."""
+    (see ``wire_decoder``), else ``None``. The JSON is kept as it came,
+    undeclared keys included: when the value is shown or sent on, decode
+    it with ``wire_parser_option`` instead."""
     is_ = S.is_(schema)
 
     def match(json: object) -> T | None:

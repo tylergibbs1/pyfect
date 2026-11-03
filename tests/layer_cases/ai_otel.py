@@ -37,6 +37,9 @@ from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.ai.anthropic import client as anthropic_client
 from pyfect.ai.anthropic import language_model as anthropic_lm
+from pyfect.ai.openai import client as responses_client
+from pyfect.ai.openai import embedding_model as responses_em
+from pyfect.ai.openai import language_model as responses_lm
 from pyfect.ai.openai_compat import client as openai_client
 from pyfect.ai.openai_compat import embedding_model as openai_em
 from pyfect.ai.openai_compat import language_model as openai_lm
@@ -152,7 +155,67 @@ def _openai_client() -> AnyLayer:
     return openai_client.layer(api_key=redact("sk-test")).pipe(L.provide_merge(_openai_http()))
 
 
+def _responses_http() -> AnyLayer:
+    def body(request: HttpClientRequest) -> object:
+        if request.url.endswith("/embeddings"):
+            return {
+                "object": "list",
+                "data": [{"object": "embedding", "index": 0, "embedding": [1, 2]}],
+                "model": "embed-test",
+                "usage": {"prompt_tokens": 1, "total_tokens": 1},
+            }
+        text = {"type": "output_text", "text": "Hello from GPT", "annotations": []}
+        return {
+            "id": "resp_1",
+            "object": "response",
+            "created_at": 1,
+            "model": "gpt-test",
+            "status": "completed",
+            "output": [
+                {
+                    "type": "message",
+                    "id": "msg_1",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [text],
+                }
+            ],
+        }
+
+    return _http(body)
+
+
+def _responses_model() -> AnyLayer:
+    return responses_lm.layer(model="gpt-test")
+
+
+def _responses_client() -> AnyLayer:
+    return responses_client.layer(api_key=redact("sk-test")).pipe(
+        L.provide_merge(_responses_http())
+    )
+
+
 _PROVIDER_CASES: dict[str, Case] = {
+    "pyfect.ai.openai.client.layer": Case(
+        layer=lambda: responses_client.layer(api_key=redact("sk-test")),
+        needs=_responses_http,
+        use=lambda: _generates("Hello from GPT").pipe(fx.provide(_responses_model())),
+    ),
+    "pyfect.ai.openai.client.layer_config": Case(
+        layer=lambda: responses_client.layer_config(api_key=config.redacted("OPENAI_API_KEY")),
+        needs=lambda: L.merge(_responses_http(), _api_keys()),
+        use=lambda: _generates("Hello from GPT").pipe(fx.provide(_responses_model())),
+    ),
+    "pyfect.ai.openai.language_model.layer": Case(
+        layer=_responses_model,
+        needs=_responses_client,
+        use=lambda: _generates("Hello from GPT"),
+    ),
+    "pyfect.ai.openai.embedding_model.layer": Case(
+        layer=lambda: responses_em.layer(model="embed-test"),
+        needs=_responses_client,
+        use=_embeds,
+    ),
     "pyfect.ai.anthropic.client.layer": Case(
         layer=lambda: anthropic_client.layer(api_key=redact("sk-test")),
         needs=_anthropic_http,
@@ -696,4 +759,9 @@ _OTEL_CASES: dict[str, Case] = {
 }
 
 CASES: dict[str, Case] = {**_PROVIDER_CASES, **_AI_CASES, **_MCP_CASES, **_OTEL_CASES}
-SKIPPED: dict[str, str] = {}
+SKIPPED: dict[str, str] = {
+    "pyfect.ai.openai.client.layer_web_socket_mode": (
+        "needs a WebSocket server; its connection reuse is tested against one in "
+        "tests/oracle/test_ai_openai_client.py"
+    ),
+}

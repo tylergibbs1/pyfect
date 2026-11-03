@@ -15,10 +15,11 @@ invalid request, output that does not match its schema).
 `GenerateTextResponse`: its `content` parts, with `text`, `tool_calls`, `tool_results`,
 `finish_reason` and `usage`. A prompt is a string, a list of messages or a `Prompt`.
 
-`pyfect.ai.anthropic` calls Anthropic's Messages API and `pyfect.ai.openai_compat` any
-Chat Completions API (OpenAI, a local server, a gateway). Each has a `client` layer, with
-the API key as a `Redacted` (or from `Config` with `layer_config`), and a `language_model`
-whose `model(name).layer` provides the `LanguageModel`. Both send their requests through
+`pyfect.ai.anthropic` calls Anthropic's Messages API, `pyfect.ai.openai` OpenAI's
+Responses API and `pyfect.ai.openai_compat` any Chat Completions API (a local server, a
+gateway). Each has a `client` layer, with the API key as a `Redacted` (or from `Config`
+with `layer_config`), and a `language_model` whose `model(name).layer` provides the
+`LanguageModel`. They all send their requests through
 the [`HttpClient`](/docs/platform) service, so they need no vendor SDK: provide
 `httpx_client.layer` (the `pyfect-dev[httpx]` extra) in production, or a test client, as here.
 
@@ -27,6 +28,25 @@ the [`HttpClient`](/docs/platform) service, so they need no vendor SDK: provide
 <include meta='title="generate.py"'>../../snippets/ai/generate.py</include>
 
 <include lang="text">../../snippets/ai/generate.out</include>
+
+</CodeOutput>
+
+### OpenAI
+
+`pyfect.ai.openai.language_model.model(name, config)` takes the Responses API's own
+request fields as `config` (`store`, `reasoning`, `max_output_tokens`, ...) and gives back
+reasoning, citations and OpenAI's metadata on the response parts. `pyfect.ai.openai.tool`
+has OpenAI's built-in tools (`WebSearch`, `FileSearch`, `CodeInterpreter`, `Mcp`,
+`ImageGeneration`, ...): OpenAI runs them, so their calls and results arrive in the
+response and the toolkit's `to_layer()` takes no handler for them. `ApplyPatch`, `Shell` and `LocalShell` are ones your handler
+runs. `effect.pipe(client.with_web_socket_mode)` sends the streams of `effect` over one
+WebSocket connection instead of a request each.
+
+<CodeOutput>
+
+<include meta='title="openai.py"'>../../snippets/ai/openai.py</include>
+
+<include lang="text">../../snippets/ai/openai.out</include>
 
 </CodeOutput>
 
@@ -137,7 +157,7 @@ calling tools.
 
 An `EmbeddingModel`'s `embed(text)` and `embed_many(texts)` give vectors, and
 concurrent `embed` calls are sent as one batch;
-`openai_compat.embedding_model.model(name, dimensions=n).layer` provides one. Each call
+`openai.embedding_model.model(name, dimensions=n).layer` (or `openai_compat`'s) provides one. Each call
 runs in a span, such as `LanguageModel.generateText`, that
 [tracing](/docs/observability) records.
 
@@ -145,4 +165,5 @@ Reference: [`pyfect.ai`](/docs/reference/ai),
 [`language_model`](/docs/reference/ai/language_model),
 [`tool`](/docs/reference/ai/tool), [`toolkit`](/docs/reference/ai/toolkit),
 [`pyfect.ai.anthropic`](/docs/reference/ai/anthropic),
+[`pyfect.ai.openai`](/docs/reference/ai/openai),
 [`pyfect.ai.openai_compat`](/docs/reference/ai/openai_compat).

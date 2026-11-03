@@ -51,9 +51,14 @@ from pyfect.ai import toolkit as ai_toolkit
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import client as anthropic_client
 from pyfect.ai.anthropic import language_model as anthropic_lm
+from pyfect.ai.openai import client as openai_client
+from pyfect.ai.openai import embedding_model as openai_em
+from pyfect.ai.openai import language_model as openai_lm
+from pyfect.ai.openai import tool as openai_tool
 from pyfect.ai.openai_compat import client as compat_client
 from pyfect.ai.openai_compat import embedding_model as compat_em
 from pyfect.ai.openai_compat import language_model as compat_lm
+from pyfect.ai.response_id_tracker import ResponseIdTracker
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.cli import (
@@ -129,6 +134,7 @@ from pyfect.schema import SchemaError
 from pyfect.schema import model as Model
 from pyfect.schema import variant_schema as VS
 from pyfect.scope import Scope
+from pyfect.socket import WebSocketConstructor
 from pyfect.socket import datagram as dg
 from pyfect.sql import client as sql_client
 from pyfect.sql import error as sql_error
@@ -6852,6 +6858,60 @@ def check_ai_provider_client(service: anthropic_client.Service) -> None:
         service.create_message({"model": "claude-haiku-5-5", "max_tokens": 1, "messages": []}),
         fx.Effect[tuple[anthropic_client.Message, HttpResponse], ai_error_module.AiError],
     )
+
+
+def check_ai_openai(service: openai_client.Service) -> None:
+    key = redact("sk")
+    assert_type(
+        openai_client.layer(api_key=key),
+        fx.Layer[openai_client.OpenAiClient, Never, HttpClient],
+    )
+    assert_type(
+        openai_lm.model("gpt-5"),
+        ai_model.Model[lm.LanguageModel, openai_client.OpenAiClient],
+    )
+    assert_type(
+        openai_em.model("text-embedding-3-small", dimensions=1536),
+        ai_model.Model[
+            ai_embedding_model.EmbeddingModel | ai_embedding_model.Dimensions,
+            openai_client.OpenAiClient,
+        ],
+    )
+    # WebSocket mode provides the socket and needs the client and a constructor.
+    assert_type(
+        openai_client.layer_web_socket_mode(),
+        fx.Layer[
+            openai_client.OpenAiSocket | ResponseIdTracker,
+            Never,
+            openai_client.OpenAiClient | WebSocketConstructor,
+        ],
+    )
+    assert_type(
+        lm.generate_text("hi").pipe(openai_client.with_web_socket_mode),
+        fx.Effect[
+            lm.GenerateTextResponse[Never, Never],
+            ai_error_module.AiError,
+            lm.LanguageModel | openai_client.OpenAiClient | WebSocketConstructor,
+        ],
+    )
+    # The client calls fail only with AiError.
+    assert_type(
+        service.create_response({"model": "gpt-5", "input": "hi"}),
+        fx.Effect[tuple[openai_client.Response, HttpResponse], ai_error_module.AiError],
+    )
+    # Provider-defined tools carry their name and result types.
+    assert_type(
+        openai_tool.WebSearch(),
+        ai_tool.ProviderDefined[
+            Literal["OpenAiWebSearch"],
+            openai_tool.WebSearchParameters,
+            openai_tool.WebSearchSuccess,
+            openai_tool.WebSearchFailure,
+            openai_tool.WebSearchFailure,
+            Never,
+        ],
+    )
+    openai_lm.with_config_override({"use_item_reference": True})  # pyright: ignore[reportArgumentType]
 
 
 # --- Model / VariantSchema / SqlModel -----------------------------------------------------
