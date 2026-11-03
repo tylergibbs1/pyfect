@@ -7,7 +7,8 @@ Effect's declarations of them): tagged objects, as Effect writes them.
 ``{"_tag": "Fail", "error": e}`` / ``{"_tag": "Die", "defect": d}`` /
 ``{"_tag": "Interrupt", "fiberId": n | None}``; a ``Cause``: its reasons;
 an ``Exit``: ``{"_tag": "Success", "value": v}`` /
-``{"_tag": "Failure", "cause": reasons}``; a ``Redacted``: its value.
+``{"_tag": "Failure", "cause": reasons}``; a ``Redacted``: its value
+(unless it disallows JSON encoding).
 """
 
 from __future__ import annotations
@@ -22,7 +23,10 @@ from pyfect.option import Option, Some
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok, Result
 from pyfect.schema import ast
+from pyfect.schema import getter as G
+from pyfect.schema import transformation as T
 from pyfect.schema._codec_links import FINITE, link, tagged
+from pyfect.schema.getter import Getter, forbidden
 
 type _Tagged = Mapping[str, Any]
 
@@ -122,11 +126,20 @@ def exit_link(value: ast.AST, cause: ast.AST) -> ast.Link:
     return link(union, decode=_exit_of, encode=_exit_to)
 
 
-def redacted_link(value: ast.AST, label: str | None) -> ast.Link:
+def _cannot_serialize(input: Option[Redacted[object]]) -> str:
+    label = None if input is None else input.value.label
+    return "Cannot serialize Redacted" + ("" if label is None else f' with label: "{label}"')
+
+
+def redacted_link(value: ast.AST, label: str | None, *, disallow_encode: bool) -> ast.Link:
+    """``value`` wrapped in a ``Redacted`` labelled ``label``; with
+    ``disallow_encode`` the secret is never written out (a ``Forbidden``
+    issue)."""
+
     def hide(secret: object) -> Redacted[object]:
         return Redacted(secret, label=label)
 
-    def show(secret: Redacted[object]) -> object:
-        return _redacted.value(secret)
-
-    return link(value, decode=hide, encode=show)
+    encode: Getter[object, Redacted[object]] = (
+        forbidden(_cannot_serialize) if disallow_encode else G.transform(_redacted.value)
+    )
+    return ast.Link(value, T.Transformation(G.transform(hide), encode))

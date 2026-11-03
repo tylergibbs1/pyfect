@@ -29,3 +29,21 @@ class ParseOptions(TypedDict, total=False):
     disable_checks: bool
     concurrency: Concurrency
     report_input: bool
+
+
+class _Constructing(ParseOptions, total=False):
+    constructing: bool
+
+
+def constructing(options: ParseOptions) -> ParseOptions:
+    """``options`` for a constructor's parse (``make``, Effect's constructor
+    compiler): a missing key or element takes its node's constructor
+    default, and a class's type side takes a mapping of its fields."""
+    out: _Constructing = {**options, "constructing": True}
+    return out
+
+
+def is_constructing(options: ParseOptions) -> bool:
+    """``options`` are a constructor's (``constructing``, only ever set
+    to ``True``)."""
+    return "constructing" in options

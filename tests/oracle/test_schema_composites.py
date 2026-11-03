@@ -41,8 +41,7 @@ Omitted:
   exception class, which has no strategy.
 - "withConstructorDefault / Tuple / Tuple & Some", "... / nested defaults
   (Struct)", "... / inner defaults (Tuple)", "... / nested defaults
-  (Tuple)": no ``withConstructorDefault`` (a struct's defaults are field
-  defaults; a tuple's elements have none).
+  (Tuple)": ported in ``test_schema_constructor_default.py``.
 - "Tuple / A required element cannot follow an optional element" with
   ``Schema.optional`` and "TupleWithRest / An optional element cannot
   follow a rest element": ``optional`` is ``optionalKey`` of ``UndefinedOr``

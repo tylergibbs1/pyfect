@@ -10,9 +10,13 @@ bytes are ``bytes``; a value ``JSON.stringify`` cannot write
 (``undefined``) is a ``set``.
 
 Omitted:
-- ``makeTreeRecord``, "decodeFormData / encodeFormData" and
-  "decodeURLSearchParams / encodeURLSearchParams" (every title in those
-  blocks): ``FormData`` and ``URLSearchParams`` are web platform types.
+- "decodeFormData / encodeFormData" and "decodeURLSearchParams /
+  encodeURLSearchParams" (every title in those blocks): ``FormData`` and
+  ``URLSearchParams`` are web platform types (docs/PARITY.md section 4).
+- "makeTreeRecord / reinitializes own undefined values ..." keep their
+  meaning with ``None`` for ``undefined``; "... replaces conflicting leaf
+  values with containers" uses a ``MappingProxyType`` for
+  ``Object.freeze``.
 - "SchemaTransformation / makeTransformation preserves an existing
   transformation": ``decode_to`` takes a ``Transformation``; Effect's
   ``{ decode, encode }`` object is the ``Transformation(decode, encode)``
@@ -22,7 +26,8 @@ Omitted:
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, TypedDict
+from types import MappingProxyType
+from typing import Any, TypedDict, TypeIs
 
 import pytest
 
@@ -247,3 +252,100 @@ def test_pipe():
     middleware: T.Middleware[str, str] = T.Middleware(lambda e, _: e, lambda e, _: e)
     assert transformation.pipe(lambda self: self) is transformation
     assert middleware.pipe(lambda self: self) is middleware
+
+
+# ------------------------------------------------------- makeTreeRecord
+
+
+def test_make_tree_record_preserves_array_valued_leaves_at_duplicate_paths():
+    """makeTreeRecord / preserves array-valued leaves at duplicate paths"""
+    tree = G.make_tree_record(
+        [("permissions", ["read"]), ("permissions", ["write"]), ("permissions", ["share"])]
+    )
+    assert tree == {"permissions": [["read"], ["write"], ["share"]]}
+
+
+def test_make_tree_record_replaces_conflicting_leaf_values_with_containers():
+    """makeTreeRecord / replaces conflicting leaf values with containers"""
+    assert G.make_tree_record([("a", "x"), ("a[b]", "y")]) == {"a": {"b": "y"}}
+    assert G.make_tree_record([("a", "x"), ("a[0]", "y")]) == {"a": ["y"]}
+    frozen = MappingProxyType({"value": "x"})
+    tree = G.make_tree_record([("a", frozen), ("a[b]", {"value": "y"})])
+    assert tree == {"a": {"b": {"value": "y"}}}
+
+
+def test_make_tree_record_replaces_conflicting_object_and_array_containers():
+    """makeTreeRecord / replaces conflicting object and array containers"""
+    assert G.make_tree_record([("a[b]", "x"), ("a[0]", "y")]) == {"a": ["y"]}
+    assert G.make_tree_record([("a[0]", "x"), ("a[b]", "y")]) == {"a": {"b": "y"}}
+
+
+def test_make_tree_record_reinitializes_own_undefined_values_before_descending():
+    """makeTreeRecord / reinitializes own undefined values before descending"""
+    assert G.make_tree_record([("a", None), ("a[b]", 1)]) == {"a": {"b": 1}}
+
+
+def test_make_tree_record_reinitializes_own_undefined_values_at_numeric_indexes():
+    """makeTreeRecord / reinitializes own undefined values at numeric indexes"""
+    assert G.make_tree_record([("a[0]", None), ("a[0][b]", 1)]) == {"a": [{"b": 1}]}
+
+
+def test_make_tree_record_preserves_invalid_array_index_segments_as_object_keys():
+    """makeTreeRecord / preserves invalid array index segments as object keys"""
+    tree = G.make_tree_record([("leading[01]", "a"), ("overflow[4294967295]", "b")])
+    assert tree == {"leading": {"01": "a"}, "overflow": {"4294967295": "b"}}
+
+
+def _holes(length: int, **values: str) -> list[str | None]:
+    out: list[str | None] = [None] * length
+    for index, value in values.items():
+        out[int(index.removeprefix("i"))] = value
+    return out
+
+
+def test_make_tree_record_keeps_arrays_with_at_most_20_holes():
+    """makeTreeRecord / sparse array indices / keeps arrays with at most 20 holes"""
+    tree = G.make_tree_record([("a[0]", "x"), ("a[21]", "y")])
+    assert tree == {"a": _holes(22, i0="x", i21="y")}
+
+
+def test_make_tree_record_uses_the_final_indices_regardless_of_entry_order():
+    """makeTreeRecord / sparse array indices / uses the final indices regardless of entry order"""
+    tree = G.make_tree_record([("a[21]", "y"), ("a[0]", "x")])
+    assert tree == {"a": _holes(22, i0="x", i21="y")}
+
+
+def test_make_tree_record_keeps_index_keys_on_an_object_when_an_array_would_have_more_than_20_holes():  # noqa: E501
+    """makeTreeRecord / sparse array indices / keeps index keys on an object when an array would have more than 20 holes"""  # noqa: E501
+    tree = G.make_tree_record([("a[0]", "x"), ("a[22]", "y")])
+    assert tree == {"a": {"0": "x", "22": "y"}}
+
+
+def test_make_tree_record_applies_the_hole_limit_independently_to_nested_containers():
+    """makeTreeRecord / sparse array indices / applies the hole limit independently to nested containers"""  # noqa: E501
+    tree = G.make_tree_record([("items[1000][tags][0]", "x")])
+    assert tree == {"items": {"1000": {"tags": ["x"]}}}
+
+
+def test_make_tree_record_appends_after_the_maximum_array_index_without_throwing():
+    """makeTreeRecord / sparse array indices / appends after the maximum array index without throwing"""  # noqa: E501
+    tree = G.make_tree_record([("a[4294967294]", "x"), ("a[]", "y")])
+    assert tree == {"a": {"4294967294": "x", "4294967295": "y"}}
+
+
+def _is_str(value: object) -> TypeIs[str]:
+    return isinstance(value, str)
+
+
+def test_collect_bracket_path_entries_flattens_what_make_tree_record_builds():
+    """pyfect: ``collect_bracket_path_entries`` (Effect tests it only
+    through ``encodeFormData`` / ``encodeURLSearchParams``)"""
+    collect = G.collect_bracket_path_entries(_is_str)
+    tree = {"a": ["1", "2"], "user": {"name": "J"}, "items": [{"id": "x"}], "n": 1}
+    entries = collect(tree)
+    assert entries == [("a", "1"), ("a", "2"), ("user[name]", "J"), ("items[0][id]", "x")]
+    assert G.make_tree_record(entries) == {
+        "a": ["1", "2"],
+        "user": {"name": "J"},
+        "items": [{"id": "x"}],
+    }

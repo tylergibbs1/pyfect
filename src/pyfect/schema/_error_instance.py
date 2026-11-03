@@ -61,7 +61,7 @@ class ErrorInstance:
         """The schema of errors; ``include_stack`` writes the stack,
         ``exclude_cause`` leaves the cause out. The same options give the
         same schema."""
-        return _error_schema(include_stack, exclude_cause)
+        return error_schema(include_stack, exclude_cause)
 
 
 def _text_of(value: JsonValue) -> str:
@@ -176,9 +176,7 @@ def _is_error(value: object) -> TypeIs[BaseException | ErrorInstance]:
 
 
 @cache
-def _error_schema(
-    include_stack: bool, exclude_cause: bool
-) -> Bottom[BaseException | ErrorInstance]:
+def error_schema(include_stack: bool, exclude_cause: bool) -> Bottom[BaseException | ErrorInstance]:
     def encode(value: BaseException | ErrorInstance) -> Mapping[str, object]:
         encoded = _encode(value, include_stack=include_stack, exclude_cause=exclude_cause)
         return cast("Mapping[str, object]", encoded)
@@ -186,7 +184,16 @@ def _error_schema(
     def to_json(_: tuple[ast.AST, ...]) -> ast.Link:
         return link(_JSON_ERROR, decode=_decode_error, encode=encode)
 
-    return declare(_is_error, expected="Error", to_codec_json=to_json)
+    options = {
+        **({"includeStack": True} if include_stack else {}),
+        **({"excludeCause": True} if exclude_cause else {}),
+    }
+    return declare(
+        _is_error,
+        expected="Error",
+        representation={"id": "effect/schema/Error", "payload": options or None},
+        to_codec_json=to_json,
+    )
 
 
 type DefectSchema = DecodeToSchema[BaseException, JsonValue, Never, Never]

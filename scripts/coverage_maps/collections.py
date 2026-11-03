@@ -954,7 +954,11 @@ TRIE = Module(
     pythonic=_rows(EQUAL_KEYED, {"size": "`len(trie)`"}),
 )
 
-GRAPH = Module("Graph", "effect/src/Graph.ts", ())
+GRAPH = Module(
+    "Graph",
+    "effect/src/Graph.ts",
+    ("pyfect.graph", "pyfect.graph:Graph", "pyfect.graph:MutableGraph", "pyfect.graph:Walker"),
+)
 
 HASH_RING = Module(
     "HashRing",

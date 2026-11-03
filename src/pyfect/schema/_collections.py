@@ -100,6 +100,7 @@ def FrozenSet[A, I, RD, RE](value: Codec[A, I, RD, RE], /) -> FrozenSetSchema[A,
         (value.__codec__().ast,),
         _set_run,
         annotations={
+            "representation": {"id": "effect/schema/ReadonlySet", "payload": None},
             "expected": "frozenset",
             "to_codec": _set_codec,
             "to_codec_arbitrary": _arb.frozen_set,
@@ -160,6 +161,7 @@ def Map[K, V, KI, VI, RD, RE](
     Mapping``."""
     nodes = (key.__codec__().ast, value.__codec__().ast)
     annotations = {
+        "representation": {"id": "effect/schema/ReadonlyMap", "payload": None},
         "expected": "Mapping",
         "to_codec": _map_codec,
         "to_codec_arbitrary": _arb.map_,

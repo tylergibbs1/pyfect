@@ -31,8 +31,6 @@ Omitted:
   declarations carry no sentinels in pyfect.
 - "getCandidateIndex / literal-only union with a unique symbol", "...
   tagged tuples with unique symbol sentinels": no symbols.
-- "getCandidateIndex / constructor mode ...": pyfect's constructors
-  validate one class, never a union input.
 - "getCandidateIndex / should protect cached common sentinel candidates
   from external mutation", "... should reuse the candidates of a runtime
   type without literals", "... should reuse non-discriminated candidates of
@@ -217,6 +215,19 @@ def test_get_candidate_index_should_handle_tagged_structs():
     assert index({"_tag": "c"}) == []
     assert index("") == [2]
     assert index(1) == []
+
+
+def test_get_candidate_index_constructor_mode_should_keep_tagged_candidates_only_when_an_object_discriminator_is_missing():  # noqa: E501
+    """getCandidateIndex / constructor mode should keep tagged candidates only when an object discriminator is missing
+
+    Effect's ``{ _tag: undefined }`` case is left out: ``None`` is a value
+    (``null``), not a missing key."""  # noqa: E501
+    union = S.Union(S.Struct(_A, _tag=S.tag("a")), S.Struct(_B, _tag=S.tag("b"))).ast
+    assert isinstance(union, S.ast.Union)
+    assert union.candidates({}, True) == [0, 1]
+    assert union.candidates({"_tag": "a"}, True) == [0]
+    assert union.candidates("a", True) == []
+    assert union.candidates({}, False) == []
 
 
 class _KindA(TypedDict):

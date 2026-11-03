@@ -23,12 +23,6 @@ _PATTERN_SCHEMA_KEYWORDS = frozenset(
 type _Value = JsonSchema | bool
 
 
-def _encoded_optional(p: ast.PropertySignature) -> bool:
-    if p.encoded_optional is not None:
-        return p.encoded_optional
-    return p.optional or p.default is not None or p.type.flip().optional_key
-
-
 def compile_objects(
     compiler: Compiler, node: ast.Objects, dependencies: list[Exactness]
 ) -> JsonSchema:
@@ -64,7 +58,7 @@ def _properties(
         if not isinstance(p.name, str):
             raise ValueError("Objects property names must be strings")
         properties[p.name] = compiler.member(p.type, p.type.key_annotations, dependencies)
-        if not _encoded_optional(p):
+        if not p.optional_when_encoded():
             required.append(p.name)
     if node.properties:
         out["properties"] = properties
@@ -169,16 +163,26 @@ def _patterns(compiler: Compiler, parameter: ast.AST, seen: frozenset[str]) -> l
     reference = candidate.reference
     if reference is None:
         return _local_patterns(compiler, candidate.ast, seen)
-    compiler.definition_of(candidate)
+    definition = compiler.definition_of(candidate)
     if reference in seen:
         return None
-    return _local_patterns(compiler, candidate.ast, seen | {reference})
+    compiled = None if definition is None else (definition.schema, definition.dependencies)
+    return _local_patterns(compiler, candidate.ast, seen | {reference}, compiled)
 
 
-def _local_patterns(compiler: Compiler, node: ast.AST, seen: frozenset[str]) -> list[str] | None:  # noqa: PLR0911
+def _local_patterns(  # noqa: PLR0911
+    compiler: Compiler,
+    node: ast.AST,
+    seen: frozenset[str],
+    compiled: tuple[JsonSchema, list[Exactness]] | None = None,
+) -> list[str] | None:
+    """``compiled``: the node's definition, already compiled (its
+    callbacks are not run twice)."""
     match node:
+        case ast.Suspend():
+            return _patterns(compiler, node.target, seen)
         case ast.String():
-            return _string_patterns(compiler, node)
+            return _string_patterns(compiler, node, compiled)
         case ast.Union():
             if not node.types or node.checks or node.mode == "one_of":
                 return None
@@ -202,14 +206,19 @@ def _local_patterns(compiler: Compiler, node: ast.AST, seen: frozenset[str]) -> 
             raise ValueError(f"Invalid index signature parameter {node.tag}")
 
 
-def _string_patterns(compiler: Compiler, node: ast.String) -> list[str] | None:
+def _string_patterns(
+    compiler: Compiler, node: ast.String, compiled: tuple[JsonSchema, list[Exactness]] | None
+) -> list[str] | None:
     checks = node.checks
     if not checks:
         return []
     if len(checks) != 1 or not isinstance(checks[0], ast.Filter):
         return None
-    dependencies: list[Exactness] = []
-    schema = compiler.compile(node, dependencies)
+    if compiled is None:
+        dependencies: list[Exactness] = []
+        schema = compiler.compile(node, dependencies)
+    else:
+        schema, dependencies = compiled
     if not is_exact(dependencies):
         return None
     pattern = schema.get("pattern")

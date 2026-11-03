@@ -16,19 +16,13 @@ Omitted, with the reason:
   fields are a ``dict``.
 - "verifyGeneration bounds residual discards": fast-check's ``maxDiscards``;
   Hypothesis's own ``filter_too_much`` health check plays that part.
-- "make uses constructor defaults from the test environment and honors
-  disableChecks" and "make preserves mixed causes from constructor
-  defaults": ``withConstructorDefault`` is not ported (docs/coverage/schema.md).
 - the ``make`` case of "forwards parsing options": a filter sees only the
   value in pyfect; the decoding and encoding cases read the options through
   ``check_effect``.
-- the ``verifyRoundTripEffect`` titles ("round trips preserve mixed causes
-  from ${method}", "round trips use both decoding and encoding services
-  lazily", "round-trip assertion defects report shrunk inputs and replay",
-  "round trips preserve schema defects", "roundTrip propagates interruption
-  and runs finalizers"): ``verify_round_trip`` runs synchronously under
-  Hypothesis's ``given``; an effect form needs a property runner that draws
-  inside a fiber (deferred, docs/PARITY.md M11).
+- "roundTrip propagates interruption and runs finalizers": Hypothesis
+  draws synchronously, so ``verify_round_trip_effect`` runs each value's
+  round trip to its end in a nested synchronous run; the caller cannot
+  interrupt it midway (a getter that never finishes hangs the check).
 """
 
 from __future__ import annotations
@@ -51,11 +45,12 @@ from pyfect.cause import (
     reason_annotations,
 )
 from pyfect.exit import Failure
+from pyfect.exit import die as die_exit
 from pyfect.option import Option
 from pyfect.schema import SchemaError
 from pyfect.schema import getter as G
 from pyfect.schema import transformation as T
-from pyfect.schema.issue import InvalidType, InvalidValue, Issue
+from pyfect.schema.issue import InvalidType, InvalidValue, Issue, format_issue, is_issue
 from pyfect.testing import SchemaAsserts, SchemaCheck
 
 type Method = Literal["decoding", "encoding", "make"]
@@ -414,3 +409,133 @@ def test_propagates_interruption_and_runs_finalizers(method: Direction):
     ex = yield from fiber.await_exit()
     assert isinstance(ex, Failure)
     assert ex.cause.has_interrupts_only
+
+
+class _Time(TypedDict):
+    time: float
+
+
+@testing.effect
+def test_make_uses_constructor_defaults_from_the_test_environment_and_honors_disable_checks():
+    """make uses constructor defaults from the test environment and honors disableChecks"""
+    millis = fx.clock.now_nanos().map(lambda nanos: float(nanos // 1_000_000))
+    schema = S.Struct(_Time, time=S.Number.pipe(S.with_constructor_default(millis)))
+    assertion = SchemaAsserts(schema).make().succeed_effect({}, {"time": 123})
+    yield from testing.set_time(0.123)
+    yield from assertion
+
+    checked = SchemaAsserts(S.Number.check(S.is_greater_than(0)))
+    yield from checked.make().fail_effect(-1, "Expected a value greater than 0")
+    yield from checked.make(disable_checks=True).succeed_effect(-1)
+
+
+class _Value(TypedDict):
+    value: str
+
+
+@testing.effect
+def test_make_preserves_mixed_causes_from_constructor_defaults():
+    """make preserves mixed causes from constructor defaults"""
+    issue = InvalidValue({"message": "schema issue"})
+    defect = CleanupFailed("cleanup failed")
+    default = fx.fail(issue).ensuring(fx.die(defect))
+    schema = S.Struct(_Value, value=S.String.pipe(S.with_constructor_default(default)))
+    ex = yield from SchemaAsserts(schema).make().fail_effect({}, "schema issue").exit()
+    assert isinstance(ex, Failure)
+    validation, cleanup = ex.cause.reasons
+    # The finalizer's defect elects the issue to a defect where it happens
+    # (section 4, ``Cause.squash``).
+    assert isinstance(validation, Die)
+    assert isinstance(validation.defect, UnhandledError)
+    found = validation.defect.error
+    assert is_issue(found)
+    assert "schema issue" in format_issue(found)
+    assert cleanup == Die(defect)
+
+
+# --- verifyRoundTripEffect ----------------------------------------------------------
+
+
+@pytest.mark.parametrize("method", ["decoding", "encoding"])
+@testing.effect
+def test_round_trips_preserve_mixed_causes(method: Direction):
+    """round trips preserve mixed causes from ${method}"""
+    issue = InvalidValue({"message": "schema issue"})
+    defect = CleanupFailed("cleanup failed")
+
+    def failure(
+        _eff: fx.Effect[Option[str], Issue], _options: S.ParseOptions
+    ) -> fx.Effect[Option[str], Issue]:
+        return fx.fail(issue).ensuring(fx.die(defect))
+
+    asserts = SchemaAsserts(_middleware(method, failure))
+    ex = yield from asserts.verify_round_trip_effect(runs=1, seed=1).exit()
+    assert isinstance(ex, Failure)
+    validation, cleanup = ex.cause.reasons
+    assert isinstance(validation, Die)
+    assert isinstance(validation.defect, UnhandledError)
+    found = validation.defect.error
+    assert is_issue(found)
+    assert format_issue(found) == "schema issue"
+    assert cleanup == Die(defect)
+
+
+class Decoding(fx.Tag[fx.Ref[int]], key="Decoding"):
+    pass
+
+
+class Encoding(fx.Tag[fx.Ref[int]], key="Encoding"):
+    pass
+
+
+def _count_decoding(_value: str, _options: S.ParseOptions) -> fx.Effect[None, Never, Decoding]:
+    return Decoding().flat_map(lambda ref: ref.update(lambda n: n + 1))
+
+
+def _count_encoding(_value: str, _options: S.ParseOptions) -> fx.Effect[None, Never, Encoding]:
+    return Encoding().flat_map(lambda ref: ref.update(lambda n: n + 1))
+
+
+@testing.effect
+def test_round_trips_use_both_decoding_and_encoding_services_lazily():
+    """round trips use both decoding and encoding services lazily"""
+    schema = S.String.pipe(
+        S.decode(T.Transformation(G.check_effect(_count_decoding), G.check_effect(_count_encoding)))
+    )
+    decoding = yield from fx.Ref.make(0)
+    encoding = yield from fx.Ref.make(0)
+    assertion = SchemaAsserts(schema).verify_round_trip_effect(runs=3, seed=1)
+    assert (yield from decoding.get()) == 0
+    assert (yield from encoding.get()) == 0
+    yield from assertion.pipe(
+        fx.provide_context(fx.Context.make(Decoding, decoding).add(Encoding, encoding))
+    )
+    assert (yield from decoding.get()) == 3
+    assert (yield from encoding.get()) == 3
+
+
+@testing.effect
+def test_round_trip_assertion_defects_report_shrunk_inputs_and_replay():
+    """round-trip assertion defects report shrunk inputs and replay"""
+    lossy = S.Number.pipe(
+        S.decode_to(S.Number, T.transform(decode=lambda value: value, encode=lambda _: 0.0))
+    )
+    ex = yield from SchemaAsserts(lossy).verify_round_trip_effect(runs=20, seed=1).exit()
+    error = _assertion_defect(ex)
+    assert "did not round-trip" in str(error)
+    # Hypothesis's notes name the shrunk value, for a replay.
+    notes = "\n".join(getattr(error, "__notes__", []))
+    assert "check(" in notes and "value=" in notes
+
+
+@testing.effect
+def test_round_trips_preserve_schema_defects():
+    """round trips preserve schema defects"""
+    defect = SchemaDefect("round-trip defect")
+
+    def die(_value: str, _options: S.ParseOptions) -> fx.Effect[G.CheckOutput]:
+        return fx.die(defect)
+
+    schema = S.String.pipe(S.decode(T.Transformation(G.passthrough(), G.check_effect(die))))
+    ex = yield from SchemaAsserts(schema).verify_round_trip_effect(runs=1, seed=1).exit()
+    assert ex == die_exit(defect)

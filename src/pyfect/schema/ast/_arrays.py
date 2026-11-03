@@ -20,7 +20,14 @@ from typing import cast, final
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast._base import AST, at_key, invalid_type, issue_of, join_checks
+from pyfect.schema.ast._base import (
+    AST,
+    at_key,
+    construct_missing,
+    invalid_type,
+    issue_of,
+    join_checks,
+)
 from pyfect.schema.ast._result import MISSING, ParseResult
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, run_steps
 from pyfect.schema.issue import Composite, Issue, MissingKey, Pointer, UnexpectedKey, reported
@@ -33,6 +40,11 @@ class Element:
 
     type: AST
     optional: bool = False
+
+    def optional_when_encoded(self) -> bool:
+        """Whether the position may be missing from the encoded input (it is
+        optional, or a decoding default fills it)."""
+        return self.optional or self.type.flip().optional_key
 
 
 def _check_order(elements: Sequence[Element], rest: Sequence[AST]) -> None:
@@ -151,6 +163,8 @@ class _Run(Steps["_Run"]):
                 if type(result) is Success and result.value is not MISSING:
                     out[index] = result.value
                     continue
+            elif (constructed := construct_missing(position.type, options)) is not None:
+                result = constructed
             elif position.type.encoding is not None:
                 result = position.type.parse(MISSING, options)
             elif position.optional:

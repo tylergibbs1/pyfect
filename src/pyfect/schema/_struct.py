@@ -15,7 +15,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Generic, Never, TypeVar, overload
 
-from pyfect import _json_text
 from pyfect.schema import ast
 from pyfect.schema._derive import typed_dict_ast, typed_dict_fields
 from pyfect.schema._record import RecordSchema
@@ -75,20 +74,10 @@ def StructWithRest[TD: Mapping[str, object], RD, RE](
     raises ``ValueError``, as does a struct or record with an encoding of
     its own."""
     nodes = [schema.ast, *(r.ast for r in records)]
-    objects = [node for node in nodes if isinstance(node, ast.Objects) and node.encoding is None]
+    objects = [node for node in nodes if isinstance(node, ast.Objects)]
     if len(objects) != len(nodes):
         raise ValueError("StructWithRest does not support encodings")
-    properties = list(objects[0].properties)
-    index_signatures = list(objects[0].index_signatures)
-    checks = objects[0].checks
-    for record in objects[1:]:
-        for p in record.properties:
-            if any(q.name == p.name for q in properties):
-                raise ValueError(f"Duplicate identifier: {_json_text.stringify(p.name)}. ts(2300)")
-        properties += record.properties
-        index_signatures += record.index_signatures
-        checks = ast.join_checks(checks, record.checks)
-    node = ast.Objects(tuple(properties), tuple(index_signatures), checks=checks)
+    node = ast.struct_with_rest(objects[0], objects[1:])
     return StructWithRestSchema(node, schema, records)
 
 

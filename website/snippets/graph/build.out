@@ -1,0 +1,5 @@
+Graph(undirected, 3, 3)
+[1, 2] 2
+3 4
+PathResult(path=(1, 2, 3), edges=(2, 3), distance=1773.0, costs=(633, 1140))
+True

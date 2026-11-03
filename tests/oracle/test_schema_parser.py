@@ -13,9 +13,10 @@ pyfect's ``Exit`` is not, so the port checks that the AST parse returns an
 ``Exit`` rather than an effect.
 
 The ``make`` / ``makeOption`` defect titles fail a ``withConstructorDefault``
-in Effect; pyfect's field defaults are plain values, so a declaration's
-parser gives the same cause. Titles Effect builds for two causes ("not an
-Issue" and "both an Issue and a defect") are one parametrized test.
+in Effect; here a declaration's parser gives the same cause (the default's
+own path is covered in ``test_schema_constructor_default.py``). Titles
+Effect builds for two causes ("not an Issue" and "both an Issue and a
+defect") are one parametrized test.
 
 Omitted: "makeEffect / defers deriving the type AST until the maker is
 called and derives it once" (``make_effect`` is a method of an immutable
@@ -621,8 +622,8 @@ def _transformed(cause: Cause[Issue]) -> tuple[S.Bottom[str, str], S.Bottom[str,
 
 def test_make_should_throw_an_error_when_the_cause_contains_both_an_issue_and_a_defect():
     """make / should throw an error when the cause contains both an Issue and a defect"""
-    # Effect fails a ``withConstructorDefault``; pyfect's field defaults are
-    # plain values, so a declaration's parser gives the mixed cause.
+    # Effect fails a ``withConstructorDefault``; a declaration's parser gives
+    # the same mixed cause.
     schema = _failing_declaration(_MIXED)
     _raises_with_defect(
         "Constructor adapter can only throw schema issues", lambda: schema.make("a")

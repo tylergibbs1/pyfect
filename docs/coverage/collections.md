@@ -32,7 +32,7 @@ Coverage counts ported, renamed and §4 exports.
 | MutableList | 17 | 0 | 0 | 17 | 0 | 100% |
 | MutableRef | 16 | 0 | 0 | 16 | 0 | 100% |
 | Trie | 28 | 27 | 0 | 1 | 0 | 100% |
-| Graph | 93 | 0 | 0 | 0 | 93 | 0% |
+| Graph | 93 | 93 | 0 | 0 | 0 | 100% |
 | HashRing | 8 | 6 | 1 | 1 | 0 | 100% |
 | SemVer | 41 | 28 | 0 | 13 | 0 | 100% |
 | SemVerRange | 18 | 16 | 1 | 1 | 0 | 100% |
@@ -42,7 +42,7 @@ Coverage counts ported, renamed and §4 exports.
 | Hex | 4 | 4 | 0 | 0 | 0 | 100% |
 | EncodingError | 3 | 2 | 0 | 1 | 0 | 100% |
 | Crypto | 2 | 2 | 0 | 0 | 0 | 100% |
-| **All** | 985 | | | | 93 | 90% |
+| **All** | 985 | | | | 0 | 100% |
 
 ## Array
 
@@ -982,99 +982,99 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
-| `GraphError` | missing |  |
-| `isGraph` | missing |  |
-| `fromSnapshot` | missing |  |
-| `toSnapshot` | missing |  |
-| `make` | missing |  |
-| `directed` | missing |  |
-| `undirected` | missing |  |
-| `beginMutation` | missing |  |
-| `endMutation` | missing |  |
-| `mutate` | missing |  |
-| `compose` | missing |  |
-| `intersection` | missing |  |
-| `difference` | missing |  |
-| `symmetricDifference` | missing |  |
-| `complement` | missing |  |
-| `neighborhood` | missing |  |
-| `inducedSubgraph` | missing |  |
-| `sum` | missing |  |
-| `addNode` | missing |  |
-| `getNode` | missing |  |
-| `hasNode` | missing |  |
-| `nodeCount` | missing |  |
-| `findNode` | missing |  |
-| `findNodes` | missing |  |
-| `findEdge` | missing |  |
-| `findEdges` | missing |  |
-| `updateNode` | missing |  |
-| `updateEdge` | missing |  |
-| `mapNodes` | missing |  |
-| `mapEdges` | missing |  |
-| `reverse` | missing |  |
-| `filterMapNodes` | missing |  |
-| `filterMapEdges` | missing |  |
-| `filterNodes` | missing |  |
-| `filterEdges` | missing |  |
-| `addEdge` | missing |  |
-| `removeNode` | missing |  |
-| `removeNodes` | missing |  |
-| `removeEdge` | missing |  |
-| `removeEdges` | missing |  |
-| `getEdge` | missing |  |
-| `hasEdge` | missing |  |
-| `edgeCount` | missing |  |
-| `incidentEdges` | missing |  |
-| `outgoingEdges` | missing |  |
-| `incomingEdges` | missing |  |
-| `edgesBetween` | missing |  |
-| `degree` | missing |  |
-| `outDegree` | missing |  |
-| `inDegree` | missing |  |
-| `neighbors` | missing |  |
-| `successors` | missing |  |
-| `predecessors` | missing |  |
-| `neighborsDirected` | missing |  |
-| `toGraphViz` | missing |  |
-| `toMermaid` | missing |  |
-| `findCycle` | missing |  |
-| `isAcyclic` | missing |  |
-| `isBipartite` | missing |  |
-| `maximumBipartiteMatching` | missing |  |
-| `unweightedDistances` | missing |  |
-| `hasPath` | missing |  |
-| `connectedComponents` | missing |  |
-| `bridges` | missing |  |
-| `articulationPoints` | missing |  |
-| `biconnectedComponents` | missing |  |
-| `maximumFlow` | missing |  |
-| `minimumCut` | missing |  |
-| `weaklyConnectedComponents` | missing |  |
-| `stronglyConnectedComponents` | missing |  |
-| `isConnected` | missing |  |
-| `isWeaklyConnected` | missing |  |
-| `isStronglyConnected` | missing |  |
-| `isTree` | missing |  |
-| `minimumSpanningForest` | missing |  |
-| `transitiveReduction` | missing |  |
-| `dijkstra` | missing |  |
-| `floydWarshall` | missing |  |
-| `astar` | missing |  |
-| `bellmanFord` | missing |  |
-| `simplePaths` | missing |  |
-| `allShortestPaths` | missing |  |
-| `Walker` | missing |  |
-| `indices` | missing |  |
-| `values` | missing |  |
-| `entries` | missing |  |
-| `dfs` | missing |  |
-| `bfs` | missing |  |
-| `topo` | missing |  |
-| `dfsPostOrder` | missing |  |
-| `nodes` | missing |  |
-| `edges` | missing |  |
-| `externals` | missing |  |
+| `GraphError` | ported | `pyfect.graph.GraphError` |
+| `isGraph` | ported | `pyfect.graph.is_graph` |
+| `fromSnapshot` | ported | `pyfect.graph.from_snapshot` |
+| `toSnapshot` | ported | `pyfect.graph.Graph.to_snapshot` |
+| `make` | ported | `pyfect.graph.make` |
+| `directed` | ported | `pyfect.graph.directed` |
+| `undirected` | ported | `pyfect.graph.undirected` |
+| `beginMutation` | ported | `pyfect.graph.Graph.begin_mutation` |
+| `endMutation` | ported | `pyfect.graph.MutableGraph.end_mutation` |
+| `mutate` | ported | `pyfect.graph.Graph.mutate` |
+| `compose` | ported | `pyfect.graph.Graph.compose` |
+| `intersection` | ported | `pyfect.graph.Graph.intersection` |
+| `difference` | ported | `pyfect.graph.Graph.difference` |
+| `symmetricDifference` | ported | `pyfect.graph.Graph.symmetric_difference` |
+| `complement` | ported | `pyfect.graph.Graph.complement` |
+| `neighborhood` | ported | `pyfect.graph.Graph.neighborhood` |
+| `inducedSubgraph` | ported | `pyfect.graph.Graph.induced_subgraph` |
+| `sum` | ported | `pyfect.graph.Graph.sum` |
+| `addNode` | ported | `pyfect.graph.MutableGraph.add_node` |
+| `getNode` | ported | `pyfect.graph.Graph.get_node` |
+| `hasNode` | ported | `pyfect.graph.Graph.has_node` |
+| `nodeCount` | ported | `pyfect.graph.Graph.node_count` |
+| `findNode` | ported | `pyfect.graph.Graph.find_node` |
+| `findNodes` | ported | `pyfect.graph.Graph.find_nodes` |
+| `findEdge` | ported | `pyfect.graph.Graph.find_edge` |
+| `findEdges` | ported | `pyfect.graph.Graph.find_edges` |
+| `updateNode` | ported | `pyfect.graph.MutableGraph.update_node` |
+| `updateEdge` | ported | `pyfect.graph.MutableGraph.update_edge` |
+| `mapNodes` | ported | `pyfect.graph.MutableGraph.map_nodes` |
+| `mapEdges` | ported | `pyfect.graph.MutableGraph.map_edges` |
+| `reverse` | ported | `pyfect.graph.MutableGraph.reverse` |
+| `filterMapNodes` | ported | `pyfect.graph.MutableGraph.filter_map_nodes` |
+| `filterMapEdges` | ported | `pyfect.graph.MutableGraph.filter_map_edges` |
+| `filterNodes` | ported | `pyfect.graph.MutableGraph.filter_nodes` |
+| `filterEdges` | ported | `pyfect.graph.MutableGraph.filter_edges` |
+| `addEdge` | ported | `pyfect.graph.MutableGraph.add_edge` |
+| `removeNode` | ported | `pyfect.graph.MutableGraph.remove_node` |
+| `removeNodes` | ported | `pyfect.graph.MutableGraph.remove_nodes` |
+| `removeEdge` | ported | `pyfect.graph.MutableGraph.remove_edge` |
+| `removeEdges` | ported | `pyfect.graph.MutableGraph.remove_edges` |
+| `getEdge` | ported | `pyfect.graph.Graph.get_edge` |
+| `hasEdge` | ported | `pyfect.graph.Graph.has_edge` |
+| `edgeCount` | ported | `pyfect.graph.Graph.edge_count` |
+| `incidentEdges` | ported | `pyfect.graph.Graph.incident_edges` |
+| `outgoingEdges` | ported | `pyfect.graph.Graph.outgoing_edges` |
+| `incomingEdges` | ported | `pyfect.graph.Graph.incoming_edges` |
+| `edgesBetween` | ported | `pyfect.graph.Graph.edges_between` |
+| `degree` | ported | `pyfect.graph.Graph.degree` |
+| `outDegree` | ported | `pyfect.graph.Graph.out_degree` |
+| `inDegree` | ported | `pyfect.graph.Graph.in_degree` |
+| `neighbors` | ported | `pyfect.graph.Graph.neighbors` |
+| `successors` | ported | `pyfect.graph.Graph.successors` |
+| `predecessors` | ported | `pyfect.graph.Graph.predecessors` |
+| `neighborsDirected` | ported | `pyfect.graph.Graph.neighbors_directed` |
+| `toGraphViz` | ported | `pyfect.graph.Graph.to_graph_viz` |
+| `toMermaid` | ported | `pyfect.graph.Graph.to_mermaid` |
+| `findCycle` | ported | `pyfect.graph.Graph.find_cycle` |
+| `isAcyclic` | ported | `pyfect.graph.Graph.is_acyclic` |
+| `isBipartite` | ported | `pyfect.graph.Graph.is_bipartite` |
+| `maximumBipartiteMatching` | ported | `pyfect.graph.Graph.maximum_bipartite_matching` |
+| `unweightedDistances` | ported | `pyfect.graph.Graph.unweighted_distances` |
+| `hasPath` | ported | `pyfect.graph.Graph.has_path` |
+| `connectedComponents` | ported | `pyfect.graph.Graph.connected_components` |
+| `bridges` | ported | `pyfect.graph.Graph.bridges` |
+| `articulationPoints` | ported | `pyfect.graph.Graph.articulation_points` |
+| `biconnectedComponents` | ported | `pyfect.graph.Graph.biconnected_components` |
+| `maximumFlow` | ported | `pyfect.graph.Graph.maximum_flow` |
+| `minimumCut` | ported | `pyfect.graph.Graph.minimum_cut` |
+| `weaklyConnectedComponents` | ported | `pyfect.graph.Graph.weakly_connected_components` |
+| `stronglyConnectedComponents` | ported | `pyfect.graph.Graph.strongly_connected_components` |
+| `isConnected` | ported | `pyfect.graph.Graph.is_connected` |
+| `isWeaklyConnected` | ported | `pyfect.graph.Graph.is_weakly_connected` |
+| `isStronglyConnected` | ported | `pyfect.graph.Graph.is_strongly_connected` |
+| `isTree` | ported | `pyfect.graph.Graph.is_tree` |
+| `minimumSpanningForest` | ported | `pyfect.graph.Graph.minimum_spanning_forest` |
+| `transitiveReduction` | ported | `pyfect.graph.Graph.transitive_reduction` |
+| `dijkstra` | ported | `pyfect.graph.Graph.dijkstra` |
+| `floydWarshall` | ported | `pyfect.graph.Graph.floyd_warshall` |
+| `astar` | ported | `pyfect.graph.Graph.astar` |
+| `bellmanFord` | ported | `pyfect.graph.Graph.bellman_ford` |
+| `simplePaths` | ported | `pyfect.graph.Graph.simple_paths` |
+| `allShortestPaths` | ported | `pyfect.graph.Graph.all_shortest_paths` |
+| `Walker` | ported | `pyfect.graph.Walker` |
+| `indices` | ported | `pyfect.graph.Walker.indices` |
+| `values` | ported | `pyfect.graph.Walker.values` |
+| `entries` | ported | `pyfect.graph.Walker.entries` |
+| `dfs` | ported | `pyfect.graph.Graph.dfs` |
+| `bfs` | ported | `pyfect.graph.Graph.bfs` |
+| `topo` | ported | `pyfect.graph.Graph.topo` |
+| `dfsPostOrder` | ported | `pyfect.graph.Graph.dfs_post_order` |
+| `nodes` | ported | `pyfect.graph.Graph.nodes` |
+| `edges` | ported | `pyfect.graph.Graph.edges` |
+| `externals` | ported | `pyfect.graph.Graph.externals` |
 
 ## HashRing
 

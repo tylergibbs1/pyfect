@@ -65,6 +65,7 @@ from pyfect.schema.getter import (
 URL: Bottom[Url] = instance_of(
     Url,
     expected="URL",
+    representation={"id": "effect/schema/URL", "payload": None},
     to_codec_arbitrary=_arb.url,
     to_codec_json=string_codec(T.url_from_string),
     **URL_INSTANCES,
@@ -80,7 +81,10 @@ def _bytes_codec(_: tuple[ast.AST, ...]) -> ast.Link:
 
 
 Bytes: Bottom[bytes] = instance_of(
-    bytes, to_codec_json=_bytes_codec, to_codec_arbitrary=_arb.bytes_
+    bytes,
+    representation={"id": "effect/schema/Uint8Array", "payload": None},
+    to_codec_json=_bytes_codec,
+    to_codec_arbitrary=_arb.bytes_,
 )
 """``bytes`` (Effect's ``Uint8Array``)."""
 

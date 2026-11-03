@@ -214,7 +214,10 @@ class CandidateIndex:
                 keys[key] = None
         self._sentinel_keys = tuple(keys)
 
-    def __call__(self, input: object) -> list[int]:
+    def __call__(self, input: object, constructing: bool = False) -> list[int]:
+        """The candidates for ``input``; under a constructor (Effect's
+        constructor mode) a missing sentinel key selects every member that
+        has it, as a constructor default may fill it in."""
         members = self._members
         if self._only_literals:
             return [
@@ -225,7 +228,7 @@ class CandidateIndex:
         if self._sentinel_keys:
             observed = _observed(input, self._sentinel_keys)
             if observed is not None:
-                return self._by_sentinels(*observed)
+                return self._by_sentinels(*observed, constructing)
         return self._by_kind(input)
 
     def _by_kind(self, input: object) -> list[int]:
@@ -240,10 +243,13 @@ class CandidateIndex:
             i for i, m in enumerate(self._members) if not m.never and not m.sentinels and takes(m)
         ]
 
-    def _by_sentinels(self, observed: dict[Hashable, object], kind: frozenset[str]) -> list[int]:
+    def _by_sentinels(
+        self, observed: dict[Hashable, object], kind: frozenset[str], constructing: bool
+    ) -> list[int]:
         """Discriminated members whose sentinels the input does not
-        contradict and that one of its sentinel values selects, plus the
-        other members taking the input's kind. A missing key is neutral."""
+        contradict and that one of its sentinel values selects (or, when
+        ``constructing``, that has a key the input lacks), plus the other
+        members taking the input's kind. A missing key is neutral."""
         selected: list[int] = []
         for i, m in enumerate(self._members):
             if m.never:
@@ -257,6 +263,7 @@ class CandidateIndex:
             for key, literal in m.sentinels:
                 value = observed.get(key, _ABSENT)
                 if value is _ABSENT:
+                    matched = matched or constructing
                     continue
                 if same_literal(literal, value):
                     matched = True

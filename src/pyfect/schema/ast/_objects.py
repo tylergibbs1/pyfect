@@ -22,7 +22,14 @@ from typing import cast, final
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast._base import AST, at_key, invalid_type, issue_of, join_checks
+from pyfect.schema.ast._base import (
+    AST,
+    at_key,
+    construct_missing,
+    invalid_type,
+    issue_of,
+    join_checks,
+)
 from pyfect.schema.ast._result import MISSING, ParseResult
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, run_steps
 from pyfect.schema.issue import Composite, Issue, MissingKey, Pointer, UnexpectedKey, reported
@@ -42,12 +49,15 @@ class PropertySignature:
     out when flipping (optional or defaulted here, or an optional source of
     the node's transformation)."""
 
+    def optional_when_encoded(self) -> bool:
+        """Whether the key may be missing from the encoded input."""
+        if self.encoded_optional is not None:
+            return self.encoded_optional
+        return self.optional or self.default is not None or self.type.flip().optional_key
+
     def flipped(self) -> PropertySignature:
         type = self.type.flip()
-        other = self.encoded_optional
-        if other is None:
-            other = self.optional or self.default is not None or type.optional_key
-        return PropertySignature(self.name, type, other, None, self.optional)
+        return PropertySignature(self.name, type, self.optional_when_encoded(), None, self.optional)
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +239,9 @@ class _Run(Steps["_Run"]):
 
     def _missing(self, prop: PropertySignature) -> ParseResult | None:
         """The parse of a missing key, or ``None`` once it is settled."""
+        constructed = construct_missing(prop.type, self.options)
+        if constructed is not None:
+            return constructed
         if prop.default is not None:
             self.out[prop.name] = prop.default()
             return None

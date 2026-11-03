@@ -6,11 +6,9 @@ Each test's docstring is the Effect test title. ``Headers`` is a read-only
 
 Omitted, with the reason:
 
-- ``serializer annotation``, ``Schema.DateTimeUtcFromHttpDate decodes any
-  format and encodes IMF-fixdate``, ``Schema.RetryAfterFromString round
-  trips and rejects invalid values``, ``Schema.RetryAfter accepts only
-  finite, non-negative durations``: the HTTP schemas (``Schema.Headers``,
-  ``Schema.RetryAfter``...) are not ported.
+- ``serializer annotation``: it reads through ``Schema.toIso``, which is
+  not ported (docs/PARITY.md section 4). The HTTP schemas are
+  ``pyfect.http.schema``.
 - ``does not expose inspectable prototype methods during for..in
   iteration``, ``works with for..in based headers polyfills``: JavaScript
   prototype enumeration; iterating a ``Headers`` gives its names (checked
@@ -29,7 +27,10 @@ from datetime import UTC, datetime
 
 import pytest
 
+from pyfect import schema as S
+from pyfect.duration import Seconds
 from pyfect.http import headers as h
+from pyfect.http import schema as HS
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok, Result
 
@@ -190,3 +191,29 @@ def test_retry_after_delay() -> None:
     date = _ok(h.parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT"))
     assert h.retry_after_delay(date, HTTP_DATE_MILLIS - 30_000) == 30
     assert h.retry_after_delay(date, HTTP_DATE_MILLIS + 30_000) == 0
+
+
+def test_schema_date_time_utc_from_http_date_decodes_any_format_and_encodes_imf_fixdate() -> None:
+    """Schema.DateTimeUtcFromHttpDate decodes any format and encodes IMF-fixdate"""
+    decoded = S.decode_sync(HS.DateTimeUtcFromHttpDate)("Sun Nov  6 08:49:37 1994")
+    assert decoded.timestamp() * 1000 == HTTP_DATE_MILLIS
+    assert S.encode_sync(HS.DateTimeUtcFromHttpDate)(decoded) == "Sun, 06 Nov 1994 08:49:37 GMT"
+    with pytest.raises(S.SchemaError):
+        S.decode_sync(HS.DateTimeUtcFromHttpDate)("tomorrow")
+
+
+def test_schema_retry_after_from_string_round_trips_and_rejects_invalid_values() -> None:
+    """Schema.RetryAfterFromString round trips and rejects invalid values"""
+    decoded = S.decode_sync(HS.RetryAfterFromString)("120")
+    assert decoded.tag == "Duration"
+    assert S.encode_sync(HS.RetryAfterFromString)(decoded) == "120"
+    with pytest.raises(S.SchemaError):
+        S.decode_sync(HS.RetryAfterFromString)("-5")
+
+
+def test_schema_retry_after_accepts_only_finite_non_negative_durations() -> None:
+    """Schema.RetryAfter accepts only finite, non-negative durations"""
+    is_retry_after = S.is_(HS.RetryAfter)
+    assert is_retry_after(h.retry_after_duration(5))
+    assert not is_retry_after(h.RetryAfterDuration(Seconds(-5.0)))
+    assert not is_retry_after(h.RetryAfterDuration(Seconds(math.inf)))

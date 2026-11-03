@@ -39,7 +39,10 @@ from pyfect.schema._value_codecs import (
 )
 
 Duration: Bottom[timedelta] = instance_of(
-    timedelta, expected="Duration", to_codec_json=duration_codec
+    timedelta,
+    expected="Duration",
+    representation={"id": "effect/schema/Duration", "payload": None},
+    to_codec_json=duration_codec,
 )
 """A ``timedelta`` (Effect's ``Duration``)."""
 
@@ -55,6 +58,7 @@ def _is_zoned(value: object) -> TypeIs[datetime]:
 DateTimeUtc: Bottom[datetime] = declare(
     _is_utc,
     expected="DateTime.Utc",
+    representation={"id": "effect/schema/DateTimeUtc", "payload": None},
     to_codec_arbitrary=_arb.date_time_utc,
     to_codec_json=string_codec(T.date_time_utc_from_string),
     to_formatter=DATE_TIME_UTC_FORMATTER,
@@ -63,6 +67,7 @@ DateTimeUtc: Bottom[datetime] = declare(
 DateTimeZoned: Bottom[datetime] = declare(
     _is_zoned,
     expected="DateTime.Zoned",
+    representation={"id": "effect/schema/DateTimeZoned", "payload": None},
     to_codec_arbitrary=_arb.date_time_zoned,
     to_codec_json=string_codec(T.date_time_zoned_from_string),
     to_formatter=DATE_TIME_ZONED_FORMATTER,
@@ -72,6 +77,7 @@ rejected."""
 TimeZoneNamed: Bottom[ZoneInfo] = instance_of(
     ZoneInfo,
     expected="DateTime.TimeZone.Named",
+    representation={"id": "effect/schema/TimeZoneNamed", "payload": None},
     to_codec_arbitrary=_arb.time_zone_named,
     to_codec_json=string_codec(T.time_zone_named_from_string),
     to_formatter=ZONE_FORMATTER,
@@ -80,6 +86,7 @@ TimeZoneNamed: Bottom[ZoneInfo] = instance_of(
 TimeZoneOffset: Bottom[timezone] = instance_of(
     timezone,
     expected="DateTime.TimeZone.Offset",
+    representation={"id": "effect/schema/TimeZoneOffset", "payload": None},
     to_codec_arbitrary=_arb.time_zone_offset,
     to_codec_json=time_zone_offset_codec,
     to_formatter=ZONE_FORMATTER,
@@ -94,6 +101,7 @@ def _is_zone(value: object) -> TypeIs[tzinfo]:
 TimeZone: Bottom[tzinfo] = declare(
     _is_zone,
     expected="DateTime.TimeZone",
+    representation={"id": "effect/schema/TimeZone", "payload": None},
     to_codec_arbitrary=_arb.time_zone,
     to_codec_json=string_codec(T.time_zone_from_string),
     to_formatter=ZONE_FORMATTER,
@@ -102,6 +110,7 @@ TimeZone: Bottom[tzinfo] = declare(
 ByteSize: Bottom[_ByteSize] = declare(
     is_byte_size,
     expected="ByteSize",
+    representation={"id": "effect/schema/ByteSize", "payload": None},
     to_codec_json=byte_size_codec,
     to_codec_string_tree=byte_size_string_tree_codec,
 )

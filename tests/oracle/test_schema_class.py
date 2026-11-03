@@ -6,7 +6,8 @@ title, prefixed by its ``describe`` block. ``TestSchema.Asserts`` is
 Python mappings: ``Schema.Class<A>("A")({...})`` is ``class A(S.Class)``
 with annotated fields; ``extend`` is subclassing; ``new A({...})`` is the
 keyword constructor ``A(a=...)``, which validates; a struct's checks are
-``@S.class_check`` methods; ``withConstructorDefault`` is a field default;
+``@S.class_check`` methods; ``withConstructorDefault`` is a field default or
+``S.with_constructor_default`` on the field's schema;
 ``mutableKey`` is ``frozen=False`` on the class line. ``A.make`` takes an
 instance (the constructor builds one), so Effect's ``make`` from plain
 props is the constructor here.
@@ -40,8 +41,8 @@ Omitted:
   constructs nested Class instances with and without Union", "Class / make
   selects the first TaggedClass Union member when the tag is defaulted".
 - "Class / make applies constructor defaults only at a field occurrence",
-  "Class / Struct with nested Class": ``withConstructorDefault`` on a
-  schema; a default belongs to a class field.
+  "Class / Struct with nested Class": ported in
+  ``test_schema_constructor_default.py``.
 - "Class / should be compatible with `immer` / ...": no immer.
 - "TaggedError / name matches tag", "... matches identifier", "...
   matches identifier after extend": a Python exception has no ``name``;

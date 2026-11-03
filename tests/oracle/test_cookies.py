@@ -6,9 +6,9 @@ cookie operations are ``Cookies`` methods.
 
 Omitted, with the reason:
 
-- ``serializerIso annotation``, ``toCodecJson``, ``RecordFromCookies
-  converts cookies to decoded string values``: ``Schema.Cookies`` and
-  ``Schema.RecordFromCookies`` are not ported.
+- ``serializerIso annotation``: it reads through ``Schema.toIso``, which
+  is not ported (docs/PARITY.md section 4). The cookie schemas are
+  ``pyfect.http.schema``.
 - ``identifies cookies errors``: ``isinstance(e, CookiesError)`` is the
   guard; a plain object with a ``_tag`` cannot pass for one.
 """
@@ -17,7 +17,9 @@ from datetime import UTC, datetime
 
 import pytest
 
+from pyfect import schema as S
 from pyfect.http import cookies as c
+from pyfect.http import schema as HS
 from pyfect.result import Err, Ok
 
 
@@ -104,3 +106,28 @@ def test_get_and_get_value() -> None:
     assert cookies.get("missing") is None
     assert cookies.get_value("missing") is None
     assert c.EMPTY.get("constructor") is None
+
+
+def test_schema_cookies_to_codec_json() -> None:
+    """Schema.Cookies / toCodecJson"""
+    cookies = c.from_set_cookie(
+        [
+            "sessionId=abc123; Path=/; HttpOnly; Secure",
+            "theme=dark; Path=/; Max-Age=3600",
+            "language=en; Domain=.example.com; SameSite=Lax",
+        ]
+    )
+    encoded = S.encode_sync(S.to_codec_json(S.to_type(HS.Cookies)))(cookies)
+    assert encoded == (
+        "sessionId=abc123; Path=/; HttpOnly; Secure",
+        "theme=dark; Max-Age=3600; Path=/",
+        "language=en; Domain=example.com; SameSite=Lax",
+    )
+
+
+def test_record_from_cookies_converts_cookies_to_decoded_string_values() -> None:
+    """RecordFromCookies converts cookies to decoded string values"""
+    cookies = c.from_set_cookie(["session=abc", "theme=dark"])
+    assert S.decode_sync(HS.RecordFromCookies)(cookies) == {"session": "abc", "theme": "dark"}
+    encoded = S.encode_sync(HS.RecordFromCookies)({"session": "abc", "theme": "dark"})
+    assert encoded.to_set_cookie_headers() == ["session=abc", "theme=dark"]

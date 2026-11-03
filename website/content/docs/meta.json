@@ -15,6 +15,7 @@
     "config",
     "schema",
     "transactions",
+    "graph",
     "platform",
     "sql",
     "cli",

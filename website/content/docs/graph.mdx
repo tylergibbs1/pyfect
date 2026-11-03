@@ -1,0 +1,76 @@
+---
+title: Graphs
+description: "Directed and undirected graphs with stable indexes: traversals, shortest paths, components, flows and GraphViz or Mermaid output."
+---
+
+`pyfect.graph` holds nodes and edges with data of any type, as Effect's `Graph` module
+does. A graph is immutable. You build one inside a callback, change it with `mutate`,
+and get a new graph back each time. Nodes and edges are numbered in the order they are
+added, an index is never reused, and every algorithm follows that order, so results are
+the same on every run.
+
+## Building a graph
+
+`graph.directed(build)` and `graph.undirected(build)` call `build` with a
+`MutableGraph`, then freeze it. `add_node` and `add_edge` return the new index.
+`mutate(f)` runs `f` on a private copy and returns the finished graph; `begin_mutation`
+and `end_mutation` do the same in two steps. Two immutable graphs are `==` when they
+hold the same data at the same indexes.
+
+<CodeOutput>
+
+<include meta='title="build.py"'>../../snippets/graph/build.py</include>
+
+<include lang="text">../../snippets/graph/build.out</include>
+
+</CodeOutput>
+
+Some methods only make sense for one kind of graph: `degree`, `is_bipartite` and
+`bridges` need an undirected graph, `topo`, `successors` and `maximum_flow` a directed
+one. Pyright rejects them on the wrong kind, and at runtime they raise `GraphError`.
+
+## Walking a graph
+
+`dfs`, `bfs`, `dfs_post_order` and `topo` return a `Walker`. Iterate it for
+`(index, data)` pairs, or call `indices()`, `values()` or `visit(f)`. `start` picks the
+first nodes, `direction` can follow edges backwards (`"incoming"`) or ignore their
+direction (`"undirected"`), and `radius` stops at that many edges. A walker is lazy and
+starts over each time you iterate it. On a mutable graph, an iteration already running
+keeps the graph as it was when it started.
+
+<CodeOutput>
+
+<include meta='title="walk.py"'>../../snippets/graph/walk.py</include>
+
+<include lang="text">../../snippets/graph/walk.out</include>
+
+</CodeOutput>
+
+`to_graph_viz()` writes the graph as GraphViz DOT and `to_mermaid()` as a Mermaid
+flowchart. Both take label functions; by default a label is the data as JavaScript
+would print it, so output matches Effect's.
+
+## Paths, components and flows
+
+`dijkstra`, `astar` and `bellman_ford` find one cheapest path, or return `None` when
+the target can't be reached. `cost` turns an edge's data into a weight; `math.inf`
+means the edge can't be used. `floyd_warshall` finds all pairs at once, and
+`simple_paths` and `all_shortest_paths` list paths lazily, with an optional `limit`.
+Negative weights are only accepted by Bellman-Ford and Floyd-Warshall, which raise
+`GraphError` on a negative cycle.
+
+<CodeOutput>
+
+<include meta='title="paths.py"'>../../snippets/graph/paths.py</include>
+
+<include lang="text">../../snippets/graph/paths.out</include>
+
+</CodeOutput>
+
+The graph has more analyses: `connected_components`,
+`strongly_connected_components`, `bridges` and `articulation_points`,
+`maximum_bipartite_matching`, `minimum_cut`, `minimum_spanning_forest` and
+`transitive_reduction`. `compose`, `intersection`, `difference`, `complement`,
+`neighborhood` and `induced_subgraph` build new graphs from existing ones.
+`to_snapshot` and `graph.from_snapshot` turn a graph into plain records and back, with
+its indexes kept.
