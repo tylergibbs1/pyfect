@@ -241,6 +241,57 @@ def test_http_api_mutation_reactivity_keys_refresh_queries_with_those_keys():
     assert (yield from atom_registry.get_result(registry, query)) == "get-2"
 
 
+class _ItemId(TypedDict):
+    id: int
+
+
+_RENAME = ep.patch(
+    "rename", "/items/:id", params=S.Struct(_ItemId, id=S.Int), payload=S.String, success=S.String
+)
+_LIST = ep.get("list", "/items", success=S.String)
+_ITEMS: Any = HttpApiGroup.make("items").add(_RENAME, _LIST)
+
+
+@testing.effect
+def test_http_api_mutate_sends_its_parts_and_waits_for_the_result():
+    """``mutate(group, endpoint)(**parts)`` writes the parts to the mutation
+    atom and waits for its result (DOGFOOD pulse #1); its reactivity keys
+    refresh the queries with those keys."""
+    sent: list[tuple[str, str, bytes]] = []
+    lists = [0]
+
+    def send(request: HttpClientRequest, *_: Any) -> fx.Effect[HttpClientResponse, Any]:
+        if request.method == "GET":
+            lists[0] += 1
+            return _json(request, f"list-{lists[0]}")
+        body = request.body
+        sent.append((request.method, request.url, getattr(body, "body", b"")))
+        # answered later, so the call waits for the result
+        return fx.sleep(0.01).and_then(_json(request, "renamed"))
+
+    client = atom_http_api.make(
+        _tag("Items"),
+        api=HttpApi.make("items").add(_ITEMS),
+        base_url="http://test",
+        http_client=layer.succeed(HttpClient, make_http_client(send)),
+    )
+    listing = client.query(_ITEMS, _LIST, reactivity_keys=["items"])
+    registry = atom_registry.make()
+    yield from fx.add_finalizer(lambda _: fx.sync(registry.dispose))
+    yield from atom_registry.mount(registry, listing)
+    assert (yield from atom_registry.get_result(registry, listing)) == "list-1"
+
+    rename = client.mutate(_ITEMS, _RENAME)
+    result = yield from rename(params={"id": 7}, payload="new", reactivity_keys=["items"]).pipe(
+        fx.provide_service(atom_registry.AtomRegistry, registry)
+    )
+    assert result == "renamed"
+    assert sent == [("PATCH", "http://test/items/7", b'"new"')]
+    yield from fx.yield_now()
+    assert (yield from atom_registry.get_result(registry, listing)) == "list-2"
+    assert registry.get(client.mutation(_ITEMS, _RENAME)) == async_result.success("renamed")
+
+
 def test_http_api_only_decoded_only_atoms_are_serializable() -> None:
     client = _api_client(lambda request: _json(request, "x"))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert atom.is_serializable(client.mutation(_GROUP, _CREATE))
@@ -365,3 +416,109 @@ def test_an_initial_result_with_waiting_survives_the_wire(timers: FakeTimers) ->
     finally:
         server.dispose()
         client.dispose()
+
+
+# --- hydrated effect atoms reload (DOGFOOD pulse #2) -------------------------
+#
+# A hydrated effect atom without skip_initial_run runs its effect once built.
+# What it shows, printed by Effect 4.0.6 under Node for each way the reload
+# ends: the build keeps the hydrated value, so a reload that settles during the
+# build is dropped and one that settles later replaces it, without the hydrated
+# value ever reading as waiting; a refresh then shows its results as usual.
+
+_SETTLES = {
+    "succeeds at once": fx.succeed(2),
+    "succeeds later": fx.sleep(0.05).and_then(fx.succeed(2)),
+    "fails at once": fx.fail("down"),
+    "fails later": fx.sleep(0.05).and_then(fx.fail("down")),
+}
+
+
+def _shown(result: AsyncResult[int, str]) -> tuple[object, ...]:
+    match result:
+        case Success(value=value, waiting=waiting, timestamp=timestamp):
+            return ("Success", value, waiting, "hydrated" if timestamp == 1000 else "new")
+        case Failure(previous_success=previous, waiting=waiting):
+            return ("Failure", waiting, None if previous is None else previous.value.value)
+        case _:
+            return ("Initial", result.waiting)
+
+
+@pytest.mark.parametrize(
+    ("reload", "later", "refreshed", "refreshed_later"),
+    [
+        (
+            "succeeds at once",
+            ("Success", 1, False, "hydrated"),
+            ("Success", 2, False, "new"),
+            ("Success", 2, False, "new"),
+        ),
+        (
+            "succeeds later",
+            ("Success", 2, False, "new"),
+            ("Success", 2, True, "new"),
+            ("Success", 2, False, "new"),
+        ),
+        (
+            "fails at once",
+            ("Success", 1, False, "hydrated"),
+            ("Failure", False, 1),
+            ("Failure", False, 1),
+        ),
+        (
+            "fails later",
+            ("Failure", False, 1),
+            ("Failure", True, 1),
+            ("Failure", False, 1),
+        ),
+    ],
+)
+def test_a_hydrated_effect_atom_reloads_once_built(
+    timers: FakeTimers,
+    reload: str,
+    later: tuple[object, ...],
+    refreshed: tuple[object, ...],
+    refreshed_later: tuple[object, ...],
+) -> None:
+    schema = async_result.Schema(success=S.Int, error=S.String)
+    runs = [0]
+
+    def run() -> None:
+        runs[0] += 1
+
+    count = atom.make(fx.sync(run).and_then(_SETTLES[reload])).serializable(key="n", schema=schema)
+    saved = [
+        hydration.DehydratedAtom(
+            key="n",
+            value={"_tag": "Success", "value": 1, "waiting": False, "timestamp": 1000},
+            dehydrated_at=1000,
+        )
+    ]
+    registry = timers.registry()
+    try:
+        hydration.hydrate(registry, saved)
+        assert _shown(registry.get(count)) == ("Success", 1, False, "hydrated")
+        registry.mount(count)
+        assert runs[0] == 1
+        assert _shown(registry.get(count)) == ("Success", 1, False, "hydrated")
+        timers.advance(300)
+        assert _shown(registry.get(count)) == later
+        registry.refresh(count)
+        assert runs[0] == 2
+        assert _shown(registry.get(count)) == refreshed
+        timers.advance(300)
+        assert _shown(registry.get(count)) == refreshed_later
+    finally:
+        registry.dispose()
+
+
+def test_a_subscripted_state_is_the_same_writable_atom(timers: FakeTimers) -> None:
+    """``atom.state[T](value)`` only states the type (DOGFOOD pulse #3)."""
+    log = atom.state[tuple[str, ...]](()).keep_alive()
+    registry = timers.registry()
+    try:
+        assert registry.get(log) == ()
+        registry.update(log, lambda lines: (*lines, "started"))
+        assert registry.get(log) == ("started",)
+    finally:
+        registry.dispose()

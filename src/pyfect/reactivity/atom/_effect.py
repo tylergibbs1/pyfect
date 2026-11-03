@@ -55,9 +55,13 @@ def _set_self[A](ctx: WriteContext[A], value: A) -> None:
     ctx.set_self(value)
 
 
-def state[A](initial: A) -> Writable[A, A]:
-    """A writable atom holding ``initial`` until it is set."""
-    return writable(lambda _get: initial, _set_self)
+class state[A]:
+    """A writable atom holding ``initial`` until it is set. ``state(())``
+    infers the type from the value; ``state[tuple[str, ...]](())`` states
+    it, as Effect's ``Atom.make<A>(value)``."""
+
+    def __new__(cls, initial: A, /) -> Writable[A, A]:
+        return writable(lambda _get: initial, _set_self)
 
 
 def _close_scope(scope: CloseableScope) -> Effect[None]:

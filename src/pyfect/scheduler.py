@@ -146,6 +146,9 @@ class SyncScheduler(Tracking):
         """Whether this thread is the one running the scheduler's tasks."""
         return self._driver == threading.get_ident()
 
+    def driver(self) -> int | None:
+        return self._driver
+
     def schedule(self, task: Task) -> None:
         task = self._tracked(task)
         with self._cond:
@@ -244,6 +247,9 @@ class AsyncioScheduler(Tracking):
     def runs_here(self) -> bool:
         """Whether this thread is the one running the scheduler's tasks."""
         return threading.get_ident() == self._thread and self._loop.is_running()
+
+    def driver(self) -> int | None:
+        return self._thread if self._loop.is_running() else None
 
     @classmethod
     def current(cls) -> AsyncioScheduler:

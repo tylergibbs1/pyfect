@@ -34,6 +34,7 @@ from pyfect.reactivity.atom_registry._registry import (
     AtomRegistryService,
     InitialValue,
     RegistryDisposedError,
+    RegistryThreadError,
 )
 from pyfect.scheduler import Scheduler
 from pyfect.scope import CloseableScope, Scope, acquire_release
@@ -203,6 +204,7 @@ __all__ = [
     "Node",
     "NodeState",
     "RegistryDisposedError",
+    "RegistryThreadError",
     "batch",
     "consume_skip_initial_run",
     "get_result",
