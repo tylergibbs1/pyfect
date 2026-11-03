@@ -54,7 +54,7 @@ def json_type(value: object) -> str:
 
 
 _NUMBER: JsonSchema = {
-    "anyOf": [{"type": "number"}, {"type": "string", "enum": ["Infinity", "-Infinity", "NaN"]}]
+    "anyOf": [{"type": "number"}, {"type": "string", "enum": ["NaN", "Infinity", "-Infinity"]}]
 }
 _KEYWORDS: dict[type[ast.AST], JsonSchema] = {
     ast.Any: {},
@@ -183,10 +183,12 @@ class Compiler:
             return {"$ref": definition_reference(candidate.reference)}
         return self.compile(candidate.ast, dependencies, candidate.content)
 
-    def definition_of(self, candidate: Candidate) -> None:
-        """Compile ``candidate``'s definition (if it has one) now."""
-        if candidate.reference is not None:
-            self._definition(candidate, candidate.reference)
+    def definition_of(self, candidate: Candidate) -> _Definition | None:
+        """Compile ``candidate``'s definition (if it has one) now; a
+        compiled one is reused."""
+        if candidate.reference is None:
+            return None
+        return self._definition(candidate, candidate.reference)
 
     def _definition(self, candidate: Candidate, key: str) -> _Definition:
         definition = self._definitions.get(key)
@@ -290,7 +292,7 @@ class Compiler:
     def _arrays(self, node: ast.Arrays, dependencies: list[Exactness]) -> JsonSchema:
         out: JsonSchema = {"type": "array"}
         elements = node.elements
-        min_items = len(elements) - sum(1 for e in elements if e.optional)
+        min_items = len(elements) - sum(1 for e in elements if e.optional_when_encoded())
         prefix = [self.member(e.type, e.type.key_annotations, dependencies) for e in elements]
         if prefix:
             out["prefixItems"] = prefix

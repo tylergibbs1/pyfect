@@ -71,9 +71,16 @@ def _iterates_checks(target: pyast.expr) -> bool:
 
 # Loops over checks that compare identities, where a group is one check.
 _BY_IDENTITY = frozenset({"schema/_assignable.py", "brand.py"})
-# ``compile`` hands each check to ``_check``, which recurses into groups.
+# Each hands every check to a function that recurses into groups
+# (``_check``; the representation modules' ``check`` / ``_encode_check``).
 _DELEGATING = frozenset(
-    {"schema/_jsonschema/_compile.py compile", "schema/_jsonschema/_compile.py _check"}
+    {
+        "schema/_jsonschema/_compile.py compile",
+        "schema/_jsonschema/_compile.py _check",
+        "schema/representation/_from.py append_checks",
+        "schema/representation/_json.py _encode_checks",
+        "schema/representation/_to.py on",
+    }
 )
 
 

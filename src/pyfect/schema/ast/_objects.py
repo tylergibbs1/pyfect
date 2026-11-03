@@ -42,12 +42,15 @@ class PropertySignature:
     out when flipping (optional or defaulted here, or an optional source of
     the node's transformation)."""
 
+    def optional_when_encoded(self) -> bool:
+        """Whether the key may be missing from the encoded input."""
+        if self.encoded_optional is not None:
+            return self.encoded_optional
+        return self.optional or self.default is not None or self.type.flip().optional_key
+
     def flipped(self) -> PropertySignature:
         type = self.type.flip()
-        other = self.encoded_optional
-        if other is None:
-            other = self.optional or self.default is not None or type.optional_key
-        return PropertySignature(self.name, type, other, None, self.optional)
+        return PropertySignature(self.name, type, self.optional_when_encoded(), None, self.optional)
 
 
 @dataclass(frozen=True, slots=True)

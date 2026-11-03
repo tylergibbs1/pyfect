@@ -26,8 +26,6 @@ Omitted:
   canonical encoding".
 - "Duration": ``timedelta`` cannot be infinite, so the ``Infinity`` /
   ``NegativeInfinity`` forms are left out (the finite forms are ported).
-- "Redacted(Option(String)) disallowJsonEncode": ``S.Redacted`` has no
-  ``disallow_json_encode`` option yet.
 - toCodecGoJson (and its toJsonSchemaDocument titles): a separate
   derivation, not ported yet.
 - toCodecIso / toCodecStringTree: separate derivations, not JSON.
@@ -500,6 +498,17 @@ def test_redacted_option_string():
     encoding = asserts.encoding()
     encoding.succeed(Redacted(None), {"_tag": "None"})
     encoding.succeed(Redacted(O.Some("a")), {"_tag": "Some", "value": "a"})
+    decoding = asserts.decoding()
+    decoding.succeed({"_tag": "None"}, Redacted(None))
+    decoding.succeed({"_tag": "Some", "value": "a"}, Redacted(O.Some("a")))
+
+
+def test_redacted_option_string_disallow_json_encode():
+    """schemas without encoding / Redacted / Redacted(Option(String)) disallowJsonEncode"""
+    asserts = _asserts(S.Redacted(S.Option(S.String), disallow_json_encode=True))
+    encoding = asserts.encoding()
+    encoding.fail(Redacted(None), "Cannot serialize Redacted")
+    encoding.fail(Redacted(O.Some("a")), "Cannot serialize Redacted")
     decoding = asserts.decoding()
     decoding.succeed({"_tag": "None"}, Redacted(None))
     decoding.succeed({"_tag": "Some", "value": "a"}, Redacted(O.Some("a")))

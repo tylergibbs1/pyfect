@@ -8005,3 +8005,92 @@ def check_test_crypto() -> None:
 
     assert_type(fx.testing.TestCrypto.make("seed"), fx.Effect[CryptoService, Never, Crypto])
     assert_type(fx.testing.TestCrypto.layer(1), fx.Layer[Crypto, Never, Crypto])
+
+
+def check_graph() -> None:
+    from pyfect import graph
+    from pyfect.graph import (
+        AllPairsResult,
+        Edge,
+        Graph,
+        MutableGraph,
+        PathResult,
+        Snapshot,
+        Walker,
+    )
+
+    def build(m: MutableGraph[str, int]) -> None:
+        a, b = m.add_node("A"), m.add_node("B")
+        m.add_edge(a, b, 1)
+
+    g = graph.directed(build)
+    assert_type(g, Graph[str, int, Literal["directed"]])
+    u = graph.undirected(lambda m: None)
+    assert_type(graph.directed(), Graph[Never, Never, Literal["directed"]])
+    assert_type(graph.make("undirected"), Graph[Never, Never, Literal["undirected"]])
+    assert_type(g.begin_mutation(), MutableGraph[str, int, Literal["directed"]])
+    assert_type(g.mutate(lambda m: None), Graph[str, int, Literal["directed"]])
+    assert_type(g.begin_mutation().end_mutation(), Graph[str, int, Literal["directed"]])
+    assert_type(g.get_node(0), fx.option.Option[str])
+    assert_type(g.get_edge(0), Edge[int] | None)
+    assert_type(g.find_node(lambda n: n == "A"), int | None)
+    assert_type(g.dijkstra(source=0, target=1, cost=float), PathResult[int] | None)
+    assert_type(g.floyd_warshall(float), AllPairsResult[int])
+    assert_type(g.bfs(start=[0]), Walker[int, str])
+    assert_type(g.edges(), Walker[int, Edge[int]])
+    assert_type(list(g.bfs(start=[0]).values()), list[str])
+    assert_type(g.topo(), Walker[int, str])
+    assert_type(g.to_snapshot(), Snapshot[str, int, Literal["directed"]])
+    assert_type(graph.from_snapshot(g.to_snapshot()), Graph[str, int, Literal["directed"]])
+    assert_type(g.transitive_reduction(), Graph[str, int, Literal["directed"]])
+
+    # Covariant: an immutable graph of ``str`` nodes is a graph of objects;
+    # a mutable one (``add_node`` takes ``N``) is not.
+    wide: Graph[object, object, graph.Kind] = g
+    narrow: MutableGraph[object, int] = g.begin_mutation()  # pyright: ignore[reportAssignmentType]
+
+    # Kind-specific methods only exist for their kind.
+    g.degree(0)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    u.topo()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    u.successors(0)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    g.is_bipartite()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    g.compose(u)  # pyright: ignore[reportArgumentType]
+    # A callback's result is ignored, as Effect's ``(mutable) => void``.
+    assert_type(g.mutate(lambda m: m.add_node("C")), Graph[str, int, Literal["directed"]])
+    g.mutate(lambda m: [m.add_node(1)])  # pyright: ignore[reportArgumentType]
+    del wide, narrow
+
+
+def schema_representation_types() -> None:
+    from typing import TypedDict as _TypedDict
+
+    from pyfect.schema import representation as R
+
+    document = R.to_representation(S.String)
+    assert_type(document, R.Document)
+    assert_type(R.to_representations((S.String, S.Number)), R.MultiDocument)
+    assert_type(R.to_json(document), R.Json)
+    assert_type(R.from_json({}), R.Document)
+    # Revived schemas know their node, not their types (Effect's ``Top``).
+    revived = R.from_representation(document, revivers=R.BUILTIN_REVIVERS)
+    assert_type(revived, R.AnySchema)
+    first, *_ = R.from_representations(R.to_multi_document(document), revivers=())
+    assert_type(first, R.AnySchema)
+
+    class Minimum(_TypedDict):
+        minimum: float
+
+    # A reviver's payload is typed by its payload schema.
+    reviver = R.make_reviver_filter(
+        "acme/min", S.Struct(Minimum), lambda input: S.is_greater_than(input.payload["minimum"])
+    )
+    assert_type(reviver, R.FilterReviver[Minimum])
+    R.make_reviver_filter(
+        "acme/min",
+        S.Struct(Minimum),
+        lambda input: S.is_greater_than(input.payload["maximum"]),  # pyright: ignore[reportGeneralTypeIssues, reportUnknownArgumentType]
+    )
+    # A filter reviver returns a filter, not a group.
+    R.make_reviver_filter("acme/min", S.Null, lambda _: S.make_filter_group(S.is_int()))  # pyright: ignore[reportArgumentType]
+    # Representations are frozen data.
+    R.String().checks = ()  # pyright: ignore[reportAttributeAccessIssue]

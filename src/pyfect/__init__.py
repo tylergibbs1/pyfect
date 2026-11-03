@@ -9,6 +9,7 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.fil
 ``fx.console``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.redacted``
 (``fx.Redacted``), ``fx.byte_size``, ``fx.brand``, ``fx.case`` (case
 conversion), ``fx.big_decimal``, ``fx.semver``, ``fx.semver_range``, ``fx.trie``,
+``fx.graph`` (directed and undirected graphs),
 ``fx.hash_map``, ``fx.hash_set``, ``fx.mutable_hash_map``, ``fx.mutable_hash_set``,
 ``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema``
 (JSON Schema dialects), ``fx.json_pointer``, ``fx.json_patch``, ``fx.schedule``,
@@ -275,6 +276,7 @@ _SUBMODULES = frozenset(
         "exit",
         "file_system",
         "filters",
+        "graph",
         "graphql",
         "hash_map",
         "hash_set",
@@ -350,6 +352,7 @@ if _typing.TYPE_CHECKING:
         exit,
         file_system,
         filters,
+        graph,
         graphql,
         hash_map,
         hash_set,
@@ -599,6 +602,7 @@ __all__ = [
     "from_optional",
     "from_result",
     "gen",
+    "graph",
     "graphql",
     "hash_map",
     "hash_set",

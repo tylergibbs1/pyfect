@@ -11,9 +11,9 @@ Coverage counts ported, renamed and §4 exports.
 | SchemaTransformation | 50 | 33 | 3 | 2 | 12 | 76% |
 | SchemaIssue | 21 | 12 | 0 | 0 | 9 | 57% |
 | SchemaParser | 33 | 22 | 0 | 4 | 7 | 78% |
-| SchemaRepresentation | 100 | 2 | 0 | 0 | 98 | 2% |
+| SchemaRepresentation | 100 | 85 | 3 | 9 | 3 | 97% |
 | JsonSchema | 14 | 7 | 7 | 0 | 0 | 100% |
-| **All** | 781 | | | | 227 | 70% |
+| **All** | 781 | | | | 132 | 83% |
 
 ## Schema
 
@@ -716,104 +716,104 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
-| `makeReviverDeclaration` | missing |  |
-| `makeReviverFilter` | missing |  |
-| `makeReviverFilterGroup` | missing |  |
-| `isTrimmedReviver` | missing |  |
-| `isPatternReviver` | missing |  |
-| `isStringFiniteReviver` | missing |  |
-| `isStringBigIntReviver` | missing |  |
-| `isStringSymbolReviver` | missing |  |
-| `isUUIDReviver` | missing |  |
-| `isGUIDReviver` | missing |  |
-| `isULIDReviver` | missing |  |
-| `isBase64Reviver` | missing |  |
-| `isBase64UrlReviver` | missing |  |
-| `isStartingWithReviver` | missing |  |
-| `isEndingWithReviver` | missing |  |
-| `isIncludingReviver` | missing |  |
-| `isUppercasedReviver` | missing |  |
-| `isLowercasedReviver` | missing |  |
-| `isCapitalizedReviver` | missing |  |
-| `isUncapitalizedReviver` | missing |  |
-| `isFiniteReviver` | missing |  |
-| `isGreaterThanReviver` | missing |  |
-| `isGreaterThanOrEqualToReviver` | missing |  |
-| `isLessThanReviver` | missing |  |
-| `isLessThanOrEqualToReviver` | missing |  |
-| `isBetweenReviver` | missing |  |
-| `isMultipleOfReviver` | missing |  |
-| `isIntReviver` | missing |  |
-| `isMinLengthReviver` | missing |  |
-| `isMaxLengthReviver` | missing |  |
-| `isBetweenLengthReviver` | missing |  |
-| `isMinCodePointsReviver` | missing |  |
-| `isMaxCodePointsReviver` | missing |  |
-| `isBetweenCodePointsReviver` | missing |  |
-| `isMinSizeReviver` | missing |  |
-| `isMaxSizeReviver` | missing |  |
-| `isBetweenSizeReviver` | missing |  |
-| `isMinPropertiesReviver` | missing |  |
-| `isMaxPropertiesReviver` | missing |  |
-| `isBetweenPropertiesReviver` | missing |  |
-| `isPropertyNamesReviver` | missing |  |
-| `isUniqueReviver` | missing |  |
-| `isUniqueKeyReviver` | missing |  |
-| `OptionReviver` | missing |  |
-| `ResultReviver` | missing |  |
-| `RedactedReviver` | missing |  |
-| `CauseReasonReviver` | missing |  |
-| `CauseReviver` | missing |  |
-| `ErrorInstanceReviver` | missing |  |
-| `ExitReviver` | missing |  |
-| `ReadonlyMapReviver` | missing |  |
-| `GraphReviver` | missing |  |
-| `HashMapReviver` | missing |  |
-| `ReadonlySetReviver` | missing |  |
-| `HashSetReviver` | missing |  |
-| `ChunkReviver` | missing |  |
-| `RegExpReviver` | missing |  |
-| `URLReviver` | missing |  |
-| `DateReviver` | missing |  |
-| `DurationReviver` | missing |  |
-| `ByteSizeReviver` | missing |  |
-| `BigDecimalReviver` | missing |  |
-| `SemVerReviver` | missing |  |
-| `SemVerRangeReviver` | missing |  |
-| `FileReviver` | missing |  |
-| `FormDataReviver` | missing |  |
-| `URLSearchParamsReviver` | missing |  |
-| `Uint8ArrayReviver` | missing |  |
-| `DateTimeUtcReviver` | missing |  |
-| `TimeZoneOffsetReviver` | missing |  |
-| `TimeZoneNamedReviver` | missing |  |
-| `TimeZoneReviver` | missing |  |
-| `DateTimeZonedReviver` | missing |  |
-| `isGreaterThanDateReviver` | missing |  |
-| `isGreaterThanOrEqualToDateReviver` | missing |  |
-| `isLessThanDateReviver` | missing |  |
-| `isLessThanOrEqualToDateReviver` | missing |  |
-| `isBetweenDateReviver` | missing |  |
-| `isGreaterThanBigIntReviver` | missing |  |
-| `isGreaterThanOrEqualToBigIntReviver` | missing |  |
-| `isLessThanBigIntReviver` | missing |  |
-| `isLessThanOrEqualToBigIntReviver` | missing |  |
-| `isBetweenBigIntReviver` | missing |  |
-| `JsonReviver` | missing |  |
-| `MutableJsonReviver` | missing |  |
-| `makeCode` | missing |  |
-| `toRepresentation` | missing |  |
-| `toRepresentations` | missing |  |
-| `toMultiDocument` | missing |  |
-| `toJsonSchemaDocument` | ported | `pyfect.schema.to_json_schema_document` |
-| `toJsonSchemaMultiDocument` | ported | `pyfect.schema.to_json_schema_multi_document` |
+| `makeReviverDeclaration` | ported | `pyfect.schema.representation.make_reviver_declaration` |
+| `makeReviverFilter` | ported | `pyfect.schema.representation.make_reviver_filter` |
+| `makeReviverFilterGroup` | ported | `pyfect.schema.representation.make_reviver_filter_group` |
+| `isTrimmedReviver` | ported | `pyfect.schema.representation.is_trimmed_reviver` |
+| `isPatternReviver` | ported | `pyfect.schema.representation.is_pattern_reviver` |
+| `isStringFiniteReviver` | ported | `pyfect.schema.representation.is_string_finite_reviver` |
+| `isStringBigIntReviver` | ported | `pyfect.schema.representation.is_string_big_int_reviver` |
+| `isStringSymbolReviver` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `isUUIDReviver` | ported | `pyfect.schema.representation.is_uuid_reviver` |
+| `isGUIDReviver` | ported | `pyfect.schema.representation.is_guid_reviver` |
+| `isULIDReviver` | ported | `pyfect.schema.representation.is_ulid_reviver` |
+| `isBase64Reviver` | ported | `pyfect.schema.representation.is_base64_reviver` |
+| `isBase64UrlReviver` | ported | `pyfect.schema.representation.is_base64_url_reviver` |
+| `isStartingWithReviver` | ported | `pyfect.schema.representation.is_starting_with_reviver` |
+| `isEndingWithReviver` | ported | `pyfect.schema.representation.is_ending_with_reviver` |
+| `isIncludingReviver` | ported | `pyfect.schema.representation.is_including_reviver` |
+| `isUppercasedReviver` | ported | `pyfect.schema.representation.is_uppercased_reviver` |
+| `isLowercasedReviver` | ported | `pyfect.schema.representation.is_lowercased_reviver` |
+| `isCapitalizedReviver` | ported | `pyfect.schema.representation.is_capitalized_reviver` |
+| `isUncapitalizedReviver` | ported | `pyfect.schema.representation.is_uncapitalized_reviver` |
+| `isFiniteReviver` | ported | `pyfect.schema.representation.is_finite_reviver` |
+| `isGreaterThanReviver` | ported | `pyfect.schema.representation.is_greater_than_reviver` |
+| `isGreaterThanOrEqualToReviver` | ported | `pyfect.schema.representation.is_greater_than_or_equal_to_reviver` |
+| `isLessThanReviver` | ported | `pyfect.schema.representation.is_less_than_reviver` |
+| `isLessThanOrEqualToReviver` | ported | `pyfect.schema.representation.is_less_than_or_equal_to_reviver` |
+| `isBetweenReviver` | ported | `pyfect.schema.representation.is_between_reviver` |
+| `isMultipleOfReviver` | ported | `pyfect.schema.representation.is_multiple_of_reviver` |
+| `isIntReviver` | ported | `pyfect.schema.representation.is_int_reviver` |
+| `isMinLengthReviver` | ported | `pyfect.schema.representation.is_min_length_reviver` |
+| `isMaxLengthReviver` | ported | `pyfect.schema.representation.is_max_length_reviver` |
+| `isBetweenLengthReviver` | ported | `pyfect.schema.representation.is_between_length_reviver` |
+| `isMinCodePointsReviver` | ported | `pyfect.schema.representation.is_min_code_points_reviver` |
+| `isMaxCodePointsReviver` | ported | `pyfect.schema.representation.is_max_code_points_reviver` |
+| `isBetweenCodePointsReviver` | ported | `pyfect.schema.representation.is_between_code_points_reviver` |
+| `isMinSizeReviver` | ported | `pyfect.schema.representation.is_min_size_reviver` |
+| `isMaxSizeReviver` | ported | `pyfect.schema.representation.is_max_size_reviver` |
+| `isBetweenSizeReviver` | ported | `pyfect.schema.representation.is_between_size_reviver` |
+| `isMinPropertiesReviver` | ported | `pyfect.schema.representation.is_min_properties_reviver` |
+| `isMaxPropertiesReviver` | ported | `pyfect.schema.representation.is_max_properties_reviver` |
+| `isBetweenPropertiesReviver` | ported | `pyfect.schema.representation.is_between_properties_reviver` |
+| `isPropertyNamesReviver` | ported | `pyfect.schema.representation.is_property_names_reviver` |
+| `isUniqueReviver` | ported | `pyfect.schema.representation.is_unique_reviver` |
+| `isUniqueKeyReviver` | ported | `pyfect.schema.representation.is_unique_key_reviver` |
+| `OptionReviver` | ported | `pyfect.schema.representation.option_reviver` |
+| `ResultReviver` | ported | `pyfect.schema.representation.result_reviver` |
+| `RedactedReviver` | ported | `pyfect.schema.representation.redacted_reviver` |
+| `CauseReasonReviver` | ported | `pyfect.schema.representation.cause_reason_reviver` |
+| `CauseReviver` | ported | `pyfect.schema.representation.cause_reviver` |
+| `ErrorInstanceReviver` | ported | `pyfect.schema.representation.error_instance_reviver` |
+| `ExitReviver` | ported | `pyfect.schema.representation.exit_reviver` |
+| `ReadonlyMapReviver` | renamed | `pyfect.schema.representation.map_reviver` |
+| `GraphReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |
+| `HashMapReviver` | §4 | `map_reviver` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
+| `ReadonlySetReviver` | renamed | `pyfect.schema.representation.frozen_set_reviver` |
+| `HashSetReviver` | §4 | `frozen_set_reviver` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
+| `ChunkReviver` | §4 | an array needs no reviver (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
+| `RegExpReviver` | ported | `pyfect.schema.representation.reg_exp_reviver` |
+| `URLReviver` | ported | `pyfect.schema.representation.url_reviver` |
+| `DateReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |
+| `DurationReviver` | ported | `pyfect.schema.representation.duration_reviver` |
+| `ByteSizeReviver` | ported | `pyfect.schema.representation.byte_size_reviver` |
+| `BigDecimalReviver` | ported | `pyfect.schema.representation.big_decimal_reviver` |
+| `SemVerReviver` | ported | `pyfect.schema.representation.sem_ver_reviver` |
+| `SemVerRangeReviver` | ported | `pyfect.schema.representation.sem_ver_range_reviver` |
+| `FileReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |
+| `FormDataReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |
+| `URLSearchParamsReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |
+| `Uint8ArrayReviver` | renamed | `pyfect.schema.representation.bytes_reviver` |
+| `DateTimeUtcReviver` | ported | `pyfect.schema.representation.date_time_utc_reviver` |
+| `TimeZoneOffsetReviver` | ported | `pyfect.schema.representation.time_zone_offset_reviver` |
+| `TimeZoneNamedReviver` | ported | `pyfect.schema.representation.time_zone_named_reviver` |
+| `TimeZoneReviver` | ported | `pyfect.schema.representation.time_zone_reviver` |
+| `DateTimeZonedReviver` | ported | `pyfect.schema.representation.date_time_zoned_reviver` |
+| `isGreaterThanDateReviver` | ported | `pyfect.schema.representation.is_greater_than_date_reviver` |
+| `isGreaterThanOrEqualToDateReviver` | ported | `pyfect.schema.representation.is_greater_than_or_equal_to_date_reviver` |
+| `isLessThanDateReviver` | ported | `pyfect.schema.representation.is_less_than_date_reviver` |
+| `isLessThanOrEqualToDateReviver` | ported | `pyfect.schema.representation.is_less_than_or_equal_to_date_reviver` |
+| `isBetweenDateReviver` | ported | `pyfect.schema.representation.is_between_date_reviver` |
+| `isGreaterThanBigIntReviver` | ported | `pyfect.schema.representation.is_greater_than_big_int_reviver` |
+| `isGreaterThanOrEqualToBigIntReviver` | ported | `pyfect.schema.representation.is_greater_than_or_equal_to_big_int_reviver` |
+| `isLessThanBigIntReviver` | ported | `pyfect.schema.representation.is_less_than_big_int_reviver` |
+| `isLessThanOrEqualToBigIntReviver` | ported | `pyfect.schema.representation.is_less_than_or_equal_to_big_int_reviver` |
+| `isBetweenBigIntReviver` | ported | `pyfect.schema.representation.is_between_big_int_reviver` |
+| `JsonReviver` | ported | `pyfect.schema.representation.json_reviver` |
+| `MutableJsonReviver` | ported | `pyfect.schema.representation.mutable_json_reviver` |
+| `makeCode` | ported | `pyfect.schema.representation.make_code` |
+| `toRepresentation` | ported | `pyfect.schema.representation.to_representation` |
+| `toRepresentations` | ported | `pyfect.schema.representation.to_representations` |
+| `toMultiDocument` | ported | `pyfect.schema.representation.to_multi_document` |
+| `toJsonSchemaDocument` | ported | `pyfect.schema.representation.to_json_schema_document` |
+| `toJsonSchemaMultiDocument` | ported | `pyfect.schema.representation.to_json_schema_multi_document` |
 | `toCodeDocument` | missing |  |
-| `toJson` | missing |  |
-| `toJsonMultiDocument` | missing |  |
-| `fromJson` | missing |  |
-| `fromJsonMultiDocument` | missing |  |
-| `fromRepresentation` | missing |  |
-| `fromRepresentations` | missing |  |
+| `toJson` | ported | `pyfect.schema.representation.to_json` |
+| `toJsonMultiDocument` | ported | `pyfect.schema.representation.to_json_multi_document` |
+| `fromJson` | ported | `pyfect.schema.representation.from_json` |
+| `fromJsonMultiDocument` | ported | `pyfect.schema.representation.from_json_multi_document` |
+| `fromRepresentation` | ported | `pyfect.schema.representation.from_representation` |
+| `fromRepresentations` | ported | `pyfect.schema.representation.from_representations` |
 | `fromJsonSchemaDocument` | missing |  |
 | `fromJsonSchemaMultiDocument` | missing |  |
 

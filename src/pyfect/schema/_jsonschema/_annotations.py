@@ -104,6 +104,11 @@ def collect(annotations: ast.Annotations | None, options: Options) -> JsonSchema
     include = options.include_annotation_key
     if include is not None:
         for key, value in annotations.items():
-            if key not in _EXCLUDED and include(key) and ast.is_json(value):
+            if (
+                key not in _EXCLUDED
+                and not key.startswith("~")
+                and include(key)
+                and ast.is_json(value)
+            ):
                 out[key] = to_json(value)
     return out

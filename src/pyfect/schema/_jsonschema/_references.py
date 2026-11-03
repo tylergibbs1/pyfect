@@ -51,8 +51,13 @@ class Content:
     schema: Candidate | None
 
 
-def _identifier(node: ast.AST) -> str | None:
-    identifier = (node.resolve() or {}).get("identifier")
+FALLBACK_KEY = "~identifier"
+"""The annotation naming the node a definition was reached from, kept on
+the definition (``to_representation``) so its name survives a round trip."""
+
+
+def _identifier(node: ast.AST, key: str = "identifier") -> str | None:
+    identifier = (node.resolve() or {}).get(key)
     return identifier if isinstance(identifier, str) else None
 
 
@@ -163,8 +168,10 @@ class References:
         node = node.owner()
         identifier = _identifier(node)
         fallback = None
-        if identifier is None and node is not input:
-            fallback = _identifier(input)
+        if identifier is None:
+            fallback = _identifier(input) if node is not input else None
+            if fallback is None:
+                fallback = _identifier(node, FALLBACK_KEY)
             if fallback is not None:
                 identifier = f"{fallback}Encoded"
         variants = self._candidates.setdefault(id(node), [])

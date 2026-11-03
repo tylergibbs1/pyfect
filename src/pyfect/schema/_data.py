@@ -64,9 +64,14 @@ def _node(
     *,
     to_equivalence: EquivalenceAnnotation,
     to_formatter: FormatterAnnotation,
+    payload: object = None,
 ) -> ast.Declaration:
     nodes = tuple(p.__codec__().ast for p in parameters)
     annotations = {
+        "representation": {
+            "id": f"effect/schema/{expected.replace('.', '')}",
+            "payload": payload,
+        },
         "expected": expected,
         "to_codec": to_codec,
         "to_equivalence": to_equivalence,
@@ -403,19 +408,31 @@ def _format_redacted(_: tuple[object, ...]) -> Callable[[object], str]:
 
 
 def Redacted[A, I, RD, RE](
-    value: Codec[A, I, RD, RE], /, *, label: str | None = None
+    value: Codec[A, I, RD, RE],
+    /,
+    *,
+    label: str | None = None,
+    disallow_json_encode: bool = False,
 ) -> RedactedSchema[A, I, RD, RE]:
     """A ``Redacted`` holding a ``value`` value (Effect's ``Redacted``). An
     invalid value is reported as ``Expected a valid value`` at
     ``["value"]``, never with its own message (that would show it); with a
     ``label``, a secret labelled otherwise is ``Expected "<label>"`` at
-    ``["label"]``. The parsed secret keeps the input's label."""
+    ``["label"]``. The parsed secret keeps the input's label. With
+    ``disallow_json_encode`` its JSON codec refuses to write the secret
+    (``Cannot serialize Redacted``)."""
+    payload: dict[str, object] = {}
+    if label is not None:
+        payload["label"] = label
+    if disallow_json_encode:
+        payload["disallowJsonEncode"] = True
     node = _node(
         (value,),
         _redacted_run(label),
         "Redacted",
-        lambda ps: redacted_link(ps[0], label),
+        lambda ps: redacted_link(ps[0], label, disallow_encode=disallow_json_encode),
         to_equivalence=_inst.redacted_equivalence,
         to_formatter=_format_redacted,
+        payload=payload or None,
     )
     return RedactedSchema(node, value, label)

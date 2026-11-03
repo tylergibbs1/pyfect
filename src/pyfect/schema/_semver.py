@@ -123,6 +123,7 @@ def _range_arbitrary(_: tuple[ast.AST, ...], __: ArbitraryConstraint) -> ast.Lin
 SemVer: Bottom[semver.SemVer] = declare(
     _is_version,
     expected="SemVer",
+    representation={"id": "effect/schema/SemVer", "payload": None},
     to_codec_json=_version_json,
     to_codec_arbitrary=_version_arbitrary,
 )
@@ -133,6 +134,7 @@ SemVerFromString: DecodeToSchema[semver.SemVer, str] = _VERSION_TEXT.pipe(
 SemVerRange: Bottom[semver_range.SemVerRange] = declare(
     _is_range,
     expected="SemVerRange",
+    representation={"id": "effect/schema/SemVerRange", "payload": None},
     to_codec_json=_range_json,
     to_codec_arbitrary=_range_arbitrary,
 )

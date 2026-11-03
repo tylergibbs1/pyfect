@@ -234,6 +234,7 @@ def _reg_exp_arbitrary(_: tuple[ast.AST, ...], __: ArbitraryConstraint) -> ast.L
 RegExp: Bottom[re.Pattern[str]] = declare(
     _is_pattern,
     expected="RegExp",
+    representation={"id": "effect/schema/RegExp", "payload": None},
     to_codec_arbitrary=_reg_exp_arbitrary,
     to_codec_json=_reg_exp_codec,
     to_formatter=_reg_exp_formatter,

@@ -5,11 +5,12 @@ Python measures every one with ``len``: a string's length counts code
 points (JavaScript counts UTF-16 units), so the ``code_points`` checks
 agree with the ``length`` ones on strings. ``size`` (Effect's ``Set`` /
 ``Map``) and ``properties`` (an object's keys) are ``len`` of a set or a
-mapping. A negative bound counts as ``0``.
+mapping. A bound is floored, and a negative one counts as ``0``.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping, Sequence, Sized
 from typing import Any
 
@@ -19,6 +20,12 @@ from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Top
 from pyfect.schema.ast import AST, Filter, filter_of, issue_of, run_now
 from pyfect.schema.issue import Composite, Issue, Pointer, reported
+
+
+def _cardinality(value: float) -> int:
+    if not math.isfinite(value):
+        raise ValueError(f"Expected a finite number, got {value}")
+    return max(0, math.floor(value))
 
 
 def _sized(
@@ -42,8 +49,8 @@ def _between(minimum: int, maximum: int, exactly: str, between: str) -> str:
     return exactly if minimum == maximum else between
 
 
-def is_min_length(min_length: int, /, **annotations: object) -> Filter[Sized]:
-    n = max(0, min_length)
+def is_min_length(min_length: float, /, **annotations: object) -> Filter[Sized]:
+    n = _cardinality(min_length)
     return _sized(
         lambda length: length >= n,
         f"a value with a length of at least {n}",
@@ -58,8 +65,8 @@ def is_non_empty(**annotations: object) -> Filter[Sized]:
     return is_min_length(1, **annotations)
 
 
-def is_max_length(max_length: int, /, **annotations: object) -> Filter[Sized]:
-    n = max(0, max_length)
+def is_max_length(max_length: float, /, **annotations: object) -> Filter[Sized]:
+    n = _cardinality(max_length)
     return _sized(
         lambda length: length <= n,
         f"a value with a length of at most {n}",
@@ -69,8 +76,8 @@ def is_max_length(max_length: int, /, **annotations: object) -> Filter[Sized]:
     )
 
 
-def is_between_length(minimum: int, maximum: int, /, **annotations: object) -> Filter[Sized]:
-    low, high = max(0, minimum), max(0, maximum)
+def is_between_length(minimum: float, maximum: float, /, **annotations: object) -> Filter[Sized]:
+    low, high = _cardinality(minimum), _cardinality(maximum)
     return _sized(
         lambda length: low <= length <= high,
         _between(
@@ -85,8 +92,8 @@ def is_between_length(minimum: int, maximum: int, /, **annotations: object) -> F
     )
 
 
-def is_min_code_points(min_code_points: int, /, **annotations: object) -> Filter[str]:
-    n = max(0, min_code_points)
+def is_min_code_points(min_code_points: float, /, **annotations: object) -> Filter[str]:
+    n = _cardinality(min_code_points)
     return _sized(
         lambda count: count >= n,
         f"a string with at least {n} code points",
@@ -96,8 +103,8 @@ def is_min_code_points(min_code_points: int, /, **annotations: object) -> Filter
     )
 
 
-def is_max_code_points(max_code_points: int, /, **annotations: object) -> Filter[str]:
-    n = max(0, max_code_points)
+def is_max_code_points(max_code_points: float, /, **annotations: object) -> Filter[str]:
+    n = _cardinality(max_code_points)
     return _sized(
         lambda count: count <= n,
         f"a string with at most {n} code points",
@@ -107,8 +114,8 @@ def is_max_code_points(max_code_points: int, /, **annotations: object) -> Filter
     )
 
 
-def is_between_code_points(minimum: int, maximum: int, /, **annotations: object) -> Filter[str]:
-    low, high = max(0, minimum), max(0, maximum)
+def is_between_code_points(minimum: float, maximum: float, /, **annotations: object) -> Filter[str]:
+    low, high = _cardinality(minimum), _cardinality(maximum)
     return _sized(
         lambda count: low <= count <= high,
         _between(
@@ -123,8 +130,8 @@ def is_between_code_points(minimum: int, maximum: int, /, **annotations: object)
     )
 
 
-def is_min_size(min_size: int, /, **annotations: object) -> Filter[Sized]:
-    n = max(0, min_size)
+def is_min_size(min_size: float, /, **annotations: object) -> Filter[Sized]:
+    n = _cardinality(min_size)
     return _sized(
         lambda size: size >= n,
         f"a value with a size of at least {n}",
@@ -134,8 +141,8 @@ def is_min_size(min_size: int, /, **annotations: object) -> Filter[Sized]:
     )
 
 
-def is_max_size(max_size: int, /, **annotations: object) -> Filter[Sized]:
-    n = max(0, max_size)
+def is_max_size(max_size: float, /, **annotations: object) -> Filter[Sized]:
+    n = _cardinality(max_size)
     return _sized(
         lambda size: size <= n,
         f"a value with a size of at most {n}",
@@ -145,8 +152,8 @@ def is_max_size(max_size: int, /, **annotations: object) -> Filter[Sized]:
     )
 
 
-def is_between_size(minimum: int, maximum: int, /, **annotations: object) -> Filter[Sized]:
-    low, high = max(0, minimum), max(0, maximum)
+def is_between_size(minimum: float, maximum: float, /, **annotations: object) -> Filter[Sized]:
+    low, high = _cardinality(minimum), _cardinality(maximum)
     return _sized(
         lambda size: low <= size <= high,
         _between(
@@ -165,8 +172,8 @@ def _entries(n: int) -> str:
     return "1 entry" if n == 1 else f"{n} entries"
 
 
-def is_min_properties(min_properties: int, /, **annotations: object) -> Filter[Sized]:
-    n = max(0, min_properties)
+def is_min_properties(min_properties: float, /, **annotations: object) -> Filter[Sized]:
+    n = _cardinality(min_properties)
     return _sized(
         lambda count: count >= n,
         f"a value with at least {_entries(n)}",
@@ -176,8 +183,8 @@ def is_min_properties(min_properties: int, /, **annotations: object) -> Filter[S
     )
 
 
-def is_max_properties(max_properties: int, /, **annotations: object) -> Filter[Sized]:
-    n = max(0, max_properties)
+def is_max_properties(max_properties: float, /, **annotations: object) -> Filter[Sized]:
+    n = _cardinality(max_properties)
     return _sized(
         lambda count: count <= n,
         f"a value with at most {_entries(n)}",
@@ -187,8 +194,10 @@ def is_max_properties(max_properties: int, /, **annotations: object) -> Filter[S
     )
 
 
-def is_between_properties(minimum: int, maximum: int, /, **annotations: object) -> Filter[Sized]:
-    low, high = max(0, minimum), max(0, maximum)
+def is_between_properties(
+    minimum: float, maximum: float, /, **annotations: object
+) -> Filter[Sized]:
+    low, high = _cardinality(minimum), _cardinality(maximum)
     return _sized(
         lambda count: low <= count <= high,
         _between(

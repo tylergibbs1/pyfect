@@ -34,6 +34,11 @@ class Element:
     type: AST
     optional: bool = False
 
+    def optional_when_encoded(self) -> bool:
+        """Whether the position may be missing from the encoded input (it is
+        optional, or a decoding default fills it)."""
+        return self.optional or self.type.flip().optional_key
+
 
 def _check_order(elements: Sequence[Element], rest: Sequence[AST]) -> None:
     optional = [e.optional for e in elements]

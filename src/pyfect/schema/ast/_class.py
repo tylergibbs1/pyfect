@@ -3,7 +3,7 @@ fields (Effect's class declaration, linked to its struct)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import Literal as _Literal
 from typing import Protocol, cast
@@ -61,6 +61,7 @@ class Class(AST):
 
     shape: ClassShape
     side: ClassSide = "decode"
+    _typed: list[Class] = field(default_factory=list["Class"], init=False, repr=False)
     tag = "Class"
 
     def get_expected(self) -> str:
@@ -122,7 +123,11 @@ class Class(AST):
     def _to_type(self) -> Class:
         match self.side:
             case "decode":
-                return replace(self, side="type")
+                # Made once: every occurrence of the class's decoded side
+                # is one node (one definition in a document).
+                if not self._typed:
+                    self._typed.append(replace(self, side="type"))
+                return self._typed[0]
             case "encode":
                 return replace(self, side="encoded", checks=None)
             case _:

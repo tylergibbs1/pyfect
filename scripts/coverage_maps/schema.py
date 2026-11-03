@@ -149,8 +149,33 @@ PARSER = Module(
         )
     },
 )
+REVIVED_SCHEMAS = "`SchemaRepresentation` revivers of schemas pyfect has not ported"
+
 REPRESENTATION = Module(
-    "SchemaRepresentation", "effect/src/SchemaRepresentation.ts", ("pyfect.schema",)
+    "SchemaRepresentation",
+    "effect/src/SchemaRepresentation.ts",
+    ("pyfect.schema.representation",),
+    renamed={
+        "ReadonlyMapReviver": "pyfect.schema.representation.map_reviver",
+        "ReadonlySetReviver": "pyfect.schema.representation.frozen_set_reviver",
+        "Uint8ArrayReviver": "pyfect.schema.representation.bytes_reviver",
+    },
+    pythonic={
+        "isStringSymbolReviver": (NO_UNDEFINED, "not ported"),
+        "HashMapReviver": (COLLECTIONS, "`map_reviver`"),
+        "HashSetReviver": (COLLECTIONS, "`frozen_set_reviver`"),
+        "ChunkReviver": (COLLECTIONS, "an array needs no reviver"),
+        **{
+            name: (REVIVED_SCHEMAS, "not ported")
+            for name in (
+                "DateReviver",
+                "FileReviver",
+                "FormDataReviver",
+                "URLSearchParamsReviver",
+                "GraphReviver",
+            )
+        },
+    },
 )
 JSON_SCHEMA = Module(
     "JsonSchema",
