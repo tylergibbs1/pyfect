@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Hashable, Iterable, Mapping, Sequence, Set
+from contextvars import ContextVar
 from typing import cast
 
 from pyfect._stack import stack_nearly_full, with_fresh_stack
@@ -23,17 +24,22 @@ def equal_key(value: object) -> Hashable:
     """A key that is ``==`` for two values exactly when ``Equal.equals``
     calls them equal: ``True`` apart from ``1``, NaN equal to NaN, lists,
     tuples, mappings and sets by their items. Raises ``TypeError`` for a
-    value holding an unhashable object of another kind (compare those with
-    ``equals``)."""
+    value holding an unhashable object of another kind, or holding itself
+    (compare those with ``equals``)."""
+    return _key(value, set())
+
+
+def _key(value: object, path: set[int]) -> Hashable:
+    # ``path``: the ids of the containers being keyed, to stop at a cycle.
     kind = type(value)
     if kind is str or kind is int or value is None:
         return value
     if kind is tuple or kind is list or kind is dict or kind is frozenset or kind is set:
-        return _container_key(value) if not stack_nearly_full() else _deep_container_key(value)
-    return _other_key(value)
+        return _container_key(value, path) if not stack_nearly_full() else _deep(value, path)
+    return _other_key(value, path)
 
 
-def _other_key(value: object) -> Hashable:
+def _other_key(value: object, path: set[int]) -> Hashable:
     if isinstance(value, BaseException):
         hash(value)
         return value
@@ -45,7 +51,7 @@ def _other_key(value: object) -> Hashable:
         case str() | bytes() | int() | float():
             return value
         case list() | tuple() | Mapping() | Set():
-            return _deep_container_key(cast("object", value))
+            return _deep(cast("object", value), path)
         case Hashable():
             hash(value)  # a frozen dataclass holding a list raises here
             return value
@@ -53,32 +59,76 @@ def _other_key(value: object) -> Hashable:
             raise TypeError(f"unhashable type: {type(value).__name__!r}")
 
 
-def _deep_container_key(value: object) -> Hashable:
-    return with_fresh_stack(lambda: _container_key(value))
+def _deep(value: object, path: set[int]) -> Hashable:
+    return with_fresh_stack(lambda: _container_key(value, path))
 
 
-def _container_key(value: object) -> Hashable:
-    if isinstance(value, list | tuple):
-        return (tuple, tuple(map(equal_key, cast("Sequence[object]", value))))
-    if isinstance(value, Mapping):
-        pairs = cast("Mapping[object, object]", value).items()
-        return (dict, frozenset((equal_key(k), equal_key(v)) for k, v in pairs))
-    return (frozenset, frozenset(map(equal_key, cast("Set[object]", value))))
+def _container_key(value: object, path: set[int]) -> Hashable:
+    marker = id(value)
+    if marker in path:
+        raise TypeError("cyclic value")
+    path.add(marker)
+    try:
+        if isinstance(value, list | tuple):
+            items = cast("Sequence[object]", value)
+            return (tuple, tuple(_key(item, path) for item in items))
+        if isinstance(value, Mapping):
+            pairs = cast("Mapping[object, object]", value).items()
+            return (dict, frozenset((_key(k, path), _key(v, path)) for k, v in pairs))
+        return (frozenset, frozenset(_key(item, path) for item in cast("Set[object]", value)))
+    finally:
+        path.remove(marker)
+
+
+_SCALARS = frozenset({str, int, float, bool, bytes, type(None)})
+
+_in_progress: ContextVar[set[tuple[int, int]] | None] = ContextVar(
+    "pyfect_equals_in_progress", default=None
+)
+"""The pairs being compared by the ``equals`` call running in this context.
+A fresh stack copies the context, so the set follows a walk across
+threads."""
 
 
 def equals(a: object, b: object) -> bool:
     """Effect's ``Equal.equals``: ``==``, but ``True`` is not ``1`` and NaN
-    is NaN, also inside lists, tuples, mappings and sets."""
+    is NaN, also inside lists, tuples, mappings and sets. A pair of values
+    met again while comparing them (a cycle, also through an ``__eq__`` that
+    calls ``equals``) is assumed equal, so cyclic values compare as their
+    unfoldings do."""
     if a is b:
         return True
-    try:
+    kind = type(a)
+    if kind is type(b) and (kind is str or kind is int):
+        return a == b
+    if kind in _SCALARS and type(b) in _SCALARS:
         return equal_key(a) == equal_key(b)
-    except TypeError:
+    pairs = _in_progress.get()
+    if pairs is not None:
+        return _assuming_equal(a, b, pairs)
+    token = _in_progress.set(pairs := set())
+    try:
+        return _assuming_equal(a, b, pairs)
+    finally:
+        _in_progress.reset(token)
+
+
+def _assuming_equal(a: object, b: object, pairs: set[tuple[int, int]]) -> bool:
+    pair = (id(a), id(b))
+    if pair in pairs:
+        return True
+    pairs.add(pair)
+    try:
+        if stack_nearly_full():
+            return with_fresh_stack(lambda: _equal_structure(a, b))
         return _equal_structure(a, b)
+    finally:
+        pairs.remove(pair)
 
 
 def _equal_structure(a: object, b: object) -> bool:
-    # Values holding unhashable objects: part by part, those by ``==``.
+    # Lists, tuples and mappings part by part, so a value is walked once
+    # (keying it whole would key each level again when a part is unhashable).
     if isinstance(a, bool) or isinstance(b, bool):
         return type(a) is type(b) and a == b
     if isinstance(a, list | tuple) and isinstance(b, list | tuple):
@@ -93,7 +143,10 @@ def _equal_structure(a: object, b: object) -> bool:
             (key := keys.get(equal_key(k), _ABSENT)) is not _ABSENT and equals(v, right_map[key])
             for k, v in left_map.items()
         )
-    return bool(a == b)
+    try:
+        return equal_key(cast("object", a)) == equal_key(b)
+    except TypeError:
+        return bool(a == b)
 
 
 _ABSENT = object()

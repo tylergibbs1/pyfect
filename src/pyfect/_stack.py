@@ -19,6 +19,14 @@ _HEADROOM = 400
 """Frames left to the caller when the walk moves to a new thread: room for
 one level of a recursive structure between two calls."""
 
+MAX_FRESH_STACKS = 300
+"""Fresh stacks one walk may nest (each about ``getrecursionlimit() -
+_HEADROOM`` frames, so far deeper than JavaScript's stack). Past it the walk
+raises ``RecursionError``: a walk that never ends (a cycle) fails instead
+of starting threads until the process runs out of them."""
+
+_depth: contextvars.ContextVar[int] = contextvars.ContextVar("pyfect_fresh_stacks", default=0)
+
 
 def stack_nearly_full() -> bool:
     """Whether the next level of a walk belongs on a fresh stack."""
@@ -35,6 +43,10 @@ def with_fresh_stack[A](f: Callable[[], A]) -> A:
     exception is the caller's."""
     if not stack_nearly_full():
         return f()
+    depth = _depth.get() + 1
+    if depth > MAX_FRESH_STACKS:
+        raise RecursionError("maximum recursion depth exceeded (pyfect fresh stacks)")
     context = contextvars.copy_context()
+    context.run(_depth.set, depth)
     with ThreadPoolExecutor(1, thread_name_prefix="pyfect-deep-stack") as executor:
         return executor.submit(context.run, f).result()

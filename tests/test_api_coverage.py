@@ -27,7 +27,7 @@ def test_saved_coverage_table_is_current(cluster: str) -> None:
     assert run.returncode == 0, run.stderr
 
 
-@pytest.mark.parametrize("cluster", ["core-a", "core-b"])
+@pytest.mark.parametrize("cluster", ["core-a", "core-b", "config-data"])
 def test_cluster_has_no_missing_exports(cluster: str) -> None:
     table = (ROOT / "docs" / "coverage" / f"{cluster}.md").read_text()
     assert "| missing |" not in table
