@@ -25,6 +25,18 @@ Each decoder and encoder comes in several forms: `_sync` raises, `_result` and `
 the outcome, `_effect` fails in the error channel. `decode_unknown_*` accepts any input, while
 `decode_*` expects the encoded type. They all take parse options such as `errors="all"`.
 
+`S.Record(key, value)` decodes a dict whose keys match `key`. As in Effect, a key that fails the
+key schema is not reported with that schema's message: it is an excess property, which is dropped
+unless you pass `on_excess_property="error"`.
+
+<CodeOutput>
+
+<include meta='title="records.py"'>../../snippets/schema/records.py</include>
+
+<include lang="text">../../snippets/schema/records.out</include>
+
+</CodeOutput>
+
 ## Classes
 
 A subclass of `S.Class` is an immutable class with a keyword constructor, and a schema. Its annotations are its
