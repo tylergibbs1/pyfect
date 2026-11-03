@@ -137,3 +137,13 @@ class Isaac:
 def safe_int_of(draw: float) -> int:
     """Effect's ``nextIntUnsafe`` from a draw in ``[0, 1)``, in its float arithmetic."""
     return int(math.floor(draw * float(2 * _MAX_SAFE + 1)) + float(-_MAX_SAFE))
+
+
+def between_of(low: float, high: float, draw: float) -> float:
+    """Effect's ``nextBetween``: a draw in ``[0, 1)`` scaled to ``[low, high)``.
+    Rounding can reach the excluded bound even for a draw below 1; then the
+    float just below it."""
+    value = draw * (high - low) + low
+    if value != high or low >= high or not math.isfinite(high):
+        return value
+    return math.nextafter(high, -math.inf)

@@ -5,66 +5,46 @@ JavaScript's ``TextDecoder``)."""
 
 from __future__ import annotations
 
-import base64
-import binascii
-import re
 from collections.abc import Callable
 
-from pyfect._js import text_encode
+from pyfect import _binary_codecs as codecs
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
+from pyfect.result import Ok, Result
 from pyfect.schema._options import ParseOptions
 from pyfect.schema.getter._getter import Getter, Transform, TransformEffect
 from pyfect.schema.issue import InvalidValue, Issue, reported
 
 
-def _bytes(value: bytes | str) -> bytes:
-    return text_encode(value) if isinstance(value, str) else value
-
-
 def base64_decode(text: str) -> bytes | None:
     """Effect's ``Base64.decode``: CR / LF ignored, padded, standard alphabet."""
-    stripped = text.replace("\r", "").replace("\n", "")
-    if len(stripped) % 4:
-        return None
-    try:
-        return base64.b64decode(stripped, validate=True)
-    except binascii.Error:
-        return None
-
-
-_BASE64_URL = re.compile(r"[A-Za-z0-9_-]*={0,2}")
-_URL_TO_STANDARD = str.maketrans("-_", "+/")
+    return _ok(codecs.base64_decode(text))
 
 
 def base64_url_decode(text: str) -> bytes | None:
     """Effect's ``Base64Url.decode``: CR / LF ignored, the URL alphabet, a
     length (padding included) padded up to a multiple of 4."""
-    stripped = text.replace("\r", "").replace("\n", "")
-    if len(stripped) % 4 == 1 or not _BASE64_URL.fullmatch(stripped):
-        return None
-    padded = stripped + "=" * (len(stripped) % 4 and 4 - len(stripped) % 4)
-    return base64_decode(padded.translate(_URL_TO_STANDARD))
-
-
-_HEX = re.compile(r"(?:[0-9a-fA-F]{2})*")
+    return _ok(codecs.base64_url_decode(text))
 
 
 def hex_decode(text: str) -> bytes | None:
-    return bytes.fromhex(text) if _HEX.fullmatch(text) else None
+    return _ok(codecs.hex_decode(text))
+
+
+def _ok(result: Result[bytes, codecs.EncodingError]) -> bytes | None:
+    return result.value if isinstance(result, Ok) else None
 
 
 def base64_encode(value: bytes | str) -> str:
-    return base64.b64encode(_bytes(value)).decode("ascii")
+    return codecs.base64_encode(value)
 
 
 def base64_url_encode(value: bytes | str, *, padding: bool = False) -> str:
-    out = base64.urlsafe_b64encode(_bytes(value)).decode("ascii")
-    return out if padding else out.rstrip("=")
+    return codecs.base64_url_encode_padded(value) if padding else codecs.base64_url_encode(value)
 
 
 def hex_encode(value: bytes | str) -> str:
-    return _bytes(value).hex()
+    return codecs.hex_encode(value)
 
 
 def encode_base64() -> Getter[str, bytes | str]:

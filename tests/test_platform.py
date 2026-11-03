@@ -13,6 +13,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import file_system, logger, path, platform, stdio, stream, terminal, testing
+from pyfect.crypto import Crypto
 from pyfect.file_system import FileSystem, NoopFileSystem
 from pyfect.file_system._stat import file_info
 from pyfect.path import Path
@@ -367,9 +368,9 @@ def test_a_display_failure_is_a_bad_argument():
 
 
 def test_the_platform_layer_provides_every_service():
-    program = fx.all(FileSystem(), Path(), fx.Stdio(), fx.Terminal())
+    program = fx.all(FileSystem(), Path(), fx.Stdio(), fx.Terminal(), Crypto())
     services = fx.run_sync(program.pipe(fx.provide(platform.layer)))
-    assert len(services) == 4
+    assert len(services) == 5
 
 
 def test_services_reject_a_non_effect_field():

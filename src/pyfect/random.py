@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 from typing import Protocol, overload
 
 from pyfect._core import Effect
-from pyfect._isaac import Isaac, safe_int_of
+from pyfect._isaac import Isaac, between_of, safe_int_of
 from pyfect._primitives import _Locally
 from pyfect.context import Reference
 from pyfect.effect import fail_sync, suspend
@@ -63,17 +63,9 @@ def next_int() -> Effect[int]:
     return _random_with(lambda r: r.next_int_unsafe())
 
 
-def _between(low: float, high: float, draw: float) -> float:
-    value = draw * (high - low) + low
-    if value != high or low >= high or not math.isfinite(high):
-        return value
-    # Rounding can reach the excluded bound even for a draw below 1.
-    return math.nextafter(high, -math.inf)
-
-
 def next_between(low: float, high: float) -> Effect[float]:
     """A random float in ``[low, high)``."""
-    return _random_with(lambda r: _between(low, high, r.next_double_unsafe()))
+    return _random_with(lambda r: between_of(low, high, r.next_double_unsafe()))
 
 
 def next_int_between(low: float, high: float, *, half_open: bool = False) -> Effect[int]:

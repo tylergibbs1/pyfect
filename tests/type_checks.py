@@ -20,7 +20,9 @@ from opentelemetry.trace import SpanContext
 
 import pyfect as fx
 from pyfect import (
+    big_decimal,
     channel,
+    crypto,
     execution_plan,
     graphql,
     layer,
@@ -29,6 +31,8 @@ from pyfect import (
     reactivity,
     rpc,
     schedule,
+    semver,
+    semver_range,
     stream,
 )
 from pyfect import schema as S
@@ -68,11 +72,13 @@ from pyfect.cli._environment import Environment as CliEnvironment
 from pyfect.cli.global_flag import LogLevel
 from pyfect.context import ServiceEffect, Tag
 from pyfect.duration import Seconds, to_seconds
-from pyfect.encoding import Json, json_array, ndjson, sse
+from pyfect.encoding import EncodingError, Json, base64, json_array, ndjson, sse
 from pyfect.errors import TaggedError
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
 from pyfect.fiber_set import FiberSetRuntime
+from pyfect.hash_map import HashMap
+from pyfect.hash_set import HashSet
 from pyfect.http import middleware as http_middleware
 from pyfect.http import router as http_router
 from pyfect.http import server as http_server
@@ -138,6 +144,7 @@ from pyfect.sql.error import ResultLengthMismatch, SqlError
 from pyfect.sql.statement import Fragment, Statement
 from pyfect.sql.statement import Literal as SqlLiteral
 from pyfect.stream import Stream
+from pyfect.trie import Trie
 from pyfect.workers import python_worker, python_worker_runner
 from pyfect.workers.python_worker import ThreadWorker
 from pyfect.workers.worker import Spawner, Worker, WorkerPlatform
@@ -7847,3 +7854,37 @@ def check_catch_reasons_any_number(
             or_else=on_reason8,
         )
     )
+
+
+def collections_and_crypto(
+    service: crypto.CryptoService,
+    hm: HashMap[str, int],
+    trie: Trie[int],
+    version: semver.SemVer,
+) -> None:
+    from pyfect.platform_error import PlatformError as _PlatformError
+
+    assert_type(crypto.layer, layer.Layer[crypto.Crypto])
+    assert_type(service.random_bytes(8), fx.Effect[bytes, _PlatformError])
+    assert_type(service.random_uuid_v4(), fx.Effect[str, _PlatformError])
+    assert_type(service.random_uuid_v7(format="bytes"), fx.Effect[bytes, _PlatformError])
+    assert_type(HashMap.make(("a", 1), ("b", 2)), HashMap[str, int])
+    assert_type(hm.get("a"), fx.option.Option[int])
+    assert_type(hm.set("c", 3), HashMap[str, int])
+    assert_type(HashSet.make(1, 2), HashSet[int])
+    assert_type(hm.union(HashMap.make((1, "x"))), HashMap[str | int, int | str])
+    assert_type(HashSet.make(1).union(HashSet.make("a")), HashSet[int | str])
+    assert_type(trie.get("a"), fx.option.Option[int])
+    assert_type(trie.longest_prefix_of("abc"), fx.option.Option[tuple[str, int]])
+    assert_type(semver.parse("1.2.3"), fx.result.Result[semver.SemVer, semver.SemVerError])
+    assert_type(version.difference(version), semver.ReleaseType | None)
+    assert_type(semver_range.parse_unsafe("^1").max_satisfying([version]), semver.SemVer | None)
+    assert_type(big_decimal.from_string("1.5"), big_decimal.BigDecimal | None)
+    assert_type(
+        big_decimal.make(1, 0).divide(big_decimal.make(3, 0)), big_decimal.BigDecimal | None
+    )
+    assert_type(base64.decode("AA=="), fx.result.Result[bytes, EncodingError])
+    one = big_decimal.make(1, 0)
+    assert_type(one + one, big_decimal.BigDecimal)
+    one + 1  # pyright: ignore[reportOperatorIssue, reportUnusedExpression]
+    hm.set(1, 2)  # pyright: ignore[reportArgumentType]

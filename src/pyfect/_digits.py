@@ -35,3 +35,20 @@ def parse_signed_digits(value: str) -> int | None:
         magnitude = parse_digits(value[1:])
         return None if magnitude is None else (-magnitude if sign == "-" else magnitude)
     return parse_digits(value)
+
+
+_SHORT_RUN = 4000
+"""Digits ``int`` reads in one call (its limit is 4300)."""
+
+
+def digits_value(value: str) -> int | None:
+    """``value`` as an int when it is ASCII digits, however many (what
+    JavaScript's ``BigInt`` reads), else ``None``."""
+    return _run_value(value) if is_digits(value) else None
+
+
+def _run_value(run: str) -> int:
+    if len(run) <= _SHORT_RUN:
+        return int(run)
+    half = len(run) // 2
+    return _run_value(run[:half]) * 10 ** (len(run) - half) + _run_value(run[half:])

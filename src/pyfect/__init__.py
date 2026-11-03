@@ -8,7 +8,9 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.fil
 ``fx.clock``, ``fx.config`` (``fx.Config``, ``fx.ConfigError``), ``fx.config_provider``,
 ``fx.console``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.redacted``
 (``fx.Redacted``), ``fx.byte_size``, ``fx.brand``, ``fx.case`` (case
-conversion), ``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema``
+conversion), ``fx.big_decimal``, ``fx.semver``, ``fx.semver_range``, ``fx.trie``,
+``fx.hash_map``, ``fx.hash_set``, ``fx.mutable_hash_map``, ``fx.mutable_hash_set``,
+``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema``
 (JSON Schema dialects), ``fx.json_pointer``, ``fx.json_patch``, ``fx.schedule``,
 ``fx.scheduler``,
 ``fx.Queue``, ``fx.PubSub``, ``fx.Pool``, ``fx.Cache``, ``fx.ScopedCache``, ``fx.Ref``,
@@ -34,9 +36,10 @@ building blocks: ``fx.Stream`` (constructors in ``fx.stream``), ``fx.Sink``
 (``fx.take``); framers (NDJSON, JSON arrays, Server-Sent Events) in ``fx.encoding``;
 channels decoding and encoding chunks with a schema in ``fx.channel_schema``.
 Platform: ``fx.FileSystem`` (``fx.file_system``), ``fx.Path`` (``fx.path``),
-``fx.Stdio`` (``fx.stdio``), ``fx.Terminal`` (``fx.terminal``), child processes
-(``fx.process``: ``make``, ``ChildProcessSpawner``), ``fx.PlatformError``
-(``fx.platform_error``) and all five live services in ``fx.platform.layer``.
+``fx.Stdio`` (``fx.stdio``), ``fx.Crypto`` (``fx.crypto``), ``fx.Terminal``
+(``fx.terminal``), child processes (``fx.process``: ``make``,
+``ChildProcessSpawner``), ``fx.PlatformError`` (``fx.platform_error``) and all
+six live services in ``fx.platform.layer``.
 Command-line apps in ``fx.cli`` (``Command``, ``Flag``, ``Argument``, prompts,
 help and shell completions).
 HTTP clients in ``fx.http`` (``HttpClient``, requests, responses, headers,
@@ -82,6 +85,7 @@ from pyfect.clock import Clock, sleep
 from pyfect.config import Config, ConfigError
 from pyfect.config_provider import ConfigProvider, CurrentConfigProvider
 from pyfect.context import Context, MissingServiceError, Reference, Tag
+from pyfect.crypto import Crypto
 from pyfect.deferred import Deferred
 from pyfect.duration import Duration
 from pyfect.effect import (
@@ -247,6 +251,7 @@ _SUBMODULES = frozenset(
     (
         "ai",
         "batching",
+        "big_decimal",
         "brand",
         "byte_size",
         "case",
@@ -259,6 +264,7 @@ _SUBMODULES = frozenset(
         "config_provider",
         "console",
         "cron",
+        "crypto",
         "date_time",
         "devtools",
         "duration",
@@ -269,6 +275,8 @@ _SUBMODULES = frozenset(
         "file_system",
         "filters",
         "graphql",
+        "hash_map",
+        "hash_set",
         "http",
         "json_patch",
         "json_pointer",
@@ -276,6 +284,8 @@ _SUBMODULES = frozenset(
         "layer",
         "logger",
         "metric",
+        "mutable_hash_map",
+        "mutable_hash_set",
         "optic",
         "option",
         "path",
@@ -292,6 +302,8 @@ _SUBMODULES = frozenset(
         "scheduler",
         "schema",
         "scope",
+        "semver",
+        "semver_range",
         "sink",
         "sql",
         "stdio",
@@ -301,6 +313,7 @@ _SUBMODULES = frozenset(
         "testing",
         "tracer",
         "transaction",
+        "trie",
         "workers",
         "workflow",
     )
@@ -312,6 +325,7 @@ if _typing.TYPE_CHECKING:
     from pyfect import (
         ai,
         batching,
+        big_decimal,
         brand,
         byte_size,
         case,
@@ -324,6 +338,7 @@ if _typing.TYPE_CHECKING:
         config_provider,
         console,
         cron,
+        crypto,
         date_time,
         devtools,
         duration,
@@ -334,6 +349,8 @@ if _typing.TYPE_CHECKING:
         file_system,
         filters,
         graphql,
+        hash_map,
+        hash_set,
         http,
         json_patch,
         json_pointer,
@@ -341,6 +358,8 @@ if _typing.TYPE_CHECKING:
         layer,
         logger,
         metric,
+        mutable_hash_map,
+        mutable_hash_set,
         optic,
         option,
         path,
@@ -357,6 +376,8 @@ if _typing.TYPE_CHECKING:
         scheduler,
         schema,
         scope,
+        semver,
+        semver_range,
         sink,
         sql,
         stdio,
@@ -366,6 +387,7 @@ if _typing.TYPE_CHECKING:
         testing,
         tracer,
         transaction,
+        trie,
         workers,
         workflow,
     )
@@ -405,6 +427,7 @@ __all__ = [
     "ConfigError",
     "ConfigProvider",
     "Context",
+    "Crypto",
     "CurrentConfigProvider",
     "CurrentLogAnnotations",
     "CurrentLogLevel",
@@ -516,6 +539,7 @@ __all__ = [
     "annotate_current_span",
     "annotate_logs_scoped",
     "batching",
+    "big_decimal",
     "blocking",
     "brand",
     "byte_size",
@@ -537,6 +561,7 @@ __all__ = [
     "console",
     "context",
     "cron",
+    "crypto",
     "current_fiber",
     "current_parent_span",
     "current_span",
@@ -572,6 +597,8 @@ __all__ = [
     "from_result",
     "gen",
     "graphql",
+    "hash_map",
+    "hash_set",
     "http",
     "interrupt",
     "interruptible_mask",
@@ -591,6 +618,8 @@ __all__ = [
     "make_span",
     "make_span_scoped",
     "metric",
+    "mutable_hash_map",
+    "mutable_hash_set",
     "never",
     "optic",
     "option",
@@ -627,6 +656,8 @@ __all__ = [
     "scope",
     "scoped",
     "scoped_with",
+    "semver",
+    "semver_range",
     "service_option",
     "set_context",
     "sink",
@@ -645,6 +676,7 @@ __all__ = [
     "tracer",
     "transaction",
     "transpose_option",
+    "trie",
     "try_",
     "try_async",
     "try_blocking",
