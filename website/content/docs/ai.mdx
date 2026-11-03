@@ -118,6 +118,23 @@ saves it.
 
 </CodeOutput>
 
+### A tool loop
+
+One `generate_text` call is one model call: it runs the tools the model asks for and adds
+their results to the response, but the model has not seen them yet. When
+`reply.finish_reason == "tool-calls"`, call the model again with the results. With a chat,
+the results are already in its history, so the next call sends no new message:
+`session.generate_text([], toolkit=Tools)`. Stop after a few steps, as a model can keep
+calling tools.
+
+<CodeOutput>
+
+<include meta='title="tool_loop.py"'>../../snippets/ai/tool_loop.py</include>
+
+<include lang="text">../../snippets/ai/tool_loop.out</include>
+
+</CodeOutput>
+
 An `EmbeddingModel`'s `embed(text)` and `embed_many(texts)` give vectors, and
 concurrent `embed` calls are sent as one batch;
 `openai_compat.embedding_model.model(name, dimensions=n).layer` provides one. Each call

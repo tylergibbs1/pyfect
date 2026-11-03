@@ -5159,6 +5159,20 @@ def cli_read(config: CliDeploy) -> None:
     assert_type(Argument.literals("env", ("dev", "prod")), Argument[Literal["dev", "prod"]])
 
 
+def check_cli_defaults_keep_literals(models: tuple[Literal["haiku", "sonnet"], ...]) -> None:
+    # DOGFOOD atlas #5: a default that is one of the literals keeps the literal type.
+    model = Flag.literals("model", models)
+    assert_type(model.with_default(models[0]), Flag[Literal["haiku", "sonnet"]])
+    assert_type(model.with_default("haiku"), Flag[Literal["haiku", "sonnet"]])
+    assert_type(model.with_default(fx.succeed(models[0])), Flag[Literal["haiku", "sonnet"]])
+    assert_type(model.optional().with_default("haiku"), Flag[Literal["haiku", "sonnet"] | None])
+    assert_type(model.with_default(None), Flag[Literal["haiku", "sonnet"] | None])
+    assert_type(Flag.integer("n").with_default("auto"), Flag[int | str])
+    env = Argument.literals("env", ("dev", "prod"))
+    assert_type(env.with_default("dev"), Argument[Literal["dev", "prod"]])
+    assert_type(env.with_default(None), Argument[Literal["dev", "prod"] | None])
+
+
 class CliShared(Config):
     verbose = Flag.boolean("verbose")
 
@@ -6778,6 +6792,15 @@ def check_mcp_client_calls(
     assert_type(service.call_tool(tool), fx.Effect[mcp_schema_module.CallToolResult, McpErr])
     assert_type(service.call_tool(tool, schema=S.Struct(AiWeather)), fx.Effect[AiWeather, McpErr])
     assert_type(service.list_tools(), fx.Effect[list[mcp_schema_module.Tool], McpErr])
+    # failure_mode="return" gives tool errors to the model, so a call fails with nothing.
+    assert_type(
+        mcp_client_module.toolkit(service),
+        fx.Effect[ai_toolkit.WithHandler[Any, Any, McpErr, Never], McpErr],
+    )
+    assert_type(
+        mcp_client_module.toolkit(service, "docs__", failure_mode="return"),
+        fx.Effect[ai_toolkit.WithHandler[Any, Any, Never, Never], McpErr],
+    )
 
 
 def check_ai_providers() -> None:
@@ -6935,6 +6958,35 @@ class GqlLogin(TypedDict):
 
 class GqlViewer(TypedDict):
     viewer: GqlLogin
+
+
+class GqlLoginNodes(TypedDict):
+    nodes: Sequence[GqlLogin | None]
+
+
+def check_graphql_resolver_items(
+    nodes: graphql.operation.Method[Sequence[str], GqlLoginNodes, Never, Never],
+) -> None:
+    # DOGFOOD atlas #6: ``items`` types the lookups with the list's items.
+    from pyfect.graphql.client_error import GraphQLClientError
+
+    def ids(keys: Sequence[str]) -> Sequence[str]:
+        return keys
+
+    by_position = graphql.resolver.ordered(nodes, variables=ids, items=lambda data: data["nodes"])
+    assert_type(
+        graphql.resolver.request(by_position),
+        Callable[[str], fx.Effect[GqlLogin, GraphQLClientError | fx.NoSuchElementException]],
+    )
+    by_login = graphql.resolver.find_by_id(
+        nodes, variables=ids, items=lambda data: data["nodes"], key=lambda found: found["login"]
+    )
+    assert_type(
+        graphql.resolver.request(by_login),
+        Callable[[str], fx.Effect[GqlLogin, GraphQLClientError | fx.NoSuchElementException]],
+    )
+    graphql.resolver.ordered(nodes, variables=ids, items=lambda data: data["edges"])  # pyright: ignore[reportGeneralTypeIssues, reportUnknownLambdaType]
+    graphql.resolver.ordered(nodes, variables=ids)  # pyright: ignore[reportCallIssue]
 
 
 class GqlIssueId(TypedDict):

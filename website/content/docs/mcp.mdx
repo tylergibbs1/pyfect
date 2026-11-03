@@ -15,7 +15,10 @@ from 2024-11-05 to the stateless 2026-07-28.
 provided. Each tool is listed with its description, its parameters' JSON Schema and an
 output schema; `tool.Readonly`, `Destructive`, `Idempotent` and `OpenWorld` annotations
 become its hints. Invalid arguments and declared failures come back as tool errors the
-model can read, and any other failure as an internal error that leaks no details.
+model can read, and any other failure as an internal error that leaks no details. The
+2025 revisions allow only an object as a structured result, so a tool whose result is
+another kind of value, such as a list, sends it as `{"result": ...}`, with an output
+schema saying so; pyfect's client unwraps it.
 `mcp_server.resource`, `resource_template` and `prompt` add resources and prompts the same
 way, as layers.
 
@@ -48,7 +51,17 @@ default), a transport or protocol error.
 
 `mcp_client.toolkit(client, prefix)` gives the server's tools as a toolkit with their
 handlers, so `generate_text(prompt, toolkit=...)` lets a model call another program's
-tools, named with `prefix` to keep them apart from local ones.
+tools. Each model tool is named `prefix` followed by the server's name for it, joined as
+they are, as in Effect: `"docs__"` gives `docs__search`, and `"docs"` gives `docssearch`.
+A tool error from the server (`isError`) fails the call with `McpClientError` by default.
+Pass `failure_mode="return"` to give it to the model as a failed result instead, as a
+local tool with `failure_mode="return"` does, so the model can read "no country has the
+code 'XX'" and answer. A request that fails, such as a timeout or a closed transport, then
+goes back to the model too, as its error message.
+
+Each request is a span on both sides, named for its method: `McpClient.tools/call` on
+the client and `McpServer.tools/call` on the server, each with a `tool` attribute, inside
+the trace of the HTTP request that carries it.
 
 ## Security defaults
 

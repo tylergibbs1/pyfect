@@ -14,7 +14,7 @@ history, read the same in both libraries.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any, ClassVar, Literal, NotRequired, Self, TypedDict, cast
 
@@ -27,6 +27,7 @@ from pyfect.errors import TaggedError
 from pyfect.http import error as http_error
 from pyfect.http.headers import current_redacted_names
 from pyfect.redacted import Redacted
+from pyfect.schema import issue as I
 
 type HttpMethod = Literal[
     "GET", "POST", "PATCH", "PUT", "DELETE", "HEAD", "OPTIONS", "TRACE", "QUERY"
@@ -299,6 +300,35 @@ class InternalProviderError(AiErrorReason):
         return f"Internal provider error: {self.description}"
 
 
+_UNION_SHOWN = 3
+"""The most members a union may have for an AI error to spell it out."""
+
+
+def describe_schema_error(error: S.SchemaError) -> str:
+    """``error``'s message with any union of more than a few members, that
+    no member could take, said as ``Expected one of N schemas``: a model's
+    output is checked against unions of every part and tool, whose schemas
+    run to kilobytes. Every AI error made from a schema error uses this."""
+    return I.format_issue(_brief(error.issue))
+
+
+def _brief(issue: I.Issue) -> I.Issue:
+    match issue:
+        case I.AnyOf(ast=ast, issues=()) if len(ast.types) > _UNION_SHOWN and not (
+            ast.annotations or {}
+        ).get("message"):
+            message = f"Expected one of {len(ast.types)} schemas"
+            return I.InvalidValue({"message": message}, issue.input)
+        case I.AnyOf(issues=issues) | I.Composite(issues=issues) if issues:
+            return replace(issue, issues=tuple(_brief(i) for i in issues))
+        case I.Pointer(path, inner):
+            return I.Pointer(path, _brief(inner))
+        case I.Encoding(issue=inner) | I.Filter(issue=inner):
+            return replace(issue, issue=_brief(inner))
+        case _:
+            return issue
+
+
 @dataclass(eq=False)
 class InvalidResponseError(AiErrorReason):
     """The provider's response could not be read."""
@@ -310,7 +340,7 @@ class InvalidResponseError(AiErrorReason):
 
     @staticmethod
     def from_schema_error(error: S.SchemaError) -> InvalidResponseError:
-        return InvalidResponseError(description=str(error))
+        return InvalidResponseError(description=describe_schema_error(error))
 
     @property
     def message(self) -> str:
@@ -332,7 +362,7 @@ class InvalidOutputError(AiErrorReason):
 
     @staticmethod
     def from_schema_error(error: S.SchemaError) -> InvalidOutputError:
-        return InvalidOutputError(description=str(error))
+        return InvalidOutputError(description=describe_schema_error(error))
 
     @property
     def message(self) -> str:
@@ -355,7 +385,9 @@ class StructuredOutputError(AiErrorReason):
 
     @staticmethod
     def from_schema_error(error: S.SchemaError, response_text: str) -> StructuredOutputError:
-        return StructuredOutputError(description=str(error), response_text=response_text)
+        return StructuredOutputError(
+            description=describe_schema_error(error), response_text=response_text
+        )
 
     @property
     def message(self) -> str:
@@ -778,6 +810,7 @@ __all__ = [
     "UnsupportedSchemaError",
     "UsageInfo",
     "build_error_description",
+    "describe_schema_error",
     "is_ai_error",
     "is_ai_error_reason",
     "make",

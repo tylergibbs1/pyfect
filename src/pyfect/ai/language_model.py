@@ -211,6 +211,34 @@ def _error(method: str, reason: Any) -> AiError:
     return AiError(module="LanguageModel", method=method, reason=reason)
 
 
+def _checking_tool_names(
+    decode: Callable[[Sequence[EncodedPart]], Effect[list[Any], SchemaError]],
+    tools: Sequence[Any],
+    method: str,
+) -> Callable[[Sequence[EncodedPart]], Effect[list[Any], SchemaError | AiError]]:
+    """``decode``, after failing a call to (or result of) a tool not in
+    ``tools`` with an ``InvalidOutputError`` (Effect's reason) that names
+    it and the tools there are: the part union's schema error would not."""
+    names = tuple(cast("str", tool.name) for tool in tools)
+    available = ", ".join(names) if names else "none"
+
+    def checked(parts: Sequence[EncodedPart]) -> Effect[list[Any], SchemaError | AiError]:
+        for i, part in enumerate(parts):
+            kind = part.get("type")
+            if kind in ("tool-call", "tool-result"):
+                name = part.get("name")
+                if isinstance(name, str) and name not in names:
+                    called = "called" if kind == "tool-call" else "returned a result of"
+                    description = (
+                        f"The model {called} the tool '{name}', which is not in the toolkit "
+                        f"(its tools: {available})\n  at [{i}]"
+                    )
+                    return fx.fail(_error(method, InvalidOutputError(description=description)))
+        return decode(parts)
+
+    return checked
+
+
 def _incomplete_reason(parts: Sequence[EncodedPart]) -> str | None:
     return incomplete_reason([part.get("reason") for part in parts if part.get("type") == "finish"])
 
@@ -368,9 +396,10 @@ class Service:
         encoded: bool,
         stream: bool,
         deferred: bool = False,
-    ) -> Callable[[Sequence[EncodedPart]], Effect[list[Any], SchemaError]]:
+    ) -> Callable[[Sequence[EncodedPart]], Effect[list[Any], SchemaError | AiError]]:
         """Decodes a response's parts; ``deferred`` also takes calls to
-        tools outside ``kit``."""
+        tools outside ``kit``, which otherwise fail with
+        ``ToolNotFoundError`` before the parts are decoded."""
         tools = () if kit is None else tuple(kit.tools.values())
         key = (encoded, stream, deferred)
         cached = self._decoders.get(key)
@@ -384,7 +413,17 @@ class Service:
         part = R.stream_part(toolkit) if stream else R.part(toolkit)
         if deferred:
             part = S.Union(part, _UNDECLARED_TOOL_CALL)
-        decoder = cast("Any", S.decode_unknown_effect(S.Array(part)))
+        decode_parts = cast(
+            "Callable[[Sequence[EncodedPart]], Effect[list[Any], SchemaError]]",
+            S.decode_unknown_effect(S.Array(part)),
+        )
+        decoder = (
+            decode_parts
+            if deferred
+            else _checking_tool_names(
+                decode_parts, tools, "streamText" if stream else "generateText"
+            )
+        )
         self._decoders[key] = (tools, decoder)
         return decoder
 
