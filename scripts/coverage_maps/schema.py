@@ -18,7 +18,6 @@ INTERNAL = "Effect's `@internal` schema exports"
 CONTEXT = "`SchemaAST.Context`"
 DATE = "`Schema.Date`, `DateFromString`, `DateFromMillis`"
 WEB = "`Schema.File`, `FormData`, `URLSearchParams`"
-GRAPH = "`Schema.Graph`"
 ISO = "`Schema.toIso`, `toCodecIso`"
 OTHER_CODECS = "`Schema.toDifferJsonPatch`, `toEncoderXml`, `toCodecGoJson`"
 FIELDS_ASSIGN = "`Schema.fieldsAssign`"
@@ -75,7 +74,6 @@ SCHEMA = Module(
                 "fromURLSearchParams",
             )
         },
-        "Graph": (GRAPH, "not ported"),
         **{
             name: (ISO, "not ported")
             for name in ("toCodecIso", "toIso", "toIsoSource", "toIsoFocus", "overrideToCodecIso")
@@ -299,6 +297,7 @@ REPRESENTATION = Module(
         "ReadonlyMapReviver": "pyfect.schema.representation.map_reviver",
         "ReadonlySetReviver": "pyfect.schema.representation.frozen_set_reviver",
         "Uint8ArrayReviver": "pyfect.schema.representation.bytes_reviver",
+        "GraphReviver": "pyfect.schema.representation.graph_reviver",
     },
     pythonic={
         "isStringSymbolReviver": (NO_UNDEFINED, "not ported"),
@@ -312,7 +311,6 @@ REPRESENTATION = Module(
                 "FileReviver",
                 "FormDataReviver",
                 "URLSearchParamsReviver",
-                "GraphReviver",
             )
         },
     },

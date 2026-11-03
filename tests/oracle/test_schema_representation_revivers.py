@@ -14,7 +14,7 @@ Python's ``re`` flags (an int).
 Omitted (§4 rows in docs/PARITY.md):
 - No such schemas: "revives isStringSymbol" (no symbols), "revives
   HashMap", "revives HashSet", "revives Chunk" (Python's own collections),
-  "revives Graph", "revives Date" (a ``datetime`` is ``DateTimeUtc``),
+  "revives Date" (a ``datetime`` is ``DateTimeUtc``),
   "revives File", "revives FormData", "revives URLSearchParams" (browser
   types), "revives MutableJson" (``mutable_json_reviver`` revives
   ``S.Json``: Python's JSON values are already mutable).
@@ -732,6 +732,13 @@ def test_revives_readonly_map_declaration():
     """revives ReadonlyMap"""
     assert_declaration_reviver(
         S.Map(S.String, S.Number), "effect/schema/ReadonlyMap", None, R.map_reviver
+    )
+
+
+def test_revives_graph_declaration():
+    """revives Graph"""
+    assert_declaration_reviver(
+        S.Graph("directed", S.String, S.Number), "effect/schema/Graph", "directed", R.graph_reviver
     )
 
 

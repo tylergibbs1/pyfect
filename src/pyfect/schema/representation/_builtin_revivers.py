@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping
 from typing import Any, NotRequired, TypedDict, TypeIs, cast
 
 from pyfect import schema as S
+from pyfect.graph import Kind
 from pyfect.schema._error_instance import error_schema
 from pyfect.schema._schema import Codec, Top
 from pyfect.schema.ast import Annotations, Filter
@@ -241,6 +242,17 @@ map_reviver = _declaration("ReadonlyMap", lambda ps: S.Map(ps[0], ps[1]))
 """Effect's ``ReadonlyMapReviver``: revives ``S.Map``."""
 frozen_set_reviver = _declaration("ReadonlySet", lambda ps: S.FrozenSet(ps[0]))
 """Effect's ``ReadonlySetReviver``: revives ``S.FrozenSet``."""
+
+
+def _revive_graph(input: DeclarationInput[Kind]) -> Top:
+    node, edge = input.type_parameters
+    return _annotated(S.Graph(input.payload, node, edge), input.annotations)
+
+
+graph_reviver = make_reviver_declaration(
+    "effect/schema/Graph", S.Literals("directed", "undirected"), _revive_graph
+)
+"""Effect's ``GraphReviver``: revives ``S.Graph``, its kind the payload."""
 
 
 def _options(**valid: Callable[[object], bool]) -> Codec[Payload | None, Any, Any, Any]:

@@ -126,11 +126,15 @@ layer, concurrency, retries and timeouts.
 - **Streams.** Pull-based streams, sinks and channels with backpressure, plus NDJSON, JSON
   array and Server-Sent Events framers. [Streams →](https://pyfect.dev/docs/streams)
 - **Schema.** Decode and encode data with Effect's error messages, generate JSON Schema and
-  Hypothesis strategies, and plug into pydantic or msgspec.
+  Hypothesis strategies, store schemas themselves as JSON documents, and plug into pydantic
+  or msgspec.
   [Schema →](https://pyfect.dev/docs/schema)
 - **Transactions.** Software transactional memory: `TxRef`, transactional queues, maps,
   locks and semaphores that commit atomically and retry without blocking a thread.
   [Transactions →](https://pyfect.dev/docs/transactions)
+- **Graphs.** Directed and undirected graphs with stable indexes: walks, shortest paths,
+  components, flows and matchings, GraphViz and Mermaid output, and a schema for storing
+  them as JSON. [Graphs →](https://pyfect.dev/docs/graph)
 - **Config.** Typed settings from the environment, `.env` files or dicts, with secrets kept
   out of logs. [Config →](https://pyfect.dev/docs/config)
 - **Observability.** Logging, spans, metrics and an OpenTelemetry bridge.

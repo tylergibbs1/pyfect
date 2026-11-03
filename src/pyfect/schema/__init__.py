@@ -193,6 +193,7 @@ from pyfect.schema._duration_codecs import (
 )
 from pyfect.schema._error import SchemaError
 from pyfect.schema._error_instance import DecodedDefect, Defect, DefectSchema, ErrorInstance
+from pyfect.schema._graph import Graph, GraphSchema
 from pyfect.schema._jsonschema import (
     CheckContext,
     CheckOutput,
@@ -531,6 +532,8 @@ __all__ = [
     "FromBrand",
     "FrozenSet",
     "FrozenSetSchema",
+    "Graph",
+    "GraphSchema",
     "Guard",
     "Host",
     "HostFromString",

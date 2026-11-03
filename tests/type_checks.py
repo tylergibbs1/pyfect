@@ -8152,3 +8152,18 @@ def schema_rest_types() -> None:
     assert_type(HS.RecordFromCookies, DecodeToSchema[dict[str, str], http_cookies.Cookies])
     assert_type(HS.UrlParams, S.Bottom[http_url_params.UrlParams])
     assert_type(HS.DateTimeUtcFromHttpDate, DecodeToSchema[datetime, str])
+
+
+def check_schema_graph() -> None:
+    from pyfect import graph
+
+    schema = S.Graph("directed", S.String, S.FiniteFromString)
+    assert_type(schema, S.GraphSchema[str, float, str, str, Literal["directed"], Never, Never])
+    assert_type(S.decode_unknown_sync(schema)(None), graph.Graph[str, float, Literal["directed"]])
+    undirected = S.Graph("undirected", S.String, S.Number)
+    assert_type(
+        S.encode_sync(undirected)(graph.undirected()),
+        graph.Graph[str, float, Literal["undirected"]],
+    )
+    S.Graph("cyclic", S.String, S.Number)  # pyright: ignore[reportArgumentType]
+    S.encode_sync(undirected)(graph.directed())  # pyright: ignore[reportArgumentType]

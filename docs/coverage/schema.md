@@ -5,13 +5,13 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Schema | 377 | 300 | 17 | 60 | 0 | 100% |
+| Schema | 377 | 301 | 17 | 59 | 0 | 100% |
 | SchemaAST | 133 | 58 | 8 | 67 | 0 | 100% |
 | SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
 | SchemaIssue | 21 | 16 | 3 | 2 | 0 | 100% |
 | SchemaParser | 33 | 25 | 0 | 8 | 0 | 100% |
-| SchemaRepresentation | 100 | 85 | 3 | 9 | 3 | 97% |
+| SchemaRepresentation | 100 | 85 | 4 | 8 | 3 | 97% |
 | JsonSchema | 14 | 7 | 7 | 0 | 0 | 100% |
 | **All** | 781 | | | | 3 | 99% |
 
@@ -342,7 +342,7 @@ Coverage counts ported, renamed and §4 exports.
 | `DnsTxtRecord` | ported | `pyfect.schema.DnsTxtRecord` |
 | `DnsRecord` | ported | `pyfect.schema.DnsRecord` |
 | `Exit` | ported | `pyfect.schema.Exit` |
-| `Graph` | §4 | not ported (§4: `Schema.Graph`) |
+| `Graph` | ported | `pyfect.schema.Graph` |
 | `HashMap` | §4 | `S.Map` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
 | `HashSet` | §4 | `S.FrozenSet` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
 | `Option` | ported | `pyfect.schema.Option` |
@@ -767,7 +767,7 @@ Coverage counts ported, renamed and §4 exports.
 | `ErrorInstanceReviver` | ported | `pyfect.schema.representation.error_instance_reviver` |
 | `ExitReviver` | ported | `pyfect.schema.representation.exit_reviver` |
 | `ReadonlyMapReviver` | renamed | `pyfect.schema.representation.map_reviver` |
-| `GraphReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |
+| `GraphReviver` | renamed | `pyfect.schema.representation.graph_reviver` |
 | `HashMapReviver` | §4 | `map_reviver` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
 | `ReadonlySetReviver` | renamed | `pyfect.schema.representation.frozen_set_reviver` |
 | `HashSetReviver` | §4 | `frozen_set_reviver` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |

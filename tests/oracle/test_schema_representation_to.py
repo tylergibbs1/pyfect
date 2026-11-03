@@ -15,6 +15,10 @@ Omitted:
   "... / ObjectKeyword", "node conversion / global unique symbol".
 - "schema annotations and declarations / omits brands": ``S.from_brand``
   adds the brand's checks; a TypeScript-only brand has no runtime form.
+- "encoded and type projections / retains only the media type when a reviver
+  changes the content": ``S.from_json_string`` takes no ``reviver``
+  (``JSON.parse``'s reviver drops a key by returning ``undefined``, which
+  Python has no value for).
 
 Python differences: ``is_pattern``'s payload holds ``re`` flags (an
 ``int``), and its arbitrary constraint is a compiled pattern (not JSON).
