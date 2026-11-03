@@ -9,7 +9,7 @@ Payloads are encoded with the events' JSON byte codecs (Effect's
 
 import time
 from collections.abc import Callable, Generator, Sequence
-from typing import Any, Never, NotRequired, TypedDict
+from typing import Any, Never, NotRequired, TypedDict, cast
 
 import pytest
 
@@ -215,7 +215,9 @@ def replay_items(events: Sequence[tuple[str, str, bool]]):
     def compact(c: L.Compaction) -> fx.Effect[None]:
         return fx.for_each(
             c.events,
-            lambda e: c.write(e.tag, {**e.payload, "list": "replacement"}),
+            lambda e: c.write(
+                e.tag, {**cast("dict[str, object]", e.payload), "list": "replacement"}
+            ),
         ).as_void()
 
     handlers = _merge(
@@ -270,10 +272,7 @@ def test_does_not_acknowledge_undecodable_entries():
                 fx.layer.merge(
                     fx.layer.succeed(J.EventJournal, journal),
                     fx.layer.succeed(L.Identity, test_identity("log")),
-                    fx.layer.succeed(
-                        L.HandlerTransaction,
-                        lambda effect: effect.ensuring(done.offer(None)),
-                    ),
+                    fx.layer.succeed(L.HandlerTransaction, _transaction_then(done.offer(None))),
                 )
             )
         )
@@ -496,7 +495,10 @@ def test_stored_newer_entry_conflicts_with_every_replacement():
         L.group_compaction(
             ItemGroup,
             lambda c: fx.for_each(
-                [1, 2], lambda item: c.write("ItemAdded", {**c.events[0].payload, "item": item})
+                [1, 2],
+                lambda item: c.write(
+                    "ItemAdded", {**cast("dict[str, object]", c.events[0].payload), "item": item}
+                ),
             ).as_void(),
         ),
     )
@@ -679,6 +681,13 @@ def test_writes_typed_event():
         assert handled == ["user-1"]
 
     yield from fx.scoped(fx.gen(body)).pipe(fx.provide(_user_log_layer(handled)))
+
+
+def _transaction_then(after: fx.Effect[object]) -> L.Transaction:
+    def transaction[A, E, R](effect: fx.Effect[A, E, R], /) -> fx.Effect[A, E, R]:
+        return effect.ensuring(after)
+
+    return transaction
 
 
 def _timeline_transaction(timeline: list[str]):
@@ -1111,7 +1120,9 @@ def test_decodes_conflicts_with_caller_identity():
                 "First": L.HandlerItem(
                     first_event,
                     fx.Context.make(ReplayLabel, "first"),
-                    lambda i: observe_replay(seen, f"handle First {i.payload['id']}"),
+                    lambda i: observe_replay(
+                        seen, f"handle First {cast('dict[str, str]', i.payload)['id']}"
+                    ),
                 )
             },
             store_id=(yield from L.CurrentStoreId()),
@@ -1166,9 +1177,7 @@ def test_logs_failed_replay_and_redelivers():
             fx.layer.merge(
                 fx.layer.succeed(J.EventJournal, journal),
                 fx.layer.succeed(L.Identity, test_identity("log")),
-                fx.layer.succeed(
-                    L.HandlerTransaction, lambda effect: effect.ensuring(finished.offer(None))
-                ),
+                fx.layer.succeed(L.HandlerTransaction, _transaction_then(finished.offer(None))),
             )
         )
     )

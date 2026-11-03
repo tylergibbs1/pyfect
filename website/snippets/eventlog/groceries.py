@@ -38,7 +38,8 @@ def clear(cleared: L.HandlerInput[Cleared]) -> fx.Effect[None]:
 Handlers = L.group(Groceries, lambda h: h.handle(ItemAdded, add).handle(ListCleared, clear))
 
 Log = (
-    L.layer(L.schema(Groceries), Handlers.pipe(fx.layer.provide(L.layer_registry)))
+    # The log gives the handlers its Registry, so only the journal and identity remain.
+    L.layer(L.schema(Groceries), Handlers)
     .pipe(fx.layer.provide(J.layer_memory))
     .pipe(fx.layer.provide(fx.layer.effect(L.Identity, L.make_identity)))
 )

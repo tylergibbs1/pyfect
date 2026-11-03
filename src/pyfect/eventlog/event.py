@@ -19,7 +19,7 @@ from typing import Any, Never, TypeGuard, overload
 from pyfect import schema as S
 from pyfect.eventlog._binary import BytesCodec, to_codec
 
-type _C[T] = S.Codec[T, Any, Any, Any]
+type _C[T] = S.Codec[T, object, object, object]
 
 
 @dataclass(frozen=True, eq=False)
@@ -42,6 +42,7 @@ class Event[P, A, E]:
 
 
 type AnyEvent = Event[Any, Any, Any]
+"""An event of any payload, success and error (Effect's ``Event.Any``)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +52,11 @@ class Write[P, A, E]:
 
     event: Event[P, A, E]
     payload: P
+
+
+type AnyWrite[A, E] = Write[Any, A, E]
+"""A write of any payload whose handler gives ``A`` or fails with ``E``:
+building the ``Write`` already checked its payload against its event."""
 
 
 @overload
@@ -106,4 +112,4 @@ def is_event(value: object) -> TypeGuard[AnyEvent]:
     return isinstance(value, Event)
 
 
-__all__ = ["AnyEvent", "Event", "Write", "add_error", "is_event", "make"]
+__all__ = ["AnyEvent", "AnyWrite", "Event", "Write", "add_error", "is_event", "make"]

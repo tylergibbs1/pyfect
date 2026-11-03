@@ -654,7 +654,7 @@ class _SqlJournal(EventJournalService):
         )
 
     @property
-    def changes(self) -> Effect[Subscription[Entry], Any, Scope]:
+    def changes(self) -> Effect[Subscription[Entry], Never, Scope]:
         return self._pubsub.subscribe()
 
     @property

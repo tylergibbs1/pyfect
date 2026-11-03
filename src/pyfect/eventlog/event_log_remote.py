@@ -69,6 +69,7 @@ __all__ = [
     "EventLogRemoteClient",
     "EventLogRemoteError",
     "EventLogRemoteService",
+    "WhenAuthenticated",
     "WriteFn",
     "layer_client",
     "layer_encrypted",
@@ -104,7 +105,16 @@ class WriteFn(Protocol):
     ) -> Effect[Sequence[WriteAck] | None, EventLogRemoteError]: ...
 
 
-def _authenticated[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:
+class WhenAuthenticated(Protocol):
+    """Runs an effect once the ``Identity`` it runs as is authenticated
+    with the remote."""
+
+    def __call__[A, E, R](
+        self, effect: Effect[A, E, R], /
+    ) -> Effect[A, E | EventLogRemoteError, R | Identity]: ...
+
+
+def _authenticated[A, E, R](effect: Effect[A, E, R], /) -> Effect[A, E, R]:
     return effect
 
 
@@ -118,7 +128,7 @@ class EventLogRemoteService:
     changes: Changes
     write: WriteFn
     first_sequence: int | None = None
-    when_authenticated: Callable[[Effect[Any, Any, Any]], Effect[Any, Any, Any]] = _authenticated
+    when_authenticated: WhenAuthenticated = _authenticated
 
 
 class EventLogRemote(Tag[EventLogRemoteService], key="effect/eventlog/EventLogRemote"):
@@ -322,7 +332,9 @@ def make_with(
 
             return gen(run)
 
-        def when_authenticated(effect: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
+        def when_authenticated[A, E, R](
+            effect: Effect[A, E, R], /
+        ) -> Effect[A, E | EventLogRemoteError, R | Identity]:
             return Identity().flat_map(ensure_authenticated).and_then(effect)
 
         hello = state["hello"]

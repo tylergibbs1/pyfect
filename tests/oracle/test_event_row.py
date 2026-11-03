@@ -39,11 +39,19 @@ class GroceryRow(TypedDict):
     completed: bool
 
 
-Grocery = R.make("grocery", key="id", schema=S.Struct(GroceryRow))
+class GroceryPatch(TypedDict, total=False):
+    name: str
+    quantity: float | None
+    completed: bool
+
+
+Grocery = R.make(
+    "grocery", key="id", schema=S.Struct(GroceryRow), key_type=str, patch_fields=GroceryPatch
+)
 Groceries = G.empty.add(Grocery)
 schema = L.schema(Groceries)
 
-type Payload = R.Payload[GroceryRow, Any]
+type Payload = R.Payload[GroceryRow, str]
 type Call = tuple[Any, ...]
 
 
@@ -59,7 +67,7 @@ def _entry(
 
 
 def _entry_with(
-    msecs: int, row: R.EventRow[Any, Any, Any], payload: Any
+    msecs: int, row: R.EventRow[Any, Any, Any, Any], payload: Any
 ) -> Generator[Any, Any, Entry]:
     """An entry carrying ``payload`` encoded as the journal stores it."""
     data = yield from S.encode_effect(row.payload_codec)(payload).or_die()
@@ -96,8 +104,8 @@ def _replay(payload: Payload, conflicts: Sequence[Payload]):
 X: GroceryRow = {"id": "g1", "name": "x", "quantity": 1, "completed": False}
 Y: GroceryRow = {"id": "g1", "name": "y", "quantity": 2, "completed": True}
 E: GroceryRow = {"id": "g1", "name": "e", "quantity": None, "completed": False}
-P = {"name": "p", "quantity": 3}
-Q = {"name": "q", "completed": True}
+P: GroceryPatch = {"name": "p", "quantity": 3}
+Q: GroceryPatch = {"name": "q", "completed": True}
 
 
 class StampRow(TypedDict):
@@ -559,7 +567,7 @@ def _make_replica(compact: bool = False) -> Generator[Any, Any, _Replica]:
     changes = yield from fx.Queue[RemoteEntry, EventLogRemoteError].unbounded()
     journal = yield from J.make_memory
 
-    def patch(key: str, fields: Any) -> fx.Effect[None]:
+    def patch(key: str, fields: GroceryPatch) -> fx.Effect[None]:
         def apply() -> None:
             row = storage.get(key)
             if row is not None:
@@ -615,7 +623,7 @@ def _random_op(rng: random.Random) -> Payload:
             {"id": key, "name": name(), "quantity": quantity(), "completed": rng.random() < 0.5}
         ).payload
     if kind == "patch":
-        fields: dict[str, object] = {}
+        fields: GroceryPatch = {}
         if rng.random() < 0.5:
             fields["name"] = name()
         if rng.random() < 0.5:

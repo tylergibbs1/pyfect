@@ -49,6 +49,7 @@ from pyfect.layer import Layer, provide_merge
 from pyfect.layer import succeed as layer_succeed
 from pyfect.redacted import make as redacted
 from pyfect.rpc import RpcRequest
+from pyfect.rpc.group import HandlersFor
 from pyfect.rpc.middleware import MiddlewareOptions
 from pyfect.stream import Stream
 from pyfect.stream import fail as stream_fail
@@ -232,19 +233,19 @@ type OnWrite = Callable[
 ]
 
 
-type Changes = Callable[[str, StoreId, int, ConnectionWrites], Stream[bytes, Any]]
+type Changes = Callable[[str, StoreId, int, ConnectionWrites], Stream[bytes, object]]
 """A connection's changes: ``(public_key, store_id, start_sequence, writes)``."""
 
 
 def layer_rpc_handlers(
     *,
     remote_id: RemoteId,
-    get_or_create_session_auth_binding: Callable[[str, bytes], Effect[bytes, Any]],
+    get_or_create_session_auth_binding: Callable[[str, bytes], Effect[bytes, object]],
     on_write: OnWrite,
     changes: Changes,
     first_sequence: int | None = None,
     authorize_identity: Callable[[str], Effect[None, EventLogProtocolError]] | None = None,
-) -> Layer[Any]:
+) -> Layer[HandlersFor[EventLogRemoteRpcs] | EventLogAuthentication]:
     """The handlers of ``EventLogRemoteRpcs`` and the auth middleware.
     ``get_or_create_session_auth_binding`` gives the signing key bound to a
     public key (binding the presented one on first use)."""

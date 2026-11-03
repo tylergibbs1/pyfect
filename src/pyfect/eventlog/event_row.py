@@ -3,8 +3,20 @@
 An ``EventRow`` is an event whose payload sets, patches or removes one
 row of a table, identified by its key fields::
 
-    Grocery = event_row.make("grocery", key="id", schema=S.Struct(GroceryRow))
+    Grocery = event_row.make(
+        "grocery",
+        key="id",
+        schema=S.Struct(GroceryRow),
+        key_type=str,
+        patch_fields=GroceryPatch,  # a total=False TypedDict of the non-key fields
+    )
     log.write(Grocery, Grocery.set({"id": "g1", ...}).payload)
+    log.write(Grocery, Grocery.patch("g1", {"completed": True}).payload)
+
+``key_type`` and ``patch_fields`` only type ``patch``, ``remove`` and the
+handler's callbacks (Python cannot derive them from the schema, as Effect
+does); ``make`` checks ``patch_fields`` names exactly the non-key fields,
+and ``patch`` raises ``EventRowPatchError`` for a key or unknown field.
 
 ``handler`` turns three callbacks into the event's handler, resolving a
 late entry against the newer ones already stored, so replicas applying
@@ -23,7 +35,7 @@ from pyfect import schema as S
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect.effect import fail, gen, succeed
-from pyfect.eventlog.event import Event, Write
+from pyfect.eventlog.event import AnyEvent, Event, Write
 from pyfect.eventlog.event_group import EventGroup
 from pyfect.eventlog.event_journal import Entry, entry_order
 from pyfect.eventlog.event_log import CompactWrite, HandlerInput, Registry
@@ -37,6 +49,7 @@ from pyfect.schema.issue import Forbidden, Issue
 
 __all__ = [
     "EventRow",
+    "EventRowPatchError",
     "KeyDeclaration",
     "PatchPayload",
     "Payload",
@@ -180,14 +193,28 @@ def _patch_field(codec: _Codec) -> _Codec:
     )
 
 
+class EventRowPatchError(ValueError):
+    """A patch named a field that is not one of the row's non-key fields
+    (a key field, or a field the row does not have)."""
+
+    def __init__(self, tag: str, fields: Sequence[str], patchable: frozenset[str]) -> None:
+        super().__init__(
+            f"{tag!r} patches only its non-key fields {sorted(patchable)!r}, got {list(fields)!r}"
+        )
+        self.tag = tag
+        self.fields = tuple(fields)
+
+
 @dataclass(frozen=True, eq=False)
-class EventRow[R: Row, K, E = Never](Event[Payload[R, K], None, E]):
+class EventRow[R: Row, K = object, E = Never, P: Row = Row](Event[Payload[R, K], None, E]):
     """An event setting, patching or removing rows of ``schema`` keyed by
-    ``key_fields``."""
+    ``key_fields`` (of type ``K``); a patch writes some of the fields
+    ``P``."""
 
     key_fields: tuple[str, ...] = ()
-    schema: S.StructSchema[R, Any, Any] = field(default=cast("Any", None), repr=False)
+    schema: S.StructSchema[R, object, object] = field(default=cast("Any", None), repr=False)
     _key: _RowKey = field(default=cast("Any", None), repr=False)
+    _patchable: frozenset[str] = field(default=frozenset(), repr=False)
 
     def key_of(self, fields: Row) -> str:
         """The primary key of the row with these key field values."""
@@ -196,33 +223,50 @@ class EventRow[R: Row, K, E = Never](Event[Payload[R, K], None, E]):
     def set(self, row: R) -> Write[Payload[R, K], None, E]:
         return Write(self, {"_tag": "set", "row": row})
 
-    def patch(self, key: K, fields: Row) -> Write[Payload[R, K], None, E]:
-        """Write ``fields`` (non-key fields) over the row's."""
+    def patch(self, key: K, fields: P) -> Write[Payload[R, K], None, E]:
+        """Write ``fields`` (non-key fields) over the row's; a key field or
+        a field the row does not have raises ``EventRowPatchError``."""
+        wrong = [name for name in fields if name not in self._patchable]
+        if wrong:
+            raise EventRowPatchError(self.tag, wrong, self._patchable)
         return Write(self, {"_tag": "patch", "key": key, "fields": fields})
 
     def remove(self, key: K) -> Write[Payload[R, K], None, E]:
         return Write(self, {"_tag": "remove", "key": key})
 
 
-def make[R: Row, E = Never](
+def make[R: Row, K = object, P: Row = Row, E = Never](
     tag: str,
     *,
     key: str | KeyDeclaration,
-    schema: S.StructSchema[R, Any, Any],
-    error: S.Codec[E, Any, Any, Any] | None = None,
-) -> EventRow[R, Any, E]:
+    schema: S.StructSchema[R, object, object],
+    key_type: type[K] | None = None,
+    patch_fields: type[P] | None = None,
+    error: S.Codec[E, object, object, object] | None = None,
+) -> EventRow[R, K, E, P]:
     """An event keeping rows of ``schema`` (Effect's ``EventRow.make``).
     ``key`` names the key field, or declares several; a missing key field
     raises ``ValueError``. A single named field is carried as its value,
-    a declaration as a mapping of its fields."""
+    a declaration as a mapping of its fields. ``key_type`` (that value's
+    type) and ``patch_fields`` (a TypedDict of exactly the non-key fields,
+    else ``ValueError``) type the key and the patches."""
     fields = cast("Mapping[str, _Codec]", schema.fields)
     names = (key,) if isinstance(key, str) else key.fields
     unknown = [name for name in names if name not in fields]
     if not names or unknown:
         raise ValueError(f"{tag!r} key fields must be fields of the schema, got {names!r}")
     row_key = _scalar_key(key, fields[key]) if isinstance(key, str) else _declared_key(key, fields)
-    patch_fields = {
-        name: _patch_field(codec) for name, codec in fields.items() if name not in row_key.fields
+    del key_type
+    patchable = frozenset(name for name in fields if name not in row_key.fields)
+    if patch_fields is not None:
+        declared = frozenset(cast("Mapping[str, object]", patch_fields.__annotations__))
+        if declared != patchable:
+            raise ValueError(
+                f"{tag!r} patch_fields must name the non-key fields {sorted(patchable)!r}, "
+                f"got {sorted(declared)!r}"
+            )
+    patch_schemas = {
+        name: _patch_field(codec) for name, codec in fields.items() if name in patchable
     }
     payload = S.Union(
         _struct({"_tag": S.Literal("set"), "row": schema}),
@@ -230,13 +274,13 @@ def make[R: Row, E = Never](
             {
                 "_tag": S.Literal("patch"),
                 "key": row_key.schema,
-                "fields": _struct(patch_fields, optional=True),
+                "fields": _struct(patch_schemas, optional=True),
             }
         ),
         _struct({"_tag": S.Literal("remove"), "key": row_key.schema}),
     )
 
-    def primary_key(p: Payload[R, Any]) -> str:
+    def primary_key(p: Payload[R, K]) -> str:
         return row_key.primary_key(p["row"] if p["_tag"] == "set" else row_key.to_values(p["key"]))
 
     return EventRow(
@@ -248,6 +292,7 @@ def make[R: Row, E = Never](
         key_fields=row_key.fields,
         schema=schema,
         _key=row_key,
+        _patchable=patchable,
     )
 
 
@@ -288,11 +333,11 @@ def _resolve(entry: _Op, conflicts: Sequence[_Op]) -> _Op | None:
             return entry
 
 
-def handler[R: Row, K, E, RR = Never](
-    row: EventRow[R, K, E],
+def handler[R: Row, K, E, P: Row, RR = Never](
+    row: EventRow[R, K, E, P],
     *,
     set: Callable[[R, K], Effect[object, E, RR]],
-    patch: Callable[[K, Row], Effect[object, E, RR]],
+    patch: Callable[[K, P], Effect[object, E, RR]],
     remove: Callable[[K], Effect[object, E, RR]],
 ) -> Callable[[HandlerInput[Payload[R, K]]], Effect[None, E, RR]]:
     """The handler of ``row`` calling at most one callback per entry: the
@@ -308,7 +353,8 @@ def handler[R: Row, K, E, RR = Never](
             case "set":
                 return set(op["row"], cast("K", key_from_row(op["row"])))
             case "patch":
-                return patch(op["key"], op["fields"]) if op["fields"] else succeed(None)
+                fields = cast("P", op["fields"])
+                return patch(op["key"], fields) if fields else succeed(None)
             case "remove":
                 return remove(op["key"])
 
@@ -349,8 +395,8 @@ def _shadowed(entries: Sequence[Entry], ops: Mapping[int, _Op]) -> set[int]:
     return shadowed
 
 
-def compaction(
-    group: EventGroup[Any], row: EventRow[Any, Any, Any]
+def compaction[R: Row, K, E, P: Row](
+    group: EventGroup[AnyEvent], row: EventRow[R, K, E, P]
 ) -> Layer[Never, Never, Registry]:
     """Compact ``row``'s entries a remote sends: an entry is dropped when
     newer ones of its key overwrite everything it writes. Undecodable

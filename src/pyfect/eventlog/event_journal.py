@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from functools import cached_property
-from typing import Any, NewType, Protocol, cast
+from typing import Any, Never, NewType, Protocol, cast
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -47,9 +47,9 @@ RemoteId = NewType("RemoteId", bytes)
 StoreId = NewType("StoreId", str)
 """The store of an identity an event log writes to (``"default"``)."""
 
-EntryIdSchema: S.Codec[EntryId, Any] = cast("S.Codec[EntryId, Any]", S.Bytes)
-RemoteIdSchema: S.Codec[RemoteId, Any] = cast("S.Codec[RemoteId, Any]", S.Bytes)
-StoreIdSchema: S.Codec[StoreId, Any] = cast("S.Codec[StoreId, Any]", S.String)
+EntryIdSchema: S.Codec[EntryId, bytes] = cast("S.Codec[EntryId, bytes]", S.Bytes)
+RemoteIdSchema: S.Codec[RemoteId, bytes] = cast("S.Codec[RemoteId, bytes]", S.Bytes)
+StoreIdSchema: S.Codec[StoreId, str] = cast("S.Codec[StoreId, str]", S.String)
 
 
 @dataclass(eq=False)
@@ -335,7 +335,7 @@ class EventJournalService(ABC):
 
     @property
     @abstractmethod
-    def changes(self) -> Effect[Subscription[Entry], Any, Scope]:
+    def changes(self) -> Effect[Subscription[Entry], Never, Scope]:
         """A subscription to the entries written locally."""
 
     @property
@@ -565,7 +565,7 @@ class _MemoryJournal(EventJournalService):
         return sync(lambda: self._ensure_remote(remote_id).sequence)
 
     @property
-    def changes(self) -> Effect[Subscription[Entry], Any, Scope]:
+    def changes(self) -> Effect[Subscription[Entry], Never, Scope]:
         return self._pubsub.subscribe()
 
     @property
