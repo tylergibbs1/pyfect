@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from typing import Any, ClassVar, Never, TypeVar, cast
+from typing import Any, ClassVar, Never, Protocol, TypeVar, cast
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -54,6 +54,29 @@ class Persistable(Request[A_co, E_co | PersistenceError | S.SchemaError, R_co], 
     @abstractmethod
     def primary_key(self) -> str:
         """The key the request's result is stored under."""
+
+    def _persistable_types(self) -> Exactly[A_co, E_co]:
+        """Never called: lets ``persisted_cache`` read the request's success
+        and error exactly (``Persistable.Success<K>`` / ``Error<K>``)."""
+        raise NotImplementedError
+
+
+class Exactly[A, E]:
+    """Invariant in ``A`` and ``E`` (each is taken and given back), so
+    matching a request's ``_persistable_types()`` pins its success and
+    error instead of widening them to what else they meet."""
+
+    __slots__ = ()
+
+    def pin(self, success: A, error: E) -> tuple[A, E]:
+        raise NotImplementedError
+
+
+class HasPersistableTypes[A, E](Protocol):
+    """A persistable request succeeding with exactly ``A`` and failing with
+    exactly ``E`` (its schemas' types)."""
+
+    def _persistable_types(self) -> Exactly[A, E]: ...
 
 
 type AnyPersistable = Persistable[Any, Any, Any]
@@ -129,6 +152,8 @@ __all__ = [
     "AnyCodec",
     "AnyPersistable",
     "Class",
+    "Exactly",
+    "HasPersistableTypes",
     "Persistable",
     "TimeToLive",
     "deserialize_exit",

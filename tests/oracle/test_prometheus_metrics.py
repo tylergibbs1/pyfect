@@ -307,3 +307,22 @@ def test_output_format_ends_with_a_newline_when_there_are_metrics():
     counter = metric.counter("newline_test", description="Test newline")
     output = yield from _format(counter.update(1))
     assert output.endswith("\n")
+
+
+@testing.effect
+def test_a_timer_is_written_in_milliseconds_without_its_time_unit():
+    """(not an Effect title; trawl T6) A timer records milliseconds and the
+    export leaves out ``time_unit``, so the name says nothing of the unit.
+    The expected text is Effect 4.0.6's ``PrometheusMetrics.format()`` under
+    Node for the same updates."""
+    timer = metric.timer("trawl_visit_seconds", description="Page visits", boundaries=[100, 1000])
+    output = yield from _format(timer.update(51.521), timer.update(0.25))
+    assert output == (
+        "# HELP trawl_visit_seconds Page visits\n"
+        "# TYPE trawl_visit_seconds histogram\n"
+        'trawl_visit_seconds_bucket{le="100"} 0\n'
+        'trawl_visit_seconds_bucket{le="1000"} 1\n'
+        'trawl_visit_seconds_bucket{le="+Inf"} 2\n'
+        "trawl_visit_seconds_sum 51771\n"
+        "trawl_visit_seconds_count 2\n"
+    )

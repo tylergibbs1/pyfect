@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Never, overload
 
+from pyfect._tags import Tags
 from pyfect.result import Err, Ok, Result
 from pyfect.stream._base import A_co, E_co, R_co, StreamBase
 
@@ -178,25 +179,9 @@ class ErrorMethods(StreamBase[A_co, E_co, R_co]):
 
         return Stream(self._channel.tap_error(f))
 
-    @overload
-    def tap_error_tag[T1, E2 = Never, R2 = Never](
-        self, tag: type[T1], f: Callable[[T1], Effect[object, E2, R2]]
-    ) -> Stream[A_co, E_co | E2, R_co | R2]: ...
-    @overload
-    def tap_error_tag[T1, T2, E2 = Never, R2 = Never](
-        self, tag: tuple[type[T1], type[T2]], f: Callable[[T1 | T2], Effect[object, E2, R2]]
-    ) -> Stream[A_co, E_co | E2, R_co | R2]: ...
-    @overload
-    def tap_error_tag[T1, T2, T3, E2 = Never, R2 = Never](
-        self,
-        tag: tuple[type[T1], type[T2], type[T3]],
-        f: Callable[[T1 | T2 | T3], Effect[object, E2, R2]],
-    ) -> Stream[A_co, E_co | E2, R_co | R2]: ...
-    def tap_error_tag(
-        self,
-        tag: type[Any] | tuple[type[Any], ...],
-        f: Callable[[Any], Effect[object, Any, Any]],
-    ) -> Stream[Any, Any, Any]:
+    def tap_error_tag[T, E2 = Never, R2 = Never](
+        self, tag: Tags[T], f: Callable[[T], Effect[object, E2, R2]]
+    ) -> Stream[A_co, E_co | E2, R_co | R2]:
         """``tap_error`` for the errors that are instances of ``tag`` (a
         class or a tuple of classes)."""
         from pyfect.effect import void

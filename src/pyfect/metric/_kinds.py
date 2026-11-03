@@ -404,7 +404,11 @@ def timer(
 ) -> Histogram[Duration]:
     """A histogram of durations in milliseconds, with the attribute
     ``time_unit="milliseconds"``. The default boundaries double from 0.5ms,
-    34 of them, then ``math.inf``."""
+    34 of them, then ``math.inf``.
+
+    ``prometheus_format`` leaves ``time_unit`` out (as Effect does), so end
+    the name in ``_milliseconds``: ``request_milliseconds``, not
+    ``request_seconds``."""
     bounds = (
         exponential_boundaries(start=0.5, factor=2, count=35) if boundaries is None else boundaries
     )

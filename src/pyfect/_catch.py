@@ -1,6 +1,6 @@
 """Recovery that removes the caught errors from ``E``: use with ``.pipe``.
 
-``catch_tag`` catches by class (one, or a tuple of up to three), ``catch_if``
+``catch_tag`` catches by class (one, or a tuple of any number), ``catch_if``
 by a ``TypeIs`` refinement. Both remove exactly what they catch::
 
     eff.pipe(catch_tag((NotFound, Invalid), lambda e: succeed(None)))
@@ -20,6 +20,7 @@ from collections.abc import Callable
 from typing import Any, Never, TypeIs, overload
 
 from pyfect._core import Effect, _catching_if, _MatchCause
+from pyfect._tags import Tags
 
 
 class _CatchSome[EC, B, E2, R2]:
@@ -100,40 +101,18 @@ def catch_if(
 
 
 @overload
-def catch_tag[T1, B, E2 = Never, R2 = Never](
-    tag: type[T1], f: Callable[[T1], Effect[B, E2, R2]]
-) -> _CatchSome[T1, B, E2, R2]: ...
+def catch_tag[T, B, E2 = Never, R2 = Never](
+    tag: Tags[T], f: Callable[[T], Effect[B, E2, R2]]
+) -> _CatchSome[T, B, E2, R2]: ...
 @overload
-def catch_tag[T1, T2, B, E2 = Never, R2 = Never](
-    tag: tuple[type[T1], type[T2]], f: Callable[[T1 | T2], Effect[B, E2, R2]]
-) -> _CatchSome[T1 | T2, B, E2, R2]: ...
-@overload
-def catch_tag[T1, T2, T3, B, E2 = Never, R2 = Never](
-    tag: tuple[type[T1], type[T2], type[T3]], f: Callable[[T1 | T2 | T3], Effect[B, E2, R2]]
-) -> _CatchSome[T1 | T2 | T3, B, E2, R2]: ...
-@overload
-def catch_tag[T1, EO, B, C, EE = Never, RR = Never](
-    tag: type[T1],
-    f: Callable[[T1], Effect[B, EE, RR]],
+def catch_tag[T, EO, B, C, EE = Never, RR = Never](
+    tag: Tags[T],
+    f: Callable[[T], Effect[B, EE, RR]],
     *,
     or_else: Callable[[EO], Effect[C, EE, RR]],
-) -> _CatchAll[T1, EO, B, C, EE, RR]: ...
-@overload
-def catch_tag[T1, T2, EO, B, C, EE = Never, RR = Never](
-    tag: tuple[type[T1], type[T2]],
-    f: Callable[[T1 | T2], Effect[B, EE, RR]],
-    *,
-    or_else: Callable[[EO], Effect[C, EE, RR]],
-) -> _CatchAll[T1 | T2, EO, B, C, EE, RR]: ...
-@overload
-def catch_tag[T1, T2, T3, EO, B, C, EE = Never, RR = Never](
-    tag: tuple[type[T1], type[T2], type[T3]],
-    f: Callable[[T1 | T2 | T3], Effect[B, EE, RR]],
-    *,
-    or_else: Callable[[EO], Effect[C, EE, RR]],
-) -> _CatchAll[T1 | T2 | T3, EO, B, C, EE, RR]: ...
+) -> _CatchAll[T, EO, B, C, EE, RR]: ...
 def catch_tag(
-    tag: type[Any] | tuple[type[Any], ...],
+    tag: Tags[Any],
     f: Callable[[Any], Effect[Any, Any, Any]],
     *,
     or_else: Callable[[Any], Effect[Any, Any, Any]] | None = None,

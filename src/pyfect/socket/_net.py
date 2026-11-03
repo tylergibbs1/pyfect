@@ -66,16 +66,17 @@ def from_connection(
     *,
     open_timeout: Duration | None = None,
     tls_server: bool = False,
+    target: str | None = None,
 ) -> SocketService:
     """A socket over the connections ``open`` makes. ``open_timeout`` bounds
-    the opening; ``tls_server`` makes TLS upgrades take the server side."""
+    the opening; ``tls_server`` makes TLS upgrades take the server side;
+    ``target`` (``host:port``, a path) is named when opening fails."""
     require_effect(open, "open")
     current = _Current()
     opening = open
     if open_timeout is not None:
-        opening = open.timeout_or_else(
-            open_timeout, lambda: fail(open_error(TimeoutError("Connection timed out"), "Timeout"))
-        )
+        timed_out = open_error(TimeoutError("Connection timed out"), "Timeout", target=target)
+        opening = open.timeout_or_else(open_timeout, lambda: fail(timed_out))
 
     def reader():
         scope = yield from Scope()
@@ -174,15 +175,20 @@ def _upgrade(
     )
 
 
-def connecting(connect: Connect) -> Effect[Connection, SocketError, Scope]:
+def connecting(
+    connect: Connect, target: str | None = None
+) -> Effect[Connection, SocketError, Scope]:
     """A connection ``connect`` makes on the loop (with the protocol it is
-    given), closed with the scope: gracefully once open, at once before."""
+    given), closed with the scope: gracefully once open, at once before.
+    A failure to connect names ``target``."""
 
     def body():
         conn = Connection()
         scope = yield from Scope()
         yield from scope.add_finalizer(lambda _: sync(lambda: conn.close(graceful=conn.open)))
-        yield from run(lambda: connect(conn)).map_error(open_error)
+        yield from run(lambda: connect(conn)).map_error(
+            lambda cause: open_error(cause, target=target)
+        )
         conn.open = True
         return conn
 
@@ -197,7 +203,8 @@ def make_net(
     async def connect(conn: Connection) -> object:
         return await get_loop().create_connection(lambda: conn, host, port)
 
-    return from_connection(connecting(connect), open_timeout=open_timeout)
+    target = _address(host, port)
+    return from_connection(connecting(connect, target), open_timeout=open_timeout, target=target)
 
 
 def make_unix(path: str, *, open_timeout: Duration | None = None) -> SocketService:
@@ -206,7 +213,7 @@ def make_unix(path: str, *, open_timeout: Duration | None = None) -> SocketServi
     async def connect(conn: Connection) -> object:
         return await get_loop().create_unix_connection(lambda: conn, path)
 
-    return from_connection(connecting(connect), open_timeout=open_timeout)
+    return from_connection(connecting(connect, path), open_timeout=open_timeout, target=path)
 
 
 def make_tls(
@@ -225,7 +232,12 @@ def make_tls(
         await get_loop().create_connection(lambda: conn, host, port)
         await conn.start_tls(context, server_side=False, hostname=options.servername or host)
 
-    return from_connection(connecting(connect), open_timeout=open_timeout)
+    target = _address(host, port)
+    return from_connection(connecting(connect, target), open_timeout=open_timeout, target=target)
+
+
+def _address(host: str, port: int) -> str:
+    return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
 
 
 def _adopt(sock: socket.socket) -> Effect[Connection, SocketError, Scope]:

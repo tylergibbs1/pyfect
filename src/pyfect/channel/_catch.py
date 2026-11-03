@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Never, TypeIs, overload
 
+from pyfect._tags import Tags
 from pyfect.channel import _errors
 from pyfect.channel._base import AnyChannel, ChannelBase
 from pyfect.channel._channel import Channel
@@ -103,32 +104,12 @@ def catch_if(
 
 
 @overload
-def catch_tag[T1, O2, D2 = None, I = object, IE = object, ID = object, E2 = Never, R2 = Never](
-    tag: type[T1], f: Callable[[T1], _Ch[O2, E2, D2, I, IE, ID, R2]]
-) -> _CatchSome[T1, O2, E2, D2, I, IE, ID, R2]: ...
-@overload
-def catch_tag[T1, T2, O2, D2 = None, I = object, IE = object, ID = object, E2 = Never, R2 = Never](
-    tag: tuple[type[T1], type[T2]], f: Callable[[T1 | T2], _Ch[O2, E2, D2, I, IE, ID, R2]]
-) -> _CatchSome[T1 | T2, O2, E2, D2, I, IE, ID, R2]: ...
+def catch_tag[T, O2, D2 = None, I = object, IE = object, ID = object, E2 = Never, R2 = Never](
+    tag: Tags[T], f: Callable[[T], _Ch[O2, E2, D2, I, IE, ID, R2]]
+) -> _CatchSome[T, O2, E2, D2, I, IE, ID, R2]: ...
 @overload
 def catch_tag[
-    T1,
-    T2,
-    T3,
-    O2,
-    D2 = None,
-    I = object,
-    IE = object,
-    ID = object,
-    E2 = Never,
-    R2 = Never,
-](
-    tag: tuple[type[T1], type[T2], type[T3]],
-    f: Callable[[T1 | T2 | T3], _Ch[O2, E2, D2, I, IE, ID, R2]],
-) -> _CatchSome[T1 | T2 | T3, O2, E2, D2, I, IE, ID, R2]: ...
-@overload
-def catch_tag[
-    T1,
+    T,
     EO,
     O2,
     O3,
@@ -140,16 +121,14 @@ def catch_tag[
     EE = Never,
     RR = Never,
 ](
-    tag: type[T1],
-    f: Callable[[T1], _Ch[O2, EE, D2, I, IE, ID, RR]],
+    tag: Tags[T],
+    f: Callable[[T], _Ch[O2, EE, D2, I, IE, ID, RR]],
     *,
     or_else: Callable[[EO], _Ch[O3, EE, D3, I, IE, ID, RR]],
-) -> _CatchAll[T1, EO, O2, O3, EE, D2, D3, I, IE, ID, RR]: ...
-def catch_tag(
-    tag: type[Any] | tuple[type[Any], ...], f: Handler, *, or_else: Handler | None = None
-) -> Any:
+) -> _CatchAll[T, EO, O2, O3, EE, D2, D3, I, IE, ID, RR]: ...
+def catch_tag(tag: Tags[Any], f: Handler, *, or_else: Handler | None = None) -> Any:
     """Recover from the errors that are instances of ``tag`` (a class or a
-    tuple of up to three) and remove them from ``OutErr``."""
+    tuple of any number) and remove them from ``OutErr``."""
     predicate: Callable[[Any], bool] = lambda e: isinstance(e, tag)  # noqa: E731
     if or_else is None:
         return _CatchSome[Any, Any, Any, Any, Any, Any, Any, Any](predicate, f, None)

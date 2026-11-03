@@ -107,6 +107,15 @@ class Pausable(Protocol):
 
 
 @runtime_checkable
+class HasUrl(Protocol):
+    """A WebSocket that knows the URL it connects to (the browser's
+    ``url``; ``None`` for an accepted one): an open failure names it."""
+
+    @property
+    def url(self) -> str | None: ...
+
+
+@runtime_checkable
 class Drainable(Protocol):
     """A WebSocket that counts the bytes it was given but has not sent yet
     (the browser's ``bufferedAmount``): writes to it wait for them."""
@@ -211,6 +220,7 @@ class _Buffer:
 
     def __init__(self, ws: WebSocketLike, high_water_mark: int | None) -> None:
         self.ws = ws
+        self.target: str | None = ws.url if isinstance(ws, HasUrl) else None
         self.pausable: Pausable | None = ws if isinstance(ws, Pausable) else None
         self.high_water_mark = (
             high_water_mark
@@ -257,7 +267,7 @@ class _Buffer:
         self.push(data)
 
     def _on_error(self, event: WebSocketEvent) -> None:
-        self.fail(read_error(event) if self.open else open_error(event))
+        self.fail(read_error(event) if self.open else open_error(event, target=self.target))
 
     def _on_close(self, event: WebSocketEvent) -> None:
         code = event.code if isinstance(event.code, int) else 1006
@@ -370,8 +380,9 @@ def _ignore(_: WebSocketEvent) -> None:
     pass
 
 
-def _open_timeout() -> Effect[Never, SocketError]:
-    return fail(open_error(TimeoutError('timeout waiting for "open"'), "Timeout"))
+def _open_timeout(target: str | None) -> Effect[Never, SocketError]:
+    cause = TimeoutError('timeout waiting for "open"')
+    return fail(open_error(cause, "Timeout", target=target))
 
 
 class _Current:
@@ -425,7 +436,9 @@ def from_web_socket(
         if ws.ready_state >= CLOSING:
             return (yield from fail(buffer.error or close_error(1006)))
         if not buffer.open:
-            yield from buffer.wait_open().timeout_or_else(timeout, _open_timeout)
+            yield from buffer.wait_open().timeout_or_else(
+                timeout, lambda: _open_timeout(buffer.target)
+            )
         buffer.started()
         current.ws = ws
         current.latch.open_unsafe()

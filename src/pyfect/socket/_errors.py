@@ -44,14 +44,38 @@ type OpenErrorKind = Literal["Unknown", "Timeout"]
 
 @dataclass(eq=False)
 class SocketOpenError(TaggedError):
+    """Opening the socket failed; ``target`` is where it was going (a URL,
+    ``host:port`` or a path) when known. Unlike Effect's, the message names
+    the target and the cause (PARITY §4)."""
+
     kind: OpenErrorKind
     cause: object
+    target: str | None = None
 
     @property
     def message(self) -> str:
         if self.kind == "Timeout":
-            return 'timeout waiting for "open"'
-        return "An error occurred during Open"
+            base = 'timeout waiting for "open"'
+            return base if self.target is None else f"{base} of {self.target}"
+        detail = describe_cause(self.cause)
+        if self.target is None and detail is None:
+            return "An error occurred during Open"
+        where = "the socket" if self.target is None else self.target
+        return f"Could not open {where}" if detail is None else f"Could not open {where}: {detail}"
+
+
+def describe_cause(cause: object) -> str | None:
+    """A line saying what ``cause`` is: an exception as ``Type: text``, a
+    WebSocket error event by its data."""
+    from pyfect.socket._web_socket import WebSocketEvent
+
+    data = cause.data if isinstance(cause, WebSocketEvent) else cause
+    if data is None:
+        return None
+    if isinstance(data, BaseException):
+        text = str(data)
+        return f"{type(data).__name__}: {text}" if text else type(data).__name__
+    return str(data)
 
 
 @dataclass(eq=False)
@@ -118,8 +142,10 @@ def write_error(cause: object) -> SocketError:
     return SocketError(SocketWriteError(cause))
 
 
-def open_error(cause: object, kind: OpenErrorKind = "Unknown") -> SocketError:
-    return SocketError(SocketOpenError(kind, cause))
+def open_error(
+    cause: object, kind: OpenErrorKind = "Unknown", *, target: str | None = None
+) -> SocketError:
+    return SocketError(SocketOpenError(kind, cause, target))
 
 
 def upgrade_error(cause: object = None) -> SocketError:

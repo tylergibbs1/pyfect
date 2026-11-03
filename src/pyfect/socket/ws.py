@@ -106,6 +106,7 @@ class WsWebSocket:
             self._flowing.set()
         self._task: asyncio.Task[None] | None = None
         self._connection: WsConnection | None = None
+        self.url: str | None = None
 
     @classmethod
     def connect(
@@ -119,6 +120,7 @@ class WsWebSocket:
         ``max_message_size`` bytes (``None``: no limit) closes it with
         1009."""
         ws = cls(max_message_size=max_message_size)
+        ws.url = url
         call_soon(lambda: ws._begin(url, options))
         return ws
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, Never, Unpack, final, overload
 
+from pyfect._tags import Tags
 from pyfect.context import Tag
 from pyfect.effect import Effect, fail, succeed
 from pyfect.http import request as _request
@@ -407,7 +408,7 @@ def transform_response[E, R, E1 = Never, R1 = Never](
 
 
 def catch_tag[T, E2 = Never, R2 = Never](
-    tag: type[T] | tuple[type[T], ...], f: Callable[[T], Effect[HttpClientResponse, E2, R2]]
+    tag: Tags[T], f: Callable[[T], Effect[HttpClientResponse, E2, R2]]
 ) -> _CatchTag[T, E2, R2]:
     """Recover from the failures that are instances of ``tag`` and remove
     them from the client's errors. Use with ``.pipe``."""
@@ -420,7 +421,7 @@ class _CatchTag[T, E2, R2]:
 
     def __init__(
         self,
-        tag: type[T] | tuple[type[T], ...],
+        tag: Tags[T],
         f: Callable[[T], Effect[HttpClientResponse, E2, R2]],
     ) -> None:
         self.tag = tag

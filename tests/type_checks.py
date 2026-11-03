@@ -5818,7 +5818,7 @@ def check_persistence(
     assert_type(
         made,
         fx.Effect[
-            persisted_cache.PersistedCache[GetPersistedUser],
+            persisted_cache.PersistedCache[GetPersistedUser, Never, PersistedUser, str],
             Never,
             persistence_module.Persistence | fx.Scope,
         ],
@@ -5826,7 +5826,7 @@ def check_persistence(
     assert_type(
         persisted_cache.make(needs_service, store_id="users", time_to_live=lambda _e, _r: 60),
         fx.Effect[
-            persisted_cache.PersistedCache[GetPersistedUser],
+            persisted_cache.PersistedCache[GetPersistedUser, Never, PersistedUser, str],
             Never,
             PersistedLookup | persistence_module.Persistence | fx.Scope,
         ],
@@ -5840,7 +5840,7 @@ def check_persistence(
     assert_type(
         at_lookup,
         fx.Effect[
-            persisted_cache.PersistedCache[GetPersistedUser, PersistedLookup],
+            persisted_cache.PersistedCache[GetPersistedUser, PersistedLookup, PersistedUser, str],
             Never,
             persistence_module.Persistence | fx.Scope,
         ],
@@ -5885,6 +5885,58 @@ def check_persistence(
         fx.Layer[persistence_module.Persistence, Never, kvs.KeyValueStore],
     )
     assert_type(user_directories.make().config("app"), fx.Effect[str, fx.PlatformError])
+
+
+def check_persisted_cache_lookup_types(
+    narrow: persisted_cache.PersistedCache[GetPersistedUser, Never, PersistedUser, Never],
+    wrong_success: persisted_cache.PersistedCache[GetPersistedUser, Never, int, str],
+    wrong_error: persisted_cache.PersistedCache[GetPersistedUser, Never, PersistedUser, int],
+) -> None:
+    # The lookup gives Persistable.Success<K> / Error<K> (trawl T3): a lookup
+    # that never fails fits, one giving another success or error is an error.
+    assert_type(
+        narrow.get(GetPersistedUser(1)),
+        fx.Effect[PersistedUser, str | PersistenceError | S.SchemaError],
+    )
+    wrong_success.get(GetPersistedUser(1))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    wrong_error.get(GetPersistedUser(1))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+    def returns_int(req: GetPersistedUser) -> fx.Effect[int]: ...
+
+    def ttl_by_exit(exit: fx.Exit[PersistedUser, str], req: GetPersistedUser) -> float:
+        return 60 if isinstance(exit, fx.Success) else 1
+
+    def ttl_wide(
+        exit: fx.Exit[PersistedUser, str | PersistenceError | S.SchemaError],
+        req: GetPersistedUser,
+    ) -> float:
+        return 1
+
+    @fx.fn
+    def program():
+        cache = yield from persisted_cache.make(
+            returns_int, store_id="users", time_to_live=lambda _e, _r: 60
+        )
+        return (yield from cache.get(GetPersistedUser(1)))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
+
+    del program
+    # The TTL functions see the lookup's Exit; the in-memory one also the
+    # store's failures.
+    persisted_cache.make(
+        lookup_user,
+        store_id="users",
+        time_to_live=ttl_by_exit,
+        in_memory_ttl=ttl_wide,
+    )
+    persisted_cache.make(
+        lookup_user,
+        store_id="users",
+        time_to_live=ttl_wide,
+        in_memory_ttl=ttl_by_exit,  # pyright: ignore[reportArgumentType]
+    )
+
+
+def lookup_user(req: GetPersistedUser) -> fx.Effect[PersistedUser, str]: ...
 
 
 def _key_param(key: str) -> list[str | float]:
@@ -7350,4 +7402,244 @@ def atom_http_api_types() -> None:
     assert_type(
         client.mutation(Users, Users.create),
         atom.AtomResultFn[atom_http_api.MutationRequest[None, None, str, None], float, Never],
+    )
+
+
+# --- catch_tag takes any number of classes (trawl T4; Effect's catchTag is variadic) ---
+
+
+@dataclass
+class TagA(fx.TaggedError):
+    pass
+
+
+@dataclass
+class TagB(fx.TaggedError):
+    pass
+
+
+@dataclass
+class TagC(fx.TaggedError):
+    pass
+
+
+@dataclass
+class TagD(fx.TaggedError):
+    pass
+
+
+@dataclass
+class TagE(fx.TaggedError):
+    pass
+
+
+@dataclass
+class TagF(fx.TaggedError):
+    pass
+
+
+type _SixTags = TagA | TagB | TagC | TagD | TagE | TagF
+
+
+def handle_tag_f(e: TagF) -> fx.Effect[int]:
+    return fx.succeed(0)
+
+
+def stream_tag_f(e: TagF) -> _St[int]:
+    return fx.stream.make(1)
+
+
+def check_catch_tag_any_number(
+    eff: fx.Effect[str, _SixTags],
+    st: _St[str, _SixTags],
+    ch: _Ch[str, _SixTags, None, object, object, object, Never],
+    failing: layer.Layer[Port, _SixTags],
+) -> None:
+    four = (TagA, TagB, TagC, TagD)
+    assert_type(
+        eff.pipe(fx.catch_tag(four, lambda e: fx.succeed(len(type(e).__name__)))),
+        fx.Effect[str | int, TagE | TagF, Never],
+    )
+    assert_type(
+        eff.pipe(fx.catch_tag((TagA, TagB, TagC, TagD, TagE, TagF), lambda e: fx.succeed(None))),
+        fx.Effect[str | None, Never, Never],
+    )
+    assert_type(
+        eff.pipe(
+            fx.catch_tag(
+                (TagA, TagB, TagC, TagD, TagE), lambda e: fx.succeed(0), or_else=handle_tag_f
+            )
+        ),
+        fx.Effect[str | int, Never, Never],
+    )
+    assert_type(
+        eff.tap_error_tag((TagA, TagB, TagC, TagD, TagE), fx.succeed),
+        fx.Effect[str, _SixTags, Never],
+    )
+    assert_type(
+        st.pipe(fx.stream.catch_tag(four, lambda _: fx.stream.make(0))),
+        _St[str | int, TagE | TagF],
+    )
+    assert_type(
+        st.pipe(
+            fx.stream.catch_tag(
+                (TagA, TagB, TagC, TagD, TagE),
+                lambda _: fx.stream.make(0),
+                or_else=stream_tag_f,
+            )
+        ),
+        _St[str | int, Never],
+    )
+    assert_type(st.tap_error_tag(four, fx.succeed), _St[str, _SixTags])
+    assert_type(
+        ch.pipe(fx.channel.catch_tag(four, lambda _: fx.channel.succeed(0))),
+        _Ch[str | int, TagE | TagF, None, object, object, object, Never],
+    )
+    assert_type(
+        failing.pipe(layer.catch_tag((TagA, TagB, TagC, TagD, TagE), lambda _: port_live)),
+        layer.Layer[Port, TagF],
+    )
+
+
+# --- catch_reasons takes as many cases as there are reasons (Effect's catchReasons record) ---
+
+
+@dataclass
+class Reason1:
+    pass
+
+
+@dataclass
+class Reason2:
+    pass
+
+
+@dataclass
+class Reason3:
+    pass
+
+
+@dataclass
+class Reason4:
+    pass
+
+
+@dataclass
+class Reason5:
+    pass
+
+
+@dataclass
+class Reason6:
+    pass
+
+
+@dataclass
+class Reason7:
+    pass
+
+
+@dataclass
+class Reason8:
+    pass
+
+
+@dataclass
+class ManyReasons(fx.TaggedError):
+    reason: Reason1 | Reason2 | Reason3 | Reason4 | Reason5 | Reason6 | Reason7 | Reason8
+
+
+def on_reason8(reason: Reason8, error: ManyReasons) -> fx.Effect[bytes]:
+    return fx.succeed(b"")
+
+
+def on_reason8_stream(reason: Reason8, error: ManyReasons) -> Stream[bytes]:
+    return stream.succeed(b"")
+
+
+def on_reason8_channel(reason: Reason8, error: ManyReasons) -> channel.Channel[int]:
+    return channel.succeed(0)
+
+
+def check_catch_reasons_any_number(
+    eff: fx.Effect[str, ManyReasons | NotFound],
+    s: Stream[str, ManyReasons | NotFound],
+    ch: channel.Channel[int, ManyReasons | NotFound, None],
+) -> None:
+    assert_type(
+        eff.pipe(
+            fx.catch_reasons(
+                ManyReasons,
+                (Reason1, lambda r, _: fx.succeed(1)),
+                (Reason2, lambda r, _: fx.succeed(2)),
+                (Reason3, lambda r, _: fx.succeed(3)),
+                (Reason4, lambda r, _: fx.succeed(4)),
+                (Reason5, lambda r, _: fx.succeed(5)),
+                (Reason6, lambda r, _: fx.succeed(6)),
+                (Reason7, lambda r, _: fx.succeed(7)),
+                (Reason8, lambda r, _: fx.succeed(None)),
+            )
+        ),
+        fx.Effect[str | int | None, ManyReasons | NotFound, Never],
+    )
+    assert_type(
+        eff.pipe(
+            fx.catch_reasons(
+                ManyReasons,
+                (Reason1, lambda r, _: fx.succeed(1)),
+                (Reason2, lambda r, _: fx.succeed(2)),
+                (Reason3, lambda r, _: fx.succeed(3)),
+                (Reason4, lambda r, _: fx.succeed(4)),
+                (Reason5, lambda r, _: fx.succeed(5)),
+                (Reason6, lambda r, _: fx.succeed(6)),
+                (Reason7, lambda r, _: fx.succeed(7)),
+                or_else=on_reason8,
+            )
+        ),
+        fx.Effect[str | int | bytes, NotFound, Never],
+    )
+    assert_type(
+        s.pipe(
+            stream.catch_reasons(
+                ManyReasons,
+                (Reason1, lambda r, _: stream.succeed(1)),
+                (Reason2, lambda r, _: stream.succeed(2)),
+                (Reason3, lambda r, _: stream.succeed(3)),
+                (Reason4, lambda r, _: stream.succeed(4)),
+                (Reason5, lambda r, _: stream.succeed(5)),
+                (Reason6, lambda r, _: stream.succeed(6)),
+                (Reason7, lambda r, _: stream.succeed(7)),
+                or_else=on_reason8_stream,
+            )
+        ),
+        Stream[str | int | bytes, NotFound, Never],
+    )
+    assert_type(
+        ch.pipe(
+            channel.catch_reasons(
+                ManyReasons,
+                (Reason1, lambda r, _: channel.succeed(1)),
+                (Reason2, lambda r, _: channel.succeed(2)),
+                (Reason3, lambda r, _: channel.succeed(3)),
+                (Reason4, lambda r, _: channel.succeed(4)),
+                (Reason5, lambda r, _: channel.succeed(5)),
+                (Reason6, lambda r, _: channel.succeed(6)),
+                (Reason7, lambda r, _: channel.succeed(7)),
+                or_else=on_reason8_channel,
+            )
+        ),
+        channel.Channel[int, NotFound, None, object, object, object, Never],
+    )
+    # or_else must still cover the reasons the cases leave.
+    eff.pipe(
+        fx.catch_reasons(  # pyright: ignore[reportArgumentType]
+            ManyReasons,
+            (Reason1, lambda r, _: fx.succeed(1)),
+            (Reason2, lambda r, _: fx.succeed(2)),
+            (Reason3, lambda r, _: fx.succeed(3)),
+            (Reason4, lambda r, _: fx.succeed(4)),
+            (Reason5, lambda r, _: fx.succeed(5)),
+            (Reason6, lambda r, _: fx.succeed(6)),
+            or_else=on_reason8,
+        )
     )

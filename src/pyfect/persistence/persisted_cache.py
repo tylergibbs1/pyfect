@@ -18,7 +18,7 @@ and replaced.
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from typing import Any, Literal, Never, overload
+from typing import Any, Literal, Never, Protocol, cast, overload
 
 from pyfect._catch import catch_tag
 from pyfect._core import Effect
@@ -26,7 +26,7 @@ from pyfect.batching._request import TypedRequest
 from pyfect.cache import Cache, RequireServicesAt
 from pyfect.effect import from_exit, gen, succeed, suspend
 from pyfect.persistence._error import PersistenceError
-from pyfect.persistence.persistable import AnyPersistable, TimeToLive
+from pyfect.persistence.persistable import AnyPersistable, HasPersistableTypes, TimeToLive
 from pyfect.persistence.persistence import Persistence, PersistenceStore
 from pyfect.schema import SchemaError
 from pyfect.scope import Scope
@@ -35,10 +35,16 @@ _IN_MEMORY_TTL = 10.0
 _IN_MEMORY_CAPACITY = 1024
 
 
-class PersistedCache[K: AnyPersistable, R = Never]:
+class _LookupTypes[K_co, A_co, E_co](Protocol):
+    def _lookup_types(self) -> tuple[K_co, A_co, E_co]: ...
+
+
+class PersistedCache[K: AnyPersistable, R = Never, A = Any, E = Any]:
     """Make one with ``make``. ``get``'s success and error come from the
     request's schemas; ``R`` is what the lookup needs when
-    ``require_services_at="lookup"``."""
+    ``require_services_at="lookup"``; ``A`` and ``E`` are what the lookup
+    gives, which must fit the request's schemas (``get`` is a pyright
+    error otherwise)."""
 
     __slots__ = ("_in_memory", "_store")
 
@@ -46,15 +52,24 @@ class PersistedCache[K: AnyPersistable, R = Never]:
         self._in_memory = in_memory
         self._store = store
 
+    def _lookup_types(self) -> tuple[K, A, E]:
+        """Never called: ties the lookup's success and error to the
+        request's for ``get``."""
+        raise NotImplementedError
+
     @property
     def in_memory(self) -> Cache[K, Any, Any, Any]:
         """The in-memory cache in front of the store."""
         return self._in_memory
 
-    def get[A, EE, RR](self, key: TypedRequest[A, EE, RR, K]) -> Effect[A, EE, RR | R]:
+    def get[AA, EE, RR, SA, SE](
+        self: _LookupTypes[HasPersistableTypes[SA, SE], SA, SE],
+        key: TypedRequest[AA, EE, RR, K],
+    ) -> Effect[AA, EE, RR | R]:
         """The outcome for ``key``: from memory, from the store, or looked
         up now and stored."""
-        return self._in_memory.get(key)  # pyright: ignore[reportArgumentType]
+        cache = cast("PersistedCache[K, R]", self)
+        return cache._in_memory.get(key)  # pyright: ignore[reportArgumentType]
 
     def invalidate(self, key: K) -> Effect[None, PersistenceError]:
         """Forget ``key`` in the store and in memory."""
@@ -62,41 +77,43 @@ class PersistedCache[K: AnyPersistable, R = Never]:
 
 
 @overload
-def make[K: AnyPersistable, R = Never](
-    lookup: Callable[[K], Effect[object, object, R]],
+def make[K: AnyPersistable, A, E, R = Never](
+    lookup: Callable[[K], Effect[A, E, R]],
     *,
     store_id: str,
-    time_to_live: TimeToLive[K, Any, Any],
+    time_to_live: TimeToLive[K, A, E],
     in_memory_capacity: int | None = _IN_MEMORY_CAPACITY,
-    in_memory_ttl: TimeToLive[K, Any, Any] | None = None,
+    in_memory_ttl: TimeToLive[K, A, E | PersistenceError | SchemaError] | None = None,
     require_services_at: Literal["construction"] = "construction",
-) -> Effect[PersistedCache[K], Never, R | Persistence | Scope]: ...
+) -> Effect[PersistedCache[K, Never, A, E], Never, R | Persistence | Scope]: ...
 @overload
-def make[K: AnyPersistable, R = Never](
-    lookup: Callable[[K], Effect[object, object, R]],
+def make[K: AnyPersistable, A, E, R = Never](
+    lookup: Callable[[K], Effect[A, E, R]],
     *,
     store_id: str,
-    time_to_live: TimeToLive[K, Any, Any],
+    time_to_live: TimeToLive[K, A, E],
     in_memory_capacity: int | None = _IN_MEMORY_CAPACITY,
-    in_memory_ttl: TimeToLive[K, Any, Any] | None = None,
+    in_memory_ttl: TimeToLive[K, A, E | PersistenceError | SchemaError] | None = None,
     require_services_at: Literal["lookup"],
-) -> Effect[PersistedCache[K, R], Never, Persistence | Scope]: ...
+) -> Effect[PersistedCache[K, R, A, E], Never, Persistence | Scope]: ...
 def make(
-    lookup: Callable[[Any], Effect[object, object, Any]],
+    lookup: Callable[[Any], Effect[Any, Any, Any]],
     *,
     store_id: str,
     time_to_live: TimeToLive[Any, Any, Any],
     in_memory_capacity: int | None = _IN_MEMORY_CAPACITY,
     in_memory_ttl: TimeToLive[Any, Any, Any] | None = None,
     require_services_at: RequireServicesAt = "construction",
-) -> Effect[PersistedCache[Any, Any], Never, Any]:
+) -> Effect[PersistedCache[Any, Any, Any, Any], Never, Any]:
     """A cache of ``lookup``'s outcomes in the store ``store_id``, kept
     there for ``time_to_live`` and in memory for ``in_memory_ttl``
     (default: 10 seconds), at most ``in_memory_capacity`` of them (default:
     1024). ``lookup`` must give the request's success or fail with its
-    error: the store writes them by the request's schemas."""
+    error (a pyright error at ``get`` otherwise): the store writes them by
+    the request's schemas. ``time_to_live`` sees the lookup's ``Exit``;
+    ``in_memory_ttl`` may also see the store's failures."""
 
-    def body() -> Generator[Effect[Any, Any, Any], Any, PersistedCache[Any, Any]]:
+    def body() -> Generator[Effect[Any, Any, Any], Any, PersistedCache[Any, Any, Any, Any]]:
         persistence = yield from Persistence()
         store = yield from persistence.make(store_id=store_id, time_to_live=time_to_live)
 

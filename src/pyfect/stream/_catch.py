@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Never, TypeIs, overload
 
+from pyfect._tags import Tags
 from pyfect.channel import _errors
 from pyfect.stream._base import AnyStream, StreamBase
 from pyfect.stream._stream import Stream
@@ -115,29 +116,19 @@ def catch_if_refinement(
 
 
 @overload
-def catch_tag[T1, A2, E2 = Never, R2 = Never](
-    tag: type[T1], f: Callable[[T1], _S[A2, E2, R2]]
-) -> _CatchSome[T1, A2, E2, R2]: ...
+def catch_tag[T, A2, E2 = Never, R2 = Never](
+    tag: Tags[T], f: Callable[[T], _S[A2, E2, R2]]
+) -> _CatchSome[T, A2, E2, R2]: ...
 @overload
-def catch_tag[T1, T2, A2, E2 = Never, R2 = Never](
-    tag: tuple[type[T1], type[T2]], f: Callable[[T1 | T2], _S[A2, E2, R2]]
-) -> _CatchSome[T1 | T2, A2, E2, R2]: ...
-@overload
-def catch_tag[T1, T2, T3, A2, E2 = Never, R2 = Never](
-    tag: tuple[type[T1], type[T2], type[T3]], f: Callable[[T1 | T2 | T3], _S[A2, E2, R2]]
-) -> _CatchSome[T1 | T2 | T3, A2, E2, R2]: ...
-@overload
-def catch_tag[T1, EO, A2, A3, EE = Never, RR = Never](
-    tag: type[T1],
-    f: Callable[[T1], _S[A2, EE, RR]],
+def catch_tag[T, EO, A2, A3, EE = Never, RR = Never](
+    tag: Tags[T],
+    f: Callable[[T], _S[A2, EE, RR]],
     *,
     or_else: Callable[[EO], _S[A3, EE, RR]],
-) -> _CatchAll[T1, EO, A2, A3, EE, RR]: ...
-def catch_tag(
-    tag: type[Any] | tuple[type[Any], ...], f: Handler, *, or_else: Handler | None = None
-) -> Any:
+) -> _CatchAll[T, EO, A2, A3, EE, RR]: ...
+def catch_tag(tag: Tags[Any], f: Handler, *, or_else: Handler | None = None) -> Any:
     """Recover from the errors that are instances of ``tag`` (a class or a
-    tuple of up to three) and remove them from the stream's errors."""
+    tuple of any number) and remove them from the stream's errors."""
     predicate: Callable[[Any], bool] = lambda e: isinstance(e, tag)  # noqa: E731
     if or_else is None:
         return _CatchSome[Any, Any, Any, Any](predicate, f)

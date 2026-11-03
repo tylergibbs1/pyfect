@@ -32,7 +32,8 @@ with a `primary_key()`: the schemas say how to write its outcome, and the key sa
 `persisted_cache.make(lookup, store_id=..., time_to_live=...)` is a cache in front of the
 `Persistence` service. `get` answers from memory, then from the store, and only then runs
 `lookup` and stores its `Exit`, so failures are cached too, for as long as `time_to_live`
-gives for that outcome.
+gives for that outcome. `lookup` must succeed and fail with the request's schemas' types: a
+lookup giving an `int` for `success=S.String` makes `get` a pyright error.
 
 <Diagram name="persisted-cache" title="get looks in memory, then in the Persistence store, and only runs lookup when neither has the outcome" />
 

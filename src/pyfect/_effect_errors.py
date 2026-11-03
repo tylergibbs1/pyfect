@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal, Never, overload
 
 from pyfect import _core
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
+from pyfect._tags import Tags
 from pyfect.cause import Cause, Fail, _as_exception
 from pyfect.cause import die as die_cause
 from pyfect.cause import fail as fail_cause
@@ -243,25 +244,9 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
 
         return _core._MatchCause(as_effect(self), on_failure, None)
 
-    @overload
-    def tap_error_tag[T1, E2 = Never, R2 = Never](
-        self, tag: type[T1], f: Callable[[T1], Effect[object, E2, R2]]
-    ) -> Effect[A_co, E_co | E2, R_co | R2]: ...
-    @overload
-    def tap_error_tag[T1, T2, E2 = Never, R2 = Never](
-        self, tag: tuple[type[T1], type[T2]], f: Callable[[T1 | T2], Effect[object, E2, R2]]
-    ) -> Effect[A_co, E_co | E2, R_co | R2]: ...
-    @overload
-    def tap_error_tag[T1, T2, T3, E2 = Never, R2 = Never](
-        self,
-        tag: tuple[type[T1], type[T2], type[T3]],
-        f: Callable[[T1 | T2 | T3], Effect[object, E2, R2]],
-    ) -> Effect[A_co, E_co | E2, R_co | R2]: ...
-    def tap_error_tag(
-        self,
-        tag: type[Any] | tuple[type[Any], ...],
-        f: Callable[[Any], Effect[object, Any, Any]],
-    ) -> Effect[Any, Any, Any]:
+    def tap_error_tag[T, E2 = Never, R2 = Never](
+        self, tag: Tags[T], f: Callable[[T], Effect[object, E2, R2]]
+    ) -> Effect[A_co, E_co | E2, R_co | R2]:
         """``tap_error`` for the errors that are instances of ``tag`` (a
         class or a tuple of classes)."""
         return self.tap_error(lambda e: f(e) if isinstance(e, tag) else _core._Succeed(None))

@@ -55,6 +55,7 @@ from pyfect._layer_core import (
     require_layers,
 )
 from pyfect._layer_tracing import parent_span, span
+from pyfect._tags import Tags
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.context import Context, Tag, TagLike, _Holding, tag_class
@@ -460,21 +461,9 @@ def catch_all[O, E, E2 = Never, R2 = Never](
     return _CatchEvery(f)
 
 
-@overload
-def catch_tag[T1, O, E2 = Never, R2 = Never](
-    tag: type[T1], f: Callable[[T1], Layer[O, E2, R2]]
-) -> _CatchTag[T1, O, E2, R2]: ...
-@overload
-def catch_tag[T1, T2, O, E2 = Never, R2 = Never](
-    tag: tuple[type[T1], type[T2]], f: Callable[[T1 | T2], Layer[O, E2, R2]]
-) -> _CatchTag[T1 | T2, O, E2, R2]: ...
-@overload
-def catch_tag[T1, T2, T3, O, E2 = Never, R2 = Never](
-    tag: tuple[type[T1], type[T2], type[T3]], f: Callable[[T1 | T2 | T3], Layer[O, E2, R2]]
-) -> _CatchTag[T1 | T2 | T3, O, E2, R2]: ...
-def catch_tag(
-    tag: type[Any] | tuple[type[Any], ...], f: Callable[[Any], Layer[Any, Any, Any]]
-) -> Any:
+def catch_tag[T, O, E2 = Never, R2 = Never](
+    tag: Tags[T], f: Callable[[T], Layer[O, E2, R2]]
+) -> _CatchTag[T, O, E2, R2]:
     """Build ``f(error)`` instead when the build fails with an instance of
     ``tag`` (a class or a tuple of classes), and remove those errors::
 
