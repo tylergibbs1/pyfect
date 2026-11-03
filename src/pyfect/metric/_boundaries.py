@@ -7,6 +7,8 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 
+from pyfect._js import power
+
 
 def boundaries_from_iterable(boundaries: Iterable[float]) -> tuple[float, ...]:
     """The distinct positive ``boundaries``, in order, then ``math.inf``."""
@@ -22,13 +24,4 @@ def linear_boundaries(*, start: float, width: float, count: int) -> tuple[float,
 def exponential_boundaries(*, start: float, factor: float, count: int) -> tuple[float, ...]:
     """``count - 1`` boundaries (at least one) growing by ``factor`` from
     ``start``, then ``math.inf``."""
-    return boundaries_from_iterable(start * _pow(factor, i) for i in range(max(1, count - 1)))
-
-
-def _pow(base: float, exponent: int) -> float:
-    """JavaScript's ``Math.pow``: past the float range is an infinity, not
-    an ``OverflowError``."""
-    try:
-        return math.pow(base, exponent)
-    except OverflowError:
-        return -math.inf if base < 0 and exponent % 2 else math.inf
+    return boundaries_from_iterable(start * power(factor, i) for i in range(max(1, count - 1)))

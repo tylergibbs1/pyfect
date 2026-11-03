@@ -145,6 +145,22 @@ def divide(dividend: float, divisor: float) -> float:
     return math.copysign(math.inf, dividend) * math.copysign(1.0, divisor)
 
 
+def power(base: float, exponent: float) -> float:
+    """``Math.pow`` / ``**``: a result past float range is a signed
+    infinity, ``0 ** -n`` is an infinity, ``(-8) ** 0.5`` and
+    ``1 ** Infinity`` are NaN (Python raises, returns a complex, or 1)."""
+    if math.isnan(exponent) or (abs(base) == 1 and math.isinf(exponent)):
+        return math.nan
+    odd = math.isfinite(exponent) and exponent % 2 == 1
+    sign = -1.0 if odd and math.copysign(1.0, base) < 0 else 1.0
+    try:
+        return math.pow(base, exponent)
+    except OverflowError:
+        return sign * math.inf
+    except ValueError:
+        return sign * math.inf if base == 0 else math.nan
+
+
 def floor(value: float) -> float:
     """``Math.floor``: an infinity or NaN stays as it is (Python raises)."""
     return float(math.floor(value)) if math.isfinite(value) else value

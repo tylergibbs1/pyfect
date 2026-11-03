@@ -10,7 +10,7 @@ from typing import Any, Literal, overload
 
 from pyfect.clock import Clock
 from pyfect.context import Context
-from pyfect.duration import Duration, to_millis, to_nanos, to_seconds
+from pyfect.duration import Duration, nanos_or_infinite, to_millis, to_nanos, to_seconds
 from pyfect.metric._boundaries import exponential_boundaries
 from pyfect.metric._metric import Metric, Series, map_input_with_context
 from pyfect.metric._refs import Attributes, Hooks, merge
@@ -183,7 +183,7 @@ class _Summary(Series[Any, Any]):
     ) -> None:
         super().__init__("Summary", id, description, attributes)
         age = max(to_seconds(max_age), 0.0)
-        self._max_age_ns: float = to_nanos(age) if math.isfinite(age) else math.inf
+        self._max_age_ns: float = nanos_or_infinite(age)
         self._max_size = max_size
         self._quantiles = tuple(sorted(quantiles))
 

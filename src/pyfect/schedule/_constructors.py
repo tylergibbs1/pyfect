@@ -4,13 +4,21 @@
 from __future__ import annotations
 
 import builtins
-import math
 from collections.abc import Callable
 from typing import Any
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect, _Gen, _Succeed, _Sync
-from pyfect.duration import ZERO, Duration, Seconds, to_nanos, to_seconds
+from pyfect._js import power
+from pyfect.duration import (
+    ZERO,
+    Duration,
+    Seconds,
+    from_millis,
+    nanos_or_infinite,
+    to_millis,
+    to_seconds,
+)
 from pyfect.schedule._model import (
     Continue,
     Decision,
@@ -65,11 +73,12 @@ _IDENTITY: Schedule[Any, Any] = from_step(
 
 def exponential(base: Duration, factor: float = 2.0) -> Schedule[Seconds]:
     """Recur forever, waiting ``base``, ``base*factor``, ``base*factor**2``,
-    ... Outputs the delay."""
-    first = _nanos(base)
+    ... Outputs the delay, which becomes infinite once it passes float
+    range (cap it with ``min(..., spaced(d))``)."""
+    first = to_millis(base)
 
     def step(m: InputMetadata[object]) -> Decision[Seconds]:
-        delay = _seconds(first * factor ** (m.attempt - 1))
+        delay = from_millis(first * power(factor, m.attempt - 1))
         return Continue(delay, delay)
 
     return _stateless(step)
@@ -77,16 +86,18 @@ def exponential(base: Duration, factor: float = 2.0) -> Schedule[Seconds]:
 
 def fibonacci(one: Duration) -> Schedule[Seconds]:
     """Recur forever, waiting ``one``, ``2*one``, ``3*one``, ``5*one``, ...:
-    each delay the sum of the two before. Outputs the delay."""
-    unit = _nanos(one)
+    each delay the sum of the two before. Outputs the delay, which becomes
+    infinite once it passes float range."""
+    unit = to_millis(one)
 
     def make() -> StepFn[Seconds, object, Any, Any]:
-        a, b = 0, unit
+        # Effect's float milliseconds, which saturate to infinity.
+        a, b = 0.0, unit
 
         def step() -> Decision[Seconds]:
             nonlocal a, b
             a, b = b, a + b
-            return Continue(_seconds(b), _seconds(b))
+            return Continue(from_millis(b), from_millis(b))
 
         return lambda _now, _input: _Sync(step)
 
@@ -97,7 +108,7 @@ def fixed(interval: Duration) -> Schedule[int]:
     """Recur on a fixed beat of ``interval``, counted from the first step.
     A run that overruns the beat is followed at once; missed beats are not
     replayed. Outputs the count, from 0."""
-    window = _nanos(interval)
+    window = nanos_or_infinite(to_seconds(interval))
 
     def make() -> Callable[[InputMetadata[object]], Effect[Decision[int]]]:
         # Effect's arithmetic, in whole nanoseconds since the first step.
@@ -110,7 +121,7 @@ def fixed(interval: Duration) -> Schedule[int]:
             if m.attempt == 1:
                 last_run = window
                 return Continue(0, _seconds(window))
-            now = to_nanos(m.elapsed)
+            now = nanos_or_infinite(m.elapsed)
             running_behind = now > last_run + window
             delay = 0 if running_behind else _to_boundary(now, window)
             last_run = now + delay
@@ -124,19 +135,13 @@ def fixed(interval: Duration) -> Schedule[int]:
 def windowed(interval: Duration) -> Schedule[int]:
     """Recur at the end of each ``interval``-long window, counted from the
     first step. Outputs the count, from 0."""
-    window = _nanos(interval)
+    window = nanos_or_infinite(to_seconds(interval))
 
     def step(m: InputMetadata[object]) -> Decision[int]:
-        delay = 0 if window == 0 else _to_boundary(to_nanos(m.elapsed), window)
+        delay = 0 if window == 0 else _to_boundary(nanos_or_infinite(m.elapsed), window)
         return Continue(m.attempt - 1, _seconds(delay))
 
     return _stateless(step)
-
-
-def _nanos(duration: Duration) -> float:
-    """Whole nanoseconds in ``duration``; an infinite one stays infinite."""
-    seconds = to_seconds(duration)
-    return seconds if math.isinf(seconds) else to_nanos(seconds)
 
 
 def _to_boundary(elapsed: float, window: float) -> float:

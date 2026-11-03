@@ -15,7 +15,7 @@ from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._wake_tracking import WakeTracker
 from pyfect.clock import Clock, ClockService, LiveClock
-from pyfect.duration import Duration, Seconds, to_nanos, to_seconds
+from pyfect.duration import Duration, Seconds, add_nanos, nanos_or_infinite, to_nanos, to_seconds
 from pyfect.effect import provide_service
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -49,11 +49,6 @@ _OUTSIDE_WARNING = (
     "scheduled relative to a later time."
 )
 _NANOS = 1_000_000_000
-
-
-def _nanos(seconds: float) -> float:
-    """Whole nanoseconds; infinities stay infinite (a sleep that never wakes)."""
-    return seconds if math.isinf(seconds) else to_nanos(seconds)
 
 
 class _Sleeper:
@@ -160,7 +155,7 @@ class TestClock:
     def sleep(self, seconds: Seconds) -> Effect[None]:
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
             def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
-                end = self._timestamp_ns + _nanos(seconds)
+                end = add_nanos(self._timestamp_ns, nanos_or_infinite(seconds))
                 if end <= self._timestamp_ns:
                     resume(_Succeed(None))
                     return None
@@ -184,13 +179,13 @@ class TestClock:
         Before moving, and after each wake-up, wait for the woken fiber and
         the work it starts to suspend, work on other threads included
         (``fx.blocking``, SQLite and HTTP calls)."""
-        delta = _nanos(to_seconds(duration))
-        return self._move(lambda now: now + delta)
+        delta = nanos_or_infinite(to_seconds(duration))
+        return self._move(lambda now: add_nanos(now, delta))
 
     def set_time(self, at: float) -> Effect[None]:
         """Set wall time to ``at`` (seconds since the epoch), waking every
         sleeper due by then. Moving backwards leaves monotonic time alone."""
-        target = _nanos(at)
+        target = nanos_or_infinite(at)
         return self._move(lambda _: target)
 
     def with_live[A, E, R](self, eff: Effect[A, E, R]) -> Effect[A, E, R]:

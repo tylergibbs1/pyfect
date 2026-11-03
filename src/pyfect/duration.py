@@ -8,11 +8,17 @@ raw float cannot reach a timer without being parsed.
 Parsing follows Effect's ``Duration.make``: NaN and -0 become 0.
 Infinities are kept (an infinite sleep never wakes); negative values are
 kept (a negative sleep wakes at once).
+
+Arithmetic saturates as JavaScript's numbers do: a delay that grows past
+float range is infinite, never an ``OverflowError``. Nanosecond counts
+(``nanos_or_infinite``) are ints within float range or infinities, so
+they mix with float times freely.
 """
 
 from __future__ import annotations
 
 import math
+import sys
 from datetime import timedelta
 from decimal import Decimal
 from typing import final
@@ -43,31 +49,67 @@ def to_seconds(duration: Duration) -> Seconds:
 
 
 def to_nanos(seconds: float) -> int:
-    """Whole nanoseconds (floored) in a finite number of seconds.
+    """Whole nanoseconds (floored) in a finite number of seconds; raises
+    ``ValueError`` for an infinity (use ``nanos_or_infinite``).
 
     The float is read as the shortest decimal that prints it, so
     ``1_000_000_000.001`` is exactly ``1_000_000_000_001_000_000``;
     multiplying by ``1e9`` in floating point would be off by tens of
     nanoseconds at epoch-sized values."""
+    if not math.isfinite(seconds):
+        raise ValueError(f"to_nanos needs a finite duration, got {seconds}")
     return math.floor(_exact_nanos(seconds))
 
 
-def nanos_or_infinite(seconds: Seconds) -> int | float:
+_MAX_NANOS = math.floor(sys.float_info.max)
+
+
+def nanos_or_infinite(seconds: float) -> int | float:
     """``to_nanos``, keeping an infinite duration infinite (a timer that
-    never fires). Deadlines are ``now_nanos + nanos_or_infinite(d)``."""
-    return float(seconds) if math.isinf(seconds) else to_nanos(seconds)
+    never fires). A count past float range (over about 1.8e299 seconds) is
+    infinite too, so the result always mixes with floats: deadlines are
+    ``now_nanos + nanos_or_infinite(d)``."""
+    if math.isnan(seconds):
+        return 0
+    if math.isinf(seconds):
+        return float(seconds)
+    return _in_float_range(to_nanos(seconds))
 
 
 def from_nanos(nanos: int | float) -> Seconds:
     """A sleep of ``nanos`` whole nanoseconds; ``to_nanos`` reads it back
     exactly (below 10**15 ns, about 11 days), so a timer computed in
-    nanoseconds never floors to a 0 ns sleep that leaves time unmoved."""
-    return Seconds(nanos / _NANOS)
+    nanoseconds never floors to a 0 ns sleep that leaves time unmoved.
+    A count past float range is infinite."""
+    return Seconds(_in_float_range(nanos) / _NANOS)
+
+
+def add_nanos(a: int | float, b: int | float) -> int | float:
+    """``a + b`` for ``nanos_or_infinite`` counts (a deadline is ``now +
+    delay``), staying within float range: a sum past it is infinite, as
+    JavaScript's millisecond sums are."""
+    return _in_float_range(_in_float_range(a) + _in_float_range(b))
+
+
+def _in_float_range(nanos: int | float) -> int | float:
+    """An int count past float range as the infinity it saturates to."""
+    if isinstance(nanos, int) and abs(nanos) > _MAX_NANOS:
+        return math.inf if nanos > 0 else -math.inf
+    return nanos
+
+
+def from_millis(millis: float) -> Seconds:
+    """Effect's ``Duration.millis``: a delay computed in float milliseconds
+    (infinite once it passes float range, as in JavaScript)."""
+    return Seconds(millis / 1000)
 
 
 def round_nanos(nanos: float) -> int:
     """The whole nanoseconds nearest ``nanos``, ties away from zero
-    (Effect's ``roundTiesAwayFromZero``, as ``Math.round`` on the size)."""
+    (Effect's ``roundTiesAwayFromZero``, as ``Math.round`` on the size).
+    Raises ``ValueError`` for an infinity or NaN."""
+    if not math.isfinite(nanos):
+        raise ValueError(f"round_nanos needs a finite count, got {nanos}")
     size = abs(nanos)
     whole = math.floor(size)
     rounded = whole + 1 if size - whole >= 0.5 else whole
@@ -110,7 +152,7 @@ _UNITS = (
 
 def format_duration(seconds: Seconds) -> str:
     """Human-readable, as Effect's ``Duration.format``: ``"1s 500ms"``."""
-    if math.isinf(seconds):
+    if math.isinf(seconds * 1000):
         return "Infinity" if seconds > 0 else "-Infinity"
     nanos = _effect_nanos(abs(seconds))
     if nanos == 0:
@@ -129,7 +171,9 @@ __all__ = [
     "ZERO",
     "Duration",
     "Seconds",
+    "add_nanos",
     "format_duration",
+    "from_millis",
     "from_nanos",
     "nanos_or_infinite",
     "round_nanos",
