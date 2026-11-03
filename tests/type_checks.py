@@ -7920,6 +7920,36 @@ def atom_http_api_types() -> None:
     rename(params={"id": "1"})  # pyright: ignore[reportArgumentType]
     create(payload=1)  # pyright: ignore[reportArgumentType]
     create(params={"id": 1})  # pyright: ignore[reportArgumentType]
+    # query_of: the strict, curried query. The endpoint fixes its parts before they are
+    # checked, so a wrong part is an error (query(...) solves them with the endpoint, which
+    # is covariant, and so widens to accept them).
+    get_item = items.query_of(Items, Items.rename)
+    assert_type(get_item, atom_http_api.Query[Ids, None, str, None, str, Never])
+    assert_type(get_item(params={"id": 1}, payload="y"), atom.Atom[AsyncResult[str, Never]])
+    assert_type(
+        items.query_of(Items, Items.rename, response_mode="response-only")(params={"id": 1}),
+        atom.Atom[AsyncResult[HttpClientResponse, Never]],
+    )
+    assert_type(
+        items.query_of(Items, Items.rename, response_mode="decoded-and-response")(),
+        atom.Atom[AsyncResult[tuple[str, HttpClientResponse], Never]],
+    )
+    assert_type(
+        client.query_of(Users, Users.create)(
+            payload="x", reactivity_keys=["users"], time_to_live=60, serialization_key="k"
+        ),
+        atom.Atom[AsyncResult[float, Never]],
+    )
+    get_item(params={"id": "1"})  # pyright: ignore[reportArgumentType]
+    get_item(payload=1)  # pyright: ignore[reportArgumentType]
+    get_item(query={"page": 1})  # pyright: ignore[reportArgumentType]
+    client.query_of(Users, Users.create)(params={"id": 1})  # pyright: ignore[reportArgumentType]
+    client.query_of(Items, Items.rename)  # pyright: ignore[reportCallIssue, reportArgumentType]
+    # The leniency query_of works around: query(...) accepts the wrong part. Pinned so the
+    # build fails once pyright rejects it, and query's own pins can be made strict.
+    assert_type(
+        items.query(Items, Items.rename, params={"id": "1"}), atom.Atom[AsyncResult[str, Never]]
+    )
     # The limitation mutate works around; fails the build once pyright solves it.
     atom.set(
         items.mutation(Items, Items.rename),

@@ -4,13 +4,15 @@
 ``make(tag, api=api, http_client=layer)`` gives an ``AtomHttpApiClient``:
 a runtime whose layer provides ``tag`` with ``http_api.client.make(api)``
 over the ``HttpClient`` the layer gives, ``query`` atoms calling an
-endpoint, ``mutation`` function atoms, and ``mutate``, a mutation as a
-function of its request parts::
+endpoint, ``query_of``, a query as a function of its request parts (a
+wrong part is a type error there, and accepted by ``query``),
+``mutation`` function atoms, and ``mutate``, a mutation as a function of
+its request parts::
 
     class UsersApi(Tag[Client[Users]], key="UsersApi"): ...
 
     client = atom_http_api.make(UsersApi, api=api, http_client=http_layer)
-    user = client.query(Users, Users.get_user, params={"id": 1})
+    user = client.query_of(Users, Users.get_user)(params={"id": 1})
     create = client.mutate(Users, Users.create)
     yield from create(payload={"name": "x"}, reactivity_keys=["users"])
 
@@ -25,6 +27,7 @@ Equal arguments give the same atom.
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from typing import Any, Literal, NamedTuple, Never, TypedDict, cast, overload
 
 from pyfect import schema as S
@@ -144,6 +147,40 @@ class Mutate[P, Q, B, H, A, E]:
         request = {name: value for name, value in given.items() if value is not None}
         return set_atom(self._mutation, request).and_then(
             get_result(self._mutation, suspend_on_waiting=True)
+        )
+
+
+class Query[P, Q, B, H, A, E]:
+    """A query atom as a function of the request parts its endpoint declares
+    (``AtomHttpApiClient.query_of``). The endpoint fixes the parts' types
+    before they are given, so a wrong part is a type error."""
+
+    __slots__ = ("_query",)
+
+    def __init__(self, query: Callable[..., Atom[AsyncResult[A, E]]]) -> None:
+        self._query = query
+
+    def __call__(
+        self,
+        *,
+        params: P | None = None,
+        query: Q | None = None,
+        payload: B | None = None,
+        headers: H | None = None,
+        sse_options: SseOptions | None = None,
+        reactivity_keys: Keys | None = None,
+        time_to_live: Duration | None = None,
+        serialization_key: str | None = None,
+    ) -> Atom[AsyncResult[A, E]]:
+        return self._query(
+            params=params,
+            query=query,
+            payload=payload,
+            headers=headers,
+            sse_options=sse_options,
+            reactivity_keys=reactivity_keys,
+            time_to_live=time_to_live,
+            serialization_key=serialization_key,
         )
 
 
@@ -496,6 +533,80 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
         )
         return self._queries(key)
 
+    @overload
+    def query_of[P, Q, B, CB, H, S1, CS, E](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
+        /,
+        *,
+        response_mode: Literal["decoded-only"] = "decoded-only",
+    ) -> Query[P, Q, CB, H, CS, E]: ...
+    @overload
+    def query_of[P, Q, B, CB, H, S1, CS, E, ME](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        /,
+        *,
+        response_mode: Literal["decoded-only"] = "decoded-only",
+    ) -> Query[P, Q, CB, H, CS, E | ME]: ...
+    @overload
+    def query_of[P, Q, B, CB, H, S1, CS, E](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
+        /,
+        *,
+        response_mode: Literal["decoded-and-response"],
+    ) -> Query[P, Q, CB, H, tuple[CS, HttpClientResponse], E]: ...
+    @overload
+    def query_of[P, Q, B, CB, H, S1, CS, E, ME](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        /,
+        *,
+        response_mode: Literal["decoded-and-response"],
+    ) -> Query[P, Q, CB, H, tuple[CS, HttpClientResponse], E | ME]: ...
+    @overload
+    def query_of[P, Q, B, CB, H, S1, CS, E](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
+        /,
+        *,
+        response_mode: Literal["response-only"],
+    ) -> Query[P, Q, CB, H, HttpClientResponse, Never]: ...
+    @overload
+    def query_of[P, Q, B, CB, H, S1, CS, E, ME](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        /,
+        *,
+        response_mode: Literal["response-only"],
+    ) -> Query[P, Q, CB, H, HttpClientResponse, ME]: ...
+    def query_of(
+        self,
+        group: type[G],
+        endpoint: AnyEndpoint,
+        /,
+        *,
+        response_mode: ResponseMode = "decoded-only",
+    ) -> Query[Any, Any, Any, Any, Any, Any]:
+        """``query`` as a function of the request parts, typed by the
+        endpoint alone::
+
+            client.query_of(Users, Users.get_user)(params={"id": 1})
+
+        ``query(group, endpoint, params=...)`` solves the parts' types from
+        the endpoint and the parts together, and the endpoint is covariant,
+        so a wrong part widens them and is accepted; here it is an error."""
+        self._own(group, endpoint)
+        query = cast("Callable[..., Atom[Any]]", self.query)
+        return Query(partial(query, group, endpoint, response_mode=response_mode))
+
     def _make_query(self, key: _QueryKey) -> Atom[Any]:
         made: Atom[Any] = self.runtime.atom(
             self._call(key.group, key.endpoint, key.response_mode, dict(key.request))
@@ -552,5 +663,5 @@ def make[G: HttpApiGroup[Any], T](
     return AtomHttpApiClient(tag, api, atom_runtime)
 
 
-__all__ = ["AtomHttpApiClient", "HttpClientLayer", "Mutate", "MutationRequest", "make"]
+__all__ = ["AtomHttpApiClient", "HttpClientLayer", "Mutate", "MutationRequest", "Query", "make"]
 publish(globals())
