@@ -65,47 +65,52 @@ def with_run[EX, RX](
     """A protocol from its parts, made with the function writing requests
     to the server (Effect's ``Utils.withRun``). Requests written before the
     server runs are kept, and handed to it (with their services) when it
-    does."""
-    buffer: list[tuple[int, Message, Context[Any]]] = []
-    current: list[WriteRequest] = []
-    semaphore = Semaphore(1)
+    does. Each run of the effect makes its own buffer, so a layer over it
+    serves every run (and every worker) it is built for."""
 
-    def buffered(client_id: int, message: Message) -> Effect[None]:
-        def keep(services: Context[Any]) -> None:
-            buffer.append((client_id, message, services))
+    def per_run() -> Effect[ServerProtocolService, EX, RX]:
+        buffer: list[tuple[int, Message, Context[Any]]] = []
+        current: list[WriteRequest] = []
+        semaphore = Semaphore(1)
 
-        return context().map(keep)
+        def buffered(client_id: int, message: Message) -> Effect[None]:
+            def keep(services: Context[Any]) -> None:
+                buffer.append((client_id, message, services))
 
-    def write(client_id: int, message: Message) -> Effect[None]:
-        return suspend(lambda: (current[-1] if current else buffered)(client_id, message))
+            return context().map(keep)
 
-    def build(parts: ProtocolParts) -> ServerProtocolService:
-        def run(f: WriteRequest) -> Effect[Never]:
-            @gen
-            def running():
-                pending = list(buffer)
-                buffer.clear()
-                for client_id, message, services in pending:
-                    yield from suspend(lambda c=client_id, m=message: f(c, m)).pipe(
-                        provide_context(services)
-                    )
-                current.append(f)
-                return (yield from never.on_exit(lambda _: succeed(current.remove(f))))
+        def write(client_id: int, message: Message) -> Effect[None]:
+            return suspend(lambda: (current[-1] if current else buffered)(client_id, message))
 
-            return semaphore.with_permits(running)
+        def build(parts: ProtocolParts) -> ServerProtocolService:
+            def run(f: WriteRequest) -> Effect[Never]:
+                @gen
+                def running():
+                    pending = list(buffer)
+                    buffer.clear()
+                    for client_id, message, services in pending:
+                        yield from suspend(lambda c=client_id, m=message: f(c, m)).pipe(
+                            provide_context(services)
+                        )
+                    current.append(f)
+                    return (yield from never.on_exit(lambda _: succeed(current.remove(f))))
 
-        return ServerProtocolService(
-            run,
-            parts.disconnects,
-            parts.send,
-            parts.end,
-            parts.supports_ack,
-            parts.supports_span_propagation,
-            parts.codec_for,
-            parts.initial_message,
-        )
+                return semaphore.with_permits(running)
 
-    return make(write).map(build)
+            return ServerProtocolService(
+                run,
+                parts.disconnects,
+                parts.send,
+                parts.end,
+                parts.supports_ack,
+                parts.supports_span_propagation,
+                parts.codec_for,
+                parts.initial_message,
+            )
+
+        return make(write).map(build)
+
+    return suspend(per_run)
 
 
 __all__ = [

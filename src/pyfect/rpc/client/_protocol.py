@@ -61,84 +61,91 @@ def with_run_client[EX, RX](
     When the ``Scope`` the protocol is made in closes, the calls waiting
     and every later call fail with an ``RpcClientError`` saying the
     protocol is closed (in Effect they wait forever): a client made with
-    ``make(Group).pipe(provide(protocol))`` outlives its protocol."""
-    client_ids: set[int] = set()
-    buffers: dict[int, list[tuple[Message, Context[Any]]]] = {}
-    writes: dict[int, WriteResponse] = {}
-    awaited: set[int] = set()
-    """The clients that sent a request and have not stopped running."""
-    released: list[RpcClientError] = []
+    ``make(Group).pipe(provide(protocol))`` outlives its protocol.
 
-    def write(client_id: int, response: Message) -> Effect[None]:
-        def body() -> Effect[None]:
-            found = writes.get(client_id)
-            if found is not None:
-                return found(response)
-            if client_id not in awaited:
-                return _VOID
+    Each run of the effect makes its own state, so a layer over it
+    serves every run it is provided to."""
 
-            def keep(services: Context[Any]) -> None:
-                buffers.setdefault(client_id, []).append((response, services))
+    def per_run() -> Effect[ClientProtocolService, EX, RX]:
+        client_ids: set[int] = set()
+        buffers: dict[int, list[tuple[Message, Context[Any]]]] = {}
+        writes: dict[int, WriteResponse] = {}
+        awaited: set[int] = set()
+        """The clients that sent a request and have not stopped running."""
+        released: list[RpcClientError] = []
 
-            return context().map(keep)
+        def write(client_id: int, response: Message) -> Effect[None]:
+            def body() -> Effect[None]:
+                found = writes.get(client_id)
+                if found is not None:
+                    return found(response)
+                if client_id not in awaited:
+                    return _VOID
 
-        return suspend(body)
+                def keep(services: Context[Any]) -> None:
+                    buffers.setdefault(client_id, []).append((response, services))
 
-    def build(parts: ClientProtocolParts) -> ClientProtocolService:
-        def send(client_id: int, message: Message) -> Effect[None, RpcClientError]:
-            def body() -> Effect[None, RpcClientError]:
-                if released:
-                    return fail(released[0])
-                if message.get("_tag") == "Request":
-                    awaited.add(client_id)
-                return parts.send(client_id, message)
+                return context().map(keep)
 
             return suspend(body)
 
-        def run(client_id: int, f: WriteResponse) -> Effect[Never]:
+        def build(parts: ClientProtocolParts) -> ClientProtocolService:
+            def send(client_id: int, message: Message) -> Effect[None, RpcClientError]:
+                def body() -> Effect[None, RpcClientError]:
+                    if released:
+                        return fail(released[0])
+                    if message.get("_tag") == "Request":
+                        awaited.add(client_id)
+                    return parts.send(client_id, message)
+
+                return suspend(body)
+
+            def run(client_id: int, f: WriteResponse) -> Effect[Never]:
+                @gen
+                def running():
+                    client_ids.add(client_id)
+                    writes[client_id] = f
+                    for response, services in buffers.pop(client_id, []):
+                        yield from suspend(lambda r=response: f(r)).pipe(provide_context(services))
+
+                    def leave(_: object) -> Effect[None]:
+                        client_ids.discard(client_id)
+                        awaited.discard(client_id)
+                        writes.pop(client_id, None)
+                        buffers.pop(client_id, None)
+                        return _VOID
+
+                    return (yield from never.on_exit(leave))
+
+                return running
+
+            return ClientProtocolService(run, send, parts.supports_ack, parts.codec_for)
+
+        def release(_: object) -> Effect[None]:
+            error = protocol_closed()
+            released.append(error)
+            failure: Message = {"_tag": "ClientProtocolError", "error": error}
+
             @gen
-            def running():
-                client_ids.add(client_id)
-                writes[client_id] = f
-                for response, services in buffers.pop(client_id, []):
-                    yield from suspend(lambda r=response: f(r)).pipe(provide_context(services))
+            def fail_waiting():
+                for f in list(writes.values()):
+                    yield from f(failure)
 
-                def leave(_: object) -> Effect[None]:
-                    client_ids.discard(client_id)
-                    awaited.discard(client_id)
-                    writes.pop(client_id, None)
-                    buffers.pop(client_id, None)
-                    return _VOID
-
-                return (yield from never.on_exit(leave))
-
-            return running
-
-        return ClientProtocolService(run, send, parts.supports_ack, parts.codec_for)
-
-    def release(_: object) -> Effect[None]:
-        error = protocol_closed()
-        released.append(error)
-        failure: Message = {"_tag": "ClientProtocolError", "error": error}
+            return fail_waiting.uninterruptible()
 
         @gen
-        def fail_waiting():
-            for f in list(writes.values()):
-                yield from f(failure)
+        def made():
+            service = yield from make(write, client_ids).map(build)
+            scope = yield from service_option(Scope)
+            if scope is not None:
+                # Added last, so it runs first: the waiting calls fail before
+                # the transport is torn down.
+                yield from scope.value.add_finalizer(release)
+            return service
 
-        return fail_waiting.uninterruptible()
+        return made
 
-    @gen
-    def made():
-        service = yield from make(write, client_ids).map(build)
-        scope = yield from service_option(Scope)
-        if scope is not None:
-            # Added last, so it runs first: the waiting calls fail before
-            # the transport is torn down.
-            yield from scope.value.add_finalizer(release)
-        return service
-
-    return made
+    return suspend(per_run)
 
 
 def protocol_closed() -> RpcClientError:

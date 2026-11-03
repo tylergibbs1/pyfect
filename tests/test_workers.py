@@ -358,3 +358,57 @@ class _InitClient(Tag[_InitGroup], key="InitClient"):
 def test_a_worker_pool_takes_either_a_size_or_a_min_and_max_size(options: dict[str, Any]) -> None:
     with pytest.raises(TypeError):
         rpc_client.make_protocol_worker(**options)
+
+
+def _get_initial_through(protocol: fx.Layer[Any, Any, Any]) -> Effect[str, Any, Any]:
+    call = rpc_client.make(_InitGroup).flat_map(lambda client: client.get_initial())
+    return fx.scoped(call).pipe(
+        fx.provide(
+            protocol.pipe(
+                layer.provide(rpc_worker.layer_initial_message(S.String, fx.succeed("hi")))
+            ).pipe(layer.provide(python_worker.layer(lambda _: ThreadWorker(_serve_initial))))
+        )
+    )
+
+
+def test_one_worker_protocol_layer_value_serves_every_run_it_is_provided_to() -> None:
+    # A layer is a recipe: each run builds its own pool and protocol
+    # (Effect's withRunClient makes its state in Effect.suspend).
+    protocol = rpc_client.layer_protocol_worker(size=1)
+    exits = [fx.run_sync_exit(_get_initial_through(protocol)) for _ in range(3)]
+    assert exits == [Exit.succeed("started with hi")] * 3
+
+
+class _SlowGroup(RpcGroup):
+    slow = rpc_make("Slow", payload=S.Int, success=S.String)
+
+
+def _serve_slow(worker_id: int) -> None:
+    handlers = _SlowGroup.to_layer(
+        _SlowGroup.handlers().handle(_SlowGroup.slow)(
+            lambda _request: fx.sleep(0.2).map(lambda _: str(worker_id))
+        )
+    )
+    main = (
+        rpc_server.layer(_SlowGroup)
+        .pipe(layer.provide(handlers))
+        .pipe(layer.provide(rpc_server.layer_protocol_worker_runner))
+        .pipe(layer.provide(python_worker_runner.layer))
+    )
+    fx.run_sync_exit(main.launch())
+
+
+def test_each_worker_thread_serves_over_its_own_runner_protocol() -> None:
+    # Two workers at once, both built from the one runner layer value: each
+    # needs its own request buffer and semaphore (Effect's withRun makes
+    # them in Effect.suspend).
+    calls = rpc_client.make(_SlowGroup).flat_map(
+        lambda client: fx.all(client.slow(1), client.slow(2), concurrency=2)
+    )
+    protocol = rpc_client.layer_protocol_worker(size=2).pipe(
+        layer.provide(python_worker.layer(lambda id_: ThreadWorker(lambda: _serve_slow(id_))))
+    )
+    exit_ = fx.run_sync_exit(fx.scoped(calls).pipe(fx.provide(protocol)).timeout(5))
+    assert isinstance(exit_, fx.Success)
+    first, second = exit_.value
+    assert first != second, "both requests were served by one worker's server"
