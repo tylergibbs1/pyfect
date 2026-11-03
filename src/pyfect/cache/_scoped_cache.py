@@ -25,6 +25,7 @@ from pyfect._core import (
 )
 from pyfect._fiber import Fiber
 from pyfect._root import new_root, start_root
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.cache._expiry import (
     RequireServicesAt,
     TimeToLive,
@@ -48,7 +49,7 @@ _VOID: Final[Effect[None]] = _Succeed(None)
 _DONE: Final[Exit[None, Never]] = Success(None)
 
 
-class ScopedCache[K: Hashable, A, E = Never, R = Never]:
+class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never]:
     """Make one with ``ScopedCache.make(lookup, capacity=...)`` inside a
     scope."""
 
@@ -69,8 +70,9 @@ class ScopedCache[K: Hashable, A, E = Never, R = Never]:
         self._entries: dict[K, _Entry[A, E]] | None = {}
 
     @overload
-    @staticmethod
+    @classmethod
     def make[K2: Hashable, T, X = Never, RR = Never](
+        cls: type[ScopedCache[Unsubscripted, Unsubscripted, Any, Any]],
         lookup: Callable[[K2], Effect[T, X, RR]],
         *,
         capacity: int | None,
@@ -78,8 +80,9 @@ class ScopedCache[K: Hashable, A, E = Never, R = Never]:
         require_services_at: Literal["construction"] = "construction",
     ) -> Effect[ScopedCache[K2, T, X], Never, RR | Scope]: ...
     @overload
-    @staticmethod
+    @classmethod
     def make[K2: Hashable, T, X = Never](
+        cls: type[ScopedCache[Unsubscripted, Unsubscripted, Any, Any]],
         lookup: Callable[[K2], Effect[T, X, Scope]],
         *,
         capacity: int | None,
@@ -87,16 +90,48 @@ class ScopedCache[K: Hashable, A, E = Never, R = Never]:
         require_services_at: Literal["lookup"],
     ) -> Effect[ScopedCache[K2, T, X], Never, Scope]: ...
     @overload
-    @staticmethod
+    @classmethod
     def make[K2: Hashable, T, X = Never, RR = Never](
+        cls: type[ScopedCache[Unsubscripted, Unsubscripted, Any, Any]],
         lookup: Callable[[K2], Effect[T, X, Scope | RR]],
         *,
         capacity: int | None,
         time_to_live: TimeToLive[K2, T, X] | None = None,
         require_services_at: Literal["lookup"],
     ) -> Effect[ScopedCache[K2, T, X, RR], Never, Scope]: ...
-    @staticmethod
+    @overload
+    @classmethod
+    def make[RR = Never](
+        cls,
+        lookup: Callable[[K], Effect[A, E, RR]],
+        *,
+        capacity: int | None,
+        time_to_live: TimeToLive[K, A, E] | None = None,
+        require_services_at: Literal["construction"] = "construction",
+    ) -> Effect[ScopedCache[K, A, E], Never, RR | Scope]: ...
+    @overload
+    @classmethod
     def make(
+        cls,
+        lookup: Callable[[K], Effect[A, E, Scope]],
+        *,
+        capacity: int | None,
+        time_to_live: TimeToLive[K, A, E] | None = None,
+        require_services_at: Literal["lookup"],
+    ) -> Effect[ScopedCache[K, A, E], Never, Scope]: ...
+    @overload
+    @classmethod
+    def make(
+        cls,
+        lookup: Callable[[K], Effect[A, E, Scope | R]],
+        *,
+        capacity: int | None,
+        time_to_live: TimeToLive[K, A, E] | None = None,
+        require_services_at: Literal["lookup"],
+    ) -> Effect[ScopedCache[K, A, E, R], Never, Scope]: ...
+    @classmethod
+    def make(
+        cls,
         lookup: Callable[[Any], Effect[Any, Any, Any]],
         *,
         capacity: int | None,

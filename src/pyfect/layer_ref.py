@@ -20,6 +20,7 @@ from typing import Any, Literal, Never, Self, cast, overload
 
 from pyfect._core import Effect, _Gen, _Succeed, _WithFiber
 from pyfect._layer_core import Layer, effect_context, fork_or_create, require_layer
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.context import Context, ServiceEffect, Tag
 from pyfect.duration import Duration
 from pyfect.layer import effect as layer_effect
@@ -29,7 +30,7 @@ from pyfect.schedule import Schedule
 from pyfect.scope import Scope, scoped
 
 
-class LayerRef[I, E = Never]:
+class LayerRef[I = Unsubscripted, E = Never]:
     """Make one with ``LayerRef.make(layer)`` inside a scope."""
 
     __slots__ = ("_layer", "rc_ref")
@@ -39,8 +40,9 @@ class LayerRef[I, E = Never]:
         self._layer: Layer[I, E] = effect_context(rc_ref.get())
 
     @overload
-    @staticmethod
+    @classmethod
     def make[I2, X = Never, RR = Never](
+        cls: type[LayerRef[Unsubscripted, Any]],
         layer: Layer[I2, X, RR],
         *,
         idle_time_to_live: Duration | None = None,
@@ -48,16 +50,38 @@ class LayerRef[I, E = Never]:
         invalidation_schedule: Schedule[object, object, object, RR] | None = None,
     ) -> Effect[LayerRef[I2, X], Never, Scope | RR]: ...
     @overload
-    @staticmethod
+    @classmethod
     def make[I2, X = Never, RR = Never](
+        cls: type[LayerRef[Unsubscripted, Any]],
         layer: Layer[I2, X, RR],
         *,
         idle_time_to_live: Duration | None = None,
         preload: bool,
         invalidation_schedule: Schedule[object, object, object, RR] | None = None,
     ) -> Effect[LayerRef[I2, X], X, Scope | RR]: ...
-    @staticmethod
+    @overload
+    @classmethod
+    def make[RR = Never](
+        cls,
+        layer: Layer[I, E, RR],
+        *,
+        idle_time_to_live: Duration | None = None,
+        preload: Literal[False] = False,
+        invalidation_schedule: Schedule[object, object, object, RR] | None = None,
+    ) -> Effect[LayerRef[I, E], Never, Scope | RR]: ...
+    @overload
+    @classmethod
+    def make[RR = Never](
+        cls,
+        layer: Layer[I, E, RR],
+        *,
+        idle_time_to_live: Duration | None = None,
+        preload: bool,
+        invalidation_schedule: Schedule[object, object, object, RR] | None = None,
+    ) -> Effect[LayerRef[I, E], E, Scope | RR]: ...
+    @classmethod
     def make(
+        cls,
         layer: Layer[Any, Any, Any],
         *,
         idle_time_to_live: Duration | None = None,

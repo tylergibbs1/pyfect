@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Generator
-from typing import Any, Final, Literal, Never
+from typing import Any, Final, Literal, Never, overload
 
 from pyfect._core import (
     Effect,
@@ -28,6 +28,7 @@ from pyfect._core import (
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._interrupt_reason import closed
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.clock import Clock, ClockService
@@ -48,7 +49,7 @@ type TimeToLiveStrategy = Literal["creation", "usage"]
 type _Lease[A, E, X, R] = Callable[[PoolItem[A, E], A, Fiber[Any, Any], Restore], Effect[X, Any, R]]
 
 
-class Pool[A, E = Never]:
+class Pool[A = Unsubscripted, E = Never]:
     """Items acquired with a scoped effect and lent to fibers. Make one with
     ``Pool.make`` / ``make_with_ttl`` / ``make_with_strategy`` inside a
     scope; closing that scope shuts the pool down, waiting for borrowed
@@ -72,8 +73,29 @@ class Pool[A, E = Never]:
 
     # --- constructors ---------------------------------------------------------
 
-    @staticmethod
+    @overload
+    @classmethod
     def make[T, X = Never, R = Never](
+        cls: type[Pool[Unsubscripted, Any]],
+        acquire: Effect[T, X, R],
+        *,
+        size: int,
+        concurrency: int = 1,
+        target_utilization: float = 1.0,
+    ) -> Effect[Pool[T, X], Never, Scope | R]: ...
+    @overload
+    @classmethod
+    def make[R = Never](
+        cls,
+        acquire: Effect[A, E, R],
+        *,
+        size: int,
+        concurrency: int = 1,
+        target_utilization: float = 1.0,
+    ) -> Effect[Pool[A, E], Never, Scope | R]: ...
+    @classmethod
+    def make[T, X = Never, R = Never](
+        cls,
         acquire: Effect[T, X, R],
         *,
         size: int,
@@ -91,8 +113,35 @@ class Pool[A, E = Never]:
             target_utilization=target_utilization,
         )
 
-    @staticmethod
+    @overload
+    @classmethod
     def make_with_ttl[T, X = Never, R = Never](
+        cls: type[Pool[Unsubscripted, Any]],
+        acquire: Effect[T, X, R],
+        *,
+        min: int,
+        max: int,
+        time_to_live: Duration,
+        time_to_live_strategy: TimeToLiveStrategy = "usage",
+        concurrency: int = 1,
+        target_utilization: float = 1.0,
+    ) -> Effect[Pool[T, X], Never, Scope | R]: ...
+    @overload
+    @classmethod
+    def make_with_ttl[R = Never](
+        cls,
+        acquire: Effect[A, E, R],
+        *,
+        min: int,
+        max: int,
+        time_to_live: Duration,
+        time_to_live_strategy: TimeToLiveStrategy = "usage",
+        concurrency: int = 1,
+        target_utilization: float = 1.0,
+    ) -> Effect[Pool[A, E], Never, Scope | R]: ...
+    @classmethod
+    def make_with_ttl[T, X = Never, R = Never](
+        cls,
         acquire: Effect[T, X, R],
         *,
         min: int,
@@ -123,8 +172,33 @@ class Pool[A, E = Never]:
             )
         )
 
-    @staticmethod
+    @overload
+    @classmethod
     def make_with_strategy[T, X = Never, R = Never](
+        cls: type[Pool[Unsubscripted, Any]],
+        acquire: Effect[T, X, R],
+        *,
+        min: int,
+        max: int,
+        strategy: Strategy[T, X],
+        concurrency: int = 1,
+        target_utilization: float = 1.0,
+    ) -> Effect[Pool[T, X], Never, Scope | R]: ...
+    @overload
+    @classmethod
+    def make_with_strategy[R = Never](
+        cls,
+        acquire: Effect[A, E, R],
+        *,
+        min: int,
+        max: int,
+        strategy: Strategy[A, E],
+        concurrency: int = 1,
+        target_utilization: float = 1.0,
+    ) -> Effect[Pool[A, E], Never, Scope | R]: ...
+    @classmethod
+    def make_with_strategy[T, X = Never, R = Never](
+        cls,
         acquire: Effect[T, X, R],
         *,
         min: int,

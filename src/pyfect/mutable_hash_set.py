@@ -6,12 +6,13 @@ Iteration follows insertion order; being mutable, it is unhashable."""
 from __future__ import annotations
 
 from collections.abc import Hashable, Iterable, Iterator
-from typing import cast
+from typing import cast, overload
 
 from pyfect._equal import equal_key
+from pyfect._unsubscripted import Unsubscripted
 
 
-class MutableHashSet[A]:
+class MutableHashSet[A = Unsubscripted]:
     """Build one with ``MutableHashSet.empty()``, ``make(*values)`` or
     ``from_iterable(values)``. Updates return the set itself."""
 
@@ -27,12 +28,26 @@ class MutableHashSet[A]:
         """Spelled ``MutableHashSet[str].empty()``."""
         return MutableHashSet()
 
-    @staticmethod
-    def make[B](*values: B) -> MutableHashSet[B]:
+    @overload
+    @classmethod
+    def make[B](cls: type[MutableHashSet[Unsubscripted]], *values: B) -> MutableHashSet[B]: ...
+    @overload
+    @classmethod
+    def make(cls, *values: A) -> MutableHashSet[A]: ...
+    @classmethod
+    def make[B](cls, *values: B) -> MutableHashSet[B]:
         return MutableHashSet.from_iterable(values)
 
-    @staticmethod
-    def from_iterable[B](values: Iterable[B]) -> MutableHashSet[B]:
+    @overload
+    @classmethod
+    def from_iterable[B](
+        cls: type[MutableHashSet[Unsubscripted]], values: Iterable[B]
+    ) -> MutableHashSet[B]: ...
+    @overload
+    @classmethod
+    def from_iterable(cls, values: Iterable[A]) -> MutableHashSet[A]: ...
+    @classmethod
+    def from_iterable[B](cls, values: Iterable[B]) -> MutableHashSet[B]:
         out = MutableHashSet[B]()
         for value in values:
             out.add(value)

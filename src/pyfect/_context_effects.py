@@ -76,9 +76,13 @@ class _UpdateContext[R2, RO]:
 
 def update_context[R2, RO](f: Callable[[Context[R2]], Context[RO]]) -> _UpdateContext[R2, RO]:
     """Run the effect with ``f`` of the current services, which then need
-    only what ``f`` reads::
+    only what ``f`` reads. ``f`` is a typed ``def``: in ``.pipe``, a lambda's
+    parameter would be ``Unknown`` (research/typing/catch_2_lambda.py)::
 
-    eff.pipe(update_context(lambda ctx: ctx.add(Cache, 2)))
+        def with_cache(ctx: Context[Never]) -> Context[Cache]:
+            return ctx.add(Cache, 2)
+
+        eff.pipe(update_context(with_cache))
     """
     return _UpdateContext(f)
 

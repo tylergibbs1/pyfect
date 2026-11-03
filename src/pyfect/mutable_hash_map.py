@@ -11,13 +11,14 @@ insertion order. Being mutable, it is unhashable.
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Iterable, Iterator
-from typing import cast
+from typing import cast, overload
 
 from pyfect._equal import equal_key, equals
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.option import Option, Some
 
 
-class MutableHashMap[K, V]:
+class MutableHashMap[K = Unsubscripted, V = Unsubscripted]:
     """Build one with ``MutableHashMap.empty()``, ``make(*entries)`` or
     ``from_iterable(entries)``. Updates return the map itself."""
 
@@ -33,12 +34,28 @@ class MutableHashMap[K, V]:
         """Spelled ``MutableHashMap[str, int].empty()``."""
         return MutableHashMap()
 
-    @staticmethod
-    def make[K2, V2](*entries: tuple[K2, V2]) -> MutableHashMap[K2, V2]:
+    @overload
+    @classmethod
+    def make[K2, V2](
+        cls: type[MutableHashMap[Unsubscripted, Unsubscripted]], *entries: tuple[K2, V2]
+    ) -> MutableHashMap[K2, V2]: ...
+    @overload
+    @classmethod
+    def make(cls, *entries: tuple[K, V]) -> MutableHashMap[K, V]: ...
+    @classmethod
+    def make[K2, V2](cls, *entries: tuple[K2, V2]) -> MutableHashMap[K2, V2]:
         return MutableHashMap.from_iterable(entries)
 
-    @staticmethod
-    def from_iterable[K2, V2](entries: Iterable[tuple[K2, V2]]) -> MutableHashMap[K2, V2]:
+    @overload
+    @classmethod
+    def from_iterable[K2, V2](
+        cls: type[MutableHashMap[Unsubscripted, Unsubscripted]], entries: Iterable[tuple[K2, V2]]
+    ) -> MutableHashMap[K2, V2]: ...
+    @overload
+    @classmethod
+    def from_iterable(cls, entries: Iterable[tuple[K, V]]) -> MutableHashMap[K, V]: ...
+    @classmethod
+    def from_iterable[K2, V2](cls, entries: Iterable[tuple[K2, V2]]) -> MutableHashMap[K2, V2]:
         out = MutableHashMap[K2, V2]()
         for key, value in entries:
             out.set(key, value)

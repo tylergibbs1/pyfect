@@ -11,18 +11,19 @@ schedule until the scope that made it closes.
 
 from __future__ import annotations
 
-from typing import Any, Never
+from typing import Any, Never, overload
 
 from pyfect._core import Effect, _FromExit, _Locally, _WithFiber
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.exit import Exit, Success
 from pyfect.schedule import Schedule
 from pyfect.scope import Scope
 from pyfect.scoped_ref import ScopedRef
 
 
-class Resource[A, E = Never]:
+class Resource[A = Unsubscripted, E = Never]:
     """Make one with ``Resource.manual`` or ``Resource.auto`` inside a scope."""
 
     __slots__ = ("_acquire", "_ref")
@@ -31,8 +32,19 @@ class Resource[A, E = Never]:
         self._ref = ref
         self._acquire = acquire
 
-    @staticmethod
+    @overload
+    @classmethod
     def manual[T, X = Never, R = Never](
+        cls: type[Resource[Unsubscripted, Any]], acquire: Effect[T, X, R]
+    ) -> Effect[Resource[T, X], Never, Scope | R]: ...
+    @overload
+    @classmethod
+    def manual[R = Never](
+        cls, acquire: Effect[A, E, R]
+    ) -> Effect[Resource[A, E], Never, Scope | R]: ...
+    @classmethod
+    def manual[T, X = Never, R = Never](
+        cls,
         acquire: Effect[T, X, R],
     ) -> Effect[Resource[T, X], Never, Scope | R]:
         """A resource acquired now (with the services in scope now) and
@@ -46,9 +58,21 @@ class Resource[A, E = Never]:
 
         return _WithFiber(body)
 
-    @staticmethod
+    @overload
+    @classmethod
     def auto[T, X = Never, RR = Never](
-        acquire: Effect[T, X, RR], policy: Schedule[object, object, object, RR]
+        cls: type[Resource[Unsubscripted, Any]],
+        acquire: Effect[T, X, RR],
+        policy: Schedule[object, object, object, RR],
+    ) -> Effect[Resource[T, X], Never, Scope | RR]: ...
+    @overload
+    @classmethod
+    def auto[RR = Never](
+        cls, acquire: Effect[A, E, RR], policy: Schedule[object, object, object, RR]
+    ) -> Effect[Resource[A, E], Never, Scope | RR]: ...
+    @classmethod
+    def auto[T, X = Never, RR = Never](
+        cls, acquire: Effect[T, X, RR], policy: Schedule[object, object, object, RR]
     ) -> Effect[Resource[T, X], Never, Scope | RR]:
         """``manual``, refreshed each time ``policy`` recurs (first after its
         first delay) until the current scope closes. Failed refreshes are

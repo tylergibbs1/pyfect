@@ -40,7 +40,7 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
-from pyfect._fn import fn, fn_untraced, generator_function
+from pyfect._fn import Gen, fn, fn_untraced, generator_function
 from pyfect._os_wait import os_wait
 from pyfect._root import loop_running_here, run_loop
 from pyfect.cause import Cause
@@ -424,6 +424,7 @@ def provide_service[S, T](tag: TagLike[S, T], service: S) -> _ProvideService[S, 
 # Re-exported so ``pyfect.effect`` is a complete toolbox.
 __all__ = [
     "AsyncioRequiredError",
+    "Gen",
     "blocking",
     "callback",
     "catch_all",

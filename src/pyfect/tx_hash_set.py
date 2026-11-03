@@ -15,12 +15,13 @@ from typing import Any, TypeIs, overload
 
 from pyfect import _tx_ops
 from pyfect._core import Effect
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.hash_set import HashSet
 from pyfect.option import Some
 from pyfect.tx_ref import TxRef
 
 
-class TxHashSet[V]:
+class TxHashSet[V = Unsubscripted]:
     """``TxHashSet(ref)`` wraps an existing ``TxRef``; ``empty``, ``make``,
     ``from_iterable`` and ``from_hash_set`` are the effects."""
 
@@ -34,18 +35,40 @@ class TxHashSet[V]:
         """Spelled ``TxHashSet[str].empty()``."""
         return TxHashSet.from_hash_set(HashSet[V].empty())
 
-    @staticmethod
-    def make[T](*values: T) -> Effect[TxHashSet[T]]:
+    @overload
+    @classmethod
+    def make[T](cls: type[TxHashSet[Unsubscripted]], *values: T) -> Effect[TxHashSet[T]]: ...
+    @overload
+    @classmethod
+    def make(cls, *values: V) -> Effect[TxHashSet[V]]: ...
+    @classmethod
+    def make[T](cls, *values: T) -> Effect[TxHashSet[T]]:
         return TxHashSet.from_iterable(values)
 
-    @staticmethod
-    def from_iterable[T](values: Iterable[T]) -> Effect[TxHashSet[T]]:
+    @overload
+    @classmethod
+    def from_iterable[T](
+        cls: type[TxHashSet[Unsubscripted]], values: Iterable[T]
+    ) -> Effect[TxHashSet[T]]: ...
+    @overload
+    @classmethod
+    def from_iterable(cls, values: Iterable[V]) -> Effect[TxHashSet[V]]: ...
+    @classmethod
+    def from_iterable[T](cls, values: Iterable[T]) -> Effect[TxHashSet[T]]:
         """A new set each time the effect runs. ``values`` is read once,
         here, so a one-shot iterator survives transaction retries."""
         return TxHashSet.from_hash_set(HashSet.from_iterable(values))
 
-    @staticmethod
-    def from_hash_set[T](values: HashSet[T]) -> Effect[TxHashSet[T]]:
+    @overload
+    @classmethod
+    def from_hash_set[T](
+        cls: type[TxHashSet[Unsubscripted]], values: HashSet[T]
+    ) -> Effect[TxHashSet[T]]: ...
+    @overload
+    @classmethod
+    def from_hash_set(cls, values: HashSet[V]) -> Effect[TxHashSet[V]]: ...
+    @classmethod
+    def from_hash_set[T](cls, values: HashSet[T]) -> Effect[TxHashSet[T]]:
         return TxRef.make(values).map(TxHashSet)
 
     @property

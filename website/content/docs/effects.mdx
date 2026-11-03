@@ -23,6 +23,11 @@ pyright infers the success type from `return`, the errors from every effect that
 the services from every service used. You rarely write `Effect[...]` yourself, except on
 function signatures you want to pin.
 
+A generic function body is the exception: pyright loses its type parameter when the body also
+uses other services, so annotate its return as `fx.Gen[A, E, R]` (what the body yields and
+returns), as in `def with_scope[R](eff: fx.Effect[int, Never, R]) -> fx.Gen[int, Never, R | Scope]`.
+`@fx.fn` raises `TypeError` for a generic body without a return annotation.
+
 ## Running effects
 
 | Function | Use it for |

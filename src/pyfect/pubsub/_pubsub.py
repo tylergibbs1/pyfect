@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, Never
+from typing import Any, Never, overload
 
 from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Suspend, _Sync, _WithFiber
 from pyfect._fiber import Fiber
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.exit import Failure
 from pyfect.option import Some
@@ -18,14 +19,22 @@ from pyfect.queue import Strategy
 from pyfect.scope import Scope
 
 
-class PubSub[A]:
+class PubSub[A = Unsubscripted]:
     __slots__ = ("_hub",)
 
     def __init__(self, atomic: Atomic[A], strategy: Strategy) -> None:
         self._hub = Hub(atomic, strategy)
 
-    @staticmethod
-    def make[T](atomic: Callable[[], Atomic[T]], strategy: Strategy) -> Effect[PubSub[T]]:
+    @overload
+    @classmethod
+    def make[T](
+        cls: type[PubSub[Unsubscripted]], atomic: Callable[[], Atomic[T]], strategy: Strategy
+    ) -> Effect[PubSub[T]]: ...
+    @overload
+    @classmethod
+    def make(cls, atomic: Callable[[], Atomic[A]], strategy: Strategy) -> Effect[PubSub[A]]: ...
+    @classmethod
+    def make[T](cls, atomic: Callable[[], Atomic[T]], strategy: Strategy) -> Effect[PubSub[T]]:
         """A hub over the store ``atomic()`` builds, handling a full store by
         ``strategy`` (Effect's ``make``, with the built-in strategies)."""
         return _Sync(lambda: PubSub(atomic(), strategy))

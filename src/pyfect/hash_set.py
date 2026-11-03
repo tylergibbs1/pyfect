@@ -18,9 +18,10 @@ from typing import Any, TypeIs, cast, overload
 from pyfect import _hamt
 from pyfect._equal import equal_key
 from pyfect._hamt import Entry, Node
+from pyfect._unsubscripted import Unsubscripted
 
 
-class HashSet[A]:
+class HashSet[A = Unsubscripted]:
     """Build one with ``HashSet.empty()``, ``HashSet.make(*values)`` or
     ``HashSet.from_iterable(values)``."""
 
@@ -38,12 +39,24 @@ class HashSet[A]:
         """Spelled ``HashSet[str].empty()``."""
         return HashSet()
 
-    @staticmethod
-    def make[B](*values: B) -> HashSet[B]:
+    @overload
+    @classmethod
+    def make[B](cls: type[HashSet[Unsubscripted]], *values: B) -> HashSet[B]: ...
+    @overload
+    @classmethod
+    def make(cls, *values: A) -> HashSet[A]: ...
+    @classmethod
+    def make[B](cls, *values: B) -> HashSet[B]:
         return HashSet.from_iterable(values)
 
-    @staticmethod
-    def from_iterable[B](values: Iterable[B]) -> HashSet[B]:
+    @overload
+    @classmethod
+    def from_iterable[B](cls: type[HashSet[Unsubscripted]], values: Iterable[B]) -> HashSet[B]: ...
+    @overload
+    @classmethod
+    def from_iterable(cls, values: Iterable[A]) -> HashSet[A]: ...
+    @classmethod
+    def from_iterable[B](cls, values: Iterable[B]) -> HashSet[B]:
         """The set of ``values``; the first of equal values is kept."""
         return HashSet[B]()._added(values)
 

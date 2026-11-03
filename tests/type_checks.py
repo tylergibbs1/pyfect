@@ -117,6 +117,7 @@ from pyfect.persistence import persisted_queue as pq
 from pyfect.persistence import persistence as persistence_module
 from pyfect.persistence import rate_limiter as rl
 from pyfect.persistence import redis as redis_module
+from pyfect.pool._state import Strategy
 from pyfect.pubsub import Atomic, Subscription
 from pyfect.queue import Dequeue
 from pyfect.redacted import make as redact
@@ -226,6 +227,50 @@ def lookup(key: str):
 def check_generators() -> None:
     assert_type(lookup("k"), fx.Effect[str, NotFound | Invalid, Primary | Port])
     assert_type(Primary(), TagEffect[Db, Primary, Primary])
+
+
+# A generic body annotates its return as fx.Gen[A, E, R]: inferred, pyright drops R (one
+# other requirement) or collapses it into the other (two), and fn raises TypeError for an
+# unannotated generic body (research/typing/fn_1_generic.py).
+
+
+@fx.fn
+def generic_alone[R](eff: fx.Effect[int, Never, R]) -> fx.Gen[int, Never, R]:
+    return (yield from eff)
+
+
+@fx.fn
+def generic_scoped[R](eff: fx.Effect[int, Never, R]) -> fx.Gen[int, Never, R | Scope]:
+    fiber = yield from eff.fork_scoped()
+    return (yield from fiber.join())
+
+
+@fx.fn
+def generic_three[R, E](
+    eff: fx.Effect[int, E, R], port: fx.Effect[int, Never, Port]
+) -> fx.Gen[int, E, R | Port | Scope]:
+    fiber = yield from eff.fork_scoped()
+    yield from port
+    return (yield from fiber.join())
+
+
+@fx.fn("generic_named")
+def generic_named[R](eff: fx.Effect[int, Never, R]) -> fx.Gen[int, Never, R | Scope]:
+    fiber = yield from eff.fork_scoped()
+    return (yield from fiber.join())
+
+
+def generic_wrong[R](eff: fx.Effect[int, Never, R]) -> fx.Gen[int, Never, R]:
+    yield from fx.Scope()  # pyright: ignore[reportReturnType]
+    return (yield from eff)
+
+
+def check_generic_bodies(needs_primary: fx.Effect[int, Never, Primary]) -> None:
+    assert_type(generic_alone(needs_primary), fx.Effect[int, Never, Primary])
+    assert_type(generic_scoped(needs_primary), fx.Effect[int, Never, Primary | Scope])
+    assert_type(generic_named(needs_primary), fx.Effect[int, Never, Primary | Scope])
+    with_error = needs_primary.flat_map(lambda n: fx.fail(NotFound("k")) if n else fx.succeed(n))
+    assert_type(generic_three(with_error, Port()), fx.Effect[int, NotFound, Primary | Port | Scope])
 
 
 # --- catch_tag removes exactly one error class ------------------------------------
@@ -1796,7 +1841,7 @@ def check_rc_map() -> None:
         fx.RcMap.make(_lookup_port, capacity=2, idle_time_to_live=len),
         fx.Effect[fx.RcMap[str, int, NotFound | fx.ExceededCapacityError], Never, fx.Scope | Port],
     )
-    fx.RcMap.make(_lookup_port, idle_time_to_live=lambda key: key)  # pyright: ignore[reportArgumentType]
+    fx.RcMap.make(_lookup_port, idle_time_to_live=lambda key: key)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
 
 def check_rc_map_methods(rc_map: fx.RcMap[str, int, NotFound]) -> None:
@@ -1832,7 +1877,7 @@ def check_cache() -> None:
         fx.Cache.make(_lookup_port, capacity=2, time_to_live=ttl),
         fx.Effect[fx.Cache[str, int, NotFound], Never, Port],
     )
-    fx.Cache.make(_lookup_port, capacity=2, time_to_live=lambda _ex, key: key)  # pyright: ignore[reportArgumentType]
+    fx.Cache.make(_lookup_port, capacity=2, time_to_live=lambda _ex, key: key)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
 
 def check_cache_methods(cache: fx.Cache[str, int, NotFound, Port]) -> None:
@@ -2132,7 +2177,7 @@ def check_pool() -> None:
         min=0,
         max=1,
         time_to_live=1,
-        time_to_live_strategy="idle",  # pyright: ignore[reportArgumentType]
+        time_to_live_strategy="idle",  # pyright: ignore[reportArgumentType, reportCallIssue]
     )
 
 
@@ -8375,3 +8420,170 @@ def check_schema_graph() -> None:
     )
     S.Graph("cyclic", S.String, S.Number)  # pyright: ignore[reportArgumentType]
     S.encode_sync(undirected)(graph.directed())  # pyright: ignore[reportArgumentType]
+
+
+# --- constructors honour a subscript ------------------------------------------------
+# X[T].make(...) makes an X[T]; bare X.make(...) infers T from the arguments
+# (tests/test_subscript_constructors.py lists every constructor).
+
+type JobState = Literal["waiting", "running"]
+
+
+def check_data_constructors_honour_a_subscript() -> None:
+    from pyfect.mutable_hash_map import MutableHashMap
+    from pyfect.mutable_hash_set import MutableHashSet
+    from pyfect.tx_chunk import TxChunk
+    from pyfect.tx_hash_map import TxHashMap
+    from pyfect.tx_hash_set import TxHashSet
+
+    assert_type(
+        TxHashMap[int, JobState].from_iterable([(1, "waiting")]),
+        fx.Effect[TxHashMap[int, JobState]],
+    )
+    assert_type(TxHashMap[int, JobState].make((1, "waiting")), fx.Effect[TxHashMap[int, JobState]])
+    assert_type(TxHashMap.make((1, "waiting")), fx.Effect[TxHashMap[int, str]])
+    TxHashMap[int, JobState].make((1, "done"))  # pyright: ignore[reportArgumentType]
+    assert_type(TxHashSet[JobState].make("waiting"), fx.Effect[TxHashSet[JobState]])
+    assert_type(TxHashSet[JobState].from_iterable(["waiting"]), fx.Effect[TxHashSet[JobState]])
+    assert_type(
+        TxHashSet[int | None].from_hash_set(HashSet.make(1)), fx.Effect[TxHashSet[int | None]]
+    )
+    assert_type(TxChunk[int | None].make([1]), fx.Effect[TxChunk[int | None]])
+    assert_type(TxChunk[int | None].from_iterable([1]), fx.Effect[TxChunk[int | None]])
+    assert_type(fx.TxRef[int | None].make(None), fx.Effect[fx.TxRef[int | None]])
+    assert_type(fx.TxRef.make(None), fx.Effect[fx.TxRef[None]])
+    assert_type(
+        fx.TxSubscriptionRef[int | None].make(None), fx.Effect[fx.TxSubscriptionRef[int | None]]
+    )
+    assert_type(fx.TxPriorityQueue[float].make(1, 2), fx.Effect[fx.TxPriorityQueue[float]])
+    assert_type(fx.TxPriorityQueue[float].from_iterable([1]), fx.Effect[fx.TxPriorityQueue[float]])
+    assert_type(fx.TxPriorityQueue[float].empty(), fx.Effect[fx.TxPriorityQueue[float]])
+    assert_type(
+        fx.TxPriorityQueue[bytes | str].make(b"a", key=len),
+        fx.Effect[fx.TxPriorityQueue[bytes | str]],
+    )
+    assert_type(fx.Ref[int | None].make(None), fx.Effect[fx.Ref[int | None]])
+    assert_type(fx.Ref.make(None), fx.Effect[fx.Ref[None]])
+    fx.Ref[int].make("a")  # pyright: ignore[reportArgumentType]
+    assert_type(
+        fx.SynchronizedRef[int | None].make(None), fx.Effect[fx.SynchronizedRef[int | None]]
+    )
+    assert_type(
+        fx.SubscriptionRef[int | None].make(None), fx.Effect[fx.SubscriptionRef[int | None]]
+    )
+    assert_type(
+        fx.ScopedRef[int | None].make(lambda: None),
+        fx.Effect[fx.ScopedRef[int | None], Never, fx.Scope],
+    )
+    assert_type(
+        fx.ScopedRef[int | None].from_acquire(fx.succeed(None)),
+        fx.Effect[fx.ScopedRef[int | None], Never, fx.Scope],
+    )
+    assert_type(HashMap[int, JobState].make((1, "waiting")), HashMap[int, JobState])
+    assert_type(HashMap[int, JobState].from_iterable([(1, "waiting")]), HashMap[int, JobState])
+    assert_type(HashSet[JobState].make("waiting"), HashSet[JobState])
+    assert_type(HashSet[JobState].from_iterable(["waiting"]), HashSet[JobState])
+    assert_type(MutableHashMap[int, JobState].make((1, "waiting")), MutableHashMap[int, JobState])
+    assert_type(
+        MutableHashMap[int, JobState].from_iterable([(1, "waiting")]),
+        MutableHashMap[int, JobState],
+    )
+    assert_type(MutableHashSet[JobState].make("waiting"), MutableHashSet[JobState])
+    assert_type(MutableHashSet[JobState].from_iterable(["waiting"]), MutableHashSet[JobState])
+    assert_type(Trie[int | None].make(("a", 1)), Trie[int | None])
+    assert_type(Trie[int | None].from_iterable([("a", 1)]), Trie[int | None])
+    assert_type(
+        fx.PubSub[int | None].make(lambda: Atomic[int | None].bounded(4), "sliding"),
+        fx.Effect[fx.PubSub[int | None]],
+    )
+
+
+def check_builders_honour_a_subscript(
+    strategy: Strategy[int | None, NotFound | Invalid], parent: fx.CloseableScope
+) -> None:
+    from pyfect.cluster._resource_map import ResourceMap
+    from pyfect.cluster._resource_ref import ResourceRef
+
+    assert_type(
+        fx.Cache[str, int | None, NotFound].make(_lookup_port, capacity=2),
+        fx.Effect[fx.Cache[str, int | None, NotFound], Never, Port],
+    )
+    assert_type(
+        fx.ScopedCache[str, int | None, NotFound].make(_scoped_port, capacity=2),
+        fx.Effect[fx.ScopedCache[str, int | None, NotFound], Never, fx.Scope | Port],
+    )
+    assert_type(
+        fx.RcMap[str, int | None, NotFound].make(_lookup_port),
+        fx.Effect[fx.RcMap[str, int | None, NotFound], Never, fx.Scope | Port],
+    )
+    assert_type(
+        fx.RcRef[int | None].make(fx.succeed(1)),
+        fx.Effect[fx.RcRef[int | None], Never, fx.Scope],
+    )
+    assert_type(
+        fx.Pool[int | None].make(fx.succeed(1), size=2),
+        fx.Effect[fx.Pool[int | None], Never, fx.Scope],
+    )
+    assert_type(
+        fx.Pool[int | None].make_with_ttl(fx.succeed(1), min=0, max=1, time_to_live=1),
+        fx.Effect[fx.Pool[int | None], Never, fx.Scope],
+    )
+    assert_type(
+        fx.Pool[int | None, NotFound | Invalid].make_with_strategy(
+            fx.succeed(1), min=0, max=1, strategy=strategy
+        ),
+        fx.Effect[fx.Pool[int | None, NotFound | Invalid], Never, fx.Scope],
+    )
+    assert_type(
+        fx.Resource[int | None].manual(fx.succeed(1)),
+        fx.Effect[fx.Resource[int | None], Never, fx.Scope],
+    )
+    assert_type(
+        fx.Resource[int | None].auto(fx.succeed(1), schedule.spaced(1)),
+        fx.Effect[fx.Resource[int | None], Never, fx.Scope],
+    )
+    assert_type(
+        fx.LayerMap[str, Port, NotFound | Invalid].make(_port_layer),
+        fx.Effect[fx.LayerMap[str, Port, NotFound | Invalid], Never, fx.Scope | Primary],
+    )
+    assert_type(
+        fx.LayerMap[str, Port, NotFound | Invalid].from_record({"a": failing_port_live}),
+        fx.Effect[fx.LayerMap[str, Port, NotFound | Invalid], Never, fx.Scope | Primary],
+    )
+    assert_type(
+        fx.LayerRef[Port, NotFound | Invalid].make(failing_port_live),
+        fx.Effect[fx.LayerRef[Port, NotFound | Invalid], Never, fx.Scope | Primary],
+    )
+    assert_type(
+        ResourceMap[str, int | None, NotFound].make(_scoped_port),
+        fx.Effect[ResourceMap[str, int | None, NotFound], Never, Port | fx.Scope],
+    )
+    assert_type(
+        ResourceRef[int | None].make(parent, lambda _scope: fx.succeed(1)),
+        fx.Effect[ResourceRef[int | None]],
+    )
+    assert_type(fx.Logger[object].make(lambda o: len(o.message)), fx.Logger[object])
+    assert_type(
+        fx.RequestResolver[GetUser].from_function(lambda entry: entry.request.id),
+        fx.RequestResolver[GetUser],
+    )
+    assert_type(
+        fx.RequestResolver[GetUser].from_function_batched(lambda entries: [1 for _ in entries]),
+        fx.RequestResolver[GetUser],
+    )
+    assert_type(
+        fx.RequestResolver[GetUser].from_effect(lambda _entry: fx.void),
+        fx.RequestResolver[GetUser],
+    )
+    assert_type(
+        fx.RequestResolver[GetUser].make_grouped(
+            key=lambda entry: entry.request.id, resolver=lambda _entries, _key: fx.void
+        ),
+        fx.RequestResolver[GetUser],
+    )
+    assert_type(
+        fx.RequestResolver[GetUser].from_effect_tagged(
+            {GetUser: lambda es: fx.succeed(["a"] * len(es))}
+        ),
+        fx.RequestResolver[GetUser],
+    )

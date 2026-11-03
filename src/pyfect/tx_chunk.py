@@ -7,13 +7,15 @@ joins the running transaction (``fx.tx``) or runs as one of its own.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from typing import overload
 
 from pyfect import _tx_ops
 from pyfect._core import Effect
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.tx_ref import TxRef
 
 
-class TxChunk[A]:
+class TxChunk[A = Unsubscripted]:
     """``TxChunk(ref)`` is Effect's ``makeUnsafe``; ``make``, ``empty`` and
     ``from_iterable`` are the effects."""
 
@@ -22,8 +24,14 @@ class TxChunk[A]:
     def __init__(self, ref: TxRef[tuple[A, ...]]) -> None:
         self._ref = ref
 
-    @staticmethod
-    def make[T](items: Iterable[T]) -> Effect[TxChunk[T]]:
+    @overload
+    @classmethod
+    def make[T](cls: type[TxChunk[Unsubscripted]], items: Iterable[T]) -> Effect[TxChunk[T]]: ...
+    @overload
+    @classmethod
+    def make(cls, items: Iterable[A]) -> Effect[TxChunk[A]]: ...
+    @classmethod
+    def make[T](cls, items: Iterable[T]) -> Effect[TxChunk[T]]:
         """A new ``TxChunk`` each time the effect runs. ``items`` is read
         once, here, so a one-shot iterator survives transaction retries."""
         initial = tuple(items)
@@ -35,8 +43,16 @@ class TxChunk[A]:
         empty: tuple[A, ...] = ()
         return TxRef.make(empty).map(cls)
 
-    @staticmethod
-    def from_iterable[T](items: Iterable[T]) -> Effect[TxChunk[T]]:
+    @overload
+    @classmethod
+    def from_iterable[T](
+        cls: type[TxChunk[Unsubscripted]], items: Iterable[T]
+    ) -> Effect[TxChunk[T]]: ...
+    @overload
+    @classmethod
+    def from_iterable(cls, items: Iterable[A]) -> Effect[TxChunk[A]]: ...
+    @classmethod
+    def from_iterable[T](cls, items: Iterable[T]) -> Effect[TxChunk[T]]:
         return TxChunk.make(items)
 
     @property

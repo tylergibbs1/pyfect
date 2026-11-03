@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, Never, overload
 
 from pyfect import _tx_ops
 from pyfect._core import Effect
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.effect import succeed
 from pyfect.option import Option, Some
 from pyfect.transaction import Transaction, TransactionMeta, tx_retry
@@ -61,7 +62,7 @@ def _merge_sorted[A](
     return tuple(out)
 
 
-class TxPriorityQueue[A]:
+class TxPriorityQueue[A = Unsubscripted]:
     """``TxPriorityQueue(ref, key)`` wraps an existing ``TxRef`` of sorted
     items (Effect's ``makeUnsafe``); ``empty``, ``from_iterable`` and
     ``make`` are the effects. Without ``key``, items compare as they are."""
@@ -88,30 +89,53 @@ class TxPriorityQueue[A]:
         return TxRef.make(empty).map(lambda ref: TxPriorityQueue(ref, key))
 
     @overload
-    @staticmethod
+    @classmethod
     def from_iterable[T: SupportsRichComparison](
-        items: Iterable[T],
+        cls: type[TxPriorityQueue[Unsubscripted]], items: Iterable[T]
     ) -> Effect[TxPriorityQueue[T]]: ...
     @overload
-    @staticmethod
-    def from_iterable[T](items: Iterable[T], *, key: Key[T]) -> Effect[TxPriorityQueue[T]]: ...
-    @staticmethod
+    @classmethod
+    def from_iterable[T](
+        cls: type[TxPriorityQueue[Unsubscripted]], items: Iterable[T], *, key: Key[T]
+    ) -> Effect[TxPriorityQueue[T]]: ...
+    @overload
+    @classmethod
+    def from_iterable[T: SupportsRichComparison](
+        cls: type[TxPriorityQueue[T]], items: Iterable[T]
+    ) -> Effect[TxPriorityQueue[T]]: ...
+    @overload
+    @classmethod
+    def from_iterable(cls, items: Iterable[A], *, key: Key[A]) -> Effect[TxPriorityQueue[A]]: ...
+    @classmethod
     def from_iterable(
-        items: Iterable[Any], *, key: Key[Any] = _identity
+        cls, items: Iterable[Any], *, key: Key[Any] = _identity
     ) -> Effect[TxPriorityQueue[Any]]:
         """A new queue each time the effect runs. ``items`` is read once,
-        here, so a one-shot iterator survives transaction retries."""
+        here, so a one-shot iterator survives transaction retries.
+        ``TxPriorityQueue[A].from_iterable(...)`` takes the subscript."""
         initial = tuple(sorted(items, key=key))
         return TxRef.make(initial).map(lambda ref: TxPriorityQueue(ref, key))
 
     @overload
-    @staticmethod
-    def make[T: SupportsRichComparison](*items: T) -> Effect[TxPriorityQueue[T]]: ...
+    @classmethod
+    def make[T: SupportsRichComparison](
+        cls: type[TxPriorityQueue[Unsubscripted]], *items: T
+    ) -> Effect[TxPriorityQueue[T]]: ...
     @overload
-    @staticmethod
-    def make[T](*items: T, key: Key[T]) -> Effect[TxPriorityQueue[T]]: ...
-    @staticmethod
-    def make(*items: Any, key: Key[Any] = _identity) -> Effect[TxPriorityQueue[Any]]:
+    @classmethod
+    def make[T](
+        cls: type[TxPriorityQueue[Unsubscripted]], *items: T, key: Key[T]
+    ) -> Effect[TxPriorityQueue[T]]: ...
+    @overload
+    @classmethod
+    def make[T: SupportsRichComparison](
+        cls: type[TxPriorityQueue[T]], *items: T
+    ) -> Effect[TxPriorityQueue[T]]: ...
+    @overload
+    @classmethod
+    def make(cls, *items: A, key: Key[A]) -> Effect[TxPriorityQueue[A]]: ...
+    @classmethod
+    def make(cls, *items: Any, key: Key[Any] = _identity) -> Effect[TxPriorityQueue[Any]]:
         return TxPriorityQueue.from_iterable(items, key=key)
 
     @property

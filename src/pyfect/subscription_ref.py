@@ -14,10 +14,11 @@ later one, from a subscription made when the stream starts.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Never
+from typing import TYPE_CHECKING, Never, overload
 
 from pyfect._core import Effect, _Sync
 from pyfect._locked_ref import LockedRef
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.pubsub import Atomic, PubSub, Subscription
 from pyfect.scope import Scope
 
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
     from pyfect.stream import Stream
 
 
-class SubscriptionRef[A](LockedRef[A]):
+class SubscriptionRef[A = Unsubscripted](LockedRef[A]):
     __slots__ = ("_pubsub",)
 
     def __init__(self, value: A) -> None:
@@ -33,8 +34,16 @@ class SubscriptionRef[A](LockedRef[A]):
         self._pubsub = PubSub(Atomic[A].unbounded(replay=1), "dropping")
         self._pubsub.publish_unsafe(value)
 
-    @staticmethod
-    def make[T](value: T) -> Effect[SubscriptionRef[T]]:
+    @overload
+    @classmethod
+    def make[T](
+        cls: type[SubscriptionRef[Unsubscripted]], value: T
+    ) -> Effect[SubscriptionRef[T]]: ...
+    @overload
+    @classmethod
+    def make(cls, value: A) -> Effect[SubscriptionRef[A]]: ...
+    @classmethod
+    def make[T](cls, value: T) -> Effect[SubscriptionRef[T]]:
         return _Sync(lambda: SubscriptionRef(value))
 
     def _store(self, value: A) -> None:

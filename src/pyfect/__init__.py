@@ -91,6 +91,7 @@ from pyfect.deferred import Deferred
 from pyfect.duration import Duration
 from pyfect.effect import (
     AsyncioRequiredError,
+    Gen,
     blocking,
     callback,
     catch_all,
@@ -457,6 +458,7 @@ __all__ = [
     "FiberMap",
     "FiberSet",
     "FileSystem",
+    "Gen",
     "HasReason",
     "IllegalArgumentError",
     "Interrupted",

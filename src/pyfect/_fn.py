@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import sys
 from collections.abc import Callable, Generator
 from functools import partial
 from typing import TYPE_CHECKING, Any, Concatenate, Never, Unpack, cast, overload
@@ -30,6 +31,11 @@ from pyfect.context import Context
 
 if TYPE_CHECKING:
     from pyfect.tracer import SpanOptions
+
+type Gen[A, E = Never, R = Never] = Generator[Effect[Any, E, R], Any, A]
+"""What a generator body yields and returns: ``Gen[A, E, R]`` is the return
+annotation of a body making an ``Effect[A, E, R]``. A generic body needs it
+(pyright loses the type parameter otherwise; research/typing/fn_1_generic.py)."""
 
 type Pipe[X, Y, **P] = Callable[[X], Y] | Callable[Concatenate[X, P], Y]
 """A pipeable: the previous result, then (optionally) the call's arguments."""
@@ -47,6 +53,27 @@ def generator_function(f: Callable[..., Any], api: str) -> None:
         raise TypeError(
             f"{api}: {f.__qualname__} is not a generator function; an effect inside it "
             "runs only with `yield from effect`"
+        )
+
+
+def _annotates_return(f: Callable[..., Any]) -> bool:
+    if sys.version_info >= (3, 14):
+        import annotationlib
+
+        return "return" in annotationlib.get_annotations(f, format=annotationlib.Format.FORWARDREF)
+    return "return" in inspect.get_annotations(f)
+
+
+def typed_generic_body(f: Callable[..., Any], api: str) -> None:
+    """``f``, checked to annotate its return type when it is generic: given a
+    generic body yielding effects that need different services, pyright drops
+    or collapses the type parameter (research/typing/fn_1_generic.py)."""
+    if inspect.isfunction(f) and f.__type_params__ and not _annotates_return(f):
+        params = ", ".join(p.__name__ for p in f.__type_params__)
+        raise TypeError(
+            f"{api}: {f.__qualname__} is generic ([{params}]) with no return annotation; "
+            "pyright cannot infer a generic body's effect type, so annotate it: "
+            "`-> fx.Gen[A, E, R]` for a generator, `-> fx.Effect[A, E, R]` for an effect"
         )
 
 
@@ -77,6 +104,7 @@ def _appliers(pipeables: tuple[Callable[..., Any], ...]) -> tuple[_Applied, ...]
 
 def _untraced(f: _Body, pipeables: tuple[Callable[..., Any], ...]) -> Callable[..., Any]:
     generator_function(f, "fn")
+    typed_generic_body(f, "fn")
     appliers = _appliers(pipeables)
 
     @functools.wraps(f)
@@ -119,6 +147,7 @@ def _traced(
     under one for the definition."""
     from pyfect.tracer._spans import in_parent_span, span_using
 
+    typed_generic_body(f, "fn")
     definition_name = f"{name} (definition)"
     appliers = _appliers(pipeables)
 
