@@ -9,7 +9,7 @@ is absent when any child is, with the first absent child's error.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, overload
+from typing import Any, Never, overload
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
@@ -38,6 +38,8 @@ def all[A1, A2, A3, A4, A5](
     c1: Config[A1], c2: Config[A2], c3: Config[A3], c4: Config[A4], c5: Config[A5], /
 ) -> Config[tuple[A1, A2, A3, A4, A5]]: ...
 @overload
+def all(*configs: Config[Never]) -> Config[tuple[Never, ...]]: ...
+@overload
 def all[A](*configs: Config[A]) -> Config[tuple[A, ...]]: ...
 def all(*configs: Config[Any]) -> Config[tuple[Any, ...]]:
     """The configs' values as a tuple, in order (Effect's ``Config.all``
@@ -47,6 +49,10 @@ def all(*configs: Config[Any]) -> Config[tuple[Any, ...]]:
     return Config(lambda provider, prefix: _collect(configs, provider, prefix).map(_tuple))
 
 
+@overload
+def all_dict(configs: Mapping[Never, Config[Never]]) -> Config[dict[Never, Never]]: ...
+@overload
+def all_dict[K, A](configs: Mapping[K, Config[A]]) -> Config[dict[K, A]]: ...
 def all_dict[K, A](configs: Mapping[K, Config[A]]) -> Config[dict[K, A]]:
     """The configs' values under the same keys (Effect's ``Config.all`` of a
     record). The mapping is copied when the config is made."""

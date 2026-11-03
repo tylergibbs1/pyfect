@@ -3722,11 +3722,24 @@ def check_config_schema() -> None:
 
 
 def check_config_combinators(port: fx.Config[int], host: fx.Config[str]) -> None:
+    from typing import Literal
+
     from pyfect import config
 
     assert_type(port.map(str), fx.Config[str])
     assert_type(port.with_default(None), fx.Config[int | None])
     assert_type(port.with_default(3000), fx.Config[int])
+    assert_type(port.with_default("auto"), fx.Config[int | str])
+    # A literal config keeps its literal when the default is one of them (as Flag does),
+    # and widens like Effect's ``withDefault`` otherwise (research/typing/config_1).
+    env: fx.Config[Literal["dev", "prod"]] = config.literal("dev", "prod", name="ENV")
+    assert_type(env.with_default("dev"), fx.Config[Literal["dev", "prod"]])
+    assert_type(env.with_default(None), fx.Config[Literal["dev", "prod"] | None])
+    _: fx.Config[Literal["dev", "prod"]] = env.with_default("staging")  # pyright: ignore[reportAssignmentType]
+    # Empty groups are Never, not Unknown, so their with_default stays typed.
+    assert_type(config.all_dict({}), fx.Config[dict[Never, Never]])
+    assert_type(config.all(*iter(())), fx.Config[tuple[Never, ...]])
+    assert_type(config.all_dict({}).with_default("x"), fx.Config[dict[Never, Never] | str])
     assert_type(port.or_else(lambda _e: host), fx.Config[int | str])
     assert_type(port.nested("server"), fx.Config[int])
     assert_type(port.map_effect(lambda p: fx.succeed(p + 1)), fx.Config[int])

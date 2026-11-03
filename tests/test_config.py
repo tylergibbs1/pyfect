@@ -438,7 +438,7 @@ def test_combinators_reject_a_non_config_when_called():
     with pytest.raises(TypeError, match=r"configs\[1\] must be a Config, got int: 5"):
         config.all(config.string("a"), 5)  # pyright: ignore[reportCallIssue, reportArgumentType]
     with pytest.raises(TypeError, match=r"configs\['b'\] must be a Config"):
-        config.all_dict({"b": fx.succeed(1)})  # pyright: ignore[reportArgumentType]
+        config.all_dict({"b": fx.succeed(1)})  # pyright: ignore[reportArgumentType, reportCallIssue]
     with pytest.raises(TypeError, match=r"element must be a Config"):
         config.list_of(config.string)  # pyright: ignore[reportArgumentType]
     with pytest.raises(TypeError, match=r"value must be a Config"):
