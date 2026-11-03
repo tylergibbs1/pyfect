@@ -7503,6 +7503,20 @@ def cluster_runner_layer_types() -> None:
     )
 
 
+def atom_state_types() -> None:
+    from pyfect.reactivity import atom
+
+    # atom.state infers its type from the value; subscripted, it takes the type given
+    # (Effect's Atom.make<A>(value)), also through a method (DOGFOOD pulse #3)
+    assert_type(atom.state(()), atom.Writable[tuple[()], tuple[()]])
+    assert_type(
+        atom.state[tuple[str, ...]](()).keep_alive(),
+        atom.Writable[tuple[str, ...], tuple[str, ...]],
+    )
+    assert_type(atom.state[int | None](None), atom.Writable[int | None, int | None])
+    atom.state[int](None)  # pyright: ignore[reportArgumentType]
+
+
 def atom_types() -> None:
     from pyfect.reactivity import async_result, atom, atom_registry
     from pyfect.reactivity.async_result import AsyncResult
@@ -7652,6 +7666,48 @@ def atom_http_api_types() -> None:
     assert_type(
         client.mutation(Users, Users.create),
         atom.AtomResultFn[atom_http_api.MutationRequest[None, None, str, None], float, Never],
+    )
+
+    # mutate: the endpoint as a function of its request parts, typed by the endpoint
+    # (DOGFOOD pulse #1: a MutationRequest dict literal leaves the parts it lacks unsolved)
+    from pyfect.reactivity.atom_registry import AtomRegistry
+
+    class Ids(TypedDict):
+        id: int
+
+    class Items(HttpApiGroup, identifier="items"):
+        rename = ep.patch(
+            "rename",
+            "/items/:id",
+            params=fx.schema.Struct(Ids, id=fx.schema.Int),
+            payload=fx.schema.String,
+            success=fx.schema.String,
+        )
+
+    items_api = HttpApi.make("items").add(Items)
+
+    class ItemsClient(fx.Tag[api_client.Client[Items]], key="type_checks/atom_http_api/Items"):
+        pass
+
+    items = atom_http_api.make(ItemsClient, api=items_api, http_client=fx.layer.empty)
+    create = client.mutate(Users, Users.create)
+    assert_type(create, atom_http_api.Mutate[None, None, str, None, float, Never])
+    assert_type(
+        create(payload="x", reactivity_keys=["users"]), fx.Effect[float, Never, AtomRegistry]
+    )
+    rename = items.mutate(Items, Items.rename)
+    assert_type(rename(params={"id": 1}, payload="y"), fx.Effect[str, Never, AtomRegistry])
+    assert_type(
+        items.mutate(Items, Items.rename, response_mode="response-only")(params={"id": 1}),
+        fx.Effect[HttpClientResponse, Never, AtomRegistry],
+    )
+    rename(params={"id": "1"})  # pyright: ignore[reportArgumentType]
+    create(payload=1)  # pyright: ignore[reportArgumentType]
+    create(params={"id": 1})  # pyright: ignore[reportArgumentType]
+    # The limitation mutate works around; fails the build once pyright solves it.
+    atom.set(
+        items.mutation(Items, Items.rename),
+        {"params": {"id": 1}, "payload": "y"},  # pyright: ignore[reportArgumentType]
     )
 
     class Admin(HttpApiGroup, identifier="admin"):

@@ -1,1 +1,4 @@
 hello, Ada
+before: ()
+greeted Grace
+after: ('Grace',)

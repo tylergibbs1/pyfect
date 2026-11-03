@@ -64,6 +64,11 @@ class Tracking:
         now. An interrupt sent from there is delivered at once."""
         return False
 
+    def driver(self) -> int | None:
+        """The ident of the thread running the scheduler's tasks now, if
+        one is (and known)."""
+        return None
+
     def outside_work(self) -> WakeTracker:
         """Counts fibers waiting on work handed to another thread, and the
         tasks their resumes schedule."""

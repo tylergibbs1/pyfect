@@ -4,14 +4,15 @@
 ``make(tag, api=api, http_client=layer)`` gives an ``AtomHttpApiClient``:
 a runtime whose layer provides ``tag`` with ``http_api.client.make(api)``
 over the ``HttpClient`` the layer gives, ``query`` atoms calling an
-endpoint and ``mutation`` function atoms::
+endpoint, ``mutation`` function atoms, and ``mutate``, a mutation as a
+function of its request parts::
 
     class UsersApi(Tag[Client[Users]], key="UsersApi"): ...
 
     client = atom_http_api.make(UsersApi, api=api, http_client=http_layer)
     user = client.query(Users, Users.get_user, params={"id": 1})
-    create = client.mutation(Users, Users.create)
-    registry.set(create, {"payload": {"name": "x"}, "reactivity_keys": ["users"]})
+    create = client.mutate(Users, Users.create)
+    yield from create(payload={"name": "x"}, reactivity_keys=["users"])
 
 An ``HttpClientError`` or ``SchemaError`` of a call is a defect; the
 atoms fail with the endpoint's declared errors and its middleware's.
@@ -48,9 +49,12 @@ from pyfect.reactivity import _reactivity, async_result
 from pyfect.reactivity._reactivity import Keys
 from pyfect.reactivity.async_result import AsyncResult
 from pyfect.reactivity.atom._combinators import family, set_idle_ttl
+from pyfect.reactivity.atom._conversions import get_result
+from pyfect.reactivity.atom._conversions import set as set_atom
 from pyfect.reactivity.atom._fn import AtomResultFn
 from pyfect.reactivity.atom._runtime import AtomRuntime, RuntimeFactory, runtime
 from pyfect.reactivity.atom._types import Atom, AtomContext, FnContext, Writable
+from pyfect.reactivity.atom_registry import AtomRegistry
 
 type HttpClientLayer = Layer[Any, Never, Any]
 """The layer giving the ``HttpClient`` (and the client side of the
@@ -108,6 +112,39 @@ def _result_schema(endpoint: AnyEndpoint) -> Any:
     return async_result.Schema(
         success=union(success_schemas(endpoint)), error=union(error_schemas(endpoint))
     )
+
+
+class Mutate[P, Q, B, H, A, E]:
+    """Calls a mutation with the parts its endpoint declares
+    (``AtomHttpApiClient.mutate``)."""
+
+    __slots__ = ("_mutation",)
+
+    def __init__(self, mutation: Writable[AsyncResult[A, E], Any]) -> None:
+        self._mutation = mutation
+
+    def __call__(
+        self,
+        *,
+        params: P | None = None,
+        query: Q | None = None,
+        payload: B | None = None,
+        headers: H | None = None,
+        sse_options: SseOptions | None = None,
+        reactivity_keys: Keys | None = None,
+    ) -> Effect[A, E, AtomRegistry]:
+        given = {
+            "params": params,
+            "query": query,
+            "payload": payload,
+            "headers": headers,
+            "sse_options": sse_options,
+            "reactivity_keys": reactivity_keys,
+        }
+        request = {name: value for name, value in given.items() if value is not None}
+        return set_atom(self._mutation, request).and_then(
+            get_result(self._mutation, suspend_on_waiting=True)
+        )
 
 
 class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
@@ -227,6 +264,78 @@ class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
         request written to it, reading the response in ``response_mode``."""
         group_id, endpoint_id = self._own(group, endpoint)
         return self._mutations(_MutationKey(group_id, endpoint_id, response_mode))
+
+    @overload
+    def mutate[P, Q, B, CB, H, S1, CS, E](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
+        /,
+        *,
+        response_mode: Literal["decoded-only"] = "decoded-only",
+    ) -> Mutate[P, Q, CB, H, CS, E]: ...
+    @overload
+    def mutate[P, Q, B, CB, H, S1, CS, E, ME](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        /,
+        *,
+        response_mode: Literal["decoded-only"] = "decoded-only",
+    ) -> Mutate[P, Q, CB, H, CS, E | ME]: ...
+    @overload
+    def mutate[P, Q, B, CB, H, S1, CS, E](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
+        /,
+        *,
+        response_mode: Literal["decoded-and-response"],
+    ) -> Mutate[P, Q, CB, H, tuple[CS, HttpClientResponse], E]: ...
+    @overload
+    def mutate[P, Q, B, CB, H, S1, CS, E, ME](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        /,
+        *,
+        response_mode: Literal["decoded-and-response"],
+    ) -> Mutate[P, Q, CB, H, tuple[CS, HttpClientResponse], E | ME]: ...
+    @overload
+    def mutate[P, Q, B, CB, H, S1, CS, E](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
+        /,
+        *,
+        response_mode: Literal["response-only"],
+    ) -> Mutate[P, Q, CB, H, HttpClientResponse, Never]: ...
+    @overload
+    def mutate[P, Q, B, CB, H, S1, CS, E, ME](
+        self,
+        group: type[G],
+        endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
+        /,
+        *,
+        response_mode: Literal["response-only"],
+    ) -> Mutate[P, Q, CB, H, HttpClientResponse, ME]: ...
+    def mutate(
+        self,
+        group: type[G],
+        endpoint: AnyEndpoint,
+        /,
+        *,
+        response_mode: ResponseMode = "decoded-only",
+    ) -> Mutate[Any, Any, Any, Any, Any, Any]:
+        """``endpoint`` of ``group`` as a function of its request parts,
+        typed by the endpoint, giving the effect that writes them to the
+        ``mutation`` atom and waits for its result::
+
+            yield from client.mutate(Users, Users.create)(payload=user, reactivity_keys=["users"])
+
+        (A ``MutationRequest`` dict literal written to the atom leaves the
+        parts the endpoint lacks unsolved under pyright.)"""
+        return Mutate(self.mutation(group, endpoint, response_mode=response_mode))
 
     def _make_mutation(self, key: _MutationKey) -> Writable[Any, Any]:
         def run(request: MutationRequest[Any, Any, Any, Any], _get: FnContext) -> Any:
@@ -443,5 +552,5 @@ def make[G: HttpApiGroup[Any], T](
     return AtomHttpApiClient(tag, api, atom_runtime)
 
 
-__all__ = ["AtomHttpApiClient", "HttpClientLayer", "MutationRequest", "make"]
+__all__ = ["AtomHttpApiClient", "HttpClientLayer", "Mutate", "MutationRequest", "make"]
 publish(globals())

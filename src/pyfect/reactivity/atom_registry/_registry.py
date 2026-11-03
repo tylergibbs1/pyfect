@@ -13,6 +13,7 @@ from that scheduler's thread.
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -20,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._root import ambient_run, new_root, start_root
+from pyfect._wake_tracking import Tracking
 from pyfect.context import Context
 from pyfect.duration import Duration, Seconds, to_millis, to_seconds
 from pyfect.reactivity._hydration import should_hydrate
@@ -47,6 +49,12 @@ class InitialValue[A]:
 
 class RegistryDisposedError(RuntimeError):
     """An atom was read from a disposed registry."""
+
+
+class RegistryThreadError(RuntimeError):
+    """A registry was used from a thread other than the one running its
+    scheduler (inside ``fx.blocking``, say). Its nodes are not locked: use
+    it from its scheduler's thread, as ``fx.sync`` does."""
 
 
 def _key(atom: Atom[Any]) -> object:
@@ -112,10 +120,26 @@ class AtomRegistryService:
     def __repr__(self) -> str:
         return f"<AtomRegistry nodes={len(self.nodes)}>"
 
+    def check_thread(self) -> None:
+        """Raise ``RegistryThreadError`` when another thread is running
+        this registry's scheduler now. Every entry point calls it."""
+        scheduler = self.scheduler
+        if not isinstance(scheduler, Tracking):
+            return
+        driver = scheduler.driver()
+        if driver is not None and driver != threading.get_ident():
+            current = threading.current_thread().name
+            raise RegistryThreadError(
+                f"{self!r} used from thread {current!r} while its scheduler runs on thread "
+                f"{driver}: a registry runs on one scheduler, so use it from that thread "
+                "(fx.sync, not fx.blocking)"
+            )
+
     # --- reading and writing --------------------------------------------
 
     def get_nodes(self) -> Mapping[object, Node[Any]]:
         """The nodes by atom (or by serialization key)."""
+        self.check_thread()
         return self.nodes
 
     def get[A](self, atom: Atom[A]) -> A:
@@ -127,6 +151,7 @@ class AtomRegistryService:
     def set_serializable(self, key: str, encoded: object) -> None:
         """Preload the encoded value of the serializable atom ``key``; it is
         decoded when the atom is first read."""
+        self.check_thread()
         self.preloaded_serializable[key] = encoded
 
     def modify[R, W, A](self, atom: Writable[R, W], f: Callable[[R], tuple[A, W]]) -> A:
@@ -140,6 +165,7 @@ class AtomRegistryService:
         atom.write(node.write_context, f(node.value()))
 
     def refresh(self, atom: Atom[Any]) -> None:
+        self.check_thread()
         if atom.refresh is not None:
             atom.refresh(self.refresh)
         else:
@@ -178,6 +204,7 @@ class AtomRegistryService:
         return atom.idle_ttl is not None or self.default_idle_ttl is not None
 
     def ensure_node[A](self, atom: Atom[A]) -> Node[A]:
+        self.check_thread()
         key = _key(atom)
         node = self.nodes.get(key)
         if node is None:
@@ -307,6 +334,7 @@ class AtomRegistryService:
 
     def reset(self) -> None:
         """Remove every node, running their finalizers."""
+        self.check_thread()
         for _, cancel in self.timeout_buckets.values():
             cancel()
         self.timeout_buckets.clear()
@@ -326,6 +354,7 @@ class AtomRegistryService:
 
     def dispose(self) -> None:
         """``reset``, and refuse new nodes from now on."""
+        self.check_thread()
         self.disposed = True
         self.reset()
 
@@ -337,6 +366,7 @@ class AtomRegistryService:
         before this returns (Effect's ``runForkWith`` and dispatcher
         flush, ``_dispatcher.py``)."""
         require_effect(effect, "effect")
+        self.check_thread()
         dispatcher = Dispatcher(self.scheduler)
         fiber: Fiber[A, E] = new_root(self.scheduler, context, scheduler=dispatcher)
         dispatcher.run_flushed(lambda: start_root(fiber, effect, now=True))
@@ -347,4 +377,4 @@ def _ignore(_: object) -> None:
     pass
 
 
-__all__ = ["AtomRegistryService", "InitialValue", "RegistryDisposedError"]
+__all__ = ["AtomRegistryService", "InitialValue", "RegistryDisposedError", "RegistryThreadError"]

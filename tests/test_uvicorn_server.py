@@ -13,16 +13,17 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Never
 
 import httpx
 import pytest
 import uvicorn
 
 import pyfect as fx
-from pyfect import effect, layer, stream
+from pyfect import effect, layer, stream, testing
 from pyfect.clock import sleep
 from pyfect.context import Tag
+from pyfect.fiber_set import FiberSet
 from pyfect.http import asgi, router, server, server_response, uvicorn_server
 from pyfect.http.asgi import Receive, Scope, Send
 from pyfect.http.client import HttpClient
@@ -345,3 +346,27 @@ def test_under_run_sync_inside_a_running_loop_the_server_runs_on_a_loop_of_its_o
         return _run(_serving(routes, _get("/")))
 
     assert asyncio.run(main()) == (200, "ok")
+
+
+@testing.live(timeout=10)
+def test_a_fiber_a_request_forks_into_a_longer_lived_set_can_still_be_interrupted():
+    """A handler can fork a fiber that outlives its request (beacon's watcher
+    keeps one per monitor in a FiberMap). It runs on the server's loop; the set
+    holding it is closed after the server, so interrupting it then must still
+    finish (DOGFOOD pulse #5: the loop thread had stopped, the set's close
+    waited for ever, and the test stalled)."""
+    background = yield from FiberSet[Never, Never].make()
+    started = yield from fx.Deferred[None, Never].make()
+
+    def handler() -> fx.Effect[Any, Any, Any]:
+        forked = background.run(started.succeed(None).and_then(fx.never))
+        return forked.as_(server_response.text("forked"))
+
+    routes = router.add("GET", "/", handler())
+    answer = yield from scoped(_serving(routes, _get("/"))).pipe(
+        fx.provide(uvicorn_server.layer_test())
+    )
+    yield from started.wait()
+    assert answer == (200, "forked")
+    yield from background.clear()
+    assert (yield from background.size()) == 0

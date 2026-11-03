@@ -16,7 +16,7 @@ SRC = Path(__file__).parent.parent / "src" / "pyfect"
 
 ALLOWED = {
     "socket/_loop.py": "one loop per process, never stopped",
-    "http/uvicorn_server.py": "the server's own loop, used only by its start and stop",
+    "http/uvicorn_server.py": "one loop per process (or the program's), never stopped",
 }
 
 

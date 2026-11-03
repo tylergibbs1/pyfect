@@ -11,7 +11,9 @@ values while something uses them, and rebuilds an atom when an atom it read chan
 
 ## Atoms and derived atoms
 
-`atom.make(1)` is a writable atom holding `1`. `atom.make(lambda get: get(count) * 2)` is a
+`atom.make(1)` is a writable atom holding `1`; `atom.state[tuple[str, ...]](())` is one
+whose type you give, where the value alone would be too narrow (Effect's
+`Atom.make<A>(value)`). `atom.make(lambda get: get(count) * 2)` is a
 derived atom: `get` reads another atom and records it as a dependency, so setting `count`
 rebuilds `doubled` and notifies its subscribers. `atom.family(f)` gives one atom per key,
 compared with `Equal`, so `todo(1)` is the same atom each time it is called.
@@ -73,16 +75,34 @@ keys refreshes those queries once it succeeds. A query also takes `headers`,
 
 `atom_http_api.make(Tag, api=..., http_client=...)` does the same for an
 [HTTP API](/docs/http-api): `query(Group, endpoint, params=..., payload=...)` and
-`mutation(Group, endpoint)`, typed from the endpoint's schemas. Both clients build their
-transport in an atom runtime, which does not see the program's services, so the layer you
-pass provides all of it: here it wraps the program's HTTP client, which knows the test
-server's address.
+`mutation(Group, endpoint)`, typed from the endpoint's schemas. `mutate(Group, endpoint)`
+is the mutation as a function of the endpoint's request parts: calling it with keywords
+(and `reactivity_keys`) gives the effect that runs the mutation and waits for its result.
+Prefer it to writing a `MutationRequest` dict to the mutation atom, which pyright cannot
+check when the endpoint lacks a part. Both clients build their transport in an atom
+runtime, which does not see the program's services, so the layer you pass provides all of
+it: here it wraps the program's HTTP client, which knows the test server's address.
 
 <CodeOutput>
 
 <include meta='title="http_api.py"'>../../snippets/atoms/http_api.py</include>
 
 <include lang="text">../../snippets/atoms/http_api.out</include>
+
+</CodeOutput>
+
+A query of a [Server-Sent Events](/docs/http-api) endpoint holds the open stream, not
+an event. A stream atom over it, `atom.make(lambda get: stream.unwrap(get.result(events,
+suspend_on_waiting=True)))`, holds the latest event and is waiting while the stream is
+open, so other atoms can depend on it or be refreshed by it with `refresh_on_signal`.
+Once it is no longer waiting the stream has ended (the server went away or closed it):
+refresh the query to connect again.
+
+<CodeOutput>
+
+<include meta='title="sse.py"'>../../snippets/atoms/sse.py</include>
+
+<include lang="text">../../snippets/atoms/sse.out</include>
 
 </CodeOutput>
 
@@ -94,7 +114,16 @@ server's address.
 state to an Effect client and back. `hydration.hydrate(registry, entries)` preloads another
 registry by key before its atoms are read. An effect atom still runs once it is built
 unless it is marked `skip_initial_run=True`, which keeps the hydrated value until the
-atom is refreshed or a dependency changes. `async_result.Schema` encodes an `AsyncResult`
+atom is refreshed or a dependency changes.
+
+While that first run goes on, the atom shows the hydrated value, and it is not marked
+waiting: `get_result(atom, suspend_on_waiting=True)` returns it at once. A result that
+arrives later replaces it, a failure keeping it as its previous success. A run that
+settles while the atom is being built (an effect with nothing to wait for) is dropped,
+and the hydrated value stays until the atom is refreshed. This is what Effect does. To
+tell a hydrated value from a fresh one, compare a `Success`'s `timestamp` (epoch
+milliseconds, kept through hydration) with when your program started, or refresh the
+atom and wait with `suspend_on_waiting=True`. `async_result.Schema` encodes an `AsyncResult`
 the way Effect's `AsyncResult.Schema` does.
 
 <CodeOutput>

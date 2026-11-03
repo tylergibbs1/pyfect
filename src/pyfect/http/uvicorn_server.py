@@ -5,7 +5,9 @@ of Effect's ``NodeHttpServer.layer``)::
 
 The socket is bound when the server is made, so ``address`` is known (port
 0: any free port). uvicorn runs on the building fiber's asyncio loop under
-``run_main`` / ``run_async``, else on a loop thread of its own; each
+``run_main`` / ``run_async``, else on a loop thread shared by such servers
+and never stopped (a fiber a request forks into a longer-lived set runs on
+it, and must still be able to finish once the server is gone); each
 request runs on its own fiber on that loop, through ``pyfect.http.asgi``
 (streamed bodies, client aborts, WebSocket upgrades). Requests that arrive
 while no app is served get a 503. When the serving scope closes, uvicorn
@@ -106,16 +108,23 @@ class _Dispatch:
             await send({"type": "websocket.close", "code": 1013})
 
 
+class _Shared:
+    lock = threading.Lock()
+    loop: asyncio.AbstractEventLoop | None = None
+
+
 def _loop_thread() -> asyncio.AbstractEventLoop:
-    """A new loop, run on a daemon thread until stopped (then closed)."""
-    loop = asyncio.new_event_loop()
-
-    def run() -> None:
-        loop.run_forever()
-        loop.close()
-
-    threading.Thread(target=run, name="pyfect-uvicorn", daemon=True).start()
-    return loop
+    """The loop servers outside an asyncio program run on: one per process,
+    on a daemon thread, started on first use and never stopped. Fibers run
+    on it, and a fiber forked from a request can outlive its server (held
+    by a layer released later), so stopping the loop with the server would
+    strand it: interrupting it would wait for ever (DOGFOOD pulse #5)."""
+    with _Shared.lock:
+        if _Shared.loop is None:
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, name="pyfect-uvicorn", daemon=True).start()
+            _Shared.loop = loop
+        return _Shared.loop
 
 
 def _wait[A](future: Future[A], waits_for: WaitsFor) -> Effect[A, BaseException]:
@@ -141,13 +150,11 @@ class _Running:
         self,
         server: uvicorn.Server,
         loop: asyncio.AbstractEventLoop,
-        owned: bool,
         graceful: Seconds,
     ) -> None:
         self.server = server
         self.graceful = graceful
         self.loop = loop
-        self.owned = owned
         self.served: Future[None] | None = None
 
     def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
@@ -173,7 +180,7 @@ class _Running:
         def body() -> Effect[None]:
             self.server.should_exit = True
             assert self.served is not None
-            return _wait(self.served, "event").ignore().ensuring(sync(self._release))
+            return _wait(self.served, "event").ignore()
 
         return suspend(body)
 
@@ -203,11 +210,6 @@ class _Running:
             )
 
         return suspend(body)
-
-    def _release(self) -> None:
-        if self.owned and not self.loop.is_closed():
-            self.owned = False
-            self.loop.call_soon_threadsafe(self.loop.stop)
 
 
 class _Server(uvicorn.Server):
@@ -289,7 +291,6 @@ def make(**options: Unpack[Options]) -> Effect[HttpServerService, SocketServerEr
             running = _Running(
                 _uvicorn(dispatch, options),
                 loop,
-                owned=current is None,
                 graceful=_graceful(options),
             )
             return (
