@@ -53,6 +53,7 @@ if TYPE_CHECKING:
 
 S_inv = TypeVar("S_inv")
 T_co = TypeVar("T_co", covariant=True)
+T_inv = TypeVar("T_inv")
 # A bare ``Context`` is ``Context[Any]``: the runtime's own contexts are
 # untyped; contexts handed to users and taken from them carry their tags.
 R_contra = TypeVar("R_contra", contravariant=True, default=Any)
@@ -63,7 +64,6 @@ class MissingServiceError(Exception):
     this out unless an ``Any`` or a cast got in the way."""
 
 
-@final
 class ServiceEffect(Effect[S_inv, Never, T_co]):
     """Reads a service. Invariant in the shape so ``Layer.succeed(Tag,
     value)`` checks ``value`` against the shape exactly."""
@@ -106,6 +106,14 @@ def _require_base_parents(cls: type[Tag[Any]]) -> None:
             )
 
 
+@final
+class TagEffect(ServiceEffect[S_inv, T_co], Generic[S_inv, T_co, T_inv]):
+    """What calling a tag class gives: ``ServiceEffect[S, R]`` that also
+    holds the tag ``T`` exactly (invariant), so ``Provides`` can read it."""
+
+    __slots__ = ()
+
+
 class Tag[S]:
     """A service identifier with shape ``S``. Subclass it; never
     instantiate it.
@@ -128,9 +136,9 @@ class Tag[S]:
         cls.key = key or f"{cls.__module__}.{cls.__qualname__}"
         cls.__tag_base__ = base
 
-    def __new__(cls) -> ServiceEffect[S, Self]:
+    def __new__(cls) -> TagEffect[S, Self, Self]:
         _require_subclass(cls)
-        return ServiceEffect(cls)
+        return TagEffect(cls)
 
 
 class ServiceMarker:
@@ -151,9 +159,9 @@ class Reference[S](Tag[S], base=True):
         if cls.__dict__.get("default") is None:
             raise TypeError(f"Reference {cls.__qualname__} must define a 'default' classmethod")
 
-    def __new__(cls) -> ServiceEffect[S, Never]:
+    def __new__(cls) -> TagEffect[S, Never, Self]:
         _require_subclass(cls)
-        return ServiceEffect(cls)
+        return TagEffect(cls)
 
     @classmethod
     def default(cls) -> S:
@@ -173,6 +181,16 @@ class TagLike[S, T](Protocol):
     Used in signatures to recover both the shape ``S`` and the tag ``T``."""
 
     def __call__(self) -> ServiceEffect[S, T]: ...
+
+
+class Provides[S, T](Protocol):
+    """A tag class as a layer providing it sees it: the shape ``S`` and the
+    tag ``T`` itself, exactly. ``TagLike`` reads ``T`` covariantly (and a
+    ``Reference`` as ``Never``), so with an expected ``Layer[Db]`` pyright
+    solved ``layer.succeed(Other, x)`` as ``Layer[Db | Other]`` and
+    accepted it (``research/typing/layer_1_widening.py``)."""
+
+    def __call__(self) -> TagEffect[S, Any, T]: ...
 
 
 @final
@@ -385,10 +403,12 @@ def tag_class[S, T](tag: TagLike[S, T]) -> type[Tag[S]]:
 __all__ = [
     "Context",
     "MissingServiceError",
+    "Provides",
     "Reference",
     "ServiceEffect",
     "ServiceMarker",
     "Tag",
+    "TagEffect",
     "TagLike",
     "tag_class",
 ]

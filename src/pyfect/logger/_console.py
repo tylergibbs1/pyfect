@@ -36,7 +36,7 @@ def _default(options: Options) -> None:
         items.append(dict(annotations))
     console = fiber.get_ref(CurrentConsole)
     write = console.error if fiber.get_ref(LogToStderr) else console.log
-    header = f"[{default_date_format(options.date)}] {options.log_level.name} (#{fiber.id})"
+    header = f"[{default_date_format(options.date)}] {str(options.log_level).upper()} (#{fiber.id})"
     write(f"{header}{_spans(options)}:", *items)
 
 
@@ -95,7 +95,7 @@ def console_pretty(
         items = list(options.message)
         first_line = (
             color(f"[{format_date(options.date)}]", "white")
-            + f" {color(level.name, *_LEVEL_COLORS[level])}"
+            + f" {color(str(level).upper(), *_LEVEL_COLORS[level])}"
             + f" (#{fiber.id}){_spans(options)}:"
         )
         if items and isinstance(first := structured_message(items[0]), str):

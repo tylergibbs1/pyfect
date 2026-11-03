@@ -58,7 +58,7 @@ from pyfect._layer_tracing import parent_span, span
 from pyfect._tags import Tags
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
-from pyfect.context import Context, Tag, TagLike, _Holding, tag_class
+from pyfect.context import Context, Provides, Tag, _Holding, tag_class
 from pyfect.effect import sync as sync_effect
 from pyfect.scope import CloseableScope, Scope
 
@@ -94,7 +94,7 @@ __all__ = [
 # --- constructors -------------------------------------------------------------
 
 
-def succeed[S, T](tag: TagLike[S, T], service: S) -> Layer[T]:
+def succeed[S, T](tag: Provides[S, T], service: S) -> Layer[T]:
     """Provide ``service``. Not shared: there is nothing to build."""
     return succeed_context(Context.make(tag, service))
 
@@ -109,7 +109,7 @@ empty: Layer[Never] = succeed_context(Context.empty())
 """Builds nothing."""
 
 
-def sync[S, T](tag: TagLike[S, T], make: Callable[[], S]) -> Layer[T]:
+def sync[S, T](tag: Provides[S, T], make: Callable[[], S]) -> Layer[T]:
     """Provide ``make()``, called once per build."""
     return sync_context(lambda: Context.make(tag, make()))
 
@@ -121,12 +121,12 @@ def sync_context[A](make: Callable[[], Context[A]]) -> Layer[A]:
 
 
 @overload
-def effect[S, T, E](tag: TagLike[S, T], make: Effect[S, E, Scope]) -> Layer[T, E]: ...
+def effect[S, T, E](tag: Provides[S, T], make: Effect[S, E, Scope]) -> Layer[T, E]: ...
 @overload
 def effect[S, T, E = Never, R = Never](
-    tag: TagLike[S, T], make: Effect[S, E, Scope | R]
+    tag: Provides[S, T], make: Effect[S, E, Scope | R]
 ) -> Layer[T, E, R]: ...
-def effect(tag: TagLike[Any, Any], make: Effect[Any, Any, Any]) -> Layer[Any, Any, Any]:
+def effect(tag: Provides[Any, Any], make: Effect[Any, Any, Any]) -> Layer[Any, Any, Any]:
     """Build a service with an effect. ``make`` may acquire resources
     (it runs with a ``Scope``); they are released with the layer."""
     require_effect(make, "make")
@@ -181,7 +181,7 @@ class UnimplementedError(Exception):
     """A defect: a mocked service was used for a member the mock lacks."""
 
 
-def mock[S, T](tag: TagLike[S, T], /, **members: object) -> Layer[T]:
+def mock[S, T](tag: Provides[S, T], /, **members: object) -> Layer[T]:
     """Provide a service made of ``members``. Any other attribute is an
     effect that dies with ``UnimplementedError``, and a function returning
     that effect, so a test mocks only what it uses."""

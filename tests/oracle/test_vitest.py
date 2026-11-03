@@ -12,7 +12,7 @@ released when the block ends is a test class with ``scope="class"``;
 Omitted: the ``utils`` assertion tests (pytest's ``assert``); ``skip`` /
 ``skipIf`` / ``runIf`` / ``describe.each`` / ``skip.each`` / ``fails``
 (pytest marks, which apply to decorated tests unchanged); ``it.prop`` and
-every property test (Hypothesis, with Schema in M8); effectful
+every property test (ported in ``test_vitest_prop.py``); effectful
 ``beforeAll`` / ``beforeEach`` hooks and their timeout tests (pytest
 fixtures, and ``layer_fixture`` for effectful setup); ``describeWrapped``,
 ``makeMethods`` fixtures, layer concurrency and "nested sibling layers in

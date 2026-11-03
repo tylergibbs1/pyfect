@@ -70,7 +70,7 @@ from pyfect.cli import (
 )
 from pyfect.cli._environment import Environment as CliEnvironment
 from pyfect.cli.global_flag import LogLevel
-from pyfect.context import ServiceEffect, Tag
+from pyfect.context import Tag, TagEffect
 from pyfect.duration import Seconds, to_seconds
 from pyfect.encoding import EncodingError, Json, base64, json_array, ndjson, sse
 from pyfect.errors import TaggedError
@@ -225,7 +225,7 @@ def lookup(key: str):
 
 def check_generators() -> None:
     assert_type(lookup("k"), fx.Effect[str, NotFound | Invalid, Primary | Port])
-    assert_type(Primary(), ServiceEffect[Db, Primary])
+    assert_type(Primary(), TagEffect[Db, Primary, Primary])
 
 
 # --- catch_tag removes exactly one error class ------------------------------------
@@ -700,6 +700,13 @@ def check_layer_dependencies() -> None:
 def check_layer_shapes() -> None:
     layer.succeed(Port, "8080")  # pyright: ignore[reportArgumentType]
     layer.succeed(Primary, object())  # pyright: ignore[reportArgumentType]
+    # The tag is read exactly: an expected type cannot widen it to a union.
+    replica: layer.Layer[Primary] = layer.succeed(Replica, GoodDb())  # pyright: ignore[reportAssignmentType]
+    synced: layer.Layer[Primary] = layer.sync(Replica, GoodDb)  # pyright: ignore[reportAssignmentType]
+    built: layer.Layer[Primary] = layer.effect(Replica, fx.succeed(GoodDb()))  # pyright: ignore[reportAssignmentType]
+    level: layer.Layer[Level] = layer.succeed(Level, 3)
+    fewer: layer.Layer[Never] = layer.succeed(Primary, GoodDb())
+    del replica, synced, built, level, fewer
 
 
 # --- the run gate --------------------------------------------------------------------
@@ -710,8 +717,8 @@ def check_run_gate() -> None:
     fx.run_sync(lookup("k").pipe(fx.provide(layer.merge(primary_live, port_live))))  # pyright: ignore[reportArgumentType]
     fx.run_sync_exit(lookup("k").pipe(fx.provide(layer.merge(primary_live, port_live))))
     assert_type(fx.run_sync(Level()), int)
-    assert_type(fx.MaxOpsBeforeYield(), ServiceEffect[int, Never])
-    assert_type(fx.CurrentScheduler(), ServiceEffect[Scheduler, Never])
+    assert_type(fx.MaxOpsBeforeYield(), TagEffect[int, Never, fx.MaxOpsBeforeYield])
+    assert_type(fx.CurrentScheduler(), TagEffect[Scheduler, Never, fx.CurrentScheduler])
     assert_type(
         fx.succeed(1).pipe(fx.provide_service(fx.MaxOpsBeforeYield, 16)),
         fx.Effect[int, Never, Never],
@@ -1151,7 +1158,10 @@ def check_schedule_effects(
     )
     assert_type(eff.schedule(schedule.spaced(1)), fx.Effect[int, NotFound, Port])
     assert_type(eff.schedule_from(0, schedule.spaced(1)), fx.Effect[int, NotFound, Port])
-    assert_type(schedule.CurrentMetadata(), ServiceEffect[schedule.Metadata[object, object], Never])
+    assert_type(
+        schedule.CurrentMetadata(),
+        TagEffect[schedule.Metadata[object, object], Never, schedule.CurrentMetadata],
+    )
     # A retry policy must accept the effect's errors; a repeat schedule its values.
     eff.retry(only_str)  # pyright: ignore[reportCallIssue, reportArgumentType]
     eff.repeat(only_str)  # pyright: ignore[reportCallIssue, reportArgumentType]
@@ -1449,6 +1459,29 @@ def check_test_missing_a_service():
 @fx.testing.effect  # pyright: ignore[reportCallIssue, reportArgumentType, reportUntypedFunctionDecorator]
 def check_test_missing_a_service_its_fixture_lacks(ports: fx.testing.Services[Port]):
     yield from Primary()
+
+
+def check_property_tests() -> None:
+    @fx.testing.prop(S.Int, label=S.String)
+    def plain(n: int, label: str) -> bool:
+        return n >= 0
+
+    assert_type(plain, Callable[..., None])
+
+    @fx.testing.effect_prop(S.Int)
+    def effectful(n: int):
+        yield from fx.succeed(n)
+
+    assert_type(effectful, Callable[..., None])
+
+    # A plain property returning an effect would pass without running it.
+    @fx.testing.prop(S.Int)  # pyright: ignore[reportArgumentType]
+    def returns_an_effect(n: int):
+        return fx.succeed(n > 0)
+
+    @fx.testing.prop(S.Int)  # pyright: ignore[reportArgumentType]
+    def is_a_generator(n: int):
+        yield from fx.succeed(n)
 
 
 class CheckTestClass:
@@ -2246,8 +2279,8 @@ def check_log_effects(eff: fx.Effect[int, NotFound, Primary]) -> None:
 
 
 def check_log_references() -> None:
-    assert_type(fx.MinimumLogLevel(), ServiceEffect[fx.LogLevel, Never])
-    assert_type(fx.CurrentLogLevel(), ServiceEffect[logger.Severity, Never])
+    assert_type(fx.MinimumLogLevel(), TagEffect[fx.LogLevel, Never, fx.MinimumLogLevel])
+    assert_type(fx.CurrentLogLevel(), TagEffect[logger.Severity, Never, fx.CurrentLogLevel])
     fx.log("x").pipe(fx.provide_service(fx.MinimumLogLevel, fx.LogLevel.ALL))
     fx.log("x").pipe(fx.provide_service(fx.CurrentLogLevel, fx.LogLevel.NONE))  # pyright: ignore[reportArgumentType]
 
@@ -2339,7 +2372,7 @@ def check_span_effects(eff: fx.Effect[int, NotFound, Primary]) -> None:
     assert_type(fx.current_span(), fx.Effect[Span, fx.NoSuchElementException])
     assert_type(fx.current_parent_span(), fx.Effect[AnySpan, fx.NoSuchElementException])
     assert_type(fx.annotate_current_span("k", 1), fx.Effect[None])
-    assert_type(fx.tracer.ParentSpan(), ServiceEffect[AnySpan | None, Never])
+    assert_type(fx.tracer.ParentSpan(), TagEffect[AnySpan | None, Never, fx.tracer.ParentSpan])
     assert_type(SpanLink(parent).span, AnySpan)
     eff.with_span("a", kind="sideways")  # pyright: ignore[reportArgumentType]
     eff.with_span("a", colour="red")  # pyright: ignore[reportCallIssue]
@@ -2360,7 +2393,7 @@ def check_stack_frames(eff: fx.Effect[int, NotFound, Primary], c: fx.Cause[NotFo
         eff.with_parent_span(ExternalSpan("s", "t"), capture_stack_trace=False),
         fx.Effect[int, NotFound, Primary],
     )
-    assert_type(CurrentStackFrame(), ServiceEffect[StackFrame | None, Never])
+    assert_type(CurrentStackFrame(), TagEffect[StackFrame | None, Never, CurrentStackFrame])
     assert_type(
         c.annotate(fx.Context.make(StackTrace, StackFrame("f", lambda: None))), fx.Cause[NotFound]
     )
@@ -3571,7 +3604,9 @@ def check_config_provider(needs_db: fx.Effect[fx.ConfigProvider, NotFound, Prima
     assert_type(
         cp.from_dir("/run/secrets"), fx.Effect[cp.ConfigProvider, Never, fx.Path | fx.FileSystem]
     )
-    assert_type(fx.CurrentConfigProvider(), ServiceEffect[cp.ConfigProvider, Never])
+    assert_type(
+        fx.CurrentConfigProvider(), TagEffect[cp.ConfigProvider, Never, fx.CurrentConfigProvider]
+    )
     assert_type(cp.layer(provider), fx.Layer[fx.CurrentConfigProvider])
     assert_type(
         cp.layer(cp.from_dot_env()),
@@ -4632,15 +4667,17 @@ def check_tx_collections(
     def is_bool(value: int | bool, key: str) -> TypeIs[bool]:
         return isinstance(value, bool)
 
-    mixed = fx.TxHashMap[str, int | bool](fx.TxRef({}))
+    mixed = fx.TxHashMap[str, int | bool](fx.TxRef(HashMap[str, int | bool].empty()))
     assert_type(mixed.filter(is_bool), fx.Effect[fx.TxHashMap[str, bool], Never, Never])
 
     assert_type(fx.TxHashSet.make("a"), fx.Effect[fx.TxHashSet[str], Never, Never])
     assert_type(fx.TxHashSet[int].empty(), fx.Effect[fx.TxHashSet[int], Never, Never])
-    assert_type(tx_set.to_hash_set(), fx.Effect[frozenset[str], Never, Never])
+    assert_type(tx_set.to_hash_set(), fx.Effect[HashSet[str], Never, Never])
+    assert_type(tx_map.snapshot(), fx.Effect[HashMap[str, int], Never, Never])
+    tx_map.union({"a": 1})  # pyright: ignore[reportArgumentType]
     assert_type(tx_set.remove("a"), fx.Effect[bool, Never, Never])
     assert_type(
-        tx_set.union(fx.TxHashSet[int](fx.TxRef(frozenset()))),
+        tx_set.union(fx.TxHashSet[int](fx.TxRef(HashSet[int].empty()))),
         fx.Effect[fx.TxHashSet[str | int], Never, Never],
     )
     assert_type(tx_set.map(len), fx.Effect[fx.TxHashSet[int], Never, Never])
@@ -4758,7 +4795,9 @@ def check_platform(
 ) -> None:
     from pyfect import file_system, platform, platform_error, stdio, terminal
 
-    assert_type(fx.FileSystem(), ServiceEffect[file_system.FileSystemService, fx.FileSystem])
+    assert_type(
+        fx.FileSystem(), TagEffect[file_system.FileSystemService, fx.FileSystem, fx.FileSystem]
+    )
     assert_type(fs.read_file("a"), fx.Effect[bytes, fx.PlatformError, Never])
     assert_type(fs.read_file_string("a"), fx.Effect[str, fx.PlatformError, Never])
     assert_type(fs.exists("a"), fx.Effect[bool, fx.PlatformError, Never])
@@ -4863,7 +4902,7 @@ def check_http_client(service: fx.http.HttpClientService[fx.http.HttpClientError
 
     assert_type(
         client.HttpClient(),
-        ServiceEffect[client.HttpClientService[HttpClientError], client.HttpClient],
+        TagEffect[client.HttpClientService[HttpClientError], client.HttpClient, client.HttpClient],
     )
     assert_type(
         client.get("/todos"), fx.Effect[HttpClientResponse, HttpClientError, client.HttpClient]
@@ -7602,7 +7641,7 @@ def atom_http_api_types() -> None:
         pass
 
     client = atom_http_api.make(Client, api=api, http_client=fx.layer.empty)
-    assert_type(client, atom_http_api.AtomHttpApiClient[Client])
+    assert_type(client, atom_http_api.AtomHttpApiClient[Client, Users])
     assert_type(
         client.query(Users, Users.create, payload="x"), atom.Atom[AsyncResult[float, Never]]
     )
@@ -7614,6 +7653,13 @@ def atom_http_api_types() -> None:
         client.mutation(Users, Users.create),
         atom.AtomResultFn[atom_http_api.MutationRequest[None, None, str, None], float, Never],
     )
+
+    class Admin(HttpApiGroup, identifier="admin"):
+        reset = ep.post("reset", "/reset", success=fx.schema.Number)
+
+    # A group the client's api lacks is a type error.
+    client.query(Admin, Admin.reset)  # pyright: ignore[reportArgumentType, reportCallIssue]
+    client.mutation(Admin, Admin.reset)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
 
 # --- catch_tag takes any number of classes (trawl T4; Effect's catchTag is variadic) ---

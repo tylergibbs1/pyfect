@@ -30,7 +30,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._json_text import stringify
 from pyfect._public import publish
-from pyfect.context import TagLike, tag_class
+from pyfect.context import Provides, TagLike, tag_class
 from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.effect import die, fail
 from pyfect.http.client import HttpClientService
@@ -110,13 +110,14 @@ def _result_schema(endpoint: AnyEndpoint) -> Any:
     )
 
 
-class AtomHttpApiClient[T]:
-    """Atoms over an ``HttpApi`` client provided as ``T``."""
+class AtomHttpApiClient[T, G: HttpApiGroup[Any] = Any]:
+    """Atoms over the client of an ``HttpApi[G]`` provided as ``T``.
+    ``query`` and ``mutation`` take only the api's groups ``G``."""
 
     __slots__ = ("_mutations", "_queries", "api", "runtime", "tag")
 
     def __init__(
-        self, tag: TagLike[Any, T], api: HttpApi[Any], runtime: AtomRuntime[T, Never]
+        self, tag: TagLike[Any, T], api: HttpApi[G], runtime: AtomRuntime[T, Never]
     ) -> None:
         self.tag = tag
         self.api = api
@@ -163,7 +164,7 @@ class AtomHttpApiClient[T]:
     @overload
     def mutation[P, Q, B, CB, H, S1, CS, E](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
         /,
         *,
@@ -172,7 +173,7 @@ class AtomHttpApiClient[T]:
     @overload
     def mutation[P, Q, B, CB, H, S1, CS, E, ME](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
         /,
         *,
@@ -181,7 +182,7 @@ class AtomHttpApiClient[T]:
     @overload
     def mutation[P, Q, B, CB, H, S1, CS, E](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
         /,
         *,
@@ -190,7 +191,7 @@ class AtomHttpApiClient[T]:
     @overload
     def mutation[P, Q, B, CB, H, S1, CS, E, ME](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
         /,
         *,
@@ -199,7 +200,7 @@ class AtomHttpApiClient[T]:
     @overload
     def mutation[P, Q, B, CB, H, S1, CS, E](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
         /,
         *,
@@ -208,7 +209,7 @@ class AtomHttpApiClient[T]:
     @overload
     def mutation[P, Q, B, CB, H, S1, CS, E, ME](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
         /,
         *,
@@ -216,7 +217,7 @@ class AtomHttpApiClient[T]:
     ) -> AtomResultFn[MutationRequest[P, Q, CB, H], HttpClientResponse, ME]: ...
     def mutation(
         self,
-        group: AnyGroup,
+        group: type[G],
         endpoint: AnyEndpoint,
         /,
         *,
@@ -246,7 +247,7 @@ class AtomHttpApiClient[T]:
     @overload
     def query[P, Q, B, CB, H, S1, CS, E](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
         /,
         *,
@@ -263,7 +264,7 @@ class AtomHttpApiClient[T]:
     @overload
     def query[P, Q, B, CB, H, S1, CS, E, ME](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
         /,
         *,
@@ -280,7 +281,7 @@ class AtomHttpApiClient[T]:
     @overload
     def query[P, Q, B, CB, H, S1, CS, E](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
         /,
         *,
@@ -297,7 +298,7 @@ class AtomHttpApiClient[T]:
     @overload
     def query[P, Q, B, CB, H, S1, CS, E, ME](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
         /,
         *,
@@ -314,7 +315,7 @@ class AtomHttpApiClient[T]:
     @overload
     def query[P, Q, B, CB, H, S1, CS, E](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, Never],
         /,
         *,
@@ -331,7 +332,7 @@ class AtomHttpApiClient[T]:
     @overload
     def query[P, Q, B, CB, H, S1, CS, E, ME](
         self,
-        group: type[HttpApiGroup[Any]],
+        group: type[G],
         endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, HttpApiMiddleware[Any, ME, Any]],
         /,
         *,
@@ -347,7 +348,7 @@ class AtomHttpApiClient[T]:
     ) -> Atom[AsyncResult[HttpClientResponse, ME]]: ...
     def query(
         self,
-        group: AnyGroup,
+        group: type[G],
         endpoint: AnyEndpoint,
         /,
         *,
@@ -403,8 +404,8 @@ class AtomHttpApiClient[T]:
         return made
 
 
-def make[G, T](
-    tag: TagLike[api_client.Client[G], T],
+def make[G: HttpApiGroup[Any], T](
+    tag: Provides[api_client.Client[G], T],
     *,
     api: HttpApi[G],
     http_client: HttpClientLayer | Callable[[AtomContext], HttpClientLayer],
@@ -415,7 +416,7 @@ def make[G, T](
     transform_response: api_client.TransformResponse | None = None,
     base_url: str | None = None,
     runtime: RuntimeFactory = runtime,
-) -> AtomHttpApiClient[T]:
+) -> AtomHttpApiClient[T, G]:
     """Atoms over the client of ``api`` provided as ``tag`` (Effect's
     ``AtomHttpApi.Service``): ``http_api.client.make(api, ...)`` with
     ``transform_client``, ``transform_response`` and ``base_url``, over

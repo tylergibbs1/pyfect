@@ -26,7 +26,7 @@ from urllib.parse import SplitResult
 
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
-from pyfect._os_wait import os_wait
+from pyfect._os_wait import WaitsFor, os_wait
 from pyfect._released import Lifetime
 from pyfect.effect import Effect, fail, succeed, sync
 from pyfect.errors import Done
@@ -70,10 +70,12 @@ def _form_content(form: _body.FormData) -> dict[str, Any]:
 
 
 def _future[A](
-    signal: AbortSignal | None, start: Callable[[], Future[A]]
+    signal: AbortSignal | None, start: Callable[[], Future[A]], *, waits_for: WaitsFor
 ) -> Effect[A, BaseException]:
     """Wait for the future ``start()`` gives; interrupting (or aborting
-    ``signal``) cancels it."""
+    ``signal``) cancels it. A body's next chunk is an ``"event"``: the
+    server may hold it back indefinitely, so the test clock must not wait
+    for it."""
 
     def register(resume: Callable[[Effect[A, BaseException]], None]) -> Callable[[], bool]:
         future = start()
@@ -90,7 +92,7 @@ def _future[A](
         future.add_done_callback(done)
         return future.cancel
 
-    return os_wait(register, waits_for="work")
+    return os_wait(register, waits_for=waits_for)
 
 
 class _Backend:
@@ -151,7 +153,7 @@ class _Backend:
             self._lifetime.close()
             return future
 
-        closing = _future(None, shutdown).ignore()
+        closing = _future(None, shutdown, waits_for="work").ignore()
         return closing.flat_map(
             lambda _: sync(lambda: self.loop.call_soon_threadsafe(self.loop.stop)).as_void()
         )
@@ -215,7 +217,7 @@ class _Backend:
             return fail(HttpClientError(TransportError(request, error)))
 
         return (
-            _future(signal, lambda: self.submit(send))
+            _future(signal, lambda: self.submit(send), waits_for="work")
             .catch_all(on_error)
             .map(lambda response: self._response(request, response, signal))
         )
@@ -253,8 +255,10 @@ class _Backend:
         def end_or_fail(error: BaseException) -> Effect[Never, BaseException | Done]:
             return fail(Done() if isinstance(error, StopAsyncIteration) else error)
 
-        pull = _future(None, lambda: self.submit(next_chunk)).catch_all(end_or_fail)
-        closing = _future(None, lambda: self.submit(response.aclose)).ignore()
+        pull = _future(None, lambda: self.submit(next_chunk), waits_for="event").catch_all(
+            end_or_fail
+        )
+        closing = _future(None, lambda: self.submit(response.aclose), waits_for="work").ignore()
         return from_effect_repeat(pull).ensuring(closing)
 
 

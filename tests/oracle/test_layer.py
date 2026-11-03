@@ -26,7 +26,7 @@ from typing import Never
 
 import pyfect as fx
 from pyfect import layer, schedule, testing
-from pyfect.context import TagLike
+from pyfect.context import Provides
 from pyfect.tracer import AnySpan, CurrentStackFrame, ExternalSpan, ParentSpan, Span, StackFrame
 
 ACQUIRE1, ACQUIRE2, ACQUIRE3 = "Acquiring Module 1", "Acquiring Module 2", "Acquiring Module 3"
@@ -57,7 +57,7 @@ class Service2Tag(fx.Tag[Service2], key="Service2"): ...
 class Service3Tag(fx.Tag[Service3], key="Service3"): ...
 
 
-def _make[S, T](tag: TagLike[S, T], make: type[S], n: int, log: list[str]) -> layer.Layer[T]:
+def _make[S, T](tag: Provides[S, T], make: type[S], n: int, log: list[str]) -> layer.Layer[T]:
     def acquire() -> S:
         log.append(f"Acquiring Module {n}")
         return make()

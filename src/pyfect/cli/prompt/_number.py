@@ -8,7 +8,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from pyfect._js import js_number
+from pyfect._js import divide, js_number, power
+from pyfect._js import round as js_round
 from pyfect.cli import _ansi as ansi
 from pyfect.cli.prompt._core import (
     Action,
@@ -55,8 +56,10 @@ def parse_float(text: str) -> float | None:
 
 
 def _js_round(value: float, precision: int) -> float:
-    factor = 10.0**precision
-    return math.floor(value * factor + 0.5) / factor
+    """Effect's ``Number.round``: ``Math.round(value * 10 ** p) / 10 ** p``
+    in JavaScript arithmetic, so a factor past float range gives ``NaN``."""
+    factor = power(10.0, precision)
+    return divide(js_round(value * factor), factor)
 
 
 def _bounds[N: (int, float)](minimum: float, maximum: float) -> Callable[[N], Effect[N, str]]:

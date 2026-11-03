@@ -166,6 +166,17 @@ def floor(value: float) -> float:
     return float(math.floor(value)) if math.isfinite(value) else value
 
 
+def round(value: float) -> float:
+    """``Math.round``: halves go up, ``-0.5 <= x < 0`` gives ``-0``.
+    ``floor(x + 0.5)`` is not it: the sum rounds (``0.49999999999999994``
+    goes to 1, odd numbers past 2**52 to even)."""
+    if not math.isfinite(value):
+        return value
+    whole = math.floor(value)
+    rounded = whole + 1.0 if value - whole >= 0.5 else float(whole)
+    return math.copysign(rounded, value) if rounded == 0 else rounded
+
+
 def ceil(value: float) -> float:
     """``Math.ceil``: an infinity or NaN stays as it is (Python raises)."""
     return float(math.ceil(value)) if math.isfinite(value) else value

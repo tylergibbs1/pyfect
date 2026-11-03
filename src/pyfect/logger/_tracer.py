@@ -23,7 +23,7 @@ def _record(options: Options) -> None:
         return
     attributes: dict[str, object] = dict(fiber.get_ref(CurrentLogAnnotations))
     attributes["effect.fiberId"] = fiber.id
-    attributes["effect.logLevel"] = options.log_level.name
+    attributes["effect.logLevel"] = str(options.log_level).upper()
     if options.cause.reasons:
         attributes["effect.cause"] = options.cause.pretty()
     span.event(_event_name(options.message), fiber.get_ref(Clock).now_nanos_unsafe(), attributes)

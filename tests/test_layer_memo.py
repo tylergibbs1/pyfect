@@ -3,7 +3,7 @@
 
 import pyfect as fx
 from pyfect import layer
-from pyfect.context import TagLike
+from pyfect.context import Provides
 from pyfect.scope import CloseableScope
 
 
@@ -19,7 +19,7 @@ class S3(fx.Tag[str]): ...
 class Num(fx.Tag[int]): ...
 
 
-def make_layer[T](tag: TagLike[str, T], n: int, log: list[str]) -> layer.Layer[T]:
+def make_layer[T](tag: Provides[str, T], n: int, log: list[str]) -> layer.Layer[T]:
     acquire = fx.acquire_release(
         fx.sync(lambda: log.append(f"acquire{n}") or f"s{n}"),
         lambda _a, _e: fx.sync(lambda: log.append(f"release{n}")),

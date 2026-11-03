@@ -1,6 +1,7 @@
 """TxChunk, TxHashMap and TxHashSet behaviours beyond Effect's test files.
 Expected values were printed by Effect v4.0.6 under Node first."""
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -8,6 +9,9 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
+from pyfect._equal import equal_key
+from pyfect.hash_map import HashMap
+from pyfect.hash_set import HashSet
 from pyfect.option import Some
 
 
@@ -142,19 +146,17 @@ def test_failed_transaction_leaves_collections_unchanged():
 
     assert (yield from fx.tx(body()).flip()) == "boom"
     assert (yield from tx_map.entries()) == [("a", 1)]
-    assert (yield from tx_set.to_hash_set()) == frozenset({"a"})
+    assert (yield from tx_set.to_hash_set()) == HashSet.make("a")
     assert (yield from chunk.get()) == (1,)
 
 
 @testing.effect
-def test_snapshot_is_read_only_and_survives_writes_outside_a_transaction():
+def test_snapshot_survives_writes_outside_a_transaction():
     tx_map = yield from fx.TxHashMap.make(("a", 1))
     snapshot = yield from tx_map.snapshot()
     yield from tx_map.set("a", 2)
     yield from tx_map.remove_many(["a"])
-    assert dict(snapshot) == {"a": 1}
-    with pytest.raises(TypeError):
-        snapshot["a"] = 3  # pyright: ignore[reportIndexIssue]
+    assert snapshot == HashMap.make(("a", 1))
 
 
 @testing.effect
@@ -180,15 +182,18 @@ def test_flat_map_failure_creates_nothing_and_rolls_back():
 @testing.effect
 def test_union_and_set_many_replace_values_at_shared_keys():
     tx_map = yield from fx.TxHashMap.make(("a", 1), ("b", 2))
-    yield from tx_map.union({"b": 3})
+    yield from tx_map.union(HashMap.make(("b", 3)))
     yield from tx_map.set_many([("a", 4), ("a", 5)])
     assert (yield from tx_map.entries()) == [("a", 5), ("b", 3)]
 
 
 def test_repr_names_the_collection_and_its_ref():
     assert repr(fx.TxChunk(fx.TxRef((1,)))) == "TxChunk(TxRef((1,)))"
-    assert repr(fx.TxHashMap(fx.TxRef({"a": 1}))) == "TxHashMap(TxRef({'a': 1}))"
-    assert repr(fx.TxHashSet(fx.TxRef(frozenset({1})))) == "TxHashSet(TxRef(frozenset({1})))"
+    assert (
+        repr(fx.TxHashMap(fx.TxRef(HashMap.make(("a", 1)))))
+        == "TxHashMap(TxRef(HashMap([('a', 1)])))"
+    )
+    assert repr(fx.TxHashSet(fx.TxRef(HashSet.make(1)))) == "TxHashSet(TxRef(HashSet([1])))"
 
 
 _MAP_WRITES: dict[str, Callable[[fx.TxHashMap[str, int]], fx.Effect[Any]]] = {
@@ -198,8 +203,8 @@ _MAP_WRITES: dict[str, Callable[[fx.TxHashMap[str, int]], fx.Effect[Any]]] = {
     "set_many_same": lambda m: m.set_many([("a", 1)]),
     "set_many_empty": lambda m: m.set_many([]),
     "set_many_away_and_back": lambda m: m.set_many([("a", 5), ("a", 1)]),
-    "union_empty": lambda m: m.union({}),
-    "union_same": lambda m: m.union({"a": 1}),
+    "union_empty": lambda m: m.union(HashMap[str, int].empty()),
+    "union_same": lambda m: m.union(HashMap.make(("a", 1))),
     "remove_many_missing": lambda m: m.remove_many(["zz"]),
     "remove_many_empty": lambda m: m.remove_many([]),
     "remove_many_present": lambda m: m.remove_many(["a"]),
@@ -249,3 +254,54 @@ def test_writes_to_a_present_key_wake_waiters_even_when_nothing_changes():
     assert _wakes(lambda m: m.modify_at("a", lambda x: x)) == 2
     assert _wakes(lambda m: m.set_many([])) == 2
     assert _wakes(lambda m: m.remove_many(["zz"])) == 2
+
+
+@testing.effect
+def test_map_keys_compare_and_iterate_as_effects():
+    """Keys follow Effect's ``Equal`` (``True`` apart from ``1``, NaN finds
+    NaN, ``-0`` is ``0``, lists by their items) and iterate in Effect's
+    order; the expected values were printed by Effect under Node."""
+    tx_map = yield from fx.TxHashMap.make(
+        (1, "one"),
+        (True, "true"),
+        (math.nan, "nan"),
+        ([1, 2], "list"),
+        ("apple", "a"),
+        (-0.0, "zero"),
+        (2.5, "f"),
+        (None, "null"),
+    )
+    assert (yield from tx_map.size()) == 8
+    assert (yield from tx_map.values()) == ["zero", "one", "null", "f", "a", "list", "nan", "true"]
+    assert (yield from tx_map.get(math.nan)) == Some("nan")
+    assert (yield from tx_map.get([1, 2])) == Some("list")
+    assert (yield from tx_map.get(0)) == Some("zero")
+
+    keyed = yield from fx.TxHashMap[str, int].empty()
+    for i in range(20):
+        yield from keyed.set(f"k{i}", i)
+    expected = [19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 8, 9, 6, 7, 4, 5, 2, 3, 0, 1]
+    assert (yield from keyed.keys()) == [f"k{i}" for i in expected]
+
+
+@testing.effect
+def test_set_members_compare_and_iterate_as_effects():
+    """``False`` stays apart from ``0``; the order was printed by Effect
+    under Node."""
+    tx_set = yield from fx.TxHashSet.make("pear", "fig", 3, False, 0, "kiwi", 10, 1.5)
+    members = yield from tx_set.reduce(list[object](), lambda acc, v: [*acc, v])
+    assert members == [0, 3, "pear", False, 10, 1.5, "fig", "kiwi"]
+    assert (yield from tx_set.has(False)) is True
+    yield from tx_set.remove(0)
+    assert (yield from tx_set.has(False)) is True
+
+
+@testing.effect
+def test_get_hash_and_has_hash_take_list_keys():
+    entries: list[tuple[object, str]] = [([1, 2], "a")]
+    tx_map = yield from fx.TxHashMap.from_iterable(entries)
+    key_hash = hash(equal_key([1, 2]))
+    assert (yield from tx_map.get_hash([1, 2], key_hash)) == Some("a")
+    assert (yield from tx_map.has_hash([1, 2], key_hash)) is True
+    assert (yield from tx_map.has_hash([1, 2], key_hash + 1)) is False
+    assert (yield from tx_map.get_hash(True, hash(equal_key(True)))) is None

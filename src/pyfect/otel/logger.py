@@ -97,7 +97,7 @@ def _record(options: Options, observed: int) -> LogRecord:
         timestamp=(options.date - _EPOCH) // _MICROSECOND * 1000,
         observed_timestamp=observed,
         context=context,
-        severity_text=options.log_level.name,
+        severity_text=str(options.log_level),
         severity_number=log_level_to_severity_number(options.log_level),
         body=message[0] if len(message) == 1 else message,
         attributes=attributes,

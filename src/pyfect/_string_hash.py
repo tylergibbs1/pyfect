@@ -4,6 +4,12 @@ rings and shard ids depend on the exact values, so they match Effect's."""
 
 from __future__ import annotations
 
+import sys
+from array import array
+from collections.abc import Sequence
+
+_UTF16_NATIVE = "utf-16-le" if sys.byteorder == "little" else "utf-16-be"
+
 
 def _int32(n: int) -> int:
     n &= 0xFFFFFFFF
@@ -18,8 +24,12 @@ def optimize(n: int) -> int:
 
 def string_hash(text: str) -> int:
     """Effect's ``Hash.string(text)``."""
-    units = text.encode("utf-16-le", "surrogatepass")
+    # Unsigned 32-bit arithmetic: the same bits as JavaScript's int32 ops.
+    if text.isascii():
+        units: Sequence[int] = text.encode("ascii")
+    else:
+        units = array("H", text.encode(_UTF16_NATIVE, "surrogatepass"))
     h = 5381
-    for i in range(len(units) - 2, -1, -2):
-        h = _int32(h * 33) ^ (units[i] | units[i + 1] << 8)
+    for unit in reversed(units):
+        h = ((h * 33) & 0xFFFFFFFF) ^ unit
     return optimize(h)

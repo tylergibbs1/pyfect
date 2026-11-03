@@ -3,6 +3,7 @@ printed by Effect v4.0.6 under Node."""
 
 from __future__ import annotations
 
+import math
 from datetime import UTC, datetime
 from typing import Any
 
@@ -103,6 +104,23 @@ def test_number_prompt_rounds_half_up_like_javascript(env: Services[Any]):
     yield from input_text("2.5")
     yield from input_key("enter")
     assert (yield from prompt.run(prompt.number("F", precision=0))) == 3
+
+
+@pytest.mark.parametrize(("precision", "text"), [(400, "1.25"), (-400, "123.456"), (308, "1.5")])
+@testing.effect
+def test_number_prompt_rounds_past_float_range_as_javascript(
+    env: Services[Any], precision: int, text: str
+):
+    """``Number.round`` with ``Math.pow(10, precision)`` past float range is
+    ``NaN`` (an infinite or zero factor), printed by Effect under Node; Python
+    raised ``OverflowError`` or ``ZeroDivisionError``."""
+    yield from input_text(text)
+    yield from input_key("enter")
+    result = yield from prompt.run(prompt.number("F", precision=precision))
+    if precision == 308:
+        assert result == 1.5
+    else:
+        assert math.isnan(result)
 
 
 @testing.effect

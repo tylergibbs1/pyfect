@@ -7,7 +7,7 @@ apart from ``1``, NaN is one member, and lists, tuples, dicts and sets are
 members by their items. Updates return a new set, or the same set when
 nothing changes; like Effect's, it is a persistent hash array mapped trie
 (``pyfect._hamt``), so an update costs about ``log32(size)``. Iteration
-follows the hashes, as Effect's does.
+follows Effect's hashes (``pyfect._effect_hash``), in Effect's order.
 """
 
 from __future__ import annotations

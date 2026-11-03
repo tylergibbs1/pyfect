@@ -17,7 +17,7 @@ from typing import Any, Never, Protocol, ReadOnly, TypedDict, cast
 
 from pyfect import effect as fx
 from pyfect import stream
-from pyfect.context import Context, TagLike
+from pyfect.context import Context, Provides
 from pyfect.duration import Seconds
 from pyfect.effect import Effect
 from pyfect.graphql._codec import Codec
@@ -402,7 +402,7 @@ def _raw_attribute(cls: type, name: str) -> object:
 
 
 def layer_test[G, I](
-    tag: TagLike[G, I], group: GroupClass[G, Any, Any], /, **handlers: TestHandler
+    tag: Provides[G, I], group: GroupClass[G, Any, Any], /, **handlers: TestHandler
 ) -> Layer[I]:
     """A layer providing ``make_test(group, **handlers)`` as ``tag``'s
     service."""

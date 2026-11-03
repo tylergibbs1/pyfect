@@ -123,3 +123,24 @@ def test_math_pow_only_inside_js_power():
         if p != SRC / "_js.py"
     }
     assert {p: lines for p, lines in found.items() if lines} == {}
+
+
+def float_literal_powers(path: Path) -> list[int]:
+    def is_float(node: ast.expr) -> bool:
+        return isinstance(node, ast.Constant) and type(node.value) is float
+
+    return [
+        node.lineno
+        for node in ast.walk(ast.parse(path.read_text()))
+        if isinstance(node, ast.BinOp)
+        and isinstance(node.op, ast.Pow)
+        and (is_float(node.left) or is_float(node.right))
+    ]
+
+
+def test_no_float_power_outside_js_power():
+    """``10.0 ** n`` raises ``OverflowError`` past float range where
+    JavaScript's ``**`` gives ``Infinity`` (``cli.prompt.number`` died with a
+    precision over 308); ports of ``Math.pow`` use ``_js.power``."""
+    found = {str(p.relative_to(SRC)): float_literal_powers(p) for p in sorted(SRC.rglob("*.py"))}
+    assert {p: lines for p, lines in found.items() if lines} == {}

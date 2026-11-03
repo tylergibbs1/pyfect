@@ -1,11 +1,10 @@
 """Ports of Effect's ``test/HashMap.test.ts``.
 
 Each test's docstring is the Effect test title. Module functions are
-methods (``HashMap.set(m, k, v)`` is ``m.set(k, v)``). Omitted:
-"preserves traversal order across every node kind" (it places keys by the
-custom hashes ``modifyHash`` is given, which pyfect ignores: keys are found
-by value). ``Equal`` / ``Hash``
-objects are classes with ``__eq__`` / ``__hash__``.
+methods (``HashMap.set(m, k, v)`` is ``m.set(k, v)``). ``Equal`` / ``Hash``
+objects are classes with ``__eq__`` / ``__hash__``; "preserves traversal
+order across every node kind" gives its keys the hashes Effect's test passes
+to ``modifyHash`` (which pyfect ignores: keys are found by value) that way.
 """
 
 from __future__ import annotations
@@ -578,3 +577,49 @@ def test_should_handle_hash_collisions() -> None:
     assert m.has(key1)
     assert not m.has(key2)
     assert m.has(key3)
+
+
+class _Hashed:
+    """A key with the hash Effect's test hands ``modifyHash``."""
+
+    def __init__(self, name: str, hash: int) -> None:
+        self.name = name
+        self.hash = hash
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _Hashed) and other.name == self.name
+
+    def __hash__(self) -> int:
+        return self.hash
+
+
+def test_preserves_traversal_order_across_every_node_kind() -> None:
+    """preserves traversal order across every node kind"""
+    empty = HashMap[_Hashed, int].empty()
+    assert list(empty) == []
+    assert list(empty.keys()) == []
+    assert list(empty.values()) == []
+    inputs = [
+        *((f"leaf-{17 - i}", 17 - i, 17 - i) for i in range(16)),
+        ("nested-2", 65, 102),
+        ("collision-first", 0, 1),
+        ("nested-0", 1, 100),
+        ("collision-second", 0, 2),
+        ("nested-1", 33, 101),
+    ]
+    m = empty
+    for name, hash, value in inputs:
+        m = m.modify_hash(_Hashed(name, hash), hash, lambda _, v=value: Some(v))
+    expected = [
+        ("collision-first", 1),
+        ("collision-second", 2),
+        ("nested-0", 100),
+        ("nested-1", 101),
+        ("nested-2", 102),
+        *((f"leaf-{i + 2}", i + 2) for i in range(16)),
+    ]
+    assert [(k.name, v) for k, v in m] == expected
+    assert [(k.name, v) for k, v in m.entries()] == expected
+    keys = list(m.keys())
+    assert [k.name for k in keys] == [k for k, _ in expected]
+    assert list(m.values()) == [v for _, v in expected]

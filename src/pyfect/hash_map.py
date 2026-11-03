@@ -14,8 +14,8 @@ finds NaN, and lists, tuples, dicts and sets are keys by their items::
 Every update returns a new map and leaves the old one as it was. Like
 Effect's, the map is a persistent hash array mapped trie (``pyfect._hamt``):
 an update copies about ``log32(size)`` nodes and shares the rest.
-Iteration yields ``(key, value)`` pairs in hash order, as Effect's does (so
-it can differ between runs for ``str`` keys, as a ``frozenset``'s does).
+Iteration yields ``(key, value)`` pairs in hash order, Effect's order: keys
+are hashed with Effect's ``Hash.hash`` (``pyfect._effect_hash``).
 The ``hash`` arguments of ``get_hash`` / ``has_hash`` / ``modify_hash`` are
 accepted for Effect's API and not needed: keys are found by value.
 """
@@ -170,8 +170,8 @@ class HashMap[K, V]:
 
     def set(self, key: K, value: V) -> HashMap[K, V]:
         """The map with ``key`` set to ``value``; the same map when ``key``
-        already holds this very value (``is``). An equal key already there
-        is kept."""
+        already holds this value (``Object.is``: ``pyfect._js.same_value``).
+        An equal key already there is kept."""
         ident = equal_key(key)
         hash = _hamt.hash_of(ident)
         added = _hamt.find(self._root, hash, ident) is None

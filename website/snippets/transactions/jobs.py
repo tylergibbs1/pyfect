@@ -30,7 +30,7 @@ def program():
     yield from fx.Fiber.join_all(workers)
 
     owners = yield from claimed.snapshot()
-    print(dict(sorted(owners.items())))
+    print(dict(sorted(owners)))
 
 
 fx.run_sync(program())

@@ -27,7 +27,7 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._json_text import stringify
 from pyfect._public import publish
-from pyfect.context import TagLike, tag_class
+from pyfect.context import Provides, TagLike, tag_class
 from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.http import headers as http_headers
 from pyfect.http.headers import Headers
@@ -241,7 +241,7 @@ class AtomRpcClient[G: RpcGroup, T]:
 
 
 def make[G: RpcGroup, T](
-    tag: TagLike[G, T],
+    tag: Provides[G, T],
     *,
     group: type[G],
     protocol: ProtocolLayer | Callable[[AtomContext], ProtocolLayer],

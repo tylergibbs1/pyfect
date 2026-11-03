@@ -117,18 +117,7 @@ boolean = _choices(
     + [(f, False) for f in ("false", "no", "off", "0", "n")]
 )
 
-log_level = _choices(
-    [
-        ("All", LogLevel.ALL),
-        ("Fatal", LogLevel.FATAL),
-        ("Error", LogLevel.ERROR),
-        ("Warn", LogLevel.WARN),
-        ("Info", LogLevel.INFO),
-        ("Debug", LogLevel.DEBUG),
-        ("Trace", LogLevel.TRACE),
-        ("None", LogLevel.NONE),
-    ]
-)
+log_level = _choices([(str(level), level) for level in LogLevel])
 
 
 def literal[L: LiteralValue](values: Sequence[L]) -> Scalar[L]:

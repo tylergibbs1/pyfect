@@ -49,6 +49,28 @@ friends, which print the full cause on failure. Run only fast tests with
 
 <include meta='title="test_services.py"'>../../snippets/testing/test_services.py</include>
 
+## Property tests
+
+`@testing.prop(...)` runs a test on many generated inputs, as Effect's `it.prop` does. Each input
+is a schema, drawn with `S.to_strategy`, or a Hypothesis strategy. Positional inputs fill the
+test's rightmost parameters, and keyword inputs fill the parameters they name. Any parameters left
+over are pytest fixtures. A property passes by returning `True` or `None`. Returning `False` or
+raising falsifies it, and Hypothesis shrinks the input to the smallest one that still fails. A
+plain property that returns an effect or a generator raises `TypeError` (pyright rejects it too),
+because it would otherwise pass without running.
+
+`@testing.effect_prop(...)` and `@testing.live_prop(...)` are the effect forms (`it.effect.prop`
+and `it.live.prop`). They run the test once per input, each time with a new `TestClock`, `TestConsole`
+and `Scope`, and they take a `layer_fixture` the way `@testing.effect` does. A typed failure or a
+defect falsifies the property. An interruption, or the `timeout` (real time, for the whole check),
+ends the check without shrinking, and finalizers still run.
+
+`runs=` sets how many inputs are tried and `seed=` makes the draws repeatable. When they are
+unset, they come from the active Hypothesis settings profile, which plays the role of Effect's
+`Arbitrary.configureGlobal`. Property tests need the `pyfect-dev[hypothesis]` extra.
+
+<include meta='title="test_properties.py"'>../../snippets/testing/test_properties.py</include>
+
 ## Checking failures
 
 A failure records annotations in its cause, such as the span it happened in, and they take

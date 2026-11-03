@@ -203,12 +203,12 @@ def test_maps_effect_log_level_to_otel_severity_number_spec_values():
             r.log_record.severity_text: r.log_record.severity_number for r in _records(exporter)
         }
         assert by_text == {
-            "TRACE": SeverityNumber.TRACE,
-            "DEBUG": SeverityNumber.DEBUG,
-            "INFO": SeverityNumber.INFO,
-            "WARN": SeverityNumber.WARN,
-            "ERROR": SeverityNumber.ERROR,
-            "FATAL": SeverityNumber.FATAL,
+            "Trace": SeverityNumber.TRACE,
+            "Debug": SeverityNumber.DEBUG,
+            "Info": SeverityNumber.INFO,
+            "Warn": SeverityNumber.WARN,
+            "Error": SeverityNumber.ERROR,
+            "Fatal": SeverityNumber.FATAL,
         }
 
     yield from program.pipe(fx.provide(_sdk(exporter))).pipe(

@@ -2,23 +2,19 @@
 
 Each test's docstring is the Effect test title. Module functions are methods
 (``TxHashMap.get(m, "a")`` is ``m.get("a")``), so the data-first and
-data-last halves of a test are the same call; a ``HashMap`` argument is any
-``Mapping`` and ``snapshot`` gives a read-only ``Mapping``; ``get`` gives an
+data-last halves of a test are the same call; ``union`` takes and
+``snapshot`` gives a ``pyfect.hash_map.HashMap``, iterating in Effect's hash
+order (so ``findFirst`` finds the entry Effect's does); ``get`` gives an
 ``Option`` (``Some`` or ``None``), ``find_first`` a pair or ``None``;
 ``isTxHashMap`` is ``isinstance``; ``Hash.string`` is ``hash``; Effect's
 records are dataclasses.
-
-Adapted, with the reason:
-
-- "findFirst should return first matching entry": iteration follows
-  insertion order, not HAMT hash order, so the first ``user1`` session is
-  ``session1`` where Effect finds ``session3``.
 """
 
 from dataclasses import dataclass, replace
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.hash_map import HashMap
 from pyfect.option import Some
 from pyfect.result import Err, Ok
 
@@ -286,9 +282,9 @@ def test_snapshot():
     yield from tx_map.set("c", 3)
 
     assert len(snapshot) == 2
-    assert snapshot.get("a") == 1
-    assert snapshot.get("b") == 2
-    assert "c" not in snapshot
+    assert snapshot.get("a") == Some(1)
+    assert snapshot.get("b") == Some(2)
+    assert snapshot.get("c") is None
     assert (yield from tx_map.size()) == 3
 
 
@@ -300,7 +296,8 @@ def test_snapshot():
 def test_union():
     """union"""
     tx_map = yield from fx.TxHashMap.make(("a", 1), ("b", 2))
-    yield from tx_map.union({"b": 20, "c": 3})
+    other = HashMap.make(("b", 20), ("c", 3))  # "b" should be overwritten
+    yield from tx_map.union(other)
     assert (yield from tx_map.size()) == 3
     assert (yield from tx_map.get("a")) == Some(1)
     assert (yield from tx_map.get("b")) == Some(20)
@@ -639,7 +636,7 @@ def test_find_first_should_return_first_matching_entry():
     )
 
     found = yield from tx_map.find_first(lambda session, _: session[0] == "user1")
-    assert found == ("session1", ("user1", "09:00"))
+    assert found == ("session3", ("user1", "11:00"))
 
     other = yield from tx_map.find_first(lambda session, _: session[0] not in ("user1", "user2"))
     assert other is None

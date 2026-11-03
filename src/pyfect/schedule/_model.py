@@ -106,7 +106,11 @@ def _since(now: float, then: float) -> float:
     and break the window arithmetic in ``fixed`` and ``windowed``."""
     if now == then or math.isinf(now) or math.isinf(then):
         return now - then
-    return (to_nanos(now) - to_nanos(then)) / 1_000_000_000
+    nanos = to_nanos(now) - to_nanos(then)
+    try:
+        return nanos / 1_000_000_000
+    except OverflowError:  # past float range, where JavaScript's ``-`` saturates
+        return math.inf if nanos > 0 else -math.inf
 
 
 class _MetadataCounter:

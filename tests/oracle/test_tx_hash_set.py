@@ -2,12 +2,13 @@
 
 Each test's docstring is the Effect test title. Module functions are methods
 (``TxHashSet.add(s, "c")`` is ``s.add("c")``); a ``HashSet`` is a
-``frozenset``; ``isTxHashSet`` is ``isinstance``; a custom ``Equal`` value
+``pyfect.hash_set.HashSet``; ``isTxHashSet`` is ``isinstance``; a custom ``Equal`` value
 is a class with ``__eq__`` and ``__hash__``.
 """
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.hash_set import HashSet
 
 from ._tx import in_tx
 
@@ -104,7 +105,7 @@ def test_from_iterable_creates_independent_sets_on_each_execution():
 @in_tx
 def test_from_hash_set_creates_tx_hash_set_from_hash_set():
     """fromHashSet creates TxHashSet from HashSet"""
-    tx_set = yield from fx.TxHashSet.from_hash_set(frozenset({"foo", "bar", "baz"}))
+    tx_set = yield from fx.TxHashSet.from_hash_set(HashSet.make("foo", "bar", "baz"))
     assert (yield from tx_set.size()) == 3
     assert (yield from tx_set.has("foo")) is True
     assert (yield from tx_set.has("bar")) is True

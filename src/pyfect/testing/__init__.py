@@ -29,6 +29,9 @@ take no real time::
 - ``assert_exit_success`` and friends: failures print ``Cause.pretty()``;
   ``assert_exit_fail(exit, error)`` compares a failure by its error alone.
 - ``SchemaAsserts``: decode, encode and make assertions for a schema.
+- ``prop`` / ``effect_prop`` / ``live_prop``: property tests over schemas
+  and Hypothesis strategies (``it.prop`` / ``it.effect.prop`` /
+  ``it.live.prop``).
 
 If every fiber ends up waiting with nothing to wake them, synchronous runs
 raise ``StalledError`` instead of hanging. A woken fiber that never suspends
@@ -66,14 +69,17 @@ from pyfect.testing._console import (
 from pyfect.testing._decorators import TestBody, TestDecorator, effect, live
 from pyfect.testing._flaky import flaky
 from pyfect.testing._layers import Services, effect_fixture, layer_fixture
+from pyfect.testing._prop import Arbitrary, PropertyFalsifiedError, effect_prop, live_prop, prop
 from pyfect.testing._runners import run_test, run_test_async, run_test_async_exit, run_test_exit
 from pyfect.testing._runtime import TestTimeoutError
 from pyfect.testing._schema import SchemaAsserts, SchemaCheck
 
 __all__ = [
+    "Arbitrary",
     "BusyFiberWarning",
     "ClockNotAdvancedWarning",
     "Entry",
+    "PropertyFalsifiedError",
     "SchemaAsserts",
     "SchemaCheck",
     "Services",
@@ -91,11 +97,14 @@ __all__ = [
     "assert_success",
     "effect",
     "effect_fixture",
+    "effect_prop",
     "error_lines",
     "flaky",
     "layer_fixture",
     "live",
+    "live_prop",
     "log_lines",
+    "prop",
     "run_test",
     "run_test_async",
     "run_test_async_exit",

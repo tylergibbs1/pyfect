@@ -17,6 +17,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Iterator
 
+from pyfect import _js as js
 from pyfect._js import js_sort_key
 from pyfect._string_hash import string_hash
 from pyfect.primary_key import PrimaryKey
@@ -32,7 +33,7 @@ def _shard_hash(shard: int) -> int:
 
 
 def _js_round(x: float) -> int:
-    return math.floor(x + 0.5)
+    return int(js.round(x))
 
 
 def _normalize_count(n: float) -> int:

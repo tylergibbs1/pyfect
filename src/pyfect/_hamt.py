@@ -5,7 +5,9 @@ Entries are keyed by an ``equal_key`` (``pyfect._equal``), already hashable
 and ``==`` exactly when Effect's ``Equal.equals`` is. Every update copies
 only the nodes on the path to its entry, so it costs about
 ``log32(size)`` and shares the rest with the old trie. ``None`` is the
-empty trie. Iteration follows the hashes, as Effect's does.
+empty trie. Hashes are Effect's (``pyfect._effect_hash``), 32 bits read five
+at a time from the low end as Effect's trie reads them, so entries sit and
+iterate in Effect's order.
 """
 
 from __future__ import annotations
@@ -13,9 +15,11 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterator
 from typing import NamedTuple
 
+from pyfect._effect_hash import effect_hash
+from pyfect._js import same_value
+
 _BITS = 5
 _MASK = (1 << _BITS) - 1
-_HASH_BITS = 64
 
 
 class Entry[K, V](NamedTuple):
@@ -49,7 +53,7 @@ type Node = _Bitmap | _Collision | Entry[object, object]
 
 
 def hash_of(ident: Hashable) -> int:
-    return hash(ident) & ((1 << _HASH_BITS) - 1)
+    return effect_hash(ident)
 
 
 def find(node: Node | None, hash: int, ident: Hashable) -> Entry[object, object] | None:
@@ -73,14 +77,15 @@ def find(node: Node | None, hash: int, ident: Hashable) -> Entry[object, object]
 
 
 def insert(node: Node | None, entry: Entry[object, object], shift: int = 0) -> Node:  # noqa: PLR0911
-    """``node`` with ``entry``, replacing the one of an equal ``ident``. An
-    existing entry keeps its key, as Effect's ``set`` does."""
+    """``node`` with ``entry``, replacing the one of an equal ``ident``; the
+    same node when that entry already holds this value (``Object.is``, as
+    Effect's). An existing entry keeps its key."""
     match node:
         case None:
             return entry
         case Entry():
             if node.hash == entry.hash and node.ident == entry.ident:
-                if node.value is entry.value:
+                if same_value(node.value, entry.value):
                     return node
                 return Entry(node.hash, node.ident, node.key, entry.value)
             return _merge(node, entry, shift)
@@ -89,7 +94,7 @@ def insert(node: Node | None, entry: Entry[object, object], shift: int = 0) -> N
                 return _merge(node, entry, shift)
             for i, old in enumerate(node.entries):
                 if old.ident == entry.ident:
-                    if old.value is entry.value:
+                    if same_value(old.value, entry.value):
                         return node
                     kept = Entry(old.hash, old.ident, old.key, entry.value)
                     return _Collision(node.hash, (*node.entries[:i], kept, *node.entries[i + 1 :]))

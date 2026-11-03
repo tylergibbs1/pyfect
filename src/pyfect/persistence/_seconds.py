@@ -18,7 +18,7 @@ def _is_seconds(value: object) -> TypeIs[Seconds]:
 
 
 def _round_away(value: float) -> int:
-    return int(math.copysign(math.floor(abs(value) + 0.5), value))
+    return int(math.copysign(js.round(abs(value)), value))
 
 
 def whole_nanos(millis: float) -> float:

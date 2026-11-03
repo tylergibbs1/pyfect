@@ -33,7 +33,7 @@ def _key_values(quote: Callable[[str], str]) -> Callable[[Options], str]:
         fiber = options.fiber
         parts = [
             pair("timestamp", iso_millis(options.date)),
-            pair("level", options.log_level.name),
+            pair("level", str(options.log_level).upper()),
             pair("fiber", f"#{fiber.id}"),
         ]
         parts.extend(pair("message", text(m)) for m in options.message)
@@ -82,7 +82,7 @@ def _structured(options: Options) -> StructuredLog:
             if len(items) == 1
             else [structured_message(m) for m in items]
         ),
-        "level": options.log_level.name,
+        "level": str(options.log_level).upper(),
         "timestamp": iso_millis(options.date),
         "annotations": {
             k: structured_message(v) for k, v in fiber.get_ref(CurrentLogAnnotations).items()

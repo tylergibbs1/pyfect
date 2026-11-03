@@ -120,3 +120,20 @@ def test_up_to_duration_stops_after_an_infinite_delay():
         return (yield from running.join())
 
     assert testing.run_test(scenario) == math.inf
+
+
+def test_elapsed_between_instants_past_float_range_is_infinite():
+    """``during`` stepped at -1.7e308 s and then 1.7e308 s: the elapsed time
+    passes float range, and Effect's ``now - start`` is ``Infinity`` (Python
+    raised ``OverflowError`` dividing the nanosecond difference)."""
+
+    @fx.gen
+    def go():
+        step = yield from schedule.to_step(schedule.during(math.inf))
+        first = yield from step(-1.7e308, None)
+        second = yield from step(1.7e308, None)
+        return first, second
+
+    first, second = testing.run_test(go)
+    assert isinstance(first, Continue) and first.output == 0
+    assert isinstance(second, Continue) and second.output == math.inf and second.delay == 0
