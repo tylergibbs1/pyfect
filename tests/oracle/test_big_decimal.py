@@ -6,14 +6,19 @@ are ``BigDecimal | None``, ``Order`` is ``compare`` and ``Equivalence`` is
 ``==``; dual functions are methods.
 
 Omitted: ``toJSON()`` and ``inspect`` (no JSON or Node inspection protocol;
-``repr`` is covered by ``toString()``), and the skipped property-based suite.
+``repr`` is covered by ``toString()``). Effect skips its property-based
+suite for speed; it is ported here with ``testing.prop`` at Hypothesis's
+default number of runs.
 """
 
 from __future__ import annotations
 
-import pytest
+from decimal import Decimal
 
-from pyfect import big_decimal
+import pytest
+from hypothesis import strategies as st
+
+from pyfect import big_decimal, testing
 from pyfect._equal import equals
 from pyfect.big_decimal import BigDecimal, RoundingMode
 
@@ -719,3 +724,57 @@ def test_round_half_odd() -> None:
     _rounds(
         "half-odd", [("145", -1, "150"), ("-2.5", 0, "-3"), ("1.85", 1, "1.9"), ("2.4", 0, "2")]
     )
+
+
+# Property based testing (``describe.skip`` in Effect)
+
+_INT32 = st.integers(-(2**31), 2**31 - 1)
+_ARB_WITH_ZERO = st.one_of(
+    st.just(big_decimal.make_normalized_unsafe(0, 0)),
+    st.tuples(st.integers(), _INT32).map(lambda vs: make(*vs)),
+    st.tuples(st.integers(), _INT32).map(lambda vs: make(*vs)),
+    st.tuples(st.integers(), _INT32).map(lambda vs: make(*vs)),
+)
+
+
+def _js_to_exponential(n: float) -> str:
+    """``Number.prototype.toExponential()`` with no digit count: the shortest
+    round-trip digits, as ``repr`` gives them."""
+    if n == 0:
+        return "0e+0"
+    sign, digits, exponent = Decimal(repr(n)).normalize().as_tuple()
+    assert isinstance(exponent, int)
+    text = "".join(map(str, digits))
+    mantissa = text[0] + (f".{text[1:]}" if len(text) > 1 else "")
+    power = exponent + len(text) - 1
+    return f"{'-' if sign else ''}{mantissa}e{'+' if power >= 0 else '-'}{abs(power)}"
+
+
+@testing.prop(_ARB_WITH_ZERO)
+def test_unsafe_from_string_and_format_should_be_inverses(bd: BigDecimal) -> bool:
+    """unsafeFromString and format should be inverses"""
+    return big_decimal.from_string_unsafe(bd.format()) == bd
+
+
+@testing.prop(st.floats(width=32, allow_nan=False, allow_infinity=False))
+def test_to_exponential_should_harmonize_with_number_to_exponential(n: float) -> bool:
+    """toExponential should harmonize with Number.prototype.toExponential"""
+    return _js_to_exponential(n) == big_decimal.from_number_unsafe(n).to_exponential()
+
+
+def test_js_to_exponential_matches_node() -> None:
+    """The reference above gives what Node printed for these numbers."""
+    printed = [
+        (0.0, "0e+0"),
+        (-0.0, "0e+0"),
+        (-1.0, "-1e+0"),
+        (0.1, "1e-1"),
+        (3.4028234663852886e38, "3.4028234663852886e+38"),
+        (123456.7, "1.234567e+5"),
+        (-0.000123, "-1.23e-4"),
+        (1e21, "1e+21"),
+        (5e-7, "5e-7"),
+        (0.30000001192092896, "3.0000001192092896e-1"),
+    ]
+    for n, text in printed:
+        assert _js_to_exponential(n) == text

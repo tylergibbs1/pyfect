@@ -31,8 +31,9 @@ Omitted, with the reason:
   message-only constructor to port.
 - ``isDone`` "returns true for Done values" / "returns false for other
   values" and ``DoneTypeId``: ``isinstance(x, fx.Done)`` is the guard.
-- ``IllegalArgumentError``, ``ExceededCapacityError``: not ported yet; no
-  v4 queue strategy raises ``ExceededCapacityError``.
+- ``IllegalArgumentError`` / ``ExceededCapacityError``: ``_tag`` is the
+  class (``type(error).__name__``); the ``is*`` "returns false" cases are
+  ``isinstance``.
 """
 
 import traceback
@@ -527,6 +528,58 @@ def test_creates_an_error_without_message() -> None:
 def test_is_an_instance_of_error() -> None:
     """is an instance of Error"""
     assert isinstance(fx.NoSuchElementException(), Exception)
+
+
+# IllegalArgumentError
+
+
+def test_illegal_argument_error_creates_an_error_with_tag_and_message() -> None:
+    """creates an error with _tag and message"""
+    error = fx.IllegalArgumentError("bad arg")
+    assert type(error).__name__ == "IllegalArgumentError"
+    assert str(error) == "bad arg"
+
+
+def test_illegal_argument_error_creates_an_error_without_message() -> None:
+    """creates an error without message"""
+    assert str(fx.IllegalArgumentError()) == ""
+
+
+def test_illegal_argument_error_is_an_instance_of_error() -> None:
+    """is an instance of Error"""
+    assert isinstance(fx.IllegalArgumentError(), Exception)
+
+
+def test_returns_true_for_illegal_argument_error_instances() -> None:
+    """returns true for IllegalArgumentError instances"""
+    assert isinstance(fx.IllegalArgumentError(), fx.IllegalArgumentError)
+    assert not isinstance(ValueError(), fx.IllegalArgumentError)
+
+
+# ExceededCapacityError
+
+
+def test_exceeded_capacity_error_creates_an_error_with_tag_and_message() -> None:
+    """creates an error with _tag and message"""
+    error = fx.ExceededCapacityError("queue full")
+    assert type(error).__name__ == "ExceededCapacityError"
+    assert str(error) == "queue full"
+
+
+def test_exceeded_capacity_error_creates_an_error_without_message() -> None:
+    """creates an error without message"""
+    assert str(fx.ExceededCapacityError()) == ""
+
+
+def test_exceeded_capacity_error_is_an_instance_of_error() -> None:
+    """is an instance of Error"""
+    assert isinstance(fx.ExceededCapacityError(), Exception)
+
+
+def test_returns_true_for_exceeded_capacity_error_instances() -> None:
+    """returns true for ExceededCapacityError instances"""
+    assert isinstance(fx.ExceededCapacityError(), fx.ExceededCapacityError)
+    assert not isinstance(Exception(), fx.ExceededCapacityError)
 
 
 # UnknownError

@@ -1,5 +1,5 @@
 """Effect core A: constructors, errors, Exit, Cause, Result, Option, and the
-Filter / Predicate / Function modules they lean on."""
+Filter / Predicate / Function modules they lean on, and Effectable."""
 
 from api_coverage import Cluster, Module
 
@@ -304,8 +304,33 @@ FUNCTION_MODULE = Module(
     },
 )
 
+EFFECTABLE_RULE = "`Effectable.Mixin(Base)` and `Effectable.Prototype`"
+
+EFFECTABLE = Module(
+    "Effectable",
+    "effect/src/Effectable.ts",
+    ("pyfect.effectable",),
+    pythonic={
+        "Mixin": (EFFECTABLE_RULE, "`class Boxed(effectable.Class[int], Box)`"),
+        "Prototype": (EFFECTABLE_RULE, "a subclass of `effectable.Class`"),
+    },
+)
+
 CLUSTER = Cluster(
     name="core-a",
-    title="Effect core A (Effect, Exit, Cause, Result, Option, Filter, Predicate, Function)",
-    modules=(EFFECT, EXIT, CAUSE, RESULT, OPTION, FILTER_MODULE, PREDICATE_MODULE, FUNCTION_MODULE),
+    title=(
+        "Effect core A (Effect, Effectable, Exit, Cause, Result, Option, Filter, Predicate,"
+        " Function)"
+    ),
+    modules=(
+        EFFECT,
+        EFFECTABLE,
+        EXIT,
+        CAUSE,
+        RESULT,
+        OPTION,
+        FILTER_MODULE,
+        PREDICATE_MODULE,
+        FUNCTION_MODULE,
+    ),
 )

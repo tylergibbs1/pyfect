@@ -28,6 +28,8 @@ take no real time::
   with a fresh one, read back with ``log_lines`` / ``error_lines``.
 - ``assert_exit_success`` and friends: failures print ``Cause.pretty()``;
   ``assert_exit_fail(exit, error)`` compares a failure by its error alone.
+- ``TestCrypto``: a seeded, repeatable ``Crypto`` that keeps the real
+  digests.
 - ``SchemaAsserts``: decode, encode and make assertions for a schema.
 - ``prop`` / ``effect_prop`` / ``live_prop``: property tests over schemas
   and Hypothesis strategies (``it.prop`` / ``it.effect.prop`` /
@@ -66,6 +68,7 @@ from pyfect.testing._console import (
     log_lines,
     test_console,
 )
+from pyfect.testing._crypto import TestCrypto
 from pyfect.testing._decorators import TestBody, TestDecorator, effect, live
 from pyfect.testing._flaky import flaky
 from pyfect.testing._layers import Services, effect_fixture, layer_fixture
@@ -87,6 +90,7 @@ __all__ = [
     "TestBody",
     "TestClock",
     "TestConsole",
+    "TestCrypto",
     "TestDecorator",
     "TestTimeoutError",
     "adjust",

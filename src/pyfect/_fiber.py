@@ -41,6 +41,7 @@ before the fiber completes.
 
 from __future__ import annotations
 
+import contextvars
 import itertools
 import math
 import threading
@@ -243,6 +244,7 @@ class Fiber(Generic[A_co, E_co]):
 
     __slots__ = (
         "__weakref__",
+        "_async_context",
         "_children",
         "_ctx",
         "_exit",
@@ -290,6 +292,9 @@ class Fiber(Generic[A_co, E_co]):
         self._waiting: _Wait | None = None
         self._yielded: _Yielded | None = None
         self._phase: _Phase = "pending"
+        # The ``contextvars`` context the fiber parked or paused in, which
+        # it resumes in (Effect's captured async context).
+        self._async_context: contextvars.Context | None = None
         self._set_context(context)
         if self._runtime_metrics is not None:
             self._runtime_metrics.record_fiber_start(self._ctx)
@@ -473,10 +478,17 @@ class Fiber(Generic[A_co, E_co]):
         if self._exit is not None:
             return  # finished early by an interrupt; a stale start or resume
         self._phase = "running"
+        parked_in, self._async_context = self._async_context, None
         try:
-            self._loop(start)
+            if parked_in is None:
+                self._loop(start)
+            else:
+                parked_in.run(self._loop, start)
         finally:
             self._phase = "idle"
+            if self._exit is None:
+                # Parked or paused: resume in this context, not the waker's.
+                self._async_context = contextvars.copy_context() if parked_in is None else parked_in
 
     def _loop(self, start: Step) -> None:
         cur: Step = start

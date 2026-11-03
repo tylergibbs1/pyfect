@@ -7980,3 +7980,28 @@ def check_schema_leftover_values() -> None:
     assert_type(S.decode_unknown_sync(S.HostFromString)("a.b"), host.Host)
     assert_type(S.decode_unknown_sync(S.DnsRecord)(None), dns.DnsRecord)
     assert_type(S.decode_unknown_sync(S.DnsMxRecord)(None), dns.Mx)
+
+
+def check_effectable() -> None:
+    from pyfect import effectable
+
+    class Answer(effectable.Class[int, str]):
+        def as_effect(self) -> fx.Effect[int, str]:
+            return fx.succeed(42)
+
+    class Wrong(effectable.Class[int]):
+        def as_effect(self) -> fx.Effect[str]:  # pyright: ignore[reportIncompatibleMethodOverride]
+            return fx.succeed("no")
+
+    answer = Answer()
+    assert_type(answer.map(lambda n: n + 1), fx.Effect[int, str])
+    wide: fx.Effect[int | None, str | ValueError] = answer
+    assert_type(Answer().catch_all(lambda _: fx.succeed(0)), fx.Effect[int, Never, Never])
+    del wide, Wrong
+
+
+def check_test_crypto() -> None:
+    from pyfect.crypto import Crypto, CryptoService
+
+    assert_type(fx.testing.TestCrypto.make("seed"), fx.Effect[CryptoService, Never, Crypto])
+    assert_type(fx.testing.TestCrypto.layer(1), fx.Layer[Crypto, Never, Crypto])

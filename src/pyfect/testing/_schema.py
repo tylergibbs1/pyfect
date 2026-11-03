@@ -8,7 +8,11 @@
 ``succeed(input)`` expects the input back; ``succeed(input, expected)`` a
 given value. ``fail(input, message)`` expects a schema failure whose issue
 prints as ``message``. A defect fails the assertion with the whole cause.
-``verify_generation()`` checks the values ``to_strategy`` draws.
+``succeed_effect`` / ``fail_effect`` are the same assertions as effects
+that parse each time they run, with the running fiber's services: a
+mismatch is an ``AssertionError`` defect. ``verify_generation()`` checks
+the values ``to_strategy`` draws; ``verify_round_trip()`` that each one
+encodes and decodes back to an equivalent value.
 """
 
 from __future__ import annotations
@@ -19,10 +23,11 @@ from typing import Generic, Never, TypeVar, Unpack
 
 from pyfect._core import Effect
 from pyfect._extras import missing_extra
+from pyfect.cause import Cause, Die, Fail, from_reasons
 from pyfect.context import TagLike
-from pyfect.effect import provide_service
+from pyfect.effect import fail_cause, provide_service, succeed, suspend, sync
 from pyfect.exit import Exit, Failure, Success
-from pyfect.result import Ok
+from pyfect.result import Err, Ok, Result
 from pyfect.run import run_sync_exit
 from pyfect.schema import (
     Codec,
@@ -31,6 +36,7 @@ from pyfect.schema import (
     decode_unknown_effect,
     encode_unknown_effect,
     is_,
+    to_equivalence,
     to_strategy,
 )
 from pyfect.testing._assertions import describe_exit
@@ -39,6 +45,37 @@ _SAME = object()
 R_co = TypeVar("R_co", covariant=True)
 RD_co = TypeVar("RD_co", covariant=True)
 RE_co = TypeVar("RE_co", covariant=True)
+
+
+def _schema_result[R](
+    eff: Effect[object, SchemaError, R],
+) -> Effect[Result[object, str], Never, R]:
+    """``Ok(value)``, or ``Err(message)`` for a failure made only of schema
+    errors; any other cause stays a failure, its typed errors made defects
+    (Effect's ``schemaResult``)."""
+
+    def from_exit(ex: Exit[object, SchemaError]) -> Effect[Result[object, str], Never, R]:
+        if isinstance(ex, Success):
+            return succeed(Ok(ex.value))
+        reasons = ex.cause.reasons
+        if reasons and all(isinstance(r, Fail) for r in reasons):
+            first = reasons[0]
+            assert isinstance(first, Fail)
+            return succeed(Err(first.error.message))
+        return fail_cause(_as_defects(ex.cause))
+
+    return eff.exit().flat_map(from_exit)
+
+
+def _as_defects(cause: Cause[SchemaError]) -> Cause[Never]:
+    return from_reasons(
+        Die(r.error, annotations=r.annotations) if isinstance(r, Fail) else r for r in cause.reasons
+    )
+
+
+def _assert_result(actual: Result[object, str], expected: Result[object, str]) -> None:
+    if actual != expected:
+        raise AssertionError(f"expected {expected!r}, got {actual!r}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +98,23 @@ class SchemaCheck(Generic[R_co]):
         ex = self.run(input)
         if not (isinstance(ex, Success) and ex.value == want):
             raise AssertionError(f"expected Success({want!r}), got {describe_exit(ex)}")
+
+    def succeed_effect(self, input: object, expected: object = _SAME) -> Effect[None, Never, R_co]:
+        """``succeed`` as an effect, parsing each time it runs."""
+        want: Result[object, str] = Ok(input if expected is _SAME else expected)
+        return self._assert_effect(input, want)
+
+    def fail_effect(self, input: object, message: str) -> Effect[None, Never, R_co]:
+        """``fail`` as an effect, parsing each time it runs."""
+        return self._assert_effect(input, Err(message))
+
+    def _assert_effect(
+        self, input: object, expected: Result[object, str]
+    ) -> Effect[None, Never, R_co]:
+        parse = self.parse
+        return suspend(lambda: _schema_result(parse(input))).flat_map(
+            lambda actual: sync(lambda: _assert_result(actual, expected))
+        )
 
     def fail(self: SchemaCheck[Never], input: object, message: str) -> None:
         ex = self.run(input)
@@ -94,6 +148,41 @@ class SchemaAsserts(Generic[RD_co, RE_co]):
 
     def encoding(self, **options: Unpack[ParseOptions]) -> SchemaCheck[RE_co]:
         return SchemaCheck(encode_unknown_effect(self.schema, **options))
+
+    def verify_round_trip(
+        self: SchemaAsserts[Never, Never], *, runs: int = 100, seed: int | None = None
+    ) -> None:
+        """Each value ``to_strategy`` draws encodes, then decodes to a value
+        the schema's equivalence calls equal (Effect's ``verifyRoundTrip``;
+        needs Hypothesis). A failing value is shrunk and reported."""
+        try:
+            from hypothesis import HealthCheck, given, settings
+            from hypothesis import seed as hypothesis_seed
+        except ImportError as error:
+            raise missing_extra("verify_round_trip", "hypothesis") from error
+
+        encode = encode_unknown_effect(self.schema)
+        decode = decode_unknown_effect(self.schema)
+        equivalent = to_equivalence(self.schema)
+
+        @settings(
+            max_examples=runs,
+            database=None,
+            deadline=None,
+            suppress_health_check=[HealthCheck.too_slow],
+        )
+        @given(to_strategy(self.schema))
+        def check(value: object) -> None:
+            ex = run_sync_exit(_schema_result(encode(value).flat_map(decode)))
+            if not isinstance(ex, Success):
+                raise AssertionError(f"the round trip of {value!r} died: {describe_exit(ex)}")
+            match ex.value:
+                case Ok(back) if equivalent(back, value):
+                    return
+                case result:
+                    raise AssertionError(f"{value!r} did not round-trip: {result!r}")
+
+        (check if seed is None else hypothesis_seed(seed)(check))()
 
     def verify_generation(self, count: int = 30) -> None:
         """``to_strategy`` draws ``count`` values, each one of the schema's
