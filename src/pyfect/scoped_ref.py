@@ -50,8 +50,8 @@ class ScopedRef[A]:
 
         def body():
             owner = yield from Scope()
-            scope = owner._fork_now()
-            generation = scope._fork_now()
+            scope = owner.fork_unsafe()
+            generation = scope.fork_unsafe()
             value: T = yield from _in_scope(acquire, generation).tap_cause(
                 lambda cause: scope.close(Failure(cause))
             )
@@ -84,7 +84,7 @@ class ScopedRef[A]:
         require_effect(acquire, "acquire")
 
         def body():
-            generation = self._scope._fork_now()
+            generation = self._scope.fork_unsafe()
 
             def discard(cause: Any) -> Effect[None]:
                 return generation.close(Failure(cause))

@@ -128,7 +128,7 @@ def broadcast_n(
         parent = yield Scope()
         streams: list[AnyStream_] = []
         for _ in range(max(0, n)):
-            scope = parent._fork_now()
+            scope = parent.fork_unsafe()
             subscription = yield pubsub.subscribe().pipe(provide_service(Scope, scope))
             reader: Any = channel.from_effect_take(subscription.take()).on_exit(scope.close)
             streams.append(Stream(reader))

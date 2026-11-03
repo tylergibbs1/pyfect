@@ -3,7 +3,7 @@ awaitAllChildren, fork, forkDaemon, forkIn and forkScoped.
 
 Each test's docstring is the Effect test title. ``forkChild`` is ``fork``,
 ``forkDetach`` is ``fork_daemon``, and ``Scope.provide(scope)`` is
-``provide_service(fx.Scope, scope)``. A resume goes through the scheduler
+``fx.scope.provide(scope)``. A resume goes through the scheduler
 in pyfect where Effect runs the resumed fiber at once, so "does not await
 preexisting children in the same fiber" yields once more before polling.
 """
@@ -218,7 +218,7 @@ def _fork_with(
         )
     return eff.fork_scoped(
         start_immediately=start_immediately, uninterruptible=uninterruptible
-    ).pipe(fx.provide_service(fx.Scope, scope))
+    ).pipe(fx.scope.provide(scope))
 
 
 @pytest.mark.parametrize("fork", ["fork_in", "fork_scoped"])

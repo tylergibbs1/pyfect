@@ -351,7 +351,7 @@ def from_build[O, E = Never, R = Never](
 
     def child_scoped(memo: MemoMap, scope: CloseableScope) -> Effect[Context, Any, Any]:
         def run() -> Effect[Context, Any, Any]:
-            layer_scope = scope._fork_now()
+            layer_scope = scope.fork_unsafe()
             return build(memo, layer_scope).on_exit(
                 lambda ex: layer_scope.close(ex) if isinstance(ex, Failure) else _VOID
             )

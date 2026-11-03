@@ -18,6 +18,9 @@ A fiber reads its scheduler and its yield budget from its context, as
 Effect does, so they can be provided per effect::
 
     eff.pipe(provide_service(MaxOpsBeforeYield, 16))
+
+``ShouldYield`` replaces the budget with a function deciding when the
+fiber yields (Effect's ``Scheduler.shouldYield``).
 """
 
 from __future__ import annotations
@@ -29,11 +32,14 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from typing import Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from pyfect._wake_tracking import Tracking, WakeTracker
 from pyfect.context import Reference
 from pyfect.duration import Seconds
+
+if TYPE_CHECKING:
+    from pyfect._fiber import Fiber
 
 type Task = Callable[[], None]
 type Cancel = Callable[[], None]
@@ -86,6 +92,24 @@ class PreventSchedulerYield(Reference[bool]):
     @classmethod
     def default(cls) -> bool:
         return False
+
+
+type YieldCheck = Callable[[Fiber[Any, Any], int], bool]
+"""Whether a fiber yields now, given the fiber and the steps it has taken
+since it last started running."""
+
+
+class ShouldYield(Reference[YieldCheck | None]):
+    """Decides when a fiber gives other fibers a turn, in place of
+    ``MaxOpsBeforeYield`` (Effect's ``Scheduler.shouldYield``). It is asked
+    before each step but the first of every run, so a fiber always makes
+    progress; ``PreventSchedulerYield`` turns it off. A raise is a defect
+    of the fiber. ``None`` (the default) compares the steps with the
+    budget."""
+
+    @classmethod
+    def default(cls) -> YieldCheck | None:
+        return None
 
 
 class _Timer:
@@ -261,7 +285,9 @@ __all__ = [
     "MaxOpsBeforeYield",
     "PreventSchedulerYield",
     "Scheduler",
+    "ShouldYield",
     "StalledError",
     "SyncScheduler",
     "Task",
+    "YieldCheck",
 ]

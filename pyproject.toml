@@ -101,7 +101,7 @@ filterwarnings = [
 
 [tool.pyright]
 typeCheckingMode = "strict"
-include = ["src", "tests", "examples", "benchmarks", "website/snippets"]
+include = ["src", "tests", "examples", "benchmarks", "scripts", "website/snippets"]
 reportUnnecessaryTypeIgnoreComment = true
 # Calling a deprecated API is an error.
 reportDeprecated = "error"

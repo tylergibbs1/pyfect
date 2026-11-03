@@ -77,7 +77,7 @@ def merge_all(
             return fiber.interrupt().and_then(closed).and_then(_Suspend(evict))
 
         def start(channel: AnyChannel) -> Effect[None, Any, Any]:
-            child_scope = forked._fork_now()
+            child_scope = forked.fork_unsafe()
             fiber_box: list[Fiber[Any, Any]] = []
 
             def finished(cause: Any) -> Effect[None]:
@@ -156,7 +156,7 @@ def merge(left: AnyChannel, right: AnyChannel, halt_strategy: HaltStrategy) -> C
             return queue.fail_cause(cause).as_void() if halts else _VOID
 
         def run_side(side: str, channel: AnyChannel) -> Effect[Any]:
-            side_scope = forked._fork_now()
+            side_scope = forked.fork_unsafe()
 
             def stopped(cause: Any) -> Effect[None]:
                 # A failure beside the side's Done (a finalizer's defect)

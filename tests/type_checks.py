@@ -1271,6 +1271,111 @@ def check_option(o: fx.Option[int | None]) -> None:
             pass
 
 
+def is_int_or_str(x: int | str) -> TypeIs[int]:
+    return isinstance(x, int)
+
+
+def check_result_long_tail(r: fx.Result[int, str], mixed: fx.Result[int | str, str]) -> None:
+    assert_type(r.merge(), int | str)
+    assert_type(r.flip(), fx.Err[int] | fx.Ok[str])
+    assert_type(r.tap(print), fx.Ok[int] | fx.Err[str])
+    assert_type(r.and_then(fx.Ok("x")), fx.Ok[str] | fx.Err[Never] | fx.Err[str])
+    assert_type(r.or_else(lambda e: fx.Ok(len(e))), fx.Ok[int] | fx.Err[Never])
+    assert_type(r.get_or_none(), int | None)
+    assert_type(r.get_or_raise_with(ValueError), int)
+    # A TypeIs predicate narrows the success.
+    assert_type(mixed.filter_or_fail(is_int_or_str, str), fx.Ok[int] | fx.Err[str])
+    assert_type(r.filter_or_fail(lambda n: n > 0, str), fx.Ok[int] | fx.Err[str])
+    assert_type(fx.result.lift_predicate(1, is_int_or_str, str), fx.Ok[int] | fx.Err[str])
+    assert_type(fx.result.from_option(fx.Some(1), lambda: "e"), fx.Ok[int] | fx.Err[str])
+    assert_type(fx.result.succeed_some(1), fx.Ok[fx.Some[int]])
+    assert_type(fx.result.transpose_option(fx.Some(r)), fx.Ok[fx.Some[int] | None] | fx.Err[str])
+    assert_type(fx.result.all_dict({"a": r}), fx.Ok[dict[str, int]] | fx.Err[str])
+    if fx.result.is_result(object()):
+        pass
+
+
+def check_option_long_tail(o: fx.Option[int], words: fx.Option[str]) -> None:
+    assert_type(fx.option.void, fx.Some[None] | None)
+    assert_type(fx.option.as_(o, "a"), fx.Some[str] | None)
+    assert_type(fx.option.and_then(o, words), fx.Some[str] | None)
+    assert_type(fx.option.flatten(fx.Some(o)), fx.Some[int] | None)
+    assert_type(fx.option.product(o, words), fx.Some[tuple[int, str]] | None)
+    assert_type(fx.option.all(o, words), fx.Some[tuple[int, str]] | None)
+    assert_type(fx.option.all_dict({"a": o}), fx.Some[dict[str, int]] | None)
+    assert_type(fx.option.zip_with(o, words, lambda n, w: w * n), fx.Some[str] | None)
+    assert_type(fx.option.or_else(o, lambda: words), fx.Some[int | str] | None)
+    assert_type(fx.option.or_else_result(o, lambda: words), fx.Some[fx.Result[str, int]] | None)
+    assert_type(fx.option.get_success(fx.Ok(1)), fx.Some[int] | None)
+    assert_type(fx.option.get_or_raise_with(o, ValueError), int)
+    assert_type(fx.option.flat_map_optional(words, lambda w: w or None), fx.Some[str] | None)
+    assert_type(fx.option.to_list(o), list[int])
+    assert_type(
+        fx.option.partition_map(o, lambda n: fx.Ok(str(n))),
+        tuple[fx.Some[str] | None, fx.Some[Never] | None],
+    )
+    mixed: fx.Option[int | str] = None
+    assert_type(fx.option.filter(mixed, is_int_or_str), fx.Some[int] | None)
+    assert_type(fx.option.lift_predicate(1, is_int_or_str), fx.Some[int] | None)
+    if fx.option.is_some(o):
+        assert_type(o, fx.Some[int])
+
+
+def check_exit_accessors(ex: fx.Exit[int, str]) -> None:
+    assert_type(ex.has_fails, bool)
+    assert_type(ex.find_error(), fx.Err[fx.Success[int]] | fx.Ok[str] | fx.Err[fx.Failure[str]])
+    assert_type(ex.find_defect(), BaseException | None)
+    assert_type(ex.get_success(), fx.Some[int] | None)
+    assert_type(ex.get_cause(), fx.Some[fx.Cause[str]] | None)
+    assert_type(ex.filter_value(), fx.Ok[int] | fx.Err[fx.Failure[str]])
+    assert_type(fx.exit.fail_cause(fx.cause.fail("e")), fx.Failure[str])
+
+
+def check_filters() -> None:
+    from pyfect import filters
+
+    def even(n: int) -> fx.Result[int, int]:
+        return fx.Ok(n) if n % 2 == 0 else fx.Err(n)
+
+    def halve(n: int) -> fx.Result[float, str]:
+        return fx.Ok(n / 2) if n else fx.Err("zero")
+
+    assert_type(filters.compose(even, halve), Callable[[int], fx.Result[float, int | str]])
+    assert_type(filters.zip(even, halve), Callable[[int], fx.Result[tuple[int, float], int | str]])
+    assert_type(filters.compose_passthrough(even, halve), Callable[[int], fx.Result[float, int]])
+    assert_type(
+        filters.from_predicate(is_int_or_str), Callable[[int | str], fx.Result[int, int | str]]
+    )
+    assert_type(filters.instance_of(str), Callable[[object], fx.Result[str, object]])
+    assert_type(filters.to_option(even), Callable[[int], fx.Option[int]])
+
+
+class _CoreADb(fx.Tag[str]): ...
+
+
+def check_effect_core_a(eff: fx.Effect[int, str, _CoreADb]) -> None:
+    def even(n: int) -> fx.Result[int, float]:
+        return fx.Ok(n) if n % 2 == 0 else fx.Err(n / 2)
+
+    assert_type(fx.succeed_none, fx.Effect[None])
+    assert_type(fx.succeed_some(1), fx.Effect[fx.Some[int]])
+    assert_type(eff.as_some(), fx.Effect[fx.Some[int], str, _CoreADb])
+    assert_type(eff.is_failure(), fx.Effect[bool, Never, _CoreADb])
+    assert_type(fx.with_fiber_succeed(lambda f: f.id), fx.Effect[int])
+    assert_type(
+        eff.filter_map_or_else(even, lambda x: fx.succeed(str(x))),
+        fx.Effect[int | str, str, _CoreADb],
+    )
+    assert_type(eff.filter_map_or_fail(even, str), fx.Effect[int, str, _CoreADb])
+    assert_type(
+        eff.filter_map_or_fail(even), fx.Effect[int, str | fx.NoSuchElementException, _CoreADb]
+    )
+    # set_context removes the services it provides from R.
+    assert_type(
+        eff.pipe(fx.set_context(fx.Context.make(_CoreADb, "db"))), fx.Effect[int, str, Never]
+    )
+
+
 def check_cause(c: fx.Cause[str]) -> None:
     assert_type(fx.cause.empty, fx.Cause[Never])
     assert_type(fx.cause.from_reasons([Fail(1), Die(ValueError())]), fx.Cause[int])
@@ -2284,6 +2389,68 @@ def check_traced_fn() -> None:
 
     assert_type(lookup("u"), fx.Effect[str, NotFound, Primary])
     lookup(1)  # pyright: ignore[reportArgumentType]
+
+
+def check_fn_pipeables() -> None:
+    def find(user_id: str):
+        db = yield from Primary()
+        value = db.get(user_id)
+        if value is None:
+            return (yield from NotFound(user_id))
+        return value
+
+    # Each pipeable sees the previous result; one taking more parameters
+    # also gets the call's arguments.
+    def tagged(
+        eff: fx.Effect[str, NotFound, Primary], user_id: str
+    ) -> fx.Effect[str, NotFound, Primary]:
+        return eff.map(lambda v: f"{user_id}={v}")
+
+    untraced = fx.fn_untraced(find, lambda eff: eff.map(len), lambda eff: eff.map(str))
+    assert_type(untraced("u"), fx.Effect[str, NotFound, Primary])
+    assert_type(fx.fn(find, tagged)("u"), fx.Effect[str, NotFound, Primary])
+    caught = fx.fn("find")(find, fx.catch_tag(NotFound, lambda _: fx.succeed("none")))
+    assert_type(caught("u"), fx.Effect[str, Never, Primary])
+    assert_type(fx.fn("count")(find, lambda _eff: 3)("u"), int)
+
+    # A pipeable's arguments must be the call's.
+    def wrong(eff: fx.Effect[str, NotFound, Primary], user_id: int) -> int:
+        return user_id
+
+    fx.fn(find, wrong)  # pyright: ignore[reportArgumentType]
+    # A pipeable must take what the one before gave.
+    fx.fn_untraced(find, lambda eff: eff.map(len), tagged)  # pyright: ignore[reportArgumentType]
+    fx.fn("find", find)  # pyright: ignore[reportArgumentType]
+
+
+def check_scope_use(
+    needs_scope: fx.Effect[int, NotFound, fx.Scope | Primary], scope: fx.CloseableScope
+) -> None:
+    assert_type(fx.scope.make(), fx.Effect[fx.CloseableScope])
+    assert_type(needs_scope.pipe(fx.scope.provide(scope)), fx.Effect[int, NotFound, Primary])
+    assert_type(needs_scope.pipe(fx.scope.use(scope)), fx.Effect[int, NotFound, Primary])
+    assert_type(fx.succeed(1).pipe(fx.scope.use(scope)), fx.Effect[int])
+    assert_type(scope.fork_unsafe("parallel"), fx.CloseableScope)
+    fx.scope.use(fx.Scope)  # pyright: ignore[reportArgumentType]
+    fx.scope.make("concurrent")  # pyright: ignore[reportArgumentType]
+
+
+def check_should_yield() -> None:
+    from pyfect.scheduler import ShouldYield
+
+    def every_four(_fiber: fx.Fiber[Any, Any], ops: int) -> bool:
+        return ops >= 4
+
+    assert_type(fx.void.pipe(fx.provide_service(ShouldYield, every_four)), fx.Effect[None])
+    fx.provide_service(ShouldYield, lambda _fiber: True)  # pyright: ignore[reportArgumentType]
+
+
+def check_runtime_error_attributes(ctx: fx.Context[Primary]) -> None:
+    from pyfect.run import get_error_exit_code, get_error_reported
+
+    assert_type(get_error_exit_code(ValueError()), int)
+    assert_type(get_error_reported("anything"), bool)
+    assert_type(ctx.get_or_none(Primary), Db | None)
 
 
 def check_layer_spans(built: layer.Layer[Primary, NotFound, Replica]) -> None:

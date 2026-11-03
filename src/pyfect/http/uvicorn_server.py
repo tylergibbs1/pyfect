@@ -246,7 +246,7 @@ def _serve(
         def body(fiber: Fiber[Any, Any]) -> Effect[None, Never, ScopeTag]:
             context: Context[Any] = fiber._context
             serve_scope = context.get_unsafe(ScopeTag)
-            requests: CloseableScope = serve_scope._fork_now("parallel")
+            requests: CloseableScope = serve_scope.fork_unsafe("parallel")
 
             def fork(
                 handled: Effect[None, Never, Any], request: Context[Any]

@@ -102,6 +102,6 @@ def test_supports_merging_the_current_value_on_reset():
         yield from scope.close(fx.Success(None))
         return (yield from CurrentValues())
 
-    result = yield from program.pipe(fx.provide_service(fx.Scope, scope))
+    result = yield from program.pipe(fx.scope.provide(scope))
     assert reset_values == [(), ("scoped",), ("scoped", "external")]
     assert result == ("external",)

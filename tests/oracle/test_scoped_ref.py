@@ -1,7 +1,7 @@
 """Ports of Effect's ``ScopedRef.test.ts``.
 
 Each test's docstring is the Effect test title. ``Scope.provide(scope)`` is
-``provide_service(fx.Scope, scope)`` and ``forkDetach`` is
+``fx.scope.provide(scope)`` and ``forkDetach`` is
 ``fork_daemon``. The ``utils/counter.ts`` helper is ``_Counter``. The last
 test checks ``ref.pipe(identity) === ref`` in Effect; pyfect's refs are not
 pipeable, so its port reads the value after the owning scope closed.
@@ -100,9 +100,7 @@ def test_owner_finalizers_registered_after_the_ref_still_see_a_live_value_after_
     """owner finalizers registered after the ref still see a live value after set"""
     log: list[str] = []
     owner = fx.CloseableScope()
-    ref = yield from fx.ScopedRef.from_acquire(_logged(log, 1)).pipe(
-        fx.provide_service(fx.Scope, owner)
-    )
+    ref = yield from fx.ScopedRef.from_acquire(_logged(log, 1)).pipe(fx.scope.provide(owner))
     yield from owner.add_finalizer(
         lambda _: ref.get().flat_map(lambda n: fx.sync(lambda: log.append(f"use {n}")))
     )
@@ -143,7 +141,7 @@ def test_releases_a_replacement_when_the_old_finalizer_defects():
             fx.succeed(0),
             lambda _a, _e: old_released.update(lambda n: n + 1).and_then(fx.die(defect)),
         )
-    ).pipe(fx.provide_service(fx.Scope, owner_scope))
+    ).pipe(fx.scope.provide(owner_scope))
 
     set_exit = yield from ref.set(
         fx.acquire_release(
@@ -166,7 +164,7 @@ def test_a_set_in_flight_when_the_owning_scope_closes_releases_its_value():
     """a set in flight when the owning scope closes releases its value"""
     released: list[int] = []
     owner = fx.CloseableScope()
-    ref = yield from fx.ScopedRef.make(lambda: 0).pipe(fx.provide_service(fx.Scope, owner))
+    ref = yield from fx.ScopedRef.make(lambda: 0).pipe(fx.scope.provide(owner))
     gate = yield from fx.Latch.make(False)
     setter = yield from ref.set(
         fx.acquire_release(gate.wait().as_(1), lambda n, _: fx.sync(lambda: released.append(n)))

@@ -10,12 +10,9 @@ thing being removed is known before the effect is seen.
 from __future__ import annotations
 
 import asyncio
-import functools
-import inspect
 from collections.abc import Awaitable, Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
-from functools import partial
-from typing import TYPE_CHECKING, Any, Never, Unpack, cast, overload
+from typing import Any, Never, overload
 
 from pyfect._catch import catch_all, catch_if, catch_tag
 from pyfect._catch_reason import catch_reason, catch_reasons, unwrap_reason
@@ -24,6 +21,8 @@ from pyfect._context_effects import (
     provide_context,
     provide_service_effect,
     service_option,
+    set_context,
+    update_context,
     update_service_scoped,
 )
 from pyfect._core import (
@@ -41,27 +40,44 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._fn import fn, fn_untraced, generator_function
 from pyfect._os_wait import os_wait
 from pyfect._root import loop_running_here, run_loop
-from pyfect._stack_frame import CurrentStackFrame, StackFrame, call_site
 from pyfect.cause import Cause
 from pyfect.cause import die as die_cause
 from pyfect.cause import fail as fail_cause_of
 from pyfect.cause import interrupt as interrupt_cause
-from pyfect.context import Context, TagLike, tag_class
+from pyfect.context import TagLike, tag_class
 from pyfect.errors import NoSuchElementException, UnknownError
 from pyfect.exit import Exit
 from pyfect.option import Option, Some
 from pyfect.result import Ok, Result
-
-if TYPE_CHECKING:
-    from pyfect.tracer import SpanOptions
 
 # --- constructors -------------------------------------------------------------
 
 
 def succeed[A](value: A) -> Effect[A]:
     return _Succeed(value)
+
+
+succeed_none: Effect[None] = _Succeed(None)
+"""Succeed with an absent ``Option``."""
+
+
+def succeed_some[A](value: A) -> Effect[Some[A]]:
+    return _Succeed(Some(value))
+
+
+def with_fiber[A, E = Never, R = Never](
+    f: Callable[[Fiber[Any, Any]], Effect[A, E, R]],
+) -> Effect[A, E, R]:
+    """The effect ``f`` builds from the fiber running it."""
+    return _WithFiber(f)
+
+
+def with_fiber_succeed[A](f: Callable[[Fiber[Any, Any]], A]) -> Effect[A]:
+    """Succeed with ``f`` of the fiber running it; a raise is a defect."""
+    return _WithFiber(lambda fiber: _Sync(lambda: f(fiber)))
 
 
 def fail[E](error: E) -> Effect[Never, E]:
@@ -353,135 +369,8 @@ def gen[A, E = Never, R = Never](
             user = yield from find_user("u1")
             return user.name
     """
-    _generator_function(f, "gen")
+    generator_function(f, "gen")
     return _Gen(f)
-
-
-@overload
-def fn[**P, A, E = Never, R = Never](
-    f: Callable[P, Generator[Effect[Any, E, R], Any, A]], /
-) -> Callable[P, Effect[A, E, R]]: ...
-@overload
-def fn(name: str, /, **options: Unpack[SpanOptions]) -> _Traced: ...
-def fn(
-    f: Callable[..., Generator[Effect[Any, Any, Any], Any, Any]] | str,
-    /,
-    **options: Unpack[SpanOptions],
-) -> Callable[..., Effect[Any, Any, Any]] | _Traced:
-    """Turn a generator function with parameters into a function that
-    returns an effect::
-
-        @fn
-        def find_user(user_id: str):
-            db = yield from Database()
-            ...
-
-    ``@fn("name")`` (with span options as keywords) also runs every call
-    inside a span of that name, the parent of the spans made inside.
-
-    Each call of a named function also runs inside a stack frame for its
-    call site under one for the definition (``"name (definition)"``), so a
-    failure inside records both (``tracer.StackTrace``). The bare ``@fn``
-    is Effect's ``fnUntraced``: no span and no frames.
-    """
-    if isinstance(f, str):
-        return _Traced(f, options, call_site(1))
-    _generator_function(f, "fn")
-
-    @functools.wraps(f)
-    def wrapper(*args: Any, **kwargs: Any) -> Effect[Any, Any, Any]:
-        return _Gen(lambda: f(*args, **kwargs))
-
-    return wrapper
-
-
-def _traced(
-    f: Callable[..., Generator[Effect[Any, Any, Any], Any, Any] | Effect[Any, Any, Any]],
-    name: str,
-    definition: Callable[[], str | None],
-    span: SpanOptions,
-) -> Callable[..., Effect[Any, Any, Any]]:
-    """``f`` as a function returning an effect that runs inside a span
-    ``name`` and a stack frame for the call (``name`` at the call site)
-    under one for the definition."""
-    from pyfect.tracer._spans import in_parent_span, span_using
-
-    definition_name = f"{name} (definition)"
-
-    # Built apart from ``wrapper`` so the frame never holds the call's
-    # arguments, which forked fibers inheriting it would keep alive.
-    def enter_at(stack: Callable[[], str | None]) -> Callable[[Context], Context]:
-        def enter(ctx: Context) -> Context:
-            caller = ctx.lookup(CurrentStackFrame)[1]
-            frame = StackFrame(name, stack, StackFrame(definition_name, definition, caller))
-            return ctx.add(CurrentStackFrame, frame)
-
-        return enter
-
-    def run_body(result: object) -> Effect[Any, Any, Any]:
-        # Effect.fn's ``isEffect(iter) ? iter : fromIteratorUnsafe(iter)``.
-        if isinstance(result, Effect):
-            return cast("Effect[Any, Any, Any]", result)
-        if isinstance(result, Generator):
-            generator = cast("Generator[Effect[Any, Any, Any], Any, Any]", result)
-            return _Gen(lambda: generator)
-        return _FailCause(
-            die_cause(
-                TypeError(
-                    f"fn({name!r}): {f.__qualname__} returned {type(result).__name__}, "
-                    "not an effect or a generator; an effect inside it runs only with "
-                    "`yield from effect`"
-                )
-            )
-        )
-
-    @functools.wraps(f)
-    def wrapper(*args: Any, **kwargs: Any) -> Effect[Any, Any, Any]:
-        body: Effect[Any, Any, Any] = _Suspend(lambda: run_body(f(*args, **kwargs)))
-        traced = span_using(name, partial(in_parent_span, body), span)
-        return _Locally(traced, enter_at(call_site(1)))
-
-    return wrapper
-
-
-class _Traced:
-    """``@fn("name")``: the decorator that adds the span."""
-
-    __slots__ = ("definition", "name", "options")
-
-    def __init__(
-        self, name: str, options: SpanOptions, definition: Callable[[], str | None]
-    ) -> None:
-        self.name = name
-        self.options = options
-        self.definition = definition
-
-    @overload
-    def __call__[**P, A, E = Never, R = Never](
-        self, f: Callable[P, Generator[Effect[Any, E, R], Any, A]], /
-    ) -> Callable[P, Effect[A, E, R]]: ...
-    @overload
-    def __call__[**P, A, E = Never, R = Never](
-        self, f: Callable[P, Effect[A, E, R]], /
-    ) -> Callable[P, Effect[A, E, R]]: ...
-    def __call__(
-        self,
-        f: Callable[..., Generator[Effect[Any, Any, Any], Any, Any] | Effect[Any, Any, Any]],
-        /,
-    ) -> Callable[..., Effect[Any, Any, Any]]:
-        # Effect.fn's body may return an effect, so it is checked when it runs.
-        return functools.wraps(f)(_traced(f, self.name, self.definition, self.options))
-
-
-def _generator_function(f: Callable[..., Any], api: str) -> None:
-    """``f``, checked to be a generator function when it is a ``def``: one
-    with no ``yield`` would run its effects' constructors and none of them.
-    (A lambda returning a generator is checked when it runs.)"""
-    if inspect.isfunction(f) and f.__name__ != "<lambda>" and not inspect.isgeneratorfunction(f):
-        raise TypeError(
-            f"{api}: {f.__qualname__} is not a generator function; an effect inside it "
-            "runs only with `yield from effect`"
-        )
 
 
 # --- combinators that remove types (use with .pipe) ---------------------------
@@ -552,6 +441,7 @@ __all__ = [
     "fail_sync",
     "fiber_id",
     "fn",
+    "fn_untraced",
     "from_async",
     "from_exit",
     "from_option",
@@ -564,7 +454,10 @@ __all__ = [
     "provide_service",
     "provide_service_effect",
     "service_option",
+    "set_context",
     "succeed",
+    "succeed_none",
+    "succeed_some",
     "suspend",
     "sync",
     "transpose_option",
@@ -572,7 +465,10 @@ __all__ = [
     "try_async",
     "try_blocking",
     "unwrap_reason",
+    "update_context",
     "update_service_scoped",
     "void",
+    "with_fiber",
+    "with_fiber_succeed",
     "yield_now",
 ]

@@ -288,10 +288,10 @@ def merge(*layers: _Builds[Any, Any, Any] | Layer[Any, Any, Any]) -> Layer[Any, 
     built_layers = cast("tuple[Layer[Any, Any, Any], ...]", layers)
 
     def build(memo: MemoMap, scope: CloseableScope) -> Effect[Context, Any, Any]:
-        parallel = scope._fork_now("parallel")
+        parallel = scope.fork_unsafe("parallel")
         built = for_each(
             built_layers,
-            lambda layer: layer._build(memo, parallel._fork_now()),
+            lambda layer: layer._build(memo, parallel.fork_unsafe()),
             concurrency="unbounded",
         )
         return built.map(lambda contexts: Context.merge_all(*contexts))

@@ -298,7 +298,7 @@ def bracket(
 ) -> _AnyChannel:
 
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull, Any, Any]:
-        forked = scope._fork_now()
+        forked = scope.fork_unsafe()
 
         def close(cause: Cause[Any]) -> Effect[None]:
             return forked.close(done_exit_from_cause(cause))

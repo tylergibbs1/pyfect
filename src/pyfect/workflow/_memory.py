@@ -171,7 +171,7 @@ class _MemoryEngine:
         # Each run gets a fresh scope, so a replay rebuilds its compensations
         # instead of registering them again.
         instance = WorkflowInstanceService.initial(
-            state.instance.workflow, state.instance.execution_id, scope=state.scope._fork_now()
+            state.instance.workflow, state.instance.execution_id, scope=state.scope.fork_unsafe()
         )
         state.instance = instance
         suspend_on_failure = instance.workflow.annotations.get_unsafe(SuspendOnFailure)

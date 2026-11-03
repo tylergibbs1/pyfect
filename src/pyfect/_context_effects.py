@@ -1,5 +1,6 @@
 """Effects that read or provide services: ``context``, ``service_option``,
-``provide_context``, ``provide_service_effect`` and ``update_service_scoped``.
+``provide_context``, ``update_context``, ``set_context``,
+``provide_service_effect`` and ``update_service_scoped``.
 
 The providers remove what they provide from ``R``, so they are used with
 ``.pipe``; ``Effect.update_service`` adds a requirement, so it is a method.
@@ -61,6 +62,30 @@ def provide_context[RO](ctx: Context[RO]) -> _ProvideContext[RO]:
     eff.pipe(provide_context(ctx))
     """
     return _ProvideContext(ctx)
+
+
+class _UpdateContext[R2, RO]:
+    __slots__ = ("f",)
+
+    def __init__(self, f: Callable[[Context[R2]], Context[RO]]) -> None:
+        self.f = f
+
+    def __call__[A, E = Never](self, target: Effect[A, E, RO]) -> Effect[A, E, R2]:
+        return _Locally(target, self.f)
+
+
+def update_context[R2, RO](f: Callable[[Context[R2]], Context[RO]]) -> _UpdateContext[R2, RO]:
+    """Run the effect with ``f`` of the current services, which then need
+    only what ``f`` reads::
+
+    eff.pipe(update_context(lambda ctx: ctx.add(Cache, 2)))
+    """
+    return _UpdateContext(f)
+
+
+def set_context[RO](ctx: Context[RO]) -> _UpdateContext[Never, RO]:
+    """Run the effect with exactly the services of ``ctx``, no others."""
+    return _UpdateContext(lambda _: ctx)
 
 
 class _ProvideServiceEffect[T, E2, R2]:

@@ -283,6 +283,11 @@ class Context(Generic[R_contra]):
         found, value = self.lookup(tag_class(tag))
         return value if found else or_else()
 
+    def get_or_none[S, T](self, tag: TagLike[S, T]) -> S | None:
+        """The service, or ``None`` if absent. Unlike ``get_option``, an absent
+        reference gives ``None``, not its default (Effect's ``getOrUndefined``)."""
+        return self._services.get(tag_class(tag))
+
     def add[S, T](self, tag: TagLike[S, T], service: S) -> Context[R_contra | T]:
         """A copy with ``service`` added. Replacing a tag keeps its place."""
         return Context({**self._services, tag_class(tag): service})

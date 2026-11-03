@@ -866,7 +866,7 @@ class _Handlers:
         # Each run gets a fresh scope under the activation's parent, so
         # replays rebuild compensations while suspended runs keep theirs.
         instance = WorkflowInstanceService.initial(
-            workflow, execution_id, scope=pending.scope._fork_now()
+            workflow, execution_id, scope=pending.scope.fork_unsafe()
         )
         pending.instances.add(instance)
         self.current_run = _CurrentRun(request, instance, {})

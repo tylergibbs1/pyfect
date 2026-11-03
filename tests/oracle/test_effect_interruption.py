@@ -3,7 +3,7 @@ that exercise a forked fiber being interrupted: races, ``forEach``
 interruption, ``acquireRelease`` and the "interruption" block.
 
 Each test's docstring is the Effect test title. ``Effect.forkChild`` is
-``fork``; ``Scope.provide(scope)`` is ``provide_service(fx.Scope, scope)``.
+``fork``; ``Scope.provide(scope)`` is ``fx.scope.provide(scope)``.
 A resume in Effect runs the woken fiber at once; in pyfect it goes through
 the scheduler, so a port yields where Effect's fiber would already have run.
 """
@@ -173,7 +173,7 @@ def test_supports_release_dependencies():
             lambda _a, _ex: ATag().flat_map(lambda a: fx.sync(lambda: released.append(a))),
         )
         .pipe(fx.provide_service(ATag, "A"))
-        .pipe(fx.provide_service(fx.Scope, scope))
+        .pipe(fx.scope.provide(scope))
     )
     yield from scope.close(fx.exit.succeed(None))
     assert released == ["A"]

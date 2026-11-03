@@ -2,7 +2,9 @@
 
 ``acquire_release`` adds a finalizer to the current ``Scope`` (which joins
 ``R``); ``scoped`` creates a scope, runs the effect in it, and closes it
-however the effect ends, removing ``Scope`` from ``R``. Finalizers run in
+however the effect ends, removing ``Scope`` from ``R``. For a scope made
+with ``make``, ``eff.pipe(provide(scope))`` runs ``eff`` in it and leaves
+it open; ``eff.pipe(use(scope))`` also closes it when ``eff`` ends. Finalizers run in
 reverse order of registration, uninterruptibly, and all of them run even if
 some fail.
 """
@@ -55,6 +57,12 @@ class CloseableScope:
         self._finalizers: dict[object, Finalizer] = {}
         self._closed: Exit[Any, Any] | None = None
         self._parent: CloseableScope | None = None
+
+    @property
+    def strategy(self) -> Strategy:
+        """How finalizers run on close: one after the other, last added
+        first, or all at once."""
+        return self._strategy
 
     @property
     def finalizer_count(self) -> int:
@@ -139,10 +147,10 @@ class CloseableScope:
         """A child scope, closed when this one closes (if not before). The
         child of a closed scope starts closed."""
 
-        return _Sync(lambda: self._fork_now(strategy))
+        return _Sync(lambda: self.fork_unsafe(strategy))
 
-    def _fork_now(self, strategy: Strategy = "sequential") -> CloseableScope:
-        """``fork``, run at once (Effect's ``Scope.forkUnsafe``)."""
+    def fork_unsafe(self, strategy: Strategy = "sequential") -> CloseableScope:
+        """``fork``, run at once."""
         child = CloseableScope(strategy)
         if self._closed is not None:
             child._closed = self._closed
@@ -187,6 +195,51 @@ def _run_parallel(entries: _Entries, ex: Exit[Any, Any]) -> Effect[None]:
 
 class Scope(Tag[CloseableScope]):
     pass
+
+
+def make(strategy: Strategy = "sequential") -> Effect[CloseableScope]:
+    """A new open scope (``CloseableScope(strategy)``, made when the effect
+    runs)."""
+    return _Sync(lambda: CloseableScope(strategy))
+
+
+class _InScope:
+    """``provide(scope)`` / ``use(scope)``: run in ``scope``, removing
+    ``Scope`` from ``R``; ``use`` also closes it with the effect's exit."""
+
+    __slots__ = ("close", "scope")
+
+    def __init__(self, scope: CloseableScope, *, close: bool) -> None:
+        self.scope = scope
+        self.close = close
+
+    @overload
+    def __call__[A, E](self, eff: Effect[A, E, Scope]) -> Effect[A, E]: ...
+    @overload
+    def __call__[A, E, R](self, eff: Effect[A, E, Scope | R]) -> Effect[A, E, R]: ...
+    def __call__(self, eff: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
+        require_effect(eff, "eff")
+        scope = self.scope
+        inner: Effect[Any, Any, Any] = _Locally(eff, lambda ctx: ctx.add(Scope, scope))
+        return inner.on_exit(scope.close) if self.close else inner
+
+
+def provide(scope: CloseableScope) -> _InScope:
+    """Run an effect in ``scope``, removing ``Scope`` from ``R``; the scope
+    stays open::
+
+        eff.pipe(scope.provide(resources))
+    """
+    return _InScope(scope, close=False)
+
+
+def use(scope: CloseableScope) -> _InScope:
+    """Run an effect in ``scope`` and close the scope with the effect's
+    exit, however it ends, removing ``Scope`` from ``R``::
+
+        eff.pipe(scope.use(resources))
+    """
+    return _InScope(scope, close=True)
 
 
 @overload
@@ -313,6 +366,9 @@ __all__ = [
     "add_finalizer",
     "fork_in",
     "fork_scoped",
+    "make",
+    "provide",
     "scoped",
     "scoped_with",
+    "use",
 ]

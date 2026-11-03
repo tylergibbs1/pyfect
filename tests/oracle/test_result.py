@@ -1,20 +1,21 @@
 """Ports of Effect's ``Result.test.ts``.
 
-Omitted: ``void``, ``succeedNone`` and ``succeedSome`` (``Ok(None)`` and
-``Ok(Some(x))`` are the literals); ``toString`` / ``toJSON`` / ``inspect``
-(the dataclass ``repr`` is Python's form); ``pipe composes Result
-operations`` (Result has methods, not ``pipe``); ``isResult`` (use
-``isinstance``); ``fromOption``, ``getSuccess`` / ``getFailure``,
-``getOrNull`` / ``getOrUndefined``, ``getOrThrowWith``, ``merge``, ``tap``,
-``flip``, ``liftPredicate``, ``filterOrFail``, ``makeEquivalence``,
-``andThen``, ``orElse`` and the transposes (a ``match`` statement says each
-in a line, so they are not ported); Do notation and ``gen`` (Python has no
-typed do-notation; see docs/PARITY.md section 4).
+``Result`` combinators are methods of ``Ok`` and ``Err``; constructors and
+the functions over several values are in ``pyfect.result``. Omitted:
+``toString`` / ``toJSON`` / ``inspect`` (the dataclass ``repr`` is Python's
+form); ``pipe composes Result operations`` (Result has methods, not
+``pipe``); ``getOrUndefined`` (Python has one ``None``; docs/PARITY.md
+section 4); ``makeEquivalence compares successes and failures by channel``
+(``==``; section 4); the Do notation titles and ``gen`` (generator locals;
+section 4).
 """
+
+from typing import TypeIs
 
 import pytest
 
-from pyfect import result
+from pyfect import option, result
+from pyfect.option import Option, Some
 from pyfect.result import Err, Ok, Result
 
 
@@ -143,8 +144,6 @@ def test_flat_map() -> None:
 
 def test_all() -> None:
     """all"""
-    # Effect's struct form is omitted: a dict comprehension over ``match``
-    # does it in Python.
     assert result.all() == Ok(())
     assert result.all(Ok(1)) == Ok((1,))
     assert result.all(Ok(1), Ok(True)) == Ok((1, True))
@@ -159,3 +158,148 @@ def test_all() -> None:
         return [Ok(1), Err("e"), Ok(3)]
 
     assert result.all(*iterable_with_failure()) == Err("e")
+    # structs and records
+    empty: dict[str, Result[int, str]] = {}
+    nothing: dict[str, int] = {}
+    assert result.all_dict(empty) == Ok(nothing)
+    assert result.all_dict({"a": Ok(1)}) == Ok({"a": 1})
+    assert result.all_dict({"a": Ok(1), "b": Ok(True)}) == Ok({"a": 1, "b": True})
+    assert result.all_dict({"a": Ok(1), "b": Err("e")}) == Err("e")
+
+
+def test_void() -> None:
+    """void"""
+    assert result.void == Ok(None)
+
+
+def test_from_option() -> None:
+    """fromOption"""
+    none: Option[int] = None
+    assert result.from_option(none, lambda: "none") == Err("none")
+    assert result.from_option(Some(1), lambda: "none") == Ok(1)
+
+
+def test_succeed_none() -> None:
+    """succeedNone"""
+    assert result.succeed_none == Ok(None)
+
+
+def test_succeed_some() -> None:
+    """succeedSome"""
+    assert result.succeed_some(1) == Ok(Some(1))
+
+
+def test_is_result() -> None:
+    """isResult"""
+    assert result.is_result(Ok(1))
+    assert result.is_result(Err("e"))
+    assert not result.is_result(Some(1))
+
+
+def test_get_success() -> None:
+    """getSuccess"""
+    assert option.get_success(Ok(1)) == Some(1)
+    assert option.get_success(Err("a")) is None
+
+
+def test_get_failure() -> None:
+    """getFailure"""
+    assert option.get_failure(Ok(1)) is None
+    assert option.get_failure(Err("e")) == Some("e")
+
+
+def test_get_or_null() -> None:
+    """getOrNull"""
+    assert Ok(1).get_or_none() == 1
+    assert Err("a").get_or_none() is None
+
+
+def test_get_or_throw_with() -> None:
+    """getOrThrowWith"""
+    assert Ok(1).get_or_raise_with(lambda e: ValueError(f"Unexpected Err: {e}")) == 1
+    with pytest.raises(ValueError, match="Unexpected Err: e"):
+        Err("e").get_or_raise_with(lambda e: ValueError(f"Unexpected Err: {e}"))
+
+
+def test_merge() -> None:
+    """merge"""
+    assert Ok(1).merge() == 1
+    assert Err("a").merge() == "a"
+
+
+def test_tap() -> None:
+    """tap"""
+    seen: list[int] = []
+    assert Ok(42).tap(seen.append) == Ok(42)
+    assert seen == [42]
+    failure: Result[int, str] = Err("err")
+    assert failure.tap(seen.append) == Err("err")
+    assert seen == [42]
+
+
+def test_flip() -> None:
+    """flip"""
+    assert Ok("a").flip() == Err("a")
+    assert Err("b").flip() == Ok("b")
+
+
+def test_lift_predicate() -> None:
+    """liftPredicate"""
+
+    def is_positive(n: int) -> bool:
+        return n > 0
+
+    def is_number(n: str | int) -> TypeIs[int]:
+        return isinstance(n, int)
+
+    assert result.lift_predicate(1, is_positive, lambda n: f"{n} is not positive") == Ok(1)
+    assert result.lift_predicate(-1, is_positive, lambda n: f"{n} is not positive") == Err(
+        "-1 is not positive"
+    )
+    assert result.lift_predicate(1, is_number, lambda n: f"{n} is not a number") == Ok(1)
+    assert result.lift_predicate("string", is_number, lambda n: f"{n} is not a number") == Err(
+        "string is not a number"
+    )
+
+
+def test_filter_or_fail() -> None:
+    """filterOrFail"""
+    assert Ok(1).filter_or_fail(lambda n: n > 0, lambda _: "a") == Ok(1)
+    assert Ok(1).filter_or_fail(lambda n: n > 1, lambda _: "a") == Err("a")
+    failure: Result[int, int] = Err(1)
+    assert failure.filter_or_fail(lambda n: n > 0, lambda _: "a") == Err(1)
+
+
+def test_and_then_replaces_successes_with_result_or_plain_values() -> None:
+    """andThen replaces successes with Result or plain values"""
+    # and_then takes the next Result, as Effect.and_then takes the next effect;
+    # Effect's function and plain-value forms are flat_map and map.
+    assert Ok(1).and_then(Ok(2)) == Ok(2)
+    assert Ok(1).flat_map(lambda _: Ok(2)) == Ok(2)
+    assert Ok(1).map(lambda _: 2) == Ok(2)
+    assert Err("e").and_then(Ok(2)) == Err("e")
+
+
+def test_or_else_recovers_failures_and_preserves_successes() -> None:
+    """orElse recovers failures and preserves successes"""
+    ok: Result[int, str] = Ok(1)
+    err: Result[int, str] = Err("a")
+    assert ok.or_else(lambda _: Ok(2)) == Ok(1)
+    assert ok.or_else(lambda _: Err("b")) == Ok(1)
+    assert err.or_else(lambda _: Ok(2)) == Ok(2)
+    assert err.or_else(lambda _: Err("b")) == Err("b")
+
+
+def test_transpose_option() -> None:
+    """transposeOption"""
+    assert result.transpose_option(Some(Ok(1))) == Ok(Some(1))
+    assert result.transpose_option(None) == Ok(None)
+    assert result.transpose_option(Some(Err("e"))) == Err("e")
+
+
+def test_transpose_map_option() -> None:
+    """transposeMapOption"""
+    none: Option[int] = None
+    assert result.transpose_map_option(Some(1), Ok) == Ok(Some(1))
+    assert result.transpose_map_option(none, Ok) == Ok(None)
+    assert result.transpose_map_option(Some("e"), Err) == Err("e")

@@ -111,7 +111,7 @@ def flat_map(self: AnyChannel, f: Callable[[Any], AnyChannel]) -> Channel_:
             def start(value: Any) -> AnyPull:
                 nonlocal child_scope
                 if child_scope is None:
-                    child_scope = scope._fork_now()
+                    child_scope = scope.fork_unsafe()
                 used = child_scope
                 return f(value)._transform(upstream, used).flat_map(lambda inner: keep(inner, used))
 
@@ -132,7 +132,7 @@ def concat_with(self: AnyChannel, f: Callable[[Any], AnyChannel]) -> Channel_:
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
         def make() -> AnyPull:
             current: AnyPull | None = None
-            forked = scope._fork_now()
+            forked = scope.fork_unsafe()
 
             def switch(pull: AnyPull) -> AnyPull:
                 nonlocal current
@@ -160,7 +160,7 @@ def or_else_if_empty(self: AnyChannel, f: Callable[[Any], AnyChannel]) -> Channe
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
         def make() -> AnyPull:
             current: AnyPull | None = None
-            forked = scope._fork_now()
+            forked = scope.fork_unsafe()
 
             def switch(pull: AnyPull) -> AnyPull:
                 nonlocal current

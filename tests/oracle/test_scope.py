@@ -1,7 +1,7 @@
 """Ports of Effect's ``Scope.test.ts``.
 
 Each test's docstring is the Effect test title. ``Scope.makeUnsafe`` is
-``CloseableScope(strategy)``, ``Scope.forkUnsafe`` is ``scope._fork_now()``
+``CloseableScope(strategy)``, ``Scope.forkUnsafe`` is ``scope.fork_unsafe()``
 and ``closeUnsafe`` is ``close_unsafe``. Effect's ``state._tag`` checks read
 ``is_empty`` (Effect's "Empty": open, no finalizers), ``finalizer_count``
 and ``is_closed``. An ``AbortController`` signal is the cancellation of the asyncio
@@ -180,7 +180,7 @@ def test_continues_and_awaits_remaining_finalizers_after_a_throw(strategy: Strat
 def test_closing_a_child_removes_it_from_the_parent():
     """closing a child removes it from the parent"""
     parent = CloseableScope()
-    child = parent._fork_now()
+    child = parent.fork_unsafe()
     assert child.is_empty
     assert parent.finalizer_count == 1
     yield from child.close(fx.Success(None))
@@ -192,7 +192,7 @@ def test_closing_a_child_removes_it_from_the_parent():
 def test_a_throwing_child_finalizer_does_not_leave_the_child_in_its_parent():
     """a throwing child finalizer does not leave the child in its parent"""
     parent = CloseableScope()
-    child = parent._fork_now()
+    child = parent.fork_unsafe()
 
     def boom(_: fx.Exit[Any, Any]) -> fx.Effect[None]:
         raise RuntimeError("boom")
@@ -208,7 +208,7 @@ def test_a_throwing_child_finalizer_does_not_leave_the_child_in_its_parent():
 def test_an_interrupted_close_does_not_leave_the_child_in_its_parent():
     """an interrupted close does not leave the child in its parent"""
     parent = CloseableScope()
-    child = parent._fork_now()
+    child = parent.fork_unsafe()
     entered = yield from fx.Deferred[None].make()
     release = yield from fx.Deferred[None].make()
     yield from child.add_finalizer(lambda _: entered.succeed(None).and_then(release.wait()))
@@ -225,7 +225,7 @@ def test_an_interrupted_close_does_not_leave_the_child_in_its_parent():
 def test_closing_the_parent_closes_the_child_with_the_parents_exit_only_once():
     """closing the parent closes the child with the parent's exit only once"""
     parent = CloseableScope()
-    child = parent._fork_now()
+    child = parent.fork_unsafe()
     exits: list[fx.Exit[Any, Any]] = []
     yield from child.add_finalizer(lambda ex: fx.sync(lambda: exits.append(ex)))
     failure = fx.exit.fail("parent failed")

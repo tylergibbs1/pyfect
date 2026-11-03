@@ -42,7 +42,7 @@ def repeat_loop(self: AnyChannel, on_exit: OnExit) -> Channel_:
         current: AnyPull | None = None
 
         def make_pull() -> AnyPull:
-            run_scope = scope._fork_now()
+            run_scope = scope.fork_unsafe()
 
             def recover(cause: Any) -> AnyPull:
                 ex = done_exit_from_cause(cause)

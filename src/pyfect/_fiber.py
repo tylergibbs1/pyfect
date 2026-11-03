@@ -78,6 +78,8 @@ from pyfect.scheduler import (
     MaxOpsBeforeYield,
     PreventSchedulerYield,
     Scheduler,
+    ShouldYield,
+    YieldCheck,
 )
 
 if TYPE_CHECKING:
@@ -254,6 +256,7 @@ class Fiber(Generic[A_co, E_co]):
         "_run_scheduler",
         "_runtime_metrics",
         "_scheduler",
+        "_should_yield",
         "_stack",
         "_stack_frame",
         "_tracer_hook",
@@ -440,6 +443,7 @@ class Fiber(Generic[A_co, E_co]):
         self._ctx = view.context
         self._scheduler: Scheduler = view.scheduler
         self._ops_budget: float = view.ops_budget
+        self._should_yield: YieldCheck | None = view.should_yield
         self._tracer_hook: ContextHook | None = view.tracer_hook
         self._runtime_metrics: FiberRuntimeMetricsService | None = view.runtime_metrics
         self._stack_frame: StackFrame | None = view.stack_frame
@@ -488,8 +492,7 @@ class Fiber(Generic[A_co, E_co]):
 
             if isinstance(cur, Effect):
                 ops += 1
-                if ops > self._ops_budget:
-                    self._pause(cur)
+                if ops > self._ops_budget and self._pause_due(cur, ops):
                     return
                 try:
                     hook = self._tracer_hook
@@ -511,8 +514,12 @@ class Fiber(Generic[A_co, E_co]):
                 # long chain of ``map``s still yields, while a primitive's
                 # result normally reaches its continuation in the same step.
                 ops += 1
-                if not decided and ops % _INLINE_STEPS == 0 and ops > self._ops_budget:
-                    self._pause(cur)
+                if (
+                    not decided
+                    and ops % _INLINE_STEPS == 0
+                    and ops > self._ops_budget
+                    and self._pause_due(cur, ops)
+                ):
                     return
                 frame = self._stack.pop()
                 decided = frame.claims
@@ -521,6 +528,20 @@ class Fiber(Generic[A_co, E_co]):
                 return  # a resume callback will call _run again
             else:  # untyped user code handed back something that is not an effect
                 cur = exit_die(TypeError(f"not a valid effect: {cur!r}"))
+
+    def _pause_due(self, cur: Step, ops: int) -> bool:
+        """Past the budget: pause before ``cur``, unless a ``ShouldYield``
+        hook (whose budget is 1) says not to. A raising hook is a defect,
+        which the fiber goes on with after the pause."""
+        check = self._should_yield
+        if check is not None:
+            try:
+                if not check(self, ops):
+                    return False
+            except BaseException as exc:
+                cur = self._raised(exc)
+        self._pause(cur)
+        return True
 
     def _pause(self, cur: Step) -> None:
         """The step budget is spent: let other fibers run, then go on with
@@ -843,6 +864,7 @@ class _RunView:
     context: Context
     scheduler: Scheduler
     ops_budget: float
+    should_yield: YieldCheck | None
     tracer_hook: ContextHook | None
     runtime_metrics: FiberRuntimeMetricsService | None
     stack_frame: StackFrame | None
@@ -852,8 +874,11 @@ class _RunView:
         context = given
         if context.lookup(_RunScheduler)[1] is not run_scheduler:
             context = _into_run(context, run_scheduler)
+        should_yield: YieldCheck | None = None
         if context.lookup(PreventSchedulerYield)[1]:
             budget = math.inf
+        elif (should_yield := context.lookup(ShouldYield)[1]) is not None:
+            budget = 1
         else:
             budget = max(1, context.lookup(MaxOpsBeforeYield)[1])
         scheduler = context.lookup(CurrentScheduler)[1]
@@ -861,7 +886,15 @@ class _RunView:
         runtime_metrics = context.lookup(FiberRuntimeMetrics)[1]
         frame = context.lookup(CurrentStackFrame)[1]
         return _RunView(
-            given, run_scheduler, context, scheduler, budget, hook, runtime_metrics, frame
+            given,
+            run_scheduler,
+            context,
+            scheduler,
+            budget,
+            should_yield,
+            hook,
+            runtime_metrics,
+            frame,
         )
 
 

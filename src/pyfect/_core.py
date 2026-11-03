@@ -48,6 +48,7 @@ from pyfect._effect_resources import ResourceMethods, _call_user, _run_finalizer
 from pyfect._effect_services import ServiceMethods
 from pyfect._effect_timing import TimingMethods
 from pyfect._effect_tracing import TracingMethods
+from pyfect.result import Err, Ok
 
 if TYPE_CHECKING:
     from pyfect._concurrency import Concurrency
@@ -241,6 +242,39 @@ class Effect(
     ) -> Effect[Any, Any, Any]:
         """Continue with ``or_else(value)`` when the value fails ``predicate``."""
         return _FlatMap(self, lambda a: _Succeed(a) if predicate(a) else or_else(a))
+
+    def filter_map_or_else[B, X, C, E2 = Never, R2 = Never](
+        self,
+        filter: Callable[[A_co], Ok[B] | Err[X]],
+        or_else: Callable[[X], Effect[C, E2, R2]],
+    ) -> Effect[B | C, E_co | E2, R_co | R2]:
+        """Succeed with what ``filter`` passes; continue with ``or_else`` of
+        what it rejects."""
+
+        def next_step(a: Any) -> Effect[Any, Any, Any]:
+            r = filter(a)
+            return _Succeed(r.value) if isinstance(r, Ok) else or_else(r.error)
+
+        return _FlatMap(self, next_step)
+
+    @overload
+    def filter_map_or_fail[B](
+        self, filter: Callable[[A_co], Ok[B] | Err[object]]
+    ) -> Effect[B, E_co | NoSuchElementException, R_co]: ...
+    @overload
+    def filter_map_or_fail[B, X, E2](
+        self, filter: Callable[[A_co], Ok[B] | Err[X]], or_fail_with: Callable[[X], E2]
+    ) -> Effect[B, E_co | E2, R_co]: ...
+    def filter_map_or_fail(
+        self, filter: Callable[[Any], Any], or_fail_with: Callable[[Any], Any] | None = None
+    ) -> Effect[Any, Any, Any]:
+        """Succeed with what ``filter`` passes; fail with ``or_fail_with`` of
+        what it rejects (by default a ``NoSuchElementException``)."""
+        if or_fail_with is None:
+            from pyfect.errors import NoSuchElementException
+
+            return self.filter_map_or_else(filter, lambda _: _fail(NoSuchElementException()))
+        return self.filter_map_or_else(filter, lambda x: _fail(or_fail_with(x)))
 
 
 def _to_none(_: object) -> None:

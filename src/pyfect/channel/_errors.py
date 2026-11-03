@@ -34,7 +34,7 @@ type Handler = Callable[[Any], AnyChannel]
 
 def catch_cause(self: AnyChannel, f: Callable[[Cause[Any]], AnyChannel]) -> Channel_:
     def transform(upstream: AnyPull, scope: CloseableScope) -> Effect[AnyPull]:
-        forked = scope._fork_now()
+        forked = scope.fork_unsafe()
 
         def with_pull(pull: AnyPull) -> AnyPull:
             current: AnyPull
@@ -48,7 +48,7 @@ def catch_cause(self: AnyChannel, f: Callable[[Cause[Any]], AnyChannel]) -> Chan
                 nonlocal forked
                 if is_done_cause(cause):
                     return _FailCause(cause)
-                failed, forked = forked, scope._fork_now()
+                failed, forked = forked, scope.fork_unsafe()
                 return (
                     failed.close(Failure(cause))
                     .and_then(f(cause)._transform(upstream, forked))

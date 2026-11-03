@@ -6,7 +6,7 @@ are methods (``ScopedCache.get(cache, key)`` is ``cache.get(key)``);
 ``time_to_live`` is a duration or a function of the exit and the key.
 Durations are seconds, ``forkChild({ startImmediately })`` is
 ``fork(start_immediately=True)``, ``Fiber.await`` is ``await_exit``,
-``Scope.provide(scope)`` is ``provide_service(fx.Scope, scope)``,
+``Scope.provide(scope)`` is ``fx.scope.provide(scope)``,
 ``Effect.die(message)`` dies with ``Exception(message)``, ``Data.Class``
 keys are frozen dataclasses and ``cache.state._tag === "Closed"`` is
 ``cache.is_closed``.
@@ -75,7 +75,7 @@ def _died_with(ex: fx.Exit[Any, Any] | None, message: str) -> bool:
 
 
 def _in[A, E](scope: fx.CloseableScope, eff: fx.Effect[A, E, fx.Scope]) -> fx.Effect[A, E]:
-    return eff.pipe(fx.provide_service(fx.Scope, scope))
+    return eff.pipe(fx.scope.provide(scope))
 
 
 class _TestLookup:

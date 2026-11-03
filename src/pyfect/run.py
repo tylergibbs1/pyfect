@@ -15,7 +15,8 @@
   failure is logged through the loggers, and ``teardown`` turns the exit into
   the process status;
   ``default_teardown`` gives 0 on success, 130 when interrupted, or the
-  error's ``exit_code`` (``TaggedError.exit_code``, default 1).
+  error's ``exit_code`` (``get_error_exit_code``: ``TaggedError.exit_code``
+  or any error's ``exit_code`` attribute, default 1).
 
 Each of ``run_sync`` and ``run_async`` has an ``_exit`` variant that
 returns the ``Exit`` instead of raising, and accepts effects that can fail.
@@ -42,7 +43,6 @@ from pyfect._fiber import Fiber
 from pyfect._root import ambient_run, new_root, start_root
 from pyfect.cause import Cause
 from pyfect.context import Context
-from pyfect.errors import TaggedError
 from pyfect.exit import Exit, Success
 from pyfect.logger import log_error
 from pyfect.scheduler import AsyncioScheduler, Scheduler, SyncScheduler
@@ -195,8 +195,7 @@ def run_callback(
 
 def default_teardown(ex: Exit[Any, Any]) -> int:
     """Effect's ``defaultTeardown``: 0 on success, 130 when only
-    interrupted, otherwise the squashed error's ``exit_code`` (1 unless a
-    ``TaggedError`` sets it)."""
+    interrupted, otherwise the squashed error's ``get_error_exit_code``."""
     if isinstance(ex, Success):
         return 0
     if ex.cause.has_interrupts_only:
@@ -204,7 +203,22 @@ def default_teardown(ex: Exit[Any, Any]) -> int:
     error = ex.cause.squash()
     if isinstance(error, SystemExit):
         return _exit_status(error)
-    return error.exit_code if isinstance(error, TaggedError) else 1
+    return get_error_exit_code(error)
+
+
+def get_error_exit_code(error: object) -> int:
+    """The process status ``error`` asks for when it ends the program: its
+    ``exit_code`` attribute when that is an ``int``, else 1. Any value may
+    set one (``TaggedError`` declares it)."""
+    code = getattr(error, "exit_code", None)
+    return code if isinstance(code, int) and not isinstance(code, bool) else 1
+
+
+def get_error_reported(error: object) -> bool:
+    """Whether ``run_main`` logs ``error`` when it ends the program: its
+    ``error_reported`` attribute when that is a ``bool``, else ``True``."""
+    reported = getattr(error, "error_reported", True)
+    return reported if isinstance(reported, bool) else True
 
 
 def _exit_status(exit: SystemExit) -> int:
@@ -262,11 +276,7 @@ class _Signalled:
 def _log_failure(cause: Cause[object]) -> Effect[None]:
     error = cause.squash()
     # ``sys.exit`` ends the program with its status; it is no error to log.
-    if (
-        cause.has_interrupts_only
-        or isinstance(error, SystemExit)
-        or getattr(error, "error_reported", True) is False
-    ):
+    if cause.has_interrupts_only or isinstance(error, SystemExit) or not get_error_reported(error):
         return _VOID
     return log_error(cause)
 
@@ -334,6 +344,8 @@ __all__ = [
     "await_fiber",
     "default_teardown",
     "drive",
+    "get_error_exit_code",
+    "get_error_reported",
     "run_async",
     "run_async_exit",
     "run_callback",

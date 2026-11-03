@@ -1,5 +1,6 @@
 """``Effect`` methods that fold both outcomes into a value or a next effect:
-``match*``, ``option``, ``exit`` and ``result``."""
+``match*``, ``option``, ``as_some``, ``is_failure`` / ``is_success``,
+``exit`` and ``result``."""
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pyfect.result import Err, Ok
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
-    from pyfect.option import Option
+    from pyfect.option import Option, Some
 
 
 class FoldingMethods(EffectBase[A_co, E_co, R_co]):
@@ -51,6 +52,21 @@ class FoldingMethods(EffectBase[A_co, E_co, R_co]):
             as_effect(self), _recovering(_succeed_none), lambda a: _core._Succeed(Some(a))
         )
 
+    def as_some(self) -> Effect[Some[A_co], E_co, R_co]:
+        """Succeed with ``Some(value)``."""
+        from pyfect.option import Some
+
+        return _core._Map(as_effect(self), Some)
+
+    def is_failure(self) -> Effect[bool, Never, R_co]:
+        """Whether it fails with a typed error. Defects and interruptions
+        still propagate."""
+        return self.match(on_failure=_true, on_success=_false)
+
+    def is_success(self) -> Effect[bool, Never, R_co]:
+        """Whether it succeeds. Defects and interruptions still propagate."""
+        return self.match(on_failure=_false, on_success=_true)
+
     def match_effect[B, C, EE = Never, RR = Never](
         self,
         *,
@@ -84,3 +100,11 @@ class FoldingMethods(EffectBase[A_co, E_co, R_co]):
             _recovering(lambda e: _core._Succeed(Err(e))),
             lambda a: _core._Succeed(Ok(a)),
         )
+
+
+def _true(_: object) -> bool:
+    return True
+
+
+def _false(_: object) -> bool:
+    return False

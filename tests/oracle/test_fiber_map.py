@@ -2,7 +2,7 @@
 
 Each test's docstring is the Effect test title. ``Effect.runFork(eff)`` is
 ``eff.fork_daemon(start_immediately=True)``, ``Scope.provide(scope)`` is
-``provide_service(fx.Scope, scope)``, ``getUnsafe`` / ``get`` give the
+``fx.scope.provide(scope)``, ``getUnsafe`` / ``get`` give the
 fiber or ``None``, and ``makeRuntimePromise`` is ``make_runtime_async`` (a
 runner returning an asyncio future). Durations are seconds rather than
 milliseconds.
@@ -42,7 +42,7 @@ def test_closing_the_scope_waits_for_asynchronous_cleanup_of_a_replaced_fiber():
     release = yield from fx.Deferred[None].make()
     scope = fx.CloseableScope()
     yield from scope.add_finalizer(lambda _: fx.sync(lambda: events.append("resource released")))
-    container = yield from fx.FiberMap[str].make().pipe(fx.provide_service(fx.Scope, scope))
+    container = yield from fx.FiberMap[str].make().pipe(fx.scope.provide(scope))
     previous = yield from container.run(
         "key",
         started.succeed(None)
@@ -82,7 +82,7 @@ def test_run_defers_startup():
 def test_retains_ownership_of_replacements_made_by_a_synchronous_finalizer():
     """retains ownership of replacements made by a synchronous finalizer"""
     scope = fx.CloseableScope()
-    fiber_map = yield from fx.FiberMap[str].make().pipe(fx.provide_service(fx.Scope, scope))
+    fiber_map = yield from fx.FiberMap[str].make().pipe(fx.scope.provide(scope))
     run = yield from fiber_map.runtime()
     fibers: list[fx.Fiber[Any, Any]] = []
     yield from fx.add_finalizer(lambda _: fx.Fiber.interrupt_all(fibers))
@@ -174,7 +174,7 @@ def test_join():
 def test_size():
     """size"""
     scope = fx.CloseableScope()
-    fiber_map = yield from fx.FiberMap[str].make().pipe(fx.provide_service(fx.Scope, scope))
+    fiber_map = yield from fx.FiberMap[str].make().pipe(fx.scope.provide(scope))
     fiber_map.set_unsafe("a", (yield from fx.never.fork_daemon(start_immediately=True)))
     fiber_map.set_unsafe("b", (yield from fx.never.fork_daemon(start_immediately=True)))
     assert (yield from fiber_map.size()) == 2

@@ -3,7 +3,7 @@
 
 Each test's docstring is the Effect test title. ``Effect.runFork(eff)`` is
 ``eff.fork_daemon(start_immediately=True)``, ``Scope.provide(scope)`` is
-``provide_service(fx.Scope, scope)``, and ``makeRuntimePromise`` is
+``fx.scope.provide(scope)``, and ``makeRuntimePromise`` is
 ``make_runtime_async`` (a runner returning an asyncio future). Durations
 are seconds rather than milliseconds. "identifies FiberSet in JSON" checks
 ``repr``: Python has no ``toJSON``.
@@ -92,7 +92,7 @@ def test_runs_fibers_concurrently_and_await_empty_waits_for_completion():
 def test_size():
     """size"""
     scope = fx.CloseableScope()
-    fiber_set = yield from fx.FiberSet.make().pipe(fx.provide_service(fx.Scope, scope))
+    fiber_set = yield from fx.FiberSet.make().pipe(fx.scope.provide(scope))
     fiber_set.add_unsafe((yield from fx.never.fork_daemon(start_immediately=True)))
     fiber_set.add_unsafe((yield from fx.never.fork_daemon(start_immediately=True)))
     assert (yield from fiber_set.size()) == 2

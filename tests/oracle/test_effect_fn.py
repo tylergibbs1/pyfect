@@ -2,19 +2,18 @@
 ``Effect.test.ts``.
 
 Each test's docstring is the Effect test title. ``Effect.fn("name")(body)``
-is ``@fx.fn("name")``; ``Effect.fn(body)`` is ``@fx.fn``.
+is ``@fx.fn("name")``; ``Effect.fn(body)`` is ``@fx.fn`` (``fx.fn_untraced``).
+Pipeables follow the body: ``fx.fn(body, p1, p2)``.
 
 Adapted, with the reason:
 
 - "should proxy body length": Python functions have no ``length``; the
   decorated functions keep the body's signature (``inspect.signature``).
+- "should support self with pipeable arguments": ``{ self }`` binds
+  ``this``; in Python the body is a bound method.
 
 Omitted, with the reason:
 
-- "should support pipeable arguments", "should support self with pipeable
-  arguments": ``fn`` takes no pipeables; apply combinators to the effect
-  the body returns or to the call's result. A decorated method binds
-  ``self`` as any method does.
 - ``StackCapture.test.ts`` (six titles on ``Error.stackTraceLimit``): a
   JavaScript stack costs an ``Error``; pyfect reads the caller's code
   object and line, which allocates no exception and has no limit to honour.
@@ -71,8 +70,47 @@ def test_should_proxy_body_length():
         yield from fx.void
         return len(a) + b if c else b
 
+    def body(a: str, b: int):
+        yield from fx.void
+        return len(a) + b
+
+    untraced = fx.fn_untraced(body, lambda eff: eff.map(lambda n: n))
+
     assert len(inspect.signature(traced).parameters) == 2
     assert len(inspect.signature(named).parameters) == 3
+    assert len(inspect.signature(untraced).parameters) == 2
+
+
+@testing.effect
+def test_should_support_pipeable_arguments():
+    """should support pipeable arguments"""
+
+    def body(s: str):
+        yield from fx.void
+        return len(s)
+
+    def with_args(eff: fx.Effect[int], *args: str) -> fx.Effect[list[int | str]]:
+        return eff.map(lambda result: [result, *args])
+
+    f = fx.fn(body, with_args)
+    result = yield from f("a")
+    assert result == [1, "a"]
+
+
+@testing.effect
+def test_should_support_self_with_pipeable_arguments():
+    """should support self with pipeable arguments"""
+
+    class Prefixed:
+        prefix = "bound"
+
+        def render(self, value: str):
+            yield from fx.void
+            return f"{self.prefix}:{value}"
+
+    f = fx.fn(Prefixed().render, lambda eff: eff.map(str.upper))
+    result = yield from f("value")
+    assert result == "BOUND:VALUE"
 
 
 @testing.effect

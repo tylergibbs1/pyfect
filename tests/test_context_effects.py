@@ -130,3 +130,22 @@ def test_a_shared_layer_outlives_a_nested_provide_that_reuses_it():
 
     assert (yield from program.pipe(fx.provide(port))) == 80
     assert log == ["acquire", "nested done", "release"]
+
+
+def test_get_or_none_gives_the_service_or_none():
+    # Effect's ``Context.getOrUndefined``: unlike ``getOption``, an absent
+    # reference gives undefined, not its default (printed under Node).
+    class Present(fx.Tag[int], key="GetOrNone/Present"): ...
+
+    class Absent(fx.Tag[int], key="GetOrNone/Absent"): ...
+
+    class Ref(fx.Reference[str], key="GetOrNone/Ref"):
+        @classmethod
+        def default(cls) -> str:
+            return "default"
+
+    context = fx.Context.make(Present, 1)
+    assert context.get_or_none(Present) == 1
+    assert context.get_or_none(Absent) is None
+    assert context.get_or_none(Ref) is None
+    assert context.add(Ref, "set").get_or_none(Ref) == "set"

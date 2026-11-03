@@ -192,7 +192,7 @@ def race_all(*streams: AnyStream) -> AnyStream_:
             winner: list[AnyEffect] = []
 
             def contender(stream: AnyStream) -> AnyEffect:
-                child = scope._fork_now()
+                child = scope.fork_unsafe()
 
                 def settle(ex: Exit[Any, Any]) -> AnyEffect:
                     if isinstance(ex, Success) and not winner:

@@ -97,8 +97,8 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
         self.memo_map = MemoMap() if memo_map is None else memo_map
         self._layer = layer
         self._scope = CloseableScope()
-        self._layer_scope = self._scope._fork_now()
-        self._fiber_scope = self._scope._fork_now("parallel")
+        self._layer_scope = self._scope.fork_unsafe()
+        self._fiber_scope = self._scope.fork_unsafe("parallel")
         # Fibers the runtime started (requests and the layer build), and
         # fibers running its disposal: disposal must not wait for them.
         self._managed: WeakSet[Fiber[Any, Any]] = WeakSet()

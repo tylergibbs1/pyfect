@@ -12,10 +12,12 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Generic, Never, TypeIs, TypeVar
 
+from pyfect._some import Some
 from pyfect.cause import Cause
 from pyfect.cause import die as _die_cause
 from pyfect.cause import fail as _fail_cause
 from pyfect.cause import interrupt as _interrupt_cause
+from pyfect.result import Err, Ok, Result
 
 A_co = TypeVar("A_co", covariant=True)
 E_co = TypeVar("E_co", covariant=True)
@@ -44,6 +46,42 @@ class Success(Generic[A_co]):
     ) -> C:
         return on_success(self.value)
 
+    @property
+    def has_fails(self) -> bool:
+        return False
+
+    @property
+    def has_dies(self) -> bool:
+        return False
+
+    @property
+    def has_interrupts(self) -> bool:
+        return False
+
+    def filter_success(self) -> Ok[Success[A_co]]:
+        return Ok(self)
+
+    def filter_value(self) -> Ok[A_co]:
+        return Ok(self.value)
+
+    def filter_failure(self) -> Err[Success[A_co]]:
+        return Err(self)
+
+    def filter_cause(self) -> Err[Success[A_co]]:
+        return Err(self)
+
+    def find_error(self) -> Err[Success[A_co]]:
+        return Err(self)
+
+    def find_defect(self) -> None:
+        return None
+
+    def get_success(self) -> Some[A_co]:
+        return Some(self.value)
+
+    def get_cause(self) -> None:
+        return None
+
 
 @dataclass(frozen=True, slots=True)
 class Failure(Generic[E_co]):
@@ -69,12 +107,58 @@ class Failure(Generic[E_co]):
     ) -> B:
         return on_failure(self.cause)
 
+    @property
+    def has_fails(self) -> bool:
+        return self.cause.has_fails
+
+    @property
+    def has_dies(self) -> bool:
+        return self.cause.has_dies
+
+    @property
+    def has_interrupts(self) -> bool:
+        return self.cause.has_interrupts
+
+    def filter_success(self) -> Err[Failure[E_co]]:
+        return Err(self)
+
+    def filter_value(self) -> Err[Failure[E_co]]:
+        return Err(self)
+
+    def filter_failure(self) -> Ok[Failure[E_co]]:
+        return Ok(self)
+
+    def filter_cause(self) -> Ok[Cause[E_co]]:
+        return Ok(self.cause)
+
+    def find_error(self) -> Result[E_co, Failure[E_co]]:
+        """``Ok`` of the first typed error, else ``Err`` of this exit."""
+        found = self.cause.find_error()
+        return found if isinstance(found, Ok) else Err(self)
+
+    def find_defect(self) -> BaseException | None:
+        return self.cause.find_defect()
+
+    def get_success(self) -> None:
+        return None
+
+    def get_cause(self) -> Some[Cause[E_co]]:
+        return Some(self.cause)
+
 
 type Exit[A, E] = Success[A] | Failure[E]
 
 
 def succeed[A](value: A) -> Success[A]:
     return Success(value)
+
+
+void: Success[None] = Success(None)
+"""``Success(None)``."""
+
+
+def fail_cause[E](cause: Cause[E]) -> Failure[E]:
+    return Failure(cause)
 
 
 def fail[E](error: E) -> Failure[E]:
@@ -111,8 +195,10 @@ __all__ = [
     "as_void_all",
     "die",
     "fail",
+    "fail_cause",
     "interrupt",
     "is_failure",
     "is_success",
     "succeed",
+    "void",
 ]
