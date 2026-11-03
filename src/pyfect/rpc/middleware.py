@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Generic, Never, TypeVar
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect.context import Context, Tag
+from pyfect.context import Context, ServiceMarker, Tag
 from pyfect.effect import context, provide_context, succeed
 from pyfect.layer import Layer
 from pyfect.layer import effect_context as layer_effect_context
@@ -115,7 +115,7 @@ type ClientMiddlewareFn[E, R] = Callable[
 ]
 
 
-class ForClient[M]:
+class ForClient[M](ServiceMarker):
     """The client side of the middleware ``M`` (type-level marker)."""
 
     @property

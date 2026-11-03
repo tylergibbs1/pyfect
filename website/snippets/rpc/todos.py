@@ -42,12 +42,8 @@ TodosLive = Todos.to_layer(
     Todos.handlers().handle(Todos.get_todo)(get_todo).handle(Todos.countdown)(countdown)
 )
 
-# Serve the group on POST /rpc of the router, as newline-delimited JSON.
-RpcLive = (
-    rpc_server.layer_http(Todos, path="/rpc", protocol="http")
-    .pipe(layer.provide(TodosLive))
-    .pipe(layer.provide(serialization.layer_ndjson))
-)
+# Serve the group on POST /rpc of the router. It needs the handlers and a serialization.
+RpcLive = rpc_server.layer_http(Todos, path="/rpc", protocol="http")
 
 
 def client_protocol(url: str):
@@ -65,7 +61,13 @@ def program():
     print((yield from todos_client.countdown(3).run_collect()))
 
 
-served = router.serve(RpcLive, disable_logger=True, disable_listen_log=True)
+# serve passes what the routes need through: provide the handlers and newline-delimited
+# JSON to the served layer.
+served = (
+    router.serve(RpcLive, disable_logger=True, disable_listen_log=True)
+    .pipe(layer.provide(TodosLive))
+    .pipe(layer.provide(serialization.layer_ndjson))
+)
 fx.run_main(
     fx.scoped(program())
     .pipe(fx.provide(served))

@@ -40,7 +40,7 @@ from pyfect.ai.tool import (
     failure_result_schema,
 )
 from pyfect.cause import Cause, Fail, from_reasons
-from pyfect.context import Context, MissingServiceError, Reference, Tag
+from pyfect.context import Context, MissingServiceError, Reference, ServiceMarker, Tag
 from pyfect.exit import Failure, Success
 from pyfect.layer import Layer, effect_context
 from pyfect.queue import Queue
@@ -59,7 +59,7 @@ HE_co = TypeVar("HE_co", covariant=True)
 R_co = TypeVar("R_co", covariant=True)
 
 
-class Handlers(Generic[N_co]):
+class Handlers(ServiceMarker, Generic[N_co]):
     """The requirement of a toolkit whose tools are named ``N_co``: their
     handlers, which ``Toolkit.to_layer`` provides. A marker, never built."""
 

@@ -133,6 +133,16 @@ class Tag[S]:
         return ServiceEffect(cls)
 
 
+class ServiceMarker:
+    """A requirement that is not a tag, known only by its type: an RPC
+    group's handlers, a toolkit's, a middleware's client side. It is never
+    built: the layer providing it adds services under their own keys.
+    Requirements of layers and effects are tags or service markers."""
+
+    def __new__(cls) -> Never:
+        raise TypeError(f"{cls.__qualname__} is a type-level marker")
+
+
 class Reference[S](Tag[S], base=True):
     """A tag with a default value. Override ``default``."""
 
@@ -372,6 +382,7 @@ __all__ = [
     "MissingServiceError",
     "Reference",
     "ServiceEffect",
+    "ServiceMarker",
     "Tag",
     "TagLike",
     "tag_class",

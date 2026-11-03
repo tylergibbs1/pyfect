@@ -24,7 +24,7 @@ from typing import Any, ClassVar, Never, Protocol, Self, cast, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect.context import Context
+from pyfect.context import Context, ServiceMarker
 from pyfect.deferred import Deferred
 from pyfect.effect import context, die, provide_context, succeed
 from pyfect.errors import Done
@@ -37,7 +37,7 @@ from pyfect.scope import Scope
 from pyfect.stream import Stream
 
 
-class HandlersFor[G]:
+class HandlersFor[G](ServiceMarker):
     """What a server of the group ``G`` needs: a handler for each of its
     RPCs (type-level marker; Effect's ``Rpc.ToHandler``)."""
 
@@ -217,7 +217,7 @@ def _attribute_of(group: type, rpc: AnyRpc) -> str:
     return rpc.tag
 
 
-class HandlerOf[T]:
+class HandlerOf[T](ServiceMarker):
     """A handler of the RPC ``T`` in the context (type-level marker)."""
 
     @property

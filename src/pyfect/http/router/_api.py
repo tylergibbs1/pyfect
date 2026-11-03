@@ -12,7 +12,7 @@ from pyfect._core import Effect, _WithFiber
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._layer_core import Layer, MemoMap, fork_or_create, require_layer
-from pyfect.context import Context, Tag
+from pyfect.context import Context, ServiceMarker, Tag
 from pyfect.effect import succeed
 from pyfect.http import find_my_way, server
 from pyfect.http.asgi._app import AsgiApp, to_asgi_with
@@ -237,11 +237,19 @@ type _Routed[RE, R] = Effect[
 
 
 @overload
-def to_http_effect[A, LE, X: Tag[Any] = Never](
+def to_http_effect[A, LE, X: Tag[Any] | ServiceMarker = Never](
     app_layer: Layer[A, LE, HttpRouter | X],
 ) -> Effect[_Routed[Never, Never], LE, Scope | X]: ...
 @overload
-def to_http_effect[A, LE, E = Never, R = Never, GE = Never, GR = Never, X: Tag[Any] = Never](
+def to_http_effect[
+    A,
+    LE,
+    E = Never,
+    R = Never,
+    GE = Never,
+    GR = Never,
+    X: Tag[Any] | ServiceMarker = Never,
+](
     app_layer: Layer[
         A, LE, HttpRouter | Requires[R] | Raises[E] | GlobalRequires[GR] | GlobalRaises[GE] | X
     ],
@@ -263,7 +271,7 @@ def to_http_effect(app_layer: Layer[Any, Any, Any]) -> Effect[Any, Any, Any]:
 
 
 @overload
-def serve[A, LE, X: Tag[Any] = Never](
+def serve[A, LE, X: Tag[Any] | ServiceMarker = Never](
     app_layer: Layer[A, LE, HttpRouter | X],
     *,
     router_config: find_my_way.RouterConfig | None = None,
@@ -271,7 +279,7 @@ def serve[A, LE, X: Tag[Any] = Never](
     disable_listen_log: bool = False,
 ) -> Layer[A, LE, HttpServer | X]: ...
 @overload
-def serve[A, LE, E = Never, R = Never, GE = Never, GR = Never, X: Tag[Any] = Never](
+def serve[A, LE, E = Never, R = Never, GE = Never, GR = Never, X: Tag[Any] | ServiceMarker = Never](
     app_layer: Layer[
         A, LE, HttpRouter | Requires[R] | Raises[E] | GlobalRequires[GR] | GlobalRaises[GE] | X
     ],
@@ -281,7 +289,7 @@ def serve[A, LE, E = Never, R = Never, GE = Never, GR = Never, X: Tag[Any] = Nev
     disable_listen_log: bool = False,
 ) -> Layer[A, LE, HttpServer | R | GR | X]: ...
 @overload
-def serve[A, LE, HE, HR = Never, X: Tag[Any] = Never](
+def serve[A, LE, HE, HR = Never, X: Tag[Any] | ServiceMarker = Never](
     app_layer: Layer[A, LE, HttpRouter | X],
     *,
     middleware: Callable[
@@ -292,7 +300,7 @@ def serve[A, LE, HE, HR = Never, X: Tag[Any] = Never](
     disable_listen_log: bool = False,
 ) -> Layer[A, LE, HttpServer | HR | X]: ...
 @overload
-def serve[A, LE, HE, E = Never, R = Never, HR = Never, X: Tag[Any] = Never](
+def serve[A, LE, HE, E = Never, R = Never, HR = Never, X: Tag[Any] | ServiceMarker = Never](
     app_layer: Layer[A, LE, HttpRouter | Requires[R] | Raises[E] | X],
     *,
     middleware: Callable[
@@ -303,7 +311,17 @@ def serve[A, LE, HE, E = Never, R = Never, HR = Never, X: Tag[Any] = Never](
     disable_listen_log: bool = False,
 ) -> Layer[A, LE, HttpServer | HR | X]: ...
 @overload
-def serve[A, LE, HE, HR, E = Never, R = Never, GE = Never, GR = Never, X: Tag[Any] = Never](
+def serve[
+    A,
+    LE,
+    HE,
+    HR,
+    E = Never,
+    R = Never,
+    GE = Never,
+    GR = Never,
+    X: Tag[Any] | ServiceMarker = Never,
+](
     app_layer: Layer[
         A, LE, HttpRouter | Requires[R] | Raises[E] | GlobalRequires[GR] | GlobalRaises[GE] | X
     ],

@@ -6,8 +6,9 @@ description: "Routes, middleware and a server on uvicorn, with each handler an e
 A handler is an effect that gives an `HttpServerResponse`. Routes are added to the
 `HttpRouter` by layers, so a route's handler can ask for any service and the layer's type
 says which ones the server must provide. `router.serve(routes)` serves them on the
-`HttpServer` in the context, and needs whatever else the routes' layer needs, so its
-services can be provided to the server layer; `uvicorn_server.layer(port=...)` is one on uvicorn (install the
+`HttpServer` in the context, and needs whatever else the routes' layer needs (services, and
+markers such as an [RPC group](/docs/rpc)'s `HandlersFor[Group]`), so they can be provided to
+the server layer; `uvicorn_server.layer(port=...)` is one on uvicorn (install the
 `pyfect-dev[server]` extra), and `live_server.layer` one on the standard library.
 
 ## Routes
@@ -54,9 +55,11 @@ logged unless `disable_logger=True`.
 launching it: `fx.run_main(Main.launch())`. On Ctrl-C the server stops accepting connections
 and gives the requests in flight `graceful_shutdown_timeout` (20 seconds) before
 interrupting them. A streamed body still open then, such as an SSE stream, stops where it
-is. `router.to_asgi(routes)` is the same app as an ASGI application, for
-`uvicorn main:app` or any other ASGI server; its layers are built at the server's startup and
-released at its shutdown.
+is, so one open server-sent events response holds shutdown for the full 20 seconds; pass
+`uvicorn_server.layer(port=8000, graceful_shutdown_timeout=3)` to wait 3 seconds instead.
+`router.to_asgi(routes)` is the same app as an ASGI application, for `uvicorn main:app` or
+any other ASGI server; its layers are built at the server's startup and released at its
+shutdown.
 
 <include meta='title="main.py"'>../../snippets/http_server/main.py</include>
 

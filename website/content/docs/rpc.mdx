@@ -25,7 +25,8 @@ with 403; `layer.succeed(AllowedOrigins, origin.allow("https://app.example"))` (
 `pyfect.http.origin`) lists the origins to accept too. Messages are encoded by the
 `RpcSerialization` in the context:
 `serialization.layer_ndjson` or `layer_json`, or JSON-RPC 2.0 with `layer_json_rpc()` and
-`layer_nd_json_rpc()`.
+`layer_nd_json_rpc()`. `router.serve` passes the layer's needs through, so the handlers
+(`HandlersFor[Group]`) and the serialization can be provided to the served layer.
 
 `rpc_client.make(Group)` is the client, over the `ClientProtocol` in the context:
 `layer_protocol_http(url)` sends calls as POSTs, and `layer_protocol_socket()` over the

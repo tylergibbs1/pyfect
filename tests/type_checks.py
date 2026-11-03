@@ -117,6 +117,7 @@ from pyfect.redacted import make as redact
 from pyfect.rpc import client as rpc_client
 from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
+from pyfect.rpc.serialization import RpcSerialization
 from pyfect.scheduler import Scheduler, SyncScheduler
 from pyfect.schema import SchemaError
 from pyfect.schema import model as Model
@@ -5197,6 +5198,42 @@ def check_serve_passes_requirements_through(
     assert_type(
         http_router.serve(plain).pipe(layer.provide(layer.succeed(RouteStore, "s"))),
         fx.Layer[Never, Never, HttpServer],
+    )
+
+
+def check_serve_passes_markers_through(
+    toolkit: fx.Layer[Never, Never, HttpRouter | ai_toolkit.Handlers[Literal["Weather"]]],
+    for_client: "fx.Layer[Never, Never, HttpRouter | rpc.middleware.ForClient[RpcAuth]]",
+) -> None:
+    # Requirements that are markers rather than tags (an RPC group's
+    # handlers, a toolkit's, a middleware's client side) pass through too,
+    # as everything but HttpRouter does in Effect (DOGFOOD trawl 7).
+    served = http_router.serve(rpc_server.layer_http(RpcOther, path="/rpc"))
+    assert_type(
+        served, fx.Layer[Never, Never, HttpServer | RpcSerialization | rpc.HandlersFor[RpcOther]]
+    )
+    other_handlers = RpcOther.to_layer(
+        RpcOther.handlers().handle(RpcOther.pong)(lambda _r: fx.succeed(None))
+    )
+    assert_type(
+        served.pipe(layer.provide(other_handlers)),
+        fx.Layer[Never, Never, HttpServer | RpcSerialization],
+    )
+    assert_type(
+        http_router.to_http_effect(rpc_server.layer_http(RpcOther, path="/rpc")),
+        fx.Effect[
+            fx.Effect[HttpServerResponse, HttpServerError, Scope | HttpServerRequest],
+            Never,
+            Scope | RpcSerialization | rpc.HandlersFor[RpcOther],
+        ],
+    )
+    assert_type(
+        http_router.serve(toolkit),
+        fx.Layer[Never, Never, HttpServer | ai_toolkit.Handlers[Literal["Weather"]]],
+    )
+    assert_type(
+        http_router.serve(for_client),
+        fx.Layer[Never, Never, HttpServer | rpc.middleware.ForClient[RpcAuth]],
     )
 
 
