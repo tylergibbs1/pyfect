@@ -11,6 +11,11 @@ Adapted, with the reason:
   one singleton and migrates it after owner death" and "keeps
   EntityResource alive during movement and releases it explicitly" run on
   both backends (Effect runs them on PostgreSQL only).
+- "transfers frozen row locks after expiry" waits for the client to read
+  the runners again before it sends: the new owner can take the lock up to
+  a ``refresh_assignments_interval`` before the client stops routing to
+  the frozen runner, which still serves requests (its sockets are open and
+  its lock refresh waits), so Effect's test races there too.
 """
 
 from __future__ import annotations
@@ -807,6 +812,7 @@ def test_transfers_frozen_row_locks_after_expiry(cluster_db: ClusterDatabase):
             ),
             12,
         )
+        yield from cluster.wait_for_client_sync()
         next_owner = yield from cluster.owner_of_entity(StateEntity, id)
         assert next_owner is not None
         assert cluster.owners_of_shard(shard) == [next_owner]

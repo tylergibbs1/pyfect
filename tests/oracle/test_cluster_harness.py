@@ -1,0 +1,85 @@
+"""pyfect-only checks of the cluster harness (``_cluster_harness``) itself:
+what a test built on it can rely on."""
+
+from __future__ import annotations
+
+from collections.abc import Generator
+from typing import Any
+
+import pyfect as fx
+from pyfect import exit as Exit
+from pyfect import testing
+
+from ._cluster_harness import ClusterDatabase, make
+from .test_cluster_integration_entity import (
+    EntityRequest,
+    StateEntity,
+    address_string,
+    standard_entities,
+)
+
+type Body = Generator[fx.Effect[Any, Any, Any], Any]
+
+
+class Boom(Exception):
+    pass
+
+
+@testing.live(timeout=30)
+def test_a_test_failing_while_a_runner_is_frozen_reports_its_failure(
+    cluster_db: ClusterDatabase,
+):
+    """A frozen runner waits uninterruptibly for its storage: the cluster's
+    teardown releases it, so a failing test fails with its own error
+    instead of hanging in the runner's finalizers."""
+
+    def body() -> Body:
+        cluster = yield from make(cluster_db, entities=standard_entities, lock_mode="row")
+        [runner] = yield from cluster.start(1)
+        yield from cluster.wait_for_stable_assignments()
+        yield from cluster.freeze(runner)
+        yield from cluster.freeze_client()
+        return (yield from fx.fail(Boom()))
+
+    exit = yield from fx.scoped(fx.gen(body)).exit()
+    assert isinstance(exit, Exit.Failure)
+    assert isinstance(exit.cause.squash(), Boom)
+
+
+@testing.live(timeout=60)
+def test_the_client_routes_by_the_runners_of_its_last_sync(cluster_db: ClusterDatabase):
+    """A runner sees a shard move before the client does: the client
+    routes by the runners it last read, so a test that sends right after
+    a move waits for ``wait_for_client_sync`` first."""
+    backend = cluster_db.backend
+
+    def body() -> Body:
+        cluster = yield from make(cluster_db, entities=standard_entities, lock_mode="row")
+        yield from cluster.start(2)
+        yield from cluster.wait_for_stable_assignments()
+        yield from cluster.wait_for_client_sync()
+        id = f"client-view-{backend}"
+        old_owner = yield from cluster.owner_of_entity(StateEntity, id)
+        assert old_owner is not None
+        yield from cluster.freeze_client()
+        yield from cluster.freeze(old_owner)
+        yield from cluster.wait_until(
+            "The frozen runner's row lock did not expire",
+            cluster.owner_of_entity(StateEntity, id).map(
+                lambda owner: owner is not None and owner is not old_owner
+            ),
+            12,
+        )
+        # The runners moved the shard; the client still routes to the
+        # frozen runner.
+        assert not cluster.client_in_sync()
+        yield from cluster.resume_client()
+        yield from cluster.wait_for_client_sync()
+        next_owner = yield from cluster.owner_of_entity(StateEntity, id)
+        assert next_owner is not None
+        client = yield from cluster.get_client(StateEntity)
+        reply = yield from client(id).increment(EntityRequest(id=f"{backend}-view", sequence=0))
+        assert reply["runner"] == address_string(next_owner.address)
+        yield from cluster.kill(old_owner)
+
+    yield from fx.scoped(fx.gen(body))

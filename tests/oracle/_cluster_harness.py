@@ -13,6 +13,13 @@ and ``cut_socket`` closes one connection between two members. The
 ``wait_*`` helpers poll with a deadline and report the cluster's state when
 it passes.
 
+pyfect-only: a runner still frozen when the cluster closes is killed
+first, so a test failing meanwhile reports its error instead of hanging.
+``freeze_client`` stops the client's reads of the runners, and
+``wait_for_client_sync`` waits until the client routes by the running
+runners: a frozen runner keeps serving the requests the client still
+routes to it.
+
 Backends: ``"sqlite"`` (a database file shared by every member; SQLite has
 no advisory locks, so its locks are rows) and ``"pg"`` (the throwaway
 server of ``_postgres``). Effect runs PostgreSQL and MySQL; MySQL is not
@@ -231,7 +238,11 @@ class _LockFaultController:
 class _RunnerStorageController:
     """Runner storage that can be frozen (heartbeats and lock refreshes
     wait) or killed (no more writes) (Effect's
-    ``makeRunnerStorageController``)."""
+    ``makeRunnerStorageController``).
+
+    ``synced_runners`` (pyfect-only) are the healthy runners of the last
+    read of the runners that its reader finished with: the sync loop reads
+    again only after acting on the previous read."""
 
     def __init__(self, storage: RunnerStorageService) -> None:
         self.gate = Latch(True)
@@ -239,9 +250,18 @@ class _RunnerStorageController:
         self.sync_paused = Latch(False)
         self.mode: Literal["frozen", "killed", "running"] = "running"
         self.last_runners: list[Any] = []
+        self.synced_runners: frozenset[RunnerAddress] | None = None
+        read_once = [False]
 
         def remember(found: list[Any]) -> None:
             self.last_runners = found
+            read_once[0] = True
+
+        def read_started() -> None:
+            if read_once[0]:
+                self.synced_runners = frozenset(
+                    runner.address for runner, healthy in self.last_runners if healthy
+                )
 
         def refresh(address: RunnerAddress, shard_ids: Any) -> fx.Effect[list[ShardId], Any]:
             shards = list(shard_ids)
@@ -263,10 +283,12 @@ class _RunnerStorageController:
 
         self.controlled = replace(
             storage,
-            get_runners=self._while_frozen(
-                self.sync_paused,
-                storage.get_runners.tap(lambda r: fx.sync(lambda: remember(r))),
-                lambda: self.last_runners,
+            get_runners=fx.sync(read_started).and_then(
+                self._while_frozen(
+                    self.sync_paused,
+                    storage.get_runners.tap(lambda r: fx.sync(lambda: remember(r))),
+                    lambda: self.last_runners,
+                )
             ),
             refresh=refresh,
             release=release,
@@ -295,15 +317,18 @@ class _RunnerStorageController:
 
         return fx.suspend(start)
 
-    @property
-    def freeze(self) -> fx.Effect[None]:
+    def freeze(self, *, refreshes: bool = True) -> fx.Effect[None]:
+        """Freeze, and wait until a read of the runners (and, with
+        ``refreshes``, a lock refresh) is waiting."""
+
         def apply() -> None:
             self.mode = "frozen"
             self.gate.close_unsafe()
 
-        return fx.sync(apply).and_then(
-            fx.all(self.refresh_paused.wait(), self.sync_paused.wait(), discard=True)
-        )
+        paused = [self.sync_paused.wait()]
+        if refreshes:
+            paused.append(self.refresh_paused.wait())
+        return fx.sync(apply).and_then(fx.all(*paused, discard=True))
 
     @property
     def kill(self) -> fx.Effect[None]:
@@ -320,6 +345,20 @@ class _RunnerStorageController:
             self.gate.open_unsafe()
 
         return fx.sync(apply)
+
+    def release_on_close(self, scope: CloseableScope) -> fx.Effect[None]:
+        """Kill this storage if it is still frozen when ``scope`` closes:
+        its reader waits uninterruptibly, so closing it frozen would hang,
+        and a test failing while a runner is frozen would time out instead
+        of reporting its error (pyfect-only). Add this after the layers
+        that read the storage, so it runs before their finalizers."""
+
+        def release() -> None:
+            if self.mode == "frozen":
+                self.mode = "killed"
+                self.gate.open_unsafe()
+
+        return scope.add_finalizer(lambda _: fx.sync(release))
 
 
 def address_key(address: RunnerAddress) -> str:
@@ -486,6 +525,7 @@ class Cluster:
     parent: CloseableScope
     client: Context[Any]
     client_sharding: ShardingService
+    client_storage: _RunnerStorageController
     workflow_engine: Any
     sockets: _SocketController
     runner_layer: Callable[..., Layer[Any, Never, Any]]
@@ -542,6 +582,7 @@ class Cluster:
                 .build_with_scope(scope)
                 .pipe(fx.provide(self.shared.merge(storage)))
             )
+            yield from controller.release_on_close(scope)
             runner = ClusterRunner(
                 address=address,
                 index=index,
@@ -620,9 +661,32 @@ class Cluster:
             if runner.state() != "running":
                 return
             runner._state = "frozen"  # pyright: ignore[reportPrivateUsage]
-            yield from runner.controller.freeze
+            yield from runner.controller.freeze()
 
         return freeze_
+
+    def freeze_client(self) -> fx.Effect[None]:
+        """Stops the client's reads of the runners: it keeps routing by
+        the runners it last read (pyfect-only)."""
+        return self.client_storage.freeze(refreshes=False)
+
+    def resume_client(self) -> fx.Effect[None]:
+        return self.client_storage.resume
+
+    def client_in_sync(self) -> bool:
+        """Whether the client routes by the running runners: the healthy
+        runners of the client's last finished read of the runners are the
+        running ones (pyfect-only). A runner sees a shard move up to a
+        ``refresh_assignments_interval`` before the client does."""
+        running = frozenset(r.address for r in self.runners if r.state() == "running")
+        return self.client_storage.synced_runners == running
+
+    def wait_for_client_sync(self, timeout: float = 15) -> fx.Effect[None, Exception]:
+        return self.wait_until(
+            "The client's view of the runners did not catch up with the running runners",
+            fx.sync(self.client_in_sync),
+            timeout,
+        )
 
     def fault_lock(self, runner: ClusterRunner, mode: LockFaultMode) -> fx.Effect[None]:
         return runner.lock_fault.set(mode)
@@ -871,12 +935,13 @@ def make(
         resolved = entities(prefix) if callable(entities) else entities
         sockets = _SocketController()
         client_scope = yield from parent.fork()
-        client_storage = yield from (
+        client_storage_context = yield from (
             sql_runner_storage.layer_with(prefix=prefix)
             .pipe(fx.layer.provide(sharding_config_.layer(settings)))
             .build_with_scope(client_scope)
             .pipe(fx.provide(database_context))
         )
+        client_storage = _RunnerStorageController(client_storage_context.get_unsafe(RunnerStorage))
         client_base = yield from (
             socket_runner.layer_client_only.pipe(
                 fx.layer.provide(tracked_client_protocol(sockets, CLIENT_PEER))
@@ -884,8 +949,9 @@ def make(
             .pipe(fx.layer.provide(sharding_config_.layer(settings)))
             .pipe(fx.layer.provide(serialization.layer_ndjson))
             .build_with_scope(client_scope)
-            .pipe(fx.provide(shared.merge(client_storage)))
+            .pipe(fx.provide(shared.merge(Context.make(RunnerStorage, client_storage.controlled))))
         )
+        yield from client_storage.release_on_close(client_scope)
         engine = yield from cluster_workflow_engine.make().pipe(
             fx.provide(shared.merge(client_base))
         )
@@ -902,6 +968,7 @@ def make(
             parent=parent,
             client=client,
             client_sharding=client.get_unsafe(Sharding),
+            client_storage=client_storage,
             workflow_engine=engine,
             sockets=sockets,
             runner_layer=runner_layer or socket_runner_layer,
