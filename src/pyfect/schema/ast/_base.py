@@ -7,17 +7,21 @@ from collections.abc import Hashable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from pyfect._effect_args import require_effect
+from pyfect._primitives import known_exit
 from pyfect.cause import Fail
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
-from pyfect.schema._options import ParseOptions
+from pyfect.schema._options import ParseOptions, is_constructing
 from pyfect.schema.ast._check import collect_issues
 from pyfect.schema.ast._encoding import Encoding, decode_chain, flip_encoding
-from pyfect.schema.ast._result import MISSING, MISSING_EXIT, ParseResult, flat_map
+from pyfect.schema.ast._result import MISSING, MISSING_EXIT, ParseResult, flat_map, map_issue
 from pyfect.schema.issue import Composite, InvalidType, Issue, Pointer, is_issue, reported
+from pyfect.schema.issue import Encoding as EncodingIssue
 
 if TYPE_CHECKING:
+    from pyfect._core import Effect
     from pyfect.schema.ast._check import Check
 
 type Annotations = Mapping[str, object]
@@ -49,12 +53,23 @@ class AST(ABC):
     """A struct key holding this node may be missing (Effect's
     ``optionalKey`` context): set on the source of a transformation, so a
     key is optional on the encoded side only."""
+    constructor_default: Effect[object, Issue] | None = field(
+        default=None, kw_only=True, compare=False
+    )
+    """What a constructor (``make``) gives a missing key or element holding
+    this node, parsed by the node (Effect's ``constructorDefault`` context,
+    ``with_constructor_default``); decoding never uses it."""
     context_owner: AST | None = field(default=None, init=False, repr=False, compare=False)
     """The node this one copies with only its key context changed (see
     ``replace_context``); any other ``replace`` drops it."""
     body_owner: AST | None = field(default=None, init=False, repr=False, compare=False)
     """The node this one copies with an encoding added (``decode_to``):
     the schema whose values a JSON string holds, say."""
+    _type_side: list[AST] = field(
+        default_factory=list["AST"], init=False, repr=False, compare=False
+    )
+    """``to_type()``, made once: contextual copies of a node then share one
+    type side, so derivations see one schema (Effect memoizes ``toType``)."""
     tag: ClassVar[str]
 
     def owner(self) -> AST:
@@ -140,8 +155,15 @@ class AST(ABC):
         return self
 
     def to_type(self) -> AST:
-        """The node's decoded side: no encoding, its parts' decoded sides."""
-        return (self if self.encoding is None else replace(self, encoding=None))._to_type()
+        """The node's decoded side: no encoding, its parts' decoded sides. A
+        contextual copy's is its owner's, with the copy's key context."""
+        owner = self.owner()
+        if owner is not self:
+            return _with_context(owner.to_type(), self)
+        if not self._type_side:
+            base = self if self.encoding is None else replace(self, encoding=None)
+            self._type_side.append(base._to_type())
+        return self._type_side[0]
 
     def _to_type(self) -> AST:
         """The decoded side of the node's own parts (it has no encoding)."""
@@ -223,3 +245,45 @@ def replace_context[A: AST](
     )
     object.__setattr__(out, "context_owner", node.owner())
     return out
+
+
+def _with_context(typed: AST, source: AST) -> AST:
+    if (
+        typed.key_annotations == source.key_annotations
+        and typed.optional_key == source.optional_key
+        and typed.constructor_default is source.constructor_default
+    ):
+        return typed
+    out = replace(
+        typed,
+        key_annotations=source.key_annotations,
+        optional_key=source.optional_key,
+        constructor_default=source.constructor_default,
+    )
+    object.__setattr__(out, "context_owner", typed.owner())
+    return out
+
+
+def with_constructor_default[A: AST](ast: A, default: Effect[object, Issue]) -> A:
+    """``ast`` whose missing key or element a constructor fills with
+    ``default``'s value (Effect's ``SchemaAST.withConstructorDefault``); the
+    copy shares ``ast``'s body."""
+    require_effect(default, "default")
+    out = replace_context(ast)
+    object.__setattr__(out, "constructor_default", default)
+    return out
+
+
+def construct_missing(ast: AST, options: ParseOptions) -> ParseResult | None:
+    """The parse of a missing key or element holding ``ast`` under a
+    constructor: its constructor default's value, parsed by ``ast`` (a
+    failing default is an ``Encoding`` issue, as Effect's ``withDefault``);
+    ``None`` without a default or outside a constructor."""
+    default = ast.constructor_default
+    if default is None or not is_constructing(options):
+        return None
+    known = known_exit(default)
+    if type(known) is Success:
+        return ast.parse(known.value, options)
+    wrapped = map_issue(default if known is None else known, lambda i: EncodingIssue(ast, i))
+    return flat_map(wrapped, lambda value: ast.parse(value, options))

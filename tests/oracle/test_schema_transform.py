@@ -18,8 +18,8 @@ Omitted:
   ``Date`` (an invalid ``Date``) has no Python counterpart;
   ``DateTimeUtcFromString`` / ``DateTimeUtcFromMillis`` are the codecs.
 - "Transformations / BigDecimalFromString": no ``BigDecimal`` yet.
-- "flip / should work with withConstructorDefault": no
-  ``withConstructorDefault`` (a struct's defaults are field defaults).
+- "flip / should work with withConstructorDefault": ported in
+  ``test_schema_constructor_default.py``.
 - "UnknownFromJsonString / fromJsonString / reviver option" and "...
   replacer and space options" (the replacer half): JavaScript's
   ``reviver`` / ``replacer`` callbacks (``space`` is ported in
@@ -737,8 +737,8 @@ def _declaration(cause: Cause[Issue]) -> S.Bottom[str]:
 
 def test_make_option_throws_when_the_cause_is_not_a_schema_issue():
     """makeOption / should throw an error when the cause is not a schema issue"""
-    # Effect fails a ``withConstructorDefault``; pyfect's defaults are plain
-    # values, so a declaration's parser gives the cause.
+    # Effect fails a ``withConstructorDefault``; a declaration's parser gives
+    # the same cause.
     schema = _declaration(_DIES)
     _raises_with_defect(
         "Option adapter can only return none for schema issues", lambda: schema.make_option("a")
@@ -827,3 +827,23 @@ def test_annotate_encoded_transforming_schema():
     schema = S.NumberFromString.annotate_encoded(title="encoded title")
     assert (S.to_encoded(schema).ast.annotations or {}).get("title") == "encoded title"
     assert (S.to_type(schema).ast.annotations or {}).get("title") is None
+
+
+# ------------------------------------- duration and offset transformations
+
+
+def test_duration_and_offset_transformations_decode_through_decode_to():
+    """pyfect: ``T.duration_from_*`` and ``T.time_zone_offset_from_number``
+    (Effect's ``durationFrom*`` / ``timeZoneOffsetFromNumber``, which its
+    tests reach only through the schemas built on them)"""
+    from_text = S.String.pipe(S.decode_to(S.Duration, T.duration_from_string))
+    SchemaAsserts(from_text).decoding().succeed("2 seconds", timedelta(seconds=2))
+    SchemaAsserts(from_text).encoding().succeed(timedelta(milliseconds=5), "5 millis")
+    from_nanos = S.BigInt.pipe(S.decode_to(S.Duration, T.duration_from_nanos))
+    SchemaAsserts(from_nanos).decoding().succeed(3000, timedelta(microseconds=3))
+    from_millis = S.Number.pipe(S.decode_to(S.Duration, T.duration_from_millis))
+    SchemaAsserts(from_millis).encoding().succeed(timedelta(milliseconds=1.5), 1.5)
+    offset = S.Int.pipe(S.decode_to(S.TimeZoneOffset, T.time_zone_offset_from_number))
+    decoding = SchemaAsserts(offset).decoding()
+    decoding.succeed(3_600_000, timezone(timedelta(hours=1)))
+    decoding.fail(86_400_000, "Expected an offset strictly between -24 and +24 hours")

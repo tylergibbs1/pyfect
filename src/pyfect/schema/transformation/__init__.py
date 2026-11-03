@@ -32,11 +32,17 @@ from pyfect.schema.transformation._builtins import (
     string_from_uri_component,
     time_zone_from_string,
     time_zone_named_from_string,
+    time_zone_offset_from_number,
     to_lower_case,
     to_upper_case,
     trim,
     uncapitalize,
     url_from_string,
+)
+from pyfect.schema.transformation._durations import (
+    duration_from_millis,
+    duration_from_nanos,
+    duration_from_string,
 )
 from pyfect.schema.transformation._transformation import (
     Middleware,
@@ -62,6 +68,9 @@ __all__ = [
     "capitalize",
     "date_time_utc_from_string",
     "date_time_zoned_from_string",
+    "duration_from_millis",
+    "duration_from_nanos",
+    "duration_from_string",
     "from_json_string",
     "is_transformation",
     "number_from_string",
@@ -78,6 +87,7 @@ __all__ = [
     "string_from_uri_component",
     "time_zone_from_string",
     "time_zone_named_from_string",
+    "time_zone_offset_from_number",
     "to_lower_case",
     "to_upper_case",
     "transform",

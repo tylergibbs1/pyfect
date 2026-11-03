@@ -12,7 +12,7 @@ from pyfect.exit import Success
 from pyfect.option import Option, Some
 from pyfect.schema._adapters import CONSTRUCTOR, OPTION, raise_schema_failure, schema_error_of
 from pyfect.schema._error import SchemaError
-from pyfect.schema._options import ParseOptions
+from pyfect.schema._options import ParseOptions, constructing
 from pyfect.schema.ast import (
     AST,
     Check,
@@ -110,8 +110,10 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
     def make[A](
         self: Bottom[A, object, object, object], input: A, /, **options: Unpack[ParseOptions]
     ) -> A:
-        """``input`` checked against the decoded side; raises ``SchemaError``."""
-        match run_now(self.ast.to_type().parse(input, options)):
+        """``input`` checked against the decoded side, its missing keys and
+        elements filled by their constructor defaults
+        (``with_constructor_default``); raises ``SchemaError``."""
+        match run_now(self.ast.to_type().parse(input, constructing(options))):
             case Success(value):
                 return cast("A", value)
             case failure:
@@ -121,7 +123,7 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
         self: Bottom[A, object, object, object], input: A, /, **options: Unpack[ParseOptions]
     ) -> Option[A]:
         """``Some(value)``, or ``None`` when ``input`` is invalid."""
-        match run_now(self.ast.to_type().parse(input, options)):
+        match run_now(self.ast.to_type().parse(input, constructing(options))):
             case Success(value):
                 return Some(cast("A", value))
             case failure:
@@ -133,7 +135,8 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
     ) -> Effect[A, Issue]:
         """``make`` as an effect failing with the bare ``Issue``, as Effect's
         ``makeEffect`` (so an enclosing schema can add its path)."""
-        return cast("Effect[A, Issue]", to_effect(self.ast.to_type().parse(input, options)))
+        parsed = self.ast.to_type().parse(input, constructing(options))
+        return cast("Effect[A, Issue]", to_effect(parsed))
 
 
 class Codec(Protocol[T_co, E_co, RD_co, RE_co]):

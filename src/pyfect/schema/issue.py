@@ -16,9 +16,9 @@ raised while transforming a value.
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeIs
+from typing import TYPE_CHECKING, Any, TypedDict, TypeIs
 
 from pyfect.logger._text import format_unknown, json_quote
 from pyfect.option import Option, Some
@@ -155,10 +155,74 @@ def is_issue(value: object) -> TypeIs[Issue]:
     )
 
 
+type Formatter[F] = Callable[[Issue], F]
+"""Turns an issue into a report (Effect's ``SchemaIssue.Formatter``)."""
+type LeafHook = Callable[[Leaf], str]
+"""The text of a leaf issue (Effect's ``LeafHook``)."""
+type CheckHook = Callable[[Filter], str | None]
+"""The text of a failed check, ``None`` for the default one (Effect's
+``CheckHook``)."""
+
+
+class StandardIssue(TypedDict):
+    """One issue of a Standard Schema failure: its text and where it is."""
+
+    message: str
+    path: Path
+
+
+class StandardFailure(TypedDict):
+    """A Standard Schema failure result (``StandardSchemaV1.FailureResult``)."""
+
+    issues: list[StandardIssue]
+
+
+def has_input(issue: Issue) -> bool:
+    """``issue`` keeps the rejected value (Effect's ``hasInput``): parsing
+    ran with ``report_input=True``. A ``Pointer`` and a ``MissingKey``
+    never do."""
+    match issue:
+        case Pointer() | MissingKey():
+            return False
+        case _:
+            return issue.input is not None
+
+
 def format_issue(issue: Issue) -> str:
     """Effect's default formatter (``SchemaIssue.defaultFormatter``): one
     message per leaf, each followed by ``\\n  at <path>`` below the root."""
-    return _format(issue, "", None)
+    return "\n".join(
+        "" if message is None else f"{message}\n  at {format_path(path)}" if path else message
+        for path, message in _messages(issue, leaf_message, default_check_hook)
+    )
+
+
+def make_formatter_default() -> Formatter[str]:
+    """``format_issue`` (Effect's ``makeFormatterDefault``)."""
+    return format_issue
+
+
+def make_formatter_standard_schema_v1(
+    *, leaf_hook: LeafHook | None = None, check_hook: CheckHook | None = None
+) -> Formatter[StandardFailure]:
+    """A formatter writing an issue as a Standard Schema failure: one
+    ``{"message", "path"}`` per leaf (Effect's
+    ``makeFormatterStandardSchemaV1``). ``leaf_hook`` writes a leaf
+    (``leaf_message`` by default), ``check_hook`` a failed check
+    (``default_check_hook``)."""
+    leaf = leaf_hook or leaf_message
+    check = check_hook or default_check_hook
+
+    def format(issue: Issue) -> StandardFailure:
+        return {
+            "issues": [
+                StandardIssue(message=message, path=path)
+                for path, message in _messages(issue, leaf, check)
+                if message is not None
+            ]
+        }
+
+    return format
 
 
 def format_path(path: Path) -> str:
@@ -171,28 +235,33 @@ def _format_key(key: PathKey) -> str:
     return json_quote(key) if isinstance(key, str) else format_unknown(key)
 
 
-def _format(issue: Issue, path: str, override: str | None) -> str:
+def _messages(
+    issue: Issue, leaf_hook: LeafHook, check_hook: CheckHook
+) -> list[tuple[Path, str | None]]:
+    """Each leaf's path and text, in order; an empty ``Composite`` is
+    ``None`` (an empty line in ``format_issue``, nothing in a Standard
+    Schema failure)."""
     # A loop over an explicit stack: an issue tree is as deep as the input.
-    lines: list[str] = []
-    stack: list[tuple[Issue, str, str | None]] = [(issue, path, override)]
+    out: list[tuple[Path, str | None]] = []
+    stack: list[tuple[Issue, Path, str | None]] = [(issue, (), None)]
     while stack:
         issue, path, override = stack.pop()
         match issue:
             case Filter(issue=inner):
-                found = override if override is not None else filter_message(issue)
+                found = override if override is not None else filter_message(issue, check_hook)
                 stack.append((inner, path, found))
                 continue
             case Encoding(issue=inner):
                 stack.append((inner, path, override))
                 continue
             case Pointer(segments, inner):
-                stack.append((inner, path + format_path(segments), override))
+                stack.append((inner, (*path, *segments), override))
                 continue
             case Composite(issues=issues) | AnyOf(issues=issues) if issues:
                 stack.extend((i, path, override) for i in reversed(issues))
                 continue
             case Composite():
-                lines.append("")
+                out.append((path, None))
                 continue
             case AnyOf(ast=ast):
                 found = override if override is not None else _find_message(issue)
@@ -200,9 +269,9 @@ def _format(issue: Issue, path: str, override: str | None) -> str:
                     found if found is not None else _expected_message(ast.expected(), issue.input)
                 )
             case _:
-                message = override if override is not None else leaf_message(issue)
-        lines.append(f"{message}\n  at {path}" if path else message)
-    return "\n".join(lines)
+                message = override if override is not None else leaf_hook(issue)
+        out.append((path, message))
+    return out
 
 
 def leaf_message(issue: Leaf) -> str:
@@ -242,14 +311,18 @@ def _with_input(without: str, prefix: str, input: Option[object]) -> str:
     return without if input is None else f"{prefix} {_show(input)}"
 
 
-def filter_message(issue: Filter) -> str | None:
-    """The text of a failed check (Effect's ``defaultCheckHook`` and its
-    fallback): the check's ``message``, the inner issue's, then for an
+def default_check_hook(issue: Filter) -> str | None:
+    """The ``message`` of the failed check, else of its inner issue
+    (Effect's ``defaultCheckHook``)."""
+    message = _find_message(issue)
+    return message if message is not None else _find_message(issue.issue)
+
+
+def filter_message(issue: Filter, check_hook: CheckHook = default_check_hook) -> str | None:
+    """The text of a failed check: ``check_hook``'s, then for an
     ``InvalidValue`` ``"Expected <expected>"`` from the inner issue or the
     check."""
-    message = _find_message(issue)
-    if message is None:
-        message = _find_message(issue.issue)
+    message = check_hook(issue)
     if message is not None or not isinstance(issue.issue, InvalidValue):
         return message
     expected = _find_expected(issue.issue)
@@ -313,26 +386,35 @@ def _show(input: Some[object]) -> str:
 
 __all__ = [
     "AnyOf",
+    "CheckHook",
     "Composite",
     "Encoding",
     "Filter",
     "Forbidden",
+    "Formatter",
     "InvalidType",
     "InvalidValue",
     "Issue",
     "IssueAnnotations",
     "Leaf",
+    "LeafHook",
     "MissingKey",
     "OneOf",
     "Path",
     "PathKey",
     "Pointer",
+    "StandardFailure",
+    "StandardIssue",
     "UnexpectedKey",
+    "default_check_hook",
     "filter_message",
     "format_check",
     "format_issue",
     "format_path",
+    "has_input",
     "is_issue",
     "leaf_message",
+    "make_formatter_default",
+    "make_formatter_standard_schema_v1",
     "reported",
 ]

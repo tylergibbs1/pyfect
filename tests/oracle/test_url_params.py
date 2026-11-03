@@ -6,16 +6,21 @@ operations are ``UrlParams`` methods.
 
 Omitted, with the reason:
 
-- ``round-trips ordered pairs with the serializer annotation``,
-  ``JsonFromUrlParamsField applies a JSON reviver``, ``RecordFromUrlParams
-  preserves single and repeated values``: the URL parameter schemas are
-  not ported (``to_record`` is the record conversion).
+- ``round-trips ordered pairs with the serializer annotation``: it reads
+  through ``Schema.toIso``, which is not ported (docs/PARITY.md section 4).
+- ``JsonFromUrlParamsField applies a JSON reviver``: ``S.from_json_string``
+  has no ``reviver`` option (``test_schema_transform.py`` omits its reviver
+  title); the test below checks the field is read and parsed.
 """
+
+from typing import TypedDict
 
 import pytest
 
 import pyfect as fx
+from pyfect import schema as S
 from pyfect import testing
+from pyfect.http import schema as HS
 from pyfect.http import url_params as up
 from pyfect.redacted import Redacted
 
@@ -100,3 +105,23 @@ def test_get_first_and_last() -> None:
     assert params.get_last("foo") == "b"
     assert params.get_first("bar") is None
     assert params.get_last("bar") is None
+
+
+class _Value(TypedDict):
+    value: str
+
+
+def test_json_from_url_params_field_parses_the_field() -> None:
+    """JsonFromUrlParamsField applies a JSON reviver (without the reviver)"""
+    field = S.decode_sync(HS.JsonFromUrlParamsField("json"))
+    value = field(up.from_input({"json": '{"value":"original"}'}))
+    assert S.decode_unknown_sync(S.Struct(_Value))(value) == {"value": "original"}
+    with pytest.raises(S.SchemaError, match=r'Missing key\n  at \["json"\]'):
+        field(up.from_input({}))
+
+
+def test_record_from_url_params_preserves_single_and_repeated_values() -> None:
+    """RecordFromUrlParams preserves single and repeated values"""
+    params = up.make([("a", "1"), ("a", "2"), ("b", "3")])
+    assert S.decode_sync(HS.RecordFromUrlParams)(params) == {"a": ("1", "2"), "b": "3"}
+    assert S.encode_sync(HS.RecordFromUrlParams)({"a": ("1", "2"), "b": "3"}) == params

@@ -8,7 +8,7 @@ a zone a ``ZoneInfo`` / ``timezone``, an ``Option`` is ``Some | None``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any
 from urllib.parse import urlunsplit
 from zoneinfo import ZoneInfo
@@ -196,6 +196,31 @@ time_zone_from_string: Transformation[tzinfo, str] = transform_effect(
 )
 """A zone and its text: an IANA identifier or an offset like ``+03:00``
 (Effect's ``timeZoneFromString``)."""
+
+
+_DAY_MS = 86_400_000
+
+
+def _offset_of(millis: int) -> timezone | None:
+    # Python's offsets are strictly inside a day (Effect's are not bounded).
+    return timezone(timedelta(milliseconds=millis)) if abs(millis) < _DAY_MS else None
+
+
+def _offset_millis(zone: timezone) -> int:
+    return (zone.utcoffset(None) // timedelta(microseconds=1)) // 1000
+
+
+def _decode_offset(millis: int, options: ParseOptions) -> Exit[timezone, Issue]:
+    out = _offset_of(millis)
+    expected = "an offset strictly between -24 and +24 hours"
+    return _invalid(expected, millis, options) if out is None else Success(out)
+
+
+time_zone_offset_from_number: Transformation[timezone, int] = transform_effect(
+    decode=_decode_offset, encode=_done(_offset_millis)
+)
+"""A fixed-offset zone and its offset in milliseconds (Effect's
+``timeZoneOffsetFromNumber``); the offset is strictly inside a day."""
 
 
 def _byte_size_text(size: int) -> str:

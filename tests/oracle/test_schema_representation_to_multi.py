@@ -10,8 +10,6 @@ Omitted:
   Context", "... / preserves the original owner through repeated Context
   replacements", every "contextual projections with toType / toEncoded /
   flip" title (each builds ``mutableKey`` fields).
-- "shares type references without losing key annotations or constructor
-  defaults": ``withConstructorDefault`` is not ported.
 - "reference policies / exposes the projected body and counts contextual
   copies together": needs ``S.optional_key(value)`` as a standalone schema
   (an element marker in pyfect).
@@ -19,8 +17,9 @@ Omitted:
   same reason.
 """
 
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
+from pyfect import effect as fx
 from pyfect import schema as S
 from pyfect.schema import representation as R
 
@@ -221,3 +220,30 @@ def test_wraps_the_root_representation_and_preserves_references():
 def test_constructs_runtime_and_type_source():
     """SchemaRepresentation.makeCode / constructs runtime and type source"""
     assert R.make_code("S.String", "str") == R.Code("S.String", "str")
+
+
+class _Shared(TypedDict):
+    annotated: float
+    defaulted: NotRequired[float]
+    required: float
+
+
+def test_shares_type_references_without_losing_key_annotations_or_constructor_defaults():
+    """shares type references without losing key annotations or constructor defaults"""
+    value = S.NumberFromString.annotate(identifier="Value")
+    schema = S.to_type(
+        S.Struct(
+            _Shared,
+            annotated=value.annotate_key(description="field"),
+            defaulted=value.pipe(S.with_constructor_default(fx.succeed(1.0))),
+            required=value,
+        )
+    )
+    document = R.to_representation(schema)
+    assert list(document.references) == ["Value"]
+    assert isinstance(document.representation, R.Objects)
+    assert document.representation.property_signatures[0] == R.PropertySignature(
+        "annotated", R.Reference("Value"), annotations={"description": "field"}
+    )
+    made = schema.make({"annotated": 2, "required": 3})
+    assert made == {"annotated": 2, "defaulted": 1, "required": 3}

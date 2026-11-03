@@ -5,15 +5,15 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Schema | 377 | 294 | 4 | 38 | 41 | 89% |
-| SchemaAST | 133 | 44 | 1 | 37 | 51 | 61% |
-| SchemaGetter | 53 | 44 | 0 | 0 | 9 | 83% |
-| SchemaTransformation | 50 | 33 | 3 | 2 | 12 | 76% |
-| SchemaIssue | 21 | 12 | 0 | 0 | 9 | 57% |
-| SchemaParser | 33 | 22 | 0 | 4 | 7 | 78% |
+| Schema | 377 | 300 | 17 | 60 | 0 | 100% |
+| SchemaAST | 133 | 58 | 8 | 67 | 0 | 100% |
+| SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
+| SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
+| SchemaIssue | 21 | 16 | 3 | 2 | 0 | 100% |
+| SchemaParser | 33 | 25 | 0 | 8 | 0 | 100% |
 | SchemaRepresentation | 100 | 85 | 3 | 9 | 3 | 97% |
 | JsonSchema | 14 | 7 | 7 | 0 | 0 | 100% |
-| **All** | 781 | | | | 132 | 83% |
+| **All** | 781 | | | | 3 | 99% |
 
 ## Schema
 
@@ -86,15 +86,15 @@ Coverage counts ported, renamed and §4 exports.
 | `ObjectKeyword` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `UniqueSymbol` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `Struct` | ported | `pyfect.schema.Struct` |
-| `fieldsAssign` | missing |  |
-| `encodeKeys` | missing |  |
-| `extendTo` | missing |  |
+| `fieldsAssign` | §4 | TypedDict inheritance (§4: `Schema.fieldsAssign`) |
+| `encodeKeys` | ported | `pyfect.schema.encode_keys` |
+| `extendTo` | ported | `pyfect.schema.extend_to` |
 | `Record` | ported | `pyfect.schema.Record` |
 | `StructWithRest` | ported | `pyfect.schema.StructWithRest` |
 | `Tuple` | ported | `pyfect.schema.Tuple` |
 | `TupleWithRest` | ported | `pyfect.schema.TupleWithRest` |
 | `Array` | ported | `pyfect.schema.Array` |
-| `withArrayLengthConstraints` | missing |  |
+| `withArrayLengthConstraints` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `NonEmptyArray` | ported | `pyfect.schema.NonEmptyArray` |
 | `ArrayEnsure` | ported | `pyfect.schema.ArrayEnsure` |
 | `UniqueArray` | ported | `pyfect.schema.UniqueArray` |
@@ -112,30 +112,30 @@ Coverage counts ported, renamed and §4 exports.
 | `middlewareDecoding` | ported | `pyfect.schema.middleware_decoding` |
 | `middlewareEncoding` | ported | `pyfect.schema.middleware_encoding` |
 | `catchDecoding` | ported | `pyfect.schema.catch_decoding` |
-| `catchDecodingWithContext` | missing |  |
+| `catchDecodingWithContext` | renamed | `pyfect.schema.catch_decoding` |
 | `catchEncoding` | ported | `pyfect.schema.catch_encoding` |
-| `catchEncodingWithContext` | missing |  |
+| `catchEncodingWithContext` | renamed | `pyfect.schema.catch_encoding` |
 | `decodeTo` | ported | `pyfect.schema.decode_to` |
-| `linkDecoding` | missing |  |
+| `linkDecoding` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `TrueLiterals` | ported | `pyfect.schema.TrueLiterals` |
 | `FalseLiterals` | ported | `pyfect.schema.FalseLiterals` |
 | `BooleanLiterals` | ported | `pyfect.schema.BooleanLiterals` |
 | `decode` | ported | `pyfect.schema.decode` |
 | `encodeTo` | ported | `pyfect.schema.encode_to` |
 | `encode` | ported | `pyfect.schema.encode` |
-| `withConstructorDefault` | missing |  |
+| `withConstructorDefault` | ported | `pyfect.schema.with_constructor_default` |
 | `withDecodingDefaultKey` | ported | `pyfect.schema.with_decoding_default_key` |
 | `withDecodingDefaultTypeKey` | ported | `pyfect.schema.with_decoding_default_type_key` |
 | `withDecodingDefault` | §4 | `S.with_decoding_default_key` (§4: `Schema.UndefinedOr` / `NullishOr`) |
 | `withDecodingDefaultType` | §4 | `S.with_decoding_default_type_key` (§4: `Schema.UndefinedOr` / `NullishOr`) |
-| `tag` | missing |  |
+| `tag` | ported | `pyfect.schema.tag` |
 | `tagDefaultOmit` | ported | `pyfect.schema.tag_default_omit` |
 | `TaggedStruct` | ported | `pyfect.schema.TaggedStruct` |
 | `toTaggedUnion` | ported | `pyfect.schema.to_tagged_union` |
 | `TaggedUnion` | ported | `pyfect.schema.TaggedUnion` |
 | `Opaque` | §4 | `class Self(S.Class)` (§4: `Schema.Opaque<Self>()(struct)`) |
 | `instanceOf` | ported | `pyfect.schema.instance_of` |
-| `link` | missing |  |
+| `link` | ported | `pyfect.schema.link` |
 | `makeFilter` | ported | `pyfect.schema.make_filter` |
 | `makeFilterGroup` | ported | `pyfect.schema.make_filter_group` |
 | `isTrimmed` | ported | `pyfect.schema.is_trimmed` |
@@ -209,16 +209,16 @@ Coverage counts ported, renamed and §4 exports.
 | `RegExp` | ported | `pyfect.schema.RegExp` |
 | `URL` | ported | `pyfect.schema.URL` |
 | `URLFromString` | ported | `pyfect.schema.URLFromString` |
-| `Date` | missing |  |
-| `DateFromString` | missing |  |
-| `DateFromMillis` | missing |  |
+| `Date` | §4 | `S.DateTimeUtc` (§4: `Schema.Date`, `DateFromString`, `DateFromMillis`) |
+| `DateFromString` | §4 | `S.DateTimeUtcFromString` (§4: `Schema.Date`, `DateFromString`, `DateFromMillis`) |
+| `DateFromMillis` | §4 | `S.DateTimeUtcFromMillis` (§4: `Schema.Date`, `DateFromString`, `DateFromMillis`) |
 | `fromJsonString` | ported | `pyfect.schema.from_json_string` |
 | `UnknownFromJsonString` | ported | `pyfect.schema.UnknownFromJsonString` |
-| `File` | missing |  |
-| `FormData` | missing |  |
-| `fromFormData` | missing |  |
-| `URLSearchParams` | missing |  |
-| `fromURLSearchParams` | missing |  |
+| `File` | §4 | `pyfect.http.schema.UrlParams` / `RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `FormData` | §4 | `pyfect.http.schema.UrlParams` / `RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `fromFormData` | §4 | `pyfect.http.schema.UrlParams` / `RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `URLSearchParams` | §4 | `pyfect.http.schema.UrlParams` / `RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `fromURLSearchParams` | §4 | `pyfect.http.schema.UrlParams` / `RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
 | `NumberFromString` | ported | `pyfect.schema.NumberFromString` |
 | `FiniteFromString` | ported | `pyfect.schema.FiniteFromString` |
 | `BigIntFromString` | ported | `pyfect.schema.BigIntFromString` |
@@ -252,7 +252,7 @@ Coverage counts ported, renamed and §4 exports.
 | `DateTimeUtc` | ported | `pyfect.schema.DateTimeUtc` |
 | `DateTimeUtcFromDate` | ported | `pyfect.schema.DateTimeUtcFromDate` |
 | `DateTimeUtcFromString` | ported | `pyfect.schema.DateTimeUtcFromString` |
-| `DateTimeUtcFromHttpDate` | missing |  |
+| `DateTimeUtcFromHttpDate` | renamed | `pyfect.http.schema.DateTimeUtcFromHttpDate` |
 | `DateTimeUtcFromMillis` | ported | `pyfect.schema.DateTimeUtcFromMillis` |
 | `TimeZoneOffset` | ported | `pyfect.schema.TimeZoneOffset` |
 | `TimeZoneNamed` | ported | `pyfect.schema.TimeZoneNamed` |
@@ -342,22 +342,22 @@ Coverage counts ported, renamed and §4 exports.
 | `DnsTxtRecord` | ported | `pyfect.schema.DnsTxtRecord` |
 | `DnsRecord` | ported | `pyfect.schema.DnsRecord` |
 | `Exit` | ported | `pyfect.schema.Exit` |
-| `Graph` | missing |  |
+| `Graph` | §4 | not ported (§4: `Schema.Graph`) |
 | `HashMap` | §4 | `S.Map` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
 | `HashSet` | §4 | `S.FrozenSet` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
 | `Option` | ported | `pyfect.schema.Option` |
 | `OptionFromNullOr` | ported | `pyfect.schema.OptionFromNullOr` |
 | `OptionFromUndefinedOr` | §4 | `S.OptionFromNullOr` (§4: `Schema.UndefinedOr` / `NullishOr`) |
 | `OptionFromNullishOr` | §4 | `S.OptionFromNullOr` (§4: `Schema.UndefinedOr` / `NullishOr`) |
-| `Cookie` | missing |  |
-| `Cookies` | missing |  |
-| `RecordFromCookies` | missing |  |
-| `Headers` | missing |  |
-| `RetryAfter` | missing |  |
-| `RetryAfterFromString` | missing |  |
-| `UrlParams` | missing |  |
-| `JsonFromUrlParamsField` | missing |  |
-| `RecordFromUrlParams` | missing |  |
+| `Cookie` | renamed | `pyfect.http.schema.Cookie` |
+| `Cookies` | renamed | `pyfect.http.schema.Cookies` |
+| `RecordFromCookies` | renamed | `pyfect.http.schema.RecordFromCookies` |
+| `Headers` | renamed | `pyfect.http.schema.Headers` |
+| `RetryAfter` | renamed | `pyfect.http.schema.RetryAfter` |
+| `RetryAfterFromString` | renamed | `pyfect.http.schema.RetryAfterFromString` |
+| `UrlParams` | renamed | `pyfect.http.schema.UrlParams` |
+| `JsonFromUrlParamsField` | renamed | `pyfect.http.schema.JsonFromUrlParamsField` |
+| `RecordFromUrlParams` | renamed | `pyfect.http.schema.RecordFromUrlParams` |
 | `OptionFromOptionalKey` | ported | `pyfect.schema.OptionFromOptionalKey` |
 | `OptionFromOptional` | §4 | `S.OptionFromOptionalKey` (§4: `Schema.UndefinedOr` / `NullishOr`) |
 | `OptionFromOptionalNullOr` | ported | `pyfect.schema.OptionFromOptionalNullOr` |
@@ -368,7 +368,7 @@ Coverage counts ported, renamed and §4 exports.
 | `SemVerFromString` | ported | `pyfect.schema.SemVerFromString` |
 | `SemVerRange` | ported | `pyfect.schema.SemVerRange` |
 | `SemVerRangeFromString` | ported | `pyfect.schema.SemVerRangeFromString` |
-| `makeClassTrusted` | missing |  |
+| `makeClassTrusted` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `Class` | ported | `pyfect.schema.Class` |
 | `TaggedClass` | ported | `pyfect.schema.TaggedClass` |
 | `Error` | ported | `pyfect.schema.Error` |
@@ -377,23 +377,23 @@ Coverage counts ported, renamed and §4 exports.
 | `toFormatter` | ported | `pyfect.schema.to_formatter` |
 | `overrideToEquivalence` | ported | `pyfect.schema.Bottom.override_to_equivalence` |
 | `toEquivalence` | ported | `pyfect.schema.to_equivalence` |
-| `toRepresentation` | missing |  |
+| `toRepresentation` | renamed | `pyfect.schema.representation.to_representation` |
 | `toJsonSchemaDocument` | ported | `pyfect.schema.to_json_schema_document` |
 | `toCodecJson` | ported | `pyfect.schema.to_codec_json` |
-| `toCodecIso` | missing |  |
+| `toCodecIso` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
 | `toCodecStringTree` | ported | `pyfect.schema.to_codec_string_tree` |
 | `toCodecArrayFromSingle` | ported | `pyfect.schema.to_codec_array_from_single` |
-| `toCodecGoJson` | missing |  |
-| `toEncoderXml` | missing |  |
-| `toIso` | missing |  |
-| `toIsoSource` | missing |  |
-| `toIsoFocus` | missing |  |
-| `overrideToCodecIso` | missing |  |
-| `toDifferJsonPatch` | missing |  |
-| `Tree` | missing |  |
+| `toCodecGoJson` | §4 | not ported (§4: `Schema.toDifferJsonPatch`, `toEncoderXml`, `toCodecGoJson`) |
+| `toEncoderXml` | §4 | not ported (§4: `Schema.toDifferJsonPatch`, `toEncoderXml`, `toCodecGoJson`) |
+| `toIso` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
+| `toIsoSource` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
+| `toIsoFocus` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
+| `overrideToCodecIso` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
+| `toDifferJsonPatch` | §4 | not ported (§4: `Schema.toDifferJsonPatch`, `toEncoderXml`, `toCodecGoJson`) |
+| `Tree` | ported | `pyfect.schema.Tree` |
 | `Json` | ported | `pyfect.schema.Json` |
 | `JsonObject` | ported | `pyfect.schema.JsonObject` |
-| `MutableJson` | missing |  |
+| `MutableJson` | §4 | `S.Json` (§4: `Schema.mutable`, `mutableKey` / `readonlyKey`) |
 | `resolveAnnotations` | ported | `pyfect.schema.resolve_annotations` |
 | `resolveAnnotationsKey` | ported | `pyfect.schema.resolve_annotations_key` |
 
@@ -424,8 +424,8 @@ Coverage counts ported, renamed and §4 exports.
 | `isUnion` | §4 | `isinstance(ast, Union)` (§4: `TypeId` symbols and `is*` guards) |
 | `isSuspend` | §4 | `isinstance(ast, Suspend)` (§4: `TypeId` symbols and `is*` guards) |
 | `Link` | ported | `pyfect.schema.ast.Link` |
-| `defaultParseOptions` | missing |  |
-| `Context` | missing |  |
+| `defaultParseOptions` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `Context` | §4 | the node fields `optional_key`, `key_annotations`, `constructor_default` (§4: `SchemaAST.Context`) |
 | `Declaration` | ported | `pyfect.schema.ast.Declaration` |
 | `Null` | ported | `pyfect.schema.ast.Null` |
 | `null` | ported | `pyfect.schema.ast.null` |
@@ -443,7 +443,7 @@ Coverage counts ported, renamed and §4 exports.
 | `objectKeyword` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `Enum` | ported | `pyfect.schema.ast.Enum` |
 | `TemplateLiteral` | ported | `pyfect.schema.ast.TemplateLiteral` |
-| `templateLiteralParser` | missing |  |
+| `templateLiteralParser` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `UniqueSymbol` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `Literal` | ported | `pyfect.schema.ast.Literal` |
 | `String` | ported | `pyfect.schema.ast.String` |
@@ -457,91 +457,91 @@ Coverage counts ported, renamed and §4 exports.
 | `BigInt` | ported | `pyfect.schema.ast.BigInt` |
 | `bigInt` | ported | `pyfect.schema.ast.big_int` |
 | `Arrays` | ported | `pyfect.schema.ast.Arrays` |
-| `stepArray` | missing |  |
-| `parseArray` | missing |  |
+| `stepArray` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `parseArray` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `FINITE_PATTERN` | ported | `pyfect.schema.ast.FINITE_PATTERN` |
-| `getIndexSignatureKeys` | missing |  |
+| `getIndexSignatureKeys` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `PropertySignature` | ported | `pyfect.schema.ast.PropertySignature` |
 | `IndexSignature` | ported | `pyfect.schema.ast.IndexSignature` |
 | `Objects` | ported | `pyfect.schema.ast.Objects` |
-| `stepProperty` | missing |  |
-| `parseProperties` | missing |  |
-| `struct` | missing |  |
-| `getAST` | missing |  |
-| `tuple` | missing |  |
-| `union` | missing |  |
-| `structWithRest` | missing |  |
-| `tupleWithRest` | missing |  |
+| `stepProperty` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `parseProperties` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `struct` | ported | `pyfect.schema.ast.struct` |
+| `getAST` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `tuple` | ported | `pyfect.schema.ast.tuple_` |
+| `union` | ported | `pyfect.schema.ast.union` |
+| `structWithRest` | ported | `pyfect.schema.ast.struct_with_rest` |
+| `tupleWithRest` | ported | `pyfect.schema.ast.tuple_with_rest` |
 | `mutable` | §4 | not ported (§4: `Schema.mutable`, `mutableKey` / `readonlyKey`) |
-| `collectSentinels` | missing |  |
-| `getCandidateIndex` | missing |  |
+| `collectSentinels` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `getCandidateIndex` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `Union` | ported | `pyfect.schema.ast.Union` |
 | `Suspend` | ported | `pyfect.schema.ast.Suspend` |
 | `Filter` | ported | `pyfect.schema.ast.Filter` |
 | `FilterGroup` | ported | `pyfect.schema.ast.FilterGroup` |
 | `makeFilter` | ported | `pyfect.schema.ast.make_filter` |
 | `makeFilterByGuard` | ported | `pyfect.schema.ast.make_filter_by_guard` |
-| `isFinite` | missing |  |
-| `finite` | missing |  |
-| `isPattern` | missing |  |
-| `getContextOwner` | missing |  |
-| `replaceEncoding` | missing |  |
+| `isFinite` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `finite` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `isPattern` | renamed | `pyfect.schema.is_pattern` |
+| `getContextOwner` | renamed | `pyfect.schema.ast.AST.owner` |
+| `replaceEncoding` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `replaceContext` | ported | `pyfect.schema.ast.replace_context` |
-| `getLastEncoding` | missing |  |
+| `getLastEncoding` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `annotate` | ported | `pyfect.schema.ast.annotate` |
-| `replaceChecks` | missing |  |
+| `replaceChecks` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `appendChecks` | ported | `pyfect.schema.ast.append_checks` |
-| `mapLink` | missing |  |
-| `applyToLastLink` | missing |  |
-| `replaceContextLastLink` | missing |  |
-| `applyToSelfOrLastLinkEncoding` | missing |  |
-| `applyToSelfOrLastLinkEncodingIdempotent` | missing |  |
-| `middlewareDecoding` | missing |  |
-| `middlewareEncoding` | missing |  |
-| `mapOrSame` | missing |  |
-| `annotateKey` | missing |  |
+| `mapLink` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `applyToLastLink` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `replaceContextLastLink` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `applyToSelfOrLastLinkEncoding` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `applyToSelfOrLastLinkEncodingIdempotent` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `middlewareDecoding` | renamed | `pyfect.schema.middleware_decoding` |
+| `middlewareEncoding` | renamed | `pyfect.schema.middleware_encoding` |
+| `mapOrSame` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `annotateKey` | renamed | `pyfect.schema.Bottom.annotate_key` |
 | `optionalKey` | ported | `pyfect.schema.ast.optional_key` |
 | `optional` | renamed | `pyfect.schema.ast.optional_key` |
 | `mutableKey` | §4 | not ported (§4: `Schema.mutable`, `mutableKey` / `readonlyKey`) |
-| `withConstructorDefault` | missing |  |
+| `withConstructorDefault` | ported | `pyfect.schema.ast.with_constructor_default` |
 | `decodeTo` | ported | `pyfect.schema.ast.decode_to` |
 | `record` | ported | `pyfect.schema.ast.record` |
-| `isOptional` | missing |  |
+| `isOptional` | ported | `pyfect.schema.ast.is_optional` |
 | `isMutable` | §4 | not ported (§4: `Schema.mutable`, `mutableKey` / `readonlyKey`) |
-| `toType` | missing |  |
+| `toType` | ported | `pyfect.schema.ast.AST.to_type` |
 | `toEncoded` | ported | `pyfect.schema.ast.to_encoded` |
-| `flip` | missing |  |
-| `parameterFromPropertyKey` | missing |  |
-| `parameterFromString` | missing |  |
+| `flip` | ported | `pyfect.schema.ast.AST.flip` |
+| `parameterFromPropertyKey` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `parameterFromString` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `STRING_PATTERN` | ported | `pyfect.schema.ast.STRING_PATTERN` |
-| `isStringFinite` | missing |  |
-| `isStringBigInt` | missing |  |
-| `bigIntString` | missing |  |
+| `isStringFinite` | renamed | `pyfect.schema.is_string_finite` |
+| `isStringBigInt` | renamed | `pyfect.schema.is_string_big_int` |
+| `bigIntString` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `symbolString` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `isStringSymbol` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `collectIssues` | ported | `pyfect.schema.ast.collect_issues` |
-| `runChecks` | missing |  |
-| `getConstructorDescriptor` | missing |  |
-| `resolve` | missing |  |
-| `resolveAt` | missing |  |
-| `resolveIdentifier` | missing |  |
-| `resolveTitle` | missing |  |
-| `resolveDescription` | missing |  |
+| `runChecks` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `getConstructorDescriptor` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `resolve` | ported | `pyfect.schema.ast.AST.resolve` |
+| `resolveAt` | ported | `pyfect.schema.ast.resolve_at` |
+| `resolveIdentifier` | ported | `pyfect.schema.ast.resolve_identifier` |
+| `resolveTitle` | ported | `pyfect.schema.ast.resolve_title` |
+| `resolveDescription` | ported | `pyfect.schema.ast.resolve_description` |
 | `isJson` | ported | `pyfect.schema.ast.is_json` |
 | `Json` | ported | `pyfect.schema.ast.json` |
-| `MutableJson` | missing |  |
-| `unknownToJson` | missing |  |
+| `MutableJson` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `unknownToJson` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `objectKeywordToJson` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `isStringTree` | ported | `pyfect.schema.ast.is_string_tree` |
-| `unknownToStringTree` | missing |  |
+| `unknownToStringTree` | §4 | not public (§4: Effect's `@internal` schema exports) |
 
 ## SchemaGetter
 
 | Effect | Status | pyfect |
 |---|---|---|
 | `run` | ported | `pyfect.schema.getter.run` |
-| `compose` | missing |  |
-| `map` | missing |  |
+| `compose` | ported | `pyfect.schema.getter.Getter.compose` |
+| `map` | ported | `pyfect.schema.getter.Getter.map` |
 | `succeed` | ported | `pyfect.schema.getter.succeed` |
 | `fail` | ported | `pyfect.schema.getter.fail` |
 | `forbidden` | ported | `pyfect.schema.getter.forbidden` |
@@ -561,7 +561,7 @@ Coverage counts ported, renamed and §4 exports.
 | `Number` | ported | `pyfect.schema.getter.number` |
 | `Boolean` | ported | `pyfect.schema.getter.boolean` |
 | `BigInt` | ported | `pyfect.schema.getter.big_int` |
-| `Date` | missing |  |
+| `Date` | §4 | `date_time_utc_from_input` (§4: `Schema.Date`, `DateFromString`, `DateFromMillis`) |
 | `trim` | ported | `pyfect.schema.getter.trim` |
 | `capitalize` | ported | `pyfect.schema.getter.capitalize` |
 | `uncapitalize` | ported | `pyfect.schema.getter.uncapitalize` |
@@ -586,12 +586,12 @@ Coverage counts ported, renamed and §4 exports.
 | `encodeUriComponent` | ported | `pyfect.schema.getter.encode_uri_component` |
 | `decodeUriComponent` | ported | `pyfect.schema.getter.decode_uri_component` |
 | `dateTimeUtcFromInput` | ported | `pyfect.schema.getter.date_time_utc_from_input` |
-| `decodeFormData` | missing |  |
-| `encodeFormData` | missing |  |
-| `decodeURLSearchParams` | missing |  |
-| `encodeURLSearchParams` | missing |  |
-| `makeTreeRecord` | missing |  |
-| `collectBracketPathEntries` | missing |  |
+| `decodeFormData` | §4 | `pyfect.http.schema.RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `encodeFormData` | §4 | `pyfect.http.schema.RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `decodeURLSearchParams` | §4 | `pyfect.http.schema.RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `encodeURLSearchParams` | §4 | `pyfect.http.schema.RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `makeTreeRecord` | ported | `pyfect.schema.getter.make_tree_record` |
+| `collectBracketPathEntries` | ported | `pyfect.schema.getter.collect_bracket_path_entries` |
 
 ## SchemaTransformation
 
@@ -599,9 +599,9 @@ Coverage counts ported, renamed and §4 exports.
 |---|---|---|
 | `Middleware` | ported | `pyfect.schema.transformation.Middleware` |
 | `Transformation` | ported | `pyfect.schema.transformation.Transformation` |
-| `composeTransformation` | missing |  |
+| `composeTransformation` | renamed | `pyfect.schema.transformation.Transformation.compose` |
 | `isTransformation` | ported | `pyfect.schema.transformation.is_transformation` |
-| `makeTransformation` | missing |  |
+| `makeTransformation` | renamed | `pyfect.schema.transformation.Transformation` |
 | `transformEffect` | ported | `pyfect.schema.transformation.transform_effect` |
 | `transform` | ported | `pyfect.schema.transformation.transform` |
 | `transformOptional` | ported | `pyfect.schema.transformation.transform_optional` |
@@ -617,16 +617,16 @@ Coverage counts ported, renamed and §4 exports.
 | `passthroughSubtype` | ported | `pyfect.schema.transformation.passthrough_subtype` |
 | `numberFromString` | ported | `pyfect.schema.transformation.number_from_string` |
 | `bigintFromString` | renamed | `pyfect.schema.transformation.big_int_from_string` |
-| `dateFromString` | missing |  |
-| `dateFromMillis` | missing |  |
-| `durationFromString` | missing |  |
-| `durationFromNanos` | missing |  |
-| `durationFromMillis` | missing |  |
+| `dateFromString` | §4 | `date_time_utc_from_string` (§4: `Schema.Date`, `DateFromString`, `DateFromMillis`) |
+| `dateFromMillis` | §4 | `S.DateTimeUtcFromMillis` (§4: `Schema.Date`, `DateFromString`, `DateFromMillis`) |
+| `durationFromString` | ported | `pyfect.schema.transformation.duration_from_string` |
+| `durationFromNanos` | ported | `pyfect.schema.transformation.duration_from_nanos` |
+| `durationFromMillis` | ported | `pyfect.schema.transformation.duration_from_millis` |
 | `byteSizeFromString` | ported | `pyfect.schema.transformation.byte_size_from_string` |
 | `byteSizeFromBigInt` | ported | `pyfect.schema.transformation.byte_size_from_big_int` |
 | `byteSizeFromNumber` | ported | `pyfect.schema.transformation.byte_size_from_number` |
-| `errorFromJsonError` | missing |  |
-| `defectFromJson` | missing |  |
+| `errorFromJsonError` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `defectFromJson` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `optionFromNullOr` | ported | `pyfect.schema.transformation.option_from_null_or` |
 | `optionFromUndefinedOr` | §4 | `option_from_null_or` (§4: `Schema.UndefinedOr` / `NullishOr`) |
 | `optionFromNullishOr` | §4 | `option_from_null_or` (§4: `Schema.UndefinedOr` / `NullishOr`) |
@@ -640,9 +640,9 @@ Coverage counts ported, renamed and §4 exports.
 | `stringFromHexString` | ported | `pyfect.schema.transformation.string_from_hex_string` |
 | `stringFromUriComponent` | ported | `pyfect.schema.transformation.string_from_uri_component` |
 | `fromJsonString` | ported | `pyfect.schema.transformation.from_json_string` |
-| `fromFormData` | missing |  |
-| `fromURLSearchParams` | missing |  |
-| `timeZoneOffsetFromNumber` | missing |  |
+| `fromFormData` | §4 | `pyfect.http.schema.RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `fromURLSearchParams` | §4 | `pyfect.http.schema.RecordFromUrlParams` (§4: `Schema.File`, `FormData`, `URLSearchParams`) |
+| `timeZoneOffsetFromNumber` | ported | `pyfect.schema.transformation.time_zone_offset_from_number` |
 | `timeZoneNamedFromString` | ported | `pyfect.schema.transformation.time_zone_named_from_string` |
 | `timeZoneFromString` | ported | `pyfect.schema.transformation.time_zone_from_string` |
 | `dateTimeUtcFromString` | ported | `pyfect.schema.transformation.date_time_utc_from_string` |
@@ -653,7 +653,7 @@ Coverage counts ported, renamed and §4 exports.
 | Effect | Status | pyfect |
 |---|---|---|
 | `isIssue` | ported | `pyfect.schema.issue.is_issue` |
-| `hasInput` | missing |  |
+| `hasInput` | ported | `pyfect.schema.issue.has_input` |
 | `Filter` | ported | `pyfect.schema.issue.Filter` |
 | `Encoding` | ported | `pyfect.schema.issue.Encoding` |
 | `Pointer` | ported | `pyfect.schema.issue.Pointer` |
@@ -662,28 +662,28 @@ Coverage counts ported, renamed and §4 exports.
 | `Composite` | ported | `pyfect.schema.issue.Composite` |
 | `InvalidType` | ported | `pyfect.schema.issue.InvalidType` |
 | `InvalidValue` | ported | `pyfect.schema.issue.InvalidValue` |
-| `makeCompositeAtKey` | missing |  |
+| `makeCompositeAtKey` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `Forbidden` | ported | `pyfect.schema.issue.Forbidden` |
 | `AnyOf` | ported | `pyfect.schema.issue.AnyOf` |
 | `OneOf` | ported | `pyfect.schema.issue.OneOf` |
-| `makeSingle` | missing |  |
-| `normalizeFilterOutput` | missing |  |
-| `defaultLeafHook` | missing |  |
-| `defaultCheckHook` | missing |  |
-| `makeFormatterStandardSchemaV1` | missing |  |
-| `makeFormatterDefault` | missing |  |
-| `defaultFormatter` | missing |  |
+| `makeSingle` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `normalizeFilterOutput` | renamed | `pyfect.schema.ast.normalize_filter_output` |
+| `defaultLeafHook` | renamed | `pyfect.schema.issue.leaf_message` |
+| `defaultCheckHook` | ported | `pyfect.schema.issue.default_check_hook` |
+| `makeFormatterStandardSchemaV1` | ported | `pyfect.schema.issue.make_formatter_standard_schema_v1` |
+| `makeFormatterDefault` | ported | `pyfect.schema.issue.make_formatter_default` |
+| `defaultFormatter` | renamed | `pyfect.schema.issue.format_issue` |
 
 ## SchemaParser
 
 | Effect | Status | pyfect |
 |---|---|---|
-| `makeEffect` | missing |  |
-| `makeOption` | missing |  |
-| `make` | missing |  |
+| `makeEffect` | ported | `pyfect.schema.Bottom.make_effect` |
+| `makeOption` | ported | `pyfect.schema.Bottom.make_option` |
+| `make` | ported | `pyfect.schema.Bottom.make` |
 | `is` | ported | `pyfect.schema.is_` |
-| `_is` | missing |  |
-| `_issue` | missing |  |
+| `_is` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `_issue` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `asserts` | ported | `pyfect.schema.asserts` |
 | `decodeUnknownEffect` | ported | `pyfect.schema.decode_unknown_effect` |
 | `decodeEffect` | ported | `pyfect.schema.decode_effect` |
@@ -709,8 +709,8 @@ Coverage counts ported, renamed and §4 exports.
 | `encodeResult` | ported | `pyfect.schema.encode_result` |
 | `encodeUnknownSync` | ported | `pyfect.schema.encode_unknown_sync` |
 | `encodeSync` | ported | `pyfect.schema.encode_sync` |
-| `run` | missing |  |
-| `asOption` | missing |  |
+| `run` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `asOption` | §4 | not public (§4: Effect's `@internal` schema exports) |
 
 ## SchemaRepresentation
 

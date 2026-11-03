@@ -3,6 +3,7 @@ fields (Effect's class declaration, linked to its struct)."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from functools import partial
 from typing import Literal as _Literal
@@ -12,7 +13,7 @@ from pyfect._stack import stack_nearly_full, with_fresh_stack
 from pyfect.exit import Exit, Success
 from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
-from pyfect.schema._options import ParseOptions
+from pyfect.schema._options import ParseOptions, is_constructing
 from pyfect.schema.ast._base import AST, Checks, invalid_type
 from pyfect.schema.ast._check import collect_issues
 from pyfect.schema.ast._objects import Objects
@@ -97,6 +98,11 @@ class Class(AST):
             case "type" | "encode":
                 if isinstance(input, self.shape.cls):
                     return Success(input)
+                if self.side == "type" and is_constructing(options) and isinstance(input, Mapping):
+                    # A constructor makes an instance from its fields'
+                    # values (Effect's constructor descriptor).
+                    fields = cast("Mapping[object, object]", input)
+                    return self._construct(self.shape.fields.to_type(), fields, options)
                 return invalid_type(self, input, options)
             case "encoded":
                 return self.shape.encoded.parse(input, options)
@@ -104,6 +110,9 @@ class Class(AST):
                 return self._decode(input, options)
 
     def _decode(self, input: object, options: ParseOptions) -> ParseResult:
+        return self._construct(self.shape.fields, input, options)
+
+    def _construct(self, fields: AST, input: object, options: ParseOptions) -> ParseResult:
         shape = self.shape
 
         def construct(values: object) -> Exit[object, Issue]:
@@ -113,7 +122,7 @@ class Class(AST):
                 return die_exit(defect)
             return check_instance(shape, instance, options)
 
-        return flat_map(shape.fields.parse(input, options), construct)
+        return flat_map(fields.parse(input, options), construct)
 
     def _flip(self) -> Class:
         flipped: dict[ClassSide, ClassSide] = {"decode": "encode", "encode": "decode"}

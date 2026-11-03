@@ -75,6 +75,7 @@ from pyfect.schema.getter._text import (
     trim,
     uncapitalize,
 )
+from pyfect.schema.getter._tree_record import collect_bracket_path_entries, make_tree_record
 
 __all__ = [
     "CheckOutput",
@@ -91,6 +92,7 @@ __all__ = [
     "camel_to_snake",
     "capitalize",
     "check_effect",
+    "collect_bracket_path_entries",
     "date_time_utc_from_input",
     "decode_base64",
     "decode_base64_string",
@@ -107,6 +109,7 @@ __all__ = [
     "forbidden",
     "forbidden_encoding",
     "join_key_value",
+    "make_tree_record",
     "number",
     "omit",
     "parse_json",

@@ -24,7 +24,7 @@ def _uuid_v7(millis: int) -> uuid.UUID:
 
 
 def _generated[B](schema: Codec[B, Any, Any, Any], make: Effect[object]) -> Any:
-    return with_constructor_default(schema, cast("Effect[B, Never, Never]", make))
+    return with_constructor_default(cast("Effect[B, Never, Never]", make))(schema)
 
 
 def UuidV4WithGenerate[B: str, I, RD, RE](

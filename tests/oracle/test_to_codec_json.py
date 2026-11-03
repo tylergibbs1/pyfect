@@ -610,3 +610,24 @@ def test_option_option_finite_from_date():
         O.Some(O.Some(0)),
         {"_tag": "Some", "value": {"_tag": "Some", "value": _EPOCH_TEXT}},
     )
+
+
+class _Stamp(TypedDict):
+    a: datetime
+    b: float
+
+
+def test_should_apply_the_construction_process_to_the_provided_link_in_the_serializer_annotation():
+    """toCodecJson / should apply the construction process to the provided link in the serializer annotation"""  # noqa: E501
+    same: T.Transformation[datetime, datetime] = T.passthrough()
+
+    def to_codec(_: object) -> S.ast.Link:
+        return S.link(S.DateTimeUtc, same)
+
+    stamp = S.DateTimeUtc.annotate(to_codec=to_codec)
+    schema = S.Struct(_Stamp, a=stamp)
+    encoding = SchemaAsserts(S.to_codec_json(schema)).encoding()
+    encoding.succeed(
+        {"a": datetime(2021, 1, 1, tzinfo=UTC), "b": 1},
+        {"a": "2021-01-01T00:00:00.000Z", "b": 1},
+    )

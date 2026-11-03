@@ -17,7 +17,7 @@ from typing import cast, final
 
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
-from pyfect.schema._options import ParseOptions
+from pyfect.schema._options import ParseOptions, is_constructing
 from pyfect.schema.ast._base import AST, issue_of, join_checks
 from pyfect.schema.ast._candidates import CandidateIndex, member_expected
 from pyfect.schema.ast._result import ParseResult
@@ -60,7 +60,7 @@ class Union(AST):
         # The common case without a run's state: the first member that
         # takes the input.
         issues: list[Issue] = []
-        candidates = self.candidates(input)
+        candidates = self.candidates(input, is_constructing(options))
         types = self.types
         for n, i in enumerate(candidates):
             result = types[i].parse(input, options)
@@ -111,7 +111,9 @@ class _Run(Steps["_Run"]):
         self.ast = ast
         self.input = input
         self.options = options
-        self.candidates = candidates or [ast.types[i] for i in ast.candidates(input)]
+        self.candidates = candidates or [
+            ast.types[i] for i in ast.candidates(input, is_constructing(options))
+        ]
         self.out: Success[object] | Failure[Issue] | None = None
         self.successes: list[AST] = []
         self.issues: list[Issue] = []

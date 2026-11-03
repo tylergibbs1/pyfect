@@ -11,7 +11,7 @@ Effect's ``Infinity`` forms are not used).
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import timedelta, timezone
+from datetime import timedelta
 from fractions import Fraction
 from typing import Any
 
@@ -34,25 +34,8 @@ def string_codec(transformation: T.Transformation[Any, str]) -> CodecLink:
     return make
 
 
-_DAY_MS = 86_400_000
-
-
-def _offset_of(millis: int) -> timezone | None:
-    # Python's offsets are strictly inside a day (Effect's are not bounded).
-    return timezone(timedelta(milliseconds=millis)) if abs(millis) < _DAY_MS else None
-
-
-def _offset_to(zone: timezone) -> int:
-    return (zone.utcoffset(None) // timedelta(microseconds=1)) // _US_PER_MS
-
-
 def time_zone_offset_codec(_: tuple[ast.AST, ...]) -> ast.Link:
-    return partial_link(
-        _INT,
-        decode=_offset_of,
-        encode=_offset_to,
-        expected="an offset strictly between -24 and +24 hours",
-    )
+    return ast.Link(_INT, T.time_zone_offset_from_number)
 
 
 _NON_NEGATIVE_BIG_INT = ast.append_checks(ast.big_int, (is_greater_than_or_equal_to_big_int(0),))

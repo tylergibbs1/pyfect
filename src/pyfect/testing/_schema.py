@@ -19,16 +19,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, Never, TypeVar, Unpack
+from typing import Any, Generic, Never, TypeVar, Unpack
 
 from pyfect._core import Effect
 from pyfect._extras import missing_extra
 from pyfect.cause import Cause, Die, Fail, from_reasons
-from pyfect.context import TagLike
-from pyfect.effect import fail_cause, provide_service, succeed, suspend, sync
+from pyfect.context import Context, TagLike
+from pyfect.effect import context, fail_cause, provide_service, succeed, suspend, sync, void
 from pyfect.exit import Exit, Failure, Success
 from pyfect.result import Err, Ok, Result
-from pyfect.run import run_sync_exit
+from pyfect.run import run_sync, run_sync_exit
 from pyfect.schema import (
     Codec,
     ParseOptions,
@@ -127,6 +127,14 @@ class SchemaCheck(Generic[R_co]):
         raise AssertionError(f"expected a SchemaError {message!r}, got {describe_exit(ex)}")
 
 
+class _Abort(BaseException):
+    """Ends a Hypothesis run at once (it shrinks on an ``Exception``) with
+    a round trip's cause that is not an assertion failure."""
+
+    def __init__(self, cause: Cause[Never]) -> None:
+        self.cause = cause
+
+
 @dataclass(frozen=True, slots=True)
 class SchemaAsserts(Generic[RD_co, RE_co]):
     """Assertions for one schema; a schema needing services to decode
@@ -155,34 +163,57 @@ class SchemaAsserts(Generic[RD_co, RE_co]):
         """Each value ``to_strategy`` draws encodes, then decodes to a value
         the schema's equivalence calls equal (Effect's ``verifyRoundTrip``;
         needs Hypothesis). A failing value is shrunk and reported."""
+        verify: Effect[None] = self.verify_round_trip_effect(runs=runs, seed=seed)
+        run_sync(verify)
+
+    def verify_round_trip_effect[R](
+        self: SchemaAsserts[R, R], *, runs: int = 100, seed: int | None = None
+    ) -> Effect[None, Never, R]:
+        """``verify_round_trip`` as an effect with the running fiber's
+        services (Effect's ``verifyRoundTripEffect``): a mismatch is an
+        ``AssertionError`` defect; any other failure than a schema error
+        ends the check and fails the effect with its cause. Hypothesis
+        draws synchronously, so each value's round trip runs to its end in
+        a nested synchronous run (no asyncio, no interruption midway)."""
         try:
             from hypothesis import HealthCheck, given, settings
             from hypothesis import seed as hypothesis_seed
         except ImportError as error:
             raise missing_extra("verify_round_trip", "hypothesis") from error
 
-        encode = encode_unknown_effect(self.schema)
-        decode = decode_unknown_effect(self.schema)
-        equivalent = to_equivalence(self.schema)
+        schema = self.schema
 
-        @settings(
-            max_examples=runs,
-            database=None,
-            deadline=None,
-            suppress_health_check=[HealthCheck.too_slow],
-        )
-        @given(to_strategy(self.schema))
-        def check(value: object) -> None:
-            ex = run_sync_exit(_schema_result(encode(value).flat_map(decode)))
-            if not isinstance(ex, Success):
-                raise AssertionError(f"the round trip of {value!r} died: {describe_exit(ex)}")
-            match ex.value:
-                case Ok(back) if equivalent(back, value):
-                    return
-                case result:
-                    raise AssertionError(f"{value!r} did not round-trip: {result!r}")
+        # The services are the running fiber's: whatever ``R`` it was given.
+        def verify(ctx: Context[Any]) -> Effect[None]:
+            encode = encode_unknown_effect(schema)
+            decode = decode_unknown_effect(schema)
+            equivalent = to_equivalence(schema)
 
-        (check if seed is None else hypothesis_seed(seed)(check))()
+            @settings(
+                max_examples=runs,
+                database=None,
+                deadline=None,
+                suppress_health_check=[HealthCheck.too_slow],
+            )
+            @given(to_strategy(schema))
+            def check(value: object) -> None:
+                round_trip = _schema_result(encode(value).flat_map(decode))
+                ex = run_sync_exit(round_trip, context=ctx)
+                if not isinstance(ex, Success):
+                    raise _Abort(ex.cause)
+                match ex.value:
+                    case Ok(back) if equivalent(back, value):
+                        return
+                    case result:
+                        raise AssertionError(f"{value!r} did not round-trip: {result!r}")
+
+            try:
+                (check if seed is None else hypothesis_seed(seed)(check))()
+            except _Abort as abort:
+                return fail_cause(abort.cause)
+            return void
+
+        return context().flat_map(lambda ctx: suspend(lambda: verify(ctx)))
 
     def verify_generation(self, count: int = 30) -> None:
         """``to_strategy`` draws ``count`` values, each one of the schema's

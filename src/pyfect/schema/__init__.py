@@ -155,6 +155,12 @@ from pyfect.schema._codecs import (
     from_json_string,
 )
 from pyfect.schema._collections import FrozenSet, FrozenSetSchema, Map, MapSchema
+from pyfect.schema._constructor_default import (
+    ConstructorDefault,
+    WithConstructorDefault,
+    tag,
+    with_constructor_default,
+)
 from pyfect.schema._data import (
     Cause,
     CauseReason,
@@ -376,6 +382,7 @@ from pyfect.schema._struct import (
     StructWithRestSchema,
     suspend,
 )
+from pyfect.schema._struct_keys import EncodeKeys, ExtendTo, encode_keys, extend_to
 from pyfect.schema._tagged import (
     TaggedStruct,
     TaggedStructSchema,
@@ -410,9 +417,11 @@ from pyfect.schema._transform import (
     encode,
     encode_to,
     flip,
+    link,
     to_encoded,
     to_type,
 )
+from pyfect.schema._tree import Tree, TreeValue
 from pyfect.schema._values import (
     ByteSize,
     DateTimeUtc,
@@ -464,6 +473,7 @@ __all__ = [
     "CheckOutput",
     "Class",
     "Codec",
+    "ConstructorDefault",
     "DateTimeUtc",
     "DateTimeUtcFromDate",
     "DateTimeUtcFromMillis",
@@ -498,6 +508,7 @@ __all__ = [
     "DurationFromNanos",
     "DurationFromString",
     "Encode",
+    "EncodeKeys",
     "EncodeTo",
     "Encoder",
     "EncodingStrategy",
@@ -508,6 +519,7 @@ __all__ = [
     "ErrorInstance",
     "Exit",
     "ExitSchema",
+    "ExtendTo",
     "FalseLiterals",
     "Filter",
     "FilterGroup",
@@ -657,6 +669,8 @@ __all__ = [
     "ToJsonSchema",
     "ToTaggedUnion",
     "Top",
+    "Tree",
+    "TreeValue",
     "Trim",
     "Trimmed",
     "TrueLiterals",
@@ -673,6 +687,7 @@ __all__ = [
     "UnixPathAddressFromString",
     "Unknown",
     "UnknownFromJsonString",
+    "WithConstructorDefault",
     "WithDecodingDefaultKey",
     "WithDecodingDefaultTypeKey",
     "asserts",
@@ -697,6 +712,7 @@ __all__ = [
     "encode",
     "encode_effect",
     "encode_exit",
+    "encode_keys",
     "encode_option",
     "encode_result",
     "encode_sync",
@@ -706,6 +722,7 @@ __all__ = [
     "encode_unknown_option",
     "encode_unknown_result",
     "encode_unknown_sync",
+    "extend_to",
     "field",
     "flip",
     "from_brand",
@@ -772,6 +789,7 @@ __all__ = [
     "is_uppercased",
     "is_uuid",
     "issue",
+    "link",
     "make_filter",
     "make_filter_group",
     "make_is_between",
@@ -788,6 +806,7 @@ __all__ = [
     "resolve_annotations",
     "resolve_annotations_key",
     "suspend",
+    "tag",
     "tag_default_omit",
     "to_codec_array_from_single",
     "to_codec_json",
@@ -802,6 +821,7 @@ __all__ = [
     "to_type",
     "transformation",
     "variant_schema",
+    "with_constructor_default",
     "with_decoding_default_key",
     "with_decoding_default_type_key",
 ]

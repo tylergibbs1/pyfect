@@ -244,12 +244,7 @@ def TupleWithRest(
     schema may follow (``ValueError``)."""
     rests = (rest, *post)
     node = cast("ast.Arrays", schema.ast)
-    arrays = ast.Arrays(
-        node.elements,
-        tuple(r.__codec__().ast for r in rests),
-        node.mutable,
-        checks=node.checks,
-    )
+    arrays = ast.tuple_with_rest(node, [r.__codec__().ast for r in rests])
     return TupleWithRestSchema(arrays, schema, rests)
 
 

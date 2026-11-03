@@ -22,7 +22,14 @@ from typing import cast, final
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast._base import AST, at_key, invalid_type, issue_of, join_checks
+from pyfect.schema.ast._base import (
+    AST,
+    at_key,
+    construct_missing,
+    invalid_type,
+    issue_of,
+    join_checks,
+)
 from pyfect.schema.ast._result import MISSING, ParseResult
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, run_steps
 from pyfect.schema.issue import Composite, Issue, MissingKey, Pointer, UnexpectedKey, reported
@@ -232,6 +239,9 @@ class _Run(Steps["_Run"]):
 
     def _missing(self, prop: PropertySignature) -> ParseResult | None:
         """The parse of a missing key, or ``None`` once it is settled."""
+        constructed = construct_missing(prop.type, self.options)
+        if constructed is not None:
+            return constructed
         if prop.default is not None:
             self.out[prop.name] = prop.default()
             return None

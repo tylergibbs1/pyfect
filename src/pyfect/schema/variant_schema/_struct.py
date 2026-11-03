@@ -11,18 +11,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Generic, Protocol, TypeIs, TypeVar, Unpack, cast, runtime_checkable
+from typing import Any, Generic, Protocol, TypeIs, TypeVar, cast, runtime_checkable
 
-from pyfect._core import Effect
-from pyfect.effect import succeed
-from pyfect.option import Option
-from pyfect.run import run_sync
 from pyfect.schema import ast
-from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom, is_schema
 from pyfect.schema._struct import StructSchema
-from pyfect.schema.issue import Issue
-from pyfect.schema.variant_schema._defaults import WithConstructorDefault
 from pyfect.schema.variant_schema._field import AnyCodec, Field
 
 TD_co = TypeVar("TD_co", bound=Mapping[str, object], covariant=True)
@@ -32,54 +25,8 @@ _AnyBottom = Bottom[Any, Any, Any, Any]
 
 @dataclass(frozen=True, slots=True, eq=False)
 class VariantStructSchema(StructSchema[TD_co, Any, Any], Generic[TD_co]):
-    """One variant's struct: a struct schema whose ``make`` /
-    ``make_effect`` fill the keys with a constructor default
-    (``with_constructor_default``) before checking the value."""
-
-    def make[A](
-        self: Bottom[A, object, object, object], input: A, /, **options: Unpack[ParseOptions]
-    ) -> A:
-        filled = _filled(cast("VariantStructSchema[Any]", self), input)
-        value = input if filled is None else cast("A", run_sync(filled))
-        return _AnyBottom.make(self, value, **options)
-
-    def make_option[A](
-        self: Bottom[A, object, object, object], input: A, /, **options: Unpack[ParseOptions]
-    ) -> Option[A]:
-        filled = _filled(cast("VariantStructSchema[Any]", self), input)
-        value = input if filled is None else cast("A", run_sync(filled))
-        return _AnyBottom.make_option(self, value, **options)
-
-    def make_effect[A](
-        self: Bottom[A, object, object, object], input: A, /, **options: Unpack[ParseOptions]
-    ) -> Effect[A, Issue]:
-        filled = _filled(cast("VariantStructSchema[Any]", self), input)
-        if filled is None:
-            return _AnyBottom.make_effect(self, input, **options)
-        return filled.flat_map(
-            lambda value: _AnyBottom.make_effect(self, cast("A", value), **options)
-        )
-
-
-def _filled(schema: VariantStructSchema[Any], input: object) -> Effect[dict[str, object]] | None:
-    """``input`` with each missing defaulted key set to its default; ``None``
-    when nothing is missing (or ``input`` is no mapping, which the check
-    then rejects)."""
-    if not isinstance(input, Mapping):
-        return None
-    given = cast("Mapping[str, object]", input)
-    missing = [
-        (name, field.default)
-        for name, field in schema.fields.items()
-        if name not in given and isinstance(field, WithConstructorDefault)
-    ]
-    if not missing:
-        return None
-    values = dict(given)
-    run: Effect[None] = succeed(None)
-    for name, default in missing:
-        run = run.and_then(default.map(lambda value, name=name: values.__setitem__(name, value)))
-    return run.map(lambda _: values)
+    """One variant's struct; its ``make`` fills the keys with a constructor
+    default (``with_constructor_default``)."""
 
 
 def variant_struct_schema(fields: Mapping[str, AnyCodec]) -> VariantStructSchema[Any]:

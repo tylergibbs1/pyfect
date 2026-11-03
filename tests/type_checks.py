@@ -3896,6 +3896,12 @@ def check_schema_services(unknown: object) -> None:
     # Schema assertions run once ``provide`` gave each direction its service.
     fx.testing.SchemaAsserts(needs).decoding().succeed(unknown)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     fx.testing.SchemaAsserts(needs).decoding().provide(Port, 1).succeed(unknown)  # pyright: ignore[reportArgumentType]
+    # The effectful round trip needs both directions' services; the synchronous one none.
+    assert_type(
+        fx.testing.SchemaAsserts(needs).verify_round_trip_effect(),
+        fx.Effect[None, Never, Primary | Port],
+    )
+    fx.testing.SchemaAsserts(needs).verify_round_trip()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     decode_only: S.Bottom[int, str, Primary] = S.Bottom(S.ast.unknown)
     assert_type(S.encode_unknown_sync(decode_only)(unknown), str)
 
@@ -8094,3 +8100,55 @@ def schema_representation_types() -> None:
     R.make_reviver_filter("acme/min", S.Null, lambda _: S.make_filter_group(S.is_int()))  # pyright: ignore[reportArgumentType]
     # Representations are frozen data.
     R.String().checks = ()  # pyright: ignore[reportAttributeAccessIssue]
+
+
+# --- Schema rest (M11b) -------------------------------------------------------------------------
+
+
+def schema_rest_types() -> None:
+    from datetime import timedelta, timezone
+    from typing import TypedDict as _TypedDict
+
+    from pyfect.http import cookies as http_cookies
+    from pyfect.http import headers as http_headers
+    from pyfect.http import schema as HS
+    from pyfect.http import url_params as http_url_params
+    from pyfect.option import Option, Some
+    from pyfect.schema import getter as G
+    from pyfect.schema import issue as I
+    from pyfect.schema import transformation as T
+    from pyfect.schema._transform import DecodeToSchema
+
+    # A constructor default keeps the schema's types and must match its Type.
+    defaulted = S.FiniteFromString.pipe(S.with_constructor_default(fx.succeed(1.0)))
+    assert_type(defaulted, S.WithConstructorDefault[float, str, Never, Never])
+    S.String.pipe(S.with_constructor_default(fx.succeed(1)))  # pyright: ignore[reportArgumentType]
+    assert_type(S.tag("a"), S.WithConstructorDefault[Literal["a"], Literal["a"], Never, Never])
+
+    class _A(_TypedDict):
+        a: float
+
+    class _B(_A):
+        b: str
+
+    def derive_b(value: _A) -> Option[object]:
+        return Some(str(value["a"]))
+
+    renamed = S.Struct(_A).pipe(S.encode_keys({"a": "c"}))
+    assert_type(renamed, S.Bottom[_A, Mapping[str, object], Never, Never])
+    extended = S.Struct(_A).pipe(S.extend_to(_B, {"b": derive_b}))
+    assert_type(extended, DecodeToSchema[_B, Mapping[str, object], Never, Never])
+    assert_type(S.Tree(S.Number), S.Bottom[S.TreeValue[float], S.TreeValue[float], Never, Never])
+
+    assert_type(T.duration_from_string, T.Transformation[timedelta, str])
+    assert_type(T.time_zone_offset_from_number, T.Transformation[timezone, int])
+    entries: list[tuple[str, str]] = [("a", "1")]
+    assert_type(G.make_tree_record(entries), dict[str, S.TreeValue[str | None]])
+
+    assert_type(I.make_formatter_standard_schema_v1()(I.InvalidValue({})), I.StandardFailure)
+    _hook: I.CheckHook = I.default_check_hook
+
+    assert_type(HS.Headers, S.Bottom[http_headers.Headers])
+    assert_type(HS.RecordFromCookies, DecodeToSchema[dict[str, str], http_cookies.Cookies])
+    assert_type(HS.UrlParams, S.Bottom[http_url_params.UrlParams])
+    assert_type(HS.DateTimeUtcFromHttpDate, DecodeToSchema[datetime, str])

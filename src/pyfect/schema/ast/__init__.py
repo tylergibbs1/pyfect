@@ -15,6 +15,13 @@ from its values. ``Undefined``, ``Void``, ``Symbol``, ``UniqueSymbol`` and
 every value an object) and are not ported.
 """
 
+from pyfect.schema.ast._annotations import (
+    is_optional,
+    resolve_at,
+    resolve_description,
+    resolve_identifier,
+    resolve_title,
+)
 from pyfect.schema.ast._arrays import Arrays, Element
 from pyfect.schema.ast._base import (
     AST,
@@ -27,6 +34,7 @@ from pyfect.schema.ast._base import (
     issue_of,
     join_checks,
     replace_context,
+    with_constructor_default,
 )
 from pyfect.schema.ast._check import (
     Check,
@@ -42,6 +50,13 @@ from pyfect.schema.ast._check import (
     normalize_filter_output,
 )
 from pyfect.schema.ast._class import Class, ClassShape, ClassSide, check_instance
+from pyfect.schema.ast._constructors import (
+    struct,
+    struct_with_rest,
+    tuple_,
+    tuple_with_rest,
+    union,
+)
 from pyfect.schema.ast._declaration import (
     Declaration,
     DeclarationParser,
@@ -172,6 +187,7 @@ __all__ = [
     "invalid_type",
     "is_exit",
     "is_json",
+    "is_optional",
     "is_string_tree",
     "issue_of",
     "join_checks",
@@ -189,12 +205,22 @@ __all__ = [
     "parse_at_key",
     "record",
     "replace_context",
+    "resolve_at",
+    "resolve_description",
+    "resolve_identifier",
+    "resolve_title",
     "run_now",
     "same_literal",
     "string",
     "string_tree",
+    "struct",
+    "struct_with_rest",
     "then",
     "to_effect",
     "to_encoded",
+    "tuple_",
+    "tuple_with_rest",
+    "union",
     "unknown",
+    "with_constructor_default",
 ]

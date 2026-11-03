@@ -199,3 +199,12 @@ def to_type[T](schema: Codec[T, object, object, object], /) -> Bottom[T]:
 def to_encoded[E](schema: Codec[object, E, object, object], /) -> Bottom[E]:
     """The schema's encoded side (Effect's ``toEncoded``)."""
     return Bottom(ast.to_encoded(schema.__codec__().ast))
+
+
+def link[T, M](
+    encode_to: Codec[M, object, object, object], transformation: Transformation[T, M], /
+) -> ast.Link:
+    """A declaration's codec step (Effect's ``link<T>()(encodeTo, t)``): its
+    ``T`` values encoded through ``transformation`` to ``encode_to``, for a
+    ``to_codec`` / ``to_codec_json`` annotation."""
+    return ast.Link(encode_to.__codec__().ast, transformation)

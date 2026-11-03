@@ -17,10 +17,7 @@ also ``cases["1"]``). Effect's ``Opaque`` (a nominal struct type) is
 a TypedDict subclass stays structural; ``research/typing/schema_4_tagged.py``).
 
 Omitted:
-- Constructor defaults (no ``withConstructorDefault``: a TypedDict value
-  is built with its tag): the ``make`` halves of "tag / decoding: required
-  & encoding: required & constructor: optional", "tag / decoding: default &
-  encoding: omit & constructor: optional" and "tagDefaultOmit".
+- The "tag / ..." titles: ported in ``test_schema_constructor_default.py``.
 - Symbols: "Tagged unions / toTaggedUnion / should expose a symbol tag";
   the symbol case of "... / should augment a union of structs" is a string.
 - "Opaque / returns the original schema": there is no ``Opaque`` to return
@@ -32,7 +29,10 @@ from typing import Literal, TypedDict, assert_never
 
 import pytest
 
+from pyfect import effect as fx
 from pyfect import schema as S
+from pyfect.schema import getter as G
+from pyfect.schema import transformation as T
 from pyfect.testing import SchemaAsserts
 
 # ------------------------------------------------------------------- tag
@@ -53,16 +53,26 @@ def test_tag_decoding_required_encoding_required_constructor_required():
 
 def test_tag_decoding_required_encoding_required_constructor_optional():
     """tag / decoding: required & encoding: required & constructor: optional"""
-    asserts = SchemaAsserts(S.TaggedStruct(_TagA, a=S.FiniteFromString))
-    asserts.make().succeed({"_tag": "a", "a": 1})
+    asserts = SchemaAsserts(S.Struct(_TagA, _tag=S.tag("a"), a=S.FiniteFromString))
+    make = asserts.make()
+    make.succeed({"_tag": "a", "a": 1})
+    make.succeed({"a": 1}, {"_tag": "a", "a": 1})
     asserts.decoding().succeed({"_tag": "a", "a": "1"}, {"_tag": "a", "a": 1})
     asserts.encoding().succeed({"_tag": "a", "a": 1}, {"_tag": "a", "a": "1"})
 
 
 def test_tag_decoding_default_encoding_omit_constructor_optional():
     """tag / decoding: default & encoding: omit & constructor: optional"""
-    asserts = SchemaAsserts(S.Struct(_TagA, _tag=S.tag_default_omit("a"), a=S.FiniteFromString))
-    asserts.make().succeed({"_tag": "a", "a": 1})
+    tag = S.tag("a").pipe(
+        S.encode_to(
+            S.optional_key(S.Literal("a")),
+            T.Transformation(G.with_default(fx.succeed("a")), G.omit()),
+        )
+    )
+    asserts = SchemaAsserts(S.Struct(_TagA, _tag=tag, a=S.FiniteFromString))
+    make = asserts.make()
+    make.succeed({"_tag": "a", "a": 1})
+    make.succeed({"a": 1}, {"_tag": "a", "a": 1})
     decoding = asserts.decoding()
     decoding.succeed({"_tag": "a", "a": "1"}, {"_tag": "a", "a": 1})
     decoding.succeed({"a": "1"}, {"_tag": "a", "a": 1})
@@ -75,6 +85,7 @@ def test_tagdefaultomit():
 
     make = asserts.make()
     make.succeed({"_tag": "a", "a": 1})
+    make.succeed({"a": 1}, {"_tag": "a", "a": 1})
     make.fail({"_tag": "c", "a": 1}, 'Expected "a"\n  at ["_tag"]')
 
     decoding = asserts.decoding()
