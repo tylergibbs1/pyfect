@@ -8,8 +8,8 @@ Omitted, with the reason:
 - ``discriminates addresses sharing the common type id``: addresses are
   distinct classes; ``isinstance`` discriminates them.
 - ``validates ports``, ``decodes and canonically encodes schemas``,
-  ``validates branded address schemas on decode and encode``: the net schemas
-  (``Schema.Port``, ``Schema.IpAddress``, ...) are not ported.
+  ``validates branded address schemas on decode and encode``: ported in
+  ``test_schema_net.py``.
 - ``copies Buffer constructor inputs``: Node's ``Buffer``; ``copies byte
   constructor inputs`` covers ``bytearray``.
 - In ``converts octets, segments, bytes, and parts``, the sparse-array and

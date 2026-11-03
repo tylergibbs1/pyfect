@@ -7888,3 +7888,49 @@ def collections_and_crypto(
     assert_type(one + one, big_decimal.BigDecimal)
     one + 1  # pyright: ignore[reportOperatorIssue, reportUnusedExpression]
     hm.set(1, 2)  # pyright: ignore[reportArgumentType]
+
+
+# --- Schema leftovers (M11) ------------------------------------------------------------------
+
+
+def check_schema_template_literals() -> None:
+    from pyfect import schema as S
+
+    assert_type(S.TemplateLiteral("a", S.String, 1), S.TemplateLiteralSchema)
+    assert_type(S.TemplateLiteral(["a", S.String]), S.TemplateLiteralSchema)
+    assert_type(S.decode_unknown_sync(S.TemplateLiteral("a", S.String))(1), str)
+    assert_type(
+        S.TemplateLiteralParser("a", S.FiniteFromString),
+        S.TemplateLiteralParserSchema[Never, Never],
+    )
+    assert_type(S.decode_sync(S.TemplateLiteralParser("a", S.Int))("a1"), tuple[Any, ...])
+    S.TemplateLiteral("a", object())  # pyright: ignore[reportArgumentType]
+
+
+def check_schema_leftover_values() -> None:
+    import re
+    from datetime import timedelta
+    from ipaddress import IPv4Address, IPv6Network
+
+    from pyfect import big_decimal, semver
+    from pyfect.net import dns, host
+    from pyfect.net import net_address as na
+
+    big = big_decimal.from_string_unsafe("1.5")
+    assert_type(S.decode_unknown_sync(S.BigDecimalFromString)("1.5"), big_decimal.BigDecimal)
+    assert_type(S.encode_sync(S.BigDecimalFromString)(big), str)
+    S.BigDecimal.check(S.is_between_big_decimal(minimum=big, maximum=big))
+    S.BigDecimal.check(S.is_greater_than_big_decimal(1.5))  # pyright: ignore[reportArgumentType]
+    assert_type(S.decode_unknown_sync(S.RegExp)(re.compile("a")), re.Pattern[str])
+    assert_type(S.decode_unknown_sync(S.DurationFromMillis)(1), timedelta)
+    assert_type(S.encode_sync(S.DurationFromNanos)(timedelta(0)), int)
+    assert_type(S.decode_unknown_sync(S.SemVerFromString)("1.0.0"), semver.SemVer)
+    assert_type(S.decode_unknown_sync(S.BooleanLiterals)("yes"), bool)
+    assert_type(S.decode_unknown_sync(S.Ipv4AddressFromString)("1.2.3.4"), IPv4Address)
+    assert_type(S.decode_unknown_sync(S.IpAddressFromString)("::1"), na.IpAddress)
+    assert_type(S.decode_unknown_sync(S.IpMulticastAddress)(None), na.IpAddress)
+    assert_type(S.decode_unknown_sync(S.Ipv6NetworkFromString)("::/0"), IPv6Network)
+    assert_type(S.decode_unknown_sync(S.DomainNameFromString)("a.b"), host.DomainName)
+    assert_type(S.decode_unknown_sync(S.HostFromString)("a.b"), host.Host)
+    assert_type(S.decode_unknown_sync(S.DnsRecord)(None), dns.DnsRecord)
+    assert_type(S.decode_unknown_sync(S.DnsMxRecord)(None), dns.Mx)

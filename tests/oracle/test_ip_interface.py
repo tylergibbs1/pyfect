@@ -4,10 +4,11 @@ Each test's docstring is the Effect test title. An interface is an
 ``ipaddress.IPv4Interface`` / ``IPv6Interface``; ``format`` stands in for
 ``toJSON``/``inspect``.
 
+The schema test ``decodes and canonically encodes schemas`` is ported in
+``test_schema_net.py``.
+
 Omitted, with the reason:
 
-- ``decodes and canonically encodes schemas``: ``Schema.IpInterfaceFromString``
-  is not ported.
 - In ``rejects invalid prefixes and malformed input``, the ``1.5``, ``NaN``
   and ``Infinity`` prefixes: the prefix length is typed ``int``.
 """

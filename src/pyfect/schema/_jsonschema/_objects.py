@@ -11,6 +11,7 @@ from pyfect.schema import ast
 from pyfect.schema._codec_links import NUMBER_KEY_PATTERN
 from pyfect.schema._jsonschema._exact import Exactness, is_exact
 from pyfect.schema._jsonschema._merge import append_json_schema, has_only_keywords
+from pyfect.schema._jsonschema._template import template_pattern
 
 if TYPE_CHECKING:
     from pyfect.schema._jsonschema._compile import Compiler
@@ -174,7 +175,7 @@ def _patterns(compiler: Compiler, parameter: ast.AST, seen: frozenset[str]) -> l
     return _local_patterns(compiler, candidate.ast, seen | {reference})
 
 
-def _local_patterns(compiler: Compiler, node: ast.AST, seen: frozenset[str]) -> list[str] | None:
+def _local_patterns(compiler: Compiler, node: ast.AST, seen: frozenset[str]) -> list[str] | None:  # noqa: PLR0911
     match node:
         case ast.String():
             return _string_patterns(compiler, node)
@@ -192,6 +193,11 @@ def _local_patterns(compiler: Compiler, node: ast.AST, seen: frozenset[str]) -> 
             return patterns
         case ast.Number():
             return None if node.checks else [NUMBER_KEY_PATTERN]
+        case ast.TemplateLiteral():
+            if node.checks:
+                return None
+            pattern, exact = template_pattern(compiler, node)
+            return [pattern] if exact else None
         case _:
             raise ValueError(f"Invalid index signature parameter {node.tag}")
 

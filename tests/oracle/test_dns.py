@@ -6,7 +6,7 @@ dataclasses (``dns.Srv(...)``); ``make_record`` builds one as a ``Result``;
 
 Omitted, with the reason:
 
-- ``encodes and decodes JSON``: ``Schema.DnsRecord`` is not ported.
+- ``encodes and decodes JSON``: ported in ``test_schema_net.py``.
 - In ``rejects invalid fields``, ``priority: 1.5``: priorities are typed
   ``int``.
 

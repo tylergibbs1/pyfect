@@ -8,6 +8,7 @@
 ``succeed(input)`` expects the input back; ``succeed(input, expected)`` a
 given value. ``fail(input, message)`` expects a schema failure whose issue
 prints as ``message``. A defect fails the assertion with the whole cause.
+``verify_generation()`` checks the values ``to_strategy`` draws.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from dataclasses import dataclass
 from typing import Generic, Never, TypeVar, Unpack
 
 from pyfect._core import Effect
+from pyfect._extras import missing_extra
 from pyfect.context import TagLike
 from pyfect.effect import provide_service
 from pyfect.exit import Exit, Failure, Success
@@ -28,6 +30,8 @@ from pyfect.schema import (
     SchemaError,
     decode_unknown_effect,
     encode_unknown_effect,
+    is_,
+    to_strategy,
 )
 from pyfect.testing._assertions import describe_exit
 
@@ -90,3 +94,25 @@ class SchemaAsserts(Generic[RD_co, RE_co]):
 
     def encoding(self, **options: Unpack[ParseOptions]) -> SchemaCheck[RE_co]:
         return SchemaCheck(encode_unknown_effect(self.schema, **options))
+
+    def verify_generation(self, count: int = 30) -> None:
+        """``to_strategy`` draws ``count`` values, each one of the schema's
+        (Effect's ``arbitrary().verifyGeneration()``; needs Hypothesis)."""
+        try:
+            from hypothesis import HealthCheck, given, settings
+        except ImportError as error:
+            raise missing_extra("verify_generation", "hypothesis") from error
+
+        is_value = is_(self.schema)
+
+        @settings(
+            max_examples=count,
+            database=None,
+            deadline=None,
+            suppress_health_check=[HealthCheck.too_slow],
+        )
+        @given(to_strategy(self.schema))
+        def check(value: object) -> None:
+            assert is_value(value), f"generated a value the schema refuses: {value!r}"
+
+        check()

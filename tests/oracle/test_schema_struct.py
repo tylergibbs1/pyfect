@@ -43,8 +43,8 @@ Omitted:
   Property", "... / Optional Property with Nullability", "... / Optional
   Property to Exact Optional Property", "... / Optional Property with
   Nullability to Optional Property".
-- ``TemplateLiteral`` (not ported): "Record / Record(TemplateLiteral ...)",
-  "Record / Record(`a${string}`, Number)".
+- Ported in ``test_schema_template_literal.py``: "Record /
+  Record(TemplateLiteral ...)", "Record / Record(`a${string}`, Number)".
 - "Record / Record(Enum, Number)": an ``S.Enum`` decodes values to members,
   so as a record key it is a key pattern (values in, members out), not a
   required key per value.

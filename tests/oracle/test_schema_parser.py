@@ -32,7 +32,8 @@ Object.prototype properties", "requires __proto__ to be an own property",
 "keeps dynamic record properties own-only while finite record keys are
 declared": a Python ``Mapping`` has no prototype chain); "distinguishes
 missing tuple elements from undefined" (Python has no ``undefined``);
-"preserves missing optional template literals" (no ``TemplateLiteral``).
+"preserves missing optional template literals" is in
+``test_schema_template_literal.py``.
 """
 
 from collections.abc import Callable, Generator, Iterator, Mapping

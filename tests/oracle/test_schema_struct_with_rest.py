@@ -10,10 +10,11 @@ TypedDict, which is open (PEP 728's ``extra_items=`` types the other keys).
 As in Effect, an index signature also checks the declared keys it takes.
 
 Omitted:
-- Symbols and ``TemplateLiteral`` (no Python counterpart / not ported):
-  "Record(Symbol, Number)", "Record(`a${string}`, Number)", "indexed objects
-  / selects matching pattern, template, numeric and symbol indexes" and the
-  toJsonSchemaDocument template titles.
+- Symbols (no Python counterpart): "Record(Symbol, Number)", "indexed
+  objects / selects matching pattern, template, numeric and symbol
+  indexes". "Record(`a${string}`, Number)" and the toJsonSchemaDocument
+  template titles are in ``test_schema_template_literal.py`` and
+  ``test_to_json_schema_document.py``.
 - Hypothesis runs, shrinks and replays (``test_arbitrary.py``): "indexed
   objects / does not generate omitted fixed property names from indexes",
   the shrink/replay half of "... / shrinks and replays fixed fields within

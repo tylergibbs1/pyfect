@@ -33,6 +33,7 @@ from pyfect.schema._jsonschema._merge import (
 )
 from pyfect.schema._jsonschema._objects import compile_objects
 from pyfect.schema._jsonschema._references import Candidate, Content, References
+from pyfect.schema._jsonschema._template import template_pattern
 
 _JSON_TYPES = frozenset({"string", "number", "boolean", "array", "object", "null", "integer"})
 
@@ -259,7 +260,7 @@ class Compiler:
             return None
         return {"allOf": schemas, **collect(annotations, self.options)}, False
 
-    def _on(self, node: ast.AST, dependencies: list[Exactness]) -> JsonSchema:
+    def _on(self, node: ast.AST, dependencies: list[Exactness]) -> JsonSchema:  # noqa: PLR0911
         leaf = _leaf(node)
         if leaf is not None:
             return leaf
@@ -272,6 +273,11 @@ class Compiler:
                 return compile_objects(self, node, dependencies)
             case ast.Union():
                 return self._union(node, dependencies)
+            case ast.TemplateLiteral():
+                pattern, exact = template_pattern(self, node)
+                if not exact:
+                    dependencies.append(False)
+                return {"type": "string", "pattern": pattern}
             case _:
                 # An opaque node: a declaration's parameters' definitions are
                 # still emitted, as in Effect.

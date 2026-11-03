@@ -90,6 +90,8 @@ def children(node: ast.AST) -> Iterator[ast.AST]:
             yield from node.types
         case ast.Suspend():
             yield node.target
+        case ast.TemplateLiteral():
+            yield from node.parts
         case _:
             pass
 

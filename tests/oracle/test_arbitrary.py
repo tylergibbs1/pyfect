@@ -40,14 +40,20 @@ Omitted:
   alternatives ...", "reaches longer pattern alternatives ...",
   "evaluates a residual filter once per generated value", "bounds
   residual-filter exhaustion").
+- The ``TemplateLiteral`` titles are in ``test_schema_template_literal.py``.
 - UTF-16 lengths, supplementary-plane pattern subtleties and JavaScript
   ``RegExp`` flags ("generates variable-length supplementary patterns ...",
   "generates variable-length patterns with code point bounds at size
   zero", "respects UTF-16 limits ...", "generates supplementary code
   points ...", "honors dot-all and sticky regular-expression flags").
-- Schemas pyfect does not port: ``Date``, ``BigDecimal``, ``RegExp``,
+- The BigDecimal shrinking titles ("shrinks BigDecimals by numeric value
+  across representations", "shrinks BigDecimals toward ordinary thresholds
+  between simple candidates"): Hypothesis shrinks its own choices, not the
+  value by Effect's bisection; the shrunk value of the constructive title
+  is checked.
+- Schemas pyfect does not port: ``Date``,
   ``Symbol``, ``UniqueSymbol``, ``ObjectKeyword``, ``Void``,
-  ``Undefined``, ``TemplateLiteral``, ``HashSet``, ``HashMap``, ``Chunk``,
+  ``Undefined``, ``HashSet``, ``HashMap``, ``Chunk``,
   ``URLSearchParams``, ``File``, ``FormData``, ``MutableJson`` and
   ``StructWithRest`` (every title about them, the "indexed objects"
   block, "generates ordinary and null-prototype structural objects",
@@ -67,9 +73,10 @@ Omitted:
 from __future__ import annotations
 
 import enum
+import re
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, NotRequired, TypedDict, TypeIs, cast
+from typing import Any, Literal, Never, NotRequired, TypedDict, TypeIs, cast
 
 import pytest
 
@@ -79,6 +86,7 @@ from hypothesis import HealthCheck, find, given, settings
 from hypothesis import strategies as st
 from hypothesis.errors import FailedHealthCheck, Unsatisfiable
 
+from pyfect import big_decimal as bd
 from pyfect import schema as S
 from pyfect.date_time._epoch import to_epoch_millis
 from pyfect.option import Some
@@ -272,7 +280,9 @@ def test_derives_built_in_and_canonical_declarations():
         [
             ("Json", S.Json),
             ("URL", S.URL),
+            ("RegExp", S.RegExp),
             ("Duration", S.Duration),
+            ("BigDecimal", S.BigDecimal),
             ("DateTimeUtc", S.DateTimeUtc),
             ("TimeZoneOffset", S.TimeZoneOffset),
             ("TimeZoneNamed", S.TimeZoneNamed),
@@ -992,3 +1002,88 @@ def test_recursion_budget_grows_to_the_shortest_finite_path():
     chain.append(S.NullOr(S.Struct(Link, next=hop(hops - 1))))
     values = sample(chain[0], 10)
     assert all(map(S.is_(chain[0]), values))
+
+
+def test_generates_reg_exp_declarations_without_codec_filtering():
+    """Built-in declarations / generates RegExp declarations without codec filtering"""
+    values = sample(S.RegExp, 100)
+    assert all(isinstance(value, re.Pattern) for value in values)
+    assert len({value.pattern for value in values}) > 1
+    assert len({value.flags for value in values}) > 1
+
+
+_MAX_SAFE = 2**53 - 1
+
+
+def _between(
+    minimum: bd.BigDecimal, maximum: bd.BigDecimal, exclusive: bool = False
+) -> S.Codec[bd.BigDecimal, bd.BigDecimal, Never, Never]:
+    return S.BigDecimal.check(
+        S.is_between_big_decimal(
+            minimum=minimum,
+            maximum=maximum,
+            exclusive_minimum=exclusive,
+            exclusive_maximum=exclusive,
+        )
+    )
+
+
+def test_generates_and_shrinks_big_decimal_declarations_constructively():
+    """Built-in declarations / generates and shrinks BigDecimal declarations constructively"""
+    values = sample(S.BigDecimal, 500)
+    assert all(map(S.is_(S.BigDecimal), values))
+    assert len({value.scale for value in values}) > 1
+    constrained = _between(bd.make(1_234, 3), bd.make(1_236, 3), exclusive=True)
+    assert all(map(S.is_(constrained), sample(constrained, 500)))
+    high_scale = _between(bd.make(-12_345, 22), bd.make(678_901, 24))
+    assert all(map(S.is_(high_scale), sample(high_scale, 500)))
+    assert minimal(S.BigDecimal) == bd.make(0, 0)
+
+
+def test_covers_independent_big_decimal_precision_and_exponent_ranges():
+    """Built-in declarations / covers independent BigDecimal precision and exponent ranges"""
+    values = sample(S.BigDecimal, 1_000)
+    assert any(abs(value.scale) > 20 for value in values)
+    assert any(len(str(abs(value.value))) > 20 for value in values)
+
+
+def test_constructs_big_decimals_in_narrow_and_extreme_scale_intervals():
+    """Built-in declarations / constructs BigDecimals in narrow and extreme-scale intervals"""
+    narrow = _between(bd.make(123_456_789, 1_000), bd.make(123_456_799, 1_000), exclusive=True)
+    assert all(map(S.is_(narrow), sample(narrow, 200)))
+    maximum_scale = _between(bd.make(0, _MAX_SAFE), bd.make(1, _MAX_SAFE))
+    assert all(map(S.is_(maximum_scale), sample(maximum_scale, 50)))
+
+
+def test_recognizes_equivalent_big_decimal_singleton_bounds():
+    """Built-in declarations / recognizes equivalent BigDecimal singleton bounds"""
+    for minimum, maximum in [
+        (bd.make(1, 0), bd.make(10, 1)),
+        (bd.make(10**4097, 0), bd.make(1, -4097)),
+        (bd.make(-1, -4097), bd.make(-(10**4097), 0)),
+        (bd.make(0, -_MAX_SAFE), bd.make(0, _MAX_SAFE)),
+    ]:
+        values = sample(_between(minimum, maximum), 20)
+        assert values
+        assert all(value == minimum for value in values)
+
+
+def test_preserves_both_big_decimal_bounds_across_large_scale_differences():
+    """Built-in declarations / preserves both BigDecimal bounds across large scale differences"""
+    near = bd.make(10**4097 - 1, 0)
+    far = bd.make(1, -4097)
+    for minimum, maximum in [(near, far), (far.negate(), near.negate())]:
+        for exclusive in (False, True):
+            schema = _between(minimum, maximum, exclusive)
+            values = sample(schema, 100)
+            assert all(map(S.is_(schema), values))
+            assert any(minimum < value < maximum for value in values)
+
+
+def test_rejects_empty_big_decimal_intervals_at_the_maximum_scale():
+    """Built-in declarations / rejects empty BigDecimal intervals at the maximum scale"""
+    schema = _between(bd.make(0, _MAX_SAFE), bd.make(1, _MAX_SAFE), exclusive=True)
+    with pytest.raises(
+        ValueError, match="Unable to derive an arbitrary for BigDecimal constraints"
+    ):
+        S.to_strategy(schema)

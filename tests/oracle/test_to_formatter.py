@@ -17,7 +17,7 @@ Omitted:
   field", "Record(Symbol, Option(Number))", "suspend / optional", "suspend /
   optional + Array", "ReadonlySet(Symbol)", "ReadonlyMap(Symbol, String)").
 - "StructWithRest": ported in ``test_schema_struct_with_rest.py``.
-- ``TemplateLiteral``, ``Date``, ``RegExp``,
+- ``Date``, ``RegExp``,
   ``HashMap``, ``HashSet``, ``Chunk``, ``BigDecimal``: not ported schemas
   (every title naming them).
 - "Duration": ``timedelta``'s own text instead (see above).

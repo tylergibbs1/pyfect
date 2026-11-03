@@ -100,12 +100,22 @@ from pyfect.schema.ast._result import (
     to_effect,
 )
 from pyfect.schema.ast._suspend import Suspend
+from pyfect.schema.ast._template_literal import (
+    BIG_INT_PATTERN,
+    FINITE_PATTERN,
+    STRING_PATTERN,
+    TemplateLiteral,
+    match_part,
+)
 from pyfect.schema.ast._union import Union, UnionMode
 
 __all__ = [
     "AST",
+    "BIG_INT_PATTERN",
+    "FINITE_PATTERN",
     "MISSING",
     "MISSING_EXIT",
+    "STRING_PATTERN",
     "Annotations",
     "Any",
     "Arrays",
@@ -142,6 +152,7 @@ __all__ = [
     "Refinement",
     "String",
     "Suspend",
+    "TemplateLiteral",
     "Union",
     "UnionMode",
     "Unknown",
@@ -169,6 +180,7 @@ __all__ = [
     "make_filter_by_guard",
     "map_issue",
     "map_value",
+    "match_part",
     "never",
     "normalize_filter_output",
     "null",

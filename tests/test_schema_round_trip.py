@@ -15,6 +15,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import pyfect as fx
+from pyfect import big_decimal as bd
 from pyfect import optic
 from pyfect import schema as S
 
@@ -66,6 +67,19 @@ _CHECKED: dict[str, S.Bottom[Any, Any]] = {
     "is_between": S.Number.check(S.is_between(minimum=-1.5, maximum=10)),
     "is_between_big_int": S.BigInt.check(
         S.is_between_big_int(minimum=-3, maximum=3, exclusive_maximum=True)
+    ),
+    "is_between_big_decimal": S.BigDecimal.check(
+        S.is_between_big_decimal(
+            minimum=bd.make(-15, 1), maximum=bd.make(1_236, 3), exclusive_minimum=True
+        )
+    ),
+    "is_greater_than_big_decimal": S.BigDecimal.check(S.is_greater_than_big_decimal(bd.make(5, 1))),
+    "is_greater_than_or_equal_to_big_decimal": S.BigDecimal.check(
+        S.is_greater_than_or_equal_to_big_decimal(bd.make(-5, 0))
+    ),
+    "is_less_than_big_decimal": S.BigDecimal.check(S.is_less_than_big_decimal(bd.make(1, 30))),
+    "is_less_than_or_equal_to_big_decimal": S.BigDecimal.check(
+        S.is_less_than_or_equal_to_big_decimal(bd.make(-7, -3))
     ),
     "is_between_code_points": S.String.check(S.is_between_code_points(1, 3)),
     "is_between_date": S.DateTimeUtc.check(
@@ -157,6 +171,26 @@ def _as_js_numbers(value: object) -> object:
 _JSON_TEXT = {"UnknownFromJsonString"}
 
 
+def _has_json_form(node: S.ast.AST) -> bool:
+    """As in Effect, a declaration without a ``to_codec_json`` (the network
+    addresses, ``HostPort``), or a union of one (``Host``), has no JSON
+    form: encoding one is ``Expected JSON value``."""
+    if node.encoding is not None:
+        return True
+    if isinstance(node, S.ast.Union):
+        return all(map(_has_json_form, node.types))
+    if not isinstance(node, S.ast.Declaration):
+        return True
+    annotations = node.annotations or {}
+    representation = cast("dict[str, object]", annotations.get("representation") or {})
+    return (
+        "to_codec_json" in annotations
+        or "to_codec" in annotations
+        or representation.get("id") == "effect/schema/Json"
+        or bool(node.type_parameters)
+    )
+
+
 @pytest.mark.parametrize("name", sorted(_CATALOG))
 def test_decoding_an_encoded_value_gives_it_back(name: str):
     schema = _CATALOG[name]
@@ -168,7 +202,9 @@ def test_decoding_an_encoded_value_gives_it_back(name: str):
             return same(_as_js_numbers(a), _as_js_numbers(b))
         return same(a, b)
 
-    codecs = (schema, S.to_codec_json(schema))
+    codecs = (
+        (schema, S.to_codec_json(schema)) if _has_json_form(schema.__codec__().ast) else (schema,)
+    )
     round_trips = [(S.encode_sync(c), S.decode_unknown_sync(c)) for c in codecs]
 
     @settings(max_examples=40, deadline=None)

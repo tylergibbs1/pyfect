@@ -4,10 +4,11 @@ Each test's docstring is the Effect test title. A network is an
 ``ipaddress.IPv4Network`` / ``IPv6Network``; ``format`` stands in for
 ``toJSON``/``inspect``/``toString``; ``network_address`` for ``.address``.
 
+The schema test ``decodes declarations and canonically encodes Schema
+strings`` is ported in ``test_schema_net.py``.
+
 Omitted, with the reason:
 
-- ``decodes declarations and canonically encodes Schema strings``: the net
-  schemas are not ported.
 - In ``rejects invalid prefix lengths and host bits``, the ``1.5``, ``NaN``
   and ``Infinity`` prefixes: the prefix length is typed ``int``.
 - The data-last forms in the containment tests: Python calls take both

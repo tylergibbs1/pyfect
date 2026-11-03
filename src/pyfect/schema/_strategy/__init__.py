@@ -11,6 +11,7 @@ Recursion is bounded by a budget spent on each cyclic ``Suspend``.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Hashable
 from typing import Any
 
@@ -34,6 +35,7 @@ from pyfect.schema._strategy._composites import (
     arrays,
     objects,
 )
+from pyfect.schema.getter._coerce import to_string
 
 type _Strategy = st.SearchStrategy[Any]
 
@@ -132,8 +134,22 @@ class _Derivation:
                 return self._class(node, budget)
             case ast.Declaration():
                 return self._declaration(node, budget)
+            case ast.TemplateLiteral():
+                return self._template(node, budget)
             case _:
                 raise ValueError(f"Unable to derive an arbitrary for {node.expected()}")
+
+    def _template(self, node: ast.TemplateLiteral, budget: int) -> _Strategy:
+        # Each part's text, joined; a non-finite number has no segment.
+        parts = [
+            self(p, budget).filter(math.isfinite) if isinstance(p, ast.Number) else self(p, budget)
+            for p in node.parts
+        ]
+        return (
+            st.tuples(*parts)
+            .map(lambda values: "".join(map(to_string, values)))
+            .filter(lambda text: _parses(node, text))
+        )
 
     def _union(self, node: ast.Union, budget: int) -> _Strategy:
         members = [self(m, budget) for m in node.types if self._fits(m, budget)]

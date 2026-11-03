@@ -4,8 +4,7 @@ Each test's docstring is the Effect test title.
 
 Omitted, with the reason:
 
-- ``decodes and encodes schemas``: the net schemas (``Schema.HostFromString``,
-  ...) are not ported.
+- ``decodes and encodes schemas``: ported in ``test_schema_net.py``.
 """
 
 from typing import Any

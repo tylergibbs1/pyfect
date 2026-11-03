@@ -56,6 +56,17 @@ class Linked:
 type Plan = Strategy | Json | Linked
 
 
+def _big_decimals(constraint: ArbitraryConstraint) -> Callable[[tuple[Any, ...]], Any]:
+    """Effect's constructive ``BigDecimal`` arbitrary, within the bounds."""
+
+    def make(_: tuple[Any, ...]) -> Any:
+        from pyfect.schema._strategy._big_decimal import big_decimals
+
+        return big_decimals(constraint)
+
+    return make
+
+
 class Graph:
     """The decoded side of one root, with each node's cost."""
 
@@ -106,11 +117,15 @@ class Graph:
         if callable(make):
             return Strategy(cast("Callable[[tuple[Any, ...]], Any]", make))
         representation = annotations.get("representation")
-        if (
-            isinstance(representation, dict)
-            and cast("dict[str, object]", representation).get("id") == "effect/schema/Json"
-        ):
+        id = (
+            cast("dict[str, object]", representation).get("id")
+            if isinstance(representation, dict)
+            else None
+        )
+        if id == "effect/schema/Json":
             return Json()
+        if id == "effect/schema/BigDecimal" and make is None:
+            return Strategy(_big_decimals(constraint_of(node.checks)))
         parameters = tuple(self.typed(p) for p in node.type_parameters)
         codec_arbitrary = annotations.get("to_codec_arbitrary")
         if callable(codec_arbitrary):
@@ -157,6 +172,9 @@ class Graph:
                     yield index.type, minimum > required
             case ast.Suspend():
                 yield node.target, True
+            case ast.TemplateLiteral():
+                for part in node.parts:
+                    yield part, True
             case ast.Class():
                 side = node.shape.fields if node.side == "type" else node.shape.encoded
                 yield self.typed(side), True

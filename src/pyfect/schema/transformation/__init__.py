@@ -11,6 +11,7 @@ included (``S.middleware_decoding``, ``S.catch_decoding``).
 """
 
 from pyfect.schema.transformation._builtins import (
+    big_decimal_from_string,
     big_int_from_string,
     byte_size_from_big_int,
     byte_size_from_number,
@@ -52,6 +53,7 @@ from pyfect.schema.transformation._transformation import (
 __all__ = [
     "Middleware",
     "Transformation",
+    "big_decimal_from_string",
     "big_int_from_string",
     "byte_size_from_big_int",
     "byte_size_from_number",

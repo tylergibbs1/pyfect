@@ -31,8 +31,10 @@ Omitted:
 - Ported in ``test_schema_errors.py`` ("Declaration / Error") and
   ``test_schema_struct_with_rest.py`` (the ``StructWithRest`` titles; the
   surrogate-pair and template ones stay omitted, see above and below).
-- Not yet ported schemas: ``TemplateLiteral`` (every title naming it),
-  ``RegExp``, ``Date``,
+- "TemplateLiteral segments / keeps oneOf when a check on the whole
+  template is exported exactly": its check is an ``isPattern``, which
+  pyfect leaves out (see above), so the union is loosened.
+- Not yet ported schemas: ``RegExp``, ``Date``,
   ``MutableJson``, ``JsonObject``, ``fromJsonString`` (its ``contentSchema``
   derivation) and every "fromJsonString" title.
 - Validation-only titles: "exports both applicable bounds when the input
@@ -49,7 +51,9 @@ Omitted:
 
 import enum
 from collections.abc import Callable
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Any, Literal, Never, NotRequired, TypedDict
+
+import pytest
 
 from pyfect import schema as S
 from pyfect.json_schema import JsonSchema
@@ -1680,5 +1684,208 @@ def test_error_preserves_its_identifier():
                 "required": ["a"],
                 "additionalProperties": False,
             }
+        },
+    )
+
+
+# --------------------------------------------------------- TemplateLiteral
+
+
+def test_template_literal():
+    """TemplateLiteral"""
+    schema = S.TemplateLiteral("a", S.String)
+    _check(schema, {"type": "string", "pattern": "^a[\\s\\S]*?$"})
+    _check(
+        schema.annotate(description="a"),
+        {"type": "string", "pattern": "^a[\\s\\S]*?$", "description": "a"},
+    )
+
+
+def test_template_literal_with_big_int():
+    """TemplateLiteral with BigInt"""
+    _check(S.TemplateLiteral(S.BigInt), {"type": "string", "pattern": "^-?\\d+$"})
+
+
+_SEGMENT = S.String.check(S.make_filter(lambda s: s == "abc"))
+_TEMPLATES: list[tuple[str, Any]] = [
+    ("direct", S.TemplateLiteral("item.", _SEGMENT)),
+    ("named", S.TemplateLiteral("item.", _SEGMENT.annotate(identifier="Segment"))),
+    ("named template", S.TemplateLiteral("item.", _SEGMENT).annotate(identifier="Item")),
+    ("nested template", S.TemplateLiteral("item.", S.TemplateLiteral(_SEGMENT))),
+    ("union", S.TemplateLiteral("item.", S.Union(_SEGMENT, S.Literal("def")))),
+]
+
+
+def test_template_resolves_repeated_named_segments():
+    """TemplateLiteral segments / resolves repeated named segments without checks"""
+    named = S.String.annotate(identifier="Segment")
+    _check(
+        S.TemplateLiteral(named, ".", named),
+        {"type": "string", "pattern": "^[\\s\\S]*?\\.[\\s\\S]*?$"},
+        {"Segment": {"type": "string"}},
+    )
+
+
+def test_template_resolves_named_nested_templates_and_union_segments():
+    """TemplateLiteral segments / resolves named nested templates and union segments"""
+    named = S.String.annotate(identifier="Segment")
+    nested = S.TemplateLiteral("item.", named).annotate(identifier="Nested")
+    choice = S.Union(nested, S.Literal("other")).annotate(identifier="Choice")
+    document = S.to_json_schema_document(S.TemplateLiteral(choice, ".", named))
+    assert document.schema == {
+        "type": "string",
+        "pattern": "^(?:item\\.[\\s\\S]*?|other)\\.[\\s\\S]*?$",
+    }
+
+
+def test_template_resolves_named_segments_in_record_keys():
+    """TemplateLiteral segments / resolves named segments in record keys"""
+    named = S.String.annotate(identifier="Segment")
+    _check(
+        S.Record(S.TemplateLiteral("item.", named), S.Finite),
+        {
+            "type": "object",
+            "patternProperties": {"^item\\.[\\s\\S]*?$": {"type": "number"}},
+            "additionalProperties": False,
+        },
+        {"Segment": {"type": "string"}},
+    )
+
+
+@pytest.mark.parametrize("part", [_SEGMENT, _SEGMENT.annotate(identifier="Segment")])
+def test_template_approximates_segment_checks(part: S.Codec[str, str]):
+    """TemplateLiteral segments / approximates %s segment checks while preserving runtime validation"""  # noqa: E501
+    schema = S.TemplateLiteral("item.", part)
+    assert S.is_(schema)("item.abc")
+    assert not S.is_(schema)("item.xyz")
+    document = S.to_json_schema_document(schema)
+    assert document.schema == {"type": "string", "pattern": "^item\\.[\\s\\S]*?$"}
+
+
+@pytest.mark.parametrize(("name", "part"), _TEMPLATES)
+def test_template_uses_any_of_when_segment_checks_are_omitted(name: str, part: Any):
+    """TemplateLiteral segments / uses anyOf when %s segment checks are omitted"""
+    schema = S.Union(part, S.Literal("item.xyz"), mode="one_of")
+    assert S.is_(schema)("item.abc")
+    assert S.is_(schema)("item.xyz")
+    document = S.to_json_schema_document(schema)
+    assert "anyOf" in document.schema
+    assert "oneOf" not in document.schema
+
+
+def test_template_uses_any_of_when_numeric_segment_checks_are_omitted():
+    """TemplateLiteral segments / uses anyOf when numeric segment checks are omitted"""
+    schema = S.Union(S.TemplateLiteral("item.", S.Int), S.Literal("item.1.5"), mode="one_of")
+    assert S.is_(schema)("item.1")
+    assert S.is_(schema)("item.1.5")
+    document = S.to_json_schema_document(schema)
+    assert "anyOf" in document.schema
+    assert "oneOf" not in document.schema
+
+
+@pytest.mark.parametrize("name", ["unnamed", "named"])
+def test_template_uses_any_of_when_segments_lose_one_of_exclusivity(name: str):
+    """TemplateLiteral segments / uses anyOf when %s segments lose oneOf exclusivity"""
+    segment = S.Union(S.String, S.Literal("abc"), mode="one_of")
+    part = segment.annotate(identifier="Segment") if name == "named" else segment
+    template = S.TemplateLiteral("item.", part)
+    schema = S.Union(template, S.Literal("item.abc"), mode="one_of")
+    assert not S.is_(template)("item.abc")
+    assert S.is_(schema)("item.abc")
+    assert S.is_(schema)("item.xyz")
+    document = S.to_json_schema_document(schema)
+    assert "anyOf" in document.schema
+    assert "oneOf" not in document.schema
+    if name == "named":
+        assert "oneOf" in document.definitions["Segment"]
+
+
+_EMPTY_ANY_OF: S.UnionSchema[str, str, Never, Never] = S.Union()
+_EMPTY_ONE_OF: S.UnionSchema[str, str, Never, Never] = S.Union(mode="one_of")
+_EMPTY_SEGMENTS: list[S.Codec[str, str]] = [
+    _EMPTY_ANY_OF,
+    _EMPTY_ANY_OF.annotate(identifier="EmptySegment"),
+    _EMPTY_ONE_OF,
+    _EMPTY_ONE_OF.annotate(identifier="EmptySegment"),
+]
+
+
+@pytest.mark.parametrize("part", _EMPTY_SEGMENTS)
+def test_template_empty_union_preserves_surrounding_one_of(part: S.Codec[str, str]):
+    """TemplateLiteral segments / empty union segments / preserves surrounding oneOf for %s"""
+    template = S.TemplateLiteral("item.", part)
+    schema = S.Union(template, S.Literal("item."), mode="one_of")
+    assert not S.is_(template)("item.")
+    assert S.is_(schema)("item.")
+    assert not S.is_(schema)("item.abc")
+    document = S.to_json_schema_document(schema)
+    assert "oneOf" in document.schema
+    assert "anyOf" not in document.schema
+
+
+@pytest.mark.parametrize("part", _EMPTY_SEGMENTS)
+def test_template_empty_union_does_not_select_record_keys(part: S.Codec[str, str]):
+    """TemplateLiteral segments / empty union segments / does not select record keys for %s"""
+    schema = S.Record(S.TemplateLiteral("item.", part), S.Finite)
+    assert S.decode_unknown_sync(schema)({"item.": "ignored"}) == {}
+    assert "patternProperties" in S.to_json_schema_document(schema).schema
+
+
+@pytest.mark.parametrize("part", [S.String, S.Union(S.String, S.Literal("abc"))])
+def test_template_keeps_one_of_when_segment_is_exported_exactly(part: S.Codec[str, str]):
+    """TemplateLiteral segments / keeps oneOf when the %s segment is exported exactly"""
+    schema = S.Union(S.TemplateLiteral("item.", part), S.Literal("item.xyz"), mode="one_of")
+    assert S.is_(schema)("item.abc")
+    assert not S.is_(schema)("item.xyz")
+    assert "oneOf" in S.to_json_schema_document(schema).schema
+
+
+_ITEM_KEYS = {"type": "string", "pattern": "^item\\.[\\s\\S]*?$"}
+_RECORD_DEFINITIONS: dict[str, dict[str, Any]] = {
+    "named": {"Segment": {"type": "string"}},
+    "named template": {"Item": _ITEM_KEYS},
+}
+
+
+@pytest.mark.parametrize(("name", "part"), _TEMPLATES)
+def test_template_record_value_checks_skip_keys_outside_the_template(name: str, part: Any):
+    """TemplateLiteral segments / does not apply record value checks to keys outside the %s filtered template"""  # noqa: E501
+    # Effect's test expects ``{"type": "object"}``; Effect under Node writes
+    # the approximate key pattern as ``propertyNames``, as pyfect does.
+    schema = S.Record(part, S.Finite)
+    decoded = S.decode_unknown_sync(schema)({"item.abc": 1, "item.xyz": "ignored"})
+    assert decoded == {"item.abc": 1}
+    names = (
+        {"type": "string", "pattern": "^item\\.(?:[\\s\\S]*?|def)$"}
+        if name == "union"
+        else _ITEM_KEYS
+    )
+    _check(
+        schema,
+        {"type": "object", "propertyNames": names, "additionalProperties": {"type": "number"}},
+        _RECORD_DEFINITIONS.get(name),
+    )
+
+
+def test_record_template_literal_and_annotate():
+    """Record(`a${string}`, Number) & annotate"""
+    _check(
+        S.Record(S.TemplateLiteral("a", S.String), S.Finite),
+        {
+            "type": "object",
+            "patternProperties": {"^a[\\s\\S]*?$": {"type": "number"}},
+            "additionalProperties": False,
+        },
+    )
+
+
+def test_on_excess_property_applies_to_properties_not_covered_by_pattern_properties():
+    """onExcessProperty / applies to properties not covered by patternProperties"""
+    _check(
+        S.Record(S.TemplateLiteral("x-", S.String), S.Number),
+        {
+            "type": "object",
+            "patternProperties": {"^x-[\\s\\S]*?$": _NUMBER},
+            "additionalProperties": False,
         },
     )

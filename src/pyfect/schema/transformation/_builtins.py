@@ -13,7 +13,7 @@ from typing import Any
 from urllib.parse import urlunsplit
 from zoneinfo import ZoneInfo
 
-from pyfect import byte_size
+from pyfect import big_decimal, byte_size
 from pyfect._url import Url, parse_url
 from pyfect.date_time import (
     format_iso,
@@ -150,6 +150,17 @@ url_from_string: Transformation[Url, str] = transform_effect(
     decode=_parsed(parse_url, "a valid URL string"), encode=_done(urlunsplit)
 )
 """A URL and its text (Effect's ``urlFromString``)."""
+
+
+def _format_big_decimal(value: big_decimal.BigDecimal) -> str:
+    return value.format()
+
+
+big_decimal_from_string: Transformation[big_decimal.BigDecimal, str] = transform_effect(
+    decode=_parsed(big_decimal.from_string, "a valid BigDecimal string"),
+    encode=_done(_format_big_decimal),
+)
+"""A ``BigDecimal`` and its text (Effect's ``bigDecimalFromString``)."""
 
 
 def _utc_from_string(text: str) -> datetime | None:
