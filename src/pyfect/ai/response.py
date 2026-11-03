@@ -22,10 +22,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Literal, Self, TypeVar, cast
-from urllib.parse import SplitResult
 
 from pyfect import schema as S
 from pyfect._json_value import JsonValue
+from pyfect._url import Url
 from pyfect._wire_codec import Const, Key, key, wire_codec
 from pyfect.ai.ai_error import (
     HTTP_REQUEST_DETAILS,
@@ -260,7 +260,7 @@ class UrlSourcePart(_Wire):
     type: ClassVar[Literal["source"]] = "source"
     source_type: ClassVar[Literal["url"]] = "url"
     id: str
-    url: SplitResult
+    url: Url
     title: str
     metadata: ProviderMetadata = field(default_factory=_metadata)
 

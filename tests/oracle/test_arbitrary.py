@@ -573,18 +573,20 @@ def test_derives_json_through_its_built_in_representation():
 def test_prefers_an_explicit_to_codec_arbitrary_over_a_built_in():
     """schema / prefers an explicit toCodecArbitrary over a built-in
     representation"""
-    from urllib.parse import SplitResult, urlsplit
+    from urllib.parse import urlsplit
+
+    from pyfect.http.url import Url
 
     expected = "https://effect.website/custom"
 
     def custom(_: tuple[ast.AST, ...], __: S.ArbitraryConstraint) -> ast.Link:
         return ast.Link(
             S.Literal(expected).ast,
-            T.transform(decode=urlsplit, encode=lambda _: expected),
+            T.transform(decode=lambda text: Url._make(urlsplit(text)), encode=lambda _: expected),
         )
 
-    values: list[SplitResult] = sample(S.URL.annotate(to_codec_arbitrary=custom), 10)
-    assert {value.geturl() for value in values} == {expected}
+    values: list[Url] = sample(S.URL.annotate(to_codec_arbitrary=custom), 10)
+    assert {str(value) for value in values} == {expected}
 
 
 def test_derives_canonical_declarations_through_their_codec():

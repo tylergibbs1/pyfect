@@ -262,7 +262,7 @@ def search_params_from_url(url: SplitResult) -> dict[str, str | list[str]]:
     return parse_url_params(url.query).to_record()
 
 
-def to_url(request: ServerRequest) -> SplitResult | None:
+def to_url(request: ServerRequest) -> _url.Url | None:
     """The request's full URL, from its ``host`` header (``localhost``
     without one) and protocol; ``None`` when that is no valid URL, or the
     host is no authority (so it cannot change the path or query)."""
@@ -282,7 +282,7 @@ def to_url(request: ServerRequest) -> SplitResult | None:
         return None
 
 
-def to_url_result(request: ServerRequest) -> Result[SplitResult, RequestParseError]:
+def to_url_result(request: ServerRequest) -> Result[_url.Url, RequestParseError]:
     url = to_url(request)
     if url is None:
         return Err(RequestParseError(request, "Invalid URL"))

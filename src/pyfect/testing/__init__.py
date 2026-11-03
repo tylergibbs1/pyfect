@@ -26,7 +26,8 @@ take no real time::
   test clock inside any program.
 - ``TestConsole``: a console recording every call; ``effect`` tests run
   with a fresh one, read back with ``log_lines`` / ``error_lines``.
-- ``assert_exit_success`` and friends: failures print ``Cause.pretty()``.
+- ``assert_exit_success`` and friends: failures print ``Cause.pretty()``;
+  ``assert_exit_fail(exit, error)`` compares a failure by its error alone.
 - ``SchemaAsserts``: decode, encode and make assertions for a schema.
 
 If every fiber ends up waiting with nothing to wake them, synchronous runs
@@ -40,6 +41,7 @@ blocking Redis commands, worker messages, a child's exit).
 from pyfect._public import publish
 from pyfect.scheduler import StalledError
 from pyfect.testing._assertions import (
+    assert_exit_fail,
     assert_exit_failure,
     assert_exit_success,
     assert_failure,
@@ -82,6 +84,7 @@ __all__ = [
     "TestDecorator",
     "TestTimeoutError",
     "adjust",
+    "assert_exit_fail",
     "assert_exit_failure",
     "assert_exit_success",
     "assert_failure",

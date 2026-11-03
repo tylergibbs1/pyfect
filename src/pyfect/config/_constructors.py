@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, overload
-from urllib.parse import SplitResult
 
 from pyfect._one_or_many import one_or_many
+from pyfect._url import Url
 from pyfect.byte_size import ByteSize
 from pyfect.config import _scalars
 from pyfect.config._config import Config
@@ -94,9 +94,10 @@ def date_time(name: str | None = None) -> Config[datetime]:
     return scalar_config(_scalars.date_time, name)
 
 
-def url(name: str | None = None) -> Config[SplitResult]:
+def url(name: str | None = None) -> Config[Url]:
     """An absolute URL with a scheme (and a host for ``http``, ``https``,
-    ``ws``, ``wss`` and ``ftp``), split by ``urllib.parse.urlsplit``."""
+    ``ws``, ``wss`` and ``ftp``), split by ``urllib.parse.urlsplit`` into a
+    ``Url``, whose ``str()`` is the URL (``f"{url}/payouts"``)."""
     return scalar_config(_scalars.url, name)
 
 

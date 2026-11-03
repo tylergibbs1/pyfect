@@ -8,12 +8,11 @@ import re
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from decimal import Decimal
-from urllib.parse import SplitResult
 
 from pyfect import _js_date as js_date
 from pyfect import _json_text
 from pyfect._js import SPACE, js_number
-from pyfect._url import parse_url
+from pyfect._url import Url, parse_url
 from pyfect.byte_size import ByteSize
 from pyfect.byte_size import from_string as byte_size_from_string
 from pyfect.config._leaf import EXPECTED_STRING, Scalar, composite, expected
@@ -205,7 +204,7 @@ date_time = Scalar(_STRING, _date_time)
 _INVALID_URL = InvalidValue({"message": "Expected a valid URL string"})
 
 
-def _url(text: str) -> Result[SplitResult, Issue]:
+def _url(text: str) -> Result[Url, Issue]:
     url = parse_url(text)
     return Err(_INVALID_URL) if url is None else Ok(url)
 

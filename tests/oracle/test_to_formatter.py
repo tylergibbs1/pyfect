@@ -38,6 +38,7 @@ from zoneinfo import ZoneInfo
 
 from pyfect import schema as S
 from pyfect.date_time import format_iso_zoned
+from pyfect.http.url import Url
 from pyfect.option import Option, Some
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok
@@ -457,7 +458,10 @@ def test_suspend_readonly_map():
 def test_url():
     """URL"""
     # Python keeps the URL as written (``urlsplit`` does not add the "/").
-    assert S.to_formatter(S.URL)(urlsplit("https://www.example.com/")) == "https://www.example.com/"
+    assert (
+        S.to_formatter(S.URL)(Url._make(urlsplit("https://www.example.com/")))
+        == "https://www.example.com/"
+    )
 
 
 def test_option_string():

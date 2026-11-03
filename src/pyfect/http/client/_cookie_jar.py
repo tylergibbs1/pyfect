@@ -21,7 +21,7 @@ from pyfect.http import url as _url
 from pyfect.http.cookies import Cookie, CookieOptions, Cookies
 
 
-def _where(url: str) -> SplitResult | None:
+def _where(url: str) -> _url.Url | None:
     try:
         return _url.parse(url)
     except ValueError:

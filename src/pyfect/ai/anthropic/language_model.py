@@ -103,7 +103,7 @@ class Config(Tag[ConfigService], key="@effect/ai-anthropic/AnthropicLanguageMode
 
 # Capabilities ---------------------------------------------------------------------------
 
-_SONNET_5 = re.compile(r"claude-sonnet-5(?!-\d\b)")
+_SONNET_5 = re.compile(r"claude-sonnet-5(?!-[0-9]\b)")
 _NO_MID_CONVERSATION = (
     "claude-opus-4-6",
     "claude-opus-4-7",

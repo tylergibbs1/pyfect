@@ -3,7 +3,7 @@ dates, zones, URLs, bytes and JSON, ``Option`` from ``None`` or a missing
 key, ``Redacted`` from a value.
 
 Python mappings (``docs/PARITY.md``): bytes are ``bytes`` (``Uint8Array``),
-a URL a ``urllib.parse.SplitResult``, a UTC date-time an aware ``datetime``
+a URL a ``Url`` (a ``urllib.parse.SplitResult``), a UTC date-time an aware ``datetime``
 in UTC, an ``Option`` ``Some | None``.
 """
 
@@ -12,10 +12,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime, tzinfo
 from typing import Any, Literal, cast
-from urllib.parse import SplitResult
 from zoneinfo import ZoneInfo
 
 from pyfect import redacted as _redacted
+from pyfect._url import Url
 from pyfect.byte_size import ByteSize as _ByteSize
 from pyfect.date_time._epoch import to_epoch_millis
 from pyfect.option import Option as _Option
@@ -62,14 +62,15 @@ from pyfect.schema.getter import (
     transform_optional,
 )
 
-URL: Bottom[SplitResult] = instance_of(
-    SplitResult,
+URL: Bottom[Url] = instance_of(
+    Url,
     expected="URL",
     to_codec_arbitrary=_arb.url,
     to_codec_json=string_codec(T.url_from_string),
     **URL_INSTANCES,
 )
-"""A parsed URL, a ``urllib.parse.SplitResult`` (Effect's ``URL``)."""
+"""A parsed URL, a ``Url`` (Effect's ``URL``): a ``urllib.parse.SplitResult``
+whose ``str()`` is the URL."""
 
 _BASE64_STRING = ast.annotate(ast.string, {"format": "byte", "content_encoding": "base64"})
 
@@ -134,9 +135,9 @@ BytesFromHex: DecodeToSchema[bytes, str] = _expecting(
     "a hex encoded string that will be decoded as a Uint8Array"
 ).pipe(decode_to(Bytes, T.Transformation(decode_hex(), encode_hex())))
 
-URLFromString: DecodeToSchema[SplitResult, str] = _expecting(
-    "a string that will be decoded as a URL"
-).pipe(decode_to(URL, T.url_from_string))
+URLFromString: DecodeToSchema[Url, str] = _expecting("a string that will be decoded as a URL").pipe(
+    decode_to(URL, T.url_from_string)
+)
 
 
 def _from_bit(bit: Literal[0, 1]) -> bool:

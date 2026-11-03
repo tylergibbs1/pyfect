@@ -22,6 +22,7 @@ from pyfect.ai import id_generator
 from pyfect.ai import prompt as P
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
+from pyfect.http.url import Url
 from pyfect.persistence import key_value_store, persistence
 from pyfect.persistence.persistence import BackingPersistence
 
@@ -41,7 +42,7 @@ PERSISTENCE_LAYER = C.layer_persisted(store_id="chat").pipe(
 _FILE_DATA = [
     pytest.param(bytes([0, 137, 255, 65]), id="bytes"),
     pytest.param("dGVzdA==", id="string"),
-    pytest.param(urlsplit("https://example.com/file.txt"), id="URL"),
+    pytest.param(Url._make(urlsplit("https://example.com/file.txt")), id="URL"),
 ]
 
 

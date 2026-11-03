@@ -38,7 +38,7 @@ def _offset(zone: str) -> timezone | None:
     return timezone(-delta if zone[0] == "-" else delta)
 
 
-_HAS_ZONE = re.compile(r"Z|GMT|[+-]\d{2}$|[+-]\d{2}:?\d{2}$|\]$")
+_HAS_ZONE = re.compile(r"Z|GMT|[+-][0-9]{2}$|[+-][0-9]{2}:?[0-9]{2}$|\]$")
 _ENDS_IN_ZONE = re.compile(r"(?:z|gmt)$", re.IGNORECASE)
 
 

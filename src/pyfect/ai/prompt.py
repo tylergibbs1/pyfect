@@ -23,10 +23,10 @@ import base64
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, cast
-from urllib.parse import SplitResult
 
 from pyfect import schema as S
 from pyfect._json_value import JsonValue
+from pyfect._url import Url
 from pyfect._wire_codec import Const, Key, key, wire_codec
 from pyfect.exit import Success
 from pyfect.schema import getter as G
@@ -89,8 +89,8 @@ class ReasoningPart(_Wire):
     options: ProviderOptions = field(default_factory=_options)
 
 
-type FileData = str | bytes | SplitResult
-"""A file's data: base64 text, bytes or a URL (``urllib.parse.urlsplit``)."""
+type FileData = str | bytes | Url
+"""A file's data: base64 text, bytes or a URL (a ``Url``, from ``http.url.parse``)."""
 
 
 @dataclass(frozen=True, eq=True)

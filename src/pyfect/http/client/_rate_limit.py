@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     )
 
 _MIN_MILLIS = 1.0
-_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+_NUMBER = re.compile(r"-?[0-9]+(?:\.[0-9]+)?")
 
 
 class RateLimitHeaders(TypedDict, total=False):

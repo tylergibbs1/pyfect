@@ -10,8 +10,8 @@ from pyfect.http.find_my_way._paths import closing_parenthesis
 from pyfect.schema import Top, ast
 
 _EMPTY: frozenset[str] = frozenset()
-_PARAM = re.compile(r":(\w+)")
-_PARAMS = re.compile(r"::|:(\w+)")
+_PARAM = re.compile(r":(\w+)", re.ASCII)
+_PARAMS = re.compile(r"::|:(\w+)", re.ASCII)
 
 
 def last_encoding(node: ast.AST) -> ast.AST:

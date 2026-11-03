@@ -21,6 +21,7 @@ from urllib.parse import SplitResult, urlsplit
 from zoneinfo import ZoneInfo
 
 from pyfect._equal import dict_of, frozenset_of
+from pyfect._url import Url
 from pyfect.date_time._epoch import EPOCH, from_epoch_millis, to_epoch_millis
 from pyfect.date_time._zones import zone_named
 from pyfect.schema import ast
@@ -131,9 +132,9 @@ _URL = ast.Objects(
 )
 
 
-def _url_of(parts: Mapping[str, Any]) -> SplitResult:
+def _url_of(parts: Mapping[str, Any]) -> Url:
     path = "/".join(parts["path"])
-    return urlsplit(f"{parts['scheme']}://{parts['label']}.{parts['suffix']}/{path}")
+    return Url._make(urlsplit(f"{parts['scheme']}://{parts['label']}.{parts['suffix']}/{path}"))
 
 
 def _url_to(url: SplitResult) -> Mapping[str, Any]:

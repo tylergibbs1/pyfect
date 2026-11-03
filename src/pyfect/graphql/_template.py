@@ -10,8 +10,8 @@ from collections.abc import Sequence
 
 from pyfect.graphql.template import DocumentTemplate, Fragment, Parts
 
-_WORD_END = re.compile(r'[\w"-]$')
-_WORD_START = re.compile(r'^[\w"-]')
+_WORD_END = re.compile(r'[\w"-]$', re.ASCII)
+_WORD_START = re.compile(r'^[\w"-]', re.ASCII)
 
 
 def _concat(left: str, right: str) -> str:

@@ -41,6 +41,7 @@ from urllib.parse import urlsplit
 
 from pyfect import option as O
 from pyfect import schema as S
+from pyfect.http.url import Url
 from pyfect.redacted import Redacted
 from pyfect.schema import transformation as T
 from pyfect.testing import SchemaAsserts
@@ -448,7 +449,7 @@ def test_class():
 def test_url():
     """schemas without encoding / URL"""
     asserts = _asserts(S.URL)
-    url = urlsplit("https://example.com")
+    url = Url._make(urlsplit("https://example.com"))
     asserts.encoding().succeed(url, "https://example.com")
     asserts.decoding().succeed("https://example.com", url)
     asserts.decoding().fail("not a url", "Expected a valid URL string")

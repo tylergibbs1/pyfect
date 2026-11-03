@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import CodeType
 from typing import final
 
@@ -28,7 +28,7 @@ class StackFrame:
     the form ``"at function (file:line)"``) and the frame it runs inside."""
 
     name: str
-    stack: Callable[[], str | None]
+    stack: Callable[[], str | None] = field(repr=False)
     parent: StackFrame | None = None
 
 

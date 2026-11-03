@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 from pyfect import byte_size
 from pyfect import effect as fx
 from pyfect import schema as S
+from pyfect.http.url import Url
 from pyfect.schema import transformation as T
 from pyfect.schema.issue import Forbidden, Issue
 from pyfect.testing import SchemaAsserts
@@ -189,7 +190,9 @@ def test_url_from_string():
     asserts = SchemaAsserts(S.URLFromString)
     asserts.decoding().succeed("https://effect.website", urlsplit("https://effect.website"))
     asserts.decoding().fail("123", "Expected a valid URL string")
-    asserts.encoding().succeed(urlsplit("https://effect.website/"), "https://effect.website/")
+    asserts.encoding().succeed(
+        Url._make(urlsplit("https://effect.website/")), "https://effect.website/"
+    )
 
 
 def test_trim():

@@ -69,6 +69,7 @@ class Flag[A]:
 
     @staticmethod
     def finite(name: str) -> Flag[float]:
+        """A float (``129.99``, ``-1e3``); ``nan`` and ``inf`` are refused."""
         return Flag(p.finite(p.FLAG, name))
 
     @staticmethod

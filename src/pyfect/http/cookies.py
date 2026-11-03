@@ -119,7 +119,7 @@ _FIELD_CONTENT = re.compile(r"[\t\x20-\x7e\x80-\xff]+")
 _NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 _DOMAIN = re.compile(r"[\t\x20-\x3a\x3c-\x7e\x80-\xff]+")
 _PATH = re.compile(r"[\x20-\x3a\x3c-\x7e]+")
-_LEADING_INT = re.compile(r"\s*([+-]?\d+)")
+_LEADING_INT = re.compile(r"\s*([+-]?[0-9]+)")
 _MAX_SECONDS = int(sys.float_info.max)
 _BAD_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 

@@ -62,6 +62,7 @@ class Argument[A]:
 
     @staticmethod
     def finite(name: str) -> Argument[float]:
+        """A float (``129.99``, ``-1e3``); ``nan`` and ``inf`` are refused."""
         return Argument(p.finite(p.ARGUMENT, name))
 
     @staticmethod

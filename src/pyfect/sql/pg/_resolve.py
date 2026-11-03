@@ -24,7 +24,7 @@ from pyfect.sql.pg.error import connection_error
 _DEFAULT_TIMEOUT = 5.0
 _MAX_KEEP_ALIVE = 0x7FFFFFFF
 _RESERVED = frozenset(("user", "database", "replication", "options"))
-_SOCKET_FILE = re.compile(r"^(.*)/\.s\.PGSQL\.(\d+)$")
+_SOCKET_FILE = re.compile(r"^(.*)/\.s\.PGSQL\.([0-9]+)$")
 _BAD_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
 

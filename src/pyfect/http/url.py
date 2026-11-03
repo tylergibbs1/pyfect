@@ -1,6 +1,7 @@
 """URLs (Effect's ``Url``): parsing and immutable updates.
 
-A URL is a ``urllib.parse.SplitResult``, normalized as WHATWG's ``URL``
+A URL is a ``Url``, a ``urllib.parse.SplitResult`` whose ``str()`` is the
+URL written out, normalized as WHATWG's ``URL``
 normalizes it: the scheme and host lowercased, an empty path of an
 ``http(s)`` / ``ws(s)`` / ``ftp`` URL written ``/``, a default port dropped,
 dot segments resolved, and characters outside each part's allowed set
@@ -22,6 +23,7 @@ from urllib.parse import SplitResult, unquote_to_bytes
 
 from pyfect._digits import parse_digits
 from pyfect._js import text_encode
+from pyfect._url import Url, as_url, write
 from pyfect.errors import IllegalArgumentError, TaggedError
 from pyfect.http import url_params as _params
 from pyfect.redacted import Redacted
@@ -240,7 +242,7 @@ def _resolve(base: SplitResult, reference: str) -> str:  # noqa: PLR0911
     return prefix + directory + reference
 
 
-def parse(text: str, base: str | SplitResult | None = None) -> SplitResult:
+def parse(text: str, base: str | SplitResult | None = None) -> Url:
     """``text`` as an absolute URL, resolved against ``base`` when it has no
     scheme; raises ``ValueError`` when it is not a valid URL."""
     text = re.sub(r"[\t\n\r]", "", text.strip("".join(_C0) + " "))
@@ -270,7 +272,7 @@ def parse(text: str, base: str | SplitResult | None = None) -> SplitResult:
         netloc = ""
         path, query, fragment = _split_rest(rest)
         path = _encode(_remove_dots(path), _PATH) if path.startswith("/") else _encode(path, _C0)
-    return SplitResult(
+    return Url(
         scheme,
         netloc,
         path,
@@ -287,11 +289,8 @@ def _backslashes(text: str) -> str:
 
 
 def href(url: SplitResult) -> str:
-    """The URL written out."""
-    authority = f"//{url.netloc}" if url.netloc or url.scheme in _SPECIAL_PORTS else ""
-    query = f"?{url.query}" if url.query else ""
-    fragment = f"#{url.fragment}" if url.fragment else ""
-    return f"{url.scheme}:{authority}{url.path}{query}{fragment}"
+    """The URL written out (``str(url)`` of a ``Url``)."""
+    return write(url)
 
 
 def origin(url: SplitResult) -> str:
@@ -309,7 +308,7 @@ class UrlError(TaggedError):
     cause: object
 
 
-def make(url: str, params: _params.UrlParams, hash: str | None) -> Result[SplitResult, UrlError]:
+def make(url: str, params: _params.UrlParams, hash: str | None) -> Result[Url, UrlError]:
     """``url`` with ``params`` appended to its query (rewritten as
     ``URLSearchParams`` writes it when there are any) and ``hash`` as its
     fragment."""
@@ -327,7 +326,7 @@ def make(url: str, params: _params.UrlParams, hash: str | None) -> Result[SplitR
 
 def from_string(
     url: str, base: str | SplitResult | None = None
-) -> Result[SplitResult, IllegalArgumentError]:
+) -> Result[Url, IllegalArgumentError]:
     try:
         return Ok(parse(url, base))
     except ValueError:
@@ -337,51 +336,53 @@ def from_string(
         return Err(IllegalArgumentError(f'Invalid URL: "{url}"{suffix}'))
 
 
-def _reparse(url: SplitResult, **parts: str) -> SplitResult:
-    return parse(href(url._replace(**parts)))
+def _reparse(url: SplitResult, **parts: str) -> Url:
+    return parse(href(as_url(url)._replace(**parts)))
 
 
-def set_hash(url: SplitResult, hash: str) -> SplitResult:
-    return url._replace(fragment=_encode(hash.removeprefix("#"), _FRAGMENT))
+def set_hash(url: SplitResult, hash: str) -> Url:
+    return as_url(url)._replace(fragment=_encode(hash.removeprefix("#"), _FRAGMENT))
 
 
-def set_host(url: SplitResult, host: str) -> SplitResult:
+def set_host(url: SplitResult, host: str) -> Url:
     credentials = url.netloc.rpartition("@")[0]
     return _reparse(url, netloc=f"{credentials}@{host}" if credentials else host)
 
 
-def set_hostname(url: SplitResult, hostname: str) -> SplitResult:
+def set_hostname(url: SplitResult, hostname: str) -> Url:
     port = f":{url.port}" if url.port is not None else ""
     return set_host(url, hostname + port)
 
 
-def set_href(url: SplitResult, href: str) -> SplitResult:
+def set_href(url: SplitResult, href: str) -> Url:
     return parse(href)
 
 
-def _set_userinfo(url: SplitResult, username: str, password: str) -> SplitResult:
+def _set_userinfo(url: SplitResult, username: str, password: str) -> Url:
     host = url.netloc.rpartition("@")[2]
     username, password = _encode(username, _USERINFO), _encode(password, _USERINFO)
     credentials = username + (f":{password}" if password else "")
     return _reparse(url, netloc=f"{credentials}@{host}" if credentials else host)
 
 
-def set_password(url: SplitResult, password: str | Redacted[str]) -> SplitResult:
+def set_password(url: SplitResult, password: str | Redacted[str]) -> Url:
     plain = password if isinstance(password, str) else redacted_value(password)
     return _set_userinfo(url, url.username or "", plain)
 
 
-def set_username(url: SplitResult, username: str) -> SplitResult:
+def set_username(url: SplitResult, username: str) -> Url:
     return _set_userinfo(url, username, url.password or "")
 
 
-def set_pathname(url: SplitResult, pathname: str) -> SplitResult:
+def set_pathname(url: SplitResult, pathname: str) -> Url:
     special = url.scheme in _SPECIAL_PORTS
     path = pathname if pathname.startswith("/") or not special else f"/{pathname}"
-    return url._replace(path=_encode(_remove_dots(path), _PATH) if path.startswith("/") else path)
+    return as_url(url)._replace(
+        path=_encode(_remove_dots(path), _PATH) if path.startswith("/") else path
+    )
 
 
-def set_port(url: SplitResult, port: str | int) -> SplitResult:
+def set_port(url: SplitResult, port: str | int) -> Url:
     host = url.netloc.rpartition("@")[2]
     hostname = host[: host.rfind("]") + 1] if host.startswith("[") else host.partition(":")[0]
     credentials = url.netloc.rpartition("@")[0]
@@ -389,37 +390,36 @@ def set_port(url: SplitResult, port: str | int) -> SplitResult:
     return _reparse(url, netloc=f"{credentials}@{netloc}" if credentials else netloc)
 
 
-def set_protocol(url: SplitResult, protocol: str) -> SplitResult:
+def set_protocol(url: SplitResult, protocol: str) -> Url:
     """A new scheme; switching between a special scheme (``http``, ...) and
     another is ignored, as ``URL`` ignores it."""
     scheme = protocol.removesuffix(":").lower()
     if (scheme in _SPECIAL_PORTS) != (url.scheme in _SPECIAL_PORTS) or not _SCHEME.fullmatch(
         f"{scheme}:"
     ):
-        return url
+        return as_url(url)
     return _reparse(url, scheme=scheme)
 
 
-def set_search(url: SplitResult, search: str) -> SplitResult:
+def set_search(url: SplitResult, search: str) -> Url:
     query_set = _SPECIAL_QUERY if url.scheme in _SPECIAL_PORTS else _QUERY
-    return url._replace(query=_encode(search.removeprefix("?"), query_set))
+    return as_url(url)._replace(query=_encode(search.removeprefix("?"), query_set))
 
 
 def url_params(url: SplitResult) -> _params.UrlParams:
     return _params.parse(url.query)
 
 
-def set_url_params(url: SplitResult, input: _params.Input) -> SplitResult:
-    return url._replace(query=_params.to_string(input))
+def set_url_params(url: SplitResult, input: _params.Input) -> Url:
+    return as_url(url)._replace(query=_params.to_string(input))
 
 
-def modify_url_params(
-    url: SplitResult, f: Callable[[_params.UrlParams], _params.Input]
-) -> SplitResult:
-    return url._replace(query=_params.to_string(f(url_params(url))))
+def modify_url_params(url: SplitResult, f: Callable[[_params.UrlParams], _params.Input]) -> Url:
+    return as_url(url)._replace(query=_params.to_string(f(url_params(url))))
 
 
 __all__ = [
+    "Url",
     "UrlError",
     "from_string",
     "href",

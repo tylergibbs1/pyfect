@@ -30,6 +30,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from pyfect import schema as S
+from pyfect.http.url import Url
 from pyfect.option import Some
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok
@@ -359,11 +360,15 @@ def test_preserves_union_member_equivalence_annotations():
     assert not equivalence("ab", "bc")
 
 
+def _url(text: str) -> Url:
+    return Url._make(urlsplit(text))
+
+
 def test_url():
     """URL"""
     equivalence = S.to_equivalence(S.URL)
-    assert equivalence(urlsplit("https://example.com"), urlsplit("https://example.com"))
-    assert not equivalence(urlsplit("https://example.com"), urlsplit("https://example.org"))
+    assert equivalence(_url("https://example.com"), _url("https://example.com"))
+    assert not equivalence(_url("https://example.com"), _url("https://example.org"))
 
 
 def test_redacted_string():

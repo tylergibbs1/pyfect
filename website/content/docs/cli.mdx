@@ -12,7 +12,7 @@ runs the handler that matches them, with `--help`, `--version`, `--completions`,
 
 ## Flags and subcommands
 
-`Flag.string`, `integer`, `finite`, `boolean`, `literals`, `file`, `date`, ... make flags, and
+`Flag.string`, `integer`, `finite` (a float; `nan` and `inf` are refused), `boolean`, `literals`, `file`, `date`, ... make flags, and
 methods refine them: `with_alias`, `with_default`, `optional`, `with_description`,
 `with_fallback_config` (read a [config](/docs/config) value when the flag is missing).
 `Argument` does the same for positional arguments.

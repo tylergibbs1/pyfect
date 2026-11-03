@@ -34,6 +34,7 @@ from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.ai.openai_compat import client
 from pyfect.ai.openai_compat import language_model as olm
+from pyfect.http.url import Url
 from pyfect.layer import Layer
 from pyfect.redacted import make as redact
 
@@ -247,7 +248,9 @@ def test_multimodal_order():
     mock = mock_json(completion({"content": "done"}))
     content = (
         Pr.TextPart(text="first text"),
-        Pr.FilePart(media_type="image/png", data=urlsplit("https://example.com/image.png")),
+        Pr.FilePart(
+            media_type="image/png", data=Url._make(urlsplit("https://example.com/image.png"))
+        ),
         Pr.FilePart(media_type="image/png", data="https://example.com/string-image.png"),
         Pr.FilePart(media_type="image/png", data=data),
         Pr.TextPart(text="second text"),

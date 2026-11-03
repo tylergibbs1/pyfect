@@ -7,9 +7,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import NotRequired, TypedDict, overload
-from urllib.parse import SplitResult
 
 from pyfect._digits import is_digits, parse_digits
+from pyfect._url import Url
 from pyfect.net._errors import NetAddressError, address_error
 from pyfect.net.net_address._ip import (
     IpAddress,
@@ -349,9 +349,7 @@ def format_inet(address: InetAddress) -> str:
     )
 
 
-def to_url(
-    address: IpAddress | InetAddress, scheme: str = "http"
-) -> Result[SplitResult, NetAddressError]:
+def to_url(address: IpAddress | InetAddress, scheme: str = "http") -> Result[Url, NetAddressError]:
     """The address as a WHATWG-normalized URL (``pyfect.http.url``); scoped
     IPv6 addresses have no URL form."""
     from pyfect.http import url

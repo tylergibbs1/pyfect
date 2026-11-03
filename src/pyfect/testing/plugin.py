@@ -4,7 +4,8 @@
   ``@effect`` and ``@live`` tests (seconds; ``0`` disables it).
 - The ``pyfect_effect`` and ``pyfect_live`` markers are put on those tests,
   so ``-m "not pyfect_live"`` skips the tests that take real time.
-- A failed ``==`` involving an ``Exit`` failure shows its ``Cause.pretty()``.
+- A failed ``==`` involving an ``Exit`` failure shows its ``Cause.pretty()``,
+  or each side's annotations when only those differ.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import pytest
 
 from pyfect.duration import Seconds
 from pyfect.exit import Failure
-from pyfect.testing._assertions import describe_exit
+from pyfect.testing._assertions import annotation_difference, describe_exit
 from pyfect.testing._decorators import settings
 
 
@@ -49,6 +50,10 @@ def pytest_assertrepr_compare(op: str, left: object, right: object) -> list[str]
     if not failures:
         return None
     lines = [f"{left!r} == {right!r}"]
+    if len(failures) == 2:  # both sides failed
+        difference = annotation_difference(failures[0].cause, failures[1].cause)
+        if difference:
+            return [*lines, *difference]
     for failure in failures:
         lines.extend(describe_exit(failure).splitlines())
     return lines

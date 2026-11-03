@@ -300,7 +300,7 @@ class HttpClientRequest:
             content_type=content_type,
         ).map(self.set_body)
 
-    def to_url(self) -> SplitResult | None:
+    def to_url(self) -> _url.Url | None:
         """The URL the request is sent to, or ``None`` when it is invalid."""
         match _url.make(self.url, self.url_params, self.hash):
             case Ok(url):

@@ -41,5 +41,21 @@ interruption in it with tracebacks.
 
 <include meta='title="defects.py"'>../../snippets/errors/defects.py</include>
 
+## Reading a failed Exit
+
+`fx.run_sync_exit` gives an `Exit`: `Success(value)` or `Failure(cause)`. To get the typed error
+out of a cause, `cause.find_error()` returns `Ok(error)` for the first typed error, or `Err` of
+the cause when it holds none (a defect or an interruption). `cause.find_fail()` returns the `Fail`
+reason itself, whose `.error` is the error, or the cause when it holds none. In tests, `testing.assert_exit_fail(exit, error)`
+checks a failure by its error (see [Testing](/docs/testing#checking-failures)).
+
+<CodeOutput>
+
+<include meta='title="reading_exit.py"'>../../snippets/errors/reading_exit.py</include>
+
+<include lang="text">../../snippets/errors/reading_exit.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.errors`](/docs/reference/errors), [`pyfect.cause`](/docs/reference/cause),
 [`pyfect.exit`](/docs/reference/exit).

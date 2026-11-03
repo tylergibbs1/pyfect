@@ -32,8 +32,10 @@ from pyfect.cli.prompt._core import (
 from pyfect.effect import Effect, fail, gen, succeed
 from pyfect.terminal import UserInput
 
-_INT_PREFIX = re.compile(r"\s*([+-]?\d+)")
-_FLOAT_PREFIX = re.compile(r"\s*([+-]?(?:Infinity|(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?))")
+_INT_PREFIX = re.compile(r"\s*([+-]?[0-9]+)")
+_FLOAT_PREFIX = re.compile(
+    r"\s*([+-]?(?:Infinity|(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?))"
+)
 
 
 def parse_int(text: str) -> int | None:
@@ -191,7 +193,7 @@ def _typed_float(text: str, state: _State) -> Effect[Action[_State, float]]:
         return succeed(Beep())
     if text == ".":
         return _frame(state, f"{js_number(parsed)}.")
-    if "." in state.value and re.fullmatch(r"\d", text):
+    if "." in state.value and re.fullmatch(r"[0-9]", text):
         return _frame(state, state.value + text)
     return _frame(state, js_number(parsed))
 

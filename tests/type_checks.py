@@ -3414,10 +3414,10 @@ def check_config_provider(needs_db: fx.Effect[fx.ConfigProvider, NotFound, Prima
 def check_config_constructors() -> None:
     from datetime import datetime
     from typing import Literal
-    from urllib.parse import SplitResult
 
     from pyfect import config
     from pyfect.byte_size import ByteSize
+    from pyfect.http.url import Url
 
     assert_type(config.string("A"), fx.Config[str])
     assert_type(config.non_empty_string(), fx.Config[str])
@@ -3429,7 +3429,7 @@ def check_config_constructors() -> None:
     assert_type(config.duration("A"), fx.Config[Seconds])
     assert_type(config.byte_size("A"), fx.Config[ByteSize])
     assert_type(config.date_time("A"), fx.Config[datetime])
-    assert_type(config.url("A"), fx.Config[SplitResult])
+    assert_type(config.url("A"), fx.Config[Url])
     assert_type(config.log_level("A"), fx.Config[fx.LogLevel])
     assert_type(config.redacted("A"), fx.Config[fx.Redacted[str]])
     assert_type(config.literal(1, 2, name="A"), fx.Config[int])

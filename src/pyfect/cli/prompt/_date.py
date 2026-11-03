@@ -106,7 +106,7 @@ class _DatePrompt:
         return succeed(NextFrame(replace(state, typed="")))
 
     def _type(self, text: str, state: _State) -> Effect[Action[_State, datetime]]:
-        if not re.search(r"\d", text):
+        if not re.search(r"[0-9]", text):
             return succeed(Beep())
         typed = state.typed + text
         state.parts[state.cursor].set_value(typed)

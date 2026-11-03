@@ -63,7 +63,7 @@ def from_struct[S: msgspec.Struct](
 
 _LOCATED = re.compile(r"^(?P<message>.*) - at (?P<key>`key` in )?`\$(?P<path>[^`]*)`$", re.DOTALL)
 _MISSING = re.compile(r"^Object missing required field `(?P<field>[^`]*)`$")
-_SEGMENT = re.compile(r"\.(?P<key>[^.\[]+)|\[(?P<index>\d+)\]|\[(?P<quoted>\"[^\"]*\")\]")
+_SEGMENT = re.compile(r"\.(?P<key>[^.\[]+)|\[(?P<index>[0-9]+)\]|\[(?P<quoted>\"[^\"]*\")\]")
 
 
 def _issue_of(error: msgspec.ValidationError) -> Issue:

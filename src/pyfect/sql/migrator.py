@@ -350,8 +350,8 @@ def _run(
     return _ensure_table(sql, table).and_then(completed).flat_map(dump)
 
 
-_RECORD_KEY = re.compile(r"^(\d+)_(.+)$")
-_FILE_NAME = re.compile(r"^(?:.*/)?(\d+)_([^.]+)\.py$")
+_RECORD_KEY = re.compile(r"([0-9]+)_(.+)")
+_FILE_NAME = re.compile(r"^(?:.*/)?([0-9]+)_([^.]+)\.py$")
 
 
 def _sorted(migrations: list[ResolvedMigration]) -> list[ResolvedMigration]:
@@ -359,12 +359,14 @@ def _sorted(migrations: list[ResolvedMigration]) -> list[ResolvedMigration]:
 
 
 def from_record(migrations: Mapping[str, Migration]) -> Loader:
-    """Migrations keyed ``"<id>_<name>"``; other keys are skipped."""
+    """Migrations keyed ``"<id>_<name>"`` (``"1_create_users"``); any other
+    key raises ``ValueError`` naming it (Effect skips it, so it never runs)."""
     found: list[ResolvedMigration] = []
     for key, migration in migrations.items():
-        match = _RECORD_KEY.match(key)
-        if match is not None:
-            found.append((int(match[1]), match[2], succeed(migration)))
+        match = _RECORD_KEY.fullmatch(key)
+        if match is None:
+            raise ValueError(f"migration key {key!r} is not <id>_<name>, such as '1_create_users'")
+        found.append((int(match[1]), match[2], succeed(migration)))
     return succeed(_sorted(found))
 
 

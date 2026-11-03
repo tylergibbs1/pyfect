@@ -49,4 +49,14 @@ friends, which print the full cause on failure. Run only fast tests with
 
 <include meta='title="test_services.py"'>../../snippets/testing/test_services.py</include>
 
+## Checking failures
+
+A failure records annotations in its cause, such as the span it happened in, and they take
+part in equality as in Effect. So `exit_ == fx.exit.fail(error)` is false for a failure inside
+`with_span` (or a workflow activity), though both sides print alike; pytest then lists each
+side's annotations. `testing.assert_exit_fail(exit_, error)` compares by the error alone, and
+`testing.assert_exit_failure(exit_, cause)` compares whole causes.
+
+<include meta='title="test_failures.py"'>../../snippets/testing/test_failures.py</include>
+
 Reference: [`pyfect.testing`](/docs/reference/testing).

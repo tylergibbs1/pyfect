@@ -89,7 +89,7 @@ def zone_offset(offset: timedelta) -> timezone | None:
 
 
 _OFFSET_ZONE = re.compile(r"^(?:GMT)?[+-]")
-_OFFSET = re.compile(r"([+-])(\d{2}):?(\d{2})$")
+_OFFSET = re.compile(r"([+-])([0-9]{2}):?([0-9]{2})$")
 
 
 def parse_offset(text: str) -> timedelta | None:
