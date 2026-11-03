@@ -229,8 +229,15 @@ class SyncScheduler(Tracking):
         return min(max(self._timers[0][0] - time.monotonic(), 0.0), threading.TIMEOUT_MAX)
 
 
+class LoopClosedError(RuntimeError):
+    """A task was handed to an ``AsyncioScheduler`` whose loop has closed:
+    the fibers on it can never run again. Raised where the task was handed
+    over, so the lost wake-up is a defect there rather than a silent hang."""
+
+
 class AsyncioScheduler(Tracking):
-    """Runs tasks on an asyncio event loop, batching them per loop tick."""
+    """Runs tasks on an asyncio event loop, batching them per loop tick. A
+    task handed over once the loop has closed raises ``LoopClosedError``."""
 
     def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
@@ -258,10 +265,18 @@ class AsyncioScheduler(Tracking):
 
     def schedule(self, task: Task) -> None:
         if threading.get_ident() != self._thread:
-            self._loop.call_soon_threadsafe(self.schedule, task)
+            self._call_soon_threadsafe(self.schedule, task)
             return
         self._ready.append(self._tracked(task))
         self._drain_soon()
+
+    def _call_soon_threadsafe(self, f: Callable[..., None], *args: object) -> None:
+        try:
+            self._loop.call_soon_threadsafe(f, *args)
+        except RuntimeError:
+            if not self._loop.is_closed():
+                raise
+            raise LoopClosedError("the asyncio loop this fiber runs on has closed") from None
 
     def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
         return self._loop.call_later(max(delay, 0.0), task).cancel
@@ -288,6 +303,7 @@ __all__ = [
     "AsyncioScheduler",
     "Cancel",
     "CurrentScheduler",
+    "LoopClosedError",
     "MaxOpsBeforeYield",
     "PreventSchedulerYield",
     "Scheduler",

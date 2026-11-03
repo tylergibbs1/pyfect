@@ -281,3 +281,43 @@ def test_a_signal_ends_the_process_even_when_the_teardown_gives_zero(tmp_path: P
     done = run_main_process(tmp_path, program, send=signal.SIGINT)
     assert done.returncode == 0
     assert done.stdout == ""
+
+
+FINALIZER_DIES_IN_A_SCOPE = """
+from pyfect.scope import add_finalizer
+program = fx.scoped(
+    add_finalizer(lambda _e: fx.die(RuntimeError("finalizer boom"))).and_then(fx.log("body done"))
+)
+fx.run_main(program)
+log("unreachable")
+"""
+
+FINALIZER_DIES_IN_A_LAYER_OVER_UVICORN = """
+from pyfect import layer
+from pyfect.http import router, server_response, uvicorn_server
+from pyfect.scope import add_finalizer
+
+dies = layer.effect_discard(add_finalizer(lambda _e: fx.die(RuntimeError("finalizer boom"))))
+served = router.serve(router.add("GET", "/", server_response.text("ok")), disable_logger=True)
+app = served.pipe(layer.provide_merge(dies)).pipe(layer.provide_merge(uvicorn_server.layer_test()))
+fx.run_main(fx.log("body done").pipe(fx.provide(app)))
+log("unreachable")
+"""
+
+
+@pytest.mark.parametrize(
+    "program",
+    [FINALIZER_DIES_IN_A_SCOPE, FINALIZER_DIES_IN_A_LAYER_OVER_UVICORN],
+    ids=["scope", "layer-over-uvicorn"],
+)
+def test_a_failure_raised_by_finalizers_at_teardown_is_logged_and_exits_one(
+    tmp_path: Path, program: str
+):
+    """Effect's runMain under Node, a scope whose finalizer dies after the body
+    succeeded: ``ERROR (#1): Error: finalizer boom`` is logged and the process
+    exits 1 (dogfood quill #1)."""
+    done = run_main_process(tmp_path, program)
+    assert done.returncode == 1
+    assert "body done" in done.stdout
+    assert re.search(r"ERROR \(#1\): RuntimeError: finalizer boom", done.stdout)
+    assert "unreachable" not in done.stdout

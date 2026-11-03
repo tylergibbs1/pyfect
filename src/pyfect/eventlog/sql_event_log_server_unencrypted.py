@@ -414,6 +414,22 @@ class _SqlStorage(StorageService):
             found = self._select_batch_history(store_id, oldest, batch)
         return found.or_die().with_tracer_enabled(False)
 
+    def latest_sequence(self, store_id: StoreId, /) -> Effect[int | None]:
+        def last(rows: Sequence[Mapping[str, object]]) -> int | None:
+            found = rows[0]["sequence"]
+            return None if found is None else column_int(found)
+
+        return (
+            self._sql(
+                "SELECT MAX(sequence) AS sequence FROM {} WHERE store_id = {}",
+                self._t.entries,
+                store_id,
+            )
+            .map(last)
+            .or_die()
+            .with_tracer_enabled(False)
+        )
+
     def write(self, store_id: StoreId, entries: Sequence[Entry], /) -> Effect[list[RemoteEntry]]:
         if not entries:
             return succeed([])

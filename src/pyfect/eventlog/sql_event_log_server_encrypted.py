@@ -335,6 +335,19 @@ class _SqlStorage(StorageService):
 
         return stream_unwrap(gen(body).with_tracer_enabled(False).or_die())
 
+    def latest_sequence(self, public_key: str, store_id: StoreId, /) -> Effect[int | None]:
+        sql = self._sql
+
+        def body():
+            scope = yield from self._resources.get(_scope_key(public_key, store_id))
+            [last] = yield from sql(
+                "SELECT MAX(last_sequence) AS last_sequence FROM {}", scope.table
+            )
+            found = last["last_sequence"]
+            return None if found is None else column_int(found)
+
+        return scoped(gen(body)).with_tracer_enabled(False).or_die()
+
 
 def layer_storage(
     *, entry_table_prefix: str = "effect_events", remote_id_table: str = "effect_remote_id"

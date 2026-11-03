@@ -39,9 +39,13 @@ The identity in this example comes from `make_identity`, which uses
 
 ## Rows
 
-`grocery = event_row.make("grocery", key="id", schema=S.Struct(Grocery))` is an event that
-sets, patches or removes one row: `grocery.set(row)`, `grocery.patch(key, fields)` and
-`grocery.remove(key)` give writes for `write_many`.
+`grocery = event_row.make("grocery", key="id", schema=S.Struct(Grocery), key_type=str,
+patch_fields=GroceryPatch)` is an event that sets, patches or removes one row:
+`grocery.set(row)`, `grocery.patch(key, fields)` and `grocery.remove(key)` give writes for
+`write_many`. `key_type` and `patch_fields` (a `total=False` TypedDict of the non-key
+fields) let pyright check the key and each patch, as Effect derives them from the schema;
+`make` checks `patch_fields` names exactly the non-key fields, and `patch` raises
+`EventRowPatchError` for a key field or a field the row does not have.
 `event_row.handler(row, set=..., patch=..., remove=...)` turns three callbacks into its
 handler, resolving a late entry against the newer ones already stored, so clients that
 apply the same entries in any order end with the same rows. `event_row.compaction(group,
@@ -71,6 +75,27 @@ stores, checks an `EventLogServerAuthorization` and can compact the backlog. Bot
 memory storage for tests and SQL storage (`sql_event_log_server_encrypted`,
 `sql_event_log_server_unencrypted`). Clients authenticate by signing a challenge with an
 Ed25519 key derived from their identity.
+
+Here a test server and two devices of one user, a laptop and a phone, sync a note. The
+server is `event_log_server_encrypted.layer` behind `rpc_server.layer_protocol_websocket(path)`,
+served by a router; each device's remote is `event_log_remote.layer_encrypted` over
+`rpc_client.layer_protocol_socket()` on a `ws.layer_web_socket(url)`. Both devices write as
+the same `Identity`: `encode_identity_string` turns it into text to carry to the other
+device, and `decode_identity_string` reads it back.
+
+<CodeOutput>
+
+<include meta='title="sync.py"'>../../snippets/eventlog/sync.py</include>
+
+<include lang="text">../../snippets/eventlog/sync.out</include>
+
+</CodeOutput>
+
+To wait for a sync, run `log.synced`: it succeeds once the server has acknowledged
+everything the log wrote and the log has applied the server's changes up to the latest
+entry the server held when asked. Effect has no such call; pyfect adds it (with the
+`EventLog.LatestSequence` RPC it asks the server through), so a test or a script can sync
+and then check, without sleeping.
 
 Payloads travel as their schemas' JSON: Effect's MessagePack codec is not ported, so pyfect
 clients and servers talk to each other but not to Effect's.

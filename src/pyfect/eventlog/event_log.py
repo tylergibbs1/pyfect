@@ -21,18 +21,28 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Never, cast, overload
+from typing import TYPE_CHECKING, Any, Never, Protocol, cast, overload
 
 from pyfect import _json_text
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._layer_core import require_layer
 from pyfect.cause import Cause
+from pyfect.clock import sleep
 from pyfect.context import Context, Reference, Tag
-from pyfect.effect import context, die, gen, provide_context, provide_service, succeed, sync
+from pyfect.effect import (
+    context,
+    die,
+    gen,
+    provide_context,
+    provide_service,
+    succeed,
+    suspend,
+    sync,
+)
 from pyfect.eventlog._conflicts import set_anchor
 from pyfect.eventlog._identity import Identity, IdentityService
-from pyfect.eventlog.event import AnyEvent, Event, Write
+from pyfect.eventlog.event import AnyEvent, AnyWrite, Event, Write
 from pyfect.eventlog.event_group import EventGroup
 from pyfect.eventlog.event_journal import (
     Entry,
@@ -40,10 +50,12 @@ from pyfect.eventlog.event_journal import (
     EntryWithConflicts,
     EventJournal,
     EventJournalError,
+    EventJournalService,
     RemoteAck,
     RemoteEntry,
     RemoteId,
     StoreId,
+    WithLock,
     make_entry_id_unsafe,
 )
 from pyfect.eventlog.event_log_encryption import EventLogEncryption
@@ -73,7 +85,7 @@ from pyfect.scope import Scope, acquire_release, add_finalizer, scoped
 
 if TYPE_CHECKING:
     from pyfect.eventlog.event_log_message import WriteAck
-    from pyfect.eventlog.event_log_remote import EventLogRemoteService
+    from pyfect.eventlog.event_log_remote import EventLogRemoteError, EventLogRemoteService
 
 __all__ = [
     "BatchCompaction",
@@ -98,6 +110,7 @@ __all__ = [
     "RegistryService",
     "TaggedPayload",
     "Transaction",
+    "WriteClient",
     "WriteEvent",
     "decode_identity_string",
     "encode_identity_string",
@@ -138,7 +151,9 @@ class HandlerInput[P]:
     conflicts: tuple[Conflict[P], ...] = ()
 
 
-type HandlerFn = Callable[[HandlerInput[Any]], Effect[Any, Any, Any]]
+type HandlerFn = Callable[[HandlerInput[object]], Effect[object, object, object]]
+"""A registered handler, its payload and result types erased (Effect's
+``unknown``); ``Handlers.handle`` checks them against the event."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +162,7 @@ class HandlerItem:
     registered it, and the function."""
 
     event: AnyEvent
-    context: Context[Any]
+    context: Context[Never]
     handler: HandlerFn
 
 
@@ -158,7 +173,7 @@ class Handlers[R = Never]:
     __slots__ = ("_by_tag", "_context", "group")
 
     def __init__(
-        self, group: EventGroup[Any], by_tag: Mapping[str, HandlerFn], context: Context[Any]
+        self, group: EventGroup[AnyEvent], by_tag: Mapping[str, HandlerFn], context: Context[Never]
     ) -> None:
         self.group = group
         self._by_tag = dict(by_tag)
@@ -182,17 +197,24 @@ class Handlers[R = Never]:
     def handle[R1 = Never](
         self,
         event: str,
-        handler: Callable[[HandlerInput[Any]], Effect[Any, Any, R1]],
+        handler: Callable[[HandlerInput[Never]], Effect[object, object, R1]],
         /,
     ) -> Handlers[R | R1]: ...
-    def handle(self, event: AnyEvent | str, handler: HandlerFn, /) -> Handlers[Any]:
+    def handle(
+        self,
+        event: AnyEvent | str,
+        handler: Callable[..., Effect[object, object, object]],
+        /,
+    ) -> Handlers[object]:
         """Handle ``event`` (or the event of that tag) with ``handler``. The
         log provides its ``Identity`` to the handler."""
         tag = event if isinstance(event, str) else event.tag
         found = self.group.events.get(tag)
         if found is None or (not isinstance(event, str) and found is not event):
             raise ValueError(f"{tag!r} is not an event of {self.group!r}")
-        return Handlers(self.group, {**self._by_tag, tag: handler}, self._context)
+        # The overloads tie the handler's payload to the event's.
+        erased = cast("HandlerFn", handler)
+        return Handlers(self.group, {**self._by_tag, tag: erased}, self._context)
 
 
 # --- registry ------------------------------------------------------------------------
@@ -253,9 +275,12 @@ class RegistryService:
             self._remotes.pop(remote.id, None)
             return self._remote_fibers.remove(remote.id)
 
-        from pyfect.effect import suspend
-
         return acquire_release(suspend(acquire), release)
+
+    @property
+    def remotes(self) -> Sequence[EventLogRemoteService]:
+        """The remotes registered now."""
+        return tuple(self._remotes.values())
 
     def handle_remote(
         self, handler: Callable[[EventLogRemoteService], Effect[None]]
@@ -294,7 +319,14 @@ class CurrentStoreId(Reference[StoreId], key="effect/eventlog/EventLog/CurrentSt
         return StoreId("default")
 
 
-type Transaction = Callable[[Effect[Any, Any, Any]], Effect[Any, Any, Any]]
+class Transaction(Protocol):
+    """Wraps an effect, keeping its types (a database transaction, say)."""
+
+    def __call__[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]: ...
+
+
+def _no_transaction[A, E, R](effect: Effect[A, E, R], /) -> Effect[A, E, R]:
+    return effect
 
 
 class HandlerTransaction(Reference[Transaction], key="effect/eventlog/EventLog/HandlerTransaction"):
@@ -303,7 +335,7 @@ class HandlerTransaction(Reference[Transaction], key="effect/eventlog/EventLog/H
 
     @classmethod
     def default(cls) -> Transaction:
-        return lambda effect: effect
+        return _no_transaction
 
 
 # --- identities ----------------------------------------------------------------------
@@ -351,14 +383,19 @@ class EventLogSchema[G]:
     groups: tuple[G, ...]
 
 
-def schema[G: EventGroup[Any]](*groups: G) -> EventLogSchema[G]:
+def schema[G: EventGroup[AnyEvent]](*groups: G) -> EventLogSchema[G]:
     """The schema of an event log of ``groups``."""
     return EventLogSchema(groups)
 
 
-def _under[A, E, R](services: Context[Any], effect: Effect[A, E, R]) -> Effect[A, E, R]:
-    # ``services`` beneath the caller's context: the caller's win.
-    return context().flat_map(lambda current: effect.pipe(provide_context(services.merge(current))))
+def _under[A, E](services: Context[Never], effect: Effect[A, E, object]) -> Effect[A, E]:
+    # ``services`` beneath the caller's context: the caller's win. They are
+    # the services of the layer that registered the handler, which needs no
+    # more (``group`` puts what it needs in the layer's requirements).
+    provided = context().flat_map(
+        lambda current: effect.pipe(provide_context(services.merge(current)))
+    )
+    return cast("Effect[A, E]", provided)
 
 
 def group[Ev: AnyEvent, RR = Never, EX = Never](
@@ -374,7 +411,7 @@ def group[Ev: AnyEvent, RR = Never, EX = Never](
         services = yield from context()
         services = Context({t: s for t, s in services.map_unsafe.items() if t is not Scope})
         built = build(Handlers(group, {}, services))
-        handlers: Handlers[Any] = (yield from built) if isinstance(built, Effect) else built
+        handlers: Handlers[RR] = (yield from built) if isinstance(built, Effect) else built
         missing = [tag for tag in group.events if tag not in handlers.by_tag]
         if missing:
             raise ValueError(f"Event not handled: {', '.join(missing)}")
@@ -389,7 +426,7 @@ class TaggedPayload:
     """A decoded event: its tag and payload (Effect's ``TaggedPayload``)."""
 
     tag: str
-    payload: Any
+    payload: object
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,7 +438,14 @@ class CompactionItem:
     event: TaggedPayload | None
 
 
-type WriteEvent = Callable[[AnyEvent | str, Any], Effect[None]]
+class WriteEvent(Protocol):
+    """Writes a replacement event: its payload checked against the event,
+    or any payload for a tag."""
+
+    @overload
+    def __call__[P, A, E](self, event: Event[P, A, E], payload: P, /) -> Effect[None]: ...
+    @overload
+    def __call__(self, event: str, payload: object, /) -> Effect[None]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,7 +529,7 @@ def _register_batch_compaction[R](
 
 
 def group_batch_compaction[R = Never](
-    group: EventGroup[Any], effect: Callable[[BatchCompaction], Effect[None, Never, R]]
+    group: EventGroup[AnyEvent], effect: Callable[[BatchCompaction], Effect[None, Never, R]]
 ) -> Layer[Never, Never, R | Registry]:
     """Compact the group's entries a remote sends, all in one call.
     Replacements written with ``write`` take the first entry's place."""
@@ -495,19 +539,16 @@ def group_batch_compaction[R = Never](
         write_from: _WriteFrom,
         forward: Callable[[Entry], Effect[None]],
     ) -> Effect[None, Never, R]:
-        return effect(
-            BatchCompaction(
-                entries,
-                lambda event, payload: write_from(entries[0].entry, event, payload),
-                forward,
-            )
-        )
+        def write(event: AnyEvent | str, payload: object) -> Effect[None]:
+            return write_from(entries[0].entry, event, payload)
+
+        return effect(BatchCompaction(entries, write, forward))
 
     return _register_batch_compaction(group, run)
 
 
 def group_compaction[R = Never](
-    group: EventGroup[Any], effect: Callable[[Compaction], Effect[None, Never, R]]
+    group: EventGroup[AnyEvent], effect: Callable[[Compaction], Effect[None, Never, R]]
 ) -> Layer[Never, Never, R | Registry]:
     """Compact the group's entries a remote sends, one call per primary
     key with the decodable entries; undecodable ones are forwarded
@@ -528,15 +569,14 @@ def group_compaction[R = Never](
                 keyed[0].append(item.entry)
                 keyed[1].append(item.event)
             for primary_key, (keyed_entries, events) in by_key.items():
-                first = keyed_entries[0]
+
+                def write(
+                    event: AnyEvent | str, payload: object, first: Entry = keyed_entries[0]
+                ) -> Effect[None]:
+                    return write_from(first, event, payload)
+
                 yield from effect(
-                    Compaction(
-                        primary_key,
-                        tuple(keyed_entries),
-                        tuple(events),
-                        lambda event, payload, first=first: write_from(first, event, payload),
-                        forward,
-                    )
+                    Compaction(primary_key, tuple(keyed_entries), tuple(events), write, forward)
                 )
 
         return gen(body)
@@ -545,7 +585,7 @@ def group_compaction[R = Never](
 
 
 def group_reactivity(
-    group: EventGroup[Any], keys: Mapping[str, Sequence[str]] | Sequence[str]
+    group: EventGroup[AnyEvent], keys: Mapping[str, Sequence[str]] | Sequence[str]
 ) -> Layer[Never, Never, Registry]:
     """Invalidate the reactivity ``keys`` (per event tag, or for every
     event of the group) with each entry's primary key when it is handled."""
@@ -655,7 +695,7 @@ def make_replay_from_remote(
     reactivity: ReactivityService,
     reactivity_keys: Mapping[str, Sequence[str]],
     log_annotations: Mapping[str, str],
-) -> Callable[[Sequence[EntryWithConflicts]], Effect[None, Any]]:
+) -> Callable[[Sequence[EntryWithConflicts]], Effect[None, object]]:
     """Replay a batch of remote entries with their handlers: payloads and
     conflicts decoded (a conflict once per batch), each handler run with
     its layer's services under the batch's, and the log's ``Identity``."""
@@ -668,7 +708,7 @@ def make_replay_from_remote(
         log_annotations=log_annotations,
     )
 
-    def replay_batch(batch: Sequence[EntryWithConflicts]) -> Effect[None, Any]:
+    def replay_batch(batch: Sequence[EntryWithConflicts]) -> Effect[None, object]:
         def body():
             services = yield from context()
             state = _ReplayBatch(services, {}, {})
@@ -681,6 +721,7 @@ def make_replay_from_remote(
 
 
 _REMOTE_RETRY = schedule_min(exponential(0.2, 1.5), spaced(10))
+_SYNCED_POLL = 0.01
 
 
 # --- the log -------------------------------------------------------------------------
@@ -691,32 +732,40 @@ class EventLogService:
 
     def __init__(
         self,
-        write_events: Callable[[Sequence[tuple[str, Any]]], Effect[list[Any], Any]],
+        write_events: Callable[[Sequence[tuple[str, object]]], Effect[list[object], object]],
         entries: Effect[list[Entry], EventJournalError],
         destroy: Effect[None, EventJournalError],
+        synced: Effect[None, EventJournalError | EventLogRemoteError],
     ) -> None:
         self._write_events = write_events
         self.entries = entries
         self.destroy = destroy
+        self.synced = synced
+        """Succeeds once every registered remote has acknowledged the
+        entries written so far and the log has applied the remote's
+        changes up to the latest it stored when asked (a pyfect addition).
+        A remote that cannot tell its latest sequence is only uploaded to."""
 
     @overload
     def write[P, A, E](
         self, event: Event[P, A, E], payload: P, /
     ) -> Effect[A, E | EventJournalError]: ...
     @overload
-    def write(self, event: str, payload: Any, /) -> Effect[Any, Any]: ...
-    def write(self, event: AnyEvent | str, payload: Any, /) -> Effect[Any, Any]:
+    def write(self, event: str, payload: object, /) -> Effect[object, object]: ...
+    def write(self, event: AnyEvent | str, payload: object, /) -> Effect[object, object]:
         """Write ``event`` with ``payload`` and run its handler, succeeding
         with its result."""
         tag = event if isinstance(event, str) else event.tag
         return self._write_events([(tag, payload)]).map(lambda results: results[0])
 
     def write_many[A, E](
-        self, writes: Sequence[Write[Any, A, E]], /
+        self, writes: Sequence[AnyWrite[A, E]], /
     ) -> Effect[list[A], E | EventJournalError]:
         """Write the (non-empty) ``writes`` under one lock and handler
         transaction, succeeding with their results in order."""
-        return self._write_events([(w.event.tag, w.payload) for w in writes])
+        # Each Write ties its payload to its event; the handlers give A or E.
+        written = self._write_events([(w.event.tag, w.payload) for w in writes])
+        return cast("Effect[list[A], E | EventJournalError]", written)
 
 
 class EventLog(Tag[EventLogService], key="effect/eventlog/EventLog"):
@@ -770,6 +819,68 @@ def _compact_remote(
     return compact_remote
 
 
+type _Upload = Callable[
+    [EventLogRemoteService], Effect[object, EventJournalError | EventLogRemoteError]
+]
+
+
+def _uploader(
+    journal: EventJournalService, identity: IdentityService, store_id: StoreId, with_lock: WithLock
+) -> _Upload:
+    """Sends the entries a remote has not seen and records its acks."""
+
+    def upload_to(
+        remote: EventLogRemoteService,
+    ) -> Effect[object, EventJournalError | EventLogRemoteError]:
+        def acknowledge(acks: Sequence[WriteAck] | None) -> Effect[None, EventJournalError]:
+            if not acks:
+                return succeed(None)
+            return with_lock(
+                journal.write_remote_acks(
+                    remote_id=remote.id,
+                    acks=[RemoteAck(ack.entry_id, ack.sequence) for ack in acks],
+                    first_sequence=remote.first_sequence,
+                )
+            )
+
+        return journal.with_remote_uncommitted(
+            remote.id,
+            lambda entries: remote.write(
+                identity=identity, store_id=store_id, entries=entries
+            ).flat_map(acknowledge),
+        )
+
+    return upload_to
+
+
+def _synced(
+    registry: RegistryService,
+    journal: EventJournalService,
+    identity: IdentityService,
+    store_id: StoreId,
+    upload_to: _Upload,
+) -> Effect[None, EventJournalError | EventLogRemoteError]:
+    def sync_remote(
+        remote: EventLogRemoteService,
+    ) -> Effect[None, EventJournalError | EventLogRemoteError]:
+        latest_sequence = remote.latest_sequence
+
+        def body():
+            # Uploaded first, so the latest sequence covers this log's entries.
+            yield from upload_to(remote)
+            if latest_sequence is None:
+                return
+            latest = yield from latest_sequence(identity=identity, store_id=store_id)
+            if latest is None:
+                return
+            while (yield from journal.next_remote_sequence(remote.id)) <= latest:
+                yield from sleep(_SYNCED_POLL)
+
+        return gen(body)
+
+    return suspend(lambda: for_each(registry.remotes, sync_remote).as_void())
+
+
 def _make():
     store_id = yield from CurrentStoreId()
     identity = yield from Identity()
@@ -795,6 +906,7 @@ def _make():
         return gen(body)
 
     compact_remote = _compact_remote(registry.compactors)
+    upload_to = _uploader(journal, identity, store_id, with_lock)
 
     def run_remote(remote: EventLogRemoteService) -> Effect[None]:
         def consume():
@@ -826,23 +938,7 @@ def _make():
             .annotate_logs({"service": "EventLog", "effect": "runRemote consume"})
         )
 
-        def acknowledge(acks: Sequence[WriteAck] | None) -> Effect[None, EventJournalError]:
-            if not acks:
-                return succeed(None)
-            return with_lock(
-                journal.write_remote_acks(
-                    remote_id=remote.id,
-                    acks=[RemoteAck(ack.entry_id, ack.sequence) for ack in acks],
-                    first_sequence=remote.first_sequence,
-                )
-            )
-
-        write = journal.with_remote_uncommitted(
-            remote.id,
-            lambda entries: remote.write(
-                identity=identity, store_id=store_id, entries=entries
-            ).flat_map(acknowledge),
-        )
+        write = upload_to(remote)
         write_until_success = write.tap_cause(log_debug).retry(_REMOTE_RETRY)
 
         def body():
@@ -889,7 +985,8 @@ def _make():
         return gen(body)
 
     yield from registry.handle_remote(run_remote)
-    return EventLogService(write_events, journal.entries, journal.destroy)
+    synced = _synced(registry, journal, identity, store_id, upload_to)
+    return EventLogService(write_events, journal.entries, journal.destroy, synced)
 
 
 layer_event_log: Layer[EventLog | Registry, Never, EventJournal | Identity] = (
@@ -900,26 +997,42 @@ layer_event_log: Layer[EventLog | Registry, Never, EventJournal | Identity] = (
 """The event log over the ``EventJournal``, writing as the ``Identity``."""
 
 
-def layer[E, R](
-    schema: EventLogSchema[Any], handlers: Layer[Any, E, R]
+@overload
+def layer[E = Never](
+    schema: EventLogSchema[EventGroup[AnyEvent]], handlers: Layer[Never, E, Registry | EventLog]
+) -> Layer[EventLog | Registry, E, EventJournal | Identity]: ...
+@overload
+def layer[E = Never, R = Never](
+    schema: EventLogSchema[EventGroup[AnyEvent]], handlers: Layer[Never, E, R | Registry | EventLog]
+) -> Layer[EventLog | Registry, E, R | EventJournal | Identity]: ...
+def layer[E = Never, R = Never](
+    schema: EventLogSchema[EventGroup[AnyEvent]], handlers: Layer[Never, E, R | Registry | EventLog]
 ) -> Layer[EventLog | Registry, E, R | EventJournal | Identity]:
     """The event log of ``schema`` with the group ``handlers`` (layers of
-    ``group``), which get the log's ``Registry``."""
+    ``group``), which get the log's ``Registry`` (and ``EventLog``): the
+    result needs what else they need (Effect's ``Exclude<R, EventLog |
+    Registry>``)."""
     require_layer(handlers, "handlers")
     del schema
-    return cast(
-        "Layer[EventLog | Registry, E, R | EventJournal | Identity]",
-        handlers.pipe(provide_merge(layer_event_log)),
-    )
+    return handlers.pipe(provide_merge(layer_event_log))
+
+
+class WriteClient(Protocol):
+    """Writes one event, keeping its success and error types."""
+
+    def __call__[P, A, E](self, write: Write[P, A, E], /) -> Effect[A, E | EventJournalError]: ...
 
 
 def make_client(
-    schema: EventLogSchema[Any],
-) -> Effect[Callable[[Write[Any, Any, Any]], Effect[Any, Any]], Never, EventLog]:
+    schema: EventLogSchema[EventGroup[AnyEvent]],
+) -> Effect[WriteClient, Never, EventLog]:
     """A function writing one event to the ``EventLog``."""
     del schema
 
-    def client(log: EventLogService) -> Callable[[Write[Any, Any, Any]], Effect[Any, Any]]:
-        return lambda item: log.write(item.event, item.payload)
+    def client(log: EventLogService) -> WriteClient:
+        def write[P, A, E](item: Write[P, A, E], /) -> Effect[A, E | EventJournalError]:
+            return log.write(item.event, item.payload)
+
+        return write
 
     return EventLog().map(client)

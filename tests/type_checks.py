@@ -7137,13 +7137,10 @@ def eventlog_checks() -> None:
         lambda h: h.handle(user_created, lambda i: fx.sync(lambda: i.payload["id"]).as_void()),
     )
     assert_type(handlers, Layer[Never, Never, ev_log.Registry])
+    # The log gives its handlers the Registry: it is not passed on (quill #5).
     assert_type(
         ev_log.layer(ev_log.schema(group), handlers),
-        Layer[
-            ev_log.EventLog | ev_log.Registry,
-            Never,
-            ev_log.Registry | ev_journal.EventJournal | ev_log.Identity,
-        ],
+        Layer[ev_log.EventLog | ev_log.Registry, Never, ev_journal.EventJournal | ev_log.Identity],
     )
 
     # Rows: the payload is a set / patch / remove of the row's TypedDict.
@@ -7151,22 +7148,27 @@ def eventlog_checks() -> None:
         id: str
         name: str
 
-    grocery = ev_row.make("grocery", key="id", schema=S.Struct(EvGrocery))
-    assert_type(grocery, ev_row.EventRow[EvGrocery, Any])
+    class EvGroceryPatch(TypedDict, total=False):
+        name: str
+
+    grocery = ev_row.make(
+        "grocery", key="id", schema=S.Struct(EvGrocery), key_type=str, patch_fields=EvGroceryPatch
+    )
+    assert_type(grocery, ev_row.EventRow[EvGrocery, str, Never, EvGroceryPatch])
     assert_type(
         grocery.set({"id": "g1", "name": "milk"}),
-        ev_event.Write[ev_row.Payload[EvGrocery, Any], None, Never],
+        ev_event.Write[ev_row.Payload[EvGrocery, str], None, Never],
     )
     grocery.set({"id": "g1"})  # pyright: ignore[reportArgumentType]
     row_handler = ev_row.handler(
         grocery,
         set=lambda row, _key: fx.sync(lambda: row["name"]),
-        patch=lambda _key, _fields: fx.void,
+        patch=lambda _key, fields: fx.sync(lambda: fields.get("name")),
         remove=lambda _key: fx.void,
     )
     assert_type(
         row_handler,
-        Callable[[ev_log.HandlerInput[ev_row.Payload[EvGrocery, Any]]], fx.Effect[None]],
+        Callable[[ev_log.HandlerInput[ev_row.Payload[EvGrocery, str]]], fx.Effect[None]],
     )
     assert_type(
         ev_row.compaction(ev_group.empty.add(grocery), grocery),
@@ -7191,6 +7193,104 @@ def eventlog_checks() -> None:
     )
     pong: devtools_schema.Response = {"_tag": "Pong"}
     del pong
+
+
+def eventlog_typed_api_checks() -> None:
+    """Dogfood quill #2, #3, #4, #5: the eventlog's public signatures carry types."""
+    from pyfect.eventlog import event as ev_event
+    from pyfect.eventlog import event_group as ev_group
+    from pyfect.eventlog import event_journal as ev_journal
+    from pyfect.eventlog import event_log as ev_log
+    from pyfect.eventlog import event_log_remote as ev_remote
+    from pyfect.eventlog import event_log_server_unencrypted as ev_unencrypted
+    from pyfect.eventlog import event_row as ev_row
+    from pyfect.layer import Layer
+    from pyfect.rpc.server import ServerProtocol as EvServerProtocol
+
+    class EvUser(TypedDict):
+        id: str
+
+    user_created = ev_event.make(
+        "UserCreated", primary_key=lambda p: p["id"], payload=S.Struct(EvUser)
+    )
+    group = ev_group.empty.add(user_created)
+    handlers = ev_log.group(group, lambda h: h.handle(user_created, lambda _i: fx.void))
+
+    class EvDb(fx.Tag[str]): ...
+
+    needs_db = ev_log.group(group, lambda h: h.handle(user_created, lambda _i: EvDb().as_void()))
+    assert_type(needs_db, Layer[Never, Never, EvDb | ev_log.Registry])
+    assert_type(
+        ev_log.layer(ev_log.schema(group), needs_db),
+        Layer[
+            ev_log.EventLog | ev_log.Registry,
+            Never,
+            EvDb | ev_journal.EventJournal | ev_log.Identity,
+        ],
+    )
+    assert_type(
+        ev_unencrypted.layer(ev_log.schema(group), handlers),
+        Layer[
+            Never,
+            Never,
+            ev_unencrypted.EventLogServerAuthorization
+            | EvServerProtocol
+            | ev_unencrypted.Storage
+            | ev_unencrypted.StoreMapping,
+        ],
+    )
+
+    # A remote's when_authenticated needs the Identity and may fail
+    # authenticating (quill #2).
+    def remote_use(remote: ev_remote.EventLogRemoteService) -> None:
+        assert_type(
+            remote.when_authenticated(fx.succeed(1)),
+            fx.Effect[int, ev_remote.EventLogRemoteError, ev_log.Identity],
+        )
+        assert_type(
+            remote.when_authenticated(EvDb()),
+            fx.Effect[str, ev_remote.EventLogRemoteError, EvDb | ev_log.Identity],
+        )
+
+    del remote_use
+
+    write_client = ev_log.make_client(ev_log.schema(group))
+    assert_type(write_client, fx.Effect[ev_log.WriteClient, Never, ev_log.EventLog])
+
+    def client_use(client: ev_log.WriteClient) -> None:
+        assert_type(
+            client(ev_event.Write(user_created, {"id": "u1"})),
+            fx.Effect[None, ev_journal.EventJournalError],
+        )
+
+    del client_use
+
+    def synced_use(log: ev_log.EventLogService) -> None:
+        assert_type(
+            log.synced,
+            fx.Effect[None, ev_journal.EventJournalError | ev_remote.EventLogRemoteError],
+        )
+
+    del synced_use
+
+    class EvGrocery(TypedDict):
+        id: str
+        name: str
+
+    class EvGroceryPatch(TypedDict, total=False):
+        name: str
+
+    grocery = ev_row.make(
+        "grocery", key="id", schema=S.Struct(EvGrocery), key_type=str, patch_fields=EvGroceryPatch
+    )
+    # A patch writes non-key fields of their types, keyed by the key's type (quill #4).
+    grocery.patch("g1", {"name": "oat milk"})
+    grocery.patch("g1", {"nmae": "oat milk"})  # pyright: ignore[reportArgumentType]
+    grocery.patch("g1", {"id": "g2"})  # pyright: ignore[reportArgumentType]
+    grocery.patch("g1", {"name": 1})  # pyright: ignore[reportArgumentType]
+    grocery.patch(1, {"name": "x"})  # pyright: ignore[reportArgumentType]
+    untyped = ev_row.make("grocery", key="id", schema=S.Struct(EvGrocery))
+    assert_type(untyped, ev_row.EventRow[EvGrocery, object, Never, Mapping[str, object]])
 
 
 def cluster_core_types() -> None:

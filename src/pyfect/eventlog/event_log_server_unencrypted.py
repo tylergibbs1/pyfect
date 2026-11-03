@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
-from typing import Any, Literal, Never, cast, overload
+from typing import Any, Literal, Never, Protocol, cast, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -24,6 +24,7 @@ from pyfect.effect import die, fail, gen, succeed, sync
 from pyfect.errors import TaggedError
 from pyfect.eventlog._identity import Identity, IdentityService
 from pyfect.eventlog.event import AnyEvent, Event
+from pyfect.eventlog.event_group import EventGroup
 from pyfect.eventlog.event_journal import (
     Entry,
     RemoteEntry,
@@ -77,6 +78,7 @@ __all__ = [
     "EventLogServerUnencrypted",
     "EventLogServerUnencryptedService",
     "HistoryIndex",
+    "ServerWrite",
     "Storage",
     "StorageService",
     "StoreMapping",
@@ -218,6 +220,10 @@ class StorageService(ABC):
         compactors: Mapping[str, RegisteredCompactor],
         /,
     ) -> Stream[RemoteEntry]: ...
+
+    @abstractmethod
+    def latest_sequence(self, store_id: StoreId, /) -> Effect[int | None]:
+        """The sequence of the last stored entry, ``None`` when there is none."""
 
     def with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]:
         """Run ``effect`` in the storage's transaction, so its writes commit
@@ -496,6 +502,14 @@ def _rpc_handlers():
 
         return stream_unwrap(gen(open_changes))
 
+    def latest_sequence(public_key: str, store_id: StoreId) -> Effect[int | None, object]:
+        def read():
+            resolved = yield from mapping.resolve(public_key=public_key, store_id=store_id)
+            yield from auth.authorize_read(public_key=public_key, store_id=resolved)
+            return (yield from storage.latest_sequence(resolved))
+
+        return gen(read)
+
     return _layer_rpc_handlers(
         remote_id=remote_id,
         first_sequence=storage.first_sequence,
@@ -503,6 +517,7 @@ def _rpc_handlers():
         get_or_create_session_auth_binding=storage.get_or_create_session_auth_binding,
         on_write=on_write,
         changes=changes,
+        latest_sequence=latest_sequence,
     )
 
 
@@ -612,6 +627,13 @@ class _MemoryStorage(StorageService):
 
         return stream_unwrap(gen(open_changes))
 
+    def latest_sequence(self, store_id: StoreId, /) -> Effect[int | None]:
+        def read() -> int | None:
+            journal = self._store(store_id).journal
+            return journal[-1].remote_sequence if journal else None
+
+        return sync(read)
+
     def _with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]:
         return self._semaphore.with_permits(effect)
 
@@ -633,6 +655,20 @@ the scope closes."""
 layer_storage_memory: Layer[Storage] = layer_effect(Storage, make_storage_memory)
 
 
+class ServerWrite(Protocol):
+    """The server's ``write(store_id=, event=, payload=)``: the payload is
+    checked against the event, or any payload for a tag."""
+
+    @overload
+    def __call__[P, A, E](
+        self, *, store_id: StoreId, event: Event[P, A, E], payload: P
+    ) -> Effect[A, E | EventLogServerStoreError]: ...
+    @overload
+    def __call__(
+        self, *, store_id: StoreId, event: str, payload: object
+    ) -> Effect[object, object]: ...
+
+
 class EventLogServerUnencryptedService:
     """Writes events from the server itself."""
 
@@ -640,7 +676,7 @@ class EventLogServerUnencryptedService:
         self._storage = storage
         self._handler = handler
 
-    def make_write(self, schema: EventLogSchema[Any]) -> Callable[..., Effect[Any, Any]]:
+    def make_write(self, schema: EventLogSchema[EventGroup[AnyEvent]]) -> ServerWrite:
         events: dict[str, AnyEvent] = {}
         for group in schema.groups:
             events.update(group.events)
@@ -650,8 +686,10 @@ class EventLogServerUnencryptedService:
             *, store_id: StoreId, event: Event[P, A, E], payload: P
         ) -> Effect[A, E | EventLogServerStoreError]: ...
         @overload
-        def write(*, store_id: StoreId, event: str, payload: Any) -> Effect[Any, Any]: ...
-        def write(*, store_id: StoreId, event: AnyEvent | str, payload: Any) -> Effect[Any, Any]:
+        def write(*, store_id: StoreId, event: str, payload: object) -> Effect[object, object]: ...
+        def write(
+            *, store_id: StoreId, event: AnyEvent | str, payload: object
+        ) -> Effect[object, object]:
             tag = event if isinstance(event, str) else event.tag
             public_key = _server_write_public_key(store_id)
             schema_event = events.get(tag)
@@ -694,8 +732,8 @@ class EventLogServerUnencrypted(
 
 
 def make_write(
-    schema: EventLogSchema[Any],
-) -> Effect[Callable[..., Effect[Any, Any]], Never, EventLogServerUnencrypted]:
+    schema: EventLogSchema[EventGroup[AnyEvent]],
+) -> Effect[ServerWrite, Never, EventLogServerUnencrypted]:
     """The server's ``write(store_id=, event=, payload=)`` for ``schema``."""
     return EventLogServerUnencrypted().map(lambda server: server.make_write(schema))
 
@@ -712,27 +750,54 @@ layer_server: Layer[EventLogServerUnencrypted | Registry, Never, Storage] = laye
 """``EventLogServerUnencrypted`` and its ``Registry``."""
 
 
-def layer[E, R](
-    schema: EventLogSchema[Any], handlers: Layer[Any, E, R]
+@overload
+def layer[E = Never](
+    schema: EventLogSchema[EventGroup[AnyEvent]], handlers: Layer[Never, E, Registry]
+) -> Layer[Never, E, EventLogServerAuthorization | ServerProtocol | Storage | StoreMapping]: ...
+@overload
+def layer[E = Never, R = Never](
+    schema: EventLogSchema[EventGroup[AnyEvent]], handlers: Layer[Never, E, R | Registry]
+) -> Layer[Never, E, R | EventLogServerAuthorization | ServerProtocol | Storage | StoreMapping]: ...
+def layer[E = Never, R = Never](
+    schema: EventLogSchema[EventGroup[AnyEvent]], handlers: Layer[Never, E, R | Registry]
 ) -> Layer[
     Never,
     E,
     R | EventLogServerAuthorization | ServerProtocol | Storage | StoreMapping,
 ]:
     """An unencrypted server of ``schema`` with the group ``handlers``,
-    over the ``ServerProtocol``."""
+    over the ``ServerProtocol``. The server gives the handlers its
+    ``Registry``."""
     require_layer(handlers, "handlers")
     del schema
+    # pyright cannot take Registry out of ``R | Registry``; layer_server gives it.
+    erased = cast("Layer[Any, E, Any]", handlers)
     return (
         rpc_server_layer(EventLogRemoteRpcs)
         .pipe(layer_provide(layer_rpc_handlers))
-        .pipe(layer_provide(handlers))
+        .pipe(layer_provide(erased))
         .pipe(layer_provide(layer_server))
     )
 
 
-def layer_no_rpc_server[E, R](
-    schema: EventLogSchema[Any], handlers: Layer[Any, E, R]
+@overload
+def layer_no_rpc_server[E = Never](
+    schema: EventLogSchema[EventGroup[AnyEvent]], handlers: Layer[Never, E, Registry]
+) -> Layer[
+    HandlersFor[EventLogRemoteRpcs] | EventLogAuthentication,
+    E,
+    EventLogServerAuthorization | Storage | StoreMapping,
+]: ...
+@overload
+def layer_no_rpc_server[E = Never, R = Never](
+    schema: EventLogSchema[EventGroup[AnyEvent]], handlers: Layer[Never, E, R | Registry]
+) -> Layer[
+    HandlersFor[EventLogRemoteRpcs] | EventLogAuthentication,
+    E,
+    R | EventLogServerAuthorization | Storage | StoreMapping,
+]: ...
+def layer_no_rpc_server[E = Never, R = Never](
+    schema: EventLogSchema[EventGroup[AnyEvent]], handlers: Layer[Never, E, R | Registry]
 ) -> Layer[
     HandlersFor[EventLogRemoteRpcs] | EventLogAuthentication,
     E,
@@ -745,4 +810,5 @@ def layer_no_rpc_server[E, R](
         "Layer[HandlersFor[EventLogRemoteRpcs] | EventLogAuthentication, E, Any]",
         layer_rpc_handlers,
     )
-    return merge(rpc_handlers, handlers).pipe(layer_provide(layer_server))
+    erased = cast("Layer[Any, E, Any]", handlers)
+    return merge(rpc_handlers, erased).pipe(layer_provide(layer_server))

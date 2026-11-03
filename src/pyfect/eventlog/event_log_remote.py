@@ -69,6 +69,8 @@ __all__ = [
     "EventLogRemoteClient",
     "EventLogRemoteError",
     "EventLogRemoteService",
+    "LatestSequence",
+    "WhenAuthenticated",
     "WriteFn",
     "layer_client",
     "layer_encrypted",
@@ -104,7 +106,22 @@ class WriteFn(Protocol):
     ) -> Effect[Sequence[WriteAck] | None, EventLogRemoteError]: ...
 
 
-def _authenticated[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:
+class LatestSequence(Protocol):
+    def __call__(
+        self, *, identity: IdentityService, store_id: StoreId
+    ) -> Effect[int | None, EventLogRemoteError]: ...
+
+
+class WhenAuthenticated(Protocol):
+    """Runs an effect once the ``Identity`` it runs as is authenticated
+    with the remote."""
+
+    def __call__[A, E, R](
+        self, effect: Effect[A, E, R], /
+    ) -> Effect[A, E | EventLogRemoteError, R | Identity]: ...
+
+
+def _authenticated[A, E, R](effect: Effect[A, E, R], /) -> Effect[A, E, R]:
     return effect
 
 
@@ -112,13 +129,17 @@ def _authenticated[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:
 class EventLogRemoteService:
     """A remote: its id, the sequence its changes start at, ``changes``
     from ``start_sequence``, ``write`` (succeeding with the acks, or
-    ``None`` when it has none) and ``when_authenticated``."""
+    ``None`` when it has none), ``when_authenticated`` and
+    ``latest_sequence``, the highest sequence it has stored for a store
+    (a pyfect addition, ``None`` for a remote that cannot tell, which
+    ``EventLogService.synced`` then does not wait for)."""
 
     id: RemoteId
     changes: Changes
     write: WriteFn
     first_sequence: int | None = None
-    when_authenticated: Callable[[Effect[Any, Any, Any]], Effect[Any, Any, Any]] = _authenticated
+    when_authenticated: WhenAuthenticated = _authenticated
+    latest_sequence: LatestSequence | None = None
 
 
 class EventLogRemote(Tag[EventLogRemoteService], key="effect/eventlog/EventLogRemote"):
@@ -322,7 +343,17 @@ def make_with(
 
             return gen(run)
 
-        def when_authenticated(effect: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
+        def latest_sequence(
+            *, identity: IdentityService, store_id: StoreId
+        ) -> Effect[int | None, EventLogRemoteError]:
+            call = ensure_authenticated(identity).and_then(
+                client.latest_sequence({"public_key": identity.public_key, "store_id": store_id})
+            )
+            return retry_forbidden(call, identity).map_error(_as_remote_error("latestSequence"))
+
+        def when_authenticated[A, E, R](
+            effect: Effect[A, E, R], /
+        ) -> Effect[A, E | EventLogRemoteError, R | Identity]:
             return Identity().flat_map(ensure_authenticated).and_then(effect)
 
         hello = state["hello"]
@@ -333,6 +364,7 @@ def make_with(
             changes=changes,
             write=write,
             when_authenticated=when_authenticated,
+            latest_sequence=latest_sequence,
         )
         yield from registry.register_remote(remote)
         return remote

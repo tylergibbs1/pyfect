@@ -257,6 +257,11 @@ class ChangesPayload(TypedDict):
     start_sequence: int
 
 
+class LatestSequencePayload(TypedDict):
+    public_key: str
+    store_id: StoreId
+
+
 HelloRpc = make("EventLog.Hello", success=HelloResponse)
 AuthenticateRpc = make("EventLog.Authenticate", payload=Authenticate, error=EventLogProtocolError)
 WriteChunkedRpc = make(
@@ -280,6 +285,16 @@ ChangesRpc = make(
 ).middleware(EventLogAuthentication)
 
 
+LatestSequenceRpc = make(
+    "EventLog.LatestSequence",
+    payload=S.Struct(LatestSequencePayload, store_id=StoreIdSchema),
+    success=S.NullOr(S.Int),
+    error=EventLogProtocolError,
+).middleware(EventLogAuthentication)
+"""The highest sequence the server has stored for an identity's store, or
+``None`` (a pyfect addition: what ``EventLog.synced`` waits for)."""
+
+
 class EventLogRemoteRpcs(RpcGroup):
     """The RPCs of an event log server."""
 
@@ -288,6 +303,7 @@ class EventLogRemoteRpcs(RpcGroup):
     write_chunked = WriteChunkedRpc
     write_single = WriteSingleRpc
     changes = ChangesRpc
+    latest_sequence = LatestSequenceRpc
 
 
 __all__ = [
@@ -307,6 +323,8 @@ __all__ = [
     "HelloResponse",
     "HelloRpc",
     "JoinState",
+    "LatestSequencePayload",
+    "LatestSequenceRpc",
     "ProtocolErrorCode",
     "SingleMessage",
     "StoreId",
