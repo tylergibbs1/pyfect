@@ -1,8 +1,9 @@
 """Typed errors.
 
-Subclass ``TaggedError`` (usually as a ``@dataclass(eq=False)``; plain
-``@dataclass`` works too, but pyright then thinks it unhashable) for
-domain errors. An
+Subclass ``TaggedError`` for domain errors. One with fields must be a
+``@dataclass(eq=False)`` (plain ``@dataclass`` works too, but pyright then
+thinks it unhashable); constructing one whose fields nothing sets raises
+``TypeError``. An
 instance is yieldable: ``yield from NotFound(key)`` fails the surrounding
 generator and adds ``NotFound`` to its error channel. Write
 ``return (yield from NotFound(key))`` so the type checker knows the code
@@ -25,10 +26,12 @@ it.
 from __future__ import annotations
 
 import builtins
+import re
+import sys
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, fields, is_dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, ClassVar, Never, Self, TypeIs, overload
+from typing import TYPE_CHECKING, Any, ClassVar, Final, Never, Self, TypeIs, get_origin, overload
 
 from pyfect._core import Effect, _FailCause
 from pyfect.cause import Cause, Fail, Interrupt, Reason, fail, from_reasons
@@ -60,6 +63,12 @@ class TaggedError(Exception):
         if cls.__eq__ is TaggedError.__eq__ and cls.__hash__ is TaggedError.__hash__:
             type.__setattr__(cls, "__eq__", TaggedError.__eq__)
             type.__setattr__(cls, "__hash__", TaggedError.__hash__)
+        # The bases are finished, so fields no constructor sets fail here; the
+        # class itself may still get ``@dataclass``, so it is checked when
+        # first constructed (``_check_fields_then_new``).
+        _require_dataclass_fields(cls, below=cls)
+        if "__init__" not in cls.__dict__ and _own_fields(cls):
+            type.__setattr__(cls, "__new__", staticmethod(_check_fields_then_new))
 
     def _structure(self) -> tuple[object, ...]:
         if is_dataclass(self):
@@ -107,6 +116,76 @@ class TaggedError(Exception):
             state = {k: v for k, v in self.__dict__.items() if k not in init}
             return (_rebuild, (type(self), init), state)
         return super().__reduce__()
+
+
+def _own_fields(cls: type) -> list[str]:
+    """The instance fields ``cls`` itself annotates: not ``ClassVar`` /
+    ``Final``, dunders or ``TaggedError``'s own attributes."""
+    if sys.version_info >= (3, 14):
+        import annotationlib
+
+        annotations = annotationlib.get_annotations(cls, format=annotationlib.Format.FORWARDREF)
+    else:
+        import inspect
+
+        annotations = inspect.get_annotations(cls)
+    return [
+        name
+        for name, annotation in annotations.items()
+        if not name.startswith("__")
+        and name not in TaggedError.__annotations__
+        and not _CLASS_LEVEL.match(annotation if isinstance(annotation, str) else repr(annotation))
+        and get_origin(annotation) not in (ClassVar, Final)
+        and annotation not in (ClassVar, Final)
+    ]
+
+
+_CLASS_LEVEL = re.compile(r"^(?:typing\.|t\.)?(?:ClassVar|Final)\b")
+
+
+def _require_dataclass_fields(cls: type, *, below: type | None = None) -> None:
+    """Raise ``TypeError`` if a class between ``cls`` and ``TaggedError``
+    (above ``below``, when given) annotates fields that no constructor sets:
+    it is not a dataclass and neither it nor a subclass on the way to ``cls``
+    writes ``__init__``."""
+    handwritten_init = False
+    for klass in cls.__mro__:
+        if klass is TaggedError:
+            return
+        own_dataclass = "__dataclass_fields__" in klass.__dict__
+        if "__init__" in klass.__dict__ and not own_dataclass:
+            handwritten_init = True
+        if own_dataclass or handwritten_init or klass is below:
+            continue
+        names = _own_fields(klass)
+        if names:
+            raise TypeError(
+                f"{klass.__qualname__} declares fields ({', '.join(names)}) but is not a "
+                "dataclass, so nothing sets them; decorate it with @dataclass (or "
+                "@dataclass(eq=False)), or subclass S.TaggedError, which needs no decorator"
+            )
+
+
+def _check_fields_then_new(cls: type[TaggedError], *args: Any, **_kwargs: Any) -> Any:
+    """The ``__new__`` of a class with fields and no ``__init__`` of its own:
+    the first time a class is built, check that ``@dataclass`` set them up.
+    The inherited ``__new__`` gets the positional arguments only, as
+    ``BaseException.__new__`` keeps them (``OSError``'s refuses keywords
+    once a class overrides ``__new__``); ``__init__`` takes them all."""
+    new = cls.__dict__.get("_TaggedError__new")
+    if new is None:
+        _require_dataclass_fields(cls)
+        new = next(
+            own
+            for klass in cls.__mro__
+            if (own := klass.__dict__.get("__new__")) is not None and not _is_hook(own)
+        )
+        type.__setattr__(cls, "_TaggedError__new", new)
+    return new(cls, *args)
+
+
+def _is_hook(value: object) -> bool:
+    return isinstance(value, staticmethod) and value.__func__ is _check_fields_then_new
 
 
 def _rebuild[T](cls: Callable[..., T], init: dict[str, Any]) -> T:

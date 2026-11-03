@@ -170,3 +170,60 @@ def test_an_eq_false_dataclass_error_still_compares_and_hashes_by_fields():
     assert Missing("x") == Missing("x")
     assert Missing("x") != Missing("y")
     assert hash(Missing("x")) == hash(Missing("x"))
+
+
+class TestFieldsNeedADataclass:
+    """forge #4: ``class TooHeavy(TaggedError): task: str`` reads like an error
+    with a field but has none without ``@dataclass``: ``TooHeavy("a")`` built
+    an error whose ``task`` raised ``AttributeError`` later. Constructing one
+    now raises ``TypeError`` naming the decorator."""
+
+    def test_an_annotated_subclass_without_dataclass_cannot_be_constructed(self):
+        class TooHeavy(fx.TaggedError):
+            task: str
+
+        with pytest.raises(TypeError, match=r"TooHeavy declares fields \(task\).*@dataclass"):
+            TooHeavy("a")
+
+    def test_fields_added_by_an_undecorated_subclass_of_a_dataclass_error(self):
+        class Heavier(NotFound):
+            weight: int
+
+        with pytest.raises(TypeError, match=r"Heavier declares fields \(weight\)"):
+            Heavier("a")
+
+    def test_subclassing_a_plain_base_with_fields_fails_where_it_is_defined(self):
+        class Base(fx.TaggedError):
+            code: int
+
+        with pytest.raises(TypeError, match=r"Base declares fields \(code\)"):
+
+            class Child(Base):  # pyright: ignore[reportUnusedClass]
+                name: str
+
+    def test_what_stays_allowed(self):
+        from typing import ClassVar
+
+        class Plain(fx.TaggedError):
+            pass
+
+        class Tuned(fx.TaggedError):
+            exit_code: ClassVar[int] = 3
+            report_ignored: bool = True  # TaggedError's own attributes
+
+        class OwnInit(fx.TaggedError):
+            task: str
+
+            def __init__(self, task: str) -> None:
+                super().__init__(task)
+                self.task = task
+
+        @dataclass
+        class Decorated(fx.TaggedError):
+            task: str
+
+        assert Plain("msg").args == ("msg",)
+        assert Tuned().report_ignored
+        assert OwnInit("a").task == "a"
+        assert Decorated("a").task == "a"
+        assert fx.Done(1).value == 1

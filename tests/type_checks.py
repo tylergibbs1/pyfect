@@ -1470,6 +1470,32 @@ hashable_errors = {HashableNotFound("k")}
 unhashable_to_pyright = {NotFound("k")}  # pyright: ignore[reportUnhashable]
 
 
+# --- TaggedError fields --------------------------------------------------------------
+# A field needs ``@dataclass``. A plain subclass keeps ``Exception``'s ``*args``
+# constructor (no ``dataclass_transform`` base: research/typing/tagged_error_1_fields.py),
+# so pyright rejects a field keyword; the positional ``TooHeavy("a")`` it can't catch
+# raises TypeError when constructed (tests/test_tagged_error.py).
+
+
+class PlainArgs(fx.TaggedError): ...
+
+
+class UndecoratedFields(fx.TaggedError):
+    task: str
+
+
+@dataclass(eq=False)
+class DecoratedFields(fx.TaggedError):
+    task: str
+
+
+def check_tagged_error_fields() -> None:
+    assert_type(PlainArgs("msg", 1), PlainArgs)
+    assert_type(DecoratedFields(task="a").task, str)
+    DecoratedFields()  # pyright: ignore[reportCallIssue]
+    UndecoratedFields(task="a")  # pyright: ignore[reportCallIssue]
+
+
 # --- testing ------------------------------------------------------------------------
 # A decorated test's body may need a Scope and, through a first parameter annotated
 # Services[...], what a layer_fixture builds. Needing anything else is an error at the
