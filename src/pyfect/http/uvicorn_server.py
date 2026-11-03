@@ -5,16 +5,15 @@ of Effect's ``NodeHttpServer.layer``)::
 
 The socket is bound when the server is made, so ``address`` is known (port
 0: any free port). uvicorn runs on the building fiber's asyncio loop under
-``run_main`` / ``run_async``, else on a loop thread of its own; each
+``run_main`` / ``run_async``, else on a loop thread shared by such servers
+and never stopped (a fiber a request forks into a longer-lived set runs on
+it, and must still be able to finish once the server is gone); each
 request runs on its own fiber on that loop, through ``pyfect.http.asgi``
 (streamed bodies, client aborts, WebSocket upgrades). Requests that arrive
 while no app is served get a 503. When the serving scope closes, uvicorn
 stops accepting and gives requests in flight ``graceful_shutdown_timeout``;
 then their fibers are interrupted and streamed bodies end where they are
-(ASGI cannot abort a started response quietly, so it ends complete). A
-loop of the server's own stays up until the server itself is released;
-fibers requests left in longer scopes (a pooled client's connection) then
-move to the run that built the server, so they can still be interrupted.
+(ASGI cannot abort a started response quietly, so it ends complete).
 """
 # pyright: reportPrivateUsage=false
 
@@ -37,9 +36,9 @@ except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.http.uvicorn_server", "server") from error
 
 from pyfect._core import Effect, _WithFiber
-from pyfect._fiber import Fiber, current_run_scheduler
+from pyfect._fiber import Fiber
 from pyfect._os_wait import Resume, WaitsFor, os_wait
-from pyfect._root import new_root, run_loop, start_root
+from pyfect._root import run_loop
 from pyfect.context import Context
 from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.effect import fail, succeed, suspend, sync
@@ -60,7 +59,6 @@ from pyfect.layer import effect as layer_effect
 from pyfect.net.net_address import inet_address_from_native_unsafe
 from pyfect.path import Path
 from pyfect.run import run_fork
-from pyfect.scheduler import AsyncioScheduler, Scheduler
 from pyfect.scope import CloseableScope, acquire_release
 from pyfect.scope import Scope as ScopeTag
 from pyfect.socket._web_socket import DEFAULT_MAX_MESSAGE_SIZE
@@ -110,16 +108,23 @@ class _Dispatch:
             await send({"type": "websocket.close", "code": 1013})
 
 
+class _Shared:
+    lock = threading.Lock()
+    loop: asyncio.AbstractEventLoop | None = None
+
+
 def _loop_thread() -> asyncio.AbstractEventLoop:
-    """A new loop, run on a daemon thread until stopped (then closed)."""
-    loop = asyncio.new_event_loop()
-
-    def run() -> None:
-        loop.run_forever()
-        loop.close()
-
-    threading.Thread(target=run, name="pyfect-uvicorn", daemon=True).start()
-    return loop
+    """The loop servers outside an asyncio program run on: one per process,
+    on a daemon thread, started on first use and never stopped. Fibers run
+    on it, and a fiber forked from a request can outlive its server (held
+    by a layer released later), so stopping the loop with the server would
+    strand it: interrupting it would wait for ever (DOGFOOD pulse #5)."""
+    with _Shared.lock:
+        if _Shared.loop is None:
+            loop = asyncio.new_event_loop()
+            threading.Thread(target=loop.run_forever, name="pyfect-uvicorn", daemon=True).start()
+            _Shared.loop = loop
+        return _Shared.loop
 
 
 def _wait[A](future: Future[A], waits_for: WaitsFor) -> Effect[A, BaseException]:
@@ -145,16 +150,11 @@ class _Running:
         self,
         server: uvicorn.Server,
         loop: asyncio.AbstractEventLoop,
-        successor: Scheduler | None,
         graceful: Seconds,
     ) -> None:
         self.server = server
         self.graceful = graceful
         self.loop = loop
-        # On a loop of its own, the run that built the server takes over
-        # the fibers still on the loop when the server is released.
-        self.successor = successor
-        self.fibers: AsyncioScheduler | None = None
         self.served: Future[None] | None = None
 
     def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
@@ -165,8 +165,6 @@ class _Running:
         served = self.served
 
         async def started() -> None:
-            if self.successor is not None:
-                self.fibers = AsyncioScheduler.current()
             while not self.server.started and not served.done():
                 await asyncio.sleep(0.005)
             if served.done():
@@ -182,7 +180,7 @@ class _Running:
         def body() -> Effect[None]:
             self.server.should_exit = True
             assert self.served is not None
-            return _wait(self.served, "event").ignore().ensuring(sync(self._release))
+            return _wait(self.served, "event").ignore()
 
         return suspend(body)
 
@@ -208,32 +206,10 @@ class _Running:
                 served.timeout_option(self.graceful)
                 .and_then(requests.close(exit))
                 .and_then(suspend(end_responses))
-                .and_then(served)
+                .and_then(self.stop())
             )
 
         return suspend(body)
-
-    def fork(self, handled: Effect[None, Never, Any], request: Context[Any]) -> Fiber[None, Never]:
-        """Start a request's fiber: on a loop of the server's own, on
-        ``fibers``, which ``_release`` hands to the building run."""
-        fibers = self.fibers
-        if fibers is None or current_run_scheduler() is not None:
-            return run_fork(handled, context=request)
-        fiber: Fiber[None, Never] = new_root(fibers, request)
-        start_root(fiber, handled, now=True)
-        return fiber
-
-    def _release(self) -> None:
-        successor, self.successor = self.successor, None
-        if successor is not None and not self.loop.is_closed():
-            self.loop.call_soon_threadsafe(self._hand_off_and_stop, successor)
-
-    def _hand_off_and_stop(self, successor: Scheduler) -> None:
-        # Fibers a request left in a longer scope (a pool's connection)
-        # still run, and can be interrupted, once the loop is gone.
-        if self.fibers is not None:
-            self.fibers.hand_off(successor)
-        self.loop.call_soon(self.loop.stop)
 
 
 class _Server(uvicorn.Server):
@@ -277,7 +253,7 @@ def _serve(
             def fork(
                 handled: Effect[None, Never, Any], request: Context[Any]
             ) -> Fiber[None, Never]:
-                return running.fork(handled, request).run_in(requests)
+                return run_fork(handled, context=request).run_in(requests)
 
             handler = AsgiHandler(app, middleware, context, fork)
             dispatch.current = handler
@@ -315,7 +291,6 @@ def make(**options: Unpack[Options]) -> Effect[HttpServerService, SocketServerEr
             running = _Running(
                 _uvicorn(dispatch, options),
                 loop,
-                successor=current_run_scheduler() if current is None else None,
                 graceful=_graceful(options),
             )
             return (

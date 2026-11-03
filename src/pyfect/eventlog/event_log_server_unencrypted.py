@@ -221,6 +221,10 @@ class StorageService(ABC):
         /,
     ) -> Stream[RemoteEntry]: ...
 
+    @abstractmethod
+    def latest_sequence(self, store_id: StoreId, /) -> Effect[int | None]:
+        """The sequence of the last stored entry, ``None`` when there is none."""
+
     def with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]:
         """Run ``effect`` in the storage's transaction, so its writes commit
         together and publish in commit order."""
@@ -498,6 +502,14 @@ def _rpc_handlers():
 
         return stream_unwrap(gen(open_changes))
 
+    def latest_sequence(public_key: str, store_id: StoreId) -> Effect[int | None, object]:
+        def read():
+            resolved = yield from mapping.resolve(public_key=public_key, store_id=store_id)
+            yield from auth.authorize_read(public_key=public_key, store_id=resolved)
+            return (yield from storage.latest_sequence(resolved))
+
+        return gen(read)
+
     return _layer_rpc_handlers(
         remote_id=remote_id,
         first_sequence=storage.first_sequence,
@@ -505,6 +517,7 @@ def _rpc_handlers():
         get_or_create_session_auth_binding=storage.get_or_create_session_auth_binding,
         on_write=on_write,
         changes=changes,
+        latest_sequence=latest_sequence,
     )
 
 
@@ -613,6 +626,13 @@ class _MemoryStorage(StorageService):
             )
 
         return stream_unwrap(gen(open_changes))
+
+    def latest_sequence(self, store_id: StoreId, /) -> Effect[int | None]:
+        def read() -> int | None:
+            journal = self._store(store_id).journal
+            return journal[-1].remote_sequence if journal else None
+
+        return sync(read)
 
     def _with_transaction[A, E, R](self, effect: Effect[A, E, R], /) -> Effect[A, E, R]:
         return self._semaphore.with_permits(effect)

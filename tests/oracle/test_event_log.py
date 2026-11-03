@@ -1418,6 +1418,7 @@ def _known_entries_replay(mode: str) -> Generator[fx.Effect[Any, Any, Any], Any]
         .handle(Rpcs.write_chunked)(lambda _: fx.succeed(()))
         .handle(Rpcs.write_single)(lambda _: fx.succeed(()))
         .handle(Rpcs.changes)(lambda _: fx.succeed(changes))
+        .handle(Rpcs.latest_sequence)(lambda _: fx.succeed(None))
     )
 
     def authentication(effect: Any, _options: Any) -> Any:

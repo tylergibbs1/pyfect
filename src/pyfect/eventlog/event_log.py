@@ -28,8 +28,18 @@ from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._layer_core import require_layer
 from pyfect.cause import Cause
+from pyfect.clock import sleep
 from pyfect.context import Context, Reference, Tag
-from pyfect.effect import context, die, gen, provide_context, provide_service, succeed, sync
+from pyfect.effect import (
+    context,
+    die,
+    gen,
+    provide_context,
+    provide_service,
+    succeed,
+    suspend,
+    sync,
+)
 from pyfect.eventlog._conflicts import set_anchor
 from pyfect.eventlog._identity import Identity, IdentityService
 from pyfect.eventlog.event import AnyEvent, AnyWrite, Event, Write
@@ -40,10 +50,12 @@ from pyfect.eventlog.event_journal import (
     EntryWithConflicts,
     EventJournal,
     EventJournalError,
+    EventJournalService,
     RemoteAck,
     RemoteEntry,
     RemoteId,
     StoreId,
+    WithLock,
     make_entry_id_unsafe,
 )
 from pyfect.eventlog.event_log_encryption import EventLogEncryption
@@ -73,7 +85,7 @@ from pyfect.scope import Scope, acquire_release, add_finalizer, scoped
 
 if TYPE_CHECKING:
     from pyfect.eventlog.event_log_message import WriteAck
-    from pyfect.eventlog.event_log_remote import EventLogRemoteService
+    from pyfect.eventlog.event_log_remote import EventLogRemoteError, EventLogRemoteService
 
 __all__ = [
     "BatchCompaction",
@@ -263,9 +275,12 @@ class RegistryService:
             self._remotes.pop(remote.id, None)
             return self._remote_fibers.remove(remote.id)
 
-        from pyfect.effect import suspend
-
         return acquire_release(suspend(acquire), release)
+
+    @property
+    def remotes(self) -> Sequence[EventLogRemoteService]:
+        """The remotes registered now."""
+        return tuple(self._remotes.values())
 
     def handle_remote(
         self, handler: Callable[[EventLogRemoteService], Effect[None]]
@@ -706,6 +721,7 @@ def make_replay_from_remote(
 
 
 _REMOTE_RETRY = schedule_min(exponential(0.2, 1.5), spaced(10))
+_SYNCED_POLL = 0.01
 
 
 # --- the log -------------------------------------------------------------------------
@@ -719,10 +735,16 @@ class EventLogService:
         write_events: Callable[[Sequence[tuple[str, object]]], Effect[list[object], object]],
         entries: Effect[list[Entry], EventJournalError],
         destroy: Effect[None, EventJournalError],
+        synced: Effect[None, EventJournalError | EventLogRemoteError],
     ) -> None:
         self._write_events = write_events
         self.entries = entries
         self.destroy = destroy
+        self.synced = synced
+        """Succeeds once every registered remote has acknowledged the
+        entries written so far and the log has applied the remote's
+        changes up to the latest it stored when asked (a pyfect addition).
+        A remote that cannot tell its latest sequence is only uploaded to."""
 
     @overload
     def write[P, A, E](
@@ -797,6 +819,68 @@ def _compact_remote(
     return compact_remote
 
 
+type _Upload = Callable[
+    [EventLogRemoteService], Effect[object, EventJournalError | EventLogRemoteError]
+]
+
+
+def _uploader(
+    journal: EventJournalService, identity: IdentityService, store_id: StoreId, with_lock: WithLock
+) -> _Upload:
+    """Sends the entries a remote has not seen and records its acks."""
+
+    def upload_to(
+        remote: EventLogRemoteService,
+    ) -> Effect[object, EventJournalError | EventLogRemoteError]:
+        def acknowledge(acks: Sequence[WriteAck] | None) -> Effect[None, EventJournalError]:
+            if not acks:
+                return succeed(None)
+            return with_lock(
+                journal.write_remote_acks(
+                    remote_id=remote.id,
+                    acks=[RemoteAck(ack.entry_id, ack.sequence) for ack in acks],
+                    first_sequence=remote.first_sequence,
+                )
+            )
+
+        return journal.with_remote_uncommitted(
+            remote.id,
+            lambda entries: remote.write(
+                identity=identity, store_id=store_id, entries=entries
+            ).flat_map(acknowledge),
+        )
+
+    return upload_to
+
+
+def _synced(
+    registry: RegistryService,
+    journal: EventJournalService,
+    identity: IdentityService,
+    store_id: StoreId,
+    upload_to: _Upload,
+) -> Effect[None, EventJournalError | EventLogRemoteError]:
+    def sync_remote(
+        remote: EventLogRemoteService,
+    ) -> Effect[None, EventJournalError | EventLogRemoteError]:
+        latest_sequence = remote.latest_sequence
+
+        def body():
+            # Uploaded first, so the latest sequence covers this log's entries.
+            yield from upload_to(remote)
+            if latest_sequence is None:
+                return
+            latest = yield from latest_sequence(identity=identity, store_id=store_id)
+            if latest is None:
+                return
+            while (yield from journal.next_remote_sequence(remote.id)) <= latest:
+                yield from sleep(_SYNCED_POLL)
+
+        return gen(body)
+
+    return suspend(lambda: for_each(registry.remotes, sync_remote).as_void())
+
+
 def _make():
     store_id = yield from CurrentStoreId()
     identity = yield from Identity()
@@ -822,6 +906,7 @@ def _make():
         return gen(body)
 
     compact_remote = _compact_remote(registry.compactors)
+    upload_to = _uploader(journal, identity, store_id, with_lock)
 
     def run_remote(remote: EventLogRemoteService) -> Effect[None]:
         def consume():
@@ -853,23 +938,7 @@ def _make():
             .annotate_logs({"service": "EventLog", "effect": "runRemote consume"})
         )
 
-        def acknowledge(acks: Sequence[WriteAck] | None) -> Effect[None, EventJournalError]:
-            if not acks:
-                return succeed(None)
-            return with_lock(
-                journal.write_remote_acks(
-                    remote_id=remote.id,
-                    acks=[RemoteAck(ack.entry_id, ack.sequence) for ack in acks],
-                    first_sequence=remote.first_sequence,
-                )
-            )
-
-        write = journal.with_remote_uncommitted(
-            remote.id,
-            lambda entries: remote.write(
-                identity=identity, store_id=store_id, entries=entries
-            ).flat_map(acknowledge),
-        )
+        write = upload_to(remote)
         write_until_success = write.tap_cause(log_debug).retry(_REMOTE_RETRY)
 
         def body():
@@ -916,7 +985,8 @@ def _make():
         return gen(body)
 
     yield from registry.handle_remote(run_remote)
-    return EventLogService(write_events, journal.entries, journal.destroy)
+    synced = _synced(registry, journal, identity, store_id, upload_to)
+    return EventLogService(write_events, journal.entries, journal.destroy, synced)
 
 
 layer_event_log: Layer[EventLog | Registry, Never, EventJournal | Identity] = (

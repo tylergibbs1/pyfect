@@ -7196,7 +7196,7 @@ def eventlog_checks() -> None:
 
 
 def eventlog_typed_api_checks() -> None:
-    """Dogfood quill #2, #4, #5: the eventlog's public signatures carry types."""
+    """Dogfood quill #2, #3, #4, #5: the eventlog's public signatures carry types."""
     from pyfect.eventlog import event as ev_event
     from pyfect.eventlog import event_group as ev_group
     from pyfect.eventlog import event_journal as ev_journal
@@ -7264,6 +7264,14 @@ def eventlog_typed_api_checks() -> None:
         )
 
     del client_use
+
+    def synced_use(log: ev_log.EventLogService) -> None:
+        assert_type(
+            log.synced,
+            fx.Effect[None, ev_journal.EventJournalError | ev_remote.EventLogRemoteError],
+        )
+
+    del synced_use
 
     class EvGrocery(TypedDict):
         id: str

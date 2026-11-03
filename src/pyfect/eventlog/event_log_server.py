@@ -34,6 +34,7 @@ from pyfect.eventlog.event_log_message import (
     EventLogRemoteRpcs,
     HelloResponse,
     JoinState,
+    LatestSequencePayload,
     SingleMessage,
     WriteAck,
     WriteSinglePayload,
@@ -61,6 +62,7 @@ __all__ = [
     "Changes",
     "ChunkedMessageState",
     "ConnectionWrites",
+    "LatestSequence",
     "OnWrite",
     "layer_auth_middleware",
     "layer_rpc_handlers",
@@ -236,6 +238,10 @@ type OnWrite = Callable[
 type Changes = Callable[[str, StoreId, int, ConnectionWrites], Stream[bytes, object]]
 """A connection's changes: ``(public_key, store_id, start_sequence, writes)``."""
 
+type LatestSequence = Callable[[str, StoreId], Effect[int | None, object]]
+"""The highest stored sequence of ``(public_key, store_id)``, ``None`` when
+the store is empty."""
+
 
 def layer_rpc_handlers(
     *,
@@ -243,6 +249,7 @@ def layer_rpc_handlers(
     get_or_create_session_auth_binding: Callable[[str, bytes], Effect[bytes, object]],
     on_write: OnWrite,
     changes: Changes,
+    latest_sequence: LatestSequence,
     first_sequence: int | None = None,
     authorize_identity: Callable[[str], Effect[None, EventLogProtocolError]] | None = None,
 ) -> Layer[HandlersFor[EventLogRemoteRpcs] | EventLogAuthentication]:
@@ -403,6 +410,25 @@ def layer_rpc_handlers(
                 )
             )
 
+        def latest_sequence_handler(
+            request: RpcRequest[LatestSequencePayload],
+        ) -> Effect[int | None, EventLogProtocolError]:
+            public_key = request.payload["public_key"]
+            if public_key not in _authenticated(request):
+                return fail(
+                    _forbidden("LatestSequence", "Identity is not authenticated", public_key)
+                )
+            return latest_sequence(public_key, request.payload["store_id"]).catch_cause(
+                lambda _: fail(
+                    EventLogProtocolError(
+                        request_tag="LatestSequence",
+                        code="InternalServerError",
+                        message="Persistence failure",
+                        public_key=public_key,
+                    )
+                )
+            )
+
         return (
             EventLogRemoteRpcs.handlers()
             .handle(EventLogRemoteRpcs.hello)(hello)
@@ -410,6 +436,7 @@ def layer_rpc_handlers(
             .handle(EventLogRemoteRpcs.write_single)(write_single)
             .handle(EventLogRemoteRpcs.write_chunked)(write_chunked)
             .handle(EventLogRemoteRpcs.changes)(changes_handler)
+            .handle(EventLogRemoteRpcs.latest_sequence)(latest_sequence_handler)
         )
 
     return EventLogRemoteRpcs.to_layer_effect(gen(make)).pipe(provide_merge(layer_auth_middleware))

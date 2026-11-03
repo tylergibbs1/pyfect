@@ -1,12 +1,11 @@
-"""uvicorn_server under ``run_sync`` runs uvicorn on a loop thread of its own, and request
-fibers run on that loop. Fibers a request starts into a longer scope (a pool's connection,
-an eventlog connection's subscriptions) must still be interrupted cleanly once the server
-has stopped: the loop stays up until the server itself is released, and fibers left on it
-then move to the run that built the server (dogfood quill #1)."""
+"""uvicorn_server under ``run_sync`` runs uvicorn on a loop thread, and request fibers run
+on that loop. Fibers a request starts into a longer scope (a pool's connection, an eventlog
+connection's subscriptions) must still be interrupted cleanly once the server has stopped
+and been released (dogfood quill #1: ``Die(RuntimeError('Event loop is closed'))`` twice, or
+a hang). The loop is shared by such servers and never stopped."""
 
 from __future__ import annotations
 
-import threading
 from typing import Any, TypedDict
 
 import pyfect as fx
@@ -60,16 +59,10 @@ def test_a_fiber_a_request_left_in_a_scope_closed_after_serving_is_interrupted()
     assert finalized == ["done"]
 
 
-def _join_loop_threads() -> None:
-    for thread in threading.enumerate():
-        if thread.name == "pyfect-uvicorn":
-            thread.join(5)
-            assert not thread.is_alive()
-
-
-# Released between the server and what outlives it: the server's loop is gone by then.
-loop_gone = layer.effect_discard(
-    acquire_release(fx.void, lambda _a, _e: fx.blocking(_join_loop_threads))
+# Released between the server and what outlives it: the server is gone by then.
+server_gone: list[bool] = []
+mark_server_gone = layer.effect_discard(
+    acquire_release(fx.void, lambda _a, _e: fx.sync(lambda: server_gone.append(True)))
 )
 
 
@@ -78,12 +71,14 @@ def test_a_fiber_a_request_left_in_a_scope_that_outlives_the_server_is_interrupt
     served = router.serve(_routes(finalized), disable_logger=True)
     server = (
         uvicorn_server.layer_test()
-        .pipe(layer.provide_merge(loop_gone))
+        .pipe(layer.provide_merge(mark_server_gone))
         .pipe(layer.provide_merge(background))
     )
     app = served.pipe(layer.provide_merge(server))
+    server_gone.clear()
     assert fx.run_sync_exit(_get().pipe(fx.provide(app))) == fx.Success("ok")
     assert finalized == ["done"]
+    assert server_gone == [True]
 
 
 def test_an_encrypted_eventlog_server_shuts_down_cleanly_after_a_client_connected() -> None:

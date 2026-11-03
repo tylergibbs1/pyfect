@@ -227,45 +227,14 @@ class SyncScheduler(Tracking):
 
 
 class LoopClosedError(RuntimeError):
-    """A task was handed to an ``AsyncioScheduler`` whose loop has closed
-    with nothing taking its fibers over (``hand_off``): the fibers of that
-    run can never run again. Raised where the task was handed over, so the
-    lost wake-up is a defect there rather than a silent hang."""
-
-
-class _LoopTimer:
-    """A timer on the loop that moves to the successor on ``hand_off``."""
-
-    __slots__ = ("cancel_current", "daemon", "pending", "task", "when")
-
-    def __init__(self, pending: set[_LoopTimer], when: float, task: Task, daemon: bool) -> None:
-        self.pending = pending
-        self.when = when
-        self.task = task
-        self.daemon = daemon
-        self.cancel_current: Cancel = _no_cancel
-
-    def fire(self) -> None:
-        self.pending.discard(self)
-        self.task()
-
-    def cancel(self) -> None:
-        self.pending.discard(self)
-        self.cancel_current()
-
-
-def _no_cancel() -> None:
-    return None
+    """A task was handed to an ``AsyncioScheduler`` whose loop has closed:
+    the fibers on it can never run again. Raised where the task was handed
+    over, so the lost wake-up is a defect there rather than a silent hang."""
 
 
 class AsyncioScheduler(Tracking):
-    """Runs tasks on an asyncio event loop, batching them per loop tick.
-
-    A loop's owner that closes it while fibers of this scheduler may still
-    be alive first calls ``hand_off``: from then on every task and timer
-    goes to the successor, so those fibers can still be interrupted and
-    finish there. A task handed over once the loop has closed without one
-    raises ``LoopClosedError``."""
+    """Runs tasks on an asyncio event loop, batching them per loop tick. A
+    task handed over once the loop has closed raises ``LoopClosedError``."""
 
     def __init__(self, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
@@ -273,9 +242,6 @@ class AsyncioScheduler(Tracking):
         self._thread = threading.get_ident()
         self._ready: deque[Task] = deque()
         self._draining_scheduled = False
-        self._timers: set[_LoopTimer] = set()
-        self._successor: Scheduler | None = None
-        self._handing_off = threading.Lock()
 
     @property
     def loop(self) -> asyncio.AbstractEventLoop:
@@ -284,9 +250,6 @@ class AsyncioScheduler(Tracking):
 
     def runs_here(self) -> bool:
         """Whether this thread is the one running the scheduler's tasks."""
-        successor = self._successor
-        if successor is not None:
-            return isinstance(successor, Tracking) and successor.runs_here()
         return threading.get_ident() == self._thread and self._loop.is_running()
 
     @classmethod
@@ -295,19 +258,8 @@ class AsyncioScheduler(Tracking):
         return cls(asyncio.get_running_loop())
 
     def schedule(self, task: Task) -> None:
-        successor = self._successor
-        if successor is not None:
-            successor.schedule(task)
-            return
         if threading.get_ident() != self._thread:
-            # Under the lock, a hand-off either happened (go to the
-            # successor) or comes after this task in the loop's queue.
-            with self._handing_off:
-                successor = self._successor
-                if successor is None:
-                    self._call_soon_threadsafe(self.schedule, task)
-            if successor is not None:
-                successor.schedule(task)
+            self._call_soon_threadsafe(self.schedule, task)
             return
         self._ready.append(self._tracked(task))
         self._drain_soon()
@@ -318,37 +270,10 @@ class AsyncioScheduler(Tracking):
         except RuntimeError:
             if not self._loop.is_closed():
                 raise
-            raise LoopClosedError(
-                "the asyncio loop this fiber runs on has closed; nothing took its fibers over"
-            ) from None
+            raise LoopClosedError("the asyncio loop this fiber runs on has closed") from None
 
     def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
-        successor = self._successor
-        if successor is not None:
-            return successor.call_later(delay, task, daemon=daemon)
-        delay = Seconds(max(delay, 0.0))
-        timer = _LoopTimer(self._timers, self._loop.time() + delay, task, daemon)
-        timer.cancel_current = self._loop.call_later(delay, timer.fire).cancel
-        self._timers.add(timer)
-        return timer.cancel
-
-    def hand_off(self, successor: Scheduler) -> None:
-        """Move this scheduler's work to ``successor`` for good: the tasks
-        queued, the timers pending, and everything scheduled from now on.
-        Called on the loop's thread by whoever is about to stop the loop;
-        stop it with ``call_soon`` after this, so tasks other threads queued
-        before the hand-off still run (and are forwarded) first."""
-        with self._handing_off:
-            self._successor = successor
-        ready, self._ready = self._ready, deque()
-        for task in ready:
-            successor.schedule(task)
-        now = self._loop.time()
-        for timer in tuple(self._timers):
-            timer.cancel_current()
-            timer.cancel_current = successor.call_later(
-                Seconds(max(timer.when - now, 0.0)), timer.fire, daemon=timer.daemon
-            )
+        return self._loop.call_later(max(delay, 0.0), task).cancel
 
     def _drain_soon(self) -> None:
         if not self._draining_scheduled:

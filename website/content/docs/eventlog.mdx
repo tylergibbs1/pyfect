@@ -91,6 +91,12 @@ device, and `decode_identity_string` reads it back.
 
 </CodeOutput>
 
+To wait for a sync, run `log.synced`: it succeeds once the server has acknowledged
+everything the log wrote and the log has applied the server's changes up to the latest
+entry the server held when asked. Effect has no such call; pyfect adds it (with the
+`EventLog.LatestSequence` RPC it asks the server through), so a test or a script can sync
+and then check, without sleeping.
+
 Payloads travel as their schemas' JSON: Effect's MessagePack codec is not ported, so pyfect
 clients and servers talk to each other but not to Effect's.
 

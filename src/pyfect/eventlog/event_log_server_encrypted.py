@@ -84,6 +84,10 @@ class StorageService(ABC):
     ) -> Stream[EncryptedRemoteBatch]:
         """The stored batches from ``start_sequence``, then new ones."""
 
+    @abstractmethod
+    def latest_sequence(self, public_key: str, store_id: StoreId, /) -> Effect[int | None]:
+        """The sequence of the last stored entry, ``None`` when there is none."""
+
 
 class Storage(Tag[StorageService], key="effect/eventlog/EventLogServer/Storage"):
     """The storage of an encrypted server."""
@@ -196,6 +200,7 @@ def _handlers(storage: StorageService):
             get_or_create_session_auth_binding=storage.get_or_create_session_auth_binding,
             on_write=on_write,
             changes=changes,
+            latest_sequence=storage.latest_sequence,
         )
 
     return gen(make)
@@ -299,6 +304,13 @@ class _MemoryStorage(StorageService):
             return from_iterable(backlog).concat(from_subscription(subscription))
 
         return stream_unwrap(gen(open_changes))
+
+    def latest_sequence(self, public_key: str, store_id: StoreId, /) -> Effect[int | None]:
+        def read() -> int | None:
+            batches = self._journal((public_key, store_id)).batches
+            return batches[-1].sequence + len(batches[-1].entry_ids) - 1 if batches else None
+
+        return sync(read)
 
 
 make_storage_memory: Effect[StorageService, Never, Scope] = RcMap.make(
