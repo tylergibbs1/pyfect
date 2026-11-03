@@ -174,12 +174,16 @@ class _Wait:
     racing the end of registration on another thread (free-threaded
     builds have no GIL to order them) either lands in ``sync_result``
     before registration reads it, or sees registration over and resumes
-    the parked fiber."""
+    the parked fiber.
+
+    The wait lets go of its fiber once claimed: ``resume`` is handed to the
+    outside (a future's callbacks, a listener list), which may keep it
+    after it fired, and must not keep the fiber, and its result, alive."""
 
     __slots__ = ("canceler", "done", "fiber", "registering", "sync_result")
 
     def __init__(self, fiber: Fiber[Any, Any]) -> None:
-        self.fiber = fiber
+        self.fiber: Fiber[Any, Any] | None = fiber
         self.done = False
         self.registering = True
         self.sync_result: Effect[Any, Any, Any] | None = None
@@ -190,23 +194,27 @@ class _Wait:
             if self.done:
                 return False
             self.done = True
+            self.fiber = None
             return True
 
     def end_registration(self) -> Effect[Any, Any, Any] | None:
         """Registration is over; the effect a resume during it left."""
         with _resume_lock:
             self.registering = False
-            return self.sync_result
+            result, self.sync_result = self.sync_result, None
+            return result
 
     def resume(self, effect: Effect[Any, Any, Any]) -> None:
         with _resume_lock:
-            if self.done:
+            fiber = self.fiber
+            if fiber is None:
                 return
             self.done = True
+            self.fiber = None
+            self.canceler = None
             if self.registering:
                 self.sync_result = effect
                 return
-        fiber = self.fiber
         if fiber._on_run_thread():
             fiber._resume(self, effect)
         else:

@@ -209,7 +209,11 @@ class _Backend:
             built = self.client.build_request(
                 request.method, _url.href(url), headers=list(headers.items()), **content
             )
-            return await self.client.send(built, stream=True)
+            response = await self.client.send(built, stream=True)
+            # Tied to the signal as soon as it exists: an interrupt that wins
+            # against its arrival (a lost race) drops it unseen, and aborts.
+            signal.add_listener(lambda: self._call_soon(lambda: self._close_response(response)))
+            return response
 
         def on_error(error: BaseException) -> Effect[Never, HttpClientError]:
             if failures:
@@ -219,16 +223,10 @@ class _Backend:
         return (
             _future(signal, lambda: self.submit(send), waits_for="work")
             .catch_all(on_error)
-            .map(lambda response: self._response(request, response, signal))
+            .map(lambda response: self._response(request, response))
         )
 
-    def _response(
-        self, request: HttpClientRequest, response: httpx.Response, signal: AbortSignal
-    ) -> HttpClientResponse:
-        def close() -> None:
-            self._call_soon(lambda: self._close_response(response))
-
-        signal.add_listener(close)
+    def _response(self, request: HttpClientRequest, response: httpx.Response) -> HttpClientResponse:
         headers = Headers(
             {name: ", ".join(response.headers.get_list(name)) for name in response.headers}
         )
@@ -236,7 +234,7 @@ class _Backend:
         if request.method != "HEAD" and response.status_code not in _NO_BODY_STATUSES:
             body = self._body(response)
         else:
-            close()
+            self._call_soon(lambda: self._close_response(response))
         return HttpClientResponse(
             request,
             response.status_code,

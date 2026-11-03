@@ -279,7 +279,17 @@ class _LimitedResponse(HttpClientResponse):
     def __init__(self, original: HttpClientResponse, max_bytes: int) -> None:
         super().__init__(original.request, original.status, original.headers, None)
         self.original = original
-        self._body = suspend_stream(lambda: self._capped(max_bytes))
+        self._max_bytes = max_bytes
+
+    @property
+    def stream(self) -> Stream[bytes, HttpClientError]:
+        # Made on each use, not kept: a body referring back to the response
+        # would put it in a reference cycle (see ``HttpClientResponse.bytes_``).
+        max_bytes = self._max_bytes
+        return suspend_stream(lambda: self._capped(max_bytes)).map_error(self._error)
+
+    def _read(self) -> Effect[bytes, HttpClientError]:
+        return self.stream.run_collect().map(b"".join)
 
     def _too_large(self, max_bytes: int) -> HttpClientError:
         cause = ResponseTooLargeError(max_bytes)
