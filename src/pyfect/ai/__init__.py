@@ -1,6 +1,8 @@
 """AI services (Effect's ``effect/ai``): prompts, responses, tools and
 toolkits, the provider-neutral ``LanguageModel`` and ``EmbeddingModel``
-services, and the Model Context Protocol (``mcp_server``, ``mcp_client``).
+services, the Model Context Protocol (``mcp_server``, ``mcp_client``), and
+each provider's structured-output codec (``anthropic_structured_output``,
+``openai_structured_output``).
 
 Each module is Effect's of the same name::
 
@@ -9,6 +11,7 @@ Each module is Effect's of the same name::
 
 from pyfect.ai import (
     ai_error,
+    anthropic_structured_output,
     chat,
     embedding_model,
     id_generator,
@@ -19,6 +22,7 @@ from pyfect.ai import (
     mcp_schema,
     mcp_server,
     model,
+    openai_structured_output,
     prompt,
     response,
     response_id_tracker,
@@ -41,6 +45,7 @@ __all__ = [
     "McpClientError",
     "McpServer",
     "ai_error",
+    "anthropic_structured_output",
     "chat",
     "embedding_model",
     "id_generator",
@@ -51,6 +56,7 @@ __all__ = [
     "mcp_schema",
     "mcp_server",
     "model",
+    "openai_structured_output",
     "prompt",
     "response",
     "response_id_tracker",

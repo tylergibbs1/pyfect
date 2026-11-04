@@ -43,6 +43,7 @@ from pyfect.ai.anthropic._tools import Capabilities, json_schema, prepare_tools
 from pyfect.ai.anthropic.client import AnthropicClient, MessageParams
 from pyfect.ai.anthropic.client import Service as ClientService
 from pyfect.ai.anthropic.telemetry import add_gen_ai_annotations
+from pyfect.ai.anthropic_structured_output import to_codec_anthropic
 from pyfect.ai.tool import NameMapper
 from pyfect.context import Tag
 from pyfect.stream import Stream
@@ -323,6 +324,7 @@ def make(
         return lm.make(
             generate_text=generate,
             stream_text=stream,
+            codec_transformer=to_codec_anthropic,
             supports_system_messages_in_history=current().map(
                 lambda cfg: config_capabilities(cfg).supports_mid_conversation_system_messages
             ),

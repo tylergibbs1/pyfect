@@ -24,6 +24,7 @@ from pyfect.ai.id_generator import Service as IdService
 from pyfect.ai.openai import _schema as W
 from pyfect.ai.openai._errors import OPENAI
 from pyfect.ai.openai._prompt import KEY, MODULE, openai_options, provider_tool
+from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.response import FinishReason
 from pyfect.ai.tool import NameMapper, unsafe_secure_json_parse
 from pyfect.http import url
@@ -237,7 +238,7 @@ def function_params(
     options: lm.ProviderOptions, name: str, arguments: str, method: str
 ) -> Gen[object]:
     raw = yield from parse_params(name, arguments, method)
-    return (yield from PT.transform_params(MODULE, options, name, raw))
+    return (yield from PT.transform_params(MODULE, options, name, raw, transformer=to_codec_openai))
 
 
 def mcp_call(names: NameMapper, arguments: object, method: str) -> Gen[tuple[str, object]]:

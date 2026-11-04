@@ -2,7 +2,8 @@
 tool calls back into parts: the ``UnsupportedInput`` a request builder
 raises, JSON Schemas of tools and response formats, and the
 normalization of a tool call's parameters. ``module`` is the provider's
-language model module name, as its errors show it."""
+language model module name, as its errors show it; ``transformer`` its
+structured-output codec transformer (``to_codec_anthropic``, ...)."""
 
 from __future__ import annotations
 
@@ -15,6 +16,7 @@ from pyfect.ai import _provider as P
 from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
 from pyfect.ai.ai_error import AiError, ToolNotFoundError, UnsupportedSchemaError
+from pyfect.json_schema import JsonSchema
 
 
 class UnsupportedInput(Exception):
@@ -35,11 +37,28 @@ def unsupported_schema(module: str, error: object, method: str) -> UnsupportedIn
     return unsupported(module, method, UnsupportedSchemaError(description=str(error)))
 
 
-def json_schema(module: str, schema: Any, method: str) -> P.JsonObject:
+def json_schema(
+    module: str, schema: Any, method: str, *, transformer: T.CodecTransformer
+) -> P.JsonObject:
     try:
-        return dict(T.get_json_schema_from_schema(schema))
+        return dict(T.get_json_schema_from_schema(schema, transformer=transformer))
     except Exception as error:
         raise unsupported_schema(module, error, method) from error
+
+
+def memoized(transformer: T.CodecTransformer) -> T.CodecTransformer:
+    """``transformer`` run once per schema: a request prepares its tools'
+    codecs once and decodes each of their calls with them."""
+    made: dict[int, tuple[S.Top, tuple[S.Top, JsonSchema]]] = {}
+
+    def transform(schema: S.Top) -> tuple[S.Top, JsonSchema]:
+        hit = made.get(id(schema))
+        if hit is None:
+            hit = (schema, transformer(schema))
+            made[id(schema)] = hit
+        return hit[1]
+
+    return transform
 
 
 def schema_description(schema: Any) -> str | None:
@@ -47,7 +66,9 @@ def schema_description(schema: Any) -> str | None:
     return description if isinstance(description, str) else None
 
 
-def tool_json_schema(module: str, tool: T.AnyTool, *, require_object: bool) -> P.JsonObject:
+def tool_json_schema(
+    module: str, tool: T.AnyTool, *, require_object: bool, transformer: T.CodecTransformer
+) -> P.JsonObject:
     """The JSON Schema of a tool's parameters (a dynamic tool's own one
     as given); with ``require_object``, anything but an object schema is
     rejected."""
@@ -61,7 +82,7 @@ def tool_json_schema(module: str, tool: T.AnyTool, *, require_object: bool) -> P
         )
 
     try:
-        schema = dict(T.get_json_schema(tool))
+        schema = dict(T.get_json_schema(tool, transformer=transformer))
     except Exception as cause:
         raise error(cause) from cause
     raw = isinstance(tool, T.Dynamic) and tool.json_schema is not None
@@ -71,9 +92,15 @@ def tool_json_schema(module: str, tool: T.AnyTool, *, require_object: bool) -> P
 
 
 def transform_params(
-    module: str, options: lm.ProviderOptions, tool_name: str, params: object
+    module: str,
+    options: lm.ProviderOptions,
+    tool_name: str,
+    params: object,
+    *,
+    transformer: T.CodecTransformer,
 ) -> Effect[object, AiError, Any]:
-    """Valid parameters in the tool's standard encoded form; invalid ones
+    """Valid parameters, decoded from the provider's shape by the
+    transformer's codec, in the tool's standard encoded form; invalid ones
     unchanged, for the toolkit to report. An unknown tool fails, unless
     tool call validation is deferred (its parameters are kept)."""
     tool = next((t for t in options.tools if t.name == tool_name), None)
@@ -92,7 +119,11 @@ def transform_params(
     if isinstance(tool, T.Dynamic) and tool.json_schema is not None:
         return fx.succeed(params)
     schema = tool.parameters_schema
-    normalized: Effect[object, Any, Any] = S.decode_unknown_effect(schema)(params).flat_map(
+    try:
+        codec = transformer(schema)[0]
+    except Exception as error:
+        return fx.fail(unsupported_schema(module, error, "makeResponse").error)
+    normalized: Effect[object, Any, Any] = S.decode_unknown_effect(codec)(params).flat_map(
         S.encode_unknown_effect(schema)
     )
     return normalized.or_else_succeed(lambda _: params)

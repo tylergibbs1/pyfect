@@ -4,14 +4,8 @@ are recorded JSON or Server-Sent Events answered by a mocked
 ``HttpClient`` (or a stub ``OpenAiClient`` streaming given events); no
 test reaches a real API.
 
-Omitted:
-
-- ``response handling / decodes Effect Schema dynamic tool call params
-  with the OpenAI codec`` and ``tool preparation / empty object on
-  properties for empty parameters`` (both titles): Effect's
-  ``OpenAiStructuredOutput`` codec (records as key/value arrays, optional
-  keys as nullable, ``properties: {}`` added to empty objects) is not
-  ported; pyfect sends the default JSON Schema (``docs/PARITY.md``).
+``tool preparation / empty object on properties for empty parameters``
+appears twice in Effect's file with the same body; it is ported once.
 """
 
 from __future__ import annotations
@@ -1118,13 +1112,35 @@ def test_dynamic_tools():
     assert found["parameters"] == schema
 
 
+class _NoFields(TypedDict):
+    pass
+
+
+@testing.effect
+def test_empty_params_properties():
+    """generateText / tool preparation / empty object on properties for empty parameters"""
+    tool = T.make(
+        "EmptyParamsTool",
+        description="Empty params tool",
+        parameters=T.EMPTY_PARAMS,
+        success=S.String,
+    )
+    toolkit = K.make(tool)
+    body = yield from _with_tools(
+        "Use the tool", toolkit, toolkit.to_layer(tool.handler(lambda _, __: fx.succeed("ok")))
+    )
+    found = next(t for t in body["tools"] if t["name"] == "EmptyParamsTool")
+    assert found["parameters"] == {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": False,
+    }
+
+
 @testing.effect
 def test_non_object_parameters():
-    """generateText / tool preparation / names the tool when its parameters are not an object schema
-
-    Effect's case is ``Schema.Struct({})``, which its OpenAI codec rejects;
-    without the codec, a string schema is the non-object case."""
-    toolkit = K.make(T.make("NoParams", parameters=S.String))
+    """generateText / tool preparation / names the tool when its parameters are not an object schema"""  # noqa: E501
+    toolkit = K.make(T.make("NoParams", parameters=S.Struct(_NoFields)))
     mock = _mock()
     error = yield from _provided(
         lm.generate_text("Use the tool", toolkit=toolkit, disable_tool_call_resolution=True).flip(),
@@ -1302,6 +1318,23 @@ def test_dynamic_tool_raw_params():
         output=[function_call("DynamicTool", params)],
     )
     assert result.tool_calls[0].params == params
+
+
+class _Env(TypedDict):
+    env: dict[str, str]
+
+
+@testing.effect
+def test_dynamic_tool_schema_params():
+    """generateText / response handling / decodes Effect Schema dynamic tool call params with the OpenAI codec"""  # noqa: E501
+    tool = T.dynamic("DynamicTool", parameters=S.Struct(_Env, env=S.Record(S.String, S.String)))
+    result = yield from _respond(
+        prompt="Use the dynamic tool",
+        toolkit=K.make(tool),
+        options={"disable_tool_call_resolution": True},
+        output=[function_call("DynamicTool", {"env": [{"0": "PATH", "1": "/usr/bin"}]})],
+    )
+    assert result.tool_calls[0].params == {"env": {"PATH": "/usr/bin"}}
 
 
 ReturnModeTool = T.make(

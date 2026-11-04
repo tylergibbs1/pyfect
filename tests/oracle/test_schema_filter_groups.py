@@ -72,9 +72,14 @@ def _iterates_checks(target: pyast.expr) -> bool:
 # Loops over checks that compare identities, where a group is one check.
 _BY_IDENTITY = frozenset({"schema/_assignable.py", "brand.py"})
 # Each hands every check to a function that recurses into groups
-# (``_check``; the representation modules' ``check`` / ``_encode_check``).
+# (``_check``; the representation modules' ``check`` / ``_encode_check``;
+# the structured-output ``_compiler_check`` / ``_record_check`` /
+# ``_append_check_descriptions``).
 _DELEGATING = frozenset(
     {
+        "ai/_structured_output_checks.py compiler_checks",
+        "ai/_structured_output_checks.py record_checks",
+        "ai/_structured_output_checks.py structural_annotations",
         "schema/_jsonschema/_compile.py compile",
         "schema/_jsonschema/_compile.py _check",
         "schema/representation/_from.py append_checks",

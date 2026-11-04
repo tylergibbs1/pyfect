@@ -15,6 +15,7 @@ from pyfect._core import Effect
 from pyfect.ai import _provider as P
 from pyfect.ai import _provider_tools as PT
 from pyfect.ai import language_model as lm
+from pyfect.ai import tool as T
 from pyfect.ai._openai_errors import COMPAT
 from pyfect.ai.ai_error import AiError, ToolParameterValidationError
 from pyfect.ai.openai_compat import _schema as W
@@ -118,13 +119,15 @@ def _tool_call(
     completion: W.ChatCompletion,
     index: int,
     call: W.ToolCall,
+    *,
+    codecs: T.CodecTransformer,
 ) -> Gen[Part]:
     function = call.get("function") or {}
     name = names.get_custom_name(P.or_default(function.get("name"), "unknown_tool"))
     raw = yield from _parse_params(
         name, P.or_default(function.get("arguments"), "{}"), "makeResponse"
     )
-    params = yield from PT.transform_params(MODULE, options, name, raw)
+    params = yield from PT.transform_params(MODULE, options, name, raw, transformer=codecs)
     return {
         "type": "tool-call",
         "id": P.or_default(call.get("id"), f"{completion['id']}_tool_{index}"),
@@ -139,6 +142,7 @@ def _make_response(
     completion: W.ChatCompletion,
     response: HttpClientResponse,
     names: NameMapper,
+    codecs: T.CodecTransformer,
 ) -> Gen[list[Part]]:
     parts: list[Part] = [
         {
@@ -167,7 +171,9 @@ def _make_response(
         if content:
             parts.append({"type": "text", "text": content})
         for index, call in enumerate(message.get("tool_calls") or []):
-            parts.append((yield from _tool_call(options, names, completion, index, call)))
+            parts.append(
+                (yield from _tool_call(options, names, completion, index, call, codecs=codecs))
+            )
             has_tool_calls = True
     reason = None if choice is None else choice.get("finish_reason")
     parts.append(
@@ -187,8 +193,10 @@ def make_response(
     completion: W.ChatCompletion,
     response: HttpClientResponse,
     names: NameMapper,
+    codecs: T.CodecTransformer,
 ) -> Effect[list[Part], AiError, Any]:
-    return fx.gen(lambda: _make_response(options, completion, response, names))
+    """``codecs`` makes the codecs decoding the tool calls' parameters."""
+    return fx.gen(lambda: _make_response(options, completion, response, names, codecs))
 
 
 @dataclass
@@ -211,6 +219,7 @@ class _Stream:
     options: lm.ProviderOptions
     response: HttpClientResponse
     names: NameMapper
+    codecs: T.CodecTransformer
     max_chars: int
     too_large: bool = False
     service_tier: str | None = None
@@ -245,7 +254,9 @@ class _Stream:
             raw = yield from _parse_params(
                 call.name, call.arguments.text() or "{}", "makeStreamResponse"
             )
-            params = yield from PT.transform_params(MODULE, self.options, call.name, raw)
+            params = yield from PT.transform_params(
+                MODULE, self.options, call.name, raw, transformer=self.codecs
+            )
             parts.append({"type": "tool-params-end", "id": call.id})
             parts.append(
                 {
@@ -387,7 +398,10 @@ def make_stream_response(
     response: HttpClientResponse,
     names: NameMapper,
     max_chars: int,
+    *,
+    codecs: T.CodecTransformer,
 ) -> Stream[Part, AiError, Any]:
-    """``max_chars`` bounds each tool call's streamed parameters."""
-    state = _Stream(options, response, names, max_chars)
+    """``max_chars`` bounds each tool call's streamed parameters; ``codecs``
+    makes the codecs decoding them."""
+    state = _Stream(options, response, names, codecs, max_chars)
     return events.map_effect(state.event).flatten_iterable()

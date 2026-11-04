@@ -28,6 +28,7 @@ from pyfect.ai import toolkit as K
 from pyfect.ai.anthropic import client
 from pyfect.ai.anthropic import language_model as alm
 from pyfect.ai.anthropic import tool as AT
+from pyfect.ai.anthropic_structured_output import to_codec_anthropic
 from pyfect.layer import Layer
 from pyfect.redacted import make as redact
 from pyfect.result import Ok
@@ -1029,12 +1030,8 @@ _CLIENT_TOOLS = {
 
 @pytest.mark.parametrize("name", list(_CLIENT_TOOLS))
 def test_client_tool_parameters_compile(name: str):
-    """client provider tool parameters compile with the Anthropic codec / ${name}
-
-    pyfect has no separate Anthropic codec: the default codec transformer
-    turns the parameters into the JSON Schema the request sends."""
-    schema = T.get_json_schema(_CLIENT_TOOLS[name]())
-    assert schema
+    """client provider tool parameters compile with the Anthropic codec / ${name}"""
+    assert to_codec_anthropic(_CLIENT_TOOLS[name]().parameters_schema).json_schema
 
 
 class _ReadParams(TypedDict):

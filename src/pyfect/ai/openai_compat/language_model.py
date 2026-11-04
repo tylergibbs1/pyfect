@@ -23,8 +23,10 @@ from pyfect import layer as L
 from pyfect import stream as St
 from pyfect._core import Effect
 from pyfect.ai import _provider as P
+from pyfect.ai import _provider_tools as PT
 from pyfect.ai import language_model as lm
 from pyfect.ai import model as M
+from pyfect.ai import tool as T
 from pyfect.ai._provider_tools import UnsupportedInput
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.openai_compat import _schema as W
@@ -34,6 +36,7 @@ from pyfect.ai.openai_compat._response import Part, make_response, make_stream_r
 from pyfect.ai.openai_compat.client import OpenAiClient
 from pyfect.ai.openai_compat.client import Service as ClientService
 from pyfect.ai.openai_compat.telemetry import add_gen_ai_annotations
+from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.tool import NameMapper
 from pyfect.context import Tag
 from pyfect.stream import Stream
@@ -82,11 +85,14 @@ class Config(Tag[ConfigService], key="@effect/ai-openai-compat/OpenAiLanguageMod
 
 
 def _make_request(
-    config: Mapping[str, Any], options: lm.ProviderOptions, names: NameMapper
+    config: Mapping[str, Any],
+    options: lm.ProviderOptions,
+    names: NameMapper,
+    codecs: T.CodecTransformer,
 ) -> Effect[dict[str, Any], AiError]:
     try:
         messages = prepare_messages(options.prompt, config, names)
-        return fx.succeed(chat_request(config, options, messages, names))
+        return fx.succeed(chat_request(config, options, messages, names, codecs))
     except UnsupportedInput as error:
         return fx.fail(error.error)
 
@@ -169,6 +175,7 @@ def make(
     def build(client: ClientService) -> Effect[lm.Service]:
         def generate(options: lm.ProviderOptions) -> Effect[Sequence[lm.EncodedPart], AiError, Any]:
             names = NameMapper(options.tools)
+            codecs = PT.memoized(to_codec_openai)
 
             def send(request: dict[str, Any]) -> Effect[list[Part], AiError, Any]:
                 _annotate_request(options.span, request)
@@ -176,29 +183,35 @@ def make(
                 def respond(sent: tuple[W.ChatCompletion, Any]) -> Effect[list[Part], AiError, Any]:
                     completion, response = sent
                     _annotate_response(options.span, completion)
-                    return make_response(options, completion, response, names)
+                    return make_response(options, completion, response, names, codecs)
 
                 return client.create_response(request).flat_map(respond)
 
-            return current().flat_map(lambda cfg: _make_request(cfg, options, names)).flat_map(send)
+            request = current().flat_map(lambda cfg: _make_request(cfg, options, names, codecs))
+            return request.flat_map(send)
 
         def stream(options: lm.ProviderOptions) -> Stream[lm.EncodedPart, AiError, Any]:
             names = NameMapper(options.tools)
+            codecs = PT.memoized(to_codec_openai)
 
             def send(request: dict[str, Any]) -> Effect[Stream[Part, AiError, Any], AiError]:
                 _annotate_request(options.span, request)
                 return client.create_response_stream(request).map(
                     lambda sent: make_stream_response(
-                        options, sent[1], sent[0], names, client.max_response_bytes
+                        options, sent[1], sent[0], names, client.max_response_bytes, codecs=codecs
                     )
                 )
 
             built: Effect[Stream[Part, AiError, Any], AiError] = (
-                current().flat_map(lambda cfg: _make_request(cfg, options, names)).flat_map(send)
+                current()
+                .flat_map(lambda cfg: _make_request(cfg, options, names, codecs))
+                .flat_map(send)
             )
             return St.unwrap(built).map(lambda part: _annotate_stream_part(options.span, part))
 
-        return lm.make(generate_text=generate, stream_text=stream)
+        return lm.make(
+            generate_text=generate, stream_text=stream, codec_transformer=to_codec_openai
+        )
 
     return OpenAiClient().flat_map(build)
 

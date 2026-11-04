@@ -3,15 +3,6 @@ Each docstring is the Effect test title (with its ``describe``). Responses
 are recorded JSON or Server-Sent Events answered by a mocked
 ``HttpClient``; no test reaches a real API.
 
-Omitted:
-
-- ``prepares selected tool codecs once per ${mode} request ...``, ``decodes
-  tool call params with the OpenAI codec``, ``decodes Effect Schema dynamic
-  tool call params with the OpenAI codec``, ``decodes streamed tool call
-  params with the OpenAI codec`` and ``uses OpenAI codec transformer for
-  optional structured fields``: Effect's ``OpenAiStructuredOutput`` codec
-  (records as key/value arrays, optional keys as nullable) is not ported;
-  pyfect sends the default JSON Schema.
 """
 
 from __future__ import annotations
@@ -20,8 +11,10 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownLambdaType=false
 import json
 from collections.abc import Sequence
-from typing import Any, Literal, NotRequired, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict, TypeIs
 from urllib.parse import urlsplit
+
+import pytest
 
 import pyfect as fx
 from pyfect import schema as S
@@ -38,7 +31,7 @@ from pyfect.http.url import Url
 from pyfect.layer import Layer
 from pyfect.redacted import make as redact
 
-from ._ai_http import MockHttp, json_response, mock_json, mock_sse, sse_response
+from ._ai_http import MockHttp, body_json, json_response, mock_json, mock_sse, sse_response
 
 
 class Input(TypedDict):
@@ -1113,3 +1106,175 @@ def test_deferred_streams_undeclared_calls():
     assert [(p.name, p.params) for p in parts if isinstance(p, R.ToolCallPart)] == [
         ("Write", {"path": "a"})
     ]
+
+
+# The OpenAI codec ------------------------------------------------------------------------
+
+
+class _Env(TypedDict):
+    env: dict[str, str]
+
+
+class _Opaque(TypedDict):
+    opaque: Any
+
+
+def _is_str(value: object) -> TypeIs[str]:
+    return isinstance(value, str)
+
+
+_ENV_ENTRIES = {"env": [{"0": "PATH", "1": "/usr/bin"}]}
+_ENV = {"env": {"PATH": "/usr/bin"}}
+RecordTool = T.make(
+    "RecordTool",
+    parameters=S.Struct(_Env, env=S.Record(S.String, S.String)),
+    success=S.String,
+)
+RecordToolkit = K.make(RecordTool)
+RecordToolkitLayer = RecordToolkit.to_layer(RecordTool.handler(lambda _, __: fx.succeed("done")))
+
+
+@pytest.mark.parametrize("mode", ["complete", "stream"])
+@testing.effect
+def test_prepares_tool_codecs_once_per_request(mode: str):
+    """prepares selected tool codecs once per ${mode} request and normalizes repeated calls"""
+    conversions: list[None] = []
+
+    def to_json_schema(_: S.CheckContext) -> dict[str, object]:
+        conversions.append(None)
+        return {"minItems": 1}
+
+    env = S.Record(S.String, S.String).check(
+        S.make_filter(
+            lambda _: True,
+            representation={"id": "test/compat/toolCodec", "payload": None},
+            to_json_schema=to_json_schema,
+        )
+    )
+    read_env = T.make("ReadEnv", parameters=S.Struct(_Env, env=env))
+    unselected = T.make("Unselected", parameters=S.Struct(_Opaque, opaque=S.declare(_is_str)))
+    toolkit = K.make(read_env, unselected)
+    handlers = toolkit.to_layer(
+        read_env.handler(lambda _, __: fx.void), unselected.handler(lambda _, __: fx.void)
+    )
+    calls = [
+        {
+            "id": id,
+            "type": "function",
+            "function": {"name": "ReadEnv", "arguments": json.dumps(_ENV_ENTRIES)},
+        }
+        for id in ("call_1", "call_2")
+    ]
+
+    def respond(request: Any) -> Any:
+        body = body_json(request)
+        assert [tool["function"]["name"] for tool in body["tools"]] == ["ReadEnv"]
+        assert body["tools"][0]["function"]["parameters"]["properties"]["env"]["type"] == "array"
+        if mode == "complete":
+            message = {"content": None, "tool_calls": calls}
+            return fx.succeed(
+                json_response(request, completion(message, finish_reason="tool_calls"))
+            )
+        deltas = [{**call, "index": index} for index, call in enumerate(calls)]
+        events = [chunk("chatcmpl_env", {"tool_calls": deltas}, "tool_calls"), "[DONE]"]
+        return fx.succeed(sse_response(request, events))
+
+    mock = MockHttp(respond)
+    for request in (1, 2):
+        options: dict[str, Any] = {
+            "toolkit": toolkit,
+            "tool_choice": {"one_of": ["ReadEnv"]},
+            "disable_tool_call_resolution": True,
+        }
+        if mode == "complete":
+            result = yield from _provided(
+                lm.generate_text("read the environment", **options),
+                mock,
+                "gpt-4o-mini",
+                None,
+                handlers,
+            )
+            found = [{"id": part.id, "params": part.params} for part in result.tool_calls]
+        else:
+            parts = yield from _provided(
+                lm.stream_text("read the environment", **options).run_collect(),
+                mock,
+                "gpt-4o-mini",
+                None,
+                handlers,
+            )
+            found = [
+                {"id": part.id, "params": part.params}
+                for part in parts
+                if isinstance(part, R.ToolCallPart)
+            ]
+        assert found == [{"id": "call_1", "params": _ENV}, {"id": "call_2", "params": _ENV}]
+        assert len(conversions) == request
+
+
+@testing.effect
+def test_decodes_tool_call_params_with_the_openai_codec():
+    """generateText / decodes tool call params with the OpenAI codec"""
+    result = yield from _provided(
+        lm.generate_text(
+            "read the environment", toolkit=RecordToolkit, disable_tool_call_resolution=True
+        ),
+        mock_json(_calls(("call_record_1", "RecordTool", _ENV_ENTRIES))),
+        "gpt-4o-mini",
+        None,
+        RecordToolkitLayer,
+    )
+    assert _first(result.content, R.ToolCallPart).params == _ENV
+
+
+@testing.effect
+def test_decodes_schema_dynamic_params_with_the_openai_codec():
+    """generateText / decodes Effect Schema dynamic tool call params with the OpenAI codec"""
+    tool = T.dynamic("DynamicTool", parameters=S.Struct(_Env, env=S.Record(S.String, S.String)))
+    result = yield from _provided(
+        lm.generate_text(
+            "use the dynamic tool", toolkit=K.make(tool), disable_tool_call_resolution=True
+        ),
+        mock_json(_calls(("call_dynamic_1", "DynamicTool", _ENV_ENTRIES))),
+    )
+    assert result.tool_calls[0].params == _ENV
+
+
+class _Nickname(TypedDict):
+    name: str
+    nickname: NotRequired[str]
+
+
+@testing.effect
+def test_openai_codec_for_optional_structured_fields():
+    """generateObject / uses OpenAI codec transformer for optional structured fields"""
+    mock = mock_json(completion({"content": json.dumps({"name": "Ada", "nickname": None})}))
+    person = yield from _provided(
+        lm.generate_object("Return a person", schema=S.Struct(_Nickname)), mock
+    )
+    assert person.value == {"name": "Ada"}
+    schema = mock.bodies[0]["response_format"]["json_schema"]["schema"]
+    assert schema["required"] == ["name", "nickname"]
+    assert schema["properties"]["nickname"] == {"anyOf": [{"type": "string"}, {"type": "null"}]}
+
+
+@testing.effect
+def test_decodes_streamed_tool_call_params_with_the_openai_codec():
+    """streamText / decodes streamed tool call params with the OpenAI codec"""
+    delta = {
+        "index": 0,
+        "id": "call_record_1",
+        "type": "function",
+        "function": {"name": "RecordTool", "arguments": json.dumps(_ENV_ENTRIES)},
+    }
+    events = [chunk("chatcmpl_record_1", {"tool_calls": [delta]}, "tool_calls"), "[DONE]"]
+    parts = yield from _provided(
+        lm.stream_text(
+            "read the environment", toolkit=RecordToolkit, disable_tool_call_resolution=True
+        ).run_collect(),
+        mock_sse(events),
+        "gpt-4o-mini",
+        None,
+        RecordToolkitLayer,
+    )
+    assert _first(parts, R.ToolCallPart).params == _ENV

@@ -19,6 +19,7 @@ from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import _schema as W
 from pyfect.ai.anthropic._errors import SECRET_HEADERS
 from pyfect.ai.anthropic._prompt import is_citation_part
+from pyfect.ai.anthropic_structured_output import to_codec_anthropic
 from pyfect.ai.id_generator import IdGenerator
 from pyfect.ai.response import FinishReason
 from pyfect.ai.tool import NameMapper
@@ -130,7 +131,9 @@ def citation_source(citation: dict[str, Any], documents: list[CitableDocument]) 
 def transform_params(
     options: lm.ProviderOptions, tool_name: str, params: object
 ) -> Effect[object, AiError, Any]:
-    return PT.transform_params("AnthropicLanguageModel", options, tool_name, params)
+    return PT.transform_params(
+        "AnthropicLanguageModel", options, tool_name, params, transformer=to_codec_anthropic
+    )
 
 
 def tool_result(id: str, name: str, is_failure: bool, result: object) -> Part:

@@ -70,6 +70,11 @@ class AST(ABC):
     )
     """``to_type()``, made once: contextual copies of a node then share one
     type side, so derivations see one schema (Effect memoizes ``toType``)."""
+    _flip_side: list[AST] = field(
+        default_factory=list["AST"], init=False, repr=False, compare=False
+    )
+    """``flip()``, made once (Effect memoizes ``flip``): the flip of a
+    recursive schema then refers back to itself, a finite graph."""
     tag: ClassVar[str]
 
     def owner(self) -> AST:
@@ -145,10 +150,11 @@ class AST(ABC):
     def flip(self) -> AST:
         """The node that encodes what this one decodes. A node without an
         encoding flips its parts; a leaf is its own flip."""
-        encoding = self.encoding
-        if encoding is not None:
-            return flip_encoding(self, encoding)
-        return self._flip()
+        if not self._flip_side:
+            encoding = self.encoding
+            flipped = flip_encoding(self, encoding) if encoding is not None else self._flip()
+            self._flip_side.append(flipped)
+        return self._flip_side[0]
 
     def _flip(self) -> AST:
         """The flip of the node's own parts (it has no encoding)."""

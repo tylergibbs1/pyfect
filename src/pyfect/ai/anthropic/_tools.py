@@ -13,6 +13,7 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
 from pyfect.ai._provider_tools import UnsupportedInput
 from pyfect.ai.ai_error import InvalidUserInputError
+from pyfect.ai.anthropic_structured_output import to_codec_anthropic
 
 type Block = dict[str, Any]
 
@@ -38,11 +39,11 @@ def _error(method: str, reason: Any) -> UnsupportedInput:
 
 
 def json_schema(schema: Any, method: str) -> Block:
-    return PT.json_schema(MODULE, schema, method)
+    return PT.json_schema(MODULE, schema, method, transformer=to_codec_anthropic)
 
 
 def tool_json_schema(tool: T.AnyTool) -> Block:
-    return PT.tool_json_schema(MODULE, tool, require_object=True)
+    return PT.tool_json_schema(MODULE, tool, require_object=True, transformer=to_codec_anthropic)
 
 
 def _computer(args: Mapping[str, Any], name: str, type_: str) -> Block:

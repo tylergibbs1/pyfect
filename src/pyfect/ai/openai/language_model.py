@@ -44,6 +44,7 @@ from pyfect.ai.openai._tools import prepare_response_format, prepare_tools
 from pyfect.ai.openai.client import OpenAiClient, OpenAiSocket
 from pyfect.ai.openai.client import Service as ClientService
 from pyfect.ai.openai.telemetry import add_gen_ai_annotations
+from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.tool import NameMapper
 from pyfect.context import Tag
 from pyfect.stream import Stream
@@ -267,7 +268,9 @@ def make(
             ).flat_map(lambda made: IdGenerator().flat_map(lambda ids: send(made, ids)))
             return St.unwrap(built).map(lambda part: _annotate_stream_part(options.span, part))
 
-        return lm.make(generate_text=generate, stream_text=stream)
+        return lm.make(
+            generate_text=generate, stream_text=stream, codec_transformer=to_codec_openai
+        )
 
     return OpenAiClient().flat_map(build)
 

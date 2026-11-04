@@ -17,6 +17,7 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
 from pyfect.ai.ai_error import InvalidRequestError, ToolConfigurationError, describe_schema_error
 from pyfect.ai.openai._prompt import MODULE, AnyProviderDefined, Item
+from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.tool import NameMapper
 
 _TYPES = {
@@ -67,7 +68,9 @@ def _function(tool: T.AnyTool, config: Mapping[str, Any]) -> Item:
     item: Item = {
         "type": "function",
         "name": tool.name,
-        "parameters": PT.tool_json_schema(MODULE, tool, require_object=True),
+        "parameters": PT.tool_json_schema(
+            MODULE, tool, require_object=True, transformer=to_codec_openai
+        ),
         "strict": strict,
     }
     description = T.get_description(tool)
@@ -118,6 +121,8 @@ def prepare_response_format(config: Mapping[str, Any], options: lm.ProviderOptio
         "description": P.or_default(
             PT.schema_description(response_format.schema), "Response with a JSON object"
         ),
-        "schema": PT.json_schema(MODULE, response_format.schema, "prepareResponseFormat"),
+        "schema": PT.json_schema(
+            MODULE, response_format.schema, "prepareResponseFormat", transformer=to_codec_openai
+        ),
         "strict": strict if strict is not None else True,
     }

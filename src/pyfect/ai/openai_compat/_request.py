@@ -13,6 +13,7 @@ from pyfect.ai import _provider_tools as PT
 from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
 from pyfect.ai.openai_compat._prompt import MODULE, Block
+from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.tool import NameMapper
 
 _KNOWN = frozenset(
@@ -66,7 +67,9 @@ def _function(name: str, description: str | None, parameters: Any, strict: bool)
     return {"type": "function", "function": function}
 
 
-def _tools(options: lm.ProviderOptions, config: Mapping[str, Any]) -> list[Block]:
+def _tools(
+    options: lm.ProviderOptions, config: Mapping[str, Any], codecs: T.CodecTransformer
+) -> list[Block]:
     allowed = options.tools
     choice = options.tool_choice
     if isinstance(choice, dict) and "one_of" in choice:
@@ -81,7 +84,7 @@ def _tools(options: lm.ProviderOptions, config: Mapping[str, Any]) -> list[Block
             strict = default_strict if default_strict is not None else True
             tools.append(_function(tool.provider_name, description, schema, strict))
         else:
-            schema = PT.tool_json_schema(MODULE, tool, require_object=True)
+            schema = PT.tool_json_schema(MODULE, tool, require_object=True, transformer=codecs)
             mode = T.get_strict_mode(tool)
             strict = mode if mode is not None else default_strict
             tools.append(
@@ -105,7 +108,9 @@ def _response_format(options: lm.ProviderOptions, config: Mapping[str, Any]) -> 
     response_format = options.response_format
     if not isinstance(response_format, lm.JsonFormat):
         return None
-    schema = PT.json_schema(MODULE, response_format.schema, "prepareResponseFormat")
+    schema = PT.json_schema(
+        MODULE, response_format.schema, "prepareResponseFormat", transformer=to_codec_openai
+    )
     strict = config.get("strict_json_schema")
     return {
         "type": "json_schema",
@@ -125,8 +130,10 @@ def chat_request(
     options: lm.ProviderOptions,
     messages: list[Block],
     names: NameMapper,
+    codecs: T.CodecTransformer,
 ) -> Block:
-    """Raises ``UnsupportedInput`` for a schema that has no JSON Schema."""
+    """Raises ``UnsupportedInput`` for a schema that has no JSON Schema.
+    ``codecs`` makes the tools' codecs (the response reuses them)."""
     request: Block = {
         key: value for key, value in config.items() if key not in _KNOWN and key not in LIBRARY_KEYS
     }
@@ -139,7 +146,7 @@ def chat_request(
     if response_format is not None:
         request["response_format"] = response_format
     if options.tools:
-        tools = _tools(options, config)
+        tools = _tools(options, config, codecs)
         if tools:
             request["tools"] = tools
         request["tool_choice"] = _tool_choice(options.tool_choice, names)

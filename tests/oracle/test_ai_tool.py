@@ -14,8 +14,6 @@ Omitted:
 - ``should preserve every reason and its annotations when failure mode is
   error``: it reads ``References.CurrentStackFrame`` annotations, which
   pyfect's ``race`` does not carry per reason.
-- ``should return tool call handler failures with failure mode return using
-  OpenAI transformer``: the OpenAI codec transformer is not ported.
 """
 
 from __future__ import annotations
@@ -31,6 +29,7 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import response as R
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
+from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.context import Tag
 from pyfect.json_schema import JsonSchema
 
@@ -71,11 +70,16 @@ def _call(name: str, params: object, id: str = "tool-123") -> list[lm.EncodedPar
 
 
 def _generate(
-    toolkit: K.AnyToolkit, handler: T.Handler[Any], name: str, params: object
+    toolkit: K.AnyToolkit,
+    handler: T.Handler[Any],
+    name: str,
+    params: object,
+    transformer: T.CodecTransformer | None = None,
 ) -> fx.Effect[lm.GenerateTextResponse[Any, Any], Any, Any]:
+    model = with_language_model(generate_text=_call(name, params), codec_transformer=transformer)
     return (
         lm.generate_text("Test", toolkit=toolkit)
-        .pipe(with_language_model(generate_text=_call(name, params)))
+        .pipe(model)
         .pipe(fx.provide(toolkit.to_layer(handler)))
     )
 
@@ -144,6 +148,22 @@ def test_returns_handler_failures_in_return_mode():
     handler = FailureModeReturn.handler(lambda _, __: fx.fail(failure))
     response = yield from _generate(
         toolkit, handler, "FailureModeReturn", {"testParam": "test-param"}
+    )
+    assert response.tool_results == [
+        R.ToolResultFailure(
+            id="tool-123", name="FailureModeReturn", result=failure, encoded_result=failure
+        )
+    ]
+
+
+@testing.effect
+def test_returns_handler_failures_in_return_mode_with_openai_transformer():
+    """User Defined / should return tool call handler failures with failure mode return using OpenAI transformer"""  # noqa: E501
+    failure = ToolFailure(testFailure="failure-mode-return-tool")
+    toolkit = K.make(FailureModeReturn)
+    handler = FailureModeReturn.handler(lambda _, __: fx.fail(failure))
+    response = yield from _generate(
+        toolkit, handler, "FailureModeReturn", {"testParam": "test-param"}, to_codec_openai
     )
     assert response.tool_results == [
         R.ToolResultFailure(

@@ -9,6 +9,7 @@ from typing import Any, Protocol, cast
 
 import pyfect as fx
 from pyfect.ai import language_model as lm
+from pyfect.ai import tool as T
 from pyfect.stream import _constructors as streams
 
 type Parts = Sequence[lm.EncodedPart]
@@ -21,7 +22,10 @@ class ProvideModel(Protocol):
 
 
 def with_language_model(
-    *, generate_text: Generate | None = None, stream_text: StreamText | None = None
+    *,
+    generate_text: Generate | None = None,
+    stream_text: StreamText | None = None,
+    codec_transformer: T.CodecTransformer | None = None,
 ) -> ProvideModel:
     def generate(options: lm.ProviderOptions) -> fx.Effect[Parts, Any, Any]:
         if generate_text is None:
@@ -41,5 +45,5 @@ def with_language_model(
             return streams.from_iterable(cast("Parts", result))
         return result
 
-    model = lm.make(generate_text=generate, stream_text=stream)
+    model = lm.make(generate_text=generate, stream_text=stream, codec_transformer=codec_transformer)
     return cast("ProvideModel", fx.provide_service_effect(lm.LanguageModel, model))

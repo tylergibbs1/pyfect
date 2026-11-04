@@ -51,6 +51,7 @@ from pyfect.ai import toolkit as ai_toolkit
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import client as anthropic_client
 from pyfect.ai.anthropic import language_model as anthropic_lm
+from pyfect.ai.anthropic_structured_output import StructuredOutputCodec, to_codec_anthropic
 from pyfect.ai.openai import client as openai_client
 from pyfect.ai.openai import embedding_model as openai_em
 from pyfect.ai.openai import language_model as openai_lm
@@ -58,6 +59,7 @@ from pyfect.ai.openai import tool as openai_tool
 from pyfect.ai.openai_compat import client as compat_client
 from pyfect.ai.openai_compat import embedding_model as compat_em
 from pyfect.ai.openai_compat import language_model as compat_lm
+from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.response_id_tracker import ResponseIdTracker
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
@@ -6912,6 +6914,17 @@ def check_ai_openai(service: openai_client.Service) -> None:
         ],
     )
     openai_lm.with_config_override({"use_item_reference": True})  # pyright: ignore[reportArgumentType]
+
+
+def check_ai_structured_output() -> None:
+    # The codec decodes the schema's Type from any JSON; its services carry over.
+    assert_type(to_codec_anthropic(S.FiniteFromString), StructuredOutputCodec[float, Never, Never])
+    codec, json_schema = to_codec_openai(S.Tuple(S.String, S.Finite))
+    assert_type(codec, S.Codec[tuple[str, float], object, Never, Never])
+    assert_type(json_schema, dict[str, object])
+    # Each is a provider's codec transformer.
+    transformers: list[ai_tool.CodecTransformer] = [to_codec_anthropic, to_codec_openai]
+    assert_type(transformers[0](S.String), tuple[S.Top, dict[str, object]])
 
 
 # --- Model / VariantSchema / SqlModel -----------------------------------------------------
