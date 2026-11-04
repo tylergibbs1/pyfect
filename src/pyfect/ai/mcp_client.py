@@ -681,6 +681,7 @@ __all__ = [
     "ClientProtocol",
     "ClientProtocolVersion",
     "McpClient",
+    "McpClientError",
     "McpClientService",
     "Transport",
     "TransportService",

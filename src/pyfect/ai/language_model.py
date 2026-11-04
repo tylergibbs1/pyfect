@@ -1088,6 +1088,7 @@ def stream_text(
 
 
 __all__ = [
+    "AiError",
     "EncodedPart",
     "GenerateFn",
     "GenerateObjectResponse",

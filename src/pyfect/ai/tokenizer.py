@@ -52,4 +52,10 @@ def _truncate(
     )
 
 
-__all__ = ["Service", "Tokenize", "Tokenizer", "make"]
+__all__ = [
+    "AiError",
+    "Service",
+    "Tokenize",
+    "Tokenizer",
+    "make",
+]

@@ -189,6 +189,7 @@ def reverse_error(operation: ReverseOperation) -> Callable[[object], ReverseErro
 
 __all__ = [
     "AnyProtocolAdapter",
+    "IllegalArgumentError",
     "ProtocolAdapter",
     "ProtocolVersion",
     "Registry",

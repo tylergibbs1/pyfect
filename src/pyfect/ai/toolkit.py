@@ -462,6 +462,7 @@ def merge(*toolkits: AnyToolkit) -> AnyToolkit:
 
 
 __all__ = [
+    "AiError",
     "AnyToolkit",
     "FailureOriginAnnotation",
     "HandlerResult",

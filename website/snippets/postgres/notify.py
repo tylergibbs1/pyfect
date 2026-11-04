@@ -35,14 +35,28 @@ def program():
     # LISTEN holds a session until the scope closes; the Dequeue gets every
     # notification sent on the channel from then on.
     progress = yield from sql.listen("progress")
+    # A checkpoint that commits between the LISTEN and the read below.
+    yield from sql.with_transaction(checkpoint(1, 500))
 
-    error = yield from sql.with_transaction(checkpoint(1, 500, reject=True)).flip()
+    # Read the current state after listening, then take only newer rows:
+    # the 500 notification is still queued and is older than what we read.
+    [state] = yield from sql("SELECT row FROM jobs WHERE id = 1")
+    seen = state["row"]
+    assert isinstance(seen, int)
+    print("read", seen)
+
+    error = yield from sql.with_transaction(checkpoint(1, 750, reject=True)).flip()
     print(repr(error))
     yield from sql.with_transaction(checkpoint(1, 1000))
 
-    notification = yield from progress.take().timeout(5)
-    print(notification.channel, notification.payload)
-    print((yield from sql("SELECT row FROM jobs WHERE id = 1")))
+    while seen < 1000:
+        notification = yield from progress.take().timeout(5)
+        row = int(notification.payload.split(":")[1])
+        if row <= seen:
+            print("dropped", notification.payload)
+            continue
+        seen = row
+        print(notification.channel, notification.payload)
 
 
 fx.run_main(fx.scoped(program()).pipe(fx.provide(layer)))

@@ -530,11 +530,14 @@ def layer_persisted(*, store_id: str) -> Layer[Persistence, Never, BackingPersis
 
 __all__ = [
     "PERSISTENCE_KEY",
+    "AiError",
     "Chat",
     "ChatNotFoundError",
     "Persisted",
     "Persistence",
+    "PersistenceError",
     "PersistenceService",
+    "SchemaError",
     "Service",
     "empty",
     "from_export",

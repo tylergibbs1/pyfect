@@ -68,4 +68,12 @@ def layer(
     )
 
 
-__all__ = ["DEFAULT_ALPHABET", "IdGenerator", "Service", "default_id_generator", "layer", "make"]
+__all__ = [
+    "DEFAULT_ALPHABET",
+    "IdGenerator",
+    "IllegalArgumentError",
+    "Service",
+    "default_id_generator",
+    "layer",
+    "make",
+]

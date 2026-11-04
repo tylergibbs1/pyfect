@@ -276,7 +276,7 @@ class RpcServer:
         # Started at once, as Effect's ``runForkWith``: an ``Interrupt``
         # written next finds the handler's ``on_interrupt`` in place.
         fiber = request_fiber._fork(
-            effect.pipe(provide_context(run.context)),
+            run.registered(effect.pipe(provide_context(run.context))),
             daemon=True,
             start_immediately=True,
             uninterruptible=options is not None and options.uninterruptible,
@@ -442,9 +442,19 @@ class _RequestRun:
                 report_unsafe(current, exit.cause)
         return write if close is None else write.ensuring(close)
 
+    def registered(self, handler: Effect[Any, Any, Any]) -> Effect[Any, Any, Any]:
+        """``handler`` registered as the request's fiber before it runs, as
+        Effect does: an ``Eof`` or ``Interrupt`` that its first step causes
+        synchronously (a fiber it wakes runs nested in it) finds it."""
+
+        def register(fiber: Fiber[Any, Any]) -> Effect[Any, Any, Any]:
+            self.client.fibers[self.request.id] = fiber
+            return handler
+
+        return _WithFiber(register)
+
     def watch(self, fiber: Fiber[Any, Any]) -> None:
         fiber.run_in(self.server._track)
-        self.client.fibers[self.request.id] = fiber
         fiber.add_observer_unsafe(self._observe)
 
     def _observe(self, exit: Exit.Exit[Any, Any]) -> None:

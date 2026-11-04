@@ -127,6 +127,7 @@ def with_config_override(overrides: ConfigService) -> P.WithConfigOverride[Confi
 
 
 __all__ = [
+    "AiError",
     "Config",
     "ConfigService",
     "ModelConfig",
