@@ -18,14 +18,14 @@ function Signature({ children }: { children: ReactNode }) {
   );
 }
 
-function Table({ head, children }: { head: string; children: ReactNode }) {
+function Table({ head, typeHead = 'Type', children }: { head: string; typeHead?: string; children: ReactNode }) {
   return (
     <div className="typeset-scroll no-scrollbar *:[table]:w-full">
       <table>
         <thead>
           <tr>
             <th>{head}</th>
-            <th>Type</th>
+            <th>{typeHead}</th>
             <th>Description</th>
           </tr>
         </thead>
@@ -63,7 +63,14 @@ export function PyAttribute(props: { name: string; type?: string; value?: string
   return <Row {...props} />;
 }
 
-export function PyAttributes({ children }: { children?: ReactNode }) {
+export function PyAttributes({ kind, children }: { kind?: 'types'; children?: ReactNode }) {
+  if (kind === 'types') {
+    return (
+      <Table head="Type" typeHead="Definition">
+        {children}
+      </Table>
+    );
+  }
   return <Table head="Attribute">{children}</Table>;
 }
 

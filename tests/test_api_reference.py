@@ -1,7 +1,8 @@
 """The site's API reference (`website/scripts/generate_api.py`) documents every
 public module and every value a public module exports, each with its type, and
 shows an overloaded function's overloads rather than its implementation's
-signature (which reads `-> Effect[Any, Any, Any]`).
+signature (which reads `-> Effect[Any, Any, Any]`), keeps every type parameter, and
+links what a package re-exports from its public submodules.
 
 The generator runs on fumadocs-python's `fumapy`, which ships only inside the
 site's node modules: run `bun install` in `website/` first (docs CI does).
@@ -66,11 +67,11 @@ def modules_of(tree: Tree) -> dict[str, Tree]:
 
 
 def is_value(obj: object) -> bool:
-    """What the reference lists under a module's values, not as a page or a function."""
+    """What the reference lists under a module's values or types, not as a page or a
+    function."""
     return not (
         isinstance(obj, type | types.ModuleType | types.FunctionType | types.BuiltinFunctionType)
         or typing.get_origin(obj) is not None  # a generic alias of a class
-        or isinstance(obj, typing.TypeAliasType)  # a type, not a value
         or (callable(obj) and hasattr(obj, "__wrapped__"))  # a decorated function
     )
 
@@ -128,21 +129,6 @@ def test_the_values_quill_and_atlas_looked_for_are_listed(reference: Tree):
     assert type_of("pyfect.byte_size.zero") == "ByteSize"
 
 
-def overloaded(tree: Tree) -> list[tuple[str, Any, Tree]]:
-    """(path, runtime function, reference entry) of every overloaded function."""
-    out: list[tuple[str, Any, Tree]] = []
-    for path, mod in modules_of(tree).items():
-        module = importlib.import_module(path)
-        for name, entry in mod["functions"].items():
-            out.append((f"{path}.{name}", getattr(module, name), entry))
-        for name, cls in mod["classes"].items():
-            runtime = getattr(module, name)
-            for method, entry in cls["functions"].items():
-                fn = inspect.getattr_static(runtime, method, None)
-                out.append((f"{path}.{name}.{method}", getattr(fn, "__func__", fn), entry))
-    return [(p, fn, e) for p, fn, e in out if fn is not None and typing.get_overloads(fn)]
-
-
 def test_an_overloaded_function_shows_its_overloads(reference: Tree):
     functions = overloaded(reference)
     assert len(functions) > 100
@@ -159,3 +145,149 @@ def test_an_overloaded_function_shows_its_overloads(reference: Tree):
         "[A, E, R](eff: Effect[A, E, Transaction | R]) -> Effect[A, E, R]",
     ]
     assert tx["returns"]["annotation"] is None
+
+
+def all_functions(tree: Tree) -> list[tuple[str, Any, Tree]]:
+    """(path, runtime function, reference entry) of every function and method."""
+    out: list[tuple[str, Any, Tree]] = []
+    for path, mod in modules_of(tree).items():
+        module = importlib.import_module(path)
+        for name, entry in mod["functions"].items():
+            out.append((f"{path}.{name}", getattr(module, name), entry))
+        for name, cls in mod["classes"].items():
+            runtime = getattr(module, name)
+            for method, entry in cls["functions"].items():
+                fn = inspect.getattr_static(runtime, method, None)
+                out.append((f"{path}.{name}.{method}", getattr(fn, "__func__", fn), entry))
+    return [(p, fn, e) for p, fn, e in out if fn is not None]
+
+
+def overloaded(tree: Tree) -> list[tuple[str, Any, Tree]]:
+    """(path, runtime function, reference entry) of every overloaded function."""
+    return [(p, fn, e) for p, fn, e in all_functions(tree) if typing.get_overloads(fn)]
+
+
+def _shown_type_parameters(line: str) -> list[str]:
+    """`[K: Key, R = Never](x: K) -> ...` -> ["K", "R"]."""
+    if not line.startswith("["):
+        return []
+    depth, end = 0, 0
+    for i, char in enumerate(line):
+        depth += {"[": 1, "]": -1}.get(char, 0)
+        if depth == 0:
+            end = i
+            break
+    names: list[str] = []
+    depth, start = 0, 1
+    for i, char in enumerate(line[: end + 1]):
+        if char in "[(" and i:
+            depth += 1
+        elif char in "])" and i < end:
+            depth -= 1
+        elif (char == "," and depth == 0) or i == end:
+            names.append(line[start:i].strip().split(":")[0].split("=")[0].strip().lstrip("*"))
+            start = i + 1
+    return names
+
+
+def test_a_generic_signature_keeps_its_type_parameters(reference: Tree):
+    """Each signature line names the type parameters its function declares, so
+    `make[K, A, E, R]` doesn't read as erased types."""
+    wrong: list[str] = []
+    checked = 0
+    for path, fn, entry in all_functions(reference):
+        signatures = typing.get_overloads(fn) or [fn]
+        for line, overload in zip(entry["signature"].split("\n"), signatures, strict=True):
+            signature = getattr(overload, "__func__", overload)  # a staticmethod's
+            declared = [t.__name__ for t in getattr(signature, "__type_params__", ())]
+            checked += bool(declared)
+            if _shown_type_parameters(line) != declared:
+                wrong.append(f"{path}: {line[:80]}")
+    assert checked > 500
+    assert wrong == []
+
+    make = modules_of(reference)["pyfect.persistence.persisted_cache"]["functions"]["make"]
+    assert make["signature"].startswith("[K: AnyPersistable, A, E, R = Never](lookup: ")
+    assert make["source"].startswith("@overload\ndef make[K: AnyPersistable, A, E, R = Never](")
+    for_each = modules_of(reference)["pyfect"]["functions"]["for_each"]
+    assert for_each["signature"].startswith("[T, B, E = Never, R = Never](items, f")
+
+
+def test_a_generic_class_shows_its_type_parameters(reference: Tree):
+    wrong: list[str] = []
+    for path, mod in modules_of(reference).items():
+        module = importlib.import_module(path)
+        for name, cls in mod["classes"].items():
+            declared = getattr(module, name).__dict__.get("__type_params__", ())
+            if declared and not (cls["description"] or "").startswith(f"`class {name}["):
+                wrong.append(f"{path}.{name}")
+    assert wrong == []
+    cache = modules_of(reference)["pyfect.persistence.persisted_cache"]["classes"]
+    assert cache["PersistedCache"]["description"].startswith(
+        "`class PersistedCache[K: AnyPersistable, R = Never, A = Any, E = Any]`"
+    )
+
+
+def test_a_type_alias_is_listed_with_its_definition(reference: Tree):
+    exit_types = {
+        a["name"]: a["annotation"] for a in modules_of(reference)["pyfect.exit"]["attributes"]
+    }
+    assert exit_types["Exit"] == "type Exit[A, E] = Success[A] | Failure[E]"
+    option = {a["name"]: a["annotation"] for a in modules_of(reference)["pyfect"]["attributes"]}
+    assert option["Option"] == "type Option[A] = Some[A] | None"
+
+
+def test_a_package_links_what_it_reexports_from_its_submodules(reference: Tree):
+    """`pyfect.sql.pg.layer` is defined (and documented) in `pyfect.sql.pg.client`;
+    the package's page links it rather than leaving it out."""
+    pg = modules_of(reference)["pyfect.sql.pg"]
+    text = "\n".join(section["value"] for section in pg["docstring"] if section["kind"] == "text")
+    assert "[`layer`](/docs/reference/sql/pg/client#layer)" in text
+    assert "[`PgPoolConfig`](/docs/reference/sql/pg/config/PgPoolConfig)" in text
+    for path, mod in modules_of(reference).items():
+        module = importlib.import_module(path)
+        documented = (
+            {a["name"] for a in mod["attributes"]}
+            | set(mod["classes"])
+            | set(mod["functions"])
+            | set(mod["modules"])
+        )
+        text = "\n".join(s["value"] for s in mod["docstring"] or [] if s["kind"] == "text")
+        unlinked = [
+            name
+            for name in getattr(module, "__all__", ())
+            if name not in documented
+            and f"[`{name}`](" not in text
+            and _defined_by_pyfect(getattr(module, name))
+        ]
+        assert unlinked == [], path
+
+
+def _defined_by_pyfect(value: object) -> bool:
+    """False for a class or function from elsewhere (`ipaddress.IPv4Address`), and
+    for a module (listed under its own name: `rpc_schema` is `pyfect.rpc.schema`)."""
+    if isinstance(value, types.ModuleType):
+        return False
+    module = getattr(value, "__module__", None)
+    return not isinstance(value, type | types.FunctionType) or str(module).startswith("pyfect")
+
+
+def test_reexport_links_point_at_reference_pages(reference: Tree):
+    """Re-export links are built, not written by hand: each must name a page (a
+    module's or a class's) and, for a function, a heading on it."""
+    import re
+
+    def url(path: str) -> str:
+        return "/docs/reference" + "".join(f"/{part}" for part in path.split(".")[1:])
+
+    modules = modules_of(reference)
+    pages = {url(path): mod for path, mod in modules.items()}
+    pages |= {url(cls["path"]): cls for mod in modules.values() for cls in mod["classes"].values()}
+    broken: list[str] = []
+    for path, mod in modules.items():
+        text = "\n".join(s["value"] for s in mod["docstring"] or [] if s["kind"] == "text")
+        for page, anchor in re.findall(r"\]\((/docs/reference[^)#]*)(?:#([^)]*))?\)", text):
+            target = pages.get(page)
+            if target is None or (anchor and anchor not in target["functions"]):
+                broken.append(f"{path}: {page}#{anchor}")
+    assert broken == []
