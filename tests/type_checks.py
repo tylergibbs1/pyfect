@@ -152,6 +152,7 @@ from pyfect.socket import WebSocketConstructor
 from pyfect.socket import datagram as dg
 from pyfect.sql import clickhouse as sql_clickhouse
 from pyfect.sql import client as sql_client
+from pyfect.sql import d1 as sql_d1
 from pyfect.sql import error as sql_error
 from pyfect.sql import libsql as sql_libsql
 from pyfect.sql import migrator as sql_migrator
@@ -5273,6 +5274,39 @@ def sql_mysql_driver(mysql_sql: sql_mysql.MysqlClientService) -> None:
     assert_type(sql_result.affected_rows(sql_mysql.ResultSetHeader(1, 2)), int)
     sql_mysql.MysqlClientConfig(password="secret")  # pyright: ignore[reportArgumentType]
     sql_mysql.MysqlClientConfig(port="3306")  # pyright: ignore[reportArgumentType]
+
+
+def sql_d1_driver(
+    d1_sql: sql_d1.D1ClientService,
+    users: Statement[str],
+    counts: Statement[int],
+) -> None:
+    """The D1 driver needs an ``HttpClient``; ``batch`` types each
+    statement's rows by position; ``update_values`` is not supported."""
+    from pyfect import redacted
+    from pyfect.http.client import HttpClient
+
+    config = sql_d1.D1ClientConfig(account_id="a", database_id="d", api_token=redacted.make("t"))
+    assert_type(
+        sql_d1.make(config),
+        fx.Effect[sql_d1.D1ClientService, Never, fx.Scope | reactivity.Reactivity | HttpClient],
+    )
+    assert_type(
+        sql_d1.layer(config), fx.Layer[sql_d1.D1Client | sql_client.SqlClient, Never, HttpClient]
+    )
+    assert_type(
+        sql_d1.layer_config({"account_id": fx.config.string("ACCOUNT")}),
+        fx.Layer[sql_d1.D1Client | sql_client.SqlClient, fx.ConfigError, HttpClient],
+    )
+    assert_type(d1_sql.batch(()), fx.Effect[tuple[()], sql_error.SqlError])
+    assert_type(
+        d1_sql.batch((users, counts)),
+        fx.Effect[tuple[list[str], list[int]], sql_error.SqlError],
+    )
+    assert_type(d1_sql.batch([users, users]), fx.Effect[tuple[list[str], ...], sql_error.SqlError])
+    assert_type(d1_sql.config, sql_d1.D1ClientConfig)
+    sql_d1.D1ClientConfig(account_id="a", database_id="d", api_token="t")  # pyright: ignore[reportArgumentType]
+    d1_sql.update_values([], "v")  # pyright: ignore[reportDeprecated]
 
 
 def sql_clickhouse_driver(

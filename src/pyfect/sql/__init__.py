@@ -3,7 +3,7 @@ with bound parameters, a client with transactions, batched resolvers,
 schema-typed queries, migrations, and a SQLite driver on ``sqlite3``. The
 PostgreSQL driver, ``pyfect.sql.pg`` on psycopg 3, is the ``pyfect-dev[pg]``
 extra and is not imported here, as are ``mysql``, ``mssql``, ``libsql``
-(libSQL and Turso) and ``clickhouse``.
+(libSQL and Turso), ``clickhouse`` and ``d1`` (Cloudflare D1).
 
 - ``statement``: fragments, helpers and compilers
 - ``client``: ``SqlClient`` and ``make`` for drivers

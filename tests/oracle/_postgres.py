@@ -196,7 +196,8 @@ class CancelGate:
     cancel sent at once, the server gets it late. ``intercepted`` is set
     when a cancel arrives, ``delivered`` once the server took it.
     ``pause()`` stops forwarding anything, as a server that stops
-    answering."""
+    answering, until ``resume()``; ``accepted`` counts the connections it
+    took (cancel requests aside)."""
 
     def __init__(self, server: PgServer) -> None:
         import threading
@@ -211,6 +212,7 @@ class CancelGate:
         self._released = threading.Event()
         self._flowing = threading.Event()
         self._flowing.set()
+        self.accepted = 0
         self._ends: list[socket.socket] = []
         self._thread = threading.Thread
         self._thread(target=self._serve, daemon=True).start()
@@ -224,6 +226,9 @@ class CancelGate:
 
     def pause(self) -> None:
         self._flowing.clear()
+
+    def resume(self) -> None:
+        self._flowing.set()
 
     def _serve(self) -> None:
         while True:
@@ -248,6 +253,7 @@ class CancelGate:
             return
         backend = socket.create_connection((self._server.host, self._server.port))
         self._ends += [client, backend]
+        self.accepted += 1
         backend.sendall(head)
         self._thread(target=self._pump, args=(backend, client), daemon=True).start()
         self._pump(client, backend)

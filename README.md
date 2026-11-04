@@ -144,7 +144,8 @@ layer, concurrency, retries and timeouts.
   and UDP sockets, all as services you can swap in tests. [Platform →](https://pyfect.dev/docs/platform)
 - **SQL.** Statements built from literal templates, so values are always bound parameters;
   transactions with savepoints, batching resolvers and migrations, on SQLite (standard
-  library) or PostgreSQL (psycopg). [SQL →](https://pyfect.dev/docs/sql)
+  library), PostgreSQL (psycopg), MySQL (asyncmy), SQL Server (python-tds), libSQL and
+  Turso, ClickHouse and Cloudflare D1 (the last three over HTTP). [SQL →](https://pyfect.dev/docs/sql)
 - **CLI.** Typed commands, flags and arguments with subcommands, generated help, shell
   completions and interactive prompts. [CLI →](https://pyfect.dev/docs/cli)
 - **HTTP server.** Routes and middleware added by layers, each handler an effect, served on
@@ -204,7 +205,8 @@ uv add "pyfect-dev @ git+https://github.com/tylergibbs1/pyfect"
 
 Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `httpx` (the
 HTTP client backend), `websockets` (WebSocket clients and servers), `server` (the uvicorn
-HTTP server), `pg` (the PostgreSQL driver, on psycopg), `redis` (the Redis client, on
+HTTP server), `pg` (the PostgreSQL driver, on psycopg), `mysql` (the MySQL driver, on
+asyncmy), `mssql` (the SQL Server driver, on python-tds), `redis` (the Redis client, on
 redis-py) and `eventlog` (the event log's encryption, on cryptography), for example
 `uv add "pyfect-dev[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
 

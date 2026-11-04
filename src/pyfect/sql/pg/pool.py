@@ -5,6 +5,10 @@ again down to ``min_connections`` after ``idle_timeout`` unused. A
 checkout skips (and replaces) a session that died, outlived its
 ``connection_ttl``, or had a cancel PostgreSQL did not confirm. Every
 checkout is exclusive.
+
+With ``SpanPropagationEnabled`` (and span timing), a statement that waited
+for a new session gets a ``db.connect`` child span covering the part of
+the connect it waited for, with ``db.client.connection.connect_time_ms``.
 """
 # pyright: reportPrivateUsage=false
 
@@ -13,13 +17,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Never
 
-from pyfect._core import Effect, _Suspend
+from pyfect._core import Effect, _Succeed, _Suspend, _WithFiber
+from pyfect._fiber import Fiber
 from pyfect._primitives import Restore, uninterruptible_mask
-from pyfect.clock import monotonic
-from pyfect.context import Tag
+from pyfect._tracer_ref import CurrentTracer
+from pyfect.clock import Clock, ClockService, monotonic
+from pyfect.context import Context, Tag
 from pyfect.duration import to_seconds
 from pyfect.effect import fail, provide_service, succeed, sync
-from pyfect.exit import Failure
+from pyfect.exit import Failure, Success
 from pyfect.pool import Pool
 from pyfect.scope import CloseableScope, Scope, add_finalizer, scoped
 from pyfect.sql.error import SqlError
@@ -27,6 +33,11 @@ from pyfect.sql.pg.config import PgPoolConfig
 from pyfect.sql.pg.connection import PgConnection
 from pyfect.sql.pg.connection import make as make_connection
 from pyfect.sql.pg.error import connection_error
+from pyfect.sql.statement import SpanPropagationEnabled
+from pyfect.tracer._model import ExternalSpan, SpanRequest
+from pyfect.tracer._refs import ParentSpan, TracerEnabled, TracerTimingEnabled
+
+_VOID: Effect[None] = _Succeed(None)
 
 
 class PgPoolService:
@@ -39,7 +50,7 @@ class PgPoolService:
     - ``invalidate(connection)``: replace a session
     """
 
-    __slots__ = ("_check_out", "_pool", "_slow_use", "config")
+    __slots__ = ("_check_out", "_hand_out", "_pool", "_slow_use", "config")
 
     def __init__(
         self,
@@ -47,11 +58,13 @@ class PgPoolService:
         pool: Pool[PgConnection, SqlError],
         check_out: Effect[PgConnection, SqlError, Scope],
         slow_use: Callable[[], bool],
+        hand_out: Callable[[PgConnection], Effect[PgConnection]],
     ) -> None:
         self.config = config
         self._pool = pool
         self._check_out = check_out
         self._slow_use = slow_use
+        self._hand_out = hand_out
 
     @property
     def get(self) -> Effect[PgConnection, SqlError, Scope]:
@@ -67,7 +80,7 @@ class PgPoolService:
         def body() -> Effect[A, E | SqlError, R]:
             if self._slow_use():
                 return scoped(self._check_out.flat_map(f))
-            return self._pool.use(f)
+            return self._pool.use(lambda connection: self._hand_out(connection).flat_map(f))
 
         return _Suspend(body)
 
@@ -105,8 +118,80 @@ def _with_timeout[A](
     return uninterruptible_mask(body)
 
 
+class _Connects:
+    """When each session's connect started and ended (on the pool's clock),
+    until its first checkout reports it. The pool connects on its own
+    fiber, where a span would have no statement parent."""
+
+    __slots__ = ("_clock", "_opened")
+
+    def __init__(self, clock: ClockService) -> None:
+        self._clock = clock
+        self._opened: dict[PgConnection, tuple[int, int]] = {}
+
+    def timed[E](self, connect: Effect[PgConnection, E, Scope]) -> Effect[PgConnection, E, Scope]:
+        """``connect``, recording its times until the session's first
+        checkout or its close, whichever comes first (Effect's WeakMap)."""
+
+        def body() -> Effect[PgConnection, E, Scope]:
+            start = self._clock.now_nanos_unsafe()
+
+            def opened(connection: PgConnection) -> Effect[PgConnection, Never, Scope]:
+                self._opened[connection] = (start, self._clock.now_nanos_unsafe())
+
+                def forget(_: object) -> Effect[None]:
+                    return sync(lambda: self._opened.pop(connection, None)).as_(None)
+
+                return add_finalizer(forget).as_(connection)
+
+            return connect.flat_map(opened)
+
+        return _Suspend(body)
+
+    def hand_out(self, connection: PgConnection) -> Effect[PgConnection]:
+        if connection not in self._opened:
+            return _Succeed(connection)
+        return _WithFiber(lambda fiber: self._report(fiber, connection).as_(connection))
+
+    def _report(self, fiber: Fiber[Any, Any], connection: PgConnection) -> Effect[None]:
+        start, end = self._opened.pop(connection)
+        statement = fiber.get_ref(ParentSpan)
+        # Without span timing the statement span has no start time.
+        if (
+            statement is None
+            or isinstance(statement, ExternalSpan)
+            or not fiber.get_ref(TracerEnabled)
+            or not fiber.get_ref(SpanPropagationEnabled)
+            or not fiber.get_ref(TracerTimingEnabled)
+        ):
+            return _VOID
+        waited_from = statement.status.start_time
+        if end < waited_from:
+            return _VOID
+        span = fiber.get_ref(CurrentTracer).span(
+            SpanRequest(
+                name="db.connect",
+                parent=statement,
+                annotations=Context.empty(),
+                links=[],
+                start_time=max(start, waited_from),
+                kind="client",
+                root=False,
+                sampled=statement.sampled,
+            )
+        )
+        span.attribute("db.system.name", "postgresql")
+        span.attribute("db.client.connection.connect_time_ms", (end - start) / 1e6)
+        span.end(end, Success(None))
+        return _VOID
+
+
 def make(config: PgPoolConfig) -> Effect[PgPoolService, SqlError, Scope]:
     """A pool; closing the scope closes every session."""
+    return _WithFiber(lambda fiber: _make(config, _Connects(fiber.get_ref(Clock))))
+
+
+def _make(config: PgPoolConfig, connects: _Connects) -> Effect[PgPoolService, SqlError, Scope]:
     ttl = None if config.connection_ttl is None else to_seconds(config.connection_ttl)
     timeout = None if config.acquire_timeout is None else to_seconds(config.acquire_timeout)
     opened_at: dict[PgConnection, float] = {}
@@ -128,7 +213,7 @@ def make(config: PgPoolConfig) -> Effect[PgPoolService, SqlError, Scope]:
 
         return monotonic().flat_map(opened)
 
-    acquire = make_connection(config).tap(track)
+    acquire = connects.timed(make_connection(config)).tap(track)
 
     def expired(connection: PgConnection, now: float) -> bool:
         if connection.needs_retire:
@@ -151,14 +236,16 @@ def make(config: PgPoolConfig) -> Effect[PgPoolService, SqlError, Scope]:
 
             return monotonic().flat_map(at)
 
-        return pool.get().flat_map(checked)
+        return pool.get().flat_map(checked).flat_map(connects.hand_out)
 
     def slow_use() -> bool:
         return ttl is not None or timeout is not None or any(c.needs_retire for c in opened_at)
 
     def build(pool: Pool[PgConnection, SqlError]) -> PgPoolService:
         holder.append(pool)
-        return PgPoolService(config, pool, _with_timeout(_Suspend(check_out), timeout), slow_use)
+        return PgPoolService(
+            config, pool, _with_timeout(_Suspend(check_out), timeout), slow_use, connects.hand_out
+        )
 
     pool: Effect[Pool[PgConnection, SqlError], Never, Any] = Pool.make_with_ttl(
         acquire,

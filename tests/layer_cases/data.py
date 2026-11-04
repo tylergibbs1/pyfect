@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, TypedDict
 
 from oracle import _clickhouse, _mssql, _mysql, _postgres, _redis
+from oracle._d1_fake import FakeD1
 
 import pyfect as fx
 from layer_cases._case import Case
@@ -60,7 +61,7 @@ from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.socket import server as socket_server
 from pyfect.socket.server import SocketServer
-from pyfect.sql import clickhouse, libsql, mssql, mysql, pg, sqlite
+from pyfect.sql import clickhouse, d1, libsql, mssql, mysql, pg, sqlite
 from pyfect.sql.clickhouse import migrator as clickhouse_migrator
 from pyfect.sql.client import SqlClient
 from pyfect.sql.libsql import migrator as libsql_migrator
@@ -92,6 +93,17 @@ def _temporary_directory() -> str:
 
 def _sqlite() -> AnyLayer:
     return sqlite.layer(sqlite.SqliteClientConfig(filename=":memory:"))
+
+
+def _d1_provider() -> AnyLayer:
+    from oracle import _d1_fake
+
+    return _provider(
+        D1_ACCOUNT=_d1_fake.ACCOUNT,
+        D1_DATABASE=_d1_fake.DATABASE,
+        D1_TOKEN=_d1_fake.TOKEN,
+        D1_BASE_URL=_d1_fake.BASE,
+    )
 
 
 def _libsql() -> AnyLayer:
@@ -210,6 +222,30 @@ _SQL: dict[str, Case] = {
         ),
         needs=_sqlite,
         use=_gen(_migrated_table),
+    ),
+    # Each run gets its own fake D1 (its own in-memory database) as the
+    # HttpClient the shared layer value needs.
+    "pyfect.sql.d1.client.layer": Case(
+        layer=lambda: d1.layer(FakeD1().config()),
+        needs=lambda: FakeD1().layer,
+        use=_gen(_fresh_database),
+    ),
+    "pyfect.sql.d1.client.layer_config": Case(
+        layer=lambda: d1.layer_config(
+            {
+                "account_id": config.string("D1_ACCOUNT"),
+                "database_id": config.string("D1_DATABASE"),
+                "api_token": config.redacted("D1_TOKEN"),
+                "base_url": config.string("D1_BASE_URL"),
+            }
+        ),
+        needs=lambda: fx.layer.merge(_d1_provider(), FakeD1().layer),
+        use=_gen(_fresh_database),
+    ),
+    "pyfect.sql.d1.client.layer_from": Case(
+        layer=lambda: d1.layer_from(d1.make(FakeD1().config())),
+        needs=lambda: FakeD1().layer,
+        use=_gen(_fresh_database),
     ),
     "pyfect.sql.libsql.client.layer": Case(layer=_libsql, use=_gen(_fresh_database)),
     "pyfect.sql.libsql.client.layer_config": Case(

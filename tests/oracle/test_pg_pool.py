@@ -23,8 +23,12 @@ Omitted:
 - "retries a stale background acquisition rather than failing an unrelated
   checkout": needs a scripted server that answers some startups and stalls
   others (a ``stream`` factory).
-- The "PgPool connection spans" block: there is no ``db.connect`` span
-  (libpq connects in one call).
+
+Adapted: the "PgPool connection spans" tests hold each connect in a paused
+``CancelGate`` (Effect's held-startup ``stream`` factory) for 40 ms of real
+time (a ``TestClock`` adjustment waits for the held connect, on the SQL
+loop thread, to finish), so the connect takes at least 40 ms and starts
+when the pool opens the session, just after the statement's span.
 """
 # pyright: reportPrivateUsage=false
 
@@ -46,6 +50,7 @@ from pyfect.sql import pg
 from pyfect.sql.client import SqlClient
 from pyfect.sql.error import SqlError
 from pyfect.sql.pg.connection import PgConnection, Result
+from pyfect.sql.statement import SpanPropagationEnabled
 
 from ._postgres import (
     CancelGate,
@@ -647,3 +652,162 @@ def test_a_released_client_interrupts_naming_the_closed_pool(pg_server: PgServer
     error = exit_.cause.squash()
     assert isinstance(error, Interrupted)
     assert "because the Pool is closed" in "\n".join(error.__notes__)
+
+
+# --- PgPool connection spans --------------------------------------------------
+
+
+def _recording() -> tuple[fx.tracer.Tracer, list[fx.tracer.NativeSpan]]:
+    spans: list[fx.tracer.NativeSpan] = []
+
+    def make(request: fx.tracer.SpanRequest) -> fx.tracer.NativeSpan:
+        span = fx.tracer.NativeSpan(request)
+        spans.append(span)
+        return span
+
+    return fx.tracer.Tracer(make), spans
+
+
+def _accepted(gate: CancelGate, count: int) -> fx.Effect[None]:
+    """Wait until ``gate`` took ``count`` connections."""
+
+    def body() -> Generator[Any, Any]:
+        deadline = time.monotonic() + 5
+        while gate.accepted < count:
+            assert time.monotonic() < deadline, "timed out waiting for a connect"
+            yield from fx.sleep(0.001)
+
+    return fx.gen(body)
+
+
+def _first_checkout(
+    gate: CancelGate,
+    checkout: Any,
+    *,
+    acquire_timeout: float | None = None,
+    propagate: bool = True,
+    timing: bool = True,
+) -> fx.Effect[tuple[list[fx.tracer.NativeSpan], fx.tracer.NativeSpan], Any]:
+    """A statement whose checkout opens the pool's first session, the
+    connect answered after 40 ms, then a second statement on that session."""
+    tracer, spans = _recording()
+
+    def body():
+        pool = yield from pg.pool.make(
+            pg.PgPoolConfig(url=gate.url, max_connections=1, acquire_timeout=acquire_timeout)
+        )
+        gate.pause()
+        first = yield from fx.scoped(checkout(pool)).with_span("first statement").fork()
+        yield from _accepted(gate, gate.accepted + 1)
+        yield from fx.sleep(0.04)
+        gate.resume()
+        yield from first.join()
+        yield from fx.scoped(pool.get).with_span("second statement")
+        connects = [s for s in spans if s.name == "db.connect"]
+        return connects, next(s for s in spans if s.name == "first statement")
+
+    return (
+        fx.scoped(fx.gen(body))
+        .pipe(fx.provide_service(fx.tracer.TracerTimingEnabled, timing))
+        .with_tracer(tracer)
+        .pipe(fx.provide_service(SpanPropagationEnabled, propagate))
+    )
+
+
+@testing.live
+def test_reports_the_connect_a_statement_waited_for_under_its_span(cancel_gate: CancelGate):
+    """PgPool connection spans / reports the connect a statement waited for under its span,
+    only with propagation and timing"""
+
+    def use(pool: pg.PgPoolService) -> fx.Effect[None, SqlError]:
+        return pool.use(lambda _: fx.void)
+
+    def reserve(pool: pg.PgPoolService) -> fx.Effect[PgConnection, SqlError, Scope]:
+        return pool.reserve
+
+    for checkout, acquire_timeout in ((use, None), (use, 1.0), (reserve, None)):
+        connects, first = yield from _first_checkout(
+            cancel_gate, checkout, acquire_timeout=acquire_timeout
+        )
+        assert len(connects) == 1
+        (connect,) = connects
+        assert connect.parent is first
+        assert connect.status.start_time >= first.status.start_time
+        connect_time = connect.attributes.get("db.client.connection.connect_time_ms")
+        assert isinstance(connect_time, float)
+        assert connect_time >= 40
+        assert connect.attributes.get("db.system.name") == "postgresql"
+        assert connect.kind == "client"
+    connects, _ = yield from _first_checkout(cancel_gate, use, propagate=False)
+    assert connects == []
+    connects, _ = yield from _first_checkout(cancel_gate, use, timing=False)
+    assert connects == []
+
+
+@testing.live
+def test_reports_no_connect_for_a_session_that_was_ready_before_the_statement(
+    pg_server: PgServer,
+):
+    """PgPool connection spans / reports no connect for a session that was ready before the
+    statement"""
+    tracer, spans = _recording()
+
+    def body():
+        pool = yield from pg.pool.make(_config(pg_server, min_connections=1, max_connections=2))
+        # The background session gives no signal when it is ready.
+        yield from fx.sleep(0.2)
+
+        def statements():
+            yield from pool.get.with_span("ready statement")
+            waiting = yield from fx.scoped(pool.get).with_span("waiting statement").fork()
+            yield from waiting.join()
+
+        yield from fx.scoped(fx.gen(statements))
+        connects = [s for s in spans if s.name == "db.connect"]
+        assert len(connects) == 1
+        waiting = next(s for s in spans if s.name == "waiting statement")
+        assert connects[0].parent is waiting
+
+    yield from (
+        fx.scoped(fx.gen(body))
+        .with_tracer(tracer)
+        .pipe(fx.provide_service(SpanPropagationEnabled, True))
+    )
+
+
+def _dead_sessions(url: object) -> int:
+    import gc
+
+    gc.collect()
+    return sum(
+        1
+        for o in gc.get_objects()
+        if isinstance(o, PgConnection) and o.config.url == url and o.is_dead
+    )
+
+
+@testing.live
+def test_forgets_the_connect_of_a_session_closed_before_its_first_checkout(
+    cancel_gate: CancelGate,
+):
+    """Effect keeps connect times in a WeakMap: a session the pool closes
+    before anyone checked it out (here, opened for a checkout that timed
+    out and then idle past ``idle_timeout``) is not kept alive by them."""
+
+    def body():
+        pool = yield from pg.pool.make(
+            pg.PgPoolConfig(
+                url=cancel_gate.url, max_connections=1, idle_timeout=0.05, acquire_timeout=0.05
+            )
+        )
+        cancel_gate.pause()
+        timed_out = yield from fx.scoped(pool.get).exit()
+        assert isinstance(timed_out, Failure)
+        cancel_gate.resume()
+        yield from _accepted(cancel_gate, 1)
+        # Long enough for the connect to land and the idle session to close.
+        yield from fx.sleep(0.5)
+        assert _dead_sessions(cancel_gate.url) == 0
+        del pool
+
+    yield from fx.scoped(fx.gen(body))

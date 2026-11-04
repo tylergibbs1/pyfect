@@ -8,7 +8,7 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from pyfect._core import Effect, _Succeed, _Suspend, _Sync
 from pyfect.sql.connection import Row, TransformRows, ValueRow
@@ -184,20 +184,36 @@ class SqliteConnection:
         return self._call(run).or_die().flat_map(stop)
 
 
+def _target(filename: str, readonly: bool) -> tuple[str, bool]:
+    """What ``sqlite3.connect`` opens for ``filename``, and whether it is a
+    URI. A ``file:`` URI is opened as one (as ``node:sqlite`` does); a
+    readonly client opens any file through a URI with ``mode=ro`` (the
+    ``SQLITE_OPEN_READONLY`` flag ``sqlite3`` cannot pass)."""
+    is_uri = filename.startswith("file:")
+    if not readonly:
+        return filename, is_uri
+    if not is_uri:
+        return f"file:{quote(filename)}?mode=ro", True
+    parts = urlsplit(filename)
+    params = [p for p in parts.query.split("&") if p and not p.startswith("mode=")]
+    return urlunsplit(parts._replace(query="&".join([*params, "mode=ro"]))), True
+
+
 def open_connection(
     filename: str, *, readonly: bool, prepare_cache_size: int
 ) -> Effect[SqliteConnection, SqlError]:
-    """Open ``filename`` on a new worker thread."""
+    """Open ``filename`` (a path, ``:memory:`` or a ``file:`` URI) on a new
+    worker thread."""
+    target, uri = _target(filename, readonly)
 
     def connect() -> sqlite3.Connection:
-        target = f"file:{quote(filename)}?mode=ro" if readonly else filename
         return sqlite3.connect(
             target,
             timeout=0,
             isolation_level=None,
             check_same_thread=False,
             cached_statements=prepare_cache_size,
-            uri=readonly,
+            uri=uri,
         )
 
     def body() -> Effect[SqliteConnection, SqlError]:

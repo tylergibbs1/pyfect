@@ -45,7 +45,8 @@ _WAL_RETRY = 0.01
 class SqliteClientConfig:
     """How to open the database.
 
-    - ``filename``: a path, or ``":memory:"``
+    - ``filename``: a path, ``":memory:"``, or a ``file:`` URI (its
+      parameters, such as ``?immutable=1``, apply)
     - ``readonly``: open it read-only (and start transactions with a plain
       ``BEGIN``; otherwise ``BEGIN IMMEDIATE``)
     - ``prepare_cache_size``: how many prepared statements to keep
