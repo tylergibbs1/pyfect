@@ -95,6 +95,7 @@ __all__ = [
     "CompactionItem",
     "Conflict",
     "CurrentStoreId",
+    "EventJournalError",
     "EventLog",
     "EventLogSchema",
     "EventLogService",

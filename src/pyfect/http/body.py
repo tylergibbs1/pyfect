@@ -411,6 +411,7 @@ __all__ = [
     "HttpBody",
     "HttpBodyError",
     "JsonError",
+    "PlatformError",
     "Raw",
     "SchemaErrorReason",
     "Stream",

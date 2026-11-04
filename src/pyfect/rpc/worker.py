@@ -85,6 +85,7 @@ def initial_message[A](
 __all__ = [
     "Encoded",
     "InitialMessage",
+    "NoSuchElementException",
     "initial_message",
     "layer_initial_message",
     "make_initial_message",

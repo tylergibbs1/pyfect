@@ -78,6 +78,7 @@ class WorkerRunnerPlatform(
 __all__ = [
     "Handler",
     "PlatformMessage",
+    "WorkerError",
     "WorkerRunner",
     "WorkerRunnerPlatform",
     "WorkerRunnerPlatformService",

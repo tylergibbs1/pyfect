@@ -240,6 +240,7 @@ def layer_config(
 __all__ = [
     "BackupMetadata",
     "RunResult",
+    "SqlError",
     "SqliteClient",
     "SqliteClientConfig",
     "SqliteClientService",

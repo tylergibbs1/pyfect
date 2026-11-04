@@ -448,6 +448,7 @@ def from_web_handler(
 
 __all__ = [
     "Fork",
+    "HttpServerError",
     "WebHandler",
     "WebHandlerLayer",
     "from_web_handler",

@@ -170,4 +170,9 @@ def make(config: PgPoolConfig) -> Effect[PgPoolService, SqlError, Scope]:
     return pool.map(build)
 
 
-__all__ = ["PgPool", "PgPoolService", "make"]
+__all__ = [
+    "PgPool",
+    "PgPoolService",
+    "SqlError",
+    "make",
+]

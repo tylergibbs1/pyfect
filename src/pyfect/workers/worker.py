@@ -264,6 +264,7 @@ __all__ = [
     "SpawnerFn",
     "Transfers",
     "Worker",
+    "WorkerError",
     "WorkerPlatform",
     "WorkerPlatformService",
     "layer_spawner",

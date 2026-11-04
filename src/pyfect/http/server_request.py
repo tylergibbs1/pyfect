@@ -701,10 +701,12 @@ def schema_body_form_json[T, RD](
 __all__ = [
     "BodyTooLargeError",
     "ClientRequest",
+    "HttpServerError",
     "HttpServerRequest",
     "MaxBodySize",
     "ParsedSearchParams",
     "RequestProtocol",
+    "SchemaError",
     "ServerRequest",
     "SourceRequest",
     "form_data_body",

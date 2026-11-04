@@ -541,6 +541,7 @@ def response_of_defect(defect: BaseException) -> HttpServerResponse | None:
 __all__ = [
     "ContentTypeOptions",
     "CookieEntry",
+    "CookiesError",
     "HttpServerResponse",
     "JsonResponder",
     "Options",

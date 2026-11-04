@@ -245,6 +245,7 @@ __all__ = [
     "Crypto",
     "CryptoService",
     "DigestAlgorithm",
+    "PlatformError",
     "UuidFormat",
     "layer",
     "live",

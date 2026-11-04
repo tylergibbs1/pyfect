@@ -337,4 +337,11 @@ def layer_test(
     return layer_test_client.pipe(provide_merge(httpx_layer)).pipe(provide_merge(server))
 
 
-__all__ = ["Options", "layer", "layer_server", "layer_test", "make"]
+__all__ = [
+    "Options",
+    "SocketServerError",
+    "layer",
+    "layer_server",
+    "layer_test",
+    "make",
+]

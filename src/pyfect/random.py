@@ -132,6 +132,7 @@ def with_seed(seed: str | float) -> _WithSeed:
 
 __all__ = [
     "LiveRandom",
+    "NoSuchElementException",
     "Random",
     "RandomService",
     "choice",

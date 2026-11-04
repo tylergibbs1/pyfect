@@ -473,6 +473,7 @@ def layer_server(
 
 
 __all__ = [
+    "SocketServerError",
     "WsWebSocket",
     "layer_server",
     "layer_web_socket",

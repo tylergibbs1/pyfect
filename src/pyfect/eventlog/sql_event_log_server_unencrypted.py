@@ -41,7 +41,7 @@ from pyfect.sql.statement import Fragment, Identifier, Statement
 from pyfect.stream import Stream, from_iterable, from_subscription
 from pyfect.stream import unwrap as stream_unwrap
 
-__all__ = ["layer_storage", "make_storage"]
+__all__ = ["SqlError", "layer_storage", "make_storage"]
 
 type _Dialect = Literal["sqlite", "pg"]
 

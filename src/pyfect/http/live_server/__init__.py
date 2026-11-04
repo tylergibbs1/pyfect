@@ -179,6 +179,7 @@ def layer_test(
 
 __all__ = [
     "Options",
+    "SocketServerError",
     "TlsOptions",
     "layer",
     "layer_server",

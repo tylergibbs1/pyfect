@@ -201,6 +201,7 @@ layer_memory: layer_.Layer[RunnerStorage] = layer_.effect(RunnerStorage, make_me
 
 __all__ = [
     "EncodedRunnerStorage",
+    "PersistenceError",
     "RunnerStorage",
     "RunnerStorageService",
     "encode_runner",

@@ -3,9 +3,11 @@ every exception a public module exports has a public ``__module__`` that
 exports it (``pyfect._public.publish``), and a missing service lists the
 services the program provided, not the runtime's own."""
 
+import builtins
 import importlib
 import inspect
 import pkgutil
+import sys
 import types
 from typing import Any
 
@@ -136,3 +138,119 @@ def test_unsafe_names_use_effects_suffix():
             if name.startswith("unsafe_") and name not in _EFFECT_PREFIX_NAMES:
                 found.add(f"{path.relative_to(source)}: {name}")
     assert sorted(found) == []
+
+
+class _Unresolved:
+    def __class_getitem__(cls, _item: object) -> type["_Unresolved"]:
+        return cls
+
+
+class _Annotations(dict[str, object]):
+    """Names an annotation string sees: the function's type parameters and module
+    globals; a name that exists only under ``TYPE_CHECKING`` becomes a class of its
+    own (not an exception), so the rest of the annotation still evaluates."""
+
+    def __init__(self, fn: Any) -> None:
+        super().__init__({t.__name__: t for t in getattr(fn, "__type_params__", ())})
+        self.globals: dict[str, Any] = fn.__globals__
+
+    def __missing__(self, name: str) -> object:
+        if name in self.globals:
+            return self.globals[name]
+        if hasattr(builtins, name):
+            return getattr(builtins, name)
+        if name.startswith("__"):  # a frame lookup (pytest's __tracebackhide__)
+            raise KeyError(name)
+        return type(name, (_Unresolved,), {})
+
+
+def _return_annotation(fn: Any) -> object:
+    if sys.version_info >= (3, 14):
+        import annotationlib
+
+        annotations = annotationlib.get_annotations(fn, format=annotationlib.Format.STRING)
+    else:
+        annotations = inspect.get_annotations(fn)
+    returned = annotations.get("return")
+    return (
+        eval(returned, fn.__globals__, _Annotations(fn)) if isinstance(returned, str) else returned
+    )
+
+
+def _failure_types(fn: Any) -> set[type[BaseException]]:
+    """The exception classes in the error channel of ``fn``'s ``Effect`` return
+    annotation (each overload's), unions flattened; TypeVars are skipped."""
+    import typing
+
+    from pyfect._core import Effect
+
+    def flatten(t: object) -> list[object]:
+        if typing.get_origin(t) in (typing.Union, types.UnionType):
+            return [leaf for arg in typing.get_args(t) for leaf in flatten(arg)]
+        return [t]
+
+    found: set[type[BaseException]] = set()
+    for signature in typing.get_overloads(fn) or [fn]:
+        returned = _return_annotation(getattr(signature, "__func__", signature))
+        if typing.get_origin(returned) is not Effect or len(typing.get_args(returned)) < 2:
+            continue
+        found.update(
+            leaf
+            for leaf in flatten(typing.get_args(returned)[1])
+            if isinstance(leaf, type) and issubclass(leaf, BaseException)
+        )
+    return found
+
+
+def _public_functions() -> list[tuple[str, types.ModuleType, Any]]:
+    """(name, module, function) of each function a public module exports, and of
+    each public method of a class it exports."""
+    out: list[tuple[str, types.ModuleType, Any]] = []
+    for name in _public_modules():
+        try:
+            module = importlib.import_module(name)
+        except ImportError:  # behind an extra that is not installed
+            continue
+        for attr in getattr(module, "__all__", ()):
+            value: Any = getattr(module, attr)
+            if inspect.isfunction(value):
+                out.append((f"{name}.{attr}", module, value))
+            elif inspect.isclass(value) and value.__module__.startswith("pyfect."):
+                for method, member in vars(value).items():
+                    fn = getattr(member, "__func__", member)
+                    if not method.startswith("_") and inspect.isfunction(fn):
+                        out.append((f"{name}.{attr}.{method}", module, fn))
+    return out
+
+
+def test_every_error_a_public_function_fails_with_is_exported_by_a_public_module():
+    """A user who catches it can import it from where it is documented."""
+    wrong: set[str] = set()
+    for where, _, fn in _public_functions():
+        for error in _failure_types(fn):
+            home = importlib.import_module(error.__module__)
+            if error.__module__ == "builtins":
+                continue
+            if is_private(error.__module__) or error.__name__ not in getattr(home, "__all__", ()):
+                wrong.add(f"{where}: {error.__module__}.{error.__qualname__}")
+    assert sorted(wrong) == []
+
+
+# pyfect.ai is being reworked on its own branch (M12); its modules join this
+# check when that lands.
+_NOT_YET_REEXPORTED = "pyfect.ai"
+
+
+def test_a_module_that_has_an_error_its_functions_fail_with_exports_it():
+    """``from pyfect.persistence.persisted_cache import PersistenceError`` works at
+    runtime because the module imports it; it must also be in ``__all__``, or
+    pyright reports a private import where the user met the error."""
+    wrong: set[str] = set()
+    for where, module, fn in _public_functions():
+        if module.__name__.startswith(_NOT_YET_REEXPORTED):
+            continue
+        exported = getattr(module, "__all__", ())
+        for error in _failure_types(fn):
+            if vars(module).get(error.__name__) is error and error.__name__ not in exported:
+                wrong.add(f"{module.__name__}.{error.__name__} (met in {where})")
+    assert sorted(wrong) == []

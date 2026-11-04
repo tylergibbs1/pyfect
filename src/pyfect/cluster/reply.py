@@ -214,6 +214,7 @@ __all__ = [
     "Chunk",
     "ChunkEncoded",
     "Encoded",
+    "MalformedMessage",
     "Reply",
     "ReplyWithContext",
     "WithExit",

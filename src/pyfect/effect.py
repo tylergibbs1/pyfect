@@ -425,6 +425,8 @@ def provide_service[S, T](tag: TagLike[S, T], service: S) -> _ProvideService[S, 
 __all__ = [
     "AsyncioRequiredError",
     "Gen",
+    "NoSuchElementException",
+    "UnknownError",
     "blocking",
     "callback",
     "catch_all",
