@@ -1,8 +1,9 @@
 """Reuse cases for the sql, persistence, eventlog and reactivity layers.
 
-SQLite cases use an in-memory database per run; PostgreSQL, MySQL and
-Redis cases use the throwaway servers of ``oracle._postgres`` /
-``oracle._mysql`` / ``oracle._redis`` (they skip without them). Uses that
+SQLite cases use an in-memory database per run; PostgreSQL, MySQL, SQL
+Server and Redis cases use the throwaway servers of ``oracle._postgres`` /
+``oracle._mysql`` / ``oracle._mssql`` / ``oracle._redis`` (they skip
+without them). Uses that
 touch an external store (a file, a server) pass whether or not an earlier
 run's data is still there."""
 
@@ -19,7 +20,7 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
-from oracle import _mysql, _postgres, _redis
+from oracle import _mssql, _mysql, _postgres, _redis
 
 import pyfect as fx
 from layer_cases._case import Case
@@ -59,8 +60,9 @@ from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.socket import server as socket_server
 from pyfect.socket.server import SocketServer
-from pyfect.sql import mysql, pg, sqlite
+from pyfect.sql import mssql, mysql, pg, sqlite
 from pyfect.sql.client import SqlClient
+from pyfect.sql.mssql import migrator as mssql_migrator
 from pyfect.sql.mysql import migrator as mysql_migrator
 from pyfect.sql.pg import migrator as pg_migrator
 from pyfect.sql.sqlite import migrator as sqlite_migrator
@@ -106,6 +108,14 @@ def _mysql_client() -> AnyLayer:
     return mysql.layer(_mysql_config())
 
 
+def _mssql_config() -> mssql.MssqlClientConfig:
+    return _mssql.server().config(max_connections=2)
+
+
+def _mssql_client() -> AnyLayer:
+    return mssql.layer(_mssql_config())
+
+
 def _fresh_database():
     """A table made in this run is the only one: each build opens its own
     in-memory database."""
@@ -129,6 +139,13 @@ def _create_items_mysql():
     sql = yield from SqlClient()
     yield from sql(
         "CREATE TABLE layer_reuse_items (id INT AUTO_INCREMENT PRIMARY KEY, name TEXT NOT NULL)"
+    )
+
+
+def _create_items_mssql():
+    sql = yield from SqlClient()
+    yield from sql(
+        "CREATE TABLE layer_reuse_items (id INT IDENTITY PRIMARY KEY, name NVARCHAR(MAX) NOT NULL)"
     )
 
 
@@ -192,6 +209,37 @@ _SQL: dict[str, Case] = {
             table="layer_reuse_migrations",
         ),
         needs=_mysql_client,
+        use=_gen(_migrated_table),
+    ),
+    "pyfect.sql.mssql.client.layer": Case(layer=_mssql_client, use=_gen(_select_one)),
+    "pyfect.sql.mssql.client.layer_config": Case(
+        layer=lambda: mssql.layer_config(
+            {
+                "server": config.string("MSSQL_SERVER"),
+                "port": config.integer("MSSQL_PORT"),
+                "username": config.string("MSSQL_USERNAME"),
+                "password": config.redacted("MSSQL_PASSWORD"),
+                "trust_server": config.boolean("MSSQL_TRUST_SERVER"),
+            }
+        ),
+        needs=lambda: _provider(
+            MSSQL_SERVER=_mssql.server().host,
+            MSSQL_PORT=str(_mssql.server().port),
+            MSSQL_USERNAME=_mssql.server().username,
+            MSSQL_PASSWORD=_mssql.PASSWORD,
+            MSSQL_TRUST_SERVER="true",
+        ),
+        use=_gen(_select_one),
+    ),
+    "pyfect.sql.mssql.client.layer_from": Case(
+        layer=lambda: mssql.layer_from(mssql.make(_mssql_config())), use=_gen(_select_one)
+    ),
+    "pyfect.sql.mssql.migrator.layer": Case(
+        layer=lambda: mssql_migrator.layer(
+            loader=mssql_migrator.from_record({"1_create_items": fx.gen(_create_items_mssql)}),
+            table="layer_reuse_migrations",
+        ),
+        needs=_mssql_client,
         use=_gen(_migrated_table),
     ),
 }

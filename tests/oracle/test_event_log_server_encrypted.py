@@ -1,7 +1,9 @@
 """Ports of Effect's ``effect/test/eventlog/EventLogServerEncryptedTest.ts``
 suite, run on the memory storage (``EventLogServerEncrypted.test.ts``), the
-SQLite storage (``sql-sqlite-node``) and the PostgreSQL storage (``sql-pg``,
-skipped without a local server). Each test's docstring is the Effect test title.
+SQLite storage (``sql-sqlite-node``), the PostgreSQL storage (``sql-pg``,
+skipped without a local server), and the MySQL and SQL Server storages
+(``sql-mysql2``, ``sql-mssql``, skipped without Docker). Each test's
+docstring is the Effect test title.
 
 Effect's counting WebCrypto proxy is a counting ``AesGcm`` given to
 ``make_encryption_subtle``. Frames are JSON, so the man in the middle
@@ -206,8 +208,8 @@ def _sql_storage(client: fx.Layer[SqlClient, Any]) -> fx.Layer[Server.Storage, A
 @pytest.fixture
 def storage(request: pytest.FixtureRequest) -> fx.Layer[Server.Storage, Any]:
     """The memory storage, or the SQL storage on an in-memory SQLite database,
-    the session's PostgreSQL server or its MySQL container (skipped without
-    one)."""
+    the session's PostgreSQL server or its MySQL or SQL Server container
+    (skipped without one)."""
     match request.param:
         case "memory":
             return Server.layer_storage_memory
@@ -219,6 +221,14 @@ def storage(request: pytest.FixtureRequest) -> fx.Layer[Server.Storage, Any]:
 
             server: PgServer = request.getfixturevalue("pg_server")
             return _sql_storage(pg.layer(pg.PgPoolConfig(url=server.url)))
+        case "mssql":
+            pytest.importorskip("pytds")
+            from pyfect.sql import mssql
+
+            from ._mssql import MssqlServer
+
+            mssql_server: MssqlServer = request.getfixturevalue("mssql_server")
+            return _sql_storage(mssql.layer(mssql_server.config()))
         case _:
             pytest.importorskip("asyncmy")
             from pyfect.sql import mysql
@@ -229,7 +239,9 @@ def storage(request: pytest.FixtureRequest) -> fx.Layer[Server.Storage, Any]:
             return _sql_storage(mysql.layer(mysql.MysqlClientConfig(url=mysql_server.url)))
 
 
-STORAGES = pytest.mark.parametrize("storage", ["memory", "SQLite", "pg", "mysql2"], indirect=True)
+STORAGES = pytest.mark.parametrize(
+    "storage", ["memory", "SQLite", "pg", "mysql2", "mssql"], indirect=True
+)
 
 
 def services(storage: fx.Layer[Server.Storage, Any]) -> fx.Layer[Any, Any]:

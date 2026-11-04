@@ -154,6 +154,7 @@ from pyfect.sql import client as sql_client
 from pyfect.sql import error as sql_error
 from pyfect.sql import migrator as sql_migrator
 from pyfect.sql import model as sql_model
+from pyfect.sql import mssql as sql_mssql
 from pyfect.sql import mysql as sql_mysql
 from pyfect.sql import pg as sql_pg
 from pyfect.sql import resolver as sql_resolver
@@ -5270,6 +5271,61 @@ def sql_mysql_driver(mysql_sql: sql_mysql.MysqlClientService) -> None:
     assert_type(sql_result.affected_rows(sql_mysql.ResultSetHeader(1, 2)), int)
     sql_mysql.MysqlClientConfig(password="secret")  # pyright: ignore[reportArgumentType]
     sql_mysql.MysqlClientConfig(port="3306")  # pyright: ignore[reportArgumentType]
+
+
+def sql_mssql_driver(mssql_sql: sql_mssql.MssqlClientService) -> None:
+    """The SQL Server driver's constructors keep their error and requirement
+    types; a procedure's rows and output parameters keep theirs, and an
+    input takes only its parameter's type."""
+    from typing import TypedDict
+
+    from pyfect import redacted
+    from pyfect.sql.connection import Row
+    from pyfect.sql.mssql import TYPES, Parameter, procedure
+
+    class Greeting(TypedDict):
+        greeting: str
+
+    config = sql_mssql.MssqlClientConfig(server="db", password=redacted.make("secret"))
+    assert_type(
+        sql_mssql.make(config),
+        fx.Effect[sql_mssql.MssqlClientService, SqlError, fx.Scope | reactivity.Reactivity],
+    )
+    assert_type(
+        sql_mssql.layer(config), fx.Layer[sql_mssql.MssqlClient | sql_client.SqlClient, SqlError]
+    )
+    assert_type(
+        sql_mssql.layer_config({"server": fx.config.string("MSSQL_SERVER")}),
+        fx.Layer[sql_mssql.MssqlClient | sql_client.SqlClient, fx.ConfigError | SqlError],
+    )
+    assert_type(
+        sql_mssql.layer_from(sql_mssql.make(config)),
+        fx.Layer[sql_mssql.MssqlClient | sql_client.SqlClient, SqlError],
+    )
+    assert_type(
+        sql_mssql.MssqlClient(),
+        TagEffect[sql_mssql.MssqlClientService, sql_mssql.MssqlClient, sql_mssql.MssqlClient],
+    )
+    assert_type(mssql_sql.config, sql_mssql.MssqlClientConfig)
+
+    name = Parameter[str]("name", TYPES.NVarChar)
+    answer = Parameter[int]("answer", TYPES.Int)
+    greet = procedure.make("greet").param(name).output_param(answer)
+    assert_type(
+        mssql_sql.call(greet.compile(name("Tim"))), fx.Effect[procedure.Result[Row], SqlError]
+    )
+    typed = greet.with_rows(Greeting).compile(name("Tim"))
+    assert_type(mssql_sql.call(typed), fx.Effect[procedure.Result[Greeting], SqlError])
+
+    def read(result: procedure.Result[Greeting]) -> None:
+        assert_type(result.output[answer], int)
+        assert_type(result.output["answer"], object)
+        assert_type(result.rows[0]["greeting"], str)
+
+    del read
+    name(1)  # pyright: ignore[reportArgumentType]
+    sql_mssql.MssqlClientConfig(server="db", password="secret")  # pyright: ignore[reportArgumentType]
+    sql_mssql.MssqlClientConfig(server="db", port="1433")  # pyright: ignore[reportArgumentType]
 
 
 # --- cli ---

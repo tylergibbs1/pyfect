@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import atexit
 import os
-import shutil
 import subprocess
 import time
 from dataclasses import dataclass
@@ -26,9 +25,10 @@ import pytest
 
 from pyfect import redacted
 
+from . import _docker as _containers
+
 IMAGE = "mysql:lts"
 LABEL = "pyfect.test=mysql"
-_OWNER = "pyfect.test.owner"
 _STARTUP_TIMEOUT = 180.0
 
 
@@ -52,50 +52,12 @@ class MysqlServer:
 
 
 def _docker(*args: str, timeout: float = 60) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", *args], capture_output=True, text=True, check=False, timeout=timeout
-    )
-
-
-def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return _containers.docker(*args, timeout=timeout)
 
 
 def reap_stale() -> list[str]:
     """Remove the labelled containers whose owning process is gone."""
-    listed = _docker(
-        "ps",
-        "-a",
-        "--filter",
-        f"label={LABEL}",
-        "--format",
-        f'{{{{.ID}}}} {{{{.Label "{_OWNER}"}}}}',
-    )
-    stale: list[str] = []
-    for line in listed.stdout.splitlines():
-        container, _, owner = line.partition(" ")
-        if not owner.isdigit() or not _alive(int(owner)):
-            stale.append(container)
-    if stale:
-        _docker("rm", "-f", "-v", *stale)
-    return stale
-
-
-def _remove(container: str) -> None:
-    _docker("rm", "-f", "-v", container)
-
-
-def _port(container: str) -> int:
-    mapped = _docker("port", container, "3306/tcp").stdout.split()
-    if not mapped:
-        raise RuntimeError("the MySQL container published no port")
-    return int(mapped[0].rsplit(":", 1)[1])
+    return _containers.reap_stale(LABEL)
 
 
 def _wait_ready(server: MysqlServer) -> None:
@@ -127,15 +89,9 @@ def _wait_ready(server: MysqlServer) -> None:
 
 
 def _start() -> MysqlServer:
-    if shutil.which("docker") is None:
-        raise RuntimeError("docker not found")
-    if _docker("info", "--format", "{{.ServerVersion}}").returncode != 0:
-        raise RuntimeError("the Docker daemon is not running")
+    _containers.require_docker()
     reap_stale()
-    if _docker("image", "inspect", IMAGE).returncode != 0:
-        pulled = _docker("pull", IMAGE, timeout=600)
-        if pulled.returncode != 0:
-            raise RuntimeError(f"cannot pull {IMAGE}: {pulled.stderr.strip()}")
+    _containers.pull(IMAGE)
     started = _docker(
         "run",
         "-d",
@@ -143,7 +99,7 @@ def _start() -> MysqlServer:
         "--label",
         LABEL,
         "--label",
-        f"{_OWNER}={os.getpid()}",
+        f"{_containers.OWNER}={os.getpid()}",
         "-p",
         "127.0.0.1::3306",
         "--tmpfs",
@@ -165,12 +121,12 @@ def _start() -> MysqlServer:
     if started.returncode != 0:
         raise RuntimeError(f"cannot start MySQL: {started.stderr.strip()}")
     container = started.stdout.strip()
-    atexit.register(_remove, container)
+    atexit.register(_containers.remove, container)
     try:
-        server = MysqlServer("127.0.0.1", _port(container), container)
+        server = MysqlServer("127.0.0.1", _containers.published_port(container, 3306), container)
         _wait_ready(server)
     except BaseException:
-        _remove(container)
+        _containers.remove(container)
         raise
     return server
 

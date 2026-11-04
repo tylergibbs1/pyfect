@@ -38,6 +38,8 @@ _LIBRARIES: dict[str, Extra] = {
     "websockets": "websockets",
     "psycopg": "pg",
     "asyncmy": "mysql",
+    "pytds": "mssql",
+    "OpenSSL": "mssql",
     "uvicorn": "server",
     "redis": "redis",
     "cryptography": "eventlog",

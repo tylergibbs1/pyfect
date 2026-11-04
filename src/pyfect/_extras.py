@@ -14,6 +14,7 @@ type Extra = Literal[
     "websockets",
     "pg",
     "mysql",
+    "mssql",
     "server",
     "redis",
     "eventlog",

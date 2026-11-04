@@ -66,6 +66,7 @@ def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedPr
 
 POSTGRES = SNIPPETS / "postgres"
 MYSQL = SNIPPETS / "mysql"
+MSSQL = SNIPPETS / "mssql"
 
 
 def mysql_env(path: Path) -> dict[str, str]:
@@ -79,11 +80,33 @@ def mysql_env(path: Path) -> dict[str, str]:
     return {"DATABASE_URL": mysql.uri(root=True).rpartition("/")[0] + f"/{database}"}
 
 
+def mssql_env(path: Path) -> dict[str, str]:
+    """The server and a new, empty database for a SQL Server snippet."""
+    from oracle._mssql import PASSWORD, query_now, server
+
+    mssql = server()  # skips without Docker
+    database = "snippet_" + "_".join(path.relative_to(MSSQL).with_suffix("").parts)
+    query_now(
+        f"IF DB_ID('{database}') IS NOT NULL BEGIN "
+        f"ALTER DATABASE [{database}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; "
+        f"DROP DATABASE [{database}] END"
+    )
+    query_now(f"CREATE DATABASE [{database}]")
+    return {
+        "MSSQL_SERVER": mssql.host,
+        "MSSQL_PORT": str(mssql.port),
+        "MSSQL_DATABASE": database,
+        "MSSQL_PASSWORD": PASSWORD,
+    }
+
+
 def snippet_env(path: Path) -> dict[str, str] | None:
     """`DATABASE_URL` of a new, empty database for a PostgreSQL or MySQL
-    snippet."""
+    snippet; the server and database of a SQL Server one."""
     if path.is_relative_to(MYSQL):
         return mysql_env(path)
+    if path.is_relative_to(MSSQL):
+        return mssql_env(path)
     if not path.is_relative_to(POSTGRES):
         return None
     from oracle._postgres import query_now, server

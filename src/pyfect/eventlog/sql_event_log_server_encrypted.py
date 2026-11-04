@@ -1,5 +1,6 @@
 """Storage of an encrypted event log server in a SQL database (Effect's
-``eventlog/SqlEventLogServerEncrypted``), on SQLite, PostgreSQL or MySQL.
+``eventlog/SqlEventLogServerEncrypted``), on SQLite, PostgreSQL, MySQL or
+SQL Server.
 
 Each identity and store has a table of batches, named by a hash of the
 pair under ``entry_table_prefix``, and a table of the entry ids it holds
@@ -61,9 +62,10 @@ class _Scope:
 
 
 def _dialect(sql: SqlClientService) -> str:
-    if sql.dialect not in ("sqlite", "pg", "mysql"):
+    if sql.dialect not in ("sqlite", "pg", "mysql", "mssql"):
         raise ValueError(
-            f"SqlEventLogServerEncrypted supports SQLite, PostgreSQL and MySQL, not {sql.dialect}"
+            "SqlEventLogServerEncrypted supports SQLite, PostgreSQL, MySQL and SQL Server, "
+            f"not {sql.dialect}"
         )
     return sql.dialect
 
@@ -87,7 +89,7 @@ def make_storage(
 ) -> Effect[StorageService, SqlError, SqlClient | EventLogEncryption | Scope]:
     """Storage in the ``SqlClient``'s database, creating its tables
     (Effect's ``makeStorage``). Fails with ``ValueError`` as a defect on a
-    dialect other than SQLite, PostgreSQL or MySQL."""
+    dialect other than SQLite, PostgreSQL, MySQL or SQL Server."""
 
     def build():
         encryption = yield from EventLogEncryption()
@@ -102,6 +104,19 @@ def make_storage(
             yield from sql(
                 "CREATE TABLE IF NOT EXISTS {} (public_key TEXT PRIMARY KEY, "
                 "signing_public_key BYTEA NOT NULL)",
+                bindings,
+            )
+        elif dialect == "mssql":
+            yield from sql(
+                "IF OBJECT_ID({}, N'U') IS NULL "
+                "CREATE TABLE {} (remote_id VARBINARY(16) PRIMARY KEY)",
+                remote_id_table,
+                remote_ids,
+            )
+            yield from sql(
+                "IF OBJECT_ID({}, N'U') IS NULL CREATE TABLE {} ("
+                "public_key NVARCHAR(191) PRIMARY KEY, signing_public_key VARBINARY(32) NOT NULL)",
+                f"{entry_table_prefix}_session_auth_bindings",
                 bindings,
             )
         elif dialect == "mysql":
@@ -149,7 +164,23 @@ def _open_scope(
         table = sql.identifier(name)
         ids_table = sql.identifier(f"{name}_ids")
         index = sql.identifier(f"{name}_last_sequence")
-        if dialect == "mysql":
+        if dialect == "mssql":
+            yield from sql(
+                "IF OBJECT_ID({}, N'U') IS NULL CREATE TABLE {} (sequence INT PRIMARY KEY, "
+                "last_sequence INT NOT NULL, iv VARBINARY(12) NOT NULL, "
+                "entry_ids VARBINARY(MAX) NOT NULL, encrypted_batch VARBINARY(MAX) NOT NULL, "
+                "INDEX {} NONCLUSTERED (last_sequence))",
+                name,
+                table,
+                index,
+            )
+            yield from sql(
+                "IF OBJECT_ID({}, N'U') IS NULL CREATE TABLE {} ("
+                "entry_id VARBINARY(16) PRIMARY KEY, sequence INT NOT NULL)",
+                f"{name}_ids",
+                ids_table,
+            )
+        elif dialect == "mysql":
             yield from sql(
                 "CREATE TABLE IF NOT EXISTS {} (sequence INT PRIMARY KEY, "
                 "last_sequence INT NOT NULL, iv BINARY(12) NOT NULL, "
@@ -247,6 +278,21 @@ class _SqlStorage(StorageService):
         if sql.dialect == "mysql":
             inserted = sql("INSERT IGNORE INTO {} {}", ids_table, sql.insert(rows)).raw
             return inserted.map(affected_rows)
+        if sql.dialect == "mssql":
+            # MERGE needs unique source ids; the caller dedupes them.
+            values = sql.join(",", False)(
+                [sql("({}, {})", row["entry_id"], row["sequence"]) for row in rows]
+            )
+            return sql(
+                "MERGE {} WITH (HOLDLOCK) AS target "
+                "USING (VALUES {}) AS source (entry_id, sequence) "
+                "ON target.entry_id = source.entry_id "
+                "WHEN NOT MATCHED THEN INSERT (entry_id, sequence) "
+                "VALUES (source.entry_id, source.sequence) "
+                "OUTPUT inserted.entry_id;",
+                ids_table,
+                values,
+            ).map(len)
         return sql(
             "INSERT INTO {} {} ON CONFLICT DO NOTHING RETURNING entry_id",
             ids_table,

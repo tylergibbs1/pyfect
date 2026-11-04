@@ -1,0 +1,62 @@
+---
+title: SQL Server
+description: "A pooled SQL Server client: typed parameters, OUTPUT clauses, stored procedures with output parameters, errors read from SQL Server's error numbers, and migrations."
+---
+
+`pyfect.sql.mssql` speaks SQL Server's protocol through python-tds; install the
+`pyfect-dev[mssql]` extra. `mssql.layer` provides both `MssqlClient` and `SqlClient`, so the
+code from the [SQL guide](/docs/sql) runs unchanged on SQL Server.
+
+The snippet on this page reads the server, database and password from the environment:
+
+```bash
+MSSQL_SERVER=localhost MSSQL_DATABASE=app MSSQL_PASSWORD=... python connect.py
+```
+
+## Connecting
+
+`MssqlClientConfig` holds the `server` and either its `port` (1433 by default) or the
+`instance_name` of a named instance, the `database`, `username` and `password` (a
+`Redacted`, so it never shows up in logs), and the pool's size and connection lifetime.
+Connections are encrypted with TLS unless `encrypt=False`; `trust_server=True` accepts a
+certificate the machine doesn't trust, as a development server's. To read the settings
+from the environment, use `mssql.layer_config({"server": fx.config.string("MSSQL_SERVER"), ...})`.
+
+Each statement runs through `sp_executesql` with typed parameters: `str` as `NVARCHAR`,
+`int` as `BIGINT`, `float` as `FLOAT`, `bytes` as `VARBINARY`, and so on
+(`parameter_types` changes the mapping). `sql.param(TYPES.Int, 1)` sends one value as a
+type of your choice. A few things work differently than on PostgreSQL:
+
+- `returning(...)` on the `insert` and `update` helpers becomes an `OUTPUT INSERTED.*`
+  clause, so a statement that changes rows gives them back.
+- A failure's `reason` comes from SQL Server's error number: `UniqueViolation` (with the
+  constraint or index name as `constraint`), `DeadlockError`, `LockTimeoutError`,
+  `AuthenticationError`, ...
+- Interrupting a statement cancels it on the server; the connection is reused.
+- Streaming rows (`sql(...).stream`) isn't supported, as in Effect's client.
+
+## Stored procedures
+
+A `Parameter` names a procedure parameter and its SQL type. `procedure.make(name)` builds a
+procedure from its input (`param`) and output (`output_param`) parameters; `compile` takes a
+value for each input, and `sql.call(...)` runs it. The result's `output` is read by the
+`Parameter`, typed by it, and its `rows` are those the procedure selected.
+
+<CodeOutput>
+
+<include meta='title="connect.py"'>../../snippets/mssql/connect.py</include>
+
+<include lang="text">../../snippets/mssql/connect.out</include>
+
+</CodeOutput>
+
+## Transactions
+
+`sql.with_transaction` begins a transaction at `READ COMMITTED`, and nested calls use
+savepoints (`SAVE TRANSACTION`). SQL Server has no statement to release a savepoint, so a
+nested transaction that succeeds leaves its savepoint until the outer one ends.
+
+## Migrations
+
+`mssql.migrator` works like the [SQLite migrator](/docs/sql#migrations): `migrator.layer`
+runs the migrations when the layer is built, recording them in `effect_sql_migrations`.

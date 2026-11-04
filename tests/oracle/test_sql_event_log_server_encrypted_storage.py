@@ -1,11 +1,12 @@
 """Ports of Effect's ``effect/test/eventlog/SqlEventLogServerEncryptedStorageTest.ts``
-suite for ``pyfect.eventlog.sql_event_log_server_encrypted``, as ``sql-pg`` and
-``sql-mysql2`` run it: on the session's PostgreSQL server and MySQL container
-(each skipped without one), the MySQL client logging in as ``root`` to see
-other connections' lock waits, as Effect's does.
+suite for ``pyfect.eventlog.sql_event_log_server_encrypted``, as ``sql-pg``,
+``sql-mysql2`` and ``sql-mssql`` run it: on the session's PostgreSQL server
+and MySQL and SQL Server containers (each skipped without one), the MySQL
+client logging in as ``root`` to see other connections' lock waits, as
+Effect's does.
 
 Each test's docstring is the Effect test title, ``{dialect}`` standing for
-the suite's name (``pg``, ``mysql2``).
+the suite's name (``pg``, ``mysql2``, ``mssql``).
 """
 
 import itertools
@@ -33,9 +34,18 @@ store_id = StoreId("store-a")
 type Connect = Callable[[], fx.Effect[SqlClientService, Any, Any]]
 
 
-@pytest.fixture(params=["pg", "mysql2"])
+@pytest.fixture(params=["pg", "mysql2", "mssql"])
 def connect(request: pytest.FixtureRequest) -> Connect:
-    """A new pool on the session's PostgreSQL server or MySQL container."""
+    """A new pool on the session's PostgreSQL server, MySQL container or SQL
+    Server container."""
+    if request.param == "mssql":
+        pytest.importorskip("pytds")
+        from pyfect.sql import mssql
+
+        from ._mssql import MssqlServer
+
+        mssql_server: MssqlServer = request.getfixturevalue("mssql_server")
+        return lambda: mssql.make(mssql_server.config())
     if request.param == "pg":
         pytest.importorskip("psycopg")
         from pyfect.sql import pg
@@ -85,11 +95,15 @@ def _encrypted_storage(
 def _await_lock_wait(sql: SqlClientService) -> Generator[Any, Any]:
     """Waits until another connection is blocked on a lock held by an open
     transaction."""
-    waiting = sql(
-        "SELECT COUNT(*) AS n FROM performance_schema.data_lock_waits"
-        if sql.dialect == "mysql"
-        else "SELECT COUNT(*)::int AS n FROM pg_stat_activity "
-        "WHERE wait_event_type = 'Lock' AND datname = current_database()"
+    waiting = sql.on_dialect_or_else(
+        mysql=lambda: sql("SELECT COUNT(*) AS n FROM performance_schema.data_lock_waits"),
+        mssql=lambda: sql(
+            "SELECT COUNT(*) AS n FROM sys.dm_exec_requests WHERE blocking_session_id <> 0"
+        ),
+        or_else=lambda: sql(
+            "SELECT COUNT(*)::int AS n FROM pg_stat_activity "
+            "WHERE wait_event_type = 'Lock' AND datname = current_database()"
+        ),
     )
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
