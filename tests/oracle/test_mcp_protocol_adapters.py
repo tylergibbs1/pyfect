@@ -18,7 +18,9 @@ Omitted, with the reason:
   mismatches, request metadata validation, ``input_required`` multi
   round-trips), none of which is ported.
 - ``v2024_11_05`` / ``v2025_03_26`` / ``v2025_06_18`` / ``v2025_11_25.test.ts``:
-  conformance-suite runs (not ported, as above), except their own titles
+  conformance-suite runs, ported per suite in test_mcp_conformance_*.py,
+  test_mcp_logging.py and test_mcp_http_admission.py (the rest are not
+  ported, as above), except their own titles
   ``MUST NOT advertise completions`` (2024-11-05) and ``does not expose
   experimental Tasks without an extension`` (2025-11-25), which are here;
   the 2025-03-26 ones are about JSON-RPC batches, which are not ported.
