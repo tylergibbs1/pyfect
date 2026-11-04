@@ -20,6 +20,7 @@
     "graph",
     "platform",
     "sql",
+    "postgres",
     "cli",
     "http-server",
     "http-api",

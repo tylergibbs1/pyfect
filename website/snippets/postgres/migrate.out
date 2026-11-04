@@ -1,0 +1,2 @@
+[{'migration_id': 1, 'name': 'create_jobs'}, {'migration_id': 2, 'name': 'add_progress'}]
+['id', 'name', 'progress']

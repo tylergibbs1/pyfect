@@ -5,6 +5,10 @@ Every Python block in `website/content/docs` is an `<include>` of a file under
 from `website/` alone, so guides can't include files outside it):
 a snippet asserts its own results, and `test_*.py` snippets are pytest files.
 
+Snippets under `postgres/` read `DATABASE_URL`: each runs on a fresh database of the
+throwaway server the pg tests use (`tests/oracle/_postgres.py`), and skips without one.
+The site build never runs snippets, so it needs no server.
+
 A snippet that prints has its output next to it (`x.py` -> `x.out`), which guides show
 in "Output" tabs. The file must equal what running the snippet prints; regenerate with
 
@@ -46,7 +50,7 @@ def included_files(guide: Path) -> list[Path]:
     return [(guide.parent / target.split("#")[0]).resolve() for target in targets]
 
 
-def run(*args: str) -> subprocess.CompletedProcess[str]:
+def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     # -P: don't put the snippet's directory on sys.path, as `python file.py` would.
     return subprocess.run(
         [sys.executable, "-P", *args],
@@ -55,7 +59,24 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
         text=True,
         timeout=60,
         cwd=ROOT,
+        env=None if env is None else os.environ | env,
     )
+
+
+POSTGRES = SNIPPETS / "postgres"
+
+
+def snippet_env(path: Path) -> dict[str, str] | None:
+    """`DATABASE_URL` of a new, empty database for a PostgreSQL snippet."""
+    if not path.is_relative_to(POSTGRES):
+        return None
+    from oracle._postgres import query_now, server
+
+    pg = server()  # skips without a local PostgreSQL
+    database = "snippet_" + "_".join(path.relative_to(POSTGRES).with_suffix("").parts)
+    query_now(f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)')
+    query_now(f'CREATE DATABASE "{database}"')
+    return {"DATABASE_URL": pg.uri.rpartition("/")[0] + f"/{database}"}
 
 
 def name(path: Path) -> str:
@@ -68,7 +89,7 @@ TESTS = [p for p in snippet_files() if p.name.startswith("test_")]
 
 @pytest.mark.parametrize("path", SCRIPTS, ids=name)
 def test_snippet_runs(path: Path):
-    done = run(str(path))
+    done = run(str(path), env=snippet_env(path))
     assert done.returncode == 0, done.stderr
     expected = path.with_suffix(".out")
     if os.environ.get("UPDATE_SNIPPET_OUTPUT") and done.stdout:
@@ -100,7 +121,7 @@ def test_outputs_belong_to_snippets(path: Path):
 
 @pytest.mark.parametrize("path", TESTS, ids=name)
 def test_snippet_tests_pass(path: Path):
-    done = run("-m", "pytest", "-q", "-p", "no:cacheprovider", str(path))
+    done = run("-m", "pytest", "-q", "-p", "no:cacheprovider", str(path), env=snippet_env(path))
     assert done.returncode == 0, done.stdout + done.stderr
 
 
