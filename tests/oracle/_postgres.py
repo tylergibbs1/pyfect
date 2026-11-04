@@ -2,8 +2,10 @@
 
 ``pg_server`` (session scope) starts one with ``initdb`` and ``pg_ctl`` in
 a temporary directory the first time a test asks for it, and stops it when
-the test process exits; without the binaries (or psycopg), the tests that
-need it skip. It never touches a server it did not start.
+the test process exits, however it exits (``_pg_owner``). Starting one first
+reaps the servers whose owning process is gone, and never touches one whose
+owner is alive. Without the binaries (or psycopg), the tests that need it
+skip.
 
 TCP connections authenticate with SCRAM (user ``postgres``, password
 ``postgres``); the Unix socket in ``socket_dir`` trusts everyone.
@@ -27,6 +29,8 @@ import pytest
 
 import pyfect as fx
 from pyfect import redacted
+
+from . import _pg_owner
 
 if TYPE_CHECKING:
     from pyfect.sql.pg.connection import PgConnection
@@ -71,22 +75,25 @@ def _free_port() -> int:
 class _Shared:
     server: PgServer | None = None
     reason: str | None = None
+    watchdog: subprocess.Popen[bytes] | None = None
 
 
-def _stop(pg_ctl: str, data_dir: str, root: str) -> None:
-    subprocess.run(
-        [pg_ctl, "-D", data_dir, "-m", "immediate", "stop"],
-        capture_output=True,
-        check=False,
-    )
-    shutil.rmtree(root, ignore_errors=True)
+def _stop(root: Path, watchdog: subprocess.Popen[bytes]) -> None:
+    _pg_owner.stop_server(root)
+    if watchdog.stdin is not None:
+        watchdog.stdin.close()
+    watchdog.wait()
 
 
 def _start() -> PgServer:
     initdb, pg_ctl = _binary("initdb"), _binary("pg_ctl")
     if initdb is None or pg_ctl is None:
         raise RuntimeError("initdb / pg_ctl not found")
-    root = tempfile.mkdtemp(prefix="pyfect-pg-")
+    _pg_owner.reap(Path(tempfile.gettempdir()))
+    root = tempfile.mkdtemp(prefix=_pg_owner.PREFIX)
+    _pg_owner.claim(Path(root))
+    _Shared.watchdog = _pg_owner.watch(Path(root))
+    atexit.register(_stop, Path(root), _Shared.watchdog)
     data_dir = os.path.join(root, "data")
     password_file = os.path.join(root, "password")
     Path(password_file).write_text(PASSWORD)
@@ -114,7 +121,6 @@ def _start() -> PgServer:
         capture_output=True,
         check=True,
     )
-    atexit.register(_stop, pg_ctl, data_dir, root)
     return PgServer("127.0.0.1", port, root, data_dir)
 
 

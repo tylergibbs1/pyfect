@@ -236,19 +236,12 @@ def test_every_error_a_public_function_fails_with_is_exported_by_a_public_module
     assert sorted(wrong) == []
 
 
-# pyfect.ai is being reworked on its own branch (M12); its modules join this
-# check when that lands.
-_NOT_YET_REEXPORTED = "pyfect.ai"
-
-
 def test_a_module_that_has_an_error_its_functions_fail_with_exports_it():
     """``from pyfect.persistence.persisted_cache import PersistenceError`` works at
     runtime because the module imports it; it must also be in ``__all__``, or
     pyright reports a private import where the user met the error."""
     wrong: set[str] = set()
     for where, module, fn in _public_functions():
-        if module.__name__.startswith(_NOT_YET_REEXPORTED):
-            continue
         exported = getattr(module, "__all__", ())
         for error in _failure_types(fn):
             if vars(module).get(error.__name__) is error and error.__name__ not in exported:

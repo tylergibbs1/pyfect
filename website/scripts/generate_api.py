@@ -91,7 +91,7 @@ def private_exports(mod: griffe.Module) -> dict[str, Documented]:
     names = exported_names(mod)
     out: dict[str, Documented] = {}
     for name, member in mod.members.items():
-        if not member.is_alias or is_private(name):
+        if not member.is_alias or (names is None and is_private(name)):
             continue
         try:
             target = member.final_target
@@ -298,7 +298,7 @@ def reexports(mod: griffe.Module, home: dict[str, str]) -> list[tuple[str, str]]
         return []
     out: list[tuple[str, str]] = []
     for name, member in mod.members.items():
-        if not member.is_alias or is_private(name) or name not in names:
+        if not member.is_alias or name not in names:
             continue
         try:
             target = member.final_target
@@ -332,11 +332,20 @@ def parse(mod: griffe.Module, home: dict[str, str]) -> dict[str, Any]:
     names = exported_names(mod)
 
     def listed(name: str) -> bool:
-        return not is_private(name) and (names is None or name in names)
+        # `__all__` decides; the OpenAPI clients export `_MisalignmentErrorType`.
+        return name in names if names is not None else not is_private(name)
 
     doc = simplify_docstring(mod.docstring, mod)
+    # fumapy skips values named `_x`; one in `__all__` is public all the same.
+    exported_private = [
+        {"name": a.name, "annotation": a.annotation, "description": None, "value": a.value}
+        for a in mod.attributes.values()
+        if not a.is_alias and a.is_private and names is not None and a.name in names
+    ]
     attributes = [
-        a | {"value": literal(a["value"])} for a in doc.attributes if listed(str(a["name"]))
+        a | {"value": literal(a["value"])}
+        for a in [*doc.attributes, *exported_private]
+        if listed(str(a["name"]))
     ]
     classes: dict[str, Any] = {}
     functions: dict[str, Any] = {}

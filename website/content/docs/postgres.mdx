@@ -61,7 +61,11 @@ so handle the notify's `SqlError` there (here it's logged).
 </CodeOutput>
 
 Call `listen` before the first read of the state it reports on: a change committed between
-the read and the `LISTEN` would otherwise go unnoticed.
+the read and the `LISTEN` would otherwise go unnoticed. The other side of that order is that
+the queue can then hold notifications older than the state you read: one sent between the
+`LISTEN` and the read is delivered after it. So drop every notification that isn't newer
+than what you read, by comparing a version or sequence column, as the snippet does with
+`row` (it drops `1:500`).
 
 ## Migrations
 

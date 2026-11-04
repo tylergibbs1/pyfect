@@ -1,3 +1,4 @@
+read 500
 Rejected(reason='checkpoint refused')
+dropped 1:500
 progress 1:1000
-[{'row': 1000}]
