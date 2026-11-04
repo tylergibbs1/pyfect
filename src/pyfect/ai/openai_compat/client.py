@@ -27,6 +27,7 @@ from pyfect import byte_size
 from pyfect import layer as L
 from pyfect import stream as St
 from pyfect._core import Effect
+from pyfect._js import or_default
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai import _openai_errors as OE
 from pyfect.ai import _provider as P
@@ -114,7 +115,7 @@ def make(
     limit = P.response_limit(max_response_bytes)
 
     def prepare(request: http_request.HttpClientRequest) -> http_request.HttpClientRequest:
-        request = request.prepend_url(api_url or DEFAULT_API_URL)
+        request = request.prepend_url(or_default(api_url, DEFAULT_API_URL))
         if api_key is not None:
             request = request.bearer_token(redacted_value(api_key))
         if organization_id is not None:

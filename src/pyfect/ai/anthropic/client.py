@@ -27,6 +27,7 @@ from pyfect import layer as L
 from pyfect import schema as S
 from pyfect import stream as St
 from pyfect._core import Effect
+from pyfect._js import or_default
 from pyfect.ai import _provider as P
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import _schema as W
@@ -168,11 +169,11 @@ def make(
     the underlying client (and so does an ``AnthropicConfig``, per call).
     A response body, or a streamed tool call's parameters, larger than
     ``max_response_bytes`` (256 MiB) fails the call."""
-    version = api_version or DEFAULT_API_VERSION
+    version = or_default(api_version, DEFAULT_API_VERSION)
     limit = P.response_limit(max_response_bytes)
 
     def prepare(request: http_request.HttpClientRequest) -> http_request.HttpClientRequest:
-        request = request.prepend_url(api_url or DEFAULT_API_URL)
+        request = request.prepend_url(or_default(api_url, DEFAULT_API_URL))
         if api_key is not None:
             request = request.set_header("x-api-key", redacted_value(api_key))
         return request.set_header("anthropic-version", version).accept_json()

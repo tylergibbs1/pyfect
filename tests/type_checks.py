@@ -65,6 +65,10 @@ from pyfect.ai.openai_compat import client as compat_client
 from pyfect.ai.openai_compat import embedding_model as compat_em
 from pyfect.ai.openai_compat import language_model as compat_lm
 from pyfect.ai.openai_structured_output import to_codec_openai
+from pyfect.ai.openrouter import client as openrouter_client
+from pyfect.ai.openrouter import decision_model as openrouter_dm
+from pyfect.ai.openrouter import language_model as openrouter_lm
+from pyfect.ai.openrouter.generated import client as openrouter_generated
 from pyfect.ai.response_id_tracker import ResponseIdTracker
 from pyfect.ai.typesafe import client as typesafe_client
 from pyfect.ai.typesafe import decision_model as typesafe_dm
@@ -6986,6 +6990,42 @@ def check_ai_decision_model(
         typesafe_client.layer_config(),
         fx.Layer[typesafe_client.TypeSafeClient, fx.config.ConfigError, HttpClient],
     )
+
+
+def check_ai_openrouter(service: openrouter_client.Service) -> None:
+    key = redact("sk")
+    assert_type(
+        openrouter_client.layer(api_key=key),
+        fx.Layer[openrouter_client.OpenRouterClient, Never, HttpClient],
+    )
+    assert_type(
+        openrouter_client.layer_config(),
+        fx.Layer[openrouter_client.OpenRouterClient, fx.config.ConfigError, HttpClient],
+    )
+    assert_type(
+        openrouter_lm.model("openai/gpt-4o-mini"),
+        ai_model.Model[lm.LanguageModel, openrouter_client.OpenRouterClient],
+    )
+    assert_type(
+        openrouter_dm.model("openai/gpt-4o-mini"),
+        ai_model.Model[ai_dm.DecisionModel, openrouter_client.OpenRouterClient],
+    )
+    request: openrouter_client.ChatRequest = {"model": "openai/gpt-4o-mini", "messages": []}
+    # The client calls fail only with AiError.
+    assert_type(
+        service.create_chat_completion(request),
+        fx.Effect[tuple[openrouter_client.ChatResult, HttpResponse], ai_error_module.AiError],
+    )
+    # The generated operations keep their documented error statuses.
+    assert_type(
+        service.client.send_chat_completion_request(payload=request),
+        fx.Effect[
+            openrouter_client.ChatResult,
+            HttpClientError | S.SchemaError | openrouter_generated.OpenRouterClientError,
+        ],
+    )
+    openrouter_lm.with_config_override({"temperature": "hot"})  # pyright: ignore[reportArgumentType]
+    openrouter_dm.layer(model="m", config={"user": 1})  # pyright: ignore[reportArgumentType]
 
 
 def check_ai_structured_output() -> None:

@@ -132,7 +132,9 @@ def test_mcp_server_answers_deep_nesting_with_a_parse_error():
     headers = {"accept": "application/json, text/event-stream"}
     request = R.post(URL).set_headers(headers).body_text(DEEP, "application/json")
     response = yield from http.execute(request)
-    assert response.status == 400
+    # Effect's admitHttp answers a parse error with 200 when no session or
+    # protocol header is at fault.
+    assert response.status == 200
     body: Any = yield from response.json
     assert body["error"]["code"] == -32700
 

@@ -18,6 +18,7 @@ from pyfect import byte_size
 from pyfect import config as C
 from pyfect import layer as L
 from pyfect._core import Effect
+from pyfect._js import or_default
 from pyfect.ai import _provider as P
 from pyfect.ai._provider import ClientTransform
 from pyfect.ai.ai_error import AiError
@@ -64,7 +65,7 @@ def make(
     limit = P.response_limit(max_response_bytes)
 
     def prepare(request: http_request.HttpClientRequest) -> http_request.HttpClientRequest:
-        request = request.prepend_url(api_url or DEFAULT_API_URL)
+        request = request.prepend_url(or_default(api_url, DEFAULT_API_URL))
         if api_key is not None:
             request = request.bearer_token(redacted_value(api_key))
         return request.accept_json()

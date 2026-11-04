@@ -18,7 +18,7 @@ from typing import Any, Literal, Never, cast
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
-from pyfect.ai._mcp import projection
+from pyfect.ai._mcp import log_levels, projection
 from pyfect.ai._mcp.core import McpServerService, RequestOutbound, RequestServices
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter, Registry
 from pyfect.ai.mcp_schema import (
@@ -69,6 +69,7 @@ from pyfect.cause import Cause, Fail
 from pyfect.deferred import Deferred
 from pyfect.effect import fail, fail_cause, gen, provide_service, succeed, suspend, sync
 from pyfect.exit import Success
+from pyfect.logger import CurrentLogLevel, Severity
 
 type Wire = dict[str, Any]
 """A result as written."""
@@ -81,16 +82,6 @@ CLIENT_INFO_META = "io.modelcontextprotocol/clientInfo"
 CLIENT_CAPABILITIES_META = "io.modelcontextprotocol/clientCapabilities"
 SERVER_INFO_META = "io.modelcontextprotocol/serverInfo"
 
-_LEVELS: tuple[LoggingLevel, ...] = (
-    "debug",
-    "info",
-    "notice",
-    "warning",
-    "error",
-    "critical",
-    "alert",
-    "emergency",
-)
 _VOID: Effect[None] = succeed(None)
 
 
@@ -231,11 +222,15 @@ class Connection:
     client_id: int
     transport: Literal["stdio", "http"]
     broadcast: Send
+    default_log_level: Severity
+    """The session's threshold until it sets one: the ``CurrentLogLevel``
+    the server was built with (Effect's ``defaultLogLevel``)."""
     protocol: AnyProtocolAdapter | None = None
     identity: Identity = field(default_factory=Identity)
     initialize_payload: JsonObject = field(default_factory=dict[str, Any])
     initialized: bool = False
     log_level: LoggingLevel | None = None
+    """The level the client set with ``logging/setLevel``."""
     subscriptions: set[str] = field(default_factory=set[str])
     _pending: dict[RequestId, Deferred[JsonObject]] = field(
         default_factory=dict[RequestId, "Deferred[JsonObject]"]
@@ -331,9 +326,14 @@ class Connection:
             capture_stack_trace=False,
             attributes={"rpc.system.name": "effect_rpc", "rpc.method": method},
         )
-        replied: Effect[JsonObject] = traced.catch_cause(_as_mcp_error).match(
-            on_failure=lambda error: error_response(id, error),
-            on_success=lambda result: response(id, result),
+        # Effect's RpcServer reports the cause of every failed request.
+        replied: Effect[JsonObject] = (
+            traced.with_error_reporting()
+            .catch_cause(_as_mcp_error)
+            .match(
+                on_failure=lambda error: error_response(id, error),
+                on_success=lambda result: response(id, result),
+            )
         )
         return replied.exit().map(lambda exit: exit.value if isinstance(exit, Success) else None)
 
@@ -356,13 +356,8 @@ class Connection:
 
     def wants(self, method: str, params: Mapping[str, Any]) -> bool:
         if method == "notifications/message":
-            level = params.get("level")
-            minimum = self.log_level
-            return (
-                minimum is None
-                or level not in _LEVELS
-                or _LEVELS.index(level) >= _LEVELS.index(minimum)
-            )
+            threshold = self.default_log_level if self.log_level is None else self.log_level
+            return log_levels.session_delivers(params.get("level"), threshold)
         if method == "notifications/resources/updated":
             return params.get("uri") in self.subscriptions
         if method == "notifications/elicitation/complete":
@@ -376,11 +371,43 @@ class Connection:
             return _VOID
         return self.broadcast(notification(method, params))
 
-    def _request_outbound(self, out: Send) -> Callable[[str, JsonObject], Effect[None]]:
+    def _request_outbound(
+        self, out: Send, protocol: AnyProtocolAdapter, metadata: JsonObject
+    ) -> Callable[[str, JsonObject], Effect[None]]:
+        """Where a request's own notifications go. A 2026-07-28 request gets
+        the logs its ``_meta`` asks for and the progress of its own token."""
+
+        def stateless_wants(method: str, params: JsonObject) -> bool:
+            if method == "notifications/message":
+                minimum = log_levels.request_log_level(metadata)
+                level = params.get("level")
+                return (
+                    log_levels.is_logging_level(minimum)
+                    and log_levels.is_logging_level(level)
+                    and log_levels.at_least(level, minimum)
+                )
+            if method == "notifications/progress":
+                return params.get("progressToken") == metadata.get("progressToken")
+            return self.wants(method, params)
+
+        wants = stateless_wants if protocol.is_stateless else self.wants
+
         def deliver(method: str, params: JsonObject) -> Effect[None]:
-            return out(notification(method, params)) if self.wants(method, params) else _VOID
+            return out(notification(method, params)) if wants(method, params) else _VOID
 
         return deliver
+
+    def _handler_log_level(self, protocol: AnyProtocolAdapter, metadata: JsonObject) -> Severity:
+        """The ``CurrentLogLevel`` a handler runs at: its request's level on
+        2026-07-28, else the session's."""
+        if protocol.is_stateless:
+            requested = log_levels.request_log_level(metadata)
+            if log_levels.is_logging_level(requested):
+                return log_levels.effect_level(requested)
+            return self.default_log_level
+        if self.log_level is None:
+            return self.default_log_level
+        return log_levels.effect_level(self.log_level)
 
     # --- requests to the client --------------------------------------------------------
 
@@ -493,7 +520,8 @@ class Connection:
             suspend(lambda: handler(context))
             .pipe(provide_service(McpRequestContext, context))
             .pipe(provide_service(McpServerClient, client))
-            .pipe(provide_service(RequestOutbound, self._request_outbound(out)))
+            .pipe(provide_service(CurrentLogLevel, self._handler_log_level(protocol, metadata)))
+            .pipe(provide_service(RequestOutbound, self._request_outbound(out, protocol, metadata)))
         )
 
     def _stateful(self, method: str, params: JsonObject, out: Send) -> Effect[Wire, McpError]:
@@ -679,6 +707,9 @@ class Connection:
             return succeed(complete(discovery, True))
         if method in ("ping", "initialize", "logging/setLevel", "resources/subscribe"):
             return fail(_method_not_found(method))
+        requested_level = log_levels.request_log_level(meta)
+        if requested_level is not None and not log_levels.is_logging_level(requested_level):
+            return fail(InvalidParams(f"Invalid request log level {requested_level!r}"))
         cacheable = method in _CACHEABLE
         return self._feature(protocol, identity, method, params, out).map(
             lambda result: complete(result, cacheable)

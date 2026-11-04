@@ -12,8 +12,8 @@ from typing import Any, Literal, NotRequired, TypedDict, TypeIs, cast
 
 from pyfect import schema as S
 from pyfect._core import Effect
+from pyfect.ai._generated_support import struct
 from pyfect.ai._provider import wire_parser, wire_parser_option
-from pyfect.ai.openai._generated_support import struct
 
 type JsonObject = dict[str, Any]
 

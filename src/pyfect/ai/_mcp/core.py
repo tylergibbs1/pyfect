@@ -40,6 +40,7 @@ from pyfect.ai.mcp_schema import (
 from pyfect.context import Context, Tag
 from pyfect.effect import fail, gen, provide_service, service_option, succeed, suspend, sync
 from pyfect.http.server_request import HttpServerRequest
+from pyfect.logger import CurrentLogLevel
 
 type RequestServices = McpRequestContext | McpServerClient
 """What a handler is given by the request it serves."""
@@ -74,7 +75,9 @@ def omit_request_services(context: Context[Any]) -> Context[Any]:
     """``context`` without the services a request provides: a handler
     registered during one request serves later ones with their own."""
     return context.pipe(
-        Context.omit(McpRequestContext, McpServerClient, HttpServerRequest, RequestOutbound)
+        Context.omit(
+            McpRequestContext, McpServerClient, HttpServerRequest, RequestOutbound, CurrentLogLevel
+        )
     )
 
 

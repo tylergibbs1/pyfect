@@ -50,6 +50,26 @@ WebSocket connection instead of a request each.
 
 </CodeOutput>
 
+### OpenRouter
+
+`pyfect.ai.openrouter.language_model.model(name, config)` reaches any model OpenRouter
+routes to, named as OpenRouter names it (`anthropic/claude-sonnet-4.5`). `config` takes the
+Chat Completions request's own fields (`provider` routing, `reasoning`, `plugins`, ...).
+Tool and response schemas are written for the model's family: Anthropic's and OpenAI's
+strict forms for their models, the default for the others. Replayed reasoning is sent once
+per request, and `{"openrouter": {"cacheControl": ...}}` in a message's or part's options
+sets a cache breakpoint. `pyfect.ai.openrouter.decision_model` provides a `DecisionModel`
+over OpenRouter's Decisions API, and the `OpenRouterClient` service's `client` field is a
+generated client of every other OpenRouter operation.
+
+<CodeOutput>
+
+<include meta='title="openrouter.py"'>../../snippets/ai/openrouter.py</include>
+
+<include lang="text">../../snippets/ai/openrouter.out</include>
+
+</CodeOutput>
+
 `language_model.make(generate_text=..., stream_text=...)` builds a `LanguageModel` from two
 functions of a request's `ProviderOptions` (its prompt, tools and response format). The
 examples below use it to script the model's answers, as a test does.
@@ -172,9 +192,10 @@ input=...)` asks for every answer in one call. Look an answer up with its decisi
 invalid answer fails with an `AiError`; `decide_settled` instead gives each decision an
 `Ok` answer or an `Err(Unanswered)`.
 
-`pyfect.ai.openai.decision_model`, `pyfect.ai.cloudflare.decision_model` and
-`pyfect.ai.typesafe.decision_model` provide one. `decision_model.make(decide=...)` builds
-one from a function of a call's `ProviderOptions`, as a test does:
+`pyfect.ai.openai.decision_model`, `pyfect.ai.openrouter.decision_model`,
+`pyfect.ai.cloudflare.decision_model` and `pyfect.ai.typesafe.decision_model` provide one.
+`decision_model.make(decide=...)` builds one from a function of a call's `ProviderOptions`,
+as a test does:
 
 <CodeOutput>
 
@@ -189,6 +210,7 @@ Reference: [`pyfect.ai`](/docs/reference/ai),
 [`tool`](/docs/reference/ai/tool), [`toolkit`](/docs/reference/ai/toolkit),
 [`pyfect.ai.anthropic`](/docs/reference/ai/anthropic),
 [`pyfect.ai.openai`](/docs/reference/ai/openai),
+[`pyfect.ai.openrouter`](/docs/reference/ai/openrouter),
 [`decision`](/docs/reference/ai/decision),
 [`decision_model`](/docs/reference/ai/decision_model),
 [`pyfect.ai.openai_compat`](/docs/reference/ai/openai_compat),

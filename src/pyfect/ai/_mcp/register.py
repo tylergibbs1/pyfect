@@ -25,8 +25,10 @@ from pyfect.ai._mcp.core import (
     ToolEntry,
     omit_request_services,
 )
+from pyfect.ai._mcp.tool_schema import tool_json_schema
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.mcp_schema import (
+    ELICIT_REQUEST_FORM_PARAMS,
     TOOL_JSON,
     Annotations,
     CallToolResult,
@@ -58,6 +60,7 @@ from pyfect.ai.toolkit import FailureOriginAnnotation, HandlerResult, Handlers, 
 from pyfect.cause import Cause, Fail, UnhandledError
 from pyfect.context import Context
 from pyfect.effect import fail, fail_cause, gen, succeed, suspend
+from pyfect.errors import TaggedError
 from pyfect.http.find_my_way import Router, RouterConfig
 
 INTERNAL_TOOL_ERROR_MESSAGE = "Tool execution failed due to an internal server error."
@@ -105,16 +108,29 @@ def _tool_error_result(message: str) -> CallToolResult:
     return {"isError": True, "content": [{"type": "text", "text": message}]}
 
 
-def _content_of(encoded: object) -> list[ContentBlock]:
-    return [] if encoded is None else [{"type": "text", "text": _stringify(encoded)}]
+def _content_of(encoded: object, *, void: bool) -> list[ContentBlock]:
+    """The JSON text of an encoded result; none for a void tool's (Effect's
+    ``undefined``, which Python's ``None`` cannot tell from ``null``)."""
+    return [] if void and encoded is None else [{"type": "text", "text": _stringify(encoded)}]
+
+
+def _error_message(error: object) -> str:
+    """Effect's ``error.message`` of an ``Error`` (empty for anything else):
+    a tagged error's ``message`` field or property, an exception's text."""
+    if not isinstance(error, BaseException):
+        return ""
+    message = getattr(error, "message", None)
+    if isinstance(message, str):
+        return message
+    return "" if isinstance(error, TaggedError) else str(error)
 
 
 # --- tools ---------------------------------------------------------------------------------
 
 
-def _object_schema(tool: Tool.AnyTool) -> Effect[JsonObject]:
+def _object_schema(tool: Tool.AnyTool, *, strict: bool) -> Effect[JsonObject]:
     raw = tool.json_schema if isinstance(tool, Tool.Dynamic) else None
-    schema = raw if raw is not None else Tool.get_json_schema(tool)
+    schema = raw if raw is not None else tool_json_schema(tool.parameters_schema, strict=strict)
     if raw is None:
         problem = (
             "its parameters must encode to a JSON Schema with an object root "
@@ -189,14 +205,14 @@ def register_toolkit[N: LiteralString, RP, HE, R](
                         f"'{tool.name}'; use a schema instead"
                     )
                 )
-            input_schema = yield from _object_schema(tool)
+            input_schema = yield from _object_schema(tool, strict=strict)
             mcp_tool: McpTool = {
                 "name": tool.name,
                 "inputSchema": input_schema,
                 "annotations": _tool_annotations(tool.annotations),
             }
             # Revisions before 2026-07-28 list it only for an object (projection).
-            mcp_tool["outputSchema"] = Tool.get_json_schema_from_schema(tool.success_schema)
+            mcp_tool["outputSchema"] = tool_json_schema(tool.success_schema, strict=False)
             description = Tool.get_description(tool)
             if description is not None:
                 mcp_tool["description"] = description
@@ -228,6 +244,7 @@ def _tool_handler(
         S.encode_unknown_effect(tool.failure_schema),
     )
     is_declared_failure = S.is_(tool.failure_schema)
+    void = tool.success_schema is S.Null
     strict = tool.annotations.get_unsafe(Tool.Strict) is True
     options: S.ParseOptions = {
         "errors": "all",
@@ -235,11 +252,12 @@ def _tool_handler(
     }
 
     def declared_failure_result(error: object) -> Effect[CallToolResult, Any]:
-        if isinstance(error, BaseException) and str(error):
-            return succeed(_tool_error_result(str(error)))
+        message = _error_message(error)
+        if message:
+            return succeed(_tool_error_result(message))
         return encode_failure(error).map(
             lambda encoded: cast(
-                "CallToolResult", {"isError": True, "content": _content_of(encoded)}
+                "CallToolResult", {"isError": True, "content": _content_of(encoded, void=False)}
             )
         )
 
@@ -262,9 +280,9 @@ def _tool_handler(
             return fail_cause(Cause((Fail(result.result),)).annotate(origin))
         out: CallToolResult = {
             "isError": result.is_failure,
-            "content": _content_of(result.encoded_result),
+            "content": _content_of(result.encoded_result, void=void),
         }
-        if not result.is_failure and result.encoded_result is not None:
+        if not result.is_failure and not (void and result.encoded_result is None):
             out["structuredContent"] = cast("Any", result.encoded_result)
         return succeed(out)
 
@@ -622,11 +640,17 @@ def elicit[A, R = Never](
     def run():
         client = yield from McpServerClient()
         reverse = yield from client.get_client
-        request: ElicitRequestFormParams = {
-            "mode": "form",
-            "message": message,
-            "requestedSchema": cast("Any", Tool.get_json_schema_from_schema(schema)),
-        }
+        decode_request = cast(
+            "Callable[[object], Effect[ElicitRequestFormParams, S.SchemaError]]",
+            S.decode_unknown_effect(ELICIT_REQUEST_FORM_PARAMS),
+        )
+        request = yield from decode_request(
+            {
+                "mode": "form",
+                "message": message,
+                "requestedSchema": tool_json_schema(schema, strict=False),
+            }
+        ).or_die()
         result = yield from reverse.elicit(request).catch_cause(
             lambda cause: fail(ElicitationDeclined(request, cause.squash()))
         )

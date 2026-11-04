@@ -12,26 +12,20 @@ Omitted, with the reason:
   transports, slow-reader isolation and mixed-protocol HTTP notification
   isolation: they drive Effect's RpcServer internals and custom
   transports, which pyfect's transports do not expose.
-- HTTP batches, legacy session log levels on batches, resource
-  subscriptions and their backlogs, list-change notification scheduling,
-  ``layerHttpRequestScoped`` and ``allowSubscriptions``: not ported (see
-  PARITY.md, M10e mcp).
-- Disconnect interrupting in-flight HTTP tools and DELETE interrupting a
-  pending POST: the in-memory router has no client disconnect.
-- Strict-mode toolkit tests (closed schemas, strict raw JSON Schema,
-  strict decode once), anchored ``$defs`` publishing, identified schema
-  escaping, output schemas of classes and recursive schemas: pyfect's
-  JSON Schema generator inlines; strict mode is not ported.
-- ``distinguishes ... failures`` (4 cases), serialization scrubbing and
-  ``reportErrors``: rely on Effect's ``failureMode`` and logger/reporter
-  test layers; the generic internal-error message is covered below.
-- ``registration context`` (6 cases): pyfect registrations capture their
-  services when registered; there is no per-client registration label.
-- ``validates supplied protocol versions on POST`` and DELETE version
-  checks: the -32020 header-mismatch validation is not ported.
-- ``should accept batches after falling back``, ``June wire transcript``
-  and STDIO subscription cancellation: batches and subscriptions are not
-  ported; the 2025-06-18 transcript is covered by the lifecycle tests.
+- Resource subscriptions and their backlogs, list-change notification
+  scheduling, ``subscriptions/listen``, ``layerHttpRequestScoped`` and
+  ``allowSubscriptions``: not ported (see PARITY.md, M10e mcp).
+- Disconnect interrupting in-flight HTTP tools, DELETE interrupting a
+  pending POST (pyfect ends that POST's stream instead of answering 404) and
+  closing a started elicitation stream: the in-memory router buffers whole
+  responses and has no client disconnect.
+- ``June wire transcript``: covered by the lifecycle tests.
+
+Ported elsewhere: the direct-service and ``registerToolkit`` titles
+(strict mode, identified schemas, failure modes, registration context) in
+test_mcp_server_registrations.py; POST and DELETE protocol-version checks
+and legacy batches in test_mcp_http_admission.py; HTTP batch SSE framing in
+test_mcp_batch_cancellation.py.
 """
 
 from __future__ import annotations

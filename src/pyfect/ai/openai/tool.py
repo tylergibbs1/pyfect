@@ -18,8 +18,8 @@ from typing import Any, Literal, NotRequired, TypedDict, cast
 
 from pyfect import schema as S
 from pyfect.ai import tool as T
+from pyfect.ai._generated_support import struct
 from pyfect.ai.openai import generated as G
-from pyfect.ai.openai._generated_support import struct
 from pyfect.ai.openai.generated import types as GT
 from pyfect.schema import ast
 from pyfect.schema._struct import StructSchema

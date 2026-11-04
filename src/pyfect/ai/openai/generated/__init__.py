@@ -1,12 +1,12 @@
 """The schemas of the OpenAI API (Effect's ``Generated.ts``), generated from
-Effect's module by ``scripts/gen_openai_schemas.py``: rerun it after an
+Effect's module by ``scripts/gen_ai_schemas.py``: rerun it after an
 update, do not edit. Each schema has Effect's name, its checks and its
 annotations; its type is the name of the same name in ``types``::
 
     from pyfect.ai.openai import generated
     from pyfect.ai.openai.generated import types
 
-    call: types.FunctionToolCall = S.decode_unknown_sync(generated.FunctionToolCall)(json)
+    value: types.FunctionToolCall = S.decode_unknown_sync(generated.FunctionToolCall)(json)
 """
 
 # pyright: reportPrivateUsage=false, reportUnusedImport=false

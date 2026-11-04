@@ -1,4 +1,5 @@
-"""What ``pyfect.ai.openai.generated`` is built with. Each builder takes and
+"""What the generated provider schemas (``pyfect.ai.openai.generated``,
+``pyfect.ai.openrouter.generated``) are built with. Each builder takes and
 gives ``Any``: a generated schema's type is declared from
 ``generated_types`` (both come from the same source by the same
 generator), so the type checker reads thousands of declarations instead

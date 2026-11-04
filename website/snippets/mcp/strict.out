@@ -1,0 +1,4 @@
+additionalProperties False
+[{'type': 'text', 'text': 'hi Ada'}]
+Invalid parameters for tool 'greet': Expected no excess property
+  at ["nmae"]

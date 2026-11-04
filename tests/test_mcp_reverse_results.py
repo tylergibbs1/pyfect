@@ -4,7 +4,7 @@ no acceptance."""
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, NotRequired, TypedDict, cast
 
 import pytest
 from oracle._mcp import stdio_harness
@@ -19,8 +19,14 @@ from pyfect.ai._mcp.core import ToolEntry
 from pyfect.context import Context
 
 
+class Reason(TypedDict):
+    reason: NotRequired[str]
+
+
 def _ask() -> fx.Effect[MS.CallToolResult, Any, Any]:
-    asked = M.elicit(message="Delete everything?", schema=S.Record(S.String, S.String))
+    # A form's schema must be an object of properties (Effect decodes it with
+    # ``ElicitRequestFormParams`` and dies otherwise).
+    asked = M.elicit(message="Delete everything?", schema=S.Struct(Reason))
     answered = asked.as_("accepted").pipe(
         fx.catch_tag(MS.ElicitationDeclined, lambda _: fx.succeed("declined"))
     )

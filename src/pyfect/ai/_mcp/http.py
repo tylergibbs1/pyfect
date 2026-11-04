@@ -17,19 +17,25 @@ from pyfect import _json_text, stream
 from pyfect._core import Effect
 from pyfect._js import text_encode
 from pyfect._json_text import parse as parse_json_text
+from pyfect.ai._mcp import batch
 from pyfect.ai._mcp import sessions as S
 from pyfect.ai._mcp.core import McpServer, McpServerService
 from pyfect.ai._mcp.dispatch import (
-    Classified,
     Connection,
     Request,
     ServerInfo,
     classify,
-    error_response,
-    requested_protocol_version,
+)
+from pyfect.ai._mcp.http_admission import (
+    SESSION_HEADER,
+    VERSION_HEADER,
+    Admitter,
+    Rejected,
+    Session,
+    Unparsable,
 )
 from pyfect.ai.mcp_protocol import Registry
-from pyfect.ai.mcp_schema import InvalidRequest, JsonObject, ParseError
+from pyfect.ai.mcp_schema import JsonObject
 from pyfect.byte_size import ByteSize
 from pyfect.clock import monotonic
 from pyfect.effect import gen, succeed
@@ -39,11 +45,9 @@ from pyfect.http.incoming_message import MaxBodySize
 from pyfect.http.router import HttpRouter
 from pyfect.http.server_request import BodyTooLargeError, ServerRequest, read_limited
 from pyfect.http.server_response import HttpServerResponse, parse_content_length
+from pyfect.logger import CurrentLogLevel, Severity
 from pyfect.queue import Queue
 from pyfect.result import Ok
-
-SESSION_HEADER = "mcp-session-id"
-VERSION_HEADER = "mcp-protocol-version"
 
 _VOID: Effect[None] = succeed(None)
 
@@ -68,19 +72,25 @@ def _media_types(header: str | None) -> list[str]:
     return types
 
 
-def _json(message: JsonObject) -> str:
-    return _json_text.stringify(message)
+def _json(message: JsonObject | list[JsonObject]) -> str:
+    return _json_text.stringify(cast("Any", message))
 
 
-def _event(message: JsonObject) -> bytes:
+def _event(message: JsonObject | list[JsonObject]) -> bytes:
     return text_encode(f"data: {_json(message)}\n\n")
 
 
 class _Sessions:
     def __init__(
-        self, server: McpServerService, info: ServerInfo, registry: Registry, limits: S.Limits
+        self,
+        server: McpServerService,
+        info: ServerInfo,
+        registry: Registry,
+        limits: S.Limits,
+        log_level: Severity,
     ) -> None:
         self.server = server
+        self.log_level: Severity = log_level
         self.info = info
         self.registry = registry
         self.sessions = S.Table(server, limits)
@@ -93,6 +103,7 @@ class _Sessions:
             self.server.next_client_id(),
             "http",
             broadcast=lambda _: _VOID,
+            default_log_level=self.log_level,
         )
 
 
@@ -125,19 +136,6 @@ def _answer(
         return response.stream(cast("Any", body), content_type="text/event-stream", headers=headers)
 
     return run
-
-
-def _sessionless(
-    sessions: _Sessions, classified: Classified, request: ServerRequest
-) -> Effect[HttpServerResponse]:
-    """A message with no session that is neither stateless nor ``initialize``."""
-    if classified.request is not None and classified.request.method == "ping":
-        return _answer(sessions.connection(), classified.request, {})
-    header = sessions.registry.find(request.headers.get(VERSION_HEADER) or "")
-    if header is not None and header.is_stateless:
-        # A stateless client's notification or response: nothing to route it to.
-        return succeed(_empty(202))
-    return succeed(_empty(400))
 
 
 def _close_all(connections: Sequence[Connection]) -> Effect[None]:
@@ -199,8 +197,47 @@ def _open_session(
     return run
 
 
+def _rejected(rejection: Rejected) -> HttpServerResponse:
+    if rejection.error is None:
+        return _empty(rejection.status)
+    body: JsonObject = {"jsonrpc": "2.0", "id": rejection.id, "error": rejection.error}
+    return response.json_unsafe(body, status=rejection.status)
+
+
+def _batch(
+    connection: Connection, messages: list[object], acknowledge: bool, headers: dict[str, str]
+) -> Effect[HttpServerResponse]:
+    """A batch's responses in one JSON array, or an event stream of the
+    server's notifications, then that array; 202 when the batch expects no
+    answer, an empty event stream when every request was cancelled."""
+    if acknowledge:
+        return batch.answer(connection, messages, lambda _: _VOID).as_(_empty(202, headers))
+    events = Queue[JsonObject | list[JsonObject], Done]()
+
+    def notify(message: JsonObject) -> Effect[None]:
+        return events.offer(message).as_void()
+
+    def finish(replies: list[JsonObject]) -> Effect[None]:
+        return events.offer(replies).as_void() if replies else _VOID
+
+    @gen
+    def run():
+        answered = batch.answer(connection, messages, notify).flat_map(finish)
+        yield from answered.ensuring(events.end().as_void()).fork_daemon()
+        first = yield from events.take().option()
+        if first is None:
+            return response.stream(stream.empty, content_type="text/event-stream", headers=headers)
+        if isinstance(first.value, list):
+            return response.json_unsafe(cast("Any", first.value), headers=headers)
+        body = stream.make(first.value).concat(stream.from_queue(events)).map(_event)
+        return response.stream(cast("Any", body), content_type="text/event-stream", headers=headers)
+
+    return run
+
+
 def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerResponse]:
     table = sessions.sessions
+    admitter = Admitter(sessions.registry)
 
     @gen
     def run():  # noqa: PLR0911
@@ -209,43 +246,36 @@ def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerRespo
             return text
         now = yield from monotonic()
         try:
-            message: Any = parse_json_text(text) if text is not None else None
+            message: object = parse_json_text(text) if text is not None else Unparsable()
         except ValueError:
-            return response.json_unsafe(error_response(None, ParseError("Parse error")), status=400)
-        if isinstance(message, list):
-            return response.json_unsafe(
-                error_response(None, InvalidRequest("JSON-RPC batches are not supported")),
-                status=400,
-            )
-        classified = classify(message)
+            message = Unparsable()
         session_id = request.headers.get(SESSION_HEADER)
-        version = requested_protocol_version(classified.params)
-        stateless = sessions.registry.find(version) if version is not None else None
-        if classified.request is not None and (
-            (stateless is not None and stateless.is_stateless)
-            or (version is not None and session_id is None and stateless is None)
-        ):
-            return (yield from _answer(sessions.connection(), classified.request, {}))
-        if classified.kind == "invalid":
-            return response.json_unsafe(
-                error_response(classified.id, InvalidRequest("Invalid Request")), status=400
+        connection: Connection | None = None
+        session: Session = "absent"
+        if session_id is not None:
+            connection, expired = table.get(session_id, now)
+            if expired is not None:
+                yield from expired.close()
+            session = (
+                "unknown"
+                if connection is None or connection.protocol is None
+                else (connection.protocol)
             )
+        admission = admitter.admit(request.headers, message, session)
+        if isinstance(admission, Rejected):
+            return _rejected(admission)
+        headers = {} if isinstance(session, str) else {VERSION_HEADER: session.protocol_version}
+        if isinstance(message, list) and connection is not None:  # admitted: names a session
+            batch = cast("list[object]", message)
+            return (yield from _batch(connection, batch, admission.acknowledge, headers))
+        classified = classify(message)
         if classified.request is not None and classified.request.method == "initialize":
-            if session_id is not None:
-                return _empty(400)
             return (yield from _open_session(sessions, classified.request, now))
-        if session_id is None:
-            return (yield from _sessionless(sessions, classified, request))
-        connection, expired = table.get(session_id, now)
-        if expired is not None:
-            yield from expired.close()
-        if connection is None or connection.protocol is None:
-            return _empty(404)
-        protocol_version = connection.protocol.protocol_version
-        sent_version = request.headers.get(VERSION_HEADER)
-        if sent_version is not None and sent_version != protocol_version:
-            return _empty(400)
-        headers = {VERSION_HEADER: protocol_version}
+        if connection is None:
+            if classified.request is None:
+                # A stateless client's notification or response: nothing to route it to.
+                return _empty(202)
+            return (yield from _answer(sessions.connection(), classified.request, {}))
         if classified.request is not None:
             return (yield from _answer(connection, classified.request, headers))
         yield from connection.dispatch(message, lambda _: _VOID)
@@ -255,13 +285,29 @@ def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerRespo
 
 
 def _delete(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerResponse]:
+    """End a session; one named with a wrong protocol version stays open."""
     session_id = request.headers.get(SESSION_HEADER)
     if session_id is None:
         return succeed(_empty(400))
-    connection = sessions.sessions.pop(session_id)
-    if connection is None:
-        return succeed(_empty(404))
-    return connection.close().as_(_empty(204))
+
+    @gen
+    def run():
+        now = yield from monotonic()
+        connection, expired = sessions.sessions.get(session_id, now)
+        if expired is not None:
+            yield from expired.close()
+        if connection is None or connection.protocol is None:
+            return _empty(404)
+        checked = Admitter(sessions.registry).session(
+            request.headers, connection.protocol, initialize=False
+        )
+        if isinstance(checked, Rejected):
+            return _empty(checked.status)
+        sessions.sessions.pop(session_id)
+        yield from connection.close()
+        return _empty(204)
+
+    return run
 
 
 def serve(
@@ -279,7 +325,8 @@ def serve(
     def run():
         server = yield from McpServer()
         router = yield from HttpRouter()
-        sessions = _Sessions(server, info, registry, limits)
+        level = yield from CurrentLogLevel()
+        sessions = _Sessions(server, info, registry, limits, level)
         terminate = allow_session_termination and any(
             not p.is_stateless for p in registry.protocols
         )

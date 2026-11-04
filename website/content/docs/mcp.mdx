@@ -63,6 +63,38 @@ Each request is a span on both sides, named for its method: `McpClient.tools/cal
 the client and `McpServer.tools/call` on the server, each with a `tool` attribute, inside
 the trace of the HTTP request that carries it.
 
+## Strict tools
+
+A tool annotated `tool.Strict` lists a closed input schema (`additionalProperties: false`
+on every object) and the server refuses arguments with unknown keys before the handler
+runs, naming each one. Like Effect, it reports the refusal as an error result on
+revisions that do so (2025-11-25 and later) and as an `InvalidParams` error before them.
+
+<CodeOutput>
+
+<include meta='title="strict.py"'>../../snippets/mcp/strict.py</include>
+
+<include lang="text">../../snippets/mcp/strict.out</include>
+
+</CodeOutput>
+
+## Logging and protocol checks
+
+A client's `logging/setLevel` sets its session's threshold: log notifications below it are
+dropped, and until it sets one the threshold is the `CurrentLogLevel` the server was built
+with (Info unless you provide another), so `debug` messages are not sent by default. Handlers run with `CurrentLogLevel` at the session's level
+(`notice` is Effect's Info, `critical` and above are Fatal). On 2026-07-28 each request
+names its own level in `_meta["io.modelcontextprotocol/logLevel"]`, and gets only the logs
+at that level or above, and only the progress of its own `progressToken`.
+
+The HTTP endpoint checks headers before it runs anything, as Effect does: a
+`MCP-Protocol-Version` the server does not speak gets a 400 with error -32022 and the
+supported versions, and a header that disagrees with the session or with a 2026-07-28
+request's `_meta`, `Mcp-Method` or `Mcp-Name` gets -32020. A 2025-03-26 session may send
+JSON-RPC batches (over HTTP and stdio); their answers come back as one array. Over HTTP, if
+the batch's handlers send notifications, the reply is an event stream: the notifications, then
+the array. A cancelled request in a batch gets no answer.
+
 ## Security defaults
 
 - `mcp_server.layer_http` keeps at most `max_sessions` (1000) sessions and answers 503 when
