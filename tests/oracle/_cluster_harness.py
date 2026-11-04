@@ -810,19 +810,24 @@ class Cluster:
     ) -> fx.Effect[None, Exception]:
         """Polls ``condition`` (with the client's services) every 100 ms
         until it holds; fails with the cluster's state after ``timeout``
-        seconds."""
+        seconds. Each check runs only for the time left, so a condition
+        that blocks (``deferred.wait()``) fails at the deadline too."""
         checked = condition.pipe(fx.provide(self.client))
 
         @fx.gen
         def wait():
             clock = yield from fx.clock.Clock()
             deadline = clock.now_unsafe() + timeout
-            if (yield from checked):
-                return
-            while clock.now_unsafe() < deadline:
-                yield from fx.sleep(0.1)
-                if (yield from checked):
+            while True:
+                left = deadline - clock.now_unsafe()
+                if left <= 0:
+                    break
+                held = yield from checked.timeout_option(left)
+                if held is not None and held.value:
                     return
+                if clock.now_unsafe() >= deadline:
+                    break
+                yield from fx.sleep(min(0.1, max(0.0, deadline - clock.now_unsafe())))
             state = yield from self.diagnostics()
             return (yield from fx.fail(AssertionError(f"{description}\n{state}")))
 

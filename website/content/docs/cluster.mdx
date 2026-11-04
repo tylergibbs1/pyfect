@@ -117,6 +117,20 @@ persisted messages. Here two runners in one process share a SQLite file:
 
 </CodeOutput>
 
+A runner that stops on purpose (its scope closes, as on a deploy) drains before it hands
+over. It lets the requests its entities are running finish for up to
+`entity_termination_timeout` (15 seconds, as in Effect, to fit Kubernetes' grace period),
+and only then releases their shards. So a job that is running when its runner stops usually
+finishes on that runner and is not run again elsewhere. A request still running at the
+timeout is interrupted, and a persisted one then runs again on the runner that takes its
+shard. With a timeout of 0 the runner hands over at once, as `runners.py` above does so its
+example stops quickly. An RPC annotated `cluster_schema.InterruptOnTermination` is interrupted
+when the drain starts instead of waited for. A runner that dies (`kill -9`) does not drain:
+the others take its shards once they see it is gone, and run its unfinished persisted
+requests.
+
+<include meta='title="drain.py"'>../../snippets/cluster/drain.py</include>
+
 `sharding_config` takes a function that updates the settings read from the environment.
 `client_only=True` makes a runner that sends messages but holds no shards, for a web server
 in front of the cluster. `runner_health="k8s"` checks whether a runner that stopped

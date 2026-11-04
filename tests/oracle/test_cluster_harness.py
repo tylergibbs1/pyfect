@@ -9,6 +9,7 @@ from typing import Any
 import pyfect as fx
 from pyfect import exit as Exit
 from pyfect import testing
+from pyfect.latch import Latch
 
 from ._cluster_harness import ClusterDatabase, make
 from .test_cluster_integration_entity import (
@@ -81,5 +82,31 @@ def test_the_client_routes_by_the_runners_of_its_last_sync(cluster_db: ClusterDa
         reply = yield from client(id).increment(EntityRequest(id=f"{backend}-view", sequence=0))
         assert reply["runner"] == address_string(next_owner.address)
         yield from cluster.kill(old_owner)
+
+    yield from fx.scoped(fx.gen(body))
+
+
+@testing.live(timeout=20)
+def test_wait_until_fails_at_its_deadline_on_a_condition_that_never_returns(
+    cluster_db: ClusterDatabase,
+):
+    """A condition that blocks (``deferred.wait()`` on a request that never
+    starts) is bounded by the deadline too: the test fails with the
+    description instead of hanging until the test's own timeout."""
+
+    def body() -> Body:
+        cluster = yield from make(cluster_db, entities=standard_entities, lock_mode="row")
+        clock = yield from fx.clock.Clock()
+        never = Latch()
+        started = clock.monotonic_unsafe()
+        exit = yield from cluster.wait_until(
+            "The request did not start", never.wait().as_(True), 0.5
+        ).exit()
+        elapsed = clock.monotonic_unsafe() - started
+        assert isinstance(exit, Exit.Failure)
+        error = exit.cause.squash()
+        assert isinstance(error, AssertionError)
+        assert str(error).startswith("The request did not start")
+        assert elapsed < 5
 
     yield from fx.scoped(fx.gen(body))
