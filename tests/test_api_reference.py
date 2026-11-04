@@ -240,8 +240,7 @@ def test_a_type_alias_is_listed_with_its_definition(reference: Tree):
 def test_a_package_links_what_it_reexports_from_its_submodules(reference: Tree):
     """`pyfect.sql.pg.layer` is defined (and documented) in `pyfect.sql.pg.client`;
     the package's page links it rather than leaving it out."""
-    pg = modules_of(reference)["pyfect.sql.pg"]
-    text = "\n".join(section["value"] for section in pg["docstring"] if section["kind"] == "text")
+    text = _docstring_text(modules_of(reference)["pyfect.sql.pg"])
     assert "[`layer`](/docs/reference/sql/pg/client#layer)" in text
     assert "[`PgPoolConfig`](/docs/reference/sql/pg/config/PgPoolConfig)" in text
     for path, mod in modules_of(reference).items():
@@ -252,7 +251,7 @@ def test_a_package_links_what_it_reexports_from_its_submodules(reference: Tree):
             | set(mod["functions"])
             | set(mod["modules"])
         )
-        text = "\n".join(s["value"] for s in mod["docstring"] or [] if s["kind"] == "text")
+        text = _docstring_text(mod)
         unlinked = [
             name
             for name in getattr(module, "__all__", ())
@@ -285,9 +284,14 @@ def test_reexport_links_point_at_reference_pages(reference: Tree):
     pages |= {url(cls["path"]): cls for mod in modules.values() for cls in mod["classes"].values()}
     broken: list[str] = []
     for path, mod in modules.items():
-        text = "\n".join(s["value"] for s in mod["docstring"] or [] if s["kind"] == "text")
+        text = _docstring_text(mod)
         for page, anchor in re.findall(r"\]\((/docs/reference[^)#]*)(?:#([^)]*))?\)", text):
             target = pages.get(page)
             if target is None or (anchor and anchor not in target["functions"]):
                 broken.append(f"{path}: {page}#{anchor}")
     assert broken == []
+
+
+def _docstring_text(mod: Tree) -> str:
+    sections: list[Tree] = mod["docstring"] or []
+    return "\n".join(str(s["value"]) for s in sections if s["kind"] == "text")
