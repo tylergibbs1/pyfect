@@ -11,7 +11,9 @@ Match a reason with ``catch_reason``::
     )
 
 Messages name the method and the URL with its secrets redacted
-(``url_params.redact_url``), and never the headers or the body.
+(``url_params.redact_url``), and never the headers or the body. ``str()``
+of an error without a description adds its cause:
+``Transport error (POST http://.../jobs): ConnectError: ...``.
 """
 
 from __future__ import annotations
@@ -31,6 +33,17 @@ def _message(name: str, description: str | None, info: str) -> str:
     return f"{name}: {description} ({info})" if description else f"{name} error ({info})"
 
 
+def _with_cause(message: str, description: str | None, cause: object) -> str:
+    """``message``, then the cause when no description says what went wrong
+    (Effect's message leaves it out; see docs/PARITY.md)."""
+    if description or cause is None:
+        return message
+    if isinstance(cause, BaseException):
+        detail = str(cause)
+        return f"{message}: {type(cause).__name__}{f': {detail}' if detail else ''}"
+    return f"{message}: {cause!r}"
+
+
 def _method_and_url(request: HttpClientRequest) -> str:
     return f"{request.method} {redact_url(request.url)}"
 
@@ -48,6 +61,9 @@ class _RequestReason(TaggedError):
             self.description,
             _method_and_url(self.request),
         )
+
+    def __str__(self) -> str:
+        return _with_cause(self.message, self.description, self.cause)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -92,6 +108,9 @@ class _ResponseReason(TaggedError):
     def message(self) -> str:
         info = f"{self.response.status} {_method_and_url(self.request)}"
         return _message(type(self).__name__.removesuffix("Error"), self.description, info)
+
+    def __str__(self) -> str:
+        return _with_cause(self.message, self.description, self.cause)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -153,6 +172,9 @@ class HttpClientError(TaggedError):
     @property
     def message(self) -> str:
         return self.reason.message
+
+    def __str__(self) -> str:
+        return str(self.reason)
 
     def to_json(self) -> dict[str, object]:
         return {"_tag": "HttpClientError", "reason": self.reason.to_json()}

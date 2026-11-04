@@ -44,6 +44,62 @@ the client what was wrong, build the routes with
 `{"_tag": "HttpApiSchemaError", "kind": "Payload", "message": "Missing key\n  at [\"url\"]"}`.
 It is off by default, as in Effect, since the message describes your schemas.
 
+## Security
+
+A middleware runs around the handlers of the endpoints it is added to. Declare one as a
+class over what it gives the handlers and how it fails:
+`HttpApiMiddleware[Caller, Unauthorized]` provides a `Caller` and may fail with
+`Unauthorized`, whose schema is the class's `error`. With
+`security={"bearer": security.bearer}` it reads a bearer token; `security.basic` and
+`security.api_key(key=..., in_="header")` read the other kinds. A group declared
+`HttpApiGroup[Authorization]` puts every one of its endpoints behind it, and
+`endpoint.middleware(Authorization)` puts one endpoint behind it.
+
+The implementation is a layer: `layer.succeed(Authorization, {"bearer": bearer})` maps each
+security name to a function of the handler's effect and a `SecurityOptions`.
+`options.credential` is the decoded credential, a `Redacted` string for a token (empty when
+the request has none), and the function either fails or runs the handler with what it
+provides. Pyright checks that the handler's `Caller` is provided.
+
+On the client side, `middleware.layer_client(Authorization, send)` runs `send` around every
+request to the middleware's endpoints: it gets a `ClientMiddlewareOptions` and sends the
+request on with `options.next(...)`, here with the token added. Provide it to `client.make`.
+
+<CodeOutput>
+
+<include meta='title="security.py"'>../../snippets/http_api/security.py</include>
+
+<include lang="text">../../snippets/http_api/security.out</include>
+
+</CodeOutput>
+
+The OpenAPI document lists the security scheme and the 401 response.
+
+## Uploads and streams
+
+`schema.as_multipart(S.Struct(Upload, file=multipart.SingleFileSchema), max_file_size=...)`
+declares a `multipart/form-data` payload. The server writes each file part to a temporary
+file before the handler runs, and the handler gets a `multipart.PersistedFile` with its
+`name`, `content_type` and `path`; the file is removed when the request ends.
+`SingleFileSchema` takes exactly one file for the field. A client sends the payload as an
+`http.body.FormData`, built with `append(name, value)`, where a value is a string or a
+`body.File(content, name, content_type)`. For uploads too large to keep,
+`as_multipart_stream` gives the handler a stream of parts instead.
+
+`schema.StreamSse(data=...)` declares a `text/event-stream` response: the handler gives a
+`Stream` and each element is sent as one event, encoded by the schema. The client method
+gives back a `Stream` of the decoded events, so `run_for_each` follows them as they arrive.
+`StreamSse(events=...)` sends whole events (with `event` and `id`) instead of their data,
+and `error=` encodes a failure of the stream as an event the client fails with.
+
+<CodeOutput>
+
+<include meta='title="uploads.py"'>../../snippets/http_api/uploads.py</include>
+
+<include lang="text">../../snippets/http_api/uploads.out</include>
+
+</CodeOutput>
+
 ## OpenAPI documentation
 
 `openapi.from_api(api)` is the API's OpenAPI 3.1 document, with a JSON Schema for each
@@ -80,4 +136,7 @@ Reference: [`pyfect.http_api`](/docs/reference/http_api),
 [`pyfect.http_api.endpoint`](/docs/reference/http_api/endpoint),
 [`pyfect.http_api.builder`](/docs/reference/http_api/builder),
 [`pyfect.http_api.client`](/docs/reference/http_api/client),
-[`pyfect.http_api.openapi`](/docs/reference/http_api/openapi).
+[`pyfect.http_api.openapi`](/docs/reference/http_api/openapi),
+[`pyfect.http_api.middleware`](/docs/reference/http_api/middleware),
+[`pyfect.http_api.security`](/docs/reference/http_api/security),
+[`pyfect.http_api.schema`](/docs/reference/http_api/schema).
