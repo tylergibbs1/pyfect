@@ -40,6 +40,8 @@ from pyfect import socket as socket_module
 from pyfect._json_value import JsonValue
 from pyfect.ai import ai_error as ai_error_module
 from pyfect.ai import chat as ai_chat
+from pyfect.ai import decision as ai_decision
+from pyfect.ai import decision_model as ai_dm
 from pyfect.ai import embedding_model as ai_embedding_model
 from pyfect.ai import language_model as lm
 from pyfect.ai import mcp_client as mcp_client_module
@@ -52,7 +54,10 @@ from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import client as anthropic_client
 from pyfect.ai.anthropic import language_model as anthropic_lm
 from pyfect.ai.anthropic_structured_output import StructuredOutputCodec, to_codec_anthropic
+from pyfect.ai.cloudflare import client as cloudflare_client
+from pyfect.ai.cloudflare import decision_model as cloudflare_dm
 from pyfect.ai.openai import client as openai_client
+from pyfect.ai.openai import decision_model as openai_dm
 from pyfect.ai.openai import embedding_model as openai_em
 from pyfect.ai.openai import language_model as openai_lm
 from pyfect.ai.openai import tool as openai_tool
@@ -61,6 +66,8 @@ from pyfect.ai.openai_compat import embedding_model as compat_em
 from pyfect.ai.openai_compat import language_model as compat_lm
 from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.response_id_tracker import ResponseIdTracker
+from pyfect.ai.typesafe import client as typesafe_client
+from pyfect.ai.typesafe import decision_model as typesafe_dm
 from pyfect.batching import Entry
 from pyfect.cause import Die, Fail, Interrupt
 from pyfect.cli import (
@@ -6914,6 +6921,71 @@ def check_ai_openai(service: openai_client.Service) -> None:
         ],
     )
     openai_lm.with_config_override({"use_item_reference": True})  # pyright: ignore[reportArgumentType]
+
+
+class _Ticket(TypedDict):
+    message: str
+
+
+def check_ai_decision_model(
+    response: ai_dm.DecideResponse, settled: ai_dm.DecideSettledResponse
+) -> None:
+    # Labels written as literals stay literal; computed ones widen to str.
+    team = ai_decision.classify(instructions="Route", criteria={"billing": "b", "tech": "t"})
+    severity = ai_decision.rate(instructions="Rate", criteria=["low", "high"])
+    urgent = ai_decision.probability(instructions="Urgent?")
+    assert_type(team, ai_decision.Classify[Literal["billing", "tech"]])
+    assert_type(severity, ai_decision.Rate[Literal["low", "high"]])
+    assert_type(
+        ai_decision.rate(instructions="Rate", criteria=[str(1), "2"]), ai_decision.Rate[str]
+    )
+    triage = ai_decision.make(
+        input=S.Struct(_Ticket), decisions={"team": team, "severity": severity, "urgent": urgent}
+    )
+    assert_type(triage, ai_decision.Definition[_Ticket, Never])
+    # An answer looked up by its decision carries that decision's labels.
+    assert_type(response.answers[team], ai_decision.ClassifyAnswer[Literal["billing", "tech"]])
+    assert_type(response.answers[severity].label, Literal["low", "high"])
+    assert_type(response.answers[urgent], ai_decision.ProbabilityAnswer)
+    assert_type(
+        settled.outcomes[team],
+        fx.Ok[ai_decision.ClassifyAnswer[Literal["billing", "tech"]]]
+        | fx.Err[ai_decision.Unanswered],
+    )
+    # Deciding needs the DecisionModel and fails only with AiError.
+    assert_type(
+        ai_dm.decide(triage, input={"message": "hi"}),
+        fx.Effect[ai_dm.DecideResponse, AiError, ai_dm.DecisionModel],
+    )
+    assert_type(
+        ai_dm.decide_settled(triage, input={"message": "hi"}),
+        fx.Effect[ai_dm.DecideSettledResponse, AiError, ai_dm.DecisionModel],
+    )
+    ai_dm.decide(triage, input={"message": 1})  # pyright: ignore[reportArgumentType]
+    # Providers need their own client.
+    assert_type(
+        openai_dm.model("gpt-6-luna"),
+        ai_model.Model[ai_dm.DecisionModel, openai_client.OpenAiClient],
+    )
+    assert_type(
+        cloudflare_dm.model("clef"),
+        ai_model.Model[ai_dm.DecisionModel, cloudflare_client.CloudflareClient],
+    )
+    assert_type(
+        typesafe_dm.model("jev-latest"),
+        ai_model.Model[ai_dm.DecisionModel, typesafe_client.TypeSafeClient],
+    )
+    assert_type(
+        cloudflare_client.layer_config(),
+        fx.Layer[cloudflare_client.CloudflareClient, fx.config.ConfigError, HttpClient],
+    )
+    assert_type(
+        typesafe_client.layer(), fx.Layer[typesafe_client.TypeSafeClient, Never, HttpClient]
+    )
+    assert_type(
+        typesafe_client.layer_config(),
+        fx.Layer[typesafe_client.TypeSafeClient, fx.config.ConfigError, HttpClient],
+    )
 
 
 def check_ai_structured_output() -> None:

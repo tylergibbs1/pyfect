@@ -94,12 +94,61 @@ class CreateEmbeddingRequest(TypedDict):
     user: NotRequired[str]
 
 
+class PredicateQuestion(TypedDict):
+    type: Literal["predicate"]
+    name: str
+    instructions: str
+
+
+class DecisionChoice(TypedDict):
+    value: str
+    description: str
+
+
+class ChoiceQuestion(TypedDict):
+    type: Literal["choice"]
+    name: str
+    instructions: str
+    choices: Sequence[DecisionChoice]
+
+
+class DecisionLevel(TypedDict):
+    label: str
+    description: str
+
+
+class ScoreQuestion(TypedDict):
+    type: Literal["score"]
+    name: str
+    instructions: str
+    levels: Sequence[DecisionLevel]
+
+
+type DecisionQuestion = PredicateQuestion | ChoiceQuestion | ScoreQuestion
+"""A question of the Decisions API."""
+
+
+class DecisionInputText(TypedDict):
+    type: Literal["input_text"]
+    text: str
+
+
+class DecisionInputImage(TypedDict):
+    type: Literal["input_image"]
+    image_url: str
+
+
+class DecisionInputMessage(TypedDict):
+    role: Literal["user"]
+    content: Sequence[DecisionInputText | DecisionInputImage]
+
+
 class CreateDecisionsRequest(TypedDict):
     """A ``POST /decisions`` body."""
 
     model: str
-    input: str | list[JsonObject]
-    questions: list[JsonObject]
+    input: str | Sequence[DecisionInputMessage]
+    questions: Sequence[DecisionQuestion]
 
 
 # --- responses --------------------------------------------------------------------------
@@ -631,11 +680,6 @@ class _DecisionUsage(TypedDict):
     output_tokens: NotRequired[int]
 
 
-class CreateDecisionsResponse(TypedDict):
-    answers: list[JsonObject]
-    usage: NotRequired[_DecisionUsage]
-
-
 class _PredicateAnswer(TypedDict):
     type: Literal["predicate"]
     name: str
@@ -674,6 +718,15 @@ class _RefusalAnswer(TypedDict):
     name: str
 
 
+type DecisionAnswer = _PredicateAnswer | _ChoiceAnswer | _ScoreAnswer | _RefusalAnswer
+"""An answer of the Decisions API."""
+
+
+class CreateDecisionsResponse(TypedDict):
+    answers: list[DecisionAnswer]
+    usage: NotRequired[_DecisionUsage]
+
+
 CREATE_DECISIONS_RESPONSE = S.Struct(
     CreateDecisionsResponse,
     answers=S.List(
@@ -697,6 +750,9 @@ __all__ = [
     "CreateEmbeddingRequest",
     "CreateEmbeddingResponse",
     "CreateResponse",
+    "DecisionAnswer",
+    "DecisionInputMessage",
+    "DecisionQuestion",
     "Embedding",
     "IncludeEnum",
     "MessageStatus",

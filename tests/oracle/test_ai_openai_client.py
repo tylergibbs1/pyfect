@@ -8,11 +8,8 @@ Omitted: ``OpenAiClientGenerated / sets Bearer token from apiKey``,
 ``prepends custom apiUrl`` and ``applies OpenAiConfig transformClient after
 options transformClient``: the generated client of every OpenAPI operation
 is not ported (``OpenAiClient`` covers the Responses, embeddings and
-decisions calls the models use).
-
-Not ported: all 10 titles of ``OpenAiDecisionModel.test.ts``: ``DecisionModel``
-is deferred in pyfect's ai core (``docs/PARITY.md``), so there is no
-``OpenAiDecisionModel`` (the client's ``create_decisions`` call is ported)."""
+decisions calls the models use). ``OpenAiDecisionModel.test.ts`` is ported in
+``test_ai_openai_decision_model.py``."""
 
 from __future__ import annotations
 

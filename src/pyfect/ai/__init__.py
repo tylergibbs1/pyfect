@@ -1,6 +1,7 @@
 """AI services (Effect's ``effect/ai``): prompts, responses, tools and
 toolkits, the provider-neutral ``LanguageModel`` and ``EmbeddingModel``
-services, the Model Context Protocol (``mcp_server``, ``mcp_client``), and
+services, ``decision`` and the ``DecisionModel`` service (``decision_model``),
+the Model Context Protocol (``mcp_server``, ``mcp_client``), and
 each provider's structured-output codec (``anthropic_structured_output``,
 ``openai_structured_output``).
 
@@ -13,6 +14,8 @@ from pyfect.ai import (
     ai_error,
     anthropic_structured_output,
     chat,
+    decision,
+    decision_model,
     embedding_model,
     id_generator,
     language_model,
@@ -32,6 +35,7 @@ from pyfect.ai import (
 )
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.chat import Chat
+from pyfect.ai.decision_model import DecisionModel
 from pyfect.ai.language_model import LanguageModel
 from pyfect.ai.mcp_client import McpClient
 from pyfect.ai.mcp_client_error import McpClientError
@@ -40,6 +44,7 @@ from pyfect.ai.mcp_server import McpServer
 __all__ = [
     "AiError",
     "Chat",
+    "DecisionModel",
     "LanguageModel",
     "McpClient",
     "McpClientError",
@@ -47,6 +52,8 @@ __all__ = [
     "ai_error",
     "anthropic_structured_output",
     "chat",
+    "decision",
+    "decision_model",
     "embedding_model",
     "id_generator",
     "language_model",

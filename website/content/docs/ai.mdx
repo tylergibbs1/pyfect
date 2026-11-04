@@ -161,9 +161,36 @@ concurrent `embed` calls are sent as one batch;
 runs in a span, such as `LanguageModel.generateText`, that
 [tracing](/docs/observability) records.
 
+## Decisions
+
+A `DecisionModel` answers judgments instead of writing text. `decision.classify` picks one
+of its labels, `decision.rate` places the input on ordered levels and `decision.probability`
+gives the chance that a statement is true; `decision.make(input=schema, decisions={...})`
+names them and the schema encodes the input as JSON. `decision_model.decide(definition,
+input=...)` asks for every answer in one call. Look an answer up with its decision object,
+`answers[team]`, and its label has that decision's literal type. A missing, refused or
+invalid answer fails with an `AiError`; `decide_settled` instead gives each decision an
+`Ok` answer or an `Err(Unanswered)`.
+
+`pyfect.ai.openai.decision_model`, `pyfect.ai.cloudflare.decision_model` and
+`pyfect.ai.typesafe.decision_model` provide one. `decision_model.make(decide=...)` builds
+one from a function of a call's `ProviderOptions`, as a test does:
+
+<CodeOutput>
+
+<include meta='title="decisions.py"'>../../snippets/ai/decisions.py</include>
+
+<include lang="text">../../snippets/ai/decisions.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.ai`](/docs/reference/ai),
 [`language_model`](/docs/reference/ai/language_model),
 [`tool`](/docs/reference/ai/tool), [`toolkit`](/docs/reference/ai/toolkit),
 [`pyfect.ai.anthropic`](/docs/reference/ai/anthropic),
 [`pyfect.ai.openai`](/docs/reference/ai/openai),
-[`pyfect.ai.openai_compat`](/docs/reference/ai/openai_compat).
+[`decision`](/docs/reference/ai/decision),
+[`decision_model`](/docs/reference/ai/decision_model),
+[`pyfect.ai.openai_compat`](/docs/reference/ai/openai_compat),
+[`pyfect.ai.cloudflare`](/docs/reference/ai/cloudflare),
+[`pyfect.ai.typesafe`](/docs/reference/ai/typesafe).
