@@ -23,6 +23,8 @@
     "postgres",
     "mysql",
     "mssql",
+    "libsql",
+    "clickhouse",
     "cli",
     "http-server",
     "http-api",

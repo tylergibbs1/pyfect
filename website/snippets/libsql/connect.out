@@ -1,0 +1,2 @@
+ResultSet(columns=(), column_types=(), rows=(), rows_affected=1, last_insert_rowid=1)
+[{'email': 'ada@example.com'}]

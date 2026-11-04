@@ -1,0 +1,54 @@
+---
+title: libSQL and Turso
+description: "A libSQL client for a local file, an in-memory database or a remote sqld or Turso server over HTTP."
+---
+
+`pyfect.sql.libsql` opens a database from a URL. A `file:` path or `:memory:` runs on the
+standard library's `sqlite3`, so it needs nothing extra. A `libsql://`, `https://` or
+`http://` URL talks to a libSQL server (sqld or Turso) over Hrana over HTTP, which needs the
+`pyfect-dev[httpx]` extra. `libsql.layer` provides both `LibsqlClient` and `SqlClient`, so
+the code from the [SQL guide](/docs/sql) runs unchanged.
+
+<CodeOutput>
+
+<include meta='title="connect.py"'>../../snippets/libsql/connect.py</include>
+
+<include lang="text">../../snippets/libsql/connect.out</include>
+
+</CodeOutput>
+
+## Connecting
+
+`LibsqlClientConfig` takes the URL and, for a server, its `auth_token` (a `Redacted`, so it
+never shows up in logs). The URL is checked when the config is made, so a typo fails at
+startup rather than on the first statement:
+
+- `libsql://host` uses HTTPS; add `?tls=0` and an explicit port for plain HTTP.
+- `?authToken=...` on the URL takes the place of `auth_token`.
+- `ws://` and `wss://` URLs are served over HTTP and HTTPS. sqld and Turso accept both on the
+  same address.
+
+To read the settings from the environment, use
+`libsql.layer_config({"url": fx.config.string("LIBSQL_URL"), "auth_token": fx.config.redacted("LIBSQL_TOKEN")})`.
+A client you made yourself goes in `LibsqlLiveConfig(live_client=...)`. It is any object
+with async `execute(sql, args)` and `transaction(mode)` methods (`libsql.LibsqlSdk`), and the
+caller closes it.
+
+## How it differs
+
+The client runs one thing at a time. A statement holds it until it finishes, and a
+transaction holds it from `BEGIN IMMEDIATE` until it commits or rolls back. Nested
+transactions use savepoints. A few things work differently than on the other drivers:
+
+- `.raw` gives a `ResultSet` with `columns`, `column_types`, `rows`, `rows_affected` and
+  `last_insert_rowid`. A local database leaves `column_types` empty, since `sqlite3` doesn't
+  expose declared types.
+- A failure's `reason` comes from SQLite's primary code, as in Effect. A unique violation
+  is a `ConstraintError`, not a `UniqueViolation`.
+- Streams aren't supported, and `BeginTransaction` is ignored.
+- A local database that can't be opened is a defect, not a `SqlError`.
+
+## Migrations
+
+`libsql.migrator` works like the [SQLite migrator](/docs/sql#migrations): `migrator.layer`
+runs the migrations when the layer is built and records them in `effect_sql_migrations`.

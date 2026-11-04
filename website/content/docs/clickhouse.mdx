@@ -1,0 +1,64 @@
+---
+title: ClickHouse
+description: "A ClickHouse client over the HTTP interface: typed parameters, inserts in any format, streams, per-effect settings and query ids, and migrations."
+---
+
+`pyfect.sql.clickhouse` talks to ClickHouse's HTTP interface, the way `@clickhouse/client`
+does, so it needs no native driver. Requests go through a pyfect `HttpClient`; by default
+the client makes one on httpx (the `pyfect-dev[httpx]` extra) and closes it with its layer.
+`clickhouse.layer` provides both `ClickhouseClient` and `SqlClient`.
+
+<CodeOutput>
+
+<include meta='title="connect.py"'>../../snippets/clickhouse/connect.py</include>
+
+<include lang="text">../../snippets/clickhouse/connect.out</include>
+
+</CodeOutput>
+
+## Connecting
+
+`ClickhouseClientConfig` takes the server's `url` (`http://localhost:8123` by default), a
+`username` and `password` (a `Redacted`) or an `access_token`, the `database`, and settings
+and headers sent with every request. The URL can carry most of them, as
+`@clickhouse/client` reads it: `http://user:password@host:8123/database?ch_max_threads=4`.
+It is checked when the config is made, so a typo fails at startup. Pass `http_client=` to
+send requests with an `HttpClient` you already have.
+
+To read the settings from the environment, use
+`clickhouse.layer_config({"url": fx.config.string("CLICKHOUSE_URL"), "password": fx.config.redacted("CLICKHOUSE_PASSWORD")})`.
+The layer checks the server with `/ping` and fails with a `ConnectionError` if it doesn't
+answer within five seconds. `/ping` checks no credentials, so a wrong password shows up on
+the first statement, as an `AuthenticationError`.
+
+## Statements
+
+Each value becomes a `{p1: Type}` parameter. The type comes from the value: `Int64` for an
+`int`, `Float64`, `Bool`, `String`, `DateTime` (`DateTime64(6)` with microseconds), `Date`,
+`Array(...)`. Name it yourself with `sql.param("Nullable(Int32)", None)`; a
+`clickhouse.TupleParam` is a tuple and a dict a map.
+
+A statement runs as a query with `FORMAT JSON` appended. That doesn't work for a statement
+that carries data, like `INSERT ... VALUES`, so:
+
+- `sql.as_command(effect)` runs the effect's statements as commands, which send the SQL as
+  written and ignore the output.
+- `sql.insert_query(table=..., values=rows)` sends rows as `JSONEachRow`. Pass `format=` and
+  `bytes` (a CSV body, say) or a `Stream` for other formats, and `columns=` to pick columns.
+
+`sql.with_query_id(effect, "id")` and `sql.with_clickhouse_settings(effect, {...})` apply to
+every statement and insert inside the effect. Interrupting a statement aborts its request
+and runs `KILL QUERY` for it. A stream does the same if it is dropped before its last row.
+
+A failure's `reason` comes from ClickHouse's error code: `AuthenticationError` (516),
+`AuthorizationError` (497), `SqlSyntaxError` (62 and kin) and `StatementTimeoutError`
+(159, 469). Everything else is an `UnknownError` whose `cause` is the `ClickhouseError`
+with the server's `code`. `sql.client` is the HTTP client underneath, with `query`,
+`command`, `exec` and `insert` for formats the SQL client doesn't read.
+
+## Migrations
+
+`clickhouse.migrator` works like the [SQLite migrator](/docs/sql#migrations). The ledger is a
+`MergeTree` table, and migrations run outside transactions, since ClickHouse's are
+experimental. Each migration is recorded once it succeeds, so a failed one and the ones after
+it run again next time.

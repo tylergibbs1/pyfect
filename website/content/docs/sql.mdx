@@ -9,7 +9,9 @@ provides one on the standard library's `sqlite3`. For PostgreSQL, install the `p
 extra and provide `pyfect.sql.pg.layer` instead; the code that uses `SqlClient` stays the
 same (see [PostgreSQL](/docs/postgres)). MySQL works the same way with the `pyfect-dev[mysql]`
 extra and `pyfect.sql.mysql.layer` (see [MySQL](/docs/mysql)), and SQL Server with the
-`pyfect-dev[mssql]` extra and `pyfect.sql.mssql.layer` (see [SQL Server](/docs/mssql)). Every failure is a `SqlError` whose `reason` says what went wrong (`UniqueViolation`,
+`pyfect-dev[mssql]` extra and `pyfect.sql.mssql.layer` (see [SQL Server](/docs/mssql)). libSQL
+and Turso use `pyfect.sql.libsql.layer` (see [libSQL and Turso](/docs/libsql)), and
+ClickHouse `pyfect.sql.clickhouse.layer` (see [ClickHouse](/docs/clickhouse)). Every failure is a `SqlError` whose `reason` says what went wrong (`UniqueViolation`,
 `SqlSyntaxError`, `LockTimeoutError`, ...).
 
 ## Safe statements

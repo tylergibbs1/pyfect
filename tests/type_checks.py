@@ -150,8 +150,10 @@ from pyfect.schema import variant_schema as VS
 from pyfect.scope import Scope
 from pyfect.socket import WebSocketConstructor
 from pyfect.socket import datagram as dg
+from pyfect.sql import clickhouse as sql_clickhouse
 from pyfect.sql import client as sql_client
 from pyfect.sql import error as sql_error
+from pyfect.sql import libsql as sql_libsql
 from pyfect.sql import migrator as sql_migrator
 from pyfect.sql import model as sql_model
 from pyfect.sql import mssql as sql_mssql
@@ -5271,6 +5273,91 @@ def sql_mysql_driver(mysql_sql: sql_mysql.MysqlClientService) -> None:
     assert_type(sql_result.affected_rows(sql_mysql.ResultSetHeader(1, 2)), int)
     sql_mysql.MysqlClientConfig(password="secret")  # pyright: ignore[reportArgumentType]
     sql_mysql.MysqlClientConfig(port="3306")  # pyright: ignore[reportArgumentType]
+
+
+def sql_clickhouse_driver(
+    ch_sql: sql_clickhouse.ClickhouseClientService,
+    eff: fx.Effect[int, str, sql_client.SqlClient],
+) -> None:
+    """The ClickHouse driver's constructors keep their error and requirement
+    types; ``as_command``, ``with_query_id`` and ``with_clickhouse_settings``
+    keep the effect's; the password takes only a ``Redacted``."""
+    from pyfect import redacted
+    from pyfect.sql.statement import Fragment
+
+    config = sql_clickhouse.ClickhouseClientConfig(
+        url="http://localhost:8123", password=redacted.make("secret")
+    )
+    assert_type(
+        sql_clickhouse.make(config),
+        fx.Effect[
+            sql_clickhouse.ClickhouseClientService,
+            sql_error.SqlError,
+            fx.Scope | reactivity.Reactivity,
+        ],
+    )
+    assert_type(
+        sql_clickhouse.layer(config),
+        fx.Layer[sql_clickhouse.ClickhouseClient | sql_client.SqlClient, sql_error.SqlError],
+    )
+    assert_type(
+        sql_clickhouse.layer_config({"url": fx.config.string("CLICKHOUSE_URL")}),
+        fx.Layer[
+            sql_clickhouse.ClickhouseClient | sql_client.SqlClient,
+            fx.ConfigError | sql_error.SqlError,
+        ],
+    )
+    rows = ch_sql("SELECT 1")
+    assert_type(ch_sql.as_command(eff), fx.Effect[int, str, sql_client.SqlClient])
+    assert_type(ch_sql.with_query_id(eff, "id"), fx.Effect[int, str, sql_client.SqlClient])
+    assert_type(
+        ch_sql.with_clickhouse_settings(eff, {"max_threads": 2}),
+        fx.Effect[int, str, sql_client.SqlClient],
+    )
+    assert_type(
+        ch_sql.insert_query(table="t", values=[{"a": 1}]),
+        fx.Effect[sql_clickhouse.InsertResult, sql_error.SqlError],
+    )
+    assert_type(ch_sql.param("Int32", 1), Fragment)
+    assert_type(ch_sql.client, sql_clickhouse.ClickhouseDriver)
+    assert_type(
+        ch_sql.client.query("SELECT 1", format="JSONEachRow"),
+        fx.Effect[sql_clickhouse.ResultSet, sql_clickhouse.ClickhouseError | HttpClientError],
+    )
+    assert_type(rows.raw, fx.Effect[object, sql_error.SqlError])
+    sql_clickhouse.ClickhouseClientConfig(password="secret")  # pyright: ignore[reportArgumentType]
+    ch_sql.with_clickhouse_settings(eff, {"max_threads": object()})  # pyright: ignore[reportArgumentType]
+
+
+def sql_libsql_driver(libsql_sql: sql_libsql.LibsqlClientService) -> None:
+    """The libSQL driver opens without a typed error (a database that cannot
+    be opened is a defect, as in Effect); the token takes only a
+    ``Redacted``, and a live client must be a ``LibsqlSdk``."""
+    from pyfect import redacted
+
+    config = sql_libsql.LibsqlClientConfig(
+        url="libsql://db.turso.io", auth_token=redacted.make("token")
+    )
+    assert_type(
+        sql_libsql.make(config),
+        fx.Effect[sql_libsql.LibsqlClientService, Never, fx.Scope | reactivity.Reactivity],
+    )
+    assert_type(sql_libsql.layer(config), fx.Layer[sql_libsql.LibsqlClient | sql_client.SqlClient])
+    assert_type(
+        sql_libsql.layer_config({"url": fx.config.string("LIBSQL_URL")}),
+        fx.Layer[sql_libsql.LibsqlClient | sql_client.SqlClient, fx.ConfigError],
+    )
+    assert_type(
+        sql_libsql.LibsqlClient(),
+        TagEffect[sql_libsql.LibsqlClientService, sql_libsql.LibsqlClient, sql_libsql.LibsqlClient],
+    )
+    assert_type(libsql_sql.config, sql_libsql.LibsqlClientConfig | sql_libsql.LibsqlLiveConfig)
+    assert_type(libsql_sql.sdk, sql_libsql.LibsqlSdk)
+    assert_type(
+        sql_libsql.LibsqlLiveConfig(live_client=libsql_sql.sdk).live_client, sql_libsql.LibsqlSdk
+    )
+    sql_libsql.LibsqlClientConfig(url=":memory:", auth_token="secret")  # pyright: ignore[reportArgumentType]
+    sql_libsql.LibsqlLiveConfig(live_client=object())  # pyright: ignore[reportArgumentType]
 
 
 def sql_mssql_driver(mssql_sql: sql_mssql.MssqlClientService) -> None:

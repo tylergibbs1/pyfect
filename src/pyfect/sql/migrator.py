@@ -224,7 +224,17 @@ def _run(
 
     def insert_migrations(rows: Sequence[tuple[int, str]]) -> Effect[object, SqlError]:
         values = [{"migration_id": id_, "name": n} for id_, n in rows]
-        return sql("INSERT INTO {} {}", name, sql.insert(values)).without_transform
+        # A ClickHouse statement runs as a query, ``FORMAT JSON`` appended,
+        # which ``INSERT ... VALUES`` reads as data; ``INSERT ... SELECT``
+        # takes it (Effect's ``VALUES`` fails on a server).
+        return sql.on_dialect_or_else(
+            clickhouse=lambda: sql(
+                "INSERT INTO {} (migration_id, name) {}",
+                name,
+                sql.join(" UNION ALL ", False)([sql("SELECT {}, {}", id_, n) for id_, n in rows]),
+            ),
+            or_else=lambda: sql("INSERT INTO {} {}", name, sql.insert(values)),
+        ).without_transform
 
     def to_record(rows: Sequence[Mapping[str, object]]) -> MigrationRecord | None:
         if not rows:

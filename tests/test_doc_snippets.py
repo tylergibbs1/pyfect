@@ -7,7 +7,9 @@ a snippet asserts its own results, and `test_*.py` snippets are pytest files.
 
 Snippets under `postgres/` and `mysql/` read `DATABASE_URL`: each runs on a fresh database
 of the throwaway server the pg or MySQL tests use (`tests/oracle/_postgres.py`,
-`tests/oracle/_mysql.py`), and skips without one.
+`tests/oracle/_mysql.py`), and skips without one. Those under `clickhouse/` read
+`CLICKHOUSE_URL` and its credentials, of the ClickHouse tests' server
+(`tests/oracle/_clickhouse.py`), and make their own tables.
 The site build never runs snippets, so it needs no server.
 
 A snippet that prints has its output next to it (`x.py` -> `x.out`), which guides show
@@ -67,6 +69,7 @@ def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedPr
 POSTGRES = SNIPPETS / "postgres"
 MYSQL = SNIPPETS / "mysql"
 MSSQL = SNIPPETS / "mssql"
+CLICKHOUSE = SNIPPETS / "clickhouse"
 
 
 def mysql_env(path: Path) -> dict[str, str]:
@@ -100,6 +103,18 @@ def mssql_env(path: Path) -> dict[str, str]:
     }
 
 
+def clickhouse_env() -> dict[str, str]:
+    """The URL and credentials of the ClickHouse server the driver's tests use."""
+    from oracle._clickhouse import PASSWORD, USER, server
+
+    clickhouse = server()  # skips without Docker
+    return {
+        "CLICKHOUSE_URL": clickhouse.url,
+        "CLICKHOUSE_USER": USER,
+        "CLICKHOUSE_PASSWORD": PASSWORD,
+    }
+
+
 def snippet_env(path: Path) -> dict[str, str] | None:
     """`DATABASE_URL` of a new, empty database for a PostgreSQL or MySQL
     snippet; the server and database of a SQL Server one."""
@@ -107,6 +122,8 @@ def snippet_env(path: Path) -> dict[str, str] | None:
         return mysql_env(path)
     if path.is_relative_to(MSSQL):
         return mssql_env(path)
+    if path.is_relative_to(CLICKHOUSE):
+        return clickhouse_env()
     if not path.is_relative_to(POSTGRES):
         return None
     from oracle._postgres import query_now, server

@@ -1,9 +1,9 @@
 """Reuse cases for the sql, persistence, eventlog and reactivity layers.
 
-SQLite cases use an in-memory database per run; PostgreSQL, MySQL, SQL
-Server and Redis cases use the throwaway servers of ``oracle._postgres`` /
-``oracle._mysql`` / ``oracle._mssql`` / ``oracle._redis`` (they skip
-without them). Uses that
+SQLite and libSQL cases use an in-memory database per run; PostgreSQL, MySQL, SQL
+Server, ClickHouse and Redis cases use the throwaway servers of ``oracle._postgres`` /
+``oracle._mysql`` / ``oracle._mssql`` / ``oracle._clickhouse`` / ``oracle._redis``
+(they skip without them). Uses that
 touch an external store (a file, a server) pass whether or not an earlier
 run's data is still there."""
 
@@ -20,11 +20,11 @@ from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
-from oracle import _mssql, _mysql, _postgres, _redis
+from oracle import _clickhouse, _mssql, _mysql, _postgres, _redis
 
 import pyfect as fx
 from layer_cases._case import Case
-from pyfect import config, config_provider, file_system, path
+from pyfect import config, config_provider, file_system, path, redacted
 from pyfect import schema as S
 from pyfect import socket as fx_socket
 from pyfect.context import Tag
@@ -60,8 +60,10 @@ from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.socket import server as socket_server
 from pyfect.socket.server import SocketServer
-from pyfect.sql import mssql, mysql, pg, sqlite
+from pyfect.sql import clickhouse, libsql, mssql, mysql, pg, sqlite
+from pyfect.sql.clickhouse import migrator as clickhouse_migrator
 from pyfect.sql.client import SqlClient
+from pyfect.sql.libsql import migrator as libsql_migrator
 from pyfect.sql.mssql import migrator as mssql_migrator
 from pyfect.sql.mysql import migrator as mysql_migrator
 from pyfect.sql.pg import migrator as pg_migrator
@@ -92,6 +94,10 @@ def _sqlite() -> AnyLayer:
     return sqlite.layer(sqlite.SqliteClientConfig(filename=":memory:"))
 
 
+def _libsql() -> AnyLayer:
+    return libsql.layer(libsql.LibsqlClientConfig(url=":memory:"))
+
+
 def _pg_config() -> pg.PgPoolConfig:
     return pg.PgPoolConfig(url=_postgres.server().url, max_connections=2)
 
@@ -114,6 +120,34 @@ def _mssql_config() -> mssql.MssqlClientConfig:
 
 def _mssql_client() -> AnyLayer:
     return mssql.layer(_mssql_config())
+
+
+def _clickhouse_config() -> clickhouse.ClickhouseClientConfig:
+    return clickhouse.ClickhouseClientConfig(
+        url=_clickhouse.server().url,
+        username=_clickhouse.USER,
+        password=redacted.make(_clickhouse.PASSWORD),
+    )
+
+
+def _clickhouse_client() -> AnyLayer:
+    return clickhouse.layer(_clickhouse_config())
+
+
+def _create_items_clickhouse():
+    sql = yield from SqlClient()
+    yield from sql(
+        "CREATE TABLE IF NOT EXISTS layer_reuse_items (id Int32, name String)"
+        " ENGINE = MergeTree ORDER BY id"
+    )
+
+
+def _migrated_table_clickhouse():
+    sql = yield from SqlClient()
+    yield from sql("INSERT INTO layer_reuse_items SELECT 1, 'a'")
+    [row] = yield from sql("SELECT toInt32(count()) AS n FROM layer_reuse_items")
+    assert isinstance(row["n"], int)
+    assert row["n"] >= 1
 
 
 def _fresh_database():
@@ -176,6 +210,53 @@ _SQL: dict[str, Case] = {
         ),
         needs=_sqlite,
         use=_gen(_migrated_table),
+    ),
+    "pyfect.sql.libsql.client.layer": Case(layer=_libsql, use=_gen(_fresh_database)),
+    "pyfect.sql.libsql.client.layer_config": Case(
+        layer=lambda: libsql.layer_config({"url": config.string("LIBSQL_URL")}),
+        needs=lambda: _provider(LIBSQL_URL=":memory:"),
+        use=_gen(_fresh_database),
+    ),
+    "pyfect.sql.libsql.client.layer_from": Case(
+        layer=lambda: libsql.layer_from(libsql.make(libsql.LibsqlClientConfig(url=":memory:"))),
+        use=_gen(_fresh_database),
+    ),
+    "pyfect.sql.libsql.migrator.layer": Case(
+        layer=lambda: libsql_migrator.layer(
+            loader=libsql_migrator.from_record({"1_create_items": fx.gen(_create_items_sqlite)})
+        ),
+        needs=_libsql,
+        use=_gen(_migrated_table),
+    ),
+    "pyfect.sql.clickhouse.client.layer": Case(layer=_clickhouse_client, use=_gen(_select_one)),
+    "pyfect.sql.clickhouse.client.layer_config": Case(
+        layer=lambda: clickhouse.layer_config(
+            {
+                "url": config.string("CLICKHOUSE_URL"),
+                "username": config.string("CLICKHOUSE_USER"),
+                "password": config.redacted("CLICKHOUSE_PASSWORD"),
+            }
+        ),
+        needs=lambda: _provider(
+            CLICKHOUSE_URL=_clickhouse.server().url,
+            CLICKHOUSE_USER=_clickhouse.USER,
+            CLICKHOUSE_PASSWORD=_clickhouse.PASSWORD,
+        ),
+        use=_gen(_select_one),
+    ),
+    "pyfect.sql.clickhouse.client.layer_from": Case(
+        layer=lambda: clickhouse.layer_from(clickhouse.make(_clickhouse_config())),
+        use=_gen(_select_one),
+    ),
+    "pyfect.sql.clickhouse.migrator.layer": Case(
+        layer=lambda: clickhouse_migrator.layer(
+            loader=clickhouse_migrator.from_record(
+                {"1_create_items": fx.gen(_create_items_clickhouse)}
+            ),
+            table="layer_reuse_migrations",
+        ),
+        needs=_clickhouse_client,
+        use=_gen(_migrated_table_clickhouse),
     ),
     "pyfect.sql.pg.client.layer": Case(layer=_pg, use=_gen(_select_one)),
     "pyfect.sql.pg.client.layer_config": Case(
