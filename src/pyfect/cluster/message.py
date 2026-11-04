@@ -205,6 +205,7 @@ __all__ = [
     "IncomingLocal",
     "IncomingRequest",
     "IncomingRequestLocal",
+    "MalformedMessage",
     "Outgoing",
     "OutgoingEnvelope",
     "OutgoingRequest",

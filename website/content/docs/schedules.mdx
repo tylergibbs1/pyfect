@@ -22,4 +22,21 @@ Combinators: `up_to(times=, duration=)`, `jittered`, `while_`, `max` / `min`, `c
 more. They are methods; `jittered` and `passthrough` also pipe (`s.pipe(schedule.jittered)`). Schedules use the `Clock` service, so tests can run them on virtual time
 ([Testing](/docs/testing)).
 
-Reference: [`pyfect.schedule`](/docs/reference/schedule).
+## Cron
+
+`pyfect.cron` parses cron expressions: five fields (minute, hour, day, month, weekday), or
+six with seconds first, in a time zone. `cron.next(c, now)` is the first matching time after
+`now`, `cron.sequence` the ones after it, and `cron.match` tests a datetime. `cron.parse`
+returns a `Result` with a `CronParseError` for a bad expression; `cron.parse_unsafe` raises
+it. `schedule.cron` repeats an effect at each matching time. To run a cron job once across a
+cluster, see [cron jobs](/docs/cluster#singletons-and-cron-jobs).
+
+<CodeOutput>
+
+<include meta='title="cron.py"'>../../snippets/schedules/cron.py</include>
+
+<include lang="text">../../snippets/schedules/cron.out</include>
+
+</CodeOutput>
+
+Reference: [`pyfect.schedule`](/docs/reference/schedule), [`pyfect.cron`](/docs/reference/cron).

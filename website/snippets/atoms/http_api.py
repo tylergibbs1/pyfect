@@ -57,7 +57,7 @@ def program():
     api_atoms = atom_http_api.make(
         ExampleClient, api=api, http_client=layer.succeed(HttpClient, http)
     )
-    hello = api_atoms.query(Greetings, Greetings.hello, params={"name": "Ada"})
+    hello = api_atoms.query_of(Greetings, Greetings.hello)(params={"name": "Ada"})
     print((yield from atom.get_result(hello)))
 
     # A query with reactivity keys is refreshed by a mutation made with the same keys.

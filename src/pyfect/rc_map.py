@@ -32,6 +32,7 @@ from pyfect._core import (
 )
 from pyfect._fiber import Fiber
 from pyfect._root import new_root, start_root
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.clock import Clock, ClockService
 from pyfect.context import Context
 from pyfect.deferred import Deferred
@@ -77,7 +78,7 @@ class _Entry[A, E]:
         self.ref_count = 1
 
 
-class RcMap[K: Hashable, A, E = Never]:
+class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
     """Make one with ``RcMap.make(lookup)`` inside a scope."""
 
     __slots__ = ("_capacity", "_context", "_entries", "_idle_time_to_live", "_lookup", "_scope")
@@ -98,23 +99,44 @@ class RcMap[K: Hashable, A, E = Never]:
         self._entries: dict[K, _Entry[A, E]] | None = {}  # None once closed
 
     @overload
-    @staticmethod
+    @classmethod
     def make[K2: Hashable, T, X = Never, R = Never](
+        cls: type[RcMap[Unsubscripted, Unsubscripted, Any]],
         lookup: Callable[[K2], Effect[T, X, R]],
         *,
         idle_time_to_live: IdleTimeToLive[K2] | None = None,
         capacity: None = None,
     ) -> Effect[RcMap[K2, T, X], Never, Scope | R]: ...
     @overload
-    @staticmethod
+    @classmethod
     def make[K2: Hashable, T, X = Never, R = Never](
+        cls: type[RcMap[Unsubscripted, Unsubscripted, Any]],
         lookup: Callable[[K2], Effect[T, X, R]],
         *,
         idle_time_to_live: IdleTimeToLive[K2] | None = None,
         capacity: int,
     ) -> Effect[RcMap[K2, T, X | ExceededCapacityError], Never, Scope | R]: ...
-    @staticmethod
+    @overload
+    @classmethod
+    def make[R = Never](
+        cls,
+        lookup: Callable[[K], Effect[A, E, R]],
+        *,
+        idle_time_to_live: IdleTimeToLive[K] | None = None,
+        capacity: None = None,
+    ) -> Effect[RcMap[K, A, E], Never, Scope | R]: ...
+    @overload
+    @classmethod
+    def make[X = Never, R = Never](
+        cls,
+        lookup: Callable[[K], Effect[A, X, R]],
+        *,
+        idle_time_to_live: IdleTimeToLive[K] | None = None,
+        capacity: int,
+    ) -> Effect[RcMap[K, A, X | ExceededCapacityError], Never, Scope | R]: ...
+    @classmethod
     def make(
+        cls,
         lookup: Callable[[Any], Effect[Any, Any, Any]],
         *,
         idle_time_to_live: IdleTimeToLive[Any] | None = None,

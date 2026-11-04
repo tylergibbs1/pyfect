@@ -132,6 +132,12 @@ class Config(Effect[A_co, ConfigError]):
 
         return Config(run)
 
+    @overload
+    def with_default[B](self: Config[B], default: B) -> Config[B]: ...
+    @overload
+    def with_default[B](  # pyright: ignore[reportOverlappingOverload]
+        self, default: B
+    ) -> Config[A_co | B]: ...
     def with_default[B](self, default: B) -> Config[A_co | B]:
         """``default`` when the value is absent. Invalid data and source
         errors still fail. A group from ``all`` is absent as a whole when

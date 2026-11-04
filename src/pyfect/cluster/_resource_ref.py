@@ -13,10 +13,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, overload
 
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.cluster._interruptors import around_entity
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.deferred import Deferred
@@ -59,14 +60,31 @@ _INTERRUPTED: Exit[Any, Any] = interrupt_exit()
 
 
 @dataclass(eq=False, slots=True)
-class ResourceRef[A]:
+class ResourceRef[A = Unsubscripted]:
     _release_scope: CloseableScope
     _acquire: Callable[[CloseableScope], Effect[A]]
     _teardown_address: EntityAddress | None
     _state: _State[A] = field(default_factory=_Closed)
 
-    @staticmethod
+    @overload
+    @classmethod
     def make[B](
+        cls: type[ResourceRef[Unsubscripted]],
+        parent: CloseableScope,
+        acquire: Callable[[CloseableScope], Effect[B]],
+        teardown_address: EntityAddress | None = None,
+    ) -> Effect[ResourceRef[B]]: ...
+    @overload
+    @classmethod
+    def make(
+        cls,
+        parent: CloseableScope,
+        acquire: Callable[[CloseableScope], Effect[A]],
+        teardown_address: EntityAddress | None = None,
+    ) -> Effect[ResourceRef[A]]: ...
+    @classmethod
+    def make[B](
+        cls,
         parent: CloseableScope,
         acquire: Callable[[CloseableScope], Effect[B]],
         teardown_address: EntityAddress | None = None,

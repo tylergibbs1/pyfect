@@ -36,14 +36,39 @@ function unwrapTabs(nodes: RootContent[]): RootContent[] {
   });
 }
 
+/** `type` aliases come with the values, their annotation starting `type ` (see
+ * `parse_type_alias` in scripts/generate_api.py): give them a table of their own. */
+function splitTypes(nodes: RootContent[]): RootContent[] {
+  return nodes.flatMap((node, i): RootContent[] => {
+    if (!isElement(node, 'PyAttributes') || nodes[i - 1]?.type === 'heading') return [node];
+    const isType = (child: (typeof node.children)[number]) =>
+      child.type === 'mdxJsxFlowElement' && (attribute(child, 'type') ?? '').startsWith('type ');
+    const values = node.children.filter((child) => !isType(child));
+    const types = node.children.filter(isType);
+    const out: RootContent[] = [];
+    if (values.length > 0) out.push(heading(2, 'Values', 'values'), { ...node, children: values });
+    if (types.length > 0) {
+      out.push(heading(2, 'Types', 'types'), {
+        ...node,
+        attributes: [...node.attributes, { type: 'mdxJsxAttribute', name: 'kind', value: 'types' }],
+        children: types,
+      });
+    }
+    return out;
+  });
+}
+
 /**
- * Shapes fumadocs-python's pages like the guides: a module's tabs become sections, and
- * each function or method gets its own heading, so all of them are linkable and listed
- * in the table of contents. A function entry then leaves out its own title.
+ * Shapes fumadocs-python's pages like the guides: a module's tabs become sections, its
+ * values get a "Values" section and its `type` aliases a "Types" one, and each function or method gets its own heading, so
+ * all of them are linkable and listed in the table of contents. A function entry then
+ * leaves out its own title.
  */
 export function remarkReferenceHeadings() {
   return (tree: Root) => {
-    tree.children = unwrapTabs(tree.children).flatMap((node): RootContent[] => {
+    // A module's values (layers, effects, constants) and types come untitled; a class's
+    // attributes already follow their own heading.
+    tree.children = splitTypes(unwrapTabs(tree.children)).flatMap((node): RootContent[] => {
       if (!isElement(node, 'PyFunction')) return [node];
       const name = attribute(node, 'name');
       if (!name) return [node];

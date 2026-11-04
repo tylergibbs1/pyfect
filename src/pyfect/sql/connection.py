@@ -81,6 +81,7 @@ __all__ = [
     "Connection",
     "ConnectionTag",
     "Row",
+    "SqlError",
     "TransformRows",
     "ValueRow",
 ]

@@ -454,6 +454,7 @@ def schema_no_body[T, RD](
 
 
 __all__ = [
+    "HttpClientError",
     "HttpClientResponse",
     "ResponseBody",
     "ResponseTooLargeError",

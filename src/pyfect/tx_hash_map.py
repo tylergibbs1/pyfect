@@ -18,6 +18,7 @@ from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._equal import equal_key
 from pyfect._primitives import _Gen
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.hash_map import HashMap
 from pyfect.option import Option, Some
 from pyfect.result import Result
@@ -25,7 +26,7 @@ from pyfect.transaction import tx
 from pyfect.tx_ref import TxRef
 
 
-class TxHashMap[K, V]:
+class TxHashMap[K = Unsubscripted, V = Unsubscripted]:
     """``TxHashMap(ref)`` wraps an existing ``TxRef``; ``empty``, ``make``
     and ``from_iterable`` are the effects."""
 
@@ -39,12 +40,30 @@ class TxHashMap[K, V]:
         """Spelled ``TxHashMap[str, int].empty()``."""
         return _new(HashMap[K, V].empty())
 
-    @staticmethod
-    def make[K2, V2](*entries: tuple[K2, V2]) -> Effect[TxHashMap[K2, V2]]:
-        return TxHashMap.from_iterable(entries)
+    @overload
+    @classmethod
+    def make[K2, V2](
+        cls: type[TxHashMap[Unsubscripted, Unsubscripted]], *entries: tuple[K2, V2]
+    ) -> Effect[TxHashMap[K2, V2]]: ...
+    @overload
+    @classmethod
+    def make(cls, *entries: tuple[K, V]) -> Effect[TxHashMap[K, V]]: ...
+    @classmethod
+    def make(cls, *entries: tuple[Any, Any]) -> Effect[TxHashMap[Any, Any]]:
+        """``TxHashMap[K, V].make(...)`` takes the subscript; ``TxHashMap.make``
+        infers it from the entries."""
+        return _new(HashMap.from_iterable(entries))
 
-    @staticmethod
-    def from_iterable[K2, V2](entries: Iterable[tuple[K2, V2]]) -> Effect[TxHashMap[K2, V2]]:
+    @overload
+    @classmethod
+    def from_iterable[K2, V2](
+        cls: type[TxHashMap[Unsubscripted, Unsubscripted]], entries: Iterable[tuple[K2, V2]]
+    ) -> Effect[TxHashMap[K2, V2]]: ...
+    @overload
+    @classmethod
+    def from_iterable(cls, entries: Iterable[tuple[K, V]]) -> Effect[TxHashMap[K, V]]: ...
+    @classmethod
+    def from_iterable(cls, entries: Iterable[tuple[Any, Any]]) -> Effect[TxHashMap[Any, Any]]:
         """A new map each time the effect runs. ``entries`` is read once,
         here, so a one-shot iterator survives transaction retries."""
         return _new(HashMap.from_iterable(entries))

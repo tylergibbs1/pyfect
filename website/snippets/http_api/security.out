@@ -1,0 +1,2 @@
+without a token: Unauthorized(message='a valid bearer token is needed')
+with a token: ada

@@ -1,0 +1,2 @@
+{'op': 'replace', 'path': '/stars', 'value': 12}
+{'op': 'add', 'path': '/tags/1', 'value': 'python'}

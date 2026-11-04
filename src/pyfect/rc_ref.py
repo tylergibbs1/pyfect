@@ -16,7 +16,7 @@ caller has left.
 from __future__ import annotations
 
 import math
-from typing import Any, Final, Generic, Literal, Never, TypeVar
+from typing import Any, Final, Generic, Literal, Never, TypeVar, overload
 
 from pyfect._core import (
     Effect,
@@ -31,6 +31,7 @@ from pyfect._core import (
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._root import new_root, start_root
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.clock import sleep
 from pyfect.context import Context
 from pyfect.duration import Duration, Seconds, to_seconds
@@ -41,7 +42,7 @@ from pyfect.scope import CloseableScope, Scope
 _VOID: Final[Effect[None]] = _Succeed(None)
 _DONE: Final[Exit[None, Never]] = Success(None)
 
-A_co = TypeVar("A_co", covariant=True)
+A_co = TypeVar("A_co", covariant=True, default=Unsubscripted)
 E_co = TypeVar("E_co", covariant=True, default=Never)
 
 
@@ -91,9 +92,22 @@ class RcRef(Generic[A_co, E_co]):
         self._idle_time_to_live = idle_time_to_live
         self._state: _State[A_co] = "empty"
 
-    @staticmethod
+    @overload
+    @classmethod
     def make[T, X = Never, R = Never](
-        acquire: Effect[T, X, R], *, idle_time_to_live: Duration | None = None
+        cls: type[RcRef[Unsubscripted, Any]],
+        acquire: Effect[T, X, R],
+        *,
+        idle_time_to_live: Duration | None = None,
+    ) -> Effect[RcRef[T, X], Never, Scope | R]: ...
+    @overload
+    @classmethod
+    def make[R = Never](
+        cls, acquire: Effect[A_co, E_co, R], *, idle_time_to_live: Duration | None = None
+    ) -> Effect[RcRef[A_co, E_co], Never, Scope | R]: ...
+    @classmethod
+    def make[T, X = Never, R = Never](
+        cls, acquire: Effect[T, X, R], *, idle_time_to_live: Duration | None = None
     ) -> Effect[RcRef[T, X], Never, Scope | R]:
         """A ref that runs ``acquire`` (with the services in scope now, and
         a scope of its own) when first used. Without ``idle_time_to_live``

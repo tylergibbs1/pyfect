@@ -18,14 +18,14 @@ function Signature({ children }: { children: ReactNode }) {
   );
 }
 
-function Table({ head, children }: { head: string; children: ReactNode }) {
+function Table({ head, typeHead = 'Type', children }: { head: string; typeHead?: string; children: ReactNode }) {
   return (
     <div className="typeset-scroll no-scrollbar *:[table]:w-full">
       <table>
         <thead>
           <tr>
             <th>{head}</th>
-            <th>Type</th>
+            <th>{typeHead}</th>
             <th>Description</th>
           </tr>
         </thead>
@@ -63,12 +63,21 @@ export function PyAttribute(props: { name: string; type?: string; value?: string
   return <Row {...props} />;
 }
 
-export function PyAttributes({ children }: { children?: ReactNode }) {
+export function PyAttributes({ kind, children }: { kind?: 'types'; children?: ReactNode }) {
+  if (kind === 'types') {
+    return (
+      <Table head="Type" typeHead="Definition">
+        {children}
+      </Table>
+    );
+  }
   return <Table head="Attribute">{children}</Table>;
 }
 
 export function PyFunctionReturn({ type, children }: { type?: string; children?: ReactNode }) {
   if ((type ?? 'None') === 'None' && Children.count(children) === 0) return null;
+  // An overloaded function has no single return type: its signatures show each one.
+  if (type === undefined) return <>{children}</>;
   return (
     <>
       <p>
@@ -118,8 +127,11 @@ export function PyFunction(props: {
         </h4>
       )}
       <Signature>
-        {props.name}
-        {props.type}
+        {/* one line per overload */}
+        {props.type
+          .split('\n')
+          .map((line) => props.name + line)
+          .join('\n')}
       </Signature>
       {rest.filter((child) => !(isValidElement(child) && (child.type === PyFunctionReturn || child.type === PySourceCode)))}
       {parameters.length > 0 ? <Table head="Parameter">{parameters}</Table> : null}

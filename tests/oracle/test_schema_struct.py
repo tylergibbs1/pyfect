@@ -286,6 +286,34 @@ def test_record_applies_excess_property_options_to_unmatched_own_keys():
         S.encode_unknown_sync(schema)(value, on_excess_property="error")
 
 
+def test_record_a_key_failing_its_check_is_an_excess_property():
+    """Not an Effect title: what Effect v4.0.6's ``Schema.Record`` does under Node with
+    ``Record(String.check(isPattern(/^[a-z]+$/)), Number)`` nested in a struct (dogfood
+    forge #5). A key failing its check is not an entry: it is dropped by default, and
+    ``onExcessProperty: "error"`` reports it as an excess property, not with the key's
+    own message; ``errors: "all"`` adds the value issues after it."""
+
+    class Tasks(TypedDict):
+        tasks: dict[str, float]
+
+    records = S.Record(S.String.check(S.is_pattern(r"^[a-z]+$")), S.Number)
+    schema = S.Struct(Tasks, tasks=records)
+    value = {"tasks": {"ok": 1, "a b": 2}}
+    assert S.decode_unknown_sync(schema)(value) == {"tasks": {"ok": 1}}
+    assert S.encode_unknown_sync(schema)(value) == {"tasks": {"ok": 1}}
+    excess = r'^Expected no excess property\n  at \["tasks"\]\["a b"\]$'
+    with pytest.raises(S.SchemaError, match=excess):
+        S.decode_unknown_sync(schema)(value, on_excess_property="error")
+    with pytest.raises(S.SchemaError, match=excess):
+        S.encode_unknown_sync(schema)(value, on_excess_property="error")
+    bad_value = {"ok": "x", "a b": 2}
+    with pytest.raises(S.SchemaError) as raised:
+        S.decode_unknown_sync(records)(bad_value, on_excess_property="error", errors="all")
+    assert raised.value.message == (
+        'Expected no excess property\n  at ["a b"]\nExpected number\n  at ["ok"]'
+    )
+
+
 def test_record_recognizes_numeric_declared_keys_with_an_index_signature():
     """Record / recognizes numeric declared keys with an index signature"""
     schema = S.Record(S.Union(S.Literal(1), S.String), S.String)

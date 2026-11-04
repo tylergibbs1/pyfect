@@ -32,4 +32,12 @@ def layer[R = Never](
     return layer_effect_discard(run(loader=loader, schema_directory=schema_directory, table=table))
 
 
-__all__ = ["Loader", "MigrationError", "from_file_system", "from_record", "layer", "run"]
+__all__ = [
+    "Loader",
+    "MigrationError",
+    "SqlError",
+    "from_file_system",
+    "from_record",
+    "layer",
+    "run",
+]

@@ -68,6 +68,24 @@ In production, provide `httpx_client.layer` instead (install the `pyfect-dev[htt
 Every request runs in a client span and sends trace headers (see
 [observability](/docs/observability)); interrupting a request aborts it.
 
+## HTTP client errors
+
+Every failure of a request is an `HttpClientError` whose `reason` says what went wrong:
+`TransportError` (the request couldn't be sent or its response received), `EncodeError`,
+`InvalidUrlError`, `StatusCodeError`, `DecodeError` or `EmptyBodyError`.
+`fx.catch_reason(HttpClientError, StatusCodeError, f)` recovers from one of them. The
+reason's `cause` is the underlying exception, such as a refused connection or a client used
+after the scope that owned it closed. `error.message` is Effect's text and leaves the cause
+out; `str(error)` adds it when the reason has no description of its own.
+
+<CodeOutput>
+
+<include meta='title="http_errors.py"'>../../snippets/platform/http_errors.py</include>
+
+<include lang="text">../../snippets/platform/http_errors.out</include>
+
+</CodeOutput>
+
 ## A mocked client in tests
 
 `layer_test` makes the stand-in server a one-line fixture. Under `testing.effect` the clock

@@ -8,7 +8,7 @@ the lookup is interrupted and the next ``get`` starts afresh."""
 from __future__ import annotations
 
 from collections.abc import Callable, Hashable
-from typing import Any, Never
+from typing import Any, Never, overload
 
 from pyfect._concurrency import for_each
 from pyfect._core import (
@@ -21,6 +21,7 @@ from pyfect._core import (
     uninterruptible_mask,
 )
 from pyfect._fiber import Fiber
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.context import Context
 from pyfect.deferred import Deferred
 from pyfect.effect import interrupt
@@ -38,7 +39,7 @@ class _Entry[A, E]:
         self.awaiters = 0
 
 
-class ResourceMap[K: Hashable, A, E]:
+class ResourceMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Unsubscripted]:
     __slots__ = ("_closed", "_entries", "_lookup")
 
     def __init__(self, lookup: Callable[[K, CloseableScope], Effect[A, E]]) -> None:
@@ -46,8 +47,20 @@ class ResourceMap[K: Hashable, A, E]:
         self._entries: dict[K, _Entry[A, E]] = {}
         self._closed = False
 
-    @staticmethod
+    @overload
+    @classmethod
     def make[K2: Hashable, A2, E2, R = Never](
+        cls: type[ResourceMap[Unsubscripted, Unsubscripted, Unsubscripted]],
+        lookup: Callable[[K2], Effect[A2, E2, R | Scope]],
+    ) -> Effect[ResourceMap[K2, A2, E2], Never, R | Scope]: ...
+    @overload
+    @classmethod
+    def make[R = Never](
+        cls, lookup: Callable[[K], Effect[A, E, R | Scope]]
+    ) -> Effect[ResourceMap[K, A, E], Never, R | Scope]: ...
+    @classmethod
+    def make[K2: Hashable, A2, E2, R = Never](
+        cls,
         lookup: Callable[[K2], Effect[A2, E2, R | Scope]],
     ) -> Effect[ResourceMap[K2, A2, E2], Never, R | Scope]:
         """A map whose entries are built by ``lookup`` (with their own

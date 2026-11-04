@@ -9,12 +9,14 @@ function returning an ``Option``: ``None`` leaves the value as it is.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import overload
 
 from pyfect._core import Effect, _Sync
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.option import Option
 
 
-class Ref[A]:
+class Ref[A = Unsubscripted]:
     """``Ref(value)`` is Effect's ``makeUnsafe``; ``Ref.make`` is the effect."""
 
     __slots__ = ("_value",)
@@ -22,8 +24,14 @@ class Ref[A]:
     def __init__(self, value: A) -> None:
         self._value = value
 
-    @staticmethod
-    def make[T](value: T) -> Effect[Ref[T]]:
+    @overload
+    @classmethod
+    def make[T](cls: type[Ref[Unsubscripted]], value: T) -> Effect[Ref[T]]: ...
+    @overload
+    @classmethod
+    def make(cls, value: A) -> Effect[Ref[A]]: ...
+    @classmethod
+    def make[T](cls, value: T) -> Effect[Ref[T]]:
         return _Sync(lambda: Ref(value))
 
     def get_unsafe(self) -> A:

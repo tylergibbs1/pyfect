@@ -17,6 +17,7 @@ from typing import Any, Final, Never, overload
 from pyfect._core import Effect, _Gen, _Locally, _Sync
 from pyfect._effect_args import require_effect
 from pyfect._interrupt_reason import interrupt_closed
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.effect import sync as sync_effect
 from pyfect.exit import Exit, Failure, Success
 from pyfect.scope import CloseableScope, Scope
@@ -29,7 +30,7 @@ def _in_scope[A, E](eff: Effect[A, E, Any], scope: CloseableScope) -> Effect[A, 
     return _Locally(eff, lambda ctx: ctx.add(Scope, scope))
 
 
-class ScopedRef[A]:
+class ScopedRef[A = Unsubscripted]:
     """Make one with ``ScopedRef.make`` or ``ScopedRef.from_acquire`` inside
     a scope."""
 
@@ -40,8 +41,19 @@ class ScopedRef[A]:
         self._current = (generation, value)
         self._lock = Semaphore(1)
 
-    @staticmethod
+    @overload
+    @classmethod
     def from_acquire[T, X = Never, R = Never](
+        cls: type[ScopedRef[Unsubscripted]], acquire: Effect[T, X, R]
+    ) -> Effect[ScopedRef[T], X, Scope | R]: ...
+    @overload
+    @classmethod
+    def from_acquire[X = Never, R = Never](
+        cls, acquire: Effect[A, X, R]
+    ) -> Effect[ScopedRef[A], X, Scope | R]: ...
+    @classmethod
+    def from_acquire[T, X = Never, R = Never](
+        cls,
         acquire: Effect[T, X, R],
     ) -> Effect[ScopedRef[T], X, Scope | R]:
         """A ref holding what ``acquire`` gives, with its resources in the
@@ -61,8 +73,16 @@ class ScopedRef[A]:
 
         return _Gen(body).uninterruptible()
 
-    @staticmethod
-    def make[T](evaluate: Callable[[], T]) -> Effect[ScopedRef[T], Never, Scope]:
+    @overload
+    @classmethod
+    def make[T](
+        cls: type[ScopedRef[Unsubscripted]], evaluate: Callable[[], T]
+    ) -> Effect[ScopedRef[T], Never, Scope]: ...
+    @overload
+    @classmethod
+    def make(cls, evaluate: Callable[[], A]) -> Effect[ScopedRef[A], Never, Scope]: ...
+    @classmethod
+    def make[T](cls, evaluate: Callable[[], T]) -> Effect[ScopedRef[T], Never, Scope]:
         """A ref holding ``evaluate()``, which has no resources."""
         return ScopedRef.from_acquire(sync_effect(evaluate))
 

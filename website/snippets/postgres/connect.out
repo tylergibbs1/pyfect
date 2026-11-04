@@ -1,0 +1,3 @@
+[{'kind': 'signup', 'data': {'plan': 'pro', 'user': 'ada'}}]
+[{'id': 1, 'kind': 'signup'}]
+[{'id': 1}]

@@ -84,3 +84,30 @@ def test_a_traced_fn_body_that_returns_neither_dies_with_a_type_error():
     assert isinstance(defect, TypeError)
     assert "bad" in str(defect)
     assert "yield from" in str(defect)
+
+
+def _generic_unannotated[R](eff: fx.Effect[int, Any, R]):
+    return (yield from eff)
+
+
+def _generic_annotated[R](eff: fx.Effect[int, Any, R]) -> fx.Gen[int, Any, R]:
+    return (yield from eff)
+
+
+@pytest.mark.parametrize(
+    "decorate",
+    [fx.fn, fx.fn_untraced, fx.fn("named")],
+    ids=["fn", "fn_untraced", "fn(name)"],
+)
+def test_a_generic_body_must_annotate_its_return_type(decorate: Callable[[Any], object]):
+    # pyright drops or collapses a generic body's type parameter when the body
+    # yields effects needing different services (research/typing/fn_1_generic.py),
+    # so a generic body says what it yields.
+    with pytest.raises(TypeError, match=r"_generic_unannotated is generic.*fx\.Gen\[A, E, R\]"):
+        decorate(_generic_unannotated)
+    assert callable(decorate(_generic_annotated))
+
+
+def test_an_annotated_generic_body_runs():
+    with_annotation = fx.fn(_generic_annotated)
+    assert fx.run_sync(with_annotation(fx.succeed(2))) == 2

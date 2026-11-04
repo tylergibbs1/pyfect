@@ -12,9 +12,10 @@ rolls back publishes nothing.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Never
+from typing import TYPE_CHECKING, Never, overload
 
 from pyfect._core import Effect
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.effect import gen
 from pyfect.scope import Scope, acquire_release
 from pyfect.transaction import tx
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from pyfect.stream import Stream
 
 
-class TxSubscriptionRef[A]:
+class TxSubscriptionRef[A = Unsubscripted]:
     """``make`` is the effect; ``isinstance(x, TxSubscriptionRef)`` is
     Effect's ``isTxSubscriptionRef``."""
 
@@ -36,8 +37,16 @@ class TxSubscriptionRef[A]:
         self._ref = ref
         self._pubsub = pubsub
 
-    @staticmethod
-    def make[T](value: T) -> Effect[TxSubscriptionRef[T]]:
+    @overload
+    @classmethod
+    def make[T](
+        cls: type[TxSubscriptionRef[Unsubscripted]], value: T
+    ) -> Effect[TxSubscriptionRef[T]]: ...
+    @overload
+    @classmethod
+    def make(cls, value: A) -> Effect[TxSubscriptionRef[A]]: ...
+    @classmethod
+    def make[T](cls, value: T) -> Effect[TxSubscriptionRef[T]]:
         return TxPubSub[T].unbounded().map(lambda pubsub: TxSubscriptionRef(TxRef(value), pubsub))
 
     @property

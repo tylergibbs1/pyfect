@@ -28,11 +28,12 @@ from typing import Any, TypeIs, cast, overload
 from pyfect import _hamt
 from pyfect._equal import equal_key, equals
 from pyfect._hamt import Entry, Node
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.option import Option, Some
 from pyfect.result import Ok, Result
 
 
-class HashMap[K, V]:
+class HashMap[K = Unsubscripted, V = Unsubscripted]:
     """Build one with ``HashMap.empty()``, ``HashMap.make(*entries)`` or
     ``HashMap.from_iterable(entries)``."""
 
@@ -54,12 +55,28 @@ class HashMap[K, V]:
         """Spelled ``HashMap[str, int].empty()``."""
         return HashMap()
 
-    @staticmethod
-    def make[K2, V2](*entries: tuple[K2, V2]) -> HashMap[K2, V2]:
+    @overload
+    @classmethod
+    def make[K2, V2](
+        cls: type[HashMap[Unsubscripted, Unsubscripted]], *entries: tuple[K2, V2]
+    ) -> HashMap[K2, V2]: ...
+    @overload
+    @classmethod
+    def make(cls, *entries: tuple[K, V]) -> HashMap[K, V]: ...
+    @classmethod
+    def make[K2, V2](cls, *entries: tuple[K2, V2]) -> HashMap[K2, V2]:
         return HashMap.from_iterable(entries)
 
-    @staticmethod
-    def from_iterable[K2, V2](entries: Iterable[tuple[K2, V2]]) -> HashMap[K2, V2]:
+    @overload
+    @classmethod
+    def from_iterable[K2, V2](
+        cls: type[HashMap[Unsubscripted, Unsubscripted]], entries: Iterable[tuple[K2, V2]]
+    ) -> HashMap[K2, V2]: ...
+    @overload
+    @classmethod
+    def from_iterable(cls, entries: Iterable[tuple[K, V]]) -> HashMap[K, V]: ...
+    @classmethod
+    def from_iterable[K2, V2](cls, entries: Iterable[tuple[K2, V2]]) -> HashMap[K2, V2]:
         """The map of ``entries``; a later value for an equal key wins, and
         the first key is kept."""
         return HashMap[K2, V2]().set_many(entries)

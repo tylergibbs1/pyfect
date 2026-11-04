@@ -292,6 +292,50 @@ def test_http_api_mutate_sends_its_parts_and_waits_for_the_result():
     assert registry.get(client.mutation(_ITEMS, _RENAME)) == async_result.success("renamed")
 
 
+@testing.effect
+def test_http_api_query_of_is_query_with_its_parts_checked_by_the_endpoint():
+    """``query_of(group, endpoint)(**parts)`` is ``query(group, endpoint, **parts)``:
+    the same atom for the same arguments, sending the parts (DOGFOOD atom_http_api
+    query: the curried form fixes the parts' types before they are checked)."""
+    sent: list[str] = []
+
+    def send(request: HttpClientRequest, *_: Any) -> fx.Effect[HttpClientResponse, Any]:
+        sent.append(request.url)
+        return _json(request, "item")
+
+    client = atom_http_api.make(
+        _tag("ItemsQueryOf"),
+        api=HttpApi.make("items").add(_ITEMS),
+        base_url="http://test",
+        http_client=layer.succeed(HttpClient, make_http_client(send)),
+    )
+    get = client.query_of(_ITEMS, _RENAME)
+    item = get(params={"id": 3}, payload="p", reactivity_keys=["items"], time_to_live=60)
+    assert item is client.query(
+        _ITEMS, _RENAME, params={"id": 3}, payload="p", reactivity_keys=["items"], time_to_live=60
+    )
+    assert item.idle_ttl == 60
+    response_only = client.query_of(_ITEMS, _RENAME, response_mode="response-only")
+    assert response_only(params={"id": 3}, payload="p") is client.query(
+        _ITEMS, _RENAME, params={"id": 3}, payload="p", response_mode="response-only"
+    )
+    registry = atom_registry.make()
+    yield from fx.add_finalizer(lambda _: fx.sync(registry.dispose))
+    yield from atom_registry.mount(registry, item)
+    assert (yield from atom_registry.get_result(registry, item)) == "item"
+    assert sent == ["http://test/items/3"]
+
+
+def test_http_api_query_of_rejects_a_foreign_endpoint() -> None:
+    client = atom_http_api.make(
+        _tag("ItemsQueryOfForeign"),
+        api=HttpApi.make("items").add(_ITEMS),
+        http_client=layer.succeed(HttpClient, make_http_client(lambda r, *_: _json(r, "x"))),  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    )
+    with pytest.raises(ValueError, match="is not an endpoint of items"):
+        client.query_of(_ITEMS, _GET)
+
+
 def test_http_api_only_decoded_only_atoms_are_serializable() -> None:
     client = _api_client(lambda request: _json(request, "x"))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert atom.is_serializable(client.mutation(_GROUP, _CREATE))

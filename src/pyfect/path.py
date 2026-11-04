@@ -263,6 +263,7 @@ layer: Layer[Path] = layer_win32 if os.name == "nt" else layer_posix
 """The host's rules."""
 
 __all__ = [
+    "BadArgument",
     "Parsed",
     "Path",
     "PathService",

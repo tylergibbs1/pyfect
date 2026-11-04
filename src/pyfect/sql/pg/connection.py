@@ -580,5 +580,6 @@ __all__ = [
     "PgConnection",
     "Result",
     "Row",
+    "SqlError",
     "make",
 ]

@@ -1,0 +1,4 @@
+TransportError
+message: Transport error (GET https://api.example.com/todos/1)
+cause:   ConnectionRefusedError(61, 'Connection refused')
+str:     Transport error (GET https://api.example.com/todos/1): ConnectionRefusedError: [Errno 61] Connection refused

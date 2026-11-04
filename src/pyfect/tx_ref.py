@@ -10,12 +10,14 @@ outermost transaction commits.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import overload
 
 from pyfect._core import Effect, _Sync
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.transaction import TransactionMeta, transactional
 
 
-class TxRef[A]:
+class TxRef[A = Unsubscripted]:
     """``TxRef(value)`` is Effect's ``makeUnsafe``; ``TxRef.make`` is the
     effect. A committed write that changes the value (by JavaScript's
     ``Object.is``: ``-0.0`` replaces ``0.0``) bumps ``version``; every
@@ -31,8 +33,14 @@ class TxRef[A]:
         # this ref, keyed by waiter.
         self._pending: dict[object, Callable[[], None]] = {}
 
-    @staticmethod
-    def make[T](value: T) -> Effect[TxRef[T]]:
+    @overload
+    @classmethod
+    def make[T](cls: type[TxRef[Unsubscripted]], value: T) -> Effect[TxRef[T]]: ...
+    @overload
+    @classmethod
+    def make(cls, value: A) -> Effect[TxRef[A]]: ...
+    @classmethod
+    def make[T](cls, value: T) -> Effect[TxRef[T]]:
         return _Sync(lambda: TxRef(value))
 
     @property

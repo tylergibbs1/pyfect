@@ -21,6 +21,7 @@ from typing import Any, Literal, Never, Self, cast, overload
 
 from pyfect._core import Effect, _Gen, _Succeed, _WithFiber
 from pyfect._layer_core import Layer, effect_context, fork_or_create
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.context import Context, ServiceEffect, Tag
 from pyfect.layer import effect as layer_effect
 from pyfect.layer import unwrap
@@ -29,7 +30,7 @@ from pyfect.rc_map import IdleTimeToLive, RcMap
 from pyfect.scope import Scope, scoped
 
 
-class LayerMap[K: Hashable, I, E = Never]:
+class LayerMap[K: Hashable = Unsubscripted, I = Unsubscripted, E = Never]:
     """Make one with ``LayerMap.make(lookup)`` or ``LayerMap.from_record``
     inside a scope."""
 
@@ -39,23 +40,44 @@ class LayerMap[K: Hashable, I, E = Never]:
         self.rc_map = rc_map
 
     @overload
-    @staticmethod
+    @classmethod
     def make[K2: Hashable, I2, X = Never, R = Never](
+        cls: type[LayerMap[Unsubscripted, Unsubscripted, Any]],
         lookup: Callable[[K2], Layer[I2, X, R]],
         *,
         idle_time_to_live: IdleTimeToLive[K2] | None = None,
         preload_keys: None = None,
     ) -> Effect[LayerMap[K2, I2, X], Never, Scope | R]: ...
     @overload
-    @staticmethod
+    @classmethod
     def make[K2: Hashable, I2, X = Never, R = Never](
+        cls: type[LayerMap[Unsubscripted, Unsubscripted, Any]],
         lookup: Callable[[K2], Layer[I2, X, R]],
         *,
         idle_time_to_live: IdleTimeToLive[K2] | None = None,
         preload_keys: Iterable[K2],
     ) -> Effect[LayerMap[K2, I2, X], X, Scope | R]: ...
-    @staticmethod
+    @overload
+    @classmethod
+    def make[R = Never](
+        cls,
+        lookup: Callable[[K], Layer[I, E, R]],
+        *,
+        idle_time_to_live: IdleTimeToLive[K] | None = None,
+        preload_keys: None = None,
+    ) -> Effect[LayerMap[K, I, E], Never, Scope | R]: ...
+    @overload
+    @classmethod
+    def make[R = Never](
+        cls,
+        lookup: Callable[[K], Layer[I, E, R]],
+        *,
+        idle_time_to_live: IdleTimeToLive[K] | None = None,
+        preload_keys: Iterable[K],
+    ) -> Effect[LayerMap[K, I, E], E, Scope | R]: ...
+    @classmethod
     def make(
+        cls,
         lookup: Callable[[Any], Layer[Any, Any, Any]],
         *,
         idle_time_to_live: IdleTimeToLive[Any] | None = None,
@@ -83,23 +105,44 @@ class LayerMap[K: Hashable, I, E = Never]:
         return _Gen(body)
 
     @overload
-    @staticmethod
+    @classmethod
     def from_record[K2: Hashable, I2, X = Never, R = Never](
+        cls: type[LayerMap[Unsubscripted, Unsubscripted, Any]],
         layers: Mapping[K2, Layer[I2, X, R]],
         *,
         idle_time_to_live: IdleTimeToLive[K2] | None = None,
         preload: Literal[False] = False,
     ) -> Effect[LayerMap[K2, I2, X], Never, Scope | R]: ...
     @overload
-    @staticmethod
+    @classmethod
     def from_record[K2: Hashable, I2, X = Never, R = Never](
+        cls: type[LayerMap[Unsubscripted, Unsubscripted, Any]],
         layers: Mapping[K2, Layer[I2, X, R]],
         *,
         idle_time_to_live: IdleTimeToLive[K2] | None = None,
         preload: bool,
     ) -> Effect[LayerMap[K2, I2, X], X, Scope | R]: ...
-    @staticmethod
+    @overload
+    @classmethod
+    def from_record[R = Never](
+        cls,
+        layers: Mapping[K, Layer[I, E, R]],
+        *,
+        idle_time_to_live: IdleTimeToLive[K] | None = None,
+        preload: Literal[False] = False,
+    ) -> Effect[LayerMap[K, I, E], Never, Scope | R]: ...
+    @overload
+    @classmethod
+    def from_record[R = Never](
+        cls,
+        layers: Mapping[K, Layer[I, E, R]],
+        *,
+        idle_time_to_live: IdleTimeToLive[K] | None = None,
+        preload: bool,
+    ) -> Effect[LayerMap[K, I, E], E, Scope | R]: ...
+    @classmethod
     def from_record(
+        cls,
         layers: Mapping[Any, Layer[Any, Any, Any]],
         *,
         idle_time_to_live: IdleTimeToLive[Any] | None = None,

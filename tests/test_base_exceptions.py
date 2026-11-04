@@ -13,7 +13,6 @@ fiber is parked.
 
 import ast
 import asyncio
-import os
 import signal
 import sys
 import threading
@@ -274,18 +273,32 @@ def test_ctrl_c_loses_no_fiber_queued_behind_the_one_it_hit():
     threading.current_thread() is not threading.main_thread(), reason="signals go to main"
 )
 def test_a_real_sigint_during_blocking_user_code_runs_the_finalizers():
+    """The signal goes to the main thread once the user code has started:
+    a timer racing the run, or a SIGINT the OS hands to the sending thread
+    (which leaves the main thread's sleep running), made this flaky under
+    load."""
     log: list[str] = []
-    timer = threading.Timer(0.2, lambda: os.kill(os.getpid(), signal.SIGINT))
-    prog = fx.sync(lambda: time.sleep(5)).ensuring(fx.sync(lambda: log.append("fin")))
+    blocking = threading.Event()
+
+    def block() -> None:
+        blocking.set()
+        time.sleep(30)
+
+    def send() -> None:
+        if blocking.wait(30):
+            signal.pthread_kill(threading.main_thread().ident or 0, signal.SIGINT)
+
+    prog = fx.sync(block).ensuring(fx.sync(lambda: log.append("fin")))
     started = time.monotonic()
-    timer.start()
+    sender = threading.Thread(target=send, daemon=True)
+    sender.start()
     try:
         with pytest.raises(KeyboardInterrupt):
             fx.run_sync(prog)
     finally:
-        timer.cancel()
+        sender.join()
     assert log == ["fin"]
-    assert time.monotonic() - started < 4
+    assert time.monotonic() - started < 30
 
 
 def test_ctrl_c_making_an_awaitable_is_not_a_defect():

@@ -388,6 +388,7 @@ __all__ = [
     "PgClient",
     "PgClientService",
     "PgSqlConnection",
+    "SqlError",
     "layer",
     "layer_config",
     "layer_from",

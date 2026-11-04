@@ -12,7 +12,8 @@ pyfect separates two kinds of failure, as Effect does:
 
 ## Defining and failing
 
-Subclass `fx.TaggedError`, usually as a dataclass. Inside a generator, yielding an error fails
+Subclass `fx.TaggedError`; an error with fields must be a `@dataclass` (constructing one
+whose fields nothing sets raises `TypeError`), while `S.TaggedError` needs no decorator. Inside a generator, yielding an error fails
 the effect: `return (yield from NotFound(key))`. Outside one, use `fx.fail(error)`.
 
 <include meta='title="tagged.py"'>../../snippets/errors/tagged.py</include>
@@ -22,7 +23,9 @@ the effect: `return (yield from NotFound(key))`. Outside one, use `fx.fail(error
 `catch_tag(ErrorClass, handler)` handles one error class and removes it from the type. Because it
 removes something, it is a function you use with `.pipe(...)`, one per call; pyright cannot infer
 the removal from a method. `catch_all` handles every typed error, as a method or, for `.pipe`,
-`fx.catch_all(handler)` (annotate the handler's parameter).
+`fx.catch_all(handler)` with a typed `def` as the handler: pyright checks the curried call before
+`.pipe` supplies the effect, so a lambda's parameter would be `Unknown`. The same goes for
+`or_else=` of `catch_tag` and `catch_if`.
 
 Other handlers: `catch_if`, `map_error`, `or_else_succeed`, `match`, `result` (an
 `Ok`/`Err` value), `ignore`, and `retry` (see [Schedules and retries](/docs/schedules)).

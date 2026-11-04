@@ -169,6 +169,7 @@ def layer_system() -> Layer[AddressResolver, Never, Dns]:
 __all__ = [
     "AddressResolver",
     "AddressResolverService",
+    "NetAddressError",
     "ResolveError",
     "ScopeIdLookup",
     "layer",

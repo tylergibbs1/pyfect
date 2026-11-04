@@ -130,6 +130,7 @@ __all__ = [
     "DumpServices",
     "Loader",
     "MigrationError",
+    "SqlError",
     "dump_schema",
     "from_file_system",
     "from_record",

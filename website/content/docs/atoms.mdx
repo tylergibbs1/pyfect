@@ -75,7 +75,10 @@ keys refreshes those queries once it succeeds. A query also takes `headers`,
 
 `atom_http_api.make(Tag, api=..., http_client=...)` does the same for an
 [HTTP API](/docs/http-api): `query(Group, endpoint, params=..., payload=...)` and
-`mutation(Group, endpoint)`, typed from the endpoint's schemas. `mutate(Group, endpoint)`
+`mutation(Group, endpoint)`, typed from the endpoint's schemas. Prefer
+`query_of(Group, endpoint)(params=..., payload=...)`, the same atom: pyright rejects a
+wrong request part there, while `query(...)` widens the endpoint's types to accept it.
+`mutate(Group, endpoint)`
 is the mutation as a function of the endpoint's request parts: calling it with keywords
 (and `reactivity_keys`) gives the effect that runs the mutation and waits for its result.
 Prefer it to writing a `MutationRequest` dict to the mutation atom, which pyright cannot

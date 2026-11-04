@@ -11,8 +11,9 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Generic, NamedTuple, Never, Self, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, NamedTuple, Never, Self, TypeVar, overload
 
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.cause import Cause
 from pyfect.logger._level import LogLevel
 
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
     from pyfect.platform_error import PlatformError
     from pyfect.scope import Scope
 
-O_co = TypeVar("O_co", covariant=True)
+O_co = TypeVar("O_co", covariant=True, default=Unsubscripted)
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _MILLISECOND = timedelta(milliseconds=1)
@@ -70,8 +71,14 @@ class Logger(Generic[O_co]):
     def __init__(self, log: Callable[[Options], O_co]) -> None:
         self._log = log
 
-    @staticmethod
-    def make[O](log: Callable[[Options], O]) -> Logger[O]:
+    @overload
+    @classmethod
+    def make[O](cls: type[Logger[Unsubscripted]], log: Callable[[Options], O]) -> Logger[O]: ...
+    @overload
+    @classmethod
+    def make(cls, log: Callable[[Options], O_co]) -> Logger[O_co]: ...
+    @classmethod
+    def make[O](cls, log: Callable[[Options], O]) -> Logger[O]:
         return Logger(log)
 
     def log(self, options: Options) -> O_co:

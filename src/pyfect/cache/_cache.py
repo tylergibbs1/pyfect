@@ -19,6 +19,7 @@ from pyfect._core import (
 )
 from pyfect._fiber import Fiber
 from pyfect._root import new_root, start_root
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.cache._expiry import (
     RequireServicesAt,
     TimeToLive,
@@ -38,7 +39,7 @@ from pyfect.option import Option, Some
 _VOID: Final[Effect[None]] = _Succeed(None)
 
 
-class Cache[K: Hashable, A, E = Never, R = Never]:
+class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never]:
     """Make one with ``Cache.make(lookup, capacity=...)``."""
 
     __slots__ = ("_capacity", "_context", "_entries", "_lookup", "_time_to_live")
@@ -58,8 +59,9 @@ class Cache[K: Hashable, A, E = Never, R = Never]:
         self._entries: dict[K, _Entry[A, E]] = {}
 
     @overload
-    @staticmethod
+    @classmethod
     def make[K2: Hashable, T, X = Never, RR = Never](
+        cls: type[Cache[Unsubscripted, Unsubscripted, Any, Any]],
         lookup: Callable[[K2], Effect[T, X, RR]],
         *,
         capacity: int | None,
@@ -67,16 +69,38 @@ class Cache[K: Hashable, A, E = Never, R = Never]:
         require_services_at: Literal["construction"] = "construction",
     ) -> Effect[Cache[K2, T, X], Never, RR]: ...
     @overload
-    @staticmethod
+    @classmethod
     def make[K2: Hashable, T, X = Never, RR = Never](
+        cls: type[Cache[Unsubscripted, Unsubscripted, Any, Any]],
         lookup: Callable[[K2], Effect[T, X, RR]],
         *,
         capacity: int | None,
         time_to_live: TimeToLive[K2, T, X] | None = None,
         require_services_at: Literal["lookup"],
     ) -> Effect[Cache[K2, T, X, RR]]: ...
-    @staticmethod
+    @overload
+    @classmethod
+    def make[RR = Never](
+        cls,
+        lookup: Callable[[K], Effect[A, E, RR]],
+        *,
+        capacity: int | None,
+        time_to_live: TimeToLive[K, A, E] | None = None,
+        require_services_at: Literal["construction"] = "construction",
+    ) -> Effect[Cache[K, A, E], Never, RR]: ...
+    @overload
+    @classmethod
     def make(
+        cls,
+        lookup: Callable[[K], Effect[A, E, R]],
+        *,
+        capacity: int | None,
+        time_to_live: TimeToLive[K, A, E] | None = None,
+        require_services_at: Literal["lookup"],
+    ) -> Effect[Cache[K, A, E, R]]: ...
+    @classmethod
+    def make(
+        cls,
         lookup: Callable[[Any], Effect[Any, Any, Any]],
         *,
         capacity: int | None,

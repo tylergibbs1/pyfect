@@ -48,6 +48,7 @@ from pyfect.tracer import ParentSpan, Span, Tracer, current_span
 
 __all__ = [
     "EffectSpanView",
+    "NoSuchElementException",
     "OtelSpan",
     "OtelTraceFlags",
     "OtelTraceState",

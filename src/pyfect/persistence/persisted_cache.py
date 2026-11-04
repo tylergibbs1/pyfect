@@ -152,4 +152,8 @@ def _default_in_memory_ttl(_exit: object, _key: object) -> float:
     return _IN_MEMORY_TTL
 
 
-__all__ = ["PersistedCache", "make"]
+__all__ = [
+    "PersistedCache",
+    "PersistenceError",
+    "make",
+]

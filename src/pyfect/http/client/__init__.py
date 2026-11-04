@@ -78,6 +78,7 @@ __all__ = [
     "AbortController",
     "AbortSignal",
     "HttpClient",
+    "HttpClientError",
     "HttpClientService",
     "Phase",
     "Postprocess",

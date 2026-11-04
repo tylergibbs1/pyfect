@@ -1,0 +1,84 @@
+---
+title: PostgreSQL
+description: "A pooled PostgreSQL client: JSON columns, LISTEN/NOTIFY, notifications sent on commit, and migrations."
+---
+
+`pyfect.sql.pg` runs on psycopg 3; install the `pyfect-dev[pg]` extra. `pg.layer` provides
+both `PgClient` and `SqlClient`, so the code from the [SQL guide](/docs/sql) runs unchanged on
+PostgreSQL. `PgClient` adds what only PostgreSQL has: `json`, `listen` and `notify`.
+
+The snippets on this page read the server's URL from `DATABASE_URL`:
+
+```bash
+DATABASE_URL=postgres://user:password@localhost:5432/app python connect.py
+```
+
+## Connecting
+
+`PgPoolConfig` holds the URL (a `Redacted`, so it never shows up in logs), the pool's size
+and timeouts, and the session settings. `pg.layer(config)` opens connections as statements
+need them and closes them when the layer's scope closes. To read the settings from the
+environment instead, use `pg.layer_config({"url": fx.config.redacted("DATABASE_URL")})`.
+
+Statements use the same `{}` placeholders as every `SqlClient`. Three things are specific to
+PostgreSQL or easy to miss:
+
+- `sql.json(value)` binds a value as `jsonb`. Reading a `json` or `jsonb` column gives the
+  parsed value back.
+- `sql.literal("...")` is trusted SQL text, spliced in as written. Its argument is a
+  `LiteralString`, so pyright rejects text built at runtime.
+- `sql.unsafe(text, params)` takes text built at runtime, and its parameters go to
+  PostgreSQL's own placeholders, `$1`, `$2` and so on, not `{}`.
+
+<CodeOutput>
+
+<include meta='title="connect.py"'>../../snippets/postgres/connect.py</include>
+
+<include lang="text">../../snippets/postgres/connect.out</include>
+
+</CodeOutput>
+
+## LISTEN and NOTIFY
+
+`sql.listen(channel)` runs `LISTEN` and succeeds once PostgreSQL has confirmed it. It gives a
+`Dequeue[Notification, SqlError]` with every notification sent on the channel after that.
+The listener holds its own session until its `Scope` closes, so `listen` needs a `Scope`:
+here `fx.scoped` around the program. If the session fails, the queue fails with the
+session's error. If more than `capacity` notifications (default 1024) are left untaken, the
+queue fails with an error saying the listener fell behind.
+
+`sql.notify(channel, payload)` sends one. Inside a transaction, wrap it in
+`sql.after_commit(...)`: it then runs only if the transaction commits, so a listener never
+hears about a write that was rolled back. `after_commit` takes an effect that can't fail,
+so handle the notify's `SqlError` there (here it's logged).
+
+<CodeOutput>
+
+<include meta='title="notify.py"'>../../snippets/postgres/notify.py</include>
+
+<include lang="text">../../snippets/postgres/notify.out</include>
+
+</CodeOutput>
+
+Call `listen` before the first read of the state it reports on: a change committed between
+the read and the `LISTEN` would otherwise go unnoticed.
+
+## Migrations
+
+`pg.migrator` works like the [SQLite migrator](/docs/sql#migrations), and `migrator.layer`
+runs the migrations when the layer is built. With `schema_directory`, it also writes the
+schema and the migrations table to that directory with `pg_dump`. That's why the layer needs
+the platform services, even when it doesn't dump anything.
+
+<CodeOutput>
+
+<include meta='title="migrate.py"'>../../snippets/postgres/migrate.py</include>
+
+<include lang="text">../../snippets/postgres/migrate.out</include>
+
+</CodeOutput>
+
+Reference: [`pyfect.sql.pg`](/docs/reference/sql/pg),
+[`pyfect.sql.pg.client`](/docs/reference/sql/pg/client),
+[`pyfect.sql.pg.config`](/docs/reference/sql/pg/config),
+[`pyfect.sql.pg.migrator`](/docs/reference/sql/pg/migrator).

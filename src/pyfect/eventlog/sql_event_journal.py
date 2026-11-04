@@ -54,7 +54,7 @@ from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError
 from pyfect.sql.statement import Fragment, Identifier
 
-__all__ = ["layer", "make"]
+__all__ = ["SqlError", "layer", "make"]
 
 type _Dialect = Literal["sqlite", "pg"]
 

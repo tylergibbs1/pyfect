@@ -300,4 +300,4 @@ def layer_config(
     return effect_context(built)
 
 
-__all__ = ["RedisPy", "RedisPyService", "layer", "layer_config", "make"]
+__all__ = ["RedisError", "RedisPy", "RedisPyService", "layer", "layer_config", "make"]

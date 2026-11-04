@@ -64,6 +64,10 @@ eventlog = [
 requires = ["uv_build>=0.12.15,<0.13.0"]
 build-backend = "uv_build"
 
+[tool.uv]
+# docs: the API reference generator, checked by tests/test_api_reference.py
+default-groups = ["dev", "docs"]
+
 [tool.uv.build-backend]
 # The distribution is pyfect-dev (PyPI's pyfect is another project); the import name is pyfect.
 module-name = "pyfect"

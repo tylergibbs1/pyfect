@@ -418,11 +418,13 @@ def show_help(command: AnyCommand, path: Sequence[str] | None = None) -> Effect[
 
 __all__ = [
     "AnyCommand",
+    "CliError",
     "Command",
     "CommandContext",
     "Config",
     "Example",
     "ParsedTokens",
+    "QuitError",
     "SubcommandGroup",
     "group",
     "make",

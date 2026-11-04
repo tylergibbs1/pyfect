@@ -136,6 +136,7 @@ __all__ = [
     "ANY_ORIGIN",
     "SAME_ORIGIN",
     "AllowedOrigins",
+    "HttpServerError",
     "Origin",
     "OriginPolicy",
     "allow",

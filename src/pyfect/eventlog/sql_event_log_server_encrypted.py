@@ -44,7 +44,7 @@ from pyfect.sql.statement import Identifier
 from pyfect.stream import Stream, from_iterable, from_subscription
 from pyfect.stream import unwrap as stream_unwrap
 
-__all__ = ["layer_storage", "layer_storage_subtle", "make_storage"]
+__all__ = ["SqlError", "layer_storage", "layer_storage_subtle", "make_storage"]
 
 # Keeps each statement within the dialects' bind parameter limits.
 _CHUNK = 200

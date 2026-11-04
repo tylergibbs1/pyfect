@@ -13,7 +13,6 @@ from typing import (
     TypeVar,
     Unpack,
     cast,
-    final,
     overload,
 )
 
@@ -27,6 +26,7 @@ from pyfect._core import (
     uninterruptible_mask,
 )
 from pyfect._effect_args import require_effect
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.batching._request import Entry
 from pyfect.clock import sleep
 from pyfect.duration import Duration
@@ -43,13 +43,7 @@ if TYPE_CHECKING:
     from pyfect.tracer import SpanOptions
 
 
-@final
-class _Infer:
-    """The request type of a ``RequestResolver`` named without one: its
-    constructors then read the type from their argument."""
-
-
-Q_contra = TypeVar("Q_contra", contravariant=True, default=_Infer)
+Q_contra = TypeVar("Q_contra", contravariant=True, default=Unsubscripted)
 E_co = TypeVar("E_co", covariant=True, default=Never)
 
 type RunAll[Q, E] = Callable[[Sequence[Entry[Q]], Hashable], Effect[None, E]]
@@ -208,7 +202,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
     @overload
     @classmethod
     def make_grouped[Q, K: Hashable, E = Never](
-        cls: type[RequestResolver[_Infer, Any]],
+        cls: type[RequestResolver[Unsubscripted, Any]],
         *,
         key: Callable[[Entry[Q]], K],
         resolver: Callable[[Sequence[Entry[Q]], K], Effect[None, E]],
@@ -235,7 +229,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
     @overload
     @classmethod
     def from_function[Q](
-        cls: type[RequestResolver[_Infer, Any]], f: Callable[[Entry[Q]], object]
+        cls: type[RequestResolver[Unsubscripted, Any]], f: Callable[[Entry[Q]], object]
     ) -> RequestResolver[Q]: ...
     @overload
     @classmethod
@@ -259,7 +253,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
     @overload
     @classmethod
     def from_function_batched[Q](
-        cls: type[RequestResolver[_Infer, Any]],
+        cls: type[RequestResolver[Unsubscripted, Any]],
         f: Callable[[Sequence[Entry[Q]]], Iterable[object]],
     ) -> RequestResolver[Q]: ...
     @overload
@@ -286,7 +280,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
     @overload
     @classmethod
     def from_effect[Q, E = Never](
-        cls: type[RequestResolver[_Infer, Any]], f: Callable[[Entry[Q]], Effect[object, E]]
+        cls: type[RequestResolver[Unsubscripted, Any]], f: Callable[[Entry[Q]], Effect[object, E]]
     ) -> RequestResolver[Q, E]: ...
     @overload
     @classmethod
@@ -306,7 +300,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
     @overload
     @classmethod
     def from_effect_tagged[Q, E = Never](
-        cls: type[RequestResolver[_Infer, Any]], handlers: TaggedHandlers[Q, E]
+        cls: type[RequestResolver[Unsubscripted, Any]], handlers: TaggedHandlers[Q, E]
     ) -> RequestResolver[Q, E]: ...
     @overload
     @classmethod

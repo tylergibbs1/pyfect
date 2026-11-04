@@ -20,6 +20,7 @@ from typing import Any, TypeIs, overload
 
 from pyfect._equal import equal_key, equals
 from pyfect._js import js_sort_key
+from pyfect._unsubscripted import Unsubscripted
 from pyfect.option import Option, Some
 from pyfect.result import Ok, Result
 
@@ -87,7 +88,7 @@ def _replace(root: _Node, key: str, leaf: _Node | None) -> _Node:
     return _EMPTY if node is None else node
 
 
-class Trie[V]:
+class Trie[V = Unsubscripted]:
     """Build one with ``Trie.empty()``, ``Trie.make(*entries)`` or
     ``Trie.from_iterable(entries)``."""
 
@@ -103,12 +104,26 @@ class Trie[V]:
         """Spelled ``Trie[int].empty()``."""
         return Trie()
 
-    @staticmethod
-    def make[V2](*entries: tuple[str, V2]) -> Trie[V2]:
+    @overload
+    @classmethod
+    def make[V2](cls: type[Trie[Unsubscripted]], *entries: tuple[str, V2]) -> Trie[V2]: ...
+    @overload
+    @classmethod
+    def make(cls, *entries: tuple[str, V]) -> Trie[V]: ...
+    @classmethod
+    def make[V2](cls, *entries: tuple[str, V2]) -> Trie[V2]:
         return Trie.from_iterable(entries)
 
-    @staticmethod
-    def from_iterable[V2](entries: Iterable[tuple[str, V2]]) -> Trie[V2]:
+    @overload
+    @classmethod
+    def from_iterable[V2](
+        cls: type[Trie[Unsubscripted]], entries: Iterable[tuple[str, V2]]
+    ) -> Trie[V2]: ...
+    @overload
+    @classmethod
+    def from_iterable(cls, entries: Iterable[tuple[str, V]]) -> Trie[V]: ...
+    @classmethod
+    def from_iterable[V2](cls, entries: Iterable[tuple[str, V2]]) -> Trie[V2]:
         """The trie of ``entries``; a later value for a key wins."""
         return Trie[V2]().insert_many(entries)
 
