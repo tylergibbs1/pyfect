@@ -1,5 +1,5 @@
-"""The asyncio loop psycopg runs on: one per process, on a daemon thread of
-its own, started on first use.
+"""The asyncio loop the asyncio database drivers (psycopg, asyncmy) run on:
+one per process, on a daemon thread of its own, started on first use.
 
 Fibers never run on it. ``call`` starts a coroutine there and waits for its
 outcome through ``Latch.wait`` (an ``os_wait``), so no fiber blocks and a
@@ -37,7 +37,7 @@ class _Shared:
 def get_loop() -> asyncio.AbstractEventLoop:
     with _Shared.lock:
         if _Shared.loop is None:
-            _Shared.loop = LoopThread("pyfect-pg").loop
+            _Shared.loop = LoopThread("pyfect-sql").loop
         return _Shared.loop
 
 

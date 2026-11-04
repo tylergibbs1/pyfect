@@ -1,4 +1,4 @@
-"""``pyfect.sql.pg._loop.call``: running psycopg coroutines from fibers."""
+"""``pyfect.sql._loop.call``: running psycopg coroutines from fibers."""
 # pyright: reportPrivateUsage=false
 
 import asyncio
@@ -10,7 +10,7 @@ pytest.importorskip("psycopg")
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.sql.pg._loop import call, get_loop
+from pyfect.sql._loop import call, get_loop
 from pyfect.sql.pg.error import catch
 
 

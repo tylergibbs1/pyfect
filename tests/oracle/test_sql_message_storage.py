@@ -1,10 +1,11 @@
 """Ports of platform-node's ``test/cluster/SqlMessageStorage.integration.test.ts``
 for ``pyfect.cluster.sql_message_storage`` on SQLite and on the throwaway
-PostgreSQL server (``_postgres.pg_server``; those cases skip without one).
+PostgreSQL and MySQL servers (``_postgres.pg_server``, ``_mysql.mysql_server``;
+those cases skip without one).
 
 Each test's docstring is the Effect test title. Effect truncates shared
 tables between cases; here SQLite gets a fresh file per test and
-PostgreSQL a fresh table prefix. MySQL and SQL Server are not run (no
+PostgreSQL and MySQL a fresh table prefix. SQL Server is not run (no
 server). ``MessageStorageTest.ts``'s own memory cases ("saves a request",
 "detects duplicates", "unprocessedMessages excludes complete requests",
 "repliesFor", "registerReplyHandler") are the same titles already ported in
@@ -103,10 +104,20 @@ def _pg(pg_server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:
     return pg.make(pg.PgPoolConfig(url=pg_server.url)).pipe(fx.provide(reactivity.layer))
 
 
-@pytest.fixture(params=["sqlite", "pg"])
+def _mysql(server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:
+    from pyfect.sql import mysql
+
+    return mysql.make(mysql.MysqlClientConfig(url=server.url)).pipe(fx.provide(reactivity.layer))
+
+
+@pytest.fixture(params=["sqlite", "pg", "mysql"])
 def backend(request: pytest.FixtureRequest, tmp_path: Path) -> Backend:
     if request.param == "sqlite":
         return Backend("sqlite", lambda: make_client(tmp_path), "cluster")
+    if request.param == "mysql":
+        pytest.importorskip("asyncmy")
+        server = request.getfixturevalue("mysql_server")
+        return Backend("mysql", lambda: _mysql(server), f"msg_{os.getpid()}_{next(_prefixes)}")
     pytest.importorskip("psycopg")
     server = request.getfixturevalue("pg_server")
     return Backend("pg", lambda: _pg(server), f"msg_{os.getpid()}_{next(_prefixes)}")

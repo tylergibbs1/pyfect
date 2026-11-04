@@ -1,9 +1,10 @@
 """Reuse cases for the sql, persistence, eventlog and reactivity layers.
 
-SQLite cases use an in-memory database per run; PostgreSQL and Redis
-cases use the throwaway servers of ``oracle._postgres`` / ``oracle._redis``
-(they skip without them). Uses that touch an external store (a file, a
-server) pass whether or not an earlier run's data is still there."""
+SQLite cases use an in-memory database per run; PostgreSQL, MySQL and
+Redis cases use the throwaway servers of ``oracle._postgres`` /
+``oracle._mysql`` / ``oracle._redis`` (they skip without them). Uses that
+touch an external store (a file, a server) pass whether or not an earlier
+run's data is still there."""
 
 # pyright: reportUnknownLambdaType=false, reportUnknownMemberType=false
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
@@ -11,13 +12,14 @@ server) pass whether or not an earlier run's data is still there."""
 from __future__ import annotations
 
 import atexit
+import itertools
 import shutil
 import tempfile
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
-from oracle import _postgres, _redis
+from oracle import _mysql, _postgres, _redis
 
 import pyfect as fx
 from layer_cases._case import Case
@@ -57,8 +59,9 @@ from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.socket import server as socket_server
 from pyfect.socket.server import SocketServer
-from pyfect.sql import pg, sqlite
+from pyfect.sql import mysql, pg, sqlite
 from pyfect.sql.client import SqlClient
+from pyfect.sql.mysql import migrator as mysql_migrator
 from pyfect.sql.pg import migrator as pg_migrator
 from pyfect.sql.sqlite import migrator as sqlite_migrator
 
@@ -95,6 +98,14 @@ def _pg() -> AnyLayer:
     return pg.layer(_pg_config())
 
 
+def _mysql_config() -> mysql.MysqlClientConfig:
+    return mysql.MysqlClientConfig(url=_mysql.server().url, max_connections=2)
+
+
+def _mysql_client() -> AnyLayer:
+    return mysql.layer(_mysql_config())
+
+
 def _fresh_database():
     """A table made in this run is the only one: each build opens its own
     in-memory database."""
@@ -112,6 +123,13 @@ def _select_one():
 def _create_items():
     sql = yield from SqlClient()
     yield from sql("CREATE TABLE layer_reuse_items (id SERIAL PRIMARY KEY, name TEXT NOT NULL)")
+
+
+def _create_items_mysql():
+    sql = yield from SqlClient()
+    yield from sql(
+        "CREATE TABLE layer_reuse_items (id INT AUTO_INCREMENT PRIMARY KEY, name TEXT NOT NULL)"
+    )
 
 
 def _create_items_sqlite():
@@ -159,6 +177,23 @@ _SQL: dict[str, Case] = {
         needs=_pg,
         use=_gen(_migrated_table),
     ),
+    "pyfect.sql.mysql.client.layer": Case(layer=_mysql_client, use=_gen(_select_one)),
+    "pyfect.sql.mysql.client.layer_config": Case(
+        layer=lambda: mysql.layer_config({"url": config.redacted("DATABASE_URL")}),
+        needs=lambda: _provider(DATABASE_URL=_mysql.server().uri()),
+        use=_gen(_select_one),
+    ),
+    "pyfect.sql.mysql.client.layer_from": Case(
+        layer=lambda: mysql.layer_from(mysql.make(_mysql_config())), use=_gen(_select_one)
+    ),
+    "pyfect.sql.mysql.migrator.layer": Case(
+        layer=lambda: mysql_migrator.layer(
+            loader=mysql_migrator.from_record({"1_create_items": fx.gen(_create_items_mysql)}),
+            table="layer_reuse_migrations",
+        ),
+        needs=_mysql_client,
+        use=_gen(_migrated_table),
+    ),
 }
 
 
@@ -169,17 +204,25 @@ def _redis_client() -> AnyLayer:
     return redis_py.layer(_redis.server().url)
 
 
+_shared_keys = itertools.count()
+
+
 def _kv_use(*, fresh: bool) -> Callable[[], fx.Effect[Any, Any, Any]]:
     """Set then get; a ``fresh`` store (one Effect makes per build) starts
-    empty in every run."""
+    empty in every run. A shared one (files) gets a key of each run's own:
+    runs at once writing the same file can read it half written."""
 
     def body():
         kv = yield from kvs.KeyValueStore()
         if fresh:
             assert (yield from kv.size) == 0
-        yield from kv.set("key", "value")
-        assert (yield from kv.get("key")) == "value"
-        assert (yield from kv.size) == 1
+            key = "key"
+        else:
+            key = f"key-{next(_shared_keys)}"
+        yield from kv.set(key, "value")
+        assert (yield from kv.get(key)) == "value"
+        if fresh:
+            assert (yield from kv.size) == 1
 
     return _gen(body)
 

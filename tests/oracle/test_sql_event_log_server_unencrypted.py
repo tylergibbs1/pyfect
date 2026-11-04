@@ -1,8 +1,9 @@
 """Ports of Effect's ``effect/test/eventlog/SqlEventLogServerUnencryptedStorageTest.ts``
 suite and of the ``sql-sqlite-node`` ``SqlEventLogServerUnencrypted`` titles,
-and ``sql-pg``'s ``SqlEventLogServerUnencrypted.integration.test.ts``, for
-``pyfect.eventlog.sql_event_log_server_unencrypted``. The storage suite runs
-on SQLite and on the session's PostgreSQL server (skipped without one); its
+and ``sql-pg``'s and ``sql-mysql2``'s ``SqlEventLogServerUnencrypted.integration.test.ts``,
+for ``pyfect.eventlog.sql_event_log_server_unencrypted``. The storage suite
+runs on SQLite, on the session's PostgreSQL server and on its MySQL
+container (each skipped without one); its
 ``RegressionTest`` suite runs in ``test_event_log_server_unencrypted.py``.
 
 Each test's docstring is the Effect test title. Tables are unique per
@@ -10,7 +11,6 @@ test, since the PostgreSQL server is shared.
 """
 
 import itertools
-import os
 import re
 import uuid
 from collections.abc import Callable, Generator, Sequence
@@ -44,8 +44,10 @@ _namespaces = itertools.count(1)
 
 
 def _namespace(prefix: str) -> str:
-    # Unique per process: the PostgreSQL server is shared by the session.
-    return f"{prefix}_{os.getpid()}_{next(_namespaces)}"
+    # Unique per session, whose tests share the PostgreSQL and MySQL servers
+    # (each started for the session), and short enough for MySQL's 64
+    # character names, as Effect's.
+    return f"{prefix}_{next(_namespaces)}"
 
 
 def make_options(prefix: str) -> dict[str, Any]:
@@ -77,17 +79,25 @@ def _client() -> fx.Effect[SqlClientService, Any, Any]:
     return sqlite.make(sqlite.SqliteClientConfig(filename=":memory:"))
 
 
-@pytest.fixture(params=["sqlite", "pg"])
+@pytest.fixture(params=["sqlite", "pg", "mysql2"])
 def connect(request: pytest.FixtureRequest) -> Connect:
     """A new client of an in-memory SQLite database, or a new pool on the
-    session's PostgreSQL server (skipped without one)."""
+    session's PostgreSQL server or MySQL container (skipped without one)."""
     if request.param == "sqlite":
         return _client
-    pytest.importorskip("psycopg")
-    from pyfect.sql import pg
+    if request.param == "pg":
+        pytest.importorskip("psycopg")
+        from pyfect.sql import pg
 
-    server: PgServer = request.getfixturevalue("pg_server")
-    return lambda: pg.make(pg.PgPoolConfig(url=server.url))
+        server: PgServer = request.getfixturevalue("pg_server")
+        return lambda: pg.make(pg.PgPoolConfig(url=server.url))
+    pytest.importorskip("asyncmy")
+    from pyfect.sql import mysql
+
+    from ._mysql import MysqlServer
+
+    mysql_server: MysqlServer = request.getfixturevalue("mysql_server")
+    return lambda: mysql.make(mysql.MysqlClientConfig(url=mysql_server.url))
 
 
 def make_storage(sql: SqlClientService, **options: Any) -> fx.Effect[U.StorageService, Any, Any]:
@@ -169,6 +179,14 @@ def test_starts_over_existing_entries_with_long_primary_keys(connect: Connect):
                 "CREATE TABLE {} (store_id TEXT NOT NULL, sequence BIGINT NOT NULL, "
                 "entry_id BYTEA NOT NULL, event TEXT NOT NULL, primary_key TEXT NOT NULL, "
                 "payload BYTEA NOT NULL, PRIMARY KEY (store_id, sequence), "
+                "UNIQUE (store_id, entry_id))",
+                table,
+            )
+        elif sql.dialect == "mysql":
+            yield from sql(
+                "CREATE TABLE {} (store_id VARCHAR(191) NOT NULL, sequence BIGINT NOT NULL, "
+                "entry_id BINARY(16) NOT NULL, event TEXT NOT NULL, primary_key TEXT NOT NULL, "
+                "payload BLOB NOT NULL, PRIMARY KEY (store_id, sequence), "
                 "UNIQUE (store_id, entry_id))",
                 table,
             )

@@ -49,6 +49,9 @@ websockets = [
 pg = [
     "psycopg>=3.3",
 ]
+mysql = [
+    "asyncmy>=0.2.17",
+]
 server = [
     "uvicorn>=0.38",
     "websockets>=15",
@@ -81,6 +84,7 @@ dev = [
     "pyfect-dev[httpx]",
     "pyfect-dev[websockets]",
     "pyfect-dev[pg]",
+    "pyfect-dev[mysql]",
     "pyfect-dev[server]",
     "pyfect-dev[redis]",
     "pyfect-dev[eventlog]",

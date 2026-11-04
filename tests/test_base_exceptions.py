@@ -508,7 +508,7 @@ def test_no_bare_exception_handler_in_the_runtime_core():
 
 # Code that never runs on a fiber's thread (worker threads, a driver's own
 # loop thread), where Ctrl-C is never delivered.
-_OFF_FIBER = {"workers/_thread.py", "sql/sqlite/_worker.py", "sql/pg/_loop.py"}
+_OFF_FIBER = {"workers/_thread.py", "sql/sqlite/_worker.py", "sql/_loop.py"}
 
 
 def _names(node: ast.expr | None) -> set[str]:

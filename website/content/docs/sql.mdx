@@ -7,7 +7,8 @@ description: "Parameterized statements, batched lookups, transactions and migrat
 runs on a connection from the client and succeeds with the rows as dicts. `sqlite.layer`
 provides one on the standard library's `sqlite3`. For PostgreSQL, install the `pyfect-dev[pg]`
 extra and provide `pyfect.sql.pg.layer` instead; the code that uses `SqlClient` stays the
-same (see [PostgreSQL](/docs/postgres)). Every failure is a `SqlError` whose `reason` says what went wrong (`UniqueViolation`,
+same (see [PostgreSQL](/docs/postgres)). MySQL works the same way with the `pyfect-dev[mysql]`
+extra and `pyfect.sql.mysql.layer` (see [MySQL](/docs/mysql)). Every failure is a `SqlError` whose `reason` says what went wrong (`UniqueViolation`,
 `SqlSyntaxError`, `LockTimeoutError`, ...).
 
 ## Safe statements

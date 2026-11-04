@@ -16,7 +16,7 @@ from typing import Any, Literal, Never, cast
 
 from pyfect._context_effects import service_option
 from pyfect._core import Effect
-from pyfect.effect import die, gen, succeed
+from pyfect.effect import die, fail, gen, succeed
 from pyfect.eventlog.event_journal import (
     Entry,
     EntryId,
@@ -43,7 +43,7 @@ from pyfect.stream import unwrap as stream_unwrap
 
 __all__ = ["SqlError", "layer_storage", "make_storage"]
 
-type _Dialect = Literal["sqlite", "pg"]
+type _Dialect = Literal["sqlite", "pg", "mysql"]
 
 # Keeps each history lookup within the dialects' bind parameter limits.
 _LOOKUP_BATCH_SIZE = 200
@@ -51,12 +51,12 @@ _LOOKUP_BATCH_SIZE = 200
 
 def _dialect(sql: SqlClientService) -> _Dialect:
     match sql.dialect:
-        case "sqlite" | "pg":
+        case "sqlite" | "pg" | "mysql":
             return sql.dialect
         case _:
             pass
     raise ValueError(
-        f"SqlEventLogServerUnencrypted supports SQLite and PostgreSQL, not {sql.dialect}"
+        f"SqlEventLogServerUnencrypted supports SQLite, PostgreSQL and MySQL, not {sql.dialect}"
     )
 
 
@@ -89,7 +89,7 @@ def make_storage(
     """Storage in the ``SqlClient``'s database, creating its tables
     (Effect's ``makeStorage``). ``insert_batch_size`` rows go in one
     ``INSERT``. Fails with ``ValueError`` as a defect on a dialect other
-    than SQLite or PostgreSQL, or a batch size below 1."""
+    than SQLite, PostgreSQL or MySQL, or a batch size below 1."""
     if insert_batch_size < 1:
         raise ValueError(f"insert_batch_size must be >= 1, got {insert_batch_size}")
 
@@ -142,7 +142,60 @@ class _Tables:
         self.bindings: Identifier = sql.identifier(f"{prefix}_session_auth_bindings")
 
 
+def _create_mysql_tables(sql: SqlClientService, t: _Tables) -> Effect[None, SqlError]:
+    event_key_index = f"{t.entries_name}_event_key_idx"
+
+    def body():
+        yield from sql(
+            "CREATE TABLE IF NOT EXISTS {} (singleton INT PRIMARY KEY, "
+            "remote_id BINARY(16) NOT NULL)",
+            t.remote_id,
+        )
+        yield from sql(
+            "CREATE TABLE IF NOT EXISTS {} (store_id VARCHAR(191) NOT NULL, "
+            "sequence BIGINT NOT NULL, entry_id BINARY(16) NOT NULL, event TEXT NOT NULL, "
+            "primary_key TEXT NOT NULL, payload BLOB NOT NULL, "
+            "PRIMARY KEY (store_id, sequence), UNIQUE (store_id, entry_id))",
+            t.entries,
+        )
+        # Serves the batch lookup in ``entries_after`` on prefixes. MySQL has
+        # no ``IF NOT EXISTS`` for indexes: an existing one fails the create.
+        index_exists = sql(
+            "SELECT COUNT(*) AS count FROM information_schema.statistics "
+            "WHERE table_schema = DATABASE() AND table_name = {} AND index_name = {}",
+            t.entries_name,
+            event_key_index,
+        ).map(lambda rows: column_int(rows[0]["count"]) > 0)
+
+        def unless_exists(error: SqlError) -> Effect[None, SqlError]:
+            return index_exists.flat_map(lambda exists: succeed(None) if exists else fail(error))
+
+        yield from (
+            sql(
+                "CREATE INDEX {} ON {} (store_id, event(191), primary_key(191), entry_id)",
+                sql.identifier(event_key_index),
+                t.entries,
+            )
+            .as_void()
+            .catch_all(unless_exists)
+        )
+        yield from sql(
+            "CREATE TABLE IF NOT EXISTS {} (store_id VARCHAR(191) PRIMARY KEY, "
+            "next_sequence BIGINT NOT NULL)",
+            t.stores,
+        )
+        yield from sql(
+            "CREATE TABLE IF NOT EXISTS {} (public_key VARCHAR(191) PRIMARY KEY, "
+            "signing_public_key BINARY(32) NOT NULL)",
+            t.bindings,
+        )
+
+    return gen(body)
+
+
 def _create_tables(sql: SqlClientService, dialect: _Dialect, t: _Tables) -> Effect[None, SqlError]:
+    if dialect == "mysql":
+        return _create_mysql_tables(sql, t)
     pg = dialect == "pg"
     event_key_index = sql.identifier(f"{t.entries_name}_event_key_idx")
 
@@ -273,6 +326,13 @@ class _SqlStorage(StorageService):
         return service_option(sql.transaction_service).flat_map(run)
 
     def _ensure_store(self, store_id: str) -> Statement[Row]:
+        if self._dialect == "mysql":
+            return self._sql(
+                "INSERT INTO {} (store_id, next_sequence) VALUES ({}, 1) "
+                "ON DUPLICATE KEY UPDATE store_id = store_id",
+                self._t.stores,
+                store_id,
+            )
         return self._sql(
             "INSERT INTO {} (store_id, next_sequence) VALUES ({}, 1) ON CONFLICT DO NOTHING",
             self._t.stores,
@@ -281,7 +341,7 @@ class _SqlStorage(StorageService):
 
     def _lock_store(self, store_id: str) -> Effect[int, SqlError]:
         sql = self._sql
-        if self._dialect == "pg":
+        if self._dialect in ("pg", "mysql"):
             query = sql(
                 "SELECT next_sequence FROM {} WHERE store_id = {} FOR UPDATE",
                 self._t.stores,

@@ -1,10 +1,11 @@
 """Ports of platform-node's ``test/cluster/SqlRunnerStorage.integration.test.ts``
 for ``pyfect.cluster.sql_runner_storage`` on SQLite and on the throwaway
-PostgreSQL server (``_postgres.pg_server``; those cases skip without one).
+PostgreSQL and MySQL servers (``_postgres.pg_server``, ``_mysql.mysql_server``;
+those cases skip without one).
 
 Each test's docstring is the Effect test title. Effect gives each case an
 empty database; here each one uses its own table prefix (advisory locks
-are namespaced by prefix too). MySQL and Vitess are not run (no server).
+are namespaced by prefix too). Vitess is not run (no server).
 
 Omitted:
 - "cluster SQL storage with a DML-only role" (both titles): they revoke
@@ -57,10 +58,14 @@ def _prefix(name: str) -> str:
 type ClientMaker = Callable[[], fx.Effect[SqlClientService, Any, fx.Scope]]
 
 
-@pytest.fixture(params=["sqlite", "pg"])
+@pytest.fixture(params=["sqlite", "pg", "mysql"])
 def backend(request: pytest.FixtureRequest, tmp_path: Path) -> tuple[str, ClientMaker]:
     if request.param == "sqlite":
         return "sqlite", lambda: make_client(tmp_path)
+    if request.param == "mysql":
+        pytest.importorskip("asyncmy")
+        server = request.getfixturevalue("mysql_server")
+        return "mysql", lambda: _mysql(server)
     pytest.importorskip("psycopg")
     server = request.getfixturevalue("pg_server")
     return "pg", lambda: _pg(server)
@@ -128,6 +133,12 @@ def test_acquire_shards(backend: tuple[str, ClientMaker], advisory: bool):
         yield from storage.release(runner_address1, shard_id.make("default", 2))
 
     yield from fx.gen(body)
+
+
+def _mysql(server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:
+    from pyfect.sql import mysql
+
+    return mysql.make(mysql.MysqlClientConfig(url=server.url)).pipe(fx.provide(reactivity.layer))
 
 
 def _pg(pg_server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:

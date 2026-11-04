@@ -46,6 +46,13 @@ def is_private(name: str) -> bool:
     return name.startswith("_") and not (name.startswith("__") and name.endswith("__"))
 
 
+def is_listed(name: str, names: set[str] | None) -> bool:
+    """A module's public name: one its `__all__` exports (even with a leading
+    underscore, as the OpenAI schemas' `_MisalignmentErrorType`), or any
+    public name when it has no `__all__`."""
+    return not is_private(name) if names is None else name in names
+
+
 SHOWN_DUNDERS = {"__init__", "__call__"}
 
 
@@ -91,7 +98,7 @@ def private_exports(mod: griffe.Module) -> dict[str, Documented]:
     names = exported_names(mod)
     out: dict[str, Documented] = {}
     for name, member in mod.members.items():
-        if not member.is_alias or is_private(name):
+        if not member.is_alias or not is_listed(name, names):
             continue
         try:
             target = member.final_target
@@ -298,7 +305,7 @@ def reexports(mod: griffe.Module, home: dict[str, str]) -> list[tuple[str, str]]
         return []
     out: list[tuple[str, str]] = []
     for name, member in mod.members.items():
-        if not member.is_alias or is_private(name) or name not in names:
+        if not member.is_alias or not is_listed(name, names):
             continue
         try:
             target = member.final_target
@@ -332,7 +339,7 @@ def parse(mod: griffe.Module, home: dict[str, str]) -> dict[str, Any]:
     names = exported_names(mod)
 
     def listed(name: str) -> bool:
-        return not is_private(name) and (names is None or name in names)
+        return is_listed(name, names)
 
     doc = simplify_docstring(mod.docstring, mod)
     attributes = [
@@ -340,15 +347,16 @@ def parse(mod: griffe.Module, home: dict[str, str]) -> dict[str, Any]:
     ]
     classes: dict[str, Any] = {}
     functions: dict[str, Any] = {}
-    # Defined here (values come from the docstring's "Attributes"), or defined in a
-    # private module and documented here.
+    # Defined here (values come from the docstring's "Attributes", which leave out
+    # underscored names even when exported), or defined in a private module and
+    # documented here.
     documented: list[tuple[str, Documented]] = [
         (name, member)
         for name, member in mod.members.items()
         if not member.is_alias
         and listed(name)
         and isinstance(member, Documented)
-        and not isinstance(member, griffe.Attribute)
+        and (not isinstance(member, griffe.Attribute) or is_private(name))
     ]
     documented += [(n, t) for n, t in private_exports(mod).items() if home.get(t.path) == mod.path]
     for name, obj in documented:

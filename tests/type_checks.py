@@ -154,8 +154,10 @@ from pyfect.sql import client as sql_client
 from pyfect.sql import error as sql_error
 from pyfect.sql import migrator as sql_migrator
 from pyfect.sql import model as sql_model
+from pyfect.sql import mysql as sql_mysql
 from pyfect.sql import pg as sql_pg
 from pyfect.sql import resolver as sql_resolver
+from pyfect.sql import result as sql_result
 from pyfect.sql import schema as sql_schema
 from pyfect.sql import sqlite as sql_sqlite
 from pyfect.sql.client import SqlClient
@@ -5236,6 +5238,38 @@ def sql_pg_driver(
     sql_pg.PgConnectionConfig(port="5432")  # pyright: ignore[reportArgumentType]
     sql_pg.PgConnectionConfig(password="secret")  # pyright: ignore[reportArgumentType]
     queue.offer(sql_pg.Notification(1, "events", ""))  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+
+
+def sql_mysql_driver(mysql_sql: sql_mysql.MysqlClientService) -> None:
+    """The MySQL driver's constructors keep their error and requirement
+    types; the config takes the password only as ``Redacted`` and the port
+    only as an ``int``."""
+    from pyfect import redacted
+
+    config = sql_mysql.MysqlClientConfig(url=redacted.make("mysql://u:p@db/app"))
+    assert_type(
+        sql_mysql.make(config),
+        fx.Effect[sql_mysql.MysqlClientService, SqlError, fx.Scope | reactivity.Reactivity],
+    )
+    assert_type(
+        sql_mysql.layer(config), fx.Layer[sql_mysql.MysqlClient | sql_client.SqlClient, SqlError]
+    )
+    assert_type(
+        sql_mysql.layer_config({"url": fx.config.redacted("DATABASE_URL")}),
+        fx.Layer[sql_mysql.MysqlClient | sql_client.SqlClient, fx.ConfigError | SqlError],
+    )
+    assert_type(
+        sql_mysql.layer_from(sql_mysql.make(config)),
+        fx.Layer[sql_mysql.MysqlClient | sql_client.SqlClient, SqlError],
+    )
+    assert_type(
+        sql_mysql.MysqlClient(),
+        TagEffect[sql_mysql.MysqlClientService, sql_mysql.MysqlClient, sql_mysql.MysqlClient],
+    )
+    assert_type(mysql_sql.config, sql_mysql.MysqlClientConfig)
+    assert_type(sql_result.affected_rows(sql_mysql.ResultSetHeader(1, 2)), int)
+    sql_mysql.MysqlClientConfig(password="secret")  # pyright: ignore[reportArgumentType]
+    sql_mysql.MysqlClientConfig(port="3306")  # pyright: ignore[reportArgumentType]
 
 
 # --- cli ---

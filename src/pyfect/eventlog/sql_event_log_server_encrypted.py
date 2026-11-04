@@ -1,5 +1,5 @@
 """Storage of an encrypted event log server in a SQL database (Effect's
-``eventlog/SqlEventLogServerEncrypted``), on SQLite or PostgreSQL.
+``eventlog/SqlEventLogServerEncrypted``), on SQLite, PostgreSQL or MySQL.
 
 Each identity and store has a table of batches, named by a hash of the
 pair under ``entry_table_prefix``, and a table of the entry ids it holds
@@ -40,6 +40,7 @@ from pyfect.semaphore import Semaphore
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError
+from pyfect.sql.result import affected_rows
 from pyfect.sql.statement import Identifier
 from pyfect.stream import Stream, from_iterable, from_subscription
 from pyfect.stream import unwrap as stream_unwrap
@@ -60,9 +61,9 @@ class _Scope:
 
 
 def _dialect(sql: SqlClientService) -> str:
-    if sql.dialect not in ("sqlite", "pg"):
+    if sql.dialect not in ("sqlite", "pg", "mysql"):
         raise ValueError(
-            f"SqlEventLogServerEncrypted supports SQLite and PostgreSQL, not {sql.dialect}"
+            f"SqlEventLogServerEncrypted supports SQLite, PostgreSQL and MySQL, not {sql.dialect}"
         )
     return sql.dialect
 
@@ -86,22 +87,30 @@ def make_storage(
 ) -> Effect[StorageService, SqlError, SqlClient | EventLogEncryption | Scope]:
     """Storage in the ``SqlClient``'s database, creating its tables
     (Effect's ``makeStorage``). Fails with ``ValueError`` as a defect on a
-    dialect other than SQLite or PostgreSQL."""
+    dialect other than SQLite, PostgreSQL or MySQL."""
 
     def build():
         encryption = yield from EventLogEncryption()
         sql = (yield from SqlClient()).without_transforms()
-        pg = _dialect(sql) == "pg"
-        binary = "BYTEA" if pg else "BLOB"
+        dialect = _dialect(sql)
         remote_ids = sql.identifier(remote_id_table)
         bindings = sql.identifier(f"{entry_table_prefix}_session_auth_bindings")
-        if pg:
+        if dialect == "pg":
             yield from sql(
                 "CREATE TABLE IF NOT EXISTS {} (remote_id BYTEA PRIMARY KEY)", remote_ids
             )
             yield from sql(
                 "CREATE TABLE IF NOT EXISTS {} (public_key TEXT PRIMARY KEY, "
                 "signing_public_key BYTEA NOT NULL)",
+                bindings,
+            )
+        elif dialect == "mysql":
+            yield from sql(
+                "CREATE TABLE IF NOT EXISTS {} (remote_id BINARY(16) PRIMARY KEY)", remote_ids
+            )
+            yield from sql(
+                "CREATE TABLE IF NOT EXISTS {} (public_key VARCHAR(191) PRIMARY KEY, "
+                "signing_public_key BINARY(32) NOT NULL)",
                 bindings,
             )
         else:
@@ -119,7 +128,7 @@ def make_storage(
             yield from sql("INSERT INTO {} (remote_id) VALUES ({})", remote_ids, remote_id)
 
         def lookup(scope_key: str) -> Effect[_Scope, SqlError, Scope]:
-            return _open_scope(sql, encryption, entry_table_prefix, binary, scope_key)
+            return _open_scope(sql, encryption, entry_table_prefix, dialect, scope_key)
 
         resources = yield from RcMap.make(lookup, idle_time_to_live=300)
         return _SqlStorage(sql, remote_id, bindings, resources)
@@ -131,7 +140,7 @@ def _open_scope(
     sql: SqlClientService,
     encryption: EventLogEncryptionService,
     prefix: str,
-    binary: str,
+    dialect: str,
     scope_key: str,
 ) -> Effect[_Scope, SqlError, Scope]:
     def body():
@@ -140,7 +149,20 @@ def _open_scope(
         table = sql.identifier(name)
         ids_table = sql.identifier(f"{name}_ids")
         index = sql.identifier(f"{name}_last_sequence")
-        if binary == "BYTEA":
+        if dialect == "mysql":
+            yield from sql(
+                "CREATE TABLE IF NOT EXISTS {} (sequence INT PRIMARY KEY, "
+                "last_sequence INT NOT NULL, iv BINARY(12) NOT NULL, "
+                "entry_ids LONGBLOB NOT NULL, encrypted_batch LONGBLOB NOT NULL, "
+                "INDEX (last_sequence))",
+                table,
+            )
+            yield from sql(
+                "CREATE TABLE IF NOT EXISTS {} (entry_id BINARY(16) PRIMARY KEY, "
+                "sequence INT NOT NULL)",
+                ids_table,
+            )
+        elif dialect == "pg":
             yield from sql(
                 "CREATE TABLE IF NOT EXISTS {} (sequence INTEGER PRIMARY KEY, "
                 "last_sequence INTEGER NOT NULL, iv BYTEA NOT NULL, entry_ids BYTEA NOT NULL, "
@@ -222,6 +244,9 @@ class _SqlStorage(StorageService):
         # How many of the ids were not stored yet; stored ids keep their
         # first sequence.
         sql = self._sql
+        if sql.dialect == "mysql":
+            inserted = sql("INSERT IGNORE INTO {} {}", ids_table, sql.insert(rows)).raw
+            return inserted.map(affected_rows)
         return sql(
             "INSERT INTO {} {} ON CONFLICT DO NOTHING RETURNING entry_id",
             ids_table,

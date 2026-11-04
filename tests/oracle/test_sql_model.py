@@ -1,8 +1,8 @@
 """Ports of Effect's ``sql-mysql2/test/Model.integration.test.ts``
-(``SqlModel.makeRepository`` / ``makeResolvers``), run on SQLite: pyfect
-has no MySQL driver, and these titles test the repository, not MySQL.
-SQLite takes the ``INSERT ... RETURNING *`` path that every dialect but
-MySQL takes. Each test's docstring is the Effect test title.
+(``SqlModel.makeRepository`` / ``makeResolvers``), run on SQLite, which
+takes the ``INSERT ... RETURNING *`` path that every dialect but MySQL
+takes; ``test_mysql_model`` runs them on MySQL's path. Each test's
+docstring is the Effect test title.
 
 Python mappings: ``Model.Class<User>("User")({...})`` is ``class
 User(Model.Class[UserInsert, UserUpdate])``, the TypedDicts typing the

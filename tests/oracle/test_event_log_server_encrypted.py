@@ -205,22 +205,31 @@ def _sql_storage(client: fx.Layer[SqlClient, Any]) -> fx.Layer[Server.Storage, A
 
 @pytest.fixture
 def storage(request: pytest.FixtureRequest) -> fx.Layer[Server.Storage, Any]:
-    """The memory storage, or the SQL storage on an in-memory SQLite database
-    or the session's PostgreSQL server (skipped without one)."""
+    """The memory storage, or the SQL storage on an in-memory SQLite database,
+    the session's PostgreSQL server or its MySQL container (skipped without
+    one)."""
     match request.param:
         case "memory":
             return Server.layer_storage_memory
         case "SQLite":
             return _sql_storage(sqlite.layer(sqlite.SqliteClientConfig(filename=":memory:")))
-        case _:
+        case "pg":
             pytest.importorskip("psycopg")
             from pyfect.sql import pg
 
             server: PgServer = request.getfixturevalue("pg_server")
             return _sql_storage(pg.layer(pg.PgPoolConfig(url=server.url)))
+        case _:
+            pytest.importorskip("asyncmy")
+            from pyfect.sql import mysql
+
+            from ._mysql import MysqlServer
+
+            mysql_server: MysqlServer = request.getfixturevalue("mysql_server")
+            return _sql_storage(mysql.layer(mysql.MysqlClientConfig(url=mysql_server.url)))
 
 
-STORAGES = pytest.mark.parametrize("storage", ["memory", "SQLite", "pg"], indirect=True)
+STORAGES = pytest.mark.parametrize("storage", ["memory", "SQLite", "pg", "mysql2"], indirect=True)
 
 
 def services(storage: fx.Layer[Server.Storage, Any]) -> fx.Layer[Any, Any]:

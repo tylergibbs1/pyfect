@@ -47,6 +47,7 @@ from pyfect.sql import migrator
 from pyfect.sql.client import SqlClient, SqlClientService
 from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError, is_sql_error
+from pyfect.sql.result import affected_rows
 from pyfect.sql.statement import Fragment, Statement
 
 _REQUEST, _ACK_CHUNK, _INTERRUPT = 0, 1, 2
@@ -323,7 +324,7 @@ class _Storage:
         if sql.dialect == "mysql":
 
             def affected(result: Any) -> Effect[Sequence[Row], SqlError]:
-                if getattr(result, "affectedRows", 0) > 0:
+                if affected_rows(result) > 0:
                     return succeed([])
                 return self.select_by_message_id(message_id)
 

@@ -30,8 +30,8 @@ from pyfect.exit import Failure
 from pyfect.queue import Dequeue, Queue
 from pyfect.scope import CloseableScope, Scope, add_finalizer, fork_in
 from pyfect.semaphore import Semaphore
+from pyfect.sql._loop import call
 from pyfect.sql.error import SqlError, UnknownError
-from pyfect.sql.pg._loop import call
 from pyfect.sql.pg._resolve import ResolvedConfig, resolve, resolve_password
 from pyfect.sql.pg._session import (
     Field,

@@ -1,0 +1,50 @@
+---
+title: MySQL
+description: "A pooled MySQL client: prepared statements, row counts, errors read from MySQL's error numbers, and migrations."
+---
+
+`pyfect.sql.mysql` runs on asyncmy; install the `pyfect-dev[mysql]` extra. `mysql.layer`
+provides both `MysqlClient` and `SqlClient`, so the code from the [SQL guide](/docs/sql)
+runs unchanged on MySQL.
+
+The snippet on this page reads the server's URL from `DATABASE_URL`:
+
+```bash
+DATABASE_URL=mysql://user:password@localhost:3306/app python connect.py
+```
+
+## Connecting
+
+`MysqlClientConfig` holds the URL (a `Redacted`, so it never shows up in logs) or the
+separate `host`, `port`, `database`, `username` and `password`, and the pool's size and
+connection lifetime. `connect_options` passes anything else to the driver. To read the
+settings from the environment, use `mysql.layer_config({"url": fx.config.redacted("DATABASE_URL")})`.
+
+Statements are prepared on the server and cached per connection. Set
+`disable_prepared_statements=True` for servers or proxies that don't support them; the
+values are then escaped into the text. A few things work differently than on SQLite and
+PostgreSQL:
+
+- MySQL has no `RETURNING`. A statement that changes rows gives no rows; its `.raw`
+  result is a `ResultSetHeader` with `affected_rows` and `insert_id`.
+- `sql(...).unprepared` can run several statements separated by `;`, and gives a list
+  with each one's result.
+- A failure's `reason` comes from MySQL's error number: `UniqueViolation` (with the key's
+  name as `constraint`), `DeadlockError`, `LockTimeoutError`, `AuthenticationError`, ...
+- Interrupting a statement also ends its connection on the server (`KILL`), so its locks are
+  released.
+
+<CodeOutput>
+
+<include meta='title="connect.py"'>../../snippets/mysql/connect.py</include>
+
+<include lang="text">../../snippets/mysql/connect.out</include>
+
+</CodeOutput>
+
+## Migrations
+
+`mysql.migrator` works like the [SQLite migrator](/docs/sql#migrations): `migrator.layer`
+runs the migrations when the layer is built, recording them in `effect_sql_migrations`.
+MySQL commits DDL as it runs, so a migration that fails part way leaves the statements
+before the failure applied.

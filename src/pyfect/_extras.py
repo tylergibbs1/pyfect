@@ -13,6 +13,7 @@ type Extra = Literal[
     "httpx",
     "websockets",
     "pg",
+    "mysql",
     "server",
     "redis",
     "eventlog",

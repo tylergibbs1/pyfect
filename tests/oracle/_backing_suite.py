@@ -7,7 +7,7 @@ is ``testing.adjust`` (seconds)."""
 from __future__ import annotations
 
 from collections.abc import Callable, Generator
-from typing import Any
+from typing import Any, LiteralString
 
 import pyfect as fx
 from pyfect import schedule, testing
@@ -155,9 +155,10 @@ def wait_for_count(
     )
 
 
-def deletes_expired_entries_in_batches(index_count: str) -> Body:
+def deletes_expired_entries_in_batches(index_count: str, key_type: LiteralString = "TEXT") -> Body:
     """``Persistence SQL cleanup / deletes expired entries in batches``:
-    ``index_count`` counts the expires index in the dialect's catalog."""
+    ``index_count`` counts the expires index in the dialect's catalog;
+    ``key_type`` is the key columns' type (MySQL keys no ``TEXT``)."""
 
     def body():
         sql = (yield from SqlClient()).without_transforms()
@@ -166,8 +167,8 @@ def deletes_expired_entries_in_batches(index_count: str) -> Body:
             "SELECT COUNT(*) AS count FROM {} WHERE store_id = 'expired'", table
         ).map(lambda rows: int(rows[0]["count"]))  # pyright: ignore[reportArgumentType]
         yield from sql(
-            "CREATE TABLE {} (store_id TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, "
-            "expires BIGINT, PRIMARY KEY (store_id, id))",
+            f"CREATE TABLE {{}} (store_id {key_type} NOT NULL, id {key_type} NOT NULL, "
+            "value TEXT NOT NULL, expires BIGINT, PRIMARY KEY (store_id, id))",
             table,
         )
         entries = [

@@ -5,8 +5,9 @@ Every Python block in `website/content/docs` is an `<include>` of a file under
 from `website/` alone, so guides can't include files outside it):
 a snippet asserts its own results, and `test_*.py` snippets are pytest files.
 
-Snippets under `postgres/` read `DATABASE_URL`: each runs on a fresh database of the
-throwaway server the pg tests use (`tests/oracle/_postgres.py`), and skips without one.
+Snippets under `postgres/` and `mysql/` read `DATABASE_URL`: each runs on a fresh database
+of the throwaway server the pg or MySQL tests use (`tests/oracle/_postgres.py`,
+`tests/oracle/_mysql.py`), and skips without one.
 The site build never runs snippets, so it needs no server.
 
 A snippet that prints has its output next to it (`x.py` -> `x.out`), which guides show
@@ -64,10 +65,25 @@ def run(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedPr
 
 
 POSTGRES = SNIPPETS / "postgres"
+MYSQL = SNIPPETS / "mysql"
+
+
+def mysql_env(path: Path) -> dict[str, str]:
+    """`DATABASE_URL` of a new, empty database for a MySQL snippet."""
+    from oracle._mysql import query_now, server
+
+    mysql = server()  # skips without Docker
+    database = "snippet_" + "_".join(path.relative_to(MYSQL).with_suffix("").parts)
+    query_now(f"DROP DATABASE IF EXISTS `{database}`", root=True)
+    query_now(f"CREATE DATABASE `{database}`", root=True)
+    return {"DATABASE_URL": mysql.uri(root=True).rpartition("/")[0] + f"/{database}"}
 
 
 def snippet_env(path: Path) -> dict[str, str] | None:
-    """`DATABASE_URL` of a new, empty database for a PostgreSQL snippet."""
+    """`DATABASE_URL` of a new, empty database for a PostgreSQL or MySQL
+    snippet."""
+    if path.is_relative_to(MYSQL):
+        return mysql_env(path)
     if not path.is_relative_to(POSTGRES):
         return None
     from oracle._postgres import query_now, server
