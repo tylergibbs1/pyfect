@@ -1,7 +1,8 @@
 """``HttpRouter``: routes added by layers, matched with find-my-way.
 
 Add routes with ``add`` / ``add_all`` / ``use`` layers, then ``serve``
-them (or ``to_web_handler`` / ``to_http_effect``). A handler's errors and
+them (or ``to_web_handler`` / ``to_http_effect``, or ``in_memory_client``
+in tests). A handler's errors and
 requirements flow into the served app's types through the route layers'
 requirements (``Requires`` / ``Raises``)."""
 
@@ -21,6 +22,7 @@ from pyfect.http.router._api import (
     to_web_handler,
     use,
 )
+from pyfect.http.router._in_memory import in_memory_client, layer_in_memory_client
 from pyfect.http.router._markers import GlobalRaises, GlobalRequires, Raises, Requires, Unhandled
 from pyfect.http.router._middleware import (
     CorsOptions,
@@ -56,7 +58,9 @@ __all__ = [
     "add_all",
     "cors",
     "disable_logger",
+    "in_memory_client",
     "layer",
+    "layer_in_memory_client",
     "make",
     "middleware",
     "params",

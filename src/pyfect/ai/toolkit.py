@@ -22,7 +22,7 @@ needs ``Handlers[N_co]``, which ``to_layer`` provides.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Generic, LiteralString, Never, TypeVar, cast, final, overload
 
 import pyfect as fx
@@ -89,6 +89,22 @@ class _Registered:
 
 
 _handler_tags: dict[str, type[Tag[_Registered]]] = {}
+
+
+def map_handler_contexts(
+    toolkit: Toolkit[Any, Any, Any, Any],
+    context: Context[Any],
+    f: Callable[[Context[Any]], Context[Any]],
+) -> Context[Any]:
+    """``context`` with ``f`` applied to the context each of ``toolkit``'s
+    handlers kept from where its layer was built."""
+    out = context
+    for tool in toolkit.tools.values():
+        tag = _handler_tag(tool.id)
+        found, registered = out.lookup(tag)
+        if found:
+            out = out.add(tag, replace(registered, context=f(registered.context)))
+    return out
 
 
 def _handler_tag(tool_id: str) -> type[Tag[_Registered]]:
@@ -472,5 +488,6 @@ __all__ = [
     "WithHandler",
     "empty",
     "make",
+    "map_handler_contexts",
     "merge",
 ]

@@ -148,6 +148,10 @@ def _router_service() -> AnyEffect:
 
 _HTTP: dict[str, Case] = {
     "pyfect.http.router.add": Case(layer=_routes, run=_serving()),
+    "pyfect.http.router.layer_in_memory_client": Case(
+        layer=lambda: router.layer_in_memory_client(_routes()),
+        use=lambda: _get("http://localhost/", "ok"),
+    ),
     "pyfect.http.router.add_all": Case(
         layer=lambda: router.add_all(
             [router.route("GET", "/users", server_response.text("users"))], prefix="/api"

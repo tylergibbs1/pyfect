@@ -102,7 +102,9 @@ app needs more room.
 
 ## Testing routes
 
-A test serves the routes on `layer_test` and sends requests with the `HttpClient` it gives.
+A test serves the routes on `layer_test` and sends requests with the `HttpClient` it gives. To
+skip the socket, `router.in_memory_client(routes)` answers requests in memory and streams
+response bodies as they are written (see [Testing](/docs/testing)).
 
 <include meta='title="test_routes.py"'>../../snippets/http_server/test_routes.py</include>
 

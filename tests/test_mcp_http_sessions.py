@@ -27,21 +27,10 @@ def _initialize(**extra: object) -> dict[str, Any]:
 
 
 def _http(**options: Any) -> fx.Effect[HttpClientService[Any, Any], Any, Any]:
-    from pyfect.http.client import make as make_http_client
-    from pyfect.http.router import to_http_effect
-    from pyfect.http_api.test import _handle  # pyright: ignore[reportPrivateUsage]
+    from pyfect.http.router import in_memory_client
 
     app = M.layer_http(name="t", version="1", path="/mcp", protocols=(P.v2025_11_25,), **options)
-
-    @fx.gen
-    def run():
-        handler = yield from to_http_effect(app)
-        scope = yield from fx.Scope()
-        return make_http_client(
-            lambda request, _url, _signal, _fiber: _handle(handler, scope, request)
-        )
-
-    return run
+    return in_memory_client(app)
 
 
 def _post(

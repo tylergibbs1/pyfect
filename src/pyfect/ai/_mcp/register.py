@@ -56,7 +56,13 @@ from pyfect.ai.mcp_schema import (
     ToolAnnotations,
 )
 from pyfect.ai.mcp_schema import Tool as McpTool
-from pyfect.ai.toolkit import FailureOriginAnnotation, HandlerResult, Handlers, Toolkit
+from pyfect.ai.toolkit import (
+    FailureOriginAnnotation,
+    HandlerResult,
+    Handlers,
+    Toolkit,
+    map_handler_contexts,
+)
 from pyfect.cause import Cause, Fail, UnhandledError
 from pyfect.context import Context
 from pyfect.effect import fail, fail_cause, gen, succeed, suspend
@@ -183,7 +189,12 @@ def register_toolkit[N: LiteralString, RP, HE, R](
     @gen
     def register():
         server = yield from McpServer()
-        kit = yield from toolkit
+
+        def without_request(context: Context[Any]) -> Context[Any]:
+            # A handler's layer may be built during a request: it keeps none of that request's.
+            return map_handler_contexts(toolkit, context, omit_request_services)
+
+        kit = yield from toolkit.pipe(fx.update_context(without_request))
         services = omit_request_services((yield from fx.context()))
 
         def internal_tool_error(cause: Cause[object]) -> Effect[CallToolResult, InvalidParams]:

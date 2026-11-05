@@ -29,7 +29,19 @@ class StdioHarness:
     server: M.McpServerService
     stdin: Queue[bytes, Done]
     stdout: Queue[Json, Done]
+    raw_stdout: Queue[str, Done]
+    """Each write to stdout, as written."""
+    fiber: fx.Fiber[Any, Any]
+    """The server, serving until stdin ends."""
     next_id: int = 1
+
+    @property
+    def close(self) -> fx.Effect[None]:
+        """End stdin, as a client closing it."""
+        return self.stdin.end().as_void()
+
+    def send_chunk(self, chunk: bytes) -> fx.Effect[None]:
+        return self.stdin.offer(chunk).as_void()
 
     def send(self, message: Json) -> fx.Effect[None]:
         return self.stdin.offer((json.dumps(message) + "\n").encode()).as_void()
@@ -37,7 +49,7 @@ class StdioHarness:
     def send_raw(self, line: str) -> fx.Effect[None]:
         return self.stdin.offer((line + "\n").encode()).as_void()
 
-    def _meta(self, params: Json | None) -> Json | None:
+    def with_metadata(self, params: Json | None) -> Json | None:
         if not self.protocol.is_stateless:
             return params
         meta = {
@@ -71,7 +83,7 @@ class StdioHarness:
             id = self.next_id
             self.next_id += 1
         message: Json = {"jsonrpc": "2.0", "id": id, "method": method}
-        projected = self._meta(params)
+        projected = self.with_metadata(params)
         if projected is not None:
             message["params"] = projected
         return self.send(message).and_then(self.response_to(id))
@@ -112,15 +124,19 @@ def stdio_harness(
         server = yield from M.make()
         stdin = Queue[bytes, Done]()
         stdout = Queue[Json, Done]()
+        raw_stdout = Queue[str, Done]()
 
         def output(*, end_on_done: bool = False) -> stdio.Output:
             def write(chunk: str | bytes) -> fx.Effect[None]:
                 text = chunk.decode() if isinstance(chunk, bytes) else chunk
-                return fx.sync(
-                    lambda: [
-                        stdout.offer_unsafe(json.loads(line)) for line in text.splitlines() if line
-                    ]
-                ).as_void()
+
+                def record() -> None:
+                    raw_stdout.offer_unsafe(text)
+                    for line in text.splitlines():
+                        if line:
+                            stdout.offer_unsafe(json.loads(line))
+
+                return fx.sync(record)
 
             return cast("stdio.Output", sink.for_each(write))
 
@@ -132,12 +148,12 @@ def stdio_harness(
             protocols=tuple(protocols or (protocol,)),
             instructions=instructions,
         )
-        yield from (
+        fiber = yield from (
             serving.pipe(fx.provide_service(M.McpServer, server))
             .pipe(fx.provide(stdio.layer_test(stdin=stream.from_queue(stdin), stdout=output)))
             .fork_scoped()
         )
-        return StdioHarness(protocol, server, stdin, stdout)
+        return StdioHarness(protocol, server, stdin, stdout, raw_stdout, fiber)
 
     return run
 
@@ -148,16 +164,6 @@ MCP_ENDPOINT = "http://localhost:3000/mcp"
 def in_memory_http(app: Any) -> fx.Effect[Any, Any, Scope]:
     """An ``HttpClientService`` whose requests ``app`` (a layer adding
     routes to the router) handles in memory."""
-    from pyfect.http.client import make as make_http_client
-    from pyfect.http.router import to_http_effect
-    from pyfect.http_api.test import _handle  # pyright: ignore[reportPrivateUsage]
+    from pyfect.http.router import in_memory_client
 
-    @fx.gen
-    def run():
-        handler = yield from to_http_effect(app)
-        scope = yield from Scope()
-        return make_http_client(
-            lambda request, _url, _signal, _fiber: _handle(handler, scope, request)
-        )
-
-    return run
+    return in_memory_client(app)

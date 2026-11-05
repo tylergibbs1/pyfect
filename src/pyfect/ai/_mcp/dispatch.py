@@ -15,11 +15,13 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal, Never, cast
 
+from pyfect import _json_text
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
-from pyfect.ai._mcp import log_levels, projection
+from pyfect.ai._mcp import log_levels, projection, reverse_policy
 from pyfect.ai._mcp.core import McpServerService, RequestOutbound, RequestServices
+from pyfect.ai._mcp.http_status import fail_with_http_status
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter, Registry
 from pyfect.ai.mcp_schema import (
     CALL_TOOL_PARAMS,
@@ -27,6 +29,7 @@ from pyfect.ai.mcp_schema import (
     CREATE_MESSAGE_RESULT,
     ELICIT_RESULT,
     GET_PROMPT,
+    IMPLEMENTATION,
     INITIALIZE_PARAMS,
     LIST_ROOTS_RESULT,
     LIST_TOOLS,
@@ -40,8 +43,9 @@ from pyfect.ai.mcp_schema import (
     ClientCapabilities,
     CreateMessageParams,
     CreateMessageResult,
-    ElicitRequestFormParams,
+    ElicitRequestParams,
     ElicitResult,
+    GetPromptResult,
     Icon,
     Implementation,
     InternalError,
@@ -119,11 +123,29 @@ def error_response(id: RequestId | None, error: McpError) -> JsonObject:
     return {"jsonrpc": "2.0", "id": id, "error": cast("Any", error.to_wire())}
 
 
+def _encodable_response(id: RequestId, result: Wire) -> JsonObject:
+    """The response carrying ``result``, or an internal error when it is not
+    JSON (a NaN, a value with no JSON form)."""
+    reply = response(id, result)
+    try:
+        _json_text.stringify(reply)
+    except (TypeError, ValueError):
+        return error_response(id, InternalError("Failed to encode the result"))
+    return reply
+
+
+def invalid_params_response(id: RequestId | None) -> JsonObject:
+    """The answer to a request whose params are not an object."""
+    return error_response(id, InvalidParams("Invalid params"))
+
+
 def notification(method: str, params: JsonObject) -> JsonObject:
     return {"jsonrpc": "2.0", "method": method, "params": params}
 
 
-type Kind = Literal["request", "notification", "response", "invalid"]
+type Kind = Literal["request", "notification", "response", "invalid", "invalid_params", "ignored"]
+"""``invalid_params``: a request whose params are not an object; ``ignored``:
+a notification whose params are not (answered by nothing)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,7 +181,13 @@ def classify(message: object) -> Classified:  # noqa: PLR0911
     params = body.get("params", {})
     if isinstance(method, str):
         if params is not None and not isinstance(params, dict):
-            return Classified("invalid", id, method)
+            if "id" not in body:
+                return Classified("ignored", None, method)
+            return (
+                Classified("invalid_params", id, method)
+                if id is not None
+                else Classified("invalid", None, method)
+            )
         params_object: JsonObject = params or {}
         if "id" not in body:
             return Classified("notification", None, method, params_object)
@@ -185,6 +213,10 @@ def requested_protocol_version(params: Mapping[str, Any]) -> str | None:
 def _decode(schema: S.Top, params: object) -> Effect[Any, InvalidParams]:
     decode = cast("Callable[[object], Effect[Any, S.SchemaError]]", S.decode_unknown_effect(schema))
     return decode(params).map_error(lambda error: InvalidParams(error.message))
+
+
+def _method_not_found_bare() -> McpError:
+    return ProtocolError("Method not found", error_code=METHOD_NOT_FOUND_ERROR_CODE)
 
 
 def _method_not_found(method: str) -> McpError:
@@ -229,6 +261,11 @@ class Connection:
     identity: Identity = field(default_factory=Identity)
     initialize_payload: JsonObject = field(default_factory=dict[str, Any])
     initialized: bool = False
+    closed: bool = False
+    """Whether the session ended (closed by the client, idle or evicted)."""
+    streams: list[Send] = field(default_factory=list[Send])
+    """An HTTP session's event streams of the requests in flight, where its
+    ``broadcast`` writes (a stdio client has the one output)."""
     log_level: LoggingLevel | None = None
     """The level the client set with ``logging/setLevel``."""
     subscriptions: set[str] = field(default_factory=set[str])
@@ -254,11 +291,18 @@ class Connection:
                     lambda reply: _VOID if reply is None else out(reply)
                 )
             return self.start(request, out).as_void()
+        return self._not_a_request(classified, out)
+
+    def _not_a_request(self, classified: Classified, out: Send) -> Effect[None]:
         match classified.kind:
             case "notification":
                 return self._notified(classified.method, classified.params)
             case "response":
                 return self._answered(classified.body)
+            case "ignored":
+                return _VOID
+            case "invalid_params":
+                return out(invalid_params_response(classified.id))
             case _:
                 return out(error_response(classified.id, InvalidRequest("Invalid Request")))
 
@@ -268,10 +312,11 @@ class Connection:
         return bool(self._inflight)
 
     def close(self) -> Effect[None]:
-        """Interrupt the requests still being served."""
+        """End the connection: interrupt the requests still being served."""
 
         @gen
         def run():
+            self.closed = True
             for fiber in list(self._inflight.values()):
                 yield from fiber.interrupt()
 
@@ -332,7 +377,7 @@ class Connection:
             .catch_cause(_as_mcp_error)
             .match(
                 on_failure=lambda error: error_response(id, error),
-                on_success=lambda result: response(id, result),
+                on_success=lambda result: _encodable_response(id, result),
             )
         )
         return replied.exit().map(lambda exit: exit.value if isinstance(exit, Success) else None)
@@ -367,9 +412,12 @@ class Connection:
     def deliver(self, method: str, params: JsonObject) -> Effect[None]:
         """A broadcast notification, sent once the client is initialized
         and if it wants it (``Peer``)."""
-        if not self.initialized or not self.wants(method, params):
+        protocol = self.protocol
+        if protocol is None or not self.initialized or not self.wants(method, params):
             return _VOID
-        return self.broadcast(notification(method, params))
+        return self.broadcast(
+            notification(method, projection.notification(protocol, method, params))
+        )
 
     def _request_outbound(
         self, out: Send, protocol: AnyProtocolAdapter, metadata: JsonObject
@@ -393,7 +441,9 @@ class Connection:
         wants = stateless_wants if protocol.is_stateless else self.wants
 
         def deliver(method: str, params: JsonObject) -> Effect[None]:
-            return out(notification(method, params)) if wants(method, params) else _VOID
+            if not wants(method, params):
+                return _VOID
+            return out(notification(method, projection.notification(protocol, method, params)))
 
         return deliver
 
@@ -433,7 +483,12 @@ class Connection:
         return (
             sync(lambda: self._pending.__setitem__(id, deferred))
             .and_then(out(message))
-            .and_then(deferred.wait())
+            .and_then(
+                # A cancelled request may never be answered: tell the client.
+                deferred.wait().on_interrupt(
+                    out(notification("notifications/cancelled", {"requestId": id}))
+                )
+            )
             .flat_map(answer)
             .ensuring(sync(lambda: self._pending.pop(id, None)))
         )
@@ -449,8 +504,6 @@ class Connection:
             def unsupported(reason: str) -> McpReverseOperationUnsupported:
                 return McpReverseOperationUnsupported(operation, version, reason)
 
-            if protocol.is_stateless:
-                return unsupported(f"MCP {version} has no server-to-client requests")
             if capability == "elicitation" and not protocol.supports_structured_content:
                 return unsupported(f"MCP {version} has no elicitation")
             if identity.capabilities.get(capability) is None:
@@ -483,9 +536,32 @@ class Connection:
         def create_message(
             params: CreateMessageParams,
         ) -> Effect[CreateMessageResult, ReverseError]:
-            return request("sampling/createMessage", "sampling", params, CREATE_MESSAGE_RESULT)
+            operation: ReverseOperation = "sampling/createMessage"
+            refusal = refused(operation, "sampling")
+            reason = reverse_policy.sampling_refusal(protocol, identity.capabilities, params)
+            if refusal is None and reason is not None:
+                return fail(McpReverseOperationUnsupported(operation, version, reason))
 
-        def elicit(params: ElicitRequestFormParams) -> Effect[ElicitResult, ReverseError]:
+            def checked(result: CreateMessageResult) -> Effect[CreateMessageResult, ReverseError]:
+                reason = reverse_policy.sampling_result_refusal(
+                    protocol, identity.capabilities, result
+                )
+                if reason is None:
+                    return succeed(result)
+                return fail(McpReverseOperationUnsupported(operation, version, reason))
+
+            return request(operation, "sampling", params, CREATE_MESSAGE_RESULT).flat_map(checked)
+
+        def elicit(params: ElicitRequestParams) -> Effect[ElicitResult, ReverseError]:
+            if refused("elicitation/create", "elicitation") is None:
+                projected = reverse_policy.project_elicitation(
+                    protocol, identity.capabilities, params
+                )
+                if isinstance(projected, str):
+                    return fail(
+                        McpReverseOperationUnsupported("elicitation/create", version, projected)
+                    )
+                params = projected
             return request("elicitation/create", "elicitation", params, ELICIT_RESULT)
 
         return ReverseClient(list_roots, create_message, elicit)
@@ -516,10 +592,12 @@ class Connection:
             succeed(self._reverse_client(protocol, identity, out)),
             metadata,
         )
+        # A stateless request belongs to no session, so it has no client of one.
+        with_client: Effect[Wire, McpError, Any] = suspend(lambda: handler(context))
+        if not protocol.is_stateless:
+            with_client = with_client.pipe(provide_service(McpServerClient, client))
         return (
-            suspend(lambda: handler(context))
-            .pipe(provide_service(McpRequestContext, context))
-            .pipe(provide_service(McpServerClient, client))
+            with_client.pipe(provide_service(McpRequestContext, context))
             .pipe(provide_service(CurrentLogLevel, self._handler_log_level(protocol, metadata)))
             .pipe(provide_service(RequestOutbound, self._request_outbound(out, protocol, metadata)))
         )
@@ -542,7 +620,8 @@ class Connection:
 
         def start(payload: Any) -> Wire:
             self.protocol = protocol
-            self.identity = Identity(payload["capabilities"], payload["clientInfo"])
+            capabilities = projection.client_capabilities(protocol, payload["capabilities"])
+            self.identity = Identity(capabilities, payload["clientInfo"])
             self.initialize_payload = dict(params)
             result: Wire = {
                 "protocolVersion": protocol.protocol_version,
@@ -561,8 +640,9 @@ class Connection:
         capabilities: ServerCapabilities = {"logging": {}}
         if protocol.supports_audio:
             capabilities["completions"] = {}
-        if self.info.extensions is not None:
-            capabilities["extensions"] = dict(self.info.extensions)
+        extensions = _extensions(protocol, self.info.extensions)
+        if extensions:
+            capabilities["extensions"] = extensions
         if prompts:
             capabilities["prompts"] = {"listChanged": not stateless}
         if resources:
@@ -638,7 +718,7 @@ class Connection:
                     lambda decoded: serve(
                         lambda c: server.get_prompt_for(
                             decoded["name"], decoded.get("arguments") or {}, c
-                        ).map(lambda result: projection.get_prompt_result(protocol, result))
+                        ).flat_map(lambda result: _prompt_on_wire(protocol, result))
                     )
                 )
             case "completion/complete":
@@ -681,6 +761,8 @@ class Connection:
         meta = cast("JsonObject", params.get("_meta") or {})
         capabilities = meta.get(CLIENT_CAPABILITIES_META)
         info = meta.get(CLIENT_INFO_META)
+        if info is not None and not _is_implementation(info):
+            return fail(InvalidParams(f"Invalid {CLIENT_INFO_META}"))
         identity = Identity(
             cast("ClientCapabilities", capabilities if isinstance(capabilities, dict) else {}),
             cast("Implementation", info) if isinstance(info, dict) else None,
@@ -710,6 +792,9 @@ class Connection:
         requested_level = log_levels.request_log_level(meta)
         if requested_level is not None and not log_levels.is_logging_level(requested_level):
             return fail(InvalidParams(f"Invalid request log level {requested_level!r}"))
+        if method == "prompts/list" and not self.server.has_registrations[2]:
+            # An unadvertised capability's method (Effect's 2026-07-28 prompts/list).
+            return fail_with_http_status(404, _method_not_found_bare())
         cacheable = method in _CACHEABLE
         return self._feature(protocol, identity, method, params, out).map(
             lambda result: complete(result, cacheable)
@@ -747,11 +832,42 @@ def _call_tool(
                 )
             )
         )
-    return called.map(lambda result: projection.call_tool_result(protocol, result, wrap))
+
+    def on_wire(result: CallToolResult) -> Effect[Wire, McpError]:
+        reason = projection.unsupported_content(protocol, result["content"])
+        if reason is not None:
+            return fail(InvalidParams(reason))
+        return succeed(projection.call_tool_result(protocol, result, wrap))
+
+    return called.flat_map(on_wire)
 
 
 def _wire(value: Mapping[str, Any]) -> Wire:
     return dict(value)
+
+
+def _prompt_on_wire(
+    protocol: AnyProtocolAdapter, result: GetPromptResult
+) -> Effect[Wire, McpError]:
+    reason = projection.unsupported_content(protocol, [m["content"] for m in result["messages"]])
+    if reason is not None:
+        return fail(InvalidParams(reason))
+    return succeed(projection.get_prompt_result(protocol, result))
+
+
+_is_implementation = S.is_(IMPLEMENTATION)
+
+
+def _extensions(
+    protocol: AnyProtocolAdapter, extensions: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """The extension settings ``protocol`` can advertise: on 2026-07-28 only
+    JSON objects, so a legacy scalar setting cannot break discovery."""
+    if extensions is None:
+        return {}
+    if not protocol.is_stateless:
+        return dict(extensions)
+    return {name: value for name, value in extensions.items() if isinstance(value, dict)}
 
 
 def _offers_stateless(registry: Registry) -> bool:

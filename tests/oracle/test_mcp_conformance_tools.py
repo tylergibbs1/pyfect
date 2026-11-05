@@ -12,9 +12,9 @@ Omitted:
 - "should list shared tools and gate modern-only tools by era" checks the
   ``MrtrTool`` too: ``input_required`` round trips are not ported; the
   ``JsonSchema2020Tool`` half is "gates a modern-only tool by revision" here.
-- "Tools > Modern request headers" (4 titles): ``Mcp-Name`` and
-  ``Mcp-Param-*`` routing headers are HTTP-only. The ``Mcp-Name`` check is
-  in test_mcp_http_admission.py; ``Mcp-Param-*`` mirroring is not ported.
+- "Tools > Modern request headers": the ``Mcp-Name`` title is in
+  test_mcp_http_admission.py; the 3 ``Mcp-Param-*`` mirroring titles are not
+  ported.
 - "should send a tool list-change notification when the advertised list
   changes" reads ``flushListChanged``: list-change coalescing is not
   ported.

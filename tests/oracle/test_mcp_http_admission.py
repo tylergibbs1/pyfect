@@ -1,8 +1,14 @@
 """Ports of Effect's MCP HTTP admission and JSON-RPC batch titles: from
 McpServer.test.ts, the 2025-03-26 transport titles of v2025_03_26.test.ts and
-the 2026-07-28 transport and request-metadata titles of v2026_07_28.test.ts.
+the 2026-07-28 transport, discovery and request-metadata titles of
+v2026_07_28.test.ts.
 
 Omitted:
+- "should return InvalidParams when a resumed tool rejects its requestState",
+  "should reject tool-enabled sampling when the client omits sampling.tools",
+  "should treat an empty elicitation capability as form support", "should
+  reject input requests when the client omits their required capabilities":
+  ``input_required`` round trips are not ported.
 - "should accept cancellation notifications without request metadata": in
   test_mcp_protocol_adapters.py.
 - "should validate nested mirrored parameters before executing a tool" and
@@ -31,6 +37,7 @@ from pyfect.http.client import HttpClientService
 from pyfect.http.response import HttpClientResponse
 
 from ._mcp import CLIENT_INFO, Json, in_memory_http, stdio_harness
+from ._mcp_http import conformance, read_message
 
 URL = "http://localhost/mcp"
 ACCEPT = "application/json, text/event-stream"
@@ -534,3 +541,195 @@ def test_should_accept_a_request_when_optional_client_identity_is_omitted():
     }
     response = yield from _post(http, body, _headers("tools/list"))
     assert response.status == 200
+
+
+# --- v2026_07_28.test.ts: discovery and independent requests --------------------------------
+
+
+_META: Json = {
+    "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientCapabilities": {
+        "elicitation": {"form": {}},
+        "roots": {},
+        "sampling": {},
+    },
+    "io.modelcontextprotocol/clientInfo": {"name": "McpConformanceClient", "version": "1.0.0"},
+}
+
+
+def _modern_post(
+    http: Http, id: object, method: str, params: Json | None = None
+) -> fx.Effect[Any, Any]:
+    body = {
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": method,
+        "params": {"_meta": _META, **(params or {})},
+    }
+    return _post(http, body, {"mcp-protocol-version": "2026-07-28", "mcp-method": method})
+
+
+def _modern_server(**info: Any) -> Any:
+    return M.layer_http(
+        name="McpConformance",
+        version="1.0.0",
+        path="/mcp",
+        protocols=(P.v2026_07_28, P.v2025_06_18),
+        **info,
+    )
+
+
+@testing.effect
+def test_should_discover_the_server_when_no_initialization_or_session_exists():
+    """Mcp Conformance (2026-07-28) / Discovery / should discover the server when no initialization or session exists"""  # noqa: E501
+    http = yield from in_memory_http(
+        _modern_server(instructions="Follow the test server instructions.")
+    )
+    response = yield from _modern_post(http, 1, "server/discover")
+    result = (yield from read_message(response))["result"]
+    assert response.status == 200
+    assert response.headers.get("mcp-session-id") is None
+    assert result["supportedVersions"][0] == "2026-07-28"
+    assert result["instructions"] == "Follow the test server instructions."
+
+
+@testing.effect
+def test_should_advertise_supported_extension_settings_with_legacy_configuration():
+    """Mcp Conformance (2026-07-28) / Discovery / should advertise supported extension settings when discovering a server with legacy configuration"""  # noqa: E501
+    extensions = {
+        "example/settings": {"enabled": True, "formats": ["text/html"], "nested": {"value": None}},
+        "example/empty": {},
+    }
+    http = yield from in_memory_http(
+        _modern_server(
+            extensions={
+                **extensions,
+                "example/boolean": True,
+                "example/array": [],
+                "example/null": None,
+            }
+        )
+    )
+    response = yield from _modern_post(http, "discovery", "server/discover")
+    assert response.status == 200
+    assert (yield from read_message(response))["result"]["capabilities"] == {
+        "completions": {},
+        "logging": {},
+        "extensions": extensions,
+    }
+
+
+@testing.effect
+def test_should_serve_independent_requests_when_no_discovery_or_session_exists():
+    """Mcp Conformance (2026-07-28) / Discovery / should serve independent requests when no discovery or session exists"""  # noqa: E501
+    http = yield from in_memory_http(_modern_server())
+    headers = {"mcp-protocol-version": "2026-07-28", "mcp-method": "tools/list"}
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": _META}}
+    first = yield from _post(http, body, headers)
+    second = yield from _post(
+        http, {**body, "id": 2}, {**headers, "mcp-session-id": "ignored-modern-session"}
+    )
+    assert first.status == 200
+    assert second.status == 200
+    assert first.headers.get("mcp-session-id") is None
+
+
+@testing.effect
+def test_should_exchange_self_contained_newline_delimited_requests_over_stdio():
+    """Mcp Conformance (2026-07-28) / Discovery / should exchange self-contained newline-delimited requests over stdio"""  # noqa: E501
+    harness = yield from stdio_harness(P.v2026_07_28)
+    result = (yield from harness.send_request("server/discover", {}))["result"]
+    assert result["supportedVersions"] == ["2026-07-28"]
+    assert result["capabilities"] == {"completions": {}, "logging": {}}
+    assert result["resultType"] == "complete"
+    assert result["ttlMs"] == 0
+    assert result["cacheScope"] == "private"
+    assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["version"] == "1.0.0"
+
+
+@testing.effect
+def test_should_preserve_caller_metadata_alongside_authoritative_protocol_facts():
+    """Mcp Conformance (2026-07-28) / Request metadata / should preserve caller metadata alongside authoritative protocol facts"""  # noqa: E501
+    observed: list[Any] = []
+
+    def probe(_: object) -> fx.Effect[MS.CallToolResult, Any, Any]:
+        return MS.McpRequestContext().map(
+            lambda context: (observed.append(dict(context.request_metadata)), _empty_call())[1]
+        )
+
+    registration = M.McpServer().flat_map(
+        lambda server: server.add_tool(
+            ToolEntry(
+                {"name": "RequestMetadataTool", "inputSchema": {"type": "object"}},
+                Context.empty(),
+                probe,
+            )
+        )
+    )
+    app = layer.effect_discard(registration).pipe(layer.provide_merge(_modern_server()))
+    http = yield from in_memory_http(app)
+    yield from _post(
+        http,
+        {
+            "jsonrpc": "2.0",
+            "id": 8,
+            "method": "tools/call",
+            "params": {
+                "name": "RequestMetadataTool",
+                "arguments": {},
+                "_meta": {**_META, "sentinel": "preserved"},
+            },
+        },
+        {
+            "mcp-protocol-version": "2026-07-28",
+            "mcp-method": "tools/call",
+            "mcp-name": "RequestMetadataTool",
+        },
+    )
+    assert observed == [{**_META, "sentinel": "preserved"}]
+
+
+@testing.effect
+def test_should_include_the_requested_uri_when_a_resource_is_not_found():
+    """Mcp Conformance (2026-07-28) / Result envelopes / should include the requested URI when a resource is not found"""  # noqa: E501
+    http = yield from in_memory_http(_modern_server())
+    uri = "test://nonexistent-resource-for-conformance-testing"
+    response = yield from _post(
+        http,
+        {
+            "jsonrpc": "2.0",
+            "id": 29,
+            "method": "resources/read",
+            "params": {"uri": uri, "_meta": _META},
+        },
+        {
+            "mcp-protocol-version": "2026-07-28",
+            "mcp-method": "resources/read",
+            "mcp-name": uri,
+        },
+    )
+    error = (yield from read_message(response))["error"]
+    assert error["code"] == MS.INVALID_PARAMS_ERROR_CODE
+    assert error["data"] == {"uri": uri}
+
+
+def _empty_call() -> MS.CallToolResult:
+    return {"content": []}
+
+
+@testing.effect
+def test_should_reject_a_tools_call_request_when_its_required_routing_name_is_missing():
+    """Mcp Conformance / Tools > Modern request headers / should reject a tools/call request when its required routing name is missing"""  # noqa: E501
+    test = yield from conformance(P.v2026_07_28)
+    initialized = yield from test.initialize()
+    response = yield from test.send(
+        initialized,
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"arguments": {"value": "called"}},
+        },
+    )
+    error = yield from test.decode_error(response)
+    assert error["error"]["code"] == MS.HEADER_MISMATCH_ERROR_CODE

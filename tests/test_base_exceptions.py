@@ -291,12 +291,16 @@ def test_a_real_sigint_during_blocking_user_code_runs_the_finalizers():
     prog = fx.sync(block).ensuring(fx.sync(lambda: log.append("fin")))
     started = time.monotonic()
     sender = threading.Thread(target=send, daemon=True)
+    # A process started with `&` by a non-interactive shell ignores SIGINT, and
+    # Python then installs no handler: the signal would never reach the run.
+    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
     sender.start()
     try:
         with pytest.raises(KeyboardInterrupt):
             fx.run_sync(prog)
     finally:
         sender.join()
+        signal.signal(signal.SIGINT, previous)
     assert log == ["fin"]
     assert time.monotonic() - started < 30
 

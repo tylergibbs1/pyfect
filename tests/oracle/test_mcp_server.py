@@ -2,24 +2,28 @@
 
 Each test's docstring is the Effect test title (with its ``describe``).
 Stdio tests run the server over an in-memory stdio (``stdio_harness``);
-HTTP tests send raw requests to ``McpServer.layer_http`` through an
-in-memory router; direct-service tests call ``McpServerService`` with a
-``McpServerClient`` provided.
+HTTP tests send raw requests to ``McpServer.layer_http`` through
+``router.in_memory_client``, reading event streams as they arrive;
+direct-service tests call ``McpServerService`` with a ``McpServerClient``
+provided.
 
 Omitted, with the reason:
 
-- URL elicitation ordering, cross-connection reverse responses, custom
-  transports, slow-reader isolation and mixed-protocol HTTP notification
-  isolation: they drive Effect's RpcServer internals and custom
-  transports, which pyfect's transports do not expose.
+- ``should match reverse responses to their originating connection``,
+  ``should suppress cancelled responses when a custom transport handles MCP
+  messages``, ``should deliver notifications and results to other clients when
+  one client stops reading``, ``should release disconnected clients when a
+  reverse request is cancelled without a reply``, ``drops server notifications
+  from buffered JSON-RPC responses``: they drive Effect's RpcServer protocol
+  with custom transports, which pyfect's transports do not expose.
+- ``should isolate request notifications across mixed HTTP protocols``: it
+  reads a ``subscriptions/listen`` stream, which is not ported.
+- ``should release request metadata when HTTP requests complete without
+  server notifications``: a Python dict takes no weak reference; a stateless
+  POST's connection is never registered, so nothing keeps it.
 - Resource subscriptions and their backlogs, list-change notification
   scheduling, ``subscriptions/listen``, ``layerHttpRequestScoped`` and
   ``allowSubscriptions``: not ported (see PARITY.md, M10e mcp).
-- Disconnect interrupting in-flight HTTP tools, DELETE interrupting a
-  pending POST (pyfect ends that POST's stream instead of answering 404) and
-  closing a started elicitation stream: the in-memory router buffers whole
-  responses and has no client disconnect.
-- ``June wire transcript``: covered by the lifecycle tests.
 
 Ported elsewhere: the direct-service and ``registerToolkit`` titles
 (strict mode, identified schemas, failure modes, registration context) in
@@ -45,11 +49,13 @@ from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.ai._mcp.core import ToolEntry
 from pyfect.context import Context
+from pyfect.deferred import Deferred
 from pyfect.http import request as R
 from pyfect.http.client import HttpClientService
 from pyfect.http.response import HttpClientResponse
 
 from ._mcp import CLIENT_INFO, in_memory_http, stdio_harness
+from ._mcp_http import http_harness, initialize_session, read_message, server_layer, sse_reader
 
 ALL = [P.v2026_07_28, P.v2025_11_25, P.v2025_06_18, P.v2025_03_26, P.v2024_11_05]
 
@@ -646,3 +652,498 @@ def test_returns_an_empty_202_for_notifications():
     listed = yield from _post(http, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, headers)
     assert listed.status == 200
     assert json.loads((yield from listed.text))["result"]["tools"] == []
+
+
+# --- HTTP streams read as they arrive -------------------------------------------------------
+
+
+def _blocking_tool(name: str, handle: Any) -> fx.Effect[None, Any, M.McpServer]:
+    entry = ToolEntry({"name": name, "inputSchema": {"type": "object"}}, Context.empty(), handle)
+    return M.McpServer().flat_map(lambda server: server.add_tool(entry))
+
+
+def _blocking_tool_entry(tool: Any) -> fx.Effect[None, Any, M.McpServer]:
+    entry = ToolEntry(tool, Context.empty(), lambda _: fx.succeed({"content": []}))
+    return M.McpServer().flat_map(lambda server: server.add_tool(entry))
+
+
+@testing.effect
+def test_should_interrupt_tool_work_when_its_non_resumable_http_response_is_disconnected():
+    """McpServer / should interrupt tool work when its non-resumable HTTP response is disconnected"""  # noqa: E501
+    interrupted = Deferred[None]()
+    protocol = P.v2025_03_26
+
+    @fx.gen
+    def registration():
+        server = yield from M.McpServer()
+
+        def wait(_: object) -> fx.Effect[Any]:
+            return (
+                server.notify("notifications/message", {"level": "error", "data": "running"})
+                .and_then(fx.never)
+                .on_interrupt(interrupted.succeed(None))
+            )
+
+        yield from _blocking_tool("Wait", wait)
+
+    harness = yield from http_harness(server_layer("HttpDisconnect", (protocol,), registration))
+    headers = yield from initialize_session(harness, protocol)
+    response = yield from harness.post(
+        {
+            "jsonrpc": "2.0",
+            "id": "wait",
+            "method": "tools/call",
+            "params": {"name": "Wait", "arguments": {}},
+        },
+        headers,
+    )
+    stream = yield from sse_reader(response)
+    assert (yield from stream.take())["method"] == "notifications/message"
+    yield from stream.cancel
+    yield from interrupted.wait()
+
+
+@testing.effect
+def test_interrupts_an_in_flight_tool_on_delete_and_returns_404_for_its_pending_post():
+    """McpServer / interrupts an in-flight tool on DELETE and returns 404 for its pending POST"""
+    started, interrupted = Deferred[None](), Deferred[None]()
+    protocol = P.v2025_11_25
+
+    def blocked(_: object) -> fx.Effect[Any]:
+        return started.succeed(None).and_then(fx.never).on_interrupt(interrupted.succeed(None))
+
+    harness = yield from http_harness(
+        server_layer(
+            "SessionDelete",
+            (protocol,),
+            _blocking_tool("Blocked", blocked),
+            allow_session_termination=True,
+        )
+    )
+    headers = yield from initialize_session(harness, protocol)
+    pending = yield from harness.post(
+        {
+            "jsonrpc": "2.0",
+            "id": "blocked-tool",
+            "method": "tools/call",
+            "params": {"name": "Blocked", "arguments": {}},
+        },
+        headers,
+    ).fork_scoped()
+    yield from started.wait()
+    assert (yield from harness.request("DELETE", None, headers)).status == 204
+    yield from interrupted.wait()
+    assert (yield from pending.join()).status == 404
+
+
+@testing.effect
+def test_closes_an_already_started_elicitation_stream_on_delete():
+    """McpServer / closes an already-started elicitation stream on DELETE"""
+    interrupted = Deferred[None]()
+    protocol = P.v2025_11_25
+    request: Any = {
+        "mode": "url",
+        "message": "Authorize access",
+        "url": "https://example.com/authorize",
+        "elicitationId": "authorization-1",
+    }
+
+    def authorize(_: object) -> fx.Effect[Any, Any, Any]:
+        return (
+            MS.McpServerClient()
+            .flat_map(lambda client: client.get_client)
+            .flat_map(lambda reverse: reverse.elicit(request))
+            .as_(cast("MS.CallToolResult", {"content": []}))
+            .or_die()
+            .on_interrupt(interrupted.succeed(None))
+        )
+
+    harness = yield from http_harness(
+        server_layer(
+            "SessionDelete",
+            (protocol,),
+            _blocking_tool("Authorize", authorize),
+            allow_session_termination=True,
+        )
+    )
+    headers = yield from initialize_session(harness, protocol, {"elicitation": {"url": {}}})
+    response = yield from harness.post(
+        {
+            "jsonrpc": "2.0",
+            "id": "authorize-tool",
+            "method": "tools/call",
+            "params": {"name": "Authorize", "arguments": {}},
+        },
+        headers,
+    )
+    stream = yield from sse_reader(response)
+    elicitation = yield from stream.take()
+    assert elicitation["method"] == "elicitation/create"
+    assert "id" in elicitation
+    assert (yield from harness.request("DELETE", None, headers)).status == 204
+    yield from interrupted.wait()
+    remaining = yield from stream.drain()
+    assert not any(message.get("id") == "authorize-tool" for message in remaining)
+
+
+@testing.effect
+def test_should_deliver_url_elicitation_completion_before_the_tool_result():
+    """McpServer / should deliver URL elicitation completion before the tool result when the tool awaits notification delivery"""  # noqa: E501
+    completed = Deferred[None]()
+    protocol = P.v2025_11_25
+    request: Any = {
+        "mode": "url",
+        "message": "Authorize access",
+        "url": "https://example.com/authorize",
+        "elicitationId": "authorization-1",
+    }
+
+    @fx.gen
+    def registration():
+        server = yield from M.McpServer()
+
+        def authorize(_: object) -> fx.Effect[Any, Any, Any]:
+            @fx.gen
+            def run():
+                client = yield from MS.McpServerClient()
+                reverse = yield from client.get_client
+                yield from reverse.elicit(request)
+                yield from completed.wait()
+                yield from server.notify_elicitation_complete(client.client_id, "authorization-1")
+                return {"content": [{"type": "text", "text": "Authorized"}]}
+
+            return run.or_die()
+
+        yield from server.add_tool(
+            ToolEntry(
+                {"name": "Authorize", "inputSchema": {"type": "object"}}, Context.empty(), authorize
+            )
+        )
+
+    harness = yield from http_harness(
+        server_layer("UrlElicitationCompletion", (protocol,), registration)
+    )
+    headers = yield from initialize_session(harness, protocol, {"elicitation": {"url": {}}})
+    response = yield from harness.post(
+        {
+            "jsonrpc": "2.0",
+            "id": "authorize-tool",
+            "method": "tools/call",
+            "params": {"name": "Authorize", "arguments": {}},
+        },
+        headers,
+    )
+    stream = yield from sse_reader(response)
+    elicitation = yield from stream.take()
+    assert elicitation["method"] == "elicitation/create"
+    assert "id" in elicitation
+    accepted = yield from harness.post(
+        {"jsonrpc": "2.0", "id": elicitation["id"], "result": {"action": "accept"}}, headers
+    )
+    assert accepted.status == 202
+    yield from completed.succeed(None)
+    complete = yield from stream.take()
+    assert complete["method"] == "notifications/elicitation/complete"
+    assert complete["params"] == {"elicitationId": "authorization-1"}
+    result = yield from stream.take()
+    assert result["id"] == "authorize-tool"
+    assert result["result"] == {"content": [{"type": "text", "text": "Authorized"}]}
+    assert (yield from stream.drain()) == []
+
+
+@testing.effect
+def test_should_honor_the_legacy_http_session_log_level_when_delivering_notifications():
+    """McpServer / should honor the legacy HTTP session log level when delivering notifications"""
+    protocol = P.v2025_11_25
+
+    @fx.gen
+    def registration():
+        server = yield from M.McpServer()
+
+        @fx.gen
+        def emit():
+            for level, data in (("warning", "filtered"), ("error", "delivered")):
+                yield from server.notify("notifications/message", {"level": level, "data": data})
+            return cast("MS.CallToolResult", {"content": []})
+
+        yield from server.add_tool(
+            ToolEntry(
+                {"name": "Emit", "inputSchema": {"type": "object"}}, Context.empty(), lambda _: emit
+            )
+        )
+
+    harness = yield from http_harness(server_layer("SessionLogLevel", (protocol,), registration))
+    headers = yield from initialize_session(harness, protocol)
+    configured = yield from harness.post(
+        {"jsonrpc": "2.0", "id": 2, "method": "logging/setLevel", "params": {"level": "error"}},
+        headers,
+    )
+    assert configured.status == 200
+    response = yield from harness.post(
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "Emit"}}, headers
+    )
+    stream = yield from sse_reader(response)
+    messages = yield from stream.drain()
+    logs = [m["params"] for m in messages if m.get("method") == "notifications/message"]
+    assert logs == [{"level": "error", "data": "delivered"}]
+    assert messages[-1]["id"] == 3
+    assert messages[-1]["result"] == {"content": []}
+
+
+@testing.effect
+def test_should_deliver_stateless_request_notifications_over_stdio():
+    """McpServer / should deliver stateless request notifications over stdio"""
+
+    @fx.gen
+    def registration():
+        server = yield from M.McpServer()
+
+        @fx.gen
+        def emit():
+            for level, data in (("info", "filtered"), ("error", "delivered")):
+                yield from server.notify("notifications/message", {"level": level, "data": data})
+            yield from server.notify(
+                "notifications/progress", {"progressToken": "token", "progress": 1}
+            )
+            return cast("MS.CallToolResult", {"content": []})
+
+        yield from server.add_tool(
+            ToolEntry(
+                {"name": "Emit", "inputSchema": {"type": "object"}}, Context.empty(), lambda _: emit
+            )
+        )
+
+    harness = yield from stdio_harness(P.v2026_07_28, None, registration)
+    meta = {"io.modelcontextprotocol/logLevel": "warning", "progressToken": "token"}
+    params = harness.with_metadata({"name": "Emit", "_meta": meta})
+    yield from harness.send({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": params})
+    logged = yield from harness.receive()
+    assert logged["method"] == "notifications/message"
+    assert logged["params"] == {"level": "error", "data": "delivered"}
+    progress = yield from harness.receive()
+    assert progress["method"] == "notifications/progress"
+    assert progress["params"] == {"progressToken": "token", "progress": 1}
+    assert (yield from harness.receive())["id"] == 2
+
+
+@testing.effect
+def test_should_accept_batches_after_falling_back_to_a_stateful_protocol():
+    """McpServer / should accept batches after falling back to a stateful protocol"""
+    harness = yield from stdio_harness(P.v2025_03_26, [P.v2026_07_28, P.v2025_03_26])
+    initialized = yield from harness.send_request(
+        "initialize",
+        {
+            "protocolVersion": "2025-11-25",
+            "capabilities": {},
+            "clientInfo": {"name": "fallback-client", "version": "1.0.0"},
+        },
+        1,
+    )
+    assert initialized["result"]["protocolVersion"] == "2025-03-26"
+    yield from harness.send_notification("notifications/initialized")
+    yield from harness.send_raw(
+        json.dumps(
+            [
+                {"jsonrpc": "2.0", "id": 2, "method": "ping"},
+                {"jsonrpc": "2.0", "id": 3, "method": "ping"},
+            ]
+        )
+    )
+    batch: Any = yield from harness.receive()
+    assert sorted(batch, key=lambda reply: reply["id"]) == [
+        {"jsonrpc": "2.0", "id": 2, "result": {}},
+        {"jsonrpc": "2.0", "id": 3, "result": {}},
+    ]
+
+
+_WAIT_CALL: dict[str, Any] = {
+    "jsonrpc": "2.0",
+    "id": "wait",
+    "method": "tools/call",
+    "params": {"name": "Wait", "arguments": {}},
+}
+
+
+def _waiting_tool(
+    interrupted: Deferred[None], started: Deferred[None] | None = None
+) -> fx.Effect[None, Any, M.McpServer]:
+    """``Wait``: logs (when no one waits on ``started``), then runs until interrupted."""
+
+    @fx.gen
+    def registration():
+        server = yield from M.McpServer()
+
+        def wait(_: object) -> fx.Effect[Any]:
+            before = (
+                server.notify("notifications/message", {"level": "error", "data": "running"})
+                if started is None
+                else started.succeed(None)
+            )
+            return before.and_then(fx.never).on_interrupt(interrupted.succeed(None))
+
+        yield from _blocking_tool("Wait", wait)
+
+    return registration
+
+
+@testing.effect
+def test_a_caller_leaving_before_any_message_interrupts_the_request():
+    """Not an Effect title; aborting the POST under Effect's harness interrupts
+    the handler, with no event written yet."""
+    started, interrupted = Deferred[None](), Deferred[None]()
+    protocol = P.v2025_03_26
+    harness = yield from http_harness(
+        server_layer("Abort", (protocol,), _waiting_tool(interrupted, started))
+    )
+    headers = yield from initialize_session(harness, protocol)
+    pending = yield from harness.post(_WAIT_CALL, headers).fork()
+    yield from started.wait()
+    yield from pending.interrupt()
+    yield from interrupted.wait()
+
+
+@testing.effect
+def test_a_reader_leaving_a_batch_stream_interrupts_its_requests():
+    """Not an Effect title; cancelling a batch's event stream under Effect's
+    harness interrupts its requests, as for one request."""
+    interrupted = Deferred[None]()
+    protocol = P.v2025_03_26
+    harness = yield from http_harness(
+        server_layer("BatchDisconnect", (protocol,), _waiting_tool(interrupted))
+    )
+    headers = yield from initialize_session(harness, protocol)
+    reader = yield from sse_reader((yield from harness.post([_WAIT_CALL], headers)))
+    assert (yield from reader.take())["method"] == "notifications/message"
+    yield from reader.cancel
+    yield from interrupted.wait()
+
+
+@testing.effect
+def test_a_batch_pending_when_its_session_is_deleted_gets_404():
+    """Not an Effect title; under Effect's harness a pending batch POST gets
+    404 when DELETE ends its session, as one request does."""
+    started, interrupted = Deferred[None](), Deferred[None]()
+    protocol = P.v2025_03_26
+    harness = yield from http_harness(
+        server_layer(
+            "BatchDelete",
+            (protocol,),
+            _waiting_tool(interrupted, started),
+            allow_session_termination=True,
+        )
+    )
+    headers = yield from initialize_session(harness, protocol)
+    pending = yield from harness.post([_WAIT_CALL], headers).fork()
+    yield from started.wait()
+    assert (yield from harness.request("DELETE", None, headers)).status == 204
+    yield from interrupted.wait()
+    assert (yield from pending.join()).status == 404
+
+
+@testing.effect
+def test_should_preserve_the_june_wire_transcript_when_requests_use_stdio():
+    """McpServer / should preserve the June wire transcript when requests use stdio"""
+    harness = yield from stdio_harness(P.v2025_06_18)
+    yield from harness.send(
+        {
+            "jsonrpc": "2.0",
+            "id": 0,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "TestClient", "version": "1.0.0"},
+            },
+        }
+    )
+    assert (yield from harness.receive()) == {
+        "jsonrpc": "2.0",
+        "id": 0,
+        "result": {
+            "protocolVersion": "2025-06-18",
+            "capabilities": {"completions": {}, "logging": {}},
+            "serverInfo": {"name": "test-server", "version": "1.0.0"},
+        },
+    }
+    yield from harness.send({"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}})
+    assert (yield from harness.receive()) == {"jsonrpc": "2.0", "id": 1, "result": {}}
+
+
+@testing.effect
+def test_a_finished_request_leaves_no_event_stream_on_its_session():
+    """Not an Effect title (its streams are RPC clients it drops when they
+    end): a long session must not keep one stream per request it served."""
+    protocol = P.v2025_03_26
+    servers: list[M.McpServerService] = []
+    registration = M.McpServer().map(servers.append)
+    harness = yield from http_harness(server_layer("Streams", (protocol,), registration))
+    headers = yield from initialize_session(harness, protocol)
+    ping: dict[str, Any] = {"jsonrpc": "2.0", "id": 2, "method": "ping", "params": {}}
+    yield from read_message((yield from harness.post(ping, headers)))
+    yield from read_message((yield from harness.post([ping], headers)))
+    peers = list(servers[0]._peers.values())  # pyright: ignore[reportPrivateUsage]
+    assert [cast("Any", peer).streams for peer in peers] == [[]]
+
+
+@testing.effect
+def test_a_tools_partial_annotations_list_the_hints_they_leave_out():
+    """Not an Effect title; Effect's ``ToolAnnotations`` default each hint, so
+    a tool registered directly lists all four from 2025-06-18 on, title kept."""
+
+    @fx.gen
+    def registration():
+        tool: Any = {
+            "name": "Partial",
+            "title": "T",
+            "inputSchema": {"type": "object"},
+            "annotations": {"readOnlyHint": True, "title": "A"},
+        }
+        yield from _blocking_tool_entry(tool)
+
+    harness = yield from stdio_harness(P.v2025_06_18, None, registration)
+    yield from harness.initialize()
+    reply = yield from harness.send_request("tools/list")
+    assert reply["result"]["tools"][0]["annotations"] == {
+        "title": "A",
+        "readOnlyHint": True,
+        "destructiveHint": True,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+
+
+@testing.effect
+def test_a_requests_own_progress_has_no_message_on_2024_11_05():
+    """Not an Effect title; Effect under the same request sends ``message``
+    from 2025-03-26 on and drops it on 2024-11-05."""
+
+    @fx.gen
+    def registration():
+        server = yield from M.McpServer()
+        progress: MS.JsonObject = {"progressToken": "p", "progress": 1, "total": 2, "message": "m"}
+
+        def report(_: object) -> fx.Effect[Any]:
+            return server.notify("notifications/progress", progress).as_({"content": []})
+
+        yield from _blocking_tool("Report", report)
+
+    for protocol, expected in (
+        (P.v2024_11_05, {"progressToken": "p", "progress": 1, "total": 2}),
+        (
+            P.v2025_03_26,
+            {"progressToken": "p", "progress": 1, "total": 2, "message": "m"},
+        ),
+    ):
+        harness = yield from http_harness(server_layer("Progress", (protocol,), registration))
+        headers = yield from initialize_session(harness, protocol)
+        response = yield from harness.post(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "Report", "arguments": {}, "_meta": {"progressToken": "p"}},
+            },
+            headers,
+        )
+        reader = yield from sse_reader(response)
+        assert (yield from reader.take())["params"] == expected

@@ -2,11 +2,12 @@
 (test/ai/McpServer/McpConformance/LoggingTest.ts), run over stdio for each
 stateful revision and over 2026-07-28 for the stateless suite.
 
+The HTTP background-log titles read each response's event stream as the
+server writes it (``_mcp_http.sse_reader``).
+
 Omitted:
-- the HTTP background-log titles ("should filter background HTTP logs when
-  the destination session selects ...", "should isolate background HTTP log
-  levels ...", "MUST not deliver logs from ... on an HTTP subscription
-  stream"): they read an SSE stream the in-memory HTTP harness buffers whole.
+- "MUST not deliver logs from ... on an HTTP subscription stream":
+  ``subscriptions/listen`` is not ported.
 - "SCHEMA preserves ...", "MUST allow arbitrary JSON-compatible log data",
   "should preserve the level, logger, and JSON data when decoding a log
   notification": schema decoding, pinned in test_mcp_schema.py.
@@ -16,20 +17,32 @@ Omitted:
 
 from __future__ import annotations
 
-from typing import Any, Never
+from typing import Any, Never, cast
 
 import pytest
 
 import pyfect as fx
+from pyfect import layer, testing
 from pyfect import schema as S
-from pyfect import testing
 from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_schema as MS
 from pyfect.ai import mcp_server as M
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
+from pyfect.ai._mcp.core import ToolEntry
+from pyfect.context import Context
+from pyfect.deferred import Deferred
 
 from ._mcp import Json, StdioHarness, stdio_harness
+from ._mcp_http import (
+    HttpHarness,
+    SseReader,
+    http_harness,
+    initialize_session,
+    read_message,
+    server_layer,
+    sse_reader,
+)
 
 STATEFUL = [P.v2024_11_05, P.v2025_03_26, P.v2025_06_18, P.v2025_11_25]
 LEVELS = ["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"]
@@ -318,3 +331,158 @@ def test_sends_a_stateless_request_only_the_progress_of_its_own_token():
             break
         received.append(message["params"])
     assert received == [{"progressToken": "mine", "progress": 1}]
+
+
+# --- HTTP streams read as they arrive -------------------------------------------------------
+
+
+def _background_server(
+    protocol: P.AnyProtocolAdapter, name: str, release: Deferred[None]
+) -> tuple[layer.Layer[Any, Any, Any], list[M.McpServerService]]:
+    """A ``Wait`` tool that logs ``ready``, then holds its POST open until
+    ``release``."""
+    servers: list[M.McpServerService] = []
+
+    @fx.gen
+    def registration():
+        server = yield from M.McpServer()
+        servers.append(server)
+
+        def wait(_: object) -> fx.Effect[MS.CallToolResult]:
+            return (
+                server.notify("notifications/message", {"level": "emergency", "data": "ready"})
+                .and_then(release.wait())
+                .as_(cast("MS.CallToolResult", {"content": []}))
+            )
+
+        yield from server.add_tool(
+            ToolEntry({"name": "Wait", "inputSchema": {"type": "object"}}, Context.empty(), wait)
+        )
+
+    return server_layer(name, (protocol,), registration), servers
+
+
+def _waiting_stream(
+    harness: HttpHarness, protocol: P.AnyProtocolAdapter, level: str
+) -> fx.Effect[SseReader, Any, Any]:
+    """A session at ``level`` with a ``Wait`` POST read past its ``ready`` log."""
+
+    @fx.gen
+    def run():
+        headers = yield from initialize_session(harness, protocol)
+        configured = yield from harness.post(
+            {
+                "jsonrpc": "2.0",
+                "id": "set-level",
+                "method": "logging/setLevel",
+                "params": {"level": level},
+            },
+            headers,
+        ).flat_map(read_message)
+        assert configured["id"] == "set-level"
+        assert configured["result"] == {}
+        response = yield from harness.post(
+            {
+                "jsonrpc": "2.0",
+                "id": "wait",
+                "method": "tools/call",
+                "params": {"name": "Wait", "arguments": {}},
+            },
+            headers,
+        )
+        stream = yield from sse_reader(response)
+        ready = yield from stream.take()
+        assert ready["method"] == "notifications/message"
+        assert ready["params"] == {"level": "emergency", "data": "ready"}
+        return stream
+
+    return run
+
+
+def _until_sentinel(stream: SseReader) -> fx.Effect[list[Json]]:
+    @fx.gen
+    def run():
+        messages: list[Json] = []
+        while True:
+            message = yield from stream.take()
+            assert message["method"] == "notifications/message"
+            messages.append(message["params"])
+            if message["params"]["data"] == "sentinel":
+                return messages
+
+    return run
+
+
+def _background_logs(server: M.McpServerService) -> fx.Effect[None]:
+    @fx.gen
+    def run():
+        for level, data in (
+            ("debug", "debug-log"),
+            ("error", "error-log"),
+            ("emergency", "sentinel"),
+        ):
+            yield from server.notify("notifications/message", {"level": level, "data": data})
+
+    return run
+
+
+EXPECTED_BACKGROUND: dict[str, list[Json]] = {
+    "debug": [
+        {"level": "debug", "data": "debug-log"},
+        {"level": "error", "data": "error-log"},
+        {"level": "emergency", "data": "sentinel"},
+    ],
+    "emergency": [{"level": "emergency", "data": "sentinel"}],
+}
+
+
+@pytest.mark.parametrize("level", ["debug", "emergency"])
+@pytest.mark.parametrize("protocol", STATEFUL, ids=lambda p: p.protocol_version)
+@testing.effect
+def test_should_filter_background_http_logs_when_the_destination_session_selects_a_level(
+    protocol: P.AnyProtocolAdapter, level: str
+):
+    """Mcp Conformance / Logging / Setting Log Level / should filter background HTTP logs when the destination session selects ${level}"""  # noqa: E501
+    release = Deferred[None]()
+    app, servers = _background_server(protocol, "BackgroundLogging", release)
+    harness = yield from http_harness(app)
+    stream = yield from _waiting_stream(harness, protocol, level)
+    yield from _background_logs(servers[0])
+    assert (yield from _until_sentinel(stream)) == EXPECTED_BACKGROUND[level]
+    yield from release.succeed(None)
+    answer = yield from stream.take()
+    assert answer["id"] == "wait"
+    assert answer["result"] == {"content": []}
+    assert (yield from stream.drain()) == []
+
+
+@pytest.mark.parametrize("protocol", STATEFUL, ids=lambda p: p.protocol_version)
+@testing.effect
+def test_should_isolate_background_http_log_levels_when_sessions_select_different_thresholds(
+    protocol: P.AnyProtocolAdapter,
+):
+    """Mcp Conformance / Logging / Setting Log Level / should isolate background HTTP log levels when concurrent sessions select different thresholds"""  # noqa: E501
+    release = Deferred[None]()
+    app, servers = _background_server(protocol, "IsolatedBackgroundLogging", release)
+    harness = yield from http_harness(app)
+    streams: dict[str, SseReader] = {}
+    for level in ("debug", "emergency"):
+        streams[level] = yield from _waiting_stream(harness, protocol, level)
+    yield from _background_logs(servers[0])
+    for level, stream in streams.items():
+        assert (yield from _until_sentinel(stream)) == EXPECTED_BACKGROUND[level], level
+    yield from release.succeed(None)
+    for stream in streams.values():
+        assert (yield from stream.take())["id"] == "wait"
+        assert (yield from stream.drain()) == []
+
+
+@pytest.mark.parametrize("protocol", STATEFUL, ids=lambda p: p.protocol_version)
+@testing.effect
+def test_must_advertise_logging_when_log_notifications_are_supported(
+    protocol: P.AnyProtocolAdapter,
+):
+    """Mcp Conformance / Logging / Capabilities / MUST advertise logging when log notifications are supported"""  # noqa: E501
+    harness = yield from stdio_harness(protocol)
+    initialized = yield from harness.initialize()
+    assert "logging" in initialized["result"]["capabilities"]

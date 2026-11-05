@@ -21,15 +21,10 @@ from typing import Any, Never, overload
 from pyfect._core import Effect
 from pyfect._layer_for_life import with_layer
 from pyfect.context import Context
-from pyfect.effect import context, die, gen, provide_service, succeed
-from pyfect.exit import Exit, Success
-from pyfect.http._request_state import CurrentRequestState, RequestState
-from pyfect.http.client import make as make_http_client
-from pyfect.http.http_effect import scope_transfer_to_stream
-from pyfect.http.request import HttpClientRequest
+from pyfect.effect import context, die, gen
+from pyfect.http._in_memory import client as in_memory_client
 from pyfect.http.router import to_http_effect
-from pyfect.http.server_request import HttpServerRequest, from_client_request
-from pyfect.http.server_response import HttpServerResponse, to_client_response
+from pyfect.http.server_response import HttpServerResponse
 from pyfect.http_api._handlers import HandlerEntry
 from pyfect.http_api.api import ApiServing, HttpApi, api_of
 from pyfect.http_api.builder import handler_to_route
@@ -85,9 +80,7 @@ def _groups(
         app = api_layer(api).pipe(layer_provide(succeed_context(services)))
         handler: Effect[HttpServerResponse, Any, Any] = yield from to_http_effect(app)
         scope: CloseableScope = yield from Scope()
-        http_client = make_http_client(
-            lambda request, _url, _signal, _fiber: _handle(handler, scope, request)
-        )
+        http_client = in_memory_client(handler, scope)
         return (yield from make_with(api, http_client=http_client, base_url=base_url))
 
     return gen(run)
@@ -107,45 +100,6 @@ def _unhandled(api: HttpApi[Any], group: AnyGroup, services: Context[Any]) -> Gr
     }
     routes = tuple(handler_to_route(api, group, entry, services) for entry in entries.values())
     return GroupService(routes, entries)
-
-
-def _handle(
-    handler: Effect[HttpServerResponse, Any, Any],
-    scope: CloseableScope,
-    request: HttpClientRequest,
-) -> Effect[Any, Never, Any]:
-    def run() -> Any:
-        request_scope: CloseableScope = yield from scope.fork()
-        server_request = from_client_request(request)
-        state = RequestState()
-        transferred = False
-
-        def pre_response(response: HttpServerResponse) -> Effect[HttpServerResponse, Any, Any]:
-            pre = state.pre_response_handler
-            return succeed(response) if pre is None else pre(server_request, response)
-
-        def to_client(response: HttpServerResponse) -> Any:
-            nonlocal transferred
-            transfer = scope_transfer_to_stream(response)
-            transferred = transfer is not response
-            return to_client_response(transfer, request=request)
-
-        def on_exit(exit_: Exit[Any, Any]) -> Effect[None]:
-            if transferred and isinstance(exit_, Success):
-                return succeed(None)
-            return request_scope.close(exit_)
-
-        return (
-            yield from handler.flat_map(pre_response)
-            .map(to_client)
-            .pipe(provide_service(HttpServerRequest, server_request))
-            .pipe(provide_service(CurrentRequestState, state))
-            .pipe(provide_service(Scope, request_scope))
-            .or_die()
-            .on_exit(on_exit)
-        )
-
-    return gen(run)
 
 
 __all__ = ["groups"]

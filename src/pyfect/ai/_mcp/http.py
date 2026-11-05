@@ -4,17 +4,19 @@ A stateful client's ``initialize`` opens a session, named by the
 ``mcp-session-id`` response header that its later requests send back; a
 stateless (2026-07-28) request needs no session. A request's answer is
 JSON, or a server-sent event stream when the server sends anything
-before it (progress, log messages, requests to the client).
+before it (progress, log messages, requests to the client); a notification
+no request owns goes on every open stream of the session.
 """
 
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
-from typing import Any, cast
+from collections.abc import Callable, Sequence
+from typing import Any, Never, cast
 
 from pyfect import _json_text, stream
 from pyfect._core import Effect
+from pyfect._fiber import Fiber
 from pyfect._js import text_encode
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai._mcp import batch
@@ -23,8 +25,10 @@ from pyfect.ai._mcp.core import McpServer, McpServerService
 from pyfect.ai._mcp.dispatch import (
     Connection,
     Request,
+    Send,
     ServerInfo,
     classify,
+    invalid_params_response,
 )
 from pyfect.ai._mcp.http_admission import (
     SESSION_HEADER,
@@ -38,7 +42,7 @@ from pyfect.ai.mcp_protocol import Registry
 from pyfect.ai.mcp_schema import JsonObject
 from pyfect.byte_size import ByteSize
 from pyfect.clock import monotonic
-from pyfect.effect import gen, succeed
+from pyfect.effect import gen, succeed, suspend
 from pyfect.errors import Done
 from pyfect.http import server_response as response
 from pyfect.http.incoming_message import MaxBodySize
@@ -80,6 +84,20 @@ def _event(message: JsonObject | list[JsonObject]) -> bytes:
     return text_encode(f"data: {_json(message)}\n\n")
 
 
+def _to_each(streams: list[Send]) -> Send:
+    """A notification no request owns, on every open stream of a session."""
+
+    def send(message: JsonObject) -> Effect[None]:
+        @gen
+        def run():
+            for out in list(streams):
+                yield from out(message)
+
+        return run
+
+    return send
+
+
 class _Sessions:
     def __init__(
         self,
@@ -96,14 +114,16 @@ class _Sessions:
         self.sessions = S.Table(server, limits)
 
     def connection(self) -> Connection:
+        streams: list[Send] = []
         return Connection(
             self.server,
             self.info,
             self.registry,
             self.server.next_client_id(),
             "http",
-            broadcast=lambda _: _VOID,
+            broadcast=_to_each(streams),
             default_log_level=self.log_level,
+            streams=streams,
         )
 
 
@@ -111,31 +131,71 @@ def _empty(status: int, headers: dict[str, str] | None = None) -> HttpServerResp
     return response.empty(status=status, headers=headers or {})
 
 
+type _Message = JsonObject | list[JsonObject]
+"""One event of a response: a message, or a batch's answers."""
+type _Out = Callable[[_Message], Effect[None]]
+
+
+def _answer_on_stream(
+    connection: Connection,
+    headers: dict[str, str],
+    serve: Callable[[_Out], Effect[Fiber[None, Never]]],
+) -> Effect[HttpServerResponse]:
+    """What ``serve`` answers, on its own fiber: JSON when its answer is the
+    only message, else an event stream of what comes before it, then it;
+    an empty event stream when it was cancelled, 404 when its session ended.
+    A caller or reader that leaves interrupts the work: it cannot resume."""
+    messages = Queue[_Message, Done]()
+
+    def out(message: _Message) -> Effect[None]:
+        return messages.offer(message).as_void()
+
+    def finished() -> Effect[None]:
+        connection.streams.remove(out)
+        return messages.end().as_void()
+
+    @gen
+    def started():
+        connection.streams.append(out)
+        serving = yield from serve(out)
+        # The stream ends with the work: after its answer, or empty when cancelled.
+        yield from serving.await_exit().ensuring(suspend(finished)).fork_daemon()
+        return serving
+
+    def reply(serving: Fiber[None, Never]) -> Effect[HttpServerResponse]:
+        @gen
+        def run():
+            first = yield from messages.take().option()
+            if first is None:
+                if connection.closed:
+                    return _empty(404)
+                return response.stream(
+                    stream.empty, content_type="text/event-stream", headers=headers
+                )
+            if "method" not in first.value:
+                return response.json_unsafe(cast("Any", first.value), headers=headers)
+            body = (
+                stream.make(first.value)
+                .concat(stream.from_queue(messages))
+                .map(_event)
+                .ensuring(serving.interrupt())
+            )
+            return response.stream(
+                cast("Any", body), content_type="text/event-stream", headers=headers
+            )
+
+        return run
+
+    return started.uninterruptible().flat_map(
+        lambda serving: reply(serving).on_interrupt(serving.interrupt())
+    )
+
+
 def _answer(
     connection: Connection, request: Request, headers: dict[str, str]
 ) -> Effect[HttpServerResponse]:
-    """The answer to one request: JSON when it is the only message, else
-    an event stream of what came before it, then it."""
-    messages = Queue[JsonObject, Done]()
-
-    def out(message: JsonObject) -> Effect[None]:
-        return messages.offer(message).as_void()
-
-    @gen
-    def run():
-        serving = yield from connection.start(request, out)
-        # The stream ends with the request: after its response, or empty
-        # when it was cancelled (Effect's empty SSE reply).
-        yield from serving.await_exit().ensuring(messages.end().as_void()).fork_daemon()
-        first = yield from messages.take().option()
-        if first is None:
-            return response.stream(stream.empty, content_type="text/event-stream", headers=headers)
-        if "method" not in first.value:
-            return response.json_unsafe(first.value, headers=headers)
-        body = stream.make(first.value).concat(stream.from_queue(messages)).map(_event)
-        return response.stream(cast("Any", body), content_type="text/event-stream", headers=headers)
-
-    return run
+    """The answer to one request."""
+    return _answer_on_stream(connection, headers, lambda out: connection.start(request, out))
 
 
 def _close_all(connections: Sequence[Connection]) -> Effect[None]:
@@ -185,7 +245,7 @@ def _open_session(
         )
         if reply is None or "error" in reply or connection.protocol is None:
             return response.json_unsafe(reply)
-        new_id = uuid.uuid4().hex
+        new_id = str(uuid.uuid4())
         if not table.open(new_id, connection, now):
             yield from connection.close()
             return _empty(503)
@@ -212,27 +272,14 @@ def _batch(
     answer, an empty event stream when every request was cancelled."""
     if acknowledge:
         return batch.answer(connection, messages, lambda _: _VOID).as_(_empty(202, headers))
-    events = Queue[JsonObject | list[JsonObject], Done]()
 
-    def notify(message: JsonObject) -> Effect[None]:
-        return events.offer(message).as_void()
+    def serve(out: _Out) -> Effect[Fiber[None, Never]]:
+        def finish(replies: list[JsonObject]) -> Effect[None]:
+            return out(replies) if replies else _VOID
 
-    def finish(replies: list[JsonObject]) -> Effect[None]:
-        return events.offer(replies).as_void() if replies else _VOID
+        return batch.answer(connection, messages, out).flat_map(finish).fork_daemon()
 
-    @gen
-    def run():
-        answered = batch.answer(connection, messages, notify).flat_map(finish)
-        yield from answered.ensuring(events.end().as_void()).fork_daemon()
-        first = yield from events.take().option()
-        if first is None:
-            return response.stream(stream.empty, content_type="text/event-stream", headers=headers)
-        if isinstance(first.value, list):
-            return response.json_unsafe(cast("Any", first.value), headers=headers)
-        body = stream.make(first.value).concat(stream.from_queue(events)).map(_event)
-        return response.stream(cast("Any", body), content_type="text/event-stream", headers=headers)
-
-    return run
+    return _answer_on_stream(connection, headers, serve)
 
 
 def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerResponse]:
@@ -269,6 +316,8 @@ def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerRespo
             batch = cast("list[object]", message)
             return (yield from _batch(connection, batch, admission.acknowledge, headers))
         classified = classify(message)
+        if classified.kind == "invalid_params":
+            return response.json_unsafe(invalid_params_response(classified.id), headers=headers)
         if classified.request is not None and classified.request.method == "initialize":
             return (yield from _open_session(sessions, classified.request, now))
         if connection is None:

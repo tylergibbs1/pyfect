@@ -35,8 +35,10 @@ def answer(
     connection: Connection, messages: Sequence[object], notify: Send
 ) -> Effect[list[JsonObject]]:
     """The responses to the batch's requests and invalid messages, in the
-    order they finish; what the server sends meanwhile goes to ``notify``."""
+    order they finish; what the server sends meanwhile goes to ``notify``.
+    Interrupting it interrupts the requests."""
     replies: list[JsonObject] = []
+    started: list[Fiber[None, Never]] = []
 
     def out(message: JsonObject) -> Effect[None]:
         if "method" in message:
@@ -45,7 +47,6 @@ def answer(
 
     @gen
     def run():
-        started: list[Fiber[None, Never]] = []
         # Effect's JSON-RPC decoder drops batch items that are not objects.
         objects: list[object] = [m for m in messages if isinstance(m, dict)]
         for message in objects:
@@ -59,4 +60,9 @@ def answer(
             yield from fiber.await_exit()
         return replies
 
-    return run
+    @gen
+    def interrupt_all():
+        for fiber in started:
+            yield from fiber.interrupt()
+
+    return run.on_interrupt(interrupt_all)

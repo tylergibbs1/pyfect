@@ -710,6 +710,24 @@ ELICIT_REQUEST_FORM_PARAMS = S.Struct(
 )
 
 
+class ElicitRequestURLParams(TypedDict):
+    """A URL-mode elicitation (2025-11-25): the client opens ``url``."""
+
+    mode: Literal["url"]
+    message: str
+    elicitationId: str
+    url: str
+    _meta: NotRequired[dict[str, JsonValue]]
+
+
+ELICIT_REQUEST_URL_PARAMS = S.Struct(ElicitRequestURLParams, _meta=REQUEST_META_OBJECT)
+
+type ElicitRequestParams = ElicitRequestFormParams | ElicitRequestURLParams
+ELICIT_REQUEST_PARAMS: S.Codec[ElicitRequestParams, Any] = S.Union(
+    ELICIT_REQUEST_FORM_PARAMS, ELICIT_REQUEST_URL_PARAMS
+)
+
+
 class ElicitResult(TypedDict):
     action: Literal["accept", "decline", "cancel"]
     content: NotRequired[dict[str, JsonValue]]
@@ -797,7 +815,7 @@ COMPLETE = Method("completion/complete", COMPLETE_PARAMS, COMPLETE_RESULT)
 SET_LEVEL = Method("logging/setLevel", S.Struct(_SetLevelParams), JSON_OBJECT)
 CREATE_MESSAGE = Method("sampling/createMessage", CREATE_MESSAGE_PARAMS, CREATE_MESSAGE_RESULT)
 LIST_ROOTS = Method("roots/list", REQUEST_META, LIST_ROOTS_RESULT)
-ELICIT = Method("elicitation/create", ELICIT_REQUEST_FORM_PARAMS, ELICIT_RESULT)
+ELICIT = Method("elicitation/create", ELICIT_REQUEST_PARAMS, ELICIT_RESULT)
 
 CLIENT_REQUESTS: Mapping[str, Method[Any, Any]] = {
     method.name: method
@@ -936,7 +954,7 @@ class ReverseClient:
 
     list_roots: Callable[[], Effect[ListRootsResult, ReverseError]]
     create_message: Callable[[CreateMessageParams], Effect[CreateMessageResult, ReverseError]]
-    elicit: Callable[[ElicitRequestFormParams], Effect[ElicitResult, ReverseError]]
+    elicit: Callable[[ElicitRequestParams], Effect[ElicitResult, ReverseError]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1018,6 +1036,8 @@ __all__ = [
     "CREATE_MESSAGE_RESULT",
     "ELICIT",
     "ELICIT_REQUEST_FORM_PARAMS",
+    "ELICIT_REQUEST_PARAMS",
+    "ELICIT_REQUEST_URL_PARAMS",
     "ELICIT_RESULT",
     "EMBEDDED_RESOURCE",
     "GET_PROMPT",
@@ -1095,6 +1115,8 @@ __all__ = [
     "CreateMessageParams",
     "CreateMessageResult",
     "ElicitRequestFormParams",
+    "ElicitRequestParams",
+    "ElicitRequestURLParams",
     "ElicitResult",
     "ElicitationBoolean",
     "ElicitationDeclined",

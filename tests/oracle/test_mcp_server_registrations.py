@@ -87,9 +87,9 @@ class Profile(TypedDict):
 @testing.effect
 def test_inlines_identified_elicitation_schemas():
     """McpServer / direct service / inlines identified elicitation schemas"""
-    observed: list[MS.ElicitRequestFormParams] = []
+    observed: list[MS.ElicitRequestParams] = []
 
-    def elicit(request: MS.ElicitRequestFormParams) -> fx.Effect[MS.ElicitResult, Any]:
+    def elicit(request: MS.ElicitRequestParams) -> fx.Effect[MS.ElicitResult, Any]:
         observed.append(request)
         return fx.succeed(cast("MS.ElicitResult", {"action": "accept", "content": {"name": "Ada"}}))
 
@@ -113,7 +113,7 @@ def test_inlines_identified_elicitation_schemas():
     assert result == {"name": "Ada"}
     [request] = observed
     assert request.get("mode") == "form"
-    assert json.loads(json.dumps(request["requestedSchema"])) == {
+    assert json.loads(json.dumps(request.get("requestedSchema"))) == {
         "type": "object",
         "properties": {"name": {"type": "string"}},
         "required": ["name"],

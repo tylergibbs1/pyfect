@@ -11,6 +11,7 @@ from pyfect.ai.mcp_protocol import AnyProtocolAdapter
 from pyfect.ai.mcp_schema import (
     Annotations,
     CallToolResult,
+    ClientCapabilities,
     ContentBlock,
     GetPromptResult,
     Implementation,
@@ -36,6 +37,16 @@ def implementation(protocol: AnyProtocolAdapter, info: Implementation) -> Wire:
         if protocol.supports_structured_content
         else _without(info, *drop, "title")
     )
+
+
+def client_capabilities(
+    protocol: AnyProtocolAdapter, capabilities: ClientCapabilities
+) -> ClientCapabilities:
+    """What ``protocol``'s schema keeps of what a client advertises: nothing
+    of elicitation before 2025-06-18."""
+    if protocol.supports_structured_content:
+        return capabilities
+    return cast("ClientCapabilities", _without(capabilities, "elicitation"))
 
 
 def annotations_of(protocol: AnyProtocolAdapter, value: Annotations) -> Wire:
@@ -102,16 +113,17 @@ def _is_object_schema(schema: object) -> bool:
 
 
 def _legacy_input_schema(schema: Mapping[str, Any]) -> Wire:
-    """Boolean property schemas as the objects they mean (before 2025-06-18
-    a property schema must be an object)."""
-    properties = schema.get("properties")
-    if not isinstance(properties, Mapping):
-        return dict(schema)
-    projected: Wire = {
-        name: ({} if s else {"not": {}}) if isinstance(s, bool) else s
-        for name, s in cast("Mapping[str, object]", properties).items()
-    }
-    return {**schema, "properties": projected}
+    """``type``, ``properties`` and ``required``, all the schema of a revision
+    before 2025-06-18 has, with boolean property schemas as the objects they
+    mean."""
+    out: Wire = {k: schema[k] for k in ("type", "properties", "required") if k in schema}
+    properties = out.get("properties")
+    if isinstance(properties, Mapping):
+        out["properties"] = {
+            name: ({} if s else {"not": {}}) if isinstance(s, bool) else s
+            for name, s in cast("Mapping[str, object]", properties).items()
+        }
+    return out
 
 
 WRAP_RESULT = "x-fastmcp-wrap-result"
@@ -135,8 +147,35 @@ def wraps_result(protocol: AnyProtocolAdapter, value: Tool) -> bool:
     )
 
 
+_HINT_DEFAULTS: Wire = {
+    "readOnlyHint": False,
+    "destructiveHint": True,
+    "idempotentHint": False,
+    "openWorldHint": True,
+}
+"""A tool annotation left out means this (``ToolAnnotations``' defaults)."""
+
+
+def _tool_annotations(protocol: AnyProtocolAdapter, value: Tool) -> Wire | None:
+    """2025-06-18 on has the title beside the annotations; 2025-03-26 only in
+    them, where the canonical title wins; 2024-11-05 has no annotations."""
+    if not protocol.supports_audio:
+        return None
+    annotations = value.get("annotations")
+    title = value.get("title") or (annotations or {}).get("title")
+    if protocol.supports_structured_content:
+        return None if annotations is None else {**_HINT_DEFAULTS, **annotations}
+    if annotations is None and title is None:
+        return None
+    merged = {**_HINT_DEFAULTS, **(annotations or {})}
+    return merged if title is None else {**merged, "title": title}
+
+
 def tool(protocol: AnyProtocolAdapter, value: Tool) -> Wire:
-    out = _described(protocol, value, core_annotations=False)
+    # A tool's canonical title is its own, else its annotations' (Effect's ``addTool``).
+    title = value.get("title") or (value.get("annotations") or {}).get("title")
+    titled = value if title is None else {**value, "title": title}
+    out = _described(protocol, titled, core_annotations=False)
     if not protocol.supports_structured_content:
         out.pop("outputSchema", None)
         out["inputSchema"] = _legacy_input_schema(out["inputSchema"])
@@ -153,12 +192,24 @@ def tool(protocol: AnyProtocolAdapter, value: Tool) -> Wire:
         and not _is_object_schema(out["outputSchema"])
     ):
         out.pop("outputSchema")
-    if not protocol.supports_audio:
+    annotations = _tool_annotations(protocol, value)
+    if annotations is None:
         out.pop("annotations", None)
-    elif "annotations" in out and not protocol.supports_structured_content:
-        out["annotations"] = _without(out["annotations"], "title")
+    else:
+        out["annotations"] = annotations
     out.pop("execution", None)
     return out
+
+
+def unsupported_content(protocol: AnyProtocolAdapter, blocks: list[ContentBlock]) -> str | None:
+    """Why ``protocol``'s schema cannot hold ``blocks``, if it cannot."""
+    for block in blocks:
+        kind = block["type"]
+        if (kind == "audio" and not protocol.supports_audio) or (
+            kind == "resource_link" and not protocol.supports_structured_content
+        ):
+            return f"{kind} tool content is not supported by MCP {protocol.protocol_version}"
+    return None
 
 
 def content(protocol: AnyProtocolAdapter, block: ContentBlock) -> Wire:
@@ -167,6 +218,8 @@ def content(protocol: AnyProtocolAdapter, block: ContentBlock) -> Wire:
         out["annotations"] = annotations_of(protocol, out["annotations"])
     if not protocol.supports_structured_content:
         out.pop("_meta", None)
+        if "resource" in out:
+            out["resource"] = _without(out["resource"], "_meta")
     return out
 
 
@@ -204,6 +257,14 @@ def call_tool_result(
     if "_meta" in result:
         out["_meta"] = result["_meta"]
     return out
+
+
+def notification(protocol: AnyProtocolAdapter, method: str, params: Mapping[str, Any]) -> Wire:
+    """A notification's params on ``protocol``'s wire: progress messages
+    start at 2025-03-26."""
+    if method == "notifications/progress" and not protocol.supports_audio:
+        return _without(params, "message")
+    return dict(params)
 
 
 def get_prompt_result(protocol: AnyProtocolAdapter, result: GetPromptResult) -> Wire:

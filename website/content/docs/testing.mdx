@@ -49,6 +49,19 @@ friends, which print the full cause on failure. Run only fast tests with
 
 <include meta='title="test_services.py"'>../../snippets/testing/test_services.py</include>
 
+## HTTP routes in memory
+
+`router.in_memory_client(routes)` gives an `HttpClient` whose requests the routes answer in the same
+process, with no socket, so time stays virtual. A streamed response body is not buffered: the client
+reads each chunk as the handler writes it and pulls the next only when asked, so a test can read
+server-sent events while the handler is still running. A reader that stops early closes the
+handler's request scope, and a body never read closes with the test's scope.
+`router.layer_in_memory_client(routes)` provides it as the `HttpClient` service instead. An error the
+routes leave unhandled is a defect of the request, as in Effect's `HttpApiTest`, unless a server would
+answer it with a response: a route not found gives 404.
+
+<include meta='title="test_streaming_http.py"'>../../snippets/testing/test_streaming_http.py</include>
+
 ## Property tests
 
 `@testing.prop(...)` runs a test on many generated inputs, as Effect's `it.prop` does. Each input

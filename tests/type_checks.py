@@ -5690,6 +5690,25 @@ assert_type(
 )
 
 
+# In memory, a route's requirements are the client's; its errors are defects.
+assert_type(
+    http_router.in_memory_client(route_app),
+    fx.Effect[
+        fx.http.HttpClientService[fx.http.HttpClientError, RouteDb | RouteCache], Never, Scope
+    ],
+)
+assert_type(
+    http_router.in_memory_client(http_router.add("GET", "/", http_server_response.text("ok"))),
+    fx.Effect[fx.http.HttpClientService[fx.http.HttpClientError], Never, Scope],
+)
+assert_type(
+    http_router.layer_in_memory_client(http_router.add("GET", "/", fx.fail(RouteNotAllowed()))),
+    fx.Layer[fx.http.HttpClient, Never, Never],
+)
+# A route needing services has no `HttpClient` layer: its client needs them.
+http_router.layer_in_memory_client(route_app)  # pyright: ignore[reportArgumentType]
+
+
 # The routes layer's other requirements pass through `serve` and `to_http_effect`
 # (Effect's `Exclude<R, HttpRouter>`, DOGFOOD beacon 5).
 class RouteStore(Tag[str]): ...

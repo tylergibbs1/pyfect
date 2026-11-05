@@ -22,7 +22,8 @@ def _seconds(build: Callable[[int], object], n: int) -> float:
         start = time.perf_counter()
         build(n)
         runs.append(time.perf_counter() - start)
-    return sorted(runs)[1]
+    # Load only ever adds time, so the fastest run is the one to compare.
+    return min(runs)
 
 
 def _grows_linearly(build: Callable[[int], object]) -> None:

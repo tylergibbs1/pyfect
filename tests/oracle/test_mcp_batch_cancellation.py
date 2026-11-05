@@ -3,9 +3,8 @@ cancellation: the batch SSE framing title of McpServer.test.ts and the
 batch cancellation titles of the conformance UtilitiesTest.ts
 (``statefulLegacySuite``, for the revisions that accept batches).
 
-The HTTP harness gives a response once its body is complete, so where
-Effect's tests read the first SSE events before cancelling, these wait for
-the handlers to start, cancel, then read the whole body.
+The in-memory client streams response bodies, so these read the first SSE
+events before cancelling, as Effect's do.
 """
 
 from __future__ import annotations
@@ -27,6 +26,7 @@ from pyfect.http.client import HttpClientService
 from pyfect.http.response import HttpClientResponse
 
 from ._mcp import CLIENT_INFO, Json, in_memory_http, stdio_harness
+from ._mcp_http import sse_reader
 
 URL = "http://localhost/mcp"
 ACCEPT = "application/json, text/event-stream"
@@ -180,7 +180,6 @@ def test_should_omit_cancelled_replies_and_preserve_remaining_results(
     release = Deferred[None]()
     interrupted = Deferred[None]()
     other_interrupted = Deferred[None]()
-    entered = fx.Queue[None]()
 
     @fx.gen
     def registrations():
@@ -192,7 +191,6 @@ def test_should_omit_cancelled_replies_and_preserve_remaining_results(
                 flag = interrupted if name == "Cancel" else other_interrupted
                 return (
                     server.notify("notifications/message", {"level": "error", "data": name})
-                    .and_then(entered.offer(None))
                     .and_then(body)
                     .on_interrupt(flag.succeed(None))
                     .as_({"content": [{"type": "text", "text": name}]})
@@ -202,8 +200,10 @@ def test_should_omit_cancelled_replies_and_preserve_remaining_results(
 
     http = yield from _http(protocol, registrations)
     headers = yield from _session(http, protocol)
-    pending = yield from _post(http, [_call(1, "Cancel"), _call("1", "Keep")], headers).fork()
-    yield from entered.take_n(2)
+    response = yield from _post(http, [_call(1, "Cancel"), _call("1", "Keep")], headers)
+    stream = yield from sse_reader(response)
+    assert (yield from stream.take())["method"] == "notifications/message"
+    assert (yield from stream.take())["method"] == "notifications/message"
     yield from _post(http, _cancel(1), headers)
     yield from interrupted.wait().timeout(1)
     assert not (yield from other_interrupted.is_done())
@@ -212,10 +212,8 @@ def test_should_omit_cancelled_replies_and_preserve_remaining_results(
         yield from other_interrupted.wait().timeout(1)
     else:
         yield from release.succeed(None)
-    response = yield from pending.join().timeout(1)
-    messages = _events((yield from response.text))
-    assert [m["method"] for m in messages[:2]] == ["notifications/message"] * 2
-    assert _flat(messages[2:]) == (
+    messages = yield from stream.drain().timeout(1)
+    assert _flat(cast("list[Any]", messages)) == (
         []
         if cancelled == "all"
         else [
