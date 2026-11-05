@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal
 
-from pyfect.errors import TaggedError
+from pyfect.errors import TaggedError, with_cause
 from pyfect.http.url_params import redact_url
 
 if TYPE_CHECKING:
@@ -34,14 +34,8 @@ def _message(name: str, description: str | None, info: str) -> str:
 
 
 def _with_cause(message: str, description: str | None, cause: object) -> str:
-    """``message``, then the cause when no description says what went wrong
-    (Effect's message leaves it out; see docs/PARITY.md)."""
-    if description or cause is None:
-        return message
-    if isinstance(cause, BaseException):
-        detail = str(cause)
-        return f"{message}: {type(cause).__name__}{f': {detail}' if detail else ''}"
-    return f"{message}: {cause!r}"
+    """``message``, then the cause when no description says what went wrong."""
+    return message if description else with_cause(message, cause)
 
 
 def _method_and_url(request: HttpClientRequest) -> str:

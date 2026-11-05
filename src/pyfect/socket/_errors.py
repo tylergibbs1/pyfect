@@ -63,6 +63,9 @@ class SocketOpenError(TaggedError):
         where = "the socket" if self.target is None else self.target
         return f"Could not open {where}" if detail is None else f"Could not open {where}: {detail}"
 
+    def __str__(self) -> str:
+        return self.message
+
 
 def describe_cause(cause: object) -> str | None:
     """A line saying what ``cause`` is: an exception as ``Type: text``, a

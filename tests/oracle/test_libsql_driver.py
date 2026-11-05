@@ -187,10 +187,42 @@ def test_a_local_database_that_cannot_be_opened_is_a_defect(tmp_path: Path):
     assert defect.reason.cause.code == "SQLITE_CANTOPEN"
 
 
+@testing.effect
+def test_a_layer_for_a_server_that_is_down_fails_on_the_first_statement():
+    """(pyfect) as in Effect (run against @effect/sql-libsql), building opens no connection"""
+    built = libsql.layer(LibsqlClientConfig(url="http://127.0.0.1:1"))
+
+    def body():
+        sql = yield from libsql.LibsqlClient()
+        error = yield from sql("SELECT 1").flip()
+        assert isinstance(error, SqlError)
+        assert isinstance(error.reason, UnknownError)
+
+    yield from fx.gen(body).pipe(fx.provide(built))
+
+
 _SLOW = (
     "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 8000000) "
     "SELECT count(*) FROM c"
 )
+
+
+@testing.live(timeout=60)
+def test_an_interrupted_remote_statement_finishes_on_the_server(libsql_server: LibsqlServer):
+    """(pyfect) Hrana has no cancel, so the statement goes on after the interrupt, as with
+    Effect's client, whose promise nothing can abort"""
+    sql = yield from _client(libsql_server.url)
+    yield from sql("DROP TABLE IF EXISTS interrupted_finishes")
+    yield from sql("CREATE TABLE interrupted_finishes (n INTEGER)")
+    fiber = yield from sql.unsafe(f"INSERT INTO interrupted_finishes {_SLOW}").fork()
+    yield from fx.sleep(0.2)
+    yield from fiber.interrupt()
+    yield from fiber.await_exit()
+    deadline = time.monotonic() + 30
+    while not (yield from sql("SELECT n FROM interrupted_finishes")):
+        assert time.monotonic() < deadline, "the statement did not finish on the server"
+        yield from fx.sleep(0.1)
+    yield from sql("DROP TABLE interrupted_finishes")
 
 
 @testing.live(timeout=30)

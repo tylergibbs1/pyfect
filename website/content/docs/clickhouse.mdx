@@ -29,7 +29,8 @@ To read the settings from the environment, use
 `clickhouse.layer_config({"url": fx.config.string("CLICKHOUSE_URL"), "password": fx.config.redacted("CLICKHOUSE_PASSWORD")})`.
 The layer checks the server with `/ping` and fails with a `ConnectionError` if it doesn't
 answer within five seconds. `/ping` checks no credentials, so a wrong password shows up on
-the first statement, as an `AuthenticationError`.
+the first statement. For a named user that is an `AuthenticationError`, but the `default`
+user gets code 194 (`REQUIRED_PASSWORD`, HTTP 401), which is an `UnknownError`; see below.
 
 ## Statements
 
@@ -50,10 +51,12 @@ that carries data, like `INSERT ... VALUES`, so:
 every statement and insert inside the effect. Interrupting a statement aborts its request
 and runs `KILL QUERY` for it. A stream does the same if it is dropped before its last row.
 
-A failure's `reason` comes from ClickHouse's error code: `AuthenticationError` (516),
-`AuthorizationError` (497), `SqlSyntaxError` (62 and kin) and `StatementTimeoutError`
-(159, 469). Everything else is an `UnknownError` whose `cause` is the `ClickhouseError`
-with the server's `code`. `sql.client` is the HTTP client underneath, with `query`,
+A failure's `reason` comes from ClickHouse's error code, the same codes Effect maps:
+`AuthenticationError` (516), `AuthorizationError` (497), `SqlSyntaxError` (36, 60, 62, 242)
+and `StatementTimeoutError` (159, 469). Everything else is an `UnknownError` whose `cause`
+is the `ClickhouseError` with the server's `code`. That includes a wrong password for the
+`default` user, which ClickHouse answers with 194 rather than 516, so check
+`error.reason.cause.code` if you log in as `default`. `sql.client` is the HTTP client underneath, with `query`,
 `command`, `exec` and `insert` for formats the SQL client doesn't read.
 
 ## Migrations

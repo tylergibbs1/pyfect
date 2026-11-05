@@ -28,6 +28,7 @@ from pyfect.sql import SqlClient, mysql
 from pyfect.sql.error import AuthenticationError, SqlError, UniqueViolation
 from pyfect.sql.statement import CurrentTransformer, Statement
 
+from ._interrupt_on_server import GONE_WITHIN
 from ._mysql import MysqlServer
 
 type Body = Callable[[], Generator[Any, Any, Any]]
@@ -367,9 +368,11 @@ def test_interrupting_a_statement_ends_it_on_the_server(mysql_server: MysqlServe
         yield from fx.sleep(0.5)
         yield from fiber.interrupt()
         yield from fiber.await_exit()
-        # The row lock is free again at once (innodb_lock_wait_timeout is 50s).
+        # The row lock is free again at once (innodb_lock_wait_timeout is 50s). The time
+        # limit stays under the 5 s after which the server notices a closed socket by itself:
+        # at 5 s this passed with the kill not working (test_mysql_interrupt_on_server).
         locked = sql("SELECT id FROM interrupted_locks WHERE id = 1 FOR UPDATE")
-        assert (yield from sql.with_transaction(locked).timeout(5)) == [{"id": 1}]
+        assert (yield from sql.with_transaction(locked).timeout(GONE_WITHIN)) == [{"id": 1}]
         sleeping = yield from sql(
             "SELECT COUNT(*) AS n FROM information_schema.processlist "
             "WHERE info = 'SELECT SLEEP(60)'"
@@ -490,8 +493,9 @@ def test_a_stream_failing_mid_result_keeps_the_connection(mysql_server: MysqlSer
 
 @testing.live(timeout=30)
 def test_interrupting_a_stream_ends_it_on_the_server(mysql_server: MysqlServer):
-    """(pyfect) interrupting a stream still sending rows ends at once, and
-    the pool serves the next statement on a new connection"""
+    """(pyfect) interrupting a stream still sending rows ends at once for the client, and
+    the pool serves the next statement on a new connection (the server's side is
+    test_mysql_interrupt_on_server)"""
     slow = (
         "SELECT a.ordinal_position, SLEEP(0.001) FROM information_schema.columns a, "
         "information_schema.columns b"

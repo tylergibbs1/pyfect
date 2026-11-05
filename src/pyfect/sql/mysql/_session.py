@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -24,6 +25,9 @@ from pyfect.sql.mysql._bind import bind
 _STATEMENT_CACHE_SIZE = 256
 _STREAM_CHUNK = 128
 _KILL_TIMEOUT = 5.0
+_DRAIN_GRACE = 0.1
+
+_log = logging.getLogger("pyfect.sql.mysql")
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,29 +181,56 @@ class Session:
             raise
 
     async def close_stream(self, cursor: Cursor) -> None:
-        """Read what the stream left unread, then give the turn back."""
+        """End the stream, then give the turn back: what it left unread is read past, and a
+        statement still sending rows after a moment is killed, as it may send for hours.
+        Only the statement: a transaction goes on, if the connection stays in step."""
         try:
             if self.usable:
-                try:
-                    await cursor.close()
-                except Exception:
-                    self._cut_short()
+                await self._read_past(cursor)
         finally:
             self._lock.release()
 
+    async def _read_past(self, cursor: Cursor) -> None:
+        reading = asyncio.ensure_future(cursor.close())
+        try:
+            done, _ = await asyncio.wait([reading], timeout=_DRAIN_GRACE)
+            if not done:
+                await self.kill(only_statement=True)
+                done, _ = await asyncio.wait([reading], timeout=_KILL_TIMEOUT)
+            if not done:
+                reading.cancel()
+                await asyncio.wait([reading])
+                self._cut_short()
+                await self.kill()
+            elif (error := reading.exception()) is not None:
+                if _asyncmy.is_server_error(error):
+                    _asyncmy.end_unbuffered_result(self.raw)
+                else:
+                    self._cut_short()
+        except asyncio.CancelledError:
+            reading.cancel()
+            await asyncio.wait([reading])
+            self._cut_short()
+            raise
+
     # --- ending ---------------------------------------------------------------
 
-    async def kill(self) -> None:
-        """End the server side of this connection from another one, so a
-        statement cut short stops holding its locks."""
+    async def kill(self, *, only_statement: bool = False) -> None:
+        """End this connection (or only its statement) on the server, from another
+        connection, so a statement cut short stops holding its locks. A kill that cannot be
+        sent fails nobody, but the statement stays on the server, so it is logged."""
         thread_id = self.raw.thread_id()
-        with contextlib.suppress(Exception):
+        try:
             async with asyncio.timeout(_KILL_TIMEOUT):
                 side = await _asyncmy.connect(self._options)
                 try:
-                    await side.kill(thread_id)
+                    await _asyncmy.kill(side, thread_id, only_statement=only_statement)
                 finally:
                     side.close()
+        except Exception as error:
+            _log.warning(
+                "KILL %d failed, so its statement stays on the server: %r", thread_id, error
+            )
 
     async def stop(self, task: asyncio.Task[Any]) -> None:
         """Interrupt ``task``'s statement: a statement on the wire is cut

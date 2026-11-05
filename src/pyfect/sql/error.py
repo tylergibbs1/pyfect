@@ -25,6 +25,7 @@ from collections.abc import Callable, Mapping
 from typing import TypeIs
 
 from pyfect import schema as S
+from pyfect.errors import with_cause
 
 _CAUSE = S.Union(S.Json, S.Defect(), S.Unknown)
 """Any cause: JSON values as they are, exceptions as ``{"name", "message"}``,
@@ -40,6 +41,9 @@ class _Reason(S.TaggedError):
     @property
     def is_retryable(self) -> bool:
         return False
+
+    def __str__(self) -> str:
+        return with_cause(self.message or self._tag, self.cause)
 
 
 class ConnectionError(_Reason, tag="ConnectionError"):

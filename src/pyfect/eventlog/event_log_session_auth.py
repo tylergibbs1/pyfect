@@ -48,9 +48,6 @@ class EventLogSessionAuthError(TaggedError):
     message: str
     cause: object = None
 
-    def __str__(self) -> str:
-        return self.message
-
 
 @dataclass(frozen=True, slots=True)
 class SessionAuthPayload:

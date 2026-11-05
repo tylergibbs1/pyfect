@@ -57,7 +57,6 @@ class RawConnection(Protocol):
     def thread_id(self) -> int: ...
     def cursor(self, cursor: type[Any]) -> Any: ...
     async def prepare(self, query: str) -> PreparedStatement: ...
-    async def kill(self, thread_id: int) -> object: ...
     async def ensure_closed(self) -> None: ...
     def close(self) -> None: ...
 
@@ -82,6 +81,25 @@ def text_cursor(conn: RawConnection, *, as_tuples: bool) -> Cursor:
 def stream_cursor(conn: RawConnection) -> Cursor:
     """An unbuffered cursor of dict rows."""
     return cast("Cursor", conn.cursor(_SSDictCursor))
+
+
+_UNKNOWN_THREAD = 1094
+
+
+async def kill(conn: RawConnection, thread_id: int, *, only_statement: bool) -> None:
+    """Send ``KILL`` (or ``KILL QUERY``) as a statement over ``conn``. asyncmy's own ``kill``
+    sends ``COM_PROCESS_KILL``, which MySQL 8.4 answers with "Unknown command". A thread
+    already gone is what the kill wanted."""
+    from asyncmy.errors import MySQLError
+
+    cursor = text_cursor(conn, as_tuples=True)
+    try:
+        await cursor.execute(f"KILL {'QUERY ' if only_statement else ''}{thread_id:d}")
+    except MySQLError as error:
+        if not error.args or error.args[0] != _UNKNOWN_THREAD:
+            raise
+    finally:
+        await cursor.close()
 
 
 def is_server_error(error: BaseException) -> bool:
@@ -142,6 +160,7 @@ __all__ = [
     "connect_keywords",
     "end_unbuffered_result",
     "is_server_error",
+    "kill",
     "stream_cursor",
     "text_cursor",
 ]

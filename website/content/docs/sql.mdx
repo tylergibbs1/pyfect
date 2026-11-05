@@ -12,7 +12,8 @@ extra and `pyfect.sql.mysql.layer` (see [MySQL](/docs/mysql)), and SQL Server wi
 `pyfect-dev[mssql]` extra and `pyfect.sql.mssql.layer` (see [SQL Server](/docs/mssql)). libSQL
 and Turso use `pyfect.sql.libsql.layer` (see [libSQL and Turso](/docs/libsql)), and
 ClickHouse `pyfect.sql.clickhouse.layer` (see [ClickHouse](/docs/clickhouse)). Every failure is a `SqlError` whose `reason` says what went wrong (`UniqueViolation`,
-`SqlSyntaxError`, `LockTimeoutError`, ...).
+`SqlSyntaxError`, `LockTimeoutError`, ...), and `str(error)` shows the message and the driver's
+cause.
 
 ## Safe statements
 
@@ -93,6 +94,23 @@ Two processes starting at once don't run them twice.
 `migrator.from_file_system(directory)` loads `<id>_<name>.py` modules instead, each with its
 migration as `default`. `migrator.layer(loader=...)` runs the migrations when the layer is
 built, so the app's layer can migrate before anything else uses the database.
+
+## Several databases in one program
+
+Each driver's layer provides two services: its own tag (`mysql.MysqlClient`,
+`libsql.LibsqlClient`, ...) and `SqlClient`. Merge two layers and the type checker has nothing
+to complain about, since both provide `SqlClient`, but only the last one's stays: as in
+Effect, `layer.merge(a, b)` gives `b`'s client. Code that reads `SqlClient` then runs against
+whichever came last. Once a program has two databases, read each through its driver's tag,
+and give each migrator its own client with `provide_merge`.
+
+<CodeOutput>
+
+<include meta='title="several_databases.py"'>../../snippets/sql/several_databases.py</include>
+
+<include lang="text">../../snippets/sql/several_databases.out</include>
+
+</CodeOutput>
 
 ## SQLite in tests
 

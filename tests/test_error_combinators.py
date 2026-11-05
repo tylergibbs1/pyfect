@@ -244,9 +244,10 @@ def test_first_success_of_stops_at_a_defect() -> None:
     assert later == []
 
 
-def test_unknown_error_reads_as_its_message() -> None:
+def test_unknown_error_reads_as_its_message_and_cause() -> None:
     error = fx.UnknownError(ValueError("bad"), "An error occurred in try_")
-    assert str(error) == "An error occurred in try_"
+    assert error.message == "An error occurred in try_"
+    assert str(error) == "An error occurred in try_: ValueError: bad"
     assert str(fx.UnknownError(ValueError("bad"))) == "bad"
 
 

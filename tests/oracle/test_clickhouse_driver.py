@@ -280,6 +280,26 @@ def test_migrations_run_and_are_recorded(clickhouse_server: ClickhouseServer):
     _on_server(clickhouse_server, body)
 
 
+def test_a_wrong_password_for_the_default_user_is_an_unknown_error(
+    clickhouse_server: ClickhouseServer,
+):
+    """(pyfect) ClickHouse answers the ``default`` user's wrong password with 194, which
+    Effect does not map either (run against @effect/sql-clickhouse): only 516 is an
+    ``AuthenticationError``"""
+
+    def wrong_password():
+        sql = yield from clickhouse.ClickhouseClient()
+        error = yield from sql("SELECT 1").flip()
+        assert isinstance(error.reason, UnknownError)
+        assert isinstance(error.reason.cause, clickhouse.error.ClickhouseError)
+        assert error.reason.cause.code == 194
+        assert error.reason.cause.type == "REQUIRED_PASSWORD"
+
+    _on_server(
+        clickhouse_server, wrong_password, username="default", password=redacted.make("wrong")
+    )
+
+
 def test_failures_carry_the_servers_code(clickhouse_server: ClickhouseServer):
     """(pyfect) failures carry the server's code and type"""
 
