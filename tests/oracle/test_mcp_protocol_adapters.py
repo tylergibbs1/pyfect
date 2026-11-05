@@ -11,7 +11,7 @@ Omitted, with the reason:
 - The other ``ProtocolAdapters.test.ts`` titles: in
   test_mcp_adapters_http.py.
 - The other ``v2026_07_28.test.ts`` titles: in test_mcp_http_admission.py,
-  which lists the ones ``input_required`` round trips hold back.
+  test_mcp_conformance_multi_round_trip.py and test_mcp_conformance_tools.py.
 - ``v2024_11_05`` / ``v2025_03_26`` / ``v2025_06_18`` / ``v2025_11_25.test.ts``:
   conformance-suite runs, ported per suite in test_mcp_conformance_*.py,
   test_mcp_logging.py and test_mcp_http_admission.py (their docstrings say
@@ -20,8 +20,7 @@ Omitted, with the reason:
   experimental Tasks without an extension`` (2025-11-25), which are here;
   the 2025-03-26 ones are about JSON-RPC batches, which are not ported.
 - ``Workerd.test.ts``: Cloudflare's workerd runtime, inapplicable.
-- ``LayerHttpRequestScoped.test.ts``: ``layerHttpRequestScoped`` is not
-  ported.
+- ``LayerHttpRequestScoped.test.ts``: in test_mcp_request_scoped.py.
 """
 
 from __future__ import annotations

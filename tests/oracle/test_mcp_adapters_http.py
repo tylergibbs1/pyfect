@@ -8,11 +8,9 @@ Content is given as base64 text where Effect builds it from a
 stdio client here (``_mcp_peer``), so "before transport" means the client saw
 no request.
 
-Omitted, with the reason:
-
-- ``should expose continuation input to modern resource and prompt handlers``
-  and ``should reject client input when the selected protocol cannot encode
-  it``: ``input_required`` round trips are not ported (PARITY.md).
+Ported elsewhere: ``should expose continuation input to modern resource and
+prompt handlers`` and ``should reject client input when the selected protocol
+cannot encode it``, in test_mcp_conformance_multi_round_trip.py.
 """
 
 from __future__ import annotations

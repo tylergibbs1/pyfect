@@ -476,6 +476,21 @@ _MCP_CASES: dict[str, Case] = {
     "pyfect.ai.mcp_server.layer_http": Case(
         layer=_http_server, run=lambda value: _over_http(_tool_app(value), _calls_add)
     ),
+    "pyfect.ai.mcp_server.layer_http_request_scoped": Case(
+        layer=lambda: M.layer_http_request_scoped(
+            name="test-server", version="1.0.0", path="/mcp", protocols=(P.v2026_07_28,)
+        ),
+        run=lambda value: _calls_add().pipe(
+            fx.provide(
+                C.layer_http(
+                    name="test-client",
+                    version="1.0.0",
+                    url=_mcp.MCP_ENDPOINT,
+                    protocol=P.v2026_07_28,
+                ).pipe(L.provide(_in_memory_http(_tool_app(value))))
+            )
+        ),
+    ),
     "pyfect.ai.mcp_server.layer_stdio": Case(
         layer=_stdio_server,
         run=lambda value: _calls_add().pipe(

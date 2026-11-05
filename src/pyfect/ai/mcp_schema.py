@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Literal, Never, NotRequired, TypedDict, cast
+from typing import Any, ClassVar, Literal, Never, NotRequired, TypedDict, cast, overload
 
 from pyfect import schema as S
 from pyfect._core import Effect
@@ -35,6 +35,7 @@ METHOD_NOT_FOUND_ERROR_CODE = -32601
 INVALID_PARAMS_ERROR_CODE = -32602
 INTERNAL_ERROR_CODE = -32603
 HEADER_MISMATCH_ERROR_CODE = -32020
+MISSING_REQUIRED_CLIENT_CAPABILITY_ERROR_CODE = -32021
 UNSUPPORTED_PROTOCOL_VERSION_ERROR_CODE = -32022
 RESOURCE_NOT_FOUND_ERROR_CODE = -32002
 """What revisions before 2026-07-28 answer an unknown resource with."""
@@ -945,6 +946,95 @@ class ElicitationDeclined(TaggedError):
     cause: object = None
 
 
+# --- 2026-07-28 subscriptions -----------------------------------------------------------
+
+
+class SubscriptionFilter(TypedDict, total=False):
+    """What a ``subscriptions/listen`` stream carries."""
+
+    toolsListChanged: bool
+    promptsListChanged: bool
+    resourcesListChanged: bool
+    resourceSubscriptions: list[str]
+
+
+class SubscriptionsListenParams(TypedDict):
+    notifications: SubscriptionFilter
+    _meta: NotRequired[dict[str, JsonValue]]
+
+
+SUBSCRIPTION_FILTER = S.Struct(SubscriptionFilter)
+SUBSCRIPTIONS_LISTEN = Method(
+    "subscriptions/listen",
+    S.Struct(
+        SubscriptionsListenParams, notifications=SUBSCRIPTION_FILTER, _meta=REQUEST_META_OBJECT
+    ),
+    JSON_OBJECT,
+)
+
+
+# --- 2026-07-28 multi round-trip requests -----------------------------------------------
+
+
+class RootsInputRequest(TypedDict):
+    method: Literal["roots/list"]
+    params: NotRequired[dict[str, JsonValue]]
+
+
+class SamplingInputRequest(TypedDict):
+    method: Literal["sampling/createMessage"]
+    params: CreateMessageParams
+
+
+class InputRequestUrlParams(TypedDict):
+    """A URL-mode elicitation on 2026-07-28, which has no ``elicitationId``."""
+
+    mode: Literal["url"]
+    message: str
+    url: str
+
+
+class ElicitationInputRequest(TypedDict):
+    method: Literal["elicitation/create"]
+    params: ElicitRequestFormParams | InputRequestUrlParams
+
+
+type McpInputRequest = RootsInputRequest | SamplingInputRequest | ElicitationInputRequest
+"""A request for client input, keyed in ``InputRequired.input_requests``."""
+
+type McpInputResponse = Mapping[str, Any]
+"""The client's answer to an ``McpInputRequest``, keyed as the request was."""
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class InputRequired:
+    """A handler's outcome when it cannot complete until the client supplies
+    keyed input in a later request. ``request_state`` is opaque to the client,
+    which returns it unchanged with the responses. At least one is given."""
+
+    input_requests: Mapping[str, McpInputRequest] | None
+    request_state: str | None
+
+    @overload
+    def __init__(
+        self, *, input_requests: Mapping[str, McpInputRequest], request_state: str | None = None
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self, *, input_requests: Mapping[str, McpInputRequest] | None = None, request_state: str
+    ) -> None: ...
+
+    def __init__(
+        self,
+        *,
+        input_requests: Mapping[str, McpInputRequest] | None = None,
+        request_state: str | None = None,
+    ) -> None:
+        object.__setattr__(self, "input_requests", input_requests)
+        object.__setattr__(self, "request_state", request_state)
+
+
 # --- request services -------------------------------------------------------------------
 
 
@@ -966,6 +1056,10 @@ class RequestContext:
     client_capabilities: ClientCapabilities
     client_info: Implementation | None
     request_metadata: Mapping[str, JsonValue]
+    input_responses: Mapping[str, McpInputResponse] | None = None
+    """A retried request's answers to its ``InputRequired`` (2026-07-28)."""
+    request_state: str | None = None
+    """The ``request_state`` a retried request returned (2026-07-28)."""
 
 
 class McpRequestContext(Tag[RequestContext], key="effect/ai/McpSchema/McpRequestContext"):
@@ -1069,6 +1163,7 @@ __all__ = [
     "LOGGING_LEVEL",
     "LOGGING_LEVELS",
     "METHOD_NOT_FOUND_ERROR_CODE",
+    "MISSING_REQUIRED_CLIENT_CAPABILITY_ERROR_CODE",
     "PARSE_ERROR_CODE",
     "PING",
     "PRIMITIVE_SCHEMA_DEFINITION",
@@ -1092,6 +1187,8 @@ __all__ = [
     "SERVER_REQUESTS",
     "SET_LEVEL",
     "SUBSCRIBE",
+    "SUBSCRIPTIONS_LISTEN",
+    "SUBSCRIPTION_FILTER",
     "TEXT_CONTENT",
     "TEXT_RESOURCE_CONTENTS",
     "TOOL",
@@ -1120,6 +1217,7 @@ __all__ = [
     "ElicitResult",
     "ElicitationBoolean",
     "ElicitationDeclined",
+    "ElicitationInputRequest",
     "ElicitationNumber",
     "ElicitationString",
     "EmbeddedResource",
@@ -1131,6 +1229,8 @@ __all__ = [
     "Implementation",
     "InitializeParams",
     "InitializeResult",
+    "InputRequestUrlParams",
+    "InputRequired",
     "InternalError",
     "InvalidParams",
     "InvalidRequest",
@@ -1147,6 +1247,8 @@ __all__ = [
     "ListRootsResult",
     "LoggingLevel",
     "McpError",
+    "McpInputRequest",
+    "McpInputResponse",
     "McpRequestContext",
     "McpReverseOperationError",
     "McpReverseOperationUnsupported",
@@ -1177,9 +1279,13 @@ __all__ = [
     "ReverseOperation",
     "Role",
     "Root",
+    "RootsInputRequest",
+    "SamplingInputRequest",
     "SamplingMessage",
     "ServerCapabilities",
     "ServerClient",
+    "SubscriptionFilter",
+    "SubscriptionsListenParams",
     "TextContent",
     "TextResourceContents",
     "TitledMultiSelectEnum",

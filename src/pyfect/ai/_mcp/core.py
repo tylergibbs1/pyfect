@@ -3,7 +3,7 @@
 ``McpServerService`` holds the tools, resources, templates and prompts
 handlers registered, answers them for a request (``call_tool``, ...), and
 delivers server notifications to the connected ``Peer`` s that the
-transports register.
+transports register and to the ``subscriptions/listen`` streams.
 """
 
 from __future__ import annotations
@@ -11,9 +11,11 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Never, Protocol
 
 from pyfect._core import Effect
+from pyfect._fiber import Fiber
+from pyfect.ai._mcp.subscriptions import Event, Presence
 from pyfect.ai.mcp_schema import (
     CallToolParams,
     CallToolResult,
@@ -23,6 +25,7 @@ from pyfect.ai.mcp_schema import (
     CompletionContext,
     EnabledWhen,
     GetPromptResult,
+    InputRequired,
     InternalError,
     InvalidParams,
     JsonObject,
@@ -38,9 +41,12 @@ from pyfect.ai.mcp_schema import (
     Tool,
 )
 from pyfect.context import Context, Tag
+from pyfect.deferred import Deferred
 from pyfect.effect import fail, gen, provide_service, service_option, succeed, suspend, sync
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.logger import CurrentLogLevel
+from pyfect.pubsub import Atomic, PubSub, Subscription
+from pyfect.scope import Scope, acquire_release
 
 type RequestServices = McpRequestContext | McpServerClient
 """What a handler is given by the request it serves."""
@@ -56,6 +62,15 @@ type NotificationMethod = Literal[
 ]
 
 _REQUEST_NOTIFICATIONS = frozenset({"notifications/message", "notifications/progress"})
+_LIST_CHANGES = frozenset(
+    {
+        "notifications/resources/list_changed",
+        "notifications/tools/list_changed",
+        "notifications/prompts/list_changed",
+    }
+)
+_SUBSCRIPTION_EVENTS = _LIST_CHANGES | {"notifications/resources/updated"}
+_NO_CLIENT_INPUT = "Client input is not supported by this MCP protocol"
 
 type CompletionHandler = Callable[
     [str, CompletionContext], Effect[CompleteResult, InternalError, RequestServices]
@@ -86,9 +101,11 @@ class ToolEntry:
     tool: Tool
     annotations: Context[Any]
     handle: Callable[
-        [JsonObject | None], Effect[CallToolResult, InvalidParams | InternalError, RequestServices]
+        [JsonObject | None],
+        Effect[CallToolResult | InputRequired, InvalidParams | InternalError, RequestServices],
     ]
-    """Invalid input is ``InvalidParams``, a failed execution ``InternalError``."""
+    """Invalid input is ``InvalidParams``, a failed execution ``InternalError``;
+    ``InputRequired`` asks a 2026-07-28 client to retry with input."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +131,20 @@ class PromptEntry:
     prompt: Prompt
     annotations: Context[Any]
     completions: Mapping[str, CompletionHandler]
-    handle: Callable[[Mapping[str, str]], Effect[GetPromptResult, McpError, RequestServices]]
+    handle: Callable[
+        [Mapping[str, str]], Effect[GetPromptResult | InputRequired, McpError, RequestServices]
+    ]
+
+
+@dataclass(slots=True)
+class _PendingChange:
+    """A list change waiting for its window to end; later changes of the kind
+    join it, so its revision is the newest one."""
+
+    body: JsonObject
+    revision: int
+    origin: int | None
+    delivered: Deferred[None]
 
 
 class Peer(Protocol):
@@ -174,6 +204,10 @@ class McpServerService:
         self._completions: dict[str, CompletionHandler] = {}
         self._peers: dict[int, Peer] = {}
         self._ids = itertools.count(1)
+        self._events = PubSub[Event](Atomic(None, None), "dropping")
+        self._listeners = 0
+        self._list_change_revision = 0
+        self._pending_changes: dict[str, _PendingChange] = {}
 
     # --- registrations -----------------------------------------------------------------
 
@@ -229,9 +263,11 @@ class McpServerService:
         return sync(add).and_then(self.notify("notifications/prompts/list_changed"))
 
     @property
-    def has_registrations(self) -> tuple[bool, bool, bool]:
+    def has_registrations(self) -> Presence:
         """Whether there are tools, resources (or templates) and prompts."""
-        return bool(self._tools), bool(self._resources or self._templates), bool(self._prompts)
+        return Presence(
+            bool(self._tools), bool(self._resources or self._templates), bool(self._prompts)
+        )
 
     # --- serving -----------------------------------------------------------------------
 
@@ -253,8 +289,8 @@ class McpServerService:
 
     def call_tool_for(
         self, params: CallToolParams, context: RequestContext
-    ) -> Effect[CallToolResult, InvalidParams | InternalError, RequestServices]:
-        """The result of ``params`` 's call; an unknown tool is invalid params."""
+    ) -> Effect[CallToolResult | InputRequired, InvalidParams | InternalError, RequestServices]:
+        """The outcome of ``params`` 's call; an unknown tool is invalid params."""
         name = params["name"]
         entry = self.find_tool(name, context)
         if entry is None:
@@ -278,7 +314,7 @@ class McpServerService:
 
     def get_prompt_for(
         self, name: str, arguments: Mapping[str, str], context: RequestContext
-    ) -> Effect[GetPromptResult, McpError, RequestServices]:
+    ) -> Effect[GetPromptResult | InputRequired, McpError, RequestServices]:
         entry = self._prompts.get(name)
         if entry is None or not _visible(entry.annotations, context):
             return fail(InvalidParams(f"Prompt '{name}' not found"))
@@ -306,7 +342,9 @@ class McpServerService:
         self, params: CallToolParams
     ) -> Effect[CallToolResult, InvalidParams | InternalError, McpServerClient]:
         """Call a tool for the current session."""
-        return _with_request(lambda context: self.call_tool_for(params, context))
+        return _with_request(lambda context: self.call_tool_for(params, context)).flat_map(
+            _complete
+        )
 
     def find_resource(self, uri: str) -> Effect[ReadResourceResult, McpError, McpServerClient]:
         """Read a resource for the current session."""
@@ -321,7 +359,9 @@ class McpServerService:
         self, name: str, arguments: Mapping[str, str] | None = None
     ) -> Effect[GetPromptResult, McpError, McpServerClient]:
         """Get a prompt for the current session."""
-        return _with_request(lambda context: self.get_prompt_for(name, arguments or {}, context))
+        return _with_request(
+            lambda context: self.get_prompt_for(name, arguments or {}, context)
+        ).flat_map(_complete)
 
     def completion(
         self, params: CompleteParams
@@ -340,10 +380,29 @@ class McpServerService:
     def disconnect(self, client_id: int) -> None:
         self._peers.pop(client_id, None)
 
+    @property
+    def list_change_revision(self) -> int:
+        """The newest list change's; a new listener ignores it and older ones."""
+        return self._list_change_revision
+
+    @property
+    def subscribe_events(self) -> Effect[Subscription[Event], Never, Scope]:
+        """A listener's feed of what subscriptions carry, for its scope."""
+
+        def counted(by: int) -> Effect[None]:
+            return sync(lambda: setattr(self, "_listeners", self._listeners + by))
+
+        return acquire_release(counted(1), lambda _, __: counted(-1)).and_then(
+            self._events.subscribe()
+        )
+
     def notify(self, method: NotificationMethod, params: JsonObject | None = None) -> Effect[None]:
         """Send a notification. A log message or progress sent while serving
-        a request goes to that request's client; the others go to every
-        connected client that wants them."""
+        a request goes to that request's client. List changes of a kind made
+        in one scheduling window go out once, after it. The others go to
+        every connected client that wants them and every subscription that
+        asked; a request waits for its own client's copy, so that it precedes
+        the response."""
         body: JsonObject = {} if params is None else params
 
         @gen
@@ -352,9 +411,50 @@ class McpServerService:
             if method in _REQUEST_NOTIFICATIONS and current is not None:
                 yield from current.value(method, body)
                 return None
+            request = yield from service_option(McpRequestContext)
+            origin = None if request is None else request.value.client_id
+            if method in _LIST_CHANGES:
+                return (yield from self._list_changed(method, body, origin))
+            return (yield from self._publish(method, body, None, origin))
+
+        return run
+
+    def _list_changed(self, method: str, body: JsonObject, origin: int | None) -> Effect[None]:
+        self._list_change_revision += 1
+        revision = self._list_change_revision
+        joined = self._pending_changes.get(method)
+        if joined is not None:
+            joined.revision = revision
+            return _VOID
+        if not self._peers and self._listeners == 0:
+            return _VOID
+        change = _PendingChange(body, revision, origin, Deferred[None]())
+        self._pending_changes[method] = change
+
+        @gen
+        def flush():
+            del self._pending_changes[method]
+            yield from self._publish(method, change.body, change.revision, change.origin)
+            yield from change.delivered.succeed(None)
+
+        forked = flush.fork_daemon().as_void()
+        return forked if origin is None else forked.and_then(change.delivered.wait())
+
+    def _publish(
+        self, method: str, body: JsonObject, revision: int | None, origin: int | None
+    ) -> Effect[None]:
+        @gen
+        def run():
+            if method in _SUBSCRIPTION_EVENTS:
+                yield from self._events.publish(Event(method, body, revision))
+            own: Fiber[None, Never] | None = None
             for peer in list(self._peers.values()):
-                yield from peer.deliver(method, body)
-            return None
+                # On its own fiber, so one client that stopped reading holds up no other.
+                delivery = yield from peer.deliver(method, body).fork_daemon(start_immediately=True)
+                if peer.client_id == origin:
+                    own = delivery
+            if own is not None:
+                yield from own.await_exit()
 
         return run
 
@@ -370,6 +470,13 @@ class McpServerService:
 class McpServer(Tag[McpServerService], key="effect/ai/McpServer"):
     """The MCP server whose tools, resources and prompts the transports
     serve."""
+
+
+def _complete[A](outcome: A | InputRequired) -> Effect[A, InvalidParams]:
+    """The direct service has no client to return an ``InputRequired`` to."""
+    if isinstance(outcome, InputRequired):
+        return fail(InvalidParams(_NO_CLIENT_INPUT))
+    return succeed(outcome)
 
 
 def _at_most_100(result: CompleteResult) -> CompleteResult:

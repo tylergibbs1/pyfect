@@ -23,6 +23,7 @@ from pyfect.queue import Queue
 from pyfect.stdio import Stdio
 
 _VOID: Effect[None] = succeed(None)
+_OUTPUT_BUFFER = 8
 
 
 def _encode(message: JsonObject) -> str:
@@ -43,7 +44,9 @@ def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, M
     def run():
         server = yield from McpServer()
         io = yield from Stdio()
-        lines = Queue[str, Done]()
+        # Bounded, as in Effect's stdio protocol: a client that stops reading
+        # holds up writers, so a subscription's backlog can overflow.
+        lines = Queue[str, Done](_OUTPUT_BUFFER)
 
         def write(message: JsonObject) -> Effect[None]:
             return lines.offer(_encode(message)).as_void()
@@ -88,7 +91,7 @@ def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, M
         server.connect(connection)
         reading = io.stdin.decode_text().split_lines().run_for_each(receive)
         finished = suspend(lambda: for_each(list(batches), _await_batch)).as_void()
-        yield from (
+        serving = yield from (
             reading.and_then(connection.drain())
             .and_then(finished)
             .ensuring(
@@ -96,7 +99,12 @@ def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, M
                 .and_then(connection.close())
                 .and_then(lines.end())
             )
+            .fork()
         )
+        # A dead writer would leave every writer waiting on the bounded output.
+        yield from writer.await_exit().and_then(serving.interrupt()).fork()
+        yield from serving.await_exit()
         yield from writer.join()
+        yield from serving.join()
 
     return run.pipe(provide_service(LogToStderr, True))

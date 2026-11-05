@@ -7089,6 +7089,74 @@ def check_mcp() -> None:
         fx.Layer[mcp_m.McpServer, Illegal, Router],
     )
     assert_type(
+        mcp_m.layer_http(
+            name="s",
+            version="1",
+            path="/mcp",
+            protocols=(mcp_p.v2026_07_28,),
+            allow_subscriptions=False,
+        ),
+        fx.Layer[mcp_m.McpServer, Illegal, Router],
+    )
+    assert_type(
+        mcp_m.layer_http_request_scoped(
+            name="s", version="1", path="/mcp", protocols=(mcp_p.v2026_07_28,)
+        ),
+        fx.Layer[mcp_m.McpServer, Illegal, Router],
+    )
+    # Sessionful revisions keep state between requests, so a request cannot own them.
+    mcp_m.layer_http_request_scoped(
+        name="s",
+        version="1",
+        path="/mcp",
+        protocols=(mcp_p.v2025_11_25,),  # pyright: ignore[reportArgumentType]
+    )
+    mcp_m.layer_http_request_scoped(
+        name="s",
+        version="1",
+        path="/mcp",
+        protocols=(mcp_p.v2026_07_28, mcp_p.v2025_11_25),  # pyright: ignore[reportArgumentType]
+    )
+    mcp_m.layer_http_request_scoped(
+        name="s",
+        version="1",
+        path="/mcp",
+        protocols=(mcp_p.v2026_07_28,),
+        allow_subscriptions=True,  # pyright: ignore[reportCallIssue]
+    )
+    mcp_m.layer_http_request_scoped(
+        name="s",
+        version="1",
+        path="/mcp",
+        protocols=(mcp_p.v2026_07_28,),
+        allow_session_termination=True,  # pyright: ignore[reportCallIssue]
+    )
+    assert_type(
+        mcp_schema_module.McpRequestContext().map(lambda c: c.input_responses),
+        fx.Effect[
+            Mapping[str, mcp_schema_module.McpInputResponse] | None,
+            Never,
+            mcp_schema_module.McpRequestContext,
+        ],
+    )
+    assert_type(
+        mcp_schema_module.McpRequestContext().map(lambda c: c.request_state),
+        fx.Effect[str | None, Never, mcp_schema_module.McpRequestContext],
+    )
+    # A URL elicitation asked through InputRequired has no elicitationId.
+    mcp_schema_module.InputRequired(
+        input_requests={
+            "go": {
+                "method": "elicitation/create",
+                "params": {"mode": "url", "message": "m", "url": "https://x"},
+            }
+        }
+    )
+    # InputRequired asks for input, or a retry with state; at least one of them.
+    mcp_schema_module.InputRequired(request_state="state")
+    mcp_schema_module.InputRequired(input_requests={"roots": {"method": "roots/list"}})
+    mcp_schema_module.InputRequired()  # pyright: ignore[reportCallIssue]
+    assert_type(
         mcp_m.register_resource(uri="demo://a", name="a", content=fx.succeed("text")),
         fx.Effect[None, Never, mcp_m.McpServer],
     )

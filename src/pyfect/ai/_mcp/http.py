@@ -5,7 +5,9 @@ A stateful client's ``initialize`` opens a session, named by the
 stateless (2026-07-28) request needs no session. A request's answer is
 JSON, or a server-sent event stream when the server sends anything
 before it (progress, log messages, requests to the client); a notification
-no request owns goes on every open stream of the session.
+no request owns goes on every open stream of the session. A
+``subscriptions/listen`` request is always an event stream, kept alive with
+comments.
 """
 
 from __future__ import annotations
@@ -39,10 +41,11 @@ from pyfect.ai._mcp.http_admission import (
     Unparsable,
 )
 from pyfect.ai.mcp_protocol import Registry
-from pyfect.ai.mcp_schema import JsonObject
+from pyfect.ai.mcp_schema import SUBSCRIPTIONS_LISTEN, JsonObject
 from pyfect.byte_size import ByteSize
 from pyfect.clock import monotonic
-from pyfect.effect import gen, succeed, suspend
+from pyfect.context import Context
+from pyfect.effect import context, gen, service_option, succeed, suspend, update_context
 from pyfect.errors import Done
 from pyfect.http import server_response as response
 from pyfect.http.incoming_message import MaxBodySize
@@ -52,8 +55,14 @@ from pyfect.http.server_response import HttpServerResponse, parse_content_length
 from pyfect.logger import CurrentLogLevel, Severity
 from pyfect.queue import Queue
 from pyfect.result import Ok
+from pyfect.scope import Scope
 
 _VOID: Effect[None] = succeed(None)
+_STREAM_BUFFER = 16
+"""Effect's ``streamBufferSize`` default, for every POST's response."""
+_KEEP_ALIVE_SECONDS = 15
+_KEEP_ALIVE = stream.tick(_KEEP_ALIVE_SECONDS).drop(1).map(lambda _: b": keepalive\n\n")
+"""Comments that keep an idle subscription's connection open."""
 
 
 def _media_types(header: str | None) -> list[str]:
@@ -85,13 +94,15 @@ def _event(message: JsonObject | list[JsonObject]) -> bytes:
 
 
 def _to_each(streams: list[Send]) -> Send:
-    """A notification no request owns, on every open stream of a session."""
+    """A notification no request owns, on every open stream of a session; each
+    on its own fiber, whose offer keeps its place in that stream, so a stream
+    nobody reads holds up neither the others nor the sender."""
 
     def send(message: JsonObject) -> Effect[None]:
         @gen
         def run():
             for out in list(streams):
-                yield from out(message)
+                yield from out(message).fork_daemon(start_immediately=True)
 
         return run
 
@@ -106,12 +117,15 @@ class _Sessions:
         registry: Registry,
         limits: S.Limits,
         log_level: Severity,
+        *,
+        allow_subscriptions: bool,
     ) -> None:
         self.server = server
         self.log_level: Severity = log_level
         self.info = info
         self.registry = registry
         self.sessions = S.Table(server, limits)
+        self.allow_subscriptions = allow_subscriptions
 
     def connection(self) -> Connection:
         streams: list[Send] = []
@@ -124,6 +138,7 @@ class _Sessions:
             broadcast=_to_each(streams),
             default_log_level=self.log_level,
             streams=streams,
+            supports_subscriptions=self.allow_subscriptions,
         )
 
 
@@ -140,12 +155,17 @@ def _answer_on_stream(
     connection: Connection,
     headers: dict[str, str],
     serve: Callable[[_Out], Effect[Fiber[None, Never]]],
+    *,
+    subscription: bool = False,
 ) -> Effect[HttpServerResponse]:
     """What ``serve`` answers, on its own fiber: JSON when its answer is the
-    only message, else an event stream of what comes before it, then it;
-    an empty event stream when it was cancelled, 404 when its session ended.
-    A caller or reader that leaves interrupts the work: it cannot resume."""
-    messages = Queue[_Message, Done]()
+    only message (a ``subscription`` is an event stream anyway), else an
+    event stream of what comes before it, then it; an empty event stream when
+    it was cancelled, 404 when its session ended. A caller or reader that
+    leaves interrupts the work: it cannot resume, and neither can one whose
+    request scope closed with the body unread. The work waits for a reader
+    ``_STREAM_BUFFER`` messages behind."""
+    messages = Queue[_Message, Done](_STREAM_BUFFER)
 
     def out(message: _Message) -> Effect[None]:
         return messages.offer(message).as_void()
@@ -154,10 +174,17 @@ def _answer_on_stream(
         connection.streams.remove(out)
         return messages.end().as_void()
 
+    def abandon(serving: Fiber[None, Never]) -> Effect[None]:
+        """No reader is left: release the broadcasts waiting for room as well."""
+        return serving.interrupt().and_then(messages.shutdown()).as_void()
+
     @gen
     def started():
         connection.streams.append(out)
         serving = yield from serve(out)
+        scope = yield from service_option(Scope)
+        if scope is not None:
+            yield from scope.value.add_finalizer(lambda _: abandon(serving))
         # The stream ends with the work: after its answer, or empty when cancelled.
         yield from serving.await_exit().ensuring(suspend(finished)).fork_daemon()
         return serving
@@ -172,14 +199,12 @@ def _answer_on_stream(
                 return response.stream(
                     stream.empty, content_type="text/event-stream", headers=headers
                 )
-            if "method" not in first.value:
+            if "method" not in first.value and not subscription:
                 return response.json_unsafe(cast("Any", first.value), headers=headers)
-            body = (
-                stream.make(first.value)
-                .concat(stream.from_queue(messages))
-                .map(_event)
-                .ensuring(serving.interrupt())
-            )
+            events = stream.make(first.value).concat(stream.from_queue(messages)).map(_event)
+            if subscription:
+                events = events.merge(_KEEP_ALIVE, halt_strategy="left")
+            body = events.ensuring(abandon(serving))
             return response.stream(
                 cast("Any", body), content_type="text/event-stream", headers=headers
             )
@@ -192,10 +217,17 @@ def _answer_on_stream(
 
 
 def _answer(
-    connection: Connection, request: Request, headers: dict[str, str]
+    connection: Connection,
+    request: Request,
+    headers: dict[str, str],
 ) -> Effect[HttpServerResponse]:
     """The answer to one request."""
-    return _answer_on_stream(connection, headers, lambda out: connection.start(request, out))
+    return _answer_on_stream(
+        connection,
+        headers,
+        lambda out: connection.start(request, out),
+        subscription=request.method == SUBSCRIPTIONS_LISTEN.name,
+    )
 
 
 def _close_all(connections: Sequence[Connection]) -> Effect[None]:
@@ -367,15 +399,22 @@ def serve(
     allowed_origins: Sequence[str] | None,
     allow_session_termination: bool,
     limits: S.Limits,
+    allow_subscriptions: bool = True,
+    request_services: bool = False,
 ) -> Effect[None, Any, McpServer | HttpRouter]:
-    """Add the MCP endpoint at ``path`` to the router."""
+    """Add the MCP endpoint at ``path`` to the router. With
+    ``request_services``, what a request's fiber provides takes precedence
+    over the layer's services, which handlers see too."""
 
     @gen
     def run():
         server = yield from McpServer()
         router = yield from HttpRouter()
         level = yield from CurrentLogLevel()
-        sessions = _Sessions(server, info, registry, limits, level)
+        sessions = _Sessions(
+            server, info, registry, limits, level, allow_subscriptions=allow_subscriptions
+        )
+        services: Context[Any] = yield from context()
         terminate = allow_session_termination and any(
             not p.is_stateless for p in registry.protocols
         )
@@ -399,7 +438,14 @@ def serve(
             accepted = _media_types(request.headers.get("accept"))
             if "application/json" not in accepted or "text/event-stream" not in accepted:
                 return succeed(_empty(406))
-            return _post(sessions, request)
+            posted = _post(sessions, request)
+            if not request_services:
+                return posted
+
+            def overridden(current: Context[Any]) -> Context[Any]:
+                return services.merge(current)
+
+            return posted.pipe(update_context(overridden))
 
         def delete(request: ServerRequest) -> Effect[HttpServerResponse]:
             if not terminate:

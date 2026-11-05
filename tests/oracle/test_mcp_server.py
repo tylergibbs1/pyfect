@@ -16,16 +16,14 @@ Omitted, with the reason:
   reverse request is cancelled without a reply``, ``drops server notifications
   from buffered JSON-RPC responses``: they drive Effect's RpcServer protocol
   with custom transports, which pyfect's transports do not expose.
-- ``should isolate request notifications across mixed HTTP protocols``: it
-  reads a ``subscriptions/listen`` stream, which is not ported.
 - ``should release request metadata when HTTP requests complete without
   server notifications``: a Python dict takes no weak reference; a stateless
   POST's connection is never registered, so nothing keeps it.
-- Resource subscriptions and their backlogs, list-change notification
-  scheduling, ``subscriptions/listen``, ``layerHttpRequestScoped`` and
-  ``allowSubscriptions``: not ported (see PARITY.md, M10e mcp).
 
-Ported elsewhere: the direct-service and ``registerToolkit`` titles
+Ported elsewhere: resource subscriptions, their backlogs, list-change scheduling,
+``allowSubscriptions`` and the mixed-protocol isolation title in
+test_mcp_conformance_subscriptions.py; ``layerHttpRequestScoped`` in
+test_mcp_request_scoped.py; the direct-service and ``registerToolkit`` titles
 (strict mode, identified schemas, failure modes, registration context) in
 test_mcp_server_registrations.py; POST and DELETE protocol-version checks
 and legacy batches in test_mcp_http_admission.py; HTTP batch SSE framing in
@@ -41,18 +39,20 @@ import pytest
 
 import pyfect as fx
 from pyfect import schema as S
-from pyfect import testing
+from pyfect import sink, stdio, stream, testing
 from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_schema as MS
 from pyfect.ai import mcp_server as M
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
-from pyfect.ai._mcp.core import ToolEntry
+from pyfect.ai._mcp.core import PromptEntry, ToolEntry
 from pyfect.context import Context
 from pyfect.deferred import Deferred
+from pyfect.errors import Done
 from pyfect.http import request as R
 from pyfect.http.client import HttpClientService
 from pyfect.http.response import HttpClientResponse
+from pyfect.queue import Queue
 
 from ._mcp import CLIENT_INFO, in_memory_http, stdio_harness
 from ._mcp_http import http_harness, initialize_session, read_message, server_layer, sse_reader
@@ -1147,3 +1147,146 @@ def test_a_requests_own_progress_has_no_message_on_2024_11_05():
         )
         reader = yield from sse_reader(response)
         assert (yield from reader.take())["params"] == expected
+
+
+# --- a session's event streams ----------------------------------------------------------------
+
+
+def _session_stream_server(progressed: list[int]) -> fx.Effect[None, Any, M.McpServer]:
+    @fx.gen
+    def run():
+        server = yield from M.McpServer()
+
+        def chatty(_: object) -> fx.Effect[Any]:
+            @fx.gen
+            def report():
+                for index in range(100):
+                    yield from server.notify(
+                        "notifications/progress", {"progressToken": "p", "progress": index}
+                    )
+                    progressed.append(index)
+                return cast("Any", {"content": []})
+
+            return report
+
+        tool: Any = {"name": "Chatty", "inputSchema": {"type": "object"}}
+        yield from server.add_tool(ToolEntry(tool, Context.empty(), chatty))
+
+    return run
+
+
+@testing.effect
+def test_a_session_request_waits_for_a_reader_that_stopped_reading_its_stream():
+    """Effect's 16-message stream buffer holds for a session's POST too: under
+    Node, a tool reporting progress on an unread body stops at 16."""
+    progressed: list[int] = []
+    app = server_layer(
+        "Backpressure", (P.v2025_11_25,), _session_stream_server(progressed), mode="server"
+    )
+    harness = yield from http_harness(app)
+    headers = yield from initialize_session(harness, P.v2025_11_25)
+    yield from harness.post(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "Chatty", "arguments": {}, "_meta": {"progressToken": "p"}},
+        },
+        headers,
+    )
+    for _ in range(50):
+        yield from fx.yield_now()
+    assert 16 <= len(progressed) <= 18
+
+
+@testing.effect
+def test_a_session_stream_nobody_reads_holds_up_no_other_stream_of_the_session():
+    """Effect delivers a broadcast to each POST on its own, so one stalled
+    stream costs the others nothing."""
+    never_answered = Deferred[None]()
+    servers: list[M.McpServerService] = []
+
+    def announcing(_: object) -> fx.Effect[Any]:
+        @fx.gen
+        def run():
+            yield from servers[0].notify(
+                "notifications/progress", {"progressToken": "p", "progress": 1}
+            )
+            yield from never_answered.wait()
+            return cast("Any", {"content": []})
+
+        return run
+
+    @fx.gen
+    def registrations():
+        yield from _session_stream_server([])
+        server = yield from M.McpServer()
+        servers.append(server)
+        tool: Any = {"name": "Announcing", "inputSchema": {"type": "object"}}
+        yield from server.add_tool(ToolEntry(tool, Context.empty(), announcing))
+
+    app = server_layer("Backpressure", (P.v2025_11_25,), registrations, mode="server")
+    harness = yield from http_harness(app)
+    headers = yield from initialize_session(harness, P.v2025_11_25)
+
+    def call(id: int, name: str) -> dict[str, Any]:
+        return {
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": {}, "_meta": {"progressToken": "p"}},
+        }
+
+    yield from harness.post(call(2, "Chatty"), headers)
+    for _ in range(50):
+        yield from fx.yield_now()
+    response = yield from harness.post(call(3, "Announcing"), headers)
+    stream = yield from sse_reader(response)
+    assert (yield from stream.take())["method"] == "notifications/progress"
+    yield from servers[0].notify("notifications/tools/list_changed")
+    message = yield from stream.take().timeout(1)
+    assert message["method"] == "notifications/tools/list_changed"
+    yield from never_answered.succeed(None)
+
+
+@testing.effect
+def test_a_dead_stdio_writer_ends_the_server():
+    """Otherwise every writer waits on the bounded output for good."""
+    stdin = Queue[bytes, Done]()
+    served = M.run_stdio(name="s", version="1", protocols=(P.v2025_11_25,)).pipe(
+        fx.provide_service(M.McpServer, (yield from M.make()))
+    )
+
+    def write(_: object) -> fx.Effect[None]:
+        return fx.die(OSError("the pipe broke"))
+
+    def dying_output(*, end_on_done: bool = False) -> Any:
+        return sink.for_each(write)
+
+    fiber = yield from served.pipe(
+        fx.provide(stdio.layer_test(stdin=stream.from_queue(stdin), stdout=dying_output))
+    ).fork_scoped()
+    line = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+    yield from stdin.offer((json.dumps(line) + "\n").encode())
+    for _ in range(100):
+        yield from fx.yield_now()
+    assert fiber.poll_unsafe() is not None
+
+
+@testing.effect
+def test_the_direct_service_has_no_client_to_ask():
+    """``McpServer.callTool`` and ``getPrompt`` outside a request: Effect's "Client
+    input is not supported by this MCP protocol"."""
+    server = yield from M.make()
+    outcome: Any = MS.InputRequired(request_state="s")
+    tool: Any = {"name": "T", "inputSchema": {"type": "object"}}
+    yield from server.add_tool(ToolEntry(tool, Context.empty(), lambda _: fx.succeed(outcome)))
+    yield from server.add_prompt(
+        PromptEntry({"name": "P"}, Context.empty(), {}, lambda _: fx.succeed(outcome))
+    )
+    called = yield from _direct(server.call_tool({"name": "T", "arguments": {}})).flip()
+    assert isinstance(called, MS.InvalidParams)
+    assert called.message == "Client input is not supported by this MCP protocol"
+    prompted = yield from _direct(server.get_prompt_result("P", {})).flip()
+    assert isinstance(prompted, MS.InvalidParams)
+    assert prompted.message == "Client input is not supported by this MCP protocol"

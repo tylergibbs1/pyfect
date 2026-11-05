@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import cast
 
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter
@@ -11,6 +12,8 @@ from pyfect.ai.mcp_schema import (
     CreateMessageParams,
     CreateMessageResult,
     ElicitRequestParams,
+    JsonObject,
+    McpInputRequest,
 )
 
 _TOOL_CONTENT = ("tool_use", "tool_result")
@@ -25,6 +28,14 @@ def _has_tool_content(content: object) -> bool:
     )
 
 
+def _uses_tools(params: CreateMessageParams) -> bool:
+    return (
+        "tools" in params
+        or "toolChoice" in params
+        or any(_has_tool_content(m["content"]) for m in params["messages"])
+    )
+
+
 def sampling_refusal(
     protocol: AnyProtocolAdapter, capabilities: ClientCapabilities, params: CreateMessageParams
 ) -> str | None:
@@ -32,11 +43,7 @@ def sampling_refusal(
     ``createMessage``): 2025-11-25 gates tool use and included context on
     their nested capabilities; before it, requests with either form have no
     wire shape."""
-    uses_tools = (
-        "tools" in params
-        or "toolChoice" in params
-        or any(_has_tool_content(m["content"]) for m in params["messages"])
-    )
+    uses_tools = _uses_tools(params)
     if protocol.supports_icons:
         sampling = capabilities.get("sampling") or {}
         if uses_tools and sampling.get("tools") is None:
@@ -90,3 +97,39 @@ def project_elicitation(
     if url:
         return "Request is not representable by this protocol"
     return cast("ElicitRequestParams", {k: v for k, v in params.items() if k != "mode"})
+
+
+def required_input_capabilities(
+    requests: Mapping[str, McpInputRequest] | None, capabilities: ClientCapabilities
+) -> dict[str, JsonObject]:
+    """The client capabilities ``requests`` need that the client did not
+    declare (Effect's ``requiredCapabilitiesForInputRequests``)."""
+    required: dict[str, JsonObject] = {}
+    for request in (requests or {}).values():
+        if request["method"] == "roots/list":
+            if capabilities.get("roots") is None:
+                required["roots"] = {}
+        elif request["method"] == "sampling/createMessage":
+            params = request["params"]
+            advertised = capabilities.get("sampling")
+            sampling = required.get("sampling", {})
+            if _uses_tools(params) and (advertised or {}).get("tools") is None:
+                sampling["tools"] = {}
+            if (
+                params.get("includeContext") in _CONTEXTS
+                and (advertised or {}).get("context") is None
+            ):
+                sampling["context"] = {}
+            if advertised is None or sampling:
+                required["sampling"] = sampling
+        else:
+            mode = "url" if request["params"].get("mode") == "url" else "form"
+            elicitation = capabilities.get("elicitation")
+            supported = elicitation is not None and (
+                elicitation.get("url") is not None
+                if mode == "url"
+                else elicitation.get("form") is not None or not elicitation
+            )
+            if not supported:
+                required.setdefault("elicitation", {})[mode] = {}
+    return required

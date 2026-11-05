@@ -3,18 +3,12 @@ McpServer.test.ts, the 2025-03-26 transport titles of v2025_03_26.test.ts and
 the 2026-07-28 transport, discovery and request-metadata titles of
 v2026_07_28.test.ts.
 
-Omitted:
-- "should return InvalidParams when a resumed tool rejects its requestState",
-  "should reject tool-enabled sampling when the client omits sampling.tools",
-  "should treat an empty elicitation capability as form support", "should
-  reject input requests when the client omits their required capabilities":
-  ``input_required`` round trips are not ported.
-- "should accept cancellation notifications without request metadata": in
-  test_mcp_protocol_adapters.py.
-- "should validate nested mirrored parameters before executing a tool" and
-  "should treat an unmatched Base64 wrapper as a literal when routing a
-  request": they check ``Mcp-Param-*`` mirroring of ``x-mcp-header``
-  parameters, which pyfect's server does not check.
+Ported elsewhere: the "Multi round-trip request capabilities" titles in
+test_mcp_conformance_multi_round_trip.py; "should accept cancellation
+notifications without request metadata" in test_mcp_protocol_adapters.py;
+"should validate nested mirrored parameters before executing a tool" and "should
+treat an unmatched Base64 wrapper as a literal when routing a request" in
+test_mcp_conformance_tools.py.
 """
 
 from __future__ import annotations

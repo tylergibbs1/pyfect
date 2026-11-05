@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pyfect as fx
 from pyfect import layer
@@ -32,6 +32,7 @@ SERVER_VERSION = "1.0.0"
 CONFORMANCE_CLIENT = {"name": "McpConformanceClient", "version": "1.0.0"}
 ALLOWED_ORIGIN = "https://allowed.example"
 INITIALIZED: Json = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+type Mode = Literal["server", "request"]
 
 
 def server_layer(
@@ -40,17 +41,34 @@ def server_layer(
     registrations: fx.Effect[None, Any, Any] | None = None,
     *,
     allow_session_termination: bool = False,
+    mode: Mode = "server",
+    instructions: str | None = None,
+    extensions: Json | None = None,
 ) -> layer.Layer[Any, Any, Any]:
     """Effect's ``makeServerLayer`` (``https://allowed.example`` is the one
     allowed origin), with ``registrations`` run against its server."""
-    served = M.layer_http(
-        name=name,
-        version=SERVER_VERSION,
-        path="/mcp",
-        protocols=protocols,
-        allowed_origins=(ALLOWED_ORIGIN,),
-        allow_session_termination=allow_session_termination,
-    )
+    served: layer.Layer[Any, Any, Any]
+    if mode == "request":
+        served = M.layer_http_request_scoped(
+            name=name,
+            version=SERVER_VERSION,
+            path="/mcp",
+            protocols=cast("Any", protocols),
+            allowed_origins=(ALLOWED_ORIGIN,),
+            instructions=instructions,
+            extensions=extensions,
+        )
+    else:
+        served = M.layer_http(
+            name=name,
+            version=SERVER_VERSION,
+            path="/mcp",
+            protocols=protocols,
+            allowed_origins=(ALLOWED_ORIGIN,),
+            allow_session_termination=allow_session_termination,
+            instructions=instructions,
+            extensions=extensions,
+        )
     if registrations is None:
         return served
     return layer.effect_discard(registrations).pipe(layer.provide_merge(served))
@@ -79,7 +97,9 @@ class HttpHarness:
         merged = {"accept": ACCEPT, "content-type": "application/json", **(headers or {})}
         return self.client.execute(request.set_headers(merged)).or_die()
 
-    def post(self, body: object, headers: dict[str, str] | None = None) -> fx.Effect[Any]:
+    def post(
+        self, body: object, headers: dict[str, str] | None = None
+    ) -> fx.Effect[HttpClientResponse]:
         return self.request("POST", body, headers)
 
     def post_text(self, text: str, headers: dict[str, str] | None = None) -> fx.Effect[Any]:
@@ -232,7 +252,9 @@ def _stateless_body(
     meta: Json = {
         **_object(params.get("_meta")),
         "io.modelcontextprotocol/protocolVersion": protocol.protocol_version,
-        "io.modelcontextprotocol/clientCapabilities": capabilities or default_capabilities,
+        "io.modelcontextprotocol/clientCapabilities": (
+            default_capabilities if capabilities is None else capabilities
+        ),
         "io.modelcontextprotocol/clientInfo": CONFORMANCE_CLIENT,
     }
     return {**message, "params": {**params, "_meta": meta}}

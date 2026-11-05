@@ -6,13 +6,14 @@ The HTTP background-log titles read each response's event stream as the
 server writes it (``_mcp_http.sse_reader``).
 
 Omitted:
-- "MUST not deliver logs from ... on an HTTP subscription stream":
-  ``subscriptions/listen`` is not ported.
 - "SCHEMA preserves ...", "MUST allow arbitrary JSON-compatible log data",
   "should preserve the level, logger, and JSON data when decoding a log
   notification": schema decoding, pinned in test_mcp_schema.py.
 - "SCENARIO does not corrupt the stdio protocol stream with log output":
   the harness reads parsed frames, so a corrupt line fails every test.
+
+"MUST not deliver logs from ... on an HTTP subscription stream" is in
+test_mcp_conformance_subscriptions.py.
 """
 
 from __future__ import annotations

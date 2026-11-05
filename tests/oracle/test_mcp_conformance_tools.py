@@ -8,16 +8,10 @@ Content tools take base64 ``data`` strings, so the image and audio tools
 give ``"AQID"`` / ``"BAUG"`` where Effect builds them from a
 ``Uint8Array``.
 
-Omitted:
-- "should list shared tools and gate modern-only tools by era" checks the
-  ``MrtrTool`` too: ``input_required`` round trips are not ported; the
-  ``JsonSchema2020Tool`` half is "gates a modern-only tool by revision" here.
-- "Tools > Modern request headers": the ``Mcp-Name`` title is in
-  test_mcp_http_admission.py; the 3 ``Mcp-Param-*`` mirroring titles are not
-  ported.
-- "should send a tool list-change notification when the advertised list
-  changes" reads ``flushListChanged``: list-change coalescing is not
-  ported.
+Omitted: none. "should list shared tools and gate modern-only tools by era" is
+"gates a modern-only tool by revision" here; the ``Mcp-Param-*`` titles run over
+HTTP against the features server, in both modes; the ``Mcp-Name`` title is in
+test_mcp_http_admission.py.
 """
 
 from __future__ import annotations
@@ -39,6 +33,8 @@ from pyfect.ai._mcp.core import ToolEntry
 from pyfect.context import Context
 
 from ._mcp import Json, StdioHarness, stdio_harness
+from ._mcp_features import MRTR_TOOL, features_conformance
+from ._mcp_http import Conformance, http_harness, initialize_session, read_message, server_layer
 
 ALL = [P.v2024_11_05, P.v2025_03_26, P.v2025_06_18, P.v2025_11_25, P.v2026_07_28]
 STATEFUL = [p for p in ALL if not p.is_stateless]
@@ -117,8 +113,14 @@ def _features(invocations: list[str]) -> tuple[fx.Effect[None, Any, Any], ...]:
         Context.make(MS.EnabledWhen, lambda client: client.protocol_version == "2026-07-28"),
         lambda _: fx.succeed({"content": []}),
     )
+    mrtr = ToolEntry(
+        {"name": MRTR_TOOL, "inputSchema": {"type": "object"}},
+        Context.make(MS.EnabledWhen, lambda client: client.protocol_version == "2026-07-28"),
+        lambda _: fx.succeed(MS.InputRequired(request_state="state")),
+    )
     return (
         toolkit,
+        M.McpServer().flat_map(lambda server: server.add_tool(mrtr)),
         _content_tool(
             "ImageTool", {"content": [{"type": "image", "data": "AQID", "mimeType": "image/png"}]}
         ),
@@ -250,11 +252,11 @@ def test_must_return_each_tool_input_schema(protocol: P.AnyProtocolAdapter):
 @pytest.mark.parametrize("protocol", ALL, ids=_id)
 @testing.effect
 def test_gates_a_modern_only_tool_by_revision(protocol: P.AnyProtocolAdapter):
-    """Not an Effect title: the JsonSchema2020Tool half of "should list shared
-    tools and gate modern-only tools by era"."""
+    """Mcp Conformance / Tools / Listing Tools / should list shared tools and gate modern-only tools by era"""  # noqa: E501
     names = {t["name"] for t in (yield from _tools((yield from _server(protocol))))}
     assert {"TestTool", "StructuredTool", "LogLevelTool", "RequestMetadataTool"} <= names
     assert ("JsonSchema2020Tool" in names) == protocol.is_stateless
+    assert (MRTR_TOOL in names) == protocol.is_stateless
 
 
 # --- Calling tools ------------------------------------------------------------------------
@@ -491,3 +493,339 @@ def test_should_advertise_tool_list_change_notifications(protocol: P.AnyProtocol
     """Mcp Conformance / Tools > Legacy notifications / should advertise tool list-change notifications when supported"""  # noqa: E501
     capabilities = yield from _capabilities(protocol, features=True)
     assert capabilities["tools"]["listChanged"] is True
+
+
+# --- Modern request headers: Mcp-Param-* ------------------------------------------------------
+
+
+def _header_call(id: str, arguments: Json) -> Json:
+    return {
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/call",
+        "params": {"name": "HeaderTool", "arguments": arguments},
+    }
+
+
+@pytest.mark.parametrize("mode", ["server", "request"])
+@testing.effect
+def test_should_reject_a_tool_call_when_a_required_parameter_header_is_missing(mode: Any):
+    """Mcp Conformance / Tools > Modern request headers / should reject a tool call when a required parameter header is missing"""  # noqa: E501
+    test = yield from features_conformance(P.v2026_07_28, mode)
+    session = yield from test.initialize()
+    response = yield from test.send(
+        session, _header_call("missing-parameter-header", {"region": "eu-central-1"})
+    )
+    assert response.status == 400
+    error = yield from test.decode_error(response)
+    assert error["id"] == "missing-parameter-header"
+    assert error["error"]["code"] == MS.HEADER_MISMATCH_ERROR_CODE
+    assert test.observations.tool_invocations == 0
+
+
+@pytest.mark.parametrize("mode", ["server", "request"])
+@testing.effect
+def test_should_accept_omitted_routing_headers_when_optional_parameters_have_prototype_property_names(  # noqa: E501
+    mode: Any,
+):
+    """Mcp Conformance / Tools > Modern request headers / should accept omitted routing headers when optional parameters have prototype property names"""  # noqa: E501
+    entry = ToolEntry(
+        {
+            "name": "OptionalRouting",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "toString": {"type": "string", "x-mcp-header": "Route"},
+                    "nested": {
+                        "type": "object",
+                        "properties": {
+                            "constructor": {"type": "string", "x-mcp-header": "Nested-Route"}
+                        },
+                    },
+                },
+            },
+        },
+        Context.empty(),
+        lambda _: fx.succeed({"content": [{"type": "text", "text": "called"}]}),
+    )
+    protocol = P.v2026_07_28
+    harness = yield from http_harness(
+        server_layer(
+            "OptionalRouting",
+            (protocol,),
+            M.McpServer().flat_map(lambda server: server.add_tool(entry)),
+            mode=mode,
+        )
+    )
+    cases: tuple[Json, ...] = ({}, {"nested": {}})
+    for arguments in cases:
+        response = yield from harness.post(
+            {
+                "jsonrpc": "2.0",
+                "id": "optional-routing",
+                "method": "tools/call",
+                "params": {
+                    "name": "OptionalRouting",
+                    "arguments": arguments,
+                    "_meta": {
+                        "io.modelcontextprotocol/protocolVersion": protocol.protocol_version,
+                        "io.modelcontextprotocol/clientCapabilities": {},
+                    },
+                },
+            },
+            {
+                "Mcp-Protocol-Version": protocol.protocol_version,
+                "Mcp-Method": "tools/call",
+                "Mcp-Name": "OptionalRouting",
+            },
+        )
+        assert response.status == 200
+        message = yield from read_message(response)
+        assert message["result"]["content"] == [{"type": "text", "text": "called"}]
+
+
+_PARAMETER_HEADER_CASES: list[tuple[str, Json, dict[str, str], int]] = [
+    (
+        "integer-missing",
+        {"region": "eu-central-1", "shard": 42},
+        {"Mcp-Param-Region": "eu-central-1"},
+        400,
+    ),
+    (
+        "integer-mismatch",
+        {"region": "eu-central-1", "shard": 42},
+        {"Mcp-Param-Region": "eu-central-1", "Mcp-Param-Shard": "7"},
+        400,
+    ),
+    (
+        "boolean-mismatch",
+        {"region": "eu-central-1", "dryRun": True},
+        {"Mcp-Param-Region": "eu-central-1", "Mcp-Param-Dry-Run": "false"},
+        400,
+    ),
+    (
+        "encoded-string",
+        {"region": "Hello, 世界"},
+        {"Mcp-Param-Region": "=?base64?SGVsbG8sIOS4lueVjA==?="},
+        200,
+    ),
+    ("encoded-invalid-utf8", {"region": "�"}, {"Mcp-Param-Region": "=?base64?/w==?="}, 400),
+    (
+        "encoded-replacement-character",
+        {"region": "�"},
+        {"Mcp-Param-Region": "=?base64?77+9?="},
+        200,
+    ),
+    (
+        "encoded-leading-bom",
+        {"region": "﻿eu-west"},
+        {"Mcp-Param-Region": "=?base64?77u/ZXUtd2VzdA==?="},
+        200,
+    ),
+    (
+        "encoded-leading-bom-mismatch",
+        {"region": "eu-west"},
+        {"Mcp-Param-Region": "=?base64?77u/ZXUtd2VzdA==?="},
+        400,
+    ),
+    ("encoded-tab", {"region": "eu\twest"}, {"Mcp-Param-Region": "=?base64?ZXUJd2VzdA==?="}, 200),
+    ("plain-tab", {"region": "eu\twest"}, {"Mcp-Param-Region": "eu\twest"}, 200),
+    ("plain-control-character", {"region": "eu\x0bwest"}, {"Mcp-Param-Region": "eu\x0bwest"}, 400),
+]
+
+
+@pytest.mark.parametrize("mode", ["server", "request"])
+@testing.effect
+def test_should_validate_parameter_headers_when_values_use_plain_or_base64_encoding(mode: Any):
+    """Mcp Conformance / Tools > Modern request headers / should validate parameter headers when values use plain or Base64 encoding"""  # noqa: E501
+    test = yield from features_conformance(P.v2026_07_28, mode)
+    session = yield from test.initialize()
+    for id, arguments, headers, status in _PARAMETER_HEADER_CASES:
+        yield from test.reset_observations
+        response = yield from test.send(session, _header_call(id, arguments), headers=headers)
+        assert response.status == status, id
+        assert test.observations.tool_invocations == (0 if status == 400 else 1), id
+        if status == 400:
+            error = yield from test.decode_error(response)
+            assert error["error"]["code"] == MS.HEADER_MISMATCH_ERROR_CODE
+        else:
+            yield from test.decode_result(response)
+
+
+@testing.effect
+def test_should_validate_nested_mirrored_parameters_before_executing_a_tool():
+    """v2026_07_28 / should validate nested mirrored parameters before executing a tool"""
+    test = yield from features_conformance(P.v2026_07_28)
+    session = yield from test.initialize()
+    arguments: Json = {"region": "eu", "routing": {"region": "eu"}}
+    for header in (None, "us", "eu", "=?base64?ZXU=?="):
+        yield from test.reset_observations
+        headers = {"Mcp-Param-Region": "eu"}
+        if header is not None:
+            headers["Mcp-Param-Nested-Region"] = header
+        response = yield from test.send(session, _header_call("nested", arguments), headers=headers)
+        if header in (None, "us"):
+            assert test.observations.tool_invocations == 0
+            assert response.status == 400
+            error = yield from test.decode_error(response)
+            assert error["error"]["code"] == MS.HEADER_MISMATCH_ERROR_CODE
+        else:
+            assert test.observations.tool_invocations == 1
+            assert response.status == 200
+
+
+@testing.effect
+def test_should_treat_an_unmatched_base64_wrapper_as_a_literal_when_routing_a_request():
+    """v2026_07_28 / should treat an unmatched Base64 wrapper as a literal when routing a request"""
+    test = yield from features_conformance(P.v2026_07_28)
+    session = yield from test.initialize()
+    value = "=?base64?SGVsbG8="
+    response = yield from test.send(
+        session, _header_call("wrapper", {"region": value}), headers={"Mcp-Param-region": value}
+    )
+    assert response.status == 200
+
+
+# --- Legacy notifications ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("protocol", STATEFUL, ids=_id)
+@testing.effect
+def test_should_send_a_tool_list_change_notification_when_the_advertised_list_changes(
+    protocol: P.AnyProtocolAdapter,
+):
+    """Mcp Conformance / Tools > Legacy notifications / should send a tool list-change notification when the advertised list changes"""  # noqa: E501
+    fixture = yield from stdio_harness(protocol)
+
+    def entry(name: str) -> ToolEntry:
+        return ToolEntry(
+            {"name": name, "inputSchema": {"type": "object", "properties": {}}},
+            Context.empty(),
+            lambda _: fx.succeed({"content": []}),
+        )
+
+    yield from fixture.server.add_tool(entry("baseline-list-changed-tool"))
+    yield from fixture.initialize()
+    yield from fixture.server.add_tool(entry("dynamic-list-changed-tool"))
+    yield from fixture.flush_list_changed
+    notification = yield from fixture.await_outbound_method("notifications/tools/list_changed")
+    assert notification["jsonrpc"] == "2.0"
+    assert "id" not in notification
+    response = yield from fixture.send_request("tools/list", {})
+    assert "dynamic-list-changed-tool" in [t["name"] for t in response["result"]["tools"]]
+
+
+@pytest.mark.parametrize("mode", ["server", "request"])
+@testing.effect
+def test_a_number_too_large_for_a_float_never_matches_its_parameter_header(mode: Any):
+    """An argument past JavaScript's safe integers matches no header, however
+    large: it is not a defect."""
+    test = yield from features_conformance(P.v2026_07_28, mode)
+    session = yield from test.initialize()
+    response = yield from test.send(
+        session,
+        _header_call("huge", {"region": "eu", "shard": 10**400}),
+        headers={"Mcp-Param-Region": "eu", "Mcp-Param-Shard": "1"},
+    )
+    assert response.status == 400
+    error = yield from test.decode_error(response)
+    assert error["error"]["code"] == MS.HEADER_MISMATCH_ERROR_CODE
+
+
+_HEADERED: Any = {
+    "name": "Headered",
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "text": {"type": "string", "x-mcp-header": "Text"},
+            "flag": {"type": "boolean", "x-mcp-header": "Flag"},
+            "count": {"type": "number", "x-mcp-header": "Count"},
+            "nested": {
+                "type": "object",
+                "properties": {"deep": {"type": "string", "x-mcp-header": "Deep"}},
+            },
+            "plain": {"type": "object"},
+        },
+    },
+}
+
+
+def _headered_app(protocol: P.AnyProtocolAdapter) -> Any:
+    entry = ToolEntry(_HEADERED, Context.empty(), lambda _: fx.succeed({"content": []}))
+    registration = M.McpServer().flat_map(lambda server: server.add_tool(entry))
+    return server_layer("Headered", (protocol,), registration)
+
+
+def _headered_call(arguments: Json) -> Json:
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "Headered", "arguments": arguments},
+    }
+
+
+@pytest.mark.parametrize(
+    ("arguments", "headers", "matches"),
+    [
+        pytest.param({}, {}, True, id="an absent argument wants no header"),
+        pytest.param({}, {"Mcp-Param-Text": "x"}, False, id="an absent argument with a header"),
+        pytest.param({"text": "x"}, {"Mcp-Param-Text": "x"}, True, id="a string"),
+        pytest.param({"text": "x"}, {"Mcp-Param-Text": "X"}, False, id="a string is exact"),
+        pytest.param({"flag": True}, {"Mcp-Param-Flag": "true"}, True, id="true"),
+        pytest.param({"flag": False}, {"Mcp-Param-Flag": "false"}, True, id="false"),
+        pytest.param({"flag": True}, {"Mcp-Param-Flag": "TRUE"}, False, id="true is lowercase"),
+        pytest.param({"flag": True}, {"Mcp-Param-Flag": "1"}, False, id="true is not 1"),
+        pytest.param({"count": 3}, {"Mcp-Param-Count": "3"}, True, id="an integer"),
+        pytest.param({"count": 3.0}, {"Mcp-Param-Count": "3"}, True, id="an integral float"),
+        pytest.param({"count": 3}, {"Mcp-Param-Count": "0x3"}, True, id="Number() reads hex"),
+        pytest.param({"count": 0}, {"Mcp-Param-Count": "  "}, False, id="blank is not 0"),
+        pytest.param({"count": 1.5}, {"Mcp-Param-Count": "1.5"}, False, id="a fraction never"),
+        pytest.param(
+            {"nested": {"deep": "x"}}, {"Mcp-Param-Deep": "x"}, True, id="through properties"
+        ),
+        pytest.param({"nested": {"deep": "x"}}, {}, False, id="a nested one missing"),
+        pytest.param(
+            {"text": "\u00e9"},
+            {"Mcp-Param-Text": "=?base64?w6k=?="},
+            True,
+            id="encoded",
+        ),
+    ],
+)
+@testing.effect
+def test_a_parameter_header_mirrors_its_argument(arguments: Json, headers: Any, matches: bool):
+    """Effect's ``parameterHeaderMatches``: a mismatch is -32020 before the tool runs."""
+    test = Conformance(P.v2026_07_28, (yield from http_harness(_headered_app(P.v2026_07_28))))
+    session = yield from test.initialize()
+    response = yield from test.send(session, _headered_call(arguments), headers=headers)
+    message = yield from read_message(response)
+    if matches:
+        assert "result" in message
+    else:
+        assert response.status == 400
+        assert message["error"]["code"] == MS.HEADER_MISMATCH_ERROR_CODE
+
+
+@testing.effect
+def test_a_mismatch_names_the_header_and_the_argument_path():
+    """Effect's message has the whole path, for a client to find its mistake."""
+    test = Conformance(P.v2026_07_28, (yield from http_harness(_headered_app(P.v2026_07_28))))
+    session = yield from test.initialize()
+    message = yield from read_message(
+        (yield from test.send(session, _headered_call({"nested": {"deep": "x"}})))
+    )
+    assert "mcp-param-deep" in message["error"]["message"].lower()
+    assert "nested.deep" in message["error"]["message"]
+
+
+@testing.effect
+def test_session_revisions_have_no_parameter_headers():
+    """A session request carries no ``Mcp-Param-*``, so nothing can mismatch."""
+    legacy = P.v2025_11_25
+    harness = yield from http_harness(_headered_app(legacy))
+    headers = yield from initialize_session(harness, legacy)
+    message = yield from read_message(
+        (yield from harness.post(_headered_call({"text": "x"}), headers))
+    )
+    assert "result" in message

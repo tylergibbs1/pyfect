@@ -19,9 +19,10 @@ from pyfect import _json_text
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
-from pyfect.ai._mcp import log_levels, projection, reverse_policy
+from pyfect.ai._mcp import log_levels, param_headers, projection, reverse_policy, subscriptions
 from pyfect.ai._mcp.core import McpServerService, RequestOutbound, RequestServices
 from pyfect.ai._mcp.http_status import fail_with_http_status
+from pyfect.ai._mcp.input_wire import CONTINUATION_PARAMS, INPUT_REQUESTS, ContinuationParams
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter, Registry
 from pyfect.ai.mcp_schema import (
     CALL_TOOL_PARAMS,
@@ -29,14 +30,17 @@ from pyfect.ai.mcp_schema import (
     CREATE_MESSAGE_RESULT,
     ELICIT_RESULT,
     GET_PROMPT,
+    HEADER_MISMATCH_ERROR_CODE,
     IMPLEMENTATION,
     INITIALIZE_PARAMS,
     LIST_ROOTS_RESULT,
     LIST_TOOLS,
     METHOD_NOT_FOUND_ERROR_CODE,
+    MISSING_REQUIRED_CLIENT_CAPABILITY_ERROR_CODE,
     READ_RESOURCE,
     SET_LEVEL,
     SUBSCRIBE,
+    SUBSCRIPTIONS_LISTEN,
     UNSUPPORTED_PROTOCOL_VERSION_ERROR_CODE,
     CallToolParams,
     CallToolResult,
@@ -48,6 +52,7 @@ from pyfect.ai.mcp_schema import (
     GetPromptResult,
     Icon,
     Implementation,
+    InputRequired,
     InternalError,
     InvalidParams,
     InvalidRequest,
@@ -55,6 +60,7 @@ from pyfect.ai.mcp_schema import (
     ListRootsResult,
     LoggingLevel,
     McpError,
+    McpInputResponse,
     McpRequestContext,
     McpReverseOperationError,
     McpReverseOperationUnsupported,
@@ -71,9 +77,22 @@ from pyfect.ai.mcp_schema import (
 )
 from pyfect.cause import Cause, Fail
 from pyfect.deferred import Deferred
-from pyfect.effect import fail, fail_cause, gen, provide_service, succeed, suspend, sync
+from pyfect.effect import (
+    fail,
+    fail_cause,
+    gen,
+    interrupt,
+    provide_service,
+    service_option,
+    succeed,
+    suspend,
+    sync,
+)
 from pyfect.exit import Success
+from pyfect.http.server_request import HttpServerRequest, ServerRequest
 from pyfect.logger import CurrentLogLevel, Severity
+from pyfect.option import Option
+from pyfect.scope import scoped
 
 type Wire = dict[str, Any]
 """A result as written."""
@@ -85,6 +104,8 @@ PROTOCOL_VERSION_META = "io.modelcontextprotocol/protocolVersion"
 CLIENT_INFO_META = "io.modelcontextprotocol/clientInfo"
 CLIENT_CAPABILITIES_META = "io.modelcontextprotocol/clientCapabilities"
 SERVER_INFO_META = "io.modelcontextprotocol/serverInfo"
+
+_FEATURE_HANDLER_FAILED = "MCP feature handler failed"
 
 _VOID: Effect[None] = succeed(None)
 
@@ -269,6 +290,10 @@ class Connection:
     log_level: LoggingLevel | None = None
     """The level the client set with ``logging/setLevel``."""
     subscriptions: set[str] = field(default_factory=set[str])
+    supports_subscriptions: bool = True
+    """Whether 2026-07-28 clients may ``subscriptions/listen``."""
+    _listening: set[RequestId] = field(default_factory=set[RequestId])
+    """The requests that are subscriptions: they end only when cancelled."""
     _pending: dict[RequestId, Deferred[JsonObject]] = field(
         default_factory=dict[RequestId, "Deferred[JsonObject]"]
     )
@@ -323,10 +348,14 @@ class Connection:
         return run
 
     def drain(self) -> Effect[None]:
-        """Wait for the requests still being served."""
+        """Wait for the requests still being served, ending the subscriptions
+        among them: nobody is left to cancel those."""
 
         @gen
         def run():
+            # Taken at once: awaiting one, another may end by itself (overflow).
+            for fiber in [self._inflight[id] for id in self._listening]:
+                yield from fiber.interrupt()
             while self._inflight:
                 yield from next(iter(self._inflight.values())).await_exit()
 
@@ -339,6 +368,7 @@ class Connection:
 
         def done() -> None:
             self._inflight.pop(id, None)
+            self._listening.discard(id)
 
         served = (
             self.answer(id, request.method, request.params, out)
@@ -348,6 +378,8 @@ class Connection:
 
         def track(fiber: Fiber[None, Never]) -> Fiber[None, Never]:
             self._inflight[id] = fiber
+            if request.method == SUBSCRIPTIONS_LISTEN.name:
+                self._listening.add(id)
             return fiber
 
         return served.fork_daemon().map(track)
@@ -359,7 +391,7 @@ class Connection:
         version = requested_protocol_version(params)
         stateless = self.registry.find(version) if version is not None else None
         if stateless is not None and stateless.is_stateless:
-            answered = self._stateless(stateless, method, params, out)
+            answered = self._stateless(stateless, id, method, params, out)
         elif version is not None and stateless is None and _offers_stateless(self.registry):
             answered = fail(_unsupported_version(version, self.registry))
         else:
@@ -575,13 +607,26 @@ class Connection:
         params: JsonObject,
         out: Send,
         handler: Callable[[RequestContext], Effect[Wire, McpError, RequestServices]],
+        *,
+        continuation: ContinuationParams | None = None,
     ) -> Effect[Wire, McpError]:
         """``handler`` given the request's services."""
         meta = params.get("_meta")
         metadata: JsonObject = meta if isinstance(meta, dict) else {}
         version = protocol.protocol_version
+        responses: Mapping[str, McpInputResponse] | None = None
+        state: str | None = None
+        if continuation is not None:
+            responses = continuation.get("inputResponses")
+            state = continuation.get("requestState")
         context = RequestContext(
-            self.client_id, version, identity.capabilities, identity.info, metadata
+            self.client_id,
+            version,
+            identity.capabilities,
+            identity.info,
+            metadata,
+            responses,
+            state,
         )
         client = ServerClient(
             self.client_id,
@@ -635,21 +680,22 @@ class Connection:
         return _decode(INITIALIZE_PARAMS, params).map(start)
 
     def capabilities_for(self, protocol: AnyProtocolAdapter) -> ServerCapabilities:
-        tools, resources, prompts = self.server.has_registrations
-        stateless = protocol.is_stateless
+        presence = self.server.has_registrations
+        # A session's client always gets list changes; only 2026-07-28 opts out.
+        list_changed = self.supports_subscriptions if protocol.is_stateless else True
+        subscribe = list_changed if protocol.is_stateless else self.transport == "stdio"
         capabilities: ServerCapabilities = {"logging": {}}
         if protocol.supports_audio:
             capabilities["completions"] = {}
         extensions = _extensions(protocol, self.info.extensions)
         if extensions:
             capabilities["extensions"] = extensions
-        if prompts:
-            capabilities["prompts"] = {"listChanged": not stateless}
-        if resources:
-            subscribe = self.transport == "stdio" and not stateless
-            capabilities["resources"] = {"listChanged": not stateless, "subscribe": subscribe}
-        if tools:
-            capabilities["tools"] = {"listChanged": not stateless}
+        if presence.prompts:
+            capabilities["prompts"] = {"listChanged": list_changed}
+        if presence.resources:
+            capabilities["resources"] = {"listChanged": list_changed, "subscribe": subscribe}
+        if presence.tools:
+            capabilities["tools"] = {"listChanged": list_changed}
         return capabilities
 
     def _feature(  # noqa: PLR0911
@@ -666,6 +712,18 @@ class Connection:
             handler: Callable[[RequestContext], Effect[Wire, McpError, RequestServices]],
         ) -> Effect[Wire, McpError]:
             return self._serve(protocol, identity, params, out, handler)
+
+        def serve_continued(
+            handler: Callable[[RequestContext], Effect[Wire, McpError, RequestServices]],
+        ) -> Effect[Wire, McpError]:
+            """``serve`` for a request 2026-07-28 may retry with client input."""
+            if not protocol.is_stateless:
+                return serve(handler)
+            return _decode(CONTINUATION_PARAMS, params).flat_map(
+                lambda continuation: self._serve(
+                    protocol, identity, params, out, handler, continuation=continuation
+                )
+            )
 
         def listed(
             key: str, items: Callable[[RequestContext], list[Any]]
@@ -689,7 +747,7 @@ class Connection:
                 )
             case "tools/call":
                 return _decode(CALL_TOOL_PARAMS, params).flat_map(
-                    lambda call: serve(lambda c: _call_tool(server, protocol, call, c))
+                    lambda call: serve_continued(lambda c: _call_tool(server, protocol, call, c))
                 )
             case "resources/list":
                 return listed(
@@ -706,7 +764,9 @@ class Connection:
                 )
             case "resources/read":
                 return _decode(READ_RESOURCE.payload_schema, params).flat_map(
-                    lambda decoded: serve(lambda c: self._read(protocol, decoded["uri"], c))
+                    lambda decoded: serve_continued(
+                        lambda c: self._read(protocol, decoded["uri"], c)
+                    )
                 )
             case "prompts/list":
                 return listed(
@@ -715,10 +775,10 @@ class Connection:
                 )
             case "prompts/get":
                 return _decode(GET_PROMPT.payload_schema, params).flat_map(
-                    lambda decoded: serve(
+                    lambda decoded: serve_continued(
                         lambda c: server.get_prompt_for(
                             decoded["name"], decoded.get("arguments") or {}, c
-                        ).flat_map(lambda result: _prompt_on_wire(protocol, result))
+                        ).flat_map(lambda outcome: _prompt_on_wire(protocol, identity, outcome))
                     )
                 )
             case "completion/complete":
@@ -755,8 +815,42 @@ class Connection:
 
     # --- 2026-07-28 ----------------------------------------------------------------------
 
-    def _stateless(
-        self, protocol: AnyProtocolAdapter, method: str, params: JsonObject, out: Send
+    def _listen(self, id: RequestId, params: JsonObject, out: Send) -> Effect[Wire, McpError]:
+        """A ``subscriptions/listen`` stream, on ``out``. It has no result: it
+        ends when cancelled, or by itself when its backlog overflows."""
+
+        def send(method: str, body: JsonObject) -> Effect[None]:
+            return out(notification(method, body))
+
+        def terminate(request_id: RequestId, reason: str) -> Effect[None]:
+            # Over HTTP the stream's end says it; stdio's has no end of its own.
+            if self.transport == "http":
+                return _VOID
+            return send("notifications/cancelled", {"requestId": request_id, "reason": reason})
+
+        def listening(decoded: Any) -> Effect[Wire, McpError]:
+            if not self.supports_subscriptions:
+                return fail(_method_not_found(SUBSCRIPTIONS_LISTEN.name))
+            listened = subscriptions.listen(
+                decoded["notifications"],
+                id,
+                presence=self.server.has_registrations,
+                list_change_revision=self.server.list_change_revision,
+                subscribe=self.server.subscribe_events,
+                send=send,
+                terminate=terminate,
+            )
+            return scoped(listened).and_then(interrupt())
+
+        return _decode(SUBSCRIPTIONS_LISTEN.payload_schema, params).flat_map(listening)
+
+    def _stateless(  # noqa: PLR0911
+        self,
+        protocol: AnyProtocolAdapter,
+        id: RequestId,
+        method: str,
+        params: JsonObject,
+        out: Send,
     ) -> Effect[Wire, McpError]:
         meta = cast("JsonObject", params.get("_meta") or {})
         capabilities = meta.get(CLIENT_CAPABILITIES_META)
@@ -773,7 +867,8 @@ class Connection:
             own = result.get("_meta")
             merged: JsonObject = {**(own if isinstance(own, dict) else {})}
             merged[SERVER_INFO_META] = cast("Any", server_info)
-            completed: JsonObject = {**result, "_meta": merged, "resultType": "complete"}
+            result_type = "input_required" if isinstance(result, _InputRequired) else "complete"
+            completed: JsonObject = {**result, "_meta": merged, "resultType": result_type}
             if cacheable:
                 completed["ttlMs"] = 0
                 completed["cacheScope"] = "private"
@@ -787,12 +882,14 @@ class Connection:
             if self.info.instructions is not None:
                 discovery["instructions"] = self.info.instructions
             return succeed(complete(discovery, True))
-        if method in ("ping", "initialize", "logging/setLevel", "resources/subscribe"):
+        if method in _NOT_ON_2026_07_28:
             return fail(_method_not_found(method))
         requested_level = log_levels.request_log_level(meta)
         if requested_level is not None and not log_levels.is_logging_level(requested_level):
             return fail(InvalidParams(f"Invalid request log level {requested_level!r}"))
-        if method == "prompts/list" and not self.server.has_registrations[2]:
+        if method == SUBSCRIPTIONS_LISTEN.name:
+            return self._listen(id, params, out)
+        if method == "prompts/list" and not self.server.has_registrations.prompts:
             # An unadvertised capability's method (Effect's 2026-07-28 prompts/list).
             return fail_with_http_status(404, _method_not_found_bare())
         cacheable = method in _CACHEABLE
@@ -800,6 +897,15 @@ class Connection:
             lambda result: complete(result, cacheable)
         )
 
+
+class _InputRequired(dict[str, Any]):
+    """A result that is an ``input_required`` one."""
+
+
+_NOT_ON_2026_07_28 = frozenset(
+    {"ping", "initialize", "logging/setLevel", "resources/subscribe", "resources/unsubscribe"}
+)
+"""Session methods ``_feature`` serves for the revisions that have sessions."""
 
 _CACHEABLE = frozenset(
     {"tools/list", "prompts/list", "resources/list", "resources/templates/list", "resources/read"}
@@ -814,32 +920,89 @@ def _call_tool(
     call: CallToolParams,
     context: RequestContext,
 ) -> Effect[Wire, McpError, RequestServices]:
-    """A tool's result on ``protocol`` 's wire. An unknown tool is always a
+    """A tool's outcome on ``protocol`` 's wire. An unknown tool is always a
     protocol error; the tool's own failures are ``isError`` results when the
-    revision reports them so (Effect's per-revision ``tools/call``)."""
+    revision reports them so (Effect's per-revision ``tools/call``), but a
+    retry the tool refuses (a tampered state) stays a protocol error."""
     name = call["name"]
     found = server.find_tool(name, context)
     if found is None:
         return fail(InvalidParams(f"Tool '{name}' not found"))
     wrap = projection.wraps_result(protocol, found.tool)
     called = server.call_tool_for(call, context)
+    continued = context.input_responses is not None or context.request_state is not None
     if protocol.reports_tool_errors_as_results:
-        called = called.catch_all(
-            lambda error: succeed(
+
+        def reported(
+            error: InvalidParams | InternalError,
+        ) -> Effect[CallToolResult, InvalidParams]:
+            if continued and isinstance(error, InvalidParams):
+                return fail(error)
+            return succeed(
                 cast(
                     "CallToolResult",
                     {"isError": True, "content": [{"type": "text", "text": str(error)}]},
                 )
             )
-        )
 
-    def on_wire(result: CallToolResult) -> Effect[Wire, McpError]:
-        reason = projection.unsupported_content(protocol, result["content"])
+        called = called.catch_all(reported)
+
+    def on_wire(outcome: CallToolResult | InputRequired) -> Effect[Wire, McpError]:
+        if isinstance(outcome, InputRequired):
+            if not protocol.is_stateless:
+                version = protocol.protocol_version
+                return fail(InvalidParams(f"Client input is not supported by MCP {version}"))
+            return _input_required(outcome, context.client_capabilities)
+        reason = projection.unsupported_content(protocol, outcome["content"])
         if reason is not None:
             return fail(InvalidParams(reason))
-        return succeed(projection.call_tool_result(protocol, result, wrap))
+        return succeed(projection.call_tool_result(protocol, outcome, wrap))
 
-    return called.flat_map(on_wire)
+    def checked(request: Option[ServerRequest]) -> Effect[Wire, McpError, RequestServices]:
+        if protocol.is_stateless and request is not None:
+            mismatch = param_headers.mismatch(
+                found.tool["inputSchema"], call.get("arguments"), request.value.headers
+            )
+            if mismatch is not None:
+                return fail_with_http_status(
+                    400, ProtocolError(mismatch, error_code=HEADER_MISMATCH_ERROR_CODE)
+                )
+        return called.flat_map(on_wire)
+
+    return service_option(HttpServerRequest).flat_map(checked)
+
+
+def _input_required(
+    outcome: InputRequired, capabilities: ClientCapabilities
+) -> Effect[Wire, McpError]:
+    """``outcome`` on the 2026-07-28 wire, once the client can answer it."""
+
+    @gen
+    def run():
+        wire = _InputRequired()
+        requests = outcome.input_requests
+        if requests is not None:
+            requests = yield from _decode_input_requests(requests).map_error(
+                lambda _: InternalError(_FEATURE_HANDLER_FAILED)
+            )
+            wire["inputRequests"] = requests
+        required = reverse_policy.required_input_capabilities(requests, capabilities)
+        if required:
+            return (
+                yield from fail_with_http_status(
+                    400,
+                    ProtocolError(
+                        "The request requires client capabilities that were not declared",
+                        {"requiredCapabilities": required},
+                        error_code=MISSING_REQUIRED_CLIENT_CAPABILITY_ERROR_CODE,
+                    ),
+                )
+            )
+        if outcome.request_state is not None:
+            wire["requestState"] = outcome.request_state
+        return wire
+
+    return run
 
 
 def _wire(value: Mapping[str, Any]) -> Wire:
@@ -847,8 +1010,12 @@ def _wire(value: Mapping[str, Any]) -> Wire:
 
 
 def _prompt_on_wire(
-    protocol: AnyProtocolAdapter, result: GetPromptResult
+    protocol: AnyProtocolAdapter, identity: Identity, result: GetPromptResult | InputRequired
 ) -> Effect[Wire, McpError]:
+    if isinstance(result, InputRequired):
+        if not protocol.is_stateless:
+            return fail(InternalError(_FEATURE_HANDLER_FAILED))
+        return _input_required(result, identity.capabilities)
     reason = projection.unsupported_content(protocol, [m["content"] for m in result["messages"]])
     if reason is not None:
         return fail(InvalidParams(reason))
@@ -856,6 +1023,7 @@ def _prompt_on_wire(
 
 
 _is_implementation = S.is_(IMPLEMENTATION)
+_decode_input_requests = S.decode_unknown_effect(INPUT_REQUESTS)
 
 
 def _extensions(

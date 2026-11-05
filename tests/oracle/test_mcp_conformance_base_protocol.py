@@ -129,6 +129,19 @@ def test_should_return_method_not_found_when_the_requested_method_is_unknown():
     assert message["error"]["code"] == MS.METHOD_NOT_FOUND_ERROR_CODE
 
 
+@pytest.mark.parametrize(
+    "method",
+    ["ping", "initialize", "logging/setLevel", "resources/subscribe", "resources/unsubscribe"],
+)
+@testing.effect
+def test_a_method_2026_07_28_removed_is_not_found_over_stdio(method: str):
+    """As over HTTP: 2026-07-28 has no session to change (checked against Effect
+    under Node, whose stdio answers each with method not found)."""
+    harness = yield from stdio_harness(MODERN)
+    message = yield from harness.send_request(method, {"uri": "file:///a"}, 3)
+    assert message["error"]["code"] == MS.METHOD_NOT_FOUND_ERROR_CODE
+
+
 @testing.effect
 def test_should_return_invalid_params_when_request_parameters_do_not_match_the_method_schema():
     """Mcp Conformance / Base Protocol > Stateless messages / should return invalid params when request parameters do not match the method schema"""  # noqa: E501

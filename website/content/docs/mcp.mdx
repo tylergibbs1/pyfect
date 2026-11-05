@@ -95,6 +95,58 @@ JSON-RPC batches (over HTTP and stdio); their answers come back as one array. Ov
 the batch's handlers send notifications, the reply is an event stream: the notifications, then
 the array. A cancelled request in a batch gets no answer.
 
+## Subscriptions
+
+On 2026-07-28 a client asks for change notifications with one long `subscriptions/listen`
+request. The answer is an event stream that opens with an acknowledgment naming the filters
+the server honors (`toolsListChanged`, `promptsListChanged`, `resourcesListChanged`,
+`resourceSubscriptions`), then carries only what matches, each with the request's id in
+`_meta["io.modelcontextprotocol/subscriptionId"]`. Changes of one kind made in the same
+scheduling window go out once. Idle HTTP streams get a comment every 15 seconds.
+
+Each stream has a backlog of 64 notifications. A client that falls that far behind loses
+its subscription and nobody else is held up: over HTTP the stream ends, over stdio it gets
+`notifications/cancelled` with the request's id. Before 2026-07-28 clients get list changes
+unasked and, over stdio, `resources/subscribe`. To turn subscriptions off, pass
+`allow_subscriptions=False` to `mcp_server.layer_http`: discovery advertises no list changes
+and `subscriptions/listen` is method not found.
+
+<CodeOutput>
+
+<include meta='title="subscriptions.py"'>../../snippets/mcp/subscriptions.py</include>
+
+<include lang="text">../../snippets/mcp/subscriptions.out</include>
+
+</CodeOutput>
+
+## Request-scoped servers
+
+`mcp_server.layer_http_request_scoped` serves 2026-07-28 with each POST's work belonging to
+that request, for hosts that end everything with the response, such as serverless platforms.
+When the client goes away the handler is interrupted, and handlers see the request's services
+over the layer's. Tools, resources, prompts, completions and a request's own progress and logs
+work as in `layer_http`. There are no subscriptions or broadcast notifications, DELETE gets
+405, and a sessionful revision in `protocols` is a type error.
+
+Sessions are not what lets a tool ask its client something on this revision. A tool or prompt
+handler returns `mcp_schema.InputRequired` with keyed requests (`roots/list`,
+`sampling/createMessage`, `elicitation/create`), an opaque `request_state`, or both. The client
+retries with its answers, which the handler reads from `McpRequestContext`'s `input_responses`
+and `request_state`. Requests go out in 2026-07-28's form, so keys it does not carry (such as a
+URL elicitation's `elicitationId`) are dropped and a malformed one is error -32603. A request whose capabilities the client did not declare gets a 400 with
+error -32021 and the missing `requiredCapabilities`; on earlier revisions a tool's
+`InputRequired` is invalid params. A 2026-07-28 HTTP request must also mirror each parameter
+annotated `x-mcp-header` in its `Mcp-Param-<name>` header, plain or as `=?base64?...?=`, or it
+gets a 400 with error -32020 before the tool runs.
+
+<CodeOutput>
+
+<include meta='title="request_scoped.py"'>../../snippets/mcp/request_scoped.py</include>
+
+<include lang="text">../../snippets/mcp/request_scoped.out</include>
+
+</CodeOutput>
+
 ## Security defaults
 
 - `mcp_server.layer_http` keeps at most `max_sessions` (1000) sessions and answers 503 when

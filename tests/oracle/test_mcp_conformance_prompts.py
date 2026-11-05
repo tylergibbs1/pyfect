@@ -8,12 +8,7 @@ results only. Prompt content takes base64 ``data`` strings, so the
 image and audio prompts give ``"AQID"`` / ``"BAUG"`` where Effect's
 ``ImageContent.make`` encodes a ``Uint8Array``.
 
-Omitted:
-- "should send a prompt list-change notification when the advertised list
-  changes" reads ``flushListChanged``: Effect coalesces list changes,
-  pyfect sends each one at once (list-change coalescing is not ported).
-- The 2026-07-28 ``MrtrPrompt`` in the prompt list: ``input_required``
-  round trips are not ported.
+Omitted: none.
 """
 
 from __future__ import annotations
@@ -28,6 +23,8 @@ from pyfect import testing
 from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_schema as MS
 from pyfect.ai import mcp_server as M
+from pyfect.ai._mcp.core import PromptEntry
+from pyfect.context import Context
 
 from ._mcp import Json, StdioHarness, stdio_harness
 
@@ -121,6 +118,18 @@ def _features(invocations: list[str]) -> tuple[fx.Effect[None, Any, Any], ...]:
             },
             content=lambda params: fx.succeed(params["value"]),
         ),
+        M.McpServer().flat_map(
+            lambda server: server.add_prompt(
+                PromptEntry(
+                    {"name": "MrtrPrompt"},
+                    Context.make(
+                        MS.EnabledWhen, lambda client: client.protocol_version == "2026-07-28"
+                    ),
+                    {},
+                    lambda _: fx.succeed(MS.InputRequired(request_state="state")),
+                )
+            )
+        ),
     )
 
 
@@ -197,6 +206,7 @@ def test_must_list_every_prompt_visible_to_the_initialized_client(protocol: P.An
         "ContextCompletionPrompt",
         "EmbeddedResourcePrompt",
         "ImagePrompt",
+        *(["MrtrPrompt"] if protocol.is_stateless else []),
         "NoArgumentPrompt",
         "TestPrompt",
     ]
@@ -466,3 +476,28 @@ def test_should_pass_previously_resolved_arguments_as_completion_context(
     context = {"arguments": {"locale": "en"}}
     reply = yield from _complete(protocol, ref, {"name": "value", "value": "c"}, context)
     assert reply["result"]["completion"]["values"] == ["context received"]
+
+
+@pytest.mark.parametrize("protocol", STATEFUL, ids=_id)
+@testing.effect
+def test_should_send_a_prompt_list_change_notification_when_the_advertised_list_changes(
+    protocol: P.AnyProtocolAdapter,
+):
+    """Mcp Conformance / Prompts > Legacy notifications / should send a prompt list-change notification when the advertised list changes"""  # noqa: E501
+    fixture = yield from stdio_harness(protocol)
+
+    def entry(name: str) -> PromptEntry:
+        message: Any = {"role": "user", "content": {"type": "text", "text": name}}
+        return PromptEntry(
+            {"name": name}, Context.empty(), {}, lambda _: fx.succeed({"messages": [message]})
+        )
+
+    yield from fixture.server.add_prompt(entry("baseline-list-changed-prompt"))
+    yield from fixture.initialize()
+    yield from fixture.server.add_prompt(entry("dynamic-list-changed-prompt"))
+    yield from fixture.flush_list_changed
+    notification = yield from fixture.await_outbound_method("notifications/prompts/list_changed")
+    assert notification["jsonrpc"] == "2.0"
+    assert "id" not in notification
+    response = yield from fixture.send_request("prompts/list", {})
+    assert "dynamic-list-changed-prompt" in [p["name"] for p in response["result"]["prompts"]]

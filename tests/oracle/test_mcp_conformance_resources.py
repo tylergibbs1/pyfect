@@ -7,12 +7,9 @@ serves the same resources, and the titles check the JSON-RPC results only.
 A blob is given as base64 text (``"AQID"``) where Effect's result takes a
 ``Uint8Array``.
 
-Omitted:
-- "should send a resource list-change notification when the advertised
-  list changes" reads ``flushListChanged``: list-change coalescing is not
-  ported.
-- "Resources > Legacy subscriptions" (3 titles): resource subscriptions are
-  not ported.
+"Resources > Legacy subscriptions" is in test_mcp_conformance_subscriptions.py.
+
+Omitted: none.
 """
 
 from __future__ import annotations
@@ -27,6 +24,8 @@ from pyfect import testing
 from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_schema as MS
 from pyfect.ai import mcp_server as M
+from pyfect.ai._mcp.core import ResourceEntry
+from pyfect.context import Context
 
 from ._mcp import Json, StdioHarness, stdio_harness
 
@@ -282,3 +281,28 @@ def test_should_advertise_resource_list_change_notifications(protocol: P.AnyProt
     """Mcp Conformance / Resources > Legacy notifications / should advertise resource list-change notifications when supported"""  # noqa: E501
     capabilities = yield from _capabilities(protocol, features=True)
     assert capabilities["resources"]["listChanged"] is True
+
+
+@pytest.mark.parametrize("protocol", STATEFUL, ids=_id)
+@testing.effect
+def test_should_send_a_resource_list_change_notification_when_the_advertised_list_changes(
+    protocol: P.AnyProtocolAdapter,
+):
+    """Mcp Conformance / Resources > Legacy notifications / should send a resource list-change notification when the advertised list changes"""  # noqa: E501
+    fixture = yield from stdio_harness(protocol)
+
+    def entry(uri: str) -> ResourceEntry:
+        return ResourceEntry(
+            {"uri": uri, "name": uri}, Context.empty(), fx.succeed({"contents": []})
+        )
+
+    yield from fixture.server.add_resource(entry("file:///baseline-list-changed"))
+    yield from fixture.initialize()
+    yield from fixture.server.add_resource(entry("file:///dynamic-list-changed"))
+    yield from fixture.flush_list_changed
+    notification = yield from fixture.await_outbound_method("notifications/resources/list_changed")
+    assert notification["jsonrpc"] == "2.0"
+    assert "id" not in notification
+    response = yield from fixture.send_request("resources/list", {})
+    uris = [r["uri"] for r in response["result"]["resources"]]
+    assert "file:///dynamic-list-changed" in uris

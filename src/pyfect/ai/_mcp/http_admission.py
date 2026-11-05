@@ -5,14 +5,12 @@ headers, and which batches a revision accepts."""
 
 from __future__ import annotations
 
-import base64
-import binascii
-import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from pyfect.ai._mcp.dispatch import CLIENT_CAPABILITIES_META, PROTOCOL_VERSION_META
+from pyfect.ai._mcp.routing_header import decode_routing_header
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter, Registry
 from pyfect.ai.mcp_schema import (
     HEADER_MISMATCH_ERROR_CODE,
@@ -31,10 +29,6 @@ VERSION_HEADER = "mcp-protocol-version"
 METHOD_HEADER = "mcp-method"
 NAME_HEADER = "mcp-name"
 
-_BASE64_PREFIX = "=?base64?"
-_BASE64_SUFFIX = "?="
-_PLAIN_HEADER = re.compile(r"^[\t\x20-\x7e]*$")
-
 STATELESS_METHODS = frozenset(
     {
         "server/discover",
@@ -46,11 +40,11 @@ STATELESS_METHODS = frozenset(
         "resources/read",
         "tools/call",
         "tools/list",
+        "subscriptions/listen",
         "notifications/cancelled",
     }
 )
-"""The messages a 2026-07-28 server takes (Effect's ``ClientRpcs`` less
-``subscriptions/listen``, which pyfect does not serve)."""
+"""The messages a 2026-07-28 server takes (Effect's ``ClientRpcs``)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,18 +70,6 @@ type Session = AnyProtocolAdapter | Literal["absent", "unknown"]
 @dataclass(frozen=True, slots=True)
 class Unparsable:
     """A body that is not JSON."""
-
-
-def decode_routing_header(value: str) -> str | None:
-    """A routing header's value: plain visible ASCII as is, else UTF-8
-    Base64 between ``=?base64?`` and ``?=`` (``None`` when malformed)."""
-    if not (value.startswith(_BASE64_PREFIX) and value.endswith(_BASE64_SUFFIX)):
-        return value if _PLAIN_HEADER.match(value) else None
-    encoded = value[len(_BASE64_PREFIX) : -len(_BASE64_SUFFIX)]
-    try:
-        return base64.b64decode(encoded, validate=True).decode("utf-8")
-    except (binascii.Error, UnicodeDecodeError):
-        return None
 
 
 def _record(value: object) -> dict[str, Any] | None:

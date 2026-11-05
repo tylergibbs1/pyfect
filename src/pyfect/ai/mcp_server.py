@@ -20,7 +20,7 @@ A handler runs with the request's ``McpRequestContext`` and
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, LiteralString, Never
+from typing import Any, Literal, LiteralString, Never
 
 from pyfect import byte_size
 from pyfect._core import Effect
@@ -49,12 +49,12 @@ from pyfect.ai._mcp.register import (
     register_toolkit,
     uri_template,
 )
-from pyfect.ai.mcp_protocol import AnyProtocolAdapter, make_registry
+from pyfect.ai.mcp_protocol import AnyProtocolAdapter, ProtocolAdapter, make_registry
 from pyfect.ai.mcp_schema import CompletionContext, Icon, PromptMessage, Role
 from pyfect.ai.toolkit import Handlers, Toolkit
 from pyfect.context import Context
 from pyfect.duration import Duration
-from pyfect.effect import succeed
+from pyfect.effect import fail, succeed
 from pyfect.errors import IllegalArgumentError
 from pyfect.http.router import HttpRouter
 from pyfect.layer import Layer, effect_discard, provide, provide_merge
@@ -167,6 +167,7 @@ def layer_http(
     extensions: Mapping[str, Any] | None = None,
     allowed_origins: Sequence[str] | None = None,
     allow_session_termination: bool = False,
+    allow_subscriptions: bool = True,
     max_sessions: int = _sessions.DEFAULT_MAX_SESSIONS,
     session_idle_timeout: Duration = _sessions.DEFAULT_IDLE_TIMEOUT,
     max_message_bytes: byte_size.Input = _sessions.DEFAULT_MAX_MESSAGE_BYTES,
@@ -178,7 +179,10 @@ def layer_http(
     ``allow_session_termination`` a client ends its session with DELETE.
     At most ``max_sessions`` sessions are open (an ``initialize`` past
     that gets 503); a session idle for ``session_idle_timeout`` seconds
-    ends; a message larger than ``max_message_bytes`` gets 413."""
+    ends; a message larger than ``max_message_bytes`` gets 413. With
+    ``allow_subscriptions=False``, 2026-07-28 discovery advertises no list
+    changes and ``subscriptions/listen`` is method not found; earlier
+    revisions are unchanged."""
     info = _info(
         name,
         version,
@@ -199,6 +203,69 @@ def layer_http(
                 allowed_origins=allowed_origins,
                 allow_session_termination=allow_session_termination,
                 limits=parsed,
+                allow_subscriptions=allow_subscriptions,
+            )
+        )
+    )
+    return effect_discard(routes).pipe(provide_merge(layer))
+
+
+def layer_http_request_scoped(
+    *,
+    name: str,
+    version: str,
+    path: str,
+    protocols: Sequence[ProtocolAdapter[Literal["2026-07-28"]]],
+    title: str | None = None,
+    description: str | None = None,
+    website_url: str | None = None,
+    icons: Sequence[Icon] = (),
+    instructions: str | None = None,
+    extensions: Mapping[str, Any] | None = None,
+    allowed_origins: Sequence[str] | None = None,
+    max_message_bytes: byte_size.Input = _sessions.DEFAULT_MAX_MESSAGE_BYTES,
+) -> Layer[McpServer, IllegalArgumentError, HttpRouter]:
+    """Serve sessionless MCP at ``path`` with each POST's execution belonging
+    to that request: nothing keeps running after its response, and handlers see
+    the request's services over the layer's. Sessionful revisions are refused
+    (``IllegalArgumentError``, for an untyped caller).
+
+    Tools, resources, prompts, completions, ``InputRequired`` round trips and
+    a request's own progress and logs work as in ``layer_http``. There are no
+    subscriptions (discovery advertises no list changes, ``subscriptions/listen``
+    is method not found) or broadcast notifications, and DELETE gets 405."""
+    info = _info(
+        name,
+        version,
+        title=title,
+        description=description,
+        website_url=website_url,
+        icons=icons,
+        instructions=instructions,
+        extensions=extensions,
+    )
+    sessionful: tuple[AnyProtocolAdapter, ...] = tuple(p for p in protocols if not p.is_stateless)
+    if sessionful:
+        version_name = sessionful[0].protocol_version
+        refused = IllegalArgumentError(
+            "McpServer.layer_http_request_scoped does not support the sessionful "
+            f"MCP protocol {version_name}"
+        )
+        return effect_discard(fail(refused)).pipe(provide_merge(layer))
+    limits = _sessions.limits(
+        _sessions.DEFAULT_MAX_SESSIONS, _sessions.DEFAULT_IDLE_TIMEOUT, max_message_bytes
+    )
+    routes = limits.flat_map(
+        lambda parsed: make_registry(protocols).flat_map(
+            lambda registry: _http.serve(
+                info,
+                registry,
+                path=path,
+                allowed_origins=allowed_origins,
+                allow_session_termination=False,
+                limits=parsed,
+                allow_subscriptions=False,
+                request_services=True,
             )
         )
     )
@@ -311,6 +378,7 @@ __all__ = [
     "elicit",
     "layer",
     "layer_http",
+    "layer_http_request_scoped",
     "layer_stdio",
     "make",
     "prompt",
