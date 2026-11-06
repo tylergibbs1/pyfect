@@ -33,7 +33,6 @@ from pyfect import byte_size
 from pyfect import layer as L
 from pyfect import stream as St
 from pyfect._core import Effect
-from pyfect._js import or_default
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai import _provider as P
 from pyfect.ai import ai_error as E
@@ -42,6 +41,7 @@ from pyfect.ai.ai_error import AiError
 from pyfect.ai.openai import _schema as W
 from pyfect.ai.openai import _web_socket as WS
 from pyfect.ai.openai._errors import ERRORS, OPENAI
+from pyfect.ai.openai._requests import DEFAULT_API_URL, prepare_requests
 from pyfect.ai.openai._web_socket import ResponseStream, SocketService
 from pyfect.ai.openai.config import ClientTransform, OpenAiConfig
 from pyfect.byte_size import ByteSize
@@ -53,7 +53,6 @@ from pyfect.http.client import HttpClient, HttpClientService
 from pyfect.http.error import HttpClientError
 from pyfect.http.response import HttpClientResponse
 from pyfect.redacted import Redacted
-from pyfect.redacted import value as redacted_value
 from pyfect.scope import Scope
 from pyfect.socket import WebSocketConstructor
 from pyfect.stream import Stream
@@ -64,7 +63,6 @@ CreateDecisionsRequest = W.CreateDecisionsRequest
 Response = W.Response
 ResponseStreamEvent = W.ResponseStreamEvent
 
-DEFAULT_API_URL = "https://api.openai.com/v1"
 _redacted = P.with_redacted_headers(OPENAI.secret_headers)
 
 
@@ -130,16 +128,7 @@ def make(
     transform. A response body larger than ``max_response_bytes``
     (256 MiB) fails the call."""
     limit = P.response_limit(max_response_bytes)
-
-    def prepare(request: http_request.HttpClientRequest) -> http_request.HttpClientRequest:
-        request = request.prepend_url(or_default(api_url, DEFAULT_API_URL))
-        if api_key is not None:
-            request = request.bearer_token(redacted_value(api_key))
-        if organization_id is not None:
-            request = request.set_header("openai-organization", redacted_value(organization_id))
-        if project_id is not None:
-            request = request.set_header("openai-project", redacted_value(project_id))
-        return request.accept_json()
+    prepare = prepare_requests(api_key, api_url, organization_id, project_id)
 
     def build(base: HttpClientService[HttpClientError]) -> Service:
         mapped = base.map_request(prepare).filter_status_ok()

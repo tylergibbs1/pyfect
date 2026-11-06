@@ -4,12 +4,8 @@ recorded JSON or Server-Sent Events answered by a mocked ``HttpClient``;
 WebSocket mode talks to an in-memory server (Effect's
 ``vitest-websocket-mock``).
 
-Omitted: ``OpenAiClientGenerated / sets Bearer token from apiKey``,
-``prepends custom apiUrl`` and ``applies OpenAiConfig transformClient after
-options transformClient``: the generated client of every OpenAPI operation
-is not ported (``OpenAiClient`` covers the Responses, embeddings and
-decisions calls the models use). ``OpenAiDecisionModel.test.ts`` is ported in
-``test_ai_openai_decision_model.py``."""
+``OpenAiClientGenerated`` is ported in ``test_ai_openai_client_generated.py``
+and ``OpenAiDecisionModel.test.ts`` in ``test_ai_openai_decision_model.py``."""
 
 from __future__ import annotations
 

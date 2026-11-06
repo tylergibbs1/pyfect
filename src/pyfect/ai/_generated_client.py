@@ -8,14 +8,22 @@ range (``"2xx"``); a documented error status fails with the client's
 ``ClientError`` subclass carrying the decoded body; any other status fails
 with a ``StatusCodeError`` whose description is the body's JSON (or
 ``"Unexpected status code"``). Server-Sent Events and binary operations
-check the status only and skip the ``transform_client`` hook, as Effect's
-do."""
+check the status only; they skip the ``transform_client`` hook unless the
+client sets ``transform_streams``, as Effect's OpenRouter and OpenAI clients
+differ.
+
+An ``encoded_path`` is Effect's ``__makePathRequest``: its parameters are
+percent-encoded as ``encodeURIComponent`` does, and an empty parameter, a dot
+segment or a parameter that cannot be encoded fails the operation with an
+``InvalidUrlError``, without sending."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal, cast
+from urllib.parse import quote
 
 import pyfect as fx
 from pyfect import _json_text
@@ -27,7 +35,7 @@ from pyfect.errors import TaggedError
 from pyfect.http import request as http_request
 from pyfect.http.body import FormDataInput
 from pyfect.http.client import HttpClientService
-from pyfect.http.error import HttpClientError, StatusCodeError
+from pyfect.http.error import HttpClientError, InvalidUrlError, StatusCodeError
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse, StatusRange, match_status
 from pyfect.stream import Stream
@@ -36,8 +44,8 @@ type Method = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 type ClientTransform = Callable[
     [HttpClientService[HttpClientError]], Effect[HttpClientService[HttpClientError]]
 ]
-"""Effect's ``transformClient`` option: the client each JSON operation
-runs on, chosen per call."""
+"""Effect's ``transformClient`` option: the client an operation runs on,
+chosen per call."""
 
 type Params = Mapping[str, Any]
 
@@ -83,25 +91,67 @@ class _Decoder:
 
 @dataclass(frozen=True)
 class Operation:
-    """An operation: ``success`` decodes a 2xx body, a ``void`` status
-    succeeds with ``None`` (without either, a 2xx is an unexpected
-    status), ``errors`` maps a status to its tag and body schema."""
+    """An operation: ``success`` decodes a 2xx body, ``status_success``
+    the body of an exact status, ``binary_success`` gives a 2xx body as
+    bytes, a ``void`` status succeeds with ``None`` (a 2xx none of them
+    covers is an unexpected status), ``errors`` maps a status to its tag and
+    body schema."""
 
     method: Method
     url_params: tuple[str, ...] = ()
     headers: tuple[str, ...] = ()
     success: Any = None
+    status_success: Mapping[int, Any] = field(default_factory=dict[int, Any])
+    binary_success: bool = False
     void: tuple[int, ...] = ()
     errors: Mapping[int, tuple[str, Any]] = field(default_factory=dict[int, tuple[str, Any]])
     _success: _Decoder | None = field(default=None, init=False, compare=False)
     _errors: dict[int, _Decoder] = field(default_factory=dict[int, _Decoder], init=False)
+    _status_success: dict[int, _Decoder] = field(default_factory=dict[int, _Decoder], init=False)
 
     def __post_init__(self) -> None:
         if self.success is not None:
             object.__setattr__(self, "_success", _Decoder(self.success))
+        self._status_success.update(
+            {status: _Decoder(schema) for status, schema in self.status_success.items()}
+        )
         self._errors.update(
             {status: _Decoder(schema) for status, (_, schema) in self.errors.items()}
         )
+
+
+@dataclass(frozen=True)
+class EncodedPath:
+    """A path template of ``{}`` and the parameters not yet encoded into it."""
+
+    template: str
+    parameters: tuple[str, ...]
+
+
+type Path = str | EncodedPath
+
+_DOT_SEGMENT = re.compile(r"(?:\.|%2e){1,2}", re.IGNORECASE)
+
+
+def encoded_path(template: str, *parameters: str) -> EncodedPath:
+    return EncodedPath(template, parameters)
+
+
+def _resolved_path(path: EncodedPath, operation: Operation) -> Effect[str, HttpClientError]:
+    def fail(description: str, cause: object = None) -> Effect[str, HttpClientError]:
+        request = http_request.make(operation.method, "")
+        return fx.fail(HttpClientError(InvalidUrlError(request, cause, description)))
+
+    if any(value == "" or _DOT_SEGMENT.fullmatch(value) for value in path.parameters):
+        return fail("Path parameters must be non-empty and cannot be dot segments")
+    try:
+        encoded = [quote(value, safe="!'()*") for value in path.parameters]
+    except UnicodeEncodeError as cause:
+        return fail("Failed to encode path parameter", cause)
+    resolved = path.template.format(*encoded)
+    if any(_DOT_SEGMENT.fullmatch(segment) for segment in resolved.split("/")):
+        return fail("Request paths cannot contain dot segments")
+    return fx.succeed(resolved)
 
 
 def json_body(payload: object) -> JsonBody:
@@ -129,11 +179,13 @@ def _unexpected_status(response: HttpClientResponse) -> Effect[Any, HttpClientEr
 
 class GeneratedClient:
     """The base of a generated client: ``http_client`` sends every
-    operation, through ``transform_client`` for the JSON ones."""
+    operation, through ``transform_client`` for the JSON ones (and the
+    streams, with ``transform_streams``)."""
 
     __slots__ = ("_transform", "http_client")
 
     error_class: ClassVar[type[ClientError]] = ClientError
+    transform_streams: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -162,15 +214,23 @@ class GeneratedClient:
             case None:
                 return request
 
+    def _prepared(
+        self, operation: Operation, path: Path, params: Params | None, body: Body
+    ) -> Effect[HttpClientRequest, HttpClientError]:
+        if isinstance(path, str):
+            return fx.succeed(self._request(operation, path, params, body))
+        return _resolved_path(path, operation).map(
+            lambda resolved: self._request(operation, resolved, params, body)
+        )
+
     def _json(
         self,
         operation: Operation,
-        path: str,
+        path: Path,
         params: Params | None,
         body: Body,
         include_response: bool,
     ) -> Effect[Any, Any]:
-        request = self._request(operation, path, params, body)
         error_class = self.error_class
 
         def decode_error(status: int) -> Callable[[HttpClientResponse], Effect[Any, Any]]:
@@ -192,31 +252,47 @@ class GeneratedClient:
         success = operation._success  # pyright: ignore[reportPrivateUsage]
         if success is not None:
             cases["2xx"] = lambda response: response.json.flat_map(success)
+        for status, decode in operation._status_success.items():  # pyright: ignore[reportPrivateUsage]
+            cases[status] = lambda response, decode=decode: response.json.flat_map(decode)
+        if operation.binary_success:
+            cases["2xx"] = lambda response: response.bytes_
 
         def respond(response: HttpClientResponse) -> Effect[Any, Any]:
             decoded = match_status(response, cases, _unexpected_status)
             return decoded.map(lambda value: (value, response)) if include_response else decoded
 
-        if self._transform is None:
-            return self.http_client.execute(request).flat_map(respond)
-        return self._transform(self.http_client).flat_map(
-            lambda client: client.execute(request).flat_map(respond)
-        )
+        def send(request: HttpClientRequest) -> Effect[Any, Any]:
+            if self._transform is None:
+                return self.http_client.execute(request).flat_map(respond)
+            return self._transform(self.http_client).flat_map(
+                lambda client: client.execute(request).flat_map(respond)
+            )
+
+        return self._prepared(operation, path, params, body).flat_map(send)
+
+    def _stream_bytes(
+        self, operation: Operation, path: Path, params: Params | None, body: Body
+    ) -> Stream[bytes, HttpClientError]:
+        def send(request: HttpClientRequest) -> Effect[HttpClientResponse, HttpClientError]:
+            if self._transform is None or not self.transform_streams:
+                return self.http_client.filter_status_ok().execute(request)
+            return self._transform(self.http_client).flat_map(
+                lambda client: client.filter_status_ok().execute(request)
+            )
+
+        sent = self._prepared(operation, path, params, body).flat_map(send)
+        return St.unwrap(sent.map(lambda response: response.stream))
 
     def _sse(
-        self, operation: Operation, path: str, params: Params | None, body: Body, schema: Any
+        self, operation: Operation, path: Path, params: Params | None, body: Body, schema: Any
     ) -> Stream[sse.DataEvent[Any], Any]:
-        request = self._request(operation, path, params, body)
-        sent = self.http_client.filter_status_ok().execute(request)
         return (
-            St.unwrap(sent.map(lambda response: response.stream))
+            self._stream_bytes(operation, path, params, body)
             .decode_text()
             .pipe_through_channel(sse.decode_data_schema(schema))
         )
 
     def _binary(
-        self, operation: Operation, path: str, params: Params | None, body: Body
+        self, operation: Operation, path: Path, params: Params | None, body: Body
     ) -> Stream[bytes, HttpClientError]:
-        request = self._request(operation, path, params, body)
-        sent = self.http_client.filter_status_ok().execute(request)
-        return St.unwrap(sent.map(lambda response: response.stream))
+        return self._stream_bytes(operation, path, params, body)

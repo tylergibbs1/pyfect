@@ -57,10 +57,13 @@ from pyfect.ai.anthropic_structured_output import StructuredOutputCodec, to_code
 from pyfect.ai.cloudflare import client as cloudflare_client
 from pyfect.ai.cloudflare import decision_model as cloudflare_dm
 from pyfect.ai.openai import client as openai_client
+from pyfect.ai.openai import client_generated as openai_client_generated
 from pyfect.ai.openai import decision_model as openai_dm
 from pyfect.ai.openai import embedding_model as openai_em
 from pyfect.ai.openai import language_model as openai_lm
 from pyfect.ai.openai import tool as openai_tool
+from pyfect.ai.openai.generated import client as openai_generated
+from pyfect.ai.openai.generated import types as openai_generated_types
 from pyfect.ai.openai_compat import client as compat_client
 from pyfect.ai.openai_compat import embedding_model as compat_em
 from pyfect.ai.openai_compat import language_model as compat_lm
@@ -101,6 +104,7 @@ from pyfect.http import middleware as http_middleware
 from pyfect.http import router as http_router
 from pyfect.http import server as http_server
 from pyfect.http import server_response as http_server_response
+from pyfect.http.body import File as HttpFile
 from pyfect.http.client import HttpClient
 from pyfect.http.error import HttpClientError
 from pyfect.http.platform import HttpPlatform
@@ -7372,6 +7376,58 @@ def check_ai_decision_model(
         typesafe_client.layer_config(),
         fx.Layer[typesafe_client.TypeSafeClient, fx.config.ConfigError, HttpClient],
     )
+
+
+type _OpenAiGeneratedErrors = HttpClientError | S.SchemaError | openai_generated.OpenAiClientError
+
+
+def check_ai_openai_client_generated(service: openai_generated.OpenAiClient) -> None:
+    key = fx.redacted.make("k")
+    assert_type(
+        openai_client_generated.layer(api_key=key),
+        fx.Layer[openai_client_generated.OpenAiClientGenerated, Never, HttpClient],
+    )
+    assert_type(
+        openai_client_generated.layer_config(),
+        fx.Layer[openai_client_generated.OpenAiClientGenerated, fx.config.ConfigError, HttpClient],
+    )
+    # A JSON operation: path arguments first, the response on request.
+    assert_type(
+        service.get_assistant("a"),
+        fx.Effect[openai_generated_types.GetAssistant200, _OpenAiGeneratedErrors],
+    )
+    assert_type(
+        service.get_assistant("a", include_response=True),
+        fx.Effect[
+            tuple[openai_generated_types.GetAssistant200, HttpResponse], _OpenAiGeneratedErrors
+        ],
+    )
+    # Exact-status successes are a union; a binary body is bytes; a stream is a stream.
+    assert_type(
+        service.invite_user(payload={"email": "a@b.c", "role": "reader"}),
+        fx.Effect[
+            openai_generated_types.InviteUser200 | openai_generated_types.InviteUser201,
+            _OpenAiGeneratedErrors,
+        ],
+    )
+    assert_type(
+        service.create_speech(payload={"model": "tts-1", "input": "Hi", "voice": "alloy"}),
+        fx.Effect[bytes, _OpenAiGeneratedErrors],
+    )
+    assert_type(service.download_file_stream("f"), fx.Stream[bytes, HttpClientError])
+    assert_type(
+        service.create_response_sse(payload={"model": "m", "input": "x"}),
+        fx.Stream[
+            sse.DataEvent[openai_generated_types.CreateResponse200Sse],
+            HttpClientError | S.SchemaError | sse.Retry | sse.SseError,
+        ],
+    )
+    # A multipart file is a form's file part, not raw bytes.
+    assert_type(
+        service.create_file(payload={"file": HttpFile(b"x"), "purpose": "batch"}),
+        fx.Effect[openai_generated_types.CreateFile200, _OpenAiGeneratedErrors],
+    )
+    service.create_file(payload={"file": b"x", "purpose": "batch"})  # pyright: ignore[reportArgumentType]
 
 
 def check_ai_openrouter(service: openrouter_client.Service) -> None:

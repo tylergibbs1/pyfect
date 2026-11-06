@@ -9,6 +9,7 @@ import collections.abc as _abc
 import typing as _t
 
 from pyfect import schema as _S
+from pyfect.http.body import File as _File
 AABenchmarkEntry = _t.TypedDict("AABenchmarkEntry", {"agentic_index": "float | None", "coding_index": "float | None", "intelligence_index": "float | None"})
 ActivityItem = _t.TypedDict("ActivityItem", {"byok_usage_inference": "float", "completion_tokens": "float", "date": "str", "endpoint_id": "str", "model": "str", "model_permaslug": "str", "prompt_tokens": "float", "provider_name": "str", "reasoning_tokens": "float", "requests": "float", "usage": "float"})
 type AdvisorNestedTool__parameters = _abc.Mapping[str, _t.Any]

@@ -253,12 +253,18 @@ type FormDataCoercible = str | int | float | bool | File | None
 type FormDataInput = Mapping[str, FormDataCoercible | Sequence[FormDataCoercible]]
 
 
-def _form_value(value: str | int | float | bool | File) -> FormDataValue:
-    if isinstance(value, str | File):
-        return value
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return js_number(value)
+def _form_value(value: object) -> FormDataValue:
+    """``FormData.append``: a generated multipart type's object field is
+    stringified as JavaScript does."""
+    match value:
+        case str() | File():
+            return value
+        case bool():
+            return "true" if value else "false"
+        case int() | float():
+            return js_number(value)
+        case _:
+            return "[object Object]"
 
 
 def form_data_record(entries: FormDataInput) -> FormData:

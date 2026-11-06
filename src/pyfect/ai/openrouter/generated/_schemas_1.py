@@ -8,6 +8,7 @@ import typing as _t
 
 from pyfect import schema as _S
 from pyfect.ai import _generated_support as _b
+from pyfect.http.body import File as _File
 from pyfect.ai.openrouter.generated import types as _T
 from pyfect.schema._struct import StructSchema as _StructSchema
 

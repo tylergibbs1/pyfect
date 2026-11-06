@@ -38,6 +38,7 @@ from pyfect.ai import toolkit as K
 from pyfect.ai.anthropic import client as anthropic_client
 from pyfect.ai.anthropic import language_model as anthropic_lm
 from pyfect.ai.openai import client as responses_client
+from pyfect.ai.openai import client_generated as responses_generated
 from pyfect.ai.openai import embedding_model as responses_em
 from pyfect.ai.openai import language_model as responses_lm
 from pyfect.ai.openai_compat import client as openai_client
@@ -195,7 +196,23 @@ def _responses_client() -> AnyLayer:
     )
 
 
+def _generated_embedding() -> AnyEffect:
+    return responses_generated.OpenAiClientGenerated().flat_map(
+        lambda client: client.create_embedding(payload={"model": "embed-test", "input": "Hello"})
+    )
+
+
 _PROVIDER_CASES: dict[str, Case] = {
+    "pyfect.ai.openai.client_generated.layer": Case(
+        layer=lambda: responses_generated.layer(api_key=redact("sk-test")),
+        needs=_responses_http,
+        use=_generated_embedding,
+    ),
+    "pyfect.ai.openai.client_generated.layer_config": Case(
+        layer=lambda: responses_generated.layer_config(api_key=config.redacted("OPENAI_API_KEY")),
+        needs=lambda: L.merge(_responses_http(), _api_keys()),
+        use=_generated_embedding,
+    ),
     "pyfect.ai.openai.client.layer": Case(
         layer=lambda: responses_client.layer(api_key=redact("sk-test")),
         needs=_responses_http,

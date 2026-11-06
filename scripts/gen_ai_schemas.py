@@ -47,14 +47,14 @@ ROOT = Path(__file__).resolve().parent.parent
 @dataclass(frozen=True)
 class Target:
     """A provider package to generate: its ``name`` (the directory under
-    ``packages/ai`` and under ``pyfect.ai``), the API's ``title`` and
-    whether Effect's module has a generated ``client``."""
+    ``packages/ai`` and under ``pyfect.ai``), the API's ``title`` and its
+    name in Effect's generated client, if there is one to generate."""
 
     name: str
     title: str
     example: str
     """A schema the package docstring decodes."""
-    client: bool = False
+    client_title: str | None = None
 
     @property
     def package(self) -> str:
@@ -69,8 +69,8 @@ class Target:
         return ref / "packages" / "ai" / self.name / "src" / "Generated.ts"
 
 
-OPENAI = Target("openai", "OpenAI", "FunctionToolCall")
-OPENROUTER = Target("openrouter", "OpenRouter", "ChatResult", client=True)
+OPENAI = Target("openai", "OpenAI", "FunctionToolCall", "OpenAi")
+OPENROUTER = Target("openrouter", "OpenRouter", "ChatResult", "OpenRouter")
 TARGETS = {target.name: target for target in (OPENAI, OPENROUTER)}
 
 
@@ -390,7 +390,7 @@ _CHECKS = {
     "isMultipleOf": "is_multiple_of",
 }
 
-_GLOBALS = {"Blob": ("bytes", "bytes")}
+_GLOBALS = {"Blob": ("_File", "_File")}
 
 
 def snake(name: str) -> str:
@@ -707,6 +707,7 @@ import typing as _t
 
 from pyfect import schema as _S
 from pyfect.ai import _generated_support as _b
+from pyfect.http.body import File as _File
 from {target.package} import types as _T
 from pyfect.schema._struct import StructSchema as _StructSchema
 '''
@@ -740,6 +741,7 @@ import collections.abc as _abc
 import typing as _t
 
 from pyfect import schema as _S
+from pyfect.http.body import File as _File
 '''
 
 
@@ -766,7 +768,7 @@ def _all(names: list[str]) -> str:
     return "\n__all__ = [\n" + "".join(f'    "{name}",\n' for name in sorted(names)) + "]\n"
 
 
-def generate(source: str, target: Target = OPENAI) -> dict[str, str]:
+def generate(source: str, target: Target) -> dict[str, str]:
     """The generated package's modules (file name to text) for a
     Generated.ts source."""
     package = target.package
@@ -805,10 +807,12 @@ def generate(source: str, target: Target = OPENAI) -> dict[str, str]:
         + "\n"
         + _all([item.name for item in plain])
     )
-    if target.client:
+    if target.client_title is not None:
         try:
             files["client.py"] = gen_ai_client.generate_client(
-                source, gen_ai_client.ClientTarget(target.title, package), set(type_names)
+                source,
+                gen_ai_client.ClientTarget(target.title, package, target.client_title),
+                set(type_names),
             )
         except gen_ai_client.ClientShapeError as error:
             raise GenerateError(str(error)) from error

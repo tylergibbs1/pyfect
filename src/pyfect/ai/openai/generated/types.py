@@ -9,6 +9,7 @@ import collections.abc as _abc
 import typing as _t
 
 from pyfect import schema as _S
+from pyfect.http.body import File as _File
 AssistantToolsCode = _t.TypedDict("AssistantToolsCode", {"type": "_t.Literal[\"code_interpreter\"]"})
 type FileSearchRanker = _t.Literal["auto", "default_2024_08_21"]
 type FunctionParameters = _abc.Mapping[str, _S.JsonValue]
@@ -25,7 +26,7 @@ type VoiceIdsShared = str | _t.Literal["alloy", "ash", "ballad", "coral", "echo"
 SpeechAudioDeltaEvent = _t.TypedDict("SpeechAudioDeltaEvent", {"type": "_t.Literal[\"speech.audio.delta\"]", "audio": "str"})
 SpeechAudioDoneEvent__usage = _t.TypedDict("SpeechAudioDoneEvent__usage", {"input_tokens": "float", "output_tokens": "float", "total_tokens": "float"})
 SpeechAudioDoneEvent = _t.TypedDict("SpeechAudioDoneEvent", {"type": "_t.Literal[\"speech.audio.done\"]", "usage": "SpeechAudioDoneEvent__usage"})
-type __ClientMultipartFile = bytes
+type __ClientMultipartFile = _File
 type AudioResponseFormat = _t.Literal["json", "text", "srt", "verbose_json", "vtt", "diarized_json"]
 type TranscriptionInclude = _t.Literal["logprobs"]
 VadConfig = _t.TypedDict("VadConfig", {"type": "_t.Literal[\"server_vad\"]", "prefix_padding_ms": "_t.NotRequired[float]", "silence_duration_ms": "_t.NotRequired[float]", "threshold": "_t.NotRequired[float]"})
