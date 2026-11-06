@@ -50,6 +50,13 @@ WebSocket connection instead of a request each.
 
 </CodeOutput>
 
+For the rest of OpenAI's API, `pyfect.ai.openai.client_generated.OpenAiClientGenerated` is a
+service with one method per operation (379 of them, such as `list_assistants` or
+`download_file_stream`), generated from Effect's client. It takes the same key, URL and
+`OpenAiConfig` transforms as the language model's client, and an operation fails with the
+`HttpClientError`, the `SchemaError` or the `OpenAiClientError` of a documented status rather
+than `AiError`.
+
 ### OpenRouter
 
 `pyfect.ai.openrouter.language_model.model(name, config)` reaches any model OpenRouter

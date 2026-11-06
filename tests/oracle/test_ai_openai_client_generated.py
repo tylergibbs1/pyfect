@@ -18,11 +18,13 @@ import pyfect as fx
 from pyfect import config, config_provider, testing
 from pyfect import layer as L
 from pyfect import schema as S
+from pyfect import stream as fx_stream
 from pyfect.ai import _generated_client as _c
 from pyfect.ai.openai import client_generated, generated
 from pyfect.ai.openai import config as openai_config
 from pyfect.ai.openai.generated import client as generated_client
 from pyfect.ai.openai.generated import types as GT
+from pyfect.deferred import Deferred
 from pyfect.exit import Failure
 from pyfect.http import client as http_client
 from pyfect.http import error as http_error
@@ -251,6 +253,37 @@ def test_sse_operation_decodes_events():
         api_key=_KEY,
     )
     assert events[0]["data"]["type"] == "response.created"
+
+
+@testing.effect
+def test_interrupting_a_sse_operation_closes_the_response_body():
+    """Python-only: the operation's stream owns the body, on any way out."""
+    started = Deferred[None]()
+    closed = Deferred[None]()
+    chunk = {"type": "response.created", "response": response_body(), "sequence_number": 0}
+
+    def respond(request: HttpClientRequest) -> Any:
+        body = (
+            fx_stream.make(sse_body([chunk]).encode())
+            .concat(fx_stream.from_effect_drain(started.succeed(None)))
+            .concat(fx_stream.never)
+            .ensuring(closed.succeed(None))
+        )
+        return fx.succeed(
+            http_response.make(request, body, headers={"content-type": "text/event-stream"})
+        )
+
+    def reading(client: generated_client.OpenAiClient) -> fx.Effect[None, Any, Any]:
+        @fx.gen
+        def run():
+            fiber = yield from client.create_response_sse(payload=_PAYLOAD).run_drain().fork()
+            yield from started.wait()
+            yield from fiber.interrupt()
+
+        return run
+
+    yield from _run(reading, MockHttp(respond), api_key=_KEY)
+    yield from closed.wait().timeout(1)
 
 
 @testing.effect

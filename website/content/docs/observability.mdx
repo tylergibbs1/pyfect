@@ -43,7 +43,8 @@ Metrics are descriptions: `counter`, `gauge`, `histogram`, `summary`, `frequency
 <include meta='title="metrics.py"'>../../snippets/observability/metrics.py</include>
 
 `metric.prometheus_format()` writes the registry in the Prometheus text format for any HTTP
-framework to serve.
+framework to serve. `pyfect.http.prometheus.layer_http()` is that route on `pyfect.http`'s router, at
+`/metrics` unless you pass `path=`.
 
 A `timer` records **milliseconds**, as Effect's does, and the Prometheus text leaves out its
 `time_unit` attribute, so the name is the only place the unit can show: name a timer

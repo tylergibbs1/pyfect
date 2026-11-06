@@ -248,6 +248,72 @@ def test_a_malformed_input_request_is_an_internal_error(request_: Json):
     assert message["error"] == {"code": -32603, "message": "MCP feature handler failed"}
 
 
+@pytest.mark.parametrize(
+    "request_",
+    [
+        pytest.param({"method": "nope"}, id="an unknown method"),
+        pytest.param({"params": {}}, id="no method"),
+        pytest.param({"method": SAMPLE}, id="sampling without params"),
+        pytest.param({"method": ELICIT}, id="elicitation without params"),
+        pytest.param({"method": SAMPLE, "params": None}, id="sampling with null params"),
+        pytest.param({"method": ELICIT, "params": None}, id="elicitation with null params"),
+        pytest.param(5, id="a number"),
+        pytest.param(None, id="null"),
+        pytest.param("text", id="a string"),
+        pytest.param([], id="a list"),
+    ],
+)
+@testing.effect
+def test_a_request_the_capability_check_cannot_read_is_a_defect(request_: Json):
+    """The check runs before the result schema and throws on these (Match's
+    exhaustive case, reading ``params`` of nothing), under any capabilities."""
+    test = yield from _server()
+    params = {"name": "Ask", "arguments": {"requests": {"a": request_}}}
+    message = yield from _send(test, "tools/call", params)
+    assert message["error"] == {"code": -32603, "message": "Internal error"}
+
+
+@pytest.mark.parametrize(
+    ("request_", "required"),
+    [
+        pytest.param({"method": ROOTS, "params": "x"}, {"roots": {}}, id="roots, odd params"),
+        pytest.param({"method": ROOTS, "params": None}, {"roots": {}}, id="roots, null params"),
+        pytest.param({"method": ROOTS}, {"roots": {}}, id="roots, no params"),
+        pytest.param(
+            {"method": SAMPLE, "params": {"maxTokens": 5}},
+            {"sampling": {}},
+            id="sampling without messages",
+        ),
+        pytest.param({"method": SAMPLE, "params": "x"}, {"sampling": {}}, id="sampling, a string"),
+        pytest.param(
+            {"method": ELICIT, "params": {"mode": "url", "message": "m"}},
+            {"elicitation": {"url": {}}},
+            id="a url without url",
+        ),
+        pytest.param(
+            {"method": ELICIT, "params": "x"}, {"elicitation": {"form": {}}}, id="form, a string"
+        ),
+        pytest.param(
+            _sample(tools=[{"name": "w"}]), {"sampling": {"tools": {}}}, id="a tool, malformed"
+        ),
+    ],
+)
+@testing.effect
+def test_missing_capabilities_answer_before_a_malformed_request_is_refused(
+    request_: Json, required: Json
+):
+    """Effect checks capabilities on the handler's raw requests, then decodes."""
+    test = yield from _server()
+    session = yield from test.initialize()
+    params = {"name": "Ask", "arguments": {"requests": {"a": request_}}}
+    body = {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
+    response = yield from test.send(session, body, client_capabilities={})
+    message = yield from read_message(response)
+    assert response.status == 400
+    assert message["error"]["code"] == -32021
+    assert message["error"]["data"] == {"requiredCapabilities": required}
+
+
 ACCEPTED_RESPONSES = [
     pytest.param(
         {"action": "accept", "content": {"a": 1.5, "b": True, "c": ["x"], "d": "s"}},

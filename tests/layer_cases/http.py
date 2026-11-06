@@ -41,6 +41,7 @@ from pyfect.http import (
     httpx_client,
     live_server,
     platform,
+    prometheus,
     router,
     server,
     server_response,
@@ -128,6 +129,18 @@ def _serving(path: str = "/", expected: str = "ok") -> Any:
     return run
 
 
+def _serving_any_text(path: str) -> Any:
+    """``_serving`` for a body that depends on what else the process did."""
+
+    def run(value: AnyLayer) -> AnyEffect:
+        def ok(answer: tuple[int, str]) -> None:
+            assert answer[0] == 200, answer
+
+        return _fetch(path).map(ok).pipe(fx.provide(_serve(value)))
+
+    return run
+
+
 def _ok_app() -> AnyEffect:
     return fx.succeed(server_response.text("ok"))
 
@@ -148,6 +161,9 @@ def _router_service() -> AnyEffect:
 
 _HTTP: dict[str, Case] = {
     "pyfect.http.router.add": Case(layer=_routes, run=_serving()),
+    "pyfect.http.prometheus.layer_http": Case(
+        layer=prometheus.layer_http, run=_serving_any_text("/metrics")
+    ),
     "pyfect.http.router.layer_in_memory_client": Case(
         layer=lambda: router.layer_in_memory_client(_routes()),
         use=lambda: _get("http://localhost/", "ok"),

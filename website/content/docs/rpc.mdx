@@ -28,6 +28,10 @@ with 403; `layer.succeed(AllowedOrigins, origin.allow("https://app.example"))` (
 `layer_nd_json_rpc()`. `router.serve` passes the layer's needs through, so the handlers
 (`HandlersFor[Group]`) and the serialization can be provided to the served layer.
 
+`rpc_server.layer_protocol_stdio` serves a group over standard input and output, for a
+program another one starts: `rpc_server.layer(Group)` over it, launched, ends once input has
+ended and the last response is written.
+
 `rpc_client.make(Group)` is the client, over the `ClientProtocol` in the context:
 `layer_protocol_http(url)` sends calls as POSTs, and `layer_protocol_socket()` over the
 `Socket` in the context. A call fails with the procedure's error or an `RpcClientError`;

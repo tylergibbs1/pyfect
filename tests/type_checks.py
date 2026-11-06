@@ -101,6 +101,7 @@ from pyfect.fiber_set import FiberSetRuntime
 from pyfect.hash_map import HashMap
 from pyfect.hash_set import HashSet
 from pyfect.http import middleware as http_middleware
+from pyfect.http import prometheus as http_prometheus
 from pyfect.http import router as http_router
 from pyfect.http import server as http_server
 from pyfect.http import server_response as http_server_response
@@ -5693,6 +5694,14 @@ assert_type(
     fx.Layer[Never, Never, HttpRouter | Requires[RouteDb] | Raises[RouteNotAllowed]],
 )
 
+
+assert_type(
+    rpc_server.layer_protocol_stdio,
+    layer.Layer[rpc_server.ServerProtocol, Never, fx.Stdio | RpcSerialization],
+)
+assert_type(
+    http_prometheus.layer_http(prefix="app"), layer.Layer[Never, Never, http_router.HttpRouter]
+)
 
 # In memory, a route's requirements are the client's; its errors are defects.
 assert_type(

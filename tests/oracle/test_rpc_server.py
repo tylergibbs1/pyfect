@@ -10,17 +10,7 @@ Omitted:
   request of an in-process handler is covered by the web handler tests.
 - "decodes payloads with the ParseOptions annotation": pyfect has no
   request resolvers inside schema transformations.
-- the stdio cases ("should drain the response when stdin ends ...", "should
-  shut down when stdin ends ...", "should wait for a blocked STDIO write
-  ...", "should accept cancellation ...", "should backpressure STDIO sends
-  ..."): pyfect has no stdio protocol.
 - the SchemaBinary cases: pyfect has no SchemaBinary serialization.
-- the framed HTTP response buffer cases ("applies backpressure to framed
-  HTTP responses by default", "uses the configured framed HTTP response
-  buffer size", "allows unbounded framed HTTP response buffering", "keeps
-  non-framed HTTP responses unbounded") and "should continue sending to
-  other clients when a backpressured HTTP client disconnects": they rely
-  on reading a Web response's body lazily from a JS ``ReadableStream``.
 - "closes a socket when the serialization buffer limit is exceeded":
   covered by test_rpc_serialization.py's max buffer size cases.
 """

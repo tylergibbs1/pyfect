@@ -26,6 +26,7 @@ Server:
   (same-origin by default)
 - ``platform``, ``static_server``, ``multipart``, ``etag``, ``mime``,
   ``template``, ``status``
+- ``prometheus``: the metrics registry as a scrape endpoint
 
 ::
 
@@ -58,6 +59,7 @@ from pyfect.http import (
     multipart,
     origin,
     platform,
+    prometheus,
     request,
     response,
     router,
@@ -103,6 +105,7 @@ __all__ = [
     "multipart",
     "origin",
     "platform",
+    "prometheus",
     "request",
     "response",
     "router",

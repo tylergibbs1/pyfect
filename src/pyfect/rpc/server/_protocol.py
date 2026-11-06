@@ -86,12 +86,12 @@ def with_run[EX, RX](
             def run(f: WriteRequest) -> Effect[Never]:
                 @gen
                 def running():
-                    pending = list(buffer)
-                    buffer.clear()
-                    for client_id, message, services in pending:
+                    # What these requests' startup writes joins the buffer, and is run too.
+                    for client_id, message, services in buffer:
                         yield from suspend(lambda c=client_id, m=message: f(c, m)).pipe(
                             provide_context(services)
                         )
+                    buffer.clear()
                     current.append(f)
                     return (yield from never.on_exit(lambda _: succeed(current.remove(f))))
 

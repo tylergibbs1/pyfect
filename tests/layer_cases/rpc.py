@@ -13,6 +13,7 @@ import pyfect as fx
 from layer_cases._case import AnyEffect, AnyLayer, Case
 from pyfect import layer as L
 from pyfect import schema as S
+from pyfect import sink, stdio, stream
 from pyfect.context import Tag
 from pyfect.http import router, uvicorn_server
 from pyfect.http.server import HttpServer
@@ -189,6 +190,33 @@ def _thread_workers(runner: AnyLayer | None = None, platform: AnyLayer | None = 
     return lambda _id: ThreadWorker(lambda: _worker_main(chosen_runner, chosen_platform))
 
 
+def _over_stdio(protocol: AnyLayer) -> AnyEffect:
+    """One ``Ping`` on stdin; the server ends once its ``Pong`` is written."""
+    lines: list[bytes] = []
+
+    def stdout(*, end_on_done: bool = False) -> Any:
+        def write(data: str | bytes) -> AnyEffect:
+            return fx.sync(lambda: lines.append(data if isinstance(data, bytes) else data.encode()))
+
+        return sink.for_each(write)
+
+    server = (
+        rpc_server.layer(Echo)
+        .pipe(L.provide(_handlers()))
+        .pipe(L.provide(protocol))
+        .pipe(L.provide(rs.layer_ndjson))
+        .pipe(L.provide(stdio.layer_test(stdin=stream.make(b'{"_tag":"Ping"}\n'), stdout=stdout)))
+    )
+
+    @fx.fn
+    def body():
+        fiber = yield from server.launch().fork()
+        yield from fiber.await_exit()
+        assert lines == [b'{"_tag":"Pong"}\n']
+
+    return body()
+
+
 def _over_worker(
     *,
     client: AnyLayer | None = None,
@@ -274,6 +302,10 @@ CASES: dict[str, Case] = {
     "pyfect.rpc.server.layer_protocol_socket_server": Case(
         layer=lambda: rpc_server.layer_protocol_socket_server,
         run=lambda value: _over_tcp(server_protocol=value),
+    ),
+    "pyfect.rpc.server.layer_protocol_stdio": Case(
+        layer=lambda: rpc_server.layer_protocol_stdio,
+        run=_over_stdio,
     ),
     "pyfect.rpc.server.layer_protocol_worker_runner": Case(
         layer=lambda: rpc_server.layer_protocol_worker_runner,

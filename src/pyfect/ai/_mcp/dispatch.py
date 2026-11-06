@@ -981,11 +981,6 @@ def _input_required(
     def run():
         wire = _InputRequired()
         requests = outcome.input_requests
-        if requests is not None:
-            requests = yield from _decode_input_requests(requests).map_error(
-                lambda _: InternalError(_FEATURE_HANDLER_FAILED)
-            )
-            wire["inputRequests"] = requests
         required = reverse_policy.required_input_capabilities(requests, capabilities)
         if required:
             return (
@@ -997,6 +992,10 @@ def _input_required(
                         error_code=MISSING_REQUIRED_CLIENT_CAPABILITY_ERROR_CODE,
                     ),
                 )
+            )
+        if requests is not None:
+            wire["inputRequests"] = yield from _decode_input_requests(requests).map_error(
+                lambda _: InternalError(_FEATURE_HANDLER_FAILED)
             )
         if outcome.request_state is not None:
             wire["requestState"] = outcome.request_state

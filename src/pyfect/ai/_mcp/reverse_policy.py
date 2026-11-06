@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import cast
+from typing import assert_never, cast
 
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter
 from pyfect.ai.mcp_schema import (
@@ -28,12 +28,27 @@ def _has_tool_content(content: object) -> bool:
     )
 
 
-def _uses_tools(params: CreateMessageParams) -> bool:
-    return (
-        "tools" in params
-        or "toolChoice" in params
-        or any(_has_tool_content(m["content"]) for m in params["messages"])
+def _uses_tools(params: Mapping[str, object]) -> bool:
+    """Assumes no shape, as the input-request check runs before any decoding."""
+    if "tools" in params or "toolChoice" in params:
+        return True
+    messages = params.get("messages")
+    if not isinstance(messages, list):
+        return False
+    return any(
+        isinstance(message, Mapping)
+        and _has_tool_content(cast("Mapping[str, object]", message).get("content"))
+        for message in cast("list[object]", messages)
     )
+
+
+def _input_fields(request: Mapping[str, object]) -> Mapping[str, object]:
+    """``request.params`` as JavaScript reads a field of it: nothing or null
+    raises, anything else that is not an object has no fields."""
+    params = request["params"]
+    if params is None:
+        raise TypeError("input request params are null")
+    return cast("Mapping[str, object]", params) if isinstance(params, Mapping) else {}
 
 
 def sampling_refusal(
@@ -103,14 +118,17 @@ def required_input_capabilities(
     requests: Mapping[str, McpInputRequest] | None, capabilities: ClientCapabilities
 ) -> dict[str, JsonObject]:
     """The client capabilities ``requests`` need that the client did not
-    declare (Effect's ``requiredCapabilitiesForInputRequests``)."""
+    declare (Effect's ``requiredCapabilitiesForInputRequests``). As there, it
+    sees a handler's requests before they are decoded, and raises on one it
+    cannot read."""
     required: dict[str, JsonObject] = {}
     for request in (requests or {}).values():
-        if request["method"] == "roots/list":
+        method = request["method"]
+        if method == "roots/list":
             if capabilities.get("roots") is None:
                 required["roots"] = {}
-        elif request["method"] == "sampling/createMessage":
-            params = request["params"]
+        elif method == "sampling/createMessage":
+            params = _input_fields(request)
             advertised = capabilities.get("sampling")
             sampling = required.get("sampling", {})
             if _uses_tools(params) and (advertised or {}).get("tools") is None:
@@ -122,8 +140,8 @@ def required_input_capabilities(
                 sampling["context"] = {}
             if advertised is None or sampling:
                 required["sampling"] = sampling
-        else:
-            mode = "url" if request["params"].get("mode") == "url" else "form"
+        elif method == "elicitation/create":
+            mode = "url" if _input_fields(request).get("mode") == "url" else "form"
             elicitation = capabilities.get("elicitation")
             supported = elicitation is not None and (
                 elicitation.get("url") is not None
@@ -132,4 +150,6 @@ def required_input_capabilities(
             )
             if not supported:
                 required.setdefault("elicitation", {})[mode] = {}
+        else:
+            assert_never(method)
     return required

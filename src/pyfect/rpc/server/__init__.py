@@ -4,7 +4,8 @@
 in the context; ``layer_http(Group, path=...)`` serves it on an
 ``HttpRouter`` route, over WebSockets (the default) or HTTP POSTs;
 ``layer_protocol_socket_server`` over the connections of a
-``SocketServer``; ``layer_protocol_worker_runner`` inside a worker,
+``SocketServer``; ``layer_protocol_stdio`` over standard input and output;
+``layer_protocol_worker_runner`` inside a worker,
 serving its parent. The serialization (``RpcSerialization``) and the
 group's handlers come from the context.
 """
@@ -29,6 +30,7 @@ from pyfect.rpc.server._protocol import (
     with_run,
 )
 from pyfect.rpc.server._serialized import layer, make
+from pyfect.rpc.server._stdio import layer_protocol_stdio, make_protocol_stdio
 from pyfect.rpc.server._transports import (
     BufferSize,
     HttpEffect,
@@ -160,12 +162,14 @@ __all__ = [
     "layer_http",
     "layer_protocol_http",
     "layer_protocol_socket_server",
+    "layer_protocol_stdio",
     "layer_protocol_websocket",
     "layer_protocol_worker_runner",
     "make",
     "make_no_serialization",
     "make_protocol_http",
     "make_protocol_socket_server",
+    "make_protocol_stdio",
     "make_protocol_websocket",
     "make_protocol_with_http_effect",
     "make_protocol_with_http_effect_websocket",

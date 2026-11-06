@@ -3,8 +3,8 @@
 Each test's docstring is the Effect test title. ``PrometheusMetrics.format(
 { prefix, metricNameMapper })`` is ``metric.prometheus_format(prefix=...,
 metric_name_mapper=...)``. Each test runs with a fresh registry, so no
-test sees another's metrics. ``layerHttp`` is not ported (pyfect has no
-HTTP router; serve the text from any framework).
+test sees another's metrics. Effect has no title for ``layerHttp``
+(``http.prometheus.layer_http``); the last tests here pin it to its source.
 """
 
 import math
@@ -12,6 +12,7 @@ import re
 
 import pyfect as fx
 from pyfect import metric, testing
+from pyfect.http import prometheus, router
 
 
 def _format(
@@ -326,3 +327,28 @@ def test_a_timer_is_written_in_milliseconds_without_its_time_unit():
         "trawl_visit_seconds_sum 51771\n"
         "trawl_visit_seconds_count 2\n"
     )
+
+
+@testing.effect
+def test_layer_http_serves_the_registry_at_metrics():
+    yield from metric.counter("served", description="Served").update(2)
+    client = yield from router.in_memory_client(prometheus.layer_http())
+    response = yield from client.get("http://localhost/metrics")
+    assert response.status == 200
+    assert response.headers.get("content-type") == "text/plain; version=0.0.4; charset=utf-8"
+    text = yield from response.text
+    assert "# HELP served Served\n" in text
+    assert "served 2\n" in text
+
+
+@testing.effect
+def test_layer_http_takes_a_path_and_the_format_options():
+    yield from metric.gauge("depth").update(1)
+    routes = prometheus.layer_http(
+        path="/internal/metrics", prefix="app", metric_name_mapper=str.upper
+    )
+    client = yield from router.in_memory_client(routes)
+    moved = yield from client.get("http://localhost/metrics")
+    assert moved.status == 404
+    response = yield from client.get("http://localhost/internal/metrics")
+    assert "app_DEPTH 1\n" in (yield from response.text)

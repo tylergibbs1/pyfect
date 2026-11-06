@@ -1,6 +1,7 @@
 """The registry in the Prometheus text exposition format (Effect's
-``PrometheusMetrics.format``). Serve it from any HTTP framework with the
-content type ``text/plain; version=0.0.4; charset=utf-8``."""
+``PrometheusMetrics.format``). ``pyfect.http.prometheus.layer_http`` serves it;
+any other HTTP framework can with the content type
+``text/plain; version=0.0.4; charset=utf-8``."""
 
 from __future__ import annotations
 
