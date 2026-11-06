@@ -10,7 +10,6 @@ built on them; most programs never touch one directly::
 
 from __future__ import annotations
 
-import tomllib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -23,7 +22,7 @@ from pyfect._json_text import parse as parse_json
 from pyfect._json_text import stringify
 from pyfect.cli._environment import Environment
 from pyfect.effect import Effect, fail, gen, succeed
-from pyfect.encoding import ini, yaml
+from pyfect.encoding import ini, toml, yaml
 from pyfect.file_system import FileSystem
 from pyfect.path import Path
 from pyfect.redacted import Redacted
@@ -178,13 +177,16 @@ file_text: Primitive[str] = Primitive("FileText", _read_file_text)
 
 
 def _js_error_text(error: Exception) -> str:
-    return f"{type(error).__name__}: {error}"
+    """JavaScript's ``${error}``: what the parsers raise as ``ValueError``,
+    Effect's throw as ``SyntaxError``."""
+    name = "SyntaxError" if type(error) is ValueError else type(error).__name__
+    return f"{name}: {error}"
 
 
 _FILE_PARSERS: dict[str, Callable[[str], object]] = {
     "ini": ini.parse,
     "json": parse_json,
-    "toml": tomllib.loads,
+    "toml": toml.parse,
     "yml": yaml.parse,
     "yaml": yaml.parse,
 }

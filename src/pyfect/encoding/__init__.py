@@ -6,6 +6,7 @@
 - ``sse``: Server-Sent Events.
 - ``ini``: INI text to nested dicts (``parse``).
 - ``yaml``: one YAML document to Python values (``parse``).
+- ``toml``: TOML text to nested dicts (``parse``).
 - ``base64``, ``base64_url``, ``hex``: binary-to-text codecs whose ``decode``
   returns a ``Result`` with an ``EncodingError`` (``encoding_error``).
 
@@ -27,6 +28,7 @@ from pyfect.encoding import (
     json_array,
     ndjson,
     sse,
+    toml,
     yaml,
 )
 from pyfect.encoding.encoding_error import EncodingError
@@ -42,5 +44,6 @@ __all__ = [
     "json_array",
     "ndjson",
     "sse",
+    "toml",
     "yaml",
 ]

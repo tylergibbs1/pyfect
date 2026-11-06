@@ -110,6 +110,7 @@ class _FakeStatement:
 
 class _FakeConnection:
     connected = True
+    server_status = 0
 
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
@@ -523,3 +524,24 @@ def test_dicts_and_lists_bind_as_json(mysql_server: MysqlServer, disable: bool):
         assert rows == [{"d": {"a": [1, "x"]}, "l": [1, None]}]
 
     yield from _with_client(mysql_server, body, disable_prepared_statements=disable)
+
+
+@testing.effect
+def test_no_backslash_escapes_binds_text_as_the_server_reads_it(mysql_server: MysqlServer):
+    """(pyfect) under ``NO_BACKSLASH_ESCAPES`` a text statement's literals and
+    placeholders follow the mode: a backslash is plain text, also in the
+    parameters, whichever session mode was set last"""
+
+    def body():
+        sql = yield from SqlClient()
+        yield from sql("SET SESSION sql_mode = 'NO_BACKSLASH_ESCAPES'").unprepared
+        rows = yield from sql(
+            "SELECT 'a\\' AS plain, {} AS bound, {} AS quote", "b\\", "' OR 1=1 -- "
+        )
+        yield from sql("SET SESSION sql_mode = ''").unprepared
+        return rows
+
+    rows = yield from _with_client(
+        mysql_server, body, disable_prepared_statements=True, max_connections=1
+    )
+    assert rows == [{"plain": "a\\", "bound": "b\\", "quote": "' OR 1=1 -- "}]

@@ -9195,3 +9195,9 @@ def check_builders_honour_a_subscript(
         ),
         fx.RequestResolver[GetUser],
     )
+
+
+def encoding_toml_types() -> None:
+    from pyfect.encoding import toml
+
+    assert_type(toml.parse("a = 1"), dict[str, Any])

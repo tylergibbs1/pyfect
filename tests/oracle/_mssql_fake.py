@@ -8,6 +8,8 @@ record their queries and answer ``[{"value": 42}]``.
   is waiting)
 - ``request_causes``: errors the next requests raise, in turn
 - ``connect_cause``: the error connecting raises
+- ``hold_connect``: an event connecting waits for (``connect_started`` tells
+  a test that it is waiting)
 - ``error_after_connect``: the next connection ends as it is made, before
   the client has it (tedious's error right after the connect callback)
 - ``respond``: answers every statement instead (its SQL and parameters)
@@ -135,12 +137,17 @@ class Fake:
         self.error_after_connect = False
         self.emission_error: BaseException | None = None
         self.connect_cause: BaseException | None = None
+        self.hold_connect: threading.Event | None = None
+        self.connect_started = threading.Event()
         self.request_causes: list[BaseException | None] = []
         self.options: list[ConnectOptions] = []
         self.respond: Callable[[str, Sequence[TypedValue]], Rows] | None = None
 
     def connect(self, options: ConnectOptions, on_end: Callable[[], None]) -> FakeConnection:
         self.options.append(options)
+        self.connect_started.set()
+        if self.hold_connect is not None:
+            self.hold_connect.wait(30)
         if self.connect_cause is not None:
             raise self.connect_cause
         connection = FakeConnection(self, on_end)

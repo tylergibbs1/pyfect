@@ -13,11 +13,15 @@ fiber is parked.
 
 import ast
 import asyncio
+import gc
+import os
+import select
 import signal
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Never
 
@@ -269,40 +273,71 @@ def test_ctrl_c_loses_no_fiber_queued_behind_the_one_it_hit():
     assert log == ["sibling ran", "main fin"]
 
 
+@contextmanager
+def _sigint_reaches_the_main_thread() -> Generator[int]:
+    """Yields a file descriptor that becomes readable when SIGINT arrives.
+
+    CPython can lose or defer a real signal in two ways that have nothing to
+    do with the run, and a loaded machine hits both:
+
+    - the handler runs inside whatever Python code the main thread is in. If
+      the garbage collector is running a ``__del__`` there, the
+      ``KeyboardInterrupt`` is "ignored in deallocator" and gone, so the run
+      finishes with nothing raised. Hence no collection during the test.
+    - a signal landing after the last check but before a blocking C call
+      starts does not interrupt that call: the handler waits for it to end.
+      Blocking on the wakeup descriptor (written by the C handler) closes it.
+    """
+    read_end, write_end = os.pipe()
+    os.set_blocking(write_end, False)
+    # A process started with `&` by a non-interactive shell ignores SIGINT, and
+    # Python then installs no handler: the signal would never reach the run.
+    handler = signal.signal(signal.SIGINT, signal.default_int_handler)
+    wakeup = signal.set_wakeup_fd(write_end, warn_on_full_buffer=False)
+    gc.collect()
+    gc.disable()
+    try:
+        yield read_end
+    finally:
+        gc.enable()
+        signal.set_wakeup_fd(wakeup)
+        signal.signal(signal.SIGINT, handler)
+        os.close(read_end)
+        os.close(write_end)
+
+
 @pytest.mark.skipif(
     threading.current_thread() is not threading.main_thread(), reason="signals go to main"
 )
 def test_a_real_sigint_during_blocking_user_code_runs_the_finalizers():
-    """The signal goes to the main thread once the user code has started:
-    a timer racing the run, or a SIGINT the OS hands to the sending thread
-    (which leaves the main thread's sleep running), made this flaky under
-    load."""
+    """The signal goes to the main thread once the user code has started: a
+    SIGINT the OS hands to the sending thread would leave the main thread
+    blocked."""
     log: list[str] = []
     blocking = threading.Event()
+    limit = 30.0
+    started = time.monotonic()
 
-    def block() -> None:
+    def block_on(signalled: int) -> None:
         blocking.set()
-        time.sleep(30)
+        while time.monotonic() - started < limit:
+            select.select([signalled], [], [], limit)
 
     def send() -> None:
-        if blocking.wait(30):
+        if blocking.wait(limit):
             signal.pthread_kill(threading.main_thread().ident or 0, signal.SIGINT)
 
-    prog = fx.sync(block).ensuring(fx.sync(lambda: log.append("fin")))
-    started = time.monotonic()
     sender = threading.Thread(target=send, daemon=True)
-    # A process started with `&` by a non-interactive shell ignores SIGINT, and
-    # Python then installs no handler: the signal would never reach the run.
-    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
-    sender.start()
-    try:
-        with pytest.raises(KeyboardInterrupt):
-            fx.run_sync(prog)
-    finally:
-        sender.join()
-        signal.signal(signal.SIGINT, previous)
+    with _sigint_reaches_the_main_thread() as signalled:
+        prog = fx.sync(lambda: block_on(signalled)).ensuring(fx.sync(lambda: log.append("fin")))
+        sender.start()
+        try:
+            with pytest.raises(KeyboardInterrupt):
+                fx.run_sync(prog)
+        finally:
+            sender.join()
     assert log == ["fin"]
-    assert time.monotonic() - started < 30
+    assert time.monotonic() - started < limit
 
 
 def test_ctrl_c_making_an_awaitable_is_not_a_defect():

@@ -229,6 +229,18 @@ def test_from_queue_writes_everything_waiting_as_one_chunk():
 
 
 @testing.effect
+def test_from_pubsub_reads_what_was_published_before_a_shutdown():
+    """Effect under Node gives ``[1, 2]``: the reader, woken by the publish,
+    takes both messages before the shutdown goes on."""
+    pubsub = yield from fx.PubSub[int].unbounded()
+    reader = yield from stream.from_pubsub(pubsub).run_collect().fork()
+    yield from fx.yield_now()
+    yield from pubsub.publish_all([1, 2])
+    yield from pubsub.shutdown()
+    assert (yield from reader.join()) == [1, 2]
+
+
+@testing.effect
 def test_from_pubsub_take_replays_chunks_then_the_failure():
     pubsub = yield from fx.PubSub[fx.Take[int, str]].unbounded(replay=3)
     yield from pubsub.publish((1, 2))

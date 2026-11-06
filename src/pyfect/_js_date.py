@@ -52,7 +52,8 @@ def parse_input(text: str) -> datetime | None:
 
 def parse(text: str) -> datetime | None:
     """``text`` as an aware ``datetime``, or ``None`` when JavaScript's
-    ``Date`` would be invalid (or the year is outside 1 to 9999)."""
+    ``Date`` would be invalid (or the instant, in UTC too, is outside years
+    1 to 9999, so every caller can convert it)."""
     match = _FORMAT.fullmatch(text)
     if match is None or match["year"] == "-000000":
         return None
@@ -79,6 +80,8 @@ def parse(text: str) -> datetime | None:
             micro,
             tzinfo=tz,
         ) + timedelta(days=day - 1 + end_of_day)
+        aware = parsed if parsed.tzinfo is not None else parsed.astimezone()
+        aware.astimezone(UTC)
     except (ValueError, OverflowError):
         return None
-    return parsed if parsed.tzinfo is not None else parsed.astimezone()
+    return aware

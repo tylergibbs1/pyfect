@@ -24,6 +24,7 @@ from pyfect.sql.mysql._bind import bind
 _STATEMENT_CACHE_SIZE = 256
 _STREAM_CHUNK = 128
 _KILL_TIMEOUT = 5.0
+_NO_BACKSLASH_ESCAPES = 0x200  # the protocol's SERVER_STATUS_NO_BACKSLASH_ESCAPES
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,8 +110,16 @@ class Session:
         names = [column[0] for column in description]
         return [[dict(zip(names, row, strict=True)) for row in rows]]
 
+    def _bound(self, sql: str, params: Sequence[object]) -> str:
+        # The server reports the session's mode with every result, and the
+        # connection's ``escape`` follows the same flag.
+        no_backslash_escapes = bool(self.raw.server_status & _NO_BACKSLASH_ESCAPES)
+        return bind(
+            sql, _parameters(params), self.raw.escape, no_backslash_escapes=no_backslash_escapes
+        )
+
     async def _query(self, sql: str, params: Sequence[object], as_tuples: bool) -> list[ResultSet]:
-        text = bind(sql, _parameters(params), self.raw.escape)
+        text = self._bound(sql, params)
         cursor = _asyncmy.text_cursor(self.raw, as_tuples=as_tuples)
         results: list[ResultSet] = []
         try:
@@ -152,7 +161,7 @@ class Session:
         await self._lock.acquire()
         try:
             cursor = _asyncmy.stream_cursor(self.raw)
-            await cursor.execute(bind(sql, _parameters(params), self.raw.escape))
+            await cursor.execute(self._bound(sql, params))
         except asyncio.CancelledError:
             self._cut_short()
             self._lock.release()

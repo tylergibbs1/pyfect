@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 from collections.abc import Mapping, Sequence
 from typing import Any, cast
 
@@ -164,6 +165,15 @@ class _Stream:
             self.closed = True
         return results
 
+    async def close(self) -> None:
+        """Give the server its stream back, if it kept one. The caller has a
+        better error to report, so a failure here is ignored."""
+        if self.closed:
+            return
+        with contextlib.suppress(LibsqlError, httpx.HTTPError):
+            await self._pipeline([{"type": "close"}])
+        self.closed = True
+
     async def execute(self, sql: str, args: Sequence[object], *, close: bool) -> ResultSet:
         stmt = {"sql": sql, "args": [_encode(v) for v in to_values(args)], "want_rows": True}
         requests: list[_Json] = [{"type": "execute", "stmt": stmt}]
@@ -202,7 +212,11 @@ class RemoteClient:
 
     async def transaction(self, mode: TransactionMode, /) -> RemoteTransaction:
         stream = _Stream(self)
-        await stream.execute(begin_statement(mode), (), close=False)
+        try:
+            await stream.execute(begin_statement(mode), (), close=False)
+        except LibsqlError:
+            await stream.close()
+            raise
         return RemoteTransaction(stream)
 
     async def close(self) -> None:

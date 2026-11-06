@@ -140,7 +140,7 @@ class _ValueSection(dict[str, Any]):
             if isinstance(self._value, str)
             else "number"
         )
-        raise ValueError(f"Cannot create property '{key}' on {kind} '{js_string(self._value)}'")
+        raise TypeError(f"Cannot create property '{key}' on {kind} '{js_string(self._value)}'")
 
 
 def _section(output: dict[str, Any], section: str) -> dict[str, Any]:

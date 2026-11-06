@@ -11,15 +11,27 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Sequence
 
+_OUTSIDE_STRINGS = r"""
+    | `(?:[^`]|``)*`?              # `name`
+    | /\*(?!M?!).*?(?:\*/|\Z)      # /* comment */, but /*! and /*M! hold statement text
+    | --(?=[\x00-\x20\x7f]|\Z)[^\n]* # -- then whitespace or a control character
+    | \#[^\n]*                     # comment
+    | \?                           # a placeholder
+"""
 _TOKEN = re.compile(
     r"""
-      '(?:[^'\\]|\\.|'')*'?      # 'string', with \ escapes and ''
-    | "(?:[^"\\]|\\.|"")*"?      # "string"
-    | `(?:[^`]|``)*`?            # `name`
-    | /\*.*?(?:\*/|\Z)           # /* comment */
-    | (?:--[ \t]|\#)[^\n]*       # -- comment and # comment
-    | \?                         # a placeholder
-    """,
+      '(?:[^'\\]|\\.|'')*'?        # 'string', with \ escapes and ''
+    | "(?:[^"\\]|\\.|"")*"?        # "string"
+    """
+    + _OUTSIDE_STRINGS,
+    re.VERBOSE | re.DOTALL,
+)
+_TOKEN_NO_BACKSLASH_ESCAPES = re.compile(
+    r"""
+      '(?:[^']|'')*'?              # 'string', where \ is plain text
+    | "(?:[^"]|"")*"?              # "string"
+    """
+    + _OUTSIDE_STRINGS,
     re.VERBOSE | re.DOTALL,
 )
 
@@ -28,10 +40,17 @@ class PlaceholderMismatch(Exception):
     """The statement has a different number of ``?`` than parameters."""
 
 
-def bind(sql: str, params: Sequence[object], escape: Callable[[object], str]) -> str:
+def bind(
+    sql: str,
+    params: Sequence[object],
+    escape: Callable[[object], str],
+    *,
+    no_backslash_escapes: bool,
+) -> str:
     """``sql`` with its placeholders replaced by ``escape`` of ``params``,
     in order; raises ``PlaceholderMismatch`` unless there is one parameter
-    per placeholder."""
+    per placeholder. ``no_backslash_escapes`` is the session's SQL mode of
+    that name, under which a backslash in a string is plain text."""
     index = 0
 
     def replace(found: re.Match[str]) -> str:
@@ -46,7 +65,7 @@ def bind(sql: str, params: Sequence[object], escape: Callable[[object], str]) ->
         index += 1
         return escape(params[index - 1])
 
-    bound = _TOKEN.sub(replace, sql)
+    bound = (_TOKEN_NO_BACKSLASH_ESCAPES if no_backslash_escapes else _TOKEN).sub(replace, sql)
     if index != len(params):
         raise PlaceholderMismatch(
             f"the statement has {index} placeholders for {len(params)} parameters"

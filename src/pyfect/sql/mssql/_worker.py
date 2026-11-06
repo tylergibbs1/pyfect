@@ -4,10 +4,12 @@ Each connection gets one worker thread: its calls run there in the order
 sent while the fiber that sent one waits without blocking others.
 Interrupting the fiber drops a call that has not started; one that has
 gets ``cancel`` (called while it runs, never after) and the fiber waits
-for it to end, so the connection is never used by two calls at once. When
-a call ends, its ``Cancellable`` forgets any cancel asked for it, under the
-same lock, so a cancel that came after its request ended never reaches the
-next call's. A call after ``shutdown`` fails with an ``SqlError`` saying so.
+for it to end, so the connection is never used by two calls at once. A
+call given ``release`` (one that opens something, with nothing else to
+protect yet) is left to finish on the thread instead. When a call ends,
+its ``Cancellable`` forgets any cancel asked for it, under the same lock,
+so a cancel that came after its request ended never reaches the next
+call's. A call after ``shutdown`` fails with an ``SqlError`` saying so.
 """
 # pyright: reportPrivateUsage=false
 
@@ -24,7 +26,7 @@ from pyfect.cause import die, fail, interrupt
 from pyfect.process._os import Latch
 from pyfect.sql.error import SqlError, UnknownError
 
-type _Phase = Literal["queued", "running", "dropped", "done"]
+type _Phase = Literal["queued", "running", "dropped", "abandoned", "done"]
 
 
 def _outcome[A](
@@ -64,6 +66,12 @@ class _Call[A]:
         self.phase: _Phase = "queued"
         self.settled: Latch[Effect[A, SqlError]] = Latch(waits_for="work")
 
+    def end(self) -> bool:
+        """The call ended; whether its fiber had stopped waiting for it."""
+        abandoned = self.phase == "abandoned"
+        self.phase = "done"
+        return abandoned
+
 
 class Worker:
     """One thread running a connection's calls in order."""
@@ -83,8 +91,8 @@ class Worker:
     ) -> Effect[A, SqlError]:
         """Run ``thunk`` on the thread; an exception it raises fails with
         ``catch`` of it. Interrupted while it runs, ``cancel`` runs and the
-        fiber waits for ``thunk`` to end; a value it made all the same goes
-        to ``release``."""
+        fiber waits for ``thunk`` to end. With ``release`` the fiber does not
+        wait: a value ``thunk`` makes all the same goes to ``release``."""
 
         def start() -> Effect[A, SqlError]:
             call: _Call[A] = _Call()
@@ -97,10 +105,16 @@ class Worker:
                     call.phase = "running"
                 outcome = _outcome(thunk, catch)
                 with call.lock:
-                    call.phase = "done"
+                    abandoned = call.end()
                     if cancel is not None:
                         cancel.forget_cancel()
                 call.settled.set(outcome)
+                if abandoned:
+                    made(outcome)
+
+            def made(outcome: Effect[A, SqlError]) -> None:
+                if release is not None and isinstance(outcome, _Succeed):
+                    release(outcome.value)
 
             def released(done: Future[None]) -> None:
                 error = done.exception()
@@ -115,12 +129,12 @@ class Worker:
                     if call.phase == "queued":
                         call.phase = "dropped"
                         return _Succeed(None)
-                    if call.phase == "running" and cancel is not None:
-                        cancel.cancel()
-
-                def made(outcome: Effect[A, SqlError]) -> None:
-                    if release is not None and isinstance(outcome, _Succeed):
-                        release(outcome.value)
+                    if call.phase == "running":
+                        if release is not None:
+                            call.phase = "abandoned"
+                            return _Succeed(None)
+                        if cancel is not None:
+                            cancel.cancel()
 
                 return call.settled.wait().map(made)
 

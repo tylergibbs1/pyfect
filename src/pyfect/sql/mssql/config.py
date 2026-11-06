@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
@@ -91,6 +92,16 @@ def seconds_or(value: Duration | None, default: Seconds) -> Seconds:
     return default if value is None else to_seconds(value)
 
 
+def driver_seconds_or(value: Duration | None, default: Seconds) -> Seconds:
+    """A timeout for the driver's connection, as Effect hands one to tedious
+    (``options.x ? toMillis(...) : undefined``): the falsy numbers 0 and NaN
+    are unset, while a ``timedelta(0)``, like Effect's ``Duration.zero``, is
+    no time at all."""
+    if value is None or value == 0 or (isinstance(value, float) and math.isnan(value)):
+        return default
+    return to_seconds(value)
+
+
 __all__ = [
     "DEFAULT_CANCEL_TIMEOUT",
     "DEFAULT_CHECK_TIMEOUT",
@@ -102,5 +113,6 @@ __all__ = [
     "DEFAULT_MIN_CONNECTIONS",
     "DEFAULT_PORT",
     "MssqlClientConfig",
+    "driver_seconds_or",
     "seconds_or",
 ]

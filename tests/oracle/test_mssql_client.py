@@ -13,6 +13,7 @@ interrupted" waits until the request reaches the driver, where Effect's
 is ported as the ``(pyfect)`` "param types".
 """
 
+import threading
 import time
 from collections.abc import Callable, Generator
 from typing import Any
@@ -26,6 +27,7 @@ from pyfect import testing
 from pyfect.reactivity import layer as reactivity_layer
 from pyfect.sql import SqlClient, mssql
 from pyfect.sql import statement as st
+from pyfect.sql.error import SqlError
 from pyfect.sql.mssql import TYPES, Parameter, ParameterOptions, procedure
 
 from . import _mssql_fake
@@ -664,3 +666,100 @@ def test_strings_outside_the_bmp_keep_every_character(mssql_server: MssqlServer)
         assert rows == [{"a": "😀", "b": "a😀b"}]
 
     yield from _on_server(mssql_server, body)
+
+
+# --- opening a connection ---------------------------------------------------------
+
+
+def _mocked_config(**fields: Any) -> mssql.MssqlClientConfig:
+    return mssql.MssqlClientConfig(
+        server="localhost", password=fx.redacted.make("pass"), trust_server=True, **fields
+    )
+
+
+def _build_client(**fields: Any) -> fx.Effect[Any, Any]:
+    return fx.scoped(mssql.make(_mocked_config(**fields))).pipe(fx.provide(reactivity_layer))
+
+
+def _wait_for(condition: Callable[[], bool]) -> None:
+    deadline = time.monotonic() + 5
+    while not condition():
+        assert time.monotonic() < deadline
+        time.sleep(0.005)
+
+
+@pytest.mark.parametrize(
+    ("field", "default"),
+    [("connect_timeout", 15.0), ("cancel_timeout", 5.0), ("connection_retry_interval", 0.5)],
+)
+def test_a_timeout_of_0_is_the_driver_s_default(
+    monkeypatch: pytest.MonkeyPatch, field: str, default: float
+):
+    """(pyfect) Effect passes these to tedious as ``options.x ? ... : undefined``,
+    so the number 0 leaves tedious's default"""
+    fake = _mssql_fake.install(monkeypatch)
+    fx.run_sync_exit(_build_client(**{field: 0}))
+    assert getattr(fake.options[0], field) == default
+
+
+def test_a_timeout_of_nan_is_the_driver_s_default(monkeypatch: pytest.MonkeyPatch):
+    """(pyfect) ``NaN`` is falsy in ``options.x ? ... : undefined``, so it is unset too"""
+    fake = _mssql_fake.install(monkeypatch)
+    fx.run_sync_exit(_build_client(cancel_timeout=float("nan")))
+    assert fake.options[0].cancel_timeout == 5.0
+
+
+def test_a_timeout_of_a_zero_duration_reaches_the_driver(monkeypatch: pytest.MonkeyPatch):
+    """(pyfect) a ``timedelta(0)`` is a value as ``Duration.zero`` is an object,
+    which tedious reads as no time at all"""
+    from datetime import timedelta
+
+    fake = _mssql_fake.install(monkeypatch)
+    fx.run_sync_exit(_build_client(cancel_timeout=timedelta(0)))
+    assert fake.options[0].cancel_timeout == 0
+
+
+def test_interrupting_a_connection_while_it_opens_returns_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """(pyfect) as Effect's ``callback`` around ``conn.connect``: nothing waits
+    for the driver, and a connection made all the same is closed"""
+    fake = _mssql_fake.install(monkeypatch)
+    fake.hold_connect = threading.Event()
+
+    @fx.gen
+    def body():
+        fiber = yield from _build_client(connect_timeout=30.0).fork()
+        while not fake.connect_started.is_set():
+            yield from fx.sleep(0.005)
+        yield from fiber.interrupt()
+        return (yield from fiber.await_exit())
+
+    started = time.monotonic()
+    try:
+        ex = fx.run_sync(body)
+        assert time.monotonic() - started < 5
+        assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
+    finally:
+        fake.hold_connect.set()
+    _wait_for(lambda: len(fake.connections) == 1 and fake.connections[0].closed)
+
+
+def test_a_connection_check_that_times_out_does_not_wait_for_the_open(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """(pyfect) ``make`` fails at ``connect_timeout`` with the driver still
+    connecting, as Effect's ``timeoutOrElse`` does"""
+    fake = _mssql_fake.install(monkeypatch)
+    fake.hold_connect = threading.Event()
+    started = time.monotonic()
+    try:
+        ex = fx.run_sync_exit(_build_client(connect_timeout=0.05))
+        assert time.monotonic() - started < 5
+    finally:
+        fake.hold_connect.set()
+    assert isinstance(ex, fx.Failure)
+    error = ex.cause.find_error()
+    assert isinstance(error, fx.Ok) and isinstance(error.value, SqlError)
+    assert error.value.reason.message == "MssqlClient: Connection timeout"
+    _wait_for(lambda: len(fake.connections) == 1 and fake.connections[0].closed)

@@ -73,6 +73,8 @@ class Options(TypedDict):
     """Every interface by default (IPv6 and IPv4 where the host has both)."""
     graceful_shutdown_timeout: NotRequired[Duration]
     """How long requests in flight may run once the server closes (20s)."""
+    disable_preemptive_shutdown: NotRequired[bool]
+    """Give requests in flight no time: closing interrupts them at once."""
     config: NotRequired[Mapping[str, Any]]
     """More ``uvicorn.Config`` arguments (``http``, ``ws``, ``ws_max_size``,
     ``proxy_headers``, ``timeout_keep_alive``, ``log_config``...); the app,
@@ -223,6 +225,8 @@ class _Server(uvicorn.Server):
 
 
 def _graceful(options: Options) -> Seconds:
+    if options.get("disable_preemptive_shutdown", False):
+        return to_seconds(0)
     return to_seconds(options.get("graceful_shutdown_timeout", 20))
 
 

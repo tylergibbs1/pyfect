@@ -53,6 +53,7 @@ from pyfect.sql.mssql.config import (
     DEFAULT_MIN_CONNECTIONS,
     DEFAULT_PORT,
     MssqlClientConfig,
+    driver_seconds_or,
     seconds_or,
 )
 from pyfect.sql.mssql.error import classify
@@ -179,9 +180,9 @@ def connect_options(config: MssqlClientConfig) -> ConnectOptions:
         password=None if config.password is None else redacted_value(config.password),
         encrypt=config.encrypt,
         trust_server=config.trust_server,
-        connect_timeout=seconds_or(config.connect_timeout, DEFAULT_CONNECT_TIMEOUT),
-        cancel_timeout=seconds_or(config.cancel_timeout, DEFAULT_CANCEL_TIMEOUT),
-        connection_retry_interval=seconds_or(
+        connect_timeout=driver_seconds_or(config.connect_timeout, DEFAULT_CONNECT_TIMEOUT),
+        cancel_timeout=driver_seconds_or(config.cancel_timeout, DEFAULT_CANCEL_TIMEOUT),
+        connection_retry_interval=driver_seconds_or(
             config.connection_retry_interval, DEFAULT_CONNECTION_RETRY_INTERVAL
         ),
         max_retries_on_transient_errors=DEFAULT_MAX_RETRIES_ON_TRANSIENT_ERRORS

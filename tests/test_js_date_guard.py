@@ -13,6 +13,10 @@ import ast
 from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
+
+from pyfect import _js_date as js_date
+
 SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
 
 # Reads back ISO text that pyfect itself wrote with ``datetime.isoformat``.
@@ -50,3 +54,10 @@ def test_named_zones_are_made_only_by_zone_named():
         f"{path}:{line}" for path, line in _calls("ZoneInfo") if path != "date_time/_zones.py"
     ]
     assert offenders == [], "use date_time.zone_named, which canonicalizes the name"
+
+
+@pytest.mark.parametrize("text", ["9999-12-31T23:00:00-02:00", "0001-01-01T00:00:00+01:00"])
+def test_an_instant_outside_datetime_s_range_in_utc_is_none(text: str):
+    """Valid in JavaScript, whose ``Date`` reaches further; here it would make
+    a caller's ``astimezone(UTC)`` raise ``OverflowError``."""
+    assert js_date.parse(text) is None

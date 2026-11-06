@@ -47,7 +47,7 @@ def test_a_section_over_an_array_keeps_the_array():
 
 def test_a_section_over_a_value_raises():
     """``a=1`` then ``[a]``: Effect throws ``Cannot create property 'b' on string '1'``."""
-    with pytest.raises(ValueError, match="Cannot create property 'b' on string '1'"):
+    with pytest.raises(TypeError, match="Cannot create property 'b' on string '1'"):
         ini.parse("a=1\n[a]\nb=2")
 
 

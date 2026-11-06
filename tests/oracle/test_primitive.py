@@ -348,6 +348,33 @@ def test_file_constructors_preserve_text_parsed_content_and_schema_decoding(env:
     yield from with_file_system(fx.gen(body), _ConfigFile())
 
 
+class _FileHolding(_ConfigFile):
+    def __init__(self, content: str) -> None:
+        self._content = content
+
+    def read_file_string(self, path: str, encoding: str = "utf-8"):
+        return fx.succeed(self._content)
+
+
+@testing.effect
+def test_a_file_that_does_not_parse_fails_with_the_js_error_text(env: Services[Any]):
+    """(pyfect) printed by Effect under Node, which writes the thrown error as
+    ``${error}``, its JavaScript class first"""
+
+    def failure(path: str, content: str) -> fx.Effect[str, Any, Any]:
+        return with_file_system(primitive.file_parse().parse(path).flip(), _FileHolding(content))
+
+    assert (yield from failure("/bad.toml", "a")) == (
+        "Failed to parse '.toml' file content: SyntaxError: Expected '=' at line 1, column 2"
+    )
+    assert (yield from failure("/bad.ini", "a=1\n[a]\nb=2")) == (
+        "Failed to parse '.ini' file content: TypeError: Cannot create property 'b' on string '1'"
+    )
+    assert (yield from failure("/bad.yaml", 'a: "b')).startswith(
+        "Failed to parse '.yaml' file content: SyntaxError: "
+    )
+
+
 def test_never_has_the_matching_primitive_tag():
     """Never has the matching primitive tag"""
     assert primitive.never.tag == "Never"

@@ -332,3 +332,20 @@ def test_should_defect_when_batching_in_a_transaction():
         assert exit.cause.has_dies
 
     yield from _on_fake(body)
+
+
+@testing.effect
+def test_a_batch_of_one_statement_holding_several_gives_every_result():
+    """(pyfect) D1 answers the request with a result per statement it ran, one
+    request here where Effect sends ``db.batch([prepared])``. Effect's
+    ``responses.map`` keeps them all, renaming only by the statements it knows"""
+    fake = FakeD1()
+
+    def body():
+        sql = yield from _make(fake, transform_result_names=_rename("name", "NAME"))
+        results = yield from sql.batch((sql("CREATE TABLE test (x TEXT); SELECT 1 AS name"),))
+        assert results == ([], [{"name": 1}])
+        results = yield from sql.batch((sql("SELECT 1 AS name; SELECT 2 AS name"),))
+        assert results == ([{"NAME": 1}], [{"name": 2}])
+
+    yield from _on_fake(body, fake)

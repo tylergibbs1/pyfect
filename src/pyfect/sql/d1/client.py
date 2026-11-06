@@ -137,6 +137,19 @@ def _batch_span_name(attributes: Sequence[tuple[str, object]]) -> str:
     return "BATCH" if target is None else f"BATCH {target}"
 
 
+def _rows_of(
+    results: Sequence[D1Result], transforms: Sequence[TransformRows | None]
+) -> tuple[Any, ...]:
+    """Each result's rows, renamed by its statement's transform. One entry of
+    several statements gets a result for each, with no transform past the
+    statements sent (Effect's ``transforms[index]``)."""
+    padded = [*transforms, *[None] * (len(results) - len(transforms))]
+    return tuple(
+        list(result.results if transform is None else transform(result.results))
+        for result, transform in zip(results, padded, strict=False)
+    )
+
+
 class D1ClientService(SqlClientService):
     """A D1 client: an ``SqlClientService`` with ``batch``, its config and
     the HTTP API it runs on (``api``)."""
@@ -229,12 +242,7 @@ class D1ClientService(SqlClientService):
 
                 def send(queries: list[Query]) -> Effect[tuple[Any, ...], SqlError]:
                     sent = self.api.query(queries).map_error(lambda e: _error(e, message))
-                    return sent.map(
-                        lambda results: tuple(
-                            list(r.results if t is None else t(r.results))
-                            for r, t in zip(results, transforms, strict=True)
-                        )
-                    )
+                    return sent.map(lambda results: _rows_of(results, transforms))
 
                 queries = for_each(compiled, lambda c: _query(c[0], c[1], message))
                 return queries.flat_map(send)
