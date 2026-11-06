@@ -34,12 +34,14 @@ from pyfect.cron import next as cron_next
 from pyfect.date_time import format_iso, now
 from pyfect.duration import Duration, to_seconds
 from pyfect.effect import fail_cause, gen, provide_service, void
+from pyfect.encoding.schema_binary import wire_name
+from pyfect.encoding.schema_binary._undefined import Undefined
 from pyfect.exit import Exit, Failure, Success
 from pyfect.layer import Layer
 from pyfect.logger import log_warning
 from pyfect.rpc import make as make_rpc
 from pyfect.schedule import exponential, min, spaced
-from pyfect.schema import Class, DateTimeUtc, field
+from pyfect.schema import Boolean, Class, DateTimeUtc, Union, field
 from pyfect.scope import Scope
 
 
@@ -52,8 +54,8 @@ class CronPayload(Class, identifier="effect/cluster/ClusterCron/CronPayload"):
     """A run of a cron job, due at ``date_time``. Runs sent to the executor
     (``executor``) share one address, so their instant is their key."""
 
-    date_time: datetime = field(DateTimeUtc)
-    executor: bool | None = None
+    date_time: datetime = field(DateTimeUtc.pipe(wire_name("dateTime")))
+    executor: bool | None = field(Union(Boolean, Undefined), default=None)
 
     def primary_key(self) -> str:
         return format_iso(self.date_time) if self.executor else ""

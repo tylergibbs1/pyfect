@@ -77,7 +77,10 @@ def flip_encoding(ast: AST, links: Encoding) -> AST:
         flipped.insert(0, Link(links[i - 1].to.flip(), links[i].transformation.flip()))
     to = links[-1].to.flip()
     chain = (*to.encoding, *flipped) if to.encoding else tuple(flipped)
-    return replace(to, encoding=chain)
+    out = replace(to, encoding=chain)
+    # Its decoded side is ``to``'s: a schema's encoded side stays one node.
+    object.__setattr__(out, "context_owner", to.owner())
+    return out
 
 
 def decode_to[A: AST](from_: AST, to: A, transformation: LinkTransformation) -> A:

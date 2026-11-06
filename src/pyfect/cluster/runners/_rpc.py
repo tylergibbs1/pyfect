@@ -57,7 +57,7 @@ from pyfect.scope import Scope, scoped
 
 _VOID: Effect[None] = succeed(None)
 
-ReplyEncodedSchema = cast("S.Codec[reply_.Encoded, Any, Never, Never]", S.Unknown)
+ReplyEncodedSchema = cast("S.Codec[reply_.OnWire, Any, Never, Never]", envelope_.OpaqueHole)
 """A reply already encoded by the protocol's codec (Effect's
 ``Reply.Encoded``, an opaque hole)."""
 

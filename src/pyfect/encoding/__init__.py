@@ -7,6 +7,8 @@
 - ``ini``: INI text to nested dicts (``parse``).
 - ``yaml``: one YAML document to Python values (``parse``).
 - ``toml``: TOML text to nested dicts (``parse``).
+- ``schema_binary``: a compact binary codec derived from a schema's encoded
+  side, byte-compatible with Effect's ``SchemaBinary``.
 - ``base64``, ``base64_url``, ``hex``: binary-to-text codecs whose ``decode``
   returns a ``Result`` with an ``EncodingError`` (``encoding_error``).
 
@@ -27,6 +29,7 @@ from pyfect.encoding import (
     ini,
     json_array,
     ndjson,
+    schema_binary,
     sse,
     toml,
     yaml,
@@ -43,6 +46,7 @@ __all__ = [
     "ini",
     "json_array",
     "ndjson",
+    "schema_binary",
     "sse",
     "toml",
     "yaml",

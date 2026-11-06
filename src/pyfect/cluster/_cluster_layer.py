@@ -33,6 +33,7 @@ from pyfect.rpc.serialization import MaxBufferSize, RpcSerialization
 
 type Storage = Literal["local", "sql", "byo"]
 type Health = Literal["ping", "k8s"]
+type SerializationKind = Literal["binary", "ndjson"]
 type ShardingConfigUpdate = Callable[[ShardingConfigService], ShardingConfigService]
 
 _K8S_CA = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
@@ -77,6 +78,7 @@ def assemble(
     health: Layer[Any, Any, Any] | None,
     storage: Storage,
     sharding_config: ShardingConfigUpdate | None,
+    serialization_kind: SerializationKind,
     serialization_max_buffer_size: MaxBufferSize,
 ) -> Layer[Any, Any, Any]:
     """``transport`` (a ``Sharding | Runners`` layer) with its runner
@@ -96,8 +98,10 @@ def assemble(
         if storage == "byo"
         else sql_runner_storage.layer.or_die()
     )
-    wire: Layer[RpcSerialization] = serialization.layer_ndjson_with(
-        max_buffer_size=serialization_max_buffer_size
+    wire: Layer[RpcSerialization] = (
+        serialization.layer_ndjson_with(max_buffer_size=serialization_max_buffer_size)
+        if serialization_kind == "ndjson"
+        else serialization.layer_schema_binary(max_frame_size=serialization_max_buffer_size)
     )
     return (
         with_health.pipe(layer_.provide_merge(messages))
@@ -109,6 +113,7 @@ def assemble(
 
 __all__ = [
     "Health",
+    "SerializationKind",
     "ShardingConfigUpdate",
     "Storage",
     "assemble",

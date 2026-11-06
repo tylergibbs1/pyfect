@@ -58,5 +58,25 @@ writer, so a slow sink slows the whole pipeline instead of filling memory.
 
 `fx.encoding` has framers for NDJSON, JSON arrays and Server-Sent Events.
 
+## SchemaBinary
+
+`pyfect.encoding.schema_binary` writes a schema's values as compact binary frames, with the
+same bytes as Effect's `encoding/SchemaBinary`. `to_codec(schema)` is a schema from `bytes`
+holding one frame. `parser(schema)` reads concatenated frames from chunks split anywhere, and
+`encoder(schema)` writes them, with a string dictionary for a connection when given
+`dictionary=True`. `encode(schema)`, `decode(schema)` and `duplex(channel, input_schema=...,
+output_schema=...)` are the same as channels for `Stream.pipe_through_channel`.
+
+<include meta='title="schema_binary.py"'>../../snippets/streams/schema_binary.py</include>
+
+<include lang="text">../../snippets/streams/schema_binary.out</include>
+
+Field ids are hashes of their names, so renaming a field changes its wire identity:
+`S.String.pipe(schema_binary.field_id(7))` fixes it across a rename. `wire_name("primaryKey")`
+gives a snake_case attribute the identity of Effect's camelCase field. A `datetime` is written
+in whole milliseconds. Python has no infinite `timedelta` and its dates cover years 1 to 9999,
+so Effect's values beyond those fail to read here.
+
 Reference: [`pyfect.stream`](/docs/reference/stream), [`pyfect.sink`](/docs/reference/sink),
-[`pyfect.channel`](/docs/reference/channel).
+[`pyfect.channel`](/docs/reference/channel),
+[`pyfect.encoding.schema_binary`](/docs/reference/encoding/schema_binary).

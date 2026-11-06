@@ -1,24 +1,31 @@
+# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 """Ports of Effect's rpc/RpcSerialization.test.ts. Each test's docstring is
 the Effect test title, prefixed by its describe block.
 
-Omitted: the "SchemaBinary" block (pyfect has no SchemaBinary
-serialization yet); the "jsonRpc inherited properties" cases that pollute
+Omitted: the "jsonRpc inherited properties" cases that pollute
 ``Object.prototype`` (Python dicts have no prototype to inherit keys
-from; the clean-prototype case is kept); the "codecFor" block's custom
-hole codec cases (they need SchemaBinary's codec holes, except the text
-one, kept).
+from; the clean-prototype case is kept).
 """
 
 import json
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, NotRequired, TypedDict
 
 import pytest
 
 import pyfect as fx
+from pyfect import effect as E
+from pyfect import exit as Exit
+from pyfect import layer as L
 from pyfect import schema as S
+from pyfect import stream as Stream
 from pyfect import testing
+from pyfect.encoding import schema_binary
+from pyfect.http import router, uvicorn_server
+from pyfect.rpc import RpcGroup, make
+from pyfect.rpc import client as rpc_client
 from pyfect.rpc import serialization as rs
+from pyfect.rpc import server as rpc_server
 
 _FAILURE = {"_tag": "Fail", "error": {"code": -32021, "message": "Missing capability"}}
 _DEFECT = {"_tag": "Die", "defect": {"message": "boom"}}
@@ -278,9 +285,354 @@ def test_json_rpc_encodes_a_notification_without_an_id() -> None:
     )
 
 
+def test_schema_binary_writes_no_frame_for_no_messages() -> None:
+    """(not an Effect title) Effect's parser encodes an empty batch to undefined."""
+    assert rs.make_schema_binary().make_unsafe().encode([]) is None
+
+
 def test_text_serializations_json_lower_the_hole() -> None:
     """RpcSerialization / codecFor / text serializations JSON-lower the hole"""
     encode = S.encode_sync(rs.json.codec_for(S.DateTimeUtc))
     assert encode(datetime(1970, 1, 1, tzinfo=UTC)) == "1970-01-01T00:00:00.000Z"
     assert rs.ndjson.codec_for is rs.json.codec_for
     assert rs.json_rpc().codec_for is rs.json.codec_for
+
+
+# --- SchemaBinary ---------------------------------------------------------------------
+
+
+class _Empty(TypedDict):
+    pass
+
+
+class _Echo(TypedDict):
+    value: str
+
+
+class _Counts(TypedDict):
+    to: float
+
+
+class EchoError(S.TaggedError, tag="EchoError"):
+    at: datetime = S.field(S.DateTimeUtc)
+
+
+_FAILED_AT = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+class _Rpcs(RpcGroup):
+    echo = make("Echo", payload=S.Struct(_Echo), success=S.String)
+    counts = make("Counts", payload=S.Struct(_Counts), success=S.Number, stream=True)
+    fail = make("Fail", payload=S.Struct(_Empty), success=S.Null, error=EchoError)
+    boom = make("Boom", payload=S.Struct(_Empty), success=S.Null)
+
+
+def _binary_client(body: Any) -> Any:
+    return _run_client(body, rs.layer_schema_binary())
+
+
+def _run_client(body: Any, serialization: Any) -> Any:
+    handlers = _Rpcs.to_layer(
+        _Rpcs.handlers()
+        .handle(_Rpcs.echo)(lambda request: E.succeed(f"{request.payload['value']}!"))
+        .handle(_Rpcs.counts)(lambda request: Stream.range(1, int(request.payload["to"]) + 1))
+        .handle(_Rpcs.fail)(lambda _: E.fail(EchoError(at=_FAILED_AT)))
+        .handle(_Rpcs.boom)(lambda _: E.die(ValueError("boom")))
+    )
+    server: Any = router.serve(
+        rpc_server.layer(_Rpcs)
+        .pipe(L.provide(handlers))
+        .pipe(L.provide_merge(rpc_server.layer_protocol_http("/rpc")))
+        .pipe(L.provide(serialization)),
+        disable_logger=True,
+        disable_listen_log=True,
+    )
+    client: Any = rpc_client.layer_protocol_http(
+        "", transform_client=lambda c: c.map_request(lambda r: r.append_url("/rpc"))
+    )
+    protocol: Any = (
+        client.pipe(L.provide_merge(server))
+        .pipe(L.provide(uvicorn_server.layer_test()))
+        .pipe(L.provide(serialization))
+    )
+    program: Any = fx.scoped(E.gen(body)).pipe(fx.provide(protocol))
+    return fx.run_sync(program.timeout(10).or_die())
+
+
+def test_schema_binary_roundtrips_requests_and_streamed_responses_over_http() -> None:
+    """RpcSerialization / SchemaBinary / roundtrips requests and streamed responses over HTTP"""
+
+    def body():
+        client = yield from rpc_client.make(_Rpcs)
+        assert (yield from client.echo({"value": "hi"})) == "hi!"
+        assert (yield from client.counts({"to": 3}).run_collect()) == [1, 2, 3]
+        error = yield from client.fail({}).flip()
+        assert isinstance(error, EchoError)
+        assert error.at == _FAILED_AT
+        exit_ = yield from client.boom({}).exit()
+        assert Exit.is_failure(exit_)
+        assert "boom" in str(exit_.cause)
+
+    _binary_client(body)
+
+
+def _uvarint(value: int) -> bytes:
+    out = bytearray()
+    while value >= 0x80:
+        out.append((value & 0x7F) | 0x80)
+        value >>= 7
+    out.append(value)
+    return bytes(out)
+
+
+class _Added(TypedDict):
+    _tag: Literal["Request"]
+    id: float | str
+    tag: str
+    payload: bytes
+    headers: tuple[tuple[str, str], ...]
+    added: NotRequired[str]
+
+
+def test_schema_binary_fingerprints_envelopes() -> None:
+    """RpcSerialization / SchemaBinary / fingerprints envelopes"""
+    parser = rs.make_schema_binary().make_unsafe()
+    incompatible = S.Struct(
+        _Added,
+        _tag=S.Literal("Request"),
+        id=S.Union(S.String, S.Number),
+        tag=S.String,
+        payload=S.Bytes,
+        headers=S.Array(S.Tuple(S.String, S.String)),
+        added=S.String,
+    )
+    frame = S.encode_unknown_sync(schema_binary.to_codec(incompatible, fingerprint=True))(
+        {"_tag": "Request", "id": 1, "tag": "Echo", "payload": bytes((1,)), "headers": ()}
+    )
+    with pytest.raises(S.SchemaError, match="matching layout fingerprint"):
+        parser.decode(frame)
+
+
+class _Writer(TypedDict):
+    value: str
+    added: NotRequired[str]
+
+
+def test_schema_binary_does_not_fingerprint_payloads_by_default() -> None:
+    """RpcSerialization / SchemaBinary / does not fingerprint payloads by default"""
+    service = rs.make_schema_binary()
+    writer = S.Struct(_Writer, value=S.String, added=S.String)
+    reader = S.Struct(_Echo, value=S.String)
+    encoded: Any = S.encode_unknown_sync(service.codec_for(writer))({"value": "ok", "added": "new"})
+    assert isinstance(encoded, bytes)
+    assert S.decode_unknown_sync(service.codec_for(reader))(encoded) == {"value": "ok"}
+
+
+class _Numeric(TypedDict):
+    value: float
+
+
+def test_layer_schema_binary_fingerprints_payloads_when_enabled() -> None:
+    """RpcSerialization / SchemaBinary / layerSchemaBinary fingerprints payloads when enabled"""
+    service = rs.make_schema_binary(fingerprint_payloads=True)
+    writer = S.Struct(_Echo, value=S.String)
+    reader = S.Struct(_Numeric, value=S.Number)
+    encoded: Any = S.encode_unknown_sync(service.codec_for(writer))({"value": "ok"})
+    assert S.decode_unknown_sync(service.codec_for(writer))(encoded) == {"value": "ok"}
+    with pytest.raises(S.SchemaError, match="matching layout fingerprint"):
+        S.decode_unknown_sync(service.codec_for(reader))(encoded)
+
+
+def test_schema_binary_uses_fingerprinted_envelope_framing_and_the_binary_content_type() -> None:
+    """RpcSerialization / SchemaBinary / uses fingerprinted envelope framing and the binary
+    content type"""
+    service = rs.make_schema_binary()
+    parser = service.make_unsafe()
+    request = {
+        "_tag": "Request",
+        "id": 1,
+        "tag": "Echo",
+        "payload": bytes((1, 2, 3)),
+        "headers": (),
+    }
+    frame = parser.encode(request)
+    assert service.content_type == "application/vnd.effect.rpc+schema-binary"
+    assert service.includes_framing is True
+    assert isinstance(frame, bytes)
+    assert parser.decode(frame) == [request]
+
+
+def test_schema_binary_keeps_varied_frames_decodable_across_parser_replacement() -> None:
+    """RpcSerialization / SchemaBinary / keeps varied frames decodable across parser replacement"""
+    service = rs.make_schema_binary()
+    encoder = service.make_unsafe()
+    for index in range(200):
+        request: dict[str, Any] = {
+            "_tag": "Request",
+            "id": index if index % 2 == 0 else f"request-{index}",
+            "tag": f"Echo{index % 7}",
+            "payload": bytes((index + offset) & 0xFF for offset in range(index % 17)),
+            "headers": tuple((f"x-{offset}", f"{index}") for offset in range(index % 4)),
+        }
+        if index % 3 == 0:
+            request |= {
+                "traceId": f"trace-{index}",
+                "spanId": f"span-{index}",
+                "sampled": index % 2 == 0,
+            }
+        frame = encoder.encode(request)
+        assert isinstance(frame, bytes)
+        split = 1 + len(request["tag"]) % (len(frame) - 1)
+        parser = service.make_unsafe()
+        assert parser.decode(frame[:split]) == []
+        assert parser.decode(frame[split:]) == [request]
+
+
+def test_schema_binary_owns_encoded_frames_without_copying_envelope_holes() -> None:
+    """RpcSerialization / SchemaBinary / owns encoded frames without copying envelope holes"""
+    service = rs.make_schema_binary()
+    encoder = service.make_unsafe()
+    payload = bytearray((1, 2, 3))
+    request = {"_tag": "Request", "id": 1, "tag": "Echo", "payload": bytes(payload), "headers": ()}
+    frame = encoder.encode(request)
+    assert isinstance(frame, bytes)
+    expected = bytes(frame)
+    payload[:] = bytes((9, 9, 9))
+    for i in range(1000):
+        encoder.encode({**request, "id": i})
+    assert frame == expected
+    assert service.make_unsafe().decode(frame) == [{**request, "payload": bytes((1, 2, 3))}]
+
+
+def test_schema_binary_defaults_max_frame_size_to_16_mib() -> None:
+    """RpcSerialization / SchemaBinary / defaults maxFrameSize to 16 MiB"""
+    service = rs.make_schema_binary()
+    assert service.make_unsafe().decode(_uvarint(16 * 1024 * 1024)) == []
+    with pytest.raises(S.SchemaError, match="frame within maxFrameSize"):
+        service.make_unsafe().decode(_uvarint(16 * 1024 * 1024 + 1))
+
+
+def test_layer_schema_binary_overrides_max_frame_size() -> None:
+    """RpcSerialization / SchemaBinary / layerSchemaBinary overrides maxFrameSize"""
+    service = rs.make_schema_binary(max_frame_size=4)
+    assert service.make_unsafe().decode(_uvarint(4)) == []
+    with pytest.raises(S.SchemaError, match="frame within maxFrameSize"):
+        service.make_unsafe().decode(_uvarint(5))
+
+
+def test_layer_schema_binary_allows_an_unbounded_max_frame_size() -> None:
+    """RpcSerialization / SchemaBinary / layerSchemaBinary allows an unbounded maxFrameSize"""
+    service = rs.make_schema_binary(max_frame_size="unbounded")
+    assert service.make_unsafe().decode(_uvarint(16 * 1024 * 1024 + 1)) == []
+
+
+# --- codecFor -------------------------------------------------------------------------
+
+
+def _json_string_codec(schema: Any) -> Any:
+    """A hole codec observably unlike ``S.to_codec_json``: JSON, then a string."""
+    return S.from_json_string(S.to_codec_json(schema))
+
+
+_json_strings = L.succeed(
+    rs.RpcSerialization, rs.with_codec_for(rs.make_ndjson(), _json_string_codec)
+)
+
+
+def test_codec_for_builds_each_servers_codecs_when_that_server_is_created() -> None:
+    """RpcSerialization / codecFor / builds each server's codecs when that server is created"""
+    as_json_string = [False]
+
+    def codec_for(schema: Any) -> Any:
+        return _json_string_codec(schema) if as_json_string[0] else S.to_codec_json(schema)
+
+    serialization = L.succeed(rs.RpcSerialization, rs.with_codec_for(rs.make_ndjson(), codec_for))
+
+    def echo(value: str) -> Any:
+        def body():
+            client = yield from rpc_client.make(_Rpcs)
+            return (yield from client.echo({"value": value}))
+
+        return _run_client(body, serialization)
+
+    assert echo("first") == "first!"
+    as_json_string[0] = True
+    assert echo("second") == "second!"
+
+
+def test_codec_for_fills_the_request_payload_hole_with_the_serializations_codec() -> None:
+    """RpcSerialization / codecFor / fills the request payload hole with the serialization's
+    codec"""
+    frames: list[object] = []
+    inner = rs.make_ndjson()
+
+    class _Noting:
+        def __init__(self) -> None:
+            self.parser = inner.make_unsafe()
+
+        def decode(self, data: rs.Frame, /) -> list[object]:
+            decoded = self.parser.decode(data)
+            frames.extend(m for m in decoded if m.get("_tag") == "Request")  # pyright: ignore[reportAttributeAccessIssue]
+            return decoded
+
+        def encode(self, response: object, /) -> rs.Frame | None:
+            return self.parser.encode(response)
+
+    service = rs.RpcSerializationService(
+        make_unsafe=_Noting,
+        content_type=inner.content_type,
+        includes_framing=inner.includes_framing,
+        codec_for=_json_string_codec,
+    )
+
+    def body():
+        client = yield from rpc_client.make(_Rpcs)
+        assert (yield from client.echo({"value": "hi"})) == "hi!"
+
+    _run_client(body, L.succeed(rs.RpcSerialization, service))
+    [frame] = frames
+    payload = frame["payload"]  # pyright: ignore[reportIndexIssue]
+    assert isinstance(payload, str), "the payload hole must carry the codec's output"
+    assert json.loads(payload) == {"value": "hi"}
+
+
+def test_codec_for_fills_the_stream_chunk_holes_with_the_serializations_codec() -> None:
+    """RpcSerialization / codecFor / fills the stream chunk holes with the serialization's codec"""
+
+    def body():
+        client = yield from rpc_client.make(_Rpcs)
+        assert (yield from client.counts({"to": 3}).run_collect()) == [1, 2, 3]
+
+    _run_client(body, _json_strings)
+
+
+def test_codec_for_fills_the_exit_hole_with_the_serializations_codec() -> None:
+    """RpcSerialization / codecFor / fills the exit hole with the serialization's codec"""
+
+    def body():
+        client = yield from rpc_client.make(_Rpcs)
+        error = yield from client.fail({}).flip()
+        assert isinstance(error, EchoError)
+        assert error.at == _FAILED_AT
+
+    _run_client(body, _json_strings)
+
+
+def test_codec_for_fills_the_defect_hole_with_the_serializations_codec() -> None:
+    """RpcSerialization / codecFor / fills the defect hole with the serialization's codec"""
+
+    def body():
+        client = yield from rpc_client.make(_Rpcs)
+        exit_ = yield from client.boom({}).exit()
+        assert Exit.is_failure(exit_)
+        assert "boom" in str(exit_.cause)
+
+    _run_client(body, _json_strings)
+
+
+@testing.effect
+def test_layer_schema_binary_provides_the_serialization():
+    """(not an Effect title) the layer provides the service Effect's layer does"""
+    program: Any = rs.RpcSerialization()
+    service: Any = yield from program.pipe(fx.provide(rs.layer_schema_binary()))
+    assert service.content_type == "application/vnd.effect.rpc+schema-binary"

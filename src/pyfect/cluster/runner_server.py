@@ -55,7 +55,7 @@ from pyfect.scope import CloseableScope, Scope, fork_scoped
 
 _VOID: Effect[None] = succeed(None)
 
-type _Encoded = Effect[reply_.Encoded, EntityNotAssignedToRunner]
+type _Encoded = Effect[reply_.OnWire, EntityNotAssignedToRunner]
 type _Resume = Callable[[_Encoded], None]
 
 
@@ -75,7 +75,7 @@ _request_scope: Effect[CloseableScope | None] = service_option(Scope).map(
 
 def _defect_reply(
     reply: ReplyWithContext, defect: BaseException, codec_for: CodecFor
-) -> Effect[reply_.Encoded]:
+) -> Effect[reply_.OnWire]:
     fallback = ReplyWithContext.from_defect(
         id=reply.reply.id, request_id=reply.reply.request_id, defect=defect
     )
@@ -113,7 +113,7 @@ class _Handlers:
             return self.sharding.notify(message)
         return self.sharding.send(message)
 
-    def effect(self, request: RpcRequest[RequestPayload]) -> Effect[reply_.Encoded, Any]:
+    def effect(self, request: RpcRequest[RequestPayload]) -> Effect[reply_.OnWire, Any]:
         sharding = self.sharding
 
         @gen
@@ -177,18 +177,18 @@ class _Handlers:
 
     def stream(
         self, request: RpcRequest[RequestPayload]
-    ) -> Effect[Queue[reply_.Encoded, EntityNotAssignedToRunner | Done], Any, Scope]:
+    ) -> Effect[Queue[reply_.OnWire, EntityNotAssignedToRunner | Done], Any, Scope]:
         codec_for = self.codec_for
 
         @gen
         def run():
             caller_scope = yield from _request_scope
-            queue = yield from Queue[reply_.Encoded, EntityNotAssignedToRunner | Done].unbounded()
+            queue = yield from Queue[reply_.OnWire, EntityNotAssignedToRunner | Done].unbounded()
 
-            def offer(encoded: reply_.Encoded, last: bool) -> None:
+            def offer(encoded: reply_.OnWire, last: bool) -> None:
                 queue.offer_unsafe(encoded)
                 if last:
-                    cast("Queue[reply_.Encoded, Done]", queue).end_unsafe()
+                    cast("Queue[reply_.OnWire, Done]", queue).end_unsafe()
 
             def respond(reply: ReplyWithContext) -> Effect[None]:
                 def malformed(error: MalformedMessage) -> Effect[None]:
@@ -199,7 +199,7 @@ class _Handlers:
 
                 return (
                     reply_.serialize(reply, codec_for)
-                    .map(lambda encoded: offer(encoded, encoded["_tag"] == "WithExit"))
+                    .map(lambda encoded: offer(encoded, isinstance(reply.reply, reply_.WithExit)))
                     .pipe(catch_tag(MalformedMessage, malformed))
                 )
 

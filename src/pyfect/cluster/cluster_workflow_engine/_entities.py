@@ -14,10 +14,21 @@ from pyfect.cluster.cluster_schema import Dynamic, Persisted, Uninterruptible, W
 from pyfect.cluster.entity import Entity
 from pyfect.cluster.envelope import Request
 from pyfect.context import Context
+from pyfect.encoding.schema_binary._undefined import Undefined
 from pyfect.rpc import make as make_rpc
 from pyfect.rpc._rpc import AnyRpc
 from pyfect.schema import Any as AnySchema
-from pyfect.schema import Bottom, Class, DateTimeUtcFromMillis, Struct, ast, field
+from pyfect.schema import (
+    Boolean,
+    Bottom,
+    Class,
+    DateTimeUtcFromMillis,
+    String,
+    Struct,
+    Union,
+    ast,
+    field,
+)
 from pyfect.schema import Exit as ExitSchema
 from pyfect.workflow.workflow import Workflow, result_schema
 
@@ -53,7 +64,7 @@ class DeferredPayload(Class, identifier="DeferredPayload"):
 
 class ResumePayload(Class, identifier="ResumePayload"):
     # Older persisted resume envelopes have an empty payload and use the empty key.
-    childExecutionId: str | None = None
+    childExecutionId: str | None = field(Union(String, Undefined), default=None)
 
     def primary_key(self) -> str:
         # Different children must not share an in-flight wake: the parent
@@ -98,6 +109,18 @@ class Parent(TypedDict):
     detached: NotRequired[bool]
 
 
+_ParentSchema: Bottom[Any] = Union(
+    Struct(
+        Parent,
+        workflowName=String,
+        executionId=String,
+        detached=cast("Any", Union(Boolean, Undefined)),
+    ),
+    Undefined,
+)
+"""Effect's ``Schema.optional(Schema.Struct(...))``: a union on the wire."""
+
+
 class RunPayload(dict[str, object]):
     """A workflow's payload fields with the parent key; every run of an
     execution shares the empty primary key."""
@@ -125,7 +148,7 @@ class _RunPayloadShape:
 
     def _build(self) -> tuple[ast.Objects, ast.AST]:
         if self._built is None:
-            parent = ast.PropertySignature(PAYLOAD_PARENT_KEY, Struct(Parent).ast, optional=True)
+            parent = ast.PropertySignature(PAYLOAD_PARENT_KEY, _ParentSchema.ast, optional=True)
             fields = ast.Objects(
                 (*self.payload_fields.properties, parent),
                 self.payload_fields.index_signatures,

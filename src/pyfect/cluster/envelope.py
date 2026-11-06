@@ -19,8 +19,10 @@ from pyfect import schema as S
 from pyfect._wire_codec import Const, key, wire_codec
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.shard_id import ShardId
-from pyfect.cluster.snowflake import Snowflake, SnowflakeFromString
+from pyfect.cluster.snowflake import Snowflake, SnowflakeFromBigInt
+from pyfect.encoding.schema_binary._undefined import Undefined
 from pyfect.http.headers import EMPTY, Headers
+from pyfect.schema import ast
 from pyfect.schema import transformation as T
 
 
@@ -189,18 +191,41 @@ AddressSchema: S.Bottom[EntityAddress, Mapping[str, object]] = wire_codec(
 )
 """An entity address with Effect's keys."""
 
+
+def _accepts_anything(_: object) -> TypeIs[Any]:
+    return True
+
+
+def _no_json_codec(_: object) -> None:
+    return None
+
+
+def _bytes_codec(_: object) -> ast.Link:
+    passthrough: T.Transformation[Any, Any] = T.passthrough()
+    return ast.Link(S.Bytes.ast, passthrough)
+
+
+OpaqueHole: S.Bottom[Any] = S.declare(
+    _accepts_anything,
+    expected="an already-encoded value",
+    to_codec_json=_no_json_codec,
+    to_codec=_bytes_codec,
+)
+"""A value the protocol's own codec already encoded: JSON under the text
+serializations, bytes under ``SchemaBinary`` (Effect's ``OpaqueHole``)."""
+
 PartialRequestSchema: S.Bottom[PartialRequest, Mapping[str, object]] = wire_codec(
     cast("type[PartialRequest]", Request),
     [
         Const("_tag", "Request"),
-        key("requestId", "request_id", SnowflakeFromString),
+        key("requestId", "request_id", SnowflakeFromBigInt),
         key("address", "address", AddressSchema),
         key("tag", "tag", S.String),
-        key("payload", "payload", S.Unknown),
+        key("payload", "payload", OpaqueHole),
         key("headers", "headers", HeadersSchema),
-        key("traceId", "trace_id", S.String, optional=True),
-        key("spanId", "span_id", S.String, optional=True),
-        key("sampled", "sampled", S.Boolean, optional=True),
+        key("traceId", "trace_id", S.Union(S.String, Undefined), optional=True),
+        key("spanId", "span_id", S.Union(S.String, Undefined), optional=True),
+        key("sampled", "sampled", S.Union(S.Boolean, Undefined), optional=True),
     ],
     identifier="PartialRequest",
 )
@@ -209,10 +234,10 @@ AckChunkSchema: S.Bottom[AckChunk, Mapping[str, object]] = wire_codec(
     AckChunk,
     [
         Const("_tag", "AckChunk"),
-        key("id", "id", SnowflakeFromString),
+        key("id", "id", SnowflakeFromBigInt),
         key("address", "address", AddressSchema),
-        key("requestId", "request_id", SnowflakeFromString),
-        key("replyId", "reply_id", SnowflakeFromString),
+        key("requestId", "request_id", SnowflakeFromBigInt),
+        key("replyId", "reply_id", SnowflakeFromBigInt),
     ],
     identifier="AckChunk",
 )
@@ -221,9 +246,9 @@ InterruptSchema: S.Bottom[Interrupt, Mapping[str, object]] = wire_codec(
     Interrupt,
     [
         Const("_tag", "Interrupt"),
-        key("id", "id", SnowflakeFromString),
+        key("id", "id", SnowflakeFromBigInt),
         key("address", "address", AddressSchema),
-        key("requestId", "request_id", SnowflakeFromString),
+        key("requestId", "request_id", SnowflakeFromBigInt),
     ],
     identifier="Interrupt",
 )
@@ -231,10 +256,14 @@ InterruptSchema: S.Bottom[Interrupt, Mapping[str, object]] = wire_codec(
 PartialSchema: S.Bottom[Partial, Mapping[str, object]] = S.Union(
     PartialRequestSchema, AckChunkSchema, InterruptSchema
 )
-"""A partial envelope as Effect's JSON (Effect's ``Envelope.PartialJson``)."""
+"""A partial envelope (Effect's ``Envelope.Partial``): ids are bigints on its
+encoded side, so ``SchemaBinary`` writes them as Effect does."""
 
-_encode_partial = S.encode_sync(PartialSchema)
-_decode_partial = S.decode_unknown_sync(PartialSchema)
+PartialJson: S.Codec[Partial, object] = S.to_codec_json(PartialSchema)
+"""A partial envelope as Effect's JSON: ids as strings."""
+
+_encode_partial = S.encode_sync(PartialJson)
+_decode_partial = S.decode_unknown_sync(PartialJson)
 
 
 def encode(envelope: Partial) -> Encoded:
@@ -268,7 +297,9 @@ __all__ = [
     "Interrupt",
     "InterruptEncoded",
     "InterruptSchema",
+    "OpaqueHole",
     "Partial",
+    "PartialJson",
     "PartialRequest",
     "PartialRequestEncoded",
     "PartialRequestSchema",

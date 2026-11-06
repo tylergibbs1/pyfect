@@ -10,8 +10,8 @@ The "e2e worker thread" and "e2e worker process" suites are the browser
 and Deno ``RpcWorker.test.ts`` ("e2e worker", commented out in
 platform-node's file) on a ``ThreadWorker`` and a ``ProcessWorker``; they
 also run "should get deferred user", which only platform-node's e2e suite
-has. Omitted: the SchemaBinary suites and cases (no SchemaBinary
-serialization) and "entity proxy" (pyfect has no cluster module). The "request
+has. Omitted: "entity proxy" (its cluster tests are in test_entity_proxy*.py).
+The "request
 defect isolation over HTTP" and Ticker isolation cases are in
 test_rpc_server.py.
 """

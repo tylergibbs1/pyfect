@@ -361,16 +361,23 @@ def worker_suite(spawn: Callable[[], WorkerHandle]) -> Layer[Any, Any, Any]:
 
 SUITES: dict[str, Callable[[], Layer[Any, Any, Any]]] = {
     "e2e http ndjson": lambda: http_suite(rs.layer_ndjson),
+    "e2e http SchemaBinary": lambda: http_suite(rs.layer_schema_binary()),
     "e2e http jsonrpc": lambda: http_suite(rs.layer_nd_json_rpc()),
     "e2e ws ndjson": lambda: ws_suite(rs.layer_ndjson),
     "e2e ws json": lambda: ws_suite(rs.layer_json),
     "e2e ws jsonrpc": lambda: ws_suite(rs.layer_json_rpc()),
+    "e2e ws SchemaBinary": lambda: ws_suite(rs.layer_schema_binary()),
     "e2e live http ndjson": lambda: http_suite(rs.layer_ndjson, live_server.layer_test),
     "e2e live ws ndjson": lambda: ws_suite(rs.layer_ndjson, live_server.layer_test),
     "e2e live ws json": lambda: ws_suite(rs.layer_json, live_server.layer_test),
     "e2e live ws jsonrpc": lambda: ws_suite(rs.layer_json_rpc(), live_server.layer_test),
+    "e2e live http SchemaBinary": lambda: http_suite(
+        rs.layer_schema_binary(), live_server.layer_test
+    ),
+    "e2e live ws SchemaBinary": lambda: ws_suite(rs.layer_schema_binary(), live_server.layer_test),
     "e2e tcp ndjson": lambda: tcp_suite(rs.layer_ndjson),
     "e2e tcp jsonrpc": lambda: tcp_suite(rs.layer_nd_json_rpc()),
+    "e2e tcp SchemaBinary": lambda: tcp_suite(rs.layer_schema_binary()),
     "e2e worker thread": lambda: worker_suite(lambda: ThreadWorker(run_worker)),
     "e2e worker process": lambda: worker_suite(_process_worker),
 }

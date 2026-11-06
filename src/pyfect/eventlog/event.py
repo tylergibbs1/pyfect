@@ -17,7 +17,7 @@ from functools import cached_property
 from typing import Any, Never, TypeGuard, overload
 
 from pyfect import schema as S
-from pyfect.eventlog._binary import BytesCodec, to_codec
+from pyfect.encoding.schema_binary import BytesCodec, to_codec
 
 type _C[T] = S.Codec[T, object, object, object]
 

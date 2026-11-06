@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict, TypeIs, 
 
 from pyfect.exit import Exit
 from pyfect.http.headers import Headers
+from pyfect.rpc._encoded_schema import EncodedSchema
 
 if TYPE_CHECKING:
     from pyfect.rpc.client_error import RpcClientError
@@ -267,6 +268,7 @@ __all__ = [
     "ClientEnd",
     "ClientProtocolError",
     "EncodedHeaders",
+    "EncodedSchema",
     "Eof",
     "EofEncoded",
     "ExitEncoded",

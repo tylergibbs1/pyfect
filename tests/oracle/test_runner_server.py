@@ -1,3 +1,4 @@
+# pyright: reportCallIssue=false, reportArgumentType=false
 """Ports of Effect's ``test/cluster/RunnerServer.test.ts``. Each test's
 docstring is the Effect test title.
 

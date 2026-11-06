@@ -1,0 +1,207 @@
+# ruff: noqa: E501
+"""Frames Effect wrote, from ``tests/oracle/schema_binary_wire.ts`` under Node;
+the exact bytes ``test_schema_binary_wire.py`` reads and must write."""
+
+from __future__ import annotations
+
+FRAMES: dict[str, dict[str, str]] = {
+    "number_ints": {
+        "default": ("08200401000203d00f"),
+        "fingerprint": ("10217cbd8723c04991f70401000203d00f"),
+    },
+    "number_decimals": {
+        "default": ("0a200302e103b206e2be02"),
+        "fingerprint": ("12217cbd8723c04991f70302e103b206e2be02"),
+    },
+    "number_floats": {
+        "default": ("1b200300000000000000f03f182d4454fb2109409c7500883ce4377e"),
+        "fingerprint": ("23217cbd8723c04991f70300000000000000f03f182d4454fb2109409c7500883ce4377e"),
+    },
+    "int_array": {
+        "default": ("052003020506"),
+        "fingerprint": ("0d21ce5e0d719eaf4c2003020506"),
+    },
+    "person": {
+        "default": ("1520e199a9901648b0deb7ce4603416461fc92b3dd6c"),
+        "fingerprint": ("1121027ebad6656845b40001480341646101"),
+    },
+    "person_decimal": {
+        "default": ("1e20e8aca9cd0a0141e599a99016da0501b0deb7ce4603416461fb92b3dd6c"),
+        "fingerprint": ("1521027ebad6656845b401014103da05010341646100"),
+    },
+    "rows": {
+        "default": (
+            "aa0120044200e0d5e1b9030a726f772d3094b7ff8f0e2c001460726567696f6e02657560776f726b"
+            "6572027730a0d7dba00f14020672656408626c7565fdafdcb40f086576656e19010a726f772d3114"
+            "00080102657511027731040103066f64643300e0d5e1b9030a726f772d3295a1be910d041e0194b7"
+            "ff8f0e1400080102657511027732a0d7dba00f06020103fdafdcb40f0116010a726f772d33140008"
+            "010265751102773304010303"
+        ),
+        "fingerprint": (
+            "830121e2f2d07ca64a232e042e001d0a726f772d302a0260726567696f6e02657560776f726b6572"
+            "02773014020672656408626c7565086576656e18010a726f772d3112020102657511027731040103"
+            "066f64641a001f0a726f772d32041e0112020102657511027732060201030115010a726f772d3312"
+            "02010265751102773304010303"
+        ),
+    },
+    "record": {
+        "default": ("0d20000a09610209620411c3a906"),
+        "fingerprint": ("1421bdf9731741e1e5060309610209620411c3a906"),
+    },
+    "tagged_a": {
+        "default": ("0d200a22c69a148dc386c3751e01"),
+        "fingerprint": ("0d2170b9fd15413defe501021e01"),
+    },
+    "tagged_b": {
+        "default": ("0d200a8fc49a13f0e3c9f95e0178"),
+        "fingerprint": ("0c2170b9fd15413defe5000178"),
+    },
+    "mixed_string": {
+        "default": ("03200578"),
+        "fingerprint": ("0b21b8dba916d23854640178"),
+    },
+    "mixed_number": {
+        "default": ("0420041e01"),
+        "fingerprint": ("0c21b8dba916d2385464001e01"),
+    },
+    "mixed_struct": {
+        "default": ("0720098cc386c375"),
+        "fingerprint": ("0b21b8dba916d23854640201"),
+    },
+    "tuple": {
+        "default": ("0420010178"),
+        "fingerprint": ("0c21032c47191f428d52010178"),
+    },
+    "natives": {
+        "default": (
+            "b50120a0e2ee8d050501626f6f6dd0bc9ab20a0de8030000000000000080ee3600e0d491c20f03f6"
+            "0104e8d09fe817060080bcc1960b98a4b4a81b1e7b226e6573746564223a5b312c2274776f222c74"
+            "7275652c6e756c6c5d7dc8dbd9f2290bffffffffffffffffffff01a080baec320301020388918d9f"
+            "330468757368c8d1f0dd3f08e803000000000000d8fdf5e9560100c8b1d1826016e8030000000000"
+            "00014575726f70652f4c6f6e646f6ea0b9b3f873020178"
+        ),
+        "fingerprint": (
+            "800121fc23b967eeb5a7030501626f6f6d0de8030000000000000080ee360003f60104060080bcc1"
+            "960b1e7b226e6573746564223a5b312c2274776f222c747275652c6e756c6c5d7d0bffffffffffff"
+            "ffffffff01030102030468757368e803000000000000010016e803000000000000014575726f7065"
+            "2f4c6f6e646f6e020178"
+        ),
+    },
+    "exit_ok": {
+        "default": ("03200054"),
+        "fingerprint": ("0b21af1da55585db521b0054"),
+    },
+    "exit_cause": {
+        "default": ("152001030500626f6f6d09030000000000001c400102"),
+        "fingerprint": ("1d21af1da55585db521b01030500626f6f6d09030000000000001c400102"),
+    },
+    "cause": {
+        "default": ("1420030500626f6f6d09030000000000001c400102"),
+        "fingerprint": ("1c2146b18ce39e09e5c5030500626f6f6d09030000000000001c400102"),
+    },
+    "recursive": {
+        "default": ("2420909db9ea3317020f00d293a7bd060200c981b1980f0204050102000206c98c88c37902"),
+        "fingerprint": ("1a21bef2c387dcbfa75e0e02060003020002040501020002060102"),
+    },
+    "field_id": {
+        "default": ("07203902c00c0178"),
+        "fingerprint": ("0d21d60d42a5e8e59f2701020178"),
+    },
+}
+
+DICTIONARY: list[str] = [
+    (
+        "45209899e5fd4a0653656172636898ddf38c4f203031323334353637383961626364656630313233"
+        "343536373839616263646566a897cfea6d06626f6479203089c386c37500"
+    ),
+    (
+        "43209899e5fd4a0347657498ddf38c4f203031323334353637383961626364656630313233343536"
+        "373839616263646566a897cfea6d0700626f6479203189c386c37502"
+    ),
+    ("22209899e5fd4a070044656c65746598ddf38c4f0103a897cfea6d010589c386c37504"),
+    ("1c209899e5fd4a010198ddf38c4f0103a897cfea6d010989c386c37506"),
+    ("1c209899e5fd4a010798ddf38c4f0103a897cfea6d010589c386c37508"),
+]
+
+MANY = (
+    "1520e199a9901648b0deb7ce4603416461fc92b3dd6c1720e199a990165ab0deb7ce46054772616365fb92b3dd6c"
+)
+
+RPC: dict[str, str] = {
+    "request": ("1c21cc328ab08f52452507000209080201310347657406010401610162"),
+    "request_full": ("2321cc328ab08f524525070f02017302090802000e020001034765740201740100020001"),
+    "ack": ("0d21cc328ab08f52452500020131"),
+    "interrupt": ("0d21cc328ab08f5245250802000e"),
+    "ping": ("0a21cc328ab08f52452503"),
+    "eof": ("0a21cc328ab08f52452504"),
+    "chunk": ("1021cc328ab08f52452505020908020131"),
+    "exit": ("1021cc328ab08f52452501020131020908"),
+    "defect": ("0d21cc328ab08f52452502020908"),
+    "pong": ("0a21cc328ab08f52452506"),
+}
+
+PARITY: dict[str, dict[str, str]] = {
+    "recursive_redacted": {
+        "default": "0f20909db9ea330100c88c88c3790178",
+        "fingerprint": "0d21730d4807d461b5f201000178",
+    },
+    "optional_recursive": {
+        "default": "1a20e8cfbfb3750d909db9ea330100c98c88c3790289c386c37504",
+        "fingerprint": "1121285aeec2268c28dd0104010001020104",
+    },
+    "redacted_recursive": {
+        "default": "0e20909db9ea330100c98c88c37902",
+        "fingerprint": "0d21bef2c387dcbfa75e01000102",
+    },
+    "zoned_offset_zero_in_union": {
+        "default": "0f2010e8030000000000000000000000",
+        "fingerprint": "17215bd0e069e9f70b5101e8030000000000000000000000",
+    },
+    "wide_number_in_union": {
+        "default": "0a20040000000000004043",
+        "fingerprint": "12214a9666d0eae4b8a1010000000000004043",
+    },
+    "redacted_same_member": {"default": "022078", "fingerprint": "0a2179b401864cbb63af78"},
+    "optional_tuple_element": {
+        "default": "06200201610162",
+        "fingerprint": "0e21845b88872f57df4d0201610162",
+    },
+    "rank_zoned": {
+        "default": "0a2008e803000000000000",
+        "fingerprint": "122192226bf9c3a4c85700e803000000000000",
+    },
+    "rank_bigint": {"default": "03200402", "fingerprint": "0b2126ac77c189ea88e50002"},
+    "rank_unknown": {"default": "03200578", "fingerprint": "0b21da6a950d2e52a6280078"},
+}
+
+OPTIONAL_DICTIONARY: list[str] = [
+    "1820e0928583720673686172656490c5858373056f74686572",
+    "192090c585837306736861726564a8de85c37306736861726564",
+    "1420e092858372010190c585837306736861726564",
+    "0f2090c58583730103a8de85c3730101",
+]
+
+EVENT_LOG: dict[str, str] = {
+    "hello": "2520f083f2390105f0a38ebc57100102030405060708090a0b0c0d0e0f10e0bc96f95a020406",
+    "hello_no_sequence": "1d20f083f2390105f0a38ebc57100102030405060708090a0b0c0d0e0f10",
+    "authenticate": "2420d096ad910e0745643235353139e896edea2f0107f8efc0827a02706be0f9e2cb7b0106",
+    "write_ack": "1d20c1f6fd901e12f087b3b95310018f4a1e7b0070008000000000000001",
+    "changes_payload": "16209885f1a8260173b1f8f3b63b04f8efc0827a02706b",
+    "protocol_error": "4120a08ec1bc12016df0e0b5a239154576656e744c6f6750726f746f636f6c4572726f72d092b7d4520154f8efc0827a0305706ba0cfadcc7c084e6f74466f756e64",
+    "protocol_error_bare": "3820a08ec1bc12016df0e0b5a239154576656e744c6f6750726f746f636f6c4572726f72d092b7d4520154a0cfadcc7c084e6f74466f756e64",
+    "write_encrypted": "41209885f1a8260173d8b68399632b012900b68ee2c904040102c5bffa8106040304f7b8b9c30c240110018f4a1e7b0070008000000000000001f8efc0827a02706b",
+    "changes_encrypted": "3320013000e8de8fe2030208b68ee2c904040102c5bffa8106040304f7b8b9c30c240110018f4a1e7b0070008000000000000001",
+}
+
+CLUSTER: dict[str, str] = {
+    "request_traced": "76200a06aa86cba0f3feb8110205739895c59a162cd0dbb8f234055468696e67b8e7a6da40026531b0a6a3ab591381ae8dce1b0ee0e8a3ee2f0764656661756c74a8faeec3190101f8e9bd9d1b02f601c88fdbc9250201019899e5fd4a03496e6398ddf38c4f020574c89ebb996b08000618782d610162",
+    "reply_exit": "1c200aa2612fcef8e9bd9d1b010a80ae8dce1b010ca8a8a3fb66020002",
+    "reply_chunk": "25200ae00ae782d8c3e9911a050201020104f8e9bd9d1b010a80ae8dce1b010cc1f6fd901e04",
+    "already_processing": "3f200a4895f3039895c59a162cd0dbb8f234055468696e67b8e7a6da40026531b0a6a3ab591381ae8dce1b0ee0e8a3ee2f0764656661756c7480b58eac290135",
+    "mailbox_full": "38200a8e729de19895c59a162cd0dbb8f234055468696e67b8e7a6da40026531b0a6a3ab591381ae8dce1b0ee0e8a3ee2f0764656661756c74",
+    "cron": "1720809bd7c52608e803000000000000e0838ce378020101",
+    "workflow_run": "242088a1d2b103170980b58df01a0165d8c2d3bc5f017798ac81906b02010189c386c37502",
+    "resume": "0920c0f6b7e53d020563",
+}
+
+DICTIONARY_LIMITS = "c6759a9be79ac5f913978cf35185320d181bc2a434f69fded2c9c0b925aaed58"

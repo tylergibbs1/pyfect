@@ -222,7 +222,7 @@ def _settings(port: int) -> Callable[[Any], Any]:
     return lambda _: replace(_FAST, runner_address=runner_address.make(HOST, port))
 
 
-_WIRE = serialization.layer_ndjson
+_WIRE = serialization.layer_schema_binary()
 
 
 def _pair(runner: AnyLayer, sender: AnyLayer) -> AnyEffect:

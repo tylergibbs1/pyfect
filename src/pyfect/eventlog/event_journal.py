@@ -25,9 +25,9 @@ from pyfect.clock import Clock, ClockService, now_millis_unsafe
 from pyfect.context import Tag
 from pyfect.date_time._epoch import from_epoch_millis
 from pyfect.effect import gen, succeed, suspend, sync, try_
+from pyfect.encoding.schema_binary import to_codec, wire_name
 from pyfect.errors import TaggedError
 from pyfect.eventlog import _uuid
-from pyfect.eventlog._binary import BytesCodec, to_codec
 from pyfect.eventlog._conflicts import ConflictIndex
 from pyfect.exit import Exit, Failure
 from pyfect.layer import Layer
@@ -156,7 +156,7 @@ class Entry(S.Class, identifier="effect/eventlog/EventJournal/Entry"):
 
     id: EntryId = S.field(EntryIdSchema)
     event: str
-    primary_key: str
+    primary_key: str = S.field(S.String.pipe(wire_name("primaryKey")))
     payload: bytes = S.field(S.Bytes)
 
     @cached_property
@@ -181,7 +181,7 @@ def entry_order(entry: Entry) -> bytes:
 class RemoteEntry(S.Class, identifier="effect/eventlog/EventJournal/RemoteEntry"):
     """An entry as a remote sent it, at ``remote_sequence``."""
 
-    remote_sequence: int = S.field(S.Natural)
+    remote_sequence: int = S.field(S.Natural.pipe(wire_name("remoteSequence")))
     entry: Entry
 
 
@@ -215,9 +215,8 @@ class EntryWithConflicts:
     conflicts: tuple[Entry, ...]
 
 
-ENTRY_ARRAY_CODEC: BytesCodec[tuple[Entry, ...]] = to_codec(S.Array(Entry))
-"""Entries written to bytes (Effect's ``Entry.arraySchemaBinary``, one
-frame for the array)."""
+ENTRY_ARRAY_CODEC = S.Array(to_codec(Entry))
+"""Entries as one frame each (Effect's ``Entry.arraySchemaBinary``)."""
 
 
 def make_entries(

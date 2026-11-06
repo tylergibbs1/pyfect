@@ -7,9 +7,9 @@ the codec of the values inside messages (payloads, chunks, exits).
 
 - ``json``: one JSON value per frame (a batch is an array);
 - ``ndjson`` / ``make_ndjson``: one JSON value per line, frames of any size;
-- ``json_rpc`` / ``nd_json_rpc``: JSON-RPC 2.0, unframed or per line.
-
-Effect's ``SchemaBinary`` serialization is not ported yet.
+- ``json_rpc`` / ``nd_json_rpc``: JSON-RPC 2.0, unframed or per line;
+- ``make_schema_binary``: ``encoding.schema_binary`` frames. Envelopes are in
+  fingerprint mode, values in the schema-evolving default mode.
 """
 
 from __future__ import annotations
@@ -22,9 +22,11 @@ from pyfect import schema as S
 from pyfect._js import text_decoder, text_encode
 from pyfect._json_text import parse, stringify
 from pyfect.context import Tag
+from pyfect.encoding import schema_binary
 from pyfect.errors import TaggedError
 from pyfect.layer import Layer
 from pyfect.layer import succeed as layer_succeed
+from pyfect.rpc._encoded_schema import EncodedSchema
 from pyfect.rpc._json_rpc import Batches, decode_json_rpc, encode_json_rpc
 
 type CodecFor = Callable[[S.Top], S.Codec[Any, Any, Any, Any]]
@@ -234,6 +236,54 @@ def nd_json_rpc(
     )
 
 
+_SCHEMA_BINARY_MAX_FRAME_SIZE = 16 * 1024 * 1024
+"""Effect's default ``max_frame_size`` for ``make_schema_binary``."""
+
+type MaxFrameSize = int | Literal["unbounded"]
+
+
+def _schema_binary_parser(max_frame_size: int | None) -> Parser:
+    reader = schema_binary.parser(EncodedSchema, fingerprint=True, max_frame_size=max_frame_size)
+    writer = schema_binary.encoder(EncodedSchema, fingerprint=True)
+
+    class _SchemaBinaryParser:
+        def decode(self, data: Frame, /) -> list[object]:
+            return reader.feed_sync(text_encode(data) if isinstance(data, str) else data)
+
+        def encode(self, response: object, /) -> Frame | None:
+            if not isinstance(response, list):
+                return writer.encode(response)
+            messages = cast("list[object]", response)
+            return writer.encode_many(messages) if messages else None
+
+    return _SchemaBinaryParser()
+
+
+def make_schema_binary(
+    *,
+    max_frame_size: MaxFrameSize = _SCHEMA_BINARY_MAX_FRAME_SIZE,
+    fingerprint_payloads: bool = False,
+) -> RpcSerializationService:
+    """``encoding.schema_binary`` over RPC, with Effect's wire format.
+    ``max_frame_size`` limits a frame a parser buffers. Values are written in
+    the default mode, whose schemas can evolve compatibly; with
+    ``fingerprint_payloads`` they also carry their layout hash, and a peer with
+    a different layout fails."""
+    limit = None if max_frame_size == "unbounded" else max_frame_size
+
+    def codec_for(schema: S.Top) -> S.Codec[Any, Any, Any, Any]:
+        return schema_binary.to_codec_direct(
+            cast("S.Codec[Any, Any, Any, Any]", schema), fingerprint=fingerprint_payloads
+        )
+
+    return RpcSerializationService(
+        make_unsafe=lambda: _schema_binary_parser(limit),
+        content_type="application/vnd.effect.rpc+schema-binary",
+        includes_framing=True,
+        codec_for=codec_for,
+    )
+
+
 def with_codec_for(
     service: RpcSerializationService, codec_for: CodecFor
 ) -> RpcSerializationService:
@@ -249,6 +299,19 @@ def layer_ndjson_with(
     *, max_buffer_size: MaxBufferSize = DEFAULT_MAX_BUFFER_SIZE
 ) -> Layer[RpcSerialization]:
     return layer_succeed(RpcSerialization, make_ndjson(max_buffer_size=max_buffer_size))
+
+
+def layer_schema_binary(
+    *,
+    max_frame_size: MaxFrameSize = _SCHEMA_BINARY_MAX_FRAME_SIZE,
+    fingerprint_payloads: bool = False,
+) -> Layer[RpcSerialization]:
+    return layer_succeed(
+        RpcSerialization,
+        make_schema_binary(
+            max_frame_size=max_frame_size, fingerprint_payloads=fingerprint_payloads
+        ),
+    )
 
 
 def layer_json_rpc(*, content_type: str = "application/json") -> Layer[RpcSerialization]:
@@ -280,6 +343,7 @@ __all__ = [
     "Frame",
     "MaxBufferSize",
     "MaxBufferSizeExceeded",
+    "MaxFrameSize",
     "NdjsonDecodeError",
     "Parser",
     "RpcSerialization",
@@ -293,7 +357,9 @@ __all__ = [
     "layer_nd_json_rpc",
     "layer_ndjson",
     "layer_ndjson_with",
+    "layer_schema_binary",
     "make_ndjson",
+    "make_schema_binary",
     "nd_json_rpc",
     "ndjson",
     "with_codec_for",

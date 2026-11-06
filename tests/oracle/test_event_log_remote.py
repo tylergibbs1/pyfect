@@ -221,9 +221,7 @@ def test_pipelines_at_most_four_chunks():
     def body():
         harness = yield from make_harness(make_unencrypted)
         identity = yield from L.make_identity
-        # Base64 in JSON grows the payload by a third, so three chunks of
-        # payload make the five parts Effect's MessagePack framing makes of four.
-        entry = make_entry(payload_size=M.CHUNK_SIZE * 3)
+        entry = make_entry(payload_size=M.CHUNK_SIZE * 4)
         write = yield from harness.remote.write(
             identity=identity, store_id=default_store_id, entries=[entry]
         ).fork_scoped()

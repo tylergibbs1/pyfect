@@ -13,6 +13,7 @@ from pyfect.errors import Done
 from pyfect.http.origin import origin_allowed
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.http.server_response import HttpServerResponse, empty, text
+from pyfect.http.server_response import bytes_ as bytes_response
 from pyfect.http.server_response import stream as stream_response
 from pyfect.queue import Queue
 from pyfect.rpc.message import RequestId, response_defect_encoded
@@ -23,6 +24,7 @@ from pyfect.rpc.serialization import (
     RpcSerialization,
     RpcSerializationService,
     encode_text,
+    is_binary,
 )
 from pyfect.rpc.server._protocol import (
     Message,
@@ -224,6 +226,10 @@ def make_protocol_with_http_effect_websocket() -> Effect[HttpProtocol, Never, Rp
     return make
 
 
+def _read_frame(request: Any, binary: bool) -> Effect[Frame]:
+    return request.bytes_.or_die() if binary else request.text.or_die()
+
+
 @dataclass(slots=True, eq=False)
 class _HttpClient:
     write: Callable[[Message], Effect[None]]
@@ -323,7 +329,8 @@ class _HttpHandler:
             if not (yield from origin_allowed(request)):
                 return empty(status=403)
             scope = yield from Scope()
-            data = yield from request.text.or_die()
+            binary = is_binary(serialization)
+            data = yield from _read_frame(request, binary)
             client_id: int = next(self._ids)
             capacity = self._buffer if framed and isinstance(self._buffer, int) else None
             queue = yield from Queue[Any, Done].make(capacity)
@@ -371,7 +378,10 @@ class _HttpHandler:
             initial: list[Any] = yield from take_all.interruptible()
             chunks = [encode_text(c) for c in initial]
             if queue.is_done_unsafe():
-                return text("".join(c.decode() for c in chunks), content_type=content_type)
+                joined = b"".join(chunks)
+                if binary:
+                    return bytes_response(joined, content_type=content_type)
+                return text(joined.decode(), content_type=content_type)
             body: Stream[bytes, Never] = from_iterable(chunks).concat(
                 from_queue(queue).map(encode_text)
             )

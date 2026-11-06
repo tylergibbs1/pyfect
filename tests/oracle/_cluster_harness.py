@@ -23,8 +23,7 @@ routes to it.
 Backends: ``"sqlite"`` (a database file shared by every member; SQLite has
 no advisory locks, so its locks are rows) and ``"pg"`` (the throwaway
 server of ``_postgres``). Effect runs PostgreSQL and MySQL; MySQL is not
-run here (no server). Messages travel as ndjson: Effect's ``SchemaBinary``
-is not ported.
+run here (no server). Messages travel as ``SchemaBinary``, as in Effect.
 """
 
 from __future__ import annotations
@@ -457,7 +456,7 @@ def socket_runner_layer(
         .pipe(fx.layer.provide(fx.layer.succeed(SocketServer, server)))
         .pipe(fx.layer.provide(client_protocol))
         .pipe(fx.layer.provide(sharding_config_.layer(replace(config, runner_address=address))))
-        .pipe(fx.layer.provide(serialization.layer_ndjson))
+        .pipe(fx.layer.provide(serialization.layer_schema_binary()))
     )
 
 
@@ -475,7 +474,7 @@ def make_raw_runner_client(runner: ClusterRunner) -> fx.Effect[RawRunnerClient, 
 
     @fx.gen
     def make_():
-        wire = serialization.ndjson
+        wire = serialization.make_schema_binary()
         parent = yield from Scope()
         transport = yield from parent.fork()
         yield from parent.add_finalizer(lambda _: transport.close(fx.exit.succeed(None)))
@@ -952,7 +951,7 @@ def make(
                 fx.layer.provide(tracked_client_protocol(sockets, CLIENT_PEER))
             )
             .pipe(fx.layer.provide(sharding_config_.layer(settings)))
-            .pipe(fx.layer.provide(serialization.layer_ndjson))
+            .pipe(fx.layer.provide(serialization.layer_schema_binary()))
             .build_with_scope(client_scope)
             .pipe(fx.provide(shared.merge(Context.make(RunnerStorage, client_storage.controlled))))
         )

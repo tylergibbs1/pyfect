@@ -135,8 +135,9 @@ requests.
 `client_only=True` makes a runner that sends messages but holds no shards, for a web server
 in front of the cluster. `runner_health="k8s"` checks whether a runner that stopped
 answering is still alive by reading its pod from the Kubernetes API, where the default
-pings it. The layers serialize messages as newline-delimited JSON, where Effect's default is
-its binary format, which is not ported, so a pyfect runner cannot join an Effect cluster.
+pings it. Messages are [SchemaBinary](/docs/streams#schemabinary) frames, as in Effect;
+`serialization="ndjson"` writes newline-delimited JSON instead, and
+`serialization_max_buffer_size` limits a frame of either.
 Lower level pieces are there too: `socket_runner` and `http_runner` (the protocols and servers), `runner_server`,
 `runners` and `runner_health`.
 

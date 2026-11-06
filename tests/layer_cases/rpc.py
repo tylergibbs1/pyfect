@@ -347,6 +347,10 @@ CASES: dict[str, Case] = {
         layer=lambda: rs.layer_ndjson_with(max_buffer_size=1 << 20),
         run=lambda value: _over_web_socket(serialization=value),
     ),
+    "pyfect.rpc.serialization.layer_schema_binary": Case(
+        layer=rs.layer_schema_binary,
+        run=lambda value: _over_web_socket(serialization=value),
+    ),
     "pyfect.rpc.serialization.layer_json_rpc": Case(
         layer=rs.layer_json_rpc,
         run=lambda value: _over_http(serialization=value),

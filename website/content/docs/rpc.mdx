@@ -24,8 +24,11 @@ their layer.
 with 403; `layer.succeed(AllowedOrigins, origin.allow("https://app.example"))` (from
 `pyfect.http.origin`) lists the origins to accept too. Messages are encoded by the
 `RpcSerialization` in the context:
-`serialization.layer_ndjson` or `layer_json`, or JSON-RPC 2.0 with `layer_json_rpc()` and
-`layer_nd_json_rpc()`. `router.serve` passes the layer's needs through, so the handlers
+`serialization.layer_ndjson` or `layer_json`, JSON-RPC 2.0 with `layer_json_rpc()` and
+`layer_nd_json_rpc()`, or `layer_schema_binary()`, the
+[binary format](/docs/streams#schemabinary), whose frames read and write the same bytes as
+Effect's (`max_frame_size=` limits a frame, 16 MiB by default; `fingerprint_payloads=True`
+fails on a payload whose layout differs). `router.serve` passes the layer's needs through, so the handlers
 (`HandlersFor[Group]`) and the serialization can be provided to the served layer.
 
 `rpc_server.layer_protocol_stdio` serves a group over standard input and output, for a

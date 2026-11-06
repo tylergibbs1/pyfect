@@ -5,7 +5,7 @@ A client says ``Hello`` (the server's remote id and a one-time
 challenge), ``Authenticate``\\s an identity by signing the challenge,
 then writes entries (``WriteSingle``, or ``WriteChunked`` parts of at
 most 512,000 bytes) and streams ``Changes``. Writes and changes carry
-their entries as bytes (see ``_binary``): encrypted batches, or plain
+their entries as ``SchemaBinary`` bytes: encrypted batches, or plain
 entries for an unencrypted server.
 """
 
@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
-from typing import Literal, TypedDict, Unpack
+from typing import Any, Literal, TypedDict, Unpack
 
 from pyfect import schema as S
 from pyfect._core import Effect
-from pyfect.eventlog._binary import BytesCodec, to_codec
+from pyfect.encoding.schema_binary import BytesCodec, to_codec, wire_name
+from pyfect.encoding.schema_binary._undefined import Undefined
 from pyfect.eventlog._identity import Identity
 from pyfect.eventlog.event_journal import (
     Entry,
@@ -37,16 +38,21 @@ type ProtocolErrorCode = Literal[
 ]
 
 
+def _absent_or(schema: Any, name: str) -> Any:
+    """Effect's ``Schema.optional(schema)`` of the field ``name``."""
+    return S.Union(schema, Undefined).pipe(wire_name(name))
+
+
 class EventLogProtocolError(S.TaggedError, tag="EventLogProtocolError"):
     """A server refused or failed a request."""
 
-    request_tag: str
+    request_tag: str = S.field(S.String.pipe(wire_name("requestTag")))
     code: ProtocolErrorCode = S.field(
         S.Literals("Unauthorized", "Forbidden", "NotFound", "InvalidRequest", "InternalServerError")
     )
     message: str
-    public_key: str | None = None
-    store_id: StoreId | None = S.field(S.NullOr(StoreIdSchema), default=None)
+    public_key: str | None = S.field(_absent_or(S.String, "publicKey"), default=None)
+    store_id: StoreId | None = S.field(_absent_or(S.String, "storeId"), default=None)
 
 
 class EventLogAuthentication(
@@ -62,17 +68,17 @@ class HelloResponse(S.Class, identifier="effect/eventlog/EventLogRemote/HelloRes
     """The server's remote id, a challenge to sign, and the first sequence
     its changes start at."""
 
-    remote_id: RemoteId = S.field(RemoteIdSchema)
+    remote_id: RemoteId = S.field(wire_name("remoteId")(RemoteIdSchema))
     challenge: bytes = S.field(S.Bytes)
-    first_sequence: int | None = S.field(S.NullOr(S.Natural), default=None)
+    first_sequence: int | None = S.field(_absent_or(S.Natural, "firstSequence"), default=None)
 
 
 class Authenticate(S.Class, identifier="effect/eventlog/EventLogRemote/Authenticate"):
     """An identity's public key, its signing public key and the signature
     of the session auth payload."""
 
-    public_key: str
-    signing_public_key: bytes = S.field(S.Bytes)
+    public_key: str = S.field(S.String.pipe(wire_name("publicKey")))
+    signing_public_key: bytes = S.field(S.Bytes.pipe(wire_name("signingPublicKey")))
     signature: bytes = S.field(S.Bytes)
     algorithm: Literal["Ed25519"] = S.field(S.Literal("Ed25519"))
 
@@ -166,15 +172,15 @@ class ChunkedMessage(
 class WriteAck(S.Class, identifier="effect/eventlog/EventLogMessage/WriteAck"):
     """The server stored ``entry_id`` at ``sequence``."""
 
-    entry_id: EntryId = S.field(EntryIdSchema)
+    entry_id: EntryId = S.field(wire_name("entryId")(EntryIdSchema))
     sequence: int = S.field(S.Natural)
 
 
 class WriteEntries(S.Class, identifier="effect/eventlog/EventLogRemote/WriteEntries"):
     """Encrypted batches to write to ``store_id``."""
 
-    public_key: str
-    store_id: StoreId = S.field(StoreIdSchema)
+    public_key: str = S.field(S.String.pipe(wire_name("publicKey")))
+    store_id: StoreId = S.field(S.String.pipe(wire_name("storeId")))
     batches: tuple[EncryptedBatch, ...]
 
     @property
@@ -193,8 +199,8 @@ class WriteEntriesUnencrypted(
 ):
     """Plain entries to write to ``store_id``."""
 
-    public_key: str
-    store_id: StoreId = S.field(StoreIdSchema)
+    public_key: str = S.field(S.String.pipe(wire_name("publicKey")))
+    store_id: StoreId = S.field(S.String.pipe(wire_name("storeId")))
     entries: tuple[Entry, ...]
 
     @property
@@ -278,7 +284,12 @@ WriteSingleRpc = make(
 ).middleware(EventLogAuthentication)
 ChangesRpc = make(
     "EventLog.Changes",
-    payload=S.Struct(ChangesPayload, store_id=StoreIdSchema, start_sequence=S.Natural),
+    payload=S.Struct(
+        ChangesPayload,
+        public_key=S.String.pipe(wire_name("publicKey")),
+        store_id=wire_name("storeId")(StoreIdSchema),
+        start_sequence=S.Natural.pipe(wire_name("startSequence")),
+    ),
     success=S.Union(SingleMessage, ChunkedMessage),
     error=EventLogProtocolError,
     stream=True,
@@ -287,7 +298,11 @@ ChangesRpc = make(
 
 LatestSequenceRpc = make(
     "EventLog.LatestSequence",
-    payload=S.Struct(LatestSequencePayload, store_id=StoreIdSchema),
+    payload=S.Struct(
+        LatestSequencePayload,
+        public_key=S.String.pipe(wire_name("publicKey")),
+        store_id=wire_name("storeId")(StoreIdSchema),
+    ),
     success=S.NullOr(S.Int),
     error=EventLogProtocolError,
 ).middleware(EventLogAuthentication)

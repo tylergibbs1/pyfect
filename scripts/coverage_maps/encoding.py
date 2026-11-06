@@ -9,7 +9,9 @@ TOML = Module("Toml", "effect/src/encoding/Toml.ts", ("pyfect.encoding.toml",))
 XML = Module("Xml", "effect/src/encoding/Xml.ts", ("pyfect.encoding",))
 TAR = Module("Tar", "effect/src/encoding/Tar.ts", ("pyfect.encoding",))
 ZIP = Module("Zip", "effect/src/encoding/Zip.ts", ("pyfect.encoding",))
-SCHEMA_BINARY = Module("SchemaBinary", "effect/src/encoding/SchemaBinary.ts", ("pyfect.encoding",))
+SCHEMA_BINARY = Module(
+    "SchemaBinary", "effect/src/encoding/SchemaBinary.ts", ("pyfect.encoding.schema_binary",)
+)
 
 CLUSTER = Cluster(
     "encoding",

@@ -67,9 +67,9 @@ class IndexSignature:
     parameter: AST
     type: AST
 
-    def selects(self, key: object) -> bool:
+    def selects(self, key: object, options: ParseOptions | None = None) -> bool:
         """``key`` is a value of the parameter's encoded side."""
-        return type(self.parameter.flip().to_type().parse(key, {})) is Success
+        return type(self.parameter.flip().to_type().parse(key, options or {})) is Success
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -152,7 +152,7 @@ class _Run(Steps["_Run"]):
         if ast.index_signatures:
             self.declared: frozenset[Hashable] = frozenset(p.name for p in ast.properties)
             self.entries: tuple[tuple[IndexSignature, object], ...] = tuple(
-                (i, key) for i in ast.index_signatures for key in input if i.selects(key)
+                (i, key) for i in ast.index_signatures for key in input if i.selects(key, options)
             )
         else:
             self.declared, self.entries = _NO_KEYS, _NO_ENTRIES
@@ -218,7 +218,9 @@ class _Run(Steps["_Run"]):
         ast = self.ast
         declared = {p.name for p in ast.properties}
         for key, value in self.input.items():
-            if key not in declared and not any(i.selects(key) for i in ast.index_signatures):
+            if key not in declared and not any(
+                i.selects(key, self.options) for i in ast.index_signatures
+            ):
                 self._report(key, UnexpectedKey(ast, reported(value, self.options)))
 
     def _report(self, key: object, issue: Issue) -> None:

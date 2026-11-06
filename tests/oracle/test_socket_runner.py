@@ -5,26 +5,17 @@ localhost, and a client built with ``socket_runner.layer_client_only`` or
 storage. Each test's docstring is the Effect test title.
 
 Adapted, with the reason:
-- "uses SchemaBinary by default for TCP connections": Effect's
-  ``SchemaBinary`` serialization is not ported, so ``cluster_socket.layer``
-  defaults to ndjson; the test checks that the default serialization
-  reaches a runner on ndjson.
-- "applies serializationMaxBufferSize to the default SchemaBinary parser":
-  the limit applies to the default ndjson parser.
 - "discarded persisted requests serialize circular values and volatile
   requests do not wait for replies": the circular value is a JavaScript
   ``BigDecimal`` (its ``normalized`` self-reference); the payload's amount
   is a decimal string here, and the rest of the test is Effect's.
-
-Omitted:
-- "preserves an explicit binary selection": ``SchemaBinary`` is not ported.
 """
 
 from __future__ import annotations
 
 from collections.abc import Generator
 from dataclasses import replace
-from typing import Any, Never, TypedDict
+from typing import Any, Literal, Never, TypedDict
 
 import pyfect as fx
 from pyfect import exit as Exit
@@ -106,8 +97,10 @@ def _config(port: int, **overrides: Any) -> ShardingConfigService:
 
 def start_runner(
     entities: Layer[Never, Never, Sharding],
-    wire: Layer[serialization.RpcSerialization] = serialization.layer_ndjson,
+    wire: Layer[serialization.RpcSerialization] | None = None,
 ) -> fx.Effect[int, Any, Any]:
+    wire_ = serialization.layer_schema_binary() if wire is None else wire
+
     @fx.gen
     def start():
         server = yield from socket_server.make(0, HOST)
@@ -120,7 +113,7 @@ def start_runner(
             .pipe(fx.layer.provide(fx.layer.succeed(SocketServer, server)))
             .pipe(fx.layer.provide(cluster_socket.layer_client_protocol))
             .pipe(fx.layer.provide(sharding_config.layer(_config(port))))
-            .pipe(fx.layer.provide(wire))
+            .pipe(fx.layer.provide(wire_))
         )
         yield from runner.build()
         return port
@@ -138,21 +131,25 @@ def client_layer(port: int) -> Layer[Any, Never, Any]:
                 )
             )
         )
-        .pipe(fx.layer.provide(serialization.layer_ndjson))
+        .pipe(fx.layer.provide(serialization.layer_schema_binary()))
     )
 
 
-def configured_client_layer(port: int, max_buffer_size: int | None = None) -> Layer[Any, Any, Any]:
+def configured_client_layer(
+    port: int,
+    kind: Literal["binary", "ndjson"] | None = None,
+    max_buffer_size: int | None = None,
+) -> Layer[Any, Any, Any]:
     def settings(config: ShardingConfigService) -> ShardingConfigService:
         return _config(port, runner_listen_address=runner_address.make(HOST, port))
 
-    if max_buffer_size is None:
-        return cluster_socket.layer(client_only=True, storage="byo", sharding_config=settings)
+    options: dict[str, Any] = {}
+    if kind is not None:
+        options["serialization"] = kind
+    if max_buffer_size is not None:
+        options["serialization_max_buffer_size"] = max_buffer_size
     return cluster_socket.layer(
-        client_only=True,
-        storage="byo",
-        sharding_config=settings,
-        serialization_max_buffer_size=max_buffer_size,
+        client_only=True, storage="byo", sharding_config=settings, **options
     )
 
 
@@ -167,18 +164,35 @@ def _ping(entity_id: str):
     return (yield from make_client(entity_id).ping())
 
 
-@testing.live(timeout=15)
-def test_uses_the_default_serialization_for_tcp_connections():
-    """uses SchemaBinary by default for TCP connections"""
-
+def _assert_serialization(
+    wire: Layer[serialization.RpcSerialization], kind: Literal["binary", "ndjson"] | None
+) -> Any:
     def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
-        port = yield from start_runner(serialization_entity_layer)
+        port = yield from start_runner(serialization_entity_layer, wire)
         result = yield from fx.scoped(
-            _ping("serialization-entity").pipe(fx.provide(configured_client_layer(port)))
+            _ping("serialization-entity").pipe(fx.provide(configured_client_layer(port, kind)))
         )
         assert result == "pong"
 
-    yield from fx.gen(body).pipe(fx.provide(shared_storage))
+    return fx.gen(body).pipe(fx.provide(shared_storage))
+
+
+@testing.live(timeout=15)
+def test_uses_the_default_serialization_for_tcp_connections():
+    """uses SchemaBinary by default for TCP connections"""
+    yield from _assert_serialization(serialization.layer_schema_binary(), None)
+
+
+@testing.live(timeout=15)
+def test_preserves_an_explicit_ndjson_selection():
+    """(not an Effect title) an explicit ndjson selection reaches a runner on ndjson"""
+    yield from _assert_serialization(serialization.layer_ndjson, "ndjson")
+
+
+@testing.live(timeout=15)
+def test_preserves_an_explicit_binary_selection():
+    """preserves an explicit binary selection"""
+    yield from _assert_serialization(serialization.layer_schema_binary(), "binary")
 
 
 @testing.live(timeout=15)
@@ -194,7 +208,7 @@ def test_applies_serialization_max_buffer_size_to_the_default_parser():
         exit = yield from fx.scoped(
             _ping("serialization-limit-entity")
             .timeout(1)
-            .pipe(fx.provide(configured_client_layer(port, 1)))
+            .pipe(fx.provide(configured_client_layer(port, None, 1)))
         ).exit()
         assert isinstance(exit, Exit.Failure), "the configured frame limit must reject the response"
 

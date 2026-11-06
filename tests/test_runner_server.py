@@ -1,3 +1,4 @@
+# pyright: reportCallIssue=false, reportArgumentType=false
 """``runner_server.layer_handlers`` against a sharding that answers each
 message itself: what the handlers hand to ``Sharding`` and what they send
 back to the calling runner. (Effect's own RunnerServer tests need

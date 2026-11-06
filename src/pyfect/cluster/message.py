@@ -165,7 +165,7 @@ def serialize(message: Outgoing, codec_for: CodecFor) -> Effect[Partial, Malform
 def serialize_envelope(message: Outgoing) -> Effect[Encoded, MalformedMessage]:
     """``message`` as Effect's JSON."""
     return serialize(message, codec_for_json).flat_map(
-        lambda partial: MalformedMessage.refail(S.encode_effect(envelope_.PartialSchema)(partial))
+        lambda partial: MalformedMessage.refail(S.encode_effect(envelope_.PartialJson)(partial))
     )  # pyright: ignore[reportReturnType]
 
 

@@ -9,8 +9,8 @@ Coverage counts ported, renamed and §4 exports.
 | Xml | 7 | 0 | 0 | 0 | 7 | 0% |
 | Tar | 9 | 0 | 0 | 0 | 9 | 0% |
 | Zip | 7 | 0 | 0 | 0 | 7 | 0% |
-| SchemaBinary | 10 | 0 | 0 | 0 | 10 | 0% |
-| **All** | 34 | | | | 33 | 2% |
+| SchemaBinary | 10 | 10 | 0 | 0 | 0 | 100% |
+| **All** | 34 | | | | 23 | 32% |
 
 ## Toml
 
@@ -60,13 +60,13 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
-| `toCodec` | missing |  |
-| `toCodecDirect` | missing |  |
-| `encodeUnknownSync` | missing |  |
-| `encodeManyUnknownSync` | missing |  |
-| `parser` | missing |  |
-| `encoder` | missing |  |
-| `encode` | missing |  |
-| `decode` | missing |  |
-| `duplex` | missing |  |
-| `fieldId` | missing |  |
+| `toCodec` | ported | `pyfect.encoding.schema_binary.to_codec` |
+| `toCodecDirect` | ported | `pyfect.encoding.schema_binary.to_codec_direct` |
+| `encodeUnknownSync` | ported | `pyfect.encoding.schema_binary.encode_unknown_sync` |
+| `encodeManyUnknownSync` | ported | `pyfect.encoding.schema_binary.encode_many_unknown_sync` |
+| `parser` | ported | `pyfect.encoding.schema_binary.parser` |
+| `encoder` | ported | `pyfect.encoding.schema_binary.encoder` |
+| `encode` | ported | `pyfect.encoding.schema_binary.encode` |
+| `decode` | ported | `pyfect.encoding.schema_binary.decode` |
+| `duplex` | ported | `pyfect.encoding.schema_binary.duplex` |
+| `fieldId` | ported | `pyfect.encoding.schema_binary.field_id` |

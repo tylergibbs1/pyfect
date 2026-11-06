@@ -108,8 +108,8 @@ entry the server held when asked. Effect has no such call; pyfect adds it (with 
 `EventLog.LatestSequence` RPC it asks the server through), so a test or a script can sync
 and then check, without sleeping.
 
-Payloads travel as their schemas' JSON: Effect's MessagePack codec is not ported, so pyfect
-clients and servers talk to each other but not to Effect's.
+Payloads, entries and the write and change frames are
+[SchemaBinary](/docs/streams#schemabinary) frames with Effect's bytes.
 
 Reference: [`pyfect.eventlog`](/docs/reference/eventlog),
 [`event_log`](/docs/reference/eventlog/event_log),

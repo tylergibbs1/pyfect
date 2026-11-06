@@ -107,8 +107,12 @@ class _HttpExchange:
         @gen
         def exchange():
             encoded = parser.encode(requests[0] if len(requests) == 1 else requests)
-            text = encoded if isinstance(encoded, str) else (encoded or b"").decode()
-            body = http_body.text(text, serialization.content_type)
+            content_type = serialization.content_type
+            body = (
+                http_body.text(encoded, content_type)
+                if isinstance(encoded, str)
+                else http_body.bytes_(encoded or b"", content_type)
+            )
             response = yield from self._client.post("", body=body).map_error(_http_error)
             if not serialization.includes_framing:
                 data = yield from response.text.map_error(_http_error)

@@ -15,9 +15,8 @@ database.
 Import it as a submodule (``from pyfect import eventlog``): ``import pyfect``
 does not load it, since its servers load ``pyfect.rpc``.
 
-Payloads and messages are their schemas' JSON as UTF-8 bytes: Effect's
-``SchemaBinary`` (MessagePack) is not ported, so pyfect peers cannot talk
-to Effect ones.
+Payloads, entries and write and change frames are ``encoding.schema_binary``
+frames with Effect's bytes.
 """
 
 from pyfect.eventlog import (

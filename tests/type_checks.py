@@ -93,7 +93,7 @@ from pyfect.cli._environment import Environment as CliEnvironment
 from pyfect.cli.global_flag import LogLevel
 from pyfect.context import Tag, TagEffect
 from pyfect.duration import Seconds, to_seconds
-from pyfect.encoding import EncodingError, Json, base64, json_array, ndjson, sse
+from pyfect.encoding import EncodingError, Json, base64, json_array, ndjson, schema_binary, sse
 from pyfect.errors import TaggedError
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
@@ -9278,3 +9278,16 @@ def encoding_toml_types() -> None:
     from pyfect.encoding import toml
 
     assert_type(toml.parse("a = 1"), dict[str, Any])
+
+
+class _BinaryPoint(TypedDict):
+    x: float
+
+
+_binary_points = S.Struct(_BinaryPoint)
+_binary_codec = schema_binary.to_codec(_binary_points)
+assert_type(S.encode_sync(_binary_codec)({"x": 1}), bytes)
+assert_type(S.decode_sync(_binary_codec)(b""), _BinaryPoint)
+assert_type(schema_binary.parser(_binary_points).feed_sync(b""), list[_BinaryPoint])
+assert_type(schema_binary.encoder(_binary_points, fingerprint=True).encode({"x": 1}), bytes)
+assert_type(schema_binary.encode_unknown_sync(_binary_points)({"x": 1}), bytes)

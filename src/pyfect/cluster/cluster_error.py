@@ -10,6 +10,7 @@ from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.snowflake import Snowflake, SnowflakeFromString
 from pyfect.effect import fail
+from pyfect.encoding.schema_binary import wire_name
 
 _ID = "~effect/cluster/ClusterError"
 
@@ -66,7 +67,7 @@ class MailboxFull(S.TaggedError, identifier=f"{_ID}/MailboxFull"):
 class AlreadyProcessingMessage(S.TaggedError, identifier=f"{_ID}/AlreadyProcessingMessage"):
     """The entity is already processing the message with this id."""
 
-    envelope_id: Snowflake = S.field(SnowflakeFromString)
+    envelope_id: Snowflake = S.field(SnowflakeFromString.pipe(wire_name("envelopeId")))
     address: EntityAddress
 
 

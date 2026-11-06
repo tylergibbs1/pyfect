@@ -178,12 +178,10 @@ class _EncodedBase:
             persisted = ReplyWithContext.from_defect(
                 id=reply.reply.id, request_id=reply.reply.request_id, defect=error
             )
-            return (
-                reply_.serialize(persisted, codec_for_json).or_die().map(lambda e: (e, persisted))
-            )
+            return _serialize_json(persisted).or_die().map(lambda e: (e, persisted))
 
         encoded: Effect[tuple[reply_.Encoded, ReplyWithContext]] = (
-            reply_.serialize(reply, codec_for_json)
+            _serialize_json(reply)
             .flat_map(_json_checked)
             .map(lambda e: (e, reply))
             .catch_all(fallback)
@@ -356,6 +354,11 @@ def _envelope_defect(error: S.SchemaError) -> str:
     of the row it decodes."""
     issue = S.issue.format_issue(S.issue.Pointer(("envelope",), error.issue))
     return f"SchemaError({issue})"
+
+
+def _serialize_json(reply: ReplyWithContext) -> Effect[reply_.Encoded, MalformedMessage]:
+    """The stored form of ``reply``: JSON, so its fields can be read."""
+    return cast("Effect[reply_.Encoded, MalformedMessage]", reply_.serialize(reply, codec_for_json))
 
 
 def _json_checked(encoded: reply_.Encoded) -> Effect[reply_.Encoded, MalformedMessage]:

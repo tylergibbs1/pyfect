@@ -16,6 +16,7 @@ from pyfect import layer as layer_
 from pyfect.cluster import http_runner
 from pyfect.cluster._cluster_layer import (
     Health,
+    SerializationKind,
     ShardingConfigUpdate,
     Storage,
     assemble,
@@ -112,6 +113,7 @@ def layer(
     runner_health: Health = "ping",
     runner_health_k8s_namespace: str | None = None,
     runner_health_k8s_label_selector: str | None = None,
+    serialization: SerializationKind = ...,
     serialization_max_buffer_size: MaxBufferSize = ...,
     sharding_config: ShardingConfigUpdate | None = None,
 ) -> Layer[_Out, SocketServerError | ConfigError, SqlClient]: ...
@@ -124,6 +126,7 @@ def layer(
     runner_health: Health = "ping",
     runner_health_k8s_namespace: str | None = None,
     runner_health_k8s_label_selector: str | None = None,
+    serialization: SerializationKind = ...,
     serialization_max_buffer_size: MaxBufferSize = ...,
     sharding_config: ShardingConfigUpdate | None = None,
 ) -> Layer[_Out, SocketServerError | ConfigError]: ...
@@ -136,6 +139,7 @@ def layer(
     runner_health: Health = "ping",
     runner_health_k8s_namespace: str | None = None,
     runner_health_k8s_label_selector: str | None = None,
+    serialization: SerializationKind = ...,
     serialization_max_buffer_size: MaxBufferSize = ...,
     sharding_config: ShardingConfigUpdate | None = None,
 ) -> Layer[_Core, SocketServerError | ConfigError, MessageStorage | RunnerStorage]: ...
@@ -145,6 +149,7 @@ def layer(
     transport: Transport,
     client_only: Literal[True],
     storage: Literal["sql"] = "sql",
+    serialization: SerializationKind = ...,
     serialization_max_buffer_size: MaxBufferSize = ...,
     sharding_config: ShardingConfigUpdate | None = None,
 ) -> Layer[_Out, ConfigError, SqlClient]: ...
@@ -154,6 +159,7 @@ def layer(
     transport: Transport,
     client_only: Literal[True],
     storage: Literal["local"],
+    serialization: SerializationKind = ...,
     serialization_max_buffer_size: MaxBufferSize = ...,
     sharding_config: ShardingConfigUpdate | None = None,
 ) -> Layer[_Out, ConfigError]: ...
@@ -163,6 +169,7 @@ def layer(
     transport: Transport,
     client_only: Literal[True],
     storage: Literal["byo"],
+    serialization: SerializationKind = ...,
     serialization_max_buffer_size: MaxBufferSize = ...,
     sharding_config: ShardingConfigUpdate | None = None,
 ) -> Layer[_Core, ConfigError, MessageStorage | RunnerStorage]: ...
@@ -174,6 +181,7 @@ def layer(
     runner_health: Health = "ping",
     runner_health_k8s_namespace: str | None = None,
     runner_health_k8s_label_selector: str | None = None,
+    serialization: SerializationKind = "binary",
     serialization_max_buffer_size: MaxBufferSize = 16 * 1024 * 1024,
     sharding_config: ShardingConfigUpdate | None = None,
 ) -> Layer[Any, Any, Any]:
@@ -194,6 +202,7 @@ def layer(
         health=health,
         storage=storage,
         sharding_config=sharding_config,
+        serialization_kind=serialization,
         serialization_max_buffer_size=serialization_max_buffer_size,
     )
 

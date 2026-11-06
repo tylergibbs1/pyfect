@@ -17,7 +17,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._wire_codec import Const, key, wire_codec
 from pyfect.cluster.cluster_error import MalformedMessage
-from pyfect.cluster.snowflake import Snowflake, SnowflakeFromString
+from pyfect.cluster.snowflake import Snowflake, SnowflakeFromBigInt
 from pyfect.context import Context
 from pyfect.effect import provide_context, succeed
 from pyfect.exit import Exit
@@ -82,6 +82,10 @@ class ChunkEncoded(TypedDict):
 
 type Encoded = WithExitEncoded | ChunkEncoded
 
+type OnWire = Encoded | bytes
+"""A reply as a serialization's ``codec_for`` writes it: a frame under
+``SchemaBinary``, so only JSON storage may read its fields."""
+
 _never_rpc = make_rpc("Never", success=S.Never)
 
 
@@ -125,8 +129,8 @@ def with_exit_schema(exit: S.Top) -> S.Bottom[WithExit, Mapping[str, object]]:
         WithExit,
         [
             Const("_tag", "WithExit"),
-            key("requestId", "request_id", SnowflakeFromString),
-            key("id", "id", SnowflakeFromString),
+            key("requestId", "request_id", SnowflakeFromBigInt),
+            key("id", "id", SnowflakeFromBigInt),
             key("exit", "exit", exit),
         ],
         identifier="Reply.WithExit",
@@ -138,8 +142,8 @@ def chunk_schema(success: S.Top) -> S.Bottom[Chunk, Mapping[str, object]]:
         Chunk,
         [
             Const("_tag", "Chunk"),
-            key("requestId", "request_id", SnowflakeFromString),
-            key("id", "id", SnowflakeFromString),
+            key("requestId", "request_id", SnowflakeFromBigInt),
+            key("id", "id", SnowflakeFromBigInt),
             key("sequence", "sequence", S.Int),
             key("values", "values", S.NonEmptyArray(success)),
         ],
@@ -171,15 +175,15 @@ def _encode(
     return MalformedMessage.refail(S.encode_effect(schema)(reply).pipe(provide_context(context)))
 
 
-def serialize(self: ReplyWithContext, codec_for: CodecFor) -> Effect[Encoded, MalformedMessage]:
+def serialize(self: ReplyWithContext, codec_for: CodecFor) -> Effect[OnWire, MalformedMessage]:
     """The reply encoded by its RPC's schema."""
     return _encode(reply_schema(self.rpc, codec_for), self.reply, self.context)
 
 
-def serialize_or_defect(self: ReplyWithContext, codec_for: CodecFor) -> Effect[Encoded]:
+def serialize_or_defect(self: ReplyWithContext, codec_for: CodecFor) -> Effect[OnWire]:
     """The reply encoded, or a defect ending its request when it cannot be."""
 
-    def defect(error: MalformedMessage) -> Effect[Encoded]:
+    def defect(error: MalformedMessage) -> Effect[OnWire]:
         fallback = ReplyWithContext.from_defect(
             id=self.reply.id, request_id=self.reply.request_id, defect=error
         )
@@ -215,6 +219,7 @@ __all__ = [
     "ChunkEncoded",
     "Encoded",
     "MalformedMessage",
+    "OnWire",
     "Reply",
     "ReplyWithContext",
     "WithExit",

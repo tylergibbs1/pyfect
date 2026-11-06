@@ -10,7 +10,6 @@ Omitted:
   request of an in-process handler is covered by the web handler tests.
 - "decodes payloads with the ParseOptions annotation": pyfect has no
   request resolvers inside schema transformations.
-- the SchemaBinary cases: pyfect has no SchemaBinary serialization.
 - "closes a socket when the serialization buffer limit is exceeded":
   covered by test_rpc_serialization.py's max buffer size cases.
 """
@@ -81,7 +80,9 @@ class Ping(RpcGroup):
 
 
 @pytest.mark.parametrize(
-    "serialization", [rs.layer_ndjson, rs.layer_nd_json_rpc()], ids=["ndjson", "ndJsonRpc"]
+    "serialization",
+    [rs.layer_ndjson, rs.layer_nd_json_rpc(), rs.layer_schema_binary()],
+    ids=["ndjson", "ndJsonRpc", "schemaBinary"],
 )
 def test_returns_http_200_with_an_empty_body_for_an_empty_post(serialization: Any) -> None:
     """RpcServer / returns HTTP 200 with an empty body for an empty ${name} POST"""
@@ -252,7 +253,7 @@ class ClientGroup(RpcGroup):
     invalid = make("Invalid", payload=S.Struct(NumberValue))
 
 
-def _isolation_client(body: Any) -> Any:
+def _isolation_client(body: Any, serialization: Any = rs.layer_json) -> Any:
     handlers = ServerGroup.to_layer(
         ServerGroup.handlers()
         .handle(ServerGroup.ok)(lambda _: effect.succeed("ok"))
@@ -262,7 +263,7 @@ def _isolation_client(body: Any) -> Any:
         rpc_server.layer(ServerGroup)
         .pipe(layer.provide(handlers))
         .pipe(layer.provide_merge(rpc_server.layer_protocol_http("/rpc")))
-        .pipe(layer.provide(rs.layer_json)),
+        .pipe(layer.provide(serialization)),
         disable_logger=True,
         disable_listen_log=True,
     )
@@ -272,7 +273,7 @@ def _isolation_client(body: Any) -> Any:
         )
         .pipe(layer.provide_merge(server))
         .pipe(layer.provide(uvicorn_server.layer_test()))
-        .pipe(layer.provide(rs.layer_json))
+        .pipe(layer.provide(serialization))
     )
     program = fx.scoped(effect.gen(body)).pipe(fx.provide(protocol))
     return fx.run_sync(program.timeout(10).or_die())
@@ -308,6 +309,65 @@ def test_json_an_invalid_payload_fails_only_its_request() -> None:
         assert 'at ["value"]' in diagnostic
 
     _isolation_client(body)
+
+
+_FINGERPRINT_DIAGNOSTIC = "Expected matching layout fingerprint"
+"""Fingerprinted payloads need both peers to share the schema, so a mismatch is
+reported as a fingerprint error instead of the original diagnostic."""
+_BINARY_CASES = [
+    pytest.param(
+        rs.layer_schema_binary(), None, ["Missing key", 'at ["value"]'], id="SchemaBinary"
+    ),
+    pytest.param(
+        rs.layer_schema_binary(fingerprint_payloads=True),
+        _FINGERPRINT_DIAGNOSTIC,
+        [_FINGERPRINT_DIAGNOSTIC],
+        id="SchemaBinary with fingerprints",
+    ),
+]
+
+
+@pytest.mark.parametrize("tag", ["Missing", "MissingWithSchemas"])
+@pytest.mark.parametrize(("serialization", "unknown_tag", "invalid"), _BINARY_CASES)
+def test_binary_unknown_tag_fails_only_its_request(
+    serialization: Any, unknown_tag: str | None, invalid: list[str], tag: str
+) -> None:
+    """RpcServer / request defect isolation over HTTP / ${name}: unknown tag ${tag} fails only its request and the client remains reusable"""  # noqa: E501
+
+    def body():
+        client = yield from rpc_client.make(ClientGroup)
+        assert (yield from client.ok()) == "ok"
+        call = client.missing if tag == "Missing" else client.missing_with_schemas
+        missing = yield from call().exit()
+        assert (yield from client.ok()) == "ok"
+        if unknown_tag is None:
+            assert missing == Exit.die(DecodedDefect(f"Unknown request tag: {tag}"))
+        else:
+            assert isinstance(missing, Exit.Failure)
+            assert len(missing.cause.reasons) == 1
+            assert unknown_tag in str(missing.cause.squash())
+
+    _isolation_client(body, serialization)
+
+
+@pytest.mark.parametrize(("serialization", "unknown_tag", "invalid"), _BINARY_CASES)
+def test_binary_an_invalid_payload_fails_only_its_request(
+    serialization: Any, unknown_tag: str | None, invalid: list[str]
+) -> None:
+    """RpcServer / request defect isolation over HTTP / ${name}: an invalid payload fails only its request and the client remains reusable"""  # noqa: E501
+
+    def body():
+        client = yield from rpc_client.make(ClientGroup)
+        assert (yield from client.ok()) == "ok"
+        exit = yield from client.invalid({"value": 42}).exit()
+        assert (yield from client.ok()) == "ok"
+        assert isinstance(exit, Exit.Failure)
+        assert len(exit.cause.reasons) == 1
+        diagnostic = _message(exit.cause.squash())
+        for expected in invalid:
+            assert expected in diagnostic
+
+    _isolation_client(body, serialization)
 
 
 # --- platform-node: Ticker isolation over TCP ------------------------------------------
