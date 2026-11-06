@@ -26,13 +26,16 @@ values are then escaped into the text. A few things work differently than on SQL
 PostgreSQL:
 
 - MySQL has no `RETURNING`. A statement that changes rows gives no rows; its `.raw`
-  result is a `ResultSetHeader` with `affected_rows` and `insert_id`.
+  result is a `ResultSetHeader` with `affected_rows` and `insert_id`. `.raw` is typed `object`,
+  as Effect's is `unknown`, because the same statement API can also give rows or a list of
+  results, so read it with `isinstance(header, mysql.ResultSetHeader)`.
 - `sql(...).unprepared` can run several statements separated by `;`, and gives a list
   with each one's result.
 - A failure's `reason` comes from MySQL's error number: `UniqueViolation` (with the key's
   name as `constraint`), `DeadlockError`, `LockTimeoutError`, `AuthenticationError`, ...
 - Interrupting a statement also ends its connection on the server (`KILL`), so its locks are
-  released.
+  released. Ending a stream early reads past a short rest; a statement still sending rows
+  after a moment gets `KILL QUERY`, so the connection and any transaction on it go on.
 
 <CodeOutput>
 

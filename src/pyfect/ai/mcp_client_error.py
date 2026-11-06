@@ -28,9 +28,6 @@ class McpClientErrorReason(TaggedError):
     def message(self) -> str:
         raise NotImplementedError
 
-    def __str__(self) -> str:
-        return self.message
-
 
 @dataclass(eq=False)
 class TransportError(McpClientErrorReason):
@@ -197,9 +194,6 @@ class McpClientError(TaggedError):
     @property
     def message(self) -> str:
         return self.reason.message
-
-    def __str__(self) -> str:
-        return self.message
 
 
 def is_mcp_client_error(u: object) -> bool:

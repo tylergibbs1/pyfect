@@ -20,9 +20,11 @@ def program():
     )
 
     # A statement that changes rows gives no rows; .raw gives mysql2's
-    # ResultSetHeader with the count and the generated id.
+    # ResultSetHeader with the count and the generated id. .raw is typed object,
+    # since a statement can give rows or several results instead, so check it.
     header = yield from sql("INSERT INTO users (email) VALUES ({})", "ada@example.com").raw
-    print(header)
+    assert isinstance(header, mysql.ResultSetHeader)
+    print(header.insert_id, header.affected_rows)
 
     # A failed statement's SqlError says why, read from MySQL's error number.
     error = yield from sql("INSERT INTO users (email) VALUES ({})", "ada@example.com").flip()

@@ -295,7 +295,12 @@ def _render_value(error: BaseException, prefix: str, seen: set[int]) -> str:
     Effect's ``renderPrettyError`` renders one: its line (as Python names
     it), then its ``__cause__`` nested in ``{ [cause]: ... }``. Python's chain would put
     the cause first and end with the error that was logged."""
-    lines = "".join(traceback.format_exception(error, chain=False)).rstrip().splitlines()
+    text = "".join(traceback.format_exception(error, chain=False)).rstrip()
+    # The cause gets its own nested block here, so the line keeps Effect's message alone.
+    message = getattr(error, "message", None)
+    if isinstance(message, str):
+        text = text.replace(str(error), message, 1)
+    lines = text.splitlines()
     if prefix:
         lines = [f"{prefix}[cause]: {lines[0]}", *(prefix + line for line in lines[1:])]
     cause = error.__cause__

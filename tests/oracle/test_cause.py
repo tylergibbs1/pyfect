@@ -590,7 +590,7 @@ def test_creates_an_error_with_cause_and_message() -> None:
     original = ValueError("original")
     error = fx.UnknownError(original, "wrapper message")
     assert error.message == "wrapper message"
-    assert str(error) == "wrapper message"
+    assert str(error) == "wrapper message: ValueError: original"
 
 
 def test_stores_the_original_cause() -> None:

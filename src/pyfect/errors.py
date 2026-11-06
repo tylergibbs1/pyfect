@@ -42,6 +42,34 @@ if TYPE_CHECKING:
     from pyfect.logger import Severity
 
 
+def with_cause(message: str, cause: object) -> str:
+    """``message`` and why, for ``str()``: what a log line shows, while ``.message`` stays
+    Effect's text (docs/PARITY.md). A cause whose own message this one repeats replaces it,
+    so a wrapper around its reason says it once."""
+    if cause is None:
+        return message
+    if not isinstance(cause, BaseException):
+        return f"{message}: {cause!r}"
+    detail = str(cause)
+    if detail.startswith(message):
+        return detail
+    said = getattr(cause, "message", None)
+    if isinstance(said, str) and said and said in message:
+        return message.replace(said, detail, 1)
+    if detail and detail in message:
+        return message
+    return f"{message}: {type(cause).__name__}{f': {detail}' if detail else ''}"
+
+
+def _why(error: BaseException) -> object:
+    """What caused ``error``: a ``reason`` that is an error (it tells its own cause), or else
+    its ``__cause__`` or ``cause``."""
+    reason = getattr(error, "reason", None)
+    if isinstance(reason, BaseException):
+        return reason
+    return error.__cause__ if error.__cause__ is not None else getattr(error, "cause", None)
+
+
 class TaggedError(Exception):
     exit_code: ClassVar[int] = 1
     error_reported: bool = True
@@ -102,7 +130,7 @@ class TaggedError(Exception):
     def __str__(self) -> str:
         message = getattr(self, "message", None)
         if isinstance(message, str):
-            return message
+            return with_cause(message, _why(self))
         if is_dataclass(self):
             return ", ".join(f"{f.name}={getattr(self, f.name)!r}" for f in fields(self))
         return super().__str__()
@@ -267,7 +295,7 @@ class UnknownError(TaggedError):
     message: str | None = None
 
     def __str__(self) -> str:
-        return self.message if self.message is not None else str(self.cause)
+        return str(self.cause) if self.message is None else with_cause(self.message, self.cause)
 
 
 __all__ = [
@@ -279,4 +307,5 @@ __all__ = [
     "TimeoutException",
     "UnknownError",
     "filter_done",
+    "with_cause",
 ]

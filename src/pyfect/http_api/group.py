@@ -65,6 +65,7 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co], base=True):
         annotations: Context[Any] | None = None,
         **kwargs: Any,
     ) -> None:
+        _refuse_reserved_names(cls)
         if identifier is None:
             # A derived group: the methods below set its endpoints. It is
             # the same tag as the group it derives from (typed ``type[Self]``,
@@ -164,6 +165,23 @@ class HttpApiGroup(Tag[GroupService], Generic[M_co, MT_co], base=True):
 type AnyGroup = type[HttpApiGroup[Any]]
 
 
+RESERVED_NAMES = frozenset(
+    {name for name in dir(HttpApiGroup) if not name.startswith("_")}
+    | {"identifier", "top_level", "endpoints", "annotations", "origin"}
+)
+"""What a group's endpoint attribute can't be called: the group's own members."""
+
+
+def _refuse_reserved_names(cls: type) -> None:
+    for name, value in vars(cls).items():
+        if isinstance(value, HttpApiEndpoint) and name in RESERVED_NAMES:
+            identifier = cast("AnyEndpoint", value).identifier
+            raise TypeError(
+                f"{cls.__name__}.{name} would replace HttpApiGroup.{name}, a reserved name: "
+                f"give the endpoint {identifier!r} another attribute"
+            )
+
+
 def _wrapped(cls: type, endpoints: Mapping[str, AnyEndpoint]) -> Mapping[str, AnyEndpoint]:
     """``endpoints`` each wrapped by the middleware ``cls`` declares. Every
     assignment of a group's ``endpoints`` goes through here, so no class
@@ -194,4 +212,4 @@ def _middleware_classes(argument: object) -> tuple[AnyMiddleware, ...]:
     raise TypeError(f"HttpApiGroup[...] takes middleware classes, got {argument!r}")
 
 
-__all__ = ["AnyGroup", "GroupService", "HttpApiGroup"]
+__all__ = ["RESERVED_NAMES", "AnyGroup", "GroupService", "HttpApiGroup"]

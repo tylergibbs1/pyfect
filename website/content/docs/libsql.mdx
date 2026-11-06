@@ -47,6 +47,13 @@ transactions use savepoints. A few things work differently than on the other dri
   is a `ConstraintError`, not a `UniqueViolation`.
 - Streams aren't supported, and `BeginTransaction` is ignored.
 - A local database that can't be opened is a defect, not a `SqlError`.
+- `libsql.layer` opens no connection, as in Effect. A layer for a server that is down builds
+  fine, and the first statement fails with a `SqlError` (its `reason` is an `UnknownError`).
+  The MySQL and ClickHouse layers check the server when they are built, so run a
+  `SELECT 1` at startup if you want the same here.
+- Hrana has no way to cancel a statement. Interrupting a remote statement stops waiting for
+  it, as in Effect, and the server finishes it. A transaction it was part of rolls back
+  after that.
 
 ## Migrations
 

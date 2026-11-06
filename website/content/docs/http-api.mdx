@@ -17,6 +17,12 @@ schemas.
 `HttpApiGroup` holds them, and `HttpApi.make(name).add(Group)` collects the groups. An error
 schema's `http_api_status` annotation is the status it is sent with.
 
+A group's own members can't be endpoint attributes: `add`, `annotate`, `annotate_endpoints`,
+`annotate_endpoints_merge`, `annotate_merge`, `annotations`, `endpoints`, `identifier`, `key`,
+`make`, `method`, `middleware`, `origin`, `prefix` and `top_level`. Naming one fails with a
+`TypeError` as the class is created. Name the attribute `add_item` and the endpoint itself
+what you like: `add_item = endpoint.post("add", "/items")`.
+
 A handler takes an `HttpApiRequest` with the decoded `params`, `query`, `payload` and
 `headers`, and gives the success value or fails with a declared error.
 `builder.group(api, Group, ...)` is the layer of a group's handlers; building it dies if an
