@@ -83,6 +83,25 @@ def test_serves_the_proxy_rpcs_through_the_entity_client():
     yield from fx.scoped(body).pipe(fx.provide(handlers))
 
 
+@testing.effect
+def test_provides_handler_context_for_generated_rpc_handlers():
+    """provides handler context for generated rpc handlers: on the real sharding, where Effect's
+    stubs it; the discard of an RPC without a payload reaches the entity's client"""
+    group = to_rpc_group(TestEntity)
+    handlers = entity_proxy_server.layer_rpc_handlers(TestEntity).pipe(
+        fx.layer.provide_merge(test_sharding)
+    )
+
+    @fx.gen
+    def body():
+        yield from testing.adjust(0.001)
+        client = yield from rpc_test.make_client(group)
+        discard = _method(client, group, "TestEntity.NeverDiscard")
+        assert (yield from discard({"entityId": "id", "payload": None})) is None
+
+    yield from fx.scoped(body).pipe(fx.provide(handlers))
+
+
 def test_derives_a_post_endpoint_and_a_discard_endpoint_per_entity_rpc() -> None:
     group = entity_proxy.to_http_api_group("proxied", ProxiedEntity)
     assert group.identifier == "proxied"

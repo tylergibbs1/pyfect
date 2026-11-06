@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+import datetime
 import enum
+import pyfect as fx
 import re
+import zoneinfo
 from typing import Any, Literal, Never, NotRequired, TypedDict, cast
+from pyfect import big_decimal
+from pyfect import byte_size
+from pyfect import cause
+from pyfect import graph
+from pyfect import semver
+from pyfect import semver_range
+from pyfect.http import url
 
 from pyfect import schema as S
 
@@ -38,12 +48,12 @@ type Schema24Type = _Struct4
 type Schema25Type = _Struct5
 type Schema26Type = str | float
 type Schema27Type = str | Literal["a"]
-type Schema28Type = object
+type Schema28Type = fx.Option[str]
 type Schema29Type = dict[str, float]
 type Schema30Type = frozenset[str]
-type Schema31Type = object
+type Schema31Type = fx.Redacted[str]
 type Schema32Type = bytes
-type Schema33Type = object
+type Schema33Type = datetime.datetime
 type Schema34Type = str
 type Schema35Type = str
 type Schema36Type = str
@@ -88,33 +98,33 @@ type Schema74Type = float
 type Schema75Type = float
 type Schema76Type = float
 type Schema77Type = float
-type Schema78Type = object
-type Schema79Type = object
-type Schema80Type = object
-type Schema81Type = object
-type Schema82Type = object
+type Schema78Type = datetime.datetime
+type Schema79Type = datetime.datetime
+type Schema80Type = datetime.datetime
+type Schema81Type = datetime.datetime
+type Schema82Type = datetime.datetime
 type Schema83Type = int
 type Schema84Type = int
 type Schema85Type = int
 type Schema86Type = int
-type Schema87Type = object
-type Schema88Type = object
-type Schema89Type = object
-type Schema90Type = object
-type Schema91Type = object
-type Schema92Type = object
-type Schema93Type = object
+type Schema87Type = fx.Result[str, float]
+type Schema88Type = cause.Reason[str]
+type Schema89Type = cause.Cause[str]
+type Schema90Type = fx.Exit[str, float]
+type Schema91Type = graph.Graph[str, float, Literal["directed"]]
+type Schema92Type = S.ErrorInstance
+type Schema93Type = S.ErrorInstance
 type Schema94Type = re.Pattern[str]
-type Schema95Type = object
-type Schema96Type = object
-type Schema97Type = object
-type Schema98Type = object
-type Schema99Type = object
-type Schema100Type = object
-type Schema101Type = object
-type Schema102Type = object
-type Schema103Type = object
-type Schema104Type = object
+type Schema95Type = url.Url
+type Schema96Type = datetime.timedelta
+type Schema97Type = byte_size.ByteSize
+type Schema98Type = big_decimal.BigDecimal
+type Schema99Type = semver.SemVer
+type Schema100Type = semver_range.SemVerRange
+type Schema101Type = datetime.timezone
+type Schema102Type = zoneinfo.ZoneInfo
+type Schema103Type = datetime.tzinfo
+type Schema104Type = datetime.datetime
 type Schema105Type = PersonType
 type Schema106Type = TreeType
 type Schema107Type = PingType
@@ -173,7 +183,7 @@ Schema39 = S.String.check(S.is_pattern(re.compile("^a", 32)).annotate(expected="
 Schema40 = S.String.check(S.is_uuid(4).annotate(expected="a UUID v4"))
 Schema41 = S.Number.check(S.is_between(minimum=0, maximum=2, exclusive_maximum=True).annotate(expected="a value between 0 and 2 (excluded)"))
 Schema42 = S.String.check(S.is_between_length(1, 2).annotate(expected="a value with a length between 1 and 2"))
-Schema43 = S.BigInt.check(S.is_greater_than_big_int(int("3")).annotate(expected="a value greater than 3n"))
+Schema43 = S.BigInt.check(S.is_greater_than_big_int(3).annotate(expected="a value greater than 3n"))
 Schema44 = S.Number.check(S.is_multiple_of(2).annotate(expected="a value that is a multiple of 2"))
 Schema45 = S.Number.check(S.make_filter_group(S.is_greater_than(0).annotate(expected="a value greater than 0"), S.is_less_than(2).annotate(expected="a value less than 2")))
 Schema46 = S.String.check(S.is_min_length(1).annotate(expected="a value with a length of at least 1").abort()).check(S.is_max_length(2).annotate(expected="a value with a length of at most 2"))
@@ -213,10 +223,10 @@ Schema79 = S.DateTimeUtc.annotate(expected="DateTime.Utc").check(S.is_greater_th
 Schema80 = S.DateTimeUtc.annotate(expected="DateTime.Utc").check(S.is_less_than_date(S.decode_unknown_sync(S.to_codec_json(S.DateTimeUtc))("2026-01-01T00:00:00.000Z")).annotate(expected="a value less than 2026-01-01T00:00:00.000Z"))
 Schema81 = S.DateTimeUtc.annotate(expected="DateTime.Utc").check(S.is_less_than_or_equal_to_date(S.decode_unknown_sync(S.to_codec_json(S.DateTimeUtc))("2026-01-01T00:00:00.000Z")).annotate(expected="a value less than or equal to 2026-01-01T00:00:00.000Z"))
 Schema82 = S.DateTimeUtc.annotate(expected="DateTime.Utc").check(S.is_between_date(minimum=S.decode_unknown_sync(S.to_codec_json(S.DateTimeUtc))("2026-01-01T00:00:00.000Z"), maximum=S.decode_unknown_sync(S.to_codec_json(S.DateTimeUtc))("2026-01-01T00:00:00.000Z")).annotate(expected="a value between 2026-01-01T00:00:00.000Z and 2026-01-01T00:00:00.000Z"))
-Schema83 = S.BigInt.check(S.is_greater_than_or_equal_to_big_int(int("3")).annotate(expected="a value greater than or equal to 3n"))
-Schema84 = S.BigInt.check(S.is_less_than_big_int(int("3")).annotate(expected="a value less than 3n"))
-Schema85 = S.BigInt.check(S.is_less_than_or_equal_to_big_int(int("3")).annotate(expected="a value less than or equal to 3n"))
-Schema86 = S.BigInt.check(S.is_between_big_int(minimum=int("1"), maximum=int("3")).annotate(expected="a value between 1n and 3n"))
+Schema83 = S.BigInt.check(S.is_greater_than_or_equal_to_big_int(3).annotate(expected="a value greater than or equal to 3n"))
+Schema84 = S.BigInt.check(S.is_less_than_big_int(3).annotate(expected="a value less than 3n"))
+Schema85 = S.BigInt.check(S.is_less_than_or_equal_to_big_int(3).annotate(expected="a value less than or equal to 3n"))
+Schema86 = S.BigInt.check(S.is_between_big_int(minimum=1, maximum=3).annotate(expected="a value between 1n and 3n"))
 Schema87 = S.Result(S.String, S.Number).annotate(expected="Result")
 Schema88 = S.CauseReason(S.String, cast("Any", S.Json.annotate(expected="JSON value"))).annotate(expected="Cause.Reason")
 Schema89 = S.Cause(S.String, cast("Any", S.Json.annotate(expected="JSON value"))).annotate(expected="Cause")

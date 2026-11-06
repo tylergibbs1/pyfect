@@ -1,10 +1,8 @@
-"""``R.to_code_document`` (Effect's ``toCodeDocument``), which writes Python here.
-
-Omitted: the titles of ``toCodeDocument.test.ts`` and
-``toCodeDocument.annotations.test.ts``, whose expected strings are TypeScript. Each
-node kind, check and declaration they cover is a case here, and is judged by what the
-generated code does: it runs, it describes the same document, it accepts what the
-source accepts, and pyright accepts it (``_generated_code_sample.py``).
+"""``R.to_code_document`` (Effect's ``toCodeDocument``), which writes Python here,
+judged by what the generated code does: it runs, it describes the same document, it
+accepts what the source accepts, and pyright accepts it (``_generated_code_sample.py``).
+Effect's titles are in ``test_to_code_document_titles.py`` and
+``test_to_code_document_annotations.py``, with their expected strings in Python.
 """
 
 from pathlib import Path
@@ -102,7 +100,7 @@ def _code(schema: Any) -> R.CodeDocument:
             '.annotate(expected="a value with a length of at least 1"))',
             "str",
         ),
-        (S.Option(S.String), 'S.Option(S.String).annotate(expected="Option")', "object"),
+        (S.Option(S.String), 'S.Option(S.String).annotate(expected="Option")', "fx.Option[str]"),
     ],
 )
 def test_code_of_each_node(schema: Any, runtime: str, type: str) -> None:

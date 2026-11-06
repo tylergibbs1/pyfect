@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import ast
 import keyword
 import re
 from collections.abc import Callable, Sequence
@@ -27,6 +28,7 @@ from pyfect.schema.representation._code import (
     TypedDictArtifact,
 )
 from pyfect.schema.representation._code_builtins import (
+    IMPORTED_MODULES,
     check_code,
     declaration_code,
     string_literal,
@@ -50,13 +52,12 @@ _EXCLUDED_ANNOTATIONS = frozenset(
         "to_codec_arbitrary",
         "~structural",
         "~sentinels",
-        "~identifier",
-        "~constructor",
     }
 )
 _FINITE = 'S.is_finite().annotate(expected="a finite number")'
 _RESERVED = frozenset(
     {
+        *IMPORTED_MODULES,
         "S",
         "Any",
         "Literal",
@@ -479,6 +480,41 @@ def _imports(artifacts: Sequence[Artifact], body: str) -> list[str]:
     return [*plain, *froms]
 
 
+def _direct_names(runtime: str) -> set[str]:
+    """The names ``runtime`` reads when it runs, which leaves out what a lambda reads."""
+    names: set[str] = set()
+    stack: list[ast.AST] = [ast.parse(runtime, mode="eval")]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.Lambda):
+            continue
+        if isinstance(node, ast.Name):
+            names.add(node.id)
+        stack.extend(ast.iter_child_nodes(node))
+    return names
+
+
+def _in_definition_order(definitions: dict[str, tuple[str, str]]) -> list[str]:
+    """The lines of ``definitions`` (name to line and runtime), each after the
+    definitions its runtime reads: a non-recursive reference can read a recursive
+    one, which can read another non-recursive one."""
+    lines: list[str] = []
+    seen: set[str] = set()
+
+    def visit(name: str) -> None:
+        if name in seen:
+            return
+        seen.add(name)
+        line, runtime = definitions[name]
+        for dependency in sorted(_direct_names(runtime) & definitions.keys()):
+            visit(dependency)
+        lines.append(line)
+
+    for name in definitions:
+        visit(name)
+    return lines
+
+
 def to_code_module(document: CodeDocument, /, *, names: Sequence[str] = ()) -> str:
     """``document`` as one module: imports, type aliases (they may refer to each
     other), artifacts, references in order, then a variable for each root, named by
@@ -498,11 +534,14 @@ def to_code_module(document: CodeDocument, /, *, names: Sequence[str] = ()) -> s
         for artifact in document.artifacts
         if isinstance(artifact, TypedDictArtifact | EnumArtifact)
     ]
-    lines += [f"{named.identifier} = {named.code.runtime}" for named in non_recursives]
-    lines += [
-        f"{identifier}: S.Bottom[{identifier}Type, Any, Any, Any] = {code.runtime}"
-        for identifier, code in recursives.items()
-    ]
+    definitions = {
+        named.identifier: (f"{named.identifier} = {named.code.runtime}", named.code.runtime)
+        for named in non_recursives
+    }
+    for identifier, code in recursives.items():
+        annotated = f"{identifier}: S.Bottom[{identifier}Type, Any, Any, Any] = {code.runtime}"
+        definitions[identifier] = (annotated, code.runtime)
+    lines += _in_definition_order(definitions)
     lines += [
         f"{name} = {code.runtime}" for name, code in zip(root_names, document.codes, strict=True)
     ]

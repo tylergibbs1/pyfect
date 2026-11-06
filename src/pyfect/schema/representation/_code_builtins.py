@@ -41,10 +41,7 @@ _PAIRS = frozenset(
     {"isBetweenLength", "isBetweenCodePoints", "isBetweenSize", "isBetweenProperties"}
 )
 _BETWEEN = frozenset({"isBetween", "isBetweenDate", "isBetweenBigInt"})
-_FROM_JSON = {
-    "Date": ("S.decode_unknown_sync(S.to_codec_json(S.DateTimeUtc))({value})", ()),
-    "BigInt": ("int({value})", ()),
-}
+_DATE_FROM_JSON = "S.decode_unknown_sync(S.to_codec_json(S.DateTimeUtc))({value})"
 
 
 _WORD_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
@@ -99,10 +96,11 @@ def _mapping(values: Mapping[object, object]) -> str | None:
 def _bound_value(name: str, value: object) -> str:
     """A bound as a Python expression: a date or a big integer is in its JSON
     form in the payload."""
+    if isinstance(value, str) and name.endswith("BigInt"):
+        return value
     rendered = cast("str", value_literal(value))
-    for suffix, (template, _) in _FROM_JSON.items():
-        if name.endswith(suffix) and isinstance(value, str):
-            return template.format(value=rendered)
+    if isinstance(value, str) and name.endswith("Date"):
+        return _DATE_FROM_JSON.format(value=rendered)
     return rendered
 
 
@@ -155,23 +153,45 @@ def check_code(  # noqa: PLR0911
     return None
 
 
+_DATETIME = ("import datetime",)
+_FX = "import pyfect as fx"
+_CAUSE = "from pyfect import cause"
 _FIXED: Mapping[str, tuple[str, str, tuple[str, ...]]] = {
     "Json": ("S.Json", "S.JsonValue", ()),
     "MutableJson": ("S.Json", "S.JsonValue", ()),
     "RegExp": ("S.RegExp", "re.Pattern[str]", ("import re",)),
-    "URL": ("S.URL", "object", ()),
-    "Duration": ("S.Duration", "object", ()),
-    "ByteSize": ("S.ByteSize", "object", ()),
-    "BigDecimal": ("S.BigDecimal", "object", ()),
-    "SemVer": ("S.SemVer", "object", ()),
-    "SemVerRange": ("S.SemVerRange", "object", ()),
+    "URL": ("S.URL", "url.Url", ("from pyfect.http import url",)),
+    "Duration": ("S.Duration", "datetime.timedelta", _DATETIME),
+    "ByteSize": ("S.ByteSize", "byte_size.ByteSize", ("from pyfect import byte_size",)),
+    "BigDecimal": ("S.BigDecimal", "big_decimal.BigDecimal", ("from pyfect import big_decimal",)),
+    "SemVer": ("S.SemVer", "semver.SemVer", ("from pyfect import semver",)),
+    "SemVerRange": (
+        "S.SemVerRange",
+        "semver_range.SemVerRange",
+        ("from pyfect import semver_range",),
+    ),
     "Uint8Array": ("S.Bytes", "bytes", ()),
-    "DateTimeUtc": ("S.DateTimeUtc", "object", ()),
-    "TimeZoneOffset": ("S.TimeZoneOffset", "object", ()),
-    "TimeZoneNamed": ("S.TimeZoneNamed", "object", ()),
-    "TimeZone": ("S.TimeZone", "object", ()),
-    "DateTimeZoned": ("S.DateTimeZoned", "object", ()),
+    "DateTimeUtc": ("S.DateTimeUtc", "datetime.datetime", _DATETIME),
+    "TimeZoneOffset": ("S.TimeZoneOffset", "datetime.timezone", _DATETIME),
+    "TimeZoneNamed": ("S.TimeZoneNamed", "zoneinfo.ZoneInfo", ("import zoneinfo",)),
+    "TimeZone": ("S.TimeZone", "datetime.tzinfo", _DATETIME),
+    "DateTimeZoned": ("S.DateTimeZoned", "datetime.datetime", _DATETIME),
 }
+IMPORTED_MODULES = frozenset(
+    {
+        "byte_size",
+        "big_decimal",
+        "cause",
+        "datetime",
+        "fx",
+        "graph",
+        "semver",
+        "semver_range",
+        "url",
+        "zoneinfo",
+    }
+)
+"""The names the imports above bind, which nothing generated may reuse."""
 
 
 def _defect(code: Code) -> str:
@@ -180,18 +200,35 @@ def _defect(code: Code) -> str:
     return f'cast("Any", {code.runtime})'
 
 
-_NEEDS_CAST = frozenset({"CauseReason", "Cause", "Exit"})
-_PARAMETRIC: Mapping[str, Callable[[tuple[Code, ...]], tuple[str, str]]] = {
-    "Option": lambda p: (f"S.Option({p[0].runtime})", "object"),
-    "Result": lambda p: (f"S.Result({p[0].runtime}, {p[1].runtime})", "object"),
-    "CauseReason": lambda p: (f"S.CauseReason({p[0].runtime}, {_defect(p[1])})", "object"),
-    "Cause": lambda p: (f"S.Cause({p[0].runtime}, {_defect(p[1])})", "object"),
-    "Exit": lambda p: (f"S.Exit({p[0].runtime}, {p[1].runtime}, {_defect(p[2])})", "object"),
+_CAST = ("from typing import Any", "from typing import cast")
+_PARAMETRIC: Mapping[str, Callable[[tuple[Code, ...]], tuple[str, str, tuple[str, ...]]]] = {
+    "Option": lambda p: (f"S.Option({p[0].runtime})", f"fx.Option[{p[0].type}]", (_FX,)),
+    "Result": lambda p: (
+        f"S.Result({p[0].runtime}, {p[1].runtime})",
+        f"fx.Result[{p[0].type}, {p[1].type}]",
+        (_FX,),
+    ),
+    "CauseReason": lambda p: (
+        f"S.CauseReason({p[0].runtime}, {_defect(p[1])})",
+        f"cause.Reason[{p[0].type}]",
+        (_CAUSE, *_CAST),
+    ),
+    "Cause": lambda p: (
+        f"S.Cause({p[0].runtime}, {_defect(p[1])})",
+        f"cause.Cause[{p[0].type}]",
+        (_CAUSE, *_CAST),
+    ),
+    "Exit": lambda p: (
+        f"S.Exit({p[0].runtime}, {p[1].runtime}, {_defect(p[2])})",
+        f"fx.Exit[{p[0].type}, {p[1].type}]",
+        (_FX, *_CAST),
+    ),
     "ReadonlyMap": lambda p: (
         f"S.Map({p[0].runtime}, {p[1].runtime})",
         f"dict[{p[0].type}, {p[1].type}]",
+        (),
     ),
-    "ReadonlySet": lambda p: (f"S.FrozenSet({p[0].runtime})", f"frozenset[{p[0].type}]"),
+    "ReadonlySet": lambda p: (f"S.FrozenSet({p[0].runtime})", f"frozenset[{p[0].type}]", ()),
 }
 
 
@@ -226,16 +263,19 @@ def declaration_code(  # noqa: PLR0911
         runtime, type, imports = _FIXED[name]
         return GeneratedDeclaration(runtime, type, imports)
     if name in _PARAMETRIC:
-        imports = (
-            ("from typing import Any", "from typing import cast") if name in _NEEDS_CAST else ()
-        )
-        return GeneratedDeclaration(*_PARAMETRIC[name](parameters), imports)
+        return GeneratedDeclaration(*_PARAMETRIC[name](parameters))
     if name == "Redacted":
-        return GeneratedDeclaration(_redacted(payload, parameters), "object")
+        return GeneratedDeclaration(
+            _redacted(payload, parameters), f"fx.Redacted[{parameters[0].type}]", (_FX,)
+        )
     if name == "Error":
-        return GeneratedDeclaration(_error(payload), "object")
+        return GeneratedDeclaration(_error(payload), "S.ErrorInstance")
     if name == "Graph":
         node, edge = parameters
         kind = string_literal(cast("str", payload))
-        return GeneratedDeclaration(f"S.Graph({kind}, {node.runtime}, {edge.runtime})", "object")
+        return GeneratedDeclaration(
+            f"S.Graph({kind}, {node.runtime}, {edge.runtime})",
+            f"graph.Graph[{node.type}, {edge.type}, Literal[{kind}]]",
+            ("from pyfect import graph", "from typing import Literal"),
+        )
     return None

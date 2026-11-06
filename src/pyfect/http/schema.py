@@ -47,6 +47,7 @@ from pyfect.schema import ast as _ast
 from pyfect.schema import transformation as T
 from pyfect.schema._options import ParseOptions
 from pyfect.schema.issue import InvalidValue, Issue, MissingKey, Pointer, reported
+from pyfect.schema.representation import GeneratedDeclaration
 
 type _CodecLink = Callable[[tuple[_ast.AST, ...]], _ast.Link]
 
@@ -59,6 +60,12 @@ def _is_headers(value: object) -> TypeIs[_headers.Headers]:
     return isinstance(value, _headers.Headers)
 
 
+def _to_code(runtime: str, type: str, module: str) -> Callable[[object], GeneratedDeclaration]:
+    """Effect's ``toCode`` annotation of an HTTP declaration."""
+    imports = ("from pyfect.http import schema as HS", f"from pyfect.http import {module}")
+    return lambda _: GeneratedDeclaration(runtime, type, imports)
+
+
 def _headers_record(value: _headers.Headers) -> dict[str, str]:
     return dict(value)
 
@@ -67,6 +74,7 @@ Headers: Bottom[_headers.Headers] = declare(
     _is_headers,
     expected="Headers",
     representation={"id": "effect/http/Headers", "payload": None},
+    to_code=_to_code("HS.Headers", "headers.Headers", "headers"),
     to_codec=_codec(
         lambda: link(
             Record(String, String),
@@ -85,6 +93,7 @@ Cookie: Bottom[_cookies.Cookie] = declare(
     _is_cookie,
     expected="Cookie",
     representation={"id": "effect/http/Cookie", "payload": None},
+    to_code=_to_code("HS.Cookie", "cookies.Cookie", "cookies"),
 )
 """A ``pyfect.http.cookies.Cookie``."""
 
@@ -105,6 +114,7 @@ Cookies: Bottom[_cookies.Cookies] = declare(
     _is_cookies,
     expected="Cookies",
     representation={"id": "effect/http/Cookies", "payload": None},
+    to_code=_to_code("HS.Cookies", "cookies.Cookies", "cookies"),
     to_codec_json=_codec(
         lambda: link(Array(String), T.transform(decode=_set_cookies, encode=_set_cookie_headers))
     ),
@@ -147,6 +157,7 @@ UrlParams: Bottom[_url_params.UrlParams] = declare(
     _is_url_params,
     expected="UrlParams",
     representation={"id": "effect/http/UrlParams", "payload": None},
+    to_code=_to_code("HS.UrlParams", "url_params.UrlParams", "url_params"),
     to_codec=_codec(
         lambda: link(Array(Tuple(String, String)), T.transform(decode=_params_of, encode=_pairs_of))
     ),

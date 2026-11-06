@@ -31,6 +31,7 @@ from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.entity_type import EntityType
 from pyfect.cluster.shard_id import ShardId
+from pyfect.cluster.singleton_address import SingletonAddress
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.encoding import schema_binary as B
 from pyfect.eventlog import event_log_message as M
@@ -207,6 +208,16 @@ _ADDRESS = EntityAddress(
 )
 _ReplyExit = S.Exit(S.Number, S.String, S.Defect())
 _Reply = S.Union(reply.with_exit_schema(_ReplyExit), reply.chunk_schema(S.Number))
+
+
+def test_a_singleton_address_has_effects_bytes() -> None:
+    frame = bytes.fromhex(
+        "2620b0deb7ce46066c6561646572b0a6a3ab591381ae8dce1b06e0e8a3ee2f0764656661756c74"
+    )
+    value = SingletonAddress(shard_id=ShardId(group="default", id=3), name="leader")
+    codec = B.to_codec(SingletonAddress)
+    assert S.encode_unknown_sync(codec)(value) == frame
+    assert S.decode_unknown_sync(codec)(frame) == value
 
 
 def test_a_traced_request_envelope_has_effects_bytes() -> None:
