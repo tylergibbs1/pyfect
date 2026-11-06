@@ -59,7 +59,7 @@ def test_an_outside_interrupt_waits_for_every_racer_and_reports_only_the_interru
         yield from fiber.interrupt()
         return me, (yield from fiber.await_exit())
 
-    me, ex = fx.run_sync(program)
+    me, ex = fx.run_blocking(program)
     assert isinstance(ex, fx.Failure) and ex.cause.reasons == (Interrupt(me),)
     expected = ["a"] if name == "timeout" else ["a", "b"]
     assert _cleaned(log) == expected
@@ -76,6 +76,6 @@ def test_a_racer_that_already_failed_is_not_reported_after_an_outside_interrupt(
         yield from fiber.interrupt()
         return me, (yield from fiber.await_exit())
 
-    me, ex = fx.run_sync(program)
+    me, ex = fx.run_blocking(program)
     assert isinstance(ex, fx.Failure) and ex.cause.reasons == (Interrupt(me),)
     assert _cleaned(log) == ["b"]

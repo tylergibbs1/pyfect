@@ -23,4 +23,4 @@ def program():
     print("bought", (yield from buyer.join()), "left", (yield from stock.get()))
 
 
-fx.run_sync(program())
+fx.run_blocking(program())

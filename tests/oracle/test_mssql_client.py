@@ -698,14 +698,14 @@ def test_a_timeout_of_0_is_the_driver_s_default(
     """(pyfect) Effect passes these to tedious as ``options.x ? ... : undefined``,
     so the number 0 leaves tedious's default"""
     fake = _mssql_fake.install(monkeypatch)
-    fx.run_sync_exit(_build_client(**{field: 0}))
+    fx.run_blocking_exit(_build_client(**{field: 0}))
     assert getattr(fake.options[0], field) == default
 
 
 def test_a_timeout_of_nan_is_the_driver_s_default(monkeypatch: pytest.MonkeyPatch):
     """(pyfect) ``NaN`` is falsy in ``options.x ? ... : undefined``, so it is unset too"""
     fake = _mssql_fake.install(monkeypatch)
-    fx.run_sync_exit(_build_client(cancel_timeout=float("nan")))
+    fx.run_blocking_exit(_build_client(cancel_timeout=float("nan")))
     assert fake.options[0].cancel_timeout == 5.0
 
 
@@ -715,7 +715,7 @@ def test_a_timeout_of_a_zero_duration_reaches_the_driver(monkeypatch: pytest.Mon
     from datetime import timedelta
 
     fake = _mssql_fake.install(monkeypatch)
-    fx.run_sync_exit(_build_client(cancel_timeout=timedelta(0)))
+    fx.run_blocking_exit(_build_client(cancel_timeout=timedelta(0)))
     assert fake.options[0].cancel_timeout == 0
 
 
@@ -737,7 +737,7 @@ def test_interrupting_a_connection_while_it_opens_returns_at_once(
 
     started = time.monotonic()
     try:
-        ex = fx.run_sync(body)
+        ex = fx.run_blocking(body)
         assert time.monotonic() - started < 5
         assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
     finally:
@@ -754,7 +754,7 @@ def test_a_connection_check_that_times_out_does_not_wait_for_the_open(
     fake.hold_connect = threading.Event()
     started = time.monotonic()
     try:
-        ex = fx.run_sync_exit(_build_client(connect_timeout=0.05))
+        ex = fx.run_blocking_exit(_build_client(connect_timeout=0.05))
         assert time.monotonic() - started < 5
     finally:
         fake.hold_connect.set()

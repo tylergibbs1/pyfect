@@ -307,7 +307,7 @@ def test_a_base_install_builds_the_httpx_layer_only_to_fail_naming_the_extra(
     program = (
         "import pyfect as fx\n"
         "from pyfect.http import httpx_client\n"
-        "exit = fx.run_sync_exit(fx.scoped(fx.void.pipe(fx.provide(httpx_client.layer))))\n"
+        "exit = fx.run_blocking_exit(fx.scoped(fx.void.pipe(fx.provide(httpx_client.layer))))\n"
         "print(exit)\n"
     )
     run = subprocess.run(

@@ -25,6 +25,6 @@ def program():
     return first, second
 
 
-result = fx.run_sync(program.pipe(fx.provide(Greeters.layer(greeter))))
+result = fx.run_blocking(program.pipe(fx.provide(Greeters.layer(greeter))))
 assert result == ("hello from haiku", "hello from sonnet")
 assert built == ["haiku", "sonnet"]

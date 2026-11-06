@@ -1,6 +1,6 @@
 """PostgreSQL sessions (Effect's ``@effect/sql-pg`` ``PgConnection``) on
 psycopg's asyncio API, driven on a loop thread of its own (``_loop``), so
-they work under ``run_sync`` and ``run_async`` alike and no fiber blocks.
+they work under ``run_blocking`` and ``run_async`` alike and no fiber blocks.
 
 A session runs one statement at a time; fibers sharing it wait in turn.
 ``pin`` reserves it for one scope (transactions, streams and listeners

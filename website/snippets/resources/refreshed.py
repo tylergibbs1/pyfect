@@ -13,4 +13,4 @@ def program():
     return before, after
 
 
-assert fx.run_sync(fx.scoped(program)) == ("config v1", "config v2")
+assert fx.run_blocking(fx.scoped(program)) == ("config v1", "config v2")

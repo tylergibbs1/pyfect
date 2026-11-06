@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 
 from pyfect._core import Effect
 from pyfect._stack_frame import StackFrame, StackTrace
-from pyfect.cause import Cause, Die, Fail, Interrupt, Reason, UnhandledError, from_reasons
+from pyfect.cause import Cause, Die, Fail, Interrupt, Reason, from_reasons
 from pyfect.context import Context, Tag
 from pyfect.effect import succeed
 from pyfect.errors import TaggedError
@@ -209,7 +209,7 @@ def cause_response[E](cause: Cause[E]) -> Effect[tuple[HttpServerResponse, Cause
         effect = succeed(_CLIENT_ABORT if client_interrupt else _SERVER_ABORT)
 
     def with_response(sent: HttpServerResponse) -> tuple[HttpServerResponse, Cause[E]]:
-        failures.append(Die(UnhandledError(sent)))
+        failures.append(Die(sent))
         return sent, from_reasons(failures)
 
     return effect.map(with_response)

@@ -143,7 +143,7 @@ def _sent(
     dialect: str, program: fx.Effect[Any, Any, Any], rows: list[Row] | None = None
 ) -> list[str]:
     sent: list[str] = []
-    fx.run_sync(fx.scoped(program).pipe(fx.provide(_client(dialect, sent, rows))).or_die())
+    fx.run_blocking(fx.scoped(program).pipe(fx.provide(_client(dialect, sent, rows))).or_die())
     return sent
 
 
@@ -180,7 +180,7 @@ def test_mysql_binary_keys_read_back_as_text() -> None:
 
     rows: list[Row] = [{"id": b"K:alice", "value": "1"}]
     sent: list[str] = []
-    found = fx.run_sync(
+    found = fx.run_blocking(
         fx.scoped(fx.gen(program))
         .pipe(fx.provide(layer_backing_sql_multi_table))
         .pipe(fx.provide(_client("mysql", sent, rows)))

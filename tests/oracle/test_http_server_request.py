@@ -68,7 +68,7 @@ def test_to_client_request() -> None:
     assert client.headers["x-test"] == "ok"
     assert list(client.url_params) == [("a", "1"), ("a", "2")]
     assert isinstance(client.body, http_body.Stream)
-    exit = fx.run_sync_exit(client.body.stream.run_collect())
+    exit = fx.run_blocking_exit(client.body.stream.run_collect())
     assert isinstance(exit, Success)
     assert b"".join(exit.value).decode() == '{"foo":"bar"}'
 
@@ -124,7 +124,7 @@ def test_from_client_request_preserves_request_metadata_and_shares_stream_body_a
         text = yield from request.text
         return data, parsed, text
 
-    data, parsed, text = fx.run_sync(program().or_die())
+    data, parsed, text = fx.run_blocking(program().or_die())
     assert request.source is client
     assert request.method == "POST"
     assert request.original_url == "http://localhost:3000/items?existing=1&page=1#top"
@@ -144,7 +144,7 @@ def test_from_client_request_exposes_form_data_bodies_as_multipart_parts() -> No
         .append("file", http_body.File(b"hello", "hello.txt", "text/plain"))
     )
     request = from_client_request(client_request.post("/upload").body_form_data(form))
-    parts = fx.run_sync(request.multipart_stream.run_collect().or_die())
+    parts = fx.run_blocking(request.multipart_stream.run_collect().or_die())
     assert len(parts) == 2
     field, file = parts
     assert isinstance(field, Field)
@@ -154,26 +154,26 @@ def test_from_client_request_exposes_form_data_bodies_as_multipart_parts() -> No
     assert file.key == "file"
     assert file.name == "hello.txt"
     assert file.content_type == "text/plain"
-    assert fx.run_sync(file.content_effect.or_die()) == b"hello"
+    assert fx.run_blocking(file.content_effect.or_die()) == b"hello"
 
 
 def test_reads_a_raw_body_init_after_conversion_from_a_client_request() -> None:
     """reads a raw BodyInit after conversion from a client request"""
     client = client_request.post("https://example.com").set_body(http_body.raw("abc"))
-    assert fx.run_sync(from_client_request(client).text.or_die()) == "abc"
+    assert fx.run_blocking(from_client_request(client).text.or_die()) == "abc"
 
 
 def test_reads_raw_body_init_bytes_after_conversion_from_a_client_request() -> None:
     """reads raw BodyInit bytes after conversion from a client request"""
     client = client_request.post("https://example.com").set_body(http_body.raw("abc"))
-    assert fx.run_sync(from_client_request(client).bytes_.or_die()) == bytes([97, 98, 99])
+    assert fx.run_blocking(from_client_request(client).bytes_.or_die()) == bytes([97, 98, 99])
 
 
 def test_streams_a_raw_url_search_params_after_conversion_from_a_client_request() -> None:
     """streams a raw URLSearchParams after conversion from a client request"""
     params = url_params.from_input({"a": "1", "b": "two"})
     client = client_request.post("https://example.com").set_body(http_body.raw(params))
-    chunks = fx.run_sync(from_client_request(client).stream.run_collect().or_die())
+    chunks = fx.run_blocking(from_client_request(client).stream.run_collect().or_die())
     assert b"".join(chunks).decode() == "a=1&b=two"
 
 
@@ -192,7 +192,7 @@ def test_schema_body_json_applies_parse_options() -> None:
             body=json.dumps({"status": "ok", "name": "svc", "sha": "abc", "version": "1.0.0"}),
         )
     )
-    decoded = fx.run_sync(
+    decoded = fx.run_blocking(
         schema_body_json(
             schema.Struct(_Status),
             on_excess_property="ignore",

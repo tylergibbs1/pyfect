@@ -144,7 +144,7 @@ def main() -> None:
         # the run; the batches before it are already in the warehouse.
         return fx.sync(lambda: print(f"pipeline stopped: {error!r}"))
 
-    fx.run_sync(pipeline(pricing, warehouse).catch_all(failed))
+    fx.run_blocking(pipeline(pricing, warehouse).catch_all(failed))
     retried = sorted(order_id for order_id, calls in pricing.calls.items() if calls > 1)
     print(f"{warehouse.written} orders written; retried {retried}")
     print(f"backpressure held: {warehouse.most_waiting <= BOUND}")

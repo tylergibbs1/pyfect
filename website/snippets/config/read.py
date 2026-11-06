@@ -15,12 +15,12 @@ def server():
 env = config_provider.layer(config_provider.from_env(env={"PORT": "8080", "DEBUG": "true"}))
 
 # server is a Config[tuple[str, int, bool]] and an Effect failing with ConfigError.
-# ConfigError is still in the type, so run_sync (which takes only effects that
-# cannot fail) would be a type error: run_sync_exit returns the Exit instead.
-assert fx.run_sync_exit(server.pipe(fx.provide(env))) == fx.Success(("localhost", 8080, True))
+# ConfigError is still in the type, so run_blocking (which takes only effects that
+# cannot fail) would be a type error: run_blocking_exit returns the Exit instead.
+assert fx.run_blocking_exit(server.pipe(fx.provide(env))) == fx.Success(("localhost", 8080, True))
 
 # Invalid data fails with a readable message, not a default.
 bad = config_provider.layer(config_provider.from_env(env={"PORT": "99999"}))
-exit = fx.run_sync_exit(server.pipe(fx.provide(bad)))
+exit = fx.run_blocking_exit(server.pipe(fx.provide(bad)))
 assert isinstance(exit, fx.Failure)
 assert "Expected a value between 1 and 65535" in str(exit.cause.squash())

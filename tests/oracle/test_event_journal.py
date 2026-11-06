@@ -308,7 +308,7 @@ def test_generates_local_ids_after_imported_ids_from_the_same_or_a_later_millise
     monkeypatch: pytest.MonkeyPatch,
 ):
     """EventJournal / generates local ids after imported ids from the same or a later millisecond"""
-    journal = fx.run_sync(J.make_memory)
+    journal = fx.run_blocking(J.make_memory)
     millis = J.entry_id_millis(J.make_entry_id_unsafe()) + 1
     _now(monkeypatch, millis)
     # Saturated ``rand_a`` bits sort above every local id counter in the
@@ -317,8 +317,8 @@ def test_generates_local_ids_after_imported_ids_from_the_same_or_a_later_millise
         remote_entry_with_rand_a(millis, 0xFFF),
         remote_entry_with_rand_a(millis + 1, 0xFFF),
     ]:
-        fx.run_sync(import_entry(journal, remote).or_die())
-        local = fx.run_sync(_write_local(journal).or_die())
+        fx.run_blocking(import_entry(journal, remote).or_die())
+        local = fx.run_blocking(_write_local(journal).or_die())
         assert remote.id < local.id
 
 
@@ -326,12 +326,12 @@ def test_continues_the_local_id_counter_after_a_low_imported_rand_a_in_the_same_
     monkeypatch: pytest.MonkeyPatch,
 ):
     """EventJournal / continues the local id counter after a low imported rand_a in the same millisecond"""  # noqa: E501
-    journal = fx.run_sync(J.make_memory)
+    journal = fx.run_blocking(J.make_memory)
     millis = J.entry_id_millis(J.make_entry_id_unsafe()) + 1
     remote = remote_entry_with_rand_a(millis, 5)
     _now(monkeypatch, millis)
-    fx.run_sync(import_entry(journal, remote).or_die())
-    local = fx.run_sync(_write_local(journal).or_die())
+    fx.run_blocking(import_entry(journal, remote).or_die())
+    local = fx.run_blocking(_write_local(journal).or_die())
     assert remote.id < local.id
     # Only a saturated counter needs the next millisecond.
     assert J.entry_id_millis(local.id) == millis
@@ -340,31 +340,31 @@ def test_continues_the_local_id_counter_after_a_low_imported_rand_a_in_the_same_
 @pytest.mark.usefixtures("isolated_ids")
 def test_never_commits_a_local_id_below_an_imported_id_at_the_maximum_timestamp():
     """EventJournal / never commits a local id below an imported id at the maximum timestamp"""
-    journal = fx.run_sync(J.make_memory)
+    journal = fx.run_blocking(J.make_memory)
     remote = maximum_entry()
-    fx.run_sync(import_entry(journal, remote).or_die())
+    fx.run_blocking(import_entry(journal, remote).or_die())
     # No later id exists, so the write may fail, but it must not commit an
     # id that sorts before the imported one.
-    fx.run_sync_exit(_write_local(journal))
-    below = [item for item in fx.run_sync(journal.entries.or_die()) if item.id < remote.id]
+    fx.run_blocking_exit(_write_local(journal))
+    below = [item for item in fx.run_blocking(journal.entries.or_die()) if item.id < remote.id]
     assert id_strings(below) == []
 
 
 @pytest.mark.usefixtures("isolated_ids")
 def test_keeps_local_writes_working_after_a_failed_import_of_an_id_at_the_maximum_timestamp():
     """EventJournal / keeps local writes working after a failed import of an id at the maximum timestamp"""  # noqa: E501
-    journal = fx.run_sync(J.make_memory)
-    failed = fx.run_sync_exit(
+    journal = fx.run_blocking(J.make_memory)
+    failed = fx.run_blocking_exit(
         journal.write_from_remote(
             remote_id=J.make_remote_id_unsafe(),
             entries=[RemoteEntry(remote_sequence=0, entry=maximum_entry())],
             effect=lambda _: fx.fail(J.EventJournalError("test", "rejected")),
         )
     )
-    written = fx.run_sync_exit(_write_local(journal))
+    written = fx.run_blocking_exit(_write_local(journal))
     assert isinstance(failed, fx.Failure)
     assert isinstance(written, fx.Success), "the local write failed after the import was rejected"
-    assert id_strings(fx.run_sync(journal.entries.or_die())) == [written.value.id_string]
+    assert id_strings(fx.run_blocking(journal.entries.or_die())) == [written.value.id_string]
 
 
 _HOUR = 60 * 60 * 1000

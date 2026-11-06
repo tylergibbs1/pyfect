@@ -20,7 +20,7 @@ def _sent(form: body.FormData) -> httpx.Request:
     send = HttpClient().flat_map(
         lambda client: client.execute(request.post("http://test/").body_form_data(form))
     )
-    fx.run_sync(fx.scoped(send).pipe(fx.provide(http)).or_die())
+    fx.run_blocking(fx.scoped(send).pipe(fx.provide(http)).or_die())
     return seen[0]
 
 

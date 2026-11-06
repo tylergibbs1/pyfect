@@ -17,7 +17,7 @@ from typing import Any, Never, overload
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.context import Tag
-from pyfect.effect import die, fn
+from pyfect.effect import die, fn_untraced
 from pyfect.file_system import FileSystem, layer_noop
 from pyfect.http.client import HttpClient, HttpClientService
 from pyfect.http.etag import Generator
@@ -143,7 +143,7 @@ def with_log_address[A, E, R](layer: Layer[A, E, R]) -> Layer[A, E, R | HttpServ
     return effect_discard(log_address).pipe(provide_merge(layer))
 
 
-@fn
+@fn_untraced
 def _make_test_client():
     server = yield from HttpServer()
     client = yield from HttpClient()

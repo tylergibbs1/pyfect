@@ -73,8 +73,8 @@ class Success(Generic[A_co]):
     def find_error(self) -> Err[Success[A_co]]:
         return Err(self)
 
-    def find_defect(self) -> None:
-        return None
+    def find_defect(self) -> Err[Success[A_co]]:
+        return Err(self)
 
     def get_success(self) -> Some[A_co]:
         return Some(self.value)
@@ -136,8 +136,9 @@ class Failure(Generic[E_co]):
         found = self.cause.find_error()
         return found if isinstance(found, Ok) else Err(self)
 
-    def find_defect(self) -> BaseException | None:
-        return self.cause.find_defect()
+    def find_defect(self) -> Result[object, Failure[E_co]]:
+        found = self.cause.find_defect()
+        return found if isinstance(found, Ok) else Err(self)
 
     def get_success(self) -> None:
         return None
@@ -165,7 +166,7 @@ def fail[E](error: E) -> Failure[E]:
     return Failure(_fail_cause(error))
 
 
-def die(defect: BaseException) -> Failure[Never]:
+def die(defect: object) -> Failure[Never]:
     return Failure(_die_cause(defect))
 
 

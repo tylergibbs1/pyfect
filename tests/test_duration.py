@@ -28,7 +28,7 @@ def test_seconds_cannot_hold_nan():
 
 
 def test_sleep_nan_completes_at_once_on_the_sync_scheduler():
-    assert fx.run_sync_exit(fx.sleep(float("nan")).as_("woke").timeout(5)) == fx.Success("woke")
+    assert fx.run_blocking_exit(fx.sleep(float("nan")).as_("woke").timeout(5)) == fx.Success("woke")
 
 
 def test_sleep_nan_completes_at_once_on_asyncio():
@@ -37,7 +37,7 @@ def test_sleep_nan_completes_at_once_on_asyncio():
 
 
 def test_nan_timeout_fires_at_once():
-    assert isinstance(fx.run_sync_exit(fx.never.timeout(float("nan"))), fx.Failure)
+    assert isinstance(fx.run_blocking_exit(fx.never.timeout(float("nan"))), fx.Failure)
 
 
 def test_schedules_treat_nan_as_zero():
@@ -46,7 +46,7 @@ def test_schedules_treat_nan_as_zero():
         step = yield from schedule.to_step(schedule.spaced(float("nan")))
         return (yield from step(0.0, None))
 
-    assert fx.run_sync(first_decision) == schedule.Continue(0, Seconds(0.0))
+    assert fx.run_blocking(first_decision) == schedule.Continue(0, Seconds(0.0))
 
 
 @pytest.mark.parametrize(
@@ -87,7 +87,7 @@ def test_an_infinite_sleep_never_wakes_and_does_not_crash_the_sync_scheduler():
     """An infinite duration is kept (Effect's ``Duration.infinity``): the
     sleep never wakes, and waiting on its timer must not overflow."""
     other_thread = fx.blocking(lambda: time.sleep(0.05)).as_("other")
-    assert fx.run_sync(fx.sleep(math.inf).as_("slept").race(other_thread)) == "other"
+    assert fx.run_blocking(fx.sleep(math.inf).as_("slept").race(other_thread)) == "other"
 
 
 @pytest.mark.parametrize("seconds", [1e-12, -1e-12])

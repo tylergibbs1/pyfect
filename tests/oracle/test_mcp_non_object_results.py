@@ -1,9 +1,7 @@
 """A tool whose result is not a JSON object, served on a revision whose
-``structuredContent`` must be an object (2025-06-18, 2025-11-25): the result
-is wrapped as ``{"result": ...}`` and the output schema says so, as other MCP
-SDKs do, and pyfect's client unwraps it (DOGFOOD atlas #4). Not an Effect
-port: Effect's ``McpServer`` drops the output schema and the structured
-result there, leaving only the text. A string result is still text alone."""
+``structuredContent`` must be an object (2025-06-18, 2025-11-25): as Effect's
+``McpServer``, it is listed with no output schema and answered with its JSON
+text alone."""
 
 from __future__ import annotations
 
@@ -74,20 +72,13 @@ LEGACY = [P.v2025_11_25, P.v2025_06_18]
 
 @pytest.mark.parametrize("protocol", LEGACY, ids=lambda p: p.protocol_version)
 @testing.effect
-def test_a_non_object_result_is_wrapped_and_its_schema_says_so(protocol: C.ClientProtocol):
+def test_a_non_object_result_is_its_json_text_alone(protocol: C.ClientProtocol):
     tools = yield from connect(protocol)
     client, arr = tools["Arr"]
-    assert arr.get("outputSchema") == {
-        "type": "object",
-        "properties": {"result": {"type": "array", "items": _SAFE_INT}},
-        "required": ["result"],
-        "x-fastmcp-wrap-result": True,
-    }
+    assert "outputSchema" not in arr
     raw = yield from client.call_tool(arr)
-    assert raw.get("structuredContent") == {"result": [1, 2]}
+    assert "structuredContent" not in raw
     assert raw["content"] == [{"type": "text", "text": "[1,2]"}]
-    assert (yield from client.call_tool(arr, schema=S.Unknown)) == [1, 2]
-    assert (yield from client.call_tool(arr, schema=S.Array(S.Int))) == (1, 2)
 
     # An object, a string (whose text is all of it) and no result are as Effect
     # serves them.

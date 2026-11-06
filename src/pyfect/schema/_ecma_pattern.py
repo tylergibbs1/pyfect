@@ -5,8 +5,9 @@ expressions, run on Python's ``re``.
 what Unicode mode rejects; ``$`` ends the string, ``.`` skips the four line
 terminators, ``\\d`` is ASCII and a reference to a group that took no part in the
 match is empty. What ``re`` cannot match alike is refused, not approximated:
-``\\p{...}``, a reference to a group opened later or still open, or to one a loop
-would clear, a variable width behind and a group name used twice.
+a reference to a group opened later or still open, or to one a loop would clear,
+and a group name used twice. ``\\p{...}`` and a variable width behind run on the
+``regex`` package (extra ``pyfect-dev[regex]``), and are refused without it.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import cast
 
 from pyfect._digits import is_digits
 from pyfect.schema._checks_string import string_filter
@@ -30,6 +32,15 @@ _NOT_SPACE = (
     "\\x00-\\x08\\x0e-\\x1f\\x21-\\x9f\\xa1-\\u167f\\u1681-\\u1fff\\u200b-\\u2027\\u202a-\\u202e"
     "\\u2030-\\u205e\\u2060-\\u2fff\\u3001-\\ufefe\\uff00-\\U0010ffff"
 )
+_PROPERTY = re.compile(
+    r"(?:(?:General_Category|gc|Script|sc|Script_Extensions|scx)=)?[A-Z][A-Za-z_]*"
+)
+_ASCII_SET = {
+    "d": "0-9",
+    "D": "\\x00-/:-\\U0010ffff",
+    "w": "0-9A-Za-z_",
+    "W": "\\x00-/:-@\\[-^`{-\\U0010ffff",
+}
 _QUANTIFIER = re.compile(r"\{[0-9]+(?:,[0-9]*)?\}")
 _SIMPLE_ESCAPES = {"t": r"\t", "n": r"\n", "v": r"\x0b", "f": r"\x0c", "r": r"\r"}
 
@@ -58,8 +69,9 @@ def _repeats(quantifier: str) -> bool:
 
 
 class _Translation:
-    def __init__(self, source: str) -> None:
+    def __init__(self, source: str, *, properties: bool = False) -> None:
         self.source = source
+        self.properties = properties
         self.at = 0
         self.out: list[str] = []
         self.groups: list[_Group] = []
@@ -88,6 +100,8 @@ class _Translation:
     def reference(self, number: int) -> str:
         """A group that took no part in the match is empty in JavaScript and
         fails in ``re``. A number past the groups so far does not compile."""
+        if self.properties and number > self.capture_count:
+            raise EcmaPatternError(_ERROR)
         self.referenced.add(number)
         return f"(?({number})\\{number})"
 
@@ -228,6 +242,11 @@ class _Translation:
             return self.literal(self.code_point_escape())
         self.at += 1
         match char:
+            case "p" | "P" if self.properties:
+                return self.property_escape(char)
+            case "d" | "D" | "w" | "W" if self.properties:
+                # ``\\p`` needs ``regex`` without its ASCII flag, so these say ASCII themselves.
+                return _ASCII_SET[char] if in_class else f"[{_ASCII_SET[char]}]"
             case "d" | "D" | "w" | "W":
                 return f"\\{char}"
             case "s":
@@ -235,11 +254,13 @@ class _Translation:
             case "S":
                 return _NOT_SPACE if in_class else f"[{_NOT_SPACE}]"
             case "b":
-                return r"\x08" if in_class else r"\b"
+                if in_class:
+                    return r"\x08"
+                return r"(?a:\b)" if self.properties else r"\b"
             case "B":
                 if in_class:
                     raise EcmaPatternError(_ERROR)
-                return r"\B"
+                return r"(?a:\B)" if self.properties else r"\B"
             case "t" | "n" | "v" | "f" | "r":
                 return _SIMPLE_ESCAPES[char]
             case "0":
@@ -277,6 +298,14 @@ class _Translation:
                 return f"\\{char}"
             case _:
                 raise EcmaPatternError(_ERROR)
+
+    def property_escape(self, char: str) -> str:
+        end = self.source.find("}", self.at)
+        name = self.source[self.at + 1 : end] if self.peek() == "{" and end > 0 else ""
+        if _PROPERTY.fullmatch(name) is None:
+            raise EcmaPatternError(_ERROR)
+        self.at = end + 1
+        return f"\\{char}{{{name}}}"
 
     def character_class(self) -> None:
         self.at += 1
@@ -326,7 +355,21 @@ def compile_ecma(source: str) -> re.Pattern[str]:
     """``source`` compiled; raises ``EcmaPatternError``."""
     try:
         return re.compile(translate(source), re.ASCII)
-    except re.error as error:
+    except (re.error, EcmaPatternError) as error:
+        return _compile_on_regex(source, error)
+
+
+def _compile_on_regex(source: str, refused: Exception) -> re.Pattern[str]:
+    """What ``re`` refuses but the ``regex`` package has; the ``regex`` pattern
+    has ``re.Pattern``'s methods."""
+    try:
+        import regex  # pyright: ignore[reportMissingTypeStubs]
+    except ImportError:
+        raise EcmaPatternError(_ERROR) from refused
+    try:
+        translated = _Translation(source, properties=True).run()
+        return cast("re.Pattern[str]", regex.compile(translated))  # pyright: ignore[reportUnknownMemberType]
+    except regex.error as error:  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
         raise EcmaPatternError(_ERROR) from error
 
 

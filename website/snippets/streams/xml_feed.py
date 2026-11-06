@@ -22,7 +22,7 @@ items = (
     .pipe_through_channel(xml.elements(["feed", "item"]))
     .map(describe)
 )
-print(fx.run_sync(items.run_collect().or_die()))
+print(fx.run_blocking(items.run_collect().or_die()))
 
 events: list[xml.Event] = [
     xml.StartElement("note", {"to": "Ada & Grace"}),
@@ -30,4 +30,4 @@ events: list[xml.Event] = [
     xml.EndElement("note"),
 ]
 written = stream.from_iterable(events).pipe_through_channel(xml.encode_string())
-print(fx.run_sync(written.run_string().or_die()))
+print(fx.run_blocking(written.run_string().or_die()))

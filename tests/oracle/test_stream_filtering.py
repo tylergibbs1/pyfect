@@ -3,7 +3,7 @@
 ``when`` and ``zipWithNext`` sections and the two ``rechunk`` titles.
 
 Each test's docstring is the Effect test title. Effect's inclusive
-``Stream.range(a, b)`` is ``stream.range_inclusive(a, b)``, chunks and
+``Stream.range(a, b)`` is ``stream.range(a, b)``, chunks and
 windows are tuples, ``Option.some(x)`` is ``Some(x)`` and ``Option.none()``
 is ``None``, and a ``Filter`` is a function returning ``Ok`` / ``Err``.
 
@@ -107,7 +107,7 @@ def test_limit_bytes_drops_the_crossing_chunk_and_switches_to_the_fallback():
 @testing.effect
 def test_take_pulls_the_first_n_values_from_a_stream():
     """take - pulls the first `n` values from a stream"""
-    result = yield from stream.range_inclusive(1, 5).take(3).run_collect()
+    result = yield from stream.range(1, 5).take(3).run_collect()
     assert result == [1, 2, 3]
 
 
@@ -151,14 +151,14 @@ def test_take_nan_short_circuits_stream_evaluation():
 @testing.effect
 def test_take_until_takes_elements_until_a_predicate_is_satisfied():
     """takeUntil - takes elements until a predicate is satisfied"""
-    result = yield from stream.range_inclusive(1, 5).take_until(lambda n: n % 3 == 0).run_collect()
+    result = yield from stream.range(1, 5).take_until(lambda n: n % 3 == 0).run_collect()
     assert result == [1, 2, 3]
 
 
 @testing.effect
 def test_take_while_takes_elements_while_a_predicate_is_satisfied():
     """takeWhile - takes elements while a predicate is satisfied"""
-    result = yield from stream.range_inclusive(1, 5).take_while(lambda n: n % 3 != 0).run_collect()
+    result = yield from stream.range(1, 5).take_while(lambda n: n % 3 != 0).run_collect()
     assert result == [1, 2]
 
 
@@ -166,7 +166,7 @@ def test_take_while_takes_elements_while_a_predicate_is_satisfied():
 def test_take_while_filter_takes_elements_while_a_filter_succeeds():
     """takeWhileFilter - takes elements while a filter succeeds"""
     result = yield from (
-        stream.range_inclusive(1, 5)
+        stream.range(1, 5)
         .take_while_filter(lambda n: Ok(n + 10) if n < 3 else Err(None))
         .run_collect()
     )
@@ -177,9 +177,7 @@ def test_take_while_filter_takes_elements_while_a_filter_succeeds():
 def test_take_until_effect_takes_elements_until_an_effectful_predicate_is_satisfied():
     """takeUntilEffect - takes elements until an effectful predicate is satisfied"""
     result = yield from (
-        stream.range_inclusive(1, 5)
-        .take_until_effect(lambda n: fx.succeed(n % 3 == 0))
-        .run_collect()
+        stream.range(1, 5).take_until_effect(lambda n: fx.succeed(n % 3 == 0)).run_collect()
     )
     assert result == [1, 2, 3]
 
@@ -188,9 +186,7 @@ def test_take_until_effect_takes_elements_until_an_effectful_predicate_is_satisf
 def test_take_while_effect_takes_elements_while_an_effectful_predicate_is_satisfied():
     """takeWhileEffect - takes elements while an effectful predicate is satisfied"""
     result = yield from (
-        stream.range_inclusive(1, 5)
-        .take_while_effect(lambda n: fx.succeed(n % 3 != 0))
-        .run_collect()
+        stream.range(1, 5).take_while_effect(lambda n: fx.succeed(n % 3 != 0)).run_collect()
     )
     assert result == [1, 2]
 
@@ -198,7 +194,7 @@ def test_take_while_effect_takes_elements_while_an_effectful_predicate_is_satisf
 @testing.effect
 def test_take_right():
     """takeRight"""
-    numbers = stream.range_inclusive(1, 5)
+    numbers = stream.range(1, 5)
     result1 = yield from numbers.take_right(3).run_collect()
     result2 = yield from numbers.run_collect()
     assert result1 == result2[-3:]
@@ -444,14 +440,14 @@ def test_sliding_returns_a_sliding_window():
 @testing.effect
 def test_sliding_returns_all_elements_if_chunk_size_is_greater_than_the_size_of_the_stream():
     """sliding - returns all elements if chunkSize is greater than the size of the stream"""
-    result = yield from stream.range_inclusive(1, 5).sliding(6).run_collect()
+    result = yield from stream.range(1, 5).sliding(6).run_collect()
     assert result == [(1, 2, 3, 4, 5)]
 
 
 @testing.effect
 def test_sliding_is_mostly_equivalent_to_zstream_grouped_when_step_size_and_chunk_size_are_equal():
     """sliding - is mostly equivalent to ZStream#grouped when stepSize and chunkSize are equal"""
-    numbers = stream.range_inclusive(1, 5)
+    numbers = stream.range(1, 5)
     result1 = yield from numbers.sliding_size(3, 3).run_collect()
     result2 = yield from numbers.grouped(3).run_collect()
     assert result1 == result2
@@ -522,7 +518,7 @@ def test_sliding_emits_elements_properly_when_a_failure_occurs():
 @testing.effect
 def test_split_should_split_properly():
     """split - should split properly"""
-    result1 = yield from stream.range_inclusive(0, 9).split(lambda n: n % 4 == 0).run_collect()
+    result1 = yield from stream.range(0, 9).split(lambda n: n % 4 == 0).run_collect()
     result2 = yield from (
         stream.from_arrays([1, 2], [3, 4], [5, 6], [7, 8, 9], [10])
         .split(lambda n: n % 3 == 0)
@@ -535,7 +531,7 @@ def test_split_should_split_properly():
 @testing.effect
 def test_split_is_equivalent_to_identity_when_the_predicate_is_not_satisfied():
     """split - is equivalent to identity when the predicate is not satisfied"""
-    result = yield from stream.range_inclusive(1, 10).split(lambda n: n % 11 == 0).run_collect()
+    result = yield from stream.range(1, 10).split(lambda n: n % 11 == 0).run_collect()
     assert result == [tuple(range(1, 11))]
 
 

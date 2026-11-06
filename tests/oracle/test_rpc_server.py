@@ -40,7 +40,6 @@ from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.rpc.message import FromServer, Request, ResponseExit
 from pyfect.rpc.middleware import SuccessValue
-from pyfect.schema import DecodedDefect
 from pyfect.tracer import CurrentTracer, Ended, NativeSpan, SpanRequest, Tracer
 
 type Handler = Callable[[WebRequest], Awaitable[WebResponse]]
@@ -58,9 +57,8 @@ def _serve(app: Layer[Any, Any, Any], use: Callable[[Handler], Awaitable[None]])
 
 
 def _message(defect: object) -> str:
-    """Effect dies with a string; pyfect with a ``DecodedDefect`` of it."""
-    assert isinstance(defect, DecodedDefect)
-    return str(defect.value)
+    assert isinstance(defect, str)
+    return defect
 
 
 def _post(body: str) -> WebRequest:
@@ -115,7 +113,7 @@ def test_reports_success_encode_failures_with_the_rpc_tag() -> None:
         Age.handlers().handle(Age.get_user_age)(lambda _: effect.succeed(_NOT_A_NUMBER))
     )
     reporter = ErrorReporter.layer(
-        [ErrorReporter.make(lambda report: reports.append(_message(report.error)))]
+        [ErrorReporter.make(lambda report: reports.append(str(report.error)))]
     )
     app = _http(Age, handlers, rs.layer_ndjson).pipe(layer.provide(reporter))
 
@@ -208,7 +206,7 @@ def test_rpc_test_handler_defects(disable_fatal_defects: bool) -> None:
             .handle(Group.block)(
                 lambda _: started.succeed(None).flat_map(lambda _: release.wait()).as_("ok")
             )
-            .handle(Group.boom)(lambda _: effect.die(DecodedDefect("boom")))
+            .handle(Group.boom)(lambda _: effect.die("boom"))
         )
         client = yield from rpc_test.make_client(
             Group, disable_fatal_defects=disable_fatal_defects
@@ -223,7 +221,7 @@ def test_rpc_test_handler_defects(disable_fatal_defects: bool) -> None:
         yield from release.succeed(None)
         assert (yield from blocked.join()) == ("ok" if disable_fatal_defects else "boom")
 
-    fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die())
+    fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die())
 
 
 # --- platform-node: request defect isolation over HTTP --------------------------------
@@ -276,7 +274,7 @@ def _isolation_client(body: Any, serialization: Any = rs.layer_json) -> Any:
         .pipe(layer.provide(serialization))
     )
     program = fx.scoped(effect.gen(body)).pipe(fx.provide(protocol))
-    return fx.run_sync(program.timeout(10).or_die())
+    return fx.run_blocking(program.timeout(10).or_die())
 
 
 @pytest.mark.parametrize("tag", ["Missing", "MissingWithSchemas"])
@@ -289,7 +287,7 @@ def test_json_unknown_tag_fails_only_its_request(tag: str) -> None:
         call = client.missing if tag == "Missing" else client.missing_with_schemas
         missing = yield from call().exit()
         assert (yield from client.ok()) == "ok"
-        assert missing == Exit.die(DecodedDefect(f"Unknown request tag: {tag}"))
+        assert missing == Exit.die(f"Unknown request tag: {tag}")
 
     _isolation_client(body)
 
@@ -341,7 +339,7 @@ def test_binary_unknown_tag_fails_only_its_request(
         missing = yield from call().exit()
         assert (yield from client.ok()) == "ok"
         if unknown_tag is None:
-            assert missing == Exit.die(DecodedDefect(f"Unknown request tag: {tag}"))
+            assert missing == Exit.die(f"Unknown request tag: {tag}")
         else:
             assert isinstance(missing, Exit.Failure)
             assert len(missing.cause.reasons) == 1
@@ -419,7 +417,7 @@ def _ticker_survives[G: TickerClient | Booming](
     program = fx.scoped(effect.gen(body)).pipe(
         fx.provide(client_protocol.pipe(layer.provide_merge(served)))
     )
-    fx.run_sync(program.timeout(30).or_die())
+    fx.run_blocking(program.timeout(30).or_die())
 
 
 def _ticker_rpc() -> Any:
@@ -473,7 +471,7 @@ def test_with_disable_fatal_defects_a_handler_defect_fails_only_its_own_request(
     handlers = Booming.to_layer(
         Booming.handlers()
         .handle(Booming.ticker)(lambda _: stream.from_schedule(schedule.spaced(0.06)))
-        .handle(Booming.boom)(lambda _: effect.die(DecodedDefect("boom")))
+        .handle(Booming.boom)(lambda _: effect.die("boom"))
     )
     server = (
         rpc_server.layer(Booming, rpc_server.ServerOptions(disable_fatal_defects=True))
@@ -551,4 +549,4 @@ def test_isolates_synchronous_handler_throws_when_fatal_defects_are_disabled() -
         yield from release.succeed(None)
         assert summarize((yield from messages.take())) == ["1", ["Success", "served"]]
 
-    fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die())
+    fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die())

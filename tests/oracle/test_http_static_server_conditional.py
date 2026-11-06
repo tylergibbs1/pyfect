@@ -96,7 +96,7 @@ def _platform(
 def _app(
     file_system: NoopFileSystem, platform: HttpPlatformService, **options: Any
 ) -> static.StaticApp:
-    return fx.run_sync(
+    return fx.run_blocking(
         static.make(root=ROOT, **options)
         .pipe(fx.provide(path_layer))
         .pipe(effect.provide_service(FileSystem, file_system))
@@ -195,7 +195,7 @@ def test_matched_if_none_match_takes_precedence_over_range() -> None:
 
 def _error(app: static.StaticApp, url: str) -> object:
     request = request_from_web(WebRequest(url))
-    exit = fx.run_sync_exit(app.pipe(effect.provide_service(HttpServerRequest, request)))
+    exit = fx.run_blocking_exit(app.pipe(effect.provide_service(HttpServerRequest, request)))
     assert isinstance(exit, Failure)
     return exit.cause.squash()
 

@@ -60,7 +60,7 @@ def test_group_adjacent_by_keeps_an_upstream_failure():
 def test_partition_offers_both_sides_at_once_so_readers_waiting_on_each_other_progress():
     # One chunk overflowing both queues: zip reads an odd only after an
     # even, so offering the evens before the odds would deadlock.
-    evens, odds = yield from stream.range_inclusive(0, 5).partition(
+    evens, odds = yield from stream.range(0, 5).partition(
         lambda n: fx.Ok(n) if n % 2 == 0 else fx.Err(n), capacity=1
     )
     assert (yield from evens.zip(odds).run_collect()) == [(0, 1), (2, 3), (4, 5)]
@@ -68,7 +68,7 @@ def test_partition_offers_both_sides_at_once_so_readers_waiting_on_each_other_pr
 
 @testing.effect
 def test_a_broadcast_n_stream_that_stops_unsubscribes_so_the_others_keep_reading():
-    first, second = yield from (stream.range_inclusive(1, 6).rechunk(1).broadcast_n(2, capacity=1))
+    first, second = yield from (stream.range(1, 6).rechunk(1).broadcast_n(2, capacity=1))
     taken = yield from first.take(1).run_collect()
     rest = yield from second.run_collect()
     assert (taken, rest) == ([1], [1, 2, 3, 4, 5, 6])

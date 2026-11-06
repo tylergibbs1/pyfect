@@ -18,7 +18,7 @@ Omitted, with the reason:
   JavaScript stack costs an ``Error``; pyfect reads the caller's code
   object and line, which allocates no exception and has no limit to honour.
 
-The ``tracing`` titles use ``run_sync_exit`` for ``runForkWith(...)`` plus
+The ``tracing`` titles use ``run_blocking_exit`` for ``runForkWith(...)`` plus
 ``pollUnsafe``; an ``Exit`` is not an effect in pyfect, so "reuses the
 original exit" checks that the failure keeps the cause it was given.
 """
@@ -134,7 +134,7 @@ def test_should_reuse_the_definition_frame_across_calls():
 def test_terminal_root_failure_captures_stack_frame():
     """terminal root failure captures stack frame"""
     frame = StackFrame("root frame", lambda: None, None)
-    ex = fx.run_sync_exit(fx.fail("boom"), context=fx.Context.make(CurrentStackFrame, frame))
+    ex = fx.run_blocking_exit(fx.fail("boom"), context=fx.Context.make(CurrentStackFrame, frame))
     assert isinstance(ex, fx.Failure)
     assert ex.cause.annotations.get_option(StackTrace) == fx.Some(frame)
 
@@ -149,7 +149,7 @@ def test_caught_sandboxed_failure_captures_stack_frame():
 def test_failure_without_a_current_frame_has_no_stack_annotation_and_reuses_the_original_exit():
     """failure without a current frame has no stack annotation and reuses the original exit"""
     failure = fx.cause.fail("boom")
-    ex = fx.run_sync_exit(fx.fail_cause(failure))
+    ex = fx.run_blocking_exit(fx.fail_cause(failure))
     assert isinstance(ex, fx.Failure)
     assert ex.cause is failure
     assert ex.cause.annotations.get_option(StackTrace) is None

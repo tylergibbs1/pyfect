@@ -95,7 +95,7 @@ def test_a_summary_of_size_zero_counts_but_keeps_no_samples():
 def test_a_quantile_out_of_range_dies_on_the_first_update():
     """Printed by Effect under Node: making it is fine, its hooks throw."""
     bad = metric.summary("bad", max_age=1, max_size=1, quantiles=[0.5, 1.5])
-    exit = fx.run_sync_exit(_fresh(bad.update(1)))
+    exit = fx.run_blocking_exit(_fresh(bad.update(1)))
     assert isinstance(exit, Failure)
     assert isinstance(exit.cause.reasons[0], Die)
     assert "Quantile must be between 0 and 1, found: 1.5" in str(exit.cause.reasons[0].defect)
@@ -135,12 +135,12 @@ def test_the_default_timer_boundaries_double_from_half_a_millisecond():
 
 
 @testing.effect
-def test_a_frequency_state_does_not_change_after_it_is_read():
+def test_a_frequency_state_is_the_live_map():
     frequency = metric.frequency("f", preregistered_words=["z"])
     yield from frequency.update("a")
     before = yield from frequency.value()
     yield from frequency.update("a")
-    assert before.occurrences == {"z": 0, "a": 1}
+    assert before.occurrences == {"z": 0, "a": 2}
     assert (yield from frequency.value()).occurrences == {"z": 0, "a": 2}
 
 
@@ -386,6 +386,6 @@ def test_a_metric_is_its_own_description():
 def test_a_negative_max_size_keeps_no_samples():
     """Printed by Effect under Node: no error, and as ``maxSize: 0``."""
     summary = metric.summary("negative-size", max_age=60, max_size=-1, quantiles=[0.5])
-    state = fx.run_sync(_fresh(summary.update(1).and_then(summary.value())))
+    state = fx.run_blocking(_fresh(summary.update(1).and_then(summary.value())))
     assert state.quantiles == ((0.5, None),)
     assert state.count == 1

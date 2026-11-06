@@ -17,7 +17,7 @@ SRC = Path(__file__).parent.parent / "src" / "pyfect"
 ALLOWED = {
     "_loop_thread.py": "LoopThread.submit, which its owners call through Lifetime.submit",
     "socket/_loop.py": "one loop per process, never stopped",
-    "http/uvicorn_server.py": "one loop per process (or the program's), never stopped",
+    "http/_asgi_listener.py": "one loop per process (or the program's), never stopped",
 }
 
 

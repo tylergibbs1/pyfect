@@ -1,7 +1,7 @@
 """Ports of Effect's ``http/HttpMiddleware.test.ts``.
 
 Each test's docstring is the Effect test title. A response carried by a
-defect is ``Die(UnhandledError(response))`` (``server_response.die_with``),
+defect is ``Die(response)`` (``server_response.die_with``),
 since a pyfect defect is an exception.
 
 Changed, with the reason:
@@ -23,7 +23,7 @@ import pytest
 import pyfect as fx
 from pyfect import effect, logger
 from pyfect._core import _WithFiber
-from pyfect.cause import Cause, Fail, UnhandledError
+from pyfect.cause import Cause, Fail
 from pyfect.cause import die as die_cause
 from pyfect.cause import fail as fail_cause
 from pyfect.cause import interrupt as interrupt_cause
@@ -159,8 +159,8 @@ def test_preserves_failures_mixed_with_client_aborts_even_with_status_499() -> N
         )
     )
     # The server attaches the response to the failed handler cause.
-    handler_cause = cause + die_cause(UnhandledError(server_response.empty(status=499)))
-    exit = fx.run_sync(
+    handler_cause = cause + die_cause(server_response.empty(status=499))
+    exit = fx.run_blocking(
         http_logger(effect.fail_cause(handler_cause))
         .pipe(effect.provide_service(HttpServerRequest, _request("http://localhost/slow")))
         .pipe(fx.provide(logger.layer([recorder])))
@@ -216,7 +216,7 @@ def test_annotates_method_path_and_status_without_query_or_hash() -> None:
         lambda options: annotations.append(dict(options.fiber.get_ref(CurrentLogAnnotations)))
     )
     request = _request("http://localhost:3000/todos/1?foo=bar#top")
-    fx.run_sync(
+    fx.run_blocking(
         http_logger(effect.succeed(server_response.empty(status=204)))
         .pipe(effect.provide_service(HttpServerRequest, request))
         .pipe(fx.provide(logger.layer([recorder])))
@@ -240,7 +240,7 @@ def test_uses_a_stable_http_span_log_span_name() -> None:
     )
     for path in ("one", "two"):
         request = _request(f"http://localhost:3000/{path}")
-        fx.run_sync(logged.pipe(effect.provide_service(HttpServerRequest, request)))
+        fx.run_blocking(logged.pipe(effect.provide_service(HttpServerRequest, request)))
     assert spans == [["http.span"], ["http.span"]]
 
 
@@ -297,7 +297,7 @@ def test_restores_parent_span_and_ends_the_span_if_interrupted_before_handler_re
         .pipe(effect.provide_service(HttpServerRequest, _request()))
         .pipe(effect.provide_service(CurrentTracer, Tracer.make(interrupting)))
     )
-    exit = fx.run_sync_exit(program)
+    exit = fx.run_blocking_exit(program)
     assert isinstance(exit, Failure)
     assert seen["observed"] is seen["original"]
     assert isinstance(spans[0].status, Ended)
@@ -318,7 +318,7 @@ def test_restores_the_parent_span_context_identity() -> None:
             _WithFiber(lambda after: effect.succeed((before, after._context)))
         )
 
-    before, after = fx.run_sync(
+    before, after = fx.run_blocking(
         _WithFiber(program).pipe(effect.provide_service(HttpServerRequest, _request())).or_die()
     )
     assert seen[0] is not before
@@ -340,7 +340,7 @@ def test_records_attributes_for_sampled_spans() -> None:
     response = server_response.empty(
         status=201, headers={"x-response": "response", "x-response-secret": "response-secret"}
     )
-    fx.run_sync(
+    fx.run_blocking(
         _traced(effect.succeed(response), request, recording)
         .pipe(
             effect.provide_service(
@@ -371,7 +371,7 @@ def test_redacts_sensitive_query_params_in_url_attributes() -> None:
         lambda request: (urls.append(request.url), server_response.empty())[1]
     )
     request = _request("http://localhost/todos?sig=sig-secret&foo=bar")
-    fx.run_sync(_traced(app, request, recording).or_die())
+    fx.run_blocking(_traced(app, request, recording).or_die())
     attributes = recording.spans[0].attributes
     assert attributes["url.full"] == "http://localhost/todos?sig=REDACTED&foo=bar"
     assert attributes["url.query"] == "sig=REDACTED&foo=bar"
@@ -382,7 +382,7 @@ def test_skips_attributes_for_unsampled_spans() -> None:
     """skips attributes for unsampled spans"""
     recording = _Recording()
     app = effect.succeed(server_response.empty(status=204))
-    fx.run_sync(
+    fx.run_blocking(
         _traced(app, _request("http://localhost:3000/unsampled"), recording)
         .pipe(effect.provide_service(MinimumTraceLevel, LogLevel.FATAL))
         .or_die()
@@ -414,7 +414,7 @@ def test_ends_the_span_and_restores_the_context_when_the_app_is_interrupted() ->
         yield from fiber.interrupt()
         yield from effect.yield_now()
 
-    fx.run_sync(program())
+    fx.run_blocking(program())
     assert len(recording.spans) == 1
     assert isinstance(recording.spans[0].status, Ended)
     assert parents == [None]
@@ -440,7 +440,7 @@ def test_fails_the_span_for_a_rendered_599_without_changing_the_response() -> No
         .catch_all(lambda _: effect.succeed(response))
     )
     recording = _Recording()
-    result = fx.run_sync(_traced(app, request, recording).or_die())
+    result = fx.run_blocking(_traced(app, request, recording).or_die())
     assert result is response
     error = _span_error(spans[0])
     assert isinstance(error, HttpServerError)
@@ -455,7 +455,7 @@ def test_fails_a_native_span_without_changing_a_returned_500_response() -> None:
     request = _request("http://localhost:3000/native")
     response = server_response.empty(status=500)
     app = current_span().map(lambda span: (spans.append(span), response)[1])
-    exit = fx.run_sync(_traced(app, request).exit())
+    exit = fx.run_blocking(_traced(app, request).exit())
     assert isinstance(exit, Success)
     assert exit.value is response
     error = _span_error(spans[0])
@@ -472,8 +472,8 @@ def test_preserves_the_stream_failure_when_the_sent_response_is_500() -> None:
     stream_error = RuntimeError("stream failed")
     # Once headers are sent, the platform attaches the response to the
     # stream failure so the server can finish the request correctly.
-    cause = fail_cause(stream_error) + die_cause(UnhandledError(response))
-    exit = fx.run_sync(_traced(effect.fail_cause(cause), request, recording).exit())
+    cause = fail_cause(stream_error) + die_cause(response)
+    exit = fx.run_blocking(_traced(effect.fail_cause(cause), request, recording).exit())
     assert isinstance(exit, Failure)
     assert exit.cause == cause
     span = recording.spans[0]
@@ -505,7 +505,9 @@ def _observe(middleware: Any, peer: str, headers: dict[str, str]) -> object:
     request = _request("http://app.test/a", headers={"host": "app.test", **headers}).modify(
         remote_address=peer
     )
-    response = fx.run_sync(app.pipe(effect.provide_service(HttpServerRequest, request)).or_die())
+    response = fx.run_blocking(
+        app.pipe(effect.provide_service(HttpServerRequest, request)).or_die()
+    )
 
     async def main() -> object:
         return await response_to_web(response).json()

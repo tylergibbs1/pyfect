@@ -5,12 +5,12 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Effect | 229 | 180 | 11 | 38 | 0 | 100% |
+| Effect | 229 | 194 | 11 | 24 | 0 | 100% |
 | Effectable | 3 | 1 | 0 | 2 | 0 | 100% |
 | Exit | 27 | 25 | 0 | 2 | 0 | 100% |
-| Cause | 59 | 27 | 5 | 27 | 0 | 100% |
-| Result | 40 | 22 | 10 | 8 | 0 | 100% |
-| Option | 60 | 36 | 8 | 16 | 0 | 100% |
+| Cause | 59 | 29 | 5 | 25 | 0 | 100% |
+| Result | 40 | 23 | 10 | 7 | 0 | 100% |
+| Option | 60 | 37 | 8 | 15 | 0 | 100% |
 | Filter | 28 | 24 | 0 | 4 | 0 | 100% |
 | Predicate | 47 | 0 | 0 | 47 | 0 | 100% |
 | Function | 22 | 0 | 0 | 22 | 0 | 100% |
@@ -30,7 +30,7 @@ Coverage counts ported, renamed and §4 exports.
 | `findFirstFilter` | ported | `pyfect.find_first_filter` |
 | `forEach` | ported | `pyfect.for_each` |
 | `head` | ported | `pyfect.Effect.head` |
-| `whileLoop` | §4 | a `while` loop in `fx.gen` (§4: `Effect.whileLoop`) |
+| `whileLoop` | ported | `pyfect.while_loop` |
 | `promise` | renamed | `pyfect.from_async` |
 | `tryPromise` | renamed | `pyfect.try_async` |
 | `succeed` | ported | `pyfect.succeed` |
@@ -54,7 +54,7 @@ Coverage counts ported, renamed and §4 exports.
 | `die` | ported | `pyfect.die` |
 | `try` | ported | `pyfect.try_` |
 | `yieldNow` | ported | `pyfect.yield_now` |
-| `yieldNowWith` | §4 | `yield_now()` (§4: `Effect.yieldNowWith(priority)`) |
+| `yieldNowWith` | ported | `pyfect.yield_now_with` |
 | `withFiber` | ported | `pyfect.with_fiber` |
 | `withFiberSucceed` | ported | `pyfect.with_fiber_succeed` |
 | `fromResult` | ported | `pyfect.from_result` |
@@ -126,10 +126,10 @@ Coverage counts ported, renamed and §4 exports.
 | `filterMapOrFail` | ported | `pyfect.Effect.filter_map_or_fail` |
 | `when` | ported | `pyfect.Effect.when` |
 | `match` | ported | `pyfect.Effect.match` |
-| `matchEager` | §4 | `match` (§4: `*Eager` variants) |
+| `matchEager` | ported | `pyfect.Effect.match_eager` |
 | `matchCause` | ported | `pyfect.Effect.match_cause` |
-| `matchCauseEager` | §4 | `match_cause` (§4: `*Eager` variants) |
-| `matchCauseEffectEager` | §4 | `match_cause_effect` (§4: `*Eager` variants) |
+| `matchCauseEager` | ported | `pyfect.Effect.match_cause_eager` |
+| `matchCauseEffectEager` | ported | `pyfect.Effect.match_cause_effect_eager` |
 | `matchCauseEffect` | ported | `pyfect.Effect.match_cause_effect` |
 | `matchEffect` | ported | `pyfect.Effect.match_effect` |
 | `isFailure` | ported | `pyfect.Effect.is_failure` |
@@ -157,7 +157,7 @@ Coverage counts ported, renamed and §4 exports.
 | `onError` | ported | `pyfect.Effect.on_error` |
 | `onErrorIf` | ported | `pyfect.Effect.on_error_if` |
 | `onErrorFilter` | ported | `pyfect.Effect.on_error_filter` |
-| `onExitPrimitive` | §4 | `on_exit` (§4: `Effect.onExitPrimitive`) |
+| `onExitPrimitive` | ported | `pyfect.Effect.on_exit_primitive` |
 | `onExit` | ported | `pyfect.Effect.on_exit` |
 | `onExitIf` | ported | `pyfect.Effect.on_exit_if` |
 | `onExitFilter` | ported | `pyfect.Effect.on_exit_filter` |
@@ -174,7 +174,7 @@ Coverage counts ported, renamed and §4 exports.
 | `forever` | ported | `pyfect.Effect.forever` |
 | `repeat` | ported | `pyfect.Effect.repeat` |
 | `repeatOrElse` | ported | `pyfect.Effect.repeat_or_else` |
-| `replicate` | §4 | `[eff] * n` (§4: `Effect.replicate(n)`) |
+| `replicate` | ported | `pyfect.Effect.replicate` |
 | `replicateEffect` | ported | `pyfect.Effect.replicate_effect` |
 | `schedule` | ported | `pyfect.Effect.schedule` |
 | `scheduleFrom` | ported | `pyfect.Effect.schedule_from` |
@@ -239,16 +239,16 @@ Coverage counts ported, renamed and §4 exports.
 | `Transaction` | ported | `pyfect.Transaction` |
 | `tx` | ported | `pyfect.tx` |
 | `txRetry` | ported | `pyfect.tx_retry` |
-| `effectify` | §4 | `callback` / `from_async` (§4: `Effect.effectify`) |
+| `effectify` | ported | `pyfect.effectify` |
 | `satisfiesSuccessType` | §4 | an annotation (§4: `satisfiesSuccessType`) |
 | `satisfiesErrorType` | §4 | an annotation (§4: `satisfiesSuccessType`) |
 | `satisfiesServicesType` | §4 | an annotation (§4: `satisfiesSuccessType`) |
-| `mapEager` | §4 | `map` (§4: `*Eager` variants) |
-| `mapErrorEager` | §4 | `map_error` (§4: `*Eager` variants) |
-| `mapBothEager` | §4 | `map_both` (§4: `*Eager` variants) |
-| `flatMapEager` | §4 | `flat_map` (§4: `*Eager` variants) |
-| `catchEager` | §4 | `catch_all` (§4: `*Eager` variants) |
-| `fnUntracedEager` | §4 | `fn_untraced` (§4: `*Eager` variants) |
+| `mapEager` | ported | `pyfect.Effect.map_eager` |
+| `mapErrorEager` | ported | `pyfect.Effect.map_error_eager` |
+| `mapBothEager` | ported | `pyfect.Effect.map_both_eager` |
+| `flatMapEager` | ported | `pyfect.Effect.flat_map_eager` |
+| `catchEager` | ported | `pyfect.Effect.catch_eager` |
+| `fnUntracedEager` | ported | `pyfect.fn_untraced_eager` |
 
 ## Effectable
 
@@ -332,7 +332,7 @@ Coverage counts ported, renamed and §4 exports.
 | `isDone` | §4 | `isinstance(x, Done)` (§4: `TypeId` symbols and `is*` guards) |
 | `DoneTypeId` | §4 | `isinstance(x, Done)` (§4: `TypeId` symbols and `is*` guards) |
 | `Done` | ported | `pyfect.errors.Done` |
-| `done` | §4 | `fx.fail(Done(value))` (§4: `Cause.done(value)`) |
+| `done` | ported | `pyfect.cause.done` |
 | `TimeoutErrorTypeId` | §4 | `isinstance(x, TimeoutException)` (§4: `TypeId` symbols and `is*` guards) |
 | `isTimeoutError` | §4 | `isinstance(x, TimeoutException)` (§4: `TypeId` symbols and `is*` guards) |
 | `TimeoutError` | renamed | `pyfect.errors.TimeoutException` |
@@ -342,9 +342,9 @@ Coverage counts ported, renamed and §4 exports.
 | `isExceededCapacityError` | §4 | `isinstance(x, ExceededCapacityError)` (§4: `TypeId` symbols and `is*` guards) |
 | `ExceededCapacityErrorTypeId` | §4 | `isinstance(x, ExceededCapacityError)` (§4: `TypeId` symbols and `is*` guards) |
 | `ExceededCapacityError` | ported | `pyfect.errors.ExceededCapacityError` |
-| `AsyncFiberErrorTypeId` | §4 | `isinstance(x, AsyncioRequiredError)` (§4: `TypeId` symbols and `is*` guards) |
-| `isAsyncFiberError` | §4 | `isinstance(x, AsyncioRequiredError)` (§4: `TypeId` symbols and `is*` guards) |
-| `AsyncFiberError` | §4 | `AsyncioRequiredError` (§4: `runSync` of an async effect throws `AsyncFiberError`) |
+| `AsyncFiberErrorTypeId` | §4 | `isinstance(x, AsyncFiberError)` (§4: `TypeId` symbols and `is*` guards) |
+| `isAsyncFiberError` | §4 | `isinstance(x, AsyncFiberError)` (§4: `TypeId` symbols and `is*` guards) |
+| `AsyncFiberError` | ported | `pyfect.errors.AsyncFiberError` |
 | `UnknownErrorTypeId` | §4 | `isinstance(x, UnknownError)` (§4: `TypeId` symbols and `is*` guards) |
 | `isUnknownError` | §4 | `isinstance(x, UnknownError)` (§4: `TypeId` symbols and `is*` guards) |
 | `UnknownError` | ported | `pyfect.errors.UnknownError` |
@@ -385,7 +385,7 @@ Coverage counts ported, renamed and §4 exports.
 | `getOrThrow` | renamed | `pyfect.result.Ok.get_or_raise` |
 | `orElse` | ported | `pyfect.result.Ok.or_else` |
 | `flatMap` | ported | `pyfect.result.Ok.flat_map` |
-| `andThen` | §4 | `and_then(next)`, `flat_map`, `map` (§4: `and_then(next)` takes the next Option / Result) |
+| `andThen` | ported | `pyfect.result.Ok.and_then` |
 | `all` | ported | `pyfect.result.all` |
 | `flip` | ported | `pyfect.result.Ok.flip` |
 | `gen` | §4 | generator locals (§4: Do / bind / Option.gen) |
@@ -432,7 +432,7 @@ Coverage counts ported, renamed and §4 exports.
 | `asVoid` | ported | `pyfect.option.as_void` |
 | `void` | ported | `pyfect.option.void` |
 | `flatMap` | ported | `pyfect.option.flat_map` |
-| `andThen` | §4 | `and_then(o, next)`, `flat_map`, `as_` (§4: `and_then(next)` takes the next Option / Result) |
+| `andThen` | ported | `pyfect.option.and_then` |
 | `flatMapNullishOr` | renamed | `pyfect.option.flat_map_optional` |
 | `flatten` | ported | `pyfect.option.flatten` |
 | `zipRight` | ported | `pyfect.option.zip_right` |

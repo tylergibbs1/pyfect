@@ -21,7 +21,7 @@ def lookup(code: str):
     return code.lower()
 
 
-assert fx.run_sync(lookup("PT").with_span("GET /ask").pipe(fx.provide(telemetry))) == "pt"
+assert fx.run_blocking(lookup("PT").with_span("GET /ask").pipe(fx.provide(telemetry))) == "pt"
 
 spans = {span.name: span for span in exporter.get_finished_spans()}
 assert sorted(spans) == ["GET /ask", "lookup"]

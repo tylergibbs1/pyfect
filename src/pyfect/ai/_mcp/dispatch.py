@@ -928,7 +928,6 @@ def _call_tool(
     found = server.find_tool(name, context)
     if found is None:
         return fail(InvalidParams(f"Tool '{name}' not found"))
-    wrap = projection.wraps_result(protocol, found.tool)
     called = server.call_tool_for(call, context)
     continued = context.input_responses is not None or context.request_state is not None
     if protocol.reports_tool_errors_as_results:
@@ -956,7 +955,7 @@ def _call_tool(
         reason = projection.unsupported_content(protocol, outcome["content"])
         if reason is not None:
             return fail(InvalidParams(reason))
-        return succeed(projection.call_tool_result(protocol, outcome, wrap))
+        return succeed(projection.call_tool_result(protocol, outcome))
 
     def checked(request: Option[ServerRequest]) -> Effect[Wire, McpError, RequestServices]:
         if protocol.is_stateless and request is not None:

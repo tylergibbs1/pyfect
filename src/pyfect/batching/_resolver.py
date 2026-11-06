@@ -27,13 +27,15 @@ from pyfect._core import (
 )
 from pyfect._effect_args import require_effect
 from pyfect._unsubscripted import Unsubscripted
-from pyfect.batching._request import Entry
+from pyfect.batching._request import Entry, EqualKeys
 from pyfect.clock import sleep
 from pyfect.duration import Duration
 from pyfect.exit import Failure, Success
 
 if TYPE_CHECKING:
     from pyfect.batching._engine import Batch, Slot
+    from pyfect.batching._request import TypedRequest
+    from pyfect.cache import Cache
     from pyfect.exit import Exit
     from pyfect.persistence import PersistenceError
     from pyfect.persistence.persistable import AnyPersistable
@@ -224,7 +226,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
     ) -> RequestResolver[Any, Any]:
         """Batch requests by ``key``; ``resolver`` runs each batch with its
         key (the first entry's, among equal keys)."""
-        return RequestResolver._of(resolver, batch_key=key)
+        return RequestResolver._of(resolver, batch_key=EqualKeys(key))
 
     @overload
     @classmethod
@@ -344,11 +346,30 @@ class RequestResolver(Generic[Q_contra, E_co]):
 
         return self._with(collect_while=collect_while)
 
+    def as_cache[Q: Hashable](
+        self: RequestResolver[Q, E_co],
+        *,
+        capacity: int | None,
+        time_to_live: Callable[[Exit[Any, E_co], Q], Duration] | None = None,
+        require_services_at: Literal["lookup", "construction"] = "lookup",
+    ) -> Effect[Cache[Q, Any, E_co]]:
+        """A cache whose lookup makes the request (Effect's ``asCache``). A
+        request's success type is not read out of ``Q``, so values are ``Any``."""
+        from pyfect.batching._api import request
+        from pyfect.cache import Cache
+
+        return Cache.make(
+            lambda req: request(cast("TypedRequest[Any, Any, Any, Any]", req), self),
+            capacity=capacity,
+            time_to_live=time_to_live,
+            require_services_at=cast("Literal['lookup']", require_services_at),
+        )
+
     def grouped[Q](
         self: RequestResolver[Q, E_co], f: Callable[[Entry[Q]], Hashable]
     ) -> RequestResolver[Q, E_co]:
         """Batch requests by ``f``; equal keys share a batch."""
-        return self._with(batch_key=f)
+        return self._with(batch_key=EqualKeys(f))
 
     def around[Q, B, E2 = Never](
         self: RequestResolver[Q, E_co],

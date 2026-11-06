@@ -211,7 +211,7 @@ def _handle(
                     AiErr.ToolResultEncodingError(
                         tool_name=name,
                         tool_result=output.result,
-                        description=AiErr.describe_schema_error(error),
+                        description=error.message,
                     ),
                 )
             )
@@ -220,9 +220,7 @@ def _handle(
     def invalid_params(error: SchemaError) -> Effect[Stream[HandlerResult, Any, Any], AiError]:
         failure = _make_error(
             name,
-            AiErr.ToolParameterValidationError(
-                tool_name=name, description=AiErr.describe_schema_error(error)
-            ),
+            AiErr.ToolParameterValidationError(tool_name=name, description=error.message),
         )
         if tool.failure_mode == "error":
             origin = Context.make(FailureOriginAnnotation, "parameters")
@@ -235,8 +233,7 @@ def _handle(
                 name,
                 AiErr.InvalidToolResultError(
                     tool_name=name,
-                    description="Tool handler returned invalid result: "
-                    + AiErr.describe_schema_error(error),
+                    description="Tool handler returned invalid result: " + error.message,
                 ),
             )
         if AiErr.is_ai_error_reason(error):

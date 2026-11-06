@@ -98,7 +98,8 @@ class _Frequency(Series[Any, Any]):
         occurrences = dict.fromkeys(self._preregistered, 0)
 
         def get(_: Context) -> FrequencyState:
-            return FrequencyState(dict(occurrences))
+            # The live map, as in Effect.
+            return FrequencyState(occurrences)
 
         def update(word: str, _: Context) -> None:
             occurrences[word] = occurrences.get(word, 0) + 1

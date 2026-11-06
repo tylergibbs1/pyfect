@@ -21,7 +21,7 @@ from pyfect.http.error import HttpClientError
 
 
 def _run[A](eff: fx.Effect[A, object]) -> A:
-    return fx.run_sync(eff.or_die())
+    return fx.run_blocking(eff.or_die())
 
 
 @testing.effect

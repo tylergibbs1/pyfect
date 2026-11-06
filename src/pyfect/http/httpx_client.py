@@ -3,7 +3,7 @@
 ``layer`` provides the client; ``layer_with(**options)`` passes options to
 ``httpx.AsyncClient`` (``verify``, ``proxy``, ``limits``, ...). The httpx
 client runs on an asyncio loop of its own, on a background thread, so the
-layer works under ``run_sync`` and ``run_async`` alike, and closes with the
+layer works under ``run_blocking`` and ``run_async`` alike, and closes with the
 layer::
 
     program.pipe(fx.provide(httpx_client.layer))

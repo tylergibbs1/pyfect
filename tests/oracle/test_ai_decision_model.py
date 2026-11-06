@@ -189,11 +189,12 @@ def test_rate_fails_with_one_criterion():
         D.rate(instructions="How much", criteria=["only"])
 
 
-def test_make_rejects_a_decision_under_two_names():
-    """A decision object under two names would make ``answers[decision]``
-    ambiguous (Python only: Effect looks answers up by name)."""
-    with pytest.raises(ValueError, match="one name"):
-        D.make(input=S.String, decisions={"a": urgent, "b": urgent})
+def test_make_takes_a_decision_under_two_names():
+    """Effect looks answers up by name, so a repeated object is no error; in
+    Python ``answers[decision]`` is the first name's."""
+    definition = D.make(input=S.String, decisions={"a": urgent, "b": urgent})
+    assert list(definition.decisions) == ["a", "b"]
+    assert definition.name_of(urgent) == "a"
 
 
 # DecisionModel ----------------------------------------------------------------------------

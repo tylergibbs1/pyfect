@@ -115,4 +115,4 @@ def open_after(send: Send, *, times: int = 5) -> int:
 
     with _server() as url, _without_cycle_collection():
         run = fx.scoped(program).pipe(fx.provide(httpx_client.layer)).pipe(fx.provide(_SERVICES))
-        return fx.run_sync(run)
+        return fx.run_blocking(run)

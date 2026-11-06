@@ -97,4 +97,4 @@ BODIES = [
 
 if __name__ == "__main__":
     for body in BODIES:
-        print(fx.run_sync(handle(body)))
+        print(fx.run_blocking(handle(body)))

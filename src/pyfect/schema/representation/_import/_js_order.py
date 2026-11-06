@@ -7,16 +7,11 @@ from __future__ import annotations
 
 from typing import cast
 
-from pyfect._digits import parse_digits
-
-_MAX_ARRAY_INDEX = 2**32 - 2
+from pyfect._digits import array_index
 
 
 def _array_index(key: object) -> int | None:
-    if not isinstance(key, str):
-        return None
-    index = parse_digits(key, unpadded=True)
-    return index if index is not None and index <= _MAX_ARRAY_INDEX else None
+    return array_index(key) if isinstance(key, str) else None
 
 
 def _has_array_index_key(document: object) -> bool:

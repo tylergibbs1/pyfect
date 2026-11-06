@@ -10,7 +10,7 @@ until the end::
     from pyfect import channel
 
     doubled = channel.from_iterable([1, 2, 3]).map(lambda n: n * 2)
-    fx.run_sync(doubled.run_collect())  # [2, 4, 6]
+    fx.run_blocking(doubled.run_collect())  # [2, 4, 6]
 
 Constructors are functions here, and so are the combinators that remove
 something from a channel's type (``catch_tag``, ``catch_if``, the

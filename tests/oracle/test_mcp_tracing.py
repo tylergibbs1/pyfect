@@ -46,7 +46,7 @@ def test_each_request_is_a_client_span_and_a_server_span_naming_the_method_and_t
         return (yield from client.call_tool(tool, {"a": 1, "b": 2}))
 
     program: Any = fx.scoped(session).pipe(fx.provide_service(CurrentTracer, tracer))
-    result = fx.run_sync(program.timeout(10).or_die())
+    result = fx.run_blocking(program.timeout(10).or_die())
     assert result.get("structuredContent") == {"total": 3}
 
     [client] = called(spans, "McpClient.tools/call")

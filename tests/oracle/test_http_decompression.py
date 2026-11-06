@@ -116,7 +116,7 @@ def test_keeps_headers_only_to_web_lazy() -> None:
         return server_response.empty()
 
     program = decompression()(app()).pipe(effect.provide_service(HttpServerRequest, request))
-    fx.run_sync(program.or_die())
+    fx.run_blocking(program.or_die())
 
 
 @pytest.mark.parametrize("accessor", ["json", "text", "arrayBuffer", "stream"])

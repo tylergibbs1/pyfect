@@ -40,7 +40,7 @@ import traceback
 
 import pyfect as fx
 from pyfect import cause
-from pyfect.cause import Cause, Die, EmptyCauseError, Fail, Interrupt, UnhandledError
+from pyfect.cause import Cause, Die, EmptyCauseError, Fail, Interrupt
 from pyfect.result import Err, Ok
 from pyfect.tracer import InterruptorStackTrace, StackTrace
 
@@ -252,9 +252,7 @@ def test_returns_the_first_fail_even_after_an_interrupt_and_a_defect() -> None:
     c = cause.from_reasons(
         [Interrupt(1), Die(RuntimeError("defect")), Fail("first"), Fail("second")]
     )
-    squashed = c.squash()
-    assert isinstance(squashed, UnhandledError)
-    assert squashed.error == "first"
+    assert c.squash() == "first"
     first = ValueError("first")
     assert cause.from_reasons([Die(RuntimeError("defect")), Fail(first)]).squash() is first
 
@@ -313,33 +311,33 @@ def test_find_error_returns_failure_when_no_fail_reason_exists() -> None:
 def test_returns_success_with_the_first_die_reason() -> None:
     """returns success with the first Die reason"""
     defect = ValueError("defect")
-    assert cause.die(defect).find_die() == Die(defect)
+    assert cause.die(defect).find_die() == Ok(Die(defect))
 
 
 def test_find_die_returns_failure_when_no_die_reason_exists() -> None:
     """returns failure when no Die reason exists"""
-    assert cause.fail("error").find_die() is None
+    assert isinstance(cause.fail("error").find_die(), Err)
 
 
 def test_returns_success_with_the_defect_value() -> None:
     """returns success with the defect value"""
     defect = ValueError("defect")
-    assert cause.die(defect).find_defect() is defect
+    assert cause.die(defect).find_defect() == Ok(defect)
 
 
 def test_find_defect_returns_failure_when_no_die_reason_exists() -> None:
     """returns failure when no Die reason exists"""
-    assert cause.fail("error").find_defect() is None
+    assert isinstance(cause.fail("error").find_defect(), Err)
 
 
 def test_returns_success_with_the_first_interrupt_reason() -> None:
     """returns success with the first Interrupt reason"""
-    assert cause.interrupt(42).find_interrupt() == Interrupt(42)
+    assert cause.interrupt(42).find_interrupt() == Ok(Interrupt(42))
 
 
 def test_returns_failure_when_no_interrupt_reason_exists() -> None:
     """returns failure when no Interrupt reason exists"""
-    assert cause.fail("error").find_interrupt() is None
+    assert isinstance(cause.fail("error").find_interrupt(), Err)
 
 
 # interruptors / filterInterruptors
@@ -363,13 +361,13 @@ def test_excludes_undefined_fiber_ids_from_set() -> None:
 
 def test_returns_success_with_fiber_id_set_when_interrupts_exist() -> None:
     """returns success with fiber ID set when interrupts exist"""
-    assert cause.interrupt(1).filter_interruptors() == {1}
-    assert cause.interrupt().filter_interruptors() == frozenset()
+    assert cause.interrupt(1).filter_interruptors() == Ok(frozenset({1}))
+    assert cause.interrupt().filter_interruptors() == Ok(frozenset[int]())
 
 
 def test_returns_failure_when_no_interrupts_exist() -> None:
     """returns failure when no interrupts exist"""
-    assert cause.fail("error").filter_interruptors() is None
+    assert isinstance(cause.fail("error").filter_interruptors(), Err)
 
 
 # map
@@ -458,7 +456,7 @@ def test_converts_fail_with_string_to_error() -> None:
     """converts Fail with string to Error"""
     errors = cause.fail("string error").pretty_errors()
     assert len(errors) == 1
-    assert isinstance(errors[0], UnhandledError)
+    assert isinstance(errors[0], cause.UnhandledError)
     assert errors[0].error == "string error"
 
 

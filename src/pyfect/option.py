@@ -18,7 +18,7 @@ The functions here are Effect's ``Option`` module, data-first
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from typing import Any, Never, TypeIs, overload
+from typing import Any, Never, TypeIs, cast, overload
 
 from pyfect._some import Option, Some
 from pyfect.errors import NoSuchElementException
@@ -90,10 +90,23 @@ def flat_map[A, B = Never](option: Option[A], f: Callable[[A], Option[B]]) -> Op
     return None if option is None else f(option.value)
 
 
-def and_then[B](option: Option[object], that: Option[B]) -> Option[B]:
-    """``that`` if ``option`` is present (a function is ``flat_map``, a plain
-    value ``as_``)."""
-    return None if option is None else that
+@overload
+def and_then[A, B](option: Option[A], that: Callable[[A], Option[B]]) -> Option[B]: ...
+@overload
+def and_then[A, B](option: Option[A], that: Callable[[A], B]) -> Option[B]: ...
+@overload
+def and_then[B](option: Option[object], that: Option[B]) -> Option[B]: ...
+@overload
+def and_then[B](option: Option[object], that: B) -> Option[B]: ...
+def and_then(option: Option[Any], that: Any) -> Any:
+    """After a present ``option``: ``that(value)`` for a function, ``that``
+    otherwise; what is not already an ``Option`` becomes ``Some``."""
+    if option is None:
+        return None
+    result: object = that(option.value) if callable(that) else that
+    if result is None or isinstance(result, Some):
+        return cast("Option[Any]", result)
+    return Some(result)
 
 
 def flat_map_optional[A, B](option: Option[A], f: Callable[[A], B | None]) -> Option[B]:

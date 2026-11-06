@@ -1,4 +1,4 @@
-"""uvicorn_server under ``run_sync`` runs uvicorn on a loop thread, and request fibers run
+"""uvicorn_server under ``run_blocking`` runs uvicorn on a loop thread, and request fibers run
 on that loop. Fibers a request starts into a longer scope (a pool's connection, an eventlog
 connection's subscriptions) must still be interrupted cleanly once the server has stopped
 and been released (dogfood quill #1: ``Die(RuntimeError('Event loop is closed'))`` twice, or
@@ -55,7 +55,7 @@ def test_a_fiber_a_request_left_in_a_scope_closed_after_serving_is_interrupted()
         layer.provide_merge(background)
     )
     app = served.pipe(layer.provide_merge(uvicorn_server.layer_test()))
-    assert fx.run_sync_exit(_get().pipe(fx.provide(app))) == fx.Success("ok")
+    assert fx.run_blocking_exit(_get().pipe(fx.provide(app))) == fx.Success("ok")
     assert finalized == ["done"]
 
 
@@ -76,7 +76,7 @@ def test_a_fiber_a_request_left_in_a_scope_that_outlives_the_server_is_interrupt
     )
     app = served.pipe(layer.provide_merge(server))
     server_gone.clear()
-    assert fx.run_sync_exit(_get().pipe(fx.provide(app))) == fx.Success("ok")
+    assert fx.run_blocking_exit(_get().pipe(fx.provide(app))) == fx.Success("ok")
     assert finalized == ["done"]
     assert server_gone == [True]
 
@@ -114,7 +114,7 @@ def test_an_encrypted_eventlog_server_shuts_down_cleanly_after_a_client_connecte
         )
         yield from fx.scoped(fx.sleep(0.3)).pipe(fx.provide(client(url)))
 
-    assert fx.run_sync_exit(fx.scoped(connect()).pipe(fx.provide(served))) == fx.Success(None)
+    assert fx.run_blocking_exit(fx.scoped(connect()).pipe(fx.provide(served))) == fx.Success(None)
 
 
 class _AddParams(TypedDict):
@@ -165,4 +165,4 @@ def test_a_pooled_client_connection_open_at_shutdown_is_closed_cleanly() -> None
         layer.merge(mcp, route), disable_logger=True, disable_listen_log=True
     ).pipe(layer.provide_merge(pool))
     app = served.pipe(layer.provide_merge(uvicorn_server.layer_test()))
-    assert fx.run_sync_exit(_get().pipe(fx.provide(app))) == fx.Success("5")
+    assert fx.run_blocking_exit(_get().pipe(fx.provide(app))) == fx.Success("5")

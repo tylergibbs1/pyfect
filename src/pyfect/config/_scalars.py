@@ -7,16 +7,15 @@ import math
 import re
 from collections.abc import Callable, Sequence
 from datetime import datetime
-from decimal import Decimal
 
 from pyfect import _js_date as js_date
 from pyfect import _json_text
-from pyfect._js import SPACE, js_number
+from pyfect._js import js_number
 from pyfect._url import Url, parse_url
 from pyfect.byte_size import ByteSize
 from pyfect.byte_size import from_string as byte_size_from_string
 from pyfect.config._leaf import EXPECTED_STRING, Scalar, composite, expected
-from pyfect.duration import Seconds
+from pyfect.duration import Seconds, parse_duration_text
 from pyfect.logger import LogLevel
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok, Result
@@ -75,13 +74,17 @@ def _number(text: str) -> Result[float, Issue]:
 number = Scalar(expected(f"string | {_NON_FINITE_EXPECTED}"), _number)
 
 
+_MAX_SAFE_INTEGER = 2**53 - 1
+
+
 def _integer(text: str) -> Result[int, Issue]:
     if not _FINITE.fullmatch(text):
         return Err(_NOT_FINITE_STRING)
-    if not math.isfinite(float(text)):
+    number = float(text)
+    # As Effect's ``Number`` then ``isSafeInteger``, read through a float.
+    if not math.isfinite(number) or number != int(number) or abs(number) > _MAX_SAFE_INTEGER:
         return Err(_INTEGER)
-    exact = Decimal(text)
-    return Ok(int(exact)) if exact == exact.to_integral_value() else Err(_INTEGER)
+    return Ok(int(number))
 
 
 integer = Scalar(_STRING, _integer)
@@ -138,32 +141,13 @@ def _encode_literal(value: LiteralValue) -> str:
             return js_number(value)
 
 
-_DURATION = re.compile(
-    rf"(-?[0-9]+(?:\.[0-9]+)?)[{SPACE}]+"
-    r"(nanos?|micros?|millis?|seconds?|minutes?|hours?|days?|weeks?)"
-)
-_UNIT_SECONDS = {
-    "nano": Decimal("1e-9"),
-    "micro": Decimal("1e-6"),
-    "milli": Decimal("1e-3"),
-    "second": Decimal(1),
-    "minute": Decimal(60),
-    "hour": Decimal(3600),
-    "day": Decimal(86400),
-    "week": Decimal(604800),
-}
-
-
 def _duration(text: str) -> Result[Seconds, Issue]:
-    if text == "Infinity":
-        return Ok(Seconds(math.inf))
-    if text == "-Infinity":
-        return Ok(Seconds(-math.inf))
-    match = _DURATION.fullmatch(text)
-    if match is None:
-        return Err(InvalidValue({"message": "Expected a valid Duration string"}))
-    amount, unit = match.groups()
-    return Ok(Seconds(float(Decimal(amount) * _UNIT_SECONDS[unit.removesuffix("s")])))
+    parsed = parse_duration_text(text)
+    return (
+        Err(InvalidValue({"message": "Expected a valid Duration string"}))
+        if parsed is None
+        else Ok(parsed)
+    )
 
 
 duration = Scalar(_STRING, _duration)

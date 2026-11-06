@@ -28,7 +28,7 @@ from pyfect.context import Context, TagLike
 from pyfect.effect import context, fail_cause, provide_service, succeed, suspend, sync, void
 from pyfect.exit import Exit, Failure, Success
 from pyfect.result import Err, Ok, Result
-from pyfect.run import run_sync, run_sync_exit
+from pyfect.run import run_blocking, run_blocking_exit
 from pyfect.schema import (
     Codec,
     ParseOptions,
@@ -87,7 +87,7 @@ class SchemaCheck(Generic[R_co]):
     parse: Callable[[object], Effect[object, SchemaError, R_co]]
 
     def run(self: SchemaCheck[Never], input: object) -> Exit[object, SchemaError]:
-        return run_sync_exit(self.parse(input))
+        return run_blocking_exit(self.parse(input))
 
     def provide[S, T](self: SchemaCheck[T], tag: TagLike[S, T], service: S) -> SchemaCheck[Never]:
         parse = self.parse
@@ -164,7 +164,7 @@ class SchemaAsserts(Generic[RD_co, RE_co]):
         the schema's equivalence calls equal (Effect's ``verifyRoundTrip``;
         needs Hypothesis). A failing value is shrunk and reported."""
         verify: Effect[None] = self.verify_round_trip_effect(runs=runs, seed=seed)
-        run_sync(verify)
+        run_blocking(verify)
 
     def verify_round_trip_effect[R](
         self: SchemaAsserts[R, R], *, runs: int = 100, seed: int | None = None
@@ -198,7 +198,7 @@ class SchemaAsserts(Generic[RD_co, RE_co]):
             @given(to_strategy(schema))
             def check(value: object) -> None:
                 round_trip = _schema_result(encode(value).flat_map(decode))
-                ex = run_sync_exit(round_trip, context=ctx)
+                ex = run_blocking_exit(round_trip, context=ctx)
                 if not isinstance(ex, Success):
                     raise _Abort(ex.cause)
                 match ex.value:

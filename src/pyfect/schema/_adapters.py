@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Never
 
-from pyfect.cause import Cause, Fail
+from pyfect.cause import Cause, Die, Fail
 from pyfect.schema._error import SchemaError
 
 SYNC = "Sync adapter can only throw schema errors"
@@ -30,7 +30,9 @@ def schema_error_of(cause: Cause[SchemaError], adapter: str) -> SchemaError:
         return errors[0]
     error = RuntimeError(adapter)
     error.add_note("Cause:\n" + cause.pretty())
-    raise error from (cause.find_defect() or cause.squash())
+    defects = [r.defect for r in cause.reasons if isinstance(r, Die)]
+    chained = defects[0] if defects and isinstance(defects[0], BaseException) else cause.raisable()
+    raise error from chained
 
 
 def raise_schema_failure(cause: Cause[SchemaError], adapter: str) -> Never:

@@ -196,7 +196,7 @@ def test_operations_match_ref(
     make: Callable[[int], _Locked], name: str, plain: _Plain, effectful: _Effectful
 ):
     def outcome(ref: fx.Ref[int] | _Locked, op: Callable[[Any], fx.Effect[object]]):
-        return fx.run_sync(op(ref)), ref.get_unsafe()
+        return fx.run_blocking(op(ref)), ref.get_unsafe()
 
     expected = outcome(fx.Ref(1), plain)
     assert outcome(make(1), plain) == expected, name

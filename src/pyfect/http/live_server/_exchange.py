@@ -20,7 +20,7 @@ from typing import Any
 
 from pyfect._core import Effect
 from pyfect._digits import parse_digits
-from pyfect.cause import Cause, UnhandledError, merge
+from pyfect.cause import Cause, merge
 from pyfect.cause import die as die_cause
 from pyfect.effect import fail_cause, succeed, suspend, void
 from pyfect.http._field import is_field_value, is_token
@@ -297,7 +297,7 @@ class Exchange:
         if self.headers_sent:
             self.close_after = True
             self.conn.close(graceful=False)
-            return fail_cause(merge(cause, die_cause(UnhandledError(response))))
+            return fail_cause(merge(cause, die_cause(response)))
 
         def write(pair: tuple[HttpServerResponse, Cause[Any]]) -> Effect[None, Any]:
             fallback, reported = pair

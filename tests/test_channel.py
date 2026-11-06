@@ -193,9 +193,9 @@ def test_to_pull_scoped_keeps_resources_in_the_given_scope():
 
 
 def test_take_to_pull_replays_each_kind_of_take():
-    assert fx.run_sync_exit(take.to_pull((1, 2))) == fx.Success((1, 2))
-    assert fx.run_sync_exit(take.to_pull(fx.exit.fail("e"))) == fx.exit.fail("e")
-    assert fx.run_sync_exit(take.to_pull(fx.Success("end"))) == fx.exit.fail(fx.Done("end"))
+    assert fx.run_blocking_exit(take.to_pull((1, 2))) == fx.Success((1, 2))
+    assert fx.run_blocking_exit(take.to_pull(fx.exit.fail("e"))) == fx.exit.fail("e")
+    assert fx.run_blocking_exit(take.to_pull(fx.Success("end"))) == fx.exit.fail(fx.Done("end"))
 
 
 @testing.effect
@@ -281,7 +281,7 @@ def test_a_build_that_raises_gives_a_pull_that_dies(
         return (yield from next_item.exit()), (yield from next_item.exit())
 
     first, second = yield from fx.scoped(body)
-    assert isinstance(first, fx.Failure) and isinstance(first.cause.find_defect(), RuntimeError)
+    assert isinstance(first, fx.Failure) and isinstance(first.cause.defects[0], RuntimeError)
     assert second == first
 
 
@@ -440,16 +440,16 @@ def test_deeply_nested_channels_build_on_the_fibers_stack(build: _Nest):
     nested = channel.from_iterable([1, 2])
     for _ in range(DEEP):
         nested = build(nested)
-    assert fx.run_sync(nested.run_collect()) == [1, 2]
+    assert fx.run_blocking(nested.run_collect()) == [1, 2]
 
 
 def test_a_deeply_nested_map_done_ends_on_the_fibers_stack():
     nested = channel.end(0)
     for _ in range(DEEP):
         nested = nested.map_done(lambda n: n + 1)
-    assert fx.run_sync(nested.run_drain()) == DEEP
+    assert fx.run_blocking(nested.run_drain()) == DEEP
 
 
 def test_a_million_items_run_through_a_pull_loop():
     source = channel.from_iterable(range(1_000_000)).map(lambda n: n + 1)
-    assert fx.run_sync(source.run_fold(lambda: 0, lambda acc, n: acc + n)) == 500_000_500_000
+    assert fx.run_blocking(source.run_fold(lambda: 0, lambda acc, n: acc + n)) == 500_000_500_000

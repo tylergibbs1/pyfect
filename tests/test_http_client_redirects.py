@@ -23,7 +23,7 @@ def _follow(start: str, location: str) -> tuple[int, list[str]]:
     send = HttpClient().flat_map(
         lambda client: client.follow_redirects().execute(request.post(start).body_text("secret"))
     )
-    response = fx.run_sync(fx.scoped(send).pipe(fx.provide(http)).or_die())
+    response = fx.run_blocking(fx.scoped(send).pipe(fx.provide(http)).or_die())
     return response.status, seen
 
 

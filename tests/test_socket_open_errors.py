@@ -1,9 +1,5 @@
-"""A socket that cannot open says where it was going and why (trawl T5).
-
-Effect's ``SocketOpenError.message`` is ``An error occurred during Open``
-whatever the target, relying on JS printing the ``cause`` beside it. pyfect
-puts the target and the cause in the message (PARITY §4 decisions).
-"""
+"""A socket that cannot open keeps where it was going and why, as ``target``
+and ``cause``; its message is Effect's whatever they are."""
 
 from __future__ import annotations
 
@@ -42,7 +38,7 @@ def _open_failure(make: fx.Effect[SocketService] | SocketService) -> SocketError
         return (yield from reader.pull)
 
     opened = make if isinstance(make, fx.Effect) else fx.succeed(make)
-    error = fx.run_sync(scoped(opened.flat_map(pull)).flip().timeout(10).or_die())
+    error = fx.run_blocking(scoped(opened.flat_map(pull)).flip().timeout(10).or_die())
     assert isinstance(error, SocketError)
     assert isinstance(error.reason, SocketOpenError)
     return error
@@ -53,20 +49,22 @@ def _reason(error: SocketError) -> SocketOpenError:
     return error.reason
 
 
-def test_a_refused_web_socket_names_the_url_and_the_refusal() -> None:
+def test_a_refused_web_socket_keeps_the_url_and_the_refusal() -> None:
     url = f"ws://127.0.0.1:{_free_port()}/rpc"
     error = _open_failure(Socket().pipe(fx.provide(ws.layer_web_socket(url))))
-    assert error.message.startswith(f"Could not open {url}: ConnectionRefusedError")
+    assert error.message == "An error occurred during Open"
     assert str(error) == error.message
+    assert _reason(error).target == url
 
 
-def test_a_refused_tcp_socket_names_the_address_and_the_refusal() -> None:
+def test_a_refused_tcp_socket_keeps_the_address_and_the_refusal() -> None:
     port = _free_port()
-    error = _open_failure(make_net(port, "127.0.0.1"))
-    assert error.message.startswith(f"Could not open 127.0.0.1:{port}: ConnectionRefusedError")
+    reason = _reason(_open_failure(make_net(port, "127.0.0.1")))
+    assert reason.target == f"127.0.0.1:{port}"
+    assert isinstance(reason.cause, ConnectionRefusedError)
 
 
-def test_an_open_timeout_names_the_target() -> None:
+def test_an_open_timeout_keeps_the_target() -> None:
     # A listener that never answers the upgrade: the WebSocket never opens.
     with socket.socket() as silent:
         silent.bind(("127.0.0.1", 0))
@@ -75,16 +73,19 @@ def test_an_open_timeout_names_the_target() -> None:
         layer = ws.layer_web_socket(url, open_timeout=0.2)
         error = _open_failure(Socket().pipe(fx.provide(layer)))
     assert _reason(error).kind == "Timeout"
-    assert error.message == f'timeout waiting for "open" of {url}'
+    assert error.message == 'timeout waiting for "open"'
+    assert _reason(error).target == url
 
 
-def test_without_a_target_or_cause_the_message_is_effects() -> None:
-    assert SocketOpenError("Unknown", None).message == "An error occurred during Open"
-    assert SocketOpenError("Timeout", None).message == 'timeout waiting for "open"'
-    assert (
-        SocketOpenError("Unknown", OSError("no route")).message
-        == "Could not open the socket: OSError: no route"
-    )
+def test_the_message_is_effects_whatever_the_target_and_cause() -> None:
+    for target in (None, "ws://x"):
+        for cause in (None, OSError("no route")):
+            assert SocketOpenError("Unknown", cause, target).message == (
+                "An error occurred during Open"
+            )
+            assert SocketOpenError("Timeout", cause, target).message == (
+                'timeout waiting for "open"'
+            )
 
 
 def _refused_url() -> str:
@@ -134,8 +135,6 @@ def test_every_client_constructor_is_covered() -> None:
 
 
 @pytest.mark.parametrize("name", sorted(_CLIENTS))
-def test_a_client_that_cannot_open_names_its_target_and_cause(name: str) -> None:
+def test_a_client_that_cannot_open_keeps_its_target(name: str) -> None:
     make, target = _CLIENTS[name]()
-    error = _open_failure(make)
-    assert error.message.startswith(f"Could not open {target}: "), error.message
-    assert _reason(error).target == target
+    assert _reason(_open_failure(make)).target == target

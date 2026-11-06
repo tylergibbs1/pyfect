@@ -19,7 +19,7 @@ from pyfect.platform_error import PlatformError, system_error
 def _load(
     provider: cp.ConfigProvider, path: cp.PathInput
 ) -> fx.Ok[cp.Node | None] | fx.Err[SourceError]:
-    return fx.run_sync(provider.load(path).result())
+    return fx.run_blocking(provider.load(path).result())
 
 
 def assert_success(provider: cp.ConfigProvider, path: cp.PathInput, expected: cp.Node) -> None:
@@ -929,7 +929,7 @@ def test_expands_long_sequences_of_adjacent_references_without_overflowing():
 def _from_dot_env(
     eff: fx.Effect[cp.ConfigProvider, PlatformError, FileSystem], fs: NoopFileSystem
 ) -> cp.ConfigProvider:
-    result = fx.run_sync(eff.result().pipe(fx.provide(file_system.layer_noop(fs))))
+    result = fx.run_blocking(eff.result().pipe(fx.provide(file_system.layer_noop(fs))))
     assert isinstance(result, fx.Ok)
     return result.value
 
@@ -997,7 +997,7 @@ def test_fails_with_the_file_system_error_when_the_file_cannot_be_read():
         ) -> fx.Effect[str, PlatformError]:
             return fx.fail(error)
 
-    result = fx.run_sync(
+    result = fx.run_blocking(
         cp.from_dot_env().result().pipe(fx.provide(file_system.layer_noop(Denied())))
     )
 
@@ -1032,7 +1032,7 @@ class _Files(NoopFileSystem):
 
 
 def _from_dir(fs: NoopFileSystem, root_path: str = "/", **options: bool) -> cp.ConfigProvider:
-    return fx.run_sync(
+    return fx.run_blocking(
         cp.from_dir(root_path, **options).pipe(
             fx.provide(layer.merge(file_system.layer_noop(fs), path_layer_posix))
         )
@@ -1110,7 +1110,7 @@ def _load_from_context(path: cp.PathInput):
 
 
 def _run[A](eff: fx.Effect[A, SourceError]) -> A:
-    result = fx.run_sync(eff.result())
+    result = fx.run_blocking(eff.result())
     assert isinstance(result, fx.Ok)
     return result.value
 

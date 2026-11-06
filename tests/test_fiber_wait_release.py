@@ -53,7 +53,7 @@ def _result_after(resume_from: Callable[[Callable[[], None]], None]) -> weakref.
         resume_from(lambda: kept[0](fx.void))
         yield from fiber.await_exit()
 
-    fx.run_sync(program)
+    fx.run_blocking(program)
     assert kept, "the outside still holds resume"
     return results[0]
 

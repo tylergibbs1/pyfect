@@ -117,7 +117,7 @@ def test_catch_tag_recovers_a_schema_tagged_error():
         id: int
 
     program = fx.fail(NotFound(id=7)).pipe(fx.catch_tag(NotFound, lambda e: fx.succeed(e.id)))
-    assert fx.run_sync(program) == 7
+    assert fx.run_blocking(program) == 7
 
 
 def test_schema_errors_compare_by_their_fields():

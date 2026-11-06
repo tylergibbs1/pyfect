@@ -48,7 +48,7 @@ def register_race(n: int) -> list[str]:
             total += yield from one()
         return total
 
-    total = fx.run_sync(body)
+    total = fx.run_blocking(body)
     return [] if total == n else [f"register race: {total} of {n} resumes"]
 
 
@@ -101,7 +101,7 @@ def interrupt_stress(seed: int, n: int) -> list[str]:
         return exits
 
     bad: list[str] = []
-    for i, ex in enumerate(fx.run_sync(main)):
+    for i, ex in enumerate(fx.run_blocking(main)):
         succeeded = isinstance(ex, fx.Success)
         if not succeeded and not ex.cause.has_interrupts_only:
             bad.append(f"fiber {i}: {ex}")

@@ -151,13 +151,13 @@ def test_stream_changes_keeps_items_python_calls_equal(a: object, b: object):
     """``Stream.changes`` is ``changesWith(Equal.equals)``: Effect writes
     ``[1, true, 1, NaN, {a:1}, {a:true}, [0], [false]]`` for
     ``make(1, true, 1, 1.0, NaN, NaN, {a:1}, {a:1}, {a:true}, [0], [false])``."""
-    out = fx.run_sync(stream.make(a, b, a).changes().run_collect())
+    out = fx.run_blocking(stream.make(a, b, a).changes().run_collect())
     assert equals(out, [a, b, a])
 
 
 def test_stream_changes_drops_a_repeated_nan_and_one_point_zero():
     first, second = _nan_pair()
-    out = fx.run_sync(stream.make(1, 1.0, first, second).changes().run_collect())
+    out = fx.run_blocking(stream.make(1, 1.0, first, second).changes().run_collect())
     assert out[0] == 1
     assert len(out) == 2
     assert math.isnan(out[1])

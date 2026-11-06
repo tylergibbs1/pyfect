@@ -11,7 +11,7 @@ Coverage counts ported, renamed and §4 exports.
 | ManagedRuntime | 2 | 1 | 0 | 1 | 0 | 100% |
 | Fiber | 11 | 9 | 1 | 1 | 0 | 100% |
 | References | 19 | 17 | 2 | 0 | 0 | 100% |
-| Scheduler | 4 | 2 | 1 | 1 | 0 | 100% |
+| Scheduler | 4 | 3 | 1 | 0 | 0 | 100% |
 | Semaphore | 10 | 8 | 2 | 0 | 0 | 100% |
 | Latch | 10 | 8 | 2 | 0 | 0 | 100% |
 | Runtime | 6 | 3 | 0 | 3 | 0 | 100% |
@@ -162,7 +162,7 @@ Coverage counts ported, renamed and §4 exports.
 | Effect | Status | pyfect |
 |---|---|---|
 | `Scheduler` | renamed | `pyfect.scheduler.CurrentScheduler` |
-| `MixedScheduler` | §4 | `SyncScheduler` / `AsyncioScheduler` (§4: `Scheduler.shouldYield(fiber)` and `makeDispatcher`) |
+| `MixedScheduler` | ported | `pyfect.scheduler.MixedScheduler` |
 | `MaxOpsBeforeYield` | ported | `pyfect.scheduler.MaxOpsBeforeYield` |
 | `PreventSchedulerYield` | ported | `pyfect.scheduler.PreventSchedulerYield` |
 

@@ -765,14 +765,11 @@ def test_preserves_successful_results_when_optional_parameters_are_omitted():
 def test_omits_structured_content_for_null_and_array_tool_results():
     """McpServer / registerToolkit / omits structured content for null and array tool results"""
     harness, _ = yield from _toolkit_client()
-    # pyfect wraps the result of a tool whose output is not an object on 2025-06-18
-    # (PARITY.md, DOGFOOD atlas #4) where Effect leaves the structured content out;
-    # the text content is Effect's.
     null_result = (yield from _call(harness, "NullableResultTool", {}))["result"]
-    assert null_result.get("structuredContent") == {"result": None}
+    assert "structuredContent" not in null_result
     assert null_result["content"] == [{"type": "text", "text": "null"}]
     array_result = (yield from _call(harness, "ArrayResultTool", {}))["result"]
-    assert array_result.get("structuredContent") == {"result": ["first", "second"]}
+    assert "structuredContent" not in array_result
     assert array_result["content"] == [{"type": "text", "text": '["first","second"]'}]
 
 

@@ -26,7 +26,7 @@ removed, with everything in it, when its scope closes.
 
 </CodeOutput>
 
-These programs run with `fx.run_main` rather than `run_sync`, which only takes effects that
+These programs run with `fx.run_main` rather than `run_blocking`, which only takes effects that
 cannot fail: `run_main` logs a failure and exits the process with a nonzero status.
 
 ## Child processes

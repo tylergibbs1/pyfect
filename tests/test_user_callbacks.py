@@ -16,7 +16,7 @@ from pyfect.exit import Exit, Failure, Success
 from pyfect.testing import run_test_exit
 
 
-def defects(ex: Exit[Any, Any]) -> list[BaseException]:
+def defects(ex: Exit[Any, Any]) -> list[object]:
     assert isinstance(ex, Failure)
     return [r.defect for r in ex.cause.reasons if isinstance(r, Die)]
 
@@ -87,8 +87,7 @@ def test_on_exit_preserves_the_original_failure_when_the_finalizer_throws():
     """Effect.test.ts: onExit preserves the original failure when the finalizer throws."""
     ex = run_test_exit(fx.fail("body failure").on_exit(raising("finalizer defect")))
     body, fin = defects(ex)
-    assert isinstance(body, fx.UnhandledError)
-    assert body.error == "body failure"
+    assert body == "body failure"
     assert str(fin) == "finalizer defect"
 
 
@@ -143,8 +142,7 @@ FINALIZER_COMBINATORS: dict[str, Wrap] = {
 def test_a_raising_cleanup_callback_keeps_the_original_cause(wrap: Wrap):
     ex = run_test_exit(wrap(fx.fail("body"), raising("cleanup")))
     body, cleanup = defects(ex)
-    assert isinstance(body, fx.UnhandledError)
-    assert body.error == "body"
+    assert body == "body"
     assert str(cleanup) == "cleanup"
 
 

@@ -61,7 +61,7 @@ from pyfect.effect import Effect, suspend
 from pyfect.exit import Failure, succeed
 from pyfect.option import Option, Some
 from pyfect.result import Ok
-from pyfect.run import run_sync_exit
+from pyfect.run import run_blocking_exit
 from pyfect.schema import getter as G
 from pyfect.schema import transformation as T
 from pyfect.schema.issue import AnyOf, Forbidden, Issue, OneOf
@@ -416,9 +416,9 @@ def test_union_any_of_does_not_reuse_a_previous_success_when_all_members_now_fai
         S.decode(T.Transformation(G.transform_effect(first_run), G.passthrough()))
     )
     effect = S.decode_unknown_effect(S.Union(first, S.String.check(S.is_min_length(5))))("a")
-    assert run_sync_exit(effect) == succeed("a")
+    assert run_blocking_exit(effect) == succeed("a")
     succeeds[0] = False
-    exit = run_sync_exit(effect)
+    exit = run_blocking_exit(effect)
     assert isinstance(exit, Failure)
     match exit.cause.find_error():
         case Ok(error):

@@ -28,7 +28,7 @@ def error_of(result: Any) -> Any:
 
 
 def run(effect: Any) -> Any:
-    return fx.run_sync(effect)
+    return fx.run_blocking(effect)
 
 
 def tar_bytes() -> bytes:
@@ -155,7 +155,7 @@ def test_every_zip_error_ends_the_archive() -> None:
         return body
 
     source = stream.make(bytes(data)).pipe_through_channel(Zip.decode())
-    last = fx.run_sync_exit(source.map_effect(read).run_drain())
+    last = fx.run_blocking_exit(source.map_effect(read).run_drain())
     errors = [error_of(result) for result in [*seen, last]]
     assert [error.kind for error in errors] == ["Checksum"] * 3
     assert errors[0] is errors[1] is errors[2]
@@ -210,7 +210,7 @@ def test_output_zlib_still_holds_after_the_last_input_is_read() -> None:
         return entry.body.run_bytes().map(keep)
 
     entries = stream.make(data[: start + compressed]).pipe_through_channel(Zip.decode())
-    result = fx.run_sync_exit(entries.map_effect(read).run_drain())
+    result = fx.run_blocking_exit(entries.map_effect(read).run_drain())
     assert bodies == [65_540]
     assert error_of(result).kind == "Truncated"
 
@@ -275,7 +275,7 @@ def test_a_deflated_entry_near_4_gib_declares_zip64_with_room_to_grow(
     body = stream.make(os.urandom(200_000)).concat(stream.fail("stop"))
     items = [Zip.file_stream("f", body, size=size)]
     source: Any = stream.from_iterable(items)
-    fx.run_sync_exit(source.pipe_through_channel(Zip.encode()).run_for_each(keep))
+    fx.run_blocking_exit(source.pipe_through_channel(Zip.encode()).run_for_each(keep))
     header = b"".join(written)
     version = int.from_bytes(header[4:6], "little")
     assert version == (45 if zip64 else 20)

@@ -1,4 +1,4 @@
-"""Path operations as a service (Effect's ``Path``), over ``os.path``.
+"""Path operations as a service (Effect's ``Path``).
 
 Programs that take the ``Path`` service instead of importing ``os.path``
 can be run against another platform's rules (``layer_posix``,
@@ -7,11 +7,9 @@ can be run against another platform's rules (``layer_posix``,
     p = yield from Path()
     config = p.join(home, ".config", "app.toml")
 
-``layer`` is the host's ``os.path``. Every operation behaves as the
-``os.path`` function of the same job does (``join`` restarts at an absolute
-segment, ``dirname("/a/b/")`` is ``"/a/b"``, ``relative`` of a path to
-itself is ``"."``), not as Node's ``path``; the ones ``os.path`` lacks
-(``format``, ``parse``, ``resolve_within``, file URLs) follow Node's.
+``posix`` follows Node's ``path.posix``, as Effect does (``join("/a", "/b")``
+is ``"/a/b"``, ``dirname("/a/b/")`` is ``"/a"``, ``relative`` of a path to
+itself is ``""``). ``win32`` is ``ntpath``.
 """
 
 from __future__ import annotations
@@ -24,6 +22,7 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Never, Protocol
 
+from pyfect import _path_posix
 from pyfect._core import Effect
 from pyfect.context import Tag
 from pyfect.effect import fail, succeed
@@ -136,9 +135,8 @@ class PathService:
     def is_absolute(self, path: str) -> bool:
         return self._m.isabs(path)
 
-    def join(self, path: str, *paths: str) -> str:
-        """``os.path.join``: an absolute segment starts the result again."""
-        return self._m.join(path, *paths)
+    def join(self, *paths: str) -> str:
+        return self._m.join(*paths) if paths else "."
 
     def normalize(self, path: str) -> str:
         return self._m.normpath(path)
@@ -251,8 +249,46 @@ class Path(Tag[PathService]):
     """The path rules a program uses."""
 
 
-posix = PathService(posixpath, windows=False)
-"""POSIX rules (``posixpath``)."""
+class _NodePosix(PathService):
+    """The operations whose results differ between Node and ``posixpath``."""
+
+    __slots__ = ()
+
+    def basename(self, path: str, suffix: str = "") -> str:
+        return _path_posix.basename(path, suffix)
+
+    def dirname(self, path: str) -> str:
+        return _path_posix.dirname(path)
+
+    def extname(self, path: str) -> str:
+        return _path_posix.extname(path)
+
+    def join(self, *paths: str) -> str:
+        return _path_posix.join(*paths)
+
+    def normalize(self, path: str) -> str:
+        return _path_posix.normalize(path)
+
+    def parse(self, path: str) -> Parsed:
+        base = _path_posix.basename(path)
+        ext = _path_posix.extname(path)
+        return Parsed(
+            root="/" if path.startswith("/") else "",
+            dir=_path_posix.directory_of_parse(path),
+            base=base,
+            ext=ext,
+            name=base[: -len(ext)] if ext else base,
+        )
+
+    def relative(self, from_: str, to: str) -> str:
+        return _path_posix.relative(from_, to)
+
+    def resolve(self, *segments: str) -> str:
+        return _path_posix.resolve(*segments)
+
+
+posix: PathService = _NodePosix(posixpath, windows=False)
+"""POSIX rules (Node's ``path.posix``)."""
 
 win32 = PathService(ntpath, windows=True)
 """Windows rules (``ntpath``)."""

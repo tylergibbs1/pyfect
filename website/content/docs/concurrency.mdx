@@ -4,7 +4,7 @@ description: "Fibers, structured concurrency, races and timeouts."
 ---
 
 Every effect runs on a **fiber**, a lightweight thread on pyfect's scheduler. The same program
-runs with `run_sync` (no event loop) or on asyncio with `run_async`.
+runs with `run_blocking` (no event loop) or on asyncio with `run_async`.
 
 ## Running effects concurrently
 

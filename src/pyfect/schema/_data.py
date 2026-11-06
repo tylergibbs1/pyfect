@@ -4,7 +4,7 @@ them).
 
 Each takes a value of its type and parses what it holds with the given
 schemas, so ``Option(S.Int)`` takes ``Some(1)`` and ``None``; an issue is
-reported at the attribute holding the part (``["value"]``,
+reported under Effect's names for the part (``["success"]``,
 ``["reasons"][0]["error"]``). Encoding encodes the parts the same way.
 """
 
@@ -62,6 +62,7 @@ def _node(
     expected: str,
     to_codec: CodecLink,
     *,
+    representation_id: str | None = None,
     to_equivalence: EquivalenceAnnotation,
     to_formatter: FormatterAnnotation,
     payload: object = None,
@@ -69,7 +70,7 @@ def _node(
     nodes = tuple(p.__codec__().ast for p in parameters)
     annotations = {
         "representation": {
-            "id": f"effect/schema/{expected.replace('.', '')}",
+            "id": f"effect/schema/{representation_id or expected.replace('.', '')}",
             "payload": payload,
         },
         "expected": expected,
@@ -149,11 +150,11 @@ def _result_run(nodes: tuple[ast.AST, ...]) -> _Parser:
     def parse(input: object, node: ast.Declaration, options: ParseOptions) -> ast.ParseResult:
         if isinstance(input, Ok):
             ok = cast("Ok[object]", input)
-            exit = ast.parse_at_key(node, "value", success, ok.value, input=ok, options=options)
+            exit = ast.parse_at_key(node, "success", success, ok.value, input=ok, options=options)
             return _wrap(exit, Ok)
         if isinstance(input, Err):
             err = cast("Err[object]", input)
-            exit = ast.parse_at_key(node, "error", failure, err.error, input=err, options=options)
+            exit = ast.parse_at_key(node, "failure", failure, err.error, input=err, options=options)
             return _wrap(exit, Err)
         return ast.invalid_type(node, input, options)
 
@@ -164,7 +165,7 @@ def Result[A, E, AI, EI, RD, RE](
     success: Codec[A, AI, RD, RE], failure: Codec[E, EI, RD, RE], /
 ) -> ResultSchema[A, E, AI, EI, RD, RE]:
     """A ``Result``: ``Ok`` of a ``success`` value, ``Err`` of a ``failure``
-    one (Effect's ``Result``; issues at ``["value"]`` / ``["error"]``)."""
+    one (Effect's ``Result``; issues at ``["success"]`` / ``["failure"]``)."""
     return ResultSchema(
         _node(
             (success, failure),
@@ -182,9 +183,9 @@ def Result[A, E, AI, EI, RD, RE](
 # ------------------------------------------------------------------ Cause
 
 
-type DefectCodec[RD, RE] = Codec[BaseException, object, RD, RE]
-"""A defect's schema: a ``Die`` holds a ``BaseException`` (``S.Defect()``
-writes one as JSON)."""
+type DefectCodec[RD, RE] = Codec[object, object, RD, RE]
+"""A defect's schema: a ``Die`` holds any value (``S.Defect()`` writes one as
+JSON)."""
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -210,7 +211,7 @@ def _reason_run(nodes: tuple[ast.AST, ...]) -> _Parser:
             exit = ast.parse_at_key(
                 node, "defect", defect, input.defect, input=input, options=options
             )
-            return _wrap(exit, lambda d: Die(cast("BaseException", d)))
+            return _wrap(exit, Die)
         if isinstance(input, Interrupt):
             return Success(input)
         return ast.invalid_type(node, input, options)
@@ -224,12 +225,13 @@ def CauseReason[E, EI, RD, RE](
     """A reason of a ``Cause`` (Effect's ``CauseReason``): a ``Fail`` whose
     error ``error`` takes, a ``Die`` whose defect ``defect`` takes, or an
     ``Interrupt`` (kept as it is). The parsed reason has no annotations, as
-    in Effect. Anything else is ``Expected Cause.Reason``."""
+    in Effect. Anything else is ``Expected Cause.Failure``."""
     node = _node(
         (error, defect),
         _reason_run,
-        "Cause.Reason",
+        "Cause.Failure",
         _reason_codec,
+        representation_id="CauseReason",
         to_equivalence=_inst.reason_equivalence,
         to_formatter=_inst.reason_formatter,
     )
@@ -266,7 +268,7 @@ def _reason_codec(nodes: tuple[ast.AST, ...]) -> ast.Link:
     return reason_link(error, defect)
 
 
-_REASON = {"expected": "Cause.Reason", "to_codec": _reason_codec}
+_REASON = {"expected": "Cause.Failure", "to_codec": _reason_codec}
 
 
 def _cause_codec(nodes: tuple[ast.AST, ...]) -> ast.Link:

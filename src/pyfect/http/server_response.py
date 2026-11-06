@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, ClassVar, Never, TypedDict, Unpack, cast, fina
 from pyfect._core import Effect
 from pyfect._digits import parse_digits
 from pyfect._js import text_encode
-from pyfect.cause import UnhandledError
 from pyfect.effect import die, from_async, from_result, succeed
 from pyfect.http import _form_data
 from pyfect.http import body as _body
@@ -527,15 +526,12 @@ def from_client_response(response: HttpClientResponse) -> HttpServerResponse:
 def die_with(response: HttpServerResponse) -> Effect[Never]:
     """Die with ``response`` as the defect; servers send it as is (Effect's
     ``Effect.die(response)``)."""
-    return die(UnhandledError(response))
+    return die(response)
 
 
-def response_of_defect(defect: BaseException) -> HttpServerResponse | None:
-    """The response a defect carries (``die_with`` / ``or_die`` wrap it in
-    an ``UnhandledError``)."""
-    if isinstance(defect, UnhandledError) and isinstance(defect.error, HttpServerResponse):
-        return defect.error
-    return None
+def response_of_defect(defect: object) -> HttpServerResponse | None:
+    """The response a defect carries."""
+    return defect if isinstance(defect, HttpServerResponse) else None
 
 
 __all__ = [

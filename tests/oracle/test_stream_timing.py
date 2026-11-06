@@ -47,11 +47,7 @@ def test_buffer_maintains_elements_and_ordering():
 def test_buffer_stream_with_a_failure():
     """stream with a failure"""
     result = yield from (
-        stream.range_inclusive(0, 9)
-        .concat(stream.fail("boom"))
-        .buffer(capacity=2)
-        .run_collect()
-        .exit()
+        stream.range(0, 9).concat(stream.fail("boom")).buffer(capacity=2).run_collect().exit()
     )
     assert result == fx.exit.fail("boom")
 
@@ -66,7 +62,7 @@ def test_buffer_fast_producer_progresses_independently():
         seen.append(n)
         return latch.succeed(None) if n == 4 else fx.void
 
-    buffered = stream.range_inclusive(1, 4).tap(record).buffer(capacity=2)
+    buffered = stream.range(1, 4).tap(record).buffer(capacity=2)
     result1 = yield from buffered.take(2).run_collect()
     yield from latch.wait()
     assert result1 == [1, 2]
@@ -88,11 +84,7 @@ def test_buffer_array_suspend_maintains_elements_and_ordering():
 def test_buffer_array_suspend_stream_with_a_failure():
     """stream with a failure"""
     result = yield from (
-        stream.range_inclusive(0, 9)
-        .concat(stream.fail("boom"))
-        .buffer_array(capacity=2)
-        .run_collect()
-        .exit()
+        stream.range(0, 9).concat(stream.fail("boom")).buffer_array(capacity=2).run_collect().exit()
     )
     assert result == fx.exit.fail("boom")
 
@@ -107,7 +99,7 @@ def test_buffer_array_suspend_fast_producer_progresses_independently():
         seen.append(n)
         return latch.succeed(None) if n == 4 else fx.void
 
-    buffered = stream.range_inclusive(1, 4).tap(record).buffer_array(capacity=2)
+    buffered = stream.range(1, 4).tap(record).buffer_array(capacity=2)
     result1 = yield from buffered.take(2).run_collect()
     yield from latch.wait()
     assert result1 == [1, 2]
@@ -120,11 +112,7 @@ def test_buffer_array_suspend_fast_producer_progresses_independently():
 def _failing_then_more(
     strategy: Literal["dropping", "sliding"], *, array: bool
 ) -> Stream[int, str]:
-    source = (
-        stream.range_inclusive(1, 1_000)
-        .concat(stream.fail("boom"))
-        .concat(stream.range_inclusive(1_001, 2_000))
-    )
+    source = stream.range(1, 1_000).concat(stream.fail("boom")).concat(stream.range(1_001, 2_000))
     if array:
         return source.buffer_array(capacity=2, strategy=strategy)
     return source.buffer(capacity=2, strategy=strategy)
@@ -168,7 +156,7 @@ def _after(latch: _Latch, then: Stream[int]) -> Stream[int]:
 def _ones(first: int, last: int, done: _Latch) -> Stream[int]:
     """``first`` to ``last`` one item per chunk, completing ``done`` when
     released."""
-    return stream.range_inclusive(first, last).rechunk(1).ensuring(done.succeed(None))
+    return stream.range(first, last).rechunk(1).ensuring(done.succeed(None))
 
 
 type _Reads = Literal["eight", "one", "all"]
@@ -289,7 +277,7 @@ def test_buffer_unbounded_buffers_the_stream():
 def test_buffer_unbounded_buffers_a_stream_with_a_failure():
     """buffers a stream with a failure"""
     result = yield from (
-        stream.range_inclusive(0, 9)
+        stream.range(0, 9)
         .concat(stream.fail("boom"))
         .buffer(capacity="unbounded")
         .run_collect()
@@ -308,7 +296,7 @@ def test_buffer_unbounded_fast_producer_progress_independently():
         seen.append(n)
         return latch.succeed(None) if n == 999 else fx.void
 
-    buffered = stream.range_inclusive(1, 999).tap(record).rechunk(999).buffer(capacity="unbounded")
+    buffered = stream.range(1, 999).tap(record).rechunk(999).buffer(capacity="unbounded")
     result1 = yield from buffered.take(2).run_collect()
     yield from latch.wait()
     assert result1 == [1, 2]
@@ -593,7 +581,7 @@ def test_throttle_shape_keeps_the_rate_when_sleeps_end_early():
     clock = yield from Clock()
     early = _ShiftedClock(clock, monotonic_offset=1 << 80, early=0.001)
     timestamps = (
-        stream.range_inclusive(1, 3)
+        stream.range(1, 3)
         .rechunk(1)
         .throttle(cost=len, units=1, duration=1, strategy="shape")
         .map_effect(lambda _: _millis(clock))
@@ -618,7 +606,7 @@ def test_throttle_shape_is_not_affected_by_wall_clock_changes():
         return fx.sync(move)
 
     timestamps = (
-        stream.range_inclusive(1, 2)
+        stream.range(1, 2)
         .rechunk(1)
         .throttle(cost=len, units=1, duration=1, strategy="shape")
         .tap(shift)
@@ -664,7 +652,7 @@ def test_timeout_or_else_succeed():
 def test_timeout_or_else_should_switch_streams():
     """timeoutOrElse - should switch streams"""
     result = yield from (
-        stream.range_inclusive(0, 4)
+        stream.range(0, 4)
         .tap(lambda _: fx.sleep(math.inf))
         .timeout_or_else(0, lambda: stream.succeed(4))
         .run_collect()
@@ -718,7 +706,7 @@ def test_timeout_succeed():
 def test_timeout_should_end_the_stream():
     """timeout - should end the stream"""
     result = yield from (
-        stream.range_inclusive(0, 4).tap(lambda _: fx.sleep(math.inf)).timeout(0).run_collect()
+        stream.range(0, 4).tap(lambda _: fx.sleep(math.inf)).timeout(0).run_collect()
     )
     assert result == []
 
@@ -853,7 +841,7 @@ def test_schedule():
     """schedule"""
     start = yield from fx.clock.now()
     fiber = yield from (
-        stream.range_inclusive(1, 8)
+        stream.range(1, 8)
         .schedule(schedule.fixed(0.1))
         .map_effect(lambda n: fx.clock.now().map(lambda now: (n, round((now - start) * 1000))))
         .run_collect()

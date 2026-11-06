@@ -17,7 +17,7 @@ def main():
 
 
 def run() -> None:
-    fx.run_sync(main.pipe(fx.provide(python_worker_runner.layer)).or_die())
+    fx.run_blocking(main.pipe(fx.provide(python_worker_runner.layer)).or_die())
 
 
 if __name__ == "__main__":

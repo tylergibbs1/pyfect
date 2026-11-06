@@ -102,6 +102,7 @@ from pyfect.effect import (
     catch_tag,
     current_fiber,
     die,
+    effectify,
     fail,
     fail_cause,
     fail_cause_sync,
@@ -109,6 +110,7 @@ from pyfect.effect import (
     fiber_id,
     fn,
     fn_untraced,
+    fn_untraced_eager,
     from_async,
     from_exit,
     from_option,
@@ -135,9 +137,11 @@ from pyfect.effect import (
     update_context,
     update_service_scoped,
     void,
+    while_loop,
     with_fiber,
     with_fiber_succeed,
     yield_now,
+    yield_now_with,
 )
 from pyfect.error_reporter import ErrorReporter
 from pyfect.errors import (
@@ -202,6 +206,8 @@ from pyfect.run import (
     default_teardown,
     run_async,
     run_async_exit,
+    run_blocking,
+    run_blocking_exit,
     run_callback,
     run_fork,
     run_main,
@@ -209,7 +215,13 @@ from pyfect.run import (
     run_sync_exit,
 )
 from pyfect.schedule import Schedule
-from pyfect.scheduler import CurrentScheduler, MaxOpsBeforeYield, PreventSchedulerYield
+from pyfect.scheduler import (
+    CurrentScheduler,
+    EffectScheduler,
+    MaxOpsBeforeYield,
+    MixedScheduler,
+    PreventSchedulerYield,
+)
 from pyfect.scope import (
     CloseableScope,
     Scope,
@@ -445,6 +457,7 @@ __all__ = [
     "Done",
     "Duration",
     "Effect",
+    "EffectScheduler",
     "EmptyCauseError",
     "Enqueue",
     "Err",
@@ -477,6 +490,7 @@ __all__ = [
     "Metric",
     "MinimumLogLevel",
     "MissingServiceError",
+    "MixedScheduler",
     "NoRunError",
     "NoSuchElementException",
     "Ok",
@@ -578,6 +592,7 @@ __all__ = [
     "die",
     "duration",
     "effectable",
+    "effectify",
     "encoding",
     "error_reporter",
     "execution_plan",
@@ -597,6 +612,7 @@ __all__ = [
     "first_success_of",
     "fn",
     "fn_untraced",
+    "fn_untraced_eager",
     "for_each",
     "from_async",
     "from_exit",
@@ -654,6 +670,8 @@ __all__ = [
     "result",
     "run_async",
     "run_async_exit",
+    "run_blocking",
+    "run_blocking_exit",
     "run_callback",
     "run_fork",
     "run_main",
@@ -698,12 +716,14 @@ __all__ = [
     "use_span",
     "validate",
     "void",
+    "while_loop",
     "with_execution_plan",
     "with_fiber",
     "with_fiber_succeed",
     "workers",
     "workflow",
     "yield_now",
+    "yield_now_with",
 ]
 
 publish(globals())

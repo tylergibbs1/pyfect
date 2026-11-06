@@ -37,7 +37,6 @@ from pyfect.rpc.schema import get_stream_schemas
 from pyfect.rpc.serialization import CodecFor
 from pyfect.rpc.server._core import RpcServer, ServerOptions, make_no_serialization, unknown_tag
 from pyfect.rpc.server._protocol import Message, ServerProtocol, ServerProtocolService
-from pyfect.schema import DecodedDefect
 from pyfect.scope import Scope, fork_scoped, scoped
 
 _VOID: Effect[None] = succeed(None)
@@ -196,7 +195,7 @@ class _Serialized:
             return {"_tag": "Exit", "requestId": request_id, "exit": value}
 
         def encode_failed(error: S.SchemaError) -> Effect[Never]:
-            defect = DecodedDefect(f'Failed to encode response for RPC "{codecs.tag}": {error}')
+            defect = f'Failed to encode response for RPC "{codecs.tag}": {error}'
             failed_encode.append(True)
             cause: Cause[Never] = Exit.die(defect).cause
             return report(cause).flat_map(lambda _: fail_cause(cause))
@@ -225,7 +224,7 @@ class _Serialized:
         client: _Client,
         request_id: RequestId,
         encode_exit: Callable[[object], Effect[Any, S.SchemaError, Any]],
-        defect: BaseException,
+        defect: object,
     ) -> Effect[None]:
         sent: Effect[None, Any, Any] = encode_exit(Exit.die(defect)).flat_map(
             lambda exit: self._protocol.send(
@@ -234,7 +233,7 @@ class _Serialized:
         )
         return sent.catch_cause(lambda cause: self._send_defect(client, cause.squash()))
 
-    def _send_defect(self, client: _Client, defect: BaseException) -> Effect[None]:
+    def _send_defect(self, client: _Client, defect: object) -> Effect[None]:
         def send() -> Effect[None]:
             return self._protocol.send(
                 client.id, response_defect_encoded(self._encode_defect(defect))
@@ -266,7 +265,7 @@ class _Serialized:
         tag = message.get("tag", "")
         request_id = message.get("id")
         if not is_request_id(request_id):
-            return self._send_defect(client, DecodedDefect(f"Invalid request id: {request_id}"))
+            return self._send_defect(client, f"Invalid request id: {request_id}")
         rpc = self._group.rpcs.get(tag) if isinstance(tag, str) else None
         if rpc is None:
             return self._send_request_defect(
@@ -276,7 +275,7 @@ class _Serialized:
         headers = _headers(message.get("headers"))
         if headers is None:
             return self._send_request_defect(
-                client, request_id, codecs.encode_exit, DecodedDefect("Invalid request headers")
+                client, request_id, codecs.encode_exit, "Invalid request headers"
             )
 
         def decoded(payload: object) -> Effect[None]:
@@ -293,9 +292,7 @@ class _Serialized:
             return self._server().write(client.id, request)
 
         def invalid(error: S.SchemaError) -> Effect[None]:
-            return self._send_request_defect(
-                client, request_id, codecs.encode_exit, DecodedDefect(str(error))
-            )
+            return self._send_request_defect(client, request_id, codecs.encode_exit, str(error))
 
         return (
             codecs.decode(message.get("payload"))

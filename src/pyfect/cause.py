@@ -27,8 +27,10 @@ from pyfect._equal import dedupe
 from pyfect.result import Err, Ok, Result
 
 if TYPE_CHECKING:
+    from pyfect._core import Effect
     from pyfect._stack_frame import StackFrame
     from pyfect.context import Context, Tag
+    from pyfect.errors import Done
 
 E_co = TypeVar("E_co", covariant=True)
 
@@ -68,7 +70,7 @@ class Fail(_Annotated, Generic[E_co]):
 
 @dataclass(frozen=True, slots=True)
 class Die(_Annotated):
-    defect: BaseException
+    defect: object
     annotations: Annotations = field(default=_NO_ANNOTATIONS, hash=False, repr=False, kw_only=True)
 
 
@@ -139,7 +141,7 @@ class Cause(Generic[E_co]):
         return tuple(r.error for r in self.reasons if isinstance(r, Fail))
 
     @property
-    def defects(self) -> tuple[BaseException, ...]:
+    def defects(self) -> tuple[object, ...]:
         return tuple(r.defect for r in self.reasons if isinstance(r, Die))
 
     @property
@@ -174,7 +176,7 @@ class Cause(Generic[E_co]):
 
         return Cause(
             tuple(
-                Die(_as_exception(r.error), annotations=r.annotations)
+                Die(r.error, annotations=r.annotations)
                 if isinstance(r, Fail) and not isinstance(r.error, Done)
                 else r
                 for r in self.reasons
@@ -196,20 +198,21 @@ class Cause(Generic[E_co]):
         found = self.find_fail()
         return Ok(found.error) if isinstance(found, Fail) else Err(found)
 
-    def find_die(self) -> Die | None:
-        return next((r for r in self.reasons if isinstance(r, Die)), None)
+    def find_die(self) -> Result[Die, Cause[E_co]]:
+        found = next((r for r in self.reasons if isinstance(r, Die)), None)
+        return Err(self) if found is None else Ok(found)
 
-    def find_defect(self) -> BaseException | None:
-        die = self.find_die()
-        return None if die is None else die.defect
+    def find_defect(self) -> Result[object, Cause[E_co]]:
+        return self.find_die().map(lambda die: die.defect)
 
-    def find_interrupt(self) -> Interrupt | None:
-        return next((r for r in self.reasons if isinstance(r, Interrupt)), None)
+    def find_interrupt(self) -> Result[Interrupt, Cause[E_co]]:
+        found = next((r for r in self.reasons if isinstance(r, Interrupt)), None)
+        return Err(self) if found is None else Ok(found)
 
-    def filter_interruptors(self) -> frozenset[int] | None:
+    def filter_interruptors(self) -> Result[frozenset[int], Cause[E_co]]:
         """``interruptors`` if the cause holds an interruption (the set is
-        empty when every one was external), else ``None``."""
-        return self.interruptors if self.has_interrupts else None
+        empty when every one was external), else ``Err`` of the cause."""
+        return Ok(self.interruptors) if self.has_interrupts else Err(self)
 
     def find_recoverable_error(self) -> Fail[E_co] | Cause[Never]:
         """What a typed recovery handler may act on.
@@ -232,18 +235,22 @@ class Cause(Generic[E_co]):
         """Keep defects and interruptions; drop typed errors."""
         return Cause(tuple(r for r in self.reasons if not isinstance(r, Fail)))
 
-    def squash(self) -> BaseException:
-        """The single exception that best represents this cause.
+    def squash(self) -> object:
+        """The single value that best represents this cause, as it is.
 
         Priority: the first typed error, then the first defect, then
-        interruption. Typed errors that are not exceptions are wrapped in
-        ``UnhandledError`` so they can still be raised.
+        interruption.
         """
         if self.failures:
-            return _as_exception(self.failures[0])
+            return self.failures[0]
         if self.defects:
             return self.defects[0]
         return _interrupted(self) if self.reasons else EmptyCauseError("Empty cause")
+
+    def raisable(self) -> BaseException:
+        """``squash`` as something Python can raise: a value that is not an
+        exception is wrapped in ``UnhandledError``."""
+        return _as_exception(self.squash())
 
     def pretty_errors(self) -> tuple[BaseException, ...]:
         """One exception per typed error and defect, in order. Typed errors
@@ -251,7 +258,7 @@ class Cause(Generic[E_co]):
         interruptions alone gives one ``Interrupted`` naming the interruptors;
         an empty cause gives none."""
         errors = tuple(
-            _as_exception(r.error) if isinstance(r, Fail) else r.defect
+            _as_exception(r.error if isinstance(r, Fail) else r.defect)
             for r in self.reasons
             if not isinstance(r, Interrupt)
         )
@@ -280,14 +287,25 @@ def _render_error(error: BaseException) -> str:
     """``error`` with its traceback and cause chain; a defect decoded from
     JSON as Effect renders the decoded error, under the name it was written
     with."""
-    from pyfect.schema import DecodedDefect, ErrorInstance
+    from pyfect.schema import ErrorInstance
 
-    if isinstance(error, DecodedDefect) and isinstance(error.value, ErrorInstance):
-        decoded = error.value
-        return decoded.stack or f"{decoded.name}: {decoded.message}"
+    if isinstance(error, ErrorInstance):
+        return error.stack or f"{error.name}: {error.message}"
+    if isinstance(error, UnhandledError):
+        return _render_no_error(error.error)
     if error.__traceback__ is not None:
         return "".join(traceback.format_exception(error)).rstrip()
     return _render_value(error, "", {id(error)})
+
+
+def _render_no_error(value: object) -> str:
+    """A value that is no exception, as ``causePrettyError`` makes an
+    ``Error`` of it."""
+    from pyfect.logger._text import json_text
+
+    if value is None or value in (0, ""):
+        return f"Error: Unknown error: {value}"
+    return f"Error: {value if isinstance(value, str) else json_text(value)}"
 
 
 def _render_value(error: BaseException, prefix: str, seen: set[int]) -> str:
@@ -315,7 +333,7 @@ class UnhandledError(Exception):
     """Raised at a run boundary for a typed error that is not an exception."""
 
     def __init__(self, error: object) -> None:
-        super().__init__(repr(error))
+        super().__init__(error if isinstance(error, str) else repr(error))
         self.error = error
 
 
@@ -407,7 +425,15 @@ def fail[E](error: E) -> Cause[E]:
     return Cause((Fail(error),))
 
 
-def die(defect: BaseException) -> Cause[Never]:
+def done[A = None](value: A = None) -> Effect[Never, Done[A]]:
+    """An effect failing with ``Done(value)``, ending a pull."""
+    from pyfect.effect import fail as fail_effect
+    from pyfect.errors import Done
+
+    return fail_effect(Done(value))
+
+
+def die(defect: object) -> Cause[Never]:
     return Cause((Die(defect),))
 
 
@@ -426,6 +452,7 @@ __all__ = [
     "Reason",
     "UnhandledError",
     "die",
+    "done",
     "empty",
     "fail",
     "from_reasons",

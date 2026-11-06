@@ -242,7 +242,7 @@ def test_validates_date_time_utc_epoch_millisecond_boundaries() -> None:
 def test_round_trips_exit_cause_and_cause_reason() -> None:
     """round-trips Exit, Cause, and CauseReason"""
     schema = S.Cause(S.String, AnyDefect)
-    cause = Cause((Fail("boom"), Die({"defect": True}), Interrupt(0), Interrupt(None)))  # pyright: ignore[reportArgumentType]
+    cause = Cause((Fail("boom"), Die({"defect": True}), Interrupt(0), Interrupt(None)))
     decoded = roundtrip(schema, cause)
     assert [type(r) for r in decoded.reasons] == [Fail, Die, Interrupt, Interrupt]
     assert decoded.reasons[2].fiber_id == 0
@@ -255,7 +255,7 @@ def test_round_trips_exit_cause_and_cause_reason() -> None:
 def test_round_trips_both_exit_branches_in_fingerprint_mode() -> None:
     """round-trips both Exit branches in fingerprint mode"""
     schema = S.Exit(S.Number, S.String, AnyDefect)
-    cause = Cause((Fail("boom"), Die({"defect": True})))  # pyright: ignore[reportArgumentType]
+    cause = Cause((Fail("boom"), Die({"defect": True})))
     assert Exit.is_success(roundtrip_fp(schema, Exit.succeed(7)))
     failure = roundtrip_fp(schema, Exit.fail_cause(cause))
     assert [type(r) for r in failure.cause.reasons] == [Fail, Die]

@@ -335,7 +335,7 @@ def _run_client(body: Any, serialization: Any) -> Any:
     handlers = _Rpcs.to_layer(
         _Rpcs.handlers()
         .handle(_Rpcs.echo)(lambda request: E.succeed(f"{request.payload['value']}!"))
-        .handle(_Rpcs.counts)(lambda request: Stream.range(1, int(request.payload["to"]) + 1))
+        .handle(_Rpcs.counts)(lambda request: Stream.range(1, int(request.payload["to"])))
         .handle(_Rpcs.fail)(lambda _: E.fail(EchoError(at=_FAILED_AT)))
         .handle(_Rpcs.boom)(lambda _: E.die(ValueError("boom")))
     )
@@ -356,7 +356,7 @@ def _run_client(body: Any, serialization: Any) -> Any:
         .pipe(L.provide(serialization))
     )
     program: Any = fx.scoped(E.gen(body)).pipe(fx.provide(protocol))
-    return fx.run_sync(program.timeout(10).or_die())
+    return fx.run_blocking(program.timeout(10).or_die())
 
 
 def test_schema_binary_roundtrips_requests_and_streamed_responses_over_http() -> None:

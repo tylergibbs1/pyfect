@@ -40,8 +40,8 @@ def test_sync_context_manager_builds_on_enter_and_releases_on_exit():
     log: list[str] = []
     with fx.ManagedRuntime.make(tracked(log)) as runtime:
         assert log == ["acquire"]
-        assert runtime.run_sync(Name()) == "svc"
-        assert runtime.run_sync(Name().map(str.upper)) == "SVC"
+        assert runtime.run_blocking(Name()) == "svc"
+        assert runtime.run_blocking(Name().map(str.upper)) == "SVC"
     assert log == ["acquire", "release"]
 
 
@@ -59,9 +59,9 @@ def test_a_failing_build_on_enter_raises_and_releases_what_was_built():
 
 def test_runs_after_dispose_die():
     runtime = fx.ManagedRuntime.make(layer.succeed(Name, "x"))
-    assert runtime.run_sync(Name()) == "x"
+    assert runtime.run_blocking(Name()) == "x"
     runtime.dispose()
-    ex = runtime.run_sync_exit(Name())
+    ex = runtime.run_blocking_exit(Name())
     assert isinstance(ex, fx.Failure)
     assert "ManagedRuntime disposed" in ex.cause.pretty()
 
@@ -69,7 +69,7 @@ def test_runs_after_dispose_die():
 def test_dispose_twice_is_a_no_op():
     log: list[str] = []
     runtime = fx.ManagedRuntime.make(tracked(log))
-    runtime.run_sync(fx.void)
+    runtime.run_blocking(fx.void)
     runtime.dispose()
     runtime.dispose()
     assert log == ["acquire", "release"]
@@ -83,9 +83,9 @@ def test_fibers_the_layer_forked_keep_running_across_sync_runs():
         return ticks
 
     with fx.ManagedRuntime.make(layer.effect(Ticks, ticking)) as runtime:
-        first = runtime.run_sync(Ticks().flat_map(lambda t: t.get()))
-        runtime.run_sync(fx.sleep(0.02))
-        second = runtime.run_sync(Ticks().flat_map(lambda t: t.get()))
+        first = runtime.run_blocking(Ticks().flat_map(lambda t: t.get()))
+        runtime.run_blocking(fx.sleep(0.02))
+        second = runtime.run_blocking(Ticks().flat_map(lambda t: t.get()))
     assert second > first
 
 
@@ -95,7 +95,7 @@ def test_sync_runs_from_several_threads_share_one_build():
     results: list[str] = []
 
     def request() -> None:
-        results.append(runtime.run_sync(fx.sleep(0.001).and_then(Name())))
+        results.append(runtime.run_blocking(fx.sleep(0.001).and_then(Name())))
 
     threads = [threading.Thread(target=request) for _ in range(8)]
     for t in threads:
@@ -134,7 +134,7 @@ def _first_used_from_two_threads(runtime: fx.ManagedRuntime[Name]) -> list[objec
     thread = threading.Thread(target=lambda: asyncio.run(main()))
     thread.start()
     go.wait()
-    results.append(runtime.run_sync(Name()))
+    results.append(runtime.run_blocking(Name()))
     thread.join(10)
     runtime.dispose()
     return results
@@ -209,10 +209,10 @@ def test_a_sync_run_inside_a_sync_run_of_the_same_runtime_completes():
     stall that fiber's run, so a nested sync run gets a scheduler of its own."""
     runtime = fx.ManagedRuntime.make(layer.succeed(Name, "x"))
     inner = fx.sleep(0.001).and_then(Name())
-    outer = fx.sync(lambda: runtime.run_sync(inner)).flat_map(
+    outer = fx.sync(lambda: runtime.run_blocking(inner)).flat_map(
         lambda a: fx.sleep(0.001).as_(a + "!")
     )
-    assert _within(5, lambda: runtime.run_sync(outer)) == "x!"
+    assert _within(5, lambda: runtime.run_blocking(outer)) == "x!"
     runtime.dispose()
 
 
@@ -237,7 +237,7 @@ def test_blocking_dispose_inside_a_fiber_raises():
     """Inside a fiber, blocking would stall the fiber's own run (and a
     request would wait for itself): use ``dispose_effect`` there."""
     runtime = fx.ManagedRuntime.make(layer.succeed(Name, "x"))
-    ex = _within(5, lambda: runtime.run_sync_exit(fx.sync(runtime.dispose)))
+    ex = _within(5, lambda: runtime.run_blocking_exit(fx.sync(runtime.dispose)))
     assert isinstance(ex, fx.Failure)
     assert "dispose_effect" in ex.cause.pretty()
     runtime.dispose()
@@ -290,7 +290,7 @@ def test_first_runs_racing_on_a_loop_and_a_sync_thread_build_the_layer_once():
         target=lambda: results.append(asyncio.run(runtime.run_async(Name())))
     )
     on_loop.start()
-    results.append(runtime.run_sync(Name()))
+    results.append(runtime.run_blocking(Name()))
     on_loop.join()
     runtime.dispose()
     assert (builds, results) == (["build"], ["svc", "svc"])

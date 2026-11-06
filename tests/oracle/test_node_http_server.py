@@ -407,7 +407,7 @@ def test_answers_keep_alive_requests_while_graceful_shutdown_drains_an_existing_
         return (yield from client.join())
 
     started_at = time.monotonic()
-    first, second = fx.run_sync(program().or_die())
+    first, second = fx.run_blocking(program().or_die())
     assert time.monotonic() - started_at < 5
     [first_response] = parse_responses(first)
     assert first_response.status == 200
@@ -799,7 +799,7 @@ def test_keeps_routes_isolated_between_independent_servers() -> None:
     program = port.flat_map(
         lambda public: checks(public).pipe(fx.provide(served(internal_app)))
     ).pipe(fx.provide(served(public_app)))
-    assert fx.run_sync(program.or_die()) == [200, 200, 200, 200, 404, 404]
+    assert fx.run_blocking(program.or_die()) == [200, 200, 200, 200, 404, 404]
 
 
 def _raw_requests(paths: list[str], method: str = "GET") -> bytes:

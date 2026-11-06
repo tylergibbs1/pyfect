@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from pyfect import run_sync, testing
+from pyfect import run_blocking, testing
 from pyfect._core import Effect
 from pyfect.effect import gen, succeed, sync, void
 from pyfect.net.net_address import InetAddressV4
@@ -182,4 +182,4 @@ def test_a_server_effect_run_twice_listens_twice():
         return received
 
     for _ in range(2):
-        assert run_sync(scoped(gen(echo_once)).timeout(10).or_die()) == b"hi"
+        assert run_blocking(scoped(gen(echo_once)).timeout(10).or_die()) == b"hi"

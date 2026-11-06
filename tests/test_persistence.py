@@ -159,7 +159,7 @@ def test_stored_failures_keep_their_error_and_defect_message():
         assert (yield from store.get(GetItem(1))) == fx.exit.fail(error)
         died = yield from store.get(GetItem(2))
         assert isinstance(died, fx.Failure)
-        assert str(died.cause.find_defect()) == "crashed"
+        assert str(died.cause.defects[0]) == "crashed"
 
     yield from fx.gen(body).pipe(fx.provide(persistence.layer_memory))
 
@@ -192,6 +192,6 @@ def test_a_raising_time_to_live_is_a_defect_of_the_write():
         written = store.set(GetItem(1), fx.exit.succeed(Item(name="a")))
         died = yield from written.exit()
         assert isinstance(died, fx.Failure)
-        assert str(died.cause.find_defect()) == "bad time to live"
+        assert str(died.cause.defects[0]) == "bad time to live"
 
     yield from fx.gen(body).pipe(fx.provide(persistence.layer_memory))

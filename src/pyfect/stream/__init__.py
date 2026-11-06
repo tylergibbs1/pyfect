@@ -8,7 +8,7 @@ at a time while its functions take one item at a time::
 
     from pyfect import stream
 
-    fx.run_sync(stream.range(0, 5).run_collect())  # [0, 1, 2, 3, 4]
+    fx.run_blocking(stream.range(0, 4).run_collect())  # [0, 1, 2, 3, 4]
 
 Constructors are functions here, and so are the combinators that remove
 something from a stream's type (``scoped``, ``catch_tag``, ``catch_if``,
@@ -21,7 +21,7 @@ used with ``.pipe``, and the ones combining any number of streams
 ``to_pull``, ``to_queue``, ``to_async_iterable``, ``pipe_through_channel``,
 ``decode_text``, ``split_lines``, ...) are methods.
 ``range`` follows Python's ``range`` and leaves its end out;
-``range_inclusive`` is Effect's ``range``.
+``range`` is Effect's ``range``.
 """
 
 from pyfect.stream._async_iterable import StreamAsyncIterable, StreamAsyncIterator
@@ -49,7 +49,6 @@ from pyfect.stream._constructors import (
     never,
     paginate,
     range,
-    range_inclusive,
     scoped,
     service,
     service_option,
@@ -133,7 +132,6 @@ __all__ = [
     "provide_service_effect",
     "race_all",
     "range",
-    "range_inclusive",
     "scoped",
     "service",
     "service_option",

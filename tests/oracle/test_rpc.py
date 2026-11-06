@@ -3,12 +3,9 @@ test title, prefixed by its describe block.
 
 A handler takes one ``RpcRequest`` (payload, client, request id,
 headers); ``Option`` results are ``StreamSchemas | None``; JS arrays
-encode to tuples. A defect is an exception, so Effect's ``Schema.Any``
-defect schema is a transformation keeping a ``DecodedDefect``'s whole JSON
-value.
+encode to tuples. Effect's ``Schema.Any`` defect schema is ``S.Any``, keeping the defect's
+whole JSON value.
 """
-
-from typing import TypeIs
 
 from pyfect import effect, testing
 from pyfect import exit as Exit
@@ -25,12 +22,6 @@ from pyfect.rpc import (
     rpc_schema,
     to_layer_handler,
 )
-from pyfect.schema import DecodedDefect
-from pyfect.schema import transformation as T
-
-
-def _is_decoded_defect(value: object) -> TypeIs[DecodedDefect]:
-    return isinstance(value, DecodedDefect)
 
 
 class TestGroup(RpcGroup):
@@ -52,15 +43,9 @@ def test_can_implement_a_single_handler():
 def test_exit_schema_uses_custom_defect_schema() -> None:
     """Rpc / exitSchema uses custom defect schema"""
     # Effect's ``Schema.Any`` defect: the defect's JSON value, kept whole.
-    any_defect = S.Any.pipe(
-        S.decode_to(
-            S.declare(_is_decoded_defect, expected="DecodedDefect"),
-            T.transform(decode=DecodedDefect, encode=lambda d: d.value),
-        )
-    )
-    rpc = make("customDefect", success=S.String, defect=any_defect)
+    rpc = make("customDefect", success=S.String, defect=S.Any)
     schema = exit_schema(rpc)
-    error = DecodedDefect({"message": "boom", "stack": "Error: boom\n  at foo.ts:1", "code": 42})
+    error = {"message": "boom", "stack": "Error: boom\n  at foo.ts:1", "code": 42}
     round_tripped = S.decode_sync(schema)(S.encode_sync(schema)(Exit.die(error)))
     assert isinstance(round_tripped, Failure)
     assert round_tripped.cause.squash() == error

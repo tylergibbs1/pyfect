@@ -27,4 +27,4 @@ def program():
 
 
 failed = fx.scoped(program).pipe(fx.catch_tag(FetchFailed, lambda e: fx.succeed(e.url)))
-print(fx.run_sync(failed))
+print(fx.run_blocking(failed))

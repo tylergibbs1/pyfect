@@ -65,7 +65,7 @@ def _request(url: str = "http://localhost:3000/", **options: Any) -> WebRequest:
 
 def _in_request[A, E](eff: fx.Effect[A, E, Any]) -> A:
     provided = eff.pipe(effect.provide_service(HttpServerRequest, request_from_web(_request())))
-    return fx.run_sync(provided.pipe(effect.provide_service(TracerEnabled, False)).or_die())
+    return fx.run_blocking(provided.pipe(effect.provide_service(TracerEnabled, False)).or_die())
 
 
 def _write_nothing(_request: object, _response: HttpServerResponse) -> fx.Effect[None]:

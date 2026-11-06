@@ -182,12 +182,12 @@ def test_a_commit_in_another_run_wakes_a_retrying_transaction():
 
     results: list[int] = []
     waiter = threading.Thread(
-        target=lambda: results.append(fx.run_sync(fx.tx(body()))), daemon=True
+        target=lambda: results.append(fx.run_blocking(fx.tx(body()))), daemon=True
     )
     waiter.start()
     while not ref._pending:
         time.sleep(0.001)
-    fx.run_sync(ref.set(5))
+    fx.run_blocking(ref.set(5))
     waiter.join(5)
 
     assert results == [5]

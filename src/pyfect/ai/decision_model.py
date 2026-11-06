@@ -227,9 +227,7 @@ def make(
         encoded: Effect[JsonValue, Any, Any] = S.encode_effect(definition.json_input)(input)
         return (
             encoded.map_error(
-                lambda error: _error(
-                    method, E.InvalidUserInputError(description=E.describe_schema_error(error))
-                )
+                lambda error: _error(method, E.InvalidUserInputError(description=error.message))
             )
             .flat_map(lambda state: call(method, state, definition.decisions, images))
             .map(settled)

@@ -11,4 +11,4 @@ class PersistenceError(S.TaggedError, identifier="effect/persistence/Persistence
     it and have the failure stored."""
 
     message: str
-    cause: BaseException | None = S.field(S.Union(S.Null, S.Defect()), default=None)
+    cause: object = S.field(S.Union(S.Null, S.Defect()), default=None)

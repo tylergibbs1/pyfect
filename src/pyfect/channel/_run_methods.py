@@ -65,8 +65,9 @@ class RunMethods(
 
     def run_for_each_while[O, E, D, R, E2 = Never, R2 = Never](
         self: RunMethods[O, E, D, Never, Never, None, R], f: Callable[[O], Effect[bool, E2, R2]]
-    ) -> Effect[None, E | E2, R | R2]:
-        """Run ``f`` on each item until it succeeds with ``False``."""
+    ) -> Effect[D | None, E | E2, R | R2]:
+        """Run ``f`` on each item until it succeeds with ``False`` (``None``),
+        or the channel ends (its end value)."""
         from pyfect.channel import _run
 
         return _run.run_for_each_while(self, f)

@@ -26,8 +26,12 @@ from __future__ import annotations
 import contextlib
 from collections import deque
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from pyfect._core import Effect, _Callback, _Succeed, _Sync
+
+if TYPE_CHECKING:
+    from pyfect.scheduler import Scheduler
 
 
 class _Waiter:
@@ -83,9 +87,10 @@ class WaitList:
         for waiter in ready:
             waiter.wake()
 
-    def notify_ready_soon(self) -> None:
-        """``notify_ready`` in a scheduled task (``wake_soon``); several calls
-        before it runs share it, as Effect's ``scheduleReleaseTaker``."""
+    def notify_ready_soon(self, scheduler: Scheduler | None = None) -> None:
+        """``notify_ready`` in a task on ``scheduler``, else as ``wake_soon``;
+        several calls before it runs share it, as Effect's
+        ``scheduleReleaseTaker``."""
         if self._soon or not self._waiters:
             return
         self._soon = True
@@ -94,7 +99,20 @@ class WaitList:
             self._soon = False
             self.notify_ready()
 
-        wake_soon(flush)
+        if scheduler is not None:
+            scheduler.schedule(flush)
+            return
+        from pyfect._fiber import current_fiber
+        from pyfect.scheduler import SyncOnlyScheduler
+
+        # Effect's queue holds the dispatcher of the fiber that made it, whichever
+        # fiber offers: under a ``run_sync`` the root flushes it.
+        fiber = current_fiber()
+        run = None if fiber is None else fiber._scheduler
+        if isinstance(run, SyncOnlyScheduler):
+            run.schedule_as_root(flush)
+        else:
+            wake_soon(flush)
 
     def notify_all(self) -> None:
         waiters, self._waiters = self._waiters, deque()

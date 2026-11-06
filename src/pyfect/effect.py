@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Never, overload
+from typing import Any, Never, cast, overload
 
 from pyfect._catch import catch_all, catch_if, catch_tag
 from pyfect._catch_reason import catch_reason, catch_reasons, unwrap_reason
@@ -39,8 +39,8 @@ from pyfect._core import (
     _YieldNow,
 )
 from pyfect._effect_args import require_effect
-from pyfect._fiber import Fiber
-from pyfect._fn import Gen, fn, fn_untraced, generator_function
+from pyfect._fiber import Fiber, current_run_scheduler
+from pyfect._fn import Gen, fn, fn_untraced, fn_untraced_eager
 from pyfect._os_wait import os_wait
 from pyfect._root import loop_running_here, run_loop
 from pyfect.cause import Cause
@@ -52,6 +52,7 @@ from pyfect.errors import NoSuchElementException, UnknownError
 from pyfect.exit import Exit
 from pyfect.option import Option, Some
 from pyfect.result import Ok, Result
+from pyfect.scheduler import SyncOnlyScheduler
 
 # --- constructors -------------------------------------------------------------
 
@@ -88,7 +89,7 @@ def fail_cause[E](cause: Cause[E]) -> Effect[Never, E]:
     return _FailCause(cause)
 
 
-def die(defect: BaseException) -> Effect[Never]:
+def die(defect: object) -> Effect[Never]:
     return _FailCause(die_cause(defect))
 
 
@@ -197,6 +198,81 @@ def callback[A, E = Never, R = Never](
     return _Callback(register)
 
 
+def while_loop[A, E = Never, R = Never](
+    *,
+    while_: Callable[[], bool],
+    body: Callable[[], Effect[A, E, R]],
+    step: Callable[[A], None],
+) -> Effect[None, E, R]:
+    """Run ``body`` while ``while_()`` holds, giving each value to ``step``;
+    the stack does not grow."""
+
+    def loop() -> Effect[None, E, R]:
+        if not while_():
+            return _Succeed(None)
+        return body().flat_map(_after)
+
+    def _after(a: A) -> Effect[None, E, R]:
+        step(a)
+        return _Suspend(loop)
+
+    return _Suspend(loop)
+
+
+def _js_falsy(value: object) -> bool:
+    """JavaScript's reading of a callback's ``err``: an empty list or dict counts."""
+    return value is None or value in (False, 0, "")
+
+
+def effectify[E = Never](
+    fn: Callable[..., object],
+    on_error: Callable[[Any, tuple[object, ...]], E] | None = None,
+    on_sync_error: Callable[[Exception, tuple[object, ...]], E] | None = None,
+) -> Callable[..., Effect[Any, E]]:
+    """A function taking a Node-style last argument ``cb(error, result)`` as
+    a function returning an effect. A truthy ``error`` fails, through
+    ``on_error``; a raise while calling ``fn`` is a defect, or ``on_sync_error``'s
+    failure. Python cannot read the result's type out of the callback's, so
+    it is ``Any``: annotate the effect."""
+
+    def call(*args: object) -> Effect[Any, E]:
+        def register(resume: Callable[[Effect[Any, E]], None]) -> None:
+            synchronous = True
+            pending: Effect[Any, E] | None = None
+
+            def outcome(err: object, result: object) -> Effect[Any, E]:
+                if _js_falsy(err):
+                    return _Succeed(result)
+                if on_error is None:
+                    return _FailCause(fail_cause_of(cast("E", err)))
+                map_error = on_error
+                return _Suspend(lambda: _FailCause(fail_cause_of(map_error(err, args))))
+
+            def done(err: object = None, result: Any = None) -> None:
+                nonlocal pending
+                effect = outcome(err, result)
+                if synchronous:
+                    pending = effect if pending is None else pending
+                else:
+                    resume(effect)
+
+            try:
+                fn(*args, done)
+            except Exception as exc:
+                pending = (
+                    _FailCause(die_cause(exc))
+                    if on_sync_error is None
+                    else _FailCause(fail_cause_of(on_sync_error(exc, args)))
+                )
+            synchronous = False
+            if pending is not None:
+                resume(pending)
+
+        return _Callback(register)
+
+    return call
+
+
 def from_async[A](make: Callable[[], Awaitable[A]]) -> Effect[A]:
     """Await an awaitable. Requires ``run_async``/``run_main`` (an asyncio
     loop). Raised exceptions are defects; interruption cancels the task and
@@ -220,7 +296,7 @@ def try_async(
 
 
 class AsyncioRequiredError(RuntimeError):
-    """``from_async`` ran without an asyncio loop (e.g. under ``run_sync``)."""
+    """``from_async`` ran without an asyncio loop (e.g. under ``run_blocking``)."""
 
 
 def _await[A, E](
@@ -229,8 +305,11 @@ def _await[A, E](
     def start() -> Effect[A, E]:
         loop = run_loop()
         if loop is None:
+            run = current_run_scheduler()
+            if isinstance(run, SyncOnlyScheduler) and run.root is not None:
+                return _Callback(lambda _resume: None)  # run_sync: AsyncFiberError
             raise AsyncioRequiredError(
-                "from_async/try_async need an asyncio loop, and run_sync blocks this thread's "
+                "from_async/try_async need an asyncio loop, and run_blocking blocks this thread's "
                 "loop until it returns; use await run_async(...) inside a coroutine"
                 if loop_running_here()
                 else "from_async/try_async need an asyncio loop; run with run_async or run_main"
@@ -342,6 +421,12 @@ def yield_now() -> Effect[None]:
     return _YieldNow()
 
 
+def yield_now_with(priority: int = 0) -> Effect[None]:
+    """``yield_now`` at ``priority``: within a scheduler tick, lower numbers
+    resume first."""
+    return _YieldNow(priority)
+
+
 def interrupt() -> Effect[Never]:
     """Interrupt the current fiber."""
     return _WithFiber(lambda f: _FailCause(interrupt_cause(f.id)))
@@ -369,7 +454,6 @@ def gen[A, E = Never, R = Never](
             user = yield from find_user("u1")
             return user.name
     """
-    generator_function(f, "gen")
     return _Gen(f)
 
 
@@ -438,6 +522,7 @@ __all__ = [
     "context",
     "current_fiber",
     "die",
+    "effectify",
     "fail",
     "fail_cause",
     "fail_cause_sync",
@@ -445,6 +530,7 @@ __all__ = [
     "fiber_id",
     "fn",
     "fn_untraced",
+    "fn_untraced_eager",
     "from_async",
     "from_exit",
     "from_option",
@@ -471,7 +557,9 @@ __all__ = [
     "update_context",
     "update_service_scoped",
     "void",
+    "while_loop",
     "with_fiber",
     "with_fiber_succeed",
     "yield_now",
+    "yield_now_with",
 ]

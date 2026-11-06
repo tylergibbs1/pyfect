@@ -5,6 +5,7 @@ from pyfect import exit
 from pyfect.cause import Cause, Die, Fail, Interrupt
 from pyfect.exit import Exit, Failure, Success
 from pyfect.option import Some
+from pyfect.result import Err, Ok
 
 boom = RuntimeError("boom")
 
@@ -92,9 +93,9 @@ def test_find_error_passes_the_exit_through_when_there_is_no_typed_error() -> No
 def test_find_defect_get_success_and_get_cause() -> None:
     ok, failed = outcomes()
     died: Exit[int, str] = exit.die(boom)
-    assert died.find_defect() is boom
-    assert failed.find_defect() is None
-    assert ok.find_defect() is None
+    assert died.find_defect() == Ok(boom)
+    assert isinstance(failed.find_defect(), Err)
+    assert isinstance(ok.find_defect(), Err)
     assert ok.get_success() == Some(1)
     assert failed.get_success() is None
     assert ok.get_cause() is None

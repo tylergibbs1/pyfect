@@ -23,5 +23,5 @@ def program():
 
 
 # scoped gives the program a scope and closes it when the program ends.
-assert fx.run_sync(fx.scoped(program)) == 1
+assert fx.run_blocking(fx.scoped(program)) == 1
 assert events == ["open", "SELECT 1", "close"]

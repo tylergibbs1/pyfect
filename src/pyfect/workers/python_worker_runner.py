@@ -7,7 +7,7 @@ ready, calls the handler for each message the parent sends (with port id
 it (or, in a process, goes away). Outside a worker, ``start`` fails with a
 ``WorkerSpawnError``. A worker's main program is typically::
 
-    fx.run_sync_exit(MainLayer.launch())
+    fx.run_blocking_exit(MainLayer.launch())
 
 which ends once the parent closes the worker.
 """

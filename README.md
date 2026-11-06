@@ -75,14 +75,14 @@ program = (
     .pipe(fx.provide(layer.succeed(Users, InMemoryUsers())))
 )
 
-fx.run_sync(program)
+fx.run_blocking(program)
 ```
 
 Remove the `catch_tag` line and pyright stops you before the program runs:
 
 ```text
 error: Argument of type "Effect[str, UserNotFound, Never]" cannot be assigned to
-       parameter "eff" of type "Effect[A@run_sync, Never, Never]"
+       parameter "eff" of type "Effect[A@run_blocking, Never, Never]"
     Type "UserNotFound" is not assignable to type "Never"
 ```
 
@@ -94,7 +94,7 @@ layer, concurrency, retries and timeouts.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/how-it-works-dark.svg">
-    <img src="assets/how-it-works-light.svg" alt="An @fx.fn generator builds Effect[A, E, R]; catch_tag removes an error, provide(layer) removes a service, and run_sync runs the Effect[A, Never, Never] to an Exit." width="225">
+    <img src="assets/how-it-works-light.svg" alt="An @fx.fn generator builds Effect[A, E, R]; catch_tag removes an error, provide(layer) removes a service, and run_blocking runs the Effect[A, Never, Never] to an Exit." width="225">
   </picture>
 </p>
 
@@ -114,7 +114,7 @@ layer, concurrency, retries and timeouts.
 - **Services and layers.** Dependency injection checked by the type checker, with memoized,
   concurrently built layers that release their resources in order.
   [Services →](https://pyfect.dev/docs/services)
-- **A fiber runtime of its own.** The same program runs with `run_sync` (no event loop) or on
+- **A fiber runtime of its own.** The same program runs with `run_blocking` (no event loop) or on
   asyncio. `blocking` moves blocking calls to a thread. [Effects →](https://pyfect.dev/docs/effects)
 - **Structured concurrency.** Children end with their parent; `all` and `for_each` take a
   concurrency limit; races wait for losers to clean up.

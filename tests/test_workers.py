@@ -54,7 +54,7 @@ def main():
     runner = yield from WorkerRunnerPlatform().flat_map(lambda p: p.start())
     yield from runner.run(lambda port, message: runner.send(port, ("echo", message)))
 
-fx.run_sync(main.pipe(fx.provide(python_worker_runner.layer)).or_die())
+fx.run_blocking(main.pipe(fx.provide(python_worker_runner.layer)).or_die())
 """
 
 
@@ -71,7 +71,7 @@ def _echo_main():
 
 
 def _run_echo() -> None:
-    fx.run_sync(_echo_main.pipe(fx.provide(python_worker_runner.layer)).or_die())
+    fx.run_blocking(_echo_main.pipe(fx.provide(python_worker_runner.layer)).or_die())
 
 
 ECHOES: dict[str, Callable[[], WorkerHandle]] = {
@@ -128,7 +128,7 @@ def main():
     runner = yield from WorkerRunnerPlatform().flat_map(lambda p: p.start())
     yield from runner.run(handle)
 
-fx.run_sync(main.pipe(fx.provide(python_worker_runner.layer)))
+fx.run_blocking(main.pipe(fx.provide(python_worker_runner.layer)))
 """
 
 
@@ -284,7 +284,7 @@ def _gone(pid: int) -> bool:
 
 def test_starting_a_runner_outside_a_worker_fails_with_a_spawn_error() -> None:
     start = WorkerRunnerPlatform().flat_map(lambda p: p.start())
-    exit = fx.run_sync_exit(start.pipe(fx.provide(python_worker_runner.layer)))
+    exit = fx.run_blocking_exit(start.pipe(fx.provide(python_worker_runner.layer)))
     assert isinstance(exit, Exit.Failure)
     error = exit.cause.squash()
     assert isinstance(error, WorkerError)
@@ -325,7 +325,7 @@ def _serve_initial() -> None:
         .pipe(layer.provide_merge(rpc_server.layer_protocol_worker_runner))
         .pipe(layer.provide(python_worker_runner.layer))
     )
-    fx.run_sync_exit(main.launch())
+    fx.run_blocking_exit(main.launch())
 
 
 @testing.live(timeout=20)
@@ -375,7 +375,7 @@ def test_one_worker_protocol_layer_value_serves_every_run_it_is_provided_to() ->
     # A layer is a recipe: each run builds its own pool and protocol
     # (Effect's withRunClient makes its state in Effect.suspend).
     protocol = rpc_client.layer_protocol_worker(size=1)
-    exits = [fx.run_sync_exit(_get_initial_through(protocol)) for _ in range(3)]
+    exits = [fx.run_blocking_exit(_get_initial_through(protocol)) for _ in range(3)]
     assert exits == [Exit.succeed("started with hi")] * 3
 
 
@@ -395,7 +395,7 @@ def _serve_slow(worker_id: int) -> None:
         .pipe(layer.provide(rpc_server.layer_protocol_worker_runner))
         .pipe(layer.provide(python_worker_runner.layer))
     )
-    fx.run_sync_exit(main.launch())
+    fx.run_blocking_exit(main.launch())
 
 
 def test_each_worker_thread_serves_over_its_own_runner_protocol() -> None:
@@ -408,7 +408,7 @@ def test_each_worker_thread_serves_over_its_own_runner_protocol() -> None:
     protocol = rpc_client.layer_protocol_worker(size=2).pipe(
         layer.provide(python_worker.layer(lambda id_: ThreadWorker(lambda: _serve_slow(id_))))
     )
-    exit_ = fx.run_sync_exit(fx.scoped(calls).pipe(fx.provide(protocol)).timeout(5))
+    exit_ = fx.run_blocking_exit(fx.scoped(calls).pipe(fx.provide(protocol)).timeout(5))
     assert isinstance(exit_, fx.Success)
     first, second = exit_.value
     assert first != second, "both requests were served by one worker's server"

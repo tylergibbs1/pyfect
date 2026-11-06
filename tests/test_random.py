@@ -8,7 +8,7 @@ from pyfect import random, schedule
 
 
 def seeded[A](eff: fx.Effect[A], seed: str | float) -> A:
-    return fx.run_sync(eff.pipe(random.with_seed(seed)))
+    return fx.run_blocking(eff.pipe(random.with_seed(seed)))
 
 
 FIVE = fx.all(*[random.next()] * 5)
@@ -118,7 +118,7 @@ def test_shuffle_reads_its_iterable_when_it_runs():
     values = [1, 2, 3]
     shuffled = random.shuffle(values)
     values.append(4)
-    assert sorted(fx.run_sync(shuffled)) == [1, 2, 3, 4]
+    assert sorted(fx.run_blocking(shuffled)) == [1, 2, 3, 4]
 
 
 def test_a_jittered_schedule_draws_from_the_seeded_generator():

@@ -31,4 +31,4 @@ def greet(user_id: str) -> fx.Effect[str, fx.TimeoutException]:
 # Running it without handling that is a type error, so we handle it here.
 program = greet("1").pipe(fx.catch_tag(fx.TimeoutException, lambda _: fx.succeed("Timed out")))
 
-assert fx.run_sync(program) == "Hello, Ada!"
+assert fx.run_blocking(program) == "Hello, Ada!"

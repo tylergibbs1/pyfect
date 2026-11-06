@@ -40,7 +40,7 @@ from pyfect.layer import Layer
 from pyfect.net.net_address import InetAddressV4
 from pyfect.rpc import make as make_rpc
 from pyfect.rpc import serialization
-from pyfect.schema import DecodedDefect, ErrorInstance
+from pyfect.schema import ErrorInstance
 from pyfect.socket import server as socket_server
 from pyfect.socket.server import SocketServer
 
@@ -288,9 +288,8 @@ def test_a_reply_serialization_failure_fails_only_its_own_request():
             # The defect crosses the wire as an error instance; Effect reads its
             # name through ``String(error)``.
             failure = bad.cause.squash()
-            assert isinstance(failure, DecodedDefect)
-            assert isinstance(failure.value, ErrorInstance)
-            assert failure.value.name == "MalformedMessage", "the caller must get the encode error"
+            assert isinstance(failure, ErrorInstance)
+            assert failure.name == "MalformedMessage", "the caller must get the encode error"
             slow_exit = yield from slow.await_exit()
             assert slow_exit == Exit.succeed("done")
 

@@ -1,7 +1,7 @@
 """Fail a test that runs longer than the ``test_timeout`` ini value (a hang).
 
 A fiber parked forever (a lost wake-up, an uninterruptible wait) blocks
-``run_sync`` with no error. The alarm turns that into a failure with a
+``run_blocking`` with no error. The alarm turns that into a failure with a
 traceback that shows where the test was stuck.
 """
 

@@ -235,7 +235,7 @@ def test_handle_http_names_the_workflow_endpoints_a_group_lacks():
     layer = group_layer(
         api, HealthOnly, lambda h: workflow_proxy_server.handle_http(h, [Increment])
     )
-    exit_ = fx.run_sync_exit(fx.scoped(layer.pipe(fx.layer.provide_merge(WORKFLOWS)).build()))
+    exit_ = fx.run_blocking_exit(fx.scoped(layer.pipe(fx.layer.provide_merge(WORKFLOWS)).build()))
     assert isinstance(exit_, fx.exit.Failure)
     defect = exit_.cause.squash()
     assert isinstance(defect, ValueError)

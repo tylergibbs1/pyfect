@@ -57,7 +57,7 @@ def _serve(program: fx.Effect[Any, Any, Any]) -> Any:
         .pipe(layer.provide(serialization.layer_json))
     )
     served = router.serve(live, disable_logger=True, disable_listen_log=True)
-    return fx.run_sync(
+    return fx.run_blocking(
         fx.scoped(program)
         .pipe(fx.provide(served))
         .pipe(fx.provide(uvicorn_server.layer(host="127.0.0.1")))
@@ -154,7 +154,7 @@ def test_a_call_waiting_on_a_socket_protocol_whose_scope_closes_fails() -> None:
         yield from protocol_scope.close(fx.exit.succeed(None))
         return (yield from waiting.join())
 
-    error = _rpc_client_error(fx.run_sync(fx.scoped(program())))
+    error = _rpc_client_error(fx.run_blocking(fx.scoped(program())))
     assert CLOSED in error.message
 
 
@@ -203,7 +203,7 @@ def test_make_client_keeps_a_scoped_handlers_layer_open_while_the_client_is_used
         second = yield from client.start("b")
         return first, second
 
-    assert fx.run_sync(fx.scoped(program()).or_die()) == (1, 2)
+    assert fx.run_blocking(fx.scoped(program()).or_die()) == (1, 2)
 
 
 def test_handlers_provided_to_make_client_alone_name_what_was_released(tmp_path: Path) -> None:
@@ -216,7 +216,7 @@ def test_handlers_provided_to_make_client_alone_name_what_was_released(tmp_path:
         client = yield from rpc_test.make_client(Jobs).pipe(fx.provide(_jobs_live(tmp_path)))
         return (yield from client.start("a").timeout(5).exit())
 
-    exit_ = fx.run_sync(fx.scoped(program()))
+    exit_ = fx.run_blocking(fx.scoped(program()))
     assert isinstance(exit_, Failure), exit_
     error = exit_.cause.squash()
     assert isinstance(error, Interrupted), exit_.cause

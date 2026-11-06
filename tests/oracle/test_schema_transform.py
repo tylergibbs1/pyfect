@@ -54,8 +54,8 @@ from pyfect.clock import sleep
 from pyfect.context import Tag
 from pyfect.date_time import format_iso_zoned
 from pyfect.effect import Effect, fail_cause, succeed
+from pyfect.errors import AsyncFiberError
 from pyfect.exit import Failure
-from pyfect.exit import succeed as succeed_exit
 from pyfect.option import Option, Some
 from pyfect.result import Err, Ok
 from pyfect.schema import getter as G
@@ -779,11 +779,11 @@ _ASYNC = S.String.pipe(
 def test_sync_adapters_block_on_async_decoding():
     """decodeUnknownResult / should throw on async decoding
     decodeUnknownExit / should die on async decoding"""
-    # Pythonic decision: running an asynchronous effect synchronously blocks
-    # until it is done (``run_sync``), so the adapters succeed where Effect's
-    # die.
-    assert S.decode_unknown_result(_ASYNC)("1") == Ok("1")
-    assert S.decode_unknown_exit(_ASYNC)("1") == succeed_exit("1")
+    with pytest.raises(RuntimeError):
+        S.decode_unknown_result(_ASYNC)("1")
+    ran = S.decode_unknown_exit(_ASYNC)("1")
+    assert isinstance(ran, Failure)
+    assert isinstance(ran.cause.defects[0], AsyncFiberError)
 
 
 class _MagicNumber(Tag[float]):

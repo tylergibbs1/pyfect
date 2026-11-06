@@ -3,7 +3,7 @@ handling``, and the ``transduce``, ``aggregateWithin``, ``tapSink`` and
 ``peel`` sections.
 
 Each test's docstring is the Effect test title. Effect's inclusive
-``Stream.range(a, b)`` is ``stream.range_inclusive(a, b)``,
+``Stream.range(a, b)`` is ``stream.range(a, b)``,
 ``Stream.catch`` / ``Sink.catch`` are ``catch_all``, durations are
 seconds and the test clock's times are seconds.
 
@@ -277,7 +277,7 @@ def test_aggregate_within_fails_fast():
         return fx.void
 
     yield from (
-        stream.range_inclusive(1, 9)
+        stream.range(1, 9)
         .tap(offer)
         .aggregate_within(sink.fold_until(lambda: None, 5, ignore), schedule.forever)
         .run_drain()

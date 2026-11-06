@@ -647,7 +647,7 @@ def test_a_released_client_interrupts_naming_the_closed_pool(pg_server: PgServer
         sql = yield from SqlClient().pipe(fx.provide(pg.client.layer(_config(pg_server))))
         return (yield from sql("SELECT 1").timeout(5).exit())
 
-    exit_ = fx.run_sync(scope.scoped(program()).or_die())
+    exit_ = fx.run_blocking(scope.scoped(program()).or_die())
     assert isinstance(exit_, Failure) and exit_.cause.has_interrupts_only, exit_
     error = exit_.cause.squash()
     assert isinstance(error, Interrupted)

@@ -19,7 +19,7 @@ connection; writing a ``CloseEvent`` closes it::
 
 ``to_channel`` and ``to_stream`` turn a socket into a channel (input
 written, output read) or a stream. The live sockets run on an asyncio loop
-of their own, on a background thread, so they work under ``run_sync`` too.
+of their own, on a background thread, so they work under ``run_blocking`` too.
 ``pyfect.socket.server`` listens for connections and
 ``pyfect.socket.datagram`` sends and receives UDP packets. ``from_web_socket``
 adapts a browser-style WebSocket and ``make_web_socket`` opens a client

@@ -21,4 +21,4 @@ def program():
     yield from fiber.join()
 
 
-fx.run_sync(program)
+fx.run_blocking(program)

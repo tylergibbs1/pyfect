@@ -50,7 +50,7 @@ def test_the_string_tree_codec_of_a_self_referring_class_reads_text_leaves():
 def test_config_schema_reads_a_self_referring_class():
     provider = cp.from_unknown({"name": "a", "age": 1, "friend": {"name": "b", "age": 2}})
 
-    assert fx.run_sync(config.schema(User).parse(provider).or_die()) == _NESTED
+    assert fx.run_blocking(config.schema(User).parse(provider).or_die()) == _NESTED
 
 
 class Node(S.Class):

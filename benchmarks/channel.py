@@ -31,7 +31,7 @@ def per_item() -> object:
         .map(lambda n: n * 2)
         .pipe_to(channel.identity())
     )
-    return fx.run_sync(pipeline.run_drain())
+    return fx.run_blocking(pipeline.run_drain())
 
 
 def chunked() -> object:
@@ -41,7 +41,7 @@ def chunked() -> object:
         .map(lambda chunk: tuple(n * 2 for n in chunk))
         .pipe_to(channel.identity())
     )
-    return fx.run_sync(pipeline.run_drain())
+    return fx.run_blocking(pipeline.run_drain())
 
 
 def main() -> None:

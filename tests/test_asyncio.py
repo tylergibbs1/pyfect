@@ -23,12 +23,12 @@ def test_try_async_maps_exceptions():
     assert fx.run_main(eff.catch_all(fx.succeed)) == "failed: down"
 
 
-def test_from_async_under_run_sync_explains_itself():
+def test_from_async_under_run_blocking_explains_itself():
     async def noop() -> None:
         return None
 
     with pytest.raises(fx.AsyncioRequiredError):
-        fx.run_sync(fx.from_async(noop))
+        fx.run_blocking(fx.from_async(noop))
 
 
 def test_interrupting_a_fiber_cancels_its_task_and_waits():

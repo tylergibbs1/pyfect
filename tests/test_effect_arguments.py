@@ -251,7 +251,7 @@ def test_the_guard_finds_the_combinators_it_is_meant_to_check():
     names = {(q.rsplit(".", 1)[-1], p) for q, _, p in _CASES}
     assert ("on_interrupt", "finalizer") in names
     assert ("acquire_release", "acquire") in names
-    assert ("run_sync", "eff") in names
+    assert ("run_blocking", "eff") in names
     assert ("all", "effects") in names
     assert ("fresh", "layer") in names
     assert ("merge", "layers") in names

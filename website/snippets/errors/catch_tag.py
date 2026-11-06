@@ -29,7 +29,7 @@ with_default = read("admin", "news").pipe(fx.catch_tag(NotFound, lambda e: fx.su
 # catch_all handles every typed error: Effect[str] (no errors left).
 safe = with_default.catch_all(lambda e: fx.succeed(f"denied: {e.user}"))
 
-assert fx.run_sync(safe) == ""
-assert fx.run_sync(read("guest", "motd").catch_all(lambda e: fx.succeed(repr(e)))) == (
+assert fx.run_blocking(safe) == ""
+assert fx.run_blocking(read("guest", "motd").catch_all(lambda e: fx.succeed(repr(e)))) == (
     "Forbidden(user='guest')"
 )

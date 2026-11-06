@@ -92,7 +92,7 @@ class ResponseDefect:
     """The server failed for every request of the client."""
 
     client_id: int
-    defect: BaseException
+    defect: object
 
 
 @dataclass(frozen=True, slots=True)

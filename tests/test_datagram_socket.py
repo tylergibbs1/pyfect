@@ -15,7 +15,7 @@ from pyfect.clock import sleep
 from pyfect.effect import gen, yield_now
 from pyfect.exit import Failure
 from pyfect.net.net_address import InetAddressV4
-from pyfect.run import run_sync_exit
+from pyfect.run import run_blocking_exit
 from pyfect.scope import Scope, scoped
 from pyfect.socket.datagram import (
     BackingEvents,
@@ -87,7 +87,7 @@ def _never_open(_: BackingEvents) -> Effect[BackingSocket, DatagramSocketError]:
 def test_a_receive_buffer_below_one_dies_when_the_socket_is_made(capacity: int):
     """Effect throws inside ``withFiber``: a defect when it runs, not at the call."""
     buffer = ReceiveBuffer(capacity)
-    exit = run_sync_exit(make_from_backing_socket(_never_open, receive_buffer=buffer))
+    exit = run_blocking_exit(make_from_backing_socket(_never_open, receive_buffer=buffer))
     assert isinstance(exit, Failure)
     assert "must be a positive integer" in str(exit.cause.squash())
 

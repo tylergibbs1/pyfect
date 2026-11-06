@@ -328,7 +328,7 @@ def test_can_serialize_workflow_defects():
         yield from testing.adjust(0.001)
         ex = yield from ErrorDefectWorkflow.execute({"id": "raw-error-defect"}).exit()
         assert isinstance(ex, fx.Failure)
-        defect = ex.cause.find_defect()
+        defect = ex.cause.defects[0]
         assert isinstance(defect, Exception)
         assert str(defect) == "Batch request error: Request timed out"
 
@@ -1839,7 +1839,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
         yield from testing.adjust(registration_timeout - clock_duration)
         exit_ = fiber.poll_unsafe()
         assert exit_ is not None, "the notifyLocal registration wait must be bounded"
-        defect = exit_.cause.find_defect() if isinstance(exit_, fx.Failure) else None
+        defect = exit_.cause.defects[0] if isinstance(exit_, fx.Failure) else None
         assert isinstance(defect, Exception)
         assert str(defect) == f"Entity type 'Workflow/{removed.tag}' not registered"
 

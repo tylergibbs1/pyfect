@@ -221,11 +221,11 @@ def test_parser_uses_separate_decoding_and_encoding_services():
     scale = T.Transformation(G.transform_effect(_scale_up), G.transform_effect(_scale_down))
     part = S.Number.pipe(S.decode(scale))
     schema = S.TemplateLiteralParser("value:", part)
-    decoded = fx.run_sync_exit(
+    decoded = fx.run_blocking_exit(
         S.decode_effect(schema)("value:2").pipe(fx.provide_service(_DecodeScale, 3))
     )
     assert decoded == Success(("value:", 6))
-    encoded = fx.run_sync_exit(
+    encoded = fx.run_blocking_exit(
         S.encode_effect(schema)(("value:", 6)).pipe(fx.provide_service(_EncodeScale, 2))
     )
     assert encoded == Success("value:3")

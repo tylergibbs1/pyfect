@@ -69,7 +69,7 @@ HandlersLive = layer.merge(JobsLive, StatusLive).pipe(layer.provide(Services))
 
 
 def _run[A](program: fx.Effect[A, Any, Any]) -> A:
-    return fx.run_sync(scope.scoped(program))
+    return fx.run_blocking(scope.scoped(program))
 
 
 def test_the_layer_given_to_groups_stays_open_while_the_client_is_used() -> None:

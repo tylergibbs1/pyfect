@@ -7,9 +7,9 @@ functions are methods here; ``withPermits(n)(eff)`` is
 ``with_permits(key, eff, n)``.
 
 Effect's tests that interrupt "at any operation" pause the fiber from a
-custom ``shouldYield``. pyfect has no per-step hook: a sweep of
-``MaxOpsBeforeYield`` budgets places the pause at every step instead (see
-``docs/PARITY.md``), and the test interrupts the paused fiber.
+custom ``shouldYield``. These ports sweep ``MaxOpsBeforeYield`` budgets, which
+place the pause at every step; ``test_custom_dispatchers.py`` runs Effect's own
+form.
 """
 
 from typing import Any

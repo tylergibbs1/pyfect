@@ -29,8 +29,8 @@ class CurrentTimeZone(Tag[tzinfo], key="effect/DateTime/CurrentTimeZone"):
 
 def now() -> Effect[datetime]:
     """The ``Clock``'s wall time as an aware UTC datetime (to the
-    microsecond)."""
-    return Clock().map(lambda c: _EPOCH + timedelta(microseconds=c.now_nanos_unsafe() // 1_000))
+    millisecond, as Effect's)."""
+    return Clock().map(lambda c: _EPOCH + timedelta(milliseconds=c.now_nanos_unsafe() // 1_000_000))
 
 
 def now_in_current_zone() -> Effect[datetime, Never, CurrentTimeZone]:

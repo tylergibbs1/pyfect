@@ -414,7 +414,7 @@ def _error_or_defect[A, E, X, Y](
         case Ok(found):
             return on_error(found, self)
         case Err(rest):
-            return on_defect(rest.squash(), self)
+            return on_defect(rest.raisable(), self)
 
 
 def match_with_error[A, E, W, X, Y, Z](
@@ -592,11 +592,11 @@ class Builder(Generic[Out_co, A_co, E_co]):
         return self._when(is_failure, handle)
 
     def on_defect[B](
-        self, f: Callable[[BaseException, Failure[A_co, E_co]], B]
+        self, f: Callable[[object, Failure[A_co, E_co]], B]
     ) -> Builder[Out_co | B, A_co, E_co]:
         def handle(result: Failure[A_co, E_co]) -> Option[object]:
             defect = result.cause.find_defect()
-            return None if defect is None else Some(f(defect, result))
+            return Some(f(defect.value, result)) if isinstance(defect, Ok) else None
 
         return self._when(is_failure, handle)
 
@@ -605,7 +605,7 @@ class Builder(Generic[Out_co, A_co, E_co]):
     ) -> Builder[Out_co | B, A_co, E_co]:
         def handle(result: Failure[A_co, E_co]) -> Option[object]:
             interruptors = result.cause.filter_interruptors()
-            return None if interruptors is None else Some(f(interruptors, result))
+            return Some(f(interruptors.value, result)) if isinstance(interruptors, Ok) else None
 
         return self._when(is_failure, handle)
 
@@ -619,7 +619,7 @@ class Builder(Generic[Out_co, A_co, E_co]):
         if self._output is not None:
             return self._output.value
         if isinstance(self.result, Failure):
-            raise self.result.cause.squash()
+            raise self.result.cause.raisable()
         return None
 
     def exhaustive(self) -> Out_co:

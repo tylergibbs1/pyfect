@@ -31,6 +31,29 @@ class ResourceMethods(EffectBase[A_co, E_co, R_co]):
         uninterruptibly; if it fails, its cause is added to the result."""
         return _on_exit(as_effect(self), f)
 
+    def on_exit_primitive[E2 = Never, R2 = Never](
+        self,
+        f: Callable[[Exit[A_co, E_co]], Effect[object, E2, R2] | None],
+        interruptible: bool = False,
+    ) -> Effect[A_co, E_co | E2, R_co | R2]:
+        """``on_exit`` whose ``f`` may return ``None``, and may fail, as
+        Effect's building block for it. With ``interruptible`` the finalizer
+        stays as interruptible as the fiber is: ``f`` is still called, but an
+        interrupted fiber does not run the effect it returns."""
+
+        def run(ex: Exit[A_co, E_co]) -> Effect[object, E2, R2]:
+            after = f(ex)
+            return _core._Succeed(None) if after is None else after
+
+        effect = as_effect(self)
+        if not interruptible:
+            return _on_exit(effect, run)
+
+        def finish(ex: Exit[A_co, E_co]) -> Step:
+            return _run_finalizer(run(ex), ex)
+
+        return _core._MatchCause(effect, lambda c: finish(Failure(c)), lambda a: finish(Success(a)))
+
     def ensuring[R2 = Never](
         self, finalizer: Effect[object, Never, R2]
     ) -> Effect[A_co, E_co, R_co | R2]:

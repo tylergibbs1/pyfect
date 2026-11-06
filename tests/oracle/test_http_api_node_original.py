@@ -513,7 +513,7 @@ def _decode_security(scheme: Any, web: WebRequest, params: dict[str, str]) -> st
         .pipe(fx.provide_service(HttpServerRequest, request_from_web(web)))
         .pipe(fx.provide_service(ParsedSearchParams, params))
     )
-    return redacted.value(fx.run_sync(decoded))
+    return redacted.value(fx.run_blocking(decoded))
 
 
 def test_security_api_key_header_security() -> None:
@@ -690,7 +690,7 @@ def test_http_api_test_works() -> None:
         find = get_group(api_client, Groups).method("findById")
         assert (yield from find(params={"id": 0})) == Group(id=1, name="foo")
 
-    exit_ = fx.run_sync(
+    exit_ = fx.run_blocking(
         fx.scoped(effect.gen(program))
         .pipe(fx.provide(layer.merge(groups_live, AuthorizationLive)))
         .exit()

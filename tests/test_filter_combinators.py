@@ -113,4 +113,4 @@ def test_filter_map_reads_its_iterable_each_run() -> None:
             yield from (1, 2)
 
     eff = fx.filter_map(Twice(), fx.Ok)
-    assert (fx.run_sync(eff), fx.run_sync(eff), reads) == ([1, 2], [1, 2], 2)
+    assert (fx.run_blocking(eff), fx.run_blocking(eff), reads) == ([1, 2], [1, 2], 2)

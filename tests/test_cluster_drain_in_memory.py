@@ -94,11 +94,11 @@ ENTITIES = pytest.mark.parametrize("entity", [_durable, _volatile], ids=["persis
 
 @ENTITIES
 def test_an_in_memory_runner_drains_a_running_job(entity: Entity_):
-    log = fx.run_sync(_stop_during_a_job(entity, 5).timeout(10).or_die())
+    log = fx.run_blocking(_stop_during_a_job(entity, 5).timeout(10).or_die())
     assert log == ["job finished", "runner stopped"]
 
 
 @ENTITIES
 def test_with_a_zero_timeout_it_stops_at_once(entity: Entity_):
-    log = fx.run_sync(_stop_during_a_job(entity, 0).timeout(10).or_die())
+    log = fx.run_blocking(_stop_during_a_job(entity, 0).timeout(10).or_die())
     assert log == ["runner stopped"]

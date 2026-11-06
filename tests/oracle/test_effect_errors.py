@@ -36,11 +36,11 @@ class ErrorC(fx.TaggedError):
     pass
 
 
-def _defect(ex: fx.Exit[Any, Any]) -> BaseException:
+def _defect(ex: fx.Exit[Any, Any]) -> object:
     assert isinstance(ex, fx.Failure)
     defect = ex.cause.find_defect()
-    assert defect is not None
-    return defect
+    assert isinstance(defect, fx.Ok)
+    return defect.value
 
 
 def _error(ex: fx.Exit[Any, Any]) -> object:
@@ -711,13 +711,13 @@ def test_filter_preserves_input_order_with_concurrency_2() -> None:
 def test_filter_odd_numbers() -> None:
     """filter > odd numbers"""
     eff = fx.filter([1, 2, 3, 4, 5], lambda n: fx.succeed(n % 2 == 1))
-    assert fx.run_sync(eff) == [1, 3, 5]
+    assert fx.run_blocking(eff) == [1, 3, 5]
 
 
 def test_filter_iterable() -> None:
     """filter > iterable"""
     eff = fx.filter({1, 2, 3, 4, 5}, lambda n: fx.succeed(n % 2 == 1))
-    assert sorted(fx.run_sync(eff)) == [1, 3, 5]
+    assert sorted(fx.run_blocking(eff)) == [1, 3, 5]
 
 
 def test_predicate_filters_iterable() -> None:
@@ -773,7 +773,7 @@ def test_repeated_throwing_handlers_do_not_overflow_the_stack_and_run_finalizers
         nonlocal finalized
         finalized += 1
 
-    ex = fx.run_sync_exit(program.ensuring(fx.sync(finalize)))
+    ex = fx.run_blocking_exit(program.ensuring(fx.sync(finalize)))
     assert ex == fx.exit.die(handler_defect)
     assert finalized == 1
 

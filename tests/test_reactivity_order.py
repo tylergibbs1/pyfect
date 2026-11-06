@@ -14,7 +14,7 @@ _PACKAGE = Path(__file__).parent.parent / "src" / "pyfect" / "reactivity"
 
 
 def test_batched_invalidations_run_handlers_in_invalidation_order() -> None:
-    reactivity = fx.run_sync(make_reactivity)
+    reactivity = fx.run_blocking(make_reactivity)
     keys = [f"key-{n}" for n in range(32)]
     calls: list[str] = []
     for key in keys:
@@ -22,7 +22,7 @@ def test_batched_invalidations_run_handlers_in_invalidation_order() -> None:
     invalidations = fx.void
     for key in reversed(keys):
         invalidations = invalidations.and_then(reactivity.invalidate([key]))
-    fx.run_sync(reactivity.with_batch(invalidations))
+    fx.run_blocking(reactivity.with_batch(invalidations))
     assert calls == list(reversed(keys))
 
 

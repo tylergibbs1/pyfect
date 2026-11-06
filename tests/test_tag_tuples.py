@@ -84,20 +84,20 @@ _TAGS = (_A, _B, _C, _D, _E)
 
 def test_catch_tag_catches_the_fifth_of_five_classes() -> None:
     caught = fx.fail(_E()).pipe(fx.catch_tag(_TAGS, lambda e: fx.succeed(type(e).__name__)))
-    assert fx.run_sync(caught) == "_E"
+    assert fx.run_blocking(caught) == "_E"
 
 
 def test_stream_channel_and_layer_catch_tag_take_five_classes() -> None:
     stream = fx.stream.fail(_D()).pipe(fx.stream.catch_tag(_TAGS, lambda _: fx.stream.make(1)))
-    assert fx.run_sync(stream.run_collect()) == [1]
+    assert fx.run_blocking(stream.run_collect()) == [1]
     channel = fx.channel.fail(_C()).pipe(
         fx.channel.catch_tag(_TAGS, lambda _: fx.channel.succeed(2))
     )
-    assert fx.run_sync(channel.run_collect()) == [2]
+    assert fx.run_blocking(channel.run_collect()) == [2]
 
     class Port(fx.Tag[int]): ...
 
     built = layer.effect(Port, fx.fail(_B())).pipe(
         layer.catch_tag(_TAGS, lambda _: layer.succeed(Port, 3))
     )
-    assert fx.run_sync(Port().pipe(fx.provide(built))) == 3
+    assert fx.run_blocking(Port().pipe(fx.provide(built))) == 3

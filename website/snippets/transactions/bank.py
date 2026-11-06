@@ -61,4 +61,4 @@ def program():
     assert (yield from total(alice, bob)) == 150
 
 
-fx.run_sync(program())
+fx.run_blocking(program())

@@ -64,7 +64,7 @@ TIMEOUT = 5.0
 def run_uvicorn(program: fx.Effect[Any, Any, Any], **options: Any) -> Any:
     """Run ``program`` with a uvicorn test server (and its client)."""
     provided = scoped(program).pipe(fx.provide(uvicorn_server.layer_test(**options)))
-    return fx.run_sync(provided.or_die())
+    return fx.run_blocking(provided.or_die())
 
 
 @pytest.fixture(autouse=True)
@@ -129,7 +129,7 @@ def test_keeps_routes_isolated_between_independent_servers() -> None:
         second = yield from scoped(get("/b").zip(get("/a"))).pipe(fx.provide(serving("/b")))
         return first, second
 
-    first, second = fx.run_sync(program().or_die())
+    first, second = fx.run_blocking(program().or_die())
     assert first == ((200, "/a"), (404, ""))
     assert second == ((200, "/b"), (404, ""))
 
@@ -183,7 +183,7 @@ def test_logs_and_traces_status_101_after_an_upgraded_websocket_closes() -> None
     def record(options: Any) -> None:
         annotations = options.fiber.get_ref(CurrentLogAnnotations)
         if annotations.get("http.url") == "/ws":
-            fx.run_sync(logged.succeed(annotations.get("http.status")))
+            fx.run_blocking(logged.succeed(annotations.get("http.status")))
 
     spans = _Spans()
 
@@ -333,7 +333,7 @@ def test_closes_a_websocket_with_the_handlers_code(name: str, exit: str, code: i
     @fx.fn
     def program():
         at = yield from port
-        return (yield from _close_code(at, lambda: fx.run_sync(opened.succeed(None))))
+        return (yield from _close_code(at, lambda: fx.run_blocking(opened.succeed(None))))
 
     assert _routed("/ws", handler())(program()) == code
 

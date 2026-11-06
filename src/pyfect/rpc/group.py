@@ -19,8 +19,9 @@ on which each RPC attribute is the method calling it.
 
 from __future__ import annotations
 
+import types
 from collections.abc import Callable, Mapping
-from typing import Any, ClassVar, Never, Protocol, Self, cast, overload
+from typing import Any, ClassVar, Never, Protocol, Self, cast, get_args, get_origin, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
@@ -144,10 +145,15 @@ class RpcGroup:
     """A group of RPCs: subclass it with the RPCs as attributes."""
 
     rpcs: ClassVar[Mapping[str, AnyRpc]] = {}
+    _wraps_rpcs: ClassVar[bool] = False
     _rpc_methods: dict[str, Any]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
+        for base in types.get_original_bases(cls):
+            origin = get_origin(base)
+            if isinstance(origin, type) and issubclass(origin, RpcGroup) and origin._wraps_rpcs:
+                _add_middleware(cls, get_args(base)[0])
         found: dict[str, AnyRpc] = {}
         for klass in reversed(cls.__mro__):
             for value in vars(klass).values():
@@ -259,6 +265,23 @@ def access_handler[P, S, E](
     )
 
 
+def _add_middleware(group: type[RpcGroup], middleware: Any) -> None:
+    for name, value in list(vars(group).items()):
+        if isinstance(value, AnyRpc):
+            setattr(group, name, value.with_middleware(middleware))
+
+
+class RpcGroupWith[GM](RpcGroup):
+    """A group whose RPCs are all wrapped by ``GM`` (Effect's
+    ``RpcGroup.middleware``)::
+
+        class Users(RpcGroupWith[Auth]):
+            get = rpc.make("Users.get", ...)
+    """
+
+    _wraps_rpcs: ClassVar[bool] = True
+
+
 __all__ = [
     "Bound",
     "HandlerFn",
@@ -266,6 +289,7 @@ __all__ = [
     "Handlers",
     "HandlersFor",
     "RpcGroup",
+    "RpcGroupWith",
     "StreamBound",
     "access_handler",
     "to_layer_handler",

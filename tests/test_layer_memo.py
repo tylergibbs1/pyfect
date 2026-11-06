@@ -35,7 +35,7 @@ def test_nested_provide_reuses_the_outer_build():
     log: list[str] = []
     l1 = make_layer1(log)
     inner = S1().pipe(fx.provide(l1))
-    assert fx.run_sync(S1().and_then(inner).pipe(fx.provide(l1))) == "s1"
+    assert fx.run_blocking(S1().and_then(inner).pipe(fx.provide(l1))) == "s1"
     assert log == ["acquire1", "release1"]
 
 
@@ -46,14 +46,14 @@ def test_subsequent_provides_share_the_memo_map():
     program: fx.Effect[None] = (
         fx.void.pipe(fx.provide(base, local=True)).pipe(fx.provide(base)).pipe(fx.provide(base))
     )
-    fx.run_sync(program)
+    fx.run_blocking(program)
     assert len(builds) == 2
 
 
 def test_a_local_provide_always_builds():
     builds: list[int] = []
     base = layer.sync(Num, lambda: builds.append(1) or 42)
-    fx.run_sync(Num().pipe(fx.provide(base, local=True)).pipe(fx.provide(base)))
+    fx.run_blocking(Num().pipe(fx.provide(base, local=True)).pipe(fx.provide(base)))
     assert len(builds) == 2
 
 
@@ -76,7 +76,7 @@ def test_merged_layers_release_in_parallel():
         second = layer.effect(S2, fx.acquire_release(fx.succeed("b"), release_second))
         yield from fx.void.pipe(fx.provide(layer.merge(first, second)))
 
-    fx.run_sync(program)
+    fx.run_blocking(program)
     assert log == ["Ok(value=None)"]
 
 
@@ -86,7 +86,7 @@ def test_a_provide_inside_a_layer_reuses_what_the_build_already_built():
     log: list[str] = []
     l1 = make_layer1(log)
     uses_s1 = layer.effect(S2, S1().pipe(fx.provide(l1)))
-    fx.run_sync(S2().pipe(fx.provide(uses_s1.pipe(layer.provide_merge(l1)))))
+    fx.run_blocking(S2().pipe(fx.provide(uses_s1.pipe(layer.provide_merge(l1)))))
     assert log == ["acquire1", "release1"]
 
 
@@ -102,7 +102,7 @@ def test_layer_build_reuses_the_enclosing_provide():
         yield from scope.close(fx.Success(None))
         return built.get(S1)
 
-    assert fx.run_sync(program.pipe(fx.provide(l1))) == "s1"
+    assert fx.run_blocking(program.pipe(fx.provide(l1))) == "s1"
     assert log == ["acquire1", "release1"]
 
 
@@ -114,5 +114,5 @@ def test_sibling_nested_provides_build_their_own_layers():
     l1, l2 = make_layer1(log), make_layer(S2, 2, log)
     inner = S2().pipe(fx.provide(l2))
     program = S1().and_then(inner).and_then(inner).pipe(fx.provide(l1))
-    assert fx.run_sync(program) == "s2"
+    assert fx.run_blocking(program) == "s2"
     assert log == ["acquire1", "acquire2", "release2", "acquire2", "release2", "release1"]

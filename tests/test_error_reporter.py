@@ -193,10 +193,8 @@ def test_any_object_can_carry_the_report_attributes():
 
 
 def test_a_severity_that_is_not_one_reads_as_info():
-    """Effect gives ``Info`` for an unknown severity. It passes ``All`` and
-    ``None`` through; pyfect reads them as ``INFO`` too, since a report's
-    severity is a ``Severity``."""
-    for bad in ("Loud", 30, fx.LogLevel.NONE, fx.LogLevel.ALL):
+    """Effect gives ``Info`` for an unknown severity."""
+    for bad in ("Loud", 30):
         error = ValueError()
         error.report_severity = bad  # pyright: ignore[reportAttributeAccessIssue]
         assert error_reporter.get_severity(error) == fx.LogLevel.INFO

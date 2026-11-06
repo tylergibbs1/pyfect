@@ -15,7 +15,8 @@ Server:
 
 - ``server``: the ``HttpServer`` service, ``serve`` and the test client;
   ``live_server``: the stdlib HTTP/1.1 server behind it;
-  ``uvicorn_server``: one on uvicorn (``pyfect-dev[server]``)
+  ``uvicorn_server``: one on uvicorn (``pyfect-dev[server]``);
+  ``hypercorn_server``: one that also speaks HTTP/2 (``pyfect-dev[http2]``)
 - ``asgi``: apps as ASGI applications (``to_asgi``), and ASGI applications
   (FastAPI, Starlette) as apps (``from_asgi``)
 - ``server_request`` / ``server_response`` / ``server_error`` /
@@ -37,7 +38,7 @@ Server:
         res = yield from client.get("https://example.com")
         return (yield from res.text)
 
-    fx.run_sync(program().pipe(fx.provide(httpx_client.layer)))
+    fx.run_blocking(program().pipe(fx.provide(httpx_client.layer)))
 """
 
 from pyfect.http import (

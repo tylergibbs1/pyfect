@@ -36,7 +36,7 @@ def test_an_interrupt_right_after_its_request_runs_the_handlers_cleanup() -> Non
             yield from effect.yield_now()
         return cleaned
 
-    assert fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die()) == ["never"]
+    assert fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die()) == ["never"]
 
 
 class Gated(RpcGroup):
@@ -75,7 +75,7 @@ def _messages_when_the_handler_signals(follow_up: Interrupt | Eof) -> list[str]:
         yield from fx.sleep(0.2)
         return seen
 
-    return fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die())
+    return fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die())
 
 
 def test_eof_written_while_the_handler_starts_waits_for_the_handler() -> None:

@@ -56,10 +56,12 @@ _INTERNAL = {
 }
 
 
-def _off_thread(thunk: Callable[[], object]) -> fx.Effect[BaseException | None]:
+def _off_thread(thunk: Callable[[], object]) -> fx.Effect[object]:
     """The defect of running ``thunk`` on a blocking thread, if any."""
     return (
-        fx.blocking(thunk).exit().map(lambda ex: ex.cause.find_defect() if is_failure(ex) else None)
+        fx.blocking(thunk)
+        .exit()
+        .map(lambda ex: ex.cause.defects[0] if is_failure(ex) and ex.cause.defects else None)
     )
 
 
@@ -110,8 +112,8 @@ def test_a_registry_whose_scheduler_is_not_running_can_be_read_from_any_thread()
         registry.set(_counter, 3)
         yield from fx.void
 
-    fx.run_sync(build)
+    fx.run_blocking(build)
     [registry] = registries
     seen: list[Any] = []
-    fx.run_sync(fx.blocking(lambda: seen.append(registry.get(_counter))))
+    fx.run_blocking(fx.blocking(lambda: seen.append(registry.get(_counter))))
     assert seen == [3]

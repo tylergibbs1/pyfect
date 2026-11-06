@@ -40,7 +40,6 @@ from pyfect.cause import (
     Die,
     Fail,
     Interrupt,
-    UnhandledError,
     from_reasons,
     reason_annotations,
 )
@@ -244,7 +243,7 @@ def test_preserves_thrown_schema_defects_in_success_and_failure_assertions(metho
     ):
         ex = yield from eff.exit()
         assert isinstance(ex, Failure)
-        assert ex.cause.find_defect() is defect
+        assert ex.cause.defects[0] is defect
         assert not ex.cause.has_fails
 
 
@@ -296,11 +295,9 @@ def test_preserves_validation_failures_and_defective_finalizers(method: Directio
         ex = yield from eff.exit()
         assert isinstance(ex, Failure)
         validation, cleanup = ex.cause.reasons
-        # The finalizer's defect elects the issue to a defect where it
-        # happens, wrapped so it can be raised (section 4, ``Cause.squash``).
+        # The finalizer's defect elects the issue to a defect where it happens.
         assert isinstance(validation, Die)
-        assert isinstance(validation.defect, UnhandledError)
-        assert isinstance(validation.defect.error, InvalidType)
+        assert isinstance(validation.defect, InvalidType)
         assert cleanup == Die(defect)
     with pytest.raises(AssertionError):
         assertions.fail(123, "Expected string")
@@ -443,11 +440,9 @@ def test_make_preserves_mixed_causes_from_constructor_defaults():
     ex = yield from SchemaAsserts(schema).make().fail_effect({}, "schema issue").exit()
     assert isinstance(ex, Failure)
     validation, cleanup = ex.cause.reasons
-    # The finalizer's defect elects the issue to a defect where it happens
-    # (section 4, ``Cause.squash``).
+    # The finalizer's defect elects the issue to a defect where it happens.
     assert isinstance(validation, Die)
-    assert isinstance(validation.defect, UnhandledError)
-    found = validation.defect.error
+    found = validation.defect
     assert is_issue(found)
     assert "schema issue" in format_issue(found)
     assert cleanup == Die(defect)
@@ -473,8 +468,7 @@ def test_round_trips_preserve_mixed_causes(method: Direction):
     assert isinstance(ex, Failure)
     validation, cleanup = ex.cause.reasons
     assert isinstance(validation, Die)
-    assert isinstance(validation.defect, UnhandledError)
-    found = validation.defect.error
+    found = validation.defect
     assert is_issue(found)
     assert format_issue(found) == "schema issue"
     assert cleanup == Die(defect)

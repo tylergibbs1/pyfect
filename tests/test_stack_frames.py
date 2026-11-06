@@ -118,7 +118,7 @@ def test_an_external_parent_span_adds_no_frame():
 @testing.effect
 def test_a_frame_without_a_location_prints_its_name_alone():
     ex = yield from fx.fail("x").with_span("nostack", capture_stack_trace=False).exit()
-    assert _cause(ex).pretty() == "pyfect.cause.UnhandledError: 'x'\n    at nostack"
+    assert _cause(ex).pretty() == "Error: x\n    at nostack"
 
 
 @testing.effect
@@ -136,8 +136,8 @@ def test_a_named_fn_records_its_call_and_definition_frames():
 
 
 @testing.effect
-def test_a_bare_fn_records_no_frame():
-    @fx.fn
+def test_fn_untraced_records_no_frame():
+    @fx.fn_untraced
     def untraced():
         return (yield from CurrentStackFrame())
 
@@ -176,7 +176,7 @@ def test_a_race_loser_records_the_racing_fibers_frame():
 def test_children_interrupted_when_their_parent_ends_record_their_own_frame():
     exits: list[fx.Exit[Any, Any]] = []
 
-    @fx.fn
+    @fx.fn_untraced
     def parent():
         yield from fx.never.on_exit(lambda ex: fx.sync(lambda: exits.append(ex))).fork(
             start_immediately=True

@@ -358,7 +358,7 @@ def test_keeps_local_writes_working_after_an_enclosing_transaction_rolls_back_an
         failed = isinstance(rolled_back, fx.Failure)
         return failed, written_id, id_strings((yield from journal.entries))
 
-    rolled_back, written_id, entries = fx.run_sync(fx.scoped(_run(body)))
+    rolled_back, written_id, entries = fx.run_blocking(fx.scoped(_run(body)))
     assert rolled_back
     assert written_id is not None, "the local write failed after the import was rolled back"
     assert entries == [written_id]

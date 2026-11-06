@@ -323,10 +323,13 @@ class _AfterStarted[A](Effect[A, Never, Never]):
 
 @final
 class _YieldNow(Effect[None, Never, Never]):
-    __slots__ = ()
+    __slots__ = ("priority",)
+
+    def __init__(self, priority: int = 0) -> None:
+        self.priority = priority
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
-        return fiber._yield_now()
+        return fiber._yield_now(self.priority)
 
 
 @final

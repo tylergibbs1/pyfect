@@ -24,7 +24,7 @@ from collections.abc import Callable, Generator
 from functools import partial
 from typing import TYPE_CHECKING, Any, Concatenate, Never, Unpack, cast, overload
 
-from pyfect._core import Effect, _FailCause, _Gen, _Locally, _Suspend
+from pyfect._core import Effect, _FailCause, _Gen, _Locally, _Succeed, _Suspend
 from pyfect._stack_frame import CurrentStackFrame, StackFrame, call_site
 from pyfect.cause import die as die_cause
 from pyfect.context import Context
@@ -43,17 +43,6 @@ type Pipe[X, Y, **P] = Callable[[X], Y] | Callable[Concatenate[X, P], Y]
 type _Body = Callable[..., Generator[Effect[Any, Any, Any], Any, Any]]
 type _AnyBody = Callable[..., Generator[Effect[Any, Any, Any], Any, Any] | Effect[Any, Any, Any]]
 type _Applied = Callable[[object, tuple[Any, ...], dict[str, Any]], object]
-
-
-def generator_function(f: Callable[..., Any], api: str) -> None:
-    """``f``, checked to be a generator function when it is a ``def``: one
-    with no ``yield`` would run its effects' constructors and none of them.
-    (A lambda returning a generator is checked when it runs.)"""
-    if inspect.isfunction(f) and f.__name__ != "<lambda>" and not inspect.isgeneratorfunction(f):
-        raise TypeError(
-            f"{api}: {f.__qualname__} is not a generator function; an effect inside it "
-            "runs only with `yield from effect`"
-        )
 
 
 def _annotates_return(f: Callable[..., Any]) -> bool:
@@ -103,7 +92,6 @@ def _appliers(pipeables: tuple[Callable[..., Any], ...]) -> tuple[_Applied, ...]
 
 
 def _untraced(f: _Body, pipeables: tuple[Callable[..., Any], ...]) -> Callable[..., Any]:
-    generator_function(f, "fn")
     typed_generic_body(f, "fn")
     appliers = _appliers(pipeables)
 
@@ -139,12 +127,12 @@ def _traced(
     f: _AnyBody,
     name: str,
     definition: Callable[[], str | None],
-    span: SpanOptions,
+    span: SpanOptions | None,
     pipeables: tuple[Callable[..., Any], ...],
 ) -> Callable[..., Any]:
     """``f`` as a function returning an effect that runs inside a span
-    ``name`` and a stack frame for the call (``name`` at the call site)
-    under one for the definition."""
+    ``name``, unless ``span`` is ``None``, and a stack frame for the call
+    (``name`` at the call site) under one for the definition."""
     from pyfect.tracer._spans import in_parent_span, span_using
 
     typed_generic_body(f, "fn")
@@ -169,7 +157,9 @@ def _traced(
         if not isinstance(result, Effect):
             return result
         body = cast("Effect[Any, Any, Any]", result)
-        traced: Effect[Any, Any, Any] = span_using(name, partial(in_parent_span, body), span)
+        traced: Effect[Any, Any, Any] = (
+            body if span is None else span_using(name, partial(in_parent_span, body), span)
+        )
         located: Effect[Any, Any, Any] = _Locally(traced, enter_at(call_site(1)))
         return located
 
@@ -525,7 +515,8 @@ def fn(
     Each call of a named function also runs inside a stack frame for its
     call site under one for the definition (``"name (definition)"``), so a
     failure inside records both (``tracer.StackTrace``). The bare ``@fn``
-    is Effect's ``fnUntraced`` (``fn_untraced``): no span and no frames.
+    has those frames, named ``"Effect.fn"``, and no span, as Effect's unnamed
+    ``Effect.fn``; ``fn_untraced`` has neither.
 
     Pipeables after the body post-process each call's effect (see the
     module docstring): ``fn(body, lambda eff, user_id: eff.map(...))``,
@@ -537,7 +528,7 @@ def fn(
         return _Traced(f, options, call_site(1))
     if options:
         raise TypeError("fn: span options go with a name, as fn(name, **span_options)(body)")
-    return _untraced(f, pipeables)
+    return _traced(f, "Effect.fn", call_site(1), None, pipeables)
 
 
 # --- generated fn_untraced overloads (tests/test_fn_overloads.py) ---
@@ -640,9 +631,75 @@ def fn_untraced[**P, A, B1, B2, B3, B4, B5, B6, B7, B8, B9, E = Never, R = Never
 def fn_untraced(f: _Body, /, *pipeables: Callable[..., Any]) -> Callable[..., Any]:
     """Effect's ``fnUntraced``: ``f``, a generator function, as a function
     returning an effect, with no span and no stack frames; pipeables
-    post-process each call's effect (see the module docstring). The bare
-    ``@fn`` is the same."""
+    post-process each call's effect (see the module docstring)."""
     return _untraced(f, pipeables)
 
 
-__all__ = ["Pipe", "fn", "fn_untraced", "generator_function"]
+def _resumed(
+    generator: Generator[Effect[Any, Any, Any], Any, Any], first: Effect[Any, Any, Any]
+) -> Generator[Effect[Any, Any, Any], Any, Any]:
+    """The rest of ``generator``, whose last yield was ``first``."""
+    current = first
+    try:
+        while True:
+            value = yield current
+            try:
+                current = generator.send(value)
+            except StopIteration as stop:
+                return stop.value
+    finally:
+        generator.close()
+
+
+def _eager_run(
+    start: Callable[[], Generator[Effect[Any, Any, Any], Any, Any]],
+) -> Effect[Any, Any, Any]:
+    """Run the body up to its first effect that holds no exit, at once. The
+    effect then goes on from there on its first run, and restarts the body
+    on any later one (Effect's ``fromIteratorEagerUnsafe``)."""
+    try:
+        generator = start()
+        value: Any = None
+        while True:
+            try:
+                effect = generator.send(value)
+            except StopIteration as stop:
+                return _Succeed(stop.value)
+            if isinstance(effect, _Succeed):
+                value = effect.value
+                continue
+            if isinstance(effect, _FailCause):
+                generator.close()
+                return effect
+            break
+    except Exception as exc:
+        return _FailCause(die_cause(exc))
+    first_run = True
+
+    def resume() -> Effect[Any, Any, Any]:
+        nonlocal first_run
+        if first_run:
+            first_run = False
+            return _Gen(lambda: _resumed(generator, effect))
+        return _Gen(start)
+
+    return _Suspend(resume)
+
+
+def fn_untraced_eager[**P, A, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]], /, *pipeables: Callable[..., Any]
+) -> Callable[P, Effect[A, E, R]]:
+    """``fn_untraced``, but a call runs the body at once while its effects
+    already hold their exits (Effect's ``fnUntracedEager``)."""
+
+    @functools.wraps(f)
+    def call(*args: P.args, **kwargs: P.kwargs) -> Effect[A, E, R]:
+        effect: Any = _eager_run(lambda: f(*args, **kwargs))
+        for pipeable in pipeables:
+            effect = pipeable(effect)
+        return effect
+
+    return call
+
+
+__all__ = ["Pipe", "fn", "fn_untraced", "fn_untraced_eager"]

@@ -33,7 +33,7 @@ from pyfect.deferred import Deferred
 from pyfect.exit import Failure, Success
 from pyfect.option import Some
 from pyfect.result import Ok
-from pyfect.run import run_sync, run_sync_exit
+from pyfect.run import run_blocking, run_blocking_exit
 from pyfect.schema.issue import InvalidValue, Issue, is_issue
 from pyfect.testing import SchemaAsserts
 
@@ -58,7 +58,7 @@ def test_flip_should_work_with_with_constructor_default():
     make.succeed({}, {"a": -1})
 
     flipped = S.flip(schema)
-    assert isinstance(run_sync_exit(flipped.make_effect({})), Failure)
+    assert isinstance(run_blocking_exit(flipped.make_effect({})), Failure)
     SchemaAsserts(flipped).make().succeed({"a": "1"})
 
     flipped2 = S.flip(flipped)
@@ -201,7 +201,7 @@ def test_struct_effect_async_service():
     make.succeed({}, {"a": -1})
     made = schema.make_effect({})  # pyright: ignore[reportArgumentType]
     provided = made.pipe(fx.provide_service(_Service, fx.succeed(0.0)))
-    assert run_sync_exit(provided) == Success({"a": 0})
+    assert run_blocking_exit(provided) == Success({"a": 0})
 
 
 def test_tuple_some():
@@ -255,7 +255,7 @@ def test_make_effect_should_preserve_mixed_schema_issue_and_defect_causes():
     boom = RuntimeError("defect")
     cause: Cause[Issue] = Cause((Fail(InvalidValue({"message": "schema issue"})), Die(boom)))
     schema = S.Struct(_OptionalA, a=S.String.pipe(S.with_constructor_default(fx.fail_cause(cause))))
-    exit = run_sync_exit(schema.make_effect({}))
+    exit = run_blocking_exit(schema.make_effect({}))
     assert isinstance(exit, Failure)
     assert any(isinstance(r, Die) for r in exit.cause.reasons)
     error = exit.cause.find_error()
@@ -323,9 +323,9 @@ def test_applies_concurrency_to_constructor_defaults():
     """product concurrency / applies concurrency to constructor defaults"""
 
     def program() -> fx.Effect[_AB, Issue]:
-        first = run_sync(Deferred[None].make())
-        second = run_sync(Deferred[None].make())
-        release = run_sync(Deferred[None].make())
+        first = run_blocking(Deferred[None].make())
+        second = run_blocking(Deferred[None].make())
+        release = run_blocking(Deferred[None].make())
 
         def field(
             value: str, started: Deferred[None]
@@ -347,7 +347,7 @@ def test_applies_concurrency_to_constructor_defaults():
             )
         )
 
-    assert run_sync_exit(program()) == Success({"a": "a", "b": "b"})
+    assert run_blocking_exit(program()) == Success({"a": "a", "b": "b"})
 
 
 def test_stores_constructor_defaults_directly_in_the_context():

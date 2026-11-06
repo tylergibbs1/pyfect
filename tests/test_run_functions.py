@@ -26,9 +26,9 @@ def describe():
     return f"{name}:{port}"
 
 
-def test_run_sync_with_a_context():
-    assert fx.run_sync(describe, context=services) == "ada:8080"
-    ex = fx.run_sync_exit(Name().and_then(fx.fail("no")), context=services)
+def test_run_blocking_with_a_context():
+    assert fx.run_blocking(describe, context=services) == "ada:8080"
+    ex = fx.run_blocking_exit(Name().and_then(fx.fail("no")), context=services)
     assert isinstance(ex, fx.Failure)
 
 
@@ -37,7 +37,7 @@ def test_run_async_with_a_context():
 
 
 def test_a_context_with_more_services_than_needed_is_accepted():
-    assert fx.run_sync(Name(), context=services) == "ada"
+    assert fx.run_blocking(Name(), context=services) == "ada"
 
 
 def test_run_fork_without_a_fiber_loop_or_scheduler_raises():
@@ -99,8 +99,8 @@ def test_a_finalizer_sees_the_closing_fibers_services_under_its_own():
         yield from scope.add_finalizer(lambda _ex: describe.map(seen.append))
 
     closing = fx.CloseableScope()
-    fx.run_sync(
+    fx.run_blocking(
         register.pipe(fx.provide_service(fx.Scope, closing)), context=fx.Context.make(Name, "own")
     )
-    fx.run_sync(closing.close(fx.Success(None)), context=services)
+    fx.run_blocking(closing.close(fx.Success(None)), context=services)
     assert seen == ["own:8080"]

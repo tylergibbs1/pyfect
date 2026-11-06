@@ -33,7 +33,7 @@ def test_import_pyfect_context_reaches_the_context_module():
 def test_fx_context_is_still_the_effect_of_the_current_services():
     class Db(fx.Tag[str]): ...
 
-    services = fx.run_sync(fx.context(Db).pipe(fx.provide_service(Db, "db")))
+    services = fx.run_blocking(fx.context(Db).pipe(fx.provide_service(Db, "db")))
     assert services.get(Db) == "db"
 
 

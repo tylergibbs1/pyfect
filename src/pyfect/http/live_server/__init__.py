@@ -74,8 +74,8 @@ class Options(TypedDict):
     ``requestTimeout``, 300s); a body that does not fails its read and the
     connection is closed."""
     websocket_max_message_size: NotRequired[int]
-    """The longest WebSocket message a client may send (16 MiB, as uvicorn's
-    ``ws_max_size``); a longer one closes the connection with 1009."""
+    """The longest WebSocket message a client may send (100 MiB, as `ws`'s
+    ``maxPayload``); a longer one closes the connection with 1009."""
 
 
 class TlsOptions(Options):

@@ -28,7 +28,7 @@ from pyfect.encoding._archive import decode_channel
 from pyfect.encoding.tar._decoder import Decoder
 from pyfect.encoding.tar._encoder import SLAB_SIZE, Encoder
 from pyfect.encoding.tar._header import EPOCH, TYPEFLAGS
-from pyfect.encoding.tar._model import Entry, EntryType, Header, TarError, TarErrorKind
+from pyfect.encoding.tar._model import Entry, EntryType, FarDate, Header, TarError, TarErrorKind
 from pyfect.exit import Success, void
 from pyfect.exit import fail as fail_exit
 from pyfect.pull import catch_done
@@ -39,6 +39,7 @@ from pyfect.stream._base import require_stream
 __all__ = [
     "Entry",
     "EntryType",
+    "FarDate",
     "Header",
     "TarError",
     "TarErrorKind",
@@ -79,7 +80,7 @@ def _header(
     gid: int | None,
     uname: str | None,
     gname: str | None,
-    mtime: datetime | None,
+    mtime: datetime | FarDate | None,
     pax: Mapping[str, str] | None,
 ) -> Header:
     default_mode = 0o755 if kind == "Directory" else 0o777 if kind == "Symlink" else 0o644
@@ -108,7 +109,7 @@ def file(
     gid: int | None = None,
     uname: str | None = None,
     gname: str | None = None,
-    mtime: datetime | None = None,
+    mtime: datetime | FarDate | None = None,
     pax: Mapping[str, str] | None = None,
 ) -> Entry:
     """A regular file from in-memory content; a ``str`` is encoded as UTF-8. Unset
@@ -141,7 +142,7 @@ def file_stream[E = Never, R = Never](
     gid: int | None = None,
     uname: str | None = None,
     gname: str | None = None,
-    mtime: datetime | None = None,
+    mtime: datetime | FarDate | None = None,
     pax: Mapping[str, str] | None = None,
 ) -> Entry[E, R]:
     """A regular file streamed from ``body``, which runs when the entry is encoded.
@@ -172,7 +173,7 @@ def directory(
     gid: int | None = None,
     uname: str | None = None,
     gname: str | None = None,
-    mtime: datetime | None = None,
+    mtime: datetime | FarDate | None = None,
     pax: Mapping[str, str] | None = None,
 ) -> Entry:
     """A directory (mode ``0o755`` by default). A trailing ``/`` is added to a
@@ -203,7 +204,7 @@ def symlink(
     gid: int | None = None,
     uname: str | None = None,
     gname: str | None = None,
-    mtime: datetime | None = None,
+    mtime: datetime | FarDate | None = None,
     pax: Mapping[str, str] | None = None,
 ) -> Entry:
     """A symbolic link to ``target`` (mode ``0o777`` by default)."""
@@ -232,7 +233,7 @@ def hardlink(
     gid: int | None = None,
     uname: str | None = None,
     gname: str | None = None,
-    mtime: datetime | None = None,
+    mtime: datetime | FarDate | None = None,
     pax: Mapping[str, str] | None = None,
 ) -> Entry:
     """A hard link to ``target``, the archive path of an entry written earlier."""

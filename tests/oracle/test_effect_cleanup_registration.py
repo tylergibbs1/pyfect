@@ -3,7 +3,7 @@
 
 Each test's docstring is the Effect test title. Effect's tests pause the
 child with a custom ``Scheduler.shouldYield`` right after its context
-changes, then interrupt it. pyfect has no per-step hook, so the ports sweep
+changes, then interrupt it. The ports sweep
 ``MaxOpsBeforeYield`` budgets until the pause has landed at every step of
 the body, and interrupt the paused child each time.
 

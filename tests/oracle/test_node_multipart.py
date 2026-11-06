@@ -14,7 +14,7 @@ def test_fails_with_a_typed_parse_error_when_the_boundary_is_missing() -> None:
     parts = body.pipe_through_channel(
         multipart.make_channel({"content-type": "multipart/form-data"})
     )
-    exit = fx.run_sync_exit(parts.run_collect())
+    exit = fx.run_blocking_exit(parts.run_collect())
     assert isinstance(exit, Failure)
     error = exit.cause.squash()
     assert isinstance(error, multipart.MultipartError)

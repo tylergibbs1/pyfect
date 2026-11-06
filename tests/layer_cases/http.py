@@ -39,6 +39,7 @@ from pyfect.http import client as http_client
 from pyfect.http import (
     etag,
     httpx_client,
+    hypercorn_server,
     live_server,
     platform,
     prometheus,
@@ -209,6 +210,12 @@ _HTTP: dict[str, Case] = {
             fx.provide(server.serve(_ok_app()).pipe(L.provide_merge(value)))
         ),
     ),
+    "pyfect.http.hypercorn_server.layer_test": Case(
+        layer=hypercorn_server.layer_test,
+        run=lambda value: _get("/", "ok").pipe(
+            fx.provide(server.serve(_ok_app()).pipe(L.provide_merge(value)))
+        ),
+    ),
     "pyfect.http.uvicorn_server.layer_test": Case(
         layer=uvicorn_server.layer_test,
         run=lambda value: _get("/", "ok").pipe(
@@ -302,6 +309,12 @@ _CLIENTS: dict[str, Case] = {
     ),
     "pyfect.http.live_server.layer_server": Case(
         layer=lambda: live_server.layer_server(host="127.0.0.1"), run=_with_httpx
+    ),
+    "pyfect.http.hypercorn_server.layer": Case(
+        layer=lambda: hypercorn_server.layer(host="127.0.0.1"), run=_with_httpx
+    ),
+    "pyfect.http.hypercorn_server.layer_server": Case(
+        layer=lambda: hypercorn_server.layer_server(host="127.0.0.1"), run=_with_httpx
     ),
     "pyfect.http.uvicorn_server.layer": Case(
         layer=lambda: uvicorn_server.layer(host="127.0.0.1"), run=_with_httpx

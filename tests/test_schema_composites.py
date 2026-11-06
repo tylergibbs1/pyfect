@@ -295,7 +295,7 @@ def test_a_parsed_reason_has_no_annotations_and_interrupts_are_kept():
 def test_non_cause_inputs_name_what_was_expected():
     defects = S.instance_of(Exception)
     SchemaAsserts(S.Cause(S.String, defects)).decoding().fail("x", "Expected Cause")
-    SchemaAsserts(S.CauseReason(S.String, defects)).decoding().fail("x", "Expected Cause.Reason")
+    SchemaAsserts(S.CauseReason(S.String, defects)).decoding().fail("x", "Expected Cause.Failure")
     SchemaAsserts(S.Exit(S.String, S.String, defects)).decoding().fail(
         cause.fail("a"), "Expected Exit"
     )

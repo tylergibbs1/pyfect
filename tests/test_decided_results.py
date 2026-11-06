@@ -47,7 +47,7 @@ class _InterruptAt:
         self.target: fx.Fiber[Any, Any] | None = None
         self.fired = False
 
-    def schedule(self, task: Task) -> None:
+    def schedule(self, task: Task, priority: int = 0) -> None:
         self.seen += 1
         target = self.target
         if self.seen == self.at and target is not None:
@@ -118,7 +118,7 @@ def _attempt(case: _Case, budget: int, k: int, at: int) -> tuple[bool, str | Non
 
         return fx.scoped(program)
 
-    return fx.run_sync(fx.CurrentScheduler().flat_map(under))
+    return fx.run_blocking(fx.CurrentScheduler().flat_map(under))
 
 
 def _sweep(
@@ -307,7 +307,7 @@ _ARCHIVE_BODY = b"the body of the entry" * 40
 
 def _encoded(encode: Callable[[], Any], entry: Any) -> bytes:
     made: Any = stream.make(entry).pipe_through_channel(encode()).run_bytes()
-    return fx.run_sync(made)
+    return fx.run_blocking(made)
 
 
 # Not transactions (``TxQueue.take``): as in Effect's ``tx``, the commit runs

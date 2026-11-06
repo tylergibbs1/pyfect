@@ -5,13 +5,11 @@ from api_coverage import Cluster, Module
 
 ISINSTANCE = "`TypeId` symbols and `is*` guards"
 ONE_NONE = "Option `none()` / `some(a)` / `isOption`"
-AND_THEN = "`and_then(next)` takes the next Option / Result"
 DO = "Do / bind / Option.gen"
 ORDER = "Order, Equivalence, Combiner, Reducer"
 PREDICATE = "Data.Class, TaggedEnum, Match, Predicate"
 FUNCTION = "Function (pipe, flow, dual, …)"
 FILTER = "Effect's `Filter` module"
-EAGER = "`*Eager` variants"
 SERVICE = "`Effect.service(tag)`, `Effect.scope`, `contextWith(f)`"
 RUN_WITH = "`runForkWith(context)`"
 
@@ -35,20 +33,16 @@ EFFECT = Module(
     pythonic={
         "TypeId": (ISINSTANCE, "`isinstance(x, Effect)`"),
         "isEffect": (ISINSTANCE, "`isinstance(x, Effect)`"),
-        "whileLoop": ("`Effect.whileLoop`", "a `while` loop in `fx.gen`"),
         "undefined": (ONE_NONE, "`fx.void`"),
         "Do": (DO, "generator locals"),
         "bindTo": (DO, "generator locals"),
         "bind": (DO, "generator locals"),
         "let": (DO, "generator locals"),
-        "yieldNowWith": ("`Effect.yieldNowWith(priority)`", "`yield_now()`"),
         "catchTags": ("`Effect.catchTags({ A: f, B: g })`", "chained `catch_tag`"),
         "contextWith": (SERVICE, "`fx.context(*tags).map(f)`"),
         "service": (SERVICE, "the tag: `Database()`"),
         "scope": (SERVICE, "the tag: `Scope()`"),
-        "onExitPrimitive": ("`Effect.onExitPrimitive`", "`on_exit`"),
         "abortSignal": ("Effect.promise / tryPromise / callback(AbortSignal)", "`callback`"),
-        "replicate": ("`Effect.replicate(n)`", "`[eff] * n`"),
         "spanAnnotations": ("`spanAnnotations`", "`tracer.TracerSpanAnnotations`"),
         "spanLinks": ("`spanAnnotations`", "`tracer.TracerSpanLinks`"),
         "tracer": ("`Effect.tracer`", "`tracer.CurrentTracer`"),
@@ -58,19 +52,9 @@ EFFECT = Module(
         "runPromiseExitWith": (RUN_WITH, "`run_async_exit(eff, context=)`"),
         "runSyncWith": (RUN_WITH, "`run_sync(eff, context=)`"),
         "runSyncExitWith": (RUN_WITH, "`run_sync_exit(eff, context=)`"),
-        "effectify": ("`Effect.effectify`", "`callback` / `from_async`"),
         "satisfiesSuccessType": ("`satisfiesSuccessType`", "an annotation"),
         "satisfiesErrorType": ("`satisfiesSuccessType`", "an annotation"),
         "satisfiesServicesType": ("`satisfiesSuccessType`", "an annotation"),
-        "matchEager": (EAGER, "`match`"),
-        "matchCauseEager": (EAGER, "`match_cause`"),
-        "matchCauseEffectEager": (EAGER, "`match_cause_effect`"),
-        "mapEager": (EAGER, "`map`"),
-        "mapErrorEager": (EAGER, "`map_error`"),
-        "mapBothEager": (EAGER, "`map_both`"),
-        "flatMapEager": (EAGER, "`flat_map`"),
-        "catchEager": (EAGER, "`catch_all`"),
-        "fnUntracedEager": (EAGER, "`fn_untraced`"),
     },
 )
 
@@ -125,17 +109,12 @@ CAUSE = Module(
                 "isIllegalArgumentError": "IllegalArgumentError",
                 "isExceededCapacityError": "ExceededCapacityError",
                 "ExceededCapacityErrorTypeId": "ExceededCapacityError",
-                "AsyncFiberErrorTypeId": "AsyncioRequiredError",
-                "isAsyncFiberError": "AsyncioRequiredError",
+                "AsyncFiberErrorTypeId": "AsyncFiberError",
+                "isAsyncFiberError": "AsyncFiberError",
                 "UnknownErrorTypeId": "UnknownError",
                 "isUnknownError": "UnknownError",
             }.items()
         },
-        "done": ("`Cause.done(value)`", "`fx.fail(Done(value))`"),
-        "AsyncFiberError": (
-            "`runSync` of an async effect throws `AsyncFiberError`",
-            "`AsyncioRequiredError`",
-        ),
     },
 )
 
@@ -158,7 +137,6 @@ RESULT = Module(
     pythonic={
         "makeEquivalence": (ORDER, "`==`"),
         "getOrUndefined": (ONE_NONE, "`get_or_none()`"),
-        "andThen": (AND_THEN, "`and_then(next)`, `flat_map`, `map`"),
         "gen": (DO, "generator locals"),
         "Do": (DO, "generator locals"),
         "bind": (DO, "generator locals"),
@@ -187,7 +165,6 @@ OPTION = Module(
         "fromUndefinedOr": (ONE_NONE, "`from_optional`"),
         "fromNullOr": (ONE_NONE, "`from_optional`"),
         "getOrUndefined": (ONE_NONE, "`get_or_none`"),
-        "andThen": (AND_THEN, "`and_then(o, next)`, `flat_map`, `as_`"),
         "makeEquivalence": (ORDER, "`==`"),
         "makeOrder": (ORDER, "`key=` functions"),
         "makeReducer": (ORDER, "`functools.reduce`"),

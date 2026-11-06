@@ -19,7 +19,7 @@ class TaskQueue:
         self.tasks: list[Task] = []
         self._outside = WakeTracker()
 
-    def schedule(self, task: Task) -> None:
+    def schedule(self, task: Task, priority: int = 0) -> None:
         self.tasks.append(task)
 
     def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:

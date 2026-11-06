@@ -29,7 +29,7 @@ def _ok[A](result: fx.Result[A, object]) -> A:
 
 def test_a_config_url_writes_itself_out_in_an_f_string():
     provider = cp.from_unknown({"PAYOUT_URL": "http://localhost:8000"})
-    url = fx.run_sync(config.url("PAYOUT_URL").parse(provider).or_die())
+    url = fx.run_blocking(config.url("PAYOUT_URL").parse(provider).or_die())
     assert f"{url}/payouts" == "http://localhost:8000/payouts"
     assert url.geturl() == "http://localhost:8000"  # still a SplitResult
 

@@ -68,7 +68,7 @@ def _assert_rpc_error(exit: Exit.Exit[Any, Any]) -> None:
 
 
 def _run(body: Callable[[], Any]) -> Any:
-    return fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die())
+    return fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die())
 
 
 # --- socket ----------------------------------------------------------------------------

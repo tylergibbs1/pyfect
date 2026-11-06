@@ -236,7 +236,7 @@ def test_aggregate_ends_a_run_at_each_schedule_step_while_the_sink_waits():
     ]
     taking: Sink[list[int], int, int] = sink.take(2)
     assert (yield from _chunks().aggregate(taking).run_collect()) == [[1, 2], [3, 4], [5], [6]]
-    summed = stream.range_inclusive(1, 10, chunk_size=3).aggregate(sink.sum())
+    summed = stream.range(1, 10, chunk_size=3).aggregate(sink.sum())
     assert (yield from summed.run_collect()) == [6, 15, 24, 10]
 
 

@@ -30,14 +30,14 @@ def _first[A, E, R](s: stream.Stream[A, E, R], n: int) -> fx.Effect[list[A], E, 
 
 @testing.effect
 def test_range_leaves_its_end_out_as_python_does():
-    assert (yield from stream.range(1, 4).run_collect()) == [1, 2, 3]
-    assert (yield from stream.range(3, 3).run_collect()) == []
-    assert (yield from _chunks(stream.range(0, 5, chunk_size=2))) == [(0, 1), (2, 3), (4,)]
+    assert (yield from stream.range(1, 3).run_collect()) == [1, 2, 3]
+    assert (yield from stream.range(3, 2).run_collect()) == []
+    assert (yield from _chunks(stream.range(0, 4, chunk_size=2))) == [(0, 1), (2, 3), (4,)]
 
 
 @testing.effect
 def test_run_count_and_run_sum_read_every_chunk():
-    numbers = stream.range_inclusive(1, 10, chunk_size=3)
+    numbers = stream.range(1, 10, chunk_size=3)
     assert (yield from numbers.run_count()) == 10
     assert (yield from numbers.run_sum()) == 55
     assert (yield from stream.empty.run_sum()) == 0

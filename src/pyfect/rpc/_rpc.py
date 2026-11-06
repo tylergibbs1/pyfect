@@ -31,7 +31,7 @@ from pyfect.stream import Stream
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
     from pyfect.rpc._methods import StreamMethod, UnaryMethod
-    from pyfect.rpc.group import RpcGroup
+    from pyfect.rpc.group import RpcGroup, RpcGroupWith
     from pyfect.rpc.message import RequestId
     from pyfect.rpc.middleware import AnyMiddleware, RpcMiddleware
 
@@ -143,7 +143,18 @@ class Rpc(AnyRpc, Generic[P_co, S_, E, M_co, MT_co]):
     can read both what it provides and its tag)."""
 
     @overload
+    def __get__[GM](
+        self, instance: None, owner: type[RpcGroupWith[GM]], /
+    ) -> Rpc[P_co, S_, E, M_co | GM, MT_co | GM]: ...
+    @overload
     def __get__(self, instance: None, owner: type[object], /) -> Self: ...
+    @overload
+    def __get__[ME](
+        self: Rpc[P_co, S_, E, Never],
+        instance: RpcGroupWith[RpcMiddleware[Any, ME, Any]],
+        owner: type[object],
+        /,
+    ) -> UnaryMethod[P_co, S_, E | ME]: ...
     @overload
     def __get__[TE](
         self: Rpc[P_co, S_, E, Never], instance: ClientErrors[TE], owner: type[object], /
@@ -201,6 +212,10 @@ class StreamRpc(AnyRpc, Generic[P_co, A_co, E, M_co, MT_co]):
     that fails with ``E``."""
 
     @overload
+    def __get__[GM](
+        self, instance: None, owner: type[RpcGroupWith[GM]], /
+    ) -> StreamRpc[P_co, A_co, E, M_co | GM, MT_co | GM]: ...
+    @overload
     def __get__(self, instance: None, owner: type[object], /) -> Self: ...
     @overload
     def __get__[TE](
@@ -254,7 +269,7 @@ def make[P = None, A = None, E1 = Never](
     payload: _C[P] | None = None,
     success: _C[A] | None = None,
     error: _C[E1] | None = None,
-    defect: Codec[BaseException, Any, Never, Never] | None = None,
+    defect: Codec[object, Any, Never, Never] | None = None,
     stream: Literal[True],
 ) -> StreamRpc[P, A, E1]: ...
 @overload
@@ -264,7 +279,7 @@ def make[P = None, A = None, EE = Never](  # pyright: ignore[reportOverlappingOv
     payload: _C[P] | None = None,
     success: StreamSchema[A, EE],
     error: _C[EE] | None = None,
-    defect: Codec[BaseException, Any, Never, Never] | None = None,
+    defect: Codec[object, Any, Never, Never] | None = None,
     stream: Literal[False] = False,
 ) -> StreamRpc[P, A, EE]: ...
 @overload
@@ -274,7 +289,7 @@ def make[P = None, S1 = None, E1 = Never](
     payload: _C[P] | None = None,
     success: _C[S1] | None = None,
     error: _C[E1] | None = None,
-    defect: Codec[BaseException, Any, Never, Never] | None = None,
+    defect: Codec[object, Any, Never, Never] | None = None,
     stream: Literal[False] = False,
 ) -> Rpc[P, S1, E1]: ...
 def make(
@@ -283,7 +298,7 @@ def make(
     payload: Top | None = None,
     success: Top | None = None,
     error: Top | None = None,
-    defect: Codec[BaseException, Any, Never, Never] | None = None,
+    defect: Codec[object, Any, Never, Never] | None = None,
     stream: bool = False,
 ) -> Any:
     """An RPC named ``tag`` (Effect's ``Rpc.make``). Its payload defaults to

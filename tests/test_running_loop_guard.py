@@ -1,11 +1,11 @@
 """Code a fiber runs must find its asyncio loop through ``_root.run_loop()``
 (the loop driving the fiber's run), never ``asyncio.get_running_loop()``:
-under ``run_sync`` inside a coroutine, the running loop is blocked until
-``run_sync`` returns, and work put on it hangs the program
-(``tests/test_run_sync_in_loop.py``).
+under ``run_blocking`` inside a coroutine, the running loop is blocked until
+``run_blocking`` returns, and work put on it hangs the program
+(``tests/test_run_blocking_in_loop.py``).
 
 A coroutine may ask for its running loop. A plain function may only where
-it is listed below, with why it never runs on a fiber of a ``run_sync``
+it is listed below, with why it never runs on a fiber of a ``run_blocking``
 run."""
 
 import ast

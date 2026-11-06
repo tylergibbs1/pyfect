@@ -22,7 +22,7 @@ from pyfect.byte_size import ByteSize
 from pyfect.byte_size import Input as ByteSizeInput
 from pyfect.byte_size import from_input as byte_size_from_input
 from pyfect.context import Tag
-from pyfect.effect import blocking, fail, fn, succeed
+from pyfect.effect import blocking, fail, fn_untraced, succeed
 from pyfect.file_system import FileSystem
 from pyfect.file_system import layer as file_system_layer
 from pyfect.http import body as _body
@@ -394,12 +394,12 @@ def make(
     """A platform from its file responses (given the clamped range and the
     ETag and ``last-modified`` headers) and its compression."""
 
-    @fn
+    @fn_untraced
     def build():
         fs = yield from FileSystem()
         etags = yield from Generator()
 
-        @fn
+        @fn_untraced
         def respond_file(path: str, **options: Unpack[FileOptions]):
             info = yield from fs.stat(path)
             etag = yield from etags.from_file_info(info)

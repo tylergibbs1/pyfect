@@ -12,7 +12,7 @@ def database():
 
 
 # or_die: a config error at startup is fatal (a defect, out of the error type).
-url, password = fx.run_sync(
+url, password = fx.run_blocking(
     database.nested("db").pipe(fx.provide(config_provider.layer(provider))).or_die()
 )
 assert url == "postgres://db"

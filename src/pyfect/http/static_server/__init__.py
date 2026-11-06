@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 
 from pyfect._core import Effect
 from pyfect._js import decode_uri_component
-from pyfect.effect import fail, fn, succeed
+from pyfect.effect import fail, fn_untraced, succeed
 from pyfect.file_system import FileInfo, FileSystem, FileSystemService
 from pyfect.http.platform import HttpPlatform, HttpPlatformService
 from pyfect.http.router import HttpRouter
@@ -139,7 +139,7 @@ class _Server:
             bytes_to_read=byte_range.end - byte_range.start + 1,
         ).map(lambda response: response.set_header("Content-Range", content_range))
 
-    @fn
+    @fn_untraced
     def serve_file(self, request: ServerRequest, file_path: str, file_size: int | None = None):
         range_header = request.headers.get("range") if request.method == "GET" else None
         full: HttpServerResponse | None = None
@@ -216,7 +216,7 @@ class _Server:
         )
 
 
-@fn
+@fn_untraced
 def make(**options: Unpack[Options]):
     """The app serving ``options["root"]`` (see the module docs)."""
     file_system = yield from FileSystem()
@@ -243,7 +243,7 @@ def layer(
     ``prefix`` when given), its errors answered as their responses."""
     prefix = options.pop("prefix", None)
 
-    @fn
+    @fn_untraced
     def build():
         router = yield from HttpRouter()
         app: StaticApp = yield from make(**options)

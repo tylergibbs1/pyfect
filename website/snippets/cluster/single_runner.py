@@ -50,6 +50,6 @@ def app(database: Path):
 
 with tempfile.TemporaryDirectory() as directory:
     database = Path(directory) / "cluster.db"
-    print(fx.run_sync(Greet.execute({"name": "ada"}).pipe(fx.provide(app(database)))))
+    print(fx.run_blocking(Greet.execute({"name": "ada"}).pipe(fx.provide(app(database)))))
     # A new run on the same database reads the stored result: nothing is composed again.
-    print(fx.run_sync(Greet.execute({"name": "ada"}).pipe(fx.provide(app(database)))))
+    print(fx.run_blocking(Greet.execute({"name": "ada"}).pipe(fx.provide(app(database)))))

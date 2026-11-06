@@ -282,6 +282,15 @@ def _is_done(reason: Reason[object]) -> TypeIs[Fail[Done[Any]]]:
     return isinstance(reason, Fail) and isinstance(reason.error, Done)
 
 
+@dataclass(eq=False)
+class AsyncFiberError(TaggedError):
+    """``run_sync`` ran an effect that did not finish synchronously. The
+    fiber is left where it stopped."""
+
+    fiber: object
+    message: str = "An asynchronous Effect was executed with Effect.runSync"
+
+
 class ExceededCapacityError(TaggedError):
     """A bounded structure was asked to hold more than its capacity."""
 
@@ -299,6 +308,7 @@ class UnknownError(TaggedError):
 
 
 __all__ = [
+    "AsyncFiberError",
     "Done",
     "ExceededCapacityError",
     "IllegalArgumentError",

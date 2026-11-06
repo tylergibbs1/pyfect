@@ -1,7 +1,7 @@
 """Ports of Effect's ``Sink.test.ts``.
 
 Each test's docstring is the Effect test title. Effect's inclusive
-``Stream.range(a, b)`` is ``stream.range_inclusive(a, b)``, ``fromArray``
+``Stream.range(a, b)`` is ``stream.range(a, b)``, ``fromArray``
 is ``from_iterable``, a ``Filter`` is a function returning ``Ok`` / ``Err``
 and durations are seconds.
 
@@ -64,21 +64,21 @@ def test_reduce_while_empty():
 def test_reduce_while_termination_in_the_middle():
     """termination in the middle"""
     reducer = sink.reduce_while(lambda: 0, lambda n: n <= 5, _add)
-    assert (yield from stream.range_inclusive(1, 9).run(reducer)) == 6
+    assert (yield from stream.range(1, 9).run(reducer)) == 6
 
 
 @testing.effect
 def test_reduce_while_immediate_termination():
     """immediate termination"""
     reducer = sink.reduce_while(lambda: 0, lambda n: n <= -1, _add)
-    assert (yield from stream.range_inclusive(1, 9).run(reducer)) == 0
+    assert (yield from stream.range(1, 9).run(reducer)) == 0
 
 
 @testing.effect
 def test_reduce_while_no_termination():
     """no termination"""
     reducer = sink.reduce_while(lambda: 0, lambda n: n <= 500, _add)
-    assert (yield from stream.range_inclusive(1, 9).run(reducer)) == 45
+    assert (yield from stream.range(1, 9).run(reducer)) == 45
 
 
 # --- reduceWhileArray --------------------------------------------------------------
@@ -136,7 +136,7 @@ def test_reduce_while_effect_short_circuits():
 @testing.effect
 def test_reduce_equivalence_with_array_reduce():
     """equivalence with Array.reduce"""
-    source = stream.range_inclusive(1, 9)
+    source = stream.range(1, 9)
     result1 = yield from source.run(sink.reduce(lambda: "", lambda s, n: s + f"{n}"))
     collected = yield from source.run_collect()
     assert result1 == "".join(f"{n}" for n in collected)

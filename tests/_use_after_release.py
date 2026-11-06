@@ -32,7 +32,7 @@ def assert_fails_after_release[A](
         value = yield from make().pipe(fx.provide(layer))
         return (yield from use(value).timeout(timeout).exit())
 
-    exit_ = fx.run_sync(fx.scoped(program()))
+    exit_ = fx.run_blocking(fx.scoped(program()))
     assert isinstance(exit_, Failure), f"used after release, it succeeded: {exit_}"
     found = exit_.cause.find_error()
     assert isinstance(found, Ok), f"not a typed failure: {exit_.cause}"

@@ -52,3 +52,20 @@ def _run_value(run: str) -> int:
         return int(run)
     half = len(run) // 2
     return _run_value(run[:half]) * 10 ** (len(run) - half) + _run_value(run[half:])
+
+
+_MAX_ARRAY_INDEX = 2**32 - 2
+
+
+def array_index(key: str) -> int | None:
+    """``key`` as a JavaScript array index, which an object lists first."""
+    index = parse_digits(key, unpadded=True)
+    return index if index is not None and index <= _MAX_ARRAY_INDEX else None
+
+
+def in_object_order[A](values: dict[str, A]) -> dict[str, A]:
+    """``values`` in ``Object.keys`` order: array indexes ascending, then the
+    others as they came."""
+    indexes = {key: index for key in values if (index := array_index(key)) is not None}
+    ordered = sorted(indexes, key=indexes.__getitem__)
+    return {key: values[key] for key in (*ordered, *(k for k in values if k not in indexes))}

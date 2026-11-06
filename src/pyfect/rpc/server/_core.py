@@ -57,7 +57,6 @@ from pyfect.rpc.message import (
 )
 from pyfect.rpc.middleware import MiddlewareOptions
 from pyfect.rpc.schema import ClientAbort
-from pyfect.schema import DecodedDefect
 from pyfect.scope import CloseableScope, Scope, scoped
 from pyfect.semaphore import Semaphore
 from pyfect.stream import Stream
@@ -70,9 +69,9 @@ type OnRequest = Callable[[Effect[Any, Any, Any]], Effect[Any, Any, Any]]
 _VOID: Effect[None] = succeed(None)
 
 
-def unknown_tag(tag: object) -> DecodedDefect:
+def unknown_tag(tag: object) -> str:
     """The defect of a request for no RPC (Effect dies with this text)."""
-    return DecodedDefect(f"Unknown request tag: {tag}")
+    return f"Unknown request tag: {tag}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,7 +183,7 @@ class RpcServer:
 
         return suspend(body)
 
-    def _send_defect(self, client: _Client, defect: BaseException) -> Effect[None]:
+    def _send_defect(self, client: _Client, defect: object) -> Effect[None]:
         def body() -> Effect[None]:
             should_end = client.ended and not client.fibers
             write = self._on_from_server(ResponseDefect(client.id, defect))
@@ -241,7 +240,7 @@ class RpcServer:
                 client.ended = True
                 return _VOID if client.fibers else self._end_client(client)
 
-    def _defect_of(self, client_id: int, defect: BaseException) -> Effect[None]:
+    def _defect_of(self, client_id: int, defect: object) -> Effect[None]:
         client = self._clients.get(client_id)
         return _VOID if client is None else self._send_defect(client, defect)
 

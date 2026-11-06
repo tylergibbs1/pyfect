@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from typing import TypeIs, cast
 
 from pyfect.schema import ast
+from pyfect.schema._codec_links import link
 from pyfect.schema._declare import declare
 from pyfect.schema._schema import Bottom
 
@@ -25,9 +26,19 @@ def _none_strategy(_: tuple[object, ...]) -> object:
     return st.none()
 
 
+def _nothing(_: object) -> None:
+    return None
+
+
+def to_null_json(_: tuple[ast.AST, ...]) -> ast.Link:
+    """JSON writes ``undefined`` and ``void`` as ``null``, and reads only that."""
+    return link(ast.null, decode=_nothing, encode=_nothing)
+
+
 Undefined: Bottom[None] = declare(
     _is_none,
     expected="undefined",
+    to_codec_json=to_null_json,
     representation={"id": UNDEFINED_ID, "payload": None},
     to_arbitrary=_none_strategy,
 )

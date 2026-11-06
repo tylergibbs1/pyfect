@@ -178,12 +178,12 @@ def test_a_classifier_defect_records_ignored_and_the_call_dies_with_the_combined
         assert isinstance(thrown, Failure)
         assert isinstance(died, Failure)
         thrown_die = thrown.cause.find_die()
-        assert thrown_die is not None
-        assert thrown_die.defect is thrown_error
+        assert isinstance(thrown_die, Ok)
+        assert thrown_die.value.defect is thrown_error
         assert died.cause.find_error() == Ok("boom")
         died_die = died.cause.find_die()
-        assert died_die is not None
-        assert died_die.defect is died_error
+        assert isinstance(died_die, Ok)
+        assert died_die.value.defect is died_error
         assert isinstance((yield from breaker.state("defect")), cb.Closed)
 
     _run(fx.gen(body), cb.layer_store_memory())

@@ -62,7 +62,7 @@ def test_a_pg_listener_that_falls_behind_fails_instead_of_growing() -> None:
         assert "fell behind" in str(error)
 
     layer = pg.layer(pg.PgPoolConfig(url=server.url, max_connections=2))
-    fx.run_sync(testing.with_live(fx.scoped(fx.gen(body))).pipe(fx.provide(layer)).or_die())
+    fx.run_blocking(testing.with_live(fx.scoped(fx.gen(body))).pipe(fx.provide(layer)).or_die())
 
 
 def test_a_pg_listener_is_bounded_by_default() -> None:
@@ -83,7 +83,7 @@ def test_a_pg_listener_is_bounded_by_default() -> None:
         assert (yield from notes.size()) <= capacity
 
     layer = pg.layer(pg.PgPoolConfig(url=server.url, max_connections=2))
-    fx.run_sync(testing.with_live(fx.scoped(fx.gen(body))).pipe(fx.provide(layer)).or_die())
+    fx.run_blocking(testing.with_live(fx.scoped(fx.gen(body))).pipe(fx.provide(layer)).or_die())
 
 
 def _with_redis(body: Body) -> None:
@@ -93,7 +93,7 @@ def _with_redis(body: Body) -> None:
     server = _redis.server()
     _redis.flush()
     program = testing.with_live(fx.scoped(fx.gen(body)))
-    fx.run_sync(program.pipe(fx.provide(redis_py.layer(server.url))).or_die())
+    fx.run_blocking(program.pipe(fx.provide(redis_py.layer(server.url))).or_die())
 
 
 def test_a_redis_subscriber_that_falls_behind_fails_instead_of_growing() -> None:

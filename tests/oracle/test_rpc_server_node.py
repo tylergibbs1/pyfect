@@ -26,7 +26,7 @@ from pyfect.clock import sleep
 from pyfect.exit import Failure
 from pyfect.option import Some
 from pyfect.rpc.client import with_headers
-from pyfect.schema import DecodedDefect, ErrorInstance
+from pyfect.schema import ErrorInstance
 from pyfect.scope import scoped
 
 from ._rpc import SUITES, ServerProtocol, User, UsersClient, users_client_layer_test
@@ -36,7 +36,7 @@ _NAMES = list(SUITES)
 
 def _run(suite: str, body: Any) -> Any:
     program = scoped(effect.gen(body)).pipe(fx.provide(SUITES[suite]()))
-    return fx.run_sync(program.timeout(30).or_die())
+    return fx.run_blocking(program.timeout(30).or_die())
 
 
 @pytest.mark.parametrize("suite", _NAMES)
@@ -131,7 +131,7 @@ def test_defect(suite: str) -> None:
         client = yield from UsersClient()
         exit = yield from client.produce_defect().exit()
         assert isinstance(exit, Failure)
-        assert exit.cause.defects == (DecodedDefect("boom"),)
+        assert exit.cause.defects == ("boom",)
         assert not exit.cause.failures
 
     _run(suite, body)
@@ -182,7 +182,7 @@ def test_rpc_test_works() -> None:
         assert user == User(id="1", name="Logged in user")
 
     program = scoped(effect.gen(body)).pipe(fx.provide(users_client_layer_test()))
-    fx.run_sync(program.timeout(10).or_die())
+    fx.run_blocking(program.timeout(10).or_die())
 
 
 def test_preserves_full_defect_with_custom_schema() -> None:
@@ -193,10 +193,9 @@ def test_preserves_full_defect_with_custom_schema() -> None:
         exit = yield from client.produce_defect_custom().exit()
         assert isinstance(exit, Failure)
         defect = exit.cause.squash()
-        assert isinstance(defect, DecodedDefect)
-        assert isinstance(defect.value, ErrorInstance)
-        assert defect.value.name == "CustomDefect"
-        assert defect.value.message == "detailed error"
-        assert defect.value.stack == "Error: detailed error\n  at handler.ts:1"
+        assert isinstance(defect, ErrorInstance)
+        assert defect.name == "CustomDefect"
+        assert defect.message == "detailed error"
+        assert defect.stack == "Error: detailed error\n  at handler.ts:1"
 
     _run("e2e http ndjson", body)

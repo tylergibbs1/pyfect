@@ -15,7 +15,7 @@ from pyfect.sql.sqlite import SqliteClient, SqliteClientConfig, layer
 
 def _run(effect: Any) -> Any:
     """``None`` when it does not finish: it waits forever."""
-    done: Any = fx.run_sync(fx.scoped(effect).timeout_option(0.2))
+    done: Any = fx.run_blocking(fx.scoped(effect).timeout_option(0.2))
     return None if done is None else done.value
 
 
@@ -154,7 +154,7 @@ def test_a_queue_below_zero_capacity_is_a_rendezvous() -> None:
 @pytest.mark.parametrize("kind", ["bounded", "dropping", "sliding"])
 def test_a_pubsub_at_or_below_zero_capacity_dies_when_it_runs(kind: str, capacity: int) -> None:
     effect = getattr(fx.PubSub[int], kind)(capacity)
-    exit = fx.run_sync_exit(effect)
+    exit = fx.run_blocking_exit(effect)
     assert isinstance(exit, fx.Failure)
     defect = exit.cause.squash()
     assert str(defect) == f"Cannot construct PubSub with capacity of {capacity}"

@@ -26,7 +26,7 @@ def _chunk_after(op: Callable[[fx.TxChunk[int]], fx.Effect[None]]) -> tuple[int,
         yield from op(chunk)
         return (yield from chunk.get())
 
-    return fx.run_sync(body())
+    return fx.run_blocking(body())
 
 
 @pytest.mark.parametrize(
@@ -81,7 +81,7 @@ def _wakes(op: Callable[[fx.TxHashMap[str, int]], fx.Effect[Any]]) -> int:
         yield from fiber.interrupt()
         return runs
 
-    return fx.run_sync(body())
+    return fx.run_blocking(body())
 
 
 def test_writes_that_change_nothing_do_not_wake_waiters():
@@ -244,7 +244,7 @@ def test_map_writes_that_change_nothing_keep_the_version(name: str):
             yield from _MAP_WRITES[name](tx_map)
             return tx_map.ref.version
 
-        return fx.run_sync(body())
+        return fx.run_blocking(body())
 
     assert (version_after([]), version_after([("a", 1)])) == _MAP_VERSIONS_IN_EFFECT[name]
 

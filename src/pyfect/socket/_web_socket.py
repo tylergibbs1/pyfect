@@ -57,7 +57,7 @@ from pyfect.socket._socket import (
 
 DEFAULT_HIGH_WATER_MARK = 64 * 1024
 DEFAULT_OPEN_TIMEOUT = 10.0
-DEFAULT_MAX_MESSAGE_SIZE = 16 * 1024 * 1024
+DEFAULT_MAX_MESSAGE_SIZE = 100 * 1024 * 1024
 """The longest message pyfect's WebSocket servers and clients take (uvicorn's
 ``ws_max_size``); a longer one closes the connection with 1009."""
 

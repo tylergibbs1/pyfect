@@ -160,7 +160,7 @@ def test_anthropic_server_error_keeps_empty_message(status: int):
         .pipe(fx.provide(anthropic.layer()))
         .pipe(fx.provide(MockHttp(respond).layer))
     )
-    error = fx.run_sync(program.or_die())
+    error = fx.run_blocking(program.or_die())
     assert isinstance(error.reason, E.InternalProviderError)
     assert error.reason.description == ""
 

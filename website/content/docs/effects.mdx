@@ -4,7 +4,7 @@ description: "Build effects, compose them with generators, and run them."
 ---
 
 An `Effect[A, E, R]` describes a computation. Building one runs nothing; a **run function**
-(`run_sync`, `run_async`, `run_main`) executes it on a fiber.
+(`run_blocking`, `run_async`, `run_main`) executes it on a fiber.
 
 <include meta='title="values.py"'>../../snippets/effects/values.py</include>
 
@@ -32,8 +32,9 @@ returns), as in `def with_scope[R](eff: fx.Effect[int, Never, R]) -> fx.Gen[int,
 
 | Function | Use it for |
 | --- | --- |
-| `run_sync(eff)` | scripts and tests: no event loop needed, sleeps and forks work |
-| `run_sync_exit(eff)` | the same, returning an `Exit` (`Success` or `Failure`) instead of raising |
+| `run_blocking(eff)` | scripts and tests: no event loop needed, sleeps and forks work |
+| `run_sync(eff)` | an effect that finishes synchronously; anything else dies with `AsyncFiberError`, as Effect's `runSync` |
+| `run_blocking_exit(eff)` | the same, returning an `Exit` (`Success` or `Failure`) instead of raising |
 | `await run_async(eff)` | inside asyncio code |
 | `run_main(eff)` | a program's entry point: handles SIGINT/SIGTERM, logs failures, sets the exit code |
 | `ManagedRuntime.make(layer)` | building services once and running many effects with them (web servers) |

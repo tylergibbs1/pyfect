@@ -16,7 +16,7 @@ class PersistedQueueError(
     is what its backend raised."""
 
     message: str
-    cause: BaseException | None = S.field(S.Union(S.Null, S.Defect()), default=None)
+    cause: object = S.field(S.Union(S.Null, S.Defect()), default=None)
 
 
 class DeadLetter:

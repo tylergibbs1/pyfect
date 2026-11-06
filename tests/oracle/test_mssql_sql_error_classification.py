@@ -30,7 +30,7 @@ def _query_failure_reason(monkeypatch: pytest.MonkeyPatch, **cause: Any) -> SqlE
         assert isinstance(error, SqlError)
         return error.reason
 
-    return fx.run_sync(fx.scoped(fx.gen(body)).pipe(fx.provide(reactivity_layer)).or_die())
+    return fx.run_blocking(fx.scoped(fx.gen(body)).pipe(fx.provide(reactivity_layer)).or_die())
 
 
 def _tag(monkeypatch: pytest.MonkeyPatch, number: int) -> str:

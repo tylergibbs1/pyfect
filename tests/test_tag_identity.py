@@ -57,7 +57,7 @@ def test_a_base_family_gives_each_subclass_its_own_service():
     both = fx.all(First(), Second()).pipe(
         fx.provide(layer.merge(layer.succeed(First, 1), layer.succeed(Second, 2)))
     )
-    assert fx.run_sync(both) == (1, 2)
+    assert fx.run_blocking(both) == (1, 2)
 
 
 def test_a_base_is_neither_read_nor_provided():

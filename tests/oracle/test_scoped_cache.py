@@ -728,7 +728,7 @@ def test_invalidate_when_preserves_a_replacement_resource_after_an_old_lookup_co
     def release(value: int, _ex: fx.Exit[Any, Any]) -> fx.Effect[None]:
         return fx.sync(lambda: released.append(value))
 
-    @fx.fn
+    @fx.fn_untraced
     def lookup(_key: str):
         resource_id = yield from fx.acquire_release(fx.sync(acquire), release)
         if resource_id == 1:

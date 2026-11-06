@@ -44,13 +44,13 @@ def test_take_starts_no_tool_handler(n: int) -> None:
         return fx.sync(lambda: log.append(f"start{ms}")).and_then(fx.sleep(ms / 1000)).as_("d")
 
     parts = [_call("a", 80), _call("b", 10), {"type": "text-delta", "id": "t", "delta": "x"}]
-    taken = fx.run_sync(
+    taken = fx.run_blocking(
         lm.stream_text("hi", toolkit=_TOOLKIT)
         .take(n)
         .run_collect()
         .pipe(with_language_model(stream_text=[*parts, _FINISH]))
         .pipe(fx.provide(_TOOLKIT.to_layer(_TOOL.handler(handler))))
     )
-    fx.run_sync(fx.sleep(0.1))
+    fx.run_blocking(fx.sleep(0.1))
     assert [part.type for part in taken] == [p["type"] for p in parts[:n]]
     assert log == []

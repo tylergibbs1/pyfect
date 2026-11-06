@@ -10,7 +10,7 @@ fiber with the services of the request that started it.
 An interrupted caller leaves its batch; the last one to leave interrupts
 the batch's wait, so the batch never runs.
 
-Pending batches are kept per run as well as per key: a ``run_sync``'s
+Pending batches are kept per run as well as per key: a ``run_blocking``'s
 scheduler stops when the run ends, so a batch a daemon left behind there
 would never run, and a later run joining it would wait forever.
 """
@@ -20,12 +20,13 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable
 from dataclasses import dataclass
-from typing import Any, Final
+from types import NoneType
+from typing import Any, Final, final
 
 from pyfect._core import Effect, _Callback, _FromExit, _Succeed, _Suspend, _Sync, _WithFiber
 from pyfect._fiber import Fiber
 from pyfect._root import new_root, run_identity, start_root
-from pyfect.batching._request import Entry
+from pyfect.batching._request import Entry, EqualKeys
 from pyfect.batching._resolver import RequestResolver
 from pyfect.context import Context
 from pyfect.exit import Exit, Failure
@@ -61,6 +62,30 @@ class Origin:
         return (run_identity(self.run_scheduler), key)
 
 
+@final
+class _ByReference:
+    """A key that matches only itself, and keeps it alive while it is pending."""
+
+    __slots__ = ("key",)
+
+    def __init__(self, key: object) -> None:
+        self.key = key
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _ByReference) and other.key is self.key
+
+    def __hash__(self) -> int:
+        return id(self.key)
+
+
+def _slot_key(resolver: RequestResolver[Any, Any], key: Hashable) -> Hashable:
+    if isinstance(resolver.batch_key, EqualKeys) or isinstance(
+        key, str | bytes | int | float | NoneType
+    ):
+        return key
+    return _ByReference(key)
+
+
 type Slot = tuple[object, Hashable]
 """A pending batch's place in its resolver: its run and its key."""
 
@@ -76,7 +101,7 @@ class Batch:
         self.resolver = resolver
         self.key = key
         self.origin = origin
-        self.slot = origin.slot(key)
+        self.slot = origin.slot(_slot_key(resolver, key))
         # Dicts as insertion-ordered sets.
         self.entries: dict[Entry[Any], None] = {}
         self.pending: dict[Entry[Any], None] = {}
@@ -143,7 +168,7 @@ def add_entry(
     if resolver.pre_check is not None and not resolver.pre_check(entry):
         return entry
     key = resolver.batch_key(entry)
-    slot = origin.slot(key)
+    slot = origin.slot(_slot_key(resolver, key))
     batches = resolver._batches
     batch = batches.get(slot)
     if batch is None:
@@ -173,7 +198,7 @@ def remove_entry(resolver: RequestResolver[Any, Any], entry: Entry[Any], origin:
     out of its batch and interrupt the batch's wait if no entry is left."""
     if entry.uninterruptible:
         return
-    slot = origin.slot(resolver.batch_key(entry))
+    slot = origin.slot(_slot_key(resolver, resolver.batch_key(entry)))
     batch = resolver._batches.get(slot)
     if batch is None or entry not in batch.entries:
         return

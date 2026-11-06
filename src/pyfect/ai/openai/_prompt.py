@@ -27,7 +27,6 @@ from pyfect.ai import tool as T
 from pyfect.ai.ai_error import (
     InvalidRequestError,
     ToolParameterValidationError,
-    describe_schema_error,
 )
 from pyfect.ai.tool import NameMapper
 
@@ -128,7 +127,7 @@ def _decode_params(tool: AnyProviderDefined, name: str, params: object) -> Any:
         raise PT.unsupported(
             MODULE,
             "prepareMessages",
-            ToolParameterValidationError(tool_name=name, description=describe_schema_error(error)),
+            ToolParameterValidationError(tool_name=name, description=error.message),
         ) from error
 
 

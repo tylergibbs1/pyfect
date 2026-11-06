@@ -663,7 +663,7 @@ def elicit[A, R = Never](
             }
         ).or_die()
         result = yield from reverse.elicit(request).catch_cause(
-            lambda cause: fail(ElicitationDeclined(request, cause.squash()))
+            lambda cause: fail(ElicitationDeclined(request, cause.raisable()))
         )
         action: Literal["accept", "decline", "cancel"] = result["action"]
         if action == "cancel":

@@ -117,7 +117,7 @@ def test_makes_instances_behave_as_effects() -> None:
     box = EffectBox(3)
     assert isinstance(box, fx.Effect)
     assert box.pipe(lambda b: b.value) == 3
-    assert fx.run_sync(box.map(lambda n: n + 1)) == 4
+    assert fx.run_blocking(box.map(lambda n: n + 1)) == 4
 
 
 def test_does_not_modify_the_original_class_prototype() -> None:
@@ -135,9 +135,9 @@ def test_a_raising_as_effect_is_a_defect() -> None:
             raise ValueError("boom")
 
     broken = Broken()
-    ex = fx.run_sync_exit(broken)
+    ex = fx.run_blocking_exit(broken)
     assert isinstance(ex, fx.Failure)
-    assert isinstance(ex.cause.find_defect(), ValueError)
+    assert isinstance(ex.cause.defects[0], ValueError)
 
 
 def test_class_without_as_effect_cannot_be_instantiated() -> None:

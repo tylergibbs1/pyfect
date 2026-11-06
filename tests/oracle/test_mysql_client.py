@@ -153,7 +153,7 @@ def _protocols(monkeypatch: pytest.MonkeyPatch, **fields: Any) -> list[str]:
         yield from sql.unsafe("SELECT ?", [1]).raw
 
     layer = mysql.layer(mysql.MysqlClientConfig(**fields))
-    fx.run_sync(fx.scoped(fx.gen(body)).pipe(fx.provide(layer)).or_die())
+    fx.run_blocking(fx.scoped(fx.gen(body)).pipe(fx.provide(layer)).or_die())
     return calls
 
 
@@ -441,7 +441,7 @@ def test_connects_with_separate_fields(mysql_server: MysqlServer):
         assert attributes["db.namespace"] == "test"
         assert attributes["server.port"] == mysql_server.port
 
-    fx.run_sync(fx.scoped(fx.gen(body)).pipe(fx.provide(mysql.layer(config))).or_die())
+    fx.run_blocking(fx.scoped(fx.gen(body)).pipe(fx.provide(mysql.layer(config))).or_die())
 
 
 def test_wrong_password_is_an_authentication_error(mysql_server: MysqlServer):
@@ -451,7 +451,7 @@ def test_wrong_password_is_an_authentication_error(mysql_server: MysqlServer):
         url=redacted.make(f"mysql://test:wrong@{mysql_server.host}:{mysql_server.port}/test")
     )
     failed = fx.scoped(mysql.make(config)).flip().or_die()
-    error = fx.run_sync(failed.pipe(fx.provide(reactivity_layer)))
+    error = fx.run_blocking(failed.pipe(fx.provide(reactivity_layer)))
     assert isinstance(error.reason, AuthenticationError)
     assert error.reason.operation == "connect"
 

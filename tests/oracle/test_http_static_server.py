@@ -166,7 +166,7 @@ def precision(
         app = yield from static.make(root="/root")
         return (yield from app.pipe(effect.provide_service(HttpServerRequest, request)))
 
-    response = fx.run_sync(
+    response = fx.run_blocking(
         program().pipe(fx.provide(services(StatFileSystem(size), platform(respond)))).or_die()
     )
     return response, calls

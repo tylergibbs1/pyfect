@@ -132,7 +132,7 @@ def test_routes_a_query_only_url_to_the_root_of_a_router_mounted_under_a_prefix(
         )
         return _fetch_text(routes, "/admin?tab=1")
 
-    assert fx.run_sync(scoped(program())) == "/?tab=1"
+    assert fx.run_blocking(scoped(program())) == "/?tab=1"
 
 
 @pytest.mark.parametrize("ignore_duplicate_slashes", [True, False])
@@ -186,14 +186,14 @@ def test_describes_route_misses_caused_by_max_param_length() -> None:
         )
 
     def not_found(method: str, path: str) -> str | None:
-        exit = fx.run_sync_exit(lookup(method, path))
+        exit = fx.run_blocking_exit(lookup(method, path))
         assert isinstance(exit, Failure)
         error = exit.cause.squash()
         assert isinstance(error, HttpServerError)
         assert isinstance(error.reason, RouteNotFound)
         return error.reason.description
 
-    assert fx.run_sync(lookup("GET", "/addresses/abcde")).status == 200
+    assert fx.run_blocking(lookup("GET", "/addresses/abcde")).status == 200
     limit = "path parameter is longer than maxParamLength (5)"
     assert not_found("GET", "/addresses/abcdef") == limit
     assert not_found("HEAD", "/addresses/abcdef") == limit

@@ -27,7 +27,7 @@ def _run(handler: Handler, urls: list[str], jar: cookies.Cookies | None = None) 
         return (yield from ref.get())
 
     http = httpx_client.layer_with(transport=httpx.MockTransport(handler))
-    return fx.run_sync(fx.gen(program).pipe(fx.provide(http)).or_die())
+    return fx.run_blocking(fx.gen(program).pipe(fx.provide(http)).or_die())
 
 
 class _Sites:

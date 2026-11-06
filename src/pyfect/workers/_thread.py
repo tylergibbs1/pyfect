@@ -1,7 +1,7 @@
 """Workers on threads (the counterpart of Node's ``worker_threads``).
 
 A ``ThreadWorker`` runs ``target`` on a new daemon thread; the code there
-runs its own runtime (``run_sync`` or ``run_async``) and finds its parent
+runs its own runtime (``run_blocking`` or ``run_async``) and finds its parent
 through ``python_worker_runner.layer``. Messages are handed over as they
 are, not copied: send values neither side changes afterwards. The thread
 exits when ``target`` returns (code 0) or raises (an error event, then

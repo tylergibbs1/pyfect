@@ -15,6 +15,7 @@ from typing import Any, Never
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
+from pyfect._digits import in_object_order
 from pyfect.cause import Cause, Fail
 from pyfect.config._config import Config, Resolution, require_config
 from pyfect.config._error import ConfigError
@@ -107,7 +108,7 @@ def _keyed[A](keys: list[str]) -> Callable[[Decoded[list[A]]], Decoded[dict[str,
     def to_dict(decoded: Decoded[list[A]]) -> Decoded[dict[str, A]]:
         match decoded:
             case Ok(values):
-                return Ok(dict(zip(keys, values, strict=True)))
+                return Ok(in_object_order(dict(zip(keys, values, strict=True))))
             case Err():
                 return decoded
 
@@ -119,7 +120,7 @@ def _as_list(values: Any) -> list[Any]:
 
 
 def _as_dict(values: Any) -> dict[str, Any]:
-    return dict(values)
+    return in_object_order(dict(values))
 
 
 def _container[A](

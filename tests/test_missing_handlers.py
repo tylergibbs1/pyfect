@@ -39,7 +39,7 @@ def list_users(_r: HttpApiRequest[None, None, None, None]) -> fx.Effect[tuple[Us
 
 def test_an_http_api_group_without_a_handler_names_the_endpoint_when_built():
     partial = builder.group(api, Users, lambda h: h.handle(Users.list_users)(list_users))
-    exit_ = fx.run_sync_exit(fx.scoped(layer.fresh(partial).build()))
+    exit_ = fx.run_blocking_exit(fx.scoped(layer.fresh(partial).build()))
     assert isinstance(exit_, Failure)
     [reason] = exit_.cause.reasons
     assert isinstance(reason, Die)
@@ -75,7 +75,7 @@ def test_an_rpc_group_without_a_handler_is_rejected_by_to_layer():
 def test_handlers_made_by_an_effect_without_one_die_when_built():
     partial = Accounts.handlers().handle(Accounts.ping)(lambda _r: fx.succeed(None))
     built = layer.fresh(Accounts.to_layer_effect(fx.succeed(partial))).build()
-    exit_ = fx.run_sync_exit(fx.scoped(built))
+    exit_ = fx.run_blocking_exit(fx.scoped(built))
     assert isinstance(exit_, Failure)
     [reason] = exit_.cause.reasons
     assert isinstance(reason, Die)
@@ -89,4 +89,4 @@ def test_a_complete_rpc_group_builds():
         .handle(Accounts.get)(lambda r: fx.succeed(Profile(id=r.payload)))
     )
     built: fx.Effect[object, Never, fx.Scope] = layer.fresh(Accounts.to_layer(complete)).build()
-    assert isinstance(fx.run_sync_exit(fx.scoped(built)), fx.Success)
+    assert isinstance(fx.run_blocking_exit(fx.scoped(built)), fx.Success)

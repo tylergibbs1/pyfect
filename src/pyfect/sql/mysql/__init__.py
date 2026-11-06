@@ -2,7 +2,7 @@
 extra, never imported by ``pyfect``).
 
 asyncmy runs on the SQL loop thread, so the client works under
-``run_sync`` and ``run_async`` and no fiber blocks::
+``run_blocking`` and ``run_async`` and no fiber blocks::
 
     from pyfect.sql import mysql
 

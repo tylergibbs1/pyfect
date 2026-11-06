@@ -15,7 +15,7 @@ program = fx.from_async(fetch).map(str.upper)
 assert asyncio.run(fx.run_async(program)) == "DATA"
 
 # Effects that don't touch asyncio also run without a loop.
-assert fx.run_sync(fx.sleep(0.01).as_("done")) == "done"
+assert fx.run_blocking(fx.sleep(0.01).as_("done")) == "done"
 
-# run_sync_exit returns an Exit instead of raising.
-assert fx.run_sync_exit(fx.succeed(1)) == fx.Success(1)
+# run_blocking_exit returns an Exit instead of raising.
+assert fx.run_blocking_exit(fx.succeed(1)) == fx.Success(1)

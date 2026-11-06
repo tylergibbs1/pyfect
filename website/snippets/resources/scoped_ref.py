@@ -20,5 +20,5 @@ def program():
     return (yield from current.get())
 
 
-assert fx.run_sync(fx.scoped(program)) == "us"
+assert fx.run_blocking(fx.scoped(program)) == "us"
 assert events == ["open eu", "open us", "close eu", "close us"]

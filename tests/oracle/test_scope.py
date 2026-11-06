@@ -67,7 +67,7 @@ def test_completes_a_single_finalizer_when_its_callback_interrupts_close(strateg
             task.cancel()
             return fx.sync(lambda: cleaned.append(True))
 
-        fx.run_sync(scope.add_finalizer(finalizer))
+        fx.run_blocking(scope.add_finalizer(finalizer))
         task = asyncio.ensure_future(
             fx.run_async_exit(fx.yield_now().and_then(scope.close(fx.Success(None))))
         )

@@ -4,7 +4,7 @@ Stream core, constructors, sources and run functions of M6).
 
 Each test's docstring is the Effect test title. Chunks are tuples here,
 ``Uint8Array`` is ``bytes``, Effect's inclusive ``Stream.range(a, b)`` is
-``stream.range_inclusive(a, b)`` (``stream.range`` follows Python's), and
+``stream.range(a, b)`` (``stream.range`` follows Python's), and
 ``fromArray`` / ``fromIteratorSucceed`` are ``from_iterable``.
 The operator sections are ported in ``test_stream_*.py``.
 
@@ -218,13 +218,13 @@ class _Greeter:
 @testing.effect
 def test_range_min_less_than_max():
     """range - min less than max"""
-    assert (yield from stream.range_inclusive(1, 3).run_collect()) == [1, 2, 3]
+    assert (yield from stream.range(1, 3).run_collect()) == [1, 2, 3]
 
 
 @testing.effect
 def test_range_zero_chunk_size_does_not_change_the_emitted_range():
     """range - zero chunk size does not change the emitted range"""
-    result = yield from stream.range_inclusive(1, 3, chunk_size=0).take(4).run_collect()
+    result = yield from stream.range(1, 3, chunk_size=0).take(4).run_collect()
     assert result == [1, 2, 3]
 
 
@@ -233,7 +233,7 @@ def test_range_normalizes_the_chunk_size_without_changing_emitted_values():
     """range - normalizes the chunk size without changing emitted values"""
     results = yield from fx.for_each(
         [-1, 0, 2],
-        lambda size: stream.range_inclusive(1, 5, chunk_size=size).chunks().run_collect(),
+        lambda size: stream.range(1, 5, chunk_size=size).chunks().run_collect(),
     )
     assert results == [
         [(1,), (2,), (3,), (4,), (5,)],
@@ -275,13 +275,13 @@ def test_service_option_none():
 @testing.effect
 def test_range_min_greater_than_max():
     """range - min greater than max"""
-    assert (yield from stream.range_inclusive(4, 3).run_collect()) == []
+    assert (yield from stream.range(4, 3).run_collect()) == []
 
 
 @testing.effect
 def test_range_min_equal_to_max():
     """range - min equal to max"""
-    assert (yield from stream.range_inclusive(3, 3).run_collect()) == [3]
+    assert (yield from stream.range(3, 3).run_collect()) == [3]
 
 
 @testing.effect

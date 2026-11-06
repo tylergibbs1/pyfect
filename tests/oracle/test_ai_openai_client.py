@@ -456,7 +456,7 @@ def test_error_body_decodes():
             "code": "insufficient_quota",
         }
     }
-    decoded = fx.run_sync(_errors.decode_error_body(body).or_die())
+    decoded = fx.run_blocking(_errors.decode_error_body(body).or_die())
     assert decoded["error"]["message"] == "You exceeded your current quota"
     assert decoded["error"].get("type") == "insufficient_quota"
     assert decoded["error"].get("code") == "insufficient_quota"

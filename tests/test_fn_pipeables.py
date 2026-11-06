@@ -34,7 +34,7 @@ def test_a_named_functions_frames_cover_what_the_pipeables_add():
             assert frame is not None and frame.parent is not None
             return n, frame.name, frame.parent.name
 
-        return eff.flat_map(fx.fn(read))
+        return eff.flat_map(fx.fn_untraced(read))
 
     f = fx.fn("named")(_identity, frame_names)
     assert (yield from f(1)) == (1, "named", "named (definition)")

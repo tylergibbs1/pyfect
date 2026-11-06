@@ -82,14 +82,14 @@ def test_other_exceptions_become_bad_arguments():
 
 
 def test_the_host_path_layer_matches_the_operating_system():
-    p = fx.run_sync(Path().pipe(fx.provide(path.layer)))
+    p = fx.run_blocking(Path().pipe(fx.provide(path.layer)))
     assert p.sep == os.sep
 
 
-def test_posix_paths_follow_os_path():
+def test_posix_paths_follow_node():
     p = path.posix
-    assert p.join("/a", "/b") == "/b"
-    assert p.relative("/a/b", "/a/b") == "."
+    assert p.join("/a", "/b") == "/a/b"
+    assert p.relative("/a/b", "/a/b") == ""
     assert p.basename("/a/b.txt", ".txt") == "b"
     parsed = path.Parsed(root="/", dir="/a", base="b.txt", ext=".txt", name="b")
     assert p.parse("/a/b.txt") == parsed
@@ -264,7 +264,7 @@ def test_to_file_appends_each_batch_of_lines(tmp_path: FsPath):
     file_logger = lines.to_file(str(target), batch_window=60)
 
     program = fx.log_info("one").and_then(fx.log_info("two", 2))
-    fx.run_sync(
+    fx.run_blocking(
         program.pipe(fx.provide(logger.layer([file_logger])))
         .pipe(fx.provide(file_system.layer))
         .or_die()
@@ -279,7 +279,7 @@ def test_to_file_writes_a_lone_surrogate_as_the_replacement_character(tmp_path: 
     lines = logger.Logger.make(lambda options: " ".join(map(str, options.message)))
     file_logger = lines.to_file(str(target), batch_window=60)
     program = fx.log_info("a\ud800b").pipe(fx.provide(logger.layer([file_logger])))
-    fx.run_sync(program.pipe(fx.provide(file_system.layer)).or_die())
+    fx.run_blocking(program.pipe(fx.provide(file_system.layer)).or_die())
     assert target.read_bytes() == "a\ufffdb\n".encode()
 
 
@@ -296,18 +296,18 @@ def test_to_file_fails_when_the_file_cannot_be_opened(
 
 
 def test_the_live_stdout_writes_text_and_bytes(capfd: pytest.CaptureFixture[str]):
-    fx.run_sync(stream.make("text ", b"bytes\n").run(stdio.live.stdout()).or_die())
+    fx.run_blocking(stream.make("text ", b"bytes\n").run(stdio.live.stdout()).or_die())
     assert capfd.readouterr().out == "text bytes\n"
 
 
 def test_the_live_args_skip_the_program_name(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("sys.argv", ["prog", "a", "b"])
-    assert fx.run_sync(stdio.live.args) == ("a", "b")
+    assert fx.run_blocking(stdio.live.args) == ("a", "b")
 
 
 def test_the_live_stdin_streams_bytes(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("sys.stdin", io.TextIOWrapper(io.BytesIO(b"in\nput")))
-    assert b"".join(fx.run_sync(stdio.live.stdin.run_collect().or_die())) == b"in\nput"
+    assert b"".join(fx.run_blocking(stdio.live.stdin.run_collect().or_die())) == b"in\nput"
 
 
 # --- Terminal -------------------------------------------------------------------------
@@ -354,7 +354,7 @@ def test_concurrent_reads_keep_input_in_order(monkeypatch: pytest.MonkeyPatch):
 
 def test_display_writes_to_the_output():
     output = io.StringIO()
-    fx.run_sync(terminal.live(input=0, output=output).display("prompt> ").or_die())
+    fx.run_blocking(terminal.live(input=0, output=output).display("prompt> ").or_die())
     assert output.getvalue() == "prompt> "
 
 
@@ -369,7 +369,7 @@ def test_a_display_failure_is_a_bad_argument():
 
 def test_the_platform_layer_provides_every_service():
     program = fx.all(FileSystem(), Path(), fx.Stdio(), fx.Terminal(), Crypto())
-    services = fx.run_sync(program.pipe(fx.provide(platform.layer)))
+    services = fx.run_blocking(program.pipe(fx.provide(platform.layer)))
     assert len(services) == 5
 
 

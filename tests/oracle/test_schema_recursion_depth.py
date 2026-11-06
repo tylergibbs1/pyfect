@@ -104,7 +104,7 @@ def test_an_effectful_recursive_parse_decodes_a_deep_value():
     value: dict[str, Any] = {"name": "a", "children": []}
     for _ in range(500):
         value = {"name": "a", "children": [value]}
-    decoded = fx.run_sync(S.decode_unknown_effect(named)(value).or_die())
+    decoded = fx.run_blocking(S.decode_unknown_effect(named)(value).or_die())
     assert decoded["name"] == "A"
 
 

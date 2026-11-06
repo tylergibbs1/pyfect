@@ -208,10 +208,10 @@ def test_default_teardown_maps_exits_to_statuses():
     class Gone(fx.TaggedError):
         exit_code: ClassVar[int] = 69
 
-    assert fx.default_teardown(fx.run_sync_exit(fx.void)) == 0
-    assert fx.default_teardown(fx.run_sync_exit(fx.interrupt())) == 130
-    assert fx.default_teardown(fx.run_sync_exit(fx.die(ValueError()))) == 1
-    assert fx.default_teardown(fx.run_sync_exit(fx.fail(Gone()))) == 69
+    assert fx.default_teardown(fx.run_blocking_exit(fx.void)) == 0
+    assert fx.default_teardown(fx.run_blocking_exit(fx.interrupt())) == 130
+    assert fx.default_teardown(fx.run_blocking_exit(fx.die(ValueError()))) == 1
+    assert fx.default_teardown(fx.run_blocking_exit(fx.fail(Gone()))) == 69
 
 
 def test_a_custom_teardown_sets_the_status(tmp_path: Path):

@@ -193,7 +193,7 @@ from pyfect.schema._duration_codecs import (
 )
 from pyfect.schema._ecma_pattern import EcmaPatternError, compile_ecma, is_ecma_pattern
 from pyfect.schema._error import SchemaError
-from pyfect.schema._error_instance import DecodedDefect, Defect, DefectSchema, ErrorInstance
+from pyfect.schema._error_instance import Defect, DefectSchema, ErrorInstance
 from pyfect.schema._graph import Graph, GraphSchema
 from pyfect.schema._jsonschema import (
     CheckContext,
@@ -316,21 +316,25 @@ from pyfect.schema._parse import (
     decode_effect,
     decode_exit,
     decode_option,
+    decode_promise,
     decode_result,
     decode_sync,
     decode_unknown_effect,
     decode_unknown_exit,
     decode_unknown_option,
+    decode_unknown_promise,
     decode_unknown_result,
     decode_unknown_sync,
     encode_effect,
     encode_exit,
     encode_option,
+    encode_promise,
     encode_result,
     encode_sync,
     encode_unknown_effect,
     encode_unknown_exit,
     encode_unknown_option,
+    encode_unknown_promise,
     encode_unknown_result,
     encode_unknown_sync,
     is_,
@@ -436,6 +440,7 @@ from pyfect.schema._values import (
     TimeZoneNamed,
     TimeZoneOffset,
 )
+from pyfect.schema._void import ObjectKeyword, Undefined, Void
 from pyfect.schema.ast import Check, Filter, FilterGroup, FilterOutput, make_filter
 
 __all__ = [
@@ -485,7 +490,6 @@ __all__ = [
     "Decode",
     "DecodeTo",
     "DecodeToSchema",
-    "DecodedDefect",
     "Decoder",
     "Defect",
     "DefectSchema",
@@ -613,6 +617,7 @@ __all__ = [
     "NullOr",
     "Number",
     "NumberFromString",
+    "ObjectKeyword",
     "OnBefore",
     "OnExcessProperty",
     "Option",
@@ -685,6 +690,7 @@ __all__ = [
     "TupleWithRest",
     "TupleWithRestSchema",
     "URLFromString",
+    "Undefined",
     "Union",
     "UnionSchema",
     "UniqueArray",
@@ -692,6 +698,7 @@ __all__ = [
     "UnixPathAddressFromString",
     "Unknown",
     "UnknownFromJsonString",
+    "Void",
     "WithConstructorDefault",
     "WithDecodingDefaultKey",
     "WithDecodingDefaultTypeKey",
@@ -707,12 +714,14 @@ __all__ = [
     "decode_effect",
     "decode_exit",
     "decode_option",
+    "decode_promise",
     "decode_result",
     "decode_sync",
     "decode_to",
     "decode_unknown_effect",
     "decode_unknown_exit",
     "decode_unknown_option",
+    "decode_unknown_promise",
     "decode_unknown_result",
     "decode_unknown_sync",
     "encode",
@@ -720,12 +729,14 @@ __all__ = [
     "encode_exit",
     "encode_keys",
     "encode_option",
+    "encode_promise",
     "encode_result",
     "encode_sync",
     "encode_to",
     "encode_unknown_effect",
     "encode_unknown_exit",
     "encode_unknown_option",
+    "encode_unknown_promise",
     "encode_unknown_result",
     "encode_unknown_sync",
     "extend_to",

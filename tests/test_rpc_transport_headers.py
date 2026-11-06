@@ -123,7 +123,7 @@ def test_socket_transport_headers_win_over_in_band_headers(name: str) -> None:
                 continue
 
     program = fx.scoped(effect.gen(body)).pipe(fx.provide(serialization))
-    assert fx.run_sync(program.timeout(5).or_die()) == "alice"
+    assert fx.run_blocking(program.timeout(5).or_die()) == "alice"
 
 
 def test_in_band_headers_the_transport_does_not_carry_still_arrive() -> None:

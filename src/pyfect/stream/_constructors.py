@@ -284,22 +284,22 @@ def iterate[A](initial: A, f: Callable[[A], A]) -> Stream[A]:
     return unfold(initial, lambda a: _Sync(lambda: (a, f(a))))
 
 
-def range(start: int, stop: int, *, chunk_size: int = DEFAULT_CHUNK_SIZE) -> Stream[int]:
-    """The integers from ``start`` up to, not including, ``stop``, as
-    Python's ``range`` (Effect's ``range`` includes its end: see
-    ``range_inclusive``). Chunks hold up to ``chunk_size`` (at least 1)."""
-    if start >= stop:
+def range(minimum: int, maximum: int, *, chunk_size: int = DEFAULT_CHUNK_SIZE) -> Stream[int]:
+    """The integers from ``minimum`` to ``maximum``, both included, as
+    Effect's ``range``; empty when ``minimum > maximum``. Chunks hold up to
+    ``chunk_size`` (at least 1)."""
+    if minimum > maximum:
         return empty
     size = max(1, chunk_size)
 
     def make_pull() -> AnyPull:
-        current = start
+        current = minimum
 
         def pull() -> AnyPull:
             nonlocal current
-            if current >= stop:
+            if current > maximum:
                 return _ENDED
-            end = min(current + size, stop)
+            end = min(current + size, maximum + 1)
             chunk = tuple(builtins.range(current, end))
             current = end
             return _Succeed(chunk)
@@ -307,14 +307,6 @@ def range(start: int, stop: int, *, chunk_size: int = DEFAULT_CHUNK_SIZE) -> Str
         return _Suspend(pull)
 
     return from_pull(_Sync(make_pull))
-
-
-def range_inclusive(
-    minimum: int, maximum: int, *, chunk_size: int = DEFAULT_CHUNK_SIZE
-) -> Stream[int]:
-    """The integers from ``minimum`` to ``maximum``, both included
-    (Effect's ``range``); empty when ``minimum > maximum``."""
-    return range(minimum, maximum + 1, chunk_size=chunk_size)
 
 
 # --- deferred and scoped streams -----------------------------------------------

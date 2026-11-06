@@ -24,4 +24,4 @@ def program():
     print((yield from seats.get()), (yield from booked.get()))
 
 
-fx.run_sync(program())
+fx.run_blocking(program())

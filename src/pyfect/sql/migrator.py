@@ -162,7 +162,7 @@ def _is_constraint_conflict(error: SqlError) -> bool:
 def _load_migration(resolved: ResolvedMigration) -> Effect[Migration, MigrationError]:
     id_, name, load = resolved
 
-    def import_failed(defect: BaseException) -> Effect[Never, MigrationError]:
+    def import_failed(defect: object) -> Effect[Never, MigrationError]:
         return fail(
             MigrationError(
                 kind="ImportError",
@@ -370,13 +370,12 @@ def _sorted(migrations: list[ResolvedMigration]) -> list[ResolvedMigration]:
 
 def from_record(migrations: Mapping[str, Migration]) -> Loader:
     """Migrations keyed ``"<id>_<name>"`` (``"1_create_users"``); any other
-    key raises ``ValueError`` naming it (Effect skips it, so it never runs)."""
+    key is skipped."""
     found: list[ResolvedMigration] = []
     for key, migration in migrations.items():
         match = _RECORD_KEY.fullmatch(key)
-        if match is None:
-            raise ValueError(f"migration key {key!r} is not <id>_<name>, such as '1_create_users'")
-        found.append((int(match[1]), match[2], succeed(migration)))
+        if match is not None:
+            found.append((int(match[1]), match[2], succeed(migration)))
     return succeed(_sorted(found))
 
 

@@ -41,7 +41,7 @@ def _config(server: ClickhouseServer, **fields: Any) -> clickhouse.ClickhouseCli
 
 def _on_server(server: ClickhouseServer, body: Body, **fields: Any) -> Any:
     program = fx.scoped(fx.gen(body)).pipe(fx.provide(clickhouse.layer(_config(server, **fields))))
-    return fx.run_sync(program.timeout(60).or_die())
+    return fx.run_blocking(program.timeout(60).or_die())
 
 
 def _table(prefix: str) -> str:

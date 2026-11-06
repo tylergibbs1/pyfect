@@ -41,7 +41,7 @@ def test_each_run_of_endpoint_makes_a_client_of_its_own() -> None:
             )
             yield from method.response_only()
 
-    fx.run_sync(effect.gen(program))
+    fx.run_blocking(effect.gen(program))
     assert sent == ["first", "second"]
 
 
@@ -52,6 +52,6 @@ def test_a_reused_endpoint_effect_builds_a_new_client_each_run() -> None:
     made = client.endpoint(
         _API, _GROUP, _GROUP.endpoints["health"], http_client=_recording("only", sent)
     )
-    first = fx.run_sync(made)
-    second = fx.run_sync(made)
+    first = fx.run_blocking(made)
+    second = fx.run_blocking(made)
     assert first is not second

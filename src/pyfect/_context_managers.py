@@ -3,7 +3,7 @@
 
 The manager is entered when the resource is acquired and exited when the
 enclosing ``Scope`` closes. ``__exit__`` sees the scope's outcome: nothing
-on success, otherwise ``Cause.squash()`` of the failure. A finalizer cannot
+on success, otherwise ``Cause.raisable()`` of the failure. A finalizer cannot
 recover a failure, so a true return from ``__exit__`` suppresses nothing.
 """
 # pyright: reportPrivateUsage=false
@@ -64,7 +64,7 @@ def acquire_async_context[T, E = Never, R = Never](
 def _exc_info(ex: Exit[Any, Any]) -> _ExcInfo:
     if not isinstance(ex, Failure):
         return (None, None, None)
-    error = ex.cause.squash()
+    error = ex.cause.raisable()
     return (type(error), error, error.__traceback__)
 
 

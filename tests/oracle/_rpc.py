@@ -141,12 +141,10 @@ timing_layer: Layer[Any, Any, Any] = layer.succeed(Timing, _timing)
 
 def _custom_defect() -> BaseException:
     """Effect dies with a plain object; here its decoded form."""
-    return S.DecodedDefect(
-        S.ErrorInstance(
-            message="detailed error",
-            name="CustomDefect",
-            stack="Error: detailed error\n  at handler.ts:1",
-        )
+    return S.ErrorInstance(
+        message="detailed error",
+        name="CustomDefect",
+        stack="Error: detailed error\n  at handler.ts:1",
     )
 
 
@@ -186,16 +184,12 @@ def _make_handlers() -> Any:
         .handle(UserRpcs.stream_users)(stream_users)
         .handle(UserRpcs.get_interrupts)(lambda _: effect.sync(lambda: counts["interrupts"]))
         .handle(UserRpcs.get_emits)(lambda _: effect.sync(lambda: counts["emits"]))
-        .handle(UserRpcs.produce_defect)(lambda _: effect.die(S.DecodedDefect("boom")))
+        .handle(UserRpcs.produce_defect)(lambda _: effect.die("boom"))
         .handle(UserRpcs.produce_defect_custom)(lambda _: effect.die(_custom_defect()))
         .handle(UserRpcs.never)(lambda _: effect.never.on_interrupt(bump("interrupts")))
         .handle(UserRpcs.nested_test)(lambda _: effect.succeed(None))
         .handle(UserRpcs.timed_method)(
-            lambda r: (
-                effect.die(S.DecodedDefect("boom"))
-                if r.payload["shouldFail"]
-                else effect.succeed(1)
-            ),
+            lambda r: effect.die("boom") if r.payload["shouldFail"] else effect.succeed(1),
         )
         .handle(UserRpcs.get_timing_middleware_metrics)(
             lambda _: effect.sync(lambda: Metrics(**_metrics)),
@@ -328,7 +322,7 @@ def worker_main() -> Layer[Any, Any, Any]:
 
 def run_worker() -> None:
     """A worker's program: serve until the parent closes it."""
-    fx.run_sync_exit(worker_main().launch())
+    fx.run_blocking_exit(worker_main().launch())
 
 
 _TESTS = Path(__file__).parent.parent

@@ -160,7 +160,7 @@ def test_end_of_month():
     """endOf / month"""
     end = date_time.end_of(utc("2024-03-15T12:00:00.000Z"), "month")
     assert iso(end) == "2024-03-31T23:59:59.999Z"
-    assert end.microsecond == 999_999
+    assert end.microsecond == 999_000
 
 
 def test_end_of_feb_leap_year():

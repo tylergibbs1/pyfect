@@ -27,9 +27,9 @@ def test_is_future_and_is_past_compare_with_the_clock():
 
 
 @testing.effect
-def test_now_keeps_microseconds():
-    yield from testing.set_time(1.000_001_9)
-    assert (yield from date_time.now()) == datetime(1970, 1, 1, 0, 0, 1, 1, tzinfo=UTC)
+def test_now_floors_to_a_millisecond():
+    yield from testing.set_time(1.001_9)
+    assert (yield from date_time.now()) == datetime(1970, 1, 1, 0, 0, 1, 1000, tzinfo=UTC)
 
 
 @testing.effect
@@ -144,10 +144,10 @@ def test_start_of_and_nearest_resolve_in_the_zone():
     # Sunday 2025-03-09 is the spring-forward day: its midnight is EST, its noon EDT.
     noon = datetime(2025, 3, 9, 12, tzinfo=NEW_YORK)
     assert date_time.start_of(noon, "day").isoformat() == "2025-03-09T00:00:00-05:00"
-    assert date_time.end_of(noon, "day").isoformat() == "2025-03-09T23:59:59.999999-04:00"
+    assert date_time.end_of(noon, "day").isoformat() == "2025-03-09T23:59:59.999000-04:00"
     assert date_time.nearest(noon, "day").isoformat() == "2025-03-10T00:00:00-04:00"
     assert date_time.start_of(noon, "year").isoformat() == "2025-01-01T00:00:00-05:00"
-    assert date_time.end_of(noon, "hour").isoformat() == "2025-03-09T12:59:59.999999-04:00"
+    assert date_time.end_of(noon, "hour").isoformat() == "2025-03-09T12:59:59.999000-04:00"
 
 
 def test_fractional_time_units_truncate_the_instant_like_effect():
@@ -156,18 +156,18 @@ def test_fractional_time_units_truncate_the_instant_like_effect():
     # 1000 - 0.5ms is 999, -1000 + 0.5ms is -999, -1000 - 0.5ms is -1000.
     one = datetime.fromtimestamp(1, UTC)
     minus_one = datetime.fromtimestamp(-1, UTC)
-    micro = timedelta(microseconds=1)
-    assert date_time.subtract(one, microseconds=0.5) == one - micro
-    assert date_time.add(one, microseconds=-0.5) == one - micro
-    assert date_time.add(minus_one, microseconds=0.5) == minus_one + micro
-    assert date_time.add(minus_one, microseconds=-0.5) == minus_one
-    assert date_time.add(one, microseconds=0.5, milliseconds=0.0005) == one
+    milli = timedelta(milliseconds=1)
+    assert date_time.subtract(one, milliseconds=0.5) == one - milli
+    assert date_time.add(one, milliseconds=-0.5) == one - milli
+    assert date_time.add(minus_one, milliseconds=0.5) == minus_one + milli
+    assert date_time.add(minus_one, milliseconds=-0.5) == minus_one
+    assert date_time.add(one, milliseconds=0.5) == one
 
 
 def test_millisecond_is_a_unit():
     dt = datetime(2024, 3, 20, 12, 0, 0, 123_456, tzinfo=UTC)
     assert date_time.start_of(dt, "millisecond") == dt.replace(microsecond=123_000)
-    assert date_time.end_of(dt, "millisecond") == dt.replace(microsecond=123_999)
+    assert date_time.end_of(dt, "millisecond") == dt.replace(microsecond=123_000)
     assert date_time.nearest(dt, "millisecond") == dt.replace(microsecond=123_000)
     assert date_time.nearest(dt.replace(microsecond=123_500), "millisecond") == (
         dt.replace(microsecond=124_000)
@@ -219,5 +219,5 @@ def test_start_end_and_nearest_of_calendar_units_in_a_zone(
 
     assert utc_minute(date_time.start_of(at, unit)) == start
     assert utc_minute(date_time.end_of(at, unit)) == end
-    assert date_time.end_of(at, unit).microsecond == 999_999
+    assert date_time.end_of(at, unit).microsecond == 999_000
     assert utc_minute(date_time.nearest(at, unit)) == nearest

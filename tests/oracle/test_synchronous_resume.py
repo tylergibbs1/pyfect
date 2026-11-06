@@ -56,7 +56,7 @@ def _show(ex: fx.Exit[Any, Any]) -> str:
 
 def _run(program: fx.Effect[Any, Any]) -> tuple[str, list[str]]:
     log.clear()
-    return _show(fx.run_sync_exit(program)), list(log)
+    return _show(fx.run_blocking_exit(program)), list(log)
 
 
 def _on_exit_log(ex: fx.Exit[Any, Any]) -> fx.Effect[str]:
@@ -126,7 +126,7 @@ def test_race_all_first_interrupts_yielded_losers_in_fork_order():
         return body.on_interrupt(fx.sync(lambda: log.append(f"int{i}")))
 
     log.clear()
-    assert fx.run_sync(fx.race_all_first(racer(0, 3), racer(1, 1), racer(2, 2))) == 1
+    assert fx.run_blocking(fx.race_all_first(racer(0, 3), racer(1, 1), racer(2, 2))) == 1
     assert log == ["end1", "int0", "int2"]
 
 
@@ -148,7 +148,7 @@ def test_an_interrupt_unwinds_a_yielded_fiber_before_interrupt_unsafe_returns():
         yield from a.await_exit()
 
     log.clear()
-    fx.run_sync(program)
+    fx.run_blocking(program)
     assert log == ["a finalizer", "after interruptUnsafe"]
 
 
@@ -179,7 +179,7 @@ def test_an_abandoned_cache_lookup_finishes_before_the_next_lookup_of_its_key_st
         return (yield from cache.get(1))
 
     log.clear()
-    assert fx.run_sync(program) == 1
+    assert fx.run_blocking(program) == 1
     assert log == ["start (running=1)", "end", "A interrupted", "start (running=1)", "end"]
 
 
@@ -202,7 +202,7 @@ def test_an_interrupt_cascade_ends_the_parent_before_interrupt_unsafe_returns():
         return parent.poll_unsafe() is not None
 
     log.clear()
-    assert fx.run_sync(program) is True
+    assert fx.run_blocking(program) is True
     assert log == ["parent fin"]
 
 

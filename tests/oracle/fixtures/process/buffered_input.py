@@ -35,7 +35,7 @@ def program():
 
 
 services = process.layer.pipe(provide(merge(file_system_layer, path_layer)))
-result = fx.run_sync_exit(fx.scoped(program()).pipe(fx.provide(services)))
+result = fx.run_blocking_exit(fx.scoped(program()).pipe(fx.provide(services)))
 print("program finished:", type(result).__name__, flush=True)
 time.sleep(0.5)
 print("still alive after 500ms", flush=True)

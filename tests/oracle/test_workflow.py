@@ -2,7 +2,7 @@
 
 Each test's docstring is the Effect test title. Effect's test pauses the
 fiber with a custom ``Scheduler.shouldYield`` once the activity is
-registered, then interrupts it. pyfect has no per-step hook, so the port
+registered, then interrupts it. The port
 sweeps ``MaxOpsBeforeYield`` budgets, interrupting the paused fiber each
 time, and checks that some budget lands the pause between the acquisition
 and the body.

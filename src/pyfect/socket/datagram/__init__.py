@@ -16,7 +16,7 @@ no reader is open, so a send-only client still acquires a reader::
         return response.payload
 
 ``make_udp`` / ``layer_udp`` open sockets with Python's ``socket`` module (read on
-the socket loop's thread, so they work under ``run_sync`` too);
+the socket loop's thread, so they work under ``run_blocking`` too);
 ``from_socket`` adopts a bound one; ``make_from_backing_socket`` is the
 contract other transports implement.
 """

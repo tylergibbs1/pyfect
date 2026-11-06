@@ -86,7 +86,7 @@ class StreamAsyncIterator(Generic[A_co]):
         if self._closing is not None and ex.cause.has_interrupts_only:
             return await self._ended()
         await self._close_reporting(ex)
-        raise ex.cause.squash()
+        raise ex.cause.raisable()
 
     async def aclose(self) -> None:
         """Interrupt a pull in flight and close the run's scope. Closing

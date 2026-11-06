@@ -128,7 +128,9 @@ def test_layer_map_and_layer_ref_share_what_the_enclosing_build_built():
         yield from fx.scoped(layer_ref.context_effect())
         log.append("built")
 
-    fx.run_sync(fx.scoped(layer.effect_discard(use).pipe(layer.provide_merge(dep_live)).build()))
+    fx.run_blocking(
+        fx.scoped(layer.effect_discard(use).pipe(layer.provide_merge(dep_live)).build())
+    )
     assert log == ["D+", "outer has D", "built", "D-"]
 
 

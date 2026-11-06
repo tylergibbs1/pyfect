@@ -25,7 +25,7 @@ Adapted, with the reason:
   hash(-2)`` in CPython gives two requests with equal hashes.
 - "persisted stores synchronous resolver failures": the resolver raises
   ``RuntimeError("backend defect")`` (a defect must be an exception), and
-  the stored defect comes back as a ``DecodedDefect`` with the same
+  the stored defect comes back as the same
   message, so the two exits are compared by their defect's text.
 
 Omitted, with the reason:
@@ -881,10 +881,10 @@ def test_persisted_stores_synchronous_resolver_failures():
         request = ThrowingValue()
         first = yield from fx.request(request, persisted).exit()
         assert isinstance(first, fx.Failure)
-        assert str(first.cause.find_defect()) == "backend defect"
+        assert str(first.cause.defects[0]) == "backend defect"
         second = yield from fx.request(request, persisted).exit()
         assert isinstance(second, fx.Failure)
-        assert str(second.cause.find_defect()) == "backend defect"
+        assert str(second.cause.defects[0]) == "backend defect"
         assert calls[0] == 1
 
     yield from fx.gen(body).pipe(fx.provide(persistence.layer_memory))

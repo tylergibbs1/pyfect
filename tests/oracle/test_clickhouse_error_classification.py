@@ -19,7 +19,7 @@ from ._clickhouse_fake import Call, FakeClickhouse
 
 
 def _run(effect: fx.Effect[Any, Any, Any]) -> Any:
-    return fx.run_sync(fx.scoped(effect).pipe(fx.provide(reactivity_layer)).timeout(5).or_die())
+    return fx.run_blocking(fx.scoped(effect).pipe(fx.provide(reactivity_layer)).timeout(5).or_die())
 
 
 def _connect_failure_reason_tag(code: int) -> str:

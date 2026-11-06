@@ -353,13 +353,13 @@ def test_insert_and_update_without_a_returned_row_die():
         missing = SoftDeleteUser.update.make({"id": 99, "name": "Nobody", "deleted_at": None})
         exit_ = yield from repo.update(missing).exit()
         assert isinstance(exit_, fx.Failure)
-        assert isinstance(exit_.cause.find_defect(), NoSuchElementException)
+        assert isinstance(exit_.cause.defects[0], NoSuchElementException)
 
         yield from repo.delete(alice.id)
         update = SoftDeleteUser.update.make({"id": alice.id, "name": "Al", "deleted_at": None})
         exit_ = yield from repo.update(update).exit()
         assert isinstance(exit_, fx.Failure)
-        assert isinstance(exit_.cause.find_defect(), NoSuchElementException)
+        assert isinstance(exit_.cause.defects[0], NoSuchElementException)
 
     yield from _with_client(body)
 

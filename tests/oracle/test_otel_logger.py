@@ -339,7 +339,7 @@ def test_uses_ambient_context_only_when_there_is_no_effect_parent_span():
 
     token = otel_context.attach(trace.set_span_in_context(NonRecordingSpan(ambient)))
     try:
-        fx.run_sync(program.pipe(fx.provide(_sdk(exporter))))
+        fx.run_blocking(program.pipe(fx.provide(_sdk(exporter))))
     finally:
         otel_context.detach(token)
 

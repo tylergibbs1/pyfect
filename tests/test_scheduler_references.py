@@ -20,7 +20,7 @@ class CountingScheduler:
         self.inner = inner
         self.scheduled = 0
 
-    def schedule(self, task: Task) -> None:
+    def schedule(self, task: Task, priority: int = 0) -> None:
         self.scheduled += 1
         self.inner.schedule(task)
 
@@ -52,7 +52,7 @@ _SEQUENTIAL = ["a0", "a1", "a2", "b0", "b1", "b2"]
 
 
 def test_the_run_functions_provide_the_scheduler_they_run_on():
-    assert isinstance(fx.run_sync(fx.CurrentScheduler()), SyncScheduler)
+    assert isinstance(fx.run_blocking(fx.CurrentScheduler()), SyncScheduler)
 
 
 @testing.effect
@@ -115,7 +115,7 @@ def test_a_budget_below_one_still_makes_progress():
         program = fx.for_each(range(10), fx.succeed).pipe(
             fx.provide_service(fx.MaxOpsBeforeYield, budget)
         )
-        assert fx.run_sync(program) == list(range(10))
+        assert fx.run_blocking(program) == list(range(10))
 
 
 def test_the_references_read_their_defaults_and_provided_values():
@@ -127,7 +127,7 @@ def test_the_references_read_their_defaults_and_provided_values():
         )
         return default, provided, (yield from fx.PreventSchedulerYield())
 
-    assert fx.run_sync(program) == (2048, 16, False)
+    assert fx.run_blocking(program) == (2048, 16, False)
 
 
 @testing.effect
@@ -155,14 +155,14 @@ def test_a_context_from_an_earlier_run_runs_on_the_current_runtime():
     scope = CloseableScope()
     ran_on: list[Scheduler] = []
     finalizer = fx.CurrentScheduler().flat_map(lambda s: fx.sync(lambda: ran_on.append(s)))
-    fx.run_sync(scope.add_finalizer(lambda _: finalizer))
+    fx.run_blocking(scope.add_finalizer(lambda _: finalizer))
 
     @fx.gen
     def close():
         yield from scope.close(Success(None))
         return (yield from fx.CurrentScheduler())
 
-    closed_on = fx.run_sync(close)
+    closed_on = fx.run_blocking(close)
     assert ran_on == [closed_on]
 
 
@@ -179,15 +179,15 @@ def test_a_scheduler_provided_in_an_earlier_run_is_kept():
         )
         return counting
 
-    counting = fx.run_sync(add)
-    fx.run_sync(scope.close(Success(None)))
+    counting = fx.run_blocking(add)
+    fx.run_blocking(scope.close(Success(None)))
     assert ran_on == [counting]
 
 
 class ImmediateScheduler(CountingScheduler):
     """Runs each task the moment it is scheduled."""
 
-    def schedule(self, task: Task) -> None:
+    def schedule(self, task: Task, priority: int = 0) -> None:
         task()
 
 

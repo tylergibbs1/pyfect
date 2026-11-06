@@ -21,7 +21,7 @@ class Wrapped(fx.TaggedError):
 def test_defect_shows_the_raising_function():
     """Effect Cause.test.ts "cuts the stack of a defect at the internal frame
     that called user code": the rendered defect names ``userCode``."""
-    ex = fx.run_sync_exit(fx.sync(user_code))
+    ex = fx.run_blocking_exit(fx.sync(user_code))
     assert isinstance(ex, fx.Failure)
     rendered = ex.cause.pretty()
     assert "user_code" in rendered
@@ -57,9 +57,9 @@ def test_empty_cause_renders_a_string():
 def test_a_defect_decoded_from_json_renders_with_the_name_it_was_written_with():
     """A defect that crossed a JSON boundary renders as Effect renders the
     decoded error: ``name: message``, the name it was written with."""
-    from pyfect.schema import DecodedDefect, ErrorInstance
+    from pyfect.schema import ErrorInstance
 
-    decoded = DecodedDefect(ErrorInstance("cause=boom", name="MalformedMessage"))
+    decoded = ErrorInstance("cause=boom", name="MalformedMessage")
     rendered = cause.die(decoded).pretty()
     assert rendered.startswith("MalformedMessage: cause=boom")
 

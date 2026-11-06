@@ -1,13 +1,9 @@
-"""What an AI error says. A call to a tool the toolkit lacks is Effect's
-``InvalidOutputError``, but names the tool and the toolkit's tools (DOGFOOD
-atlas #3; Effect's message is the response part union's schema), and no AI
-error built from a schema error embeds a whole union's schema."""
+"""AI errors made from a ``SchemaError`` carry its message, as Effect's; a call to
+a tool not in the toolkit is an ``InvalidOutputError`` of the part union."""
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any, TypedDict, cast
 
 import pytest
@@ -39,13 +35,6 @@ WEATHER: list[lm.EncodedPart] = [
     {"type": "tool-call", "id": "c1", "name": "atlas_weather", "params": {"city": "Lisbon"}},
     {"type": "finish", "reason": "tool-calls", "usage": USAGE},
 ]
-NAMED = (
-    "Invalid output: The model called the tool 'atlas_weather', which is not in the toolkit "
-    "(its tools: atlas_country_facts, atlas_compare)\n  at [0]"
-)
-
-# Long enough for any one message, far too short for a union of part schemas.
-MAX_MESSAGE = 300
 
 
 def model(parts: list[lm.EncodedPart]) -> fx.Effect[lm.Service]:
@@ -62,29 +51,36 @@ def failure_of(
     return provided.pipe(fx.provide(HANDLERS)).flip()
 
 
+def _is_effects_message(error: E.AiError, method: str) -> bool:
+    prefix = f"LanguageModel.{method}: Invalid output: "
+    return (
+        isinstance(error.reason, E.InvalidOutputError)
+        and error.message.startswith(prefix)
+        and "atlas_weather" not in error.message
+        and "\n  at [0]" in error.message
+    )
+
+
 @pytest.mark.parametrize("resolve", [True, False], ids=["resolved", "unresolved"])
 @testing.effect
-def test_generate_text_names_an_unknown_tool_and_the_available_ones(resolve: bool):
+def test_generate_text_fails_an_unknown_tool_on_the_part_union(resolve: bool):
     error = yield from failure_of(
         lm.generate_text("Weather?", toolkit=KIT, disable_tool_call_resolution=not resolve),
         WEATHER,
     )
-    assert isinstance(error.reason, E.InvalidOutputError)
-    assert error.message == f"LanguageModel.generateText: {NAMED}"
+    assert _is_effects_message(error, "generateText")
 
 
 @testing.effect
-def test_stream_text_names_an_unknown_tool():
+def test_stream_text_fails_an_unknown_tool_on_the_part_union():
     error = yield from failure_of(lm.stream_text("Weather?", toolkit=KIT).run_drain(), WEATHER)
-    assert isinstance(error.reason, E.InvalidOutputError)
-    assert error.message == f"LanguageModel.streamText: {NAMED}"
+    assert _is_effects_message(error, "streamText")
 
 
 @testing.effect
-def test_a_tool_call_with_no_toolkit_names_the_tool():
+def test_a_tool_call_with_no_toolkit_fails_on_the_part_union():
     error = yield from failure_of(lm.generate_text("Weather?"), WEATHER)
-    assert isinstance(error.reason, E.InvalidOutputError)
-    assert "'atlas_weather', which is not in the toolkit (its tools: none)" in error.message
+    assert _is_effects_message(error, "generateText")
 
 
 @testing.effect
@@ -104,22 +100,6 @@ def provided(effect: fx.Effect[Any, Any, Any]) -> fx.Effect[Any, Any, Any]:
     return effect.pipe(fx.provide(HANDLERS))
 
 
-# --- the guard: no union schema in an AI error's message ---------------------------------
-
-
-@testing.effect
-def test_an_invalid_response_part_is_described_without_the_part_union():
-    parts: list[lm.EncodedPart] = [{"type": "telepathy"}, {"type": "finish", "reason": "stop"}]
-    for run in (
-        lm.generate_text("Hi", toolkit=KIT),
-        lm.stream_text("Hi", toolkit=KIT).run_drain(),
-    ):
-        error = yield from failure_of(run, parts)
-        assert isinstance(error.reason, E.InvalidOutputError)
-        assert len(error.message) < MAX_MESSAGE, error.message
-        assert re.search(r"Invalid output: Expected one of \d+ schemas\n  at \[0\]$", error.message)
-
-
 def _shape(i: int) -> S.Top:
     shape = TypedDict(f"Shape{i}", {f"field{i}": str})  # pyright: ignore[reportGeneralTypeIssues]
     return S.Struct(shape)
@@ -132,7 +112,7 @@ def _wide_error() -> S.SchemaError:
     decode = cast(
         "Callable[[object], fx.Effect[object, S.SchemaError]]", S.decode_unknown_effect(WIDE)
     )
-    exit = fx.run_sync_exit(decode(1).flip())
+    exit = fx.run_blocking_exit(decode(1).flip())
     assert isinstance(exit, Success)
     return exit.value
 
@@ -140,41 +120,14 @@ def _wide_error() -> S.SchemaError:
 @pytest.mark.parametrize(
     "describe",
     [
-        lambda error: E.InvalidOutputError.from_schema_error(error).message,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
-        lambda error: E.InvalidResponseError.from_schema_error(error).message,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
-        lambda error: E.StructuredOutputError.from_schema_error(error, "{}").message,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+        lambda error: E.InvalidOutputError.from_schema_error(error).description,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+        lambda error: E.InvalidResponseError.from_schema_error(error).description,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+        lambda error: E.StructuredOutputError.from_schema_error(error, "{}").description,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     ],
     ids=["InvalidOutputError", "InvalidResponseError", "StructuredOutputError"],
 )
-def test_reasons_made_from_a_schema_error_describe_a_union_briefly(
+def test_reasons_made_from_a_schema_error_carry_its_message(
     describe: Callable[[S.SchemaError], str],
 ):
-    message = describe(_wide_error())
-    assert len(message) < MAX_MESSAGE, message
-    assert "one of 12 schemas" in message
-
-
-# Descriptions taken from errors other than schema errors (an SSE error, a schema
-# transformation raising), which carry no union.
-NOT_SCHEMA_ERRORS = {
-    ("language_model.py", "reason = UnsupportedSchemaError(description=str(error))"),
-    ("_provider.py", "return self.error(method, InvalidResponseError(description=error.message))"),
-    (
-        "_provider_tools.py",
-        "return unsupported(module, method, UnsupportedSchemaError(description=str(error)))",
-    ),
-}
-
-
-def test_ai_errors_describe_schema_errors_only_through_describe_schema_error():
-    root = Path(E.__file__).parent
-    found = {
-        (path.name, line.strip())
-        for path in root.rglob("*.py")
-        for line in path.read_text().splitlines()
-        if re.search(r"description=(str\(|[a-z_]+\.message\b)", line)
-    }
-    assert found <= NOT_SCHEMA_ERRORS, (
-        "describe a schema error with ai_error.describe_schema_error, which keeps "
-        f"union schemas out of the message: {sorted(found - NOT_SCHEMA_ERRORS)}"
-    )
+    error = _wide_error()
+    assert describe(error) == error.message

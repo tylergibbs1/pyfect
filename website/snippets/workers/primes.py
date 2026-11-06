@@ -50,6 +50,6 @@ Workers = rpc_client.layer_protocol_worker(size=2).pipe(
 )
 
 if sys.argv[1:] == ["worker"]:
-    fx.run_sync_exit(WorkerMain.launch())
+    fx.run_blocking_exit(WorkerMain.launch())
 else:
     fx.run_main(fx.scoped(program()).pipe(fx.provide(Workers)))

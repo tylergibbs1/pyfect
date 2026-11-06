@@ -14,7 +14,7 @@ raised while parsing is raised as it is.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from typing import Any, Never, Protocol, TypeIs, Unpack, cast
 
 from pyfect._core import Effect
@@ -24,7 +24,7 @@ from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
 from pyfect.option import Option, Some
 from pyfect.result import Err, Ok, Result
-from pyfect.run import run_sync_exit
+from pyfect.run import run_async, run_sync_exit
 from pyfect.schema import ast as ast_module
 from pyfect.schema._adapters import (
     ASSERTION,
@@ -158,6 +158,15 @@ def _as_sync[O](run: _Run[O]) -> Parser[object, O]:
 # ---------------------------------------------------------------- decoding
 
 
+def _as_promise[I, A](
+    parser: Parser[I, Effect[A, SchemaError]],
+) -> Parser[I, Coroutine[Any, Any, A]]:
+    def promise(input: I, /, **options: Unpack[ParseOptions]) -> Coroutine[Any, Any, A]:
+        return run_async(cast("Effect[A]", parser(input, **options)))
+
+    return promise
+
+
 def decode_unknown_effect[A, R](
     schema: Codec[A, object, R, object], /, **options: Unpack[ParseOptions]
 ) -> Parser[object, Effect[A, SchemaError, R]]:
@@ -168,6 +177,22 @@ def decode_effect[A, I, R](
     schema: Codec[A, I, R, object], /, **options: Unpack[ParseOptions]
 ) -> Parser[I, Effect[A, SchemaError, R]]:
     return _as_effect(_decoding(schema, options))
+
+
+def decode_unknown_promise[A](
+    schema: Codec[A, object, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Coroutine[Any, Any, A]]:
+    """A coroutine that decodes, raising ``SchemaError`` (Effect's
+    ``decodeUnknownPromise``)."""
+    return _as_promise(decode_unknown_effect(schema, **options))
+
+
+def decode_promise[A, I](
+    schema: Codec[A, I, Never, object], /, **options: Unpack[ParseOptions]
+) -> Parser[I, Coroutine[Any, Any, A]]:
+    """A coroutine that decodes, raising ``SchemaError`` (Effect's
+    ``decodePromise``)."""
+    return _as_promise(decode_effect(schema, **options))
 
 
 def decode_unknown_exit[A](
@@ -231,6 +256,22 @@ def encode_effect[A, I, R](
     schema: Codec[A, I, object, R], /, **options: Unpack[ParseOptions]
 ) -> Parser[A, Effect[I, SchemaError, R]]:
     return _as_effect(_encoding(schema, options))
+
+
+def encode_unknown_promise[I](
+    schema: Codec[object, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[object, Coroutine[Any, Any, I]]:
+    """A coroutine that encodes, raising ``SchemaError`` (Effect's
+    ``encodeUnknownPromise``)."""
+    return _as_promise(encode_unknown_effect(schema, **options))
+
+
+def encode_promise[A, I](
+    schema: Codec[A, I, object, Never], /, **options: Unpack[ParseOptions]
+) -> Parser[A, Coroutine[Any, Any, I]]:
+    """A coroutine that encodes, raising ``SchemaError`` (Effect's
+    ``encodePromise``)."""
+    return _as_promise(encode_effect(schema, **options))
 
 
 def encode_unknown_exit[I](

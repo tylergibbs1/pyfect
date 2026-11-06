@@ -64,6 +64,11 @@ def info(*args: object) -> Effect[None]:
     return _call(lambda c: c.info(*args))
 
 
+def dirxml(*args: object) -> Effect[None]:
+    """Node's ``dirxml`` is ``log``."""
+    return log(*args)
+
+
 def log(*args: object) -> Effect[None]:
     return _call(lambda c: c.log(*args))
 

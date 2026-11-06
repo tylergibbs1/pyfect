@@ -68,7 +68,7 @@ def _first_message(**client_options: Any) -> object:
         .pipe(fx.provide(router.serve(routes, disable_logger=True)))
     )
     provided = scoped(program).pipe(fx.provide(live_server.layer_test()))
-    return fx.run_sync(provided.timeout(10).or_die())
+    return fx.run_blocking(provided.timeout(10).or_die())
 
 
 def test_the_client_takes_a_message_over_1_mib_by_default() -> None:
@@ -92,7 +92,7 @@ def _default(function: Any, name: str) -> object:
 
 
 def test_every_websocket_endpoint_defaults_to_the_same_limit() -> None:
-    assert DEFAULT_MAX_MESSAGE_SIZE == 16 * 1024 * 1024
+    assert DEFAULT_MAX_MESSAGE_SIZE == 100 * 1024 * 1024
     assert _default(ws_platform.WsWebSocket.connect, "max_message_size") == DEFAULT_MAX_MESSAGE_SIZE
     assert _default(ws_platform.layer_web_socket, "max_message_size") == DEFAULT_MAX_MESSAGE_SIZE
     assert (

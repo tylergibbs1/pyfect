@@ -76,4 +76,4 @@ def test_settling_one_queue_keeps_another_queues_claim(tmp_path: Path, store: St
         assert runs == ["a-value", "b-value"]
 
     services = pq.layer.pipe(fx.layer.provide_merge(store(tmp_path)))
-    fx.run_sync(fx.scoped(fx.gen(body)).pipe(fx.provide(services)).or_die())
+    fx.run_blocking(fx.scoped(fx.gen(body)).pipe(fx.provide(services)).or_die())

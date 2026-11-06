@@ -29,7 +29,7 @@ class RateLimitStoreError(
     """The store could not be reached; ``cause`` is why."""
 
     message: str
-    cause: BaseException | None = S.field(S.Union(S.Null, S.Defect()), default=None)
+    cause: object = S.field(S.Union(S.Null, S.Defect()), default=None)
 
 
 type RateLimiterErrorReason = RateLimitExceeded | RateLimitStoreError
@@ -48,10 +48,10 @@ class RateLimiterError(
     reason: RateLimiterErrorReason = S.field(RATE_LIMITER_ERROR_REASON)
 
     def __post_init__(self) -> None:
-        self.__cause__ = self.cause
+        self.__cause__ = self.cause if isinstance(self.cause, BaseException) else None
 
     @property
-    def cause(self) -> BaseException | None:
+    def cause(self) -> object:
         return self.reason.cause if isinstance(self.reason, RateLimitStoreError) else None
 
     @property

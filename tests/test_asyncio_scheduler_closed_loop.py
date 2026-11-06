@@ -55,7 +55,7 @@ def test_interrupting_a_fiber_whose_loop_closed_is_a_defect_of_the_interrupter()
     started.wait(5)
     loop.call_soon_threadsafe(loop.stop)
     thread.join(5)
-    exit = fx.run_sync_exit(fibers[0].interrupt())
+    exit = fx.run_blocking_exit(fibers[0].interrupt())
     assert isinstance(exit, fx.Failure)
     assert isinstance(exit.cause.squash(), LoopClosedError)
 

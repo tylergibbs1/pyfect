@@ -38,7 +38,7 @@ port: fx.Effect[int, Any, server.HttpServer] = server.HttpServer().map(
 
 def _run(program: fx.Effect[Any, Any, Any], **options: Any) -> Any:
     provided = scoped(program).pipe(fx.provide(uvicorn_server.layer_test(**options)))
-    return fx.run_sync(provided.or_die())
+    return fx.run_blocking(provided.or_die())
 
 
 def _serving(
@@ -84,7 +84,7 @@ def test_a_port_in_use_fails_with_a_socket_server_error() -> None:
     with socket.create_server(("127.0.0.1", 0)) as taken:
         at = taken.getsockname()[1]
         made = scoped(uvicorn_server.make(host="127.0.0.1", port=at)).exit()
-        exit = fx.run_sync(made)
+        exit = fx.run_blocking(made)
     assert isinstance(exit, fx.Failure)
     assert "SocketServerError" in type(exit.cause.squash()).__name__
 
@@ -368,8 +368,8 @@ def test_closing_the_serving_scope_stops_the_server() -> None:
     assert _run(program()) == ((200, "ok"), False)
 
 
-def test_under_run_sync_inside_a_running_loop_the_server_runs_on_a_loop_of_its_own() -> None:
-    # run_sync blocks the coroutine's loop, so uvicorn must not be put on it.
+def test_under_run_blocking_inside_a_running_loop_the_server_runs_on_a_loop_of_its_own() -> None:
+    # run_blocking blocks the coroutine's loop, so uvicorn must not be put on it.
     routes = router.add("GET", "/", server_response.text("ok"))
 
     async def main() -> tuple[int, str]:

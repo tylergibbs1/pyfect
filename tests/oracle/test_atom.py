@@ -987,7 +987,7 @@ def test_disposed_lifetime_ignores_async_updates(timers: FakeTimers) -> None:
 
 
 def _sleepy(start: int, stop: int) -> fx.Stream[int]:
-    return stream.range_inclusive(start, stop).tap(lambda _: fx.sleep(0.05))
+    return stream.range(start, stop).tap(lambda _: fx.sleep(0.05))
 
 
 @testing.effect
@@ -995,7 +995,7 @@ def test_stream():
     """stream"""
     services = yield from fx.context()
     count = atom.make(
-        stream.range_inclusive(0, 2)
+        stream.range(0, 2)
         .tap(lambda _: AtomRegistry())
         .tap(lambda _: fx.sleep(0.05))
         .pipe(stream.provide_context(services))
@@ -1116,7 +1116,7 @@ def test_pull(timers: FakeTimers) -> None:
     """pull"""
     _check_pull(
         timers,
-        atom.pull(stream.range_inclusive(0, 1, chunk_size=1).tap(lambda _: fx.sleep(0.05))),
+        atom.pull(stream.range(0, 1, chunk_size=1).tap(lambda _: fx.sleep(0.05))),
         0,
         1,
     )
@@ -1125,16 +1125,14 @@ def test_pull(timers: FakeTimers) -> None:
 def test_pull_runtime(timers: FakeTimers) -> None:
     """pull runtime"""
     source = stream.unwrap(
-        _counter_get().map(lambda start: stream.range_inclusive(start, 2, chunk_size=1))
+        _counter_get().map(lambda start: stream.range(start, 2, chunk_size=1))
     ).tap(lambda _: fx.sleep(0.05))
     _check_pull(timers, counter_runtime.pull(source), 1, 2)
 
 
 def test_pull_refreshable(timers: FakeTimers) -> None:
     """pull refreshable"""
-    count = atom.pull(
-        lambda _get: stream.range_inclusive(1, 2, chunk_size=1).tap(lambda _: fx.sleep(0.05))
-    )
+    count = atom.pull(lambda _get: stream.range(1, 2, chunk_size=1).tap(lambda _: fx.sleep(0.05)))
     r = timers.registry()
     unmount = r.mount(count)
     result = r.get(count)

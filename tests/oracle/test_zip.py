@@ -311,7 +311,7 @@ def test_dies_when_the_runtime_cannot_deflate(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr(zlib, "compressobj", broken)
     for entry in (Zip.file("a", "a"), Zip.file_stream("a", stream.make(b"a"))):
-        result = fx.run_sync_exit(encode([entry]))
+        result = fx.run_blocking_exit(encode([entry]))
         assert isinstance(result, fx.Failure)
         assert result.cause.has_dies
 

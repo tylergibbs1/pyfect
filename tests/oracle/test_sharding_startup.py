@@ -66,7 +66,7 @@ class _StartupLast:
         self._held: deque[Task] = deque()
         self.held_total = 0
 
-    def schedule(self, task: Task) -> None:
+    def schedule(self, task: Task, priority: int = 0) -> None:
         if fx.Fiber.get_current() is self._startup and self._pending > 0:
             self.held_total += 1
             self._held.append(task)

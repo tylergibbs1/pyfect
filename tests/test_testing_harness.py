@@ -50,7 +50,7 @@ def test_a_typed_error_fails_the_test_and_every_reason_is_shown(
     )
     result = pytester.runpytest()
     result.assert_outcomes(failed=1)
-    result.stdout.fnmatch_lines(["*UnhandledError: 'boom'*", "*RuntimeError: cleanup broke*"])
+    result.stdout.fnmatch_lines(["*UnhandledError: boom*", "*RuntimeError: cleanup broke*"])
 
 
 def test_a_failed_exit_comparison_shows_the_pretty_cause(pytester: pytest.Pytester) -> None:
@@ -59,7 +59,7 @@ def test_a_failed_exit_comparison_shows_the_pretty_cause(pytester: pytest.Pytest
         import pyfect as fx
 
         def test_compare():
-            ex = fx.run_sync_exit(fx.die(ValueError("deep down")))
+            ex = fx.run_blocking_exit(fx.die(ValueError("deep down")))
             assert ex == fx.Success(1)
         """
     )
@@ -69,14 +69,14 @@ def test_a_failed_exit_comparison_shows_the_pretty_cause(pytester: pytest.Pytest
 
 
 def test_assert_exit_success_shows_the_pretty_cause_of_a_failure() -> None:
-    ex = fx.run_sync_exit(fx.die(ValueError("deep down")))
+    ex = fx.run_blocking_exit(fx.die(ValueError("deep down")))
     with pytest.raises(AssertionError, match=r"(?s)expected Success\(1\).*ValueError: deep down"):
         testing.assert_exit_success(ex, 1)
-    testing.assert_exit_success(fx.run_sync_exit(fx.succeed(1)), 1)
+    testing.assert_exit_success(fx.run_blocking_exit(fx.succeed(1)), 1)
 
 
 def test_assert_exit_failure_compares_causes() -> None:
-    ex = fx.run_sync_exit(fx.fail("boom"))
+    ex = fx.run_blocking_exit(fx.fail("boom"))
     testing.assert_exit_failure(ex, fail("boom"))
     with pytest.raises(AssertionError, match=r"(?s)expected Failure.*got Failure"):
         testing.assert_exit_failure(ex, die(ValueError("other")))
@@ -208,7 +208,7 @@ def test_run_test_times_out_in_real_time() -> None:
 
 
 def test_with_live_outside_a_test_clock_runs_the_effect_as_is() -> None:
-    assert fx.run_sync(testing.with_live(fx.succeed(1))) == 1
+    assert fx.run_blocking(testing.with_live(fx.succeed(1))) == 1
 
 
 # --- asyncio ----------------------------------------------------------------------------

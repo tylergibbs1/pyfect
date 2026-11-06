@@ -22,7 +22,7 @@ def _decode_with[A](
     eff: fx.Effect[A, Never, HttpServerRequest | ParsedSearchParams],
 ) -> A:
     request = request_from_web(WebRequest("http://localhost/", headers=dict(headers)))
-    return fx.run_sync(
+    return fx.run_blocking(
         eff.pipe(effect.provide_service(HttpServerRequest, request)).pipe(
             effect.provide_service(ParsedSearchParams, {})
         )

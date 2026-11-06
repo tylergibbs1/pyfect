@@ -33,7 +33,7 @@ def test_run_in_closes_the_latest_registration_first_when_a_fiber_is_registered_
         fiber.run_in(scope)
         yield from scope.close(fx.exit.succeed(None))
 
-    fx.run_sync(program)
+    fx.run_blocking(program)
     assert events == ["interrupted", "finalizer"]
 
 
@@ -186,7 +186,7 @@ def test_runs_an_async_interrupt_finalizer_exactly_once_in_order():
 
 def test_get_current_is_none_outside_a_fiber():
     assert fx.Fiber.get_current() is None
-    fiber = fx.run_sync(fx.sync(fx.Fiber.get_current).fork().flat_map(lambda f: f.join()))
+    fiber = fx.run_blocking(fx.sync(fx.Fiber.get_current).fork().flat_map(lambda f: f.join()))
     assert isinstance(fiber, fx.Fiber)
 
 

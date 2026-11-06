@@ -37,12 +37,11 @@ def from_env_record(
 def from_env(
     env: Mapping[str, str] | None = None, *, preserve_empty_strings: bool = False
 ) -> ConfigProvider:
-    """``from_env_record`` over ``env``, or over ``os.environ`` (names and
-    values read at each lookup) when no ``env`` is given."""
-    if env is not None:
-        return from_env_record(env, preserve_empty_strings=preserve_empty_strings)
-    return make(
-        lambda path: succeed(_node_at(_trie(os.environ), os.environ, path, preserve_empty_strings))
+    """``from_env_record`` over ``env``, or over a copy of ``os.environ``
+    made now (as Effect copies ``process.env``), so later writes to the
+    environment are not seen."""
+    return from_env_record(
+        dict(os.environ) if env is None else env, preserve_empty_strings=preserve_empty_strings
     )
 
 

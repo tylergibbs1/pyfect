@@ -181,7 +181,7 @@ def _worker_main(runner: AnyLayer, platform: AnyLayer) -> None:
         .pipe(L.provide(runner))
         .pipe(L.provide(platform))
     )
-    fx.run_sync_exit(main.launch())
+    fx.run_blocking_exit(main.launch())
 
 
 def _thread_workers(runner: AnyLayer | None = None, platform: AnyLayer | None = None) -> Any:

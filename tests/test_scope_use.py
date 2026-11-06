@@ -79,5 +79,5 @@ def test_fork_unsafe_gives_a_child_closed_with_its_parent():
     parent = CloseableScope()
     child = parent.fork_unsafe("parallel")
     assert child.strategy == "parallel" and not child.is_closed
-    fx.run_sync(parent.close(fx.exit.void))
+    fx.run_blocking(parent.close(fx.exit.void))
     assert child.is_closed

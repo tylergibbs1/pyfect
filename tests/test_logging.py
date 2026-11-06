@@ -117,7 +117,7 @@ def test_causes_are_taken_out_of_the_message_and_merged():
     (entry,) = entries
     assert entry.message == ("text",)
     assert entry.cause.failures == ("a",)
-    assert isinstance(entry.cause.find_defect(), ValueError)
+    assert isinstance(entry.cause.defects[0], ValueError)
 
 
 @testing.effect
@@ -160,7 +160,7 @@ def test_a_logger_that_raises_is_a_defect():
 
     ex = yield from fx.log("x").with_logger(fx.Logger.make(boom)).exit()
     assert isinstance(ex, fx.Failure)
-    assert isinstance(ex.cause.find_defect(), RuntimeError)
+    assert isinstance(ex.cause.defects[0], RuntimeError)
 
 
 @pytest.mark.parametrize(
@@ -538,7 +538,7 @@ def test_a_failing_pool_finalizer_is_logged_at_the_unhandled_log_level():
     for entry in entries:
         assert entry.message == ("Unhandled error in pool finalizer",)
         assert entry.log_level is fx.LogLevel.ERROR
-        assert isinstance(entry.cause.find_defect(), RuntimeError)
+        assert isinstance(entry.cause.defects[0], RuntimeError)
     entries.clear()
     yield from (
         fx.scoped(program).pipe(only_capture).pipe(fx.provide_service(fx.UnhandledLogLevel, None))

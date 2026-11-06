@@ -47,12 +47,12 @@ def test_tags_with_the_same_shape_stay_distinct():
     eff = read_both.pipe(fx.provide_service(Primary, InMemoryDb({"k": "p"}))).pipe(
         fx.provide_service(Replica, InMemoryDb({"k": "r"}))
     )
-    assert fx.run_sync(eff) == ("p", "r")
+    assert fx.run_blocking(eff) == ("p", "r")
 
 
 def test_references_have_defaults_and_can_be_overridden():
-    assert fx.run_sync(Verbose()) is False
-    assert fx.run_sync(Verbose().pipe(fx.provide_service(Verbose, True))) is True
+    assert fx.run_blocking(Verbose()) is False
+    assert fx.run_blocking(Verbose().pipe(fx.provide_service(Verbose, True))) is True
 
 
 def test_reference_without_default_is_rejected_at_class_creation():
@@ -71,7 +71,7 @@ def test_provided_services_are_scoped_to_the_effect():
         b = yield from Prefix()
         return a, b
 
-    assert fx.run_sync(program.pipe(fx.provide_service(Prefix, "outer"))) == ("inner", "outer")
+    assert fx.run_blocking(program.pipe(fx.provide_service(Prefix, "outer"))) == ("inner", "outer")
 
 
 def test_forked_fibers_see_the_parents_services():
@@ -80,13 +80,13 @@ def test_forked_fibers_see_the_parents_services():
         fiber = yield from Prefix().fork()
         return (yield from fiber.join())
 
-    assert fx.run_sync(program.pipe(fx.provide_service(Prefix, "x"))) == "x"
+    assert fx.run_blocking(program.pipe(fx.provide_service(Prefix, "x"))) == "x"
 
 
 def test_missing_service_is_a_defect_with_a_clear_message():
     eff: fx.Effect[str] = Prefix()  # type: ignore[assignment]  # deliberately lie to the checker
     with pytest.raises(fx.MissingServiceError, match="Prefix"):
-        fx.run_sync(eff)
+        fx.run_blocking(eff)
 
 
 # --- layers ---------------------------------------------------------------------
@@ -97,13 +97,13 @@ def test_layer_succeed_and_provide():
         layer.succeed(Primary, InMemoryDb({"k": "p"})),
         layer.succeed(Replica, InMemoryDb({"k": "r"})),
     )
-    assert fx.run_sync(read_both.pipe(fx.provide(live))) == ("p", "r")
+    assert fx.run_blocking(read_both.pipe(fx.provide(live))) == ("p", "r")
 
 
 def test_partial_provide_leaves_the_rest():
     eff = read_both.pipe(fx.provide(layer.succeed(Primary, InMemoryDb({"k": "p"}))))
     eff2 = eff.pipe(fx.provide(layer.succeed(Replica, InMemoryDb({"k": "r"}))))
-    assert fx.run_sync(eff2) == ("p", "r")
+    assert fx.run_blocking(eff2) == ("p", "r")
 
 
 def test_layers_can_depend_on_layers():
@@ -118,7 +118,7 @@ def test_layers_can_depend_on_layers():
     db = layer.effect(Primary, make_db)
     prefix = layer.succeed(Prefix, "hello")
     eff = Primary().map(lambda d: d.get("k")).pipe(fx.provide(db.pipe(fx.provide(prefix))))
-    assert fx.run_sync(eff) == "hello!"
+    assert fx.run_blocking(eff) == "hello!"
     assert builds == ["db"]
 
 
@@ -133,7 +133,7 @@ def test_a_shared_layer_is_built_once_per_provide():
 
     primary = layer.effect(Primary, make("primary")).pipe(fx.provide(base))
     replica = layer.effect(Replica, make("replica")).pipe(fx.provide(base))
-    assert fx.run_sync(read_both.pipe(fx.provide(layer.merge(primary, replica)))) == (
+    assert fx.run_blocking(read_both.pipe(fx.provide(layer.merge(primary, replica)))) == (
         "primary:p",
         "replica:p",
     )
@@ -149,7 +149,7 @@ def test_fresh_layers_are_not_shared():
     replica = layer.effect(Replica, Prefix().map(lambda p: InMemoryDb({"k": p}))).pipe(
         fx.provide(base)
     )
-    fx.run_sync(read_both.pipe(fx.provide(layer.merge(primary, replica))))
+    fx.run_blocking(read_both.pipe(fx.provide(layer.merge(primary, replica))))
     assert builds == ["built", "built"]
 
 
@@ -162,7 +162,7 @@ def test_layer_resources_are_released_after_the_program():
     )
     live = layer.effect(Primary, acquire)
     program = Primary().map(lambda d: log.append("use") or d.get("k"))
-    assert fx.run_sync(program.pipe(fx.provide(live))) == "v"
+    assert fx.run_blocking(program.pipe(fx.provide(live))) == "v"
     assert log == ["open", "use", "close"]
 
 
@@ -172,7 +172,7 @@ def test_a_failing_layer_fails_the_program():
         host: str
 
     bad = layer.effect(Primary, fx.fail(ConnectError("db.local")))
-    ex = fx.run_sync_exit(Primary().pipe(fx.provide(bad)))
+    ex = fx.run_blocking_exit(Primary().pipe(fx.provide(bad)))
     assert isinstance(ex, fx.Failure) and ex.cause.failures == (ConnectError("db.local"),)
 
 
@@ -187,4 +187,4 @@ def test_provide_merge_keeps_both_outputs():
         p = yield from Prefix()
         return db.get("k"), p
 
-    assert fx.run_sync(program.pipe(fx.provide(both))) == ("shared", "shared")
+    assert fx.run_blocking(program.pipe(fx.provide(both))) == ("shared", "shared")

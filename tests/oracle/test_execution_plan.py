@@ -257,7 +257,7 @@ class _Collector:
 
 def _squash(c: Cause[Any]) -> object:
     found = c.find_fail()
-    return found.error if isinstance(found, Fail) else c.find_defect()
+    return found.error if isinstance(found, Fail) else c.defects[0]
 
 
 def _simplify(event: Event[Any]) -> dict[str, object]:

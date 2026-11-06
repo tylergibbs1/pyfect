@@ -194,7 +194,7 @@ def _responding(
 
 
 def _run(program: Effect[Any, Any]) -> Any:
-    return fx.run_sync(scoped(program))
+    return fx.run_blocking(scoped(program))
 
 
 def _exit(api: Any, http: HttpClientService[Any], use: Any) -> Exit[Any, Any]:

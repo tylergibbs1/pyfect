@@ -20,5 +20,5 @@ def describe(exit: fx.Exit[str, NotFound]) -> str:
                     return f"crashed: {rest.pretty()}"
 
 
-print(describe(fx.run_sync_exit(fx.fail(NotFound("motd")))))
-print(describe(fx.run_sync_exit(fx.die(ZeroDivisionError("division by zero")))))
+print(describe(fx.run_blocking_exit(fx.fail(NotFound("motd")))))
+print(describe(fx.run_blocking_exit(fx.die(ZeroDivisionError("division by zero")))))

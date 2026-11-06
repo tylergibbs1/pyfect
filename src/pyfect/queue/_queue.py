@@ -20,6 +20,7 @@ from pyfect._core import (
     uninterruptible_mask,
 )
 from pyfect._effect_args import require_effect
+from pyfect._fiber import current_fiber
 from pyfect._waiters import WaitList
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
@@ -30,15 +31,23 @@ from pyfect.option import Option, Some
 from pyfect.queue import _state as st
 from pyfect.queue._views import Dequeue, Enqueue
 from pyfect.result import Ok
+from pyfect.scheduler import Scheduler
 
 type Strategy = Literal["suspend", "dropping", "sliding"]
 
 
 class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
-    __slots__ = ("_capacity", "_items", "_state", "_strategy")
+    __slots__ = ("_capacity", "_items", "_scheduler", "_state", "_strategy")
 
     def __init__(self, capacity: int | None = None, strategy: Strategy = "suspend") -> None:
         self._capacity = capacity
+        # A scheduler given to the fiber making the queue also holds its
+        # wakes (Effect keeps that fiber's dispatcher); pyfect's own run
+        # schedulers do not outlive their run, so offers wake on their own.
+        fiber = current_fiber()
+        self._scheduler: Scheduler | None = (
+            None if fiber is None or fiber._scheduler is fiber._run_scheduler else fiber._scheduler
+        )
         self._strategy: Strategy = strategy
         self._items: deque[A] = deque()
         self._state: st.State[A, E] = st.Open()
@@ -89,6 +98,14 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
             return None
 
         return _Callback(register)
+
+    def flush(self) -> Effect[None]:
+        """Wake the takers that can go on now, not in a scheduled task."""
+        return _Sync(self.flush_unsafe)
+
+    def flush_unsafe(self) -> None:
+        if isinstance(self._state, st.Open | st.Closing):
+            self._state.takers.notify_ready()
 
     def offer_unsafe(self, item: A) -> bool:
         """``offer`` without waiting, from outside an effect: ``False`` if it
@@ -165,7 +182,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
             case st.Open(takers=takers, offers=offers, awaiters=awaiters):
                 self._state = st.Closing(takers, offers, awaiters, cause)
                 # A batch take waiting for its minimum can now drain the rest.
-                takers.notify_ready_soon()
+                takers.notify_ready_soon(self._scheduler)
                 self._finish_if_drained()
                 return True
             case st.Closing() | st.Done():
@@ -382,7 +399,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         if now:
             takers.notify_ready()
         else:
-            takers.notify_ready_soon()
+            takers.notify_ready_soon(self._scheduler)
 
     def _shut(self, cause: Cause[E], offers: deque[st.Offer[A]]) -> None:
         self._items.clear()

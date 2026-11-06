@@ -9,7 +9,6 @@ ISINSTANCE = "`TypeId` symbols and `is*` guards"
 MEMO_MAP = "`Layer.makeMemoMap` / `forkMemoMap` / `makeMemoMapUnsafe`"
 SATISFIES = "`satisfiesSuccessType`"
 KEYS = "Context keys"
-YIELD_HOOK = "`Scheduler.shouldYield(fiber)` and `makeDispatcher`"
 REPORTED = "`Runtime.errorReported`"
 
 SCOPE = Module(
@@ -101,7 +100,6 @@ SCHEDULER = Module(
     "effect/src/Scheduler.ts",
     ("pyfect.scheduler",),
     renamed={"Scheduler": "pyfect.scheduler.CurrentScheduler"},
-    pythonic={"MixedScheduler": (YIELD_HOOK, "`SyncScheduler` / `AsyncioScheduler`")},
 )
 
 SEMAPHORE = Module(

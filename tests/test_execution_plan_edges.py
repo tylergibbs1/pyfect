@@ -41,7 +41,7 @@ def test_a_fallback_step_counts_the_failure_it_takes_over(
     plan: execution_plan.ExecutionPlan[object], expected_runs: int
 ) -> None:
     runs, eff = _always_failing()
-    ex = fx.run_sync(eff.pipe(fx.with_execution_plan(plan)).exit())
+    ex = fx.run_blocking(eff.pipe(fx.with_execution_plan(plan)).exit())
     testing.assert_exit_failure(ex, cause.fail("x"))
     assert len(runs) == expected_runs
 
@@ -61,7 +61,7 @@ def test_a_stream_fallback_step_counts_the_failure_it_takes_over() -> None:
     items: list[int] = []
     source = _counted_stream(lambda n: stream.make(n).concat(stream.fail(f"e{n}")))
     plan = execution_plan.make(Step(EMPTY), Step(EMPTY, attempts=1))
-    ex = fx.run_sync(
+    ex = fx.run_blocking(
         source.pipe(stream.with_execution_plan(plan))
         .run_for_each(lambda i: fx.sync(lambda: items.append(i)))
         .exit()
@@ -74,7 +74,7 @@ def test_preventing_fallback_on_partial_streams_still_falls_back_before_any_item
     items: list[int] = []
     source = _counted_stream(lambda n: stream.fail("e") if n == 1 else stream.make(7))
     plan = execution_plan.make(Step(EMPTY), Step(EMPTY))
-    ex = fx.run_sync(
+    ex = fx.run_blocking(
         source.pipe(stream.with_execution_plan(plan, prevent_fallback_on_partial_stream=True))
         .run_for_each(lambda i: fx.sync(lambda: items.append(i)))
         .exit()

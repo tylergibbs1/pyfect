@@ -77,7 +77,7 @@ def test_class_make_preserves_existing_instances():
     option = A.make_option(instance)
     assert isinstance(option, Some)
     assert option.value is instance
-    assert fx.run_sync(A.make_effect(instance).or_die()) is instance
+    assert fx.run_blocking(A.make_effect(instance).or_die()) is instance
     assert len(constructions) == 1
 
 
@@ -139,7 +139,7 @@ def test_class_make_with_void_input():
 
     assert A.make(A()) == A()
     assert A.make_option(A()) == Some(A())
-    assert fx.run_sync(A.make_effect(A()).or_die()) == A()
+    assert fx.run_blocking(A.make_effect(A()).or_die()) == A()
 
 
 def test_class_decoding_validates_the_class_struct_once():
@@ -425,7 +425,7 @@ def test_tagged_class_make_with_void_input():
 
     assert A.make(A()) == A()
     assert A.make_option(A()) == Some(A())
-    assert fx.run_sync(A.make_effect(A()).or_die()) == A()
+    assert fx.run_blocking(A.make_effect(A()).or_die()) == A()
 
 
 def test_tagged_class_explicit_identifier():
@@ -506,7 +506,7 @@ def test_error_make_with_void_input():
 
     assert E.make(E()) == E()
     assert E.make_option(E()) == Some(E())
-    assert fx.run_sync(E.make_effect(E()).or_die()) == E()
+    assert fx.run_blocking(E.make_effect(E()).or_die()) == E()
 
 
 def test_error_fields_argument():
@@ -598,7 +598,7 @@ def test_tagged_error_make_with_void_input():
 
     assert E.make(E()) == E()
     assert E.make_option(E()) == Some(E())
-    assert fx.run_sync(E.make_effect(E()).or_die()) == E()
+    assert fx.run_blocking(E.make_effect(E()).or_die()) == E()
 
 
 def test_tagged_error_fields_argument():

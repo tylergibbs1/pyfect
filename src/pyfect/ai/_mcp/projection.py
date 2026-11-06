@@ -126,27 +126,6 @@ def _legacy_input_schema(schema: Mapping[str, Any]) -> Wire:
     return out
 
 
-WRAP_RESULT = "x-fastmcp-wrap-result"
-"""Marks an output schema whose result is wrapped as ``{"result": ...}``
-(FastMCP's key, which its clients unwrap too)."""
-
-
-def wraps_result(protocol: AnyProtocolAdapter, value: Tool) -> bool:
-    """Whether ``value``'s result goes as ``{"result": ...}`` on
-    ``protocol``: a revision whose ``structuredContent`` must be an object,
-    and a result that is not one, nor nothing, nor a string (whose text is
-    all of it). Effect drops these results' structured form, leaving only
-    their JSON text; other MCP SDKs wrap them."""
-    schema = value.get("outputSchema")
-    return (
-        protocol.supports_structured_content
-        and not protocol.supports_any_structured_content
-        and isinstance(schema, Mapping)
-        and not _is_object_schema(schema)
-        and cast("Mapping[str, object]", schema).get("type") not in ("null", "string")
-    )
-
-
 _HINT_DEFAULTS: Wire = {
     "readOnlyHint": False,
     "destructiveHint": True,
@@ -179,13 +158,6 @@ def tool(protocol: AnyProtocolAdapter, value: Tool) -> Wire:
     if not protocol.supports_structured_content:
         out.pop("outputSchema", None)
         out["inputSchema"] = _legacy_input_schema(out["inputSchema"])
-    elif wraps_result(protocol, value):
-        out["outputSchema"] = {
-            "type": "object",
-            "properties": {"result": out["outputSchema"]},
-            "required": ["result"],
-            WRAP_RESULT: True,
-        }
     elif (
         "outputSchema" in out
         and not protocol.supports_any_structured_content
@@ -236,11 +208,8 @@ def _unwrap_string(result: CallToolResult) -> list[ContentBlock]:
     return blocks
 
 
-def call_tool_result(
-    protocol: AnyProtocolAdapter, result: CallToolResult, wrap: bool = False
-) -> Wire:
-    """``result`` on ``protocol``'s wire; ``wrap`` (``wraps_result``)
-    sends a successful result's ``structuredContent`` as ``{"result": ...}``."""
+def call_tool_result(protocol: AnyProtocolAdapter, result: CallToolResult) -> Wire:
+    """``result`` on ``protocol``'s wire."""
     structured = result.get("structuredContent")
     if protocol.supports_any_structured_content:
         out: Wire = {"content": [content(protocol, b) for b in result["content"]]}
@@ -248,9 +217,7 @@ def call_tool_result(
             out["structuredContent"] = structured
     else:
         out = {"content": [content(protocol, b) for b in _unwrap_string(result)]}
-        if wrap and result.get("isError") is not True:
-            out["structuredContent"] = {"result": structured}
-        elif protocol.supports_structured_content and isinstance(structured, Mapping):
+        if protocol.supports_structured_content and isinstance(structured, Mapping):
             out["structuredContent"] = structured
     if "isError" in result:
         out["isError"] = result["isError"]

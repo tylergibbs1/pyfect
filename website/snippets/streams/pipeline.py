@@ -45,6 +45,6 @@ pipeline = (
     .run(sink.for_each(lambda batch: fx.sync(lambda: written.append(batch))))
 )
 
-assert fx.run_sync_exit(pipeline) == fx.Success(None)
+assert fx.run_blocking_exit(pipeline) == fx.Success(None)
 assert written == [(100, 200), (300, 400), (500,)]
 assert calls[3] == 2  # retried once

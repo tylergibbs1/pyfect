@@ -120,8 +120,8 @@ _encode_defect = S.encode_unknown_sync(_defect)
 _decode_defect = S.decode_unknown_sync(_defect)
 
 
-def _portable_defect(defect: BaseException | str) -> BaseException:
-    return _decode_defect(defect if isinstance(defect, str) else _encode_defect(defect))
+def _portable_defect(defect: object) -> object:
+    return _decode_defect(_encode_defect(defect))
 
 
 def with_exit_schema(exit: S.Top) -> S.Bottom[WithExit, Mapping[str, object]]:

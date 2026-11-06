@@ -294,7 +294,7 @@ def _handle(
 
     def on_exit(exit: Exit[Any, Any]) -> None:
         if not result.done():
-            error = exit.cause.squash() if not isinstance(exit, Success) else None
+            error = exit.cause.raisable() if not isinstance(exit, Success) else None
             result.set_exception(error or RuntimeError("the app sent no response"))
 
     fiber.add_observer_unsafe(on_exit)
@@ -386,7 +386,7 @@ def to_web_handler_layer_with[E, LE](
     async def handler(request: WebRequest, extra: Context[Any] | None = None) -> WebResponse:
         exit = await asyncio.shield(building)
         if not isinstance(exit, Success):
-            raise exit.cause.squash()
+            raise exit.cause.raisable()
         return await exit.value(request, extra)
 
     def dispose() -> asyncio.Future[None]:

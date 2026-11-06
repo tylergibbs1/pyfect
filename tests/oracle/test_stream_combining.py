@@ -288,7 +288,7 @@ def test_flat_map_preserves_an_outer_element_when_a_permit_arrives_during_a_pull
 def _outer_failure(
     combinator: Literal["flatMap", "switchMap"], inner: Literal["never", "slow"]
 ) -> fx.Effect[None]:
-    @fx.fn
+    @fx.fn_untraced
     def run():
         started = yield from fx.Latch.make()
         failing = yield from fx.Deferred[None].make()
@@ -332,7 +332,7 @@ def _waits_for_in_flight(concurrency: fx.Concurrency) -> fx.Effect[None]:
     @fx.fn
     def run():
         fiber = yield from (
-            stream.range_inclusive(1, 5)
+            stream.range(1, 5)
             .map_effect(lambda n: fx.sleep(0.01).as_(n), concurrency=concurrency, unordered=True)
             .run_collect()
             .fork()
@@ -363,7 +363,7 @@ def _fails_when_mapping_throws(unordered: bool) -> fx.Effect[None]:
             return fx.never
         raise boom
 
-    @fx.fn
+    @fx.fn_untraced
     def run():
         mapped = stream.make(1, 2).map_effect(f, concurrency=2, unordered=unordered)
         assert (yield from mapped.run_drain().exit()) == fx.exit.die(boom)

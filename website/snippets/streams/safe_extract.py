@@ -27,10 +27,10 @@ entries: list[tar.Entry] = [
     tar.file("../../etc/passwd", "not fine"),
     tar.symlink("link", "/etc"),
 ]
-untrusted = fx.run_sync(
+untrusted = fx.run_blocking(
     stream.from_iterable(entries).pipe_through_channel(tar.encode()).run_bytes().or_die()
 )
 
 decoded = stream.make(untrusted).pipe_through_channel(tar.decode())
 checked = decoded.map(lambda entry: (entry.header.path, is_safe(entry.header)))
-print(fx.run_sync(checked.run_collect().or_die()))
+print(fx.run_blocking(checked.run_collect().or_die()))

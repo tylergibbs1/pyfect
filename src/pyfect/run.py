@@ -1,9 +1,14 @@
 """Running effects.
 
-- ``run_sync``: on the calling thread, with pyfect's own scheduler. Sleeps,
-  forks, races and ``blocking`` all work; ``from_async`` does not (there is
-  no asyncio loop; called from a coroutine, ``run_sync`` blocks its loop,
-  so ``from_async`` dies with ``AsyncioRequiredError`` instead of hanging).
+- ``run_sync``: as Effect's ``runSync``. Runs what can finish without
+  waiting, yields included; an effect that waits (a sleep, ``blocking``, a
+  ``Deferred`` nobody completes, ``from_async``) dies with
+  ``AsyncFiberError``, leaving its fiber where it stopped.
+- ``run_blocking``: blocks the calling thread until the effect is done, on
+  pyfect's own scheduler (JavaScript has no way to do this). Sleeps, forks,
+  races and ``blocking`` all work; ``from_async`` does not (there is no
+  asyncio loop; called from a coroutine, ``run_blocking`` blocks its loop, so
+  ``from_async`` dies with ``AsyncioRequiredError`` instead of hanging).
 - ``run_async``: inside a running asyncio loop. Cancelling the awaiting
   task interrupts the fiber and waits for its finalizers.
 - ``run_fork``: start the effect and get its ``Fiber`` back at once, on the
@@ -18,7 +23,7 @@
   error's ``exit_code`` (``get_error_exit_code``: ``TaggedError.exit_code``
   or any error's ``exit_code`` attribute, default 1).
 
-Each of ``run_sync`` and ``run_async`` has an ``_exit`` variant that
+Each of ``run_sync``, ``run_blocking`` and ``run_async`` has an ``_exit`` variant that
 returns the ``Exit`` instead of raising, and accepts effects that can fail.
 The plain variants only accept effects whose errors are handled
 (``E = Never``). Every run function except ``run_main`` takes a
@@ -43,9 +48,11 @@ from pyfect._fiber import Fiber
 from pyfect._root import ambient_run, new_root, start_root
 from pyfect.cause import Cause
 from pyfect.context import Context
+from pyfect.errors import AsyncFiberError
 from pyfect.exit import Exit, Success
+from pyfect.exit import die as exit_die
 from pyfect.logger import log_error
-from pyfect.scheduler import AsyncioScheduler, Scheduler, SyncScheduler
+from pyfect.scheduler import AsyncioScheduler, Scheduler, SyncOnlyScheduler, SyncScheduler
 
 _EMPTY: Context[Never] = Context.empty()
 _VOID: Effect[None] = _Succeed(None)
@@ -60,10 +67,16 @@ def run_sync_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]: ...
 def run_sync_exit[A, E, R](eff: Effect[A, E, R], *, context: Context[R]) -> Exit[A, E]: ...
 def run_sync_exit(eff: Effect[Any, Any, Any], *, context: Context = _EMPTY) -> Exit[Any, Any]:
     require_effect(eff, "eff")
-    scheduler = SyncScheduler()
+    scheduler = SyncOnlyScheduler()
     fiber: Fiber[Any, Any] = new_root(scheduler, context)
     fiber._start(eff)
-    return drive(scheduler, fiber)
+    return flush_exit(scheduler, fiber)
+
+
+def flush_exit[A, E](scheduler: SyncOnlyScheduler, fiber: Fiber[A, E]) -> Exit[A, E]:
+    """What ``fiber`` comes to without waiting on anything."""
+    scheduler.flush_as(fiber)
+    return exit_die(AsyncFiberError(fiber=fiber)) if fiber._exit is None else fiber._exit
 
 
 @overload
@@ -72,6 +85,26 @@ def run_sync[A](eff: Effect[A, Never, Never]) -> A: ...
 def run_sync[A, R](eff: Effect[A, Never, R], *, context: Context[R]) -> A: ...
 def run_sync(eff: Effect[Any, Never, Any], *, context: Context = _EMPTY) -> Any:
     return unwrap(run_sync_exit(eff, context=context))
+
+
+@overload
+def run_blocking_exit[A, E](eff: Effect[A, E, Never]) -> Exit[A, E]: ...
+@overload
+def run_blocking_exit[A, E, R](eff: Effect[A, E, R], *, context: Context[R]) -> Exit[A, E]: ...
+def run_blocking_exit(eff: Effect[Any, Any, Any], *, context: Context = _EMPTY) -> Exit[Any, Any]:
+    require_effect(eff, "eff")
+    scheduler = SyncScheduler()
+    fiber: Fiber[Any, Any] = new_root(scheduler, context)
+    fiber._start(eff)
+    return drive(scheduler, fiber)
+
+
+@overload
+def run_blocking[A](eff: Effect[A, Never, Never]) -> A: ...
+@overload
+def run_blocking[A, R](eff: Effect[A, Never, R], *, context: Context[R]) -> A: ...
+def run_blocking(eff: Effect[Any, Never, Any], *, context: Context = _EMPTY) -> Any:
+    return unwrap(run_blocking_exit(eff, context=context))
 
 
 def drive[A, E](scheduler: SyncScheduler, fiber: Fiber[A, E]) -> Exit[A, E]:
@@ -200,7 +233,7 @@ def default_teardown(ex: Exit[Any, Any]) -> int:
         return 0
     if ex.cause.has_interrupts_only:
         return 130
-    error = ex.cause.squash()
+    error = ex.cause.raisable()
     if isinstance(error, SystemExit):
         return _exit_status(error)
     return get_error_exit_code(error)
@@ -274,7 +307,7 @@ class _Signalled:
 
 
 def _log_failure(cause: Cause[object]) -> Effect[None]:
-    error = cause.squash()
+    error = cause.raisable()
     # ``sys.exit`` ends the program with its status; it is no error to log.
     if cause.has_interrupts_only or isinstance(error, SystemExit) or not get_error_reported(error):
         return _VOID
@@ -332,7 +365,7 @@ def unwrap[A](ex: Exit[A, Any]) -> A:
     note when there is more than one reason)."""
     if isinstance(ex, Success):
         return ex.value
-    error = ex.cause.squash()
+    error = ex.cause.raisable()
     if len(ex.cause.reasons) > 1:
         error.add_note("Full cause:\n" + ex.cause.pretty())
     raise error
@@ -344,10 +377,13 @@ __all__ = [
     "await_fiber",
     "default_teardown",
     "drive",
+    "flush_exit",
     "get_error_exit_code",
     "get_error_reported",
     "run_async",
     "run_async_exit",
+    "run_blocking",
+    "run_blocking_exit",
     "run_callback",
     "run_fork",
     "run_main",

@@ -20,5 +20,5 @@ def program():
     return (yield from task.join())
 
 
-assert fx.run_sync(program) == 42
+assert fx.run_blocking(program) == 42
 assert log == ["interrupted"]

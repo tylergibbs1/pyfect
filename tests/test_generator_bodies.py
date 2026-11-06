@@ -27,16 +27,17 @@ def _no_yield() -> int:
     [fx.fn, fx.gen],
     ids=["fn", "gen"],
 )
-def test_a_function_without_yield_is_rejected_when_decorated(
-    decorate: Callable[[Any], object],
-):
-    with pytest.raises(TypeError, match=r"_no_yield is not a generator function.*yield from"):
-        decorate(_no_yield)
+def test_a_function_without_yield_dies_when_run(decorate: Callable[[Any], object]):
+    """Checked under Node: Effect.fn and Effect.gen do not throw when given a
+    plain function; running the result fails."""
+    made = decorate(_no_yield)
+    eff: Any = made() if callable(made) else made
+    assert isinstance(fx.run_blocking_exit(eff), fx.Failure)
 
 
 def test_a_body_that_returns_no_generator_dies_with_a_type_error_when_run():
     not_a_generator: Callable[[], Any] = lambda: 1  # noqa: E731
-    exit = fx.run_sync_exit(fx.gen(not_a_generator))
+    exit = fx.run_blocking_exit(fx.gen(not_a_generator))
     assert isinstance(exit, fx.Failure)
     defect = exit.cause.squash()
     assert isinstance(defect, TypeError)
@@ -49,7 +50,7 @@ def _plus_one(n: int) -> Generator[fx.Effect[int], int, int]:
 
 
 def test_a_lambda_returning_a_generator_still_works():
-    assert fx.run_sync(fx.gen(lambda: _plus_one(1))) == 2
+    assert fx.run_blocking(fx.gen(lambda: _plus_one(1))) == 2
 
 
 def test_a_traced_fn_body_may_return_an_effect_that_runs_in_its_span():
@@ -57,7 +58,7 @@ def test_a_traced_fn_body_may_return_an_effect_that_runs_in_its_span():
     def traced(n: int) -> fx.Effect[tuple[int, str], fx.NoSuchElementException]:
         return fx.current_span().map(lambda span: (n, span.name))
 
-    assert fx.run_sync(traced(1).or_die()) == (1, "traced")
+    assert fx.run_blocking(traced(1).or_die()) == (1, "traced")
 
 
 def test_a_traced_fn_body_runs_only_when_its_effect_runs():
@@ -70,7 +71,7 @@ def test_a_traced_fn_body_runs_only_when_its_effect_runs():
 
     effect = traced()
     assert calls == []
-    assert fx.run_sync(effect.zip(effect)) == (1, 2)
+    assert fx.run_blocking(effect.zip(effect)) == (1, 2)
 
 
 def test_a_traced_fn_body_that_returns_neither_dies_with_a_type_error():
@@ -78,7 +79,7 @@ def test_a_traced_fn_body_that_returns_neither_dies_with_a_type_error():
     def bad() -> fx.Effect[int]:
         return 1  # pyright: ignore[reportReturnType]
 
-    exit = fx.run_sync_exit(bad())
+    exit = fx.run_blocking_exit(bad())
     assert isinstance(exit, fx.Failure)
     defect = exit.cause.squash()
     assert isinstance(defect, TypeError)
@@ -110,4 +111,4 @@ def test_a_generic_body_must_annotate_its_return_type(decorate: Callable[[Any], 
 
 def test_an_annotated_generic_body_runs():
     with_annotation = fx.fn(_generic_annotated)
-    assert fx.run_sync(with_annotation(fx.succeed(2))) == 2
+    assert fx.run_blocking(with_annotation(fx.succeed(2))) == 2

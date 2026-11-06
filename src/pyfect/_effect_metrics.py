@@ -64,7 +64,7 @@ class MetricMethods(EffectBase[A_co, E_co, R_co]):
     ) -> Effect[A_co, E_co, R_co]: ...
     @overload
     def track_defects[I](
-        self, metric: Metric[I, object], f: Callable[[BaseException], I], /
+        self, metric: Metric[I, object], f: Callable[[object], I], /
     ) -> Effect[A_co, E_co, R_co]: ...
     def track_defects(
         self, metric: Metric[Any, object], f: Callable[[Any], Any] | None = None, /

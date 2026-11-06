@@ -36,7 +36,7 @@ def _connect_failure_reason(monkeypatch: pytest.MonkeyPatch, cause: MySQLError) 
 
     monkeypatch.setattr(asyncmy, "connect", connect)
     failed = fx.scoped(mysql.make(mysql.MysqlClientConfig())).flip().or_die()
-    error = fx.run_sync(failed.pipe(fx.provide(reactivity_layer)))
+    error = fx.run_blocking(failed.pipe(fx.provide(reactivity_layer)))
     assert error.reason.message == "MysqlClient: Failed to connect"
     assert error.reason.operation == "connect"
     assert error.reason.cause is cause

@@ -4,7 +4,7 @@
 ``destructors``.
 
 Each test's docstring is the Effect test title. Effect's inclusive
-``Stream.range(a, b)`` is ``stream.range_inclusive(a, b)``,
+``Stream.range(a, b)`` is ``stream.range(a, b)``,
 ``Result.succeed`` / ``Result.fail`` are ``Ok`` / ``Err``,
 ``Deferred.await`` is ``wait()``, ``Fiber.await`` is ``await_exit()``, an
 iterator's ``return()`` is ``aclose()`` and its ``throw(error)`` is
@@ -72,7 +72,7 @@ def _evens_and_first_odd(group: tuple[int, Stream[int]]) -> Stream[int]:
 def test_group_by_key_a_group_that_stops_early_does_not_block_the_others():
     """groupByKey - a group that stops early does not block the others"""
     result = yield from (
-        stream.range_inclusive(1, 8)
+        stream.range(1, 8)
         .rechunk(1)
         .group_by_key(lambda n: n % 2, buffer_size=1)
         .flat_map(_evens_and_first_odd, concurrency="unbounded")
@@ -85,7 +85,7 @@ def test_group_by_key_a_group_that_stops_early_does_not_block_the_others():
 def test_group_by_a_group_that_stops_early_does_not_block_the_others():
     """groupBy - a group that stops early does not block the others"""
     result = yield from (
-        stream.range_inclusive(1, 8)
+        stream.range(1, 8)
         .rechunk(1)
         .group_by(lambda n: fx.succeed((n % 2, n)), buffer_size=1)
         .flat_map(_evens_and_first_odd, concurrency="unbounded")
@@ -199,16 +199,14 @@ def test_partition_defaults_to_a_capacity_of_16():
         nonlocal pulled
         pulled += 1
 
-    yield from (
-        stream.range_inclusive(0, 31).rechunk(1).tap(lambda _: fx.sync(count)).partition(fx.Ok)
-    )
+    yield from (stream.range(0, 31).rechunk(1).tap(lambda _: fx.sync(count)).partition(fx.Ok))
     yield from testing.adjust(0)
     # Sixteen elements are buffered; the next offer is blocked.
     assert pulled == 17
 
 
 def _check_values():
-    evens, odds = yield from stream.range_inclusive(0, 5).partition(_even_odd)
+    evens, odds = yield from stream.range(0, 5).partition(_even_odd)
     assert (yield from evens.run_collect()) == [0, 2, 4]
     assert (yield from odds.run_collect()) == [1, 3, 5]
 
@@ -228,7 +226,7 @@ def test_partition_partition_values():
 @testing.effect
 def test_partition_one_side_stopping_early_does_not_block_the_other():
     """one side stopping early does not block the other"""
-    evens, odds = yield from stream.range_inclusive(1, 8).partition(_even_odd, capacity=1)
+    evens, odds = yield from stream.range(1, 8).partition(_even_odd, capacity=1)
     result = yield from fx.all(evens.run_collect(), odds.take(1).run_collect(), concurrency=2)
     assert result == ([2, 4, 6, 8], [1])
 
@@ -253,7 +251,7 @@ def test_partition_partition_errors():
 
 
 def _check_backpressure():
-    evens, odds = yield from stream.range_inclusive(0, 5).partition(_even_odd, capacity=1)
+    evens, odds = yield from stream.range(0, 5).partition(_even_odd, capacity=1)
     ref = yield from fx.Ref[list[int]].make([])
     latch = yield from fx.Deferred[None].make()
 
@@ -311,7 +309,7 @@ def test_partition_effect_values():
     def classify(n: int) -> fx.Effect[fx.Ok[int] | fx.Err[str]]:
         return fx.succeed(fx.Ok(n + 10) if n % 2 == 0 else fx.Err(f"odd:{n}"))
 
-    passes, fails = yield from stream.range_inclusive(0, 5).partition_effect(classify)
+    passes, fails = yield from stream.range(0, 5).partition_effect(classify)
     assert (yield from passes.run_collect()) == [10, 12, 14]
     assert (yield from fails.run_collect()) == ["odd:1", "odd:3", "odd:5"]
 
@@ -319,7 +317,7 @@ def test_partition_effect_values():
 @testing.effect
 def test_partition_effect_one_side_stopping_early_does_not_block_the_other():
     """partitionEffect - one side stopping early does not block the other"""
-    evens, odds = yield from stream.range_inclusive(1, 8).partition_effect(
+    evens, odds = yield from stream.range(1, 8).partition_effect(
         lambda n: fx.succeed(_even_odd(n)), capacity=1
     )
     result = yield from fx.all(evens.run_collect(), odds.take(1).run_collect(), concurrency=2)
@@ -333,7 +331,7 @@ def test_partition_queue_values():
     def classify(n: int) -> fx.Ok[int] | fx.Err[str]:
         return fx.Ok(n + 1) if n % 2 == 0 else fx.Err(f"odd:{n}")
 
-    passes, fails = yield from stream.range_inclusive(0, 5).partition_queue(classify)
+    passes, fails = yield from stream.range(0, 5).partition_queue(classify)
     assert (yield from stream.from_queue(passes).run_collect()) == [1, 3, 5]
     assert (yield from stream.from_queue(fails).run_collect()) == ["odd:1", "odd:3", "odd:5"]
 
@@ -341,7 +339,7 @@ def test_partition_queue_values():
 @testing.effect
 def test_partition_with_filter():
     """partition with Filter"""
-    passed, failed = yield from stream.range_inclusive(0, 5).partition(_even_odd)
+    passed, failed = yield from stream.range(0, 5).partition(_even_odd)
     assert (yield from passed.run_collect()) == [0, 2, 4]
     assert (yield from failed.run_collect()) == [1, 3, 5]
 
@@ -397,9 +395,7 @@ def test_broadcast_n_ends_a_subscriber_whose_end_a_full_dropping_buffer_would_ha
 @testing.effect
 def test_broadcast_n_delivers_every_element_to_a_subscriber_that_keeps_up_while_another_lags():
     """delivers every element to a subscriber that keeps up while another lags beyond capacity"""
-    slow, fast = (
-        yield from stream.range_inclusive(1, 5).map_effect(fx.succeed).broadcast_n(2, capacity=1)
-    )
+    slow, fast = yield from stream.range(1, 5).map_effect(fx.succeed).broadcast_n(2, capacity=1)
     result = yield from fx.all(
         slow.tap(lambda _: fx.yield_now()).run_collect(),
         fast.run_collect(),

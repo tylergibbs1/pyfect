@@ -108,8 +108,8 @@ def test_allows_sharing_a_memo_map():
 def test_can_be_built_synchronously():
     """can be built synchronously"""
     runtime = fx.ManagedRuntime.make(layer.succeed(Name, "test"))
-    services = fx.run_sync(runtime.context_effect)
-    assert fx.run_sync(Name(), context=services) == "test"
+    services = fx.run_blocking(runtime.context_effect)
+    assert fx.run_blocking(Name(), context=services) == "test"
 
 
 def test_supports_await_using():

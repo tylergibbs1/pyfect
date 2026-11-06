@@ -89,4 +89,4 @@ def program():
 
 
 if __name__ == "__main__":
-    fx.run_sync(program)
+    fx.run_blocking(program)

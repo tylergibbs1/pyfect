@@ -39,8 +39,8 @@ def start_root(fiber: Fiber[Any, Any], eff: Effect[Any, Any, Any], *, now: bool 
 
 def run_loop() -> asyncio.AbstractEventLoop | None:
     """The asyncio loop driving the run of the fiber running on this thread,
-    or ``None`` (no fiber, or a ``run_sync`` run). A loop merely running on
-    this thread does not count: ``run_sync`` blocks it until it returns, so
+    or ``None`` (no fiber, or a ``run_blocking`` run). A loop merely running on
+    this thread does not count: ``run_blocking`` blocks it until it returns, so
     nothing scheduled on it runs before then."""
     run = current_run_scheduler()
     return run.loop if isinstance(run, AsyncioScheduler) else None
@@ -76,7 +76,7 @@ def ambient_run(scheduler: Scheduler | None) -> tuple[Scheduler, bool]:
         if scheduler is None:
             raise NoRunError(
                 "run_fork needs a running fiber, a running asyncio loop, or a scheduler "
-                "to run on; use run_sync or run_async otherwise"
+                "to run on; use run_blocking or run_async otherwise"
             ) from None
         return scheduler, False
     return AsyncioScheduler(loop), True

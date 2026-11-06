@@ -88,19 +88,17 @@ def test_matches_as_node_does(pattern: str, value: str, expected: bool | None) -
 @pytest.mark.parametrize(
     "pattern",
     [
-        "^\\p{L}$",
         "\\2(a)(b)",
         "\\k<n>(?<n>a)",
         "(a\\1)",
-        "(?<=a+)b",
         "(?<a>x)|(?<a>y)",
         "(?:(a)|b)+\\1",
         "(?:(?<n>a)|b){2}\\k<n>",
     ],
 )
 def test_what_python_cannot_match_alike_is_refused(pattern: str) -> None:
-    """Node accepts these. ``re`` has no ``\\p{...}``, cannot refer to a group opened later or
-    still open, needs a fixed width behind, and takes a group name once. In the last two, each
+    """Node accepts these. ``re`` cannot refer to a group opened later or still open and
+    takes a group name once. In the last two, each
     turn of a loop clears a group in JavaScript, and keeps its last value in ``re``."""
     with pytest.raises(S.EcmaPatternError):
         S.compile_ecma(pattern)
@@ -139,3 +137,37 @@ def test_a_group_name_may_be_any_identifier_and_nothing_else() -> None:
     for pattern in ("(?<1a>a)", "(?<>a)", "(?<a", "(?<a>a)\\k<b", "(?<a>a)\\k"):
         with pytest.raises(S.EcmaPatternError):
             S.compile_ecma(pattern)
+
+
+@pytest.mark.parametrize(
+    ("pattern", "value", "expected"),
+    [
+        ("^\\p{L}$", "é", True),
+        ("^\\p{L}$", "1", False),
+        ("^\\P{L}$", "1", True),
+        ("^\\p{Lu}+$", "àB", False),
+        ("^\\p{Script=Greek}+$", "αβ", True),
+        ("^\\p{gc=Nd}$", "٣", True),
+        ("^[\\p{L}\\d]+$", "é1", True),
+        ("^\\p{Emoji}$", "😀", True),
+        ("\\p{L}\\bé", "aé", True),
+        ("^[\\W]+$", "é", True),
+        ("(?<=a+)b", "aab", True),
+        ("(?<=a+)b", "cb", False),
+        ("(?<=x|yy)z", "yyz", True),
+        ("(?<!a+)b", "ab", False),
+    ],
+)
+def test_properties_and_variable_lookbehind_run_on_the_regex_extra(
+    pattern: str, value: str, expected: bool
+) -> None:
+    """Node 24: ``new RegExp(pattern, "u").test(value)``."""
+    assert (S.compile_ecma(pattern).search(value) is not None) is expected
+
+
+@pytest.mark.parametrize(
+    "pattern", ["\\p{l}", "\\p{Foo}", "\\p{Script=Nope}", "\\p", "\\p{}", "\\p{Script=latin}"]
+)
+def test_property_names_node_rejects_are_rejected(pattern: str) -> None:
+    with pytest.raises(S.EcmaPatternError):
+        S.compile_ecma(pattern)

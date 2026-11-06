@@ -39,7 +39,7 @@ class FakeTimers(Tracking):
     def time_ns(self) -> int:
         return self.now_ns
 
-    def schedule(self, task: Task) -> None:
+    def schedule(self, task: Task, priority: int = 0) -> None:
         self._ready.append(self._tracked(task))
 
     def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:

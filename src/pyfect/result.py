@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Generic, Never, TypeIs, TypeVar, overload
+from typing import Any, Generic, Never, TypeIs, TypeVar, cast, overload
 
 from pyfect._some import Option, Some
 
@@ -47,9 +47,21 @@ class Ok(Generic[A_co]):
     ) -> C:
         return on_success(self.value)
 
-    def and_then[B = Never, E2 = Never](self, that: Result[B, E2]) -> Result[B, E2]:
-        """``that``, after this success (a function is ``flat_map``)."""
-        return that
+    @overload
+    def and_then[B, E2](  # pyright: ignore[reportOverlappingOverload]
+        self, that: Callable[[A_co], Result[B, E2]]
+    ) -> Result[B, E2]: ...
+    @overload
+    def and_then[B](self, that: Callable[[A_co], B]) -> Ok[B]: ...
+    @overload
+    def and_then[B, E2 = Never](self, that: Result[B, E2]) -> Result[B, E2]: ...
+    @overload
+    def and_then[B](self, that: B) -> Ok[B]: ...
+    def and_then(self, that: Any) -> Any:
+        """After this success: ``that(value)`` for a function, ``that``
+        otherwise; what is not already a ``Result`` becomes ``Ok``."""
+        result: object = that(self.value) if callable(that) else that
+        return cast("Any", result) if isinstance(result, Ok | Err) else Ok(result)
 
     def or_else(self, f: Callable[[Never], object]) -> Ok[A_co]:
         return self

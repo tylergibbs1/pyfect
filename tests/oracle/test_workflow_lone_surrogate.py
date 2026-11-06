@@ -19,7 +19,7 @@ class _Payload(TypedDict):
 
 def test_an_execution_id_of_a_key_with_a_lone_surrogate():
     flow = workflow.make("Lone", payload=S.Struct(_Payload), idempotency_key=lambda p: p["k"])
-    assert fx.run_sync(flow.execution_id({"k": _LONE})) == "8cccadc2aef10c793147c031ea464bdd"
+    assert fx.run_blocking(flow.execution_id({"k": _LONE})) == "8cccadc2aef10c793147c031ea464bdd"
 
 
 def test_a_token_of_a_workflow_named_with_a_lone_surrogate():

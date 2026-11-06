@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, final
+from typing import TYPE_CHECKING, Any, Generic, Never, Self, TypeVar, cast, final, overload
 
 from pyfect._core import Effect, _FailCause, _Gen, _Succeed
 from pyfect._effect_args import require_effect
@@ -100,6 +100,10 @@ class CurrentMetadata(Reference[Metadata[object, object]]):
         )
 
 
+def _value_or_effect(result: object) -> Effect[Any, Any, Any]:
+    return cast("Effect[Any, Any, Any]", result) if isinstance(result, Effect) else _Succeed(result)
+
+
 def _since(now: float, then: float) -> float:
     """``now - then`` to the nanosecond. Effect subtracts whole
     milliseconds; float seconds would make ``1.3 - 1.0`` 0.30000000000000004
@@ -171,13 +175,20 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
     ) -> None:
         self._make_step = make_step
 
+    @overload
+    def map[B, I, E2, R2](  # pyright: ignore[reportOverlappingOverload]
+        self: Schedule[Out_co, I, E_co, R_co], f: Callable[[Metadata[Out_co, I]], Effect[B, E2, R2]]
+    ) -> Schedule[B, I, E_co | E2, R_co | R2]: ...
+    @overload
     def map[B, I](
         self: Schedule[Out_co, I, E_co, R_co], f: Callable[[Metadata[Out_co, I]], B]
-    ) -> Schedule[B, I, E_co, R_co]:
-        """Replace each output (including the final one) with ``f(metadata)``."""
+    ) -> Schedule[B, I, E_co, R_co]: ...
+    def map(self, f: Callable[[Any], Any]) -> Schedule[Any, Any, Any, Any]:
+        """Replace each output (including the final one) with ``f(metadata)``,
+        or with what it succeeds with when it is an effect."""
         from pyfect.schedule._combinators import map_effect
 
-        return map_effect(self, lambda m: _Succeed(f(m)))
+        return map_effect(self, lambda m: _value_or_effect(f(m)))
 
     def map_effect[B, I, E2 = Never, R2 = Never](
         self: Schedule[Out_co, I, E_co, R_co], f: Callable[[Metadata[Out_co, I]], Effect[B, E2, R2]]
@@ -196,14 +207,22 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
 
         return tap(self, f)
 
+    @overload
+    def while_[I, E2, R2](  # pyright: ignore[reportOverlappingOverload]
+        self: Schedule[Out_co, I, E_co, R_co],
+        predicate: Callable[[Metadata[Out_co, I]], Effect[bool, E2, R2]],
+    ) -> Schedule[Out_co, I, E_co | E2, R_co | R2]: ...
+    @overload
     def while_[I](
         self: Schedule[Out_co, I, E_co, R_co], predicate: Callable[[Metadata[Out_co, I]], bool]
-    ) -> Schedule[Out_co, I, E_co, R_co]:
-        """Recur only while ``predicate(metadata)`` holds (Effect's
-        ``Schedule.while``); stop with the step's output once it fails."""
+    ) -> Schedule[Out_co, I, E_co, R_co]: ...
+    def while_(self, predicate: Callable[[Any], Any]) -> Schedule[Any, Any, Any, Any]:
+        """Recur only while ``predicate(metadata)``, a value or an effect,
+        holds (Effect's ``Schedule.while``); stop with the step's output once
+        it fails."""
         from pyfect.schedule._combinators import while_effect
 
-        return while_effect(self, lambda m: _Succeed(predicate(m)))
+        return while_effect(self, lambda m: _value_or_effect(predicate(m)))
 
     def while_effect[I, E2 = Never, R2 = Never](
         self: Schedule[Out_co, I, E_co, R_co],

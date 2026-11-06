@@ -30,7 +30,7 @@ from typing import Any, Never
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.cause import Die, UnhandledError
+from pyfect.cause import Die
 from pyfect.exit import Exit, Failure
 from pyfect.exit import die as exit_die
 from pyfect.exit import fail as exit_fail
@@ -346,7 +346,7 @@ def test_a_defect_that_throws_when_hashed_still_terminates_an_interrupted_fiber(
     assert defect.calls == 1
     assert isinstance(ex, Failure)
     assert [type(r) for r in ex.cause.reasons] == [Die, fx.cause.Interrupt]
-    assert ex.cause.find_defect() is defect
+    assert ex.cause.defects[0] is defect
 
 
 def test_interrupting_a_fiber_does_not_call_math_random(monkeypatch: Any) -> None:
@@ -379,7 +379,7 @@ def test_interrupting_a_fiber_does_not_call_math_random(monkeypatch: Any) -> Non
 
     for name in ("random", "getrandbits", "randrange", "randint"):
         monkeypatch.setattr(random, name, forbidden(name))
-    ex = fx.run_sync(program)
+    ex = fx.run_blocking(program)
     monkeypatch.undo()
     assert calls == []
     assert isinstance(ex, Failure)
@@ -508,8 +508,7 @@ def test_race_all_elects_typed_failures_when_all_racers_fail_and_one_dies():
     assert isinstance(ex, Failure)
     first, second = ex.cause.reasons
     assert isinstance(first, Die)
-    assert isinstance(first.defect, UnhandledError)
-    assert first.defect.error == "error"
+    assert first.defect == "error"
     assert second == Die(defect)
 
 
@@ -611,7 +610,7 @@ def test_lazily_nested_map_continuations() -> None:
             return fx.succeed(0)
         return fx.suspend(lambda: loop(n - 1)).map(lambda m: m + 1)
 
-    assert fx.run_sync(loop(100_000)) == 100_000
+    assert fx.run_blocking(loop(100_000)) == 100_000
 
 
 def test_passes_only_the_value_to_callbacks_regardless_of_declared_arity() -> None:
@@ -620,7 +619,7 @@ def test_passes_only_the_value_to_callbacks_regardless_of_declared_arity() -> No
     def callback(*args: object) -> fx.Effect[int]:
         return fx.succeed(len(args))
 
-    assert fx.run_sync(fx.succeed(1).flat_map(callback)) == 1
+    assert fx.run_blocking(fx.succeed(1).flat_map(callback)) == 1
 
 
 def test_iterator_yields_the_effect_once_then_completes_with_the_sent_value() -> None:

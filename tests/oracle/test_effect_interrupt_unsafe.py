@@ -17,10 +17,10 @@ def test_an_interrupt_from_a_nested_run_on_the_same_thread_is_not_lost():
     @fx.gen
     def prog():
         me = yield from fx.current_fiber()
-        yield from fx.sync(lambda: fx.run_sync(fx.sync(lambda: me.interrupt_as_unsafe(None))))
+        yield from fx.sync(lambda: fx.run_blocking(fx.sync(lambda: me.interrupt_as_unsafe(None))))
         yield from fx.sync(lambda: log.append("after interrupt"))
 
-    ex = fx.run_sync_exit(prog)
+    ex = fx.run_blocking_exit(prog)
     assert isinstance(ex, fx.Failure)
     assert ex.cause.has_interrupts_only
     assert log == []

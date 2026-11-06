@@ -158,4 +158,4 @@ def test_compose_passthrough_fails_with_the_original_input() -> None:
 
 def test_a_filter_built_here_works_with_catch_filter() -> None:
     eff = fx.fail(4).catch_filter(even, lambda n: fx.succeed(n * 10))
-    assert fx.run_sync_exit(eff) == fx.exit.succeed(40)
+    assert fx.run_blocking_exit(eff) == fx.exit.succeed(40)

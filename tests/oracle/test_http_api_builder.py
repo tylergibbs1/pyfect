@@ -80,7 +80,7 @@ def _payload_error(api: Any, payload: object = None) -> str:
             ).exit()
         )
 
-    exit_ = fx.run_sync(scoped(effect.gen(program)))
+    exit_ = fx.run_blocking(scoped(effect.gen(program)))
     assert isinstance(exit_, Failure)
     error = exit_.cause.squash()
     assert isinstance(error, HttpApiSchemaError)
@@ -121,7 +121,7 @@ def _users_api() -> Any:
 
 
 def _build_defect(live: Any) -> BaseException:
-    exit_ = fx.run_sync(scoped(live.build()).exit())
+    exit_ = fx.run_blocking(scoped(live.build()).exit())
     assert isinstance(exit_, Failure)
     defect = exit_.cause.squash()
     assert isinstance(defect, BaseException)
@@ -182,7 +182,7 @@ def test_executes_effectful_handler_builders() -> None:
         get_user = get_group(api_client, group).method("getUser")
         return (yield from get_user(params={"id": "user-1"}))
 
-    result = fx.run_sync(
+    result = fx.run_blocking(
         scoped(effect.gen(program)).pipe(fx.provide(live)).pipe(fx.provide(server.layer_services))
     )
     assert result == {"id": "user-1", "name": "Ada"}
@@ -903,7 +903,7 @@ def test_runs_pre_response_handlers_once_per_response_across_retries() -> None:
             .pipe(fx.provide_service(TracerDisabledWhen, lambda _r: True))
         )
 
-    r = fx.run_sync(
+    r = fx.run_blocking(
         scoped(effect.gen(program))
         .pipe(fx.provide(live))
         .pipe(fx.provide(m_live))

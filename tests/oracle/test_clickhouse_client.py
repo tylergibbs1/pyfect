@@ -45,7 +45,7 @@ _KILL = "KILL QUERY WHERE query_id = {queryId:String}"
 
 
 def _run(body: Body) -> Any:
-    return fx.run_sync(
+    return fx.run_blocking(
         fx.scoped(fx.gen(body)).pipe(fx.provide(reactivity_layer)).timeout(5).or_die()
     )
 

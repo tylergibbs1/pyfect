@@ -25,7 +25,7 @@ from pyfect.stream import Stream
 
 
 def _run[A](eff: fx.Effect[A, object]) -> A:
-    return fx.run_sync(eff.or_die())
+    return fx.run_blocking(eff.or_die())
 
 
 MAX_SAFE = 2**53 - 1

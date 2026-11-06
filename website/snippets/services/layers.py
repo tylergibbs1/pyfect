@@ -48,8 +48,8 @@ def program():
     return (yield from users.name("1"))
 
 
-assert fx.run_sync(program.pipe(fx.provide(AppLive))) == "Ada"
+assert fx.run_blocking(program.pipe(fx.provide(AppLive))) == "Ada"
 
 # merge builds several layers together: Layer[Db | Users].
 Both = layer.merge(DbLive, AppLive)
-assert fx.run_sync(program.pipe(fx.provide(Both))) == "Ada"
+assert fx.run_blocking(program.pipe(fx.provide(Both))) == "Ada"

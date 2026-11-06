@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal, Never, overload
 from pyfect import _core
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
 from pyfect._tags import Tags
-from pyfect.cause import Cause, Fail, _as_exception
+from pyfect.cause import Cause, Fail
 from pyfect.cause import die as die_cause
 from pyfect.cause import fail as fail_cause
 from pyfect.exit import Success
@@ -146,13 +146,13 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
         return _core._MatchCause(as_effect(self), handle, None)
 
     def catch_defect[B, E2 = Never, R2 = Never](
-        self, f: Callable[[BaseException], Effect[B, E2, R2]]
+        self, f: Callable[[object], Effect[B, E2, R2]]
     ) -> Effect[A_co | B, E_co | E2, R_co | R2]:
         """Recover from the first defect. Typed errors pass through."""
 
         def on_failure(cause: Cause[E_co]) -> Effect[Any, Any, Any]:
             defect = cause.find_defect()
-            return _core._FailCause(cause) if defect is None else f(defect)
+            return f(defect.value) if isinstance(defect, Ok) else _core._FailCause(cause)
 
         return _core._MatchCause(as_effect(self), on_failure, None)
 
@@ -180,7 +180,7 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
 
     def or_die(self) -> Effect[A_co, Never, R_co]:
         """Die with the first typed error instead of failing with it."""
-        return self.catch_all(lambda e: _core._FailCause(die_cause(_as_exception(e))))
+        return self.catch_all(lambda e: _core._FailCause(die_cause(e)))
 
     def tap_error[E2 = Never, R2 = Never](
         self, f: Callable[[E_co], Effect[object, E2, R2]]
@@ -232,15 +232,15 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
         return _core._MatchCause(as_effect(self), on_failure, None)
 
     def tap_defect[E2 = Never, R2 = Never](
-        self, f: Callable[[BaseException], Effect[object, E2, R2]]
+        self, f: Callable[[object], Effect[object, E2, R2]]
     ) -> Effect[A_co, E_co | E2, R_co | R2]:
         """Run ``f(defect)`` for the first defect, then keep failing."""
 
         def on_failure(cause: Cause[E_co]) -> Effect[Any, Any, Any]:
             defect = cause.find_defect()
-            if defect is None:
+            if isinstance(defect, Err):
                 return _core._FailCause(cause)
-            return _core._FlatMap(f(defect), lambda _: _core._FailCause(cause))
+            return _core._FlatMap(f(defect.value), lambda _: _core._FailCause(cause))
 
         return _core._MatchCause(as_effect(self), on_failure, None)
 

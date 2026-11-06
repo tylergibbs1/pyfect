@@ -1032,7 +1032,7 @@ def test_watch_prefers_the_caller_watch_backend_over_the_construction_backend(tm
         )
 
     construction = _Backend(Create("from-construction"))
-    event = fx.run_sync(
+    event = fx.run_blocking(
         program()
         .pipe(fx.provide(file_system.layer))
         .pipe(fx.provide_service(WatchBackend, construction))

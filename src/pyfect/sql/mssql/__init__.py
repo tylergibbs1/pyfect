@@ -2,7 +2,7 @@
 ``pyfect-dev[mssql]`` extra, never imported by ``pyfect``).
 
 pytds speaks TDS in pure Python, as tedious does in Node; each connection's
-calls run on a thread of its own, so the client works under ``run_sync``
+calls run on a thread of its own, so the client works under ``run_blocking``
 and ``run_async`` and no fiber blocks::
 
     from pyfect.sql import mssql

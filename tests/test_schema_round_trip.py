@@ -4,7 +4,7 @@ the schema's own codec and its canonical JSON codec."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Never, NotRequired, TypedDict, cast
 
 import pytest
@@ -212,6 +212,9 @@ def test_decoding_an_encoded_value_gives_it_back(name: str):
     @given(S.to_strategy(schema))
     def round_trip(value: object) -> None:
         assert is_(value)
+        # As in Effect, a zoned string has a whole-minute offset, and reading it keeps that.
+        if isinstance(value, datetime) and (value.utcoffset() or timedelta()).seconds % 60:
+            return
         for encode, decode in round_trips:
             assert equivalent(decode(encode(value)), value)
 

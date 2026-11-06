@@ -15,7 +15,7 @@ from pyfect.ai import _provider as P
 from pyfect.ai import _provider_tools as PT
 from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
-from pyfect.ai.ai_error import InvalidRequestError, ToolConfigurationError, describe_schema_error
+from pyfect.ai.ai_error import InvalidRequestError, ToolConfigurationError
 from pyfect.ai.openai._prompt import MODULE, AnyProviderDefined, Item
 from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.tool import NameMapper
@@ -56,7 +56,7 @@ def _provider_defined(tool: AnyProviderDefined) -> Item:
         raise PT.unsupported(
             MODULE,
             "prepareTools",
-            ToolConfigurationError(tool_name=tool.name, description=describe_schema_error(error)),
+            ToolConfigurationError(tool_name=tool.name, description=error.message),
         ) from error
     return {**P.obj(args), "type": kind}
 

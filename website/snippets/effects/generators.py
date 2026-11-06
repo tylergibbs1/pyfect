@@ -10,7 +10,7 @@ def program():
 
 
 # program is an Effect[int]: the type of the return value is inferred.
-assert fx.run_sync(program) == 42
+assert fx.run_blocking(program) == 42
 
 
 @fx.fn
@@ -20,4 +20,4 @@ def add(a: int, b: int):
 
 
 # A function returning an effect; add(1, 2) is an Effect[int].
-assert fx.run_sync(add(1, 2)) == 3
+assert fx.run_blocking(add(1, 2)) == 3

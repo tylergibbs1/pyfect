@@ -12,7 +12,7 @@ current ``Scope`` and gives back a ``ChildProcessHandle``::
         code = yield from handle.exit_code
         return output, code
 
-    fx.run_sync(fx.scoped(program()).pipe(fx.provide(platform.layer)))
+    fx.run_blocking(fx.scoped(program()).pipe(fx.provide(platform.layer)))
 
 Standard output and error are byte streams and standard input a sink;
 ``pipe_to`` feeds one command's output into the next. When the scope

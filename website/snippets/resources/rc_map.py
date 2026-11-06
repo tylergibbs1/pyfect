@@ -23,5 +23,5 @@ def program():
     events.append("both scopes closed")
 
 
-fx.run_sync(fx.scoped(program))
+fx.run_blocking(fx.scoped(program))
 assert events == ["open https://a.test", "close https://a.test", "both scopes closed"]

@@ -18,7 +18,7 @@ def program():
     return first, again
 
 
-first, again = fx.run_sync(program)
+first, again = fx.run_blocking(program)
 assert first == ("country PT", "country PT", "country ES")
 assert again == "country PT"
 assert fetched == ["PT", "ES"]

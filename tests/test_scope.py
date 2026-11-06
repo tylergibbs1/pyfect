@@ -22,7 +22,7 @@ def test_resources_release_in_reverse_order():
         b = yield from resource("b", log)
         log.append(f"use {a}{b}")
 
-    fx.run_sync(fx.scoped(program))
+    fx.run_blocking(fx.scoped(program))
     assert log == ["acquire a", "acquire b", "use ab", "release b (Success)", "release a (Success)"]
 
 
@@ -34,7 +34,7 @@ def test_release_sees_the_failure():
         yield from resource("a", log)
         yield from fx.fail("boom")
 
-    fx.run_sync_exit(fx.scoped(program))
+    fx.run_blocking_exit(fx.scoped(program))
     assert log == ["acquire a", "release a (Failure)"]
 
 
@@ -58,7 +58,7 @@ def test_acquire_use_release():
         lambda n: fx.sync(lambda: log.append("use") or n + 1),
         lambda _n, _ex: fx.sync(lambda: log.append("release")),
     )
-    assert fx.run_sync(eff) == 2
+    assert fx.run_blocking(eff) == 2
     assert log == ["acquire", "use", "release"]
 
 

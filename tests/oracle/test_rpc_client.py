@@ -3,7 +3,7 @@ Effect test title, prefixed by its describe blocks.
 
 A protocol is a ``ClientProtocolService``; messages are the encoded
 ``dict``s Effect's protocols carry. Effect dies with strings; here with a
-``DecodedDefect`` of the string.
+the string.
 
 Omitted:
 - "releases pending calls when connection defect delivery is interrupted
@@ -49,7 +49,6 @@ from pyfect.rpc import serialization as rs
 from pyfect.rpc import server as rpc_server
 from pyfect.rpc.client import ClientOptions, ClientProtocol, ClientProtocolService
 from pyfect.rpc.message import Request
-from pyfect.schema import DecodedDefect
 from pyfect.schema import transformation as T
 from pyfect.scope import CloseableScope, Scope
 from pyfect.socket import (
@@ -79,7 +78,7 @@ class ChunkGroup(RpcGroup):
 
 
 def _run(body: Callable[[], Any]) -> Any:
-    return fx.run_sync(fx.scoped(effect.gen(body)).timeout(10).or_die())
+    return fx.run_blocking(fx.scoped(effect.gen(body)).timeout(10).or_die())
 
 
 type Handle = Callable[[dict[str, Any]], Effect[None]]
@@ -123,8 +122,7 @@ def _current() -> fx.Fiber[Any, Any]:
 
 def _squash_message(exit: Exit.Exit[Any, Any]) -> object:
     assert isinstance(exit, Exit.Failure)
-    found = exit.cause.squash()
-    return found.value if isinstance(found, DecodedDefect) else found
+    return exit.cause.squash()
 
 
 def test_does_not_fail_a_new_request_started_during_connection_defect_delivery() -> None:
@@ -315,7 +313,7 @@ def test_does_not_send_interrupt_when_a_failed_streaming_send_closes_its_scope()
         def on_from_client(options: rpc_client.OnFromClient) -> Effect[None]:
             sent.append(type(options.message).__name__)
             if isinstance(options.message, Request):
-                return effect.die(DecodedDefect("send failed"))
+                return effect.die("send failed")
             return effect.succeed(None)
 
         client, _core = yield from rpc_client.make_no_serialization(TestGroup, on_from_client)
@@ -459,7 +457,7 @@ def _traced_call(method: str, **options: Any) -> list[NativeSpan]:
         .pipe(fx.provide(handlers))
         .pipe(effect.provide_service(CurrentTracer, Tracer.make(span)))
     )
-    fx.run_sync(program.timeout(10).or_die())
+    fx.run_blocking(program.timeout(10).or_die())
     return spans
 
 
@@ -846,7 +844,7 @@ def test_continues_retrying_when_the_transient_error_hook_defects():
     options = rpc_client.SocketOptions(
         retry_transient_errors=True,
         retry_policy=schedule.recurs(2),
-        on_transient_error=lambda _: effect.die(DecodedDefect("hook defect")),
+        on_transient_error=lambda _: effect.die("hook defect"),
     )
     client = yield from _socket_client(socket, options)
     stream_fiber = yield from client.events().run_drain().timeout(1).flip().fork()
@@ -1026,7 +1024,7 @@ def _batching(
         client = yield from rpc_client.make(EchoGroup)
         return (yield from body(client, lambda: requests[0]))
 
-    return fx.run_sync(
+    return fx.run_blocking(
         fx.scoped(effect.gen(program)).pipe(fx.provide(protocol)).timeout(10).or_die()
     )
 

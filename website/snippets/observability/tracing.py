@@ -9,7 +9,7 @@ def get_user(user_id: str):
     return (yield from fx.current_span())
 
 
-span = fx.run_sync(get_user("42").with_span("GET /users/42").or_die())
+span = fx.run_blocking(get_user("42").with_span("GET /users/42").or_die())
 
 assert span.name == "get_user"
 assert span.attributes["user.id"] == "42"

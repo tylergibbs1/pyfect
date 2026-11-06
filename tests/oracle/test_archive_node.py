@@ -5,9 +5,8 @@ titles: found by comparing with Effect.
 
 Effect returns traversal paths as written; ``test_paths_are_returned_as_written`` says
 so outright, since that is what callers must guard against. Only ``zlib`` differences
-and ``datetime`` differences are allowed (``DIVERGENCES``, ``docs/PARITY.md`` section 4):
-which message of corrupt deflate data is reported depends on the zlib build, and
-``datetime`` has no dates past years 1 to 9999."""
+differences are allowed (``DIVERGENCES``, ``docs/PARITY.md`` section 4): which message
+of corrupt deflate data is reported depends on the zlib build."""
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false
 
 from __future__ import annotations
@@ -54,7 +53,9 @@ def date(value: Any) -> datetime | None:
     return EPOCH + timedelta(milliseconds=value)
 
 
-def millis(value: datetime) -> int:
+def millis(value: datetime | tar.FarDate) -> int:
+    if isinstance(value, tar.FarDate):
+        return value.epoch_millis
     return (value - EPOCH) // timedelta(milliseconds=1)
 
 
@@ -97,7 +98,7 @@ def header_of(header: Any) -> dict[str, Any]:
 
 
 def finish(effect: Any, out: dict[str, Any]) -> dict[str, Any]:
-    result = fx.run_sync_exit(effect)
+    result = fx.run_blocking_exit(effect)
     if isinstance(result, fx.Failure):
         found = result.cause.find_error()
         if isinstance(found, Ok):
@@ -304,12 +305,6 @@ DIVERGENCES: dict[str, dict[str, Any]] = {
         "items": [{"body": None}],
         "kind": "Truncated",
     },
-    **{
-        f"tar.decode/{field}/mtime/{index}": {"items": [], "kind": "InvalidHeader"}
-        for field in ("pax-field", "global-field")
-        # 253402300800, -62135596801 and 8640000000000 seconds
-        for index in (13, 15, 16)
-    },
 }
 
 
@@ -369,7 +364,7 @@ def test_other_readers_read_what_encode_writes() -> None:
             tar.file("b" * 200, big),
         ]
     )
-    data = fx.run_sync(tar_items.pipe_through_channel(tar.encode()).run_bytes())
+    data = fx.run_blocking(tar_items.pipe_through_channel(tar.encode()).run_bytes())
     with tarfile.open(fileobj=io.BytesIO(data)) as archive:
         assert archive.getnames() == ["d", "d/a", "d/l", "b" * 200]
         member = archive.extractfile("b" * 200)
@@ -385,7 +380,7 @@ def test_other_readers_read_what_encode_writes() -> None:
             Zip.file_stream("g", stream.make(big), size=len(big)),
         ]
     )
-    data = fx.run_sync(zip_items.pipe_through_channel(Zip.encode()).run_bytes())
+    data = fx.run_blocking(zip_items.pipe_through_channel(Zip.encode()).run_bytes())
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         assert archive.testzip() is None
         assert archive.namelist() == ["d/", "d/a", "s", "f", "g"]

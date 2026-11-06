@@ -23,7 +23,7 @@ import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Never, Protocol, overload
+from typing import Any, Never, Protocol, cast, overload
 
 from pyfect._core import Effect, _Gen, _Succeed, _WithFiber
 from pyfect._fiber import Fiber
@@ -79,7 +79,6 @@ class CurrentErrorReporters(Reference[tuple[ErrorReporter, ...]]):
 
 
 _NO_ATTRIBUTES: Mapping[str, object] = MappingProxyType({})
-_SEVERITIES: frozenset[LogLevel] = frozenset(LogLevel) - {LogLevel.ALL, LogLevel.NONE}
 
 
 def is_ignored(error: object) -> bool:
@@ -89,10 +88,10 @@ def is_ignored(error: object) -> bool:
 
 
 def get_severity(error: object) -> Severity:
-    """``error``'s ``report_severity`` when it is a ``Severity``, else
-    ``LogLevel.INFO``."""
+    """``error``'s ``report_severity`` when it is a ``LogLevel`` (``ALL`` and
+    ``NONE`` pass through, as in Effect), else ``LogLevel.INFO``."""
     severity = getattr(error, "report_severity", None)
-    return severity if isinstance(severity, LogLevel) and severity in _SEVERITIES else LogLevel.INFO  # pyright: ignore[reportReturnType]
+    return cast("Severity", severity) if isinstance(severity, LogLevel) else LogLevel.INFO
 
 
 def get_attributes(error: object) -> Mapping[str, object]:

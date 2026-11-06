@@ -41,19 +41,19 @@ def add(
     """``dt`` moved by the given units, keeping its zone. Months and years
     clamp to the last day of the month (Jan 31 + 1 month = Feb 28/29).
     Time units are added one at a time, smallest first, each sum cut to a
-    whole microsecond toward the epoch (Effect's millisecond ``setTime``)."""
+    whole millisecond toward the epoch (Effect's ``setTime``)."""
     zone = zone_of(dt, "dt")
-    epoch_micros = (dt - _EPOCH) // _MICRO
-    for amount, micros_per_unit in (
-        (microseconds, 1),
-        (milliseconds, 1_000),
-        (seconds, 1_000_000),
-        (minutes, 60_000_000),
-        (hours, 3_600_000_000),
+    epoch_millis = Decimal((dt - _EPOCH) // _MICRO) / 1_000
+    for amount, millis_per_unit in (
+        (microseconds, Decimal("0.001")),
+        (milliseconds, Decimal(1)),
+        (seconds, Decimal(1_000)),
+        (minutes, Decimal(60_000)),
+        (hours, Decimal(3_600_000)),
     ):
         if amount:
-            epoch_micros = _add_truncated(epoch_micros, amount, micros_per_unit)
-    shifted = (_EPOCH + timedelta(microseconds=epoch_micros)).astimezone(zone)
+            epoch_millis = _add_truncated(epoch_millis, amount, millis_per_unit)
+    shifted = (_EPOCH + timedelta(milliseconds=float(epoch_millis))).astimezone(zone)
     if not (days or weeks or months or years):
         return shifted
 
@@ -99,13 +99,13 @@ def subtract(
 def start_of(
     dt: datetime, unit: Unit, *, week_starts_on: calendar.Day = calendar.SUNDAY
 ) -> datetime:
-    """The first microsecond of ``dt``'s ``unit``, on its wall clock."""
+    """The first millisecond of ``dt``'s ``unit``, on its wall clock."""
     return _on_wall_clock(dt, zone_of(dt, "dt"), lambda wall: _start(wall, unit, week_starts_on))
 
 
 def end_of(dt: datetime, unit: Unit, *, week_starts_on: calendar.Day = calendar.SUNDAY) -> datetime:
-    """The last microsecond of ``dt``'s ``unit``, on its wall clock
-    (Effect's last millisecond, at datetime's resolution)."""
+    """The last millisecond of ``dt``'s ``unit``, on its wall clock
+    (``.999``)."""
     return _on_wall_clock(dt, zone_of(dt, "dt"), lambda wall: _end(wall, unit, week_starts_on))
 
 
@@ -118,17 +118,17 @@ def nearest(
 
     def round_wall(wall: datetime) -> datetime:
         start = _start(wall, unit, week_starts_on)
-        after = _end(wall, unit, week_starts_on) + timedelta(microseconds=1)
+        after = _end(wall, unit, week_starts_on) + timedelta(milliseconds=1)
         return start if wall - start < after - wall else after
 
     return _on_wall_clock(dt, zone, round_wall)
 
 
-def _add_truncated(epoch_micros: int, amount: float, micros_per_unit: int) -> int:
-    """``epoch_micros`` plus ``amount`` units, cut toward zero as
+def _add_truncated(epoch_millis: Decimal, amount: float, millis_per_unit: Decimal) -> Decimal:
+    """``epoch_millis`` plus ``amount`` units, cut toward zero as
     JavaScript's TimeClip cuts a time value. The float is read as the
-    decimal that prints it, so ``1.001`` seconds is 1,001,000µs."""
-    return int(epoch_micros + Decimal(repr(amount)) * micros_per_unit)
+    decimal that prints it, so ``1.001`` seconds is 1,001ms."""
+    return Decimal(int(epoch_millis + Decimal(repr(amount)) * millis_per_unit))
 
 
 def _on_wall_clock(dt: datetime, zone: tzinfo, f: Callable[[datetime], datetime]) -> datetime:
@@ -178,13 +178,13 @@ def _start_of_days(midnight: datetime, unit: _DayUnit, week_starts_on: calendar.
 def _end(wall: datetime, unit: Unit, week_starts_on: calendar.Day) -> datetime:
     match unit:
         case "millisecond":
-            return wall.replace(microsecond=wall.microsecond // 1_000 * 1_000 + 999)
+            return wall.replace(microsecond=wall.microsecond // 1_000 * 1_000)
         case "second":
-            return wall.replace(microsecond=999_999)
+            return wall.replace(microsecond=999_000)
         case "minute":
-            return wall.replace(second=59, microsecond=999_999)
+            return wall.replace(second=59, microsecond=999_000)
         case "hour":
-            return wall.replace(minute=59, second=59, microsecond=999_999)
+            return wall.replace(minute=59, second=59, microsecond=999_000)
         case "day" | "week" | "month" | "year":
             return _end_of_days(_last_moment(wall), unit, week_starts_on)
 
@@ -206,4 +206,4 @@ def _midnight(wall: datetime) -> datetime:
 
 
 def _last_moment(wall: datetime) -> datetime:
-    return wall.replace(hour=23, minute=59, second=59, microsecond=999_999)
+    return wall.replace(hour=23, minute=59, second=59, microsecond=999_000)

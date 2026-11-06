@@ -260,7 +260,7 @@ def _array_error(s: fx.Stream[Any, Any], **options: Any) -> fx.Effect[tuple[str,
 def test_json_array_errors_name_the_value_and_its_offset(
     chunks: list[str], options: dict[str, Any], expected: tuple[str, int | None, str]
 ):
-    assert fx.run_sync(_array_error(_texts(*chunks), **options)) == expected
+    assert fx.run_blocking(_array_error(_texts(*chunks), **options)) == expected
 
 
 @testing.effect

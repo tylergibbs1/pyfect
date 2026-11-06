@@ -226,7 +226,7 @@ def is_property_names(key_schema: Top, /, **annotations: object) -> Filter[Mappi
                 case failure:
                     issue = issue_of(failure)
                     if issue is None:
-                        raise failure.cause.squash()
+                        raise failure.cause.raisable()
                     issues.append(Pointer((key,), issue))
                     if options.get("errors") == "first":
                         break

@@ -18,5 +18,5 @@ def program():
     yield from fx.for_each(requests, lambda r: fetch(permits, *r), concurrency="unbounded")
 
 
-fx.run_sync(program)
+fx.run_blocking(program)
 print(log)

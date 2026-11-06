@@ -39,13 +39,13 @@ def _parts(
 
 
 def _error(eff: fx.Effect[Any, Any]) -> object:
-    exit = fx.run_sync_exit(eff)
+    exit = fx.run_blocking_exit(eff)
     assert isinstance(exit, Failure)
     return exit.cause.squash()
 
 
 def _value[A](eff: fx.Effect[A, Any]) -> A:
-    exit = fx.run_sync_exit(eff)
+    exit = fx.run_blocking_exit(eff)
     assert isinstance(exit, Success), exit
     return exit.value
 

@@ -20,7 +20,7 @@ class _Named(TypedDict):
 
 
 def _flip(eff: fx.Effect[Any, HttpApiSchemaError]) -> HttpApiSchemaError:
-    exit_ = fx.run_sync_exit(eff)
+    exit_ = fx.run_blocking_exit(eff)
     assert isinstance(exit_, Failure)
     error = exit_.cause.squash()
     assert isinstance(error, HttpApiSchemaError)
@@ -30,7 +30,7 @@ def _flip(eff: fx.Effect[Any, HttpApiSchemaError]) -> HttpApiSchemaError:
 def _reported(error: HttpApiSchemaError) -> tuple[fx.Exit[Any, Any], list[fx.Cause[object]]]:
     reports: list[fx.Cause[object]] = []
     reporter = error_reporter.make(lambda report: reports.append(report.cause))
-    exit_ = fx.run_sync(
+    exit_ = fx.run_blocking(
         effect.fail(error)
         .with_error_reporting()
         .exit()
@@ -50,7 +50,7 @@ def test_responds_with_400_and_does_not_report_decoding_failures(kind: Any) -> N
     assert isinstance(exit_, Failure)
     assert exit_.cause.squash() is error
     assert reports == []
-    assert fx.run_sync(to_response(error)).status == 400
+    assert fx.run_blocking(to_response(error)).status == 400
 
 
 def _encoding_error(kind: Any) -> HttpApiSchemaError:
@@ -60,7 +60,7 @@ def _encoding_error(kind: Any) -> HttpApiSchemaError:
 @pytest.mark.parametrize("kind", ["Body", "ResponseHeaders"])
 def test_responds_with_500_for_encoding_failures(kind: Any) -> None:
     """responds with 500 for ${kind} encoding failures"""
-    assert fx.run_sync(to_response(_encoding_error(kind))).status == 500
+    assert fx.run_blocking(to_response(_encoding_error(kind))).status == 500
 
 
 @pytest.mark.parametrize("kind", ["Body", "ResponseHeaders"])

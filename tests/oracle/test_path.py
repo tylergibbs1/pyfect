@@ -6,6 +6,8 @@ cause is the ``UnicodeDecodeError`` or ``ValueError`` Python raises where
 JavaScript has a ``URIError``.
 """
 
+import pytest
+
 from pyfect import path, testing
 from pyfect.path import Path
 from pyfect.platform_error import BadArgument
@@ -80,3 +82,72 @@ def test_applies_windows_root_rules(win32_layer: Services[Path]):
     assert p.resolve_within("C:\\srv", "\\Windows") is None
     assert p.resolve_within("C:\\srv", "D:\\b.txt") is None
     assert p.resolve_within("C:\\srv", "\\\\server\\share\\b.txt") is None
+
+
+@pytest.mark.parametrize(
+    ("function", "arguments", "expected"),
+    [
+        ("join", ["/a", "/b"], "/a/b"),
+        ("join", ["a", "", "b"], "a/b"),
+        ("join", [], "."),
+        ("join", ["a/../.."], ".."),
+        ("join", ["/a/", "../.."], "/"),
+        ("join", ["", ""], "."),
+        ("normalize", ["a//b/./../c/"], "a/c/"),
+        ("normalize", [""], "."),
+        ("normalize", ["/"], "/"),
+        ("normalize", ["./"], "./"),
+        ("normalize", ["../a/.."], ".."),
+        ("normalize", ["///a"], "/a"),
+        ("relative", ["/a/b", "/a/b"], ""),
+        ("relative", ["/a/b/c", "/a/d"], "../../d"),
+        ("relative", ["/a", "/a/b/c"], "b/c"),
+        ("relative", ["/", "/a"], "a"),
+        ("relative", ["/a", "/"], ".."),
+        ("basename", ["/a/b.txt", ".txt"], "b"),
+        ("basename", ["/a/b/"], "b"),
+        ("basename", ["a.txt", "a.txt"], ""),
+        ("basename", ["/a/a.txt", "a.txt"], "a.txt"),
+        ("basename", ["/"], ""),
+        ("basename", [""], ""),
+        ("extname", ["a.b."], "."),
+        ("extname", [".bashrc"], ""),
+        ("extname", ["..."], "."),
+        ("extname", [".."], ""),
+        ("extname", ["a/b.c/"], ".c"),
+        ("extname", ["a."], "."),
+        ("dirname", ["/a/b/"], "/a"),
+        ("dirname", ["a"], "."),
+        ("dirname", ["/"], "/"),
+        ("dirname", ["//a"], "//"),
+        ("dirname", ["/a"], "/"),
+        ("dirname", ["a/b//"], "a"),
+        ("dirname", ["//"], "/"),
+        ("dirname", [""], "."),
+        ("resolve", ["/a", "../b"], "/b"),
+        ("resolve", ["/a", "/b", "c"], "/b/c"),
+        ("resolve", ["/.."], "/"),
+    ],
+)
+def test_posix_operations_match_node(function: str, arguments: list[str], expected: str):
+    # Node 24: path.posix[function](...arguments)
+    assert getattr(path.posix, function)(*arguments) == expected
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("/a/b.c", {"root": "/", "dir": "/a", "base": "b.c", "ext": ".c", "name": "b"}),
+        ("a/", {"root": "", "dir": "", "base": "a", "ext": "", "name": "a"}),
+        (".x", {"root": "", "dir": "", "base": ".x", "ext": "", "name": ".x"}),
+        ("/", {"root": "/", "dir": "/", "base": "", "ext": "", "name": ""}),
+        ("/a", {"root": "/", "dir": "/", "base": "a", "ext": "", "name": "a"}),
+        ("a/b/", {"root": "", "dir": "a", "base": "b", "ext": "", "name": "b"}),
+        ("/a//b", {"root": "/", "dir": "/a/", "base": "b", "ext": "", "name": "b"}),
+        ("", {"root": "", "dir": "", "base": "", "ext": "", "name": ""}),
+        ("//a", {"root": "/", "dir": "/", "base": "a", "ext": "", "name": "a"}),
+    ],
+)
+def test_posix_parse_matches_node(source: str, expected: dict[str, str]):
+    # Node 24: path.posix.parse(source)
+    assert path.posix.parse(source) == path.Parsed(**expected)

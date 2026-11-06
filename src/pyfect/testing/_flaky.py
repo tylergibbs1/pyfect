@@ -6,7 +6,7 @@ from typing import Any, Never, overload
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect.cause import Cause, Die, Fail, _as_exception, from_reasons  # pyright: ignore[reportPrivateUsage]
+from pyfect.cause import Cause, Die, Fail, from_reasons
 from pyfect.duration import Duration
 from pyfect.effect import fail_cause
 from pyfect.schedule import recurs
@@ -31,6 +31,4 @@ def flaky(eff: Effect[Any, Any, Any], timeout: Duration = 30.0) -> Effect[Any, A
 
 
 def _all_defects(cause: Cause[Any]) -> Cause[Never]:
-    return from_reasons(
-        Die(_as_exception(r.error)) if isinstance(r, Fail) else r for r in cause.reasons
-    )
+    return from_reasons(Die(r.error) if isinstance(r, Fail) else r for r in cause.reasons)

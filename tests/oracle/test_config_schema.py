@@ -46,7 +46,7 @@ from pyfect.schema import transformation as T
 
 
 def _parse[A](cfg: Config[A], provider: cp.ConfigProvider) -> fx.Ok[A] | fx.Err[str]:
-    return fx.run_sync(cfg.parse(provider).map_error(lambda e: e.cause.message).result())
+    return fx.run_blocking(cfg.parse(provider).map_error(lambda e: e.cause.message).result())
 
 
 def assert_success[A](cfg: Config[A], provider: cp.ConfigProvider, expected: object) -> None:

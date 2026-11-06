@@ -6,7 +6,7 @@ not use; or fails with ``E``. Run one with ``Stream.run``::
 
     from pyfect import sink, stream
 
-    fx.run_sync(stream.range(0, 5).run(sink.sum()))  # 10
+    fx.run_blocking(stream.range(0, 4).run(sink.sum()))  # 10
 
 The functions here build sinks; methods (``map``, ``flat_map``,
 ``map_input``, ``catch_all``, ...) refine them, and the functions that

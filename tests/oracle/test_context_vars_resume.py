@@ -57,7 +57,7 @@ def test_deferred_await_resumes_in_the_awaiters_context(waiter_store: str | None
     """Deferred.await resumes in the awaiter's context"""
 
     async def main() -> None:
-        deferred = fx.run_sync(fx.Deferred[None].make())
+        deferred = fx.run_blocking(fx.Deferred[None].make())
         waiter = asyncio.create_task(
             run_with_store(waiter_store, deferred.wait().and_then(observe))
         )
@@ -85,7 +85,7 @@ def test_pool_get_resumes_in_the_waiters_context(waiter_store: str | None) -> No
                 .tap(lambda p: fx.scoped(p.get()))
                 .pipe(fx.provide_service(fx.Scope, scope))
             )
-            holder_acquired = fx.run_sync(fx.Deferred[str].make())
+            holder_acquired = fx.run_blocking(fx.Deferred[str].make())
             holder = asyncio.create_task(
                 run_with_store(
                     "waker",

@@ -7,7 +7,7 @@ step until it succeeds (Effect v4's unstable ``ExecutionPlan``)::
         execution_plan.Step(primary_layer, attempts=2),
         execution_plan.Step(fallback_layer),
     )
-    fx.run_sync(fetch.pipe(fx.with_execution_plan(plan)))
+    fx.run_blocking(fetch.pipe(fx.with_execution_plan(plan)))
 
 A step provides a layer or a context and retries ``attempts`` times on its
 ``schedule`` while ``while_(error)`` holds. The plan provides only what

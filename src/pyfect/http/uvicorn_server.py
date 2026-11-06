@@ -19,198 +19,41 @@ then their fibers are interrupted and streamed bodies end where they are
 
 from __future__ import annotations
 
-import asyncio
 import collections.abc
 import contextlib
-import socket
-import threading
-from collections.abc import Callable, Coroutine, Mapping
-from concurrent.futures import Future
-from typing import Any, Never, NotRequired, TypedDict, Unpack
+from collections.abc import Mapping
+from typing import Any, NotRequired, Unpack
 
 from pyfect._extras import missing_extra
-from pyfect._loop_thread import LoopThread
 
 try:
     import uvicorn
 except ImportError as error:  # pragma: no cover - depends on the environment
     raise missing_extra("pyfect.http.uvicorn_server", "server") from error
 
-from pyfect._core import Effect, _WithFiber
-from pyfect._fiber import Fiber
-from pyfect._os_wait import Resume, WaitsFor, os_wait
-from pyfect._root import run_loop
-from pyfect.context import Context
-from pyfect.duration import Duration, Seconds, to_seconds
-from pyfect.effect import fail, succeed, suspend, sync
-from pyfect.exit import Exit
+from pyfect._core import Effect
 from pyfect.file_system import FileSystem
-from pyfect.http.asgi._serve import AsgiHandler
-from pyfect.http.asgi._types import Receive, Scope, Send
+from pyfect.http._asgi_listener import Dispatch, ListenOptions, graceful, make_listener
 from pyfect.http.client import HttpClient
 from pyfect.http.etag import Generator
 from pyfect.http.httpx_client import layer as httpx_layer
 from pyfect.http.live_server import layer_services
 from pyfect.http.live_server._listener import ABORT_GRACE_PERIOD
 from pyfect.http.platform import HttpPlatform
-from pyfect.http.server import HttpApp, HttpServer, HttpServerService, Middleware, layer_test_client
-from pyfect.http.server import make as make_server
+from pyfect.http.server import HttpServer, HttpServerService, layer_test_client
 from pyfect.layer import Layer, merge, provide_merge
 from pyfect.layer import effect as layer_effect
-from pyfect.net.net_address import inet_address_from_native_unsafe
 from pyfect.path import Path
-from pyfect.run import run_fork
-from pyfect.scope import CloseableScope, acquire_release
 from pyfect.scope import Scope as ScopeTag
 from pyfect.socket._web_socket import DEFAULT_MAX_MESSAGE_SIZE
-from pyfect.socket.server import SocketServerError, SocketServerOpenError
+from pyfect.socket.server import SocketServerError
 
 
-class Options(TypedDict):
-    port: NotRequired[int]
-    """0 (the default): any free port."""
-    host: NotRequired[str]
-    """Every interface by default (IPv6 and IPv4 where the host has both)."""
-    graceful_shutdown_timeout: NotRequired[Duration]
-    """How long requests in flight may run once the server closes (20s)."""
-    disable_preemptive_shutdown: NotRequired[bool]
-    """Give requests in flight no time: closing interrupts them at once."""
+class Options(ListenOptions):
     config: NotRequired[Mapping[str, Any]]
     """More ``uvicorn.Config`` arguments (``http``, ``ws``, ``ws_max_size``,
     ``proxy_headers``, ``timeout_keep_alive``, ``log_config``...); the app,
     socket and lifespan are the server's."""
-
-
-def _bind(host: str | None, port: int) -> socket.socket:
-    if host is None:
-        if socket.has_dualstack_ipv6():
-            return socket.create_server(("::", port), family=socket.AF_INET6, dualstack_ipv6=True)
-        return socket.create_server(("0.0.0.0", port))
-    family, _, _, _, address = socket.getaddrinfo(
-        host, port, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE
-    )[0]
-    return socket.create_server(address[:2], family=family)
-
-
-class _Dispatch:
-    """The ASGI app uvicorn runs: the served app's handler, or a 503."""
-
-    __slots__ = ("current",)
-
-    def __init__(self) -> None:
-        self.current: AsgiHandler | None = None
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        handler = self.current
-        if handler is not None:
-            await handler(scope, receive, send)
-        elif scope["type"] == "http":
-            await send({"type": "http.response.start", "status": 503, "headers": []})
-            await send({"type": "http.response.body", "body": b""})
-        elif scope["type"] == "websocket":
-            await send({"type": "websocket.close", "code": 1013})
-
-
-class _Shared:
-    lock = threading.Lock()
-    loop: asyncio.AbstractEventLoop | None = None
-
-
-def _loop_thread() -> asyncio.AbstractEventLoop:
-    """The loop servers outside an asyncio program run on: one per process,
-    on a daemon thread, started on first use and never stopped. Fibers run
-    on it, and a fiber forked from a request can outlive its server (held
-    by a layer released later), so stopping the loop with the server would
-    strand it: interrupting it would wait for ever (DOGFOOD pulse #5)."""
-    with _Shared.lock:
-        if _Shared.loop is None:
-            _Shared.loop = LoopThread("pyfect-uvicorn").loop
-        return _Shared.loop
-
-
-def _wait[A](future: Future[A], waits_for: WaitsFor) -> Effect[A, BaseException]:
-    """Wait for ``future`` (done on any thread) without blocking."""
-
-    def register(resume: Resume[A, BaseException]) -> None:
-        def done(finished: Future[A]) -> None:
-            if finished.cancelled():
-                resume(fail(asyncio.CancelledError()))
-                return
-            error = finished.exception()
-            resume(succeed(finished.result()) if error is None else fail(error))
-
-        future.add_done_callback(done)
-
-    return os_wait(register, waits_for=waits_for)
-
-
-class _Running:
-    """uvicorn serving on ``loop`` until ``stop``."""
-
-    def __init__(
-        self,
-        server: uvicorn.Server,
-        loop: asyncio.AbstractEventLoop,
-        graceful: Seconds,
-    ) -> None:
-        self.server = server
-        self.graceful = graceful
-        self.loop = loop
-        self.served: Future[None] | None = None
-
-    def submit[A](self, make: Callable[[], Coroutine[Any, Any, A]]) -> Future[A]:
-        return asyncio.run_coroutine_threadsafe(make(), self.loop)
-
-    def start(self, sock: socket.socket) -> Effect[None, BaseException]:
-        self.served = self.submit(lambda: self.server.serve(sockets=[sock]))
-        served = self.served
-
-        async def started() -> None:
-            while not self.server.started and not served.done():
-                await asyncio.sleep(0.005)
-            if served.done():
-                served.result()
-                raise RuntimeError("uvicorn stopped while starting")
-
-        return _wait(self.submit(started), "work")
-
-    def stop(self) -> Effect[None]:
-        """Stop accepting and wait for uvicorn to exit (its own
-        ``timeout_graceful_shutdown`` cancels what is still running)."""
-
-        def body() -> Effect[None]:
-            self.server.should_exit = True
-            assert self.served is not None
-            return _wait(self.served, "event").ignore()
-
-        return suspend(body)
-
-    def shut_down(
-        self, handler: AsgiHandler, requests: CloseableScope, exit: Exit[Any, Any]
-    ) -> Effect[None]:
-        """As ``NodeHttpServer``'s preemptive shutdown: stop accepting and
-        give requests in flight ``graceful`` seconds, then interrupt the
-        request fibers (``requests``) and end the bodies still streaming, so
-        uvicorn exits before its own timeout would cancel them."""
-
-        def end_responses() -> Effect[None]:
-            async def end() -> None:
-                handler.end_responses()
-
-            return _wait(self.submit(end), "work").ignore()
-
-        def body() -> Effect[None]:
-            self.server.should_exit = True
-            assert self.served is not None
-            served = _wait(self.served, "event").ignore()
-            return (
-                served.timeout_option(self.graceful)
-                .and_then(requests.close(exit))
-                .and_then(suspend(end_responses))
-                .and_then(self.stop())
-            )
-
-        return suspend(body)
 
 
 class _Server(uvicorn.Server):
@@ -224,13 +67,7 @@ class _Server(uvicorn.Server):
         yield
 
 
-def _graceful(options: Options) -> Seconds:
-    if options.get("disable_preemptive_shutdown", False):
-        return to_seconds(0)
-    return to_seconds(options.get("graceful_shutdown_timeout", 20))
-
-
-def _uvicorn(dispatch: _Dispatch, options: Options) -> uvicorn.Server:
+def _uvicorn(dispatch: Dispatch, options: Options) -> uvicorn.Server:
     config: dict[str, Any] = {
         "log_config": None,
         "server_header": False,
@@ -239,84 +76,15 @@ def _uvicorn(dispatch: _Dispatch, options: Options) -> uvicorn.Server:
     }
     # uvicorn's own timeout only backs up ``_Running.shut_down``, which ends
     # the requests first: its cancel is logged with a traceback.
-    backstop = _graceful(options) + ABORT_GRACE_PERIOD
+    backstop = graceful(options) + ABORT_GRACE_PERIOD
     config.update(app=dispatch, lifespan="off", timeout_graceful_shutdown=backstop)
     return _Server(uvicorn.Config(**config))
-
-
-def _serve(
-    dispatch: _Dispatch, running: _Running
-) -> Callable[[HttpApp, Middleware | None], Effect[None, Never, ScopeTag]]:
-    def serve(app: HttpApp, middleware: Middleware | None) -> Effect[None, Never, ScopeTag]:
-        def body(fiber: Fiber[Any, Any]) -> Effect[None, Never, ScopeTag]:
-            context: Context[Any] = fiber._context
-            serve_scope = context.get_unsafe(ScopeTag)
-            requests: CloseableScope = serve_scope.fork_unsafe("parallel")
-
-            def fork(
-                handled: Effect[None, Never, Any], request: Context[Any]
-            ) -> Fiber[None, Never]:
-                return run_fork(handled, context=request).run_in(requests)
-
-            handler = AsgiHandler(app, middleware, context, fork)
-            dispatch.current = handler
-
-            def unserve(exit: Exit[Any, Any]) -> Effect[None]:
-                def remove() -> None:
-                    if dispatch.current is handler:
-                        dispatch.current = None
-
-                return running.shut_down(handler, requests, exit).ensuring(sync(remove))
-
-            return serve_scope.add_finalizer(unserve)
-
-        return _WithFiber(body)
-
-    return serve
 
 
 def make(**options: Unpack[Options]) -> Effect[HttpServerService, SocketServerError, ScopeTag]:
     """An ``HttpServer`` on uvicorn, listening on ``host:port`` until the
     scope closes."""
-
-    def bind() -> Effect[socket.socket, SocketServerError]:
-        try:
-            return succeed(_bind(options.get("host"), options.get("port", 0)))
-        except OSError as cause:
-            return fail(SocketServerError(SocketServerOpenError(cause)))
-
-    def run(sock: socket.socket) -> Effect[HttpServerService, SocketServerError, ScopeTag]:
-        dispatch = _Dispatch()
-
-        def start() -> Effect[_Running, SocketServerError]:
-            current = run_loop()
-            loop = current or _loop_thread()
-            running = _Running(
-                _uvicorn(dispatch, options),
-                loop,
-                graceful=_graceful(options),
-            )
-            return (
-                running.start(sock)
-                .as_(running)
-                .catch_all(
-                    lambda cause: running.stop().and_then(
-                        fail(SocketServerError(SocketServerOpenError(cause)))
-                    )
-                )
-            )
-
-        def service(running: _Running) -> HttpServerService:
-            host, port = sock.getsockname()[:2]
-            address = inet_address_from_native_unsafe(host, port)
-            return make_server(serve=_serve(dispatch, running), address=address)
-
-        return acquire_release(suspend(start), lambda running, _: running.stop()).map(service)
-
-    def close(sock: socket.socket, _exit: object) -> Effect[None]:
-        return sync(sock.close)
-
-    return acquire_release(suspend(bind), close).flat_map(run)
+    return make_listener(options, lambda dispatch: _uvicorn(dispatch, options))
 
 
 def layer_server(**options: Unpack[Options]) -> Layer[HttpServer, SocketServerError]:

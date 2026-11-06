@@ -140,7 +140,7 @@ def test_closing_a_client_interrupts_its_waiting_calls_on_the_server() -> None:
         second = yield from interrupt
         return {first["requestId"], second["requestId"]}
 
-    assert fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die()) == {"unary", "stream"}
+    assert fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die()) == {"unary", "stream"}
 
 
 def test_responses_for_a_closed_client_are_not_kept() -> None:
@@ -158,7 +158,7 @@ def test_responses_for_a_closed_client_are_not_kept() -> None:
         gc.collect()
         return [ref() is not None for ref in refs]
 
-    kept = fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die())
+    kept = fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die())
     assert kept == [False] * len(kept)
 
 
@@ -212,5 +212,5 @@ def test_http_responses_for_a_closed_client_are_not_kept() -> None:
         yield from exchange.await_exit()
         return kept
 
-    kept = fx.run_sync(fx.scoped(effect.gen(body)).timeout(5).or_die())
+    kept = fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die())
     assert kept == [False] * len(kept)

@@ -144,7 +144,7 @@ def test_the_tracer_logger_records_annotations_and_renders_non_text_messages_as_
 
 
 def test_the_tracer_logger_is_a_default_logger():
-    assert logger.tracer_logger in fx.run_sync(fx.CurrentLoggers())
+    assert logger.tracer_logger in fx.run_blocking(fx.CurrentLoggers())
 
 
 # --- sampling and propagation ------------------------------------------------------
@@ -258,7 +258,7 @@ def test_a_raising_context_hook_is_a_defect():
     def context[T](run: Callable[[], T], fiber: fx.Fiber[Any, Any]) -> T:
         raise boom
 
-    exit_ = fx.run_sync_exit(fx.succeed(1).with_tracer(Tracer(NativeSpan, context)))
+    exit_ = fx.run_blocking_exit(fx.succeed(1).with_tracer(Tracer(NativeSpan, context)))
     assert exit_ == fx.exit.die(boom)
 
 

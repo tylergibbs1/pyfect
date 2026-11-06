@@ -219,9 +219,7 @@ class ErrorMethods(
 
     def catch_defect[O2, E2 = Never, D2 = None, R2 = Never](
         self,
-        f: Callable[
-            [BaseException], Channel[O2, E2, D2, InElem_contra, InErr_contra, InDone_contra, R2]
-        ],
+        f: Callable[[object], Channel[O2, E2, D2, InElem_contra, InErr_contra, InDone_contra, R2]],
     ) -> Channel[
         OutElem_co | O2,
         OutErr_co | E2,

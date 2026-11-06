@@ -21,7 +21,7 @@ class TimerRecordingScheduler:
         self.inner = inner
         self.delays: list[float] = []
 
-    def schedule(self, task: Task) -> None:
+    def schedule(self, task: Task, priority: int = 0) -> None:
         self.inner.schedule(task)
 
     def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:

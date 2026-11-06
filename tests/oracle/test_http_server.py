@@ -30,7 +30,7 @@ def _server(address: SocketAddress) -> server.HttpServerService:
 
 
 def _formatted(address: SocketAddress) -> str:
-    return fx.run_sync(
+    return fx.run_blocking(
         server.address_formatted_with(effect.succeed).pipe(
             effect.provide_service(HttpServer, _server(address))
         )
@@ -78,7 +78,7 @@ def test_rejects_scoped_ipv6_test_server_addresses_before_dropping_their_scope()
     for text in ["[fe80::1%2]:3000", "[::%2]:3000"]:
         address = inet_address_from_string_unsafe(text)
         client = _client(_unexpected)
-        exit = fx.run_sync_exit(
+        exit = fx.run_blocking_exit(
             server.make_test_client.pipe(effect.provide_service(HttpServer, _server(address))).pipe(
                 effect.provide_service(HttpClient, client)
             )
@@ -118,7 +118,7 @@ def test_uses_ipv4_loopback_for_unspecified_listeners_and_preserves_explicit_hos
         test_client = yield from server.make_test_client
         yield from test_client.get("/")
 
-    fx.run_sync(
+    fx.run_blocking(
         program()
         .pipe(effect.provide_service(HttpServer, _server(address)))
         .pipe(effect.provide_service(HttpClient, _client(send)))

@@ -60,6 +60,15 @@ server = [
     "uvicorn>=0.38",
     "websockets>=15",
 ]
+http2 = [
+    "hypercorn>=0.18",
+]
+intl = [
+    "babel>=2.18",
+]
+regex = [
+    "regex>=2024.11.6",
+]
 redis = [
     "redis>=8.1",
 ]
@@ -94,6 +103,9 @@ dev = [
     "pyfect-dev[mysql]",
     "pyfect-dev[mssql]",
     "pyfect-dev[server]",
+    "pyfect-dev[http2]",
+    "pyfect-dev[intl]",
+    "pyfect-dev[regex]",
     "pyfect-dev[redis]",
     "pyfect-dev[eventlog]",
     "pyfect-dev[brotli]",

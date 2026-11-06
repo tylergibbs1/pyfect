@@ -27,7 +27,7 @@ def map_chain() -> float:
     eff = fx.succeed(0)
     for _ in range(STEPS):
         eff = eff.map(lambda x: x + 1)
-    return best_of(lambda: fx.run_sync(eff))
+    return best_of(lambda: fx.run_blocking(eff))
 
 
 @fx.gen
@@ -47,8 +47,8 @@ def fork_join():
 
 def main() -> None:
     print(f"map chain: {STEPS / map_chain() / 1e6:.2f}M steps/s")
-    print(f"gen steps: {STEPS / best_of(lambda: fx.run_sync(gen_steps)) / 1e6:.2f}M steps/s")
-    print(f"fork+join: {FORKS / best_of(lambda: fx.run_sync(fork_join)) / 1e3:.0f}k/s")
+    print(f"gen steps: {STEPS / best_of(lambda: fx.run_blocking(gen_steps)) / 1e6:.2f}M steps/s")
+    print(f"fork+join: {FORKS / best_of(lambda: fx.run_blocking(fork_join)) / 1e3:.0f}k/s")
 
 
 if __name__ == "__main__":

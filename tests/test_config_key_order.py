@@ -15,11 +15,11 @@ _NUMBERS = S.Record(S.String, S.Number)
 
 
 def _keys(cfg: config.Config[dict[str, float]], provider: cp.ConfigProvider) -> list[str]:
-    return list(fx.run_sync(cfg.parse(provider).or_die()))
+    return list(fx.run_blocking(cfg.parse(provider).or_die()))
 
 
 def _first_error(cfg: config.Config[object], provider: cp.ConfigProvider) -> str:
-    result = fx.run_sync(cfg.parse(provider).map_error(lambda e: str(e.cause)).result())
+    result = fx.run_blocking(cfg.parse(provider).map_error(lambda e: str(e.cause)).result())
     assert isinstance(result, fx.Err)
     return result.error.splitlines()[-1]
 

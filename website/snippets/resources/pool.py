@@ -36,6 +36,6 @@ def program():
     )
 
 
-results = fx.run_sync(fx.scoped(program))
+results = fx.run_blocking(fx.scoped(program))
 assert len(results) == 3
 assert sorted(events) == ["close 1", "close 2"]

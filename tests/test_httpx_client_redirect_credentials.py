@@ -28,7 +28,7 @@ def _sent(**options: Any) -> dict[str, httpx.Request]:
     send = HttpClient().flat_map(
         lambda client: client.follow_redirects().execute(request.get("https://a.test/"))
     )
-    fx.run_sync(fx.scoped(send).pipe(fx.provide(http)).or_die())
+    fx.run_blocking(fx.scoped(send).pipe(fx.provide(http)).or_die())
     return seen
 
 
@@ -95,7 +95,7 @@ def test_request_headers_override_client_level_headers() -> None:
     send = HttpClient().flat_map(
         lambda client: client.execute(request.get("https://a.test/").set_header("x-env", "req"))
     )
-    fx.run_sync(fx.scoped(send).pipe(fx.provide(http)).or_die())
+    fx.run_blocking(fx.scoped(send).pipe(fx.provide(http)).or_die())
     assert seen[0].get_list("x-env") == ["req"]
 
 

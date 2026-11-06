@@ -75,12 +75,12 @@ from pyfect.context import Context, Reference, Tag
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as exit_die
 from pyfect.scheduler import (
+    BoundScheduler,
     CurrentScheduler,
+    EffectScheduler,
     MaxOpsBeforeYield,
     PreventSchedulerYield,
     Scheduler,
-    ShouldYield,
-    YieldCheck,
 )
 
 if TYPE_CHECKING:
@@ -272,6 +272,7 @@ class Fiber(Generic[A_co, E_co]):
         "_tracer_hook",
         "_waiting",
         "_yielded",
+        "current_op_count",
         "id",
     )
 
@@ -287,6 +288,7 @@ class Fiber(Generic[A_co, E_co]):
         ``context``'s ``CurrentScheduler``."""
         self.id = next(_fiber_ids)
         self._run_scheduler = run_scheduler
+        self.current_op_count = 0
         self._parent = parent
         self._stack: list[Frame] = []
         self._interruptible = interruptible
@@ -456,7 +458,7 @@ class Fiber(Generic[A_co, E_co]):
         self._ctx = view.context
         self._scheduler: Scheduler = view.scheduler
         self._ops_budget: float = view.ops_budget
-        self._should_yield: YieldCheck | None = view.should_yield
+        self._should_yield: EffectScheduler | None = view.should_yield
         self._tracer_hook: ContextHook | None = view.tracer_hook
         self._runtime_metrics: FiberRuntimeMetricsService | None = view.runtime_metrics
         self._stack_frame: StackFrame | None = view.stack_frame
@@ -550,13 +552,15 @@ class Fiber(Generic[A_co, E_co]):
                 cur = exit_die(TypeError(f"not a valid effect: {cur!r}"))
 
     def _pause_due(self, cur: Step, ops: int) -> bool:
-        """Past the budget: pause before ``cur``, unless a ``ShouldYield``
-        hook (whose budget is 1) says not to. A raising hook is a defect,
-        which the fiber goes on with after the pause."""
+        """Past the budget: pause before ``cur``, unless an
+        ``EffectScheduler`` (asked before each step, as Effect) says not to. A raising
+        ``should_yield`` is a defect, which the fiber goes on with after the
+        pause."""
         check = self._should_yield
         if check is not None:
+            self.current_op_count = ops
             try:
-                if not check(self, ops):
+                if not check.should_yield(self):
                     return False
             except BaseException as exc:
                 cur = self._raised(exc)
@@ -568,7 +572,7 @@ class Fiber(Generic[A_co, E_co]):
         ``cur``."""
         self._queue_yielded(_Yielded(cur))
 
-    def _queue_yielded(self, yielded: _Yielded) -> None:
+    def _queue_yielded(self, yielded: _Yielded, priority: int = 0) -> None:
         self._yielded = yielded
 
         def go_on() -> None:
@@ -576,7 +580,7 @@ class Fiber(Generic[A_co, E_co]):
                 self._yielded = None
                 self._drive(yielded.step)
 
-        self._scheduler.schedule(go_on)
+        self._scheduler.schedule(go_on, priority)
 
     def _continue(self, frame: Frame, ex: Exit[Any, Any]) -> Step:
         hook = self._tracer_hook
@@ -647,16 +651,9 @@ class Fiber(Generic[A_co, E_co]):
         if self._parent is not None:
             self._parent._children.pop(self, None)
         observers, self._observers = self._observers, []
-        raised: BaseException | None = None
         for observer in observers:
-            # One raising observer must not keep the exit from the rest
-            # (joiners would hang); its exception still surfaces after them.
-            try:
-                observer(ex)
-            except BaseException as exc:
-                raised = raised or exc
-        if raised is not None:
-            raise raised
+            # As Effect: a raise stops the observers after it.
+            observer(ex)
         return None
 
     def _remove_observer(self, observer: Callable[[Exit[Any, Any]], None]) -> None:
@@ -697,8 +694,8 @@ class Fiber(Generic[A_co, E_co]):
         drain.push_first((self, then))
         return SUSPEND
 
-    def _yield_now(self) -> Step:
-        self._queue_yielded(_Yielded(Success(None)))
+    def _yield_now(self, priority: int = 0) -> Step:
+        self._queue_yielded(_Yielded(Success(None)), priority)
         return SUSPEND
 
     def _suspend(self, register: Register[Any, Any, Any]) -> Step:
@@ -884,7 +881,7 @@ class _RunView:
     context: Context
     scheduler: Scheduler
     ops_budget: float
-    should_yield: YieldCheck | None
+    should_yield: EffectScheduler | None
     tracer_hook: ContextHook | None
     runtime_metrics: FiberRuntimeMetricsService | None
     stack_frame: StackFrame | None
@@ -894,14 +891,20 @@ class _RunView:
         context = given
         if context.lookup(_RunScheduler)[1] is not run_scheduler:
             context = _into_run(context, run_scheduler)
-        should_yield: YieldCheck | None = None
+        scheduler = context.lookup(CurrentScheduler)[1]
+        if isinstance(scheduler, BoundScheduler) and scheduler.run is not run_scheduler:
+            scheduler = scheduler.effect_scheduler
+        if isinstance(scheduler, EffectScheduler):
+            scheduler = BoundScheduler(scheduler, run_scheduler)
+            context = context.add(CurrentScheduler, scheduler)
+        should_yield = scheduler.effect_scheduler if isinstance(scheduler, BoundScheduler) else None
         if context.lookup(PreventSchedulerYield)[1]:
             budget = math.inf
-        elif (should_yield := context.lookup(ShouldYield)[1]) is not None:
-            budget = 1
+            should_yield = None
+        elif should_yield is not None:
+            budget = 0
         else:
             budget = max(1, context.lookup(MaxOpsBeforeYield)[1])
-        scheduler = context.lookup(CurrentScheduler)[1]
         hook = context.lookup(CurrentTracer)[1].context
         runtime_metrics = context.lookup(FiberRuntimeMetrics)[1]
         frame = context.lookup(CurrentStackFrame)[1]

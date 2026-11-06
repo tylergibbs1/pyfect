@@ -66,7 +66,7 @@ def _run[A](
     eff: fx.Effect[A, Any, Any], provided: fx.Layer[HttpPlatform, Never, Never] = _LAYER
 ) -> A:
     provide: Any = fx.provide(provided)
-    return fx.run_sync(provide(eff).or_die())
+    return fx.run_blocking(provide(eff).or_die())
 
 
 def _file_response(path: str, **options: Any) -> fx.Effect[HttpServerResponse, PlatformError, Any]:

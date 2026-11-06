@@ -259,12 +259,9 @@ def make[T, R](
     *, input: S.Codec[T, Any, Any, R], decisions: Mapping[str, AnyDecision]
 ) -> Definition[T, R]:
     """A definition of ``decisions`` about values of ``input``. Raises
-    ``ValueError`` when ``decisions`` is empty or one decision object has
-    two names (``answers[decision]`` names one answer)."""
+    ``ValueError`` when ``decisions`` is empty."""
     if not decisions:
         raise ValueError("Decision.make: decisions must not be empty")
-    if len({id(decision) for decision in decisions.values()}) != len(decisions):
-        raise ValueError("Decision.make: each decision must appear under one name")
     return Definition(input, decisions)
 
 

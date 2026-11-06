@@ -552,9 +552,9 @@ def test_done_failures_compare_by_value():
 
 
 def test_a_raised_done_names_itself():
-    """A Done that escapes run_sync shows as Done(...), not as its bare value."""
+    """A Done that escapes run_blocking shows as Done(...), not as its bare value."""
     with pytest.raises(fx.Done) as raised:
-        fx.run_sync(fx.die(fx.Done()))
+        fx.run_blocking(fx.die(fx.Done()))
     assert str(raised.value) == "Done()"
     assert str(fx.Done(42)) == "Done(42)"
 

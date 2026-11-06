@@ -33,7 +33,7 @@ def test_a_raising_use_callback_is_a_defect_and_returns_the_item():
 
     ex = yield from pool.use(boom).exit()
     assert isinstance(ex, fx.Failure)
-    assert isinstance(ex.cause.find_defect(), RuntimeError)
+    assert isinstance(ex.cause.defects[0], RuntimeError)
     assert pool.state.usage == 0
     assert (yield from pool.use(fx.succeed)) == "resource"
 

@@ -515,7 +515,7 @@ def _defect_of_get(app: Any, path: str) -> object:
     from ._http_api import serve_layer
 
     program = http_client.get(path).pipe(fx.provide(serve_layer(app)))
-    exit_ = fx.run_sync(scope.scoped(program).exit())
+    exit_ = fx.run_blocking(scope.scoped(program).exit())
     assert isinstance(exit_, Failure)
     return exit_.cause.squash()
 

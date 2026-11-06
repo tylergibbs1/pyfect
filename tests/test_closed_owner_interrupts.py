@@ -110,7 +110,7 @@ CASES: list[tuple[str, fx.Effect[Any, Any, scope.Scope], _Use]] = [
 def test_using_a_closed_owner_interrupts_and_names_it(
     owner: str, make: fx.Effect[Any, Any, scope.Scope], use: _Use
 ) -> None:
-    exit_ = fx.run_sync(_closed(make).flat_map(use))
+    exit_ = fx.run_blocking(_closed(make).flat_map(use))
     assert isinstance(exit_, Failure)
     assert exit_.cause.has_interrupts_only
     error = exit_.cause.squash()
@@ -126,9 +126,9 @@ def test_an_open_owner_interrupts_without_a_reason() -> None:
         yield from fiber_map.remove("k")
         return (yield from fiber.await_exit())
 
-    exit_ = fx.run_sync(scope.scoped(program()))
+    exit_ = fx.run_blocking(scope.scoped(program()))
     assert isinstance(exit_, Failure)
-    assert "because" not in "\n".join(exit_.cause.squash().__notes__)
+    assert "because" not in "\n".join(exit_.cause.raisable().__notes__)
 
 
 def test_a_scoped_ref_whose_generation_closed_while_acquiring_names_the_scope() -> None:
@@ -141,6 +141,6 @@ def test_a_scoped_ref_whose_generation_closed_while_acquiring_names_the_scope() 
         return (yield from ref.set(close_own_scope()).exit())
 
     for made in (ScopedRef.from_acquire(close_own_scope()).exit(), scope.scoped(program())):
-        exit_ = fx.run_sync(scope.scoped(made))
+        exit_ = fx.run_blocking(scope.scoped(made))
         assert isinstance(exit_, Failure)
-        assert "because the Scope is closed" in "\n".join(exit_.cause.squash().__notes__)
+        assert "because the Scope is closed" in "\n".join(exit_.cause.raisable().__notes__)

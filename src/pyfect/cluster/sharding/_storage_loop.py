@@ -135,7 +135,7 @@ class StorageInbox:
                 defect = ReplyWithContext.from_defect(
                     id=state.snowflakes.next_unsafe(),
                     request_id=message.envelope.request_id,
-                    defect=cause.squash(),
+                    defect=cause.raisable(),
                 )
                 return state.storage.save_reply(defect).ignore()
             error = found.error

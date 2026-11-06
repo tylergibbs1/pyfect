@@ -245,11 +245,11 @@ def test_exit_and_effect_adapters_keep_the_whole_cause():
     schema = S.Bottom[object](Dying(cause=CAUSES["issue and defect"]))
     exit = S.decode_unknown_exit(schema)("a")
     assert isinstance(exit, Failure)
-    assert exit.cause.find_defect() is DEFECT
+    assert exit.cause.defects[0] is DEFECT
     found = exit.cause.find_error()
     assert isinstance(found, Ok)
     assert found.value.message == "schema issue"
 
-    ran = fx.run_sync_exit(S.encode_unknown_effect(schema)("a"))
+    ran = fx.run_blocking_exit(S.encode_unknown_effect(schema)("a"))
     assert isinstance(ran, Failure)
-    assert ran.cause.find_defect() is DEFECT
+    assert ran.cause.defects[0] is DEFECT

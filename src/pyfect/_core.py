@@ -28,11 +28,12 @@ primitives from here: loading this module loads the rest in the right order.
 from __future__ import annotations
 
 from collections.abc import Callable, Generator, Iterable
-from typing import TYPE_CHECKING, Any, Literal, Never, Self, TypeIs, overload
+from typing import TYPE_CHECKING, Any, Literal, Never, Self, TypeIs, cast, overload
 
 from pyfect._effect_args import require_effect
-from pyfect._effect_base import SUSPEND, A_co, E_co, Frame, R_co, Step
+from pyfect._effect_base import SUSPEND, A_co, E_co, EffectBase, Frame, R_co, Step
 from pyfect._effect_concurrency import ConcurrencyMethods
+from pyfect._effect_eager import EagerMethods
 from pyfect._effect_errors import (
     ErrorMethods,
     _catching_if,
@@ -58,6 +59,7 @@ if TYPE_CHECKING:
 
 
 class Effect(
+    EagerMethods[A_co, E_co, R_co],
     ErrorMethods[A_co, E_co, R_co],
     FoldingMethods[A_co, E_co, R_co],
     ResourceMethods[A_co, E_co, R_co],
@@ -104,11 +106,15 @@ class Effect(
         return _FlatMap(self, f)
 
     def and_then[B, E2 = Never, R2 = Never](
-        self, that: Effect[B, E2, R2]
+        self, that: Effect[B, E2, R2] | Callable[[A_co], Effect[B, E2, R2]]
     ) -> Effect[B, E_co | E2, R_co | R2]:
-        """Run ``that`` after this effect, keeping only its value."""
-        require_effect(that, "that")
-        return _FlatMap(self, lambda _: that)
+        """Run ``that``, or ``that(value)``, after this effect, keeping only
+        its value."""
+        if callable(that) and not isinstance(that, EffectBase):
+            return _FlatMap(self, that)
+        effect = cast("Effect[B, E2, R2]", that)
+        require_effect(effect, "that")
+        return _FlatMap(self, lambda _: effect)
 
     def tap[E2 = Never, R2 = Never](
         self, f: Callable[[A_co], Effect[object, E2, R2]]
@@ -158,6 +164,10 @@ class Effect(
 
         repeated = for_each([self] * n, _identity, concurrency=concurrency)
         return repeated.as_void() if discard else repeated
+
+    def replicate(self, n: int) -> list[Effect[A_co, E_co, R_co]]:
+        """A list holding this effect ``n`` times."""
+        return [self] * n
 
     def forever(self, *, disable_yield: bool = False) -> Effect[Never, E_co, R_co]:
         """Run this effect again and again, until it fails. As in Effect,

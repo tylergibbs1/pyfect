@@ -78,4 +78,4 @@ main = program.pipe(fx.catch_tag(fx.TimeoutException, lambda _: fx.succeed(0))).
 )
 
 if __name__ == "__main__":
-    print("greeted", fx.run_sync(main), "users")
+    print("greeted", fx.run_blocking(main), "users")

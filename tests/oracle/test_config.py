@@ -29,7 +29,7 @@ from pyfect.redacted import Redacted
 
 
 def _parse[A](cfg: Config[A], provider: cp.ConfigProvider) -> fx.Ok[A] | fx.Err[str]:
-    return fx.run_sync(cfg.parse(provider).map_error(lambda e: e.cause.message).result())
+    return fx.run_blocking(cfg.parse(provider).map_error(lambda e: e.cause.message).result())
 
 
 def assert_success[A](cfg: Config[A], provider: cp.ConfigProvider, expected: object) -> None:
@@ -133,7 +133,7 @@ def test_preserves_provider_defects_and_interruption_reasons():
     cause = fx.cause.die(RuntimeError("provider defect")) + fx.cause.interrupt(123)
     provider = cp.make(lambda _: fx.fail_cause(cause))
 
-    exit = fx.run_sync_exit(config.string("value").parse(provider))
+    exit = fx.run_blocking_exit(config.string("value").parse(provider))
 
     assert exit == fx.Failure(cause)
 

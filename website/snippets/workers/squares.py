@@ -17,7 +17,7 @@ def serve():
 
 
 def worker_main() -> None:
-    fx.run_sync(serve().pipe(fx.provide(python_worker_runner.layer)).or_die())
+    fx.run_blocking(serve().pipe(fx.provide(python_worker_runner.layer)).or_die())
 
 
 # The parent's side: spawn a worker, send it messages, handle its replies.

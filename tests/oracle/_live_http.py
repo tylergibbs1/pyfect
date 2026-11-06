@@ -23,7 +23,7 @@ TIMEOUT = 5.0
 def run_live(program: fx.Effect[Any, Any, Any], **options: Any) -> Any:
     """Run ``program`` with a live test server (and its client)."""
     provided = scoped(program).pipe(fx.provide(live_server.layer_test(**options)))
-    return fx.run_sync(provided.or_die())
+    return fx.run_blocking(provided.or_die())
 
 
 def _port(address: object) -> int:

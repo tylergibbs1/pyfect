@@ -20,7 +20,7 @@ class Rejected(fx.TaggedError):
 
 
 def _in_span(effect: fx.Effect[object, Rejected]) -> fx.Exit[object, Rejected]:
-    return fx.run_sync_exit(effect.with_span("hold-budget"))
+    return fx.run_blocking_exit(effect.with_span("hold-budget"))
 
 
 def test_a_failure_inside_a_span_is_not_equal_to_the_bare_failure_as_in_effect():
@@ -38,8 +38,8 @@ def test_assert_exit_fail_reports_another_error_with_the_pretty_cause():
 
 def test_assert_exit_fail_refuses_a_success_or_a_defect_beside_the_error():
     with pytest.raises(AssertionError, match=r"got Success\(value=1\)"):
-        testing.assert_exit_fail(fx.run_sync_exit(fx.succeed(1)), Rejected("grace"))
-    both = fx.run_sync_exit(
+        testing.assert_exit_fail(fx.run_blocking_exit(fx.succeed(1)), Rejected("grace"))
+    both = fx.run_blocking_exit(
         fx.fail(Rejected("grace")).ensuring(fx.die(ValueError("cleanup broke")))
     )
     with pytest.raises(AssertionError, match="cleanup broke"):
@@ -55,7 +55,7 @@ def test_a_failed_comparison_says_the_sides_differ_only_in_annotations(
         from pyfect import exit
 
         def test_compare():
-            ex = fx.run_sync_exit(fx.fail("no").with_span("hold-budget"))
+            ex = fx.run_blocking_exit(fx.fail("no").with_span("hold-budget"))
             assert ex == exit.fail("no")
         """
     )

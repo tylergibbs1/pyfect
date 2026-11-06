@@ -100,7 +100,7 @@ def future_of[A](fiber: Fiber[A, Any]) -> asyncio.Future[A]:
         if isinstance(ex, Success):
             future.set_result(ex.value)
         else:
-            future.set_exception(ex.cause.squash())
+            future.set_exception(ex.cause.raisable())
 
     fiber.add_observer_unsafe(settle)
     return future

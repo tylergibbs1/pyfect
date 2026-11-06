@@ -29,7 +29,7 @@ def to_logging(target: str | logging.Logger = "pyfect") -> Logger[None]:
             return
         fiber = options.fiber
         cause = options.cause
-        error = cause.squash() if cause.reasons else None
+        error = cause.raisable() if cause.reasons else None
         now = options.millis
         record = std.makeRecord(
             std.name,

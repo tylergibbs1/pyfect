@@ -3,6 +3,7 @@ the default reference and real file-system errors (each checked against
 Effect under Node where Effect has the same case)."""
 
 import math
+import os
 from pathlib import Path
 from typing import Never
 
@@ -18,24 +19,25 @@ from pyfect.platform_error import BadResource, NotFound
 def _load(
     provider: cp.ConfigProvider, path: cp.PathInput
 ) -> fx.Ok[cp.Node | None] | fx.Err[SourceError]:
-    return fx.run_sync(provider.load(path).result())
+    return fx.run_blocking(provider.load(path).result())
 
 
-def test_from_env_reads_os_environ_at_each_lookup(monkeypatch: pytest.MonkeyPatch):
+def test_from_env_copies_os_environ_when_made(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PYFECT_TEST_EARLY", "set before")
     provider = cp.from_env()
     monkeypatch.setenv("PYFECT_TEST_LATE", "set later")
 
-    assert _load(provider, ["PYFECT_TEST_LATE"]) == fx.Ok(Value("set later"))
-    assert _load(provider, ["PYFECT", "TEST", "LATE"]) == fx.Ok(Value("set later"))
+    assert _load(provider, ["PYFECT_TEST_EARLY"]) == fx.Ok(Value("set before"))
+    assert _load(provider, ["PYFECT", "TEST", "EARLY"]) == fx.Ok(Value("set before"))
+    assert _load(provider, ["PYFECT_TEST_LATE"]) == fx.Ok(None)
 
 
-def test_the_current_provider_defaults_to_the_environment(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("PYFECT_TEST_DEFAULT", "from env")
-    found = fx.run_sync(
-        fx.CurrentConfigProvider().flat_map(lambda p: p.load(["PYFECT_TEST_DEFAULT"])).result()
+def test_the_current_provider_defaults_to_the_environment():
+    found = fx.run_blocking(
+        fx.CurrentConfigProvider().flat_map(lambda p: p.load(["PATH"])).result()
     )
 
-    assert found == fx.Ok(Value("from env"))
+    assert found == fx.Ok(Value(os.environ["PATH"]))
 
 
 def test_load_takes_a_tuple_or_a_list():
@@ -84,12 +86,12 @@ def _live[A, E](eff: fx.Effect[A, E, fx.FileSystem | fx.Path]) -> fx.Effect[A, E
 def _provider(
     eff: fx.Effect[cp.ConfigProvider, Never, fx.FileSystem | fx.Path],
 ) -> cp.ConfigProvider:
-    return fx.run_sync(_live(eff))
+    return fx.run_blocking(_live(eff))
 
 
 def test_from_dot_env_fails_with_not_found_for_a_missing_file(tmp_path: Path):
     path = tmp_path / "absent.env"
-    result = fx.run_sync(_live(cp.from_dot_env(path).result()))
+    result = fx.run_blocking(_live(cp.from_dot_env(path).result()))
 
     assert isinstance(result, fx.Err)
     assert isinstance(result.error.reason, NotFound)
@@ -224,7 +226,7 @@ def test_dot_env_whitespace_and_line_ends_are_javascripts():
 def test_from_dot_env_reads_a_file_with_a_byte_order_mark(tmp_path: Path):
     path = tmp_path / ".env"
     path.write_text("A=1\n", encoding="utf-8-sig")
-    loaded = fx.run_sync(_live(cp.from_dot_env(path).result()))
+    loaded = fx.run_blocking(_live(cp.from_dot_env(path).result()))
 
     assert isinstance(loaded, fx.Ok)
     assert _load(loaded.value, ["A"]) == fx.Ok(Value("1"))

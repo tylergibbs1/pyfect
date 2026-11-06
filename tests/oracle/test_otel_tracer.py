@@ -14,7 +14,7 @@ Adapted, with the reason:
   scope is ``pyfect`` and pyfect's version.
 - "inherits an OpenTelemetry span started inside an Effect span" and "does
   not inherit an ambient Effect span when re-entering from JavaScript":
-  re-entering is a nested ``run_sync`` from inside the outer program.
+  re-entering is a nested ``run_blocking`` from inside the outer program.
 - "inherits getter-based OpenTelemetry parent ids with trace flags %s": a
   Python ``SpanContext`` is a tuple, with no getter-based variant; the port
   keeps the check that the active parent's ids are inherited and that
@@ -154,7 +154,9 @@ def test_inherits_an_opentelemetry_span_started_inside_an_effect_span():
 
         def inside() -> None:
             with otel_tracer.start_as_current_span("otel-parent") as parent:
-                child = fx.run_sync(fx.current_span().with_span("child").or_die(), context=services)
+                child = fx.run_blocking(
+                    fx.current_span().with_span("child").or_die(), context=services
+                )
                 assert child.trace_id == format_trace_id(parent.get_span_context().trace_id)
                 assert child.parent is not None
                 assert child.parent.span_id == format_span_id(parent.get_span_context().span_id)
@@ -176,7 +178,9 @@ def test_does_not_inherit_an_ambient_effect_span_when_re_entering():
         def inner():
             outer = yield from fx.current_span()
             child = yield from fx.sync(
-                lambda: fx.run_sync(fx.current_span().with_span("child").or_die(), context=services)
+                lambda: fx.run_blocking(
+                    fx.current_span().with_span("child").or_die(), context=services
+                )
             )
             assert child.parent is None
             assert child.trace_id != outer.trace_id
@@ -337,7 +341,7 @@ def test_inherits_opentelemetry_parent_ids_with_trace_flags(flags: int):
             token = otel_context.attach(active)
             try:
                 child = fx.current_span().with_span("child", annotations=annotations)
-                return fx.run_sync(child.or_die(), context=services)
+                return fx.run_blocking(child.or_die(), context=services)
             finally:
                 otel_context.detach(token)
 
@@ -439,7 +443,7 @@ def test_with_span_context():
 
         def inside() -> None:
             with otel_tracer.start_as_current_span("otel-span", attributes={"root": "yes"}) as span:
-                child = fx.run_sync(
+                child = fx.run_blocking(
                     effect.pipe(otel.tracer.with_span_context(span.get_span_context())),
                     context=services,
                 )

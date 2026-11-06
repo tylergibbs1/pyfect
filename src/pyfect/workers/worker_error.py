@@ -8,7 +8,7 @@ from typing import TypeIs
 from pyfect import schema as S
 
 
-def _cause_field() -> BaseException | None:
+def _cause_field() -> object:
     return S.field(S.Union(S.Null, S.Defect()), default=None)
 
 
@@ -16,14 +16,14 @@ class WorkerSpawnError(S.TaggedError, identifier="effect/workers/WorkerError/Wor
     """A worker could not be spawned or set up."""
 
     message: str
-    cause: BaseException | None = _cause_field()
+    cause: object = _cause_field()
 
 
 class WorkerSendError(S.TaggedError, identifier="effect/workers/WorkerError/WorkerSendError"):
     """A message could not be sent to a worker."""
 
     message: str
-    cause: BaseException | None = _cause_field()
+    cause: object = _cause_field()
 
 
 class WorkerReceiveError(S.TaggedError, identifier="effect/workers/WorkerError/WorkerReceiveError"):
@@ -31,14 +31,14 @@ class WorkerReceiveError(S.TaggedError, identifier="effect/workers/WorkerError/W
     away (it exited, or raised)."""
 
     message: str
-    cause: BaseException | None = _cause_field()
+    cause: object = _cause_field()
 
 
 class WorkerUnknownError(S.TaggedError, identifier="effect/workers/WorkerError/WorkerUnknownError"):
     """A worker failed in a way none of the other reasons cover."""
 
     message: str
-    cause: BaseException | None = _cause_field()
+    cause: object = _cause_field()
 
 
 type WorkerErrorReason = (
@@ -58,10 +58,10 @@ class WorkerError(S.TaggedError, identifier="~effect/workers/WorkerError"):
     reason: WorkerErrorReason = S.field(WORKER_ERROR_REASON)
 
     def __post_init__(self) -> None:
-        self.__cause__ = self.cause
+        self.__cause__ = self.cause if isinstance(self.cause, BaseException) else None
 
     @property
-    def cause(self) -> BaseException | None:
+    def cause(self) -> object:
         return self.reason.cause
 
     @property

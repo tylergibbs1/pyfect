@@ -13,7 +13,7 @@ HANGING_TEST = """
 import pyfect as fx
 
 def test_waits_forever():
-    fx.run_sync(fx.tx(fx.tx_retry))
+    fx.run_blocking(fx.tx(fx.tx_retry))
 """
 
 

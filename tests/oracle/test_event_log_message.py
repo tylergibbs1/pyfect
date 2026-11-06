@@ -62,10 +62,10 @@ def test_ignores_duplicate_chunks() -> None:
 def test_entry_frames() -> None:
     """entry frames"""
     frames = tuple(bytes.fromhex(h) for h in _WIRE_ENTRIES)
-    decoded = fx.run_sync(S.decode_effect(ENTRY_ARRAY_CODEC)(frames).or_die())
+    decoded = fx.run_blocking(S.decode_effect(ENTRY_ARRAY_CODEC)(frames).or_die())
     assert decoded == _ENTRIES
     assert isinstance(decoded[0], Entry)
-    assert fx.run_sync(S.encode_effect(ENTRY_ARRAY_CODEC)(_ENTRIES).or_die()) == frames
+    assert fx.run_blocking(S.encode_effect(ENTRY_ARRAY_CODEC)(_ENTRIES).or_die()) == frames
 
 
 def test_changes_frame_round_trip() -> None:
@@ -74,11 +74,11 @@ def test_changes_frame_round_trip() -> None:
         RemoteEntry(remote_sequence=7, entry=_ENTRIES[0]),
         RemoteEntry(remote_sequence=8, entry=_ENTRIES[1]),
     )
-    decoded = fx.run_sync(M.decode_changes_unencrypted(bytes.fromhex(_WIRE_CHANGES)).or_die())
+    decoded = fx.run_blocking(M.decode_changes_unencrypted(bytes.fromhex(_WIRE_CHANGES)).or_die())
     assert decoded == remote
     assert isinstance(decoded[0], RemoteEntry)
     assert isinstance(decoded[0].entry, Entry)
-    assert fx.run_sync(M.encode_changes_unencrypted(remote).or_die()).hex() == _WIRE_CHANGES
+    assert fx.run_blocking(M.encode_changes_unencrypted(remote).or_die()).hex() == _WIRE_CHANGES
 
 
 def test_write_frame_round_trip() -> None:
@@ -86,10 +86,10 @@ def test_write_frame_round_trip() -> None:
     request = M.WriteEntriesUnencrypted(
         public_key="pk", store_id=StoreId("store"), entries=_ENTRIES
     )
-    decoded = fx.run_sync(M.WriteEntriesUnencrypted.decode(bytes.fromhex(_WIRE_WRITE)).or_die())
+    decoded = fx.run_blocking(M.WriteEntriesUnencrypted.decode(bytes.fromhex(_WIRE_WRITE)).or_die())
     assert decoded == request
     assert isinstance(decoded.entries[0], Entry)
-    assert fx.run_sync(request.encoded.or_die()).hex() == _WIRE_WRITE
+    assert fx.run_blocking(request.encoded.or_die()).hex() == _WIRE_WRITE
 
 
 def _missing_keys(error: Exception) -> list[str]:
@@ -105,9 +105,11 @@ def test_decoders_forward_parse_options() -> None:
     empty = S.Struct(_Empty)
     empty_struct = S.encode_sync(schema_binary.to_codec(empty))({})
     empty_entries = S.encode_sync(schema_binary.to_codec(S.Array(empty)))(({},))
-    write = fx.run_sync(
+    write = fx.run_blocking(
         M.WriteEntriesUnencrypted.decode(empty_struct, errors="all").flip().or_die()
     )
     assert _missing_keys(write) == ['["entries"]', '["publicKey"]', '["storeId"]']
-    changes = fx.run_sync(M.decode_changes_unencrypted(empty_entries, errors="all").flip().or_die())
+    changes = fx.run_blocking(
+        M.decode_changes_unencrypted(empty_entries, errors="all").flip().or_die()
+    )
     assert _missing_keys(changes) == ['[0]["entry"]', '[0]["remoteSequence"]']

@@ -45,8 +45,8 @@ class _RecordingPath(PathService):
         super().__init__(fx_path.win32._m, windows=True)
         self.joined: list[str] = []
 
-    def join(self, path: str, *paths: str) -> str:
-        self.joined.append("\\".join((path, *paths)))
+    def join(self, *paths: str) -> str:
+        self.joined.append("\\".join(paths))
         return str(_FIXTURE)
 
 

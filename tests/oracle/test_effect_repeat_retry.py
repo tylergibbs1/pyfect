@@ -68,12 +68,9 @@ def test_does_not_retry_typed_failures_accompanied_by_finalizer_defects():
     ex = yield from fx.suspend(source).retry(schedule.recurs(1)).exit()
     assert attempts == 1
     assert isinstance(ex, fx.Failure)
-    # Effect dies with the raw error "error"; a pyfect defect is an exception,
-    # so the unhandled typed error is wrapped in ``UnhandledError``.
     first, second = ex.cause.reasons
     assert isinstance(first, Die)
-    assert isinstance(first.defect, fx.UnhandledError)
-    assert first.defect.error == "error"
+    assert first.defect == "error"
     assert second == Die(cleanup_failed)
 
 

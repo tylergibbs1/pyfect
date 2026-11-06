@@ -37,7 +37,7 @@ class CircuitBreakerStoreError(
     """The store could not be reached; ``cause`` is why."""
 
     message: str
-    cause: BaseException | None = S.field(S.Union(S.Null, S.Defect()), default=None)
+    cause: object = S.field(S.Union(S.Null, S.Defect()), default=None)
 
 
 type CircuitBreakerErrorReason = CircuitOpen | CircuitHalfOpen | CircuitBreakerStoreError
@@ -56,10 +56,10 @@ class CircuitBreakerError(
     reason: CircuitBreakerErrorReason = S.field(CIRCUIT_BREAKER_ERROR_REASON)
 
     def __post_init__(self) -> None:
-        self.__cause__ = self.cause
+        self.__cause__ = self.cause if isinstance(self.cause, BaseException) else None
 
     @property
-    def cause(self) -> BaseException | None:
+    def cause(self) -> object:
         return self.reason.cause if isinstance(self.reason, CircuitBreakerStoreError) else None
 
     @property

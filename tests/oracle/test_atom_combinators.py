@@ -21,7 +21,7 @@ def test_subscription_ref(timers: FakeTimers) -> None:
     mirrored = atom.subscription_ref(ref)
     r = timers.registry()
     assert r.get(mirrored) == 123
-    fx.run_sync(ref.update(lambda a: a + 1))
+    fx.run_blocking(ref.update(lambda a: a + 1))
     assert r.get(mirrored) == 124
 
 
@@ -164,7 +164,7 @@ def test_to_stream_result(timers: FakeTimers) -> None:
     r = timers.registry()
     one = atom.make(fx.succeed(1))
     eff = atom.to_stream_result(one).run_head().pipe(fx.provide_service(AtomRegistry, r))
-    assert fx.run_sync(eff) == fx.Some(1)
+    assert fx.run_blocking(eff) == fx.Some(1)
 
 
 def test_refresh_on_signal(timers: FakeTimers) -> None:

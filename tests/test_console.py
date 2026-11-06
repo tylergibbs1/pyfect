@@ -17,7 +17,7 @@ from pyfect.testing import Entry, TestConsole
 
 def _entries(eff: fx.Effect[object]) -> list[Entry]:
     test_console = TestConsole()
-    fx.run_sync(eff.pipe(fx.provide_service(CurrentConsole, test_console)))
+    fx.run_blocking(eff.pipe(fx.provide_service(CurrentConsole, test_console)))
     return test_console.entries
 
 
@@ -50,8 +50,8 @@ def test_each_effect_calls_its_console_method(eff: fx.Effect[None], entry: Entry
 def test_effects_read_the_console_when_they_run_not_when_built():
     eff = console.log("x")
     first, second = TestConsole(), TestConsole()
-    fx.run_sync(eff.pipe(fx.provide_service(CurrentConsole, first)))
-    fx.run_sync(eff.pipe(fx.provide_service(CurrentConsole, second)))
+    fx.run_blocking(eff.pipe(fx.provide_service(CurrentConsole, first)))
+    fx.run_blocking(eff.pipe(fx.provide_service(CurrentConsole, second)))
     assert first.entries == second.entries == [Entry("log", ("x",))]
 
 
@@ -80,7 +80,7 @@ def test_a_group_without_a_label_writes_no_line_and_collapsed_uses_group_collaps
 def test_with_group_and_with_time_close_after_a_failure():
     failing: fx.Effect[None, str] = console.log("in").and_then(fx.fail("boom"))
     test_console = TestConsole()
-    ex = fx.run_sync_exit(
+    ex = fx.run_blocking_exit(
         console.with_time(console.with_group(failing, label="g"), "t").pipe(
             fx.provide_service(CurrentConsole, test_console)
         )
@@ -97,7 +97,7 @@ def test_with_group_and_with_time_close_after_a_failure():
 
 def test_console_with_passes_the_current_console():
     test_console = TestConsole()
-    seen = fx.run_sync(
+    seen = fx.run_blocking(
         console.console_with(fx.succeed).pipe(fx.provide_service(CurrentConsole, test_console))
     )
     assert seen is test_console
@@ -143,8 +143,8 @@ def test_run_test_provides_a_test_console():
 def test_test_console_layer_provides_a_fresh_test_console_per_build():
     eff = console.log("x").and_then(testing.log_lines)
     provided = eff.pipe(fx.provide(TestConsole.layer()))
-    assert fx.run_sync(provided) == ["x"]
-    assert fx.run_sync(provided) == ["x"]
+    assert fx.run_blocking(provided) == ["x"]
+    assert fx.run_blocking(provided) == ["x"]
 
 
 # --- LiveConsole, as Node prints -------------------------------------------------

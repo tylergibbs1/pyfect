@@ -23,6 +23,7 @@ from pyfect.rpc.group import (
     Handlers,
     HandlersFor,
     RpcGroup,
+    RpcGroupWith,
     access_handler,
     to_layer_handler,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "RpcClientDefect",
     "RpcClientError",
     "RpcGroup",
+    "RpcGroupWith",
     "RpcMiddleware",
     "RpcRequest",
     "ServerClient",

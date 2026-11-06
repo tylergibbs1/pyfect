@@ -228,7 +228,7 @@ Schema84 = S.BigInt.check(S.is_less_than_big_int(3).annotate(expected="a value l
 Schema85 = S.BigInt.check(S.is_less_than_or_equal_to_big_int(3).annotate(expected="a value less than or equal to 3n"))
 Schema86 = S.BigInt.check(S.is_between_big_int(minimum=1, maximum=3).annotate(expected="a value between 1n and 3n"))
 Schema87 = S.Result(S.String, S.Number).annotate(expected="Result")
-Schema88 = S.CauseReason(S.String, cast("Any", S.Json.annotate(expected="JSON value"))).annotate(expected="Cause.Reason")
+Schema88 = S.CauseReason(S.String, cast("Any", S.Json.annotate(expected="JSON value"))).annotate(expected="Cause.Failure")
 Schema89 = S.Cause(S.String, cast("Any", S.Json.annotate(expected="JSON value"))).annotate(expected="Cause")
 Schema90 = S.Exit(S.String, S.Number, cast("Any", S.Json.annotate(expected="JSON value"))).annotate(expected="Exit")
 Schema91 = S.Graph("directed", S.String, S.Number).annotate(expected="an immutable directed Graph")

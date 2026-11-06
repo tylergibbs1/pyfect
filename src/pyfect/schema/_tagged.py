@@ -120,6 +120,59 @@ class TaggedUnionSchema(UnionSchema[A_co, I_co, RD_co, RE_co], Generic[A_co, I_c
 
         return test
 
+    @overload
+    def match[A, T](
+        self: TaggedUnionSchema[A, Any, Any, Any],
+        cases: Mapping[LiteralValue, Callable[[A], T]],
+        /,
+    ) -> Callable[[A], T]: ...
+    @overload
+    def match[A, T](
+        self: TaggedUnionSchema[A, Any, Any, Any],
+        value: A,
+        cases: Mapping[LiteralValue, Callable[[A], T]],
+        /,
+    ) -> T: ...
+    def match(self, *args: Any) -> Any:
+        """``cases``' function for the case ``value`` is; given the cases
+        alone, the function of the value."""
+        if len(args) == 1:
+            cases_only = args[0]
+
+            def apply(value: Any) -> Any:
+                return cases_only[_tag_of(value, self.tag)](value)
+
+            return apply
+        value, cases = args
+        return cases[_tag_of(value, self.tag)](value)
+
+    @overload
+    def match_or_else[A, T](
+        self: TaggedUnionSchema[A, Any, Any, Any],
+        cases: Mapping[LiteralValue, Callable[[A], T]],
+        or_else: Callable[[A], T],
+        /,
+    ) -> Callable[[A], T]: ...
+    @overload
+    def match_or_else[A, T](
+        self: TaggedUnionSchema[A, Any, Any, Any],
+        value: A,
+        cases: Mapping[LiteralValue, Callable[[A], T]],
+        or_else: Callable[[A], T],
+        /,
+    ) -> T: ...
+    def match_or_else(self, *args: Any) -> Any:
+        """``match``, with ``or_else`` for a case ``cases`` leaves out."""
+        if len(args) == 2:
+            cases_only, otherwise = args
+
+            def apply(value: Any) -> Any:
+                return cases_only.get(_tag_of(value, self.tag), otherwise)(value)
+
+            return apply
+        value, cases, or_else = args
+        return cases.get(_tag_of(value, self.tag), or_else)(value)
+
 
 def _tag_of(value: object, tag: str) -> object:
     if isinstance(value, Mapping):

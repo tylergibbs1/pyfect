@@ -96,7 +96,7 @@ def test_advertises_supported_algorithms() -> None:
     """advertises supported algorithms"""
     from pyfect.http.platform import layer_live
 
-    algorithms = fx.run_sync(
+    algorithms = fx.run_blocking(
         HttpPlatform().map(lambda p: p.compression.algorithms).pipe(fx.provide(layer_live))
     )
     assert "gzip" in algorithms

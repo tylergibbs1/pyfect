@@ -28,4 +28,4 @@ def program():
     print([run.job for run in taken])
 
 
-fx.run_sync(program())
+fx.run_blocking(program())

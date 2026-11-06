@@ -16,7 +16,7 @@ def handle(user_id: str):
 
 
 program = handle("42").annotate_logs("user_id", "42").pipe(fx.provide(Collect))
-fx.run_sync(program)
+fx.run_blocking(program)
 
 assert len(lines) == 2
 assert "level=INFO fiber=#" in lines[0] and 'message="signed in" user_id=42' in lines[0]

@@ -65,7 +65,7 @@ class _Tty(io.StringIO):
 
 def test_reads_terminal_state_when_the_effects_run(monkeypatch: pytest.MonkeyPatch):
     """NodeStdio / reads terminal state when the effects run"""
-    service = fx.run_sync(Stdio().pipe(fx.provide(stdio.layer)))
+    service = fx.run_blocking(Stdio().pipe(fx.provide(stdio.layer)))
     checks = fx.all(
         service.stdin_is_terminal, service.stdout_is_terminal, service.stderr_is_terminal
     )
@@ -76,8 +76,8 @@ def test_reads_terminal_state_when_the_effects_run(monkeypatch: pytest.MonkeyPat
         monkeypatch.setattr("sys.stderr", None if stderr is None else _Tty(stderr))
 
     set_tty(False, False, True)
-    assert fx.run_sync(checks) == (False, False, True)
+    assert fx.run_blocking(checks) == (False, False, True)
     set_tty(True, True, False)
-    assert fx.run_sync(checks) == (True, True, False)
+    assert fx.run_blocking(checks) == (True, True, False)
     set_tty(False, True, None)
-    assert not fx.run_sync(service.stderr_is_terminal)
+    assert not fx.run_blocking(service.stderr_is_terminal)

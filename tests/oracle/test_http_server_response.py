@@ -282,13 +282,13 @@ def test_supports_repeated_reads_of_raw_web_response_bodies() -> None:
         data = yield from response.bytes_
         return first, second, data
 
-    assert fx.run_sync(program().or_die()) == ("hello", "hello", b"hello")
+    assert fx.run_blocking(program().or_die()) == ("hello", "hello", b"hello")
 
 
 def test_leaves_the_raw_web_response_servable_after_a_client_body_read() -> None:
     """leaves the raw Web Response servable after a client-body read"""
     response = server_response.raw(WebResponse("hello"))
-    assert fx.run_sync(server_response.to_client_response(response).text.or_die()) == "hello"
+    assert fx.run_blocking(server_response.to_client_response(response).text.or_die()) == "hello"
     assert _text(response_to_web(response)) == "hello"
 
 
@@ -314,7 +314,7 @@ def test_from_client_response_preserves_status_headers_cookies_and_json() -> Non
     session = response.cookies.get("session")
     assert session is not None
     assert session.value == "123"
-    assert fx.run_sync(round_trip.json.or_die()) == {"foo": "bar"}
+    assert fx.run_blocking(round_trip.json.or_die()) == {"foo": "bar"}
 
 
 def test_from_client_response_preserves_stream_requirements() -> None:
@@ -325,7 +325,7 @@ def test_from_client_response_preserves_stream_requirements() -> None:
     round_trip = server_response.to_client_response(response)
     assert round_trip.url == ""
     text = round_trip.text.pipe(effect.provide_service(ValueRef, 420))
-    assert fx.run_sync(text.or_die()) == "420"
+    assert fx.run_blocking(text.or_die()) == "420"
 
 
 def test_from_client_response_preserves_form_data_bodies() -> None:
@@ -338,7 +338,7 @@ def test_from_client_response_preserves_form_data_bodies() -> None:
     content_type = response.headers["content-type"]
     assert content_type.startswith("multipart/form-data; boundary=")
     boundary = content_type.split("boundary=", 1)[1]
-    text = fx.run_sync(round_trip.text.or_die())
+    text = fx.run_blocking(round_trip.text.or_die())
     assert f'--{boundary}\r\nContent-Disposition: form-data; name="foo"\r\n\r\nbar\r\n' in text
 
 
@@ -349,7 +349,7 @@ def test_from_client_response_turns_empty_client_bodies_into_empty_server_stream
     response = server_response.from_client_response(client)
     round_trip = server_response.to_client_response(response, request=request)
     assert response.status == 200
-    assert fx.run_sync(round_trip.text.or_die()) == ""
+    assert fx.run_blocking(round_trip.text.or_die()) == ""
 
 
 def test_from_client_response_ignores_malformed_or_unsafe_content_lengths() -> None:

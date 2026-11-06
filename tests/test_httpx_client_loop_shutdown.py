@@ -60,7 +60,7 @@ def _read_part(url: str) -> Exit[Any, Any]:
         client = yield from HttpClient()
         return (yield from client.get(url).flat_map(lambda r: r.stream.take(1).run_collect()))
 
-    return fx.run_sync_exit(fx.scoped(fx.gen(program)).pipe(fx.provide(httpx_client.layer)))
+    return fx.run_blocking_exit(fx.scoped(fx.gen(program)).pipe(fx.provide(httpx_client.layer)))
 
 
 def test_a_released_client_closes_the_bodies_it_left_open(

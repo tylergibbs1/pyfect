@@ -363,7 +363,7 @@ return 0
 )
 
 
-def _store_error(message: str, cause: BaseException) -> RateLimiterError:
+def _store_error(message: str, cause: object) -> RateLimiterError:
     return RateLimiterError(reason=RateLimitStoreError(message=message, cause=cause))
 
 

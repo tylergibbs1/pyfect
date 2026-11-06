@@ -23,5 +23,6 @@ def read(user: str, key: str):
 
 
 # read("admin", "motd") is an Effect[str, Forbidden | NotFound].
-exit = fx.run_sync_exit(read("guest", "motd"))
-assert exit == fx.exit.fail(Forbidden("guest"))
+exit = fx.run_blocking_exit(read("guest", "motd"))
+assert isinstance(exit, fx.Failure)
+assert exit.cause.find_error() == fx.Ok(Forbidden("guest"))

@@ -45,8 +45,7 @@ type OpenErrorKind = Literal["Unknown", "Timeout"]
 @dataclass(eq=False)
 class SocketOpenError(TaggedError):
     """Opening the socket failed; ``target`` is where it was going (a URL,
-    ``host:port`` or a path) when known. Unlike Effect's, the message names
-    the target and the cause (PARITY §4)."""
+    ``host:port`` or a path) when known."""
 
     kind: OpenErrorKind
     cause: object
@@ -55,30 +54,11 @@ class SocketOpenError(TaggedError):
     @property
     def message(self) -> str:
         if self.kind == "Timeout":
-            base = 'timeout waiting for "open"'
-            return base if self.target is None else f"{base} of {self.target}"
-        detail = describe_cause(self.cause)
-        if self.target is None and detail is None:
-            return "An error occurred during Open"
-        where = "the socket" if self.target is None else self.target
-        return f"Could not open {where}" if detail is None else f"Could not open {where}: {detail}"
+            return 'timeout waiting for "open"'
+        return "An error occurred during Open"
 
     def __str__(self) -> str:
         return self.message
-
-
-def describe_cause(cause: object) -> str | None:
-    """A line saying what ``cause`` is: an exception as ``Type: text``, a
-    WebSocket error event by its data."""
-    from pyfect.socket._web_socket import WebSocketEvent
-
-    data = cause.data if isinstance(cause, WebSocketEvent) else cause
-    if data is None:
-        return None
-    if isinstance(data, BaseException):
-        text = str(data)
-        return f"{type(data).__name__}: {text}" if text else type(data).__name__
-    return str(data)
 
 
 @dataclass(eq=False)

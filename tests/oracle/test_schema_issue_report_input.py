@@ -24,7 +24,7 @@ from pyfect.exit import Exit, Failure
 from pyfect.option import Option, Some
 from pyfect.redacted import make as redacted
 from pyfect.result import Err, Ok, Result
-from pyfect.run import run_sync_exit
+from pyfect.run import run_blocking_exit
 from pyfect.schema import getter as G
 from pyfect.schema import transformation as T
 from pyfect.schema.issue import (
@@ -263,13 +263,13 @@ def test_distinguishes_present_undefined_from_absent_input_in_forbidden():
 
     getter = G.forbidden(message)
     options: S.ParseOptions = {"report_input": True}
-    issue = _error(run_sync_exit(fx.suspend(lambda: G.run(getter, Some(None), options))))
+    issue = _error(run_blocking_exit(fx.suspend(lambda: G.run(getter, Some(None), options))))
     assert isinstance(issue, Forbidden)
     assert has_input(issue)
     assert issue.input == Some(None)
     assert format_issue(issue) == "not allowed"
 
-    issue = _error(run_sync_exit(fx.suspend(lambda: G.run(getter, None, options))))
+    issue = _error(run_blocking_exit(fx.suspend(lambda: G.run(getter, None, options))))
     assert isinstance(issue, Forbidden)
     assert not has_input(issue)
 

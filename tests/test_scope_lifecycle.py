@@ -113,7 +113,7 @@ def test_a_parallel_scope_runs_its_finalizers_concurrently():
         )
         yield from scope.close(fx.Success(None))
 
-    fx.run_sync(program)
+    fx.run_blocking(program)
     assert log == ["Ok(value=None)"]
 
 

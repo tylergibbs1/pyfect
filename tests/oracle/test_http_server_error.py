@@ -1,12 +1,11 @@
 """Ports of Effect's ``http/HttpServerError.test.ts``. Each test's
 docstring is the Effect test title; a response carried by a defect is
-``Die(UnhandledError(response))``."""
+``Die(response)``."""
 
 from typing import Any
 
 import pyfect as fx
 from pyfect import effect
-from pyfect.cause import UnhandledError
 from pyfect.cause import die as die_cause
 from pyfect.cause import fail as fail_cause
 from pyfect.http import server_response
@@ -42,7 +41,7 @@ def test_formats_request_reason_messages() -> None:
 def test_redacts_query_params_using_the_current_redacted_names() -> None:
     """redacts query params using the current redacted names"""
     request = _request("GET", "http://example.com/widgets?token=token-secret&sig=sig-visible")
-    message = fx.run_sync(
+    message = fx.run_blocking(
         effect.sync(lambda: RouteNotFound(request).message).pipe(
             effect.provide_service(CurrentRedactedNames, ("token",))
         )
@@ -91,7 +90,7 @@ def test_maps_reasons_to_status_codes() -> None:
         (HttpServerError(RequestParseError(request)), 400),
     ]
     for respondable, status in cases:
-        assert fx.run_sync(to_response(respondable)).status == status
+        assert fx.run_blocking(to_response(respondable)).status == status
 
 
 def test_matches_wrapper_only() -> None:
@@ -106,7 +105,7 @@ def test_matches_wrapper_only() -> None:
 def test_returns_none_cause_for_response_defects() -> None:
     """returns none cause for response defects"""
     response = server_response.empty(status=418)
-    out, cause = cause_response_stripped(die_cause(UnhandledError(response)))
+    out, cause = cause_response_stripped(die_cause(response))
     assert out is response
     assert cause is None
 

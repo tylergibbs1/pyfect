@@ -139,7 +139,7 @@ class ErrorMethods(StreamBase[A_co, E_co, R_co]):
         return Stream(self._channel.catch_cause(handle))
 
     def catch_defect[B, E2 = Never, R2 = Never](
-        self, f: Callable[[BaseException], Stream[B, E2, R2]]
+        self, f: Callable[[object], Stream[B, E2, R2]]
     ) -> Stream[A_co | B, E_co | E2, R_co | R2]:
         """Go on with ``f(defect)`` after a failure with a defect. Typed
         errors pass through."""
@@ -189,14 +189,14 @@ class ErrorMethods(StreamBase[A_co, E_co, R_co]):
         return self.tap_error(lambda e: f(e) if isinstance(e, tag) else void)
 
     def tap_defect[E2 = Never, R2 = Never](
-        self, f: Callable[[BaseException], Effect[object, E2, R2]]
+        self, f: Callable[[object], Effect[object, E2, R2]]
     ) -> Stream[A_co, E_co | E2, R_co | R2]:
         """Run ``f(defect)`` when the stream fails with a defect."""
         from pyfect.effect import void
 
         def tap(cause: Cause[E_co]) -> Effect[object, E2, R2]:
             defect = cause.find_defect()
-            return void if defect is None else f(defect)
+            return f(defect.value) if isinstance(defect, Ok) else void
 
         return self.tap_cause(tap)
 

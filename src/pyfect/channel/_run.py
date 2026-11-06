@@ -70,9 +70,7 @@ def run_for_each_while(self: AnyChannel, f: Callable[[Any], Effect[bool, Any, An
     def go_on(more: bool) -> AnyEffect:
         return _VOID if more else ENDED
 
-    return _run_with(
-        self, lambda pull: PullLoop(pull.flat_map(f).flat_map(go_on), _ignore), lambda _: _VOID
-    )
+    return _run_with(self, lambda pull: PullLoop(pull.flat_map(f).flat_map(go_on), _ignore))
 
 
 def run_fold(

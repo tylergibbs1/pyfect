@@ -12,7 +12,7 @@ from typing import Final
 from pyfect._digits import is_digits, parse_digits
 from pyfect._js import js_sort_key, text_encode
 from pyfect._json_text import quote as quoted
-from pyfect.encoding.tar._model import EntryType, Header, TarError
+from pyfect.encoding.tar._model import EntryType, FarDate, Header, TarError
 
 BLOCK: Final = 512
 PERMISSION_BITS: Final = 0o7777
@@ -70,9 +70,11 @@ def is_header_only(kind: EntryType) -> bool:
     return kind not in ("File", "Other")
 
 
-def millis_of(mtime: datetime) -> int | None:
+def millis_of(mtime: datetime | FarDate) -> int | None:
     """``Date.getTime()``, or ``None`` for a naive ``datetime``, which names no
     instant (JavaScript's invalid date)."""
+    if isinstance(mtime, FarDate):
+        return mtime.epoch_millis
     if mtime.utcoffset() is None:
         return None
     return (mtime - EPOCH) // timedelta(milliseconds=1)
@@ -285,11 +287,13 @@ def apply_pax(header: RawHeader, records: Mapping[str, str]) -> dict[str, str]:
     return rest
 
 
-def to_mtime(millis: int) -> datetime:
-    """``new Date(millis)``. Past JavaScript's range or years 1 to 9999, which
-    ``datetime`` holds, the archive fails."""
-    if abs(millis) > _MAX_DATE_MILLIS or not _MIN_MILLIS <= millis <= _MAX_MILLIS:
+def to_mtime(millis: int) -> datetime | FarDate:
+    """``new Date(millis)``: a ``datetime``, a ``FarDate`` past its years 1 to
+    9999; past JavaScript's range the archive fails."""
+    if abs(millis) > _MAX_DATE_MILLIS:
         raise invalid_header("mtime is out of range")
+    if not _MIN_MILLIS <= millis <= _MAX_MILLIS:
+        return FarDate(millis)
     return EPOCH + timedelta(milliseconds=millis)
 
 

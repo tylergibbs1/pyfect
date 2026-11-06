@@ -151,7 +151,7 @@ def test_a_server_layer_built_twice_serves_each_build() -> None:
         return (yield from with_socket(at, use))
 
     for _ in range(2):
-        received = fx.run_sync(scoped(program()).pipe(fx.provide(served)).or_die())
+        received = fx.run_blocking(scoped(program()).pipe(fx.provide(served)).or_die())
         [response] = parse_responses(received)
         assert response.body == b"ok"
 
@@ -199,7 +199,7 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
     layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout=0.3)
     program = scoped(serving()).pipe(fx.provide(layer_live))
     started_at = time.monotonic()
-    fx.run_sync(program.timeout(TIMEOUT).or_die())
+    fx.run_blocking(program.timeout(TIMEOUT).or_die())
     assert time.monotonic() - started_at < 2.5
 
 
@@ -232,7 +232,7 @@ def test_aborts_a_streamed_body_still_open_when_the_shutdown_timeout_ends() -> N
     layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout=0.3)
     program = scoped(serving()).pipe(fx.provide(layer_live))
     started_at = time.monotonic()
-    reader = fx.run_sync(program.timeout(TIMEOUT).or_die())
+    reader = fx.run_blocking(program.timeout(TIMEOUT).or_die())
     reader.join(TIMEOUT)
     assert time.monotonic() - started_at < 2.5
     [body] = received

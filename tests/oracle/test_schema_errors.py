@@ -62,25 +62,25 @@ def test_defect():
 
     decoding = asserts.decoding()
     # Error: message only
-    decoding.succeed({"message": "a"}, S.DecodedDefect(S.ErrorInstance("a")))
+    decoding.succeed({"message": "a"}, S.ErrorInstance("a"))
     # Error: message and name
-    decoding.succeed({"message": "a", "name": "b"}, S.DecodedDefect(S.ErrorInstance("a", name="b")))
+    decoding.succeed({"message": "a", "name": "b"}, S.ErrorInstance("a", name="b"))
     # Error: message, name, and stack
     decoding.succeed(
         {"message": "a", "name": "b", "stack": "c"},
-        S.DecodedDefect(S.ErrorInstance("a", name="b", stack="c")),
+        S.ErrorInstance("a", name="b", stack="c"),
     )
     # anything else
-    decoding.succeed("a", S.DecodedDefect("a"))
-    decoding.succeed({"a": 1}, S.DecodedDefect({"a": 1}))
+    decoding.succeed("a", "a")
+    decoding.succeed({"a": 1}, {"a": 1})
 
     encoding = asserts.encoding()
     # Error
     encoding.succeed(ValueError("a"), {"name": "ValueError", "message": "a"})
     # anything else
-    encoding.succeed(S.DecodedDefect("a"), "a")
-    encoding.succeed(S.DecodedDefect({"a": 1}), {"a": 1})
-    encoding.succeed(S.DecodedDefect(S.ErrorInstance("a")), {"name": "Error", "message": "a"})
+    encoding.succeed("a", "a")
+    encoding.succeed({"a": 1}, {"a": 1})
+    encoding.succeed(S.ErrorInstance("a"), {"name": "Error", "message": "a"})
 
 
 def test_errorinstance_and_defect_memoize_equivalent_options():
@@ -107,7 +107,7 @@ def test_cause_strict_encoding_preserves_the_default_wire_format_for_every_reaso
     value = cause.Cause(
         (
             cause.Fail("boom"),
-            cause.Die(S.DecodedDefect(42)),
+            cause.Die(42),
             cause.Interrupt(7),
             cause.Interrupt(),
         )
@@ -146,9 +146,7 @@ def test_exit_exit_finitefromstring_string_defect():
     asserts = SchemaAsserts(S.Exit(S.FiniteFromString, S.String, S.Defect()))
     # The encoded side of a Die holds the defect's JSON form.
     encoded_die = exit.die(cast("BaseException", {"name": "boom", "message": "boom message"}))
-    asserts.decoding().succeed(
-        encoded_die, exit.die(S.DecodedDefect(S.ErrorInstance("boom message", name="boom")))
-    )
+    asserts.decoding().succeed(encoded_die, exit.die(S.ErrorInstance("boom message", name="boom")))
 
 
 # ------------------------------------------------------- toCodec.test.ts
@@ -226,21 +224,19 @@ def test_tocodecjson_schemas_with_encoding_defect():
         {"name": "ValueError", "message": "a", "cause": {"name": "ValueError", "message": "b"}},
     )
     encoding.succeed(
-        S.DecodedDefect(S.ErrorInstance("a", cause=Some("b"))),
+        S.ErrorInstance("a", cause=Some("b")),
         {"name": "Error", "message": "a", "cause": "b"},
     )
     encoding.succeed(NoSuchElementException(), {"name": "NoSuchElementException", "message": ""})
-    encoding.succeed(S.DecodedDefect("a"), "a")
-    encoding.succeed(S.DecodedDefect({"a": 1}), {"a": 1})
+    encoding.succeed("a", "a")
+    encoding.succeed({"a": 1}, {"a": 1})
 
     decoding = asserts.decoding()
     decoding.succeed(
         {"message": "a", "cause": {"message": "b"}},
-        S.DecodedDefect(S.ErrorInstance("a", cause=Some(S.ErrorInstance("b")))),
+        S.ErrorInstance("a", cause=Some(S.ErrorInstance("b"))),
     )
-    decoding.succeed(
-        {"message": "a", "cause": None}, S.DecodedDefect(S.ErrorInstance("a", cause=Some(None)))
-    )
+    decoding.succeed({"message": "a", "cause": None}, S.ErrorInstance("a", cause=Some(None)))
 
 
 def test_tocodecjson_schemas_with_encoding_defect_with_excluded_cause():

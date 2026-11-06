@@ -275,4 +275,4 @@ def test_adjust_waits_for_woken_fibers_when_the_advancing_fiber_yields_on_its_op
 
 def test_layer_can_adjust_when_provided_without_an_ambient_scope() -> None:
     """TestClock.test.ts "layer - can adjust when provided without an ambient Scope"."""
-    fx.run_sync(testing.adjust(1).pipe(fx.provide(TestClock.layer())))
+    fx.run_blocking(testing.adjust(1).pipe(fx.provide(TestClock.layer())))

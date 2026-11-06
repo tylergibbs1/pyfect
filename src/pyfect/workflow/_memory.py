@@ -362,7 +362,7 @@ class _MemoryEngine:
                 return succeed(None)
             if isinstance(ex, Success):
                 return succeed(ex.value)
-            return die(ex.cause.squash())
+            return die(ex.cause.raisable())
 
         return suspend_effect(run)
 

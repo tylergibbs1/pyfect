@@ -37,7 +37,7 @@ def repeat(eff: fx.Effect[object], n: int) -> fx.Effect[None]:
 
 def per_op_us(eff: fx.Effect[object]) -> float:
     program = repeat(eff, OPS)
-    return best_of(lambda: fx.run_sync(program)) / OPS * 1e6
+    return best_of(lambda: fx.run_blocking(program)) / OPS * 1e6
 
 
 def main() -> None:

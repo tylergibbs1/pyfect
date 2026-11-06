@@ -426,7 +426,7 @@ def test_error_schema() -> None:
 
     status, body = _routed(app, program())
     assert status == 599
-    decoded = fx.run_sync(S.decode_unknown_effect(CustomError)(body).or_die())
+    decoded = fx.run_blocking(S.decode_unknown_effect(CustomError)(body).or_die())
     assert decoded == CustomError(name="test")
 
 
@@ -488,6 +488,6 @@ def test_to_url_reports_https_over_tls() -> None:
         at = yield from port
         return at, (yield from effect.blocking(lambda: request(at)))
 
-    at, received = fx.run_sync(program().pipe(fx.provide(served)).or_die())
+    at, received = fx.run_blocking(program().pipe(fx.provide(served)).or_die())
     [response] = parse_responses(received)
     assert response.body.decode() == f"127.0.0.1:{at} /x?y=1 https://127.0.0.1:{at}/x?y=1"

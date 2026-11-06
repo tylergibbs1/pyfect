@@ -61,14 +61,14 @@ _DEFAULT_LOCK_EXPIRATION: Final = Seconds(120)
 def _offer_failed(cause: Cause[Any]) -> Effect[Never, PersistedQueueError]:
     return fail(
         PersistedQueueError(
-            message="Failed to offer element to persisted queue", cause=cause.squash()
+            message="Failed to offer element to persisted queue", cause=cause.raisable()
         )
     )
 
 
 def _cleanup_failed(cause: Cause[Any]) -> Effect[Never, PersistedQueueError]:
     return fail(
-        PersistedQueueError(message="Failed to clean up persisted queue", cause=cause.squash())
+        PersistedQueueError(message="Failed to clean up persisted queue", cause=cause.raisable())
     )
 
 

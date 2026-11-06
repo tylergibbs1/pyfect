@@ -6,7 +6,7 @@ Effect makes anything thrown inside an effect a defect. Python also raises
 ``GeneratorExit``, a custom ``BaseException``. Each is a defect where it
 happens, so finalizers run and ``catch_defect`` sees it. Ctrl-C is the
 exception: the step it cuts short ends as interrupted and the runner
-interrupts the main fiber, then re-raises ``KeyboardInterrupt`` (``run_sync``)
+interrupts the main fiber, then re-raises ``KeyboardInterrupt`` (``run_blocking``)
 or ends the process with 130 (``run_main``), as when Ctrl-C lands while every
 fiber is parked.
 """
@@ -107,7 +107,7 @@ PLACES: list[Callable[[BaseException], fx.Effect[object]]] = [
 
 
 def _died_with(ex: fx.Exit[Any, Any], exc: BaseException) -> bool:
-    return isinstance(ex, fx.Failure) and ex.cause.find_defect() is exc
+    return isinstance(ex, fx.Failure) and ex.cause.defects[:1] == (exc,)
 
 
 @pytest.mark.parametrize("place", PLACES, ids=lambda p: p.__name__)
@@ -117,7 +117,7 @@ def test_a_base_exception_from_user_code_is_a_defect_and_finalizers_run(
 ):
     exc = kind()
     log: list[str] = []
-    ex = fx.run_sync_exit(place(exc).ensuring(fx.sync(lambda: log.append("fin"))))
+    ex = fx.run_blocking_exit(place(exc).ensuring(fx.sync(lambda: log.append("fin"))))
     assert _died_with(ex, exc)
     assert log == ["fin"]
 
@@ -126,7 +126,7 @@ def test_a_base_exception_from_user_code_is_a_defect_and_finalizers_run(
 def test_catch_defect_sees_a_base_exception(kind: Callable[[], BaseException]):
     exc = kind()
     caught = _from_sync(exc).catch_defect(fx.succeed)
-    assert fx.run_sync(caught) is exc
+    assert fx.run_blocking(caught) is exc
 
 
 @pytest.mark.parametrize("kind", KINDS, ids=lambda k: k.__name__)
@@ -185,18 +185,18 @@ def test_a_base_exception_from_a_generator_closing_on_failure_keeps_the_failure(
         return body
 
     exc = kind()
-    ex = fx.run_sync_exit(closing_with(exc))
-    plain = fx.run_sync_exit(closing_with(ValueError()))
+    ex = fx.run_blocking_exit(closing_with(exc))
+    plain = fx.run_blocking_exit(closing_with(ValueError()))
     assert isinstance(ex, fx.Failure) and isinstance(plain, fx.Failure)
     assert repr(ex.cause.reasons[:-1]) == repr(plain.cause.reasons[:-1])
     assert ex.cause.reasons[-1] == fx.cause.Die(exc)
 
 
-def test_run_sync_raises_a_system_exit_after_the_finalizers():
+def test_run_blocking_raises_a_system_exit_after_the_finalizers():
     log: list[str] = []
     prog = fx.sync(lambda: sys.exit(3)).ensuring(fx.sync(lambda: log.append("fin")))
     with pytest.raises(SystemExit) as raised:
-        fx.run_sync(prog)
+        fx.run_blocking(prog)
     assert raised.value.code == 3
     assert log == ["fin"]
 
@@ -224,7 +224,7 @@ def test_ctrl_c_in_user_code_interrupts_the_run_and_runs_finalizers():
     log: list[str] = []
     prog = fx.sync(_ctrl_c).ensuring(fx.sync(lambda: log.append("fin")))
     with pytest.raises(KeyboardInterrupt):
-        fx.run_sync(prog)
+        fx.run_blocking(prog)
     assert log == ["fin"]
 
 
@@ -236,7 +236,7 @@ def test_ctrl_c_is_not_a_defect_that_catch_defect_can_swallow():
         .ensuring(fx.sync(lambda: log.append("fin")))
     )
     with pytest.raises(KeyboardInterrupt):
-        fx.run_sync(prog)
+        fx.run_blocking(prog)
     assert log == ["fin"]
 
 
@@ -254,7 +254,7 @@ def test_ctrl_c_in_a_child_interrupts_the_main_fiber_and_both_finalize():
         yield from fx.never.ensuring(fx.sync(lambda: log.append("main fin")))
 
     with pytest.raises(KeyboardInterrupt):
-        fx.run_sync(prog)
+        fx.run_blocking(prog)
     assert sorted(log) == ["child fin", "main fin"]
 
 
@@ -269,7 +269,7 @@ def test_ctrl_c_loses_no_fiber_queued_behind_the_one_it_hit():
         yield from fx.never.ensuring(fx.sync(lambda: log.append("main fin")))
 
     with pytest.raises(KeyboardInterrupt):
-        fx.run_sync(prog)
+        fx.run_blocking(prog)
     assert log == ["sibling ran", "main fin"]
 
 
@@ -333,7 +333,7 @@ def test_a_real_sigint_during_blocking_user_code_runs_the_finalizers():
         sender.start()
         try:
             with pytest.raises(KeyboardInterrupt):
-                fx.run_sync(prog)
+                fx.run_blocking(prog)
         finally:
             sender.join()
     assert log == ["fin"]
@@ -394,7 +394,7 @@ def test_ctrl_c_in_an_rpc_handler_is_not_a_defect_of_the_request():
         .ensuring(fx.sync(lambda: log.append("fin")))
     )
     with pytest.raises(KeyboardInterrupt):
-        fx.run_sync(prog.timeout(5).or_die())
+        fx.run_blocking(prog.timeout(5).or_die())
     assert log == ["fin"]
 
 
@@ -410,23 +410,24 @@ def test_ctrl_c_in_user_code_under_run_main_exits_130_after_the_finalizers():
 # --- exit observers -----------------------------------------------------------
 
 
-def test_a_raising_exit_observer_does_not_keep_the_exit_from_the_others():
+def test_a_raising_exit_observer_stops_the_ones_after_it():
+    """Checked under Node: the raise is uncaught and later observers do not run."""
     seen: list[fx.Exit[int, Never]] = []
 
-    async def main() -> int:
+    async def main() -> None:
         fiber = fx.run_fork(fx.sleep(0.01).as_(42))
         fiber.add_observer_unsafe(lambda ex: _raise(ZeroDivisionError()))
         fiber.add_observer_unsafe(seen.append)
-        return await asyncio.wait_for(fx.run_async(fiber.join()), 5)
+        await asyncio.sleep(0.05)
 
     loop = asyncio.new_event_loop()
     errors: list[object] = []
     loop.set_exception_handler(lambda _, context: errors.append(context.get("exception")))
     try:
-        assert loop.run_until_complete(main()) == 42
+        loop.run_until_complete(main())
     finally:
         loop.close()
-    assert seen == [fx.Success(42)]
+    assert seen == []
     assert any(isinstance(e, ZeroDivisionError) for e in errors)
 
 
@@ -501,7 +502,9 @@ def test_the_fiber_runtime_calls_user_code_only_where_base_exceptions_are_caught
             or (owner.name in module_functions and reached_only_guarded(owner.name))
         ):
             continue
-        offenders.append(f"{name} at line {node.lineno}")
+        # As Effect: a raising fiber observer stops the ones after it and surfaces.
+        if name != "observer":
+            offenders.append(f"{name} at line {node.lineno}")
     assert offenders == []
 
     loop_handlers = [
@@ -589,14 +592,4 @@ def test_no_handler_turns_ctrl_c_into_a_defect():
                 via_loop = any(isinstance(n, ast.Attribute) and n.attr == "_raised" for n in inside)
                 if not (reraises or via_loop):
                     offenders.append(f"{name}:{handler.lineno}")
-    # _finish raises the first observer's exception after the rest ran.
-    assert offenders == ["_fiber.py:" + str(_finish_handler_line())]
-
-
-def _finish_handler_line() -> int:
-    tree = ast.parse((_SRC / "_fiber.py").read_text())
-    (finish,) = [
-        n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_finish"
-    ]
-    (handler,) = [n for n in ast.walk(finish) if isinstance(n, ast.ExceptHandler)]
-    return handler.lineno
+    assert offenders == []

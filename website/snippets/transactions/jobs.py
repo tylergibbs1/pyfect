@@ -33,4 +33,4 @@ def program():
     print(dict(sorted(owners)))
 
 
-fx.run_sync(program())
+fx.run_blocking(program())

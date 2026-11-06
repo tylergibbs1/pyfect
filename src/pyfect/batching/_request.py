@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, Generic, Never, Protocol, Self, TypeVar
+from collections.abc import Callable, Hashable
+from typing import Any, Generic, Never, Protocol, Self, TypeVar, final
 
 from pyfect._core import Effect, _Succeed, _Sync
 from pyfect._effect_args import require_effect
@@ -116,3 +116,18 @@ class Entry(Generic[Q_co]):
 
 
 _VOID: Effect[None] = _Succeed(None)
+
+
+@final
+class EqualKeys[Q]:
+    """A batch key function whose keys compare with ``==`` (Effect's
+    ``equalBatchKeys``, ``RequestResolver.grouped``). Every other key function's
+    keys compare as a JavaScript ``Map`` compares them."""
+
+    __slots__ = ("__weakref__", "f")
+
+    def __init__(self, f: Callable[[Entry[Q]], Hashable]) -> None:
+        self.f = f
+
+    def __call__(self, entry: Entry[Q]) -> Hashable:
+        return self.f(entry)

@@ -48,7 +48,7 @@ def run_served(app: _AnyLayer, program: _AnyEffect, *around: _AnyLayer) -> objec
     served: _AnyEffect = scoped(program).pipe(fx.provide(serve_layer(app)))
     for provided in around:
         served = served.pipe(fx.provide(provided))
-    return fx.run_sync(served.or_die())
+    return fx.run_blocking(served.or_die())
 
 
 def api_layer(api: HttpApi[Any], *layers: _AnyLayer) -> _AnyLayer:
@@ -77,7 +77,7 @@ def call_group(
     out: _AnyEffect = scoped(effect.gen(program)).pipe(fx.provide(live))
     for provided in around:
         out = out.pipe(fx.provide(provided))
-    return fx.run_sync(out.pipe(fx.provide(server.layer_services)))
+    return fx.run_blocking(out.pipe(fx.provide(server.layer_services)))
 
 
 def respond(api: HttpApi[Any], live: _AnyLayer, request: WebRequest) -> Exit[Any, Any]:
@@ -94,4 +94,4 @@ def respond(api: HttpApi[Any], live: _AnyLayer, request: WebRequest) -> Exit[Any
             ).exit()
         )
 
-    return fx.run_sync(scoped(effect.gen(program)))
+    return fx.run_blocking(scoped(effect.gen(program)))

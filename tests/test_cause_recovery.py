@@ -20,7 +20,6 @@ from pyfect.cause import (
     EmptyCauseError,
     Fail,
     Interrupt,
-    UnhandledError,
     die,
     fail,
     interrupt,
@@ -129,14 +128,13 @@ def test_error_mapping_keeps_defects_and_interrupts():
             assert _reasons(ex) == [("Fail", "mapped"), ("Interrupt", 1), ("Die", DEFECT)]
 
 
-def test_elected_non_exception_errors_die_as_unhandled_error():
+def test_elected_non_exception_errors_die_as_themselves():
     ex = testing.run_test_exit(
         fx.fail_cause(fail("e") + die(DEFECT)).catch_all(lambda _: fx.succeed(1))
     )
     assert isinstance(ex, fx.Failure)
     first = ex.cause.reasons[0]
-    assert isinstance(first, Die) and isinstance(first.defect, UnhandledError)
-    assert first.defect.error == "e"
+    assert first == Die("e")
 
 
 def test_finalizer_errors_merged():
@@ -266,7 +264,7 @@ def test_interrupted_recovery_raises_interrupted_at_the_run_boundary():
         return (yield from fiber.join())
 
     with pytest.raises(fx.Interrupted):
-        fx.run_sync(program)
+        fx.run_blocking(program)
 
 
 def test_every_interruptor_is_recorded():
@@ -281,7 +279,7 @@ def test_every_interruptor_is_recorded():
         fiber.interrupt_as_unsafe(111)
         return (yield from fiber.await_exit())
 
-    assert _reasons(fx.run_sync(program)) == [("Interrupt", 111), ("Interrupt", 222)]
+    assert _reasons(fx.run_blocking(program)) == [("Interrupt", 111), ("Interrupt", 222)]
 
 
 def test_an_interruptor_is_added_to_a_cause_that_already_holds_another():

@@ -14,7 +14,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from pyfect._core import Effect, _FailCause, _MatchCause, _Succeed, _Suspend
-from pyfect.cause import Cause, Fail, _as_exception
+from pyfect.cause import Cause, Fail
 from pyfect.cause import die as die_cause
 from pyfect.channel._base import AnyChannel, AnyPull, is_done
 from pyfect.channel._channel import Channel, from_transform, transform_pull
@@ -127,10 +127,10 @@ def catch_cause_filter(
     return catch_cause(self, handle)
 
 
-def catch_defect(self: AnyChannel, f: Callable[[BaseException], AnyChannel]) -> Channel_:
+def catch_defect(self: AnyChannel, f: Callable[[object], AnyChannel]) -> Channel_:
     def handle(cause: Cause[Any]) -> AnyChannel:
         defect = cause.find_defect()
-        return fail_cause_channel(cause) if defect is None else f(defect)
+        return f(defect.value) if isinstance(defect, Ok) else fail_cause_channel(cause)
 
     return catch_cause(self, handle)
 
@@ -154,7 +154,7 @@ def map_error(self: AnyChannel, f: Callable[[Any], Any]) -> Channel_:
 
 
 def or_die(self: AnyChannel) -> Channel_:
-    return catch_all(self, lambda error: fail_cause_channel(die_cause(_as_exception(error))))
+    return catch_all(self, lambda error: fail_cause_channel(die_cause(error)))
 
 
 def _logging(self: AnyChannel, log: bool | Severity, *, fails_only: bool) -> AnyChannel:

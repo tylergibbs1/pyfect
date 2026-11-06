@@ -18,7 +18,7 @@ from pyfect.stream import Stream
 
 
 def _run[A](program: fx.Effect[A, Any, Any]) -> A:
-    return fx.run_sync(scope.scoped(program))
+    return fx.run_blocking(scope.scoped(program))
 
 
 def test_passes_each_payload_element_through_before_the_source_produces_the_next() -> None:

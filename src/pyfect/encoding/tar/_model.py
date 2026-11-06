@@ -24,6 +24,14 @@ E_co = TypeVar("E_co", covariant=True, default=Never)
 R_co = TypeVar("R_co", covariant=True, default=Never)
 
 
+@dataclass(frozen=True, slots=True)
+class FarDate:
+    """An instant ``datetime`` cannot hold, past years 1 to 9999 but within
+    JavaScript's ``Date``: milliseconds since the Unix epoch."""
+
+    epoch_millis: int
+
+
 @dataclass(eq=False)
 class TarError(TaggedError):
     """A tar archive could not be encoded or decoded.
@@ -59,7 +67,7 @@ class Header:
     gid: int
     uname: str
     gname: str
-    mtime: datetime
+    mtime: datetime | FarDate
     link_target: str | None = None
     dev_major: int | None = None
     dev_minor: int | None = None

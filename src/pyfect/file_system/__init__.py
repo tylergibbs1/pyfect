@@ -12,7 +12,7 @@ Programs read the ``FileSystem`` service and get the host's with
         yield from fs.write_file_string("notes.txt", "hello")
         return (yield from fs.read_file_string("notes.txt"))
 
-    fx.run_sync(program().pipe(fx.provide(file_system.layer)))
+    fx.run_blocking(program().pipe(fx.provide(file_system.layer)))
 
 Every operation fails with a ``PlatformError`` whose reason is a
 ``NotFound``, ``PermissionDenied``, ``AlreadyExists``, ``BadResource`` ...

@@ -3,7 +3,7 @@
 
 Each test's docstring is the Effect test title. ``assertExitFailure(exit,
 Cause.fail(e))`` is ``exit == fx.exit.fail(e)``; Effect's inclusive
-``Stream.range(0, 99)`` is ``range_inclusive(0, 99)``.
+``Stream.range(0, 99)`` is ``range(0, 99)``.
 
 Adapted, with the reason:
 
@@ -480,7 +480,7 @@ def test_zip_with_index_propagates_errors():
 @testing.effect
 def test_zip_with_index_index_increments_correctly_for_large_streams():
     """index increments correctly for large streams"""
-    result = yield from stream.range_inclusive(0, 99).zip_with_index().run_collect()
+    result = yield from stream.range(0, 99).zip_with_index().run_collect()
     assert len(result) == 100
     assert result[0] == (0, 0)
     assert result[99] == (99, 99)

@@ -47,9 +47,9 @@ def _echo():
     return output, (yield from handle.exit_code)
 
 
-def test_runs_under_run_sync_without_an_event_loop():
+def test_runs_under_run_blocking_without_an_event_loop():
     program = fx.scoped(_echo()).pipe(fx.provide(platform.layer)).or_die()
-    assert fx.run_sync(program) == ("hello\n", 0)
+    assert fx.run_blocking(program) == ("hello\n", 0)
 
 
 def test_runs_under_asyncio():
@@ -233,13 +233,14 @@ def test_concurrent_force_kills_wait_side_by_side(process_services: Services[Pla
     assert time.monotonic() - start < 1.5
 
 
-def test_descriptors_below_3_are_rejected_when_made():
-    with pytest.raises(ValueError, match="start at 3"):
-        make("x", additional_fds={2: OutputFd()})
-    with pytest.raises(ValueError, match="start at 3"):
-        make("x").pipe_to(make("y"), from_=1)
-    with pytest.raises(ValueError, match="start at 3"):
-        make("x").pipe_to(make("y"), to=0)
+def test_descriptors_below_3_are_skipped_as_parse_fd_name_skips_them():
+    """Effect's ``parseFdName`` gives ``undefined`` below 3: the entry is dropped,
+    and a pipe falls back to stdout and stdin (``NodeChildProcessSpawner``)."""
+    assert make(
+        "x", additional_fds={2: OutputFd(), 3: OutputFd()}
+    ).options.additional_fds.keys() == {3}
+    piped = make("x").pipe_to(make("y"), from_=1, to=0)
+    assert (piped.options.from_, piped.options.to) == ("stdout", "stdin")
 
 
 def test_inputs_and_outputs_are_checked_when_made():
@@ -254,6 +255,6 @@ def test_inputs_and_outputs_are_checked_when_made():
 
 
 def test_a_command_spawned_without_a_spawner_names_the_missing_service():
-    exit = fx.run_sync_exit(fx.scoped(make("echo")).pipe(fx.provide(file_system.layer)))  # pyright: ignore[reportArgumentType]
+    exit = fx.run_blocking_exit(fx.scoped(make("echo")).pipe(fx.provide(file_system.layer)))  # pyright: ignore[reportArgumentType]
     assert isinstance(exit, fx.Failure)
     assert "ChildProcessSpawner" in exit.cause.pretty()

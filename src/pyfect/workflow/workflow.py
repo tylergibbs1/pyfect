@@ -353,7 +353,7 @@ def into_result[A, E, R](
                 # An ordinary suspension is a self-interrupt and ends up here too.
                 if not cause.has_interrupts_only:
                     instance.failed = True
-                    instance.cause = die_cause(cause.squash())
+                    instance.cause = die_cause(cause.raisable())
                 return interrupt()
 
             body = body.catch_cause(on_cause)

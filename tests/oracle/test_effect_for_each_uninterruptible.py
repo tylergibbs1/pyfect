@@ -10,7 +10,7 @@ failure adds only what is not an interrupt.
 from typing import Any
 
 import pyfect as fx
-from pyfect.cause import Die, UnhandledError
+from pyfect.cause import Die
 
 
 def _logging(log: list[str], label: str) -> fx.Effect[str]:
@@ -22,7 +22,7 @@ def test_a_failure_before_a_defect_keeps_the_fail_when_uninterruptible():
     eff: fx.Effect[Any, str] = fx.all(
         fx.fail("e4"), fx.die(Exception("d5")), concurrency="unbounded"
     ).uninterruptible()
-    assert fx.run_sync_exit(eff) == fx.exit.fail("e4")
+    assert fx.run_blocking_exit(eff) == fx.exit.fail("e4")
 
 
 def test_no_sibling_starts_after_a_synchronous_failure_when_uninterruptible():
@@ -31,7 +31,7 @@ def test_no_sibling_starts_after_a_synchronous_failure_when_uninterruptible():
     eff: fx.Effect[Any, str] = fx.all(
         fx.fail("e"), fx.sleep(0.01).and_then(_logging(log, "s2")), concurrency="unbounded"
     ).uninterruptible()
-    assert fx.run_sync_exit(eff) == fx.exit.fail("e")
+    assert fx.run_blocking_exit(eff) == fx.exit.fail("e")
     assert log == []
 
 
@@ -43,7 +43,7 @@ def test_a_started_sibling_still_finishes_when_uninterruptible():
         fx.sleep(0.02).and_then(_logging(log, "s2")),
         concurrency="unbounded",
     ).uninterruptible()
-    assert fx.run_sync_exit(eff) == fx.exit.fail("e")
+    assert fx.run_blocking_exit(eff) == fx.exit.fail("e")
     assert log == ["s2"]
 
 
@@ -55,7 +55,7 @@ def test_a_sibling_interrupting_itself_after_the_failure_adds_nothing():
         fx.sleep(0.015).and_then(fx.interrupt()),
         concurrency="unbounded",
     ).uninterruptible()
-    ex = fx.run_sync_exit(eff.on_interrupt(fx.sync(lambda: log.append("on_interrupt"))))
+    ex = fx.run_blocking_exit(eff.on_interrupt(fx.sync(lambda: log.append("on_interrupt"))))
     assert ex == fx.exit.fail("e5")
     assert log == []
 
@@ -69,10 +69,9 @@ def test_a_sibling_failing_after_the_first_failure_adds_its_defect():
         fx.sleep(0.015).and_then(fx.die(late)),
         concurrency="unbounded",
     ).uninterruptible()
-    ex = fx.run_sync_exit(eff)
+    ex = fx.run_blocking_exit(eff)
     assert isinstance(ex, fx.Failure)
     first, second = ex.cause.reasons
     assert isinstance(first, Die)
-    assert isinstance(first.defect, UnhandledError)
-    assert first.defect.error == "e"
+    assert first.defect == "e"
     assert second == Die(late)

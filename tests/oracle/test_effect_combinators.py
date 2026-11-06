@@ -654,10 +654,10 @@ def test_factory_and_body_follow_cleanup_and_replay() -> None:
 
     program = fx.never.ensuring(fx.sync(stop)).timeout_or_else(0, or_else)
     before = [factories, bodies]
-    first = fx.run_sync(program)
+    first = fx.run_blocking(program)
     first_stopped = stopped
     stopped = False
-    second = fx.run_sync(program)
+    second = fx.run_blocking(program)
     assert before == [0, 0]
     assert (factories, bodies) == (2, 2)
     assert (first_stopped, stopped) == (True, True)
@@ -681,7 +681,7 @@ def test_a_ready_source_value_is_not_confused_with_a_zero_duration_timeout() -> 
         calls += 1
         return fx.succeed(fx.Some("unexpected fallback"))
 
-    result = fx.run_sync(fx.succeed(None).timeout_or_else(0, or_else))
+    result = fx.run_blocking(fx.succeed(None).timeout_or_else(0, or_else))
     assert (result, calls) == (None, 0)
 
 
@@ -722,7 +722,7 @@ def test_slow_fallback_cannot_let_the_original_source_win_after_timeout() -> Non
         result = yield from fiber.join()
         return result is value, completed
 
-    assert fx.run_sync(program) == (True, False)
+    assert fx.run_blocking(program) == (True, False)
     assert fallback_interrupted is False
 
 
@@ -776,7 +776,7 @@ def test_source_and_fallback_inherit_caller_context() -> None:
         .annotate_logs({"request": "request-value"})
         .with_span("timeout-parent")
     )
-    assert fx.run_sync(program) == "fallback service"
+    assert fx.run_blocking(program) == "fallback service"
     assert observed == [
         "source service",
         "source-local",
@@ -820,7 +820,7 @@ def test_external_interruption_stops_a_pending_fallback() -> None:
         yield from fiber.interrupt()
         return (yield from fiber.await_exit())
 
-    ex = fx.run_sync(program)
+    ex = fx.run_blocking(program)
     assert [_interrupted(ex), source_stopped, fallback_stopped, calls] == [True, True, True, 1]
 
 
@@ -830,7 +830,7 @@ def test_external_interruption_stops_a_pending_fallback() -> None:
 def test_timeout_option_timeout_a_long_computation() -> None:
     """timeout a long computation"""
     eff = fx.sleep(60).and_then(fx.succeed(True)).timeout_option(0.01)
-    assert fx.run_sync(eff) is None
+    assert fx.run_blocking(eff) is None
 
 
 def test_timeout_a_long_computation_with_a_failure() -> None:
@@ -844,7 +844,7 @@ def test_timeout_a_long_computation_with_a_failure() -> None:
         .flip()
         .or_die()
     )
-    assert fx.run_sync(eff) == fx.cause.die(error)
+    assert fx.run_blocking(eff) == fx.cause.die(error)
 
 
 def test_timeout_repetition_of_uninterruptible_effect() -> None:
@@ -883,7 +883,7 @@ def test_timeout_produces_a_useful_error_message() -> None:
 
 def test_timeout_timeout_a_long_computation() -> None:
     """timeout a long computation"""
-    error = fx.run_sync(fx.sleep(60).and_then(fx.succeed(True)).timeout(0.01).flip().or_die())
+    error = fx.run_blocking(fx.sleep(60).and_then(fx.succeed(True)).timeout(0.01).flip().or_die())
     assert isinstance(error, fx.TimeoutException)
     assert str(error) == "Operation timed out after '10ms'"
 
@@ -942,7 +942,7 @@ def test_releases_disposables() -> None:
         yield "r"
         released.append("r")
 
-    assert fx.run_sync(fx.scoped(fx.acquire_context(fx.sync(resource)))) == "r"
+    assert fx.run_blocking(fx.scoped(fx.acquire_context(fx.sync(resource)))) == "r"
     assert released == ["r"]
 
 

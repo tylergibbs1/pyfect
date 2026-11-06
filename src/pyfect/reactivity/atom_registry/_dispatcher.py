@@ -28,7 +28,7 @@ class Dispatcher:
         self._queue: deque[Task] = deque()
         self._flushing: int | None = None
 
-    def schedule(self, task: Task) -> None:
+    def schedule(self, task: Task, priority: int = 0) -> None:
         if self._flushing == threading.get_ident():
             self._queue.append(task)
         else:

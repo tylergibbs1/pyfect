@@ -43,7 +43,7 @@ def test_fork_works_without_asyncio():
         b = yield from fx.sleep(0.01).as_("b").fork()
         return (yield from a.join()) + (yield from b.join())
 
-    assert fx.run_sync(program) == "ab"
+    assert fx.run_blocking(program) == "ab"
 
 
 def test_interrupt_runs_finalizers_and_reports_interruption():
@@ -200,7 +200,7 @@ def test_callback_resumed_from_another_thread():
     def register(resume: Callable[[fx.Effect[str]], None]) -> None:
         threading.Timer(0.01, lambda: resume(fx.succeed("from thread"))).start()
 
-    assert fx.run_sync(fx.callback(register)) == "from thread"
+    assert fx.run_blocking(fx.callback(register)) == "from thread"
 
 
 def test_blocking_runs_off_the_scheduler_thread():
@@ -213,7 +213,7 @@ def test_blocking_runs_off_the_scheduler_thread():
         other = yield from fx.blocking(threading.get_ident)
         return other != main
 
-    assert fx.run_sync(program) is True
+    assert fx.run_blocking(program) is True
 
 
 def test_a_busy_fiber_does_not_starve_others():
@@ -297,7 +297,7 @@ def test_a_join_from_another_thread_sees_an_exit_landing_as_it_registers():
             while fiber.poll_unsafe() is None:
                 yield from fx.sleep(0.001)
 
-        fx.run_sync(fx.gen(body))
+        fx.run_blocking(fx.gen(body))
 
     thread = threading.Thread(target=owner)
     thread.start()
@@ -316,6 +316,6 @@ def test_a_join_from_another_thread_sees_an_exit_landing_as_it_registers():
             super().append(item)
 
     fiber._observers = FinishingAsAppended(fiber._observers)  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
-    ex = fx.run_sync_exit(fiber.await_exit().timeout(2))
+    ex = fx.run_blocking_exit(fiber.await_exit().timeout(2))
     thread.join(5)
     assert ex == fx.Success(fx.Success(7))

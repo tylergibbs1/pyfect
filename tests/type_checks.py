@@ -7,7 +7,7 @@ pyright fails.
 """
 
 import asyncio
-from collections.abc import Callable, Generator, Hashable, Mapping, Sequence, Sized
+from collections.abc import Callable, Coroutine, Generator, Hashable, Mapping, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -92,7 +92,7 @@ from pyfect.cli import (
 from pyfect.cli._environment import Environment as CliEnvironment
 from pyfect.cli.global_flag import LogLevel
 from pyfect.context import Tag, TagEffect
-from pyfect.duration import Seconds, to_seconds
+from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.encoding import (
     EncodingError,
     Json,
@@ -799,10 +799,10 @@ def check_layer_shapes() -> None:
 
 
 def check_run_gate() -> None:
-    fx.run_sync(lookup("k"))  # pyright: ignore[reportArgumentType]
-    fx.run_sync(lookup("k").pipe(fx.provide(layer.merge(primary_live, port_live))))  # pyright: ignore[reportArgumentType]
-    fx.run_sync_exit(lookup("k").pipe(fx.provide(layer.merge(primary_live, port_live))))
-    assert_type(fx.run_sync(Level()), int)
+    fx.run_blocking(lookup("k"))  # pyright: ignore[reportArgumentType]
+    fx.run_blocking(lookup("k").pipe(fx.provide(layer.merge(primary_live, port_live))))  # pyright: ignore[reportArgumentType]
+    fx.run_blocking_exit(lookup("k").pipe(fx.provide(layer.merge(primary_live, port_live))))
+    assert_type(fx.run_blocking(Level()), int)
     assert_type(fx.MaxOpsBeforeYield(), TagEffect[int, Never, fx.MaxOpsBeforeYield])
     assert_type(fx.CurrentScheduler(), TagEffect[Scheduler, Never, fx.CurrentScheduler])
     assert_type(
@@ -1222,7 +1222,7 @@ def check_schedule_combinators(s: schedule.Schedule[int, str]) -> None:
     def on_int_inputs(m: schedule.Metadata[int, int]) -> bool:
         return m.input > 0
 
-    s.while_(on_int_inputs)  # pyright: ignore[reportArgumentType]
+    s.while_(on_int_inputs)  # pyright: ignore[reportCallIssue, reportArgumentType]
 
 
 def check_schedule_effects(
@@ -1429,7 +1429,7 @@ def check_option_long_tail(o: fx.Option[int], words: fx.Option[str]) -> None:
 def check_exit_accessors(ex: fx.Exit[int, str]) -> None:
     assert_type(ex.has_fails, bool)
     assert_type(ex.find_error(), fx.Err[fx.Success[int]] | fx.Ok[str] | fx.Err[fx.Failure[str]])
-    assert_type(ex.find_defect(), BaseException | None)
+    assert_type(ex.find_defect(), fx.Ok[object] | fx.Err[fx.Failure[str]] | fx.Err[fx.Success[int]])
     assert_type(ex.get_success(), fx.Some[int] | None)
     assert_type(ex.get_cause(), fx.Some[fx.Cause[str]] | None)
     assert_type(ex.filter_value(), fx.Ok[int] | fx.Err[fx.Failure[str]])
@@ -1486,12 +1486,12 @@ def check_cause(c: fx.Cause[str]) -> None:
     assert_type(fx.cause.from_reasons([Fail(1), Die(ValueError())]), fx.Cause[int])
     assert_type(c.map(len), fx.Cause[int])
     assert_type(c.interruptors, frozenset[int])
-    assert_type(c.filter_interruptors(), frozenset[int] | None)
+    assert_type(c.filter_interruptors(), fx.Ok[frozenset[int]] | fx.Err[fx.Cause[str]])
     assert_type(c.find_fail(), Fail[str] | fx.Cause[Never])
     assert_type(c.find_error(), fx.Ok[str] | fx.Err[fx.Cause[Never]])
-    assert_type(c.find_die(), Die | None)
-    assert_type(c.find_defect(), BaseException | None)
-    assert_type(c.find_interrupt(), Interrupt | None)
+    assert_type(c.find_die(), fx.Ok[Die] | fx.Err[fx.Cause[str]])
+    assert_type(c.find_defect(), fx.Ok[object] | fx.Err[fx.Cause[str]])
+    assert_type(c.find_interrupt(), fx.Ok[Interrupt] | fx.Err[fx.Cause[str]])
     assert_type(c.pretty_errors(), tuple[BaseException, ...])
     assert_type(fx.cause.from_reasons([Interrupt(1), Die(ValueError())]), fx.Cause[Never])
     assert_type(c + fx.cause.fail(1), fx.Cause[str | int])
@@ -1703,11 +1703,11 @@ def check_run_with_context(port_ctx: fx.Context[Port], both: fx.Context[Primary 
     assert_type(fx.Context.make(Port, 1).add(Primary, GoodDb()), fx.Context[Port | Primary])
     assert_type(fx.Context.empty(), fx.Context[Never])
     fx.Context.make(Port, "1")  # pyright: ignore[reportArgumentType]
-    assert_type(fx.run_sync(Port(), context=port_ctx), int)
-    assert_type(fx.run_sync(Port(), context=both), int)
-    fx.run_sync(lookup("k").catch_all(lambda _: fx.succeed("")), context=both)
-    fx.run_sync(lookup("k").catch_all(lambda _: fx.succeed("")), context=port_ctx)  # pyright: ignore[reportArgumentType]
-    assert_type(fx.run_sync_exit(lookup("k"), context=both), fx.Exit[str, NotFound | Invalid])
+    assert_type(fx.run_blocking(Port(), context=port_ctx), int)
+    assert_type(fx.run_blocking(Port(), context=both), int)
+    fx.run_blocking(lookup("k").catch_all(lambda _: fx.succeed("")), context=both)
+    fx.run_blocking(lookup("k").catch_all(lambda _: fx.succeed("")), context=port_ctx)  # pyright: ignore[reportArgumentType]
+    assert_type(fx.run_blocking_exit(lookup("k"), context=both), fx.Exit[str, NotFound | Invalid])
     assert_type(fx.run_fork(lookup("k"), context=both), fx.Fiber[str, NotFound | Invalid])
     assert_type(fx.run_fork(fx.succeed(1)), fx.Fiber[int, Never])
     fx.run_fork(Port())  # pyright: ignore[reportArgumentType]
@@ -1723,19 +1723,19 @@ def check_run_main() -> None:
 def check_managed_runtime() -> None:
     runtime = fx.ManagedRuntime.make(merged_live)
     assert_type(runtime, fx.ManagedRuntime[Primary | Port, Never])
-    assert_type(runtime.run_sync(Port()), int)
-    assert_type(runtime.run_sync_exit(lookup("k")), fx.Exit[str, NotFound | Invalid])
+    assert_type(runtime.run_blocking(Port()), int)
+    assert_type(runtime.run_blocking_exit(lookup("k")), fx.Exit[str, NotFound | Invalid])
     assert_type(runtime.run_fork(lookup("k")), fx.Fiber[str, NotFound | Invalid])
     assert_type(runtime.context_effect, fx.Effect[fx.Context[Primary | Port], Never, Never])
     assert_type(runtime.run_async(Port()), CoroutineType[Any, Any, int]).close()
-    runtime.run_sync(Replica())  # pyright: ignore[reportArgumentType]
-    runtime.run_sync(lookup("k"))  # pyright: ignore[reportArgumentType]
+    runtime.run_blocking(Replica())  # pyright: ignore[reportArgumentType]
+    runtime.run_blocking(lookup("k"))  # pyright: ignore[reportArgumentType]
 
     fallible = fx.ManagedRuntime.make(layer.effect(Port, fx.fail(NotFound("port"))))
     assert_type(fallible, fx.ManagedRuntime[Port, NotFound])
-    assert_type(fallible.run_sync_exit(Port()), fx.Exit[int, NotFound])
+    assert_type(fallible.run_blocking_exit(Port()), fx.Exit[int, NotFound])
     # The plain variants need a layer that cannot fail, as they need E = Never.
-    fallible.run_sync(Port())  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
+    fallible.run_blocking(Port())  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
 
 
 # --- typed Context ------------------------------------------------------------------
@@ -1910,7 +1910,7 @@ def check_rc_map() -> None:
         fx.RcMap.make(_lookup_port, capacity=2, idle_time_to_live=len),
         fx.Effect[fx.RcMap[str, int, NotFound | fx.ExceededCapacityError], Never, fx.Scope | Port],
     )
-    fx.RcMap.make(_lookup_port, idle_time_to_live=lambda key: key)  # pyright: ignore[reportArgumentType, reportCallIssue]
+    fx.RcMap.make(_lookup_port, idle_time_to_live=lambda key: object())  # pyright: ignore[reportArgumentType, reportCallIssue]
 
 
 def check_rc_map_methods(rc_map: fx.RcMap[str, int, NotFound]) -> None:
@@ -1946,7 +1946,7 @@ def check_cache() -> None:
         fx.Cache.make(_lookup_port, capacity=2, time_to_live=ttl),
         fx.Effect[fx.Cache[str, int, NotFound], Never, Port],
     )
-    fx.Cache.make(_lookup_port, capacity=2, time_to_live=lambda _ex, key: key)  # pyright: ignore[reportArgumentType, reportCallIssue]
+    fx.Cache.make(_lookup_port, capacity=2, time_to_live=lambda _ex, key: object())  # pyright: ignore[reportArgumentType, reportCallIssue]
 
 
 def check_cache_methods(cache: fx.Cache[str, int, NotFound, Port]) -> None:
@@ -2589,14 +2589,14 @@ def check_scope_use(
     fx.scope.make("concurrent")  # pyright: ignore[reportArgumentType]
 
 
-def check_should_yield() -> None:
-    from pyfect.scheduler import ShouldYield
+def check_effect_scheduler() -> None:
+    from pyfect.scheduler import MixedScheduler
 
-    def every_four(_fiber: fx.Fiber[Any, Any], ops: int) -> bool:
-        return ops >= 4
-
-    assert_type(fx.void.pipe(fx.provide_service(ShouldYield, every_four)), fx.Effect[None])
-    fx.provide_service(ShouldYield, lambda _fiber: True)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        fx.void.pipe(fx.provide_service(fx.CurrentScheduler, MixedScheduler())), fx.Effect[None]
+    )
+    assert_type(fx.yield_now_with(3), fx.Effect[None])
+    fx.provide_service(fx.CurrentScheduler, 3)  # pyright: ignore[reportArgumentType]
 
 
 def check_runtime_error_attributes(ctx: fx.Context[Primary]) -> None:
@@ -2625,7 +2625,6 @@ def check_layer_spans(built: layer.Layer[Primary, NotFound, Replica]) -> None:
 
 
 def check_metric_constructors() -> None:
-    from datetime import timedelta
 
     from pyfect import metric
 
@@ -2645,7 +2644,7 @@ def check_metric_constructors() -> None:
         metric.summary_with_timestamp("s", max_age=1, max_size=1, quantiles=[0.5]),
         metric.Metric[tuple[float, float], metric.SummaryState],
     )
-    assert_type(metric.timer("t"), metric.Metric[float | timedelta, metric.HistogramState])
+    assert_type(metric.timer("t"), metric.Metric[Duration, metric.HistogramState])
     assert_type(metric.linear_boundaries(start=0, width=1, count=3), tuple[float, ...])
     metric.counter("c", attributes={"k": 1})  # pyright: ignore[reportArgumentType]
     metric.histogram("h")  # pyright: ignore[reportCallIssue]
@@ -2728,7 +2727,7 @@ def check_otel_layers(
         eff.pipe(otel.tracer.with_span_context(span_context)), fx.Effect[int, NotFound, Primary]
     )
     # An effect still needing the tracer provider cannot run.
-    fx.run_sync(otel.tracer.current_otel_span().or_die().pipe(fx.provide(otel.tracer.layer)))  # pyright: ignore[reportArgumentType]
+    fx.run_blocking(otel.tracer.current_otel_span().or_die().pipe(fx.provide(otel.tracer.layer)))  # pyright: ignore[reportArgumentType]
 
 
 # --- channels, pulls and takes ---------------------------------------------------
@@ -3118,7 +3117,7 @@ def check_stream_constructors(eff: fx.Effect[int, NotFound, Primary]) -> None:
     assert_type(st.from_arrays([1], (2,)), _St[int])
     assert_type(st.from_iterable_effect(eff.map(lambda n: [n])), _St[int, NotFound, Primary])
     assert_type(st.range(0, 3), _St[int])
-    assert_type(st.range_inclusive(0, 3), _St[int])
+    assert_type(st.range(0, 3), _St[int])
     assert_type(st.iterate(1, lambda n: n + 1), _St[int])
     assert_type(st.service(Primary), _St[Db, Never, Primary])
     assert_type(st.service_option(Primary), _St[fx.Option[Db]])
@@ -4370,8 +4369,8 @@ def check_schema_composites(unknown: object) -> None:
     assert_type(
         S.decode_unknown_sync(S.Exit(S.Int, S.String, exceptions))(unknown), fx.Exit[int, str]
     )
-    # A Die holds an exception: the defect schema must make one.
-    S.Cause(S.String, S.Unknown)  # pyright: ignore[reportArgumentType]
+    # A Die holds any value.
+    assert_type(S.Cause(S.String, S.Unknown), S.CauseSchema[str, str, Never, Never])
     assert_type(S.decode_unknown_sync(S.Redacted(S.String))(unknown), Redacted[str])
 
     assert_type(S.Duration, S.Bottom[timedelta])
@@ -4517,19 +4516,16 @@ def schema_errors_and_tagged_unions() -> None:
 
     unknown: object = None
 
-    # Errors in JSON decode to data (S.ErrorInstance), never to a class the
-    # input names; a defect is a DecodedDefect, since a Die holds an exception.
-    assert_type(S.decode_unknown_sync(S.ErrorInstance)(unknown), BaseException | S.ErrorInstance)
-    assert_type(
-        S.ErrorInstance.schema(include_stack=True), S.Bottom[BaseException | S.ErrorInstance]
-    )
-    assert_type(S.Defect(), S.DecodeToSchema[BaseException, S.JsonValue, Never, Never])
+    # Errors in JSON decode to S.ErrorInstance, never to a class the input
+    # names; a defect is any value.
+    assert_type(S.decode_unknown_sync(S.ErrorInstance)(unknown), BaseException)
+    assert_type(S.ErrorInstance.schema(include_stack=True), S.Bottom[BaseException])
+    assert_type(S.Defect(), S.DecodeToSchema[object, S.JsonValue, Never, Never])
     assert_type(S.decode_unknown_sync(S.Cause(S.String, S.Defect()))(unknown), Cause[str])
     assert_type(
         S.decode_unknown_sync(S.Exit(S.Int, S.ErrorInstance, S.Defect()))(unknown),
-        fx.Exit[int, BaseException | S.ErrorInstance],
+        fx.Exit[int, BaseException],
     )
-    assert_type(S.DecodedDefect("a").value, S.ErrorInstance | S.JsonValue)
 
     class Circle(TypedDict):
         _tag: Literal["Circle"]
@@ -6718,7 +6714,6 @@ def check_persisted_queue(
     )
     pq.make(name="q", schema=S.Int, max_attempts="10")  # pyright: ignore[reportArgumentType]
     # an error's cause is the exception the backend raised, not a Cause
-    pq.PersistedQueueError(message="m", cause=fx.cause.die(ValueError()))  # pyright: ignore[reportArgumentType]
 
 
 def check_workers(worker: Worker[int, str], runner: WorkerRunner[int, str]) -> None:
@@ -7698,7 +7693,7 @@ def graphql_checks() -> None:
     assert_type(graphql.make(OpOnly), fx.Effect[OpOnly, Never, GqlProtocol | GqlAuth])
     only_protocol = graphql.make(OpOnly).pipe(fx.provide(layer.mock(GqlProtocol)))
     assert_type(only_protocol, fx.Effect[OpOnly, Never, GqlAuth])
-    fx.run_sync(only_protocol)  # pyright: ignore[reportArgumentType]
+    fx.run_blocking(only_protocol)  # pyright: ignore[reportArgumentType]
 
     def use(plain: Plain, authed: Authed, merged: Merged, op_only: OpOnly) -> None:
         assert_type(plain.viewer(), fx.Effect[GqlViewer, GqlError])
@@ -8007,8 +8002,6 @@ def cluster_core_types() -> None:
     )
     # A cluster error's cause is a defect, an exception, as its schema checks
     # when it is made.
-    cluster_error.PersistenceError(cause="down")  # pyright: ignore[reportArgumentType]
-    cluster_error.MalformedMessage(cause=1)  # pyright: ignore[reportArgumentType]
     cluster_error.MalformedMessage.refail(fx.fail("not an exception"))  # pyright: ignore[reportArgumentType]
     assert_type(
         sharding_config.layer_from_env(), fx.Layer[sharding_config.ShardingConfig, fx.ConfigError]
@@ -9435,3 +9428,23 @@ def s_field_with_a_wire_key() -> None:
     assert_type(keyed.plain, int)
     assert_type(S.Number.check(S.is_int()), S.Bottom[float])
     assert_type(S.Literal(1), S.LiteralSchema[int])
+
+
+class _S4Auth(rpc.RpcMiddleware[str, ValueError]):
+    pass
+
+
+class _S4Users(rpc.RpcGroupWith[_S4Auth]):
+    get = rpc.make("S4Users.get", success=S.String)
+
+
+def section4_pins() -> None:
+    # A group-wide middleware shows in each RPC's type.
+    assert_type(_S4Users.get, rpc.Rpc[None, str, Never, _S4Auth, _S4Auth])
+    assert_type(S.decode_promise(S.String)("a"), Coroutine[Any, Any, str]).close()
+    assert_type(S.encode_promise(S.String)("a"), Coroutine[Any, Any, str]).close()
+    assert_type(S.Undefined, S.Bottom[None])
+    assert_type(S.ObjectKeyword, S.Bottom[object])
+    assert_type(S.Void, S.Bottom[None, object])
+    assert_type(fx.run_sync(fx.succeed(1)), int)
+    assert_type(fx.run_blocking(fx.succeed(1)), int)

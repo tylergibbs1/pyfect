@@ -135,10 +135,10 @@ class TransportError(S.TaggedError, identifier="effect/graphql/GraphQLClientErro
     )
     close_code: int | None = S.field(S.Union(S.Int, Undefined), default=None, key="closeCode")
     fatal: bool | None = S.field(S.Union(S.Boolean, Undefined), default=None)
-    cause: BaseException | None = S.field(S.Union(S.Defect(), Undefined), default=None)
+    cause: object = S.field(S.Union(S.Defect(), Undefined), default=None)
 
     def __post_init__(self) -> None:
-        self.__cause__ = self.cause
+        self.__cause__ = self.cause if isinstance(self.cause, BaseException) else None
 
     @property
     def is_retryable(self) -> bool:

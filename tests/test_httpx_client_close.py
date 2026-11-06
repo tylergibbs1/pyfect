@@ -39,7 +39,7 @@ def _closed_after(use: fx.Effect[object, object, HttpClient | Scope]) -> list[bo
         return httpx.Response(200, stream=_Body(closed))
 
     http = httpx_client.layer_with(transport=httpx.MockTransport(handler))
-    fx.run_sync(fx.scoped(use).pipe(fx.provide(http)).or_die())
+    fx.run_blocking(fx.scoped(use).pipe(fx.provide(http)).or_die())
     return closed
 
 

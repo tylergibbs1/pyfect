@@ -26,7 +26,7 @@ from pyfect.cluster.sharding import Sharding
 from pyfect.cluster.sharding_config import ShardingConfig
 from pyfect.cluster.snowflake import Snowflake, make_generator
 from pyfect.context import Context
-from pyfect.effect import context, die, fn, gen
+from pyfect.effect import context, die, fn_untraced, gen
 from pyfect.layer import Layer
 from pyfect.rpc import message as rpc_message
 from pyfect.rpc.client._core import ClientCore, ClientOptions, OnFromClient
@@ -166,7 +166,7 @@ def make_test_client(entity: type[Entity], layer: Layer[Any, Any, Any], /) -> Ef
             return None
         registered = entry
 
-        @fn
+        @fn_untraced
         def lookup(entity_id: str):
             id = EntityId(entity_id)
             address = EntityAddress(

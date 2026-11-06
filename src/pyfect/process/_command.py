@@ -93,6 +93,8 @@ class OutputFd:
 
 type AdditionalFd = InputFd | OutputFd
 
+_FIRST_EXTRA_FD = 3
+
 
 def _no_fds() -> Mapping[int, AdditionalFd]:
     return MappingProxyType({})
@@ -140,10 +142,10 @@ class _CommandBase(Effect["ChildProcessHandle", PlatformError, "ChildProcessSpaw
         ``to`` of ``that`` (standard input by default)."""
         if not isinstance(that, (StandardCommand, PipedCommand)):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise TypeError(f"that must be a command, got {type(that).__name__}")
-        if isinstance(from_, int):
-            _check_fd(from_, "from_")
-        if isinstance(to, int):
-            _check_fd(to, "to")
+        if isinstance(from_, int) and from_ < _FIRST_EXTRA_FD:
+            from_ = "stdout"
+        if isinstance(to, int) and to < _FIRST_EXTRA_FD:
+            to = "stdin"
         left: Command = self  # pyright: ignore[reportAssignmentType]
         return PipedCommand(left, that, PipeOptions(from_=from_, to=to))
 
@@ -231,15 +233,16 @@ def make(
       unless detached).
     - ``stdin``, ``stdout``, ``stderr``: see ``CommandInput``,
       ``CommandOutput`` and ``StdinConfig``; each is a pipe by default.
-    - ``additional_fds``: descriptors from 3 up, by number.
+    - ``additional_fds``: descriptors from 3 up, by number; lower ones are skipped.
     - ``kill_signal``, ``force_kill_after``: how the scope ending the
       command kills it: the signal (``SIGTERM`` by default), then
       ``SIGKILL`` after this long if the process group is still alive.
     """
     stdin_config = stdin if isinstance(stdin, StdinConfig) else StdinConfig(_input(stdin, "stdin"))
-    fds = MappingProxyType(dict(additional_fds or {}))
+    fds = MappingProxyType(
+        {fd: config for fd, config in (additional_fds or {}).items() if fd >= _FIRST_EXTRA_FD}
+    )
     for fd, config in fds.items():
-        _check_fd(fd, "additional_fds")
         if not isinstance(config, (InputFd, OutputFd)):  # pyright: ignore[reportUnnecessaryIsInstance]
             raise TypeError(f"additional_fds[{fd}] must be an InputFd or OutputFd")
     options = CommandOptions(
@@ -274,11 +277,6 @@ def _output(value: CommandOutput, name: str) -> CommandOutput:
     if not isinstance(value, str):
         require_sink(value, name)
     return value
-
-
-def _check_fd(fd: int, name: str) -> None:
-    if fd < 3:
-        raise ValueError(f"{name}: additional descriptors start at 3, got {fd}")
 
 
 def _prefix(command: Command, executable: str, args: tuple[str, ...]) -> Command:

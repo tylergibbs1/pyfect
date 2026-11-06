@@ -77,22 +77,4 @@ def make_zoned_from_string(text: str) -> datetime | None:
     instant = js_date.parse_input(iso)
     if zone is None or instant is None:
         return None
-    exact = _exact_wall_clock(instant, zone)
-    return exact if exact is not None else instant.astimezone(zone)
-
-
-def _exact_wall_clock(written: datetime, zone: tzinfo) -> datetime | None:
-    """The instant a named zone puts at ``written``'s wall clock, when the
-    zone's offset there rounds to the written one: ``format_iso_zoned``
-    writes whole minutes, so a historical offset with seconds
-    (``+05:21:10``) reads back exactly."""
-    offset = written.utcoffset()
-    if not isinstance(zone, ZoneInfo) or offset is None:
-        return None
-    text = _offset_text(offset // timedelta(milliseconds=1))
-    for fold in (0, 1):
-        local = written.replace(tzinfo=zone, fold=fold)
-        local_offset = local.utcoffset() or timedelta(0)
-        if _offset_text(local_offset // timedelta(milliseconds=1)) == text:
-            return local
-    return None
+    return instant.astimezone(zone)

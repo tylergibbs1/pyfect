@@ -31,7 +31,7 @@ class Named(TypedDict):
 
 
 def _schema_error(schema: S.Codec[object, object, Never, object], value: object) -> S.SchemaError:
-    exit = fx.run_sync_exit(S.decode_unknown_effect(schema)(value))
+    exit = fx.run_blocking_exit(S.decode_unknown_effect(schema)(value))
     assert isinstance(exit, fx.Failure)
     error = exit.cause.failures[0]
     assert isinstance(error, S.SchemaError)

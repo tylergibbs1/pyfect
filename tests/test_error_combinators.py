@@ -159,9 +159,9 @@ def test_match_cause_sees_defects() -> None:
 
 
 def test_tap_defect_observes_only_defects_and_keeps_the_failure() -> None:
-    seen: list[BaseException] = []
+    seen: list[object] = []
 
-    def record(d: BaseException) -> fx.Effect[None]:
+    def record(d: object) -> fx.Effect[None]:
         return fx.sync(lambda: seen.append(d))
 
     assert _cause(testing.run_test_exit(fx.die(DEFECT).tap_defect(record))) == die(DEFECT)
@@ -257,7 +257,7 @@ def test_try_blocking_without_catch_fails_with_unknown_error() -> None:
     def boom() -> int:
         raise thrown
 
-    ex = fx.run_sync_exit(fx.try_blocking(boom))
+    ex = fx.run_blocking_exit(fx.try_blocking(boom))
     assert isinstance(ex, fx.Failure)
     found = ex.cause.find_fail()
     assert isinstance(found, Fail)
@@ -275,9 +275,9 @@ def test_a_raising_catch_in_try_blocking_is_a_defect() -> None:
     def catch(_: Exception) -> Never:
         raise defect
 
-    ex = fx.run_sync_exit(fx.try_blocking(boom, catch))
+    ex = fx.run_blocking_exit(fx.try_blocking(boom, catch))
     assert isinstance(ex, fx.Failure)
-    assert ex.cause.find_defect() is defect
+    assert ex.cause.defects[0] is defect
 
 
 def test_on_exit_if_adds_a_failing_hooks_error_to_a_success() -> None:

@@ -2,7 +2,7 @@
 extra, never imported by ``pyfect``).
 
 psycopg's asyncio API runs on a loop thread of its own, so the client works
-under ``run_sync`` and ``run_async`` and no fiber blocks; interrupting a
+under ``run_blocking`` and ``run_async`` and no fiber blocks; interrupting a
 statement cancels it in PostgreSQL::
 
     from pyfect.sql import pg

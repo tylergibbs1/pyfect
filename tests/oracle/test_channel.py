@@ -215,7 +215,7 @@ def test_acquire_use_release_combines_usage_and_release_failures():
     assert isinstance(ex, fx.Failure)
     assert ex.cause.failures == ()
     [usage, release] = ex.cause.defects
-    assert isinstance(usage, fx.UnhandledError) and usage.error == "usage failure"
+    assert usage == "usage failure"
     assert release is release_failure
 
 
@@ -258,7 +258,7 @@ class _CountingScheduler:
         self.inner = inner
         self.scheduled = 0
 
-    def schedule(self, task: Task) -> None:
+    def schedule(self, task: Task, priority: int = 0) -> None:
         self.scheduled += 1
         self.inner.schedule(task)
 

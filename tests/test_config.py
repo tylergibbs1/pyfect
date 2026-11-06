@@ -5,6 +5,7 @@ where a test says it pins a Pythonic difference (docs/PARITY.md, section 4).
 """
 
 import math
+import os
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Literal
@@ -19,7 +20,7 @@ from pyfect.config_provider import SourceError
 
 
 def _parse[A](cfg: Config[A], provider: cp.ConfigProvider) -> fx.Ok[A] | fx.Err[str]:
-    return fx.run_sync(cfg.parse(provider).map_error(lambda e: e.cause.message).result())
+    return fx.run_blocking(cfg.parse(provider).map_error(lambda e: e.cause.message).result())
 
 
 def _at_a(value: str) -> cp.ConfigProvider:
@@ -50,11 +51,10 @@ def test_integer_reads_effects_number_syntax(text: str, expected: object):
     assert _parse(config.integer("a"), _at_a(text)) == expected
 
 
-def test_integer_is_exact_beyond_javascripts_safe_integers():
-    """Pythonic: Effect rejects integers past 2**53 ("Expected an integer");
-    Python's ints are exact, so they are read in full."""
-    assert _parse(config.integer("a"), _at_a("12345678901234567890")) == fx.Ok(12345678901234567890)
-    assert _parse(config.integer("a"), _at_a("9007199254740993")) == fx.Ok(9007199254740993)
+def test_integer_stops_at_javascripts_safe_integers():
+    """Node: ``Config.Int`` reads through a number, so past 2**53 - 1 fails."""
+    for text in ("12345678901234567890", "9007199254740993"):
+        assert _parse(config.integer("a"), _at_a(text)) == fx.Err('Expected an integer\n  at ["a"]')
 
 
 def test_finite_and_number_edges():
@@ -300,7 +300,7 @@ def test_an_empty_separator_splits_into_characters():
 
 
 def test_a_source_error_reads_as_effect_prints_it():
-    error = fx.run_sync(
+    error = fx.run_blocking(
         config.string("a").parse(cp.make(lambda _: fx.fail(SourceError("boom")))).flip().or_die()
     )
     assert error.message == "SourceError: boom"
@@ -308,7 +308,7 @@ def test_a_source_error_reads_as_effect_prints_it():
 
 
 def test_a_schema_error_message_names_the_schema_error():
-    error = fx.run_sync(config.string("a").parse(cp.from_unknown({})).flip().or_die())
+    error = fx.run_blocking(config.string("a").parse(cp.from_unknown({})).flip().or_die())
     assert error.message == 'SchemaError(Expected string\n  at ["a"])'
     assert error.cause.message == 'Expected string\n  at ["a"]'
 
@@ -369,7 +369,7 @@ def test_gen_closes_the_generator_when_interrupted():
         finally:
             closed.append("closed")
 
-    exit = fx.run_sync_exit(tracked.parse(slow).timeout(0.01))
+    exit = fx.run_blocking_exit(tracked.parse(slow).timeout(0.01))
     assert isinstance(exit, fx.Failure)
     assert closed == ["closed"]
 
@@ -400,14 +400,15 @@ def test_a_config_reads_the_current_provider_inside_gen():
     assert port == 9000
 
 
-def test_a_config_reads_os_environ_by_default(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setenv("PYFECT_TEST_CONFIG_PORT", "1234")
-    assert fx.run_sync(config.port("PYFECT_TEST_CONFIG_PORT").or_die()) == 1234
+def test_a_config_reads_os_environ_by_default():
+    assert fx.run_blocking(config.string("PATH").or_die()) == os.environ["PATH"]
 
 
 def test_flat_map_into_a_plain_effect_gives_an_effect():
     eff = config.integer("N").flat_map(lambda n: fx.succeed(n * 2))
-    assert fx.run_sync(eff.pipe(fx.provide(cp.layer(cp.from_unknown({"N": "21"})))).or_die()) == 42
+    assert (
+        fx.run_blocking(eff.pipe(fx.provide(cp.layer(cp.from_unknown({"N": "21"})))).or_die()) == 42
+    )
 
 
 def test_the_option_method_keeps_invalid_data_failing():

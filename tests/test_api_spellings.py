@@ -47,6 +47,16 @@ _EFFECT_BOTH: dict[str, Spelling] = dict.fromkeys(("catch_all", "catch_if"), "bo
 
 _EFFECT_METHODS: dict[str, Spelling] = dict.fromkeys(
     (
+        "catch_eager",
+        "flat_map_eager",
+        "map_both_eager",
+        "map_eager",
+        "map_error_eager",
+        "match_cause_eager",
+        "match_cause_effect_eager",
+        "match_eager",
+        "on_exit_primitive",
+        "replicate",
         "and_then",
         "annotate_logs",
         "annotate_spans",
@@ -208,8 +218,8 @@ def test_catch_all_pipes_and_recovers_every_typed_error():
         return fx.succeed(f"recovered {type(e).__name__}")
 
     eff = fx.fail(Boom()).pipe(fx.catch_all(recover))
-    assert fx.run_sync(eff) == "recovered Boom"
-    assert fx.run_sync(fx.succeed("fine").pipe(fx.catch_all(recover))) == "fine"
+    assert fx.run_blocking(eff) == "recovered Boom"
+    assert fx.run_blocking(fx.succeed("fine").pipe(fx.catch_all(recover))) == "fine"
 
 
 def test_catch_all_pipeable_lets_a_defect_through_like_the_method():
@@ -217,7 +227,7 @@ def test_catch_all_pipeable_lets_a_defect_through_like_the_method():
         return fx.succeed(1)
 
     boom = ValueError("x")
-    exit_ = fx.run_sync_exit(fx.die(boom).pipe(fx.catch_all(recover)))
+    exit_ = fx.run_blocking_exit(fx.die(boom).pipe(fx.catch_all(recover)))
     assert isinstance(exit_, fx.Failure) and exit_.cause.defects == (boom,)
 
 
@@ -256,13 +266,13 @@ def test_catch_all_pipes_on_streams_channels_and_layers():
         return stream.succeed(0)
 
     s = stream.fail(Boom()).pipe(stream.catch_all(to_zero))
-    assert fx.run_sync(s.run_collect()) == [0]
+    assert fx.run_blocking(s.run_collect()) == [0]
 
     def to_one(_e: Boom) -> channel.Channel[int]:
         return channel.succeed(1)
 
     ch = channel.fail(Boom()).pipe(channel.catch_all(to_one))
-    assert fx.run_sync(ch.run_collect()) == [1]
+    assert fx.run_blocking(ch.run_collect()) == [1]
 
     class Port(fx.Tag[int]): ...
 
@@ -270,4 +280,4 @@ def test_catch_all_pipes_on_streams_channels_and_layers():
         return layer.succeed(Port, 8080)
 
     live = layer.effect(Port, fx.fail(Boom())).pipe(layer.catch_all(fallback))
-    assert fx.run_sync(Port().pipe(fx.provide(live))) == 8080
+    assert fx.run_blocking(Port().pipe(fx.provide(live))) == 8080

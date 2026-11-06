@@ -59,11 +59,13 @@ def contended(attempts: list[int]) -> fx.Effect[int]:
 
 
 def main() -> None:
-    print(f"uncontended: {COMMITS / best_of(lambda: fx.run_sync(uncontended())) / 1e3:.0f}k tx/s")
+    print(
+        f"uncontended: {COMMITS / best_of(lambda: fx.run_blocking(uncontended())) / 1e3:.0f}k tx/s"
+    )
     attempts = [0]
     total = FIBERS * PER_FIBER
-    elapsed = best_of(lambda: fx.run_sync(contended(attempts)))
-    assert fx.run_sync(contended([0])) == total
+    elapsed = best_of(lambda: fx.run_blocking(contended(attempts)))
+    assert fx.run_blocking(contended([0])) == total
     reruns = attempts[0] / (5 * total) - 1
     print(
         f"contended ({FIBERS} fibers x {PER_FIBER}): {total / elapsed / 1e3:.1f}k commits/s, "

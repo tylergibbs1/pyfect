@@ -245,7 +245,7 @@ def _run_sample(
             runtime.close()
     match ex:
         case Failure(cause=cause) if cause.has_interrupts:
-            raise _EndCheck(cause.squash())
+            raise _EndCheck(cause.raisable())
         case Success(value=False):
             raise PropertyFalsifiedError(f"property {f.__qualname__} returned False")
         case _:

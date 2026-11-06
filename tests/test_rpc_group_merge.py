@@ -42,7 +42,7 @@ def test_a_merged_group_holds_every_rpc_and_serves_them() -> None:
         count = yield from client.count({"id": "a"})
         return got, count
 
-    assert fx.run_sync(fx.scoped(effect.gen(body))) == ("a", 1.0)
+    assert fx.run_blocking(fx.scoped(effect.gen(body))) == ("a", 1.0)
 
 
 def test_the_first_base_wins_a_tag_both_groups_have() -> None:

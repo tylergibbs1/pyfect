@@ -34,7 +34,6 @@ from pyfect.ai._mcp.client_transport import (
 from pyfect.ai._mcp.client_transport import http as _http
 from pyfect.ai._mcp.client_transport import stdio as _stdio
 from pyfect.ai._mcp.client_wire import failure, limit_error, requires_tasks, to_text
-from pyfect.ai._mcp.projection import WRAP_RESULT
 from pyfect.ai.mcp_client_error import (
     ClosedError,
     ConfigurationError,
@@ -243,10 +242,8 @@ class McpClientService:
         timeout: Duration | None = None,
     ) -> Effect[Any, McpClientError, Any]:
         """Call ``tool``. With ``schema``, its ``structuredContent`` decoded
-        (unwrapped from ``{"result": ...}`` when ``tool``'s output schema has
-        ``x-fastmcp-wrap-result``; a tool error then fails with
-        ``ToolError``); else the whole result. Unbounded unless given a
-        ``timeout``."""
+        (a tool error then fails with ``ToolError``); else the whole result.
+        Unbounded unless given a ``timeout``."""
         params: JsonObject = {"name": tool["name"]}
         if arguments is not None:
             params["arguments"] = dict(arguments)
@@ -260,7 +257,8 @@ class McpClientService:
                 "Callable[[object], Effect[Any, S.SchemaError, Any]]",
                 S.decode_unknown_effect(schema),
             )
-            return decode(_structured(tool, result)).map_error(
+            structured: object = result.get("structuredContent")
+            return decode(structured).map_error(
                 lambda cause: failure(
                     ValidationError("MCP structured result validation failed", cause)
                 )
@@ -272,16 +270,6 @@ class McpClientService:
             .flat_map(typed)
         )
         return self._deadline(called, "tools/call", _optional_seconds(timeout))
-
-
-def _structured(tool: McpTool, result: CallToolResult) -> object:
-    """``result``'s ``structuredContent``, unwrapped when ``tool``'s output
-    schema says the server wrapped it as ``{"result": ...}``."""
-    structured = result.get("structuredContent")
-    schema: Mapping[str, Any] = tool.get("outputSchema") or {}
-    if schema.get(WRAP_RESULT) is True and isinstance(structured, Mapping):
-        return cast("Mapping[str, Any]", structured).get("result")
-    return structured
 
 
 class McpClient(Tag[McpClientService], key="effect/ai/McpClient"):

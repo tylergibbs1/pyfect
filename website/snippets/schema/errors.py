@@ -36,6 +36,6 @@ def handle(body: str) -> fx.Effect[str]:
 
 
 for body in ['{"sku": "apple", "quantity": 2}', '{"sku": "apple", "quantity": 9}', "{}"]:
-    print(fx.run_sync(handle(body)))
+    print(fx.run_blocking(handle(body)))
 
 print(S.encode_sync(S.from_json_string(OutOfStock))(OutOfStock(sku="pear")))

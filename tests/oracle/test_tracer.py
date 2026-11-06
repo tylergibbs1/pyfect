@@ -13,7 +13,7 @@ Adapted, with the reason:
 
 - "should capture only the span frame for a string failure": a typed error
   that is not an exception has no traceback, so ``Cause.pretty()`` shows its
-  ``UnhandledError`` line and the span frame alone (Effect checks
+  ``Error: ...`` line and the span frame alone (Effect checks
   ``prettyErrors(cause)[0].stack``).
 
 - "should capture the stack trace": a Python exception gets its traceback
@@ -93,7 +93,7 @@ def test_should_capture_only_the_span_frame_for_a_string_failure():
 
     assert len(cause.pretty_errors()) == 1
     assert re.fullmatch(
-        r"pyfect\.cause\.UnhandledError: 'boom'\n    at test \(.*test_tracer\.py:\d+\)",
+        r"Error: boom\n    at test \(.*test_tracer\.py:\d+\)",
         cause.pretty(),
     ), cause.pretty()
 
@@ -357,7 +357,7 @@ def test_runs_continuations_after_the_region_under_the_restored_span():
     def record(_: object) -> None:
         seen.append(active[0])
 
-    fx.run_sync(
+    fx.run_blocking(
         fx.sync(lambda: None)
         .map(record)
         .with_parent_span(ExternalSpan(span_id="child", trace_id="trace"))

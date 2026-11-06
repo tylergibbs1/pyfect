@@ -4,7 +4,7 @@ Effect's ``NodeChildProcessSpawner``).
 ``Popen`` starts each process on a worker thread; a thread per process
 waits for its exit and a thread per output pipe reads on demand (see
 ``_pipes``), resuming fibers through their scheduler, so fibers never block
-and the spawner works under ``run_sync`` and asyncio alike. The working
+and the spawner works under ``run_blocking`` and asyncio alike. The working
 directory is checked and resolved through ``FileSystem`` and ``Path``.
 Pipelines are spawned one command at a time, the chosen output of each
 streamed into the chosen input of the next. The scope a command is spawned

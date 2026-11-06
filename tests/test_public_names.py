@@ -52,7 +52,7 @@ def test_a_missing_service_lists_only_the_services_the_program_provided():
 
     program: Any = Db().pipe(fx.provide_service(Cache, 1))
     with pytest.raises(fx.MissingServiceError) as caught:
-        fx.run_sync(program)
+        fx.run_blocking(program)
     assert str(caught.value) == (f"Service {Db.key} was not provided (available: {Cache.key})")
 
 
@@ -61,7 +61,7 @@ def test_a_missing_service_with_nothing_provided_says_none():
 
     program: Any = Db()
     with pytest.raises(fx.MissingServiceError, match=r"\(available: none\)$"):
-        fx.run_sync(program)
+        fx.run_blocking(program)
 
 
 def test_a_schema_error_repr_is_its_message_not_the_schema_ast():

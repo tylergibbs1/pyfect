@@ -37,7 +37,7 @@ from pyfect.cause import Fail
 from pyfect.exit import Exit, Failure, Success
 from pyfect.option import Option, Some
 from pyfect.result import Ok
-from pyfect.run import run_sync_exit
+from pyfect.run import run_blocking_exit
 from pyfect.schema import (
     BigInt,
     ParseOptions,
@@ -58,7 +58,7 @@ type AnyGetter = G.Getter[Any, Any]
 def _exit(
     getter: AnyGetter, input: Option[object], options: ParseOptions
 ) -> Exit[Option[Any], Issue]:
-    return run_sync_exit(G.run(getter, input, options))
+    return run_blocking_exit(G.run(getter, input, options))
 
 
 def _ok(getter: AnyGetter, input: Option[object], options: ParseOptions | None = None) -> object:
