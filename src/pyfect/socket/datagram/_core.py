@@ -24,7 +24,7 @@ from pyfect._fiber import Fiber
 from pyfect._js import text_encode
 from pyfect._os_wait import Resume, os_wait
 from pyfect.context import Context
-from pyfect.effect import fail, gen, succeed, suspend, sync, void
+from pyfect.effect import die, fail, gen, succeed, suspend, sync, void
 from pyfect.exit import Exit, Success
 from pyfect.latch import Latch
 from pyfect.net.net_address import (
@@ -369,6 +369,13 @@ def make_from_backing_socket(
     ``on_error`` gets errors no write is left to fail; what it raises is
     ignored."""
     buffer = receive_buffer or ReceiveBuffer()
+    if buffer.capacity < 1:
+        return die(
+            ValueError(
+                "DatagramSocket receive buffer capacity must be a positive integer, "
+                f"received {buffer.capacity}"
+            )
+        )
     return context().map(lambda services: _build(open, services, buffer, on_error))
 
 

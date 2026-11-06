@@ -166,11 +166,6 @@ def test_race_all():
     assert run(program) == 1
 
 
-def test_invalid_concurrency_is_rejected_when_building():
-    with pytest.raises(ValueError, match="concurrency"):
-        fx.for_each([1], fx.succeed, concurrency=0)
-
-
 def test_a_sleep_with_nothing_to_wake_it_is_reported_not_hung():
     with pytest.raises(fx.testing.StalledError):
         fx.testing.run_test(fx.sleep(1), stall_timeout=0.05)

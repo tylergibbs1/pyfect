@@ -135,11 +135,6 @@ class EntityOptions:
     span_attributes: Mapping[str, str] = field(default_factory=dict[str, str])
 
 
-def _positive(name: str, value: Concurrency | None) -> None:
-    if isinstance(value, int) and (isinstance(value, bool) or value < 1):
-        raise ValueError(f"{name} must be a positive integer or 'unbounded', got {value!r}")
-
-
 def parse_options(
     *,
     max_idle_time: Duration | None,
@@ -151,8 +146,6 @@ def parse_options(
     span_attributes: Mapping[str, str] | None,
 ) -> EntityOptions:
     """The options of ``to_layer``, checked and parsed once."""
-    _positive("concurrency", concurrency)
-    _positive("mailbox_capacity", mailbox_capacity)
     return EntityOptions(
         max_idle_time=None if max_idle_time is None else to_seconds(max_idle_time),
         concurrency=concurrency,

@@ -16,17 +16,6 @@ type ImportedSchema = Bottom[object, object, Never, Never]
 and it needs no services."""
 
 
-def _json_literal(literal: str | float | bool) -> ast.LiteralValue:
-    """JSON Schema has one kind of number, so ``{"const": 1}`` takes ``1.0``."""
-    match literal:
-        case bool() | str():
-            return literal
-        case int():
-            return ast.JsonInt(literal)
-        case float():
-            return ast.JsonFloat(literal)
-
-
 class Finalizer:
     def __init__(self, translator: Translator) -> None:
         self.translator = translator
@@ -53,7 +42,7 @@ class Finalizer:
             case N.Boolean():
                 out = ast.boolean
             case N.Literal(literal=literal):
-                out = ast.Literal(_json_literal(literal))
+                out = ast.Literal(literal)
             case N.Arrays():
                 out = self._arrays(node)
             case N.Objects():

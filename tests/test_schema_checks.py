@@ -31,15 +31,15 @@ Items = S.Bottom[list[object]](S.ast.unknown)
 @pytest.mark.parametrize(
     ("literal", "accepted", "rejected"),
     [
-        (1, [1], [True, 1.0, "1"]),
+        (1, [1, 1.0], [True, "1"]),
         (1.5, [1.5], [True, "1.5"]),
-        (2.0, [2.0], [2, True]),
+        (2.0, [2.0, 2], [True]),
         (True, [True], [1, 1.0]),
         (None, [None], [0, "", False]),
         ("a", ["a"], [b"a"]),
     ],
 )
-def test_a_literal_matches_values_of_its_own_kind(
+def test_a_literal_matches_its_value_and_a_number_is_one_kind(
     literal: S.LiteralValue, accepted: list[object], rejected: list[object]
 ):
     guard = S.is_(S.Literal(literal))
@@ -308,7 +308,8 @@ def test_bounds_must_be_finite():
 @pytest.mark.parametrize(
     ("schema", "accepted", "rejected", "message"),
     [
-        (S.Int, [0, -3, 10**30], 1.0, "Expected an integer"),
+        (S.Int, [0, -3, 2**53 - 1], 2**53, "Expected an integer"),
+        (S.Int, [], 1.5, "Expected an integer"),
         (S.Int, [], True, "Expected number"),
         (S.Port, [0, 65535], 65536, "Expected a port number"),
         (S.Char, ["a", "😀"], "ab", "Expected a value with a length of 1"),

@@ -9,7 +9,7 @@ not go on. ``is_retryable`` and ``retry_after`` read the reason.
 
 Each error is a schema class, so errors round-trip through
 ``S.encode_sync`` / ``S.decode_unknown_sync``; headers encode as a plain
-string record and ``retry_after`` as milliseconds.
+string record and ``retryAfter`` as milliseconds.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from pyfect.graphql._schemas import HEADERS, SECONDS_FROM_MILLIS
 from pyfect.http import error as http_error
 from pyfect.http.headers import Headers, parse_retry_after, retry_after_delay
 from pyfect.result import Ok
+from pyfect.schema._undefined import Undefined
 
 
 class Location(TypedDict):
@@ -91,10 +92,12 @@ class ResponseError(S.TaggedError, identifier="effect/graphql/GraphQLClientError
     ``Retry-After``."""
 
     errors: tuple[GraphQLError, ...] = S.field(S.NonEmptyArray(GRAPHQL_ERROR))
-    data: S.JsonValue = None
-    extensions: Mapping[str, S.JsonValue] | None = S.field(S.NullOr(_JSON_OBJECT), default=None)
-    status: int | None = None
-    headers: Headers | None = S.field(S.NullOr(HEADERS), default=None)
+    data: S.JsonValue = S.field(S.Union(S.Json, Undefined), default=None)
+    extensions: Mapping[str, S.JsonValue] | None = S.field(
+        S.Union(_JSON_OBJECT, Undefined), default=None
+    )
+    status: int | None = S.field(S.Union(S.Int, Undefined), default=None)
+    headers: Headers | None = S.field(S.Union(HEADERS, Undefined), default=None)
 
     def __post_init__(self) -> None:
         header = None if self.headers is None else self.headers.get("retry-after")
@@ -125,12 +128,14 @@ class TransportError(S.TaggedError, identifier="effect/graphql/GraphQLClientErro
     ``cause`` is the original error."""
 
     description: str
-    status: int | None = None
-    headers: Headers | None = S.field(S.NullOr(HEADERS), default=None)
-    retry_after: Seconds | None = S.field(S.NullOr(SECONDS_FROM_MILLIS), default=None)
-    close_code: int | None = None
-    fatal: bool = False
-    cause: BaseException | None = S.field(S.NullOr(S.Defect()), default=None)
+    status: int | None = S.field(S.Union(S.Int, Undefined), default=None)
+    headers: Headers | None = S.field(S.Union(HEADERS, Undefined), default=None)
+    retry_after: Seconds | None = S.field(
+        S.Union(SECONDS_FROM_MILLIS, Undefined), default=None, key="retryAfter"
+    )
+    close_code: int | None = S.field(S.Union(S.Int, Undefined), default=None, key="closeCode")
+    fatal: bool | None = S.field(S.Union(S.Boolean, Undefined), default=None)
+    cause: BaseException | None = S.field(S.Union(S.Defect(), Undefined), default=None)
 
     def __post_init__(self) -> None:
         self.__cause__ = self.cause

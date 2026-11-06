@@ -154,13 +154,6 @@ class ReceiveBuffer:
     capacity: int = 1024
     strategy: Literal["dropping", "sliding"] = "dropping"
 
-    def __post_init__(self) -> None:
-        if isinstance(self.capacity, bool) or self.capacity < 1:
-            raise ValueError(
-                "DatagramSocket receive buffer capacity must be a positive integer, "
-                f"received {self.capacity}"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class BackingAddress:

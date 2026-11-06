@@ -30,6 +30,7 @@ from pyfect.schema.ast._base import (
 )
 from pyfect.schema.ast._result import MISSING, ParseResult
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, run_steps
+from pyfect.schema.ast._suspend import Suspend
 from pyfect.schema.issue import Composite, Issue, MissingKey, Pointer, UnexpectedKey, reported
 
 
@@ -165,7 +166,7 @@ class _Run(Steps["_Run"]):
                     continue
             elif (constructed := construct_missing(position.type, options)) is not None:
                 result = constructed
-            elif position.type.encoding is not None:
+            elif position.type.encoding is not None or isinstance(position.type, Suspend):
                 result = position.type.parse(MISSING, options)
             elif position.optional:
                 continue

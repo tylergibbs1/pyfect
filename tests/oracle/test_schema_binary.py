@@ -27,8 +27,8 @@ import pytest
 import pyfect as fx
 from pyfect import schema as S
 from pyfect.encoding import schema_binary as B
-from pyfect.encoding.schema_binary._undefined import Undefined
 from pyfect.option import Some
+from pyfect.schema._undefined import Undefined
 
 from ._schema_binary import (
     Opt,

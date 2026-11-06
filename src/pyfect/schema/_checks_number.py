@@ -1,9 +1,9 @@
 """Number, bigint and date checks (Effect's ``isFinite``, ``isInt``,
 ``isGreaterThan``, ``isBetweenBigInt``, ``isGreaterThanDate``, ...).
 
-Number checks take ``int`` and ``float``. ``is_int`` accepts every ``int``
-and the ``float`` values JavaScript calls safe integers (``2.0``, not
-``2.0 ** 53``). The ``_big_int`` variants are the same checks over ``int``
+Number checks take ``int`` and ``float``. ``is_int`` is JavaScript's
+``Number.isSafeInteger`` over either (``2.0``, not ``2 ** 53``); past that use
+``S.BigInt``. The ``_big_int`` variants are the same checks over ``int``
 with Effect's ``bigint`` text (``"a value greater than 5n"``). A bound must
 be finite: a non-finite one raises ``ValueError`` (Effect's ``RangeError``).
 """
@@ -50,11 +50,11 @@ def is_finite(**annotations: object) -> Filter[float]:
 
 
 def _is_safe_integer(n: float) -> bool:
-    return isinstance(n, int) or (n.is_integer() and abs(n) <= _MAX_SAFE_INTEGER)
+    return (isinstance(n, int) or n.is_integer()) and abs(n) <= _MAX_SAFE_INTEGER
 
 
 def is_int(**annotations: object) -> Filter[float]:
-    """An integer: any ``int``, or a ``float`` that is a safe integer."""
+    """A safe integer, as an ``int`` or a ``float``."""
     return filter_of(
         _is_safe_integer,
         {"expected": "an integer", **_representation("isInt", None), **annotations},
@@ -62,9 +62,9 @@ def is_int(**annotations: object) -> Filter[float]:
 
 
 def int_value(**annotations: object) -> Filter[float]:
-    """``is_int`` for the ``Int`` schema: an ``int`` only, as its type says."""
+    """``is_int`` for the ``Int`` schema: a safe ``int`` only, as its type says."""
     return filter_of(
-        lambda n: isinstance(n, int),
+        lambda n: isinstance(n, int) and abs(n) <= _MAX_SAFE_INTEGER,
         {"expected": "an integer", **_representation("isInt", None), **annotations},
     )
 

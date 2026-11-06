@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 from pyfect._stack import stack_nearly_full, with_fresh_stack
 from pyfect.schema._options import ParseOptions
 from pyfect.schema.ast._base import AST
-from pyfect.schema.ast._result import ParseResult
+from pyfect.schema.ast._result import MISSING, ParseResult
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -29,6 +29,13 @@ class Suspend(AST):
 
     def get_expected(self) -> str:
         return self.target.expected()
+
+    def parse(self, input: object, options: ParseOptions) -> ParseResult:
+        # A missing key goes through the target as well, as in Effect: it is
+        # how a target that only reaches itself shows up on an absent key.
+        if input is MISSING and self.encoding is None:
+            return self.target.parse(MISSING, options)
+        return AST.parse(self, input, options)
 
     def _parse(self, input: object, options: ParseOptions) -> ParseResult:
         # The one node through which a parse recurses as deep as its input.

@@ -157,7 +157,6 @@ class Pool[A = Unsubscripted, E = Never]:
         from pyfect.pool._ttl import creation_ttl, usage_ttl
 
         require_effect(acquire, "acquire")
-        _check_sizes(min, max, concurrency)
         ttl = to_seconds(time_to_live)
         make_strategy = creation_ttl if time_to_live_strategy == "creation" else usage_ttl
         strategy: Effect[Strategy[T, X]] = make_strategy(ttl)
@@ -210,7 +209,6 @@ class Pool[A = Unsubscripted, E = Never]:
         """A pool between ``min`` and ``max`` items, resized by
         ``strategy``."""
         require_effect(acquire, "acquire")
-        _check_sizes(min, max, concurrency)
         bounds = (min, max)
 
         def body(restore: Restore) -> Effect[Pool[T, X]]:
@@ -485,14 +483,20 @@ class Pool[A = Unsubscripted, E = Never]:
 
     # --- sizing ---------------------------------------------------------------
 
-    def _target_size(self) -> int:
+    def _target_size(self) -> float:
+        """Effect's ``targetSize``; ``max_size`` wins over ``min_size``. A
+        concurrency of 0 divides as JavaScript does: to Infinity, or to NaN
+        with no usage."""
         if self.state.is_shutting_down:
             return 0
         config = self.config
         if config.is_fixed:
             return config.min_size
-        target = math.ceil(self.state.usage / config.target_utilization / config.concurrency)
-        return _clamp(target, config.min_size, config.max_size)
+        utilization = self.state.usage / config.target_utilization
+        if config.concurrency == 0:
+            return config.max_size if utilization > 0 else math.nan
+        target = math.ceil(utilization / config.concurrency)
+        return min(max(config.min_size, target), config.max_size)
 
     def _active_size(self) -> int:
         return len(self.state.items) - len(self.state.invalidated)
@@ -535,9 +539,13 @@ class Pool[A = Unsubscripted, E = Never]:
         def body() -> Effect[None]:
             active = self._active_size()
             target = self._target_size()
+            if math.isnan(target):
+                # Effect's loop acquires nothing and goes round for good here,
+                # holding the resize permit until it is interrupted.
+                return _Callback(lambda _: None)
             if active >= target:
                 return _VOID
-            to_acquire = target - active
+            to_acquire = int(target - active)
             acquire_one = self._acquire_one()
             fixed = self.config.is_fixed
             if to_acquire == 1:
@@ -682,13 +690,6 @@ def _report_finalizer_failure(cause: Cause[Any]) -> Effect[None]:
 
 def _clamp[N: (int, float)](value: N, low: N, high: N) -> N:
     return low if value < low else high if value > high else value
-
-
-def _check_sizes(minimum: int, maximum: int, concurrency: int) -> None:
-    if minimum < 0 or maximum < 1 or maximum < minimum:
-        raise ValueError(f"pool sizes need 0 <= min <= max and max >= 1, got {minimum}, {maximum}")
-    if concurrency < 1:
-        raise ValueError(f"concurrency must be >= 1, got {concurrency}")
 
 
 def _noop_run(_: Pool[Any, Any]) -> Effect[None]:

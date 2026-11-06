@@ -18,12 +18,11 @@ from pyfect import primary_key as primary_key_
 from pyfect import schema as S
 from pyfect._wire_codec import Const, key, wire_codec
 from pyfect.cluster.entity_address import EntityAddress
-from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.snowflake import Snowflake, SnowflakeFromBigInt
-from pyfect.encoding.schema_binary._undefined import Undefined
 from pyfect.http.headers import EMPTY, Headers
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
+from pyfect.schema._undefined import Undefined
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -180,15 +179,7 @@ HeadersSchema: S.Bottom[Headers, Mapping[str, str]] = S.Record(S.String, S.Strin
 )
 """Headers as a record of strings."""
 
-AddressSchema: S.Bottom[EntityAddress, Mapping[str, object]] = wire_codec(
-    EntityAddress,
-    [
-        key("shardId", "shard_id", ShardId),
-        key("entityType", "entity_type", S.String),
-        key("entityId", "entity_id", S.String),
-    ],
-    identifier="EntityAddress",
-)
+AddressSchema: S.Bottom[EntityAddress, Mapping[str, object]] = EntityAddress.__codec__()
 """An entity address with Effect's keys."""
 
 

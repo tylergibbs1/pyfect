@@ -43,6 +43,7 @@ from pyfect.schema import (
     decode_sync,
     decode_to,
     encode_sync,
+    field,
     from_brand,
     from_json_string,
     to_codec_json,
@@ -74,9 +75,9 @@ TokenSchema = String.pipe(from_brand(Brand[str, Token].nominal()))
 class TokenParsed(Class):
     """A token taken apart."""
 
-    workflow_name: str
-    execution_id: str
-    deferred_name: str
+    workflow_name: str = field(String, key="workflowName")
+    execution_id: str = field(String, key="executionId")
+    deferred_name: str = field(String, key="deferredName")
 
     @property
     def as_token(self) -> Token:
@@ -96,14 +97,14 @@ class TokenParsed(Class):
 
 
 def _to_fields(parts: tuple[str, str, str]) -> Mapping[str, object]:
-    return {"workflow_name": parts[0], "execution_id": parts[1], "deferred_name": parts[2]}
+    return {"workflowName": parts[0], "executionId": parts[1], "deferredName": parts[2]}
 
 
 def _from_fields(fields: Mapping[str, object]) -> tuple[str, str, str]:
     return (
-        cast("str", fields["workflow_name"]),
-        cast("str", fields["execution_id"]),
-        cast("str", fields["deferred_name"]),
+        cast("str", fields["workflowName"]),
+        cast("str", fields["executionId"]),
+        cast("str", fields["deferredName"]),
     )
 
 

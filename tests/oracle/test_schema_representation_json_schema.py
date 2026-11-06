@@ -13,9 +13,6 @@ Omitted:
 - Annotation keys are pyfect's (``read_only``, not ``readOnly``), and the
   shared compiler's errors carry no document path ("reports an invalid
   index-signature parameter").
-- "checks and callbacks / passes the type produced by isInt to following
-  check callbacks": ported without ``maximum: MAX_SAFE_INTEGER`` (a Python
-  int has no safe-integer bounds).
 - "checks and callbacks / omits isPattern flags that JSON Schema cannot
   represent": pyfect leaves every ``re`` pattern out (see
   ``_jsonschema/_checks.py``), ported with a flagless pattern.
@@ -383,7 +380,11 @@ def test_passes_the_type_produced_by_is_int_to_following_check_callbacks():
 
     dependent = S.make_filter(_always, to_json_schema=to_json_schema)
     document = R.to_representation(S.Number.check(S.is_int(), dependent))
-    assert document_schema(document) == {"type": "integer", "minimum": 0}
+    assert document_schema(document) == {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2**53 - 1,
+    }
     assert received == ["integer"]
 
 

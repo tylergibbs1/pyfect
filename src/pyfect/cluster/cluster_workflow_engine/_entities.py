@@ -14,7 +14,6 @@ from pyfect.cluster.cluster_schema import Dynamic, Persisted, Uninterruptible, W
 from pyfect.cluster.entity import Entity
 from pyfect.cluster.envelope import Request
 from pyfect.context import Context
-from pyfect.encoding.schema_binary._undefined import Undefined
 from pyfect.rpc import make as make_rpc
 from pyfect.rpc._rpc import AnyRpc
 from pyfect.schema import Any as AnySchema
@@ -30,6 +29,7 @@ from pyfect.schema import (
     field,
 )
 from pyfect.schema import Exit as ExitSchema
+from pyfect.schema._undefined import Undefined
 from pyfect.workflow.workflow import Workflow, result_schema
 
 type AnyWorkflow = Workflow[Any, Any, Any]

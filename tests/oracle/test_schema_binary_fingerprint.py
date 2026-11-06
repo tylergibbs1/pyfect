@@ -26,9 +26,9 @@ from pyfect import exit as Exit
 from pyfect import schema as S
 from pyfect.cause import Cause, Die, Fail, Interrupt
 from pyfect.encoding import schema_binary as B
-from pyfect.encoding.schema_binary._undefined import Undefined
 from pyfect.option import Some
 from pyfect.result import Err
+from pyfect.schema._undefined import Undefined
 
 from ._schema_binary import (
     Opt,

@@ -140,7 +140,7 @@ def test_round_trips_both_error_headers_as_json_records():
         assert isinstance(decoded.reason.headers, H.Headers)
         assert decoded.reason.headers == headers
         if isinstance(reason, TransportError):
-            assert encoded["reason"]["retry_after"] == 30_000
+            assert encoded["reason"]["retryAfter"] == 30_000
             assert decoded.retry_after == Seconds(30)
 
 

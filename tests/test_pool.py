@@ -3,23 +3,8 @@
 
 from typing import Never
 
-import pytest
-
 import pyfect as fx
 from pyfect import testing
-
-
-@pytest.mark.parametrize(
-    ("minimum", "maximum", "concurrency"),
-    [(-1, 1, 1), (0, 0, 1), (3, 2, 1), (1, 1, 0)],
-)
-def test_bad_sizes_are_rejected_when_the_pool_is_described(
-    minimum: int, maximum: int, concurrency: int
-):
-    with pytest.raises(ValueError, match=r"must|need"):
-        fx.Pool.make_with_ttl(
-            fx.succeed(1), min=minimum, max=maximum, concurrency=concurrency, time_to_live=1.0
-        )
 
 
 @testing.effect

@@ -9,7 +9,6 @@ Schema validator dependency).
 Python differs in a few places, each kept as the expected value:
 - ``len`` of a ``str`` counts code points, as ``minLength`` does, so string
   length bounds are exact (Effect loosens ``minLength`` by half for UTF-16).
-- An ``int`` has no safe-integer bounds: ``Int`` is ``{"type": "integer"}``.
 - An ``int`` record key is read from its digits, so ``Record(Int, ...)``
   selects keys by an exact pattern.
 - A ``timedelta`` cannot be infinite: ``Duration`` has no infinity forms.
@@ -57,6 +56,10 @@ import pytest
 
 from pyfect import schema as S
 from pyfect.json_schema import JsonSchema
+
+_MAX_SAFE = 2**53 - 1
+_MIN_SAFE = -_MAX_SAFE
+_INT: dict[str, object] = {"type": "integer", "minimum": _MIN_SAFE, "maximum": _MAX_SAFE}
 
 _NUMBER_KEY = "^(?:[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?|Infinity|-Infinity|NaN)$"
 _NUMBER: JsonSchema = {
@@ -466,13 +469,13 @@ def _tagged(tag: str, value: JsonSchema | None = None) -> JsonSchema:
 
 def test_duration():
     """Declaration / Duration"""
-    # Python: a timedelta is never infinite, and an int has no safe bounds.
+    # Python: a timedelta is never infinite.
     _check(
         S.Duration,
         {
             "anyOf": [
                 _tagged("Nanos", {"type": "string", "pattern": "^-?\\d+$"}),
-                _tagged("Millis", {"type": "integer"}),
+                _tagged("Millis", _INT),
             ]
         },
     )
@@ -867,15 +870,14 @@ def test_finite():
 
 def test_is_int():
     """Finite / checks / isInt"""
-    # Python: an int has no safe-integer bounds.
-    _check(S.Finite.check(S.is_int()), {"type": "integer"})
+    _check(S.Finite.check(S.is_int()), _INT)
 
 
 def test_keeps_one_of_for_exact_integer_branches():
     """Finite / checks / keeps oneOf for exact integer branches"""
     _check(
         S.Union(S.Int, S.Boolean, mode="one_of"),
-        {"oneOf": [{"type": "integer"}, {"type": "boolean"}]},
+        {"oneOf": [_INT, {"type": "boolean"}]},
     )
 
 
@@ -924,7 +926,13 @@ def test_is_int32():
     """Finite / checks / isInt32"""
     _check(
         S.Finite.check(S.is_int32()),
-        {"type": "integer", "allOf": [{"maximum": 2147483647, "minimum": -2147483648}]},
+        {
+            "type": "integer",
+            "allOf": [
+                {"minimum": _MIN_SAFE, "maximum": _MAX_SAFE},
+                {"maximum": 2147483647, "minimum": -2147483648},
+            ],
+        },
     )
 
 
@@ -932,13 +940,27 @@ def test_is_uint32():
     """Finite / checks / isUint32"""
     _check(
         S.Finite.check(S.is_uint32()),
-        {"type": "integer", "allOf": [{"maximum": 4294967295, "minimum": 0}]},
+        {
+            "type": "integer",
+            "allOf": [
+                {"minimum": _MIN_SAFE, "maximum": _MAX_SAFE},
+                {"maximum": 4294967295, "minimum": 0},
+            ],
+        },
     )
     _check(
         S.Finite.check(S.is_uint32(description="a")),
         {
             "type": "integer",
-            "allOf": [{"description": "a", "allOf": [{"maximum": 4294967295, "minimum": 0}]}],
+            "allOf": [
+                {
+                    "description": "a",
+                    "allOf": [
+                        {"minimum": _MIN_SAFE, "maximum": _MAX_SAFE},
+                        {"maximum": 4294967295, "minimum": 0},
+                    ],
+                }
+            ],
         },
     )
 
@@ -987,8 +1009,8 @@ def test_is_between():
 
 def test_is_multiple_of():
     """Finite / checks / isMultipleOf"""
-    _check(S.Int.check(S.is_multiple_of(2)), {"type": "integer", "multipleOf": 2})
-    _check(S.Int.check(S.is_multiple_of(-2)), {"type": "integer", "multipleOf": 2})
+    _check(S.Int.check(S.is_multiple_of(2)), {**_INT, "multipleOf": 2})
+    _check(S.Int.check(S.is_multiple_of(-2)), {**_INT, "multipleOf": 2})
 
 
 def test_boolean():

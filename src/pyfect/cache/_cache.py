@@ -23,7 +23,6 @@ from pyfect._unsubscripted import Unsubscripted
 from pyfect.cache._expiry import (
     RequireServicesAt,
     TimeToLive,
-    checked_capacity,
     clock_of,
     deadline,
     is_expired,
@@ -113,9 +112,8 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
         default is forever, and zero keeps nothing. Lookups see the
         services of the context made in, overridden by the caller's;
         ``require_services_at="lookup"`` makes ``get`` require them."""
-        bound = checked_capacity(capacity)
         ttl = time_to_live_of(time_to_live)
-        return _WithFiber(lambda fiber: _Succeed(Cache(lookup, fiber._context, bound, ttl)))
+        return _WithFiber(lambda fiber: _Succeed(Cache(lookup, fiber._context, capacity, ttl)))
 
     @property
     def capacity(self) -> int | None:

@@ -6,10 +6,9 @@ A check gives a fragment that holds exactly when the check does, or
 one (``make_filter``, ...) is left out, an approximation too. A user check
 says its own with a ``to_json_schema`` annotation.
 
-Python differs from JavaScript in two places: ``len`` of a ``str`` counts
+Python differs from JavaScript in one place: ``len`` of a ``str`` counts
 code points, as JSON Schema's ``minLength`` does (exact here, approximate
-in Effect), and an ``int`` has no safe-integer bounds (``Int`` is
-``{"type": "integer"}``). JSON Schema cannot carry a Python ``re`` pattern,
+in Effect). JSON Schema cannot carry a Python ``re`` pattern,
 so ``is_pattern`` is left out (``is_ecma_pattern``'s is written).
 """
 
@@ -22,6 +21,8 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from pyfect.json_schema import JsonSchema
+
+MAX_SAFE_INTEGER = 2**53 - 1
 
 type CheckOutput = JsonSchema | tuple[JsonSchema, Literal[True]]
 
@@ -148,7 +149,11 @@ def _regexp(payload: _Payload, _: CheckContext) -> CheckOutput:
 
 BUILTINS: Mapping[str, _Builtin] = {
     "isFinite": lambda _, __: {"type": "number"},
-    "isInt": lambda _, __: {"type": "integer"},
+    "isInt": lambda _, __: {
+        "type": "integer",
+        "minimum": -MAX_SAFE_INTEGER,
+        "maximum": MAX_SAFE_INTEGER,
+    },
     "isGreaterThan": _bound("exclusiveMinimum", "exclusiveMinimum"),
     "isGreaterThanOrEqualTo": _bound("minimum", "minimum"),
     "isLessThan": _bound("exclusiveMaximum", "exclusiveMaximum"),

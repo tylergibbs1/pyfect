@@ -197,11 +197,6 @@ def test_zero_capacity_take_all_consumes_buffered_messages_before_pending_offers
     assert run(program) == ([1], 2, [])
 
 
-def test_negative_capacity_is_rejected():
-    ex = run_exit(fx.Queue[int].bounded(-1))
-    assert isinstance(ex, fx.Failure) and isinstance(ex.cause.defects[0], ValueError)
-
-
 # --- offer_all, shutdown, take_between ---------------------------------------------
 
 
@@ -424,20 +419,48 @@ def test_offer_all_to_a_sliding_queue_of_capacity_zero_keeps_nothing():
     assert run(program) == ([], 0)
 
 
-def test_offer_to_a_sliding_queue_of_capacity_zero_wakes_a_waiting_taker():
-    """Effect leaves the taker parked next to the item (its sliding branch
-    skips ``releaseTakers``), which hangs it until another take; pyfect wakes
-    it, as every other offer that adds an item does."""
+def test_offer_to_a_full_sliding_queue_leaves_a_waiting_taker_parked():
+    """Effect Queue.ts ``offerUnsafe``: the sliding branch swaps the item and
+    returns without ``releaseTakers``, so at capacity 0 the taker stays parked
+    next to the item, and a later take gets it. Printed by Effect under Node:
+    the first taker never ends, the second takes 7, a direct take gets 8."""
 
     @fx.gen
     def program():
         q = yield from fx.Queue[int].sliding(0)
+        parked = yield from q.take().fork()
+        yield from _settle()
+        offered = yield from q.offer(7)
+        yield from _settle()
+        after_offer = parked.poll_unsafe(), (yield from q.size())
+        second = yield from q.take().fork()
+        yield from _settle()
+        after_second = second.poll_unsafe(), parked.poll_unsafe(), (yield from q.size())
+        yield from q.offer(8)
+        yield from _settle()
+        direct = yield from q.take()
+        yield from _settle()
+        still = parked.poll_unsafe()
+        yield from parked.interrupt()
+        return offered, after_offer, after_second, direct, still
+
+    assert run(program) == (True, (None, 1), (fx.Success(7), None, 0), 8, None)
+
+
+def test_a_parked_taker_of_a_sliding_queue_of_capacity_zero_wakes_when_it_ends():
+    """Printed by Effect under Node: ``end`` releases the taker, which then
+    takes the item that sat next to it."""
+
+    @fx.gen
+    def program():
+        q = yield from fx.Queue[int, fx.Done].sliding(0)
         taker = yield from q.take().fork()
         yield from _settle()
-        yield from q.offer(7)
-        return (yield from taker.join()), (yield from q.size())
+        yield from q.offer(1)
+        yield from q.end()
+        return (yield from taker.await_exit()), (yield from q.size())
 
-    assert run(program) == (7, 0)
+    assert run(program) == (fx.Success(1), 0)
 
 
 # --- take_between, peek, clear, Done (checked against Effect 4.0.6 under Node) -------

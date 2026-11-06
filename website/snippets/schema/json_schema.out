@@ -13,7 +13,8 @@
         },
         "age": {
           "type": "integer",
-          "minimum": 13
+          "minimum": 13,
+          "maximum": 9007199254740991
         },
         "referrer": {
           "anyOf": [

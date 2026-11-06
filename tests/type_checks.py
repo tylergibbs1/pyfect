@@ -903,6 +903,8 @@ def check_structural() -> None:
     assert_type(fx.validate([1], fx.succeed), fx.Effect[list[int], Never, Never])
     assert_type(fx.validate([1], fx.succeed, discard=True), fx.Effect[None, Never, Never])
     assert_type(fx.race_all_first(num, inv), fx.Effect[int, Invalid, Never])
+    assert_type(fx.race_all(), fx.Effect[Never])
+    assert_type(fx.race_all_first(), fx.Effect[Never])
     assert_type(
         lookup("k").timeout_option(1), fx.Effect[fx.Option[str], NotFound | Invalid, Primary | Port]
     )
@@ -9417,3 +9419,19 @@ def xml_zip_tar_channels(
         zip_entries.pipe_through_channel(encoding_zip.encode()),
         _St[bytes, encoding_zip.ZipError | ValueError, int],
     )
+
+
+def s_field_with_a_wire_key() -> None:
+    class Keyed(S.Class):
+        primary_key: str = S.field(S.String, key="primaryKey")
+        entity_id: str = S.field(key="entityId")
+        kept: int = S.field(S.Int, default=1, key="keptKey")
+        plain: int = S.field(default=2, key="plainKey")
+
+    keyed = Keyed(primary_key="a", entity_id="b")
+    assert_type(keyed.primary_key, str)
+    assert_type(keyed.entity_id, str)
+    assert_type(keyed.kept, int)
+    assert_type(keyed.plain, int)
+    assert_type(S.Number.check(S.is_int()), S.Bottom[float])
+    assert_type(S.Literal(1), S.LiteralSchema[int])

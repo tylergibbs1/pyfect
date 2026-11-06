@@ -1,9 +1,10 @@
 """Exact-value nodes: ``Literal`` (one value) and ``Enum`` (the members of
 a Python ``enum.Enum``).
 
-A literal matches a value of its own kind only: ``1`` is not ``True`` nor
-``1.0``, as ``typing.Literal[1]`` is neither. ``0.0`` and ``-0.0`` match
-each other, and the input is kept (its sign too).
+JavaScript has one number, so a number literal matches an ``int`` or a
+``float`` of that value: ``1`` and ``1.0`` are one literal, ``0.0`` and
+``-0.0`` match each other, and the input is kept (its kind and sign too). A
+``bool`` is not a number: ``1`` is not ``True``.
 """
 
 from __future__ import annotations
@@ -25,30 +26,17 @@ from pyfect.schema.issue import Issue
 type LiteralValue = str | int | float | bool | None
 
 
-class JsonInt(int):
-    """A literal read from JSON Schema, where ``1`` and ``1.0`` are one number."""
-
-
-class JsonFloat(float):
-    """A literal read from JSON Schema, where ``1`` and ``1.0`` are one number."""
-
-
 def same_literal(literal: LiteralValue, input: object) -> bool:
-    """``input`` is ``literal``: equal and of the same kind, where a JSON number
-    has one kind."""
+    """``input`` is ``literal``, as JavaScript's ``===`` reads them."""
     match literal:
         case None:
             return input is None
-        case JsonInt() | JsonFloat():
+        case bool():
+            return isinstance(input, bool) and input == literal
+        case int() | float():
             return (
                 isinstance(input, int | float) and not isinstance(input, bool) and input == literal
             )
-        case bool():
-            return isinstance(input, bool) and input == literal
-        case int():
-            return isinstance(input, int) and not isinstance(input, bool) and input == literal
-        case float():
-            return isinstance(input, float) and input == literal
         case str():
             return isinstance(input, str) and input == literal
 

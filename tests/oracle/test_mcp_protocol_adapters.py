@@ -44,6 +44,8 @@ from pyfect.http.response import HttpClientResponse
 
 from ._mcp import CLIENT_INFO, StdioHarness, in_memory_http, stdio_harness
 
+_SAFE_INT = {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991}
+
 SERVER_INFO_META = "io.modelcontextprotocol/serverInfo"
 SERVER_INFO = {"name": "test-server", "version": "1.0.0"}
 
@@ -396,7 +398,7 @@ def test_projects_non_object_toolkit_outputs_only_for_the_july_protocol():
     }
     wrapped_arr = {
         "type": "object",
-        "properties": {"result": {"type": "array", "items": {"type": "integer"}}},
+        "properties": {"result": {"type": "array", "items": _SAFE_INT}},
         "required": ["result"],
         "x-fastmcp-wrap-result": True,
     }
@@ -417,7 +419,7 @@ def test_projects_non_object_toolkit_outputs_only_for_the_july_protocol():
         "Str": {"type": "string"},
         "Untyped": {"type": "null"},
         "Obj": OBJECT_SCHEMA,
-        "Arr": {"type": "array", "items": {"type": "integer"}},
+        "Arr": {"type": "array", "items": _SAFE_INT},
     }
     july_calls: dict[str, Any] = {
         "Str": {

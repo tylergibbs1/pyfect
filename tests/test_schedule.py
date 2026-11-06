@@ -401,22 +401,6 @@ def test_an_until_refinement_ends_with_the_narrowed_value():
     assert run(result) == "done"
 
 
-def test_negative_times_is_rejected_at_the_call():
-    # Effect stops at once; pyfect rejects it, as it does recurs(-1).
-    with pytest.raises(ValueError, match="times must be >= 0"):
-        fx.succeed(1).repeat(times=-1)
-    with pytest.raises(ValueError, match="times must be >= 0"):
-        fx.fail("e").retry(times=-1)
-
-
-def test_recurs_and_up_to_reject_negative_times():
-    # Effect stops at once; pyfect rejects it at the call (PARITY.md §4).
-    with pytest.raises(ValueError, match="recurs needs times >= 0"):
-        schedule.recurs(-1)
-    with pytest.raises(ValueError, match="up_to needs times >= 0"):
-        schedule.spaced(1).up_to(times=-1)
-
-
 def test_map_effect_runs_an_effect_for_each_output():
     # Effect's Schedule.map with an effectful function: repeat gives 20 (checked under Node).
     s = schedule.recurs(2).map_effect(lambda m: fx.succeed(m.output * 10))

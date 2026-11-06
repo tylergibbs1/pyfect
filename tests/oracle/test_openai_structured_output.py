@@ -4,10 +4,6 @@ below ``toCodecOpenAI``. ``_check`` is Effect's ``assertJsonSchema``: a
 schema whose JSON Schema is not an object root is checked as the ``value``
 property of a struct.
 
-Python differs in one place, kept as the expected value: an ``int`` has no
-safe-integer bounds, so ``Int`` is ``{"type": "integer"}`` without
-``minimum`` / ``maximum``.
-
 Omitted:
 - "Canonical JSON and mechanical invariants / encodes Undefined as null"
   and "... / encodes a bigint Literal as a string": Python has no
@@ -28,6 +24,10 @@ from pyfect.ai import tool as T
 from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.json_schema import JsonSchema
 from pyfect.testing import SchemaAsserts
+
+_MAX_SAFE = 2**53 - 1
+_MIN_SAFE = -_MAX_SAFE
+_INT: dict[str, object] = {"type": "integer", "minimum": _MIN_SAFE, "maximum": _MAX_SAFE}
 
 _TUPLE = (
     "Tuple encoded as an object with numeric string keys ('0', '1', ...). "
@@ -355,10 +355,10 @@ def test_finite_greater_than_less_than():
 
 def test_int():
     """Number / Int / Int"""
-    _check(S.Int, {"type": "integer"})
+    _check(S.Int, _INT)
     _check(
         S.Int.annotate(description="description"),
-        {"type": "integer", "description": "description"},
+        {**_INT, "description": "description"},
     )
 
 
@@ -366,7 +366,7 @@ def test_int_string_format():
     """Number / Int / Int + string format"""
     _check(
         S.Int.annotate(format="duration"),
-        {"type": "integer", "description": "a value with a format of duration"},
+        {**_INT, "description": "a value with a format of duration"},
     )
 
 
@@ -374,7 +374,7 @@ def test_int_unsupported_format():
     """Number / Int / Int + unsupported format"""
     _check(
         S.Int.annotate(format="int32"),
-        {"type": "integer", "description": "a value with a format of int32"},
+        {**_INT, "description": "a value with a format of int32"},
     )
 
 
@@ -382,7 +382,12 @@ def test_int_greater_than():
     """Number / Int / Int + isGreaterThan"""
     _check(
         S.Int.check(S.is_greater_than(1)),
-        {"type": "integer", "description": "a value greater than 1", "exclusiveMinimum": 1},
+        {
+            "type": "integer",
+            "maximum": _MAX_SAFE,
+            "description": "a value greater than 1",
+            "exclusiveMinimum": 1,
+        },
     )
 
 
@@ -429,7 +434,7 @@ def test_union_non_empty_string_int():
         {
             "anyOf": [
                 {"type": "string", "description": "a value with a length of at least 1"},
-                {"type": "integer"},
+                _INT,
             ]
         },
     )

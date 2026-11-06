@@ -88,10 +88,9 @@ def make_storage(
 ) -> Effect[StorageService, SqlError, SqlClient | Scope]:
     """Storage in the ``SqlClient``'s database, creating its tables
     (Effect's ``makeStorage``). ``insert_batch_size`` rows go in one
-    ``INSERT``. Fails with ``ValueError`` as a defect on a dialect other
-    than SQLite, PostgreSQL or MySQL, or a batch size below 1."""
-    if insert_batch_size < 1:
-        raise ValueError(f"insert_batch_size must be >= 1, got {insert_batch_size}")
+    ``INSERT`` (one, if that is below 1, as Effect flushes at the size). Fails
+    with ``ValueError`` as a defect on a dialect other than SQLite, PostgreSQL
+    or MySQL."""
 
     def build():
         sql = (yield from SqlClient()).without_transforms()
@@ -514,7 +513,7 @@ class _SqlStorage(StorageService):
                 }
                 for remote_entry in committed
             ]
-            for chunk in itertools.batched(rows, self._insert_batch_size, strict=False):
+            for chunk in itertools.batched(rows, max(self._insert_batch_size, 1), strict=False):
                 yield from sql("INSERT INTO {} {}", t.entries, sql.insert(chunk))
             yield from sql(
                 "UPDATE {} SET next_sequence = {} WHERE store_id = {}",

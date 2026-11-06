@@ -68,10 +68,6 @@ class SqliteClientConfig:
     transform_result_names: Callable[[str], str] | None = None
     transform_query_names: Callable[[str], str] | None = None
 
-    def __post_init__(self) -> None:
-        if self.prepare_cache_size < 0:
-            raise ValueError(f"prepare_cache_size must be >= 0, got {self.prepare_cache_size}")
-
 
 class SqliteClientService(SqlClientService):
     """A SQLite client: a ``SqlClientService`` that can also back up the

@@ -24,6 +24,8 @@ from pyfect.http.client import HttpClient
 
 from ._mcp import MCP_ENDPOINT, in_memory_http
 
+_SAFE_INT = {"type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991}
+
 
 class Answer(TypedDict):
     answer: str
@@ -77,7 +79,7 @@ def test_a_non_object_result_is_wrapped_and_its_schema_says_so(protocol: C.Clien
     client, arr = tools["Arr"]
     assert arr.get("outputSchema") == {
         "type": "object",
-        "properties": {"result": {"type": "array", "items": {"type": "integer"}}},
+        "properties": {"result": {"type": "array", "items": _SAFE_INT}},
         "required": ["result"],
         "x-fastmcp-wrap-result": True,
     }
@@ -104,7 +106,7 @@ def test_a_non_object_result_is_wrapped_and_its_schema_says_so(protocol: C.Clien
 def test_the_july_revision_carries_a_non_object_result_as_it_is():
     tools = yield from connect(P.v2026_07_28)
     client, arr = tools["Arr"]
-    assert arr.get("outputSchema") == {"type": "array", "items": {"type": "integer"}}
+    assert arr.get("outputSchema") == {"type": "array", "items": _SAFE_INT}
     raw = yield from client.call_tool(arr)
     assert raw.get("structuredContent") == [1, 2]
     assert (yield from client.call_tool(arr, schema=S.Unknown)) == [1, 2]

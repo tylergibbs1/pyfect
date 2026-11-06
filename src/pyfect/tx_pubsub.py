@@ -62,8 +62,6 @@ class TxPubSub[A]:
 
     @classmethod
     def _make(cls, strategy: Strategy, capacity: int | None) -> Effect[TxPubSub[A]]:
-        if capacity is not None and capacity < 0:
-            raise ValueError(f"capacity must be >= 0, got {capacity}")
         return sync(lambda: cls(strategy, capacity))
 
     @property

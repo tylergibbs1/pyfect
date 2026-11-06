@@ -2,8 +2,6 @@
 atomic publishing, rollback, shutdown reaching subscribers, and the changes
 stream following later writes."""
 
-import pytest
-
 import pyfect as fx
 from pyfect import testing
 
@@ -85,11 +83,6 @@ def test_releasing_twice_removes_only_that_subscriber():
     yield from hub.publish(1)
     assert (yield from second.take()) == 1
     assert (yield from first.is_shutdown()) is True
-
-
-def test_a_negative_capacity_is_rejected_when_described():
-    with pytest.raises(ValueError, match="capacity"):
-        fx.TxPubSub[int].bounded(-1)
 
 
 @testing.effect

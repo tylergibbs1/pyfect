@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import Any, Literal, NotRequired, TypedDict
 
 from pyfect import schema as S
-from pyfect.encoding.schema_binary._undefined import Undefined
+from pyfect.schema._undefined import Undefined
 
 type _RequestId = str | float
 

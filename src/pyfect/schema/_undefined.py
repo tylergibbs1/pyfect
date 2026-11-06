@@ -1,0 +1,40 @@
+"""Effect's ``Schema.Undefined`` for schemas whose wire form must match Effect's
+(``Schema.optional``, ``RpcMessage.EncodedSchema``'s optional fields). Python has
+one absent value, so its values are ``None``; ``S.Null`` stays a different
+layout, and JSON writes both as ``null``, as Effect's does."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import TypeIs, cast
+
+from pyfect.schema import ast
+from pyfect.schema._declare import declare
+from pyfect.schema._schema import Bottom
+
+UNDEFINED_ID = "pyfect/schema/Undefined"
+
+
+def _is_none(value: object) -> TypeIs[None]:
+    return value is None
+
+
+def _none_strategy(_: tuple[object, ...]) -> object:
+    from pyfect.schema._strategy import st
+
+    return st.none()
+
+
+Undefined: Bottom[None] = declare(
+    _is_none,
+    expected="undefined",
+    representation={"id": UNDEFINED_ID, "payload": None},
+    to_arbitrary=_none_strategy,
+)
+
+
+def is_undefined(node: ast.AST) -> bool:
+    representation = (node.annotations or {}).get("representation")
+    if not isinstance(representation, Mapping):
+        return False
+    return cast("Mapping[str, object]", representation).get("id") == UNDEFINED_ID

@@ -36,13 +36,11 @@ type Concurrency = int | Literal["unbounded"] | None
 
 
 def _parse_limit(concurrency: int | Literal["unbounded"]) -> Callable[[int], int]:
-    """Validate a limit when the effect is built; the result maps the
-    number of items (known when it runs) to how many run at once."""
+    """Maps the number of items (known when it runs) to how many run at once.
+    As in Effect, a limit under 1 runs them one at a time."""
     if concurrency == "unbounded":
         return lambda n: max(n, 1)
-    if concurrency < 1:
-        raise ValueError(f"concurrency must be at least 1, got {concurrency}")
-    return lambda _: concurrency
+    return lambda _: max(concurrency, 1)
 
 
 def _drop_own_interrupts(causes: list[Cause[Any]], by: int) -> Cause[Any]:
@@ -255,21 +253,19 @@ def race_first(a: Effect[Any, Any, Any], b: Effect[Any, Any, Any]) -> Effect[Any
     return _race([a, b], first_exit_wins=True)
 
 
-def race_all[A, EE = Never, RR = Never](*effects: Effect[A, EE, RR]) -> Effect[A, EE, RR]:
+def race_all[A = Never, EE = Never, RR = Never](*effects: Effect[A, EE, RR]) -> Effect[A, EE, RR]:
     """The first to succeed wins; the rest are interrupted. Fails only if
-    all fail."""
+    all fail. With no effects it never finishes, as in Effect."""
     require_effects(effects, "effects")
-    if not effects:
-        raise ValueError("race_all needs at least one effect")
     return _race(list(effects), first_exit_wins=False)
 
 
-def race_all_first[A, EE = Never, RR = Never](*effects: Effect[A, EE, RR]) -> Effect[A, EE, RR]:
+def race_all_first[A = Never, EE = Never, RR = Never](
+    *effects: Effect[A, EE, RR],
+) -> Effect[A, EE, RR]:
     """The first to finish wins, success or failure; the rest are
-    interrupted."""
+    interrupted. With no effects it never finishes, as in Effect."""
     require_effects(effects, "effects")
-    if not effects:
-        raise ValueError("race_all_first needs at least one effect")
     return _race(list(effects), first_exit_wins=True)
 
 

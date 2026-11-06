@@ -58,12 +58,44 @@ def test_handle_rejects_an_rpc_of_another_entity():
         Mailbox.handlers().handle(foreign)
 
 
-@pytest.mark.parametrize("concurrency", [0, -1, True])
-def test_to_layer_rejects_a_concurrency_that_is_not_positive(concurrency: int):
-    handlers = (
+def _both_handlers():
+    return (
         Mailbox.handlers()
         .handle(Mailbox.ask)(lambda _: fx.succeed(1))
         .handle(Mailbox.other)(lambda _: fx.succeed(2))
     )
-    with pytest.raises(ValueError, match="concurrency must be a positive integer"):
-        Mailbox.to_layer(handlers, concurrency=concurrency)
+
+
+@pytest.mark.parametrize("concurrency", [0, -1])
+@testing.effect
+def test_a_concurrency_below_one_never_runs_a_request(concurrency: int):
+    """Effect's ``RpcServer`` makes a semaphore of that many permits, so a
+    request waits for one. Printed by Effect under Node."""
+
+    @fx.gen
+    def body():
+        make_client = yield from make_test_client(
+            Mailbox, Mailbox.to_layer(_both_handlers(), concurrency=concurrency)
+        )
+        client = yield from make_client("1")
+        fiber = yield from client.ask().fork()
+        yield from testing.adjust(1)
+        assert fiber.poll_unsafe() is None
+
+    yield from body.pipe(fx.provide(_config))
+
+
+@pytest.mark.parametrize("capacity", [0, -1])
+@testing.effect
+def test_the_test_client_runs_a_request_at_any_mailbox_capacity(capacity: int):
+    """Printed by Effect under Node: only the sharding reads the limit."""
+
+    @fx.gen
+    def body():
+        make_client = yield from make_test_client(
+            Mailbox, Mailbox.to_layer(_both_handlers(), mailbox_capacity=capacity)
+        )
+        client = yield from make_client("1")
+        assert (yield from client.ask()) == 1
+
+    yield from body.pipe(fx.provide(_config))

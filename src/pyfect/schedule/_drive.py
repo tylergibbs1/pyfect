@@ -153,8 +153,6 @@ def from_options(
 ) -> Schedule[Any, Any, Any, Any]:
     """Effect's ``buildFromOptions``: the schedule behind the option forms
     of ``repeat`` and ``retry``. It outputs its inputs."""
-    if times is not None and times < 0:
-        raise ValueError(f"times must be >= 0, got {times}")
     policy = forever.passthrough() if schedule is None else schedule.passthrough()
     if while_ is not None:
         keep = while_

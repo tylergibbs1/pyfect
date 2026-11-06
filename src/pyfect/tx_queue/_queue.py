@@ -85,8 +85,6 @@ class TxQueue[A, E = Never](TxEnqueue[A, E], TxDequeue[A, E]):
 
     @classmethod
     def _make(cls, strategy: Strategy, capacity: int | None) -> Effect[TxQueue[A, E]]:
-        if capacity is not None and capacity < 0:
-            raise ValueError(f"capacity must be >= 0, got {capacity}")
         return sync(lambda: cls(strategy, capacity))
 
     @property

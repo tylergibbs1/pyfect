@@ -392,7 +392,7 @@ PERSISTENCE_KEY = "effect/ai/Chat/Persisted"
 class ChatNotFoundError(S.TaggedError, identifier="effect/ai/Chat/ChatNotFoundError"):
     """No chat is stored under ``chat_id``."""
 
-    chat_id: str
+    chat_id: str = S.field(S.String, key="chatId")
 
 
 class Persisted(Service):

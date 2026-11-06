@@ -108,6 +108,6 @@ def test_decoders_forward_parse_options() -> None:
     write = fx.run_sync(
         M.WriteEntriesUnencrypted.decode(empty_struct, errors="all").flip().or_die()
     )
-    assert _missing_keys(write) == ['["entries"]', '["public_key"]', '["store_id"]']
+    assert _missing_keys(write) == ['["entries"]', '["publicKey"]', '["storeId"]']
     changes = fx.run_sync(M.decode_changes_unencrypted(empty_entries, errors="all").flip().or_die())
-    assert _missing_keys(changes) == ['[0]["entry"]', '[0]["remote_sequence"]']
+    assert _missing_keys(changes) == ['[0]["entry"]', '[0]["remoteSequence"]']

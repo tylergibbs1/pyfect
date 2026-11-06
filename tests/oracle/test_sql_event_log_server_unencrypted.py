@@ -791,3 +791,23 @@ def test_reads_batch_history_through_id_and_primary_key_lookups():
                 assert _PLAN_ROW.match(detail), detail
 
     yield from _run_auth(body)
+
+
+@pytest.mark.parametrize("size", [0, -1])
+@testing.live(timeout=30)
+def test_a_batch_size_below_one_writes_a_row_at_a_time(size: int):
+    """Effect flushes once it holds ``insertBatchSize`` rows, so every row here."""
+
+    def body():
+        sql = yield from _client()
+        storage = yield from make_storage(
+            sql, **{**make_options("size"), "insert_batch_size": size}
+        )
+        store_id = make_store_id("size")
+        entries = [make_entry("a"), make_entry("b"), make_entry("c")]
+        yield from storage.write(store_id, entries)
+        changes = yield from open_changes(storage, store_id)
+        rows = yield from changes.take_n(3)
+        assert_entries(rows, entries, 1)
+
+    yield from _run(body)

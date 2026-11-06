@@ -6,8 +6,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
@@ -86,11 +84,6 @@ def test_concurrent_children_run_on_the_asyncio_runtime():
         )
 
     assert asyncio.run(main()) == ("A", "B", "C")
-
-
-def test_a_concurrency_below_one_is_rejected_when_parsing():
-    with pytest.raises(ValueError, match="concurrency must be at least 1, got 0"):
-        S.decode_unknown_exit(S.String)("a", concurrency=0)
 
 
 @testing.effect

@@ -104,11 +104,6 @@ def test_an_ended_queue_fails_takers_with_done_after_draining():
     assert (yield from queue.take().flip()) == fx.Done()
 
 
-def test_a_negative_capacity_is_rejected_when_the_queue_is_described():
-    with pytest.raises(ValueError, match="capacity"):
-        fx.TxQueue[int].bounded(-1)
-
-
 @testing.effect
 def test_fail_drops_the_items_at_once():
     queue = yield from fx.TxQueue[int, str].bounded(4)

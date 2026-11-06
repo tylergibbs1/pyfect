@@ -13,9 +13,13 @@ from pyfect import testing
 from pyfect._core import Effect
 from pyfect.clock import sleep
 from pyfect.effect import gen, yield_now
+from pyfect.exit import Failure
 from pyfect.net.net_address import InetAddressV4
+from pyfect.run import run_sync_exit
 from pyfect.scope import Scope, scoped
 from pyfect.socket.datagram import (
+    BackingEvents,
+    BackingSocket,
     Bind,
     Connect,
     Datagram,
@@ -30,6 +34,7 @@ from pyfect.socket.datagram import (
     Reader,
     ReceiveBuffer,
     Writer,
+    make_from_backing_socket,
     make_udp,
 )
 
@@ -74,11 +79,17 @@ def pull_texts(reader: Reader, count: int) -> Effect[list[str], Exception]:
     return gen(body)
 
 
-def test_receive_buffer_capacity_must_be_positive():
-    with pytest.raises(ValueError, match="positive integer"):
-        ReceiveBuffer(0)
-    with pytest.raises(ValueError, match="positive integer"):
-        ReceiveBuffer(True)
+def _never_open(_: BackingEvents) -> Effect[BackingSocket, DatagramSocketError]:
+    raise AssertionError("a socket with an invalid buffer is never made")
+
+
+@pytest.mark.parametrize("capacity", [0, -1])
+def test_a_receive_buffer_below_one_dies_when_the_socket_is_made(capacity: int):
+    """Effect throws inside ``withFiber``: a defect when it runs, not at the call."""
+    buffer = ReceiveBuffer(capacity)
+    exit = run_sync_exit(make_from_backing_socket(_never_open, receive_buffer=buffer))
+    assert isinstance(exit, Failure)
+    assert "must be a positive integer" in str(exit.cause.squash())
 
 
 @live

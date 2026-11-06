@@ -50,9 +50,8 @@ forever: Schedule[int] = spaced(ZERO)
 
 
 def recurs(times: int) -> Schedule[int]:
-    """Recur ``times`` times without waiting. Outputs the count, from 0."""
-    if times < 0:
-        raise ValueError(f"recurs needs times >= 0, got {times}")
+    """Recur ``times`` times without waiting (never, if not positive).
+    Outputs the count, from 0."""
     return forever.while_(lambda m: m.attempt <= times)
 
 

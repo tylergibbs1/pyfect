@@ -46,13 +46,6 @@ def _forever(_ex: object, _key: object) -> Seconds:
     return _FOREVER
 
 
-def checked_capacity(capacity: int | None) -> int | None:
-    """``capacity``, or ``ValueError`` for a negative one."""
-    if capacity is not None and capacity < 0:
-        raise ValueError(f"capacity must be >= 0 or None, got {capacity}")
-    return capacity
-
-
 def clock_of(fiber: Fiber[Any, Any]) -> ClockService:
     return fiber._context.lookup(Clock)[1]
 

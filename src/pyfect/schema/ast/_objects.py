@@ -32,6 +32,7 @@ from pyfect.schema.ast._base import (
 )
 from pyfect.schema.ast._result import MISSING, ParseResult
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, run_steps
+from pyfect.schema.ast._suspend import Suspend
 from pyfect.schema.issue import Composite, Issue, MissingKey, Pointer, UnexpectedKey, reported
 
 
@@ -247,7 +248,7 @@ class _Run(Steps["_Run"]):
         if prop.default is not None:
             self.out[prop.name] = prop.default()
             return None
-        if prop.type.encoding is not None:
+        if prop.type.encoding is not None or isinstance(prop.type, Suspend):
             return prop.type.parse(MISSING, self.options)
         if not prop.optional:
             self._report(prop.name, MissingKey(prop.type.key_annotations))

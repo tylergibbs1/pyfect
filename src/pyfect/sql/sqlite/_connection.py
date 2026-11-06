@@ -212,7 +212,7 @@ def open_connection(
             timeout=0,
             isolation_level=None,
             check_same_thread=False,
-            cached_statements=prepare_cache_size,
+            cached_statements=max(prepare_cache_size, 0),
             uri=uri,
         )
 

@@ -20,7 +20,7 @@ from pyfect.schema import transformation as T
 from pyfect.schema._checks_number import int_value, is_greater_than_or_equal_to_big_int
 from pyfect.schema._codec_links import CodecLink, partial_link, tagged
 
-_INT = ast.append_checks(ast.number, (int_value(),))
+_INT = ast.append_checks(ast.whole_number, (int_value(),))
 _US_PER_MS = 1000
 _NS_PER_US = 1000
 

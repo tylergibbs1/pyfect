@@ -10,9 +10,6 @@ Effect, ``node``::
     //                            {"minimum":-2147483648,"maximum":2147483647}]}
     toJsonSchemaDocument(Number.check(makeFilterGroup([isFinite(), isLessThan(5)]))).schema
     // {"type":"number","allOf":[{"exclusiveMaximum":5}]}
-
-pyfect's ``is_int`` takes any Python ``int``, so its JSON Schema has no
-safe-integer bounds (its own decision, not this finding's).
 """
 
 from __future__ import annotations
@@ -30,14 +27,20 @@ def _json_schema(schema: S.Top) -> object:
 def test_is_int32_keeps_its_constraints_in_json_schema():
     assert _json_schema(S.Number.check(S.is_int32())) == {
         "type": "integer",
-        "allOf": [{"minimum": -2147483648, "maximum": 2147483647}],
+        "allOf": [
+            {"minimum": -(2**53 - 1), "maximum": 2**53 - 1},
+            {"minimum": -2147483648, "maximum": 2147483647},
+        ],
     }
 
 
 def test_is_uint32_keeps_its_constraints_in_json_schema():
     assert _json_schema(S.Number.check(S.is_uint32())) == {
         "type": "integer",
-        "allOf": [{"minimum": 0, "maximum": 4294967295}],
+        "allOf": [
+            {"minimum": -(2**53 - 1), "maximum": 2**53 - 1},
+            {"minimum": 0, "maximum": 4294967295},
+        ],
     }
 
 

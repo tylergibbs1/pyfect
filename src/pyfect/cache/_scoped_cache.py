@@ -29,7 +29,6 @@ from pyfect._unsubscripted import Unsubscripted
 from pyfect.cache._expiry import (
     RequireServicesAt,
     TimeToLive,
-    checked_capacity,
     clock_of,
     deadline,
     is_expired,
@@ -142,12 +141,11 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         its own, closed when the entry leaves the cache, and all of them
         when the current scope closes. Options as ``Cache.make``; the
         lookup's ``Scope`` is the entry's, never a requirement."""
-        bound = checked_capacity(capacity)
         ttl = time_to_live_of(time_to_live)
 
         def body(fiber: Fiber[Any, Any]) -> Effect[ScopedCache[Any, Any, Any, Any]]:
             context = fiber._context
-            cache = ScopedCache(lookup, context, bound, ttl)
+            cache = ScopedCache(lookup, context, capacity, ttl)
             closing = context.get_unsafe(Scope).add_finalizer(lambda _: _WithFiber(cache._close))
             return closing.as_(cache)
 

@@ -87,6 +87,10 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
   transformations). It is a `dataclass_transform` field specifier returning
   the schema's Type, so `wrong: str = S.field(S.Int)` is a type error. Its
   schema takes no services (`Codec[A, object, Never, Never]`).
+  `S.field(schema, key="primaryKey")` (or `S.field(key=...)` alone, the schema
+  coming from the annotation) gives the attribute another key on the wire: JSON,
+  `SchemaBinary` identities and decode errors use it, the constructor's keyword
+  stays the attribute.
 - Effect's `Struct({...})` over an object literal becomes a TypedDict:
   `S.Struct(UserDict)` is `Bottom[UserDict, Mapping[str, object]]`, and
   `NotRequired[...]` is an optional key. A struct over a `dict` of schemas
@@ -136,7 +140,10 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
   names); `S.Defect()` decodes to `S.DecodedDefect`, since a `Die` holds an
   exception.
 
-`S.Int` is the `int` schema with the messages of Effect's `Int` check;
+`S.Int` is the `int` schema with the messages of Effect's `Int` check: an
+`int` within the safe integers. It takes `1.0`, as Effect's does, and gives `1`
+(the decoded type is `int`). `S.is_int` is `Number.isSafeInteger`, and keeps a
+`1.0`, as `S.Literal(1)` does: JavaScript has one number;
 `S.BigInt` is also `int`, with Effect's `bigint` messages.
 
 ## Tuples and arrays

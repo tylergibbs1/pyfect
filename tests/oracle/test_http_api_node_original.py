@@ -604,20 +604,14 @@ def test_handle_raw_can_manually_process_body() -> None:
     _run(program)
 
 
-_SAFE_INTEGER = {"maximum": 9007199254740991, "minimum": -9007199254740991}
-
-
 def _python_wire(node: Any) -> Any:
-    """Effect's document with pyfect's two wire differences: an ``int``
-    has no safe-integer bounds, and an optional key (no ``undefined``)
-    is the bare schema rather than ``anyOf`` it or null."""
+    """Effect's document with pyfect's wire difference: an optional key (no
+    ``undefined``) is the bare schema rather than ``anyOf`` it or null."""
     if isinstance(node, list):
         return [_python_wire(item) for item in node]
     if not isinstance(node, dict):
         return node
     out = {k: _python_wire(v) for k, v in node.items()}
-    if out.get("type") == "integer" and all(out.get(k) == v for k, v in _SAFE_INTEGER.items()):
-        out = {k: v for k, v in out.items() if k not in _SAFE_INTEGER}
     members = [m for m in out.get("anyOf", []) if m != {"type": "null"}]
     if "anyOf" in out and len(members) == 1:
         rest = {k: v for k, v in out.items() if k != "anyOf"}

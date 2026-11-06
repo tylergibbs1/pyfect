@@ -6,8 +6,9 @@ Capacity and overflow behavior are fixed at creation:
   Capacity 0 is a rendezvous: an offer completes when a taker takes it.
 - ``"dropping"``: ``offer`` on a full queue drops the new item.
 - ``"sliding"``: ``offer`` on a full queue drops the oldest item. As in
-  Effect, ``sliding(0)`` keeps the newest offered item, while
-  ``offer_all`` to it keeps nothing.
+  Effect, ``sliding(0)`` keeps the newest offered item without waking a
+  parked taker (the next take gets it), while ``offer_all`` to it keeps
+  nothing.
 
 A queue can be finished. After ``fail(error)`` (or ``interrupt()``), new
 offers return ``False``, but takers still drain the items and the offers

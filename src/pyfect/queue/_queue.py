@@ -38,8 +38,6 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
     __slots__ = ("_capacity", "_items", "_state", "_strategy")
 
     def __init__(self, capacity: int | None = None, strategy: Strategy = "suspend") -> None:
-        if capacity is not None and capacity < 0:
-            raise ValueError(f"capacity must be >= 0, got {capacity}")
         self._capacity = capacity
         self._strategy: Strategy = strategy
         self._items: deque[A] = deque()
@@ -97,13 +95,20 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
         would have to wait. Call on the queue's fibers' scheduler thread."""
         match self._state:
             case st.Open(takers=takers):
-                if self._free(takers) > 0 or self._strategy == "sliding":
-                    # As Effect's ``offerUnsafe``: a full sliding queue
-                    # swaps its oldest item for this one, even at capacity 0,
-                    # and a rendezvous queue hands the item to its waiting
-                    # takers at once.
-                    rendezvous = self._capacity == 0 and self._strategy != "sliding"
-                    self._push([item], takers, keep_at_least=1, now=rendezvous)
+                if self._strategy == "sliding" and self._is_full():
+                    # As Effect's ``offerUnsafe``: a full sliding queue swaps
+                    # its oldest item for this one, even at capacity 0, and
+                    # releases no taker.
+                    if self._items:
+                        self._items.popleft()
+                    self._items.append(item)
+                    return True
+                if self._free(takers) > 0:
+                    # A rendezvous queue hands the item to its waiting takers
+                    # at once.
+                    self._push(
+                        [item], takers, now=self._capacity is not None and self._capacity <= 0
+                    )
                     return True
                 return False
             case st.Closing() | st.Done():
@@ -352,26 +357,27 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
 
     # --- internals --------------------------------------------------------
 
+    def _is_full(self) -> bool:
+        return self._capacity is not None and len(self._items) >= self._capacity
+
     def _free(self, takers: WaitList) -> int:
         """How many items can be added now. A rendezvous queue admits one per
         parked taker."""
         if self._capacity is None:
             return 2**62
-        if self._capacity == 0:
+        if self._capacity <= 0:
             return len(takers)
         return max(0, self._capacity - len(self._items))
 
-    def _push(
-        self, batch: list[A], takers: WaitList, *, keep_at_least: int = 0, now: bool = False
-    ) -> None:
+    def _push(self, batch: list[A], takers: WaitList, *, now: bool = False) -> None:
         """Add ``batch``; a sliding queue then drops its oldest items down to
-        its capacity (or ``keep_at_least``, if larger). Takers are woken in a
+        its capacity. Takers are woken in a
         scheduled task (Effect's ``scheduleReleaseTaker``), so an offerer
         parks what did not fit before a taker makes room; ``now`` wakes
         them at once (Effect's rendezvous offer)."""
         self._items.extend(batch)
         if self._strategy == "sliding" and self._capacity is not None:
-            for _ in range(len(self._items) - max(self._capacity, keep_at_least)):
+            for _ in range(len(self._items) - max(self._capacity, 0)):
                 self._items.popleft()
         if now:
             takers.notify_ready()
@@ -451,7 +457,7 @@ class Queue[A, E = Never](Enqueue[A, E], Dequeue[A, E]):
     def _takes_from(self, offers: deque[st.Offer[A]]) -> bool:
         """Whether a take goes straight to a waiting offer: on a rendezvous
         queue with nothing buffered."""
-        return self._capacity == 0 and bool(offers)
+        return self._capacity is not None and self._capacity <= 0 and bool(offers)
 
     def _take_one(self, offers: deque[st.Offer[A]]) -> A:
         """Buffered items come first; a rendezvous queue then takes straight

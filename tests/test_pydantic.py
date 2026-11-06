@@ -77,7 +77,7 @@ def test_the_json_schema_is_the_schemas_with_definitions_inlined():
     assert properties["total"] == {"title": "Total", "type": "string"}
     assert properties["user"]["properties"] == {
         "name": {"type": "string"},
-        "age": {"type": "integer"},
+        "age": {"type": "integer", "minimum": -(2**53 - 1), "maximum": 2**53 - 1},
     }
 
 

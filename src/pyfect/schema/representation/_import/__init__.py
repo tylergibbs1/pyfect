@@ -16,6 +16,7 @@ from pyfect.json_schema import Document, JsonSchema, MultiDocument
 from pyfect.json_schema._api import Draft2020
 from pyfect.schema.issue import Path
 from pyfect.schema.representation._import._finalize import Finalizer, ImportedSchema
+from pyfect.schema.representation._import._js_order import js_ordered
 from pyfect.schema.representation._import._keywords import PatternMode
 from pyfect.schema.representation._import._translate import Options, Translator
 
@@ -56,7 +57,8 @@ def from_json_schema_document(
     expression may run for an unbounded time). ``include_annotation_key``
     selects other keys to keep as annotations."""
     options = Options(on_enter, patterns, include_annotation_key)
-    return _import((document.schema,), document.definitions, lambda _: ("schema",), options)[0]
+    schema, definitions = js_ordered((document.schema, document.definitions))
+    return _import((schema,), definitions, lambda _: ("schema",), options)[0]
 
 
 def from_json_schema_multi_document(
@@ -71,5 +73,6 @@ def from_json_schema_multi_document(
     definitions a root reaches are read. Options as
     ``from_json_schema_document``."""
     options = Options(on_enter, patterns, include_annotation_key)
-    out = _import(document.schemas, document.definitions, lambda i: ("schemas", i), options)
+    schemas, definitions = js_ordered((document.schemas, document.definitions))
+    out = _import(schemas, definitions, lambda i: ("schemas", i), options)
     return cast("tuple[ImportedSchema, *tuple[ImportedSchema, ...]]", out)

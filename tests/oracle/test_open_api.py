@@ -4,9 +4,9 @@ Each test's docstring is the Effect test title. ``Schema.Struct({...})``
 is ``struct({...})`` (``_http_api``); responses are keyed by the status
 text, as in the JSON document.
 
-Two schemas compile as pyfect's JSON Schemas do (``test_to_json_schema_document``),
+A schema compiles as pyfect's JSON Schemas do (``test_to_json_schema_document``),
 kept as the expected value: ``is_pattern`` takes a Python ``re`` pattern,
-which is left out, and an ``int`` has no safe-integer bounds.
+which is left out.
 """
 
 import json
@@ -556,8 +556,11 @@ def test_emits_encode_to_with_headers_wire_schemas_according_to_codec_mode() -> 
     encoded = spec["paths"]["/encoded"]["get"]["responses"]["404"]["headers"]["x-error-id"]
     unencoded = spec["paths"]["/unencoded"]["get"]["responses"]["404"]["headers"]["x-error-id"]
     assert encoded["schema"] == _NUMBER_STRING
-    # Python: an int has no safe-integer bounds.
-    assert unencoded["schema"] == {"type": "integer"}
+    assert unencoded["schema"] == {
+        "type": "integer",
+        "minimum": -(2**53 - 1),
+        "maximum": 2**53 - 1,
+    }
 
 
 def test_emits_headers_for_an_error_wrapped_in_with_headers() -> None:

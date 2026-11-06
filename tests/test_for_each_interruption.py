@@ -2,8 +2,6 @@
 input is read. Effect's ``forEach`` is ``suspend(() => ...)`` and, on
 interruption, waits for its workers and keeps their failures."""
 
-import pytest
-
 import pyfect as fx
 from pyfect.queue import Queue
 from pyfect.testing import run_test as run
@@ -112,8 +110,3 @@ def test_offer_all_reads_the_iterable_when_it_runs():
         return (yield from q.take_all())
 
     assert list(run(program)) == [1, 2]
-
-
-def test_invalid_concurrency_is_still_rejected_when_building():
-    with pytest.raises(ValueError, match="concurrency"):
-        fx.for_each([1], fx.succeed, concurrency=-1)

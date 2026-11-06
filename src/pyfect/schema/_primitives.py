@@ -34,9 +34,9 @@ BigInt: Bottom[int] = Bottom(ast.big_int)
 
 Finite: Bottom[float] = Number.check(is_finite())
 """A number that is not ``NaN`` nor an infinity."""
-Int: Bottom[int] = Bottom(append_checks(ast.number, (int_value(),)))
+Int: Bottom[int] = Bottom(append_checks(ast.whole_number, (int_value(),)))
 """An ``int`` (not a ``bool``): Effect's ``Int``, with its messages
-(``Expected number``, then ``Expected an integer``, also for ``1.0``)."""
+(``Expected number``, then ``Expected an integer``). ``1.0`` is taken, as ``1``."""
 Natural: Bottom[int] = Int.check(is_greater_than_or_equal_to(0))
 """An ``int`` from ``0``."""
 Port: Bottom[int] = Int.check(is_between(minimum=0, maximum=65535, expected="a port number"))

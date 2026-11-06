@@ -30,7 +30,6 @@ from dataclasses import dataclass, replace
 from typing import Any, Unpack
 
 from pyfect import schema as S
-from pyfect._js import text_encode
 from pyfect.encoding.schema_binary import _dictionary, _encode
 from pyfect.encoding.schema_binary._channels import decode, duplex, encode
 from pyfect.encoding.schema_binary._compile import FIELD_ID_KEY
@@ -44,7 +43,7 @@ from pyfect.encoding.schema_binary._target import (
     make_codec,
     make_direct_codec,
 )
-from pyfect.encoding.schema_binary._wire import IssueError, fnv32
+from pyfect.encoding.schema_binary._wire import IssueError
 from pyfect.schema import ParseOptions, SchemaError, ast
 
 _MAX_FIELD_ID = 0xFFFFFFFF
@@ -240,12 +239,6 @@ def field_id(id: int, /) -> Callable[[S.Top], S.Bottom[Any, Any, Any, Any]]:
     return annotate
 
 
-def wire_name(name: str, /) -> Callable[[S.Top], S.Bottom[Any, Any, Any, Any]]:
-    """Gives a struct property the wire identity of a field called ``name``,
-    so a snake_case attribute reads and writes Effect's camelCase field."""
-    return field_id(fnv32(text_encode(name)))
-
-
 __all__ = [
     "BytesCodec",
     "Encoder",
@@ -261,5 +254,4 @@ __all__ = [
     "parser",
     "to_codec",
     "to_codec_direct",
-    "wire_name",
 ]

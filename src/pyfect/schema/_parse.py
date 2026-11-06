@@ -20,6 +20,7 @@ from typing import Any, Never, Protocol, TypeIs, Unpack, cast
 from pyfect._core import Effect
 from pyfect.effect import fail, from_exit, succeed
 from pyfect.exit import Exit, Failure, Success
+from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
 from pyfect.option import Option, Some
 from pyfect.result import Err, Ok, Result
@@ -68,10 +69,12 @@ def _runner[O](ast: AST, base: ParseOptions) -> _Run[O]:
         input: object, options: ParseOptions
     ) -> Exit[O, SchemaError] | Effect[O, SchemaError, Any]:
         merged: ParseOptions = {**base, **options} if options else base
-        concurrency = merged.get("concurrency")
-        if isinstance(concurrency, int) and concurrency < 1:
-            raise ValueError(f"concurrency must be at least 1, got {concurrency}")
-        result = ast.parse(input, merged)
+        try:
+            result = ast.parse(input, merged)
+        except RecursionError as overflow:
+            # As in Effect: a walk that overflows the stack is a defect of
+            # the parse (a schema whose aliases only reach each other).
+            return die_exit(overflow)
         if isinstance(result, Success):
             if result.value is ast_module.MISSING:
                 return fail_exit(SchemaError(InvalidValue()))

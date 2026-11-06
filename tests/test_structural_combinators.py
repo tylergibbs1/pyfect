@@ -5,8 +5,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-import pytest
-
 import pyfect as fx
 from pyfect import testing
 from pyfect.exit import fail as exit_fail
@@ -65,11 +63,6 @@ def test_validate_fails_with_every_error_in_order() -> None:
         fx.validate([1, 2, 3, 4], lambda n: fx.fail(n) if n > 1 else fx.succeed(n)).flip().or_die()
     )
     assert testing.run_test(eff) == (2, 3, 4)
-
-
-def test_race_all_first_needs_an_effect() -> None:
-    with pytest.raises(ValueError, match="at least one"):
-        fx.race_all_first()
 
 
 def test_race_all_first_success_interrupts_the_rest() -> None:

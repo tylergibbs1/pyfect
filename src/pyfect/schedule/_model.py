@@ -255,8 +255,6 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
     ) -> Schedule[Out_co, In_contra, E_co, R_co]:
         """Stop after ``times`` recurrences, or once more than ``duration``
         has passed since the first step, whichever comes first."""
-        if times is not None and times < 0:
-            raise ValueError(f"up_to needs times >= 0, got {times}")
         limit = None if duration is None else to_seconds(duration)
 
         def within(m: Metadata[Any, Any]) -> bool:

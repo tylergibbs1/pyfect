@@ -25,9 +25,7 @@ def _decode_json(schema: Any, value: object) -> object:
         (
             S.Duration,
             {"_tag": "Millis", "value": 10**20},
-            'Expected a duration a timedelta can hold, got {"_tag":"Millis","value":'
-            + str(10**20)
-            + "}",
+            f'Expected an integer, got {10**20}\n  at ["value"]',
         ),
         (
             S.Duration,

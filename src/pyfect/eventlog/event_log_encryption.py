@@ -24,9 +24,10 @@ from pyfect._core import Effect
 from pyfect._js import text_encode
 from pyfect.context import Tag
 from pyfect.effect import die, gen, sync
-from pyfect.encoding.schema_binary import BytesCodec, to_codec, wire_name
+from pyfect.encoding.schema_binary import BytesCodec, to_codec
 from pyfect.eventlog._identity import IdentityService
 from pyfect.eventlog._identity_derivation import GetMaterial, make_get_identity_root_secret_material
+from pyfect.eventlog._transferable_bytes import TransferableBytes
 from pyfect.eventlog.event_journal import Entry, EntryId, EntryIdSchema, RemoteEntry
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -37,19 +38,20 @@ class EncryptedBatch(S.Class, identifier="effect/eventlog/EventLogEncryption/Enc
     """Encrypted entries: their ids in plaintext, the iv and the
     ciphertext."""
 
-    entry_ids: tuple[EntryId, ...] = S.field(
-        S.NonEmptyArray(EntryIdSchema).pipe(wire_name("entryIds"))
-    )
-    iv: bytes = S.field(S.Bytes)
-    encrypted_batch: bytes = S.field(S.Bytes.pipe(wire_name("encryptedBatch")))
+    entry_ids: tuple[EntryId, ...] = S.field(S.NonEmptyArray(EntryIdSchema), key="entryIds")
+    iv: bytes = S.field(TransferableBytes)
+    encrypted_batch: bytes = S.field(TransferableBytes, key="encryptedBatch")
 
 
 class EncryptedRemoteBatch(
-    EncryptedBatch, identifier="effect/eventlog/EventLogEncryption/EncryptedRemoteBatch"
+    S.Class, identifier="effect/eventlog/EventLogEncryption/EncryptedRemoteBatch"
 ):
     """An encrypted batch a remote stored, its first entry at ``sequence``."""
 
     sequence: int = S.field(S.Natural)
+    entry_ids: tuple[EntryId, ...] = S.field(S.NonEmptyArray(EntryIdSchema), key="entryIds")
+    iv: bytes = S.field(TransferableBytes)
+    encrypted_batch: bytes = S.field(TransferableBytes, key="encryptedBatch")
 
 
 def remote_batch(sequence: int, batch: EncryptedBatch) -> EncryptedRemoteBatch:

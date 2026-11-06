@@ -189,6 +189,9 @@ class _Summary(Series[Any, Any]):
 
     def _create_hooks(self) -> Hooks:
         max_age_ns, max_size, quantiles = self._max_age_ns, self._max_size, self._quantiles
+        for quantile in quantiles:
+            if quantile < 0 or quantile > 1:
+                raise ValueError(f"Quantile must be between 0 and 1, found: {quantile}")
         observations: list[tuple[float, float] | None] = [None] * max_size
         head = 0
         count = 0
@@ -380,11 +383,6 @@ def _summary(
     description: str | None,
     attributes: Attributes | None,
 ) -> _Summary:
-    for quantile in quantiles:
-        if quantile < 0 or quantile > 1:
-            raise ValueError(f"Quantile must be between 0 and 1, found: {quantile}")
-    if max_size < 0:
-        raise ValueError(f"max_size must be at least 0, got {max_size}")
     return _Summary(
         name,
         description,

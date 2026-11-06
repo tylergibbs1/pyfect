@@ -13,7 +13,7 @@ class RateLimitExceeded(
     """A ``"fail"`` consume would go over ``limit`` for ``key``; retry
     after ``retry_after``."""
 
-    retry_after: Seconds = S.field(SECONDS_FROM_MILLIS)
+    retry_after: Seconds = S.field(SECONDS_FROM_MILLIS, key="retryAfter")
     key: str
     limit: float = S.field(S.Finite)
     remaining: float = S.field(S.Finite)

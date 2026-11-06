@@ -12,7 +12,7 @@ class CircuitOpen(S.TaggedError, identifier="effect/persistence/CircuitBreaker/C
     ``retry_after``."""
 
     key: str
-    retry_after: Seconds = S.field(SECONDS_FROM_MILLIS)
+    retry_after: Seconds = S.field(SECONDS_FROM_MILLIS, key="retryAfter")
 
     @property
     def message(self) -> str:

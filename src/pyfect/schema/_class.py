@@ -37,6 +37,7 @@ from dataclasses import MISSING, FrozenInstanceError
 from typing import (
     Any,
     ClassVar,
+    NamedTuple,
     Never,
     Self,
     Unpack,
@@ -56,6 +57,7 @@ from pyfect.schema._derive import AnyBottom, schema_of
 from pyfect.schema._error import SchemaError
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom, Codec
+from pyfect.schema._undefined import is_undefined
 from pyfect.schema.ast import Check, FilterOutput, filter_of
 from pyfect.schema.issue import Issue
 
@@ -64,29 +66,51 @@ _SCHEMA = "pyfect.schema"
 
 
 @overload
-def field[A](schema: Codec[A, object, Never, Never], /) -> A: ...
-@overload
-def field[A](schema: Codec[A, object, Never, Never], /, *, default: A) -> A: ...
+def field[A](schema: Codec[A, object, Never, Never], /, *, key: str | None = None) -> A: ...
 @overload
 def field[A](
-    schema: Codec[A, object, Never, Never], /, *, default_factory: Callable[[], A]
+    schema: Codec[A, object, Never, Never], /, *, default: A, key: str | None = None
 ) -> A: ...
 @overload
-def field[A](*, default_factory: Callable[[], A]) -> A: ...
+def field[A](
+    schema: Codec[A, object, Never, Never],
+    /,
+    *,
+    default_factory: Callable[[], A],
+    key: str | None = None,
+) -> A: ...
+@overload
+def field[A](*, default_factory: Callable[[], A], key: str | None = None) -> A: ...
+@overload
+def field[A](*, default: A, key: str) -> A: ...
+@overload
+def field(*, key: str) -> Any: ...
 def field(
     schema: Codec[object, object, Never, Never] | None = None,
     /,
     *,
     default: object = MISSING,
     default_factory: Callable[[], object] | None = None,
+    key: str | None = None,
 ) -> Any:
     """A schema class field: ``schema`` instead of the annotation's (its
-    Type must fit the annotation), and a default or a default factory."""
-    metadata = {} if schema is None else {_SCHEMA: schema}
+    Type must fit the annotation), a default or a default factory, and
+    ``key``, its name in the class's schema where that is not the attribute's:
+    what it encodes to, decodes from and is called in decode issues, and what a
+    mapping given to ``make`` holds it under. The constructor keeps the
+    attribute's name."""
+    metadata: dict[str, object] = {}
+    if schema is not None:
+        metadata[_SCHEMA] = schema
+    if key is not None:
+        metadata[_KEY] = key
     if default_factory is not None:
         return dataclasses.field(default_factory=default_factory, metadata=metadata)
     return dataclasses.field(default=default, metadata=metadata)
 
+
+_KEY = "__pyfect_class_key__"
+"""The ``dataclasses.field`` metadata naming a field's key in the schema."""
 
 _CHECK = "__pyfect_class_check__"
 """The attribute holding a ``class_check`` method's filter."""
@@ -109,10 +133,41 @@ def class_check[F: Callable[[Any], FilterOutput]](
     return mark
 
 
+class _Built(NamedTuple):
+    """What a schema class's first use derives from its fields."""
+
+    schemas: dict[str, AnyBottom]
+    """By attribute."""
+    fields: ast.Objects
+    """The decoding struct, by key."""
+    constructor: ast.AST
+    """The fields' Types by attribute: issues of ``Class(...)`` name its keywords."""
+    encoded: ast.AST
+    absent_when_none: frozenset[str]
+
+
+def _is_undefined_or(node: ast.AST) -> bool:
+    return isinstance(node, ast.Union) and any(is_undefined(m) for m in node.types)
+
+
+def _defaults_to_none(cls: type, name: str) -> bool:
+    return next(f for f in dataclasses.fields(cast("Any", cls)) if f.name == name).default is None
+
+
 class _Shape:
     """A schema class's schema: its fields' struct, made on first use."""
 
-    __slots__ = ("_built", "checks", "cls", "codec", "field_names", "identifier", "init", "tag")
+    __slots__ = (
+        "_built",
+        "checks",
+        "cls",
+        "codec",
+        "field_names",
+        "identifier",
+        "init",
+        "keys",
+        "tag",
+    )
 
     def __init__(
         self,
@@ -129,52 +184,89 @@ class _Shape:
         self.tag = tag
         self.init = init
         self.checks = checks
-        self.field_names = tuple(f.name for f in dataclasses.fields(cast("Any", cls)) if f.init)
+        fields = [f for f in dataclasses.fields(cast("Any", cls)) if f.init]
+        self.field_names = tuple(f.name for f in fields)
+        self.keys: Mapping[str, str] = {f.name: f.metadata.get(_KEY, f.name) for f in fields}
+        taken = ["_tag"] if tag is not None else []
+        for key in self.keys.values():
+            if key in taken:
+                raise TypeError(f"{cls.__name__} gives two fields one key: {key!r}")
+            taken.append(key)
         self.codec = Bottom[Any, Mapping[str, object]](
             ast.Class(self, annotations={"identifier": identifier, **(annotations or {})})
         )
-        self._built: tuple[dict[str, AnyBottom], ast.Objects, ast.AST, ast.AST] | None = None
+        self._built: _Built | None = None
 
-    def _build(self) -> tuple[dict[str, AnyBottom], ast.Objects, ast.AST, ast.AST]:
+    def _build(self) -> _Built:
         if self._built is None:
             schemas = _field_schemas(self.cls, self.field_names)
-            properties = tuple(
-                ast.PropertySignature(name, schema.ast, default=_default_of(self.cls, name))
+            defaults = {name: _default_of(self.cls, name) for name in schemas}
+            absent = frozenset(
+                self.keys[name]
+                for name, schema in schemas.items()
+                if _defaults_to_none(self.cls, name) and _is_undefined_or(schema.ast)
+            )
+            keyed = tuple(
+                ast.PropertySignature(
+                    self.keys[name], schema.ast, self.keys[name] in absent, defaults[name]
+                )
+                for name, schema in schemas.items()
+            )
+            named = tuple(
+                ast.PropertySignature(name, schema.ast, default=defaults[name])
                 for name, schema in schemas.items()
             )
             if self.tag is not None:
-                properties = (ast.PropertySignature("_tag", ast.Literal(self.tag)), *properties)
-            fields = ast.Objects(properties)
-            self._built = (schemas, fields, fields.to_type(), fields.flip().to_type())
+                tag = ast.PropertySignature("_tag", ast.Literal(self.tag))
+                keyed, named = (tag, *keyed), (tag, *named)
+            fields = ast.Objects(keyed)
+            self._built = _Built(
+                schemas, fields, ast.Objects(named).to_type(), fields.flip().to_type(), absent
+            )
         return self._built
 
     @property
     def schemas(self) -> dict[str, AnyBottom]:
-        return self._build()[0]
+        return self._build().schemas
 
     @property
     def fields(self) -> ast.Objects:
-        return self._build()[1]
+        return self._build().fields
 
     @property
     def encoded(self) -> ast.AST:
-        return self._build()[3]
+        return self._build().encoded
 
     def construct(self, values: dict[object, object]) -> object:
         instance = self.cls.__new__(self.cls)
-        self.init(instance, **{name: values[name] for name in self.field_names if name in values})
+        keys = self.keys
+        self.init(
+            instance,
+            **{name: values[keys[name]] for name in self.field_names if keys[name] in values},
+        )
         return instance
 
     def values_of(self, instance: object) -> dict[object, object]:
+        """Keyed as the schema is; a field that is Effect's ``Schema.optional``
+        (``undefined`` allowed, ``None`` the default) has no key while ``None``,
+        as Effect's has none while it is absent. A dataclass cannot tell an
+        absent field from an explicit ``None``."""
         values: dict[object, object] = {} if self.tag is None else {"_tag": self.tag}
+        absent = self._build().absent_when_none
+        keys = self.keys
         for name in self.field_names:
-            values[name] = getattr(instance, name)
+            value = getattr(instance, name)
+            if value is not None or keys[name] not in absent:
+                values[keys[name]] = value
         return values
 
     def validate(self, instance: object) -> None:
         """Raise ``SchemaError`` unless ``instance``'s fields fit their
         schemas' Types and the class's checks pass."""
-        match ast.run_now(self._build()[2].parse(self.values_of(instance), {})):
+        values: dict[object, object] = {} if self.tag is None else {"_tag": self.tag}
+        for name in self.field_names:
+            values[name] = getattr(instance, name)
+        match ast.run_now(self._build().constructor.parse(values, {})):
             case Success():
                 pass
             case failure:

@@ -25,7 +25,7 @@ from pyfect.clock import Clock, ClockService, now_millis_unsafe
 from pyfect.context import Tag
 from pyfect.date_time._epoch import from_epoch_millis
 from pyfect.effect import gen, succeed, suspend, sync, try_
-from pyfect.encoding.schema_binary import to_codec, wire_name
+from pyfect.encoding.schema_binary import to_codec
 from pyfect.errors import TaggedError
 from pyfect.eventlog import _uuid
 from pyfect.eventlog._conflicts import ConflictIndex
@@ -156,7 +156,7 @@ class Entry(S.Class, identifier="effect/eventlog/EventJournal/Entry"):
 
     id: EntryId = S.field(EntryIdSchema)
     event: str
-    primary_key: str = S.field(S.String.pipe(wire_name("primaryKey")))
+    primary_key: str = S.field(S.String, key="primaryKey")
     payload: bytes = S.field(S.Bytes)
 
     @cached_property
@@ -181,7 +181,7 @@ def entry_order(entry: Entry) -> bytes:
 class RemoteEntry(S.Class, identifier="effect/eventlog/EventJournal/RemoteEntry"):
     """An entry as a remote sent it, at ``remote_sequence``."""
 
-    remote_sequence: int = S.field(S.Natural.pipe(wire_name("remoteSequence")))
+    remote_sequence: int = S.field(S.Natural, key="remoteSequence")
     entry: Entry
 
 

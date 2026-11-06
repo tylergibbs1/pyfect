@@ -89,12 +89,11 @@ from pyfect.schema.ast._keywords import (
     number,
     string,
     unknown,
+    whole_number,
 )
 from pyfect.schema.ast._literal import (
     Enum,
     EnumSide,
-    JsonFloat,
-    JsonInt,
     Literal,
     LiteralValue,
     format_literal,
@@ -155,8 +154,6 @@ __all__ = [
     "FilterIssue",
     "FilterOutput",
     "IndexSignature",
-    "JsonFloat",
-    "JsonInt",
     "Link",
     "LinkTransformation",
     "Literal",
@@ -226,5 +223,6 @@ __all__ = [
     "tuple_with_rest",
     "union",
     "unknown",
+    "whole_number",
     "with_constructor_default",
 ]

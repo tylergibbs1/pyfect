@@ -52,9 +52,26 @@ def test_property_names_reports_every_bad_key_unless_errors_first() -> None:
     assert failure(schema, value, errors="first") == 'Expected never\n  at ["a"]'
 
 
-def test_s_literal_keeps_its_kind() -> None:
-    """Pinned by ``tests/test_schema_checks.py``; only an imported literal has one number."""
-    assert not S.is_(S.Literal(1))(1.0)
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"const": 1},
+        {"const": 2.0},
+        {"enum": [1.0, "a"]},
+        {"type": "object", "properties": {"t": {"const": 1}}, "required": ["t"]},
+        {"anyOf": [{"const": 2}, {"const": True}]},
+        {"type": "integer"},
+    ],
+)
+def test_generated_code_takes_what_the_imported_schema_takes(schema: Any) -> None:
+    """M15 found 16 of 3,035 generated modules disagreeing with their imported
+    schema, when ``S.Literal`` kept ``int`` and ``float`` apart."""
+    source = imported(schema)
+    namespace: dict[str, Any] = {"__name__": "generated"}
+    exec(R.to_code_module(R.to_code_document(R.to_representations((source,)))), namespace)
+    is_source, is_generated = S.is_(source), S.is_(namespace["Schema0"])
+    for value in (1, 1.0, 2, 2.0, True, "a", 2**53, {"t": 1}, {"t": 1.0}, {"t": True}):
+        assert is_source(value) == is_generated(value), value
 
 
 def test_a_json_number_discriminates_a_struct_whichever_kind_it_comes_in() -> None:

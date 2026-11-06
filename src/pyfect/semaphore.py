@@ -27,12 +27,6 @@ if TYPE_CHECKING:
     from pyfect._fiber import Fiber
 
 
-def _check_permits(permits: int) -> int:
-    if permits < 0:
-        raise ValueError(f"permits must be >= 0, got {permits}")
-    return permits
-
-
 class _Waiter:
     """A fiber parked for ``n`` permits; ``woken`` once a release counted
     permits for it."""
@@ -128,7 +122,7 @@ class Semaphore:
     __slots__ = ("_permits", "_taken", "_waiters", "_waking")
 
     def __init__(self, permits: int) -> None:
-        self._permits = _check_permits(permits)
+        self._permits = permits
         self._taken = 0
         self._waiters: deque[_Waiter] = deque()
         # Permits counted for woken waiters that have not retried yet.
@@ -182,7 +176,6 @@ class Semaphore:
     def resize(self, permits: int) -> Effect[None]:
         """Change the total number of permits. Shrinking below what is taken
         makes takers wait until enough are given back."""
-        _check_permits(permits)
 
         def run() -> None:
             self._permits = permits

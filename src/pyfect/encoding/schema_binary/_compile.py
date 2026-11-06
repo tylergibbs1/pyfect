@@ -13,13 +13,11 @@ from pyfect.encoding.schema_binary import _layout as L
 from pyfect.encoding.schema_binary import _wire as W
 from pyfect.encoding.schema_binary._literals import literal_key, literal_kind_code, literal_text
 from pyfect.schema import ast
+from pyfect.schema._undefined import UNDEFINED_ID
 from pyfect.schema.ast._candidates import Sentinel, sentinels
 from pyfect.schema.ast._check import FilterGroup
 
 FIELD_ID_KEY = "~effect/encoding/SchemaBinary/fieldId"
-
-UNDEFINED_ID = "pyfect/schema/Undefined"
-"""The private declaration standing for Effect's ``undefined`` in a layout."""
 
 NATIVES: dict[str, tuple[int, bool]] = {
     "effect/schema/DateTimeUtc": (W.KIND_INT64, True),

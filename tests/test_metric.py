@@ -11,6 +11,8 @@ import pytest
 import pyfect as fx
 from pyfect import metric, testing
 from pyfect._js import js_number
+from pyfect.cause import Die
+from pyfect.exit import Failure
 
 
 def _fresh[A, E](eff: fx.Effect[A, E]) -> fx.Effect[A, E]:
@@ -90,11 +92,13 @@ def test_a_summary_of_size_zero_counts_but_keeps_no_samples():
     )
 
 
-def test_summary_arguments_are_checked_when_it_is_made():
-    with pytest.raises(ValueError, match=r"Quantile must be between 0 and 1, found: 1\.5"):
-        metric.summary("bad", max_age=1, max_size=1, quantiles=[0.5, 1.5])
-    with pytest.raises(ValueError, match="max_size"):
-        metric.summary("bad", max_age=1, max_size=-1, quantiles=[])
+def test_a_quantile_out_of_range_dies_on_the_first_update():
+    """Printed by Effect under Node: making it is fine, its hooks throw."""
+    bad = metric.summary("bad", max_age=1, max_size=1, quantiles=[0.5, 1.5])
+    exit = fx.run_sync_exit(_fresh(bad.update(1)))
+    assert isinstance(exit, Failure)
+    assert isinstance(exit.cause.reasons[0], Die)
+    assert "Quantile must be between 0 and 1, found: 1.5" in str(exit.cause.reasons[0].defect)
 
 
 @testing.effect
@@ -377,3 +381,11 @@ def test_a_metric_is_its_own_description():
     assert counter.attributes == {"a": "b"}
     assert counter.with_constant_input(1).type == "Counter"
     assert counter.pipe(lambda m: m.id) == "c"
+
+
+def test_a_negative_max_size_keeps_no_samples():
+    """Printed by Effect under Node: no error, and as ``maxSize: 0``."""
+    summary = metric.summary("negative-size", max_age=60, max_size=-1, quantiles=[0.5])
+    state = fx.run_sync(_fresh(summary.update(1).and_then(summary.value())))
+    assert state.quantiles == ((0.5, None),)
+    assert state.count == 1
