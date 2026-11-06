@@ -100,6 +100,9 @@ is an error class that is also a schema, so it can be sent over the wire.
 `S.to_json_schema_document(schema)` describes the JSON that `S.to_codec_json(schema)` reads
 and writes, in draft 2020-12. Checks become keywords where JSON Schema has one.
 `pyfect.json_schema` converts documents to draft-07, draft-04 and OpenAPI.
+`pyfect.schema.representation.from_json_schema_document` goes the other way: it turns a
+JSON Schema document into a schema that validates, and `to_code_document` writes the Python
+source of a schema, with `to_code_module` laying it out as a module.
 
 <CodeOutput>
 

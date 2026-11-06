@@ -43,6 +43,7 @@ _LIBRARIES: dict[str, Extra] = {
     "uvicorn": "server",
     "redis": "redis",
     "cryptography": "eventlog",
+    "brotli": "brotli",
 }
 
 

@@ -44,7 +44,7 @@ class Filter(Generic[T_contra]):
     annotations: Annotations | None = None
     aborted: bool = False
 
-    def annotate(self, **annotations: object) -> Filter[T_contra]:
+    def annotate(self, /, **annotations: object) -> Filter[T_contra]:
         """This filter with ``annotations`` merged over its own."""
         return replace(self, annotations={**(self.annotations or {}), **annotations})
 
@@ -65,7 +65,7 @@ class FilterGroup(Generic[T_contra]):
     checks: tuple[Check[T_contra], *tuple[Check[T_contra], ...]]
     annotations: Annotations | None = None
 
-    def annotate(self, **annotations: object) -> FilterGroup[T_contra]:
+    def annotate(self, /, **annotations: object) -> FilterGroup[T_contra]:
         return replace(self, annotations={**(self.annotations or {}), **annotations})
 
     def and_[T](self: FilterGroup[T], other: Check[T], /, **annotations: object) -> FilterGroup[T]:

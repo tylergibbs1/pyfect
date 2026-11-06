@@ -93,6 +93,8 @@ from pyfect.schema.ast._keywords import (
 from pyfect.schema.ast._literal import (
     Enum,
     EnumSide,
+    JsonFloat,
+    JsonInt,
     Literal,
     LiteralValue,
     format_literal,
@@ -153,6 +155,8 @@ __all__ = [
     "FilterIssue",
     "FilterOutput",
     "IndexSignature",
+    "JsonFloat",
+    "JsonInt",
     "Link",
     "LinkTransformation",
     "Literal",

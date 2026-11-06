@@ -11,9 +11,9 @@ Coverage counts ported, renamed and §4 exports.
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
 | SchemaIssue | 21 | 16 | 3 | 2 | 0 | 100% |
 | SchemaParser | 33 | 25 | 0 | 8 | 0 | 100% |
-| SchemaRepresentation | 100 | 85 | 4 | 8 | 3 | 97% |
+| SchemaRepresentation | 100 | 88 | 4 | 8 | 0 | 100% |
 | JsonSchema | 14 | 7 | 7 | 0 | 0 | 100% |
-| **All** | 781 | | | | 3 | 99% |
+| **All** | 781 | | | | 0 | 100% |
 
 ## Schema
 
@@ -807,15 +807,15 @@ Coverage counts ported, renamed and §4 exports.
 | `toMultiDocument` | ported | `pyfect.schema.representation.to_multi_document` |
 | `toJsonSchemaDocument` | ported | `pyfect.schema.representation.to_json_schema_document` |
 | `toJsonSchemaMultiDocument` | ported | `pyfect.schema.representation.to_json_schema_multi_document` |
-| `toCodeDocument` | missing |  |
+| `toCodeDocument` | ported | `pyfect.schema.representation.to_code_document` |
 | `toJson` | ported | `pyfect.schema.representation.to_json` |
 | `toJsonMultiDocument` | ported | `pyfect.schema.representation.to_json_multi_document` |
 | `fromJson` | ported | `pyfect.schema.representation.from_json` |
 | `fromJsonMultiDocument` | ported | `pyfect.schema.representation.from_json_multi_document` |
 | `fromRepresentation` | ported | `pyfect.schema.representation.from_representation` |
 | `fromRepresentations` | ported | `pyfect.schema.representation.from_representations` |
-| `fromJsonSchemaDocument` | missing |  |
-| `fromJsonSchemaMultiDocument` | missing |  |
+| `fromJsonSchemaDocument` | ported | `pyfect.schema.representation.from_json_schema_document` |
+| `fromJsonSchemaMultiDocument` | ported | `pyfect.schema.representation.from_json_schema_multi_document` |
 
 ## JsonSchema
 

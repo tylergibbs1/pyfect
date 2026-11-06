@@ -58,7 +58,7 @@ def from_representations(
     return (first, *rest)
 
 
-class _Slot:
+class ReferenceSlot:
     def __init__(self, key: str) -> None:
         self.body: ast.AST | None = None
         self.resolving = False
@@ -74,7 +74,7 @@ class _Slot:
 class Reviving:
     def __init__(self, references: R.References, revivers: Sequence[AnyReviver]) -> None:
         self.references = references
-        self.slots: dict[str, _Slot] = {}
+        self.slots: dict[str, ReferenceSlot] = {}
         self.revivers: dict[str, AnyReviver] = {}
         for index, reviver in enumerate(revivers):
             if reviver.id in self.revivers:
@@ -93,7 +93,7 @@ class Reviving:
         if slot is None:
             if key not in self.references:
                 raise error_with_path(f"Invalid reference {key}", (*path, "$ref"))
-            slot = self.slots[key] = _Slot(key)
+            slot = self.slots[key] = ReferenceSlot(key)
         if slot.body is not None:
             return slot.body
         if slot.resolving:

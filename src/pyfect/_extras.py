@@ -18,6 +18,7 @@ type Extra = Literal[
     "server",
     "redis",
     "eventlog",
+    "brotli",
 ]
 """The ``[project.optional-dependencies]`` of ``pyproject.toml``."""
 

@@ -10,7 +10,7 @@ Python differs from JavaScript in two places: ``len`` of a ``str`` counts
 code points, as JSON Schema's ``minLength`` does (exact here, approximate
 in Effect), and an ``int`` has no safe-integer bounds (``Int`` is
 ``{"type": "integer"}``). JSON Schema cannot carry a Python ``re`` pattern,
-so ``is_pattern`` is left out.
+so ``is_pattern`` is left out (``is_ecma_pattern``'s is written).
 """
 
 from __future__ import annotations
@@ -141,6 +141,11 @@ def _approximate(_: _Payload, __: CheckContext) -> CheckOutput:
     return _APPROXIMATE
 
 
+def _regexp(payload: _Payload, _: CheckContext) -> CheckOutput:
+    """An ECMAScript pattern is JSON Schema's own; a Python one is not."""
+    return {"pattern": payload["source"]} if payload["flags"] == "u" else _APPROXIMATE
+
+
 BUILTINS: Mapping[str, _Builtin] = {
     "isFinite": lambda _, __: {"type": "number"},
     "isInt": lambda _, __: {"type": "integer"},
@@ -165,10 +170,10 @@ BUILTINS: Mapping[str, _Builtin] = {
             "isMinSize",
             "isMaxSize",
             "isBetweenSize",
-            "isPattern",
         ),
         _approximate,
     ),
+    "isPattern": _regexp,
     "isMinLength": _sized(
         lambda p: {"minLength": p["minLength"]}, lambda p: {"minItems": p["minLength"]}
     ),

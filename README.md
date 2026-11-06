@@ -207,7 +207,8 @@ Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `h
 HTTP client backend), `websockets` (WebSocket clients and servers), `server` (the uvicorn
 HTTP server), `pg` (the PostgreSQL driver, on psycopg), `mysql` (the MySQL driver, on
 asyncmy), `mssql` (the SQL Server driver, on python-tds), `redis` (the Redis client, on
-redis-py) and `eventlog` (the event log's encryption, on cryptography), for example
+redis-py), `eventlog` (the event log's encryption, on cryptography) and `brotli` (`br` response
+compression on a live server), for example
 `uv add "pyfect-dev[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add

@@ -3,13 +3,6 @@ and ``schemaToJsonSchemaDocument.test.ts``. Each test's docstring is the
 Effect test title, prefixed by its ``describe`` blocks.
 
 Omitted:
-- Need ``fromJsonSchemaMultiDocument`` or Ajv (not ported, see
-  docs/PARITY.md): "rewrites callback references to the canonical ...
-  definition", "rewrites callback references with encoded leading
-  separators", "rejects malformed callback reference ...", "distinguishes
-  pointer separators from escaped slashes in ... callback references",
-  "preserves an encoded pointer suffix when rewriting a percent-named
-  alias".
 - "definition canonicalization / deduplicates fallback definitions that
   share a recursive dependency": pyfect's ``to_codec_json`` builds a fresh
   recursive copy per call, so the two roots do not share ``Objects_`` (a
@@ -21,9 +14,12 @@ from typing import Any, NotRequired, TypedDict, TypeIs
 
 import pytest
 
+from pyfect import json_schema as JS
 from pyfect import schema as S
 from pyfect.schema import representation as R
 from pyfect.schema import transformation as T
+
+from ._json_schema_validator import compile as compile_validator
 
 
 def _always(_: object) -> bool:
@@ -640,3 +636,120 @@ def test_approximates_declarations_without_a_json_codec():
         representation={"id": "test/schema/opaqueString", "payload": None},
     )
     assert _document(schema) == ("draft-2020-12", {}, {})
+
+
+def _encoded_string(identifier: str) -> Any:
+    content = S.String.annotate(identifier=identifier)
+    return S.to_codec_json(
+        S.String.check(S.is_min_length(1)).pipe(
+            S.decode_to(content, T.transform(decode=_same, encode=_same))
+        )
+    )
+
+
+def _callback(ref: str) -> Any:
+    return S.Unknown.check(S.make_filter(_always, to_json_schema=_const({"$ref": ref})))
+
+
+def _draft_07_validator(schema: Any, definitions: Any) -> Callable[[object], bool]:
+    return compile_validator(
+        JS.to_document_draft_07(JS.Document("draft-2020-12", schema, definitions))
+    )
+
+
+@pytest.mark.parametrize(
+    ("identifier", "token"),
+    [
+        ("Rate", "Rate"),
+        ("id~a/b", "id~0a~1b"),
+        ("Rate%", "Rate%25"),
+        ("Rate%2F", "Rate%252F"),
+        ("Rate%25", "Rate%2525"),
+    ],
+)
+def test_rewrites_callback_references_to_the_canonical_definition(
+    identifier: str, token: str
+) -> None:
+    """multi-root compilation / rewrites callback references to the canonical ${identifier}
+    definition"""
+    first, second = _encoded_string(identifier), _encoded_string(identifier)
+    callback = _callback(f"#/$defs/{token}Encoded_1")
+    document = R.to_representations((first, second, callback))
+    assert list(document.references) == [f"{identifier}Encoded", f"{identifier}Encoded_1"]
+    output = R.to_json_schema_multi_document(document)
+    assert list(output.definitions) == [f"{identifier}Encoded"]
+    assert output.schemas[2] == {"$ref": f"#/$defs/{token}Encoded"}
+    for restored in R.from_json_schema_multi_document(output):
+        assert S.is_(restored)("value") is True
+        assert S.is_(restored)(1) is False
+
+
+def test_rewrites_callback_references_with_encoded_leading_separators() -> None:
+    """multi-root compilation / rewrites callback references with encoded leading separators"""
+    callback = _callback("#%2F$defs%2FRate%25Encoded_1")
+    output = R.to_json_schema_multi_document(
+        R.to_representations((_encoded_string("Rate%"), _encoded_string("Rate%"), callback))
+    )
+    assert list(output.definitions) == ["Rate%Encoded"]
+    assert output.schemas[2] == {"$ref": "#/$defs/Rate%25Encoded"}
+    R.from_json_schema_multi_document(output)
+
+
+@pytest.mark.parametrize(
+    "ref",
+    ["#/$defs/Rate%Encoded_1", "#%2F$defs%2FRate%Encoded_1", "#/$defs/Rate#Encoded_1"],
+)
+def test_rejects_malformed_callback_reference(ref: str) -> None:
+    """multi-root compilation / rejects malformed callback reference ${JSON.stringify($ref)}"""
+    with pytest.raises(Exception, match="Invalid JSON Pointer URI fragment") as caught:
+        R.to_json_schema_multi_document(R.to_representations((_callback(ref),)))
+    assert str(caught.value) == f'Invalid JSON Pointer URI fragment "{ref}"'
+
+
+class _Box(TypedDict):
+    valueEncoded_1: bool
+
+
+@pytest.mark.parametrize("separator", ["/", "%2F", "%2f", "~1", "%7E1"])
+def test_distinguishes_pointer_separators_from_escaped_slashes(separator: str) -> None:
+    """multi-root compilation / distinguishes pointer separators from escaped slashes in
+    ${separator} callback references"""
+    identifier = "Box/properties/value"
+    box = S.Struct(_Box).annotate(identifier="Box")
+    ref = f"#/$defs/Box{separator}properties{separator}valueEncoded_1"
+    output = R.to_json_schema_multi_document(
+        R.to_representations(
+            (_encoded_string(identifier), _encoded_string(identifier), box, _callback(ref))
+        )
+    )
+    validate = _draft_07_validator(output.schemas[3], output.definitions)
+    is_name = separator in {"~1", "%7E1"}
+    assert validate(True) is (not is_name)
+    assert validate("value") is is_name
+    assert output.schemas[3]["$ref"] == (
+        "#/$defs/Box~1properties~1valueEncoded" if is_name else ref
+    )
+
+
+def test_preserves_an_encoded_pointer_suffix_when_rewriting_a_percent_named_alias() -> None:
+    """multi-root compilation / preserves an encoded pointer suffix when rewriting a
+    percent-named alias"""
+    definition = R.Objects(
+        (R.PropertySignature("value%2F", R.Boolean(), False),),
+        (),
+        annotations={"~identifier": "Box%"},
+    )
+    ref = "#/$defs/Box%25_1%2Fproperties%2Fvalue%252F"
+    reference = {"$ref": ref, "default": {"$ref": ref}}
+    output = R.to_json_schema_multi_document(
+        R.MultiDocument(
+            (R.Unknown(checks=(fragment(reference),)),),
+            {"Box%": definition, "Box%_1": definition},
+        )
+    )
+    assert output.schemas[0]["$ref"] == "#/$defs/Box%25%2Fproperties%2Fvalue%252F"
+    assert output.schemas[0]["default"] == {"$ref": ref}
+    assert reference["$ref"] == ref
+    validate = _draft_07_validator(output.schemas[0], output.definitions)
+    assert validate(True) is True
+    assert validate("value") is False

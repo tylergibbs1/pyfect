@@ -60,14 +60,14 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
 
         return pydantic.get_pydantic_json_schema(self, cast("Any", core), cast("Any", handler))
 
-    def annotate(self, **annotations: object) -> Self:
+    def annotate(self, /, **annotations: object) -> Self:
         """This schema with annotations merged over its own: ``identifier``
         names it in messages (``Expected <identifier>``), ``message``
         replaces its message, ``title`` / ``description`` / ... document it.
         On a schema with checks they annotate the last check."""
         return replace(self, ast=annotate(self.ast, annotations))
 
-    def annotate_encoded(self, **annotations: object) -> Self:
+    def annotate_encoded(self, /, **annotations: object) -> Self:
         """This schema with annotations on its encoded side (Effect's
         ``annotateEncoded``); a schema without a transformation is its own
         encoded side."""
@@ -95,7 +95,7 @@ class Bottom(Generic[T_co, E_co, RD_co, RE_co]):
 
         return self.annotate(to_formatter=derive)
 
-    def annotate_key(self, **annotations: object) -> Self:
+    def annotate_key(self, /, **annotations: object) -> Self:
         """This schema with annotations for the struct key holding it
         (Effect's ``annotateKey``): ``message_missing_key`` replaces
         ``"Missing key"``."""

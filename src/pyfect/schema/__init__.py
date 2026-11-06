@@ -191,6 +191,7 @@ from pyfect.schema._duration_codecs import (
     DurationFromNanos,
     DurationFromString,
 )
+from pyfect.schema._ecma_pattern import EcmaPatternError, compile_ecma, is_ecma_pattern
 from pyfect.schema._error import SchemaError
 from pyfect.schema._error_instance import DecodedDefect, Defect, DefectSchema, ErrorInstance
 from pyfect.schema._graph import Graph, GraphSchema
@@ -508,6 +509,7 @@ __all__ = [
     "DurationFromMillis",
     "DurationFromNanos",
     "DurationFromString",
+    "EcmaPatternError",
     "Encode",
     "EncodeKeys",
     "EncodeTo",
@@ -698,6 +700,7 @@ __all__ = [
     "catch_decoding",
     "catch_encoding",
     "class_check",
+    "compile_ecma",
     "declare",
     "declare_constructor",
     "decode",
@@ -744,6 +747,7 @@ __all__ = [
     "is_between_properties",
     "is_between_size",
     "is_capitalized",
+    "is_ecma_pattern",
     "is_ending_with",
     "is_finite",
     "is_greater_than",

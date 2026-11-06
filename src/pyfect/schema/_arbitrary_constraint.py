@@ -18,6 +18,7 @@ from typing import Any, Literal, cast
 
 from pyfect._digits import parse_signed_digits
 from pyfect.schema._checks_string import js_regex
+from pyfect.schema._ecma_pattern import compile_ecma
 from pyfect.schema._jsonschema._checks import BUILTINS, CheckContext
 from pyfect.schema.ast import Check, FilterGroup
 
@@ -193,7 +194,11 @@ _READERS: Mapping[str, _Reader] = {
         min_properties=d["minimum"], max_properties=d["maximum"]
     ),
     "isUnique": lambda _: ArbitraryConstraint(unique=True),
-    "isPattern": lambda d: ArbitraryConstraint(patterns=(re.compile(d["source"], d["flags"]),)),
+    "isPattern": lambda d: ArbitraryConstraint(
+        patterns=(
+            compile_ecma(d["source"]) if d["flags"] == "u" else re.compile(d["source"], d["flags"]),
+        )
+    ),
 }
 """By the id after ``effect/schema/``; the ordered checks read their bounds."""
 

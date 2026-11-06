@@ -228,7 +228,7 @@ def is_property_names(key_schema: Top, /, **annotations: object) -> Filter[Mappi
                     if issue is None:
                         raise failure.cause.squash()
                     issues.append(Pointer((key,), issue))
-                    if options.get("errors") != "all":
+                    if options.get("errors") == "first":
                         break
         if not issues:
             return None

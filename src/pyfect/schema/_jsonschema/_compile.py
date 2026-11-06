@@ -12,6 +12,7 @@ approximation, and a ``one_of`` union with an approximate member is written
 from __future__ import annotations
 
 import copy
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import cast
@@ -86,6 +87,10 @@ def _leaf(node: ast.AST) -> JsonSchema | None:
             return None
 
 
+# A definition's reference; what follows keeps its spelling (Effect's ``finalizeJsonSchema``).
+_DEFINITION_PREFIX = re.compile(r"^#(?:/|%2f).*?(?:/|%2f).*?(?=/|%2f|\Z)", re.IGNORECASE)
+
+
 def definition_reference(key: str) -> str:
     return format_uri_fragment(["$defs", key])
 
@@ -136,7 +141,9 @@ class Compiler:
             canonical = aliases.get(path[1]) if len(path) > 1 and path[0] == "$defs" else None
             if canonical is None:
                 return reference
-            return format_uri_fragment(["$defs", canonical, *path[2:]])
+            return _DEFINITION_PREFIX.sub(
+                lambda _: format_uri_fragment(["$defs", canonical]), reference, count=1
+            )
 
         schemas = [rewrite_refs(schema, rewrite) for schema in roots]
         definitions = {

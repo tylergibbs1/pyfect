@@ -74,7 +74,8 @@ _BY_IDENTITY = frozenset({"schema/_assignable.py", "brand.py"})
 # Each hands every check to a function that recurses into groups
 # (``_check``; the representation modules' ``check`` / ``_encode_check``;
 # the structured-output ``_compiler_check`` / ``_record_check`` /
-# ``_append_check_descriptions``).
+# ``_append_check_descriptions``; the importer's ``_satisfies_check`` /
+# ``_check_has_choices`` / ``_check``).
 _DELEGATING = frozenset(
     {
         "ai/_structured_output_checks.py compiler_checks",
@@ -82,7 +83,11 @@ _DELEGATING = frozenset(
         "ai/_structured_output_checks.py structural_annotations",
         "schema/_jsonschema/_compile.py compile",
         "schema/_jsonschema/_compile.py _check",
+        "schema/representation/_code_document.py recur",
         "schema/representation/_from.py append_checks",
+        "schema/representation/_import/_finalize.py finalize",
+        "schema/representation/_import/_intersect.py _satisfies_literal",
+        "schema/representation/_import/_intersect.py has_choices",
         "schema/representation/_json.py _encode_checks",
         "schema/representation/_to.py on",
     }

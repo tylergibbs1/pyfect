@@ -25,11 +25,24 @@ from pyfect.schema.issue import Issue
 type LiteralValue = str | int | float | bool | None
 
 
+class JsonInt(int):
+    """A literal read from JSON Schema, where ``1`` and ``1.0`` are one number."""
+
+
+class JsonFloat(float):
+    """A literal read from JSON Schema, where ``1`` and ``1.0`` are one number."""
+
+
 def same_literal(literal: LiteralValue, input: object) -> bool:
-    """``input`` is ``literal``: equal and of the same kind."""
+    """``input`` is ``literal``: equal and of the same kind, where a JSON number
+    has one kind."""
     match literal:
         case None:
             return input is None
+        case JsonInt() | JsonFloat():
+            return (
+                isinstance(input, int | float) and not isinstance(input, bool) and input == literal
+            )
         case bool():
             return isinstance(input, bool) and input == literal
         case int():

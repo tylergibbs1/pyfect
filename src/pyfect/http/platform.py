@@ -4,7 +4,8 @@ response compression.
 
 ``layer`` serves files through ``FileSystem`` and compresses with the
 standard library: gzip and deflate (``zlib``), and zstd where
-``compression.zstd`` exists (Python 3.14). There is no brotli.
+``compression.zstd`` exists (Python 3.14). ``layer_live`` adds brotli with
+the ``brotli`` extra.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import zlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from importlib.util import find_spec
 from typing import Any, Literal, Never, Protocol, TypedDict, Unpack, cast
 
 from pyfect._core import Effect
@@ -42,6 +44,7 @@ from pyfect.layer import provide as layer_provide
 from pyfect.platform_error import PlatformError, bad_argument
 from pyfect.stream import Stream, from_async_iterable
 from pyfect.stream import empty as empty_stream
+from pyfect.stream import from_effect as stream_from_effect
 from pyfect.stream import succeed as stream_succeed
 from pyfect.stream import suspend as suspend_stream
 from pyfect.stream import sync as sync_stream
@@ -195,6 +198,10 @@ def _zstd_available() -> bool:
     return True
 
 
+def _brotli_available() -> bool:
+    return find_spec("brotli") is not None
+
+
 class _Compressor(Protocol):
     def chunk(self, data: bytes, /) -> bytes:
         """``data`` compressed and flushed, so a slow stream is sent as it
@@ -234,7 +241,15 @@ class _Zstd:
 
 
 def _compressor(algorithm: CompressionAlgorithm, level: int | None) -> _Compressor:
-    return _Zstd(level) if algorithm == "zstd" else _Zlib(algorithm, level)
+    match algorithm:
+        case "zstd":
+            return _Zstd(level)
+        case "br":
+            from pyfect.http._brotli import Brotli
+
+            return Brotli(level)
+        case "gzip" | "deflate":
+            return _Zlib(algorithm, level)
 
 
 def _transform(
@@ -248,8 +263,23 @@ def _transform(
     return suspend_stream(make)
 
 
+def _transform_off_thread(
+    algorithm: CompressionAlgorithm, level: int | None, chunks: Stream[bytes, Any]
+) -> Stream[bytes, Any]:
+    """``_transform`` as ``node:zlib``'s streams run: brotli's default quality takes
+    seconds per megabyte, which a server's thread cannot spend."""
+
+    def make() -> Stream[bytes, Any]:
+        compressor = _compressor(algorithm, level)
+        compressed = chunks.map_effect(lambda data: blocking(lambda: compressor.chunk(data)))
+        out = compressed.concat(stream_from_effect(blocking(compressor.finish)))
+        return out.filter(lambda chunk: len(chunk) > 0)
+
+    return suspend_stream(make)
+
+
 def _compress_whole(data: bytes, algorithm: CompressionAlgorithm, level: int | None) -> bytes:
-    if algorithm == "zstd":
+    if algorithm in {"zstd", "br"}:
         compressor = _compressor(algorithm, level)
         return compressor.chunk(data) + compressor.finish()
     wbits = 31 if algorithm == "gzip" else 15
@@ -280,10 +310,20 @@ def compression_one_shot(fallback: Compression) -> Compression:
     return Compression(fallback.algorithms, compress)
 
 
-compression_stdlib: Compression = make_compression_stream(
-    ("gzip", "deflate", "zstd") if _zstd_available() else ("gzip", "deflate"), _transform
+_STDLIB_ALGORITHMS: tuple[CompressionAlgorithm, ...] = (
+    ("gzip", "deflate", "zstd") if _zstd_available() else ("gzip", "deflate")
 )
+
+compression_stdlib: Compression = make_compression_stream(_STDLIB_ALGORITHMS, _transform)
 """gzip and deflate, and zstd on Python 3.14."""
+
+compression_live: Compression = compression_one_shot(
+    make_compression_stream(
+        (*_STDLIB_ALGORITHMS, *(("br",) if _brotli_available() else ())), _transform_off_thread
+    )
+)
+"""What a live server offers (Node's ``NodeHttpCompression``): ``compression_stdlib``'s and
+brotli with the ``brotli`` extra, one-shot bodies compressed whole off the fiber's thread."""
 
 
 # --- file responses ---------------------------------------------------------------
@@ -519,9 +559,7 @@ layer_strong: Layer[HttpPlatform, Never, FileSystem] = layer_effect(
 layer_live: Layer[HttpPlatform] = (
     layer_effect(
         HttpPlatform,
-        FileSystem().flat_map(
-            lambda fs: _layer_build(fs, compression_one_shot(compression_stdlib))
-        ),
+        FileSystem().flat_map(lambda fs: _layer_build(fs, compression_live)),
     )
     .pipe(layer_provide(etag_layer))
     .pipe(layer_provide(file_system_layer))
@@ -543,6 +581,7 @@ __all__ = [
     "HttpPlatformService",
     "PlatformName",
     "Transform",
+    "compression_live",
     "compression_one_shot",
     "compression_stdlib",
     "layer",

@@ -9032,6 +9032,20 @@ def schema_representation_types() -> None:
     first, *_ = R.from_representations(R.to_multi_document(document), revivers=())
     assert_type(first, R.AnySchema)
 
+    # JSON Schema comes back as a schema of ``object``, needing nothing.
+    imported = R.from_json_schema_document(R.to_json_schema_document(document))
+    assert_type(imported, R.ImportedSchema)
+    assert_type(S.decode_unknown_sync(imported)(1), object)
+    root, *_ = R.from_json_schema_multi_document(
+        R.to_json_schema_multi_document(R.to_multi_document(document))
+    )
+    assert_type(root, R.ImportedSchema)
+    code = R.to_code_document(R.to_multi_document(document))
+    assert_type(code, R.CodeDocument)
+    assert_type(code.codes[0], R.Code)
+    assert_type(R.to_code_module(code), str)
+    assert_type(S.is_ecma_pattern("^a"), S.Filter[str])
+
     class Minimum(_TypedDict):
         minimum: float
 

@@ -2,26 +2,26 @@
 ``http.platform.layer_live`` (Web handlers) and the live server. Each
 test's docstring is the Effect test title.
 
-The standard library has no brotli, so the live platform offers gzip,
-deflate and (Python 3.14's ``compression.zstd``) zstd. Omitted for that:
-"prefers br over gzip in server order", "preserves the Content-Type of file
-responses when compressed with Brotli". "advertises supported algorithms"
-checks the same algorithms less ``br``.
+The live platform offers gzip, deflate, zstd on Python 3.14 and brotli with the ``brotli``
+extra, which the dev environment installs.
 """
 
 from __future__ import annotations
 
 import asyncio
+import threading
 import zlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import brotli as _brotli  # pyright: ignore[reportMissingTypeStubs]
 import pytest
 
 import pyfect as fx
 from pyfect import effect, stream
 from pyfect.http import live_server, router, server_response
+from pyfect.http._brotli import Brotli
 from pyfect.http.client import HttpClient
 from pyfect.http.file_like import BytesFile
 from pyfect.http.middleware import compression
@@ -37,6 +37,13 @@ from ._live_http import run_live
 BIG_JSON = '{"text":"' + "All work and no play makes Jack a dull boy. " * 100 + '"}'
 BIG_JSON_BYTES = BIG_JSON.encode()
 ZSTD = zstd_available()
+
+
+_library: Any = _brotli
+
+
+def _unbrotli(data: bytes) -> bytes:
+    return _library.decompress(data)
 
 
 def _big_json_app() -> fx.Effect[HttpServerResponse]:
@@ -94,6 +101,7 @@ def test_advertises_supported_algorithms() -> None:
     )
     assert "gzip" in algorithms
     assert "deflate" in algorithms
+    assert "br" in algorithms
     assert ("zstd" in algorithms) == ZSTD
 
 
@@ -104,6 +112,68 @@ def test_compresses_one_shot_bodies_asynchronously_with_gzip_and_an_exact_conten
     assert response.get("vary") == "Accept-Encoding"
     assert response.get("content-length") == str(len(body))
     assert _gunzip(body) == BIG_JSON
+
+
+def test_prefers_br_over_gzip_in_server_order() -> None:
+    """prefers br over gzip in server order"""
+    response, body = _get(_big_json_app(), headers={"accept-encoding": "gzip, br"})
+    assert response.get("content-encoding") == "br"
+    assert response.get("content-length") == str(len(body))
+    assert _unbrotli(body).decode() == BIG_JSON
+
+
+def test_a_stream_compressed_with_brotli_is_flushed_chunk_by_chunk() -> None:
+    chunks = stream.from_iterable([BIG_JSON_BYTES, BIG_JSON_BYTES])
+    app = server_response.stream(chunks, content_type="application/json")
+    response, body = _get(effect.succeed(app), headers={"accept-encoding": "br"})
+    assert response.get("content-encoding") == "br"
+    assert _unbrotli(body) == BIG_JSON_BYTES * 2
+
+
+def test_a_compressed_stream_leaves_the_servers_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    """As ``node:zlib``'s transforms do: brotli's default quality takes seconds per megabyte."""
+    threads: list[threading.Thread] = []
+    chunk, finish = Brotli.chunk, Brotli.finish
+
+    def on_chunk(self: Brotli, data: bytes) -> bytes:
+        threads.append(threading.current_thread())
+        return chunk(self, data)
+
+    def on_finish(self: Brotli) -> bytes:
+        threads.append(threading.current_thread())
+        return finish(self)
+
+    monkeypatch.setattr(Brotli, "chunk", on_chunk)
+    monkeypatch.setattr(Brotli, "finish", on_finish)
+    app = server_response.stream(
+        stream.from_iterable([BIG_JSON_BYTES]), content_type="application/json"
+    )
+    _, body = _get(effect.succeed(app), headers={"accept-encoding": "br"})
+    assert _unbrotli(body) == BIG_JSON_BYTES
+    assert len(threads) == 2
+    assert threading.main_thread() not in threads
+
+
+def test_preserves_the_content_type_of_file_responses_when_compressed_with_brotli(
+    tmp_path: Path,
+) -> None:
+    """preserves the Content-Type of file responses when compressed with Brotli"""
+    path = tmp_path / "index.html"
+    contents = f"<!doctype html><html><body>{'<p>Hello world</p>' * 100}</body></html>"
+    path.write_text(contents)
+    app = server_response.file(str(path))
+
+    uncompressed, plain = _get(app, headers={"accept-encoding": "identity"})
+    assert uncompressed.status == 200
+    assert uncompressed.get("content-encoding") is None
+    assert uncompressed.get("content-type") == "text/html"
+    assert plain.decode() == contents
+
+    compressed, body = _get(app, headers={"accept-encoding": "br"})
+    assert compressed.status == 200
+    assert compressed.get("content-encoding") == "br"
+    assert _unbrotli(body).decode() == contents
+    assert compressed.get("content-type") == uncompressed.get("content-type")
 
 
 def test_compresses_with_deflate() -> None:

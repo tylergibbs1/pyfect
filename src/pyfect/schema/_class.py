@@ -357,7 +357,7 @@ class _SchemaClass:
         return cls.__codec__().make_effect(input, **options)
 
     @classmethod
-    def annotate(cls, **annotations: object) -> Bottom[Self, Mapping[str, object]]:
+    def annotate(cls, /, **annotations: object) -> Bottom[Self, Mapping[str, object]]:
         """The class's schema with annotations (a new schema, not a class)."""
         return cls.__codec__().annotate(**annotations)
 
