@@ -10,7 +10,7 @@ transport layer with them::
         name="notes", version="1.0.0", protocols=(mcp_protocol.v2025_11_25,)
     )
     app = mcp_server.toolkit(NotesToolkit).pipe(layer.provide(NotesToolkit.to_layer(...)))
-    layer.merge(server, app).pipe(layer.provide(stdio.layer)).launch()
+    app.pipe(layer.provide_merge(server)).pipe(layer.provide(stdio.layer)).launch()
 
 A handler runs with the request's ``McpRequestContext`` and
 ``McpServerClient``; ``elicit`` asks the client's user for input and
@@ -54,7 +54,7 @@ from pyfect.ai.mcp_schema import CompletionContext, Icon, PromptMessage, Role
 from pyfect.ai.toolkit import Handlers, Toolkit
 from pyfect.context import Context
 from pyfect.duration import Duration
-from pyfect.effect import fail, succeed
+from pyfect.effect import current_fiber, fail, gen, succeed
 from pyfect.errors import IllegalArgumentError
 from pyfect.http.router import HttpRouter
 from pyfect.layer import Layer, effect_discard, provide, provide_merge
@@ -108,7 +108,8 @@ def run_stdio(
     instructions: str | None = None,
     extensions: Mapping[str, Any] | None = None,
 ) -> Effect[None, IllegalArgumentError | PlatformError, McpServer | Stdio]:
-    """Serve the client on standard input and output until its input ends.
+    """Serve the client on standard input and output and return once its
+    input ends and its requests are answered, so ``run_main`` exits 0.
     ``protocols`` are the revisions spoken, the first the one offered to a
     client asking for another."""
     info = _info(
@@ -137,7 +138,9 @@ def layer_stdio(
     extensions: Mapping[str, Any] | None = None,
 ) -> Layer[McpServer, IllegalArgumentError, Stdio]:
     """``run_stdio`` in the background of a layer providing the
-    ``McpServer``."""
+    ``McpServer``. As in Effect, the fiber that built the layer is interrupted
+    when the server ends: ``.launch()`` ends at the end of input, and
+    ``run_main`` exits 130."""
     running = run_stdio(
         name=name,
         version=version,
@@ -149,8 +152,15 @@ def layer_stdio(
         instructions=instructions,
         extensions=extensions,
     )
-    checked = make_registry(protocols).and_then(running.ignore().fork_scoped())
-    return effect_discard(checked).pipe(provide_merge(layer))
+
+    @gen
+    def started():
+        yield from make_registry(protocols)
+        builder = yield from current_fiber()
+        ended = builder.interrupt().fork_daemon(start_immediately=True).as_void()
+        yield from running.ignore().ensuring(ended).fork_scoped()
+
+    return effect_discard(started).pipe(provide_merge(layer))
 
 
 def layer_http(

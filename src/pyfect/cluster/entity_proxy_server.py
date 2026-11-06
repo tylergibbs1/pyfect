@@ -77,7 +77,9 @@ def layer_http_api[G: HttpApiGroup[Any, Any]](
 ) -> Layer[G, Never, Sharding]:
     """The handlers of ``group`` in ``api``, a group made by
     ``entity_proxy.to_http_api_group(..., entity)`` (Effect's
-    ``EntityProxyServer.layerHttpApi``). Defects are logged."""
+    ``EntityProxyServer.layerHttpApi``) or declared with
+    ``entity_proxy.http_endpoints``, which may leave out RPCs of the entity
+    to keep them off HTTP. Defects are logged."""
 
     def build(handlers: GroupHandlers[Any]) -> Effect[Any, Never, Sharding]:
         @gen
@@ -87,9 +89,10 @@ def layer_http_api[G: HttpApiGroup[Any, Any]](
             for parent in entity.rpcs.values():
                 for discard in (False, True):
                     identifier = f"{parent.tag}Discard" if discard else parent.tag
-                    built = built.handle(group.endpoints[identifier])(
-                        _endpoint_handler(client, entity, parent, discard=discard)
-                    )
+                    if identifier in group.endpoints:
+                        built = built.handle(group.endpoints[identifier])(
+                            _endpoint_handler(client, entity, parent, discard=discard)
+                        )
             return built
 
         return make

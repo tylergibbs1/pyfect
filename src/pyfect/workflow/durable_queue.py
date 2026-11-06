@@ -25,6 +25,10 @@ An item out of attempts is dead-lettered: its deferred never resolves and
 the workflow stays parked until the item is requeued out of band (the
 id-based de-duplication keeps replays from resurrecting it). Run
 ``persisted_queue.layer_cleanup`` in one instance to prune old items.
+
+A worker killed while it holds an item stalls that item until its lock
+expires: 120 seconds by default with ``persisted_queue.layer_store_sql`` and
+90 with ``layer_store_redis``. Set it with ``lock_expiration=`` on the store.
 """
 
 from __future__ import annotations

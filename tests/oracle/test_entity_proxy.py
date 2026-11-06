@@ -16,6 +16,7 @@ from pyfect.http import server as http_server
 from pyfect.http_api import get_group
 from pyfect.http_api import test as api_test
 from pyfect.http_api.api import HttpApi
+from pyfect.http_api.group import HttpApiGroup
 from pyfect.rpc import AnyRpc, RpcGroup
 from pyfect.rpc import make as make_rpc
 from pyfect.rpc import test as rpc_test
@@ -111,6 +112,58 @@ def test_serves_the_proxy_http_api_through_the_entity_client():
         discard: Callable[..., fx.Effect[Any, Any]] = methods.method("GetUserDiscard")
         sent = yield from discard(params={"entityId": "1"}, payload={"id": 8})
         assert sent is None
+
+    yield from (
+        fx.scoped(body).pipe(fx.provide(handlers)).pipe(fx.provide(http_server.layer_services))
+    )
+
+
+class TypedProxy(HttpApiGroup, identifier="typed-proxy"):
+    get_user, get_user_discard = entity_proxy.http_endpoints(TestEntity.get_user)  # alone
+
+
+def test_the_typed_endpoints_are_the_ones_the_runtime_group_derives() -> None:
+    built = entity_proxy.to_http_api_group("built", ProxiedEntity)
+    declared = entity_proxy.http_endpoints(ProxiedEntity.request)
+    assert {(e.identifier, e.method, e.path, e.error) for e in declared} == {
+        (e.identifier, e.method, e.path, e.error) for e in built.endpoints.values()
+    }
+
+
+@testing.effect
+def test_the_proxy_http_api_serves_a_group_of_typed_endpoints():
+    api = HttpApi.make("Proxy").add(TypedProxy)
+    handlers = entity_proxy_server.layer_http_api(api, TypedProxy, TestEntity).pipe(
+        fx.layer.provide_merge(test_sharding)
+    )
+
+    @fx.gen
+    def body():
+        yield from testing.adjust(0.001)
+        proxy = get_group((yield from api_test.groups(api, [TypedProxy])), TypedProxy)
+        user = yield from proxy.get_user(params={"entityId": "1"}, payload={"id": 7})
+        assert user == User(id=7, name="User 7")
+        sent = yield from proxy.get_user_discard(params={"entityId": "1"}, payload={"id": 8})
+        assert sent is None
+
+    yield from (
+        fx.scoped(body).pipe(fx.provide(handlers)).pipe(fx.provide(http_server.layer_services))
+    )
+
+
+@testing.effect
+def test_a_runtime_group_is_read_by_name_on_its_client():
+    group = entity_proxy.to_http_api_group("test-entity", TestEntity)
+    api = HttpApi.make("Proxy").add(group)
+    handlers = entity_proxy_server.layer_http_api(api, group, TestEntity).pipe(
+        fx.layer.provide_merge(test_sharding)
+    )
+
+    @fx.gen
+    def body():
+        proxy = get_group((yield from api_test.groups(api, [group])), group)
+        assert not hasattr(proxy, "GetUserDiscard")
+        assert callable(proxy.method("GetUserDiscard"))
 
     yield from (
         fx.scoped(body).pipe(fx.provide(handlers)).pipe(fx.provide(http_server.layer_services))

@@ -138,8 +138,35 @@ answering is still alive by reading its pod from the Kubernetes API, where the d
 pings it. The layers serialize messages as newline-delimited JSON, where Effect's default is
 its binary format, which is not ported, so a pyfect runner cannot join an Effect cluster.
 Lower level pieces are there too: `socket_runner` and `http_runner` (the protocols and servers), `runner_server`,
-`runners` and `runner_health`. `entity_proxy` exposes an entity as an RPC group or an
-[HTTP API](/docs/http-api) group, and `entity_proxy_server` serves it.
+`runners` and `runner_health`.
+
+`entity_proxy` exposes an entity as an RPC group or an [HTTP API](/docs/http-api) group, and
+`entity_proxy_server` serves it. `to_http_api_group(name, entity)` builds the HTTP group at
+run time, so its client has no attribute per operation: read one by name with
+`.method("Increment")` or `.method("IncrementDiscard")`, typed `Any`. For a typed client,
+declare the operations in a group of your own with `entity_proxy.http_endpoints(Entity.rpc)`,
+one line per RPC. RPCs you leave out stay off HTTP.
+
+<CodeOutput>
+
+<include meta='title="proxy.py"'>../../snippets/cluster/proxy.py</include>
+
+<include lang="text">../../snippets/cluster/proxy.out</include>
+
+</CodeOutput>
+
+`cluster_metrics` reports what a runner is doing. `entities` and `entity_mailbox_size_max` are
+per entity type, as in Effect, so `.value()` on the gauge itself reads 0 while entities run.
+Read a type's series with `.with_attributes({"type": ...})`, or all of them with
+`metric.snapshot`.
+
+<CodeOutput>
+
+<include meta='title="metrics.py"'>../../snippets/cluster/metrics.py</include>
+
+<include lang="text">../../snippets/cluster/metrics.out</include>
+
+</CodeOutput>
 
 ## Singletons and cron jobs
 

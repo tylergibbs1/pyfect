@@ -14,6 +14,7 @@ def run_example(name: str) -> str:
         [sys.executable, str(EXAMPLES / name)],
         check=False,
         capture_output=True,
+        stdin=subprocess.DEVNULL,
         text=True,
         timeout=30,
     )
@@ -90,6 +91,7 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         [sys.executable, str(EXAMPLES / "cli.py"), *args],
         check=False,
         capture_output=True,
+        stdin=subprocess.DEVNULL,
         text=True,
         timeout=30,
     )

@@ -71,7 +71,11 @@ add them twice. Only top-level steps are compensated, not effects inside an acti
 
 `workflow.add_finalizer(f)` runs `f(exit)` once the execution completes, not each time a
 run suspends, and `durable_queue` hands work to [`PersistedQueue`](/docs/persistence) workers
-and waits for their results. `workflow_proxy` and `workflow_proxy_server` expose
+and waits for their results. A worker killed while it holds a job stalls that job, and the
+workflow waiting on it, until the job's lock expires: 120 seconds by default with
+`persisted_queue.layer_store_sql` and 90 with `layer_store_redis`, as in Effect. Set it on the
+store, `layer_store_sql(lock_expiration=...)`, and keep it above `lock_refresh_interval`
+(30 seconds). `workflow_proxy` and `workflow_proxy_server` expose
 workflows as [RPC](/docs/rpc) or [HttpApi](/docs/http-api) groups that execute, discard
 and resume them. `to_rpc_group` and `to_http_api_group` build the groups at run time, so
 their clients call operations by name; declare `workflow_proxy.rpcs(W)` or

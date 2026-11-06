@@ -8210,6 +8210,74 @@ def cluster_sharding_types() -> None:
     del events
 
 
+class ProxyUser(TypedDict):
+    id: int
+
+
+def check_entity_proxy_typed_endpoints() -> None:
+    """``entity_proxy.http_endpoints`` declared in a group types the client."""
+    from pyfect.cluster import entity_proxy, entity_proxy_server
+    from pyfect.cluster.cluster_error import (
+        AlreadyProcessingMessage,
+        EntityNotAssignedToRunner,
+        MailboxFull,
+        PersistenceError,
+    )
+    from pyfect.cluster.entity import Entity
+    from pyfect.cluster.sharding import Sharding
+    from pyfect.http.error import HttpClientError
+    from pyfect.http_api import test as api_test
+    from pyfect.http_api.api import HttpApi
+    from pyfect.http_api.client import get_group
+    from pyfect.http_api.group import HttpApiGroup
+    from pyfect.rpc import make as make_rpc
+    from pyfect.schema import SchemaError
+
+    class Users(Entity, type="Users"):
+        rename = make_rpc("Rename", payload=S.Struct(ProxyUser), success=S.String, error=S.Number)
+
+    class UsersProxy(HttpApiGroup, identifier="users"):
+        rename, rename_discard = entity_proxy.http_endpoints(Users.rename)
+
+    api = HttpApi.make("api").add(UsersProxy)
+    assert_type(
+        entity_proxy_server.layer_http_api(api, UsersProxy, Users),
+        fx.Layer[UsersProxy, Never, Sharding],
+    )
+
+    def client():
+        users = get_group((yield from api_test.groups(api, [UsersProxy])), UsersProxy)
+        params: entity_proxy.EntityIdParams = {"entityId": "1"}
+        assert_type(
+            users.rename(params=params, payload={"id": 1}),
+            fx.Effect[
+                str,
+                float
+                | MailboxFull
+                | AlreadyProcessingMessage
+                | PersistenceError
+                | EntityNotAssignedToRunner
+                | HttpClientError
+                | SchemaError,
+            ],
+        )
+        assert_type(
+            users.rename_discard(params=params, payload={"id": 1}),
+            fx.Effect[
+                None,
+                MailboxFull
+                | AlreadyProcessingMessage
+                | PersistenceError
+                | HttpClientError
+                | SchemaError,
+            ],
+        )
+        users.rename(payload={"id": 1})  # pyright: ignore[reportCallIssue]
+        users.rename(params=params, payload={"id": "1"})  # pyright: ignore[reportArgumentType]
+
+    _ = client
+
+
 def package_namespace() -> None:
     # fx.<subpackage> is imported lazily at runtime; the type checker still
     # knows each one and rejects a name the package does not have.

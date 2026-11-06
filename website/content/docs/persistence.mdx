@@ -74,6 +74,19 @@ and let several processes take from one queue: a value taken by a process that d
 released for another once its lock expires. `persisted_queue.layer_cleanup` removes old
 completed values.
 
+That wait is `lock_expiration`, 120 seconds on `layer_store_sql` and 90 on
+`layer_store_redis`, as in Effect, so a job whose worker was killed sits for that long while
+others finish. A worker that is alive renews its lock every `lock_refresh_interval` (30
+seconds on both), so lowering the expiration only costs anything if it gets close to that.
+
+<CodeOutput>
+
+<include meta='title="lock_expiration.py"'>../../snippets/persistence/lock_expiration.py</include>
+
+<include lang="text">../../snippets/persistence/lock_expiration.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.persistence`](/docs/reference/persistence),
 [`key_value_store`](/docs/reference/persistence/key_value_store),
 [`persisted_cache`](/docs/reference/persistence/persisted_cache),

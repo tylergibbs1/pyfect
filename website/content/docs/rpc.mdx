@@ -92,6 +92,21 @@ alone, it would be released once the client is made.
 
 <include meta='title="test_todos.py"'>../../snippets/rpc/test_todos.py</include>
 
+To test over real HTTP against `uvicorn_server.layer_test()`, give
+`rpc_client.layer_protocol_http` a real client and the absolute URL from
+`server.address_formatted_with`. The test server's own `HttpClient` doesn't work here, in
+Effect either: it prefixes every URL with the server's origin, then the protocol prefixes
+its URL on top. A relative URL fails with `InvalidUrl` (`POST /rpc/http://127.0.0.1:PORT/`)
+and an absolute one with `Error decoding HTTP response`.
+
+<CodeOutput>
+
+<include meta='title="http_test_server.py"'>../../snippets/rpc/http_test_server.py</include>
+
+<include lang="text">../../snippets/rpc/http_test_server.out</include>
+
+</CodeOutput>
+
 Reference: [`pyfect.rpc`](/docs/reference/rpc), [`pyfect.rpc.group`](/docs/reference/rpc/group),
 [`pyfect.rpc.server`](/docs/reference/rpc/server),
 [`pyfect.rpc.client`](/docs/reference/rpc/client),

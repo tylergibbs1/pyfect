@@ -2,11 +2,22 @@
 (Effect's ``EntityProxy``): ``to_rpc_group`` derives an RPC group whose
 requests carry the entity id and the entity RPC's payload;
 ``to_http_api_group`` derives an HTTP API group with the entity id in the
-path."""
+path.
+
+That group is built at run time, so a client reads its operations by name
+(``.method("<Tag>")``, typed ``Any``). To type a client, declare the operations
+in your own group, one line per entity RPC (Effect types its group by the
+entity's RPCs, which Python cannot)::
+
+    class Counters(HttpApiGroup, identifier="counters"):
+        increment, increment_discard = entity_proxy.http_endpoints(Counter.increment)
+
+``entity_proxy_server.layer_http_api`` serves either group.
+"""
 
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 from pyfect import schema as S
 from pyfect.cluster.cluster_error import (
@@ -17,8 +28,9 @@ from pyfect.cluster.cluster_error import (
 )
 from pyfect.cluster.entity import Entity
 from pyfect.http_api import endpoint as http_endpoint
+from pyfect.http_api.endpoint import HttpApiEndpoint
 from pyfect.http_api.group import HttpApiGroup
-from pyfect.rpc import AnyRpc, RpcGroup
+from pyfect.rpc import AnyRpc, Rpc, RpcGroup
 from pyfect.rpc import make as make_rpc
 
 
@@ -80,6 +92,46 @@ class EntityIdParams(TypedDict):
 
 _ENTITY_ID_PARAMS: Any = S.Struct(EntityIdParams)
 
+type ClientError = MailboxFull | AlreadyProcessingMessage | PersistenceError
+"""What ``CLIENT_ERRORS`` decode to."""
+
+type RequestError = ClientError | EntityNotAssignedToRunner
+"""What ``REQUEST_ERRORS`` decode to."""
+
+
+class EntityEndpoints[P, A, E](NamedTuple):
+    """The two HTTP endpoints of one entity RPC (``http_endpoints``)."""
+
+    call: HttpApiEndpoint[EntityIdParams, None, P, P, None, A, A, E | RequestError]
+    discard: HttpApiEndpoint[EntityIdParams, None, P, P, None, None, None, ClientError]
+
+
+def http_endpoints[P, A, E](rpc: Rpc[P, A, E, Any, Any]) -> EntityEndpoints[P, A, E]:
+    """``POST /<tag lowercased>/:entityId`` (``Tag``), answered with the RPC's
+    success, and ``POST /<tag lowercased>/:entityId/discard`` (``TagDiscard``),
+    answered once the message is sent, typed, to declare in an
+    ``HttpApiGroup``."""
+    path = f"/{rpc.tag.lower()}/:entityId"
+    post: Any = http_endpoint.post
+    call: Any = post(
+        rpc.tag,
+        path,
+        params=_ENTITY_ID_PARAMS,
+        payload=rpc.payload_schema,
+        success=rpc.success_schema,
+        error=(rpc.error_schema, *REQUEST_ERRORS),
+    )
+    discard: Any = post(
+        f"{rpc.tag}Discard",
+        f"{path}/discard",
+        params=_ENTITY_ID_PARAMS,
+        payload=rpc.payload_schema,
+        error=CLIENT_ERRORS,
+    )
+    return EntityEndpoints(
+        call.annotate_merge(rpc.annotations), discard.annotate_merge(rpc.annotations)
+    )
+
 
 def to_http_api_group(name: str, entity: type[Entity]) -> type[HttpApiGroup[Any]]:
     """The HTTP API group ``name`` with, for each entity RPC ``Tag``, a
@@ -88,35 +140,21 @@ def to_http_api_group(name: str, entity: type[Entity]) -> type[HttpApiGroup[Any]
     ``TagDiscard`` answered once the message is sent (Effect's
     ``EntityProxy.toHttpApiGroup``)."""
     group: type[HttpApiGroup[Any]] = HttpApiGroup.make(name)
-    post: Any = http_endpoint.post
     for parent in entity.rpcs.values():
-        path = f"/{parent.tag.lower()}/:entityId"
-        call: Any = post(
-            parent.tag,
-            path,
-            params=_ENTITY_ID_PARAMS,
-            payload=parent.payload_schema,
-            success=parent.success_schema,
-            error=(parent.error_schema, *REQUEST_ERRORS),
-        )
-        discard: Any = post(
-            f"{parent.tag}Discard",
-            f"{path}/discard",
-            params=_ENTITY_ID_PARAMS,
-            payload=parent.payload_schema,
-            error=CLIENT_ERRORS,
-        )
-        group = group.add(
-            call.annotate_merge(parent.annotations), discard.annotate_merge(parent.annotations)
-        )
+        rpc: Any = parent
+        group = group.add(*http_endpoints(rpc))
     return group
 
 
 __all__ = [
     "CLIENT_ERRORS",
     "REQUEST_ERRORS",
+    "ClientError",
+    "EntityEndpoints",
     "EntityIdParams",
     "ProxyPayload",
+    "RequestError",
+    "http_endpoints",
     "proxy_rpcs",
     "to_http_api_group",
     "to_rpc_group",

@@ -28,6 +28,11 @@ protocols=...)` adds MCP's Streamable HTTP transport to an
 `mcp_server.run_stdio(...)` serves on standard input and output until the input ends, for
 a server that a client starts as a child process; see
 [`examples/mcp_server.py`](https://github.com/tylergibbs1/pyfect/blob/main/examples/mcp_server.py).
+It returns when the input ends, so `run_main` exits 0. `mcp_server.layer_stdio(...)` is
+Effect's form: the end of input interrupts the fiber that built the layer, so `.launch()`
+under `run_main` exits 130, as Effect's does. Put the layer below your other layers with
+`layer.provide_merge`. Under `layer.merge` it builds on a fiber of its own, which has finished
+by then, so the program keeps running after the input ends, in Effect as well.
 
 <Diagram name="mcp-session" title="The client's requests reach the server's toolkit handlers over HTTP or stdio, and each tool call comes back as a structured result" />
 

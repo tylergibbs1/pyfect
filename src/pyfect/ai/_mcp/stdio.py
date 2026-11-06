@@ -95,15 +95,15 @@ def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, M
             reading.and_then(connection.drain())
             .and_then(finished)
             .ensuring(
-                sync(lambda: server.disconnect(connection.client_id))
-                .and_then(connection.close())
-                .and_then(lines.end())
+                sync(lambda: server.disconnect(connection.client_id)).and_then(connection.close())
             )
             .fork()
         )
-        # A dead writer would leave every writer waiting on the bounded output.
+        # A dead writer would leave every writer waiting on the bounded output. Only a writer
+        # that ended early can interrupt anything: the output ends after serving has exited.
         yield from writer.await_exit().and_then(serving.interrupt()).fork()
         yield from serving.await_exit()
+        yield from lines.end()
         yield from writer.join()
         yield from serving.join()
 
