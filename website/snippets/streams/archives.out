@@ -1,0 +1,3 @@
+[('logs/', b''), ('logs/a.txt', b'hello\n'), ('logs/b.txt', b'streamed\n')]
+4096 bytes
+[('logs/', b''), ('logs/a.txt', b'hello\n'), ('logs/b.txt', b'streamed\n'), ('latest', b'')]

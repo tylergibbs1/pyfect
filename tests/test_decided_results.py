@@ -22,8 +22,13 @@ import pytest
 
 import pyfect as fx
 import pyfect._fiber as fiber_module
+from pyfect import scope as fx_scope
+from pyfect import stream
 from pyfect._wake_tracking import WakeTracker
 from pyfect.duration import Seconds
+from pyfect.encoding import tar
+from pyfect.encoding import zip as encoding_zip
+from pyfect.pull import catch_done
 from pyfect.scheduler import Cancel, Scheduler, Task
 
 _BUDGETS = (1, 2, 3, 31, 32, 33)
@@ -261,6 +266,50 @@ def _partitioned_semaphore_case(*, parked: bool) -> _Case:
     return _Case(setup, op, check, wake)
 
 
+def _archive_body_case(decode: Callable[[], Any], encoded: bytes, body: bytes) -> _Case:
+    """A pull of an entry's body takes bytes from the decoder's input."""
+
+    def setup() -> fx.Effect[Any, Any, Any]:
+        source: Any = stream.make(encoded).pipe_through_channel(decode())
+
+        def opened(scope: Any) -> Any:
+            def entries(pull: Any) -> Any:
+                return pull
+
+            def body(chunk: Any) -> Any:
+                return chunk[0].body.channel.to_pull_scoped(scope)
+
+            return source.channel.to_pull_scoped(scope).flat_map(entries).flat_map(body)
+
+        return fx_scope.make().flat_map(opened)
+
+    def op(pull: Any, seen: list[Any]) -> fx.Effect[Any, Any]:
+        return pull.map(seen.extend)
+
+    def check(pull: Any, seen: list[Any]) -> fx.Effect[str | None]:
+        @fx.gen
+        def read_rest():
+            rest = list(seen)
+            while True:
+                chunks = yield from catch_done(pull, lambda _: fx.succeed(None))
+                if chunks is None:
+                    break
+                rest.extend(chunks)
+            return None if b"".join(rest) == body else f"read {b''.join(rest)!r}"
+
+        return read_rest
+
+    return _Case(setup, op, check)
+
+
+_ARCHIVE_BODY = b"the body of the entry" * 40
+
+
+def _encoded(encode: Callable[[], Any], entry: Any) -> bytes:
+    made: Any = stream.make(entry).pipe_through_channel(encode()).run_bytes()
+    return fx.run_sync(made)
+
+
 # Not transactions (``TxQueue.take``): as in Effect's ``tx``, the commit runs
 # in an uninterruptible region, and an interrupt that arrives meanwhile fails
 # the caller when the region ends, with the commit applied.
@@ -280,6 +329,19 @@ _CASES: dict[str, _Case] = {
     "semaphore.take (woken)": _semaphore_case(parked=True),
     "partitioned_semaphore.take (free)": _partitioned_semaphore_case(parked=False),
     "partitioned_semaphore.take (woken)": _partitioned_semaphore_case(parked=True),
+    "tar body pull": _archive_body_case(
+        tar.decode, _encoded(tar.encode, tar.file("a", _ARCHIVE_BODY)), _ARCHIVE_BODY
+    ),
+    "zip stored body pull": _archive_body_case(
+        encoding_zip.decode,
+        _encoded(encoding_zip.encode, encoding_zip.file("a", _ARCHIVE_BODY, method="Store")),
+        _ARCHIVE_BODY,
+    ),
+    "zip deflated body pull": _archive_body_case(
+        encoding_zip.decode,
+        _encoded(encoding_zip.encode, encoding_zip.file("a", _ARCHIVE_BODY)),
+        _ARCHIVE_BODY,
+    ),
 }
 
 

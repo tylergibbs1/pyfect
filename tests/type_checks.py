@@ -93,7 +93,18 @@ from pyfect.cli._environment import Environment as CliEnvironment
 from pyfect.cli.global_flag import LogLevel
 from pyfect.context import Tag, TagEffect
 from pyfect.duration import Seconds, to_seconds
-from pyfect.encoding import EncodingError, Json, base64, json_array, ndjson, schema_binary, sse
+from pyfect.encoding import (
+    EncodingError,
+    Json,
+    base64,
+    json_array,
+    ndjson,
+    schema_binary,
+    sse,
+    tar,
+    xml,
+)
+from pyfect.encoding import zip as encoding_zip
 from pyfect.errors import TaggedError
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
@@ -9291,3 +9302,104 @@ assert_type(S.decode_sync(_binary_codec)(b""), _BinaryPoint)
 assert_type(schema_binary.parser(_binary_points).feed_sync(b""), list[_BinaryPoint])
 assert_type(schema_binary.encoder(_binary_points, fingerprint=True).encode({"x": 1}), bytes)
 assert_type(schema_binary.encode_unknown_sync(_binary_points)({"x": 1}), bytes)
+
+
+def xml_zip_tar_channels(
+    *,
+    text: _St[str],
+    data: _St[bytes],
+    failing_data: _St[bytes, ValueError],
+    events: _St[xml.Event],
+    needs_int: _St[bytes, ValueError, int],
+    tar_failing: _St[tar.Entry[ValueError, int]],
+    zip_entries: _St[encoding_zip.Entry[ValueError, int] | encoding_zip.ContentEntry],
+    tar_mixed: _St[tar.Entry[ValueError, int] | tar.Entry[KeyError, str]],
+    tar_widened: _St[tar.Entry[ValueError | KeyError, int | str]],
+    takes_widened: Callable[[_St[tar.Entry[ValueError | KeyError, int | str]]], object],
+    failing_text: _St[str, ValueError],
+    failing_events: _St[xml.Event, ValueError],
+) -> None:
+    assert_type(text.pipe_through_channel(xml.decode_string()), _St[xml.Event, xml.XmlError])
+    assert_type(data.pipe_through_channel(xml.decode()), _St[xml.Event, xml.XmlError])
+    assert_type(
+        events.pipe_through_channel(xml.elements(["feed", "item"])),
+        _St[xml.Element, xml.XmlError],
+    )
+    assert_type(events.pipe_through_channel(xml.encode_string()), _St[str, xml.XmlError])
+    assert_type(events.pipe_through_channel(xml.encode()), _St[bytes, xml.XmlError])
+
+    # Entry bodies carry the archive's errors, and read from the channel's input.
+    assert_type(data.pipe_through_channel(tar.decode()), _St[tar.Entry[tar.TarError], tar.TarError])
+    assert_type(
+        data.pipe_through_channel(encoding_zip.decode()),
+        _St[encoding_zip.Entry[encoding_zip.ZipError], encoding_zip.ZipError],
+    )
+
+    # The input's errors go through, also to the entry bodies, which read from it.
+    assert_type(
+        failing_text.pipe_through_channel(xml.decode_string()),
+        _St[xml.Event, xml.XmlError | ValueError],
+    )
+    assert_type(
+        failing_events.pipe_through_channel(xml.encode()), _St[bytes, xml.XmlError | ValueError]
+    )
+    assert_type(
+        failing_data.pipe_through_channel(tar.decode()),
+        _St[tar.Entry[tar.TarError | ValueError], tar.TarError | ValueError],
+    )
+    assert_type(
+        failing_data.pipe_through_channel(encoding_zip.decode()),
+        _St[
+            encoding_zip.Entry[encoding_zip.ZipError | ValueError],
+            encoding_zip.ZipError | ValueError,
+        ],
+    )
+
+    # Entries are covariant, as Effect's: an in-memory file fits among failing ones.
+    tar_list: list[tar.Entry[ValueError]] = [
+        tar.file("a", "x"),
+        tar.file_stream("b", 1, failing_data),
+    ]
+    zip_list: list[encoding_zip.Entry[ValueError] | encoding_zip.ContentEntry] = [
+        encoding_zip.file("a", "x"),
+        encoding_zip.file_stream("b", failing_data),
+    ]
+    assert_type(
+        stream.from_iterable(tar_list).pipe_through_channel(tar.encode()),
+        _St[bytes, tar.TarError | ValueError],
+    )
+    assert_type(
+        stream.from_iterable(zip_list).pipe_through_channel(encoding_zip.encode()),
+        _St[bytes, encoding_zip.ZipError | ValueError],
+    )
+
+    # Effect's ``encode`` distributes over a union of entries. Here the stream is
+    # annotated as one entry type, which a union of entries is assignable to.
+    tar_mixed.pipe_through_channel(tar.encode())  # pyright: ignore[reportArgumentType]
+    takes_widened(tar_mixed)
+    assert_type(
+        tar_widened.pipe_through_channel(tar.encode()),
+        _St[bytes, tar.TarError | ValueError | KeyError, int | str],
+    )
+
+    # ``encode`` adds the bodies' errors and requirements to the output.
+    assert_type(
+        tar_failing.pipe_through_channel(tar.encode()),
+        _St[bytes, tar.TarError | ValueError, int],
+    )
+    assert_type(
+        tar.file_stream("f", 1, needs_int),
+        tar.Entry[ValueError, int],
+    )
+    assert_type(encoding_zip.file("f", "x"), encoding_zip.ContentEntry)
+    assert_type(encoding_zip.file_stream("f", data), encoding_zip.Entry[Never, Never])
+    assert_type(
+        encoding_zip.file_stream("f", failing_data, method="Store", size=1),
+        encoding_zip.Entry[ValueError, Never],
+    )
+    # Streaming readers can only find the end of stored data from its size.
+    encoding_zip.file_stream("f", data, method="Store")  # pyright: ignore[reportArgumentType]
+    assert_type(
+        zip_entries.pipe_through_channel(encoding_zip.encode()),
+        _St[bytes, encoding_zip.ZipError | ValueError, int],
+    )

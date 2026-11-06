@@ -56,7 +56,8 @@ writer, so a slow sink slows the whole pipeline instead of filling memory.
 
 <Diagram name="stream-pipeline" title="The pipeline's stages from byte chunks to the sink, which pulls from upstream" />
 
-`fx.encoding` has framers for NDJSON, JSON arrays and Server-Sent Events.
+`fx.encoding` has framers for NDJSON, JSON arrays and Server-Sent Events, and channels for XML,
+zip and tar, below.
 
 ## SchemaBinary
 
@@ -80,3 +81,44 @@ so Effect's values beyond those fail to read here.
 Reference: [`pyfect.stream`](/docs/reference/stream), [`pyfect.sink`](/docs/reference/sink),
 [`pyfect.channel`](/docs/reference/channel),
 [`pyfect.encoding.schema_binary`](/docs/reference/encoding/schema_binary).
+
+## XML
+
+`pyfect.encoding.xml` reads a document as a stream of events, so a large one never has to fit in
+memory. `decode_string()` takes text and `decode()` takes UTF-8 bytes. `elements(path)` turns events
+back into one small tree per record, and `encode_string()` and `encode()` write events out.
+
+<include meta='title="xml_feed.py"'>../../snippets/streams/xml_feed.py</include>
+
+<include lang="text">../../snippets/streams/xml_feed.out</include>
+
+A reference to any entity but the predefined ones fails with an `"Unsupported"` error instead of
+being expanded, so a document cannot read local files or expand into gigabytes. `max_token_size`, `max_depth` and
+`max_element_size` bound what one document can hold in memory.
+
+## Zip and tar
+
+`pyfect.encoding.zip` and `pyfect.encoding.tar` read an archive as a stream of entries, each with a
+header and a `body` stream, and write entries back to archive bytes. Bodies are streamed in both
+directions, so an archive does not have to fit in memory.
+
+<include meta='title="archives.py"'>../../snippets/streams/archives.py</include>
+
+<include lang="text">../../snippets/streams/archives.out</include>
+
+Read each body before pulling the next entry: a later read fails with `"BodyConsumed"`, and pulling
+the next entry skips what is left. `map_effect` is the usual way to do that.
+
+Neither decoder touches the file system, and both return paths as written in the archive. As in
+Effect, a path can be absolute or contain `..`, a tar symlink can redirect the entries after it, and
+a zip's central directory is not read, so other tools can see different entries. A deflated zip body
+can also expand about a thousand times. Before writing entries to disk, reject paths that leave the
+target directory and limit how many bytes you read:
+
+<include meta='title="safe_extract.py"'>../../snippets/streams/safe_extract.py</include>
+
+<include lang="text">../../snippets/streams/safe_extract.out</include>
+
+Reference: [`pyfect.encoding.xml`](/docs/reference/encoding/xml),
+[`pyfect.encoding.zip`](/docs/reference/encoding/zip),
+[`pyfect.encoding.tar`](/docs/reference/encoding/tar).

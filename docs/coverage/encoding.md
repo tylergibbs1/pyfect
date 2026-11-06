@@ -6,11 +6,11 @@ Coverage counts ported, renamed and §4 exports.
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
 | Toml | 1 | 1 | 0 | 0 | 0 | 100% |
-| Xml | 7 | 0 | 0 | 0 | 7 | 0% |
-| Tar | 9 | 0 | 0 | 0 | 9 | 0% |
-| Zip | 7 | 0 | 0 | 0 | 7 | 0% |
+| Xml | 7 | 7 | 0 | 0 | 0 | 100% |
+| Tar | 9 | 9 | 0 | 0 | 0 | 100% |
+| Zip | 7 | 7 | 0 | 0 | 0 | 100% |
 | SchemaBinary | 10 | 10 | 0 | 0 | 0 | 100% |
-| **All** | 34 | | | | 23 | 32% |
+| **All** | 34 | | | | 0 | 100% |
 
 ## Toml
 
@@ -22,39 +22,39 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
-| `XmlError` | missing |  |
-| `isXmlError` | missing |  |
-| `decodeString` | missing |  |
-| `decode` | missing |  |
-| `elements` | missing |  |
-| `encodeString` | missing |  |
-| `encode` | missing |  |
+| `XmlError` | ported | `pyfect.encoding.xml.XmlError` |
+| `isXmlError` | ported | `pyfect.encoding.xml.is_xml_error` |
+| `decodeString` | ported | `pyfect.encoding.xml.decode_string` |
+| `decode` | ported | `pyfect.encoding.xml.decode` |
+| `elements` | ported | `pyfect.encoding.xml.elements` |
+| `encodeString` | ported | `pyfect.encoding.xml.encode_string` |
+| `encode` | ported | `pyfect.encoding.xml.encode` |
 
 ## Tar
 
 | Effect | Status | pyfect |
 |---|---|---|
-| `TarError` | missing |  |
-| `isTarError` | missing |  |
-| `file` | missing |  |
-| `fileStream` | missing |  |
-| `directory` | missing |  |
-| `symlink` | missing |  |
-| `hardlink` | missing |  |
-| `decode` | missing |  |
-| `encode` | missing |  |
+| `TarError` | ported | `pyfect.encoding.tar.TarError` |
+| `isTarError` | ported | `pyfect.encoding.tar.is_tar_error` |
+| `file` | ported | `pyfect.encoding.tar.file` |
+| `fileStream` | ported | `pyfect.encoding.tar.file_stream` |
+| `directory` | ported | `pyfect.encoding.tar.directory` |
+| `symlink` | ported | `pyfect.encoding.tar.symlink` |
+| `hardlink` | ported | `pyfect.encoding.tar.hardlink` |
+| `decode` | ported | `pyfect.encoding.tar.decode` |
+| `encode` | ported | `pyfect.encoding.tar.encode` |
 
 ## Zip
 
 | Effect | Status | pyfect |
 |---|---|---|
-| `ZipError` | missing |  |
-| `isZipError` | missing |  |
-| `file` | missing |  |
-| `fileStream` | missing |  |
-| `directory` | missing |  |
-| `decode` | missing |  |
-| `encode` | missing |  |
+| `ZipError` | ported | `pyfect.encoding.zip.ZipError` |
+| `isZipError` | ported | `pyfect.encoding.zip.is_zip_error` |
+| `file` | ported | `pyfect.encoding.zip.file` |
+| `fileStream` | ported | `pyfect.encoding.zip.file_stream` |
+| `directory` | ported | `pyfect.encoding.zip.directory` |
+| `decode` | ported | `pyfect.encoding.zip.decode` |
+| `encode` | ported | `pyfect.encoding.zip.encode` |
 
 ## SchemaBinary
 
