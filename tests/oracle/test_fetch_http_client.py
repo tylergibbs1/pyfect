@@ -31,7 +31,7 @@ from ._http_server import base_url
 http = testing.layer_fixture(httpx_client.layer, live=True)
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_sends_bodies(http: Services[HttpClient]):
     """sends bodies from Web requests"""
     request = (

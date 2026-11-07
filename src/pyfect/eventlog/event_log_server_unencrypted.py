@@ -644,7 +644,7 @@ def _open_pubsub(_store_id: str) -> Effect[PubSub[RemoteEntry], Never, Scope]:
 
 def _make_storage_memory():
     semaphore = yield from Semaphore.make(1)
-    pubsubs = yield from RcMap.make(_open_pubsub, idle_time_to_live=60)
+    pubsubs = yield from RcMap.make(_open_pubsub, idle_time_to_live="60 seconds")
     return _MemoryStorage(semaphore, pubsubs)
 
 

@@ -76,7 +76,7 @@ def test_connection_made_after_server_close_is_aborted():
     assert conn.transport is not None and conn.transport.is_closing()
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_writes_after_the_peer_ends_its_stream():
     # The peer's end-of-stream ends the read side only: the connection stays
     # half-open until the writer is released.
@@ -100,7 +100,7 @@ def test_writes_after_the_peer_ends_its_stream():
     assert peer.recv(1) == b"y"
 
 
-@testing.live(timeout=20)
+@testing.live(timeout="20 seconds")
 def test_a_paused_write_waits_for_drain_not_for_received_data():
     # Effect's awaitDrain resumes on drain, error or close only: data the
     # peer sends while not reading must not release a writer held back by
@@ -112,10 +112,10 @@ def test_a_paused_write_waits_for_drain_not_for_received_data():
     writer = yield from sock.writer
     payload = b"x" * 8_000_000
     writing = yield from writer.write(payload).fork(start_immediately=True)
-    yield from fx.sleep(0.2)
+    yield from fx.sleep("200 millis")
     assert writing.poll_unsafe() is None
     peer.sendall(b"ping")
-    yield from fx.sleep(0.2)
+    yield from fx.sleep("200 millis")
     assert writing.poll_unsafe() is None
 
     def read_all() -> int:
@@ -134,7 +134,7 @@ def _pair_socket() -> tuple[SocketService, socket.socket]:
     return from_socket(succeed(ours)), peer
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_reader_string_drops_a_byte_order_mark():
     # TextDecoder("utf-8") drops a leading BOM, again after each flush.
     sock, peer = _pair_socket()
@@ -144,7 +144,7 @@ def test_reader_string_drops_a_byte_order_mark():
     assert "".join((yield from pull)) == "hi"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_text_with_a_lone_surrogate_is_written_as_text_encoder_does():
     sock, peer = _pair_socket()
     yield from acquire_release(sync(lambda: peer), lambda p, _: sync(p.close))
@@ -159,7 +159,7 @@ def test_text_with_a_lone_surrogate_is_written_as_text_encoder_does():
     assert received == b"a\xef\xbf\xbd\xef\xbf\xbdb"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_writes_during_a_tls_upgrade_are_sent_encrypted():
     # Node writes to the TLS socket as soon as the upgrade starts, so a
     # write made while the handshake runs is encrypted once it is done.
@@ -181,7 +181,7 @@ def test_writes_during_a_tls_upgrade_are_sent_encrypted():
     assert received == b"hello"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_an_upgrade_of_a_tls_connection_layers_tls_inside_it():
     # Effect's upgrade puts a TLSSocket over whatever the connection is, so
     # upgrading a TLS socket runs a second TLS session inside the first.
@@ -247,4 +247,4 @@ def test_a_server_effect_run_twice_listens_twice():
         return received
 
     for _ in range(2):
-        assert run_blocking(scoped(gen(echo_once)).timeout(10).or_die()) == b"hi"
+        assert run_blocking(scoped(gen(echo_once)).timeout("10 seconds").or_die()) == b"hi"

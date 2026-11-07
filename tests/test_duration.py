@@ -9,18 +9,48 @@ import pytest
 
 import pyfect as fx
 from pyfect import schedule
-from pyfect.duration import Seconds, format_duration, to_seconds
+from pyfect.duration import Duration, Seconds, format_duration, to_seconds
 
 
 @pytest.mark.parametrize(
     ("given", "expected"),
-    [(float("nan"), 0.0), (-0.0, 0.0), (1.5, 1.5), (timedelta(milliseconds=1500), 1.5)],
+    [
+        (float("nan"), 0.0),
+        (-0.0, 0.0),
+        (1500, 1.5),
+        (1.5, 0.0015),
+        (timedelta(milliseconds=1500), 1.5),
+        (Seconds(1.5), 1.5),
+    ],
 )
-def test_to_seconds_normalises_like_effect_duration_make(given: float, expected: float):
-    """Effect's ``Duration.make`` maps NaN (and -0) to zero."""
+def test_to_seconds_normalises_like_effect_duration_make(given: Duration, expected: float):
+    """A bare number is milliseconds (Effect's ``Duration.millis``), and
+    ``Duration.make`` maps NaN (and -0) to zero."""
     parsed = to_seconds(given)
     assert isinstance(parsed, Seconds)
     assert parsed == expected and math.copysign(1.0, parsed) == math.copysign(1.0, expected)
+
+
+def test_parsed_seconds_pass_through_unchanged():
+    """A parsed ``Seconds`` is a ``Duration`` already, as Effect's
+    ``fromInputUnsafe`` returns a ``Duration`` input as it is: it is not
+    read again as milliseconds."""
+    parsed = to_seconds("2 seconds")
+    assert to_seconds(parsed) is parsed
+
+
+def test_arithmetic_on_seconds_keeps_the_unit():
+    """Durations computed from durations stay ``Seconds``, so they are not
+    read as milliseconds when passed on; a ratio or a sum with a bare
+    number is a plain ``float``."""
+    two = Seconds(2)
+    for kept in (two + two, two - two, two * 1.5, 3 * two, two / 4, -two, abs(-two), +two):
+        assert type(kept) is Seconds
+    for plain in (two / two, two + 1.0, 1.0 + two, two - 1):
+        assert type(plain) is float
+    assert two * timedelta(seconds=1) == timedelta(seconds=2)
+    assert Seconds(math.inf) * 0 == 0.0
+    assert Seconds(math.inf) + Seconds(-math.inf) == 0.0
 
 
 def test_seconds_cannot_hold_nan():
@@ -28,11 +58,13 @@ def test_seconds_cannot_hold_nan():
 
 
 def test_sleep_nan_completes_at_once_on_the_sync_scheduler():
-    assert fx.run_blocking_exit(fx.sleep(float("nan")).as_("woke").timeout(5)) == fx.Success("woke")
+    assert fx.run_blocking_exit(fx.sleep(float("nan")).as_("woke").timeout("5 seconds")) == (
+        fx.Success("woke")
+    )
 
 
 def test_sleep_nan_completes_at_once_on_asyncio():
-    ex = asyncio.run(fx.run_async_exit(fx.sleep(float("nan")).as_("woke").timeout(5)))
+    ex = asyncio.run(fx.run_async_exit(fx.sleep(float("nan")).as_("woke").timeout("5 seconds")))
     assert ex == fx.Success("woke")
 
 

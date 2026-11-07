@@ -47,7 +47,7 @@ def test_from_subscription_ends_when_the_pubsub_shuts_down():
 def test_from_pubsub_array_keeps_what_reached_a_waiting_reader_before_shutdown():
     pubsub = yield from PubSub[int].unbounded()
     reader = yield from channel.from_pubsub_array(pubsub).run_collect().fork()
-    yield from fx.sleep(0.01)
+    yield from fx.sleep("10 millis")
     yield from pubsub.publish_all([1, 2])
     yield from pubsub.shutdown()
     assert (yield from reader.join()) == [(1, 2)]

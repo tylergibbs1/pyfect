@@ -135,7 +135,7 @@ def _make_client() -> Generator[
 ]:
     fs = yield from FileSystem()
     token = yield from (
-        fs.read_file_string(TOKEN_PATH).map(str.strip).option().cached_with_ttl(60.0)
+        fs.read_file_string(TOKEN_PATH).map(str.strip).option().cached_with_ttl("60 seconds")
     )
     http = yield from HttpClient()
 
@@ -148,7 +148,7 @@ def _make_client() -> Generator[
         http.map_request(lambda request: request.prepend_url(API_URL))
         .map_request_effect(authorize)
         .filter_status_ok()
-        .retry_transient(schedule=schedule.spaced(5.0))
+        .retry_transient(schedule=schedule.spaced("5 seconds"))
     )
 
 
@@ -189,7 +189,7 @@ def make_get_pods(
             .flat_map(response_.schema_body_json(_PodList))
             .map(by_ip)
             .tap_cause(lambda cause: log_warning("Failed to fetch pods from Kubernetes API", cause))
-            .cached_with_ttl(10.0)
+            .cached_with_ttl("10 seconds")
         )
 
     return gen(body)
@@ -217,7 +217,9 @@ def _make_create_pod() -> Generator[Effect[Any, Any, Any], Any, CreatePod]:
         read_pod: Effect[Pod | None] = (
             read_raw.flat_map(response_.schema_body_json(POD))
             .map(Some)
-            .retry(while_=lambda e: isinstance(e, SchemaError), schedule=schedule.spaced(1.0))
+            .retry(
+                while_=lambda e: isinstance(e, SchemaError), schedule=schedule.spaced("1 second")
+            )
             .catch_if(_is_status(404), lambda _: succeed(None))
             .map(lambda found: None if found is None else found.value)
             .or_die()
@@ -239,7 +241,7 @@ def _make_create_pod() -> Generator[Effect[Any, Any, Any], Any, CreatePod]:
             .or_die()
         )
         wait_deleted = is_pod_found.repeat(
-            until=lambda found: not found, schedule=schedule.spaced(3.0)
+            until=lambda found: not found, schedule=schedule.spaced("3 seconds")
         ).or_die()
 
         def body() -> Generator[Effect[Any, Any, Any], Any, PodStatus]:
@@ -250,7 +252,7 @@ def _make_create_pod() -> Generator[Effect[Any, Any, Any], Any, CreatePod]:
             while pod is None or not pod.is_ready:
                 if pod is None:
                     yield from create_pod
-                yield from sleep(3.0)
+                yield from sleep("3 seconds")
                 pod = yield from read_pod
             return pod.status
 

@@ -211,7 +211,7 @@ def _handshake(port_number: int, sent_origin: str | None) -> bytes:
         return client.recv(64)
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_a_websockets_server_handshake_from_another_origin_is_refused():
     from pyfect.socket import ws as ws_platform
 

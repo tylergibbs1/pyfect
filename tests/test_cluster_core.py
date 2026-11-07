@@ -52,6 +52,6 @@ def test_shard_id_from_string_rejects_non_numbers(text: str) -> None:
 def test_snowflake_generator_reads_whole_clock_milliseconds():
     """Effect's generator reads ``currentTimeMillisUnsafe``. Float seconds
     times 1000 floors 1.001 s to 1000 ms."""
-    yield from testing.adjust(1.001)
+    yield from testing.adjust("1001 millis")
     generator = yield from snowflake.make_generator()
     assert snowflake.timestamp(generator.next_unsafe()) == 1001

@@ -68,7 +68,7 @@ A `timer` records **milliseconds**, as Effect's does, and the Prometheus text le
 `time_unit` attribute, so the name is the only place the unit can show: name a timer
 `..._milliseconds` (`checkout_milliseconds_sum 51521` is 51.5 seconds). For Prometheus's
 convention of seconds, pass a `histogram` to `track_duration`, which records seconds
-(`fx.sleep(0.01).track_duration(metric.histogram("checkout_seconds", boundaries=[1.0]))`).
+(`fx.sleep("10 millis").track_duration(metric.histogram("checkout_seconds", boundaries=[1.0]))`).
 
 Reference: [`pyfect.logger`](/docs/reference/logger), [`pyfect.tracer`](/docs/reference/tracer),
 [`pyfect.metric`](/docs/reference/metric), [`pyfect.otel`](/docs/reference/otel),

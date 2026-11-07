@@ -70,7 +70,7 @@ def test_applies_an_explicit_max_body_size_above_the_ambient_max_body_size() -> 
     statuses = fx.run_blocking(
         fx.scoped(program)
         .pipe(layer.provide(served.pipe(layer.provide_merge(uvicorn_server.layer_test()))))
-        .timeout(10)
+        .timeout("10 seconds")
         .or_die()
     )
     assert statuses == (200, 200)
@@ -129,7 +129,7 @@ def test_rejects_an_over_limit_content_length_before_the_body_arrives(
         fx.run_async(
             fx.scoped(program)
             .pipe(layer.provide(served.pipe(layer.provide_merge(uvicorn_server.layer_test()))))
-            .timeout(10)
+            .timeout("10 seconds")
             .or_die()
         )
     )

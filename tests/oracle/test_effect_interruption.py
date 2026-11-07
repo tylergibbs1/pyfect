@@ -29,10 +29,10 @@ def _on_interrupt[A, E](eff: fx.Effect[A, E], log: list[str], label: str) -> fx.
 def test_race_interrupts_the_loser_when_the_other_side_succeeds():
     """race interrupts the loser when the other side succeeds"""
     interrupted: list[str] = []
-    fast = _on_interrupt(fx.succeed("fast").delay(0.1), interrupted, "fast")
-    slow = _on_interrupt(fx.succeed("slow").delay(0.5), interrupted, "slow")
+    fast = _on_interrupt(fx.succeed("fast").delay("100 millis"), interrupted, "fast")
+    slow = _on_interrupt(fx.succeed("slow").delay("500 millis"), interrupted, "slow")
     fiber = yield from fast.race(slow).fork()
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert (yield from fiber.join()) == "fast"
     assert interrupted == ["slow"]
 
@@ -41,10 +41,10 @@ def test_race_interrupts_the_loser_when_the_other_side_succeeds():
 def test_race_first_interrupts_the_loser_when_the_other_side_succeeds():
     """raceFirst interrupts the loser when the other side succeeds"""
     interrupted: list[str] = []
-    fast = _on_interrupt(fx.succeed("fast").delay(0.1), interrupted, "fast")
-    slow = _on_interrupt(fx.succeed("slow").delay(0.5), interrupted, "slow")
+    fast = _on_interrupt(fx.succeed("fast").delay("100 millis"), interrupted, "fast")
+    slow = _on_interrupt(fx.succeed("slow").delay("500 millis"), interrupted, "slow")
     fiber = yield from fast.race_first(slow).fork()
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert (yield from fiber.join()) == "fast"
     assert interrupted == ["slow"]
 
@@ -53,9 +53,9 @@ def test_race_first_interrupts_the_loser_when_the_other_side_succeeds():
 def test_race_first_interrupts_the_loser_when_the_other_side_fails():
     """raceFirst interrupts the loser when the other side fails"""
     interrupted: list[str] = []
-    slow = _on_interrupt(fx.succeed("slow").delay(0.5), interrupted, "slow")
-    fiber = yield from fx.fail("boom").delay(0.1).race_first(slow).exit().fork()
-    yield from testing.adjust(0.5)
+    slow = _on_interrupt(fx.succeed("slow").delay("500 millis"), interrupted, "slow")
+    fiber = yield from fx.fail("boom").delay("100 millis").race_first(slow).exit().fork()
+    yield from testing.adjust("500 millis")
     assert (yield from fiber.join()) == fx.exit.fail("boom")
     assert interrupted == ["slow"]
 
@@ -112,8 +112,10 @@ def _record(done: list[int], i: int) -> fx.Effect[int]:
 def test_sequential_interrupt():
     """sequential interrupt"""
     done: list[int] = []
-    fiber = yield from fx.for_each(range(1, 7), lambda i: _record(done, i).delay(0.3)).fork()
-    yield from testing.adjust(0.8)
+    fiber = yield from fx.for_each(
+        range(1, 7), lambda i: _record(done, i).delay("300 millis")
+    ).fork()
+    yield from testing.adjust("800 millis")
     yield from fiber.interrupt()
     assert _interrupted((yield from fiber.await_exit()))
     assert done == [1, 2]
@@ -124,9 +126,9 @@ def test_unbounded_interrupt():
     """unbounded interrupt"""
     done: list[int] = []
     fiber = yield from fx.for_each(
-        range(1, 4), lambda i: _record(done, i).delay(0.15), concurrency="unbounded"
+        range(1, 4), lambda i: _record(done, i).delay("150 millis"), concurrency="unbounded"
     ).fork()
-    yield from testing.adjust(0.05)
+    yield from testing.adjust("50 millis")
     yield from fiber.interrupt()
     assert _interrupted((yield from fiber.await_exit()))
     assert done == []
@@ -137,9 +139,9 @@ def test_bounded_interrupt():
     """bounded interrupt"""
     done: list[int] = []
     fiber = yield from fx.for_each(
-        range(1, 7), lambda i: _record(done, i).delay(0.2), concurrency=2
+        range(1, 7), lambda i: _record(done, i).delay("200 millis"), concurrency=2
     ).fork()
-    yield from testing.adjust(0.35)
+    yield from testing.adjust("350 millis")
     yield from fiber.interrupt()
     assert _interrupted((yield from fiber.await_exit()))
     assert done == [1, 2]
@@ -151,7 +153,8 @@ def test_releases_on_interrupt():
     released: list[bool] = []
     fiber = yield from fx.scoped(
         fx.acquire_release(
-            fx.succeed("foo").delay(0.1), lambda _a, _ex: fx.sync(lambda: released.append(True))
+            fx.succeed("foo").delay("100 millis"),
+            lambda _a, _ex: fx.sync(lambda: released.append(True)),
         )
     ).fork(start_immediately=True)
     fiber.interrupt_as_unsafe(None)
@@ -199,7 +202,7 @@ def test_interrupt_of_never_is_interrupted_with_cause():
 def test_closing_scope_is_uninterruptible():
     """closing scope is uninterruptible"""
     ref: list[bool] = []
-    child = fx.sleep(0.01).and_then(fx.sync(lambda: ref.append(True)))
+    child = fx.sleep("10 millis").and_then(fx.sync(lambda: ref.append(True)))
     fiber = yield from child.uninterruptible().fork(start_immediately=True)
     yield from fiber.interrupt()
     assert ref == [True]

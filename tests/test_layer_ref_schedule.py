@@ -48,16 +48,16 @@ def test_the_invalidation_schedule_invalidates_or_with_preload_refreshes(
     owner = fx.CloseableScope()
     ref = yield from fx.LayerRef.make(
         res_live,
-        idle_time_to_live=60,
+        idle_time_to_live="1 minute",
         preload=preload,
-        invalidation_schedule=schedule.spaced(10),
+        invalidation_schedule=schedule.spaced("10 seconds"),
     ).pipe(fx.provide_service(fx.Scope, owner))
     note("start")
     yield from fx.scoped(ref.context_effect())
     note("used")
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     note("10s")
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     note("20s")
     yield from owner.close(fx.Success(None))
 

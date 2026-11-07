@@ -28,6 +28,7 @@ import pyfect as fx
 from pyfect import cause, schedule, sink, stream, testing
 from pyfect.cause import Cause
 from pyfect.clock import now
+from pyfect.duration import Seconds
 from pyfect.exit import Exit
 from pyfect.option import Some
 from pyfect.queue import Queue
@@ -139,12 +140,12 @@ def test_aggregate_within_does_not_step_the_schedule_while_upstream_is_idle():
 
         return fx.sync(bump)
 
-    policy = schedule.spaced(0.01).tap(count_step)
+    policy = schedule.spaced("10 millis").tap(count_step)
     idle: Stream[int] = stream.never
     fiber = yield from (
         idle.aggregate_within(sink.take(25), policy).run_drain().fork(start_immediately=True)
     )
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert steps == 0
     yield from fiber.interrupt()
 
@@ -184,17 +185,17 @@ def test_grouped_within_starts_each_window_at_its_first_element():
 
     yield from (
         stream.from_queue(queue)
-        .grouped_within(10, 0.1)
+        .grouped_within(10, "100 millis")
         .run_for_each(record)
         .fork(start_immediately=True)
     )
-    yield from testing.adjust(1.03)
+    yield from testing.adjust("1030 millis")
     yield from queue.offer(1)
-    yield from testing.adjust(0.05)
+    yield from testing.adjust("50 millis")
     yield from queue.offer(2)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from queue.offer(3)
-    yield from testing.adjust(0.1)
+    yield from testing.adjust("100 millis")
     assert batches == [(1130, [1, 2]), (2180, [3])]
 
 
@@ -203,9 +204,9 @@ def test_grouped_within_does_not_emit_empty_arrays_when_upstream_is_idle():
     """groupedWithin does not emit empty arrays when upstream is idle"""
     idle: Stream[int] = stream.never
     fiber = yield from (
-        idle.grouped_within(25, 0.05).take(5).run_collect().fork(start_immediately=True)
+        idle.grouped_within(25, "50 millis").take(5).run_collect().fork(start_immediately=True)
     )
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert fiber.poll_unsafe() is None
 
 
@@ -213,7 +214,7 @@ def test_grouped_within_does_not_emit_empty_arrays_when_upstream_is_idle():
 def test_grouped_within_normalizes_the_chunk_size():
     """groupedWithin normalizes the chunk size"""
     results = yield from fx.for_each(
-        [-1, 0, 1, 2], lambda n: stream.make(1, 2, 3).grouped_within(n, 3600).run_collect()
+        [-1, 0, 1, 2], lambda n: stream.make(1, 2, 3).grouped_within(n, "1 hour").run_collect()
     )
     assert results == [
         [[1], [2], [3]],
@@ -226,7 +227,7 @@ def test_grouped_within_normalizes_the_chunk_size():
 @testing.effect
 def test_grouped_within_flushes_final_partial_batch_on_upstream_end():
     """groupedWithin flushes final partial batch on upstream end without waiting for the schedule"""
-    result = yield from stream.make(1, 2, 3, 4, 5).grouped_within(3, 1).run_collect()
+    result = yield from stream.make(1, 2, 3, 4, 5).grouped_within(3, "1 second").run_collect()
     assert result == [[1, 2, 3], [4, 5]]
 
 
@@ -236,12 +237,12 @@ def test_grouped_within_flushes_partial_batch_when_the_schedule_elapses_while_id
     fiber = yield from (
         stream.make(1, 2, 3, 4, 5)
         .concat(stream.never)
-        .grouped_within(3, 1)
+        .grouped_within(3, "1 second")
         .take(2)
         .run_collect()
         .fork(start_immediately=True)
     )
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from fiber.join()) == [[1, 2, 3], [4, 5]]
 
 
@@ -258,7 +259,7 @@ def test_aggregate_within_simple_example():
     folding = sink.fold(start, lambda state: state[1], step)
     result = yield from (
         stream.make(1, 1, 1, 1, 2, 2)
-        .aggregate_within(folding.map(lambda state: state[0]), schedule.spaced(30 * 60))
+        .aggregate_within(folding.map(lambda state: state[0]), schedule.spaced(Seconds(30 * 60)))
         .run_collect()
     )
     assert result == [[2, 1, 1, 1, 1], [2]]
@@ -294,7 +295,7 @@ def test_aggregate_within_error_propagation_1():
     error = RuntimeError("Boom")
     ex = yield from (
         stream.make(1, 1, 1, 1)
-        .aggregate_within(sink.die(error), schedule.spaced(30 * 60))
+        .aggregate_within(sink.die(error), schedule.spaced(Seconds(30 * 60)))
         .run_collect()
         .exit()
     )
@@ -311,7 +312,10 @@ def test_aggregate_within_error_propagation_2():
 
     folding = sink.fold(list[int], lambda _: True, step)
     ex = yield from (
-        stream.make(1, 1).aggregate_within(folding, schedule.spaced(30 * 60)).run_collect().exit()
+        stream.make(1, 1)
+        .aggregate_within(folding, schedule.spaced(Seconds(30 * 60)))
+        .run_collect()
+        .exit()
     )
     assert ex == fx.exit.die(error)
 
@@ -331,7 +335,7 @@ def test_aggregate_within_interruption_propagation_1():
     folding = sink.fold(list[int], lambda _: True, step)
     fiber = yield from (
         stream.make(1, 1, 2)
-        .aggregate_within(folding, schedule.spaced(30 * 60))
+        .aggregate_within(folding, schedule.spaced(Seconds(30 * 60)))
         .run_collect()
         .fork_scoped()
     )
@@ -347,7 +351,7 @@ def test_aggregate_within_interruption_propagation_2():
     waiting: Sink[Never] = sink.from_effect(fx.never.on_interrupt(interrupted.set(True)))
     fiber = yield from (
         stream.make(1, 1, 2)
-        .aggregate_within(waiting, schedule.spaced(30 * 60))
+        .aggregate_within(waiting, schedule.spaced(Seconds(30 * 60)))
         .run_collect()
         .fork_scoped(start_immediately=True)
     )
@@ -398,7 +402,7 @@ def test_tap_sink_sink_finishing_during_an_upstream_pull_still_lets_the_stream_c
 
     source = stream.from_effect(fx.gen(source_body))
     finishing = sink.from_effect(started.wait().and_then(finished.succeed(None)))
-    result = yield from source.tap_sink(finishing).run_collect().timeout_option(1)
+    result = yield from source.tap_sink(finishing).run_collect().timeout_option("1 second")
     assert result == Some([1])
 
 

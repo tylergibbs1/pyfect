@@ -46,7 +46,7 @@ _KILL = "KILL QUERY WHERE query_id = {queryId:String}"
 
 def _run(body: Body) -> Any:
     return fx.run_blocking(
-        fx.scoped(fx.gen(body)).pipe(fx.provide(reactivity_layer)).timeout(5).or_die()
+        fx.scoped(fx.gen(body)).pipe(fx.provide(reactivity_layer)).timeout("5 seconds").or_die()
     )
 
 
@@ -111,7 +111,7 @@ def test_closes_the_client_when_the_connection_check_times_out():
     made = fx.scoped(_make(fake)).pipe(fx.provide(reactivity_layer))
     fiber = yield from made.fork_daemon()
     yield from fx.yield_now()
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     result = fiber.poll_unsafe()
     assert isinstance(result, Failure)
     error = result.cause.find_error()

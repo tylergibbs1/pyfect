@@ -360,7 +360,7 @@ def test_gen_closes_the_generator_when_it_stops_early():
 
 def test_gen_closes_the_generator_when_interrupted():
     closed: list[str] = []
-    slow = cp.make(lambda _path: fx.sleep(1.0).as_(cp.Value("1")))
+    slow = cp.make(lambda _path: fx.sleep("1 second").as_(cp.Value("1")))
 
     @config.gen
     def tracked() -> Generator[fx.Effect[Any, ConfigError], Any, int]:
@@ -369,7 +369,7 @@ def test_gen_closes_the_generator_when_interrupted():
         finally:
             closed.append("closed")
 
-    exit = fx.run_blocking_exit(tracked.parse(slow).timeout(0.01))
+    exit = fx.run_blocking_exit(tracked.parse(slow).timeout("10 millis"))
     assert isinstance(exit, fx.Failure)
     assert closed == ["closed"]
 

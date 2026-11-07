@@ -143,7 +143,7 @@ def test_store_keeps_outcomes_for_their_time_to_live(layer: fx.Layer[Any, Any]):
         assert (yield from store.get(GetItem(1))) == fx.exit.succeed(Item(name="a"))
         # A time to live of zero writes nothing.
         assert (yield from store.get(GetItem(2))) is None
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         assert (yield from store.get(GetItem(1))) is None
 
     yield from fx.gen(body).pipe(fx.provide(layer))

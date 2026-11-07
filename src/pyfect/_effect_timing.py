@@ -8,7 +8,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Never, TypeIs, overload
 
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
-from pyfect.duration import Duration
+from pyfect.duration import Duration, Seconds
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
@@ -24,8 +24,8 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
 
         return sleep(duration).and_then(as_effect(self))
 
-    def timed(self) -> Effect[tuple[float, A_co], E_co, R_co]:
-        """Pair the value with how long it took, in seconds."""
+    def timed(self) -> Effect[tuple[Seconds, A_co], E_co, R_co]:
+        """Pair the value with how long it took, as ``Seconds``."""
         from pyfect.clock import timed
 
         return timed(as_effect(self))

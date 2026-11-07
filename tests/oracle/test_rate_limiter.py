@@ -67,7 +67,7 @@ def test_charges_oversized_delay_mode_requests_behind_the_queue_and_delays_later
                 on_exceeded="delay",
                 key="oversized",
                 limit=4,
-                window=60,
+                window="1 minute",
                 tokens=tokens,
             ),
         )
@@ -96,7 +96,7 @@ def test_rejects_oversized_fail_mode_requests_without_charging_them(algorithm: A
             "on_exceeded": "fail",
             "key": "oversized",
             "limit": 4,
-            "window": 60,
+            "window": "60 seconds",
         }
         error = yield from suite.exceeded(limiter.consume(**opts, tokens=5))
         assert error.key == "oversized"
@@ -115,7 +115,9 @@ def test_supports_partially_applied_sleep() -> None:
     def body():
         limiter = yield from rl.make
         sleep = rl.sleep(limiter)
-        result = yield from sleep(algorithm="fixed-window", window=60, limit=5, key="partial")
+        result = yield from sleep(
+            algorithm="fixed-window", window="1 minute", limit=5, key="partial"
+        )
         assert result.remaining == 4
 
     _run(body)
@@ -127,7 +129,7 @@ def test_supports_uncurried_sleep() -> None:
     def body():
         limiter = yield from rl.make
         result = yield from rl.sleep(
-            limiter, algorithm="fixed-window", window=60, limit=5, key="direct"
+            limiter, algorithm="fixed-window", window="1 minute", limit=5, key="direct"
         )
         assert result.remaining == 4
 
@@ -144,7 +146,7 @@ def _fixed_delay(key: str, tokens: float) -> fx.Effect[rl.ConsumeResult, Any, An
             on_exceeded="delay",
             key=key,
             limit=5,
-            window=60,
+            window="1 minute",
             tokens=tokens,
         )
     )
@@ -181,7 +183,7 @@ def test_subtracts_elapsed_time_from_reset_metadata() -> None:
 
     def body():
         yield from _fixed_delay("elapsed", 4)
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         result = yield from _fixed_delay("elapsed", 1)
         assert result.limit == 5
         assert result.remaining == 0
@@ -211,7 +213,7 @@ def _consume_one(
     limiter: rl.RateLimiterService, algorithm: Algorithm, on_exceeded: OnExceeded
 ) -> fx.Effect[rl.ConsumeResult, rl.RateLimiterError]:
     return limiter.consume(
-        algorithm=algorithm, on_exceeded=on_exceeded, window=60, limit=5, tokens=1, key="a"
+        algorithm=algorithm, on_exceeded=on_exceeded, window="1 minute", limit=5, tokens=1, key="a"
     )
 
 
@@ -231,10 +233,10 @@ def test_returns_accumulated_delays_after_the_fixed_window_is_exceeded() -> None
         assert result.delay == 60
         result = yield from consume  # 11
         assert result.delay == 120
-        yield from testing.adjust(30)
+        yield from testing.adjust("30 seconds")
         result = yield from consume  # 12
         assert result.delay == 90
-        yield from testing.adjust(45)
+        yield from testing.adjust("45 seconds")
         result = yield from consume  # 13
         assert result.delay == 45
 
@@ -253,11 +255,11 @@ def test_fails_with_retry_after_until_the_fixed_window_resets() -> None:
         error = yield from suite.exceeded(consume)
         assert error.retry_after == 60
         assert error.remaining == 0
-        yield from testing.adjust(30)
+        yield from testing.adjust("30 seconds")
         error = yield from suite.exceeded(consume)
         assert error.retry_after == 30
         assert error.remaining == 0
-        yield from testing.adjust(30)
+        yield from testing.adjust("30 seconds")
         result = yield from consume
         assert result.delay == ZERO
         assert result.remaining == 4
@@ -282,7 +284,7 @@ def test_returns_delay_based_on_the_token_refill_rate() -> None:
         assert result.delay == refill_rate
         result = yield from consume  # 7
         assert result.delay == refill_rate * 2
-        yield from testing.adjust(60)  # 2
+        yield from testing.adjust("1 minute")  # 2
         result = yield from consume  # 3
         assert result.delay == ZERO
         assert result.remaining == 2
@@ -302,7 +304,7 @@ def test_fails_until_enough_tokens_are_refilled() -> None:
         error = yield from suite.exceeded(consume)
         assert error.retry_after == 12
         assert error.remaining == 0
-        yield from testing.adjust(12 * 3)
+        yield from testing.adjust(Seconds(12 * 3))
         result = yield from consume
         assert result.delay == ZERO
         assert result.remaining == 2
@@ -345,7 +347,7 @@ def _learned_after(
     one: the epoch the rejection was sent in."""
     first = yield from _adaptive(store)
     yield from _feedback(store, first.epoch, 1)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from _adaptive(store)
     rejected = yield from _adaptive(store)
     yield from _feedback(store, rejected.epoch, retry_after)
@@ -406,7 +408,7 @@ def test_bounds_excessive_adaptive_retry_after_cooldowns() -> None:
         yield from _feedback(store, first.epoch, 7200)
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (3600, 0, "cooldown")
-        yield from testing.adjust(3600)
+        yield from testing.adjust("1 hour")
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (ZERO, 1, "learning")
 
@@ -420,7 +422,7 @@ def test_returns_the_remaining_cooldown_delay() -> None:
         store = yield from rl.RateLimiterStore()
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 10)
-        yield from testing.adjust(4)
+        yield from testing.adjust("4 seconds")
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (6, 0, "cooldown")
 
@@ -434,7 +436,7 @@ def test_starts_learning_on_the_first_admitted_post_cooldown_request() -> None:
         store = yield from rl.RateLimiterStore()
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 10)
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         result = yield from _adaptive(store, tokens=2)
         assert (result.delay, result.epoch, result.phase) == (ZERO, 1, "learning")
 
@@ -448,7 +450,7 @@ def test_keeps_learning_requests_at_zero_delay_while_observing_token_counts() ->
         store = yield from rl.RateLimiterStore()
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 1)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         learning = yield from _adaptive(store, tokens=2)
         assert learning.phase == "learning"
         result = yield from _adaptive(store, tokens=3)
@@ -464,12 +466,12 @@ def test_learns_the_accepted_token_count_and_inferred_window_from_learning_feedb
         store = yield from rl.RateLimiterStore()
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 1)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         learning = yield from _adaptive(store, tokens=2)
-        yield from testing.adjust(4)
+        yield from testing.adjust("4 seconds")
         rejected = yield from _adaptive(store, tokens=3)
         yield from _feedback(store, rejected.epoch, 6, tokens=3)
-        yield from testing.adjust(6)
+        yield from testing.adjust("6 seconds")
         assert learning.epoch == rejected.epoch
         result = yield from _adaptive(store)
         assert (result.delay, result.phase) == (ZERO, "learned")
@@ -488,7 +490,7 @@ def test_ignores_stale_epoch_feedback() -> None:
         store = yield from rl.RateLimiterStore()
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 1)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         learning = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 10)
         result = yield from _adaptive(store)
@@ -536,12 +538,12 @@ def test_stores_only_cooldown_when_no_tokens_were_accepted_during_learning() -> 
         store = yield from rl.RateLimiterStore()
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 1)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         learning = yield from _adaptive(store, tokens=2)
         yield from _feedback(store, learning.epoch, 5, tokens=2)
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (5, learning.epoch, "cooldown")
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (
             ZERO,
@@ -558,7 +560,7 @@ def test_expires_learned_adaptive_state() -> None:
     def body():
         store = yield from rl.RateLimiterStore()
         yield from _learned_after(store, 1)
-        yield from testing.adjust(61)
+        yield from testing.adjust("61 seconds")
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (ZERO, 0, "inactive")
 
@@ -572,13 +574,13 @@ def test_bounds_learned_adaptive_windows_and_expires_the_bounded_state() -> None
         store = yield from rl.RateLimiterStore()
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 0.001)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from _adaptive(store)
         rejected = yield from _adaptive(store)
         yield from _feedback(store, rejected.epoch, 7200)
         result = yield from _adaptive(store)
         assert (result.delay, result.phase) == (3600, "learned")
-        yield from testing.adjust(61 * 60)
+        yield from testing.adjust(Seconds(61 * 60))
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (ZERO, 0, "inactive")
 

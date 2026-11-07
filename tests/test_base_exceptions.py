@@ -246,7 +246,7 @@ def test_ctrl_c_in_a_child_interrupts_the_main_fiber_and_both_finalize():
     @fx.gen
     def prog():
         child = (
-            fx.sleep(0.01)
+            fx.sleep("10 millis")
             .and_then(fx.sync(_ctrl_c))
             .ensuring(fx.sync(lambda: log.append("child fin")))
         )
@@ -394,7 +394,7 @@ def test_ctrl_c_in_an_rpc_handler_is_not_a_defect_of_the_request():
         .ensuring(fx.sync(lambda: log.append("fin")))
     )
     with pytest.raises(KeyboardInterrupt):
-        fx.run_blocking(prog.timeout(5).or_die())
+        fx.run_blocking(prog.timeout("5 seconds").or_die())
     assert log == ["fin"]
 
 
@@ -415,7 +415,7 @@ def test_a_raising_exit_observer_stops_the_ones_after_it():
     seen: list[fx.Exit[int, Never]] = []
 
     async def main() -> None:
-        fiber = fx.run_fork(fx.sleep(0.01).as_(42))
+        fiber = fx.run_fork(fx.sleep("10 millis").as_(42))
         fiber.add_observer_unsafe(lambda ex: _raise(ZeroDivisionError()))
         fiber.add_observer_unsafe(seen.append)
         await asyncio.sleep(0.05)

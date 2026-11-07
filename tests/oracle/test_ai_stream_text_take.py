@@ -14,6 +14,7 @@ from pyfect import schema as S
 from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
+from pyfect.duration import Seconds
 
 from ._ai import with_language_model
 
@@ -41,7 +42,11 @@ def test_take_starts_no_tool_handler(n: int) -> None:
 
     def handler(params: _Params, _: object) -> fx.Effect[str]:
         ms = int(params["ms"])
-        return fx.sync(lambda: log.append(f"start{ms}")).and_then(fx.sleep(ms / 1000)).as_("d")
+        return (
+            fx.sync(lambda: log.append(f"start{ms}"))
+            .and_then(fx.sleep(Seconds(ms / 1000)))
+            .as_("d")
+        )
 
     parts = [_call("a", 80), _call("b", 10), {"type": "text-delta", "id": "t", "delta": "x"}]
     taken = fx.run_blocking(
@@ -51,6 +56,6 @@ def test_take_starts_no_tool_handler(n: int) -> None:
         .pipe(with_language_model(stream_text=[*parts, _FINISH]))
         .pipe(fx.provide(_TOOLKIT.to_layer(_TOOL.handler(handler))))
     )
-    fx.run_blocking(fx.sleep(0.1))
+    fx.run_blocking(fx.sleep("100 millis"))
     assert [part.type for part in taken] == [p["type"] for p in parts[:n]]
     assert log == []

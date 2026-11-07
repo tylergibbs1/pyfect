@@ -15,7 +15,7 @@ from pyfect.sql.sqlite import SqliteClient, SqliteClientConfig, layer
 
 def _run(effect: Any) -> Any:
     """``None`` when it does not finish: it waits forever."""
-    done: Any = fx.run_blocking(fx.scoped(effect).timeout_option(0.2))
+    done: Any = fx.run_blocking(fx.scoped(effect).timeout_option("200 millis"))
     return None if done is None else done.value
 
 
@@ -109,7 +109,7 @@ def test_a_queue_at_or_below_zero_capacity(capacity: int) -> None:
     @fx.gen
     def bounded():
         q = yield from fx.Queue[int].bounded(capacity)
-        offer = yield from q.offer(1).timeout_option(0.02)
+        offer = yield from q.offer(1).timeout_option("20 millis")
         return offer, (yield from q.size()), q.capacity
 
     assert _run(bounded) == (None, 0, capacity)
@@ -117,7 +117,7 @@ def test_a_queue_at_or_below_zero_capacity(capacity: int) -> None:
     @fx.gen
     def dropping():
         q = yield from fx.Queue[int].dropping(capacity)
-        offer = yield from q.offer(1).timeout_option(0.02)
+        offer = yield from q.offer(1).timeout_option("20 millis")
         return offer, (yield from q.size())
 
     assert _run(dropping) == (Some(False), 0)
@@ -165,8 +165,8 @@ def test_a_semaphore_without_permits_makes_takers_wait(permits: int) -> None:
     @fx.gen
     def program():
         semaphore = yield from fx.Semaphore.make(permits)
-        take = yield from semaphore.take(1).timeout_option(0.02)
-        run = yield from semaphore.with_permits(fx.succeed("ran"), 1).timeout_option(0.02)
+        take = yield from semaphore.take(1).timeout_option("20 millis")
+        run = yield from semaphore.with_permits(fx.succeed("ran"), 1).timeout_option("20 millis")
         return take, run
 
     assert _run(program) == (None, None)
@@ -177,7 +177,7 @@ def test_a_tx_queue_at_or_below_zero_capacity(capacity: int) -> None:
     @fx.gen
     def program():
         bounded = yield from fx.TxQueue[int].bounded(capacity)
-        waits = yield from fx.tx(bounded.offer(1)).timeout_option(0.02)
+        waits = yield from fx.tx(bounded.offer(1)).timeout_option("20 millis")
         dropping = yield from fx.TxQueue[int].dropping(capacity)
         dropped = yield from fx.tx(dropping.offer(1))
         sliding = yield from fx.TxQueue[int].sliding(capacity)
@@ -193,7 +193,7 @@ def test_a_tx_pubsub_at_or_below_zero_capacity(capacity: int) -> None:
     def program():
         bounded = yield from fx.TxPubSub[int].bounded(capacity)
         yield from bounded.subscribe()
-        waits = yield from fx.tx(bounded.publish(1)).timeout_option(0.02)
+        waits = yield from fx.tx(bounded.publish(1)).timeout_option("20 millis")
         dropping = yield from fx.TxPubSub[int].dropping(capacity)
         yield from dropping.subscribe()
         dropped = yield from fx.tx(dropping.publish(1))
@@ -222,7 +222,7 @@ def test_a_pool_of_no_items_makes_get_wait(size: int) -> None:
     @fx.gen
     def program():
         pool = yield from fx.Pool.make(fx.succeed(1), size=size)
-        return (yield from pool.get().timeout_option(0.02))
+        return (yield from pool.get().timeout_option("20 millis"))
 
     assert _run(program) is None
 
@@ -232,7 +232,7 @@ def test_a_pool_with_a_concurrency_below_one_still_hands_out_its_item(concurrenc
     @fx.gen
     def program():
         pool = yield from fx.Pool.make(fx.succeed(1), size=1, concurrency=concurrency)
-        return (yield from pool.get().timeout_option(0.02))
+        return (yield from pool.get().timeout_option("20 millis"))
 
     assert _run(program) == Some(1)
 
@@ -245,9 +245,9 @@ def test_a_ttl_pool_takes_any_bounds(minimum: int, maximum: int, expected: objec
     @fx.gen
     def program():
         pool = yield from fx.Pool.make_with_ttl(
-            fx.succeed(1), min=minimum, max=maximum, time_to_live=1
+            fx.succeed(1), min=minimum, max=maximum, time_to_live="1 second"
         )
-        return (yield from pool.get().timeout_option(0.02))
+        return (yield from pool.get().timeout_option("20 millis"))
 
     assert _run(program) == expected
 
@@ -264,7 +264,11 @@ def _ttl_pool_run(
     @fx.gen
     def program():
         pool = yield from fx.Pool.make_with_ttl(
-            fx.sync(acquire), min=minimum, max=maximum, concurrency=concurrency, time_to_live=3600
+            fx.sync(acquire),
+            min=minimum,
+            max=maximum,
+            concurrency=concurrency,
+            time_to_live="1 hour",
         )
         values: list[int] = []
         for _ in range(gets):

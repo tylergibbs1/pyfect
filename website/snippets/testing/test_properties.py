@@ -21,5 +21,5 @@ def test_repeat_length(text: str, times: int):
 def test_discount_never_exceeds_price(percent: int):
     price = 200
     discount = yield from fx.succeed(price * percent // 100)
-    yield from testing.adjust(1)  # each run has its own TestClock
+    yield from testing.adjust("1 second")  # each run has its own TestClock
     assert 0 <= discount <= price

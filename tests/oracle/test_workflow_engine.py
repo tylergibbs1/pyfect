@@ -97,7 +97,7 @@ def _num(value: float) -> str:
 
 
 @pytest.mark.parametrize("failure", [False, True], ids=["success", "failure"])
-@testing.live(timeout=5)
+@testing.live(timeout="5 seconds")
 def test_deferred_self_completion(failure: bool):
     """deferred self-completion / success | failure"""
     signal = durable_deferred.make("signal", success=S.String, error=S.String)
@@ -218,7 +218,7 @@ def _deferred_race(_p: Id, _id: str) -> fx.Effect[str, Any, Any]:
             name="memory-deferred-race",
             success=S.String,
             error=S.Never,
-            effects=[DeferredRaceGate.wait(), fx.sleep(10).as_("activity")],
+            effects=[DeferredRaceGate.wait(), fx.sleep("10 seconds").as_("activity")],
         )
 
     return fx.suspend(run)
@@ -292,7 +292,9 @@ def test_layer_memory_replays_suspended_activity_fan_out(
     def child(p: Index, _id: str):
         def body():
             started.add(p["index"])
-            yield from durable_clock.sleep(name="child", duration=2, in_memory_threshold=0)
+            yield from durable_clock.sleep(
+                name="child", duration="2 seconds", in_memory_threshold=0
+            )
             return p["index"]
 
         return fx.gen(body)
@@ -309,7 +311,7 @@ def test_layer_memory_replays_suspended_activity_fan_out(
             assert counts["activity"] <= counts["parent"]
             if expected == waves[0]:
                 assert counts["parent"] == 1
-            yield from testing.adjust(2)
+            yield from testing.adjust("2 seconds")
         result = yield from _poll_until_complete(Parent, execution_id)
         assert result == Complete(fx.Success(tuple(range(child_count))))
         assert counts["parent"] >= len(waves) + 1
@@ -341,7 +343,7 @@ def test_layer_memory_reruns_an_activity_interrupted_by_replay_preemption():
                 room = durable_deferred.make("DurableClock/room")
                 while (yield from engine.deferred_result(room)) is None:
                     yield from fx.yield_now()
-            yield from durable_clock.sleep(name="room", duration=5, in_memory_threshold=0)
+            yield from durable_clock.sleep(name="room", duration="5 seconds", in_memory_threshold=0)
 
             def write():
                 counts["writes"] += 1
@@ -359,7 +361,7 @@ def test_layer_memory_reruns_an_activity_interrupted_by_replay_preemption():
         # Start a replay as the clock comes due; its delayed wake-up
         # interrupts the activity.
         yield from Probe.resume(execution_id)
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         yield from writing.wait()
         while counts["executions"] < 3:
             yield from fx.yield_now()
@@ -406,15 +408,15 @@ def test_layer_memory_resumes_when_children_complete_during_activity_cleanup():
         )
     )
     child_layer = Child.to_layer(
-        lambda p, _id: durable_clock.sleep(name="wait", duration=2, in_memory_threshold=0).as_(
-            p["index"]
-        )
+        lambda p, _id: durable_clock.sleep(
+            name="wait", duration="2 seconds", in_memory_threshold=0
+        ).as_(p["index"])
     )
 
     def program():
         execution_id = yield from Parent.execute({}, discard=True)
         yield from cleaning_up.wait()
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         yield from release.open()
         result = yield from _poll_until_complete(Parent, execution_id)
         assert result == Complete(fx.Success((0, 1)))
@@ -635,7 +637,7 @@ def test_layer_memory_releases_a_pending_child_registration(mode: str):
     def child(p: Index, _id: str):
         def body():
             started.append(p["index"])
-            yield from durable_clock.sleep(name="wait", duration=2, in_memory_threshold=0)
+            yield from durable_clock.sleep(name="wait", duration="2 seconds", in_memory_threshold=0)
             return p["index"]
 
         return fx.gen(body)
@@ -644,7 +646,7 @@ def test_layer_memory_releases_a_pending_child_registration(mode: str):
         execution_id = yield from Parent.execute({}, discard=True)
         yield from _poll_until_suspended(Parent, execution_id)
         assert started == [0]
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         result = yield from _poll_until_complete(Parent, execution_id)
         assert result == Complete(fx.Success((0, -1)))
 
@@ -696,8 +698,8 @@ def test_layer_memory_wakes_an_active_workflow_when_a_durable_deferred_completes
         fiber = yield from DeferredRaceWorkflow.execute(payload).fork(start_immediately=True)
 
         # Park the deferred branch before completing it.
-        yield from testing.adjust(0.001)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
+        yield from testing.adjust("1 millis")
         token = DeferredRaceGate.token_from_execution_id(
             workflow=DeferredRaceWorkflow, execution_id=execution_id
         )
@@ -706,7 +708,7 @@ def test_layer_memory_wakes_an_active_workflow_when_a_durable_deferred_completes
         yield from _poll_until_complete(DeferredRaceWorkflow, execution_id)
 
         # Let the caller's suspended-retry loop pick up a replayed result.
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert (yield from fiber.join()) == "signal"
         assert deferred_race["runs"] in (1, 2)
 
@@ -724,7 +726,7 @@ def test_layer_memory_wakes_a_suspended_caller_when_its_workflow_completes():
         success=S.String,
         idempotency_key=lambda _: "one",
         # The retry stays the fallback, but is too slow to deliver within the test.
-        suspended_retry_schedule=fx.schedule.spaced(3600).tap(lambda _: retrying.open()),
+        suspended_retry_schedule=fx.schedule.spaced("1 hour").tap(lambda _: retrying.open()),
     )
 
     def program():
@@ -733,7 +735,7 @@ def test_layer_memory_wakes_a_suspended_caller_when_its_workflow_completes():
         for _ in range(1000):
             if retrying.is_open():
                 break
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         assert retrying.is_open(), "caller must wait on its retry schedule"
         yield from gate.succeed(
             token=gate.token_from_execution_id(workflow=wf, execution_id=execution_id),
@@ -749,7 +751,7 @@ def test_layer_memory_wakes_a_suspended_caller_when_its_workflow_completes():
         for _ in range(1000):
             if fiber.poll_unsafe() is not None:
                 break
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         assert fiber.poll_unsafe() is not None, "completion must wake the caller"
         assert (yield from fiber.join()) == "done"
 
@@ -769,7 +771,7 @@ def test_layer_memory_does_not_spend_a_retry_when_a_replay_suspends_again():
         success=S.String,
         idempotency_key=lambda _: "one",
         # A single retry: only completion can deliver the result.
-        suspended_retry_schedule=fx.schedule.spaced(3600)
+        suspended_retry_schedule=fx.schedule.spaced("1 hour")
         .up_to(times=1)
         .tap(lambda _: retrying.open()),
     )
@@ -796,7 +798,7 @@ def test_layer_memory_does_not_spend_a_retry_when_a_replay_suspends_again():
         for _ in range(1000):
             if retrying.is_open():
                 break
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         assert retrying.is_open(), "caller must wait on its retry schedule"
         yield from complete(first, execution_id, "first")
         polled = yield from wf.poll(execution_id)
@@ -810,7 +812,7 @@ def test_layer_memory_does_not_spend_a_retry_when_a_replay_suspends_again():
         for _ in range(1000):
             if fiber.poll_unsafe() is not None:
                 break
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         assert fiber.poll_unsafe() is not None, "completion must wake the caller"
         assert (yield from fiber.join()) == "first/second"
 
@@ -829,7 +831,7 @@ def test_layer_memory_does_not_wake_a_caller_from_a_run_that_died_before_a_resum
         success=S.String,
         idempotency_key=lambda _: "one",
         # A single retry: only completion can deliver the result.
-        suspended_retry_schedule=fx.schedule.spaced(3600)
+        suspended_retry_schedule=fx.schedule.spaced("1 hour")
         .up_to(times=1)
         .tap(lambda _: retrying.open()),
     ).annotate(workflow.CaptureDefects, False)
@@ -850,7 +852,7 @@ def test_layer_memory_does_not_wake_a_caller_from_a_run_that_died_before_a_resum
         for _ in range(1000):
             if retrying.is_open():
                 break
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         assert retrying.is_open(), "caller must wait on its retry schedule"
         assert fiber.poll_unsafe() is None, "the died run must not wake the caller"
         yield from gate.succeed(
@@ -860,7 +862,7 @@ def test_layer_memory_does_not_wake_a_caller_from_a_run_that_died_before_a_resum
         for _ in range(1000):
             if fiber.poll_unsafe() is not None:
                 break
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         assert fiber.poll_unsafe() is not None, "completion must wake the caller"
         assert (yield from fiber.join()) == "done"
 

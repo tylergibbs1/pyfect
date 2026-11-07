@@ -82,7 +82,7 @@ def effect[S, RO, **P](
 def effect[**P](f: Callable[P, TestBody[Scope]], /) -> Callable[P, None]: ...
 @overload
 def effect(
-    *, timeout: Duration | None = None, asyncio: bool = False, warning_delay: Duration = 1.0
+    *, timeout: Duration | None = None, asyncio: bool = False, warning_delay: Duration = "1 second"
 ) -> TestDecorator: ...
 def effect(
     f: Callable[..., Any] | None = None,
@@ -90,7 +90,7 @@ def effect(
     *,
     timeout: Duration | None = None,
     asyncio: bool = False,
-    warning_delay: Duration = 1.0,
+    warning_delay: Duration = "1 second",
 ) -> Any:
     """A pytest test written as an effect, run with a ``TestClock``, a
     ``TestConsole`` and a ``Scope`` (closed when the test ends)::
@@ -131,7 +131,7 @@ def live(
 ) -> Any:
     """Like ``effect``, but with the live clock and console: sleeps take
     real time and output is written."""
-    decorator = TestDecorator(_Options("live", timeout, asyncio, 1.0))
+    decorator = TestDecorator(_Options("live", timeout, asyncio, "1 second"))
     return decorator if f is None else decorator(f)
 
 

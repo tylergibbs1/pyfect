@@ -13,7 +13,7 @@ test with `@testing.effect` and write it like `@fx.gen`.
 of retries, timeouts and schedules are exact and take no real time.
 
 A test that would wait forever fails with `StalledError` instead of hanging, and each test has a
-real-time timeout (`@testing.effect(timeout=10)`, 5 seconds by default) that interrupts it and
+real-time timeout (`@testing.effect(timeout="10 seconds")`, 5 seconds by default) that interrupts it and
 runs its finalizers.
 
 <include meta='title="test_retry.py"'>../../snippets/testing/test_retry.py</include>
@@ -23,7 +23,7 @@ runs its finalizers.
 Work handed to another thread takes no virtual time: before `adjust` moves time, and after each
 wake-up, it waits for `fx.blocking` and `try_blocking` calls, SQLite and Postgres queries, HTTP
 client requests, Redis commands, DNS lookups, writes to a socket or a child process, and the
-fibers they resume. A loop of a SQLite write then `fx.sleep(10)` runs once per `adjust(10)`.
+fibers they resume. A loop of a SQLite write then `fx.sleep("10 seconds")` runs once per `adjust("10 seconds")`.
 
 It does not wait for things that may never come: a socket or WebSocket read, a Postgres `listen` or
 Redis `subscribe` notification, a blocking Redis command (`BLPOP`, `XREAD BLOCK`), a message from a

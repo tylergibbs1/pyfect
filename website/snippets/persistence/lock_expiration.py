@@ -21,7 +21,7 @@ def queues(database: str):
     # 120 s by default (90 s on Redis). A live worker renews its lock every
     # lock_refresh_interval (30 s by default), so keep the expiration above that.
     store = persisted_queue.layer_store_sql(
-        poll_interval=0.05, lock_refresh_interval=0.5, lock_expiration=2
+        poll_interval="50 millis", lock_refresh_interval="500 millis", lock_expiration="2 seconds"
     )
     return persisted_queue.layer.pipe(layer.provide(store)).pipe(layer.provide(sql))
 

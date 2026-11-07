@@ -19,6 +19,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import effect
+from pyfect.duration import Seconds
 from pyfect.http import live_server, server, server_response
 from pyfect.http.server import HttpServer
 from pyfect.http.server_request import HttpServerRequest
@@ -48,7 +49,7 @@ def test_closes_an_idle_keep_alive_connection_after_the_keep_alive_timeout() -> 
         at = yield from _serve_ok()
         return (yield from with_socket(at, use))
 
-    received, elapsed = run_live(program(), keep_alive_timeout=0.3)
+    received, elapsed = run_live(program(), keep_alive_timeout="300 millis")
     [response] = parse_responses(received)
     assert response.status == 200
     assert response.header("connection") == "keep-alive"
@@ -68,7 +69,7 @@ def test_advertises_the_keep_alive_timeout_in_whole_seconds() -> None:
         closed = yield from with_socket(at, use)
         return keep_alive, closed
 
-    keep_alive, closed = run_live(program(), keep_alive_timeout=7.9)
+    keep_alive, closed = run_live(program(), keep_alive_timeout="7900 millis")
     assert keep_alive.header("keep-alive") == "timeout=7"
     [response] = parse_responses(closed)
     assert response.header("keep-alive") is None
@@ -93,7 +94,7 @@ def test_answers_a_head_that_does_not_arrive_within_the_headers_timeout_with_408
         at = yield from _serve_ok()
         return (yield from with_socket(at, use))
 
-    received, elapsed = run_live(program(), headers_timeout=0.3)
+    received, elapsed = run_live(program(), headers_timeout="300 millis")
     [response] = parse_responses(received)
     assert response.status == 408
     assert response.header("connection") == "close"
@@ -109,7 +110,7 @@ def test_closes_a_connection_that_sends_nothing_within_the_headers_timeout() -> 
         at = yield from _serve_ok()
         return (yield from with_socket(at, use))
 
-    received, elapsed = run_live(program(), headers_timeout=0.3)
+    received, elapsed = run_live(program(), headers_timeout="300 millis")
     assert received == b""
     assert 0.25 < elapsed < TIMEOUT / 2
 
@@ -130,7 +131,7 @@ def test_a_slow_head_after_a_keep_alive_request_gets_the_headers_timeout() -> No
         at = yield from _serve_ok()
         return (yield from with_socket(at, use))
 
-    received = run_live(program(), keep_alive_timeout=0.2, headers_timeout=3)
+    received = run_live(program(), keep_alive_timeout="200 millis", headers_timeout="3 seconds")
     [response] = parse_responses(received)
     assert response.status == 200
     assert response.body == b"ok"
@@ -196,10 +197,10 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
         yield from effect.blocking(lambda: stall(at)).fork_daemon()
         yield from effect.blocking(lambda: started.wait(TIMEOUT))
 
-    layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout=0.3)
+    layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout="300 millis")
     program = scoped(serving()).pipe(fx.provide(layer_live))
     started_at = time.monotonic()
-    fx.run_blocking(program.timeout(TIMEOUT).or_die())
+    fx.run_blocking(program.timeout(Seconds(TIMEOUT)).or_die())
     assert time.monotonic() - started_at < 2.5
 
 
@@ -226,13 +227,13 @@ def test_aborts_a_streamed_body_still_open_when_the_shutdown_timeout_ends() -> N
         reader = threading.Thread(target=read, args=(at,))
         reader.start()
         yield from effect.blocking(lambda: started.wait(TIMEOUT))
-        yield from fx.sleep(0.1)
+        yield from fx.sleep("100 millis")
         return reader
 
-    layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout=0.3)
+    layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout="300 millis")
     program = scoped(serving()).pipe(fx.provide(layer_live))
     started_at = time.monotonic()
-    reader = fx.run_blocking(program.timeout(TIMEOUT).or_die())
+    reader = fx.run_blocking(program.timeout(Seconds(TIMEOUT)).or_die())
     reader.join(TIMEOUT)
     assert time.monotonic() - started_at < 2.5
     [body] = received
@@ -245,7 +246,7 @@ def test_writes_nothing_to_a_client_that_half_closed_before_the_response() -> No
 
     @fx.fn
     def program():
-        slow = fx.sleep(0.3).as_(server_response.text("late"))
+        slow = fx.sleep("300 millis").as_(server_response.text("late"))
         at = yield from server.serve_effect(slow).flat_map(lambda _: port)
         return (yield from exchange(at, [b"GET / HTTP/1.1\r\nhost: x\r\n\r\n"]))
 

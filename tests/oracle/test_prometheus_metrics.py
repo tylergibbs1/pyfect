@@ -157,7 +157,7 @@ def test_summary_formats_a_summary_with_quantiles():
     summary = metric.summary(
         "test_summary",
         description="A test summary",
-        max_age=60,
+        max_age="1 minute",
         max_size=100,
         quantiles=[0.5, 0.9, 0.99],
     )
@@ -317,7 +317,7 @@ def test_a_timer_is_written_in_milliseconds_without_its_time_unit():
     The expected text is Effect 4.0.6's ``PrometheusMetrics.format()`` under
     Node for the same updates."""
     timer = metric.timer("trawl_visit_seconds", description="Page visits", boundaries=[100, 1000])
-    output = yield from _format(timer.update(51.521), timer.update(0.25))
+    output = yield from _format(timer.update("51521 millis"), timer.update("250 millis"))
     assert output == (
         "# HELP trawl_visit_seconds Page visits\n"
         "# TYPE trawl_visit_seconds histogram\n"

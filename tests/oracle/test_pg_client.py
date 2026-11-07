@@ -28,6 +28,7 @@ import pyfect as fx
 from pyfect import case, schedule, scope, stream, testing
 from pyfect import schema as S
 from pyfect.context import Reference, Tag
+from pyfect.duration import Seconds
 from pyfect.option import Some
 from pyfect.schema import model as Model
 from pyfect.sql import SqlClient, pg
@@ -434,7 +435,7 @@ def test_preserves_successful_concurrent_nested_transactions(pg_server: PgServer
 
         def first():
             yield from first_started.succeed(None)
-            yield from fx.sleep(0.1)
+            yield from fx.sleep("100 millis")
             yield from sql("INSERT INTO nested_transactions VALUES ('first')")
             yield from first_inserted.succeed(None)
 
@@ -571,7 +572,7 @@ def test_pins_the_primary_connection_for_streams_by_default(pg_server: PgServer)
         )
         fiber = yield from scope.fork_scoped(running)
         yield from started.wait()
-        rows = yield from sql("SELECT 1 AS value").timeout_option(0.1)
+        rows = yield from sql("SELECT 1 AS value").timeout_option("100 millis")
         yield from release.succeed(None)
         yield from fiber.join()
         assert rows is None
@@ -593,7 +594,7 @@ def test_serializes_transactions_on_its_single_connection(pg_server: PgServer):
         )
         yield from first_started.wait()
         second = yield from scope.fork_scoped(sql.with_transaction(second_started.succeed(None)))
-        overlap = yield from second_started.wait().timeout_option(0.1)
+        overlap = yield from second_started.wait().timeout_option("100 millis")
         yield from release_first.succeed(None)
         yield from first.join()
         yield from second.join()
@@ -621,7 +622,7 @@ def test_runs_queries_while_a_stream_is_active(pg_server: PgServer):
         fiber = yield from scope.fork_scoped(running)
         yield from started.wait()
         rows = yield from sql("SELECT 1 AS value").timeout_or_else(
-            3, lambda: fx.fail(RuntimeError("query timed out while stream was active"))
+            "3 seconds", lambda: fx.fail(RuntimeError("query timed out while stream was active"))
         )
         yield from release.succeed(None)
         yield from fiber.join()
@@ -722,7 +723,7 @@ def test_interruption(pg_server: PgServer):
     def body():
         sql = yield from SqlClient()
         conn = yield from sql.reserve
-        yield from conn.execute_raw("select pg_sleep(1000)", ()).timeout_option(0.05)
+        yield from conn.execute_raw("select pg_sleep(1000)", ()).timeout_option("50 millis")
         assert (yield from conn.execute_values("select 1", ())) == [(1,)]
 
     yield from _with_transforms(pg_server, body)
@@ -749,7 +750,7 @@ def _with_listen(server: PgServer, body: Body) -> fx.Effect[Any, Any]:
 
 
 def _within(seconds: float, effect: fx.Effect[Any, Any], message: str) -> fx.Effect[Any, Any]:
-    return effect.timeout_or_else(seconds, lambda: fx.fail(RuntimeError(message)))
+    return effect.timeout_or_else(Seconds(seconds), lambda: fx.fail(RuntimeError(message)))
 
 
 @testing.live
@@ -781,7 +782,7 @@ def test_an_idle_listener_does_not_hold_the_test_clock(pg_server: PgServer):
         sql = yield from pg.PgClient()
         yield from sql.listen("idle_listen")
         started = time.monotonic()
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         assert time.monotonic() - started < 0.5
 
     with warnings.catch_warnings():

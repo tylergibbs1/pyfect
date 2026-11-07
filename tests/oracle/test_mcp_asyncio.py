@@ -32,7 +32,7 @@ LISTEN_HEADERS = {
 
 def _run(effect: fx.Effect[Any, Any, Any]) -> Any:
     scoped = cast("fx.Effect[Any]", effect.pipe(fx.scoped))
-    return asyncio.run(testing.run_test_async(scoped, timeout=30))
+    return asyncio.run(testing.run_test_async(scoped, timeout="30 seconds"))
 
 
 def _chatty(progressed: list[int]) -> fx.Effect[None, Any, M.McpServer]:

@@ -153,10 +153,11 @@ OMISSIONS: tuple[Omission, ...] = (
         "section 4: a DateTime is an aware `datetime` and this is the standard library",
         "effect/test/DateTime.test.ts",
     ),
-    *_whole(
-        "section 4: a Duration is `duration.Seconds` or `timedelta`; `to_*` are arithmetic there, "
-        "and `Hash` / `Combiner` are Python's",
+    _some(
         "effect/test/Duration.test.ts",
+        "section 4: a Duration is `duration.Seconds` or `timedelta`; `to_*` are arithmetic there, "
+        "and `Hash` / `Combiner` are Python's (input forms: tests/oracle/test_duration.py)",
+        r"^(?!fromInput|converts large finite|toMillis$|toSeconds$)",
     ),
     *_whole(
         "`is*` guards are `isinstance`, `_tag` strings are classes (section 4), and the rest is "

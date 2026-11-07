@@ -377,7 +377,7 @@ def test_uses_a_5_second_busy_timeout(tmp_path: Path):
     sql = yield from make_client(tmp_path)
     assert (yield from sql("PRAGMA busy_timeout")) == [{"timeout": 5000}]
 
-    custom = yield from make_memory_client(busy_timeout=1.0)
+    custom = yield from make_memory_client(busy_timeout="1 second")
     assert (yield from custom("PRAGMA busy_timeout")) == [{"timeout": 1000}]
 
     infinite = yield from make_memory_client(busy_timeout=float("inf"))
@@ -473,7 +473,7 @@ def _until_sleeping() -> fx.Effect[None]:
     def body():
         clock = yield from testing.test_clock()
         while clock.pending_sleeps == 0:
-            yield from testing.with_live(fx.sleep(0.001))
+            yield from testing.with_live(fx.sleep("1 millis"))
 
     return fx.gen(body)
 
@@ -485,7 +485,7 @@ def test_retries_enabling_wal_while_the_database_is_locked(tmp_path: Path):
     fiber = yield from make_client(tmp_path).fork(start_immediately=True)
     yield from _until_sleeping()
     lock.execute("ROLLBACK")
-    yield from testing.adjust(0.01)
+    yield from testing.adjust("10 millis")
     sql = yield from fiber.join()
     assert (yield from sql("PRAGMA journal_mode")) == [{"journal_mode": "wal"}]
 
@@ -494,9 +494,9 @@ def test_retries_enabling_wal_while_the_database_is_locked(tmp_path: Path):
 def test_fails_to_enable_wal_with_a_typed_error_after_busy_timeout(tmp_path: Path):
     """fails to enable WAL with a typed error after busyTimeout"""
     yield from _locked_database(tmp_path)
-    fiber = yield from make_client(tmp_path, busy_timeout=1.0).fork(start_immediately=True)
+    fiber = yield from make_client(tmp_path, busy_timeout="1 second").fork(start_immediately=True)
     yield from _until_sleeping()
-    yield from testing.adjust(2.0)
+    yield from testing.adjust("2 seconds")
     error = yield from fiber.join().flip()
     assert isinstance(error, SqlError)
     assert isinstance(error.reason, LockTimeoutError)

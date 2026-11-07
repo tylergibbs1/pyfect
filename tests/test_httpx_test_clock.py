@@ -49,7 +49,7 @@ def trickle_server() -> Iterator[str]:
 
 
 @pytest.mark.filterwarnings("error::pyfect.testing.BusyFiberWarning")
-@testing.effect(warning_delay=0.5)
+@testing.effect(warning_delay="500 millis")
 def test_an_idle_streaming_body_is_not_test_clock_work(trickle_server: str):
     pytest.importorskip("httpx")
     from pyfect.http import httpx_client
@@ -65,7 +65,7 @@ def test_an_idle_streaming_body_is_not_test_clock_work(trickle_server: str):
     reading = yield from fx.scoped(read()).fork()
     started = time.monotonic()
     for _ in range(3):
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
     elapsed = time.monotonic() - started
     _Trickle.release.set()
     yield from reading.join()

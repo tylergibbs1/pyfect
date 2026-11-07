@@ -19,14 +19,14 @@ RACES: dict[str, Race] = {
     "race": lambda es: es[0].race(es[1]),
     "race_first": lambda es: es[0].race_first(es[1]),
     "race_all": lambda es: fx.race_all(*es),
-    "timeout": lambda es: es[0].timeout(3600).catch_all(lambda _: fx.void),
+    "timeout": lambda es: es[0].timeout("1 hour").catch_all(lambda _: fx.void),
 }
 
 
 def _slow_cleanup(name: str, log: list[str]) -> fx.Effect[None, str]:
     """Logs ``started:name`` when it runs and ``name`` once its cleanup,
     which takes real time, has finished."""
-    cleanup = fx.sleep(0.01).and_then(fx.sync(lambda: log.append(name)))
+    cleanup = fx.sleep("10 millis").and_then(fx.sync(lambda: log.append(name)))
     started = fx.sync(lambda: log.append(f"started:{name}"))
     return started.and_then(fx.never.on_interrupt(cleanup))
 

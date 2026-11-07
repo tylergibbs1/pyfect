@@ -42,7 +42,7 @@ def _is_alive_by_ping(runners: _Pinged) -> Effect[bool]:
     def body():
         health = yield from RunnerHealth()
         alive = yield from health.is_alive(_ADDRESS).fork()
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         return (yield from alive.join())
 
     return body.pipe(fx.provide(runner_health.layer_ping)).pipe(

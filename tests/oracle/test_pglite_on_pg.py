@@ -103,7 +103,7 @@ def test_listen_notify(pg_server: PgServer):
         yield from sql.notify("pglite_ch1", "")
         assert (yield from notifications.take()).payload == ""
 
-    yield from _with_pool(pg_server, body).timeout(15)
+    yield from _with_pool(pg_server, body).timeout("15 seconds")
 
 
 @testing.live
@@ -119,7 +119,7 @@ def test_listen_shuts_down_with_its_scope(pg_server: PgServer):
         assert isinstance(exit_, fx.Failure)
         assert exit_.cause.has_interrupts
 
-    yield from _with_pool(pg_server, body).timeout(15)
+    yield from _with_pool(pg_server, body).timeout("15 seconds")
 
 
 # --- Json.test.ts ---------------------------------------------------------------

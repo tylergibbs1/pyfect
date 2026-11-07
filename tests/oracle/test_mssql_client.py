@@ -59,7 +59,7 @@ def _mocked(body: Body) -> fx.Effect[Any, Any]:
 
 
 def _bounded[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, Any, R]:
-    return effect.timeout(2)
+    return effect.timeout("2 seconds")
 
 
 _answer = Parameter[int]("answer", TYPES.Int)
@@ -267,7 +267,7 @@ def test_cancels_an_in_flight_request_when_interrupted(monkeypatch: pytest.Monke
 
 def _single_connection() -> mssql.MssqlClientConfig:
     return mssql.MssqlClientConfig(
-        server="localhost", min_connections=0, max_connections=1, connection_ttl=3600
+        server="localhost", min_connections=0, max_connections=1, connection_ttl="1 hour"
     )
 
 
@@ -486,7 +486,7 @@ def test_interrupting_a_statement_cancels_it_on_the_server(mssql_server: MssqlSe
     def body():
         client = yield from mssql.MssqlClient()
         started = time.monotonic()
-        result = yield from client("WAITFOR DELAY '00:00:30'").timeout(0.5).result()
+        result = yield from client("WAITFOR DELAY '00:00:30'").timeout("500 millis").result()
         assert isinstance(result, fx.Err)
         rows = yield from client("SELECT @@SPID AS spid")
         assert len(rows) == 1
@@ -729,9 +729,9 @@ def test_interrupting_a_connection_while_it_opens_returns_at_once(
 
     @fx.gen
     def body():
-        fiber = yield from _build_client(connect_timeout=30.0).fork()
+        fiber = yield from _build_client(connect_timeout="30 seconds").fork()
         while not fake.connect_started.is_set():
-            yield from fx.sleep(0.005)
+            yield from fx.sleep("5 millis")
         yield from fiber.interrupt()
         return (yield from fiber.await_exit())
 
@@ -754,7 +754,7 @@ def test_a_connection_check_that_times_out_does_not_wait_for_the_open(
     fake.hold_connect = threading.Event()
     started = time.monotonic()
     try:
-        ex = fx.run_blocking_exit(_build_client(connect_timeout=0.05))
+        ex = fx.run_blocking_exit(_build_client(connect_timeout="50 millis"))
         assert time.monotonic() - started < 5
     finally:
         fake.hold_connect.set()

@@ -44,7 +44,7 @@ def test_interrupting_a_fiber_cancels_its_task_and_waits():
     @fx.gen
     def program():
         fiber = yield from fx.from_async(slow).fork()
-        yield from fx.sleep(0.01)
+        yield from fx.sleep("10 millis")
         yield from fiber.interrupt()
         log.append("after interrupt")
 
@@ -76,7 +76,7 @@ def test_fibers_run_concurrently_with_asyncio_tasks():
             log.append("asyncio task")
 
         task = asyncio.create_task(other())
-        await fx.run_async(fx.sleep(0.05).and_then(fx.sync(lambda: log.append("fiber"))))
+        await fx.run_async(fx.sleep("50 millis").and_then(fx.sync(lambda: log.append("fiber"))))
         await task
         return log
 

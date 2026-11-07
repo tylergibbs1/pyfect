@@ -144,6 +144,8 @@ def test_serves_a_query_over_post_and_subscriptions_over_graphql_ws_and_sse(ws_s
         assert updates == [issue("over sse")["data"]]
 
     served: fx.Effect[None, Any, Any] = (
-        effect.gen(program).pipe(fx.provide(router.serve(app, disable_logger=True))).timeout(5)
+        effect.gen(program)
+        .pipe(fx.provide(router.serve(app, disable_logger=True)))
+        .timeout("5 seconds")
     )
     run_live(served)

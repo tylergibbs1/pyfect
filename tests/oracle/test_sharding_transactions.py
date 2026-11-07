@@ -117,7 +117,7 @@ def test_reprocesses_a_completed_volatile_request_id_without_message_storage():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         service = yield from sharding.Sharding()
         state = yield from EntityState()
         rpc = TestEntity.rpcs["GetUserVolatile"]
@@ -190,7 +190,7 @@ def test_with_transaction_is_propagated_to_the_entity_handler():
     @fx.gen
     def body():
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         result = yield from client.with_transaction({"id": 1})
         assert result is True
@@ -239,14 +239,19 @@ def test_with_transaction_persists_a_failure_reply_after_rollback():
     def body():
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         first = yield from client.fail_with_transaction(IdKeyPayload(id=1)).flip()
         assert isinstance(first, BoomError)
 
         # The retry must be answered from storage without rerunning the handler.
-        retry = yield from client.fail_with_transaction(IdKeyPayload(id=1)).flip().timeout(5).fork()
-        yield from testing.adjust(5)
+        retry = (
+            yield from client.fail_with_transaction(IdKeyPayload(id=1))
+            .flip()
+            .timeout("5 seconds")
+            .fork()
+        )
+        yield from testing.adjust("5 seconds")
         second = yield from retry.join()
         assert isinstance(second, BoomError)
         assert state.envelopes.size_unsafe() == 1
@@ -266,10 +271,10 @@ def test_with_transaction_delivers_a_success_only_after_commit():
     @fx.gen
     def body():
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         result = yield from make_client("1").with_transaction({"id": 1}).fork()
         yield from committing.wait()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert result.poll_unsafe() is None
         yield from commit.open()
         assert (yield from result.join()) is True
@@ -290,7 +295,7 @@ def test_with_transaction_replays_the_request_without_replying_when_commit_dies(
     def body():
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         # Count handler runs when the reply arrives: only the replay may reply.
         result = yield from (
             make_client("1")
@@ -298,7 +303,7 @@ def test_with_transaction_replays_the_request_without_replying_when_commit_dies(
             .map(lambda value: (value, state.envelopes.size_unsafe()))
             .fork()
         )
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         assert (yield from result.join()) == (True, 2)
 
     yield from body.pipe(fx.provide(_with_storage(_rollback_memory_storage(wrap))))
@@ -317,7 +322,7 @@ def test_with_transaction_replays_the_request_without_replying_when_rollback_die
     def body():
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         # Count handler runs when the reply arrives: only the replay may reply.
         result = yield from (
             make_client("1")
@@ -326,7 +331,7 @@ def test_with_transaction_replays_the_request_without_replying_when_rollback_die
             .map(lambda error: (type(error).__name__, state.envelopes.size_unsafe()))
             .fork()
         )
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         assert (yield from result.join()) == ("BoomError", 2)
 
     yield from body.pipe(fx.provide(_with_storage(_rollback_memory_storage(wrap))))

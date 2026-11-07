@@ -165,8 +165,8 @@ def test_should_not_set_the_parent_span_when_none_exists():
 @testing.effect
 def test_should_set_the_correct_start_and_end_time():
     """should set the correct start and end time"""
-    span_fiber = yield from fx.current_span().delay(1).with_span("A").fork()
-    yield from testing.adjust(2)
+    span_fiber = yield from fx.current_span().delay("1 second").with_span("A").fork()
+    yield from testing.adjust("2 seconds")
     span = yield from span_fiber.join()
     assert span.name == "A"
     assert span.status.start_time == 0
@@ -393,7 +393,7 @@ def test_should_allow_enabling_disabling_the_tracer():
 @testing.effect
 def test_should_include_timing_information_in_spans_when_true():
     """should include timing information in spans when true"""
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     span = yield from fx.current_span().with_span("A").with_tracer_timing(True)
     assert span.status.start_time == 1_000_000
 
@@ -401,7 +401,7 @@ def test_should_include_timing_information_in_spans_when_true():
 @testing.effect
 def test_should_not_include_timing_information_in_spans_when_false():
     """should not include timing information in spans when false"""
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     span = yield from fx.current_span().with_span("A").with_tracer_timing(False)
     assert span.status.start_time == 0
 
@@ -411,7 +411,7 @@ def test_should_set_start_and_end_times_to_zero_when_timing_is_disabled():
     """should set start and end times to zero when timing is disabled"""
 
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         use_span = yield from fx.use_span("useSpan", fx.succeed)
         with_span = yield from fx.current_span().with_span("withSpan")
         times: list[tuple[int, int]] = []

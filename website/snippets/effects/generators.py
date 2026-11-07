@@ -5,7 +5,7 @@ import pyfect as fx
 def program():
     a = yield from fx.succeed(20)
     b = yield from fx.sync(lambda: 22)
-    yield from fx.sleep(0.01)  # suspends this fiber, not the thread
+    yield from fx.sleep("10 millis")  # suspends this fiber, not the thread
     return a + b
 
 

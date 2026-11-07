@@ -39,7 +39,7 @@ def test_run_blocking_of_an_async_effect_inside_a_running_loop_dies_naming_run_a
 
 def test_run_blocking_inside_a_running_loop_still_runs_effects_that_need_no_loop():
     async def main() -> int:
-        return fx.run_blocking(fx.sleep(0.001).as_(1))
+        return fx.run_blocking(fx.sleep("1 millis").as_(1))
 
     assert asyncio.run(main()) == 1
 

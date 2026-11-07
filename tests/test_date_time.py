@@ -22,7 +22,7 @@ def test_is_future_and_is_past_compare_with_the_clock():
     assert (yield from date_time.is_past(at - timedelta(microseconds=1))) is True
     assert (yield from date_time.is_future(at)) is False
     assert (yield from date_time.is_past(at)) is False
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from date_time.is_past(at.astimezone(NEW_YORK))) is True
 
 
@@ -42,7 +42,7 @@ def test_with_current_zone_and_offset_set_the_zone():
     )
     assert plus_two.utcoffset() == timedelta(hours=2)
     minus_half = yield from date_time.set_zone_current(datetime(2024, 1, 1, tzinfo=UTC)).pipe(
-        date_time.with_current_zone_offset(-1800)
+        date_time.with_current_zone_offset("-30 minutes")
     )
     assert minus_half.isoformat() == "2023-12-31T23:30:00-00:30"
 
@@ -60,7 +60,7 @@ def test_with_current_zone_named_fails_for_an_unknown_zone():
 @testing.effect
 def test_layers_provide_the_current_zone():
     offset = yield from date_time.now_in_current_zone().pipe(
-        fx.provide(date_time.layer_current_zone_offset(3600))
+        fx.provide(date_time.layer_current_zone_offset("1 hour"))
     )
     assert offset.isoformat() == "1970-01-01T01:00:00+01:00"
     named = yield from date_time.now_in_current_zone().pipe(

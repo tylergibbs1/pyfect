@@ -228,25 +228,25 @@ def test_shares_one_generation_between_concurrent_first_borrowers():
 def test_idle_time_to_live_reuses_and_releases_resources():
     """idleTimeToLive reuses and releases resources"""
     counter = _Counter()
-    ref = yield from fx.RcRef.make(counter.resource().as_("foo"), idle_time_to_live=0.010)
+    ref = yield from fx.RcRef.make(counter.resource().as_("foo"), idle_time_to_live="10 millis")
 
     assert counter.acquired == 0
     assert (yield from fx.scoped(ref.get())) == "foo"
     assert (counter.acquired, counter.released) == (1, 0)
 
-    yield from testing.adjust(0.005)
+    yield from testing.adjust("5 millis")
     assert (yield from fx.scoped(ref.get())) == "foo"
     assert (counter.acquired, counter.released) == (1, 0)
 
-    yield from testing.adjust(0.009)
+    yield from testing.adjust("9 millis")
     assert counter.released == 0
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     assert counter.released == 1
 
     assert (yield from fx.scoped(ref.get())) == "foo"
     assert (counter.acquired, counter.released) == (2, 1)
 
-    yield from testing.adjust(0.010)
+    yield from testing.adjust("10 millis")
     assert counter.released == 2
 
 
@@ -324,7 +324,7 @@ def test_invalidating_a_resource_while_a_get_revives_it_releases_the_resource():
     """invalidating a resource while a get revives it releases the resource"""
     for ops in range(1, 64):
         counter = _Counter()
-        ref = yield from fx.RcRef.make(counter.resource(), idle_time_to_live=60).pipe(
+        ref = yield from fx.RcRef.make(counter.resource(), idle_time_to_live="1 minute").pipe(
             fx.provide_service(fx.MaxOpsBeforeYield, ops)
         )
         yield from fx.scoped(ref.get())
@@ -346,9 +346,9 @@ def test_closing_the_ref_while_an_idle_resource_is_being_released_runs_every_fin
         yield from fx.add_finalizer(lambda _: fx.sync(counter.release))
         yield from fx.add_finalizer(lambda _: gate.wait().and_then(fx.sync(counter.release)))
 
-    ref = yield from _in(scope, fx.RcRef.make(acquire, idle_time_to_live=1))
+    ref = yield from _in(scope, fx.RcRef.make(acquire, idle_time_to_live="1 second"))
     yield from fx.scoped(ref.get())
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     closing = yield from scope.close(fx.Success(None)).fork(start_immediately=True)
     yield from gate.succeed(None)
     yield from closing.join()

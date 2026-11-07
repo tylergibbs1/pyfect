@@ -176,7 +176,7 @@ def test_a_suspension_waits_for_an_activity_already_running():
 
     def slow():
         counts["slow"] += 1
-        return fx.sleep(30)
+        return fx.sleep("30 seconds")
 
     def handler(_p: Empty, _id: str):
         counts["runs"] += 1
@@ -188,7 +188,7 @@ def test_a_suspension_waits_for_an_activity_already_running():
 
     def program():
         execution_id = yield from wf.execute({}, discard=True)
-        yield from testing.adjust(30)
+        yield from testing.adjust("30 seconds")
         yield from _poll_until_suspended(wf, execution_id)
         assert counts["slow"] == 1
         token = gate.token_from_execution_id(workflow=wf, execution_id=execution_id)
@@ -217,7 +217,7 @@ def test_completing_a_race_loser_later_does_not_preempt_the_run():
                 error=S.Never,
                 effects=[loser.wait(), fx.succeed("fast")],
             )
-            yield from activity.make(name="later", execute=fx.sleep(30))
+            yield from activity.make(name="later", execute=fx.sleep("30 seconds"))
             return won
 
         return fx.gen(body)
@@ -228,7 +228,7 @@ def test_completing_a_race_loser_later_does_not_preempt_the_run():
             yield from fx.yield_now()
         token = loser.token_from_execution_id(workflow=wf, execution_id=execution_id)
         yield from loser.succeed(token=token, value="late")
-        yield from testing.adjust(30)
+        yield from testing.adjust("30 seconds")
         result = yield from _poll_until_complete(wf, execution_id)
         assert result.exit == fx.Success("fast")
         assert runs["n"] == 1
@@ -243,14 +243,16 @@ def test_a_sleep_as_long_as_the_threshold_runs_in_memory():
     mid-sleep)."""
     wf = workflow.make("Sleeps", payload=EMPTY, idempotency_key=lambda _: "f")
     layer = wf.to_layer(
-        lambda _p, _id: durable_clock.sleep(name="nap", duration=50, in_memory_threshold=50)
+        lambda _p, _id: durable_clock.sleep(
+            name="nap", duration="50 seconds", in_memory_threshold="50 seconds"
+        )
     )
 
     def program():
         execution_id = yield from wf.execute({}, discard=True)
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         assert (yield from wf.poll(execution_id)) is None
-        yield from testing.adjust(40)
+        yield from testing.adjust("40 seconds")
         result = yield from _poll_until_complete(wf, execution_id)
         assert result.exit == fx.Success(None)
 
@@ -347,7 +349,7 @@ def test_a_deferred_refuses_a_token_naming_another_deferred():
     yield from fx.gen(program).pipe(_with_engine(wf.to_layer(handler)))
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_poll_gives_none_for_an_unknown_and_for_a_running_execution():
     """As Effect's ``poll`` (``Option.none()`` for both, printed under Node):
     a run inside a short (in-memory) durable sleep is running, not suspended
@@ -357,7 +359,7 @@ def test_poll_gives_none_for_an_unknown_and_for_a_running_execution():
 
     def handler(_p: Empty, _id: str):
         def body():
-            yield from durable_clock.sleep(name="short", duration=0.05)
+            yield from durable_clock.sleep(name="short", duration="50 millis")
             yield from gate.wait()
             return "done"
 

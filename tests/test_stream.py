@@ -212,8 +212,8 @@ def test_from_effect_schedule_fails_with_the_first_failure():
 
 @testing.effect
 def test_tick_writes_at_once_then_after_each_interval():
-    fiber = yield from _first(stream.tick(1), 3).fork()
-    yield from testing.adjust(2)
+    fiber = yield from _first(stream.tick("1 second"), 3).fork()
+    yield from testing.adjust("2 seconds")
     assert (yield from fiber.join()) == [None, None, None]
 
 

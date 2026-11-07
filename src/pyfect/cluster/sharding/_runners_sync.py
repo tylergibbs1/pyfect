@@ -29,7 +29,7 @@ _VOID: Effect[None] = succeed(None)
 
 
 def _with_timeout[A, E](effect: Effect[A, E]) -> Effect[A, Any]:
-    return effect.timeout(5)
+    return effect.timeout("5 seconds")
 
 
 def sync_loop(state: ShardingState) -> Effect[Never]:  # noqa: PLR0915

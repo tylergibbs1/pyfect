@@ -49,8 +49,8 @@ def _id(protocol: P.AnyProtocolAdapter) -> str:
 def _no_second_message(harness: StdioHarness) -> fx.Effect[None]:
     @fx.gen
     def run():
-        waiting = yield from harness.receive().timeout_option(0.001).fork()
-        yield from testing.adjust(0.001)
+        waiting = yield from harness.receive().timeout_option("1 millis").fork()
+        yield from testing.adjust("1 millis")
         assert (yield from waiting.join()) is None
 
     return run

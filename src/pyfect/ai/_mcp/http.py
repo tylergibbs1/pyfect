@@ -60,8 +60,7 @@ from pyfect.scope import Scope
 _VOID: Effect[None] = succeed(None)
 _STREAM_BUFFER = 16
 """Effect's ``streamBufferSize`` default, for every POST's response."""
-_KEEP_ALIVE_SECONDS = 15
-_KEEP_ALIVE = stream.tick(_KEEP_ALIVE_SECONDS).drop(1).map(lambda _: b": keepalive\n\n")
+_KEEP_ALIVE = stream.tick("15 seconds").drop(1).map(lambda _: b": keepalive\n\n")
 """Comments that keep an idle subscription's connection open."""
 
 

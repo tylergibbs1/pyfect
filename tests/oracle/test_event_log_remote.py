@@ -232,8 +232,8 @@ def test_pipelines_at_most_four_chunks():
         # A virtual deadline turns a sequential sender into an assertion
         # failure, rather than hanging while the first response is withheld.
         def take_chunk():
-            pending = yield from harness.take.timeout_option(1).fork_scoped()
-            yield from testing.adjust(1)
+            pending = yield from harness.take.timeout_option("1 second").fork_scoped()
+            yield from testing.adjust("1 second")
             result = yield from pending.join()
             assert isinstance(result, Some), "expected another chunk before acknowledging"
             assert result.value.tag == "EventLog.WriteChunked"
@@ -242,8 +242,8 @@ def test_pipelines_at_most_four_chunks():
         second = yield from take_chunk()
         third = yield from take_chunk()
         fourth = yield from take_chunk()
-        pending_fifth = yield from harness.take.timeout_option(1).fork_scoped()
-        yield from testing.adjust(1)
+        pending_fifth = yield from harness.take.timeout_option("1 second").fork_scoped()
+        yield from testing.adjust("1 second")
         assert (yield from pending_fifth.join()) is None, "the fifth chunk waits for a response"
         yield from second.resume(fx.succeed([]))
         fifth = yield from take_chunk()
@@ -255,7 +255,7 @@ def test_pipelines_at_most_four_chunks():
         yield from fourth.resume(fx.succeed([]))
         acks = [M.WriteAck(entry_id=entry.id, sequence=5)]
         yield from first.resume(fx.succeed(acks))
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from fifth.resume(fx.succeed([]))
         assert (yield from write.join()) == acks
 

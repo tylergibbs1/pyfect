@@ -75,7 +75,7 @@ def _formatted_failure(schema: Any, input: object, issues: Issues, message: str)
 
 def _async_string() -> Any:
     def later(os: Option[str], _: object) -> Any:
-        return fx.sleep(0.01).as_(os)
+        return fx.sleep("10 millis").as_(os)
 
     return S.String.pipe(
         S.decode(T.Transformation(G.transform_optional_effect(later), G.passthrough()))
@@ -191,7 +191,7 @@ def test_missing_dependencies_async_decoding_should_report_a_missing_dependency(
     """missing dependencies / async decoding should report a missing dependency"""
 
     def decode(n: float, _: object) -> Any:
-        return _MagicNumber().flat_map(lambda magic: fx.sleep(0.01).as_(n * magic))
+        return _MagicNumber().flat_map(lambda magic: fx.sleep("10 millis").as_(n * magic))
 
     schema: Any = S.Number.pipe(
         S.decode(T.Transformation(G.transform_effect(decode), G.passthrough()))

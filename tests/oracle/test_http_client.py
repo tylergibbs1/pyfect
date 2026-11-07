@@ -40,6 +40,7 @@ import pyfect as fx
 from pyfect import clock, testing
 from pyfect import schema as S
 from pyfect import stream as stream_
+from pyfect.duration import Seconds
 from pyfect.http import client as c
 from pyfect.http import headers as h
 from pyfect.http import request as req
@@ -573,13 +574,13 @@ def test_retry_delay(header: str | None, status: int, delay: float, scheduled: b
     retrying = base.retry_transient(
         retry_on="errors-only" if header == "date" else "errors-and-responses",
         times=1,
-        schedule=spaced(60) if scheduled else None,
+        schedule=spaced("1 minute") if scheduled else None,
     )
     fiber = yield from retrying.get("http://test/").fork(start_immediately=True)
     if delay > 0:
-        yield from testing.adjust(delay - 0.001)
+        yield from testing.adjust(Seconds(delay - 0.001))
         assert attempts[0] == 1
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
     assert (yield from fiber.join()).status == 200
 
 

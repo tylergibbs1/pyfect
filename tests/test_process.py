@@ -88,7 +88,7 @@ def test_interrupting_the_fiber_kills_the_process(process_services: Services[Pla
 @testing.live
 def test_an_interrupted_read_loses_no_output(process_services: Services[Platform]):
     handle = yield from make("sh", ["-c", "sleep 0.2; echo late"])
-    early = yield from handle.stdout.run_head().timeout_option(0.05)
+    early = yield from handle.stdout.run_head().timeout_option("50 millis")
     assert early is None
     assert (yield from _text(handle.stdout)) == "late\n"
 
@@ -100,7 +100,7 @@ def test_stdin_is_a_sink(process_services: Services[Platform]):
     assert (yield from _text(handle.stdout)) == "ab"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_a_write_cut_short_by_the_child_exiting_fails(process_services: Services[Platform]):
     # Checked against Effect under Node: the child's exit destroys stdin, so
     # a write still in progress (a grandchild holds the pipe and never
@@ -191,7 +191,7 @@ def test_a_failed_input_stream_wins_over_an_exit_that_came_first(
     error = system_error("Unknown", module="FileSystem", method="read", description="failed")
     handle = yield from make("true", stdin=stream.fail(error))
     while (yield from handle.is_running):
-        yield from fx.sleep(0.01)
+        yield from fx.sleep("10 millis")
     assert (yield from handle.exit_code.flip()) == error
 
 
@@ -207,7 +207,7 @@ def test_an_unrefed_process_keeps_its_output_after_its_scope_closes(
     yield from handle.unref.pipe(fx.provide_service(Scope, scope))
     yield from scope.close(fx.exit.succeed(None))
     assert (yield from handle.exit_code) == 0
-    yield from fx.sleep(0.05)
+    yield from fx.sleep("50 millis")
     assert (yield from _text(handle.stdout)) == "late\nmore\n"
 
 
@@ -231,7 +231,7 @@ def test_concurrent_pipelines_each_get_their_own_writers(process_services: Servi
 
         return fx.scoped(run())
 
-    sizes = yield from fx.for_each(range(_MANY), one, concurrency="unbounded").timeout(30)
+    sizes = yield from fx.for_each(range(_MANY), one, concurrency="unbounded").timeout("30 seconds")
     assert sizes == [len(data)] * _MANY
 
 
@@ -244,7 +244,9 @@ def test_concurrent_force_kills_wait_side_by_side(process_services: Services[Pla
     )
     yield from fx.for_each(handles, lambda h: h.stdout.run_head(), concurrency="unbounded")
     start = time.monotonic()
-    yield from fx.for_each(handles, lambda h: h.kill(force_kill_after=0.5), concurrency="unbounded")
+    yield from fx.for_each(
+        handles, lambda h: h.kill(force_kill_after="500 millis"), concurrency="unbounded"
+    )
     assert time.monotonic() - start < 1.5
 
 

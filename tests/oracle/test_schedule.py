@@ -66,7 +66,7 @@ def ms(millis: float) -> Seconds:
 @testing.effect
 def test_during_recurs_while_the_duration_has_not_elapsed():
     """during recurs while the duration has not elapsed"""
-    step = yield from schedule.to_step(schedule.during(1))
+    step = yield from schedule.to_step(schedule.during("1 second"))
     decision = yield from step(0.0, None)
     assert isinstance(decision, Continue)
 
@@ -77,28 +77,36 @@ def test_during_recurs_while_the_duration_has_not_elapsed():
 @testing.effect
 def test_max_outputs_the_slowest_schedule_duration():
     """max - outputs the slowest schedule duration"""
-    s = schedule.max(schedule.fixed(5), schedule.exponential(5), schedule.spaced(10))
+    s = schedule.max(
+        schedule.fixed("5 seconds"),
+        schedule.exponential("5 seconds"),
+        schedule.spaced("10 seconds"),
+    )
     assert (yield from run_delays(s, nones(3))) == [10, 10, 20]
 
 
 @testing.effect
 def test_max_stops_when_any_schedule_completes():
     """max - stops when any schedule completes"""
-    s = schedule.max(schedule.duration(1), schedule.spaced(5))
+    s = schedule.max(schedule.duration("1 second"), schedule.spaced("5 seconds"))
     assert (yield from run_delays(s, nones(3))) == [5, 0]
 
 
 @testing.effect
 def test_min_outputs_the_fastest_schedule_duration():
     """min - outputs the fastest schedule duration"""
-    s = schedule.min(schedule.fixed(5), schedule.exponential(5), schedule.spaced(10))
+    s = schedule.min(
+        schedule.fixed("5 seconds"),
+        schedule.exponential("5 seconds"),
+        schedule.spaced("10 seconds"),
+    )
     assert (yield from run_delays(s, nones(3))) == [5, 5, 5]
 
 
 @testing.effect
 def test_min_continues_after_a_schedule_completes():
     """min - continues after a schedule completes"""
-    s = schedule.min(schedule.duration(1), schedule.spaced(5))
+    s = schedule.min(schedule.duration("1 second"), schedule.spaced("5 seconds"))
     assert (yield from run_delays(s, nones(3))) == [1, 5, 5]
 
 
@@ -132,8 +140,8 @@ def expected_metadata() -> list[Metadata[int, str]]:
             attempt=1,
             start=1.0,
             now=1.0,
-            elapsed=0.0,
-            elapsed_since_previous=0.0,
+            elapsed=ZERO,
+            elapsed_since_previous=ZERO,
         ),
         Metadata(
             input="b",
@@ -142,8 +150,8 @@ def expected_metadata() -> list[Metadata[int, str]]:
             attempt=2,
             start=1.0,
             now=1.25,
-            elapsed=0.25,
-            elapsed_since_previous=0.25,
+            elapsed=ms(250),
+            elapsed_since_previous=ms(250),
         ),
     ]
 
@@ -205,7 +213,7 @@ def test_add_delay_provides_full_metadata():
 def test_concat_result_sequences_self_then_other_when_collecting_delays():
     """concatResult - sequences self then other when collecting delays"""
     left = schedule.fixed(ms(500)).while_effect(lambda m: fx.succeed(m.attempt <= 3))
-    s = left.concat_result(schedule.fixed(1))
+    s = left.concat_result(schedule.fixed("1 second"))
     assert (yield from run_delays(s, nones(6))) == [0.5, 0.5, 0.5, 1, 1, 1]
 
 
@@ -213,7 +221,7 @@ def test_concat_result_sequences_self_then_other_when_collecting_delays():
 def test_concat_result_includes_finite_other_completion_when_collecting_delays():
     """concatResult - includes finite other completion when collecting delays"""
     left = schedule.fixed(ms(500)).while_effect(lambda m: fx.succeed(m.attempt <= 2))
-    s = left.concat_result(schedule.duration(1))
+    s = left.concat_result(schedule.duration("1 second"))
     assert (yield from run_delays(s, nones(5))) == [0.5, 0.5, 1, 0]
 
 
@@ -239,7 +247,7 @@ def test_concat_result_wraps_self_outputs_as_failure_and_other_outputs_as_succes
 @testing.effect
 def test_duration_recurs_once_after_the_provided_duration():
     """recurs once after the provided duration"""
-    assert (yield from run_delays(schedule.duration(1), nones(5))) == [1, 0]
+    assert (yield from run_delays(schedule.duration("1 second"), nones(5))) == [1, 0]
 
 
 # --- once -----------------------------------------------------------------------------
@@ -286,7 +294,7 @@ def test_up_to_limits_by_times():
 def test_up_to_limits_by_duration():
     """limits by duration"""
     ids: Schedule[str, str] = schedule.identity()
-    step = yield from schedule.to_step(ids.up_to(duration=1))
+    step = yield from schedule.to_step(ids.up_to(duration="1 second"))
     first = yield from step(0.0, "a")
     second = yield from step(1.0, "b")
     third = yield from step(1.001, "c")
@@ -297,7 +305,7 @@ def test_up_to_limits_by_duration():
 def test_up_to_limits_by_the_first_exhausted_option():
     """limits by the first exhausted option"""
     ids: Schedule[str, str] = schedule.identity()
-    step = yield from schedule.to_step(ids.up_to(duration=3600, times=1))
+    step = yield from schedule.to_step(ids.up_to(duration="1 hour", times=1))
     first = yield from step(0.0, "a")
     second = yield from step(0.0, "b")
     assert [first, second] == [Continue("a", ZERO), Stop("b")]
@@ -319,7 +327,7 @@ def test_up_to_leaves_the_schedule_unchanged_when_no_options_are_specified():
 @testing.effect
 def test_jittered_keeps_delays_within_80_120_percent_of_the_original():
     """keeps delays within 80%-120% of the original"""
-    output = yield from run_delays(schedule.spaced(1).jittered(), nones(20)).pipe(
+    output = yield from run_delays(schedule.spaced("1 second").jittered(), nones(20)).pipe(
         random.with_seed("jittered-bounds")
     )
     assert len(output) == 20
@@ -329,7 +337,7 @@ def test_jittered_keeps_delays_within_80_120_percent_of_the_original():
 @testing.effect
 def test_jittered_does_not_change_completion_output():
     """does not change completion output"""
-    output = yield from run_delays(schedule.duration(1).jittered(), nones(5)).pipe(
+    output = yield from run_delays(schedule.duration("1 second").jittered(), nones(5)).pipe(
         random.with_seed("jittered-completion")
     )
     assert len(output) == 2
@@ -343,13 +351,13 @@ def test_jittered_does_not_change_completion_output():
 @testing.effect
 def test_spaced_constant_delays():
     """spaced / constant delays"""
-    assert (yield from run_delays(schedule.spaced(1), nones(5))) == [1] * 5
+    assert (yield from run_delays(schedule.spaced("1 second"), nones(5))) == [1] * 5
 
 
 @testing.effect
 def test_fixed_constant_delays():
     """fixed / constant delays"""
-    assert (yield from run_delays(schedule.fixed(1), nones(5))) == [1] * 5
+    assert (yield from run_delays(schedule.fixed("1 second"), nones(5))) == [1] * 5
 
 
 def record_delays(s: Schedule[int], action_time: float) -> fx.Effect[list[Seconds]]:
@@ -363,7 +371,7 @@ def record_delays(s: Schedule[int], action_time: float) -> fx.Effect[list[Second
             lambda m: fx.sync(lambda: delays.append(m.duration))
         )
         yield from (
-            fx.sleep(action_time)
+            fx.sleep(Seconds(action_time))
             .schedule(tapped)
             .and_then(fx.sync(lambda: delays.append(ZERO)))
             .fork()
@@ -377,27 +385,27 @@ def record_delays(s: Schedule[int], action_time: float) -> fx.Effect[list[Second
 @testing.effect
 def test_fixed_delays_until_the_nearest_window_boundary_when_action_is_slow():
     """delays until the nearest window boundary when action is slow"""
-    delays = yield from record_delays(schedule.fixed(1), 0.5)
+    delays = yield from record_delays(schedule.fixed("1 second"), 0.5)
     assert delays == [1, 0.5, 0.5, 0.5, 0.5, 0]
 
 
 @testing.effect
 def test_fixed_matches_effect_v3_when_action_duration_exceeds_the_interval():
     """matches effect v3 when action duration exceeds the interval"""
-    delays = yield from record_delays(schedule.fixed(1), 1.5)
+    delays = yield from record_delays(schedule.fixed("1 second"), 1.5)
     assert delays == [1, 0, 0, 0, 0, 0]
 
 
 @testing.effect
 def test_windowed_constant_delays():
     """windowed / constant delays"""
-    assert (yield from run_delays(schedule.windowed(1), nones(5))) == [1] * 5
+    assert (yield from run_delays(schedule.windowed("1 second"), nones(5))) == [1] * 5
 
 
 @testing.effect
 def test_windowed_delays_until_the_nearest_window_boundary():
     """delays until the nearest window boundary"""
-    delays = yield from record_delays(schedule.windowed(1), 1.5)
+    delays = yield from record_delays(schedule.windowed("1 second"), 1.5)
     assert delays == [1, 0.5, 0.5, 0.5, 0.5, 0]
 
 

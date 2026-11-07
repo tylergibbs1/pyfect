@@ -128,7 +128,7 @@ def test_a_duplicate_request_runs_under_its_original_id():
 
         reply = WithExit(request_id=original_id, id=generator.next_unsafe(), exit=Exit.succeed(1))
         yield from storage.save_reply(ReplyWithContext(reply, Context.empty(), Persistent))
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from pending.join()
         [answered] = replies
         assert isinstance(answered, WithExit)

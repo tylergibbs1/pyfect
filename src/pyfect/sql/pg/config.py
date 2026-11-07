@@ -126,7 +126,7 @@ class PgPoolConfig(PgClientConfig):
 
     min_connections: int = 0
     max_connections: int = 10
-    idle_timeout: Duration = 60.0
+    idle_timeout: Duration = "60 seconds"
     connection_ttl: Duration | None = None
     acquire_timeout: Duration | None = None
 

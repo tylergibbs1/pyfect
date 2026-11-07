@@ -43,7 +43,7 @@ from pyfect.sql.statement import Compiled, Compiler, default_escape, default_tra
 from pyfect.sql.statement import make_compiler as make_statement_compiler
 
 _escape = default_escape("`")
-_CONNECT_TIMEOUT = 5.0
+_CONNECT_TIMEOUT = "5 seconds"
 
 
 class MysqlClientService(SqlClientService):

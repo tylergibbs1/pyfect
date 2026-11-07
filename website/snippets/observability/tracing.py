@@ -5,7 +5,7 @@ from pyfect import tracer
 @fx.fn("get_user")  # every call runs inside a span named get_user
 def get_user(user_id: str):
     yield from fx.annotate_current_span("user.id", user_id)
-    yield from fx.sleep(0.01).with_span("db.query")
+    yield from fx.sleep("10 millis").with_span("db.query")
     return (yield from fx.current_span())
 
 

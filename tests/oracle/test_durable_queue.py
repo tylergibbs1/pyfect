@@ -43,7 +43,7 @@ def _poll_until_complete[A, E](
         if isinstance(polled, Complete):
             break
         yield from fx.yield_now()
-        yield from testing.with_live(fx.sleep(0.01))
+        yield from testing.with_live(fx.sleep("10 millis"))
         polled = yield from poll
     return polled
 

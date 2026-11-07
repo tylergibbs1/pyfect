@@ -23,7 +23,7 @@ from pyfect._primitives import Restore, uninterruptible_mask
 from pyfect._tracer_ref import CurrentTracer
 from pyfect.clock import Clock, ClockService, monotonic
 from pyfect.context import Context, Tag
-from pyfect.duration import to_seconds
+from pyfect.duration import Seconds, to_seconds
 from pyfect.effect import fail, provide_service, succeed, sync
 from pyfect.exit import Failure, Success
 from pyfect.pool import Pool
@@ -99,7 +99,7 @@ def _acquire_timed_out() -> Effect[Never, SqlError]:
 
 
 def _with_timeout[A](
-    effect: Effect[A, SqlError, Scope], timeout: float | None
+    effect: Effect[A, SqlError, Scope], timeout: Seconds | None
 ) -> Effect[A, SqlError, Scope]:
     """Bound ``effect``; it runs in a child scope, so a lease it took
     before timing out goes back at once."""

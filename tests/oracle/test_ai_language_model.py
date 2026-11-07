@@ -398,7 +398,9 @@ def test_stream_finish_after_tool_results():
     """streamText / emits finish after resolved tool results"""
     toolkit = K.make(MyTool)
     layer = toolkit.to_layer(
-        MyTool.handler(lambda _, __: fx.succeed(MySuccess(testSuccess="test-success")).delay(10))
+        MyTool.handler(
+            lambda _, __: fx.succeed(MySuccess(testSuccess="test-success")).delay("10 seconds")
+        )
     )
     parts: list[Any] = []
     first = fx.Latch()
@@ -411,7 +413,7 @@ def test_stream_finish_after_tool_results():
     yield from first.wait()
     assert parts[0].type == "tool-call"
     assert not any(p.type == "finish" for p in parts)
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     yield from fiber.join()
     assert [p.type for p in parts] == ["tool-call", "tool-result", "finish"]
 
@@ -1452,7 +1454,9 @@ def test_tool_without_needs_approval():
     """tool approval / tool without needsApproval executes normally"""
     toolkit = K.make(MyTool)
     layer = toolkit.to_layer(
-        MyTool.handler(lambda _, __: fx.succeed(MySuccess(testSuccess="test-success")).delay(10))
+        MyTool.handler(
+            lambda _, __: fx.succeed(MySuccess(testSuccess="test-success")).delay("10 seconds")
+        )
     )
     parts: list[Any] = []
     first = fx.Latch()
@@ -1463,7 +1467,7 @@ def test_tool_without_needs_approval():
         stream_text=[{**_CALL, "id": "call-normal", "params": {"testParam": "test"}}],
     ).fork_scoped()
     yield from first.wait()
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     yield from fiber.join()
     assert [p.type for p in parts] == ["tool-call", "tool-result"]
     assert parts[1].result == {"testSuccess": "test-success"}

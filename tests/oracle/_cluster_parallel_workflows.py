@@ -12,6 +12,7 @@ from pyfect import exit as Exit
 from pyfect import schema as S
 from pyfect.cluster.cluster_schema import ShardGroup
 from pyfect.context import Tag
+from pyfect.duration import Seconds
 from pyfect.latch import Latch
 from pyfect.workflow import Complete, activity, durable_clock, durable_deferred, workflow
 from pyfect.workflow.workflow_engine import (
@@ -123,7 +124,7 @@ def _parallel_child(payload: ParallelChildPayload, _: str):
         flags = yield from Flags()
         flags[f"parallel-child-start-{payload['id']}"] = True
         yield from durable_clock.sleep(
-            name="parallel-child", duration=payload["sleep"] / 1000, in_memory_threshold=0
+            name="parallel-child", duration=Seconds(payload["sleep"] / 1000), in_memory_threshold=0
         )
         return f"done-{payload['index']}"
 
@@ -148,7 +149,7 @@ def _sharded_clock(_: IdPayload, __: str):
         engine = yield from WorkflowEngine()
         instance = yield from WorkflowInstance()
         scheduled = yield from ShardedClockScheduled()
-        clock = durable_clock.make(name="ShardedClock", duration=10.0005)
+        clock = durable_clock.make(name="ShardedClock", duration="10000500 micros")
         yield from engine.schedule_clock(
             instance.workflow, execution_id=instance.execution_id, clock=clock
         )
@@ -213,7 +214,9 @@ def verify_zero_threshold(id_: str, in_memory_threshold: float) -> Any:
     )
     yield from (
         durable_clock.sleep(
-            name=f"clock/{id_}", duration=0.01, in_memory_threshold=in_memory_threshold
+            name=f"clock/{id_}",
+            duration="10 millis",
+            in_memory_threshold=Seconds(in_memory_threshold),
         )
         .pipe(fx.provide_service(WorkflowEngine, engine))
         .pipe(fx.provide_service(WorkflowInstance, instance))

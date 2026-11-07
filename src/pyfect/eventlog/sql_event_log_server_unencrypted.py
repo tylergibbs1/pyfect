@@ -98,7 +98,7 @@ def make_storage(
         tables = _Tables(sql, entry_table_prefix, remote_id_table)
         yield from _create_tables(sql, dialect, tables)
         remote_id = yield from _remote_id(sql, tables.remote_id)
-        pubsubs = yield from RcMap.make(_open_pubsub, idle_time_to_live=300)
+        pubsubs = yield from RcMap.make(_open_pubsub, idle_time_to_live="5 minutes")
         semaphore = yield from Semaphore.make(1)
         return _SqlStorage(
             sql=sql,

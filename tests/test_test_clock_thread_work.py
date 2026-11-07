@@ -41,11 +41,11 @@ def _iterations(
         def once():
             yield from wrap(step())
             yield from count.update(lambda n: n + 1)
-            yield from fx.sleep(10)
+            yield from fx.sleep("10 seconds")
 
         fiber = yield from once.forever().fork()
         for _ in range(4):
-            yield from testing.adjust(10)
+            yield from testing.adjust("10 seconds")
         seen = yield from count.get()
         yield from fiber.interrupt()
         return seen
@@ -99,16 +99,16 @@ def test_an_interrupted_blocking_wait_does_not_hold_the_clock():
     def program():
         @fx.gen
         def once():
-            yield from fx.sleep(1)
+            yield from fx.sleep("1 second")
             work = yield from fx.blocking(lambda: time.sleep(3)).fork()
             yield from fx.yield_now()
             yield from work.interrupt()
-            yield from fx.sleep(10)
+            yield from fx.sleep("10 seconds")
             return "slept"
 
         fiber = yield from once.fork()
-        yield from testing.adjust(1)
-        yield from testing.adjust(10)
+        yield from testing.adjust("1 second")
+        yield from testing.adjust("10 seconds")
         return (yield from fiber.join())
 
     started = time.monotonic()

@@ -37,7 +37,7 @@ BACKENDS: dict[str, Any] = {
 
 
 @pytest.mark.parametrize("backend", list(BACKENDS))
-@testing.live(timeout=20)
+@testing.live(timeout="20 seconds")
 def test_send_unsafe_preserves_reply_payloads(backend: str):
     """NodeWorkerRunner / sendUnsafe preserves reply payloads"""
     handle: WorkerHandle = BACKENDS[backend]()

@@ -48,7 +48,7 @@ def _timer_delays(eff: fx.Effect[object]) -> fx.Effect[list[float]]:
 @testing.effect
 def test_nanosecond_readers_follow_the_clock():
     yield from testing.set_time(1_000_000_000.001)
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert (yield from clock.now_nanos()) == 1_000_000_000_501_000_000
     assert (yield from clock.monotonic_nanos()) == 1_000_000_000_501_000_000
     yield from testing.set_time(0)
@@ -65,9 +65,9 @@ def test_clock_with_passes_the_current_clock():
 
 @testing.effect
 def test_timed_measures_whole_monotonic_nanoseconds():
-    fiber = yield from fx.sleep(0.3).as_("done").timed().fork()
-    yield from testing.adjust(0.1)
-    yield from testing.adjust(0.2)  # 0.1 + 0.2 is 0.30000000000000004 in floats
+    fiber = yield from fx.sleep("300 millis").as_("done").timed().fork()
+    yield from testing.adjust("100 millis")
+    yield from testing.adjust("200 millis")  # 0.1 + 0.2 is 0.30000000000000004 in floats
     assert (yield from fiber.join()) == (0.3, "done")
 
 
@@ -76,7 +76,7 @@ def test_timed_measures_whole_monotonic_nanoseconds():
 def test_a_live_sleep_of_zero_or_less_yields_once(seconds: float):
     order: list[str] = []
     other = yield from fx.sync(lambda: order.append("other")).fork()
-    yield from fx.sleep(seconds)
+    yield from fx.sleep(Seconds(seconds))
     order.append("sleeper")
     yield from other.join()
     assert order == ["other", "sleeper"]
@@ -84,16 +84,16 @@ def test_a_live_sleep_of_zero_or_less_yields_once(seconds: float):
 
 @testing.live
 def test_a_live_sleep_of_zero_or_less_sets_no_timer():
-    assert (yield from _timer_delays(fx.sleep(0).zip(fx.sleep(-1)))) == []
+    assert (yield from _timer_delays(fx.sleep(0).zip(fx.sleep("-1 second")))) == []
 
 
 @testing.live
 def test_a_live_infinite_sleep_sets_no_timer():
-    delays = yield from _timer_delays(fx.sleep(math.inf).timeout_option(0.02))
+    delays = yield from _timer_delays(fx.sleep(math.inf).timeout_option("20 millis"))
     assert math.inf not in delays
 
 
 @testing.live
 def test_a_live_infinite_sleep_never_wakes():
-    woke = yield from fx.sleep(math.inf).timeout_option(0.02)
+    woke = yield from fx.sleep(math.inf).timeout_option("20 millis")
     assert woke is None

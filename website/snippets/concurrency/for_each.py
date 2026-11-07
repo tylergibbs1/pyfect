@@ -2,7 +2,7 @@ import pyfect as fx
 
 
 def fetch(n: int) -> fx.Effect[int]:
-    return fx.sleep(0.05).as_(n * 10)
+    return fx.sleep("50 millis").as_(n * 10)
 
 
 # Up to 3 fetches at a time; results keep the input order.

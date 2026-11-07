@@ -78,7 +78,7 @@ class ChunkGroup(RpcGroup):
 
 
 def _run(body: Callable[[], Any]) -> Any:
-    return fx.run_blocking(fx.scoped(effect.gen(body)).timeout(10).or_die())
+    return fx.run_blocking(fx.scoped(effect.gen(body)).timeout("10 seconds").or_die())
 
 
 type Handle = Callable[[dict[str, Any]], Effect[None]]
@@ -388,7 +388,7 @@ def test_fails_request_on_empty_http_response(serialization: Any, body: str) -> 
         # Effect provides the layer to make alone; pyfect's protocol is closed with its
         # scope (PARITY.md), so the layer goes in through layer=.
         client = yield from rpc_client.make(TestGroup, layer=_http_protocol(serialization, body))
-        exit = yield from client.ping().timeout(1).exit()
+        exit = yield from client.ping().timeout("1 second").exit()
         error = _squash_message(exit)
         assert isinstance(error, RpcClientError)
         assert isinstance(error.reason, RpcClientDefect)
@@ -407,7 +407,7 @@ def test_defects_request_when_framed_http_response_closes_before_request_complet
             ClientOptions(generate_request_id=lambda: "0"),
             layer=_http_protocol(rs.layer_ndjson, body),
         )
-        exit = yield from client.events().run_drain().timeout(1).exit()
+        exit = yield from client.events().run_drain().timeout("1 second").exit()
         error = _squash_message(exit)
         assert isinstance(error, RpcClientError)
         assert isinstance(error.reason, RpcClientDefect)
@@ -460,7 +460,7 @@ def _traced_call(method: str, **options: Any) -> list[NativeSpan]:
         .pipe(fx.provide(handlers))
         .pipe(effect.provide_service(CurrentTracer, Tracer.make(span)))
     )
-    fx.run_blocking(program.timeout(10).or_die())
+    fx.run_blocking(program.timeout("10 seconds").or_die())
     return spans
 
 
@@ -640,13 +640,13 @@ def test_reports_transient_socket_open_errors_without_failing_in_flight_streams(
 
     options = rpc_client.SocketOptions(
         retry_transient_errors=True,
-        retry_policy=schedule.spaced(0.001),
+        retry_policy=schedule.spaced("1 millis"),
         on_transient_error=on_transient,
     )
     client = yield from _socket_client(socket, options)
     stream_fiber = yield from client.events().run_drain().fork()
-    yield from testing.adjust(0.002)
-    yield from three.wait().timeout(1)
+    yield from testing.adjust("2 millis")
+    yield from three.wait().timeout("1 second")
     assert len(errors) == 3
     for error in errors:
         assert isinstance(error.reason, SocketOpenError)
@@ -667,12 +667,12 @@ def test_fails_in_flight_streams_on_a_missed_pong_while_retrying_socket_errors()
 
     socket = _socket(effect.never, write)
     options = rpc_client.SocketOptions(
-        retry_transient_errors=True, retry_policy=schedule.spaced(3600)
+        retry_transient_errors=True, retry_policy=schedule.spaced("1 hour")
     )
     client = yield from _socket_client(socket, options)
-    stream_fiber = yield from client.events().run_drain().timeout(11).flip().fork()
+    stream_fiber = yield from client.events().run_drain().timeout("11 seconds").flip().fork()
     yield from request_sent.wait()
-    yield from testing.adjust(11)
+    yield from testing.adjust("11 seconds")
     error = yield from stream_fiber.join()
     assert writes[0] >= 2
     assert isinstance(error, RpcClientError)
@@ -693,12 +693,12 @@ def test_keeps_in_flight_streams_alive_on_non_pong_frames_without_any_pongs():
     stream_fiber = yield from client.events().run_for_each(events.offer).fork()
     yield from request_sent.wait()
     for event in ["first", "second", "third"]:
-        yield from testing.adjust(4)
+        yield from testing.adjust("4 seconds")
         assert stream_fiber.poll_unsafe() is None
         chunk = {"_tag": "Chunk", "requestId": "0", "values": [event]}
         yield from frames.offer(json.dumps(chunk) + "\n")
         assert (yield from events.take()) == event
-    yield from testing.adjust(4)
+    yield from testing.adjust("4 seconds")
     assert stream_fiber.poll_unsafe() is None
 
 
@@ -713,18 +713,18 @@ def test_allows_a_delayed_pong_within_a_custom_ping_timeout_but_fails_after_sile
         lambda _data: request_sent.succeed(None).as_void(),
     )
     options = rpc_client.SocketOptions(
-        ping_interval=2, ping_timeout=15, retry_policy=schedule.spaced(3600)
+        ping_interval="2 seconds", ping_timeout="15 seconds", retry_policy=schedule.spaced("1 hour")
     )
     client = yield from _socket_client(socket, options)
     stream_fiber = yield from client.events().run_drain().exit().fork()
     yield from request_sent.wait()
-    yield from testing.adjust(12)
+    yield from testing.adjust("12 seconds")
     assert stream_fiber.poll_unsafe() is None
     yield from frames.offer(json.dumps({"_tag": "Pong"}) + "\n")
     yield from frame_read.wait()
-    yield from testing.adjust(14)
+    yield from testing.adjust("14 seconds")
     assert stream_fiber.poll_unsafe() is None
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
     assert stream_fiber.poll_unsafe() is not None
     exit = yield from stream_fiber.join()
     error = _squash_message(exit)
@@ -760,7 +760,7 @@ def test_runs_on_ping_timeout_only_when_a_ping_timeout_drops_the_socket():
         reader=effect.sync(open_reader),
     )
     options = rpc_client.SocketOptions(
-        retry_policy=schedule.spaced(20), on_ping_timeout=record("ping timeout")
+        retry_policy=schedule.spaced("20 seconds"), on_ping_timeout=record("ping timeout")
     )
     protocol = yield from (
         rpc_client.make_protocol_socket(options)
@@ -774,13 +774,13 @@ def test_runs_on_ping_timeout_only_when_a_ping_timeout_drops_the_socket():
     closed = yield from (yield from client.events().run_drain().flip().fork()).join()
     assert isinstance(closed.reason, SocketCloseError)
 
-    yield from testing.adjust(20)
+    yield from testing.adjust("20 seconds")
     assert events == ["connect", "disconnect", "connect"]
 
     stream_fiber = yield from (
         client.events().run_drain().tap_error(lambda _: record("stream failed")).flip().fork()
     )
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     timed_out = yield from stream_fiber.join()
     assert isinstance(timed_out.reason, SocketReadError)
     assert events == [
@@ -803,7 +803,7 @@ def test_does_not_run_on_ping_timeout_when_the_ping_timeout_fires_before_the_soc
 
     socket = _socket(effect.never, reader=effect.never)
     options = rpc_client.SocketOptions(
-        retry_policy=schedule.spaced(3600), on_ping_timeout=record("ping timeout")
+        retry_policy=schedule.spaced("1 hour"), on_ping_timeout=record("ping timeout")
     )
     protocol = yield from (
         rpc_client.make_protocol_socket(options)
@@ -815,7 +815,7 @@ def test_does_not_run_on_ping_timeout_when_the_ping_timeout_fires_before_the_soc
         effect.provide_service(ClientProtocol, protocol)
     )
     stream_fiber = yield from client.events().run_drain().flip().fork()
-    yield from testing.adjust(11)
+    yield from testing.adjust("11 seconds")
     error = yield from stream_fiber.join()
     assert isinstance(error.reason, SocketReadError)
     assert events == ["disconnect"]
@@ -827,9 +827,9 @@ def test_fails_in_flight_streams_when_transient_retries_are_exhausted():
     socket, _sent = _failing_after_request()
     options = rpc_client.SocketOptions(retry_transient_errors=True, retry_policy=schedule.recurs(2))
     client = yield from _socket_client(socket, options)
-    stream_fiber = yield from client.events().run_drain().timeout(1).flip().fork()
+    stream_fiber = yield from client.events().run_drain().timeout("1 second").flip().fork()
     yield from _settle()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     error = yield from stream_fiber.join()
     assert isinstance(error, RpcClientError)
     assert isinstance(error.reason, SocketOpenError)
@@ -850,9 +850,9 @@ def test_continues_retrying_when_the_transient_error_hook_defects():
         on_transient_error=lambda _: effect.die("hook defect"),
     )
     client = yield from _socket_client(socket, options)
-    stream_fiber = yield from client.events().run_drain().timeout(1).flip().fork()
+    stream_fiber = yield from client.events().run_drain().timeout("1 second").flip().fork()
     yield from _settle()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     error = yield from stream_fiber.join()
     assert attempts[0] == 3
     assert isinstance(error, RpcClientError)
@@ -911,7 +911,7 @@ def test_keeps_a_slow_unary_request_alive_when_default_ping_ticks_run_slightly_l
     ).pipe(effect.provide_service(ClientProtocol, protocol))
     response = yield from client.ping().exit().fork()
     yield from request_sent.wait()
-    yield from testing.adjust(12)
+    yield from testing.adjust("12 seconds")
     exit_message = {"_tag": "Exit", "requestId": "0", "exit": {"_tag": "Success", "value": "slow"}}
     yield from frames.offer(json.dumps(exit_message) + "\n")
     assert (yield from response.join()) == Exit.succeed("slow")
@@ -965,9 +965,9 @@ def test_closes_the_client_scope_when_a_malformed_chunk_arrives_as_the_socket_cl
     assert isinstance((yield from bad.join()), Exit.Failure)
 
     closing = yield from scope.close(Exit.succeed(None)).fork_daemon()
-    closed = yield from closing.await_exit().timeout_option(1).fork()
+    closed = yield from closing.await_exit().timeout_option("1 second").fork()
     yield from _settle()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert isinstance((yield from closed.join()), Some)
 
 
@@ -1028,7 +1028,7 @@ def _batching(
         return (yield from body(client, lambda: requests[0]))
 
     return fx.run_blocking(
-        fx.scoped(effect.gen(program)).pipe(fx.provide(protocol)).timeout(10).or_die()
+        fx.scoped(effect.gen(program)).pipe(fx.provide(protocol)).timeout("10 seconds").or_die()
     )
 
 
@@ -1047,7 +1047,7 @@ def test_sends_requests_made_within_the_batch_window_as_one_http_request(
         assert results == ("first", "second")
         assert http_requests() == 1
 
-    _batching(serialization, rpc_client.Batch(window=0.05), body)
+    _batching(serialization, rpc_client.Batch(window="50 millis"), body)
 
 
 def test_sends_a_batch_as_soon_as_it_reaches_max_size() -> None:
@@ -1062,7 +1062,7 @@ def test_sends_a_batch_as_soon_as_it_reaches_max_size() -> None:
         assert results == ("first", "second")
         assert http_requests() == 1
 
-    _batching(rs.layer_json, rpc_client.Batch(window=3600, max_size=2), body)
+    _batching(rs.layer_json, rpc_client.Batch(window="1 hour", max_size=2), body)
 
 
 def test_keeps_a_batch_in_flight_when_one_of_its_callers_is_interrupted() -> None:
@@ -1072,13 +1072,13 @@ def test_keeps_a_batch_in_flight_when_one_of_its_callers_is_interrupted() -> Non
     def body(client: EchoGroup, http_requests: Callable[[], int]):
         interrupted = yield from client.echo({"value": "interrupted"}).fork()
         kept = yield from client.echo({"value": "kept"}).fork()
-        yield from fx.sleep(0.05)
+        yield from fx.sleep("50 millis")
         yield from interrupted.interrupt()
         yield from release.succeed(None)
         assert (yield from kept.join()) == "kept"
         assert http_requests() == 1
 
-    _batching(rs.layer_json, rpc_client.Batch(window=0.01), body, release.wait())
+    _batching(rs.layer_json, rpc_client.Batch(window="10 millis"), body, release.wait())
 
 
 class EchoEncodeGate(Reference[Effect[None]], key="RpcClientTest/EchoEncodeGate"):
@@ -1147,7 +1147,7 @@ def test_interrupts_batches_started_while_the_client_is_shutting_down():
         rpc_client.layer_protocol_http(
             "http://localhost/rpc",
             transform_client=lambda c: c.map_request_effect(before_request),
-            batch=rpc_client.Batch(window=0.005),
+            batch=rpc_client.Batch(window="5 millis"),
         )
         .pipe(layer.provide_merge(rs.layer_json))
         .pipe(layer.provide_merge(layer.succeed(HttpClient, unreachable)))
@@ -1163,12 +1163,12 @@ def test_interrupts_batches_started_while_the_client_is_shutting_down():
         .pipe(effect.provide_service(EchoEncodeGate, encode_release.wait()))
         .fork()
     )
-    yield from testing.adjust(0.005)
+    yield from testing.adjust("5 millis")
     closing = yield from scope.close(Exit.succeed(None)).fork()
     yield from cleanup_started.wait()
     yield from client.echo({"value": "second"}).fork()
     yield from encode_release.succeed(None)
-    yield from testing.adjust(0.005)
+    yield from testing.adjust("5 millis")
     yield from release.succeed(None)
     yield from closing.join()
     # every HTTP request that started was interrupted by the shutdown
@@ -1221,13 +1221,13 @@ def test_releases_a_worker_pool_slot_when_the_worker_run_fails():
     yield from run_failure.fail(WorkerError(reason=WorkerReceiveError(message="worker exited")))
     yield from protocol_error_received.wait()
 
-    first_completed = yield from first.join().timeout(1).fork()
-    yield from testing.adjust(1)
+    first_completed = yield from first.join().timeout("1 second").fork()
+    yield from testing.adjust("1 second")
     yield from first_completed.join()
 
     second = yield from protocol.send(0, request(2)).fork()
-    second_sent = yield from second_request_sent.wait().timeout(1).fork()
-    yield from testing.adjust(1)
+    second_sent = yield from second_request_sent.wait().timeout("1 second").fork()
+    yield from testing.adjust("1 second")
     yield from second_sent.join()
     yield from second.interrupt()
     assert sent_request_ids == [1, 2]

@@ -154,7 +154,7 @@ def test_retries_reuse_the_identical_compressed_request_body():
         exporter.push(1)
         fiber = yield from (yield from otlp_exporter.Flusher()).flush.fork()
         yield from first_attempt.wait()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from fiber.join()
         assert len(seen.requests) == 2
         assert seen.requests[0].headers.get("content-encoding") == "gzip"

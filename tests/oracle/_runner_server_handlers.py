@@ -154,4 +154,4 @@ def incoming(
 
 
 def live_timeout[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, Any, R]:
-    return testing.with_live(effect.timeout(1))
+    return testing.with_live(effect.timeout("1 second"))

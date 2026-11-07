@@ -35,7 +35,7 @@ every_second = cluster_cron.make(
 @fx.gen
 def program():
     yield from two_runs.wait()
-    yield from fx.sleep(0.5)  # let the second run schedule the third before shutting down
+    yield from fx.sleep("500 millis")  # let the second run schedule the third before shutting down
     print("on whole seconds:", all(run.microsecond == 0 for run in runs))
     print("seconds apart:", (runs[1] - runs[0]).total_seconds())
 

@@ -22,12 +22,12 @@ def _collect_groups[K, V](
 def test_an_idle_group_ends_and_its_key_starts_a_new_one():
     source = (
         stream.make("a1", "b1")
-        .concat(stream.from_effect_drain(fx.sleep(2)))
+        .concat(stream.from_effect_drain(fx.sleep("2 seconds")))
         .concat(stream.make("a2"))
     )
-    grouped = source.group_by_key(lambda s: s[0], idle_time_to_live=1)
+    grouped = source.group_by_key(lambda s: s[0], idle_time_to_live="1 second")
     fiber = yield from _collect_groups(grouped).fork()
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert (yield from fiber.join()) == [("a", ["a1"]), ("b", ["b1"]), ("a", ["a2"])]
 
 

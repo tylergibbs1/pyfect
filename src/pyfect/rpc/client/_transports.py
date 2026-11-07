@@ -71,7 +71,7 @@ def default_retry_policy() -> Schedule[Any, Any, Never, Never]:
     """Exponential from 0.5s by 1.5, at most 5s apart."""
     return cast(
         "Schedule[Any, Any, Never, Never]",
-        schedule.min(schedule.exponential(0.5, 1.5), schedule.spaced(5.0)),
+        schedule.min(schedule.exponential("500 millis", 1.5), schedule.spaced("5 seconds")),
     )
 
 
@@ -112,7 +112,7 @@ class SocketOptions:
     ``retry_transient_errors`` keeps requests waiting while the socket
     cannot open (reporting each error to ``on_transient_error``)."""
 
-    ping_interval: Duration = 5.0
+    ping_interval: Duration = "5 seconds"
     ping_timeout: Duration | None = None
     retry_transient_errors: bool = False
     retry_policy: Schedule[Any, Any, Never, Never] | None = None

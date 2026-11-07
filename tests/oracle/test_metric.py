@@ -676,7 +676,7 @@ def test_frequency_custom_set_with_constant():
 def test_uses_finite_extrema_for_empty_histogram_and_summary_states():
     """uses finite extrema for empty histogram and summary states"""
     histogram = metric.histogram(_next_id(), boundaries=[])
-    summary = metric.summary(_next_id(), max_age=60, max_size=10, quantiles=[])
+    summary = metric.summary(_next_id(), max_age="1 minute", max_size=10, quantiles=[])
     histogram_state = yield from histogram.value()
     summary_state = yield from summary.value()
     largest = sys.float_info.max
@@ -742,7 +742,7 @@ def test_histogram_preserves_precision_of_boundary_values():
 @testing.effect
 def test_summary_reports_the_maximum_for_negative_only_observations():
     """Summary > reports the maximum for negative-only observations"""
-    summary = metric.summary(_next_id(), max_age=60, max_size=10, quantiles=[0.5])
+    summary = metric.summary(_next_id(), max_age="1 minute", max_size=10, quantiles=[0.5])
     yield from summary.update(-10)
     yield from summary.update(-5)
     result = yield from summary.value()
@@ -754,7 +754,7 @@ def test_summary_reports_the_maximum_for_negative_only_observations():
 def test_summary_custom_observe_with_value():
     """Summary > custom observe with value"""
     summary = metric.summary(
-        _next_id(), max_age=60, max_size=10, quantiles=[0, 0.1, 0.9]
+        _next_id(), max_age="1 minute", max_size=10, quantiles=[0, 0.1, 0.9]
     ).with_attributes(_attributes)
     yield from fx.succeed(1).track_successes(summary)
     yield from fx.succeed(3).track_successes(summary)
@@ -767,7 +767,7 @@ def test_summary_custom_observe_with_value():
 def test_summary_custom_observe_with_constant():
     """Summary > custom observe with constant"""
     summary = (
-        metric.summary(_next_id(), max_age=60, max_size=10, quantiles=[0, 0.1, 0.9])
+        metric.summary(_next_id(), max_age="1 minute", max_size=10, quantiles=[0, 0.1, 0.9])
         .with_attributes(_attributes)
         .with_constant_input(1)
     )
@@ -782,7 +782,7 @@ def test_summary_custom_observe_with_constant():
 def test_summary_should_return_the_correct_quantile_when_the_first_chunk_overshoots():
     """Summary > should return the correct quantile when the first chunk overshoots"""
     samples = [10, 10, 10, 10, 10, 10, 20, 30, 40, 50]
-    summary = metric.summary(_next_id(), max_age=60, max_size=15, quantiles=[0.5])
+    summary = metric.summary(_next_id(), max_age="1 minute", max_size=15, quantiles=[0.5])
     yield from fx.for_each(samples, summary.update)
     assert (yield from summary.value()) == metric.SummaryState(
         quantiles=((0.5, 10),), count=10, min=10, max=50, sum=200
@@ -889,8 +889,8 @@ def test_track_defects_updates_on_defect():
 def test_track_duration_tracks_execution_duration():
     """trackDuration > tracks execution duration"""
     timer = metric.timer(_next_id())
-    fiber = yield from fx.sleep(3600).track_duration(timer).fork()
-    yield from testing.adjust(3600)
+    fiber = yield from fx.sleep("1 hour").track_duration(timer).fork()
+    yield from testing.adjust("1 hour")
     yield from fiber.join()
     result = yield from timer.value()
     assert result.count == 1
@@ -907,7 +907,7 @@ def test_track_duration_uses_monotonic_time_when_wall_time_moves_backward():
 
     @fx.gen
     def moves():
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         yield from testing.set_time(0)
 
     yield from moves.track_duration(timer)
@@ -922,7 +922,7 @@ def test_track_duration_uses_monotonic_time_when_wall_time_moves_backward():
 def test_track_duration_with_tracks_execution_duration():
     """trackDurationWith > tracks execution duration"""
     gauge = metric.gauge(_next_id())
-    fiber = yield from fx.sleep(3600).track_duration(gauge, lambda d: d / 60).fork()
-    yield from testing.adjust(3600)
+    fiber = yield from fx.sleep("1 hour").track_duration(gauge, lambda d: d / 60).fork()
+    yield from testing.adjust("1 hour")
     yield from fiber.join()
     assert (yield from gauge.value()) == metric.GaugeState(60)

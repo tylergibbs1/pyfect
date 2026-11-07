@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from pyfect._core import Effect, _Succeed, _Suspend, _WithFiber
 from pyfect.clock import Clock, ClockService
-from pyfect.duration import Seconds, nanos_or_infinite
+from pyfect.duration import Seconds, from_nanos, nanos_or_infinite
 from pyfect.pool._state import PoolItem, Strategy
 from pyfect.queue import Queue
 
@@ -42,7 +42,7 @@ def creation_ttl(ttl: Seconds) -> Effect[Strategy[Any, Any]]:
                         return _VOID
                     remaining = ttl_nanos - (clock.now_nanos_unsafe() - created[item])
                     if remaining > 0:
-                        return process(item).delay(remaining / 1e9)
+                        return process(item).delay(from_nanos(remaining))
                     return pool._invalidate_item(item)
 
                 return _Suspend(body)

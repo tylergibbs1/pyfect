@@ -162,7 +162,7 @@ def _restart_sharding(
 
 def _advance_until[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, E, R]:
     """Steps the test clock until ``effect`` completes."""
-    return effect.race_first(testing.adjust(0.001).forever())
+    return effect.race_first(testing.adjust("1 millis").forever())
 
 
 # Shared across runners, so a restarted runner sees the previous runner's
@@ -209,7 +209,7 @@ def test_replays_a_durable_caller_parked_on_a_queued_request_when_its_target_clo
     for _ in range(100):
         if closing.poll_unsafe() is not None:
             break
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
     yield from closing.join()
     assert (state.children, state.continued) == (0, [])
 

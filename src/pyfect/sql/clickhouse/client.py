@@ -71,7 +71,7 @@ type ClickhouseParam = Custom[str, str, object, None]
 _clickhouse_param: Callable[[str, object, None], ClickhouseParam] = custom("ClickhouseParam")
 is_clickhouse_param = is_custom("ClickhouseParam")
 
-CONNECT_TIMEOUT = 5.0
+CONNECT_TIMEOUT = "5 seconds"
 """How long ``make`` waits for ``/ping``, in seconds."""
 
 _INSERT = catch("Failed to insert data", "insert")

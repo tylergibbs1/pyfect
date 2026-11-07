@@ -597,13 +597,13 @@ def test_retries_a_retryable_transport_error_on_the_default_schedule():
     """GraphQLClient subscriptions / retries a retryable TransportError on the default schedule (500ms, then x1.5)"""  # noqa: E501
     protocol, attempts = _scripted([_lost(), _lost(), stream.make(_event("a"))])
     fiber = yield from _subscribe(protocol).run_collect().fork()
-    yield from testing.adjust(0.499)
+    yield from testing.adjust("499 millis")
     assert attempts[0] == 1
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     assert attempts[0] == 2
-    yield from testing.adjust(0.749)
+    yield from testing.adjust("749 millis")
     assert attempts[0] == 2
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     assert attempts[0] == 3
     assert (yield from fiber.join()) == [{"issueUpdated": {"title": "a"}}]
 
@@ -613,9 +613,9 @@ def test_waits_for_retry_after_when_the_transport_reports_one():
     """GraphQLClient subscriptions / waits for retryAfter when the transport reports one"""
     protocol, attempts = _scripted([_lost(retry_after=Seconds(2)), stream.make(_event("a"))])
     fiber = yield from _subscribe(protocol).run_collect().fork()
-    yield from testing.adjust(1.999)
+    yield from testing.adjust("1999 millis")
     assert attempts[0] == 1
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     assert attempts[0] == 2
     yield from fiber.join()
 
@@ -635,7 +635,7 @@ def test_fails_with_the_last_transport_error_once_subscription_retry_is_exhauste
     protocol, attempts = _scripted([_lost(), _lost(description="lost again"), _lost()])
     run = _subscribe(protocol, subscription_retry=schedule.recurs(1)).run_collect()
     fiber = yield from run.pipe(expect_reason(TransportError)).fork()
-    yield from testing.adjust(60)
+    yield from testing.adjust("1 minute")
     assert (yield from fiber.join()).description == "lost again"
     assert attempts[0] == 2
 

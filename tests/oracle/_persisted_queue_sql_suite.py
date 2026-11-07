@@ -31,7 +31,7 @@ def now_millis() -> Generator[Any, Any, int]:
 
 
 def make_queue(
-    table_name: str, poll_interval: Duration = 0.01
+    table_name: str, poll_interval: Duration = "10 millis"
 ) -> Generator[Any, Any, pq.PersistedQueue[str]]:
     store = yield from pq.make_store_sql(table_name=table_name, poll_interval=poll_interval)
     factory = yield from pq.make_factory.pipe(fx.provide_service(pq.PersistedQueueStore, store))
@@ -41,9 +41,9 @@ def make_queue(
 def make_ownership_queue(table_name: str) -> Generator[Any, Any, pq.PersistedQueue[str]]:
     store = yield from pq.make_store_sql(
         table_name=table_name,
-        poll_interval=0.1,
-        lock_refresh_interval=0.1,
-        lock_expiration=1,
+        poll_interval="100 millis",
+        lock_refresh_interval="100 millis",
+        lock_expiration="1 second",
     )
     factory = yield from pq.make_factory.pipe(fx.provide_service(pq.PersistedQueueStore, store))
     return (
@@ -85,10 +85,10 @@ class PersistedQueueSqlSuite:
                 millis = (yield from now_millis()) % 1000
                 if 500 <= millis < 600:
                     break
-                yield from fx.sleep(0.01)
+                yield from fx.sleep("10 millis")
 
             offered_at = yield from now_millis()
-            yield from queue.offer("delayed", delay=1)
+            yield from queue.offer("delayed", delay="1 second")
             yield from queue.take(_succeed)
             assert (yield from now_millis()) - offered_at >= 1000
 
@@ -104,9 +104,9 @@ class PersistedQueueSqlSuite:
 
             # the transaction starts well before the offer
             def offer() -> Generator[Any, Any, int]:
-                yield from fx.sleep(2)
+                yield from fx.sleep("2 seconds")
                 offered_at = yield from now_millis()
-                yield from queue.offer("delayed", delay=3)
+                yield from queue.offer("delayed", delay="3 seconds")
                 return offered_at
 
             offered_at = yield from sql.with_transaction(fx.gen(offer))
@@ -125,14 +125,16 @@ class PersistedQueueSqlSuite:
             sql = yield from SqlClient()
             # no test waits out this poll interval: only the offer's wake-up
             # can deliver the element
-            queue = yield from make_queue("effect_queue_commit_wake", 3600)
+            queue = yield from make_queue("effect_queue_commit_wake", "1 hour")
             taken = yield from queue.take(_succeed).fork_scoped()
 
             # the transaction stays open after the offer, long enough for a
             # wake-up sent before the commit to find nothing
-            yield from sql.with_transaction(queue.offer("committed").and_then(fx.sleep(0.5)))
+            yield from sql.with_transaction(
+                queue.offer("committed").and_then(fx.sleep("500 millis"))
+            )
 
-            value = yield from taken.join().timeout_option(5)
+            value = yield from taken.join().timeout_option("5 seconds")
             assert value == fx.Some("committed")
 
         self.run(body)
@@ -164,11 +166,11 @@ class PersistedQueueSqlSuite:
                 return a_taken.open().and_then(a_release.wait()).and_then(end)
 
             a_fiber = yield from stale.take(a).fork_scoped()
-            yield from testing.with_live(a_taken.wait().timeout(5))
+            yield from testing.with_live(a_taken.wait().timeout("5 seconds"))
 
             # refreshes stay paused on the TestClock while the live database
             # clock expires the lock, whole-second timestamps included
-            yield from testing.with_live(fx.sleep(2.5))
+            yield from testing.with_live(fx.sleep("2500 millis"))
 
             b_taken = Latch()
 
@@ -178,12 +180,12 @@ class PersistedQueueSqlSuite:
                 return b_taken.open().and_then(fx.never)
 
             replacement = yield from queue.take(b).fork_scoped()
-            yield from testing.with_live(b_taken.wait().timeout(5))
+            yield from testing.with_live(b_taken.wait().timeout("5 seconds"))
 
             # resume refreshes for the replacement before the stale settlement
             yield from (
-                testing.with_live(fx.sleep(0.1))
-                .and_then(testing.adjust(0.1))
+                testing.with_live(fx.sleep("100 millis"))
+                .and_then(testing.adjust("100 millis"))
                 .forever()
                 .fork_scoped()
             )
@@ -195,11 +197,11 @@ class PersistedQueueSqlSuite:
             ).fork_scoped()
             # longer than lock_expiration: the stale settlement must neither
             # release the replacement nor unregister its lock refresh
-            yield from testing.with_live(fx.sleep(1.5))
+            yield from testing.with_live(fx.sleep("1500 millis"))
             assert duplicate.poll_unsafe() is None
 
             yield from replacement.interrupt()
-            redelivered = yield from testing.with_live(duplicate.join().timeout(5))
+            redelivered = yield from testing.with_live(duplicate.join().timeout("5 seconds"))
             assert redelivered == ("job", "job-1", 2)
 
         self.run(body, live=False)

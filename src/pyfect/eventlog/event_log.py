@@ -721,8 +721,8 @@ def make_replay_from_remote(
     return replay_batch
 
 
-_REMOTE_RETRY = schedule_min(exponential(0.2, 1.5), spaced(10))
-_SYNCED_POLL = 0.01
+_REMOTE_RETRY = schedule_min(exponential("200 millis", 1.5), spaced("10 seconds"))
+_SYNCED_POLL = "10 millis"
 
 
 # --- the log -------------------------------------------------------------------------

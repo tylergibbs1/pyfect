@@ -71,7 +71,7 @@ def test_merged_layers_release_in_parallel():
         )
 
         def release_second(_a: str, _e: object) -> fx.Effect[None]:
-            return gate.wait().timeout(1.0).result().map(lambda r: log.append(repr(r)))
+            return gate.wait().timeout("1 second").result().map(lambda r: log.append(repr(r)))
 
         second = layer.effect(S2, fx.acquire_release(fx.succeed("b"), release_second))
         yield from fx.void.pipe(fx.provide(layer.merge(first, second)))

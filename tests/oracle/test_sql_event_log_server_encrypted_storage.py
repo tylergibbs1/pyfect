@@ -110,7 +110,7 @@ def _await_lock_wait(sql: SqlClientService) -> Generator[Any, Any]:
         rows = yield from waiting
         if rows[0]["n"] != 0:
             return
-        yield from fx.sleep(0.01)
+        yield from fx.sleep("10 millis")
     yield from fx.die(RuntimeError("the competing writer never waited on a lock"))
 
 
@@ -151,7 +151,7 @@ def competing_writes(
     return stored, persisted[1:]
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_stores_a_batch_with_more_ids_than_one_statement_can_bind(connect: Connect):
     """SqlEventLogServerEncrypted storage ({dialect}) / stores a batch with more ids than one
     statement can bind"""
@@ -173,7 +173,7 @@ def test_stores_a_batch_with_more_ids_than_one_statement_can_bind(connect: Conne
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_stores_a_competing_write_after_its_writer_retries(connect: Connect):
     """SqlEventLogServerEncrypted storage ({dialect}) / stores a competing write after its writer
     retries"""
@@ -189,7 +189,7 @@ def test_stores_a_competing_write_after_its_writer_retries(connect: Connect):
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_stores_a_competing_partly_known_batch_whole_once(connect: Connect):
     """SqlEventLogServerEncrypted storage ({dialect}) / stores a competing partly known batch whole,
     once"""

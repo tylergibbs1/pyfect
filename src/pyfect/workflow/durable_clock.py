@@ -39,7 +39,7 @@ def make(*, name: str, duration: Duration) -> DurableClock:
     )
 
 
-DEFAULT_IN_MEMORY_THRESHOLD: Seconds = to_seconds(60)
+DEFAULT_IN_MEMORY_THRESHOLD: Seconds = to_seconds("60 seconds")
 
 
 def sleep(

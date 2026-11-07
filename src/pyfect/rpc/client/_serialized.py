@@ -119,7 +119,7 @@ class _Serialized:
                 yield from self._interrupt_request(request_id).exit()
 
         return self._closing.succeed(None).flat_map(
-            lambda _: interrupt_all.timeout(1.0).exit().as_void()
+            lambda _: interrupt_all.timeout("1 second").exit().as_void()
         )
 
     def _defect_of(self, encoded: object) -> BaseException:

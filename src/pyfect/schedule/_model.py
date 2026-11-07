@@ -61,15 +61,16 @@ type StepFn[Out, In, E, R] = Callable[[float, In], Effect[Decision[Out], E, R]]
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class InputMetadata(Generic[I_co]):
-    """What a step knows before it decides. Times are wall-clock seconds;
+    """What a step knows before it decides. ``start`` and ``now`` are
+    wall-clock seconds, ``elapsed`` and ``elapsed_since_previous`` durations;
     ``attempt`` counts this step's decisions to recur, from 1."""
 
     input: I_co
     attempt: int
     start: float
     now: float
-    elapsed: float
-    elapsed_since_previous: float
+    elapsed: Seconds
+    elapsed_since_previous: Seconds
 
 
 @final
@@ -95,8 +96,8 @@ class CurrentMetadata(Reference[Metadata[object, object]]):
             attempt=0,
             start=0.0,
             now=0.0,
-            elapsed=0.0,
-            elapsed_since_previous=0.0,
+            elapsed=ZERO,
+            elapsed_since_previous=ZERO,
         )
 
 
@@ -104,17 +105,17 @@ def _value_or_effect(result: object) -> Effect[Any, Any, Any]:
     return cast("Effect[Any, Any, Any]", result) if isinstance(result, Effect) else _Succeed(result)
 
 
-def _since(now: float, then: float) -> float:
+def _since(now: float, then: float) -> Seconds:
     """``now - then`` to the nanosecond. Effect subtracts whole
     milliseconds; float seconds would make ``1.3 - 1.0`` 0.30000000000000004
     and break the window arithmetic in ``fixed`` and ``windowed``."""
     if now == then or math.isinf(now) or math.isinf(then):
-        return now - then
+        return Seconds(now - then)
     nanos = to_nanos(now) - to_nanos(then)
     try:
-        return nanos / 1_000_000_000
+        return Seconds(nanos / 1_000_000_000)
     except OverflowError:  # past float range, where JavaScript's ``-`` saturates
-        return math.inf if nanos > 0 else -math.inf
+        return Seconds(math.inf if nanos > 0 else -math.inf)
 
 
 class _MetadataCounter:
@@ -131,7 +132,7 @@ class _MetadataCounter:
     def __call__[In](self, now: float, input: In) -> InputMetadata[In]:
         if self.start is None:
             self.start = now
-        since_previous = 0.0 if self.previous is None else _since(now, self.previous)
+        since_previous = ZERO if self.previous is None else _since(now, self.previous)
         self.previous = now
         self.attempt += 1
         return InputMetadata(

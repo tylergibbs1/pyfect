@@ -50,7 +50,7 @@ def program():
     yield from sql.with_transaction(checkpoint(1, 1000))
 
     while seen < 1000:
-        notification = yield from progress.take().timeout(5)
+        notification = yield from progress.take().timeout("5 seconds")
         row = int(notification.payload.split(":")[1])
         if row <= seen:
             print("dropped", notification.payload)

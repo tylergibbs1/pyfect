@@ -16,6 +16,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.duration import Seconds
 from pyfect.testing import TestClock
 
 HOUR = 3600.0
@@ -24,7 +25,7 @@ HOUR = 3600.0
 @pytest.mark.parametrize(
     "warning", ["not advancing the test clock", "still running without suspending"]
 )
-@testing.effect(warning_delay=0.05)
+@testing.effect(warning_delay="50 millis")
 def test_warnings_bypass_test_console(
     warning: Literal["not advancing the test clock", "still running without suspending"],
     recwarn: pytest.WarningsRecorder,
@@ -32,9 +33,9 @@ def test_warnings_bypass_test_console(
     """TestClock.test.ts "warnings bypass TestConsole - ${warning}"."""
     yield from fx.console.log("ordinary output")
     then = fx.yield_now().forever() if warning == "still running without suspending" else fx.void
-    yield from fx.sleep(60).and_then(then).fork()
+    yield from fx.sleep("1 minute").and_then(then).fork()
     if warning == "still running without suspending":
-        yield from testing.adjust(60)
+        yield from testing.adjust("1 minute")
 
     def seen() -> bool:
         return any(warning in str(w.message) for w in recwarn)
@@ -42,9 +43,9 @@ def test_warnings_bypass_test_console(
     @fx.gen
     def wait_for_warning():
         while not seen():
-            yield from fx.sleep(0.01)
+            yield from fx.sleep("10 millis")
 
-    yield from testing.with_live(wait_for_warning.timeout(3))
+    yield from testing.with_live(wait_for_warning.timeout("3 seconds"))
     assert (yield from testing.log_lines) == ["ordinary output"]
     assert seen()
 
@@ -55,13 +56,13 @@ def test_adjust_skips_the_cancelled_deadline(
     cancellation: Literal["interrupted sleep", "successful timeout"],
 ):
     """TestClock.test.ts "adjust - skips the cancelled deadline (${cancellation})"."""
-    clock = TestClock(warning_delay=0.05)
+    clock = TestClock(warning_delay="50 millis")
     if cancellation == "interrupted sleep":
         sleeper = yield from clock.sleep(fx.duration.Seconds(60)).fork()
         yield from fx.yield_now()
         yield from sleeper.interrupt()
     else:
-        yield from fx.yield_now().timeout(60).pipe(fx.provide_service(fx.Clock, clock))
+        yield from fx.yield_now().timeout("1 minute").pipe(fx.provide_service(fx.Clock, clock))
 
     # Record the clock whenever adjustment yields to other fibers
     observed: set[int] = set()
@@ -71,7 +72,7 @@ def test_adjust_skips_the_cancelled_deadline(
         .forever()
         .fork()
     )
-    yield from clock.adjust(120)
+    yield from clock.adjust("2 minutes")
     assert 60 * 10**9 not in observed
 
 
@@ -79,8 +80,8 @@ def test_adjust_skips_the_cancelled_deadline(
 def test_sleep_does_not_require_passage_of_wall_time():
     """TestClock.test.ts "sleep - does not require passage of wall time"."""
     elapsed: list[bool] = []
-    yield from fx.sync(lambda: elapsed.append(True)).delay(10 * HOUR).fork()
-    yield from testing.adjust(11 * HOUR)
+    yield from fx.sync(lambda: elapsed.append(True)).delay(Seconds(10 * HOUR)).fork()
+    yield from testing.adjust(Seconds(11 * HOUR))
     assert elapsed == [True]
 
 
@@ -88,10 +89,10 @@ def test_sleep_does_not_require_passage_of_wall_time():
 def test_sleep_delays_effects_until_time_is_adjusted():
     """TestClock.test.ts "sleep - delays effects until time is adjusted"."""
     elapsed: list[bool] = []
-    fiber = yield from fx.sync(lambda: elapsed.append(True)).delay(10 * HOUR).fork()
-    yield from testing.adjust(9 * HOUR)
+    fiber = yield from fx.sync(lambda: elapsed.append(True)).delay(Seconds(10 * HOUR)).fork()
+    yield from testing.adjust(Seconds(9 * HOUR))
     assert fiber.poll_unsafe() is None
-    yield from testing.adjust(11 * HOUR)
+    yield from testing.adjust(Seconds(11 * HOUR))
     assert fiber.poll_unsafe() == fx.Success(None)
     assert elapsed == [True]
 
@@ -100,11 +101,11 @@ def test_sleep_delays_effects_until_time_is_adjusted():
 def test_sleep_handles_multiple_sleeps():
     """TestClock.test.ts "sleep - handles multiple sleeps"."""
     message: list[str] = []
-    yield from fx.sync(lambda: message.append("World!")).delay(3 * HOUR).fork_scoped()
-    yield from fx.sync(lambda: message.append("Hello, ")).delay(HOUR).fork_scoped()
-    yield from testing.adjust(HOUR)
+    yield from fx.sync(lambda: message.append("World!")).delay(Seconds(3 * HOUR)).fork_scoped()
+    yield from fx.sync(lambda: message.append("Hello, ")).delay(Seconds(HOUR)).fork_scoped()
+    yield from testing.adjust(Seconds(HOUR))
     assert "".join(message) == "Hello, "
-    yield from testing.adjust(4 * HOUR)
+    yield from testing.adjust(Seconds(4 * HOUR))
     assert "".join(message) == "Hello, World!"
 
 
@@ -112,7 +113,7 @@ def test_sleep_handles_multiple_sleeps():
 def test_set_time_sleep_correctly_handles_new_set_time():
     """TestClock.test.ts "setTime - sleep correctly handles new set time"."""
     elapsed: list[bool] = []
-    yield from fx.sync(lambda: elapsed.append(True)).delay(10 * HOUR).fork()
+    yield from fx.sync(lambda: elapsed.append(True)).delay(Seconds(10 * HOUR)).fork()
     assert elapsed == []
     yield from testing.set_time(11 * HOUR)
     assert elapsed == [True]
@@ -138,7 +139,7 @@ def test_set_time_preserves_wall_clock_nanoseconds_for_large_timestamps():
 def test_adjust_advances_wall_and_monotonic_time():
     """TestClock.test.ts "adjust - advances wall and monotonic time"."""
     clock = yield from testing.test_clock()
-    yield from clock.adjust(1)
+    yield from clock.adjust("1 second")
     assert clock.now_unsafe() == 1.0
     assert clock.monotonic_nanos_unsafe() == 1_000_000_000
     assert (yield from fx.clock.monotonic()) == 1.0
@@ -149,7 +150,7 @@ def test_adjust_preserves_precision_for_nanosecond_durations_beyond_max_safe_int
     """TestClock.test.ts "adjust - preserves precision for nanosecond durations beyond
     Number.MAX_SAFE_INTEGER"."""
     clock = TestClock()
-    yield from clock.adjust(999_999_999.999_999)
+    yield from clock.adjust(Seconds(999_999_999.999_999))
     assert clock.monotonic_nanos_unsafe() == 999_999_999_999_999_000
     assert clock.now_nanos_unsafe() == 999_999_999_999_999_000
 
@@ -159,7 +160,7 @@ def test_adjust_keeps_nanosecond_access_total_after_infinite_durations():
     """TestClock.test.ts "adjust - keeps nanosecond access total after infinite durations"."""
     for duration in (math.inf, -math.inf):
         clock = TestClock()
-        yield from clock.adjust(duration)
+        yield from clock.adjust(Seconds(duration))
         assert isinstance(clock.now_nanos_unsafe(), int)
 
 
@@ -200,7 +201,7 @@ def test_adjust_advances_monotonic_time_to_intermediate_sleep_deadlines():
         observed.append(clock.monotonic_nanos_unsafe())
 
     yield from sleeper.fork()
-    yield from clock.adjust(2)
+    yield from clock.adjust("2 seconds")
     assert observed == [1_000_000_000]
     assert clock.monotonic_nanos_unsafe() == 2_000_000_000
 
@@ -210,13 +211,13 @@ def test_adjust_runs_sleeps_registered_after_a_yield():
     """TestClock.test.ts "adjust - runs sleeps registered after a yield"."""
     ticks: list[None] = []
     fiber = yield from (
-        fx.sleep(1)
+        fx.sleep("1 second")
         .and_then(fx.sync(lambda: ticks.append(None)))
         .and_then(fx.yield_now())
         .forever()
         .fork()
     )
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     yield from fiber.interrupt()
     assert len(ticks) == 5
 
@@ -227,7 +228,7 @@ def test_set_time_runs_sleeps_registered_after_a_fork_and_join():
     ticks: list[None] = []
     fork_and_join = fx.yield_now().fork().flat_map(lambda f: f.join())
     fiber = yield from (
-        fx.sleep(1)
+        fx.sleep("1 second")
         .and_then(fx.sync(lambda: ticks.append(None)))
         .and_then(fork_and_join)
         .forever()
@@ -246,11 +247,11 @@ def test_adjust_completes_when_a_nested_clock_wakes_a_busy_fiber():
 
     @fx.gen
     def program():
-        yield from fx.sleep(1).and_then(fx.yield_now().forever()).fork()
-        yield from fx.sleep(2).and_then(fx.sync(lambda: later.append(True))).fork()
-        yield from testing.adjust(5)
+        yield from fx.sleep("1 second").and_then(fx.yield_now().forever()).fork()
+        yield from fx.sleep("2 seconds").and_then(fx.sync(lambda: later.append(True))).fork()
+        yield from testing.adjust("5 seconds")
 
-    yield from program.pipe(fx.provide(TestClock.layer(warning_delay=0.01)))
+    yield from program.pipe(fx.provide(TestClock.layer(warning_delay="10 millis")))
     assert later == [True]
 
 
@@ -263,9 +264,12 @@ def test_adjust_waits_for_woken_fibers_when_the_advancing_fiber_yields_on_its_op
     @fx.gen
     def program():
         yield from (
-            fx.sleep(1).and_then(fx.yield_now()).and_then(fx.sync(lambda: done.append(True))).fork()
+            fx.sleep("1 second")
+            .and_then(fx.yield_now())
+            .and_then(fx.sync(lambda: done.append(True)))
+            .fork()
         )
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
 
     yield from program.pipe(fx.provide(TestClock.layer(warning_delay=math.inf))).pipe(
         fx.provide_service(fx.MaxOpsBeforeYield, 4)
@@ -275,4 +279,4 @@ def test_adjust_waits_for_woken_fibers_when_the_advancing_fiber_yields_on_its_op
 
 def test_layer_can_adjust_when_provided_without_an_ambient_scope() -> None:
     """TestClock.test.ts "layer - can adjust when provided without an ambient Scope"."""
-    fx.run_blocking(testing.adjust(1).pipe(fx.provide(TestClock.layer())))
+    fx.run_blocking(testing.adjust("1 second").pipe(fx.provide(TestClock.layer())))

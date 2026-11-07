@@ -286,9 +286,9 @@ ClockWorkflow = workflow.make(
 
 
 def _clock(_payload: IdPayload, _execution_id: str) -> fx.Effect[float, Never, Any]:
-    return durable_clock.sleep(name="RestartSleep", duration=1, in_memory_threshold=0).and_then(
-        fx.clock.now().map(lambda seconds: seconds * 1000)
-    )
+    return durable_clock.sleep(
+        name="RestartSleep", duration="1 second", in_memory_threshold=0
+    ).and_then(fx.clock.now().map(lambda seconds: seconds * 1000))
 
 
 # --- Queue -------------------------------------------------------------------------------
@@ -547,9 +547,9 @@ def entities(prefix: str) -> Layer[Any, Any, Any]:
         fx.layer.provide_merge(
             pq.layer_store_sql(
                 table_name=f"{prefix}_workflow_queue",
-                poll_interval=0.1,
-                lock_refresh_interval=0.5,
-                lock_expiration=1.75,
+                poll_interval="100 millis",
+                lock_refresh_interval="500 millis",
+                lock_expiration="1750 millis",
             )
         )
     )
@@ -649,7 +649,7 @@ def started(
 # --- tests -------------------------------------------------------------------------------
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_executes_end_to_end_and_deduplicates_concurrent_callers(cluster_db: ClusterDatabase):
     """executes end to end and deduplicates concurrent callers"""
     id = f"{cluster_db.backend}-end-to-end"
@@ -678,7 +678,7 @@ def test_executes_end_to_end_and_deduplicates_concurrent_callers(cluster_db: Clu
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_replays_completed_activities_after_the_owner_dies(cluster_db: ClusterDatabase):
     """replays completed activities after the owner dies"""
     id = f"{cluster_db.backend}-replay"
@@ -707,7 +707,7 @@ def test_replays_completed_activities_after_the_owner_dies(cluster_db: ClusterDa
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_resumes_deferred_workflows_across_a_whole_cluster_restart_from_another_runner(
     cluster_db: ClusterDatabase,
 ):
@@ -740,7 +740,7 @@ def test_resumes_deferred_workflows_across_a_whole_cluster_restart_from_another_
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_wakes_a_durable_deferred_race_all_and_replays_the_winner_after_owner_death(
     cluster_db: ClusterDatabase,
 ):
@@ -783,7 +783,7 @@ def test_wakes_a_durable_deferred_race_all_and_replays_the_winner_after_owner_de
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_runs_compensation_and_suspend_on_failure_after_the_owner_is_lost(
     cluster_db: ClusterDatabase,
 ):
@@ -843,7 +843,7 @@ def test_runs_compensation_and_suspend_on_failure_after_the_owner_is_lost(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_accepts_a_late_durable_race_completion_across_the_suspend_commit(
     cluster_db: ClusterDatabase,
 ):
@@ -889,7 +889,7 @@ def test_accepts_a_late_durable_race_completion_across_the_suspend_commit(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_applies_activity_retry_policy_and_preserves_the_exhausted_error(
     cluster_db: ClusterDatabase,
 ):
@@ -916,7 +916,7 @@ def test_applies_activity_retry_policy_and_preserves_the_exhausted_error(
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_wakes_a_durable_clock_after_a_whole_cluster_restart(cluster_db: ClusterDatabase):
     """wakes a durable clock after a whole-cluster restart"""
     id = f"{cluster_db.backend}-clock"
@@ -937,7 +937,7 @@ def test_wakes_a_durable_clock_after_a_whole_cluster_restart(cluster_db: Cluster
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_persists_queued_work_across_restart_and_consumes_it_once(cluster_db: ClusterDatabase):
     """persists queued work across restart and consumes it once"""
     id = f"{cluster_db.backend}-queue"
@@ -959,7 +959,7 @@ def test_persists_queued_work_across_restart_and_consumes_it_once(cluster_db: Cl
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_persists_interruption_across_a_whole_cluster_restart(cluster_db: ClusterDatabase):
     """persists interruption across a whole-cluster restart"""
     id = f"{cluster_db.backend}-interrupt"
@@ -980,7 +980,7 @@ def test_persists_interruption_across_a_whole_cluster_restart(cluster_db: Cluste
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_replays_a_persisted_activity_handoff_without_leaking_workflow_resources(
     cluster_db: ClusterDatabase,
 ):
@@ -1016,7 +1016,7 @@ def test_replays_a_persisted_activity_handoff_without_leaking_workflow_resources
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_preserves_a_safe_interrupt_during_a_persisted_activity_handoff(
     cluster_db: ClusterDatabase,
 ):
@@ -1054,7 +1054,7 @@ def test_preserves_a_safe_interrupt_during_a_persisted_activity_handoff(
     yield from run(body).ensuring(fx.sync(lambda: handoff.fault_release.open_unsafe()))  # noqa: PLW0108
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_recovers_a_persisted_activity_across_an_actual_owner_handoff(
     cluster_db: ClusterDatabase,
 ):

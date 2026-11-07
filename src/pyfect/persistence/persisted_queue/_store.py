@@ -122,7 +122,7 @@ class QueueStates:
 def ack_retry_schedule(lock_expiration: Seconds) -> Schedule[object, object]:
     """How a store retries settling an element: backing off from 200 ms to
     5 s, for as long as the element's lock lasts."""
-    return min(exponential(0.2, 1.5), spaced(5)).up_to(duration=lock_expiration)
+    return min(exponential("200 millis", 1.5), spaced("5 seconds")).up_to(duration=lock_expiration)
 
 
 def store_interval(duration: Duration, default: Seconds) -> Seconds:

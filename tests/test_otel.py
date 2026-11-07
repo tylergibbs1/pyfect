@@ -113,7 +113,7 @@ def _points(found: Metric) -> list[NumberDataPoint]:
 def test_summary_is_a_quantiles_sum_with_count_and_sum():
     reader = InMemoryMetricReader()
     summary = metric.summary(
-        "latency", max_age=60, max_size=10, quantiles=[0.5], description="d"
+        "latency", max_age="1 minute", max_size=10, quantiles=[0.5], description="d"
     ).with_attributes({"unit": "ms"})
 
     @fx.gen
@@ -170,7 +170,7 @@ class _RecordingReader(InMemoryMetricReader):
 @testing.effect
 def test_a_released_metrics_layer_shuts_its_readers_down():
     reader = _RecordingReader()
-    metrics_layer = otel.metrics.layer(lambda: reader, shutdown_timeout=1.5).pipe(
+    metrics_layer = otel.metrics.layer(lambda: reader, shutdown_timeout="1500 millis").pipe(
         fx.provide(otel.resource.layer_empty)
     )
     yield from fx.void.pipe(fx.provide(metrics_layer))
@@ -353,7 +353,7 @@ def test_delta_frequencies_and_summaries_report_changes_since_the_last_collectio
         services = yield from fx.context()
         producer = MetricProducer(Resource({}), services, "delta")
         words = metric.frequency("words")
-        summary = metric.summary("latency", max_age=60, max_size=10, quantiles=[0.5])
+        summary = metric.summary("latency", max_age="1 minute", max_size=10, quantiles=[0.5])
         yield from words.update("a")
         yield from words.update("a")
         yield from summary.update(1)

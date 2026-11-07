@@ -110,7 +110,7 @@ class TestRateLimiterRedis(rl_suite.RateLimiterSuite):
 
 
 def _live(seconds: float) -> fx.Effect[None]:
-    return testing.with_live(fx.sleep(seconds))
+    return testing.with_live(fx.sleep(Seconds(seconds)))
 
 
 def _circuit_breaker_run(
@@ -124,7 +124,7 @@ def _circuit_breaker_run(
 @pytest.mark.parametrize(("title", "body"), cb_suite.ALL, ids=cb_suite.IDS)
 def test_circuit_breaker_redis(title: str, body: cb_suite.Body) -> None:
     """CircuitBreaker (NodeRedis) / ${title}"""
-    idle = 0.4 if body.__name__ in cb_suite.IDLE else 3600
+    idle = "400 millis" if body.__name__ in cb_suite.IDLE else "1 hour"
     _circuit_breaker_run(fx.gen(lambda: body(_live)), cb.layer_store_redis(idle_time_to_live=idle))
 
 
@@ -166,7 +166,7 @@ def _store_on(redis: RedisService, **options: Any) -> fx.Effect[cb.CircuitBreake
     return cb.make_store_redis(**options).pipe(fx.provide_service(Redis, redis))
 
 
-_OPTIONS: dict[str, Any] = {"trip_policy": cb.consecutive(1), "open_duration": 0.2}
+_OPTIONS: dict[str, Any] = {"trip_policy": cb.consecutive(1), "open_duration": "200 millis"}
 
 
 def _on(
@@ -191,17 +191,17 @@ def test_a_lapsed_probe_lease_is_taken_over_and_the_old_holders_record_is_discar
     def body():
         key = "lease-takeover"
         flaky = _Partition((yield from Redis()))
-        store_a = yield from _store_on(flaky, probe_lease=0.3)
+        store_a = yield from _store_on(flaky, probe_lease="300 millis")
         a = yield from _on(store_a)
         b = yield from cb.make(**_OPTIONS)
         transitions_b = yield from b.transitions.take(1).run_collect().fork(start_immediately=True)
 
         yield from cb_suite.fail(a, key)
-        yield from fx.sleep(0.3)
+        yield from fx.sleep("300 millis")
         stale = yield from cb_suite.held(a, key, fx.fail("boom"))
         # A can no longer renew, so its 300 millis lease lapses.
         flaky.down = True
-        yield from fx.sleep(0.6)
+        yield from fx.sleep("600 millis")
         assert (yield from b.state(key)) == cb.HalfOpen(key, False, 1)
 
         probe = yield from cb_suite.held(b, key, fx.void)
@@ -229,20 +229,20 @@ def test_a_failed_lease_renewal_is_reported_and_retried_without_failing_the_prob
     def body():
         key = "lease-renewal"
         flaky = _Partition((yield from Redis()))
-        store_a = yield from _store_on(flaky, probe_lease=0.6)
+        store_a = yield from _store_on(flaky, probe_lease="600 millis")
         a = yield from _on(store_a)
         b = yield from cb.make(**_OPTIONS)
 
         yield from cb_suite.fail(a, key)
-        yield from fx.sleep(0.3)
+        yield from fx.sleep("300 millis")
         probe = yield from cb_suite.held(a, key, fx.void)
         # The renewal due after 200 millis fails, the one after 400 millis
         # succeeds.
         flaky.down = True
-        yield from fx.sleep(0.3)
+        yield from fx.sleep("300 millis")
         flaky.down = False
         # Past the original 600 millis lease, so only a renewal keeps it.
-        yield from fx.sleep(0.5)
+        yield from fx.sleep("500 millis")
         rejected = yield from cb_suite.rejection(cb_suite.run_void(b, key))
         assert isinstance(rejected, cb.CircuitHalfOpen)
 
@@ -260,11 +260,11 @@ def test_a_renewal_after_an_ignored_probe_frees_the_slot_does_not_take_the_lease
     def body():
         key = "lease-release"
         redis = yield from Redis()
-        store = yield from _store_on(redis, probe_lease=0.6)
+        store = yield from _store_on(redis, probe_lease="600 millis")
         breaker = yield from _on(store)
 
         yield from cb_suite.fail(breaker, key)
-        yield from fx.sleep(0.3)
+        yield from fx.sleep("300 millis")
 
         def admitted():
             admission = yield from store.admit(key)
@@ -279,7 +279,7 @@ def test_a_renewal_after_an_ignored_probe_frees_the_slot_does_not_take_the_lease
             # The renewal fiber stays alive until the admit scope closes,
             # as it does while execute is still waiting on record. Its tick
             # after 200 millis lands after the release.
-            yield from fx.sleep(0.35)
+            yield from fx.sleep("350 millis")
             assert (yield from store.state(key)) == cb.HalfOpen(key, False, 1)
 
         yield from fx.scoped(fx.gen(admitted))
@@ -294,12 +294,12 @@ def test_a_leased_half_open_key_outlives_a_shorter_idle_time_to_live() -> None:
     def body():
         key = "retention-half-open"
         redis = yield from Redis()
-        store = yield from _store_on(redis, probe_lease=1, idle_time_to_live=0.3)
-        breaker = yield from _on(store, open_duration=0.1)
+        store = yield from _store_on(redis, probe_lease="1 second", idle_time_to_live="300 millis")
+        breaker = yield from _on(store, open_duration="100 millis")
         pttl = redis.send("PTTL", f"circuitbreaker:{key}")
 
         yield from cb_suite.fail(breaker, key)
-        yield from fx.sleep(0.2)
+        yield from fx.sleep("200 millis")
         probe = yield from cb_suite.held(breaker, key, fx.fail("boom"))
         # The remaining lease plus idleTimeToLive.
         leased = yield from pttl
@@ -308,7 +308,7 @@ def test_a_leased_half_open_key_outlives_a_shorter_idle_time_to_live() -> None:
 
         # Past idleTimeToLive, the first lease and the first expiry: only
         # the renewals keep the key and the probe's slot.
-        yield from fx.sleep(1.5)
+        yield from fx.sleep("1500 millis")
         assert (yield from breaker.state(key)) == cb.HalfOpen(key, True, 1)
         renewed = yield from pttl
         assert isinstance(renewed, int)
@@ -322,7 +322,7 @@ def test_a_leased_half_open_key_outlives_a_shorter_idle_time_to_live() -> None:
 
         # An interrupted probe frees the slot, so the key is back on
         # idleTimeToLive.
-        yield from fx.sleep(0.2)
+        yield from fx.sleep("200 millis")
         interrupted = yield from cb_suite.held(breaker, key, fx.void)
         yield from interrupted.fiber.interrupt()
         assert (yield from breaker.state(key)) == cb.HalfOpen(key, False, 2)
@@ -417,7 +417,7 @@ def test_does_not_restore_capacity_early_after_a_fractional_token_cost() -> None
 
         # Wall time: the reported bug expires these keys after 2s, before
         # the 4s refill.
-        yield from fx.sleep(2.5)
+        yield from fx.sleep("2500 millis")
         before_refill = {
             "keys": (yield from redis.send("EXISTS", key, refill_key)),
             "tokens": (yield from redis.send("GET", key)),
@@ -427,7 +427,7 @@ def test_does_not_restore_capacity_early_after_a_fractional_token_cost() -> None
         elapsed = time.time() * 1000 - refill_at
         assert 2_500 <= elapsed < 4_000
 
-        yield from fx.sleep((4_100 - elapsed) / 1000)
+        yield from fx.sleep(Seconds((4_100 - elapsed) / 1000))
         assert (yield from memory.token_bucket(**opts, tokens=0))[0] == 5
         assert (yield from store.token_bucket(**opts, tokens=0))[0] == 5
         assert before_refill == {
@@ -454,7 +454,7 @@ def test_restarts_the_refill_interval_after_both_redis_keys_expire(
     # by hand.
     def idle():
         redis = yield from Redis()
-        yield from testing.adjust(359)
+        yield from testing.adjust("359 seconds")
         assert (yield from redis.send("EXISTS", redis_key, refill_key)) == 2
         assert (yield from redis.send("PEXPIRE", redis_key, "0")) == 1
         assert (yield from redis.send("PEXPIRE", refill_key, "0")) == 1
@@ -537,7 +537,7 @@ def test_an_idle_subscription_does_not_hold_the_test_clock() -> None:
         redis = yield from Redis()
         yield from redis.subscribe("effect-test")
         started = time.monotonic()
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         assert time.monotonic() - started < 0.5
 
     with warnings.catch_warnings():
@@ -561,7 +561,7 @@ def test_a_blocking_read_does_not_hold_the_test_clock() -> None:
             until=lambda clients: "cmd=xread" in str(clients)
         )
         started = time.monotonic()
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         assert time.monotonic() - started < 0.5
 
     with warnings.catch_warnings():

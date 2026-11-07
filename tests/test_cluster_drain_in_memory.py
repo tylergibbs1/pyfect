@@ -73,7 +73,7 @@ def _stop_during_a_job(entity: Entity_, termination_timeout: float):
     started = Latch()
 
     def work() -> fx.Effect[str]:
-        step = fx.sync(started.open_unsafe).and_then(fx.sleep(0.2))
+        step = fx.sync(started.open_unsafe).and_then(fx.sleep("200 millis"))
         return step.and_then(fx.sync(lambda: log.append("job finished"))).as_("done")
 
     handlers, make_call = entity(work)
@@ -94,11 +94,11 @@ ENTITIES = pytest.mark.parametrize("entity", [_durable, _volatile], ids=["persis
 
 @ENTITIES
 def test_an_in_memory_runner_drains_a_running_job(entity: Entity_):
-    log = fx.run_blocking(_stop_during_a_job(entity, 5).timeout(10).or_die())
+    log = fx.run_blocking(_stop_during_a_job(entity, 5).timeout("10 seconds").or_die())
     assert log == ["job finished", "runner stopped"]
 
 
 @ENTITIES
 def test_with_a_zero_timeout_it_stops_at_once(entity: Entity_):
-    log = fx.run_blocking(_stop_during_a_job(entity, 0).timeout(10).or_die())
+    log = fx.run_blocking(_stop_during_a_job(entity, 0).timeout("10 seconds").or_die())
     assert log == ["runner stopped"]

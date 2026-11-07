@@ -39,8 +39,8 @@ def test_join_takes_on_a_failure():
 def test_fork_works_without_asyncio():
     @fx.gen
     def program():
-        a = yield from fx.sleep(0.01).as_("a").fork()
-        b = yield from fx.sleep(0.01).as_("b").fork()
+        a = yield from fx.sleep("10 millis").as_("a").fork()
+        b = yield from fx.sleep("10 millis").as_("b").fork()
         return (yield from a.join()) + (yield from b.join())
 
     assert fx.run_blocking(program) == "ab"
@@ -84,11 +84,16 @@ def test_uninterruptible_regions_finish_before_the_interrupt_lands():
 
     @fx.gen
     def program():
-        work = fx.sleep(5).and_then(say("region done")).uninterruptible().and_then(say("after"))
+        work = (
+            fx.sleep("5 seconds")
+            .and_then(say("region done"))
+            .uninterruptible()
+            .and_then(say("after"))
+        )
         fiber = yield from work.fork()
         yield from fx.yield_now()
         interrupted = yield from fiber.interrupt().fork()
-        yield from fx.testing.adjust(5)
+        yield from fx.testing.adjust("5 seconds")
         yield from interrupted.join()
         return (yield from fiber.await_exit())
 
@@ -133,11 +138,11 @@ def test_daemon_fibers_outlive_their_parent():
     def program():
         @fx.gen
         def parent():
-            yield from fx.sleep(1).and_then(say("daemon ran")).fork_daemon()
+            yield from fx.sleep("1 second").and_then(say("daemon ran")).fork_daemon()
             return "parent done"
 
         yield from parent
-        yield from fx.testing.adjust(1)
+        yield from fx.testing.adjust("1 second")
 
     run(program)
     assert log == ["daemon ran"]
@@ -295,7 +300,7 @@ def test_a_join_from_another_thread_sees_an_exit_landing_as_it_registers():
             started.set()
             # Not a join: that would go through the list patched below.
             while fiber.poll_unsafe() is None:
-                yield from fx.sleep(0.001)
+                yield from fx.sleep("1 millis")
 
         fx.run_blocking(fx.gen(body))
 
@@ -316,6 +321,6 @@ def test_a_join_from_another_thread_sees_an_exit_landing_as_it_registers():
             super().append(item)
 
     fiber._observers = FinishingAsAppended(fiber._observers)  # pyright: ignore[reportPrivateUsage, reportAttributeAccessIssue]
-    ex = fx.run_blocking_exit(fiber.await_exit().timeout(2))
+    ex = fx.run_blocking_exit(fiber.await_exit().timeout("2 seconds"))
     thread.join(5)
     assert ex == fx.Success(fx.Success(7))

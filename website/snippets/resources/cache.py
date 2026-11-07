@@ -10,7 +10,7 @@ def fetch_country(code: str) -> fx.Effect[str]:
 @fx.gen
 def program():
     # One lookup per key, shared by every caller; at most 100 entries, each for 60 s.
-    countries = yield from fx.Cache.make(fetch_country, capacity=100, time_to_live=60)
+    countries = yield from fx.Cache.make(fetch_country, capacity=100, time_to_live="1 minute")
     first = yield from fx.all(
         countries.get("PT"), countries.get("PT"), countries.get("ES"), concurrency="unbounded"
     )

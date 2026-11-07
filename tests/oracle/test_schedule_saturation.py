@@ -35,13 +35,13 @@ def delays_after[I](s: Schedule[object, I], input: I, steps: int) -> list[Second
 def test_capped_exponential_keeps_recurring_past_float_range():
     """min(exponential(0.2, 1.5), spaced(30)) recurs 2000 times (the repro;
     upTo(times) bounds it, as min with recurs would recur for ever)."""
-    capped = schedule.min(schedule.exponential(0.2, 1.5), schedule.spaced(30))
+    capped = schedule.min(schedule.exponential("200 millis", 1.5), schedule.spaced("30 seconds"))
 
     @fx.gen
     def scenario():
         bounded = capped.up_to(times=2_000)
         running = yield from fx.void.repeat(bounded).exit().fork()
-        yield from testing.adjust(2_000 * 30)
+        yield from testing.adjust(Seconds(2_000 * 30))
         return (yield from running.join())
 
     result = testing.run_test(scenario)
@@ -51,45 +51,45 @@ def test_capped_exponential_keeps_recurring_past_float_range():
 def test_exponential_delay_becomes_infinite():
     """Effect: exponential(200ms, 1.5) is first Duration.infinity at index 1738
     (its milliseconds pass float range)."""
-    delays = delays_after(schedule.exponential(0.2, 1.5), None, 2_000)
+    delays = delays_after(schedule.exponential("200 millis", 1.5), None, 2_000)
     assert math.isfinite(delays[1_737])
     assert delays[1_738:] == [math.inf] * (2_000 - 1_738)
 
 
 def test_exponential_with_a_huge_factor_becomes_infinite():
     """Effect: exponential(1s, 1e300) gives 1e303s, then Duration.infinity."""
-    delays = delays_after(schedule.exponential(1, 1e300), None, 3)
+    delays = delays_after(schedule.exponential("1 second", 1e300), None, 3)
     assert delays == [1.0, 1e300, math.inf]
 
 
 def test_fibonacci_delay_becomes_infinite():
     """Effect: fibonacci(1s) is first Duration.infinity at index 1461."""
-    delays = delays_after(schedule.fibonacci(1), None, 1_500)
+    delays = delays_after(schedule.fibonacci("1 second"), None, 1_500)
     assert math.isfinite(delays[1_460])
     assert delays[1_461:] == [math.inf] * (1_500 - 1_461)
 
 
 def test_min_with_spaced_keeps_the_finite_side():
     """min(exponential(1s, 1e300), spaced(30)) waits 1s, 30s, 30s, 30s."""
-    capped = schedule.min(schedule.exponential(1, 1e300), schedule.spaced(30))
+    capped = schedule.min(schedule.exponential("1 second", 1e300), schedule.spaced("30 seconds"))
     assert delays_after(capped, None, 4) == [1.0, 30.0, 30.0, 30.0]
 
 
 def test_max_with_spaced_waits_forever():
     """max(exponential(1s, 1e300), spaced(30)) waits Infinity once it overflows."""
-    longest = schedule.max(schedule.exponential(1, 1e300), schedule.spaced(30))
+    longest = schedule.max(schedule.exponential("1 second", 1e300), schedule.spaced("30 seconds"))
     assert delays_after(longest, None, 3) == [30.0, 1e300, math.inf]
 
 
 def test_jittered_infinite_delay_stays_infinite():
     """Effect: jittered keeps Duration.infinity infinite."""
-    jittered = schedule.exponential(1, 1e300).jittered()
+    jittered = schedule.exponential("1 second", 1e300).jittered()
     assert delays_after(jittered, None, 3)[-1] == math.inf
 
 
 def test_add_delay_to_an_infinite_delay_stays_infinite():
     """Effect: addDelay(Duration.infinity, 1s) is Duration.infinity."""
-    added = schedule.exponential(1, 1e300).add_delay(lambda _: fx.succeed(1.0))
+    added = schedule.exponential("1 second", 1e300).add_delay(lambda _: fx.succeed(Seconds(1)))
     assert delays_after(added, None, 3)[-1] == math.inf
 
 
@@ -98,8 +98,8 @@ def test_an_infinite_delay_never_wakes_under_adjust():
 
     @fx.gen
     def scenario():
-        running = yield from fx.void.repeat(schedule.exponential(1, 1e200)).fork()
-        yield from testing.adjust(1e201)
+        running = yield from fx.void.repeat(schedule.exponential("1 second", 1e200)).fork()
+        yield from testing.adjust(Seconds(1e201))
         clock = yield from testing.test_clock()
         seen = running.poll_unsafe(), clock.pending_sleeps
         yield from running.interrupt()
@@ -114,7 +114,7 @@ def test_up_to_duration_stops_after_an_infinite_delay():
 
     @fx.gen
     def scenario():
-        bounded = schedule.exponential(1, 1e200).up_to(duration=60)
+        bounded = schedule.exponential("1 second", 1e200).up_to(duration="1 minute")
         running = yield from fx.void.repeat(bounded).fork()
         yield from testing.set_time(math.inf)
         return (yield from running.join())

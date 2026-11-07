@@ -177,25 +177,25 @@ def _assert_serialization(
     return fx.gen(body).pipe(fx.provide(shared_storage))
 
 
-@testing.live(timeout=15)
+@testing.live(timeout="15 seconds")
 def test_uses_the_default_serialization_for_tcp_connections():
     """uses SchemaBinary by default for TCP connections"""
     yield from _assert_serialization(serialization.layer_schema_binary(), None)
 
 
-@testing.live(timeout=15)
+@testing.live(timeout="15 seconds")
 def test_preserves_an_explicit_ndjson_selection():
     """(not an Effect title) an explicit ndjson selection reaches a runner on ndjson"""
     yield from _assert_serialization(serialization.layer_ndjson, "ndjson")
 
 
-@testing.live(timeout=15)
+@testing.live(timeout="15 seconds")
 def test_preserves_an_explicit_binary_selection():
     """preserves an explicit binary selection"""
     yield from _assert_serialization(serialization.layer_schema_binary(), "binary")
 
 
-@testing.live(timeout=15)
+@testing.live(timeout="15 seconds")
 def test_applies_serialization_max_buffer_size_to_the_default_parser():
     """applies serializationMaxBufferSize to the default SchemaBinary parser"""
 
@@ -207,7 +207,7 @@ def test_applies_serialization_max_buffer_size_to_the_default_parser():
         assert pong == "pong"
         exit = yield from fx.scoped(
             _ping("serialization-limit-entity")
-            .timeout(1)
+            .timeout("1 second")
             .pipe(fx.provide(configured_client_layer(port, None, 1)))
         ).exit()
         assert isinstance(exit, Exit.Failure), "the configured frame limit must reject the response"
@@ -215,7 +215,7 @@ def test_applies_serialization_max_buffer_size_to_the_default_parser():
     yield from fx.gen(body).pipe(fx.provide(shared_storage))
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_discarded_persisted_requests_and_volatile_requests_do_not_wait_for_replies():
     """discarded persisted requests serialize circular values and volatile requests do not wait for replies"""  # noqa: E501
 
@@ -243,10 +243,12 @@ def test_discarded_persisted_requests_and_volatile_requests_do_not_wait_for_repl
                 ProcessPayload(id="req-2", amount=amount)
             ).fork()
             yield from volatile_started.wait().timeout_or_else(
-                5, lambda: fx.die(AssertionError("the volatile request never reached its handler"))
+                "5 seconds",
+                lambda: fx.die(AssertionError("the volatile request never reached its handler")),
             )
             yield from volatile.join().timeout_or_else(
-                1, lambda: fx.die(AssertionError("volatile discard waited for the entity reply"))
+                "1 second",
+                lambda: fx.die(AssertionError("volatile discard waited for the entity reply")),
             )
             yield from release_volatile.succeed(None)
 
@@ -255,7 +257,7 @@ def test_discarded_persisted_requests_and_volatile_requests_do_not_wait_for_repl
     yield from fx.gen(body).pipe(fx.provide(shared_storage))
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_a_reply_serialization_failure_fails_only_its_own_request():
     """a reply serialization failure fails only its own request"""
 
@@ -276,7 +278,8 @@ def test_a_reply_serialization_failure_fails_only_its_own_request():
             make_client = yield from IsolationEntity.client()
             slow = yield from make_client("slow-entity").slow().fork()
             yield from slow_started.wait().timeout_or_else(
-                5, lambda: fx.die(AssertionError("the Slow request never reached its handler"))
+                "5 seconds",
+                lambda: fx.die(AssertionError("the Slow request never reached its handler")),
             )
             bad = yield from (
                 make_client("bad-entity")

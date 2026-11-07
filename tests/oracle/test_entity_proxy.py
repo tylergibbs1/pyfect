@@ -70,7 +70,7 @@ def test_serves_the_proxy_rpcs_through_the_entity_client():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = yield from rpc_test.make_client(group)
         get_user: Callable[[object], fx.Effect[User, Any]] = _method(
             client, group, "TestEntity.GetUser"
@@ -94,7 +94,7 @@ def test_provides_handler_context_for_generated_rpc_handlers():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = yield from rpc_test.make_client(group)
         discard = _method(client, group, "TestEntity.NeverDiscard")
         assert (yield from discard({"entityId": "id", "payload": None})) is None
@@ -122,7 +122,7 @@ def test_serves_the_proxy_http_api_through_the_entity_client():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = yield from api_test.groups(api, [group])
         methods: Any = get_group(client, group)
         get_user: Callable[..., fx.Effect[Any, Any]] = methods.method("GetUser")
@@ -158,7 +158,7 @@ def test_the_proxy_http_api_serves_a_group_of_typed_endpoints():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         proxy = get_group((yield from api_test.groups(api, [TypedProxy])), TypedProxy)
         user = yield from proxy.get_user(params={"entityId": "1"}, payload={"id": 7})
         assert user == User(id=7, name="User 7")

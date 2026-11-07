@@ -240,7 +240,7 @@ def test_a_client_disconnect_interrupts_the_request() -> None:
         await fx.run_async(started.wait())
         peer.inbox.put_nowait({"type": "http.disconnect"})
         await asyncio.wait_for(call, 5)
-        await fx.run_async(interrupted.wait().timeout(5).or_die())
+        await fx.run_async(interrupted.wait().timeout("5 seconds").or_die())
         return peer.status(), True
 
     status, was_interrupted = asyncio.run(main())
@@ -340,10 +340,10 @@ def test_a_lost_websocket_connection_interrupts_the_app() -> None:
     async def main() -> list[Message]:
         peer = _Peer({"type": "websocket.connect"})
         call = asyncio.ensure_future(app(_scope("/ws", type="websocket"), peer.receive, peer.send))
-        await fx.run_async(reading.wait().timeout(5).or_die())
+        await fx.run_async(reading.wait().timeout("5 seconds").or_die())
         peer.inbox.put_nowait({"type": "websocket.disconnect", "code": 1006})
         await asyncio.wait_for(call, 5)
-        await fx.run_async(interrupted.wait().timeout(5).or_die())
+        await fx.run_async(interrupted.wait().timeout("5 seconds").or_die())
         return peer.sent
 
     assert asyncio.run(main()) == [{"type": "websocket.accept", "subprotocol": None}]
@@ -579,7 +579,7 @@ def test_a_websocket_the_app_closed_is_not_a_lost_connection() -> None:
             yield from sock.reader
             writer = yield from sock.writer
             yield from writer.write(CloseEvent(4400, "bye"))
-            yield from fx.sleep(0.1)
+            yield from fx.sleep("100 millis")
             yield from effect.sync(lambda: events.append("finished"))
             return server_response.empty()
 
@@ -610,11 +610,11 @@ def test_a_websocket_closed_before_the_upgrade_interrupts_the_app() -> None:
     async def main() -> list[Message]:
         peer = _Peer({"type": "websocket.connect"})
         call = asyncio.ensure_future(app(_scope("/ws", type="websocket"), peer.receive, peer.send))
-        await fx.run_async(waiting.wait().timeout(5).or_die())
+        await fx.run_async(waiting.wait().timeout("5 seconds").or_die())
         # A clean close code, but the handshake never finished.
         peer.inbox.put_nowait({"type": "websocket.disconnect", "code": 1000})
         await asyncio.wait_for(call, 5)
-        await fx.run_async(interrupted.wait().timeout(5).or_die())
+        await fx.run_async(interrupted.wait().timeout("5 seconds").or_die())
         return peer.sent
 
     assert asyncio.run(main()) == []

@@ -94,8 +94,8 @@ class Event:
 
 @dataclass(eq=False)
 class Retry(TaggedError):
-    """A ``retry:`` directive: reconnect after ``duration`` (seconds, or a
-    ``timedelta``), resuming from ``last_event_id``."""
+    """A ``retry:`` directive: reconnect after ``duration``, resuming from
+    ``last_event_id``."""
 
     duration: Duration
     last_event_id: str | None = None

@@ -151,7 +151,7 @@ def test_round_trips_queue_payloads_larger_than_64kb(mysql_server: MysqlServer):
 
     def body():
         store = yield from pq.make_store_sql(
-            table_name="effect_queue_large_payload", poll_interval=0.01
+            table_name="effect_queue_large_payload", poll_interval="10 millis"
         )
         factory = yield from pq.make_factory.pipe(fx.provide_service(pq.PersistedQueueStore, store))
         queue = yield from factory.make(name="large-payload", schema=S.String)

@@ -13,8 +13,8 @@ class UserNotFound(fx.TaggedError):
 
 def fetch_user(user_id: str) -> fx.Effect[str, UserNotFound]:
     if user_id != "1":
-        return fx.sleep(0.01).flat_map(lambda _: fx.fail(UserNotFound(user_id)))
-    return fx.sleep(0.01).as_("Ada")
+        return fx.sleep("10 millis").flat_map(lambda _: fx.fail(UserNotFound(user_id)))
+    return fx.sleep("10 millis").as_("Ada")
 
 
 def greet(user_id: str) -> fx.Effect[str, fx.TimeoutException]:
@@ -22,8 +22,8 @@ def greet(user_id: str) -> fx.Effect[str, fx.TimeoutException]:
         fetch_user(user_id)
         .map(lambda name: f"Hello, {name}!")
         .pipe(fx.catch_tag(UserNotFound, lambda _: fx.succeed("Who?")))
-        .timeout(1)
-        .retry(schedule.exponential(0.1).up_to(times=2))
+        .timeout("1 second")
+        .retry(schedule.exponential("100 millis").up_to(times=2))
     )
 
 

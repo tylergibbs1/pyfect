@@ -21,8 +21,8 @@ def get_todo(todo_id: int):
     http = (
         (yield from HttpClient())
         .filter_status_ok()  # a 4xx or 5xx status becomes an HttpClientError
-        .transform(lambda sending, _request: sending.timeout(2))  # per attempt
-        .retry_transient(schedule=schedule.exponential(0.01), times=3)
+        .transform(lambda sending, _request: sending.timeout("2 seconds"))  # per attempt
+        .retry_transient(schedule=schedule.exponential("10 millis"), times=3)
     )
     res = yield from http.get(f"https://api.example.com/todos/{todo_id}")
     return (yield from response.schema_body_json(TodoSchema)(res))

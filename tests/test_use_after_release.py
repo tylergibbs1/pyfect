@@ -66,7 +66,9 @@ def test_an_rpc_client_over_a_released_http_protocol() -> None:
 
 def test_an_rpc_client_over_a_released_batched_http_protocol() -> None:
     protocol = (
-        rpc_client.layer_protocol_http("http://localhost/rpc", batch=rpc_client.Batch(window=0.01))
+        rpc_client.layer_protocol_http(
+            "http://localhost/rpc", batch=rpc_client.Batch(window="10 millis")
+        )
         .pipe(layer.provide(rs.layer_json))
         .pipe(layer.provide(layer.succeed(HttpClient, http_client.make(_no_server))))
     )

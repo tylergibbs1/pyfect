@@ -51,7 +51,7 @@ def _run(body: Callable[[], Generator[Any, Any, Any]]) -> fx.Effect[Any, Any, An
 # --- SqlEventLogServerUnencrypted commit visibility ----------------------------------
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_streams_concurrent_commits_in_sequence_order(pg_server: PgServer):
     """SqlEventLogServerUnencrypted commit visibility / streams concurrent commits in sequence
     order even when the first SQL return is delayed"""
@@ -107,7 +107,7 @@ def test_streams_concurrent_commits_in_sequence_order(pg_server: PgServer):
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_streams_a_write_committed_after_the_startup_backlog_read_exactly_once(
     pg_server: PgServer,
 ):

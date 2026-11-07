@@ -67,9 +67,9 @@ def test_invalidate_releases_an_idle_resource_and_acquires_a_fresh_one():
     acquired: list[int] = []
     released: list[int] = []
     ref_scope = fx.CloseableScope()
-    ref = yield from fx.LayerRef.make(make_layer(acquired, released), idle_time_to_live=60).pipe(
-        fx.provide_service(fx.Scope, ref_scope)
-    )
+    ref = yield from fx.LayerRef.make(
+        make_layer(acquired, released), idle_time_to_live="1 minute"
+    ).pipe(fx.provide_service(fx.Scope, ref_scope))
 
     context = yield from fx.scoped(ref.context_effect())
     assert context.get(Resource).id == 1
@@ -100,7 +100,7 @@ def test_preload_acquires_the_resource_when_the_layer_ref_is_created():
     released: list[int] = []
     ref_scope = fx.CloseableScope()
     ref = yield from fx.LayerRef.make(
-        make_layer(acquired, released), idle_time_to_live=60, preload=True
+        make_layer(acquired, released), idle_time_to_live="1 minute", preload=True
     ).pipe(fx.provide_service(fx.Scope, ref_scope))
 
     assert acquired == [1]
@@ -123,7 +123,9 @@ def test_service_exposes_layer_get_context_effect_and_invalidate():
     """Service exposes layer, get, contextEffect, and invalidate"""
     acquired: list[int] = []
     released: list[int] = []
-    resource_ref_live = ResourceRef.layer(make_layer(acquired, released), idle_time_to_live=60)
+    resource_ref_live = ResourceRef.layer(
+        make_layer(acquired, released), idle_time_to_live="1 minute"
+    )
 
     @fx.gen
     def program():

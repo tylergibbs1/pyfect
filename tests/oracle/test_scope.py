@@ -45,10 +45,10 @@ def test_executes_finalizers_in_parallel():
     """executes finalizers in parallel"""
     scope = CloseableScope("parallel")
     for _ in range(3):
-        yield from scope.add_finalizer(lambda _: fx.sleep(1.0))
+        yield from scope.add_finalizer(lambda _: fx.sleep("1 second"))
     fiber = yield from scope.close(fx.Success(None)).fork(start_immediately=True)
     assert fiber.poll_unsafe() is None
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     assert fiber.poll_unsafe() is not None
 
 

@@ -33,7 +33,7 @@ record = fx.clock.now().map(
 def program():
     yield from testing.set_time(now.timestamp())
     fiber = yield from record.repeat(quarter_hours).fork()
-    yield from testing.adjust(3600)
+    yield from testing.adjust("1 hour")
     yield from fiber.join()
 
 

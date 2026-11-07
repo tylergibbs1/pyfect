@@ -32,7 +32,7 @@ def _memory(_tmp_path: Path) -> fx.Layer[pq.PersistedQueueStore, Any, Any]:
 
 def _sqlite(tmp_path: Path) -> fx.Layer[pq.PersistedQueueStore, Any, Any]:
     client = sqlite.layer(sqlite.SqliteClientConfig(filename=str(tmp_path / "test.db")))
-    return pq.layer_store_sql(poll_interval=0.01).pipe(fx.provide(client))
+    return pq.layer_store_sql(poll_interval="10 millis").pipe(fx.provide(client))
 
 
 def _redis_store(_tmp_path: Path) -> fx.Layer[pq.PersistedQueueStore, Any, Any]:
@@ -41,7 +41,9 @@ def _redis_store(_tmp_path: Path) -> fx.Layer[pq.PersistedQueueStore, Any, Any]:
 
     server = _redis.server()
     _redis.flush()
-    return pq.layer_store_redis(poll_interval=0.01).pipe(fx.provide(redis_py.layer(server.url)))
+    return pq.layer_store_redis(poll_interval="10 millis").pipe(
+        fx.provide(redis_py.layer(server.url))
+    )
 
 
 _STORES = pytest.mark.parametrize(
@@ -76,13 +78,13 @@ def test_an_interrupted_take_does_not_count_its_attempt(tmp_path: Path, store: S
             fiber = yield from queue.take(
                 lambda value, meta, taken=taken: taken.open().and_then(held(value, meta))
             ).fork_scoped()
-            yield from fx.testing.with_live(taken.wait().timeout(5))
+            yield from fx.testing.with_live(taken.wait().timeout("5 seconds"))
             yield from fiber.interrupt()
         fail = queue.take(lambda _v, meta: fx.fail(meta.attempts)).flip()
         seen.append((yield from fail))
         seen.append((yield from fail))
         last = yield from queue.take(lambda _v, meta: fx.succeed(meta.attempts)).fork_scoped()
-        yield from fx.testing.with_live(fx.sleep(0.2))
+        yield from fx.testing.with_live(fx.sleep("200 millis"))
         seen.append("waiting" if last.poll_unsafe() is None else "delivered")
 
     suite.run(store(tmp_path), body)
@@ -97,7 +99,7 @@ def _sqlite_without_table(tmp_path: Path) -> fx.Layer[Any, Any, Any]:
     def drop(sql: SqlClientService) -> fx.Effect[object, Any]:
         return sql("DROP TABLE effect_queue")
 
-    store = pq.layer_store_sql(poll_interval=0.01)
+    store = pq.layer_store_sql(poll_interval="10 millis")
     dropped = fx.layer.effect_discard(SqlClient().flat_map(drop))
     return fx.layer.merge(store, dropped).pipe(fx.provide(client))
 
@@ -132,7 +134,7 @@ def test_a_zero_sql_lock_expiration_means_the_default(tmp_path: Path) -> None:
     a zero ``lock_expiration`` is the two-minute default, not a lock that
     lapses at once: a crashed worker's fresh claim is not taken over."""
     client = sqlite.layer(sqlite.SqliteClientConfig(filename=str(tmp_path / "test.db")))
-    store = pq.layer_store_sql(poll_interval=0.01, lock_expiration=0)
+    store = pq.layer_store_sql(poll_interval="10 millis", lock_expiration=0)
     exits: list[fx.Exit[int, Any]] = []
 
     def body():
@@ -145,7 +147,7 @@ def test_a_zero_sql_lock_expiration_means_the_default(tmp_path: Path) -> None:
             "attempts = 1 WHERE id = {}",
             id,
         )
-        taken = queue.take(lambda _v, meta: fx.succeed(meta.attempts)).timeout(3)
+        taken = queue.take(lambda _v, meta: fx.succeed(meta.attempts)).timeout("3 seconds")
         exits.append((yield from fx.testing.with_live(taken).exit()))
 
     suite.run(store.pipe(fx.layer.provide_merge(client)), body)
@@ -163,16 +165,16 @@ def test_retry_delays_replay_the_schedule_on_simulated_time() -> None:
         queue = yield from pq.make(
             name="q",
             schema=S.String,
-            retry_schedule=schedule.exponential(1).up_to(duration=2.5),
+            retry_schedule=schedule.exponential("1 second").up_to(duration="2500 millis"),
         )
         take_fail = queue.take(lambda _v, meta: fx.fail(meta.attempts)).flip()
         yield from queue.offer("a")
         yield from take_fail
         for delay in (1, 2, 2):
             fiber = yield from take_fail.fork_scoped()
-            yield from fx.testing.adjust(delay - 0.1)
+            yield from fx.testing.adjust(Seconds(delay - 0.1))
             early = fiber.poll_unsafe() is not None
-            yield from fx.testing.adjust(0.1)
+            yield from fx.testing.adjust("100 millis")
             on_time = fiber.poll_unsafe() is not None
             gaps.append(f"{delay}s early={early} on_time={on_time}")
             yield from fiber.join()
@@ -199,7 +201,7 @@ def test_an_element_that_fails_to_decode_is_failed_at_once(
     def body():
         store_service = yield from pq.PersistedQueueStore()
         queue = yield from pq.make(
-            name="q", schema=suite.ITEM, retry_schedule=schedule.spaced(3600)
+            name="q", schema=suite.ITEM, retry_schedule=schedule.spaced("1 hour")
         )
         yield from store_service.offer(
             name="q", id="poison", element={"n": None}, is_custom_id=True
@@ -207,13 +209,13 @@ def test_an_element_that_fails_to_decode_is_failed_at_once(
         yield from queue.offer({"n": 1})
         taken.append((yield from queue.take(_succeed)))
         # past the failure on both the test clock and the database's
-        yield from fx.testing.adjust(1)
-        yield from fx.testing.with_live(fx.sleep(1.1))
+        yield from fx.testing.adjust("1 second")
+        yield from fx.testing.with_live(fx.sleep("1100 millis"))
         yield from store_service.cleanup(
             time_to_live=Seconds(86_400), failed_time_to_live=Seconds(0)
         )
         yield from queue.offer({"n": 2}, id="poison")
-        again = queue.take(_succeed).timeout(3)
+        again = queue.take(_succeed).timeout("3 seconds")
         taken.append((yield from fx.testing.with_live(again)))
 
     suite.run(store(tmp_path), body)

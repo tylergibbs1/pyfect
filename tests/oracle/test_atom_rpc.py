@@ -172,7 +172,7 @@ def test_query_creates_a_serializable_atom_with_reactivity_and_retention():
         {"id": 1},
         headers={"x-id": "abc"},
         reactivity_keys=["users"],
-        time_to_live=60,
+        time_to_live="1 minute",
         serialization_key="1",
     )
     assert (query.idle_ttl, atom.is_serializable(query)) == (60, True)
@@ -194,7 +194,7 @@ def test_query_creates_a_serializable_atom_with_reactivity_and_retention():
         {"id": 1},
         headers={"x-id": "abc"},
         reactivity_keys=["users"],
-        time_to_live=60,
+        time_to_live="1 minute",
         serialization_key="1",
     )
     assert from_encoded_payload is query
@@ -276,7 +276,7 @@ def test_settles_promise_dehydration_when_client_middleware_later_fails():
     hydration.hydrate(hydrated, dehydrated)
 
     yield from fail_middleware.succeed(None)
-    yield from result.wait().exit().timeout(1)
+    yield from result.wait().exit().timeout("1 second")
 
     assert notifications[0] == 1
     unmount_hydrated = hydrated.mount(failed)

@@ -390,12 +390,12 @@ def test_closes_instead_of_reusing_a_connection_released_while_a_command_is_stil
 def test_waits_for_a_free_connection_at_max_connections_and_fails_after_acquire_timeout():
     """reserve / waits for a free connection at maxConnections and fails after acquireTimeout"""
     redis, harness = yield from _make_harness(
-        pool=R.PoolOptions(max_connections=1, acquire_timeout=1)
+        pool=R.PoolOptions(max_connections=1, acquire_timeout="1 second")
     )
     first = fx.CloseableScope()
     yield from redis.reserve.pipe(fx.provide_service(fx.Scope, first))
     timed_out = yield from fx.scoped(redis.reserve).flip().fork()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert isinstance((yield from timed_out.join()), RedisError)
     waiting = yield from _ping(redis).fork()
     yield from first.close(fx.exit.succeed(None))

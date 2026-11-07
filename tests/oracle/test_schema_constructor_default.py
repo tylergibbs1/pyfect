@@ -154,7 +154,7 @@ def test_struct_effect_sync():
 
 def test_struct_effect_async():
     """withConstructorDefault / Struct / Struct & Effect async"""
-    default = sleep(0.01).as_(-1.0)
+    default = sleep("10 millis").as_(-1.0)
     schema = S.Struct(_A, a=S.FiniteFromString.pipe(S.with_constructor_default(default)))
     make = SchemaAsserts(schema).make()
     make.succeed({"a": 1})
@@ -194,7 +194,7 @@ def test_struct_effect_async_service():
     def value(service: Some[fx.Effect[float]] | None) -> fx.Effect[float]:
         return fx.succeed(-1.0) if service is None else service.value
 
-    default = sleep(0.01).and_then(fx.service_option(_Service)).flat_map(value)
+    default = sleep("10 millis").and_then(fx.service_option(_Service)).flat_map(value)
     schema = S.Struct(_A, a=S.FiniteFromString.pipe(S.with_constructor_default(default)))
     make = SchemaAsserts(schema).make()
     make.succeed({"a": 1})

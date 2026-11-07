@@ -106,7 +106,7 @@ def _retry_after_delay(value: str | None) -> Effect[Duration]:
     seconds."""
     retry_after = None if value is None else parse_retry_after(value)
     if not isinstance(retry_after, Ok):
-        return succeed(5.0)
+        return succeed("5 seconds")
     parsed = retry_after.value
     return Clock().map(lambda clock: retry_after_delay(parsed, now_millis_unsafe(clock)))
 
@@ -119,7 +119,7 @@ def _delay(meta: Metadata[object, object]) -> Effect[Duration]:
         and error.reason.response.status == 429
     ):
         return _retry_after_delay(error.reason.response.headers.get("retry-after"))
-    return succeed(1.0)
+    return succeed("1 second")
 
 
 _POLICY: Final = forever.passthrough().add_delay(_delay)

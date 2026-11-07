@@ -75,7 +75,7 @@ def test_completes_a_successful_runner_stream():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         ids = yield from Generator()
         request = yield from make_request(ReproEntityVolatile, "one")
         client = yield from make_client(Rpcs)
@@ -124,17 +124,17 @@ def test_releases_a_non_persisted_effect_handler_when_the_runner_caller_disconne
 
         @fx.gen
         def body():
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             request = yield from make_request(
                 HoleCodecEntityVolatile, "effect-disconnect", tag="Double"
             )
             server = yield from make_server()
             yield from write_request(server, "Effect", request)
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             assert (yield from started.is_done())
             assert not (yield from stopped.is_done())
             yield from server.disconnect(0)
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             assert (yield from stopped.is_done())
 
         e = HoleCodecEntityVolatile
@@ -182,7 +182,7 @@ def test_forgets_departed_callers_during_rebuild_without_replaying_or_retaining_
 
         @fx.gen
         def body():
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             service = yield from Sharding()
             server = yield from make_server()
 
@@ -198,10 +198,10 @@ def test_forgets_departed_callers_during_rebuild_without_replaying_or_retaining_
                 return request(id_).flat_map(lambda r: service.send(incoming(r)))
 
             yield from send(0, 1)
-            yield from testing.adjust(5)
+            yield from testing.adjust("5 seconds")
             assert (yield from rebuilding.is_done())
             yield from send(1, 2)
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             assert starts == [1]
 
             # A and B fill both slots, proving B was admitted before its disconnect.
@@ -211,7 +211,7 @@ def test_forgets_departed_callers_during_rebuild_without_replaying_or_retaining_
             yield from live_timeout(server.disconnect(1))
             assert not (yield from release_build.is_done())
             yield from release_build.succeed(None)
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             assert starts == [1]
 
             # Both the interrupted handler and the never-delivered request
@@ -219,7 +219,7 @@ def test_forgets_departed_callers_during_rebuild_without_replaying_or_retaining_
             # finishes.
             yield from probe(3)
             yield from probe(4)
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             assert starts == [1, 3, 4]
 
         yield from fx.scoped(body).pipe(fx.provide(make_handlers(entities)))
@@ -270,7 +270,7 @@ def test_releases_a_replayed_handler_when_its_caller_disconnects_during_acquisit
 
         @fx.gen
         def body():
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             service = yield from Sharding()
 
             def request(id_: int) -> fx.Effect[envelope.PartialRequest, Never, Any]:
@@ -278,7 +278,7 @@ def test_releases_a_replayed_handler_when_its_caller_disconnects_during_acquisit
 
             yield from service.send(incoming((yield from request(1)), caller_scope))
             yield from service.send(incoming((yield from request(2))))
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             assert counts["starts"] == 1
             assert counts["stops"] == 0
 
@@ -292,7 +292,7 @@ def test_releases_a_replayed_handler_when_its_caller_disconnects_during_acquisit
                 .fork(start_immediately=True)
             )
             yield from crash.succeed(None)
-            yield from testing.adjust(5)
+            yield from testing.adjust("5 seconds")
             assert counts["starts"] == 2
             assert (yield from disconnected.is_done())
             # Both the original handler and its replacement must release resources.
@@ -317,19 +317,19 @@ def test_does_not_admit_a_request_with_an_already_closed_caller_scope():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         service = yield from Sharding()
         caller_scope = CloseableScope()
         yield from caller_scope.close(Exit.succeed(None))
         closed = incoming((yield from make_request(e, "closed-scope")), caller_scope)
         yield from service.send(closed).exit()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert starts[0] == 0
         # A live request must still fit in the only mailbox slot.
         live = incoming((yield from make_request(e, "closed-scope")))
         admitted = yield from service.send(live).exit()
         assert isinstance(admitted, Exit.Success)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert starts[0] == 1
 
     yield from fx.scoped(body).pipe(fx.provide(make_handlers(entities)))
@@ -362,17 +362,17 @@ def test_caller_disconnect_preserves_streams(persisted: bool):
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         request = yield from make_request(entity, "protected-caller")
         if persisted:
             driver = yield from MemoryDriver()
             yield from driver.encoded.save_envelope(envelope.encode(request), None, None)
         server = yield from make_server()
         yield from write_request(server, "Stream", request, persisted=persisted)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert subscribers[0] == 1
         yield from server.disconnect(0)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert subscribers[0] == 1
 
         if not persisted:
@@ -388,7 +388,7 @@ def test_caller_disconnect_preserves_streams(persisted: bool):
                     )
                 )
             )
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             assert subscribers[0] == 0
 
     yield from fx.scoped(body).pipe(fx.provide(make_handlers(entities)))
@@ -404,7 +404,7 @@ def test_fills_the_entity_payload_and_reply_holes_with_the_serializations_codec(
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         # already encoded by the sender with the same hole codec
         request = yield from make_request(e, "hole", tag="Double", payload=json.dumps({"id": 21}))
         client = yield from make_client(Rpcs)

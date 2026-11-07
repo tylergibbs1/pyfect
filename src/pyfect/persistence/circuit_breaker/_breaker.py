@@ -275,7 +275,7 @@ def make(
     *,
     trip_policy: TripPolicy,
     open_duration: OpenDuration,
-    max_open_duration: Duration = 3600,
+    max_open_duration: Duration = "1 hour",
     on_store_error: OnStoreError = "allow",
 ) -> Effect[CircuitBreakerService, Never, CircuitBreakerStore | Scope]:
     """A breaker on the ``CircuitBreakerStore``. A closed key opens when
@@ -302,7 +302,7 @@ def layer(
     *,
     trip_policy: TripPolicy,
     open_duration: OpenDuration,
-    max_open_duration: Duration = 3600,
+    max_open_duration: Duration = "1 hour",
     on_store_error: OnStoreError = "allow",
 ) -> Layer[CircuitBreaker, Never, CircuitBreakerStore]:
     """Provides ``CircuitBreaker`` (see ``make``)."""

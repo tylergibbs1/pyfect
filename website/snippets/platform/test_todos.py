@@ -17,7 +17,7 @@ TitleSchema = S.Struct(Title)
 @fx.fn
 def get_title(todo_id: int):
     http = (yield from HttpClient()).filter_status_ok()
-    res = yield from http.get(f"https://api.example.com/todos/{todo_id}").timeout(5)
+    res = yield from http.get(f"https://api.example.com/todos/{todo_id}").timeout("5 seconds")
     return (yield from response.schema_body_json(TitleSchema)(res))["title"]
 
 
@@ -45,5 +45,5 @@ def test_rejects_a_bad_body():
 @testing.effect
 def test_times_out():
     fiber = yield from get_title(1).flip().pipe(fx.provide(client.layer_test(hang))).fork()
-    yield from testing.adjust(5)  # virtual time: no real waiting
+    yield from testing.adjust("5 seconds")  # virtual time: no real waiting
     assert isinstance((yield from fiber.join()), fx.TimeoutException)

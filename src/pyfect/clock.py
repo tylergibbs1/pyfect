@@ -17,7 +17,7 @@ from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Sync, _WithFiber, _
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect.context import Reference
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, Seconds, from_nanos, to_seconds
 from pyfect.effect import never
 
 
@@ -121,8 +121,8 @@ def clock_with[A, E = Never, R = Never](
     return Clock().flat_map(f)
 
 
-def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[float, A], E, R]:
-    """Pair ``eff``'s value with how long it took in seconds, measured in
+def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[Seconds, A], E, R]:
+    """Pair ``eff``'s value with how long it took as ``Seconds``, measured in
     whole monotonic nanoseconds."""
     require_effect(eff, "eff")
 
@@ -130,7 +130,7 @@ def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[float, A], E, R]:
         start = yield from monotonic_nanos()
         value = yield from eff
         end = yield from monotonic_nanos()
-        return ((end - start) / _NANOS, value)
+        return (from_nanos(end - start), value)
 
     return _Gen(body)
 

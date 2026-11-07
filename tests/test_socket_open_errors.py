@@ -38,7 +38,7 @@ def _open_failure(make: fx.Effect[SocketService] | SocketService) -> SocketError
         return (yield from reader.pull)
 
     opened = make if isinstance(make, fx.Effect) else fx.succeed(make)
-    error = fx.run_blocking(scoped(opened.flat_map(pull)).flip().timeout(10).or_die())
+    error = fx.run_blocking(scoped(opened.flat_map(pull)).flip().timeout("10 seconds").or_die())
     assert isinstance(error, SocketError)
     assert isinstance(error.reason, SocketOpenError)
     return error
@@ -70,7 +70,7 @@ def test_an_open_timeout_keeps_the_target() -> None:
         silent.bind(("127.0.0.1", 0))
         silent.listen()
         url = f"ws://127.0.0.1:{silent.getsockname()[1]}/rpc"
-        layer = ws.layer_web_socket(url, open_timeout=0.2)
+        layer = ws.layer_web_socket(url, open_timeout="200 millis")
         error = _open_failure(Socket().pipe(fx.provide(layer)))
     assert _reason(error).kind == "Timeout"
     assert error.message == 'timeout waiting for "open"'

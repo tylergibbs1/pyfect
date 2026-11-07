@@ -68,7 +68,7 @@ def _silent_client(port: int) -> socket.socket:
     return client
 
 
-@fx.testing.live(timeout=20)
+@fx.testing.live(timeout="20 seconds")
 def test_a_server_write_waits_while_the_peer_does_not_read():
     written = [0]
     srv = yield from ws_platform.make_server(0, "127.0.0.1")
@@ -76,7 +76,7 @@ def test_a_server_write_waits_while_the_peer_does_not_read():
     address = srv.address
     assert isinstance(address, InetAddressV4)
     client = yield from blocking(lambda: _silent_client(address.port))
-    yield from fx.sleep(1.0)
+    yield from fx.sleep("1 second")
     stalled = written[0]
     client.close()
     assert stalled < _WRITES // 4, f"{stalled} writes of 64 KiB finished unread"

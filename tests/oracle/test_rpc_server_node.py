@@ -36,7 +36,7 @@ _NAMES = list(SUITES)
 
 def _run(suite: str, body: Any) -> Any:
     program = scoped(effect.gen(body)).pipe(fx.provide(SUITES[suite]()))
-    return fx.run_blocking(program.timeout(30).or_die())
+    return fx.run_blocking(program.timeout("30 seconds").or_die())
 
 
 @pytest.mark.parametrize("suite", _NAMES)
@@ -111,7 +111,7 @@ def test_stream(suite: str) -> None:
             .run_for_each(lambda user: effect.sync(lambda: users.append(user)))
             .fork()
         )
-        yield from sleep(2.0)
+        yield from sleep("2 seconds")
         assert len(users) == 5
         interrupts = yield from client.get_interrupts()
         assert interrupts == 1
@@ -144,10 +144,10 @@ def test_never(suite: str) -> None:
     def body():
         client = yield from UsersClient()
         fiber = yield from client.never().fork()
-        yield from sleep(0.5)
+        yield from sleep("500 millis")
         assert fiber.poll_unsafe() is None
         yield from fiber.interrupt()
-        yield from sleep(0.1)
+        yield from sleep("100 millis")
         protocol = yield from ServerProtocol()
         if protocol.supports_ack:
             interrupts = yield from client.get_interrupts()
@@ -182,7 +182,7 @@ def test_rpc_test_works() -> None:
         assert user == User(id="1", name="Logged in user")
 
     program = scoped(effect.gen(body)).pipe(fx.provide(users_client_layer_test()))
-    fx.run_blocking(program.timeout(10).or_die())
+    fx.run_blocking(program.timeout("10 seconds").or_die())
 
 
 def test_preserves_full_defect_with_custom_schema() -> None:

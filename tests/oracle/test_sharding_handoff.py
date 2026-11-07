@@ -94,7 +94,7 @@ def _advance_until(done: Callable[[], bool]):
     for _ in range(100):
         if done():
             break
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
     assert done()
 
 
@@ -243,12 +243,12 @@ def test_warns_about_pending_entities_and_singletons_and_reacquires_only_after_t
             assert len(state.release_all_calls) == 0
 
         state.blackholed = True
-        yield from testing.adjust(0.201)
+        yield from testing.adjust("201 millis")
         assert not service.has_shard_id(shard_id)
         assert warnings == [], "a brief release must not warn"
         state.blackholed = False
         # Storage recovers, but uninterruptible work must still prevent release.
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert_still_blocked()
         assert not stopped.is_open()
         first_warnings = list(warnings)
@@ -257,11 +257,11 @@ def test_warns_about_pending_entities_and_singletons_and_reacquires_only_after_t
         # The entity stops, so the next warning names only the singleton.
         yield from entity_gate.open()
         yield from testing.adjust(
-            (first_warnings[0][0] + 29_999 - clock.now_unsafe() * 1000) / 1000
+            Seconds((first_warnings[0][0] + 29_999 - clock.now_unsafe() * 1000) / 1000)
         )
         warnings_before_repeat = list(warnings)
         assert_still_blocked()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         warnings_at_repeat = list(warnings)
         assert_still_blocked()
 
@@ -275,7 +275,7 @@ def test_warns_about_pending_entities_and_singletons_and_reacquires_only_after_t
         assert all(call.completed_release_alls == 1 for call in reacquires)
         recovered_releasing = _releasing_gauge(registry)
         warnings_at_recovery = list(warnings)
-        yield from testing.adjust(30)
+        yield from testing.adjust("30 seconds")
         assert warnings == warnings_at_recovery, "the release monitor must stop after recovery"
 
         # Assert diagnostics last so the red test also exercises safe recovery.
@@ -332,14 +332,14 @@ def test_does_not_warn_when_forced_release_completes_before_the_warning_deadline
         yield from _advance_until(lambda: service.has_shard_id(shard_id))
         yield from _advance_until(lambda: any(call.shards for call in state.refresh_calls))
         state.blackholed = True
-        yield from testing.adjust(0.201)
+        yield from testing.adjust("201 millis")
         assert not service.has_shard_id(shard_id)
         state.blackholed = False
         yield from _advance_until(lambda: len(state.release_all_calls) > 0)
         assert not state.release_all_calls[0].completed
         yield from _advance_until(lambda: service.has_shard_id(shard_id))
         assert state.release_all_calls[0].completed
-        yield from testing.adjust(0.9)
+        yield from testing.adjust("900 millis")
         assert warnings == [], "a completed release must cancel its warning monitor"
 
     yield from fx.scoped(body)
@@ -372,16 +372,18 @@ def test_warns_immediately_on_release_failure_and_throttles_retries_to_one_warni
         assert "default" in warnings[0][1]
         first_warning_at = warnings[0][0]
         first_attempts = len(state.release_calls)
-        yield from testing.adjust((first_warning_at + 29_999 - (yield from _now_millis())) / 1000)
+        yield from testing.adjust(
+            Seconds((first_warning_at + 29_999 - (yield from _now_millis())) / 1000)
+        )
         assert len(warnings) == 1, "retries inside the throttle window must not warn"
         assert len(state.release_calls) > first_attempts, "storage retries must continue"
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert len(warnings) == 2, "a continuing failure must warn again after 30 seconds"
         assert warnings[1][0] - first_warning_at == 30_000
         state.release_failures = 0
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         completed_attempts = len(state.release_calls)
-        yield from testing.adjust(30)
+        yield from testing.adjust("30 seconds")
         assert len(state.release_calls) == completed_attempts
         assert len(warnings) == 2, "warnings must stop after release succeeds"
 
@@ -415,7 +417,7 @@ def test_waits_for_entity_teardown_before_handing_off_without_acquiring_newly_fr
         yield from _advance_until(lambda: state.runner is None)
         acquires = len(state.acquire_calls)
         state.acquire_denied.clear()
-        yield from testing.adjust(3)
+        yield from testing.adjust("3 seconds")
         assert closing.poll_unsafe() is None
         assert state.runner is None
         assert state.acquire_calls[acquires:] == []
@@ -456,7 +458,7 @@ def test_does_not_record_a_release_cancelled_when_shutdown_handoff_times_out():
 
         closing = yield from built.scope.close(_VOID).fork()
         yield from _advance_until(lambda: len(state.release_calls) > 0)
-        yield from testing.adjust(0.05)
+        yield from testing.adjust("50 millis")
         assert len(state.release_calls) > 1, "storage retries must continue"
         retrying_releasing = _releasing_gauge(registry)
         yield from _advance_until(lambda: closing.poll_unsafe() is not None)
@@ -521,7 +523,7 @@ def test_waits_for_singleton_teardown_before_handing_off_their_shards():
         yield from stopping.wait()
 
         closing = yield from built.scope.close(_VOID).fork()
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         assert closing.poll_unsafe() is None
         assert state.release_calls == []
         assert state.release_all_calls == []
@@ -667,7 +669,7 @@ def _wait_for_singleton_ownership(service: sharding.ShardingService, owned: bool
     for _ in range(100):
         if service.has_shard_id(_singleton_shard) == owned:
             return
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
     assert service.has_shard_id(_singleton_shard) == owned
 
 
@@ -708,7 +710,7 @@ def test_cancels_explicitly_but_abandons_a_singleton_child_rpc_on_reassignment()
         )
         yield from entity_state.envelopes.take()
         yield from (yield from child_ready.wait()).interrupt()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert service.has_shard_id(_singleton_shard)
         assert _journal_interrupts(driver) == 1, "explicit child cancellation must persist"
         yield from entity_state.interrupts.take()
@@ -718,7 +720,7 @@ def test_cancels_explicitly_but_abandons_a_singleton_child_rpc_on_reassignment()
         storage_state.assign_self = False
         yield from _wait_for_singleton_ownership(service, False)
         yield from stopped.wait()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert service.has_shard_id(_destination_shard), "Sharding and the destination stay alive"
         assert _journal_interrupts(driver) == 1, "reassignment must not add a durable cancellation"
         assert entity_state.interrupts.size_unsafe() == 0
@@ -789,7 +791,7 @@ def test_bounds_singleton_teardown_to_interruption_finalization_not_inherited_co
         assert active_teardown.is_active(probe), "tracking must remain active through finalization"
         yield from finish.succeed(None)
         yield from stopped.wait()
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
         assert not active_teardown.is_active(probe), "teardown must release its shard tracking"
 
         # Do not let inherited identity suppress a later explicit
@@ -797,7 +799,7 @@ def test_bounds_singleton_teardown_to_interruption_finalization_not_inherited_co
         yield from run_later.succeed(None)
         yield from entity_state.envelopes.take()
         yield from survivor.interrupt()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert _journal_interrupts(driver) - during_finalization == 1
         assert service.has_shard_id(_destination_shard)
         assert during_finalization == 0, "teardown must include singleton finalizers"
@@ -840,18 +842,18 @@ def test_persists_a_discard_send_and_delivers_it_once_the_shard_lock_is_acquired
         service = yield from sharding.Sharding()
         shard_id = service.get_shard_id(EntityId("1"), "default")
         while not storage_state.acquire_calls:
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         client = (yield from TestEntity.client())("1")
         send = yield from client.get_user.discard({"id": 1}).fork(start_immediately=True)
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         assert send.poll_unsafe() == _VOID, "a discard send returns once persisted"
         assert entity_state.envelopes.size_unsafe() == 0, "delivery must wait for the shard lock"
 
         storage_state.lock_held_elsewhere = False
         while not service.has_shard_id(shard_id):
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         yield from service.poll_storage
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
         assert entity_state.envelopes.size_unsafe() == 1
 
     yield from fx.scoped(body).pipe(fx.provide(_pending_lock_sharding(storage_state)))

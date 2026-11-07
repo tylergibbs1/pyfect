@@ -19,6 +19,7 @@ from pyfect import layer, stream, testing
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.context import Tag
+from pyfect.duration import Seconds
 from pyfect.encoding import sse
 from pyfect.exit import Exit
 from pyfect.exit import succeed as exit_succeed
@@ -257,7 +258,7 @@ def test_query_creates_a_serializable_atom_with_reactivity_and_retention_that_en
         params={"id": 1},
         query={"page": 2},
         reactivity_keys=["users"],
-        time_to_live=60,
+        time_to_live="1 minute",
         serialization_key="1:2",
     )
     assert (query.idle_ttl, atom.is_serializable(query)) == (60, True)
@@ -290,7 +291,7 @@ def test_query_creates_a_serializable_atom_with_reactivity_and_retention_that_en
         params={"id": 1},
         query={"page": 2},
         reactivity_keys=["users"],
-        time_to_live=60,
+        time_to_live="1 minute",
         serialization_key="1:2",
     )
     assert from_encoded_input.serializable_info is not None
@@ -333,4 +334,4 @@ def test_returns_generated_sse_stream_failures_from_queries():
     events_stream = yield from atom_registry.get_result(registry, query)
     error = yield from events_stream.run_collect().flip()
 
-    assert error == sse.Retry(duration=1.0, last_event_id=None)
+    assert error == sse.Retry(duration=Seconds(1), last_event_id=None)

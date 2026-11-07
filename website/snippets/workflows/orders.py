@@ -47,7 +47,7 @@ def place_order(order: Order, _execution_id: str):
     charge_id = yield from activity.make(
         name="charge", success=S.String, execute=charge(order)
     ).pipe(PlaceOrder.with_compensation(lambda charge_id, _cause: refund(charge_id)))
-    yield from durable_clock.sleep(name="cool-off", duration=0.01)
+    yield from durable_clock.sleep(name="cool-off", duration="10 millis")
     approved = yield from Approval.wait()  # suspends until someone answers
     if not approved:
         return (yield from fx.fail("rejected"))  # runs the compensation: a refund

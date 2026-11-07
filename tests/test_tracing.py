@@ -104,7 +104,7 @@ def test_an_unnamed_fn_makes_no_span():
 @testing.effect
 def test_a_forked_fiber_keeps_the_span_and_records_nothing_on_it_after_it_ended():
     def child_body():
-        yield from fx.sleep(10)
+        yield from fx.sleep("10 seconds")
         yield from fx.log("late")
         yield from fx.annotate_current_span("late", True)
         return (yield from fx.current_span())
@@ -115,7 +115,7 @@ def test_a_forked_fiber_keeps_the_span_and_records_nothing_on_it_after_it_ended(
         return (yield from fx.current_span()), child
 
     span, child = yield from fx.gen(parent_body).with_span("A")
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     child_span = yield from child.join()
 
     assert child_span is span

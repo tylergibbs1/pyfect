@@ -10,7 +10,7 @@ assert squares == [0, 4, 16, 36]
 
 
 def lookup(n: int) -> fx.Effect[str]:
-    return fx.sleep(0.01).as_(f"item {n}")
+    return fx.sleep("10 millis").as_(f"item {n}")
 
 
 # map_effect runs an effect per item, here three at a time, keeping the order.

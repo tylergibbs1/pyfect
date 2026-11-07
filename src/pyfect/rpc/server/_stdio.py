@@ -32,7 +32,7 @@ from pyfect.stream import from_queue
 
 _CLIENT = 0
 _OUTPUT_BUFFER = 8
-_RETRY_EVERY = 0.5
+_RETRY_EVERY = "500 millis"
 _EOF: EofEncoded = {"_tag": "Eof"}
 
 

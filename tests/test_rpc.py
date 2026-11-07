@@ -52,7 +52,7 @@ def test_the_server_span_links_the_span_the_request_was_written_in() -> None:
         .pipe(fx.provide(handlers))
         .pipe(effect.provide_service(CurrentTracer, Tracer.make(span)))
     )
-    assert fx.run_blocking(program.timeout(10).or_die()) == "pong"
+    assert fx.run_blocking(program.timeout("10 seconds").or_die()) == "pong"
     (client,) = [span for span in spans if span.kind == "client"]
     (server,) = [span for span in spans if span.kind == "server"]
     assert [link.span for link in server.links] == [client]

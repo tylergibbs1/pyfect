@@ -6,7 +6,7 @@ latency = metric.timer("http_latency")
 
 
 def handler() -> fx.Effect[str]:
-    return fx.sleep(0.01).as_("ok")
+    return fx.sleep("10 millis").as_("ok")
 
 
 # track adds 1 per success; track_duration records how long each call took.

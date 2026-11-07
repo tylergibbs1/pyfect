@@ -515,7 +515,7 @@ def test_a_complete_event_without_a_data_line_ends_the_stream():
             )
         )
         .run_collect()
-        .timeout(2)
+        .timeout("2 seconds")
     )
     assert [e.body for e in events] == [_event("a")]
 
@@ -589,9 +589,9 @@ def test_a_client_stream_refused_with_403_and_retry_after_reconnects_after_the_d
         .run_collect()
         .fork()
     )
-    yield from testing.adjust(1.999)
+    yield from testing.adjust("1999 millis")
     assert attempts[0] == 1
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     assert (yield from fiber.join()) == [{"issueUpdated": {"title": "a"}}]
     assert attempts[0] == 2
 

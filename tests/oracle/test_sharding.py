@@ -104,7 +104,7 @@ def test_delivers_volatile_requests_directly_to_the_entity():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         make_client = yield from TestEntity.client()
         client = make_client("1")
         user = yield from client.get_user_volatile({"id": 1})
@@ -119,7 +119,7 @@ def test_persists_durable_requests_until_the_entity_replies():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         driver = yield from MemoryDriver()
         make_client = yield from TestEntity.client()
         client = make_client("1")
@@ -140,12 +140,12 @@ def test_routes_durable_interrupts_through_storage():
         driver = yield from MemoryDriver()
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         fiber = yield from client.never().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from fiber.interrupt()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert len(driver.encoded.journal) == 2
         assert len(driver.encoded.reply_ids) == 1
         assert state.interrupts.size_unsafe() == 1
@@ -162,10 +162,10 @@ def test_interrupts_arent_sent_for_durable_messages_on_shutdown():
     def body():
         drivers.append((yield from MemoryDriver()))
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         yield from client.never().fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
 
     yield from body.pipe(fx.provide(test_sharding))
     # The request; the client interrupt is dropped.
@@ -181,11 +181,11 @@ def test_fails_volatile_requests_immediately_when_the_mailbox_is_full():
     @fx.gen
     def body():
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         for _ in range(10):
             yield from client.never_volatile().fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         error = yield from client.never_volatile().flip()
         assert isinstance(error, MailboxFull)
 
@@ -200,19 +200,19 @@ def test_interrupt_for_future_request_works_while_mailbox_is_full():
     def body():
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         fibers: list[Fiber[Any, Any]] = yield from fx.for_each(
             range(12), lambda _: client.never_fork().fork(start_immediately=True)
         )
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert state.envelopes.size_unsafe() == 10
         # Interrupt the 11th request.
         yield from fibers[10].interrupt()
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         # Interrupt the first request, and let the 11th come through.
         yield from fibers[0].interrupt()
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         assert state.envelopes.size_unsafe() == 12
         # The second interrupt is sent.
         assert state.interrupts.size_unsafe() == 2
@@ -227,7 +227,7 @@ def test_delivers_durable_streams_and_acknowledges_each_chunk():
     @fx.gen
     def body():
         driver = yield from MemoryDriver()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         make_client = yield from TestEntity.client()
         client = make_client("1")
         users = yield from client.get_all_users({"ids": [1, 2, 3]}).run_collect()
@@ -279,11 +279,11 @@ def test_durable_messages_are_retried_on_restart():
 
         @fx.gen
         def first():
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             make_client = yield from TestEntity.client()
             client = make_client("1")
             yield from client.request_with_key(KeyPayload(key="abc")).fork()
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
 
         yield from scoped(first.pipe(fx.provide(restart_env)))
         # Only the request is in the journal.
@@ -294,7 +294,7 @@ def test_durable_messages_are_retried_on_restart():
         # Add the response.
         yield from state.messages.offer(None)
         # Let the shards get assigned and storage poll.
-        yield from scoped(testing.adjust(5).pipe(fx.provide(restart_env)))
+        yield from scoped(testing.adjust("5 seconds").pipe(fx.provide(restart_env)))
         assert len(driver.encoded.journal) == 1
         assert len(driver.encoded.reply_ids) == 1
         assert len(driver.encoded.unprocessed) == 0
@@ -302,7 +302,7 @@ def test_durable_messages_are_retried_on_restart():
         # The client reads the result from storage.
         @fx.gen
         def again():
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             make_client = yield from TestEntity.client()
             client = make_client("1")
             assert (yield from client.request_with_key(KeyPayload(key="abc"))) is None
@@ -329,14 +329,14 @@ def test_durable_streams_are_resumed_on_restart():
 
         @fx.gen
         def first():
-            yield from testing.adjust(2)
+            yield from testing.adjust("2 seconds")
             make_client = yield from TestEntity.client()
             client = make_client("1")
             yield from client.stream_with_key(KeyPayload(key="abc")).run_drain().fork()
-            yield from testing.adjust(2)
+            yield from testing.adjust("2 seconds")
             # The second chunk.
             yield from state.stream_messages.offer(None)
-            yield from testing.adjust(2)
+            yield from testing.adjust("2 seconds")
 
         yield from scoped(first.pipe(fx.provide(restart_env)))
         # 1 request, 2 acks, 2 replies
@@ -351,11 +351,11 @@ def test_durable_streams_are_resumed_on_restart():
         @fx.gen
         def resumed():
             # Let the shards get assigned and storage poll.
-            yield from testing.adjust(5)
+            yield from testing.adjust("5 seconds")
             make_client = yield from TestEntity.client()
             client = make_client("1")
             # Let the reply loop run.
-            yield from testing.adjust(0.5).fork()
+            yield from testing.adjust("500 millis").fork()
             results = yield from client.stream_with_key(KeyPayload(key="abc")).run_collect()
             assert results == [3, 4]
 
@@ -402,7 +402,7 @@ def test_interrupts_are_sent_for_volatile_messages_on_shutdown():
         make_client = yield from TestEntity.client()
         client = make_client("1")
         fiber = yield from client.never_volatile().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         _set_runner_address(
             (yield from ShardingConfig()), RunnerAddress(host="localhost", port=1234)
         )
@@ -411,7 +411,7 @@ def test_interrupts_are_sent_for_volatile_messages_on_shutdown():
 
         def task() -> None:
             fiber.interrupt_as_unsafe(None)
-            parent._fork(clock.adjust(30), daemon=True, start_immediately=True)
+            parent._fork(clock.adjust("30 seconds"), daemon=True, start_immediately=True)
 
         fiber._scheduler.schedule(task)
 
@@ -425,12 +425,12 @@ def test_client_discard_stores_durable_requests_without_waiting_for_replies():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         driver = yield from MemoryDriver()
         make_client = yield from TestEntity.client()
         client = make_client("1")
         assert (yield from client.get_user.discard({"id": 123})) is None
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert len(driver.encoded.journal) == 1
         assert len(driver.encoded.unprocessed) == 0
 
@@ -443,12 +443,12 @@ def test_client_discard_returns_while_the_durable_request_keeps_processing():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         driver = yield from MemoryDriver()
         make_client = yield from TestEntity.client()
         client = make_client("1")
         assert (yield from client.never.discard()) is None
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert len(driver.encoded.journal) == 1
         # Still processing.
         assert len(driver.encoded.unprocessed) == 1
@@ -462,12 +462,12 @@ def test_client_discard_returns_while_the_volatile_request_keeps_processing():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
         client = make_client("1")
         assert (yield from client.never_volatile.discard()) is None
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert state.envelopes.size_unsafe() == 1
 
     yield from body.pipe(fx.provide(test_sharding))
@@ -497,7 +497,7 @@ def test_client_volatile_discard_retries_a_failed_delivery():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         _set_runner_address(
             (yield from ShardingConfig()), RunnerAddress(host="localhost", port=1234)
         )
@@ -506,7 +506,7 @@ def test_client_volatile_discard_retries_a_failed_delivery():
         fiber = yield from client.never_volatile.discard().fork(start_immediately=True)
         assert len(attempts) == 1
         assert fiber.poll_unsafe() is None
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         yield from fiber.join()
         assert len(attempts) == 2
 
@@ -535,7 +535,7 @@ def test_restarts_the_entity_layer_after_a_handler_defect():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
         client = make_client("1")
@@ -553,18 +553,18 @@ def test_replays_in_flight_requests_when_restarting_after_a_defect():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
         client = make_client("1")
         yield from client.never_fork().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert state.envelopes.size_unsafe() == 1
         state.defect_trigger[0] = True
         result = yield from client.get_user({"id": 123})
         assert result == User(id=123, name="User 123")
         assert state.layer_builds[0] == 2
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert state.envelopes.size_unsafe() == 4
 
     yield from body.pipe(fx.provide(test_sharding))
@@ -578,10 +578,10 @@ def test_malformed_message_in_storage():
     def body():
         driver = yield from MemoryDriver()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         fiber = yield from client.never().fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         request = driver.encoded.journal[0]
         malformed: Any = {
             "id": "boom",
@@ -591,7 +591,7 @@ def test_malformed_message_in_storage():
         }
         yield from driver.encoded.save_envelope(malformed, None, None)
         # Wait for storage to poll.
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         exit = fiber.poll_unsafe()
         assert isinstance(exit, Exit.Failure)
         assert exit.cause.has_dies
@@ -630,12 +630,12 @@ def test_durable_messages_are_retried_when_mailbox_is_full():
     def body():
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         fibers: list[Fiber[Any, Any]] = yield from fx.for_each(
             range(11), lambda _: client.never_fork().fork()
         )
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         # The entity resumes from storage and asks for the ids.
         ids = yield from requested.take()
         assert len(ids) == 1
@@ -643,16 +643,16 @@ def test_durable_messages_are_retried_when_mailbox_is_full():
         assert state.envelopes.size_unsafe() == 10
         # Interrupt the first request and let the retry happen.
         yield from fibers[0].interrupt()
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         # The last request comes through.
         assert state.envelopes.size_unsafe() == 11
         # Interrupt the second: the entity is back in the storage loop.
         yield from fibers[1].interrupt()
         # A request within the mailbox capacity.
         yield from client.never_fork().fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from Fiber.interrupt_all(fibers)
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         # No more ids were asked for.
         assert requested.size_unsafe() == 0
 
@@ -672,7 +672,7 @@ def test_durable_stream_while_mailbox_is_full():
         fibers: list[Fiber[Any, Any]] = yield from fx.for_each(
             range(10), lambda _: client.never_fork().fork(start_immediately=True)
         )
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         fiber = yield from (
             client.get_all_users({"ids": [1, 2, 3]}).run_collect().fork(start_immediately=True)
         )
@@ -684,7 +684,7 @@ def test_durable_stream_while_mailbox_is_full():
         assert state.envelopes.size_unsafe() == 10
         # Interrupt the first request and let the retry happen.
         yield from fibers[0].interrupt()
-        yield from testing.adjust(0.5)
+        yield from testing.adjust("500 millis")
         # The last request and a NeverFork come through.
         assert state.envelopes.size_unsafe() == 12
         # Acks may be sent.
@@ -706,7 +706,7 @@ def _late_env(
 ) -> fx.Layer[Any, Never, Any]:
     entity = test_entity_no_state
     if delay is not None:
-        entity = entity.pipe(fx.layer.provide(fx.layer.effect_discard(fx.sleep(delay))))
+        entity = entity.pipe(fx.layer.provide(fx.layer.effect_discard(fx.sleep(Seconds(delay)))))
     built = (
         entity.pipe(fx.layer.provide_merge(sharding.layer))
         .pipe(fx.layer.provide(runner_storage.layer_memory))
@@ -727,11 +727,11 @@ late_storage = fx.layer.merge(
 
 @fx.fn
 def _send_request_with_key(key: str):
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     make_client = yield from TestEntity.client()
     client = make_client("1")
     yield from client.request_with_key(KeyPayload(key=key)).fork()
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
 
 
 @testing.effect
@@ -754,12 +754,12 @@ def test_holds_durable_messages_while_entity_layers_are_still_building():
         fiber = yield from scoped(fx.never.pipe(fx.provide(_late_env(config, delay=10)))).fork(
             start_immediately=True
         )
-        yield from testing.adjust(7.5)
+        yield from testing.adjust("7500 millis")
         assert len(driver.encoded.reply_ids) == 0
         assert len(driver.encoded.unprocessed) == 1
-        yield from testing.adjust(2.5)
+        yield from testing.adjust("2500 millis")
         yield from state.messages.offer(None)
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         assert len(driver.encoded.reply_ids) == 1
         assert len(driver.encoded.unprocessed) == 0
         yield from fiber.interrupt()
@@ -800,14 +800,14 @@ def test_reads_durable_messages_from_storage_when_a_late_entity_registers():
         fiber = yield from scoped(fx.never.pipe(fx.provide(delayed))).fork(start_immediately=True)
         # The startup read sees the message before the entity registers, and
         # the entity registers while the claim reset is pending.
-        yield from testing.adjust(0.999)
+        yield from testing.adjust("999 millis")
         assert reset_started.is_done_unsafe()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         # The reset completes before the read woken by registration, without
         # waiting for the poll interval or new client traffic.
         yield from release_reset.succeed(None)
         yield from state.messages.offer(None)
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         assert len(driver.encoded.reply_ids) == 1
         assert len(driver.encoded.unprocessed) == 0
         yield from fiber.interrupt()
@@ -844,7 +844,7 @@ def test_defects_durable_messages_when_no_entity_ever_registers():
             .with_logger(fx.Logger.make(log))
             .fork(start_immediately=True)
         )
-        yield from testing.adjust(8)
+        yield from testing.adjust("8 seconds")
         assert any(
             "Could not find entity manager for address, retrying" in _messages(message)
             for message in warnings
@@ -884,13 +884,13 @@ def test_bounds_local_sends_while_entity_registration_is_missing():
     def body():
         service = yield from sharding.Sharding()
         entity_id = EntityId("one")
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert service.has_shard_id(service.get_shard_id(entity_id, "default"))
         client = (yield from MissingRegistrationEntity.client())(entity_id)
         fiber = yield from client.call().fork_daemon(start_immediately=True)
         yield from fx.yield_now()
         assert fiber.poll_unsafe() is None
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert (
             _defect_message(fiber.poll_unsafe())
             == "Entity type 'MissingRegistrationEntity' not registered"
@@ -907,13 +907,13 @@ def test_recomputes_the_missing_entity_deadline_when_registration_starts():
     def body():
         service = yield from sharding.Sharding()
         entity_id = EntityId("one")
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert service.has_shard_id(service.get_shard_id(entity_id, "default"))
         client = (yield from MissingRegistrationEntity.client())(entity_id)
         fiber = yield from client.call().fork_daemon(start_immediately=True)
         yield from fx.yield_now()
         assert fiber.poll_unsafe() is None
-        yield from testing.adjust(1.5)
+        yield from testing.adjust("1500 millis")
         handlers = FirstRegistrationEntity.handlers().handle(FirstRegistrationEntity.call)(
             lambda _: fx.void
         )
@@ -922,9 +922,9 @@ def test_recomputes_the_missing_entity_deadline_when_registration_starts():
         )
         # The registration-start deadline is a second from now: the elapsed
         # fallback deadline no longer wins the race.
-        yield from testing.adjust(0.6)
+        yield from testing.adjust("600 millis")
         assert fiber.poll_unsafe() is None
-        yield from testing.adjust(0.4)
+        yield from testing.adjust("400 millis")
         assert (
             _defect_message(fiber.poll_unsafe())
             == "Entity type 'MissingRegistrationEntity' not registered"
@@ -941,7 +941,7 @@ def test_keeps_a_shared_registration_latch_when_one_waiter_is_interrupted():
     def body():
         service = yield from sharding.Sharding()
         entity_id = EntityId("one")
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert service.has_shard_id(service.get_shard_id(entity_id, "default"))
         client = (yield from MissingRegistrationEntity.client())(entity_id)
         interrupted = yield from client.call().fork_daemon(start_immediately=True)
@@ -973,7 +973,7 @@ def test_bounds_client_interruption_while_entity_registration_is_missing():
     def body():
         service = yield from sharding.Sharding()
         entity_id = EntityId("one")
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert service.has_shard_id(service.get_shard_id(entity_id, "default"))
         client = (yield from MissingRegistrationEntity.client())(entity_id)
         fiber = yield from client.call().fork_daemon(start_immediately=True)
@@ -983,7 +983,7 @@ def test_bounds_client_interruption_while_entity_registration_is_missing():
         interrupt_fiber = yield from fiber.interrupt().fork_daemon(start_immediately=True)
         yield from fx.yield_now()
         assert interrupt_fiber.poll_unsafe() is None
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from interrupt_fiber.join()
         exit = yield from fiber.await_exit()
         assert isinstance(exit, Exit.Failure)
@@ -1001,18 +1001,18 @@ def test_bounds_resident_entities_to_max_resident_entities():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
         fibers: list[Fiber[Any, Any]] = yield from fx.for_each(
             range(1, 7),
             lambda i: make_client(str(i)).get_user({"id": i}).fork(start_immediately=True),
         )
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert (yield from service.active_entity_count) <= 2
         # Idle entities are reaped over time, freeing slots for the backlog.
         for _ in range(12):
-            yield from testing.adjust(5)
+            yield from testing.adjust("5 seconds")
             assert (yield from service.active_entity_count) <= 2
         users = yield from Fiber.join_all(fibers)
         assert [user.id for user in users] == [1, 2, 3, 4, 5, 6]
@@ -1028,19 +1028,19 @@ def test_volatile_sends_to_new_entities_fail_with_mailbox_full_at_the_cap():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         driver = yield from MemoryDriver()
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
         # Occupy the only slot.
         yield from make_client("1").never_volatile().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert (yield from service.active_entity_count) == 1
         error = yield from make_client("2").get_user_volatile({"id": 2}).flip()
         assert isinstance(error, MailboxFull)
         # Persisted sends still succeed and wait in storage.
         yield from make_client("2").get_user.discard({"id": 2})
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         assert (yield from service.active_entity_count) == 1
         assert len(driver.encoded.unprocessed) == 1
         assert len(driver.encoded.reply_ids) == 0
@@ -1054,20 +1054,20 @@ def test_keeps_delivering_to_resident_entities_at_the_cap():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         driver = yield from MemoryDriver()
         state = yield from EntityState()
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
         # Make entity "1" resident and keep it busy.
         yield from make_client("1").never_fork().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert state.envelopes.size_unsafe() == 1
         # A backlog of new entity ids in front of the resident's next message.
         for i in range(2, 5):
             yield from make_client(str(i)).get_user.discard({"id": i})
         fiber = yield from make_client("1").get_user({"id": 1}).fork(start_immediately=True)
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         # The resident entity got its message despite the backlog.
         assert (yield from fiber.join()) == User(id=1, name="User 1")
         # The new ids were not admitted; their requests stay in storage.
@@ -1086,12 +1086,12 @@ def test_unbounded_max_resident_entities_does_not_limit_spawning():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
         for i in range(1, 16):
             yield from make_client(str(i)).never_volatile().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert (yield from service.active_entity_count) == 15
 
     yield from body.pipe(fx.provide(capped(max_resident_entities="unbounded")))
@@ -1103,13 +1103,13 @@ def test_drains_a_full_batch_without_waiting_for_the_poll_interval():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         driver = yield from MemoryDriver()
         for i in range(1, 6):
             yield from save_get_user_request(str(i), i)
         assert len(driver.encoded.reply_ids) == 0
         # One poll drains the whole backlog in batches of 2.
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         assert len(driver.encoded.reply_ids) == 5
 
     yield from body.pipe(fx.provide(capped(unprocessed_message_batch_size=2)))
@@ -1121,12 +1121,12 @@ def test_advances_past_in_flight_memory_requests_when_reading_bounded_batches():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         make_client = yield from TestEntity.client()
         yield from make_client("1").never().fork(start_immediately=True)
         yield from make_client("2").never().fork(start_immediately=True)
         fiber = yield from make_client("3").get_user({"id": 3}).fork(start_immediately=True)
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         assert (yield from fiber.join()) == User(id=3, name="User 3")
 
     yield from body.pipe(fx.provide(capped(unprocessed_message_batch_size=2)))
@@ -1147,17 +1147,17 @@ def test_keeps_full_sized_storage_reads_when_approaching_the_entity_cap():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
         for i in range(1, 5):
             yield from make_client(str(i)).never_volatile().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert (yield from service.active_entity_count) == 4
         limits.clear()
         for i in range(10):
             yield from save_get_user_request(str(i % 4 + 1), i)
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         assert limits
         assert set(limits) == {100}
 
@@ -1173,10 +1173,10 @@ def test_normalizes_programmatic_batch_sizes_below_one():
 
         @fx.gen
         def body():
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             make_client = yield from TestEntity.client()
             fiber = yield from make_client("1").get_user({"id": 1}).fork(start_immediately=True)
-            yield from testing.adjust(5)
+            yield from testing.adjust("5 seconds")
             assert fiber.poll_unsafe() is not None
             assert (yield from fiber.join()) == User(id=1, name="User 1")
 
@@ -1197,16 +1197,16 @@ def test_does_not_busy_poll_storage_at_the_cap():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         make_client = yield from TestEntity.client()
         yield from make_client("1").never_volatile().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         # A backlog for a new id that cannot be admitted.
         yield from make_client("2").get_user.discard({"id": 2})
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         before = len(reads)
         # Less than the poll interval.
-        yield from testing.adjust(4)
+        yield from testing.adjust("4 seconds")
         assert len(reads) - before <= 1
 
     yield from body.pipe(fx.provide(capped(transform, max_resident_entities=1)))
@@ -1221,7 +1221,7 @@ def test_does_not_freeze_the_first_callers_context_into_the_entity_server():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         make_client = yield from ContextBleedEntity.client()
         client = make_client("1")
         first = yield from client.read_caller().pipe(fx.provide_service(CallerId, "A"))
@@ -1259,7 +1259,7 @@ def test_uses_services_provided_when_registering_an_entity():
         yield from service.register_entity(RegistrationContextEntity, build, EntityOptions()).pipe(
             fx.provide_service(RegistrationContext, "registration")
         )
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = (yield from RegistrationContextEntity.client())("1")
         assert (yield from client.read()) == "registration"
 
@@ -1279,11 +1279,11 @@ def test_with_transaction_persists_a_client_interrupt_instead_of_replaying_the_r
         driver = yield from MemoryDriver()
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         fiber = yield from make_client("1").never_with_transaction().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from fiber.interrupt()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert len(driver.encoded.reply_ids) == 1
         assert state.envelopes.size_unsafe() == 1
 
@@ -1296,7 +1296,7 @@ def _wait_for_idle_reap(service: sharding.ShardingService, remaining: int) -> fx
         for _ in range(12):
             if (yield from service.active_entity_count) <= remaining:
                 return
-            yield from testing.adjust(5)
+            yield from testing.adjust("5 seconds")
         assert (yield from service.active_entity_count) <= remaining
 
     return run
@@ -1314,12 +1314,12 @@ def test_reports_entity_mailbox_sizes_until_entities_are_released():
     def body():
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         first: list[Fiber[Any, Any]] = yield from fx.for_each(
             range(2), lambda _: make_client("1").never_volatile().fork()
         )
         yield from make_client("2").never_volatile().fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
 
         def shard(id: str) -> str:
             return str(service.get_shard_id(EntityId(id), "default"))
@@ -1350,9 +1350,9 @@ def test_creates_no_entity_mailbox_series_by_default():
     def body():
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from make_client("1").never_volatile().fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert (yield from service.active_entity_count) == 1
         assert series(registry, cluster_metrics.entity_mailbox_size.id) == []
 
@@ -1376,13 +1376,13 @@ def test_reports_the_active_entity_count_on_snapshot_until_the_entity_manager_cl
     @fx.gen
     def body():
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from make_client("1").never_volatile().fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert counts() == [metric.GaugeState(1)]
         # Well within a second, so the count cannot come from a periodic update.
         yield from make_client("2").never_volatile().fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert counts() == [metric.GaugeState(2)]
 
     yield from body.pipe(fx.provide(test_sharding)).pipe(
@@ -1403,12 +1403,12 @@ def test_reports_the_largest_entity_mailbox_size_per_type_by_default():
     def body():
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         first: list[Fiber[Any, Any]] = yield from fx.for_each(
             range(2), lambda _: make_client("1").never_volatile().fork()
         )
         yield from make_client("2").never_volatile().fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert size_max() == [({"type": "TestEntity"}, metric.GaugeState(2))]
         yield from Fiber.interrupt_all(first)
         yield from _wait_for_idle_reap(service, 1)
@@ -1452,14 +1452,14 @@ def test_updates_the_shards_gauge_after_reassignment():
             return sum(1 for s in shard_ids if service.has_shard_id(s))
 
         while held() != 8:
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         assert cluster_metrics.shards.value_unsafe(Context.empty()).value == 8
         other = Runner(
             address=RunnerAddress(host="localhost", port=5678), groups=("default",), weight=1
         )
         yield from storage.register(other, True)
         while held() != 4:
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         assert cluster_metrics.shards.value_unsafe(Context.empty()).value == 4
 
     yield from scoped(body)

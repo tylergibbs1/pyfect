@@ -49,7 +49,7 @@ def test_defects_instead_of_hanging_when_persisted_failures_contain_non_json_err
         driver = yield from MemoryDriver()
         make_client = yield from TestEntity.client()
         client = make_client("1")
-        cause = yield from client.fail().timeout(2).sandbox().flip()
+        cause = yield from client.fail().timeout("2 seconds").sandbox().flip()
         assert cause.has_dies
         assert "MalformedMessage" in cause.pretty()
         assert len(driver.encoded.reply_ids) == 1
@@ -97,14 +97,14 @@ def _arm_and_shut_down(
             service = yield from sharding.Sharding()
             shard_id = service.get_shard_id(EntityId("1"), "default")
             while not service.has_shard_id(shard_id):
-                yield from fx.sleep(0.005)
+                yield from fx.sleep("5 millis")
             yield from shard_acquired.open()
             yield from arm
             yield from armed.open()
             return (yield from fx.never)
 
         run_fiber = yield from fx.scoped(runner).pipe(fx.provide(env)).fork_daemon()
-        acquired = yield from shard_acquired.wait().timeout_option(8)
+        acquired = yield from shard_acquired.wait().timeout_option("8 seconds")
         if acquired is None:
             run_fiber.interrupt_as_unsafe(None)
             yield from run_fiber.await_exit()
@@ -114,7 +114,7 @@ def _arm_and_shut_down(
         # Interrupting the fiber closes the Sharding scope, running the entity
         # finalizer as part of teardown
         run_fiber.interrupt_as_unsafe(None)
-        completed = yield from run_fiber.await_exit().timeout_option(4)
+        completed = yield from run_fiber.await_exit().timeout_option("4 seconds")
         assert completed is not None, hang_message
         return completed.value, seen["driver"]
 
@@ -123,7 +123,7 @@ def _arm_and_shut_down(
 
 @pytest.mark.parametrize("preemptive_shutdown", [True, False])
 @pytest.mark.parametrize("persisted", [False, True])
-@testing.live(timeout=20)
+@testing.live(timeout="20 seconds")
 def test_shutdown_completes_when_a_finalizing_entity_sends_an_outgoing_message(
     persisted: bool, preemptive_shutdown: bool
 ):
@@ -145,7 +145,7 @@ def test_shutdown_completes_when_a_finalizing_entity_sends_an_outgoing_message(
             # finalizer sends an outgoing message during entity teardown
             yield from fx.add_finalizer(
                 lambda _: (
-                    fx.sleep(0.3)
+                    fx.sleep("300 millis")
                     .and_then(receiver("peer").ping.discard())
                     .exit()
                     .flat_map(discard_exit.succeed)
@@ -177,7 +177,7 @@ def test_shutdown_completes_when_a_finalizing_entity_sends_an_outgoing_message(
 
 
 @pytest.mark.parametrize("persisted", [False, True])
-@testing.live(timeout=20)
+@testing.live(timeout="20 seconds")
 def test_shutdown_completes_when_a_finalizing_entity_awaits_a_reply_from_an_unroutable_entity(
     persisted: bool,
 ):
@@ -199,7 +199,7 @@ def test_shutdown_completes_when_a_finalizing_entity_awaits_a_reply_from_an_unro
             # uninterruptible finalizer that awaits a reply from another entity
             yield from fx.add_finalizer(
                 lambda _: (
-                    fx.sleep(0.3)
+                    fx.sleep("300 millis")
                     .and_then(receiver("peer").ping())
                     .exit()
                     .flat_map(request_exit.succeed)
@@ -252,7 +252,7 @@ class ShutdownStreamSender(Entity, type="ShutdownStreamSender"):
     arm = make_rpc("Arm").annotate(Persisted, False)
 
 
-@testing.live(timeout=20)
+@testing.live(timeout="20 seconds")
 def test_fails_a_stream_when_its_chunk_acknowledgement_is_abandoned_during_shutdown():
     """fails a stream when its chunk acknowledgement is abandoned during shutdown"""
 

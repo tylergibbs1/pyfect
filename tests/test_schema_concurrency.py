@@ -75,7 +75,7 @@ def test_a_defect_in_a_concurrent_child_is_reported_at_its_position():
 def test_concurrent_children_run_on_the_asyncio_runtime():
     async def main() -> tuple[str, ...]:
         def upper(value: str, _: object) -> fx.Effect[str]:
-            return fx.sleep(0.01).as_(value.upper())
+            return fx.sleep("10 millis").as_(value.upper())
 
         async_getter: G.Getter[str, str] = G.transform_effect(upper)
         schema = S.Array(_decoding(async_getter))

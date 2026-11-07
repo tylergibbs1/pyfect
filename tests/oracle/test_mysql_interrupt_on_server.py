@@ -53,7 +53,7 @@ _SLOW_ROWS = f"SELECT a.ordinal_position, SLEEP(0.001) AS {{}} FROM {_COLUMNS} a
 
 @pytest.mark.parametrize("disable_prepared", [False, True], ids=["prepared", "text"])
 @pytest.mark.parametrize("statement", _STATEMENTS.values(), ids=_STATEMENTS.keys())
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_a_timeout_ends_the_statement_on_the_server(
     mysql_server: MysqlServer, statement: str, disable_prepared: bool
 ):
@@ -61,14 +61,14 @@ def test_a_timeout_ends_the_statement_on_the_server(
 
     def body():
         sql = yield from mysql.MysqlClient()
-        yield from sql.unsafe(sql_text).timeout(0.3).exit()
+        yield from sql.unsafe(sql_text).timeout("300 millis").exit()
         yield from gone_soon(lambda: _running(marker))
 
     yield from _with_client(mysql_server, body, disable_prepared_statements=disable_prepared)
 
 
 @pytest.mark.parametrize("statement", _STATEMENTS.values(), ids=_STATEMENTS.keys())
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_a_fiber_interrupt_ends_the_statement_on_the_server(
     mysql_server: MysqlServer, statement: str
 ):
@@ -84,7 +84,7 @@ def test_a_fiber_interrupt_ends_the_statement_on_the_server(
     yield from _with_client(mysql_server, body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_an_interrupted_stream_ends_on_the_server(mysql_server: MysqlServer):
     source, marker = _marked(_SLOW_ROWS)
 
@@ -108,7 +108,7 @@ def _take_lock_at_once(table: str) -> bool:
     return True
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_another_connection_gets_the_row_lock_soon_after_an_interrupt(mysql_server: MysqlServer):
     table = f"interrupted_{uuid.uuid4().hex}"
 
@@ -125,18 +125,18 @@ def test_another_connection_gets_the_row_lock_soon_after_an_interrupt(mysql_serv
         deadline = time.monotonic() + 10
         while (yield from fx.blocking(lambda: _take_lock_at_once(table))):
             assert time.monotonic() < deadline, "the transaction never took the lock"
-            yield from fx.sleep(0.02)
-        yield from fx.sleep(0.2)
+            yield from fx.sleep("20 millis")
+        yield from fx.sleep("200 millis")
         yield from fiber.interrupt()
         deadline = time.monotonic() + GONE_WITHIN
         while not (yield from fx.blocking(lambda: _take_lock_at_once(table))):
             assert time.monotonic() < deadline, "the row is still locked"
-            yield from fx.sleep(0.05)
+            yield from fx.sleep("50 millis")
 
     yield from _with_client(mysql_server, body, max_connections=2)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_taking_part_of_a_slow_stream_ends_it_on_the_server(mysql_server: MysqlServer):
     """Ending a stream early must not wait for the server to send every row left."""
     source, marker = _marked(_SLOW_ROWS)
@@ -145,18 +145,18 @@ def test_taking_part_of_a_slow_stream_ends_it_on_the_server(mysql_server: MysqlS
         sql = yield from mysql.MysqlClient()
         first = yield from sql("SELECT CONNECTION_ID() AS id")
         started = time.monotonic()
-        yield from sql.unsafe(source).stream.take(1).run_collect().timeout(20)
+        yield from sql.unsafe(source).stream.take(1).run_collect().timeout("20 seconds")
         assert time.monotonic() - started < 10
         yield from gone_soon(lambda: _running(marker))
         # Only the statement ended: the connection serves the next one.
-        assert (yield from sql("SELECT 1 AS x").timeout(5)) == [{"x": 1}]
+        assert (yield from sql("SELECT 1 AS x").timeout("5 seconds")) == [{"x": 1}]
         rows = yield from sql("SELECT CONNECTION_ID() AS id")
         assert rows[0]["id"] == first[0]["id"]
 
     yield from _with_client(mysql_server, body, max_connections=1)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_a_kill_that_cannot_be_sent_is_reported(
     mysql_server: MysqlServer, caplog: pytest.LogCaptureFixture
 ):

@@ -60,7 +60,7 @@ def test_run_sync_exit_flushes_dispatcher_work_after_yielding():
 def test_run_sync_exit_of_a_sleep_dies_with_async_fiber_error():
     """Effect.runSyncExit(Effect.sleep(...)), under Node: a Die with
     AsyncFiberError."""
-    ex = fx.run_sync_exit(fx.sleep(0.01))
+    ex = fx.run_sync_exit(fx.sleep("10 millis"))
     assert isinstance(ex, fx.Failure)
     error = ex.cause.squash()
     assert isinstance(error, AsyncFiberError)
@@ -70,7 +70,7 @@ def test_run_sync_exit_of_a_sleep_dies_with_async_fiber_error():
 def test_run_sync_raises_the_async_fiber_error():
     """Effect.runSync throws the squashed cause."""
     try:
-        fx.run_sync(fx.sleep(0.01))
+        fx.run_sync(fx.sleep("10 millis"))
     except AsyncFiberError:
         return
     raise AssertionError("expected AsyncFiberError")

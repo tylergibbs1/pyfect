@@ -84,8 +84,8 @@ class FakeWebSocket:
 @testing.effect
 def test_opens_when_it_opened_before_the_open_listener():
     ws = FakeWebSocket()
-    socket = from_web_socket(succeed(ws), open_timeout=1.0)
-    yield from socket.reader.timeout(0.5)
+    socket = from_web_socket(succeed(ws), open_timeout="1 second")
+    yield from socket.reader.timeout("500 millis")
 
 
 @testing.effect
@@ -124,7 +124,7 @@ def echo_server():
     return acquire_release(sync(Echo), lambda e, _: sync(e.server.shutdown))
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_text_with_a_lone_surrogate_is_sent_as_a_browser_sends_it():
     # WebSocket.send takes a USVString: a lone surrogate becomes U+FFFD,
     # and later sends still go out.
@@ -138,14 +138,14 @@ def test_text_with_a_lone_surrogate_is_sent_as_a_browser_sends_it():
     assert (yield from blocking(lambda: echo.received.get(timeout=2))) == "b"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_closing_while_connecting_fails_the_open():
     # A server that accepts TCP but never answers the upgrade.
     listener = stdlib_socket.create_server(("127.0.0.1", 0))
     yield from acquire_release(sync(lambda: listener), lambda s, _: sync(s.close))
     port = listener.getsockname()[1]
     ws = ws_platform.WsWebSocket.connect(f"ws://127.0.0.1:{port}", WebSocketClientOptions())
-    socket = from_web_socket(succeed(ws), open_timeout=5.0)
+    socket = from_web_socket(succeed(ws), open_timeout="5 seconds")
     reader = yield from scoped(socket.reader).fork(start_immediately=True)
     ws.close()
     exit = yield from reader.await_exit()
@@ -171,7 +171,7 @@ def test_round_trip_on_the_asyncio_runtime():
     assert asyncio.run(main()) == ("ping",)
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_an_invalid_close_code_is_a_write_error():
     # A browser's close() throws for codes other than 1000 and 3000-4999.
     echo = yield from echo_server()

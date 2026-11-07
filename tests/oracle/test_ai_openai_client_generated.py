@@ -283,7 +283,7 @@ def test_interrupting_a_sse_operation_closes_the_response_body():
         return run
 
     yield from _run(reading, MockHttp(respond), api_key=_KEY)
-    yield from closed.wait().timeout(1)
+    yield from closed.wait().timeout("1 second")
 
 
 @testing.effect

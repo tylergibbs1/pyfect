@@ -137,7 +137,7 @@ class _WorkerClient:
             running = (
                 backing.run(lambda message: self._on_message(backing, message), on_spawn=on_spawn)
                 .tap_cause(lambda cause: self._on_cause(backing, cause))
-                .retry(schedule.spaced(1.0))
+                .retry(schedule.spaced("1 second"))
                 .annotate_logs({"module": "RpcClient", "method": "makeProtocolWorker"})
                 .interruptible()
             )

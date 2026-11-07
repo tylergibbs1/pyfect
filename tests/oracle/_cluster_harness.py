@@ -61,6 +61,7 @@ from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.sharding import Sharding, ShardingService
 from pyfect.cluster.sharding_config import DEFAULTS, ShardingConfigService
 from pyfect.context import Context
+from pyfect.duration import Seconds
 from pyfect.exit import Exit
 from pyfect.latch import Latch
 from pyfect.layer import Layer
@@ -447,7 +448,7 @@ def tracked_client_protocol(
                 )
                 return connection
 
-            socket = from_connection(open_tracked, open_timeout=1.0)
+            socket = from_connection(open_tracked, open_timeout="1 second")
             return (
                 rpc_client.make_protocol_socket()
                 .pipe(fx.provide_service(Socket, socket))
@@ -849,12 +850,12 @@ class Cluster:
                 left = deadline - clock.now_unsafe()
                 if left <= 0:
                     break
-                held = yield from checked.timeout_option(left)
+                held = yield from checked.timeout_option(Seconds(left))
                 if held is not None and held.value:
                     return
                 if clock.now_unsafe() >= deadline:
                     break
-                yield from fx.sleep(min(0.1, max(0.0, deadline - clock.now_unsafe())))
+                yield from fx.sleep(Seconds(min(0.1, max(0.0, deadline - clock.now_unsafe()))))
             state = yield from self.diagnostics()
             return (yield from fx.fail(AssertionError(f"{description}\n{state}")))
 

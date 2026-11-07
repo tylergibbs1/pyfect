@@ -38,7 +38,9 @@ def test_derives_growing_delays_from_the_persisted_attempt_count() -> None:
 
     def body():
         queue = yield from pq.make(
-            name="retry-schedule-state", schema=ITEM, retry_schedule=schedule.exponential(1)
+            name="retry-schedule-state",
+            schema=ITEM,
+            retry_schedule=schedule.exponential("1 second"),
         )
         attempts: list[int] = []
 
@@ -53,17 +55,17 @@ def test_derives_growing_delays_from_the_persisted_attempt_count() -> None:
         yield from take_fail
 
         fiber = yield from take_fail.fork_scoped()
-        yield from testing.adjust(0.5)
+        yield from testing.adjust("500 millis")
         assert fiber.poll_unsafe() is None
-        yield from testing.adjust(0.5)
+        yield from testing.adjust("500 millis")
         assert (yield from fiber.join()) == "boom"
 
         # attempt 2 failed at t=1s: the schedule must not restart at 1s, the
         # next delay is 2s
         fiber2 = yield from take_fail.fork_scoped()
-        yield from testing.adjust(1.5)
+        yield from testing.adjust("1500 millis")
         assert fiber2.poll_unsafe() is None
-        yield from testing.adjust(0.6)
+        yield from testing.adjust("600 millis")
         assert (yield from fiber2.join()) == "boom"
 
         assert attempts == [1, 2, 3]
@@ -82,19 +84,19 @@ def test_prunes_completed_elements_on_the_configured_interval() -> None:
         yield from queue.offer({"n": 1}, id="cleanup-layer-id")
         yield from queue.take(_succeed)
 
-        yield from pq.layer_cleanup(interval=60, time_to_live=3600).build()
+        yield from pq.layer_cleanup(interval="1 minute", time_to_live="1 hour").build()
 
         # within the ttl the id stays deduplicated
-        yield from testing.adjust(120)
+        yield from testing.adjust("2 minutes")
         yield from queue.offer({"n": 2}, id="cleanup-layer-id")
         fiber = yield from queue.take(_succeed).fork_scoped()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert fiber.poll_unsafe() is None
 
         # after the ttl a cleanup run prunes the entry and the id can be reused
-        yield from testing.adjust(7200)
+        yield from testing.adjust("2 hours")
         yield from queue.offer({"n": 3}, id="cleanup-layer-id")
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert (yield from fiber.join()) == {"n": 3}
 
     _run(body)

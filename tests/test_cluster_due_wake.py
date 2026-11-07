@@ -42,7 +42,7 @@ W = workflow.make(
 def _app(*, poll_interval: float, sleep: float) -> fx.Layer[WorkflowEngine]:
     def handler(_p: Payload, _id: str):
         def body():
-            yield from durable_clock.sleep(name="deadline", duration=sleep)
+            yield from durable_clock.sleep(name="deadline", duration=Seconds(sleep))
             return "woke"
 
         return fx.gen(body)
@@ -64,8 +64,8 @@ def _app(*, poll_interval: float, sleep: float) -> fx.Layer[WorkflowEngine]:
 def _run_past_the_deadline(app: fx.Layer[WorkflowEngine], after: float) -> fx.Effect[str]:
     def scenario():
         running = yield from W.execute({"id": "a"}).fork()
-        yield from testing.adjust(1)
-        yield from testing.adjust(after - 1)
+        yield from testing.adjust("1 second")
+        yield from testing.adjust(Seconds(after - 1))
         return (yield from running.join())
 
     return fx.gen(scenario).pipe(fx.provide(app))

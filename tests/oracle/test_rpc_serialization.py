@@ -356,7 +356,7 @@ def _run_client(body: Any, serialization: Any) -> Any:
         .pipe(L.provide(serialization))
     )
     program: Any = fx.scoped(E.gen(body)).pipe(fx.provide(protocol))
-    return fx.run_blocking(program.timeout(10).or_die())
+    return fx.run_blocking(program.timeout("10 seconds").or_die())
 
 
 def test_schema_binary_roundtrips_requests_and_streamed_responses_over_http() -> None:

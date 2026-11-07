@@ -528,7 +528,7 @@ def test_sse_terminates_at_failed():
         "sequence_number": 1,
         "response": response_body(status="failed"),
     }
-    result = yield from _stream(mock_sse([failed], keep_open=True)).timeout_option(0.1)
+    result = yield from _stream(mock_sse([failed], keep_open=True)).timeout_option("100 millis")
     assert result is not None
 
 
@@ -835,7 +835,9 @@ def test_ws_terminates_at_failed():
         "response": response_body(status="failed"),
     }
     turn = ws_turn(server, dict(_TEST), lambda _: server.send(failed))
-    result = yield from web_socket_mode(server, turn, "https://api.openai.com/v1").timeout_option(1)
+    result = yield from web_socket_mode(server, turn, "https://api.openai.com/v1").timeout_option(
+        "1 second"
+    )
     assert result is not None
     assert isinstance(result.value, Success)
     assert server.urls[0][0] == "wss://api.openai.com/v1/responses"
@@ -874,7 +876,7 @@ def test_ws_replaces_after_error_events():
 
     exits, last = yield from web_socket_mode(
         server, fx.gen(drive), "https://socket-errors.test/v1"
-    ).timeout(5)
+    ).timeout("5 seconds")
     assert all(not isinstance(exit, Success) for exit in exits)
     third = exits[2].cause.find_error().value
     assert isinstance(third.reason, E.InvalidRequestError)
@@ -938,7 +940,7 @@ def test_ws_xai_not_found_retry():
     drive = chat_over_ws(
         server, "gpt-4o-mini", ["hello", "again", "later"], "https://previous-response.test/v1"
     )
-    yield from fx.all(drive, fx.gen(respond), concurrency="unbounded").timeout(5)
+    yield from fx.all(drive, fx.gen(respond), concurrency="unbounded").timeout("5 seconds")
 
 
 @testing.live
@@ -960,7 +962,7 @@ def test_ws_encrypted_reasoning_retry():
     drive = chat_over_ws(
         server, "o3-mini", ["think", "continue"], "https://reasoning-recovery.test/v1"
     )
-    yield from fx.all(drive, fx.gen(respond), concurrency="unbounded").timeout(5)
+    yield from fx.all(drive, fx.gen(respond), concurrency="unbounded").timeout("5 seconds")
     reasoning = next(item for item in requests[2]["input"] if item.get("type") == "reasoning")
     assert requests[0].get("include") == ["reasoning.encrypted_content"]
     assert reasoning == {

@@ -31,6 +31,7 @@ from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.context import Tag
+from pyfect.duration import Seconds
 from pyfect.json_schema import JsonSchema
 
 from ._ai import with_language_model
@@ -884,7 +885,7 @@ def test_preliminary_results_long_running():
     handler = IncrementalTool.handler(
         lambda _, ctx: (
             ctx.preliminary(Loading(status="loading", progress=0))
-            .and_then(fx.sleep(5))
+            .and_then(fx.sleep("5 seconds"))
             .as_(Complete(status="complete"))
         )
     )
@@ -909,7 +910,7 @@ def test_preliminary_results_long_running():
     assert [(p.preliminary, p.result) for p in seen] == [
         (True, {"status": "loading", "progress": 0})
     ]
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     parts = yield from fiber.join()
     assert [(p.preliminary, p.result) for p in seen] == [
         (True, {"status": "loading", "progress": 0}),
@@ -992,7 +993,7 @@ def test_concurrent_preliminary_results():
         loading = JobLoading(status="loading", job=params["name"], progress=50)
         return (
             ctx.preliminary(loading)
-            .and_then(fx.sleep(params["delay"] / 1000))
+            .and_then(fx.sleep(Seconds(params["delay"] / 1000)))
             .as_(JobComplete(status="complete", job=params["name"]))
         )
 
@@ -1028,14 +1029,14 @@ def test_concurrent_preliminary_results():
         (True, {"status": "loading", "job": "fast", "progress": 50}),
         (True, {"status": "loading", "job": "slow", "progress": 50}),
     ]
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from fx.yield_now()
     assert len(results) == 3
     assert (results[2].preliminary, results[2].result) == (
         False,
         {"status": "complete", "job": "fast"},
     )
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
     yield from fx.yield_now()
     yield from fiber.join()
     assert len(results) == 4

@@ -112,7 +112,7 @@ def test_an_encrypted_eventlog_server_shuts_down_cleanly_after_a_client_connecte
         url = yield from http_server.address_formatted_with(
             lambda a: fx.succeed(a.replace("http://", "ws://") + "/sync")
         )
-        yield from fx.scoped(fx.sleep(0.3)).pipe(fx.provide(client(url)))
+        yield from fx.scoped(fx.sleep("300 millis")).pipe(fx.provide(client(url)))
 
     assert fx.run_blocking_exit(fx.scoped(connect()).pipe(fx.provide(served))) == fx.Success(None)
 
@@ -160,7 +160,7 @@ def test_a_pooled_client_connection_open_at_shutdown_is_closed_cleanly() -> None
         lambda r: r.add("GET", "/", fx.scoped(total()).map(lambda n: server_response.text(str(n))))
     )
     # The pool keeps the connection a minute: it is still open when the server stops.
-    pool = layer.effect(Clients, RcMap.make(connect, idle_time_to_live=60))
+    pool = layer.effect(Clients, RcMap.make(connect, idle_time_to_live="1 minute"))
     served = router.serve(
         layer.merge(mcp, route), disable_logger=True, disable_listen_log=True
     ).pipe(layer.provide_merge(pool))

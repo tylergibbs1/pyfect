@@ -200,7 +200,7 @@ def test_should_interrupt_the_handler_when_the_client_aborts_its_post():
     posting = yield from harness.post(body, headers).fork()
     yield from entered.wait()
     yield from posting.interrupt()
-    yield from interrupted.wait().timeout(1)
+    yield from interrupted.wait().timeout("1 second")
 
 
 def _client_in_own_scope(
@@ -238,7 +238,7 @@ def test_should_interrupt_a_streaming_handler_when_the_client_cancels_after_head
         yield from scope.close(Success(None))
     else:
         yield from reader.cancel
-    yield from interrupted.wait().timeout(1)
+    yield from interrupted.wait().timeout("1 second")
 
 
 @testing.effect
@@ -267,7 +267,7 @@ def test_should_interrupt_a_streaming_handler_when_the_client_aborts_while_its_u
     yield from headers_sent.succeed(None)
     yield from backpressured.wait()
     yield from scope.close(Success(None))
-    yield from interrupted.wait().timeout(1)
+    yield from interrupted.wait().timeout("1 second")
 
 
 @testing.effect

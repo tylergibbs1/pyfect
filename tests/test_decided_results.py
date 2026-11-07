@@ -217,7 +217,7 @@ def _synchronized_ref_case() -> _Case:
         def verdict(v: int) -> str | None:
             return None if v in (0, 1) and v >= len(seen) else f"value {v}, saw {seen}"
 
-        free = ref.update(lambda x: x).timeout(1).exit()
+        free = ref.update(lambda x: x).timeout("1 second").exit()
         return (
             ref.get()
             .map(verdict)

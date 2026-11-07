@@ -19,7 +19,9 @@ from pyfect import effect, layer, stream
 from pyfect import schema as S
 from pyfect.byte_size import ByteSize
 from pyfect.clock import sleep
+from pyfect.duration import Seconds
 from pyfect.http import body as http_body
+from pyfect.http import cookies as cookies_module
 from pyfect.http import live_server, multipart, router, server, server_response
 from pyfect.http.client import HttpClient
 from pyfect.http.middleware import search_params_parser
@@ -379,13 +381,29 @@ def test_set_cookie() -> None:
             path="/",
             domain="example.com",
             expires=expires,
-            max_age=300,
+            max_age="5 minutes",
         )
     )
     app = router.add("GET", "/home", response)
     program = HttpClient().flat_map(lambda client: client.get("/home")).map(lambda r: r.cookies)
     cookies = _routed(app, program)
-    assert cookies == response.cookies
+    assert cookies == cookies_module.from_iterable(
+        [
+            cookies_module.make_cookie_unsafe("test", "value"),
+            cookies_module.make_cookie_unsafe(
+                "test2",
+                "value2",
+                http_only=True,
+                secure=True,
+                same_site="lax",
+                partitioned=True,
+                path="/",
+                domain="example.com",
+                expires=expires,
+                max_age=Seconds(300),
+            ),
+        ]
+    )
 
 
 def test_uninterruptible_routes() -> None:
@@ -397,9 +415,11 @@ def test_uninterruptible_routes() -> None:
         fiber = Fiber.get_current()
         assert fiber is not None
         yield from (
-            effect.sync(lambda: fiber.interrupt_as_unsafe(fiber.id)).delay(0.01).fork_daemon()
+            effect.sync(lambda: fiber.interrupt_as_unsafe(fiber.id))
+            .delay("10 millis")
+            .fork_daemon()
         )
-        yield from sleep(0.05)
+        yield from sleep("50 millis")
         return server_response.empty()
 
     app = router.add("GET", "/home", handler(), uninterruptible=True)

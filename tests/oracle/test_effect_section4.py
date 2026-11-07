@@ -278,10 +278,10 @@ def test_a_raising_fiber_observer_stops_the_ones_after_it():
         raise ValueError("observer")
 
     def program():
-        fiber = yield from fx.sleep(0.01).fork()
+        fiber = yield from fx.sleep("10 millis").fork()
         fiber.add_observer_unsafe(raising)
         fiber.add_observer_unsafe(lambda _: seen.append("second"))
-        yield from fx.sleep(0.05)
+        yield from fx.sleep("50 millis")
 
     with pytest.raises(ValueError, match="observer"):
         fx.run_blocking(fx.gen(program))

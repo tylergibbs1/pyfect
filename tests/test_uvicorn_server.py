@@ -155,7 +155,9 @@ def start(srv):
 body = stream.make(b"data: 1\\n\\n").concat(stream.never)
 routes = router.add("GET", "/events", server_response.stream(body))
 serving = router.serve(routes, disable_logger=True).pipe(
-    layer.provide_merge(uvicorn_server.layer(host="127.0.0.1", graceful_shutdown_timeout=0.3))
+    layer.provide_merge(
+        uvicorn_server.layer(host="127.0.0.1", graceful_shutdown_timeout="300 millis")
+    )
 )
 main = server.HttpServer().map(start).and_then(fx.never)
 fx.run_main(main.pipe(fx.provide(serving)))
@@ -200,12 +202,12 @@ def test_graceful_shutdown_cancels_requests_still_running_after_the_timeout() ->
                 time.sleep(0.3)
 
         yield from effect.blocking(request).fork_daemon()
-        yield from sleep(0.1)
+        yield from sleep("100 millis")
 
     slow = effect.never.on_interrupt(effect.sync(lambda: interrupted.append(True)))
     routes = router.add("GET", "/slow", slow.as_(server_response.empty()))
     started = time.monotonic()
-    _run(_serving(routes, program()), graceful_shutdown_timeout=0.2)
+    _run(_serving(routes, program()), graceful_shutdown_timeout="200 millis")
     assert time.monotonic() - started < 5
     assert interrupted == [True]
 
@@ -226,14 +228,14 @@ def test_disable_preemptive_shutdown_interrupts_requests_at_once() -> None:
                 time.sleep(4)
 
         yield from effect.blocking(request).fork_daemon()
-        yield from sleep(0.1)
+        yield from sleep("100 millis")
 
     slow = effect.never.on_interrupt(effect.sync(lambda: interrupted.append(True)))
     routes = router.add("GET", "/slow", slow.as_(server_response.empty()))
     started = time.monotonic()
     _run(
         _serving(routes, program()),
-        graceful_shutdown_timeout=30,
+        graceful_shutdown_timeout="30 seconds",
         disable_preemptive_shutdown=True,
     )
     assert time.monotonic() - started < 3
@@ -279,7 +281,7 @@ def test_shutdown_ends_a_streamed_response_still_open_after_the_timeout(
                     received.extend(chunk)
 
         yield from effect.blocking(request).fork_daemon()
-        yield from sleep(0.2)
+        yield from sleep("200 millis")
 
     body = stream.make(b"data: 1\n\n").concat(stream.never)
     routes = router.add(
@@ -287,7 +289,7 @@ def test_shutdown_ends_a_streamed_response_still_open_after_the_timeout(
     )
     started = time.monotonic()
     with caplog.at_level(logging.WARNING):
-        _run(_serving(routes, program()), graceful_shutdown_timeout=0.3)
+        _run(_serving(routes, program()), graceful_shutdown_timeout="300 millis")
         deadline = time.monotonic() + 2
         while not received.endswith(b"0\r\n\r\n") and time.monotonic() < deadline:
             time.sleep(0.01)
@@ -307,7 +309,7 @@ def test_shutdown_does_not_wait_for_a_response_the_client_left_unread() -> None:
         return response.status
 
     started = time.monotonic()
-    assert _run(_serving(routes, program()), graceful_shutdown_timeout=10) == 200
+    assert _run(_serving(routes, program()), graceful_shutdown_timeout="10 seconds") == 200
     assert time.monotonic() - started < 5
 
 
@@ -378,7 +380,7 @@ def test_under_run_blocking_inside_a_running_loop_the_server_runs_on_a_loop_of_i
     assert asyncio.run(main()) == (200, "ok")
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_a_fiber_a_request_forks_into_a_longer_lived_set_can_still_be_interrupted():
     """A handler can fork a fiber that outlives its request (beacon's watcher
     keeps one per monitor in a FiberMap). It runs on the server's loop; the set

@@ -45,7 +45,7 @@ def _closed_after(use: fx.Effect[object, object, HttpClient | Scope]) -> list[bo
 
 def test_a_response_whose_body_read_is_interrupted_is_closed() -> None:
     send = HttpClient().flat_map(lambda client: client.execute(request.get("http://test/")))
-    read = send.flat_map(lambda response: response.stream.run_drain()).timeout(0.1)
+    read = send.flat_map(lambda response: response.stream.run_drain()).timeout("100 millis")
     assert _closed_after(read.ignore()) == [True]
 
 

@@ -11,7 +11,7 @@ from collections.abc import Callable, Hashable
 from typing import Any, cast, overload
 
 from pyfect._equal import equal_key
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import ZERO, Duration, Seconds, to_seconds
 from pyfect.reactivity import async_result
 from pyfect.reactivity.async_result import AsyncResult, Initial
 from pyfect.reactivity.atom._types import Atom, AtomContext, Writable, WriteContext, readable
@@ -27,7 +27,7 @@ def set_idle_ttl[T: Atom[Any]](atom: T, duration: Duration) -> T:
 
 
 def remove_ttl[T: Atom[Any]](atom: T) -> T:
-    return set_idle_ttl(atom, 0)
+    return set_idle_ttl(atom, ZERO)
 
 
 def label_site(depth: int) -> str:

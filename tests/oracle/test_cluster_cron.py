@@ -70,7 +70,7 @@ def deploy(entities: fx.Layer[Never, Never, Any], millis: int) -> fx.Effect[None
         )
         yield from layer.build()
         for _ in range(millis // 100):
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
 
     return scoped(body)
 
@@ -155,7 +155,7 @@ def test_recovers_from_a_transient_failure_to_schedule_the_initial_run():
     @fx.gen
     def body():
         for _ in range(20):
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
         assert failed[0]
         assert runs[0] == 2
 
@@ -189,7 +189,7 @@ def test_keeps_the_initial_runs_instant_while_scheduling_it_is_retried_across_a_
     @fx.gen
     def body():
         for _ in range(25):
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
         assert recovered[0]
         assert len(attempts) > 1
         assert attempts == ["1970-01-01T00:00:01.000Z"] * len(attempts)
@@ -250,7 +250,7 @@ def test_catches_up_in_order_with_calculate_next_run_from_previous_after_a_resta
         if running[0] > 1:
             overlapped[0] = True
         if slow[0]:
-            yield from fx.sleep(2)
+            yield from fx.sleep("2 seconds")
         running[0] -= 1
 
     cron = cluster_cron.make(
@@ -261,7 +261,7 @@ def test_catches_up_in_order_with_calculate_next_run_from_previous_after_a_resta
     def body():
         yield from deploy(cron, 1500)
         # The pending run falls behind while no runner is up.
-        yield from testing.adjust(3)
+        yield from testing.adjust("3 seconds")
         slow[0] = True
         scheduled.clear()
         yield from deploy(cron, 6000)

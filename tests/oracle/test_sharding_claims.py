@@ -71,7 +71,7 @@ def _poll_three_times(service: sharding.ShardingService) -> fx.Effect[None]:
     def run():
         for _ in range(3):
             yield from service.poll_storage
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
 
     return run
 
@@ -132,12 +132,12 @@ def test_keeps_the_claim_of_an_active_request_replayed_after_an_entity_defect():
 
         @fx.gen
         def body():
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             service = yield from sharding.Sharding()
             driver = yield from MemoryDriver()
             client = (yield from e.client())("replay")
             running = yield from client.run().fork(start_immediately=True)
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             assert (yield from started.take()) == 1
             request: Any = driver.encoded.journal[0]
             assert request["_tag"] == "Request"
@@ -153,7 +153,7 @@ def test_keeps_the_claim_of_an_active_request_replayed_after_an_entity_defect():
             assert running.poll_unsafe() is None
             log.clear()
 
-            yield from testing.adjust(_TEN_MINUTES)
+            yield from testing.adjust(Seconds(_TEN_MINUTES))
             yield from _poll_three_times(service)
             request_id = Snowflake(int(request["requestId"]))
             assert request_id in log.claimed
@@ -202,7 +202,7 @@ def test_keeps_the_claim_of_an_active_uninterruptible_request_after_restarting()
 
         @fx.gen
         def body():
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             service = yield from sharding.Sharding()
             driver = yield from MemoryDriver()
             client = (yield from e.client())("restart")
@@ -220,7 +220,7 @@ def test_keeps_the_claim_of_an_active_uninterruptible_request_after_restarting()
             }
             yield from driver.encoded.save_envelope(interrupt, None, None)
             yield from service.poll_storage
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             assert (yield from started.take()) == 2, (
                 "handler must restart after the stored interrupt"
             )
@@ -228,7 +228,7 @@ def test_keeps_the_claim_of_an_active_uninterruptible_request_after_restarting()
             assert running.poll_unsafe() is None
             log.clear()
 
-            yield from testing.adjust(_TEN_MINUTES)
+            yield from testing.adjust(Seconds(_TEN_MINUTES))
             yield from _poll_three_times(service)
             request_id = Snowflake(int(request["requestId"]))
             assert request_id in log.claimed
@@ -264,7 +264,7 @@ def test_keeps_the_claim_of_an_active_stream_after_an_acknowledged_chunk():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         service = yield from sharding.Sharding()
         state = yield from EntityState()
         client = (yield from TestEntity.client())("active-stream")
@@ -279,14 +279,14 @@ def test_keeps_the_claim_of_an_active_stream_after_an_acknowledged_chunk():
             .fork(start_immediately=True)
         )
         yield from state.stream_messages.offer(None)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from acked.wait()
         assert values == [0]
         assert running.poll_unsafe() is None
         log.clear()
 
         # Await the ack because memory storage does not model SQL reply filtering.
-        yield from testing.adjust(_TEN_MINUTES)
+        yield from testing.adjust(Seconds(_TEN_MINUTES))
         yield from _poll_three_times(service)
         assert len(log.claimed) > 0
         assert running.poll_unsafe() is None
@@ -360,7 +360,7 @@ def test_releases_capped_addresses_even_when_targeted_claim_release_fails():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         service = yield from sharding.Sharding()
         state = yield from EntityState()
         client = yield from TestEntity.client()
@@ -375,7 +375,7 @@ def test_releases_capped_addresses_even_when_targeted_claim_release_fails():
         yield from paused.started.wait()
         yield from state.messages.offer(None)
         yield from first_run.join()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from service.reset(request.request_id)
         yield from save_get_user_request("capped", 42)
 
@@ -384,7 +384,7 @@ def test_releases_capped_addresses_even_when_targeted_claim_release_fails():
         yield from state.envelopes.take()
         assert (yield from service.active_entity_count) == 2
         yield from paused.release.succeed(None)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert "completed" in claimed
         assert "capped" in claimed
         assert failed_releases == [request.request_id]
@@ -415,7 +415,7 @@ def test_redelivers_a_request_reset_while_an_asynchronous_storage_read_is_pendin
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         service = yield from sharding.Sharding()
         state = yield from EntityState()
         client = (yield from TestEntity.client())("reset-race")
@@ -432,18 +432,18 @@ def test_redelivers_a_request_reset_while_an_asynchronous_storage_read_is_pendin
         # Complete the request while the read is paused.
         yield from state.messages.offer(None)
         yield from first_run.join()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert (yield from service.reset(request.request_id))
         yield from service.poll_storage
         claimed.clear()
 
         # The reset must be redelivered before its new claim expires.
         yield from paused.release.succeed(None)
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         assert request.request_id in claimed
         deliveries_before_claim_expiry = state.envelopes.size_unsafe()
 
-        yield from testing.adjust(_TEN_MINUTES)
+        yield from testing.adjust(Seconds(_TEN_MINUTES))
         assert state.envelopes.size_unsafe() == 1
         assert deliveries_before_claim_expiry == 1, (
             "reset request was claimed but not redelivered before claim expiry"

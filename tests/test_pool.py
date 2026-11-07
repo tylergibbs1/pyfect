@@ -89,11 +89,15 @@ def test_creation_ttl_retires_items_by_age_even_while_in_use():
         return fx.succeed(acquired)
 
     pool = yield from fx.Pool.make_with_ttl(
-        fx.suspend(acquire), min=1, max=1, time_to_live=10.0, time_to_live_strategy="creation"
+        fx.suspend(acquire),
+        min=1,
+        max=1,
+        time_to_live="10 seconds",
+        time_to_live_strategy="creation",
     )
     holder = fx.CloseableScope()
     assert (yield from pool.get().pipe(fx.provide_service(fx.Scope, holder))) == 1
-    yield from testing.adjust(10.0)
+    yield from testing.adjust("10 seconds")
     # The old item is retired, so a replacement serves new borrowers.
     assert (yield from pool.use(fx.succeed)) == 2
     yield from holder.close(fx.Success(None))
@@ -115,7 +119,7 @@ def test_usage_ttl_keeps_an_idle_reserved_item():
         )
 
     pool = yield from fx.Pool.make_with_ttl(
-        fx.suspend(acquire), min=0, max=2, concurrency=2, time_to_live=1.0
+        fx.suspend(acquire), min=0, max=2, concurrency=2, time_to_live="1 second"
     )
 
     @fx.gen
@@ -127,6 +131,6 @@ def test_usage_ttl_keeps_an_idle_reserved_item():
     assert acquired == 2
     reservation = fx.CloseableScope()
     yield from pool.reserve(1).pipe(fx.provide_service(fx.Scope, reservation))
-    yield from testing.adjust(2.0)
+    yield from testing.adjust("2 seconds")
     assert finalized == [2]
     yield from reservation.close(fx.Success(None))

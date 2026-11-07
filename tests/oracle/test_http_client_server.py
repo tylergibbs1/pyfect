@@ -51,13 +51,13 @@ class TodoWithoutId(TypedDict):
     completed: bool
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_get(http: Services[HttpClient]):
     """get"""
     assert (yield from c.get("/").flat_map(lambda r: r.text)) == "test"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_follow_redirects(http: Services[HttpClient]):
     """followRedirects"""
     client = (yield from HttpClient()).follow_redirects()
@@ -70,14 +70,14 @@ def test_follow_redirects(http: Services[HttpClient]):
     assert (yield from response.text) == "test"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_stream(http: Services[HttpClient]):
     """stream"""
     client = yield from HttpClient()
     assert (yield from res.stream(client.get("/stream")).decode_text().run_string()) == "test"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_jsonplaceholder(http: Services[HttpClient]):
     """jsonplaceholder"""
     client = yield from HttpClient()
@@ -85,7 +85,7 @@ def test_jsonplaceholder(http: Services[HttpClient]):
     assert todo["id"] == 1
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_jsonplaceholder_schema_body_json(http: Services[HttpClient]):
     """jsonplaceholder schemaBodyJson"""
     client = yield from HttpClient()
@@ -100,7 +100,7 @@ class _Status(TypedDict):
     status: int
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_head_schema_json(http: Services[HttpClient]):
     """head request with schemaJson"""
     client = yield from HttpClient()
@@ -110,16 +110,16 @@ def test_head_schema_json(http: Services[HttpClient]):
     assert decoded == {"status": 200}
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_interrupt(http: Services[HttpClient]):
     """interrupt"""
     client = yield from HttpClient()
     assert (
-        yield from client.get("/interrupt").flat_map(lambda r: r.text).timeout(1).option()
+        yield from client.get("/interrupt").flat_map(lambda r: r.text).timeout("1 second").option()
     ) is None
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_close_early(http: Services[HttpClient]):
     """close early"""
     response = yield from c.get("/stream")

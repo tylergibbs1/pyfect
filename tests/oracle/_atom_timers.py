@@ -83,8 +83,8 @@ class FakeTimers(Tracking):
         return atom_registry.make(
             initial_values=initial_values,
             scheduler=self,
-            default_idle_ttl=default_idle_ttl,
-            timeout_resolution=timeout_resolution,
+            default_idle_ttl=None if default_idle_ttl is None else Seconds(default_idle_ttl),
+            timeout_resolution=None if timeout_resolution is None else Seconds(timeout_resolution),
         )
 
 

@@ -106,7 +106,7 @@ class TestClock:
         self,
         start: float = 0.0,
         *,
-        warning_delay: Duration = 1.0,
+        warning_delay: Duration = "1 second",
         live: ClockService | None = None,
     ) -> None:
         if not math.isfinite(start):
@@ -123,7 +123,7 @@ class TestClock:
         self._moving = Semaphore(1)
 
     @staticmethod
-    def layer(*, warning_delay: Duration = 1.0) -> Layer[Never]:
+    def layer(*, warning_delay: Duration = "1 second") -> Layer[Never]:
         """Provide a fresh ``TestClock`` as the ``Clock``. Its ``with_live``
         uses the clock that was current when the layer was built."""
 

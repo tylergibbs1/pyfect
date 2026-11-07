@@ -213,7 +213,7 @@ class ClientCore:
         self, request_id: RequestId, context: Context[Any], interruptors: tuple[int, ...]
     ) -> Effect[None]:
         sent = self._send(OnFromClient(Interrupt(request_id, interruptors), context, False))
-        return sent.timeout(1.0).exit().as_void()
+        return sent.timeout("1 second").exit().as_void()
 
     # --- unary calls -----------------------------------------------------------------
 

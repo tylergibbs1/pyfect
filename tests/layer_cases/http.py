@@ -516,7 +516,7 @@ def _udp_round_trip() -> AnyEffect:
         received = yield from reader.pull
         return [datagram.payload for datagram in received]
 
-    return _expect(fx.scoped(body()).timeout(5), [b"ping"])
+    return _expect(fx.scoped(body()).timeout("5 seconds"), [b"ping"])
 
 
 _SOCKETS: dict[str, Case] = {

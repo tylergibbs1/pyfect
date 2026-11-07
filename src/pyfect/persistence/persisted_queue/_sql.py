@@ -52,7 +52,7 @@ from pyfect.sql.connection import Row
 from pyfect.sql.error import SqlError
 from pyfect.sql.statement import Fragment
 
-_CLEANUP_BATCH_DELAY: Final = 0.01
+_CLEANUP_BATCH_DELAY: Final = "10 millis"
 _DEFAULT_POLL_INTERVAL: Final = Seconds(1)
 _DEFAULT_LOCK_REFRESH_INTERVAL: Final = Seconds(30)
 _DEFAULT_LOCK_EXPIRATION: Final = Seconds(120)
@@ -286,7 +286,7 @@ def make_store_sql(
         yield from (
             suspend(settlements.refresh_locks)
             .tap_cause(log_warning)
-            .retry(spaced(0.5))
+            .retry(spaced("500 millis"))
             .schedule(fixed(lock_refresh))
             .annotate_logs(
                 {
@@ -300,7 +300,7 @@ def make_store_sql(
         states = QueueStates()
         mailboxes = yield from RcMap.make(
             _lookup(dialect, table_name, expires_at, poll_every, lock_refresh, states, settlements),
-            idle_time_to_live=30.0,
+            idle_time_to_live="30 seconds",
         )
         store = _SqlStore(
             dialect,

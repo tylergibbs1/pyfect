@@ -34,14 +34,14 @@ def protocol(server: WsServer, **options: Any) -> Effect[GraphQLProtocolService,
 @testing.effect
 def test_an_answered_keep_alive_ping_keeps_the_connection():
     server = WsServer()
-    transport = yield from protocol(server, keep_alive=10)
+    transport = yield from protocol(server, keep_alive="10 seconds")
     fiber = yield from transport.subscribe(REQUEST).run_drain().exit().fork()
     accepted = yield from server.accept
     connection = accepted.connection
     yield from connection.received.take()
 
     for _ in range(3):
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         assert (yield from connection.received.take()) == {"type": "ping"}
         yield from connection.send({"type": "pong"})
 
@@ -52,7 +52,7 @@ def test_an_answered_keep_alive_ping_keeps_the_connection():
 @testing.effect
 def test_an_operation_during_the_idle_timeout_restarts_it():
     server = WsServer()
-    transport = yield from protocol(server, idle_timeout=30, keep_alive=False)
+    transport = yield from protocol(server, idle_timeout="30 seconds", keep_alive=False)
 
     def one_operation() -> Effect[Any, Any, Any]:
         def body():
@@ -68,16 +68,16 @@ def test_an_operation_during_the_idle_timeout_restarts_it():
     yield from connection.send({"id": subscribe["id"], "type": "complete"})
     yield from first.join()
 
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     second = yield from one_operation()
     subscribe = yield from connection.received.take()
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     yield from connection.send({"id": subscribe["id"], "type": "complete"})
     yield from second.join()
 
     # The first idle timer (due at 30s) no longer applies; the second is
     # due 30s after the second operation ended, at 50s.
-    yield from testing.adjust(29)
+    yield from testing.adjust("29 seconds")
     assert not (yield from connection.closed.is_done())
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from connection.closed.wait()) == 1000

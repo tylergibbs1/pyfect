@@ -109,7 +109,7 @@ def test_subscribes_only_after_connection_ack():
         "type": "connection_init",
         "payload": {"token": "t1"},
     }
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from connection.received.size()) == 0
 
     yield from connection.send({"type": "connection_ack"})
@@ -131,10 +131,10 @@ def test_subscribes_only_after_connection_ack():
 def test_a_missing_connection_ack_is_a_transport_error():
     """GraphQLProtocol.makeWebSocket / a missing connection_ack is a TransportError"""
     server = WsServer()
-    protocol = yield from make_protocol(server, connection_ack_timeout=5)
+    protocol = yield from make_protocol(server, connection_ack_timeout="5 seconds")
     fiber = yield from protocol.subscribe(subscription("A")).run_drain().flip().fork()
     yield from server.connections.take()
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     assert isinstance((yield from fiber.join()), TransportError)
 
 
@@ -146,7 +146,7 @@ def test_a_close_while_connection_params_is_pending():
     fiber = yield from protocol.subscribe(subscription("A")).run_drain().flip().fork()
     connection = yield from server.connections.take()
     yield from connection.close(1006)
-    yield from testing.adjust(60)
+    yield from testing.adjust("1 minute")
     assert fiber.poll_unsafe() is not None
     assert (yield from fiber.join()).close_code == 1006
 
@@ -186,14 +186,14 @@ def test_1002_is_a_fatal_close():
 def test_answers_ping_with_pong_and_pings_every_keep_alive():
     """GraphQLProtocol.makeWebSocket / answers ping with pong, pings every keepAlive and treats a missed frame as a retryable close"""  # noqa: E501
     server = WsServer()
-    subscribed = yield from accepted_subscription(server, keep_alive=10)
+    subscribed = yield from accepted_subscription(server, keep_alive="10 seconds")
     connection = subscribed.connection
     yield from connection.send({"type": "ping"})
     assert (yield from connection.received.take()) == {"type": "pong"}
 
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     assert (yield from connection.received.take()) == {"type": "ping"}
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     assert (yield from subscribed.fiber.join()).is_retryable
 
 
@@ -246,8 +246,14 @@ def test_an_operation_started_after_the_scope_closed_fails():
     scope = CloseableScope()
     protocol = yield from make_protocol(server).pipe(fx.provide_service(Scope, scope))
     yield from scope.close(Success(None))
-    fiber = yield from protocol.subscribe(subscription("A")).run_drain().flip().timeout(5).fork()
-    yield from testing.adjust(5)
+    fiber = (
+        yield from protocol.subscribe(subscription("A"))
+        .run_drain()
+        .flip()
+        .timeout("5 seconds")
+        .fork()
+    )
+    yield from testing.adjust("5 seconds")
     error = yield from fiber.join()
     assert isinstance(error, TransportError)
     assert not error.is_retryable
@@ -257,8 +263,8 @@ def test_an_operation_started_after_the_scope_closed_fails():
 def test_connects_on_the_first_operation_and_closes_idle_timeout_after_the_last():
     """GraphQLProtocol.makeWebSocket / connects on the first operation and closes idleTimeout after the last one"""  # noqa: E501
     server = WsServer()
-    protocol = yield from make_protocol(server, idle_timeout=30, keep_alive=False)
-    yield from testing.adjust(60)
+    protocol = yield from make_protocol(server, idle_timeout="30 seconds", keep_alive=False)
+    yield from testing.adjust("1 minute")
     assert (yield from server.connections.size()) == 0
 
     fiber = yield from protocol.subscribe(subscription("A")).run_collect().fork()
@@ -268,9 +274,9 @@ def test_connects_on_the_first_operation_and_closes_idle_timeout_after_the_last(
     yield from connection.send({"id": subscribe["id"], "type": "complete"})
     yield from fiber.join()
 
-    yield from testing.adjust(29)
+    yield from testing.adjust("29 seconds")
     assert not (yield from connection.closed.is_done())
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from connection.closed.wait()) == 1000
 
 
@@ -307,7 +313,7 @@ def test_a_retryable_close_resubscribes_through_the_middleware_chain():
     yield from first.connection.received.take()
     yield from first.connection.close(1006)
     # The client's default schedule waits 500ms before resubscribing.
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
 
     second = yield from server.accept
     subscribe = yield from second.connection.received.take()

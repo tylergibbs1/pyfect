@@ -265,7 +265,7 @@ def test_writable_derived_clears_waiting_after_refresh(timers: FakeTimers) -> No
         count[0] += 1
         return count[0]
 
-    base = atom.make(fx.sync(run).delay(0.1)).with_label("base")
+    base = atom.make(fx.sync(run).delay("100 millis")).with_label("base")
 
     def ignore(_ctx: atom.WriteContext[Any], _value: None) -> None:
         pass
@@ -291,7 +291,7 @@ def test_writable_derived_clears_waiting_after_refresh(timers: FakeTimers) -> No
 def test_get_result_suspend_on_waiting(timers: FakeTimers) -> None:
     """get.result suspendOnWaiting"""
     r = timers.registry()
-    inner = atom.make(fx.succeed(1).delay(0.05))
+    inner = atom.make(fx.succeed(1).delay("50 millis"))
     outer = atom.make(lambda get: get.result(inner, suspend_on_waiting=True))
     r.mount(outer)
     assert r.get(outer).waiting
@@ -312,7 +312,7 @@ def test_fn_get_result_suspend_on_waiting(timers: FakeTimers) -> None:
 
     def double(n: int, _get: atom.FnContext) -> fx.Effect[int]:
         runs[0] += 1
-        return fx.succeed(n * 2).delay(0.05)
+        return fx.succeed(n * 2).delay("50 millis")
 
     inner = atom.fn(double)
 
@@ -337,7 +337,7 @@ def test_fn_get_result_suspend_on_waiting(timers: FakeTimers) -> None:
 
 def _delayed_store(storage: dict[str, str]) -> fx.Layer[KeyValueStore]:
     def get(key: str) -> fx.Effect[str | None, Any]:
-        return fx.sleep(0.02).as_(None).map(lambda _: storage.get(key))
+        return fx.sleep("20 millis").as_(None).map(lambda _: storage.get(key))
 
     def set_(key: str, value: str) -> fx.Effect[None, Any]:
         return fx.sync(lambda: storage.__setitem__(key, value))

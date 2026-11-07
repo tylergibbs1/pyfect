@@ -10,14 +10,14 @@ from pyfect.http import template
 
 def test_preserves_template_segment_order() -> None:
     """preserves template segment order"""
-    slow = effect.succeed("slow").delay(1)
+    slow = effect.succeed("slow").delay("1 second")
     fast = "fast"
 
     @fx.fn
     def program():
         fiber = yield from template.stream(["a", "b", "c"], slow, fast).run_collect().fork()
         yield from effect.yield_now()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         chunks = yield from fiber.join()
         return "".join(chunks)
 

@@ -68,7 +68,7 @@ def _first_message(**client_options: Any) -> object:
         .pipe(fx.provide(router.serve(routes, disable_logger=True)))
     )
     provided = scoped(program).pipe(fx.provide(live_server.layer_test()))
-    return fx.run_blocking(provided.timeout(10).or_die())
+    return fx.run_blocking(provided.timeout("10 seconds").or_die())
 
 
 def test_the_client_takes_a_message_over_1_mib_by_default() -> None:

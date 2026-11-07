@@ -166,7 +166,7 @@ def test_should_preserve_the_remaining_batch_result_when_a_sibling_stdio_request
     yield from entered.wait()
     yield from harness.send_notification("notifications/cancelled", {"requestId": 1})
     yield from interrupted.wait()
-    reply = yield from harness.stdout.take().or_die().timeout(1)
+    reply = yield from harness.stdout.take().or_die().timeout("1 second")
     assert _flat([reply]) == [{"jsonrpc": "2.0", "id": "1", "result": {}}]
 
 
@@ -205,14 +205,14 @@ def test_should_omit_cancelled_replies_and_preserve_remaining_results(
     assert (yield from stream.take())["method"] == "notifications/message"
     assert (yield from stream.take())["method"] == "notifications/message"
     yield from _post(http, _cancel(1), headers)
-    yield from interrupted.wait().timeout(1)
+    yield from interrupted.wait().timeout("1 second")
     assert not (yield from other_interrupted.is_done())
     if cancelled == "all":
         yield from _post(http, _cancel("1"), headers)
-        yield from other_interrupted.wait().timeout(1)
+        yield from other_interrupted.wait().timeout("1 second")
     else:
         yield from release.succeed(None)
-    messages = yield from stream.drain().timeout(1)
+    messages = yield from stream.drain().timeout("1 second")
     assert _flat(cast("list[Any]", messages)) == (
         []
         if cancelled == "all"
@@ -244,7 +244,7 @@ def test_should_close_without_a_reply_when_every_batch_request_is_cancelled(
     pending = yield from _post(http, [_call(1, "Wait"), _call(2, "Wait")], headers).fork()
     yield from entered.take_n(2)
     yield from _post(http, [_cancel(1), _cancel(2)], headers)
-    response = yield from pending.join().timeout(1)
+    response = yield from pending.join().timeout("1 second")
     assert response.status == 200
     assert response.headers.get("content-type") == "text/event-stream"
     assert (yield from response.text) == ""

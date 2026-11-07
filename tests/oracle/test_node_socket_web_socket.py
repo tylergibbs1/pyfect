@@ -54,7 +54,7 @@ from pyfect.socket import (
 )
 from pyfect.socket import ws as ws_platform
 
-live = testing.live(timeout=10)
+live = testing.live(timeout="10 seconds")
 
 pytestmark = pytest.mark.filterwarnings(
     "error::ResourceWarning", "error::pytest.PytestUnraisableExceptionWarning"
@@ -152,12 +152,12 @@ def test_pending_handshake_timeout():
     port, accepted = yield from pending_handshake_server()
 
     def open_reader():
-        socket = yield from make_web_socket(f"ws://127.0.0.1:{port}", open_timeout=0.1)
+        socket = yield from make_web_socket(f"ws://127.0.0.1:{port}", open_timeout="100 millis")
         yield from socket.reader
 
     reader = yield from scoped(gen(open_reader)).pipe(with_constructor).fork()
     yield from blocking(lambda: accepted.wait(5))
-    yield from testing.adjust(0.1)
+    yield from testing.adjust("100 millis")
     exit = yield from reader.await_exit()
     assert isinstance(exit, Failure)
     error = exit.cause.squash()
@@ -171,7 +171,7 @@ def test_pending_handshake_interruption():
     port, accepted = yield from pending_handshake_server()
 
     def open_reader():
-        socket = yield from make_web_socket(f"ws://127.0.0.1:{port}", open_timeout=0.1)
+        socket = yield from make_web_socket(f"ws://127.0.0.1:{port}", open_timeout="100 millis")
         yield from socket.reader
 
     reader = yield from scoped(gen(open_reader)).pipe(with_constructor).fork()
@@ -187,7 +187,7 @@ def test_closes_with_pending_pre_run_web_socket():
     scope = CloseableScope()
     srv = yield from ws_platform.make_server(0, "127.0.0.1").pipe(provide_service(Scope, scope))
     yield from ws_client(f"ws://127.0.0.1:{port_of(srv.address)}")
-    exit = yield from scope.close(Success(None)).timeout(1.0).exit()
+    exit = yield from scope.close(Success(None)).timeout("1 second").exit()
     assert isinstance(exit, Success)
 
 
@@ -212,7 +212,7 @@ def test_receives_messages_after_paused_handover():
     client = yield from ws_client(f"ws://127.0.0.1:{port_of(srv.address)}")
     assert (yield from blocking(lambda: client.recv(timeout=1))) == "reader-ready"
     yield from blocking(lambda: client.send("after-ready"))
-    assert (yield from received.wait().timeout(1.0)) == ("after-ready",)
+    assert (yield from received.wait().timeout("1 second")) == ("after-ready",)
 
 
 @live
@@ -269,7 +269,7 @@ def test_passes_headers():
         pass
 
     client.add_event_listener("error", ignore)
-    assert (yield from authorization.wait().timeout(1.0)) == "Bearer test"
+    assert (yield from authorization.wait().timeout("1 second")) == "Bearer test"
 
 
 @live

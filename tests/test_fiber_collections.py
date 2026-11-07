@@ -138,14 +138,14 @@ def test_a_finalizer_defect_while_closing_fails_join_only_for_a_handle(kind: str
 @testing.effect
 def test_handle_clear_can_be_interrupted_while_waiting():
     handle = yield from fx.FiberHandle.make()
-    yield from handle.run(fx.sleep(1).uninterruptible())
+    yield from handle.run(fx.sleep("1 second").uninterruptible())
     clearing = yield from handle.clear().fork(start_immediately=True)
-    yield from testing.adjust(0.01)
+    yield from testing.adjust("10 millis")
     interrupting = yield from clearing.interrupt().fork(start_immediately=True)
-    yield from testing.adjust(0.01)
+    yield from testing.adjust("10 millis")
 
     assert clearing.poll_unsafe() is not None
     assert interrupting.poll_unsafe() is not None
     assert handle.get_unsafe() is not None
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
     assert handle.get_unsafe() is None

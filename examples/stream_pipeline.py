@@ -93,7 +93,7 @@ class Pricing:
             self.priced += 1
             return fx.succeed(Priced(order, PRICES[order.sku] * order.quantity))
 
-        return fx.sleep(0.001).flat_map(lambda _: fx.suspend(call))
+        return fx.sleep("1 millis").flat_map(lambda _: fx.suspend(call))
 
 
 class Warehouse:
@@ -112,7 +112,7 @@ class Warehouse:
             total = sum(priced.cents for priced in batch) / 100
             print(f"batch {self.batches}: orders {ids}, ${total:.2f}")
 
-        return fx.sleep(0.01).flat_map(lambda _: fx.sync(store))
+        return fx.sleep("10 millis").flat_map(lambda _: fx.sync(store))
 
 
 # --- the pipeline ---------------------------------------------------------------------
@@ -122,7 +122,7 @@ type PipelineError = PricingUnavailable | ndjson.NdjsonError
 
 def pipeline(pricing: Pricing, warehouse: Warehouse) -> fx.Effect[None, PipelineError]:
     def price(order: Order) -> fx.Effect[Priced, PricingUnavailable]:
-        return pricing.price(order).retry(schedule=schedule.exponential(0.001), times=3)
+        return pricing.price(order).retry(schedule=schedule.exponential("1 millis"), times=3)
 
     return (
         body()

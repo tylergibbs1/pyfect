@@ -149,7 +149,7 @@ def _make():
         .on_first(lambda _: connected.succeed(None))
         .run_for_each(handle)
         .tap_error(log_failure)
-        .retry(schedule=spaced(1), while_=lambda _: not state["closing"])
+        .retry(schedule=spaced("1 second"), while_=lambda _: not state["closing"])
     )
     fiber = yield from connection.fork_daemon()
 
@@ -168,8 +168,10 @@ def _make():
         return gen(body)
 
     yield from add_finalizer(close)
-    yield from (suspend(lambda: requests.offer({"_tag": "Ping"})).delay(3).forever().fork_scoped())
-    yield from connected.wait().timeout_option(1)
+    yield from (
+        suspend(lambda: requests.offer({"_tag": "Ping"})).delay("3 seconds").forever().fork_scoped()
+    )
+    yield from connected.wait().timeout_option("1 second")
     return DevToolsClientService(requests)
 
 

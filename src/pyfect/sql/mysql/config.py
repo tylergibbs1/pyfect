@@ -15,15 +15,15 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from pyfect.duration import Duration
+from pyfect.duration import Duration, Seconds
 from pyfect.redacted import Redacted
 from pyfect.redacted import value as redacted_value
 
 DEFAULT_MAX_CONNECTIONS = 10
 """mysql2's ``connectionLimit``."""
 
-DEFAULT_IDLE_TIMEOUT = 60.0
-"""mysql2's ``idleTimeout``, in seconds."""
+DEFAULT_IDLE_TIMEOUT = Seconds(60)
+"""mysql2's ``idleTimeout``."""
 
 
 @dataclass(frozen=True, slots=True)

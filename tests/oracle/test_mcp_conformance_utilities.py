@@ -333,10 +333,10 @@ def test_should_cancel_only_the_owning_request_when_http_sessions_reuse_a_reques
         headers,
     )
     assert cancelled.status == 202
-    yield from interrupted.wait().timeout(1)
-    assert (yield from stream.drain().timeout(1)) == []
+    yield from interrupted.wait().timeout("1 second")
+    assert (yield from stream.drain().timeout("1 second")) == []
     yield from release_other.succeed(None)
-    assert (yield from other_stream.drain().timeout(1)) == [
+    assert (yield from other_stream.drain().timeout("1 second")) == [
         {"jsonrpc": "2.0", "id": "wait", "result": _released("kept")}
     ]
     assert not (yield from other_interrupted.is_done())
@@ -377,8 +377,8 @@ def test_should_close_without_a_reply_when_a_tool_is_cancelled_before_emitting_h
         headers,
     )
     assert cancelled.status == 202
-    yield from interrupted.wait().timeout(1)
-    response = yield from pending.join().timeout(1)
+    yield from interrupted.wait().timeout("1 second")
+    response = yield from pending.join().timeout("1 second")
     assert response.status == 200
     assert response.headers.get("content-type") == "text/event-stream"
     assert (yield from response.text) == ""

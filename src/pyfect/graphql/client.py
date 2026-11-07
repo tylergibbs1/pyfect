@@ -70,7 +70,9 @@ def _retry_delay(metadata: Metadata[Seconds, GraphQLClientError]) -> Effect[Seco
 
 
 default_subscription_retry: Schedule[Seconds, GraphQLClientError] = (
-    exponential(0.5, 1.5).pipe(set_input_type(GraphQLClientError)).modify_delay(_retry_delay)
+    exponential("500 millis", 1.5)
+    .pipe(set_input_type(GraphQLClientError))
+    .modify_delay(_retry_delay)
 )
 """500ms, then x1.5 each retry, capped at 5s and never shorter than the
 error's ``retry_after``."""

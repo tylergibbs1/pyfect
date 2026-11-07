@@ -11,6 +11,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import channel, stream, testing
+from pyfect.duration import Seconds
 from pyfect.encoding import Json, json_array, ndjson, sse
 from pyfect.encoding.json_array import JsonArrayError
 
@@ -303,9 +304,9 @@ def test_sse_decode_writes_the_events_before_a_retry_then_fails_with_it():
     texts = _texts("data: a\n\nretry: 1500\ndata: b\n\n", "data: c\n\n")
     outcome = yield from _run(texts.pipe_through_channel(sse.decode()))
     assert outcome.values == [sse.Event(data="a"), sse.Event(data="b")]
-    assert outcome.error == sse.Retry(1.5)
+    assert outcome.error == sse.Retry(Seconds(1.5))
     retry = yield from _run(_texts("id: 7\nretry: 20\n").pipe_through_channel(sse.decode()))
-    assert retry == Outcome([], [], sse.Retry(0.02, "7"))
+    assert retry == Outcome([], [], sse.Retry(Seconds(0.02), "7"))
 
 
 @testing.effect

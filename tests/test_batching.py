@@ -168,7 +168,7 @@ def test_a_resolver_built_by_an_effect():
 @testing.effect
 def test_race_takes_the_first_resolver_to_finish():
     def slow(entries: Sequence[Entry[Get]]) -> fx.Effect[None]:
-        return fx.sleep(10).and_then(entries[0].succeed("slow"))
+        return fx.sleep("10 seconds").and_then(entries[0].succeed("slow"))
 
     def fast(entries: Sequence[Entry[Get]]) -> fx.Effect[None]:
         return entries[0].succeed("fast")
@@ -180,13 +180,13 @@ def test_race_takes_the_first_resolver_to_finish():
 @testing.effect
 def test_set_delay_collects_requests_until_the_delay_ends():
     log: list[int] = []
-    resolver = fx.RequestResolver(_answering(log)).set_delay(1)
+    resolver = fx.RequestResolver(_answering(log)).set_delay("1 second")
     first = yield from fx.request(Get(1), resolver).fork()
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     second = yield from fx.request(Get(2), resolver).fork()
     yield from fx.yield_now()
     assert log == []
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert (yield from first.join()) == "1"
     assert (yield from second.join()) == "2"
     assert log == [1, 2]
@@ -195,8 +195,8 @@ def test_set_delay_collects_requests_until_the_delay_ends():
 @testing.effect
 def test_never_leaves_requests_waiting_until_interrupted():
     resolver: fx.RequestResolver[object] = fx.RequestResolver.never()
-    result = yield from fx.request(Get(1), resolver).timeout_option(1).fork()
-    yield from testing.adjust(1)
+    result = yield from fx.request(Get(1), resolver).timeout_option("1 second").fork()
+    yield from testing.adjust("1 second")
     assert (yield from result.join()) is None
 
 
@@ -274,9 +274,9 @@ def test_a_batch_left_pending_by_a_finished_run_does_not_hold_up_later_runs():
     # stops: the batch it started never runs. Requests of a later run
     # through the same (module-level) resolver collect a batch of their own.
     log: list[int] = []
-    resolver = fx.RequestResolver(_answering(log)).set_delay(0.01)
+    resolver = fx.RequestResolver(_answering(log)).set_delay("10 millis")
     fx.run_blocking(fx.request(Get(1), resolver).fork_daemon(start_immediately=True).as_void())
-    later = fx.request(Get(2), resolver).timeout_option(1).or_die()
+    later = fx.request(Get(2), resolver).timeout_option("1 second").or_die()
     assert fx.run_blocking(later) == fx.option.Some("2")
     assert log == [2]
 

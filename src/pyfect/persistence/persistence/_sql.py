@@ -44,8 +44,8 @@ _BATCH_LIMIT: Final = "1000"
 SQL_CLEANUP_BATCH_SIZE: Final = int(_BATCH_LIMIT)
 """How many expired entries the single-table backend deletes at a time."""
 
-_CLEANUP_BATCH_DELAY: Final = 0.01
-_CLEANUP_INTERVAL: Final = 300.0
+_CLEANUP_BATCH_DELAY: Final = "10 millis"
+_CLEANUP_INTERVAL: Final = "5 minutes"
 
 type _Upsert = Callable[[list[dict[str, object]]], Effect[object, SqlError]]
 type _Key = Mapping[str, str]

@@ -41,7 +41,7 @@ def _config(server: ClickhouseServer, **fields: Any) -> clickhouse.ClickhouseCli
 
 def _on_server(server: ClickhouseServer, body: Body, **fields: Any) -> Any:
     program = fx.scoped(fx.gen(body)).pipe(fx.provide(clickhouse.layer(_config(server, **fields))))
-    return fx.run_blocking(program.timeout(60).or_die())
+    return fx.run_blocking(program.timeout("1 minute").or_die())
 
 
 def _table(prefix: str) -> str:
@@ -173,7 +173,7 @@ def test_interrupting_a_query_kills_it_on_the_server(clickhouse_server: Clickhou
         for _ in range(100):
             if _running(query_id):
                 break
-            yield from fx.sleep(0.05)
+            yield from fx.sleep("50 millis")
         assert _running(query_id)
         yield from fiber.interrupt()
 

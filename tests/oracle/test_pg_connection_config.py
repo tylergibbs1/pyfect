@@ -55,7 +55,7 @@ def test_rejects_sub_second_keepalive_before_connecting(closing_listener: Closin
     """rejects sub-second keepalive before connecting"""
     error = yield from _connect_error(
         pg.PgConnectionConfig(
-            username="test", host="127.0.0.1", port=closing_listener.port, keep_alive=0.999
+            username="test", host="127.0.0.1", port=closing_listener.port, keep_alive="999 millis"
         )
     )
     assert closing_listener.connections == 0
@@ -93,10 +93,10 @@ def test_interrupts_a_stalled_password_provider_when_connect_timeout_expires(
         host="127.0.0.1",
         port=closing_listener.port,
         password=password,
-        connect_timeout=1,
+        connect_timeout="1 second",
     )
     fiber = yield from _connect_error(config).fork()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     error = yield from fiber.join()
     assert interrupted == [True]
     assert closing_listener.connections == 0
@@ -295,7 +295,7 @@ def test_treats_url_connect_timeout_0_as_no_timeout():
     port = silent.getsockname()[1]
     url = f"postgres://test@127.0.0.1:{port}/db?connect_timeout=0"
     fiber = yield from _connect_error(pg.PgConnectionConfig(url=redacted.make(url))).fork()
-    yield from testing.adjust(6)
+    yield from testing.adjust("6 seconds")
     assert fiber.poll_unsafe() is None
     silent.close()
     error = yield from fiber.join()

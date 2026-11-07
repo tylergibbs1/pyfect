@@ -634,7 +634,7 @@ def test_register_reply_handler(backend: Backend):
         request.respond = lambda _reply: latch.open().as_void()
         yield from env.storage.save_request(request)
         fiber = yield from env.storage.register_reply_handler(request).fork()
-        yield from fx.sleep(0.001)
+        yield from fx.sleep("1 millis")
         yield from env.storage.save_reply((yield from make_reply(request)))
         yield from latch.wait()
         yield from fiber.await_exit()

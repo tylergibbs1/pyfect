@@ -105,7 +105,7 @@ def run(body: Callable[[], Body]) -> fx.Effect[None, Any]:
     return fx.scoped(fx.gen(body))
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_runs_once_per_scheduled_instant_and_continues_after_failure(
     cluster_db: ClusterDatabase,
 ):
@@ -156,7 +156,7 @@ def test_runs_once_per_scheduled_instant_and_continues_after_failure(
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_calculates_the_next_run_from_the_previous_instant_or_the_current_time(
     cluster_db: ClusterDatabase,
 ):
@@ -224,7 +224,7 @@ def test_calculates_the_next_run_from_the_previous_instant_or_the_current_time(
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_catches_up_or_skips_stale_runs_and_preserves_the_schedule_across_restart(
     cluster_db: ClusterDatabase,
 ):
@@ -244,7 +244,7 @@ def test_catches_up_or_skips_stale_runs_and_preserves_the_schedule_across_restar
             name=f"skip-stale-{backend}",
             cron=every_second,
             calculate_next_run_from_previous=True,
-            skip_if_older_than=0.5,
+            skip_if_older_than="500 millis",
             execute=record_tick(skip_ticks).as_void(),
         )
         cluster = yield from make(
@@ -300,7 +300,7 @@ def test_catches_up_or_skips_stale_runs_and_preserves_the_schedule_across_restar
     yield from run(body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_resumes_without_duplicate_or_missing_ticks_after_the_singleton_owner_dies(
     cluster_db: ClusterDatabase,
 ):
@@ -341,7 +341,7 @@ def test_resumes_without_duplicate_or_missing_ticks_after_the_singleton_owner_di
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_assigns_cron_singletons_and_executions_to_their_shard_groups(
     cluster_db: ClusterDatabase,
 ):

@@ -89,7 +89,7 @@ def test_a_call_on_a_client_whose_web_socket_was_released_fails_at_once() -> Non
     def program():
         protocol = yield from _web_socket_protocol()
         client = yield from rpc_client.make(Calls).pipe(fx.provide(protocol))
-        return (yield from client.ping().timeout(5).exit())
+        return (yield from client.ping().timeout("5 seconds").exit())
 
     error = _rpc_client_error(_serve(program()))
     assert CLOSED in error.message
@@ -116,7 +116,7 @@ def test_a_call_waiting_when_the_protocol_closes_fails() -> None:
         protocol_scope = CloseableScope()
         built = yield from protocol.build().pipe(fx.provide_service(scope.Scope, protocol_scope))
         client = yield from rpc_client.make(Calls).pipe(fx.provide_context(built))
-        waiting = yield from client.hang().timeout(5).exit().fork()
+        waiting = yield from client.hang().timeout("5 seconds").exit().fork()
         yield from client.ping()  # the hang request went out before it
         yield from protocol_scope.close(fx.exit.succeed(None))
         return (yield from waiting.join())
@@ -149,7 +149,7 @@ def test_a_call_waiting_on_a_socket_protocol_whose_scope_closes_fails() -> None:
         protocol_scope = CloseableScope()
         built = yield from protocol.build().pipe(fx.provide_service(scope.Scope, protocol_scope))
         client = yield from rpc_client.make(Calls).pipe(fx.provide_context(built))
-        waiting = yield from client.hang().timeout(5).exit().fork()
+        waiting = yield from client.hang().timeout("5 seconds").exit().fork()
         yield from sent.take()
         yield from protocol_scope.close(fx.exit.succeed(None))
         return (yield from waiting.join())
@@ -214,7 +214,7 @@ def test_handlers_provided_to_make_client_alone_name_what_was_released(tmp_path:
     @fx.fn
     def program():
         client = yield from rpc_test.make_client(Jobs).pipe(fx.provide(_jobs_live(tmp_path)))
-        return (yield from client.start("a").timeout(5).exit())
+        return (yield from client.start("a").timeout("5 seconds").exit())
 
     exit_ = fx.run_blocking(fx.scoped(program()))
     assert isinstance(exit_, Failure), exit_

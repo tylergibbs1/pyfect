@@ -37,7 +37,7 @@ def _changes_after_close[S](
             return consumer
 
         consumer = yield from fx.scoped(fx.gen(in_storage_scope))
-        return list((yield from consumer.join().timeout(2.0)))
+        return list((yield from consumer.join().timeout("2 seconds")))
 
     return fx.gen(body)
 

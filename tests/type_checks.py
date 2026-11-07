@@ -94,7 +94,7 @@ from pyfect.cli import (
 from pyfect.cli._environment import Environment as CliEnvironment
 from pyfect.cli.global_flag import LogLevel
 from pyfect.context import Tag, TagEffect
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import ZERO, Duration, Seconds, from_input, to_seconds
 from pyfect.encoding import (
     EncodingError,
     Json,
@@ -1155,7 +1155,21 @@ def check_deferred(d: fx.Deferred[int, str]) -> None:
 def check_durations(scheduler: SyncScheduler) -> None:
     # Durations are parsed once, at the boundary, into Seconds (never NaN).
     assert_type(to_seconds(1.5), Seconds)
+    assert_type(from_input("1 second"), Seconds | None)
     assert_type(schedule.fibonacci(1), schedule.Schedule[Seconds])
+    # Arithmetic that keeps the unit stays Seconds, so it is not read again as milliseconds.
+    second = to_seconds("1 second")
+    assert_type(second + second, Seconds)
+    assert_type(second - ZERO, Seconds)
+    assert_type(second * 2, Seconds)
+    assert_type(2 * second, Seconds)
+    assert_type(second / 2, Seconds)
+    assert_type(-second, Seconds)
+    assert_type(second / second, float)
+    assert_type(second + 1.0, float)
+    assert_type(fx.succeed(1).timed(), fx.Effect[tuple[Seconds, int]])
+    # A bare number is milliseconds, so it is never a Seconds.
+    fx.testing.TestClock().sleep(second + 1.0)  # pyright: ignore[reportArgumentType]
     # Past the boundary, a raw float is rejected: it must go through to_seconds.
     fx.testing.TestClock().sleep(1.0)  # pyright: ignore[reportArgumentType]
     scheduler.call_later(1.0, lambda: None)  # pyright: ignore[reportArgumentType]
@@ -1216,8 +1230,8 @@ def check_schedule_combinators(s: schedule.Schedule[int, str]) -> None:
         attempt=1,
         start=0.0,
         now=0.0,
-        elapsed=0.0,
-        elapsed_since_previous=0.0,
+        elapsed=ZERO,
+        elapsed_since_previous=ZERO,
     )
     _decision: schedule.Decision[object] = schedule.Continue[int](1, Seconds(0.0))
 

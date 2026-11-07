@@ -289,7 +289,7 @@ def sleep(
     *,
     key: str | None = None,
     limit: float = 0,
-    window: Duration = 0,
+    window: Duration = "0 millis",
     algorithm: Algorithm = "fixed-window",
     tokens: float = 1,
 ) -> Sleep | Effect[ConsumeResult, RateLimiterError]:

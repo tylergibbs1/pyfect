@@ -56,7 +56,7 @@ def test_run_fork_on_a_given_scheduler_runs_when_driven():
 @testing.effect
 def test_run_fork_from_a_fiber_runs_at_once_and_outlives_it():
     log: list[str] = []
-    fiber = fx.run_fork(fx.sync(lambda: log.append("ran")).and_then(fx.sleep(1)))
+    fiber = fx.run_fork(fx.sync(lambda: log.append("ran")).and_then(fx.sleep("1 second")))
     assert log == ["ran"]
     assert fiber.poll_unsafe() is None
     yield from fiber.interrupt()

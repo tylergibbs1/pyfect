@@ -56,9 +56,9 @@ class TestPersistedQueueRedis(suite.PersistedQueueSuite):
     def make_layer(self) -> fx.Layer[pq.PersistedQueueStore, Any, Any]:
         # short intervals so the periodic reset runs while the suite's takes
         # are in flight
-        return pq.layer_store_redis(poll_interval=0.05, lock_refresh_interval=0.1).pipe(
-            fx.provide(_redis_layer())
-        )
+        return pq.layer_store_redis(
+            poll_interval="50 millis", lock_refresh_interval="100 millis"
+        ).pipe(fx.provide(_redis_layer()))
 
 
 # --- PersistedQueue (NodeRedis) ---------------------------------------------------------
@@ -100,7 +100,10 @@ def test_moves_exhausted_elements_to_the_failed_list() -> None:
 
 def _crash_store(prefix: str) -> fx.Effect[pq.PersistedQueueStoreService, Any, Any]:
     return pq.make_store_redis(
-        prefix=prefix, poll_interval=0.05, lock_refresh_interval=0.1, lock_expiration=1
+        prefix=prefix,
+        poll_interval="50 millis",
+        lock_refresh_interval="100 millis",
+        lock_expiration="1 second",
     )
 
 
@@ -159,7 +162,7 @@ def test_dead_letters_elements_from_workers_that_crashed_on_the_final_attempt() 
         # an active taker runs the periodic reset that dead-letters such
         # elements instead of redelivering them
         fiber = yield from queue.take(lambda value, _m: fx.succeed(value)).fork_scoped()
-        yield from fx.sleep(1)
+        yield from fx.sleep("1 second")
 
         failed = yield from redis.send("LRANGE", f"{prefix}crash-exhausted:failed", "0", "-1")
         assert isinstance(failed, list)

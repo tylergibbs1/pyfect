@@ -50,7 +50,7 @@ def run(layer: fx.Layer[Any, Any, Any], body: Body) -> None:
 
 
 def live_sleep(seconds: float) -> fx.Effect[None]:
-    return testing.with_live(fx.sleep(seconds))
+    return testing.with_live(fx.sleep(Seconds(seconds)))
 
 
 class PersistedQueueSuite:
@@ -73,7 +73,7 @@ class PersistedQueueSuite:
     def assert_not_delivered(self, fiber: fx.Fiber[Any, Any]) -> Generator[Any, Any]:
         """Advance the test clock one poll cycle, give real-time stores a
         moment, then check the forked take still waits."""
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from live_sleep(self.live)
         assert fiber.poll_unsafe() is None
 
@@ -83,14 +83,14 @@ class PersistedQueueSuite:
         for _ in range(8):
             if fiber.poll_unsafe() is not None:
                 break
-            yield from testing.adjust(1)
+            yield from testing.adjust("1 second")
             yield from live_sleep(0.7 * self.live)
         assert fiber.poll_unsafe() is not None
         return (yield from fiber.join())
 
     def advance_past_ttl(self) -> Generator[Any, Any]:
         """Move both clocks past a 1 second time to live."""
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         yield from live_sleep(1.5 * self.live)
 
     # --- PersistedQueue (${name}) ------------------------------------------------------
@@ -190,7 +190,7 @@ class PersistedQueueSuite:
             # the second take really waits while the element is being processed
             yield from self.assert_not_delivered(fiber2)
             yield from fiber.interrupt()
-            yield from testing.adjust(1)
+            yield from testing.adjust("1 second")
             assert (yield from fiber2.join())["n"] == 42
 
         self.run(body)
@@ -222,14 +222,14 @@ class PersistedQueueSuite:
                 schema=ITEM,
                 # MySQL and SQLite truncate retry timestamps to whole seconds:
                 # leave room for that before the real-time check below.
-                retry_schedule=schedule.spaced(2),
+                retry_schedule=schedule.spaced("2 seconds"),
             )
             yield from queue.offer({"n": 42})
             assert (yield from queue.take(_boom).flip()) == "boom"
             fiber = yield from queue.take(_attempts).fork_scoped()
 
             # not redelivered before the retry delay elapses
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
             yield from live_sleep(0.1 * self.live)
             assert fiber.poll_unsafe() is None
             assert (yield from self.await_delivery(fiber)) == 2
@@ -243,7 +243,7 @@ class PersistedQueueSuite:
             queue = yield from pq.make(name="test-queue-offer-delay", schema=ITEM)
             # SQL stores round to whole seconds, so keep the delay well clear
             # of the one second assert_not_delivered checks
-            yield from queue.offer({"n": 42}, delay=3)
+            yield from queue.offer({"n": 42}, delay="3 seconds")
 
             def handle(value: Item, meta: pq.Metadata) -> fx.Effect[tuple[Item, int]]:
                 return fx.succeed((value, meta.attempts))
@@ -261,7 +261,7 @@ class PersistedQueueSuite:
         def body():
             queue = yield from pq.make(name="test-queue-offer-delay-immediate", schema=ITEM)
             yield from queue.offer({"n": 1}, delay=0)
-            yield from queue.offer({"n": 2}, delay=-5)
+            yield from queue.offer({"n": 2}, delay="-5 seconds")
             first = yield from queue.take(_succeed)
             second = yield from queue.take(_succeed)
             assert sorted([first["n"], second["n"]]) == [1, 2]
@@ -292,7 +292,7 @@ class PersistedQueueSuite:
 
         def body():
             queue = yield from pq.make(name="test-queue-offer-delay-duplicate", schema=ITEM)
-            yield from queue.offer({"n": 1}, id="delayed-duplicate-id", delay=3)
+            yield from queue.offer({"n": 1}, id="delayed-duplicate-id", delay="3 seconds")
             yield from queue.offer({"n": 2}, id="delayed-duplicate-id")
 
             # the undelayed duplicate does not make the element available early
@@ -511,7 +511,7 @@ class PersistedQueueSuite:
                 yield from worker.fork_scoped()
 
             while not completed.is_open():
-                yield from testing.adjust(1)
+                yield from testing.adjust("1 second")
                 yield from live_sleep(0.25 * self.live)
 
             assert len(succeeded) == total

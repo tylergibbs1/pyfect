@@ -22,6 +22,7 @@ from pyfect.ai import id_generator
 from pyfect.ai import prompt as P
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
+from pyfect.duration import Seconds
 from pyfect.http.url import Url
 from pyfect.persistence import key_value_store, persistence
 from pyfect.persistence.persistence import BackingPersistence
@@ -222,12 +223,12 @@ def test_respects_time_to_live():
 
     def body():
         chats = yield from C.Persistence()
-        chat = yield from chats.get_or_create("1", time_to_live=30 * 86400)
+        chat = yield from chats.get_or_create("1", time_to_live=Seconds(30 * 86400))
         yield from chat.generate_text("test user message").pipe(
             with_language_model(generate_text=[{"type": "text", "text": "test assistant message"}])
         )
         assert (yield from _stored("chat", "1")) == _expected(OPTIONS)
-        yield from testing.adjust(30 * 86400)
+        yield from testing.adjust(Seconds(30 * 86400))
         assert (yield from _stored("chat", "1")) is None
 
     yield from fx.gen(body).pipe(_constant_ids("msg_abc123")).pipe(fx.provide(PERSISTENCE_LAYER))

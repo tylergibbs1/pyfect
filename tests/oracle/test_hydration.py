@@ -156,7 +156,7 @@ def test_releases_streamed_hydration(
     )
     source = atom.make(fx.succeed(0))
     derived: atom.Atom[AsyncResult[int, Any]] = (
-        source.map_result(lambda n: n + 1) if kind == "invalid" else source.with_refresh(3600)
+        source.map_result(lambda n: n + 1) if kind == "invalid" else source.with_refresh("1 hour")
     )
     client_atom = derived.serializable(key="count", schema=_count_schema(S.Int))
     server = timers.registry()

@@ -16,6 +16,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.duration import Seconds
 
 from ._task_queue import TaskQueue
 
@@ -41,15 +42,15 @@ def test_basic_single_partition_operation():
     sem = yield from fx.PartitionedSemaphore[str].make(4)
     messages: list[str] = []
     tasks = [
-        sem.with_permits("partition-1", _push(messages, f"process: {n}").delay(2), 2)
+        sem.with_permits("partition-1", _push(messages, f"process: {n}").delay("2 seconds"), 2)
         for n in range(4)
     ]
     yield from _concurrently(*tasks).fork()
 
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert len(messages) == 2
 
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert len(messages) == 4
 
 
@@ -59,15 +60,15 @@ def test_multiple_partitions_share_total_permits():
     sem = yield from fx.PartitionedSemaphore[str].make(4)
     messages: list[str] = []
     yield from _concurrently(
-        sem.with_permits("partition-1", _push(messages, "p1-task1").delay(2), 2),
-        sem.with_permits("partition-2", _push(messages, "p2-task1").delay(2), 2),
-        sem.with_permits("partition-1", _push(messages, "p1-task2").delay(2), 2),
+        sem.with_permits("partition-1", _push(messages, "p1-task1").delay("2 seconds"), 2),
+        sem.with_permits("partition-2", _push(messages, "p2-task1").delay("2 seconds"), 2),
+        sem.with_permits("partition-1", _push(messages, "p1-task2").delay("2 seconds"), 2),
     ).fork()
 
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert len(messages) == 2
 
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert len(messages) == 3
 
 
@@ -77,18 +78,20 @@ def test_round_robin_fairness_across_partitions():
     sem = yield from fx.PartitionedSemaphore[str].make(2)
     messages: list[str] = []
 
-    yield from sem.with_permits("partition-1", _push(messages, "p1-initial").delay(2), 2).fork()
-    yield from testing.adjust(0.001)
+    yield from sem.with_permits(
+        "partition-1", _push(messages, "p1-initial").delay("2 seconds"), 2
+    ).fork()
+    yield from testing.adjust("1 millis")
 
     yield from _concurrently(
         *(sem.with_permits("partition-1", _push(messages, f"p1-task{i}")) for i in (1, 2, 3))
     ).fork()
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
 
     yield from _concurrently(
         *(sem.with_permits("partition-2", _push(messages, f"p2-task{i}")) for i in (1, 2, 3))
     ).fork()
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
 
     assert messages == [
         "p1-initial",
@@ -107,7 +110,7 @@ def test_requesting_more_permits_than_total_returns_never():
     sem = yield from fx.PartitionedSemaphore[str].make(4)
     fiber = yield from sem.with_permits("partition-1", fx.succeed(42), 5).fork()
 
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
 
     assert fiber.poll_unsafe() is None
 
@@ -118,16 +121,19 @@ def test_single_permit_operations():
     sem = yield from fx.PartitionedSemaphore[str].make(1)
     messages: list[str] = []
     yield from _concurrently(
-        *(sem.with_permits("partition-1", _push(messages, f"task: {n}").delay(1)) for n in range(3))
+        *(
+            sem.with_permits("partition-1", _push(messages, f"task: {n}").delay("1 second"))
+            for n in range(3)
+        )
     ).fork()
 
-    yield from testing.adjust(1.5)
+    yield from testing.adjust("1500 millis")
     assert len(messages) == 1
 
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert len(messages) == 2
 
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert len(messages) == 3
 
 
@@ -137,12 +143,12 @@ def test_different_permit_sizes_on_same_partition():
     sem = yield from fx.PartitionedSemaphore[str].make(5)
     messages: list[str] = []
     yield from _concurrently(
-        sem.with_permits("partition-1", _push(messages, "large").delay(2), 3),
-        sem.with_permits("partition-1", _push(messages, "small-1").delay(2), 1),
-        sem.with_permits("partition-1", _push(messages, "small-2").delay(2), 1),
+        sem.with_permits("partition-1", _push(messages, "large").delay("2 seconds"), 3),
+        sem.with_permits("partition-1", _push(messages, "small-1").delay("2 seconds"), 1),
+        sem.with_permits("partition-1", _push(messages, "small-2").delay("2 seconds"), 1),
     ).fork()
 
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert len(messages) == 3
 
 
@@ -152,10 +158,10 @@ def test_interruption_releases_permits():
     sem = yield from fx.PartitionedSemaphore[str].make(2)
     messages: list[str] = []
     fiber = yield from sem.with_permits(
-        "partition-1", _push(messages, "long-task").delay(10), 2
+        "partition-1", _push(messages, "long-task").delay("10 seconds"), 2
     ).fork()
 
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from fiber.interrupt()
 
     yield from sem.with_permits("partition-1", _push(messages, "after-interrupt"), 2)
@@ -169,17 +175,19 @@ def test_interruption_with_partial_permit_acquisition_releases_all_taken_permits
     sem = yield from fx.PartitionedSemaphore[str].make(3)
     messages: list[str] = []
 
-    fiber1 = yield from sem.with_permits("partition-1", _push(messages, "first").delay(5), 2).fork()
-    yield from testing.adjust(0.001)
+    fiber1 = yield from sem.with_permits(
+        "partition-1", _push(messages, "first").delay("5 seconds"), 2
+    ).fork()
+    yield from testing.adjust("1 millis")
 
     fiber2 = yield from sem.with_permits("partition-2", _push(messages, "second"), 3).fork()
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     yield from fiber2.interrupt()
 
     yield from sem.with_permits("partition-3", _push(messages, "can-acquire-one"), 1)
     assert messages == ["can-acquire-one"]
 
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     yield from fiber1.join()
     assert messages == ["can-acquire-one", "first"]
 
@@ -193,14 +201,14 @@ def test_exact_permit_match():
     sem = yield from fx.PartitionedSemaphore[str].make(4)
     messages: list[str] = []
     yield from _concurrently(
-        sem.with_permits("partition-1", _push(messages, "exact-match").delay(2), 4),
-        sem.with_permits("partition-2", _push(messages, "waiting").delay(2), 1),
+        sem.with_permits("partition-1", _push(messages, "exact-match").delay("2 seconds"), 4),
+        sem.with_permits("partition-2", _push(messages, "waiting").delay("2 seconds"), 1),
     ).fork()
 
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert messages == ["exact-match"]
 
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert len(messages) == 2
 
 
@@ -211,13 +219,15 @@ def test_many_partitions():
     messages: list[str] = []
     yield from _concurrently(
         *(
-            sem.with_permits(f"partition-{i % 5}", _push(messages, f"p{i % 5}-task").delay(1))
+            sem.with_permits(
+                f"partition-{i % 5}", _push(messages, f"p{i % 5}-task").delay("1 second")
+            )
             for i in range(10)
         )
     ).fork()
 
     for expected in (3, 6, 9, 10):
-        yield from testing.adjust(1.5 if expected == 3 else 1)
+        yield from testing.adjust(Seconds(1.5 if expected == 3 else 1))
         assert len(messages) == expected
 
 
@@ -227,16 +237,18 @@ def test_partial_permit_allocation():
     sem = yield from fx.PartitionedSemaphore[str].make(3)
     messages: list[str] = []
 
-    yield from sem.with_permits("partition-1", _push(messages, "first").delay(2), 2).fork()
-    yield from testing.adjust(0.1)
+    yield from sem.with_permits(
+        "partition-1", _push(messages, "first").delay("2 seconds"), 2
+    ).fork()
+    yield from testing.adjust("100 millis")
 
     fiber = yield from sem.with_permits("partition-2", _push(messages, "second"), 2).fork()
-    yield from testing.adjust(0.1)
+    yield from testing.adjust("100 millis")
 
     assert fiber.poll_unsafe() is None
     assert messages == []
 
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert messages == ["first", "second"]
 
 

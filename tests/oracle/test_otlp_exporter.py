@@ -19,7 +19,7 @@ import pyfect as fx
 from pyfect import config_provider, layer, metric, stream, testing
 from pyfect._version import VERSION
 from pyfect.clock import now
-from pyfect.duration import Duration
+from pyfect.duration import Duration, Seconds
 from pyfect.http import body as http_body
 from pyfect.http import client, response
 from pyfect.http.body import HttpBody
@@ -154,11 +154,11 @@ def test_allows_an_in_flight_timer_export_to_finish_during_shutdown():
     """allows an in-flight timer export to finish during shutdown"""
     scope = fx.CloseableScope()
     http, _, releases, started = yield from _controlled_client(1)
-    exporter = yield from _make_exporter(http, export_interval=1, max_batch_size=10).pipe(
+    exporter = yield from _make_exporter(http, export_interval="1 second", max_batch_size=10).pipe(
         fx.scope.provide(scope)
     )
     exporter.push({"value": 1})
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from started[0].wait()
 
     close_fiber = yield from scope.close(fx.Success(None)).fork()
@@ -174,19 +174,19 @@ def test_waits_for_each_periodic_export_before_starting_the_next_interval():
     """waits for each periodic export before starting the next interval"""
     scope = fx.CloseableScope()
     http, _, releases, started = yield from _controlled_client(3)
-    exporter = yield from _make_exporter(http, export_interval=1, max_batch_size="disabled").pipe(
-        fx.scope.provide(scope)
-    )
+    exporter = yield from _make_exporter(
+        http, export_interval="1 second", max_batch_size="disabled"
+    ).pipe(fx.scope.provide(scope))
     exporter.push({"value": 1})
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from started[0].wait()
 
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert not (yield from started[1].is_done())
 
     yield from releases[0].succeed(None)
     exporter.push({"value": 2})
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from started[1].wait()
 
     exporter.push({"value": 3})
@@ -254,7 +254,7 @@ def test_bounds_shutdown_waiting_and_interrupts_remaining_requests():
     yield from started[0].wait()
 
     close_fiber = yield from scope.close(fx.Success(None)).fork()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from close_fiber.join()
     assert (yield from interrupted.get()) == 1
 
@@ -307,11 +307,11 @@ def _retry_case(retry_after: str | None, first: float, second: float):
         yield from _yield_now_n(3)
         assert attempts[0] == 1
 
-        yield from testing.adjust(first)
+        yield from testing.adjust(Seconds(first))
         yield from _yield_now_n(2)
         assert attempts[0] == 1
 
-        yield from testing.adjust(second)
+        yield from testing.adjust(Seconds(second))
         yield from _yield_now_n(2)
         assert attempts[0] == 2
 
@@ -410,7 +410,7 @@ def test_drains_a_429_response_before_retrying(filter_status: bool):
         yield from _yield_now_n(3)
         assert responses.used == [True]
 
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from flush.join()
         assert responses.used == [True, True]
 
@@ -611,7 +611,7 @@ def test_does_not_fail_when_the_collector_returns_500():
         exporter.push({"value": 1})
         fiber = yield from flusher.flush.fork()
         yield from _yield_now_n(3)
-        yield from testing.adjust(3)
+        yield from testing.adjust("3 seconds")
         yield from fiber.join()
         assert len(seen.requests) == 4
         yield from flusher.flush
@@ -632,13 +632,13 @@ def test_a_failed_export_disables_the_exporter_for_60_seconds():
         flusher = yield from otlp_exporter.Flusher()
         exporter.push({"value": 1})
         yield from flusher.flush
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         yield from flusher.flush
         exporter.push({"value": 2})
         yield from flusher.flush
         assert len(seen.requests) == 1
 
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from flusher.flush
         exporter.push({"value": 3})
         yield from flusher.flush

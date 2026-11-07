@@ -64,7 +64,7 @@ _ERROR_TYPE_TO_STATUS = {
     "service_unavailable_error": 503,
 }
 _RESPONSE_NOT_FOUND = re.compile(r"^gRPC error: Response with id=\S+ not found\Z")
-_IDLE_TIME_TO_LIVE = 60.0
+_IDLE_TIME_TO_LIVE = "60 seconds"
 
 
 class _NestedError(TypedDict):

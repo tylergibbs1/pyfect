@@ -221,7 +221,7 @@ def test_rpc_test_handler_defects(disable_fatal_defects: bool) -> None:
         yield from release.succeed(None)
         assert (yield from blocked.join()) == ("ok" if disable_fatal_defects else "boom")
 
-    fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die())
+    fx.run_blocking(fx.scoped(effect.gen(body)).timeout("5 seconds").or_die())
 
 
 # --- platform-node: request defect isolation over HTTP --------------------------------
@@ -274,7 +274,7 @@ def _isolation_client(body: Any, serialization: Any = rs.layer_json) -> Any:
         .pipe(layer.provide(serialization))
     )
     program = fx.scoped(effect.gen(body)).pipe(fx.provide(protocol))
-    return fx.run_blocking(program.timeout(10).or_die())
+    return fx.run_blocking(program.timeout("10 seconds").or_die())
 
 
 @pytest.mark.parametrize("tag", ["Missing", "MissingWithSchemas"])
@@ -403,11 +403,11 @@ def _ticker_survives[G: TickerClient | Booming](
         enough = effect.suspend(
             lambda: effect.succeed(None) if len(received) >= 2 else effect.fail("not yet")
         )
-        yield from enough.retry(schedule=schedule.spaced(0.05), times=200)
+        yield from enough.retry(schedule=schedule.spaced("50 millis"), times=200)
         before = len(received)
         assert before >= 2
         yield from failing_call(client)
-        yield from fx.sleep(0.3)
+        yield from fx.sleep("300 millis")
         after = len(received)
         status = ticker.poll_unsafe()
         yield from ticker.interrupt()
@@ -417,7 +417,7 @@ def _ticker_survives[G: TickerClient | Booming](
     program = fx.scoped(effect.gen(body)).pipe(
         fx.provide(client_protocol.pipe(layer.provide_merge(served)))
     )
-    fx.run_blocking(program.timeout(30).or_die())
+    fx.run_blocking(program.timeout("30 seconds").or_die())
 
 
 def _ticker_rpc() -> Any:
@@ -441,7 +441,7 @@ def test_an_unknown_request_tag_fails_only_its_own_request() -> None:
     """RpcServer / unknown-tag isolation / an unknown request tag fails only its own request, not other in-flight streams on the same connection"""  # noqa: E501
     handlers = TickerServer.to_layer(
         TickerServer.handlers().handle(TickerServer.ticker)(
-            lambda _: stream.from_schedule(schedule.spaced(0.06))
+            lambda _: stream.from_schedule(schedule.spaced("60 millis"))
         )
     )
     server = (
@@ -470,7 +470,7 @@ def test_with_disable_fatal_defects_a_handler_defect_fails_only_its_own_request(
     """RpcServer / fatal-defect isolation / with disableFatalDefects a handler defect fails only its own request, not other in-flight streams"""  # noqa: E501
     handlers = Booming.to_layer(
         Booming.handlers()
-        .handle(Booming.ticker)(lambda _: stream.from_schedule(schedule.spaced(0.06)))
+        .handle(Booming.ticker)(lambda _: stream.from_schedule(schedule.spaced("60 millis")))
         .handle(Booming.boom)(lambda _: effect.die("boom"))
     )
     server = (
@@ -549,4 +549,4 @@ def test_isolates_synchronous_handler_throws_when_fatal_defects_are_disabled() -
         yield from release.succeed(None)
         assert summarize((yield from messages.take())) == ["1", ["Success", "served"]]
 
-    fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die())
+    fx.run_blocking(fx.scoped(effect.gen(body)).timeout("5 seconds").or_die())

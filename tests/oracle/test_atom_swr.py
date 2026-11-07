@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import pyfect as fx
+from pyfect.duration import Seconds
 from pyfect.reactivity import async_result, atom
 from pyfect.reactivity.async_result import AsyncResult, Failure, Initial, Success
 from pyfect.reactivity.atom_registry import AtomRegistryService
@@ -32,7 +33,7 @@ def test_swr_refresh_is_forceful_while_fresh(timers: FakeTimers) -> None:
     """swr refresh is forceful while fresh"""
     r = timers.registry()
     runs = [0]
-    counted = atom.make(_runs_effect(runs)).swr(stale_time=1)
+    counted = atom.make(_runs_effect(runs)).swr(stale_time="1 second")
     unmount = r.mount(counted)
     _value(r.get(counted), 1)
     assert runs[0] == 1
@@ -46,7 +47,7 @@ def test_swr_keeps_previous_value_while_stale_revalidation_runs(timers: FakeTime
     """swr keeps previous value while stale revalidation runs"""
     r = timers.registry()
     runs = [0]
-    counted = atom.make(_runs_effect(runs).delay(0.05)).swr(stale_time=0.1)
+    counted = atom.make(_runs_effect(runs).delay("50 millis")).swr(stale_time="100 millis")
     unmount = r.mount(counted)
     assert r.get(counted).waiting
     timers.advance(50)
@@ -76,7 +77,7 @@ def test_swr_refresh_is_forceful_after_failure_with_previous_success(timers: Fak
     """swr refresh is forceful after failure with previousSuccess"""
     r = timers.registry()
     runs = [0]
-    counted = atom.fn(_fail_on(1, runs)).swr(stale_time=1)
+    counted = atom.fn(_fail_on(1, runs)).swr(stale_time="1 second")
     unmount = r.mount(counted)
     r.set(counted, 0)
     _value(r.get(counted), 0)
@@ -103,7 +104,7 @@ def test_swr_refreshes_failure_without_previous_success(timers: FakeTimers) -> N
     """swr refreshes failure without previousSuccess"""
     r = timers.registry()
     runs = [0]
-    failing = _always_failing(runs).swr(stale_time=1, revalidate_on_mount=False)
+    failing = _always_failing(runs).swr(stale_time="1 second", revalidate_on_mount=False)
     unmount = r.mount(failing)
     assert isinstance(r.get(failing), Failure)
     assert runs[0] == 1
@@ -130,7 +131,10 @@ def test_swr_revalidate_on_mount_false_skips_first_read_only(timers: FakeTimers)
     r, focus_signal, emit_focus = _focus(timers)
     runs = [0]
     failing = _always_failing(runs).swr(
-        stale_time=1, revalidate_on_mount=False, revalidate_on_focus=True, focus_signal=focus_signal
+        stale_time="1 second",
+        revalidate_on_mount=False,
+        revalidate_on_focus=True,
+        focus_signal=focus_signal,
     )
     unmount = r.mount(failing)
     assert isinstance(r.get(failing), Failure)
@@ -153,7 +157,10 @@ def test_swr_auto_revalidates_failure_with_previous_success_only_when_stale(
         return fx.succeed(i) if i == 0 else fx.fail("fail")
 
     counted = atom.fn(run).swr(
-        stale_time=1, revalidate_on_mount=False, revalidate_on_focus=True, focus_signal=focus_signal
+        stale_time="1 second",
+        revalidate_on_mount=False,
+        revalidate_on_focus=True,
+        focus_signal=focus_signal,
     )
     unmount = r.mount(counted)
     r.set(counted, 0)
@@ -196,7 +203,7 @@ def test_swr_refresh_is_forceful_while_waiting(timers: FakeTimers) -> None:
     """swr refresh is forceful while waiting"""
     r = timers.registry()
     runs = [0]
-    counted = atom.make(_runs_effect(runs).tap(lambda _: fx.sleep(0.05))).swr(stale_time=0)
+    counted = atom.make(_runs_effect(runs).tap(lambda _: fx.sleep("50 millis"))).swr(stale_time=0)
     unmount = r.mount(counted)
     timers.advance(50)
     _value(r.get(counted), 1)
@@ -220,7 +227,7 @@ def test_swr_delegates_refresh_to_wrapped_custom_refresh(timers: FakeTimers) -> 
         pass
 
     proxy = atom.writable(lambda get: get(source), ignore, lambda refresh: refresh(source))
-    swr = proxy.swr(stale_time=1, revalidate_on_mount=False)
+    swr = proxy.swr(stale_time="1 second", revalidate_on_mount=False)
     unmount = r.mount(swr)
     _value(r.get(swr), 1)
     assert runs[0] == 1
@@ -235,7 +242,7 @@ def test_swr_revalidates_after_a_stale_remount_returns(timers: FakeTimers) -> No
     r = timers.registry()
     runs = [0]
     base = atom.make(_runs_effect(runs)).keep_alive()
-    swr = base.swr(stale_time=0.1, revalidate_on_mount=True)
+    swr = base.swr(stale_time="100 millis", revalidate_on_mount=True)
     unmount1 = r.mount(swr)
     _value(r.get(swr), 1)
     assert runs[0] == 1
@@ -257,7 +264,7 @@ def test_swr_revalidates_a_kept_initial_value_by_stale_time(
 ) -> None:
     """swr revalidates a kept initial value by staleTime (seed age: $age)"""
     runs = [0]
-    counted = atom.make(_runs_effect(runs)).swr(stale_time=1)
+    counted = atom.make(_runs_effect(runs)).swr(stale_time="1 second")
     seed = async_result.success(0, timestamp=timers.now_ns // 1_000_000 - age)
     r = timers.registry(initial_values=[atom.initial_value(counted, seed, skip_initial_run=True)])
     try:
@@ -274,7 +281,7 @@ def _stale_base(
 ) -> tuple[AtomRegistryService, atom.Atom[AsyncResult[int]], atom.Atom[AsyncResult[int]]]:
     r = timers.registry()
     base = atom.make(_runs_effect(runs)).keep_alive()
-    swr = base.swr(stale_time=0.1)
+    swr = base.swr(stale_time="100 millis")
     r.get(base)
     timers.advance(101)
     return r, base, swr
@@ -334,7 +341,7 @@ def _remount(
     r = timers.registry()
     runs = [0]
     base = atom.make(_runs_effect(runs)).keep_alive()
-    swr = base.swr(stale_time=stale_time, revalidate_on_mount=revalidate_on_mount)
+    swr = base.swr(stale_time=Seconds(stale_time), revalidate_on_mount=revalidate_on_mount)
     unmount1 = r.mount(swr)
     _value(r.get(swr), 1)
     assert runs[0] == 1
@@ -357,7 +364,7 @@ def test_swr_revalidates_on_focus_signal_only_when_stale(timers: FakeTimers) -> 
     r, focus_signal, emit_focus = _focus(timers)
     runs = [0]
     counted = atom.make(_runs_effect(runs)).swr(
-        stale_time=1, revalidate_on_focus=True, focus_signal=focus_signal
+        stale_time="1 second", revalidate_on_focus=True, focus_signal=focus_signal
     )
     unmount = r.mount(counted)
     _value(r.get(counted), 1)
@@ -376,7 +383,7 @@ def test_swr_can_force_refresh_on_focus_signal(timers: FakeTimers) -> None:
     r, focus_signal, emit_focus = _focus(timers)
     runs = [0]
     counted = atom.make(_runs_effect(runs)).swr(
-        stale_time=1, revalidate_on_focus="always", focus_signal=focus_signal
+        stale_time="1 second", revalidate_on_focus="always", focus_signal=focus_signal
     )
     unmount = r.mount(counted)
     _value(r.get(counted), 1)
@@ -391,7 +398,7 @@ def test_swr_treats_value_as_stale_at_exact_stale_time_boundary(timers: FakeTime
     r, focus_signal, emit_focus = _focus(timers)
     runs = [0]
     counted = atom.make(_runs_effect(runs)).swr(
-        stale_time=1, revalidate_on_focus=True, focus_signal=focus_signal
+        stale_time="1 second", revalidate_on_focus=True, focus_signal=focus_signal
     )
     unmount = r.mount(counted)
     _value(r.get(counted), 1)
@@ -411,9 +418,9 @@ def test_swr_does_not_refresh_on_focus_signal_when_disabled_or_omitted(
     runs = [0]
     source = atom.make(_runs_effect(runs))
     counted = (
-        source.swr(stale_time=10, revalidate_on_focus=False, focus_signal=focus_signal)
+        source.swr(stale_time="10 seconds", revalidate_on_focus=False, focus_signal=focus_signal)
         if disabled
-        else source.swr(stale_time=10, focus_signal=focus_signal)
+        else source.swr(stale_time="10 seconds", focus_signal=focus_signal)
     )
     unmount = r.mount(counted)
     _value(r.get(counted), 1)
@@ -433,7 +440,7 @@ def test_swr_composes_with_signal_driven_refresh_wrappers(timers: FakeTimers) ->
     r = timers.registry()
     runs = [0]
     signal = atom.make(0)
-    counted = atom.make(_runs_effect(runs)).swr(stale_time=1).refresh_on_signal(signal)
+    counted = atom.make(_runs_effect(runs)).swr(stale_time="1 second").refresh_on_signal(signal)
     unmount = r.mount(counted)
     _value(r.get(counted), 1)
     for n in (1, 2):
@@ -457,7 +464,7 @@ def test_swr_preserves_writable_set_semantics(timers: FakeTimers) -> None:
         ctx.set_self(async_result.success(value))
 
     source = atom.writable(read, write)
-    swr = source.swr(stale_time=1)
+    swr = source.swr(stale_time="1 second")
     unmount = r.mount(swr)
     _value(r.get(swr), 0)
     r.set(swr, 1)
@@ -471,7 +478,7 @@ def test_swr_uses_registry_initial_values_as_source_state(timers: FakeTimers) ->
     """swr uses registry initial values as source state"""
     runs = [0]
     source = atom.make(_runs_effect(runs)).keep_alive()
-    swr = source.swr(stale_time=1, revalidate_on_mount=False).keep_alive()
+    swr = source.swr(stale_time="1 second", revalidate_on_mount=False).keep_alive()
     initial = async_result.success(10)
     r = timers.registry(initial_values=[atom.initial_value(swr, initial)])
     r.mount(swr)

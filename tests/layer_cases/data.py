@@ -450,7 +450,7 @@ def _consume(*, fresh: bool) -> Callable[[], fx.Effect[Any, Any, Any]]:
 
     def body():
         limiter = yield from rl.RateLimiter()
-        result = yield from limiter.consume(key="layer-reuse", limit=1000, window=60)
+        result = yield from limiter.consume(key="layer-reuse", limit=1000, window="1 minute")
         assert result.remaining == 999 if fresh else result.remaining >= 0
 
     return _gen(body)
@@ -462,7 +462,7 @@ def _rate_store_use(*, fresh: bool) -> Callable[[], fx.Effect[Any, Any, Any]]:
 
 
 def _breaker() -> AnyLayer:
-    return cb.layer(trip_policy=cb.consecutive(5), open_duration=60)
+    return cb.layer(trip_policy=cb.consecutive(5), open_duration="1 minute")
 
 
 def _execute():
@@ -563,7 +563,7 @@ _PERSISTENCE: dict[str, Case] = {
         layer=lambda: pq.layer, needs=lambda: pq.layer_store_memory, use=_gen(_offer_take)
     ),
     "pyfect.persistence.persisted_queue.layer_cleanup": Case(
-        layer=lambda: pq.layer_cleanup(interval=60),
+        layer=lambda: pq.layer_cleanup(interval="1 minute"),
         needs=lambda: pq.layer.pipe(fx.layer.provide_merge(pq.layer_store_memory)),
         use=_gen(_offer_take),
     ),
@@ -572,13 +572,13 @@ _PERSISTENCE: dict[str, Case] = {
     ),
     "pyfect.persistence.persisted_queue.layer_store_redis": Case(
         layer=lambda: pq.layer_store_redis(
-            prefix="layer-reuse-q:", poll_interval=0.05, lock_refresh_interval=0.1
+            prefix="layer-reuse-q:", poll_interval="50 millis", lock_refresh_interval="100 millis"
         ),
         needs=_redis_client,
         use=_queue_store_use,
     ),
     "pyfect.persistence.persisted_queue.layer_store_sql": Case(
-        layer=lambda: pq.layer_store_sql(poll_interval=0.05),
+        layer=lambda: pq.layer_store_sql(poll_interval="50 millis"),
         needs=_sqlite,
         use=_queue_store_use,
     ),
@@ -659,7 +659,8 @@ _REACTIVITY: dict[str, Case] = {
         layer=lambda: atom_registry.layer, use=_gen(_atom_set_get)
     ),
     "pyfect.reactivity.atom_registry.layer_options": Case(
-        layer=lambda: atom_registry.layer_options(default_idle_ttl=1), use=_gen(_atom_set_get)
+        layer=lambda: atom_registry.layer_options(default_idle_ttl="1 second"),
+        use=_gen(_atom_set_get),
     ),
 }
 

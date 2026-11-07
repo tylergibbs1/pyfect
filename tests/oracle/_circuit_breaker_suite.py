@@ -94,7 +94,7 @@ def openings(breaker: cb.CircuitBreakerService, take: int) -> fx.Effect[fx.Fiber
 
 def consecutive(advance: Advance):
     key = "consecutive"
-    breaker = yield from cb.make(trip_policy=cb.consecutive(3), open_duration=60)
+    breaker = yield from cb.make(trip_policy=cb.consecutive(3), open_duration="1 minute")
     yield from fail(breaker, key)
     yield from fail(breaker, key)
     yield from run_void(breaker, key)
@@ -116,7 +116,7 @@ def consecutive(advance: Advance):
 def rate(advance: Advance):
     key = "rate"
     breaker = yield from cb.make(
-        trip_policy=cb.rate(threshold=0.5, size=3, minimum_calls=3), open_duration=60
+        trip_policy=cb.rate(threshold=0.5, size=3, minimum_calls=3), open_duration="1 minute"
     )
     yield from fail(breaker, key)
     yield from (
@@ -133,7 +133,7 @@ def rate(advance: Advance):
 
 def half_open(advance: Advance):
     key = "half-open"
-    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=0.2)
+    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="200 millis")
     transitions = yield from breaker.transitions.take(3).run_collect().fork(start_immediately=True)
     yield from fail(breaker, key)
     yield from advance(0.3)
@@ -157,7 +157,7 @@ def half_open(advance: Advance):
 def schedule_replays(advance: Advance):
     key = "schedule"
     breaker = yield from cb.make(
-        trip_policy=cb.consecutive(2), open_duration=fx.schedule.exponential(0.2)
+        trip_policy=cb.consecutive(2), open_duration=fx.schedule.exponential("200 millis")
     )
     collected = yield from openings(breaker, 4)
     yield from fail(breaker, key)
@@ -191,7 +191,7 @@ def schedule_replays(advance: Advance):
 def reset_race(advance: Advance):
     key = "reset-race"
     breaker = yield from cb.make(
-        trip_policy=cb.consecutive(1), open_duration=fx.schedule.exponential(0.2)
+        trip_policy=cb.consecutive(1), open_duration=fx.schedule.exponential("200 millis")
     )
     collected = yield from openings(breaker, 2)
     yield from fail(breaker, key)
@@ -211,7 +211,7 @@ def schedule_from_recording_time(advance: Advance):
     key = "schedule-elapsed"
     breaker = yield from cb.make(
         trip_policy=cb.consecutive(1),
-        open_duration=fx.schedule.exponential(0.1).up_to(duration=0.25),
+        open_duration=fx.schedule.exponential("100 millis").up_to(duration="250 millis"),
     )
     collected = yield from openings(breaker, 4)
     yield from fail(breaker, key)
@@ -227,11 +227,11 @@ def schedule_from_recording_time(advance: Advance):
 def retry_after_hint(advance: Advance):
     key = "hint"
     breaker = yield from cb.make(
-        trip_policy=cb.consecutive(1), open_duration=0.2, max_open_duration=0.6
+        trip_policy=cb.consecutive(1), open_duration="200 millis", max_open_duration="600 millis"
     )
     yield from (
         fx.fail("boom")
-        .pipe(breaker.execute(key=key, classify=lambda _: cb.failure(retry_after=3600)))
+        .pipe(breaker.execute(key=key, classify=lambda _: cb.failure(retry_after="1 hour")))
         .ignore()
     )
     yield from advance(0.3)
@@ -255,7 +255,7 @@ def retry_after_hint(advance: Advance):
 
 def interrupts(advance: Advance):
     key = "interrupt"
-    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=0.2)
+    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="200 millis")
 
     def classify(_: object) -> cb.Outcome:
         return cb.failure()
@@ -292,7 +292,7 @@ def interrupts(advance: Advance):
 def stale_outcome(advance: Advance):
     a = "stale-a"
     b = "stale-b"
-    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=0.2)
+    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="200 millis")
     stale_a = yield from held(breaker, a, fx.void)
     current_b = yield from held(breaker, b, fx.fail("boom"))
 
@@ -315,10 +315,10 @@ def stale_outcome(advance: Advance):
 
 def idle_reset(advance: Advance):
     key = "idle-reset"
-    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=0.2)
+    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="200 millis")
     yield from (
         fx.fail("boom")
-        .pipe(breaker.execute(key=key, classify=lambda _: cb.failure(retry_after=1)))
+        .pipe(breaker.execute(key=key, classify=lambda _: cb.failure(retry_after="1 second")))
         .ignore()
     )
     yield from advance(1.1)
@@ -333,7 +333,7 @@ def idle_reset(advance: Advance):
 
 def idle_open(advance: Advance):
     key = "idle-open"
-    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=0.8)
+    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="800 millis")
     yield from fail(breaker, key)
     yield from advance(0.6)
     opened = yield from breaker.state(key)

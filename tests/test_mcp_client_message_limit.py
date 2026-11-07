@@ -135,6 +135,6 @@ def test_stdio_line_stops_at_the_limit():
     transport = yield from C.stdio(
         command=make_command("server"), protocol=P.v2025_11_25, max_message_bytes=LIMIT
     ).pipe(fx.provide_service(ChildProcessSpawner, spawner))
-    result = yield from transport.request(REQUEST, None).timeout(5).result()
+    result = yield from transport.request(REQUEST, None).timeout("5 seconds").result()
     _limit_error(result)
     assert counter.pulled <= LIMIT + CHUNK

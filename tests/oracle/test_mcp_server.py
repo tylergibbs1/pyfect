@@ -1244,7 +1244,7 @@ def test_a_session_stream_nobody_reads_holds_up_no_other_stream_of_the_session()
     stream = yield from sse_reader(response)
     assert (yield from stream.take())["method"] == "notifications/progress"
     yield from servers[0].notify("notifications/tools/list_changed")
-    message = yield from stream.take().timeout(1)
+    message = yield from stream.take().timeout("1 second")
     assert message["method"] == "notifications/tools/list_changed"
     yield from never_answered.succeed(None)
 

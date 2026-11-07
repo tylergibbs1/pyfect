@@ -33,7 +33,7 @@ def _on_pg(marker: str) -> list[tuple[object, ...]]:
     )
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_postgres(pg_server: PgServer):
     marker = _marker()
 
@@ -47,7 +47,7 @@ def test_postgres(pg_server: PgServer):
     )
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_postgres_row_lock_is_free_soon_after(pg_server: PgServer):
     table = _marker()
     _postgres.query_now(f"CREATE TABLE {table} (id INT PRIMARY KEY)")
@@ -69,7 +69,7 @@ def test_postgres_row_lock_is_free_soon_after(pg_server: PgServer):
 
         fiber = yield from sql.with_transaction(fx.gen(holder)).fork()
         yield from until_running(locked)
-        yield from fx.sleep(0.2)
+        yield from fx.sleep("200 millis")
         yield from fiber.interrupt()
         yield from gone_soon(locked)
 
@@ -89,7 +89,7 @@ def _on_mssql(marker: str) -> list[tuple[Any, ...]]:
     )
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_sql_server(mssql_server: MssqlServer):
     marker = _marker()
 
@@ -101,7 +101,7 @@ def test_sql_server(mssql_server: MssqlServer):
     yield from fx.scoped(fx.gen(body)).pipe(fx.provide(mssql.layer(mssql_server.config())))
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_sql_server_row_lock_is_free_soon_after(mssql_server: MssqlServer):
     table = _marker()
     _mssql.query_now(f"CREATE TABLE {table} (id INT PRIMARY KEY)")
@@ -121,7 +121,7 @@ def test_sql_server_row_lock_is_free_soon_after(mssql_server: MssqlServer):
 
         fiber = yield from sql.with_transaction(fx.gen(holder)).fork()
         yield from until_running(locked)
-        yield from fx.sleep(0.2)
+        yield from fx.sleep("200 millis")
         yield from fiber.interrupt()
         yield from gone_soon(locked)
 
@@ -131,7 +131,7 @@ def test_sql_server_row_lock_is_free_soon_after(mssql_server: MssqlServer):
 # --- ClickHouse -----------------------------------------------------------------------------
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_clickhouse(clickhouse_server: ClickhouseServer):
     query_id = _marker()
 

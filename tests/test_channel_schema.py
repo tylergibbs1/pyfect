@@ -166,7 +166,7 @@ def test_sse_encode_schema_writes_events_and_a_retry():
         data: str
 
     events = stream.make(_Named(event="message", data="a\nb")).concat(
-        stream.fail(sse.Retry(1.5, None))
+        stream.fail(sse.Retry("1500 millis", None))
     )
     text = yield from events.pipe_through_channel(sse.encode_schema(S.Struct(_Named))).run_string()
     assert text == "data: a\ndata: b\n\nretry: 1500\n\n"

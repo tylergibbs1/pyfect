@@ -411,9 +411,9 @@ def test_retry_retries_a_failing_stream_according_to_a_schedule():
     failing = stream.from_effect(fx.clock.now().map(times.append)).flat_map(
         lambda _: stream.fail(None)
     )
-    fiber = yield from (failing.retry(schedule.exponential(1)).take(3).run_drain().fork())
-    yield from testing.adjust(1)
-    yield from testing.adjust(2)
+    fiber = yield from (failing.retry(schedule.exponential("1 second")).take(3).run_drain().fork())
+    yield from testing.adjust("1 second")
+    yield from testing.adjust("2 seconds")
     yield from fiber.interrupt()
     assert [round(t) for t in reversed(times)] == [3, 1, 0]
 
@@ -433,10 +433,10 @@ def test_retry_reset_the_schedule_after_a_successful_pull():
         return stream.succeed(n) if n in (3, 5) else stream.fail(None)
 
     retried = stream.from_effect(attempt()).flat_map(pick).forever()
-    fiber = yield from retried.retry(schedule.exponential(1)).take(2).run_drain().fork()
-    yield from testing.adjust(1)
-    yield from testing.adjust(2)
-    yield from testing.adjust(1)
+    fiber = yield from retried.retry(schedule.exponential("1 second")).take(2).run_drain().fork()
+    yield from testing.adjust("1 second")
+    yield from testing.adjust("2 seconds")
+    yield from testing.adjust("1 second")
     yield from fiber.join()
     assert [round(t) for t in times] == [4, 3, 3, 1, 0]
 
@@ -452,11 +452,11 @@ def test_retry_schedule_current_metadata():
     fiber = yield from (
         stream.fail(1)
         .tap_error(record)
-        .retry(schedule.exponential(1))
+        .retry(schedule.exponential("1 second"))
         .run_drain()
         .fork(start_immediately=True)
     )
-    yield from testing.adjust(7)
+    yield from testing.adjust("7 seconds")
     yield from fiber.interrupt()
 
     def meta(attempt: int, now: float, since: float, delay: float) -> Metadata[object, object]:
@@ -467,8 +467,8 @@ def test_retry_schedule_current_metadata():
             attempt=attempt,
             start=0.0,
             now=now,
-            elapsed=now,
-            elapsed_since_previous=since,
+            elapsed=fx.duration.Seconds(now),
+            elapsed_since_previous=fx.duration.Seconds(since),
         )
 
     assert seen == [meta(0, 0, 0, 0), meta(1, 0, 0, 1), meta(2, 1, 1, 2), meta(3, 3, 2, 4)]

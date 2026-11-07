@@ -52,7 +52,7 @@ def test_server_close_mid_response_fails_the_turn_and_reconnects():
         )
         return first, second
 
-    first, second = yield from web_socket_mode(server, fx.gen(drive), _URL).timeout(5)
+    first, second = yield from web_socket_mode(server, fx.gen(drive), _URL).timeout("5 seconds")
     assert isinstance(first, Failure)
     reason = _reason(first)
     assert isinstance(reason, E.NetworkError)
@@ -82,7 +82,7 @@ def test_leaving_mid_response_replaces_the_connection():
             )
         )
 
-    second = yield from web_socket_mode(server, fx.gen(drive), _URL).timeout(5)
+    second = yield from web_socket_mode(server, fx.gen(drive), _URL).timeout("5 seconds")
     assert isinstance(second, Success)
     assert len(server.sockets) == 2
 
@@ -105,12 +105,12 @@ def test_concurrent_streams_are_sent_one_at_a_time():
             for index in range(2):
                 message = yield from server.next_create
                 order.append(f"sent {message['input']}")
-                yield from fx.sleep(0.02)
+                yield from fx.sleep("20 millis")
                 yield from server.send(*ws_completed(f"resp_{index}", f"msg_{index}", "ok"))
 
         yield from fx.all(stream("a"), stream("b"), fx.gen(respond), concurrency="unbounded")
 
-    yield from web_socket_mode(server, fx.gen(drive), _URL).timeout(5)
+    yield from web_socket_mode(server, fx.gen(drive), _URL).timeout("5 seconds")
     assert order == ["sent a", "done a", "sent b", "done b"]
     assert len(server.sockets) == 1
 
@@ -122,7 +122,7 @@ def test_error_event_details_are_its_decoded_fields():
     server = WsServer()
     error = {"error": {"message": "bad", "param": "input", "type": "invalid_request_error"}}
     turn = ws_turn(server, {"model": "m", "input": "a"}, lambda _: server.send(error))
-    exit = yield from web_socket_mode(server, turn, _URL).timeout(5)
+    exit = yield from web_socket_mode(server, turn, _URL).timeout("5 seconds")
     assert isinstance(exit, Failure)
     reason = _reason(exit)
     assert isinstance(reason, E.InvalidRequestError)
@@ -144,7 +144,7 @@ def test_response_not_found_keeps_the_connection():
         yield from server.send(*ws_completed("resp_2", "msg_2", "retried"))
 
     drive = chat_over_ws(server, "gpt-4o-mini", ["hello", "again"], _URL)
-    yield from fx.all(drive, fx.gen(respond), concurrency="unbounded").timeout(5)
+    yield from fx.all(drive, fx.gen(respond), concurrency="unbounded").timeout("5 seconds")
     assert len(server.sockets) == 1
 
 
@@ -158,7 +158,7 @@ def test_a_closed_connection_forgets_its_response_ids():
     def respond() -> Any:
         requests.append((yield from server.next_create))
         yield from server.send(*ws_completed("resp_1", "msg_1", "ok"))
-        yield from fx.sleep(0.05)
+        yield from fx.sleep("50 millis")
         server.close()
         requests.append((yield from server.next_create))
         yield from server.send(*ws_completed("resp_2", "msg_2", "again"))
@@ -166,7 +166,7 @@ def test_a_closed_connection_forgets_its_response_ids():
     def drive() -> Any:
         session = yield from chat.empty
         yield from session.stream_text(prompt="hello").run_drain()
-        yield from fx.sleep(0.2)
+        yield from fx.sleep("200 millis")
         yield from session.stream_text(prompt="again").run_drain()
 
     program = (
@@ -177,7 +177,7 @@ def test_a_closed_connection_forgets_its_response_ids():
         .pipe(fx.provide(server.layer))
         .pipe(fx.provide(unexpected().layer))
     )
-    yield from fx.all(program, fx.gen(respond), concurrency="unbounded").timeout(5)
+    yield from fx.all(program, fx.gen(respond), concurrency="unbounded").timeout("5 seconds")
     assert len(server.sockets) == 2
     assert "previous_response_id" not in requests[1]
     assert len(requests[1]["input"]) == 3

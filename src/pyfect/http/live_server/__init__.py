@@ -84,11 +84,11 @@ class TlsOptions(Options):
 
 
 def _serve(listener: Listener, protocol: RequestProtocol, options: Options) -> HttpServerService:
-    timeout = to_seconds(options.get("graceful_shutdown_timeout", 20))
+    timeout = to_seconds(options.get("graceful_shutdown_timeout", "20 seconds"))
     timeouts = Timeouts(
-        keep_alive=to_seconds(options.get("keep_alive_timeout", 5)),
-        headers=to_seconds(options.get("headers_timeout", 60)),
-        request=to_seconds(options.get("request_timeout", 300)),
+        keep_alive=to_seconds(options.get("keep_alive_timeout", "5 seconds")),
+        headers=to_seconds(options.get("headers_timeout", "60 seconds")),
+        request=to_seconds(options.get("request_timeout", "300 seconds")),
     )
     max_message = options.get("websocket_max_message_size", DEFAULT_MAX_MESSAGE_SIZE)
 

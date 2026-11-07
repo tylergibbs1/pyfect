@@ -6,7 +6,7 @@ from pyfect.reactivity import atom, atom_registry
 from pyfect.reactivity.atom import FnContext
 
 # An effect atom holds an AsyncResult: Initial while it runs, then Success or Failure.
-user = atom.make(fx.sleep(0.05).as_("Ada"))
+user = atom.make(fx.sleep("50 millis").as_("Ada"))
 
 # A stream atom holds a result of the latest item.
 latest = atom.make(stream.make(1, 2, 3))

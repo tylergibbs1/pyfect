@@ -45,7 +45,7 @@ from pyfect.socket import server as socket_server
 from pyfect.socket.server import SocketServer, SocketServerError
 from pyfect.sql.client import SqlClient
 
-_OPEN_TIMEOUT = 1.0
+_OPEN_TIMEOUT = "1 second"
 
 
 @gen

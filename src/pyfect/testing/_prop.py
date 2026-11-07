@@ -105,7 +105,7 @@ def effect_prop(
     seed: int | None = None,
     timeout: Duration | None = None,
     asyncio: bool = False,
-    warning_delay: Duration = 1.0,
+    warning_delay: Duration = "1 second",
     **keyed: Arbitrary,
 ) -> Callable[[Callable[..., TestBody[Any]]], Callable[..., None]]:
     """A property test written as an effect (``testing.effect`` per drawn
@@ -123,7 +123,7 @@ def live_prop(
     **keyed: Arbitrary,
 ) -> Callable[[Callable[..., TestBody[Any]]], Callable[..., None]]:
     """``effect_prop`` with the live clock and console."""
-    options = _Options("live", timeout, asyncio, 1.0)
+    options = _Options("live", timeout, asyncio, "1 second")
     return _property(arbitraries, keyed, runs, seed, _effect_runner(options), mode="live")
 
 

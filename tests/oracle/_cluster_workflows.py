@@ -111,7 +111,7 @@ def make_test_workflow_engine(
     )
     if storage_layer is None:
         return engine
-    return engine.pipe(fx.layer.provide(fx.layer.effect_discard(testing.adjust(0.001))))
+    return engine.pipe(fx.layer.provide(fx.layer.effect_discard(testing.adjust("1 millis"))))
 
 
 def poll_until(
@@ -125,7 +125,7 @@ def poll_until(
         if isinstance(result, tag):
             break
         yield from fx.yield_now()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from service.poll_storage
         result = yield from wf.poll(execution_id)
     assert isinstance(result, tag), f"workflow must reach {tag.__name__}"
@@ -138,7 +138,7 @@ def advance_until(
     for _ in range(rounds):
         if ready():
             break
-        yield from testing.adjust(step)
+        yield from testing.adjust(Seconds(step))
     assert ready(), message
 
 
@@ -149,7 +149,7 @@ def poll_storage_until(ready: Callable[[], bool], message: str) -> Generator[Any
         if ready():
             break
         yield from service.poll_storage
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
     assert ready(), message
 
 
@@ -226,7 +226,9 @@ def _email(payload: EmailPayload, _: str):
         @fx.gen
         def sleep_then_now():
             # suspended inside Activity
-            yield from durable_clock.sleep(name="Some sleep", duration=10, in_memory_threshold=0)
+            yield from durable_clock.sleep(
+                name="Some sleep", duration="10 seconds", in_memory_threshold=0
+            )
             return (yield from now())
 
         result = yield from activity.make(
@@ -454,7 +456,7 @@ def activity_reply(storage: MessageStorageService, request_id: Any) -> Generator
         replies = yield from storage.replies_for_unfiltered([request_id])
         if replies and replies[-1]["_tag"] == "WithExit":
             return _recovery_exit(replies[-1]["exit"])
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
     raise AssertionError(
         "unregistered activity must receive a terminal Suspended reply without waiting for "
         "registration"
@@ -497,7 +499,7 @@ def expect_continues_beside_parked_sibling(
             engine = yield from WorkflowEngine()
 
             def deferred_done(deferred: Any, **done: Any) -> fx.Effect[None]:
-                return engine.deferred_done(deferred, **done).delay(0.01)
+                return engine.deferred_done(deferred, **done).delay("10 millis")
 
             delayed = body.pipe(
                 fx.provide_service(WorkflowEngine, replace(engine, deferred_done=deferred_done))

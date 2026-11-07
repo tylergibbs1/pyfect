@@ -75,7 +75,9 @@ def _queue_schema(payload: Codec[Any, Any, Never, Never]) -> Bottom[_QueueItem, 
     return schema
 
 
-DEFAULT_RETRY_SCHEDULE: Schedule[Any, Any, Any, Any] = min(exponential(0.5, 1.5), spaced(60))
+DEFAULT_RETRY_SCHEDULE: Schedule[Any, Any, Any, Any] = min(
+    exponential("500 millis", 1.5), spaced("60 seconds")
+)
 """How ``process`` retries a failed offer: exponential from 500 ms, at most
 a minute apart."""
 
