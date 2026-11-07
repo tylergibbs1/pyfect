@@ -1,5 +1,5 @@
 """Ports of Effect's ``packages/ai/openai-compat/test/OpenAiClient.test.ts``
-and ``OpenAiTelemetry.test.ts``. Each docstring is the Effect test title
+and ``openai-compat/test/OpenAiTelemetry.test.ts``. Each docstring is the Effect test title
 (with its ``describe``). Responses are recorded JSON or Server-Sent Events
 answered by a mocked ``HttpClient``."""
 

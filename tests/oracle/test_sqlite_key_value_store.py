@@ -1,5 +1,5 @@
 """Ports of Effect's ``sql-sqlite-node/test/KeyValueStore.test.ts``: the
-``KeyValueStoreTest`` suite (``_kv_suite``) on ``layer_sql()`` and on
+``persistence/KeyValueStoreTest.ts`` suite (``_kv_suite``) on ``layer_sql()`` and on
 ``layer_sql(table="effect_key_value_store_custom")``, over a SQLite
 database in a temporary directory.
 

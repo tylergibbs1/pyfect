@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Resource.test.ts``.
+"""Ports of Effect's ``effect/test/Resource.test.ts``.
 
 Each test's docstring is the Effect test title. ``Resource.isResource`` is
 ``isinstance(value, fx.Resource)``, and durations are seconds.

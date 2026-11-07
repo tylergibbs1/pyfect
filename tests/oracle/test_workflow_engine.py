@@ -1,5 +1,5 @@
 """Ports of Effect's ``test/workflow/WorkflowEngine.test.ts``
-(``Workflow.test.ts`` is in ``test_workflow.py``).
+(``workflow/Workflow.test.ts`` is in ``test_workflow.py``).
 
 Each test's docstring is the Effect test title. Durations are seconds;
 ``Schema.Void`` is ``S.Null`` (``None``); ``{ ...engine, deferredResult }``

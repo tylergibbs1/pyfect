@@ -945,11 +945,24 @@ def nf_or_port() -> fx.Effect[int, NotFound, Port]:
 # --- scopes ---------------------------------------------------------------------------
 
 
+def check_failing_release(
+    use: fx.Effect[str, NotFound | Denied], released: fx.Effect[None, Denied]
+) -> None:
+    assert_type(
+        fx.acquire_use_release(fx.succeed(1), lambda _n: use, lambda _n, _ex: released),
+        fx.Effect[str, NotFound | Denied, Never],
+    )
+
+
 def check_scopes() -> None:
     res = fx.acquire_release(fx.succeed(1), lambda _n, _ex: fx.void)
     assert_type(res, fx.Effect[int, Never, fx.Scope])
     assert_type(fx.scoped(res), fx.Effect[int, Never, Never])
     assert_type(fx.scoped(res.zip(Port())), fx.Effect[tuple[int, int], Never, Port])
+    assert_type(
+        fx.acquire_use_release(fx.succeed(1), lambda _n: fx.succeed("a"), lambda _n, _ex: fx.void),
+        fx.Effect[str, Never, Never],
+    )
 
 
 # --- data types --------------------------------------------------------------------------

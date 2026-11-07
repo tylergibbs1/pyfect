@@ -713,7 +713,7 @@ def _empty_call() -> MS.CallToolResult:
 
 @testing.effect
 def test_should_reject_a_tools_call_request_when_its_required_routing_name_is_missing():
-    """Mcp Conformance / Tools > Modern request headers / should reject a tools/call request when its required routing name is missing"""  # noqa: E501
+    """McpConformance/ToolsTest.ts: Mcp Conformance / Tools > Modern request headers / should reject a tools/call request when its required routing name is missing"""  # noqa: E501
     test = yield from conformance(P.v2026_07_28)
     initialized = yield from test.initialize()
     response = yield from test.send(

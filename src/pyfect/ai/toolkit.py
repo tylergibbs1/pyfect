@@ -182,7 +182,7 @@ def _handle(
         return annotate.and_then(fx.fail(error))
     found, registered_value = kit.services.lookup(_handler_tag(tool.id))
     if not found:
-        missing = MissingServiceError(f"Service {tool.id} was not provided (a tool handler)")
+        missing = MissingServiceError(tool.id)
         return annotate.and_then(fx.die(missing))
     registered = cast("_Registered", registered_value)
     encode_success: Callable[[object], Effect[object, SchemaError]] = cast(

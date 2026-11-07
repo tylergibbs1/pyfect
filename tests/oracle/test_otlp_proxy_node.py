@@ -1,4 +1,4 @@
-"""Ports of ``platform/node``'s ``OtlpProxy.test.ts`` ("OtlpProxy on
+"""Ports of ``platform/node/test/OtlpProxy.test.ts`` ("OtlpProxy on
 NodeHttpServer"), on a real uvicorn server.
 
 Each test's docstring is the Effect test title. ``NodeHttpServer.layerTest``

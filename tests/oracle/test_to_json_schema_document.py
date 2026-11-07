@@ -1,4 +1,4 @@
-"""Ports of Effect's ``toJsonSchemaDocument.test.ts``. Each test's docstring
+"""Ports of Effect's ``schema/toJsonSchemaDocument.test.ts``. Each test's docstring
 is the Effect test title, prefixed by its ``describe`` blocks. The pattern and
 string-length titles are in ``test_to_json_schema_document_patterns.py``, the
 "fromJsonString" ones in ``test_to_json_schema_document_content.py``.

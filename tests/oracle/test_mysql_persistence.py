@@ -1,6 +1,6 @@
 """Ports of Effect's ``sql-mysql2/test/Persistence.integration.test.ts`` on
 the session's MySQL container (``_mysql.mysql_server``; skipped without
-Docker): the ``PersistedCacheTest`` suite (``_persisted_cache_suite``) on
+Docker): the ``persistence/PersistedCacheTest.ts`` suite (``_persisted_cache_suite``) on
 ``layer_sql_multi_table`` (``PersistedCache (sql-mysql2-multi)``) and
 ``layer_sql`` (``(sql-mysql2-single)``), the ``PersistedQueueTest`` suite
 (``_persisted_queue_suite``) on ``layer_store_sql`` (``PersistedQueue

@@ -1,5 +1,5 @@
 """Ports of Effect's ``sql-mysql2/test/MysqlClient.integration.test.ts`` and
-``Client.integration.test.ts``, against the session's MySQL container
+``mysql2/test/Client.integration.test.ts``, against the session's MySQL container
 (``_mysql.mysql_server``; skipped without Docker).
 
 Each test's docstring is the Effect test title; ``(pyfect)`` titles pin

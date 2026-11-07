@@ -2,11 +2,11 @@
 on ``redis_py`` (Effect's ``NodeRedis``), against the throwaway Redis
 server of ``_redis`` (skipped without one), emptied before each test:
 
-- the ``PersistedCacheTest`` suite on ``persistence.layer_redis``,
+- the ``persistence/PersistedCacheTest.ts`` suite on ``persistence.layer_redis``,
 - the ``RateLimiterTest`` suite on ``rate_limiter.layer_store_redis``,
 - the ``CircuitBreakerTest`` suite on ``circuit_breaker.layer_store_redis``
   (on live time: the store reads Redis ``TIME``),
-- the ``CircuitBreakerRedisTest`` suite (``test/persistence``),
+- the ``persistence/CircuitBreakerRedisTest.ts`` suite,
 - the file's own titles.
 
 Each test's docstring is the Effect test title. The

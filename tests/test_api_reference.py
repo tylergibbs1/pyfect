@@ -13,7 +13,6 @@ import importlib.util
 import inspect
 import json
 import os
-import pkgutil
 import subprocess
 import sys
 import types
@@ -22,8 +21,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from _pyfect_modules import import_module, module_names
 
-import pyfect
 from pyfect._public import is_private
 
 ROOT = Path(__file__).parent.parent
@@ -55,8 +54,9 @@ def reference(tmp_path_factory: pytest.TempPathFactory) -> Tree:
 
 
 def public_modules() -> list[str]:
-    walked = pkgutil.walk_packages(pyfect.__path__, "pyfect.")
-    return ["pyfect", *(info.name for info in walked if not is_private(info.name))]
+    """Every public module's name, imported or not: import one with ``import_module``, which
+    leaves out ``pyfect.schema.jit_compiler.install`` (importing it installs the JIT)."""
+    return ["pyfect", *(name for name in module_names() if not is_private(name))]
 
 
 def modules_of(tree: Tree) -> dict[str, Tree]:
@@ -91,7 +91,7 @@ def test_every_exported_value_is_in_the_reference_with_its_type(reference: Tree)
     missing: list[str] = []
     untyped: list[str] = []
     for path in public_modules():
-        module = importlib.import_module(path)
+        module = import_module(path)
         for name in getattr(module, "__all__", ()):
             value = getattr(module, name)
             if not is_value(value):
@@ -107,7 +107,7 @@ def test_every_exported_value_is_in_the_reference_with_its_type(reference: Tree)
 
 
 def _exports(path: str, name: str, value: object) -> bool:
-    return getattr(importlib.import_module(path), name, None) is value
+    return getattr(import_module(path), name, None) is value
 
 
 def test_the_values_quill_and_atlas_looked_for_are_listed(reference: Tree):
@@ -151,7 +151,9 @@ def all_functions(tree: Tree) -> list[tuple[str, Any, Tree]]:
     """(path, runtime function, reference entry) of every function and method."""
     out: list[tuple[str, Any, Tree]] = []
     for path, mod in modules_of(tree).items():
-        module = importlib.import_module(path)
+        module = import_module(path)
+        if module is None:
+            continue
         for name, entry in mod["functions"].items():
             out.append((f"{path}.{name}", getattr(module, name), entry))
         for name, cls in mod["classes"].items():
@@ -216,7 +218,9 @@ def test_a_generic_signature_keeps_its_type_parameters(reference: Tree):
 def test_a_generic_class_shows_its_type_parameters(reference: Tree):
     wrong: list[str] = []
     for path, mod in modules_of(reference).items():
-        module = importlib.import_module(path)
+        module = import_module(path)
+        if module is None:
+            continue
         for name, cls in mod["classes"].items():
             declared = getattr(module, name).__dict__.get("__type_params__", ())
             if declared and not (cls["description"] or "").startswith(f"`class {name}["):
@@ -244,7 +248,7 @@ def test_a_package_links_what_it_reexports_from_its_submodules(reference: Tree):
     assert "[`layer`](/docs/reference/sql/pg/client#layer)" in text
     assert "[`PgPoolConfig`](/docs/reference/sql/pg/config/PgPoolConfig)" in text
     for path, mod in modules_of(reference).items():
-        module = importlib.import_module(path)
+        module = import_module(path)
         documented = (
             {a["name"] for a in mod["attributes"]}
             | set(mod["classes"])

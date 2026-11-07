@@ -100,14 +100,6 @@ def test_retains_a_resolved_union_member_parser_after_replacement():
     assert S.decode_unknown_sync(child)("new consumer") == "replacement"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "with nothing installed, AST.parse records no visits, so a parser first run then "
-        "keeps every child interpreted, reached or not; Effect resolves an unreached "
-        "Union member when first tried"
-    ),
-)
 def test_uses_a_replacement_for_an_unresolved_union_member():
     """uses a replacement for an unresolved Union member"""
     child = S.String.annotate(title="unresolved Union candidate")
@@ -121,6 +113,26 @@ def test_uses_a_replacement_for_an_unresolved_union_member():
         ),
     )
     assert decode("first visit") == "replacement"
+
+
+def test_a_one_of_union_resolves_only_members_it_never_tried():
+    """A ``one_of`` union (every candidate tried) keeps the members it tried before a decoder
+    was installed, and resolves an untried one from the registry, as an ``any_of`` one does."""
+    tried = S.String.annotate(title="tried one_of member")
+    untried = S.Number.annotate(title="untried one_of member")
+    decode = S.decode_unknown_sync(S.Union(tried, untried, mode="one_of"))
+    assert decode("first") == "first"
+
+    for child in (tried, untried):
+        SC.set(
+            child.ast,
+            SC.CompiledDecoder(
+                decode=lambda _i, _o: "replacement",
+                decode_effect=lambda _i, _o: Success("replacement"),
+            ),
+        )
+    assert decode("again") == "again"
+    assert decode(1) == "replacement"
 
 
 def test_installs_a_decoder_in_the_shared_registry():

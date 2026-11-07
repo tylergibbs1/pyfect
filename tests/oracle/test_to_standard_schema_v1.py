@@ -171,8 +171,7 @@ class _MagicNumber(Tag[int], key="MagicNumber"):
 def _expect_missing_service(issues: list[dict[str, object]]) -> None:
     assert len(issues) == 1
     assert issues[0]["path"] is None
-    # Effect: "Service not found: MagicNumber"; pyfect words its MissingServiceError so.
-    assert "Service MagicNumber was not provided" in cast("str", issues[0]["message"])
+    assert "Service not found: MagicNumber" in cast("str", issues[0]["message"])
 
 
 def test_missing_dependencies_sync_decoding_should_throw():

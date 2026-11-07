@@ -32,20 +32,20 @@ from pyfect.testing import Services
 
 @testing.effect
 def test_effect():
-    """index.test.ts "effect"."""
+    """vitest/test/index.test.ts "effect"."""
     yield from fx.acquire_release(fx.sync(lambda: None), lambda _a, _e: fx.void)
 
 
 @testing.live
 def test_live():
-    """index.test.ts "live"."""
+    """vitest/test/index.test.ts "live"."""
     yield from fx.acquire_release(fx.sync(lambda: None), lambda _a, _e: fx.void)
 
 
 @pytest.mark.parametrize("n", [1, 2, 3])
 @testing.effect
 def test_effect_each(n: int):
-    """index.test.ts "effect each %s"."""
+    """vitest/test/index.test.ts "effect each %s"."""
     value = yield from fx.acquire_release(fx.succeed(n), lambda _a, _e: fx.void)
     assert value == n
 
@@ -53,7 +53,7 @@ def test_effect_each(n: int):
 @pytest.mark.parametrize("n", [1, 2, 3])
 @testing.live
 def test_live_each(n: int):
-    """index.test.ts "live each %s"."""
+    """vitest/test/index.test.ts "live each %s"."""
     value = yield from fx.acquire_release(fx.succeed(n), lambda _a, _e: fx.void)
     assert value == n
 
@@ -61,7 +61,7 @@ def test_live_each(n: int):
 @pytest.mark.skip(reason="skipped anyway")
 @testing.effect
 def test_effect_skipped():
-    """index.test.ts "effect skipped"."""
+    """vitest/test/index.test.ts "effect skipped"."""
     yield from fx.die(RuntimeError("skipped anyway"))
 
 
@@ -92,13 +92,13 @@ live_sleeper = testing.layer_fixture(SleeperLive, live=True)
 
 @testing.effect
 def test_layer_adds_context(foo: Services[Foo]):
-    """index.test.ts "layer > adds context"."""
+    """vitest/test/index.test.ts "layer > adds context"."""
     assert (yield from Foo()) == "foo"
 
 
 @testing.effect
 def test_layer_nested_adds_context(foo_bar: Services[Foo | Bar]):
-    """index.test.ts "layer > nested > adds context"."""
+    """vitest/test/index.test.ts "layer > nested > adds context"."""
     assert (yield from Foo()) == "foo"
     assert (yield from Bar()) == "bar"
 
@@ -112,7 +112,7 @@ def value() -> int:
 def test_layer_anonymous_layer_next_to_a_vitest_fixture_provides_its_context(
     foo: Services[Foo], value: int
 ):
-    """index.test.ts "layer > anonymous layer next to a Vitest fixture > provides its
+    """vitest/test/index.test.ts "layer > anonymous layer next to a Vitest fixture > provides its
     context" (and "runs the fixture test": the fixture reaches the test)."""
     assert (yield from Foo()) == "foo"
     assert value == 1
@@ -120,7 +120,7 @@ def test_layer_anonymous_layer_next_to_a_vitest_fixture_provides_its_context(
 
 @testing.effect
 def test_layer_test_services_test_clock(sleeper: Services[Sleeper]):
-    """index.test.ts "layer > test services > TestClock"."""
+    """vitest/test/index.test.ts "layer > test services > TestClock"."""
     sleep = yield from Sleeper()
     fiber = yield from sleep(100_000).fork()
     yield from fx.yield_now()
@@ -130,7 +130,7 @@ def test_layer_test_services_test_clock(sleeper: Services[Sleeper]):
 
 @testing.effect
 def test_layer_live_services_clock(live_sleeper: Services[Sleeper]):
-    """index.test.ts "layer > live services > Clock"."""
+    """vitest/test/index.test.ts "layer > live services > Clock"."""
     sleep = yield from Sleeper()
     yield from sleep(0.001)
 
@@ -473,7 +473,7 @@ def test_layer_timeout_finalizers(pytester: pytest.Pytester) -> None:
 
 
 def test_layer_release(pytester: pytest.Pytester) -> None:
-    """index.test.ts "layer > release > adds context" and its ``afterAll`` check that
+    """vitest/test/index.test.ts "layer > release > adds context" and its ``afterAll`` check that
     the layer was released."""
     pytester.makepyfile(
         test_a="""

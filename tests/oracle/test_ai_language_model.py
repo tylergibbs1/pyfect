@@ -1,4 +1,5 @@
-"""Ports of Effect's ``test/ai/LanguageModel.test.ts``.
+"""Ports of Effect's ``test/ai/LanguageModel.test.ts`` and
+``test/ai/LanguageModelRepresentation.test.ts``.
 
 Each test's docstring is the Effect test title (with its ``describe``). A
 provider's canned parts come from ``_ai.with_language_model``; options are

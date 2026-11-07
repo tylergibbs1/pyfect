@@ -1,5 +1,5 @@
 """Ports of Effect's ``StructWithRest`` titles from ``Schema.test.ts``,
-``toFormatter.test.ts``, ``toJsonSchemaDocument.test.ts`` and
+``toFormatter.test.ts``, ``schema/toJsonSchemaDocument.test.ts`` and
 ``Arbitrary.test.ts``. Each test's docstring is the Effect test title,
 prefixed by its ``describe`` blocks. ``TestSchema.Asserts`` is
 ``testing.SchemaAsserts``.

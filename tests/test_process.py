@@ -15,7 +15,7 @@ from pyfect import file_system, path, platform, process, stream, testing
 from pyfect.file_system import FileSystem
 from pyfect.layer import Layer, merge, provide_merge
 from pyfect.path import Path
-from pyfect.platform_error import PlatformError, Unknown, system_error
+from pyfect.platform_error import PlatformError, StreamError, Unknown, system_error
 from pyfect.process import ChildProcessSpawner, InputFd, OutputFd, make
 from pyfect.scope import CloseableScope, Scope
 from pyfect.stream import Stream
@@ -112,6 +112,58 @@ def test_a_write_cut_short_by_the_child_exiting_fails(process_services: Services
     assert (reason.module, reason.method) == ("ChildProcess", "from_writable(stdin)")
     assert isinstance(error.cause, OSError), error
     assert error.cause.errno == errno.ECANCELED, error.cause
+
+
+def _stdin_failure(error: PlatformError) -> tuple[str, str | None, str | None, object]:
+    reason = error.reason
+    assert isinstance(reason, Unknown)
+    assert (reason.module, reason.method) == ("ChildProcess", "from_writable(stdin)")
+    return error.message, reason.description, reason.syscall, error.cause
+
+
+@testing.effect
+def test_a_write_after_stdin_ended_fails_as_nodes_write_after_end(
+    process_services: Services[Platform],
+):
+    # Effect under Node: ERR_STREAM_WRITE_AFTER_END, no description, no syscall.
+    handle = yield from make("cat")
+    yield from stream.make(b"a").run(handle.stdin)
+    error = yield from stream.make(b"b").run(handle.stdin).flip()
+    message, description, syscall, cause = _stdin_failure(error)
+    assert (message, description, syscall) == (
+        "Unknown: ChildProcess.from_writable(stdin) (cat)",
+        None,
+        None,
+    )
+    assert isinstance(cause, StreamError)
+    assert (cause.code, str(cause)) == ("ERR_STREAM_WRITE_AFTER_END", "write after end")
+
+
+@testing.live(timeout=10)
+def test_a_write_after_the_child_exited_fails_as_nodes_premature_close(
+    process_services: Services[Platform],
+):
+    # Effect under Node: the child's exit destroyed stdin, ERR_STREAM_PREMATURE_CLOSE.
+    handle = yield from make("sh", ["-c", "exit 0"])
+    yield from handle.exit_code
+    error = yield from stream.make(b"b").run(handle.stdin).flip()
+    _, description, syscall, cause = _stdin_failure(error)
+    assert (description, syscall) == (None, None)
+    assert isinstance(cause, StreamError)
+    assert (cause.code, str(cause)) == ("ERR_STREAM_PREMATURE_CLOSE", "Premature close")
+
+
+@testing.live(timeout=10)
+def test_a_write_the_child_refuses_fails_with_epipe_from_write(
+    process_services: Services[Platform],
+):
+    # Effect under Node: EPIPE from the ``write`` syscall, no description.
+    handle = yield from make("sh", ["-c", "exec 0<&-; sleep 0.5"])
+    yield from fx.sleep(0.1)
+    error = yield from stream.make(b"x" * 1_000_000).run(handle.stdin).flip()
+    _, description, syscall, cause = _stdin_failure(error)
+    assert (description, syscall) == (None, "write")
+    assert isinstance(cause, OSError) and cause.errno == errno.EPIPE
 
 
 @testing.effect

@@ -165,6 +165,24 @@ class PlatformError(TaggedError):
         return self.reason.message
 
 
+class StreamError(Exception):
+    """A stream refusing a write by its state, with Node's ``code`` and message: the cause
+    Effect's Node platform gives the ``PlatformError`` (``ERR_STREAM_WRITE_AFTER_END``,
+    "write after end", once the stream ended; ``ERR_STREAM_PREMATURE_CLOSE``, "Premature
+    close", once it was destroyed)."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+    def __reduce__(self) -> tuple[type[StreamError], tuple[str, str]]:
+        return (type(self), (self.code, str(self)))
+
+
+WRITE_AFTER_END = ("ERR_STREAM_WRITE_AFTER_END", "write after end")
+PREMATURE_CLOSE = ("ERR_STREAM_PREMATURE_CLOSE", "Premature close")
+
+
 def system_error(
     tag: SystemErrorTag,
     *,
@@ -242,6 +260,7 @@ __all__ = [
     "NotFound",
     "PermissionDenied",
     "PlatformError",
+    "StreamError",
     "SystemError",
     "SystemErrorTag",
     "TimedOut",

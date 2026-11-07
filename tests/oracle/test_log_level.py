@@ -1,4 +1,4 @@
-"""Ports of Effect's ``LogLevel.test.ts``. Each test's docstring is the
+"""Ports of Effect's ``effect/test/LogLevel.test.ts``. Each test's docstring is the
 Effect test title."""
 
 import pyfect as fx

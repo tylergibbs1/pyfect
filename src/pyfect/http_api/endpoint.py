@@ -366,7 +366,7 @@ def _in_context(schema: Top, derive: Callable[[ast.AST], ast.AST]) -> Top:
     differ only in key context (a status) share it, so they are one
     OpenAPI component."""
     node = schema.__codec__().ast
-    owner = node.owner()
+    owner = node.key_context_owner()
     derived = derive(owner)
     if owner is not node:
         derived = ast.replace_context(

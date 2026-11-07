@@ -1,5 +1,5 @@
 """Ports of Effect's ``sql-mysql2/test/KeyValueStore.integration.test.ts``: the
-``KeyValueStoreTest`` suite (``_kv_suite``) on ``layer_sql()`` and on
+``persistence/KeyValueStoreTest.ts`` suite (``_kv_suite``) on ``layer_sql()`` and on
 ``layer_sql(table="effect_key_value_store_custom")``, on the session's
 MySQL container (``_mysql.mysql_server``; skipped without Docker).
 

@@ -654,7 +654,7 @@ def test_should_validate_parameter_headers_when_values_use_plain_or_base64_encod
 
 @testing.effect
 def test_should_validate_nested_mirrored_parameters_before_executing_a_tool():
-    """v2026_07_28 / should validate nested mirrored parameters before executing a tool"""
+    """v2026_07_28.test.ts / should validate nested mirrored parameters before executing a tool"""
     test = yield from features_conformance(P.v2026_07_28)
     session = yield from test.initialize()
     arguments: Json = {"region": "eu", "routing": {"region": "eu"}}
@@ -676,7 +676,7 @@ def test_should_validate_nested_mirrored_parameters_before_executing_a_tool():
 
 @testing.effect
 def test_should_treat_an_unmatched_base64_wrapper_as_a_literal_when_routing_a_request():
-    """v2026_07_28 / should treat an unmatched Base64 wrapper as a literal when routing a request"""
+    """v2026_07_28.test.ts / should treat an unmatched Base64 wrapper as a literal when routing a request"""  # noqa: E501
     test = yield from features_conformance(P.v2026_07_28)
     session = yield from test.initialize()
     value = "=?base64?SGVsbG8="

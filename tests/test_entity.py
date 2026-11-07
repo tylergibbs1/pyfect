@@ -1,4 +1,4 @@
-"""``Entity`` at its boundary, past Effect's ``Entity.test.ts``
+"""``Entity`` at its boundary, past Effect's ``cluster/Entity.test.ts``
 (``tests/oracle/test_entity.py``): a queue-based entity whose behaviour
 fails, and the checks ``to_layer`` and ``handle`` make."""
 

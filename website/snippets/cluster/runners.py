@@ -87,5 +87,7 @@ def program(database: Path):
 
 
 with tempfile.TemporaryDirectory() as directory:
-    quiet = fx.provide_service(fx.MinimumLogLevel, fx.LogLevel.WARN)  # no "Listening on"
+    # No "Listening on", and no "No healthy runners available" from a runner that syncs
+    # while the other shuts down.
+    quiet = fx.provide_service(fx.MinimumLogLevel, fx.LogLevel.ERROR)
     fx.run_main(fx.scoped(program(Path(directory) / "cluster.db")).pipe(quiet))

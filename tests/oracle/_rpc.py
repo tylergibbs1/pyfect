@@ -3,7 +3,7 @@
 # pyright: reportUnknownLambdaType=false, reportUnknownMemberType=false
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
 
-"""Effect's platform-node test fixtures rpc-schemas.ts and rpc-e2e.ts: the
+"""Effect's platform-node/test/fixtures/rpc-schemas.ts and node/test/fixtures/rpc-e2e.ts: the
 ``UserRpcs`` group, its handlers and middleware, and the transports the
 e2e suite runs over.
 
@@ -312,7 +312,7 @@ def tcp_suite(serialization: Layer[Any, Any, Any]) -> Layer[Any, Any, Any]:
 
 
 def worker_main() -> Layer[Any, Any, Any]:
-    """Effect's fixtures/rpc-worker.ts: the server inside a worker."""
+    """Effect's browser/test/fixtures/rpc-worker.ts: the server inside a worker."""
     return (
         rpc_layer()
         .pipe(layer.provide(rpc_server.layer_protocol_worker_runner))

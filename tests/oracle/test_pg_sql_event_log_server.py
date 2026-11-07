@@ -1,7 +1,9 @@
 """Ports of the PostgreSQL-only titles of Effect's ``sql-pg`` tests for the SQL
 event log server storages, on the session's throwaway server
 (``_postgres.pg_server``; skipped without one): the ``SqlEventLogServerUnencrypted
-commit visibility`` titles. The shared suites run on PostgreSQL through the
+commit visibility`` titles of
+``sql-pg/test/SqlEventLogServerUnencrypted.integration.test.ts``. The shared suites run on
+PostgreSQL through the
 ``storage`` and ``connect`` fixtures of their own modules, and
 ``SqlEventLogServerEncryptedStorageTest`` in
 ``test_sql_event_log_server_encrypted_storage.py``.

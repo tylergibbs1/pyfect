@@ -16,6 +16,8 @@ const PAGES = {
   reference: '/docs/reference/stream',
 };
 const WIDTHS = [1512, 1280, 1024, 390];
+/** How late the fonts arrive in the late-font pass, in ms: well after the first paint. */
+const FONT_DELAY = 1000;
 
 /** Positions that must match across page types. */
 function measure() {
@@ -132,6 +134,25 @@ try {
       await settle(page);
     }
     await context.close();
+
+    // Fonts arriving after the first paint (a slow runner): nothing may move when they do.
+    const late = await browser.newContext({ viewport: { width, height: 900 } });
+    await late.addInitScript(recordShifts);
+    await late.route(/\.woff2(\?|$)/, async (route) => {
+      await new Promise((r) => setTimeout(r, FONT_DELAY));
+      await route.continue();
+    });
+    const latePage = await late.newPage();
+    for (const path of Object.values(PAGES)) {
+      await latePage.goto(BASE + path, { waitUntil: 'networkidle' });
+      await latePage.evaluate(() => document.fonts.ready);
+      await settle(latePage);
+      const shifts = await latePage.evaluate(() => window.__shifts);
+      if (shifts.length > 0) {
+        failures.push(`${width}px ${path}: layout shift when fonts load late ${JSON.stringify(shifts)}`);
+      }
+    }
+    await late.close();
   }
 } finally {
   await browser.close();

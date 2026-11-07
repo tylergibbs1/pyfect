@@ -61,7 +61,15 @@ R_contra = TypeVar("R_contra", contravariant=True, default=Any)
 
 class MissingServiceError(Exception):
     """A defect: an effect read a service nobody provided. The types rule
-    this out unless an ``Any`` or a cast got in the way."""
+    this out unless an ``Any`` or a cast got in the way. Its message is
+    Effect's: ``Service not found: <key>``."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"Service not found: {key}")
+        self.key = key
+
+    def __reduce__(self) -> tuple[type[MissingServiceError], tuple[str]]:
+        return (type(self), (self.key,))
 
 
 class ServiceEffect(Effect[S_inv, Never, T_co]):
@@ -77,22 +85,7 @@ class ServiceEffect(Effect[S_inv, Never, T_co]):
         found, value = fiber._context.lookup(self.tag)
         if found:
             return Success(value)
-        return Failure(Cause((Die(MissingServiceError(_missing(self.tag, fiber._context))),)))
-
-
-def _is_runtime_setting(tag: type[Tag[Any]]) -> bool:
-    """A reference (it has a default, so it is never missing) or a tag the
-    runtime keeps for itself: noise in a missing-service message."""
-    module = tag.__module__.split(".")
-    return issubclass(tag, Reference) or (
-        module[0] == "pyfect" and any(part.startswith("_") for part in module)
-    )
-
-
-def _missing(tag: type[Tag[Any]], ctx: Context) -> str:
-    provided = [t.key for t in ctx.tags() if not _is_runtime_setting(t)]
-    available = ", ".join(provided) or "none"
-    return f"Service {tag.key} was not provided (available: {available})"
+        return Failure(Cause((Die(MissingServiceError(self.tag.key)),)))
 
 
 def _require_base_parents(cls: type[Tag[Any]]) -> None:
@@ -287,7 +280,7 @@ class Context(Generic[R_contra]):
         the service is absent."""
         found, value = self.lookup(tag_class(tag))
         if not found:
-            raise MissingServiceError(_missing(tag_class(tag), self))
+            raise MissingServiceError(tag_class(tag).key)
         return value
 
     def get_option[S, T](self, tag: TagLike[S, T]) -> Option[S]:

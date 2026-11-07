@@ -1,4 +1,4 @@
-"""Ports of Effect's ``HttpClient.test.ts``, against the httpx client
+"""Ports of Effect's ``effect/test/HttpClient.test.ts``, against the httpx client
 (``pyfect.http.httpx_client``) and a local stdlib server (``_http_server``)
 in place of ``FetchHttpClient`` and the Node server.
 

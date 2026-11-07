@@ -1,4 +1,4 @@
-"""Ports of ``@effect/vitest``'s property tests (``index.test.ts`` "property
+"""Ports of ``@effect/vitest``'s property tests (``vitest/test/index.test.ts`` "property
 testing" and "property failures", the two ``it.effect.prop`` titles of its
 layer block, and ``arbitrary-configuration.test.ts``) to ``testing.prop`` /
 ``effect_prop`` / ``live_prop``.

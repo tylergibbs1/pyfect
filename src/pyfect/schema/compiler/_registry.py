@@ -36,6 +36,7 @@ from pyfect.schema.ast import (
 )
 from pyfect.schema.ast._base import set_dispatch
 from pyfect.schema.ast._result import MISSING, ParseResult
+from pyfect.schema.ast._union import forget_tried
 
 
 @final
@@ -301,18 +302,24 @@ def resolve(ast: AST) -> Entry:
     if cached is not None:
         return cached
     if not _State.active:
-        return _store(ast, Entry(ast, None, False, _pinned))
+        return _store(ast, Entry(ast, None, False, _interpreted_under(ast)))
     compiler = _State.compiler
     compiled = None if compiler is None else compiler(ast, resolve)
     return _store(ast, Entry(ast, compiled, False, resolve))
 
 
-def _pinned(child: AST) -> Entry:
-    """The children of an entry resolved before anything was installed:
-    interpreted for good, as Effect's interpreter resolves them eagerly
-    then. (Effect still resolves a child it never reached later; with
-    nothing installed, ``AST.parse`` does not record what it reached.)"""
-    return Entry(child, None, False, _pinned)
+def _interpreted_under(parent: AST) -> Resolve:
+    """How an entry resolved before anything was installed resolves its children: interpreted
+    for good, as Effect's interpreter resolves them eagerly then; but a Union member the union
+    never tried is resolved from the registry when first tried, as Effect's Union parser
+    compiles a member then (``Union.tried``)."""
+
+    def resolve_child(child: AST) -> Entry:
+        if isinstance(parent, Union) and not parent.tried(child):
+            return resolve(child)
+        return Entry(child, None, False, _interpreted_under(child))
+
+    return resolve_child
 
 
 def _activate() -> None:
@@ -363,3 +370,4 @@ def reset() -> None:
     _State.compiler = None
     _State.active = False
     set_dispatch(None)
+    forget_tried()

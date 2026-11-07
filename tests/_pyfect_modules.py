@@ -24,6 +24,12 @@ def module_names() -> list[str]:
     return [info.name for info in pkgutil.walk_packages(pyfect.__path__, "pyfect.")]
 
 
+def import_module(name: str) -> ModuleType | None:
+    """``name`` imported, or ``None`` for a module in ``INSTALLS_ON_IMPORT`` (it exports
+    nothing): what a walk over module names from elsewhere (a docs tree) imports with."""
+    return None if name in INSTALLS_ON_IMPORT else importlib.import_module(name)
+
+
 def modules(*, public: bool = False, skip_missing_extras: bool = False) -> Iterator[ModuleType]:
     """Each module under ``pyfect``, imported, except ``INSTALLS_ON_IMPORT``.
 

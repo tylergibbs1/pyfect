@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Config.test.ts``.
+"""Ports of Effect's ``effect/test/Config.test.ts``.
 
 Each test's docstring is the Effect test title. Effect's ``Config.Array`` and
 ``Config.Record`` are ``config.list_of`` and ``config.dict_of``; a

@@ -1,5 +1,6 @@
 """Ports of Effect's ``test/cluster/MessageStorage.test.ts`` (the memory
-storage). Each test's docstring is the Effect test title.
+storage). Each test's docstring is the Effect test title. The memory titles of
+``platform-node/test/cluster/MessageStorageTest.ts`` are the same five cases with the same bodies.
 
 The encoded envelopes are Effect's JSON (camelCase keys, snowflakes as
 strings); ``unprocessed_messages`` takes ``limit=`` and ``addresses=``.

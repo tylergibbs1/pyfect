@@ -1,6 +1,7 @@
 """Ports of Effect's ``effect/test/eventlog/SqlEventLogServerUnencryptedStorageTest.ts``
-suite and of the ``sql-sqlite-node`` ``SqlEventLogServerUnencrypted`` titles,
-and ``sql-pg``'s and ``sql-mysql2``'s ``SqlEventLogServerUnencrypted.integration.test.ts``,
+suite and of ``sql-sqlite-node/test/SqlEventLogServerUnencrypted.test.ts``,
+``sql-pg/test/SqlEventLogServerUnencrypted.integration.test.ts`` and
+``sql-mysql2/test/SqlEventLogServerUnencrypted.integration.test.ts``,
 for ``pyfect.eventlog.sql_event_log_server_unencrypted``. The storage suite
 runs on SQLite, on the session's PostgreSQL server and on its MySQL
 container (each skipped without one); its

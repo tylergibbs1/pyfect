@@ -1,4 +1,4 @@
-"""Ports of the ``Config.schema`` titles of Effect's ``Config.test.ts``.
+"""Ports of the ``Config.schema`` titles of Effect's ``effect/test/Config.test.ts``.
 
 Each test's docstring is the Effect test title, prefixed by its ``describe``
 block where titles repeat. ``Schema.Struct({...})`` is ``S.Struct`` of a

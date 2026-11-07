@@ -184,7 +184,7 @@ def test_an_empty_struct_refuses_none_as_object_or_array() -> None:
 
 
 def test_struct_empty_preserves_its_semantics_in_a_union() -> None:
-    """Union / Struct({}) preserves its semantics in a union"""
+    """schema/Schema.test.ts / Union / Struct({}) preserves its semantics in a union"""
     decode = S.decode_unknown_sync(S.Union(S.Struct(_Empty), S.Null))
     values: tuple[object, ...] = ("a", 1, True, print, {}, [], None)
     for value in values:
