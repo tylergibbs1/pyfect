@@ -4,8 +4,8 @@ implicitly: pass the ones a document needs to ``from_representation``.
 
 Payloads are Effect's (``{"minLength": 1}``), so documents written by
 either side name the same checks; ``is_pattern``'s holds a Python ``re``
-pattern (``flags`` are ``re`` flags, an ``int``) or an ECMAScript one in
-Unicode mode (``"u"``, as ``is_ecma_pattern`` and Effect's imports write).
+pattern (``flags`` are ``re`` flags, an ``int``) or an ECMAScript one
+(JavaScript's flag letters, as ``is_ecma_pattern`` and Effect write).
 """
 
 from __future__ import annotations
@@ -98,8 +98,8 @@ is_trimmed_reviver = _filter("isTrimmed", lambda a: S.is_trimmed(**a))
 
 def _compiles(payload: Payload) -> bool:
     try:
-        if payload["flags"] == "u":
-            compile_ecma(payload["source"])
+        if isinstance(payload["flags"], str):
+            compile_ecma(payload["source"], payload["flags"])
         else:
             re.compile(payload["source"], payload["flags"])
     except (re.error, EcmaPatternError, ValueError, TypeError):
@@ -109,16 +109,14 @@ def _compiles(payload: Payload) -> bool:
 
 def _revive_pattern(input: CheckInput[Payload]) -> Filter[Any]:
     source, flags = input.payload["source"], input.payload["flags"]
-    if flags == "u":
-        return S.is_ecma_pattern(source, **_keywords(input.annotations))
+    if isinstance(flags, str):
+        return S.is_ecma_pattern(source, flags, **_keywords(input.annotations))
     return S.is_pattern(re.compile(source, flags), **_keywords(input.annotations))
 
 
 is_pattern_reviver = make_reviver_filter(
     "effect/schema/isPattern",
-    _payload(source=S.String, flags=S.Union([S.Int, S.Literal("u")])).check(
-        S.make_filter(_compiles)
-    ),
+    _payload(source=S.String, flags=S.Union([S.Int, S.String])).check(S.make_filter(_compiles)),
     _revive_pattern,
 )
 is_string_finite_reviver = _filter("isStringFinite", lambda a: S.is_string_finite(**a))

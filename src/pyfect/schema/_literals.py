@@ -12,11 +12,14 @@ from __future__ import annotations
 import enum
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Generic, LiteralString, Never, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Generic, LiteralString, Never, TypeVar, cast, overload
 
 from pyfect._one_or_many import one_or_many
 from pyfect.schema import ast
 from pyfect.schema._schema import Bottom, Codec
+
+if TYPE_CHECKING:
+    from pyfect.schema._transform import DecodeToSchema
 
 # Explicit covariant parameters: a frozen dataclass's fields would make
 # inferred ones invariant (``tests/test_schema_variance.py``).
@@ -43,6 +46,20 @@ class LiteralSchema(Bottom[L_co, L_co, Never, Never], Generic[L_co]):
     """The schema of one value; ``literal`` is that value."""
 
     literal: L_co
+
+    def transform[L2: LiteralValue](self, to: L2, /) -> DecodeToSchema[L2, L_co]:
+        """This literal decoded as ``to``, and ``to`` encoded back as it
+        (Effect's ``Literal.transform``)."""
+        # _transform imports this module.
+        from pyfect.schema import getter as G
+        from pyfect.schema._transform import decode_to
+        from pyfect.schema.transformation import Transformation
+
+        literal = self.literal
+        transformation: Transformation[L2, L_co] = Transformation(
+            G.transform(lambda _: to), G.transform(lambda _: literal)
+        )
+        return self.pipe(decode_to(Literal(to), transformation))
 
 
 def Literal[L: LiteralValue](literal: L, /) -> LiteralSchema[L]:
@@ -118,6 +135,19 @@ class LiteralsSchema(Bottom[L_, L_, Never, Never], Generic[L_]):
     ) -> UnionSchema[B, J, SD, SE]:
         """The union of the schemas ``f`` makes from the members."""
         return Union(*f(self.members))
+
+    def transform[L2: LiteralValue](
+        self, to: list[L2] | tuple[L2, ...], /
+    ) -> UnionSchema[L2, L_, Never, Never]:
+        """The union of each member decoded as the literal of ``to`` at its
+        position (Effect's ``Literals.transform``); ``to`` holds one literal
+        per member, else ``ValueError``."""
+        members = self.members
+        if len(to) != len(members):
+            raise ValueError(
+                f"Literals.transform takes one literal per member: {len(members)}, got {len(to)}"
+            )
+        return Union(*(member.transform(t) for member, t in zip(members, to, strict=True)))
 
 
 @overload

@@ -22,11 +22,11 @@ from pyfect.schema import (
     to_codec_json,
 )
 from pyfect.schema._options import ParseOptions
+from pyfect.schema.getter._json_options import JsonReviver, revive
 from pyfect.stream import Stream
 
-type Reviver = Callable[[str, object], object]
-"""``JSON.parse``'s reviver: called with each key (``""`` for the root) and
-its parsed value, children first; what it returns replaces the value."""
+type Reviver = JsonReviver
+"""``JSON.parse``'s reviver (``getter.JsonReviver``)."""
 
 
 class HttpIncomingMessage[E](Protocol):
@@ -61,22 +61,6 @@ class MessageDecoder[T, RD](Protocol):
     ``SchemaError``."""
 
     def __call__[E](self, message: HttpIncomingMessage[E], /) -> Effect[T, E | SchemaError, RD]: ...
-
-
-def revive(value: object, reviver: Reviver) -> object:
-    """``value`` (parsed JSON) walked as ``JSON.parse`` walks it with
-    ``reviver``."""
-
-    def walk(key: str, node: object) -> object:
-        if isinstance(node, list):
-            items: list[object] = node  # pyright: ignore[reportUnknownVariableType]
-            node = [walk(str(i), item) for i, item in enumerate(items)]
-        elif isinstance(node, dict):
-            entries: dict[str, object] = node  # pyright: ignore[reportUnknownVariableType]
-            node = {k: walk(k, v) for k, v in entries.items()}
-        return reviver(key, node)
-
-    return walk("", value)
 
 
 _parse_json = decode_effect(from_json_string(Unknown))

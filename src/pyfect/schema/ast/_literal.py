@@ -142,6 +142,9 @@ class Enum(AST):
                 return Success(member if self.side == "decode" else input)
         return invalid_type(self, input, options)
 
+    def is_opaque(self) -> bool:
+        return self.side in ("decode", "encode")
+
     def _flip(self) -> Enum:
         flipped: dict[EnumSide, EnumSide] = {"decode": "encode", "encode": "decode"}
         side = flipped.get(self.side)

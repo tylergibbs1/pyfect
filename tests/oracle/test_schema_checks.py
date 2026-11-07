@@ -10,7 +10,7 @@ an ``int`` schema; ``fromBrand(name, brand)`` takes no name (a brand is a
 ``NewType``).
 
 Omitted:
-- "Literal / transform", "Literals / transform", "FiniteFromString &
+- "FiniteFromString &
   isGreaterThan", "Checks / check / object-level checks are validated against
   the decoded value when encoding", "Checks / check / suspended checks are not
   supported": need ``transform``, ``decodeTo``, ``Struct`` or ``suspend``.
@@ -26,8 +26,9 @@ Omitted:
   "Union.mapMembers / evolve", "Union.mapMembers / Array", "Union / should
   exclude members based on failed sentinels / string | tuple", "... /
   tagged tuple union": ported in ``test_schema_composites.py``.
-- "Check / isStringSymbol", "Check / brand / ...": Python has no symbols, and
-  a brand is a ``NewType``, not a schema identifier.
+- "Check / isStringSymbol": Python has no symbols.
+- "Literal / transform", "Literals / transform" and the "brand / ..." titles:
+  ported in ``test_schema_leftovers.py``.
 - "Checks / String checks / isPattern with stateful RegExp flags": a Python
   pattern keeps no ``lastIndex``.
 - "Finite": only verifies arbitrary generation (no arbitraries yet).

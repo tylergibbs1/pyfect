@@ -9,7 +9,8 @@ says its own with a ``to_json_schema`` annotation.
 Python differs from JavaScript in one place: ``len`` of a ``str`` counts
 code points, as JSON Schema's ``minLength`` does (exact here, approximate
 in Effect). JSON Schema cannot carry a Python ``re`` pattern,
-so ``is_pattern`` is left out (``is_ecma_pattern``'s is written).
+so ``is_pattern`` is left out (``is_ecma_pattern``'s is written, as
+Effect writes ``isPattern``'s).
 """
 
 from __future__ import annotations
@@ -142,9 +143,17 @@ def _approximate(_: _Payload, __: CheckContext) -> CheckOutput:
     return _APPROXIMATE
 
 
+_EXPORTABLE_FLAGS = re.compile(r"[dg]*uy?")
+
+
 def _regexp(payload: _Payload, _: CheckContext) -> CheckOutput:
-    """An ECMAScript pattern is JSON Schema's own; a Python one is not."""
-    return {"pattern": payload["source"]} if payload["flags"] == "u" else _APPROXIMATE
+    """An ECMAScript pattern in Unicode mode is JSON Schema's own, a sticky
+    one anchored (Effect's ``isPattern``); other flags, and a Python
+    pattern (``int`` flags), have no JSON Schema form."""
+    flags, source = payload["flags"], payload["source"]
+    if not isinstance(flags, str) or _EXPORTABLE_FLAGS.fullmatch(flags) is None:
+        return _APPROXIMATE
+    return {"pattern": f"^(?:{source})" if flags.endswith("y") else source}
 
 
 BUILTINS: Mapping[str, _Builtin] = {

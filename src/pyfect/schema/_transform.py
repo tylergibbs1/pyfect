@@ -5,7 +5,8 @@
 ``source``'s Encoded through ``source``, then ``transformation.decode``,
 then ``target``; encoding runs the other way. Without a transformation the
 value passes unchanged. The source may be ``S.optional_key(schema)``: the
-struct key is then optional on the encoded side.
+key is then optional on the encoded side. ``S.optional_key(schema).pipe(
+S.encode_to(target, t))`` is optional on the type side only.
 """
 
 from __future__ import annotations
@@ -99,9 +100,24 @@ class EncodeTo(Generic[T_co, E_co, RD_co, RE_co]):
         self._to = to
         self._transformation = transformation
 
+    @overload
+    def __call__[A, RD2 = Never, RE2 = Never](
+        self, schema: OptionalKey[A, T_co, RD2, RE2], /
+    ) -> OptionalKey[A, E_co, RD_co | RD2, RE_co | RE2]: ...
+    @overload
     def __call__[A, RD2 = Never, RE2 = Never](
         self, schema: Codec[A, T_co, RD2, RE2], /
-    ) -> DecodeToSchema[A, E_co, RD_co | RD2, RE_co | RE2]:
+    ) -> DecodeToSchema[A, E_co, RD_co | RD2, RE_co | RE2]: ...
+    def __call__(
+        self, schema: Source[Any, Any, Any, Any], /
+    ) -> DecodeToSchema[Any, Any, Any, Any] | OptionalKey[Any, Any, Any, Any]:
+        if isinstance(schema, OptionalKey):
+            # Optional on the type side only: the encoded key is ``to``'s.
+            to = schema.schema.__codec__()
+            node = ast.decode_to(
+                _source_ast(self._to), ast.optional_key(to.ast), self._transformation
+            )
+            return OptionalKey(DecodeToSchema(node, self._to, to))
         return _make(self._to, schema, self._transformation)
 
 

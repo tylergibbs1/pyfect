@@ -18,7 +18,7 @@ from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast._base import AST, issue_of, join_checks
+from pyfect.schema.ast._base import AST, issue_of
 from pyfect.schema.ast._result import ParseResult, then
 from pyfect.schema.issue import Composite, Issue, Pointer, reported
 
@@ -33,6 +33,10 @@ class Declaration(AST):
 
     type_parameters: tuple[AST, ...]
     run: DeclarationRun
+    encoding_run: DeclarationRun | None = field(default=None, kw_only=True)
+    """The parser maker of the flipped declaration, which then has ``run``
+    as its own ``encoding_run``: a declaration that encodes differently.
+    ``None`` encodes with ``run``."""
     _parser: list[DeclarationParser] = field(
         default_factory=list[DeclarationParser], init=False, repr=False
     )
@@ -61,16 +65,20 @@ class Declaration(AST):
     def _flip(self) -> Declaration:
         # Checks describe the decoded side: flipped, they check the input.
         flipped = self._map(lambda t: t.flip())
+        if self.encoding_run is not None:
+            flipped = replace(flipped, run=self.encoding_run, encoding_run=self.run)
         if self.checks is None and self.encoding_checks is None:
             return flipped
         return replace(flipped, checks=self.encoding_checks, encoding_checks=self.checks)
 
     def _to_type(self) -> Declaration:
-        typed = self._map(lambda t: t.to_type())
-        if self.encoding_checks is None:
-            return typed
-        checks = join_checks(self.checks, self.encoding_checks) if typed is self else self.checks
-        return replace(typed, checks=checks, encoding_checks=None)
+        return self._map(lambda t: t.to_type())
+
+    def children(self) -> tuple[AST, ...]:
+        return self.type_parameters
+
+    def _keeps_structural_checks(self) -> bool:
+        return bool(self.type_parameters)
 
 
 def parse_at_key(

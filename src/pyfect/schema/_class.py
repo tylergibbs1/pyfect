@@ -166,6 +166,7 @@ class _Shape:
         "identifier",
         "init",
         "keys",
+        "name",
         "tag",
     )
 
@@ -182,6 +183,8 @@ class _Shape:
         self.cls = cls
         self.identifier = identifier
         self.tag = tag
+        self.name = identifier
+        """An error's ``name`` (``_ErrorName``)."""
         self.init = init
         self.checks = checks
         fields = [f for f in dataclasses.fields(cast("Any", cls)) if f.init]
@@ -362,6 +365,8 @@ def _define(
     shape = _Shape(
         cls, identifier or cls.__name__, tag, init, _checks_of(cls), annotations=annotations
     )
+    if error:
+        shape.name = identifier if identifier is not None else tag or cls.__name__
     type.__setattr__(cls, _SHAPE, shape)
 
     @functools.wraps(init)
@@ -516,12 +521,31 @@ class TaggedClass(_SchemaClass):
         )
 
 
+class _ErrorName:
+    """``error.name`` (Effect's ``name`` on an error's prototype): the
+    class's ``identifier``, else its tag, else its name. A non-data
+    descriptor, so a field called ``name`` wins; read on the class it is
+    absent, so ``@dataclass`` never takes it for a field's default."""
+
+    @overload
+    def __get__(self, obj: None, owner: type, /) -> Never: ...
+    @overload
+    def __get__(self, obj: object, owner: type | None = None, /) -> str: ...
+    def __get__(self, obj: object, owner: type | None = None, /) -> str:
+        if obj is None:
+            raise AttributeError("name")
+        return _shape_of(type(obj)).name
+
+
 @dataclass_transform(kw_only_default=True, frozen_default=True, field_specifiers=(field,))
 class Error(_SchemaClass, errors.TaggedError):
     """A schema class that is a ``pyfect.errors.TaggedError`` (Effect's
     ``Schema.Error``): yieldable, caught by ``catch_tag``, equal by fields;
     a ``message`` field is its text and a ``cause`` field its
-    ``__cause__``."""
+    ``__cause__``. ``name`` is its identifier (default: the class name),
+    unless it has a field of that name."""
+
+    name = _ErrorName()
 
     def __init_subclass__(
         cls,
@@ -545,7 +569,9 @@ class Error(_SchemaClass, errors.TaggedError):
 @dataclass_transform(kw_only_default=True, frozen_default=True, field_specifiers=(field,))
 class TaggedError(_SchemaClass, errors.TaggedError):
     """``Error`` encoded with a ``"_tag"`` key, as ``TaggedClass`` (Effect's
-    ``Schema.TaggedError``)."""
+    ``Schema.TaggedError``); ``name`` is its identifier, else its tag."""
+
+    name = _ErrorName()
 
     _tag: ClassVar[str]
 

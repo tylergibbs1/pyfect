@@ -18,7 +18,7 @@ from pyfect._equal import dedupe
 from pyfect.exit import Success
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Top
-from pyfect.schema.ast import AST, Filter, filter_of, issue_of, run_now
+from pyfect.schema.ast import AST, STRUCTURAL, Filter, filter_of, issue_of, run_now
 from pyfect.schema.issue import Composite, Issue, Pointer, reported
 
 
@@ -34,12 +34,16 @@ def _sized(
     id: str,
     payload: object,
     annotations: dict[str, object],
+    *,
+    structural: bool = True,
 ) -> Filter[Sized]:
+    """A check of ``len``; ``structural`` unless it counts code points."""
     return filter_of(
         lambda value: accepts(len(value)),
         {
             "expected": expected,
             "representation": {"id": f"effect/schema/{id}", "payload": payload},
+            **({STRUCTURAL: True} if structural else {}),
             **annotations,
         },
     )
@@ -100,6 +104,7 @@ def is_min_code_points(min_code_points: float, /, **annotations: object) -> Filt
         "isMinCodePoints",
         {"minCodePoints": n},
         annotations,
+        structural=False,
     )
 
 
@@ -111,6 +116,7 @@ def is_max_code_points(max_code_points: float, /, **annotations: object) -> Filt
         "isMaxCodePoints",
         {"maxCodePoints": n},
         annotations,
+        structural=False,
     )
 
 
@@ -127,6 +133,7 @@ def is_between_code_points(minimum: float, maximum: float, /, **annotations: obj
         "isBetweenCodePoints",
         {"minimum": low, "maximum": high},
         annotations,
+        structural=False,
     )
 
 
@@ -238,6 +245,7 @@ def is_property_names(key_schema: Top, /, **annotations: object) -> Filter[Mappi
         run,
         {
             "expected": "an object with property names matching the schema",
+            STRUCTURAL: True,
             "representation": {
                 "id": "effect/schema/isPropertyNames",
                 "payload": None,

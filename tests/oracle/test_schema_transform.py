@@ -24,10 +24,8 @@ Omitted:
   replacer and space options" (the replacer half): JavaScript's
   ``reviver`` / ``replacer`` callbacks (``space`` is ported in
   ``test_from_json_string_space``).
-- "decodeUnknownPromise / encodeUnknownPromise / FiniteFromString" and the
-  "... should reject ..." Promise titles: no Promise adapters (a
-  ``decode_unknown_effect`` run with ``run_async`` is the
-  asynchronous form).
+- The "decodeUnknownPromise / encodeUnknownPromise" titles: ported in
+  ``test_schema_leftovers.py`` (without ``SchemaParser``'s issue forms).
 - The synchronous adapters run an asynchronous decoding to completion
   instead of throwing or dying as Effect's do (see
   the async decoding test): Python's runtime can drive it in place.

@@ -18,8 +18,11 @@ class Suspend(AST):
 
     thunk: Callable[[], AST]
     _memo: list[AST] = field(default_factory=list[AST], init=False, repr=False)
+    """The target, made once and shared by the node's copies (Effect
+    memoizes the thunk)."""
     _typed: list[Suspend] = field(default_factory=list["Suspend"], init=False, repr=False)
     tag = "Suspend"
+    UNSHARED_FIELDS = AST.UNSHARED_FIELDS | {"_typed"}
 
     @property
     def target(self) -> AST:
@@ -43,6 +46,9 @@ class Suspend(AST):
         if not stack_nearly_full():
             return target.parse(input, options)
         return with_fresh_stack(lambda: target.parse(input, options))
+
+    def is_opaque(self) -> bool:
+        return True
 
     def _flip(self) -> Suspend:
         # Lazy: the target is not made until the flipped node is used.

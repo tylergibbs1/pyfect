@@ -43,6 +43,7 @@ from pyfect.schema.getter._getter import (
     TransformOptionalEffect,
     run,
 )
+from pyfect.schema.getter._json_options import JsonReplacer, JsonReviver
 from pyfect.schema.getter._make import (
     CheckOutput,
     check_effect,
@@ -80,6 +81,8 @@ from pyfect.schema.getter._tree_record import collect_bracket_path_entries, make
 __all__ = [
     "CheckOutput",
     "Getter",
+    "JsonReplacer",
+    "JsonReviver",
     "Outcome",
     "Passthrough",
     "Tag",

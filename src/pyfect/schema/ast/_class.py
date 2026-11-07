@@ -64,6 +64,7 @@ class Class(AST):
     side: ClassSide = "decode"
     _typed: list[Class] = field(default_factory=list["Class"], init=False, repr=False)
     tag = "Class"
+    UNSHARED_FIELDS = AST.UNSHARED_FIELDS | {"_typed"}
 
     def get_expected(self) -> str:
         return self.shape.cls.__name__
@@ -123,6 +124,9 @@ class Class(AST):
             return check_instance(shape, instance, options)
 
         return flat_map(fields.parse(input, options), construct)
+
+    def is_opaque(self) -> bool:
+        return self.side in ("decode", "encode")
 
     def _flip(self) -> Class:
         flipped: dict[ClassSide, ClassSide] = {"decode": "encode", "encode": "decode"}

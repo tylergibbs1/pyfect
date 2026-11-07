@@ -24,12 +24,13 @@ from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
 from pyfect.option import Option, Some
 from pyfect.result import Err, Ok, Result
-from pyfect.run import run_async, run_sync_exit
+from pyfect.run import run_async_exit, run_sync_exit
 from pyfect.schema import ast as ast_module
 from pyfect.schema._adapters import (
     ASSERTION,
     GUARD,
     OPTION,
+    PROMISE,
     RESULT,
     SYNC,
     raise_schema_failure,
@@ -161,8 +162,15 @@ def _as_sync[O](run: _Run[O]) -> Parser[object, O]:
 def _as_promise[I, A](
     parser: Parser[I, Effect[A, SchemaError]],
 ) -> Parser[I, Coroutine[Any, Any, A]]:
+    async def run(effect: Effect[A, SchemaError]) -> A:
+        match await run_async_exit(effect):
+            case Success(value):
+                return value
+            case failure:
+                raise_schema_failure(failure.cause, PROMISE)
+
     def promise(input: I, /, **options: Unpack[ParseOptions]) -> Coroutine[Any, Any, A]:
-        return run_async(cast("Effect[A]", parser(input, **options)))
+        return run(parser(input, **options))
 
     return promise
 

@@ -20,6 +20,8 @@ _KEYS = {
     "content_schema": "contentSchema",
 }
 _EXCLUDED = {
+    "~structural",
+    "~sentinels",
     "representation",
     "to_codec_json",
     "to_codec_string_tree",

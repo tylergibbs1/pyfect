@@ -14,7 +14,7 @@ from pyfect.encoding.schema_binary import _wire as W
 from pyfect.encoding.schema_binary._literals import literal_key, literal_kind_code, literal_text
 from pyfect.schema import ast
 from pyfect.schema._undefined import UNDEFINED_ID
-from pyfect.schema.ast._candidates import Sentinel, sentinels
+from pyfect.schema.ast._candidates import Sentinel, collect_sentinels
 from pyfect.schema.ast._check import FilterGroup
 
 FIELD_ID_KEY = "~effect/encoding/SchemaBinary/fieldId"
@@ -438,7 +438,7 @@ class _Compiler:
                     values.append(member.literal)
                 continue
             if isinstance(member, ast.Objects | ast.Arrays):
-                found = sentinels(member)
+                found = collect_sentinels(member)
                 if found:
                     variant_members.append((member, found))
                     continue
