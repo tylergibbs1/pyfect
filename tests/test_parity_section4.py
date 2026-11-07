@@ -3,6 +3,7 @@
 - ``a``: spelling or language mapping, the same behaviour.
 - ``b: <reason>``: Python or pyright can't express it, and the row says why.
 - ``c done``: behaved differently, now does what Effect does.
+- ``c kept: <why>``: behaves differently, and the user decided to keep it (§5).
 - ``c open: <why>``: behaves differently and Python could match it; not done.
 
 A row that loses its class, a ``b`` without a reason or an unexplained ``c``
@@ -38,7 +39,7 @@ def test_every_row_has_four_cells() -> None:
 
 
 def test_every_row_has_a_valid_class() -> None:
-    valid = re.compile(r"a|b: .{10,}|c done|c open: .{5,}")
+    valid = re.compile(r"a|b: .{10,}|c done|c kept: .{10,}|c open: .{5,}")
     assert [row[0] for row in _rows() if not valid.fullmatch(row[-1])] == []
 
 
@@ -49,7 +50,7 @@ def _class_counts() -> Counter[str]:
 def test_the_recorded_class_counts_are_the_tables() -> None:
     """Hand-carried counts drifted once (76 open rows, when 74 were)."""
     found = re.search(
-        r"Counts at the end of M16: a (\d+), b (\d+), c done (\d+), c open (\d+)",
+        r"Counts after the merge: a (\d+), b (\d+), c done (\d+), c kept (\d+), c open (\d+)",
         _PARITY.read_text(),
     )
     assert found is not None
@@ -58,18 +59,20 @@ def test_the_recorded_class_counts_are_the_tables() -> None:
         counts["a"],
         counts["b"],
         counts["c done"],
+        counts["c kept"],
         counts["c open"],
     )
 
 
 @pytest.mark.parametrize(
-    "reason", ["security hardening, needs a decision", "Effect bug, needs a decision"]
+    "reason",
+    ["c kept: security hardening, decided by the user", "c kept: Effect bug, decided by the user"],
 )
-def test_section_five_states_how_many_rows_wait_on_each_decision(reason: str) -> None:
+def test_section_five_states_how_many_rows_each_decision_covers(reason: str) -> None:
     text = _PARITY.read_text()
     section = text[text.index("\n## 5.") : text.index("\n## 6.")]
-    count = sum(row[-1].startswith(f"c open: {reason}") for row in _rows())
-    assert f"({count} §4 rows, `c open: {reason}`)" in section
+    count = sum(row[-1].startswith(reason) for row in _rows())
+    assert f"({count} §4 rows, `{reason}`)" in section
 
 
 def test_a_class_b_row_names_its_own_reason() -> None:
