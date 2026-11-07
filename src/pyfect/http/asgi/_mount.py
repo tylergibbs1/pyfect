@@ -15,8 +15,9 @@ from urllib.parse import urlsplit
 
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
-from pyfect.effect import fail, from_async, try_async
+from pyfect.effect import fail, from_async, sync, try_async
 from pyfect.errors import TaggedError
+from pyfect.exit import Exit
 from pyfect.http._foreign_path import decode_path
 from pyfect.http.abort import AbortController
 from pyfect.http.asgi._types import AsgiApplication, Message
@@ -83,15 +84,26 @@ def _scope(request: ServerRequest, state: Mapping[str, Any] | None) -> dict[str,
 
 class _Exchange:
     """One call of the application: ``receive`` reads the request body,
-    ``send`` hands the response over."""
+    ``send`` hands the response over, and ``finish`` ends the call however
+    the response ended (read, dropped, bodyless, client gone)."""
 
-    def __init__(self, body: AsyncIterator[bytes] | None) -> None:
+    def __init__(
+        self, app: AsgiApplication, scope: dict[str, Any], body: AsyncIterator[bytes] | None
+    ) -> None:
         loop = asyncio.get_running_loop()
         self._body = body
         self._body_done = False
-        self.finished = asyncio.Event()
+        self._finished = asyncio.Event()
         self.started: asyncio.Future[tuple[int, list[tuple[str, str]]]] = loop.create_future()
         self.chunks: asyncio.Queue[bytes | None] = asyncio.Queue(_QUEUED_CHUNKS)
+        self.task = asyncio.ensure_future(app(scope, self.receive, self.send))
+
+    def finish(self) -> None:
+        """The response ended: the application sees a disconnect and is
+        cancelled if it still runs. Idempotent."""
+        self._finished.set()
+        if not self.task.done():
+            self.task.cancel()
 
     async def receive(self) -> Message:
         if not self._body_done:
@@ -104,7 +116,7 @@ class _Exchange:
                     return {"type": "http.request", "body": chunk, "more_body": True}
             self._body_done = True
             return {"type": "http.request", "body": b"", "more_body": False}
-        await self.finished.wait()
+        await self._finished.wait()
         return {"type": "http.disconnect"}
 
     async def send(self, message: Message) -> None:
@@ -116,16 +128,17 @@ class _Exchange:
                     [(name.decode("latin-1"), value.decode("latin-1")) for name, value in headers],
                 )
             )
-        elif message["type"] == "http.response.body" and not self.finished.is_set():
+        elif message["type"] == "http.response.body" and not self._finished.is_set():
             chunk: bytes = message.get("body", b"")
             if chunk:
                 await self.chunks.put(chunk)
             if not message.get("more_body", False):
-                self.finished.set()
+                self._finished.set()
                 await self.chunks.put(None)
 
 
-async def _body(exchange: _Exchange, task: asyncio.Task[None]) -> AsyncIterator[bytes]:
+async def _body(exchange: _Exchange) -> AsyncIterator[bytes]:
+    task = exchange.task
     try:
         while True:
             getting = asyncio.ensure_future(exchange.chunks.get())
@@ -140,27 +153,20 @@ async def _body(exchange: _Exchange, task: asyncio.Task[None]) -> AsyncIterator[
                 return
             yield chunk
     finally:
-        exchange.finished.set()
-        if not task.done():
-            task.cancel()
+        exchange.finish()
 
 
-async def _call(
-    app: AsgiApplication, scope: dict[str, Any], body: AsyncIterator[bytes] | None
-) -> WebResponse:
-    exchange = _Exchange(body)
-    task = asyncio.ensure_future(app(scope, exchange.receive, exchange.send))
+async def _call(exchange: _Exchange) -> WebResponse:
     try:
-        await asyncio.wait((exchange.started, task), return_when=asyncio.FIRST_COMPLETED)
+        await asyncio.wait((exchange.started, exchange.task), return_when=asyncio.FIRST_COMPLETED)
     except asyncio.CancelledError:
-        exchange.finished.set()
-        task.cancel()
+        exchange.finish()
         raise
     if not exchange.started.done():
-        task.result()
+        exchange.task.result()
         raise AsgiNoResponseError("the ASGI application returned without a response")
     status, headers = exchange.started.result()
-    return WebResponse(_body(exchange, task), status=status, headers=headers)
+    return WebResponse(_body(exchange), status=status, headers=headers)
 
 
 def from_asgi(
@@ -182,10 +188,13 @@ def from_asgi(
                 pass
         scope = _scope(request, state)
         body = None if web.body is None else web.chunks()
+        exchanges: list[_Exchange] = []
 
         async def call() -> WebResponse:
+            exchange = _Exchange(app, scope, body)
+            exchanges.append(exchange)
             try:
-                return await _call(app, scope, body)
+                return await _call(exchange)
             except asyncio.CancelledError:
                 controller.abort()
                 raise
@@ -193,7 +202,18 @@ def from_asgi(
         def on_error(cause: Exception) -> HttpServerError:
             return HttpServerError(InternalError(request, "HttpApp.fromAsgi: Error in app", cause))
 
-        return try_async(call, on_error).map(response_from_web)
+        called = try_async(call, on_error).map(response_from_web)
+        found, request_scope = fiber._context.lookup(Scope)
+        if not found:
+            return called
+
+        # The request's scope closes once the response ended, however it
+        # ended: its body read or dropped, never sent (HEAD, 204, 304), or
+        # the client gone.
+        def finish(_exit: Exit[Any, Any]) -> Effect[None]:
+            return sync(lambda: [exchange.finish() for exchange in exchanges]).as_void()
+
+        return request_scope.add_finalizer(finish).and_then(called)
 
     return _WithFiber(run)
 
