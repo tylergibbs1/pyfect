@@ -126,9 +126,9 @@ layer, concurrency, retries and timeouts.
   and `repeat`. [Schedules →](https://pyfect.dev/docs/schedules)
 - **Streams.** Pull-based streams, sinks and channels with backpressure, plus NDJSON, JSON
   array and Server-Sent Events framers. [Streams →](https://pyfect.dev/docs/streams)
-- **Schema.** Decode and encode data with Effect's error messages, generate JSON Schema and
-  Hypothesis strategies, store schemas themselves as JSON documents, and plug into pydantic
-  or msgspec.
+- **Schema.** Decode and encode data with Effect's error messages, compile decoders at run
+  time or ahead of time, generate JSON Schema and Hypothesis strategies, store schemas
+  themselves as JSON documents, and plug into Standard Schema, pydantic or msgspec.
   [Schema →](https://pyfect.dev/docs/schema)
 - **Transactions.** Software transactional memory: `TxRef`, transactional queues, maps,
   locks and semaphores that commit atomically and retry without blocking a thread.
@@ -138,7 +138,8 @@ layer, concurrency, retries and timeouts.
   them as JSON. [Graphs →](https://pyfect.dev/docs/graph)
 - **Config.** Typed settings from the environment, `.env` files or dicts, with secrets kept
   out of logs. [Config →](https://pyfect.dev/docs/config)
-- **Observability.** Logging, spans, metrics and an OpenTelemetry bridge.
+- **Observability.** Logging, spans and metrics, exported through Effect's own OTLP exporters
+  or the OpenTelemetry SDK.
   [Observability →](https://pyfect.dev/docs/observability)
 - **Platform.** Files, child processes, an HTTP client (httpx), an HTTP server (standard library,
   uvicorn, hypercorn for HTTP/2, or any ASGI server), and TCP, TLS, WebSocket
@@ -190,8 +191,8 @@ layer, concurrency, retries and timeouts.
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
 pyfect follows Effect v4, does what Effect does wherever Python can express it, and runs
-Effect's own test cases as its spec: over 21,000 tests, with a test that fails on any Effect
-test title neither ported nor omitted with a reason, and about 94% of Effect's API so far. Every
+Effect's own test cases as its spec: over 22,000 tests, with a test that fails on any Effect
+test title neither ported nor omitted with a reason, and about 95% of Effect's API so far. Every
 export of the core modules is listed against Effect's in [`docs/coverage/`](docs/coverage), and
 [`docs/PARITY.md`](docs/PARITY.md) tracks what is done, what is open and what still differs. One
 difference to know: a bare number as a `Duration` is seconds here and milliseconds in Effect.

@@ -33,7 +33,8 @@ cannot fail: `run_main` logs a failure and exits the process with a nonzero stat
 
 `process.make(command, args)` describes a process. Running it in a scope starts the process
 and gives a handle whose `stdout` and `stderr` are byte streams and whose `stdin` is a sink.
-When the scope closes, a process still running is killed. The spawner's `string`, `lines`
+As in Node, `stdin` closes as soon as the process exits, and a write still in progress then
+fails. When the scope closes, a process still running is killed. The spawner's `string`, `lines`
 and `stream_lines` start a command, read its output and clean up in one call.
 
 <CodeOutput>

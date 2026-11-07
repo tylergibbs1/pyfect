@@ -29,7 +29,9 @@ pool lives for a whole program (see `examples/fastapi_style.py` in the repositor
 `fx.Cache.make(lookup, capacity=..., time_to_live=...)` runs `lookup(key)` the first time a
 key is asked for and shares the outcome with every later caller, including callers that ask
 while the lookup is still running. The least recently used entries go first once there are
-`capacity` of them, and an entry expires after its time to live.
+`capacity` of them, and an entry expires after its time to live. A `time_to_live` function
+that raises ends that lookup with the error as a defect, for every caller waiting on it, and
+keeps nothing.
 
 <include meta='title="cache.py"'>../../snippets/resources/cache.py</include>
 

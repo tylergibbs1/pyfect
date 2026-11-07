@@ -1,6 +1,6 @@
 [project]
 name = "pyfect-dev"
-version = "0.1.0"
+version = "0.1.1"
 description = "Effect-TS for Python: typed effects, a real fiber runtime, structured concurrency, services and layers."
 readme = "README.md"
 authors = [{ name = "Tyler Gibbs", email = "tylergibbs048@gmail.com" }]

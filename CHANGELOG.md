@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.1.1 (2026-11-07)
+
+New, as in Effect:
+
+- Effect's own OTLP exporters for logs, traces and metrics, next to the OpenTelemetry SDK bridge.
+- Schema decoders compiled at run time (JIT) or ahead of time, and Standard Schema support.
+- The rest of Effect's Schema test titles, with their behaviour.
+
+Fixed:
+
+- Sockets wait for the peer to read when a write fills the buffer, instead of buffering without
+  limit; TLS over TLS works; a pipe write is no longer cut short.
+- The terminal reads keys the way Node does, including a lone Escape after 50 ms.
+- ASGI WebSockets follow the ASGI state order, and a mounted app's HEAD, 204 and 304 responses
+  carry no body.
+- A PostgreSQL connection lease is returned exactly once.
+- MCP: a repeated `initialize` keeps the agreed protocol, a batch after close is refused, and a
+  duplicate request id is refused, as in Effect.
+- A `Cache` whose `time_to_live` function raises ends the lookup with that error as a defect
+  and keeps nothing (Effect hangs here). The multipart parser rejects malformed input instead
+  of crashing.
+
 ## 0.1.0 (2026-11-07)
 
 The first release of pyfect on PyPI, as `pyfect-dev` (import `pyfect`).
