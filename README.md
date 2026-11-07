@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://pypi.org/project/pyfect-dev/"><img alt="PyPI" src="https://img.shields.io/pypi/v/pyfect-dev?color=0a0a0a&label=pypi"></a>
   <a href="https://pyfect.dev/docs"><img alt="Docs" src="https://img.shields.io/badge/docs-pyfect.dev-0a0a0a"></a>
   <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-0a0a0a">
   <img alt="pyright strict" src="https://img.shields.io/badge/pyright-strict-0a0a0a">
@@ -194,15 +195,16 @@ test title neither ported nor omitted with a reason, and about 94% of Effect's A
 export of the core modules is listed against Effect's in [`docs/coverage/`](docs/coverage), and
 [`docs/PARITY.md`](docs/PARITY.md) tracks what is done, what is open and what still differs. One
 difference to know: a bare number as a `Duration` is seconds here and milliseconds in Effect.
+0.2.0 will switch to milliseconds; write `"5 seconds"` or a `timedelta` to be unaffected.
 
 ## Installation
 
-pyfect needs Python 3.13 or later; its one dependency is `typing-extensions`. It is not on PyPI
-yet: install the `pyfect-dev` distribution from GitHub and `import pyfect` (PyPI's `pyfect` is
-an unrelated project).
+pyfect needs Python 3.13 or later; its one dependency is `typing-extensions`. Install the
+`pyfect-dev` distribution from PyPI and `import pyfect` (PyPI's `pyfect` is an unrelated
+project).
 
 ```sh
-uv add "pyfect-dev @ git+https://github.com/tylergibbs1/pyfect"
+uv add pyfect-dev
 ```
 
 Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `httpx` (the
@@ -212,7 +214,7 @@ asyncmy), `mssql` (the SQL Server driver, on python-tds), `redis` (the Redis cli
 redis-py), `eventlog` (the event log's encryption, on cryptography), `brotli` (`br` response
 compression on a live server), `http2` (the HTTP/2 server, on hypercorn), `intl` (`Intl`-style
 date formatting, on babel) and `regex` (more ECMAScript patterns in schemas), for example
-`uv add "pyfect-dev[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
+`uv add "pyfect-dev[otel]"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add
 `reportUnknownParameterType = false`: pyright reads an unannotated generator's send type as
@@ -223,6 +225,7 @@ generators never use it. See [Installation](https://pyfect.dev/docs/installation
 
 - [Documentation](https://pyfect.dev/docs): guides for each part of the library.
 - [API reference](https://pyfect.dev/docs/reference): every public function and class.
+- [Changelog](CHANGELOG.md): what each release changed.
 - [Examples](examples/): a quickstart, batching, a FastAPI-style service, a stream pipeline
   and schema decoding, all checked by pyright.
 - [Effect's docs](https://effect.website/docs): the concepts carry over; pyfect uses

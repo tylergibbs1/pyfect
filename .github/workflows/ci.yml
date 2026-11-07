@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   base-install:
-    # What `uv add "pyfect-dev @ git+..."` gives a user: no extras, no pytest.
+    # What `uv add pyfect-dev` gives a user: no extras, no pytest.
     # QA api-surface F1/F2: `import pyfect` and the pytest plugin once failed
     # without httpx, and no test ran without the extras.
     runs-on: ubuntu-latest
