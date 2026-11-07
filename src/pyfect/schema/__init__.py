@@ -338,6 +338,9 @@ from pyfect.schema._parse import (
     encode_unknown_result,
     encode_unknown_sync,
     is_,
+    make,
+    make_effect,
+    make_option,
 )
 from pyfect.schema._primitives import (
     Any,
@@ -380,6 +383,12 @@ from pyfect.schema._semver import (
     SemVerFromString,
     SemVerRange,
     SemVerRangeFromString,
+)
+from pyfect.schema._standard_schema import (
+    StandardSchemaV1,
+    StandardSchemaV1FailureResult,
+    to_standard_json_schema_v1,
+    to_standard_schema_v1,
 )
 from pyfect.schema._struct import (
     Struct,
@@ -662,6 +671,8 @@ __all__ = [
     "SemVerRangeFromString",
     "SocketAddress",
     "Source",
+    "StandardSchemaV1",
+    "StandardSchemaV1FailureResult",
     "String",
     "StringFromBase64",
     "StringFromBase64Url",
@@ -819,6 +830,8 @@ __all__ = [
     "is_uuid",
     "issue",
     "link",
+    "make",
+    "make_effect",
     "make_filter",
     "make_filter_group",
     "make_is_between",
@@ -827,6 +840,7 @@ __all__ = [
     "make_is_less_than",
     "make_is_less_than_or_equal_to",
     "make_is_multiple_of",
+    "make_option",
     "middleware_decoding",
     "middleware_encoding",
     "model",
@@ -853,6 +867,8 @@ __all__ = [
     "to_iso_source",
     "to_json_schema_document",
     "to_json_schema_multi_document",
+    "to_standard_json_schema_v1",
+    "to_standard_schema_v1",
     "to_strategy",
     "to_tagged_union",
     "to_type",

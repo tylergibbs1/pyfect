@@ -116,6 +116,41 @@ source of a schema, with `to_code_module` laying it out as a module.
 
 </CodeOutput>
 
+## Compiled decoders
+
+`pyfect.schema.jit_compiler.enable(schema.ast)` generates Python source for the schema's
+validators the first time each one is used, compiles it, and installs it in the registry every
+parser shares (`S.decode_unknown_sync`, `S.is_`, `S.make`, ...). Importing
+`pyfect.schema.jit_compiler.install` does that for every schema. A compiled decoder gives the
+interpreter's results and issues: when its fast check fails, the interpreter reports why.
+`pyfect.schema.aot_compiler.compile(targets)` writes the same code as a module ahead of time, and
+`aot_compiler.build.build(...)` writes one that installs itself, so nothing is generated at run
+time. On a nested struct with ten rows the compiled decoder is about six times faster; an invalid input costs more, since the interpreter then runs to report the issue.
+
+<CodeOutput>
+
+<include meta='title="compiled.py"'>../../snippets/schema/compiled.py</include>
+
+<include lang="text">../../snippets/schema/compiled.out</include>
+
+</CodeOutput>
+
+## Standard Schema
+
+`S.to_standard_schema_v1(schema)` adds the Standard Schema interface: `__standard__` holds
+`version`, `vendor` and `validate`, which returns `{"value": ...}` or `{"issues": [...]}`
+(an awaitable of it when decoding has to wait). `S.to_standard_json_schema_v1(schema)` adds
+`json_schema.input` and `json_schema.output` for draft-2020-12 and draft-07. The adapter is
+still the schema: it decodes, constructs and subclasses as the schema does.
+
+<CodeOutput>
+
+<include meta='title="standard_schema.py"'>../../snippets/schema/standard_schema.py</include>
+
+<include lang="text">../../snippets/schema/standard_schema.out</include>
+
+</CodeOutput>
+
 ## Property tests
 
 `S.to_strategy(schema)` is a Hypothesis strategy that only produces values passing the

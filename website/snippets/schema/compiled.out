@@ -1,0 +1,3 @@
+{'id': 1, 'sku': 'apple', 'quantity': 2}
+Expected number
+  at ["quantity"]

@@ -13,7 +13,6 @@ TYPE_LEVEL = "`Schema.mutable`, `mutableKey` / `readonlyKey`"
 METHODS = "`Schema.annotate` / `annotateKey`"
 COLLECTIONS = "`ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`"
 OPAQUE = "`Schema.Opaque<Self>()(struct)`"
-STANDARD = "| StandardSchema |"
 INTERNAL = "Effect's `@internal` schema exports"
 CONTEXT = "`SchemaAST.Context`"
 DATE = "`Schema.Date`, `DateFromString`, `DateFromMillis`"
@@ -33,6 +32,7 @@ SCHEMA = Module(
         "Uint8ArrayFromBase64Url": "pyfect.schema.BytesFromBase64Url",
         "Uint8ArrayFromHex": "pyfect.schema.BytesFromHex",
         "catchDecodingWithContext": "pyfect.schema.catch_decoding",
+        "make": "pyfect.schema.Bottom",
         "catchEncodingWithContext": "pyfect.schema.catch_encoding",
         "toRepresentation": "pyfect.schema.representation.to_representation",
         **{
@@ -102,9 +102,6 @@ SCHEMA = Module(
         "HashSet": (COLLECTIONS, "`S.FrozenSet`"),
         "Chunk": (COLLECTIONS, "`S.Array`"),
         "Opaque": (OPAQUE, "`class Self(S.Class)`"),
-        "toStandardSchemaV1": (STANDARD, "the pydantic adapter"),
-        "toStandardJSONSchemaV1": (STANDARD, "the pydantic adapter"),
-        "StandardSchemaV1FailureResult": (STANDARD, "the pydantic adapter"),
     },
 )
 AST = Module(

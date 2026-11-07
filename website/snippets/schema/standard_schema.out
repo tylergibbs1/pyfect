@@ -1,0 +1,4 @@
+pyfect 1
+{'value': {'username': 'ada', 'age': 36}}
+{'issues': [{'message': 'Expected a value with a length of at least 1', 'path': ('username',)}, {'message': 'Expected number', 'path': ('age',)}]}
+{'$schema': 'http://json-schema.org/draft-07/schema#', 'type': 'object', 'properties': {'username': {'type': 'string', 'minLength': 1}, 'age': {'type': 'integer', 'minimum': -9007199254740991, 'maximum': 9007199254740991}}, 'required': ['username', 'age'], 'additionalProperties': True}

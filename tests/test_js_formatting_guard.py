@@ -21,9 +21,11 @@ _JSON_HOME = {"_json_text.py"}
 _FORMATTING = ("schema", "logger", "encoding", "date_time/_iso.py", "_json_text.py")
 # ``_js.py`` turns Python's shortest float spelling into JavaScript's; the
 # others raise class-definition errors naming Python annotations and keys, or
-# (``_code_builtins``) write Python source, where ``repr`` is the right spelling.
+# (``_code_builtins``, the schema compiler's ``_codegen``) write Python source,
+# where ``repr`` is the right spelling.
 _REPR_HOME = {
     "_js.py",
+    "schema/compiler/_codegen.py",
     "schema/_derive.py",
     "schema/model/_class.py",
     "schema/representation/_code_builtins.py",

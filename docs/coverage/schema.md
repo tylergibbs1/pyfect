@@ -5,7 +5,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Schema | 377 | 312 | 17 | 48 | 0 | 100% |
+| Schema | 377 | 314 | 18 | 45 | 0 | 100% |
 | SchemaAST | 133 | 58 | 8 | 67 | 0 | 100% |
 | SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
@@ -28,8 +28,8 @@ Coverage counts ported, renamed and §4 exports.
 | `revealCodec` | §4 | not ported (§4: `Schema.mutable`, `mutableKey` / `readonlyKey`) |
 | `SchemaError` | ported | `pyfect.schema.SchemaError` |
 | `isSchemaError` | §4 | `isinstance(x, SchemaError)` (§4: `TypeId` symbols and `is*` guards) |
-| `toStandardSchemaV1` | §4 | the pydantic adapter (§4: \| StandardSchema \|) |
-| `toStandardJSONSchemaV1` | §4 | the pydantic adapter (§4: \| StandardSchema \|) |
+| `toStandardSchemaV1` | ported | `pyfect.schema.to_standard_schema_v1` |
+| `toStandardJSONSchemaV1` | ported | `pyfect.schema.to_standard_json_schema_v1` |
 | `is` | ported | `pyfect.schema.is_` |
 | `asserts` | ported | `pyfect.schema.asserts` |
 | `decodeUnknownEffect` | ported | `pyfect.schema.decode_unknown_effect` |
@@ -56,7 +56,7 @@ Coverage counts ported, renamed and §4 exports.
 | `encodePromise` | §4 | `run_async(S.encode_effect(s)(x))` (§4: `Schema.decodePromise` / `encodePromise`) |
 | `encodeUnknownSync` | ported | `pyfect.schema.encode_unknown_sync` |
 | `encodeSync` | ported | `pyfect.schema.encode_sync` |
-| `make` | ported | `pyfect.schema.Bottom.make` |
+| `make` | renamed | `pyfect.schema.Bottom` |
 | `isSchema` | ported | `pyfect.schema.is_schema` |
 | `optionalKey` | ported | `pyfect.schema.optional_key` |
 | `requiredKey` | §4 | a key is required unless `S.optional_key` (§4: `Schema.UndefinedOr` / `NullishOr`) |
@@ -229,7 +229,7 @@ Coverage counts ported, renamed and §4 exports.
 | `StringFromHex` | ported | `pyfect.schema.StringFromHex` |
 | `StringFromUriComponent` | ported | `pyfect.schema.StringFromUriComponent` |
 | `PropertyKey` | §4 | `S.String` / `S.Number` keys (§4: `Schema.Undefined`, `Void`, `Symbol`) |
-| `StandardSchemaV1FailureResult` | §4 | the pydantic adapter (§4: \| StandardSchema \|) |
+| `StandardSchemaV1FailureResult` | ported | `pyfect.schema.StandardSchemaV1FailureResult` |
 | `BooleanFromBit` | ported | `pyfect.schema.BooleanFromBit` |
 | `Uint8Array` | renamed | `pyfect.schema.Bytes` |
 | `Uint8ArrayFromBase64` | renamed | `pyfect.schema.BytesFromBase64` |
@@ -678,9 +678,9 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
-| `makeEffect` | ported | `pyfect.schema.Bottom.make_effect` |
-| `makeOption` | ported | `pyfect.schema.Bottom.make_option` |
-| `make` | ported | `pyfect.schema.Bottom.make` |
+| `makeEffect` | ported | `pyfect.schema.make_effect` |
+| `makeOption` | ported | `pyfect.schema.make_option` |
+| `make` | ported | `pyfect.schema.make` |
 | `is` | ported | `pyfect.schema.is_` |
 | `_is` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `_issue` | §4 | not public (§4: Effect's `@internal` schema exports) |
