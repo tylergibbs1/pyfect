@@ -2,10 +2,14 @@
 Messages were printed by Effect under Node first (``report_input``, missing
 positions under ``errors="all"``, checks kept by ``TupleWithRest``)."""
 
+import ast
+import builtins
 import enum
+import importlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, NotRequired, TypedDict, TypeIs, cast
 from zoneinfo import ZoneInfo
@@ -141,6 +145,51 @@ def test_annotations_of_sequences_sets_secrets_and_durations_derive_their_schema
     SchemaAsserts(S.Struct(_Shapes)).decoding().fail(
         {**value, "pair": ["a", "b"]}, 'Expected number\n  at ["pair"][1]'
     )
+
+
+def test_a_bytes_annotation_is_the_bytes_schema():
+    class Row(TypedDict):
+        frame: bytes
+
+    schema = S.Struct(Row)
+    SchemaAsserts(schema).decoding().succeed({"frame": b"\x00\x01"})
+    SchemaAsserts(schema).decoding().fail({"frame": "AAE="}, 'Expected bytes\n  at ["frame"]')
+    assert S.encode_sync(S.to_codec_json(schema))({"frame": b"\x00\x01"}) == {"frame": "AAE="}
+
+
+def _instance_of_schemas() -> list[tuple[str, str, str]]:
+    """Every ``Name = instance_of(cls, ...)`` in ``pyfect.schema``: (module, Name, cls)."""
+    found: list[tuple[str, str, str]] = []
+    for path in sorted(Path(S.__file__).parent.glob("*.py")):
+        for node in ast.parse(path.read_text()).body:
+            if not isinstance(node, ast.AnnAssign | ast.Assign):
+                continue
+            call = node.value
+            if not (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "instance_of"
+            ):
+                continue
+            target = node.target if isinstance(node, ast.AnnAssign) else node.targets[0]
+            cls = call.args[0]
+            assert isinstance(target, ast.Name)
+            assert isinstance(cls, ast.Name)
+            found.append((f"pyfect.schema.{path.stem}", target.id, cls.id))
+    return found
+
+
+@pytest.mark.parametrize(("module", "name", "cls"), _instance_of_schemas())
+def test_a_class_with_its_own_schema_derives_it_from_its_annotation(
+    module: str, name: str, cls: str
+):
+    # A schema of the instances of one class is that class's schema, so a field
+    # annotated with the class gets it without spelling it out.
+    namespace = importlib.import_module(module)
+    annotation = getattr(namespace, cls, None) or getattr(builtins, cls)
+    # The field's type is a runtime value, which only the functional form takes.
+    Row = cast(Any, TypedDict)("Row", {"field": annotation})
+    assert S.Struct(Row).fields["field"] is getattr(namespace, name)
 
 
 def test_a_variadic_tuple_annotation_has_no_derived_schema():

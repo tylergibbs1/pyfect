@@ -5,7 +5,8 @@ classes: ``str`` String, ``int`` Int, ``float`` Number, ``bool`` Boolean,
 ``Mapping[K, V]`` Record, ``list[X]`` List, ``tuple[X, ...]`` /
 ``Sequence[X]`` Array, ``tuple[X, Y]`` Tuple, ``frozenset[X]`` /
 ``AbstractSet[X]`` FrozenSet, ``Redacted[X]`` Redacted, ``timedelta``
-Duration, ``JsonValue`` Json, a schema class itself; ``Annotated[T, ...]`` and
+Duration, ``bytes`` Bytes, ``ZoneInfo`` TimeZoneNamed, ``timezone``
+TimeZoneOffset, ``Url`` URL, ``JsonValue`` Json, a schema class itself; ``Annotated[T, ...]`` and
 a ``NewType`` stand for ``T``, a ``type`` alias for its value. Anything
 else raises ``TypeError``: give such a field its schema explicitly.
 """
@@ -21,11 +22,14 @@ import typing
 from collections.abc import Callable, Mapping
 from typing import Any, cast, get_args, get_origin, get_type_hints, is_typeddict
 from weakref import WeakKeyDictionary
+from zoneinfo import ZoneInfo
 
+from pyfect._url import Url
 from pyfect.redacted import Redacted as _Redacted
 from pyfect.schema import ast
 from pyfect.schema._arrays import Array, List, Tuple
 from pyfect.schema._assignable import assignable
+from pyfect.schema._codecs import URL, Bytes
 from pyfect.schema._collections import FrozenSet
 from pyfect.schema._data import Redacted
 from pyfect.schema._literals import Enum, Literal, Literals, Union
@@ -33,7 +37,7 @@ from pyfect.schema._primitives import Any as AnySchema
 from pyfect.schema._primitives import Boolean, Int, Null, Number, String, Unknown
 from pyfect.schema._record import Record
 from pyfect.schema._schema import Bottom, Codec
-from pyfect.schema._values import Duration, Json, JsonValue
+from pyfect.schema._values import Duration, Json, JsonValue, TimeZoneNamed, TimeZoneOffset
 
 type AnyBottom = Bottom[Any, Any, Any, Any]
 
@@ -47,6 +51,10 @@ _SIMPLE: dict[object, AnyBottom] = {
     object: Unknown,
     Any: AnySchema,
     datetime.timedelta: Duration,
+    bytes: Bytes,
+    ZoneInfo: TimeZoneNamed,
+    datetime.timezone: TimeZoneOffset,
+    Url: URL,
     JsonValue: Json,
 }
 

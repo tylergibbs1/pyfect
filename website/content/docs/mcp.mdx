@@ -124,6 +124,25 @@ and `subscriptions/listen` is method not found.
 
 </CodeOutput>
 
+Adding a tool, prompt or resource sends its list change for you. When a resource's content
+changes, say so with `server.notify("notifications/resources/updated", {"uri": uri})` on the
+`McpServer`: it reaches the subscriptions that named that URI in `resourceSubscriptions`
+(and, before 2026-07-28, the stdio clients that sent `resources/subscribe` for it).
+
+A route on the router `layer_http` serves can't ask for that `McpServer` per request:
+`provide_merge(layer_http(...))` doesn't remove the handler's `Requires[McpServer]`, as in
+Effect, where it stays a request requirement too. Take the server while the route's layer
+builds instead, in `router.use`, as Effect's `HttpRouter.use` does, and the handler closes
+over it:
+
+<CodeOutput>
+
+<include meta='title="announce.py"'>../../snippets/mcp/announce.py</include>
+
+<include lang="text">../../snippets/mcp/announce.out</include>
+
+</CodeOutput>
+
 ## Request-scoped servers
 
 `mcp_server.layer_http_request_scoped` serves 2026-07-28 with each POST's work belonging to
@@ -151,6 +170,11 @@ gets a 400 with error -32020 before the tool runs.
 <include lang="text">../../snippets/mcp/request_scoped.out</include>
 
 </CodeOutput>
+
+`McpClient` can't answer `InputRequired`, as Effect's can't: it declares no client
+capabilities, so a tool that asks fails with an `HttpError` reason carrying code -32021, and
+an `input_required` result that reaches it anyway fails with `UnsupportedError`. Call such
+tools from a client that implements the continuation.
 
 ## Security defaults
 

@@ -9,9 +9,13 @@ returns typed data, an encoder back to the wire form, a JSON Schema and Hypothes
 
 ## Decode and encode a payload
 
-`S.Struct(TypedDict)` takes its fields from the TypedDict's annotations. Keyword arguments give
-a field a stricter schema, such as a checked `S.Int`. That schema must decode to the key's type:
-`quantity=S.String` for `quantity: int` is a `TypeError` when the struct is made.
+`S.Struct(TypedDict)` takes its fields from the TypedDict's annotations: `str`, `int`, `float`,
+`bool`, `None`, `bytes`, `timedelta`, enums, literals, unions, TypedDicts, schema classes and
+the standard containers (`list`, `tuple`, `dict`, `frozenset`, `Sequence`, `Mapping`) of these.
+A `datetime` has two schemas (`S.DateTimeUtc`, `S.DateTimeZoned`), so give it one. Keyword
+arguments give a field a stricter schema, such as a checked `S.Int`. That schema must decode to
+the key's type: `quantity=S.String` for `quantity: int` is a `TypeError` when the struct is
+made.
 
 <CodeOutput>
 
