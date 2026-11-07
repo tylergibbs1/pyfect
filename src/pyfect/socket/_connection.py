@@ -11,8 +11,10 @@ How the read side ends follows Node's sockets: the peer ending the stream
 delivers the buffered bytes, then a close with code 1000; an error or a
 teardown discards them and fails with that error.
 
-``start_tls`` switches the connection to TLS (``TlsSession``): bytes are
-decrypted before they reach the buffer and encrypted on the way out.
+``start_tls`` adds a TLS layer (``TlsSession``) over the layers the
+connection has, as Node's upgrade puts a ``TLSSocket`` over whatever the
+socket is: bytes are decrypted by each layer, outermost first, before they
+reach the buffer, and encrypted by each on the way out.
 """
 
 from __future__ import annotations
@@ -36,7 +38,8 @@ HIGH_WATER_MARK = 64 * 1024
 class Signal:
     """Fibers parked until a condition holds, woken from any thread to
     retry. Conditions are checked under ``lock``, the lock of the state
-    they read."""
+    they read. One signal serves several conditions, so a wake means only
+    that something changed."""
 
     __slots__ = ("_waiters", "lock")
 
@@ -45,6 +48,11 @@ class Signal:
         self._waiters: list[Callable[[], None]] = []
 
     def wait(self, ready: Callable[[], bool]) -> Effect[None]:
+        """Wait until ``ready`` holds, parking again after a wake for some
+        other condition."""
+        return self._wait_once(ready).flat_map(lambda _: void if ready() else self.wait(ready))
+
+    def _wait_once(self, ready: Callable[[], bool]) -> Effect[None]:
         def register(resume: Resume[None, object]) -> Callable[[], None] | None:
             def wake() -> None:
                 resume(void)
@@ -59,11 +67,6 @@ class Signal:
             return lambda: self._forget(wake)
 
         return os_wait(register, waits_for="event")  # pyright: ignore[reportReturnType]
-
-    def wait_until(self, ready: Callable[[], bool]) -> Effect[None]:
-        """Wait, retrying after each wake, until ``ready`` holds (``wait``
-        returns at the first wake)."""
-        return self.wait(ready).flat_map(lambda _: void if ready() else self.wait_until(ready))
 
     def notify_locked(self) -> list[Callable[[], None]]:
         """Take the waiters (holding ``lock``); call them after releasing
@@ -93,7 +96,8 @@ class Connection(asyncio.Protocol):
         self.lock = threading.Lock()
         self.signal = Signal(self.lock)
         self.transport: asyncio.Transport | None = None
-        self._tls: TlsSession | None = None
+        # Outermost first; the last one is what plaintext is written to.
+        self._tls: tuple[TlsSession, ...] = ()
         self._chunks: deque[bytes] = deque()
         self._size = 0
         self._error: SocketError | None = None
@@ -124,7 +128,10 @@ class Connection(asyncio.Protocol):
             self._on_made(self)
 
     def data_received(self, data: bytes) -> None:
-        self._deliver(Received((data,)) if self._tls is None else self._tls.feed(data))
+        received = Received((data,))
+        for session in self._tls:
+            received = session.feed(received)
+        self._deliver(received)
 
     def _deliver(self, received: Received) -> None:
         if received.data:
@@ -158,8 +165,9 @@ class Connection(asyncio.Protocol):
             waiters = self.signal.notify_locked()
         for wake in waiters:
             wake()
-        if self._tls is not None and not self._tls.handshake.done():
-            self._tls.handshake.set_exception(exc or ConnectionError("socket closed"))
+        for session in self._tls:
+            if not session.handshake.done():
+                session.handshake.set_exception(exc or ConnectionError("socket closed"))
         if exc is None:
             self.end(close_error(1000))
         else:
@@ -179,12 +187,14 @@ class Connection(asyncio.Protocol):
     def start_tls(
         self, context: ssl.SSLContext, *, server_side: bool, hostname: str | None
     ) -> asyncio.Future[None]:
-        """Begin a TLS handshake (on the loop); bytes already buffered are
-        the peer's first handshake bytes. The future settles with it."""
+        """Begin a TLS handshake (on the loop) inside the TLS layers the
+        connection has; bytes already buffered are the peer's first
+        handshake bytes. The future settles with it."""
         transport = self.transport
         assert transport is not None
-        session = TlsSession(transport, context, server_side=server_side, hostname=hostname)
-        self._tls = session
+        lower = self._tls[-1] if self._tls else transport
+        session = TlsSession(lower, context, server_side=server_side, hostname=hostname)
+        self._tls = (*self._tls, session)
         with self.lock:
             buffered = tuple(self._chunks)
             self._chunks.clear()
@@ -281,11 +291,11 @@ class Connection(asyncio.Protocol):
 
     def closed(self) -> Effect[None]:
         """Wait until the transport is lost."""
-        return self.signal.wait_until(lambda: self.lost)
+        return self.signal.wait(lambda: self.lost)
 
     def read_ended(self) -> Effect[None]:
         """Wait until the read side has ended or failed."""
-        return self.signal.wait_until(lambda: self._error is not None)
+        return self.signal.wait(lambda: self._error is not None)
 
     def discard_input(self) -> None:
         """Drop what was received and everything received from now on,
@@ -311,7 +321,7 @@ class Connection(asyncio.Protocol):
 
     @property
     def encrypted(self) -> bool:
-        return self._tls is not None or self._server_tls is not None
+        return bool(self._tls) or self._server_tls is not None
 
     def write(self, chunks: tuple[bytes, ...]) -> Effect[None, SocketError]:
         """Write ``chunks`` on the loop, then wait while the transport's
@@ -324,10 +334,7 @@ class Connection(asyncio.Protocol):
                     resume(fail(write_error(ConnectionError("socket closed"))))
                     return
                 try:
-                    if self._tls is None:
-                        transport.writelines(chunks)
-                    else:
-                        self._tls.write(chunks)
+                    (self._tls[-1] if self._tls else transport).writelines(chunks)
                 except Exception as cause:
                     resume(fail(write_error(cause)))
                     return
@@ -349,15 +356,15 @@ class Connection(asyncio.Protocol):
         return self.signal.wait(ready).flat_map(check)
 
     def end_writing(self) -> None:
-        """Half-close once buffered writes are flushed: close_notify on a
-        TLS connection, then end-of-stream."""
+        """Half-close once buffered writes are flushed: close_notify from
+        each TLS layer, innermost first, then end-of-stream."""
 
         def run() -> None:
             transport = self.transport
             if transport is None or transport.is_closing():
                 return
-            if self._tls is not None:
-                self._tls.shutdown()
+            for session in reversed(self._tls):
+                session.shutdown()
             if transport.can_write_eof():
                 transport.write_eof()
 

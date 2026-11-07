@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import pyfect as fx
 from pyfect import run_blocking, testing
 from pyfect._core import Effect
 from pyfect.effect import gen, succeed, sync, void
@@ -17,9 +18,11 @@ from pyfect.scope import acquire_release, scoped
 from pyfect.socket import (
     SocketCloseError,
     SocketService,
+    SocketUpgradeError,
     TlsUpgradeOptions,
     from_socket,
     make_net,
+    make_tls,
     reader_string,
     server,
 )
@@ -97,6 +100,35 @@ def test_writes_after_the_peer_ends_its_stream():
     assert peer.recv(1) == b"y"
 
 
+@testing.live(timeout=20)
+def test_a_paused_write_waits_for_drain_not_for_received_data():
+    # Effect's awaitDrain resumes on drain, error or close only: data the
+    # peer sends while not reading must not release a writer held back by
+    # backpressure.
+    pair = yield from acquire_release(sync(socket.socketpair), lambda p, _: sync(p[1].close))
+    ours, peer = pair
+    sock = from_socket(acquire_release(sync(lambda: ours), lambda _s, _e: sync(lambda: None)))
+    yield from sock.reader
+    writer = yield from sock.writer
+    payload = b"x" * 8_000_000
+    writing = yield from writer.write(payload).fork(start_immediately=True)
+    yield from fx.sleep(0.2)
+    assert writing.poll_unsafe() is None
+    peer.sendall(b"ping")
+    yield from fx.sleep(0.2)
+    assert writing.poll_unsafe() is None
+
+    def read_all() -> int:
+        peer.settimeout(10)
+        total = 0
+        while total < len(payload):
+            total += len(peer.recv(1 << 20))
+        return total
+
+    assert (yield from fx.blocking(read_all)) == len(payload)
+    yield from writing.join()
+
+
 def _pair_socket() -> tuple[SocketService, socket.socket]:
     ours, peer = socket.socketpair()
     return from_socket(succeed(ours)), peer
@@ -147,6 +179,39 @@ def test_writes_during_a_tls_upgrade_are_sent_encrypted():
             c if isinstance(c, bytes) else c.encode() for c in (yield from reader.pull)
         )
     assert received == b"hello"
+
+
+@testing.live(timeout=10)
+def test_an_upgrade_of_a_tls_connection_layers_tls_inside_it():
+    # Effect's upgrade puts a TLSSocket over whatever the connection is, so
+    # upgrading a TLS socket runs a second TLS session inside the first.
+    def upgrade_then_echo(sock: SocketService) -> Effect[None]:
+        def body():
+            writer = yield from sock.writer
+            reader = yield from sock.reader
+            yield from reader.upgrade(TlsUpgradeOptions(cert=CERT, key=Redacted(KEY)))
+            while True:
+                yield from writer.write_all((yield from reader.pull))
+
+        return scoped(gen(body)).catch_all(lambda _: void)
+
+    srv = yield from server.make_tls(cert=CERT, key=Redacted(KEY), host="127.0.0.1")
+    yield from srv.run(upgrade_then_echo).fork_scoped()
+    address = srv.address
+    assert isinstance(address, InetAddressV4)
+    client = make_tls(address.port, "127.0.0.1", tls=TlsUpgradeOptions(ca=[CERT]))
+    writer = yield from client.writer
+    reader = yield from client.reader
+    yield from reader.upgrade(TlsUpgradeOptions(ca=[CERT]))
+    yield from writer.write("hello")
+    received = b""
+    while len(received) < 5:
+        received += b"".join(
+            c if isinstance(c, bytes) else c.encode() for c in (yield from reader.pull)
+        )
+    assert received == b"hello"
+    error = yield from reader.upgrade(TlsUpgradeOptions(ca=[CERT])).flip()
+    assert isinstance(error.reason, SocketUpgradeError)
 
 
 def _echo(sock: SocketService) -> Effect[None]:

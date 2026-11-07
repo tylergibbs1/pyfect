@@ -6,6 +6,10 @@ the sockets follow) keep reading after ``end()``, and so does this session:
 ``shutdown`` sends close_notify and the read side stays open until the
 peer's close_notify or EOF.
 
+A session sends its records to what it is ``over``: the transport, or the
+session beneath it, so TLS can run inside TLS as Node's ``TLSSocket`` over
+another ``TLSSocket`` does.
+
 Only the loop thread touches a session.
 """
 
@@ -16,6 +20,15 @@ import contextlib
 import ssl
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Protocol
+
+
+class Lower(Protocol):
+    """What a session sends its records over."""
+
+    def writelines(self, list_of_data: Iterable[bytes], /) -> None: ...
+
+    def is_closing(self) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,17 +42,17 @@ class Received:
 
 
 class TlsSession:
-    __slots__ = ("_incoming", "_object", "_outgoing", "_queued", "_transport", "handshake")
+    __slots__ = ("_incoming", "_lower", "_object", "_outgoing", "_queued", "handshake")
 
     def __init__(
         self,
-        transport: asyncio.Transport,
+        lower: Lower,
         context: ssl.SSLContext,
         *,
         server_side: bool,
         hostname: str | None,
     ) -> None:
-        self._transport = transport
+        self._lower = lower
         self._incoming = ssl.MemoryBIO()
         self._outgoing = ssl.MemoryBIO()
         self._object = context.wrap_bio(
@@ -56,9 +69,13 @@ class TlsSession:
             self._incoming.write(data)
         return self._advance()
 
-    def feed(self, data: bytes) -> Received:
-        self._incoming.write(data)
-        return self._advance()
+    def feed(self, received: Received) -> Received:
+        """What ``received`` (from the layer beneath) decrypts to; the end
+        or failure beneath ends this session's stream too."""
+        for data in received.data:
+            self._incoming.write(data)
+        mine = self._advance()
+        return Received(mine.data, eof=mine.eof or received.eof, error=mine.error or received.error)
 
     def _advance(self) -> Received:
         try:
@@ -96,7 +113,7 @@ class TlsSession:
                 return Received(tuple(chunks), eof=True)
             chunks.append(chunk)
 
-    def write(self, chunks: Iterable[bytes]) -> None:
+    def writelines(self, chunks: Iterable[bytes]) -> None:
         if not self.handshake.done():
             self._queued.extend(chunks)
             return
@@ -113,5 +130,8 @@ class TlsSession:
 
     def _flush(self) -> None:
         data = self._outgoing.read()
-        if data and not self._transport.is_closing():
-            self._transport.write(data)
+        if data and not self._lower.is_closing():
+            self._lower.writelines((data,))
+
+    def is_closing(self) -> bool:
+        return self._lower.is_closing()

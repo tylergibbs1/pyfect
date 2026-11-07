@@ -3,6 +3,7 @@ interruption, the stall-free wait, argument validation at the boundary,
 and the options Effect's suite does not run (``shell``, removing an
 environment variable)."""
 
+import errno
 import os
 import signal
 import time
@@ -14,7 +15,7 @@ from pyfect import file_system, path, platform, process, stream, testing
 from pyfect.file_system import FileSystem
 from pyfect.layer import Layer, merge, provide_merge
 from pyfect.path import Path
-from pyfect.platform_error import PlatformError, system_error
+from pyfect.platform_error import PlatformError, Unknown, system_error
 from pyfect.process import ChildProcessSpawner, InputFd, OutputFd, make
 from pyfect.scope import CloseableScope, Scope
 from pyfect.stream import Stream
@@ -97,6 +98,20 @@ def test_stdin_is_a_sink(process_services: Services[Platform]):
     handle = yield from make("cat")
     yield from stream.make(b"a", b"b").run(handle.stdin)
     assert (yield from _text(handle.stdout)) == "ab"
+
+
+@testing.live(timeout=10)
+def test_a_write_cut_short_by_the_child_exiting_fails(process_services: Services[Platform]):
+    # Checked against Effect under Node: the child's exit destroys stdin, so
+    # a write still in progress (a grandchild holds the pipe and never
+    # reads) fails with ECANCELED instead of reporting it was written.
+    handle = yield from make("sh", ["-c", "sleep 1 <&0 & exit 0"])
+    error = yield from stream.make(b"x" * 5_000_000).run(handle.stdin).flip()
+    reason = error.reason
+    assert isinstance(reason, Unknown)
+    assert (reason.module, reason.method) == ("ChildProcess", "from_writable(stdin)")
+    assert isinstance(error.cause, OSError), error
+    assert error.cause.errno == errno.ECANCELED, error.cause
 
 
 @testing.effect

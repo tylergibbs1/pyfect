@@ -320,8 +320,52 @@ def test_keys_are_named_as_node_readline_names_them():
     assert decode("\x1b[A") == [UserInput(None, Key("up"))]
     assert decode("\x1b[1;5C") == [UserInput(None, Key("right", ctrl=True))]
     assert decode("\x1b[3~") == [UserInput(None, Key("delete"))]
-    assert decode("\x1bx") == [UserInput("x", Key("x", meta=True))]
     assert decode("\r") == [UserInput("\r", Key("return"))]
+
+
+def test_keys_follow_node_readline_where_it_differs_from_a_plain_reading():
+    # Each case printed by readline.emitKeypressEvents under Node 24.
+    assert decode("\x1bx") == [UserInput(None, Key("x", meta=True))]
+    assert decode("\x1b.") == [UserInput(None, Key("", meta=True))]
+    assert decode("\x1b\x1b") == [UserInput(None, Key("escape", meta=True))]
+    assert decode("\x1b\x1b[A") == [UserInput(None, Key("up"))]
+    assert decode("\x1b[9z") == [UserInput(None, Key("undefined", meta=True))]
+    assert decode("\x1c.") == [UserInput("\x1c", Key("")), UserInput(".", Key(""))]
+    assert decode("\x00") == [UserInput("\x00", Key("`", ctrl=True))]
+    assert decode("a\r\nb") == [
+        UserInput("a", Key("a")),
+        UserInput("\r", Key("return")),
+        UserInput("\n", Key("enter")),
+        UserInput("b", Key("b")),
+    ]
+    # An unfinished sequence waits for the rest; only a trailing ESC times out.
+    assert decode("\x1b[") == []
+    assert decode("a\x1b") == [UserInput("a", Key("a")), UserInput(None, Key("escape", meta=True))]
+
+
+@testing.live(timeout=10)
+def test_an_escape_sequence_split_across_reads_is_one_key():
+    # Node's readline keeps a partial sequence across reads, and takes a
+    # trailing ESC for the escape key once 50 ms pass without more input.
+    read_end, write_end = os.pipe()
+    yield from fx.acquire_release(
+        fx.succeed(None), lambda _a, _e: fx.sync(lambda: (os.close(read_end), os.close(write_end)))
+    )
+    service = terminal.live(should_quit=lambda _: False, input=read_end, output=io.StringIO())
+    queue = yield from service.read_input
+    os.write(write_end, b"\x1b")
+    yield from fx.sleep(0.01)
+    os.write(write_end, b"[A")
+    assert (yield from queue.take()) == UserInput(None, Key("up"))
+    os.write(write_end, b"\x1b[")
+    yield from fx.sleep(0.1)
+    os.write(write_end, b"B")
+    assert (yield from queue.take()) == UserInput(None, Key("down"))
+    os.write(write_end, b"\x1b")
+    yield from fx.sleep(0.1)
+    os.write(write_end, b"a")
+    assert (yield from queue.take()) == UserInput(None, Key("escape", meta=True))
+    assert (yield from queue.take()) == UserInput("a", Key("a"))
 
 
 @testing.live

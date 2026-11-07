@@ -22,7 +22,7 @@ from pyfect.errors import Done
 from pyfect.platform_error import PlatformError, bad_argument
 from pyfect.queue import Dequeue, Queue
 from pyfect.scope import Scope, acquire_release
-from pyfect.terminal._keys import decode
+from pyfect.terminal._keys import ESCAPE_CODE_TIMEOUT, KeyDecoder
 from pyfect.terminal._service import QuitError, TerminalService, UserInput, default_should_quit
 
 _WAIT = 0.05
@@ -43,15 +43,15 @@ class _Input:
         self.buffer = bytearray()
         self.ended = False
 
-    def fill(self) -> None:
-        """Wait a moment for input and keep what arrives (on a worker
-        thread)."""
+    def fill(self, wait: float = _WAIT) -> None:
+        """Wait up to ``wait`` seconds for input and keep what arrives (on a
+        worker thread)."""
         with self._filling:
             if self.ended:
                 return
             try:
                 fd = self._fd()
-                if os.name != "nt" and not select.select([fd], [], [], _WAIT)[0]:
+                if os.name != "nt" and not select.select([fd], [], [], wait)[0]:
                     return
                 data = os.read(fd, 4096)
             except (OSError, ValueError):
@@ -76,6 +76,11 @@ class _Input:
             else:
                 return None
         return line.decode(errors="replace").removesuffix("\r")
+
+    def waiting(self) -> bool:
+        """Bytes are waiting or the input has ended."""
+        with self._lock:
+            return bool(self.buffer) or self.ended
 
     def take_all(self) -> bytes:
         with self._lock:
@@ -157,6 +162,7 @@ def live(
     source = _Input(input_fd)
     raw_mode = _RawMode(input_fd)
     fill = blocking(source.fill)
+    fill_within_escape_timeout = blocking(lambda: source.fill(ESCAPE_CODE_TIMEOUT))
 
     def read_line() -> Generator[Effect[Any, QuitError], Any, str]:
         while True:
@@ -170,22 +176,32 @@ def live(
     def read_input() -> Generator[Effect[Any, Never, Scope], Any, Dequeue[UserInput, Done]]:
         queue = yield from Queue[UserInput, Done].unbounded()
         yield from acquire_release(sync(raw_mode.acquire), lambda _a, _e: sync(raw_mode.release))
-        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        text = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        keys = KeyDecoder()
 
         def pump() -> Generator[Effect[Any], Any]:
             while True:
                 data = source.take_all()
                 if data:
-                    for event in decode(decoder.decode(data)):
-                        yield from queue.offer(event)
-                        if should_quit(event):
-                            yield from queue.end()
-                            return
+                    events = keys.feed(text.decode(data))
                 elif source.ended:
+                    # As Effect's reader, the end of input ends the queue
+                    # before a trailing ESC's timeout could name it.
                     yield from queue.end()
                     return
+                elif keys.escape_pending:
+                    yield from fill_within_escape_timeout
+                    if source.waiting():
+                        continue
+                    events = keys.timeout()
                 else:
                     yield from fill
+                    continue
+                for event in events:
+                    yield from queue.offer(event)
+                    if should_quit(event):
+                        yield from queue.end()
+                        return
 
         yield from gen(pump).fork_scoped()
         return queue

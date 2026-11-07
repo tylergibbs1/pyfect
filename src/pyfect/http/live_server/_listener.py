@@ -166,7 +166,7 @@ class Listener:
             for conn in pending + idle:
                 conn.close(graceful=True)
 
-        drained = timeout_option(self.signal.wait_until(lambda: not self._serving), timeout)
+        drained = timeout_option(self.signal.wait(lambda: not self._serving), timeout)
         return sync(start).flat_map(lambda _: drained).as_void()
 
 

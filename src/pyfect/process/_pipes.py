@@ -232,7 +232,9 @@ class Writer:
         return os_wait(register, waits_for="work")
 
     def close(self) -> None:
-        """End the pipe: a write in progress stops, queued ones fail."""
+        """End the pipe: a write in progress stops and fails with
+        ``ECANCELED`` (as a Node stream's destroy fails it), queued ones
+        fail too."""
         with self._cond:
             if self._closed:
                 return
@@ -246,13 +248,6 @@ class Writer:
         if not self._started:
             self._started = True
             threading.Thread(target=self._run, name="pyfect-process-writer", daemon=True).start()
-
-    def _cancel(self, request: _Write) -> None:
-        with self._cond:
-            request.cancelled = True
-            # The request in progress stops itself; a queued one leaves.
-            if request in self._queue and request is not self._queue[0]:
-                self._queue.remove(request)
 
     def _run(self) -> None:
         try:
@@ -273,19 +268,25 @@ class Writer:
         return None
 
     def _serve(self, request: _Write) -> None:
-        """Write ``request`` in short waits, until done, cancelled or
-        closed."""
-        result: Effect[None, PlatformError] = succeed(None)
-        try:
-            while request.view and not request.cancelled and not self._closed:
-                if not _ready(self._fd, write=True):
-                    continue
-                try:
-                    request.view = request.view[os.write(self._fd, request.view) :]
-                except BlockingIOError:
-                    continue
-        except OSError as error:
-            result = fail(self._on_error(error))
+        result = self._write_out(request)
         with self._cond:
             self._queue.popleft()
         request.resume(result)
+
+    def _write_out(self, request: _Write) -> Effect[None, PlatformError]:
+        """Write ``request`` in short waits until one of the outcomes below
+        decides its result."""
+        while True:
+            if not request.view:
+                return succeed(None)
+            if request.cancelled:
+                return succeed(None)  # Interrupted: nobody takes the result.
+            if self._closed:
+                return fail(self._on_error(OSError(errno.ECANCELED, "write ECANCELED")))
+            try:
+                if _ready(self._fd, write=True):
+                    request.view = request.view[os.write(self._fd, request.view) :]
+            except BlockingIOError:
+                continue
+            except OSError as error:
+                return fail(self._on_error(error))

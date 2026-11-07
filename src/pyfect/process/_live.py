@@ -178,6 +178,14 @@ class _Pipes:
         for fd in fds:
             os.close(fd)
 
+    def started_child(self, child: Child) -> None:
+        """Watch ``child``: its exit ends stdin, as Node destroys
+        ``stdin`` when the child exits (a write still in progress fails)."""
+        self.child = child
+        stdin = self.inputs.get(0)
+        if stdin is not None:
+            child.after_exit(stdin.close)
+
     def release(self) -> None:
         """Close the pipes once the child is gone: one the scope leaves
         running (unref-ed) keeps them until it exits."""
@@ -364,7 +372,7 @@ class _Spawner:
             ),
             lambda c, _: c.release(),
         )
-        pipes.child = child
+        pipes.started_child(child)
         return (yield from _wire(child, pipes))
 
     def _pipeline(
