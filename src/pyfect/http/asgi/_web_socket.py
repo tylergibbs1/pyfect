@@ -56,6 +56,14 @@ _UPGRADED = empty(status=101)
 _LOST = (1005, 1006)
 """Disconnect codes of a connection that ended without a closing handshake."""
 
+_MOVES: dict[int, frozenset[int]] = {
+    CONNECTING: frozenset({OPEN, CLOSED}),
+    OPEN: frozenset({CLOSING, CLOSED}),
+    CLOSING: frozenset({CLOSED}),
+    CLOSED: frozenset(),
+}
+"""The ready states each state may move to: a closed socket never reopens."""
+
 
 class AsgiWebSocket:
     """A browser-style WebSocket over an ASGI ``websocket`` connection.
@@ -143,9 +151,18 @@ class AsgiWebSocket:
         if self._state != CONNECTING:
             raise ConnectionError("The socket closed before the upgrade")
         await self._send({"type": "websocket.accept", "subprotocol": subprotocol})
-        self._state = OPEN
+        if not self._move(OPEN):
+            raise ConnectionError("The socket closed during the upgrade")
         self._writer = self._loop.create_task(self._write())
         self._dispatch("open", WebSocketEvent(type="open"))
+
+    def _move(self, to: int) -> bool:
+        """The only place the ready state changes; ``False`` when ``to`` is not
+        a move from the current state."""
+        if to not in _MOVES[self._state]:
+            return False
+        self._state = to
+        return True
 
     def _dispatch(self, type: WebSocketEventType, event: WebSocketEvent) -> None:
         with self._lock:
@@ -161,8 +178,7 @@ class AsgiWebSocket:
                 )
 
     def _close(self, code: int, reason: str) -> None:
-        if self._state == OPEN:
-            self._state = CLOSING
+        if self._move(CLOSING):
             close: Message = {"type": "websocket.close", "code": code, "reason": reason}
             self._outgoing.put_nowait((close, 0))
 
@@ -184,7 +200,7 @@ class AsgiWebSocket:
 
     def _disconnected(self, code: int, reason: str) -> None:
         opened = self._state != CONNECTING
-        self._state = CLOSED
+        self._move(CLOSED)
         if not self._closing and (code in _LOST or not opened):
             self.lost.set()
         self._outgoing.put_nowait(None)

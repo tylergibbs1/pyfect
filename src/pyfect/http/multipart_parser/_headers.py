@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 type FailureReason = Literal[
-    "TooManyHeaders", "HeaderTooLarge", "InvalidHeaderName", "InvalidHeaderValue"
+    "TooManyHeaders",
+    "HeaderTooLarge",
+    "InvalidHeaderName",
+    "InvalidHeaderValue",
+    "IncompleteHeaders",
 ]
 type PartHeaders = dict[str, str | list[str]]
 
@@ -74,6 +78,10 @@ class HeadersParser:
         headers = self._headers
         self._reset()
         return Failure(reason, headers)
+
+    def incomplete(self) -> Failure:
+        """The part ended before its headers did."""
+        return self._error("IncompleteHeaders")
 
     def _add(self, value: str) -> None:
         current = self._headers.get(self._key)

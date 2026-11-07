@@ -794,3 +794,94 @@ def test_a_response_header_value_with_a_control_character_is_never_sent() -> Non
             asyncio.run(app(_scope(), peer.receive, peer.send))
         starts = [m for m in peer.sent if m["type"] == "http.response.start"]
         assert [(m["status"], m["headers"]) for m in starts] == [(500, [])]
+
+
+def test_a_websocket_lost_while_the_accept_is_sent_stays_closed() -> None:
+    from pyfect.http.asgi._web_socket import AsgiWebSocket
+    from pyfect.socket._web_socket import CLOSED
+
+    events: list[str] = []
+
+    async def main() -> tuple[int, str]:
+        peer = _Peer()
+        release = asyncio.Event()
+
+        async def send(message: Message) -> None:
+            await peer.send(message)
+            await release.wait()
+
+        ws = AsgiWebSocket(peer.receive, send)
+        for kind in ("open", "close"):
+            ws.add_event_listener(kind, lambda event: events.append(str(event.type)))
+        accepting = asyncio.ensure_future(ws.accept(None))
+        await asyncio.wait_for(peer.on_send.wait(), 5)
+        peer.inbox.put_nowait({"type": "websocket.disconnect", "code": 1006})
+        await asyncio.sleep(0.01)
+        release.set()
+        try:
+            await accepting
+            outcome = "accepted"
+        except ConnectionError:
+            outcome = "refused"
+        await ws.finish()
+        return ws.ready_state, outcome
+
+    # The disconnect wins: the socket never opens after it closed.
+    assert asyncio.run(main()) == (CLOSED, "refused")
+    assert events == ["close"]
+
+
+def _held_asgi(status: int, ended: asyncio.Event) -> Any:
+    """An ASGI app that starts a streamed response, then waits for the
+    disconnect (as Starlette's ``StreamingResponse`` does)."""
+
+    async def app(scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await send({"type": "http.response.start", "status": status, "headers": []})
+            if status == 200:
+                await send({"type": "http.response.body", "body": b"a", "more_body": True})
+            while (await receive())["type"] != "http.disconnect":
+                pass
+            await asyncio.Event().wait()
+        finally:
+            ended.set()
+
+    return app
+
+
+def _drop_body(
+    app: fx.Effect[HttpServerResponse, Any, Any],
+) -> fx.Effect[HttpServerResponse, Any, Any]:
+    return app.map(lambda _response: server_response.text("replaced"))
+
+
+@pytest.mark.parametrize(
+    ("method", "status", "drop"),
+    [("HEAD", 200, False), ("GET", 204, False), ("GET", 304, False), ("GET", 200, True)],
+    ids=["head", "204", "304", "dropped"],
+)
+def test_a_mounted_asgi_app_ends_with_its_response(method: str, status: int, drop: bool) -> None:
+    async def main() -> tuple[int, bool]:
+        ended = asyncio.Event()
+        mounted = asgi.from_asgi(_held_asgi(status, ended))
+        app = asgi.to_asgi(_drop_body(mounted) if drop else mounted)
+        peer = await asyncio.wait_for(_request(app, _scope(method=method)), 5)
+        await asyncio.wait_for(ended.wait(), 5)
+        return peer.status(), ended.is_set()
+
+    assert asyncio.run(main()) == (200 if drop else status, True)
+
+
+def test_a_mounted_asgi_app_ends_when_the_client_goes_away() -> None:
+    async def main() -> bool:
+        ended = asyncio.Event()
+        app = asgi.to_asgi(asgi.from_asgi(_held_asgi(200, ended)))
+        peer = _Peer({"type": "http.request", "body": b""})
+        call = asyncio.ensure_future(app(_scope(), peer.receive, peer.send))
+        await asyncio.wait_for(peer.on_send.wait(), 5)
+        peer.inbox.put_nowait({"type": "http.disconnect"})
+        await asyncio.wait_for(call, 5)
+        await asyncio.wait_for(ended.wait(), 5)
+        return ended.is_set()
+
+    assert asyncio.run(main())

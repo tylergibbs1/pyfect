@@ -91,10 +91,6 @@ def _limit(value: byte_size.Input | None, default: float) -> float:
     return int(byte_size.from_input_unsafe(value))
 
 
-def _no_chunk(_chunk: bytes | None) -> None:
-    pass
-
-
 class _Noop:
     def write(self, chunk: bytes) -> None:
         pass
@@ -103,10 +99,47 @@ class _Noop:
         pass
 
 
-_HEADERS, _BODY = 0, 1
 _CRLF = b"\r\n"
 """The seed of the boundary search: the body's first boundary has no CRLF
 before it."""
+
+
+@dataclass(slots=True)
+class _Skipping:
+    """Bytes to ignore: the preamble, or a part whose headers failed."""
+
+
+@dataclass(slots=True)
+class _Headers:
+    """Reading a part's headers."""
+
+
+@dataclass(slots=True)
+class _FieldBody:
+    info: PartInfo
+    chunks: list[bytes]
+    size: int = 0
+
+
+@dataclass(slots=True)
+class _FileBody:
+    on_chunk: OnChunk
+
+
+@dataclass(slots=True)
+class _Done:
+    """The final boundary was read; the epilogue and later writes are ignored."""
+
+
+@dataclass(slots=True)
+class _Stopped:
+    """A limit or the end failed the body; nothing more is reported."""
+
+
+type _Phase = _Skipping | _Headers | _FieldBody | _FileBody | _Done | _Stopped
+"""Where the parser is. The part being read lives in its phase, so a part
+can only end the way it was read, and nothing is reported once done or
+stopped."""
 
 
 class _Parser:
@@ -137,56 +170,47 @@ class _Parser:
         self._reset()
 
     def _reset(self) -> None:
-        self._state = _HEADERS
+        self._phase: _Phase = _Skipping()
         self._index = 0
         self._parts = 0
-        self._on_chunk: OnChunk = _no_chunk
-        self._info: PartInfo | None = None
         self._header_skip = 0
         self._part_size = 0
         self._total_size = 0
-        self._file = False
-        self._field_chunks: list[bytes] = []
-        self._field_size = 0
-        self._done = False
-        self._stopped = False
-
-    def _skip_body(self) -> None:
-        self._state = _BODY
-        self._file = True
-        self._on_chunk = _no_chunk
 
     def _stop(self, error: MultipartError) -> None:
-        self._stopped = True
-        if self._state == _BODY and self._file:
-            self._on_chunk(None)
+        if isinstance(self._phase, _FileBody):
+            self._phase.on_chunk(None)
+        self._phase = _Stopped()
         self._on_error(error)
 
-    def _on_split(self, index: int, chunk: bytes) -> None:  # noqa: PLR0911, PLR0912, PLR0915
-        if self._stopped:
+    def _end_part(self) -> None:
+        """A boundary ends the part being read."""
+        match self._phase:
+            case _FieldBody(info, chunks):
+                self._on_field(info, chunks[0] if len(chunks) == 1 else b"".join(chunks))
+            case _FileBody(on_chunk):
+                on_chunk(None)
+            case _Headers():
+                self._on_error(BadHeaders(self._header_parser.incomplete()))
+            case _Skipping() | _Done() | _Stopped():
+                pass
+
+    def _on_split(self, index: int, chunk: bytes) -> None:
+        if isinstance(self._phase, _Done | _Stopped):
             return
         if index == 0:
             # data before the first boundary
-            self._skip_body()
             return
         if index != self._index:
-            if self._index > 0:
-                if self._file:
-                    self._on_chunk(None)
-                else:
-                    assert self._info is not None
-                    fields = self._field_chunks
-                    self._on_field(self._info, fields[0] if len(fields) == 1 else b"".join(fields))
-                    self._field_size = 0
-                    self._field_chunks = []
+            self._end_part()
             self._part_size = 0
-            self._state = _HEADERS
             self._index = index
             self._header_skip = 2  # skip the first \r\n
             if chunk[:2] == b"--":
-                self._done = True
+                self._phase = _Done()
                 self._on_done()
                 return
+            self._phase = _Headers()
             self._parts += 1
             if self._parts > self._max_parts:
                 self._stop(ReachedLimit("MaxParts"))
@@ -197,65 +221,65 @@ class _Parser:
             self._stop(ReachedLimit("MaxPartSize"))
             return
 
-        if self._state == _HEADERS:
-            result = self._header_parser.write(chunk, self._header_skip)
-            self._header_skip = 0
-            if isinstance(result, Failure):
-                self._skip_body()
-                self._on_error(BadHeaders(result))
-                return
-            if not isinstance(result, Parsed):
-                return
-            raw_type = result.headers.get("content-type")
-            content_type = ct.parse(raw_type if isinstance(raw_type, str) else None)
-            disposition = ct.parse_disposition(result.headers.get("content-disposition"))
-            if disposition is None or (
-                disposition.value == "form-data" and "name" not in disposition.parameters
-            ):
-                self._skip_body()
-                self._on_error(InvalidDisposition())
-                return
-            if content_type.value:
-                part_type = content_type.value
-            elif disposition.filename is not None:
-                part_type = "application/octet-stream"
-            else:
-                part_type = "text/plain"
-            info = PartInfo(
-                name=disposition.parameters.get("name", ""),
-                filename=disposition.filename,
-                content_type=part_type,
-                content_type_parameters=content_type.parameters,
-                content_disposition=disposition.value,
-                content_disposition_parameters=disposition.parameters,
-                headers=result.headers,
-            )
-            self._info = info
-            self._state = _BODY
-            self._file = self._is_file(info)
-            if self._file:
-                self._on_chunk = self._on_file(info)
-            if result.end_position < len(chunk):
-                rest = chunk[result.end_position :]
-                if self._file:
-                    self._on_chunk(rest)
-                else:
-                    self._field_size += len(rest)
-                    if self._field_size > self._max_field_size:
-                        self._stop(ReachedLimit("MaxFieldSize"))
-                        return
-                    self._field_chunks.append(rest)
-        elif self._file:
-            self._on_chunk(chunk)
+        if isinstance(self._phase, _Headers):
+            self._headers(chunk)
         else:
-            self._field_size += len(chunk)
-            if self._field_size > self._max_field_size:
-                self._stop(ReachedLimit("MaxFieldSize"))
-                return
-            self._field_chunks.append(chunk)
+            self._body(chunk)
+
+    def _headers(self, chunk: bytes) -> None:
+        result = self._header_parser.write(chunk, self._header_skip)
+        self._header_skip = 0
+        if isinstance(result, Failure):
+            self._phase = _Skipping()
+            self._on_error(BadHeaders(result))
+            return
+        if not isinstance(result, Parsed):
+            return
+        raw_type = result.headers.get("content-type")
+        content_type = ct.parse(raw_type if isinstance(raw_type, str) else None)
+        disposition = ct.parse_disposition(result.headers.get("content-disposition"))
+        if disposition is None or (
+            disposition.value == "form-data" and "name" not in disposition.parameters
+        ):
+            self._phase = _Skipping()
+            self._on_error(InvalidDisposition())
+            return
+        if content_type.value:
+            part_type = content_type.value
+        elif disposition.filename is not None:
+            part_type = "application/octet-stream"
+        else:
+            part_type = "text/plain"
+        info = PartInfo(
+            name=disposition.parameters.get("name", ""),
+            filename=disposition.filename,
+            content_type=part_type,
+            content_type_parameters=content_type.parameters,
+            content_disposition=disposition.value,
+            content_disposition_parameters=disposition.parameters,
+            headers=result.headers,
+        )
+        self._phase = (
+            _FileBody(self._on_file(info)) if self._is_file(info) else _FieldBody(info, [])
+        )
+        if result.end_position < len(chunk):
+            self._body(chunk[result.end_position :])
+
+    def _body(self, chunk: bytes) -> None:
+        match self._phase:
+            case _FileBody(on_chunk):
+                on_chunk(chunk)
+            case _FieldBody() as field:
+                field.size += len(chunk)
+                if field.size > self._max_field_size:
+                    self._stop(ReachedLimit("MaxFieldSize"))
+                    return
+                field.chunks.append(chunk)
+            case _Skipping() | _Headers() | _Done() | _Stopped():
+                pass
 
     def write(self, chunk: bytes) -> None:
-        if self._stopped:
+        if isinstance(self._phase, _Done | _Stopped):
             return
         self._total_size += len(chunk)
         if self._total_size > self._max_total_size:
@@ -265,7 +289,7 @@ class _Parser:
 
     def end(self) -> None:
         self._split.end()
-        if not self._done and not self._stopped:
+        if not isinstance(self._phase, _Done | _Stopped):
             self._stop(EndNotReached())
         self._reset()
 
