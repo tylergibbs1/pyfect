@@ -10,9 +10,8 @@ in snake_case.
 Python mappings: ``Number`` accepts ``int`` and ``float`` (JavaScript has one
 number type), ``BigInt`` accepts ``int``, ``Null`` is ``None``; ``bool`` is
 neither a number nor a bigint. ``Enum`` is a Python ``enum.Enum``, decoded
-from its values. ``Undefined``, ``Void``, ``Symbol``, ``UniqueSymbol`` and
-``ObjectKeyword`` have no Python counterpart (one ``None``, no symbols,
-every value an object) and are not ported.
+from its values. ``Symbol`` and ``UniqueSymbol`` have no Python counterpart; ``S.Undefined``,
+``S.Void`` and ``S.ObjectKeyword`` are declarations here, not nodes.
 """
 
 from pyfect.schema.ast._annotations import (

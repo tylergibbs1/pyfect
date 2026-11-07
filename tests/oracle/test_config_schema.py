@@ -25,9 +25,8 @@ Omitted, with the reason:
   successfully decoded union" and "fromUnknown provider: decodes Undefined":
   each decodes ``undefined`` (``Schema.UndefinedOr`` / ``Schema.Undefined``),
   which Python does not have.
-- "rejects Schema.ObjectKeyword" and "rejects Schema.MutableJson": neither
-  schema exists in pyfect (every Python value is an object; ``S.Json`` holds
-  any JSON value).
+- "rejects Schema.MutableJson": no such schema in pyfect (``S.Json`` holds any JSON value).
+  "rejects Schema.ObjectKeyword" is in ``test_schema_object_keyword.py``.
 """
 
 from collections.abc import Mapping

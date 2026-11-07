@@ -202,6 +202,12 @@ class Reviving:
                 return ast.annotate(node, annotations) if annotations else node
             case R.Null():
                 return self.finish(ast.null, representation, path)
+            case R.Undefined():
+                return self.finish(S.Undefined.ast, representation, path)
+            case R.Void():
+                return self.finish(S.Void.ast, representation, path)
+            case R.ObjectKeyword():
+                return self.finish(S.ObjectKeyword.ast, representation, path)
             case R.Never():
                 return self.finish(ast.never, representation, path)
             case R.Unknown():

@@ -5,7 +5,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Schema | 377 | 309 | 17 | 51 | 0 | 100% |
+| Schema | 377 | 312 | 17 | 48 | 0 | 100% |
 | SchemaAST | 133 | 58 | 8 | 67 | 0 | 100% |
 | SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
@@ -75,15 +75,15 @@ Coverage counts ported, renamed and §4 exports.
 | `Any` | ported | `pyfect.schema.Any` |
 | `Unknown` | ported | `pyfect.schema.Unknown` |
 | `Null` | ported | `pyfect.schema.Null` |
-| `Undefined` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `Undefined` | ported | `pyfect.schema.Undefined` |
 | `String` | ported | `pyfect.schema.String` |
 | `StringForLiteralAutocomplete` | §4 | not ported (§4: `Schema.mutable`, `mutableKey` / `readonlyKey`) |
 | `Number` | ported | `pyfect.schema.Number` |
 | `Boolean` | ported | `pyfect.schema.Boolean` |
 | `Symbol` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `BigInt` | ported | `pyfect.schema.BigInt` |
-| `Void` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
-| `ObjectKeyword` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `Void` | ported | `pyfect.schema.Void` |
+| `ObjectKeyword` | ported | `pyfect.schema.ObjectKeyword` |
 | `UniqueSymbol` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `Struct` | ported | `pyfect.schema.Struct` |
 | `fieldsAssign` | §4 | TypedDict inheritance (§4: `Schema.fieldsAssign`) |
@@ -404,8 +404,8 @@ Coverage counts ported, renamed and §4 exports.
 | `isAST` | §4 | `isinstance(ast, AST)` (§4: `TypeId` symbols and `is*` guards) |
 | `isDeclaration` | §4 | `isinstance(ast, Declaration)` (§4: `TypeId` symbols and `is*` guards) |
 | `isNull` | §4 | `isinstance(ast, Null)` (§4: `TypeId` symbols and `is*` guards) |
-| `isUndefined` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
-| `isVoid` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `isUndefined` | §4 | a `Declaration`, the schema `S.Undefined` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `isVoid` | §4 | a `Declaration`, the schema `S.Void` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `isNever` | §4 | `isinstance(ast, Never)` (§4: `TypeId` symbols and `is*` guards) |
 | `isUnknown` | §4 | `isinstance(ast, Unknown)` (§4: `TypeId` symbols and `is*` guards) |
 | `isAny` | §4 | `isinstance(ast, Any)` (§4: `TypeId` symbols and `is*` guards) |
@@ -416,7 +416,7 @@ Coverage counts ported, renamed and §4 exports.
 | `isSymbol` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `isLiteral` | §4 | `isinstance(ast, Literal)` (§4: `TypeId` symbols and `is*` guards) |
 | `isUniqueSymbol` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
-| `isObjectKeyword` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `isObjectKeyword` | §4 | a `Declaration`, the schema `S.ObjectKeyword` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `isEnum` | §4 | `isinstance(ast, Enum)` (§4: `TypeId` symbols and `is*` guards) |
 | `isTemplateLiteral` | §4 | `isinstance(ast, TemplateLiteral)` (§4: `TypeId` symbols and `is*` guards) |
 | `isArrays` | §4 | `isinstance(ast, Arrays)` (§4: `TypeId` symbols and `is*` guards) |
@@ -429,18 +429,18 @@ Coverage counts ported, renamed and §4 exports.
 | `Declaration` | ported | `pyfect.schema.ast.Declaration` |
 | `Null` | ported | `pyfect.schema.ast.Null` |
 | `null` | ported | `pyfect.schema.ast.null` |
-| `Undefined` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
-| `undefined` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
-| `Void` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
-| `void` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `Undefined` | §4 | a `Declaration`, the schema `S.Undefined` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `undefined` | §4 | a `Declaration`, the schema `S.Undefined` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `Void` | §4 | a `Declaration`, the schema `S.Void` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `void` | §4 | a `Declaration`, the schema `S.Void` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `Never` | ported | `pyfect.schema.ast.Never` |
 | `never` | ported | `pyfect.schema.ast.never` |
 | `Any` | ported | `pyfect.schema.ast.Any` |
 | `any` | ported | `pyfect.schema.ast.any_` |
 | `Unknown` | ported | `pyfect.schema.ast.Unknown` |
 | `unknown` | ported | `pyfect.schema.ast.unknown` |
-| `ObjectKeyword` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
-| `objectKeyword` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `ObjectKeyword` | §4 | a `Declaration`, the schema `S.ObjectKeyword` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `objectKeyword` | §4 | a `Declaration`, the schema `S.ObjectKeyword` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `Enum` | ported | `pyfect.schema.ast.Enum` |
 | `TemplateLiteral` | ported | `pyfect.schema.ast.TemplateLiteral` |
 | `templateLiteralParser` | §4 | not public (§4: Effect's `@internal` schema exports) |
@@ -531,7 +531,7 @@ Coverage counts ported, renamed and §4 exports.
 | `Json` | ported | `pyfect.schema.ast.json` |
 | `MutableJson` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `unknownToJson` | §4 | not public (§4: Effect's `@internal` schema exports) |
-| `objectKeywordToJson` | §4 | not ported (§4: `Schema.Undefined`, `Void`, `Symbol`) |
+| `objectKeywordToJson` | §4 | a `Declaration`, the schema `S.ObjectKeyword` (§4: `Schema.Undefined`, `Void`, `Symbol`) |
 | `isStringTree` | ported | `pyfect.schema.ast.is_string_tree` |
 | `unknownToStringTree` | §4 | not public (§4: Effect's `@internal` schema exports) |
 

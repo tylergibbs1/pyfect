@@ -4,6 +4,8 @@ reported at ``UnhandledLogLevel``."""
 
 import logging
 import math
+import subprocess
+import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Never
@@ -484,6 +486,18 @@ def test_to_logging_respects_the_target_level_and_names_trace(
     testing.run_test(program)
     assert [r.getMessage() for r in caplog.records] == ["e"]
     assert logging.getLevelName(fx.LogLevel.TRACE) == "TRACE"
+
+
+def test_to_logging_names_trace_with_no_other_library_loaded():
+    """uvicorn names level 5 ``TRACE`` too, so this needs an interpreter of its own."""
+    program = (
+        "import logging; from pyfect import logger; logger.to_logging('a'); "
+        "print(logging.getLevelName(5))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", program], capture_output=True, text=True, check=False
+    )
+    assert result.stdout.strip() == "TRACE", result.stderr
 
 
 def test_to_logging_skips_levels_the_target_logger_disables():

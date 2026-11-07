@@ -20,8 +20,9 @@ def to_logging(target: str | logging.Logger = "pyfect") -> Logger[None]:
     ``log_spans`` (label to elapsed milliseconds) and ``cause``. The
     target's own level and handlers then apply as usual."""
     std = target if isinstance(target, logging.Logger) else logging.getLogger(target)
-    if logging.getLevelName(LogLevel.TRACE) == f"Level {int(LogLevel.TRACE)}":
-        logging.addLevelName(LogLevel.TRACE, "TRACE")
+    trace = int(LogLevel.TRACE)
+    if logging.getLevelName(trace) == f"Level {trace}":
+        logging.addLevelName(trace, "TRACE")
 
     def emit(options: Options) -> None:
         level = int(options.log_level)

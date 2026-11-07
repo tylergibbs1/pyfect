@@ -19,6 +19,7 @@ from pyfect.schema._jsonschema._annotations import ReferencePolicy
 from pyfect.schema._jsonschema._checks import schemas_of
 from pyfect.schema._jsonschema._references import FALLBACK_KEY, Candidate, Content, References
 from pyfect.schema._schema import Top
+from pyfect.schema._undefined import OBJECT_KEYWORD_ID, UNDEFINED_ID, VOID_ID
 from pyfect.schema.representation import _model as R
 
 
@@ -119,6 +120,9 @@ class _Lowering:
             case ast.Suspend():
                 return R.Suspend(self.recur(node.target), annotations)
             case ast.Declaration():
+                keyword = _keyword_of(node.annotations)
+                if keyword is not None:
+                    return keyword(annotations=_without_builtin(node.annotations), checks=checks)
                 return self.declaration(node.type_parameters, node.annotations, checks)
             case ast.Class():
                 # A class's instances (its decoded side): a declaration of
@@ -188,6 +192,31 @@ class _Lowering:
 
 def _annotations(annotations: ast.Annotations | None) -> R.Annotations | None:
     return annotations or None
+
+
+_KEYWORD_DECLARATIONS: Mapping[object, type[R.Undefined | R.Void | R.ObjectKeyword]] = {
+    UNDEFINED_ID: R.Undefined,
+    VOID_ID: R.Void,
+    OBJECT_KEYWORD_ID: R.ObjectKeyword,
+}
+"""What pyfect declares (Python's AST has no such keywords) and Effect has as nodes."""
+
+_BUILTIN_ANNOTATIONS = frozenset(
+    {"expected", "representation", "to_arbitrary", "to_codec_json", "to_codec_string_tree"}
+)
+
+
+def _keyword_of(
+    annotations: ast.Annotations | None,
+) -> type[R.Undefined | R.Void | R.ObjectKeyword] | None:
+    representation = (annotations or {}).get("representation")
+    if not isinstance(representation, Mapping):
+        return None
+    return _KEYWORD_DECLARATIONS.get(cast("Mapping[str, object]", representation).get("id"))
+
+
+def _without_builtin(annotations: ast.Annotations | None) -> R.Annotations | None:
+    return {k: v for k, v in (annotations or {}).items() if k not in _BUILTIN_ANNOTATIONS} or None
 
 
 def _split(

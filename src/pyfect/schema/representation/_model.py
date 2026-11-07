@@ -8,9 +8,9 @@ persistence identity in ``representation`` (an ``id`` and a JSON
 ``annotations`` are the node's live annotations (callbacks included);
 ``to_json`` keeps only the JSON ones.
 
-Python mappings: ``Undefined``, ``Void``, ``Symbol``, ``UniqueSymbol`` and
-``ObjectKeyword`` have no node (pyfect has no such schemas), and a property
-has no ``isMutable`` (mutability is a TypeScript type-level distinction).
+Python mappings: ``Symbol`` and ``UniqueSymbol`` have no node (pyfect has no such
+schemas), and a property has no ``isMutable`` (mutability is a TypeScript type-level
+distinction).
 """
 
 from __future__ import annotations
@@ -80,6 +80,21 @@ class _Node:
 @dataclass(frozen=True, slots=True)
 class Null(_Node):
     tag: ClassVar[_L["Null"]] = "Null"
+
+
+@dataclass(frozen=True, slots=True)
+class Undefined(_Node):
+    tag: ClassVar[_L["Undefined"]] = "Undefined"
+
+
+@dataclass(frozen=True, slots=True)
+class Void(_Node):
+    tag: ClassVar[_L["Void"]] = "Void"
+
+
+@dataclass(frozen=True, slots=True)
+class ObjectKeyword(_Node):
+    tag: ClassVar[_L["ObjectKeyword"]] = "ObjectKeyword"
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +241,9 @@ type Representation = (
     | Reference
     | Suspend
     | Null
+    | Undefined
+    | Void
+    | ObjectKeyword
     | Never
     | Unknown
     | Any

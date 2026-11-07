@@ -21,7 +21,7 @@ WEB = "`Schema.File`, `FormData`, `URLSearchParams`"
 FIELDS_ASSIGN = "`Schema.fieldsAssign`"
 HTTP = "pyfect.http.schema"
 
-_UNDEFINED_NAMES = ("Undefined", "Void", "Symbol", "UniqueSymbol", "ObjectKeyword")
+_UNDEFINED_NAMES = ("Symbol", "UniqueSymbol")
 
 SCHEMA = Module(
     "Schema",
@@ -185,23 +185,28 @@ AST = Module(
         **{
             name: (NO_UNDEFINED, "not ported")
             for name in (
-                "isUndefined",
-                "isVoid",
                 "isSymbol",
                 "isUniqueSymbol",
-                "isObjectKeyword",
-                "Undefined",
-                "undefined",
-                "Void",
-                "void",
-                "ObjectKeyword",
-                "objectKeyword",
                 "UniqueSymbol",
                 "Symbol",
                 "symbol",
                 "isStringSymbol",
                 "symbolString",
-                "objectKeywordToJson",
+            )
+        },
+        **{
+            name: (NO_UNDEFINED, f"a `Declaration`, the schema `S.{schema}`")
+            for name, schema in (
+                ("isUndefined", "Undefined"),
+                ("isVoid", "Void"),
+                ("isObjectKeyword", "ObjectKeyword"),
+                ("Undefined", "Undefined"),
+                ("undefined", "Undefined"),
+                ("Void", "Void"),
+                ("void", "Void"),
+                ("ObjectKeyword", "ObjectKeyword"),
+                ("objectKeyword", "ObjectKeyword"),
+                ("objectKeywordToJson", "ObjectKeyword"),
             )
         },
         "mutable": (TYPE_LEVEL, "not ported"),

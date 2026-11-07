@@ -137,8 +137,8 @@ class User(S.Class):  # dataclass_transform: __init__(*, id, name, ...)
   Type (TypedDicts are open); PEP 728's `extra_items=` types the other keys,
   and `S.Struct` reads it as an index signature over the undeclared keys.
 - Errors in JSON decode to `S.ErrorInstance` (data, never a class the input
-  names); `S.Defect()` decodes to `S.DecodedDefect`, since a `Die` holds an
-  exception.
+  names); `S.Defect()` decodes an error's JSON to one and any other JSON to itself, as a
+  `Die` holds any value.
 
 `S.Int` is the `int` schema with the messages of Effect's `Int` check: an
 `int` within the safe integers. It takes `1.0`, as Effect's does, and gives `1`

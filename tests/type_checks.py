@@ -36,6 +36,7 @@ from pyfect import (
     semver_range,
     stream,
 )
+from pyfect import cause as pyfect_cause
 from pyfect import schema as S
 from pyfect import socket as socket_module
 from pyfect._json_value import JsonValue
@@ -9450,6 +9451,18 @@ def section4_pins() -> None:
     assert_type(S.Void, S.Bottom[None, object])
     assert_type(fx.run_sync(fx.succeed(1)), int)
     assert_type(fx.run_blocking(fx.succeed(1)), int)
+    assert_type(S.encode_unknown_promise(S.String)("a"), Coroutine[Any, Any, str]).close()
+    assert_type(S.decode_unknown_promise(S.String)("a"), Coroutine[Any, Any, str]).close()
+    assert_type(fx.succeed(1).replicate(2), list[fx.Effect[int]])
+    assert_type(fx.succeed(1).on_exit_primitive(lambda _: None), fx.Effect[int])
+    assert_type(tar.FarDate(1), tar.FarDate)
+
+
+def section4_value_pins(queue: fx.Queue[int], failed: fx.Cause[str]) -> None:
+    assert_type(queue.flush(), fx.Effect[None])
+    assert_type(queue.flush_unsafe(), None)
+    assert_type(failed.raisable(), BaseException)
+    assert_type(pyfect_cause.done(1), fx.Effect[Never, fx.Done[int]])
 
 
 def schema_codec_family_pins() -> None:

@@ -4,9 +4,9 @@ Each test's docstring is the Effect test title, prefixed by its
 ``to_json_schema`` annotation, given a ``S.CheckContext(type, schemas)``.
 
 Omitted:
-- No such nodes (§4: ``Schema.Undefined``, ``Void``, ``Symbol``): the
-  "ObjectKeyword", "Void", "Undefined", "Symbol", "UniqueSymbol", "local
-  UniqueSymbol" keyword titles, "arrays and objects / rejects a symbol
+- No such nodes (§4: ``Symbol``): the "Symbol", "UniqueSymbol", "local UniqueSymbol" keyword
+  titles (``ObjectKeyword``, ``Void`` and ``Undefined`` are in
+  ``test_schema_object_keyword.py``), "arrays and objects / rejects a symbol
   object property".
 - "local reference round trips / preserves the definition named ...": need
   ``fromJsonSchemaDocument``, not ported (see docs/PARITY.md).

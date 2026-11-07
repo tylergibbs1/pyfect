@@ -270,15 +270,8 @@ class _NodePosix(PathService):
         return _path_posix.normalize(path)
 
     def parse(self, path: str) -> Parsed:
-        base = _path_posix.basename(path)
-        ext = _path_posix.extname(path)
-        return Parsed(
-            root="/" if path.startswith("/") else "",
-            dir=_path_posix.directory_of_parse(path),
-            base=base,
-            ext=ext,
-            name=base[: -len(ext)] if ext else base,
-        )
+        root, directory, base, ext, name = _path_posix.parse(path)
+        return Parsed(root=root, dir=directory, base=base, ext=ext, name=name)
 
     def relative(self, from_: str, to: str) -> str:
         return _path_posix.relative(from_, to)

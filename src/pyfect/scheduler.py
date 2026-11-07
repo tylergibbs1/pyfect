@@ -367,32 +367,38 @@ class SyncScheduler(Tracking):
         while not done():
             with self._cond:
                 self._move_due_timers()
-                if not self._has_ready():
+                if not self._ready and not self._prioritized:
                     self._cond.wait(self._wait_time(stall_timeout))
                     continue
-            self._run_batch()
-            # The stall clock counts time with nothing running, not a long task or a
-            # collector pause inside one.
-            self._last_activity = time.monotonic()
+                batch = self._take_batch()
+            self._run_tasks(batch)
+            if stall_timeout is not None:
+                # The stall clock counts time with nothing running, not a long task or a
+                # collector pause inside one.
+                self._last_activity = time.monotonic()
 
     def flush(self) -> None:
         """Run what is ready, and what that schedules, without waiting or
         firing a timer: ``run_blocking``'s drain (Effect's ``dispatcher.flush``)."""
         driver, self._driver = self._driver, threading.get_ident()
         try:
-            while self._has_ready():
-                self._run_batch()
+            while self._ready or self._prioritized:
+                with self._cond:
+                    batch = self._take_batch()
+                self._run_tasks(batch)
         finally:
             self._driver = driver
 
-    def _has_ready(self) -> bool:
-        return bool(self._ready or self._prioritized)
+    def _take_batch(self) -> deque[Task]:
+        """What is ready, in order; the caller holds the lock."""
+        batch = self._ready
+        self._ready = deque()
+        if self._prioritized is None:
+            return batch
+        prioritized, self._prioritized = self._prioritized, None
+        return _merged(batch, prioritized)
 
-    def _run_batch(self) -> None:
-        with self._cond:
-            batch = _merged(self._ready, self._prioritized)
-            self._ready = deque()
-            self._prioritized = None
+    def _run_tasks(self, batch: deque[Task]) -> None:
         try:
             while batch:
                 batch.popleft()()

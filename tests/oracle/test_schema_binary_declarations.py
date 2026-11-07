@@ -11,8 +11,7 @@ Omitted (one line each):
 Adapted:
 - ``Schema.Chunk``/``HashMap``/``HashSet`` are ``S.List``/``S.Map``/``S.FrozenSet``.
 - ``Schema.Date`` has no Python schema (``S.DateTimeUtc`` is a ``datetime``); its
-  lines use ``DateTimeUtc``. Symbols, ``Schema.Undefined`` as a public schema,
-  and ``Schema.ObjectKeyword`` are dropped.
+  lines use ``DateTimeUtc``. Symbols are dropped.
 - ``timedelta`` cannot be infinite, and ``datetime`` covers years 1 to 9999: the
   boundaries are those, and reading past them is the failure.
 """

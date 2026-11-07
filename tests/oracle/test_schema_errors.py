@@ -3,28 +3,20 @@
 Each test's docstring is the Effect test title, prefixed by its
 ``describe`` blocks. ``TestSchema.Asserts`` is ``testing.SchemaAsserts``.
 
-Deviation (``docs/PARITY.md`` §5, question 11): Effect decodes an error's
-JSON form into a plain ``Error`` with that ``name``; pyfect never picks a
-class from the input, so an error decodes to ``S.ErrorInstance`` (a frozen
-dataclass of ``name``, ``message``, ``stack`` and ``cause``), and a defect,
-which a ``Die`` holds as an exception, to ``S.DecodedDefect`` of the decoded
-value. Encoding writes a Python exception with its class name, ``str(e)``
-and its ``__cause__``. So Effect's ``new Error("a")`` reads ``ErrorInstance("a")``
-where it is decoded, and ``ValueError("a")`` (an exception) where it is
-encoded; a non-``Error`` defect (``"a"``, ``{ a: 1 }``) is a
-``DecodedDefect`` of it; an ``Error`` whose ``cause`` is not an ``Error``
-(``"b"``) is an ``ErrorInstance`` with ``cause=Some("b")`` (a Python
-``__cause__`` is always an exception).
+As in Effect (``docs/PARITY.md`` §5, question 11), an error's JSON form decodes to an
+exception with that ``name``, here always an ``S.ErrorInstance``, and any other defect to the
+decoded value. Encoding writes a Python exception with its class name, ``str(e)`` and its
+``__cause__``. So Effect's ``new Error("a")`` reads ``ErrorInstance("a")`` where it is decoded,
+and ``ValueError("a")`` where it is encoded; an ``Error`` whose ``cause`` is not an ``Error``
+(``"b"``) is an ``ErrorInstance`` with ``cause=Some("b")`` (a Python ``__cause__`` is always an
+exception).
 
 Omitted:
 - "Defect" / "Error" ``verifyGeneration`` halves: drawn values are checked
   in ``test_arbitrary.py``'s catalog.
-- The null-prototype object of "Defect" (Python mappings have no prototype)
-  and the cyclic plain object of "toCodecJson / Defect" (a Python defect is
-  an exception, never a plain object).
-- "toCodecStringTree / Error" is ported; "toCodecIso", "toDifferJsonPatch",
-  ``SchemaRepresentation`` and Arbitrary titles naming ``ErrorInstance`` are
-  separate derivations not ported (``docs/PARITY.md``).
+- The null-prototype object of "Defect" (Python mappings have no prototype).
+- "toCodecStringTree / Error" is ported here; the other derivations' titles naming
+  ``ErrorInstance`` are in their own files.
 """
 
 from typing import Any, Never, cast
@@ -228,6 +220,9 @@ def test_tocodecjson_schemas_with_encoding_defect():
         {"name": "Error", "message": "a", "cause": "b"},
     )
     encoding.succeed(NoSuchElementException(), {"name": "NoSuchElementException", "message": ""})
+    cyclic: dict[str, object] = {}
+    cyclic["self"] = cyclic
+    encoding.succeed(cyclic, {})
     encoding.succeed("a", "a")
     encoding.succeed({"a": 1}, {"a": 1})
 

@@ -8,8 +8,8 @@ Omitted (one line each):
   no non-enumerable keys.
 
 Adapted:
-- Symbols, ``2n`` literals and ``Schema.ObjectKeyword`` have no Python schema;
-  those lines are dropped from their tests.
+- Symbols and ``2n`` literals have no Python schema; those lines are dropped from their
+  tests.
 - "output arena": results are independent ``bytes``, so the two tests check
   that later encodes leave earlier results alone.
 - ``__proto__`` is an ordinary key here; the tests check it stays one.
@@ -803,6 +803,9 @@ def test_retains_schema_predicates_erased_by_the_binary_layout() -> None:
         A = "a"
         B = "b"
 
+    with_object_keyword = B.parser(S.ObjectKeyword)
+    number = encode(S.Unknown, 1)
+    schema_error(lambda: with_object_keyword.feed_sync(number))
     for reader in (S.TemplateLiteral("a"), S.Literal("a"), S.Enum(_Letters)):
         parser = B.parser(reader)
         data = encode(S.String, "zzz")

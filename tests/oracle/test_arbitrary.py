@@ -52,8 +52,7 @@ Omitted:
   value by Effect's bisection; the shrunk value of the constructive title
   is checked.
 - Schemas pyfect does not port: ``Date``,
-  ``Symbol``, ``UniqueSymbol``, ``ObjectKeyword``, ``Void``,
-  ``Undefined``, ``HashSet``, ``HashMap``, ``Chunk``,
+  ``Symbol``, ``UniqueSymbol``, ``HashSet``, ``HashMap``, ``Chunk``,
   ``URLSearchParams``, ``File``, ``FormData``, ``MutableJson`` and
   ``StructWithRest`` (every title about them, the "indexed objects"
   block, "generates ordinary and null-prototype structural objects",

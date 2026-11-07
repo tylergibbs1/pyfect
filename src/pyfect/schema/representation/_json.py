@@ -376,9 +376,24 @@ def _decode_all(value: object, path: Path) -> tuple[R.Representation, ...]:
 
 
 _KEYWORDS: dict[
-    str, type[R.Null | R.Never | R.Unknown | R.Any | R.Number | R.Boolean | R.BigInt]
+    str,
+    type[
+        R.Null
+        | R.Undefined
+        | R.Void
+        | R.ObjectKeyword
+        | R.Never
+        | R.Unknown
+        | R.Any
+        | R.Number
+        | R.Boolean
+        | R.BigInt
+    ],
 ] = {
     "Null": R.Null,
+    "Undefined": R.Undefined,
+    "Void": R.Void,
+    "ObjectKeyword": R.ObjectKeyword,
     "Never": R.Never,
     "Unknown": R.Unknown,
     "Any": R.Any,

@@ -247,6 +247,12 @@ class _Generator:
                 return Code(f"S.suspend(lambda: {inner.runtime})", inner.type)
             case R.Null():
                 return Code("S.Null", "None")
+            case R.Undefined():
+                return Code("S.Undefined", "None")
+            case R.Void():
+                return Code("S.Void", "None")
+            case R.ObjectKeyword():
+                return Code("S.ObjectKeyword", "object")
             case R.Never():
                 return Code("S.Never", self.typing("Never"))
             case R.Unknown():

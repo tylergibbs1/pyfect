@@ -74,6 +74,13 @@ class _Structural(Reviving):
         return {"representation": out}
 
     def recur(self, representation: R.Representation, path: Any) -> ast.AST:
+        match representation:
+            case R.Undefined() | R.Void():
+                return self.finish(ast.null, representation, path)
+            case R.ObjectKeyword():
+                return self.finish(_OBJECT_OR_ARRAY, representation, path)
+            case _:
+                pass
         if not isinstance(representation, R.String) or representation.content is None:
             return super().recur(representation, path)
         # A string holding a document: the content schema, encoded to it
@@ -104,6 +111,14 @@ class _Structural(Reviving):
             return ast.Filter(_opaque, annotations or None, check.aborted)
         first, *rest = (self.check(c, (*path, "checks", i)) for i, c in enumerate(check.checks))
         return ast.FilterGroup((first, *rest), annotations or None)
+
+
+_OBJECT_OR_ARRAY = ast.Union(
+    (
+        ast.Objects(index_signatures=(ast.IndexSignature(ast.string, ast.json),)),
+        ast.Arrays(rest=(ast.json,)),
+    )
+)
 
 
 def to_json_schema_multi_document(

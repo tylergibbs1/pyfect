@@ -8,8 +8,8 @@ Adapted:
   builds that, so the fingerprints pinned in Effect's tests hold.
 - "rejects an inherited discriminator": a Python mapping has no prototype, so a
   subclass's class attribute stands in for an inherited key.
-- ``Schema.Any`` is pyfect's ``S.Any``; ``ObjectKeyword``, ``Symbol`` and
-  ``Schema.Date`` lines are dropped (no Python schema).
+- ``Schema.Any`` is pyfect's ``S.Any``; ``Symbol`` and ``Schema.Date`` lines are dropped (no
+  Python schema).
 """
 # pyright: reportPrivateUsage=false, reportUnknownMemberType=false
 
@@ -702,6 +702,8 @@ def test_covers_unknown_and_any_which_the_json_layer_already_rejects_or_accepts(
     """covers unknown and any, which the JSON layer already rejects or accepts"""
     assert _validates_itself(S.Unknown)
     assert _validates_itself(S.Any)
+    # A JSON payload can be a string, so an object keyword still needs the pass.
+    assert not _validates_itself(S.ObjectKeyword)
     row = struct(id=S.String, payload=S.Unknown)
     assert _validates_itself(row)
     value = {"id": "a", "payload": {"nested": [1, "two", True, None]}}

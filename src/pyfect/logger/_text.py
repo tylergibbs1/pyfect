@@ -212,7 +212,7 @@ def to_json(value: object) -> Any:
         finally:
             ancestors.discard(identity)
 
-    def compound(v: object) -> object:
+    def compound(v: object) -> object:  # noqa: PLR0911
         identity = id(v)
         if isinstance(v, BaseException):
             error = v
@@ -221,9 +221,15 @@ def to_json(value: object) -> Any:
         if isinstance(v, Mapping):
             pairs = list(cast("Mapping[object, object]", v).items())
             return container(identity, lambda: mapping(pairs))
-        if isinstance(v, list | tuple | set | frozenset):
+        if isinstance(v, list | tuple):
             values = list(cast("Iterable[object]", v))
             return container(identity, lambda: sequence(values))
+        if isinstance(v, set | frozenset):
+            return {}  # a JavaScript ``Set`` has no enumerable keys
+        if isinstance(v, bytes | bytearray):
+            return {str(index): byte for index, byte in enumerate(v)}  # a ``Uint8Array``
+        if _is_function(v):
+            return _DROP  # ``JSON.stringify`` leaves a function out
         fields = None if _shown_as_str(v) else _fields(v)
         if fields is None:
             return str(v)
@@ -234,7 +240,9 @@ def to_json(value: object) -> Any:
             return v
         if isinstance(v, float):
             return v if math.isfinite(v) else None
-        if isinstance(v, datetime | date):
+        if isinstance(v, datetime):
+            return iso_millis(v)
+        if isinstance(v, date):
             return v.isoformat()
         return compound(v)
 

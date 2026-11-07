@@ -490,6 +490,9 @@ def test_decode_and_encode_promise():
     # Node: decodePromise resolves; decodeUnknownPromise rejects with a SchemaError.
     assert asyncio.run(S.decode_promise(S.Number)(1)) == 1
     assert asyncio.run(S.encode_promise(S.Number)(1)) == 1
+    assert asyncio.run(S.encode_unknown_promise(S.Number)(1)) == 1
+    with pytest.raises(S.SchemaError, match="Expected number"):
+        asyncio.run(S.encode_unknown_promise(S.Number)("x"))
     with pytest.raises(S.SchemaError, match="Expected number"):
         asyncio.run(S.decode_unknown_promise(S.Number)("x"))
 

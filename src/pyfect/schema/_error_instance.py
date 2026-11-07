@@ -20,7 +20,7 @@ from typing import Never, TypeIs, cast
 
 from pyfect import _json_text
 from pyfect._json_value import JsonValue
-from pyfect.logger._text import format_unknown
+from pyfect.logger._text import format_unknown, to_json
 from pyfect.option import Option, Some
 from pyfect.schema import ast
 from pyfect.schema._codec_links import link
@@ -93,10 +93,10 @@ class ErrorInstance(Exception):
 
 
 def _unknown_as_json(value: object) -> JsonValue:
-    # JSON's reading of it, or its text when JSON has none (Effect's
+    # What ``JSON.stringify`` keeps of it, or its text when that raises (Effect's
     # ``encodeUnknownAsJson``).
     try:
-        return _json_text.parse(_json_text.stringify(cast("JsonValue", value)))
+        return _json_text.parse(_json_text.stringify(to_json(value)))
     except (*_json_text.STRINGIFY_ERRORS, ValueError):
         return format_unknown(value)
 

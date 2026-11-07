@@ -151,3 +151,25 @@ def test_posix_operations_match_node(function: str, arguments: list[str], expect
 def test_posix_parse_matches_node(source: str, expected: dict[str, str]):
     # Node 24: path.posix.parse(source)
     assert path.posix.parse(source) == path.Parsed(**expected)
+
+
+@pytest.mark.parametrize(
+    ("input", "parts"),
+    [
+        ("/..//", ("/", "/", "..", ".", ".")),
+        ("/..", ("/", "/", "..", ".", ".")),
+        ("..", ("", "", "..", "", "..")),
+        ("../", ("", "", "..", "", "..")),
+        ("a/..", ("", "a", "..", "", "..")),
+        ("/a/..", ("/", "/a", "..", "", "..")),
+        ("/...", ("/", "/", "...", ".", "..")),
+        ("//", ("/", "/", "", "", "")),
+        ("", ("", "", "", "", "")),
+        ("/a.b.c//", ("/", "/", "a.b.c", ".c", "a.b")),
+    ],
+)
+def test_posix_parse_matches_node_around_dots(
+    input: str, parts: tuple[str, str, str, str, str]
+) -> None:
+    # Node 24: path.posix.parse(input); its check for ".." misses a first segment under "/".
+    assert path.posix.parse(input) == path.Parsed(*parts)

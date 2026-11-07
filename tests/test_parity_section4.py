@@ -12,7 +12,10 @@ fails here, so the table can't drift from what it claims.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
+
+import pytest
 
 _PARITY = Path(__file__).parent.parent / "docs" / "PARITY.md"
 _CELL = re.compile(r"(?<!\\)\|")
@@ -37,6 +40,36 @@ def test_every_row_has_four_cells() -> None:
 def test_every_row_has_a_valid_class() -> None:
     valid = re.compile(r"a|b: .{10,}|c done|c open: .{5,}")
     assert [row[0] for row in _rows() if not valid.fullmatch(row[-1])] == []
+
+
+def _class_counts() -> Counter[str]:
+    return Counter(row[-1].split(":")[0] for row in _rows())
+
+
+def test_the_recorded_class_counts_are_the_tables() -> None:
+    """Hand-carried counts drifted once (76 open rows, when 74 were)."""
+    found = re.search(
+        r"Counts at the end of M16: a (\d+), b (\d+), c done (\d+), c open (\d+)",
+        _PARITY.read_text(),
+    )
+    assert found is not None
+    counts = _class_counts()
+    assert tuple(map(int, found.groups())) == (
+        counts["a"],
+        counts["b"],
+        counts["c done"],
+        counts["c open"],
+    )
+
+
+@pytest.mark.parametrize(
+    "reason", ["security hardening, needs a decision", "Effect bug, needs a decision"]
+)
+def test_section_five_states_how_many_rows_wait_on_each_decision(reason: str) -> None:
+    text = _PARITY.read_text()
+    section = text[text.index("\n## 5.") : text.index("\n## 6.")]
+    count = sum(row[-1].startswith(f"c open: {reason}") for row in _rows())
+    assert f"({count} §4 rows, `c open: {reason}`)" in section
 
 
 def test_a_class_b_row_names_its_own_reason() -> None:

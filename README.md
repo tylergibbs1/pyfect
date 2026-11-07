@@ -140,7 +140,7 @@ layer, concurrency, retries and timeouts.
 - **Observability.** Logging, spans, metrics and an OpenTelemetry bridge.
   [Observability →](https://pyfect.dev/docs/observability)
 - **Platform.** Files, child processes, an HTTP client (httpx), an HTTP server (standard library,
-  uvicorn or any ASGI server), and TCP, TLS, WebSocket
+  uvicorn, hypercorn for HTTP/2, or any ASGI server), and TCP, TLS, WebSocket
   and UDP sockets, all as services you can swap in tests. [Platform →](https://pyfect.dev/docs/platform)
 - **SQL.** Statements built from literal templates, so values are always bound parameters;
   transactions with savepoints, batching resolvers and migrations, on SQLite (standard
@@ -188,10 +188,12 @@ layer, concurrency, retries and timeouts.
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
-pyfect follows Effect v4 and runs Effect's own test cases as its spec: over 20,000 tests, and
-about 94% of Effect's API so far. Every export of the core modules is listed against Effect's
-in [`docs/coverage/`](docs/coverage), and [`docs/PARITY.md`](docs/PARITY.md) tracks what is
-done and what is next.
+pyfect follows Effect v4, does what Effect does wherever Python can express it, and runs
+Effect's own test cases as its spec: over 21,000 tests, with a test that fails on any Effect
+test title neither ported nor omitted with a reason, and about 94% of Effect's API so far. Every
+export of the core modules is listed against Effect's in [`docs/coverage/`](docs/coverage), and
+[`docs/PARITY.md`](docs/PARITY.md) tracks what is done, what is open and what still differs. One
+difference to know: a bare number as a `Duration` is seconds here and milliseconds in Effect.
 
 ## Installation
 
@@ -207,8 +209,9 @@ Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `h
 HTTP client backend), `websockets` (WebSocket clients and servers), `server` (the uvicorn
 HTTP server), `pg` (the PostgreSQL driver, on psycopg), `mysql` (the MySQL driver, on
 asyncmy), `mssql` (the SQL Server driver, on python-tds), `redis` (the Redis client, on
-redis-py), `eventlog` (the event log's encryption, on cryptography) and `brotli` (`br` response
-compression on a live server), for example
+redis-py), `eventlog` (the event log's encryption, on cryptography), `brotli` (`br` response
+compression on a live server), `http2` (the HTTP/2 server, on hypercorn), `intl` (`Intl`-style
+date formatting, on babel) and `regex` (more ECMAScript patterns in schemas), for example
 `uv add "pyfect-dev[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add

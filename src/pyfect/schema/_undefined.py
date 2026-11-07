@@ -14,6 +14,8 @@ from pyfect.schema._declare import declare
 from pyfect.schema._schema import Bottom
 
 UNDEFINED_ID = "pyfect/schema/Undefined"
+VOID_ID = "pyfect/schema/Void"
+OBJECT_KEYWORD_ID = "pyfect/schema/ObjectKeyword"
 
 
 def _is_none(value: object) -> TypeIs[None]:
