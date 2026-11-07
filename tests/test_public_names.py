@@ -6,6 +6,7 @@ services the program provided, not the runtime's own."""
 import builtins
 import importlib
 import inspect
+import pickle
 import sys
 import types
 from typing import Any
@@ -45,23 +46,20 @@ def test_every_exported_exception_names_a_public_module_that_exports_it():
     assert wrong == []
 
 
-def test_a_missing_service_lists_only_the_services_the_program_provided():
-    class Db(fx.Tag[str]): ...
+def test_a_missing_service_names_it_as_effect_does():
+    class Db(fx.Tag[str], key="Db"): ...
 
     class Cache(fx.Tag[int]): ...
 
     program: Any = Db().pipe(fx.provide_service(Cache, 1))
     with pytest.raises(fx.MissingServiceError) as caught:
         fx.run_blocking(program)
-    assert str(caught.value) == (f"Service {Db.key} was not provided (available: {Cache.key})")
+    assert str(caught.value) == "Service not found: Db"
 
 
-def test_a_missing_service_with_nothing_provided_says_none():
-    class Db(fx.Tag[str]): ...
-
-    program: Any = Db()
-    with pytest.raises(fx.MissingServiceError, match=r"\(available: none\)$"):
-        fx.run_blocking(program)
+def test_a_missing_service_error_survives_pickling():
+    error = pickle.loads(pickle.dumps(fx.MissingServiceError("Db")))
+    assert (str(error), error.key) == ("Service not found: Db", "Db")
 
 
 def test_a_schema_error_repr_is_its_message_not_the_schema_ast():

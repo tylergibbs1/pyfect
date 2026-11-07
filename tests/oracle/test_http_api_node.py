@@ -532,9 +532,8 @@ def test_missing_middleware_layer_fails_with_service_not_found_error() -> None:
         api, group, lambda h: h.handle(group.endpoints["a"])(lambda _: effect.succeed("ok"))
     )
     defect = _defect_of_get(api_layer(api, live), "/a")
-    # pyfect's missing-service defect, naming the service by its key.
     assert isinstance(defect, MissingServiceError)
-    assert "Service Server/MissingMiddleware was not provided" in str(defect)
+    assert str(defect) == "Service not found: Server/MissingMiddleware"
 
 
 def test_missing_add_http_api_group_layer_has_actionable_error() -> None:
