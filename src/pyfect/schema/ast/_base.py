@@ -92,11 +92,6 @@ class AST(ABC):
     """``to_encoded``, made once; the result is its own encoded side
     (Effect's ``memoizeIdempotent``)."""
     tag: ClassVar[str]
-    UNSHARED_FIELDS: ClassVar[frozenset[str]] = frozenset(
-        {"context_owner", "body_owner", "_type_side", "_flip_side", "_encoded_side"}
-    )
-    """Fields a copy never shares: what a node is a copy of, and its
-    projections, which change with its metadata."""
 
     def owner(self) -> AST:
         """The node whose body this one shares (Effect's
@@ -352,11 +347,19 @@ _METADATA = frozenset(
 _CONTEXT = frozenset({"key_annotations", "optional_key", "constructor_default"})
 
 
+_SHARED_BY_COPY = "shared_by_copy"
+SHARED_BY_COPY: Mapping[str, object] = {_SHARED_BY_COPY: True}
+"""The ``metadata`` of a field outside ``__init__`` that ``copy`` shares:
+data prepared from the node's parts (a template's segments, a suspended
+target). Every other such field is the node's own state (its projections,
+its compiler entry) and starts fresh in a copy."""
+
+
 def copy[N: AST](ast: N, **changes: object) -> N:
     """``ast`` with ``changes`` to its metadata (``_METADATA``): its class,
-    parts and prepared data (a template's segments, a suspended target) are
-    shared, its projections are not (Effect's ``copy``). A copy that changes
-    only its key context shares ``ast``'s body (``owner``)."""
+    parts and the fields marked ``SHARED_BY_COPY`` are shared, its own state
+    is not (Effect's ``copy``). A copy that changes only its key context
+    shares ``ast``'s body (``owner``)."""
     unknown = changes.keys() - _METADATA
     if unknown:
         raise TypeError(f"copy changes only metadata, not {sorted(unknown)}")
@@ -365,7 +368,7 @@ def copy[N: AST](ast: N, **changes: object) -> N:
         name = f.name
         if name in changes:
             value = changes[name]
-        elif name in ast.UNSHARED_FIELDS:
+        elif not f.init and not f.metadata.get(_SHARED_BY_COPY):
             value = f.default if f.default_factory is NO_DEFAULT else f.default_factory()
         else:
             value = getattr(ast, name)

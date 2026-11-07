@@ -14,9 +14,7 @@ annotation names its class and that has type parameters of its own), fails on
 one that ignores the subscript, and checks each is pinned in type_checks.py.
 """
 
-import importlib
 import inspect
-import pkgutil
 import re
 import typing
 from collections.abc import Callable, Iterator
@@ -24,7 +22,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-import pyfect
+from _pyfect_modules import modules
 
 TYPE_CHECKS = Path(__file__).parent / "type_checks.py"
 
@@ -44,11 +42,7 @@ EXEMPT: dict[str, str] = {
 
 
 def _modules() -> Iterator[ModuleType]:
-    for info in pkgutil.walk_packages(pyfect.__path__, "pyfect."):
-        try:
-            yield importlib.import_module(info.name)
-        except ImportError:  # an optional extra that isn't installed
-            continue
+    yield from modules(skip_missing_extras=True)
 
 
 def _generic_classes() -> Iterator[type]:

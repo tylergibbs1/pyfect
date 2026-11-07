@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 
 from pyfect._stack import stack_nearly_full, with_fresh_stack
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast._base import AST, parse_by_interpreting
+from pyfect.schema.ast._base import AST, SHARED_BY_COPY, parse_by_interpreting
 from pyfect.schema.ast._result import MISSING, ParseResult
 
 
@@ -17,12 +17,13 @@ class Suspend(AST):
     ``Suspend``): a schema may then refer to itself."""
 
     thunk: Callable[[], AST]
-    _memo: list[AST] = field(default_factory=list[AST], init=False, repr=False)
+    _memo: list[AST] = field(
+        default_factory=list[AST], init=False, repr=False, metadata=SHARED_BY_COPY
+    )
     """The target, made once and shared by the node's copies (Effect
     memoizes the thunk)."""
     _typed: list[Suspend] = field(default_factory=list["Suspend"], init=False, repr=False)
     tag = "Suspend"
-    UNSHARED_FIELDS = AST.UNSHARED_FIELDS | {"_typed"}
 
     @property
     def target(self) -> AST:

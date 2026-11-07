@@ -14,9 +14,7 @@ combinator that forgets ``require_effect`` or ``require_layer`` fails here.
 from __future__ import annotations
 
 import asyncio
-import importlib
 import inspect
-import pkgutil
 import re
 import types
 import typing
@@ -24,6 +22,7 @@ from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 import pytest
+from _pyfect_modules import modules
 
 import pyfect as fx
 from pyfect import testing
@@ -82,12 +81,7 @@ def test_on_interrupt_with_an_effect_still_runs_on_interrupt():
 
 
 def _public_modules() -> list[types.ModuleType]:
-    submodules = [
-        importlib.import_module(info.name)
-        for info in pkgutil.walk_packages(fx.__path__, "pyfect.")
-        if _is_public_module(info.name)
-    ]
-    return [fx, testing, *submodules]
+    return [fx, testing, *modules(public=True)]
 
 
 def _is_public_module(name: str) -> bool:

@@ -64,7 +64,6 @@ class Class(AST):
     side: ClassSide = "decode"
     _typed: list[Class] = field(default_factory=list["Class"], init=False, repr=False)
     tag = "Class"
-    UNSHARED_FIELDS = AST.UNSHARED_FIELDS | {"_typed"}
 
     def get_expected(self) -> str:
         return self.shape.cls.__name__

@@ -18,7 +18,7 @@ from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast._base import AST, issue_of
+from pyfect.schema.ast._base import AST, SHARED_BY_COPY, issue_of
 from pyfect.schema.ast._result import ParseResult, then
 from pyfect.schema.issue import Composite, Issue, Pointer, reported
 
@@ -38,7 +38,7 @@ class Declaration(AST):
     as its own ``encoding_run``: a declaration that encodes differently.
     ``None`` encodes with ``run``."""
     _parser: list[DeclarationParser] = field(
-        default_factory=list[DeclarationParser], init=False, repr=False
+        default_factory=list[DeclarationParser], init=False, repr=False, metadata=SHARED_BY_COPY
     )
     tag = "Declaration"
 

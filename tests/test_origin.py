@@ -12,6 +12,7 @@ import socket
 from typing import Any
 
 import pytest
+from _pyfect_modules import modules
 from oracle._live_http import exchange, port, run_live
 
 import pyfect as fx
@@ -235,15 +236,12 @@ def test_every_server_request_upgrade_checks_the_origin() -> None:
     """A guard: each ``ServerRequest`` that can upgrade runs
     ``require_allowed_origin`` first, or hands the upgrade to the request
     it wraps; a new server's request class cannot skip the check."""
-    import importlib
     import inspect
-    import pkgutil
 
-    import pyfect
     from pyfect.http.server_request import ServerRequest as Base
 
-    for info in pkgutil.walk_packages(pyfect.__path__, "pyfect."):
-        importlib.import_module(info.name)
+    for _ in modules():
+        pass
 
     def subclasses(cls: type[Base]) -> list[type[Base]]:
         return [c for sub in cls.__subclasses__() for c in (sub, *subclasses(sub))]

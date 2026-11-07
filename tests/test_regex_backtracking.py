@@ -6,13 +6,13 @@ from __future__ import annotations
 
 import ast
 import importlib
-import pkgutil
 import re
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+from _pyfect_modules import modules
 
 import pyfect
 from pyfect import schema as S
@@ -41,8 +41,7 @@ def _is_linear(call: Callable[[int], object], n: int = 4000) -> bool:
 
 
 def _module_patterns() -> Iterator[tuple[str, re.Pattern[str] | re.Pattern[bytes]]]:
-    for info in pkgutil.walk_packages(pyfect.__path__, "pyfect."):
-        module = importlib.import_module(info.name)
+    for module in modules():
         for name, value in vars(module).items():
             values: list[object] = [value]
             if isinstance(value, tuple | list):
@@ -51,7 +50,7 @@ def _module_patterns() -> Iterator[tuple[str, re.Pattern[str] | re.Pattern[bytes
                 values = list(value.values())  # pyright: ignore[reportUnknownArgumentType]
             for item in values:
                 if isinstance(item, re.Pattern):
-                    yield f"{info.name}.{name}", item
+                    yield f"{module.__name__}.{name}", item
 
 
 def _anchored_cost(pattern: re.Pattern[str] | re.Pattern[bytes], n: int) -> None:

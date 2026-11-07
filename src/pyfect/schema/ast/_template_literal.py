@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Never
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast._base import AST, invalid_type, issue_of
+from pyfect.schema.ast._base import AST, SHARED_BY_COPY, invalid_type, issue_of
 from pyfect.schema.ast._check import collect_issues
 from pyfect.schema.ast._encoding import to_encoded
 from pyfect.schema.ast._keywords import BigInt, Number, String
@@ -117,11 +117,13 @@ class TemplateLiteral(AST):
     one raises ``ValueError`` when the node is made."""
 
     parts: tuple[AST, ...]
-    literals: tuple[str | None, ...] = field(init=False, repr=False)
+    literals: tuple[str | None, ...] = field(init=False, repr=False, metadata=SHARED_BY_COPY)
     """Each part's text when it is a ``Literal``."""
-    suffix_lengths: tuple[int, ...] = field(init=False, repr=False)
+    suffix_lengths: tuple[int, ...] = field(init=False, repr=False, metadata=SHARED_BY_COPY)
     """The length of the literal text after each position."""
-    _segments: list[Arrays] = field(default_factory=list["Arrays"], init=False, repr=False)
+    _segments: list[Arrays] = field(
+        default_factory=list["Arrays"], init=False, repr=False, metadata=SHARED_BY_COPY
+    )
     tag = "TemplateLiteral"
 
     def __post_init__(self) -> None:

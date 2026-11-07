@@ -18,7 +18,7 @@ from typing import cast, final
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions, is_constructing
-from pyfect.schema.ast._base import AST, issue_of
+from pyfect.schema.ast._base import AST, SHARED_BY_COPY, issue_of
 from pyfect.schema.ast._candidates import CandidateIndex, member_expected
 from pyfect.schema.ast._result import ParseResult, call
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, resume, run_steps
@@ -35,7 +35,7 @@ class Union(AST):
     types: tuple[AST, ...]
     mode: UnionMode = "any_of"
     _index: list[CandidateIndex] = field(
-        default_factory=list[CandidateIndex], init=False, repr=False
+        default_factory=list[CandidateIndex], init=False, repr=False, metadata=SHARED_BY_COPY
     )
     tag = "Union"
 

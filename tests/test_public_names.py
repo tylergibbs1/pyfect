@@ -6,20 +6,20 @@ services the program provided, not the runtime's own."""
 import builtins
 import importlib
 import inspect
-import pkgutil
 import sys
 import types
 from typing import Any
 
 import pytest
+from _pyfect_modules import INSTALLS_ON_IMPORT, module_names
 
 import pyfect as fx
 from pyfect._public import is_private
 
 
 def _public_modules() -> list[str]:
-    walked = pkgutil.walk_packages(fx.__path__, "pyfect.")
-    return ["pyfect", *(info.name for info in walked if not is_private(info.name))]
+    walked = (name for name in module_names() if name not in INSTALLS_ON_IMPORT)
+    return ["pyfect", *(name for name in walked if not is_private(name))]
 
 
 def _exported_exceptions() -> dict[str, type[BaseException]]:

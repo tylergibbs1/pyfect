@@ -11,6 +11,7 @@ import socket
 from typing import Any
 
 import pytest
+from _pyfect_modules import modules
 
 pytest.importorskip("websockets")
 
@@ -138,22 +139,18 @@ def test_an_asgi_write_waits_while_the_server_has_not_sent():
 def test_every_web_socket_in_pyfect_reports_its_unsent_bytes() -> None:
     """A guard: a ``WebSocketLike`` without ``buffered_amount`` and
     ``when_drained`` makes ``from_web_socket``'s writes fire and forget."""
-    import importlib
     import inspect
-    import pkgutil
-
-    import pyfect
 
     found: dict[str, bool] = {}
-    for info in pkgutil.walk_packages(pyfect.__path__, "pyfect."):
-        for name, value in vars(importlib.import_module(info.name)).items():
+    for module in modules():
+        for name, value in vars(module).items():
             if (
                 inspect.isclass(value)
-                and value.__module__ == info.name
+                and value.__module__ == module.__name__
                 and not getattr(value, "_is_protocol", False)
                 and all(hasattr(value, a) for a in ("send", "add_event_listener", "ready_state"))
             ):
-                found[f"{info.name}.{name}"] = all(
+                found[f"{module.__name__}.{name}"] = all(
                     hasattr(value, a) for a in ("buffered_amount", "when_drained")
                 )
     assert "pyfect.socket.ws.WsWebSocket" in found

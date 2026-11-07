@@ -11,14 +11,13 @@ needs a case in ``tests/layer_cases`` (or a reason in its ``SKIPPED``).
 
 from __future__ import annotations
 
-import importlib
 import inspect
-import pkgutil
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
+from _pyfect_modules import modules
 from layer_cases import ai_decisions, ai_otel, cluster, core, data, http, otlp, rpc
 from layer_cases._case import Case
 
@@ -36,9 +35,7 @@ _RUNS = 3
 
 def _public_modules() -> Iterator[Any]:
     yield pyfect
-    for info in pkgutil.walk_packages(pyfect.__path__, "pyfect."):
-        if not any(part.startswith("_") for part in info.name.split(".")):
-            yield importlib.import_module(info.name)
+    yield from modules(public=True)
 
 
 def _returns_layer(function: Any) -> bool:

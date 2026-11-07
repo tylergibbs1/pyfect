@@ -62,9 +62,6 @@ class BuildError(TaggedError):
     message: str
     module: str | None = None
 
-    def __str__(self) -> str:
-        return self.message
-
 
 @dataclass(frozen=True, slots=True)
 class _Exported:
@@ -222,4 +219,4 @@ def _generate(
     return sync(generate).flat_map(lambda effect: effect)
 
 
-__all__ = ["BuildError", "BuildResult", "ModuleLoader", "Operation", "build"]
+__all__ = ["BuildError", "BuildResult", "ModuleLoader", "Operation", "PlatformError", "build"]

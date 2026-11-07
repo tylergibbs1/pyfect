@@ -1,13 +1,11 @@
 """A schema class's keys are what goes on the wire, so each must be the one
 Effect's class has: camelCase, through ``S.field(key=)``."""
 
-import importlib
-import pkgutil
 from typing import Any
 
 import pytest
+from _pyfect_modules import modules
 
-import pyfect
 from pyfect import schema as S
 
 _SHAPE = "__pyfect_schema_shape__"
@@ -15,11 +13,7 @@ _SHAPE = "__pyfect_schema_shape__"
 
 def _schema_classes() -> list[type]:
     found: set[type] = set()
-    for module in pkgutil.walk_packages(pyfect.__path__, "pyfect."):
-        try:
-            imported = importlib.import_module(module.name)
-        except ImportError:
-            continue  # an optional extra is not installed
+    for imported in modules(skip_missing_extras=True):
         for value in vars(imported).values():
             if isinstance(value, type) and hasattr(value, _SHAPE):
                 found.add(value)

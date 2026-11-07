@@ -5,14 +5,13 @@ sits in a field; ``str()`` adds it (docs/PARITY.md). ``test_every_error_...`` wa
 class in pyfect, so a new one that hides its cause fails here."""
 
 import importlib
-import pkgutil
 from collections.abc import Iterator
 from dataclasses import dataclass
 from types import ModuleType
 
 import pytest
+from _pyfect_modules import INSTALLS_ON_IMPORT, module_names
 
-import pyfect
 from pyfect.ai import mcp_client_error
 from pyfect.errors import TaggedError, UnknownError
 from pyfect.eventlog.event_log_session_auth import EventLogSessionAuthError
@@ -73,9 +72,11 @@ def test_a_raised_cause_shows_in_a_plain_tagged_error():
 
 
 def _modules() -> Iterator[ModuleType]:
-    for info in pkgutil.walk_packages(pyfect.__path__, "pyfect."):
+    for name in module_names():
+        if name in INSTALLS_ON_IMPORT:
+            continue
         try:
-            yield importlib.import_module(info.name)
+            yield importlib.import_module(name)
         except BaseException:
             continue
 
