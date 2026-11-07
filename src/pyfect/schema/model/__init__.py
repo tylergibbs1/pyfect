@@ -13,7 +13,7 @@ and the variants a database and a JSON API read and write::
         id: int = Model.field(Model.GeneratedByDb(S.Int))
         name: str
         created_at: datetime = Model.field(Model.DateTimeInsert)
-        password = Model.Sensitive(S.String)  # not selected: no annotation
+        password: str = Model.field(Model.Sensitive(S.String))  # left out of the JSON variants
 
 
     User  # the select variant

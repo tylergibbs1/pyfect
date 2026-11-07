@@ -26,13 +26,14 @@ from pyfect.result import Err, Ok
 from pyfect.schema import Codec, SchemaError, ast
 from pyfect.schema import transformation as T
 from pyfect.schema._to_codec_string_tree import to_codec_string_tree_ast
+from pyfect.schema.ast._result import NotAnObject
 from pyfect.schema.issue import Issue, Pointer
 
 _OPAQUE = "Config.schema does not support opaque StringTree encodings"
 
 
 @final
-class _Undefined:
+class _Undefined(NotAnObject):
     """What a cursor reads where the provider has nothing usable: Effect's
     ``undefined``, which no schema a config can use accepts."""
 

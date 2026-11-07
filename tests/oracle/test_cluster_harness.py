@@ -76,11 +76,25 @@ def test_the_client_routes_by_the_runners_of_its_last_sync(cluster_db: ClusterDa
         assert not cluster.client_in_sync()
         yield from cluster.resume_client()
         yield from cluster.wait_for_client_sync()
-        next_owner = yield from cluster.owner_of_entity(StateEntity, id)
-        assert next_owner is not None
         client = yield from cluster.get_client(StateEntity)
-        reply = yield from client(id).increment(EntityRequest(id=f"{backend}-view", sequence=0))
-        assert reply["runner"] == address_string(next_owner.address)
+        sequence = [0]
+
+        def replies_from_its_owner() -> Generator[fx.Effect[Any, Any, Any], Any, bool]:
+            # Under load a lock operation can pass its 500 ms and a healthy runner gives its
+            # shards up, as in Effect, so the owner may move during the call: ask again then.
+            owner = yield from cluster.owner_of_entity(StateEntity, id)
+            if owner is None:
+                return False
+            sequence[0] += 1
+            reply = yield from client(id).increment(
+                EntityRequest(id=f"{backend}-view", sequence=sequence[0] - 1)
+            )
+            if (yield from cluster.owner_of_entity(StateEntity, id)) is not owner:
+                return False
+            assert reply["runner"] == address_string(owner.address)
+            return True
+
+        yield from cluster.wait_until("The owner kept moving", fx.gen(replies_from_its_owner), 12)
         yield from cluster.kill(old_owner)
 
     yield from fx.scoped(fx.gen(body))

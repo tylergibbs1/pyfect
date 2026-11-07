@@ -35,10 +35,15 @@ def to_null_json(_: tuple[ast.AST, ...]) -> ast.Link:
     return link(ast.null, decode=_nothing, encode=_nothing)
 
 
+def stays_absent_in_a_string_tree(_: tuple[ast.AST, ...]) -> None:
+    """A string tree holds ``undefined`` itself, as ``None``; ``S.Null`` is the text ``null``."""
+
+
 Undefined: Bottom[None] = declare(
     _is_none,
     expected="undefined",
     to_codec_json=to_null_json,
+    to_codec_string_tree=stays_absent_in_a_string_tree,
     representation={"id": UNDEFINED_ID, "payload": None},
     to_arbitrary=_none_strategy,
 )

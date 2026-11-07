@@ -10,12 +10,14 @@ has an encoding is given to it as ``MISSING``: a getter may supply a value
 takes is excess: dropped, or an ``UnexpectedKey`` under
 ``on_excess_property="error"``.
 
-The input is any ``Mapping``; the output is a new ``dict``.
+The input is any ``Mapping`` or object: as in JavaScript, an instance's attributes are its
+keys, its own ones when enumerating (``_ObjectKeys``). The output is a new ``dict``. An empty
+struct is the type ``{}``: any value but ``None``, as it came.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Hashable, Mapping
+from collections.abc import Callable, Hashable, Iterator, Mapping
 from dataclasses import dataclass, replace
 from typing import cast, final
 
@@ -30,10 +32,56 @@ from pyfect.schema.ast._base import (
     issue_of,
     join_checks,
 )
-from pyfect.schema.ast._result import MISSING, ParseResult
+from pyfect.schema.ast._result import MISSING, NotAnObject, ParseResult, call
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, run_steps
 from pyfect.schema.ast._suspend import Suspend
 from pyfect.schema.issue import Composite, Issue, MissingKey, Pointer, UnexpectedKey, reported
+
+_NOT_OBJECTS = (type(None), bool, int, float, complex, str, bytes, list, tuple, NotAnObject)
+"""What JavaScript's ``typeof input === "object"`` and ``!Array.isArray`` turn away."""
+
+
+class ObjectKeys(Mapping[object, object]):
+    """An instance read as keys: any attribute, and its own ones when enumerating."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def __getitem__(self, key: object) -> object:
+        if isinstance(key, str):
+            try:
+                return getattr(self.value, key)
+            except AttributeError:
+                pass
+        raise KeyError(key)
+
+    def __contains__(self, key: object) -> bool:
+        return isinstance(key, str) and hasattr(self.value, key)
+
+    def __iter__(self) -> Iterator[object]:
+        return iter(_own_attributes(self.value))
+
+    def __len__(self) -> int:
+        return len(_own_attributes(self.value))
+
+    def __repr__(self) -> str:
+        return repr(self.value)
+
+
+def reads_properties(value: object) -> bool:
+    return not isinstance(value, _NOT_OBJECTS) and not callable(value)
+
+
+def _own_attributes(value: object) -> list[str]:
+    names: list[str] = list(getattr(value, "__dict__", ()))
+    for cls in type(value).__mro__:
+        slots: object = cls.__dict__.get("__slots__", ())
+        for name in (slots,) if isinstance(slots, str) else cast("tuple[str, ...]", slots):
+            if name not in names and name != "__weakref__" and hasattr(value, name):
+                names.append(name)
+    return names
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,13 +130,20 @@ class Objects(AST):
     tag = "Objects"
 
     def get_expected(self) -> str:
-        return "object"
+        return "object" if self.properties or self.index_signatures else "object | array"
 
     def _parse(self, input: object, options: ParseOptions) -> ParseResult:
-        if not isinstance(input, Mapping):
+        if not self.properties and not self.index_signatures:
+            refused = input is None or isinstance(input, NotAnObject)
+            return invalid_type(self, input, options) if refused else Success(input)
+        keys: Mapping[object, object]
+        if isinstance(input, Mapping):
+            keys = cast("Mapping[object, object]", input)
+        elif reads_properties(input):
+            keys = ObjectKeys(input)
+        else:
             return invalid_type(self, input, options)
-        run = _Run(self, cast("Mapping[object, object]", input), options)
-        return run_steps(run, options.get("concurrency"))
+        return call(_parse_keys, self, cast("object", input), keys, options)
 
     def _flip(self) -> Objects:
         # Checks describe the decoded side: flipped, they check the input
@@ -136,31 +191,45 @@ _NO_KEYS: frozenset[Hashable] = frozenset()
 _NO_ENTRIES: tuple[tuple[IndexSignature, object], ...] = ()
 
 
+def _parse_keys(
+    ast: Objects, input: object, keys: Mapping[object, object], options: ParseOptions
+) -> ParseResult:
+    return run_steps(_Run(ast, input, keys, options), options.get("concurrency"))
+
+
 @final
 class _Run(Steps["_Run"]):
     """One parse of a mapping: the output so far and the issues found.
     Steps: the excess-key check, then each property, then each key an
     index signature selects."""
 
-    __slots__ = ("ast", "declared", "entries", "input", "issues", "options", "out")
+    __slots__ = ("ast", "declared", "entries", "input", "issues", "keys", "options", "out")
 
-    def __init__(self, ast: Objects, input: Mapping[object, object], options: ParseOptions) -> None:
+    def __init__(
+        self,
+        ast: Objects,
+        input: object,
+        keys: Mapping[object, object],
+        options: ParseOptions,
+    ) -> None:
         self.ast = ast
         self.input = input
+        self.keys = keys
         self.options = options
         self.out: dict[object, object] = {}
         self.issues: list[Issue] = []
         if ast.index_signatures:
             self.declared: frozenset[Hashable] = frozenset(p.name for p in ast.properties)
             self.entries: tuple[tuple[IndexSignature, object], ...] = tuple(
-                (i, key) for i in ast.index_signatures for key in input if i.selects(key, options)
+                (i, key) for i in ast.index_signatures for key in keys if i.selects(key, options)
             )
         else:
             self.declared, self.entries = _NO_KEYS, _NO_ENTRIES
 
     def copy(self) -> _Run:
         other = _Run.__new__(_Run)
-        other.ast, other.input, other.options = self.ast, self.input, self.options
+        other.ast, other.input, other.keys = self.ast, self.input, self.keys
+        other.options = self.options
         other.entries, other.declared = self.entries, self.declared
         other.out = dict(self.out)
         other.issues = list(self.issues)
@@ -184,7 +253,7 @@ class _Run(Steps["_Run"]):
             self._excess()
             start = 1
         properties = self.ast.properties
-        input, options, out = self.input, self.options, self.out
+        input, options, out = self.keys, self.options, self.out
         for i in range(start - 1, len(properties)):
             prop = properties[i]
             name = prop.name
@@ -218,7 +287,7 @@ class _Run(Steps["_Run"]):
             return
         ast = self.ast
         declared = {p.name for p in ast.properties}
-        for key, value in self.input.items():
+        for key, value in self.keys.items():
             if key not in declared and not any(
                 i.selects(key, self.options) for i in ast.index_signatures
             ):
@@ -272,7 +341,7 @@ class _Run(Steps["_Run"]):
         self, index: IndexSignature, key: object, key_exit: Exit[object, Issue]
     ) -> Pending[_Run] | None:
         out_key = self._value(key, key_exit)
-        result = index.type.parse(self.input[key], self.options)
+        result = index.type.parse(self.keys[key], self.options)
         if isinstance(result, (Success, Failure)):
             self._set_entry(key, out_key, result)
             return None

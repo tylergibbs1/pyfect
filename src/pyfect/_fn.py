@@ -691,12 +691,13 @@ def fn_untraced_eager[**P, A, E = Never, R = Never](
 ) -> Callable[P, Effect[A, E, R]]:
     """``fn_untraced``, but a call runs the body at once while its effects
     already hold their exits (Effect's ``fnUntracedEager``)."""
+    appliers = _appliers(pipeables)
 
     @functools.wraps(f)
     def call(*args: P.args, **kwargs: P.kwargs) -> Effect[A, E, R]:
         effect: Any = _eager_run(lambda: f(*args, **kwargs))
-        for pipeable in pipeables:
-            effect = pipeable(effect)
+        for apply in appliers:
+            effect = apply(effect, args, kwargs)
         return effect
 
     return call

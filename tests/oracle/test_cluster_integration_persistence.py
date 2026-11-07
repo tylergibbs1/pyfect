@@ -779,11 +779,26 @@ def test_resumes_a_terminal_stream_on_the_replacement_owner(cluster_db: ClusterD
         )
         assert received == [0]
 
+        # On a loaded machine a lock operation past its timeout makes a healthy owner give up its
+        # shards, as in Effect, which restarts the handler and can move the entity: read both now.
+        current: list[Any] = []
+
+        def remember_owner(found: Any) -> bool:
+            current[:] = [found]
+            return found is not None
+
+        yield from cluster.wait_until(
+            "The entity has no owner to kill",
+            cluster.owner_of_entity(E, entity_id).map(remember_owner),
+        )
+        owner = current[0]
+        peer = next(r for r in runners if r is not owner)
+        entered_before_death = count("Streamed", id)
         yield from cluster.kill(owner)
         yield from cluster.wait_for_entity_owner(E, entity_id, peer)
         yield from cluster.wait_until(
             "The replacement owner did not resume the terminal stream",
-            fx.sync(lambda: count("Streamed", id) == 2),
+            fx.sync(lambda: count("Streamed", id) > entered_before_death),
         )
         state.stream_terminal_gate.open_unsafe()
 
@@ -792,8 +807,7 @@ def test_resumes_a_terminal_stream_on_the_replacement_owner(cluster_db: ClusterD
             "The surviving terminal stream reply was not persisted",
             cluster.message_counts().map(lambda c: c.replied == 1 and c.unprocessed == 0),
         )
-        assert count("Streamed", id) == 2
-        assert (yield from cluster.owner_of_entity(E, entity_id)) is peer
+        yield from cluster.wait_for_entity_owner(E, entity_id, peer)
 
     yield from run(body)
 

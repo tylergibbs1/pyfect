@@ -53,6 +53,7 @@ from pyfect.cluster import (
 from pyfect.cluster import sharding_config as sharding_config_
 from pyfect.cluster.entity import Entity
 from pyfect.cluster.entity_id import EntityId
+from pyfect.cluster.message_storage import MessageStorage, MessageStorageService
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.runner_storage import RunnerStorage, RunnerStorageService
 from pyfect.cluster.runners import RpcClientProtocol, RpcClientProtocolService
@@ -367,6 +368,30 @@ def address_key(address: RunnerAddress) -> str:
 CLIENT_PEER = "client"
 
 
+def _reads_nothing_once_killed(
+    storage: MessageStorageService, controller: _RunnerStorageController
+) -> MessageStorageService:
+    """A killed runner's process is gone, but here its scope is still closing while a gated
+    handler runs, and its read loop lives on. A read after the replacement's ``reset_shards``
+    claims a message for ten minutes (``last_read``), and nothing would deliver it."""
+
+    def unprocessed_messages(shard_ids: Any, /, **options: Any) -> fx.Effect[Any, Any]:
+        return fx.suspend(
+            lambda: (
+                fx.succeed([])
+                if controller.mode == "killed"
+                else storage.unprocessed_messages(shard_ids, **options)
+            )
+        )
+
+    cls = type(
+        "KilledRunnerStorage",
+        (MessageStorageService,),
+        {"unprocessed_messages": staticmethod(unprocessed_messages)},
+    )
+    return cls(storage.base, storage._handlers, storage._handlers_by_shard)  # pyright: ignore[reportPrivateUsage]
+
+
 @dataclass
 class _SocketController:
     """The open connections between members, by ``source->target``, so a
@@ -570,6 +595,9 @@ class Cluster:
             yield from scope.add_finalizer(lambda _: lock_fault.set("clear"))
             controller = _RunnerStorageController(raw_storage.get_unsafe(RunnerStorage))
             storage = Context.make(RunnerStorage, controller.controlled)
+            messages = _reads_nothing_once_killed(
+                self.shared.get_unsafe(MessageStorage), controller
+            )
             built = (
                 yield from self.runner_layer(
                     address,
@@ -579,7 +607,7 @@ class Cluster:
                     tracked_client_protocol(self.sockets, address_key(address)),
                 )
                 .build_with_scope(scope)
-                .pipe(fx.provide(self.shared.merge(storage)))
+                .pipe(fx.provide(self.shared.merge(storage).add(MessageStorage, messages)))
             )
             yield from controller.release_on_close(scope)
             runner = ClusterRunner(

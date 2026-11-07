@@ -30,6 +30,7 @@ from pyfect.schema._codec_links import (
     literal_to_string,
 )
 from pyfect.schema._schema import Bottom, Codec
+from pyfect.schema._to_codec_array_from_single import FROM_SINGLE
 
 type StringTree = str | Sequence[StringTree] | Mapping[str, StringTree] | None
 """Text leaves (``None`` for Effect's ``undefined``) in lists and string-keyed
@@ -51,6 +52,9 @@ def to_codec_string_tree_ast(node: ast.AST) -> ast.AST:
 
 class _Derivation(CodecDerivation):
     opaque = UNKNOWN_TO_STRING_TREE
+
+    def _stops_at(self, link: ast.Link) -> bool:
+        return link.transformation is FROM_SINGLE
 
     def _leaf(self, node: ast.AST) -> ast.AST:  # noqa: PLR0911
         match node:

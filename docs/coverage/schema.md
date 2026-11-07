@@ -5,7 +5,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Schema | 377 | 301 | 17 | 59 | 0 | 100% |
+| Schema | 377 | 309 | 17 | 51 | 0 | 100% |
 | SchemaAST | 133 | 58 | 8 | 67 | 0 | 100% |
 | SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
@@ -380,16 +380,16 @@ Coverage counts ported, renamed and §4 exports.
 | `toRepresentation` | renamed | `pyfect.schema.representation.to_representation` |
 | `toJsonSchemaDocument` | ported | `pyfect.schema.to_json_schema_document` |
 | `toCodecJson` | ported | `pyfect.schema.to_codec_json` |
-| `toCodecIso` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
+| `toCodecIso` | ported | `pyfect.schema.to_codec_iso` |
 | `toCodecStringTree` | ported | `pyfect.schema.to_codec_string_tree` |
 | `toCodecArrayFromSingle` | ported | `pyfect.schema.to_codec_array_from_single` |
-| `toCodecGoJson` | §4 | not ported (§4: `Schema.toDifferJsonPatch`, `toEncoderXml`, `toCodecGoJson`) |
-| `toEncoderXml` | §4 | not ported (§4: `Schema.toDifferJsonPatch`, `toEncoderXml`, `toCodecGoJson`) |
-| `toIso` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
-| `toIsoSource` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
-| `toIsoFocus` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
-| `overrideToCodecIso` | §4 | not ported (§4: `Schema.toIso`, `toCodecIso`) |
-| `toDifferJsonPatch` | §4 | not ported (§4: `Schema.toDifferJsonPatch`, `toEncoderXml`, `toCodecGoJson`) |
+| `toCodecGoJson` | ported | `pyfect.schema.to_codec_go_json` |
+| `toEncoderXml` | ported | `pyfect.schema.to_encoder_xml` |
+| `toIso` | ported | `pyfect.schema.to_iso` |
+| `toIsoSource` | ported | `pyfect.schema.to_iso_source` |
+| `toIsoFocus` | ported | `pyfect.schema.to_iso_focus` |
+| `overrideToCodecIso` | ported | `pyfect.schema.override_to_codec_iso` |
+| `toDifferJsonPatch` | ported | `pyfect.schema.to_differ_json_patch` |
 | `Tree` | ported | `pyfect.schema.Tree` |
 | `Json` | ported | `pyfect.schema.Json` |
 | `JsonObject` | ported | `pyfect.schema.JsonObject` |

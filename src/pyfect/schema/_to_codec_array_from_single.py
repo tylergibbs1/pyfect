@@ -6,7 +6,7 @@ several times a list."""
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
@@ -21,7 +21,7 @@ def _same(value: Sequence[object]) -> Sequence[object]:
     return value
 
 
-_FROM_SINGLE = T.transform(decode=_to_array, encode=_same)
+FROM_SINGLE = T.transform(decode=_to_array, encode=_same)
 
 
 def to_codec_array_from_single[T_, E, RD, RE](
@@ -31,6 +31,17 @@ def to_codec_array_from_single[T_, E, RD, RE](
     decoding a single string as a one-element list; encoding is
     unchanged. A comma-separated string is not split."""
     return Bottom(_Walk()(schema.__codec__().ast))
+
+
+@dataclass(frozen=True, slots=True)
+class _WalkedThunk:
+    """A walked ``Suspend``'s target: marks it walked, so walking it again keeps it."""
+
+    walk: _Walk
+    source: ast.Suspend
+
+    def __call__(self) -> ast.AST:
+        return self.walk(self.source.target)
 
 
 class _Walk:
@@ -50,7 +61,7 @@ class _Walk:
         if node.encoding is None:
             return self._step(node)
         *init, last = node.encoding
-        if last.transformation is _FROM_SINGLE:
+        if last.transformation is FROM_SINGLE:
             return node
         to = self(last.to)
         if to is last.to:
@@ -70,18 +81,21 @@ class _Walk:
                 ast.string,
             )
         )
-        ensure = ast.decode_to(source, out, _FROM_SINGLE)
+        ensure = ast.decode_to(source, out, FROM_SINGLE)
         return ast.optional_key(ensure) if node.optional_key else ensure
 
     def _children(self, node: ast.AST) -> ast.AST:
         match node:
             case ast.Objects():
-                return replace(
-                    node,
-                    properties=tuple(replace(p, type=self(p.type)) for p in node.properties),
-                    index_signatures=tuple(
-                        replace(i, type=self(i.type)) for i in node.index_signatures
-                    ),
+                properties = tuple(replace(p, type=self(p.type)) for p in node.properties)
+                indexes = tuple(replace(i, type=self(i.type)) for i in node.index_signatures)
+                same = all(
+                    a.type is b.type for a, b in zip(properties, node.properties, strict=True)
+                ) and all(
+                    a.type is b.type for a, b in zip(indexes, node.index_signatures, strict=True)
+                )
+                return (
+                    node if same else replace(node, properties=properties, index_signatures=indexes)
                 )
             case ast.Arrays():
                 return replace(
@@ -90,9 +104,12 @@ class _Walk:
                     rest=tuple(map(self, node.rest)),
                 )
             case ast.Union():
-                return replace(node, types=tuple(map(self, node.types)))
+                types = tuple(map(self, node.types))
+                same = all(a is b for a, b in zip(types, node.types, strict=True))
+                return node if same else replace(node, types=types)
+            case ast.Suspend() if isinstance(node.thunk, _WalkedThunk):
+                return node
             case ast.Suspend():
-                target = node
-                return replace(node, thunk=lambda: self(target.target))
+                return replace(node, thunk=_WalkedThunk(self, node))
             case _:
                 return node

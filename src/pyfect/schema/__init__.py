@@ -405,10 +405,20 @@ from pyfect.schema._template_literal import (
     TemplateLiteralSchema,
 )
 from pyfect.schema._to_codec_array_from_single import to_codec_array_from_single
+from pyfect.schema._to_codec_go_json import to_codec_go_json
 from pyfect.schema._to_codec_json import to_codec_json
 from pyfect.schema._to_codec_string_tree import StringTree, to_codec_string_tree
+from pyfect.schema._to_differ_json_patch import Differ, to_differ_json_patch
+from pyfect.schema._to_encoder_xml import to_encoder_xml
 from pyfect.schema._to_equivalence import Equivalence, to_equivalence
 from pyfect.schema._to_formatter import Formatter, OnBefore, to_formatter
+from pyfect.schema._to_iso import (
+    override_to_codec_iso,
+    to_codec_iso,
+    to_iso,
+    to_iso_focus,
+    to_iso_source,
+)
 from pyfect.schema._to_strategy import to_strategy
 from pyfect.schema._transform import (
     Decode,
@@ -493,6 +503,7 @@ __all__ = [
     "Decoder",
     "Defect",
     "DefectSchema",
+    "Differ",
     "DnsARecord",
     "DnsAaaaRecord",
     "DnsCaaRecord",
@@ -820,6 +831,7 @@ __all__ = [
     "middleware_encoding",
     "model",
     "optional_key",
+    "override_to_codec_iso",
     "refine",
     "resolve_annotations",
     "resolve_annotations_key",
@@ -827,11 +839,18 @@ __all__ = [
     "tag",
     "tag_default_omit",
     "to_codec_array_from_single",
+    "to_codec_go_json",
+    "to_codec_iso",
     "to_codec_json",
     "to_codec_string_tree",
+    "to_differ_json_patch",
     "to_encoded",
+    "to_encoder_xml",
     "to_equivalence",
     "to_formatter",
+    "to_iso",
+    "to_iso_focus",
+    "to_iso_source",
     "to_json_schema_document",
     "to_json_schema_multi_document",
     "to_strategy",

@@ -26,6 +26,10 @@ import itertools
 import random
 from typing import Any
 
+import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
+
 import pyfect as fx
 from pyfect import stream, testing
 from pyfect.option import Some
@@ -375,6 +379,27 @@ def test_map_accum_array_effect_data_first():
 # --- rechunk --------------------------------------------------------------------
 
 
+@settings(max_examples=30, deadline=None)
+@given(
+    chunks=st.lists(st.lists(st.integers()), min_size=1),
+    size=st.integers(min_value=1, max_value=100),
+)
+def test_rechunk(chunks: list[list[int]], size: int):
+    """rechunk"""
+    actual = fx.run_sync(
+        stream.from_iterable(chunks)
+        .filter(lambda chunk: len(chunk) > 0)
+        .flatten_iterable()
+        .rechunk(size)
+        .chunks()
+        .run_collect()
+    )
+    flat = [item for chunk in chunks for item in chunk]
+    assert [list(chunk) for chunk in actual] == [
+        flat[i : i + size] for i in range(0, len(flat), size)
+    ]
+
+
 @testing.effect
 def test_rechunk_preserves_large_input_split_across_source_chunks():
     """rechunk preserves large input split across source chunks"""
@@ -383,6 +408,19 @@ def test_rechunk_preserves_large_input_split_across_source_chunks():
         stream.from_arrays(values[:1], values[1:]).rechunk(200_002).chunks().run_collect()
     )
     assert [len(chunk) for chunk in actual] == [200_001]
+    assert [item for chunk in actual for item in chunk] == values
+
+
+@pytest.mark.parametrize(
+    ("size", "lengths"),
+    [(200_001, [200_000]), (200_000, [200_000]), (199_999, [199_999, 1])],
+)
+@testing.effect
+def test_rechunk_preserves_a_large_source_chunk_with_target_size(size: int, lengths: list[int]):
+    """rechunk preserves a large source chunk with target $size"""
+    values = list(range(200_000))
+    actual = yield from stream.from_iterable(values).rechunk(size).chunks().run_collect()
+    assert [len(chunk) for chunk in actual] == lengths
     assert [item for chunk in actual for item in chunk] == values
 
 

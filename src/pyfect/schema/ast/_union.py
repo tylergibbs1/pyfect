@@ -20,7 +20,7 @@ from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions, is_constructing
 from pyfect.schema.ast._base import AST, issue_of, join_checks
 from pyfect.schema.ast._candidates import CandidateIndex, member_expected
-from pyfect.schema.ast._result import ParseResult
+from pyfect.schema.ast._result import ParseResult, call
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, resume, run_steps
 from pyfect.schema.issue import AnyOf, Issue, OneOf, reported
 
@@ -55,6 +55,10 @@ class Union(AST):
         return " | ".join(dict.fromkeys(member_expected(t) for t in self.types))
 
     def _parse(self, input: object, options: ParseOptions) -> ParseResult:
+        # Selecting candidates reads the input's properties, which may raise.
+        return call(self._parse_members, input, options)
+
+    def _parse_members(self, input: object, options: ParseOptions) -> ParseResult:
         if self.mode == "one_of":
             return run_steps(_Run(self, input, options, []))
         # The common case without a run's state: the first member that

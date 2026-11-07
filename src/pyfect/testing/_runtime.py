@@ -69,6 +69,16 @@ class _Deadline:
         _note_sleepers(error, context)
         raise error
 
+    def stalled_after_timeout(self, stall: StalledError, context: Context) -> TestTimeoutError:
+        """The real failure when interrupting at the deadline left a finalizer stuck: the
+        timeout, which ``StalledError`` would otherwise hide."""
+        error = TestTimeoutError(
+            f"test timed out after {self.timeout}s; it was interrupted and a finalizer never "
+            f"finished ({stall})"
+        )
+        _note_sleepers(error, context)
+        return error
+
 
 def _note_sleepers(error: BaseException, context: Context) -> None:
     _, clock = context.lookup(Clock)
@@ -106,6 +116,8 @@ class SyncRuntime:
         try:
             self.scheduler.run_until(done, stall_timeout=self._stall_timeout)
         except StalledError as err:
+            if deadline.expired:
+                raise deadline.stalled_after_timeout(err, context) from err
             err.add_note("Every fiber is waiting; the test was interrupted to run its finalizers.")
             _note_sleepers(err, context)
             self._drain(fiber)

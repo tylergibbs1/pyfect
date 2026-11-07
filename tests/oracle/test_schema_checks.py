@@ -34,8 +34,6 @@ Omitted:
 - "Union / mode: "oneOf" with Void", "Union / preserves member order after
   sentinel dispatch", "... recovering members during runtime type /
   sentinel dispatch": need ``Void`` or transformations.
-- "Union / Struct({}) preserves its semantics in a union": an empty struct
-  takes only mappings in pyfect (Effect's takes any non-nullish value).
 - "Union / does not start later members after an asynchronous success",
   "... starts the next member only after an asynchronous failure", "...
   mode: "oneOf" succeeds on each execution of the same suspended decode

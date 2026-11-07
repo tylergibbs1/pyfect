@@ -531,12 +531,30 @@ def test_set_parameters_replaces_json_schema():
     assert T.get_json_schema(tool) == T.get_json_schema_from_schema(S.Struct(ToolParams))
 
 
-def test_is_dynamic():
-    """Dynamic / isDynamic / returns true for dynamic tools with Effect Schema, with JSON Schema; false for user-defined, provider-defined and non-tool values"""  # noqa: E501
+def test_is_dynamic_returns_true_for_dynamic_tools_with_effect_schema():
+    """Dynamic / isDynamic / returns true for dynamic tools with Effect Schema"""
     assert T.is_dynamic(T.dynamic("A", parameters=S.Struct(ToolParams)))
+
+
+def test_is_dynamic_returns_true_for_dynamic_tools_with_json_schema():
+    """Dynamic / isDynamic / returns true for dynamic tools with JSON Schema"""
     assert T.is_dynamic(T.dynamic("B", parameters=_JSON_PARAMS))
+
+
+def test_is_dynamic_returns_false_for_user_defined_tools():
+    """Dynamic / isDynamic / returns false for user-defined tools"""
     assert not T.is_dynamic(FailureModeError)
+
+
+def test_is_dynamic_returns_false_for_provider_defined_tools():
+    """Dynamic / isDynamic / returns false for provider-defined tools"""
     assert not T.is_dynamic(NoHandlerRequired({"testArg": "x"}))
+
+
+def test_is_dynamic_returns_false_for_non_tool_values():
+    """Dynamic / isDynamic / returns false for non-tool values"""
+    assert not T.is_dynamic(None)
+    assert not T.is_dynamic({})
     assert not T.is_dynamic({"name": "A"})
 
 

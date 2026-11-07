@@ -736,6 +736,17 @@ def test_retries_an_early_activity_registered_while_its_suspended_reply_is_still
     )
 
 
+def test_engines_sharing_a_storage_never_reuse_a_request_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The flake behind the title above, 1 run in 1,024: a runner sends under its random machine
+    id until it registers, the next engine's memory runner storage hands out id 0, and at one
+    millisecond of the TestClock the second request repeats the first's id, so storage takes it
+    as a duplicate and every fiber waits. Effect hangs the same way with ``Math.random`` at 0."""
+    monkeypatch.setattr("random.randrange", lambda _: 0)
+    test_retries_an_early_activity_registered_while_its_suspended_reply_is_still_being_persisted()
+
+
 @testing.effect
 def test_does_not_replay_for_an_unawaited_deferred_checkpoint():
     """does not replay for an unawaited deferred checkpoint"""

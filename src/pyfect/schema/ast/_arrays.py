@@ -200,7 +200,7 @@ class _Run(Steps["_Run"]):
             value = exit.value
             if value is not MISSING:
                 self.out[index] = value
-            elif not position.optional:
+            elif not (position.optional or position.type.optional_key):
                 self._report(index, MissingKey(position.type.key_annotations))
             return
         failure = cast("Failure[Issue]", exit)

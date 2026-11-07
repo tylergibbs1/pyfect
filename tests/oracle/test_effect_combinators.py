@@ -1038,3 +1038,21 @@ def test_cached_with_ttl_expires_exactly_at_the_deadline():
     assert (yield from cached) == 1
     yield from testing.adjust(0.2)
     assert (yield from cached) == 2
+
+
+@testing.effect
+def test_unbounded_fail():
+    """forEach / unbounded fail"""
+    done: list[int] = []
+
+    def visit(i: int) -> fx.Effect[int, str]:
+        def run() -> fx.Effect[int, str]:
+            done.append(i)
+            return fx.fail("error") if i == 3 else fx.succeed(i)
+
+        return fx.suspend(run).delay(i * 0.1)
+
+    handle = yield from fx.for_each([1, 2, 3, 4, 5], visit, concurrency="unbounded").fork()
+    yield from testing.adjust(0.5)
+    assert (yield from handle.await_exit()) == fx.exit.fail("error")
+    assert done == [1, 2, 3]

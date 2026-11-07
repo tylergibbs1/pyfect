@@ -839,3 +839,54 @@ def test_zero_capacity_offer_all_drains_in_order_and_completes_a_closing_queue()
     assert third == fx.Some(3)
     assert producer_exit == fx.Success([])
     assert done == fx.Success(None)
+
+
+@testing.effect
+def test_flush_unsafe_releases_a_waiting_taker_after_offer_unsafe_without_completing_the_queue():
+    """flushUnsafe releases a waiting taker after offerUnsafe without completing the queue"""
+    queue = yield from fx.Queue[int, Never].unbounded()
+    taker = yield from queue.take().fork()
+    awaiter = yield from queue.await_done().fork()
+    yield from fx.yield_now()
+
+    queue.offer_unsafe(1)
+    assert taker.poll_unsafe() is None
+
+    queue.flush_unsafe()
+
+    assert taker.poll_unsafe() == fx.exit.succeed(1)
+    assert awaiter.poll_unsafe() is None
+    yield from queue.shutdown()
+
+
+@testing.effect
+def test_flush_releases_a_waiting_taker_after_offer_unsafe_without_completing_the_queue():
+    """flush releases a waiting taker after offerUnsafe without completing the queue"""
+    queue = yield from fx.Queue[int, Never].unbounded()
+    taker = yield from queue.take().fork()
+    awaiter = yield from queue.await_done().fork()
+    yield from fx.yield_now()
+
+    queue.offer_unsafe(1)
+    assert taker.poll_unsafe() is None
+
+    yield from queue.flush()
+
+    assert taker.poll_unsafe() == fx.exit.succeed(1)
+    assert awaiter.poll_unsafe() is None
+    yield from queue.shutdown()
+
+
+@testing.effect
+def test_flush_unsafe_preserves_later_offers_when_the_queue_is_empty():
+    """flushUnsafe preserves later offers when the queue is empty"""
+    queue = yield from fx.Queue[int, Never].unbounded()
+    first = yield from queue.take().fork()
+    second = yield from queue.take().fork()
+    yield from fx.yield_now()
+
+    queue.flush_unsafe()
+    yield from queue.offer_all([1, 2])
+
+    assert {(yield from first.join()), (yield from second.join())} == {1, 2}
+    yield from queue.shutdown()

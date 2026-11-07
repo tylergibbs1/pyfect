@@ -18,8 +18,6 @@ INTERNAL = "Effect's `@internal` schema exports"
 CONTEXT = "`SchemaAST.Context`"
 DATE = "`Schema.Date`, `DateFromString`, `DateFromMillis`"
 WEB = "`Schema.File`, `FormData`, `URLSearchParams`"
-ISO = "`Schema.toIso`, `toCodecIso`"
-OTHER_CODECS = "`Schema.toDifferJsonPatch`, `toEncoderXml`, `toCodecGoJson`"
 FIELDS_ASSIGN = "`Schema.fieldsAssign`"
 HTTP = "pyfect.http.schema"
 
@@ -73,14 +71,6 @@ SCHEMA = Module(
                 "URLSearchParams",
                 "fromURLSearchParams",
             )
-        },
-        **{
-            name: (ISO, "not ported")
-            for name in ("toCodecIso", "toIso", "toIsoSource", "toIsoFocus", "overrideToCodecIso")
-        },
-        **{
-            name: (OTHER_CODECS, "not ported")
-            for name in ("toDifferJsonPatch", "toEncoderXml", "toCodecGoJson")
         },
         **{name: (NO_UNDEFINED, "not ported") for name in _UNDEFINED_NAMES},
         "isStringSymbol": (NO_UNDEFINED, "not ported"),

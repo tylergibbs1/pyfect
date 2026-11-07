@@ -92,8 +92,10 @@ def make_test_workflow_engine(
     sharding_layer: fx.Layer[Any, Never, Any] | None = None,
     storage_layer: fx.Layer[Any, Never, Any] | None = None,
 ) -> fx.Layer[Any, Never, Never]:
-    """Effect's ``makeTestWorkflowEngine``."""
-    return (
+    """Effect's ``makeTestWorkflowEngine``. An engine on a storage another engine used starts a
+    millisecond on: at one TestClock millisecond, a runner's random machine id before it registers
+    can equal the id the next runner registers (1 in 1,024), which repeats a request id."""
+    engine = (
         cluster_workflow_engine.layer.pipe(
             fx.layer.provide_merge(sharding.layer if sharding_layer is None else sharding_layer)
         )
@@ -107,6 +109,9 @@ def make_test_workflow_engine(
         .pipe(fx.layer.provide(runner_health.layer_noop))
         .pipe(fx.layer.provide(sharding_config.layer(config(**(config_overrides or {})))))
     )
+    if storage_layer is None:
+        return engine
+    return engine.pipe(fx.layer.provide(fx.layer.effect_discard(testing.adjust(0.001))))
 
 
 def poll_until(

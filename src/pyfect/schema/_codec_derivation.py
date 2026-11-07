@@ -79,6 +79,24 @@ class _DerivedThunk:
         return self.derivation(self.source.target)
 
 
+def _in_context_of(node: ast.AST, derived: ast.AST) -> ast.AST:
+    """``derived`` in ``node``'s key context, also on what its last link reads, which takes no
+    constructor default: a constructor fills the key on the schema's own side only."""
+    in_context = ast.replace_context(
+        derived, key_annotations=node.key_annotations, optional_key=node.optional_key
+    )
+    if in_context.encoding is not None:
+        *init, last = in_context.encoding
+        to = ast.replace_context(
+            last.to, key_annotations=node.key_annotations, optional_key=node.optional_key
+        )
+        linked = replace(in_context, encoding=(*init, ast.Link(to, last.transformation)))
+        object.__setattr__(linked, "context_owner", in_context.owner())
+        in_context = linked
+    default = node.constructor_default
+    return in_context if default is None else ast.with_constructor_default(in_context, default)
+
+
 class CodecDerivation(ABC):
     """One derivation of a canonical codec."""
 
@@ -106,10 +124,7 @@ class CodecDerivation(ABC):
         owner = node.owner()
         if owner is not node:
             # A copy with another key context: the owner's codec, in this context.
-            derived = self(owner)
-            out = ast.replace_context(
-                derived, key_annotations=node.key_annotations, optional_key=node.optional_key
-            )
+            out = _in_context_of(node, self(owner))
             self._done[id(node)] = (node, out)
             return out
         out = self._last_link(node)
@@ -125,10 +140,16 @@ class CodecDerivation(ABC):
         if node.encoding is None:
             return self._step(node)
         *init, last = node.encoding
+        if self._stops_at(last):
+            return node
         to = self(last.to)
         if to is last.to:
             return node
         return replace(node, encoding=(*init, ast.Link(to, last.transformation)))
+
+    def _stops_at(self, _link: ast.Link) -> bool:
+        """Whether ``link`` is already in the target form, so the walk keeps it as it is."""
+        return False
 
     def _step(self, node: ast.AST) -> ast.AST:  # noqa: PLR0911
         match node:

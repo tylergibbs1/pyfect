@@ -371,6 +371,9 @@ class SyncScheduler(Tracking):
                     self._cond.wait(self._wait_time(stall_timeout))
                     continue
             self._run_batch()
+            # The stall clock counts time with nothing running, not a long task or a
+            # collector pause inside one.
+            self._last_activity = time.monotonic()
 
     def flush(self) -> None:
         """Run what is ready, and what that schedules, without waiting or

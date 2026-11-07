@@ -21,13 +21,14 @@ from pyfect.schema.ast._class import Class
 from pyfect.schema.ast._encoding import Encoding, to_encoded
 from pyfect.schema.ast._keywords import BigInt, Boolean, Never, Null, Number, String, Unknown
 from pyfect.schema.ast._literal import Enum, Literal, LiteralValue, same_literal
-from pyfect.schema.ast._objects import Objects
+from pyfect.schema.ast._objects import ObjectKeys, Objects, reads_properties
 from pyfect.schema.ast._suspend import Suspend
 
 if TYPE_CHECKING:
     from pyfect.schema.ast._union import Union
 
 ALL = frozenset({"null", "string", "number", "bigint", "boolean", "array", "object"})
+NOT_NULL = ALL - {"null"}
 OBJECT = frozenset({"object"})
 ARRAY = frozenset({"array"})
 
@@ -70,7 +71,7 @@ def _members(ast: AST) -> tuple[AST, ...] | None:
     return ast.types if isinstance(ast, Union) else None
 
 
-def kinds(ast: AST) -> frozenset[str]:
+def kinds(ast: AST) -> frozenset[str]:  # noqa: PLR0911
     """The kinds of input ``ast`` may accept (Effect's ``getCandidateTypes``)."""
     members = _members(ast)
     if members is not None:
@@ -80,6 +81,8 @@ def kinds(ast: AST) -> frozenset[str]:
             return _literal_kind(literal)
         case Enum(side="decode" | "encoded"):
             return frozenset[str]().union(*(_literal_kind(m.value) for m in ast.enum))
+        case Objects(properties=(), index_signatures=()):
+            return NOT_NULL
         case Objects() | Class(side="decode" | "encoded"):
             return OBJECT
         case Arrays():
@@ -187,10 +190,14 @@ def _observed(
     input: object, keys: tuple[Hashable, ...]
 ) -> tuple[dict[Hashable, object], frozenset[str]] | None:
     """The values ``input`` holds under the sentinel ``keys`` (a mapping's
-    keys, a list's or tuple's indexes) and its kind; ``None`` when it is
-    neither."""
-    if isinstance(input, Mapping):
-        mapping = cast("Mapping[object, object]", input)
+    keys, an object's attributes, a list's or tuple's indexes) and its kind;
+    ``None`` when it is none of these."""
+    if isinstance(input, Mapping) or reads_properties(input):
+        mapping = (
+            cast("Mapping[object, object]", input)
+            if isinstance(input, Mapping)
+            else ObjectKeys(input)
+        )
         return {key: mapping[key] for key in keys if key in mapping}, OBJECT
     if isinstance(input, list | tuple):
         items = cast("Sequence[object]", input)

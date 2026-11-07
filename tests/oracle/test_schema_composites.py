@@ -50,7 +50,7 @@ Omitted:
 """
 
 from datetime import UTC, datetime, timedelta, timezone
-from typing import TypedDict, TypeIs
+from typing import Any, TypedDict, TypeIs
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -58,9 +58,14 @@ import pytest
 from pyfect import byte_size, cause, exit, redacted
 from pyfect import effect as fx
 from pyfect import schema as S
+from pyfect._core import Effect
+from pyfect.clock import sleep
 from pyfect.option import Option, Some
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok
+from pyfect.schema import getter as G
+from pyfect.schema import transformation as T
+from pyfect.schema._options import ParseOptions
 from pyfect.testing import SchemaAsserts
 
 # ------------------------------------------------------------------- Tuple
@@ -814,3 +819,28 @@ def test_byte_size():
     json = SchemaAsserts(S.to_codec_json(S.ByteSize))
     json.decoding().succeed("9007199254740993", byte_size.bytes(9_007_199_254_740_993))
     json.encoding().succeed(byte_size.bytes(9_007_199_254_740_993), "9007199254740993")
+
+
+def test_char():
+    """Char"""
+    asserts = SchemaAsserts(S.Char)
+    decoding = asserts.decoding()
+    decoding.succeed("a")
+    decoding.fail("ab", "Expected a value with a length of 1")
+    encoding = asserts.encoding()
+    encoding.succeed("a")
+    encoding.fail("ab", "Expected a value with a length of 1")
+
+
+def _after_a_sleep(os: Option[str], _options: ParseOptions) -> Effect[Option[str]]:
+    return sleep(0.01).as_(os)
+
+
+def test_should_throw_on_async_decoding():
+    """should throw on async decoding"""
+    transformation: T.Transformation[Any, Any] = T.Transformation(
+        G.transform_optional_effect(_after_a_sleep), G.passthrough()
+    )
+    schema: Any = S.String.pipe(S.decode(transformation))
+    with pytest.raises(RuntimeError, match="Result adapter can only return schema issues"):
+        S.decode_unknown_result(schema)("1")

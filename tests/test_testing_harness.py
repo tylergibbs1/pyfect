@@ -2,6 +2,7 @@
 asyncio runs, stalls, and ``flaky``."""
 
 import asyncio
+import threading
 import time
 
 import pytest
@@ -10,6 +11,7 @@ import pyfect as fx
 from pyfect import layer, testing
 from pyfect.cause import die, fail
 from pyfect.clock import LiveClock
+from pyfect.scheduler import SyncScheduler
 from pyfect.testing import Services
 
 # --- reporting ------------------------------------------------------------------------
@@ -417,3 +419,34 @@ def test_an_effect_fixture_that_fails_errors_the_tests_using_it(pytester: pytest
     result = pytester.runpytest()
     result.assert_outcomes(errors=1)
     result.stdout.fnmatch_lines(["*no database*"])
+
+
+def test_a_finalizer_stuck_after_the_deadline_is_reported_as_the_timeout() -> None:
+    """Interrupting at the deadline can leave a finalizer waiting for what the test would have
+    released: the cause is the timeout (`test_retries_an_early_activity_...`'s `StalledError`)."""
+
+    @fx.gen
+    def body():
+        gate = yield from fx.Latch.make()
+        yield from fx.never.ensuring(gate.wait())
+
+    with pytest.raises(testing.TestTimeoutError, match="a finalizer never finished"):
+        testing.run_test(body, timeout=0.05)
+
+
+def test_time_spent_running_a_task_does_not_count_towards_a_stall() -> None:
+    """A long task, or a collector pause inside one, leaves nothing ready for a moment while
+    another thread is about to wake the run: that is no stall until the timeout has passed
+    with nothing running."""
+    scheduler = SyncScheduler()
+    finished: list[bool] = []
+
+    def wake_soon() -> None:
+        scheduler.schedule(lambda: finished.append(True))
+
+    def slow() -> None:
+        time.sleep(0.2)
+        threading.Timer(0.05, wake_soon).start()
+
+    scheduler.schedule(slow)
+    scheduler.run_until(lambda: bool(finished), stall_timeout=0.1)

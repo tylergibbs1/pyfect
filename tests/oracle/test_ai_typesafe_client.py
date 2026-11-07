@@ -361,7 +361,11 @@ def test_422():
     ("headers", "expected"),
     [
         pytest.param({"retry-after": "2"}, timedelta(seconds=2), id="seconds"),
-        pytest.param({"retry-after-ms": "1500"}, timedelta(milliseconds=1500), id="ms"),
+        pytest.param(
+            {"retry-after-ms": "1500"},
+            timedelta(milliseconds=1500),
+            id="maps 429 status to RateLimitError honoring retry-after-ms",
+        ),
         pytest.param({}, None, id="none"),
     ],
 )
@@ -398,7 +402,13 @@ def test_retry_after_ms_precedence(headers: dict[str, str], expected: timedelta)
     assert reason.retry_after == expected
 
 
-@pytest.mark.parametrize("status", [529, 500])
+@pytest.mark.parametrize(
+    "status",
+    [
+        pytest.param(529, id="maps 529 status to InternalProviderError reason"),
+        pytest.param(500, id="maps 500 status to InternalProviderError reason"),
+    ],
+)
 @testing.effect
 def test_5xx(status: int):
     """TypeSafeClient / error mapping / maps 529 / 500 status to InternalProviderError reason"""

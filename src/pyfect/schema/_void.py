@@ -10,7 +10,7 @@ from pyfect.schema import ast
 from pyfect.schema._declare import Parse, declare
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom
-from pyfect.schema._undefined import Undefined, to_null_json
+from pyfect.schema._undefined import Undefined, stays_absent_in_a_string_tree, to_null_json
 from pyfect.schema.issue import Issue
 
 
@@ -25,7 +25,11 @@ Void: Bottom[None, object] = Bottom(
     ast.Declaration(
         (),
         _void_run,
-        annotations={"expected": "void", "to_codec_json": to_null_json},
+        annotations={
+            "expected": "void",
+            "to_codec_json": to_null_json,
+            "to_codec_string_tree": stays_absent_in_a_string_tree,
+        },
     )
 )
 """Takes anything and gives ``None``, in both directions, as ``void`` ignores a

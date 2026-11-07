@@ -18,7 +18,7 @@ Omitted:
 - "exposes the source schema": the derived codec is a plain ``Bottom``.
 - Ported in ``test_schema_errors.py``: the ``Error`` / ``Defect`` titles.
 - Not yet ported schemas: ``URLSearchParams``, ``RegExp``, ``HashMap``,
-  ``brand``, ``MutableJson``, ``withDecodingDefaultKey`` and every title
+  ``brand``, ``MutableJson`` and every title
   naming them, "StandardSchemaV1FailureResult".
 - Context-level details with no Python counterpart (a key's context is its
   ``TypedDict`` entry): "Number / reuses the Finite AST in the canonical
@@ -37,10 +37,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Never, NotRequired, TypedDict
 from urllib.parse import urlsplit
 
+import pyfect as fx
 from pyfect import option as O
 from pyfect import schema as S
 from pyfect.http.url import Url
 from pyfect.redacted import Redacted
+from pyfect.schema import ast
 from pyfect.schema import transformation as T
 from pyfect.testing import SchemaAsserts
 
@@ -631,3 +633,91 @@ def test_should_apply_the_construction_process_to_the_provided_link_in_the_seria
         {"a": datetime(2021, 1, 1, tzinfo=UTC), "b": 1},
         {"a": "2021-01-01T00:00:00.000Z", "b": 1},
     )
+
+
+def test_instance_of_without_annotations() -> None:
+    """toCodecJson / Declaration / instanceOf without annotations"""
+    # ``instance_of`` names its class where Effect says ``<Declaration>``; ``URL`` is a tuple here.
+    asserts = SchemaAsserts(S.to_codec_json(S.instance_of(complex)))
+    asserts.encoding().fail(1j, "Expected JSON value")
+    asserts.decoding().fail({}, "Expected complex")
+
+
+class _ArgProps(TypedDict):
+    message: str
+    cause: str
+
+
+class _ArgError(Exception):
+    def __init__(self, props: _ArgProps) -> None:
+        super().__init__(props["message"])
+        self.message = props["message"]
+        self.detail = props["cause"]
+
+    def __eq__(self, other: object) -> bool:
+        return (
+            isinstance(other, _ArgError)
+            and other.message == self.message
+            and other.detail == self.detail
+        )
+
+    __hash__ = None  # pyright: ignore[reportAssignmentType]
+
+
+def _arg_props(error: _ArgError) -> _ArgProps:
+    return {"message": error.message, "cause": error.detail}
+
+
+def _arg_link(_: tuple[ast.AST, ...]) -> ast.Link:
+    return ast.Link(S.Struct(_ArgProps).ast, T.transform(decode=_ArgError, encode=_arg_props))
+
+
+def test_arg_struct() -> None:
+    """toCodecJson / Declaration / instanceOf with annotation / arg: struct"""
+    schema = S.instance_of(
+        _ArgError,
+        title="MyError",
+        to_codec=_arg_link,
+    )
+    asserts = SchemaAsserts(S.to_codec_json(schema))
+    value = _ArgError({"message": "a", "cause": "b"})
+    asserts.encoding().succeed(value, {"message": "a", "cause": "b"})
+    asserts.decoding().succeed({"message": "a", "cause": "b"}, value)
+
+
+def test_omitted_trailing_optional_elements() -> None:
+    """toCodecJson / Tuple / omitted trailing optional elements"""
+    schema = S.Tuple(
+        S.String,
+        S.OptionFromOptionalKey(S.String),
+        S.String.pipe(S.with_decoding_default_key(fx.succeed("c"), encoding_strategy="omit")),
+    )
+    for concurrency in (1, "unbounded"):
+        encoding = SchemaAsserts(S.to_codec_json(schema)).encoding(concurrency=concurrency)
+        encoding.succeed(("a", O.Some("b"), "c"), ("a", "b"))
+        encoding.succeed(("a", None, "c"), ("a",))
+
+
+class _StrA(TypedDict):
+    a: str
+
+
+def test_struct_a_string() -> None:
+    """toCodecStringTree / should return the same reference if nothing changed /
+    Struct({ a: String })"""
+    schema = S.Struct(_StrA)
+    assert S.to_codec_string_tree(schema).ast is schema.ast
+
+
+class _Keys(TypedDict):
+    a: NotRequired[Any]
+
+
+def test_should_handle_optional_keys() -> None:
+    """toCodecStringTree / should handle optional keys"""
+    schema = S.Struct(_Keys, a=S.NonEmptyArray(S.String))
+    serializer = S.to_codec_string_tree(schema)
+    decoding = SchemaAsserts(S.to_codec_string_tree(serializer)).decoding()
+    decoding.succeed({})
+    decoding.succeed({"a": ["a"]}, {"a": ("a",)})
+    decoding.fail({"a": "a"}, 'Expected array\n  at ["a"]')

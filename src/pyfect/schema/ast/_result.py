@@ -20,8 +20,14 @@ from pyfect.run import run_sync_exit
 from pyfect.schema.issue import Issue
 
 
+class NotAnObject:
+    """A stand-in for JavaScript's ``undefined``: never read as an object with properties."""
+
+    __slots__ = ()
+
+
 @final
-class Missing:
+class Missing(NotAnObject):
     """The type of ``MISSING``."""
 
     __slots__ = ()

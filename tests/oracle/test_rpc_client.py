@@ -376,10 +376,13 @@ def _http_protocol(serialization: Any, body: str) -> Any:
 @pytest.mark.parametrize(
     ("serialization", "body"),
     [(rs.layer_json, "[]"), (rs.layer_ndjson, "")],
-    ids=["unframed", "framed"],
+    ids=[
+        "fails request on empty HTTP response for unframed serialization",
+        "fails request on empty HTTP response for framed serialization",
+    ],
 )
 def test_fails_request_on_empty_http_response(serialization: Any, body: str) -> None:
-    """RpcClient / fails request on empty HTTP response for ${unframed/framed} serialization"""
+    """RpcClient / fails request on empty HTTP response"""
 
     def program():
         # Effect provides the layer to make alone; pyfect's protocol is closed with its

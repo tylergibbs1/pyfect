@@ -27,6 +27,7 @@ from pyfect import (
     graphql,
     layer,
     logger,
+    optic,
     otel,
     reactivity,
     rpc,
@@ -136,6 +137,7 @@ from pyfect.http_api import (
 )
 from pyfect.http_api import endpoint as api_endpoint
 from pyfect.http_api import error as api_error
+from pyfect.json_patch import JsonPatch
 from pyfect.net import address_resolver, dns, net_address
 from pyfect.option import Option
 from pyfect.persistence import (
@@ -9448,3 +9450,13 @@ def section4_pins() -> None:
     assert_type(S.Void, S.Bottom[None, object])
     assert_type(fx.run_sync(fx.succeed(1)), int)
     assert_type(fx.run_blocking(fx.succeed(1)), int)
+
+
+def schema_codec_family_pins() -> None:
+    assert_type(S.to_iso(S.String), optic.Iso[str, Any])
+    assert_type(S.to_iso_source(S.String), optic.Iso[str, str])
+    assert_type(S.to_codec_iso(S.String), S.Bottom[str, Any])
+    assert_type(S.to_codec_go_json(S.String), S.Bottom[str, JsonValue])
+    assert_type(S.to_differ_json_patch(S.String).diff("a", "b"), JsonPatch)
+    assert_type(S.to_differ_json_patch(S.String).patch("a", []), str)
+    assert_type(S.to_encoder_xml(S.String)("a"), fx.Effect[str, S.SchemaError])
