@@ -29,13 +29,12 @@ DISTRIBUTION: Final = "pyfect-dev"
 """The distribution name (the import name is ``pyfect``; PyPI's ``pyfect``
 is an unrelated project)."""
 
-REPOSITORY: Final = "https://github.com/tylergibbs1/pyfect"
-
 
 def install_command(extra: Extra | None = None) -> str:
     """The command that installs pyfect, with ``extra`` if given."""
-    requirement = DISTRIBUTION if extra is None else f"{DISTRIBUTION}[{extra}]"
-    return f'uv add "{requirement} @ git+{REPOSITORY}"'
+    if extra is None:
+        return f"uv add {DISTRIBUTION}"
+    return f'uv add "{DISTRIBUTION}[{extra}]"'
 
 
 def missing_extra(feature: str, extra: Extra) -> ImportError:

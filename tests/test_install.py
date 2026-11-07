@@ -1,4 +1,4 @@
-"""What a user gets from ``uv add "pyfect-dev @ git+..."``: the base install
+"""What a user gets from ``uv add pyfect-dev``: the base install
 imports every module that does not belong to an extra, loads the pytest
 plugin, and a module behind an extra fails with an ``ImportError`` naming
 the extra and the command that installs it.
@@ -203,11 +203,22 @@ def test_no_document_or_lookup_names_the_bare_pyfect_distribution():
     assert offenders == []
 
 
-def test_the_install_command_names_the_git_distribution():
-    assert install_command() == 'uv add "pyfect-dev @ git+https://github.com/tylergibbs1/pyfect"'
-    assert install_command("otel") == (
-        'uv add "pyfect-dev[otel] @ git+https://github.com/tylergibbs1/pyfect"'
-    )
+def test_the_install_command_names_the_pypi_distribution():
+    assert install_command() == "uv add pyfect-dev"
+    assert install_command("otel") == 'uv add "pyfect-dev[otel]"'
+
+
+def test_no_document_installs_from_git():
+    # pyfect-dev is on PyPI: a git install line in the docs would install an
+    # unreleased main instead of the release.
+    offenders = [
+        f"{path.relative_to(_ROOT)}:{number}: {line.strip()}"
+        for path in _DOCUMENTS
+        if path not in _HISTORY
+        for number, line in enumerate(path.read_text().splitlines(), 1)
+        if "git+https://github.com/tylergibbs1/pyfect" in line
+    ]
+    assert offenders == []
 
 
 # pytest is not a dependency: only the plugin (loaded by pytest itself) may
@@ -230,7 +241,7 @@ for module, extra in expected.items():
     try:
         importlib.import_module(module)
     except ImportError as error:
-        hint = f"pyfect-dev[{extra}] @ git+"
+        hint = f'uv add "pyfect-dev[{extra}]"'
         if extra is None or hint not in str(error):
             problems.append(f"{module}: {type(error).__name__}: {error}")
     else:
@@ -313,4 +324,4 @@ def test_a_base_install_builds_the_httpx_layer_only_to_fail_naming_the_extra(
     run = subprocess.run(
         [str(base_install), "-I", "-c", program], capture_output=True, text=True, check=True
     )
-    assert "pyfect-dev[httpx] @ git+" in run.stdout
+    assert install_command("httpx") in run.stdout

@@ -197,12 +197,12 @@ difference to know: a bare number as a `Duration` is seconds here and millisecon
 
 ## Installation
 
-pyfect needs Python 3.13 or later; its one dependency is `typing-extensions`. It is not on PyPI
-yet: install the `pyfect-dev` distribution from GitHub and `import pyfect` (PyPI's `pyfect` is
-an unrelated project).
+pyfect needs Python 3.13 or later; its one dependency is `typing-extensions`. Install the
+`pyfect-dev` distribution from PyPI and `import pyfect` (PyPI's `pyfect` is an unrelated
+project).
 
 ```sh
-uv add "pyfect-dev @ git+https://github.com/tylergibbs1/pyfect"
+uv add pyfect-dev
 ```
 
 Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `httpx` (the
@@ -212,7 +212,7 @@ asyncmy), `mssql` (the SQL Server driver, on python-tds), `redis` (the Redis cli
 redis-py), `eventlog` (the event log's encryption, on cryptography), `brotli` (`br` response
 compression on a live server), `http2` (the HTTP/2 server, on hypercorn), `intl` (`Intl`-style
 date formatting, on babel) and `regex` (more ECMAScript patterns in schemas), for example
-`uv add "pyfect-dev[otel] @ git+https://github.com/tylergibbs1/pyfect"`.
+`uv add "pyfect-dev[otel]"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add
 `reportUnknownParameterType = false`: pyright reads an unannotated generator's send type as
