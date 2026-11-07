@@ -65,6 +65,11 @@ commits when the effect succeeds and rolls back when it fails, dies or is interr
 error raised half way through undoes the half that ran. Nested, it uses a savepoint.
 `sql.after_commit(effect)` runs `effect` only once the outermost transaction commits.
 
+The SQLite client has one connection, as in Effect, so a transaction holds it from start to
+end and every other query on that client waits for it. Keep slow work, such as reading an
+upload or calling another service, outside `with_transaction`: read or spool the input
+first, then open the transaction to write it.
+
 <CodeOutput>
 
 <include meta='title="transfer.py"'>../../snippets/sql/transfer.py</include>

@@ -1,0 +1,2 @@
+notifications/subscriptions/acknowledged {'resourceSubscriptions': ['note://today']}
+notifications/resources/updated note://today

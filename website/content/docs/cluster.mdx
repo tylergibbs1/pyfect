@@ -141,6 +141,15 @@ pings it. Messages are [SchemaBinary](/docs/streams#schemabinary) frames, as in 
 Lower level pieces are there too: `socket_runner` and `http_runner` (the protocols and servers), `runner_server`,
 `runners` and `runner_health`.
 
+Every runner of a cluster must use the same serialization. A runner can't read the other
+format, so health pings between the two fail: the runner that holds the cluster's health
+check marks the runners on the other format `healthy = false` in `cluster_runners`, and the
+hash ring gives them no shards. Nothing is lost or run twice, but they do no entity work,
+and as in Effect this is logged only at Debug ("Runner is unhealthy"), so it looks like a
+dead runner. To change serialization, or to upgrade from a pyfect whose default was ndjson,
+either replace every runner at once, or roll the upgrade out with `serialization="ndjson"`
+set on the new runners and switch every runner to binary later, all at once.
+
 `entity_proxy` exposes an entity as an RPC group or an [HTTP API](/docs/http-api) group, and
 `entity_proxy_server` serves it. `to_http_api_group(name, entity)` builds the HTTP group at
 run time, so its client has no attribute per operation: read one by name with
