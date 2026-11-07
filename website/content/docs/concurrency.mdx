@@ -72,6 +72,27 @@ permits go round-robin across the keys, so a key with many waiters can't starve 
 
 </CodeOutput>
 
-Reference: [`Fiber`](/docs/reference/Fiber), [`pyfect.queue`](/docs/reference/queue),
+## Publishing to every subscriber
+
+A `PubSub` delivers each message to every subscription. What it does when `capacity`
+messages are unread is a strategy: `bounded` makes publishers wait for the slowest
+subscriber, `dropping` drops the new message, `sliding` drops the oldest. `PubSub.make`
+takes the store and any strategy, including your own: `BackPressureStrategy`,
+`DroppingStrategy` and `SlidingStrategy` implement `pubsub.Strategy`, Effect's five hooks
+(`handle_surplus` for a publish that does not fit, `complete_pollers_unsafe` to give
+messages to parked takes, and so on), and `"suspend"`, `"dropping"` and `"sliding"` name
+them. A strategy gives a parked take its message with `poller.succeed(message)`: the take
+collects it when it resumes, and if it is interrupted first, the message goes back to its
+subscription.
+
+<CodeOutput>
+
+<include meta='title="pubsub_strategy.py"'>../../snippets/concurrency/pubsub_strategy.py</include>
+
+<include lang="text">../../snippets/concurrency/pubsub_strategy.out</include>
+
+</CodeOutput>
+
+Reference: [`Fiber`](/docs/reference/Fiber), [`pyfect.queue`](/docs/reference/queue), [`pyfect.pubsub`](/docs/reference/pubsub),
 [`for_each`](/docs/reference), [`pyfect.fiber_set`](/docs/reference/fiber_set),
 [`pyfect.partitioned_semaphore`](/docs/reference/partitioned_semaphore).

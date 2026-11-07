@@ -155,7 +155,8 @@ from pyfect.persistence import persistence as persistence_module
 from pyfect.persistence import rate_limiter as rl
 from pyfect.persistence import redis as redis_module
 from pyfect.pool._state import Strategy
-from pyfect.pubsub import Atomic, Subscription
+from pyfect.pubsub import Atomic, BackPressureStrategy, SlidingStrategy, Subscription
+from pyfect.pubsub import Strategy as PubSubStrategy
 from pyfect.queue import Dequeue
 from pyfect.redacted import make as redact
 from pyfect.rpc import client as rpc_client
@@ -1068,6 +1069,10 @@ def check_queue_views(
     print(offers, wide)
 
 
+class _HalfStrategy(PubSubStrategy[int]):
+    pass
+
+
 def check_pubsub(ps: fx.PubSub[int], sub: Subscription[int]) -> None:
     assert_type(fx.PubSub[int].bounded(2), fx.Effect[fx.PubSub[int], Never, Never])
     assert_type(fx.PubSub[int].unbounded(replay=3), fx.Effect[fx.PubSub[int], Never, Never])
@@ -1075,6 +1080,22 @@ def check_pubsub(ps: fx.PubSub[int], sub: Subscription[int]) -> None:
         fx.PubSub.make(lambda: Atomic[str].bounded(4), "sliding"),
         fx.Effect[fx.PubSub[str], Never, Never],
     )
+    # A strategy is any object with Effect's five members; a class is its factory.
+    assert_type(
+        fx.PubSub.make(lambda: Atomic[str].bounded(4), BackPressureStrategy),
+        fx.Effect[fx.PubSub[str], Never, Never],
+    )
+    assert_type(
+        fx.PubSub.make(Atomic[int].unbounded, SlidingStrategy[int]),
+        fx.Effect[fx.PubSub[int], Never, Never],
+    )
+    assert_type(ps.strategy, PubSubStrategy[int])
+    fx.PubSub.make(lambda: Atomic[str].bounded(4), SlidingStrategy[int])  # pyright: ignore[reportArgumentType, reportCallIssue]
+    fx.PubSub.make(lambda: Atomic[str].bounded(4), "slide")  # pyright: ignore[reportArgumentType, reportCallIssue]
+    not_a_strategy: PubSubStrategy[int] = Atomic[int].unbounded()  # pyright: ignore[reportAssignmentType]
+    print(not_a_strategy)
+    # A subclass inherits the two ``complete_*`` hooks and must write the other three.
+    _HalfStrategy()  # pyright: ignore[reportAbstractUsage]
     assert_type(ps.subscribe(), fx.Effect[Subscription[int], Never, fx.Scope])
     assert_type(ps.publish(1), fx.Effect[bool, Never, Never])
     assert_type(ps.publish_all([1, 2]), fx.Effect[bool, Never, Never])

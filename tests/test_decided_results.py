@@ -22,8 +22,8 @@ import pytest
 
 import pyfect as fx
 import pyfect._fiber as fiber_module
+from pyfect import pubsub, stream
 from pyfect import scope as fx_scope
-from pyfect import stream
 from pyfect._wake_tracking import WakeTracker
 from pyfect.duration import Seconds
 from pyfect.encoding import tar
@@ -166,11 +166,18 @@ _QUEUE_TAKES: dict[str, Callable[[fx.Queue[int], list[Any]], fx.Effect[Any]]] = 
 }
 
 
-def _pubsub_case(*, parked: bool) -> _Case:
+def _pubsub_case(
+    *,
+    parked: bool,
+    make: Callable[[], fx.Effect[fx.PubSub[int]]] = fx.PubSub[int].unbounded,
+    take: Callable[[Any, list[Any]], fx.Effect[Any]] = lambda sub, seen: sub.take().map(
+        seen.append
+    ),
+) -> _Case:
     def setup() -> fx.Effect[Any, Any, Any]:
         @fx.gen
         def made():
-            ps = yield from fx.PubSub[int].unbounded()
+            ps = yield from make()
             sub = yield from ps.subscribe()
             if not parked:
                 yield from ps.publish(1)
@@ -179,7 +186,7 @@ def _pubsub_case(*, parked: bool) -> _Case:
         return made
 
     def op(state: Any, seen: list[Any]) -> fx.Effect[Any]:
-        return state[1].take().map(seen.append)
+        return take(state[1], seen)
 
     def check(state: Any, seen: list[Any]) -> fx.Effect[str | None]:
         def verdict(left: Sequence[int]) -> str | None:
@@ -191,6 +198,27 @@ def _pubsub_case(*, parked: bool) -> _Case:
         return _once_parked(state[0].publish(1)) if parked else fx.void
 
     return _Case(setup, op, check, wake)
+
+
+class _OneAtATime[A](pubsub.DroppingStrategy[A]):
+    """A user strategy: gives a parked take a message only when no other
+    take is parked behind it."""
+
+    def complete_pollers_unsafe(
+        self,
+        pubsub: pubsub.Atomic[A],
+        subscribers: pubsub.Subscribers[A],
+        subscription: pubsub.BackingSubscription[A],
+        pollers: pubsub.Pollers[A],
+    ) -> None:
+        if len(pollers) == 1 and (polled := subscription.poll()) is not None:
+            poller = pollers.take()
+            assert poller is not None
+            poller.succeed(polled.value)
+
+
+def _custom_strategy() -> fx.Effect[fx.PubSub[int]]:
+    return fx.PubSub.make(pubsub.Atomic[int].unbounded, _OneAtATime[int])
 
 
 def _ref_case() -> _Case:
@@ -323,6 +351,16 @@ _CASES: dict[str, _Case] = {
     "queue.clear": _queue_case(lambda q, seen: q.clear().map(seen.extend), parked=False),
     "pubsub.take (item there)": _pubsub_case(parked=False),
     "pubsub.take (parked)": _pubsub_case(parked=True),
+    "pubsub.take_all (parked)": _pubsub_case(
+        parked=True, take=lambda sub, seen: sub.take_all().map(seen.extend)
+    ),
+    "pubsub.take (parked, back pressure)": _pubsub_case(
+        parked=True, make=lambda: fx.PubSub[int].bounded(1)
+    ),
+    "pubsub.take (parked, sliding)": _pubsub_case(
+        parked=True, make=lambda: fx.PubSub[int].sliding(1)
+    ),
+    "pubsub.take (parked, user strategy)": _pubsub_case(parked=True, make=_custom_strategy),
     "ref.update": _ref_case(),
     "synchronized_ref.update": _synchronized_ref_case(),
     "semaphore.take (free)": _semaphore_case(parked=False),
