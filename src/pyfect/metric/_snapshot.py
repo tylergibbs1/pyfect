@@ -22,7 +22,7 @@ from pyfect.metric._state import (
 def snapshot_unsafe(context: Context) -> list[Snapshot]:
     """Every series in ``context``'s registry, in registration order."""
     return [
-        Snapshot(m.id, m.type, m.description, m.attributes, m.hooks.get(context))
+        Snapshot(m.id, m.type, m.description, m.attributes, m.hooks.get(context), m.bigint)
         for m in list(context.get_unsafe(MetricRegistry).values())
     ]
 

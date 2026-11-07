@@ -145,7 +145,7 @@ class Series(Metric[In_contra, State_co]):
     """A metric that owns its series: each kind says how a series starts
     (``_create_hooks``)."""
 
-    __slots__ = ("_cache",)
+    __slots__ = ("_bigint", "_cache")
 
     def __init__(
         self,
@@ -153,8 +153,11 @@ class Series(Metric[In_contra, State_co]):
         id: str,
         description: str | None,
         attributes: Attributes | None,
+        *,
+        bigint: bool = False,
     ) -> None:
         super().__init__(kind, id, description, to_record(attributes))
+        self._bigint = bigint
         # The contextual attributes last seen, and the key and attributes
         # they give; swapped as one tuple, so a reader never mixes two.
         self._cache: tuple[object, MetricKey | None, Mapping[str, str] | None] = (
@@ -210,7 +213,7 @@ class Series(Metric[In_contra, State_co]):
         return key, attributes
 
     def _metadata(self, attributes: Mapping[str, str] | None, hooks: Hooks) -> Metadata:
-        return Metadata(self.id, self.type, self.description, attributes, hooks)
+        return Metadata(self.id, self.type, self.description, attributes, hooks, self._bigint)
 
 
 @final

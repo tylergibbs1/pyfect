@@ -20,12 +20,9 @@ Adapted, with the reason:
   where it is raised, so the defect is raised and caught first; the check
   is that the span keeps the traceback in ``Cause.pretty()``.
 
-Omitted, with the reason:
-
-- "generates OTLP span identifiers", "should preserve nested span context
-  with OtlpTracer" and the three "OtlpTracer span status" titles: the OTLP
-  exporter is not ported (``pyfect-dev[otel]`` exports through the
-  OpenTelemetry SDK instead).
+The OTLP titles ("generates OTLP span identifiers", "should preserve nested
+span context with OtlpTracer" and the "OtlpTracer span status" titles) are
+ported in ``tests/oracle/test_otlp_tracer.py``.
 """
 
 import re

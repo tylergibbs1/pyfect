@@ -35,6 +35,24 @@ In production the processor is usually `BatchSpanProcessor(OTLPSpanExporter())` 
 `opentelemetry-exporter-otlp`, with `PeriodicExportingMetricReader(OTLPMetricExporter())` for
 metrics.
 
+## Exporting over OTLP
+
+`pyfect.observability` has Effect's own OTLP/HTTP exporters, which need no extra:
+`otlp.layer_json(base_url=..., resource=...)` (or `layer_protobuf`) exports logs, metrics and
+spans to `/v1/logs`, `/v1/metrics` and `/v1/traces` through the `HttpClient` you provide. Logs
+and spans go out in batches every second and every five seconds, or as soon as 1,000 are
+waiting; metrics every ten seconds. `otlp_exporter.Flusher` exports everything now, and
+releasing the layer sends what is left, waiting up to three seconds.
+
+<include meta='title="otlp_exporters.py"'>../../snippets/observability/otlp_exporters.py</include>
+
+Transient failures are retried three times, honouring a 429's `Retry-After`; any other failure
+drops the batch and pauses that exporter for a minute. `otlp.layer_from_config()` reads the
+standard `OTEL_*` variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
+`OTEL_TRACES_EXPORTER=otlp`, ...) and installs nothing unless a signal is switched on.
+`otlp_proxy.layer(base_url=..., headers=...)` mounts the same routes on your `HttpRouter` and
+forwards browser exports to the collector, adding the credentials on the server.
+
 ## Metrics
 
 Metrics are descriptions: `counter`, `gauge`, `histogram`, `summary`, `frequency`, `timer`.
@@ -53,4 +71,5 @@ convention of seconds, pass a `histogram` to `track_duration`, which records sec
 (`fx.sleep(0.01).track_duration(metric.histogram("checkout_seconds", boundaries=[1.0]))`).
 
 Reference: [`pyfect.logger`](/docs/reference/logger), [`pyfect.tracer`](/docs/reference/tracer),
-[`pyfect.metric`](/docs/reference/metric), [`pyfect.otel`](/docs/reference/otel).
+[`pyfect.metric`](/docs/reference/metric), [`pyfect.otel`](/docs/reference/otel),
+[`pyfect.observability`](/docs/reference/observability).
