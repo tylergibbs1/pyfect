@@ -121,10 +121,9 @@ class CodecDerivation(ABC):
         hit = self._done.get(id(node))
         if hit is not None:
             return hit[1]
-        owner = node.owner()
-        if owner is not node and node.encoding is owner.encoding:
+        owner = node.key_context_owner()
+        if owner is not node:
             # A copy with another key context: the owner's codec, in this context.
-            # A flip shares its owner's body but not its encoding, so it is derived itself.
             out = _in_context_of(node, self(owner))
             self._done[id(node)] = (node, out)
             return out

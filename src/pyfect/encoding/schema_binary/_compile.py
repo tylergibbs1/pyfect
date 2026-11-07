@@ -249,7 +249,7 @@ class _Compiler:
         as Effect's memoized ``optionalKey`` makes it: optional slots of a
         schema share a dictionary table, and one holding itself has a longer
         path in the fingerprint."""
-        key = (node.owner(), id(node.key_annotations))
+        key = (node.key_context_owner(), id(node.key_annotations))
         return self.optional_nodes.setdefault(key, copy(node))
 
     def compile(self, node: ast.AST) -> L.Layout:

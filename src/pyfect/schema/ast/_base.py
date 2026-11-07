@@ -61,8 +61,9 @@ class AST(ABC):
     this node, parsed by the node (Effect's ``constructorDefault`` context,
     ``with_constructor_default``); decoding never uses it."""
     context_owner: AST | None = field(default=None, init=False, repr=False, compare=False)
-    """The node this one copies with only its key context changed (see
-    ``replace_context``); any other ``replace`` drops it."""
+    """The node whose body this one shares (see ``owner``): set by a copy that changes only
+    the key context (``replace_context``) and on a flip's encoded side; any other ``replace``
+    drops it."""
     body_owner: AST | None = field(default=None, init=False, repr=False, compare=False)
     """The node this one copies with an encoding added (``decode_to``):
     the schema whose values a JSON string holds, say."""
@@ -94,10 +95,17 @@ class AST(ABC):
     tag: ClassVar[str]
 
     def owner(self) -> AST:
-        """The node whose body this one shares (Effect's
-        ``getContextOwner``): copies that change only the key context are
-        one schema to derivations and JSON Schema definitions."""
+        """The node whose body this one shares (Effect's ``getContextOwner``): a copy with
+        another key context, or a flip's encoded side, which has its own encoding. Its decoded
+        side and its flip are the owner's."""
         return self.context_owner or self
+
+    def key_context_owner(self) -> AST:
+        """The node this one is with only its key context changed, encoding included, else
+        itself: copies that are one schema to derivations and JSON Schema definitions, each
+        in its own key context (Effect's ``replaceContext`` test of ``getContextOwner``)."""
+        owner = self.owner()
+        return owner if owner.encoding is self.encoding else self
 
     @abstractmethod
     def get_expected(self) -> str:
@@ -504,8 +512,8 @@ def _in_context[A: AST](
 
     if holds(node):
         return node
-    owner = node.owner()
-    if owner is not node and owner.encoding is node.encoding and holds(owner):
+    owner = node.key_context_owner()
+    if owner is not node and holds(owner):
         return cast("A", owner)
     return copy(
         node,
