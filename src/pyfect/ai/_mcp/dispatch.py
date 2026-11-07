@@ -78,6 +78,7 @@ from pyfect.ai.mcp_schema import (
 from pyfect.cause import Cause, Fail
 from pyfect.deferred import Deferred
 from pyfect.effect import (
+    die,
     fail,
     fail_cause,
     gen,
@@ -382,7 +383,14 @@ class Connection:
                 self._listening.add(id)
             return fiber
 
-        return served.fork_daemon().map(track)
+        def begin() -> Effect[Fiber[None, Never]]:
+            if id in self._inflight:
+                # As Effect's RpcServer: a request reusing an id still in
+                # flight is refused, unanswered, and the first keeps the id.
+                return _VOID.fork_daemon()
+            return served.fork_daemon().map(track)
+
+        return suspend(begin)
 
     def answer(
         self, id: RequestId, method: str, params: JsonObject, out: Send
@@ -390,7 +398,11 @@ class Connection:
         """The response to a request (``None`` when it was cancelled)."""
         version = requested_protocol_version(params)
         stateless = self.registry.find(version) if version is not None else None
-        if stateless is not None and stateless.is_stateless:
+        if self.closed:
+            # A batch read on after its session ended: as Effect's
+            # clientMiddleware, the request dies before it is served.
+            answered: Effect[Wire, McpError] = die(RuntimeError("Mcp-Session-Id does not exist"))
+        elif stateless is not None and stateless.is_stateless:
             answered = self._stateless(stateless, id, method, params, out)
         elif version is not None and stateless is None and _offers_stateless(self.registry):
             answered = fail(_unsupported_version(version, self.registry))
@@ -658,8 +670,12 @@ class Connection:
         return self._feature(protocol, self.identity, method, params, out)
 
     def _initialize(self, params: JsonObject) -> Effect[Wire, McpError]:
-        offered = params.get("protocolVersion")
-        protocol = self.registry.select_stateful(offered if isinstance(offered, str) else None)
+        # The first initialize chooses the protocol for the session's life; a
+        # later one, as in Effect, keeps it and replaces only the client.
+        protocol = self.protocol
+        if protocol is None:
+            offered = params.get("protocolVersion")
+            protocol = self.registry.select_stateful(offered if isinstance(offered, str) else None)
         if protocol is None:
             return fail(_method_not_found("initialize"))
 

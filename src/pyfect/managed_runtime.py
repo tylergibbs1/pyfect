@@ -124,8 +124,10 @@ class ManagedRuntime(Generic[R_contra, ER_co]):
 
     @property
     def context_effect(self) -> Effect[Context[R_contra], ER_co]:
-        """Builds the layer once and succeeds with its services. Dies once
-        the runtime is disposed."""
+        """Builds the layer once and succeeds with its services. Read after
+        the runtime is disposed, it is an effect that dies. One read before
+        disposal is not stopped by it, as in Effect: run later, it can still
+        succeed, with services whose resources were released."""
         return self._context_effect
 
     async def context(self) -> Context[R_contra]:

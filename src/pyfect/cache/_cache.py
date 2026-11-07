@@ -31,7 +31,7 @@ from pyfect.cache._expiry import (
 )
 from pyfect.cause import Cause
 from pyfect.context import Context
-from pyfect.duration import Seconds
+from pyfect.duration import ZERO, Seconds
 from pyfect.exit import Exit, Failure, Success
 from pyfect.option import Option, Some
 
@@ -252,7 +252,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
             if _interrupted(ex):
                 self._remove(key, entry)
                 return
-            ttl = self._time_to_live(ex, key)
+            ttl = entry.time_to_live
             if ttl == 0:
                 skip = True
                 self._remove(key, entry)
@@ -281,7 +281,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
             if _interrupted(ex):
                 self._remove(key, entry)
                 return
-            ttl = self._time_to_live(ex, key)
+            ttl = entry.time_to_live
             if ttl == 0:
                 if existing:
                     self._discard(key)
@@ -300,14 +300,25 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
         """An entry whose lookup has run up to its first wait (Effect's
         immediate fork), on a root fiber with this cache's services
         overridden by the caller's. A raising ``lookup`` fails the caller
-        with a defect, as in Effect."""
+        with a defect, as in Effect.
+
+        The time to live is decided inside the lookup fiber, so the fiber's
+        observers call no user code: a raising ``time_to_live`` keeps
+        nothing and becomes the lookup's defect, which ends every caller.
+        (Effect calls it in an observer, where a raise hangs the callers.)"""
         lookup = self._lookup(key)
         lookup_fiber: Fiber[A, E] = new_root(
             fiber._run_scheduler, self._context.merge(fiber._context)
         )
         entry = _Entry[A, E](lookup_fiber)
         entry.release = lambda: self._remove(key, entry)
-        start_root(lookup_fiber, lookup)
+
+        def decide_time_to_live(ex: Exit[A, E]) -> Effect[None]:
+            if not _interrupted(ex):
+                entry.time_to_live = self._time_to_live(ex, key)
+            return _VOID
+
+        start_root(lookup_fiber, lookup.on_exit(decide_time_to_live))
         return entry
 
     def _find(self, fiber: Fiber[Any, Any], key: K, *, touch: bool) -> _Entry[A, E] | None:
@@ -351,12 +362,14 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
 class _Entry[A, E]:
     """A lookup and the callers waiting on it."""
 
-    __slots__ = ("awaiters", "expires_at", "fiber", "release")
+    __slots__ = ("awaiters", "expires_at", "fiber", "release", "time_to_live")
 
     def __init__(self, fiber: Fiber[A, E]) -> None:
         self.fiber = fiber
         self.awaiters = 0
         self.expires_at: int | None = None
+        # Set as the lookup ends; stays zero if ``time_to_live`` raised.
+        self.time_to_live: Seconds = ZERO
         # Drops the entry from the cache when its waiters abandon it.
         self.release: Callable[[], None] | None = None
 

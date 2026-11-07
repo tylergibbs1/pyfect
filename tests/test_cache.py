@@ -37,6 +37,61 @@ def test_a_lookup_that_interrupts_itself_later_is_not_cached():
     assert (yield from cache.size()) == 0
 
 
+class _TtlBoom(Exception): ...
+
+
+def _raising_ttl(_ex: fx.Exit[str, Never], _key: str) -> float:
+    raise _TtlBoom
+
+
+@fx.fn
+def _slow_echo(key: str):
+    yield from fx.sleep(1)
+    return key
+
+
+def _assert_died_with_the_ttl_raise(ex: fx.Exit[object, object] | None) -> None:
+    assert ex is not None, "the caller is still waiting"
+    assert isinstance(ex, fx.Failure)
+    assert [type(defect) for defect in ex.cause.defects] == [_TtlBoom]
+
+
+@testing.effect
+def test_a_raising_time_to_live_ends_get_with_a_defect_and_caches_nothing():
+    # Effect hangs here (Cache.ts:456); pyfect ends the caller (PARITY section 4).
+    cache = yield from fx.Cache.make(_slow_echo, capacity=10, time_to_live=_raising_ttl)
+    getting = yield from cache.get("a").fork(start_immediately=True)
+    yield from testing.adjust(1)
+    _assert_died_with_the_ttl_raise(getting.poll_unsafe())
+    assert (yield from cache.size()) == 0
+
+
+@testing.effect
+def test_a_raising_time_to_live_ends_refresh_with_a_defect_and_forgets_the_key():
+    calls = [0]
+
+    def ttl_raising_after_the_first(_ex: fx.Exit[str, Never], _key: str) -> float:
+        calls[0] += 1
+        if calls[0] > 1:
+            raise _TtlBoom
+        return math.inf
+
+    cache = yield from fx.Cache.make(
+        _slow_echo, capacity=10, time_to_live=ttl_raising_after_the_first
+    )
+    missing = yield from cache.refresh("a").fork(start_immediately=True)
+    yield from testing.adjust(1)
+    assert missing.poll_unsafe() == fx.Success("a")
+    existing = yield from cache.refresh("a").fork(start_immediately=True)
+    yield from testing.adjust(1)
+    _assert_died_with_the_ttl_raise(existing.poll_unsafe())
+    assert (yield from cache.size()) == 0
+    absent = yield from cache.refresh("b").fork(start_immediately=True)
+    yield from testing.adjust(1)
+    _assert_died_with_the_ttl_raise(absent.poll_unsafe())
+    assert (yield from cache.size()) == 0
+
+
 @testing.effect
 def test_get_option_and_get_success_count_as_a_use():
     cache = yield from fx.Cache.make(_length, capacity=3)
