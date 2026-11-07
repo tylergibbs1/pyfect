@@ -19,12 +19,14 @@ Omitted:
   ``ErrorInstance`` are in their own files.
 """
 
+from dataclasses import dataclass
 from typing import Any, Never, cast
 
 from pyfect import cause, exit
 from pyfect import schema as S
-from pyfect.errors import NoSuchElementException
+from pyfect.errors import NoSuchElementException, TaggedError
 from pyfect.option import Some
+from pyfect.result import Err
 from pyfect.testing import SchemaAsserts
 
 
@@ -271,4 +273,50 @@ def test_declaration_error():
         },
         "required": ["message"],
         "additionalProperties": False,
+    }
+
+
+class _NamedError(S.Error, identifier="SErrId"):
+    message: str
+
+
+class _NamedTagged(S.TaggedError, identifier="STaggedId", tag="STag"):
+    a: float
+
+
+class _TagNamed(S.TaggedError, tag="STag2"):
+    a: float
+
+
+@dataclass
+class _Plain(TaggedError):
+    a: int
+
+
+@dataclass
+class _Said(TaggedError):
+    message: str
+
+
+def test_defect_json_writes_the_name_an_error_carries():
+    """Not an Effect title: ``Defect`` writes ``error.name``, a schema error class's identifier
+    or tag, as Effect's encoder does (each value printed by Effect under Node)."""
+    encode = S.encode_sync(S.Defect())
+    assert encode(_NamedError(message="m")) == {"name": "SErrId", "message": "m"}
+    assert encode(_NamedTagged(a=1)) == {"name": "STaggedId", "message": ""}
+    assert encode(_TagNamed(a=1)) == {"name": "STag2", "message": ""}
+    match S.decode_unknown_result(S.Number)("a"):
+        case Err(error=error):
+            assert encode(error) == {"name": "SchemaError", "message": "Expected number"}
+        case other:
+            raise AssertionError(other)
+    assert encode(TypeError("t")) == {"name": "TypeError", "message": "t"}
+    # Effect's ``Data.TaggedError("Plain")``: the tag, which is the class here, and no message.
+    assert encode(_Plain(a=1)) == {"name": "_Plain", "message": ""}
+    # ``message``, not ``str()`` (which adds the cause).
+    caused = _caused(_Said(message="said"), ValueError("why"))
+    assert encode(caused) == {
+        "name": "_Said",
+        "message": "said",
+        "cause": {"name": "ValueError", "message": "why"},
     }

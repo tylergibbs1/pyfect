@@ -1,9 +1,9 @@
 """Exceptions in JSON (Effect's ``ErrorInstance`` and ``Defect``).
 
 An error is written as Effect writes one: ``{"name", "message", "stack"?,
-"cause"?}``, the name being the exception's class name, the stack its
-formatted traceback (only with ``include_stack``), the cause its
-``__cause__`` (unless ``exclude_cause``).
+"cause"?}``, the name being a schema error class's ``name`` or else the class name, the stack
+its formatted traceback (only with ``include_stack``), the cause its ``__cause__`` (unless
+``exclude_cause``).
 
 Reading one back never picks a class from the input (the input would
 choose the code that runs): an error decodes to an ``ErrorInstance``, an
@@ -18,11 +18,13 @@ from collections.abc import Mapping
 from functools import cache
 from typing import Never, TypeIs, cast
 
-from pyfect import _json_text
+from pyfect import _json_text, errors
 from pyfect._json_value import JsonValue
 from pyfect.logger._text import format_unknown, to_json
 from pyfect.option import Option, Some
 from pyfect.schema import ast
+from pyfect.schema._class import Error as SchemaErrorClass
+from pyfect.schema._class import TaggedError as SchemaTaggedError
 from pyfect.schema._codec_links import link
 from pyfect.schema._declare import declare
 from pyfect.schema._schema import Bottom
@@ -124,6 +126,24 @@ def _decode_value(value: JsonValue) -> object:
     return _decode_error(value) if _is_json_error(value) else value
 
 
+def _error_name(error: BaseException) -> str:
+    """Effect's ``error.name``: a schema error class's identifier or tag (its ``name``), else
+    the class name. Other exceptions' ``name`` attributes (``ImportError.name``, the module) are
+    not an error's name."""
+    if isinstance(error, SchemaErrorClass | SchemaTaggedError):
+        return error.name
+    return type(error).__name__
+
+
+def _error_message(error: BaseException) -> str:
+    """Effect's ``error.message``: a pyfect error's ``message`` (``str()`` may add its cause),
+    empty for a tagged error without one, else ``str(error)``."""
+    message = getattr(error, "message", None)
+    if isinstance(message, str):
+        return message
+    return "" if isinstance(error, errors.TaggedError) else str(error)
+
+
 def _encode(value: object, *, include_stack: bool, exclude_cause: bool) -> JsonValue:
     """``value`` (an exception, an ``ErrorInstance`` or a JSON value) in
     JSON; an error that is its own cause is ``"[Circular]"`` there."""
@@ -145,7 +165,7 @@ def _encode(value: object, *, include_stack: bool, exclude_cause: bool) -> JsonV
             encoded: dict[str, JsonValue] = {"name": value.name, "message": value.message}
             stack, cause = value.stack, value.cause
         else:
-            encoded = {"name": type(value).__name__, "message": str(value)}
+            encoded = {"name": _error_name(value), "message": _error_message(value)}
             frames = value.__traceback__
             stack = None if frames is None else "".join(traceback.format_exception(value))
             cause = None if value.__cause__ is None else Some(value.__cause__)
