@@ -1,6 +1,6 @@
 """Ports of Effect's ``sql-pg/test/Persistence.integration.test.ts``, but
 for its ``PersistedQueue`` suites (another module's): the
-``PersistedCacheTest`` suite (``_persisted_cache_suite``) on
+``persistence/PersistedCacheTest.ts`` suite (``_persisted_cache_suite``) on
 ``layer_sql_multi_table`` (``PersistedCache (sql-pg-multi)``) and
 ``layer_sql`` (``PersistedCache (sql-pg-single)``), and ``Persistence SQL
 cleanup``, on the throwaway PostgreSQL server (``_postgres.pg_server``;

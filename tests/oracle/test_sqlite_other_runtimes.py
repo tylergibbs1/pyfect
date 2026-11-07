@@ -43,6 +43,12 @@ def _create(filename: str, *statements: str) -> fx.Effect[None, SqlError]:
 
 
 @testing.effect
+def test_should_work():
+    """Client / should work"""
+    yield from fx.void
+
+
+@testing.effect
 def test_readonly_clients_reject_writes(tmp_path: Path):
     """readonly clients reject writes"""
     filename = str(tmp_path / "readonly.db")

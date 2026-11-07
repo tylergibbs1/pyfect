@@ -21,6 +21,8 @@ Omitted, with the reason:
 - "Deferred.await resumes in the awaiter's context" and "Pool.get resumes in
   the waiter's context": ported in ``test_context_vars_resume.py`` with
   ``contextvars`` for ``AsyncLocalStorage``.
+- "isEffect": the ``TypeId`` / ``is*`` guards section 4 row (``isinstance(x, fx.Effect)``).
+- "do notation / works": the ``Do / bind`` section 4 row (generator locals).
 """
 
 import random
@@ -29,11 +31,12 @@ from collections.abc import Callable
 from typing import Any, Never
 
 import pyfect as fx
-from pyfect import testing
+from pyfect import cause, testing
 from pyfect.cause import Die
 from pyfect.exit import Exit, Failure
 from pyfect.exit import die as exit_die
 from pyfect.exit import fail as exit_fail
+from pyfect.exit import fail_cause as exit_fail_cause
 
 
 class ExampleError(Exception):
@@ -118,6 +121,17 @@ def test_error_in_just_usage():
         fx.void, lambda _: use, lambda _r, _e: fx.void
     ).exit()
     assert result == exit_fail(EXAMPLE)
+
+
+@testing.effect
+def test_combines_usage_and_release_failures():
+    """combines usage and release failures"""
+    use: fx.Effect[None, str] = fx.fail("usage failure")
+    release: fx.Effect[None, str] = fx.fail("release failure")
+    result = yield from fx.acquire_use_release(
+        fx.void, lambda _: use, lambda _r, _e: release
+    ).exit()
+    assert result == exit_fail_cause(cause.fail("usage failure") + cause.fail("release failure"))
 
 
 @testing.effect
@@ -593,6 +607,19 @@ def test_interrupts_started_workers_when_observer_driven_refill_throws():
 
 
 @testing.effect
+def test_bounded():
+    """bounded"""
+    results = yield from fx.for_each([1, 2, 3, 4, 5], fx.succeed, concurrency=2)
+    assert results == [1, 2, 3, 4, 5]
+
+
+@testing.effect
+def test_string():
+    """string"""
+    assert (yield from fx.for_each("abc", fx.succeed)) == ["a", "b", "c"]
+
+
+@testing.effect
 def test_length_0():
     """length = 0"""
     empty: list[int] = []
@@ -600,6 +627,38 @@ def test_length_0():
 
 
 # --- map, flatMap, gen ------------------------------------------------------------
+
+
+class ATag(fx.Tag[str], key="ATag"): ...
+
+
+@testing.effect
+def test_context_service():
+    """Context.Service"""
+    value = yield from ATag().pipe(fx.provide_service(ATag, "A"))
+    assert value == "A"
+
+
+def test_gen() -> None:
+    """gen / gen"""
+
+    @fx.gen
+    def program():
+        result = yield from fx.succeed(1)
+        assert result == 1
+        return result
+
+    assert fx.run_blocking(program) == 1
+
+
+@testing.live
+def test_recursion():
+    """stack safety / recursion"""
+
+    def loop() -> fx.Effect[None]:
+        return fx.void.flat_map(lambda _: loop())
+
+    assert (yield from loop().timeout_option(0.05)) is None
 
 
 def test_lazily_nested_map_continuations() -> None:

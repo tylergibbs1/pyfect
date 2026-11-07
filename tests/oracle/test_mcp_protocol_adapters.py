@@ -454,7 +454,7 @@ def test_accepts_cancellation_notifications_without_request_metadata():
 
 @testing.effect
 def test_2024_11_05_does_not_advertise_completions():
-    """Mcp Conformance (2024-11-05) / Completion / Capabilities / MUST NOT advertise completions"""
+    """v2024_11_05.test.ts: Mcp Conformance (2024-11-05) / Completion / Capabilities / MUST NOT advertise completions"""  # noqa: E501
     harness = yield from stdio_harness(P.v2024_11_05, None, *_FEATURES)
     initialized = yield from harness.initialize()
     assert "completions" not in initialized["result"]["capabilities"]

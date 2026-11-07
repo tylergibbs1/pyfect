@@ -1,4 +1,4 @@
-"""Ports of ``@effect/opentelemetry``'s ``Resource.test.ts``.
+"""Ports of ``@effect/opentelemetry``'s ``opentelemetry/test/Resource.test.ts``.
 
 Each test's docstring is the Effect test title. ``Resource.Resource`` is
 ``otel.resource.OtelResource`` (``fx.Resource`` is pyfect's cached value).

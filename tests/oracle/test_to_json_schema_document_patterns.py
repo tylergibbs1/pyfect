@@ -1,5 +1,5 @@
 """Ports of the pattern and string-length titles of Effect's
-``toJsonSchemaDocument.test.ts``. Each test's docstring is the Effect test title,
+``schema/toJsonSchemaDocument.test.ts``. Each test's docstring is the Effect test title,
 prefixed by its ``describe`` blocks.
 
 ``Schema.isPattern(/source/flags)`` is ``S.is_ecma_pattern("source", "flags")``;

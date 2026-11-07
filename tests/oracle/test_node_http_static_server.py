@@ -1,4 +1,4 @@
-"""Ports of platform-node's ``HttpStaticServer.test.ts``, against the live
+"""Ports of ``platform-node/test/HttpStaticServer.test.ts``, against the live
 file system and ``platform.layer_strong`` (``NodeHttpPlatform.layer``).
 
 Each test's docstring is the Effect test title. The fixtures are copied

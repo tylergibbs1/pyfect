@@ -55,7 +55,7 @@ def _fails(result: object) -> bool:
 
 
 def test_shared_subtemplates_construct_once():
-    """TemplateLiteral.test / does not expand shared subtemplates during construction"""
+    """TemplateLiteral.test.ts / does not expand shared subtemplates during construction"""
     part: S.ast.AST = S.String.ast
     for _ in range(40):
         part = S.ast.TemplateLiteral((part, part))
@@ -71,7 +71,7 @@ def test_shared_subtemplates_construct_once():
     ],
 )
 def test_rejects_codecs_at_construction(part: Any):
-    """TemplateLiteral.test / rejects codecs at construction, including transformations between equal types"""  # noqa: E501
+    """TemplateLiteral.test.ts / rejects codecs at construction, including transformations between equal types"""  # noqa: E501
     message = "TemplateLiteral parts cannot have an encoding at parts\\[0\\]"
     with pytest.raises(ValueError, match=message):
         S.TemplateLiteral(part)
@@ -80,7 +80,7 @@ def test_rejects_codecs_at_construction(part: Any):
 
 
 def test_rejects_codecs_inside_nested_unions():
-    """TemplateLiteral.test / rejects codecs inside nested unions"""
+    """TemplateLiteral.test.ts / rejects codecs inside nested unions"""
     part = S.Union(S.String, S.Union(S.Number, S.BooleanFromBit))
     with pytest.raises(
         ValueError,
@@ -90,14 +90,14 @@ def test_rejects_codecs_inside_nested_unions():
 
 
 def test_rejects_a_transformed_nested_template():
-    """TemplateLiteral.test / rejects a transformed nested template"""
+    """TemplateLiteral.test.ts / rejects a transformed nested template"""
     part = S.TemplateLiteral(S.String).pipe(S.decode(T.snake_to_camel()))
     with pytest.raises(ValueError, match=r"cannot have an encoding at parts\[0\]"):
         S.TemplateLiteral(part)
 
 
 def test_supports_checks_and_explicit_projections():
-    """TemplateLiteral.test / supports branded parts, checks, and explicit projections"""
+    """TemplateLiteral.test.ts / supports branded parts, checks, and explicit projections"""
     prefix = S.NonEmptyString.pipe(S.from_brand(Brand[str, Prefix].nominal()))
     schema = S.TemplateLiteral(prefix, ":", S.Int.check(S.is_greater_than(0)))
     assert S.decode_sync(schema)("a:1") == "a:1"
@@ -111,7 +111,7 @@ def test_supports_checks_and_explicit_projections():
 
 
 def test_parser_transforms_a_template_into_a_tuple():
-    """TemplateLiteral.test / TemplateLiteralParser / transforms a template into a tuple and encodes transformed parts"""  # noqa: E501
+    """TemplateLiteral.test.ts / TemplateLiteralParser / transforms a template into a tuple and encodes transformed parts"""  # noqa: E501
     schema = S.TemplateLiteralParser("bit:", S.BooleanFromBit)
     encoded = S.to_encoded(schema)
     assert isinstance(encoded.ast, S.ast.TemplateLiteral)
@@ -131,7 +131,7 @@ def _is_true(value: bool) -> bool:
 
 
 def test_parser_preserves_decoded_checks_and_decode_only_parts():
-    """TemplateLiteral.test / TemplateLiteralParser / preserves decoded checks and supports decode-only parts"""  # noqa: E501
+    """TemplateLiteral.test.ts / TemplateLiteralParser / preserves decoded checks and supports decode-only parts"""  # noqa: E501
     bits: S.LiteralsSchema[int] = S.Literals(0, 1)
     to_bool: T.Transformation[bool, int] = T.Transformation(
         G.transform(_is_one), G.forbidden_encoding
@@ -144,7 +144,7 @@ def test_parser_preserves_decoded_checks_and_decode_only_parts():
 
 
 def test_parser_preserves_string_coercion_for_transformed_numeric_parts():
-    """TemplateLiteral.test / TemplateLiteralParser / preserves string coercion for transformed numeric parts"""  # noqa: E501
+    """TemplateLiteral.test.ts / TemplateLiteralParser / preserves string coercion for transformed numeric parts"""  # noqa: E501
     schema = S.TemplateLiteralParser("a", S.FiniteFromString)
     assert S.decode_sync(schema)("a") == ("a", 0)
     assert S.decode_sync(schema)("a1") == ("a", 1)
@@ -152,7 +152,7 @@ def test_parser_preserves_string_coercion_for_transformed_numeric_parts():
 
 
 def test_parser_enforces_one_of_after_decoding_overlapping_members():
-    """TemplateLiteral.test / TemplateLiteralParser / enforces oneOf after decoding overlapping encoded members"""  # noqa: E501
+    """TemplateLiteral.test.ts / TemplateLiteralParser / enforces oneOf after decoding overlapping encoded members"""  # noqa: E501
     part = S.Union(
         S.String.pipe(S.decode_to(S.Literal("a"), T.passthrough_supertype())),
         S.String.pipe(S.decode_to(S.Literal("b"), T.passthrough_supertype())),
@@ -170,7 +170,7 @@ def test_parser_enforces_one_of_after_decoding_overlapping_members():
 
 
 def test_parser_preserves_shared_unions_when_normalizing():
-    """TemplateLiteral.test / TemplateLiteralParser / preserves shared unions when normalizing encoded parts"""  # noqa: E501
+    """TemplateLiteral.test.ts / TemplateLiteralParser / preserves shared unions when normalizing encoded parts"""  # noqa: E501
     part: S.Codec[str, str] = S.Union(
         S.String.pipe(S.decode_to(S.Literal("a"), T.passthrough_supertype())),
         S.String.pipe(S.decode_to(S.Literal("b"), T.passthrough_supertype())),
@@ -193,7 +193,7 @@ def test_parser_preserves_shared_unions_when_normalizing():
 
 
 def test_parser_keeps_greedy_segmentation():
-    """TemplateLiteral.test / TemplateLiteralParser / keeps greedy segmentation without requiring tuple round-trips"""  # noqa: E501
+    """TemplateLiteral.test.ts / TemplateLiteralParser / keeps greedy segmentation without requiring tuple round-trips"""  # noqa: E501
     schema = S.TemplateLiteralParser(S.String, ":", S.String)
     encoded = S.encode_sync(schema)(("a", ":", "b:c"))
     assert encoded == "a:b:c"
@@ -217,7 +217,7 @@ def _scale_down(value: float, _: ParseOptions) -> Effect[float, Issue, _EncodeSc
 
 
 def test_parser_uses_separate_decoding_and_encoding_services():
-    """TemplateLiteral.test / TemplateLiteralParser / uses separate decoding and encoding services"""  # noqa: E501
+    """TemplateLiteral.test.ts / TemplateLiteralParser / uses separate decoding and encoding services"""  # noqa: E501
     scale = T.Transformation(G.transform_effect(_scale_up), G.transform_effect(_scale_down))
     part = S.Number.pipe(S.decode(scale))
     schema = S.TemplateLiteralParser("value:", part)
@@ -599,7 +599,7 @@ def test_success_exit_is_kept():
 
 @pytest.mark.parametrize("derive", [S.to_codec_json, S.to_codec_string_tree])
 def test_codec_1n_plus_string(derive: Any):
-    """toCodec.test / toCodecJson and toCodecStringTree / TemplateLiteral / 1n + string"""
+    """toCodec.test.ts / toCodecJson and toCodecStringTree / TemplateLiteral / 1n + string"""
     asserts = SchemaAsserts(derive(S.TemplateLiteral(1, S.String)))
     asserts.encoding().succeed("1a")
     asserts.decoding().succeed("1a")
@@ -607,21 +607,21 @@ def test_codec_1n_plus_string(derive: Any):
 
 @pytest.mark.parametrize("derive", [S.to_codec_json, S.to_codec_string_tree])
 def test_codec_a_plus_bigint(derive: Any):
-    """toCodec.test / toCodecJson and toCodecStringTree / TemplateLiteral / "a" + bigint"""
+    """toCodec.test.ts / toCodecJson and toCodecStringTree / TemplateLiteral / "a" + bigint"""
     asserts = SchemaAsserts(derive(S.TemplateLiteral("a", S.BigInt)))
     asserts.encoding().succeed("a1")
     asserts.decoding().succeed("a1")
 
 
 def test_formatter():
-    """toFormatter.test / TemplateLiteral"""
+    """toFormatter.test.ts / TemplateLiteral"""
     format = S.to_formatter(S.TemplateLiteral(S.Literal("a"), S.String))
     assert format("a") == '"a"'
     assert format("ab") == '"ab"'
 
 
 def test_parser_preserves_missing_optional_template_literals():
-    """SchemaParser.test / preserves missing optional template literals"""
+    """SchemaParser.test.ts / preserves missing optional template literals"""
     template = S.TemplateLiteral("a", S.String)
     tuple_schema = S.Tuple(S.optional_key(template))
     assert S.decode_unknown_exit(tuple_schema)([]) == Success(())
@@ -650,13 +650,13 @@ def _sample(schema: S.Codec[str, str], count: int = 100) -> list[str]:
 
 
 def test_arbitrary_finite_numeric_segments():
-    """Arbitrary.test / generates finite numeric template literal segments"""
+    """Arbitrary.test.ts / generates finite numeric template literal segments"""
     schema = S.TemplateLiteral(S.Number)
     assert all(map(S.is_(schema), _sample(schema)))
 
 
 def test_arbitrary_bit_templates_and_checked_numeric_templates():
-    """Arbitrary.test / generates bit templates and preserves checked numeric template shrinks"""
+    """Arbitrary.test.ts / generates bit templates and preserves checked numeric template shrinks"""
     from hypothesis import find, settings
 
     bits: S.LiteralsSchema[int] = S.Literals(0, 1)
@@ -667,6 +667,6 @@ def test_arbitrary_bit_templates_and_checked_numeric_templates():
 
 
 def test_arbitrary_finite_numeric_union_segments():
-    """Arbitrary.test / generates finite numeric template literal union segments"""
+    """Arbitrary.test.ts / generates finite numeric template literal union segments"""
     schema = S.TemplateLiteral(S.Union(S.Number, S.Literal("a")))
     assert all(map(S.is_(schema), _sample(schema)))

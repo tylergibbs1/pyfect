@@ -1,5 +1,5 @@
 """Ports of Effect's ``sql-pg/test/KeyValueStore.integration.test.ts``: the
-``KeyValueStoreTest`` suite (``_kv_suite``) on ``layer_sql()`` and on
+``persistence/KeyValueStoreTest.ts`` suite (``_kv_suite``) on ``layer_sql()`` and on
 ``layer_sql(table="effect_key_value_store_custom")``, on the throwaway
 PostgreSQL server (``_postgres.pg_server``; skipped without one).
 

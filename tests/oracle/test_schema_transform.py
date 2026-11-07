@@ -64,6 +64,26 @@ from pyfect.testing import SchemaAsserts
 # ------------------------------------------------------------ Transformations
 
 
+class File:
+    """A stand-in for JavaScript's ``File``."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+def _is_file(u: object) -> TypeIs[File]:
+    return isinstance(u, File)
+
+
+def test_declare():
+    """declare"""
+    asserts = SchemaAsserts(S.declare(_is_file, expected="File"))
+    decoding = asserts.decoding()
+    file = File("a.txt")
+    decoding.succeed(file)
+    decoding.fail("a", "Expected File")
+
+
 def test_number_from_string():
     """Transformations / NumberFromString"""
     asserts = SchemaAsserts(S.NumberFromString)

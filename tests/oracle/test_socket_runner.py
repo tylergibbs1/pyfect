@@ -1,4 +1,4 @@
-"""Ports of platform-node's ``test/cluster/SocketRunner.test.ts``: a runner
+"""Ports of ``platform-node/test/cluster/SocketRunner.test.ts``: a runner
 built with ``socket_runner.layer`` on a real ``SocketServer`` over
 localhost, and a client built with ``socket_runner.layer_client_only`` or
 ``cluster_socket.layer(client_only=True, storage="byo")``, sharing memory

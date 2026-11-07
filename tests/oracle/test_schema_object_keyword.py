@@ -1,7 +1,7 @@
 """Ports of Effect's ``Schema.ObjectKeyword`` titles: ``schema/Schema.test.ts``,
 ``schema/toCodec.test.ts`` (JSON, string tree, XML), ``schema/toFormatter.test.ts``,
-``schema/toJsonSchemaDocument.test.ts`` and ``Config.test.ts``; and of the ``ObjectKeyword``,
-``Void`` and ``Undefined`` nodes in ``schema/representation/*.test.ts``.
+``schema/toJsonSchemaDocument.test.ts`` and ``effect/test/Config.test.ts``; and of the
+``ObjectKeyword``, ``Void`` and ``Undefined`` nodes in ``schema/representation/*.test.ts``.
 
 ``{ a: 1n }``, which is no JSON, is ``{"a": object()}`` here, as a Python ``int`` is JSON.
 """

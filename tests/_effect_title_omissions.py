@@ -76,6 +76,7 @@ OMISSIONS: tuple[Omission, ...] = (
         "effect/test/ArrayNaNIndex.test.ts",
         "effect/test/BigInt.test.ts",
         "effect/test/Boolean.test.ts",
+        "effect/test/Bytes.test.ts",
         "effect/test/Chunk.test.ts",
         "effect/test/Combiner.test.ts",
         "effect/test/Equivalence.test.ts",
@@ -88,6 +89,7 @@ OMISSIONS: tuple[Omission, ...] = (
         "effect/test/Ordering.test.ts",
         "effect/test/Predicate.test.ts",
         "effect/test/Record.test.ts",
+        "effect/test/Reducer.test.ts",
         "effect/test/String.test.ts",
         "effect/test/Struct.test.ts",
         "effect/test/Symbol.test.ts",
@@ -182,7 +184,12 @@ OMISSIONS: tuple[Omission, ...] = (
     _some(
         "platform/node/test/NodeSocket.test.ts",
         _NODE_STREAMS,
-        r"writable stream rejection",
+        r"writable stream rejection|^works$",
+    ),
+    _some(
+        "effect/test/Result.test.ts",
+        "section 4 `Do / bind` row: generator locals, as pyright can't type a growing record",
+        r"^(Do|bindTo|bind|let)$",
     ),
     *_whole(
         "NOT_PORTED a TCP chaos proxy against PostgreSQL and MySQL; "
@@ -212,7 +219,7 @@ OMISSIONS: tuple[Omission, ...] = (
         "effect/test/schema/toEquivalence.test.ts",
         "effect/test/schema/SchemaParser.test.ts",
     ),
-    _some("effect/test/schema/SchemaAST.test.ts", _SYMBOLS, r"unique symbol sentinels"),
+    _some("effect/test/schema/SchemaAST.test.ts", _SYMBOLS, r"unique symbol sentinels|^Symbol$"),
     *_whole(
         "section 4 `Schema.File` row: form-data getters are not ported with their schemas",
         "effect/test/schema/SchemaGetter.test.ts",
@@ -230,7 +237,8 @@ OMISSIONS: tuple[Omission, ...] = (
     _some(
         "effect/test/schema/Schema.test.ts",
         _SYMBOLS,
-        r"FormData|fromURLSearchParams|immerable|__proto__|name and length|symbol|Symbol",
+        r"FormData|fromURLSearchParams|immerable|^Equality$|__proto__|name and length"
+        r"|symbol|Symbol",
     ),
     _some(
         "effect/test/schema/Schema.test.ts",

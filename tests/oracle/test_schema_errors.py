@@ -1,5 +1,5 @@
 """Ports of Effect's ``ErrorInstance`` and ``Defect`` titles from
-``Schema.test.ts``, ``toCodec.test.ts`` and ``toJsonSchemaDocument.test.ts``.
+``Schema.test.ts``, ``toCodec.test.ts`` and ``schema/toJsonSchemaDocument.test.ts``.
 Each test's docstring is the Effect test title, prefixed by its
 ``describe`` blocks. ``TestSchema.Asserts`` is ``testing.SchemaAsserts``.
 

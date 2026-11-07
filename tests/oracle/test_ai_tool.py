@@ -1,5 +1,5 @@
 """Ports of Effect's ``test/ai/Tool.test.ts`` (tools, toolkits and their
-handlers).
+handlers) and ``test/ai/ToolRepresentation.test.ts``.
 
 Each test's docstring is the Effect test title (with its ``describe``).
 ``toolkit.toLayer({Name: fn})`` is ``toolkit.to_layer(tool.handler(fn))``;

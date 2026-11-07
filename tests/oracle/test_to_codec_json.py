@@ -28,7 +28,7 @@ Omitted:
   ``NegativeInfinity`` forms are left out (the finite forms are ported).
 - toCodecGoJson (and its toJsonSchemaDocument titles): a separate
   derivation, not ported yet.
-- toCodecIso / toCodecStringTree: separate derivations, not JSON.
+- toCodecIso / toCodecStringTree: separate derivations, not JSON (but for a few titles).
 """
 
 import enum
@@ -711,6 +711,26 @@ def test_struct_a_string() -> None:
 
 class _Keys(TypedDict):
     a: NotRequired[Any]
+
+
+def test_string_tree_json() -> None:
+    """toCodecStringTree / schemas without encoding / Json: Python's one ``None`` is a string
+    tree's ``undefined`` (section 4 ``Schema.UndefinedOr`` row), so it encodes and decodes,
+    where Effect fails ``null`` and ``undefined``"""
+    asserts = SchemaAsserts(S.to_codec_string_tree(S.Json))
+    encoding = asserts.encoding()
+    encoding.succeed("a")
+    encoding.succeed(["a"])
+    encoding.succeed({"a": "a"})
+    encoding.fail(1, "Expected StringTree")
+    encoding.fail(True, "Expected StringTree")
+    encoding.fail({"a": 1}, "Expected StringTree")
+    encoding.succeed(None)
+    decoding = asserts.decoding()
+    decoding.succeed("a")
+    decoding.succeed(["a"])
+    decoding.succeed({"a": "a"})
+    decoding.succeed(None)
 
 
 def test_should_handle_optional_keys() -> None:

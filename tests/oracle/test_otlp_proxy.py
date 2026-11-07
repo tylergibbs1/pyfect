@@ -1,4 +1,4 @@
-"""Ports of Effect's ``OtlpProxy.test.ts``.
+"""Ports of Effect's ``observability/OtlpProxy.test.ts``.
 
 Each test's docstring is the Effect test title. ``HttpRouter.toWebHandler``
 is ``router.to_web_handler``; a Web ``Request`` is a ``WebRequest``, and a

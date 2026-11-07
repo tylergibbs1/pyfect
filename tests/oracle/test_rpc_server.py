@@ -1,5 +1,5 @@
 """Ports of Effect's rpc/RpcServer.test.ts, and the "request defect
-isolation over HTTP" cases of platform-node's RpcServer.test.ts. Each
+isolation over HTTP" cases of platform-node/test/RpcServer.test.ts. Each
 test's docstring is the Effect test title, prefixed by its describe block.
 
 A Web handler of the server answers the POSTs (Effect's
@@ -192,7 +192,7 @@ def test_records_effect_and_stream_encode_defects_on_server_spans() -> None:
 
 @pytest.mark.parametrize("disable_fatal_defects", [False, True])
 def test_rpc_test_handler_defects(disable_fatal_defects: bool) -> None:
-    """RpcClient / RpcTest handler defects with disableFatalDefects: ${disableFatalDefects}"""
+    """rpc/RpcClient.test.ts: RpcTest handler defects with disableFatalDefects: ${disableFatalDefects}"""  # noqa: E501
 
     class Group(RpcGroup):
         block = make("Block", success=S.String)

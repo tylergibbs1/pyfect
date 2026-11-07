@@ -1,5 +1,5 @@
 """The child process of the "e2e worker process" suite (Effect's
-fixtures/rpc-worker.ts): run with ``python -m oracle._rpc_worker``."""
+browser/test/fixtures/rpc-worker.ts): run with ``python -m oracle._rpc_worker``."""
 
 from oracle._rpc import run_worker
 

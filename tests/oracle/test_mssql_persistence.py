@@ -1,6 +1,6 @@
 """Ports of Effect's ``sql-mssql/test/Persistence.integration.test.ts`` on
 the session's SQL Server container (``_mssql.mssql_server``; skipped without
-Docker): the ``PersistedCacheTest`` suite (``_persisted_cache_suite``) on
+Docker): the ``persistence/PersistedCacheTest.ts`` suite (``_persisted_cache_suite``) on
 ``layer_sql_multi_table`` (``PersistedCache (sql-mssql-multi)``) and
 ``layer_sql`` (``(sql-mssql-single)``), the ``PersistedQueueTest`` suite
 (``_persisted_queue_suite``) on ``layer_store_sql`` (``PersistedQueue

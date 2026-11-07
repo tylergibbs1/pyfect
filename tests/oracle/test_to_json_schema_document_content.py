@@ -1,4 +1,4 @@
-"""Ports of the "fromJsonString" titles of Effect's ``toJsonSchemaDocument.test.ts``:
+"""Ports of the "fromJsonString" titles of Effect's ``schema/toJsonSchemaDocument.test.ts``:
 a JSON string's ``contentMediaType`` and ``contentSchema``. Each test's docstring is
 the Effect test title, prefixed by its ``describe`` block; expected values are
 Effect's, printed under Node where they differ from the test file (noted).

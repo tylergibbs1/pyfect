@@ -1,4 +1,4 @@
-"""``pyfect.config`` beyond the ``Config.test.ts`` ports.
+"""``pyfect.config`` beyond the ``effect/test/Config.test.ts`` ports.
 
 Expected values were printed by Effect's ``Config`` under Node first, except
 where a test says it pins a Pythonic difference (docs/PARITY.md, section 4).

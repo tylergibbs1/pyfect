@@ -1,5 +1,5 @@
 """Ports of Effect's ``test/persistence/PersistedCache.test.ts``: the
-``PersistedCacheTest`` suite (``_persisted_cache_suite``) on
+``persistence/PersistedCacheTest.ts`` suite (``_persisted_cache_suite``) on
 ``persistence.layer_memory`` (``PersistedCache (memory)``).
 
 Each test's docstring is the Effect test title; the two stale-schema

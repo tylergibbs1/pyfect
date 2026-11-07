@@ -297,13 +297,14 @@ def acquire_release[A, E = Never, RR = Never](
 def acquire_use_release[A, B, EE = Never, RR = Never](
     acquire: Effect[A, EE, RR],
     use: Callable[[A], Effect[B, EE, RR]],
-    release: Callable[[A, Exit[B, EE]], Effect[object, Never, RR]],
+    release: Callable[[A, Exit[B, EE]], Effect[object, EE, RR]],
 ) -> Effect[B, EE, RR]:
-    """Acquire, use, and always release, without needing a scope."""
+    """Acquire, use, and always release, without needing a scope. A failing release adds its
+    cause to the result, after the use's."""
     require_effect(acquire, "acquire")
     return uninterruptible_mask(
         lambda restore: acquire.flat_map(
-            lambda a: restore(_call_user(use, a)).on_exit(lambda ex: release(a, ex))
+            lambda a: restore(_call_user(use, a)).on_exit_primitive(lambda ex: release(a, ex))
         )
     )
 
