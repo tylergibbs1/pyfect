@@ -27,7 +27,7 @@ from pyfect._core import Effect
 from pyfect._os_wait import Cancel, Resume, os_wait
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.errors import Done
-from pyfect.platform_error import PlatformError
+from pyfect.platform_error import PREMATURE_CLOSE, WRITE_AFTER_END, PlatformError, StreamError
 from pyfect.sink import Sink
 from pyfect.stream import Stream
 
@@ -36,7 +36,7 @@ _POLL = 0.05
 """Seconds a pipe thread waits for its descriptor before checking whether
 it was closed."""
 
-type OnError = Callable[[OSError], PlatformError]
+type OnError = Callable[[OSError | StreamError], PlatformError]
 type _Pull = Effect[tuple[bytes, ...], PlatformError | Done]
 
 
@@ -204,7 +204,8 @@ class Writer:
         self._on_error = on_error
         self._cond = threading.Condition()
         self._queue: deque[_Write] = deque()
-        self._closed = False
+        self._closed: tuple[str, str] | None = None
+        """Why later writes fail, as Node's stream says it: ended, or destroyed."""
         self._started = False
         if os.name != "nt":
             os.set_blocking(fd, False)
@@ -213,7 +214,7 @@ class Writer:
         """Write each chunk; with ``end_on_done``, close the pipe however the
         input ends."""
         write: Sink[None, bytes, Never, PlatformError] = sink_.for_each(self.write)
-        return write.ensuring(sync(self.close)) if end_on_done else write
+        return write.ensuring(sync(self.end)) if end_on_done else write
 
     def write(self, data: bytes) -> Effect[None, PlatformError]:
         def register(resume: Resume[None, PlatformError]) -> Cancel | None:
@@ -224,21 +225,29 @@ class Writer:
                     self._queue.append(request)
                     self._start()
                     self._cond.notify()
-            if closed:
-                resume(fail(self._on_error(BrokenPipeError(errno.EPIPE, "write after end"))))
+            if closed is not None:
+                resume(fail(self._on_error(StreamError(*closed))))
                 return None
             return request.cancel
 
         return os_wait(register, waits_for="work")
 
-    def close(self) -> None:
-        """End the pipe: a write in progress stops and fails with
-        ``ECANCELED`` (as a Node stream's destroy fails it), queued ones
-        fail too."""
+    def end(self) -> None:
+        """End the pipe, as Node's ``end``: later writes fail with ``write after end``."""
+        self._close(WRITE_AFTER_END)
+
+    def destroy(self) -> None:
+        """Close the pipe as Node destroys a child's ``stdin`` when the child exits: later
+        writes fail with ``Premature close``. A pipe already ended stays ended."""
+        self._close(PREMATURE_CLOSE)
+
+    def _close(self, why: tuple[str, str]) -> None:
+        """A write in progress stops and fails with ``ECANCELED`` (as a Node
+        stream's destroy fails it), queued ones fail as later writes do."""
         with self._cond:
-            if self._closed:
+            if self._closed is not None:
                 return
-            self._closed = True
+            self._closed = why
             started = self._started
             self._cond.notify()
         if not started:
@@ -258,13 +267,14 @@ class Writer:
 
     def _next(self) -> _Write | None:
         with self._cond:
-            while not self._queue and not self._closed:
+            while not self._queue and self._closed is None:
                 self._cond.wait()
-            if not self._closed:
+            closed = self._closed
+            if closed is None:
                 return self._queue[0]
             queued, self._queue = list(self._queue), deque()
         for request in queued:
-            request.resume(fail(self._on_error(BrokenPipeError(errno.EPIPE, "write after end"))))
+            request.resume(fail(self._on_error(StreamError(*closed))))
         return None
 
     def _serve(self, request: _Write) -> None:
@@ -281,7 +291,7 @@ class Writer:
                 return succeed(None)
             if request.cancelled:
                 return succeed(None)  # Interrupted: nobody takes the result.
-            if self._closed:
+            if self._closed is not None:
                 return fail(self._on_error(OSError(errno.ECANCELED, "write ECANCELED")))
             try:
                 if _ready(self._fd, write=True):

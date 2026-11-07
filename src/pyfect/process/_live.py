@@ -32,7 +32,7 @@ from pyfect.file_system import FileSystem, FileSystemService
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.path import Path, PathService
-from pyfect.platform_error import PlatformError, from_exception
+from pyfect.platform_error import PlatformError, StreamError, from_exception, system_error, tag_of
 from pyfect.process._child import Child, command_line
 from pyfect.process._command import (
     AdditionalFd,
@@ -140,23 +140,37 @@ class _Pipes:
         self.inputs: dict[int, Writer] = {}
         self.outputs: dict[int, Reader] = {}
 
-    def _error(self, fd: int, method: str) -> Callable[[OSError], PlatformError]:
+    def _error(
+        self, fd: int, method: str, syscall: str
+    ) -> Callable[[OSError | StreamError], PlatformError]:
+        """A pipe's error as Effect's Node platform reports it (``handleErrnoException``):
+        tagged by its ``errno``, with the system call that failed and no description."""
         name = {0: "stdin", 1: "stdout", 2: "stderr"}.get(fd, f"fd{fd}")
         line = self.line
-        return lambda error: from_exception(
-            error, module="ChildProcess", method=f"{method}({name})", path_or_descriptor=line
-        )
+
+        def error(cause: OSError | StreamError) -> PlatformError:
+            system = isinstance(cause, OSError)
+            return system_error(
+                tag_of(cause) if system else "Unknown",
+                module="ChildProcess",
+                method=f"{method}({name})",
+                syscall=syscall if system else None,
+                path_or_descriptor=line,
+                cause=cause,
+            )
+
+        return error
 
     def input(self, fd: int) -> int:
         read, write = os.pipe()
         self.child_fds.append(read)
-        self.inputs[fd] = Writer(write, self._error(fd, "from_writable"))
+        self.inputs[fd] = Writer(write, self._error(fd, "from_writable", "write"))
         return read
 
     def output(self, fd: int) -> int:
         read, write = os.pipe()
         self.child_fds.append(write)
-        self.outputs[fd] = Reader(read, self._error(fd, "from_readable"))
+        self.outputs[fd] = Reader(read, self._error(fd, "from_readable", "read"))
         return write
 
     @classmethod
@@ -179,12 +193,12 @@ class _Pipes:
             os.close(fd)
 
     def started_child(self, child: Child) -> None:
-        """Watch ``child``: its exit ends stdin, as Node destroys
+        """Watch ``child``: its exit destroys stdin, as Node destroys
         ``stdin`` when the child exits (a write still in progress fails)."""
         self.child = child
         stdin = self.inputs.get(0)
         if stdin is not None:
-            child.after_exit(stdin.close)
+            child.after_exit(stdin.destroy)
 
     def release(self) -> None:
         """Close the pipes once the child is gone: one the scope leaves
@@ -197,7 +211,7 @@ class _Pipes:
     def close(self) -> None:
         self.started()
         for writer in self.inputs.values():
-            writer.close()
+            writer.end()
         for reader in self.outputs.values():
             reader.close()
 
