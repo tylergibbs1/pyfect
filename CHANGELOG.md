@@ -24,3 +24,15 @@ matter most:
   checks, CORS with credentials, log and SSE line injection, cookie and session limits, redacted
   names and SQL string parameters.
 - pyfect does not copy seven behaviours of Effect that look like bugs.
+
+### If you installed pyfect from GitHub before 0.1.0
+
+These changes from earlier commits match Effect and can break code written against them:
+
+- `run_sync` of an effect that doesn't finish synchronously, such as one that waits on a
+  worker, a socket or a sleep, now fails with `AsyncFiberError` as a defect, like Effect's
+  `runSync`. Use `run_blocking` (or `run_blocking_exit`) for those. A worker's entry point
+  that called `run_sync` on its main effect now exits at once, and the client sees only
+  "exited with code 0".
+- A model call naming a tool the toolkit doesn't have fails as
+  `LanguageModel.generateText: Invalid output`, without the tool's name, as in Effect.
