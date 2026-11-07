@@ -142,14 +142,35 @@ class _Shared:
 
 
 class _Lease:
-    """A pin: released when its scope closes."""
+    """A pin: released when its scope closes. Work through it (a
+    statement, a stream, a listener) is admitted and counted in one step,
+    before anything waits, so a release always sees it."""
 
-    __slots__ = ("in_flight", "listeners", "released")
+    __slots__ = ("_released", "_work")
 
     def __init__(self) -> None:
-        self.released = False
-        self.in_flight = 0
-        self.listeners = 0
+        self._released = False
+        self._work = 0
+
+    @property
+    def released(self) -> bool:
+        return self._released
+
+    def admit(self) -> bool:
+        """Count one more piece of work, unless the pin is released."""
+        if self._released:
+            return False
+        self._work += 1
+        return True
+
+    def finish(self) -> None:
+        """One admitted piece of work ended."""
+        self._work -= 1
+
+    def release(self) -> bool:
+        """Release the pin; whether work was still open."""
+        self._released = True
+        return self._work > 0
 
 
 class PgConnection:
@@ -208,17 +229,16 @@ class PgConnection:
         """Reserve the session until the scope closes; statements through
         the connection given skip the line, those through this one wait.
         Pinning a pinned connection gives it back. Once released, the pinned
-        connection fails every statement; releasing it while a statement or
-        a listener is still open closes the session."""
+        connection fails every statement; releasing it while a statement, a
+        stream or a listener is still open closes the session."""
         if self._lease is not None:
             return succeed(self)
         shared = self._shared
 
         def release(lease: _Lease) -> Effect[None]:
             def body() -> Effect[None]:
-                lease.released = True
                 closing: Effect[None] = void
-                if lease.in_flight > 0 or lease.listeners > 0:
+                if lease.release():
                     closing = shared.fatal(_released_with_work()).and_then(shared.close())
                 return closing.and_then(shared.owner.release(1)).as_void()
 
@@ -252,18 +272,14 @@ class PgConnection:
                 return shared.owner.with_permits(run)
             held = lease
 
-            def done() -> None:
-                held.in_flight -= 1
-
             def on_wire() -> Effect[A, SqlError]:
                 # A statement still queued when the pin is released fails
                 # here and never reaches the next owner's session.
                 if shared.dead_with is not None:
                     return fail(shared.dead_with)
-                if held.released:
+                if not held.admit():
                     return fail(_pin_released())
-                held.in_flight += 1
-                return run.ensuring(sync(done))
+                return run.ensuring(sync(held.finish))
 
             return shared.wire.with_permits(_Suspend(on_wire))
 
@@ -328,11 +344,11 @@ class PgConnection:
             if lease is not None and lease.released:
                 return fail(_pin_released())
 
-            def finish(rows: Any) -> Effect[None]:
-                def done() -> None:
-                    if lease is not None:
-                        lease.in_flight -= 1
+            def done() -> None:
+                if lease is not None:
+                    lease.finish()
 
+            def finish(rows: Any) -> Effect[None]:
                 return (
                     call(lambda: session.close_stream(rows), _catch_query, waits_for="work")
                     .ignore()
@@ -349,8 +365,6 @@ class PgConnection:
                     .flat_map(chunk)
                 )
                 stream: Stream[Row, SqlError] = stream_module.from_pull(succeed(pull))
-                if lease is not None:
-                    lease.in_flight += 1
                 return add_finalizer(lambda _: finish(rows)).as_(stream)
 
             opened = call(
@@ -359,7 +373,15 @@ class PgConnection:
                 release=session.close_stream,
                 waits_for="work",
             )
-            return uninterruptible_mask(lambda restore: restore(opened).flat_map(build))
+
+            def opening(restore: Restore) -> Effect[Stream[Row, SqlError], SqlError, Scope]:
+                # Counted before the open waits, so a release during it
+                # closes the session instead of handing it on.
+                if lease is not None and not lease.admit():
+                    return fail(_pin_released())
+                return restore(opened).tap_cause(lambda _: sync(done)).flat_map(build)
+
+            return uninterruptible_mask(opening)
 
         if lease is None:
             return _Suspend(body)
@@ -427,7 +449,6 @@ class PgConnection:
                     session.unsubscribe(channel, mailbox)
 
                 def registered(mailbox: Any) -> Effect[Any]:
-                    lease.listeners += 1
                     shared.listeners.add(queue)
                     stop = scope.add_finalizer(
                         lambda _: pinned._unlisten(channel, identifier, mailbox, queue)
@@ -439,13 +460,20 @@ class PgConnection:
                     listening = pinned.query(f"LISTEN {identifier}")
                     return listening.and_then(deliver).as_(queue)
 
+                def subscribing(restore: Restore) -> Effect[Any, SqlError]:
+                    # Counted before the subscription waits, so a release
+                    # during it closes the session.
+                    if not lease.admit():
+                        return fail(_pin_released())
+                    return (
+                        restore(call(subscribe, _catch_query, release=drop, waits_for="work"))
+                        .tap_cause(lambda _: sync(lease.finish))
+                        .flat_map(registered)
+                    )
+
                 # The mailbox is subscribed and its cleanup registered as one
                 # step, so an interrupt cannot leave it behind.
-                subscribed: Effect[Any, SqlError] = uninterruptible_mask(
-                    lambda restore: restore(
-                        call(subscribe, _catch_query, release=drop, waits_for="work")
-                    ).flat_map(registered)
-                )
+                subscribed: Effect[Any, SqlError] = uninterruptible_mask(subscribing)
                 return subscribed.flat_map(started)
 
             return Queue[Notification, SqlError].dropping(capacity).flat_map(with_queue)
@@ -501,13 +529,13 @@ class PgConnection:
             return shared.session.unsubscribe(channel, mailbox)
 
         def after(last: bool) -> Effect[None]:
-            lease.listeners -= 1
+            lease.finish()
             shared.listeners.discard(queue)
             return shared.wire.with_permits(_Suspend(on_wire)) if last else void
 
         def on_wire() -> Effect[None]:
             # Skipped once the pin is released: the session has moved on.
-            if shared.dead_with is not None or lease.released:
+            if shared.dead_with is not None or not lease.admit():
                 return void
             session = shared.session
             statement = call(
@@ -523,12 +551,7 @@ class PgConnection:
                 .and_then(shared.close())
                 .uninterruptible()
             )
-            lease.in_flight += 1
-
-            def done() -> None:
-                lease.in_flight -= 1
-
-            return statement.ignore().race_first(unanswered).ensuring(sync(done))
+            return statement.ignore().race_first(unanswered).ensuring(sync(lease.finish))
 
         unlisten = (
             call(unsubscribe, _catch_query, waits_for="work")
