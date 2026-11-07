@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from importlib.metadata import version
 from typing import Final, cast
 
 from opentelemetry.util.types import AttributeValue
 
-from pyfect._extras import DISTRIBUTION
+from pyfect._version import VERSION
 from pyfect.logger._text import to_string_unknown
 
-PYFECT_VERSION: Final = version(DISTRIBUTION)
+PYFECT_VERSION: Final = VERSION
 """The instrumentation scope version of every tracer, logger and meter."""
 
 _INT64_MIN: Final = -(2**63)

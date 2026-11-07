@@ -42,8 +42,9 @@ class _Counter(Series[Any, Any]):
         description: str | None,
         attributes: Attributes | None,
         incremental: bool,
+        bigint: bool,
     ) -> None:
-        super().__init__("Counter", id, description, attributes)
+        super().__init__("Counter", id, description, attributes, bigint=bigint)
         self._incremental = incremental
 
     def _create_hooks(self) -> Hooks:
@@ -264,9 +265,9 @@ def counter(
 ) -> Counter[Any]:
     """A running total: ``update`` adds. An ``incremental`` counter ignores
     negative updates. ``bigint=True`` types it as ``int`` (Effect's
-    ``bigint``); either way a counter of ints stays exact."""
-    del bigint  # only the type differs: Python ints never lose precision
-    return _Counter(name, description, attributes, incremental)
+    ``bigint``) and makes OTLP export it as an integer; either way a counter
+    of ints stays exact."""
+    return _Counter(name, description, attributes, incremental, bigint)
 
 
 @overload
@@ -293,8 +294,7 @@ def gauge(
     bigint: bool = False,
 ) -> Gauge[Any]:
     """The latest value: ``update`` sets it, ``modify`` adds to it."""
-    del bigint
-    return _Gauge("Gauge", name, description, attributes)
+    return _Gauge("Gauge", name, description, attributes, bigint=bigint)
 
 
 def frequency(

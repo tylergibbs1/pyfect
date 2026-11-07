@@ -264,23 +264,24 @@ class Cause(Generic[E_co]):
         )
         return errors if errors or not self.reasons else (_interrupted(self),)
 
-    def pretty(self) -> str:
-        """``pretty_errors`` rendered with their tracebacks and cause chains,
-        each followed by the span frames its reason records (Effect's
-        ``    at span (location)`` lines)."""
+    def pretty_stacks(self) -> tuple[str, ...]:
+        """Each of ``pretty_errors`` rendered with its traceback and cause
+        chain, followed by the span frames its reason records (Effect's
+        ``stack`` of each ``prettyErrors(cause, { includeCauseInStack })``
+        error)."""
         from pyfect._stack_frame import StackTrace, render
 
         errors = self.pretty_errors()
         reasons = [r for r in self.reasons if not isinstance(r, Interrupt)] or self.reasons[:1]
-        return "\n\n".join(
-            "\n".join(
-                [
-                    _render_error(e),
-                    *render(_frame(r.annotations, StackTrace)),
-                ]
-            )
+        return tuple(
+            "\n".join([_render_error(e), *render(_frame(r.annotations, StackTrace))])
             for e, r in zip(errors, reasons, strict=True)
         )
+
+    def pretty(self) -> str:
+        """``pretty_stacks`` joined by blank lines (Effect's ``    at span
+        (location)`` lines after each error)."""
+        return "\n\n".join(self.pretty_stacks())
 
 
 def _render_error(error: BaseException) -> str:

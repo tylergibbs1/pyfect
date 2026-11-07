@@ -9473,3 +9473,67 @@ def schema_codec_family_pins() -> None:
     assert_type(S.to_differ_json_patch(S.String).diff("a", "b"), JsonPatch)
     assert_type(S.to_differ_json_patch(S.String).patch("a", []), str)
     assert_type(S.to_encoder_xml(S.String)("a"), fx.Effect[str, S.SchemaError])
+
+
+# --- OTLP exporters (parity-otlp) ---------------------------------------------------------------
+
+
+def otlp_pins() -> None:
+    from pyfect.http.client import HttpClient
+    from pyfect.http.router import HttpRouter
+    from pyfect.http.server_request import HttpServerRequest
+    from pyfect.http.server_response import HttpServerResponse
+    from pyfect.observability import (
+        otlp,
+        otlp_exporter,
+        otlp_logger,
+        otlp_metrics,
+        otlp_proxy,
+        otlp_resource,
+        otlp_serialization,
+        otlp_tracer,
+    )
+    from pyfect.observability.otlp_serialization import OtlpSerialization
+    from pyfect.scope import Scope
+
+    url = "http://localhost:4318"
+    assert_type(
+        otlp.layer_json(base_url=url), layer.Layer[otlp_exporter.Flusher, Never, HttpClient]
+    )
+    assert_type(
+        otlp.layer(base_url=url),
+        layer.Layer[otlp_exporter.Flusher, Never, HttpClient | OtlpSerialization],
+    )
+    assert_type(
+        otlp_tracer.layer(url=url),
+        layer.Layer[otlp_exporter.Flusher, Never, HttpClient | OtlpSerialization],
+    )
+    assert_type(
+        otlp_logger.make(url=url),
+        fx.Effect[
+            logger.Logger[None],
+            Never,
+            otlp_exporter.Flusher | OtlpSerialization | HttpClient | Scope,
+        ],
+    )
+    assert_type(
+        otlp_metrics.make(url=url, temporality="delta"),
+        fx.Effect[None, Never, otlp_exporter.Flusher | HttpClient | OtlpSerialization | Scope],
+    )
+    assert_type(otlp_resource.from_config(), fx.Effect[otlp_resource.Resource])
+    assert_type(otlp_serialization.layer_protobuf, layer.Layer[OtlpSerialization])
+    assert_type(
+        otlp_exporter.Flusher().map(lambda f: f.flush),
+        fx.Effect[fx.Effect[None], Never, otlp_exporter.Flusher],
+    )
+    assert_type(otlp_proxy.layer(base_url=url), layer.Layer[Never, Never, HttpRouter | HttpClient])
+    assert_type(
+        otlp_proxy.make(base_url=url),
+        fx.Effect[
+            dict[otlp_proxy.Signal, fx.Effect[HttpServerResponse, Never, HttpServerRequest]],
+            Never,
+            HttpClient,
+        ],
+    )
+    otlp_metrics.layer(url=url, temporality="weekly")  # pyright: ignore[reportArgumentType]
+    otlp.layer_json(base_url=url, compression="brotli")  # pyright: ignore[reportArgumentType]

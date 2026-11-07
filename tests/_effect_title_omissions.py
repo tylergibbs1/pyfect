@@ -52,7 +52,6 @@ _SYMBOLS = (
 )
 _NODE_STREAMS = "Node's streams and `EventTarget`: `process`, `socket` and `http` read Python's own"
 
-NOT_PORTED_OTLP = "NOT_PORTED section 4 row OTLP: the exporters; the `otel` extra's SDK is the path"
 NOT_PORTED_AST = "NOT_PORTED `SchemaAST`'s projections as a unit: its identity and memo titles"
 NOT_PORTED_SCHEMA = (
     "NOT_PORTED `Schema.test.ts` titles with no port; not checked one by one against Node"
@@ -133,7 +132,6 @@ OMISSIONS: tuple[Omission, ...] = (
         "the v3 to v4 migration of the TypeScript API; pyfect had no v3",
         "effect/test/schema/v3-v4.test.ts",
     ),
-    *_whole(NOT_PORTED_OTLP, "effect/test/observability/Otlp*.test.ts"),
     *_whole(
         _PG_DRIVER,
         "sql/pg/test/ContainerTeardown.test.ts",
@@ -194,7 +192,6 @@ OMISSIONS: tuple[Omission, ...] = (
         "effect/test/Sink.test.ts",
     ),
     _some("effect/test/Stream.test.ts", _NODE_STREAMS, r"event|ReadableStream"),
-    *_whole(NOT_PORTED_OTLP, "effect/test/Tracer.test.ts", "platform/node/test/OtlpProxy.test.ts"),
     *_whole(
         "the suite needs a BIND container and `node:dns`; `tests/oracle/test_dns.py` ports `Dns`",
         "platform/node-shared/test/Dns.test-utils.ts",

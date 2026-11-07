@@ -37,6 +37,9 @@ class Metadata:
     description: str | None
     attributes: Mapping[str, str] | None
     hooks: Hooks
+    bigint: bool = False
+    """A counter or gauge made with ``bigint=True`` (Effect's ``bigint``
+    state), which OTLP exports as ``asInt``."""
 
 
 type Registry = dict[MetricKey, Metadata]

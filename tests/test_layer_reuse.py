@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
-from layer_cases import ai_decisions, ai_otel, cluster, core, data, http, rpc
+from layer_cases import ai_decisions, ai_otel, cluster, core, data, http, otlp, rpc
 from layer_cases._case import Case
 
 import pyfect
@@ -27,7 +27,7 @@ import pyfect as fx
 from pyfect.exit import Success
 from pyfect.layer import Layer
 
-_AREAS = (core, rpc, http, data, cluster, ai_otel, ai_decisions)
+_AREAS = (core, rpc, http, data, cluster, ai_otel, ai_decisions, otlp)
 CASES: dict[str, Case] = {name: case for area in _AREAS for name, case in area.CASES.items()}
 SKIPPED: dict[str, str] = {name: why for area in _AREAS for name, why in area.SKIPPED.items()}
 

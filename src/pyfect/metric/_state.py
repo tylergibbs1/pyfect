@@ -72,3 +72,5 @@ class Snapshot:
     description: str | None
     attributes: Mapping[str, str] | None
     state: MetricState
+    bigint: bool = False
+    """A counter or gauge made with ``bigint=True``."""
