@@ -14,7 +14,7 @@ from pyfect.exit import Exit, Success
 from pyfect.exit import die as die_exit
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions, is_constructing
-from pyfect.schema.ast._base import AST, Checks, invalid_type
+from pyfect.schema.ast._base import AST, Checks, invalid_type, parse_by_interpreting
 from pyfect.schema.ast._check import collect_issues
 from pyfect.schema.ast._objects import Objects
 from pyfect.schema.ast._result import ParseResult, flat_map
@@ -75,10 +75,12 @@ class Class(AST):
             return self.shape.encoded.expected()
         return AST.expected(self)
 
-    def parse(self, input: object, options: ParseOptions) -> ParseResult:
+    parse = parse_by_interpreting
+
+    def interpret(self, input: object, options: ParseOptions) -> ParseResult:
         # A class may hold itself (its fields are made on first use), so a
         # parse recurses through it as deep as its input.
-        parse = self.parse_local if self.encoding is None else partial(AST.parse, self)
+        parse = self.parse_local if self.encoding is None else partial(AST.interpret, self)
         if not stack_nearly_full():
             return parse(input, options)
         return with_fresh_stack(lambda: parse(input, options))

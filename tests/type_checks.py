@@ -9473,3 +9473,40 @@ def schema_codec_family_pins() -> None:
     assert_type(S.to_differ_json_patch(S.String).diff("a", "b"), JsonPatch)
     assert_type(S.to_differ_json_patch(S.String).patch("a", []), str)
     assert_type(S.to_encoder_xml(S.String)("a"), fx.Effect[str, S.SchemaError])
+
+
+def schema_compiler_pins() -> None:
+    from collections.abc import Awaitable
+
+    from pyfect.option import Option
+    from pyfect.schema import aot_compiler, compiler, jit_compiler
+    from pyfect.schema._parse import Parser
+    from pyfect.schema._standard_schema import Result, StandardProps
+    from pyfect.schema.issue import Issue
+
+    # SchemaParser.make* keep the schema's Type.
+    assert_type(S.make(S.String), Parser[str, str])
+    assert_type(S.make_option(S.Int), Parser[int, Option[int]])
+    assert_type(S.make_effect(S.String), Parser[str, fx.Effect[str, Issue, Any]])
+    S.make(S.String)(1)  # pyright: ignore[reportArgumentType]
+
+    # A decoder needs decode_effect; the fast paths are optional.
+    compiler.set(
+        S.String.ast,
+        compiler.CompiledDecoder(decode_effect=lambda i, o: fx.exit.succeed(i)),
+    )
+    compiler.CompiledDecoder(is_=lambda i, o: True)  # pyright: ignore[reportCallIssue]
+    assert_type(jit_compiler.enable(S.String.ast), None)
+    assert_type(aot_compiler.compile([aot_compiler.Target(S.String.ast, ["decode"])]), str)
+    aot_compiler.Target(S.String.ast, ["encode"])  # pyright: ignore[reportArgumentType]
+
+    # The Standard Schema adapter is still the schema.
+    adapted = S.to_standard_schema_v1(S.FiniteFromString)
+    assert_type(adapted, S.StandardSchemaV1[float, str, Never, Never])
+    assert_type(S.decode_unknown_sync(adapted)("1"), float)
+    assert_type(adapted.__standard__, StandardProps[float])
+    validate = adapted.__standard__.validate
+    assert validate is not None
+    assert_type(validate("1"), Result[float] | Awaitable[Result[float]])
+    both = S.to_standard_json_schema_v1(adapted)
+    assert_type(both, S.StandardSchemaV1[float, str, Never, Never])

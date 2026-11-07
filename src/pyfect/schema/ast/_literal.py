@@ -19,7 +19,7 @@ from pyfect._js import js_number
 from pyfect.exit import Exit, Success
 from pyfect.logger._text import json_quote
 from pyfect.schema._options import ParseOptions
-from pyfect.schema.ast._base import AST, invalid_type
+from pyfect.schema.ast._base import AST, invalid_type, parse_by_interpreting
 from pyfect.schema.ast._result import ParseResult, map_value
 from pyfect.schema.issue import Issue
 
@@ -118,9 +118,11 @@ class Enum(AST):
             return self.enum.__name__
         return " | ".join(format_literal(m.value) for m in self.enum)
 
-    def parse(self, input: object, options: ParseOptions) -> ParseResult:
+    parse = parse_by_interpreting
+
+    def interpret(self, input: object, options: ParseOptions) -> ParseResult:
         if self.encoding is not None:
-            return AST.parse(self, input, options)
+            return AST.interpret(self, input, options)
         return self.parse_local(input, options)
 
     def parse_local(self, input: object, options: ParseOptions) -> ParseResult:

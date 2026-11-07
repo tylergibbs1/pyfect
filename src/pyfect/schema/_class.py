@@ -219,7 +219,11 @@ class _Shape:
             if self.tag is not None:
                 tag = ast.PropertySignature("_tag", ast.Literal(self.tag))
                 keyed, named = (tag, *keyed), (tag, *named)
-            fields = ast.Objects(keyed)
+            # As Effect's ``extend``: a subclass's fields carry its identifier.
+            extends = any(_SHAPE in base.__dict__ for base in self.cls.__mro__[1:])
+            fields = ast.Objects(
+                keyed, annotations={"identifier": self.identifier} if extends else None
+            )
             self._built = _Built(
                 schemas, fields, ast.Objects(named).to_type(), fields.flip().to_type(), absent
             )

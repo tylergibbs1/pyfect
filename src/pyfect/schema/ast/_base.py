@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Hashable, Mapping
+from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -75,6 +75,16 @@ class AST(ABC):
     )
     """``flip()``, made once (Effect memoizes ``flip``): the flip of a
     recursive schema then refers back to itself, a finite graph."""
+    compiler_entry: list[object] = field(
+        default_factory=list[object], init=False, repr=False, compare=False
+    )
+    """The compiler registry's entry for this exact node (Effect's registry
+    ``WeakMap``), held by ``pyfect.schema.compiler``."""
+    compiler_facts: list[object] = field(
+        default_factory=list[object], init=False, repr=False, compare=False
+    )
+    """What a generated fast path through this node needs, worked out once
+    (Effect's ``codegen`` facts ``WeakMap``)."""
     tag: ClassVar[str]
 
     def owner(self) -> AST:
@@ -101,7 +111,28 @@ class AST(ABC):
     def parse(self, input: object, options: ParseOptions) -> ParseResult:
         """``input`` decoded through the node's encoding, then checked
         against the node and its checks: an ``Exit``, or an ``Effect`` when
-        a transformation needs one."""
+        a transformation needs one. Once a decoder is installed in the
+        compiler registry (``pyfect.schema.compiler``), the node's registry
+        entry parses it."""
+        if _dispatch is not None:
+            return _dispatch(self, input, options)
+        encoding = self.encoding
+        if encoding is not None:
+            return decode_chain(self, encoding, input, options)
+        # ``parse_local``, inlined: this is the hot path.
+        if input is MISSING:
+            return MISSING_EXIT
+        result = self._parse(input, options)
+        if (self.checks is None and self.encoding_checks is None) or options.get("disable_checks"):
+            return result
+        if type(result) is Success:
+            return self._run_checks(input, result.value, options)
+        return flat_map(result, lambda value: self._run_checks(input, value, options))
+
+    def interpret(self, input: object, options: ParseOptions) -> ParseResult:
+        """``parse`` without the registry: the interpreter (Effect's
+        ``Interpreter.compile``). A subclass overriding it sets ``parse =
+        parse_by_interpreting``."""
         encoding = self.encoding
         if encoding is not None:
             return decode_chain(self, encoding, input, options)
@@ -177,6 +208,33 @@ class AST(ABC):
 
     def __str__(self) -> str:
         return f"<{self.tag}>"
+
+
+type Dispatch = Callable[[AST, object, ParseOptions], ParseResult]
+
+_dispatch: Dispatch | None = None
+"""The compiler registry's parse, once a decoder or compiler is installed
+(Effect's ``compilerAdaptersEnabled``); ``None`` keeps the interpreter."""
+
+
+def set_dispatch(dispatch: Dispatch | None) -> None:
+    """Route every node's ``parse`` through ``dispatch`` (``None``: back to
+    the interpreter). Only the compiler registry calls it."""
+    global _dispatch  # noqa: PLW0603 - read on every parse, so a plain module global
+    _dispatch = dispatch
+
+
+def dispatching() -> bool:
+    """A compiler registry routes parses: a missing key then reaches its
+    node's installed decoder as ``MISSING``, as in Effect."""
+    return _dispatch is not None
+
+
+def parse_by_interpreting(self: AST, input: object, options: ParseOptions) -> ParseResult:
+    """``parse`` for a node class that overrides ``interpret``."""
+    if _dispatch is not None:
+        return _dispatch(self, input, options)
+    return self.interpret(input, options)
 
 
 def annotate[N: AST](ast: N, annotations: Annotations) -> N:

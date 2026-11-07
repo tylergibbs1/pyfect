@@ -28,6 +28,7 @@ from pyfect.schema.ast._base import (
     AST,
     at_key,
     construct_missing,
+    dispatching,
     invalid_type,
     issue_of,
     join_checks,
@@ -98,6 +99,14 @@ class PropertySignature:
     out when flipping (optional or defaulted here, or an optional source of
     the node's transformation)."""
 
+    def flips_to_itself(self) -> bool:
+        """Its flip would declare the same key the same way."""
+        return (
+            self.default is None
+            and self.type.flip() is self.type
+            and self.optional_when_encoded() == self.optional
+        )
+
     def optional_when_encoded(self) -> bool:
         """Whether the key may be missing from the encoded input."""
         if self.encoded_optional is not None:
@@ -147,13 +156,26 @@ class Objects(AST):
 
     def _flip(self) -> Objects:
         # Checks describe the decoded side: flipped, they check the input
-        # (Effect swaps ``checks`` and ``encodingChecks``).
+        # (Effect swaps ``checks`` and ``encodingChecks``). As in Effect, a
+        # struct whose parts all flip to themselves is its own flip.
+        properties = tuple(p if p.flips_to_itself() else p.flipped() for p in self.properties)
+        indexes = tuple(
+            i
+            if i.parameter.flip() is i.parameter and i.type.flip() is i.type
+            else IndexSignature(i.parameter.flip(), i.type.flip())
+            for i in self.index_signatures
+        )
+        if (
+            self.checks is None
+            and self.encoding_checks is None
+            and all(a is b for a, b in zip(properties, self.properties, strict=True))
+            and all(a is b for a, b in zip(indexes, self.index_signatures, strict=True))
+        ):
+            return self
         return replace(
             self,
-            properties=tuple(p.flipped() for p in self.properties),
-            index_signatures=tuple(
-                IndexSignature(i.parameter.flip(), i.type.flip()) for i in self.index_signatures
-            ),
+            properties=properties,
+            index_signatures=indexes,
             checks=self.encoding_checks,
             encoding_checks=self.checks,
         )
@@ -218,13 +240,29 @@ class _Run(Steps["_Run"]):
         self.options = options
         self.out: dict[object, object] = {}
         self.issues: list[Issue] = []
+        self.entries: tuple[tuple[IndexSignature, object], ...] | None = _NO_ENTRIES
         if ast.index_signatures:
             self.declared: frozenset[Hashable] = frozenset(p.name for p in ast.properties)
-            self.entries: tuple[tuple[IndexSignature, object], ...] = tuple(
-                (i, key) for i in ast.index_signatures for key in keys if i.selects(key, options)
-            )
+            # Strict parsing lists the keys before reading any property (with
+            # the excess check); otherwise after the properties, as in Effect.
+            self.entries = None
+            if options.get("on_excess_property") == "error":
+                self._listed()
         else:
-            self.declared, self.entries = _NO_KEYS, _NO_ENTRIES
+            self.declared = _NO_KEYS
+
+    def _listed(self) -> tuple[tuple[IndexSignature, object], ...]:
+        """The keys each index signature takes, listed on first use."""
+        entries = self.entries
+        if entries is None:
+            options = self.options
+            entries = self.entries = tuple(
+                (i, key)
+                for i in self.ast.index_signatures
+                for key in self.keys
+                if i.selects(key, options)
+            )
+        return entries
 
     def copy(self) -> _Run:
         other = _Run.__new__(_Run)
@@ -236,7 +274,7 @@ class _Run(Steps["_Run"]):
         return other
 
     def size(self) -> int:
-        return 1 + len(self.ast.properties) + len(self.entries)
+        return 1 + len(self.ast.properties) + len(self._listed())
 
     def finish(self) -> Exit[object, Issue]:
         if self.issues:
@@ -271,7 +309,7 @@ class _Run(Steps["_Run"]):
             else:
                 return i + 1, Pending(result, _Run.property_of(prop))
         first_entry = len(properties) + 1
-        entries = self.entries
+        entries = self._listed()
         for i in range(max(start, first_entry) - first_entry, len(entries)):
             pending = self._entry(*entries[i])
             if pending is not None:
@@ -317,7 +355,7 @@ class _Run(Steps["_Run"]):
         if prop.default is not None:
             self.out[prop.name] = prop.default()
             return None
-        if prop.type.encoding is not None or isinstance(prop.type, Suspend):
+        if prop.type.encoding is not None or isinstance(prop.type, Suspend) or dispatching():
             return prop.type.parse(MISSING, self.options)
         if not prop.optional:
             self._report(prop.name, MissingKey(prop.type.key_annotations))

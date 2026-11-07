@@ -38,12 +38,6 @@ _STDLIB = (
     "section 4: the module is Python's own type or standard library, so the title tests Python"
 )
 _HYPOTHESIS = "section 4: Hypothesis is the property-test runner, shrinker and generator"
-_COMPILER = (
-    "section 4: the JIT and AOT schema compilers generate JavaScript for speed; same results"
-)
-_STANDARD = (
-    "section 4: the `~standard` interface is JavaScript's interop point; pydantic is Python's"
-)
 _PG_DRIVER = (
     "Effect wrote a PostgreSQL wire driver; pyfect's `sql.pg` runs on psycopg, which has its own"
 )
@@ -113,18 +107,6 @@ OMISSIONS: tuple[Omission, ...] = (
         "effect/test/StackTraceLimit.test.ts",
     ),
     *_whole(_HYPOTHESIS, "effect/test/arbitrary/**"),
-    *_whole(
-        _COMPILER,
-        "effect/test/schema/SchemaAOTCompiler*.test.ts",
-        "effect/test/schema/SchemaCompiler*.test.ts",
-        "effect/test/schema/SchemaJITCompiler*.test.ts",
-    ),
-    *_whole(
-        _STANDARD,
-        "effect/test/schema/standardSchemaAdapters.test.ts",
-        "effect/test/schema/toStandardJSONSchemaV1.test.ts",
-        "effect/test/schema/toStandardSchemaV1.test.ts",
-    ),
     *_whole(
         "JavaScript's hot module reloading",
         "effect/test/schema/HMR.test.ts",
