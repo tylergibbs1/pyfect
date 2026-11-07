@@ -137,13 +137,16 @@ class Atomic[A]:
 
 
 class BackingSubscription[A]:
-    """One subscriber's position in an ``Atomic``."""
+    """One subscriber's position in an ``Atomic``. A message read for a
+    parked take that was interrupted before collecting it is given back
+    and read first."""
 
-    __slots__ = ("_atomic", "_index", "_unsubscribed")
+    __slots__ = ("_atomic", "_index", "_returned", "_unsubscribed")
 
     def __init__(self, atomic: Atomic[A]) -> None:
         self._atomic = atomic
         self._index = atomic._end()
+        self._returned: deque[A] = deque()
         self._unsubscribed = False
 
     def size(self) -> int:
@@ -151,7 +154,11 @@ class BackingSubscription[A]:
         if self._unsubscribed:
             return 0
         atomic = self._atomic
-        return atomic._end() - max(self._index, atomic._start)
+        start = atomic._start
+        index = self._index
+        return (
+            len(self._returned) + start + len(atomic._slots) - (index if index > start else start)
+        )
 
     def is_empty(self) -> bool:
         return self.size() == 0
@@ -166,10 +173,15 @@ class BackingSubscription[A]:
         count = min(n, self.size())
         if count <= 0:
             return []
-        atomic = self._atomic
-        start = max(self._index, atomic._start)
-        self._index = start + count
-        return [atomic._read(i) for i in range(start, start + count)]
+        returned = self._returned
+        out = [returned.popleft() for _ in range(min(count, len(returned)))]
+        count -= len(out)
+        if count:
+            atomic = self._atomic
+            start = max(self._index, atomic._start)
+            self._index = start + count
+            out.extend(atomic._read(i) for i in range(start, start + count))
+        return out
 
     def poll_all(self) -> list[A]:
         return self.poll_up_to(self.size())
@@ -178,4 +190,10 @@ class BackingSubscription[A]:
         """Stop reading; messages only this subscriber owed are dropped."""
         if not self._unsubscribed:
             self._unsubscribed = True
+            self._returned.clear()
             self._atomic._leave(self._index)
+
+    def _give_back(self, value: A) -> None:
+        """``value`` was read but not taken: it is the next message read."""
+        if not self._unsubscribed:
+            self._returned.appendleft(value)

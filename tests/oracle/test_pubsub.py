@@ -8,6 +8,10 @@ from pyfect's, so the ports that place a yield with ``MaxOpsBeforeYield``
 sweep every budget instead of using Effect's number. Effect's ``retains``
 walks object properties; the port walks ``gc.get_referents``.
 
+The three strategy examples of ``PubSub.ts``'s documentation (Effect runs
+its doc examples as tests; no ``PubSub.test.ts`` title builds a strategy)
+are ported at the end, the example title in the docstring.
+
 Adapted, with the reason:
 
 - "makeAtomicBounded rejects invalid capacity %s": counts are ``int``, so
@@ -38,7 +42,15 @@ import pytest
 
 import pyfect as fx
 from pyfect import stream, testing
-from pyfect.pubsub import Atomic, PubSub, ReplayWindow, Subscription
+from pyfect.pubsub import (
+    Atomic,
+    BackPressureStrategy,
+    DroppingStrategy,
+    PubSub,
+    ReplayWindow,
+    SlidingStrategy,
+    Subscription,
+)
 
 
 def _interrupted(ex: fx.Exit[Any, Any] | None) -> bool:
@@ -821,3 +833,31 @@ def test_end_shutdown_still_interrupts_subscribers():
     yield from pubsub.shutdown()
 
     assert _interrupted((yield from subscription.take().exit()))
+
+
+@testing.effect
+def test_creating_a_pub_sub_with_a_custom_strategy():
+    """Creating a PubSub with a custom strategy"""
+    pubsub = yield from PubSub.make(lambda: Atomic[str].bounded(100), BackPressureStrategy)
+    published = yield from pubsub.publish("Hello")
+    yield from pubsub.shutdown()
+    assert published is True
+
+
+@testing.effect
+def test_applying_a_dropping_strategy():
+    """Applying a dropping strategy"""
+    pubsub = yield from PubSub.make(lambda: Atomic[str].bounded(2), DroppingStrategy)
+    subscription = yield from pubsub.subscribe()
+    published = yield from fx.for_each(("msg1", "msg2", "msg3"), pubsub.publish)
+    messages = yield from subscription.take_all()
+    assert (published, messages) == ([True, True, False], ["msg1", "msg2"])
+
+
+@testing.effect
+def test_applying_a_sliding_strategy():
+    """Applying a sliding strategy"""
+    pubsub = yield from PubSub.make(lambda: Atomic[str].bounded(2), SlidingStrategy)
+    subscription = yield from pubsub.subscribe()
+    yield from fx.for_each(("msg1", "msg2", "msg3", "msg4"), pubsub.publish)
+    assert (yield from subscription.take_all()) == ["msg3", "msg4"]
