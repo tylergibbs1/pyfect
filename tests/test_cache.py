@@ -258,3 +258,30 @@ def test_scoped_refresh_ending_after_the_cache_closed_is_interrupted_and_release
     ex = yield from refreshing.await_exit()
     assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
     assert log == ["acquired-0", "acquired-1", "released-0", "released-1"]
+
+
+@testing.effect
+def test_a_raising_time_to_live_in_a_scoped_cache_does_what_effects_does():
+    # Effect's ScopedCache (checked under Node) completes the entry in a ``finally`` before the
+    # raise: ``get`` succeeds and keeps the entry with no expiry. ``refresh`` and ``set`` decide
+    # the time to live in the caller, so they end with the defect and store nothing.
+    released: list[str] = []
+
+    def lookup(key: str) -> fx.Effect[str, Never, fx.Scope]:
+        acquire = fx.sleep(1).as_(key)
+        return fx.acquire_release(acquire, lambda k, _ex: fx.sync(lambda: released.append(k)))
+
+    cache = yield from fx.ScopedCache.make(lookup, capacity=10, time_to_live=_raising_ttl)
+    getting = yield from cache.get("a").fork(start_immediately=True)
+    yield from testing.adjust(1)
+    assert getting.poll_unsafe() == fx.Success("a")
+    yield from testing.adjust(10_000_000)
+    assert (yield from cache.has("a"))
+    refreshing = yield from cache.refresh("a").fork(start_immediately=True)
+    yield from testing.adjust(1)
+    _assert_died_with_the_ttl_raise(refreshing.poll_unsafe())
+    assert (yield from cache.get("a")) == "a"
+    assert released == []
+    setting = yield from cache.set("b", "v").exit()
+    _assert_died_with_the_ttl_raise(setting)
+    assert not (yield from cache.has("b"))

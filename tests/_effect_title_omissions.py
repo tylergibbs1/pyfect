@@ -256,8 +256,8 @@ OMISSIONS: tuple[Omission, ...] = (
     ),
     _some(
         "effect/test/schema/Schema.test.ts",
-        "a class constructor is a Python signature (section 4 `Schema.Class` row): an excess "
-        "keyword argument raises `TypeError`, so there is nothing to ignore or strip",
+        "section 4 row of this title: a class constructor is its fields' Python signature, and "
+        "taking unknown keys needs `**kwargs`, which loses pyright's field-name checks",
         r"strips excess properties with explicit ignore",
     ),
     _some(
