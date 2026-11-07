@@ -16,11 +16,12 @@ Omitted:
 - ``undefined``: "Optional Fields / Optional Property", "... / Optional
   Property with Nullability", "... / Optional Property to Exact Optional
   Property", "... / Optional Property with Nullability to Optional
-  Property", "asOption / optional -> Option", every "withDecodingDefault"
-  and "withDecodingDefaultType" title (``optional`` and the standalone
-  ``undefined`` input), and the ``undefined`` inputs of the
-  "withDecodingDefaultKey" / "withDecodingDefaultTypeKey" titles (Python
-  has one ``None``, a value; a missing key is the only absence).
+  Property", "asOption / optional -> Option", and the ``undefined`` inputs of
+  the "withDecodingDefaultKey" / "withDecodingDefaultTypeKey" titles (Python
+  has one ``None``, a value; a missing key is the only absence). The
+  "withDecodingDefault" and "withDecodingDefaultType" titles are ported with
+  ``None`` for ``undefined``, as ``OptionFromOptionalNullOr`` maps
+  ``optional``.
 - "decodeTo as composition", "encodeTo as composition": ported without the
   ``UndefinedOr(Number)`` field's ``undefined`` cases.
 """
@@ -480,3 +481,144 @@ def test_with_decoding_default_type_key_default_effect_can_require_a_service():
     decoding = SchemaAsserts(S.Struct(_ANumber, a=field)).decoding().provide(_NumberFallback, 3.0)
     decoding.succeed({"a": "2"}, {"a": 2})
     decoding.succeed({}, {"a": 3})
+
+
+# -------------------------------------------------------- withDecodingDefault
+# ``undefined`` is ``None``: a missing key or ``None`` is decoded as the default
+# (Effect's ``optional`` source, ``optionalKey(UndefinedOr(...))``).
+
+
+def _nullish_one() -> S.DecodeToSchema[float, str | None]:
+    return S.FiniteFromString.pipe(S.with_decoding_default(fx.succeed("1")))
+
+
+def test_with_decoding_default_should_return_a_decoding_default_value_if_the_key_is_missing():
+    """withDecodingDefault / should return a decoding default value if the key is missing"""
+    decoding = SchemaAsserts(S.Struct(_ANumber, a=_nullish_one())).decoding()
+    decoding.succeed({}, {"a": 1})
+    decoding.succeed({"a": None}, {"a": 1})
+    decoding.succeed({"a": "2"}, {"a": 2})
+
+
+def test_with_decoding_default_standalone_undefined_input():
+    """withDecodingDefault / should return a decoding default value if the schema is used as standalone and the input is undefined"""  # noqa: E501
+    schema = S.String.pipe(S.with_decoding_default(fx.succeed("a")))
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed(None, "a")
+    decoding.succeed("b", "b")
+
+
+def test_with_decoding_default_by_default_should_pass_through_the_value():
+    """withDecodingDefault / by default should pass through the value"""
+    SchemaAsserts(S.Struct(_ANumber, a=_nullish_one())).encoding().succeed({"a": 1}, {"a": "1"})
+
+
+def test_with_decoding_default_should_omit_the_value_if_the_encoding_strategy_is_set_to_omit():
+    """withDecodingDefault / should omit the value if the encoding strategy is set to omit"""
+    field = S.FiniteFromString.pipe(
+        S.with_decoding_default(fx.succeed("1"), encoding_strategy="omit")
+    )
+    SchemaAsserts(S.Struct(_ANumber, a=field)).encoding().succeed({"a": 1}, {})
+
+
+def test_with_decoding_default_nested_default_values():
+    """withDecodingDefault / nested default values"""
+    inner = S.Struct(_ANumber, a=_nullish_one()).pipe(S.with_decoding_default(_empty()))
+    decoding = SchemaAsserts(S.Struct(_Nested, a=inner)).decoding()
+    decoding.succeed({}, {"a": {"a": 1}})
+    decoding.succeed({"a": {}}, {"a": {"a": 1}})
+    decoding.succeed({"a": None}, {"a": {"a": 1}})
+    decoding.succeed({"a": {"a": None}}, {"a": {"a": 1}})
+    decoding.succeed({"a": {"a": "2"}}, {"a": {"a": 2}})
+
+
+def test_with_decoding_default_effect_failing_with_schema_error_and_a_defect_preserves_the_mixed_cause():  # noqa: E501
+    """withDecodingDefault / Effect failing with SchemaError and a defect preserves the mixed cause"""  # noqa: E501
+    cause: Cause[S.SchemaError] = Cause((Fail(_DEFAULT_FAILED), Die(RuntimeError("defect"))))
+    field = S.FiniteFromString.pipe(S.with_decoding_default(_mixed(cause)))
+    exit = S.decode_unknown_exit(S.Struct(_ANumber, a=field))({})
+    assert isinstance(exit, Failure)
+    assert any(isinstance(r, Die) for r in exit.cause.reasons)
+    match exit.cause.find_error():
+        case Ok(error):
+            assert error.message == 'decoding default failed\n  at ["a"]'
+        case other:
+            raise AssertionError(other)
+
+
+def test_with_decoding_default_default_effect_can_require_a_service():
+    """withDecodingDefault / default Effect can require a service"""
+    field = S.FiniteFromString.pipe(S.with_decoding_default(_Fallback()))
+    decoding = SchemaAsserts(S.Struct(_ANumber, a=field)).decoding().provide(_Fallback, "3")
+    decoding.succeed({"a": "2"}, {"a": 2})
+    decoding.succeed({}, {"a": 3})
+    decoding.succeed({"a": None}, {"a": 3})
+
+
+# ---------------------------------------------------- withDecodingDefaultType
+
+
+def _nullish_type_one() -> S.DecodeToSchema[float, str | None]:
+    return S.FiniteFromString.pipe(S.with_decoding_default_type(fx.succeed(1.0)))
+
+
+def test_with_decoding_default_type_should_return_a_decoding_default_value_if_the_key_is_missing():
+    """withDecodingDefaultType / should return a decoding default value if the key is missing"""
+    decoding = SchemaAsserts(S.Struct(_ANumber, a=_nullish_type_one())).decoding()
+    decoding.succeed({}, {"a": 1})
+    decoding.succeed({"a": None}, {"a": 1})
+    decoding.succeed({"a": "2"}, {"a": 2})
+
+
+def test_with_decoding_default_type_standalone_undefined_input():
+    """withDecodingDefaultType / should return a decoding default value if the schema is used as standalone and the input is undefined"""  # noqa: E501
+    schema = S.String.pipe(S.with_decoding_default_type(fx.succeed("a")))
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed(None, "a")
+    decoding.succeed("b", "b")
+
+
+def test_with_decoding_default_type_by_default_should_pass_through_the_value():
+    """withDecodingDefaultType / by default should pass through the value"""
+    SchemaAsserts(S.Struct(_ANumber, a=_nullish_type_one())).encoding().succeed(
+        {"a": 1}, {"a": "1"}
+    )
+
+
+def test_with_decoding_default_type_should_omit_the_value_if_the_encoding_strategy_is_set_to_omit():
+    """withDecodingDefaultType / should omit the value if the encoding strategy is set to omit"""
+    field = S.FiniteFromString.pipe(
+        S.with_decoding_default_type(fx.succeed(1.0), encoding_strategy="omit")
+    )
+    SchemaAsserts(S.Struct(_ANumber, a=field)).encoding().succeed({"a": 1}, {})
+
+
+def test_with_decoding_default_type_nested_default_values():
+    """withDecodingDefaultType / nested default values"""
+    default: _ANumber = {"a": 1}
+    inner = S.Struct(_ANumber, a=_nullish_type_one()).pipe(
+        S.with_decoding_default_type(fx.succeed(default))
+    )
+    decoding = SchemaAsserts(S.Struct(_Nested, a=inner)).decoding()
+    decoding.succeed({}, {"a": {"a": 1}})
+    decoding.succeed({"a": {}}, {"a": {"a": 1}})
+    decoding.succeed({"a": None}, {"a": {"a": 1}})
+    decoding.succeed({"a": {"a": None}}, {"a": {"a": 1}})
+    decoding.succeed({"a": {"a": "2"}}, {"a": {"a": 2}})
+
+
+def test_with_decoding_default_type_effect_failing_with_schema_error_propagates_as_decode_failure():
+    """withDecodingDefaultType / Effect failing with SchemaError propagates as decode failure"""
+    field = S.FiniteFromString.pipe(S.with_decoding_default_type(_FAILING_NUMBER))
+    decoding = SchemaAsserts(S.Struct(_ANumber, a=field)).decoding()
+    decoding.succeed({"a": "2"}, {"a": 2})
+    decoding.fail({}, 'decoding default failed\n  at ["a"]')
+
+
+def test_with_decoding_default_type_default_effect_can_require_a_service():
+    """withDecodingDefaultType / default Effect can require a service"""
+    field = S.FiniteFromString.pipe(S.with_decoding_default_type(_NumberFallback()))
+    decoding = SchemaAsserts(S.Struct(_ANumber, a=field)).decoding().provide(_NumberFallback, 3.0)
+    decoding.succeed({"a": "2"}, {"a": 2})
+    decoding.succeed({}, {"a": 3})
+    decoding.succeed({"a": None}, {"a": 3})

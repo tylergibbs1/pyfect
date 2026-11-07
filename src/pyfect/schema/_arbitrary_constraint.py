@@ -196,7 +196,9 @@ _READERS: Mapping[str, _Reader] = {
     "isUnique": lambda _: ArbitraryConstraint(unique=True),
     "isPattern": lambda d: ArbitraryConstraint(
         patterns=(
-            compile_ecma(d["source"]) if d["flags"] == "u" else re.compile(d["source"], d["flags"]),
+            compile_ecma(d["source"], d["flags"])
+            if isinstance(d["flags"], str)
+            else re.compile(d["source"], d["flags"]),
         )
     ),
 }

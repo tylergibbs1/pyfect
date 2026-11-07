@@ -23,6 +23,7 @@ from pyfect.option import Some as _Some
 from pyfect.redacted import Redacted as _Redacted
 from pyfect.schema import _arbitrary_links as _arb
 from pyfect.schema import ast
+from pyfect.schema import getter as G
 from pyfect.schema import transformation as T
 from pyfect.schema._arrays import Array, Tuple, optional_key
 from pyfect.schema._checks_string import is_string_big_int
@@ -211,11 +212,19 @@ _JSON_STRING = _expecting("a string that will be decoded as JSON")
 
 
 def from_json_string[A, I, RD, RE](
-    schema: Codec[A, I, RD, RE], /, *, space: int | str | None = None
+    schema: Codec[A, I, RD, RE],
+    /,
+    *,
+    reviver: G.JsonReviver | None = None,
+    replacer: G.JsonReplacer | None = None,
+    space: int | str | None = None,
 ) -> DecodeToSchema[A, str, RD, RE]:
-    """JSON text, parsed then decoded by ``schema`` (Effect's
-    ``fromJsonString``); encoding indents by ``space``."""
-    transformation: T.Transformation[Any, str] = T.from_json_string(space=space)
+    """JSON text, parsed (with ``reviver``) then decoded by ``schema``
+    (Effect's ``fromJsonString``); encoding writes through ``replacer``,
+    indented by ``space``."""
+    transformation: T.Transformation[Any, str] = T.from_json_string(
+        reviver=reviver, replacer=replacer, space=space
+    )
     return _JSON_STRING.pipe(decode_to(schema, transformation))
 
 

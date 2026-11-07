@@ -108,6 +108,10 @@ def _pattern(payload: Mapping[str, Any]) -> GeneratedCheck:
     source, flags = payload["source"], payload["flags"]
     if flags == "u":
         return GeneratedCheck(f"S.is_ecma_pattern({string_literal(source)})")
+    if isinstance(flags, str):
+        return GeneratedCheck(
+            f"S.is_ecma_pattern({string_literal(source)}, {string_literal(flags)})"
+        )
     return GeneratedCheck(
         f"S.is_pattern(re.compile({string_literal(source)}, {flags}))", ("import re",)
     )

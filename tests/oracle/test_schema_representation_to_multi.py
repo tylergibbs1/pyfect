@@ -8,8 +8,8 @@ Omitted:
   a key context is ``ast.replace_context``, tested in ``test_schema_ast.py``):
   "root identity and sharing / shares copies of the same AST with the same
   Context", "... / preserves the original owner through repeated Context
-  replacements", every "contextual projections with toType / toEncoded /
-  flip" title (each builds ``mutableKey`` fields).
+  replacements". The "contextual projections with toType / toEncoded /
+  flip" titles are ported below without their ``mutableKey`` fields.
 - "reference policies / exposes the projected body and counts contextual
   copies together": needs ``S.optional_key(value)`` as a standalone schema
   (an element marker in pyfect).
@@ -17,7 +17,10 @@ Omitted:
   same reason.
 """
 
+from collections.abc import Callable
 from typing import NotRequired, TypedDict
+
+import pytest
 
 from pyfect import effect as fx
 from pyfect import schema as S
@@ -247,3 +250,103 @@ def test_shares_type_references_without_losing_key_annotations_or_constructor_de
     )
     made = schema.make({"annotated": 2, "required": 3})
     assert made == {"annotated": 2, "defaulted": 1, "required": 3}
+
+
+class _Field(TypedDict):
+    value: float
+
+
+class _Fields(TypedDict):
+    optional: NotRequired[object]
+    required: object
+
+
+def _to_type(node: S.ast.AST) -> S.ast.AST:
+    return node.to_type()
+
+
+def _flip(node: S.ast.AST) -> S.ast.AST:
+    return node.flip()
+
+
+_PROJECTIONS: dict[str, Callable[[S.ast.AST], S.ast.AST]] = {
+    "toType": _to_type,
+    "toEncoded": S.ast.to_encoded,
+    "flip": _flip,
+}
+_CONTEXTUAL_SCHEMAS = {
+    "primitive": lambda: S.NumberFromString.annotate_encoded(identifier="Wire"),
+    "struct": lambda: S.Struct(_Field, value=S.NumberFromString),
+    "array": lambda: S.Array(S.NumberFromString),
+    "tuple": lambda: S.Tuple(S.NumberFromString, S.String),
+    "union": lambda: S.Union(S.NumberFromString, S.Boolean),
+    "declaration": lambda: S.Option(S.NumberFromString),
+    "suspend": lambda: S.suspend(lambda: S.Struct(_Field, value=S.NumberFromString)),
+    "encoding chain": lambda: S.String.pipe(S.decode_to(S.NumberFromString)).annotate_encoded(
+        identifier="Wire"
+    ),
+}
+
+
+@pytest.mark.parametrize("project", list(_PROJECTIONS))
+@pytest.mark.parametrize("name", list(_CONTEXTUAL_SCHEMAS))
+def test_contextual_projections_share_the_reference_while_preserving_each_fields_context(
+    project: str, name: str
+):
+    """contextual projections with $name / shares the $name reference while preserving each field's context
+
+    ``mutableKey`` fields are left out: pyfect keys have no mutability.
+    """  # noqa: E501
+    projection = _PROJECTIONS[project]
+    value = _CONTEXTUAL_SCHEMAS[name]().annotate(identifier="Value")
+    struct = S.Struct(_Fields, optional=value, required=value)
+    expected = R.to_representation(S.Bottom(projection(value.ast)))
+    document = R.to_representations(
+        (S.Bottom(projection(struct.ast)), S.Bottom(projection(value.ast)))
+    )
+
+    assert document.references == expected.references
+    assert document.representations == (
+        R.Objects(
+            (
+                R.PropertySignature("optional", expected.representation, is_optional=True),
+                R.PropertySignature("required", expected.representation),
+            )
+        ),
+        expected.representation,
+    )
+
+
+def test_contextual_projections_share_recursive_references_across_contextual_copies():
+    """contextual projections with $name / shares recursive references across contextual copies
+
+    Effect's ``mutableKey(node)`` copy is a copy with a key annotation here.
+    """
+    for projection in _PROJECTIONS.values():
+
+        def thunk() -> S.ast.AST:
+            return S.ast.Objects(
+                (
+                    S.ast.PropertySignature("value", S.NumberFromString.ast),
+                    S.ast.PropertySignature(
+                        "next",
+                        S.ast.optional_key(node),  # noqa: B023
+                        optional=True,
+                    ),
+                )
+            )
+
+        node = S.ast.Suspend(thunk, annotations={"identifier": "Node"})
+        contextual = S.ast.replace_context(node, key_annotations={"description": "a key"})
+        document = R.to_representations(
+            (S.Bottom(projection(contextual)), S.Bottom(projection(node)))
+        )
+
+        assert document.representations == (R.Reference("Node"), R.Reference("Node"))
+        assert list(document.references) == ["Node"]
+        representation = document.references["Node"]
+        assert isinstance(representation, R.Suspend)
+        assert isinstance(representation.thunk, R.Objects)
+        assert representation.thunk.property_signatures[1] == R.PropertySignature(
+            "next", R.Reference("Node"), is_optional=True
+        )

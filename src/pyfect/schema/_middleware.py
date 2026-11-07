@@ -1,6 +1,7 @@
 """Middleware and decoding defaults (Effect's ``middlewareDecoding``,
 ``middlewareEncoding``, ``catchDecoding``, ``catchEncoding``,
-``withDecodingDefaultKey``, ``withDecodingDefaultTypeKey``).
+``withDecodingDefaultKey``, ``withDecodingDefaultTypeKey``, ``withDecodingDefault``,
+``withDecodingDefaultType``).
 
 A middleware gets the schema's whole parse as an effect (``Some(value)``,
 ``None`` for a missing key, or the failure) and gives the parse to use.
@@ -15,14 +16,23 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect._primitives import known_exit
 from pyfect.exit import Failure, Success
-from pyfect.option import Option
+from pyfect.option import Option, Some
 from pyfect.schema import ast
 from pyfect.schema._arrays import optional_key
 from pyfect.schema._error import SchemaError
+from pyfect.schema._literals import Union
 from pyfect.schema._options import ParseOptions
+from pyfect.schema._primitives import Null
 from pyfect.schema._schema import Bottom, Codec
 from pyfect.schema._transform import DecodeToSchema, decode_to, encode_to, to_encoded, to_type
-from pyfect.schema.getter import Getter, Outcome, omit, passthrough, with_default
+from pyfect.schema.getter import (
+    Getter,
+    Outcome,
+    TransformOptionalEffect,
+    omit,
+    passthrough,
+    with_default,
+)
 from pyfect.schema.issue import Issue
 from pyfect.schema.transformation import Middleware, Transformation
 from pyfect.schema.transformation._transformation import unchanged
@@ -207,3 +217,76 @@ def with_decoding_default_type_key[T, R = Never](
     ``withDecodingDefaultTypeKey``)."""
     require_effect(default, "default")
     return WithDecodingDefaultTypeKey(default, encoding_strategy)
+
+
+def _with_default_nullish[T, R](default: Outcome[T, R]) -> Getter[T, T | None, R]:
+    """A missing value or ``None`` is the outcome of ``default`` (Effect's
+    ``withDefault``, where ``None`` is JavaScript's ``undefined``)."""
+
+    def run(input: Option[T | None], options: ParseOptions) -> Outcome[Option[T], R]:
+        if input is not None and input.value is not None:
+            return Success(Some(input.value))
+        if isinstance(default, Success):
+            return Success(Some(default.value))
+        if isinstance(default, Failure):
+            return default
+        return default.map(Some)
+
+    return TransformOptionalEffect(run)
+
+
+class WithDecodingDefault(Generic[A, R_co]):
+    """``with_decoding_default(default)``: apply with ``.pipe``."""
+
+    __slots__ = ("_default", "_strategy")
+
+    def __init__(self, default: Effect[A, SchemaError, R_co], strategy: EncodingStrategy) -> None:
+        self._default = default
+        self._strategy: EncodingStrategy = strategy
+
+    def __call__[T, RD = Never, RE = Never](
+        self, schema: Codec[T, A, RD, RE], /
+    ) -> DecodeToSchema[T, A | None, RD | R_co, RE]:
+        default = _with_default_nullish(_issue_outcome(self._default))
+        encode: Getter[Any, Any] = omit()
+        if self._strategy == "passthrough":
+            encode = passthrough()
+        transformation: Transformation[Any, Any, Any, Any] = Transformation(default, encode)
+        source = optional_key(Union(to_encoded(schema), Null))
+        return source.pipe(decode_to(schema, transformation))
+
+
+def with_decoding_default[E, R = Never](
+    default: Effect[E, SchemaError, R], /, *, encoding_strategy: EncodingStrategy = "passthrough"
+) -> WithDecodingDefault[E, R]:
+    """A missing struct key or ``None`` decoded as ``default``'s Encoded
+    value (Effect's ``withDecodingDefault``, ``None`` standing for
+    ``undefined``): the key is optional and nullable on the encoded side;
+    ``encoding_strategy="omit"`` leaves it out when encoding."""
+    require_effect(default, "default")
+    return WithDecodingDefault(default, encoding_strategy)
+
+
+class WithDecodingDefaultType(Generic[A, R_co]):
+    """``with_decoding_default_type(default)``: apply with ``.pipe``."""
+
+    __slots__ = ("_default", "_strategy")
+
+    def __init__(self, default: Effect[A, SchemaError, R_co], strategy: EncodingStrategy) -> None:
+        self._default = default
+        self._strategy: EncodingStrategy = strategy
+
+    def __call__[E, RD = Never, RE = Never](
+        self, schema: Codec[A, E, RD, RE], /
+    ) -> DecodeToSchema[A, E | None, RD | R_co, RE]:
+        defaulted = WithDecodingDefault(self._default, self._strategy)(to_type(schema))
+        return defaulted.pipe(encode_to(optional_key(Union(schema, Null))))
+
+
+def with_decoding_default_type[T, R = Never](
+    default: Effect[T, SchemaError, R], /, *, encoding_strategy: EncodingStrategy = "passthrough"
+) -> WithDecodingDefaultType[T, R]:
+    """A missing struct key or ``None`` decoded as ``default``'s Type value
+    (Effect's ``withDecodingDefaultType``)."""
+    require_effect(default, "default")
+    return WithDecodingDefaultType(default, encoding_strategy)

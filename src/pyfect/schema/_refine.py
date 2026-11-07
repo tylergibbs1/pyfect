@@ -8,7 +8,8 @@ so ``.pipe`` checks the schema against them."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, TypeIs, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Generic, Never, TypeIs, TypeVar, cast
 
 from pyfect.schema._schema import Bottom, Codec, Top
 from pyfect.schema.ast import Annotations, Check, Filter, FilterGroup, make_filter_by_guard
@@ -38,27 +39,47 @@ def refine[A, B](guard: Callable[[A], TypeIs[B]], /, **annotations: object) -> R
     return Refine(make_filter_by_guard(guard, annotations or None))
 
 
+# Explicit covariant parameters: a frozen dataclass's fields would make
+# inferred ones invariant (``tests/test_schema_variance.py``).
+T_co = TypeVar("T_co", covariant=True)
+E_co = TypeVar("E_co", covariant=True, default=T_co)
+RD_co = TypeVar("RD_co", covariant=True, default=Never)
+RE_co = TypeVar("RE_co", covariant=True, default=Never)
+
+
+@dataclass(frozen=True, slots=True, eq=False)
+class BrandSchema(Bottom[T_co, E_co, RD_co, RE_co], Generic[T_co, E_co, RD_co, RE_co]):
+    """A branded schema (Effect's ``brand``): the node of ``schema``, the
+    schema it brands, unchanged; ``identifier`` names the brand."""
+
+    schema: Bottom[object, E_co, RD_co, RE_co]
+    identifier: str | None
+
+
 class FromBrand[A, B]:
     """``from_brand(brand)``: apply with ``.pipe``."""
 
-    __slots__ = ("_brand",)
+    __slots__ = ("_brand", "_identifier")
 
-    def __init__(self, brand: Brand[A, B]) -> None:
+    def __init__(self, brand: Brand[A, B], identifier: str | None) -> None:
         self._brand = brand
+        self._identifier = identifier
 
-    def __call__[I, RD, RE](self, schema: Codec[A, I, RD, RE], /) -> Bottom[B, I, RD, RE]:
+    def __call__[I, RD, RE](self, schema: Codec[A, I, RD, RE], /) -> BrandSchema[B, I, RD, RE]:
         bottom = schema.__codec__()
         checks = self._brand.checks
         checked = bottom.check(*checks) if checks else bottom
         # A brand is a ``NewType``: the checked value is the branded one.
-        return cast("Bottom[B, I, RD, RE]", Bottom(checked.ast))
+        return BrandSchema(checked.ast, checked, self._identifier)
 
 
-def from_brand[A, B](brand: Brand[A, B], /) -> FromBrand[A, B]:
+def from_brand[A, B](brand: Brand[A, B], /, *, identifier: str | None = None) -> FromBrand[A, B]:
     """The schema's values branded as ``B``, after ``brand``'s checks:
     ``S.Number.pipe(S.from_brand(Brand[float, Int].check(S.is_int())))``.
-    A nominal brand adds no check."""
-    return FromBrand(brand)
+    A nominal brand adds no check, so it is Effect's ``brand(identifier)``.
+    The result keeps the schema it brands (``.schema``) and
+    ``identifier`` (``.identifier``), as Effect's ``fromBrand``."""
+    return FromBrand(brand, identifier)
 
 
 def make_filter_group[T](

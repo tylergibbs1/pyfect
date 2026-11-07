@@ -1,5 +1,5 @@
-"""ECMAScript patterns in Unicode mode (the ``u`` flag), JSON Schema's regular
-expressions, run on Python's ``re``.
+"""ECMAScript patterns, JSON Schema's regular expressions (Unicode mode, the
+``u`` flag), run on Python's ``re``.
 
 ``translate`` rewrites a pattern to one ``re`` reads the same way and rejects
 what Unicode mode rejects; ``$`` ends the string, ``.`` skips the four line
@@ -8,17 +8,30 @@ match is empty. What ``re`` cannot match alike is refused, not approximated:
 a reference to a group opened later or still open, or to one a loop would clear,
 and a group name used twice. ``\\p{...}`` and a variable width behind run on the
 ``regex`` package (extra ``pyfect-dev[regex]``), and are refused without it.
+
+Flags are JavaScript's (``_flags.py``). Without ``u`` a pattern reads UTF-16 code
+units, so the input is matched as code units; the legacy syntax only that mode
+allows (Annex B) is refused, as is ``i`` there and ``v``.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import cast
 
 from pyfect._digits import is_digits
 from pyfect.schema._checks_string import string_filter
+from pyfect.schema._ecma_flags import (
+    UNICODE,
+    EcmaFlagsError,
+    Mode,
+    code_units,
+    joined_pairs,
+    parse_flags,
+)
 from pyfect.schema.ast import Filter
 
 _ERROR = "Cannot import pattern using ECMAScript Unicode mode."
@@ -45,8 +58,11 @@ _QUANTIFIER = re.compile(r"\{[0-9]+(?:,[0-9]*)?\}")
 _SIMPLE_ESCAPES = {"t": r"\t", "n": r"\n", "v": r"\x0b", "f": r"\x0c", "r": r"\r"}
 
 
-class EcmaPatternError(ValueError):
-    """A pattern that is not valid in Unicode mode, or that ``re`` cannot run."""
+class EcmaPatternError(EcmaFlagsError):
+    """A pattern (or flags) that is not valid ECMAScript, or that ``re`` cannot run."""
+
+
+_LINE_TERMINATOR = "[\\n\\r\\u2028\\u2029]"
 
 
 def _is_hex(text: str) -> bool:
@@ -69,9 +85,12 @@ def _repeats(quantifier: str) -> bool:
 
 
 class _Translation:
-    def __init__(self, source: str, *, properties: bool = False) -> None:
+    def __init__(self, source: str, *, properties: bool = False, mode: Mode = UNICODE) -> None:
         self.source = source
         self.properties = properties
+        self.mode = mode
+        # ``\\p`` and ``i`` compile without ``re.ASCII``, so the sets say ASCII themselves.
+        self.ascii_classes = properties or mode.ignore_case
         self.at = 0
         self.out: list[str] = []
         self.groups: list[_Group] = []
@@ -112,6 +131,13 @@ class _Translation:
     def literal(self, code_point: int) -> str:
         return re.escape(chr(code_point))
 
+    def code_units(self, char: str) -> str:
+        """A source character as the pattern reads it: without ``u``, a code
+        point past the BMP is its two code units."""
+        if self.mode.unicode or ord(char) <= 0xFFFF:
+            return char
+        return "".join(map(re.escape, code_units(char)))
+
     def run(self) -> str:
         while self.at < len(self.source):
             self.atom()
@@ -127,10 +153,13 @@ class _Translation:
                 self.out.append(self.escape(in_class=False))
             case ".":
                 self.at += 1
-                self.out.append(_NOT_LINE_TERMINATOR)
+                self.out.append(r"(?s:.)" if self.mode.dot_all else _NOT_LINE_TERMINATOR)
+            case "^":
+                self.at += 1
+                self.out.append(f"(?:^|(?<={_LINE_TERMINATOR}))" if self.mode.multiline else "^")
             case "$":
                 self.at += 1
-                self.out.append(r"\Z")
+                self.out.append(f"(?={_LINE_TERMINATOR}|\\Z)" if self.mode.multiline else r"\Z")
             case "(":
                 self.group()
             case ")":
@@ -152,7 +181,7 @@ class _Translation:
                 raise EcmaPatternError(_ERROR)
             case _:
                 self.at += 1
-                self.out.append(char)
+                self.out.append(self.code_units(char))
 
     def after_quantifier(self) -> None:
         """A lazy ``?`` may follow; ``re``'s possessive ``a*+`` is not ECMAScript."""
@@ -207,8 +236,11 @@ class _Translation:
 
     def code_point_escape(self) -> int:
         """The code point of ``\\uXXXX`` or ``\\u{X...}``, at the ``u``; a
-        surrogate pair of escapes is one code point."""
+        surrogate pair of escapes is one code point. Without ``u`` it is one
+        code unit, and ``\\u{...}`` is not an escape."""
         self.at += 1
+        if self.peek() == "{" and not self.mode.unicode:
+            raise EcmaPatternError(_ERROR)
         if self.peek() == "{":
             end = self.source.find("}", self.at)
             digits = self.source[self.at + 1 : end] if end > 0 else ""
@@ -221,6 +253,8 @@ class _Translation:
             raise EcmaPatternError(_ERROR)
         self.at += 4
         high = int(digits, 16)
+        if not self.mode.unicode:
+            return high
         low_digits = self.source[self.at + 2 : self.at + 6]
         if (
             0xD800 <= high <= 0xDBFF
@@ -244,7 +278,7 @@ class _Translation:
         match char:
             case "p" | "P" if self.properties:
                 return self.property_escape(char)
-            case "d" | "D" | "w" | "W" if self.properties:
+            case "d" | "D" | "w" | "W" if self.ascii_classes:
                 # ``\\p`` needs ``regex`` without its ASCII flag, so these say ASCII themselves.
                 return _ASCII_SET[char] if in_class else f"[{_ASCII_SET[char]}]"
             case "d" | "D" | "w" | "W":
@@ -256,11 +290,11 @@ class _Translation:
             case "b":
                 if in_class:
                     return r"\x08"
-                return r"(?a:\b)" if self.properties else r"\b"
+                return r"(?a:\b)" if self.ascii_classes else r"\b"
             case "B":
                 if in_class:
                     raise EcmaPatternError(_ERROR)
-                return r"(?a:\B)" if self.properties else r"\B"
+                return r"(?a:\B)" if self.ascii_classes else r"\B"
             case "t" | "n" | "v" | "f" | "r":
                 return _SIMPLE_ESCAPES[char]
             case "0":
@@ -341,36 +375,61 @@ class _Translation:
             is_set = self.peek() in {"d", "D", "w", "W", "s", "S"}
             return self.escape(in_class=True), is_set
         # ``re`` warns of future set syntax on these, and they are literals here.
-        return (f"\\{char}" if char in "[&~|-" else char), False
+        return (f"\\{char}" if char in "[&~|-" else self.code_units(char)), False
 
 
-def translate(source: str) -> str:
-    """``source`` as a ``re`` pattern for ``re.ASCII``; raises
-    ``EcmaPatternError`` for what is not valid in Unicode mode."""
-    return _Translation(source).run()
+def translate(source: str, mode: Mode = UNICODE) -> str:
+    """``source`` as a ``re`` pattern (for ``re.ASCII`` unless ``mode`` ignores
+    case); raises ``EcmaPatternError`` for what is not valid in ``mode``."""
+    translated = _Translation(source, mode=mode).run()
+    return f"\\A(?:{translated})" if mode.sticky else translated
 
 
 @lru_cache(maxsize=256)
-def compile_ecma(source: str) -> re.Pattern[str]:
-    """``source`` compiled; raises ``EcmaPatternError``."""
+def compile_ecma(source: str, flags: str = "u") -> re.Pattern[str]:
+    """``source`` compiled as ``new RegExp(source, flags)`` reads it; raises
+    ``EcmaPatternError``. Without ``u`` the pattern matches code units
+    (``ecma_tester`` converts the input)."""
+    mode = _mode(flags)
     try:
-        return re.compile(translate(source), re.ASCII)
+        return re.compile(translate(source, mode), re.IGNORECASE if mode.ignore_case else re.ASCII)
     except (re.error, EcmaPatternError) as error:
-        return _compile_on_regex(source, error)
+        return _compile_on_regex(source, mode, error)
 
 
-def _compile_on_regex(source: str, refused: Exception) -> re.Pattern[str]:
-    """What ``re`` refuses but the ``regex`` package has; the ``regex`` pattern
-    has ``re.Pattern``'s methods."""
+def _mode(flags: str) -> Mode:
     try:
-        import regex  # pyright: ignore[reportMissingTypeStubs]
+        return parse_flags(flags)
+    except EcmaFlagsError as error:
+        raise EcmaPatternError(str(error)) from None
+
+
+def _compile_on_regex(source: str, mode: Mode, refused: Exception) -> re.Pattern[str]:
+    """What ``re`` refuses but the ``regex`` package has; the ``regex`` pattern
+    has ``re.Pattern``'s methods. ``\\p`` is an escape only in Unicode mode."""
+    if not mode.unicode:
+        raise EcmaPatternError(_ERROR) from refused
+    try:
+        import regex
     except ImportError:
         raise EcmaPatternError(_ERROR) from refused
     try:
-        translated = _Translation(source, properties=True).run()
-        return cast("re.Pattern[str]", regex.compile(translated))  # pyright: ignore[reportUnknownMemberType]
-    except regex.error as error:  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        translated = _Translation(source, properties=True, mode=mode).run()
+        if mode.sticky:
+            translated = f"\\A(?:{translated})"
+        flags = regex.IGNORECASE if mode.ignore_case else 0
+        return cast("re.Pattern[str]", regex.compile(translated, flags))
+    except regex.error as error:
         raise EcmaPatternError(_ERROR) from error
+
+
+def ecma_tester(source: str, flags: str = "u") -> Callable[[str], bool]:
+    """Whether ``new RegExp(source, flags).test(text)`` from the start of the
+    string: in Unicode mode a surrogate pair is one code point, without it
+    the text is read as UTF-16 code units. Raises ``EcmaPatternError``."""
+    regex = compile_ecma(source, flags)
+    convert = joined_pairs if "u" in flags else code_units
+    return lambda text: regex.search(convert(text)) is not None
 
 
 _TERMINATORS = {"\n": "n", "\r": "r", "\u2028": "u2028", "\u2029": "u2029"}
@@ -399,18 +458,19 @@ def canonical_source(source: str) -> str:
     return "".join(out)
 
 
-def is_ecma_pattern(source: str, /, **annotations: object) -> Filter[str]:
-    """A string the ECMAScript pattern ``source`` finds a match in, read in
-    Unicode mode (``/source/u``). JSON Schema's ``pattern`` holds these, and
-    this check writes one back. Unlike ``is_pattern``, it behaves as Effect's
-    ``isPattern(new RegExp(source, "u"))``. Raises ``EcmaPatternError`` for a
-    pattern that does not compile."""
-    regex = compile_ecma(source)
+def is_ecma_pattern(source: str, flags: str = "u", /, **annotations: object) -> Filter[str]:
+    """A string the ECMAScript pattern ``new RegExp(source, flags)`` matches
+    (Effect's ``isPattern``; Unicode mode, ``/source/u``, by default). JSON
+    Schema's ``pattern`` holds these: this check writes one back when the
+    flags are ``u`` with only ``d``, ``g`` or ``y`` (sticky anchors it), as
+    Effect's does. Raises ``EcmaPatternError`` for a pattern or flags that
+    do not compile (``v``, and ``i`` without ``u``, are refused)."""
+    test = ecma_tester(source, flags)
     canonical = canonical_source(source)
     return string_filter(
-        lambda s: regex.search(s) is not None,
+        test,
         f"a string matching the RegExp {canonical}",
         "isPattern",
-        {"source": canonical, "flags": "u"},
+        {"source": canonical, "flags": _mode(flags).flags},
         annotations,
     )

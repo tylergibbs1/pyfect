@@ -77,6 +77,11 @@ A codec decodes one type from another: `NumberFromString`, `Trim`, `DateTimeUtcF
 `BytesFromBase64` and so on. `S.decode_to(target, transformation)` builds your own codec
 from a function each way, and codecs compose inside structs and classes.
 
+`S.to_type(schema)` and `S.to_encoded(schema)` give a codec's two sides as schemas of their
+own. A check on a struct, array or union carries over to the other side when none of its
+parts transforms; when one does, only checks of the shape (a length, a size, a key count)
+carry over, since the parts' values differ.
+
 <CodeOutput>
 
 <include meta='title="transformations.py"'>../../snippets/schema/transformations.py</include>

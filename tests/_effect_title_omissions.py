@@ -47,11 +47,6 @@ _SYMBOLS = (
 _NODE_STREAMS = "Node's streams and `EventTarget`: `process`, `socket` and `http` read Python's own"
 
 NOT_PORTED_OTLP = "NOT_PORTED section 4 row OTLP: the exporters; the `otel` extra's SDK is the path"
-NOT_PORTED_AST = "NOT_PORTED `SchemaAST`'s projections as a unit: its identity and memo titles"
-NOT_PORTED_SCHEMA = (
-    "NOT_PORTED `Schema.test.ts` titles with no port; not checked one by one against Node"
-)
-NOT_PORTED_JSON_SCHEMA = "NOT_PORTED `toJsonSchemaDocument` content and surrogate-pair titles"
 NOT_PORTED_HTTP2 = "NOT_PORTED HTTP/2 on Node's server: `http.hypercorn_server` differs below ASGI"
 
 OMISSIONS: tuple[Omission, ...] = (
@@ -220,11 +215,7 @@ OMISSIONS: tuple[Omission, ...] = (
         "effect/test/schema/toEquivalence.test.ts",
         "effect/test/schema/SchemaParser.test.ts",
     ),
-    *_whole(
-        NOT_PORTED_AST,
-        "effect/test/schema/SchemaAST.test.ts",
-        "effect/test/schema/representation/toRepresentations.test.ts",
-    ),
+    _some("effect/test/schema/SchemaAST.test.ts", _SYMBOLS, r"unique symbol sentinels"),
     *_whole(
         "section 4 `Schema.File` row: form-data getters are not ported with their schemas",
         "effect/test/schema/SchemaGetter.test.ts",
@@ -234,7 +225,6 @@ OMISSIONS: tuple[Omission, ...] = (
         _SYMBOLS,
         r"Any should be|Date|Cause\(Option|top-level AST|named reference|branded members",
     ),
-    *_whole(NOT_PORTED_JSON_SCHEMA, "effect/test/schema/toJsonSchemaDocument.test.ts"),
     _some(
         "effect/test/schema/representation/stringTreeRoundtrip.test.ts",
         "`to_code_document` writes the types into Python source, covered by its own suite",
@@ -247,12 +237,23 @@ OMISSIONS: tuple[Omission, ...] = (
     ),
     _some(
         "effect/test/schema/Schema.test.ts",
-        NOT_PORTED_SCHEMA,
-        r"OptionFromOptionalKey|static|class instances|inherits the schema|assigns options|flow"
-        r"|decoding default"
-        r"|NullishOr|UndefinedOr|optional keys required|optionalKey keys required|mutableKey"
-        r"|Record\(String, optional|Schema.optional|readonlyKey|identifier|name matches"
-        r"|wrapping a|double brand|constructor keeps|extending a rebuilt|schema issue",
+        "section 4 `Schema.mutable` / `mutableKey` / `readonlyKey` row: Python types have no "
+        "`readonly`, so a key has no mutability to set or clear",
+        r"^readonlyKey$|mutableKey\(",
+    ),
+    _some(
+        "effect/test/schema/Schema.test.ts",
+        "section 4 `Schema.UndefinedOr` row: Python has one `None`, so `UndefinedOr` / "
+        "`NullishOr` are `S.NullOr` and `optional` / `requiredKey` / `required` are "
+        "`S.optional_key` and a required TypedDict key",
+        r"^UndefinedOr\(String\)$|^NullishOr\(String\)$|^Schema\.optional:"
+        r"|optional\(Number\)\) should|keys required$",
+    ),
+    _some(
+        "effect/test/schema/Schema.test.ts",
+        "a class constructor is a Python signature (section 4 `Schema.Class` row): an excess "
+        "keyword argument raises `TypeError`, so there is nothing to ignore or strip",
+        r"strips excess properties with explicit ignore",
     ),
     _some(
         "effect/test/schema/Schema.test.ts",
@@ -262,13 +263,15 @@ OMISSIONS: tuple[Omission, ...] = (
     ),
     _some(
         "effect/test/schema/Schema.test.ts",
-        "`class A extends Schema.FiniteFromString`: a Python schema is a value, not a class",
-        r"^subclassing$",
+        "`class A extends Schema.String`: a Python schema is a value, and pyright rejects a value "
+        "as a base class (`__mro_entries__` runs, but: Argument to class must be a base class)",
+        r"^subclassing$|^wrapping a|^inherits the schema protocol$|^extending a rebuilt schema$"
+        r"|^static (getter|property)|^does not create class instances$",
     ),
     _some(
         "effect/test/schema/Schema.test.ts",
         "section 4: `Struct` keys are mapped with Python comprehensions, not `mapFields` helpers",
-        r"evolveEntries|evolveKeys|mapOmit|mapPick|renameKeys",
+        r"evolveEntries|evolveKeys|mapOmit|mapPick|renameKeys|^should work with flow$",
     ),
 )
 

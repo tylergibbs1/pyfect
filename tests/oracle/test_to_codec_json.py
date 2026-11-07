@@ -721,3 +721,30 @@ def test_should_handle_optional_keys() -> None:
     decoding.succeed({})
     decoding.succeed({"a": ["a"]}, {"a": ("a",)})
     decoding.fail({"a": "a"}, 'Expected array\n  at ["a"]')
+
+
+class _MessageError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _MessageError) and other.message == self.message
+
+    __hash__ = None  # pyright: ignore[reportAssignmentType]
+
+
+def _message_of(error: _MessageError) -> str:
+    return error.message
+
+
+def _message_link(_: tuple[ast.AST, ...]) -> ast.Link:
+    return ast.Link(S.String.ast, T.transform(decode=_MessageError, encode=_message_of))
+
+
+def test_arg_message_string() -> None:
+    """toCodecJson / Declaration / instanceOf with annotation / arg: message: string"""
+    schema = S.instance_of(_MessageError, title="MyError", to_codec=_message_link)
+    asserts = SchemaAsserts(S.to_codec_json(schema))
+    asserts.encoding().succeed(_MessageError("a"), "a")
+    asserts.decoding().succeed("a", _MessageError("a"))

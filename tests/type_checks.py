@@ -4163,10 +4163,33 @@ def check_schema_checks(unknown: object) -> None:
 
     Small = NewType("Small", float)
     small = Brand[float, Small].check(S.is_less_than(10))
-    assert_type(S.Number.pipe(S.from_brand(small)), S.Bottom[Small, float])
+    assert_type(S.Number.pipe(S.from_brand(small)), S.BrandSchema[Small, float, Never, Never])
     S.String.pipe(S.from_brand(small))  # pyright: ignore[reportArgumentType]
     assert_type(S.resolve_annotations(S.String), S.ast.Annotations | None)
     _ = ones
+
+
+def check_brands_and_decoding_defaults() -> None:
+    from typing import NewType
+
+    from pyfect.brand import Brand
+
+    Small = NewType("Small", float)
+    branded = S.Number.pipe(S.from_brand(Brand[float, Small].nominal(), identifier="Small"))
+    assert_type(branded, S.BrandSchema[Small, float, Never, Never])
+    assert_type(branded.schema, S.Bottom[object, float, Never, Never])
+    assert_type(branded.identifier, str | None)
+    assert_type(
+        S.FiniteFromString.pipe(S.with_decoding_default(fx.succeed("1"))),
+        S.DecodeToSchema[float, str | None, Never, Never],
+    )
+    assert_type(
+        S.FiniteFromString.pipe(S.with_decoding_default_type(fx.succeed(1.0))),
+        S.DecodeToSchema[float, str | None, Never, Never],
+    )
+    S.FiniteFromString.pipe(S.with_decoding_default(fx.succeed(1)))  # pyright: ignore[reportArgumentType]
+    zero = S.Literal(0).transform("a")
+    assert_type(zero, S.DecodeToSchema[Literal["a"], int, Never, Never])
 
 
 def check_schema_structs(unknown: object) -> None:
@@ -4304,6 +4327,19 @@ def check_schema_errors(failing: fx.Effect[int, _NotFound | _Invalid]) -> None:
     assert_type(S.decode_unknown_sync(_NotFound)(None), _NotFound)
     _NotFound(id=1).id = 2  # pyright: ignore[reportAttributeAccessIssue]
     _ = found
+
+
+def check_schema_ast_projections() -> None:
+    string = S.ast.String()
+    assert_type(S.ast.replace_checks(string, None), S.ast.String)
+    assert_type(S.ast.replace_encoding(string, None), S.ast.String)
+    assert_type(S.ast.map_or_same((string,), lambda node: node), tuple[S.ast.String, ...])
+    assert_type(S.ast.collect_sentinels(string), tuple[S.ast.Sentinel, ...])
+    assert_type(S.ast.structural_checks((S.is_min_length(1),)), S.ast.Checks | None)
+    assert_type(S.ast.get_index_signature_keys({"a": 1}, string), list[Any])
+    type_side_only = S.optional_key(S.NumberFromString).pipe(S.encode_to(S.String))
+    assert_type(type_side_only, S.OptionalKey[float, str, Never, Never])
+    S.optional_key(S.String).pipe(S.encode_to(S.NumberFromString))  # pyright: ignore[reportArgumentType]
 
 
 def check_schema_composites(unknown: object) -> None:
@@ -9043,6 +9079,16 @@ def schema_representation_types() -> None:
     assert_type(code.codes[0], R.Code)
     assert_type(R.to_code_module(code), str)
     assert_type(S.is_ecma_pattern("^a"), S.Filter[str])
+    assert_type(S.is_ecma_pattern("^a", "iu"), S.Filter[str])
+    # Without a reviver ``parse_json`` gives JSON; a reviver may return anything.
+    assert_type(S.getter.parse_json(), S.getter.Getter[Json, str])
+    assert_type(S.getter.parse_json(reviver=lambda _, v: v), S.getter.Getter[object, str])
+    assert_type(S.getter.stringify_json(replacer=["a", 0]), S.getter.Getter[str, object])
+    assert_type(
+        S.from_json_string(S.Boolean, reviver=lambda _, v: v, replacer=lambda _, v: v),
+        S.DecodeToSchema[bool, str],
+    )
+    S.getter.stringify_json(replacer="a")  # pyright: ignore[reportArgumentType]
 
     class Minimum(_TypedDict):
         minimum: float

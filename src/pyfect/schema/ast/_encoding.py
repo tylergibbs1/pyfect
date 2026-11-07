@@ -107,5 +107,13 @@ def optional_key[A: AST](ast: A) -> A:
 
 
 def to_encoded(ast: AST) -> AST:
-    """The node's encoded side, as a node of its own (Effect's ``toEncoded``)."""
-    return ast.flip().to_type()
+    """The node's encoded side, as a node of its own (Effect's ``toEncoded``):
+    made once, and its own encoded side."""
+    memo = ast._encoded_side  # pyright: ignore[reportPrivateUsage]
+    if not memo:
+        encoded = ast.flip().to_type()
+        memo.append(encoded)
+        own = encoded._encoded_side  # pyright: ignore[reportPrivateUsage]
+        if not own:
+            own.append(encoded)
+    return memo[0]

@@ -28,6 +28,8 @@ from pyfect.exit import fail as fail_exit
 from pyfect.option import Option, Some
 from pyfect.schema._options import ParseOptions
 from pyfect.schema.getter import (
+    JsonReplacer,
+    JsonReviver,
     big_int,
     camel_to_snake,
     decode_base64,
@@ -282,12 +284,19 @@ string_from_uri_component: Transformation[str, str] = Transformation(
 )
 
 
-def from_json_string(*, space: int | str | None = None) -> Transformation[object, str]:
-    """A JSON value and its text, indented by ``space`` (Effect's
-    ``fromJsonString``)."""
-    return Transformation(
-        parse_json(), stringify_json(space=space), Content("application/json", preserve_schema=True)
-    )
+def from_json_string(
+    *,
+    reviver: JsonReviver | None = None,
+    replacer: JsonReplacer | None = None,
+    space: int | str | None = None,
+) -> Transformation[object, str]:
+    """A JSON value and its text: parsed with ``reviver``, written through
+    ``replacer`` and indented by ``space`` (Effect's ``fromJsonString``).
+    With a ``reviver`` or ``replacer`` the text's content no longer has the
+    decoded side's schema, so JSON Schema says only its media type."""
+    decode = parse_json() if reviver is None else parse_json(reviver=reviver)
+    content = Content("application/json", preserve_schema=reviver is None and replacer is None)
+    return Transformation(decode, stringify_json(replacer=replacer, space=space), content)
 
 
 def option_from_null_or[T]() -> Transformation[Option[T], T | None]:

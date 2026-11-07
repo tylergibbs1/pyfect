@@ -44,9 +44,6 @@ Omitted:
   "Class / Struct with nested Class": ported in
   ``test_schema_constructor_default.py``.
 - "Class / should be compatible with `immer` / ...": no immer.
-- "TaggedError / name matches tag", "... matches identifier", "...
-  matches identifier after extend": a Python exception has no ``name``;
-  its class names it.
 """
 
 import traceback
@@ -627,6 +624,60 @@ def test_tagged_error_struct_argument():
     assert error._tag == "E"  # pyright: ignore[reportPrivateUsage]
     assert error.id == 1
     assert sorted(E.fields()) == ["_tag", "id"]
+
+
+def test_tagged_error_name_matches_tag():
+    """TaggedError / name matches tag"""
+
+    class E(S.TaggedError, tag="TaggedErrorName"):
+        id: float
+
+    assert E(id=1).name == "TaggedErrorName"
+
+
+def test_tagged_error_name_matches_identifier():
+    """TaggedError / name matches identifier"""
+
+    class E(S.TaggedError, tag="B", identifier="A"):
+        a: float
+
+    assert E(a=1).name == "A"
+
+
+def test_tagged_error_name_matches_identifier_after_extend():
+    """TaggedError / name matches identifier after extend"""
+
+    class E(S.TaggedError, tag="B", identifier="A"):
+        a: float
+
+    class E2(E, identifier="C"):
+        b: str
+
+    assert E2(a=1, b="b").name == "C"
+
+
+def test_error_name_is_the_identifier_or_the_class_name():
+    class Named(S.Error, identifier="A"):
+        pass
+
+    class Unnamed(S.Error):
+        pass
+
+    assert Named().name == "A"
+    assert Unnamed().name == "Unnamed"
+
+
+def test_error_field_called_name_wins_over_the_name():
+    class E(S.TaggedError, tag="E", identifier="A"):
+        name: str
+
+    class Sub(E):
+        extra: int
+
+    assert E(name="field").name == "field"
+    assert Sub(name="field", extra=1).name == "field"
+    with pytest.raises(TypeError):
+        E()  # pyright: ignore[reportCallIssue]
 
 
 def test_tagged_error_zero_field_tagged_error_allows_omitting_props_argument():

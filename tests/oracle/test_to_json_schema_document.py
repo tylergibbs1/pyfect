@@ -1,10 +1,10 @@
 """Ports of Effect's ``toJsonSchemaDocument.test.ts``. Each test's docstring
-is the Effect test title, prefixed by its ``describe`` blocks.
+is the Effect test title, prefixed by its ``describe`` blocks. The pattern and
+string-length titles are in ``test_to_json_schema_document_patterns.py``, the
+"fromJsonString" ones in ``test_to_json_schema_document_content.py``.
 
 ``assertJsonSchemaDocument`` is ``_check`` (``on_excess_property="error"``
-unless a test says otherwise); its Ajv meta-schema validation and the
-``assertJsonSchemaAcceptsEffectValues`` assertions are left out (no JSON
-Schema validator dependency).
+unless a test says otherwise); its Ajv meta-schema validation is left out.
 
 Python differs in a few places, each kept as the expected value:
 - ``len`` of a ``str`` counts code points, as ``minLength`` does, so string
@@ -13,39 +13,21 @@ Python differs in a few places, each kept as the expected value:
   selects keys by an exact pattern.
 - A ``timedelta`` cannot be infinite: ``Duration`` has no infinity forms.
 - ``is_pattern`` takes a Python ``re`` pattern, which JSON Schema cannot
-  carry: it is left out.
+  carry: it is left out. ``is_ecma_pattern`` is Effect's ``isPattern``.
+- ``Schema.Date`` is ``S.DateTimeUtc``, ``MutableJson`` is ``S.Json`` and
+  ``UndefinedOr`` is ``NullOr`` (section 4).
 
-Omitted:
-- Symbols, ``undefined``, ``void``, bigint literals, unique symbols and
-  ``ObjectKeyword`` (no Python counterpart): "rejects symbol property
-  names", "Record(Symbol, Finite)", "Symbol", "UniqueSymbol", "Void",
-  "Undefined", "Literal / bigint", "ObjectKeyword", "Struct / optional /
-  ...", "Struct / UndefinedOr / ...".
-- JavaScript regexp flags and surrogate pairs: the "isPattern" titles
-  beyond the first, "loosens literal patterns only at surrogate-pair
-  boundaries", "omits literal patterns whose entire constraint is a
-  surrogate-pair boundary", "does not use approximate literal patterns as
-  record selectors", "exports the tightest code-point bounds that accept
-  every valid string" (Python lengths are exact).
-- Ported in ``test_schema_errors.py`` ("Declaration / Error") and
-  ``test_schema_struct_with_rest.py`` (the ``StructWithRest`` titles; the
-  surrogate-pair and template ones stay omitted, see above and below).
-- "TemplateLiteral segments / keeps oneOf when a check on the whole
-  template is exported exactly": its check is an ``isPattern``, which
-  pyfect leaves out (see above), so the union is loosened.
-- Not yet ported schemas: ``RegExp``, ``Date``,
-  ``MutableJson``, ``JsonObject``, ``fromJsonString`` (its ``contentSchema``
-  derivation) and every "fromJsonString" title.
-- Validation-only titles: "exports both applicable bounds when the input
-  type is a union", "rejects non-finite cardinality bounds" (a size check
-  takes an ``int``).
-- toCodecGoJson titles ("describes the nil values written by Go as null",
-  "describes recursive schemas"): ``toCodecGoJson`` is not ported yet.
-- "String & annotateKey"-style struct titles with ``encodeTo`` key
-  transformations ("optionalKey(String) to String", "optionalKey to
-  required key", "reuses one definition when the same identified AST
-  appears in different schema shapes"): key transformations are a later
-  cluster.
+Not ported here:
+- Symbols, ``undefined``, ``void`` and bigint literals (no Python
+  counterpart): "rejects symbol property names", "Record(Symbol, Finite)",
+  "Symbol", "UniqueSymbol", "Literal / bigint".
+- Ported in ``test_schema_errors.py`` ("Declaration / Error"),
+  ``test_schema_struct_with_rest.py`` (the ``StructWithRest`` titles) and
+  ``test_schema_object_keyword.py`` ("Void", "Undefined", "ObjectKeyword").
+- "rejects non-finite cardinality bounds": a size check takes an ``int``, so
+  pyright rejects ``NaN`` and the infinities.
+- Keys optional on the decoded side only (``optionalKey(...)`` then
+  ``encodeTo``) are in ``tests/_effect_title_omissions.py``.
 """
 
 import enum
@@ -54,8 +36,12 @@ from typing import Any, Literal, Never, NotRequired, TypedDict
 
 import pytest
 
+from pyfect import effect as fx
 from pyfect import schema as S
 from pyfect.json_schema import JsonSchema
+from pyfect.option import Option, Some
+from pyfect.schema import getter as G
+from pyfect.schema import transformation as T
 
 _MAX_SAFE = 2**53 - 1
 _MIN_SAFE = -_MAX_SAFE
@@ -1910,4 +1896,189 @@ def test_on_excess_property_applies_to_properties_not_covered_by_pattern_propert
             "patternProperties": {"^x-[\\s\\S]*?$": _NUMBER},
             "additionalProperties": False,
         },
+    )
+
+
+# --- Titles the module once listed as omitted.
+
+_STRING: JsonSchema = {"type": "string"}
+
+
+class _NullableA(TypedDict):
+    a: str | None
+
+
+def test_struct_undefined_or_string_to_string():
+    """Struct / UndefinedOr / UndefinedOr(String) to String"""
+    # ``UndefinedOr`` is ``NullOr`` here (section 4); ``s ?? ""`` is ``s or ""``.
+    field = S.String.pipe(
+        S.decode_to(
+            S.NullOr(S.String),
+            T.Transformation(G.passthrough_subtype(), G.transform(lambda s: s or "")),
+        )
+    )
+    _check(S.Struct(_NullableA, a=field), _object_a(_STRING))
+
+
+class _Shapes(TypedDict):
+    a: str
+    b: str | None
+    c: NotRequired[str]
+    d: NotRequired[str | None]
+    e: str | None
+
+
+def _or_else_null(o: Option[str]) -> Option[str | None]:
+    """``Option.orElseSome(() => null)``."""
+    return Some(None) if o is None else o
+
+
+def _not_null(o: Option[str | None]) -> Option[str]:
+    """``Option.filter(Predicate.isNotNull)``."""
+    return None if o is None or o.value is None else Some(o.value)
+
+
+def test_reuses_one_definition_for_an_identified_ast_in_different_shapes():
+    """reuses one definition when the same identified AST appears in different schema shapes"""
+    x = S.String.annotate(title="X", identifier="X")
+    e = S.NullOr(x).pipe(
+        S.encode_to(
+            S.optional_key(x),
+            T.Transformation(G.transform_optional(_or_else_null), G.transform_optional(_not_null)),
+        )
+    )
+    ref: JsonSchema = {"$ref": "#/$defs/X"}
+    nullable: JsonSchema = {"anyOf": [ref, {"type": "null"}]}
+    _check(
+        S.Struct(_Shapes, a=x, b=S.NullOr(x), c=x, d=S.NullOr(x), e=e),
+        {
+            "type": "object",
+            "properties": {"a": ref, "b": nullable, "c": ref, "d": nullable, "e": ref},
+            "required": ["a", "b"],
+            "additionalProperties": False,
+        },
+        {"X": {"type": "string", "title": "X"}},
+    )
+
+
+def test_mutable_json():
+    """MutableJson"""
+    # ``S.Json`` is already mutable (section 4: ``MutableJson`` is ``S.Json``).
+    _check(S.Json, {})
+
+
+def test_json_object():
+    """Record / JsonObject"""
+    _check(S.JsonObject, {"type": "object"})
+
+
+def test_date():
+    """Declaration / Date"""
+    # ``Schema.Date`` is ``S.DateTimeUtc`` (section 4).
+    _check(S.DateTimeUtc, {"type": "string"})
+
+
+class _GoFields(TypedDict):
+    a: str
+    b: NotRequired[float]
+    c: tuple[str, ...]
+
+
+def test_to_codec_go_json_describes_the_nil_values_written_by_go_as_null():
+    """toCodecGoJson / describes the nil values written by Go as null"""
+    schema = S.to_codec_go_json(S.Struct(_GoFields, b=S.FiniteFromString, c=S.Array(S.String)))
+    _check(
+        schema,
+        {
+            "type": "object",
+            "properties": {
+                "a": _STRING,
+                "b": {"anyOf": [_STRING, {"type": "null"}]},
+                "c": {"anyOf": [{"type": "array", "items": _STRING}, {"type": "null"}]},
+            },
+            "required": ["a", "c"],
+            "additionalProperties": False,
+        },
+    )
+
+
+class _GoNode(TypedDict):
+    Children: tuple["_GoNode", ...]
+
+
+def test_to_codec_go_json_describes_recursive_schemas():
+    """toCodecGoJson / describes recursive schemas"""
+    node: Any = None
+    node = S.Struct(_GoNode, Children=S.Array(S.suspend(lambda: node))).annotate(identifier="Node")
+    _check(
+        S.to_codec_go_json(node),
+        {"$ref": "#/$defs/Node"},
+        {
+            "Node": {
+                "type": "object",
+                "properties": {
+                    "Children": {
+                        "anyOf": [
+                            {"type": "array", "items": {"$ref": "#/$defs/Node"}},
+                            {"type": "null"},
+                        ]
+                    }
+                },
+                "required": ["Children"],
+                "additionalProperties": False,
+            }
+        },
+    )
+
+
+# --- optional on the type side only ------------------------------------------------------
+
+
+def _or_empty() -> T.Transformation[str, str]:
+    """``{ decode: passthrough(), encode: withDefault(Effect.succeed("")) }``."""
+    return T.Transformation(G.passthrough(), G.with_default(fx.succeed("")))
+
+
+class _OptionalNullableA(TypedDict):
+    a: NotRequired[str | None]
+
+
+def test_struct_optional_key_string_to_string():
+    """Struct / optionalKey / optionalKey(String) to String"""
+    field = S.optional_key(S.String).pipe(S.encode_to(S.String, _or_empty()))
+    schema = S.Struct(_OptionalA, a=field.schema)
+    _check(schema, _object_a(_STRING))
+    assert S.decode_unknown_sync(schema)({}) == {}
+    assert S.encode_sync(schema)({}) == {"a": ""}
+
+
+def test_struct_optional_string_to_string():
+    """Struct / optional / optional(String) to String"""
+    # ``optional`` is ``optional_key`` of ``NullOr`` here (section 4).
+    transformation: T.Transformation[str | None, str] = T.Transformation(
+        G.passthrough_supertype(), G.with_default(fx.succeed(""))
+    )
+    field = S.optional_key(S.NullOr(S.String)).pipe(S.encode_to(S.String, transformation))
+    schema = S.Struct(_OptionalNullableA, a=field.schema)
+    _check(schema, _object_a(_STRING))
+    assert S.encode_sync(schema)({}) == {"a": ""}
+
+
+def _optional_element_to_string() -> S.Codec[tuple[str, ...], tuple[str, ...]]:
+    return S.Tuple(S.optional_key(S.String).pipe(S.encode_to(S.String, _or_empty())))
+
+
+def test_tuple_optional_key_string_to_string():
+    """Tuple / optionalKey / optionalKey(String) to String"""
+    schema = _optional_element_to_string()
+    _check(schema, {"type": "array", "prefixItems": [_STRING], "minItems": 1, "maxItems": 1})
+    assert S.decode_unknown_sync(schema)(()) == ()
+    assert S.encode_sync(schema)(()) == ("",)
+
+
+def test_tuple_optional_key_to_required_key():
+    """Tuple / optionalKey to required key"""
+    _check(
+        _optional_element_to_string(),
+        {"type": "array", "prefixItems": [_STRING], "minItems": 1, "maxItems": 1},
     )

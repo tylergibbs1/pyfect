@@ -24,6 +24,7 @@ from pyfect.schema.ast._annotations import (
 from pyfect.schema.ast._arrays import Arrays, Element
 from pyfect.schema.ast._base import (
     AST,
+    STRUCTURAL,
     Annotations,
     Checks,
     Refinement,
@@ -32,9 +33,14 @@ from pyfect.schema.ast._base import (
     invalid_type,
     issue_of,
     join_checks,
+    map_or_same,
+    replace_checks,
     replace_context,
+    replace_encoding,
+    structural_checks,
     with_constructor_default,
 )
+from pyfect.schema.ast._candidates import SENTINELS, Sentinel, collect_sentinels
 from pyfect.schema.ast._check import (
     Check,
     Filter,
@@ -98,7 +104,12 @@ from pyfect.schema.ast._literal import (
     format_literal,
     same_literal,
 )
-from pyfect.schema.ast._objects import IndexSignature, Objects, PropertySignature
+from pyfect.schema.ast._objects import (
+    IndexSignature,
+    Objects,
+    PropertySignature,
+    get_index_signature_keys,
+)
 from pyfect.schema.ast._record import record
 from pyfect.schema.ast._result import (
     MISSING,
@@ -130,7 +141,9 @@ __all__ = [
     "FINITE_PATTERN",
     "MISSING",
     "MISSING_EXIT",
+    "SENTINELS",
     "STRING_PATTERN",
+    "STRUCTURAL",
     "Annotations",
     "Any",
     "Arrays",
@@ -165,6 +178,7 @@ __all__ = [
     "ParseResult",
     "PropertySignature",
     "Refinement",
+    "Sentinel",
     "String",
     "Suspend",
     "TemplateLiteral",
@@ -179,10 +193,12 @@ __all__ = [
     "call",
     "check_instance",
     "collect_issues",
+    "collect_sentinels",
     "decode_to",
     "filter_of",
     "flat_map",
     "format_literal",
+    "get_index_signature_keys",
     "has_check",
     "invalid_type",
     "is_exit",
@@ -195,6 +211,7 @@ __all__ = [
     "make_filter",
     "make_filter_by_guard",
     "map_issue",
+    "map_or_same",
     "map_value",
     "match_part",
     "never",
@@ -204,7 +221,9 @@ __all__ = [
     "optional_key",
     "parse_at_key",
     "record",
+    "replace_checks",
     "replace_context",
+    "replace_encoding",
     "resolve_at",
     "resolve_description",
     "resolve_identifier",
@@ -215,6 +234,7 @@ __all__ = [
     "string_tree",
     "struct",
     "struct_with_rest",
+    "structural_checks",
     "then",
     "to_effect",
     "to_encoded",

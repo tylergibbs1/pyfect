@@ -48,6 +48,13 @@ from pyfect.schema import transformation as T
 from pyfect.schema._to_formatter import Formatter
 
 
+def test_template_literal():
+    """TemplateLiteral"""
+    format = S.to_formatter(S.TemplateLiteral(S.Literal("a"), S.String))
+    assert format("a") == '"a"'
+    assert format("ab") == '"ab"'
+
+
 def test_never():
     """Never"""
     assert S.to_formatter(S.Never)(1) == "never"  # pyright: ignore[reportArgumentType]

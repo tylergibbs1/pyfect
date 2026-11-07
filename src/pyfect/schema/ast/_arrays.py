@@ -13,7 +13,7 @@ The input is a ``list`` or a ``tuple``; the output is a new ``tuple``, or a
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from typing import cast, final
 
@@ -24,9 +24,9 @@ from pyfect.schema.ast._base import (
     AST,
     at_key,
     construct_missing,
+    encoded_optional,
     invalid_type,
     issue_of,
-    join_checks,
 )
 from pyfect.schema.ast._result import MISSING, ParseResult
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, run_steps
@@ -45,7 +45,7 @@ class Element:
     def optional_when_encoded(self) -> bool:
         """Whether the position may be missing from the encoded input (it is
         optional, or a decoding default fills it)."""
-        return self.optional or self.type.flip().optional_key
+        return encoded_optional(self.type, optional=self.optional)
 
 
 def _check_order(elements: Sequence[Element], rest: Sequence[AST]) -> None:
@@ -96,13 +96,15 @@ class Arrays(AST):
         return replace(flipped, checks=self.encoding_checks, encoding_checks=self.checks)
 
     def _to_type(self) -> Arrays:
-        typed = self.map_types(lambda t: t.to_type())
-        if self.encoding_checks is None:
-            return typed
-        # The encoded side's checks hold for the decoded one when no part
-        # transforms.
-        checks = join_checks(self.checks, self.encoding_checks) if typed is self else self.checks
-        return replace(typed, checks=checks, encoding_checks=None)
+        return self.map_types(lambda t: t.to_type())
+
+    def children(self) -> Iterator[AST]:
+        for e in self.elements:
+            yield e.type
+        yield from self.rest
+
+    def _keeps_structural_checks(self) -> bool:
+        return True
 
 
 @final

@@ -17,6 +17,7 @@ from pyfect.schema._error import SchemaError
 SYNC = "Sync adapter can only throw schema errors"
 OPTION = "Option adapter can only return none for schema issues"
 RESULT = "Result adapter can only return schema issues"
+PROMISE = "Promise adapter can only reject schema errors"
 GUARD = "Type guard adapter can only return false for schema issues"
 ASSERTION = "Assertion adapter can only throw schema issues"
 CONSTRUCTOR = "Constructor adapter can only throw schema issues"

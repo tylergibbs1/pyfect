@@ -8,13 +8,10 @@ an ``int`` is a JSON number, a ``bigint`` not being a separate type; a
 JSON object is any ``Mapping`` with ``str`` keys, a JSON array a ``list``
 or ``tuple``.
 
+The AST updates, projections, sentinels, index signature keys and records
+are in ``test_schema_ast_projections.py``.
+
 Omitted:
-- "mapOrSame / ...", "AST updates / ...", "stores constructor defaults
-  directly in the context", the "toType / ..." titles, "Union options /
-  preserves the complete options object through recur and flip",
-  "getIndexSignatureKeys / ...", "record / ...", "IndexSignature / ...":
-  internals of Effect's AST (contexts, encodings, encoding checks) that
-  pyfect's nodes do not have, or that the struct and record ports cover.
 - "isJson" sparse arrays, getters, symbols, ``Date``, ``RegExp``,
   ``Uint8Array``, null-prototype and cross-realm objects: JavaScript
   values; their Python counterparts (a ``datetime``, a ``set``, an
@@ -23,19 +20,12 @@ Omitted:
   class instances: JavaScript values (a ``set``, a ``datetime`` and an
   ``object`` stand for them); ``null`` is ``None``, a missing leaf, so
   ``None`` is a string tree here.
-- "collectSentinels / ...": internal; each case is covered through
-  ``candidates`` and union decoding (``tests/oracle/test_schema_checks.py``
-  and ``test_schema_composites.py``). "... / Declaration / ~sentinels" and
-  "getCandidateIndex / should handle function-valued declarations with
-  sentinels", "... should deduplicate repeated declaration sentinels":
-  declarations carry no sentinels in pyfect.
 - "getCandidateIndex / literal-only union with a unique symbol", "...
   tagged tuples with unique symbol sentinels": no symbols.
-- "getCandidateIndex / should protect cached common sentinel candidates
-  from external mutation", "... should reuse the candidates of a runtime
-  type without literals", "... should reuse non-discriminated candidates of
-  a tagged union": identity and freezing of Effect's cached arrays; each
-  call returns a new list here.
+- "getCandidateIndex / should reuse the candidates of a runtime type
+  without literals", "... should reuse non-discriminated candidates of a
+  tagged union": identity and freezing of Effect's cached arrays; each call
+  returns a new list here.
 """
 
 from collections.abc import Callable

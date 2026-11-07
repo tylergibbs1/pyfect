@@ -222,13 +222,17 @@ from pyfect.schema._middleware import (
     EncodingStrategy,
     MiddlewareDecoding,
     MiddlewareEncoding,
+    WithDecodingDefault,
     WithDecodingDefaultKey,
+    WithDecodingDefaultType,
     WithDecodingDefaultTypeKey,
     catch_decoding,
     catch_encoding,
     middleware_decoding,
     middleware_encoding,
+    with_decoding_default,
     with_decoding_default_key,
+    with_decoding_default_type,
     with_decoding_default_type_key,
 )
 from pyfect.schema._net import (
@@ -361,6 +365,7 @@ from pyfect.schema._primitives import (
 )
 from pyfect.schema._record import Record, RecordSchema
 from pyfect.schema._refine import (
+    BrandSchema,
     FromBrand,
     Refine,
     from_brand,
@@ -479,6 +484,7 @@ __all__ = [
     "BooleanLiterals",
     "Bottom",
     "Bound",
+    "BrandSchema",
     "ByteSize",
     "ByteSizeFromBigInt",
     "ByteSizeFromNumber",
@@ -722,7 +728,9 @@ __all__ = [
     "UnknownFromJsonString",
     "Void",
     "WithConstructorDefault",
+    "WithDecodingDefault",
     "WithDecodingDefaultKey",
+    "WithDecodingDefaultType",
     "WithDecodingDefaultTypeKey",
     "asserts",
     "ast",
@@ -875,7 +883,9 @@ __all__ = [
     "transformation",
     "variant_schema",
     "with_constructor_default",
+    "with_decoding_default",
     "with_decoding_default_key",
+    "with_decoding_default_type",
     "with_decoding_default_type_key",
 ]
 

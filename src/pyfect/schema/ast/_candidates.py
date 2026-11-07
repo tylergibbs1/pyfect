@@ -18,6 +18,7 @@ from pyfect.logger._text import format_unknown, json_quote
 from pyfect.schema.ast._arrays import Arrays
 from pyfect.schema.ast._base import AST
 from pyfect.schema.ast._class import Class
+from pyfect.schema.ast._declaration import Declaration
 from pyfect.schema.ast._encoding import Encoding, to_encoded
 from pyfect.schema.ast._keywords import BigInt, Boolean, Never, Null, Number, String, Unknown
 from pyfect.schema.ast._literal import Enum, Literal, LiteralValue, same_literal
@@ -27,10 +28,12 @@ from pyfect.schema.ast._suspend import Suspend
 if TYPE_CHECKING:
     from pyfect.schema.ast._union import Union
 
-ALL = frozenset({"null", "string", "number", "bigint", "boolean", "array", "object"})
+ALL = frozenset({"null", "string", "number", "bigint", "boolean", "array", "object", "function"})
 NOT_NULL = ALL - {"null"}
 OBJECT = frozenset({"object"})
 ARRAY = frozenset({"array"})
+FUNCTION = frozenset({"function"})
+"""A callable's kind (JavaScript's ``typeof`` a function)."""
 
 _VALUE_KINDS: tuple[tuple[type, frozenset[str]], ...] = (
     (type(None), frozenset({"null"})),
@@ -53,7 +56,10 @@ _NODE_KINDS: tuple[tuple[type[AST], frozenset[str]], ...] = (
 
 def kind_of(value: object) -> frozenset[str]:
     """The kinds a value is (a Python ``int`` is a number and a bigint)."""
-    return next((kinds for t, kinds in _VALUE_KINDS if isinstance(value, t)), OBJECT)
+    found = next((kinds for t, kinds in _VALUE_KINDS if isinstance(value, t)), None)
+    if found is not None:
+        return found
+    return FUNCTION if callable(value) and not isinstance(value, Mapping) else OBJECT
 
 
 def _literal_kind(literal: LiteralValue) -> frozenset[str]:
@@ -71,11 +77,33 @@ def _members(ast: AST) -> tuple[AST, ...] | None:
     return ast.types if isinstance(ast, Union) else None
 
 
-def kinds(ast: AST) -> frozenset[str]:  # noqa: PLR0911
+class _Memo:
+    """``_settled`` and ``collect_sentinels`` of the nodes seen in one
+    computation: a union's members are often shared, so each is done once
+    (Effect memoizes ``toCandidate``). A key's node is kept with its value,
+    so its ``id`` stays its own."""
+
+    __slots__ = ("kinds", "sentinels", "settled")
+
+    def __init__(self) -> None:
+        self.kinds: dict[int, tuple[AST, frozenset[str]]] = {}
+        self.settled: dict[int, tuple[AST, AST]] = {}
+        self.sentinels: dict[int, tuple[AST, tuple[Sentinel, ...]]] = {}
+
+
+def _kinds(ast: AST, memo: _Memo) -> frozenset[str]:
+    found = memo.kinds.get(id(ast))
+    if found is None:
+        found = (ast, _kinds_of(ast, memo))
+        memo.kinds[id(ast)] = found
+    return found[1]
+
+
+def _kinds_of(ast: AST, memo: _Memo) -> frozenset[str]:  # noqa: PLR0911
     """The kinds of input ``ast`` may accept (Effect's ``getCandidateTypes``)."""
     members = _members(ast)
     if members is not None:
-        return frozenset[str]().union(*map(kinds, members))
+        return frozenset[str]().union(*(_kinds(member, memo) for member in members))
     match ast:
         case Literal(literal=literal):
             return _literal_kind(literal)
@@ -95,55 +123,88 @@ type Sentinel = tuple[Hashable, LiteralValue]
 """A required key (or a tuple's index) and the literal it must hold."""
 
 
-def _input_side(ast: AST) -> AST:
+def _input_side(ast: AST, memo: _Memo) -> AST:
     """The node of what the member takes as input (Effect's ``toCandidate``).
     A suspended member takes anything: selecting candidates never makes it
     (it may be the union itself)."""
-    return Unknown() if isinstance(ast, Suspend) else _settled(ast).flip().to_type()
+    return Unknown() if isinstance(ast, Suspend) else _settled(ast, memo).flip().to_type()
 
 
-def _settled(ast: AST) -> AST:
+def _settled(ast: AST, memo: _Memo) -> AST:
     """``ast`` with every part whose failures a middleware sees (and may
     recover from, as ``catch_decoding`` does) taken as ``Unknown``: such a
     part may take any input and holds no sentinel (Effect's ``toCandidate``)."""
+    found = memo.settled.get(id(ast))
+    if found is None:
+        found = (ast, _settle(ast, memo))
+        memo.settled[id(ast)] = found
+    return found[1]
+
+
+def _settle(ast: AST, memo: _Memo) -> AST:
     encoding = ast.encoding
     if encoding is not None:
-        return _settled_encoding(ast, encoding)
+        return _settled_encoding(ast, encoding, memo)
     members = _members(ast)
     if members is not None:
-        return cast("Union", ast).map_types(_settled)
+        return cast("Union", ast).map_types(lambda member: _settled(member, memo))
     match ast:
         case Objects(properties=properties):
-            types = [_settled(p.type) for p in properties]
+            types = [_settled(p.type, memo) for p in properties]
             if all(t is p.type for t, p in zip(types, properties, strict=True)):
                 return ast
             settled = (replace(p, type=t) for t, p in zip(types, properties, strict=True))
             return replace(ast, properties=tuple(settled))
         case Arrays():
-            return ast.map_types(_settled)
+            return ast.map_types(lambda element: _settled(element, memo))
         case _:
             return ast
 
 
-def _settled_encoding(ast: AST, encoding: Encoding) -> AST:
+def _settled_encoding(ast: AST, encoding: Encoding, memo: _Memo) -> AST:
     if any(link.transformation.sees_failures for link in encoding):
         return Unknown()
     *links, last = encoding
-    source = _settled(last.to)
+    source = _settled(last.to, memo)
     return ast if source is last.to else replace(ast, encoding=(*links, replace(last, to=source)))
 
 
-def sentinels(ast: AST) -> tuple[Sentinel, ...]:
+SENTINELS = "~sentinels"
+"""The annotation of a declaration's sentinels: ``(key, literal)`` pairs its
+values hold, as a struct's required literal keys."""
+
+
+def collect_sentinels(ast: AST) -> tuple[Sentinel, ...]:
     """The required literal keys of a mapping node and the required literal
     elements of a tuple, by index (Effect's ``collectSentinels``); a union's
-    are those all its members share."""
+    are those all its members share, a declaration's its ``"~sentinels"``
+    annotation."""
+    return _sentinels(ast, _Memo())
+
+
+def _sentinels(ast: AST, memo: _Memo) -> tuple[Sentinel, ...]:
+    found = memo.sentinels.get(id(ast))
+    if found is None:
+        found = (ast, _collect(ast, memo))
+        memo.sentinels[id(ast)] = found
+    return found[1]
+
+
+def _collect(ast: AST, memo: _Memo) -> tuple[Sentinel, ...]:  # noqa: PLR0911
     members = _members(ast)
     if members is not None:
         if not members:
             return ()
-        each = [sentinels(_input_side(m)) for m in members]
+        each = [_sentinels(_input_side(m, memo), memo) for m in members]
         return tuple(s for s in each[0] if all(_has(other, s) for other in each[1:]))
     match ast:
+        case Declaration(annotations=annotations):
+            declared = (annotations or {}).get(SENTINELS)
+            if not isinstance(declared, tuple | list):
+                return ()
+            return tuple(cast("Sequence[Sentinel]", declared))
+        case Suspend():
+            return _sentinels(ast.target, memo)
         case Objects(properties=properties):
             return tuple(
                 (p.name, p.type.literal)
@@ -151,7 +212,7 @@ def sentinels(ast: AST) -> tuple[Sentinel, ...]:
                 if not p.optional and isinstance(p.type, Literal)
             )
         case Class(side="encoded" | "decode"):
-            return sentinels(ast.shape.encoded)
+            return _sentinels(ast.shape.encoded, memo)
         case Arrays(elements=elements):
             return tuple(
                 (i, e.type.literal)
@@ -176,11 +237,13 @@ class _Member:
     never: bool
 
 
-def _member(ast: AST) -> _Member:
-    side = _input_side(ast)
-    found = sentinels(side)
+def _member(ast: AST, memo: _Memo) -> _Member:
+    side = _input_side(ast, memo)
+    found = _sentinels(side, memo)
     literal = (side.literal,) if isinstance(side, Literal) else None
-    return _Member(literal, found, frozenset() if found else kinds(side), isinstance(side, Never))
+    return _Member(
+        literal, found, frozenset() if found else _kinds(side, memo), isinstance(side, Never)
+    )
 
 
 _ABSENT = object()
@@ -190,15 +253,14 @@ def _observed(
     input: object, keys: tuple[Hashable, ...]
 ) -> tuple[dict[Hashable, object], frozenset[str]] | None:
     """The values ``input`` holds under the sentinel ``keys`` (a mapping's
-    keys, an object's attributes, a list's or tuple's indexes) and its kind;
-    ``None`` when it is none of these."""
-    if isinstance(input, Mapping) or reads_properties(input):
-        mapping = (
-            cast("Mapping[object, object]", input)
-            if isinstance(input, Mapping)
-            else ObjectKeys(input)
-        )
+    keys, an object's or a function's attributes, a list's or tuple's
+    indexes) and its kind; ``None`` when it is none of these."""
+    if isinstance(input, Mapping):
+        mapping = cast("Mapping[object, object]", input)
         return {key: mapping[key] for key in keys if key in mapping}, OBJECT
+    if reads_properties(input) or callable(input):
+        attributes = ObjectKeys(input)
+        return {key: attributes[key] for key in keys if key in attributes}, kind_of(input)
     if isinstance(input, list | tuple):
         items = cast("Sequence[object]", input)
         n = len(items)
@@ -212,7 +274,8 @@ class CandidateIndex:
     __slots__ = ("_members", "_only_literals", "_sentinel_keys")
 
     def __init__(self, types: Sequence[AST]) -> None:
-        self._members = [_member(t) for t in types]
+        memo = _Memo()
+        self._members = [_member(t, memo) for t in types]
         live = [m for m in self._members if not m.never]
         self._only_literals = bool(live) and all(m.literal is not None for m in live)
         keys: dict[Hashable, None] = {}

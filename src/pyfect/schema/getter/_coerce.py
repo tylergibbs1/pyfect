@@ -8,7 +8,7 @@ import math
 import re
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any
+from typing import Any, overload
 
 from pyfect import _js_date as js_date
 from pyfect import _json_text as _json
@@ -20,6 +20,7 @@ from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.schema._options import ParseOptions
 from pyfect.schema.getter._getter import Getter, Transform, TransformEffect
+from pyfect.schema.getter._json_options import JsonReplacer, JsonReviver, replace_json, revive
 from pyfect.schema.issue import InvalidValue, Issue, reported
 
 _DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
@@ -117,29 +118,41 @@ def big_int() -> Getter[int, str | int | float | bool]:
     return TransformEffect(run)
 
 
-def parse_json() -> Getter[_json.Json, str]:
-    """The JSON value of a string (``JSON.parse``); an ``InvalidValue``
-    when it is not JSON (Effect's ``parseJson``)."""
+@overload
+def parse_json() -> Getter[_json.Json, str]: ...
+@overload
+def parse_json(*, reviver: JsonReviver) -> Getter[object, str]: ...
+def parse_json(*, reviver: JsonReviver | None = None) -> Getter[object, str]:
+    """The JSON value of a string (``JSON.parse``), walked by ``reviver``
+    when given; an ``InvalidValue`` when it is not JSON or ``reviver``
+    raises (Effect's ``parseJson``)."""
 
-    def run(text: str, options: ParseOptions) -> Exit[_json.Json, Issue]:
+    def run(text: str, options: ParseOptions) -> Exit[object, Issue]:
         try:
-            return Success(_json.parse(text))
-        except _json.PARSE_ERRORS:
+            value = _json.parse(text)
+            return Success(value if reviver is None else revive(value, reviver))
+        except Exception:
+            # Effect's ``Effect.try`` turns whatever ``JSON.parse`` throws, a reviver's error
+            # included, into this issue.
             expected = {"expected": "a valid JSON string"}
             return fail_exit(InvalidValue(expected, reported(text, options)))
 
     return TransformEffect(run)
 
 
-def stringify_json(*, space: int | str | None = None) -> Getter[str, object]:
-    """The JSON text of a value (``JSON.stringify``, indented by ``space``);
-    an ``InvalidValue`` when it has none (Effect's ``stringifyJson``;
-    ``NaN`` and infinities have none, where JavaScript writes ``null``)."""
+def stringify_json(
+    *, replacer: JsonReplacer | None = None, space: int | str | None = None
+) -> Getter[str, object]:
+    """The JSON text of a value (``JSON.stringify``, through ``replacer``
+    and indented by ``space``); an ``InvalidValue`` when it has none or
+    ``replacer`` raises (Effect's ``stringifyJson``; ``NaN`` and infinities
+    have none, where JavaScript writes ``null``)."""
 
     def run(value: object, options: ParseOptions) -> Exit[str, Issue]:
         try:
-            return Success(_json.stringify(value, indent=space))
-        except _json.STRINGIFY_ERRORS:
+            replaced = value if replacer is None else replace_json(value, replacer)
+            return Success(_json.stringify(replaced, indent=space))
+        except Exception:
             expected = {"expected": "a JSON-serializable value"}
             return fail_exit(InvalidValue(expected, reported(value, options)))
 

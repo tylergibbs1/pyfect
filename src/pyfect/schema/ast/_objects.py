@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Iterator, Mapping
 from dataclasses import dataclass, replace
-from typing import cast, final
+from typing import Any, cast, final
 
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
@@ -29,10 +29,12 @@ from pyfect.schema.ast._base import (
     at_key,
     construct_missing,
     dispatching,
+    encoded_optional,
     invalid_type,
     issue_of,
-    join_checks,
+    map_or_same,
 )
+from pyfect.schema.ast._encoding import to_encoded
 from pyfect.schema.ast._result import MISSING, NotAnObject, ParseResult, call
 from pyfect.schema.ast._steps import Abort, Pending, Steps, Stop, Suspended, run_steps
 from pyfect.schema.ast._suspend import Suspend
@@ -111,23 +113,67 @@ class PropertySignature:
         """Whether the key may be missing from the encoded input."""
         if self.encoded_optional is not None:
             return self.encoded_optional
-        return self.optional or self.default is not None or self.type.flip().optional_key
+        return self.default is not None or encoded_optional(self.type, optional=self.optional)
 
     def flipped(self) -> PropertySignature:
         type = self.type.flip()
         return PropertySignature(self.name, type, self.optional_when_encoded(), None, self.optional)
 
 
+_KEY_KINDS = frozenset({"String", "Number", "TemplateLiteral", "Enum", "Suspend"})
+"""The nodes of keys. ``Enum`` and ``Suspend`` are Python's: an enum's keys
+decode to members (Effect's ``record`` makes its values required keys), and a
+suspended key (a reference in a representation) is not made to be checked."""
+
+
+def _is_key_node(ast: AST) -> bool:
+    if ast.tag == "Union":
+        return all(_is_key_node(member) for member in ast.children())
+    return ast.tag in _KEY_KINDS
+
+
+def _is_key_encoding(ast: AST) -> bool:
+    while ast.encoding is not None:
+        ast = ast.encoding[-1].to
+    if ast.tag == "Union":
+        return all(_is_key_encoding(member) for member in ast.children())
+    return ast.tag in _KEY_KINDS
+
+
 @dataclass(frozen=True, slots=True)
 class IndexSignature:
-    """Every key ``parameter`` accepts, with values of ``type``."""
+    """Every key ``parameter`` accepts, with values of ``type``. The
+    parameter is a ``String``, ``Number``, ``TemplateLiteral``, ``Enum``,
+    ``Suspend`` or a union of them, on both its sides; another raises
+    ``ValueError``."""
 
     parameter: AST
     type: AST
 
+    def __post_init__(self) -> None:
+        parameter = self.parameter
+        if not (_is_key_node(parameter) and _is_key_encoding(parameter)):
+            raise ValueError(f"Invalid index signature parameter {parameter.tag}")
+
     def selects(self, key: object, options: ParseOptions | None = None) -> bool:
         """``key`` is a value of the parameter's encoded side."""
         return type(self.parameter.flip().to_type().parse(key, options or {})) is Success
+
+
+def get_index_signature_keys(
+    input: Mapping[Any, object], parameter: AST, options: ParseOptions | None = None
+) -> list[Any]:
+    """The keys of ``input`` that an index signature with ``parameter``
+    takes (Effect's ``getIndexSignatureKeys``): those its encoded side
+    accepts. A union's are its members' in member order, each key once."""
+    parse_options = options or {}
+
+    def go(node: AST) -> list[object]:
+        if node.tag == "Union" and node.checks is None and node.encoding is None:
+            return list(dict.fromkeys(key for member in node.children() for key in go(member)))
+        return [key for key in input if type(node.parse(key, parse_options)) is Success]
+
+    return go(to_encoded(parameter))
 
 
 @dataclass(frozen=True, slots=True, eq=False)
@@ -181,28 +227,31 @@ class Objects(AST):
         )
 
     def _to_type(self) -> Objects:
-        properties = tuple(replace(p, type=p.type.to_type()) for p in self.properties)
-        indexes = tuple(
-            IndexSignature(i.parameter.to_type(), i.type.to_type()) for i in self.index_signatures
-        )
-        same = all(
-            a.type is b.type for a, b in zip(properties, self.properties, strict=True)
-        ) and all(
-            a.parameter is b.parameter and a.type is b.type
-            for a, b in zip(indexes, self.index_signatures, strict=True)
-        )
-        if same and self.encoding_checks is None:
+        def typed_property(p: PropertySignature) -> PropertySignature:
+            type = p.type.to_type()
+            return p if type is p.type else replace(p, type=type)
+
+        def typed_index(i: IndexSignature) -> IndexSignature:
+            parameter, type = i.parameter.to_type(), i.type.to_type()
+            if parameter is i.parameter and type is i.type:
+                return i
+            return IndexSignature(parameter, type)
+
+        properties = map_or_same(self.properties, typed_property)
+        indexes = map_or_same(self.index_signatures, typed_index)
+        if properties is self.properties and indexes is self.index_signatures:
             return self
-        # Encoded and decoded values are the same when no part transforms:
-        # the encoded side's checks then hold for the decoded one too.
-        checks = join_checks(self.checks, self.encoding_checks) if same else self.checks
-        return replace(
-            self,
-            properties=properties,
-            index_signatures=indexes,
-            checks=checks,
-            encoding_checks=None,
-        )
+        return replace(self, properties=properties, index_signatures=indexes)
+
+    def children(self) -> Iterator[AST]:
+        for p in self.properties:
+            yield p.type
+        for i in self.index_signatures:
+            yield i.parameter
+            yield i.type
+
+    def _keeps_structural_checks(self) -> bool:
+        return True
 
 
 _SKIPPED = object()
@@ -259,8 +308,7 @@ class _Run(Steps["_Run"]):
             entries = self.entries = tuple(
                 (i, key)
                 for i in self.ast.index_signatures
-                for key in self.keys
-                if i.selects(key, options)
+                for key in get_index_signature_keys(self.keys, i.parameter, options)
             )
         return entries
 
@@ -325,10 +373,9 @@ class _Run(Steps["_Run"]):
             return
         ast = self.ast
         declared = {p.name for p in ast.properties}
+        selected = {key for _, key in self._listed()}
         for key, value in self.keys.items():
-            if key not in declared and not any(
-                i.selects(key, self.options) for i in ast.index_signatures
-            ):
+            if key not in declared and key not in selected:
                 self._report(key, UnexpectedKey(ast, reported(value, self.options)))
 
     def _report(self, key: object, issue: Issue) -> None:

@@ -47,7 +47,7 @@ from pyfect.schema._schema import Codec
 from pyfect.schema._struct import Struct, StructSchema
 from pyfect.schema._transform import DecodeToSchema, to_type
 from pyfect.schema.ast import LiteralValue
-from pyfect.schema.ast._candidates import sentinels
+from pyfect.schema.ast._candidates import collect_sentinels
 
 # Explicit covariant parameters: a frozen dataclass's fields would make
 # inferred ones invariant (``tests/test_schema_variance.py``).
@@ -221,7 +221,7 @@ class ToTaggedUnion:
                 for inner in nested.members:
                     walk(inner)
                 return
-            found = [lit for key, lit in sentinels(member.__codec__().ast) if key == tag]
+            found = [lit for key, lit in collect_sentinels(member.__codec__().ast) if key == tag]
             key = _key(found[0]) if found else None
             if key is None:
                 raise ValueError("No literal or unique symbol found")
