@@ -26,6 +26,14 @@ from pyfect.schema.issue import AnyOf, Issue, OneOf, reported
 
 type UnionMode = _Literal["any_of", "one_of"]
 
+_ROUND: list[object] = [object()]
+"""The current round of member visits: ``forget_tried`` starts a new one."""
+
+
+def forget_tried() -> None:
+    """Count no member as tried any more (the compiler registry's ``reset``)."""
+    _ROUND[0] = object()
+
 
 @dataclass(frozen=True, slots=True, eq=False)
 class Union(AST):
@@ -37,7 +45,18 @@ class Union(AST):
     _index: list[CandidateIndex] = field(
         default_factory=list[CandidateIndex], init=False, repr=False, metadata=SHARED_BY_COPY
     )
+    member_visits: dict[int, object] = field(
+        default_factory=dict[int, object], init=False, repr=False, compare=False
+    )
+    """The members tried (by ``id``, as the compiler registry keeps a parent's child entries),
+    with the round they were tried in. Effect's Union parser compiles a member when first
+    tried: a parser made before a decoder was installed keeps those, and resolves the others
+    from the registry (``tried``)."""
     tag = "Union"
+
+    def tried(self, member: AST) -> bool:
+        """``member`` was tried by this union in the current round, its parse finished."""
+        return self.member_visits.get(id(member)) is _ROUND[0]
 
     @property
     def candidates(self) -> CandidateIndex:
@@ -66,8 +85,13 @@ class Union(AST):
         issues: list[Issue] = []
         candidates = self.candidates(input, is_constructing(options))
         types = self.types
+        tried, round_ = self.member_visits, _ROUND[0]
         for n, i in enumerate(candidates):
-            result = types[i].parse(input, options)
+            member = types[i]
+            result = member.parse(input, options)
+            # Recorded after the parse: a registry resolving the member during it finds it
+            # untried, so resolves its installed entry.
+            tried[id(member)] = round_
             if isinstance(result, Success):
                 return result
             if isinstance(result, Failure):
@@ -139,8 +163,11 @@ class _Run(Steps["_Run"]):
 
     def run_from(self, start: int) -> Suspended[_Run] | None:
         candidates = self.candidates
+        tried, round_ = self.ast.member_visits, _ROUND[0]
         for index in range(start, len(candidates)):
-            result = candidates[index].parse(self.input, self.options)
+            member = candidates[index]
+            result = member.parse(self.input, self.options)
+            tried[id(member)] = round_
             if isinstance(result, (Success, Failure)):
                 self._member(index, result)
             else:
