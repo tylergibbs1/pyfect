@@ -1,6 +1,6 @@
 """Durable sleeps of a workflow (Effect's ``effect/workflow/DurableClock``)::
 
-    yield from durable_clock.sleep(name="cool-off", duration=3 * 24 * 3600)
+    yield from durable_clock.sleep(name="cool-off", duration="3 days")
 
 A sleep longer than ``in_memory_threshold`` (default 60 seconds) is
 scheduled with the engine and suspends the execution until the clock

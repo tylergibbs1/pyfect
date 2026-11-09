@@ -97,8 +97,8 @@ def effect(
 
         @effect
         def test_retries():
-            fiber = yield from flaky_call.retry(spaced(1)).fork()
-            yield from adjust(3)
+            fiber = yield from flaky_call.retry(spaced("1 second")).fork()
+            yield from adjust("3 seconds")
             assert (yield from fiber.join()) == "ok"
 
     ``timeout`` (real time; default from the ``pyfect_timeout`` ini option)

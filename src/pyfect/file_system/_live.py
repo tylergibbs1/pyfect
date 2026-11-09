@@ -159,12 +159,13 @@ def _nanos(time: datetime | float) -> int:
 def _write(path: str, data: bytes, flag: OpenFlag, mode: int) -> None:
     fd = os.open(path, _open_flags(flag), mode)
     try:
-        view = memoryview(data)
-        while view:
-            written = os.write(fd, view)
-            if written == 0:
-                raise OSError(errno.EIO, "write returned 0 bytes written", path)
-            view = view[written:]
+        with memoryview(data) as view:
+            written = 0
+            while written < len(view):
+                count = os.write(fd, view[written:])
+                if count == 0:
+                    raise OSError(errno.EIO, "write returned 0 bytes written", path)
+                written += count
     finally:
         os.close(fd)
 
