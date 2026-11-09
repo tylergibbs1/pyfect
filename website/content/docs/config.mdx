@@ -25,8 +25,8 @@ secret out of logs and error messages.
 Constructors: `string`, `integer`, `number`, `boolean`, `port`, `url`, `duration`, `literal`,
 `log_level`, `byte_size`, `date_time`, `redacted`, `list_of`, `dict_of`; combine with
 `config.all`, `all_dict` or `@config.gen`.
-`url` gives a `Url`, a `urllib.parse.SplitResult` whose `str()` is the URL, so
-`f"{base}/payouts"` builds one.
+`url` gives a `Url` (`fx.Url`, JavaScript's `URL`), parsed as `new URL(text)` parses it;
+see [URLs](/docs/platform#urls).
 `date_time` reads text as JavaScript's `Date` does, V8's forms included (`2024-01-15`,
 `2024-01-15T10:00`, `Jan 15 2024 10:00 PM EST`, `1/15/2024`), and gives a UTC `datetime`.
 A date alone is UTC; a time that names no zone is local time, as in Effect.

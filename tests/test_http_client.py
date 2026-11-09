@@ -7,7 +7,6 @@ import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import SplitResult
 
 import pytest
 
@@ -43,7 +42,7 @@ def test_unread_response_is_aborted_when_collected() -> None:
     signals: list[AbortSignal] = []
 
     def send(
-        request: req.HttpClientRequest, _url: SplitResult, signal: AbortSignal, _fiber: Any
+        request: req.HttpClientRequest, _url: fx.Url, signal: AbortSignal, _fiber: Any
     ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
         signals.append(signal)
         return fx.succeed(res.make(request, "unread"))
@@ -60,7 +59,7 @@ def test_unread_response_is_aborted_as_soon_as_it_is_dropped() -> None:
     signals: list[AbortSignal] = []
 
     def send(
-        request: req.HttpClientRequest, _url: SplitResult, signal: AbortSignal, _fiber: Any
+        request: req.HttpClientRequest, _url: fx.Url, signal: AbortSignal, _fiber: Any
     ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
         signals.append(signal)
         return fx.succeed(res.make(request, "unread"))
@@ -77,7 +76,7 @@ def test_a_read_response_stays_readable() -> None:
     signals: list[AbortSignal] = []
 
     def send(
-        request: req.HttpClientRequest, _url: SplitResult, signal: AbortSignal, _fiber: Any
+        request: req.HttpClientRequest, _url: fx.Url, signal: AbortSignal, _fiber: Any
     ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
         signals.append(signal)
         return fx.succeed(res.make(request, "body"))
@@ -159,7 +158,7 @@ def _never_sending(
     signals: list[AbortSignal],
 ) -> c.HttpClientService[HttpClientError]:
     def send(
-        _request: req.HttpClientRequest, _url: SplitResult, signal: AbortSignal, _fiber: Any
+        _request: req.HttpClientRequest, _url: fx.Url, signal: AbortSignal, _fiber: Any
     ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
         signals.append(signal)
         return fx.never
@@ -177,7 +176,7 @@ def test_interrupting_a_body_read_aborts_the_request() -> None:
     signals: list[AbortSignal] = []
 
     def send(
-        request: req.HttpClientRequest, _url: SplitResult, signal: AbortSignal, _fiber: Any
+        request: req.HttpClientRequest, _url: fx.Url, signal: AbortSignal, _fiber: Any
     ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
         signals.append(signal)
         return fx.succeed(res.make(request, fx.stream.never))
@@ -196,7 +195,7 @@ def test_with_scope_ties_only_its_own_request_to_the_scope() -> None:
     kept: list[res.HttpClientResponse] = []
 
     def send(
-        request: req.HttpClientRequest, _url: SplitResult, signal: AbortSignal, _fiber: Any
+        request: req.HttpClientRequest, _url: fx.Url, signal: AbortSignal, _fiber: Any
     ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
         signals.append(signal)
         return fx.succeed(res.make(request, "body"))

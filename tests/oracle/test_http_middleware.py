@@ -497,7 +497,7 @@ def _observe(middleware: Any, peer: str, headers: dict[str, str]) -> object:
             {
                 "remoteAddress": request.remote_address,
                 "host": request.headers.get("host"),
-                "url": None if url is None else url.geturl(),
+                "url": None if url is None else url.href,
             }
         )
 

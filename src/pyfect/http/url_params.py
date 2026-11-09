@@ -16,9 +16,10 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from typing import cast, final
-from urllib.parse import parse_qsl, quote_plus, unquote
+from urllib.parse import unquote
 
-from pyfect._js import js_number, text_encode
+from pyfect._js import js_number, to_well_formed
+from pyfect._whatwg_url import form as _form
 from pyfect.context import Reference
 from pyfect.http.headers import Pattern, is_redacted_name
 from pyfect.redacted import Redacted
@@ -33,8 +34,12 @@ type CoercibleRecord = Mapping[str, Coercible | Sequence[Coercible] | CoercibleR
 type Input = UrlParams | CoercibleRecord | Iterable[tuple[str, Coercible]]
 
 
-def _unwrap(value: Value) -> str:
+def unwrap(value: Value) -> str:
+    """A value as sent: a ``Redacted`` one written out."""
     return value if isinstance(value, str) else redacted_value(value)
+
+
+_unwrap = unwrap
 
 
 @final
@@ -175,24 +180,17 @@ def _nested(
     return out
 
 
-def _encode_component(text: str) -> str:
-    """``application/x-www-form-urlencoded`` byte serialization, as
-    ``URLSearchParams`` writes it: only ``*-._`` and alphanumerics stay."""
-    return quote_plus(text_encode(text), safe="*").replace("~", "%7E")
-
-
 def to_string(input: Input) -> str:
-    """The parameters as a query string, without the ``?``; ``Redacted``
-    values are written out."""
-    return "&".join(
-        f"{_encode_component(k)}={_encode_component(_unwrap(v))}" for k, v in from_input(input)
-    )
+    """The parameters as a query string, without the ``?``, as
+    ``URLSearchParams`` writes them (only ``*-._`` and alphanumerics stay,
+    a space is ``+``); ``Redacted`` values are written out."""
+    return _form.serialize((k, _unwrap(v)) for k, v in from_input(input))
 
 
 def parse(query: str) -> UrlParams:
     """A query string (``?`` optional) as ``URLSearchParams`` reads it:
     ``+`` is a space and bad escapes stay as written."""
-    return UrlParams(parse_qsl(query.removeprefix("?"), keep_blank_values=True))
+    return UrlParams(_form.parse(to_well_formed(query).removeprefix("?")))
 
 
 class CurrentRedactedNames(Reference[tuple[Pattern, ...]]):
@@ -301,4 +299,5 @@ __all__ = [
     "parse",
     "redact_url",
     "to_string",
+    "unwrap",
 ]

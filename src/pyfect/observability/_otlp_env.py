@@ -32,14 +32,8 @@ def headers(signal: Signal) -> config.Config[dict[str, str] | None]:
 
 
 def _signal_path(url: Url, signal: Signal) -> Url:
-    slash = "" if url.path.endswith("/") else "/"
-    return Url(*url._replace(path=f"{url.path}{slash}v1/{signal.lower()}"))
-
-
-def _whatwg(url: Url) -> Url:
-    """``url`` as ``new URL(...)`` normalizes it (``http://host`` gets the
-    path ``/``)."""
-    return _url.parse(str(url))
+    slash = "" if url.pathname.endswith("/") else "/"
+    return _url.set_pathname(url, f"{url.pathname}{slash}v1/{signal.lower()}")
 
 
 def endpoint(signal: Signal) -> config.Config[Url | None]:
@@ -47,11 +41,10 @@ def endpoint(signal: Signal) -> config.Config[Url | None]:
     ``OTEL_EXPORTER_OTLP_ENDPOINT`` with ``/v1/<signal>`` appended to its
     path; ``None`` when neither is set."""
     base: config.Config[Url | None] = config.url("OTEL_EXPORTER_OTLP_ENDPOINT").map(
-        lambda url: _signal_path(_whatwg(url), signal)
+        lambda url: _signal_path(url, signal)
     )
     return (
         config.url(f"OTEL_EXPORTER_OTLP_{signal}_ENDPOINT")
-        .map(_whatwg)
         .or_else(lambda _: base)
         .with_default(None)
     )

@@ -7,7 +7,6 @@ from __future__ import annotations
 import weakref
 from collections.abc import Callable, Sequence
 from typing import Any, Literal, final
-from urllib.parse import SplitResult
 
 from pyfect._core import Effect, _WithFiber
 from pyfect._effect_resources import _call_user
@@ -37,7 +36,7 @@ from pyfect.tracer._spans import in_parent_span, use_span
 
 type Phase = Literal["request", "response"]
 type Send = Callable[
-    [HttpClientRequest, SplitResult, AbortSignal, Fiber[Any, Any]],
+    [HttpClientRequest, _url.Url, AbortSignal, Fiber[Any, Any]],
     Effect[HttpClientResponse, HttpClientError],
 ]
 """What a client backend implements: send the request to the URL (built
@@ -113,20 +112,21 @@ def scoped[A, E, R](
     return suspend(run)
 
 
-_DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
+_DEFAULT_PORTS = {"http:": 80, "https:": 443, "ws:": 80, "wss:": 443}
 
 
-def _add_url_attributes(span: Span, url: SplitResult, redacted: Sequence[_headers.Pattern]) -> None:
-    query = _url_params.redact_url(f"?{url.query}" if url.query else "", redacted)[1:]
-    span.attribute("url.full", _url_params.redact_url(_url.href(url), redacted))
-    span.attribute("url.path", url.path)
+def _add_url_attributes(span: Span, url: _url.Url, redacted: Sequence[_headers.Pattern]) -> None:
+    query = _url_params.redact_url(url.search, redacted)[1:]
+    span.attribute("url.full", _url_params.redact_url(url.href, redacted))
+    span.attribute("url.path", url.pathname)
     if query:
         span.attribute("url.query", query)
-    span.attribute("url.scheme", url.scheme)
+    span.attribute("url.scheme", url.protocol[:-1])
     hostname = url.hostname
     if hostname:
-        span.attribute("server.address", hostname)
-        port = url.port if url.port is not None else _DEFAULT_PORTS.get(url.scheme)
+        # URL keeps IPv6 brackets in the hostname; the semantic conventions do not.
+        span.attribute("server.address", hostname[1:-1] if hostname[0] == "[" else hostname)
+        port = int(url.port) if url.port else _DEFAULT_PORTS.get(url.protocol)
         if port is not None:
             span.attribute("server.port", port)
 

@@ -81,9 +81,9 @@ def test_text(http: Services[HttpClient]):
     """text"""
     response = yield from c.get("/text?existing=1", url_params={"value": "a#b"}, hash="fragment")
     url = u.parse(response.url)
-    assert url.path == "/text"
-    assert url.query == "existing=1&value=a%23b"
-    assert url.fragment == ""
+    assert url.pathname == "/text"
+    assert url.search == "?existing=1&value=a%23b"
+    assert url.hash == ""
     assert (yield from response.text) == "test"
 
 
@@ -131,7 +131,7 @@ def test_follow_redirects(http: Services[HttpClient]):
     """local server followRedirects"""
     client = (yield from HttpClient()).follow_redirects()
     response = yield from client.get("/redirect")
-    assert u.parse(response.url).path == "/redirected"
+    assert u.parse(response.url).pathname == "/redirected"
     assert (yield from response.text) == "redirected"
 
 

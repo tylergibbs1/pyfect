@@ -1,13 +1,14 @@
 """Ports of Effect's ``Path.test.ts`` and ``NodePath.test.ts``.
 
-Each test's docstring is the Effect test title. File URLs are strings
-(``fromFileUrl(new URL(...))`` takes the href), and a malformed escape's
-cause is the ``UnicodeDecodeError`` or ``ValueError`` Python raises where
-JavaScript has a ``URIError``.
+Each test's docstring is the Effect test title. A file URL is a ``Url``
+(``new URL(...)``), and a malformed escape's cause is the
+``UnicodeDecodeError`` or ``ValueError`` Python raises where JavaScript has
+a ``URIError``.
 """
 
 import pytest
 
+import pyfect as fx
 from pyfect import path, testing
 from pyfect.path import Path
 from pyfect.platform_error import BadArgument
@@ -43,9 +44,9 @@ def test_from_file_url_fails_with_bad_argument_for_malformed_percent_encodings(
     """fromFileUrl fails with BadArgument for malformed percent-encodings"""
     p = yield from Path()
 
-    assert (yield from p.from_file_url("file:///tmp/a%20b")) == "/tmp/a b"
+    assert (yield from p.from_file_url(fx.Url("file:///tmp/a%20b"))) == "/tmp/a b"
 
-    error = yield from p.from_file_url("file:///tmp/%").flip()
+    error = yield from p.from_file_url(fx.Url("file:///tmp/%")).flip()
     assert isinstance(error, BadArgument)
     assert (error.module, error.method) == ("Path", "from_file_url")
     assert isinstance(error.cause, ValueError)
@@ -56,8 +57,8 @@ def test_uses_posix_conversions(posix_layer: Services[Path]):
     """POSIX file URLs / uses POSIX conversions"""
     p = yield from Path()
 
-    assert (yield from p.from_file_url("file:///tmp/file.txt")) == "/tmp/file.txt"
-    assert (yield from p.to_file_url("/tmp/file.txt")) == "file:///tmp/file.txt"
+    assert (yield from p.from_file_url(fx.Url("file:///tmp/file.txt"))) == "/tmp/file.txt"
+    assert (yield from p.to_file_url("/tmp/file.txt")) == fx.Url("file:///tmp/file.txt")
 
 
 @testing.effect
@@ -65,8 +66,12 @@ def test_uses_windows_conversions(win32_layer: Services[Path]):
     """Windows file URLs / uses Windows conversions"""
     p = yield from Path()
 
-    assert (yield from p.from_file_url("file:///C:/Users/me/file.txt")) == "C:\\Users\\me\\file.txt"
-    assert (yield from p.to_file_url("C:\\Users\\me\\file.txt")) == "file:///C:/Users/me/file.txt"
+    assert (
+        yield from p.from_file_url(fx.Url("file:///C:/Users/me/file.txt"))
+    ) == "C:\\Users\\me\\file.txt"
+    assert (yield from p.to_file_url("C:\\Users\\me\\file.txt")) == fx.Url(
+        "file:///C:/Users/me/file.txt"
+    )
 
 
 @testing.effect

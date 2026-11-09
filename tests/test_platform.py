@@ -99,7 +99,7 @@ def test_posix_paths_follow_node():
 @testing.effect
 def test_from_file_url_rejects_an_encoded_separator_and_another_scheme():
     for url in ("file:///a%2fb", "https://example.com/a", "file://host/a"):
-        error = yield from path.posix.from_file_url(url).flip()
+        error = yield from path.posix.from_file_url(fx.Url(url)).flip()
         assert isinstance(error, BadArgument), url
 
 
@@ -116,14 +116,14 @@ def test_from_file_url_parses_the_url_as_a_browser_does():
         "file:///C:/../x": "/C:/x",
     }
     for url, expected in cases.items():
-        assert (yield from path.posix.from_file_url(url)) == expected, url
-    assert (yield from path.win32.from_file_url("file://localhost/C:/a")) == "C:\\a"
-    assert (yield from path.win32.from_file_url("file:///C:/../x")) == "C:\\x"
+        assert (yield from path.posix.from_file_url(fx.Url(url))) == expected, url
+    assert (yield from path.win32.from_file_url(fx.Url("file://localhost/C:/a"))) == "C:\\a"
+    assert (yield from path.win32.from_file_url(fx.Url("file:///C:/../x"))) == "C:\\x"
 
 
 @testing.effect
 def test_win32_file_urls_handle_shares():
-    share = yield from path.win32.from_file_url("file://server/share/a")
+    share = yield from path.win32.from_file_url(fx.Url("file://server/share/a"))
     assert share == "\\\\server\\share\\a"
 
 

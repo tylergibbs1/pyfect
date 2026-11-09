@@ -62,11 +62,11 @@ def test_follow_redirects(http: Services[HttpClient]):
     """followRedirects"""
     client = (yield from HttpClient()).follow_redirects()
     response = yield from client.get("/redirect-fragment")
-    assert u.parse(response.request.url).path == "/"
+    assert u.parse(response.request.url).pathname == "/"
     url = u.parse(response.url)
-    assert url.path == "/"
-    assert url.query == "value=a%23b"
-    assert url.fragment == ""
+    assert url.pathname == "/"
+    assert url.search == "?value=a%23b"
+    assert url.hash == ""
     assert (yield from response.text) == "test"
 
 

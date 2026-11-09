@@ -20,7 +20,6 @@ import base64
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict, Unpack, final
-from urllib.parse import SplitResult
 
 from pyfect import byte_size
 from pyfect._js import text_encode
@@ -44,7 +43,7 @@ if TYPE_CHECKING:
     from pyfect.file_system import FileSystem
     from pyfect.platform_error import PlatformError
 
-type UrlInput = str | SplitResult
+type UrlInput = str | _url.Url
 
 
 class RequestOptions(TypedDict, total=False):
@@ -185,11 +184,12 @@ class HttpClientRequest:
         ``url_params`` and its fragment to ``hash``."""
         if isinstance(url, str):
             return self._with(url=url)
+        hash = url.hash[1:] or None
         return HttpClientRequest(
             self.method,
-            _url.href(url._replace(query="", fragment="")),
-            _params.parse(url.query),
-            url.fragment or None,
+            _url.set_hash(_url.set_search(url, ""), "").href,
+            _params.UrlParams(url.search_params),
+            hash,
             self.headers,
             self.body,
         )

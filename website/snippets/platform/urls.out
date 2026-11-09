@@ -1,0 +1,5 @@
+https://api.example.com/v2/users/?page=1#top
+https://api.example.com /v2/users/ ?page=1 #top
+https://xn--r8jz45g.jp/a%20b
+https://api.example.com:8443/v2/users/?page=2&q=a+b#top
+{'page': '2', 'q': 'a b'}

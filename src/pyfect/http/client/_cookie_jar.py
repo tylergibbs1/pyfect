@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import ipaddress
 from dataclasses import replace
-from urllib.parse import SplitResult
 
 from pyfect.http import url as _url
 from pyfect.http.cookies import Cookie, CookieOptions, Cookies
@@ -67,21 +66,21 @@ def _options(cookie: Cookie) -> CookieOptions:
     return cookie.options or CookieOptions()
 
 
-def _bound(cookie: Cookie, url: SplitResult) -> Cookie | None:
+def _bound(cookie: Cookie, url: _url.Url) -> Cookie | None:
     """``cookie`` as set by a response from ``url``: bound to its host and
     path, or ``None`` when that response may not set it."""
-    host = (url.hostname or "").lower()
+    host = url.hostname
     options = _options(cookie)
     if options.domain is not None and not _may_set_domain(host, options.domain.lower()):
         return None
-    if options.secure and url.scheme != "https":
+    if options.secure and url.protocol != "https:":
         return None
     return replace(
         cookie,
         options=replace(
             options,
             domain=options.domain or host,
-            path=options.path or _default_path(url.path or "/"),
+            path=options.path or _default_path(url.pathname or "/"),
         ),
     )
 
@@ -91,7 +90,7 @@ def store(jar: Cookies, response_url: str, received: Cookies) -> Cookies:
     url = _where(response_url)
     if url is None or received.is_empty():
         return jar
-    host = (url.hostname or "").lower()
+    host = url.hostname
     accepted: list[Cookie] = []
     for cookie in received:
         bound = _bound(cookie, url)
@@ -105,9 +104,9 @@ def store(jar: Cookies, response_url: str, received: Cookies) -> Cookies:
 def for_request(jar: Cookies, request_url: str) -> Cookies:
     """The cookies of ``jar`` that go with a request to ``request_url``."""
     url = _where(request_url)
-    host = "" if url is None else (url.hostname or "").lower()
-    path = "/" if url is None else url.path or "/"
-    secure = url is not None and url.scheme == "https"
+    host = "" if url is None else url.hostname
+    path = "/" if url is None else url.pathname or "/"
+    secure = url is not None and url.protocol == "https:"
 
     def sent(cookie: Cookie) -> bool:
         options = _options(cookie)

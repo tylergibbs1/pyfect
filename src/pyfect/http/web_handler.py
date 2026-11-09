@@ -143,7 +143,7 @@ def request_to_web(
         body = _StreamBody(request.stream, context or Context.empty(), None, signal)
     return Ok(
         WebRequest(
-            url.geturl(),
+            url.href,
             method=request.method,
             headers=request.headers,
             body=body,

@@ -14,7 +14,7 @@ import pytest
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
-from pyfect._url import parse_url
+from pyfect._url import Url
 from pyfect.ai import ai_error as E
 from pyfect.ai import language_model as lm
 from pyfect.ai import model as M
@@ -224,8 +224,7 @@ def test_unsupported_audio():
 def test_audio_url():
     """OpenRouterLanguageModel / generateText / message preparation / audio file parts / fails on
     audio URLs"""
-    url = parse_url("https://example.com/audio.mp3")
-    assert url is not None
+    url = Url("https://example.com/audio.mp3")
     error = yield from _user_error([Pr.FilePart(media_type="audio/mpeg", data=url)])
     assert isinstance(error.reason, E.InvalidUserInputError)
 

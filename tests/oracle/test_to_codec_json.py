@@ -35,7 +35,6 @@ import enum
 import math
 from datetime import UTC, datetime, timedelta
 from typing import Any, Never, NotRequired, TypedDict
-from urllib.parse import urlsplit
 
 import pyfect as fx
 from pyfect import option as O
@@ -449,9 +448,10 @@ def test_class():
 def test_url():
     """schemas without encoding / URL"""
     asserts = _asserts(S.URL)
-    url = Url._make(urlsplit("https://example.com"))
-    asserts.encoding().succeed(url, "https://example.com")
+    url = Url("https://example.com")
+    asserts.encoding().succeed(url, "https://example.com/")
     asserts.decoding().succeed("https://example.com", url)
+    asserts.decoding().succeed("https://example.com/", url)
     asserts.decoding().fail("not a url", "Expected a valid URL string")
 
 

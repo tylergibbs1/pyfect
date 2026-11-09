@@ -16,7 +16,6 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict
-from urllib.parse import urlsplit
 
 import pytest
 
@@ -178,7 +177,7 @@ def usage(**overrides: Any) -> dict[str, Any]:
 
 
 def url(text: str) -> Url:
-    return Url._make(urlsplit(text))
+    return Url(text)
 
 
 def _provided(

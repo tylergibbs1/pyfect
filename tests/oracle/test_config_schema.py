@@ -381,7 +381,7 @@ def test_supports_declarations_with_concrete_string_tree_encodings():
     provider = unknown({"value": "https://example.com"})
     value = yield from config.schema(S.URL, "value").parse(provider)
 
-    assert (value.scheme, value.netloc) == ("https", "example.com")
+    assert (value.protocol, value.host) == ("https:", "example.com")
 
 
 @testing.effect
@@ -910,10 +910,6 @@ class _UrlValue(TypedDict):
 
 def test_from_unknown_decodes_nested_url_values():
     """fromUnknown provider: decodes nested URL values"""
-    from urllib.parse import urlsplit
-
     cfg = config.schema(S.Struct(_UrlValue, a=S.URL))
 
-    assert_success(
-        cfg, unknown({"a": "https://example.com"}), {"a": urlsplit("https://example.com")}
-    )
+    assert_success(cfg, unknown({"a": "https://example.com"}), {"a": fx.Url("https://example.com")})

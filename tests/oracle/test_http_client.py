@@ -32,7 +32,6 @@ The ``withRateLimiter`` and ``withCircuitBreaker`` blocks are in
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, TypedDict
-from urllib.parse import SplitResult
 
 import pytest
 
@@ -258,7 +257,7 @@ def _url_capturing_client() -> tuple[list[str], c.HttpClientService[HttpClientEr
     sent: list[str] = []
 
     def send(
-        request: req.HttpClientRequest, url: SplitResult, _signal: AbortSignal, _fiber: Any
+        request: req.HttpClientRequest, url: fx.Url, _signal: AbortSignal, _fiber: Any
     ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
         sent.append(u.href(url))
         return fx.succeed(res.make(request))
@@ -595,7 +594,7 @@ def test_stream_ends_early_aborts():
     signals: list[AbortSignal] = []
 
     def send(
-        request: req.HttpClientRequest, _url: SplitResult, signal: AbortSignal, _fiber: Any
+        request: req.HttpClientRequest, _url: fx.Url, signal: AbortSignal, _fiber: Any
     ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
         signals.append(signal)
         return fx.succeed(res.make(request, stream_.succeed(b"\x01").forever()))

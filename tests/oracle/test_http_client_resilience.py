@@ -890,7 +890,7 @@ def test_keys_circuits_by_request_origin_by_default() -> None:
             request: req.HttpClientRequest, url: Any, *_: object
         ) -> fx.Effect[res.HttpClientResponse]:
             def answer() -> res.HttpClientResponse:
-                hosts.append(url.netloc)
+                hosts.append(url.host)
                 status = 503 if url.hostname == "down.test" else 200
                 return res.make(request, status=status)
 

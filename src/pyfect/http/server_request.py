@@ -20,7 +20,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, Unpack, cast, final
-from urllib.parse import SplitResult
 
 from pyfect._cached import memoize
 from pyfect._core import Effect, _WithFiber
@@ -257,9 +256,9 @@ def remove_host(url: str) -> str:
     return "/" if index == -1 else url[index:]
 
 
-def search_params_from_url(url: SplitResult) -> dict[str, str | list[str]]:
+def search_params_from_url(url: _url.Url) -> dict[str, str | list[str]]:
     """The query of ``url``: each name's value, or values when repeated."""
-    return parse_url_params(url.query).to_record()
+    return UrlParams(url.search_params).to_record()
 
 
 def to_url(request: ServerRequest) -> _url.Url | None:

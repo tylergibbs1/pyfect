@@ -1,15 +1,14 @@
-"""Every URL pyfect gives back is a ``Url``, whose ``str()`` is the URL.
+"""Every URL pyfect gives back is a ``Url``, whose ``str()`` is its ``href``.
 
 ``urllib.parse.SplitResult``'s ``str()`` is its repr, so
 ``f"{config_url}/payouts"`` sent a request to ``SplitResult(scheme=...)/payouts``
-(DOGFOOD outlay 6). A ``Url`` is still a ``SplitResult``; JavaScript's ``URL``
-writes its ``href`` the same way."""
+(DOGFOOD outlay 6). A ``Url`` writes its ``href``, as JavaScript's ``URL``
+does."""
 
 from __future__ import annotations
 
 import ast
 from pathlib import Path
-from urllib.parse import SplitResult
 
 import pyfect as fx
 from pyfect import config
@@ -30,13 +29,13 @@ def _ok[A](result: fx.Result[A, object]) -> A:
 def test_a_config_url_writes_itself_out_in_an_f_string():
     provider = cp.from_unknown({"PAYOUT_URL": "http://localhost:8000"})
     url = fx.run_blocking(config.url("PAYOUT_URL").parse(provider).or_die())
-    assert f"{url}/payouts" == "http://localhost:8000/payouts"
-    assert url.geturl() == "http://localhost:8000"  # still a SplitResult
+    # As in JavaScript, the href of an origin ends in the path "/".
+    assert f"{url}payouts" == "http://localhost:8000/payouts"
 
 
 def test_every_url_producer_gives_a_url_whose_str_is_the_href():
     request = http_request.get("https://example.com/a")
-    produced: list[SplitResult | None] = [
+    produced: list[http_url.Url | None] = [
         _ok(http_url.from_string("HTTPS://Example.com:443/a/../b c")),
         http_url.set_search(_ok(http_url.from_string("https://example.com/b")), "q=1"),
         _ok(S.decode_unknown_result(S.URLFromString)("https://example.com/b%20c")),
@@ -47,11 +46,6 @@ def test_every_url_producer_gives_a_url_whose_str_is_the_href():
         assert isinstance(url, http_url.Url), repr(url)
         assert str(url) == http_url.href(url)
         assert "(" not in str(url)
-
-
-def test_a_setter_given_a_plain_split_result_gives_a_url():
-    plain = SplitResult("https", "example.com", "/", "", "")
-    assert str(http_url.set_hash(plain, "top")) == "https://example.com/#top"
 
 
 # urllib.parse's result types write their repr as their str().

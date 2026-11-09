@@ -2,6 +2,23 @@
 
 ## 0.2.1 (unreleased)
 
+### Breaking
+
+- URLs are `fx.Url` (also `pyfect.http.url.Url`), JavaScript's `URL` as an immutable Python
+  value, parsed by a full port of the WHATWG URL Standard that gives Node's results on the
+  web-platform-tests URL suite (international domain names through UTS #46, `URL`'s setters,
+  `URLSearchParams`). It was a `urllib.parse.SplitResult` subclass: use `url.protocol`,
+  `url.host` / `url.hostname`, `url.port` (a string, `""` when absent), `url.pathname`,
+  `url.search`, `url.hash` and `url.search_params` instead of `scheme`, `netloc`, `path`,
+  `query`, `fragment` and `_replace`. `Url(text, base)` parses (raising `ValueError`),
+  `Url.parse` gives `None` for text that isn't a URL and `Url.can_parse` asks. Two URLs are
+  equal when their `href` is. The `http.url` setters take a `Url`, not any `SplitResult`;
+  `http.url.mutate` is new.
+- `config.url` and the `URL` / `URLFromString` schemas normalize as `new URL` does:
+  `https://example.com` is `https://example.com/`, so `f"{url}payouts"` (not `/payouts`)
+  appends a path.
+- `Path.from_file_url` takes a `Url` and `Path.to_file_url` gives one, as in Effect.
+
 ### Changed
 
 - Every place Effect reads a date with JavaScript's `Date` (`config.date_time`, the CLI's
@@ -21,6 +38,14 @@
   `UTC` (ICU 78.3). An offset id (`+0530`) is the fixed zone `+05:30`, as in `Intl`. An id ICU doesn't know,
   such as `Factory`, is no longer a zone. `TZ` and
   the system zone read the same way.
+
+### Fixed
+
+- A `Host` (or `X-Forwarded-Host`, or an absolute request target) whose host the URL parser
+  rejects, such as `999.0.0.1`, is no longer accepted as an authority, as Effect's
+  `isValidHost` rejects it.
+- An absolute request target sets the request's host to the URL's normalized host (lowercase,
+  default port dropped), as Effect's Node server does.
 
 ## 0.2.0 (2026-11-09)
 

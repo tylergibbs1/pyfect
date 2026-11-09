@@ -5047,7 +5047,11 @@ def check_platform(
 
     assert_type(paths.join("a", "b"), str)
     assert_type(paths.resolve_within("/srv", "a"), str | None)
-    assert_type(paths.from_file_url("file:///a"), fx.Effect[str, platform_error.BadArgument, Never])
+    assert_type(
+        paths.from_file_url(fx.Url("file:///a")), fx.Effect[str, platform_error.BadArgument, Never]
+    )
+    assert_type(paths.to_file_url("/a"), fx.Effect[fx.Url, platform_error.BadArgument, Never])
+    paths.from_file_url("file:///a")  # pyright: ignore[reportArgumentType]
     assert_type(fx.path.layer, fx.Layer[fx.Path])
 
     assert_type(io.args, fx.Effect[tuple[str, ...], Never, Never])
@@ -9669,3 +9673,22 @@ def otlp_pins() -> None:
     )
     otlp_metrics.layer(url=url, temporality="weekly")  # pyright: ignore[reportArgumentType]
     otlp.layer_json(base_url=url, compression="brotli")  # pyright: ignore[reportArgumentType]
+
+
+def url_pins() -> None:
+    from pyfect.http import url as http_url
+    from pyfect.http.url_params import UrlParams
+
+    url = fx.Url("https://example.com/a?b=1#c", "https://base.test")
+    assert_type(url, fx.Url)
+    assert_type(url.href, str)
+    assert_type(url.port, str)
+    assert_type(url.search_params, tuple[tuple[str, str], ...])
+    assert_type(http_url.url_params(url), UrlParams)
+    assert_type(fx.Url.parse("x"), fx.Url | None)
+    assert_type(fx.Url.can_parse("x", url), bool)
+    assert_type(http_url.set_port(url, 8080), fx.Url)
+    assert_type(http_url.mutate(url, lambda u: setattr(u, "hash", "x")), fx.Url)
+    assert_type(http_url.from_string("x"), fx.Result[fx.Url, fx.IllegalArgumentError])
+    url.hash = "x"  # pyright: ignore[reportAttributeAccessIssue]
+    http_url.set_hash("https://example.com", "x")  # pyright: ignore[reportArgumentType]

@@ -97,9 +97,8 @@ def date_time(name: str | None = None) -> Config[datetime]:
 
 
 def url(name: str | None = None) -> Config[Url]:
-    """An absolute URL with a scheme (and a host for ``http``, ``https``,
-    ``ws``, ``wss`` and ``ftp``), split by ``urllib.parse.urlsplit`` into a
-    ``Url``, whose ``str()`` is the URL (``f"{url}/payouts"``)."""
+    """A URL, parsed as ``new URL(text)`` parses it into a ``Url``, whose
+    ``str()`` is its ``href`` (``f"{url}/payouts"``)."""
     return scalar_config(_scalars.url, name)
 
 

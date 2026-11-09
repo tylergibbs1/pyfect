@@ -219,7 +219,7 @@ def test_to_url(url: str, headers: dict[str, str], expected: str) -> None:
     """${url} ${JSON.stringify(headers)} -> ${expected}"""
     parsed = to_url(request_from_web(WebRequest(url, headers=headers)))
     assert parsed is not None
-    assert parsed.geturl() == expected
+    assert parsed.href == expected
 
 
 def test_remote_address_defaults_to_none_for_web_requests() -> None:

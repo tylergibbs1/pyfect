@@ -13,10 +13,9 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import cast
-from urllib.parse import quote, urldefrag, urljoin, urlsplit, urlunsplit
 
 from pyfect import _json_text
-from pyfect._url import parse_url
+from pyfect._url import Url
 from pyfect.json_pointer import format_uri_fragment, parse_uri_fragment
 from pyfect.json_schema._model import (
     JsonSchema,
@@ -32,11 +31,6 @@ type Path = Sequence[str]
 
 ROOT_URI = "https://effect.invalid/.json-schema/"
 
-# WHATWG's fragment and path percent-encode sets, as ``quote`` safe characters.
-_PRINTABLE = "".join(chr(c) for c in range(0x21, 0x7F))
-_FRAGMENT_SAFE = "".join(c for c in _PRINTABLE if c not in '"<>`')
-_PATH_SAFE = "".join(c for c in _FRAGMENT_SAFE if c not in "#?{}")
-
 
 @dataclass(frozen=True, slots=True)
 class _Url:
@@ -48,38 +42,10 @@ class _Url:
 
 def _resolve_url(value: str, base: str) -> _Url | None:
     """``new URL(value, base)``: ``None`` when it cannot be parsed."""
-    if any(ch in "\t\n\r" for ch in value):
-        value = "".join(ch for ch in value if ch not in "\t\n\r")
-    joined = urljoin(base, value.strip(" \x00\x01\x02\x03\x04\x05\x06\x07\x08\x0b\x0c\x0e\x0f"))
-    without_fragment, fragment = urldefrag(joined)
-    parts = urlsplit(without_fragment)
-    href = urlunsplit(
-        parts._replace(
-            scheme=parts.scheme.lower(),
-            netloc=_normalize_netloc(parts.scheme.lower(), parts.netloc),
-            path=quote(parts.path, safe=_PATH_SAFE),
-        )
-    )
-    if parse_url(href) is None:
+    url = Url.parse(value, base)
+    if url is None:
         return None
-    encoded = quote(fragment, safe=_FRAGMENT_SAFE)
-    return _Url(href, f"#{encoded}" if encoded else "")
-
-
-_DEFAULT_PORTS = {"http": "80", "https": "443", "ws": "80", "wss": "443", "ftp": "21"}
-
-
-def _normalize_netloc(scheme: str, netloc: str) -> str:
-    """The host lowercased and a default port dropped, as WHATWG does."""
-    userinfo, at, hostport = netloc.rpartition("@")
-    host, port = hostport, ""
-    if not hostport.endswith("]"):
-        head, colon, tail = hostport.rpartition(":")
-        if colon:
-            host, port = head, tail
-    if port == _DEFAULT_PORTS.get(scheme):
-        port = ""
-    return f"{userinfo}{at}{host.lower()}{':' + port if port else ''}"
+    return _Url(url.record.href(exclude_fragment=True), url.hash)
 
 
 def resolve_resource_uri(value: object, base: str) -> str | None:

@@ -33,7 +33,6 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any, Literal, NotRequired, TypedDict, cast
-from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from pyfect import schema as S
@@ -464,11 +463,7 @@ def test_suspend_readonly_map():
 
 def test_url():
     """URL"""
-    # Python keeps the URL as written (``urlsplit`` does not add the "/").
-    assert (
-        S.to_formatter(S.URL)(Url._make(urlsplit("https://www.example.com/")))
-        == "https://www.example.com/"
-    )
+    assert S.to_formatter(S.URL)(Url("https://www.example.com")) == "https://www.example.com/"
 
 
 def test_option_string():

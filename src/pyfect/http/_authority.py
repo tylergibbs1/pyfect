@@ -7,27 +7,24 @@ or a target can become part of the other."""
 from __future__ import annotations
 
 import re
-from ipaddress import IPv6Address
 from typing import NewType
+
+from pyfect._url import Url
 
 Authority = NewType("Authority", str)
 """A ``host[:port]``: a bracketed IP literal or a name of letters, digits,
 ``.``, ``-`` and ``_``, and a port up to 65535."""
 
-_SHAPE = re.compile(r"(?:\[([0-9A-Fa-f:.]+)\]|[A-Za-z0-9._-]+)(?::([0-9]{1,5}))?")
+_SHAPE = re.compile(r"(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9._-]+)(?::[0-9]{1,5})?")
 
 
 def parse_authority(text: str) -> Authority | None:
     """``text`` as an authority; ``None`` for anything else (a path, query
-    or fragment, userinfo, a list, a bad IP literal or port)."""
-    match = _SHAPE.fullmatch(text)
-    if match is None or (match[2] is not None and int(match[2]) > 65535):
+    or fragment, userinfo, a list, a bad IP literal or port). As Effect's
+    ``isValidHost``, the shape rules out paths, userinfo and lists and the
+    URL parser rejects bad IP literals and ports."""
+    if _SHAPE.fullmatch(text) is None or not Url.can_parse(f"http://{text}"):
         return None
-    if match[1] is not None:
-        try:
-            IPv6Address(match[1])
-        except ValueError:
-            return None
     return Authority(text)
 
 

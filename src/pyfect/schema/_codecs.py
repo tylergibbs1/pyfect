@@ -3,7 +3,7 @@ dates, zones, URLs, bytes and JSON, ``Option`` from ``None`` or a missing
 key, ``Redacted`` from a value.
 
 Python mappings (``docs/PARITY.md``): bytes are ``bytes`` (``Uint8Array``),
-a URL a ``Url`` (a ``urllib.parse.SplitResult``), a UTC date-time an aware ``datetime``
+a URL a ``Url`` (JavaScript's ``URL``), a UTC date-time an aware ``datetime``
 in UTC, an ``Option`` ``Some | None``.
 """
 
@@ -71,8 +71,8 @@ URL: Bottom[Url] = instance_of(
     to_codec_json=string_codec(T.url_from_string),
     **URL_INSTANCES,
 )
-"""A parsed URL, a ``Url`` (Effect's ``URL``): a ``urllib.parse.SplitResult``
-whose ``str()`` is the URL."""
+"""A parsed URL, a ``Url`` (Effect's ``URL``), whose ``str()`` is its
+``href``."""
 
 _BASE64_STRING = ast.annotate(ast.string, {"format": "byte", "content_encoding": "base64"})
 

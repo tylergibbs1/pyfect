@@ -15,7 +15,6 @@ import math
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any, Never, TypedDict, cast
-from urllib.parse import urlsplit
 
 import pyfect as fx
 from pyfect import config, testing
@@ -246,7 +245,7 @@ def test_redacted_creates_redacted_values_and_reports_missing_input():
 def test_url_decodes_valid_urls_and_reports_absence():
     """url decodes valid URLs and reports absence"""
     provider = unknown({"a": "https://example.com"})
-    assert_success(config.url("a"), provider, urlsplit("https://example.com"))
+    assert_success(config.url("a"), provider, fx.Url("https://example.com"))
     assert_failure(config.url("failure"), provider, 'Expected string\n  at ["failure"]')
 
 

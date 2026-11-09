@@ -5,7 +5,6 @@ switches the scheme to ``https`` / ``wss``."""
 from __future__ import annotations
 
 from typing import Any, Never
-from urllib.parse import SplitResult
 
 import pytest
 
@@ -45,7 +44,7 @@ class _PingRpcs(RpcGroup):
 def test_http_client_protocol_url(path: str, https: bool, expected: str):
     urls: list[str] = []
 
-    def send(request: HttpClientRequest, _url: SplitResult, _signal: Any, _fiber: Any) -> Any:
+    def send(request: HttpClientRequest, _url: fx.Url, _signal: Any, _fiber: Any) -> Any:
         urls.append(request.url)
         body = '[{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":"pong"}}]'
         return fx.succeed(http_response.make(request, body))

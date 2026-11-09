@@ -16,9 +16,9 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import SplitResult, urlunsplit
 
 from pyfect import schema as S
+from pyfect._url import Url
 from pyfect.ai import _provider as P
 from pyfect.ai import _provider_tools as PT
 from pyfect.ai import language_model as lm
@@ -100,8 +100,8 @@ def _file(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> list
         if _is_file_id(data, prefixes):
             return [{"type": "input_image", "file_id": data, "detail": detail, **extra}]
         media_type = "image/jpeg" if part.media_type == "image/*" else part.media_type
-        if isinstance(data, SplitResult):
-            url = urlunsplit(data)
+        if isinstance(data, Url):
+            url = data.href
         elif isinstance(data, bytes):
             url = f"data:{media_type};base64,{_b64(data)}"
         else:
@@ -110,8 +110,8 @@ def _file(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> list
     if part.media_type == "application/pdf":
         if _is_file_id(data, prefixes):
             return [{"type": "input_file", "file_id": data, **extra}]
-        if isinstance(data, SplitResult):
-            return [{"type": "input_file", "file_url": urlunsplit(data), **extra}]
+        if isinstance(data, Url):
+            return [{"type": "input_file", "file_url": data.href, **extra}]
         if isinstance(data, bytes):
             name = P.or_default(part.file_name, f"part-{index}.pdf")
             file_data = f"data:application/pdf;base64,{_b64(data)}"

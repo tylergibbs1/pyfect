@@ -8,10 +8,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from datetime import tzinfo
 from typing import Any, cast
-from urllib.parse import SplitResult, urlunsplit
 
 from pyfect import redacted
 from pyfect._js import js_sort_key
+from pyfect._url import Url
 from pyfect.cause import Cause, Die, Fail, Interrupt, Reason
 from pyfect.date_time import format_iso_zoned, zone_to_string
 from pyfect.date_time._iso import utc_to_string
@@ -221,12 +221,12 @@ def redacted_equivalence(parameters: _Equivalences) -> Equivalence[redacted.Reda
     return lambda a, b: value(redacted.value(a), redacted.value(b))
 
 
-def _url_text(url: SplitResult) -> str:
-    return urlunsplit(url)
+def _url_text(url: Url) -> str:
+    return url.href
 
 
-def _same_url(a: SplitResult, b: SplitResult) -> bool:
-    return _url_text(a) == _url_text(b)
+def _same_url(a: Url, b: Url) -> bool:
+    return a.href == b.href
 
 
 URL_INSTANCES: dict[str, object] = {

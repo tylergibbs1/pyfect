@@ -3,7 +3,7 @@ GraphQLProtocol.sse.test.ts. Each test's docstring is the Effect test title,
 prefixed by its describe blocks; the 502 / 400 table is two tests.
 
 A web ``Response`` is ``response.make`` (a streamed body is a ``Stream`` of
-bytes); a URL is the ``SplitResult`` the client sends to.
+bytes); a URL is the ``Url`` the client sends to.
 """
 
 # pyright: reportUnknownLambdaType=false, reportUnknownMemberType=false
@@ -178,7 +178,7 @@ def test_query_method_get_sends_a_query_as_url_params():
 
 
 def _host_of(url: Any) -> str:
-    return url.netloc
+    return url.host
 
 
 @testing.effect

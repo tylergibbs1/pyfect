@@ -345,7 +345,7 @@ def test_to_url() -> None:
     parsed = ok(na.to_url(inet("[::]:3000")))
     assert u.href(parsed) == "http://[::]:3000/"
     assert u.origin(u.set_hostname(parsed, "127.0.0.1")) == "http://127.0.0.1:3000"
-    assert parsed.hostname == "::"
+    assert parsed.hostname == "[::]"
 
 
 def test_to_url_bare_ip() -> None:
@@ -358,7 +358,7 @@ def test_to_url_bare_ip() -> None:
     ]:
         parsed = ok(na.to_url(ip(text)))
         assert u.href(parsed) == expected
-        assert parsed.port is None
+        assert parsed.port == ""
     assert u.href(ok(na.to_url(na.ipv6_loopback, "https"))) == "https://[::1]/"
 
 

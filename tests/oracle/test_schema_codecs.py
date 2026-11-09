@@ -5,10 +5,8 @@ test title, prefixed by its ``describe`` block. ``TestSchema.Asserts`` is
 
 Python mappings: ``Uint8ArrayFromBase64`` / ``Uint8ArrayFromBase64Url`` /
 ``Uint8ArrayFromHex`` are ``BytesFromBase64`` / ``BytesFromBase64Url`` /
-``BytesFromHex`` (``bytes``); a ``URL`` is a ``urllib.parse.SplitResult``,
-which keeps the text as written (WHATWG's ``URL`` adds the root path, so
-Effect encodes ``"https://effect.website/"``); a UTC ``DateTime`` is an
-aware ``datetime``.
+``BytesFromHex`` (``bytes``); a ``URL`` is a ``Url``; a UTC ``DateTime``
+is an aware ``datetime``.
 
 Omitted: "BooleanFromBit", "Uint8Array", "URL", "PropertyKey": they only
 verify arbitrary generation (no arbitraries yet).
@@ -18,7 +16,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
-from urllib.parse import urlsplit
 
 from pyfect import byte_size
 from pyfect import effect as fx
@@ -188,11 +185,9 @@ def test_byte_size_from_number():
 def test_url_from_string():
     """URLFromString"""
     asserts = SchemaAsserts(S.URLFromString)
-    asserts.decoding().succeed("https://effect.website", urlsplit("https://effect.website"))
+    asserts.decoding().succeed("https://effect.website", Url("https://effect.website"))
     asserts.decoding().fail("123", "Expected a valid URL string")
-    asserts.encoding().succeed(
-        Url._make(urlsplit("https://effect.website/")), "https://effect.website/"
-    )
+    asserts.encoding().succeed(Url("https://effect.website/"), "https://effect.website/")
 
 
 def test_trim():
