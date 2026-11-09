@@ -1,6 +1,11 @@
 # Changelog
 
-## 0.3.1 (unreleased)
+## 0.3.1 (2026-11-09)
+
+### Added
+
+- `Semaphore.take_scoped(n)`, Effect 4.1.2's `takeScoped`: waits for `n` permits and holds
+  them until the current scope closes.
 
 ### Fixed
 
