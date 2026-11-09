@@ -142,7 +142,7 @@ def test_wall_time_reads_infinite_after_moving_to_infinity():
     """Effect's ``currentTimeMillis`` is the TestClock's timestamp, so a
     schedule stepping after ``adjust(Infinity)`` sees ``now`` infinite and
     stops (``Schedule.cron``'s infinity port depends on it)."""
-    yield from testing.set_time(5.0)
+    yield from testing.set_time(5_000)
     yield from testing.adjust(math.inf)
-    assert (yield from fx.clock.now()) == math.inf
+    assert (yield from fx.clock.current_time_millis()) == math.inf
     assert (yield from fx.clock.now_nanos()) == 5_000_000_000

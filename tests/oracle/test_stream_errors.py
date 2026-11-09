@@ -408,14 +408,14 @@ def test_retry_cleans_up_resources_before_restarting_the_stream():
 def test_retry_retries_a_failing_stream_according_to_a_schedule():
     """retry - retries a failing stream according to a schedule"""
     times: list[float] = []
-    failing = stream.from_effect(fx.clock.now().map(times.append)).flat_map(
+    failing = stream.from_effect(fx.clock.current_time_millis().map(times.append)).flat_map(
         lambda _: stream.fail(None)
     )
     fiber = yield from (failing.retry(schedule.exponential("1 second")).take(3).run_drain().fork())
     yield from testing.adjust("1 second")
     yield from testing.adjust("2 seconds")
     yield from fiber.interrupt()
-    assert [round(t) for t in reversed(times)] == [3, 1, 0]
+    assert [round(t) for t in reversed(times)] == [3_000, 1_000, 0]
 
 
 @testing.effect
@@ -426,7 +426,7 @@ def test_retry_reset_the_schedule_after_a_successful_pull():
 
     @fx.fn
     def attempt():
-        times.insert(0, (yield from fx.clock.now()))
+        times.insert(0, (yield from fx.clock.current_time_millis()))
         return (yield from ref.update_and_get(lambda n: n + 1))
 
     def pick(n: int) -> Stream[int, None]:
@@ -438,7 +438,7 @@ def test_retry_reset_the_schedule_after_a_successful_pull():
     yield from testing.adjust("2 seconds")
     yield from testing.adjust("1 second")
     yield from fiber.join()
-    assert [round(t) for t in times] == [4, 3, 3, 1, 0]
+    assert [round(t) for t in times] == [4_000, 3_000, 3_000, 1_000, 0]
 
 
 @testing.effect
@@ -466,7 +466,7 @@ def test_retry_schedule_current_metadata():
             duration=fx.duration.Seconds(delay),
             attempt=attempt,
             start=0.0,
-            now=now,
+            now=now * 1000,
             elapsed=fx.duration.Seconds(now),
             elapsed_since_previous=fx.duration.Seconds(since),
         )

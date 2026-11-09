@@ -288,7 +288,7 @@ ClockWorkflow = workflow.make(
 def _clock(_payload: IdPayload, _execution_id: str) -> fx.Effect[float, Never, Any]:
     return durable_clock.sleep(
         name="RestartSleep", duration="1 second", in_memory_threshold=0
-    ).and_then(fx.clock.now().map(lambda seconds: seconds * 1000))
+    ).and_then(fx.clock.current_time_millis())
 
 
 # --- Queue -------------------------------------------------------------------------------
@@ -923,7 +923,7 @@ def test_wakes_a_durable_clock_after_a_whole_cluster_restart(cluster_db: Cluster
 
     def body() -> Body:
         cluster = yield from started(cluster_db)
-        start = (yield from fx.clock.now()) * 1000
+        start = yield from fx.clock.current_time_millis()
         execution_id = yield from with_workflow(
             cluster, ClockWorkflow.execute({"id": id}, discard=True)
         )

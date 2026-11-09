@@ -1019,7 +1019,7 @@ def test_delivers_a_pending_interrupt_when_interruptible_mask_restores_interrupt
 @testing.effect
 def test_timed_uses_monotonic_time_when_wall_time_moves_backward():
     """Effect.test.ts "timed > uses monotonic time when wall time moves backward"."""
-    yield from testing.set_time(1.0)
+    yield from testing.set_time(1_000)
 
     @fx.gen
     def body():

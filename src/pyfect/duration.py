@@ -266,6 +266,15 @@ def to_nanos(seconds: float) -> int:
     return math.floor(_exact_nanos(seconds))
 
 
+def millis_to_nanos(millis: float) -> int:
+    """Whole nanoseconds (floored) in a finite number of milliseconds, such
+    as an epoch timestamp from ``clock.current_time_millis``, read as the
+    shortest decimal that prints it (as ``to_nanos`` reads seconds)."""
+    if not math.isfinite(millis):
+        raise ValueError(f"millis_to_nanos needs a finite count, got {millis}")
+    return math.floor(Decimal(repr(float(millis))) * 10**6)
+
+
 _MAX_NANOS = math.floor(sys.float_info.max)
 
 
@@ -382,6 +391,7 @@ __all__ = [
     "from_input",
     "from_millis",
     "from_nanos",
+    "millis_to_nanos",
     "nanos_or_infinite",
     "parse_duration_text",
     "round_nanos",

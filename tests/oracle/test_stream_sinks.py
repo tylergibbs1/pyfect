@@ -27,7 +27,7 @@ from typing import Any, Never
 import pyfect as fx
 from pyfect import cause, schedule, sink, stream, testing
 from pyfect.cause import Cause
-from pyfect.clock import now
+from pyfect.clock import current_time_millis
 from pyfect.duration import Seconds
 from pyfect.exit import Exit
 from pyfect.option import Some
@@ -181,7 +181,7 @@ def test_grouped_within_starts_each_window_at_its_first_element():
     batches: list[tuple[float, list[int]]] = []
 
     def record(batch: list[int]) -> fx.Effect[None]:
-        return now().map(lambda at: batches.append((round(at * 1000), batch)))
+        return current_time_millis().map(lambda at: batches.append((round(at), batch)))
 
     yield from (
         stream.from_queue(queue)

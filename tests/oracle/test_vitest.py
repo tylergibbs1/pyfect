@@ -231,7 +231,7 @@ def test_top_level_build_per_test_provides_new_test_services_for_test(
 ):
     """build-per-test.test.ts "top-level buildPerTest > provides new test services for
     test %s"."""
-    assert (yield from fx.clock.now()) == 0
+    assert (yield from fx.clock.current_time_millis()) == 0
     yield from testing.adjust("1 second")
 
 

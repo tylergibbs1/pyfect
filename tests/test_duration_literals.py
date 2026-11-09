@@ -7,6 +7,9 @@ class field annotated `Duration` in `src/`, then fails on a numeric literal give
 default or at a call, in `src/`, `examples/` and `website/snippets/`: write `"5 seconds"`,
 `"500 millis"` or a `timedelta`, which say their unit.
 
+The same goes for epoch timestamps: `testing.set_time` takes milliseconds, so a
+`datetime.timestamp()` (seconds) handed to it is flagged too.
+
 Pyright cannot catch this: `Duration` must accept a number for users, and pyfect's own code is
 checked against the same signatures. Tests may pass bare numbers, since some test the parse.
 """
@@ -238,6 +241,51 @@ def test_no_bare_number_is_given_where_a_duration_is_taken() -> None:
         "a bare number as a Duration is milliseconds; write its unit "
         '("5 seconds", "500 millis") or a timedelta:\n' + "\n".join(problems)
     )
+
+
+# Callables taking epoch milliseconds (Effect's ``TestClock.setTime``), and
+# expressions that give epoch seconds.
+_EPOCH_MILLIS_TAKERS = frozenset({"set_time", "TestClock"})
+
+
+def _is_epoch_seconds(node: ast.expr) -> bool:
+    match node:
+        case ast.Call(func=ast.Attribute(attr="timestamp"), args=[], keywords=[]):
+            return True  # datetime.timestamp()
+        case ast.Call(func=ast.Attribute(value=ast.Name(id="time"), attr="time"), args=[]):
+            return True  # time.time()
+        case _:
+            return False
+
+
+def _epoch_seconds_violations(tree: ast.Module) -> list[tuple[int, str]]:
+    return [
+        (arg.lineno, f"`{ast.unparse(arg)}` (epoch seconds) passed to `{name}`")
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and (name := _callee_name(node)) in _EPOCH_MILLIS_TAKERS
+        for arg in [*node.args, *(kw.value for kw in node.keywords)]
+        if _is_epoch_seconds(arg)
+    ]
+
+
+def test_no_epoch_seconds_are_given_where_epoch_millis_are_taken() -> None:
+    """`set_time` and `TestClock(start)` take epoch milliseconds since 0.2.0,
+    as in Effect; `datetime.timestamp()` and `time.time()` give seconds."""
+    paths = _sources(*CHECKED, ROOT / "tests")
+    problems = [
+        f"{path.relative_to(ROOT)}:{line}: {what}"
+        for path in paths
+        for line, what in _epoch_seconds_violations(_parse(path))
+    ]
+    assert not problems, "multiply by 1000:\n" + "\n".join(problems)
+
+
+def test_the_guard_finds_epoch_seconds() -> None:
+    tree = ast.parse(
+        "testing.set_time(dt.timestamp())\nclock.set_time(time.time())\n"
+        "testing.set_time(dt.timestamp() * 1000)\nTestClock(start=time.time())\n"
+    )
+    assert [line for line, _ in _epoch_seconds_violations(tree)] == [1, 2, 4]
 
 
 def test_the_guard_finds_duration_slots_and_bare_numbers() -> None:

@@ -1,7 +1,7 @@
 """Ports of Effect's ``Schedule.test.ts``.
 
-Each test's docstring is the Effect test title. Times are seconds, not
-milliseconds: Effect's ``step(1_000, "a")`` is ``step(1.0, "a")``. A step
+Each test's docstring is the Effect test title. A step takes epoch
+milliseconds, as in Effect; delays are ``Seconds``. A step
 returns ``Continue(output, delay)`` where Effect's ``Pull`` succeeds with
 ``[output, delay]``, and ``Stop(output)`` where it fails with
 ``Cause.done(output)``.
@@ -138,8 +138,8 @@ def expected_metadata() -> list[Metadata[int, str]]:
             output=0,
             duration=ms(250),
             attempt=1,
-            start=1.0,
-            now=1.0,
+            start=1_000,
+            now=1_000,
             elapsed=ZERO,
             elapsed_since_previous=ZERO,
         ),
@@ -148,8 +148,8 @@ def expected_metadata() -> list[Metadata[int, str]]:
             output=1,
             duration=ms(250),
             attempt=2,
-            start=1.0,
-            now=1.25,
+            start=1_000,
+            now=1_250,
             elapsed=ms(250),
             elapsed_since_previous=ms(250),
         ),
@@ -166,8 +166,8 @@ def test_tap_provides_full_metadata():
 
     s = schedule.spaced(ms(250)).pipe(schedule.set_input_type(str)).tap(record)
     step = yield from schedule.to_step(s)
-    first = yield from step(1.0, "a")
-    second = yield from step(1.25, "b")
+    first = yield from step(1_000, "a")
+    second = yield from step(1_250, "b")
     assert first == Continue(0, ms(250))
     assert second == Continue(1, ms(250))
     assert observed == expected_metadata()
@@ -184,8 +184,8 @@ def test_modify_delay_provides_full_metadata():
 
     s = schedule.spaced(ms(250)).pipe(schedule.set_input_type(str)).modify_delay(modify)
     step = yield from schedule.to_step(s)
-    first = yield from step(1.0, "a")
-    second = yield from step(1.25, "b")
+    first = yield from step(1_000, "a")
+    second = yield from step(1_250, "b")
     assert first == Continue(0, ms(250))
     assert second == Continue(1, ms(500))
     assert observed == expected_metadata()
@@ -202,8 +202,8 @@ def test_add_delay_provides_full_metadata():
 
     s = schedule.spaced(ms(250)).pipe(schedule.set_input_type(str)).add_delay(extra)
     step = yield from schedule.to_step(s)
-    first = yield from step(1.0, "a")
-    second = yield from step(1.25, "b")
+    first = yield from step(1_000, "a")
+    second = yield from step(1_250, "b")
     assert first == Continue(0, ms(250))
     assert second == Continue(1, ms(500))
     assert observed == expected_metadata()
@@ -296,8 +296,8 @@ def test_up_to_limits_by_duration():
     ids: Schedule[str, str] = schedule.identity()
     step = yield from schedule.to_step(ids.up_to(duration="1 second"))
     first = yield from step(0.0, "a")
-    second = yield from step(1.0, "b")
-    third = yield from step(1.001, "c")
+    second = yield from step(1_000, "b")
+    third = yield from step(1_001, "c")
     assert [first, second, third] == [Continue("a", ZERO), Continue("b", ZERO), Stop("c")]
 
 
@@ -420,7 +420,7 @@ def cron_times(
 
     @fx.gen
     def go():
-        yield from testing.set_time(start.timestamp())
+        yield from testing.set_time(start.timestamp() * 1000)
         delays = yield from run_delays(schedule.cron(expression), nones(steps))
         times: list[str] = []
         at = start.timestamp()

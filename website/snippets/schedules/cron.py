@@ -24,14 +24,14 @@ match cron.parse("61 * * * *"):
 # of every-15-minutes runs takes no real time.
 ticks: list[str] = []
 quarter_hours = schedule.cron("*/15 * * * *", "UTC").up_to(times=3)
-record = fx.clock.now().map(
-    lambda s: ticks.append(datetime.fromtimestamp(s, UTC).strftime("%H:%M"))
+record = fx.clock.current_time_millis().map(
+    lambda millis: ticks.append(datetime.fromtimestamp(millis / 1000, UTC).strftime("%H:%M"))
 )
 
 
 @fx.gen
 def program():
-    yield from testing.set_time(now.timestamp())
+    yield from testing.set_time(now.timestamp() * 1000)
     fiber = yield from record.repeat(quarter_hours).fork()
     yield from testing.adjust("1 hour")
     yield from fiber.join()

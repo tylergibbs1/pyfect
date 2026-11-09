@@ -307,8 +307,8 @@ class _FrozenClock:
         self._inner = inner
         self._now_nanos = now_nanos
 
-    def now_unsafe(self) -> float:
-        return self._now_nanos / 1e9
+    def current_time_millis_unsafe(self) -> float:
+        return self._now_nanos / 1e6
 
     def monotonic_unsafe(self) -> float:
         return self._inner.monotonic_unsafe()

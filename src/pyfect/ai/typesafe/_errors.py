@@ -94,7 +94,9 @@ def _status_error(source: StatusCodeError, method: str) -> Effect[Never, AiError
         return _fail(method, reason)
 
     body = response.text.or_else_succeed(lambda _: source.description)
-    return body.flat_map(lambda text: clock.now().flat_map(lambda s: build(text, s * 1000)))
+    return body.flat_map(
+        lambda text: clock.current_time_millis().flat_map(lambda now: build(text, now))
+    )
 
 
 def mapper(method: str) -> Callable[[object], Effect[Never, AiError]]:

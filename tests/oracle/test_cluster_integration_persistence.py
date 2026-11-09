@@ -112,7 +112,7 @@ def count(tag: str, id: str) -> int:
 
 
 def now_millis() -> fx.Effect[float]:
-    return fx.clock.now().map(lambda seconds: seconds * 1000)
+    return fx.clock.current_time_millis()
 
 
 def malformed(cause: Cause[Any]) -> bool:

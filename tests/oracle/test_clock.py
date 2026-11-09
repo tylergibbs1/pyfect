@@ -38,4 +38,4 @@ def test_keeps_wall_time_aligned_while_exposing_the_monotonic_source(
     monotonic += 100_000_000
     assert clock.now_nanos_unsafe() == wall
     assert clock.monotonic_nanos_unsafe() > before_suspend
-    assert clock.now_unsafe() == wall / 1e9
+    assert clock.current_time_millis_unsafe() == wall // 1_000_000

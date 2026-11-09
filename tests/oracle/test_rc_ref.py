@@ -255,8 +255,8 @@ class _RecordingClock:
         self.inner = inner
         self.sleeps: list[float] = []
 
-    def now_unsafe(self) -> float:
-        return self.inner.now_unsafe()
+    def current_time_millis_unsafe(self) -> float:
+        return self.inner.current_time_millis_unsafe()
 
     def monotonic_unsafe(self) -> float:
         return self.inner.monotonic_unsafe()

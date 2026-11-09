@@ -139,7 +139,7 @@ def _map_status(reason: StatusCodeError, method: str) -> Effect[Never, AiError]:
         return _fail(method, mapped)
 
     return P.status_body(reason).flat_map(
-        lambda body: clock.now().flat_map(lambda seconds: build(body, seconds * 1000))
+        lambda body: clock.current_time_millis().flat_map(lambda now: build(body, now))
     )
 
 
@@ -159,10 +159,10 @@ def map_client_error(error: OpenRouterClientError, method: str) -> Effect[Never,
     }
     http = P.http_context(error.request, response, P.dumps(cause), secret_headers=SECRET_HEADERS)
 
-    def build(seconds: float) -> Effect[Never, AiError]:
+    def build(now: float) -> Effect[Never, AiError]:
         reason = map_status_code_to_reason(
             status=response.status,
-            now=seconds * 1000,
+            now=now,
             headers=response.headers,
             message=detail["message"],
             metadata=metadata,
@@ -170,7 +170,7 @@ def map_client_error(error: OpenRouterClientError, method: str) -> Effect[Never,
         )
         return _fail(method, reason)
 
-    return clock.now().flat_map(build)
+    return clock.current_time_millis().flat_map(build)
 
 
 def catch(method: str) -> Callable[[object], Effect[Never, AiError]]:

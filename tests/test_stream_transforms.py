@@ -179,7 +179,7 @@ def test_throttle_shape_caps_the_bucket_at_units_plus_burst():
     seen: list[tuple[int, float]] = []
 
     def record(n: int) -> fx.Effect[None]:
-        return fx.sync(lambda: seen.append((n, clock.now_unsafe())))
+        return fx.sync(lambda: seen.append((n, clock.current_time_millis_unsafe())))
 
     throttled = stream.from_queue(queue).throttle(
         cost=len, units=1, duration="1 second", burst=2, strategy="shape"
@@ -189,7 +189,7 @@ def test_throttle_shape_caps_the_bucket_at_units_plus_burst():
     yield from queue.offer_all(range(1, 7))
     for _ in range(10):
         yield from testing.adjust("1 second")
-    assert seen == [(n, 13) for n in range(1, 7)]
+    assert seen == [(n, 13_000) for n in range(1, 7)]
 
 
 @testing.effect

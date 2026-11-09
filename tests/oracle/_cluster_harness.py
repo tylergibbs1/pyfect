@@ -61,7 +61,6 @@ from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.sharding import Sharding, ShardingService
 from pyfect.cluster.sharding_config import DEFAULTS, ShardingConfigService
 from pyfect.context import Context
-from pyfect.duration import Seconds
 from pyfect.exit import Exit
 from pyfect.latch import Latch
 from pyfect.layer import Layer
@@ -845,17 +844,17 @@ class Cluster:
         @fx.gen
         def wait():
             clock = yield from fx.clock.Clock()
-            deadline = clock.now_unsafe() + timeout
+            deadline = clock.current_time_millis_unsafe() + timeout * 1000
             while True:
-                left = deadline - clock.now_unsafe()
+                left = deadline - clock.current_time_millis_unsafe()
                 if left <= 0:
                     break
-                held = yield from checked.timeout_option(Seconds(left))
+                held = yield from checked.timeout_option(left)
                 if held is not None and held.value:
                     return
-                if clock.now_unsafe() >= deadline:
+                if clock.current_time_millis_unsafe() >= deadline:
                     break
-                yield from fx.sleep(Seconds(min(0.1, max(0.0, deadline - clock.now_unsafe()))))
+                yield from fx.sleep(min(100, max(0, deadline - clock.current_time_millis_unsafe())))
             state = yield from self.diagnostics()
             return (yield from fx.fail(AssertionError(f"{description}\n{state}")))
 

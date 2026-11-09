@@ -108,7 +108,7 @@ def make_failover_storage(state: FailoverState, clock: ClockService) -> RunnerSt
     ) -> fx.Effect[list[ShardId], PersistenceError]:
         def run() -> fx.Effect[list[ShardId], PersistenceError]:
             shards = list(shard_ids)
-            state.refresh_calls.append(RefreshCall(clock.now_unsafe() * 1000, shards))
+            state.refresh_calls.append(RefreshCall(clock.current_time_millis_unsafe(), shards))
             if state.blackholed or (state.blackhole_non_empty_refresh and shards):
                 return fx.never
             return fx.succeed(shards)

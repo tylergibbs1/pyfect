@@ -367,10 +367,8 @@ def test_inherits_layer_services_and_supports_provide(method: Direction):
 
 
 def _now_check(value: float, _options: S.ParseOptions) -> fx.Effect[G.CheckOutput]:
-    return fx.clock.now().map(
-        lambda now: (
-            None if value == round(now * 1000) else InvalidValue({"message": "Unexpected time"})
-        )
+    return fx.clock.current_time_millis().map(
+        lambda now: None if value == now else InvalidValue({"message": "Unexpected time"})
     )
 
 
@@ -381,7 +379,7 @@ def test_reads_the_test_clock(method: Direction):
     check = G.check_effect(_now_check)
     schema = S.Number.pipe(S.decode(T.Transformation(check, check)))
     assertions: SchemaCheck[Never] = getattr(SchemaAsserts(schema), method)()
-    yield from testing.set_time(0.123)
+    yield from testing.set_time(123)
     yield from assertions.succeed_effect(123)
     yield from assertions.fail_effect(0, "Unexpected time")
 
@@ -418,7 +416,7 @@ def test_make_uses_constructor_defaults_from_the_test_environment_and_honors_dis
     millis = fx.clock.now_nanos().map(lambda nanos: float(nanos // 1_000_000))
     schema = S.Struct(_Time, time=S.Number.pipe(S.with_constructor_default(millis)))
     assertion = SchemaAsserts(schema).make().succeed_effect({}, {"time": 123})
-    yield from testing.set_time(0.123)
+    yield from testing.set_time(123)
     yield from assertion
 
     checked = SchemaAsserts(S.Number.check(S.is_greater_than(0)))

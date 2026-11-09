@@ -1433,9 +1433,9 @@ def test_with_test_clock_set_specific_time():
     """with TestClock - set specific time"""
     cache = yield from _length_cache(time_to_live=1.0)
     yield from cache.get("test")
-    yield from testing.set_time(0.5)
+    yield from testing.set_time(500)
     assert (yield from cache.has("test"))
-    yield from testing.set_time(1.5)
+    yield from testing.set_time(1_500)
     assert not (yield from cache.has("test"))
 
 

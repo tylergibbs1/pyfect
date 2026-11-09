@@ -1,9 +1,12 @@
 """Time. ``Clock`` is a reference, so effects can sleep without declaring
 it, and tests can swap in ``pyfect.testing.TestClock``.
 
-Wall time (``now``) can jump, backwards too; monotonic time never does,
-so measure elapsed time with it. Each comes in float seconds and in whole
-nanoseconds (Effect's ``currentTimeNanos`` / ``monotonicTimeNanos``)."""
+Wall time can jump, backwards too; monotonic time never does, so measure
+elapsed time with it. Wall time comes in epoch milliseconds
+(``current_time_millis``, Effect's ``currentTimeMillis``) and whole
+nanoseconds (``now_nanos``, Effect's ``currentTimeNanos``); monotonic time
+in float seconds and whole nanoseconds (``monotonic_nanos``, Effect's
+``monotonicTimeNanos``)."""
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
@@ -22,8 +25,9 @@ from pyfect.effect import never
 
 
 class ClockService(Protocol):
-    def now_unsafe(self) -> float:
-        """Wall-clock time, seconds since the epoch."""
+    def current_time_millis_unsafe(self) -> float:
+        """Wall-clock time, milliseconds since the epoch (Effect's
+        ``currentTimeMillisUnsafe``)."""
         ...
 
     def monotonic_unsafe(self) -> float:
@@ -42,14 +46,15 @@ class ClockService(Protocol):
 
 
 _NANOS = 1_000_000_000
+_NANOS_PER_MILLI = 1_000_000
 
 
 class LiveClock:
     """The system clock. A sleep of zero or less yields once; an infinite
     sleep never wakes and holds no timer (as Effect's)."""
 
-    def now_unsafe(self) -> float:
-        return time.time_ns() / _NANOS
+    def current_time_millis_unsafe(self) -> float:
+        return time.time_ns() // _NANOS_PER_MILLI
 
     def monotonic_unsafe(self) -> float:
         return time.monotonic_ns() / _NANOS
@@ -87,9 +92,10 @@ def sleep(duration: Duration) -> Effect[None]:
     return Clock().flat_map(lambda c: c.sleep(seconds))
 
 
-def now() -> Effect[float]:
-    """Wall-clock time, seconds since the epoch."""
-    return Clock().map(lambda c: c.now_unsafe())
+def current_time_millis() -> Effect[float]:
+    """Wall-clock time, milliseconds since the epoch (Effect's
+    ``currentTimeMillis``)."""
+    return Clock().map(lambda c: c.current_time_millis_unsafe())
 
 
 def monotonic() -> Effect[float]:
@@ -98,9 +104,9 @@ def monotonic() -> Effect[float]:
 
 
 def now_millis_unsafe(clock: ClockService) -> int:
-    """``clock``'s wall-clock time in whole milliseconds since the epoch
-    (Effect's ``currentTimeMillisUnsafe``), floored from its nanoseconds:
-    ``now_unsafe() * 1000`` floors 1.001 s to 1000 ms."""
+    """``clock``'s wall-clock time in whole milliseconds since the epoch,
+    floored from its nanoseconds (``current_time_millis_unsafe`` keeps a
+    test clock's fraction of a millisecond, as Effect's does)."""
     return clock.now_nanos_unsafe() // 1_000_000
 
 
@@ -140,9 +146,9 @@ __all__ = [
     "ClockService",
     "LiveClock",
     "clock_with",
+    "current_time_millis",
     "monotonic",
     "monotonic_nanos",
-    "now",
     "now_millis_unsafe",
     "now_nanos",
     "sleep",

@@ -555,8 +555,8 @@ class _ShiftedClock:
     wall_offset: float = 0
     early: float = 0
 
-    def now_unsafe(self) -> float:
-        return self.base.now_unsafe() + self.wall_offset
+    def current_time_millis_unsafe(self) -> float:
+        return self.base.current_time_millis_unsafe() + self.wall_offset * 1000
 
     def monotonic_unsafe(self) -> float:
         return self.monotonic_nanos_unsafe() / 1e9
@@ -572,7 +572,7 @@ class _ShiftedClock:
 
 
 def _millis(clock: ClockService) -> fx.Effect[int]:
-    return fx.sync(lambda: round(clock.now_unsafe() * 1000))
+    return fx.sync(lambda: round(clock.current_time_millis_unsafe()))
 
 
 @testing.effect
@@ -841,11 +841,13 @@ def test_repeat_elements_short_circuits_after_schedule():
 @testing.effect
 def test_schedule():
     """schedule"""
-    start = yield from fx.clock.now()
+    start = yield from fx.clock.current_time_millis()
     fiber = yield from (
         stream.range(1, 8)
         .schedule(schedule.fixed("100 millis"))
-        .map_effect(lambda n: fx.clock.now().map(lambda now: (n, round((now - start) * 1000))))
+        .map_effect(
+            lambda n: fx.clock.current_time_millis().map(lambda now: (n, round(now - start)))
+        )
         .run_collect()
         .fork()
     )

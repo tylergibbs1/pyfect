@@ -307,7 +307,7 @@ def test_an_effect_test_uses_the_live_clock_of_a_live_layer_fixture(
 ):
     """Like ``it.effect`` in an ``excludeTestServices`` layer: the test gets
     the fixture's services, without a TestClock of its own."""
-    assert (yield from fx.clock.now()) > 1_000_000_000
+    assert (yield from fx.clock.current_time_millis()) > 1_000_000_000_000
     assert isinstance((yield from fx.Clock()), LiveClock)
 
 

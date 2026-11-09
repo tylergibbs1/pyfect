@@ -9,7 +9,8 @@ test with `@testing.effect` and write it like `@fx.gen`.
 ## The test clock
 
 `@testing.effect` runs the test with a `TestClock`: time only moves when the test calls
-`testing.adjust` or `set_time`, and every fiber woken by a move runs until it waits again. Tests
+`testing.adjust` or `set_time` (epoch milliseconds, as in Effect), and every fiber woken by a
+move runs until it waits again. Tests
 of retries, timeouts and schedules are exact and take no real time.
 
 A test that would wait forever fails with `StalledError` instead of hanging, and each test has a

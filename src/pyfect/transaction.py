@@ -53,7 +53,7 @@ type TransactionRetryReason = Literal["retry", "conflict"]
 ``tx_retry``, ``"conflict"`` after a ref it read changed before it could
 commit."""
 
-_NANOS = 1_000_000_000
+_NANOS_PER_MILLI = 1_000_000
 
 
 @final
@@ -91,9 +91,9 @@ class TransactionMeta:
     """The journal and attempt metadata of a running transaction.
 
     ``attempt`` counts runs of the outermost body from 1; ``retry_reason`` is
-    ``None`` on the first. Times are wall-clock seconds read from the
-    ``Clock``, as in schedule metadata: ``start`` when the transaction began,
-    ``now`` when this attempt began."""
+    ``None`` on the first. ``start`` and ``now`` are wall-clock milliseconds
+    since the epoch read from the ``Clock``, as in schedule metadata:
+    ``start`` when the transaction began, ``now`` when this attempt began."""
 
     __slots__ = (
         "_attempt",
@@ -130,11 +130,11 @@ class TransactionMeta:
 
     @property
     def start(self) -> float:
-        return self._start_ns / _NANOS
+        return self._start_ns / _NANOS_PER_MILLI
 
     @property
     def now(self) -> float:
-        return self._now_ns / _NANOS
+        return self._now_ns / _NANOS_PER_MILLI
 
     @property
     def elapsed(self) -> Seconds:

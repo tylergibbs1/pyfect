@@ -1150,7 +1150,7 @@ def test_logs_failed_replay_and_redelivers():
     """logs a failed remote replay batch and redelivers it uncommitted after a backoff"""
     # The imported entries have wall-clock ids, so align the test clock
     # with them to keep skew warnings out of the logs.
-    yield from testing.set_time(time.time())
+    yield from testing.set_time(time.time() * 1000)
     journal = yield from J.make_memory
     remote_id = J.make_remote_id_unsafe()
     logs: list[dict[str, object]] = []

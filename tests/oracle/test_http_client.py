@@ -563,9 +563,11 @@ def test_retry_errors_only():
 @testing.effect
 def test_retry_delay(header: str | None, status: int, delay: float, scheduled: bool):
     """honors the retry delay for $name"""
-    now = yield from clock.now()
+    now = yield from clock.current_time_millis()
     retry_after = (
-        h.format_http_date(datetime.fromtimestamp(now + 30, UTC)) if header == "date" else header
+        h.format_http_date(datetime.fromtimestamp(now / 1000 + 30, UTC))
+        if header == "date"
+        else header
     )
     attempts, client = _sequence_client(
         [(status, {} if retry_after is None else {"retry-after": retry_after}), (200, {})]

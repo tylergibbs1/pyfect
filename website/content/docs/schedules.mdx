@@ -32,7 +32,8 @@ Effect. An invalid string raises `ValueError`.
 <Callout title="Bare numbers are milliseconds since 0.2.0">
 In 0.1.0 a bare number was seconds, so `fx.sleep(5)` waited 5 seconds; since 0.2.0 it waits 5
 milliseconds. Write the unit (`fx.sleep("5 seconds")`) or a `timedelta`, which read the same in
-every version.
+every version. Timestamps are epoch milliseconds too: `testing.set_time`,
+`clock.current_time_millis` (which replaces `clock.now`) and a step's `start` and `now`.
 </Callout>
 
 ## Cron

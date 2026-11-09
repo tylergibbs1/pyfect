@@ -316,8 +316,8 @@ class _AdvancingClock:
         self._ms += 1
         return (self._ms - 1) * 1_000_000
 
-    def now_unsafe(self) -> float:
-        return self.now_nanos_unsafe() / 1_000_000_000
+    def current_time_millis_unsafe(self) -> float:
+        return self.now_nanos_unsafe() / 1_000_000
 
     def monotonic_unsafe(self) -> float:
         return self._base.monotonic_unsafe()
@@ -404,6 +404,6 @@ def test_tracks_nested_metadata_across_retries_and_conflicts():
 
     assert snapshots == [
         _Snapshot(1, None, 0, 0, 0, 0, nested_same=True),
-        _Snapshot(2, "retry", 0, 1, 1, 1, nested_same=True),
-        _Snapshot(3, "conflict", 0, 1.5, 1.5, 0.5, nested_same=True),
+        _Snapshot(2, "retry", 0, 1_000, 1, 1, nested_same=True),
+        _Snapshot(3, "conflict", 0, 1_500, 1.5, 0.5, nested_same=True),
     ]

@@ -24,6 +24,26 @@
   transaction's `elapsed`. Arithmetic that keeps the unit stays `Seconds` (`d * 2`, `d + d`,
   `d / 2`); adding a bare number gives a plain `float`.
 
+- Timestamps given or read as a bare number are epoch milliseconds, as in Effect; in 0.1.0
+  they were epoch seconds:
+  - `testing.set_time(timestamp)` and `TestClock.set_time` (Effect's `TestClock.setTime`) take
+    milliseconds: `set_time(5)` was 5 seconds after the epoch and is now 5 milliseconds.
+    `TestClock(start=)` takes milliseconds too.
+  - `clock.now()` and `ClockService.now_unsafe()` (seconds) are replaced by Effect's
+    `clock.current_time_millis()` and `current_time_millis_unsafe()` (milliseconds). The old
+    names are gone, so code that used them fails loudly; a custom `ClockService` renames its
+    `now_unsafe` method and returns milliseconds.
+  - A schedule step's `now` argument and its `InputMetadata` / `Metadata` `start` and `now`
+    (`schedule.from_step`, `to_step`, `tap`, `modify_delay`, `CurrentMetadata`) are
+    milliseconds, as are a transaction's `TransactionMeta.start` and `now`.
+  - `metric.summary_with_timestamp` reads the timestamp of each `(value, timestamp)` as
+    milliseconds.
+
+  To migrate, multiply epoch seconds by 1000 (`set_time(dt.timestamp() * 1000)`); a test that
+  hands `datetime.timestamp()` or `time.time()` straight to `set_time` is the usual case.
+  `clock.now_nanos`, `monotonic`, `monotonic_nanos`, `FileSystem.utimes` (seconds, as Node's
+  `fs.utimes`) and the durations above are unchanged.
+
 - `eventlog.event_log_session_auth.SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_SECONDS` (30.0) is now
   `SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_MILLIS` (30000), Effect's
   `SessionAuthChallengeTimeToLiveMillis`.
@@ -32,6 +52,7 @@
 
 - `duration.from_input`, Effect's `Duration.fromInput`: `None` for a string that is not a
   duration.
+- `duration.millis_to_nanos`: the whole nanoseconds in a count of milliseconds, read exactly.
 
 ### Fixed
 

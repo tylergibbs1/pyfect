@@ -16,7 +16,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Seconds
+from pyfect.duration import Seconds, to_millis
 from pyfect.testing import TestClock
 
 HOUR = 3600.0
@@ -115,7 +115,7 @@ def test_set_time_sleep_correctly_handles_new_set_time():
     elapsed: list[bool] = []
     yield from fx.sync(lambda: elapsed.append(True)).delay(Seconds(10 * HOUR)).fork()
     assert elapsed == []
-    yield from testing.set_time(11 * HOUR)
+    yield from testing.set_time(to_millis(Seconds(11 * HOUR)))
     assert elapsed == [True]
 
 
@@ -123,7 +123,7 @@ def test_set_time_sleep_correctly_handles_new_set_time():
 def test_set_time_floors_nanoseconds_for_fractional_millisecond_instants():
     """TestClock.test.ts "setTime - floors nanoseconds for fractional millisecond instants"."""
     clock = TestClock()
-    yield from clock.set_time(199023.4380000004)
+    yield from clock.set_time(199023438.0000004)
     assert clock.now_nanos_unsafe() == 199023438000000
 
 
@@ -131,8 +131,9 @@ def test_set_time_floors_nanoseconds_for_fractional_millisecond_instants():
 def test_set_time_preserves_wall_clock_nanoseconds_for_large_timestamps():
     """TestClock.test.ts "setTime - preserves wall-clock nanoseconds for large timestamps"."""
     clock = TestClock()
-    yield from clock.set_time(1_000_000_000.001)
-    assert clock.now_nanos_unsafe() == 1_000_000_000_001 * 1_000_000
+    timestamp = 1_000_000_000_001
+    yield from clock.set_time(timestamp)
+    assert clock.now_nanos_unsafe() == timestamp * 1_000_000
 
 
 @testing.effect
@@ -140,7 +141,7 @@ def test_adjust_advances_wall_and_monotonic_time():
     """TestClock.test.ts "adjust - advances wall and monotonic time"."""
     clock = yield from testing.test_clock()
     yield from clock.adjust("1 second")
-    assert clock.now_unsafe() == 1.0
+    assert clock.current_time_millis_unsafe() == 1_000
     assert clock.monotonic_nanos_unsafe() == 1_000_000_000
     assert (yield from fx.clock.monotonic()) == 1.0
 
@@ -168,12 +169,12 @@ def test_adjust_keeps_nanosecond_access_total_after_infinite_durations():
 def test_set_time_advances_monotonic_time_only_when_moving_forward():
     """TestClock.test.ts "setTime - advances monotonic time only when moving forward"."""
     clock = TestClock()
-    yield from clock.set_time(2.0)
+    yield from clock.set_time(2_000)
     assert clock.monotonic_nanos_unsafe() == 2_000_000_000
-    yield from clock.set_time(0.5)
-    assert clock.now_unsafe() == 0.5
+    yield from clock.set_time(500)
+    assert clock.current_time_millis_unsafe() == 500
     assert clock.monotonic_nanos_unsafe() == 2_000_000_000
-    yield from clock.set_time(1.0)
+    yield from clock.set_time(1_000)
     assert clock.monotonic_nanos_unsafe() == 2_500_000_000
 
 
@@ -182,10 +183,10 @@ def test_set_time_preserves_nanosecond_precision_for_far_future_timestamps():
     """TestClock.test.ts "setTime - preserves nanosecond precision for far-future
     timestamps"."""
     clock = TestClock()
-    far_future = 1_000_000_000.0
+    far_future = 1_000_000_000_000
     yield from clock.set_time(far_future)
     before = clock.monotonic_nanos_unsafe()
-    yield from clock.set_time(far_future + 0.001)
+    yield from clock.set_time(far_future + 1)
     assert clock.monotonic_nanos_unsafe() - before == 1_000_000
 
 
@@ -234,7 +235,7 @@ def test_set_time_runs_sleeps_registered_after_a_fork_and_join():
         .forever()
         .fork()
     )
-    yield from testing.set_time(5)
+    yield from testing.set_time(5_000)
     yield from fiber.interrupt()
     assert len(ticks) == 5
 

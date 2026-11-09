@@ -4,9 +4,10 @@ A schedule is an effect that makes a step function. Each run of a schedule
 (each ``retry``, ``repeat``, ...) runs that effect once, so the step can keep
 state in its closure while the schedule itself stays an immutable value.
 
-A step takes the current wall-clock time (seconds since the epoch) and an
-input, and decides: ``Continue(output, delay)`` to go again after ``delay``,
-or ``Stop(output)`` to finish. It may fail with ``E`` and need ``R``.
+A step takes the current wall-clock time (milliseconds since the epoch, as
+Effect's ``currentTimeMillis``) and an input, and decides:
+``Continue(output, delay)`` to go again after ``delay``, or ``Stop(output)``
+to finish. It may fail with ``E`` and need ``R``.
 """
 # pyright: reportPrivateUsage=false
 
@@ -21,7 +22,7 @@ from pyfect._core import Effect, _FailCause, _Gen, _Succeed
 from pyfect._effect_args import require_effect
 from pyfect.clock import Clock, sleep
 from pyfect.context import Reference
-from pyfect.duration import ZERO, Duration, Seconds, to_nanos, to_seconds
+from pyfect.duration import ZERO, Duration, Seconds, from_millis, millis_to_nanos, to_seconds
 
 if TYPE_CHECKING:
     from pyfect.result import Result
@@ -62,8 +63,9 @@ type StepFn[Out, In, E, R] = Callable[[float, In], Effect[Decision[Out], E, R]]
 @dataclass(frozen=True, slots=True, kw_only=True)
 class InputMetadata(Generic[I_co]):
     """What a step knows before it decides. ``start`` and ``now`` are
-    wall-clock seconds, ``elapsed`` and ``elapsed_since_previous`` durations;
-    ``attempt`` counts this step's decisions to recur, from 1."""
+    wall-clock milliseconds since the epoch (as Effect's), ``elapsed`` and
+    ``elapsed_since_previous`` durations; ``attempt`` counts this step's
+    decisions to recur, from 1."""
 
     input: I_co
     attempt: int
@@ -106,16 +108,12 @@ def _value_or_effect(result: object) -> Effect[Any, Any, Any]:
 
 
 def _since(now: float, then: float) -> Seconds:
-    """``now - then`` to the nanosecond. Effect subtracts whole
-    milliseconds; float seconds would make ``1.3 - 1.0`` 0.30000000000000004
-    and break the window arithmetic in ``fixed`` and ``windowed``."""
-    if now == then or math.isinf(now) or math.isinf(then):
-        return Seconds(now - then)
-    nanos = to_nanos(now) - to_nanos(then)
-    try:
-        return Seconds(nanos / 1_000_000_000)
-    except OverflowError:  # past float range, where JavaScript's ``-`` saturates
-        return Seconds(math.inf if nanos > 0 else -math.inf)
+    """``now - then`` (epoch milliseconds) as a duration, to the nanosecond:
+    a float difference would make ``1.3 - 1.0`` 0.30000000000000004 and
+    break the window arithmetic in ``fixed`` and ``windowed``."""
+    if now == then or not math.isfinite(now - then):  # JavaScript's ``-`` saturates
+        return from_millis(now - then)
+    return Seconds((millis_to_nanos(now) - millis_to_nanos(then)) / 1_000_000_000)
 
 
 class _MetadataCounter:
@@ -355,7 +353,7 @@ def to_step_with_metadata[Out, In, E, R](
 
         def run(input: In) -> Effect[Metadata[Out, In] | Stop[Out], E, R]:
             def body() -> Any:
-                now = clock.now_unsafe()
+                now = clock.current_time_millis_unsafe()
                 decision = yield from step(now, input)
                 if isinstance(decision, Stop):
                     return decision

@@ -127,7 +127,7 @@ def test_interrupts_entities_and_reacquires_shards_after_lock_storage_recovers()
         assert entity_state.envelopes.size_unsafe() == 1
 
         acquire_count = len(state.acquire_calls)
-        partitioned_at = (yield from fx.clock.now()) * 1000
+        partitioned_at = yield from fx.clock.current_time_millis()
         state.blackholed = True
 
         yield from testing.adjust("201 millis")

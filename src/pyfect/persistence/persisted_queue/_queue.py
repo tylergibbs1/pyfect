@@ -11,7 +11,7 @@ from typing import Any, Never, cast
 from pyfect._core import Effect
 from pyfect.cause import Cause
 from pyfect.context import Tag
-from pyfect.duration import ZERO, Duration, Seconds, to_seconds
+from pyfect.duration import ZERO, Duration, Seconds, to_millis, to_seconds
 from pyfect.effect import fail, fail_cause, gen, provide_service, succeed, suspend
 from pyfect.layer import Layer, effect_discard
 from pyfect.layer import effect as layer_effect
@@ -72,7 +72,7 @@ def retry_delay(schedule: RetrySchedule, attempts: int) -> Effect[Seconds]:
             if isinstance(decision, Stop):
                 break
             delay = decision.delay
-            now += delay
+            now += to_millis(delay)
         return delay
 
     return gen(body)

@@ -38,7 +38,7 @@ NEW_YORK = ZoneInfo("America/New_York")
 
 
 def set_to_2024_nz() -> fx.Effect[None]:
-    return testing.set_time(datetime(2023, 12, 31, 11, tzinfo=UTC).timestamp())
+    return testing.set_time(datetime(2023, 12, 31, 11, tzinfo=UTC).timestamp() * 1000)
 
 
 def iso(dt: datetime) -> str:

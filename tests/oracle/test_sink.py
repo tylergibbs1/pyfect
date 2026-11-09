@@ -337,7 +337,7 @@ def test_take_until_effect_preserves_leftovers_and_stops_at_the_match():
 @testing.effect
 def test_with_duration_uses_monotonic_time_when_wall_time_moves_backward():
     """uses monotonic time when wall time moves backward"""
-    yield from testing.set_time(1)
+    yield from testing.set_time(1_000)
 
     def body() -> Generator[fx.Effect[None]]:
         yield testing.adjust("100 millis")

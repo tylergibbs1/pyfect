@@ -866,8 +866,8 @@ class _LateClock:
     def __init__(self, clock: ClockService) -> None:
         self._clock = clock
 
-    def now_unsafe(self) -> float:
-        return self._clock.now_unsafe()
+    def current_time_millis_unsafe(self) -> float:
+        return self._clock.current_time_millis_unsafe()
 
     def monotonic_unsafe(self) -> float:
         return self._clock.monotonic_unsafe()

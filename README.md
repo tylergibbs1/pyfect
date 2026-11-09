@@ -194,7 +194,8 @@ test title neither ported nor omitted with a reason, and about 94% of Effect's A
 export of the core modules is listed against Effect's in [`docs/coverage/`](docs/coverage), and
 [`docs/PARITY.md`](docs/PARITY.md) tracks what is done, what is open and what still differs. A
 bare number as a `Duration` is milliseconds, as in Effect, since 0.2.0 (0.1.0 read it as seconds);
-write `"5 seconds"` or a `timedelta` to say the unit.
+write `"5 seconds"` or a `timedelta` to say the unit. Timestamps given as numbers
+(`testing.set_time`, `clock.current_time_millis`) are epoch milliseconds too.
 
 ## Installation
 

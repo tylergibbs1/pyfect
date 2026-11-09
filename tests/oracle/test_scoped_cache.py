@@ -33,7 +33,7 @@ import pytest
 import pyfect as fx
 from pyfect import clock, exit, testing
 from pyfect.cause import Die
-from pyfect.duration import Seconds
+from pyfect.duration import Seconds, to_millis
 
 _HOUR = Seconds(3600)
 _MINUTE = Seconds(60)
@@ -1805,12 +1805,12 @@ def test_resource_cleanup_timing_is_correct():
 
     def lookup(key: str) -> fx.Effect[int, Never, fx.Scope]:
         def release(_a: None, _ex: fx.Exit[Any, Any]) -> fx.Effect[None]:
-            return clock.now().map(lambda time: cleanups.append((key, time)))
+            return clock.current_time_millis().map(lambda time: cleanups.append((key, time)))
 
         return fx.acquire_release(fx.void, release).as_(len(key))
 
     cache = yield from fx.ScopedCache.make(lookup, capacity=10, time_to_live=Seconds(_HOUR))
-    start = yield from clock.now()
+    start = yield from clock.current_time_millis()
 
     yield from cache.get("a")
     yield from testing.adjust(Seconds(30 * _MINUTE))
@@ -1820,7 +1820,10 @@ def test_resource_cleanup_timing_is_correct():
     yield from testing.adjust(Seconds(30 * _MINUTE))  # "b" expires
     yield from cache.has("b")
 
-    assert cleanups == [("a", start + 65 * _MINUTE), ("b", start + 95 * _MINUTE)]
+    assert cleanups == [
+        ("a", start + to_millis(65 * _MINUTE)),
+        ("b", start + to_millis(95 * _MINUTE)),
+    ]
 
 
 @testing.effect

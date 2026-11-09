@@ -179,8 +179,8 @@ class _TrackingClock:
         self.inner = inner
         self.active_sleeps = 0
 
-    def now_unsafe(self) -> float:
-        return self.inner.now_unsafe()
+    def current_time_millis_unsafe(self) -> float:
+        return self.inner.current_time_millis_unsafe()
 
     def monotonic_unsafe(self) -> float:
         return self.inner.monotonic_unsafe()

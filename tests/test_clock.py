@@ -47,7 +47,7 @@ def _timer_delays(eff: fx.Effect[object]) -> fx.Effect[list[float]]:
 
 @testing.effect
 def test_nanosecond_readers_follow_the_clock():
-    yield from testing.set_time(1_000_000_000.001)
+    yield from testing.set_time(1_000_000_000_001)
     yield from testing.adjust("500 millis")
     assert (yield from clock.now_nanos()) == 1_000_000_000_501_000_000
     assert (yield from clock.monotonic_nanos()) == 1_000_000_000_501_000_000

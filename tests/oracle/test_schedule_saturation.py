@@ -123,9 +123,8 @@ def test_up_to_duration_stops_after_an_infinite_delay():
 
 
 def test_elapsed_between_instants_past_float_range_is_infinite():
-    """``during`` stepped at -1.7e308 s and then 1.7e308 s: the elapsed time
-    passes float range, and Effect's ``now - start`` is ``Infinity`` (Python
-    raised ``OverflowError`` dividing the nanosecond difference)."""
+    """``during`` stepped at -1.7e308 ms and then 1.7e308 ms: the elapsed
+    time passes float range, and Effect's ``now - start`` is ``Infinity``."""
 
     @fx.gen
     def go():

@@ -40,10 +40,10 @@ def test_summary_with_timestamp_drops_future_and_expired_observations():
     summary = metric.summary_with_timestamp(
         "stamped", max_age="10 seconds", max_size=10, quantiles=[0.5]
     )
-    yield from testing.set_time(100)
-    yield from summary.update((1, 85))  # 15s old
-    yield from summary.update((2, 101))  # in the future
-    yield from summary.update((3, 90.0))  # exactly max_age old
+    yield from testing.set_time(100_000)
+    yield from summary.update((1, 85_000))  # 15s old
+    yield from summary.update((2, 101_000))  # in the future
+    yield from summary.update((3, 90_000))  # exactly max_age old
     state = yield from summary.value()
     assert state.quantiles == ((0.5, 3),)
     assert state.count == 3
@@ -56,11 +56,11 @@ def test_summary_with_timestamp_ages_non_finite_timestamps_as_effect_does():
     summary = metric.summary_with_timestamp(
         "odd", max_age="1 minute", max_size=10, quantiles=[0, 1]
     )
-    yield from testing.set_time(100)
+    yield from testing.set_time(100_000)
     yield from summary.update((1, math.nan))
     yield from summary.update((2, math.inf))
     yield from summary.update((3, -math.inf))
-    yield from summary.update((4, 100))
+    yield from summary.update((4, 100_000))
     state = yield from summary.value()
     assert state.quantiles == ((0, 4), (1, 4))
     assert (state.count, state.min, state.max, state.sum) == (4, 1, 4, 10)

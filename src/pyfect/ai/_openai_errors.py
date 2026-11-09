@@ -223,7 +223,7 @@ def status_code_mapper(
             return fx.fail(AiError(module=dialect.module, method=method, reason=mapped))
 
         return dialect.status_body(reason).flat_map(
-            lambda body: clock.now().flat_map(lambda seconds: build(body, seconds * 1000))
+            lambda body: clock.current_time_millis().flat_map(lambda now: build(body, now))
         )
 
     return map_status

@@ -11,7 +11,7 @@ from pyfect._primitives import Restore, uninterruptible_mask
 from pyfect.cause import Cause, Fail
 from pyfect.clock import ClockService, clock_with
 from pyfect.context import Tag
-from pyfect.duration import ZERO, Duration, Seconds, to_seconds
+from pyfect.duration import ZERO, Duration, Seconds, to_millis, to_seconds
 from pyfect.effect import fail_cause, gen, provide_service, succeed, suspend, void
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import succeed as exit_succeed
@@ -82,14 +82,14 @@ def _open_duration(open_duration: OpenDuration) -> Callable[[int], Effect[Second
     def replay(openings: int) -> Effect[Seconds]:
         def body(clock: ClockService) -> Generator[Effect[Any], Any, Seconds]:
             step = yield from to_step(schedule)
-            now = clock.now_unsafe()
+            now = clock.current_time_millis_unsafe()
             delay = ZERO
             for attempt in range(1, openings + 1):
                 decision = yield from step(now, attempt)
                 if isinstance(decision, Stop):
                     break
                 delay = decision.delay
-                now += delay
+                now += to_millis(delay)
             return delay
 
         return clock_with(lambda clock: gen(lambda: body(clock)))

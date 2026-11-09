@@ -10,7 +10,7 @@ from typing import Any, Literal, overload
 
 from pyfect.clock import Clock
 from pyfect.context import Context
-from pyfect.duration import Duration, nanos_or_infinite, to_millis, to_nanos, to_seconds
+from pyfect.duration import Duration, millis_to_nanos, nanos_or_infinite, to_millis, to_seconds
 from pyfect.metric._boundaries import exponential_boundaries
 from pyfect.metric._metric import Metric, Series, map_input_with_context
 from pyfect.metric._refs import Attributes, Hooks, merge
@@ -332,7 +332,7 @@ def summary_with_timestamp(
     attributes: Attributes | None = None,
 ) -> Summary[tuple[float, float]]:
     """``summary`` updated with ``(value, timestamp)``, the timestamp in
-    wall-clock seconds since the epoch."""
+    wall-clock milliseconds since the epoch, as in Effect."""
     inner = _summary(
         name,
         max_age=max_age,
@@ -347,7 +347,7 @@ def summary_with_timestamp(
 def _stamped(value: float, timestamp: float) -> tuple[float, float]:
     """A timestamp in whole nanoseconds; NaN and the infinities stay as they
     are, so they age as in Effect (never in range, or always too old)."""
-    return value, to_nanos(timestamp) if math.isfinite(timestamp) else timestamp
+    return value, millis_to_nanos(timestamp) if math.isfinite(timestamp) else timestamp
 
 
 def summary(

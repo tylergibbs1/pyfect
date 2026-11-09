@@ -6,9 +6,8 @@ is ``metric.snapshot``; ``Effect.trackSuccesses(eff, m)`` is
 ``eff.track_successes(m)`` and the other ``track*`` likewise.
 ``Effect.provideService(Metric.MetricRegistry, new Map())`` is
 ``fx.provide_service(metric.MetricRegistry, {})``. A ``bigint`` metric
-holds Python ``int``. Durations are seconds; ``TestClock.setTime(1_000)``
-(milliseconds) is ``testing.set_time(1.0)``. ``Effect.die(1)`` dies with
-an exception. States are dataclasses; buckets and quantiles are tuples.
+holds Python ``int``. ``Effect.die(1)`` dies with an exception. States are
+dataclasses; buckets and quantiles are tuples.
 
 Adapted, with the reason:
 
@@ -903,7 +902,7 @@ def test_track_duration_tracks_execution_duration():
 def test_track_duration_uses_monotonic_time_when_wall_time_moves_backward():
     """trackDuration > uses monotonic time when wall time moves backward"""
     timer = metric.timer(_next_id())
-    yield from testing.set_time(1.0)
+    yield from testing.set_time(1_000)
 
     @fx.gen
     def moves():

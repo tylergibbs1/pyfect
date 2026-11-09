@@ -40,7 +40,7 @@ class Tick:
 
 
 def now_millis() -> fx.Effect[float]:
-    return fx.clock.now().map(lambda seconds: seconds * 1000)
+    return fx.clock.current_time_millis()
 
 
 def millis_of(iso: str) -> float:

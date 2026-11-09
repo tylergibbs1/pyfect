@@ -433,8 +433,8 @@ def test_waits_until_a_retry_after_http_date() -> None:
     """waits until a Retry-After HTTP date"""
 
     def body():
-        now = yield from clock.now()
-        retry_at = h.format_http_date(datetime.fromtimestamp(now + 30, UTC))
+        now = yield from clock.current_time_millis()
+        retry_at = h.format_http_date(datetime.fromtimestamp(now / 1000 + 30, UTC))
         limiter = yield from rl.RateLimiter()
         attempts, base = _client(
             lambda attempt, request: res.make(
@@ -497,13 +497,13 @@ def test_applies_adaptive_cooldown_to_requests_delayed_by_the_configured_limiter
 
         def send(request: req.HttpClientRequest, *_: object) -> fx.Effect[res.HttpClientResponse]:
             def answer(now: float) -> res.HttpClientResponse:
-                status = 429 if previous and now - previous[-1] < 2 else 200
+                status = 429 if previous and now - previous[-1] < 2_000 else 200
                 previous.append(now)
                 statuses.append(status)
                 headers = {"retry-after": "2"} if status == 429 else {}
                 return res.make(request, status=status, headers=headers)
 
-            return clock.now().map(answer)
+            return clock.current_time_millis().map(answer)
 
         client = c.make(send).with_rate_limiter(
             limiter=limiter, key="adaptive-delayed", limit=1, window="1 second"
@@ -839,8 +839,8 @@ def test_circuit_breaker_classifier(
     retry_after_millis: float | None,
 ):
     """circuitBreakerClassifier classifies $name as $outcome"""
-    now = yield from clock.now()
-    classified = yield from c.circuit_breaker_classifier(exit(now * 1000))
+    now = yield from clock.current_time_millis()
+    classified = yield from c.circuit_breaker_classifier(exit(now))
     retry_after = classified.retry_after if isinstance(classified, cb.FailureOutcome) else None
     assert (classified.kind, None if retry_after is None else to_millis(retry_after)) == (
         outcome,

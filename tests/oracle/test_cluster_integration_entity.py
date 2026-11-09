@@ -53,7 +53,7 @@ def address_string(address: RunnerAddress) -> str:
 
 
 def now_millis() -> fx.Effect[float]:
-    return fx.clock.now().map(lambda seconds: seconds * 1000)
+    return fx.clock.current_time_millis()
 
 
 class EntityRequest(S.Class, identifier="ClusterEntityRequest"):

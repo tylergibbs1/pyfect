@@ -15,7 +15,7 @@ NEW_YORK = ZoneInfo("America/New_York")
 
 @testing.effect
 def test_is_future_and_is_past_compare_with_the_clock():
-    yield from testing.set_time(100)
+    yield from testing.set_time(100_000)
     at = datetime.fromtimestamp(100, UTC)
     assert (yield from date_time.is_future(at + timedelta(microseconds=1))) is True
     assert (yield from date_time.is_past(at + timedelta(microseconds=1))) is False
@@ -28,7 +28,7 @@ def test_is_future_and_is_past_compare_with_the_clock():
 
 @testing.effect
 def test_now_floors_to_a_millisecond():
-    yield from testing.set_time(1.001_9)
+    yield from testing.set_time(1_001.9)
     assert (yield from date_time.now()) == datetime(1970, 1, 1, 0, 0, 1, 1000, tzinfo=UTC)
 
 

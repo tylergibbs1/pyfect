@@ -2163,12 +2163,13 @@ def check_random() -> None:
 
 
 def check_clock() -> None:
+    assert_type(fx.clock.current_time_millis(), fx.Effect[float])
     assert_type(fx.clock.now_nanos(), fx.Effect[int])
     assert_type(fx.clock.monotonic_nanos(), fx.Effect[int])
     assert_type(fx.clock.clock_with(lambda c: fx.succeed(c.now_nanos_unsafe())), fx.Effect[int])
 
     class SecondsOnly:
-        def now_unsafe(self) -> float:
+        def current_time_millis_unsafe(self) -> float:
             return 0.0
 
         def monotonic_unsafe(self) -> float:

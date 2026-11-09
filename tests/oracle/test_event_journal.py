@@ -386,7 +386,7 @@ def test_logs_skew_warnings_relative_to_the_supplied_clock_service():
     journal = yield from J.make_memory
     # Both imports advance the id clock and are over 24 hours ahead of wall time.
     millis = J.entry_id_millis(J.make_entry_id_unsafe()) + 48 * _HOUR
-    yield from testing.set_time((millis - 25 * _HOUR) / 1000)
+    yield from testing.set_time(millis - 25 * _HOUR)
     warnings, logger = _counting_warnings()
     yield from import_entry(journal, entry(millis - 2 * _HOUR)).pipe(fx.provide(logger))
     within_24_hours = warnings[0]
@@ -400,7 +400,7 @@ def test_logs_skew_warnings_relative_to_the_supplied_clock_service_when_local_id
     journal = yield from J.make_memory
     # Local ids follow wall time, which is ahead of the supplied Clock here.
     millis = J.entry_id_millis(J.make_entry_id_unsafe())
-    yield from testing.set_time((millis - 48 * _HOUR) / 1000)
+    yield from testing.set_time(millis - 48 * _HOUR)
     warnings, logger = _counting_warnings()
     # 25 hours ahead of the supplied Clock, though behind the local ids.
     yield from import_entry(journal, entry(millis - 23 * _HOUR)).pipe(fx.provide(logger))

@@ -18,7 +18,7 @@ import pytest
 import pyfect as fx
 from pyfect import config_provider, layer, metric, stream, testing
 from pyfect._version import VERSION
-from pyfect.clock import now
+from pyfect.clock import current_time_millis
 from pyfect.duration import Duration, Seconds
 from pyfect.http import body as http_body
 from pyfect.http import client, response
@@ -365,10 +365,10 @@ def test_exports_buffered_items_without_advancing_to_the_export_interval():
     def program():
         exporter = yield from _make_exporter_raw(10)
         flusher = yield from otlp_exporter.Flusher()
-        before = yield from now()
+        before = yield from current_time_millis()
         exporter.push({"value": 1})
         yield from flusher.flush
-        assert (yield from now()) == before
+        assert (yield from current_time_millis()) == before
         assert len(seen.requests) == 1
 
     yield from _with_flusher(program, http)

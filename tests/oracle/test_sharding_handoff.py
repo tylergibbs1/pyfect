@@ -155,7 +155,7 @@ def _warning_logger(
                 return
             output = format_json.log(options)
             if "releas" in output.lower():
-                warnings.append((clock.now_unsafe() * 1000, output))
+                warnings.append((clock.current_time_millis_unsafe(), output))
 
         return fx.Logger.make(log)
 
@@ -169,7 +169,7 @@ def _with_loggers[A, E, R](
 
 
 def _now_millis() -> fx.Effect[float]:
-    return fx.clock.now().map(lambda now: now * 1000)
+    return fx.clock.current_time_millis()
 
 
 def _gated_handlers(gate: Latch) -> fx.Effect[Any, Never, Scope]:
@@ -197,7 +197,7 @@ def test_warns_about_pending_entities_and_singletons_and_reacquires_only_after_t
 
         def on_error(options: Any) -> None:
             if "unhealthy" in str(options.message) and not unhealthy_at:
-                unhealthy_at.append(clock.now_unsafe() * 1000)
+                unhealthy_at.append(clock.current_time_millis_unsafe())
 
         logger = yield from _warning_logger(warnings, on_error)
         built = yield from _with_loggers(
@@ -257,7 +257,7 @@ def test_warns_about_pending_entities_and_singletons_and_reacquires_only_after_t
         # The entity stops, so the next warning names only the singleton.
         yield from entity_gate.open()
         yield from testing.adjust(
-            Seconds((first_warnings[0][0] + 29_999 - clock.now_unsafe() * 1000) / 1000)
+            Seconds((first_warnings[0][0] + 29_999 - clock.current_time_millis_unsafe()) / 1000)
         )
         warnings_before_repeat = list(warnings)
         assert_still_blocked()

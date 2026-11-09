@@ -45,7 +45,7 @@ def test_each_run_gets_its_own_test_clock() -> None:
 
     @testing.effect_prop(S.Int, runs=3, seed=1)
     def check(_n: int):
-        times.append((yield from fx.Clock()).now_unsafe())
+        times.append((yield from fx.Clock()).current_time_millis_unsafe())
         yield from testing.adjust("1000 seconds")
 
     check()

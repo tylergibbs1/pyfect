@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import math
-from datetime import UTC, datetime, tzinfo
+from datetime import tzinfo
 from typing import overload
 
 from pyfect import cron as cron_module
 from pyfect._core import Effect, _Succeed, _Sync
 from pyfect.cron import Cron, CronParseError
+from pyfect.date_time._epoch import from_epoch_millis, to_epoch_millis
 from pyfect.duration import ZERO, Seconds
 from pyfect.effect import from_result
 from pyfect.result import Ok
@@ -38,8 +39,8 @@ def cron(
                 return _Succeed(Stop(ZERO))
 
             def decide() -> Decision[Seconds]:
-                start = datetime.fromtimestamp(now, UTC).astimezone()
-                delay = Seconds(_since(cron_module.next(c, start).timestamp(), now))
+                start = from_epoch_millis(now).astimezone()
+                delay = _since(to_epoch_millis(cron_module.next(c, start)), now)
                 return Continue(delay, delay)
 
             return _Sync(decide)
