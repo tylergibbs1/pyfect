@@ -6,8 +6,10 @@ from collections.abc import Sequence
 from datetime import UTC
 from typing import Any, TypedDict
 
+import pytest
+
 import pyfect as fx
-from pyfect import platform_error, testing
+from pyfect import layer, platform_error, testing
 from pyfect import schema as S
 from pyfect.cli import primitive
 from pyfect.cli.primitive import Primitive
@@ -127,6 +129,27 @@ def test_date_should_fail_for_invalid_values(env: Services[Any]):
 def test_date_should_have_correct_tag():
     """should have correct _tag"""
     assert primitive.date_.tag == "Date"
+
+
+@pytest.mark.parametrize(
+    ("text", "iso"),
+    [
+        ("Jan 15 2024", "2024-01-15T05:00:00.000+00:00"),
+        ("1/15/2024 10:00 PM", "2024-01-16T03:00:00.000+00:00"),
+        ("Mon, 15 Jan 2024 10:00:00 GMT", "2024-01-15T10:00:00.000+00:00"),
+        ("2024-01-15T10:00:00", "2024-01-15T15:00:00.000+00:00"),
+        ("Jan 15", "2001-01-15T05:00:00.000+00:00"),
+    ],
+)
+def test_date_reads_what_javascript_s_date_reads(
+    text: str, iso: str, monkeypatch: pytest.MonkeyPatch
+):
+    """Not an Effect title: ``Primitive.Date`` is ``new Date(text)``, V8's
+    legacy forms included, local time where no zone is named (Effect under
+    Node with ``TZ=America/New_York``)."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    parsed = fx.run_sync(primitive.date_.parse(text).or_die().pipe(layer.provide(base_layer)))
+    assert parsed.astimezone(UTC).isoformat(timespec="milliseconds") == iso
 
 
 # --- Int -----------------------------------------------------------------------------

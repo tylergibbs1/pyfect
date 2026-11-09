@@ -194,7 +194,7 @@ class _Parser:
 
     def _date(self, token: str) -> datetime | str | None:
         if _OFFSET_DATE_TIME.fullmatch(token):
-            value = js_date.parse(token)
+            value = js_date.to_datetime(js_date.parse(token))
             if value is None:
                 self._fail(f"Invalid date-time '{token}'")
             return value.astimezone(UTC)

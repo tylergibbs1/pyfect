@@ -7,7 +7,7 @@ where a test says it pins a Pythonic difference (docs/PARITY.md, section 4).
 import math
 import os
 from collections.abc import Generator
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 import pytest
@@ -129,18 +129,24 @@ def test_byte_size_from_string(text: str, size: int | None):
     assert _parse(config.byte_size("a"), _at_a(text)) == expected
 
 
-def test_date_time_reads_iso_8601_and_reads_a_naive_time_as_utc():
-    """Pythonic: Effect uses JavaScript's ``Date`` parser, which reads a date
-    alone as UTC but a date-time without an offset as local time; pyfect
-    reads ISO 8601 and treats every missing offset as UTC."""
+def test_date_time_reads_text_as_javascript_s_date_does(monkeypatch: pytest.MonkeyPatch):
+    """Effect's ``Config.Date`` is ``Schema.Date``, read with ``new Date(text)``:
+    a date alone is UTC, a date-time without an offset and V8's legacy forms
+    local time, and a day past the month's end rolls over (Effect under Node
+    with ``TZ=America/New_York``)."""
+    monkeypatch.setenv("TZ", "America/New_York")
     cases = {
-        "2021-01-01": datetime(2021, 1, 1, tzinfo=UTC),
-        "2021-01-01T10:00:00": datetime(2021, 1, 1, 10, tzinfo=UTC),
-        "2021-01-01T10:00:00+02:00": datetime(2021, 1, 1, 10, tzinfo=timezone(timedelta(hours=2))),
+        "2024-01-15": datetime(2024, 1, 15, tzinfo=UTC),
+        "2024-01-15T10:00:00": datetime(2024, 1, 15, 15, tzinfo=UTC),
+        "2021-01-01T10:00:00+02:00": datetime(2021, 1, 1, 8, tzinfo=UTC),
+        "Jan 15 2024": datetime(2024, 1, 15, 5, tzinfo=UTC),
+        "Jan 15 2024 10:00": datetime(2024, 1, 15, 15, tzinfo=UTC),
+        " 2024-01-15": datetime(2024, 1, 15, 5, tzinfo=UTC),
+        "2024-02-30": datetime(2024, 3, 1, tzinfo=UTC),
     }
     for text, expected in cases.items():
-        assert _parse(config.date_time("a"), _at_a(text)) == fx.Ok(expected)
-    for text in ["2021-13-01", "", "Jan 1 2021"]:
+        assert _parse(config.date_time("a"), _at_a(text)) == fx.Ok(expected), text
+    for text in ["2021-13-01", "", "garbage"]:
         assert _parse(config.date_time("a"), _at_a(text)) == fx.Err(
             'Expected a valid Date\n  at ["a"]'
         )

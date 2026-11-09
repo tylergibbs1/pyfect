@@ -74,7 +74,7 @@ def make_zoned_from_string(text: str) -> datetime | None:
         zone = None if offset is None else zone_offset(offset)
     else:
         iso, zone = found[1], zone_from_string(found[2])
-    instant = js_date.parse_input(iso)
+    instant = js_date.to_datetime(js_date.parse_input(iso))
     if zone is None or instant is None:
         return None
     return instant.astimezone(zone)

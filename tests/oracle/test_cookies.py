@@ -131,3 +131,25 @@ def test_record_from_cookies_converts_cookies_to_decoded_string_values() -> None
     assert S.decode_sync(HS.RecordFromCookies)(cookies) == {"session": "abc", "theme": "dark"}
     encoded = S.encode_sync(HS.RecordFromCookies)({"session": "abc", "theme": "dark"})
     assert encoded.to_set_cookie_headers() == ["session=abc", "theme=dark"]
+
+
+@pytest.mark.parametrize(
+    ("header", "expires"),
+    [
+        ("a=1; Expires=Wed, 21-Oct-2015 07:28:00 GMT", datetime(2015, 10, 21, 7, 28, tzinfo=UTC)),
+        ("a=1; Expires=Oct 21 2015", datetime(2015, 10, 21, 4, tzinfo=UTC)),
+        ("a=1; Expires=10/21/2015 7:28 PM EST", datetime(2015, 10, 22, 0, 28, tzinfo=UTC)),
+        ("a=1; Expires=nonsense", None),
+    ],
+)
+def test_expires_is_read_as_javascript_s_date_reads_it(
+    header: str, expires: datetime | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Not an Effect title: ``fromSetCookie`` reads ``Expires`` with
+    ``new Date(value)``, V8's legacy forms included, local time where no
+    zone is named (Effect under Node with ``TZ=America/New_York``)."""
+    monkeypatch.setenv("TZ", "America/New_York")
+    cookie = c.from_set_cookie(header).get("a")
+    assert cookie is not None
+    found = None if cookie.options is None else cookie.options.expires
+    assert found == expires

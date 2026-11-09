@@ -14,9 +14,10 @@ Omitted, with the reason:
   "formatUtc", "format zoned": Intl formatting (``strftime`` / Babel; Intl is skipped).
 - "fromParts", "setParts", "setPartsUtc", "removeTime", "toEpochSeconds",
   "fromEpochSeconds", "parts equality", "toUtc / with a Utc", "accepts GMT as a named
-  timezone", "formatIso", "formatIsoDate", "make", "makeUnsafe": the standard library
-  (``datetime(...)``, ``replace``, ``combine``, ``timestamp``, ``fromtimestamp``,
-  ``ZoneInfo("GMT")``, ``isoformat``, ``fromisoformat``).
+  timezone", "formatIso", "formatIsoDate", "rejects invalid object instants", "throws for
+  invalid object instants": the standard library (``datetime(...)``, ``replace``,
+  ``combine``, ``timestamp``, ``fromtimestamp``, ``ZoneInfo("GMT")``, ``isoformat``).
+  The string cases of ``makeUnsafe`` are ported through ``S.DateTimeUtcFromString``.
 - "toDate": JavaScript ``Date`` storage; datetime has no year 0 or BCE years.
 - "makeZonedUnsafe no options": skipped in Effect.
 """
@@ -31,6 +32,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import date_time, testing
+from pyfect import schema as S
 from pyfect.date_time import Disambiguation
 
 AUCKLAND = ZoneInfo("Pacific/Auckland")
@@ -810,3 +812,48 @@ def test_make_zoned_from_string_reads_what_javascript_date_reads(text: str, iso:
     parsed = date_time.make_zoned_from_string(text)
     assert parsed is not None
     assert date_time.format_iso(parsed) == iso
+
+
+# ``DateTime.make`` / ``makeUnsafe`` of a string: ``S.DateTimeUtcFromString``
+# decodes with it (Effect's ``dateTimeUtcFromString``), ``None`` for ``none``.
+def _make(text: str) -> str | None:
+    found = S.decode_option(S.DateTimeUtcFromString)(text)
+    return None if found is None else iso(found.value)
+
+
+def test_treats_strings_without_zone_info_as_utc():
+    """treats strings without zone info as UTC"""
+    assert _make("2024-01-01 01:00:00") == "2024-01-01T01:00:00.000Z"
+
+
+def test_treats_strings_with_lowercase_letters_in_comments_as_utc(monkeypatch: pytest.MonkeyPatch):
+    """treats strings with lowercase letters in comments as UTC"""
+    monkeypatch.setenv("TZ", "America/New_York")
+    assert _make("Tue, 27 Jan 2026 17:14:06 (xyz)") == "2026-01-27T17:14:06.000Z"
+
+
+def test_does_not_append_z_to_strings_ending_with_z():
+    """does not append Z to strings ending with Z"""
+    assert _make("2026-01-27T17:14:06.000Z") == "2026-01-27T17:14:06.000Z"
+
+
+def test_does_not_append_z_to_strings_with_explicit_offset():
+    """does not append Z to strings with explicit offset"""
+    assert _make("2020-02-01T11:17:00+1100") == "2020-02-01T00:17:00.000Z"
+
+
+def test_does_not_append_z_to_strings_containing_gmt():
+    """does not append Z to strings containing GMT"""
+    assert _make("Tue, 27 Jan 2026 17:14:06 GMT") == "2026-01-27T17:14:06.000Z"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("2024-01-01T00:00:00z", "2024-01-01T00:00:00.000Z"),
+        ("Tue, 27 Jan 2026 17:14:06 gmt", "2026-01-27T17:14:06.000Z"),
+    ],
+)
+def test_accepts_lowercase_utc_designators(text: str, expected: str):
+    """accepts lowercase UTC designators: %s"""
+    assert _make(text) == expected

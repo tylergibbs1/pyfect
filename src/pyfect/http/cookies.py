@@ -16,7 +16,6 @@ import sys
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, fields
 from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from typing import Literal, TypedDict, Unpack, final
 from urllib.parse import quote, unquote
 
@@ -214,14 +213,6 @@ def serialize_cookie(cookie: Cookie) -> str:
     return out
 
 
-def _parse_date(value: str) -> datetime | None:
-    try:
-        parsed = parsedate_to_datetime(value)
-    except (TypeError, ValueError):
-        return js_date.parse(value)
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
-
-
 def _parse_set_cookie(header: str) -> Cookie | None:  # noqa: PLR0912
     parts = [p.strip() for p in header.split(";") if p.strip()]
     if not parts:
@@ -240,7 +231,7 @@ def _parse_set_cookie(header: str) -> Cookie | None:  # noqa: PLR0912
                 if domain:
                     options["domain"] = domain
             case "expires" if attribute is not None:
-                date = _parse_date(attribute)
+                date = js_date.to_datetime(js_date.parse(attribute))
                 if date is not None:
                     options["expires"] = date
             case "max-age" if attribute is not None:

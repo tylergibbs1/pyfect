@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.1 (unreleased)
+
+### Changed
+
+- Every place Effect reads a date with JavaScript's `Date` (`config.date_time`, the CLI's
+  `date` flags and arguments, cookie `Expires`, `S.DateTimeUtcFromString` and other
+  `DateTime.make` strings, `make_zoned_from_string`, TOML date-times) now reads it as V8 does,
+  so more strings are accepted: `Jan 15 2024 10:00 PM EST`, `1/15/2024`, `2024-02-30` (March
+  1st), leading spaces. `config.date_time` now reads a date-time without an offset as local
+  time, as Effect does; it read it as UTC before. Parsed values are UTC `datetime`s in whole
+  milliseconds.
+
 ## 0.2.0 (unreleased)
 
 ### Breaking

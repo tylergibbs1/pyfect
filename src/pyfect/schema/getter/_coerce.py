@@ -7,7 +7,6 @@ from __future__ import annotations
 import math
 import re
 from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from typing import Any, overload
 
 from pyfect import _js_date as js_date
@@ -161,8 +160,9 @@ def stringify_json(
 
 def to_utc(value: object) -> datetime | None:
     """A UTC ``datetime`` from a ``DateTime.Input``: a ``datetime`` (a naive
-    one is UTC), epoch milliseconds, or an ISO 8601 / RFC 2822 string
-    (without a zone, UTC); ``None`` when it is none of these."""
+    one is UTC), epoch milliseconds, or a string JavaScript's ``Date`` reads
+    (without a zone, UTC: Effect's ``DateTime.make``); ``None`` when it is
+    none of these."""
     match value:
         case bool():
             return None
@@ -174,7 +174,7 @@ def to_utc(value: object) -> datetime | None:
             except (OverflowError, OSError, ValueError):
                 return None
         case str():
-            return _parse_date(value)
+            return js_date.to_datetime(js_date.parse_input(value))
         case _:
             return None
 
@@ -183,16 +183,6 @@ def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
-
-
-def _parse_date(text: str) -> datetime | None:
-    parsed = js_date.parse_input(text)
-    if parsed is not None:
-        return parsed.astimezone(UTC)
-    try:
-        return _as_utc(parsedate_to_datetime(text))
-    except (TypeError, ValueError, IndexError):
-        return None
 
 
 def date_time_utc_from_input() -> Getter[datetime, object]:

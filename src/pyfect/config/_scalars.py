@@ -166,7 +166,7 @@ byte_size = Scalar(_STRING, _byte_size)
 
 
 def _date_time(text: str) -> Result[datetime, Issue]:
-    parsed = js_date.parse_input(text)
+    parsed = js_date.to_datetime(js_date.parse(text))
     if parsed is None:
         return Err(InvalidValue({"message": "Expected a valid Date"}))
     return Ok(parsed)

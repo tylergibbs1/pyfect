@@ -3,7 +3,9 @@ and named zones come from ``date_time.zone_named``.
 
 ``datetime.fromisoformat`` takes text JavaScript rejects (``2024-W01-1``,
 a ``,5`` fraction, a ``+05:30:15`` offset) and rejects text it reads (a
-lowercase ``z``, ``+002024``, ``2024-02-30``). ``ZoneInfo(name)`` keeps the
+lowercase ``z``, ``+002024``, ``2024-02-30``); ``email.utils`` and
+``strptime`` read one format each, where ``Date`` reads V8's legacy
+forms too (``Jan 15 2024 10:00 PM EST``). ``ZoneInfo(name)`` keeps the
 caller's casing (``europe/london``), which ``Intl`` canonicalizes.
 """
 
@@ -49,6 +51,12 @@ def test_no_fromisoformat_outside_its_own_isoformat():
     assert offenders == [], "parse with pyfect._js_date (parse / parse_input)"
 
 
+@pytest.mark.parametrize("attr", ["parsedate_to_datetime", "parsedate_tz", "parsedate", "strptime"])
+def test_no_other_date_parser(attr: str):
+    offenders = [f"{path}:{line}" for path, line in _calls(attr)]
+    assert offenders == [], "parse with pyfect._js_date (parse / parse_input)"
+
+
 def test_named_zones_are_made_only_by_zone_named():
     offenders = [
         f"{path}:{line}" for path, line in _calls("ZoneInfo") if path != "date_time/_zones.py"
@@ -57,7 +65,8 @@ def test_named_zones_are_made_only_by_zone_named():
 
 
 @pytest.mark.parametrize("text", ["9999-12-31T23:00:00-02:00", "0001-01-01T00:00:00+01:00"])
-def test_an_instant_outside_datetime_s_range_in_utc_is_none(text: str):
+def test_an_instant_outside_datetime_s_range_in_utc_has_no_datetime(text: str):
     """Valid in JavaScript, whose ``Date`` reaches further; here it would make
     a caller's ``astimezone(UTC)`` raise ``OverflowError``."""
-    assert js_date.parse(text) is None
+    assert js_date.parse(text) is not None
+    assert js_date.to_datetime(js_date.parse(text)) is None
