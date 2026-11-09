@@ -27,6 +27,9 @@ Constructors: `string`, `integer`, `number`, `boolean`, `port`, `url`, `duration
 `config.all`, `all_dict` or `@config.gen`.
 `url` gives a `Url`, a `urllib.parse.SplitResult` whose `str()` is the URL, so
 `f"{base}/payouts"` builds one.
+`date_time` reads text as JavaScript's `Date` does, V8's forms included (`2024-01-15`,
+`2024-01-15T10:00`, `Jan 15 2024 10:00 PM EST`, `1/15/2024`), and gives a UTC `datetime`.
+A date alone is UTC; a time that names no zone is local time, as in Effect.
 
 Reference: [`pyfect.config`](/docs/reference/config),
 [`pyfect.config_provider`](/docs/reference/config_provider),

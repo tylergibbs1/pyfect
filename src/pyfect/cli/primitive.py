@@ -87,14 +87,14 @@ integer: Primitive[int] = _schema_primitive("Int", S.Int)
 
 
 def _parse_date(value: str) -> Effect[datetime, str]:
-    parsed = js_date.parse(value)
+    parsed = js_date.to_datetime(js_date.parse(value))
     return fail("Expected a valid Date") if parsed is None else succeed(parsed)
 
 
 date_: Primitive[datetime] = Primitive("Date", _parse_date)
-"""An ECMAScript (ISO 8601) date or date-time, as an aware ``datetime``: a
-date alone is midnight UTC and a date-time without an offset is local
-time, as JavaScript's ``Date`` reads them."""
+"""A date as JavaScript's ``Date`` reads it, as a UTC ``datetime``: ISO 8601
+(a date alone is midnight UTC, a date-time without an offset local time)
+or V8's other forms (``Jan 15 2024``, ``1/15/2024 10:00 PM``)."""
 
 string: Primitive[str] = Primitive("String", succeed)
 
