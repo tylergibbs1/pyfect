@@ -1,7 +1,7 @@
 """Rate limits per key (Effect's ``effect/persistence/RateLimiter``)::
 
     limiter = yield from RateLimiter()
-    result = yield from limiter.consume(key="user:1", limit=100, window=60)
+    result = yield from limiter.consume(key="user:1", limit=100, window="1 minute")
     # fails with RateLimiterError(RateLimitExceeded) once over the limit
 
 ``consume`` charges tokens to a key by a ``"fixed-window"`` or

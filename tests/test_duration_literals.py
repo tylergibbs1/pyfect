@@ -310,3 +310,96 @@ def test_the_guard_finds_duration_slots_and_bare_numbers() -> None:
     constants = frozenset(_numeric_constants(tree))
     found = _call_violations(tree, slots, constants) + _default_violations(tree)
     assert sorted(line for line, _ in found) == [1, 2, 4, 5, 7, 15]
+
+
+# Prose: the guides, the README and every docstring in `src`. Inline code and docstring
+# examples go through the checks above; the words around them through the patterns below.
+DOCS = (ROOT / "website" / "content" / "docs", ROOT / "README.md")
+_CODE_SPAN = re.compile(r"``(.+?)``|`([^`\n]+)`")
+_EXAMPLE_LINE = re.compile(r"^ {4,}(?!>>>)(\S.*)$", re.MULTILINE)
+_CALLED_SECONDS = re.compile(r"`{1,2}([A-Za-z_][\w.]*)\(\s*seconds?\s*\)`{1,2}")
+_NAMED_SECONDS = re.compile(r"`{1,2}([A-Za-z_]\w*)`{1,2}\s+seconds\b")
+_WALL_CLOCK_SECONDS = re.compile(r"wall[- ]clock(?:,? in)? seconds", re.IGNORECASE)
+# Bare numbers shown on purpose: the guide's note on what one meant before 0.2.0.
+_ON_PURPOSE = frozenset(
+    {("website/content/docs/schedules.mdx", "`fx.sleep(5)`: `5` passed to `sleep`")}
+)
+
+
+def _docstrings(path: Path) -> list[tuple[int, str]]:
+    return [
+        (node.lineno, node.value.value)
+        for node in ast.walk(_parse(path))
+        if isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    ]
+
+
+def _prose() -> list[tuple[str, int, str]]:
+    """``(file, line, text)`` of every guide and docstring."""
+    found: list[tuple[str, int, str]] = []
+    for root in DOCS:
+        paths = [root] if root.is_file() else sorted(root.rglob("*.mdx"))
+        found += [(str(path.relative_to(ROOT)), 1, path.read_text()) for path in paths]
+    for path in _sources(SRC):
+        found += [(str(path.relative_to(ROOT)), line, text) for line, text in _docstrings(path)]
+    return found
+
+
+def _code_in(text: str) -> list[ast.Module]:
+    """The inline code and example lines of ``text`` that parse as Python."""
+    pieces = [a or b for a, b in _CODE_SPAN.findall(text)] + _EXAMPLE_LINE.findall(text)
+    parsed: list[ast.Module] = []
+    for piece in pieces:
+        try:
+            parsed.append(ast.parse(piece.strip()))
+        except SyntaxError:
+            continue
+    return parsed
+
+
+def _prose_violations(text: str, slots: dict[str, _Slots]) -> list[str]:
+    keywords = {keyword for where in slots.values() for keyword in where.keywords}
+    found = [
+        f"`{ast.unparse(node)}`: {what}"
+        for tree in _code_in(text)
+        for node, what in ((tree, w) for _, w in _call_violations(tree, slots))
+    ]
+    found += [
+        f"`{m[0]}` calls a duration seconds"
+        for m in _CALLED_SECONDS.finditer(text)
+        if m[1].rsplit(".", 1)[-1] in slots
+    ]
+    found += [f"`{m[0]}`" for m in _NAMED_SECONDS.finditer(text) if m[1] in keywords]
+    found += [
+        f"`{m[0]}`: wall-clock times are milliseconds" for m in _WALL_CLOCK_SECONDS.finditer(text)
+    ]
+    return found
+
+
+def test_no_doc_calls_a_bare_number_seconds() -> None:
+    """A guide or docstring that reads a `Duration` (or a wall-clock time) as seconds, or
+    shows a bare number where one is taken, tells users to wait 1,000 times less."""
+    slots = _duration_slots()
+    problems = [
+        f"{path}:{line}: {what}"
+        for path, line, text in _prose()
+        for what in _prose_violations(text, slots)
+        if (path, what) not in _ON_PURPOSE
+    ]
+    assert not problems, (
+        "bare numbers are milliseconds; give durations a unit in docs:\n" + "\n".join(problems)
+    )
+
+
+def test_the_prose_guard_finds_durations_called_seconds() -> None:
+    slots = _duration_slots()
+    text = (
+        "`keep_alive()` keeps it, and `set_idle_ttl(seconds)` keeps it a while.\n"
+        "allowed `limit` per `window` seconds.\n"
+        '"""``(now, input) -> decision``; ``now`` is wall-clock seconds."""\n'
+        "Example::\n\n    eff.repeat(schedule.spaced(1.0))\n\n"
+        'Fine: `set_idle_ttl("30 seconds")`, `fx.sleep(0)`, ``ESCAPE`` milliseconds.\n'
+    )
+    assert len(_prose_violations(text, slots)) == 4

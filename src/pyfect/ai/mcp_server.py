@@ -188,8 +188,8 @@ def layer_http(
     refused (403); one without an ``Origin`` is served. With
     ``allow_session_termination`` a client ends its session with DELETE.
     At most ``max_sessions`` sessions are open (an ``initialize`` past
-    that gets 503); a session idle for ``session_idle_timeout`` seconds
-    ends; a message larger than ``max_message_bytes`` gets 413. With
+    that gets 503); a session idle for ``session_idle_timeout`` ends;
+    a message larger than ``max_message_bytes`` gets 413. With
     ``allow_subscriptions=False``, 2026-07-28 discovery advertises no list
     changes and ``subscriptions/listen`` is method not found; earlier
     revisions are unchanged."""

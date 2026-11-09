@@ -16,7 +16,7 @@ from pyfect.file_system import FileSystem
 from pyfect.layer import Layer, merge, provide_merge
 from pyfect.path import Path
 from pyfect.platform_error import PlatformError, StreamError, Unknown, system_error
-from pyfect.process import ChildProcessSpawner, InputFd, OutputFd, make
+from pyfect.process import ChildProcessSpawner, InputFd, OutputFd, _pipes, make
 from pyfect.scope import CloseableScope, Scope
 from pyfect.stream import Stream
 from pyfect.testing import Services
@@ -112,6 +112,59 @@ def test_a_write_cut_short_by_the_child_exiting_fails(process_services: Services
     assert (reason.module, reason.method) == ("ChildProcess", "from_writable(stdin)")
     assert isinstance(error.cause, OSError), error
     assert error.cause.errno == errno.ECANCELED, error.cause
+
+
+@testing.live(timeout="10 seconds")
+def test_a_writer_thread_that_raises_fails_the_write(
+    process_services: Services[Platform], monkeypatch: pytest.MonkeyPatch
+):
+    # Dogfood m020: the stdin writer's thread died on an exception and left the
+    # write waiting forever.
+    ready = _pipes._ready  # pyright: ignore[reportPrivateUsage]
+
+    def broken(fd: int, *, write: bool) -> bool:
+        if write:
+            raise ValueError("operation forbidden on released memoryview object")
+        return ready(fd, write=write)
+
+    monkeypatch.setattr(_pipes, "_ready", broken)
+    handle = yield from make("sh", ["-c", "sleep 1 <&0"])
+    written = yield from stream.make(b"x" * 5_000_000).run(handle.stdin).exit()
+    assert isinstance(written, fx.Failure)
+    assert [type(defect) for defect in written.cause.defects] == [ValueError]
+
+
+def _wait_until_gone(pid: int) -> None:
+    """Block (the fiber does not yield) until ``pid`` is reaped, and a while
+    longer for its exit to be handled."""
+    while _alive(pid):
+        time.sleep(0.01)
+    time.sleep(0.1)
+
+
+@testing.live(timeout="10 seconds")
+def test_a_write_made_before_the_childs_exit_is_handled_fails_with_ecanceled(
+    process_services: Services[Platform],
+):
+    # Effect 4.1.2 under Node: the exit destroys stdin in a later turn of the
+    # event loop, so a write made in the turn that saw the child go (here after
+    # a blocking wait) is in flight and fails with ECANCELED, every time.
+    handle = yield from make("sh", ["-c", "sleep 3 <&0 & exit 0"])
+    yield from fx.sync(lambda: _wait_until_gone(handle.pid))
+    error = yield from stream.make(b"x" * 8_000_000).run(handle.stdin).flip()
+    assert isinstance(error.cause, OSError), error
+    assert error.cause.errno == errno.ECANCELED, error.cause
+
+
+@testing.live(timeout="10 seconds")
+def test_a_write_the_pipe_takes_at_once_succeeds_before_the_childs_exit_is_handled(
+    process_services: Services[Platform],
+):
+    # Effect 4.1.2 under Node: a write tries the pipe at once, so one byte made
+    # in the turn that saw the child go is written, and stdin ends cleanly.
+    handle = yield from make("sh", ["-c", "sleep 3 <&0 & exit 0"])
+    yield from fx.sync(lambda: _wait_until_gone(handle.pid))
+    yield from stream.make(b"x").run(handle.stdin)
 
 
 def _stdin_failure(error: PlatformError) -> tuple[str, str | None, str | None, object]:

@@ -136,7 +136,7 @@ class LayerRefService[I, E = Never](Tag[LayerRef[I, E]], base=True):
 
     class Database(LayerRefService[Connection, DbError]): ...
 
-    DatabaseLive = Database.layer(connection_layer, idle_time_to_live=60)
+    DatabaseLive = Database.layer(connection_layer, idle_time_to_live="1 minute")
     """
 
     @overload

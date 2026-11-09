@@ -12,7 +12,7 @@ _LIVE = LiveClock()
 
 
 def timeout_option[A, E, R](eff: Effect[A, E, R], seconds: Seconds) -> Effect[Option[A], E, R]:
-    """``eff.timeout_option(seconds)`` timed by the system clock; ``eff``
+    """``eff`` with ``timeout_option``, timed by the system clock; ``eff``
     is the server's own I/O, which reads no clock."""
     return eff.timeout_option(seconds).pipe(provide_service(Clock, _LIVE))
 

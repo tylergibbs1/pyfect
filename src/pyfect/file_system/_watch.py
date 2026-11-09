@@ -82,7 +82,7 @@ def poll(
     interval: Seconds,
 ) -> Stream[WatchEvent, PlatformError]:
     """The changes under ``path``, found by listing it every ``interval``
-    seconds of real time (whatever ``Clock`` is provided)."""
+    of real time (whatever ``Clock`` is provided)."""
 
     def scan() -> _Listing:
         return _list_directory(path, recursive) if directory else _list_file(path)

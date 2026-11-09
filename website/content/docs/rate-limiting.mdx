@@ -10,7 +10,7 @@ uses it, so a limit of 100 requests a minute holds across a whole fleet.
 ## Rate limits
 
 `limiter.consume(key=..., limit=..., window=...)` charges a token to `key`, allowed `limit`
-per `window` seconds. The `"fixed-window"` algorithm (the default) counts tokens per
+per `window`, a duration such as `"1 minute"` (a bare number is milliseconds). The `"fixed-window"` algorithm (the default) counts tokens per
 window; `"token-bucket"` refills them steadily. Over the limit, it fails with a
 `RateLimiterError` whose `reason` is `RateLimitExceeded` (with its `retry_after`), or,
 with `on_exceeded="delay"`, succeeds with the `delay` to wait.

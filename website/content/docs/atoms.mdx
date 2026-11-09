@@ -30,8 +30,9 @@ compared with `Equal`, so `todo(1)` is the same atom each time it is called.
 `registry.get`, `set`, `update` and `subscribe` work on it directly, and `subscribe`
 returns the function that unsubscribes. An atom that no subscriber, mount or other live
 atom uses is removed from the registry, and built again when it is read next;
-`keep_alive()` keeps it, and `set_idle_ttl(seconds)` keeps it for a while after its last
-use. Methods like `map`, `with_fallback` and `debounce` derive a new atom from one.
+`keep_alive()` keeps it, and `set_idle_ttl("30 seconds")` keeps it that long after its
+last use (a bare number is milliseconds). Methods like `map`, `with_fallback` and
+`debounce` derive a new atom from one.
 
 <Diagram name="atom-registry" title="Setting count invalidates doubled; the registry rebuilds it and notifies its subscribers, and an effect atom's fiber writes its result to its node" />
 

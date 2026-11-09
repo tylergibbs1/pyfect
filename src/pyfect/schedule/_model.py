@@ -57,7 +57,7 @@ class Stop(Generic[O_co]):
 type Decision[Out] = Continue[Out] | Stop[Out]
 
 type StepFn[Out, In, E, R] = Callable[[float, In], Effect[Decision[Out], E, R]]
-"""``(now, input) -> decision``; ``now`` is wall-clock seconds."""
+"""``(now, input) -> decision``; ``now`` is wall-clock milliseconds since the epoch."""
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

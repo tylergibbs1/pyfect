@@ -51,6 +51,7 @@ from pyfect.process._command import (
 from pyfect.process._handle import ChildProcessHandle, ExitCode, ProcessId, Reref
 from pyfect.process._pipes import Reader, Writer
 from pyfect.process._spawner import ChildProcessSpawner, ChildProcessSpawnerService
+from pyfect.scheduler import CurrentScheduler, Scheduler
 from pyfect.scope import Scope, acquire_release
 from pyfect.sink import Sink
 from pyfect.stream import Stream
@@ -192,13 +193,14 @@ class _Pipes:
         for fd in fds:
             os.close(fd)
 
-    def started_child(self, child: Child) -> None:
-        """Watch ``child``: its exit destroys stdin, as Node destroys
-        ``stdin`` when the child exits (a write still in progress fails)."""
+    def started_child(self, child: Child, scheduler: Scheduler) -> None:
+        """Watch ``child``: its exit destroys stdin in a task of ``scheduler``,
+        as Node destroys ``stdin`` when the child exits (a write still in
+        progress fails)."""
         self.child = child
         stdin = self.inputs.get(0)
         if stdin is not None:
-            child.after_exit(stdin.destroy)
+            child.after_exit(lambda: stdin.destroy_soon(scheduler))
 
     def release(self) -> None:
         """Close the pipes once the child is gone: one the scope leaves
@@ -386,7 +388,7 @@ class _Spawner:
             ),
             lambda c, _: c.release(),
         )
-        pipes.started_child(child)
+        pipes.started_child(child, (yield from CurrentScheduler()))
         return (yield from _wire(child, pipes))
 
     def _pipeline(

@@ -7,8 +7,8 @@ take no real time::
 
     @testing.effect
     def test_timeout():
-        fiber = yield from fx.sleep(10).timeout(5).exit().fork()
-        yield from testing.adjust(5)
+        fiber = yield from fx.sleep("10 seconds").timeout("5 seconds").exit().fork()
+        yield from testing.adjust("5 seconds")
         assert isinstance((yield from fiber.join()), fx.Failure)
 
 - ``effect`` / ``live``: pytest tests written as generators or effects,

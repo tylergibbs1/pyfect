@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.1 (unreleased)
+
+### Fixed
+
+- A large write to a child's stdin no longer hangs on free-threaded CPython: the pipe's
+  writer thread kept a `memoryview` made on the fiber's thread, and 3.14t can release a
+  buffer whose views are made and freed on different threads, so about one 24 MB write in
+  twenty died with "operation forbidden on released memoryview object". The writer thread
+  now makes and releases its own views, and a writer thread that raises fails the write
+  (a defect) instead of leaving it waiting.
+- A write to a child's stdin made before pyfect has handled the child's exit fails with
+  `ECANCELED` every time, as in Effect 4.1.2 under Node; it sometimes failed with
+  `Premature close`. The exit now closes stdin in a task of the run's scheduler, as Node
+  does in a turn of its event loop, and a write first tries the pipe at once, as Node's
+  does, so a small write made then succeeds.
+- Docs that still read a bare number as seconds now give units: `set_idle_ttl` in the
+  atoms guide, `window` in the rate-limiting guide, `schedule.StepFn`'s `now` (epoch
+  milliseconds), the `schedule` module's examples and metadata, `session_idle_timeout`,
+  and the examples of `testing`, `layer_map`, `layer_ref`, `workflow`, `durable_clock`
+  and the rate limiter.
+
 ## 0.3.0 (2026-11-09)
 
 ### Breaking
