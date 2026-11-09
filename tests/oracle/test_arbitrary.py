@@ -446,9 +446,9 @@ def test_generates_web_url_declarations_without_codec_filtering():
     """schema / generates and shrinks web URL declarations without codec
     filtering"""
     values = sample(S.URL, 100)
-    assert {url.scheme for url in values} == {"http", "https"}
-    assert any(url.path not in ("", "/") for url in values)
-    assert minimal(S.URL).scheme in ("http", "https")
+    assert {url.protocol for url in values} == {"http:", "https:"}
+    assert any(url.pathname != "/" for url in values)
+    assert minimal(S.URL).protocol in ("http:", "https:")
 
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
@@ -582,7 +582,6 @@ def test_derives_json_through_its_built_in_representation():
 def test_prefers_an_explicit_to_codec_arbitrary_over_a_built_in():
     """schema / prefers an explicit toCodecArbitrary over a built-in
     representation"""
-    from urllib.parse import urlsplit
 
     from pyfect.http.url import Url
 
@@ -591,7 +590,7 @@ def test_prefers_an_explicit_to_codec_arbitrary_over_a_built_in():
     def custom(_: tuple[ast.AST, ...], __: S.ArbitraryConstraint) -> ast.Link:
         return ast.Link(
             S.Literal(expected).ast,
-            T.transform(decode=lambda text: Url._make(urlsplit(text)), encode=lambda _: expected),
+            T.transform(decode=Url, encode=lambda _: expected),
         )
 
     values: list[Url] = sample(S.URL.annotate(to_codec_arbitrary=custom), 10)

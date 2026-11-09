@@ -21,7 +21,6 @@ import asyncio
 from collections.abc import AsyncIterator, Callable, Coroutine
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, Never
-from urllib.parse import SplitResult
 
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
@@ -182,7 +181,7 @@ class _Backend:
     def send(
         self,
         request: HttpClientRequest,
-        url: SplitResult,
+        url: _url.Url,
         signal: AbortSignal,
         fiber: Fiber[Any, Any],
     ) -> Effect[HttpClientResponse, HttpClientError]:

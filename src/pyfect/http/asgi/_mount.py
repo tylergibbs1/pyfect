@@ -52,11 +52,14 @@ def _scope(request: ServerRequest, state: Mapping[str, Any] | None) -> dict[str,
     original, root = _root_path(request)
     query = request.url.split("?", 1)[1] if "?" in request.url else ""
     url = to_url(request)
-    scheme = url.scheme if url is not None else "http"
+    scheme = url.protocol[:-1] if url is not None else "http"
     server = (
         None
-        if url is None or url.hostname is None
-        else (url.hostname, url.port or (443 if scheme == "https" else 80))
+        if url is None or not url.hostname
+        else (
+            url.hostname.removeprefix("[").removesuffix("]"),
+            int(url.port) if url.port else 443 if scheme == "https" else 80,
+        )
     )
     remote = request.remote_address
     scope: dict[str, Any] = {

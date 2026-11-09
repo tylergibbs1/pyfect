@@ -8,8 +8,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, NotRequired, TypedDict
-from urllib.parse import SplitResult, parse_qs
 
+import pyfect as fx
 from pyfect import effect, layer, stream
 from pyfect import schema as S
 from pyfect.deferred import Deferred
@@ -152,7 +152,7 @@ def execute_layer(
     return protocol_layer(execute=execute), requests
 
 
-type Handler = Callable[[HttpClientRequest, str | None, SplitResult], HttpClientResponse]
+type Handler = Callable[[HttpClientRequest, str | None, fx.Url], HttpClientResponse]
 
 
 def body_text(request: HttpClientRequest) -> str | None:
@@ -164,7 +164,7 @@ def http_client_layer(handler: Handler) -> Layer[HttpClient]:
     """An ``HttpClient`` answering every request from ``handler``, given
     the request, its body text and its final URL."""
 
-    def send(request: HttpClientRequest, url: SplitResult, _signal: Any, _fiber: Any) -> Any:
+    def send(request: HttpClientRequest, url: fx.Url, _signal: Any, _fiber: Any) -> Any:
         return effect.sync(lambda: handler(request, body_text(request), url))
 
     return layer.succeed(HttpClient, http_client.make(send))
@@ -186,9 +186,12 @@ def graphql_response(
     )
 
 
-def url_params(url: SplitResult) -> dict[str, list[str]]:
+def url_params(url: fx.Url) -> dict[str, list[str]]:
     """Every value of every URL param."""
-    return parse_qs(url.query)
+    out: dict[str, list[str]] = {}
+    for key, value in url.search_params:
+        out.setdefault(key, []).append(value)
+    return out
 
 
 def layer_http(handler: Handler) -> Layer[GraphQLProtocol]:

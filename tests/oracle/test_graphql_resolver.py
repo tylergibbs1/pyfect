@@ -551,9 +551,9 @@ class GitHubHost(Reference[str]):
 def _nodes_handler(sent: list[str], name: Callable[[str, str], str] = lambda host, id: id) -> Any:
     def handler(request: HttpClientRequest, body_text: str | None, url: Any) -> Any:
         ids = json.loads(body_text or "")["variables"]["ids"]
-        sent.append(f"{url.netloc}: {','.join(sorted(ids))}")
+        sent.append(f"{url.host}: {','.join(sorted(ids))}")
         return graphql_response(
-            request, {"data": {"nodes": [repo(name(url.netloc, id)) for id in ids]}}
+            request, {"data": {"nodes": [repo(name(url.host, id)) for id in ids]}}
         )
 
     return handler

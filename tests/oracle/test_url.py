@@ -1,17 +1,9 @@
 """Ports of Effect's ``http/Url.test.ts``.
 
 Each test's docstring is the Effect test title. A URL is an immutable
-``SplitResult``; ``href`` writes it out.
-
-Omitted, with the reason:
-
-- ``mutate``: a ``SplitResult`` cannot be mutated; a function from URL to
-  URL is just a call.
-- ``accepts absolute URLs in opaque-origin documents``: there is no
-  browser ``location`` to stub; ``make`` never reads one.
+``Url``; ``href`` writes it out. ``make`` has no browser ``location`` to
+read a base from, so the opaque-origin case needs no stub.
 """
-
-from urllib.parse import SplitResult
 
 from pyfect.errors import IllegalArgumentError
 from pyfect.http import url as u
@@ -22,9 +14,16 @@ from pyfect.result import Err, Ok
 TEST_URL = u.parse("https://example.com/test")
 
 
-def _expect(updated: SplitResult, expected: str) -> None:
+def _expect(updated: u.Url, expected: str) -> None:
     assert updated != TEST_URL
     assert u.href(updated) == expected
+
+
+def test_make_opaque_origin() -> None:
+    """accepts absolute URLs in opaque-origin documents"""
+    assert u.make("https://example.com/api", up.EMPTY, None) == Ok(
+        u.parse("https://example.com/api")
+    )
 
 
 def test_make_appends() -> None:
@@ -54,6 +53,16 @@ def test_from_string_absolute() -> None:
 def test_from_string_relative() -> None:
     """resolves relative URLs against a base URL"""
     assert u.from_string("??") == Err(IllegalArgumentError('Invalid URL: "??"'))
+
+
+def test_mutate() -> None:
+    """mutate"""
+
+    def credentials(url: u.MutableUrl) -> None:
+        url.username = "user"
+        url.password = "pass"
+
+    _expect(u.mutate(TEST_URL, credentials), "https://user:pass@example.com/test")
 
 
 def test_set_hash() -> None:

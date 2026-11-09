@@ -81,7 +81,7 @@ def make(*, model: Model | str) -> Effect[DM.Service, Never, CloudflareClient]:
         def decide(options: DM.ProviderOptions) -> Effect[DM.ProviderResponse, E.AiError]:
             images = options.images
             if images is not None and any(
-                isinstance(image.data, Url) and image.data.scheme != "data" for image in images
+                isinstance(image.data, Url) and image.data.protocol != "data:" for image in images
             ):
                 return fx.fail(_remote_url_error())
             request: W.DecisionsRequest = {

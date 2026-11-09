@@ -736,11 +736,9 @@ def test_search_params_parser_parses_the_query() -> None:
     """request URL searchParamsParser parses the query"""
 
     def echo(request: ServerRequest) -> fx.Effect[HttpServerResponse, Any]:
-        from urllib.parse import urlsplit
-
         from pyfect.http.server_request import search_params_from_url
 
-        params = search_params_from_url(urlsplit(request.original_url))
+        params = search_params_from_url(fx.Url(request.original_url, "http://localhost"))
         return server_response.json(params)
 
     @fx.fn

@@ -496,7 +496,7 @@ def test_the_request_url_follows_the_scope_scheme() -> None:
 
     def scheme(request: ServerRequest) -> fx.Effect[HttpServerResponse]:
         url = to_url(request)
-        return effect.succeed(server_response.text("" if url is None else url.scheme))
+        return effect.succeed(server_response.text("" if url is None else url.protocol[:-1]))
 
     app = asgi.to_asgi(_app(scheme))
     scope = _scope()
@@ -674,7 +674,7 @@ def test_a_host_header_that_is_not_an_authority_does_not_change_to_url() -> None
 
     def full(request: ServerRequest) -> fx.Effect[HttpServerResponse]:
         url = to_url(request)
-        return effect.succeed(server_response.text("None" if url is None else url.geturl()))
+        return effect.succeed(server_response.text("None" if url is None else url.href))
 
     app = asgi.to_asgi(_app(full))
 

@@ -99,3 +99,9 @@ def test_authorities_and_origin_forms_are_made_only_by_their_parsers() -> None:
         if made.search(line)
     ]
     assert offenders == []
+
+
+@pytest.mark.parametrize("text", ["999.0.0.1", "1.2.3.4.5", "0x100000000", "[::1::2]", "a:65536"])
+def test_a_host_the_url_parser_rejects_is_no_authority(text: str) -> None:
+    """Effect's ``isValidHost``: the shape, then ``URL.canParse(`http://${host}`)``."""
+    assert parse_authority(text) is None

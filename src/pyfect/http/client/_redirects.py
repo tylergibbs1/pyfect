@@ -40,7 +40,7 @@ def _next_request(
         case _:
             return None
     previous = _url.parse(response.request.url)
-    if previous.scheme == "https" and url.scheme != "https":
+    if previous.protocol == "https:" and url.protocol != "https:":
         return None
     status = response.status
     if ((status in (301, 302)) and request.method == "POST") or (
@@ -51,9 +51,9 @@ def _next_request(
         request = request.update_headers(_without_credentials)
     return HttpClientRequest(
         request.method,
-        _url.href(url._replace(fragment="")),
+        _url.set_hash(url, "").href,
         _url_params.EMPTY,
-        url.fragment or None,
+        url.hash[1:] or None,
         request.headers,
         request.body,
     )

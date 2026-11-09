@@ -2,7 +2,7 @@
 
 Each test's docstring is the Effect test title (with its ``describe``).
 ``Chat.Persistence.key`` is ``chat.PERSISTENCE_KEY``; a file's ``URL`` data
-is a ``urllib.parse.SplitResult``; ``TestClock.adjust("30 days")`` is
+is a ``Url``; ``TestClock.adjust("30 days")`` is
 ``testing.adjust(30 * 86400)``.
 """
 
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 from typing import Any, TypedDict
-from urllib.parse import urlsplit
 
 import pytest
 
@@ -43,7 +42,7 @@ PERSISTENCE_LAYER = C.layer_persisted(store_id="chat").pipe(
 _FILE_DATA = [
     pytest.param(bytes([0, 137, 255, 65]), id="bytes"),
     pytest.param("dGVzdA==", id="string"),
-    pytest.param(Url._make(urlsplit("https://example.com/file.txt")), id="URL"),
+    pytest.param(Url("https://example.com/file.txt"), id="URL"),
 ]
 
 

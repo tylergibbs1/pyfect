@@ -69,6 +69,27 @@ In production, provide `httpx_client.layer` instead (install the `pyfect-dev[htt
 Every request runs in a client span and sends trace headers (see
 [observability](/docs/observability)); interrupting a request aborts it.
 
+## URLs
+
+`fx.Url` is JavaScript's `URL` as an immutable Python value: `fx.Url(text, base)` parses
+and normalizes as the WHATWG URL Standard says (the same results as Node on the
+web-platform-tests suite, international domain names included), and raises `ValueError`
+for text that isn't a URL; `fx.Url.parse` gives `None` instead and `fx.Url.can_parse`
+asks. It has `URL`'s getters (`href`, `origin`, `host`, `pathname`, `search`, `hash`,
+`search_params`, ...), and two URLs are equal when their `href` is. `str(url)` is the
+`href`. `pyfect.http.url` has Effect's `Url` functions: `set_port`, `set_search`,
+`set_url_params` and the other setters give a new `Url`, as `URL`'s setters would change
+the old one, and `mutate` hands a function a mutable copy. `config.url`, the `URL`
+schemas, request URLs and `Path.to_file_url` / `from_file_url` all use `Url`.
+
+<CodeOutput>
+
+<include meta='title="urls.py"'>../../snippets/platform/urls.py</include>
+
+<include lang="text">../../snippets/platform/urls.out</include>
+
+</CodeOutput>
+
 ## HTTP client errors
 
 Every failure of a request is an `HttpClientError` whose `reason` says what went wrong:

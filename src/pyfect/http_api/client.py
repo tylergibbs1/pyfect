@@ -32,7 +32,7 @@ from pyfect.http.error import HttpClientError
 from pyfect.http.method import has_body
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
-from pyfect.http.url import href
+from pyfect.http.url import Url, href
 from pyfect.http_api import _path
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api._client_method import EndpointClient, ResponseMode, SseOptions
@@ -101,7 +101,7 @@ def make[G](
     ]
     | None = None,
     transform_response: TransformResponse | None = None,
-    base_url: str | None = None,
+    base_url: str | Url | None = None,
 ) -> Effect[Client[G], Never, HttpClient]:
     """The client of ``api`` sending through the ``HttpClient`` service
     (``transform_client`` changes it first). The client middleware of
@@ -122,7 +122,7 @@ def make_with[G](
     *,
     http_client: HttpClientService[Any, Any],
     transform_response: TransformResponse | None = None,
-    base_url: str | None = None,
+    base_url: str | Url | None = None,
 ) -> Effect[Client[G]]:
     """``make`` with the given HTTP client."""
 
@@ -142,7 +142,7 @@ def group[G: HttpApiGroup[Any, Any]](
     *,
     http_client: HttpClientService[Any, Any],
     transform_response: TransformResponse | None = None,
-    base_url: str | None = None,
+    base_url: str | Url | None = None,
 ) -> Effect[G]:
     """The client of one group of ``api`` (a group it lacks is a type
     error)."""
@@ -173,7 +173,7 @@ def endpoint[P, Q, B, CB, H, S1, CS, E, M](
     transform_client: Callable[[HttpClientService[Any, Any]], HttpClientService[Any, Any]]
     | None = None,
     transform_response: TransformResponse | None = None,
-    base_url: str | None = None,
+    base_url: str | Url | None = None,
 ) -> Effect[EndpointClient[P, Q, CB, H, CS, E, Any]]:
     """The client method of one endpoint of ``api`` (``transform_client``
     changes ``http_client`` first)."""
@@ -200,7 +200,7 @@ def endpoint[P, Q, B, CB, H, S1, CS, E, M](
 class _Options:
     http_client: HttpClientService[Any, Any]
     transform_response: TransformResponse | None
-    base_url: str | None
+    base_url: str | Url | None
 
 
 def _reflect_calls(
@@ -213,7 +213,8 @@ def _reflect_calls(
     http = options.http_client
     base_url = options.base_url
     if base_url is not None:
-        http = http.map_request(lambda request: request.prepend_url(base_url))
+        prefix = str(base_url)
+        http = http.map_request(lambda request: request.prepend_url(prefix))
     reflected: list[ReflectedEndpoint] = []
     reflect(api, on_group=lambda _g, _a: None, on_endpoint=reflected.append, predicate=predicate)
     return [(r, _endpoint_call(r, http, services, options.transform_response)) for r in reflected]
@@ -397,7 +398,7 @@ class UrlBuilder:
 
     __slots__ = ("_api", "_base_url", "_endpoints")
 
-    def __init__(self, api: AnyApi, base_url: str | None) -> None:
+    def __init__(self, api: AnyApi, base_url: str | Url | None) -> None:
         self._api = api
         self._base_url = base_url
         self._endpoints: dict[int, tuple[AnyGroup, AnyEndpoint]] = {}
@@ -444,7 +445,9 @@ class UrlBuilder:
         if self._base_url is None:
             text = url_params.to_string(params_)
             return path if text == "" else f"{path}?{text}"
-        request = client_request.get(path).prepend_url(self._base_url).append_url_params(params_)
+        request = (
+            client_request.get(path).prepend_url(str(self._base_url)).append_url_params(params_)
+        )
         url = request.to_url()
         if url is None:
             raise ValueError(f"Invalid URL: {request.url}")
@@ -455,7 +458,7 @@ def _codec(schema: Top) -> S.Codec[Any, Any, Any, Never]:
     return cast("S.Codec[Any, Any, Any, Never]", schema)
 
 
-def url_builder(api: HttpApi[Any], *, base_url: str | None = None) -> UrlBuilder:
+def url_builder(api: HttpApi[Any], *, base_url: str | Url | None = None) -> UrlBuilder:
     """The URLs of ``api``'s endpoints (see ``UrlBuilder``)."""
     return UrlBuilder(api, base_url)
 

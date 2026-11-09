@@ -15,7 +15,6 @@ identifiers are plain names here.
 
 from collections.abc import Callable, Mapping
 from typing import Any
-from urllib.parse import SplitResult
 
 import pytest
 
@@ -180,10 +179,10 @@ def _responding(
     """An HTTP client answering every request with this response (Effect's
     ``clientFromResponse``), recording each request and its URL in ``sent``."""
 
-    def send(request: HttpClientRequest, url: SplitResult, *_: Any) -> Effect[HttpClientResponse]:
+    def send(request: HttpClientRequest, url: fx.Url, *_: Any) -> Effect[HttpClientResponse]:
         def answer() -> HttpClientResponse:
             if sent is not None:
-                sent.append((request, url.geturl()))
+                sent.append((request, url.href))
             made = body() if callable(body) else body
             data = made.encode() if isinstance(made, str) else made
             return response.make(request, data, status=status, headers=headers)

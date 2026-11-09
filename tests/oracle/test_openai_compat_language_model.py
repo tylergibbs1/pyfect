@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from typing import Any, Literal, NotRequired, TypedDict, TypeIs
-from urllib.parse import urlsplit
 
 import pytest
 
@@ -241,9 +240,7 @@ def test_multimodal_order():
     mock = mock_json(completion({"content": "done"}))
     content = (
         Pr.TextPart(text="first text"),
-        Pr.FilePart(
-            media_type="image/png", data=Url._make(urlsplit("https://example.com/image.png"))
-        ),
+        Pr.FilePart(media_type="image/png", data=Url("https://example.com/image.png")),
         Pr.FilePart(media_type="image/png", data="https://example.com/string-image.png"),
         Pr.FilePart(media_type="image/png", data=data),
         Pr.TextPart(text="second text"),

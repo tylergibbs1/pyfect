@@ -161,7 +161,7 @@ def test_date_time_reads_iso_8601_and_reads_a_naive_time_as_utc():
 def test_url_validation(text: str, valid: bool):
     result = _parse(config.url("a"), _at_a(text))
     if valid:
-        assert isinstance(result, fx.Ok) and result.value.geturl() == text
+        assert isinstance(result, fx.Ok) and result.value.href == text
     else:
         assert result == fx.Err('Expected a valid URL string\n  at ["a"]')
 

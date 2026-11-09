@@ -9,11 +9,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import urlsplit
 
 from pyfect._digits import parse_digits
+from pyfect._url import Url
 from pyfect.http._authority import ROOT, Authority, OriginForm, parse_authority, parse_origin_form
 from pyfect.http.headers import Headers
+
+# The authority as sent: a URL parser would read ``http:///x`` as host ``x``
+# and drop ``u@`` into a username.
+_ABSOLUTE_TARGET = re.compile(r"https?://([^/?#]*)", re.IGNORECASE)
 
 _TOKEN = re.compile(rb"[!#$%&'*+\-.^_`|~0-9A-Za-z]+\Z")
 _VERSION = re.compile(rb"HTTP/(\d)\.(\d)\Z")
@@ -128,15 +132,15 @@ def _target(
         return origin or "*", host
     if method == "CONNECT":
         return ROOT, _authority(target)
-    parts = urlsplit(target)
-    if parts.scheme.lower() not in ("http", "https") or not target[len(parts.scheme) :].startswith(
-        "://"
-    ):
+    match = _ABSOLUTE_TARGET.match(target)
+    url = Url.parse(target) if match else None
+    if match is None or url is None:
         raise HeadError(400, "Invalid request-target")
-    authority = _authority(parts.netloc)
+    _authority(match[1])
+    # RFC 9112 section 3.2.2: the target's authority takes precedence over Host.
+    authority = _authority(url.host)
     headers["host"] = authority
-    path = parts.path or "/"
-    origin = parse_origin_form(f"{path}?{parts.query}" if parts.query else path)
+    origin = parse_origin_form(url.pathname + url.search)
     if origin is None:
         raise HeadError(400, "Invalid request-target")
     return origin, authority

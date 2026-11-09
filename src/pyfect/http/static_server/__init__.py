@@ -14,10 +14,10 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Never, NotRequired, TypedDict, Unpack
-from urllib.parse import urlsplit
 
 from pyfect._core import Effect
 from pyfect._js import decode_uri_component
+from pyfect._url import Url
 from pyfect.effect import fail, fn_untraced, succeed
 from pyfect.file_system import FileInfo, FileSystem, FileSystemService
 from pyfect.http.platform import HttpPlatform, HttpPlatformService
@@ -173,8 +173,8 @@ class _Server:
     ) -> Effect[HttpServerResponse, HttpServerError]:
         original_url = request.original_url
         if not original_url.startswith("/"):
-            parts = urlsplit(original_url)
-            original_url = parts.path + (f"?{parts.query}" if parts.query else "")
+            url = Url(original_url)
+            original_url = url.pathname + url.search
         pathname = _strip_query(original_url)
         if not pathname.endswith("/"):
             # Keep the redirect local even when the path starts with several slashes.

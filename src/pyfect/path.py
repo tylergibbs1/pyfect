@@ -18,12 +18,13 @@ import ntpath
 import os
 import posixpath
 import re
-import urllib.parse
 from dataclasses import dataclass
 from typing import Never, Protocol
 
 from pyfect import _path_posix
 from pyfect._core import Effect
+from pyfect._url import Url
+from pyfect._whatwg_url import _percent, setters
 from pyfect.context import Tag
 from pyfect.effect import fail, succeed
 from pyfect.layer import Layer
@@ -63,8 +64,6 @@ class Parsed:
 _ENCODED_SEPARATOR = re.compile(r"%2f", re.IGNORECASE)
 _ENCODED_BACKSLASH = re.compile(r"%5c", re.IGNORECASE)
 _BAD_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
-# WHATWG's path percent-encode set leaves these as they are.
-_URL_SAFE = "/!$&'()*+,;=:@-._~"
 
 
 class PathService:
@@ -109,18 +108,15 @@ class PathService:
             return directory + last
         return directory + self.sep + last
 
-    def from_file_url(self, url: str) -> Effect[str, BadArgument]:
+    def from_file_url(self, url: Url) -> Effect[str, BadArgument]:
         """The path a ``file:`` URL names. Fails for another scheme, a host
         (but a Windows share), an encoded separator or a broken escape."""
-        parts = urllib.parse.urlsplit(url)
-        if parts.scheme != "file":
+        if url.protocol != "file:":
             return _bad_url("URL must be of scheme file")
-        host = parts.hostname or ""
-        if host == "localhost":
-            host = ""
+        host = url.hostname
         if host and not self._windows:
             return _bad_url("Invalid file URL host")
-        path = _remove_dot_segments(parts.path)
+        path = url.pathname
         encoded = _ENCODED_SEPARATOR.search(path) or (
             self._windows and _ENCODED_BACKSLASH.search(path)
         )
@@ -172,18 +168,24 @@ class PathService:
             return None
         return candidate
 
-    def to_file_url(self, path: str) -> Effect[str, BadArgument]:
-        """The ``file:`` URL of ``path``, made absolute first."""
+    def to_file_url(self, path: str) -> Effect[Url, BadArgument]:
+        """The ``file:`` URL of ``path``, made absolute first (a trailing
+        separator kept); ``%``, ``\\``, tab and newlines are escaped."""
         resolved = self.resolve(path)
+        host = ""
         if self._windows:
             resolved = resolved.replace("\\", "/")
             if resolved.startswith("//"):
                 host, _, rest = resolved[2:].partition("/")
-                return succeed(f"file://{host}/{urllib.parse.quote(rest, safe=_URL_SAFE)}")
-            resolved = "/" + resolved
+                resolved = "/" + rest
+            else:
+                resolved = "/" + resolved
         elif path.endswith("/") and not resolved.endswith("/"):
             resolved += "/"
-        return succeed("file://" + urllib.parse.quote(resolved, safe=_URL_SAFE))
+        record = setters.set_pathname(Url("file://").record, _encode_path_chars(resolved))
+        if host:
+            record = setters.set_hostname(record, host)
+        return succeed(Url.from_record(record))
 
     def to_namespaced_path(self, path: str) -> str:
         """Windows' ``\\\\?\\`` form of an absolute path; on POSIX, ``path``."""
@@ -199,31 +201,13 @@ class PathService:
         return path
 
 
-_SINGLE_DOT = frozenset((".", "%2e"))
-_DOUBLE_DOT = frozenset(("..", ".%2e", "%2e.", "%2e%2e"))
-_DRIVE = re.compile(r"[A-Za-z][:|]")
+_PATH_CHAR_ESCAPES = str.maketrans({"%": "%25", "\\": "%5C", "\n": "%0A", "\r": "%0D", "\t": "%09"})
 
 
-def _remove_dot_segments(path: str) -> str:
-    """The WHATWG URL parser's handling of ``.`` and ``..`` segments (encoded
-    dots included) in a ``file:`` URL's path; ``..`` never leaves a drive
-    letter."""
-    segments = path.split("/")[1:]
-    kept: list[str] = []
-    for index, segment in enumerate(segments):
-        last = index == len(segments) - 1
-        dots = segment.lower()
-        if dots in _DOUBLE_DOT:
-            if kept and not (len(kept) == 1 and _DRIVE.fullmatch(kept[0])):
-                kept.pop()
-            if last:
-                kept.append("")
-        elif dots in _SINGLE_DOT:
-            if last:
-                kept.append("")
-        else:
-            kept.append(segment)
-    return "/" + "/".join(kept) if segments else path
+def _encode_path_chars(path: str) -> str:
+    """Node's ``encodePathChars``: what the ``pathname`` setter would read
+    as an escape, a separator or nothing."""
+    return path.translate(_PATH_CHAR_ESCAPES)
 
 
 def _windows_path(host: str, decoded: str) -> str:
@@ -242,7 +226,7 @@ def _decode_uri_component(text: str) -> str:
     or escapes that are not UTF-8, raise ``ValueError``."""
     if _BAD_ESCAPE.search(text):
         raise ValueError(f"URI malformed: {text}")
-    return urllib.parse.unquote_to_bytes(text).decode("utf-8", errors="strict")
+    return _percent.decode(text).decode("utf-8", errors="strict")
 
 
 class Path(Tag[PathService]):

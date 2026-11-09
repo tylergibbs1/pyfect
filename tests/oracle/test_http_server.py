@@ -2,7 +2,6 @@
 the Effect test title."""
 
 from typing import Any
-from urllib.parse import SplitResult, urlsplit
 
 import pytest
 
@@ -54,7 +53,7 @@ def test_passes_formatted_server_addresses_to_the_callback() -> None:
     ]:
         formatted = _formatted(inet_address_from_string_unsafe(text))
         assert formatted == expected
-        assert urlsplit(formatted).hostname is not None
+        assert fx.Url(formatted).hostname != ""
     for path, expected in [
         ("server.sock", "unix://server.sock"),
         ("/tmp/server.sock", "unix:///tmp/server.sock"),
@@ -106,9 +105,9 @@ def test_uses_ipv4_loopback_for_unspecified_listeners_and_preserves_explicit_hos
     seen: list[str] = []
 
     def send(
-        request: HttpClientRequest, url: SplitResult, *_: object
+        request: HttpClientRequest, url: fx.Url, *_: object
     ) -> fx.Effect[http_response.HttpClientResponse]:
-        seen.append(f"{url.scheme}://{url.netloc}")
+        seen.append(f"{url.protocol}//{url.host}")
         return effect.succeed(http_response.make(request))
 
     address = inet_address_from_string_unsafe(text)

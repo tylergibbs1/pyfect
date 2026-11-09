@@ -9,8 +9,8 @@ import base64
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
-from urllib.parse import SplitResult, urlunsplit
 
+from pyfect._url import Url
 from pyfect.ai import _provider as P
 from pyfect.ai import _provider_tools as PT
 from pyfect.ai import prompt as Pr
@@ -48,8 +48,8 @@ def _image(part: Pr.FilePart, prefixes: Sequence[str] | None) -> Block:
     if _is_file_id(data, prefixes):
         return {"type": "input_image", "file_id": data, "detail": detail}
     media_type = "image/jpeg" if part.media_type == "image/*" else part.media_type
-    if isinstance(data, SplitResult):
-        url = urlunsplit(data)
+    if isinstance(data, Url):
+        url = data.href
     elif isinstance(data, bytes):
         url = f"data:{media_type};base64,{_b64(data)}"
     else:
@@ -61,8 +61,8 @@ def _pdf(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> list[
     data = part.data
     if _is_file_id(data, prefixes):
         return [{"type": "input_file", "file_id": data}]
-    if isinstance(data, SplitResult):
-        return [{"type": "input_file", "file_url": urlunsplit(data)}]
+    if isinstance(data, Url):
+        return [{"type": "input_file", "file_url": data.href}]
     if isinstance(data, bytes):
         return [
             {

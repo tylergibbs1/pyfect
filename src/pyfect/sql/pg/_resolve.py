@@ -9,10 +9,11 @@ import os
 import re
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import parse_qsl, unquote, urlsplit
+from urllib.parse import unquote
 
 from pyfect._core import Effect
 from pyfect._digits import parse_digits
+from pyfect._url import Url
 from pyfect.duration import Seconds, to_seconds
 from pyfect.effect import fail, succeed
 from pyfect.redacted import Redacted, make
@@ -118,34 +119,27 @@ def _query(url: _Url, key: str, value: str) -> None:
 
 
 def _parse_url(raw: str) -> _Url:
-    try:
-        parts = urlsplit(raw)
-    except ValueError as cause:
-        raise _Invalid("Invalid connection URL") from cause
-    if parts.scheme not in ("postgres", "postgresql"):
-        raise _Invalid(f'Unsupported connection URL protocol: "{parts.scheme}:"')
+    parsed = Url.parse(raw)
+    if parsed is None:
+        raise _Invalid("Invalid connection URL")
+    if parsed.protocol not in ("postgres:", "postgresql:"):
+        raise _Invalid(f'Unsupported connection URL protocol: "{parsed.protocol}"')
     url = _Url()
-    userinfo, _, hostport = parts.netloc.rpartition("@")
-    if hostport.startswith("["):
-        host, _, rest = hostport[1:].partition("]")
-        port = rest.removeprefix(":")
-        url.host = host or None
-    else:
-        host, _, port = hostport.partition(":")
-        if host:
-            url.host = _decode(host, "host")
-    if port:
-        url.port = _port(port, "authority")
-    if userinfo:
-        username, _, password = userinfo.partition(":")
-        if username:
-            url.username = _decode(username, "username")
-        if password:
-            url.password = _decode(password, "password")
-    database = _decode(parts.path.removeprefix("/"), "database")
+    host = parsed.hostname
+    if host.startswith("[") and host.endswith("]"):
+        url.host = host[1:-1]
+    elif host:
+        url.host = _decode(host, "host")
+    if parsed.port:
+        url.port = _port(parsed.port, "authority")
+    if parsed.username:
+        url.username = _decode(parsed.username, "username")
+    if parsed.password:
+        url.password = _decode(parsed.password, "password")
+    database = _decode(parsed.pathname.removeprefix("/"), "database")
     if database:
         url.database = database
-    for key, value in parse_qsl(parts.query, keep_blank_values=True):
+    for key, value in parsed.search_params:
         _query(url, key, value)
     return url
 

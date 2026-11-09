@@ -17,7 +17,6 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from fractions import Fraction
 from typing import Any, cast
-from urllib.parse import SplitResult, urlsplit
 from zoneinfo import ZoneInfo
 
 from pyfect._equal import dict_of, frozenset_of
@@ -134,13 +133,18 @@ _URL = ast.Objects(
 
 def _url_of(parts: Mapping[str, Any]) -> Url:
     path = "/".join(parts["path"])
-    return Url._make(urlsplit(f"{parts['scheme']}://{parts['label']}.{parts['suffix']}/{path}"))
+    return Url(f"{parts['scheme']}://{parts['label']}.{parts['suffix']}/{path}")
 
 
-def _url_to(url: SplitResult) -> Mapping[str, Any]:
-    label, _, suffix = url.netloc.partition(".")
-    path = url.path.removeprefix("/")
-    return {"scheme": url.scheme, "label": label, "suffix": suffix, "path": path.split("/")}
+def _url_to(url: Url) -> Mapping[str, Any]:
+    label, _, suffix = url.hostname.partition(".")
+    path = url.pathname.removeprefix("/")
+    return {
+        "scheme": url.protocol.removesuffix(":"),
+        "label": label,
+        "suffix": suffix,
+        "path": path.split("/"),
+    }
 
 
 def url(_: tuple[ast.AST, ...], __: ArbitraryConstraint) -> ast.Link:

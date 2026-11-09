@@ -25,8 +25,8 @@ secret out of logs and error messages.
 Constructors: `string`, `integer`, `number`, `boolean`, `port`, `url`, `duration`, `literal`,
 `log_level`, `byte_size`, `date_time`, `redacted`, `list_of`, `dict_of`; combine with
 `config.all`, `all_dict` or `@config.gen`.
-`url` gives a `Url`, a `urllib.parse.SplitResult` whose `str()` is the URL, so
-`f"{base}/payouts"` builds one.
+`url` gives a `Url` (`fx.Url`, JavaScript's `URL`), parsed as `new URL(text)` parses it;
+see [URLs](/docs/platform#urls).
 
 Reference: [`pyfect.config`](/docs/reference/config),
 [`pyfect.config_provider`](/docs/reference/config_provider),

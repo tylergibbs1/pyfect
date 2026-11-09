@@ -26,6 +26,7 @@ from pyfect.http.platform import HttpPlatform
 from pyfect.http.platform import layer as platform_layer
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.http.server_response import HttpServerResponse
+from pyfect.http.url import set_hostname
 from pyfect.layer import Layer, effect_discard, merge, provide_merge
 from pyfect.layer import effect as layer_effect
 from pyfect.logger import log
@@ -155,10 +156,9 @@ def _make_test_client():
             )
         )
     url = to_url(address).get_or_raise()
-    origin = f"{url.scheme}://{url.netloc}"
     if is_unspecified(address.address):
-        port = f":{url.port}" if url.port is not None else ""
-        origin = f"{url.scheme}://{format_ip(ipv4_loopback)}{port}"
+        url = set_hostname(url, format_ip(ipv4_loopback))
+    origin = url.origin
     prefixed: HttpClientService[Any] = client.map_request(
         lambda request: request.prepend_url(origin)
     )

@@ -7,8 +7,8 @@ their modules: ``fx.cause``, ``fx.option``, ``fx.result``, ``fx.exit``, ``fx.fil
 ``fx.layer``,
 ``fx.clock``, ``fx.config`` (``fx.Config``, ``fx.ConfigError``), ``fx.config_provider``,
 ``fx.console``, ``fx.cron``, ``fx.date_time``, ``fx.random``, ``fx.redacted``
-(``fx.Redacted``), ``fx.byte_size``, ``fx.brand``, ``fx.case`` (case
-conversion), ``fx.big_decimal``, ``fx.semver``, ``fx.semver_range``, ``fx.trie``,
+(``fx.Redacted``), ``fx.Url`` (JavaScript's ``URL``), ``fx.byte_size``, ``fx.brand``,
+``fx.case`` (case conversion), ``fx.big_decimal``, ``fx.semver``, ``fx.semver_range``, ``fx.trie``,
 ``fx.graph`` (directed and undirected graphs),
 ``fx.hash_map``, ``fx.hash_set``, ``fx.mutable_hash_map``, ``fx.mutable_hash_set``,
 ``fx.schema`` (schemas: decode, validate, encode), ``fx.json_schema``
@@ -78,6 +78,7 @@ from pyfect._iterables import (
 from pyfect._public import publish
 from pyfect._reasons import HasReason
 from pyfect._root import NoRunError
+from pyfect._url import Url
 from pyfect.batching import Request, RequestResolver, request, request_unsafe
 from pyfect.cache import Cache, ScopedCache
 from pyfect.cause import Cause, EmptyCauseError, Interrupted, UnhandledError
@@ -549,6 +550,7 @@ __all__ = [
     "UnhandledError",
     "UnhandledLogLevel",
     "UnknownError",
+    "Url",
     "acquire_async_context",
     "acquire_context",
     "acquire_release",

@@ -374,7 +374,7 @@ def format_url(
     Unix path as ``unix://path``."""
     if isinstance(address, UnixPathAddress):
         return Ok(format_unix_path(address))
-    return to_url(address, scheme).map(lambda u: f"{u.scheme}://{u.netloc}")
+    return to_url(address, scheme).map(lambda u: f"{u.protocol}//{u.host}")
 
 
 def format_url_unsafe(address: IpAddress | SocketAddress, scheme: str = "http") -> str:

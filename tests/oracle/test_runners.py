@@ -9,7 +9,6 @@ import json
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import replace
 from typing import Any, Never, TypedDict, cast
-from urllib.parse import SplitResult
 
 import pyfect as fx
 from pyfect import exit as Exit
@@ -510,7 +509,7 @@ def test_http_runner_preserves_a_leading_slash_in_http_client_paths():
     """preserves a leading slash in HTTP client paths"""
     urls: list[str] = []
 
-    def send(request: HttpClientRequest, url: SplitResult, _signal: Any, _fiber: Any) -> Any:
+    def send(request: HttpClientRequest, url: fx.Url, _signal: Any, _fiber: Any) -> Any:
         def respond() -> Any:
             urls.append(request.url)
             body = '[{"_tag":"Exit","requestId":"0","exit":{"_tag":"Success","value":"pong"}}]'

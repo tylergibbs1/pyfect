@@ -1,7 +1,7 @@
 """The built-in transformations of Effect's ``SchemaTransformation``.
 
 Python mappings: bytes are ``bytes`` (Effect's ``Uint8Array``), a URL is a
-``Url`` (a ``urllib.parse.SplitResult``), a UTC date-time an aware ``datetime`` in UTC,
+``Url`` (JavaScript's ``URL``), a UTC date-time an aware ``datetime`` in UTC,
 a zone a ``ZoneInfo`` / ``timezone``, an ``Option`` is ``Some | None``.
 """
 
@@ -10,11 +10,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any
-from urllib.parse import urlunsplit
 from zoneinfo import ZoneInfo
 
 from pyfect import big_decimal, byte_size
-from pyfect._url import Url, parse_url
+from pyfect._url import Url
 from pyfect.date_time import (
     format_iso,
     format_iso_zoned,
@@ -149,7 +148,7 @@ def _done[A](f: Callable[[Any], A]) -> Callable[[Any, ParseOptions], Exit[A, Iss
 
 
 url_from_string: Transformation[Url, str] = transform_effect(
-    decode=_parsed(parse_url, "a valid URL string"), encode=_done(urlunsplit)
+    decode=_parsed(Url.parse, "a valid URL string"), encode=_done(Url.to_json)
 )
 """A URL and its text (Effect's ``urlFromString``)."""
 

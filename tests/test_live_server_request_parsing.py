@@ -64,6 +64,14 @@ def test_a_target_in_no_request_target_form_is_a_400(target: bytes) -> None:
     assert response.status == 400
 
 
+def test_an_absolute_target_sets_the_normalized_host() -> None:
+    """As Effect's Node server: ``host`` becomes the target URL's ``host``."""
+    [response] = _send(
+        b"GET HTTP://Example.TEST:80/public?q HTTP/1.1\r\nHost: good\r\nConnection: close\r\n\r\n"
+    )
+    assert (response.status, response.body) == (200, b"/public?q example.test")
+
+
 def test_an_absolute_target_with_userinfo_is_a_400() -> None:
     [response] = _send(
         b"GET http://u@evil/admin HTTP/1.1\r\nHost: good\r\nConnection: close\r\n\r\n"

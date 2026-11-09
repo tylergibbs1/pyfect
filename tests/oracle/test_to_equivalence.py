@@ -24,7 +24,6 @@ import re
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Literal, NotRequired, TypedDict, cast
-from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -361,7 +360,7 @@ def test_preserves_union_member_equivalence_annotations():
 
 
 def _url(text: str) -> Url:
-    return Url._make(urlsplit(text))
+    return Url(text)
 
 
 def test_url():

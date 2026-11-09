@@ -125,7 +125,7 @@ class HttpClientResponse:
         if self._url:
             return self._url.split("#")[0]
         url = self.request.to_url()
-        return "" if url is None else _url.href(url._replace(fragment=""))
+        return "" if url is None else _url.set_hash(url, "").href
 
     @property
     def remote_address(self) -> str | None:

@@ -8,8 +8,8 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
-from urllib.parse import SplitResult, urlunsplit
 
+from pyfect._url import Url
 from pyfect.ai import _provider as P
 from pyfect.ai import prompt as Pr
 from pyfect.ai._provider_tools import UnsupportedInput
@@ -47,11 +47,11 @@ def cache_control(options: Pr.ProviderOptions) -> Any:
 
 
 def is_url_data(data: Pr.FileData) -> bool:
-    return isinstance(data, SplitResult) or (isinstance(data, str) and bool(_HTTP_URL.match(data)))
+    return isinstance(data, Url) or (isinstance(data, str) and bool(_HTTP_URL.match(data)))
 
 
 def url_string(data: Pr.FileData) -> str:
-    return urlunsplit(data) if isinstance(data, SplitResult) else str(data)
+    return data.href if isinstance(data, Url) else str(data)
 
 
 def _base64(data: Pr.FileData) -> str:
