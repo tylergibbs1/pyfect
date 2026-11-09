@@ -338,6 +338,24 @@ def _tool_turns(*calls: tuple[str, object]) -> list[dict[str, Any]]:
     ]
 
 
+_MODEL_OUTPUT_CASES = [
+    pytest.param(
+        [
+            {"type": "text", "text": "Screenshot"},
+            {
+                "type": "file",
+                "mediaType": "image/png",
+                "fileName": "screenshot.png",
+                "data": "iVBORw0KGgo=",
+            },
+        ],
+        "Screenshot\n[image/png screenshot.png omitted]",
+        id="as text with file placeholders",
+    ),
+    pytest.param([], "", id="as an empty string when it is empty"),
+]
+
+
 @testing.effect
 def test_parallel_tool_calls_grouped():
     """generateText / groups parallel tool calls into one assistant message"""
@@ -368,6 +386,26 @@ def test_parallel_tool_calls_grouped():
         {"role": "tool", "tool_call_id": "call_1", "content": '{"output":"first"}'},
         {"role": "tool", "tool_call_id": "call_2", "content": '{"output":"second"}'},
     ]
+
+
+@pytest.mark.parametrize(("model_output", "content"), _MODEL_OUTPUT_CASES)
+@testing.effect
+def test_tool_result_model_output(model_output: list[Any], content: str):
+    """generateText / sends tool result model output as text with file placeholders / as an
+    empty string when it is empty"""
+    mock = mock_json(completion({"content": "done"}))
+    turns = _tool_turns(("call_1", "screenshot"))
+    turns[1]["content"][0]["result"] = {"output": "APPLICATION_ONLY"}
+    turns[1]["content"][0]["modelOutput"] = model_output
+    yield from _provided(
+        lm.generate_text(turns, toolkit=TestToolkit, disable_tool_call_resolution=True),
+        mock,
+        "gpt-4o-mini",
+        None,
+        TestLayer,
+    )
+    tool = next(m for m in mock.bodies[0]["messages"] if m["role"] == "tool")
+    assert tool == {"role": "tool", "tool_call_id": "call_1", "content": content}
 
 
 def _sequenced(*bodies: Any) -> MockHttp:

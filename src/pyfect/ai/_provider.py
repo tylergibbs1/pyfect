@@ -18,6 +18,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._js import or_default
 from pyfect._json_text import parse as parse_json_text
+from pyfect.ai import prompt as Prompt
 from pyfect.ai.ai_error import (
     AiError,
     HttpContext,
@@ -220,6 +221,14 @@ def parse_json(text: str | None) -> object:
 def dumps(value: object) -> str:
     """JSON as JavaScript's ``JSON.stringify`` writes it."""
     return _json_text.stringify(value)
+
+
+def tool_result_text(part: Prompt.ToolResultPart) -> str:
+    """What a text-only provider sends for a tool result: its model output
+    as text when set, else the result (JSON unless a string)."""
+    if part.model_output is not None:
+        return Prompt.tool_model_output_to_text(part.model_output)
+    return part.result if isinstance(part.result, str) else dumps(part.result)
 
 
 def with_redacted_headers[A, E, R](

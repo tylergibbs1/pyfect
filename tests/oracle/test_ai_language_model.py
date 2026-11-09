@@ -1785,3 +1785,47 @@ def test_deferred_keeps_invalid_and_undeclared_calls():
         ("MyTool", {"testParam": 42}),
         ("Write", {"path": "a"}),
     ]
+
+
+class _Shot(TypedDict):
+    path: str
+    png: str
+
+
+_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII="
+)
+
+
+@testing.effect
+def test_carries_model_output_into_follow_up():
+    """generateText / keeps the typed tool result and carries model output into the follow-up
+    prompt"""
+    screenshot = T.make(
+        "Screenshot",
+        success=S.Struct(_Shot),
+        to_model_output=lambda result: [
+            P.TextPart(text=f"Screenshot of {result['path']}"),
+            P.FilePart(media_type="image/png", data=result["png"]),
+        ],
+    )
+    toolkit = K.make(screenshot)
+    shot: _Shot = {"path": "/home", "png": _PNG}
+    layer = toolkit.to_layer(screenshot.handler(lambda _, __: fx.succeed(shot)))
+    response = yield from _provided(
+        lm.generate_text([], toolkit=toolkit).pipe(fx.provide(layer)),
+        generate_text=[
+            {"type": "tool-call", "id": "call_screenshot", "name": "Screenshot", "params": {}}
+        ],
+    )
+    assert response.tool_results[0].result == shot
+    prompt = P.from_response_parts(response.content)
+    codec = S.to_codec_json(P.Prompt)
+    assert S.decode_unknown_sync(codec)(S.encode_unknown_sync(codec)(prompt)) == prompt
+    tool_result = prompt.content[1].content[0]
+    assert isinstance(tool_result, P.ToolResultPart)
+    assert tool_result.result == shot
+    assert tool_result.model_output == (
+        P.TextPart(text="Screenshot of /home"),
+        P.FilePart(media_type="image/png", data=_PNG),
+    )

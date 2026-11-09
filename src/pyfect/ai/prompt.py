@@ -116,9 +116,27 @@ class ToolCallPart(_Wire):
     options: ProviderOptions = field(default_factory=_options)
 
 
+type ToolModelOutputPart = TextPart | FilePart
+"""A part a tool's ``to_model_output`` returns, sent to the model in place
+of the encoded result."""
+
+
+def tool_model_output_to_text(parts: Sequence[ToolModelOutputPart]) -> str:
+    """Model output as text, for providers whose tool results are text
+    only: text parts joined by newlines, each file replaced by a placeholder
+    naming its media type and file name."""
+    return "\n".join(
+        part.text
+        if isinstance(part, TextPart)
+        else f"[{part.media_type}{'' if part.file_name is None else f' {part.file_name}'} omitted]"
+        for part in parts
+    )
+
+
 @dataclass(frozen=True, eq=True)
 class ToolResultPart(_Wire):
-    """A tool's result (encoded) for the call ``id``."""
+    """A tool's result (encoded) for the call ``id``. ``model_output``, when
+    set, is sent to the model in place of ``result``."""
 
     type: ClassVar[Literal["tool-result"]] = "tool-result"
     id: str
@@ -127,6 +145,7 @@ class ToolResultPart(_Wire):
     result: object
     provider_executed: bool = False
     options: ProviderOptions = field(default_factory=_options)
+    model_output: tuple[ToolModelOutputPart, ...] | None = None
 
 
 @dataclass(frozen=True, eq=True)
@@ -227,6 +246,9 @@ _define(
     key("providerExecuted", "provider_executed", S.Boolean, default=lambda: False),
     _options_key(),
 )
+TOOL_MODEL_OUTPUT_PART: S.Bottom[ToolModelOutputPart, Mapping[str, object]] = cast(
+    "Any", S.Union(TextPart, FilePart)
+)
 _define(
     ToolResultPart,
     "ToolResultPart",
@@ -235,6 +257,7 @@ _define(
     key("name", "name", S.String),
     key("isFailure", "is_failure", S.Boolean),
     key("result", "result", S.Unknown),
+    key("modelOutput", "model_output", S.Array(TOOL_MODEL_OUTPUT_PART), optional=True),
     key("providerExecuted", "provider_executed", S.Boolean, default=lambda: False),
     _options_key(),
 )
@@ -607,6 +630,7 @@ def _fold(builder: _Builder, part: Response.AnyPart) -> None:
                 result=part.encoded_result,
                 provider_executed=part.provider_executed,
                 options=dict(part.metadata),
+                model_output=part.model_output,
             )
             (builder.add if part.provider_executed else builder.tool.append)(result)
         case R.ToolApprovalRequestPart():
@@ -636,6 +660,7 @@ __all__ = [
     "PART",
     "PROVIDER_OPTIONS",
     "TOOL_MESSAGE_PART",
+    "TOOL_MODEL_OUTPUT_PART",
     "USER_MESSAGE_PART",
     "AssistantMessage",
     "AssistantMessagePart",
@@ -654,6 +679,7 @@ __all__ = [
     "ToolCallPart",
     "ToolMessage",
     "ToolMessagePart",
+    "ToolModelOutputPart",
     "ToolResultPart",
     "UserMessage",
     "UserMessagePart",
@@ -661,4 +687,5 @@ __all__ = [
     "from_messages",
     "from_response_parts",
     "make",
+    "tool_model_output_to_text",
 ]

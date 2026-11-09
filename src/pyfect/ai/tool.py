@@ -46,6 +46,7 @@ from typing import (
 from pyfect import schema as S
 from pyfect._json_text import parse as parse_json_text
 from pyfect.ai.ai_error import AiError, AnyReason
+from pyfect.ai.prompt import ToolModelOutputPart
 from pyfect.context import Context, Reference, Tag
 from pyfect.json_schema._model import JsonSchema
 
@@ -91,6 +92,11 @@ class Handler(Generic[N_co]):
     run: Callable[[Any, HandlerContext[Any]], Effect[Any, Any, Any]]
 
 
+type ToModelOutput = Callable[[Any], Sequence[ToolModelOutputPart]]
+"""A tool's ``to_model_output``: a successful result to the parts the model
+sees."""
+
+
 @dataclass(frozen=True)
 class Tool(Generic[N_co, P_co, S_co, F_co, HE_co, R_co]):
     """A tool the model can call (see the module docstring)."""
@@ -103,6 +109,10 @@ class Tool(Generic[N_co, P_co, S_co, F_co, HE_co, R_co]):
     description: str | None = None
     needs_approval: NeedsApproval | None = None
     annotations: Context[Any] = field(default_factory=Context.empty)
+    to_model_output: ToModelOutput | None = None
+    """Maps a successful result to what the model sees in place of the
+    encoded result (images, files); the application still gets the typed
+    result."""
 
     @property
     def id(self) -> str:
@@ -133,7 +143,7 @@ class Tool(Generic[N_co, P_co, S_co, F_co, HE_co, R_co]):
     def set_success[SS](
         self, schema: S.Codec[SS, Any, Any, Any]
     ) -> Tool[N_co, P_co, SS, F_co, HE_co, R_co]:
-        return cast("Any", replace(self, success_schema=schema))
+        return cast("Any", replace(self, success_schema=schema, to_model_output=None))
 
     def set_failure[FF](
         self, schema: S.Codec[FF, Any, Any, Any]
@@ -227,6 +237,7 @@ def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = N
     failure_mode: Literal["error"] = "error",
     dependencies: Sequence[type[RR]] = (),
     needs_approval: NeedsApproval | None = None,
+    to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
 ) -> Tool[NN, PP, SS, FF, FF, RR]: ...
 @overload
 def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = Never](
@@ -239,6 +250,7 @@ def make[NN: LiteralString, PP = dict[str, Never], SS = None, FF = Never, RR = N
     failure_mode: Literal["return"],
     dependencies: Sequence[type[RR]] = (),
     needs_approval: NeedsApproval | None = None,
+    to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
 ) -> Tool[NN, PP, SS, FF, Never, RR]: ...
 def make(
     name: str,
@@ -250,9 +262,11 @@ def make(
     failure_mode: FailureMode = "error",
     dependencies: Sequence[type] = (),
     needs_approval: NeedsApproval | None = None,
+    to_model_output: ToModelOutput | None = None,
 ) -> Tool[Any, Any, Any, Any, Any, Any]:
     """A tool the toolkit handles. Its parameters default to none, its
-    success to ``None`` and its failure to ``Never``."""
+    success to ``None`` and its failure to ``Never``. ``to_model_output``
+    maps a successful result to the parts the model sees in its place."""
     del dependencies
     return Tool[Any, Any, Any, Any, Any, Any](
         name=name,
@@ -262,6 +276,7 @@ def make(
         failure_mode=failure_mode,
         description=description,
         needs_approval=needs_approval,
+        to_model_output=to_model_output,
     )
 
 
@@ -275,6 +290,7 @@ def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
     failure: S.Codec[FF, Any, Any, Any] | None = None,
     failure_mode: Literal["error"] = "error",
     needs_approval: NeedsApproval | None = None,
+    to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
 ) -> Dynamic[NN, PP, SS, FF, FF, Never]: ...
 @overload
 def dynamic[NN: LiteralString, SS = object, FF = Never](
@@ -286,6 +302,7 @@ def dynamic[NN: LiteralString, SS = object, FF = Never](
     failure: S.Codec[FF, Any, Any, Any] | None = None,
     failure_mode: Literal["error"] = "error",
     needs_approval: NeedsApproval | None = None,
+    to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
 ) -> Dynamic[NN, object, SS, FF, FF, Never]: ...
 @overload
 def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
@@ -297,6 +314,7 @@ def dynamic[NN: LiteralString, PP = object, SS = object, FF = Never](
     failure: S.Codec[FF, Any, Any, Any] | None = None,
     failure_mode: Literal["return"],
     needs_approval: NeedsApproval | None = None,
+    to_model_output: Callable[[SS], Sequence[ToolModelOutputPart]] | None = None,
 ) -> Dynamic[NN, PP, SS, FF, Never, Never]: ...
 def dynamic(
     name: str,
@@ -307,6 +325,7 @@ def dynamic(
     failure: S.Top | None = None,
     failure_mode: FailureMode = "error",
     needs_approval: NeedsApproval | None = None,
+    to_model_output: ToModelOutput | None = None,
 ) -> Dynamic[Any, Any, Any, Any, Any, Any]:
     """A tool whose parameters are a schema or a raw JSON Schema; its
     success defaults to any value."""
@@ -319,6 +338,7 @@ def dynamic(
         failure_mode=failure_mode,
         description=description,
         needs_approval=needs_approval,
+        to_model_output=to_model_output,
         json_schema=None if is_schema or parameters is None else cast("JsonSchema", parameters),
     )
 
@@ -520,6 +540,7 @@ __all__ = [
     "Readonly",
     "Strict",
     "Title",
+    "ToModelOutput",
     "Tool",
     "dynamic",
     "failure_result_schema",

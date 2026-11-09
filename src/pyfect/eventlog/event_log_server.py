@@ -251,7 +251,7 @@ def layer_rpc_handlers(
     changes: Changes,
     latest_sequence: LatestSequence,
     first_sequence: int | None = None,
-    authorize_identity: Callable[[str], Effect[None, EventLogProtocolError]] | None = None,
+    authorize_identity: Callable[[str, bytes], Effect[None, EventLogProtocolError]] | None = None,
 ) -> Layer[HandlersFor[EventLogRemoteRpcs] | EventLogAuthentication]:
     """The handlers of ``EventLogRemoteRpcs`` and the auth middleware.
     ``get_or_create_session_auth_binding`` gives the signing key bound to a
@@ -319,7 +319,7 @@ def layer_rpc_handlers(
                     )
                 yield from challenges.invalidate(client.id)
                 if authorize_identity is not None:
-                    yield from authorize_identity(payload.public_key)
+                    yield from authorize_identity(payload.public_key, payload.signing_public_key)
                 signing_key = yield from bound_signing_key(
                     payload.public_key, payload.signing_public_key
                 )

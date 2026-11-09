@@ -20,6 +20,8 @@ from pyfect._core import Effect
 from pyfect._js import text_encode
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.errors import TaggedError
+from pyfect.eventlog._identity import IdentityService
+from pyfect.eventlog._identity_derivation import make_get_identity_root_secret_material
 
 AUTH_PAYLOAD_CONTEXT = "eventlog-auth-v1"
 ED25519_PUBLIC_KEY_LENGTH = 32
@@ -217,6 +219,17 @@ make_session_auth_challenge: Effect[bytes, EventLogSessionAuthError] = sync(
 """A fresh random challenge."""
 
 
+_identity_material = make_get_identity_root_secret_material()
+
+
+def derive_signing_public_key(identity: IdentityService) -> Effect[bytes]:
+    """The Ed25519 signing public key ``identity`` presents in session auth
+    (Effect's ``deriveSigningPublicKey``). Record it when provisioning an
+    identity, so ``authorize_identity`` can reject any other key presented
+    for its public key."""
+    return _identity_material(identity).map(lambda material: material.signing_public_key)
+
+
 def verify_session_authenticate_request(
     payload: SessionAuthPayload, signature: bytes, algorithm: str
 ) -> Effect[bool, EventLogSessionAuthError]:
@@ -240,6 +253,7 @@ __all__ = [
     "SessionAuthErrorReason",
     "SessionAuthPayload",
     "decode_session_auth_payload",
+    "derive_signing_public_key",
     "encode_session_auth_payload",
     "make_session_auth_challenge",
     "sign_session_auth_payload",

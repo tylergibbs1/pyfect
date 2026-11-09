@@ -13,10 +13,14 @@ converts them; the Python keys are already the attribute names.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from typing import Literal, TypedDict, cast
+from collections.abc import Callable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, cast
 
+from pyfect.context import Tag
 from pyfect.tracer import Span
+
+if TYPE_CHECKING:
+    from pyfect.ai.language_model import ProviderOptions
 
 type WellKnownOperationName = Literal["chat", "embeddings", "text_completion"]
 type WellKnownOutputType = Literal["text", "json", "image", "speech"]
@@ -110,13 +114,30 @@ def add_gen_ai_annotations(span: Span, options: GenAIAttributeOptions) -> None:
             add_span_attributes(span, f"gen_ai.{group}", attributes)
 
 
+type SpanTransformer = Callable[[ProviderOptions, Sequence[Any]], None]
+"""Called with the options a language model sent its provider (``span`` is
+the request's span) and the response's parts (Effect's
+``SpanTransformer``), to write attributes onto the span."""
+
+
+class CurrentSpanTransformer(
+    Tag[SpanTransformer], key="effect/ai/Telemetry/CurrentSpanTransformer"
+):
+    """The ``SpanTransformer`` a language model calls after
+    ``generate_text`` / ``generate_object``, and when a ``stream_text``
+    stream ends. The one in context at the call wins over the one in
+    context when the model was made."""
+
+
 __all__ = [
+    "CurrentSpanTransformer",
     "GenAIAttributeOptions",
     "OperationAttributes",
     "OutputAttributes",
     "ProviderAttributes",
     "RequestAttributes",
     "ResponseAttributes",
+    "SpanTransformer",
     "UsageAttributes",
     "WellKnownOperationName",
     "WellKnownOutputType",

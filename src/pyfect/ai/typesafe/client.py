@@ -40,12 +40,20 @@ _decode_models = P.wire_parser(W.LIST_MODELS_RESPONSE, W.ListModelsResponse)
 _redacted = P.with_redacted_headers(Errors.SECRET_HEADERS)
 
 
+def _uses_images(request: W.SystemOneRequest) -> bool:
+    """Whether the request needs ``TypeSafe-Danger-Zone-Images: true``: it
+    has assets or a box question."""
+    return "assets" in request or any(q["type"] == "box" for q in request["questions"].values())
+
+
 @dataclass(frozen=True)
 class Service:
     """The client: the configured ``HttpClient`` and its calls."""
 
     http_client: HttpClientService[HttpClientError]
     system_one: Callable[[W.SystemOneRequest], Effect[W.SystemOneResponse, AiError]]
+    """Sends ``TypeSafe-Danger-Zone-Images: true`` when the request has
+    assets or a box question."""
     list_models: Callable[[], Effect[W.ListModelsResponse, AiError]]
 
 
@@ -88,7 +96,10 @@ def make(
             return sent.catch_all(Errors.mapper(method)).pipe(_redacted)
 
         def system_one(payload: W.SystemOneRequest) -> Effect[W.SystemOneResponse, AiError]:
-            request = http_request.post("/systemone").body_json_unsafe(payload)
+            request = http_request.post("/systemone")
+            if _uses_images(payload):
+                request = request.set_header("TypeSafe-Danger-Zone-Images", "true")
+            request = request.body_json_unsafe(payload)
             return execute(request, _decode_system_one, "systemOne")
 
         def list_models() -> Effect[W.ListModelsResponse, AiError]:

@@ -15,15 +15,16 @@ rounded to four decimals, so their drift is accepted.
 
 from __future__ import annotations
 
-import base64
 from collections.abc import Mapping
 from typing import Literal, Never
 
 import pyfect as fx
 from pyfect import layer as L
 from pyfect._core import Effect
+from pyfect._json_value import JsonValue
 from pyfect._url import Url
 from pyfect.ai import _noul_answers as N
+from pyfect.ai import _provider as P
 from pyfect.ai import ai_error as E
 from pyfect.ai import decision as D
 from pyfect.ai import decision_model as DM
@@ -36,7 +37,7 @@ type Model = Literal["clef", "clef-flash"]
 """Model names (any other string is accepted too)."""
 
 
-def _question(decision: D.AnyDecision) -> W.Question:
+def _question(decision: D.NonLocateDecision) -> W.Question:
     match decision:
         case D.Classify():
             criteria = dict(decision.criteria)
@@ -51,7 +52,7 @@ def _question(decision: D.AnyDecision) -> W.Question:
             return question
 
 
-def questions(decisions: Mapping[str, D.AnyDecision]) -> dict[str, W.Question]:
+def questions(decisions: Mapping[str, D.NonLocateDecision]) -> dict[str, W.Question]:
     """The request's questions, by decision name."""
     return {key: _question(decision) for key, decision in decisions.items()}
 
@@ -60,8 +61,15 @@ def _image(image: DM.Image) -> W.Image:
     data = image.data
     if isinstance(data, Url):
         return str(data)
-    encoded = data if isinstance(data, str) else base64.b64encode(data).decode()
-    return {"content_type": image.media_type, "base64": encoded}
+    return {"content_type": image.media_type, "base64": f"{data!s}"}
+
+
+def _label_images(state: JsonValue, images: tuple[DM.ProviderImage, ...]) -> str:
+    """Clef shows images before the state, so the state text first lists
+    each image's reference in order."""
+    text = state if isinstance(state, str) else P.dumps(state)
+    labels = [f"Image {index}: {image.reference}" for index, image in enumerate(images, 1)]
+    return "\n".join([*labels, "", text])
 
 
 def _remote_url_error() -> E.AiError:
@@ -78,19 +86,21 @@ def make(*, model: Model | str) -> Effect[DM.Service, Never, CloudflareClient]:
     """A ``DecisionModel`` asking ``model`` through the ``CloudflareClient``."""
 
     def build(client: ClientService) -> Effect[DM.Service]:
-        def decide(options: DM.ProviderOptions) -> Effect[DM.ProviderResponse, E.AiError]:
+        def decide(
+            options: DM.ProviderOptions[D.NonLocateDecision],
+        ) -> Effect[DM.ProviderResponse, E.AiError]:
             images = options.images
             if images is not None and any(
-                isinstance(image.data, Url) and image.data.protocol != "data:" for image in images
+                isinstance(i.image.data, Url) and i.image.data.protocol != "data:" for i in images
             ):
                 return fx.fail(_remote_url_error())
             request: W.DecisionsRequest = {
                 "model": model,
-                "state": options.state,
+                "state": options.state if images is None else _label_images(options.state, images),
                 "questions": questions(options.decisions),
             }
             if images is not None:
-                request["images"] = [_image(image) for image in images]
+                request["images"] = [_image(image.image) for image in images]
             return client.create_decisions(request).map(
                 lambda response: DM.ProviderResponse(
                     N.provider_answers(options.decisions, response["answers"]),

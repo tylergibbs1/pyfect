@@ -50,6 +50,7 @@ from pyfect.ai.id_generator import IdGenerator, default_id_generator
 from pyfect.ai.id_generator import Service as IdService
 from pyfect.ai.response_id_tracker import ResponseIdTracker
 from pyfect.ai.response_id_tracker import Service as Tracker
+from pyfect.ai.telemetry import CurrentSpanTransformer, SpanTransformer
 from pyfect.ai.tool import AnyTool, CodecTransformer
 from pyfect.context import Tag
 from pyfect.json_schema._model import JsonSchema
@@ -330,17 +331,20 @@ def _mark_response(tracker: Tracker | None, prompt: P.Prompt, parts: Sequence[ob
         tracker.mark_parts(prompt.content, metadata.id)
 
 
-def _prepared(tracker: Tracker | None, options: ProviderOptions) -> ProviderOptions:
-    if tracker is None:
-        return options
-    prepared = tracker.prepare_unsafe(options.prompt)
-    if prepared is None:
-        return options
-    return replace(
-        options,
-        previous_response_id=prepared.previous_response_id,
-        incremental_prompt=prepared.prompt,
-    )
+def _prepared(
+    tracker: Tracker | None, options: ProviderOptions, sent: list[ProviderOptions]
+) -> ProviderOptions:
+    """``options`` with the tracker's incremental prompt; ``sent`` keeps
+    them for the span transformer (Effect's mutated ``providerOptions``)."""
+    prepared = None if tracker is None else tracker.prepare_unsafe(options.prompt)
+    if prepared is not None:
+        options = replace(
+            options,
+            previous_response_id=prepared.previous_response_id,
+            incremental_prompt=prepared.prompt,
+        )
+    sent[:] = [options]
+    return options
 
 
 def _fallback(options: ProviderOptions) -> ProviderOptions:
@@ -358,6 +362,9 @@ class Service:
     codec_transformer: CodecTransformer = default_codec_transformer
     supports_system_messages_in_history: Effect[bool] | None = None
     id_generator: IdService = default_id_generator
+    # The transformer in context when the model was made (Effect's
+    # parentSpanTransformer); the one at the call wins.
+    span_transformer: SpanTransformer | None = None
     _decoders: dict[tuple[bool, bool, bool], tuple[tuple[AnyTool, ...], Any]] = field(
         default_factory=dict[tuple[bool, bool, bool], tuple[tuple[AnyTool, ...], Any]]
     )
@@ -456,6 +463,8 @@ class Service:
         tool_choice: ToolChoice,
         concurrency: Concurrency,
         disable_tool_call_resolution: bool,
+        *,
+        sent: list[ProviderOptions],
     ) -> Effect[list[Any], Any, Any]:
         def with_tracker(found: Any) -> Effect[list[Any], Any, Any]:
             tracker = cast("Tracker | None", found.value if found is not None else None)
@@ -472,7 +481,7 @@ class Service:
             if error is not None:
                 return fx.fail(error)
             if kit is None or not kit.tools:
-                request = _prepared(tracker, options)
+                request = _prepared(tracker, options, sent)
                 decode = self._decoder(None, False, False, deferred)
                 return (
                     self._request(request)
@@ -495,7 +504,7 @@ class Service:
         ) -> Effect[list[Any], Any, Any]:
             prompt = A.strip_resolved(A.with_results(options.prompt, pre), approvals)
             with_prompt = replace(options, prompt=prompt)
-            request = _prepared(tracker, _with_tools(with_prompt, kit, tool_choice))
+            request = _prepared(tracker, _with_tools(with_prompt, kit, tool_choice), sent)
             decode = self._decoder(
                 kit, disable_tool_call_resolution and not deferred, False, deferred
             )
@@ -558,24 +567,22 @@ class Service:
         tool_call_validation: ToolCallValidation = "strict",
     ) -> Effect[GenerateTextResponse[Any, Any], Any, Any]:
         """See the module's ``generate_text``."""
-        return self._spanned(
-            "LanguageModel.generateText",
-            "generateText",
-            lambda span: self._content(
-                ProviderOptions(
-                    P.make(prompt),
-                    span=span,
-                    tool_call_validation=_validation(
-                        disable_tool_call_resolution, tool_call_validation
-                    ),
+
+        def body(span: Span) -> Effect[GenerateTextResponse[Any, Any], Any, Any]:
+            options = ProviderOptions(
+                P.make(prompt),
+                span=span,
+                tool_call_validation=_validation(
+                    disable_tool_call_resolution, tool_call_validation
                 ),
-                toolkit,
-                tool_choice,
-                concurrency,
-                disable_tool_call_resolution,
-            ).map(GenerateTextResponse[Any, Any]),
-            {},
-        )
+            )
+            sent = [options]
+            content = self._content(
+                options, toolkit, tool_choice, concurrency, disable_tool_call_resolution, sent=sent
+            )
+            return self._transformed(content, sent).map(GenerateTextResponse[Any, Any])
+
+        return self._spanned("LanguageModel.generateText", "generateText", body, {})
 
     def generate_object(
         self,
@@ -601,10 +608,11 @@ class Service:
                     disable_tool_call_resolution, tool_call_validation
                 ),
             )
+            sent = [options]
             content = self._content(
-                options, toolkit, tool_choice, concurrency, disable_tool_call_resolution
+                options, toolkit, tool_choice, concurrency, disable_tool_call_resolution, sent=sent
             )
-            return content.flat_map(
+            return self._transformed(content, sent).flat_map(
                 lambda parts: self._structured(parts, schema).map(
                     lambda value: GenerateObjectResponse[Any, Any, Any](parts, value)
                 )
@@ -615,6 +623,26 @@ class Service:
             "generateObject",
             body,
             {"effect.ai.object_name": name},
+        )
+
+    @property
+    def _span_transformer(self) -> Effect[SpanTransformer | None]:
+        return fx.service_option(CurrentSpanTransformer).map(
+            lambda found: found.value if found is not None else self.span_transformer
+        )
+
+    def _transformed[E, R](
+        self, content: Effect[list[Any], E, R], sent: list[ProviderOptions]
+    ) -> Effect[list[Any], E, R]:
+        """``content``, given to the span transformer once it is decided."""
+
+        def apply(transformer: SpanTransformer | None, parts: list[Any]) -> Effect[list[Any]]:
+            if transformer is None:
+                return fx.succeed(parts)
+            return fx.sync(lambda: transformer(sent[0], parts)).as_(parts)
+
+        return self._span_transformer.flat_map(
+            lambda transformer: content.flat_map(lambda parts: apply(transformer, parts))
         )
 
     def _structured(self, parts: Sequence[object], schema: S.Top) -> Effect[object, AiError]:
@@ -681,19 +709,42 @@ class Service:
                     disable_tool_call_resolution, tool_call_validation
                 ),
             )
+            sent = [options]
             _annotate(span, "text", tool_choice, concurrency)
-            return fx.service_option(ResponseIdTracker).flat_map(
-                lambda found: with_tracker(options, found.value if found is not None else None)
+            stream = fx.service_option(ResponseIdTracker).flat_map(
+                lambda found: with_tracker(
+                    options, found.value if found is not None else None, sent
+                )
+            )
+            return self._span_transformer.flat_map(
+                lambda transformer: stream.map(lambda s: transform(s, transformer, sent))
             )
 
+        def transform(
+            stream: Stream[Any, Any, Any],
+            transformer: SpanTransformer | None,
+            sent: list[ProviderOptions],
+        ) -> Stream[Any, Any, Any]:
+            # Effect: with no transformer the stream is returned as it is;
+            # otherwise the parts are gathered and given to it at the end.
+            if transformer is None:
+                return stream
+            parts: list[Any] = []
+
+            def gather(chunk: tuple[Any, ...]) -> tuple[Any, ...]:
+                parts.extend(chunk)
+                return chunk
+
+            return stream.map_array(gather).ensuring(fx.sync(lambda: transformer(sent[0], parts)))
+
         def with_tracker(
-            options: ProviderOptions, tracker: Tracker | None
+            options: ProviderOptions, tracker: Tracker | None, sent: list[ProviderOptions]
         ) -> Effect[Stream[Any, Any, Any], Any, Any]:
             if toolkit is None:
                 error = A.pending_check(A.collect(options.prompt.content), None, "streamText")
                 if error is not None:
                     return fx.fail(error)
-                request = _prepared(tracker, options)
+                request = _prepared(tracker, options, sent)
                 deferred = options.tool_call_validation == "deferred"
                 return fx.succeed(self._stream_parts(request, None, tracker, False, deferred))
             return _as_kit_effect(toolkit).flat_map(
@@ -701,6 +752,7 @@ class Service:
                     kit,
                     options,
                     tracker,
+                    sent,
                     tool_choice=tool_choice,
                     concurrency=concurrency,
                     disable_tool_call_resolution=disable_tool_call_resolution,
@@ -747,6 +799,7 @@ class Service:
         kit: K.WithHandler[Any, Any, Any, Any],
         options: ProviderOptions,
         tracker: Tracker | None,
+        sent: list[ProviderOptions],
         *,
         tool_choice: ToolChoice,
         concurrency: Concurrency,
@@ -758,13 +811,13 @@ class Service:
             return fx.fail(error)
         deferred = options.tool_call_validation == "deferred"
         if not kit.tools:
-            request = _prepared(tracker, options)
+            request = _prepared(tracker, options, sent)
             return fx.succeed(self._stream_parts(request, None, tracker, False, deferred))
 
         def with_pre(pre: list[R.AnyToolResultPart]) -> Effect[Stream[Any, Any, Any], Any, Any]:
             prompt = A.strip_resolved(A.with_results(options.prompt, pre), approvals)
             request = _prepared(
-                tracker, _with_tools(replace(options, prompt=prompt), kit, tool_choice)
+                tracker, _with_tools(replace(options, prompt=prompt), kit, tool_choice), sent
             )
             if disable_tool_call_resolution:
                 return fx.succeed(self._stream_parts(request, kit, tracker, not deferred, deferred))
@@ -828,13 +881,16 @@ def make(
     the ``IdGenerator`` in context here (else the default one)."""
     if supports_system_messages_in_history is not None:
         require_effect(supports_system_messages_in_history, "supports_system_messages_in_history")
-    return fx.service_option(IdGenerator).map(
-        lambda found: Service(
-            generate_text,
-            stream_text,
-            codec_transformer or default_codec_transformer,
-            supports_system_messages_in_history,
-            found.value if found is not None else default_id_generator,
+    return fx.service_option(IdGenerator).flat_map(
+        lambda ids: fx.service_option(CurrentSpanTransformer).map(
+            lambda transformer: Service(
+                generate_text,
+                stream_text,
+                codec_transformer or default_codec_transformer,
+                supports_system_messages_in_history,
+                ids.value if ids is not None else default_id_generator,
+                transformer.value if transformer is not None else None,
+            )
         )
     )
 

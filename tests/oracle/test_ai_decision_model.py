@@ -373,23 +373,70 @@ def test_provider_receives_state_and_decisions():
     assert calls[0].decisions is TRIAGE.decisions
 
 
+class SceneFrame(TypedDict):
+    frame: DM.Image
+
+
+class Scene(TypedDict):
+    photo: DM.Image
+    frames: list[SceneFrame]
+
+
+SCENE = S.Struct(Scene, photo=D.Image, frames=S.Array(S.Struct(SceneFrame, frame=D.Image)))
+mug = D.locate(image="photo", instructions="the coffee mug")
+FIND_MUG = D.make(input=SCENE, decisions={"mug": mug})
+PNG = DM.Image("image/png", "iVBORw0KGgo=")
+scene: Scene = {"photo": PNG, "frames": [{"frame": PNG}]}
+BOX = D.BoundingBox(0.44, 0.25, 0.84, 0.82)
+
+
+def locate_with(
+    answer: DM.ProviderAnswer, calls: list[DM.ProviderOptions] | None = None
+) -> fx.Layer[DM.DecisionModel]:
+    def decide(options: DM.ProviderOptions) -> fx.Effect[DM.ProviderResponse, E.AiError]:
+        if calls is not None:
+            calls.append(options)
+        return fx.succeed(DM.ProviderResponse({"mug": answer}))
+
+    return L.effect(
+        DM.DecisionModel, DM.make(decide=decide, supports_images=True, supports_locate=True)
+    )
+
+
 @testing.effect
-def test_forwards_images():
-    """DecisionModel / forwards images to an image-capable provider"""
-    images = [
-        DM.Image("image/png", bytes([137, 80, 78, 71])),
-        DM.Image("image/jpeg", "/9j/4AAQ"),
-        DM.Image("image/webp", url.parse("https://example.com/image.webp")),
-    ]
+def test_replaces_images_with_references():
+    """DecisionModel / replaces input images with references and sends each distinct image once"""
+    calls: list[DM.ProviderOptions] = []
+    describe = D.make(
+        input=SCENE, decisions={"urgent": D.probability(instructions="`photo` shows a fire")}
+    )
+    image_bytes = DM.Image("image/png", bytes([137, 80, 78, 71]))
+    remote = DM.Image("image/webp", url.parse("https://example.com/image.webp"))
 
     def decide(options: DM.ProviderOptions) -> fx.Effect[DM.ProviderResponse, E.AiError]:
-        assert options.images == tuple(images)
-        return fx.succeed(DM.ProviderResponse(TRIAGE_ANSWERS))
+        calls.append(options)
+        return fx.succeed(DM.ProviderResponse({"urgent": DM.ProviderProbabilityAnswer(0.9)}))
 
-    response = yield from DM.decide(TRIAGE, input=ticket, images=images).pipe(
+    value: Scene = {"photo": image_bytes, "frames": [{"frame": image_bytes}, {"frame": remote}]}
+    yield from DM.decide(describe, input=value).pipe(
         fx.provide(make_layer(decide, supports_images=True))
     )
-    assert response.answers[urgent].probability == 0.9
+    images = calls[0].images
+    assert images is not None
+    first, second = images
+    assert calls[0].state == {
+        "photo": first.reference,
+        "frames": [{"frame": first.reference}, {"frame": second.reference}],
+    }
+    assert first.reference != second.reference
+    assert images == (
+        DM.ProviderImage(first.reference, ("photo",), DM.Image("image/png", "iVBORw==")),
+        DM.ProviderImage(
+            second.reference,
+            ("frames", 1, "frame"),
+            DM.Image("image/webp", url.parse("https://example.com/image.webp")),
+        ),
+    )
 
 
 @pytest.mark.parametrize("supports_images", [None, False])
@@ -402,26 +449,72 @@ def test_rejects_images(supports_images: bool | None):
         lambda _: fx.die(RuntimeError("A text-only provider must not be called with images")),
         **options,
     )
-    error = yield from failure_of(
-        DM.decide(TRIAGE, input=ticket, images=[DM.Image("image/png", "iVBORw0KGgo=")])
-    ).pipe(fx.provide(layer))
+    error = yield from failure_of(DM.decide(FIND_MUG, input=scene)).pipe(fx.provide(layer))
     assert isinstance(error, E.AiError)
     assert isinstance(error.reason, E.InvalidUserInputError)
 
 
-@pytest.mark.parametrize("images", [None, []])
 @testing.effect
-def test_allows_no_images(images: list[DM.Image] | None):
-    """DecisionModel / allows omitted / empty images for a text-only provider"""
+def test_omits_images_without_image_fields():
+    """DecisionModel / omits images for an input without image fields"""
 
     def decide(options: DM.ProviderOptions) -> fx.Effect[DM.ProviderResponse, E.AiError]:
         assert options.images is None
         return fx.succeed(DM.ProviderResponse(TRIAGE_ANSWERS))
 
-    response = yield from DM.decide(TRIAGE, input=ticket, images=images).pipe(
-        fx.provide(make_layer(decide))
-    )
+    response = yield from DM.decide(TRIAGE, input=ticket).pipe(fx.provide(make_layer(decide)))
     assert response.answers[urgent].probability == 0.9
+
+
+@testing.effect
+def test_forwards_locate_decisions():
+    """DecisionModel / forwards locate decisions to a locate-capable provider and returns a copy
+    of the box"""
+    calls: list[DM.ProviderOptions] = []
+    provided = DM.ProviderLocateAnswer(BOX, 0.92)
+    response = yield from DM.decide(FIND_MUG, input=scene).pipe(
+        fx.provide(locate_with(provided, calls))
+    )
+    assert calls[0].decisions is FIND_MUG.decisions
+    assert response.answers[mug] == D.LocateAnswer(BOX, 0.92)
+    assert response.answers[mug].box is not provided.box
+
+
+@pytest.mark.parametrize(
+    ("supports_locate", "image"),
+    [
+        pytest.param(None, "photo", id="a provider without supportsLocate"),
+        pytest.param(True, "frames[1].frame", id="a path past the end of an array"),
+    ],
+)
+@testing.effect
+def test_rejects_locate_decisions(supports_locate: bool | None, image: str):
+    """DecisionModel / rejects locate decisions with InvalidUserInputError for a provider without
+    supportsLocate / a path past the end of an array"""
+    definition = D.make(
+        input=SCENE, decisions={"mug": D.locate(image=image, instructions="the coffee mug")}
+    )
+    options: dict[str, Any] = {} if supports_locate is None else {"supports_locate": True}
+    layer = make_layer(
+        lambda _: fx.die(RuntimeError("A rejected locate decision must not reach the provider")),
+        supports_images=True,
+        **options,
+    )
+    error = yield from failure_of(DM.decide(definition, input=scene)).pipe(fx.provide(layer))
+    assert isinstance(error.reason, E.InvalidUserInputError)
+
+
+@testing.effect
+def test_settled_rejects_locate_without_support():
+    """DecisionModel / decideSettled rejects a locate decision for a provider without
+    supportsLocate"""
+    layer = make_layer(
+        lambda _: fx.die(RuntimeError("A rejected locate decision must not reach the provider")),
+        supports_images=True,
+    )
+    error = yield from failure_of(DM.decide_settled(FIND_MUG, input=scene)).pipe(fx.provide(layer))
+    assert isinstance(error.reason, E.InvalidUserInputError)
+    assert error.method == "decideSettled"
 
 
 @testing.effect
@@ -930,3 +1023,69 @@ def test_zero_distribution_rejected_at_any_precision():
     error = yield from failure_of(DM.decide(TRIAGE, input=ticket)).pipe(fx.provide(layer))
     assert isinstance(error.reason, E.InvalidOutputError)
     assert "do not sum to 1" in (error.reason.description or "")
+
+
+@pytest.mark.parametrize(
+    "box",
+    [
+        pytest.param(D.BoundingBox(0, 0, 1, 1), id="the full image"),
+        pytest.param(D.BoundingBox(0.5, 0.5, 0.5, 0.5), id="a zero-area box"),
+    ],
+)
+@testing.effect
+def test_locate_accepts(box: D.BoundingBox):
+    """DecisionModel / locate accepts the full image / a zero-area box"""
+    response = yield from DM.decide(FIND_MUG, input=scene).pipe(
+        fx.provide(locate_with(DM.ProviderLocateAnswer(box)))
+    )
+    assert response.answers[mug] == D.LocateAnswer(box)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        pytest.param(DM.ProviderLocateAnswer(None), id="a missing box"),
+        pytest.param(
+            DM.ProviderLocateAnswer(D.BoundingBox(0.44, 0.25, 1.01, 0.82)),
+            id="an edge outside [0, 1]",
+        ),
+        pytest.param(
+            DM.ProviderLocateAnswer(D.BoundingBox(0.9, 0.25, 0.84, 0.82)),
+            id="crossed horizontal edges",
+        ),
+        pytest.param(
+            DM.ProviderLocateAnswer(D.BoundingBox(0.44, 0.25, 0.84, 0.1)),
+            id="crossed vertical edges",
+        ),
+        pytest.param(DM.ProviderLocateAnswer(BOX, 2), id="confidence outside [0, 1]"),
+    ],
+)
+@testing.effect
+def test_locate_rejects(answer: DM.ProviderLocateAnswer):
+    """DecisionModel / locate rejects a missing box / an edge outside [0, 1] / crossed horizontal
+    edges / crossed vertical edges / confidence outside [0, 1]"""
+    error = yield from failure_of(DM.decide(FIND_MUG, input=scene)).pipe(
+        fx.provide(locate_with(answer))
+    )
+    assert isinstance(error.reason, E.InvalidOutputError)
+
+
+@testing.effect
+def test_settled_keeps_valid_box():
+    """DecisionModel / decideSettled keeps a valid box beside an invalid one"""
+    spoon = D.locate(image="photo", instructions="the spoon")
+    find_two = D.make(input=SCENE, decisions={"mug": mug, "spoon": spoon})
+    answers: dict[str, DM.ProviderAnswer] = {
+        "mug": DM.ProviderLocateAnswer(BOX),
+        "spoon": DM.ProviderLocateAnswer(D.BoundingBox(0.9, 0.25, 0.84, 0.82)),
+    }
+    layer = make_layer(
+        lambda _: fx.succeed(DM.ProviderResponse(answers)),
+        supports_images=True,
+        supports_locate=True,
+    )
+    response = yield from DM.decide_settled(find_two, input=scene).pipe(fx.provide(layer))
+    assert response.outcomes[mug] == Ok(D.LocateAnswer(BOX))
+    assert unanswered(response.outcomes[spoon]) == D.Unanswered(
+        "Invalid", 'Provider returned a box with crossed edges for decision "spoon"'
+    )

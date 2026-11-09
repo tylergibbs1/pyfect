@@ -30,11 +30,15 @@ payload, result and error typed from their schemas; it works the same from any r
 An RPC annotated `Persisted` is stored before it runs and its reply is stored when it
 finishes: a sender waits on the stored reply, a request with the same primary key is
 answered once, and a request a runner had not finished when it stopped runs again on the
-runner that takes its shard over. A volatile RPC goes straight to the runner and is lost if
-that runner dies. Handlers read their own address from `CurrentAddress` and their runner's
+runner that takes its shard over. A volatile RPC goes straight to the runner and is not
+stored: if that runner dies before answering, the sender sends it again to the runner that
+takes the shard, so its handler can run twice, as in Effect. Keep volatile handlers safe to
+repeat, or annotate the RPC `Persisted`. Handlers read their own address from `CurrentAddress` and their runner's
 from `CurrentRunnerAddress`. `to_layer` takes the handlers directly, `to_layer_effect` the
 effect that builds them, and `to_layer_queue` gives a mailbox to read messages from instead.
-`entity.make_test_client` calls an entity's handlers without a cluster, for unit tests.
+`entity.make_test_client` calls an entity's handlers without a cluster, for unit tests. It
+reads `ShardingConfig` to place each entity id on a shard, so provide
+`sharding_config.layer()`, as Effect's `makeTestClient` needs it too.
 
 ## Shards and runners
 
@@ -79,7 +83,9 @@ rest. Durations are [`duration.Seconds`](/docs/reference/duration).
 takes shard locks, routes each message to the runner holding its shard and retries when a
 shard moves. Three layers build it with everything it needs:
 
-- `test_runner.layer`: one runner in memory, for tests and examples.
+- `test_runner.layer`: one runner in memory, for tests and examples. It takes its shards on
+  the clock, so under the [test clock](/docs/testing) a request waits until the test moves
+  time (`testing.adjust("1 millis")` is enough), as in Effect's own cluster tests.
 - `single_runner.layer(...)`: one runner whose messages are in SQL, for a single process
   that should still survive restarts.
 - `cluster_socket.layer(...)` and `cluster_http.layer(transport="http" | "websocket", ...)`:
@@ -127,7 +133,11 @@ shard. With a timeout of 0 the runner hands over at once, as `runners.py` above 
 example stops quickly. An RPC annotated `cluster_schema.InterruptOnTermination` is interrupted
 when the drain starts instead of waited for. A runner that dies (`kill -9`) does not drain:
 the others take its shards once they see it is gone, and run its unfinished persisted
-requests.
+requests. They see it is gone when its heartbeat and shard locks are older than
+`shard_lock_expiration` (35 seconds, as in Effect) and their next assignment check runs, so
+with the default settings its shards move about 35 to 55 seconds after it dies. A lower
+`shard_lock_expiration` (kept well above `shard_lock_refresh_interval`, 10 seconds) moves
+them sooner.
 
 <include meta='title="drain.py"'>../../snippets/cluster/drain.py</include>
 

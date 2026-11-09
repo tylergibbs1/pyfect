@@ -239,8 +239,7 @@ def _tool(message: Pr.ToolMessage) -> list[Block]:
     message_control = cache_control(message)
     messages: list[Block] = []
     for index, part in enumerate(results):
-        result = part.result
-        text = result if isinstance(result, str) else P.dumps(result)
+        text = P.tool_result_text(part)
         control = cache_control(part)
         if control is None and index == len(results) - 1:
             control = message_control

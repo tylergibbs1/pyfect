@@ -63,7 +63,11 @@ than `AiError`.
 routes to, named as OpenRouter names it (`anthropic/claude-sonnet-4.5`). `config` takes the
 Chat Completions request's own fields (`provider` routing, `reasoning`, `plugins`, ...).
 Tool and response schemas are written for the model's family: Anthropic's and OpenAI's
-strict forms for their models, the default for the others. Replayed reasoning is sent once
+strict forms for their models, the default for the others. A `generate_object` response
+format is strict only for OpenAI models; for the others it goes with `strict` unset, as in
+Effect, and some (Gemini, Claude) then answer in prose and fail with a
+`StructuredOutputError`. Set `"strict_json_schema": True` in `config` to make it strict for
+every model. Replayed reasoning is sent once
 per request, and `{"openrouter": {"cacheControl": ...}}` in a message's or part's options
 sets a cache breakpoint. `pyfect.ai.openrouter.decision_model` provides a `DecisionModel`
 over OpenRouter's Decisions API, and the `OpenRouterClient` service's `client` field is a
@@ -94,6 +98,12 @@ runs its handler and adds the results to the response. A handler's failure fails
 as a failure result. `tool_choice` is `"auto"`, `"none"`, `"required"`, `{"tool": name}` or
 `{"one_of": names}`, and a tool with `needs_approval` gives an approval request in place
 of running.
+
+`to_model_output=f` on `tool.make` maps a successful result to `prompt.TextPart` and
+`prompt.FilePart` values that the model sees instead of the encoded result, such as a
+screenshot. The response keeps the typed result. Anthropic and OpenAI send the parts as
+native content; OpenAI-compatible providers and OpenRouter send them as text, with each
+file replaced by a placeholder.
 
 <Diagram name="ai-tool-call" title="The model's tool calls are decoded and handled by the toolkit's handlers, and their results join the response" />
 
@@ -197,7 +207,17 @@ names them and the schema encodes the input as JSON. `decision_model.decide(defi
 input=...)` asks for every answer in one call. Look an answer up with its decision object,
 `answers[team]`, and its label has that decision's literal type. A missing, refused or
 invalid answer fails with an `AiError`; `decide_settled` instead gives each decision an
-`Ok` answer or an `Err(Unanswered)`.
+`Ok` answer or an `Err(Unanswered)`. A provider's classify or rate answer must give a
+probability for every label (in `[0, 1]`, summing to 1 within its rounding); one that leaves a
+label out is invalid, as in Effect.
+
+An image goes in the input as a field of type `decision.Image`, holding a
+`decision_model.Image(media_type, data)`. The provider gets each distinct image once, and
+a reference string replaces it in the state. Instructions name an image by its field
+path, as in `` `photo` ``. `decision.locate(image="photo", instructions="the mug")` asks
+where something is in that image and answers with a `BoundingBox` (edges from 0 to 1).
+Providers without image or locate support fail with `InvalidUserInputError`. TypeSafe
+supports both; OpenAI and Cloudflare take images but not locate.
 
 `pyfect.ai.openai.decision_model`, `pyfect.ai.openrouter.decision_model`,
 `pyfect.ai.cloudflare.decision_model` and `pyfect.ai.typesafe.decision_model` provide one.

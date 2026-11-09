@@ -413,10 +413,8 @@ def test_an_unusable_streamed_result_drops_the_preloaded_initial(timers: FakeTim
     server_atom = atom.make(resolved.wait()).serializable(
         key="count", schema=async_result.Schema(success=S.Int)
     )
-    seed: AsyncResult[int] = async_result.success(7, timestamp=1)
-    client_atom = atom.make(seed).serializable(
-        key="count", schema=async_result.Schema(success=S.Int)
-    )
+    seeded = atom.state[AsyncResult[int]](async_result.success(7, timestamp=1))
+    client_atom = seeded.serializable(key="count", schema=async_result.Schema(success=S.Int))
     server = timers.registry()
     client = timers.registry()
     try:

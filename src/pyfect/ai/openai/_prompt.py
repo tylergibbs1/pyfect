@@ -33,6 +33,8 @@ from pyfect.ai.tool import NameMapper
 MODULE = "OpenAiLanguageModel"
 KEY = "openai"
 _URL_OR_DATA = re.compile(r"^(data:|https?://)", re.IGNORECASE)
+_HTTP_URL = re.compile(r"^https?://", re.IGNORECASE)
+_DATA = re.compile(r"^data:", re.IGNORECASE)
 _NON_REASONING = re.compile(r"^(?:gpt-[34]|chatgpt-|chat-latest|gpt-[0-9]+(?:\.[0-9]+)?-chat)")
 
 type Item = dict[str, Any]
@@ -92,13 +94,13 @@ def _unreplayable(name: str, id: str) -> PT.UnsupportedInput:
     return _invalid(f"Cannot replay provider-executed tool item '{name}' ('{id}') losslessly")
 
 
-def _file(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> list[Item]:
+def _file(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> Item:
     extra = _breakpoint(part.options)
     data = part.data
     if part.media_type.startswith("image/"):
         detail = P.or_default(openai_options(part.options).get("imageDetail"), "auto")
         if _is_file_id(data, prefixes):
-            return [{"type": "input_image", "file_id": data, "detail": detail, **extra}]
+            return {"type": "input_image", "file_id": data, "detail": detail, **extra}
         media_type = "image/jpeg" if part.media_type == "image/*" else part.media_type
         if isinstance(data, Url):
             url = data.href
@@ -106,17 +108,22 @@ def _file(part: Pr.FilePart, index: int, prefixes: Sequence[str] | None) -> list
             url = f"data:{media_type};base64,{_b64(data)}"
         else:
             url = data if _URL_OR_DATA.match(data) else f"data:{media_type};base64,{data}"
-        return [{"type": "input_image", "image_url": url, "detail": detail, **extra}]
+        return {"type": "input_image", "image_url": url, "detail": detail, **extra}
     if part.media_type == "application/pdf":
         if _is_file_id(data, prefixes):
-            return [{"type": "input_file", "file_id": data, **extra}]
+            return {"type": "input_file", "file_id": data, **extra}
         if isinstance(data, Url):
-            return [{"type": "input_file", "file_url": data.href, **extra}]
+            return {"type": "input_file", "file_url": data.href, **extra}
+        if isinstance(data, str) and _HTTP_URL.match(data):
+            return {"type": "input_file", "file_url": data, **extra}
         if isinstance(data, bytes):
-            name = P.or_default(part.file_name, f"part-{index}.pdf")
             file_data = f"data:application/pdf;base64,{_b64(data)}"
-            return [{"type": "input_file", "filename": name, "file_data": file_data, **extra}]
-        return []
+        elif _DATA.match(data):
+            file_data = data
+        else:
+            file_data = f"data:application/pdf;base64,{data}"
+        name = P.or_default(part.file_name, f"part-{index}.pdf")
+        return {"type": "input_file", "filename": name, "file_data": file_data, **extra}
     raise _invalid(f"Detected unsupported media type for file: '{part.media_type}'")
 
 
@@ -171,7 +178,7 @@ class _Messages:
                     {"type": "input_text", "text": part.text, **_breakpoint(part.options)}
                 )
             else:
-                content.extend(_file(part, index, prefixes))
+                content.append(_file(part, index, prefixes))
         self.items.append({"role": "user", "content": content})
 
     def assistant(self, message: Pr.AssistantMessage) -> None:
@@ -384,12 +391,29 @@ class _Messages:
                 }
                 self.items.append(_with_status(item, status))
                 return
-        output = part.result if isinstance(part.result, str) else P.dumps(part.result)
+        output: str | list[Item]
+        if part.model_output is not None:
+            output = self._model_output(part.model_output)
+        elif isinstance(part.result, str):
+            output = part.result
+        else:
+            output = P.dumps(part.result)
         self.items.append(
             _with_status(
                 {"type": "function_call_output", "call_id": part.id, "output": output}, status
             )
         )
+
+    def _model_output(self, model_output: Sequence[Pr.ToolModelOutputPart]) -> str | list[Item]:
+        if not model_output:
+            return ""
+        prefixes = self.config.get("file_id_prefixes")
+        return [
+            {"type": "input_text", "text": part.text, **_breakpoint(part.options)}
+            if isinstance(part, Pr.TextPart)
+            else _file(part, index, prefixes)
+            for index, part in enumerate(model_output)
+        ]
 
 
 def _web_search(id: object, _params: object, result: object) -> Item | None:

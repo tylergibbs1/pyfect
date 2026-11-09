@@ -45,6 +45,15 @@ class ProviderProbabilityAnswer:
 
 
 @dataclass(frozen=True)
+class ProviderLocateAnswer:
+    """A locate answer; ``box`` ``None`` when the provider gave none."""
+
+    tag: ClassVar[str] = "Locate"
+    box: D.BoundingBox | None
+    confidence: float | None = None
+
+
+@dataclass(frozen=True)
 class ProviderRefusalAnswer:
     """The provider declined to answer."""
 
@@ -52,7 +61,11 @@ class ProviderRefusalAnswer:
 
 
 type ProviderAnswer = (
-    ProviderClassifyAnswer | ProviderRateAnswer | ProviderProbabilityAnswer | ProviderRefusalAnswer
+    ProviderClassifyAnswer
+    | ProviderRateAnswer
+    | ProviderProbabilityAnswer
+    | ProviderLocateAnswer
+    | ProviderRefusalAnswer
 )
 
 
@@ -150,21 +163,50 @@ def _probability(key: str, answer: ProviderProbabilityAnswer) -> D.Outcome[D.Pro
     return Ok(D.ProbabilityAnswer(answer.probability))
 
 
+def _locate(key: str, answer: ProviderLocateAnswer) -> D.Outcome[D.AnyAnswer]:
+    box = answer.box
+    if box is None or not all(_is_unit(e) for e in (box.left, box.top, box.right, box.bottom)):
+        return _invalid(f'Provider returned a box with edges outside [0, 1] for decision "{key}"')
+    if box.left > box.right or box.top > box.bottom:
+        return _invalid(f'Provider returned a box with crossed edges for decision "{key}"')
+    confidence = _confidence(key, answer.confidence)
+    if isinstance(confidence, Err):
+        return confidence
+    bounds = D.BoundingBox(box.left, box.top, box.right, box.bottom)
+    return Ok(D.LocateAnswer(bounds, confidence.value))
+
+
 def validate(
     key: str, decision: D.AnyDecision, answer: ProviderAnswer | None, rounding_error: float
 ) -> D.Outcome[D.AnyAnswer]:
     """``answer`` checked against ``decision`` (named ``key``)."""
-    if answer is None:
-        return _unanswered("Missing", f'Provider returned no answer for decision "{key}"')
-    match decision, answer:
-        case _, ProviderRefusalAnswer():
+    match answer:
+        case None:
+            return _unanswered("Missing", f'Provider returned no answer for decision "{key}"')
+        case ProviderRefusalAnswer():
             return _unanswered("Refused", f'Provider refused to answer decision "{key}"')
+        case _:
+            return _answered(key, decision, answer, rounding_error)
+
+
+def _answered(
+    key: str,
+    decision: D.AnyDecision,
+    answer: ProviderClassifyAnswer
+    | ProviderRateAnswer
+    | ProviderProbabilityAnswer
+    | ProviderLocateAnswer,
+    rounding_error: float,
+) -> D.Outcome[D.AnyAnswer]:
+    match decision, answer:
         case D.Classify(), ProviderClassifyAnswer():
             return _classify(key, decision, answer, rounding_error)
         case D.Rate(), ProviderRateAnswer():
             return _rate(key, decision, answer, rounding_error)
         case D.Probability(), ProviderProbabilityAnswer():
             return _probability(key, answer)
+        case D.Locate(), ProviderLocateAnswer():
+            return _locate(key, answer)
         case _:
             return _invalid(
                 f'Provider returned a "{answer.tag}" answer for decision "{key}", '

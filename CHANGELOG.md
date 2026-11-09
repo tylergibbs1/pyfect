@@ -18,6 +18,19 @@
   `https://example.com` is `https://example.com/`, so `f"{url}payouts"` (not `/payouts`)
   appends a path.
 - `Path.from_file_url` takes a `Url` and `Path.to_file_url` gives one, as in Effect.
+- `EventLogServerAuthorizationService.authorize_identity` also receives
+  `signing_public_key`, the key the client presented, as Effect 4.1.2's `authorizeIdentity`
+  does; implementations must accept it. `event_log_session_auth.derive_signing_public_key`
+  gives an identity's key, so a server can record it at provisioning and reject any other.
+- `workflow.make` takes only a struct schema or a schema class as `payload` (Effect's
+  `Schema.Struct.Fields | AnyStructSchema`): any other schema is a type error and raises
+  `TypeError` at definition, where the cluster engine used to die at run time.
+- `decision_model.decide` / `decide_settled` no longer take `images=`: images go in the input
+  as `decision.Image` fields (values are `decision_model.Image`), and `ProviderOptions.images`
+  holds `ProviderImage(reference, path, image)` with the state carrying each reference, as in
+  Effect 4.1.
+- `atom.serializable(schema=...)` is typed against the atom's value, so a schema of another
+  type is a type error (Effect's `ConstraintCodec<Type<R>>`).
 
 ### Changed
 
@@ -39,8 +52,33 @@
   such as `Factory`, is no longer a zone. `TZ` and
   the system zone read the same way.
 
+### Added
+
+- `telemetry.CurrentSpanTransformer` (Effect's `Telemetry.CurrentSpanTransformer`): a
+  language model calls it with the options it sent and the response's parts after
+  `generate_text` / `generate_object` and when a `stream_text` stream ends.
+- `decision.locate`, `decision.Image`, `BoundingBox`, `LocateAnswer` and
+  `decision_model.make(supports_locate=)` (Effect 4.1). TypeSafe decision models take images
+  and locate decisions (`jev-1.14.0`); OpenAI and Cloudflare decision models label images by
+  reference.
+- `tool.make(to_model_output=)` / `tool.dynamic(to_model_output=)`, `prompt.ToolModelOutputPart`,
+  `prompt.tool_model_output_to_text` and `model_output` on tool results, carried into the
+  follow-up prompt (Effect 4.1). Anthropic and OpenAI send native content blocks;
+  OpenAI-compatible providers and OpenRouter send text.
+
 ### Fixed
 
+- A persisted chat's `stream_text` is saved to the store when the stream ends, as Effect's
+  `Stream.ensuring(saveChat)`; it stayed in memory only.
+- `registry.subscribe` builds the atom, as Effect 4.1.2 does, so a subscriber of an atom no
+  one has read hears its next change and an effect atom starts.
+- A graph's default node and edge labels are JavaScript's `String(data)`: a list is `1,2`, not
+  `[1, 2]`. `String(...)` ports everywhere (schema coercion, INI values, CLI messages) write
+  lists and dicts as JavaScript does.
+- Anthropic strips a `data:` prefix from PDF data as well as images, and OpenAI sends PDFs
+  given as base64, data-URL or https strings, as Effect 4.1.2 does.
+- A rate limiter's whole `remaining` is an `int` from every store; Redis gave `1.0` where the
+  memory store gave `1`.
 - A `Host` (or `X-Forwarded-Host`, or an absolute request target) whose host the URL parser
   rejects, such as `999.0.0.1`, is no longer accepted as an authority, as Effect's
   `isValidHost` rejects it.

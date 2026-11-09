@@ -99,6 +99,32 @@ def test_posts_systemone():
     assert response.get("usage") == {"input_tokens": 360, "output_tokens": 39}
 
 
+@pytest.mark.parametrize(
+    ("extra", "header"),
+    [
+        pytest.param({}, None, id="text-only requests"),
+        pytest.param(
+            {"assets": {"image-0-abc": {"format": "png", "data_base64": "iVBORw0KGgo="}}},
+            "true",
+            id="image assets",
+        ),
+        pytest.param(
+            {"questions": {"mug": {"type": "box", "instructions": "the mug"}}},
+            "true",
+            id="a box question",
+        ),
+    ],
+)
+@testing.effect
+def test_images_header(extra: dict[str, Any], header: str | None):
+    """TypeSafeClient / make / sets the images header for text-only requests / image assets /
+    a box question"""
+    mock = mock_json(BODY)
+    payload: W.SystemOneRequest = {**REQUEST, **extra}  # pyright: ignore[reportAssignmentType]
+    yield from provided(client.TypeSafeClient().flat_map(lambda c: c.system_one(payload)), mock)
+    assert mock.requests[0].headers.get("typesafe-danger-zone-images") == header
+
+
 @testing.effect
 def test_custom_api_url():
     """TypeSafeClient / make / uses custom apiUrl when provided"""

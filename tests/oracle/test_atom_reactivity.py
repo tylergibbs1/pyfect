@@ -223,7 +223,7 @@ def test_rebuilds_on_mutation_with_a_hydrated_value(timers: FakeTimers) -> None:
     counted = (
         _counting(rebuilds, value)
         .pipe(atom.with_reactivity(["counter"]))
-        .serializable(key="hydrated-counter", schema=schema.Number)
+        .serializable(key="hydrated-counter", schema=schema.Int)
         .keep_alive()
     )
     r = timers.registry()

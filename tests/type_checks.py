@@ -49,6 +49,7 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import mcp_client as mcp_client_module
 from pyfect.ai import mcp_schema as mcp_schema_module
 from pyfect.ai import model as ai_model
+from pyfect.ai import prompt as ai_prompt
 from pyfect.ai import response as ai_response
 from pyfect.ai import tool as ai_tool
 from pyfect.ai import toolkit as ai_toolkit
@@ -6877,6 +6878,17 @@ def check_workflow() -> None:
         fx.Effect[Complete[str, float] | Suspended | None, Never, WorkflowEngine],
     )
     order.execute({"id": "a"})  # pyright: ignore[reportArgumentType]
+    # The payload is a struct or a schema class (Effect's
+    # `Schema.Struct.Fields | AnyStructSchema`), dogfood apps #9
+    workflow.make("Plain", payload=S.String, idempotency_key=lambda p: p)  # pyright: ignore[reportCallIssue, reportArgumentType]
+
+    class OrderClass(S.Class):
+        id: str
+
+    assert_type(
+        workflow.make("Cls", payload=OrderClass, idempotency_key=lambda o: o.id),
+        Workflow[OrderClass, None, Never],
+    )
 
     # to_layer keeps only the handler's own requirements.
     assert_type(
@@ -7060,6 +7072,17 @@ def check_ai_toolkit() -> None:
     weather.handler(lambda _, __: fx.fail(1))  # pyright: ignore[reportArgumentType]
     clock.handler(lambda _, __: AiDb())
     clock.handler(lambda _, __: AiOther())  # pyright: ignore[reportArgumentType]
+
+    # to_model_output takes the tool's success type and returns prompt parts.
+    def degrees_text(weather: AiWeather) -> list[ai_prompt.ToolModelOutputPart]:
+        return [ai_prompt.TextPart(text=str(weather["degrees"]))]
+
+    shown = ai_tool.make("Weather", success=S.Struct(AiWeather), to_model_output=degrees_text)
+    assert_type(
+        shown, ai_tool.Tool[Literal["Weather"], dict[str, Never], AiWeather, Never, Never, Never]
+    )
+    ai_tool.make("Clock", success=S.Int, to_model_output=degrees_text)  # pyright: ignore[reportArgumentType]
+    ai_tool.make("Clock", success=S.Int, to_model_output=lambda n: [n])  # pyright: ignore[reportArgumentType]
 
     kit = ai_toolkit.make(weather, clock)
     assert_type(
@@ -7461,6 +7484,28 @@ def check_ai_decision_model(
         fx.Effect[ai_dm.DecideSettledResponse, AiError, ai_dm.DecisionModel],
     )
     ai_dm.decide(triage, input={"message": 1})  # pyright: ignore[reportArgumentType]
+    # Images are input fields; a locate decision answers with a box.
+    assert_type(ai_decision.Image, S.Bottom[ai_dm.Image, Mapping[str, object]])
+    mug = ai_decision.locate(image="photo", instructions="the mug")
+    assert_type(mug, ai_decision.Locate)
+    assert_type(response.answers[mug], ai_decision.LocateAnswer)
+    assert_type(response.answers[mug].box, ai_decision.BoundingBox)
+    assert_type(
+        settled.outcomes[mug], fx.Ok[ai_decision.LocateAnswer] | fx.Err[ai_decision.Unanswered]
+    )
+
+    # Locate decisions reach a provider only with supports_locate.
+    def text_only(
+        options: ai_dm.ProviderOptions[ai_decision.NonLocateDecision],
+    ) -> fx.Effect[ai_dm.ProviderResponse, AiError]:
+        return fx.succeed(ai_dm.ProviderResponse({}))
+
+    def locating(options: ai_dm.ProviderOptions) -> fx.Effect[ai_dm.ProviderResponse, AiError]:
+        return fx.succeed(ai_dm.ProviderResponse({}))
+
+    assert_type(ai_dm.make(decide=text_only), fx.Effect[ai_dm.Service])
+    assert_type(ai_dm.make(decide=locating, supports_locate=True), fx.Effect[ai_dm.Service])
+    ai_dm.make(decide=text_only, supports_locate=True)  # pyright: ignore[reportCallIssue, reportArgumentType]
     # Providers need their own client.
     assert_type(
         openai_dm.model("gpt-6-luna"),
@@ -8471,6 +8516,24 @@ def atom_state_types() -> None:
     )
     assert_type(atom.state[int | None](None), atom.Writable[int | None, int | None])
     atom.state[int](None)  # pyright: ignore[reportArgumentType]
+
+
+def atom_serializable_types() -> None:
+    from pyfect.reactivity import async_result, atom
+
+    # serializable's schema must take the atom's value (Effect's
+    # `S extends ConstraintCodec<Type<R>, any>`), dogfood apps #7
+    text = atom.make(fx.succeed("text"))
+    assert_type(
+        text.serializable(key="k", schema=async_result.Schema(success=S.String)),
+        atom.Atom[async_result.AsyncResult[str, Never]],
+    )
+    text.serializable(key="k", schema=async_result.Schema(success=S.Int))  # pyright: ignore[reportArgumentType]
+    assert_type(
+        atom.make(1).serializable(key="n", schema=S.Int),
+        atom.Writable[int, int],
+    )
+    atom.make(1).serializable(key="n", schema=S.String)  # pyright: ignore[reportArgumentType]
 
 
 def atom_types() -> None:

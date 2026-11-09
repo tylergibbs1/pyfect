@@ -120,7 +120,7 @@ def test_skip_initial_run_keeps_a_hydrated_effect_seed_until_a_factory_dependenc
 
 def test_notifies_subscribers_of_an_atom_the_registry_already_holds(timers: FakeTimers) -> None:
     """notifies subscribers of an atom the registry already holds"""
-    count = atom.make(0).serializable(key="existing-count", schema=S.Number)
+    count = atom.make(0).serializable(key="existing-count", schema=S.Int)
     doubled = count.map(lambda n: n * 2)
     registry = timers.registry()
     try:
@@ -136,7 +136,7 @@ def test_notifies_subscribers_of_an_atom_the_registry_already_holds(timers: Fake
 
 def test_falls_back_on_the_first_read_of_invalid_immediate_hydration(timers: FakeTimers) -> None:
     """falls back on the first read of invalid immediate hydration"""
-    count = atom.make(0).serializable(key="count", schema=S.Number)
+    count = atom.make(0).serializable(key="count", schema=S.Int)
     registry = timers.registry()
     try:
         hydration.hydrate(registry, [DehydratedAtom("count", "invalid", 0)])

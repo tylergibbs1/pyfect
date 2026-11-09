@@ -1,6 +1,7 @@
 """Decisions a ``DecisionModel`` answers about one input (Effect's
 ``Decision``): ``classify`` (one label of a set), ``rate`` (a place on an
-ordered scale) and ``probability`` (how likely a statement holds), named
+ordered scale), ``probability`` (how likely a statement holds) and
+``locate`` (where a target is in an ``Image`` field of the input), named
 and paired with an input schema by ``make``::
 
     department = decision.classify(
@@ -17,13 +18,28 @@ the decision itself: ``response.answers[department].label`` is
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Generic, Literal, LiteralString, TypedDict, TypeVar, overload
+from typing import (
+    Any,
+    ClassVar,
+    Generic,
+    Literal,
+    LiteralString,
+    TypedDict,
+    TypeIs,
+    TypeVar,
+    cast,
+    overload,
+)
 
 from pyfect import schema as S
 from pyfect._json_value import JsonValue
+from pyfect._url import Url
+from pyfect.ai._decision_image import Image as ImageValue
 from pyfect.result import Result
+from pyfect.schema import transformation as T
 
 type Description = str | Mapping[str, JsonValue] | Sequence[JsonValue]
 """Instructions or a description: a string, a JSON object or a JSON array."""
@@ -78,7 +94,78 @@ class Probability:
     criteria: ProbabilityCriteria | None = None
 
 
-type AnyDecision = Classify[Any] | Rate[Any] | Probability
+@dataclass(frozen=True, eq=False)
+class Locate:
+    """Finds one target in an image field of the input. ``image`` is the
+    field's path in the encoded input (``"photo"``, ``"frames[2].frame"``);
+    the answer is a bounding box around the target."""
+
+    tag: ClassVar[str] = "Locate"
+    image: str
+    instructions: Description
+
+
+IMAGE_KEY = "~effect/ai/Decision/Image"
+"""The key that marks an encoded ``Image``."""
+
+
+class _Base64Image(TypedDict):
+    mediaType: str
+    base64: str
+
+
+class _UrlImage(TypedDict):
+    mediaType: str
+    url: str
+
+
+ImageEncoded = TypedDict("ImageEncoded", {"~effect/ai/Decision/Image": "_Base64Image | _UrlImage"})
+"""The JSON encoding of an ``Image``: base64 data or a URL with its media
+type, under ``IMAGE_KEY``."""
+
+
+def _is_image(value: object) -> TypeIs[ImageValue]:
+    return isinstance(value, ImageValue)
+
+
+def _decode_image(encoded: Mapping[str, Mapping[str, object]]) -> ImageValue:
+    image = encoded[IMAGE_KEY]
+    data = image["base64"] if "base64" in image else image["url"]
+    return ImageValue(str(image["mediaType"]), data)  # pyright: ignore[reportArgumentType]
+
+
+def _encode_image(image: ImageValue) -> dict[str, dict[str, object]]:
+    data = image.data
+    if isinstance(data, Url):
+        return {IMAGE_KEY: {"mediaType": image.media_type, "url": data}}
+    text = data if isinstance(data, str) else base64.b64encode(data).decode()
+    return {IMAGE_KEY: {"mediaType": image.media_type, "base64": text}}
+
+
+_IMAGE_REF = S.Union(
+    S.Struct(_Base64Image),
+    S.Struct(_UrlImage, url=S.URLFromString),
+)
+
+Image: S.Bottom[ImageValue, Mapping[str, object]] = cast(
+    "Any",
+    S.Struct(ImageEncoded, **{IMAGE_KEY: _IMAGE_REF}).pipe(
+        S.decode_to(
+            S.declare(_is_image, expected="DecisionModel.Image"),
+            T.transform(decode=_decode_image, encode=_encode_image),  # pyright: ignore[reportArgumentType]
+        )
+    ),
+)
+"""The schema of an image input field (Effect's ``Decision.Image``). Its
+type is ``decision_model.Image``: a media type with base64 data, bytes or a
+URL. ``decide`` replaces each one in the encoded input with a reference
+string and sends the images to the provider separately; an image used in
+several fields is sent once. Decisions refer to it by the field's path."""
+
+
+type AnyDecision = Classify[Any] | Rate[Any] | Probability | Locate
+type NonLocateDecision = Classify[Any] | Rate[Any] | Probability
+"""The decisions a provider without ``supports_locate`` receives."""
 
 
 @dataclass(frozen=True)
@@ -109,7 +196,30 @@ class ProbabilityAnswer:
     probability: float
 
 
-type AnyAnswer = ClassifyAnswer[Any] | RateAnswer[Any] | ProbabilityAnswer
+@dataclass(frozen=True)
+class BoundingBox:
+    """The smallest rectangle around a located target. Each edge is a
+    fraction of the image's size from the top-left corner: ``left`` and
+    ``right`` of its width, ``top`` and ``bottom`` of its height, all in
+    ``[0, 1]``, with ``left <= right`` and ``top <= bottom``."""
+
+    left: float
+    top: float
+    right: float
+    bottom: float
+
+
+@dataclass(frozen=True)
+class LocateAnswer:
+    """A ``Locate`` answer. A target absent from the image still gets a box,
+    so pair the decision with a ``probability`` that it is present;
+    ``confidence`` is an optional, provider-defined measure in ``[0, 1]``."""
+
+    box: BoundingBox
+    confidence: float | None = None
+
+
+type AnyAnswer = ClassifyAnswer[Any] | RateAnswer[Any] | ProbabilityAnswer | LocateAnswer
 
 type UnansweredReason = Literal["Missing", "Refused", "NoDistribution", "Invalid"]
 
@@ -182,6 +292,8 @@ class Answers(_ByName[AnyAnswer]):
     @overload
     def __getitem__(self, key: Probability) -> ProbabilityAnswer: ...
     @overload
+    def __getitem__(self, key: Locate) -> LocateAnswer: ...
+    @overload
     def __getitem__(self, key: str) -> AnyAnswer: ...
     def __getitem__(self, key: str | AnyDecision) -> AnyAnswer:
         return self._get(key)
@@ -199,6 +311,8 @@ class Outcomes(_ByName[Outcome[AnyAnswer]]):
     def __getitem__(self, key: Rate[L]) -> Outcome[RateAnswer[L]]: ...
     @overload
     def __getitem__(self, key: Probability) -> Outcome[ProbabilityAnswer]: ...
+    @overload
+    def __getitem__(self, key: Locate) -> Outcome[LocateAnswer]: ...
     @overload
     def __getitem__(self, key: str) -> Outcome[AnyAnswer]: ...
     def __getitem__(self, key: str | AnyDecision) -> Outcome[AnyAnswer]:
@@ -255,6 +369,16 @@ def probability(
     return Probability(instructions, criteria)
 
 
+def locate(*, image: str, instructions: Description) -> Locate:
+    """A decision finding one target in the image field at ``image``: keys
+    of the encoded input joined with ``.``, array indices in brackets
+    (``"frames[2].frame"``). The model must support locate decisions, and
+    ``decide`` fails with ``InvalidUserInputError`` when the path holds no
+    image. The answer is always one box, even when the target is absent:
+    pair it with a ``probability`` decision that the target is present."""
+    return Locate(image, instructions)
+
+
 def make[T, R](
     *, input: S.Codec[T, Any, Any, R], decisions: Mapping[str, AnyDecision]
 ) -> Definition[T, R]:
@@ -266,14 +390,21 @@ def make[T, R](
 
 
 __all__ = [
+    "IMAGE_KEY",
     "Answers",
     "AnyAnswer",
     "AnyDecision",
+    "BoundingBox",
     "Classify",
     "ClassifyAnswer",
     "Definition",
     "Description",
+    "Image",
+    "ImageEncoded",
     "Level",
+    "Locate",
+    "LocateAnswer",
+    "NonLocateDecision",
     "Outcome",
     "Outcomes",
     "Probability",
@@ -284,6 +415,7 @@ __all__ = [
     "Unanswered",
     "UnansweredReason",
     "classify",
+    "locate",
     "make",
     "probability",
     "rate",

@@ -12,6 +12,7 @@ import codecs
 import math
 import re
 from decimal import Decimal
+from typing import cast
 
 
 def or_default[A, B](value: A | None, default: B) -> A | B:
@@ -118,19 +119,26 @@ def js_number(value: float) -> str:
     return sign + body
 
 
+_LITERALS = {True: "true", False: "false", None: "null"}
+
+
 def js_string(value: object) -> str:
     """``String(value)`` for Python values: ``true`` / ``false``, ``null``
-    for ``None``, numbers as ``js_number``, a string as it is, anything else
-    ``str(value)``."""
+    for ``None``, numbers as ``js_number``, a string as it is, a list or
+    tuple as an array (items joined by ``,``, ``None`` items empty), a dict
+    as ``[object Object]``, anything else ``str(value)``."""
     match value:
         case str():
             return value
-        case bool():
-            return "true" if value else "false"
-        case None:
-            return "null"
+        case bool() | None:
+            return _LITERALS[value]
         case int() | float():
             return js_number(value)
+        case list() | tuple():
+            items = cast("list[object] | tuple[object, ...]", value)
+            return ",".join("" if item is None else js_string(item) for item in items)
+        case dict():
+            return "[object Object]"
         case _:
             return str(value)
 

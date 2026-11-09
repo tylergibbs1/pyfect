@@ -122,10 +122,16 @@ class Atom(Generic[A_co]):
         return runtime.with_reactivity(keys)(self)
 
     def serializable(
-        self, *, key: str, schema: Codec[Any, Any, Never, Never], skip_initial_run: bool = False
+        self,
+        *,
+        key: str,
+        # Effect's `S extends ConstraintCodec<Type<R>, any>`
+        schema: Codec[A_co, Any, Never, Never],
+        skip_initial_run: bool = False,
     ) -> Self:
         """Mark this atom for ``Hydration``: its value is encoded with
-        ``schema`` (as JSON) under ``key``, which also identifies its node."""
+        ``schema`` (as JSON) under ``key``, which also identifies its node.
+        ``schema``'s type must be the atom's value."""
         from pyfect.reactivity.atom._serializable import serializable
 
         return serializable(self, key=key, schema=schema, skip_initial_run=skip_initial_run)

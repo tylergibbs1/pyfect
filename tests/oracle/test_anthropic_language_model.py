@@ -33,6 +33,7 @@ from pyfect.layer import Layer
 from pyfect.redacted import make as redact
 from pyfect.result import Ok
 
+from ._ai import SCREENSHOT_PNG, screenshot_prompt
 from ._ai_http import MockHttp, json_response, meta, mock_json, mock_sse, recording_tracer
 from ._ai_http import span_named as _span
 
@@ -510,6 +511,64 @@ def test_generate_string_tool_results():
         if block["type"] == "tool_result"
     )
     assert result["content"] == "PLAIN_TEXT_SENTINEL\n"
+
+
+_PDF = "JVBERi0xLjcK"
+
+
+@pytest.mark.parametrize(
+    ("model_output", "content"),
+    [
+        pytest.param(
+            [
+                Pr.TextPart(text="Screenshot of /home"),
+                Pr.FilePart(media_type="image/png", data=SCREENSHOT_PNG),
+                Pr.FilePart(
+                    media_type="application/pdf", data=f"data:application/pdf;base64,{_PDF}"
+                ),
+            ],
+            [
+                {"type": "text", "text": "Screenshot of /home"},
+                {
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": "image/png", "data": SCREENSHOT_PNG},
+                },
+                {
+                    "type": "document",
+                    "source": {"type": "base64", "media_type": "application/pdf", "data": _PDF},
+                    "title": None,
+                },
+            ],
+            id="as native content blocks",
+        ),
+        pytest.param([], "", id="without the result when it is empty"),
+    ],
+)
+@testing.effect
+def test_generate_tool_result_model_output(
+    model_output: list[Pr.ToolModelOutputPart], content: Any
+):
+    """generateText / sends tool result model output as native content blocks / without the
+    result when it is empty"""
+    mock = mock_json(_done())
+    yield from _provided(
+        lm.generate_text(screenshot_prompt(model_output), disable_tool_call_resolution=True),
+        mock,
+        "claude-sonnet-4-20250514",
+    )
+    (body,) = mock.bodies
+    result = next(
+        block
+        for message in body["messages"]
+        if isinstance(message["content"], list)
+        for block in message["content"]
+        if block["type"] == "tool_result"
+    )
+    assert result["tool_use_id"] == "call_screenshot"
+    sent = result["content"]
+    if isinstance(sent, list):
+        sent = [{k: v for k, v in block.items() if k != "cache_control"} for block in sent]
+    assert sent == content
 
 
 @testing.effect

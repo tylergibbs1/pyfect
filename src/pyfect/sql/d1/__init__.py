@@ -14,6 +14,10 @@ SQLite's SQL over D1's HTTP API, sent with the ``HttpClient`` in context::
 - ``config``: ``D1ClientConfig``
 - ``api``: ``D1Api``, the HTTP API underneath (``query``, ``raw``), its
   results (``D1Result``, ``D1RawResult``, ``D1Meta``) and ``D1ApiError``
+
+D1 has no transactions, so ``with_transaction`` and ``pyfect.sql.migrator``
+(which runs migrations in one) die with ``NotImplementedError``, as in
+Effect; apply migrations with ``wrangler d1 migrations apply``.
 """
 
 from pyfect.sql.d1 import api, client, config

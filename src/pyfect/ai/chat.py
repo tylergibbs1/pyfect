@@ -30,6 +30,7 @@ from pyfect.ai import toolkit as K
 from pyfect.ai.ai_error import AiError, InvalidOutputError
 from pyfect.ai.id_generator import IdGenerator, default_id_generator
 from pyfect.ai.id_generator import Service as IdService
+from pyfect.channel import acquire_use_release
 from pyfect.context import Tag
 from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.effect import sync
@@ -40,10 +41,11 @@ from pyfect.persistence import PersistenceError
 from pyfect.persistence.persistence import BackingPersistence, BackingPersistenceStore
 from pyfect.ref import Ref
 from pyfect.schema import SchemaError
-from pyfect.scope import Scope, acquire_release
+from pyfect.scope import Scope
 from pyfect.semaphore import Semaphore
 from pyfect.stream import Stream
 from pyfect.stream import _constructors as StreamC
+from pyfect.stream._stream import from_channel, to_channel
 
 type _ToolkitInput[NN: LiteralString, RP, EE, RR] = (
     K.WithHandler[NN, RP, EE, RR] | Effect[K.WithHandler[NN, RP, EE, RR], EE, RR]
@@ -320,22 +322,15 @@ class Service:
         The history gains the parts streamed, also when the stream is cut
         short."""
 
-        def start() -> Effect[Stream[Any, Any, Any], Never, Scope]:
+        def start() -> Stream[Any, Any, Any]:
             parts: list[Any] = []
 
             def collect(chunk: tuple[Any, ...]) -> tuple[Any, ...]:
                 parts.extend(chunk)
                 return chunk
 
-            def release(full: P.Prompt, _: Exit[Any, Any]) -> Effect[object]:
-                done = full.concat(P.from_response_parts(parts))
-                return self.history.set(done).and_then(self._lock.release(1))
-
-            acquire = (
-                self._lock.take(1).and_then(self.history.get()).map(lambda h: h.concat(prompt))
-            )
-            return acquire_release(acquire, release).map(
-                lambda full: StreamC.unwrap(
+            def use(full: P.Prompt) -> Any:
+                streamed = StreamC.unwrap(
                     _model().map(
                         lambda model: model.stream_text(
                             full,
@@ -346,10 +341,21 @@ class Service:
                             tool_call_validation=tool_call_validation,
                         )
                     )
-                ).map_array(collect)
-            )
+                )
+                return to_channel(streamed.map_array(collect))
 
-        stream = StreamC.scoped(StreamC.unwrap(fx.suspend(start))).with_span("Chat.streamText")
+            def release(full: P.Prompt, _: Exit[Any, Any]) -> Effect[object]:
+                done = full.concat(P.from_response_parts(parts))
+                return self.history.set(done).and_then(self._lock.release(1))
+
+            acquire = (
+                self._lock.take(1).and_then(self.history.get()).map(lambda h: h.concat(prompt))
+            )
+            # Effect's Channel.acquireUseRelease: the history is set when the
+            # model's stream ends, before any finalizer added outside (the save).
+            return from_channel(acquire_use_release(acquire, use, release))
+
+        stream = StreamC.unwrap(fx.sync(start)).with_span("Chat.streamText")
         after = self._after_call
         if after is None:
             return stream
