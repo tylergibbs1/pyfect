@@ -213,11 +213,13 @@ def stringify(
     number of spaces, at most 10, or the text itself, as JavaScript's
     ``space``), numbers as JavaScript writes them, ints in full, non-ASCII
     kept and lone surrogates escaped; keys sorted when ``sort_keys``; any
-    other object written as ``default`` of it (when given).
+    other object written as ``default`` of it (when given), and a
+    ``Redacted`` as ``<redacted>``, as its ``toJSON`` writes it.
     ``NaN`` and infinities raise ``ValueError``, or are written ``null`` as
     JavaScript writes them when ``null_non_finite``; a value with no JSON
     form raises ``TypeError``, a cycle ``ValueError``."""
     space = (" " * min(indent, 10) if isinstance(indent, int) else (indent or "")[:10]) or None
+    default = _with_to_json(default)
 
     # Python's own encoder writes what JavaScript writes, but for floats
     # (every float it writes has a digit before ``.`` or ``e``), ints past
@@ -243,6 +245,24 @@ def stringify(
         writer.write(value, 0)
         return "".join(writer.out)
     return text if text.isascii() else _LONE_SURROGATE.sub(_escape_surrogate, text)
+
+
+def _with_to_json(
+    default: Callable[[object], object] | None,
+) -> Callable[[object], object]:
+    """``default``, after the ``toJSON`` JavaScript's ``JSON.stringify``
+    calls on an Effect value: a ``Redacted`` is written as its ``str``
+    (``<redacted>``), never its secret."""
+    from pyfect.redacted import Redacted
+
+    def to_json(value: object) -> object:
+        if isinstance(value, Redacted):
+            return str(cast("Redacted[object]", value))
+        if default is not None:
+            return default(value)
+        raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+    return to_json
 
 
 def js_stringify(value: object) -> str:

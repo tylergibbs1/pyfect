@@ -6,8 +6,9 @@ description: "Serve a toolkit, resources and prompts over the Model Context Prot
 The [Model Context Protocol](https://modelcontextprotocol.io) lets an AI application use
 tools, resources and prompts that another program serves. `pyfect.ai.mcp_server` serves
 them from the same [toolkits](/docs/ai#tools-and-toolkits) a `LanguageModel` uses, and
-`pyfect.ai.mcp_client` connects to any MCP server. Both speak the protocol's revisions
-from 2024-11-05 to the stateless 2026-07-28.
+`pyfect.ai.mcp_client` connects to any MCP server. The server speaks the protocol's
+revisions from 2024-11-05 to the stateless 2026-07-28; the client, as Effect's, speaks
+2025-11-25 and 2026-07-28 only.
 
 ## Serve a toolkit
 
@@ -16,9 +17,9 @@ provided. Each tool is listed with its description, its parameters' JSON Schema 
 output schema; `tool.Readonly`, `Destructive`, `Idempotent` and `OpenWorld` annotations
 become its hints. Invalid arguments and declared failures come back as tool errors the
 model can read, and any other failure as an internal error that leaks no details. The
-2025 revisions allow only an object as a structured result, so a tool whose result is
-another kind of value, such as a list, sends it as `{"result": ...}`, with an output
-schema saying so; pyfect's client unwraps it.
+2025 revisions allow only an object as a structured result, so on them, as in Effect, a
+tool whose result is another kind of value, such as a list, sends it as text content only,
+with no `structuredContent` and no output schema in its listing.
 `mcp_server.resource`, `resource_template` and `prompt` add resources and prompts the same
 way, as layers.
 
@@ -183,7 +184,9 @@ tools from a client that implements the continuation.
   message larger than `max_message_bytes` (4 MiB, and never more than the app's
   `MaxBodySize`) gets a 413.
 - A defect in a tool, resource, prompt or completion handler is logged and the client gets
-  "Internal server error"; a declared failure sends its message, never its fields.
+  "Internal server error". A declared failure with a message sends only its message; one
+  without a message sends its encoded fields, as Effect does, so keep secrets out of a
+  failure's fields or make them `Redacted`, which is sent as `<redacted>`.
 - Replies to the server's own requests (roots, sampling, elicitation) are decoded with their
   result schema; a malformed elicitation reply counts as declined.
 - The client reads each server message under `max_message_bytes` (16 MiB by default) and

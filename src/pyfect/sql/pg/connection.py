@@ -405,7 +405,8 @@ class PgConnection:
         interrupting its takers. If the session fails, the queue fails with
         its error. The queue holds at most ``capacity`` notifications not
         yet taken; one more fails it (after those) with an error saying the
-        listener fell behind."""
+        listener fell behind. The scope must close before the client's
+        layer does: closing the pool waits for the pinned session."""
         check_capacity(capacity)
         error = validate_channel_name(channel, "listen")
         if error is not None:

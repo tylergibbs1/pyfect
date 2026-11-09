@@ -22,7 +22,7 @@ from typing import Any, Never, NotRequired, TypedDict, cast
 import pytest
 
 import pyfect as fx
-from pyfect import error_reporter, layer, testing
+from pyfect import error_reporter, layer, redacted, testing
 from pyfect import logger as L
 from pyfect import schema as S
 from pyfect.ai import ai_error as AiErr
@@ -33,6 +33,7 @@ from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.ai._mcp.core import ResourceEntry, ToolEntry
 from pyfect.context import Context, Tag
+from pyfect.redacted import Redacted
 
 from ._mcp import StdioHarness, stdio_harness
 
@@ -793,6 +794,35 @@ def test_encodes_declared_error_failures_without_a_message():
     assert result.get("isError") is True
     assert "structuredContent" not in result
     assert _text(result) == '{"_tag":"NoteNotFound","id":"n1"}'
+
+
+class VaultLocked(S.TaggedError):
+    vault: str
+    token: Redacted[str] = S.field(S.Redacted(S.String))
+
+
+@testing.effect
+def test_a_declared_failure_without_a_message_never_sends_a_redacted_field():
+    """(pyfect) arpc_mcp_docs_gaps: a declared failure with no message is sent with its
+    fields, as in Effect, but a ``Redacted`` one is written ``<redacted>``, as Effect's
+    ``JSON.stringify`` writes a ``Redacted`` (its ``toJSON``)."""
+    vault = T.make("Vault", failure=VaultLocked)
+    secret = "tok-hunter2"
+    server, exit = yield from _register(
+        K.make(vault),
+        vault.handler(
+            lambda _p, _: fx.fail(VaultLocked(vault="main", token=redacted.make(secret)))
+        ),
+    )
+    assert isinstance(exit, fx.Success)
+    result = yield from _direct(server.call_tool({"name": "Vault", "arguments": {}}))
+    assert result.get("isError") is True
+    assert secret not in json.dumps(result)
+    assert json.loads(_text(result)) == {
+        "_tag": "VaultLocked",
+        "vault": "main",
+        "token": "<redacted>",
+    }
 
 
 @testing.effect

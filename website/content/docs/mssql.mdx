@@ -31,7 +31,13 @@ type of your choice. A few things work differently than on PostgreSQL:
   clause, so a statement that changes rows gives them back.
 - A failure's `reason` comes from SQL Server's error number: `UniqueViolation` (with the
   constraint or index name as `constraint`), `DeadlockError`, `LockTimeoutError`,
-  `AuthenticationError`, ...
+  `AuthenticationError`, ... A login that fails when the layer is built (a wrong password)
+  fails the layer with `ConnectionError`, whose `cause` is the `SqlError` with the
+  `AuthenticationError`, as Effect's layer wraps its first connection's error.
+- SQL Server has already rolled a deadlock victim's transaction back, so inside
+  `with_transaction` the `ROLLBACK` fails too and the transaction dies with the
+  `DeadlockError` as a defect, as in Effect: retry a deadlocked transaction on its defect
+  (`sandbox` or `catch_cause`), not with `catch_reason`.
 - Interrupting a statement cancels it on the server; the connection is reused.
 - Streaming rows (`sql(...).stream`) isn't supported, as in Effect's client.
 

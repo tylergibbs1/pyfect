@@ -62,7 +62,9 @@ the same transaction only.
 
 `sql.with_transaction(effect)` runs every statement of `effect` on one connection. It
 commits when the effect succeeds and rolls back when it fails, dies or is interrupted, so an
-error raised half way through undoes the half that ran. Nested, it uses a savepoint.
+error raised half way through undoes the half that ran. A rollback that fails itself, as on
+a lost connection, is a defect, as in Effect, so the transaction then dies and
+`catch_tag(SqlError)` doesn't see it. Nested, it uses a savepoint.
 `sql.after_commit(effect)` runs `effect` only once the outermost transaction commits.
 
 The SQLite client has one connection, as in Effect, so a transaction holds it from start to
@@ -94,8 +96,9 @@ Two processes starting at once don't run them twice.
 
 </CodeOutput>
 
-`migrator.from_record` takes migrations keyed `<id>_<name>` (`"1_create_users"`) and raises
-`ValueError` naming any other key, so a misnamed migration can't be skipped.
+`migrator.from_record` takes migrations keyed `<id>_<name>` (`"1_create_users"`) and, as
+Effect's `fromRecord`, skips any other key, so a misnamed migration never runs: check the
+ids `migrator.run` returns in a test.
 `migrator.from_file_system(directory)` loads `<id>_<name>.py` modules instead, each with its
 migration as `default`. `migrator.layer(loader=...)` runs the migrations when the layer is
 built, so the app's layer can migrate before anything else uses the database.

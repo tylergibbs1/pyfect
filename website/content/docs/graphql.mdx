@@ -41,7 +41,9 @@ of the call's context and operation. Subscriptions use graphql-sse over the same
 graphql-transport-ws connection with `web_socket=protocol.WebSocketOptions(...)`.
 `layer_web_socket(options)` runs every operation over one shared graphql-transport-ws
 connection, opened on the first call, with `connection_params`, keep-alive pings and an
-idle timeout. Subscriptions are [streams](/docs/streams), retried on retryable errors by
+idle timeout. Both WebSocket transports need a `WebSocketConstructor`, as in Effect: provide
+`pyfect.socket.ws.layer_web_socket_constructor` (pyright reports it missing otherwise).
+Subscriptions are [streams](/docs/streams), retried on retryable errors by
 `client.default_subscription_retry` (or `client.make(Group, subscription_retry=...)`).
 
 ## Middleware

@@ -1,6 +1,6 @@
 import pyfect as fx
 from pyfect import console, platform
-from pyfect.cli import Argument, Config, Flag, ShowHelp, command
+from pyfect.cli import Argument, Config, Flag, command
 from pyfect.cli.help_doc import ExampleDoc
 
 
@@ -18,6 +18,6 @@ deploy = (
 )
 
 cli = command.run_with(deploy, version="1.0.0")
-# Showing help ends the program with ShowHelp (exit code 0); catch it to carry on.
-shown = cli(["--help"]).pipe(fx.catch_tag(ShowHelp, lambda _: fx.void))
-fx.run_main(shown.pipe(fx.provide(platform.layer)))
+# `--help` prints the help and succeeds, as in Effect; a command line that doesn't parse
+# fails with ShowHelp.
+fx.run_main(cli(["--help"]).pipe(fx.provide(platform.layer)))

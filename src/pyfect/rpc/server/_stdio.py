@@ -96,6 +96,10 @@ def make_protocol_stdio() -> Effect[ServerProtocolService, Never, Stdio | RpcSer
 layer_protocol_stdio: Layer[ServerProtocol, Never, Stdio | RpcSerialization] = layer_effect(
     ServerProtocol, make_protocol_stdio()
 )
-"""A server protocol over the current ``Stdio``."""
+"""A server protocol over the current ``Stdio``: requests are read from
+standard input and responses written to standard output. Once input has
+ended and the last response is written, it interrupts the fiber that built
+it, as Effect's ``layerProtocolStdio`` does, so a launched server under
+``run_main`` exits 130."""
 
 __all__ = ["layer_protocol_stdio", "make_protocol_stdio"]
