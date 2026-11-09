@@ -221,8 +221,8 @@ class DecompressedRequest(ServerRequest):
     def _bytes(self) -> Effect[bytes, HttpServerError]:
         return memoize(self.stream.run_collect().map(b"".join))
 
-    @property
-    def bytes_(self) -> Effect[bytes, HttpServerError]:
+    def _read_whole(self, max_bytes: int | None) -> Effect[bytes, HttpServerError]:
+        del max_bytes  # ``stream`` bounds the decoded body
         return self._bytes
 
     @property

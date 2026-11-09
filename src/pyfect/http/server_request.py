@@ -112,10 +112,17 @@ class ServerRequest(ABC):
     def stream(self) -> Stream[bytes, HttpServerError]:
         """The body as it arrives."""
 
+    @final
     @property
-    @abstractmethod
     def bytes_(self) -> Effect[bytes, HttpServerError]:
-        """The whole body, read once (Effect's ``arrayBuffer``)."""
+        """The whole body, read once (Effect's ``arrayBuffer``); past
+        ``MaxBodySize`` it fails as ``BodyTooLarge``."""
+        return _WithFiber(lambda fiber: self._read_whole(fiber.get_ref(MaxBodySize)))
+
+    @abstractmethod
+    def _read_whole(self, max_bytes: int | None) -> Effect[bytes, HttpServerError]:
+        """The whole body, read once, failing as ``BodyTooLarge`` past
+        ``max_bytes``."""
 
     @abstractmethod
     def _copy(self) -> ServerRequest:
@@ -345,11 +352,11 @@ class _SharedBody:
         opened = self._open
         return opened().map_error(lambda cause: request_parse_error(request, None, cause))
 
-    def bytes_(self, request: ServerRequest) -> Effect[bytes, HttpServerError]:
+    def bytes_(
+        self, request: ServerRequest, max_bytes: int | None
+    ) -> Effect[bytes, HttpServerError]:
         if self._bytes is None:
-            self._bytes = memoize(
-                _WithFiber(lambda fiber: self._read_all(request, fiber.get_ref(MaxBodySize)))
-            )
+            self._bytes = memoize(suspend(lambda: self._read_all(request, max_bytes)))
         return self._bytes
 
     def _read_all(
@@ -359,12 +366,15 @@ class _SharedBody:
             return succeed(b"")
         content_length = parse_content_length(request.headers.get("content-length"))
 
-        def on_error(cause: object) -> HttpServerError:
-            if isinstance(cause, BodyTooLargeError):
-                return request_parse_error(request, None, cause, "BodyTooLarge")
-            return request_parse_error(request, None, cause)
+        return read_limited(self._open_read(), content_length, max_bytes).map_error(
+            lambda cause: _read_error(request, cause)
+        )
 
-        return read_limited(self._open_read(), content_length, max_bytes).map_error(on_error)
+
+def _read_error(request: ServerRequest, cause: object) -> HttpServerError:
+    if isinstance(cause, BodyTooLargeError):
+        return request_parse_error(request, None, cause, "BodyTooLarge")
+    return request_parse_error(request, None, cause)
 
 
 def _stream_of(data: Effect[bytes, HttpServerError]) -> Stream[bytes, HttpServerError]:
@@ -418,9 +428,8 @@ class SourceRequest(ServerRequest):
     def stream(self) -> Stream[bytes, HttpServerError]:
         return self._body.stream(self)
 
-    @property
-    def bytes_(self) -> Effect[bytes, HttpServerError]:
-        return self._body.bytes_(self)
+    def _read_whole(self, max_bytes: int | None) -> Effect[bytes, HttpServerError]:
+        return self._body.bytes_(self, max_bytes)
 
     def upgrade_with(
         self, *, headers: HeadersInput | None = None
@@ -492,20 +501,22 @@ class ClientRequest(ServerRequest):
                     return fail_stream(request_parse_error(self, "Unsupported body type"))
                 return succeed_stream(data)
 
-    @property
-    def bytes_(self) -> Effect[bytes, HttpServerError]:
+    def _read_whole(self, max_bytes: int | None) -> Effect[bytes, HttpServerError]:
         if self._bytes is None:
-            self._bytes = memoize(suspend(self._read))
+            self._bytes = memoize(suspend(lambda: self._read(max_bytes)))
         return self._bytes
 
-    def _read(self) -> Effect[bytes, HttpServerError]:
+    def _read(self, max_bytes: int | None) -> Effect[bytes, HttpServerError]:
         body = self._source.body
+        chunks = self.stream
         if isinstance(body, _body.Raw):
             data = _raw_bytes(body.body)
             if data is None:
                 return fail(request_parse_error(self, "Unsupported body type"))
-            return succeed(data)
-        return self.stream.run_collect().map(b"".join)
+            chunks = succeed_stream(data)
+        return read_limited(chunks, None, max_bytes).map_error(
+            lambda cause: _read_error(self, cause)
+        )
 
     @property
     def json(self) -> Effect[Json, HttpServerError]:

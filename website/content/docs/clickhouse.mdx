@@ -36,8 +36,12 @@ user gets code 194 (`REQUIRED_PASSWORD`, HTTP 401), which is an `UnknownError`; 
 
 Each value becomes a `{p1: Type}` parameter. The type comes from the value: `Int64` for an
 `int`, `Float64`, `Bool`, `String`, `DateTime` (`DateTime64(6)` with microseconds), `Date`,
-`Array(...)`. Name it yourself with `sql.param("Nullable(Int32)", None)`; a
-`clickhouse.TupleParam` is a tuple and a dict a map.
+`Array(...)`. Name it yourself with `sql.param("Nullable(Int32)", None)`. A
+`clickhouse.TupleParam` is written as a tuple and a dict as a map, but, as in Effect, their
+placeholder says `String`, so ClickHouse reads them as text unless you name the type:
+`sql.param("Tuple(Int64, String)", clickhouse.TupleParam((42, "foo")))`. A `datetime` must
+be aware (have a `tzinfo`); a naive one is a defect, since a JavaScript `Date` always has a
+zone.
 
 A statement runs as a query with `FORMAT JSON` appended. That doesn't work for a statement
 that carries data, like `INSERT ... VALUES`, so:

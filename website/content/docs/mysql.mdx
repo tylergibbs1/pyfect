@@ -33,9 +33,11 @@ PostgreSQL:
   with each one's result.
 - A failure's `reason` comes from MySQL's error number: `UniqueViolation` (with the key's
   name as `constraint`), `DeadlockError`, `LockTimeoutError`, `AuthenticationError`, ...
-- Interrupting a statement also ends its connection on the server (`KILL`), so its locks are
-  released. Ending a stream early reads past a short rest; a statement still sending rows
-  after a moment gets `KILL QUERY`, so the connection and any transaction on it go on.
+- Interrupting a statement ends it on the server with `KILL QUERY`, sent over a one-off
+  connection, and waits for it to stop, so the connection and any transaction on it go on, as
+  in Effect. A statement that hasn't stopped within five seconds has its connection closed and
+  ended on the server (`KILL`). Ending a stream early reads past a short rest; a statement
+  still sending rows after a moment gets `KILL QUERY` too.
 
 <CodeOutput>
 
@@ -50,4 +52,7 @@ PostgreSQL:
 `mysql.migrator` works like the [SQLite migrator](/docs/sql#migrations): `migrator.layer`
 runs the migrations when the layer is built, recording them in `effect_sql_migrations`.
 MySQL commits DDL as it runs, so a migration that fails part way leaves the statements
-before the failure applied.
+before the failure applied. The new migrations are recorded before they run, as in Effect's
+migrator, and the first DDL statement commits that record too: the failed migration counts
+as applied, and the next run skips it. Fix such a database by hand, or keep each DDL
+migration to one statement.

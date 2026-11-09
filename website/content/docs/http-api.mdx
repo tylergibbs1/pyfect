@@ -126,7 +126,9 @@ openapi_path="/openapi.json")` serves the document, and `swagger.layer(api)` and
 
 `test.groups(api, (Users,), layer=TestUsers)` gives a client whose requests the handlers
 answer in memory: no server or port, but the same encoding, decoding and statuses as over the
-network. The handlers' own services come from the layer the test passes, which stays open
+network. A request the server itself would refuse, such as a body past `MaxBodySize`, is a
+defect of the call holding the server's `HttpServerError` rather than its status, as in
+Effect's `HttpApiTest`. The handlers' own services come from the layer the test passes, which stays open
 until the test's scope closes, so a scoped resource in it (a database pool, a `FiberMap`)
 is still there when a handler runs. Pyright checks that the layer provides every served
 group.

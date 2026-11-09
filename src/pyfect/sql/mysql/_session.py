@@ -63,13 +63,17 @@ def _parameters(params: Sequence[object]) -> tuple[object, ...]:
 class Session:
     """A connection and its prepared statements."""
 
-    __slots__ = ("_lock", "_options", "_statements", "broken", "raw")
+    __slots__ = ("_killing", "_lock", "_options", "_running", "_statements", "broken", "raw")
 
     def __init__(self, raw: RawConnection, options: Mapping[str, Any]) -> None:
         self.raw = raw
         self._options = options
         self._lock = asyncio.Lock()
         self._statements: OrderedDict[str, PreparedStatement] = OrderedDict()
+        self._running: asyncio.Task[Any] | None = None
+        """The task whose statement is on the wire."""
+        self._killing: asyncio.Event | None = None
+        """Set once the ``KILL QUERY`` of an interrupted statement has been tried."""
         self.broken = False
 
     @staticmethod
@@ -149,6 +153,7 @@ class Session:
     ) -> list[ResultSet]:
         """Each statement's result: its rows, or a header."""
         async with self._lock:
+            self._running = asyncio.current_task()
             try:
                 if prepared:
                     return await self._execute(sql, params, as_tuples)
@@ -156,6 +161,17 @@ class Session:
             except asyncio.CancelledError:
                 self._cut_short()
                 raise
+            finally:
+                await self._settled()
+
+    async def _settled(self) -> None:
+        """The statement on the wire has settled. The turn is given back only
+        once a ``KILL QUERY`` sent for it is done, so the kill can never reach
+        the next statement (Effect's ``permit``)."""
+        self._running = None
+        killing = self._killing
+        if killing is not None:
+            await killing.wait()
 
     # --- streams --------------------------------------------------------------
 
@@ -163,16 +179,20 @@ class Session:
         """An unbuffered cursor on ``sql``; the session is this stream's
         until ``close_stream``."""
         await self._lock.acquire()
+        self._running = asyncio.current_task()
         try:
             cursor = _asyncmy.stream_cursor(self.raw)
             await cursor.execute(self._bound(sql, params))
         except asyncio.CancelledError:
             self._cut_short()
+            await self._settled()
             self._lock.release()
             raise
         except BaseException:
+            await self._settled()
             self._lock.release()
             raise
+        await self._settled()
         return cursor
 
     async def next_rows(self, cursor: Cursor) -> list[Row]:
@@ -242,15 +262,40 @@ class Session:
             )
 
     async def stop(self, task: asyncio.Task[Any]) -> None:
-        """Interrupt ``task``'s statement: a statement on the wire is cut
-        short, which closes this connection, and the server is told to
-        end it."""
+        """Interrupt ``task``'s statement (Effect's ``ActiveStatement.cancel``).
+        One on the wire gets ``KILL QUERY`` from another connection, and this
+        waits for it to settle, so the connection goes on; if both haven't
+        happened within five seconds, the statement is cut short, which closes
+        this connection, and the server is told to end the connection. Any
+        other step (waiting for its turn, reading a stream) is cut short."""
         if task.done():
+            return
+        if self._running is task:
+            await self._kill_statement(task)
             return
         task.cancel()
         await asyncio.wait([task])
         if self.broken:
             await self.kill()
+
+    async def _kill_statement(self, task: asyncio.Task[Any]) -> None:
+        killing = asyncio.Event()
+        self._killing = killing
+        try:
+            async with asyncio.timeout(_KILL_TIMEOUT):
+                await self.kill(only_statement=True)
+                killing.set()
+                await asyncio.wait([task])
+        except TimeoutError:
+            killing.set()
+            task.cancel()
+            await asyncio.wait([task])
+            self._cut_short()
+            await self.kill()
+        finally:
+            killing.set()
+            if self._killing is killing:
+                self._killing = None
 
     async def close(self) -> None:
         with contextlib.suppress(Exception):

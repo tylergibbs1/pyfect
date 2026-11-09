@@ -46,6 +46,22 @@
   `isValidHost` rejects it.
 - An absolute request target sets the request's host to the URL's normalized host (lowercase,
   default port dropped), as Effect's Node server does.
+- `http_api.test.groups` and `router.in_memory_client` bound a whole-body read by
+  `MaxBodySize`, as the network servers do: a payload past 10 MiB is refused instead of
+  decoded and handled. `ServerRequest.bytes_` is now final; a request type implements
+  `_read_whole(max_bytes)`, so none can skip the limit.
+- `live_server` reads a chunk size line as Node's `llhttp` does: whitespace around the size
+  or an extension (`2 `, `2;a b`), an empty extension name (`2;;`), an unterminated quoted
+  value, `2;a=b=c` and a size past 64 bits are a 400. `2 ;name` was accepted before.
+- Interrupting a MySQL statement sends `KILL QUERY` over a one-off connection and waits for
+  the statement to stop, so the connection, and any transaction on it, goes on, as
+  `@effect/sql-mysql2` does. The connection is closed and `KILL`ed only if the statement
+  hasn't stopped within five seconds.
+- Where Effect writes JSON with `JSON.stringify` (MCP tool results, request bodies, protocol
+  frames), pyfect writes a `Redacted` value as `<redacted>`, as its `toJSON` does in Effect;
+  it raised `TypeError`. An MCP declared failure
+  without a message with a `Redacted` field is now sent with `"<redacted>"` there instead of
+  as an internal error.
 
 ## 0.2.0 (2026-11-09)
 

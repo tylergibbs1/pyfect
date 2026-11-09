@@ -179,3 +179,30 @@ def test_a_kill_that_cannot_be_sent_is_reported(
             fx.provide(mysql.layer(mysql.MysqlClientConfig(url=url)))
         )
     assert any("KILL" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.parametrize("disable_prepared", [False, True], ids=["prepared", "text"])
+@testing.live(timeout="30 seconds")
+def test_an_interrupted_statement_keeps_its_connection(
+    mysql_server: MysqlServer, disable_prepared: bool
+):
+    """asql_mysql_interrupt_kills_connection: as @effect/sql-mysql2 4.1.2's
+    ``ActiveStatement.cancel``, an interrupt sends ``KILL QUERY`` over a one-off connection
+    and waits for the statement to settle, so the pooled connection serves the next one."""
+    sql_text, marker = _marked("SELECT SLEEP(30) AS {}")
+
+    def body():
+        sql = yield from mysql.MysqlClient()
+        [before] = yield from sql("SELECT CONNECTION_ID() AS id")
+        fiber = yield from sql.unsafe(sql_text).fork()
+        yield from until_running(lambda: _running(marker))
+        started = time.monotonic()
+        yield from fiber.interrupt()
+        assert time.monotonic() - started < 5
+        assert _running(marker) == []
+        [after] = yield from sql("SELECT CONNECTION_ID() AS id").timeout("5 seconds")
+        assert after["id"] == before["id"]
+
+    yield from _with_client(
+        mysql_server, body, max_connections=1, disable_prepared_statements=disable_prepared
+    )

@@ -19,10 +19,18 @@ _READ_SIZE = 64 * 1024
 _LINE_LIMIT = 4096
 _TRAILERS_LIMIT = 16 * 1024
 """The most bytes of trailer lines, as the head's limit."""
-_CHUNK_SIZE = re.compile(rb"([0-9A-Fa-f]{1,16})[ \t]*(?:;[\t\x20-\x7e\x80-\xff]*)?\Z")
-"""A chunk size and its extensions, which hold no CR, NUL or other control
-character (a parser that ends a line at a bare CR would read another
-message)."""
+_TCHAR = rb"[!#$%&'*+\-.^_`|~0-9A-Za-z]"
+_QUOTED = rb'"(?:[\t \x21\x23-\x5b\x5d-\x7e\x80-\xff]|\\[\t\x20-\x7e\x80-\xff])*"'
+_CHUNK_SIZE = re.compile(
+    rb"([0-9A-Fa-f]+)(?:;" + _TCHAR + rb"+(?:=(?:" + _TCHAR + rb"*|" + _QUOTED + rb"))?)*\Z"
+)
+"""A chunk size and its extensions as Node's ``llhttp`` reads them: RFC
+9112's ``chunk-ext`` with no whitespace, a token name and an optional
+token (possibly empty) or quoted-string value. Anything else, a control
+character above all (a parser that ends a line at a bare CR would read
+another message), fails the body."""
+_MAX_CHUNK_SIZE = 2**64 - 1
+"""``llhttp`` refuses a size that overflows 64 bits."""
 
 
 class BodyError(Exception):
@@ -110,9 +118,10 @@ class BodyReader:
 
     def _took_size(self, line: bytes | None) -> Effect[bytes, BodyError]:
         match = None if line is None else _CHUNK_SIZE.match(line)
-        if match is None:
+        size = None if match is None else int(match[1], 16)
+        if size is None or size > _MAX_CHUNK_SIZE:
             return self._fail("invalid chunk size").as_(b"")
-        self._left = int(match[1], 16)
+        self._left = size
         self._state = "data" if self._left else "trailers"
         return succeed(b"")
 

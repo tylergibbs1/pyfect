@@ -18,6 +18,8 @@ adds a route. A path matches `:name` segments and `*` wildcards; `router.params`
 matched values, and `router.schema_path_params`, `schema_params` and `schema_json` decode the
 path, the query and the JSON body with a [schema](/docs/schema). A request that matches no
 route gets a 404, and a handler that fails gets a 500 unless it handles the error itself.
+As in Effect, two failures answer otherwise: a `SchemaError` (a request that doesn't decode)
+gets an empty 400 and a `NoSuchElementException` an empty 404.
 
 <CodeOutput>
 

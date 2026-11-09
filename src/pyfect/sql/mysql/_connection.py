@@ -1,6 +1,7 @@
 """The ``Connection`` of a MySQL session (the ``ConnectionImpl`` of Effect's
 ``MysqlClient``): its statements run on the SQL loop thread, so no fiber
-blocks, and interrupting one cuts it short (the session is then replaced).
+blocks, and interrupting one ends it on the server with ``KILL QUERY`` (the
+session goes on; see ``Session.stop``).
 
 ``execute`` and its kin run prepared unless the client disables prepared
 statements; the ``unprepared`` ones and streams always go as text.

@@ -43,7 +43,10 @@ PostgreSQL or easy to miss:
 `sql.listen(channel)` runs `LISTEN` and succeeds once PostgreSQL has confirmed it. It gives a
 `Dequeue[Notification, SqlError]` with every notification sent on the channel after that.
 The listener holds its own session until its `Scope` closes, so `listen` needs a `Scope`:
-here `fx.scoped` around the program. If the session fails, the queue fails with the
+here `fx.scoped` around the program. Keep that scope inside the client's layer
+(`fx.scoped(program).pipe(fx.provide(layer))`): closing the layer waits for the pool's
+sessions to come back, so with the scope outside it
+(`fx.scoped(program.pipe(fx.provide(layer)))`) the program never ends, as in Effect. If the session fails, the queue fails with the
 session's error. If more than `capacity` notifications (default 1024) are left untaken, the
 queue fails with an error saying the listener fell behind.
 

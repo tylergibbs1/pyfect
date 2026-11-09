@@ -33,7 +33,8 @@ fails on a payload whose layout differs). `router.serve` passes the layer's need
 
 `rpc_server.layer_protocol_stdio` serves a group over standard input and output, for a
 program another one starts: `rpc_server.layer(Group)` over it, launched, ends once input has
-ended and the last response is written.
+ended and the last response is written. As in Effect, the end interrupts the fiber that built
+the layer, so under `run_main` the program exits with status 130, not 0.
 
 `rpc_client.make(Group)` is the client, over the `ClientProtocol` in the context:
 `layer_protocol_http(url)` sends calls as POSTs, and `layer_protocol_socket()` over the
@@ -79,11 +80,14 @@ current user.
   `AllowedOrigins` lists it.
 - Headers the transport carries, such as those of the HTTP request or the WebSocket
   upgrade, win over headers of the same name inside a message, so a client cannot claim a
-  header that a proxy or gateway set. A message's headers must be string pairs or an object
-  of strings; any other shape fails only that request.
-- The client checks every message from the server before routing it, so a malformed or
-  forged message fails the waiting call with an `RpcClientError` and the connection keeps
-  working. Closing a client's scope sends an Interrupt for each call still running and drops
+  header that a proxy or gateway set. A message's headers must be string pairs; any other
+  shape fails only that request. An object of strings is read only on a transport that
+  carries no headers of its own (standard input and output, workers): over HTTP or a
+  WebSocket the transport's pairs come first, as in Effect, and an object can't follow them.
+- The client checks every message from the server before routing it, so a frame that isn't
+  a message fails the waiting call with an `RpcClientError` and the connection keeps
+  working. An `Exit` that doesn't decode with the procedure's schemas is a defect of the
+  call holding the `SchemaError`, as in Effect. Closing a client's scope sends an Interrupt for each call still running and drops
   late replies for it.
 
 ## Testing handlers

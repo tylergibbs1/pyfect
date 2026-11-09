@@ -260,10 +260,11 @@ def test_a_chunk_extension_with_a_control_character_fails_the_body(extension: by
     assert [r.status for r in parse_responses(run_live(served))] == [400]
 
 
-def test_a_chunk_extension_is_read() -> None:
+def _chunked_status(size_line: bytes) -> list[tuple[int, bytes]]:
     data = (
         b"POST /x HTTP/1.1\r\nHost: a\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
-        b'1 ;name="v a" ; flag\r\na\r\n0\r\n\r\n'
+        + size_line
+        + b"\r\na\r\n0\r\n\r\n"
     )
 
     def program() -> Any:
@@ -272,4 +273,66 @@ def test_a_chunk_extension_is_read() -> None:
 
     app = router.add("POST", "/x", HttpServerRequest().flat_map(_read_body))
     served = effect.gen(program).pipe(fx.provide(router.serve(app, disable_logger=True)))
-    assert [(r.status, r.body) for r in parse_responses(run_live(served))] == [(200, b"a")]
+    return [(r.status, r.body) for r in parse_responses(run_live(served))]
+
+
+# Node 24's llhttp on each size line (ahttp_live_chunk_extensions): RFC 9112's chunk-ext with
+# no whitespace, a token name, and an optional token (possibly empty) or quoted-string value.
+_NODE_ACCEPTS = [
+    b"1",
+    b"1;a",
+    b"1;a=b",
+    b'1;a="b c"',
+    b'1;a="b\\"c"',
+    b"1;a;b=c",
+    b"1;a=",
+    b"1;a=;b",
+    b'1;a=""',
+    b'1;a="x\ty"',
+    b'1;a="\x80"',
+    b'1;a="b\\\x80"',
+    b'1;a="b\\\t"',
+    b"1;a!#$%&'*+-.^_`|~=b",
+    b'1;a="b";c',
+    b"1;a=b;c=d;e",
+    b"01",
+    b"00000000000000000000000000001",
+]
+_NODE_REFUSES = [
+    b"1;a b",
+    b'1;a="open',
+    b"1;a=b=c",
+    b"1;;",
+    b"1 ",
+    b"1;",
+    b"1\t",
+    b"1 ;a",
+    b"1; a",
+    b"1;a =b",
+    b"1;a= b",
+    b"1;a=b ",
+    b"1;a=b;",
+    b'1;a="b"c',
+    b'1;a="b" ',
+    b'1;a="b\\"',
+    b'1;a="\x7f"',
+    b'1;a="\x01"',
+    b'1;a="b\\\x01"',
+    b'1;a="x\\\x7fy"',
+    b"1;a=b\x7f",
+    b"1;\x80a",
+    b"1;a=\x80",
+    b"1;a=,",
+    b"1;a\t=b",
+    b"10000000000000000",
+]
+
+
+@pytest.mark.parametrize("size_line", _NODE_ACCEPTS)
+def test_a_chunk_size_line_node_accepts_is_read(size_line: bytes) -> None:
+    assert _chunked_status(size_line) == [(200, b"a")]
+
+
+@pytest.mark.parametrize("size_line", _NODE_REFUSES)
+def test_a_chunk_size_line_node_refuses_is_a_400(size_line: bytes) -> None:
+    assert [status for status, _ in _chunked_status(size_line)] == [400]
