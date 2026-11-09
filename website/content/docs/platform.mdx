@@ -26,6 +26,12 @@ removed, with everything in it, when its scope closes.
 
 </CodeOutput>
 
+`Path` joins, resolves and splits paths with the rules of Node's `path` module:
+`path.posix` and `path.win32` give what Node's `path.posix` and `path.win32` give, on any host
+(checked against every case in Node's own path tests), so `path.layer_win32` runs a program
+under Windows path rules on macOS or Linux. `resolve` on Windows rules uses the drive's own
+working directory (the `=C:` variable), as Node does.
+
 These programs run with `fx.run_main` rather than `run_blocking`, which only takes effects that
 cannot fail: `run_main` logs a failure and exits the process with a nonzero status.
 

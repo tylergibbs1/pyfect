@@ -19,8 +19,8 @@ from pathlib import Path as FsPath
 from typing import cast
 
 import pyfect as fx
+from pyfect import _path_win32, testing
 from pyfect import path as fx_path
-from pyfect import testing
 from pyfect.file_system import FileSystem, NoopFileSystem
 from pyfect.path import Path, PathService
 from pyfect.sql import migrator
@@ -42,7 +42,7 @@ class _RecordingPath(PathService):
     was joined (Effect's test overrides ``join`` and ``toFileUrl``)."""
 
     def __init__(self) -> None:
-        super().__init__(fx_path.win32._m, windows=True)
+        super().__init__(_path_win32, windows=True)
         self.joined: list[str] = []
 
     def join(self, *paths: str) -> str:

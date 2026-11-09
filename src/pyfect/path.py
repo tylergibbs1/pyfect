@@ -7,22 +7,20 @@ can be run against another platform's rules (``layer_posix``,
     p = yield from Path()
     config = p.join(home, ".config", "app.toml")
 
-``posix`` follows Node's ``path.posix``, as Effect does (``join("/a", "/b")``
-is ``"/a/b"``, ``dirname("/a/b/")`` is ``"/a"``, ``relative`` of a path to
-itself is ``""``). ``win32`` is ``ntpath``.
+``posix`` and ``win32`` follow Node's ``path.posix`` and ``path.win32``, as
+Effect does (``join("/a", "/b")`` is ``"/a/b"``, ``dirname("/a/b/")`` is
+``"/a"``, ``relative`` of a path to itself is ``""``), on any host.
 """
 
 from __future__ import annotations
 
-import ntpath
 import os
-import posixpath
 import re
 import urllib.parse
 from dataclasses import dataclass
 from typing import Never, Protocol
 
-from pyfect import _path_posix
+from pyfect import _path_posix, _path_win32
 from pyfect._core import Effect
 from pyfect.context import Tag
 from pyfect.effect import fail, succeed
@@ -31,20 +29,23 @@ from pyfect.layer import succeed as layer_succeed
 from pyfect.platform_error import BadArgument
 
 
-class _PathModule(Protocol):
-    """The part of ``posixpath`` / ``ntpath`` the service uses."""
+class _Rules(Protocol):
+    """One platform's path rules (``_path_posix``, ``_path_win32``): Node's ``path.posix`` or
+    ``path.win32``."""
 
-    @property
-    def sep(self) -> str: ...
-    def basename(self, p: str, /) -> str: ...
-    def dirname(self, p: str, /) -> str: ...
-    def splitext(self, p: str, /) -> tuple[str, str]: ...
-    def splitroot(self, p: str, /) -> tuple[str, str, str]: ...
-    def isabs(self, s: str, /) -> bool: ...
-    def join(self, a: str, /, *paths: str) -> str: ...
-    def normpath(self, path: str, /) -> str: ...
-    def relpath(self, path: str, start: str | None = None) -> str: ...
-    def abspath(self, path: str, /) -> str: ...
+    sep: str
+    delimiter: str
+
+    def basename(self, path: str, suffix: str = "", /) -> str: ...
+    def dirname(self, path: str, /) -> str: ...
+    def extname(self, path: str, /) -> str: ...
+    def is_absolute(self, path: str, /) -> bool: ...
+    def join(self, *paths: str) -> str: ...
+    def normalize(self, path: str, /) -> str: ...
+    def parse(self, path: str, /) -> tuple[str, str, str, str, str]: ...
+    def relative(self, from_: str, to: str, /) -> str: ...
+    def resolve(self, *segments: str) -> str: ...
+    def to_namespaced_path(self, path: str, /) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,41 +69,43 @@ _URL_SAFE = "/!$&'()*+,;=:@-._~"
 
 
 class PathService:
-    """``Path`` over one ``os.path`` module (``posixpath`` or ``ntpath``)."""
+    """``Path`` over one platform's rules."""
 
-    __slots__ = ("_m", "_windows")
+    __slots__ = ("_rules", "_windows")
 
-    def __init__(self, module: _PathModule, *, windows: bool) -> None:
-        self._m = module
+    def __init__(self, rules: _Rules, *, windows: bool) -> None:
+        self._rules = rules
         self._windows = windows
 
     @property
     def sep(self) -> str:
-        return self._m.sep
+        return self._rules.sep
+
+    @property
+    def delimiter(self) -> str:
+        """What separates paths in a list such as ``PATH`` (``:``, or ``;`` on Windows)."""
+        return self._rules.delimiter
 
     def basename(self, path: str, suffix: str = "") -> str:
         """The last part of ``path``, without ``suffix`` when it ends with
         it (and is more than it)."""
-        base = self._m.basename(path)
-        if suffix and base.endswith(suffix) and base != suffix:
-            return base[: -len(suffix)]
-        return base
+        return self._rules.basename(path, suffix)
 
     def dirname(self, path: str) -> str:
-        return self._m.dirname(path)
+        return self._rules.dirname(path)
 
     def extname(self, path: str) -> str:
         """The extension of the last part, dot included (``""`` for
         ``.bashrc``)."""
-        return self._m.splitext(path)[1]
+        return self._rules.extname(path)
 
     def format(
         self, *, root: str = "", dir: str = "", base: str = "", name: str = "", ext: str = ""
     ) -> str:
         """Node's ``path.format``: ``dir`` (else ``root``), then ``base``
-        (else ``name + ext``)."""
+        (else ``name`` and ``ext``, which gets a dot if it has none)."""
         directory = dir or root
-        last = base or name + ext
+        last = base or name + (ext if not ext or ext[0] == "." else "." + ext)
         if not directory:
             return last
         if directory == root:
@@ -133,32 +136,26 @@ class PathService:
         return succeed(_windows_path(host, decoded) if self._windows else decoded)
 
     def is_absolute(self, path: str) -> bool:
-        return self._m.isabs(path)
+        return self._rules.is_absolute(path)
 
     def join(self, *paths: str) -> str:
-        return self._m.join(*paths) if paths else "."
+        return self._rules.join(*paths)
 
     def normalize(self, path: str) -> str:
-        return self._m.normpath(path)
+        return self._rules.normalize(path)
 
     def parse(self, path: str) -> Parsed:
-        drive, root, _tail = self._m.splitroot(path)
-        base = self._m.basename(path)
-        name, ext = self._m.splitext(base)
-        return Parsed(root=drive + root, dir=self._m.dirname(path), base=base, ext=ext, name=name)
+        return Parsed(*self._rules.parse(path))
 
     def relative(self, from_: str, to: str) -> str:
-        """The path from ``from_`` to ``to`` (``os.path.relpath``); ``to``
-        made absolute when no relative path leads there (another drive)."""
-        try:
-            return self._m.relpath(to, from_)
-        except ValueError:
-            return self._m.abspath(to)
+        """The path from ``from_`` to ``to``, both resolved first; ``to``
+        resolved when no relative path leads there (another drive)."""
+        return self._rules.relative(from_, to)
 
     def resolve(self, *segments: str) -> str:
         """The absolute path ``segments`` lead to from the working
         directory."""
-        return self._m.abspath(self._m.join("", *segments))
+        return self._rules.resolve(*segments)
 
     def resolve_within(self, root: str, input: str) -> str | None:
         """``input`` resolved below ``root``, or ``None`` when it is rooted
@@ -187,16 +184,7 @@ class PathService:
 
     def to_namespaced_path(self, path: str) -> str:
         """Windows' ``\\\\?\\`` form of an absolute path; on POSIX, ``path``."""
-        if not self._windows or not path:
-            return path
-        resolved = self.resolve(path)
-        if resolved.startswith("\\\\?\\"):
-            return resolved
-        if resolved.startswith("\\\\"):
-            return "\\\\?\\UNC\\" + resolved[2:]
-        if re.match(r"[A-Za-z]:\\", resolved):
-            return "\\\\?\\" + resolved
-        return path
+        return self._rules.to_namespaced_path(path)
 
 
 _SINGLE_DOT = frozenset((".", "%2e"))
@@ -249,42 +237,11 @@ class Path(Tag[PathService]):
     """The path rules a program uses."""
 
 
-class _NodePosix(PathService):
-    """The operations whose results differ between Node and ``posixpath``."""
-
-    __slots__ = ()
-
-    def basename(self, path: str, suffix: str = "") -> str:
-        return _path_posix.basename(path, suffix)
-
-    def dirname(self, path: str) -> str:
-        return _path_posix.dirname(path)
-
-    def extname(self, path: str) -> str:
-        return _path_posix.extname(path)
-
-    def join(self, *paths: str) -> str:
-        return _path_posix.join(*paths)
-
-    def normalize(self, path: str) -> str:
-        return _path_posix.normalize(path)
-
-    def parse(self, path: str) -> Parsed:
-        root, directory, base, ext, name = _path_posix.parse(path)
-        return Parsed(root=root, dir=directory, base=base, ext=ext, name=name)
-
-    def relative(self, from_: str, to: str) -> str:
-        return _path_posix.relative(from_, to)
-
-    def resolve(self, *segments: str) -> str:
-        return _path_posix.resolve(*segments)
-
-
-posix: PathService = _NodePosix(posixpath, windows=False)
+posix = PathService(_path_posix, windows=False)
 """POSIX rules (Node's ``path.posix``)."""
 
-win32 = PathService(ntpath, windows=True)
-"""Windows rules (``ntpath``)."""
+win32 = PathService(_path_win32, windows=True)
+"""Windows rules (Node's ``path.win32``), the same on any host."""
 
 layer_posix: Layer[Path] = layer_succeed(Path, posix)
 layer_win32: Layer[Path] = layer_succeed(Path, win32)

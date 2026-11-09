@@ -53,4 +53,10 @@ cluster, see [cron jobs](/docs/cluster#singletons-and-cron-jobs).
 
 </CodeOutput>
 
+A zone is named the way `Intl` names it in Node, which is how Effect's `DateTime` names it:
+with ICU's canonical id, read from ICU 78.3 (Node 24.22.1). ICU keeps the older name of a
+renamed zone, so `date_time.zone_named("Asia/Kolkata")` is `Asia/Calcutta`, `EST` is
+`America/Panama`, `Etc/UTC` is `UTC` and `+0530` is `+05:30`; an id ICU doesn't know gives
+`None`.
+
 Reference: [`pyfect.schedule`](/docs/reference/schedule), [`pyfect.cron`](/docs/reference/cron).

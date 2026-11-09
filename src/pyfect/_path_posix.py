@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import os
 
+sep = "/"
+delimiter = ":"
+
 
 def _segments(path: str, *, above_root: bool) -> str:
     out: list[str] = []
@@ -39,14 +42,20 @@ def join(*paths: str) -> str:
 
 def resolve(*segments: str) -> str:
     resolved = ""
+    absolute = False
     for segment in reversed(segments):
         if segment:
             resolved = f"{segment}/{resolved}"
-            if segment[0] == "/":
+            absolute = segment[0] == "/"
+            if absolute:
                 break
-    else:
-        resolved = f"{os.getcwd()}/{resolved}"
-    return "/" + _segments(resolved, above_root=False)
+    if not absolute:
+        # Node keeps a relative result when the working directory isn't absolute.
+        cwd = os.getcwd()
+        resolved = f"{cwd}/{resolved}"
+        absolute = cwd.startswith("/")
+    body = _segments(resolved, above_root=not absolute)
+    return "/" + body if absolute else body or "."
 
 
 def relative(from_: str, to: str) -> str:
@@ -127,3 +136,11 @@ def parse(path: str) -> tuple[str, str, str, str, str]:
             name, ext = path[begin:start_dot], path[start_dot:end]
     directory = path[: start_part - 1] if start_part > 0 else "/" if absolute else ""
     return "/" if absolute else "", directory, base, ext, name
+
+
+def is_absolute(path: str) -> bool:
+    return path.startswith("/")
+
+
+def to_namespaced_path(path: str) -> str:
+    return path
