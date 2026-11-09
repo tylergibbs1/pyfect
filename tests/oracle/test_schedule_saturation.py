@@ -63,10 +63,11 @@ def test_exponential_with_a_huge_factor_becomes_infinite():
 
 
 def test_fibonacci_delay_becomes_infinite():
-    """Effect: fibonacci(1s) is first Duration.infinity at index 1461."""
+    """Effect 4.1.2: fibonacci(1s) is first Duration.infinity at index 1462
+    (4.0.6, which skipped the second delay of 1s, at 1461)."""
     delays = delays_after(schedule.fibonacci("1 second"), None, 1_500)
-    assert math.isfinite(delays[1_460])
-    assert delays[1_461:] == [math.inf] * (1_500 - 1_461)
+    assert math.isfinite(delays[1_461])
+    assert delays[1_462:] == [math.inf] * (1_500 - 1_462)
 
 
 def test_min_with_spaced_keeps_the_finite_side():
