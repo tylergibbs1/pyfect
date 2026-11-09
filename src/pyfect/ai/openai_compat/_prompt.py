@@ -185,7 +185,6 @@ def prepare_messages(
             case Pr.ToolMessage():
                 for part in message.content:
                     if isinstance(part, Pr.ToolResultPart):
-                        result = part.result
-                        text = result if isinstance(result, str) else P.dumps(result)
+                        text = P.tool_result_text(part)
                         messages.append({"role": "tool", "tool_call_id": part.id, "content": text})
     return messages

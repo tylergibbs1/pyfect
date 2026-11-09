@@ -40,13 +40,35 @@ class NoulQuestion(TypedDict):
     criteria: NotRequired[NoulCriteria]
 
 
-type Question = ChoiceQuestion | ScoreQuestion | NoulQuestion
+class BoxQuestion(TypedDict):
+    """Finds where something is in an image; needs Jev 1.14 and the
+    ``TypeSafe-Danger-Zone-Images: true`` header."""
+
+    type: Literal["box"]
+    instructions: Entry
+
+
+type Question = ChoiceQuestion | ScoreQuestion | NoulQuestion | BoxQuestion
+
+
+class ImageAsset(TypedDict):
+    """A base64 PNG or JPEG image: the standard alphabet with ``=``
+    padding, no whitespace and no ``data:`` prefix."""
+
+    type: NotRequired[Literal["image"]]
+    format: Literal["png", "jpg", "jpeg"]
+    data_base64: str
 
 
 class SystemOneRequest(TypedDict):
+    """A batch of questions against encoded state. ``assets`` maps
+    placeholder strings to images; the model sees each image wherever its
+    placeholder appears in ``state``, instructions or criteria."""
+
     model: str
     state: JsonValue
     questions: Mapping[str, Question]
+    assets: NotRequired[Mapping[str, ImageAsset]]
 
 
 class ChoiceAnswer(TypedDict):
@@ -70,7 +92,23 @@ class NoulAnswer(TypedDict):
     noul: float
 
 
-type Answer = ChoiceAnswer | ScoreAnswer | NoulAnswer
+class Box(TypedDict):
+    top: float
+    bottom: float
+    left: float
+    right: float
+
+
+class BoxAnswer(TypedDict):
+    """A bounding box whose edges are fractions of the image's width and
+    height."""
+
+    type: Literal["box"]
+    box: Box
+    confidence: float
+
+
+type Answer = ChoiceAnswer | ScoreAnswer | NoulAnswer | BoxAnswer
 
 
 class Usage(TypedDict):
@@ -99,21 +137,31 @@ _CRITERIA = S.Struct(NoulCriteria, false=ENTRY, true=ENTRY)
 CHOICE_QUESTION = S.Struct(ChoiceQuestion, instructions=ENTRY, criteria=S.Record(S.String, ENTRY))
 SCORE_QUESTION = S.Struct(ScoreQuestion, instructions=ENTRY, criteria=S.Array(ENTRY))
 NOUL_QUESTION = S.Struct(NoulQuestion, instructions=ENTRY, criteria=_CRITERIA)
-QUESTION = S.Union(CHOICE_QUESTION, SCORE_QUESTION, NOUL_QUESTION)
-SYSTEM_ONE_REQUEST = S.Struct(SystemOneRequest, questions=S.Record(S.String, QUESTION))
+BOX_QUESTION = S.Struct(BoxQuestion, instructions=ENTRY)
+QUESTION = S.Union(CHOICE_QUESTION, SCORE_QUESTION, NOUL_QUESTION, BOX_QUESTION)
+IMAGE_ASSET = S.Struct(ImageAsset)
+SYSTEM_ONE_REQUEST = S.Struct(
+    SystemOneRequest,
+    questions=S.Record(S.String, QUESTION),
+    assets=S.Record(S.String, IMAGE_ASSET),
+)
 CHOICE_ANSWER = S.Struct(ChoiceAnswer)
 SCORE_ANSWER = S.Struct(ScoreAnswer)
 NOUL_ANSWER = S.Struct(NoulAnswer)
-ANSWER = S.Union(CHOICE_ANSWER, SCORE_ANSWER, NOUL_ANSWER)
+BOX_ANSWER = S.Struct(BoxAnswer)
+ANSWER = S.Union(CHOICE_ANSWER, SCORE_ANSWER, NOUL_ANSWER, BOX_ANSWER)
 SYSTEM_ONE_RESPONSE = S.Struct(SystemOneResponse, answers=S.Record(S.String, ANSWER))
 LIST_MODELS_RESPONSE = S.Struct(ListModelsResponse)
 
 
 __all__ = [
     "ANSWER",
+    "BOX_ANSWER",
+    "BOX_QUESTION",
     "CHOICE_ANSWER",
     "CHOICE_QUESTION",
     "ENTRY",
+    "IMAGE_ASSET",
     "LIST_MODELS_RESPONSE",
     "NOUL_ANSWER",
     "NOUL_QUESTION",
@@ -123,9 +171,13 @@ __all__ = [
     "SYSTEM_ONE_REQUEST",
     "SYSTEM_ONE_RESPONSE",
     "Answer",
+    "Box",
+    "BoxAnswer",
+    "BoxQuestion",
     "ChoiceAnswer",
     "ChoiceQuestion",
     "Entry",
+    "ImageAsset",
     "ListModelsResponse",
     "ModelInfo",
     "NoulAnswer",

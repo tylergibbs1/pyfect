@@ -645,6 +645,42 @@ def test_pdf_urls():
     ]
 
 
+@pytest.mark.parametrize(
+    ("data", "content"),
+    [
+        pytest.param(
+            "JVBERi0xLjcK",
+            {
+                "type": "input_file",
+                "filename": "part-0.pdf",
+                "file_data": "data:application/pdf;base64,JVBERi0xLjcK",
+            },
+            id="base64",
+        ),
+        pytest.param(
+            "data:application/pdf;base64,JVBERi0xLjcK",
+            {
+                "type": "input_file",
+                "filename": "part-0.pdf",
+                "file_data": "data:application/pdf;base64,JVBERi0xLjcK",
+            },
+            id="data URL",
+        ),
+        pytest.param(
+            "https://example.com/document.pdf",
+            {"type": "input_file", "file_url": "https://example.com/document.pdf"},
+            id="HTTPS URL",
+        ),
+    ],
+)
+@testing.effect
+def test_pdf_strings(data: str, content: dict[str, Any]):
+    """generateText / message preparation / user messages / handles PDF base64 / data URL /
+    HTTPS URL strings"""
+    body = yield from _generate(_files(Pr.FilePart(media_type="application/pdf", data=data)))
+    assert _user_content(body) == [content]
+
+
 @testing.effect
 def test_pdf_bytes():
     """generateText / message preparation / user messages / handles PDF base64 data with filename"""
@@ -1020,6 +1056,43 @@ def test_string_tool_results():
     )
     output = next(m for m in body["input"] if m.get("type") == "function_call_output")
     assert output["output"] == "PLAIN_TEXT_SENTINEL\n"
+
+
+_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII="
+)
+
+
+@pytest.mark.parametrize(
+    ("model_output", "output"),
+    [
+        pytest.param(
+            [
+                {"type": "text", "text": "Screenshot"},
+                {"type": "file", "mediaType": "image/png", "data": _PNG},
+            ],
+            [
+                {"type": "input_text", "text": "Screenshot"},
+                {"type": "input_image", "image_url": f"data:image/png;base64,{_PNG}"},
+            ],
+            id="as native input items",
+        ),
+        pytest.param([], "", id="without the result when it is empty"),
+    ],
+)
+@testing.effect
+def test_tool_result_model_output(model_output: list[Any], output: Any):
+    """generateText / message preparation / tool messages / sends tool result model output as
+    native input items / without the result when it is empty"""
+    history = _tool_history("call_image", {"output": _PNG})
+    history[2]["content"][0]["modelOutput"] = model_output
+    body = yield from _with_tools(history, TestToolkit, TestToolkitLayer)
+    sent = next(m for m in body["input"] if m.get("type") == "function_call_output")
+    assert sent["call_id"] == "call_image"
+    items = sent["output"]
+    if isinstance(items, list):
+        items = [{k: v for k, v in item.items() if k != "detail"} for item in items]
+    assert items == output
 
 
 def _output_types(body: dict[str, Any], call_id: str) -> list[str]:

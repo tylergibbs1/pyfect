@@ -28,7 +28,7 @@ from pyfect.reactivity._hydration import should_hydrate
 from pyfect.reactivity._time import now_millis
 from pyfect.reactivity.atom_registry._batch import run_all
 from pyfect.reactivity.atom_registry._dispatcher import Dispatcher
-from pyfect.reactivity.atom_registry._node import REMOVED, Node
+from pyfect.reactivity.atom_registry._node import REMOVED, WAITING_FOR_VALUE, Node
 from pyfect.scheduler import Cancel, Scheduler
 
 if TYPE_CHECKING:
@@ -179,10 +179,16 @@ class AtomRegistryService:
         node = self.ensure_node(atom)
         if immediate:
             f(node.value())
-        elif node.current_state() == "stale":
-            # a listener hears the next change, which only reaches an
-            # up-to-date node
-            node.value()
+        else:
+            # Effect 4.1.2: build the node so the listener hears its next
+            # change. A failed build is left for the next read to report; an
+            # error raised after the value is committed has no later read to
+            # report it, so it is re-raised.
+            try:
+                node.value()
+            except Exception:
+                if not node.state & WAITING_FOR_VALUE:
+                    raise
         remove = node.subscribe(lambda: f(node._value))
 
         def cancel() -> None:

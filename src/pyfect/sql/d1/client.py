@@ -11,7 +11,9 @@ other)::
 As in Effect: ``batch`` runs statements in one request that D1 commits or
 rolls back as a whole; transactions are a defect (D1 has none across
 requests), as are streams; ``update_values`` is not supported; every
-failure is an ``UnknownError``.
+failure is an ``UnknownError``. ``pyfect.sql.migrator`` runs its migrations
+in a transaction, so it dies on D1 too; apply D1 migrations with Cloudflare's
+own tooling (``wrangler d1 migrations apply``).
 """
 # pyright: reportPrivateUsage=false
 

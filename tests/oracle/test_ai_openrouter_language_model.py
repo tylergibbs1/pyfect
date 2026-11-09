@@ -286,6 +286,49 @@ def test_string_tool_results():
     assert tool_result["content"] == "PLAIN_TEXT_SENTINEL\n"
 
 
+_MODEL_OUTPUT_CASES = [
+    pytest.param(
+        [
+            {"type": "text", "text": "Screenshot"},
+            {
+                "type": "file",
+                "mediaType": "image/png",
+                "fileName": "screenshot.png",
+                "data": "iVBORw0KGgo=",
+            },
+        ],
+        "Screenshot\n[image/png screenshot.png omitted]",
+        id="as text with file placeholders",
+    ),
+    pytest.param([], "", id="as an empty string when it is empty"),
+]
+
+
+@pytest.mark.parametrize(("model_output", "content"), _MODEL_OUTPUT_CASES)
+@testing.effect
+def test_tool_result_model_output(model_output: list[Any], content: str):
+    """OpenRouterLanguageModel / generateText / message preparation / sends tool result model
+    output as text with file placeholders / as an empty string when it is empty"""
+    result = Pr.ToolResultPart(
+        id="call_image",
+        name="image_tool",
+        result={"output": "APPLICATION_ONLY"},
+        is_failure=False,
+        model_output=tuple(S.decode_unknown_sync(S.Array(Pr.TOOL_MODEL_OUTPUT_PART))(model_output)),
+    )
+    messages = yield from _messages(
+        [
+            Pr.UserMessage(content=[Pr.TextPart(text="Use the tool")]),
+            Pr.AssistantMessage(
+                content=[Pr.ToolCallPart(id="call_image", name="image_tool", params={})]
+            ),
+            Pr.ToolMessage(content=[result]),
+        ]
+    )
+    tool_result = next(m for m in messages if m["role"] == "tool")
+    assert tool_result["content"] == content
+
+
 # generateText / message preparation / cache control --------------------------------------
 
 EPHEMERAL = {"type": "ephemeral"}

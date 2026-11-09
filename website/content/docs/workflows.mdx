@@ -69,8 +69,11 @@ produced. Compensations run once, in reverse order, after the failure; a replay 
 add them twice. Only top-level steps are compensated, not effects inside an activity. In
 `orders.py`, the rejected order is refunded.
 
-`workflow.add_finalizer(f)` runs `f(exit)` once the execution completes, not each time a
-run suspends, and `durable_queue` hands work to [`PersistedQueue`](/docs/persistence) workers
+`workflow.add_finalizer(f)` runs `f(exit)` when the execution completes, not each time a
+run suspends. Each run that registered it runs it then, as in Effect: a workflow that
+suspended once and then finished calls `f` twice, the finishing run with the real exit and
+the earlier run with a successful `None` exit. Make finalizers safe to repeat, or act only
+on the exit you care about. `durable_queue` hands work to [`PersistedQueue`](/docs/persistence) workers
 and waits for their results. A worker killed while it holds a job stalls that job, and the
 workflow waiting on it, until the job's lock expires: 120 seconds by default with
 `persisted_queue.layer_store_sql` and 90 with `layer_store_redis`, as in Effect. Set it on the

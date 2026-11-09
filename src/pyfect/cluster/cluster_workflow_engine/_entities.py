@@ -30,7 +30,7 @@ from pyfect.schema import (
 )
 from pyfect.schema import Exit as ExitSchema
 from pyfect.schema._undefined import Undefined
-from pyfect.workflow.workflow import Workflow, result_schema
+from pyfect.workflow.workflow import Workflow, payload_fields, result_schema
 
 type AnyWorkflow = Workflow[Any, Any, Any]
 
@@ -180,19 +180,8 @@ class _RunPayloadShape:
         return dict[object, object](cast("RunPayload", instance).items())
 
 
-def _payload_fields(workflow: AnyWorkflow) -> ast.Objects:
-    node = workflow.payload_schema.__codec__().ast
-    if isinstance(node, ast.Objects) and node.encoding is None:
-        return node
-    if isinstance(node, ast.Class):
-        return node.shape.fields
-    raise TypeError(
-        f"the payload of the workflow {workflow.tag!r} must be a struct or a schema class"
-    )
-
-
 def run_payload_schema(workflow: AnyWorkflow) -> Bottom[RunPayload, Mapping[str, object]]:
-    node: Any = ast.Class(_RunPayloadShape(_payload_fields(workflow)))
+    node: Any = ast.Class(_RunPayloadShape(payload_fields(workflow.tag, workflow.payload_schema)))
     return Bottom(node)
 
 

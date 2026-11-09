@@ -15,7 +15,6 @@ Probabilities are rounded to two decimals, so their drift is accepted.
 
 from __future__ import annotations
 
-import base64
 from collections.abc import Mapping
 from typing import Literal, Never
 
@@ -40,7 +39,7 @@ def _text(description: D.Description | None) -> str:
     return description if isinstance(description, str) else P.dumps(description)
 
 
-def _question(name: str, decision: D.AnyDecision) -> W.DecisionQuestion:
+def _question(name: str, decision: D.NonLocateDecision) -> W.DecisionQuestion:
     instructions = _text(decision.instructions)
     match decision:
         case D.Classify():
@@ -74,8 +73,14 @@ def _image_url(image: DM.Image) -> str:
     data = image.data
     if isinstance(data, Url):
         return str(data)
-    encoded = data if isinstance(data, str) else base64.b64encode(data).decode()
-    return f"data:{image.media_type};base64,{encoded}"
+    return f"data:{image.media_type};base64,{data!s}"
+
+
+def _image_content(image: DM.ProviderImage) -> list[W.DecisionInputText | W.DecisionInputImage]:
+    return [
+        {"type": "input_text", "text": f"Image {image.reference}:"},
+        W.DecisionInputImage(type="input_image", image_url=_image_url(image.image)),
+    ]
 
 
 def _answers(
@@ -126,10 +131,12 @@ def make(*, model: Model | str) -> Effect[DM.Service, Never, OpenAiClient]:
     """A ``DecisionModel`` asking ``model`` through the ``OpenAiClient``."""
 
     def build(client: ClientService) -> Effect[DM.Service]:
-        def decide(options: DM.ProviderOptions) -> Effect[DM.ProviderResponse, E.AiError]:
+        def decide(
+            options: DM.ProviderOptions[D.NonLocateDecision],
+        ) -> Effect[DM.ProviderResponse, E.AiError]:
             images = options.images
             if images is not None and any(
-                isinstance(image.data, Url) and image.data.protocol != "data:" for image in images
+                isinstance(i.image.data, Url) and i.image.data.protocol != "data:" for i in images
             ):
                 return fx.fail(_remote_url_error())
             text = options.state if isinstance(options.state, str) else P.dumps(options.state)
@@ -142,10 +149,7 @@ def make(*, model: Model | str) -> Effect[DM.Service, Never, OpenAiClient]:
                         "role": "user",
                         "content": [
                             {"type": "input_text", "text": text},
-                            *(
-                                W.DecisionInputImage(type="input_image", image_url=_image_url(i))
-                                for i in images
-                            ),
+                            *(part for i in images for part in _image_content(i)),
                         ],
                     }
                 ],

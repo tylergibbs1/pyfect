@@ -225,7 +225,7 @@ def test_dehydrates_the_rest_of_the_registry_when_client_middleware_fails():
         protocol=_client_middleware_protocol(fail),
     )
     failed = client.query(ClientMiddlewareGroup.get_user, None, serialization_key="failed")
-    unaffected = atom.make(42).serializable(key="unaffected", schema=S.Number)
+    unaffected = atom.make(42).serializable(key="unaffected", schema=S.Int)
     registry = atom_registry.make()
     unmount_failed = registry.mount(failed)
     unmount_unaffected = registry.mount(unaffected)

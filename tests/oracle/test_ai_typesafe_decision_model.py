@@ -23,6 +23,7 @@ from pyfect.ai import decision_model as DM
 from pyfect.ai import model as M
 from pyfect.ai.typesafe import client
 from pyfect.ai.typesafe import decision_model as tdm
+from pyfect.http import url
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
 from pyfect.redacted import make as redact
@@ -591,3 +592,92 @@ def test_structured_descriptions():
     )
     assert result.answers[structured].label == "Critical"
     assert dict(result.answers[structured].probabilities) == {"Minor": 0.1, "Critical": 0.9}
+
+
+class Listing(TypedDict):
+    message: str
+    photo: DM.Image
+    gallery: list[DM.Image]
+
+
+present = D.probability(instructions="`photo` shows a coffee mug")
+mug = D.locate(image="photo", instructions="the coffee mug")
+FIND_MUG = D.make(
+    input=S.Struct(Listing, photo=D.Image, gallery=S.Array(D.Image)),
+    decisions={"present": present, "mug": mug},
+)
+
+
+@testing.effect
+def test_images_as_assets():
+    """TypeSafeDecisionModel / images / sends images as assets keyed by their state references
+    and maps box answers onto locate answers"""
+    value: Listing = {
+        "message": "Kitchen counter",
+        "photo": DM.Image("image/png", bytes([137, 80, 78, 71])),
+        "gallery": [
+            DM.Image("image/jpeg", "/9j/4AAQ"),
+            DM.Image(
+                "application/octet-stream",
+                url.parse("data:image/png;base64,iVBORw0KGgo%2B%2FA%3D%3D#preview"),
+            ),
+        ],
+    }
+    body = {
+        "model": "jev-1.14.0",
+        "answers": {
+            "present": {"type": "noul", "noul": 0.97},
+            "mug": {
+                "type": "box",
+                "box": {"top": 0.25, "bottom": 0.82, "left": 0.44, "right": 0.84},
+                "confidence": 0.92,
+            },
+        },
+        "usage": {"input_tokens": 290, "output_tokens": 21},
+    }
+    mock = answering(body)
+    result = yield from provided(
+        DM.decide(FIND_MUG, input=value), mock, tdm.layer(model="jev-preview")
+    )
+    assert result.answers[present] == D.ProbabilityAnswer(0.97)
+    assert result.answers[mug] == D.LocateAnswer(D.BoundingBox(0.44, 0.25, 0.84, 0.82), 0.92)
+    sent = body_json(mock.requests[0])
+    photo, jpeg, data_url = [sent["state"]["photo"], *sent["state"]["gallery"]]
+    assert sent == {
+        "model": "jev-preview",
+        "state": {"message": "Kitchen counter", "photo": photo, "gallery": [jpeg, data_url]},
+        "questions": {
+            "present": {"type": "noul", "instructions": "`photo` shows a coffee mug"},
+            "mug": {"type": "box", "instructions": "the coffee mug in `photo`"},
+        },
+        "assets": {
+            photo: {"type": "image", "format": "png", "data_base64": "iVBORw=="},
+            jpeg: {"type": "image", "format": "jpg", "data_base64": "/9j/4AAQ"},
+            data_url: {"type": "image", "format": "png", "data_base64": "iVBORw0KGgo+/A=="},
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        pytest.param(
+            DM.Image("image/png", url.parse("https://example.com/mug.png")), id="a remote URL"
+        ),
+        pytest.param(
+            DM.Image("image/png", url.parse("data:image/png,%89PNG")),
+            id="a data URL without base64",
+        ),
+        pytest.param(DM.Image("image/webp", "UklGRg=="), id="a WebP image"),
+    ],
+)
+@testing.effect
+def test_rejects_invalid_images(image: DM.Image):
+    """TypeSafeDecisionModel / images / rejects a remote URL / a data URL without base64 / a
+    WebP image with InvalidUserInputError before sending"""
+    mock = MockHttp(lambda _: fx.die(RuntimeError("Invalid images must not be sent")))
+    value: Listing = {"message": "", "photo": image, "gallery": []}
+    error = yield from provided(
+        DM.decide(FIND_MUG, input=value).flip(), mock, tdm.layer(model="jev-preview")
+    )
+    assert isinstance(error.reason, E.InvalidUserInputError)

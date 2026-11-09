@@ -66,6 +66,7 @@ def result_part(id: str, name: str, result: K.HandlerResult) -> R.AnyToolResultP
         result=result.result,
         encoded_result=result.encoded_result,
         preliminary=result.preliminary,
+        model_output=result.model_output,
     )
 
 

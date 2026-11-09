@@ -55,7 +55,11 @@ def url_string(data: Pr.FileData) -> str:
 
 
 def _base64(data: Pr.FileData) -> str:
-    return base64.b64encode(data).decode() if isinstance(data, bytes) else str(data)
+    """Base64 text, without a ``data:...;base64,`` prefix (Effect's
+    ``getBase64Data``)."""
+    if isinstance(data, bytes):
+        return base64.b64encode(data).decode()
+    return _DATA_URL.sub("", str(data), count=1)
 
 
 def citations_enabled(part: Pr.FilePart) -> bool:
@@ -109,11 +113,10 @@ def _image(part: Pr.FilePart, control: Any) -> Block:
     if is_url_data(part.data):
         source: Block = {"type": "url", "url": url_string(part.data)}
     else:
-        data = part.data
         source = {
             "type": "base64",
             "media_type": "image/jpeg" if part.media_type == "image/*" else part.media_type,
-            "data": _DATA_URL.sub("", data, count=1) if isinstance(data, str) else _base64(data),
+            "data": _base64(part.data),
         }
     return {"type": "image", "source": source, "cache_control": control}
 
@@ -161,6 +164,19 @@ def _file(part: Pr.FilePart, control: Any, betas: dict[str, None]) -> Block:
     )
 
 
+def _tool_result_content(
+    model_output: Sequence[Pr.ToolModelOutputPart], betas: dict[str, None]
+) -> str | list[Block]:
+    if not model_output:
+        return ""
+    return [
+        {"type": "text", "text": part.text, "cache_control": cache_control(part.options)}
+        if isinstance(part, Pr.TextPart)
+        else _file(part, cache_control(part.options), betas)
+        for part in model_output
+    ]
+
+
 def _user_content(message: Pr.Message, betas: dict[str, None]) -> list[Block]:
     content: list[Block] = []
     parts: Sequence[Any] = message.content if not isinstance(message, Pr.SystemMessage) else ()
@@ -176,7 +192,12 @@ def _user_content(message: Pr.Message, betas: dict[str, None]) -> list[Block]:
             case Pr.FilePart():
                 content.append(_file(part, control, betas))
             case Pr.ToolResultPart():
-                result = part.result if isinstance(part.result, str) else P.dumps(part.result)
+                if part.model_output is not None:
+                    result = _tool_result_content(part.model_output, betas)
+                elif isinstance(part.result, str):
+                    result = part.result
+                else:
+                    result = P.dumps(part.result)
                 content.append(
                     {
                         "type": "tool_result",

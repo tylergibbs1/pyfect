@@ -5,6 +5,7 @@ entry of a mapping criteria."""
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Callable
 from typing import Any, TypedDict
@@ -194,19 +195,40 @@ def test_invalid_output(invalid: dict[str, Any]):
     assert isinstance(error.reason, E.InvalidOutputError)
 
 
+class Screenshot(TypedDict):
+    message: str
+    shots: list[DM.Image]
+
+
+class Photo(TypedDict):
+    photo: DM.Image
+
+
 @testing.effect
 def test_images():
-    """CloudflareDecisionModel / sends byte arrays, base64 strings, and data URLs as images"""
+    """CloudflareDecisionModel / sends byte arrays, base64 strings, and data URLs as images
+    listed by reference in the state"""
     data_url = "data:image/webp;base64,UklGRg=="
-    images = [
+    screenshots = D.make(
+        input=S.Struct(Screenshot, shots=S.Array(D.Image)), decisions=TRIAGE.decisions
+    )
+    shots = [
         DM.Image("image/png", bytes([137, 80, 78, 71])),
         DM.Image("image/jpeg", "/9j/4AAQ"),
         DM.Image("image/webp", url.parse(data_url)),
     ]
     mock = http(ANSWERS)
-    result = yield from provided(DM.decide(TRIAGE, input=INPUT, images=images), mock)
+    value: Screenshot = {**INPUT, "shots": shots}
+    result = yield from provided(DM.decide(screenshots, input=value), mock)
     assert result.answers[urgent].probability == 0.99
-    assert body_json(mock.requests[0])["images"] == [
+    body = body_json(mock.requests[0])
+    state: str = body["state"]
+    png, jpeg, webp = json.loads(state[state.index("{") :])["shots"]
+    assert state == (
+        f"Image 1: {png}\nImage 2: {jpeg}\nImage 3: {webp}\n\n"
+        + json.dumps({**INPUT, "shots": [png, jpeg, webp]}, separators=(",", ":"))
+    )
+    assert body["images"] == [
         {"content_type": "image/png", "base64": "iVBORw=="},
         {"content_type": "image/jpeg", "base64": "/9j/4AAQ"},
         data_url,
@@ -216,9 +238,10 @@ def test_images():
 @testing.effect
 def test_rejects_remote_urls():
     """CloudflareDecisionModel / rejects remote image URLs without sending a request"""
+    photo = D.make(input=S.Struct(Photo, photo=D.Image), decisions=TRIAGE.decisions)
     mock = http(ANSWERS)
-    images = [DM.Image("image/png", url.parse("https://example.com/cat.png"))]
-    error = yield from provided(DM.decide(TRIAGE, input=INPUT, images=images).flip(), mock)
+    value: Photo = {"photo": DM.Image("image/png", url.parse("https://example.com/cat.png"))}
+    error = yield from provided(DM.decide(photo, input=value).flip(), mock)
     assert isinstance(error.reason, E.InvalidUserInputError)
     assert mock.requests == []
 

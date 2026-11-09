@@ -10,7 +10,7 @@ Each test's docstring is the Effect test title (with its ``describe``).
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Literal, TypedDict
 
 import pytest
@@ -19,9 +19,12 @@ import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
 from pyfect.ai import ai_error as E
+from pyfect.ai import prompt as P
 from pyfect.ai import response as R
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
+from pyfect.encoding import schema_binary
+from pyfect.http import url
 
 
 def _json(value: object) -> Any:
@@ -329,3 +332,51 @@ def test_round_trips_finish_part():
         "usage": {"inputTokens": {}, "outputTokens": {}},
     }
     assert decoded == R.FinishPart(reason="stop", usage=R.Usage())
+
+
+class _City(TypedDict):
+    city: str
+
+
+class _Temperature(TypedDict):
+    temperature: float
+
+
+_WEATHER_TOOLKIT = K.make(
+    T.make("GetWeather", parameters=S.Struct(_City), success=S.Struct(_Temperature))
+)
+_TEXT = R.TextPart(text="hi")
+_SCREENSHOT_RESULT = R.tool_result_part(
+    id="call-1",
+    name="Screenshot",
+    is_failure=False,
+    result="done",
+    encoded_result="done",
+    model_output=(P.FilePart(media_type="image/png", data=url.parse("https://example.com/a.png")),),
+)
+
+
+@pytest.mark.parametrize(
+    ("make_schema", "value"),
+    [
+        pytest.param(R.all_parts, _TEXT, id="AllParts round trips a text part"),
+        pytest.param(R.part, _TEXT, id="Part round trips a text part"),
+        pytest.param(
+            R.stream_part,
+            R.TextDeltaPart(id="1", delta="hi"),
+            id="StreamPart round trips a text-delta part",
+        ),
+        pytest.param(
+            lambda: R.part(_WEATHER_TOOLKIT),
+            _TEXT,
+            id="Part with a toolkit round trips a text part",
+        ),
+        pytest.param(R.part, _SCREENSHOT_RESULT, id="Part round trips a tool-result part"),
+    ],
+)
+def test_binary_codecs(make_schema: Callable[[], S.Top], value: object):
+    """binary codecs / AllParts round trips a text part / Part round trips a text part /
+    StreamPart round trips a text-delta part / Part with a toolkit round trips a text part /
+    Part round trips a tool-result part"""
+    codec = schema_binary.to_codec(make_schema())
+    assert S.decode_unknown_sync(codec)(S.encode_unknown_sync(codec)(value)) == value

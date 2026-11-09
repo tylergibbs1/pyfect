@@ -372,3 +372,24 @@ def test_poll_gives_none_for_an_unknown_and_for_a_running_execution():
         assert (yield from _poll_until_suspended(wf, execution_id)) == Suspended()
 
     yield from fx.gen(program).pipe(_with_engine(wf.to_layer(handler)))
+
+
+@pytest.mark.parametrize(
+    "payload", [S.String, S.Int, S.Union(S.Struct(Empty), S.String)], ids=["String", "Int", "Union"]
+)
+def test_make_refuses_a_payload_that_is_not_a_struct_or_a_schema_class(payload: Any):
+    """Effect types ``Workflow.make``'s payload as ``Schema.Struct.Fields |
+    AnyStructSchema``; pyfect refuses any other schema at definition, where
+    the cluster engine used to die at run time (dogfood apps #9)."""
+    with pytest.raises(TypeError, match="must be a struct or a schema class"):
+        workflow.make("Plain", payload=payload, idempotency_key=str)
+
+
+def test_make_takes_a_checked_struct_and_a_schema_class():
+    class Order(S.Class):
+        id: str
+
+    workflow.make(
+        "Checked", payload=EMPTY.check(S.make_filter(lambda _: True)), idempotency_key=str
+    )
+    workflow.make("Cls", payload=Order, idempotency_key=lambda o: o.id)

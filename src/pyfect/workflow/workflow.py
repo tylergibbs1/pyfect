@@ -39,8 +39,19 @@ from pyfect.effect import suspend as suspend_effect
 from pyfect.exit import Exit, Failure, Success
 from pyfect.layer import Layer, effect_discard
 from pyfect.schedule import Schedule
-from pyfect.schema import Boolean, Bottom, Codec, Defect, Union
+from pyfect.schema import (
+    Boolean,
+    Bottom,
+    Codec,
+    Defect,
+    StructSchema,
+    TaggedClass,
+    TaggedError,
+    Union,
+    ast,
+)
 from pyfect.schema import Cause as CauseSchema
+from pyfect.schema import Class as SchemaClass
 from pyfect.schema import Exit as ExitSchema
 from pyfect.schema import Never as NeverSchema
 from pyfect.schema import Null as NullSchema
@@ -284,31 +295,66 @@ class _Compensate[R2]:
         return with_compensation(effect, self.compensation)
 
 
-def make[P, A = None, E = Never](
+@overload
+def make[P: Mapping[str, object], A = None, E = Never](
     tag: str,
     *,
-    payload: _C[P],
+    payload: StructSchema[P, Never, Never],
     idempotency_key: Callable[[P], str],
     success: _C[A] | None = None,
     error: _C[E] | None = None,
     suspended_retry_schedule: Schedule[Any, Any, Any, Any] | None = None,
     annotations: Context[Any] | None = None,
-) -> Workflow[P, A, E]:
-    """A workflow named ``tag``. ``payload`` is a struct schema (or a
-    schema class); ``success`` defaults to ``None`` (Effect's ``Void``),
-    ``error`` to none. ``idempotency_key(payload)`` names the execution.
-    ``suspended_retry_schedule`` is how a caller waiting outside any
-    workflow polls a suspended execution (exponential from 200 ms, at most
-    30 s apart)."""
+) -> Workflow[P, A, E]: ...
+@overload
+def make[P: SchemaClass | TaggedClass | TaggedError, A = None, E = Never](
+    tag: str,
+    *,
+    payload: type[P],
+    idempotency_key: Callable[[P], str],
+    success: _C[A] | None = None,
+    error: _C[E] | None = None,
+    suspended_retry_schedule: Schedule[Any, Any, Any, Any] | None = None,
+    annotations: Context[Any] | None = None,
+) -> Workflow[P, A, E]: ...
+def make(
+    tag: str,
+    *,
+    payload: _C[Any],
+    idempotency_key: Callable[[Any], str],
+    success: _C[Any] | None = None,
+    error: _C[Any] | None = None,
+    suspended_retry_schedule: Schedule[Any, Any, Any, Any] | None = None,
+    annotations: Context[Any] | None = None,
+) -> Workflow[Any, Any, Any]:
+    """A workflow named ``tag``. ``payload`` is a struct schema or a
+    schema class (Effect's ``Schema.Struct.Fields | AnyStructSchema``; any
+    other schema raises ``TypeError``); ``success`` defaults to ``None``
+    (Effect's ``Void``), ``error`` to none. ``idempotency_key(payload)``
+    names the execution. ``suspended_retry_schedule`` is how a caller
+    waiting outside any workflow polls a suspended execution (exponential
+    from 200 ms, at most 30 s apart)."""
+    payload_fields(tag, payload)
     return Workflow(
         tag,
         payload_schema=payload,
-        success_schema=cast("_C[A]", NullSchema) if success is None else success,
-        error_schema=cast("_C[E]", NeverSchema) if error is None else error,
+        success_schema=NullSchema if success is None else success,
+        error_schema=NeverSchema if error is None else error,
         idempotency_key=idempotency_key,
         annotations=Context.empty() if annotations is None else annotations,
         suspended_retry_schedule=suspended_retry_schedule,
     )
+
+
+def payload_fields(tag: str, payload: _C[Any]) -> ast.Objects:
+    """The fields of the workflow ``tag``'s ``payload``: a struct with no
+    encoding of its own, or a schema class. Raises ``TypeError`` otherwise."""
+    node = payload.__codec__().ast
+    if isinstance(node, ast.Objects) and node.encoding is None:
+        return node
+    if isinstance(node, ast.Class):
+        return node.shape.fields
+    raise TypeError(f"the payload of the workflow {tag!r} must be a struct or a schema class")
 
 
 # --- running a workflow body -------------------------------------------------------------
@@ -500,6 +546,7 @@ __all__ = [
     "into_result",
     "is_result",
     "make",
+    "payload_fields",
     "provide_scope",
     "result_schema",
     "scope",

@@ -30,6 +30,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.ai import ai_error as AiErr
 from pyfect.ai.ai_error import AiError
+from pyfect.ai.prompt import ToolModelOutputPart
 from pyfect.ai.response import ToolResultFailure, ToolResultSuccess
 from pyfect.ai.tool import (
     AnyTool,
@@ -118,14 +119,16 @@ def _handler_tag(tool_id: str) -> type[Tag[_Registered]]:
 @dataclass(frozen=True)
 class HandlerResult:
     """One output of a tool call: the result, what the model sees of it
-    (``encoded_result``), whether it is a failure (and its origin) and
-    whether it is a preliminary progress value."""
+    (``encoded_result``, or ``model_output`` from the tool's
+    ``to_model_output`` for a final success), whether it is a failure (and
+    its origin) and whether it is a preliminary progress value."""
 
     result: object
     encoded_result: object
     is_failure: bool
     preliminary: bool
     failure_origin: FailureOrigin | None = None
+    model_output: tuple[ToolModelOutputPart, ...] | None = None
 
 
 def _make_error(name: str, reason: AiErr.AnyReason) -> AiError:
@@ -192,17 +195,27 @@ def _handle(
         "Any", S.encode_unknown_effect(failure_result_schema(tool))
     )
 
+    to_model_output = tool.to_model_output
+
+    def model_output(output: _Output) -> Effect[tuple[ToolModelOutputPart, ...] | None]:
+        to_parts = to_model_output
+        if output.is_failure or output.preliminary or to_parts is None:
+            return fx.succeed(None)
+        return fx.sync(lambda: tuple(to_parts(output.result)))
+
     def encode(output: _Output) -> Effect[HandlerResult, AiError]:
         encoder = encode_failure if output.is_failure else encode_success
         return (
             encoder(output.result)
+            .zip(model_output(output))
             .map(
                 lambda encoded: HandlerResult(
                     output.result,
-                    encoded,
+                    encoded[0],
                     output.is_failure,
                     output.preliminary,
                     output.failure_origin,
+                    encoded[1],
                 )
             )
             .map_error(

@@ -1,9 +1,11 @@
 """OpenRouter's alpha Decisions API as a ``DecisionModel`` (Effect's
 ``OpenRouterDecisionModel``)::
 
-    program.pipe(fx.provide(decision_model.model("openai/gpt-4o-mini").layer))
+    program.pipe(fx.provide(decision_model.model("jaredpalmer/kev-4b-20260924").layer))
 
-The state is sent as is and must be a string, a JSON object or an array.
+The model must be one the Decisions API serves, not any chat model OpenRouter
+routes to. The state is sent as is and must be a string, a JSON object or an
+array.
 Each decision is a named question (``choice``, ``score`` with the levels'
 descriptions, ``noul``); a score's probabilities come back by level index
 and are keyed by the levels' labels. Answers without a distribution are
@@ -39,7 +41,7 @@ class Config(Tag[ConfigService], key="@effect/ai-openrouter/OpenRouterDecisionMo
     """Per-request routing and tracing options, over the model's."""
 
 
-def _question(decision: D.AnyDecision) -> W.DecisionsQuestion:
+def _question(decision: D.NonLocateDecision) -> W.DecisionsQuestion:
     match decision:
         case D.Classify():
             criteria = dict(decision.criteria)
@@ -113,7 +115,9 @@ def make(
     a provided ``Config`` overrides ``config`` per request."""
 
     def build(client: ClientService) -> Effect[DM.Service]:
-        def decide(options: DM.ProviderOptions) -> Effect[DM.ProviderResponse, E.AiError]:
+        def decide(
+            options: DM.ProviderOptions[D.NonLocateDecision],
+        ) -> Effect[DM.ProviderResponse, E.AiError]:
             state = options.state
             if state is None or isinstance(state, bool | int | float):
                 return fx.fail(_invalid_state())

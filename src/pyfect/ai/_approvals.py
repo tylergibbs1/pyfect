@@ -207,6 +207,7 @@ def _run_approved(
                 is_failure=last.is_failure,
                 result=last.result,
                 encoded_result=last.encoded_result,
+                model_output=last.model_output,
             )
         )
 

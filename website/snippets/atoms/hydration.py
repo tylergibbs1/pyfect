@@ -8,9 +8,9 @@ from pyfect.reactivity.hydration import DehydratedAtom
 loads: list[str] = []
 
 
-def load_cart() -> list[str]:
+def load_cart() -> tuple[str, ...]:
     loads.append("cart")
-    return ["tea", "scones"]
+    return ("tea", "scones")
 
 
 # A serializable atom has a key and a schema for its value (here an AsyncResult).

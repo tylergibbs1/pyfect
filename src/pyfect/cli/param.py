@@ -21,7 +21,7 @@ from pyfect import config as config_
 from pyfect import schema as S
 from pyfect._effect_args import wrong_argument
 from pyfect._effect_base import EffectBase
-from pyfect._js import js_number
+from pyfect._js import js_string
 from pyfect.cli import primitive as primitive_
 from pyfect.cli._environment import Environment
 from pyfect.cli.cli_error import (
@@ -420,18 +420,9 @@ def _invalid(single: Single[Any], value: object, expected: str) -> CliError:
 
 
 def _js_string(value: object) -> str:
-    """``String(value)`` for the values params produce."""
-    if value is True:
-        return "true"
-    if value is False:
-        return "false"
-    if value is None:
-        return "undefined"
-    if isinstance(value, float):
-        return js_number(value)
-    if isinstance(value, tuple):
-        return ",".join(_js_string(v) for v in cast("tuple[object, ...]", value))
-    return str(value)
+    """``String(value)`` for the values params produce (a missing one is
+    ``undefined``)."""
+    return "undefined" if value is None else js_string(value)
 
 
 def map_try_catch[X, A](

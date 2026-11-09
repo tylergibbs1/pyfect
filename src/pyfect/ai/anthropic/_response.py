@@ -4,7 +4,7 @@ reasons, citations, tool-call parameters and server tool results."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -51,14 +51,23 @@ class CitableDocument:
     file_name: str | None = None
 
 
+def _citable_parts(prompt: Pr.Prompt) -> Iterator[object]:
+    """User parts and tool results' model output, in prompt order."""
+    for message in prompt.content:
+        if isinstance(message, Pr.UserMessage):
+            yield from message.content
+        elif isinstance(message, Pr.ToolMessage):
+            for part in message.content:
+                if isinstance(part, Pr.ToolResultPart) and part.model_output is not None:
+                    yield from part.model_output
+
+
 def citable_documents(prompt: Pr.Prompt) -> list[CitableDocument]:
     return [
         CitableDocument(
             P.or_default(part.file_name, "Untitled Document"), part.media_type, part.file_name
         )
-        for message in prompt.content
-        if isinstance(message, Pr.UserMessage)
-        for part in message.content
+        for part in _citable_parts(prompt)
         if isinstance(part, Pr.FilePart) and is_citation_part(part)
     ]
 

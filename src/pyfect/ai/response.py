@@ -27,12 +27,14 @@ from pyfect import schema as S
 from pyfect._json_value import JsonValue
 from pyfect._url import Url
 from pyfect._wire_codec import Const, Key, key, wire_codec
+from pyfect.ai import prompt as P
 from pyfect.ai.ai_error import (
     HTTP_REQUEST_DETAILS,
     HTTP_RESPONSE_DETAILS,
     HttpRequestDetails,
     HttpResponseDetails,
 )
+from pyfect.exit import Success
 from pyfect.schema import ast
 from pyfect.schema import getter as G
 from pyfect.schema import transformation as T
@@ -170,8 +172,9 @@ class ToolCallPart(_Wire, Generic[N_co, P_co]):
 @dataclass(frozen=True)
 class ToolResultSuccess(_Wire, Generic[N_co, S_co]):
     """The tool ``name`` succeeded with ``result`` (``encoded_result`` is
-    what the model sees). ``preliminary``: a progress value streamed before
-    the final one."""
+    what the model sees, unless the tool's ``to_model_output`` gave
+    ``model_output``). ``preliminary``: a progress value streamed before the
+    final one."""
 
     type: ClassVar[Literal["tool-result"]] = "tool-result"
     id: str
@@ -182,6 +185,7 @@ class ToolResultSuccess(_Wire, Generic[N_co, S_co]):
     provider_executed: bool = False
     preliminary: bool = False
     metadata: ProviderMetadata = field(default_factory=_metadata)
+    model_output: tuple[P.ToolModelOutputPart, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -197,6 +201,7 @@ class ToolResultFailure(_Wire, Generic[N_co, F_co]):
     provider_executed: bool = False
     preliminary: bool = False
     metadata: ProviderMetadata = field(default_factory=_metadata)
+    model_output: tuple[P.ToolModelOutputPart, ...] | None = None
 
 
 type ToolResultPart[NN: str, SS, FF] = ToolResultSuccess[NN, SS] | ToolResultFailure[NN, FF]
@@ -212,6 +217,7 @@ def tool_result_part(
     provider_executed: bool = False,
     preliminary: bool = False,
     metadata: ProviderMetadata | None = None,
+    model_output: tuple[P.ToolModelOutputPart, ...] | None = None,
 ) -> ToolResultSuccess[str, object] | ToolResultFailure[str, object]:
     """A tool result of either kind (Effect's ``makePart("tool-result")``)."""
     cls: Any = ToolResultFailure if is_failure else ToolResultSuccess
@@ -223,6 +229,7 @@ def tool_result_part(
         provider_executed=provider_executed,
         preliminary=preliminary,
         metadata=metadata if metadata is not None else {},
+        model_output=model_output,
     )
 
 
@@ -523,6 +530,19 @@ def tool_call_part_schema(name: S.Top | str, params: S.Top) -> S.Bottom[Any, Map
     )
 
 
+_MODEL_OUTPUT = S.Array(P.TOOL_MODEL_OUTPUT_PART).ast
+
+
+def _model_output(
+    wire: ast.Objects, value: object, flip: bool, input: object, options: ParseOptions
+) -> ast.ParseResult:
+    """``modelOutput`` decoded (or, ``flip``, encoded); ``None`` stays."""
+    if value is None:
+        return Success(None)
+    schema = _MODEL_OUTPUT.flip() if flip else _MODEL_OUTPUT
+    return ast.parse_at_key(wire, "modelOutput", schema, value, input=input, options=options)
+
+
 def _wire_branch(name: str | None, result: ast.AST, is_failure: bool) -> ast.Objects:
     return ast.Objects(
         (
@@ -531,6 +551,7 @@ def _wire_branch(name: str | None, result: ast.AST, is_failure: bool) -> ast.Obj
             ast.PropertySignature("name", ast.string if name is None else ast.Literal(name)),
             ast.PropertySignature("isFailure", ast.Literal(is_failure)),
             ast.PropertySignature("result", ast.to_encoded(result)),
+            ast.PropertySignature("modelOutput", ast.to_encoded(_MODEL_OUTPUT), optional=True),
             ast.PropertySignature("providerExecuted", ast.boolean, optional=True),
             ast.PropertySignature("metadata", PROVIDER_METADATA.ast, optional=True),
             ast.PropertySignature("preliminary", ast.boolean, optional=True),
@@ -556,25 +577,29 @@ def tool_result_part_schema(
         values = cast("Mapping[str, Any]", input)
         is_failure = bool(values["isFailure"])
         cls: Any = ToolResultFailure if is_failure else ToolResultSuccess
+        wire = wires[is_failure]
         decoded = ast.parse_at_key(
-            wires[is_failure],
-            "result",
-            results[is_failure],
-            values["result"],
-            input=input,
-            options=options,
+            wire, "result", results[is_failure], values["result"], input=input, options=options
         )
+
+        def part(value: object, model_output: object) -> object:
+            return cls(
+                id=values["id"],
+                name=values["name"],
+                result=value,
+                encoded_result=values["result"],
+                provider_executed=values.get("providerExecuted", False),
+                preliminary=values.get("preliminary", False),
+                metadata=values.get("metadata", {}),
+                model_output=model_output,
+            )
+
         return ast.to_effect(
-            ast.map_value(
+            ast.flat_map(
                 decoded,
-                lambda value: cls(
-                    id=values["id"],
-                    name=values["name"],
-                    result=value,
-                    encoded_result=values["result"],
-                    provider_executed=values.get("providerExecuted", False),
-                    preliminary=values.get("preliminary", False),
-                    metadata=values.get("metadata", {}),
+                lambda value: ast.map_value(
+                    _model_output(wire, values.get("modelOutput"), False, input, options),
+                    lambda model_output: part(value, model_output),
                 ),
             )
         )
@@ -593,20 +618,24 @@ def tool_result_part_schema(
         return ast.to_effect(
             ast.flat_map(
                 checked,
-                lambda _: ast.map_value(
+                lambda _: ast.flat_map(
                     ast.parse_at_key(
                         wire, "result", result.flip(), part.result, input=input, options=options
                     ),
-                    lambda encoded: {
-                        "type": "tool-result",
-                        "id": part.id,
-                        "name": part.name,
-                        "isFailure": part.is_failure,
-                        "result": encoded,
-                        "providerExecuted": part.provider_executed,
-                        "preliminary": part.preliminary,
-                        "metadata": part.metadata,
-                    },
+                    lambda encoded: ast.map_value(
+                        _model_output(wire, part.model_output, True, input, options),
+                        lambda model_output: {
+                            "type": "tool-result",
+                            "id": part.id,
+                            "name": part.name,
+                            "isFailure": part.is_failure,
+                            "result": encoded,
+                            **({} if model_output is None else {"modelOutput": model_output}),
+                            "providerExecuted": part.provider_executed,
+                            "preliminary": part.preliminary,
+                            "metadata": part.metadata,
+                        },
+                    ),
                 ),
             )
         )

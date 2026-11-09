@@ -5,6 +5,7 @@ answered by a mocked ``HttpClient``. A structured rate level
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Any, TypedDict
 
@@ -318,59 +319,66 @@ def test_refusal_outranks_later_answer():
 
 
 DATA_URL = "data:image/webp;base64,UklGRg=="
-IMAGES = [
+SHOTS = [
     DM.Image("image/png", bytes([137, 80, 78, 71])),
     DM.Image("image/jpeg", "/9j/4AAQ"),
     DM.Image("image/webp", url.parse(DATA_URL)),
 ]
 
 
-def _assert_input(request: HttpClientRequest, text: str) -> None:
-    body = body_json(request)
-    assert len(body["input"]) == 1
-    assert body["input"][0]["role"] == "user"
-    assert body["input"][0]["content"] == [
-        {"type": "input_text", "text": text},
-        {"type": "input_image", "image_url": "data:image/png;base64,iVBORw=="},
-        {"type": "input_image", "image_url": "data:image/jpeg;base64,/9j/4AAQ"},
-        {"type": "input_image", "image_url": DATA_URL},
-    ]
+class Screenshot(TypedDict):
+    message: str
+    shots: list[DM.Image]
+
+
+SCREENSHOTS = D.make(
+    input=S.Struct(Screenshot, shots=S.Array(D.Image)),
+    decisions={"urgent": urgency},
+)
 
 
 @testing.effect
 def test_images():
-    """OpenAiDecisionModel / sends string and JSON state with byte array, base64 string, and data
-    URL images"""
+    """OpenAiDecisionModel / sends the state text, then each byte array, base64, or data URL
+    image after its reference"""
 
-    def check_urgency(request: HttpClientRequest) -> None:
-        assert body_json(request)["questions"] == [
+    def check(request: HttpClientRequest) -> None:
+        body = body_json(request)
+        assert len(body["input"]) == 1
+        assert body["input"][0]["role"] == "user"
+        content = body["input"][0]["content"]
+        png, jpeg, webp = json.loads(content[0]["text"])["shots"]
+        assert content == [
             {
-                "type": "predicate",
-                "name": "urgent",
-                "instructions": "Does this need immediate attention?",
-            }
+                "type": "input_text",
+                "text": json.dumps(
+                    {"message": "Checkout is down", "shots": [png, jpeg, webp]},
+                    separators=(",", ":"),
+                ),
+            },
+            {"type": "input_text", "text": f"Image {png}:"},
+            {"type": "input_image", "image_url": "data:image/png;base64,iVBORw=="},
+            {"type": "input_text", "text": f"Image {jpeg}:"},
+            {"type": "input_image", "image_url": "data:image/jpeg;base64,/9j/4AAQ"},
+            {"type": "input_text", "text": f"Image {webp}:"},
+            {"type": "input_image", "image_url": DATA_URL},
         ]
-        _assert_input(request, "Checkout is down")
 
+    value: Screenshot = {"message": "Checkout is down", "shots": SHOTS}
     result = yield from provided(
-        DM.decide(URGENCY, input="Checkout is down", images=IMAGES),
-        http(response([ANSWERS[2]]), check_urgency),
+        DM.decide(SCREENSHOTS, input=value), http(response([ANSWERS[2]]), check)
     )
     assert result.answers[urgency].probability == 0.99
-    json_result = yield from provided(
-        DM.decide(TRIAGE, input=INPUT, images=IMAGES),
-        http(response(ANSWERS), lambda r: _assert_input(r, '{"message":"Checkout is down"}')),
-    )
-    assert json_result.answers[urgent].probability == 0.99
 
 
 @testing.effect
 def test_rejects_remote_urls():
     """OpenAiDecisionModel / rejects remote image URLs without sending a request"""
     mock = http(response([ANSWERS[2]]))
-    images = [DM.Image("image/png", url.parse("https://example.com/cat.png"))]
-    error = yield from provided(
-        DM.decide(URGENCY, input="Checkout is down", images=images).flip(), mock
-    )
+    value: Screenshot = {
+        "message": "Checkout is down",
+        "shots": [DM.Image("image/png", url.parse("https://example.com/cat.png"))],
+    }
+    error = yield from provided(DM.decide(SCREENSHOTS, input=value).flip(), mock)
     assert isinstance(error.reason, E.InvalidUserInputError)
     assert mock.requests == []

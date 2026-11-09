@@ -37,12 +37,18 @@ nothing), or reserve the tokens and give the ``delay`` to wait first."""
 class ConsumeResult:
     """What a consume charged: wait ``delay`` before going on; ``remaining``
     tokens are left of ``limit`` (below zero for queued reservations), and
-    the key is back to full after ``reset_after``."""
+    the key is back to full after ``reset_after``. A whole ``remaining`` is
+    an ``int`` whatever the store computed it with, as Effect's stores all
+    give the same JavaScript number."""
 
     delay: Seconds
     limit: float
     remaining: float
     reset_after: Seconds
+
+    def __post_init__(self) -> None:
+        if isinstance(self.remaining, float) and self.remaining.is_integer():
+            object.__setattr__(self, "remaining", int(self.remaining))
 
 
 def _exceeded(key: str, retry_after: Seconds, limit: float) -> Effect[Never, RateLimiterError]:

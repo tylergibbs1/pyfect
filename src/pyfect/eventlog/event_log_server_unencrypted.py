@@ -125,7 +125,15 @@ class EventLogServerAuthorizationService(ABC):
     ) -> Effect[None, EventLogServerAuthError]: ...
 
     @abstractmethod
-    def authorize_identity(self, *, public_key: str) -> Effect[None, EventLogServerAuthError]: ...
+    def authorize_identity(
+        self, *, public_key: str, signing_public_key: bytes
+    ) -> Effect[None, EventLogServerAuthError]:
+        """Whether ``public_key`` may authenticate. ``public_key`` is an
+        identifier, not a secret: the server binds the first signing key
+        that authenticates for it and rejects any other afterwards. To
+        reject other keys on first use too, record each identity's key with
+        ``event_log_session_auth.derive_signing_public_key`` and compare it
+        with ``signing_public_key``, the key presented."""
 
 
 class EventLogServerAuthorization(
@@ -428,8 +436,12 @@ def _rpc_handlers():
 
         return storage.with_transaction(gen(body))
 
-    def authorize_identity(public_key: str) -> Effect[None, EventLogProtocolError]:
-        return auth.authorize_identity(public_key=public_key).map_error(
+    def authorize_identity(
+        public_key: str, signing_public_key: bytes
+    ) -> Effect[None, EventLogProtocolError]:
+        return auth.authorize_identity(
+            public_key=public_key, signing_public_key=signing_public_key
+        ).map_error(
             lambda error: _protocol_error(
                 "Forbidden" if error.reason == "Forbidden" else "Unauthorized",
                 error.message,
