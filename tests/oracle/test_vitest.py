@@ -81,7 +81,7 @@ FooLive = layer.succeed(Foo, "foo")
 BarLive = layer.effect(Bar, Foo().map(lambda _: "bar"))
 FooBarLive = BarLive.pipe(layer.provide_merge(FooLive))
 SleeperLive = layer.effect(
-    Sleeper, fx.Clock().map(lambda clock: lambda seconds: clock.sleep(Seconds(seconds)))
+    Sleeper, fx.Clock().map(lambda clock: lambda millis: clock.sleep(Seconds(millis / 1000)))
 )
 
 foo = testing.layer_fixture(FooLive)
@@ -121,8 +121,8 @@ def test_layer_anonymous_layer_next_to_a_vitest_fixture_provides_its_context(
 @testing.effect
 def test_layer_test_services_test_clock(sleeper: Services[Sleeper]):
     """vitest/test/index.test.ts "layer > test services > TestClock"."""
-    sleep = yield from Sleeper()
-    fiber = yield from sleep("100 seconds").fork()
+    sleep_millis = yield from Sleeper()
+    fiber = yield from sleep_millis(100_000).fork()
     yield from fx.yield_now()
     yield from testing.adjust("100 seconds")
     yield from fiber.join()
@@ -131,8 +131,8 @@ def test_layer_test_services_test_clock(sleeper: Services[Sleeper]):
 @testing.effect
 def test_layer_live_services_clock(live_sleeper: Services[Sleeper]):
     """vitest/test/index.test.ts "layer > live services > Clock"."""
-    sleep = yield from Sleeper()
-    yield from sleep("1 millis")
+    sleep_millis = yield from Sleeper()
+    yield from sleep_millis(1)
 
 
 # --- buildPerTest -----------------------------------------------------------------------
