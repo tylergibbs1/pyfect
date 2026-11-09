@@ -42,6 +42,11 @@ _ROOT = Path(__file__).parent.parent.parent
         ("America/Ciudad_Juarez", "America/Ciudad_Juarez"),
         ("SYSTEMV/AST4ADT", "SystemV/AST4ADT"),
         ("Etc/GMT+5", "Etc/GMT+5"),
+        ("+05:30", "+05:30"),
+        ("+0530", "+05:30"),
+        ("+05", "+05:00"),
+        ("-00:00", "+00:00"),
+        ("\u221205:00", "-05:00"),
     ],
 )
 def test_zone_ids_read_as_under_node(written: str, canonical: str) -> None:
@@ -52,7 +57,10 @@ def test_zone_ids_read_as_under_node(written: str, canonical: str) -> None:
     assert zone is date_time.zone_named(canonical)
 
 
-@pytest.mark.parametrize("written", ["Factory", "Etc/Unknown", "GMT+5", "Nope", "posixrules", ""])
+@pytest.mark.parametrize(
+    "written",
+    ["Factory", "Etc/Unknown", "GMT+5", "Nope", "posixrules", "", "+24:00", "+5", "+05:3"],
+)
 def test_ids_icu_rejects_are_not_zones(written: str) -> None:
     # Node 24.22.1: new Intl.DateTimeFormat("en-US", {timeZone: written}) throws a RangeError
     assert date_time.zone_named(written) is None
@@ -67,9 +75,10 @@ def test_ids_icu_rejects_are_not_zones(written: str) -> None:
         ("SystemV/PST8PDT", datetime(1950, 4, 30, 12, tzinfo=UTC), -7),
         ("SystemV/PST8PDT", datetime(1950, 4, 29, 12, tzinfo=UTC), -8),
         ("SystemV/HST10", datetime(2024, 7, 1, tzinfo=UTC), -10),
+        ("-0830", datetime(1850, 7, 1, tzinfo=UTC), -8.5),
     ],
 )
-def test_zones_tz_dropped_keep_icus_rules(zone_id: str, instant: datetime, hours: int) -> None:
+def test_zones_tz_dropped_keep_icus_rules(zone_id: str, instant: datetime, hours: float) -> None:
     # Node 24.22.1: the longOffset Intl gives for zone_id at instant
     zone = date_time.zone_named(zone_id)
     assert zone is not None
@@ -79,7 +88,7 @@ def test_zones_tz_dropped_keep_icus_rules(zone_id: str, instant: datetime, hours
 
 
 def test_zones_pickle_as_their_id() -> None:
-    for zone_id in ("Asia/Calcutta", "SystemV/AST4ADT"):
+    for zone_id in ("Asia/Calcutta", "SystemV/AST4ADT", "+05:30"):
         zone = date_time.zone_named(zone_id)
         assert pickle.loads(pickle.dumps(zone)) is zone
 
@@ -143,7 +152,8 @@ def test_table_is_what_the_recorded_node_gives() -> None:
     version = _node_version()
     if version != NODE_VERSION:
         pytest.skip(f"needs Node {NODE_VERSION} (found {version})")
-    ids = [*CANONICAL, *(zone_id.upper() for zone_id in CANONICAL), "Factory", "Etc/Unknown"]
+    offsets = ["+05:30", "+0530", "+05", "-00:00", "\u221205:00", "+23:59", "+24:00", "+5"]
+    ids = [*CANONICAL, *(zone_id.upper() for zone_id in CANONICAL), "Factory", *offsets]
     instants = [
         datetime(year, month, 15, hour, tzinfo=UTC)
         for year in (1850, 1902, 1950, 1976, 1977, 2024, 2060)
@@ -152,7 +162,7 @@ def test_table_is_what_the_recorded_node_gives() -> None:
     ]
     request = {
         "ids": ids,
-        "systemv": sorted(TZIF),
+        "systemv": [*sorted(TZIF), "-08:30", "+05:45"],
         "instants": [int(instant.timestamp() * 1000) for instant in instants],
     }
     found = json.loads(

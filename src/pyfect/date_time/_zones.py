@@ -10,6 +10,7 @@ import contextlib
 import io
 import os
 import re
+import struct
 import zoneinfo
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
@@ -77,9 +78,32 @@ def zone_named(zone_id: str) -> ZoneInfo | None:
     """The zone ``zone_id`` names (any casing), under the canonical id
     ``Intl`` gives it in Node (ICU's, ``_icu_zones.ICU_VERSION``):
     ``Asia/Kolkata`` is ``Asia/Calcutta``, ``EST`` is ``America/Panama``.
-    ``None`` for an id ICU doesn't know."""
+    An offset id (``+0530``) is the fixed zone ``+05:30``. ``None`` for an
+    id ICU doesn't know."""
+    offset = _OFFSET_ID.fullmatch(zone_id)
+    if offset is not None:
+        sign, hours, minutes = offset.group(1), int(offset.group(2)), int(offset.group(3) or 0)
+        total = (hours * 60 + minutes) * (-1 if sign in "-\u2212" else 1)
+        return _offset_zone(total)
     canonical = _canonical_ids().get(zone_id.lower())
     return None if canonical is None else _zone(canonical)
+
+
+# An offset time zone as ECMA-402 reads one (``±HH``, ``±HHMM``, ``±HH:MM``).
+_OFFSET_ID = re.compile(r"([+\-\u2212])([01][0-9]|2[0-3])(?::?([0-5][0-9]))?", re.ASCII)
+
+
+@cache
+def _offset_zone(minutes: int) -> ZoneInfo:
+    """The fixed zone ``Intl`` names ``+05:30`` (``-00:00`` is ``+00:00``)."""
+    hours, rest = divmod(abs(minutes), 60)
+    key = f"{'-' if minutes < 0 else '+'}{hours:02}:{rest:02}"
+    name = key.replace(":", "")
+    posix = f"<{name}>{'' if minutes < 0 else '-'}{hours}:{rest:02}"
+    header = b"TZif2" + bytes(15) + struct.pack(">6l", 0, 0, 0, 0, 1, len(name) + 1)
+    ttinfo = struct.pack(">lBB", minutes * 60, 0, 0) + name.encode() + b"\0"
+    tzif = header + ttinfo + header + ttinfo + f"\n{posix}\n".encode()
+    return _IcuZone.from_file(io.BytesIO(tzif), key=key)
 
 
 class _IcuZone(ZoneInfo):

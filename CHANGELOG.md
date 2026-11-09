@@ -11,7 +11,8 @@
   and both services have `delimiter`.
 - `date_time.zone_named` names a zone with ICU's canonical id, as Effect's `zoneMakeNamed`
   does under Node: `Asia/Kolkata` is `Asia/Calcutta`, `EST` is `America/Panama`, `Etc/UTC` is
-  `UTC` (ICU 78.3). An id ICU doesn't know, such as `Factory`, is no longer a zone. `TZ` and
+  `UTC` (ICU 78.3). An offset id (`+0530`) is the fixed zone `+05:30`, as in `Intl`. An id ICU doesn't know,
+  such as `Factory`, is no longer a zone. `TZ` and
   the system zone read the same way.
 
 ## 0.2.0 (unreleased)
