@@ -101,8 +101,8 @@ def _offset_zone(minutes: int) -> ZoneInfo:
     name = key.replace(":", "")
     posix = f"<{name}>{'' if minutes < 0 else '-'}{hours}:{rest:02}"
     header = b"TZif2" + bytes(15) + struct.pack(">6l", 0, 0, 0, 0, 1, len(name) + 1)
-    ttinfo = struct.pack(">lBB", minutes * 60, 0, 0) + name.encode() + b"\0"
-    tzif = header + ttinfo + header + ttinfo + f"\n{posix}\n".encode()
+    ttinfo = struct.pack(">lBB", minutes * 60, 0, 0) + name.encode("ascii") + b"\0"
+    tzif = header + ttinfo + header + ttinfo + f"\n{posix}\n".encode("ascii")
     return _IcuZone.from_file(io.BytesIO(tzif), key=key)
 
 
@@ -130,7 +130,9 @@ def _aliases() -> dict[str, list[str]]:
 @cache
 def _zone(canonical: str) -> ZoneInfo | None:
     if canonical in TZIF:
-        return _IcuZone.from_file(io.BytesIO(base64.b64decode(TZIF[canonical])), key=canonical)
+        return _IcuZone.from_file(
+            io.BytesIO(base64.b64decode(TZIF[canonical], validate=True)), key=canonical
+        )
     with contextlib.suppress(ZoneInfoNotFoundError, ValueError):
         return ZoneInfo(canonical)
     for source in (DATA.get(canonical, canonical), *_aliases()[canonical]):
