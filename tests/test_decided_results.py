@@ -275,6 +275,37 @@ def _semaphore_case(*, parked: bool) -> _Case:
     return _Case(setup, op, check, wake)
 
 
+def _semaphore_take_scoped_case(*, parked: bool) -> _Case:
+    """Permits taken are held by the scope's finalizer; an interrupted take holds none."""
+
+    def setup() -> fx.Effect[tuple[fx.Semaphore, fx.scope.CloseableScope]]:
+        made = fx.Semaphore.make(1)
+        sem = made.tap(lambda s: s.take(1)) if parked else made
+        return sem.zip(fx.scope.make())
+
+    def op(state: tuple[fx.Semaphore, fx.scope.CloseableScope], seen: list[Any]) -> fx.Effect[Any]:
+        sem, scope = state
+        return sem.take_scoped(1).pipe(fx.scope.provide(scope)).map(seen.append)
+
+    def check(
+        state: tuple[fx.Semaphore, fx.scope.CloseableScope], seen: list[Any]
+    ) -> fx.Effect[str | None]:
+        sem, scope = state
+        held = scope.finalizer_count
+        return sem.available.map(
+            lambda free: (
+                None
+                if free + held == 1 and len(seen) <= held
+                else f"free {free}, held {held}, saw {seen}"
+            )
+        )
+
+    def wake(state: tuple[fx.Semaphore, fx.scope.CloseableScope]) -> fx.Effect[Any]:
+        return _once_parked(state[0].release(1)) if parked else fx.void
+
+    return _Case(setup, op, check, wake)
+
+
 def _partitioned_semaphore_case(*, parked: bool) -> _Case:
     def setup() -> fx.Effect[fx.PartitionedSemaphore[str]]:
         made = fx.PartitionedSemaphore[str].make(1)
@@ -365,6 +396,8 @@ _CASES: dict[str, _Case] = {
     "synchronized_ref.update": _synchronized_ref_case(),
     "semaphore.take (free)": _semaphore_case(parked=False),
     "semaphore.take (woken)": _semaphore_case(parked=True),
+    "semaphore.take_scoped (free)": _semaphore_take_scoped_case(parked=False),
+    "semaphore.take_scoped (woken)": _semaphore_take_scoped_case(parked=True),
     "partitioned_semaphore.take (free)": _partitioned_semaphore_case(parked=False),
     "partitioned_semaphore.take (woken)": _partitioned_semaphore_case(parked=True),
     "tar body pull": _archive_body_case(

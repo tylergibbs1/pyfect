@@ -6,7 +6,7 @@ from __future__ import annotations
 import contextlib
 from collections import deque
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Never
 
 from pyfect._core import (
     Effect,
@@ -22,6 +22,7 @@ from pyfect._effect_args import require_effect
 from pyfect._effect_base import Frame, Step
 from pyfect._waiters import wake_soon
 from pyfect.option import Option, Some
+from pyfect.scope import CloseableScope, Scope
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
@@ -153,6 +154,26 @@ class Semaphore:
             return _WaitTurn(self, n, _as_is, attempt)
 
         return _Suspend(attempt)
+
+    def take_scoped(self, n: int = 1) -> Effect[None, Never, Scope]:
+        """Wait for ``n`` permits and hold them until the current scope
+        closes. Only the wait is interruptible: once taken, the release is
+        registered on the scope before anything can interrupt, so the
+        permits always come back."""
+
+        def body(restore: Restore) -> Effect[None, Never, Scope]:
+            def with_scope(scope: CloseableScope) -> Effect[None]:
+                def acquire() -> Effect[None]:
+                    if self._free < n:
+                        return _WaitTurn(self, n, restore, acquire)
+                    self._taken += n
+                    return scope.add_finalizer(lambda _exit: self.release(n))
+
+                return _Suspend(acquire)
+
+            return Scope().flat_map(with_scope)
+
+        return uninterruptible_mask(body)
 
     def take_if_available(self, n: int = 1) -> Effect[bool]:
         """Take ``n`` permits if they are free now; never waits."""

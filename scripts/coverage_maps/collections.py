@@ -1,8 +1,8 @@
-"""Collections, pure utilities and Crypto: the data modules Python's built-in
+"""Collections and pure utilities: the data modules Python's built-in
 types and standard library already cover (Array, Record, Iterable, Chunk,
 Number, String, ...), the ones pyfect ports because the standard library
 lacks them (Equal-keyed HashMap / HashSet, Trie, BigDecimal, SemVer, the
-binary encodings, Crypto) and the pure helpers ported earlier (Duration,
+binary encodings) and the pure helpers ported earlier (Duration,
 ByteSize, HashRing). Effect v4 has no RedBlackTree, SortedMap or SortedSet."""
 
 from api_coverage import Cluster, Module
@@ -1040,11 +1040,9 @@ ENCODING_ERROR = Module(
     pythonic=_rows(ISINSTANCE, {"EncodingErrorTypeId": "the `EncodingError` class"}),
 )
 
-CRYPTO = Module("Crypto", "effect/src/Crypto.ts", ("pyfect.crypto", "pyfect.crypto:CryptoService"))
-
 CLUSTER = Cluster(
     "collections",
-    "Collections, pure utilities and Crypto",
+    "Collections and pure utilities",
     (
         ARRAY,
         CHUNK,
@@ -1082,6 +1080,5 @@ CLUSTER = Cluster(
         BASE64_URL,
         HEX,
         ENCODING_ERROR,
-        CRYPTO,
     ),
 )

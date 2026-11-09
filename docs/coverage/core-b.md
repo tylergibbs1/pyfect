@@ -12,10 +12,10 @@ Coverage counts ported, renamed and §4 exports.
 | Fiber | 11 | 9 | 1 | 1 | 0 | 100% |
 | References | 19 | 17 | 2 | 0 | 0 | 100% |
 | Scheduler | 4 | 3 | 1 | 0 | 0 | 100% |
-| Semaphore | 10 | 8 | 2 | 0 | 0 | 100% |
+| Semaphore | 11 | 9 | 2 | 0 | 0 | 100% |
 | Latch | 10 | 8 | 2 | 0 | 0 | 100% |
 | Runtime | 6 | 3 | 0 | 3 | 0 | 100% |
-| **All** | 140 | | | | 0 | 100% |
+| **All** | 141 | | | | 0 | 100% |
 
 ## Scope
 
@@ -177,6 +177,7 @@ Coverage counts ported, renamed and §4 exports.
 | `withPermit` | renamed | `pyfect.semaphore.Semaphore.with_permits` |
 | `withPermitsIfAvailable` | ported | `pyfect.semaphore.Semaphore.with_permits_if_available` |
 | `take` | ported | `pyfect.semaphore.Semaphore.take` |
+| `takeScoped` | ported | `pyfect.semaphore.Semaphore.take_scoped` |
 | `takeIfAvailable` | ported | `pyfect.semaphore.Semaphore.take_if_available` |
 | `release` | ported | `pyfect.semaphore.Semaphore.release` |
 | `releaseAll` | ported | `pyfect.semaphore.Semaphore.release_all` |

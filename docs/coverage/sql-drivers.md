@@ -6,23 +6,23 @@ Coverage counts ported, renamed and §4 exports.
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
 | MysqlClient | 6 | 5 | 0 | 1 | 0 | 100% |
-| MysqlMigrator | 2 | 2 | 0 | 0 | 0 | 100% |
+| MysqlMigrator | 3 | 3 | 0 | 0 | 0 | 100% |
 | MssqlClient | 7 | 6 | 0 | 1 | 0 | 100% |
-| MssqlMigrator | 2 | 2 | 0 | 0 | 0 | 100% |
+| MssqlMigrator | 3 | 3 | 0 | 0 | 0 | 100% |
 | Parameter (mssql) | 2 | 0 | 1 | 1 | 0 | 100% |
 | Procedure (mssql) | 6 | 5 | 0 | 1 | 0 | 100% |
 | LibsqlClient | 5 | 4 | 0 | 1 | 0 | 100% |
-| LibsqlMigrator | 2 | 2 | 0 | 0 | 0 | 100% |
+| LibsqlMigrator | 3 | 3 | 0 | 0 | 0 | 100% |
 | ClickhouseClient | 9 | 8 | 0 | 1 | 0 | 100% |
-| ClickhouseMigrator | 2 | 2 | 0 | 0 | 0 | 100% |
+| ClickhouseMigrator | 3 | 3 | 0 | 0 | 0 | 100% |
 | D1Client | 5 | 4 | 0 | 1 | 0 | 100% |
 | PgClient | 8 | 7 | 0 | 1 | 0 | 100% |
-| PgMigrator | 2 | 2 | 0 | 0 | 0 | 100% |
+| PgMigrator | 3 | 3 | 0 | 0 | 0 | 100% |
 | PgPool | 3 | 2 | 0 | 1 | 0 | 100% |
 | PgConnection | 3 | 2 | 0 | 1 | 0 | 100% |
 | SqliteClient (sqlite-node) | 5 | 4 | 0 | 1 | 0 | 100% |
-| SqliteMigrator (sqlite-node) | 2 | 2 | 0 | 0 | 0 | 100% |
-| **All** | 71 | | | | 0 | 100% |
+| SqliteMigrator (sqlite-node) | 3 | 3 | 0 | 0 | 0 | 100% |
+| **All** | 77 | | | | 0 | 100% |
 
 ## MysqlClient
 
@@ -39,6 +39,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
+| `fromFileSystem` | ported | `pyfect.sql.mysql.migrator.from_file_system` |
 | `run` | ported | `pyfect.sql.mysql.migrator.run` |
 | `layer` | ported | `pyfect.sql.mysql.migrator.layer` |
 
@@ -58,6 +59,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
+| `fromFileSystem` | ported | `pyfect.sql.mssql.migrator.from_file_system` |
 | `run` | ported | `pyfect.sql.mssql.migrator.run` |
 | `layer` | ported | `pyfect.sql.mssql.migrator.layer` |
 
@@ -93,6 +95,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
+| `fromFileSystem` | ported | `pyfect.sql.libsql.migrator.from_file_system` |
 | `run` | ported | `pyfect.sql.libsql.migrator.run` |
 | `layer` | ported | `pyfect.sql.libsql.migrator.layer` |
 
@@ -114,6 +117,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
+| `fromFileSystem` | ported | `pyfect.sql.clickhouse.migrator.from_file_system` |
 | `run` | ported | `pyfect.sql.clickhouse.migrator.run` |
 | `layer` | ported | `pyfect.sql.clickhouse.migrator.layer` |
 
@@ -144,6 +148,7 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
+| `fromFileSystem` | ported | `pyfect.sql.pg.migrator.from_file_system` |
 | `run` | ported | `pyfect.sql.pg.migrator.run` |
 | `layer` | ported | `pyfect.sql.pg.migrator.layer` |
 
@@ -177,5 +182,6 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
+| `fromFileSystem` | ported | `pyfect.sql.sqlite.migrator.from_file_system` |
 | `run` | ported | `pyfect.sql.sqlite.migrator.run` |
 | `layer` | ported | `pyfect.sql.sqlite.migrator.layer` |

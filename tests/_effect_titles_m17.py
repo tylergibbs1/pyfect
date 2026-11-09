@@ -123,8 +123,6 @@ TITLES: dict[str, tuple[str, ...]] = {
     "effect/test/Semaphore.test.ts": (
         "admits queued requests covered by a release in one dispatcher turn",
         "take admits requests in FIFO order when a holder immediately reacquires",
-        "takeScoped holds permits until the scope closes",
-        "takeScoped takes no permits when interrupted while waiting",
     ),
     "effect/test/Stream.test.ts": (
         "emits the buffered group before failing",

@@ -411,3 +411,35 @@ def test_module_level_combinators_delegate_to_the_instance_api():
     assert (yield from fx.succeed("pipe").pipe(sem.with_permits_if_available)) == fx.Some("pipe")
 
     assert (yield from sem.release_all()) == 2
+
+
+# --- take_scoped (Effect 4.1.2) -------------------------------------------------------------
+
+
+@testing.effect
+def test_take_scoped_holds_permits_until_the_scope_closes():
+    """takeScoped holds permits until the scope closes"""
+    sem = yield from fx.Semaphore.make(2)
+    scope = yield from fx.scope.make()
+
+    yield from sem.take_scoped(2).pipe(fx.scope.provide(scope))
+    assert not (yield from sem.take_if_available(1))
+
+    yield from scope.close(fx.exit.void)
+    assert (yield from sem.take_if_available(2))
+
+
+@testing.effect
+def test_take_scoped_takes_no_permits_when_interrupted_while_waiting():
+    """takeScoped takes no permits when interrupted while waiting"""
+    sem = yield from fx.Semaphore.make(1)
+    yield from sem.take(1)
+    # The scope stays open, so only the interruption can end the acquisition.
+    scope = yield from fx.scope.make()
+    waiter = (
+        yield from sem.take_scoped(1).pipe(fx.scope.provide(scope)).fork(start_immediately=True)
+    )
+
+    yield from waiter.interrupt()
+    yield from sem.release(1)
+    assert (yield from sem.take_if_available(1))

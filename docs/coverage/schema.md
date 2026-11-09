@@ -5,15 +5,15 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Schema | 377 | 314 | 18 | 45 | 0 | 100% |
+| Schema | 407 | 314 | 18 | 45 | 30 | 92% |
 | SchemaAST | 133 | 58 | 8 | 67 | 0 | 100% |
 | SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
 | SchemaIssue | 21 | 16 | 3 | 2 | 0 | 100% |
-| SchemaParser | 33 | 25 | 0 | 8 | 0 | 100% |
-| SchemaRepresentation | 100 | 88 | 4 | 8 | 0 | 100% |
-| JsonSchema | 14 | 7 | 7 | 0 | 0 | 100% |
-| **All** | 781 | | | | 0 | 100% |
+| SchemaParser | 34 | 25 | 0 | 8 | 1 | 97% |
+| SchemaRepresentation | 101 | 88 | 4 | 8 | 1 | 99% |
+| JsonSchema | 16 | 7 | 7 | 0 | 2 | 87% |
+| **All** | 815 | | | | 34 | 95% |
 
 ## Schema
 
@@ -146,6 +146,7 @@ Coverage counts ported, renamed and §4 exports.
 | `isUUID` | ported | `pyfect.schema.is_uuid` |
 | `isGUID` | ported | `pyfect.schema.is_guid` |
 | `isULID` | ported | `pyfect.schema.is_ulid` |
+| `isAscii` | missing |  |
 | `isBase64` | ported | `pyfect.schema.is_base64` |
 | `isBase64Url` | ported | `pyfect.schema.is_base64_url` |
 | `isStartingWith` | ported | `pyfect.schema.is_starting_with` |
@@ -327,6 +328,7 @@ Coverage counts ported, renamed and §4 exports.
 | `DurationFromString` | ported | `pyfect.schema.DurationFromString` |
 | `DurationFromNanos` | ported | `pyfect.schema.DurationFromNanos` |
 | `DurationFromMillis` | ported | `pyfect.schema.DurationFromMillis` |
+| `DurationFromIsoString` | missing |  |
 | `DnsRecordType` | ported | `pyfect.schema.DnsRecordType` |
 | `DnsARecord` | ported | `pyfect.schema.DnsARecord` |
 | `DnsAaaaRecord` | ported | `pyfect.schema.DnsAaaaRecord` |
@@ -341,6 +343,34 @@ Coverage counts ported, renamed and §4 exports.
 | `DnsTlsaRecord` | ported | `pyfect.schema.DnsTlsaRecord` |
 | `DnsTxtRecord` | ported | `pyfect.schema.DnsTxtRecord` |
 | `DnsRecord` | ported | `pyfect.schema.DnsRecord` |
+| `MacKey` | missing |  |
+| `MacKeyFromBytes` | missing |  |
+| `MacKeyFromFormat` | missing |  |
+| `AeadKey` | missing |  |
+| `AeadKeyFromBytes` | missing |  |
+| `AeadKeyFromFormat` | missing |  |
+| `CipherKey` | missing |  |
+| `CipherKeyFromBytes` | missing |  |
+| `CipherKeyFromFormat` | missing |  |
+| `SignaturePublicKey` | missing |  |
+| `SignaturePublicKeyFromBytes` | missing |  |
+| `SignaturePublicKeyFromFormat` | missing |  |
+| `SignaturePrivateKey` | missing |  |
+| `SignaturePrivateKeyFromBytes` | missing |  |
+| `SignaturePrivateKeyFromFormat` | missing |  |
+| `KeyAgreementPublicKey` | missing |  |
+| `KeyAgreementPublicKeyFromBytes` | missing |  |
+| `KeyAgreementPublicKeyFromFormat` | missing |  |
+| `KeyAgreementPrivateKey` | missing |  |
+| `KeyAgreementPrivateKeyFromBytes` | missing |  |
+| `KeyAgreementPrivateKeyFromFormat` | missing |  |
+| `KeyWrapKey` | missing |  |
+| `KeyWrapKeyFromBytes` | missing |  |
+| `KeyWrapKeyFromFormat` | missing |  |
+| `KeyWrapPublicKey` | missing |  |
+| `KeyWrapPublicKeyFromFormat` | missing |  |
+| `KeyWrapPrivateKey` | missing |  |
+| `KeyWrapPrivateKeyFromFormat` | missing |  |
 | `Exit` | ported | `pyfect.schema.Exit` |
 | `Graph` | ported | `pyfect.schema.Graph` |
 | `HashMap` | §4 | `S.Map` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
@@ -711,6 +741,7 @@ Coverage counts ported, renamed and §4 exports.
 | `encodeSync` | ported | `pyfect.schema.encode_sync` |
 | `run` | §4 | not public (§4: Effect's `@internal` schema exports) |
 | `asOption` | §4 | not public (§4: Effect's `@internal` schema exports) |
+| `makeClassSync` | missing |  |
 
 ## SchemaRepresentation
 
@@ -727,6 +758,7 @@ Coverage counts ported, renamed and §4 exports.
 | `isUUIDReviver` | ported | `pyfect.schema.representation.is_uuid_reviver` |
 | `isGUIDReviver` | ported | `pyfect.schema.representation.is_guid_reviver` |
 | `isULIDReviver` | ported | `pyfect.schema.representation.is_ulid_reviver` |
+| `isAsciiReviver` | missing |  |
 | `isBase64Reviver` | ported | `pyfect.schema.representation.is_base64_reviver` |
 | `isBase64UrlReviver` | ported | `pyfect.schema.representation.is_base64_url_reviver` |
 | `isStartingWithReviver` | ported | `pyfect.schema.representation.is_starting_with_reviver` |
@@ -829,8 +861,10 @@ Coverage counts ported, renamed and §4 exports.
 | `fromSchemaOpenApi3_1` | renamed | `pyfect.json_schema.from_schema_open_api_3_1` |
 | `fromSchemaOpenApi3_0` | renamed | `pyfect.json_schema.from_schema_open_api_3_0` |
 | `toDocumentDraft07` | renamed | `pyfect.json_schema.to_document_draft_07` |
+| `toDocumentDraft07WithDefinitionsPath` | missing |  |
 | `toDocumentDraft04` | renamed | `pyfect.json_schema.to_document_draft_04` |
 | `toMultiDocumentOpenApi3_1` | renamed | `pyfect.json_schema.to_multi_document_open_api_3_1` |
+| `toMultiDocumentComponents` | missing |  |
 | `VALID_OPEN_API_COMPONENTS_SCHEMAS_KEY_REGEXP` | ported | `pyfect.json_schema.VALID_OPEN_API_COMPONENTS_SCHEMAS_KEY_REGEXP` |
 | `sanitizeOpenApiComponentsSchemasKey` | ported | `pyfect.json_schema.sanitize_open_api_components_schemas_key` |
 | `getReferenceKey` | ported | `pyfect.json_schema.get_reference_key` |
