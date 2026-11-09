@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts``: the built-in codecs and the
+"""Ports of Effect's ``schema/Schema.test.ts``: the built-in codecs and the
 ``decodeTo`` / ``encodeTo`` / ``decode`` / ``encode`` / ``flip`` titles. Each
 test's docstring is the Effect test title, prefixed by its ``describe``
 block. ``TestSchema.Asserts`` is ``testing.SchemaAsserts``.

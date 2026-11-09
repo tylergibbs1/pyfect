@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts`` titles the other ``test_schema*.py``
+"""Ports of Effect's ``schema/Schema.test.ts`` titles the other ``test_schema*.py``
 files left: the promise adapters, ``brand``, ``Literal(s).transform``,
 ``NullOr``, ``OptionFromOptionalKey``, ``Uint8Array`` (``S.Bytes``), ``URL``
 and ``make``'s options. Each test's docstring is the Effect test title,

@@ -1,4 +1,4 @@
-"""Ports of Effect's ``StructWithRest`` titles from ``Schema.test.ts``,
+"""Ports of Effect's ``StructWithRest`` titles from ``schema/Schema.test.ts``,
 ``toFormatter.test.ts``, ``schema/toJsonSchemaDocument.test.ts`` and
 ``Arbitrary.test.ts``. Each test's docstring is the Effect test title,
 prefixed by its ``describe`` blocks. ``TestSchema.Asserts`` is
@@ -93,7 +93,7 @@ def _all_valid(schema: S.Codec[Any, Any, Any, Any]) -> None:
     assert all(is_(value) for value in _sample(schema))
 
 
-# -------------------------------------------------------- Schema.test.ts
+# -------------------------------------------------------- schema/Schema.test.ts
 
 
 def test_structwithrest_should_throw_an_error_if_there_are_duplicate_property_signatures():

@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts``: ``Class``, ``TaggedClass``,
+"""Ports of Effect's ``schema/Schema.test.ts``: ``Class``, ``TaggedClass``,
 ``Error`` and ``TaggedError``. Each test's docstring is the Effect test
 title, prefixed by its ``describe`` block. ``TestSchema.Asserts`` is
 ``testing.SchemaAsserts``.

@@ -1,5 +1,5 @@
 """Ports of Effect's ``withConstructorDefault`` and ``tag`` titles: the
-"withConstructorDefault" block of ``Schema.test.ts`` (the "tag" block is in
+"withConstructorDefault" block of ``schema/Schema.test.ts`` (the "tag" block is in
 ``test_schema_tagged.py``), its
 "flip / should work with withConstructorDefault", "makeEffect / should
 preserve mixed schema issue and defect causes" and the Class "make" titles

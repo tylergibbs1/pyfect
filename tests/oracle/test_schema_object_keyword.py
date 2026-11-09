@@ -21,7 +21,7 @@ _EXPECTED = "Expected object | array | function"
 
 
 def test_object_keyword() -> None:
-    """ObjectKeyword (Schema.test.ts)"""
+    """ObjectKeyword (schema/Schema.test.ts)"""
     asserts = SchemaAsserts(S.ObjectKeyword)
     make = asserts.make()
     make.succeed({})

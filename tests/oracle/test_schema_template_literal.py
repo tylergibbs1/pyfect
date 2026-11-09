@@ -1,6 +1,6 @@
 """Ports of Effect's ``schema/TemplateLiteral.test.ts`` and the
 ``TemplateLiteral`` / ``TemplateLiteralParser`` blocks of
-``Schema.test.ts``. Each docstring is the Effect test title, prefixed by
+``schema/Schema.test.ts``. Each docstring is the Effect test title, prefixed by
 its ``describe`` block (``TemplateLiteral.test.ts`` titles by
 ``TemplateLiteral.test``).
 

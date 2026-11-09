@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts``: literals, enums, unions of
+"""Ports of Effect's ``schema/Schema.test.ts``: literals, enums, unions of
 primitives, checks, ``fromBrand`` and ``resolveAnnotations``. Each test's
 docstring is the Effect test title, prefixed by its ``describe`` block.
 ``TestSchema.Asserts`` is ``testing.SchemaAsserts``.

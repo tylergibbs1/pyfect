@@ -1,6 +1,6 @@
 """Ports of Effect's tagged struct and union titles (``tag``,
 ``tagDefaultOmit``, ``Tagged unions``) and the ``Opaque`` titles from
-``Schema.test.ts``. Each test's docstring is the Effect test title,
+``schema/Schema.test.ts``. Each test's docstring is the Effect test title,
 prefixed by its ``describe`` blocks. ``TestSchema.Asserts`` is
 ``testing.SchemaAsserts``.
 

@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts``: the built-in string, binary,
+"""Ports of Effect's ``schema/Schema.test.ts``: the built-in string, binary,
 date-time, ``ByteSize`` and URL codecs. Each test's docstring is the Effect
 test title, prefixed by its ``describe`` block. ``TestSchema.Asserts`` is
 ``testing.SchemaAsserts``.

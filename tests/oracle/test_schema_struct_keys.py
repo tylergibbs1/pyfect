@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts`` "encodeKeys" and "extendTo" blocks,
+"""Ports of Effect's ``schema/Schema.test.ts`` "encodeKeys" and "extendTo" blocks,
 and a pyfect test of ``Tree`` (Effect has none).
 
 Omitted:

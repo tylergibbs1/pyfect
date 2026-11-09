@@ -15,6 +15,8 @@ import re
 from dataclasses import dataclass
 from fnmatch import fnmatch
 
+from _effect_titles_m17 import M17_REASON, TITLES
+
 
 @dataclass(frozen=True)
 class Omission:
@@ -46,13 +48,14 @@ _SYMBOLS = (
 )
 _NODE_STREAMS = "Node's streams and `EventTarget`: `process`, `socket` and `http` read Python's own"
 
-_DECISION_IMAGE_FIELDS = (
-    "Effect 4.1 replaced the separate `images` option with `Decision.Image` input fields and "
-    "pyfect follows 4.1; the decision model tests port 4.1.2's image-field titles instead"
-)
 NOT_PORTED_HTTP2 = "NOT_PORTED HTTP/2 on Node's server: `http.hypercorn_server` differs below ASGI"
 
 OMISSIONS: tuple[Omission, ...] = (
+    *(
+        Omission(path, M17_REASON, re.compile("|".join(f"^{re.escape(t)}$" for t in titles)))
+        for path, titles in TITLES.items()
+        if titles
+    ),
     *_whole(
         _TS_TOOLING,
         "tools/*/test/**",
@@ -190,21 +193,6 @@ OMISSIONS: tuple[Omission, ...] = (
         "platform/node/test/NodeSocket.test.ts",
         _NODE_STREAMS,
         r"writable stream rejection|^works$",
-    ),
-    _some(
-        "effect/test/ai/DecisionModel.test.ts",
-        _DECISION_IMAGE_FIELDS,
-        r"^forwards images to an image-capable provider$|images for a text-only provider$",
-    ),
-    _some(
-        "ai/openai/test/OpenAiDecisionModel.test.ts",
-        _DECISION_IMAGE_FIELDS,
-        r"^sends string and JSON state with byte array, base64 string, and data URL images$",
-    ),
-    _some(
-        "ai/cloudflare/test/CloudflareDecisionModel.test.ts",
-        _DECISION_IMAGE_FIELDS,
-        r"^sends byte arrays, base64 strings, and data URLs as images$",
     ),
     _some(
         "effect/test/Result.test.ts",

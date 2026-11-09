@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts``: structs, records, key annotations
+"""Ports of Effect's ``schema/Schema.test.ts``: structs, records, key annotations
 and the struct parse-option titles. Each test's docstring is the Effect test
 title, prefixed by its ``describe`` block. ``TestSchema.Asserts`` is
 ``testing.SchemaAsserts``.

@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts``: tuples, arrays, ``suspend``, the
+"""Ports of Effect's ``schema/Schema.test.ts``: tuples, arrays, ``suspend``, the
 collection and data-type declarations and the date-time, zone and
 ``instanceOf`` declarations. Each test's docstring is the Effect test title,
 prefixed by its ``describe`` block. ``TestSchema.Asserts`` is

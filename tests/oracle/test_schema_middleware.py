@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts``: middleware, ``catchDecoding`` /
+"""Ports of Effect's ``schema/Schema.test.ts``: middleware, ``catchDecoding`` /
 ``catchEncoding``, decoding defaults, ``checkEffect``, optional fields,
 ``asOption`` and ``decodeTo`` / ``encodeTo`` as composition. Each test's
 docstring is the Effect test title, prefixed by its ``describe`` block.

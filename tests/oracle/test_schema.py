@@ -1,4 +1,4 @@
-"""Ports of Effect's ``Schema.test.ts``: the primitive schemas, ``SchemaError``
+"""Ports of Effect's ``schema/Schema.test.ts``: the primitive schemas, ``SchemaError``
 and the schema guards. Each test's docstring is the Effect test title,
 prefixed by its ``describe`` block where Effect nests it. ``TestSchema.Asserts``
 is ``testing.SchemaAsserts``; Effect's ``Exit`` of a decoder is the ``_exit``
