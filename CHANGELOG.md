@@ -18,6 +18,12 @@
   `https://example.com` is `https://example.com/`, so `f"{url}payouts"` (not `/payouts`)
   appends a path.
 - `Path.from_file_url` takes a `Url` and `Path.to_file_url` gives one, as in Effect.
+- Standard Schema: the props live at the spec's `~standard` attribute
+  (`getattr(adapted, "~standard")`); `adapted.__standard__` is now a read-only typed alias of
+  it. `json_schema.input` / `output` take the spec's options, `input({"target": "draft-07"})`,
+  instead of `target=`, and `validate(value, options=None)` accepts the spec's second argument.
+- `schedule.fibonacci(one)` waits `one`, `one`, `2*one`, `3*one`, `5*one`, ..., as Effect 4.1.2
+  does; it skipped the second `one`.
 
 ### Changed
 
@@ -39,8 +45,26 @@
   such as `Factory`, is no longer a zone. `TZ` and
   the system zone read the same way.
 
+- The OTLP exporters arm their interval with the first buffered item and stop it once an
+  export empties the buffer, as Effect 4.1.2 does: a span ended at 2 seconds goes out at 7, and
+  an idle exporter keeps no timer.
+
+### Added
+
+- A schema class (`S.Class`, `S.TaggedClass`, `S.Error`, `S.TaggedError`) has `ast`, as every
+  Effect schema does, so `jit_compiler.enable(User.ast)` and `aot_compiler.Target(User.ast, ...)`
+  take it. A field named `ast` is still the instance's.
+
 ### Fixed
 
+- An OTLP exporter paused for a minute after a failed export dropped every item pushed after
+  the minute until some export ran; the first push after the minute now ends the pause, as in
+  Effect 4.1.2.
+- `pyfect.pydantic.from_model` reports only the first pydantic error unless decoding with
+  `errors="all"`, as every schema does.
+- A `Model.Class` field outside the `select` variant wrapped in `Model.field(...)` failed with
+  dataclasses' "is a field but has no type annotation"; it now names the fix (assign the variant
+  field without `field(...)`).
 - A `Host` (or `X-Forwarded-Host`, or an absolute request target) whose host the URL parser
   rejects, such as `999.0.0.1`, is no longer accepted as an authority, as Effect's
   `isValidHost` rejects it.

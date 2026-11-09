@@ -1,28 +1,31 @@
 """The Standard Schema interface in Python form (Effect's
 ``toStandardSchemaV1`` / ``toStandardJSONSchemaV1``).
 
-JavaScript libraries meet at a ``~standard`` property; here it is the
-``__standard__`` attribute of an adapter that wraps a schema. The adapter
+Libraries meet at a ``~standard`` property; here it is the ``~standard``
+attribute (``getattr(adapted, "~standard")``) of an adapter that wraps a
+schema, typed as ``__standard__``. The adapter
 is still the schema: it decodes like it (``__codec__``), reads and calls
 through to it (``Item``, a class's constructor, ``isinstance`` against a
 schema class, subclassing it), and keeps attributes written to it local.
-``__standard__`` holds ``version`` (1), ``vendor`` (``"pyfect"``) and
+``~standard`` holds ``version`` (1), ``vendor`` (``"pyfect"``) and
 ``validate`` (``to_standard_schema_v1``) or ``json_schema``
-(``to_standard_json_schema_v1``); adapting an adapter keeps the members it
-already has.
+(``to_standard_json_schema_v1``, whose ``input`` / ``output`` take the
+spec's ``{"target": ...}`` options); adapting an adapter keeps the members
+it already has.
 
-``validate(value)`` gives ``{"value": ...}`` or ``{"issues": [{"message",
-"path"}, ...]}``, decoding with ``errors="all"`` unless ``parse_options``
-says otherwise, synchronously when the decoding ran without waiting, else
-an awaitable of that result (Effect's ``Promise``). A defect gives one
-issue, the cause's text, without a path.
+``validate(value, options=None)`` (Effect ignores the options too) gives
+``{"value": ...}`` or ``{"issues": [{"message", "path"}, ...]}``, decoding
+with ``errors="all"`` unless ``parse_options`` says otherwise,
+synchronously when the decoding ran without waiting, else an awaitable of
+that result (Effect's ``Promise``). A defect gives one issue, the cause's
+text, without a path.
 """
 
 from __future__ import annotations
 
 import asyncio
 import inspect
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MethodType
 from typing import (
@@ -32,6 +35,7 @@ from typing import (
     Literal,
     Never,
     NotRequired,
+    Protocol,
     ReadOnly,
     TypedDict,
     TypeVar,
@@ -87,7 +91,27 @@ class FailureResult(TypedDict):
 
 
 type Result[A] = SuccessResult[A] | FailureResult
-type Validate[A] = Callable[[object], Result[A] | Awaitable[Result[A]]]
+
+
+class ValidateOptions(TypedDict):
+    """``StandardSchemaV1.Options``."""
+
+    libraryOptions: NotRequired[Mapping[str, object]]
+
+
+class Validate[A](Protocol):
+    """``StandardSchemaV1.Props.validate``."""
+
+    def __call__(
+        self, value: object, options: ValidateOptions | None = None, /
+    ) -> Result[A] | Awaitable[Result[A]]: ...
+
+
+class JsonSchemaOptions(TypedDict):
+    """``StandardJSONSchemaV1.Options``: the dialect to write."""
+
+    target: Target
+    libraryOptions: NotRequired[Mapping[str, object]]
 
 
 def _failure_result() -> Bottom[FailureResult, FailureResult]:
@@ -116,16 +140,16 @@ class JsonSchemaConverter:
 
     schema: Codec[object, object, object, object]
 
-    def input(self, *, target: Target = "draft-2020-12") -> JsonSchema:
-        return _json_schema(self.schema.__codec__().ast, target)
+    def input(self, options: JsonSchemaOptions, /) -> JsonSchema:
+        return _json_schema(self.schema.__codec__().ast, options["target"])
 
-    def output(self, *, target: Target = "draft-2020-12") -> JsonSchema:
-        return _json_schema(self.schema.__codec__().ast.to_type(), target)
+    def output(self, options: JsonSchemaOptions, /) -> JsonSchema:
+        return _json_schema(self.schema.__codec__().ast.to_type(), options["target"])
 
 
 @dataclass(frozen=True, slots=True)
 class StandardProps[A]:
-    """What ``__standard__`` holds (``StandardSchemaV1.Props`` and
+    """What ``~standard`` holds (``StandardSchemaV1.Props`` and
     ``StandardJSONSchemaV1.Props``); a member the adapter lacks is ``None``."""
 
     version: Literal[1] = 1
@@ -134,19 +158,26 @@ class StandardProps[A]:
     json_schema: JsonSchemaConverter | None = None
 
 
+_KEY: Final = "~standard"
+
+
 class StandardSchemaV1(Generic[T_co, E_co, RD_co, RE_co]):
     """A schema adapted to Standard Schema (see the module)."""
 
-    __slots__ = ("__dict__", "__standard__", "__wrapped__")
+    __slots__ = ("__dict__", "__wrapped__")
 
     def __init__(
         self, schema: Codec[T_co, E_co, RD_co, RE_co], standard: StandardProps[T_co]
     ) -> None:
         object.__setattr__(self, "__wrapped__", schema)
-        object.__setattr__(self, "__standard__", standard)
+        object.__setattr__(self, _KEY, standard)
 
     __wrapped__: Codec[T_co, E_co, RD_co, RE_co]
-    __standard__: StandardProps[T_co]
+
+    @property
+    def __standard__(self) -> StandardProps[T_co]:
+        """The props at ``~standard``, typed."""
+        return self.__dict__[_KEY]
 
     def __codec__(self) -> Bottom[T_co, E_co, RD_co, RE_co]:
         return self.__wrapped__.__codec__()
@@ -206,7 +237,9 @@ def to_standard_schema_v1[T, E, RE](
     options: ParseOptions = {"errors": "all", **(parse_options or {})}
     formatter = make_formatter_standard_schema_v1(leaf_hook=leaf_hook, check_hook=check_hook)
 
-    def validate(value: object) -> Result[T] | Awaitable[Result[T]]:
+    def validate(
+        value: object, _options: ValidateOptions | None = None, /
+    ) -> Result[T] | Awaitable[Result[T]]:
         effect = decode(value, **options).match(
             on_failure=lambda error: cast("Result[T]", formatter(error.issue)),
             on_success=lambda decoded: cast("Result[T]", {"value": decoded}),
@@ -267,12 +300,15 @@ __all__ = [
     "FailureResult",
     "Issue",
     "JsonSchemaConverter",
+    "JsonSchemaOptions",
     "Result",
     "StandardProps",
     "StandardSchemaV1",
     "StandardSchemaV1FailureResult",
     "SuccessResult",
     "Target",
+    "Validate",
+    "ValidateOptions",
     "to_standard_json_schema_v1",
     "to_standard_schema_v1",
 ]

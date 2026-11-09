@@ -164,8 +164,9 @@ def test_up_to_duration_bounds_total_time():
 
 
 def test_fibonacci_sums_the_two_preceding_delays():
-    """Schedule.ts fibonacci: a=0, b=one; each step yields a+b."""
-    assert delays(schedule.fibonacci("1 second"), [0.0] * 6) == [1, 2, 3, 5, 8, 13]
+    """Effect 4.1.2's Schedule.ts fibonacci: a=0, b=one; each step yields b,
+    then advances to a+b (4.0.6 yielded a+b, skipping the second ``one``)."""
+    assert delays(schedule.fibonacci("1 second"), [0.0] * 6) == [1, 1, 2, 3, 5, 8]
 
 
 def test_exponential_multiplies_by_the_factor_each_attempt():
@@ -232,7 +233,7 @@ def test_a_failure_making_the_step_fails_every_step():
 
 def test_each_run_starts_from_fresh_state():
     s = schedule.fibonacci("1 second")
-    assert delays(s, [0.0] * 3) == delays(s, [0.0] * 3) == [1, 2, 3]
+    assert delays(s, [0.0] * 3) == delays(s, [0.0] * 3) == [1, 1, 2]
 
 
 @testing.effect
@@ -340,8 +341,16 @@ def test_windows_follow_effect_when_the_clock_moves_back():
 
 
 def test_fibonacci_and_exponential_keep_whole_delays_with_decimal_units():
-    # Effect sums whole milliseconds: 100, 200, 300, 500, 800, 1300.
-    assert delays(schedule.fibonacci("100 millis"), [0.0] * 6) == [0.1, 0.2, 0.3, 0.5, 0.8, 1.3]
+    # Effect sums whole milliseconds: 100, 100, 200, 300, 500, 800, 1300.
+    assert delays(schedule.fibonacci("100 millis"), [0.0] * 7) == [
+        0.1,
+        0.1,
+        0.2,
+        0.3,
+        0.5,
+        0.8,
+        1.3,
+    ]
     assert delays(schedule.exponential("100 millis", 3), [0.0] * 3) == [0.1, 0.3, 0.9]
 
 

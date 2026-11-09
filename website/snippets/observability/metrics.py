@@ -9,7 +9,8 @@ def handler() -> fx.Effect[str]:
     return fx.sleep("10 millis").as_("ok")
 
 
-# track adds 1 per success; track_duration records how long each call took.
+# track adds 1 per call, failures included (track_successes counts only successes);
+# track_duration records how long each call took.
 tracked = handler().track_duration(latency).track(requests.with_constant_input(1))
 
 fx.run_blocking(fx.for_each(range(3), lambda _: tracked))

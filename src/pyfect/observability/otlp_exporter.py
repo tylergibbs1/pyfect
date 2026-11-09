@@ -11,11 +11,12 @@ share ``layer_flusher``, so one ``flush`` drains traces, logs and metrics.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Never
 
 from pyfect import layer as _layer
 from pyfect._concurrency import for_each
+from pyfect._fiber import Fiber
 from pyfect._version import VERSION
 from pyfect.cause import Cause
 from pyfect.clock import Clock, now_millis_unsafe, sleep
@@ -36,12 +37,15 @@ from pyfect.http.body import HttpBody
 from pyfect.http.client import (
     HttpClient,
     HttpClientError,
+    HttpClientService,
     TracerPropagationEnabled,
     transform_response,
 )
 from pyfect.http.error import StatusCodeError
 from pyfect.http.headers import parse_retry_after, retry_after_delay
+from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
+from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.logger import log_debug
 from pyfect.result import Ok
@@ -145,6 +149,62 @@ def _drain_error(error: HttpClientError) -> Effect[None]:
     return succeed(None) if response is None else response.bytes_.ignore()
 
 
+def _client(http: HttpClientService[HttpClientError]) -> HttpClientService[HttpClientError]:
+    return (
+        http.tap(_drain)
+        .tap_error(_drain_error)
+        .filter_status_ok()
+        .pipe(transform_response(provide_service(TracerPropagationEnabled, False)))
+        .retry_transient(schedule=_POLICY, times=3)
+    )
+
+
+def _post(url: str, headers: _headers.Input | None, label: str) -> HttpClientRequest:
+    exporter_agent = f"OTel-OTLP-Exporter-Python-Pyfect-{label}/{VERSION}"
+    user_headers = _headers.from_input(headers)
+    user_agent = user_headers.get("user-agent")
+    return _request.post(
+        url,
+        headers=user_headers.set(
+            "user-agent", f"{user_agent} {exporter_agent}" if user_agent else exporter_agent
+        ),
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _Timer:
+    """The export interval: ``armed`` is open while there is something to
+    export, and changes in the same synchronous step as the buffer check, so
+    no push is stranded. ``wake`` cuts a sleep short once a flush disarmed it."""
+
+    armed: Latch
+    keep_armed: bool
+    wake: Latch = field(default_factory=Latch)
+
+    def disarm_if_empty(self, buffered: bool) -> None:
+        if self.keep_armed or buffered or not self.armed.close_unsafe():
+            return
+        self.wake.open_unsafe()
+
+    def loop(
+        self,
+        interval: Seconds,
+        export: Effect[Fiber[None, Never]],
+        buffered: Callable[[], bool],
+    ) -> Effect[Never]:
+        @gen
+        def run():
+            while True:
+                self.wake.close_unsafe()
+                yield from self.armed.wait()
+                yield from sleep(interval).race(self.wake.wait())
+                fiber = yield from export
+                yield from fiber.await_exit()
+                self.disarm_if_empty(buffered())
+
+        return run
+
+
 def make(
     *,
     url: str,
@@ -159,12 +219,15 @@ def make(
 ) -> Effect[Exporter, Never, Flusher | HttpClient | Scope]:
     """A scoped batch exporter posting ``body(items)`` to ``url``.
 
-    It exports every ``export_interval`` (each export finishing before the
-    next interval starts) and as soon as ``max_batch_size`` items are
-    buffered; with ``max_batch_size="disabled"`` only on the interval or a
-    flush, and also with nothing buffered when ``export_empty``. Transient
-    failures are retried three times. Any other failure drops the buffer
-    and disables exporting for 60 seconds. When the scope closes it exports
+    It exports ``export_interval`` after the first item is buffered (each
+    export finishing before the next interval starts) and as soon as
+    ``max_batch_size`` items are buffered; with ``max_batch_size="disabled"``
+    only on the interval or a flush. An export that empties the buffer stops
+    the interval until the next push, so an idle exporter keeps no timer;
+    with ``export_empty`` and batching disabled it exports every interval.
+    Transient failures are retried three times. Any other failure drops the
+    buffer and disables exporting for 60 seconds; the first push or export
+    after that ends the window. When the scope closes it exports
     what is left and waits up to ``shutdown_timeout`` for its exports,
     then interrupts them. ``"gzip"`` compression happens once, before the
     retries; ``body``'s effect runs after a successful post."""
@@ -174,34 +237,25 @@ def make(
     @gen
     def build():
         clock = yield from Clock()
-        http = yield from HttpClient()
-        client = (
-            http.tap(_drain)
-            .tap_error(_drain_error)
-            .filter_status_ok()
-            .pipe(transform_response(provide_service(TracerPropagationEnabled, False)))
-            .retry_transient(schedule=_POLICY, times=3)
-        )
+        client = _client((yield from HttpClient()))
+        request = _post(url, headers, label)
 
-        exporter_agent = f"OTel-OTLP-Exporter-Python-Pyfect-{label}/{VERSION}"
-        user_headers = _headers.from_input(headers)
-        user_agent = user_headers.get("user-agent")
-        request = _request.post(
-            url,
-            headers=user_headers.set(
-                "user-agent", f"{user_agent} {exporter_agent}" if user_agent else exporter_agent
-            ),
-        )
-
+        exports_empty = max_batch_size == "disabled" and export_empty
         disabled_until: int | None = None
         buffer: list[Any] = []
 
-        def export() -> Effect[None, Any]:
-            nonlocal disabled_until, buffer
-            if disabled_until is not None and now_millis_unsafe(clock) < disabled_until:
-                return succeed(None)
+        def is_disabled() -> bool:
+            nonlocal disabled_until
+            if disabled_until is None:
+                return False
+            if now_millis_unsafe(clock) < disabled_until:
+                return True
             disabled_until = None
-            if not buffer and (max_batch_size != "disabled" or not export_empty):
+            return False
+
+        def export() -> Effect[None, Any]:
+            nonlocal buffer
+            if is_disabled() or (not buffer and not exports_empty):
                 return succeed(None)
             items, buffer = buffer, []
             payload, on_success = body(items)
@@ -230,9 +284,6 @@ def make(
         export_fibers = yield from FiberSet[None, Never].make()
         fork_export = yield from export_fibers.runtime()
 
-        flusher = yield from Flusher()
-        yield from flusher.register(run_export)
-
         def shut_down() -> Effect[None]:
             if disabled_until is not None:
                 return succeed(None)
@@ -243,21 +294,27 @@ def make(
             lambda _exit: suspend(shut_down).ignore().interruptible().timeout_option(timeout)
         )
 
+        timer = _Timer(armed=Latch(exports_empty), keep_armed=exports_empty)
+        # Forked after the shutdown finalizer, so the loop stops before the
+        # shutdown flush.
         scope = yield from Scope()
-        yield from (
-            sleep(interval)
-            .and_then(export_fibers.run(run_export))
-            .flat_map(lambda fiber: fiber.await_exit())
-            .forever()
-            .fork_in(scope)
-        )
+        yield from timer.loop(
+            interval, export_fibers.run(run_export), lambda: bool(buffer)
+        ).fork_in(scope)
+        export_now = run_export.and_then(sync(lambda: timer.disarm_if_empty(bool(buffer))))
+
+        flusher = yield from Flusher()
+        yield from flusher.register(export_now)
 
         def push(item: Any) -> None:
-            if disabled_until is not None:
+            # With no idle timer, the next push ends the disabled window.
+            if is_disabled():
                 return
             buffer.append(item)
             if max_batch_size != "disabled" and len(buffer) >= max_batch_size:
-                fork_export(run_export)
+                fork_export(export_now)
+            else:
+                timer.armed.open_unsafe()
 
         return Exporter(push)
 

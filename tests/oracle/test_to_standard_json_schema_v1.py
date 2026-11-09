@@ -1,6 +1,6 @@
 """Ports of Effect's ``toStandardJSONSchemaV1.test.ts``.
 
-``schema["~standard"].jsonSchema`` is ``adapted.__standard__.json_schema``;
+``schema["~standard"].jsonSchema`` is ``getattr(adapted, "~standard").json_schema``;
 ``extend`` is subclassing the adapter."""
 
 from __future__ import annotations
@@ -14,11 +14,11 @@ _07 = "http://json-schema.org/draft-07/schema#"
 
 
 def _input(schema: Any, target: Any = "draft-2020-12") -> Any:
-    return schema.__standard__.json_schema.input(target=target)
+    return getattr(schema, "~standard").json_schema.input({"target": target})
 
 
 def _output(schema: Any, target: Any = "draft-2020-12") -> Any:
-    return schema.__standard__.json_schema.output(target=target)
+    return getattr(schema, "~standard").json_schema.output({"target": target})
 
 
 def test_describes_subclass_fields_when_the_parent_already_has_a_standard_json_schema_adapter():

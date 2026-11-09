@@ -107,7 +107,9 @@ is an error class that is also a schema, so it can be sent over the wire.
 ## JSON Schema
 
 `S.to_json_schema_document(schema)` describes the JSON that `S.to_codec_json(schema)` reads
-and writes, in draft 2020-12. Checks become keywords where JSON Schema has one.
+and writes, in draft 2020-12. Checks become keywords where JSON Schema has one. `S.is_pattern`
+takes a Python `re` pattern, which JSON Schema's ECMAScript `pattern` can't carry, so it writes
+none; `S.is_ecma_pattern` (Effect's `isPattern`) checks with the ECMAScript pattern and writes it.
 `pyfect.json_schema` converts documents to draft-07, draft-04 and OpenAPI.
 `pyfect.schema.representation.from_json_schema_document` goes the other way: it turns a
 JSON Schema document into a schema that validates, and `to_code_document` writes the Python
@@ -123,8 +125,8 @@ source of a schema, with `to_code_module` laying it out as a module.
 
 ## Compiled decoders
 
-`pyfect.schema.jit_compiler.enable(schema.ast)` generates Python source for the schema's
-validators the first time each one is used, compiles it, and installs it in the registry every
+`pyfect.schema.jit_compiler.enable(schema.ast)` (a schema class's is `User.ast`) generates
+Python source for the schema's validators the first time each one is used, compiles it, and installs it in the registry every
 parser shares (`S.decode_unknown_sync`, `S.is_`, `S.make`, ...). Importing
 `pyfect.schema.jit_compiler.install` does that for every schema. A compiled decoder gives the
 interpreter's results and issues: when its fast check fails, the interpreter reports why.
@@ -142,11 +144,13 @@ time. On a nested struct with ten rows the compiled decoder is about six times f
 
 ## Standard Schema
 
-`S.to_standard_schema_v1(schema)` adds the Standard Schema interface: `__standard__` holds
-`version`, `vendor` and `validate`, which returns `{"value": ...}` or `{"issues": [...]}`
-(an awaitable of it when decoding has to wait). `S.to_standard_json_schema_v1(schema)` adds
-`json_schema.input` and `json_schema.output` for draft-2020-12 and draft-07. The adapter is
-still the schema: it decodes, constructs and subclasses as the schema does.
+`S.to_standard_schema_v1(schema)` adds the Standard Schema interface at the spec's `~standard`
+key (`getattr(adapted, "~standard")`, typed as `adapted.__standard__`): `version`, `vendor` and
+`validate(value, options=None)`, which returns `{"value": ...}` or `{"issues": [...]}` (an
+awaitable of it when decoding has to wait). `S.to_standard_json_schema_v1(schema)` adds
+`json_schema.input({"target": ...})` and `json_schema.output(...)` for `"draft-2020-12"` and
+`"draft-07"`. The adapter is still the schema: it decodes, constructs and subclasses as the
+schema does.
 
 <CodeOutput>
 

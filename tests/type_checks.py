@@ -7451,6 +7451,38 @@ def check_ai_decision_model(
         fx.Ok[ai_decision.ClassifyAnswer[Literal["billing", "tech"]]]
         | fx.Err[ai_decision.Unanswered],
     )
+    # fx.all over decision effects keeps each answer's type (dogfood followup).
+    decided = ai_dm.decide(triage, input={"message": "hi"})
+    settling = ai_dm.decide_settled(triage, input={"message": "hi"})
+    assert_type(
+        fx.all(decided, settling, concurrency="unbounded"),
+        fx.Effect[
+            tuple[ai_dm.DecideResponse, ai_dm.DecideSettledResponse], AiError, ai_dm.DecisionModel
+        ],
+    )
+    assert_type(
+        fx.all(*[decided, decided]),
+        fx.Effect[tuple[ai_dm.DecideResponse, ...], AiError, ai_dm.DecisionModel],
+    )
+
+    def team_of(response: ai_dm.DecideResponse) -> Literal["billing", "tech"]:
+        return response.answers[team].label
+
+    assert_type(
+        fx.all(decided.map(team_of), decided.map(team_of)),
+        fx.Effect[
+            tuple[Literal["billing", "tech"], Literal["billing", "tech"]],
+            AiError,
+            ai_dm.DecisionModel,
+        ],
+    )
+    # pyright widens a literal a lambda returns (effects.mdx documents it); a def
+    # or an expected type keeps it.
+    outcome = settled.outcomes[team]
+    if isinstance(outcome, fx.Ok):
+        assert_type(outcome.map(lambda a: a.label), fx.Ok[str])
+        kept: fx.Ok[Literal["billing", "tech"]] = outcome.map(lambda a: a.label)
+        assert_type(kept, fx.Ok[Literal["billing", "tech"]])
     # Deciding needs the DecisionModel and fails only with AiError.
     assert_type(
         ai_dm.decide(triage, input={"message": "hi"}),
@@ -9577,6 +9609,7 @@ def schema_codec_family_pins() -> None:
 def schema_compiler_pins() -> None:
     from collections.abc import Awaitable
 
+    from pyfect.json_schema import JsonSchema
     from pyfect.option import Option
     from pyfect.schema import aot_compiler, compiler, jit_compiler
     from pyfect.schema._parse import Parser
@@ -9599,6 +9632,18 @@ def schema_compiler_pins() -> None:
     assert_type(aot_compiler.compile([aot_compiler.Target(S.String.ast, ["decode"])]), str)
     aot_compiler.Target(S.String.ast, ["encode"])  # pyright: ignore[reportArgumentType]
 
+    # A schema class has its schema's AST, as every Effect schema does.
+    class Expense(S.Class):
+        amount_cents: int
+
+    class Node(S.Class):
+        ast: str
+
+    assert_type(Expense.ast, S.ast.AST)
+    jit_compiler.enable(Expense.ast)
+    assert_type(Node(ast="x").ast, str)
+    _ = Expense(amount_cents=1).ast  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownVariableType]
+
     # The Standard Schema adapter is still the schema.
     adapted = S.to_standard_schema_v1(S.FiniteFromString)
     assert_type(adapted, S.StandardSchemaV1[float, str, Never, Never])
@@ -9607,8 +9652,14 @@ def schema_compiler_pins() -> None:
     validate = adapted.__standard__.validate
     assert validate is not None
     assert_type(validate("1"), Result[float] | Awaitable[Result[float]])
+    assert_type(validate("1", {"libraryOptions": {}}), Result[float] | Awaitable[Result[float]])
+    validate("1", {"library_options": {}})  # pyright: ignore[reportArgumentType]
     both = S.to_standard_json_schema_v1(adapted)
     assert_type(both, S.StandardSchemaV1[float, str, Never, Never])
+    converter = both.__standard__.json_schema
+    assert converter is not None
+    assert_type(converter.input({"target": "draft-07"}), JsonSchema)
+    converter.output({"target": "draft-04"})  # pyright: ignore[reportArgumentType]
 
 
 # --- OTLP exporters (parity-otlp) ---------------------------------------------------------------

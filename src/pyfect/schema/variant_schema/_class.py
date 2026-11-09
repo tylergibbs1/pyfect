@@ -130,6 +130,20 @@ def _take_unannotated(
     class (it does not have them)."""
     found: dict[str, object] = {}
     for name, value in list(vars(cls).items()):
+        spec = (
+            cast("dataclasses.Field[Any]", value).metadata.get(_VARIANT)
+            if name not in annotated and isinstance(value, dataclasses.Field)
+            else None
+        )
+        if spec is not None:
+            if isinstance(spec, Field) and default not in cast("Field[Any]", spec).schemas:
+                raise TypeError(
+                    f"{cls.__name__}.{name} is not in the {default!r} variant: "
+                    "assign the variant field without field(...)"
+                )
+            raise TypeError(
+                f"{cls.__name__}.{name} is in the {default!r} variant: annotate it with its type"
+            )
         if name in annotated or not isinstance(value, Field | Struct):
             continue
         if isinstance(value, Struct) or default in value.schemas:

@@ -645,3 +645,79 @@ def test_a_failed_export_disables_the_exporter_for_60_seconds():
         assert len(seen.requests) == 2
 
     yield from _with_flusher(program, http)
+
+
+@testing.effect
+def test_the_export_interval_starts_with_the_first_push():
+    """Not an Effect 4.0.6 title: Effect 4.1.2's ``make`` arms the interval with
+    the first push, so an item pushed at 2 seconds goes out at 7, not 5."""
+    times: list[int] = []
+
+    def answer(request: HttpClientRequest) -> HttpClientResponse:
+        return response.make(request)
+
+    seen, http = collector(answer)
+
+    @fx.gen
+    def program():
+        exporter = yield from _make_exporter(
+            http, export_interval="5 seconds", max_batch_size="disabled"
+        )
+        yield from testing.adjust("2 seconds")
+        exporter.push({"value": 1})
+        yield from testing.adjust("4900 millis")
+        times.append(len(seen.requests))
+        yield from testing.adjust("100 millis")
+        times.append(len(seen.requests))
+
+    yield from fx.scoped(program)
+    assert times == [0, 1]
+
+
+@testing.effect
+def test_an_exporter_that_emptied_its_buffer_rearms_on_the_next_push():
+    """Not an Effect 4.0.6 title: Effect 4.1.2 disarms the interval once an
+    export empties the buffer; the next push starts a fresh interval."""
+    seen, http = collector()
+
+    @fx.gen
+    def program():
+        exporter = yield from _make_exporter(
+            http, export_interval="5 seconds", max_batch_size="disabled"
+        )
+        exporter.push({"value": 1})
+        yield from testing.adjust("5 seconds")
+        assert len(seen.requests) == 1
+        yield from testing.adjust("3 seconds")
+        exporter.push({"value": 2})
+        yield from testing.adjust("4 seconds")
+        assert len(seen.requests) == 1
+        yield from testing.adjust("1 second")
+        assert len(seen.requests) == 2
+
+    yield from fx.scoped(program)
+
+
+@testing.effect
+def test_a_push_after_the_disabled_window_ends_it():
+    """Not an Effect 4.0.6 title: in Effect 4.1.2 ``push`` ends a disabled window
+    that has run out, so an item pushed after the minute is exported."""
+    statuses = [400]
+
+    def answer(request: HttpClientRequest) -> HttpClientResponse:
+        return response.make(request, status=statuses.pop() if statuses else 200)
+
+    seen, http = collector(answer)
+
+    @fx.gen
+    def program():
+        exporter = yield from _make_exporter_raw(10)
+        flusher = yield from otlp_exporter.Flusher()
+        exporter.push({"value": 1})
+        yield from flusher.flush
+        yield from testing.adjust("60 seconds")
+        exporter.push({"value": 2})
+        yield from flusher.flush
+        assert len(seen.requests) == 2
+
+    yield from _with_flusher(program, http)

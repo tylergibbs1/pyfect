@@ -17,7 +17,10 @@ but invalid **fails**, so a typo in `PORT` is an error, not a silent default.
 A `ConfigProvider` is where values come from: `from_env` (the default), `from_dot_env`,
 `from_dir`, `from_unknown` (nested dicts) or your own lookup. `from_dot_env` and `from_dir`
 read through the `FileSystem` service (and `Path`), so provide `platform.layer` or a test
-file system. Install one with `config_provider.layer`. `nested` reads a config under a prefix, and `config.redacted` keeps a
+file system. The default `from_env` copies the environment the first time a config is read and
+keeps that copy for the rest of the process, as Effect copies `process.env`: a variable set
+later is not seen unless you install a fresh `config_provider.from_env()`. Install one with
+`config_provider.layer`. `nested` reads a config under a prefix, and `config.redacted` keeps a
 secret out of logs and error messages.
 
 <include meta='title="sources.py"'>../../snippets/config/sources.py</include>

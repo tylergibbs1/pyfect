@@ -11,8 +11,9 @@ with `Model.model_validate` and encodes with `model_dump(mode="json")`, and each
 error becomes an issue at its path, so `errors="all"` reports every problem at once.
 `pyfect.msgspec.from_struct(Struct)` does the same for a msgspec struct with
 `msgspec.convert` and `msgspec.to_builtins` (msgspec stops at the first error). Both compose
-like any schema: in `S.Array`, under `S.from_json_string`, or as a
-[config](/docs/config) value.
+like any schema: in `S.Array`, or under `S.from_json_string`, which is also how they become a
+[config](/docs/config) value (`config.schema(S.from_json_string(from_model(Db)), "DB")`): a bare
+one is refused, as Effect's `Config.schema` refuses `Schema.Json`.
 
 Going the other way, a pyfect schema is a pydantic field type: annotate a field with it, and
 pydantic decodes, encodes and writes the JSON Schema with it.

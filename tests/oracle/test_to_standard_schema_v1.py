@@ -1,6 +1,7 @@
 """Ports of Effect's ``toStandardSchemaV1.test.ts``.
 
-Python mappings: ``schema["~standard"]`` is ``adapted.__standard__``; a
+Python mappings: ``schema["~standard"]`` is ``getattr(adapted, "~standard")``
+(typed as ``adapted.__standard__``); a
 ``Promise`` result is an awaitable; ``Schema.Class<A>("A")({...})`` is
 ``class A(S.Class)`` and ``extend`` is subclassing the adapter.
 ``Object.freeze`` has no Python equivalent, so "can re-adapt a frozen
@@ -31,7 +32,7 @@ type Issues = Sequence[dict[str, object]]
 
 
 def _validate(schema: Any, input: object) -> Any:
-    return schema.__standard__.validate(input)
+    return getattr(schema, "~standard").validate(input)
 
 
 def _issues(result: Any) -> list[dict[str, object]]:
@@ -422,3 +423,20 @@ def test_tree_leaf_hook_non_empty_string():
 
     standard = S.to_standard_schema_v1(S.NonEmptyString, leaf_hook=leaf_message)
     _sync_failure(standard, "", [{"message": _MIN_1, "path": []}])
+
+
+def test_the_props_are_at_the_spec_key():
+    """Not an Effect title: the props live at ``~standard`` as the spec says
+    (Effect's ``attach``), and ``__standard__`` is the typed name for them."""
+    standard = S.to_standard_schema_v1(S.FiniteFromString)
+    props = getattr(standard, "~standard")
+    assert props is standard.__standard__
+    assert (props.version, props.vendor) == (1, "pyfect")
+
+
+def test_validate_takes_the_specs_options():
+    """Not an Effect title: ``validate(value, options?)`` as the spec declares;
+    Effect ignores the options (JavaScript drops the extra argument)."""
+    validate = getattr(S.to_standard_schema_v1(S.FiniteFromString), "~standard").validate
+    assert validate("1", {"libraryOptions": {"x": 1}}) == {"value": 1.0}
+    assert validate("1", None) == {"value": 1.0}

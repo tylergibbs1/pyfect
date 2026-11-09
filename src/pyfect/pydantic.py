@@ -156,15 +156,15 @@ def from_model[M: BaseModel](model: type[M], /) -> Bottom[M, JsonValue]:
     """``model`` as a pyfect schema: decodes a JSON value with
     ``model.model_validate``, encodes with ``model_dump(mode="json")``.
     Each pydantic error is an issue at its location (``Missing key`` for a
-    missing field)."""
+    missing field); only the first unless decoding with ``errors="all"``."""
     target = instance_of(model)
     node = target.ast
 
-    def decode(input: JsonValue, _options: ParseOptions) -> Exit[M, Issue]:
+    def decode(input: JsonValue, options: ParseOptions) -> Exit[M, Issue]:
         try:
             return Success(model.model_validate(input))
         except ValidationError as error:
-            return fail_exit(_issue_of(error, node))
+            return fail_exit(_issue_of(error, node, every=options.get("errors") == "all"))
 
     def encode(value: M, _options: ParseOptions) -> Exit[JsonValue, Issue]:
         return Success(cast("JsonValue", value.model_dump(mode="json")))
@@ -172,9 +172,10 @@ def from_model[M: BaseModel](model: type[M], /) -> Bottom[M, JsonValue]:
     return Json.pipe(decode_to(target, T.transform_effect(decode=decode, encode=encode)))
 
 
-def _issue_of(error: ValidationError, node: schema_ast.AST) -> Issue:
+def _issue_of(error: ValidationError, node: schema_ast.AST, *, every: bool) -> Issue:
+    details = error.errors(include_url=False)
     issues: list[Issue] = []
-    for detail in error.errors(include_url=False):
+    for detail in details if every else details[:1]:
         leaf: Issue = (
             MissingKey()
             if detail["type"] == "missing"

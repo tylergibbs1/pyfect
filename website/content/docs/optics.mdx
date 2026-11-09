@@ -30,7 +30,8 @@ has the kind of its weakest step, so `optic.Id[T]().key("a")` is a `Lens` and `.
 
 `json_patch.get(before, after)` computes the [RFC 6902](https://www.rfc-editor.org/rfc/rfc6902)
 operations (`add`, `remove` and `replace`) that turn one JSON value into another, and
-`json_patch.apply(patch, value)` applies them to a copy. An operation that does not fit the
+`json_patch.apply(patch, value)` applies them to a copy (an empty patch returns `value` itself,
+as in Effect). An operation that does not fit the
 value raises `ValueError`. Patches are plain dicts, ready to store or send as JSON.
 
 <CodeOutput>

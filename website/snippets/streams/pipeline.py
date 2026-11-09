@@ -40,7 +40,7 @@ pipeline = (
     .map_effect(
         lambda o: price(o).retry(schedule=schedule.exponential("1 millis"), times=3), concurrency=4
     )
-    .buffer(capacity=8)  # pricing runs at most 8 ahead of the writer: bounded memory
+    .buffer(capacity=8)  # holds at most 8 priced items: bounded memory
     .grouped(2)
     .run(sink.for_each(lambda batch: fx.sync(lambda: written.append(batch))))
 )

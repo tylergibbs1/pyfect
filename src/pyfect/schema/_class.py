@@ -358,8 +358,15 @@ def _define(
     annotations: Mapping[str, object] | None,
 ) -> None:
     """Make ``cls`` a dataclass whose constructor validates, and its schema."""
+    own_ast_field = "ast" in inspect.get_annotations(cls) and "ast" not in cls.__dict__
+    if own_ast_field:
+        # ``@dataclass`` reads a field's default with ``getattr(cls, name)``,
+        # which would give the class's ``ast``.
+        type.__setattr__(cls, "ast", MISSING)
     # Errors keep pyfect.errors.TaggedError's structural equality and hash.
     dataclasses.dataclass(cls, kw_only=True, frozen=frozen, eq=not error)
+    if own_ast_field:
+        type.__delattr__(cls, "ast")
     if error and frozen:
         # A frozen dataclass rejects every attribute, ``__traceback__`` and
         # ``__notes__`` included; only the fields are frozen here.
@@ -417,8 +424,22 @@ def _tag_for(cls: type, tag: str | None) -> str:
     return inherited if isinstance(inherited, str) else cls.__name__
 
 
+class _ClassAst:
+    """``A.ast``, the class's schema node, as every Effect schema has. Read
+    on the class only (an instance has none); a field called ``ast`` is the
+    instance's (``_define`` keeps ``@dataclass`` from taking this for its
+    default)."""
+
+    def __get__(self, obj: None, owner: type, /) -> ast.AST:
+        if obj is not None:
+            raise AttributeError("ast")
+        return cast("Codec[object, object, object, object]", owner).__codec__().ast
+
+
 class _SchemaClass:
     """What every schema class has: it is a schema (``Codec``) of itself."""
+
+    ast = _ClassAst()
 
     @classmethod
     def __codec__(cls) -> Bottom[Self, Mapping[str, object]]:

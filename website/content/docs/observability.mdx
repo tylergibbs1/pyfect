@@ -11,8 +11,8 @@ log spans add context to every entry inside an effect.
 
 <include meta='title="log_entries.py"'>../../snippets/observability/log_entries.py</include>
 
-`logger.layer([...])` replaces the loggers: `console_pretty`, `console_logfmt`, `console_json`,
-`batched(...)`, your own `fx.Logger.make(...)`, or `logger.to_logging("app")` to hand entries to
+`logger.layer([...])` replaces the loggers: `console_pretty()` (a function, taking options),
+`console_logfmt`, `console_json`, `batched(...)`, your own `fx.Logger.make(...)`, or `logger.to_logging("app")` to hand entries to
 the standard library's `logging`.
 
 ## Tracing
@@ -40,16 +40,18 @@ metrics.
 `pyfect.observability` has Effect's own OTLP/HTTP exporters, which need no extra:
 `otlp.layer_json(base_url=..., resource=...)` (or `layer_protobuf`) exports logs, metrics and
 spans to `/v1/logs`, `/v1/metrics` and `/v1/traces` through the `HttpClient` you provide. Logs
-and spans go out in batches every second and every five seconds, or as soon as 1,000 are
-waiting; metrics every ten seconds. `otlp_exporter.Flusher` exports everything now, and
+go out a second after the first one is buffered and spans five seconds after, or as soon as
+1,000 are waiting; metrics every ten seconds. An exporter with nothing buffered keeps no timer. `otlp_exporter.Flusher` exports everything now, and
 releasing the layer sends what is left, waiting up to three seconds.
 
 <include meta='title="otlp_exporters.py"'>../../snippets/observability/otlp_exporters.py</include>
 
 Transient failures are retried three times, honouring a 429's `Retry-After`; any other failure
-drops the batch and pauses that exporter for a minute. `otlp.layer_from_config()` reads the
-standard `OTEL_*` variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
-`OTEL_TRACES_EXPORTER=otlp`, ...) and installs nothing unless a signal is switched on.
+drops the batch and pauses that exporter for a minute; the first item pushed after the minute
+ends the pause. `otlp.layer_from_config()` reads the standard `OTEL_*` variables
+(`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_TRACES_EXPORTER=otlp`, ...)
+and installs nothing unless a signal is switched on. Unlike `layer_json`, it needs an encoding
+as well as the `HttpClient`: provide `otlp_serialization.layer_json` (or `layer_protobuf`).
 `otlp_proxy.layer(base_url=..., headers=...)` mounts the same routes on your `HttpRouter` and
 forwards browser exports to the collector, adding the credentials on the server.
 

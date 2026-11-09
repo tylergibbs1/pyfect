@@ -28,6 +28,11 @@ uses other services, so annotate its return as `fx.Gen[A, E, R]` (what the body 
 returns), as in `def with_scope[R](eff: fx.Effect[int, Never, R]) -> fx.Gen[int, Never, R | Scope]`.
 `@fx.fn` raises `TypeError` for a generic body without a return annotation.
 
+pyright widens a literal returned from a lambda: `eff.map(lambda r: r.answers[team].label)` is
+an `Effect[str, ...]` even though the label is `Literal["billing", "tech"]`, and the same holds
+for `Ok.map`, `fx.for_each` and every other combinator taking a function. A `def` with a return
+annotation, or an annotated variable receiving the result, keeps the literal.
+
 ## Running effects
 
 | Function | Use it for |
@@ -39,8 +44,9 @@ returns), as in `def with_scope[R](eff: fx.Effect[int, Never, R]) -> fx.Gen[int,
 | `run_main(eff)` | a program's entry point: handles SIGINT/SIGTERM, logs failures, sets the exit code |
 | `ManagedRuntime.make(layer)` | building services once and running many effects with them (web servers) |
 
-The run functions accept only effects whose error and service types are `Never`, so an unhandled
-error or a missing service is a type error at the call site.
+Every run function needs the service type to be `Never`, so a missing service is a type error at
+the call site. `run_sync`, `run_blocking` and `run_async` also need the error type to be `Never`; their `_exit`
+variants and `run_main` take an effect that can fail and hand you (or log) the failure.
 
 <include meta='title="running.py"'>../../snippets/effects/running.py</include>
 

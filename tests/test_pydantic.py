@@ -93,9 +93,19 @@ def test_from_model_decodes_with_the_model_and_encodes_its_json_dump():
     assert S.encode_sync(schema)(Item(sku="a", qty=2)) == {"sku": "a", "qty": 2}
 
 
-def test_from_model_reports_each_pydantic_error_at_its_location():
+def test_from_model_stops_at_the_first_pydantic_error_by_default():
+    """``errors="first"``, the default, reports one issue, as every schema does."""
     result = S.decode_unknown_result(S.Array(P.from_model(Item)))(
         [{"sku": "a", "qty": 1}, {"qty": "x"}]
+    )
+
+    assert isinstance(result, Err)
+    assert str(result.error) == 'Missing key\n  at [1]["sku"]'
+
+
+def test_from_model_reports_each_pydantic_error_at_its_location():
+    result = S.decode_unknown_result(S.Array(P.from_model(Item)))(
+        [{"sku": "a", "qty": 1}, {"qty": "x"}], errors="all"
     )
 
     assert isinstance(result, Err)

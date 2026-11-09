@@ -39,8 +39,8 @@ An exception raised inside `fx.sync` or a `map` is a defect. Use `fx.try_` (or `
 
 When a failure and a defect happen together (a finalizer crashed while handling an error),
 the defect wins and typed handlers don't run, so a bug is never mistaken for a handled error.
-A failed run's `Exit` holds a `Cause`; `cause.pretty()` prints every failure, defect and
-interruption in it with tracebacks.
+A failed run's `Exit` holds a `Cause`; `cause.pretty()` prints every failure and defect in it
+with tracebacks. Interruptions are printed only when there is nothing else, as in Effect.
 
 <include meta='title="defects.py"'>../../snippets/errors/defects.py</include>
 

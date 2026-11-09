@@ -84,9 +84,9 @@ def exponential(base: Duration, factor: float = 2.0) -> Schedule[Seconds]:
 
 
 def fibonacci(one: Duration) -> Schedule[Seconds]:
-    """Recur forever, waiting ``one``, ``2*one``, ``3*one``, ``5*one``, ...:
-    each delay the sum of the two before. Outputs the delay, which becomes
-    infinite once it passes float range."""
+    """Recur forever, waiting ``one``, ``one``, ``2*one``, ``3*one``,
+    ``5*one``, ...: each delay the sum of the two before. Outputs the delay,
+    which becomes infinite once it passes float range."""
     unit = to_millis(one)
 
     def make() -> StepFn[Seconds, object, Any, Any]:
@@ -95,8 +95,9 @@ def fibonacci(one: Duration) -> Schedule[Seconds]:
 
         def step() -> Decision[Seconds]:
             nonlocal a, b
+            delay = from_millis(b)
             a, b = b, a + b
-            return Continue(from_millis(b), from_millis(b))
+            return Continue(delay, delay)
 
         return lambda _now, _input: _Sync(step)
 

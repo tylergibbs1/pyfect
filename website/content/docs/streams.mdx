@@ -30,7 +30,8 @@ A `Sink` consumes a stream and produces a result; `run_collect`, `run_fold` and
 
 ## Batches
 
-`grouped(n)` emits lists of `n` items. `grouped_within(n, duration)` also ends a batch once
+`grouped(n)` emits tuples of `n` items (the last may be shorter), as Effect's readonly arrays.
+`grouped_within(n, duration)` emits lists and also ends a batch once
 `duration` has passed since its first item, so a burst goes out in full batches and a
 straggler is not held back waiting for more. Here a queue's items are posted three at a time.
 
@@ -51,8 +52,10 @@ in the repository is a longer version.
 <include meta='title="pipeline.py"'>../../snippets/streams/pipeline.py</include>
 
 Streams are pulled: nothing upstream runs until the sink asks for more. `map_effect` keeps
-at most four calls in flight and `buffer` lets pricing run at most eight items ahead of the
-writer, so a slow sink slows the whole pipeline instead of filling memory.
+at most four calls in flight and `buffer` holds at most eight priced items. With what
+`map_effect` holds and the item being handed on, pricing can run about twenty items ahead of a
+stalled writer (as in Effect): a fixed bound, so a slow sink slows the whole pipeline instead of
+filling memory.
 
 <Diagram name="stream-pipeline" title="The pipeline's stages from byte chunks to the sink, which pulls from upstream" />
 
@@ -92,8 +95,9 @@ back into one small tree per record, and `encode_string()` and `encode()` write 
 
 <include lang="text">../../snippets/streams/xml_feed.out</include>
 
-A reference to any entity but the predefined ones fails with an `"Unsupported"` error instead of
-being expanded, so a document cannot read local files or expand into gigabytes. `max_token_size`, `max_depth` and
+A reference to an entity the DOCTYPE declares fails with an `"Unsupported"` error instead of
+being expanded, so a document cannot read local files or expand into gigabytes; one to an
+undeclared entity is a `"Syntax"` error, as in Effect. `max_token_size`, `max_depth` and
 `max_element_size` bound what one document can hold in memory.
 
 ## Zip and tar

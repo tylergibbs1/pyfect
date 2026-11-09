@@ -24,7 +24,9 @@ of its own:
 - `Sensitive(schema)`: in the database variants only, never in JSON.
 - `FieldOption(schema)`: an `Option`, stored as `NULL`, optional in JSON.
 - `DateTimeInsert`, `DateTimeUpdate` and their `FromDate` / `FromNumber` forms: set to the
-  `Clock`'s now on insert, or on every write.
+  `Clock`'s now on insert, or on every write. `S.make_effect(User.insert)` reads the fiber's
+  `Clock` (so a `TestClock`); `User.insert.make(...)` runs on its own, so it reads the system
+  clock, as Effect's `makeUnsafe` does.
 - `UuidV4Insert`, `UuidV7Insert` and the `...WithGenerate` forms: a generated id.
 - `field_only([...])`, `field_except([...])` and `Field(select=..., insert=..., ...)`: any
   other set of variants.
@@ -34,7 +36,8 @@ pyright cannot compute a variant's keys from the fields, so a model names them:
 each `Mapping[str, object]` when left out. When the class is made, each TypedDict is
 checked against the fields, and only a field with a constructor default may be
 `NotRequired`; a mismatch is a `TypeError`, so a stale TypedDict fails at import. A field
-the `select` variant leaves out is assigned without an annotation.
+the `select` variant leaves out is assigned as it is, without an annotation or `Model.field`:
+`extra = Model.Field(json=S.String)`.
 
 <Diagram name="model-variants" title="One class gives each variant its own fields, and the repository reads and writes the database ones" />
 
