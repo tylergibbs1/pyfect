@@ -288,11 +288,14 @@ def test_a_reply_serialization_failure_fails_only_its_own_request():
                 .ensuring(release_slow.succeed(None))
             )
             assert isinstance(bad, Exit.Failure), "the unencodable reply must fail the request"
-            # The defect crosses the wire as an error instance; Effect reads its
-            # name through ``String(error)``.
+            # The defect crosses the wire as an error instance named by the
+            # schema's identifier, as under Node: Effect's ``MalformedMessage``
+            # has ``name`` "~effect/cluster/ClusterError/MalformedMessage".
             failure = bad.cause.squash()
             assert isinstance(failure, ErrorInstance)
-            assert failure.name == "MalformedMessage", "the caller must get the encode error"
+            assert failure.name == "~effect/cluster/ClusterError/MalformedMessage", (
+                "the caller must get the encode error"
+            )
             slow_exit = yield from slow.await_exit()
             assert slow_exit == Exit.succeed("done")
 
