@@ -5,12 +5,21 @@ overlaps), so ``make_zoned`` does it with Effect's disambiguation names."""
 
 from __future__ import annotations
 
+import base64
+import contextlib
+import io
 import os
 import re
+import zoneinfo
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone, tzinfo
 from functools import cache
+from importlib import resources
+from pathlib import Path
 from typing import Literal, overload
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pyfect.date_time._icu_zones import CANONICAL, DATA, TZIF
 
 type Disambiguation = Literal["compatible", "earlier", "later", "reject"]
 """How ``make_zoned`` resolves a wall-clock time that a DST change skips
@@ -65,18 +74,57 @@ def make_zoned(
 
 
 def zone_named(zone_id: str) -> ZoneInfo | None:
-    """The IANA zone ``zone_id`` under its canonical name (any casing:
-    ``europe/london`` is ``Europe/London``, as ``Intl`` gives it), or
-    ``None`` if there is no such zone."""
-    try:
-        return ZoneInfo(_canonical_names().get(zone_id.lower(), zone_id))
-    except (ZoneInfoNotFoundError, ValueError):
-        return None
+    """The zone ``zone_id`` names (any casing), under the canonical id
+    ``Intl`` gives it in Node (ICU's, ``_icu_zones.ICU_VERSION``):
+    ``Asia/Kolkata`` is ``Asia/Calcutta``, ``EST`` is ``America/Panama``.
+    ``None`` for an id ICU doesn't know."""
+    canonical = _canonical_ids().get(zone_id.lower())
+    return None if canonical is None else _zone(canonical)
+
+
+class _IcuZone(ZoneInfo):
+    """A zone under a canonical id ``zoneinfo`` has no file for, read from
+    another id's file or ICU's own data; pickled by its id."""
+
+    def __reduce__(self) -> tuple[Callable[[str], ZoneInfo | None], tuple[str]]:
+        return zone_named, (self.key,)
 
 
 @cache
-def _canonical_names() -> dict[str, str]:
-    return {name.lower(): name for name in available_timezones()}
+def _canonical_ids() -> dict[str, str]:
+    return {zone_id.lower(): canonical for zone_id, canonical in CANONICAL.items()}
+
+
+@cache
+def _aliases() -> dict[str, list[str]]:
+    aliases: dict[str, list[str]] = {}
+    for zone_id, canonical in CANONICAL.items():
+        aliases.setdefault(canonical, []).append(zone_id)
+    return aliases
+
+
+@cache
+def _zone(canonical: str) -> ZoneInfo | None:
+    if canonical in TZIF:
+        return _IcuZone.from_file(io.BytesIO(base64.b64decode(TZIF[canonical])), key=canonical)
+    with contextlib.suppress(ZoneInfoNotFoundError, ValueError):
+        return ZoneInfo(canonical)
+    for source in (DATA.get(canonical, canonical), *_aliases()[canonical]):
+        data = _zone_file(source)
+        if data is not None:
+            return _IcuZone.from_file(io.BytesIO(data), key=canonical)
+    return None
+
+
+def _zone_file(zone_id: str) -> bytes | None:
+    """The TZif bytes ``ZoneInfo(zone_id)`` reads: from ``TZPATH``, else the
+    ``tzdata`` package."""
+    for directory in zoneinfo.TZPATH:
+        with contextlib.suppress(OSError):
+            return Path(directory, zone_id).read_bytes()
+    with contextlib.suppress(ImportError, OSError):
+        return resources.files("tzdata.zoneinfo").joinpath(*zone_id.split("/")).read_bytes()
+    return None
 
 
 def zone_offset(offset: timedelta) -> timezone | None:

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1 (unreleased)
+
+### Changed
+
+- `path.win32` (and `path.layer_win32`) follows Node's `path.win32` on any host instead of
+  Python's `ntpath`: `join("C:\\a", "\\b")` is `C:\\a\\b`, `relative(p, p)` is `""`,
+  `resolve` uses a drive's own working directory (`=D:`), and reserved device names (`CON:`)
+  and `toNamespacedPath` work as in Node. `path.format` adds the dot to an `ext` without one,
+  and both services have `delimiter`.
+- `date_time.zone_named` names a zone with ICU's canonical id, as Effect's `zoneMakeNamed`
+  does under Node: `Asia/Kolkata` is `Asia/Calcutta`, `EST` is `America/Panama`, `Etc/UTC` is
+  `UTC` (ICU 78.3). An id ICU doesn't know, such as `Factory`, is no longer a zone. `TZ` and
+  the system zone read the same way.
+
 ## 0.2.0 (unreleased)
 
 ### Breaking

@@ -78,13 +78,15 @@ def test_layers_provide_the_current_zone():
 @testing.effect
 def test_local_zone_follows_tz(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("TZ", "Asia/Kathmandu")
-    assert date_time.zone_local() == ZoneInfo("Asia/Kathmandu")
+    # Node: Intl gives ICU's canonical id for TZ, Asia/Katmandu.
+    assert date_time.zone_local() == date_time.zone_named("Asia/Katmandu")
+    assert date_time.zone_to_string(date_time.zone_local()) == "Asia/Katmandu"
     local = yield from date_time.now_in_current_zone().pipe(date_time.with_current_zone_local())
-    assert local.tzinfo == ZoneInfo("Asia/Kathmandu")
+    assert local.tzinfo == date_time.zone_named("Asia/Katmandu")
     from_layer = yield from date_time.now_in_current_zone().pipe(
         fx.provide(date_time.layer_current_zone_local())
     )
-    assert from_layer.tzinfo == ZoneInfo("Asia/Kathmandu")
+    assert from_layer.tzinfo == date_time.zone_named("Asia/Katmandu")
 
 
 def test_local_zone_without_tz_is_usable(monkeypatch: pytest.MonkeyPatch):
