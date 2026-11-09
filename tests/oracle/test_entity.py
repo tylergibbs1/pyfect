@@ -114,7 +114,7 @@ def _observe_fatal_defect(
         good_exit = yield from good.await_exit()
         return _snapshot(bad_exit), _snapshot(good_exit)
 
-    return run.pipe(fx.provide(sharding_config.layer_defaults)).timeout(5)
+    return run.pipe(fx.provide(sharding_config.layer_defaults)).timeout("5 seconds")
 
 
 # --- makeTestClient ------------------------------------------------------------------------

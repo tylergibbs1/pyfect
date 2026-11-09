@@ -38,7 +38,7 @@ from pyfect.sql.sqlite._connection import (
 from pyfect.sql.statement import RecordUpdateHelper, default_transforms, make_compiler_sqlite
 
 _MAX_BUSY_TIMEOUT = 2_147_483_647
-_WAL_RETRY = 0.01
+_WAL_RETRY = "10 millis"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -63,7 +63,7 @@ class SqliteClientConfig:
     readonly: bool = False
     prepare_cache_size: int = 200
     disable_wal: bool = False
-    busy_timeout: Duration = 5.0
+    busy_timeout: Duration = "5 seconds"
     span_attributes: Mapping[str, object] = field(default_factory=dict[str, object])
     transform_result_names: Callable[[str], str] | None = None
     transform_query_names: Callable[[str], str] | None = None

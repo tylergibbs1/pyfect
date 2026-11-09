@@ -37,6 +37,7 @@ from pyfect.clock import Clock, ClockService
 from pyfect.context import Context
 from pyfect.deferred import Deferred
 from pyfect.duration import (
+    ZERO,
     Duration,
     Seconds,
     from_nanos,
@@ -356,7 +357,7 @@ def _idle_time_to_live[K](ttl: IdleTimeToLive[K] | None) -> Callable[[K], Second
     if callable(ttl):
         pick = ttl
         return lambda key: to_seconds(pick(key))
-    fixed = to_seconds(0.0 if ttl is None else ttl)
+    fixed = ZERO if ttl is None else to_seconds(ttl)
     return lambda _: fixed
 
 

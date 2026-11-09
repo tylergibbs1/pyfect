@@ -786,7 +786,7 @@ def test_make_effect_preserves_mixed_schema_issue_and_defect_causes():
 
 
 def _slow(value: Option[str], _: object) -> Effect[Option[str]]:
-    return sleep(0.001).as_(value)
+    return sleep("1 millis").as_(value)
 
 
 _ASYNC = S.String.pipe(

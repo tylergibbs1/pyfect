@@ -349,12 +349,12 @@ def _coordinate(*chunks: list[int]):
 def test_debounce_should_drop_earlier_chunks_within_wait_time():
     """should drop earlier chunks within waitTime"""
     coordination = yield from _coordinate([1], [3, 4], [5], [6, 7])
-    fiber = yield from coordination.stream.chunks().debounce(1).run_collect().fork()
+    fiber = yield from coordination.stream.chunks().debounce("1 second").run_collect().fork()
     yield from coordination.offer
-    yield from fx.sleep(0.5).and_then(coordination.offer).fork()
-    yield from fx.sleep(2).and_then(coordination.offer).fork()
-    yield from fx.sleep(2.5).and_then(coordination.offer).fork()
-    yield from testing.adjust(3.5)
+    yield from fx.sleep("500 millis").and_then(coordination.offer).fork()
+    yield from fx.sleep("2 seconds").and_then(coordination.offer).fork()
+    yield from fx.sleep("2500 millis").and_then(coordination.offer).fork()
+    yield from testing.adjust("3500 millis")
     assert (yield from fiber.join()) == [(3, 4), (6, 7)]
 
 
@@ -362,9 +362,9 @@ def test_debounce_should_drop_earlier_chunks_within_wait_time():
 def test_debounce_should_take_latest_chunk_within_wait_time():
     """should take latest chunk within waitTime"""
     coordination = yield from _coordinate([1, 2], [3, 4], [5, 6])
-    fiber = yield from coordination.stream.chunks().debounce(1).run_collect().fork()
+    fiber = yield from coordination.stream.chunks().debounce("1 second").run_collect().fork()
     yield from coordination.offer.and_then(coordination.offer).and_then(coordination.offer)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from fiber.join()) == [(5, 6)]
 
 
@@ -372,9 +372,9 @@ def test_debounce_should_take_latest_chunk_within_wait_time():
 def test_debounce_should_work_properly_with_parallelization():
     """should work properly with parallelization"""
     coordination = yield from _coordinate([1], [2], [3])
-    fiber = yield from coordination.stream.chunks().debounce(1).run_collect().fork()
+    fiber = yield from coordination.stream.chunks().debounce("1 second").run_collect().fork()
     yield from fx.all(*[coordination.offer] * 3, concurrency=3, discard=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from fiber.join()) == [(3,)]
 
 
@@ -383,12 +383,12 @@ def test_debounce_should_handle_empty_chunks_properly():
     """should handle empty chunks properly"""
     fiber = yield from (
         stream.make(1, 2, 3)
-        .tap(lambda _: fx.sleep(0.5))
-        .debounce(1)
+        .tap(lambda _: fx.sleep("500 millis"))
+        .debounce("1 second")
         .run_collect()
         .fork(start_immediately=True)
     )
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert (yield from fiber.join()) == [3]
 
 
@@ -402,14 +402,14 @@ def test_debounce_should_fail_immediately():
 @testing.effect
 def test_debounce_should_work_with_empty_streams():
     """should work with empty streams"""
-    assert (yield from stream.empty.debounce(5).run_collect()) == []
+    assert (yield from stream.empty.debounce("5 seconds").run_collect()) == []
 
 
 @testing.effect
 def test_debounce_should_pick_last_element_from_every_chunk():
     """should pick last element from every chunk"""
-    fiber = yield from stream.make(1, 2, 3).debounce(1).run_collect().fork()
-    yield from testing.adjust(1)
+    fiber = yield from stream.make(1, 2, 3).debounce("1 second").run_collect().fork()
+    yield from testing.adjust("1 second")
     assert (yield from fiber.join()) == [3]
 
 
@@ -421,16 +421,16 @@ def test_debounce_should_interrupt_fibers_properly():
         coordination.stream.chunks()
         .tap(lambda _: coordination.proceed)
         .flatten_array()
-        .debounce(0.2)
+        .debounce("200 millis")
         .take(1)
         .run_collect()
         .fork()
     )
     for _ in range(3):
         yield from coordination.offer
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         yield from coordination.await_next
-    yield from testing.adjust(0.1)
+    yield from testing.adjust("100 millis")
     assert (yield from fiber.join()) == [3]
 
 
@@ -441,11 +441,11 @@ def test_debounce_should_interrupt_children_fiber_on_stream_interruption():
     fiber = yield from (
         stream.from_effect(fx.void)
         .concat(stream.from_effect(fx.never.on_interrupt(ref.set(True))))
-        .debounce(0.8)
+        .debounce("800 millis")
         .run_drain()
         .fork()
     )
-    yield from testing.adjust(60)
+    yield from testing.adjust("1 minute")
     yield from fiber.interrupt()
     assert (yield from ref.get()) is True
 
@@ -479,13 +479,13 @@ def test_throttle_enforce_no_bandwidth():
 def test_throttle_enforce_refill_bucket_tokens():
     """throttleEnforce - refill bucket tokens"""
     fiber = yield from (
-        stream.from_schedule(schedule.spaced(0.1))
+        stream.from_schedule(schedule.spaced("100 millis"))
         .take(10)
-        .throttle(cost=lambda _: 1, units=1, duration=0.2, strategy="enforce")
+        .throttle(cost=lambda _: 1, units=1, duration="200 millis", strategy="enforce")
         .run_collect()
         .fork()
     )
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from fiber.join()) == [0, 2, 4, 6, 8]
 
 
@@ -498,16 +498,16 @@ def _pull_three(burst: float) -> fx.Effect[list[tuple[int, ...]], Any]:
     def run():
         queue = yield from Queue[int, Done].unbounded()
         throttled = stream.from_queue(queue).throttle(
-            cost=sum, units=1, duration=1, burst=burst, strategy="shape"
+            cost=sum, units=1, duration="1 second", burst=burst, strategy="shape"
         )
         pull = yield from throttled.to_pull()
         yield from queue.offer(1)
         result1 = yield from pull
         if burst:
-            yield from testing.adjust(2)
+            yield from testing.adjust("2 seconds")
         yield from queue.offer(2)
         result2 = yield from pull
-        yield from (testing.adjust(4) if burst else fx.sleep(4))
+        yield from (testing.adjust("4 seconds") if burst else fx.sleep("4 seconds"))
         yield from queue.offer(3)
         result3 = yield from pull
         return [result1, result2, result3]
@@ -519,7 +519,7 @@ def _pull_three(burst: float) -> fx.Effect[list[tuple[int, ...]], Any]:
 def test_throttle_shape():
     """throttleShape"""
     fiber = yield from _pull_three(0).fork()
-    yield from testing.adjust(8)
+    yield from testing.adjust("8 seconds")
     assert (yield from fiber.join()) == [(1,), (2,), (3,)]
 
 
@@ -555,8 +555,8 @@ class _ShiftedClock:
     wall_offset: float = 0
     early: float = 0
 
-    def now_unsafe(self) -> float:
-        return self.base.now_unsafe() + self.wall_offset
+    def current_time_millis_unsafe(self) -> float:
+        return self.base.current_time_millis_unsafe() + self.wall_offset * 1000
 
     def monotonic_unsafe(self) -> float:
         return self.monotonic_nanos_unsafe() / 1e9
@@ -572,7 +572,7 @@ class _ShiftedClock:
 
 
 def _millis(clock: ClockService) -> fx.Effect[int]:
-    return fx.sync(lambda: round(clock.now_unsafe() * 1000))
+    return fx.sync(lambda: round(clock.current_time_millis_unsafe()))
 
 
 @testing.effect
@@ -583,12 +583,12 @@ def test_throttle_shape_keeps_the_rate_when_sleeps_end_early():
     timestamps = (
         stream.range(1, 3)
         .rechunk(1)
-        .throttle(cost=len, units=1, duration=1, strategy="shape")
+        .throttle(cost=len, units=1, duration="1 second", strategy="shape")
         .map_effect(lambda _: _millis(clock))
         .run_collect()
     )
     fiber = yield from timestamps.pipe(fx.provide_service(Clock, early)).fork_scoped()
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert (yield from fiber.join()) == [0, 999, 1999], "Early wake-ups must not accumulate"
 
 
@@ -608,13 +608,13 @@ def test_throttle_shape_is_not_affected_by_wall_clock_changes():
     timestamps = (
         stream.range(1, 2)
         .rechunk(1)
-        .throttle(cost=len, units=1, duration=1, strategy="shape")
+        .throttle(cost=len, units=1, duration="1 second", strategy="shape")
         .tap(shift)
         .map_effect(lambda _: _millis(clock))
         .run_collect()
     )
     fiber = yield from timestamps.pipe(fx.provide_service(Clock, shifted)).fork_scoped()
-    yield from testing.adjust(6)
+    yield from testing.adjust("6 seconds")
     assert (yield from fiber.join()) == [0, 1000], "Wall clock changes must not affect the rate"
 
 
@@ -673,14 +673,14 @@ def _raised(error: Exception) -> Exception:
 def test_timeout_finishes_when_an_async_iterator_pull_never_settles():
     """timeout finishes when an async iterator pull never settles"""
     source = stream.from_async_iterable(_stuck_after_a(), _raised)
-    assert (yield from source.timeout(0.01).run_collect()) == ["a"]
+    assert (yield from source.timeout("10 millis").run_collect()) == ["a"]
 
 
 @testing.live(asyncio=True)
 def test_timeout_or_else_finishes_when_an_async_iterator_pull_never_settles():
     """timeoutOrElse finishes when an async iterator pull never settles"""
     source = stream.from_async_iterable(_stuck_after_a(), _raised)
-    timed = source.timeout_or_else(0.01, lambda: stream.succeed("fallback"))
+    timed = source.timeout_or_else("10 millis", lambda: stream.succeed("fallback"))
     assert (yield from timed.run_collect()) == ["a", "fallback"]
 
 
@@ -688,11 +688,13 @@ def test_timeout_or_else_finishes_when_an_async_iterator_pull_never_settles():
 def test_timeout_or_else_should_not_apply_timeout_after_switch():
     """timeoutOrElse - should not apply timeout after switch"""
     fiber = yield from (
-        stream.never.timeout_or_else(0, lambda: stream.succeed(1).tap(lambda _: fx.sleep(1)))
+        stream.never.timeout_or_else(
+            0, lambda: stream.succeed(1).tap(lambda _: fx.sleep("1 second"))
+        )
         .run_collect()
         .fork(start_immediately=True)
     )
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from fiber.join()) == [1]
 
 
@@ -787,12 +789,12 @@ def test_repeat_short_circuits():
     seen: list[int] = []
     fiber = yield from (
         stream.from_effect(fx.sync(lambda: seen.insert(0, 1)))
-        .repeat(schedule.spaced(0.01))
+        .repeat(schedule.spaced("10 millis"))
         .take(2)
         .run_drain()
         .fork()
     )
-    yield from testing.adjust(0.05)
+    yield from testing.adjust("50 millis")
     yield from fiber.join()
     assert seen == [1, 1]
 
@@ -839,13 +841,15 @@ def test_repeat_elements_short_circuits_after_schedule():
 @testing.effect
 def test_schedule():
     """schedule"""
-    start = yield from fx.clock.now()
+    start = yield from fx.clock.current_time_millis()
     fiber = yield from (
         stream.range(1, 8)
-        .schedule(schedule.fixed(0.1))
-        .map_effect(lambda n: fx.clock.now().map(lambda now: (n, round((now - start) * 1000))))
+        .schedule(schedule.fixed("100 millis"))
+        .map_effect(
+            lambda n: fx.clock.current_time_millis().map(lambda now: (n, round(now - start)))
+        )
         .run_collect()
         .fork()
     )
-    yield from testing.adjust(0.8)
+    yield from testing.adjust("800 millis")
     assert (yield from fiber.join()) == [(n, n * 100) for n in range(1, 9)]

@@ -116,7 +116,7 @@ def _fail(
         )
         return fx.fail(AiError(module=MODULE, method=method, reason=reason))
 
-    return clock.now().flat_map(lambda seconds: build(seconds * 1000))
+    return clock.current_time_millis().flat_map(build)
 
 
 def map_client_error(

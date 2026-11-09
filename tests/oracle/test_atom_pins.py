@@ -45,12 +45,12 @@ def test_a_parent_released_by_an_idle_sweep_keeps_only_the_rest_of_its_ttl(
     """A parent left unused when its child is swept waits out its own idle
     TTL less the child's, not a full one."""
     r = timers.registry(timeout_resolution=0.01)
-    parent = atom.make(0).set_idle_ttl(0.15)
+    parent = atom.make(0).set_idle_ttl("150 millis")
 
     def read(get: atom.AtomContext) -> int:
         return get(parent) + 1
 
-    child = atom.make(read).set_idle_ttl(0.1)
+    child = atom.make(read).set_idle_ttl("100 millis")
     r.mount(child)()
 
     def present() -> tuple[bool, bool]:
@@ -96,4 +96,4 @@ def test_a_build_runs_its_effect_until_it_waits(timers: FakeTimers) -> None:
     assert r.get(atom.make(fx.yield_now().as_(1))) == async_result.success(1)
     items = stream.make(1, 2, 3).map_effect(lambda n: fx.yield_now().as_(n))
     assert r.get(atom.make(items)) == async_result.success(3)
-    assert r.get(atom.make(fx.sleep(0.01).as_(1))) == async_result.initial(waiting=True)
+    assert r.get(atom.make(fx.sleep("10 millis").as_(1))) == async_result.initial(waiting=True)

@@ -133,9 +133,9 @@ def make(
             compression=compression,
             max_batch_size="disabled",
             export_empty=True,
-            export_interval=10.0 if export_interval is None else export_interval,
+            export_interval="10 seconds" if export_interval is None else export_interval,
             body=body,
-            shutdown_timeout=3.0 if shutdown_timeout is None else shutdown_timeout,
+            shutdown_timeout="3 seconds" if shutdown_timeout is None else shutdown_timeout,
         )
 
     return build

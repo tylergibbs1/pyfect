@@ -179,7 +179,7 @@ class ShardAcquisition:
             state.runner_storage.release(self._self_address, shard_id),
         )
 
-        def record(timed: tuple[float, None]) -> Effect[None]:
+        def record(timed: tuple[Seconds, None]) -> Effect[None]:
             return cluster_metrics.shard_release_duration.update(timed[0])
 
         tracked = (

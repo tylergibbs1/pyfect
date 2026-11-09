@@ -94,7 +94,7 @@ def _wait_until_blocked_by(
         )
         if int(rows[0]["blocked"]) >= count:  # type: ignore[arg-type]
             return None
-        yield from fx.sleep(0.02)
+        yield from fx.sleep("20 millis")
     yield from fx.die(
         RuntimeError(f"Expected {count} backends blocked by {holder} within 10 seconds")
     )
@@ -462,7 +462,7 @@ def _lock_waits(sql: SqlClientService) -> fx.Effect[int, Any]:
     ).map(lambda rows: int(rows[0]["n"]))  # type: ignore[arg-type]
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_an_import_waits_for_a_local_write_in_flight_on_another_connection(pg_server: PgServer):
     """SqlEventJournal shared by processes (pg) / an import waits for a local write in flight on another connection"""  # noqa: E501
 
@@ -499,7 +499,7 @@ def test_an_import_waits_for_a_local_write_in_flight_on_another_connection(pg_se
             waited = (yield from _lock_waits(sql)) > 0
             if waited:
                 break
-            yield from fx.sleep(0.01)
+            yield from fx.sleep("10 millis")
         yield from release.succeed(None)
         yield from write_b.join()
         yield from import_a.join()

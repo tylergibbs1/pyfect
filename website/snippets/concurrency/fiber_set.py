@@ -11,7 +11,7 @@ class FetchFailed(fx.TaggedError):
 def fetch(url: str) -> fx.Effect[None, FetchFailed]:
     if url.endswith("/broken"):
         return fx.fail(FetchFailed(url))
-    return fx.sleep(0.01)
+    return fx.sleep("10 millis")
 
 
 @fx.gen

@@ -76,7 +76,7 @@ def _create_todo(todo: TodoWithoutId) -> fx.Effect[Todo, object, HttpClient]:
     )
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_text(http: Services[HttpClient]):
     """text"""
     response = yield from c.get("/text?existing=1", url_params={"value": "a#b"}, hash="fragment")
@@ -87,7 +87,7 @@ def test_text(http: Services[HttpClient]):
     assert (yield from response.text) == "test"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_text_preserves_bytes(http: Services[HttpClient]):
     """accessing text preserves response bytes"""
     response = yield from c.get("/bytes")
@@ -95,14 +95,14 @@ def test_text_preserves_bytes(http: Services[HttpClient]):
     assert (yield from response.bytes_) == RESPONSE_BYTES
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_bom_json(http: Services[HttpClient]):
     """request and response json ignore a leading UTF-8 BOM"""
     response = yield from c.post("/bom-json", body=body.text('﻿{"a":1}', "application/json"))
     assert (yield from response.json) == {"a": 1}
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_form_data(http: Services[HttpClient]):
     """sends $source form data request bodies as multipart"""
     form = (
@@ -114,7 +114,7 @@ def test_form_data(http: Services[HttpClient]):
         "/multipart",
         body=body.form_data(form),
         headers={"content-type": "multipart/form-data; boundary=caller-boundary"},
-    ).timeout(2)
+    ).timeout("2 seconds")
     assert (yield from response.json) == [
         {"key": "title", "value": "effect"},
         {
@@ -126,7 +126,7 @@ def test_form_data(http: Services[HttpClient]):
     ]
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_follow_redirects(http: Services[HttpClient]):
     """local server followRedirects"""
     client = (yield from HttpClient()).follow_redirects()
@@ -135,7 +135,7 @@ def test_follow_redirects(http: Services[HttpClient]):
     assert (yield from response.text) == "redirected"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_text_stream(http: Services[HttpClient]):
     """text stream"""
     client = yield from HttpClient()
@@ -143,7 +143,7 @@ def test_text_stream(http: Services[HttpClient]):
     assert text == "test"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_local_server(http: Services[HttpClient]):
     """local server"""
     client = yield from HttpClient()
@@ -158,14 +158,14 @@ def test_local_server(http: Services[HttpClient]):
     assert todo["title"] == "revived"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_local_server_schema_body_json(http: Services[HttpClient]):
     """local server schemaBodyJson"""
     todo = yield from _create_todo({"userId": 1, "title": "test", "completed": False})
     assert todo["title"] == "test"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_query_round_trip(http: Services[HttpClient]):
     """round trips QUERY method, body, and content type through the local server"""
     text = '{"query": "effect"}'
@@ -182,7 +182,7 @@ class _Status(TypedDict):
     status: int
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_head_schema_json(http: Services[HttpClient]):
     """head request with schemaJson"""
     client = yield from HttpClient()
@@ -192,33 +192,35 @@ def test_head_schema_json(http: Services[HttpClient]):
     assert decoded == {"status": 200}
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_interrupt(http: Services[HttpClient]):
     """interrupt"""
     client = yield from HttpClient()
-    result = yield from client.get("/hang").flat_map(lambda r: r.text).timeout(1).option()
+    result = yield from client.get("/hang").flat_map(lambda r: r.text).timeout("1 second").option()
     assert result is None
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_upgrade_rejected(http: Services[HttpClient]):
     """fetch rejects an upgrade request before calling fetch"""
     error = yield from c.execute(req.post("/attach").upgrade("tcp")).flip()
     assert error.reason.tag == "TransportError"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_close_early(http: Services[HttpClient]):
     """close early"""
     response = yield from c.get("/large")
     assert response.status == 200
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_stream_encode_failure(http: Services[HttpClient]):
     """returns a stream body encoding failure"""
     error = (
-        yield from c.post("/", body=body.stream(fx.stream.fail("encode failure"))).timeout(1).flip()
+        yield from c.post("/", body=body.stream(fx.stream.fail("encode failure")))
+        .timeout("1 second")
+        .flip()
     )
     assert isinstance(error, c.HttpClientError)
     assert error.reason.tag == "EncodeError"

@@ -153,7 +153,9 @@ def test_dispose_effect_inside_run_promise_after_an_async_boundary_releases_the_
 
     async def main() -> str:
         runtime = fx.ManagedRuntime.make(_finalizer(fx.sync(release)))
-        return await _settles(runtime.run_async(fx.sleep(0.001).ensuring(runtime.dispose_effect)))
+        return await _settles(
+            runtime.run_async(fx.sleep("1 millis").ensuring(runtime.dispose_effect))
+        )
 
     assert (_run(main()), released) == ("settled", True)
 
@@ -171,7 +173,7 @@ def test_dispose_effect_inside_an_immediately_started_request_child_releases_the
 
         @fx.gen
         def request():
-            yield from fx.sleep(0.001)
+            yield from fx.sleep("1 millis")
             child = yield from runtime.dispose_effect.fork(start_immediately=True)
             yield from child.join()
 
@@ -236,7 +238,7 @@ def test_detached_fiber_disposal_still_interrupts_and_awaits_its_former_request(
 
         @fx.gen
         def cleanup():
-            yield from fx.sleep(0.001)
+            yield from fx.sleep("1 millis")
             events.append("former request cleaned up")
 
         runtime.run_fork(request.ensuring(cleanup))

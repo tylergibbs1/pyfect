@@ -146,7 +146,7 @@ class Logger(Generic[O_co]):
         *,
         flag: OpenFlag = "a+",
         mode: int = 0o666,
-        batch_window: Duration = 1.0,
+        batch_window: Duration = "1 second",
     ) -> Effect[Logger[None], PlatformError, Scope | FileSystem]:
         """A logger appending this one's lines to the file at ``path``
         (opened with ``flag`` until the scope closes), written in batches

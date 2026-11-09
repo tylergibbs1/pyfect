@@ -17,7 +17,6 @@ from pyfect._core import Effect, _FailCause, _Gen, _Succeed, _Suspend
 from pyfect.cause import Cause, fail
 from pyfect.channel._upstream import restore_upstream_failure, upstream_failure_to_defect
 from pyfect.clock import Clock, ClockService, sleep
-from pyfect.duration import from_nanos
 from pyfect.effect import never
 from pyfect.exit import Exit, Failure
 from pyfect.latch import Latch
@@ -230,7 +229,7 @@ def aggregate_within(
 
             step_to_buffer = (
                 has_input.wait()
-                .flat_map(lambda _: step(from_nanos(schedule_time), last_output))
+                .flat_map(lambda _: step(schedule_time / 1_000_000, last_output))
                 .flat_map(decided)
                 .and_then(never)
             )

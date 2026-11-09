@@ -462,8 +462,8 @@ def _failed(message: str) -> Callable[[RedisError], CircuitBreakerError]:
 def make_store_redis(
     *,
     prefix: str = "circuitbreaker:",
-    probe_lease: Duration = 10,
-    idle_time_to_live: Duration = 3600,
+    probe_lease: Duration = "10 seconds",
+    idle_time_to_live: Duration = "1 hour",
 ) -> Effect[CircuitBreakerStoreService, Never, Redis]:
     """A store in the ``Redis`` service, its keys under ``prefix``. A
     probe's lease lasts ``probe_lease`` (renewed while it runs, so a probe
@@ -485,8 +485,8 @@ def make_store_redis(
 def layer_store_redis(
     *,
     prefix: str = "circuitbreaker:",
-    probe_lease: Duration = 10,
-    idle_time_to_live: Duration = 3600,
+    probe_lease: Duration = "10 seconds",
+    idle_time_to_live: Duration = "1 hour",
 ) -> Layer[CircuitBreakerStore, Never, Redis]:
     """Circuit states in Redis (see ``make_store_redis``)."""
     return layer_effect(

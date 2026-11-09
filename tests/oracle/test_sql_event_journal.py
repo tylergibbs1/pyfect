@@ -467,7 +467,7 @@ def test_rolls_back_a_failed_same_client_handler_transaction_and_redelivers_the_
             registry = yield from L.Registry()
             yield from registry.register_remote(_remote(changes))
             after_failure = yield from results.take()
-            yield from testing.adjust(0.2)
+            yield from testing.adjust("200 millis")
             after_redelivery = yield from results.take()
             assert {
                 "after_failure": after_failure,

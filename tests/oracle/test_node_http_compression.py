@@ -271,7 +271,7 @@ def test_flushes_compressed_chunks_incrementally_over_the_wire() -> None:
         # The source ends only after the latch opens, which happens once the
         # first decoded event arrives: this deadlocks unless compressed
         # chunks are flushed as they are made.
-        yield from response.stream.run_for_each(took).timeout(5)
+        yield from response.stream.run_for_each(took).timeout("5 seconds")
         return encoding, b"".join(received)
 
     served = program().pipe(

@@ -23,14 +23,14 @@ def _service(_key: str) -> fx.Effect[int, Never, _Service]:
 def test_a_lookup_that_interrupts_itself_later_is_not_cached():
     @fx.fn
     def lookup(_key: str):
-        yield from fx.sleep(1)
+        yield from fx.sleep("1 second")
         yield from fx.interrupt()
         return 1
 
     cache = yield from fx.Cache.make(lookup, capacity=10)
     getting = yield from cache.get("a").fork(start_immediately=True)
     assert (yield from cache.has("a"))
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     ex = yield from getting.await_exit()
     assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts
     assert not (yield from cache.has("a"))
@@ -46,7 +46,7 @@ def _raising_ttl(_ex: fx.Exit[str, Never], _key: str) -> float:
 
 @fx.fn
 def _slow_echo(key: str):
-    yield from fx.sleep(1)
+    yield from fx.sleep("1 second")
     return key
 
 
@@ -61,7 +61,7 @@ def test_a_raising_time_to_live_ends_get_with_a_defect_and_caches_nothing():
     # Effect hangs here (Cache.ts:456); pyfect ends the caller (PARITY section 4).
     cache = yield from fx.Cache.make(_slow_echo, capacity=10, time_to_live=_raising_ttl)
     getting = yield from cache.get("a").fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     _assert_died_with_the_ttl_raise(getting.poll_unsafe())
     assert (yield from cache.size()) == 0
 
@@ -80,14 +80,14 @@ def test_a_raising_time_to_live_ends_refresh_with_a_defect_and_forgets_the_key()
         _slow_echo, capacity=10, time_to_live=ttl_raising_after_the_first
     )
     missing = yield from cache.refresh("a").fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert missing.poll_unsafe() == fx.Success("a")
     existing = yield from cache.refresh("a").fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     _assert_died_with_the_ttl_raise(existing.poll_unsafe())
     assert (yield from cache.size()) == 0
     absent = yield from cache.refresh("b").fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     _assert_died_with_the_ttl_raise(absent.poll_unsafe())
     assert (yield from cache.size()) == 0
 
@@ -134,12 +134,12 @@ def test_cache_shares_an_asyncio_lookup():
     @fx.fn
     def lookup(_key: str):
         lookups[0] += 1
-        yield from fx.sleep(1)
+        yield from fx.sleep("1 second")
         return (yield from fx.from_async(_answer))
 
     cache = yield from fx.Cache.make(lookup, capacity=10)
     both = yield from fx.all(cache.get("ab"), cache.get("ab"), concurrency=2).fork()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from both.join()) == (2, 2)
     assert lookups == [1]
 
@@ -157,9 +157,9 @@ def test_scoped_get_closes_the_expired_entry_it_replaces():
 
     @fx.fn
     def program():
-        cache = yield from fx.ScopedCache.make(lookup, capacity=10, time_to_live=1)
+        cache = yield from fx.ScopedCache.make(lookup, capacity=10, time_to_live="1 second")
         yield from cache.get("a")
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         yield from cache.get("a")
         return list(log)
 
@@ -220,12 +220,12 @@ def test_scoped_readers_of_an_expired_entry_do_not_fail_with_its_finalizer():
 
     @fx.fn
     def program():
-        cache = yield from fx.ScopedCache.make(lookup, capacity=10, time_to_live=1)
+        cache = yield from fx.ScopedCache.make(lookup, capacity=10, time_to_live="1 second")
         yield from cache.get("a")
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         has_a = yield from cache.has("a")
         yield from cache.get("a")
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         return [has_a, (yield from cache.get("a"))]
 
     assert (yield from fx.scoped(program())) == [False, "a"]
@@ -268,17 +268,17 @@ def test_a_raising_time_to_live_in_a_scoped_cache_does_what_effects_does():
     released: list[str] = []
 
     def lookup(key: str) -> fx.Effect[str, Never, fx.Scope]:
-        acquire = fx.sleep(1).as_(key)
+        acquire = fx.sleep("1 second").as_(key)
         return fx.acquire_release(acquire, lambda k, _ex: fx.sync(lambda: released.append(k)))
 
     cache = yield from fx.ScopedCache.make(lookup, capacity=10, time_to_live=_raising_ttl)
     getting = yield from cache.get("a").fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert getting.poll_unsafe() == fx.Success("a")
-    yield from testing.adjust(10_000_000)
+    yield from testing.adjust("10000 hours")
     assert (yield from cache.has("a"))
     refreshing = yield from cache.refresh("a").fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     _assert_died_with_the_ttl_raise(refreshing.poll_unsafe())
     assert (yield from cache.get("a")) == "a"
     assert released == []

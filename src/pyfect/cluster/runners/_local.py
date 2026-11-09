@@ -47,6 +47,7 @@ from pyfect.cluster.runners._service import (
 )
 from pyfect.cluster.sharding_config import ShardingConfig
 from pyfect.cluster.snowflake import Generator, Snowflake, SnowflakeGenerator
+from pyfect.duration import Seconds
 from pyfect.effect import catch_tag, die, gen, never, succeed, suspend
 from pyfect.latch import Latch
 from pyfect.logger import log_debug
@@ -426,7 +427,7 @@ class _LocalRunners:
 
         return self._notify_with(message, after)
 
-    def _start(self, poll_interval: float) -> Effect[None]:
+    def _start(self, poll_interval: Seconds) -> Effect[None]:
         if self._storage is NOOP:
             return _VOID
 

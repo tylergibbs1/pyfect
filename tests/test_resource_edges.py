@@ -145,7 +145,7 @@ def test_rc_map_keeps_an_interrupted_lookups_scope_until_its_borrower_lets_go():
     def lookup(_key: str) -> fx.Effect[Never, Never, fx.Scope]:
         return fx.add_finalizer(lambda _: fx.sync(finalize)).and_then(fx.interrupt())
 
-    rc_map = yield from fx.RcMap.make(lookup, idle_time_to_live=60)
+    rc_map = yield from fx.RcMap.make(lookup, idle_time_to_live="1 minute")
     borrower = fx.CloseableScope()
     ex = yield from rc_map.get("k").pipe(fx.provide_service(fx.Scope, borrower)).exit()
     assert isinstance(ex, fx.Failure) and ex.cause.has_interrupts

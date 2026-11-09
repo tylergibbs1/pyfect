@@ -120,6 +120,6 @@ def test_initializes_singleton_synchronization_before_startup_fibers_run():
     closing = yield from scope.close(Exit.succeed(None)).fork()
     # Drain the retry/handoff delay too, so a regression fails without
     # leaking a scope.
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     yield from closing.join()
     assert causes == []

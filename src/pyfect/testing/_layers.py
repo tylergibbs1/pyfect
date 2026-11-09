@@ -56,7 +56,7 @@ def layer_fixture[RO, E](
     scope: FixtureScope = "module",
     live: bool = False,
     asyncio: bool = False,
-    warning_delay: Duration = 1.0,
+    warning_delay: Duration = "1 second",
     timeout: Duration | None = None,
 ) -> FixtureFunctionDefinition:
     """A pytest fixture that builds ``layer`` once per ``scope`` and
@@ -89,7 +89,7 @@ def effect_fixture[A, E](
     scope: FixtureScope = "function",
     live: bool = False,
     asyncio: bool = False,
-    warning_delay: Duration = 1.0,
+    warning_delay: Duration = "1 second",
     timeout: Duration | None = None,
 ) -> FixtureFunctionDefinition:
     """A pytest fixture whose value is what ``eff`` succeeds with, run once

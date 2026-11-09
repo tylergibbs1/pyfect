@@ -53,7 +53,7 @@ def address_string(address: RunnerAddress) -> str:
 
 
 def now_millis() -> fx.Effect[float]:
-    return fx.clock.now().map(lambda seconds: seconds * 1000)
+    return fx.clock.current_time_millis()
 
 
 class EntityRequest(S.Class, identifier="ClusterEntityRequest"):
@@ -130,7 +130,7 @@ def _state_handlers():
     )
 
 
-state_entity_layer = StateEntity.to_layer_effect(_state_handlers, max_idle_time=1)
+state_entity_layer = StateEntity.to_layer_effect(_state_handlers, max_idle_time="1 second")
 
 
 class MailboxEntity(Entity, type="ClusterIntegrationMailbox"):
@@ -275,7 +275,7 @@ class Sender(Entity, type="ClusterIntegrationShutdownReplySender"):
     arm = make_rpc("Arm").annotate(Persisted, False)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_interrupts_an_unroutable_reply_during_runner_shutdown(cluster_db: ClusterDatabase):
     """interrupts an unroutable reply during runner shutdown without hanging teardown"""
 
@@ -362,7 +362,7 @@ def _discard_entities(persisted: bool) -> tuple[Layer[Any, Any, Any], Latch, Lat
     "preemptive_shutdown", [False, True], ids=["preemptive=false", "preemptive=true"]
 )
 @pytest.mark.parametrize("persisted", [False, True], ids=["persisted=false", "persisted=true"])
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_sends_an_outgoing_discard_from_a_shutdown_finalizer_without_deadlocking(
     cluster_db: ClusterDatabase, persisted: bool, preemptive_shutdown: bool
 ):
@@ -397,7 +397,7 @@ class ReplayEntity(Entity, type="ClusterIntegrationFatalReplay"):
     crash = make_rpc("Crash", success=S.Number).annotate(Persisted, True)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_rebuilds_an_entity_after_a_fatal_defect_and_replays_in_flight_requests(
     cluster_db: ClusterDatabase,
 ):
@@ -474,7 +474,7 @@ _FAILS_IN_EFFECT = pytest.mark.xfail(strict=True, reason="fails the same way in 
 
 
 @_FAILS_IN_EFFECT
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_force_interrupts_a_stuck_handler_after_the_graceful_termination_timeout(
     cluster_db: ClusterDatabase,
 ):
@@ -536,7 +536,7 @@ def test_force_interrupts_a_stuck_handler_after_the_graceful_termination_timeout
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_holds_persisted_messages_until_a_slow_entity_layer_registers(
     cluster_db: ClusterDatabase,
 ):
@@ -587,7 +587,7 @@ def test_holds_persisted_messages_until_a_slow_entity_layer_registers(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_defects_a_durable_request_whose_owner_never_registers_the_entity(
     cluster_db: ClusterDatabase,
 ):
@@ -624,7 +624,7 @@ def test_defects_a_durable_request_whose_owner_never_registers_the_entity(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_routes_by_entity_id_isolates_state_and_preserves_mailbox_order(
     cluster_db: ClusterDatabase,
 ):
@@ -675,7 +675,7 @@ def test_routes_by_entity_id_isolates_state_and_preserves_mailbox_order(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_reports_mailbox_saturation_and_revives_idle_entities_with_fresh_state(
     cluster_db: ClusterDatabase,
 ):
@@ -730,7 +730,7 @@ def test_reports_mailbox_saturation_and_revives_idle_entities_with_fresh_state(
 
 
 @_FAILS_IN_EFFECT
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_rebalances_on_runner_addition_graceful_stop_and_abrupt_death(
     cluster_db: ClusterDatabase,
 ):
@@ -799,7 +799,7 @@ def test_rebalances_on_runner_addition_graceful_stop_and_abrupt_death(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_transfers_frozen_row_locks_after_expiry(cluster_db: ClusterDatabase):
     """transfers frozen row locks after expiry"""
     backend = cluster_db.backend
@@ -832,7 +832,7 @@ def test_transfers_frozen_row_locks_after_expiry(cluster_db: ClusterDatabase):
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_retains_frozen_advisory_locks_until_the_session_closes(cluster_db: ClusterDatabase):
     """retains frozen advisory locks until the session closes"""
     backend = cluster_db.backend
@@ -867,7 +867,7 @@ def test_retains_frozen_advisory_locks_until_the_session_closes(cluster_db: Clus
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_assigns_annotated_entities_only_to_runners_in_their_shard_group(
     cluster_db: ClusterDatabase,
 ):
@@ -891,7 +891,7 @@ def test_assigns_annotated_entities_only_to_runners_in_their_shard_group(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_runs_one_singleton_and_migrates_it_after_owner_death(cluster_db: ClusterDatabase):
     """runs one singleton and migrates it after owner death"""
 
@@ -937,7 +937,7 @@ def test_runs_one_singleton_and_migrates_it_after_owner_death(cluster_db: Cluste
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_keeps_entity_resource_alive_during_movement_and_releases_it_explicitly(
     cluster_db: ClusterDatabase,
 ):
@@ -971,7 +971,7 @@ def test_keeps_entity_resource_alive_during_movement_and_releases_it_explicitly(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_isolates_clusters_with_different_table_prefixes(cluster_db: ClusterDatabase):
     """isolates clusters with different table prefixes"""
     backend = cluster_db.backend

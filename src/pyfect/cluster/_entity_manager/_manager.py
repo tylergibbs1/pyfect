@@ -63,7 +63,7 @@ type LocalSendError = EntityNotAssignedToRunner | MailboxFull | AlreadyProcessin
 
 _VOID: Effect[None] = succeed(None)
 
-DEFAULT_RETRY_POLICY = schedule_min(exponential(0.5, 1.5), spaced(10))
+DEFAULT_RETRY_POLICY = schedule_min(exponential("500 millis", 1.5), spaced("10 seconds"))
 """Restarts after a defect wait 500ms, growing by 1.5, at most 10s."""
 
 

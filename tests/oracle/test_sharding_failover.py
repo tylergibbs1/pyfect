@@ -118,19 +118,19 @@ def test_interrupts_entities_and_reacquires_shards_after_lock_storage_recovers()
         shard_id = service.get_shard_id(EntityId("1"), "default")
 
         while not service.has_shard_id(shard_id):
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         while not any(call.shards for call in state.refresh_calls):
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
 
         entity_fiber = yield from client.never_volatile().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert entity_state.envelopes.size_unsafe() == 1
 
         acquire_count = len(state.acquire_calls)
-        partitioned_at = (yield from fx.clock.now()) * 1000
+        partitioned_at = yield from fx.clock.current_time_millis()
         state.blackholed = True
 
-        yield from testing.adjust(0.201)
+        yield from testing.adjust("201 millis")
 
         assert not service.has_shard_id(shard_id)
         assert not (yield from service.is_shutdown)
@@ -143,7 +143,7 @@ def test_interrupts_entities_and_reacquires_shards_after_lock_storage_recovers()
         ]
         assert len(failed_refreshes) <= 2
 
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert len(state.acquire_calls) == acquire_count
         assert any(call.at >= partitioned_at and not call.shards for call in state.refresh_calls)
         assert all(
@@ -151,9 +151,9 @@ def test_interrupts_entities_and_reacquires_shards_after_lock_storage_recovers()
         )
 
         state.blackholed = False
-        yield from testing.adjust(0.101)
+        yield from testing.adjust("101 millis")
         while not service.has_shard_id(shard_id):
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
 
         assert len(state.acquire_calls) > acquire_count
         assert any(s.id == shard_id.id for s in state.acquire_calls[-1].shards)
@@ -213,10 +213,10 @@ def test_keeps_shards_acquired_while_an_earlier_lock_refresh_is_in_flight():
     def body():
         service = yield from sharding.Sharding()
         shard_id = shard("default", 1)
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         assert (yield from acquire_done.is_done())
         assert service.has_shard_id(shard_id)
-        yield from testing.adjust(0.5)
+        yield from testing.adjust("500 millis")
         assert service.has_shard_id(shard_id), "shard acquired during the refresh was dropped"
         assert state.release_calls == []
         assert len(state.acquire_calls) == 1
@@ -276,17 +276,17 @@ def test_releases_a_lost_requested_shard_without_dropping_a_shard_acquired_durin
     @fx.gen
     def body():
         service = yield from sharding.Sharding()
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         assert (yield from refresh_started.is_done())
         assert service.has_shard_id(first_shard)
         assert service.has_shard_id(second_shard)
 
         yield from refresh_response.succeed(None)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert not service.has_shard_id(first_shard)
         assert service.has_shard_id(second_shard)
 
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert not service.has_shard_id(first_shard)
         assert service.has_shard_id(second_shard)
         assert state.release_calls == [first_shard]
@@ -327,19 +327,19 @@ def test_swallows_persisted_interrupts_when_the_callers_shard_is_released():
         service = yield from sharding.Sharding()
         shard_id = service.get_shard_id(EntityId("1"), "default")
         while not service.has_shard_id(shard_id):
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
 
         yield from (yield from ActiveTeardownCaller.client())("1").arm()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert entity_state.envelopes.size_unsafe() == 1
 
         state.assign_self = False
         # The acquisition loop waits one second between passes. Advance by
         # that interval instead of repeatedly waking 10ms polling loops.
         while service.has_shard_id(shard_id):
-            yield from testing.adjust(1)
+            yield from testing.adjust("1 second")
         while (yield from service.active_entity_count) > 0:
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
 
         interrupts = [e for e in driver.encoded.journal if e["_tag"] == "Interrupt"]
         assert len(interrupts) == 0
@@ -390,12 +390,12 @@ def test_refreshes_a_newly_acquired_shard_when_retrying_a_failed_lock_refresh():
     def body():
         service = yield from sharding.Sharding()
         shard_id = shard("default", 1)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert (yield from refresh_failed.is_done())
         assert service.has_shard_id(shard_id)
         assert not (yield from retry_shards.is_done())
 
-        yield from testing.adjust(0.05)
+        yield from testing.adjust("50 millis")
         assert (yield from retry_shards.is_done())
         assert (yield from retry_shards.wait()) == [shard_id]
         assert service.has_shard_id(shard_id)
@@ -439,18 +439,18 @@ def test_reacquires_shards_when_the_liveness_probe_succeeds_while_lock_refresh_i
         client = make_client("1")
         shard_id = service.get_shard_id(EntityId("1"), "default")
         while not service.has_shard_id(shard_id):
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         while not any(call.shards for call in state.refresh_calls):
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
 
         acquire_count = len(state.acquire_calls)
         state.blackhole_non_empty_refresh = True
-        yield from testing.adjust(0.201)
+        yield from testing.adjust("201 millis")
         assert not service.has_shard_id(shard_id)
 
         # recovery only needs the empty liveness probe to succeed
         while not service.has_shard_id(shard_id):
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
 
         assert len(state.acquire_calls) > acquire_count
         assert any(not call.shards for call in state.refresh_calls)
@@ -492,7 +492,7 @@ def _wait_for_termination_ownership(
         for _ in range(100):
             if service.has_shard_id(shard_id) == owned:
                 return
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         assert service.has_shard_id(shard_id) == owned
 
     return run
@@ -531,7 +531,7 @@ def test_interrupts_opted_in_streams_on_reassignment_but_respects_uninterruptibl
             service = yield from sharding.Sharding()
             yield from _wait_for_termination_ownership(service, True)
             # Let the acquisition backoff finish before testing reassignment.
-            yield from testing.adjust(1)
+            yield from testing.adjust("1 second")
             client = (yield from e.client())("termination-stream")
             running_stream = yield from (
                 client.stream_with_key(KeyPayload(key="run"))
@@ -545,15 +545,15 @@ def test_interrupts_opted_in_streams_on_reassignment_but_respects_uninterruptibl
             yield from started.take()
             state.assign_self = False
             yield from _wait_for_termination_ownership(service, False)
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
             early_exit = running_stream.poll_unsafe()
             protected_exit = protected.poll_unsafe()
             held = len(state.release_calls) == 0
             yield from finish.succeed(None)
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
             early_releases = list(state.release_calls)
             # Finish a broken implementation's grace period before asserting.
-            yield from testing.adjust(1)
+            yield from testing.adjust("1 second")
             assert isinstance(early_exit, Exit.Failure) and early_exit.cause.has_interrupts
             assert protected_exit is None
             assert held
@@ -591,7 +591,7 @@ def test_resumes_an_opted_in_persisted_request_after_early_shard_release():
         def body():
             service = yield from sharding.Sharding()
             yield from _wait_for_termination_ownership(service, True)
-            yield from testing.adjust(1)
+            yield from testing.adjust("1 second")
             client = (yield from e.client())("termination-persisted")
             running = yield from client.request_with_key(KeyPayload(key="run")).fork(
                 start_immediately=True
@@ -599,9 +599,9 @@ def test_resumes_an_opted_in_persisted_request_after_early_shard_release():
             request_id = yield from started.take()
             state.assign_self = False
             yield from _wait_for_termination_ownership(service, False)
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
             early_releases = list(state.release_calls)
-            yield from testing.adjust(1)
+            yield from testing.adjust("1 second")
             assert early_releases == [shard("default", 1)]
             assert running.poll_unsafe() is None
 
@@ -611,10 +611,10 @@ def test_resumes_an_opted_in_persisted_request_after_early_shard_release():
             state.assign_self = True
             yield from _wait_for_termination_ownership(service, True)
             yield from service.poll_storage
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
             assert started.take_unsafe() == Exit.succeed(request_id)
             yield from finish.succeed(None)
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
             assert running.poll_unsafe() == Exit.succeed(None)
 
         yield from fx.scoped(body).pipe(fx.provide(_termination_sharding(entity_layer, state)))
@@ -649,17 +649,17 @@ def test_releases_a_shard_reassigned_while_a_defected_entity_waits_to_restart():
     def body():
         service = yield from sharding.Sharding()
         yield from _wait_for_termination_ownership(service, True)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from (yield from e.client())("restarting").defect().fork(start_immediately=True)
-        yield from defected.wait().race_first(testing.adjust(0.001).forever())
+        yield from defected.wait().race_first(testing.adjust("1 millis").forever())
 
         # Reassign the shard during the 500ms defect retry sleep.
         state.assign_self = False
         yield from _wait_for_termination_ownership(service, False)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         releases = list(state.release_calls)
         # Finish a broken implementation's termination timeout before asserting.
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         assert releases == [shard("default", 1)]
 
     yield from fx.scoped(body).pipe(

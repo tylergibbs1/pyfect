@@ -412,7 +412,7 @@ def make_store_redis(
         states = QueueStates()
         active_locks: dict[str, None] = {}
         mailboxes = yield from RcMap.make(
-            _lookup(settings, run, states, clock), idle_time_to_live=30.0
+            _lookup(settings, run, states, clock), idle_time_to_live="30 seconds"
         )
 
         def refresh_locks() -> Generator[Any, Any]:

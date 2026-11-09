@@ -24,7 +24,7 @@ def flaky_service(failures: int) -> fx.Effect[str, Unavailable]:
 
 
 # Wait 10ms, 20ms, 40ms... between attempts, at most 5 retries.
-policy = schedule.exponential(0.01).up_to(times=5)
+policy = schedule.exponential("10 millis").up_to(times=5)
 assert fx.run_blocking_exit(flaky_service(2).retry(policy)) == fx.Success("ok")
 
 # The keyword form: retry while the error matches, at most twice.

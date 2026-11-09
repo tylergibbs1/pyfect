@@ -24,7 +24,7 @@ def _client(protocol: mcp_client.ClientProtocol):
         version="1.0.0",
         command=process.make(sys.executable, [str(EXAMPLE)]),
         protocol=protocol,
-        timeout=30,
+        timeout="30 seconds",
     ).pipe(fx.provide(platform.layer))
 
 

@@ -88,11 +88,11 @@ def test_delays_requests_above_the_configured_limit() -> None:
     def body():
         limiter = yield from rl.RateLimiter()
         attempts, base = _client(_ok())
-        client = base.with_rate_limiter(limiter=limiter, key="test", limit=1, window=60)
+        client = base.with_rate_limiter(limiter=limiter, key="test", limit=1, window="1 minute")
         fiber = yield from client.get(_URL).and_then(client.get(_URL)).fork()
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         assert attempts[0] == 1
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from fiber.join()
         assert attempts[0] == 2
 
@@ -120,12 +120,12 @@ def test_updates_limits_from_response_headers(
         limiter = yield from rl.RateLimiter()
         attempts, base = _client(_first(200, headers))
         client = base.with_rate_limiter(
-            limiter=limiter, key="test", limit=10, window=60, response_headers=names
+            limiter=limiter, key="test", limit=10, window="1 minute", response_headers=names
         )
         fiber = yield from client.get(_URL).and_then(client.get(_URL)).fork(start_immediately=True)
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         assert attempts[0] == 1
-        yield from testing.adjust(60)
+        yield from testing.adjust("1 minute")
         yield from fiber.join()
         assert attempts[0] == 2
 
@@ -155,13 +155,13 @@ def test_inspects_remaining_headers(
         limiter = yield from rl.RateLimiter()
         attempts, base = _client(_first(200, headers))
         client = base.with_rate_limiter(
-            limiter=limiter, key="test", limit=10, window=60, response_headers=names
+            limiter=limiter, key="test", limit=10, window="1 minute", response_headers=names
         )
         fiber = yield from client.get(_URL).and_then(client.get(_URL)).fork(start_immediately=True)
         assert attempts[0] == 1
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         assert attempts[0] == 1
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from fiber.join()
         assert attempts[0] == 2
 
@@ -184,14 +184,14 @@ def test_tracks_remaining_headers_when_the_limit_header_is_also_present() -> Non
             )
         )
         client = base.with_rate_limiter(
-            limiter=limiter, key="reported-remaining", limit=800, window=60
+            limiter=limiter, key="reported-remaining", limit=800, window="1 minute"
         )
         yield from client.get(_URL)
         yield from client.get(_URL)
         fiber = yield from client.get(_URL).fork(start_immediately=True)
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         assert attempts[0] == 2
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from fiber.join()
         assert attempts[0] == 3
 
@@ -217,14 +217,14 @@ def test_retries_a_429_at_the_reported_reset_when_remaining_is_exhausted() -> No
             limiter=limiter,
             key="reported-429",
             limit=800,
-            window=60,
+            window="1 minute",
             times=1,
             disable_adaptive_learning=True,
         )
         fiber = yield from client.get(_URL).fork(start_immediately=True)
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         assert attempts[0] == 1
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         response = yield from fiber.join()
         assert response.status == 200
         assert attempts[0] == 2
@@ -266,7 +266,7 @@ def test_remaining_counts_with_requests_in_flight(
             return fx.succeed(res.make(request, status=200, headers=second if attempt == 2 else {}))
 
         client = c.make(send).with_rate_limiter(
-            limiter=limiter, key="in-flight", limit=800, window=60
+            limiter=limiter, key="in-flight", limit=800, window="1 minute"
         )
         fiber_1 = yield from client.get(_URL).fork(start_immediately=True)
         yield from client.get(_URL)
@@ -274,9 +274,9 @@ def test_remaining_counts_with_requests_in_flight(
         yield from fiber_1.join()
 
         fiber = yield from client.get(_URL).fork(start_immediately=True)
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         assert attempts[0] == 2
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from fiber.join()
         assert attempts[0] == 3
 
@@ -298,16 +298,16 @@ def test_paces_requests_started_while_remaining_is_exhausted_with_the_limiter_af
             limiter=limiter,
             key="exhausted-pacing",
             limit=2,
-            window=60,
+            window="1 minute",
             disable_adaptive_learning=True,
         )
         yield from client.get(_URL)
         fibers = yield from fx.for_each(
             range(3), lambda _: client.get(_URL).fork(start_immediately=True)
         )
-        yield from testing.adjust(60)
+        yield from testing.adjust("1 minute")
         assert attempts[0] == 3
-        yield from testing.adjust(60)
+        yield from testing.adjust("1 minute")
         yield from fx.Fiber.join_all(fibers)
         assert attempts[0] == 4
 
@@ -342,7 +342,7 @@ def test_limit_headers_not_read(names: c.RateLimitHeaders | None, inspect: bool)
             limiter=limiter,
             key="test",
             limit=10,
-            window=60,
+            window="1 minute",
             response_headers=names,
             disable_response_inspection=not inspect,
         )
@@ -368,12 +368,16 @@ def test_retries_429_through_the_limiter(filter_ok: bool) -> None:
         limiter = yield from rl.RateLimiter()
         attempts, base = _client(_first(429, {}))
         client = (base.filter_status_ok() if filter_ok else base).with_rate_limiter(
-            limiter=limiter, key="test", limit=1, window=60, disable_response_inspection=True
+            limiter=limiter,
+            key="test",
+            limit=1,
+            window="1 minute",
+            disable_response_inspection=True,
         )
         fiber = yield from client.get(_URL).fork()
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         assert attempts[0] == 1
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         response = yield from fiber.join()
         assert response.status == 200
         assert attempts[0] == 2
@@ -391,7 +395,7 @@ def test_bounds_automatic_429_response_retries() -> None:
             limiter=limiter,
             key="bounded-response",
             limit=100,
-            window=60,
+            window="1 minute",
             times=2,
             disable_response_inspection=True,
         )
@@ -412,7 +416,7 @@ def test_bounds_automatic_http_client_error_429_retries() -> None:
             limiter=limiter,
             key="bounded-error",
             limit=100,
-            window=60,
+            window="1 minute",
             times=2,
             disable_response_inspection=True,
         )
@@ -429,8 +433,8 @@ def test_waits_until_a_retry_after_http_date() -> None:
     """waits until a Retry-After HTTP date"""
 
     def body():
-        now = yield from clock.now()
-        retry_at = h.format_http_date(datetime.fromtimestamp(now + 30, UTC))
+        now = yield from clock.current_time_millis()
+        retry_at = h.format_http_date(datetime.fromtimestamp(now / 1000 + 30, UTC))
         limiter = yield from rl.RateLimiter()
         attempts, base = _client(
             lambda attempt, request: res.make(
@@ -441,14 +445,14 @@ def test_waits_until_a_retry_after_http_date() -> None:
             limiter=limiter,
             key="http-date-retry-after",
             limit=100,
-            window=60,
+            window="1 minute",
             times=1,
             disable_adaptive_learning=True,
         )
         fiber = yield from client.get(_URL).fork()
-        yield from testing.adjust(29)
+        yield from testing.adjust("29 seconds")
         assert attempts[0] == 1
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         response = yield from fiber.join()
         assert response.status == 200
         assert attempts[0] == 2
@@ -466,16 +470,16 @@ def test_uses_a_custom_retry_after_header() -> None:
             limiter=limiter,
             key="custom-retry-after",
             limit=100,
-            window=60,
+            window="1 minute",
             times=1,
             response_headers=c.RateLimitHeaders(retry_after="X-Vendor-Retry-After"),
             disable_adaptive_learning=True,
         )
         fiber = yield from client.get(_URL).fork(start_immediately=True)
         assert attempts[0] == 1
-        yield from testing.adjust(9)
+        yield from testing.adjust("9 seconds")
         assert attempts[0] == 1
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         response = yield from fiber.join()
         assert response.status == 200
         assert attempts[0] == 2
@@ -493,28 +497,28 @@ def test_applies_adaptive_cooldown_to_requests_delayed_by_the_configured_limiter
 
         def send(request: req.HttpClientRequest, *_: object) -> fx.Effect[res.HttpClientResponse]:
             def answer(now: float) -> res.HttpClientResponse:
-                status = 429 if previous and now - previous[-1] < 2 else 200
+                status = 429 if previous and now - previous[-1] < 2_000 else 200
                 previous.append(now)
                 statuses.append(status)
                 headers = {"retry-after": "2"} if status == 429 else {}
                 return res.make(request, status=status, headers=headers)
 
-            return clock.now().map(answer)
+            return clock.current_time_millis().map(answer)
 
         client = c.make(send).with_rate_limiter(
-            limiter=limiter, key="adaptive-delayed", limit=1, window=1
+            limiter=limiter, key="adaptive-delayed", limit=1, window="1 second"
         )
         fiber = yield from fx.all(
             *(client.get(f"http://test/{n}") for n in range(1, 6)), concurrency="unbounded"
         ).fork(start_immediately=True)
         assert len(statuses) == 1
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert len(statuses) == 2
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert len(statuses) == 2
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert statuses == [200, 429, 200, 429]
-        yield from testing.adjust(6)
+        yield from testing.adjust("6 seconds")
         yield from fiber.join()
         assert statuses.count(429) == 2
 
@@ -539,15 +543,17 @@ def test_retry_after_cooldown_shared_through_the_store(filter_ok: bool) -> None:
         attempts_b, base_b = _client(_ok())
         key = "failure" if filter_ok else "shared"
         client_a = (base_a.filter_status_ok() if filter_ok else base_a).with_rate_limiter(
-            limiter=limiter_a, key=key, limit=100, window=60
+            limiter=limiter_a, key=key, limit=100, window="1 minute"
         )
-        client_b = base_b.with_rate_limiter(limiter=limiter_b, key=key, limit=100, window=60)
+        client_b = base_b.with_rate_limiter(
+            limiter=limiter_b, key=key, limit=100, window="1 minute"
+        )
         fiber_a = yield from client_a.get("http://test/a").fork(start_immediately=True)
         assert attempts_a[0] == 1
         fiber_b = yield from client_b.get("http://test/b").fork(start_immediately=True)
-        yield from testing.adjust(9)
+        yield from testing.adjust("9 seconds")
         assert attempts_b[0] == 0
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from fiber_a.join()
         yield from fiber_b.join()
         assert attempts_a[0] == 2
@@ -567,17 +573,17 @@ def test_applies_retry_after_feedback_when_automatic_retries_are_disabled() -> N
         )
         attempts_b, base_b = _client(_ok())
         client_a = base_a.with_rate_limiter(
-            limiter=limiter_a, key="terminal-feedback", limit=100, window=60, times=0
+            limiter=limiter_a, key="terminal-feedback", limit=100, window="1 minute", times=0
         )
         client_b = base_b.with_rate_limiter(
-            limiter=limiter_b, key="terminal-feedback", limit=100, window=60
+            limiter=limiter_b, key="terminal-feedback", limit=100, window="1 minute"
         )
         response = yield from client_a.get("http://test/a")
         assert response.status == 429
         fiber_b = yield from client_b.get("http://test/b").fork(start_immediately=True)
-        yield from testing.adjust(9)
+        yield from testing.adjust("9 seconds")
         assert attempts_b[0] == 0
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from fiber_b.join()
         assert attempts_b[0] == 1
 
@@ -596,11 +602,13 @@ def test_learns_adaptive_pacing_from_retry_after_feedback() -> None:
                 else res.make(request, status=200)
             )
         )
-        client = base.with_rate_limiter(limiter=limiter, key="learned", limit=100, window=60)
+        client = base.with_rate_limiter(
+            limiter=limiter, key="learned", limit=100, window="1 minute"
+        )
 
         first = yield from client.get(_URL).fork(start_immediately=True)
         assert attempts[0] == 1
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         yield from first.join()
         assert attempts[0] == 2
 
@@ -609,15 +617,15 @@ def test_learns_adaptive_pacing_from_retry_after_feedback() -> None:
 
         learning = yield from client.get(_URL).fork(start_immediately=True)
         assert attempts[0] == 4
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         yield from learning.join()
         assert attempts[0] == 5
 
         paced = yield from client.get(_URL).and_then(client.get(_URL)).fork(start_immediately=True)
         assert attempts[0] == 6
-        yield from testing.adjust(9)
+        yield from testing.adjust("9 seconds")
         assert attempts[0] == 6
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from paced.join()
         assert attempts[0] == 7
 
@@ -636,11 +644,11 @@ def test_does_not_send_adaptive_feedback_when_response_inspection_is_disabled() 
             limiter=disabled_limiter,
             key="disabled",
             limit=100,
-            window=60,
+            window="1 minute",
             disable_response_inspection=True,
         )
         enabled = enabled_base.with_rate_limiter(
-            limiter=enabled_limiter, key="disabled", limit=100, window=60
+            limiter=enabled_limiter, key="disabled", limit=100, window="1 minute"
         )
         response = yield from disabled.get("http://test/disabled")
         assert response.status == 200
@@ -664,11 +672,11 @@ def test_can_disable_adaptive_learning_without_disabling_response_inspection() -
             limiter=disabled_limiter,
             key="adaptive-disabled",
             limit=100,
-            window=60,
+            window="1 minute",
             disable_adaptive_learning=True,
         )
         enabled_client = enabled_base.with_rate_limiter(
-            limiter=enabled_limiter, key="adaptive-disabled", limit=100, window=60
+            limiter=enabled_limiter, key="adaptive-disabled", limit=100, window="1 minute"
         )
         disabled = yield from disabled_client.get("http://test/disabled").fork(
             start_immediately=True
@@ -677,9 +685,9 @@ def test_can_disable_adaptive_learning_without_disabling_response_inspection() -
         enabled = yield from enabled_client.get("http://test/enabled").fork(start_immediately=True)
         assert enabled_attempts[0] == 1
         yield from enabled.join()
-        yield from testing.adjust(9)
+        yield from testing.adjust("9 seconds")
         assert disabled_attempts[0] == 1
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from disabled.join()
         assert disabled_attempts[0] == 2
 
@@ -693,14 +701,14 @@ def test_keeps_adaptive_retry_after_state_isolated_by_resolved_key() -> None:
         limiter = yield from rl.make
         attempts_a, base_a = _client(_first(429, {"retry-after": "10"}))
         attempts_b, base_b = _client(_ok())
-        client_a = base_a.with_rate_limiter(limiter=limiter, key="a", limit=100, window=60)
-        client_b = base_b.with_rate_limiter(limiter=limiter, key="b", limit=100, window=60)
+        client_a = base_a.with_rate_limiter(limiter=limiter, key="a", limit=100, window="1 minute")
+        client_b = base_b.with_rate_limiter(limiter=limiter, key="b", limit=100, window="1 minute")
         fiber_a = yield from client_a.get("http://test/a").fork(start_immediately=True)
         assert attempts_a[0] == 1
         fiber_b = yield from client_b.get("http://test/b").fork(start_immediately=True)
         assert attempts_b[0] == 1
         yield from fiber_b.join()
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         yield from fiber_a.join()
         assert attempts_a[0] == 2
 
@@ -718,19 +726,21 @@ def test_prefers_explicit_rate_limit_reset_headers_over_adaptive_retry_after_fee
                 {"retry-after": "60", "x-ratelimit-limit": "1", "x-ratelimit-reset-after": "1"},
             )
         )
-        client = base.with_rate_limiter(limiter=limiter, key="explicit", limit=100, window=60)
+        client = base.with_rate_limiter(
+            limiter=limiter, key="explicit", limit=100, window="1 minute"
+        )
         retry = yield from client.get(_URL).fork(start_immediately=True)
         assert attempts[0] == 1
-        yield from testing.adjust(0.999)
+        yield from testing.adjust("999 millis")
         assert attempts[0] == 1
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from retry.join()
         assert attempts[0] == 2
 
         following = yield from client.get(_URL).fork(start_immediately=True)
-        yield from testing.adjust(0.999)
+        yield from testing.adjust("999 millis")
         assert attempts[0] == 2
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from following.join()
         assert attempts[0] == 3
 
@@ -829,8 +839,8 @@ def test_circuit_breaker_classifier(
     retry_after_millis: float | None,
 ):
     """circuitBreakerClassifier classifies $name as $outcome"""
-    now = yield from clock.now()
-    classified = yield from c.circuit_breaker_classifier(exit(now * 1000))
+    now = yield from clock.current_time_millis()
+    classified = yield from c.circuit_breaker_classifier(exit(now))
     retry_after = classified.retry_after if isinstance(classified, cb.FailureOutcome) else None
     assert (classified.kind, None if retry_after is None else to_millis(retry_after)) == (
         outcome,
@@ -886,7 +896,7 @@ def test_keys_circuits_by_request_origin_by_default() -> None:
 
             return fx.sync(answer)
 
-        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=60)
+        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="1 minute")
         client = c.make(send).with_circuit_breaker(breaker=breaker)
         assert (yield from client.get("http://down.test:8080/a")).status == 503
         error = yield from client.get("http://down.test:8080/b?q=1").flip()

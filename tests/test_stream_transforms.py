@@ -7,6 +7,7 @@ from typing import Any
 import pyfect as fx
 from pyfect import schedule, stream, testing
 from pyfect.clock import Clock
+from pyfect.duration import Seconds
 from pyfect.queue import Done, Queue
 from pyfect.result import Err, Ok
 
@@ -155,9 +156,9 @@ def test_zip_latest_all_waits_for_every_stream_before_writing():
 def _timed(spacing: float) -> fx.Effect[list[int], Any, Any]:
     @fx.fn
     def run():
-        spaced = stream.make(1, 2, 3).rechunk(1).schedule(schedule.spaced(spacing))
-        fiber = yield from spaced.timeout(1).run_collect().fork_scoped()
-        yield from testing.adjust(5)
+        spaced = stream.make(1, 2, 3).rechunk(1).schedule(schedule.spaced(Seconds(spacing)))
+        fiber = yield from spaced.timeout("1 second").run_collect().fork_scoped()
+        yield from testing.adjust("5 seconds")
         return (yield from fiber.join())
 
     return run()
@@ -178,17 +179,17 @@ def test_throttle_shape_caps_the_bucket_at_units_plus_burst():
     seen: list[tuple[int, float]] = []
 
     def record(n: int) -> fx.Effect[None]:
-        return fx.sync(lambda: seen.append((n, clock.now_unsafe())))
+        return fx.sync(lambda: seen.append((n, clock.current_time_millis_unsafe())))
 
     throttled = stream.from_queue(queue).throttle(
-        cost=len, units=1, duration=1, burst=2, strategy="shape"
+        cost=len, units=1, duration="1 second", burst=2, strategy="shape"
     )
     yield from throttled.run_for_each(record).fork_scoped()
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     yield from queue.offer_all(range(1, 7))
     for _ in range(10):
-        yield from testing.adjust(1)
-    assert seen == [(n, 13) for n in range(1, 7)]
+        yield from testing.adjust("1 second")
+    assert seen == [(n, 13_000) for n in range(1, 7)]
 
 
 @testing.effect
@@ -196,10 +197,10 @@ def test_throttle_enforce_caps_the_bucket_at_units_plus_burst():
     queue = yield from Queue[int, Done].unbounded()
     passed: list[int] = []
     throttled = stream.from_queue(queue).throttle(
-        cost=len, units=1, duration=1, burst=2, strategy="enforce"
+        cost=len, units=1, duration="1 second", burst=2, strategy="enforce"
     )
     yield from throttled.run_for_each(lambda n: fx.sync(lambda: passed.append(n))).fork_scoped()
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     for n in range(1, 7):
         yield from queue.offer(n)
         yield from _settle()
@@ -225,16 +226,16 @@ def test_race_closes_a_loser_that_also_wrote_at_once():
         return fx.sync(lambda: log.append(entry))
 
     first = (
-        stream.from_effect(fx.sleep(1).as_(1))
-        .concat(stream.from_effect(fx.sleep(1).as_(11)))
+        stream.from_effect(fx.sleep("1 second").as_(1))
+        .concat(stream.from_effect(fx.sleep("1 second").as_(11)))
         .ensuring(note("finA"))
     )
-    second = stream.from_effect(fx.sleep(1).as_(2)).ensuring(note("finB"))
+    second = stream.from_effect(fx.sleep("1 second").as_(2)).ensuring(note("finB"))
     raced = first.race(second).tap(lambda n: note(f"item {n}"))
     fiber = yield from raced.run_collect().fork_scoped()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     log.append("after 1s")
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from fiber.join()) == [1, 11]
     assert log == ["finB", "item 1", "after 1s", "item 11", "finA"]
 

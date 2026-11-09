@@ -18,7 +18,7 @@ from typing import Any
 from pyfect import channel
 from pyfect._core import Effect, _FlatMap, _Gen, _Succeed, _Suspend, _Sync
 from pyfect.channel._base import end_with
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.effect import provide_service
 from pyfect.errors import Done
 from pyfect.pull import catch_done
@@ -61,7 +61,7 @@ def _group_by(
     buffer_size: int,
     idle_time_to_live: Duration | None,
 ) -> AnyStream_:
-    ttl = math.inf if idle_time_to_live is None else to_seconds(idle_time_to_live)
+    ttl = Seconds(math.inf) if idle_time_to_live is None else to_seconds(idle_time_to_live)
 
     def build(pull: AnyEffect, scope: CloseableScope, forked: CloseableScope) -> AnyEffect:
         def body() -> Generator[AnyEffect, Any, AnyEffect]:

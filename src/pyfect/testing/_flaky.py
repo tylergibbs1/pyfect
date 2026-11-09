@@ -14,12 +14,12 @@ from pyfect.scope import Scope, scoped
 
 
 @overload
-def flaky[A, E](eff: Effect[A, E, Scope], timeout: Duration = 30.0) -> Effect[A]: ...
+def flaky[A, E](eff: Effect[A, E, Scope], timeout: Duration = "30 seconds") -> Effect[A]: ...
 @overload
 def flaky[A, E, R](
-    eff: Effect[A, E, Scope | R], timeout: Duration = 30.0
+    eff: Effect[A, E, Scope | R], timeout: Duration = "30 seconds"
 ) -> Effect[A, Never, R]: ...
-def flaky(eff: Effect[Any, Any, Any], timeout: Duration = 30.0) -> Effect[Any, Any, Any]:
+def flaky(eff: Effect[Any, Any, Any], timeout: Duration = "30 seconds") -> Effect[Any, Any, Any]:
     """Retry ``eff`` (in a fresh scope each time) after any failure, defects
     included, up to 10 times while less than ``timeout`` has passed. Like
     Effect's ``flakyTest``, the last failure dies: its typed errors become

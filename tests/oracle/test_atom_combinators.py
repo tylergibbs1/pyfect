@@ -218,7 +218,7 @@ def test_refresh_on_signal_uses_registry_initial_values_as_source_state(
 def test_debounce_uses_registry_initial_values_as_source_state(timers: FakeTimers) -> None:
     """debounce uses registry initial values as source state"""
     source = atom.make(0).keep_alive()
-    debounced = source.debounce(0.1).keep_alive()
+    debounced = source.debounce("100 millis").keep_alive()
     r = timers.registry(initial_values=[atom.initial_value(debounced, 10)])
     r.mount(debounced)
     assert r.get(debounced) == 10
@@ -234,7 +234,7 @@ def test_with_refresh_uses_registry_initial_values_as_source_state(timers: FakeT
     """withRefresh uses registry initial values as source state"""
     rebuilds, value = [0], [0]
     source = _counting_source(rebuilds, value)
-    refreshed = source.with_refresh(0.1).keep_alive()
+    refreshed = source.with_refresh("100 millis").keep_alive()
     r = timers.registry(initial_values=[atom.initial_value(refreshed, 10)])
     r.mount(refreshed)
     assert r.get(refreshed) == 10

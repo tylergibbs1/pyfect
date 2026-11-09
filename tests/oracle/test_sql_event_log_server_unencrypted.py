@@ -152,7 +152,7 @@ def write_with_held_publication(
     return released.succeed(None).and_then(writer.join())
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_persists_remote_id_across_storage_instances(connect: Connect):
     """SqlEventLogServerUnencrypted / persists remote id across storage instances"""
 
@@ -166,7 +166,7 @@ def test_persists_remote_id_across_storage_instances(connect: Connect):
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_starts_over_existing_entries_with_long_primary_keys(connect: Connect):
     """SqlEventLogServerUnencrypted / starts over existing entries with long primary keys"""
 
@@ -227,7 +227,7 @@ def test_starts_over_existing_entries_with_long_primary_keys(connect: Connect):
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_replays_backlog_then_streams_live_changes(connect: Connect):
     """SqlEventLogServerUnencrypted / replays backlog and then streams live changes without
     startup duplication"""
@@ -248,7 +248,7 @@ def test_replays_backlog_then_streams_live_changes(connect: Connect):
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_handles_the_changes_startup_race(connect: Connect):
     """SqlEventLogServerUnencrypted / handles the changes startup race without losing or
     duplicating rows"""
@@ -272,7 +272,7 @@ def test_handles_the_changes_startup_race(connect: Connect):
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_isolates_reads_and_streams_between_stores(connect: Connect):
     """SqlEventLogServerUnencrypted / isolates reads and streams between stores"""
 
@@ -295,7 +295,7 @@ def test_isolates_reads_and_streams_between_stores(connect: Connect):
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_commits_outer_writes_but_discards_a_caught_nested_rollback(connect: Connect):
     """SqlEventLogServerUnencrypted / commits outer writes but discards a caught nested
     rollback and its notifications"""
@@ -335,7 +335,7 @@ def test_commits_outer_writes_but_discards_a_caught_nested_rollback(connect: Con
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_persists_and_streams_multiple_successful_transaction_levels(connect: Connect):
     """SqlEventLogServerUnencrypted / persists and streams multiple successful transaction
     levels in write order exactly once"""
@@ -406,7 +406,7 @@ def pausing_client(
     return pausing, pause, entered
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_streams_concurrent_sibling_transactions_in_sequence_order(connect: Connect):
     """SqlEventLogServerUnencrypted / streams concurrent sibling transactions in sequence
     order exactly once"""
@@ -447,7 +447,7 @@ def test_streams_concurrent_sibling_transactions_in_sequence_order(connect: Conn
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_rolls_back_an_interrupted_pre_commit_body(connect: Connect):
     """SqlEventLogServerUnencrypted / rolls back an interrupted pre-commit body without
     publishing its writes"""
@@ -486,7 +486,7 @@ def test_rolls_back_an_interrupted_pre_commit_body(connect: Connect):
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_discards_outer_rollback_rows_and_notifications(connect: Connect):
     """SqlEventLogServerUnencrypted / discards outer rollback rows and notifications,
     including successful nested writes"""
@@ -521,7 +521,7 @@ def test_discards_outer_rollback_rows_and_notifications(connect: Connect):
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_publishes_writes_in_an_enclosing_sql_transaction_only_after_commit(connect: Connect):
     """SqlEventLogServerUnencrypted / publishes writes made in an enclosing SQL transaction
     only after it commits"""
@@ -552,7 +552,7 @@ def test_publishes_writes_in_an_enclosing_sql_transaction_only_after_commit(conn
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_does_not_redeliver_entries_removed_by_backlog_compaction(connect: Connect):
     """SqlEventLogServerUnencrypted / does not redeliver entries removed by backlog
     compaction when startup publication resumes"""
@@ -581,7 +581,7 @@ def test_does_not_redeliver_entries_removed_by_backlog_compaction(connect: Conne
     yield from _run(body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_publishes_storage_owned_transactions_in_commit_order(connect: Connect):
     """pyfect: a storage-owned transaction holds its permit through publication, so a
     write that commits after it is published after it (Effect's delayed-return test
@@ -607,7 +607,7 @@ def test_publishes_storage_owned_transactions_in_commit_order(connect: Connect):
         yield from committed.wait()
         writer_two = yield from storage.write(store_id, [second]).fork()
         # Without the permit writer two commits and publishes in this window.
-        yield from fx.sleep(0.2)
+        yield from fx.sleep("200 millis")
         yield from released.succeed(None)
         yield from writer_one.join()
         yield from writer_two.join()
@@ -795,7 +795,7 @@ def test_reads_batch_history_through_id_and_primary_key_lookups():
 
 
 @pytest.mark.parametrize("size", [0, -1])
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_a_batch_size_below_one_writes_a_row_at_a_time(size: int):
     """Effect flushes once it holds ``insertBatchSize`` rows, so every row here."""
 

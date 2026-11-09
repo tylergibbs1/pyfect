@@ -229,14 +229,14 @@ class MemoryCircuitBreakerStore:
         return clock_with(run)
 
 
-def make_store_memory(*, idle_time_to_live: Duration = 3600) -> CircuitBreakerStoreService:
+def make_store_memory(*, idle_time_to_live: Duration = "1 hour") -> CircuitBreakerStoreService:
     """A store in memory, dropping keys idle for ``idle_time_to_live``
     (default an hour)."""
     store = MemoryCircuitBreakerStore(to_millis(idle_time_to_live))
     return CircuitBreakerStoreService(admit=store.admit, record=store.record, state=store.state)
 
 
-def layer_store_memory(*, idle_time_to_live: Duration = 3600) -> Layer[CircuitBreakerStore]:
+def layer_store_memory(*, idle_time_to_live: Duration = "1 hour") -> Layer[CircuitBreakerStore]:
     """Circuit states in memory, fresh each time the layer is built."""
     return layer_sync(
         CircuitBreakerStore, lambda: make_store_memory(idle_time_to_live=idle_time_to_live)

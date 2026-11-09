@@ -61,7 +61,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "tls"
 CERT = (FIXTURES / "cert.pem").read_text()
 KEY = (FIXTURES / "key.pem").read_text()
 
-live = testing.live(timeout=10)
+live = testing.live(timeout="10 seconds")
 
 # A connection nobody closes is a bug: collect garbage after each test so a
 # leaked transport's "unclosed" warning fails the test that leaked it.
@@ -196,7 +196,7 @@ def test_closes_with_pending_pre_run_socket():
     srv = yield from server.make(0, "127.0.0.1").pipe(provide_service(Scope, scope))
     conn = socket.create_connection(("127.0.0.1", port_of(srv)))
     try:
-        exit = yield from scope.close(Success(None)).timeout(1.0).exit()
+        exit = yield from scope.close(Success(None)).timeout("1 second").exit()
     finally:
         conn.close()
     assert isinstance(exit, Success)
@@ -265,7 +265,7 @@ def test_reader_scope_closure_during_parked_pull():
     reader = yield from sock.reader.pipe(provide_service(Scope, read_scope))
     parked = yield from reader.pull.fork(start_immediately=True)
     yield from read_scope.close(Success(None))
-    error = yield from parked.join().flip().timeout(1.0)
+    error = yield from parked.join().flip().timeout("1 second")
     assert isinstance(error.reason, SocketCloseError)
     assert error.reason.code == 1006
 
@@ -276,7 +276,7 @@ def test_parked_pull_interrupted_keeps_chunk():
     peer, pull, parked = yield from parked_pull()
     yield from parked.interrupt()
     peer.sendall(b"hello")
-    assert decode((yield from pull.timeout(1.0))) == "hello"
+    assert decode((yield from pull.timeout("1 second"))) == "hello"
 
 
 @live
@@ -290,9 +290,9 @@ def test_retained_chunk_then_eof():
     peer.shutdown(socket.SHUT_WR)
     received = ""
     while len(received) < 5:
-        received += decode((yield from pull.timeout(1.0)))
+        received += decode((yield from pull.timeout("1 second")))
     assert received == "hello"
-    error = yield from pull.flip().timeout(1.0)
+    error = yield from pull.flip().timeout("1 second")
     assert isinstance(error.reason, SocketCloseError)
     assert error.reason.code == 1000
 
@@ -305,9 +305,9 @@ def test_replaced_parked_pull_keeps_order():
     peer.sendall(b"first")
     replacement = yield from pull.fork(start_immediately=True)
     peer.sendall(b"second")
-    received = decode((yield from replacement.join().timeout(1.0)))
+    received = decode((yield from replacement.join().timeout("1 second")))
     while len(received) < len("firstsecond"):
-        received += decode((yield from pull.timeout(1.0)))
+        received += decode((yield from pull.timeout("1 second")))
     assert received == "firstsecond"
 
 
@@ -316,7 +316,7 @@ def test_zero_open_timeout():
     """respects a zero open timeout"""
     sock = from_socket(never, open_timeout=0)
 
-    error = yield from scoped(sock.reader.as_void()).flip().timeout(1.0)
+    error = yield from scoped(sock.reader.as_void()).flip().timeout("1 second")
     assert isinstance(error.reason, SocketOpenError)
     assert error.reason.kind == "Timeout"
 
@@ -458,7 +458,7 @@ def test_interrupted_upgrade_fails_pulls():
         reader = yield from sock.reader
         upgrading = yield from reader.upgrade().fork(start_immediately=True)
         yield from upgrading.interrupt()
-        return (yield from reader.pull.flip().timeout(1.0))
+        return (yield from reader.pull.flip().timeout("1 second"))
 
     error = yield from scoped(gen(body))
     assert isinstance(error.reason, SocketCloseError)
@@ -480,7 +480,7 @@ def test_second_upgrade_rejected():
     def body():
         reader = yield from sock.reader
         yield from reader.upgrade(options)
-        return (yield from reader.upgrade(options).flip().timeout(1.0))
+        return (yield from reader.upgrade(options).flip().timeout("1 second"))
 
     error = yield from scoped(gen(body))
     assert isinstance(error.reason, SocketUpgradeError)

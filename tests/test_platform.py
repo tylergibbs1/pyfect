@@ -261,7 +261,7 @@ def test_to_file_appends_each_batch_of_lines(tmp_path: FsPath):
     target = tmp_path / "app.log"
     target.write_text("before\n")
     lines = logger.Logger.make(lambda options: " ".join(map(str, options.message)))
-    file_logger = lines.to_file(str(target), batch_window=60)
+    file_logger = lines.to_file(str(target), batch_window="1 minute")
 
     program = fx.log_info("one").and_then(fx.log_info("two", 2))
     fx.run_blocking(
@@ -277,7 +277,7 @@ def test_to_file_writes_a_lone_surrogate_as_the_replacement_character(tmp_path: 
     # Effect encodes with TextEncoder, which writes U+FFFD for it.
     target = tmp_path / "app.log"
     lines = logger.Logger.make(lambda options: " ".join(map(str, options.message)))
-    file_logger = lines.to_file(str(target), batch_window=60)
+    file_logger = lines.to_file(str(target), batch_window="1 minute")
     program = fx.log_info("a\ud800b").pipe(fx.provide(logger.layer([file_logger])))
     fx.run_blocking(program.pipe(fx.provide(file_system.layer)).or_die())
     assert target.read_bytes() == "a\ufffdb\n".encode()
@@ -343,7 +343,7 @@ def test_keys_follow_node_readline_where_it_differs_from_a_plain_reading():
     assert decode("a\x1b") == [UserInput("a", Key("a")), UserInput(None, Key("escape", meta=True))]
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_an_escape_sequence_split_across_reads_is_one_key():
     # Node's readline keeps a partial sequence across reads, and takes a
     # trailing ESC for the escape key once 50 ms pass without more input.
@@ -354,15 +354,15 @@ def test_an_escape_sequence_split_across_reads_is_one_key():
     service = terminal.live(should_quit=lambda _: False, input=read_end, output=io.StringIO())
     queue = yield from service.read_input
     os.write(write_end, b"\x1b")
-    yield from fx.sleep(0.01)
+    yield from fx.sleep("10 millis")
     os.write(write_end, b"[A")
     assert (yield from queue.take()) == UserInput(None, Key("up"))
     os.write(write_end, b"\x1b[")
-    yield from fx.sleep(0.1)
+    yield from fx.sleep("100 millis")
     os.write(write_end, b"B")
     assert (yield from queue.take()) == UserInput(None, Key("down"))
     os.write(write_end, b"\x1b")
-    yield from fx.sleep(0.1)
+    yield from fx.sleep("100 millis")
     os.write(write_end, b"a")
     assert (yield from queue.take()) == UserInput(None, Key("escape", meta=True))
     assert (yield from queue.take()) == UserInput("a", Key("a"))

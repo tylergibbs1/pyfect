@@ -122,7 +122,7 @@ def test_random_uuid_v4_formats_uuid_bytes_from_random_bytes():
 @testing.effect
 def test_random_uuid_v7_formats_uuid_bytes_with_the_clock_timestamp():
     """randomUUIDv7 formats UUID bytes with the Clock timestamp"""
-    yield from testing.set_time(0x0123456789AB / 1000)
+    yield from testing.set_time(0x0123456789AB)
     uuid = yield from test_crypto.random_uuid_v7()
     assert uuid == "01234567-89ab-7607-8809-0a0b0c0d0e0f"
     text = yield from test_crypto.random_uuid_v7(format="hex")
@@ -139,7 +139,7 @@ def test_random_uuid_v4_returns_16_bytes_with_the_version_and_variant_bits_set()
 @testing.effect
 def test_random_uuid_v7_returns_16_bytes_containing_the_clock_timestamp_version_and_variant():
     """randomUUIDv7 returns 16 bytes containing the Clock timestamp, version and variant"""
-    yield from testing.set_time(0x0123456789AB / 1000)
+    yield from testing.set_time(0x0123456789AB)
     data = yield from test_crypto.random_uuid_v7(format="bytes")
     assert data == bytes(
         [0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0x76, 7, 0x88, 9, 10, 11, 12, 13, 14, 15]
@@ -149,14 +149,14 @@ def test_random_uuid_v7_returns_16_bytes_containing_the_clock_timestamp_version_
 @testing.effect
 def test_random_ulid_encodes_the_clock_timestamp_and_random_bytes():
     """randomULID encodes the Clock timestamp and random bytes"""
-    yield from testing.set_time(0x0123456789AB / 1000)
+    yield from testing.set_time(0x0123456789AB)
     assert (yield from test_crypto.random_ulid) == "014D2PF2DB000G40R40M30E209"
 
 
 @testing.effect
 def test_random_ulid_clamps_an_overflowing_clock_timestamp():
     """randomULID clamps an overflowing Clock timestamp"""
-    yield from testing.set_time(2**48 / 1000)
+    yield from testing.set_time(2**48)
     assert (yield from test_crypto.random_ulid) == "7ZZZZZZZZZ000G40R40M30E209"
 
 
@@ -217,7 +217,7 @@ def test_generates_uuid_v4_values():
 @testing.effect
 def test_generates_uuid_v7_values():
     """generates UUIDv7 values"""
-    yield from testing.set_time(0x0123456789AB / 1000)
+    yield from testing.set_time(0x0123456789AB)
     uuid = yield from live(lambda c: c.random_uuid_v7())
     assert UUID_V7.match(uuid)
     assert uuid[:13] == "01234567-89ab"

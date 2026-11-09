@@ -27,6 +27,7 @@ pytest.importorskip("pytds")
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
+from pyfect.duration import Seconds
 from pyfect.persistence import persisted_queue as pq
 from pyfect.persistence import persistence
 from pyfect.sql import SqlClient, SqlClientService, mssql
@@ -145,7 +146,7 @@ def _queue(
         store = yield from (
             pq.make_store_sql(table_name=table_name)
             if poll_interval is None
-            else pq.make_store_sql(table_name=table_name, poll_interval=poll_interval)
+            else pq.make_store_sql(table_name=table_name, poll_interval=Seconds(poll_interval))
         )
         factory = yield from pq.make_factory.pipe(fx.provide_service(pq.PersistedQueueStore, store))
         if retry:
@@ -185,7 +186,7 @@ def _capture_deadlocks() -> Generator[Any, Any, fx.Effect[list[str], Any, Any]]:
 
     def read():
         # wait out the session's dispatch latency
-        yield from fx.sleep(2)
+        yield from fx.sleep("2 seconds")
         rows = yield from sql(
             "SELECT CAST(x.e.query('.') AS NVARCHAR(MAX)) AS graph "
             "FROM sys.dm_xe_sessions s "
@@ -218,7 +219,7 @@ def _wait_for[A](check: fx.Effect[A | None, Any, Any], what: str) -> Generator[A
         found = yield from check
         if found is not None:
             return found
-        yield from fx.sleep(0.05)
+        yield from fx.sleep("50 millis")
     return (yield from fx.die(RuntimeError(f"{what} never happened")))
 
 
@@ -270,7 +271,7 @@ def test_offers_claims_and_settlements_do_not_deadlock(mssql_server: MssqlServer
             range(total), lambda n: queues[n % 2].offer(n), concurrency=10
         ).exit()
         if isinstance(offered, fx.Success):
-            yield from completed.wait().timeout_option(15)
+            yield from completed.wait().timeout_option("15 seconds")
 
         # a lock resource names the table as objectname="<database>.<schema>.<table>"
         deadlocks = [g for g in (yield from read_deadlocks) if f'.{table_name}"' in g]
@@ -311,7 +312,7 @@ def test_skips_an_offer_racing_an_uncommitted_duplicate_under_xact_abort(
             yield from queue.offer("first", id="job")
             yield from offered.succeed(None)
             # commit only once the duplicate offer is waiting on this row
-            yield from fx.sleep(1)
+            yield from fx.sleep("1 second")
 
         first = yield from sql.with_transaction(fx.gen(first_offer)).fork_scoped()
         yield from offered.wait()

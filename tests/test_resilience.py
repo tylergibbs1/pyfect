@@ -33,7 +33,7 @@ def _consume_twice(
         for _ in range(2):
             result = yield from limiter.consume(
                 key="key",
-                window=window_millis / 1000,
+                window=Seconds(window_millis / 1000),
                 limit=limit,
                 algorithm=algorithm,
                 on_exceeded="delay",
@@ -88,7 +88,7 @@ def test_an_infinite_limit_never_fails_in_fail_mode() -> None:
     def body() -> Generator[Any, Any, list[float]]:
         limiter = yield from rl.RateLimiter()
         result = yield from limiter.consume(
-            key="key", window=1, limit=_INF, algorithm="token-bucket", tokens=5
+            key="key", window="1 second", limit=_INF, algorithm="token-bucket", tokens=5
         )
         return [to_millis(result.delay), to_millis(result.reset_after), result.remaining]
 
@@ -138,7 +138,7 @@ def _on_redis(
 def _rate_at_threshold() -> Generator[Any, Any, list[str]]:
     # One failure in two calls is exactly the threshold, which trips.
     breaker = yield from cb.make(
-        trip_policy=cb.rate(threshold=0.5, size=2, minimum_calls=2), open_duration=60
+        trip_policy=cb.rate(threshold=0.5, size=2, minimum_calls=2), open_duration="1 minute"
     )
     states: list[str] = []
     for call in (fx.void, fx.fail("boom")):
@@ -175,7 +175,7 @@ def test_an_infinite_open_duration_on_redis_is_a_store_error_not_a_defect() -> N
 def test_an_infinite_probe_lease_on_redis_fails_admission_with_a_store_error() -> None:
     def body() -> Generator[Any, Any, object]:
         breaker = yield from cb.make(
-            trip_policy=cb.consecutive(1), open_duration=1, on_store_error="fail"
+            trip_policy=cb.consecutive(1), open_duration="1 second", on_store_error="fail"
         )
         return (yield from fx.void.pipe(breaker.execute(key="lease")).flip())
 

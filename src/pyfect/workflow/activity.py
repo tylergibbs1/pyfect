@@ -94,7 +94,9 @@ def _interrupted_at_most_ten_times(meta: ScheduleMetadata[Any, Cause[Any]]) -> b
     return meta.attempt <= 10 and meta.input.has_interrupts
 
 
-_interrupt_backoff: Schedule[Any, Cause[Any]] = min(exponential(0.4, 1.5), spaced(10))
+_interrupt_backoff: Schedule[Any, Cause[Any]] = min(
+    exponential("400 millis", 1.5), spaced("10 seconds")
+)
 
 DEFAULT_INTERRUPT_RETRY_POLICY: InterruptRetryPolicy = _interrupt_backoff.while_(
     _interrupted_at_most_ten_times

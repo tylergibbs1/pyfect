@@ -909,7 +909,7 @@ def _start_watch(
             .fork()
         )
         signal = yield from testing.with_live(
-            fx.sleep(0.01).and_then(fs.write_file_string(f"{root}/{_READY}", "")).forever()
+            fx.sleep("10 millis").and_then(fs.write_file_string(f"{root}/{_READY}", "")).forever()
         ).fork()
         yield from ready.wait().race_first(fiber.join().as_(None)).ensuring(signal.interrupt())
         return fiber
@@ -1013,7 +1013,7 @@ def test_watch_uses_a_watch_backend_provided_after_the_layer_is_built(
         fs.watch(root)
         .run_head()
         .pipe(fx.provide_service(WatchBackend, _Backend(backend_event)))
-        .timeout(1)
+        .timeout("1 second")
     )
     assert event == fx.Some(backend_event)
 

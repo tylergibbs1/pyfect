@@ -54,7 +54,7 @@ def _run(
 
 
 def _trigger_export() -> fx.Effect[None]:
-    return testing.adjust(10)
+    return testing.adjust("10 seconds")
 
 
 def _find_metric(body: Any, name: str) -> Any:
@@ -96,7 +96,7 @@ def test_retains_delta_checkpoints_after_a_failed_export():
         yield from frequency.update("b")
         flusher = yield from otlp_exporter.Flusher()
         yield from flusher.flush
-        yield from testing.adjust(60)
+        yield from testing.adjust("1 minute")
         yield from flusher.flush
 
     yield from program.pipe(layer.provide(_layer(http, "delta", "1 hour"))).pipe(
@@ -149,7 +149,7 @@ def test_does_not_regress_delta_checkpoints_when_exports_complete_out_of_order()
         first = yield from flusher.flush.fork()
         yield from started[0].wait()
 
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from counter.update(1)
         second = yield from flusher.flush.fork()
         yield from started[1].wait()
@@ -159,7 +159,7 @@ def test_does_not_regress_delta_checkpoints_when_exports_complete_out_of_order()
         yield from releases[0].succeed(None)
         yield from first.join()
 
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from flusher.flush
 
     yield from fx.scoped(
@@ -387,7 +387,7 @@ def test_maps_unit_attributes_to_ucum():
 
     @fx.gen
     def program():
-        yield from metric.timer("unit_timer_test", boundaries=[10, 100]).update(0.005)
+        yield from metric.timer("unit_timer_test", boundaries=[10, 100]).update("5 millis")
         yield from metric.gauge("unit_custom_test", attributes={"unit": "{request}"}).update(1)
         yield from _trigger_export()
 

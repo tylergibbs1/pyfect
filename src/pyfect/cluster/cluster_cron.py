@@ -65,7 +65,7 @@ class CronPayload(Class, identifier="effect/cluster/ClusterCron/CronPayload"):
 
 _EXECUTOR_ID = "executor"
 
-_retry_policy = min(exponential(0.2, 1.5), spaced(60))
+_retry_policy = min(exponential("200 millis", 1.5), spaced("60 seconds"))
 
 
 def _with_retry[A](message: str, effect: Effect[A, Any, Any]) -> Effect[A, Never, Any]:

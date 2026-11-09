@@ -174,10 +174,10 @@ def test_retry_after_large() -> None:
 
 def test_retry_after_duration() -> None:
     """retryAfterDuration rounds fractions up on the wire, clamps negatives and rejects infinity"""
-    fractional = h.retry_after_duration(1.5)
+    fractional = h.retry_after_duration("1500 millis")
     assert h.format_retry_after(fractional) == "2"
     assert h.retry_after_delay(fractional, 0) == 1.5
-    negative = h.retry_after_duration(-5.0)
+    negative = h.retry_after_duration("-5 seconds")
     assert h.format_retry_after(negative) == "0"
     assert h.retry_after_delay(negative, 0) == 0
     with pytest.raises(ValueError, match="infinite"):
@@ -214,6 +214,6 @@ def test_schema_retry_after_from_string_round_trips_and_rejects_invalid_values()
 def test_schema_retry_after_accepts_only_finite_non_negative_durations() -> None:
     """Schema.RetryAfter accepts only finite, non-negative durations"""
     is_retry_after = S.is_(HS.RetryAfter)
-    assert is_retry_after(h.retry_after_duration(5))
+    assert is_retry_after(h.retry_after_duration("5 seconds"))
     assert not is_retry_after(h.RetryAfterDuration(Seconds(-5.0)))
     assert not is_retry_after(h.RetryAfterDuration(Seconds(math.inf)))

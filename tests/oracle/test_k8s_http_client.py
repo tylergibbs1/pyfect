@@ -46,7 +46,7 @@ def test_uses_the_rotated_token_after_the_token_cache_expires():
         request = k8s.get("/v1/pods")
         yield from request
         files.token = "token-2"
-        yield from testing.adjust(61)
+        yield from testing.adjust("61 seconds")
         yield from request
         assert authorization == ["Bearer token-1", "Bearer token-2"]
         assert urls == ["https://kubernetes.default.svc/api/v1/pods"] * 2
@@ -157,7 +157,7 @@ def test_create_pod_waits_until_ready_and_deletes_on_close():
             .fork()
         )
         for _ in range(3):
-            yield from testing.adjust(3)
+            yield from testing.adjust("3 seconds")
         status = yield from fiber.join()
         assert status.pod_ip == "10.0.0.9"
         # Effect spreads the spec last, so its metadata replaces the defaulted one

@@ -75,7 +75,7 @@ class PoolOptions:
 
     max_connections: int = 10
     min_connections: int = 0
-    idle_timeout: Duration = 60.0
+    idle_timeout: Duration = "60 seconds"
     acquire_timeout: Duration | None = None
 
 

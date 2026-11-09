@@ -22,7 +22,7 @@ class InMemoryUsers:
     rows: dict[str, str]
 
     def find(self, user_id: str) -> fx.Effect[str | None]:
-        return fx.sleep(0.05).as_(self.rows.get(user_id))
+        return fx.sleep("50 millis").as_(self.rows.get(user_id))
 
 
 # A connection pool that must be closed: acquired when the layer builds,
@@ -61,8 +61,8 @@ def program():
         ["1", "2", "3", "4"],
         lambda uid: (
             greet(uid)
-            .timeout(1)
-            .retry(schedule.exponential(0.01).up_to(times=2))
+            .timeout("1 second")
+            .retry(schedule.exponential("10 millis").up_to(times=2))
             .pipe(fx.catch_tag(UserNotFound, lambda e: fx.succeed(f"Who is {e.user_id}?")))
         ),
         concurrency=2,

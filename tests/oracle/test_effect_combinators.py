@@ -27,6 +27,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.duration import Seconds
 from pyfect.exit import fail as exit_fail
 from pyfect.exit import succeed as exit_succeed
 
@@ -44,9 +45,9 @@ def test_record_preserves_input_key_order_with_concurrency_2() -> None:
     @fx.gen
     def program():
         fiber = yield from fx.all_dict(
-            {"a": fx.sleep(0.02).as_(1), "b": fx.succeed(2)}, concurrency=2
+            {"a": fx.sleep("20 millis").as_(1), "b": fx.succeed(2)}, concurrency=2
         ).fork()
-        yield from testing.adjust(0.02)
+        yield from testing.adjust("20 millis")
         return (yield from fiber.join())
 
     results = testing.run_test(program)
@@ -60,11 +61,11 @@ def test_record_result_mode_preserves_input_key_order_with_unbounded_concurrency
     @fx.gen
     def program():
         fiber = yield from fx.all_dict(
-            {"a": fx.sleep(0.02).as_(1), "b": fx.fail("boom")},
+            {"a": fx.sleep("20 millis").as_(1), "b": fx.fail("boom")},
             concurrency="unbounded",
             mode="result",
         ).fork()
-        yield from testing.adjust(0.02)
+        yield from testing.adjust("20 millis")
         return (yield from fiber.join())
 
     results = testing.run_test(program)
@@ -119,7 +120,7 @@ def test_concurrency_interrupts_started_siblings_on_failure() -> None:
 
     def make(i: int) -> fx.Effect[int]:
         return (
-            fx.suspend(lambda: fx.sync(lambda: started.append(i)).and_then(fx.sleep(0.5)))
+            fx.suspend(lambda: fx.sync(lambda: started.append(i)).and_then(fx.sleep("500 millis")))
             .as_(i)
             .on_interrupt(fx.sync(lambda: interrupted.append(i)))
         )
@@ -127,9 +128,9 @@ def test_concurrency_interrupts_started_siblings_on_failure() -> None:
     @fx.gen
     def program():
         fiber = yield from fx.all(
-            make(1), fx.fail("boom").delay(0.1), make(3), make(4), concurrency=3
+            make(1), fx.fail("boom").delay("100 millis"), make(3), make(4), concurrency=3
         ).fork()
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         return (yield from fiber.await_exit())
 
     assert testing.run_test(program) == exit_fail("boom")
@@ -192,8 +193,8 @@ def test_supports_discard_option() -> None:
 
 
 def _ordered_tasks(order: list[str]) -> tuple[fx.Effect[str], fx.Effect[int]]:
-    task1 = fx.succeed("a").delay(0.05).tap(lambda _: fx.sync(lambda: order.append("task1")))
-    task2 = fx.succeed(1).delay(0.001).tap(lambda _: fx.sync(lambda: order.append("task2")))
+    task1 = fx.succeed("a").delay("50 millis").tap(lambda _: fx.sync(lambda: order.append("task1")))
+    task2 = fx.succeed(1).delay("1 millis").tap(lambda _: fx.sync(lambda: order.append("task2")))
     return task1, task2
 
 
@@ -205,7 +206,7 @@ def test_zip_concurrent_false() -> None:
     @fx.gen
     def program():
         fiber = yield from task1.zip(task2).fork()
-        yield from testing.adjust(0.051)
+        yield from testing.adjust("51 millis")
         return (yield from fiber.join())
 
     assert testing.run_test(program) == ("a", 1)
@@ -220,7 +221,7 @@ def test_zip_concurrent_true() -> None:
     @fx.gen
     def program():
         fiber = yield from task1.zip(task2, concurrent=True).fork()
-        yield from testing.adjust(0.05)
+        yield from testing.adjust("50 millis")
         return (yield from fiber.join())
 
     assert testing.run_test(program) == ("a", 1)
@@ -231,12 +232,12 @@ def test_zip_concurrent_true_interrupts_the_other_side_on_failure() -> None:
     """concurrent: true interrupts the other side on failure"""
     interrupted: list[str] = []
     task1 = fx.never.on_interrupt(fx.sync(lambda: interrupted.append("task1")))
-    task2 = fx.fail("boom").delay(0.01)
+    task2 = fx.fail("boom").delay("10 millis")
 
     @fx.gen
     def program():
         fiber = yield from task1.zip(task2, concurrent=True).fork()
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
         return (yield from fiber.await_exit())
 
     assert testing.run_test(program) == exit_fail("boom")
@@ -251,7 +252,7 @@ def test_zip_with_concurrent_false() -> None:
     @fx.gen
     def program():
         fiber = yield from task1.zip_with(task2, lambda a, b: f"{a}{b}").fork()
-        yield from testing.adjust(0.051)
+        yield from testing.adjust("51 millis")
         return (yield from fiber.join())
 
     assert testing.run_test(program) == "a1"
@@ -266,7 +267,7 @@ def test_zip_with_concurrent_true() -> None:
     @fx.gen
     def program():
         fiber = yield from task1.zip_with(task2, lambda a, b: f"{a}{b}", concurrent=True).fork()
-        yield from testing.adjust(0.05)
+        yield from testing.adjust("50 millis")
         return (yield from fiber.join())
 
     assert testing.run_test(program) == "a1"
@@ -276,13 +277,13 @@ def test_zip_with_concurrent_true() -> None:
 def test_zip_with_concurrent_true_interrupts_the_other_side_on_failure() -> None:
     """concurrent: true interrupts the other side on failure"""
     interrupted: list[str] = []
-    task1 = fx.fail("boom").delay(0.01)
+    task1 = fx.fail("boom").delay("10 millis")
     task2 = fx.never.on_interrupt(fx.sync(lambda: interrupted.append("task2")))
 
     @fx.gen
     def program():
         fiber = yield from task1.zip_with(task2, lambda a, b: f"{a}{b}", concurrent=True).fork()
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
         return (yield from fiber.await_exit())
 
     assert testing.run_test(program) == exit_fail("boom")
@@ -424,7 +425,7 @@ def test_skips_the_ttl_callback_on_interruption_and_invokes_it_once_on_next_succ
 
     def ttl(ex: fx.Exit[int, Any]) -> float:
         exits.append(ex)
-        return 60
+        return Seconds(60)
 
     @fx.gen
     def program():
@@ -452,21 +453,21 @@ def test_selects_ttl_from_each_fresh_exit_without_evaluating_on_cache_hits() -> 
 
     def ttl(ex: fx.Exit[int, Any]) -> float:
         exits.append(ex)
-        return 1 if ex == exit_succeed(1) else 3
+        return Seconds(1) if ex == exit_succeed(1) else Seconds(3)
 
     @fx.gen
     def program():
         cached = yield from fx.sync(bump).cached_with_ttl(ttl)
         seen = [count, len(exits)]
         seen.append((yield from cached))
-        yield from testing.adjust(0.999)
+        yield from testing.adjust("999 millis")
         seen.append((yield from cached))
         seen.append(len(exits))
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         seen.append((yield from cached))
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         seen.append((yield from cached))
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         seen.append((yield from cached))
         return seen
 
@@ -486,14 +487,14 @@ def test_supports_a_piped_callback_that_skips_failures_and_caches_successes() ->
 
     def ttl(ex: fx.Exit[int, str]) -> float:
         exits.append(ex)
-        return 0 if isinstance(ex, fx.Failure) else 1
+        return 0 if isinstance(ex, fx.Failure) else Seconds(1)
 
     @fx.gen
     def program():
         cached = yield from fx.suspend(body).cached_with_ttl(ttl)
         seen: list[object] = [(yield from cached.exit()), (yield from cached), (yield from cached)]
         seen.append(list(exits))
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         seen.append((yield from cached))
         return seen
 
@@ -518,14 +519,16 @@ def test_starts_ttl_from_value_creation() -> None:
 
     @fx.gen
     def program():
-        cached = yield from fx.sleep(2).and_then(fx.sync(bump)).cached_with_ttl(1)
+        cached = (
+            yield from fx.sleep("2 seconds").and_then(fx.sync(bump)).cached_with_ttl("1 second")
+        )
         first_fiber = yield from cached.fork()
         yield from fx.yield_now()
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         first = yield from first_fiber.join()
         second_fiber = yield from cached.fork()
         yield from fx.yield_now()
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         return first, (yield from second_fiber.join())
 
     assert testing.run_test(program) == (1, 1)
@@ -547,13 +550,13 @@ def test_invalidate_supports_a_piped_callback_that_skips_failures_and_caches_suc
 
     def ttl(ex: fx.Exit[int, str]) -> float:
         exits.append(ex)
-        return 0 if isinstance(ex, fx.Failure) else 1
+        return 0 if isinstance(ex, fx.Failure) else Seconds(1)
 
     @fx.gen
     def program():
         cached, _ = yield from fx.suspend(body).cached_invalidate_with_ttl(ttl)
         seen: list[object] = [(yield from cached.exit()), (yield from cached), (yield from cached)]
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         seen.append((yield from cached))
         return seen
 
@@ -578,7 +581,7 @@ def test_keeps_existing_callers_on_the_invalidated_run_without_replacing_the_new
                 yield from release.wait()
             return run
 
-        cached, invalidate = yield from body.cached_invalidate_with_ttl(3600)
+        cached, invalidate = yield from body.cached_invalidate_with_ttl("1 hour")
         owner = yield from cached.fork(start_immediately=True)
         seen = [runs]
         yield from invalidate
@@ -607,7 +610,7 @@ def test_interrupts_an_invalidated_run_when_its_last_caller_is_interrupted() -> 
 
     @fx.gen
     def program():
-        cached, invalidate = yield from fx.suspend(body).cached_invalidate_with_ttl(3600)
+        cached, invalidate = yield from fx.suspend(body).cached_invalidate_with_ttl("1 hour")
         first = yield from cached.fork(start_immediately=True)
         yield from invalidate
         second = yield from cached.fork(start_immediately=True)
@@ -829,7 +832,7 @@ def test_external_interruption_stops_a_pending_fallback() -> None:
 
 def test_timeout_option_timeout_a_long_computation() -> None:
     """timeout a long computation"""
-    eff = fx.sleep(60).and_then(fx.succeed(True)).timeout_option(0.01)
+    eff = fx.sleep("1 minute").and_then(fx.succeed(True)).timeout_option("10 millis")
     assert fx.run_blocking(eff) is None
 
 
@@ -837,9 +840,9 @@ def test_timeout_a_long_computation_with_a_failure() -> None:
     """timeout a long computation with a failure"""
     error = RuntimeError("boom")
     eff = (
-        fx.sleep(5)
+        fx.sleep("5 seconds")
         .and_then(fx.succeed(True))
-        .timeout_or_else(0.01, lambda: fx.die(error))
+        .timeout_or_else("10 millis", lambda: fx.die(error))
         .sandbox()
         .flip()
         .or_die()
@@ -852,18 +855,18 @@ def test_timeout_repetition_of_uninterruptible_effect() -> None:
 
     @fx.gen
     def program():
-        fiber = yield from fx.void.uninterruptible().forever().timeout_option(0.01).fork()
-        yield from testing.adjust(0.01)
+        fiber = yield from fx.void.uninterruptible().forever().timeout_option("10 millis").fork()
+        yield from testing.adjust("10 millis")
         return (yield from fiber.join())
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", testing.BusyFiberWarning)
-        assert testing.run_test(program, warning_delay=0.01) is None
+        assert testing.run_test(program, warning_delay="10 millis") is None
 
 
 def test_timeout_in_uninterruptible_region() -> None:
     """timeout in uninterruptible region"""
-    assert testing.run_test(fx.void.timeout_option(20).uninterruptible()) == fx.Some(None)
+    assert testing.run_test(fx.void.timeout_option("20 seconds").uninterruptible()) == fx.Some(None)
 
 
 # --- timeout ------------------------------------------------------------------------------
@@ -874,8 +877,8 @@ def test_timeout_produces_a_useful_error_message() -> None:
 
     @fx.gen
     def program():
-        fiber = yield from fx.never.timeout(1.5).flip().fork()
-        yield from testing.adjust(2)
+        fiber = yield from fx.never.timeout("1500 millis").flip().fork()
+        yield from testing.adjust("2 seconds")
         return (yield from fiber.join())
 
     assert "Operation timed out after '1s 500ms'" in str(testing.run_test(program))
@@ -883,7 +886,9 @@ def test_timeout_produces_a_useful_error_message() -> None:
 
 def test_timeout_timeout_a_long_computation() -> None:
     """timeout a long computation"""
-    error = fx.run_blocking(fx.sleep(60).and_then(fx.succeed(True)).timeout(0.01).flip().or_die())
+    error = fx.run_blocking(
+        fx.sleep("1 minute").and_then(fx.succeed(True)).timeout("10 millis").flip().or_die()
+    )
     assert isinstance(error, fx.TimeoutException)
     assert str(error) == "Operation timed out after '10ms'"
 
@@ -898,8 +903,8 @@ def test_timeout_interrupts_the_effect() -> None:
 
     @fx.gen
     def program():
-        fiber = yield from fx.never.on_interrupt(fx.sync(mark)).timeout(0.01).flip().fork()
-        yield from testing.adjust(0.01)
+        fiber = yield from fx.never.on_interrupt(fx.sync(mark)).timeout("10 millis").flip().fork()
+        yield from testing.adjust("10 millis")
         return (yield from fiber.join())
 
     error = testing.run_test(program)
@@ -916,13 +921,13 @@ def test_race_all_first() -> None:
 
     def racer(ms: int) -> fx.Effect[int, str]:
         eff: fx.Effect[int, str] = fx.fail("boom") if ms == 0 else fx.succeed(ms)
-        return eff.delay(ms / 1000).on_interrupt(fx.sync(lambda: interrupted.append(ms)))
+        return eff.delay(Seconds(ms / 1000)).on_interrupt(fx.sync(lambda: interrupted.append(ms)))
 
     @fx.gen
     def program():
         racers = [racer(ms) for ms in (500, 300, 200, 0, 100)]
         fiber = yield from fx.race_all_first(*racers).exit().fork()
-        yield from testing.adjust(0.5)
+        yield from testing.adjust("500 millis")
         return (yield from fiber.join())
 
     assert testing.run_test(program) == exit_fail("boom")
@@ -1014,11 +1019,11 @@ def test_delivers_a_pending_interrupt_when_interruptible_mask_restores_interrupt
 @testing.effect
 def test_timed_uses_monotonic_time_when_wall_time_moves_backward():
     """Effect.test.ts "timed > uses monotonic time when wall time moves backward"."""
-    yield from testing.set_time(1.0)
+    yield from testing.set_time(1_000)
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         yield from testing.set_time(0)
         return "done"
 
@@ -1033,10 +1038,10 @@ def test_cached_with_ttl_expires_exactly_at_the_deadline():
     ``now < expiresAt``): computed at 100 ms with a 200 ms TTL, the value
     is recomputed at 300 ms. In float seconds ``0.1 + 0.2 > 0.3`` kept it."""
     runs: list[int] = []
-    cached = yield from fx.sync(lambda: runs.append(1) or len(runs)).cached_with_ttl(0.2)
-    yield from testing.adjust(0.1)
+    cached = yield from fx.sync(lambda: runs.append(1) or len(runs)).cached_with_ttl("200 millis")
+    yield from testing.adjust("100 millis")
     assert (yield from cached) == 1
-    yield from testing.adjust(0.2)
+    yield from testing.adjust("200 millis")
     assert (yield from cached) == 2
 
 
@@ -1050,9 +1055,9 @@ def test_unbounded_fail():
             done.append(i)
             return fx.fail("error") if i == 3 else fx.succeed(i)
 
-        return fx.suspend(run).delay(i * 0.1)
+        return fx.suspend(run).delay(Seconds(i * 0.1))
 
     handle = yield from fx.for_each([1, 2, 3, 4, 5], visit, concurrency="unbounded").fork()
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert (yield from handle.await_exit()) == fx.exit.fail("error")
     assert done == [1, 2, 3]

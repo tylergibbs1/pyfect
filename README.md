@@ -194,9 +194,10 @@ pyfect follows Effect v4, does what Effect does wherever Python can express it, 
 Effect's own test cases as its spec: over 22,000 tests, with a test that fails on any Effect
 test title neither ported nor omitted with a reason, and about 95% of Effect's API so far. Every
 export of the core modules is listed against Effect's in [`docs/coverage/`](docs/coverage), and
-[`docs/PARITY.md`](docs/PARITY.md) tracks what is done, what is open and what still differs. One
-difference to know: a bare number as a `Duration` is seconds here and milliseconds in Effect.
-0.2.0 will switch to milliseconds; write `"5 seconds"` or a `timedelta` to be unaffected.
+[`docs/PARITY.md`](docs/PARITY.md) tracks what is done, what is open and what still differs. A
+bare number as a `Duration` is milliseconds, as in Effect, since 0.2.0 (0.1.0 read it as seconds);
+write `"5 seconds"` or a `timedelta` to say the unit. Timestamps given as numbers
+(`testing.set_time`, `clock.current_time_millis`) are epoch milliseconds too.
 
 ## Installation
 

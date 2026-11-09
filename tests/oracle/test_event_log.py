@@ -946,9 +946,9 @@ def test_resumes_remote_changes_from_committed_sequence():
 
         yield from registry.register_remote(_remote(changes))
         initial = yield from attempts.take()
-        yield from testing.adjust(0.2)
+        yield from testing.adjust("200 millis")
         reconnect = yield from attempts.take()
-        yield from testing.adjust(0.3)
+        yield from testing.adjust("300 millis")
         next_reconnect = yield from attempts.take()
         # The third connection is a barrier: both preceding streams have
         # drained, their journal transactions committed, and reactivity
@@ -1150,7 +1150,7 @@ def test_logs_failed_replay_and_redelivers():
     """logs a failed remote replay batch and redelivers it uncommitted after a backoff"""
     # The imported entries have wall-clock ids, so align the test clock
     # with them to keep skew warnings out of the logs.
-    yield from testing.set_time(time.time())
+    yield from testing.set_time(time.time() * 1000)
     journal = yield from J.make_memory
     remote_id = J.make_remote_id_unsafe()
     logs: list[dict[str, object]] = []
@@ -1216,7 +1216,7 @@ def test_logs_failed_replay_and_redelivers():
         assert (yield from subscribed.take()) == 0
         yield from finished.take()
         assert (yield from snapshot()) == {"stored": [], "next_sequence": 0}
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         assert (yield from subscribed.take()) == 0
         yield from finished.take()
         assert (yield from snapshot()) == {
@@ -1339,7 +1339,7 @@ def test_retries_failed_write_and_flushes_changes():
         yield from registry.register_remote(remote)
         subscription = yield from subscriptions.take()
         initial = yield from attempts.take()
-        yield from testing.adjust(0.2)
+        yield from testing.adjust("200 millis")
         retry = yield from attempts.take()
         yield from log.write(UserCreated, {"id": "user-2"})
         yield from log.write(UserCreated, {"id": "user-3"})
@@ -1351,7 +1351,7 @@ def test_retries_failed_write_and_flushes_changes():
         assert (yield from attempts.size()) == 0
         yield from log.write(UserCreated, {"id": "user-4"})
         change_attempt = yield from attempts.take()
-        yield from testing.adjust(0.2)
+        yield from testing.adjust("200 millis")
         change_retry = yield from attempts.take()
         assert [e.id_string for e in retry] == [e.id_string for e in initial]
         assert [e.primary_key for e in after_change] == ["user-2", "user-3"]

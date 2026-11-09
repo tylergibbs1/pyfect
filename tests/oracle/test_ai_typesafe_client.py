@@ -278,7 +278,7 @@ def test_429_metadata():
 def test_http_date_retry_after(date: str, expected: float):
     """TypeSafeClient / error mapping / HTTP-date Retry-After / honors a future / past HTTP-date
     Retry-After"""
-    yield from testing.set_time(datetime(2026, 9, 18, 12, tzinfo=UTC).timestamp())
+    yield from testing.set_time(datetime(2026, 9, 18, 12, tzinfo=UTC).timestamp() * 1000)
     mock = mock_json({"message": "Rate limit exceeded"}, status=429, headers={"retry-after": date})
     error = yield from failure(mock)
     reason = error.reason

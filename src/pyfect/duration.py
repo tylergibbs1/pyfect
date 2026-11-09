@@ -1,9 +1,9 @@
 """Durations, parsed once at the boundary.
 
-Public APIs accept a ``Duration`` (seconds as a number, a ``timedelta``, a
-string such as ``"10 seconds"``, a ``(seconds, nanos)`` pair or a mapping of
-units, as Effect's ``Duration.Input``) and parse it with ``to_seconds`` into
-``Seconds``. Everything past the
+Public APIs accept a ``Duration`` (milliseconds as a number, a ``timedelta``,
+a string such as ``"10 seconds"``, a ``(seconds, nanos)`` pair, a mapping of
+units or an already parsed ``Seconds``, as Effect's ``Duration.Input``) and
+parse it with ``to_seconds`` into ``Seconds``. Everything past the
 boundary (clocks, schedulers, schedule decisions) takes ``Seconds``, so a
 raw float cannot reach a timer without being parsed.
 
@@ -24,7 +24,7 @@ import re
 import sys
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Context, Decimal
-from typing import TypedDict, final
+from typing import TypedDict, cast, final, overload
 
 from pyfect import _js
 from pyfect._js import SPACE
@@ -44,21 +44,70 @@ class DurationParts(TypedDict, total=False):
 
 
 type Duration = float | timedelta | str | tuple[float, float] | DurationParts
-"""Seconds as a number, a ``timedelta``, a string (``"10 seconds"``,
-``"Infinity"``), a ``(seconds, nanos)`` pair or a mapping of units."""
+"""Milliseconds as a number (as in Effect), a ``timedelta``, a string
+(``"10 seconds"``, ``"Infinity"``), a ``(seconds, nanos)`` pair, a mapping of
+units, or a parsed ``Seconds``, which passes through unchanged."""
 
 
 @final
 class Seconds(float):
     """A parsed duration in seconds. Never NaN or -0.
 
-    Arithmetic on ``Seconds`` gives a plain ``float``; wrap the result in
-    ``Seconds(...)`` to use it as a duration again."""
+    Arithmetic that keeps the unit stays ``Seconds``, as Effect's ``Duration``
+    operations return a ``Duration``: ``Seconds`` plus or minus ``Seconds``,
+    times or divided by a number, negated. Mixing in a bare number gives a
+    plain ``float``, since a bare number as a ``Duration`` is milliseconds."""
 
     __slots__ = ()
 
     def __new__(cls, value: float) -> Seconds:
         return super().__new__(cls, 0.0 if math.isnan(value) or value == 0 else value)
+
+    @overload
+    def __add__(self, value: Seconds, /) -> Seconds: ...
+    @overload
+    def __add__(self, value: float, /) -> float: ...
+    def __add__(self, value: float, /) -> float:
+        total = super().__add__(value)
+        return Seconds(total) if isinstance(value, Seconds) else total
+
+    @overload
+    def __sub__(self, value: Seconds, /) -> Seconds: ...
+    @overload
+    def __sub__(self, value: float, /) -> float: ...
+    def __sub__(self, value: float, /) -> float:
+        difference = super().__sub__(value)
+        return Seconds(difference) if isinstance(value, Seconds) else difference
+
+    def __mul__(self, value: float, /) -> Seconds:
+        # A timedelta operand gives NotImplemented, so its own method runs.
+        product = cast("object", super().__mul__(value))
+        return Seconds(product) if isinstance(product, int | float) else NotImplemented
+
+    def __rmul__(self, value: float, /) -> Seconds:
+        # A timedelta operand gives NotImplemented, so its own method runs.
+        product = cast("object", super().__rmul__(value))
+        return Seconds(product) if isinstance(product, int | float) else NotImplemented
+
+    # A ratio of two durations is a plain number; the first match wins.
+    @overload
+    def __truediv__(self, value: Seconds, /) -> float: ...  # pyright: ignore[reportOverlappingOverload]
+    @overload
+    def __truediv__(self, value: float, /) -> Seconds: ...
+    def __truediv__(self, value: float, /) -> float:
+        quotient = super().__truediv__(value)
+        if quotient is NotImplemented or isinstance(value, Seconds):
+            return quotient
+        return Seconds(quotient)
+
+    def __neg__(self) -> Seconds:
+        return Seconds(-float(self))
+
+    def __pos__(self) -> Seconds:
+        return self
+
+    def __abs__(self) -> Seconds:
+        return Seconds(abs(float(self)))
 
 
 ZERO: Seconds = Seconds(0.0)
@@ -113,9 +162,32 @@ def _pair_seconds(seconds: float, nanos: float) -> Seconds:
         return Seconds(-math.inf)
     if math.inf in (seconds, nanos):
         return Seconds(math.inf)
-    if float(seconds).is_integer() and float(nanos).is_integer():
+    total = seconds * _NANOS + nanos
+    if math.isfinite(total) and float(seconds).is_integer() and float(nanos).is_integer():
         return Seconds((int(seconds) * _NANOS + int(nanos)) / _NANOS)
-    return _round_nanos(seconds * _NANOS + nanos)
+    return _round_nanos(total)
+
+
+_PART_NANOS = (
+    ("weeks", 604_800 * _NANOS),
+    ("days", 86_400 * _NANOS),
+    ("hours", 3_600 * _NANOS),
+    ("minutes", 60 * _NANOS),
+    ("seconds", _NANOS),
+    ("milliseconds", 1_000_000),
+    ("microseconds", 1_000),
+    ("nanoseconds", 1),
+)
+
+
+def _exact_parts_nanos(parts: DurationParts) -> int | None:
+    """The units summed exactly, or ``None`` when one is fractional
+    (Effect's ``sumObjectNanos``; a zero or NaN unit counts as unset)."""
+    values = [(parts.get(key, 0), scale) for key, scale in _PART_NANOS]
+    present = [(v, scale) for v, scale in values if v and not math.isnan(v)]
+    if not all(float(v).is_integer() for v, _ in present):
+        return None
+    return sum(int(v) * scale for v, scale in present)
 
 
 def _parts_seconds(parts: DurationParts) -> Seconds:
@@ -134,17 +206,31 @@ def _parts_seconds(parts: DurationParts) -> Seconds:
     )
     micros = parts.get("microseconds", 0)
     nanos = parts.get("nanoseconds", 0)
-    if (not micros or math.isnan(micros)) and (not nanos or math.isnan(nanos)):
-        return Seconds(millis / 1e3)
-    return _round_nanos(millis * 1e6 + micros * 1e3 + nanos)
+    only_millis = (not micros or math.isnan(micros)) and (not nanos or math.isnan(nanos))
+    total = millis * 1e6 if only_millis else millis * 1e6 + micros * 1e3 + nanos
+    exact = _exact_parts_nanos(parts) if math.isfinite(total) else None
+    if exact is not None:
+        return Seconds(exact / _NANOS)
+    return Seconds(millis / 1e3) if only_millis else _round_nanos(total)
+
+
+def _millis_seconds(millis: float) -> Seconds:
+    """A bare number, read as milliseconds (Effect's ``Duration.millis``):
+    whole milliseconds are kept exactly, others round to the nearest
+    nanosecond, ties away from zero."""
+    if isinstance(millis, int) or millis.is_integer():
+        return Seconds(_in_float_range(int(millis)) / 1000)
+    return _round_nanos(millis * 1e6)
 
 
 def to_seconds(duration: Duration) -> Seconds:
     """Parse a ``Duration``; a string that is not one raises ``ValueError``
     (Effect's ``Duration.fromInputUnsafe``)."""
     match duration:
+        case Seconds():
+            return duration
         case float() | int():
-            return Seconds(duration)
+            return _millis_seconds(duration)
         case timedelta():
             return Seconds(duration.total_seconds())
         case str():
@@ -158,6 +244,15 @@ def to_seconds(duration: Duration) -> Seconds:
             return _parts_seconds(duration)
 
 
+def from_input(duration: Duration) -> Seconds | None:
+    """``to_seconds``, or ``None`` for a string that is not a duration
+    (Effect's ``Duration.fromInput``)."""
+    try:
+        return to_seconds(duration)
+    except ValueError:
+        return None
+
+
 def to_nanos(seconds: float) -> int:
     """Whole nanoseconds (floored) in a finite number of seconds; raises
     ``ValueError`` for an infinity (use ``nanos_or_infinite``).
@@ -169,6 +264,15 @@ def to_nanos(seconds: float) -> int:
     if not math.isfinite(seconds):
         raise ValueError(f"to_nanos needs a finite duration, got {seconds}")
     return math.floor(_exact_nanos(seconds))
+
+
+def millis_to_nanos(millis: float) -> int:
+    """Whole nanoseconds (floored) in a finite number of milliseconds, such
+    as an epoch timestamp from ``clock.current_time_millis``, read as the
+    shortest decimal that prints it (as ``to_nanos`` reads seconds)."""
+    if not math.isfinite(millis):
+        raise ValueError(f"millis_to_nanos needs a finite count, got {millis}")
+    return math.floor(Decimal(repr(float(millis))) * 10**6)
 
 
 _MAX_NANOS = math.floor(sys.float_info.max)
@@ -284,8 +388,10 @@ __all__ = [
     "Seconds",
     "add_nanos",
     "format_duration",
+    "from_input",
     "from_millis",
     "from_nanos",
+    "millis_to_nanos",
     "nanos_or_infinite",
     "parse_duration_text",
     "round_nanos",

@@ -46,7 +46,7 @@ def _acquire_use_release(flags: _Flags) -> fx.Effect[int]:
 
         return fx.sync(body)
 
-    return fx.acquire_use_release(fx.sync(acquire).delay(0.1), use, release)
+    return fx.acquire_use_release(fx.sync(acquire).delay("100 millis"), use, release)
 
 
 def test_run_promise():

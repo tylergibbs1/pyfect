@@ -335,14 +335,14 @@ def test_aggregate_within_leaves_the_idle_time_out_of_the_schedule_clock():
         seen.append(meta.elapsed)
         return True
 
-    policy = schedule.spaced(1).while_(record)
-    later = [stream.from_effect(fx.sleep(10).as_(n)) for n in (2, 3)]
+    policy = schedule.spaced("1 second").while_(record)
+    later = [stream.from_effect(fx.sleep("10 seconds").as_(n)) for n in (2, 3)]
     source = stream.make(1).concat(later[0]).concat(later[1])
     fiber = (
         yield from source.aggregate_within(sink.collect(), policy)
         .run_collect()
         .fork(start_immediately=True)
     )
-    yield from testing.adjust(30)
+    yield from testing.adjust("30 seconds")
     assert (yield from fiber.join()) == [[1], [2], [3]]
     assert seen == [0, 1, 2]

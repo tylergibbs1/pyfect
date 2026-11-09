@@ -21,6 +21,7 @@ import asyncmy
 
 import pyfect as fx
 from pyfect import case, config, config_provider, redacted, testing
+from pyfect.duration import Seconds
 from pyfect.logger import Logger
 from pyfect.logger import layer as logger_layer
 from pyfect.reactivity import layer as reactivity_layer
@@ -350,7 +351,7 @@ def test_rolls_back_failed_transactions(mysql_server: MysqlServer):
     yield from _with_client(mysql_server, body)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_interrupting_a_statement_ends_it_on_the_server(mysql_server: MysqlServer):
     """(pyfect) interrupting a statement ends it on the server and frees
     its locks; the pool replaces the connection"""
@@ -366,14 +367,16 @@ def test_interrupting_a_statement_ends_it_on_the_server(mysql_server: MysqlServe
             yield from sql("SELECT SLEEP(60)")
 
         fiber = yield from sql.with_transaction(fx.gen(holder)).fork()
-        yield from fx.sleep(0.5)
+        yield from fx.sleep("500 millis")
         yield from fiber.interrupt()
         yield from fiber.await_exit()
         # The row lock is free again at once (innodb_lock_wait_timeout is 50s). The time
         # limit stays under the 5 s after which the server notices a closed socket by itself:
         # at 5 s this passed with the kill not working (test_mysql_interrupt_on_server).
         locked = sql("SELECT id FROM interrupted_locks WHERE id = 1 FOR UPDATE")
-        assert (yield from sql.with_transaction(locked).timeout(GONE_WITHIN)) == [{"id": 1}]
+        assert (yield from sql.with_transaction(locked).timeout(Seconds(GONE_WITHIN))) == [
+            {"id": 1}
+        ]
         sleeping = yield from sql(
             "SELECT COUNT(*) AS n FROM information_schema.processlist "
             "WHERE info = 'SELECT SLEEP(60)'"
@@ -467,7 +470,7 @@ def test_rejects_urls_it_cannot_follow(url: str):
         mysql.MysqlClientConfig(url=redacted.make(url))
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_a_stream_failing_mid_result_keeps_the_connection(mysql_server: MysqlServer):
     """(pyfect) a statement failing after its columns (here past
     cte_max_recursion_depth) fails the stream, and the connection serves
@@ -486,13 +489,13 @@ def test_a_stream_failing_mid_result_keeps_the_connection(mysql_server: MysqlSer
             assert error.reason.operation == "stream"
             return (yield from sql("SELECT CONNECTION_ID() AS id"))
 
-        inside = yield from sql.with_transaction(fx.gen(transaction)).timeout(5)
-        assert (yield from sql("SELECT CONNECTION_ID() AS id").timeout(5)) == inside
+        inside = yield from sql.with_transaction(fx.gen(transaction)).timeout("5 seconds")
+        assert (yield from sql("SELECT CONNECTION_ID() AS id").timeout("5 seconds")) == inside
 
     yield from _with_client(mysql_server, body, max_connections=1)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_interrupting_a_stream_ends_it_on_the_server(mysql_server: MysqlServer):
     """(pyfect) interrupting a stream still sending rows ends at once for the client, and
     the pool serves the next statement on a new connection (the server's side is
@@ -505,9 +508,9 @@ def test_interrupting_a_stream_ends_it_on_the_server(mysql_server: MysqlServer):
     def body():
         sql = yield from SqlClient()
         fiber = yield from sql(slow).stream.run_drain().fork()
-        yield from fx.sleep(0.5)
-        yield from fiber.interrupt().timeout(5)
-        assert (yield from sql("SELECT 1 AS x").timeout(5)) == [{"x": 1}]
+        yield from fx.sleep("500 millis")
+        yield from fiber.interrupt().timeout("5 seconds")
+        assert (yield from sql("SELECT 1 AS x").timeout("5 seconds")) == [{"x": 1}]
 
     yield from _with_client(mysql_server, body, max_connections=1)
 

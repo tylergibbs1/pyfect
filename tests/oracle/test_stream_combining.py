@@ -302,7 +302,7 @@ def _outer_failure(
         def make_inner(_: int) -> Stream[Any]:
             started.open_unsafe()
             body: Stream[Any] = (
-                stream.never if inner == "never" else stream.from_effect(fx.sleep(3600))
+                stream.never if inner == "never" else stream.from_effect(fx.sleep("1 hour"))
             )
             return body.ensuring(finalized.update(lambda n: n + 1))
 
@@ -333,11 +333,13 @@ def _waits_for_in_flight(concurrency: fx.Concurrency) -> fx.Effect[None]:
     def run():
         fiber = yield from (
             stream.range(1, 5)
-            .map_effect(lambda n: fx.sleep(0.01).as_(n), concurrency=concurrency, unordered=True)
+            .map_effect(
+                lambda n: fx.sleep("10 millis").as_(n), concurrency=concurrency, unordered=True
+            )
             .run_collect()
             .fork()
         )
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
         assert sorted((yield from fiber.join())) == [1, 2, 3, 4, 5]
 
     return run()
@@ -705,13 +707,14 @@ def test_race_all_async():
     """async"""
     fiber = yield from (
         stream.race_all(
-            stream.from_schedule(schedule.spaced(1)), stream.from_schedule(schedule.spaced(2))
+            stream.from_schedule(schedule.spaced("1 second")),
+            stream.from_schedule(schedule.spaced("2 seconds")),
         )
         .take(5)
         .run_collect()
         .fork()
     )
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     assert (yield from fiber.join()) == [0, 1, 2, 3, 4]
 
 
@@ -719,7 +722,7 @@ def test_race_all_async():
 def test_race_all_combined_async_sync():
     """combined async + sync"""
     result = yield from stream.race_all(
-        stream.from_schedule(schedule.spaced(1)), stream.make(0, 1, 2, 3)
+        stream.from_schedule(schedule.spaced("1 second")), stream.make(0, 1, 2, 3)
     ).run_collect()
     assert result == [0, 1, 2, 3]
 
@@ -728,7 +731,7 @@ def test_race_all_combined_async_sync():
 def test_race_all_combined_sync_async():
     """combined sync + async"""
     result = yield from stream.race_all(
-        stream.make(0, 1, 2, 3), stream.from_schedule(schedule.spaced(1))
+        stream.make(0, 1, 2, 3), stream.from_schedule(schedule.spaced("1 second"))
     ).run_collect()
     assert result == [0, 1, 2, 3]
 

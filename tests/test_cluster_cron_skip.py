@@ -24,7 +24,7 @@ def test_runs_older_than_skip_if_older_than_are_skipped():
         name="test",
         cron=EVERY_SECOND,
         calculate_next_run_from_previous=True,
-        skip_if_older_than=1.5,
+        skip_if_older_than="1500 millis",
         execute=execute,
     )
 
@@ -32,7 +32,7 @@ def test_runs_older_than_skip_if_older_than_are_skipped():
     def body():
         yield from deploy(cron, 1500)
         # The pending run at 2 s falls behind while no runner is up.
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         scheduled.clear()
         yield from deploy(cron, 3000)
         # At 6.5 s the runs at 2, 3 and 4 s are older than 1.5 s.

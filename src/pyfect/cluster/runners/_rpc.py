@@ -130,7 +130,7 @@ def _make_rpc():
     snowflakes = yield from Generator()
 
     clients: RcMap[RunnerAddress, tuple[Rpcs, CodecFor]] = yield from RcMap.make(
-        _lookup_in(protocol), idle_time_to_live=180.0
+        _lookup_in(protocol), idle_time_to_live="3 minutes"
     )
 
     def ping(address: RunnerAddress) -> Effect[None, RunnerUnavailable]:

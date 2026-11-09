@@ -16,6 +16,7 @@ from pyfect.cluster.runner import Runner
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.runner_storage import RunnerStorage, RunnerStorageService
 from pyfect.cluster.shard_id import ShardId
+from pyfect.duration import Seconds
 from pyfect.layer import Layer
 
 other_runner = Runner(
@@ -107,7 +108,7 @@ def make_failover_storage(state: FailoverState, clock: ClockService) -> RunnerSt
     ) -> fx.Effect[list[ShardId], PersistenceError]:
         def run() -> fx.Effect[list[ShardId], PersistenceError]:
             shards = list(shard_ids)
-            state.refresh_calls.append(RefreshCall(clock.now_unsafe() * 1000, shards))
+            state.refresh_calls.append(RefreshCall(clock.current_time_millis_unsafe(), shards))
             if state.blackholed or (state.blackhole_non_empty_refresh and shards):
                 return fx.never
             return fx.succeed(shards)
@@ -132,7 +133,7 @@ def make_failover_storage(state: FailoverState, clock: ClockService) -> RunnerSt
             def complete() -> None:
                 call.completed = True
 
-            return fx.sleep(state.release_all_duration).and_then(fx.sync(complete))
+            return fx.sleep(Seconds(state.release_all_duration)).and_then(fx.sync(complete))
 
         return fx.suspend(run)
 

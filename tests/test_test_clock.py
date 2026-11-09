@@ -16,6 +16,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.duration import Seconds
 
 
 @contextmanager
@@ -30,12 +31,12 @@ def test_timeout_repetition_of_uninterruptible_effect():
 
     @fx.gen
     def program():
-        fiber = yield from fx.void.uninterruptible().forever().timeout(0.01).exit().fork()
-        yield from testing.adjust(0.01)
+        fiber = yield from fx.void.uninterruptible().forever().timeout("10 millis").exit().fork()
+        yield from testing.adjust("10 millis")
         return (yield from fiber.join())
 
     with _no_busy_warning():
-        ex = testing.run_test(program, warning_delay=0.05)
+        ex = testing.run_test(program, warning_delay="50 millis")
     assert isinstance(ex, fx.Failure)
     assert isinstance(ex.cause.failures[0], fx.TimeoutException)
 
@@ -44,31 +45,31 @@ def test_adjust_does_not_wait_for_a_busy_fiber_it_did_not_wake():
     @fx.gen
     def program():
         busy = yield from fx.yield_now().forever().fork()
-        sleeper = yield from fx.sleep(1).as_("woke").fork()
-        yield from testing.adjust(1)
+        sleeper = yield from fx.sleep("1 second").as_("woke").fork()
+        yield from testing.adjust("1 second")
         woke = yield from sleeper.join()
         yield from busy.interrupt()
         return woke
 
     started = time.monotonic()
     with _no_busy_warning():
-        assert testing.run_test(program, warning_delay=1) == "woke"
+        assert testing.run_test(program, warning_delay="1 second") == "woke"
     assert time.monotonic() - started < 0.5
 
 
 def test_adjust_warns_and_moves_on_when_a_woken_fiber_never_suspends():
     @fx.gen
     def program():
-        busy = yield from fx.sleep(1).and_then(fx.yield_now().forever()).fork()
-        later = yield from fx.sleep(2).as_("later").fork()
-        yield from testing.adjust(2)
+        busy = yield from fx.sleep("1 second").and_then(fx.yield_now().forever()).fork()
+        later = yield from fx.sleep("2 seconds").as_("later").fork()
+        yield from testing.adjust("2 seconds")
         result = yield from later.join()
         yield from busy.interrupt()
         return result
 
     started = time.monotonic()
     with pytest.warns(testing.BusyFiberWarning, match="still running without suspending"):
-        assert testing.run_test(program, warning_delay=0.05) == "later"
+        assert testing.run_test(program, warning_delay="50 millis") == "later"
     assert time.monotonic() - started < 1
 
 
@@ -80,17 +81,17 @@ def test_adjust_waits_for_work_started_transitively_by_a_wake_up():
 
     @fx.gen
     def child():
-        yield from fx.sleep(1)
+        yield from fx.sleep("1 second")
         log.append((yield from fx.clock.monotonic()))
 
     @fx.gen
     def parent():
-        yield from fx.sleep(1)
+        yield from fx.sleep("1 second")
         inner = yield from child.fork()
         yield from inner.join()
 
     fiber = yield from parent.fork()
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
     assert fiber.poll_unsafe() == fx.Success(None)
     assert log == [2.0]
 
@@ -101,7 +102,7 @@ def test_an_unrelated_busy_fiber_does_not_stall_each_wake_up():
     log: list[float] = []
 
     def sleeper(seconds: float) -> fx.Effect[None]:
-        return fx.sleep(seconds).and_then(fx.clock.monotonic()).map(log.append)
+        return fx.sleep(Seconds(seconds)).and_then(fx.clock.monotonic()).map(log.append)
 
     @fx.gen
     def program():
@@ -109,13 +110,13 @@ def test_an_unrelated_busy_fiber_does_not_stall_each_wake_up():
         first = yield from sleeper(1).fork()
         second = yield from sleeper(2).fork()
         third = yield from sleeper(3).fork()
-        yield from testing.adjust(3)
+        yield from testing.adjust("3 seconds")
         for fiber in (first, second, third):
             yield from fiber.join()
         yield from busy.interrupt()
 
     with _no_busy_warning():
-        testing.run_test(program, warning_delay=1)
+        testing.run_test(program, warning_delay="1 second")
     assert log == [1.0, 2.0, 3.0]
 
 
@@ -124,15 +125,15 @@ def test_deadlines_add_up_exactly():
     """0.05 + 0.001 is 0.051000000000000004 in floats; the clock must still
     wake a sleep of 0.05 then 0.001 when moved by 0.051, as Effect's
     millisecond TestClock does."""
-    fiber = yield from fx.sleep(0.05).and_then(fx.sleep(0.001)).as_("woke").fork()
-    yield from testing.adjust(0.051)
+    fiber = yield from fx.sleep("50 millis").and_then(fx.sleep("1 millis")).as_("woke").fork()
+    yield from testing.adjust("51 millis")
     assert fiber.poll_unsafe() == fx.Success("woke")
 
 
 @testing.effect
 def test_repeated_sleeps_end_at_their_exact_sum():
-    fiber = yield from fx.sleep(0.1).replicate_effect(3).as_("woke").fork()
-    yield from testing.adjust(0.3)
+    fiber = yield from fx.sleep("100 millis").replicate_effect(3).as_("woke").fork()
+    yield from testing.adjust("300 millis")
     assert fiber.poll_unsafe() == fx.Success("woke")
 
 
@@ -141,7 +142,7 @@ def test_wall_time_reads_infinite_after_moving_to_infinity():
     """Effect's ``currentTimeMillis`` is the TestClock's timestamp, so a
     schedule stepping after ``adjust(Infinity)`` sees ``now`` infinite and
     stops (``Schedule.cron``'s infinity port depends on it)."""
-    yield from testing.set_time(5.0)
+    yield from testing.set_time(5_000)
     yield from testing.adjust(math.inf)
-    assert (yield from fx.clock.now()) == math.inf
+    assert (yield from fx.clock.current_time_millis()) == math.inf
     assert (yield from fx.clock.now_nanos()) == 5_000_000_000

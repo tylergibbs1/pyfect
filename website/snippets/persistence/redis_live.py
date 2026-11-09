@@ -20,9 +20,9 @@ RedisLive = redis_py.layer("redis://localhost:6379")
 Live: fx.Layer[RateLimiter | CircuitBreaker | Persistence | PersistedQueueFactory, RedisError] = (
     layer.merge(
         rate_limiter.layer.pipe(layer.provide(rate_limiter.layer_store_redis())),
-        circuit_breaker.layer(trip_policy=circuit_breaker.consecutive(5), open_duration=30).pipe(
-            layer.provide(circuit_breaker.layer_store_redis())
-        ),
+        circuit_breaker.layer(
+            trip_policy=circuit_breaker.consecutive(5), open_duration="30 seconds"
+        ).pipe(layer.provide(circuit_breaker.layer_store_redis())),
         persistence.layer_redis,
         persisted_queue.layer.pipe(layer.provide(persisted_queue.layer_store_redis())),
     ).pipe(layer.provide(RedisLive))

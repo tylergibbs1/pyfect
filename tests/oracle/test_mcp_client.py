@@ -190,8 +190,8 @@ def test_times_out_when_a_call_exceeds_its_deadline(protocol: C.ClientProtocol):
     """McpClient / <protocol> / should time out when a call exceeds its deadline"""
     client = yield from connect(protocol)
     tool = yield from find_tool(client, "slow")
-    call = yield from client.call_tool(tool, timeout=1).flip().fork()
-    yield from testing.adjust(1)
+    call = yield from client.call_tool(tool, timeout="1 second").flip().fork()
+    yield from testing.adjust("1 second")
     error = yield from call.join()
     assert isinstance(error.reason, CE.TimeoutError)
 
@@ -507,8 +507,8 @@ def test_cancels_a_timed_out_http_call(protocol: C.ClientProtocol):
         return scripted_reply(protocol, message, request)
 
     scripted = yield from scripted_http(reply, protocol)
-    call = yield from scripted.client.call_tool(SLOW_TOOL, timeout=1).flip().fork()
-    yield from testing.adjust(1)
+    call = yield from scripted.client.call_tool(SLOW_TOOL, timeout="1 second").flip().fork()
+    yield from testing.adjust("1 second")
     error = yield from call.join()
     assert isinstance(error.reason, CE.TimeoutError)
 
@@ -723,10 +723,10 @@ def connect_stdio(protocol: C.ClientProtocol) -> fx.Effect[StdioServer, Any, Any
 def test_cancels_a_timed_out_stdio_call(protocol: C.ClientProtocol):
     """McpClient / cancellation / should cancel a timed out <protocol> stdio call"""
     server = yield from connect_stdio(protocol)
-    call = yield from server.client.call_tool(SLOW_TOOL, timeout=1).flip().fork()
+    call = yield from server.client.call_tool(SLOW_TOOL, timeout="1 second").flip().fork()
     request = yield from server.receive
     assert request["method"] == "tools/call"
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert isinstance((yield from call.join()).reason, CE.TimeoutError)
     assert (yield from server.receive) == {
         "jsonrpc": "2.0",
@@ -766,7 +766,7 @@ def test_applies_the_default_deadline_to_discovery():
     server = yield from connect_stdio(P.v2025_11_25)
     listing = yield from server.client.list_tools().flip().fork()
     yield from server.receive
-    yield from testing.adjust(60)
+    yield from testing.adjust("1 minute")
     assert isinstance((yield from listing.join()).reason, CE.TimeoutError)
 
 
@@ -782,7 +782,7 @@ def test_applies_no_default_deadline_to_calls_prompts_or_reads():
     ]
     for _ in fibers:
         yield from server.receive
-    yield from testing.adjust(600)
+    yield from testing.adjust("10 minutes")
     assert all(fiber.poll_unsafe() is None for fiber in fibers)
     for fiber in fibers:
         yield from fiber.interrupt()
@@ -807,5 +807,5 @@ def test_fails_pending_calls_when_the_process_exits():
     call = yield from server.client.call_tool(SLOW_TOOL).flip().fork()
     yield from server.receive
     yield from server.exit.succeed(1)
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     assert isinstance((yield from call.join()).reason, CE.TransportError)

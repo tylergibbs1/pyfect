@@ -85,7 +85,9 @@ def map_response_error(response: HttpClientResponse) -> Effect[Never, AiError]:
         return fail(reason_from_http_status(status=status, description=description, http=http))
 
     body = response.text.option().map(lambda text: None if text is None else text.value)
-    return body.flat_map(lambda text: clock.now().flat_map(lambda s: build(text, s * 1000)))
+    return body.flat_map(
+        lambda text: clock.current_time_millis().flat_map(lambda now: build(text, now))
+    )
 
 
 def _code(code: float) -> int | str:

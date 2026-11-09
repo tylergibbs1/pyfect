@@ -36,7 +36,7 @@ def run(cluster_db: ClusterDatabase, body: Callable[[], Body]) -> fx.Effect[None
     return fx.scoped(fx.gen(body))
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_rebuilds_a_blackholed_reserved_lock_connection_and_rejoins_without_split_brain(
     cluster_db: ClusterDatabase,
 ):
@@ -75,7 +75,7 @@ def test_rebuilds_a_blackholed_reserved_lock_connection_and_rejoins_without_spli
     yield from run(cluster_db, body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_does_not_reacquire_a_shard_before_forced_release_completes(
     cluster_db: ClusterDatabase,
 ):
@@ -131,7 +131,7 @@ def test_does_not_reacquire_a_shard_before_forced_release_completes(
     yield from run(cluster_db, body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_keeps_peers_progressing_when_a_lock_query_is_permanently_stuck(
     cluster_db: ClusterDatabase,
 ):
@@ -172,7 +172,7 @@ def test_keeps_peers_progressing_when_a_lock_query_is_permanently_stuck(
     yield from run(cluster_db, body)
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_converges_after_repeated_lock_connection_rebuilds_and_a_hung_release(
     cluster_db: ClusterDatabase,
 ):

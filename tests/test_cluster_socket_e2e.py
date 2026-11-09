@@ -173,14 +173,14 @@ def _until(condition: Any, timeout: float = 20) -> fx.Effect[None, Any]:
         for _ in range(int(timeout / 0.1)):
             if (yield from condition()):
                 return
-            yield from fx.sleep(0.1)
+            yield from fx.sleep("100 millis")
         raise AssertionError("condition not met before the deadline")
 
     return wait
 
 
 @pytest.mark.parametrize("transport", ["socket", "http", "websocket"])
-@testing.live(timeout=120)
+@testing.live(timeout="2 minutes")
 def test_two_runners_share_sqlite_storage_route_and_resume_workflows(
     tmp_path: Path, transport: Transport
 ):

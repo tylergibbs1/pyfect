@@ -324,7 +324,7 @@ def wait_until_active(
             )
             if result.rows[0]["active"] == 1:
                 return
-            yield from fx.sleep(0.01)
+            yield from fx.sleep("10 millis")
         raise AssertionError(f"PostgreSQL backend {pid} did not become active within 10 seconds")
 
     return fx.gen(body)

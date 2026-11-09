@@ -18,7 +18,7 @@ def program():
     def work(worker: str) -> fx.Effect[None]:
         return (
             fx.tx(claim(worker))
-            .flat_map(lambda _: fx.sleep(0.01))
+            .flat_map(lambda _: fx.sleep("10 millis"))
             .forever()
             .pipe(fx.catch_tag(fx.Done, lambda _: fx.void))
         )

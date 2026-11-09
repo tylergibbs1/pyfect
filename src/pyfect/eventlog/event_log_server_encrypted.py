@@ -314,7 +314,7 @@ class _MemoryStorage(StorageService):
 
 
 make_storage_memory: Effect[StorageService, Never, Scope] = RcMap.make(
-    _open_pubsub, idle_time_to_live=60
+    _open_pubsub, idle_time_to_live="60 seconds"
 ).map(_MemoryStorage)
 """Storage kept in memory, its pubsubs shut down when the scope closes."""
 

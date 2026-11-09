@@ -32,13 +32,13 @@ type Sending = fx.Effect[HttpClientResponse, Any, Any]
 def _limited(client: Client, url: str) -> Sending:
     return rl.RateLimiter().flat_map(
         lambda limiter: client.with_rate_limiter(
-            limiter=limiter, window=60, limit=1000, key="k"
+            limiter=limiter, window="1 minute", limit=1000, key="k"
         ).get(f"{url}/")
     )
 
 
 def _breaker(client: Client, url: str) -> Sending:
-    return cb.make(trip_policy=cb.consecutive(1000), open_duration=60).flat_map(
+    return cb.make(trip_policy=cb.consecutive(1000), open_duration="1 minute").flat_map(
         lambda breaker: client.with_circuit_breaker(breaker=breaker).get(f"{url}/")
     )
 
@@ -52,9 +52,11 @@ def _ok(r: HttpClientResponse) -> fx.Effect[HttpClientResponse]:
 
 
 _CLIENT_CASES: dict[str, Send] = {
-    "transform": lambda client, url: client.transform(lambda s, _r: s.timeout(10)).get(f"{url}/"),
+    "transform": lambda client, url: client.transform(lambda s, _r: s.timeout("10 seconds")).get(
+        f"{url}/"
+    ),
     "transform_response": lambda client, url: client.pipe(
-        c.transform_response(lambda s: s.timeout(10))
+        c.transform_response(lambda s: s.timeout("10 seconds"))
     ).get(f"{url}/"),
     "filter_or_else": lambda client, url: client.filter_or_else(lambda r: r.status == 200, _ok).get(
         f"{url}/error"
@@ -105,14 +107,14 @@ _CLIENT_CASES: dict[str, Send] = {
 
 _EFFECT_CASES: dict[str, Send] = {
     "plain": lambda client, url: client.get(f"{url}/"),
-    "timeout": lambda client, url: client.get(f"{url}/").timeout(10),
+    "timeout": lambda client, url: client.get(f"{url}/").timeout("10 seconds"),
     "timeout_option": lambda client, url: (
         client.get(f"{url}/")
-        .timeout_option(10)
+        .timeout_option("10 seconds")
         .flat_map(lambda o: fx.never if o is None else fx.succeed(o.value))
     ),
     "timeout_or_else": lambda client, url: client.get(f"{url}/").timeout_or_else(
-        10, lambda: fx.never
+        "10 seconds", lambda: fx.never
     ),
     "race": lambda client, url: client.get(f"{url}/").race(fx.never),
     "race_first": lambda client, url: client.get(f"{url}/").race_first(fx.never),
@@ -167,7 +169,8 @@ def test_beacon_probe_does_not_run_out_of_connections() -> None:
     """beacon's probe, past httpx's pool of 100 connections."""
     assert (
         open_after(
-            lambda client, url: client.get(f"{url}/").timeout(10).map(lambda r: r.status), times=120
+            lambda client, url: client.get(f"{url}/").timeout("10 seconds").map(lambda r: r.status),
+            times=120,
         )
         == 0
     )

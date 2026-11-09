@@ -162,7 +162,7 @@ def test_blocks_when_item_not_available():
     yield from _until(count, 10)
     yield from fx.all(*[pool.get()] * 10)
     fiber = yield from fx.scoped(pool.get()).fork(start_immediately=True)
-    yield from fx.sleep(0.01)
+    yield from fx.sleep("10 millis")
     assert fiber.poll_unsafe() is None
 
 
@@ -212,7 +212,9 @@ def test_retry_on_failed_acquire_should_not_exhaust_pool():
     acquire: fx.Effect[int, str] = fx.fail("error").as_(1)
     pool = yield from fx.Pool.make_with_ttl(acquire, min=0, max=1, time_to_live=float("inf"))
     result = yield from (
-        fx.scoped(pool.get().retry(times=5)).timeout_or_else(1.0, lambda: fx.fail("timeout")).flip()
+        fx.scoped(pool.get().retry(times=5))
+        .timeout_or_else("1 second", lambda: fx.fail("timeout"))
+        .flip()
     )
     assert result == "error"
 
@@ -258,7 +260,7 @@ def test_usage_ttl_shrinks_to_min_in_idle_order_rather_than_acquisition_order():
     """usage TTL idle timeout: shrinks to min in idle order rather than acquisition order"""
     numbers = _Numbers()
     pool = yield from fx.Pool.make_with_ttl(
-        numbers.scoped(), min=1, max=3, time_to_live=1.0, time_to_live_strategy="usage"
+        numbers.scoped(), min=1, max=3, time_to_live="1 second", time_to_live_strategy="usage"
     )
     scope = yield from fx.Scope()
     first = yield from scope.fork()
@@ -268,18 +270,18 @@ def test_usage_ttl_shrinks_to_min_in_idle_order_rather_than_acquisition_order():
     assert (yield from _in(second, pool.get())) == 2
     assert (yield from _in(third, pool.get())) == 3
 
-    yield from testing.adjust(0.1)
+    yield from testing.adjust("100 millis")
     yield from second.close(_DONE)
-    yield from testing.adjust(0.1)
+    yield from testing.adjust("100 millis")
     yield from first.close(_DONE)
-    yield from testing.adjust(0.1)
+    yield from testing.adjust("100 millis")
     yield from third.close(_DONE)
-    yield from testing.adjust(0.7)
+    yield from testing.adjust("700 millis")
     assert numbers.finalized == []
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     assert numbers.finalized == [2, 1]
     assert len(pool.state.items) == 1
-    yield from testing.adjust(2.0)
+    yield from testing.adjust("2 seconds")
     assert numbers.finalized == [2, 1]
     assert (yield from pool.use(fx.succeed)) == 3
     assert numbers.acquired == 3
@@ -290,11 +292,11 @@ def test_usage_ttl_retains_items_used_every_3_seconds_across_ttl_sweeps():
     """usage TTL idle timeout: retains items used every 3 seconds across TTL sweeps"""
     numbers = _Numbers()
     pool = yield from fx.Pool.make_with_ttl(
-        numbers.plain(), min=0, max=10, time_to_live=10.0, time_to_live_strategy="usage"
+        numbers.plain(), min=0, max=10, time_to_live="10 seconds", time_to_live_strategy="usage"
     )
     for _ in range(20):
         yield from fx.scoped(pool.get())
-        yield from testing.adjust(3.0)
+        yield from testing.adjust("3 seconds")
     assert numbers.acquired == 1
 
 
@@ -305,8 +307,8 @@ class _FrozenClock:
         self._inner = inner
         self._now_nanos = now_nanos
 
-    def now_unsafe(self) -> float:
-        return self._now_nanos / 1e9
+    def current_time_millis_unsafe(self) -> float:
+        return self._now_nanos / 1e6
 
     def monotonic_unsafe(self) -> float:
         return self._inner.monotonic_unsafe()
@@ -326,15 +328,15 @@ def test_usage_ttl_measures_idle_time_with_the_pool_clock_when_a_release_runs_un
     """usage TTL idle timeout: measures idle time with the pool clock when a release runs under
     another clock"""
     pool = yield from fx.Pool.make_with_ttl(
-        fx.succeed("resource"), min=0, max=1, time_to_live=1.0, time_to_live_strategy="usage"
+        fx.succeed("resource"), min=0, max=1, time_to_live="1 second", time_to_live_strategy="usage"
     )
     clock = yield from fx.Clock()
     yield from pool.use(fx.succeed).pipe(
         fx.provide_service(fx.Clock, _FrozenClock(clock, 1_000_000 * 10**6))
     )
-    yield from testing.adjust(0.999)
+    yield from testing.adjust("999 millis")
     assert len(pool.state.items) == 1
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     assert len(pool.state.items) == 0
 
 
@@ -344,14 +346,14 @@ def _max_pool_size(concurrency: int, borrowers: int) -> fx.Effect[tuple[int, int
         deferred = yield from fx.Deferred[None].make()
         count = yield from fx.Ref.make(0)
         pool = yield from fx.Pool.make_with_ttl(
-            _counted(count), min=10, max=15, concurrency=concurrency, time_to_live=60.0
+            _counted(count), min=10, max=15, concurrency=concurrency, time_to_live="1 minute"
         )
         for _ in range(borrowers):
             yield from fx.scoped(pool.get().and_then(deferred.wait())).fork()
         yield from _until(count, 15)
         yield from deferred.succeed(None)
         maximum = yield from count.get()
-        yield from testing.adjust(60.0)
+        yield from testing.adjust("1 minute")
         minimum = yield from count.get()
         return minimum, maximum
 
@@ -375,13 +377,13 @@ def test_usage_ttl_retains_shared_items_with_active_borrowers():
     """usage TTL retains shared items with active borrowers"""
     numbers = _Numbers()
     pool = yield from fx.Pool.make_with_ttl(
-        numbers.plain(), min=0, max=2, concurrency=2, time_to_live=60.0
+        numbers.plain(), min=0, max=2, concurrency=2, time_to_live="1 minute"
     )
     scope1 = yield from (yield from fx.Scope()).fork()
     assert (yield from _in(scope1, pool.get())) == 1
     assert (yield from pool.get()) == 1
     assert (yield from fx.scoped(pool.get())) == 2
-    yield from testing.adjust(60.0)
+    yield from testing.adjust("1 minute")
     assert len(pool.state.invalidated) == 0
     assert len(pool.state.items) == 1
     yield from scope1.close(_DONE)
@@ -396,7 +398,7 @@ def test_reserve_takes_an_item_out_of_shared_circulation():
     """reserve takes an item out of shared circulation"""
     count = yield from fx.Ref.make(0)
     pool = yield from fx.Pool.make_with_ttl(
-        _counted(count), min=0, max=2, concurrency=2, time_to_live=60.0
+        _counted(count), min=0, max=2, concurrency=2, time_to_live="1 minute"
     )
     scope1 = fx.CloseableScope()
     assert (yield from _in(scope1, pool.get())) == 1
@@ -491,7 +493,7 @@ def test_usage_ttl_preserves_reservations_and_waits_for_capacity():
     """usage TTL preserves reservations and waits for capacity"""
     numbers = _Numbers()
     pool = yield from fx.Pool.make_with_ttl(
-        numbers.plain(), min=0, max=2, concurrency=2, time_to_live=1.0
+        numbers.plain(), min=0, max=2, concurrency=2, time_to_live="1 second"
     )
     scope = yield from fx.Scope()
     owner = yield from scope.fork()
@@ -499,7 +501,7 @@ def test_usage_ttl_preserves_reservations_and_waits_for_capacity():
     yield from _in(owner, pool.get())
     yield from _in(reservation, pool.reserve(1))
     yield from pool.use(fx.succeed)
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     assert len(pool.state.items) == 1
     assert len(pool.state.invalidated) == 0
 
@@ -568,7 +570,7 @@ def test_scale_to_zero():
     deferred = yield from fx.Deferred[None].make()
     count = yield from fx.Ref.make(0)
     pool = yield from fx.Pool.make_with_ttl(
-        _counted(count), min=0, max=10, concurrency=3, time_to_live=60.0
+        _counted(count), min=0, max=10, concurrency=3, time_to_live="1 minute"
     )
     for _ in range(30):
         yield from fx.scoped(pool.get().and_then(deferred.wait())).fork()
@@ -579,7 +581,7 @@ def test_scale_to_zero():
     # scheduler task at a time, so let the last borrowers return before time
     # moves on.
     yield from _wait_until(lambda: pool.state.usage == 0)
-    yield from testing.adjust(60.0)
+    yield from testing.adjust("1 minute")
     minimum = yield from count.get()
     assert (minimum, maximum) == (0, 10)
 
@@ -592,12 +594,12 @@ def test_max_pool_size_creation_strategy():
         fx.succeed("resource"), lambda _a, _e: invalidated.update(lambda n: n + 1)
     )
     pool = yield from fx.Pool.make_with_ttl(
-        acquire, min=10, max=15, time_to_live=60.0, time_to_live_strategy="creation"
+        acquire, min=10, max=15, time_to_live="1 minute", time_to_live_strategy="creation"
     )
     scope = fx.CloseableScope()
     yield from _in(scope, pool.get().repeat(times=14))
     one = yield from invalidated.get()
-    yield from testing.adjust(60.0)
+    yield from testing.adjust("1 minute")
     two = yield from invalidated.get()
     yield from scope.close(_DONE)
     three = yield from invalidated.get()
@@ -1030,7 +1032,7 @@ def test_admits_one_waiter_per_released_lease():
     """admits one waiter per released lease"""
     acquired = yield from fx.Ref.make(0)
     pool = yield from fx.Pool.make_with_ttl(
-        fx.succeed("item"), min=0, max=1, concurrency=4, time_to_live=60.0
+        fx.succeed("item"), min=0, max=1, concurrency=4, time_to_live="1 minute"
     )
     release = yield from fx.Deferred[None].make()
     lease = fx.scoped(
@@ -1081,7 +1083,7 @@ def test_usage_ttl_retention_releases_invalidated_resources_while_at_minimum_siz
         fx.acquire_release(fx.sync(_Resource), lambda _a, _e: fx.sync(finalize)),
         min=1,
         max=2,
-        time_to_live=3600.0,
+        time_to_live="1 hour",
     )
     for _ in range(2):
 
@@ -1107,7 +1109,9 @@ def test_usage_ttl_retention_releases_consumed_acquisition_failures():
         references.append(weakref.ref(error))
         return fx.fail(error)
 
-    pool = yield from fx.Pool.make_with_ttl(fx.suspend(acquire), min=0, max=2, time_to_live=3600.0)
+    pool = yield from fx.Pool.make_with_ttl(
+        fx.suspend(acquire), min=0, max=2, time_to_live="1 hour"
+    )
     for _ in range(2):
         assert isinstance((yield from fx.scoped(pool.get()).exit()), fx.Failure)
     assert len(references) == 2
@@ -1143,7 +1147,7 @@ def test_usage_ttl_retention_retries_background_failures_during_asynchronous_cle
         references.append(weakref.ref(error))
         return (yield from fx.fail(error))
 
-    pool = yield from fx.Pool.make_with_ttl(acquire, min=1, max=2, time_to_live=3600.0)
+    pool = yield from fx.Pool.make_with_ttl(acquire, min=1, max=2, time_to_live="1 hour")
     yield from fx.add_finalizer(lambda _: resume_cleanup.succeed(None))
     yield from cleanup_started.wait()
     assert (yield from fx.scoped(pool.get())) == "replacement"
@@ -1174,7 +1178,7 @@ def test_usage_ttl_retention_releases_resources_after_shutdown_while_the_pool_re
             fx.acquire_release(fx.sync(_Resource), lambda _a, _e: fx.sync(finalize)),
             min=1,
             max=2,
-            time_to_live=3600.0,
+            time_to_live="1 hour",
         ),
     )
     yield from pool.use(lambda value: fx.sync(lambda: references.append(weakref.ref(value))))
@@ -1193,7 +1197,7 @@ def test_invalidating_a_busy_item_waits_for_its_last_lease_and_finalizes_once():
     @fx.gen
     def body():
         pool = yield from fx.Pool.make_with_ttl(
-            numbers.scoped(), min=1, max=2, concurrency=2, time_to_live=3600.0
+            numbers.scoped(), min=1, max=2, concurrency=2, time_to_live="1 hour"
         )
         scope = yield from fx.Scope()
         first = yield from scope.fork()
@@ -1217,7 +1221,7 @@ def test_invalidating_a_busy_item_waits_for_its_last_lease_and_finalizes_once():
 def test_usage_ttl_preserves_fifo_retirement_and_minimum_size(removal: str, removed: int | None):
     """usage TTL preserves FIFO retirement and minimum size after ${removal} removal"""
     numbers = _Numbers()
-    pool = yield from fx.Pool.make_with_ttl(numbers.scoped(), min=1, max=3, time_to_live=1.0)
+    pool = yield from fx.Pool.make_with_ttl(numbers.scoped(), min=1, max=3, time_to_live="1 second")
 
     def borrow_three(acquired: int) -> fx.Effect[None]:
         @fx.gen
@@ -1234,15 +1238,15 @@ def test_usage_ttl_preserves_fifo_retirement_and_minimum_size(removal: str, remo
         assert numbers.finalized == [removed]
         yield from borrow_three(4)
     expected = [1, 2] if removed is None else [removed, *(n for n in (1, 2, 3) if n != removed)]
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     assert numbers.finalized == expected
-    yield from testing.adjust(5.0)
+    yield from testing.adjust("5 seconds")
     assert numbers.finalized == expected
     assert len(pool.state.items) == 1
     assert (yield from fx.scoped(pool.get())) == (3 if removed is None else 4)
     if removed is not None:
         yield from borrow_three(6)
-        yield from testing.adjust(1.0)
+        yield from testing.adjust("1 second")
         assert numbers.finalized == [*expected, 4, 5]
         assert len(pool.state.items) == 1
         assert (yield from fx.scoped(pool.get())) == 6

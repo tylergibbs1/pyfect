@@ -18,7 +18,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import ZERO, to_millis
+from pyfect.duration import ZERO, Seconds, to_millis
 from pyfect.persistence import rate_limiter as rl
 
 type Body = Callable[[], Generator[Any, Any]]
@@ -32,7 +32,7 @@ def run(layer: fx.Layer[rl.RateLimiterStore, Any, Any], body: Body) -> None:
 def options(key: str, on_exceeded: OnExceeded = "fail") -> dict[str, Any]:
     return {
         "algorithm": "token-bucket",
-        "window": 300,
+        "window": "300 seconds",
         "limit": 5,
         "key": key,
         "on_exceeded": on_exceeded,
@@ -102,7 +102,7 @@ def remaining_capacity(tokens: float, expected: list[float | str]) -> Body:
             "algorithm": "fixed-window",
             "key": f"fixed-window-fail-{tokens}",
             "limit": 1,
-            "window": 60,
+            "window": "60 seconds",
         }
 
         def attempt(_: int) -> fx.Effect[float | str]:
@@ -127,7 +127,7 @@ def fractional_delay_reservations():
             on_exceeded="delay",
             key="fixed-window-fractional-delay",
             limit=1,
-            window=60,
+            window="1 minute",
             tokens=0.75,
         ),
     )
@@ -145,7 +145,7 @@ def timing(on_exceeded: OnExceeded, elapsed: int, tokens: int, expected: int, re
         limiter = yield from rl.make
         opts = options(f"timing-{on_exceeded}-{elapsed}-{tokens}", on_exceeded)
         yield from limiter.consume(**opts, tokens=5)
-        yield from testing.adjust(elapsed / 1000)
+        yield from testing.adjust(Seconds(elapsed / 1000))
         if on_exceeded == "fail":
             error = yield from exceeded(limiter.consume(**opts, tokens=tokens))
             assert to_millis(error.retry_after) == expected
@@ -165,13 +165,13 @@ def reset_after_accounts_for_elapsed_time(on_exceeded: OnExceeded) -> Body:
         opts = options(f"timing-allowed-{on_exceeded}", on_exceeded)
         initial = yield from limiter.consume(**opts, tokens=4)
         assert to_millis(initial.reset_after) == 240_000
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         result = yield from limiter.consume(**opts)
         assert result.delay == ZERO
         assert result.remaining == 0
         assert to_millis(result.reset_after) == 241_000
 
-        yield from testing.adjust(241)
+        yield from testing.adjust("241 seconds")
         full = yield from limiter.consume(**opts, tokens=0)
         assert full.remaining == 5
         assert full.reset_after == ZERO
@@ -185,7 +185,7 @@ def zero_token_call_restarts_the_interval():
     initial = yield from limiter.consume(**opts, tokens=0)
     assert initial.remaining == 5
     assert initial.reset_after == ZERO
-    yield from testing.adjust(30)
+    yield from testing.adjust("30 seconds")
     result = yield from limiter.consume(**opts)
     assert result.remaining == 4
     assert result.delay == ZERO
@@ -246,9 +246,9 @@ def fractional_costs_reset(on_exceeded: OnExceeded) -> Body:
         limiter = yield from rl.make
         opts = options(f"fractional-reset-{on_exceeded}", on_exceeded)
         initial = yield from limiter.consume(**opts, tokens=0.5)
-        yield from testing.adjust(45)
+        yield from testing.adjust("45 seconds")
         partial = yield from limiter.consume(**opts, tokens=0)
-        yield from testing.adjust(15)
+        yield from testing.adjust("15 seconds")
         full = yield from limiter.consume(**opts, tokens=0)
         assert full.remaining == 5
         assert [to_millis(result.reset_after) for result in (initial, partial, full)] == [
@@ -264,11 +264,11 @@ def fractional_deficits_remain_rejected():
     limiter = yield from rl.make
     opts = options("fractional-retry-boundary", "fail")
     yield from limiter.consume(**opts, tokens=4.5)
-    yield from testing.adjust(45)
+    yield from testing.adjust("45 seconds")
     first = yield from exceeded(limiter.consume(**opts))
-    yield from testing.adjust(14.999)
+    yield from testing.adjust("14999 millis")
     before_refill = yield from exceeded(limiter.consume(**opts))
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     allowed = yield from limiter.consume(**opts)
     assert [to_millis(error.retry_after) for error in (first, before_refill)] == [15_000, 1]
     assert allowed.remaining == 0.5
@@ -279,12 +279,12 @@ def fractional_delay_reservations_wait():
     limiter = yield from rl.make
     opts = options("fractional-reservation-boundary", "delay")
     yield from limiter.consume(**opts, tokens=4.5)
-    yield from testing.adjust(45)
+    yield from testing.adjust("45 seconds")
     first = yield from limiter.consume(**opts)
     second = yield from limiter.consume(**opts, tokens=1.25)
-    yield from testing.adjust(74.999)
+    yield from testing.adjust("74999 millis")
     before_refill = yield from limiter.consume(**opts, tokens=0)
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     available = yield from limiter.consume(**opts, tokens=0)
     assert [
         {
@@ -311,14 +311,14 @@ def fractional_elapsed_milliseconds():
     }
     initial = yield from store.token_bucket(**opts, tokens=3)
     assert initial == (0, 0)
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     remaining, elapsed_millis = yield from store.token_bucket(**opts, tokens=1)
     assert remaining == 0
     assert abs(elapsed_millis - 1_000 / 6) <= 0.000_001
 
     limiter = yield from rl.make
     result = yield from limiter.consume(
-        algorithm="token-bucket", on_exceeded="delay", window=1, limit=3, key=opts["key"]
+        algorithm="token-bucket", on_exceeded="delay", window="1 second", limit=3, key=opts["key"]
     )
     assert result.remaining == -1
     assert abs(to_millis(result.delay) - 1_000 / 6) <= 0.000_01
@@ -330,10 +330,10 @@ def failed_retries_do_not_reserve_tokens():
     opts = options("timing-fail-boundary", "fail")
     yield from limiter.consume(**opts, tokens=5)
     yield from limiter.consume(**opts).flip()
-    yield from testing.adjust(59)
+    yield from testing.adjust("59 seconds")
     yield from limiter.consume(**opts).flip()
     yield from limiter.consume(**opts).flip()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     result = yield from limiter.consume(**opts)
     assert result.delay == ZERO
     assert result.remaining == 0
@@ -344,7 +344,7 @@ def accumulated_delay_reservations():
     limiter = yield from rl.make
     opts = options("timing-delay-reservations", "delay")
     yield from limiter.consume(**opts, tokens=5)
-    yield from testing.adjust(59)
+    yield from testing.adjust("59 seconds")
     yield from limiter.consume(**opts)
     result = yield from limiter.consume(**opts)
     assert to_millis(result.delay) == 61_000
@@ -416,7 +416,7 @@ class RateLimiterSuite:
     ) -> None:
         """${onExceeded}: restarts the refill interval after ${idle} idle"""
         key = f"timing-idle-{on_exceeded}-{tokens}"
-        self.run(restarts_interval(key, on_exceeded, tokens, testing.adjust(idle)))
+        self.run(restarts_interval(key, on_exceeded, tokens, testing.adjust(Seconds(idle))))
 
     def test_restarts_the_interval_after_a_zero_token_call_without_a_whole_token_refill(
         self,

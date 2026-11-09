@@ -31,7 +31,7 @@ command = (
 @fx.fn
 def program():
     handle = yield from command
-    return (yield from handle.exit_code.timeout(0.1))
+    return (yield from handle.exit_code.timeout("100 millis"))
 
 
 services = process.layer.pipe(provide(merge(file_system_layer, path_layer)))

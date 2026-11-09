@@ -94,13 +94,13 @@ def _forced_release_sharding(state: FailoverState, **changes: Any) -> Layer[Any]
 @fx.fn
 def _await_shard(service: sharding.ShardingService, shard_id: ShardId):
     while not service.has_shard_id(shard_id):
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
 
 
 @fx.fn
 def _await_release(service: sharding.ShardingService, shard_id: ShardId):
     while service.has_shard_id(shard_id):
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
 
 
 @testing.effect
@@ -141,23 +141,23 @@ def test_keeps_the_graceful_timeout_and_records_release_duration_across_retries_
 
         yield from _await_shard(service, shard_id)
         entity_fiber = yield from client.never_volatile().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
 
         state.assign_self = False
         yield from _await_release(service, shard_id)
         while (yield from service.active_entity_count) > 0:
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
 
         assert entity_fiber.poll_unsafe() is None
         assert len(state.release_calls) == 0
-        yield from testing.adjust(0.9)
+        yield from testing.adjust("900 millis")
         assert entity_fiber.poll_unsafe() is None
         assert len(state.release_calls) == 0
 
         for _ in range(20):
             if entity_fiber.poll_unsafe() is not None:
                 break
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         entity_exit = entity_fiber.poll_unsafe()
         assert isinstance(entity_exit, Exit.Failure) and entity_exit.cause.has_interrupts
         assert len(state.release_calls) == 1
@@ -165,7 +165,7 @@ def test_keeps_the_graceful_timeout_and_records_release_duration_across_retries_
             cluster_metrics.shard_release_duration.value_unsafe(Context.empty()).count
             == before.count
         )
-        yield from testing.adjust(0.05)
+        yield from testing.adjust("50 millis")
         assert len(state.release_calls) == 2
         assert unregister_interrupts == [False]
         after = cluster_metrics.shard_release_duration.value_unsafe(Context.empty())
@@ -194,7 +194,7 @@ def test_delivers_a_client_interrupt_to_a_request_still_draining_on_the_lock_hol
         assert len(state.release_calls) == 0, "the shard lock must still be held"
 
         yield from request.interrupt().fork(start_immediately=True)
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         assert entity_state.interrupts.size_unsafe() == 1
 
     yield from fx.scoped(body).pipe(fx.provide(_graceful_handoff_sharding(state)))
@@ -216,12 +216,12 @@ def test_acknowledges_stream_chunks_from_a_request_still_draining_on_the_lock_ho
         users = yield from client.get_all_users_volatile(
             {"ids": [1, 2]}, as_queue=True, stream_buffer_size=1
         )
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         state.assign_self = False
         yield from _await_release(service, shard_id)
 
         consumed = yield from (stream.from_queue(users).run_collect().fork(start_immediately=True))
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         exit = consumed.poll_unsafe()
         assert isinstance(exit, Exit.Success), exit
         assert [user.id for user in exit.value] == [1, 2]
@@ -240,7 +240,7 @@ def test_holds_a_remote_request_on_the_new_owner_until_it_acquires_the_shard_loc
         entity_id = EntityId("1")
         shard_id = service.get_shard_id(entity_id, "default")
         while not state.acquire_calls:
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         delivery = yield from service.send(
             IncomingRequest(
                 envelope=make_request(
@@ -256,7 +256,7 @@ def test_holds_a_remote_request_on_the_new_owner_until_it_acquires_the_shard_loc
                 codec_for=S.to_codec_json,
             )
         ).fork(start_immediately=True)
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
         assert delivery.poll_unsafe() is None, "delivery must wait for the shard lock"
 
         state.lock_held_elsewhere = False
@@ -279,7 +279,7 @@ def test_does_not_wait_for_entity_construction_before_a_forced_shard_release():
         shard_id = service.get_shard_id(EntityId("1"), "default")
         yield from _await_shard(service, shard_id)
         while not any(call.shards for call in state.refresh_calls):
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
 
         @fx.gen
         def blocked():
@@ -288,18 +288,18 @@ def test_does_not_wait_for_entity_construction_before_a_forced_shard_release():
                 start_immediately=True
             )
             while entity_state.layer_builds[0] == 0:
-                yield from testing.adjust(0.001)
+                yield from testing.adjust("1 millis")
 
             state.blackholed = True
-            yield from testing.adjust(0.201)
+            yield from testing.adjust("201 millis")
             assert not service.has_shard_id(shard_id)
 
             state.blackholed = False
-            yield from testing.adjust(1)
+            yield from testing.adjust("1 second")
 
             assert len(state.release_all_calls) == 1
             entity_state.build_latch.open_unsafe()
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             yield from entity_fiber.interrupt()
 
         yield from blocked.ensuring(entity_state.build_latch.open())
@@ -327,15 +327,15 @@ def test_does_not_register_an_entity_built_after_shard_release():
                 start_immediately=True
             )
             while entity_state.layer_builds[0] == 0:
-                yield from testing.adjust(0.001)
+                yield from testing.adjust("1 millis")
 
             state.assign_self = False
             while not state.release_calls:
-                yield from testing.adjust(0.01)
+                yield from testing.adjust("10 millis")
             assert not service.has_shard_id(shard_id)
 
             entity_state.build_latch.open_unsafe()
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
 
             assert (yield from service.active_entity_count) == 0
             assert entity_state.envelopes.size_unsafe() == 0
@@ -369,34 +369,34 @@ def test_does_not_acquire_shards_while_a_forced_release_is_pending():
         # The other runner holds part of the ring, so this runner starts with
         # a strict subset of the shards.
         while owned_count() == 0:
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         assert owned_count() < shards_per_group
         while not any(call.shards for call in state.refresh_calls):
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
 
         acquires_before_outage = len(state.acquire_calls)
         state.blackholed = True
-        yield from testing.adjust(0.201)
+        yield from testing.adjust("201 millis")
         assert owned_count() == 0
 
         # The other runner's shards are reassigned to this runner during the
         # outage, so they are not part of the forced release set.
         state.other_runner_healthy = False
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         assert len(state.release_all_calls) == 0
 
         # Recovery runs the forced release, which stays in flight for
         # ``release_all_duration``.
         state.blackholed = False
         while not state.release_all_calls:
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         while not state.release_all_calls[0].completed:
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
         # Keep shutdown from blocking on the finalizer release.
         state.release_all_duration = 0
 
         while owned_count() < shards_per_group:
-            yield from testing.adjust(0.01)
+            yield from testing.adjust("10 millis")
 
         # ``release_all`` drops every lock held by this runner, so nothing may
         # be acquired before it has completed.

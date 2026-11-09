@@ -118,11 +118,11 @@ def test_releases_after_its_idle_time_to_live():
 
     @fx.gen
     def body():
-        resource = yield from entity_resource.make(counter.acquire, idle_time_to_live=60)
+        resource = yield from entity_resource.make(counter.acquire, idle_time_to_live="1 minute")
         yield from scoped(resource.get)
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         assert counter.released == 0
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert counter.released == 1
 
     yield from _provide(scoped(body), sharding)

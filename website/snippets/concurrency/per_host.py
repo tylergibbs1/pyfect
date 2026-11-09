@@ -4,7 +4,7 @@ log: list[str] = []
 
 
 def fetch(permits: fx.PartitionedSemaphore[str], host: str, path: str) -> fx.Effect[None]:
-    request = fx.sync(lambda: log.append(f"{host}{path}")).and_then(fx.sleep(0.01))
+    request = fx.sync(lambda: log.append(f"{host}{path}")).and_then(fx.sleep("10 millis"))
     # Each request waits in its host's line for a permit.
     return permits.with_permits(host, request)
 

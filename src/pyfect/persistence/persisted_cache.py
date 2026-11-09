@@ -24,6 +24,7 @@ from pyfect._catch import catch_tag
 from pyfect._core import Effect
 from pyfect.batching._request import TypedRequest
 from pyfect.cache import Cache, RequireServicesAt
+from pyfect.duration import Duration
 from pyfect.effect import from_exit, gen, succeed, suspend
 from pyfect.persistence._error import PersistenceError
 from pyfect.persistence.persistable import AnyPersistable, HasPersistableTypes, TimeToLive
@@ -31,7 +32,7 @@ from pyfect.persistence.persistence import Persistence, PersistenceStore
 from pyfect.schema import SchemaError
 from pyfect.scope import Scope
 
-_IN_MEMORY_TTL = 10.0
+_IN_MEMORY_TTL: Duration = "10 seconds"
 _IN_MEMORY_CAPACITY = 1024
 
 
@@ -148,7 +149,7 @@ def make(
     return gen(body)
 
 
-def _default_in_memory_ttl(_exit: object, _key: object) -> float:
+def _default_in_memory_ttl(_exit: object, _key: object) -> Duration:
     return _IN_MEMORY_TTL
 
 

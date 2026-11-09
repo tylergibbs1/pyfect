@@ -398,7 +398,7 @@ def test_ordered_a_batch_whose_first_caller_was_interrupted():
     """GraphQLResolver / ordered / a batch whose first caller was interrupted is sent under the remaining caller's span"""  # noqa: E501
     spans: list[str] = []
     api = yield from _spanned_client(spans)
-    get = resolver.request(_ordered_nodes(api).set_delay(0.1))
+    get = resolver.request(_ordered_nodes(api).set_delay("100 millis"))
 
     # The first caller starts the batch, so the batch fiber inherits its span.
     first = yield from get("R_1").with_span("first").fork()
@@ -406,7 +406,7 @@ def test_ordered_a_batch_whose_first_caller_was_interrupted():
     second = yield from get("R_2").with_span("second").fork()
     yield from fx.yield_now()
     yield from first.interrupt()
-    yield from testing.adjust(0.1)
+    yield from testing.adjust("100 millis")
 
     assert (yield from second.join()) == repo("R_2")
     assert spans == ["second"]

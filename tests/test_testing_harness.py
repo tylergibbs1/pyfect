@@ -120,7 +120,7 @@ def test_the_ini_timeout_is_the_default(pytester: pytest.Pytester) -> None:
 
         @testing.live
         def test_slow():
-            yield from fx.sleep(5)
+            yield from fx.sleep("5 seconds")
         """
     )
     started = time.monotonic()
@@ -132,7 +132,7 @@ def test_the_ini_timeout_is_the_default(pytester: pytest.Pytester) -> None:
 
 @testing.live
 def _sleeps_a_little():
-    yield from fx.sleep(0.1)
+    yield from fx.sleep("100 millis")
 
 
 def test_a_nested_run_does_not_change_the_outer_default_timeout(
@@ -172,7 +172,7 @@ def test_a_stalled_test_is_interrupted_so_its_finalizers_run() -> None:
     @fx.gen
     def program():
         yield from fx.add_finalizer(lambda _: fx.sync(lambda: released.append(True)))
-        yield from fx.sleep(1)
+        yield from fx.sleep("1 second")
 
     with pytest.raises(testing.StalledError) as caught:
         testing.run_test(fx.scoped(program), stall_timeout=0.05)
@@ -183,7 +183,7 @@ def test_a_stalled_test_is_interrupted_so_its_finalizers_run() -> None:
 def test_the_not_advancing_warning_does_not_delay_a_stall() -> None:
     started = time.monotonic()
     with pytest.raises(testing.StalledError):
-        testing.run_test(fx.sleep(1), stall_timeout=0.05, warning_delay=10)
+        testing.run_test(fx.sleep("1 second"), stall_timeout=0.05, warning_delay="10 seconds")
     assert time.monotonic() - started < 1
 
 
@@ -206,7 +206,7 @@ def test_a_stall_after_blocking_work_finished_is_still_reported() -> None:
 
 def test_run_test_times_out_in_real_time() -> None:
     with pytest.raises(testing.TestTimeoutError):
-        testing.run_test(testing.with_live(fx.sleep(10)), timeout=0.05)
+        testing.run_test(testing.with_live(fx.sleep("10 seconds")), timeout="50 millis")
 
 
 def test_with_live_outside_a_test_clock_runs_the_effect_as_is() -> None:
@@ -223,16 +223,16 @@ async def _tick() -> str:
 
 @testing.effect(asyncio=True)
 def test_an_asyncio_test_runs_from_async_on_virtual_time():
-    fiber = yield from fx.from_async(_tick).delay(60).fork()
-    yield from testing.adjust(60)
+    fiber = yield from fx.from_async(_tick).delay("1 minute").fork()
+    yield from testing.adjust("1 minute")
     assert (yield from fiber.join()) == "tick"
 
 
 def test_run_test_async_uses_the_running_loop() -> None:
     @fx.gen
     def program():
-        fiber = yield from fx.from_async(_tick).delay(60).fork()
-        yield from testing.adjust(60)
+        fiber = yield from fx.from_async(_tick).delay("1 minute").fork()
+        yield from testing.adjust("1 minute")
         return (yield from fiber.join())
 
     assert asyncio.run(testing.run_test_async(program)) == "tick"
@@ -256,8 +256,8 @@ def test_cancelling_run_test_async_runs_the_finalizers() -> None:
 def test_the_test_clock_layer_works_under_run_async() -> None:
     @fx.gen
     def program():
-        fiber = yield from fx.sleep(60).as_("woke").fork()
-        yield from testing.adjust(60)
+        fiber = yield from fx.sleep("1 minute").as_("woke").fork()
+        yield from testing.adjust("1 minute")
         return (yield from fiber.join())
 
     provided = program.pipe(fx.provide(testing.TestClock.layer()))
@@ -273,7 +273,7 @@ class Ticks(fx.Tag[fx.Ref[int]]): ...
 @fx.gen
 def _ticking():
     ticks = yield from fx.Ref.make(0)
-    yield from ticks.update(lambda n: n + 1).and_then(fx.sleep(1)).forever().fork_scoped()
+    yield from ticks.update(lambda n: n + 1).and_then(fx.sleep("1 second")).forever().fork_scoped()
     return ticks
 
 
@@ -285,7 +285,7 @@ ticking_asyncio = testing.layer_fixture(layer.effect(Ticks, _ticking), asyncio=T
 def test_fibers_a_layer_forks_keep_running_during_its_tests(ticking: Services[Ticks]):
     ticks = yield from Ticks()
     before = yield from ticks.get()
-    yield from testing.adjust(3)
+    yield from testing.adjust("3 seconds")
     assert (yield from ticks.get()) == before + 3
 
 
@@ -293,7 +293,7 @@ def test_fibers_a_layer_forks_keep_running_during_its_tests(ticking: Services[Ti
 def test_an_asyncio_layer_fixture_runs_its_tests_on_its_loop(ticking_asyncio: Services[Ticks]):
     ticks = yield from Ticks()
     before = yield from ticks.get()
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
     assert (yield from ticks.get()) == before + 2
     assert (yield from fx.from_async(_tick)) == "tick"
 
@@ -307,7 +307,7 @@ def test_an_effect_test_uses_the_live_clock_of_a_live_layer_fixture(
 ):
     """Like ``it.effect`` in an ``excludeTestServices`` layer: the test gets
     the fixture's services, without a TestClock of its own."""
-    assert (yield from fx.clock.now()) > 1_000_000_000
+    assert (yield from fx.clock.current_time_millis()) > 1_000_000_000_000
     assert isinstance((yield from fx.Clock()), LiveClock)
 
 
@@ -431,7 +431,7 @@ def test_a_finalizer_stuck_after_the_deadline_is_reported_as_the_timeout() -> No
         yield from fx.never.ensuring(gate.wait())
 
     with pytest.raises(testing.TestTimeoutError, match="a finalizer never finished"):
-        testing.run_test(body, timeout=0.05)
+        testing.run_test(body, timeout="50 millis")
 
 
 def test_time_spent_running_a_task_does_not_count_towards_a_stall() -> None:

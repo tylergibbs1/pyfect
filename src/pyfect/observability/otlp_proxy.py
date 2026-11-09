@@ -59,7 +59,7 @@ type Handler = Effect[HttpServerResponse, Never, HttpServerRequest]
 _ALL_SIGNALS: Final[tuple[Signal, ...]] = ("traces", "logs", "metrics")
 _CONTENT_TYPES: Final = frozenset({"application/json", "application/x-protobuf"})
 _DEFAULT_MAX_BODY_SIZE: Final = byte_size.mebibytes(10)
-_DEFAULT_TIMEOUT: Final = 10.0
+_DEFAULT_TIMEOUT: Final = "10 seconds"
 _ENV_SIGNALS: Final[Mapping[Signal, env.Signal]] = {
     "traces": "TRACES",
     "logs": "LOGS",

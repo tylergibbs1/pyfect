@@ -58,4 +58,7 @@ Effect (effect.website, v4 semantics) for Python. Python >= 3.13, pyright strict
 - `Deferred.done(exit)`, `complete(eff)` (runs once, memoizes), `complete_with(eff)` (stores
   the effect lazily). `Fiber.interrupt()` returns `None`; use `await_exit()` for the exit.
 - Durations are parsed once at the boundary into `duration.Seconds` (NaN and -0 become 0);
-  timers, clocks and schedule decisions take `Seconds`, not `float`.
+  timers, clocks and schedule decisions take `Seconds`, not `float`. A bare number as a
+  Duration is milliseconds, as in Effect, and so is a bare-number timestamp (`set_time`,
+  `current_time_millis`, a schedule step's `now`); write units (`"5 seconds"`), which
+  `tests/test_duration_literals.py` enforces everywhere but the parse's own tests.

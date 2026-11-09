@@ -27,7 +27,7 @@ def _memory(_tmp_path: Path) -> fx.Layer[pq.PersistedQueueStore, Any, Any]:
 
 def _sqlite(tmp_path: Path) -> fx.Layer[pq.PersistedQueueStore, Any, Any]:
     client = sqlite.layer(sqlite.SqliteClientConfig(filename=str(tmp_path / "test.db")))
-    return pq.layer_store_sql(poll_interval=0.01).pipe(fx.provide(client))
+    return pq.layer_store_sql(poll_interval="10 millis").pipe(fx.provide(client))
 
 
 def _redis_store(_tmp_path: Path) -> fx.Layer[pq.PersistedQueueStore, Any, Any]:
@@ -37,7 +37,7 @@ def _redis_store(_tmp_path: Path) -> fx.Layer[pq.PersistedQueueStore, Any, Any]:
     server = _redis.server()
     _redis.flush()
     # a short refresh so lapsed claims are reset while the test watches
-    store = pq.layer_store_redis(poll_interval=0.01, lock_refresh_interval=0.05)
+    store = pq.layer_store_redis(poll_interval="10 millis", lock_refresh_interval="50 millis")
     return store.pipe(fx.provide(redis_py.layer(server.url)))
 
 
@@ -65,12 +65,12 @@ def test_settling_one_queue_keeps_another_queues_claim(tmp_path: Path, store: St
             return held.open().and_then(fx.never)
 
         yield from a.take(hold).fork_scoped()
-        yield from fx.testing.with_live(held.wait().timeout(5))
+        yield from fx.testing.with_live(held.wait().timeout("5 seconds"))
         yield from b.take(lambda value, _meta: fx.sync(lambda: runs.append(value)))
         second = yield from fx.testing.with_live(
             a.take(
                 lambda value, _meta: fx.sync(lambda: runs.append(f"again {value}"))
-            ).timeout_option(0.5)
+            ).timeout_option("500 millis")
         )
         assert second is None
         assert runs == ["a-value", "b-value"]

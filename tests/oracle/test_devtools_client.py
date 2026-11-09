@@ -13,6 +13,7 @@ from pyfect import testing
 from pyfect.deferred import Deferred
 from pyfect.devtools import client as devtools_client
 from pyfect.devtools import layer_socket
+from pyfect.duration import Seconds
 from pyfect.latch import Latch
 from pyfect.socket import CloseEvent, Reader, Socket, SocketError, Writer
 from pyfect.socket import make as make_socket
@@ -41,7 +42,7 @@ def connection(drop_after: float | None = None):
             disconnected = (
                 closed.wait()
                 if drop_after is None
-                else fx.sleep(drop_after).race_first(closed.wait())
+                else fx.sleep(Seconds(drop_after)).race_first(closed.wait())
             )
             return disconnected.and_then(fx.fail(_close_error(1006)))
 
@@ -76,7 +77,7 @@ def test_builds_promptly_when_server_only_responds():
 
     def reader():
         # Model asynchronous connection setup before waiting for the client Ping.
-        yield from fx.sleep(0.001)
+        yield from fx.sleep("1 millis")
         yield from fx.add_finalizer(lambda _: ping.succeed(None))
         inner = yield from connection()
         return Reader(ping.wait().and_then(inner.pull))
@@ -89,7 +90,7 @@ def test_builds_promptly_when_server_only_responds():
         .and_then(built.succeed(None))
         .fork_scoped()
     )
-    yield from testing.adjust(0.1)
+    yield from testing.adjust("100 millis")
     assert (yield from built.is_done())
 
 
@@ -108,10 +109,10 @@ def test_closes_scope_while_endpoint_unavailable():
         .and_then(closed.succeed(None))
         .fork_scoped()
     )
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     closed_during_outage = yield from closed.is_done()
     unavailable[0] = False
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
     yield from fiber.join()
     assert closed_during_outage
 
@@ -149,10 +150,10 @@ def test_sends_later_spans_after(
         socket = make_socket(fx.suspend(reader), _writer(write))
 
         def program():
-            yield from fx.sleep(60)
+            yield from fx.sleep("1 minute")
             yield from fx.void.with_span("later")
             # Allow delivery before closing the client layer.
-            yield from fx.sleep(10)
+            yield from fx.sleep("10 seconds")
 
         fiber = yield from (
             fx.gen(program)
@@ -165,7 +166,7 @@ def test_sends_later_spans_after(
             )
             .fork_scoped()
         )
-        yield from testing.adjust(120)
+        yield from testing.adjust("2 minutes")
         yield from fiber.join()
         assert [s["status"]["_tag"] for s in spans] == ["Started", "Ended"]
 

@@ -41,6 +41,7 @@ from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.clock import Clock
 from pyfect.context import Tag
+from pyfect.duration import Seconds, from_nanos
 from pyfect.exit import Exit, Success
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ type TransactionRetryReason = Literal["retry", "conflict"]
 ``tx_retry``, ``"conflict"`` after a ref it read changed before it could
 commit."""
 
-_NANOS = 1_000_000_000
+_NANOS_PER_MILLI = 1_000_000
 
 
 @final
@@ -90,9 +91,9 @@ class TransactionMeta:
     """The journal and attempt metadata of a running transaction.
 
     ``attempt`` counts runs of the outermost body from 1; ``retry_reason`` is
-    ``None`` on the first. Times are wall-clock seconds read from the
-    ``Clock``, as in schedule metadata: ``start`` when the transaction began,
-    ``now`` when this attempt began."""
+    ``None`` on the first. ``start`` and ``now`` are wall-clock milliseconds
+    since the epoch read from the ``Clock``, as in schedule metadata:
+    ``start`` when the transaction began, ``now`` when this attempt began."""
 
     __slots__ = (
         "_attempt",
@@ -129,19 +130,19 @@ class TransactionMeta:
 
     @property
     def start(self) -> float:
-        return self._start_ns / _NANOS
+        return self._start_ns / _NANOS_PER_MILLI
 
     @property
     def now(self) -> float:
-        return self._now_ns / _NANOS
+        return self._now_ns / _NANOS_PER_MILLI
 
     @property
-    def elapsed(self) -> float:
-        return (self._now_ns - self._start_ns) / _NANOS
+    def elapsed(self) -> Seconds:
+        return from_nanos(self._now_ns - self._start_ns)
 
     @property
-    def elapsed_since_previous(self) -> float:
-        return (self._now_ns - self._previous_ns) / _NANOS
+    def elapsed_since_previous(self) -> Seconds:
+        return from_nanos(self._now_ns - self._previous_ns)
 
     def _entry(self, ref: TxRef[Any]) -> JournalEntry:
         entry = self._journal.get(ref)

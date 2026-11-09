@@ -100,37 +100,37 @@ def test_group_by_a_group_that_stops_early_does_not_block_the_others():
 @testing.effect
 def test_share_sequenced():
     """sequenced"""
-    shared = yield from stream.from_schedule(schedule.spaced(1)).share(capacity=16)
+    shared = yield from stream.from_schedule(schedule.spaced("1 second")).share(capacity=16)
 
     first_fiber = yield from shared.take(1).run(sink.collect()).fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from first_fiber.join()) == [0]
 
     second_fiber = yield from shared.take(1).run(sink.collect()).fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from second_fiber.join()) == [0]
 
 
 @testing.effect
 def test_share_sequenced_with_idle_time_to_live():
     """sequenced with idleTimeToLive"""
-    shared = yield from stream.from_schedule(schedule.spaced(1)).share(
-        capacity=16, idle_time_to_live=1
+    shared = yield from stream.from_schedule(schedule.spaced("1 second")).share(
+        capacity=16, idle_time_to_live="1 second"
     )
 
     first_fiber = yield from shared.take(1).run(sink.collect()).fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from first_fiber.join()) == [0]
 
     second_fiber = yield from shared.take(1).run(sink.collect()).fork(start_immediately=True)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from second_fiber.join()) == [1]
 
 
 @testing.effect
 def test_share_ends_a_consumer_that_starts_after_the_shared_upstream_has_ended():
     """ends a consumer that starts after the shared upstream has ended"""
-    shared = yield from stream.make(1, 2, 3).share(capacity=16, idle_time_to_live=60)
+    shared = yield from stream.make(1, 2, 3).share(capacity=16, idle_time_to_live="1 minute")
     yield from shared.run_drain()
 
     assert (yield from shared.run_collect()) == []
@@ -139,11 +139,11 @@ def test_share_ends_a_consumer_that_starts_after_the_shared_upstream_has_ended()
 @testing.effect
 def test_share_parallel():
     """parallel"""
-    shared = yield from stream.from_schedule(schedule.spaced(1)).share(capacity=16)
+    shared = yield from stream.from_schedule(schedule.spaced("1 second")).share(capacity=16)
 
     fiber1 = yield from shared.take(1).run(sink.collect()).fork(start_immediately=True)
     fiber2 = yield from shared.take(2).run(sink.collect()).fork(start_immediately=True)
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
 
     assert (yield from fx.Fiber.join_all([fiber1, fiber2])) == [[0], [0, 1]]
 

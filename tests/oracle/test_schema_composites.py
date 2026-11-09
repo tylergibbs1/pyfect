@@ -833,7 +833,7 @@ def test_char():
 
 
 def _after_a_sleep(os: Option[str], _options: ParseOptions) -> Effect[Option[str]]:
-    return sleep(0.01).as_(os)
+    return sleep("10 millis").as_(os)
 
 
 def test_should_throw_on_async_decoding():

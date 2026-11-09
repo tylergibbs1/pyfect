@@ -15,7 +15,14 @@ from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect._wake_tracking import WakeTracker
 from pyfect.clock import Clock, ClockService, LiveClock
-from pyfect.duration import Duration, Seconds, add_nanos, nanos_or_infinite, to_nanos, to_seconds
+from pyfect.duration import (
+    Duration,
+    Seconds,
+    add_nanos,
+    millis_to_nanos,
+    nanos_or_infinite,
+    to_seconds,
+)
 from pyfect.effect import provide_service
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -49,6 +56,17 @@ _OUTSIDE_WARNING = (
     "scheduled relative to a later time."
 )
 _NANOS = 1_000_000_000
+_NANOS_PER_MILLI = 1_000_000
+
+
+def _timestamp_nanos(millis: float) -> int | float:
+    """An epoch timestamp in milliseconds as the clock's nanoseconds: NaN is
+    0, an infinity stays one, a count past float range saturates."""
+    if math.isnan(millis):
+        return 0
+    if math.isinf(millis):
+        return millis
+    return add_nanos(millis_to_nanos(millis), 0)
 
 
 class _Sleeper:
@@ -90,10 +108,11 @@ class TestClock:
     ``set_time``. Each move wakes due sleepers in order and waits for the
     work each wake-up starts.
 
-    Wall time (``now_unsafe``) and monotonic time (``monotonic_unsafe``)
-    are kept apart: ``set_time`` may move wall time backwards, but
-    monotonic time only ever moves forward. Time is kept in whole
-    nanoseconds, so deadlines add up exactly.
+    Wall time (``current_time_millis_unsafe``) and monotonic time
+    (``monotonic_unsafe``) are kept apart: ``set_time`` may move wall time
+    backwards, but monotonic time only ever moves forward. Time is kept in
+    whole nanoseconds, so deadlines add up exactly. ``start`` is the
+    starting time in milliseconds since the epoch, as ``set_time`` takes.
 
     ``warning_delay`` is how long (in real time) to wait before warning
     that a test sleeps without moving time (``ClockNotAdvancedWarning``),
@@ -104,14 +123,14 @@ class TestClock:
 
     def __init__(
         self,
-        start: float = 0.0,
+        start: float = 0,
         *,
-        warning_delay: Duration = 1.0,
+        warning_delay: Duration = "1 second",
         live: ClockService | None = None,
     ) -> None:
         if not math.isfinite(start):
             raise ValueError(f"TestClock needs a finite start time, got {start}")
-        start_ns = to_nanos(start)
+        start_ns = millis_to_nanos(start)
         self._timestamp_ns: float = start_ns
         self._wall_ns = start_ns
         self._monotonic_ns = start_ns
@@ -123,7 +142,7 @@ class TestClock:
         self._moving = Semaphore(1)
 
     @staticmethod
-    def layer(*, warning_delay: Duration = 1.0) -> Layer[Never]:
+    def layer(*, warning_delay: Duration = "1 second") -> Layer[Never]:
         """Provide a fresh ``TestClock`` as the ``Clock``. Its ``with_live``
         uses the clock that was current when the layer was built."""
 
@@ -136,12 +155,12 @@ class TestClock:
 
     # --- the Clock service ------------------------------------------------------------
 
-    def now_unsafe(self) -> float:
+    def current_time_millis_unsafe(self) -> float:
         # As Effect's ``currentTimeMillis``: infinite once time is moved to
         # infinity (the nanosecond clocks stay at the last finite time).
         if math.isinf(self._timestamp_ns):
             return self._timestamp_ns
-        return self._wall_ns / _NANOS
+        return self._wall_ns / _NANOS_PER_MILLI
 
     def monotonic_unsafe(self) -> float:
         return self._monotonic_ns / _NANOS
@@ -182,10 +201,11 @@ class TestClock:
         delta = nanos_or_infinite(to_seconds(duration))
         return self._move(lambda now: add_nanos(now, delta))
 
-    def set_time(self, at: float) -> Effect[None]:
-        """Set wall time to ``at`` (seconds since the epoch), waking every
-        sleeper due by then. Moving backwards leaves monotonic time alone."""
-        target = nanos_or_infinite(at)
+    def set_time(self, timestamp: float) -> Effect[None]:
+        """Set wall time to ``timestamp`` (milliseconds since the epoch, as
+        Effect's ``setTime``), waking every sleeper due by then. Moving
+        backwards leaves monotonic time alone."""
+        target = _timestamp_nanos(timestamp)
         return self._move(lambda _: target)
 
     def with_live[A, E, R](self, eff: Effect[A, E, R]) -> Effect[A, E, R]:
@@ -293,9 +313,10 @@ def adjust(duration: Duration) -> Effect[None]:
     return test_clock().flat_map(lambda c: c.adjust(duration))
 
 
-def set_time(at: float) -> Effect[None]:
-    """Set the test clock's wall time to ``at`` (seconds since the epoch)."""
-    return test_clock().flat_map(lambda c: c.set_time(at))
+def set_time(timestamp: float) -> Effect[None]:
+    """Set the test clock's wall time to ``timestamp`` (milliseconds since
+    the epoch, as Effect's ``TestClock.setTime``)."""
+    return test_clock().flat_map(lambda c: c.set_time(timestamp))
 
 
 def with_live[A, E, R](eff: Effect[A, E, R]) -> Effect[A, E, R]:

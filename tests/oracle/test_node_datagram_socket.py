@@ -35,7 +35,7 @@ from pyfect.socket.datagram import (
     make_udp,
 )
 
-live = testing.live(timeout=10)
+live = testing.live(timeout="10 seconds")
 
 pytestmark = pytest.mark.filterwarnings(
     "error::ResourceWarning", "error::pytest.PytestUnraisableExceptionWarning"
@@ -73,7 +73,7 @@ def pull_n(
             received.extend((yield from reader.pull))
         return received
 
-    return gen(body).timeout(2)
+    return gen(body).timeout("2 seconds")
 
 
 def text(datagrams: Sequence[Datagram]) -> list[str]:
@@ -178,6 +178,6 @@ def wait_until(ready: Callable[[], bool]) -> Effect[None, TimeoutException]:
 
     def body():
         while not ready():
-            yield from sleep(0.01)
+            yield from sleep("10 millis")
 
-    return gen(body).timeout(2)
+    return gen(body).timeout("2 seconds")

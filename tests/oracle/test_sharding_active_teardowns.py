@@ -95,7 +95,7 @@ def _wait_for_idle_reap(service: sharding.ShardingService, remaining: int) -> fx
         for _ in range(12):
             if (yield from service.active_entity_count) <= remaining:
                 return
-            yield from testing.adjust(5)
+            yield from testing.adjust("5 seconds")
         assert (yield from service.active_entity_count) <= remaining
 
     return run
@@ -116,13 +116,13 @@ def test_swallows_persisted_interrupts_from_an_idle_reaped_nested_proxy_call():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         driver = yield from MemoryDriver()
         state = yield from EntityState()
         service = yield from sharding.Sharding()
         caller = (yield from ActiveTeardownCaller.client())("1")
         yield from caller.arm()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert state.envelopes.size_unsafe() == 1
         assert _journal_interrupts(driver) == 0
 
@@ -144,9 +144,9 @@ def test_treats_node_shutdown_interrupts_as_transient_via_is_shutdown():
         driver = yield from MemoryDriver()
         state = yield from EntityState()
         seen["driver"] = driver
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from (yield from ActiveTeardownCaller.client())("1").arm()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert state.envelopes.size_unsafe() == 1
 
     yield from body.pipe(fx.provide(_active_teardown_sharding()))
@@ -165,10 +165,10 @@ def test_forwards_replayed_storage_interrupts_that_have_no_local_provenance():
         state = yield from EntityState()
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         yield from client.never().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert state.envelopes.size_unsafe() == 1
 
         request: Any = driver.encoded.journal[0]
@@ -181,7 +181,7 @@ def test_forwards_replayed_storage_interrupts_that_have_no_local_provenance():
         }
         yield from driver.encoded.save_envelope(interrupt, None, None)
 
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         assert state.interrupts.size_unsafe() == 1
         assert _journal_interrupts(driver) == 1
 
@@ -197,12 +197,12 @@ def test_forwards_interrupts_from_an_external_same_node_caller():
         driver = yield from MemoryDriver()
         state = yield from EntityState()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("1")
         fiber = yield from client.never().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from fiber.interrupt()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert _journal_interrupts(driver) == 1
         assert state.interrupts.size_unsafe() == 1
 
@@ -219,17 +219,17 @@ def test_forwards_interrupts_from_an_external_same_node_caller_during_entity_tea
         state = yield from EntityState()
         service = yield from sharding.Sharding()
         make_client = yield from TestEntity.client()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = make_client("external-teardown")
         address = _address(service, TestEntity.type, "external-teardown")
 
         fiber = yield from client.never().fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         _interruptors.acquire_entity(address)
         yield from fiber.interrupt().ensuring(
             fx.sync(lambda: _interruptors.release_entity(address))
         )
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert _journal_interrupts(driver) == 1
         assert state.interrupts.size_unsafe() == 1
 
@@ -242,7 +242,7 @@ def test_returns_registry_size_to_baseline_after_entity_reap_storms():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         service = yield from sharding.Sharding()
         make_client = yield from ReapStormEntity.client()
 

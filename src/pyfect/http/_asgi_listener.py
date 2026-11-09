@@ -19,7 +19,7 @@ from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import Resume, WaitsFor, os_wait
 from pyfect._root import run_loop
 from pyfect.context import Context
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import ZERO, Duration, Seconds, to_seconds
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.exit import Exit
 from pyfect.http.asgi._serve import AsgiHandler
@@ -193,8 +193,8 @@ class Running:
 
 def graceful(options: ListenOptions) -> Seconds:
     if options.get("disable_preemptive_shutdown", False):
-        return to_seconds(0)
-    return to_seconds(options.get("graceful_shutdown_timeout", 20))
+        return ZERO
+    return to_seconds(options.get("graceful_shutdown_timeout", "20 seconds"))
 
 
 def _serve(

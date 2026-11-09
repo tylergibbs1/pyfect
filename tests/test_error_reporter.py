@@ -278,7 +278,7 @@ def test_success_is_not_reported_and_the_timestamp_is_the_clock_time():
     reports, reporter = _recorder()
     yield from _reporting(fx.succeed(1).with_error_reporting(), [reporter])
     assert reports == []
-    yield from testing.adjust(1.5)
+    yield from testing.adjust("1500 millis")
     yield from _reporting(fx.fail(Boom("t")).with_error_reporting(), [reporter])
     (only,) = reports
     assert only.timestamp == 1_500_000_000

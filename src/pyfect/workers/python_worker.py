@@ -40,7 +40,7 @@ from pyfect.workers.worker import (
 )
 from pyfect.workers.worker_error import WorkerError, WorkerReceiveError, WorkerSpawnError
 
-CLOSE_TIMEOUT = 5.0
+CLOSE_TIMEOUT = "5 seconds"
 """Seconds a closing worker gets to exit before it is killed."""
 
 

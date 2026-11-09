@@ -79,12 +79,14 @@ def test_fibers_the_layer_forked_keep_running_across_sync_runs():
     @fx.gen
     def ticking():
         ticks = yield from fx.Ref.make(0)
-        yield from ticks.update(lambda n: n + 1).and_then(fx.sleep(0.001)).forever().fork_scoped()
+        yield from (
+            ticks.update(lambda n: n + 1).and_then(fx.sleep("1 millis")).forever().fork_scoped()
+        )
         return ticks
 
     with fx.ManagedRuntime.make(layer.effect(Ticks, ticking)) as runtime:
         first = runtime.run_blocking(Ticks().flat_map(lambda t: t.get()))
-        runtime.run_blocking(fx.sleep(0.02))
+        runtime.run_blocking(fx.sleep("20 millis"))
         second = runtime.run_blocking(Ticks().flat_map(lambda t: t.get()))
     assert second > first
 
@@ -95,7 +97,7 @@ def test_sync_runs_from_several_threads_share_one_build():
     results: list[str] = []
 
     def request() -> None:
-        results.append(runtime.run_blocking(fx.sleep(0.001).and_then(Name())))
+        results.append(runtime.run_blocking(fx.sleep("1 millis").and_then(Name())))
 
     threads = [threading.Thread(target=request) for _ in range(8)]
     for t in threads:
@@ -208,9 +210,9 @@ def test_a_sync_run_inside_a_sync_run_of_the_same_runtime_completes():
     """Driving the runtime's scheduler from inside one of its fibers would
     stall that fiber's run, so a nested sync run gets a scheduler of its own."""
     runtime = fx.ManagedRuntime.make(layer.succeed(Name, "x"))
-    inner = fx.sleep(0.001).and_then(Name())
+    inner = fx.sleep("1 millis").and_then(Name())
     outer = fx.sync(lambda: runtime.run_blocking(inner)).flat_map(
-        lambda a: fx.sleep(0.001).as_(a + "!")
+        lambda a: fx.sleep("1 millis").as_(a + "!")
     )
     assert _within(5, lambda: runtime.run_blocking(outer)) == "x!"
     runtime.dispose()

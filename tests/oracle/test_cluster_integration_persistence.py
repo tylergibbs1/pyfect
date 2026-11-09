@@ -112,7 +112,7 @@ def count(tag: str, id: str) -> int:
 
 
 def now_millis() -> fx.Effect[float]:
-    return fx.clock.now().map(lambda seconds: seconds * 1000)
+    return fx.clock.current_time_millis()
 
 
 def malformed(cause: Cause[Any]) -> bool:
@@ -273,7 +273,7 @@ def run(body: Any) -> fx.Effect[None, Any]:
     return fx.scoped(fx.gen(body))
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_delivers_a_persisted_request_sent_while_its_runner_is_down_exactly_once(
     cluster_db: ClusterDatabase,
 ):
@@ -312,7 +312,7 @@ def test_delivers_a_persisted_request_sent_while_its_runner_is_down_exactly_once
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_serves_primary_key_duplicates_from_the_stored_reply(cluster_db: ClusterDatabase):
     """serves primary-key duplicates from the stored reply"""
     backend = cluster_db.backend
@@ -338,7 +338,7 @@ def test_serves_primary_key_duplicates_from_the_stored_reply(cluster_db: Cluster
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_does_not_lose_an_uninterruptible_request_during_runner_shutdown(
     cluster_db: ClusterDatabase,
 ):
@@ -385,7 +385,7 @@ def test_does_not_lose_an_uninterruptible_request_during_runner_shutdown(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_does_not_store_or_redeliver_a_volatile_request_after_runner_failure(
     cluster_db: ClusterDatabase,
 ):
@@ -430,7 +430,7 @@ def test_does_not_store_or_redeliver_a_volatile_request_after_runner_failure(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_completes_a_discarded_volatile_caller_while_the_handler_is_still_blocked(
     cluster_db: ClusterDatabase,
 ):
@@ -467,7 +467,7 @@ def test_completes_a_discarded_volatile_caller_while_the_handler_is_still_blocke
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_stores_an_unencodable_persisted_reply_as_a_defect(cluster_db: ClusterDatabase):
     """stores an unencodable persisted reply as a defect and does not hang the caller"""
     backend = cluster_db.backend
@@ -487,7 +487,7 @@ def test_stores_an_unencodable_persisted_reply_as_a_defect(cluster_db: ClusterDa
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_isolates_a_reply_encoding_failure_so_a_sibling_request_succeeds(
     cluster_db: ClusterDatabase,
 ):
@@ -525,7 +525,7 @@ def test_isolates_a_reply_encoding_failure_so_a_sibling_request_succeeds(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_persists_a_non_json_error_as_a_serializable_defect(cluster_db: ClusterDatabase):
     """persists a non-JSON Error as a serializable defect"""
     backend = cluster_db.backend
@@ -547,7 +547,7 @@ def test_persists_a_non_json_error_as_a_serializable_defect(cluster_db: ClusterD
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_persists_typed_failures_and_defects_without_wedging_the_mailbox(
     cluster_db: ClusterDatabase,
 ):
@@ -585,7 +585,7 @@ def test_persists_typed_failures_and_defects_without_wedging_the_mailbox(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_defects_a_malformed_persisted_envelope_without_wedging_the_mailbox(
     cluster_db: ClusterDatabase,
 ):
@@ -635,7 +635,7 @@ def test_defects_a_malformed_persisted_envelope_without_wedging_the_mailbox(
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_abandons_a_stream_chunk_acknowledgement_during_shutdown(cluster_db: ClusterDatabase):
     """abandons a stream chunk acknowledgement during shutdown without stranding either runner"""
     backend = cluster_db.backend
@@ -675,7 +675,7 @@ def test_abandons_a_stream_chunk_acknowledgement_during_shutdown(cluster_db: Clu
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_round_trips_a_chunked_reply_through_storage(cluster_db: ClusterDatabase):
     """round-trips a chunked reply through storage"""
     backend = cluster_db.backend
@@ -697,7 +697,7 @@ def test_round_trips_a_chunked_reply_through_storage(cluster_db: ClusterDatabase
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_resumes_a_persisted_stream_after_its_runner_is_killed(cluster_db: ClusterDatabase):
     """resumes a persisted stream after its runner is killed"""
     backend = cluster_db.backend
@@ -744,7 +744,7 @@ def test_resumes_a_persisted_stream_after_its_runner_is_killed(cluster_db: Clust
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_resumes_a_terminal_stream_on_the_replacement_owner(cluster_db: ClusterDatabase):
     """resumes a terminal stream on the replacement owner and persists exactly one reply"""
     backend = cluster_db.backend
@@ -812,7 +812,7 @@ def test_resumes_a_terminal_stream_on_the_replacement_owner(cluster_db: ClusterD
     yield from run(body)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_delivers_scheduled_messages_only_after_their_deadline(cluster_db: ClusterDatabase):
     """delivers scheduled messages only after their deadline"""
     backend = cluster_db.backend

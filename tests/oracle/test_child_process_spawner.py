@@ -36,6 +36,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import file_system, path, process, sink, stream, testing
+from pyfect.duration import Seconds
 from pyfect.file_system import FileSystem
 from pyfect.layer import Layer, merge, provide_merge
 from pyfect.path import Path
@@ -502,9 +503,9 @@ def _wait_for_file(file: str) -> fx.Effect[None, Any, FileSystem]:
     def wait():
         fs = yield from FileSystem()
         while not (yield from fs.exists(file)):
-            yield from fx.sleep(0.01)
+            yield from fx.sleep("10 millis")
 
-    return wait().timeout(1)
+    return wait().timeout("1 second")
 
 
 @testing.live
@@ -522,7 +523,7 @@ def test_should_force_kill_a_process_after_the_initial_signal_times_out(
         stderr="ignore",
     )
     yield from _wait_for_file(ready)
-    yield from handle.kill(kill_signal=signal.SIGTERM, force_kill_after=0.05)
+    yield from handle.kill(kill_signal=signal.SIGTERM, force_kill_after="50 millis")
     assert not (yield from handle.is_running)
     assert isinstance((yield from handle.exit_code.exit()), fx.Failure)
 
@@ -540,7 +541,7 @@ def test_should_force_kill_a_process_when_its_scope_closes(
             "sh",
             ["-c", "trap '' TERM; : > \"$1\"; sleep 2", "force-kill", ready],
             kill_signal=signal.SIGTERM,
-            force_kill_after=0.05,
+            force_kill_after="50 millis",
             stdout="ignore",
             stderr="ignore",
         )
@@ -549,7 +550,7 @@ def test_should_force_kill_a_process_when_its_scope_closes(
     completed = (
         yield from fx.scoped(run())
         .map(lambda _: True)
-        .timeout_or_else(1, lambda: fx.succeed(False))
+        .timeout_or_else("1 second", lambda: fx.succeed(False))
     )
     assert completed
 
@@ -911,14 +912,14 @@ def test_should_kill_all_child_processes_in_process_group(
         .filter(lambda line: " started with PID " in line)
         .take(7)
         .run_count()
-        .timeout(2)
+        .timeout("2 seconds")
     )
     assert ready == 7
     assert (yield from handle.is_running)
     assert (yield from fx.scoped(_count_matching(name))) >= 7
     yield from handle.kill()
     assert not (yield from handle.is_running)
-    yield from fx.sleep(0.1)
+    yield from fx.sleep("100 millis")
     assert (yield from fx.scoped(_count_matching(name))) == 0
 
 
@@ -936,7 +937,7 @@ def test_should_cleanup_child_processes_when_parent_exits_with_non_zero_code(
         return (yield from handle.exit_code)
 
     assert (yield from fx.scoped(run())) == ExitCode(1)
-    yield from fx.sleep(0.1)
+    yield from fx.sleep("100 millis")
     assert (yield from fx.scoped(_count_matching(f"{name}-"))) == 0
 
 
@@ -956,7 +957,7 @@ def test_should_not_kill_an_unrefed_process_when_scope_closes(live_services: Ser
     def check():
         yield from _in_scope(scope, handle.unref)
         yield from scope.close(fx.exit.succeed(None))
-        yield from fx.sleep(0.1)
+        yield from fx.sleep("100 millis")
         assert (yield from handle.is_running)
 
     yield from check().ensuring(handle.kill(kill_signal=signal.SIGKILL).ignore())
@@ -970,7 +971,7 @@ def test_should_kill_a_restored_process_when_scope_closes(live_services: Service
     reref = yield from _in_scope(scope, handle.unref)
     yield from reref
     yield from scope.close(fx.exit.succeed(None))
-    yield from fx.sleep(0.1)
+    yield from fx.sleep("100 millis")
     assert not (yield from handle.is_running)
 
 
@@ -1000,7 +1001,7 @@ def test_should_cleanup_descendants_after_an_unrefed_parent_exits_non_zero(
     yield from _in_scope(scope, handle.unref)
     yield from scope.close(fx.exit.succeed(None))
     assert (yield from handle.exit_code) == ExitCode(1)
-    yield from fx.sleep(0.1)
+    yield from fx.sleep("100 millis")
     assert (yield from fx.scoped(_count_matching(f"{name}-"))) == 0
 
 
@@ -1023,7 +1024,7 @@ def test_should_unref_every_process_in_a_pipeline(live_services: Services[Platfo
     def check():
         yield from _in_scope(scope, handle.unref)
         yield from scope.close(fx.exit.succeed(None))
-        yield from fx.sleep(0.1)
+        yield from fx.sleep("100 millis")
         assert (yield from fx.scoped(_count_matching(root_marker))) == 1
         assert (yield from fx.scoped(_count_matching(tail_marker))) == 1
 
@@ -1051,7 +1052,7 @@ def _check_lines(output: str) -> None:
     assert (lines[0], lines[99999]) == ("1", "100000")
 
 
-@testing.effect(timeout=10)
+@testing.effect(timeout="10 seconds")
 def test_should_not_deadlock_on_large_stdout_output(node_services: Services[Platform]):
     """should not deadlock on large stdout output"""
     handle = yield from make("sh", ["-c", "seq 1 100000"])
@@ -1060,7 +1061,7 @@ def test_should_not_deadlock_on_large_stdout_output(node_services: Services[Plat
     _check_lines(output)
 
 
-@testing.effect(timeout=10)
+@testing.effect(timeout="10 seconds")
 def test_child_process_string_should_not_deadlock_on_large_output(
     node_services: Services[Platform],
 ):
@@ -1069,7 +1070,7 @@ def test_child_process_string_should_not_deadlock_on_large_output(
     _check_lines((yield from service.string(make("sh", ["-c", "seq 1 100000"]))))
 
 
-@testing.effect(timeout=10)
+@testing.effect(timeout="10 seconds")
 def test_child_process_exit_code_should_not_deadlock_on_large_output(
     node_services: Services[Platform],
 ):
@@ -1079,7 +1080,7 @@ def test_child_process_exit_code_should_not_deadlock_on_large_output(
     assert (yield from service.exit_code(command)) == ExitCode(0)
 
 
-@testing.effect(timeout=10)
+@testing.effect(timeout="10 seconds")
 def test_child_process_string_should_not_deadlock_on_large_stderr_output(
     node_services: Services[Platform],
 ):
@@ -1128,7 +1129,7 @@ def test_does_not_signal_the_process_group_of_a_child_during_exit_kill_or_scope_
             sys.executable,
             ["-c", _EXIT_SCRIPTS[by_signal]],
             detached=False,
-            force_kill_after=0.1,
+            force_kill_after="100 millis",
         )
         pids.append(handle.pid)
         if by_signal:
@@ -1155,7 +1156,7 @@ def test_does_not_poll_or_force_kill_the_process_group_of_a_child_that_exits_dur
             sys.executable,
             ["-c", "import time; time.sleep(30)"],
             detached=False,
-            force_kill_after=1,
+            force_kill_after="1 second",
         )
         pids.append(handle.pid)
 
@@ -1293,7 +1294,7 @@ def test_kills_every_process_in_a_pipeline(live_services: Services[Platform], tm
     assert ready == ["CHILD_READY", "ROOT_READY"]
     yield from handle.kill(kill_signal=signal.SIGKILL)
     sizes = (_size(root_heartbeat), _size(child_heartbeat))
-    yield from fx.sleep(0.1)
+    yield from fx.sleep("100 millis")
     assert (_size(root_heartbeat), _size(child_heartbeat)) == sizes
 
 
@@ -1330,7 +1331,7 @@ def _start_group(
                 sys.executable,
                 [PROCESS_GROUP, "leader", mode, marker, str(delays[0]), str(delays[1])],
                 stdin="pipe" if stdin == "pipe" else "ignore",
-                force_kill_after=force_kill_after,
+                force_kill_after=None if force_kill_after is None else Seconds(force_kill_after),
             ),
         )
         lines = handle.stdout.decode_text().split_lines()
@@ -1339,7 +1340,7 @@ def _start_group(
         yield from fx.add_finalizer(lambda _: fx.sync(lambda: _kill_pid(descendant)))
         return Group(handle, descendant, marker, scope)
 
-    return start().timeout(5)
+    return start().timeout("5 seconds")
 
 
 def _kill_pid(pid: int) -> None:
@@ -1359,7 +1360,7 @@ def _heartbeat_stopped(marker: str) -> fx.Effect[None]:
     @fx.fn
     def check():
         size = _size(marker)
-        yield from testing.with_live(fx.sleep(0.1))
+        yield from testing.with_live(fx.sleep("100 millis"))
         assert _size(marker) == size
 
     return check()
@@ -1379,7 +1380,7 @@ def _send(handle: ChildProcessHandle, line: str) -> fx.Effect[None, PlatformErro
     return stream.make(line.encode()).run(handle.stdin)
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_scope_release_cleans_descendants_after_the_leader_exits_successfully(
     live_services: Services[Platform], tmp: str
 ):
@@ -1393,7 +1394,7 @@ def test_scope_release_cleans_descendants_after_the_leader_exits_successfully(
     assert FsPath(group.marker).read_text() == "exited"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_scope_release_force_kills_descendants_after_the_leader_exits_with_a_non_zero_code(
     live_services: Services[Platform], tmp: str
 ):
@@ -1401,11 +1402,11 @@ def test_scope_release_force_kills_descendants_after_the_leader_exits_with_a_non
     group = yield from _start_group(tmp, "ignore-signal", stdin="pipe", force_kill_after=0.2)
     yield from _send(group.handle, "exit 1\n")
     assert (yield from group.handle.exit_code) == 1
-    yield from group.scope.close(fx.exit.succeed(None)).timeout(2)
+    yield from group.scope.close(fx.exit.succeed(None)).timeout("2 seconds")
     yield from _heartbeat_stopped(group.marker)
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_scope_release_cleans_descendants_after_the_leader_is_killed_externally(
     live_services: Services[Platform], tmp: str
 ):
@@ -1420,7 +1421,7 @@ def test_scope_release_cleans_descendants_after_the_leader_is_killed_externally(
     assert FsPath(group.marker).read_text() == "exited"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_scope_release_waits_for_descendants_that_outlive_the_leader(
     live_services: Services[Platform], tmp: str
 ):
@@ -1431,7 +1432,7 @@ def test_scope_release_waits_for_descendants_that_outlive_the_leader(
     assert os.path.exists(group.marker)
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_scope_release_drains_descendants_after_a_slow_leader_exits(
     live_services: Services[Platform], tmp: str
 ):
@@ -1444,7 +1445,7 @@ def test_scope_release_drains_descendants_after_a_slow_leader_exits(
     assert FsPath(group.marker).read_text() == "exited"
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_scope_release_force_kills_descendants_that_ignore_the_kill_signal(
     live_services: Services[Platform], tmp: str
 ):
@@ -1454,19 +1455,19 @@ def test_scope_release_force_kills_descendants_that_ignore_the_kill_signal(
     yield from _heartbeat_stopped(group.marker)
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_kill_force_kills_descendants_that_ignore_the_kill_signal(
     live_services: Services[Platform], tmp: str
 ):
     """kill force kills descendants that ignore the kill signal"""
     group = yield from _start_group(tmp, "ignore-signal")
-    yield from group.handle.kill(force_kill_after=0.2)
+    yield from group.handle.kill(force_kill_after="200 millis")
     assert not (yield from group.handle.is_running)
     yield from _heartbeat_stopped(group.marker)
     yield from group.scope.close(fx.exit.succeed(None))
 
 
-@testing.effect(timeout=10)
+@testing.effect(timeout="10 seconds")
 def test_force_kill_after_escalation_does_not_depend_on_the_effect_clock(
     node_services: Services[Platform], tmp: str
 ):
@@ -1477,7 +1478,7 @@ def test_force_kill_after_escalation_does_not_depend_on_the_effect_clock(
     yield from _heartbeat_stopped(group.marker)
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_scope_release_returns_when_a_descendant_holds_the_inherited_pipe_without_force_kill_after(
     live_services: Services[Platform], tmp: str
 ):
@@ -1506,6 +1507,6 @@ def test_scope_release_returns_when_stdout_is_unread_and_backpressured(
             ["-c", "import sys, time; sys.stdout.write('x' * 1024 * 1024); time.sleep(30)"],
             stdin="ignore",
         )
-        yield from fx.sleep(0.1)
+        yield from fx.sleep("100 millis")
 
     assert (yield from _timed(fx.scoped(run()))) < 2

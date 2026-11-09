@@ -50,7 +50,7 @@ def _defect_recovery_sharding(entity_layer: Layer[Never, Never, Any]) -> Layer[A
     return entity_layer.pipe(fx.layer.provide_merge(unregistered()))
 
 
-defect_retry_policy = schedule.spaced(0.001)
+defect_retry_policy = schedule.spaced("1 millis")
 """Restarts after 1ms, so tests only advance the clock as far as a restart
 needs instead of waking every background Sharding loop along the way."""
 
@@ -65,7 +65,7 @@ to end."""
 
 def _advance_until[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, E, R]:
     """Steps the test clock until ``effect`` completes."""
-    return effect.race_first(testing.adjust(0.001).forever())
+    return effect.race_first(testing.adjust("1 millis").forever())
 
 
 class _Generations:
@@ -185,16 +185,16 @@ def _start_blocked_rebuild(entity_id: str) -> fx.Effect[_BlockedRebuild, Any, An
             e,
             generations.next.as_(e.handlers().handle(e.run)(run)),
             _manager_options(
-                service, max_idle_time=None, defect_retry_policy=schedule.spaced(0.001)
+                service, max_idle_time=None, defect_retry_policy=schedule.spaced("1 millis")
             ),
         )
         id_ = EntityId(entity_id)
         shard_id = service.get_shard_id(id_, "default")
         address = _address(e, shard_id, entity_id)
         send = _local_run(service, address).flat_map(manager.send_local)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from send
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
         yield from generations.acquiring.wait()
         return _BlockedRebuild(manager, shard_id, send, attempts, generations.acquired)
 
@@ -280,7 +280,7 @@ def test_replays_unfinished_requests_before_arrivals_during_acquisition():
         yield from fail.succeed(None)
         yield from _advance_until(generations.acquiring.wait())
         third = yield from client.run({"id": "third"}).fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from generations.acquired.succeed(None)
         yield from _advance_until(fx.for_each([first, second, third], lambda f: f.join()))
         assert (yield from first.join()) == "first"
@@ -308,13 +308,13 @@ def test_finishes_shutdown_when_replacement_acquisition_completes():
     def body():
         blocked = yield from _start_blocked_rebuild("shutdown")
         shutdown = yield from blocked.manager.interrupt_shard(blocked.shard_id).fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert (yield from blocked.manager.active_entity_count) == 0
         yield from blocked.acquired.succeed(None)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         completed = shutdown.poll_unsafe()
         # Let a broken implementation's termination timeout finish before asserting.
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert completed == Exit.succeed(None)
         assert blocked.attempts[0] == 1, "shutdown must not replay application requests"
 
@@ -331,10 +331,10 @@ def test_interrupts_a_queued_arrival_when_shutdown_starts_during_replacement_acq
         # Arrives while the replacement handlers are still being built, so it
         # queues behind the replay of unfinished requests.
         queued = yield from blocked.send.fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert queued.poll_unsafe() is None
         yield from blocked.manager.interrupt_shard(blocked.shard_id).fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert (yield from blocked.manager.active_entity_count) == 0
         # The queued request must be refused as soon as the activation is
         # retired, without waiting for the replacement handlers.
@@ -381,17 +381,17 @@ def test_interrupts_an_entity_whose_id_is_also_active_on_a_shard_that_was_interr
 
         default_shard = shard("default", 1)
         workflow_shard = shard("workflow", 1)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from activate(default_shard)
         yield from activate(workflow_shard)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
 
         interrupt_workflow = yield from manager.interrupt_shard(workflow_shard).fork()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert interrupt_workflow.poll_unsafe() == Exit.succeed(None)
         assert stopped[0] == 1
         interrupt_default = yield from manager.interrupt_shard(default_shard).fork()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert interrupt_default.poll_unsafe() == Exit.succeed(None)
         assert stopped[0] == 2
 
@@ -446,11 +446,11 @@ def test_reports_the_largest_mailbox_size_across_entities_sharing_an_id_on_diffe
     def body():
         release = yield from Deferred[None, Never].make()
         send = yield from _mailbox_max_manager("MailboxMaxDuplicateId", release.wait())
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from send(shard("default", 1))
         yield from send(shard("default", 1))
         yield from send(shard("workflow", 1))
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
 
         # Let the entities drain when the test scope closes, even if the
         # assertion fails
@@ -478,14 +478,14 @@ def test_keeps_reporting_the_largest_mailbox_size_until_entities_drain_on_shutdo
         send = yield from _mailbox_max_manager("MailboxMaxDrain", release.wait()).pipe(
             fx.provide_service(Scope, scope)
         )
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert _mailbox_size_max(registry) == [({"type": "MailboxMaxDrain"}, 0)]
 
         yield from send(shard("default", 1))
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         closing = yield from scope.close(Exit.succeed(None)).fork()
         # Stay within the termination timeout, so the entity is still draining
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
 
         def check() -> None:
             assert _mailbox_size_max(registry) == [({"type": "MailboxMaxDrain"}, 1)]

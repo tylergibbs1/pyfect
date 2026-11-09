@@ -30,7 +30,7 @@ def observe():
         return store.get()
 
     promise = yield from fx.from_async(read)
-    yield from fx.sleep(0.001)
+    yield from fx.sleep("1 millis")
     after_sleep = store.get()
     return {"resumed": resumed, "promise": promise, "after_sleep": after_sleep}
 
@@ -63,7 +63,7 @@ def test_deferred_await_resumes_in_the_awaiters_context(waiter_store: str | None
         )
         completer = await run_with_store(
             "waker",
-            fx.sleep(0.005).and_then(deferred.succeed(None)).and_then(fx.sync(store.get)),
+            fx.sleep("5 millis").and_then(deferred.succeed(None)).and_then(fx.sync(store.get)),
         )
         assert completer == "waker"
         assert await waiter == expected(waiter_store or "none")
@@ -93,7 +93,7 @@ def test_pool_get_resumes_in_the_waiters_context(waiter_store: str | None) -> No
                         pool.get()
                         .and_then(fx.sync(store.get))
                         .tap(holder_acquired.succeed)
-                        .and_then(fx.sleep(0.01))
+                        .and_then(fx.sleep("10 millis"))
                         .and_then(fx.sync(store.get))
                     ),
                 )
@@ -116,7 +116,7 @@ def test_a_value_the_fiber_sets_survives_its_suspensions() -> None:
     @fx.gen
     def program():
         yield from fx.sync(lambda: store.set("mine"))
-        yield from fx.sleep(0.001)
+        yield from fx.sleep("1 millis")
         return store.get()
 
     async def main() -> str:

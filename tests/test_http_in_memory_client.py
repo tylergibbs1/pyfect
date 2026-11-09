@@ -58,7 +58,7 @@ def test_a_reader_that_stops_closes_the_request_scope():
     response = yield from client.get("http://localhost/events")
     assert not (yield from closed.is_done())
     assert (yield from response.stream.take(1).run_collect()) == [b"first"]
-    yield from closed.wait().timeout(1)
+    yield from closed.wait().timeout("1 second")
 
 
 @testing.effect

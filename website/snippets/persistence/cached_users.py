@@ -37,7 +37,7 @@ def fetch_user(request: GetUser) -> fx.Effect[User, UserNotFound]:
 
 def users_cache():
     return persisted_cache.make(
-        fetch_user, store_id="users", time_to_live=lambda _exit, _request: 3600
+        fetch_user, store_id="users", time_to_live=lambda _exit, _request: "1 hour"
     )
 
 

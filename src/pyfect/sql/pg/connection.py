@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 type Row = dict[str, Any]
 
-_UNLISTEN_TIMEOUT = 5.0
+_UNLISTEN_TIMEOUT = "5 seconds"
 
 DEFAULT_LISTEN_CAPACITY: Final = DEFAULT_CAPACITY
 """How many notifications a ``listen`` queue holds untaken by default."""

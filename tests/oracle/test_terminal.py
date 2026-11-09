@@ -185,7 +185,7 @@ def _select_fruit(service: TerminalService) -> fx.Effect[str]:
     )
     return (
         select.pipe(fx.catch_tag(QuitError, lambda _: fx.succeed("QuitError")))
-        .timeout_option(2)
+        .timeout_option("2 seconds")
         .map(lambda found: found.value if isinstance(found, fx.Some) else "TimedOut")
         .pipe(fx.provide(_prompt_env(service)))
     )

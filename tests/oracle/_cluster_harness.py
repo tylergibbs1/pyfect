@@ -447,7 +447,7 @@ def tracked_client_protocol(
                 )
                 return connection
 
-            socket = from_connection(open_tracked, open_timeout=1.0)
+            socket = from_connection(open_tracked, open_timeout="1 second")
             return (
                 rpc_client.make_protocol_socket()
                 .pipe(fx.provide_service(Socket, socket))
@@ -844,17 +844,17 @@ class Cluster:
         @fx.gen
         def wait():
             clock = yield from fx.clock.Clock()
-            deadline = clock.now_unsafe() + timeout
+            deadline = clock.current_time_millis_unsafe() + timeout * 1000
             while True:
-                left = deadline - clock.now_unsafe()
+                left = deadline - clock.current_time_millis_unsafe()
                 if left <= 0:
                     break
                 held = yield from checked.timeout_option(left)
                 if held is not None and held.value:
                     return
-                if clock.now_unsafe() >= deadline:
+                if clock.current_time_millis_unsafe() >= deadline:
                     break
-                yield from fx.sleep(min(0.1, max(0.0, deadline - clock.now_unsafe())))
+                yield from fx.sleep(min(100, max(0, deadline - clock.current_time_millis_unsafe())))
             state = yield from self.diagnostics()
             return (yield from fx.fail(AssertionError(f"{description}\n{state}")))
 

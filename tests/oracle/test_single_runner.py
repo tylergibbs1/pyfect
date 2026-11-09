@@ -20,7 +20,7 @@ from ._cluster_entities import TestEntity, User, test_entity_layer
 def test_test_runner_serves_volatile_and_durable_requests():
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         driver = yield from MemoryDriver()
         client = (yield from TestEntity.client())("1")
         assert (yield from client.get_user_volatile({"id": 1})) == User(id=1, name="User 1")
@@ -32,7 +32,7 @@ def test_test_runner_serves_volatile_and_durable_requests():
     )
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_single_runner_persists_durable_requests_in_sql(tmp_path: Path):
     sql = fx.layer.effect(
         SqlClient,

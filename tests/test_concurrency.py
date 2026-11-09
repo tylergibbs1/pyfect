@@ -22,13 +22,13 @@ def test_concurrent_all_overlaps_sleeps():
     @fx.gen
     def program():
         work = fx.all(
-            fx.sleep(3).as_("a"),
-            fx.sleep(3).as_("b"),
-            fx.sleep(3).as_("c"),
+            fx.sleep("3 seconds").as_("a"),
+            fx.sleep("3 seconds").as_("b"),
+            fx.sleep("3 seconds").as_("c"),
             concurrency="unbounded",
         )
         fiber = yield from work.timed().fork()
-        yield from fx.testing.adjust(3)
+        yield from fx.testing.adjust("3 seconds")
         return (yield from fiber.join())
 
     elapsed, values = run(program)
@@ -39,9 +39,9 @@ def test_concurrent_all_overlaps_sleeps():
 def test_sequential_all_does_not_overlap():
     @fx.gen
     def program():
-        work = fx.all(fx.sleep(3), fx.sleep(3))
+        work = fx.all(fx.sleep("3 seconds"), fx.sleep("3 seconds"))
         fiber = yield from work.timed().fork()
-        yield from fx.testing.adjust(6)
+        yield from fx.testing.adjust("6 seconds")
         return (yield from fiber.join())
 
     elapsed, _ = run(program)
@@ -109,10 +109,10 @@ def test_race_takes_the_first_success_and_interrupts_the_loser():
 
     @fx.gen
     def program():
-        fast = fx.sleep(1).as_("fast")
-        slow = fx.sleep(5).as_("slow").on_interrupt(say("slow interrupted"))
+        fast = fx.sleep("1 second").as_("fast")
+        slow = fx.sleep("5 seconds").as_("slow").on_interrupt(say("slow interrupted"))
         fiber = yield from fast.race(slow).fork()
-        yield from fx.testing.adjust(1)
+        yield from fx.testing.adjust("1 second")
         return (yield from fiber.join())
 
     assert run(program) == "fast"
@@ -122,8 +122,8 @@ def test_race_takes_the_first_success_and_interrupts_the_loser():
 def test_race_ignores_a_failure_if_the_other_succeeds():
     @fx.gen
     def program():
-        fiber = yield from fx.fail("early").race(fx.sleep(1).as_("late")).fork()
-        yield from fx.testing.adjust(1)
+        fiber = yield from fx.fail("early").race(fx.sleep("1 second").as_("late")).fork()
+        yield from fx.testing.adjust("1 second")
         return (yield from fiber.join())
 
     assert fx.testing.run_test_exit(program) == fx.Success("late")
@@ -143,9 +143,9 @@ def test_race_first_takes_the_first_failure_too():
 def test_timeout():
     @fx.gen
     def program():
-        slow = yield from fx.sleep(10).as_("done").timeout(5).exit().fork()
-        fast = yield from fx.sleep(1).as_("done").timeout(5).exit().fork()
-        yield from fx.testing.adjust(5)
+        slow = yield from fx.sleep("10 seconds").as_("done").timeout("5 seconds").exit().fork()
+        fast = yield from fx.sleep("1 second").as_("done").timeout("5 seconds").exit().fork()
+        yield from fx.testing.adjust("5 seconds")
         return (yield from slow.join()), (yield from fast.join())
 
     slow, fast = run(program)
@@ -158,9 +158,9 @@ def test_race_all():
     @fx.gen
     def program():
         fiber = yield from fx.race_all(
-            fx.sleep(3).as_(3), fx.sleep(1).as_(1), fx.sleep(2).as_(2)
+            fx.sleep("3 seconds").as_(3), fx.sleep("1 second").as_(1), fx.sleep("2 seconds").as_(2)
         ).fork()
-        yield from fx.testing.adjust(3)
+        yield from fx.testing.adjust("3 seconds")
         return (yield from fiber.join())
 
     assert run(program) == 1
@@ -168,7 +168,7 @@ def test_race_all():
 
 def test_a_sleep_with_nothing_to_wake_it_is_reported_not_hung():
     with pytest.raises(fx.testing.StalledError):
-        fx.testing.run_test(fx.sleep(1), stall_timeout=0.05)
+        fx.testing.run_test(fx.sleep("1 second"), stall_timeout=0.05)
 
 
 def test_timeout_produces_a_useful_error_message():
@@ -176,8 +176,8 @@ def test_timeout_produces_a_useful_error_message():
 
     @fx.gen
     def program():
-        fiber = yield from fx.never.timeout(1.5).exit().fork()
-        yield from fx.testing.adjust(2)
+        fiber = yield from fx.never.timeout("1500 millis").exit().fork()
+        yield from fx.testing.adjust("2 seconds")
         return (yield from fiber.join())
 
     ex = run(program)

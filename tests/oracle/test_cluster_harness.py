@@ -26,7 +26,7 @@ class Boom(Exception):
     pass
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_a_test_failing_while_a_runner_is_frozen_reports_its_failure(
     cluster_db: ClusterDatabase,
 ):
@@ -47,7 +47,7 @@ def test_a_test_failing_while_a_runner_is_frozen_reports_its_failure(
     assert isinstance(exit.cause.squash(), Boom)
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_the_client_routes_by_the_runners_of_its_last_sync(cluster_db: ClusterDatabase):
     """A runner sees a shard move before the client does: the client
     routes by the runners it last read, so a test that sends right after
@@ -100,7 +100,7 @@ def test_the_client_routes_by_the_runners_of_its_last_sync(cluster_db: ClusterDa
     yield from fx.scoped(fx.gen(body))
 
 
-@testing.live(timeout=20)
+@testing.live(timeout="20 seconds")
 def test_wait_until_fails_at_its_deadline_on_a_condition_that_never_returns(
     cluster_db: ClusterDatabase,
 ):

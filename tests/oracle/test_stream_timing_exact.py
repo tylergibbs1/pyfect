@@ -12,6 +12,7 @@ from collections.abc import Callable
 
 import pyfect as fx
 from pyfect import clock, schedule, sink, stream, testing
+from pyfect.duration import Seconds
 from pyfect.testing import BusyFiberWarning
 
 _MS = 1_000_000
@@ -30,15 +31,15 @@ def test_debounce_emits_at_the_deadline_without_spinning():
     (``0.1 + 0.2 > 0.3`` in float seconds)."""
     times: list[tuple[int, object]] = []
     s = (
-        stream.from_effect(fx.sleep(0.1).as_(1))
+        stream.from_effect(fx.sleep("100 millis").as_(1))
         .concat(stream.never)
-        .debounce(0.2)
+        .debounce("200 millis")
         .map_effect(_stamp(times))
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error", BusyFiberWarning)
         fiber = yield from s.run_drain().fork()
-        yield from testing.adjust(1.0)
+        yield from testing.adjust("1 second")
         yield from fiber.interrupt()
     assert times == [(300 * _MS, 1)]
 
@@ -48,15 +49,15 @@ def test_timeout_ends_the_stream_at_the_deadline():
     """1 at 10 ms then silence: timeout(20 ms) ends the stream at 30 ms."""
     ended: list[int] = []
     s = (
-        stream.from_effect(fx.sleep(0.01).as_(1))
+        stream.from_effect(fx.sleep("10 millis").as_(1))
         .concat(stream.never)
-        .timeout(0.02)
+        .timeout("20 millis")
         .on_end(clock.now_nanos().map(ended.append))
     )
     with warnings.catch_warnings():
         warnings.simplefilter("error", BusyFiberWarning)
         fiber = yield from s.run_collect().fork()
-        yield from testing.adjust(1.0)
+        yield from testing.adjust("1 second")
         result = yield from fiber.join()
     assert (result, ended) == ([1], [30 * _MS])
 
@@ -67,13 +68,13 @@ def test_throttle_shape_releases_a_delayed_chunk_when_its_tokens_are_due():
     times: list[tuple[int, object]] = []
     s = (
         stream.from_iterable([(0.01, (2,)), (0.0, (4, 3, 1))])
-        .map_effect(lambda e: fx.sleep(e[0]).as_(e[1]))
+        .map_effect(lambda e: fx.sleep(Seconds(e[0])).as_(e[1]))
         .flatten_array()
-        .throttle(cost=len, units=2, duration=0.1, burst=2)
+        .throttle(cost=len, units=2, duration="100 millis", burst=2)
         .map_effect(_stamp(times))
     )
     fiber = yield from s.run_drain().fork()
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     yield from fiber.join()
     assert times == [(10 * _MS, 2), (100 * _MS, 4), (100 * _MS, 3), (100 * _MS, 1)]
 
@@ -84,10 +85,10 @@ def test_aggregate_within_fixed_fires_on_the_beat():
     times: list[tuple[int, object]] = []
     s = (
         stream.from_iterable(range(1, 8))
-        .flat_map(lambda v: stream.from_effect(fx.sleep(0.005).as_(v)))
+        .flat_map(lambda v: stream.from_effect(fx.sleep("5 millis").as_(v)))
         .aggregate_within(
             sink.fold_until(lambda: 0, 3, lambda acc, x: fx.succeed(acc + x)),
-            schedule.fixed(0.012),
+            schedule.fixed("12 millis"),
         )
         .map_effect(_stamp(times))
     )
@@ -95,6 +96,6 @@ def test_aggregate_within_fixed_fires_on_the_beat():
     for _ in range(100):
         yield from fx.yield_now()
     for _ in range(100):
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
     yield from fiber.join()
     assert times == [(15 * _MS, 6), (22 * _MS, 4), (35 * _MS, 18)]

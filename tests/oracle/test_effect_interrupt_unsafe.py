@@ -32,7 +32,7 @@ def test_an_interrupt_from_loop_code_unwinds_the_fiber_at_once():
     log: list[str] = []
 
     async def main() -> fx.Exit[Any, Any] | None:
-        fiber = fx.run_fork(fx.sleep(1).ensuring(fx.sync(lambda: log.append("fin"))))
+        fiber = fx.run_fork(fx.sleep("1 second").ensuring(fx.sync(lambda: log.append("fin"))))
         fiber.interrupt_as_unsafe(None)
         return fiber.poll_unsafe()
 

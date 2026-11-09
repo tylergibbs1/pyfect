@@ -16,6 +16,7 @@ from typing import Any, Literal, Never, TypedDict
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
+from pyfect.duration import Duration
 from pyfect.persistence import persistable, persisted_cache
 from pyfect.persistence.persistence import Persistence
 
@@ -62,7 +63,7 @@ def smoke_test():
         return fx.sync(make)
 
     cache = yield from persisted_cache.make(
-        lookup, store_id="users", time_to_live=lambda _exit, _req: 5
+        lookup, store_id="users", time_to_live=lambda _exit, _req: "5 seconds"
     )
     assert (yield from cache.get(TTLRequest(1))) == User(id=1, name="John")
     assert (yield from store.get(TTLRequest(1))) == fx.exit.succeed(User(id=1, name="John"))
@@ -71,7 +72,7 @@ def smoke_test():
     assert invocations == 1
 
     cache = yield from persisted_cache.make(
-        lookup, store_id="users", time_to_live=lambda _exit, _req: 5
+        lookup, store_id="users", time_to_live=lambda _exit, _req: "5 seconds"
     )
     assert (yield from cache.get(TTLRequest(1))) == User(id=1, name="John")
     assert invocations == 1
@@ -120,8 +121,8 @@ class _Request(persistable.Class(success=S.Struct(_NewUser), error=S.Struct(_New
         return f"GetUser:{self.id}"
 
 
-def _one_day(_exit: object, _req: object) -> float:
-    return 86400
+def _one_day(_exit: object, _req: object) -> Duration:
+    return "1 day"
 
 
 def recomputes_stale(store_id: str, outcome: Literal["success", "error"]) -> Body:
@@ -163,7 +164,7 @@ def require_services_at_lookup(store_id: str) -> Body:
         cache = yield from persisted_cache.make(
             lookup,
             store_id=f"{store_id}-require-services-at",
-            time_to_live=lambda _exit, _req: 5,
+            time_to_live=lambda _exit, _req: "5 seconds",
             require_services_at="lookup",
         )
 

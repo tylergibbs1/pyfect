@@ -54,7 +54,7 @@ def _app(log: list[str], engine: str) -> fx.Layer[Any, Never, Never]:
                 error=S.Never,
                 effects=[
                     Decision.wait(),
-                    durable_clock.sleep(name="deadline", duration=30).as_(False),
+                    durable_clock.sleep(name="deadline", duration="30 seconds").as_(False),
                 ],
             )
             if not ok:
@@ -80,9 +80,9 @@ def test_a_deferred_completed_during_a_race_with_a_short_sleep_keeps_the_compens
         # The run is inside the race: its deferred arm parked, the sleep running.
         while log != ["step"]:
             yield from fx.yield_now()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from Decision.succeed(token=token, value=False)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         return (yield from running.join())
 
     exit_ = yield from fx.gen(scenario).pipe(fx.provide(_app(log, engine)))

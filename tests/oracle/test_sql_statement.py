@@ -250,7 +250,7 @@ def _recording_tracer() -> tuple[Tracer, list[NativeSpan]]:
 def test_records_how_long_a_statement_waited_for_a_connection():
     """records how long a statement waited for a connection"""
     tracer, spans = _recording_tracer()
-    wait = fx.sleep(0.03)
+    wait = fx.sleep("30 millis")
     acquired = yield from _make_client(fx.void, False, wait).pipe(fx.provide(reactivity_layer))
     borrowed = yield from _make_client(fx.void, True, wait).pipe(fx.provide(reactivity_layer))
 
@@ -260,7 +260,7 @@ def test_records_how_long_a_statement_waited_for_a_connection():
             .pipe(fx.provide_service(st.SpanPropagationEnabled, propagate))
             .fork()
         )
-        yield from testing.adjust(0.03)
+        yield from testing.adjust("30 millis")
         yield from fiber.join()
 
     for propagate in (True, False):

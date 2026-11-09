@@ -29,7 +29,9 @@ def free_port() -> int:
 
 def runner(database: Path, termination_timeout: float, started: Latch, log: list[str]):
     def run(_: object) -> fx.Effect[str]:
-        work = fx.sync(started.open_unsafe).and_then(fx.sleep(0.5))  # half a second of work
+        work = fx.sync(started.open_unsafe).and_then(
+            fx.sleep("500 millis")
+        )  # half a second of work
         return work.and_then(fx.sync(lambda: log.append("job finished"))).as_("done")
 
     port = free_port()

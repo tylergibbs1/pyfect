@@ -242,8 +242,8 @@ def test_should_rerun_when_a_read_ref_changed_while_the_transaction_was_suspende
     yield from fx.tx(ref.set(1))
     yield from committed.succeed(None)
 
-    joined = yield from transaction.join().timeout_option(1).fork()
-    yield from testing.adjust(1)
+    joined = yield from transaction.join().timeout_option("1 second").fork()
+    yield from testing.adjust("1 second")
 
     assert (yield from joined.join()) == fx.Some(1)
 
@@ -316,8 +316,8 @@ class _AdvancingClock:
         self._ms += 1
         return (self._ms - 1) * 1_000_000
 
-    def now_unsafe(self) -> float:
-        return self.now_nanos_unsafe() / 1_000_000_000
+    def current_time_millis_unsafe(self) -> float:
+        return self.now_nanos_unsafe() / 1_000_000
 
     def monotonic_unsafe(self) -> float:
         return self._base.monotonic_unsafe()
@@ -394,16 +394,16 @@ def test_tracks_nested_metadata_across_retries_and_conflicts():
     fiber = yield from fx.tx(body()).fork()
 
     yield from started.wait()
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from ref.set(1)
     yield from ready_for_conflict.wait()
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     yield from ref.set(2)
     yield from resume.succeed(None)
     yield from fiber.join()
 
     assert snapshots == [
         _Snapshot(1, None, 0, 0, 0, 0, nested_same=True),
-        _Snapshot(2, "retry", 0, 1, 1, 1, nested_same=True),
-        _Snapshot(3, "conflict", 0, 1.5, 1.5, 0.5, nested_same=True),
+        _Snapshot(2, "retry", 0, 1_000, 1, 1, nested_same=True),
+        _Snapshot(3, "conflict", 0, 1_500, 1.5, 0.5, nested_same=True),
     ]

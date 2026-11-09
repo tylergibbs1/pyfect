@@ -232,7 +232,7 @@ def test_catch_all_pipeable_lets_a_defect_through_like_the_method():
 
 
 def test_jittered_and_passthrough_pipe_as_in_effect():
-    s = schedule.spaced(1.0).pipe(schedule.jittered)
+    s = schedule.spaced("1 second").pipe(schedule.jittered)
     assert isinstance(s, Schedule)
     assert isinstance(schedule.recurs(2).pipe(schedule.passthrough), Schedule)
 

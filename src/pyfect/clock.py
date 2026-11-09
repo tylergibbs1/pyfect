@@ -1,9 +1,12 @@
 """Time. ``Clock`` is a reference, so effects can sleep without declaring
 it, and tests can swap in ``pyfect.testing.TestClock``.
 
-Wall time (``now``) can jump, backwards too; monotonic time never does,
-so measure elapsed time with it. Each comes in float seconds and in whole
-nanoseconds (Effect's ``currentTimeNanos`` / ``monotonicTimeNanos``)."""
+Wall time can jump, backwards too; monotonic time never does, so measure
+elapsed time with it. Wall time comes in epoch milliseconds
+(``current_time_millis``, Effect's ``currentTimeMillis``) and whole
+nanoseconds (``now_nanos``, Effect's ``currentTimeNanos``); monotonic time
+in float seconds and whole nanoseconds (``monotonic_nanos``, Effect's
+``monotonicTimeNanos``)."""
 # pyright: reportPrivateUsage=false
 
 from __future__ import annotations
@@ -17,13 +20,14 @@ from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Sync, _WithFiber, _
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect.context import Reference
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, Seconds, from_nanos, to_seconds
 from pyfect.effect import never
 
 
 class ClockService(Protocol):
-    def now_unsafe(self) -> float:
-        """Wall-clock time, seconds since the epoch."""
+    def current_time_millis_unsafe(self) -> float:
+        """Wall-clock time, milliseconds since the epoch (Effect's
+        ``currentTimeMillisUnsafe``)."""
         ...
 
     def monotonic_unsafe(self) -> float:
@@ -42,14 +46,15 @@ class ClockService(Protocol):
 
 
 _NANOS = 1_000_000_000
+_NANOS_PER_MILLI = 1_000_000
 
 
 class LiveClock:
     """The system clock. A sleep of zero or less yields once; an infinite
     sleep never wakes and holds no timer (as Effect's)."""
 
-    def now_unsafe(self) -> float:
-        return time.time_ns() / _NANOS
+    def current_time_millis_unsafe(self) -> float:
+        return time.time_ns() // _NANOS_PER_MILLI
 
     def monotonic_unsafe(self) -> float:
         return time.monotonic_ns() / _NANOS
@@ -87,9 +92,10 @@ def sleep(duration: Duration) -> Effect[None]:
     return Clock().flat_map(lambda c: c.sleep(seconds))
 
 
-def now() -> Effect[float]:
-    """Wall-clock time, seconds since the epoch."""
-    return Clock().map(lambda c: c.now_unsafe())
+def current_time_millis() -> Effect[float]:
+    """Wall-clock time, milliseconds since the epoch (Effect's
+    ``currentTimeMillis``)."""
+    return Clock().map(lambda c: c.current_time_millis_unsafe())
 
 
 def monotonic() -> Effect[float]:
@@ -98,9 +104,9 @@ def monotonic() -> Effect[float]:
 
 
 def now_millis_unsafe(clock: ClockService) -> int:
-    """``clock``'s wall-clock time in whole milliseconds since the epoch
-    (Effect's ``currentTimeMillisUnsafe``), floored from its nanoseconds:
-    ``now_unsafe() * 1000`` floors 1.001 s to 1000 ms."""
+    """``clock``'s wall-clock time in whole milliseconds since the epoch,
+    floored from its nanoseconds (``current_time_millis_unsafe`` keeps a
+    test clock's fraction of a millisecond, as Effect's does)."""
     return clock.now_nanos_unsafe() // 1_000_000
 
 
@@ -121,8 +127,8 @@ def clock_with[A, E = Never, R = Never](
     return Clock().flat_map(f)
 
 
-def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[float, A], E, R]:
-    """Pair ``eff``'s value with how long it took in seconds, measured in
+def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[Seconds, A], E, R]:
+    """Pair ``eff``'s value with how long it took as ``Seconds``, measured in
     whole monotonic nanoseconds."""
     require_effect(eff, "eff")
 
@@ -130,7 +136,7 @@ def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[float, A], E, R]:
         start = yield from monotonic_nanos()
         value = yield from eff
         end = yield from monotonic_nanos()
-        return ((end - start) / _NANOS, value)
+        return (from_nanos(end - start), value)
 
     return _Gen(body)
 
@@ -140,9 +146,9 @@ __all__ = [
     "ClockService",
     "LiveClock",
     "clock_with",
+    "current_time_millis",
     "monotonic",
     "monotonic_nanos",
-    "now",
     "now_millis_unsafe",
     "now_nanos",
     "sleep",

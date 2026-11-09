@@ -267,7 +267,7 @@ def test_http_api_mutate_sends_its_parts_and_waits_for_the_result():
         body = request.body
         sent.append((request.method, request.url, getattr(body, "body", b"")))
         # answered later, so the call waits for the result
-        return fx.sleep(0.01).and_then(_json(request, "renamed"))
+        return fx.sleep("10 millis").and_then(_json(request, "renamed"))
 
     client = atom_http_api.make(
         _tag("Items"),
@@ -310,9 +310,14 @@ def test_http_api_query_of_is_query_with_its_parts_checked_by_the_endpoint():
         http_client=layer.succeed(HttpClient, make_http_client(send)),
     )
     get = client.query_of(_ITEMS, _RENAME)
-    item = get(params={"id": 3}, payload="p", reactivity_keys=["items"], time_to_live=60)
+    item = get(params={"id": 3}, payload="p", reactivity_keys=["items"], time_to_live="1 minute")
     assert item is client.query(
-        _ITEMS, _RENAME, params={"id": 3}, payload="p", reactivity_keys=["items"], time_to_live=60
+        _ITEMS,
+        _RENAME,
+        params={"id": 3},
+        payload="p",
+        reactivity_keys=["items"],
+        time_to_live="1 minute",
     )
     assert item.idle_ttl == 60
     response_only = client.query_of(_ITEMS, _RENAME, response_mode="response-only")
@@ -472,9 +477,9 @@ def test_an_initial_result_with_waiting_survives_the_wire(timers: FakeTimers) ->
 
 _SETTLES = {
     "succeeds at once": fx.succeed(2),
-    "succeeds later": fx.sleep(0.05).and_then(fx.succeed(2)),
+    "succeeds later": fx.sleep("50 millis").and_then(fx.succeed(2)),
     "fails at once": fx.fail("down"),
-    "fails later": fx.sleep(0.05).and_then(fx.fail("down")),
+    "fails later": fx.sleep("50 millis").and_then(fx.fail("down")),
 }
 
 

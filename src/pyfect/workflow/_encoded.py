@@ -45,7 +45,7 @@ type AnyWorkflow = Workflow[Any, Any, Any]
 type Handler = Callable[[Any, str], Effect[Any, Any, Any]]
 
 DEFAULT_SUSPENDED_RETRY_SCHEDULE: Schedule[Any, Any, Any, Any] = min(
-    exponential(0.2, 1.5), spaced(30)
+    exponential("200 millis", 1.5), spaced("30 seconds")
 )
 """How a caller outside any workflow polls a suspended execution:
 exponential from 200 ms, at most 30 s apart."""

@@ -171,9 +171,9 @@ def make(
             headers=headers,
             compression=compression,
             max_batch_size=1000 if max_batch_size is None else max_batch_size,
-            export_interval=1.0 if export_interval is None else export_interval,
+            export_interval="1 second" if export_interval is None else export_interval,
             body=body,
-            shutdown_timeout=3.0 if shutdown_timeout is None else shutdown_timeout,
+            shutdown_timeout="3 seconds" if shutdown_timeout is None else shutdown_timeout,
         )
         clock = yield from Clock()
         return Logger(lambda options: made.push(_log_record(options, exclude_log_spans, clock)))

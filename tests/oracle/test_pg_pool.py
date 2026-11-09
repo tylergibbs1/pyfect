@@ -44,6 +44,7 @@ pytest.importorskip("psycopg")
 import pyfect as fx
 from pyfect import scope, testing
 from pyfect.cause import Interrupted
+from pyfect.duration import Seconds
 from pyfect.exit import Failure
 from pyfect.scope import Scope
 from pyfect.sql import pg
@@ -83,7 +84,7 @@ def _wait_for(event: threading.Event) -> fx.Effect[None]:
         deadline = time.monotonic() + 5
         while not event.is_set():
             assert time.monotonic() < deadline, "timed out waiting for the cancel gate"
-            yield from fx.sleep(0.01)
+            yield from fx.sleep("10 millis")
 
     return fx.gen(body)
 
@@ -115,7 +116,7 @@ def test_reuses_checked_out_connections(pg_server: PgServer):
 def test_uses_a_connection_once_when_its_ttl_is_zero(pg_server: PgServer):
     """uses a connection once when its TTL is zero"""
     pool = yield from pg.pool.make(_config(pg_server, connection_ttl=0, max_connections=1))
-    checkout = fx.scoped(pool.get.map(_pid)).timeout(1)
+    checkout = fx.scoped(pool.get.map(_pid)).timeout("1 second")
     first = yield from checkout
     second = yield from checkout
     assert first != second
@@ -478,7 +479,10 @@ def test_keeps_a_session_after_a_confirmed_stream_cancel(pg_server: PgServer):
     yield from blocker.query("BEGIN")
     yield from blocker.query(_LOCK, [connection.process_id])
     rows = yield from (
-        connection.stream(_BLOCKED_STREAM, [connection.process_id]).take(1).run_collect().timeout(5)
+        connection.stream(_BLOCKED_STREAM, [connection.process_id])
+        .take(1)
+        .run_collect()
+        .timeout("5 seconds")
     )
     assert rows == [{"n": 1}]
     result = yield from connection.query("SELECT pg_backend_pid()::int4 AS pid")
@@ -535,7 +539,7 @@ def test_replaces_connections_that_die(pg_server: PgServer):
         if replaced is not None:
             assert replaced != first
             break
-        yield from fx.sleep(0.01)
+        yield from fx.sleep("10 millis")
 
 
 @testing.live
@@ -556,7 +560,7 @@ def test_admits_a_waiting_checkout_when_a_reserved_connection_dies(pg_server: Pg
     waiter = yield from scope.fork_scoped(
         fx.scoped(pool.get.flat_map(lambda connection: connection.query("SELECT 1 AS ok")))
     )
-    yield from fx.sleep(0.01)
+    yield from fx.sleep("10 millis")
     # The reservation is still held when its connection dies, so nothing
     # returns the connection to the pool.
     yield from reserved.query("SELECT pg_terminate_backend(pg_backend_pid())").ignore()
@@ -576,7 +580,7 @@ def test_returns_a_borrowed_session_on_success_failure_and_interruption(pg_serve
     running = yield from scope.fork_scoped(
         pool.use(lambda connection: connection.query("SELECT pg_sleep(30)"))
     )
-    yield from fx.sleep(0.01)
+    yield from fx.sleep("10 millis")
     yield from running.interrupt()
     again = yield from pool.use(lambda connection: connection.query("SELECT 2 AS ok"))
     assert again.rows == [{"ok": 2}]
@@ -592,7 +596,7 @@ def test_borrows_around_a_connection_that_has_to_be_replaced(pg_server: PgServer
     yield from pool.use(
         lambda connection: connection.query("SELECT pg_terminate_backend(pg_backend_pid())")
     ).ignore()
-    yield from fx.sleep(0.5)
+    yield from fx.sleep("500 millis")
     second = yield from pool.use(
         lambda connection: connection.query("SELECT 2 AS ok").as_(connection.process_id)
     )
@@ -625,11 +629,13 @@ def test_fails_a_checkout_that_waits_on_an_exhausted_pool_past_acquire_timeout(
     """fails a checkout that waits on an exhausted pool past acquireTimeout"""
 
     def body():
-        sql = yield from pg.make(_config(pg_server, max_connections=1, acquire_timeout=0.1))
+        sql = yield from pg.make(
+            _config(pg_server, max_connections=1, acquire_timeout="100 millis")
+        )
         yield from sql.reserve
         statement = yield from sql("SELECT 1").flip().fork()
         transaction = yield from sql.with_transaction(sql("SELECT 1")).flip().fork()
-        yield from testing.adjust(0.1)
+        yield from testing.adjust("100 millis")
         for fiber in (statement, transaction):
             error = yield from fiber.join()
             assert error.reason._tag == "ConnectionError"
@@ -645,7 +651,7 @@ def test_a_released_client_interrupts_naming_the_closed_pool(pg_server: PgServer
     @fx.fn
     def program():
         sql = yield from SqlClient().pipe(fx.provide(pg.client.layer(_config(pg_server))))
-        return (yield from sql("SELECT 1").timeout(5).exit())
+        return (yield from sql("SELECT 1").timeout("5 seconds").exit())
 
     exit_ = fx.run_blocking(scope.scoped(program()).or_die())
     assert isinstance(exit_, Failure) and exit_.cause.has_interrupts_only, exit_
@@ -675,7 +681,7 @@ def _accepted(gate: CancelGate, count: int) -> fx.Effect[None]:
         deadline = time.monotonic() + 5
         while gate.accepted < count:
             assert time.monotonic() < deadline, "timed out waiting for a connect"
-            yield from fx.sleep(0.001)
+            yield from fx.sleep("1 millis")
 
     return fx.gen(body)
 
@@ -694,12 +700,16 @@ def _first_checkout(
 
     def body():
         pool = yield from pg.pool.make(
-            pg.PgPoolConfig(url=gate.url, max_connections=1, acquire_timeout=acquire_timeout)
+            pg.PgPoolConfig(
+                url=gate.url,
+                max_connections=1,
+                acquire_timeout=None if acquire_timeout is None else Seconds(acquire_timeout),
+            )
         )
         gate.pause()
         first = yield from fx.scoped(checkout(pool)).with_span("first statement").fork()
         yield from _accepted(gate, gate.accepted + 1)
-        yield from fx.sleep(0.04)
+        yield from fx.sleep("40 millis")
         gate.resume()
         yield from first.join()
         yield from fx.scoped(pool.get).with_span("second statement")
@@ -755,7 +765,7 @@ def test_reports_no_connect_for_a_session_that_was_ready_before_the_statement(
     def body():
         pool = yield from pg.pool.make(_config(pg_server, min_connections=1, max_connections=2))
         # The background session gives no signal when it is ready.
-        yield from fx.sleep(0.2)
+        yield from fx.sleep("200 millis")
 
         def statements():
             yield from pool.get.with_span("ready statement")
@@ -797,7 +807,10 @@ def test_forgets_the_connect_of_a_session_closed_before_its_first_checkout(
     def body():
         pool = yield from pg.pool.make(
             pg.PgPoolConfig(
-                url=cancel_gate.url, max_connections=1, idle_timeout=0.05, acquire_timeout=0.05
+                url=cancel_gate.url,
+                max_connections=1,
+                idle_timeout="50 millis",
+                acquire_timeout="50 millis",
             )
         )
         cancel_gate.pause()
@@ -806,7 +819,7 @@ def test_forgets_the_connect_of_a_session_closed_before_its_first_checkout(
         cancel_gate.resume()
         yield from _accepted(cancel_gate, 1)
         # Long enough for the connect to land and the idle session to close.
-        yield from fx.sleep(0.5)
+        yield from fx.sleep("500 millis")
         assert _dead_sessions(cancel_gate.url) == 0
         del pool
 

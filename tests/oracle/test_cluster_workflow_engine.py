@@ -102,7 +102,7 @@ def test_executes_resumes_deduplicates_and_polls_a_suspended_workflow():
 
         # Do not advance the sleep until its durable wake-up has been persisted.
         yield from wait_for_clock(driver, "Some sleep")
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         yield from poll_storage_until(
             lambda: flags.get("ensuring") is True, "suspended await must run ensuring"
         )
@@ -139,7 +139,7 @@ def test_executes_resumes_deduplicates_and_polls_a_suspended_workflow():
         assert len(driver.encoded.requests) == 10
 
         # allow suspend polling to complete
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         assert (yield from fiber.join()) is None
 
         # --- the workflow is complete
@@ -165,16 +165,16 @@ def test_interrupts_a_suspended_workflow_and_runs_compensation():
     def body():
         sharding = yield from Sharding()
         driver = yield from MemoryDriver()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
 
         fiber = yield from EmailWorkflow.execute(
             {"id": "test-email-2", "to": "bob@example.com"}
         ).fork()
 
         yield from wait_for_clock(driver, "Some sleep")
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         yield from sharding.poll_storage
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
 
         envelope = driver.encoded.journal[0]
         execution_id = envelope["address"]["entityId"]
@@ -241,7 +241,7 @@ def test_workflow_with_compensation_runs_compensation_when_the_workflow_fails():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         payload: W.EmailPayload = {"id": "test-email-3", "to": "compensation"}
         fiber = yield from EmailWorkflow.execute(payload).fork(start_immediately=True)
         yield from poll_until(
@@ -263,10 +263,10 @@ def test_nested_workflows():
     def body():
         flags = yield from Flags()
         sharding = yield from Sharding()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
 
         yield from ParentWorkflow.execute({"id": "123"}).fork()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         while flags.get("parent-suspended") is None:
             yield from fx.yield_now()
 
@@ -277,7 +277,7 @@ def test_nested_workflows():
         assert isinstance(token, str)
 
         yield from ChildDeferred.done(token=token, exit=Exit.succeed(None))
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
         yield from sharding.poll_storage
         assert flags.get("parent-end") is True
         assert flags.get("child-end") is True
@@ -292,9 +292,9 @@ def test_suspend_on_failure():
     @fx.gen
     def body():
         flags = yield from Flags()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from SuspendOnFailureWorkflow.execute({"id": ""}).fork(start_immediately=True)
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         while "suspended" not in flags:
             yield from fx.yield_now()
         assert flags.get("suspended") is True
@@ -310,9 +310,9 @@ def test_catch_cause_activity():
     @fx.gen
     def body():
         flags = yield from Flags()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         fiber = yield from CatchWorkflow.execute({"id": ""}).fork_scoped()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from fiber.join()
         assert flags.get("catch") is True
 
@@ -325,7 +325,7 @@ def test_can_serialize_workflow_defects():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         ex = yield from ErrorDefectWorkflow.execute({"id": "raw-error-defect"}).exit()
         assert isinstance(ex, fx.Failure)
         defect = ex.cause.defects[0]
@@ -380,7 +380,7 @@ def test_releases_all_workflow_scopes_after_multiple_suspensions(complete: bool)
             for _ in range(2000):
                 if len(acquired) > index:
                     break
-                yield from testing.adjust(0.001)
+                yield from testing.adjust("1 millis")
                 yield from sharding.poll_storage
             yield from poll_until(wf, execution_id, Suspended)
             # Suspension retains every attempt's resources and durable finalizers.
@@ -441,7 +441,7 @@ def test_wakes_an_activity_deferred_completed_before_a_parallel_sibling_lets_the
         execution_id = yield from wf.execute({}, discard=True)
         yield from activity_parked.wait()
         for _ in range(5):
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             yield from sharding.poll_storage
         assert (yield from wf.poll(execution_id)) is None
         completion = yield from gate.succeed(
@@ -450,7 +450,7 @@ def test_wakes_an_activity_deferred_completed_before_a_parallel_sibling_lets_the
         ).fork(start_immediately=True)
         # Deliver the callback while the sibling still prevents the parent from suspending.
         for _ in range(5):
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             yield from sharding.poll_storage
         assert (yield from wf.poll(execution_id)) is None
         yield from release_sibling.open()
@@ -566,10 +566,10 @@ def test_shuts_down_without_waiting_for_a_queued_activity_and_replays_it_after_r
     for _ in range(100):
         if shutdown.poll_unsafe() is not None:
             break
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
     closed_before_timeout = shutdown.poll_unsafe() is not None
     # Let a stalled shutdown finish, so the runner is released before asserting.
-    yield from testing.adjust(60)
+    yield from testing.adjust("1 minute")
     yield from shutdown.join()
     assert closed_before_timeout, "shutdown must not wait for entityTerminationTimeout"
     assert executions[0] == 0
@@ -622,16 +622,16 @@ def test_shutdown_waits_for_a_running_activity_before_finalizing_its_workflow():
     yield from advance_until(started.is_open, "activity must start")
     shutdown = yield from scope.close(Exit.succeed(None)).fork(start_immediately=True)
     for _ in range(100):
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
     pending_while_running = shutdown.poll_unsafe() is None
     yield from release.open()
     for _ in range(100):
         if shutdown.poll_unsafe() is not None:
             break
-        yield from testing.adjust(0.01)
+        yield from testing.adjust("10 millis")
     closed_before_timeout = shutdown.poll_unsafe() is not None
     # Let a stalled shutdown finish, so the runner is released before asserting.
-    yield from testing.adjust(60)
+    yield from testing.adjust("1 minute")
     yield from shutdown.join()
     assert pending_while_running, "shutdown must wait for the running activity"
     assert closed_before_timeout, "shutdown must finish once the activity completes"
@@ -705,7 +705,7 @@ def test_retries_an_early_activity_registered_while_its_suspended_reply_is_still
         for _ in range(200):
             if saving_reply.is_open():
                 break
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         assert saving_reply.is_open()
         assert (yield from storage.replies_for_unfiltered([request_id])) == []
         assert executions[0] == 0
@@ -715,7 +715,7 @@ def test_retries_an_early_activity_registered_while_its_suspended_reply_is_still
         for _ in range(200):
             if registration_requested.is_open():
                 break
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         assert registration_requested.is_open()
         assert (yield from storage.replies_for_unfiltered([request_id])) == []
         assert executions[0] == 0
@@ -794,7 +794,7 @@ def test_does_not_replay_for_an_unawaited_deferred_checkpoint():
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 def test_advances_a_durable_race_continuation_while_a_sibling_is_parked():
     """advances a durable race continuation while a sibling is parked"""
     yield from W.expect_continues_beside_parked_sibling(
@@ -804,24 +804,24 @@ def test_advances_a_durable_race_continuation_while_a_sibling_is_parked():
             success=S.String,
             error=S.Never,
             effects=[
-                workflow.wrap_activity_result(fx.sleep(1).as_("timer"), lambda _: False),
+                workflow.wrap_activity_result(fx.sleep("1 second").as_("timer"), lambda _: False),
                 durable_deferred.make("ParkedSiblingRace/Cancel").wait().as_("cancel"),
             ],
         ),
     )
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 def test_advances_a_durable_deferred_into_continuation_while_a_sibling_is_parked():
     """advances a DurableDeferred.into continuation while a sibling is parked"""
     # Not an activity: ``into`` itself keeps the run active until the exit is recorded.
     result = durable_deferred.make("ParkedSiblingInto/Result", success=S.String)
     yield from W.expect_continues_beside_parked_sibling(
-        "ParkedSiblingInto", result.into(fx.sleep(1).as_("timer"))
+        "ParkedSiblingInto", result.into(fx.sleep("1 second").as_("timer"))
     )
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 def test_lets_an_active_sibling_finish_before_a_durable_deferred_into_body_parks_the_run():
     """lets an active sibling finish before a DurableDeferred.into body parks the run"""
     gate = durable_deferred.make("ActiveSiblingInto/Gate", success=S.String)
@@ -833,7 +833,7 @@ def test_lets_an_active_sibling_finish_before_a_durable_deferred_into_body_parks
 
     def handler(_: Any, __: str):
         return fx.all(
-            workflow.wrap_activity_result(fx.sleep(0.1), lambda _: False).and_then(
+            workflow.wrap_activity_result(fx.sleep("100 millis"), lambda _: False).and_then(
                 W.next_step_activity(next_step_runs, "sibling")
             ),
             result.into(gate.wait()),
@@ -864,7 +864,7 @@ def test_lets_an_active_sibling_finish_before_a_durable_deferred_into_body_parks
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 def test_retries_a_deferred_wake_after_a_transient_run_reset_failure():
     """retries a deferred wake after a transient run reset failure"""
     gate = durable_deferred.make("ResetRetry/Gate", success=S.String)
@@ -911,7 +911,7 @@ def test_retries_a_deferred_wake_after_a_transient_run_reset_failure():
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout=30)
+@testing.effect(timeout="30 seconds")
 def test_keeps_a_completed_reply_when_an_older_concurrent_wake_resets_it():
     """keeps a completed reply when an older concurrent wake resets it"""
     first_reset = yield from fx.Latch.make()
@@ -989,7 +989,7 @@ def test_keeps_a_completed_reply_when_an_older_concurrent_wake_resets_it():
 
 
 @pytest.mark.parametrize("mailbox_capacity", [2, 3])
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 def test_admits_a_required_completion_after_an_unrelated_completion(mailbox_capacity: int):
     """admits a required completion after an unrelated completion with mailbox capacity 2 | 3"""
     unrelated_read = yield from fx.Latch.make()
@@ -1075,7 +1075,7 @@ def test_admits_a_required_completion_after_an_unrelated_completion(mailbox_capa
         for _ in range(100):
             if isinstance(result, Complete):
                 break
-            yield from testing.adjust(0.1)
+            yield from testing.adjust("100 millis")
             yield from sharding.poll_storage
             result = yield from wf.poll(execution_id)
         pending = [
@@ -1090,7 +1090,7 @@ def test_admits_a_required_completion_after_an_unrelated_completion(mailbox_capa
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout=30)
+@testing.effect(timeout="30 seconds")
 def test_retains_a_handover_completion_before_its_deferred_reply_is_persisted():
     """retains a handover completion before its deferred reply is persisted"""
     gate = durable_deferred.make("DeferredHandover/Gate", success=S.String)
@@ -1101,7 +1101,7 @@ def test_retains_a_handover_completion_before_its_deferred_reply_is_persisted():
 
     def save_reply(reply: Any) -> fx.Effect[None, Any]:
         if reply.rpc.tag == "deferred":
-            return fx.sleep(0.1).and_then(storage.save_reply(reply))
+            return fx.sleep("100 millis").and_then(storage.save_reply(reply))
         return storage.save_reply(reply)
 
     layer = wf.to_layer(lambda _, __: gate.wait()).pipe(
@@ -1132,7 +1132,7 @@ def test_retains_a_handover_completion_before_its_deferred_reply_is_persisted():
         )
         # Complete before the 5-second storage retry can hide a lost wake-up.
         result = yield from poll_until(wf, execution_id, Complete)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         return result
 
     result = yield from with_owner(second)
@@ -1150,7 +1150,7 @@ def test_wakes_a_suspended_caller_when_its_workflow_completes():
         success=S.String,
         idempotency_key=lambda _: "one",
         # The retry stays the fallback, but is too slow to deliver within the test.
-        suspended_retry_schedule=schedule.spaced(3600).tap(lambda _: retrying.open()),
+        suspended_retry_schedule=schedule.spaced("1 hour").tap(lambda _: retrying.open()),
     )
     context = (
         yield from wf.to_layer(lambda _, __: gate.wait())
@@ -1193,7 +1193,7 @@ def test_delivers_a_completion_through_the_retry_schedule_when_the_wake_is_lost(
         success=S.String,
         idempotency_key=lambda _: "one",
         # Once the caller first waits, no reply notification reaches it.
-        suspended_retry_schedule=schedule.spaced(10).tap(lambda _: fx.sync(drop)),
+        suspended_retry_schedule=schedule.spaced("10 seconds").tap(lambda _: fx.sync(drop)),
     )
     storage = yield from W.make_shared_storage()
 
@@ -1251,7 +1251,7 @@ class _DelegatingSharding:
 
 
 @pytest.mark.parametrize("lifecycle", ["defect rebuild", "overlapping activations"])
-@testing.effect(timeout=30)
+@testing.effect(timeout="30 seconds")
 def test_completes_before_deferred_persistence_across(lifecycle: str):  # noqa: PLR0915
     """completes before deferred persistence across defect rebuild | overlapping activations"""
     saving = yield from fx.Latch.make()
@@ -1446,7 +1446,7 @@ def _poll_and_adjust_until_done(fiber: Any, step: float, message: str) -> Any:
         if fiber.poll_unsafe() is not None:
             break
         yield from sharding.poll_storage
-        yield from testing.adjust(step)
+        yield from testing.adjust(Seconds(step))
     assert fiber.poll_unsafe() is not None, message
 
 
@@ -1455,7 +1455,7 @@ def _poll_and_adjust_until_done(fiber: Any, step: float, message: str) -> Any:
 def test_activity_race_all_returns_the_first_activity_and_interrupts_losers():
     """Activity.raceAll returns the first activity and interrupts losers"""
     flags = yield from Flags()
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     fiber = yield from R.RaceWorkflow.execute({"id": "race-1"}).fork(start_immediately=True)
     # Activity timers may be registered after the caller's first clock advance.
     yield from poll_until(
@@ -1492,10 +1492,10 @@ def test_activity_race_all_replays_the_first_durable_activity():
     flags = yield from Flags()
     sharding = yield from Sharding()
     driver = yield from MemoryDriver()
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     fiber = yield from R.DurableRaceWorkflow.execute({"id": "race-2"}).fork()
     yield from wait_for_clock(driver, "Activity3")
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from poll_storage_until(
         lambda: isinstance(flags.get("durable-race-token"), str),
         "durable race must reach its continuation",
@@ -1504,7 +1504,7 @@ def test_activity_race_all_replays_the_first_durable_activity():
     assert isinstance(token, str)
     yield from R.DurableRaceGate.done(token=token, exit=Exit.succeed(None))
     yield from sharding.poll_storage
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     assert (yield from fiber.join()) == "Activity3"
 
 
@@ -1512,14 +1512,14 @@ def _race_with_gate(wf: Any, gate: Any, id_: str, value: str = "signal") -> Any:
     sharding = yield from Sharding()
     execution_id = yield from wf.execution_id({"id": id_})
     fiber = yield from wf.execute({"id": id_}).fork(start_immediately=True)
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     yield from gate.succeed(token=_token(gate, wf, execution_id), value=value)
     yield from sharding.poll_storage
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     return (yield from fiber.join())
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_lets_a_deferred_win_while_another_branch_is_active():
     """DurableDeferred.raceAll lets a deferred win while another branch is active"""
@@ -1528,7 +1528,7 @@ def test_durable_deferred_race_all_lets_a_deferred_win_while_another_branch_is_a
     )
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_lets_an_active_branch_win_while_the_deferred_stays_pending():
     """DurableDeferred.raceAll lets an active branch win while the deferred stays pending"""
@@ -1541,7 +1541,7 @@ def test_durable_deferred_race_all_lets_an_active_branch_win_while_the_deferred_
     assert (yield from fiber.join()) == "activity"
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_does_not_replay_the_run_when_a_losing_deferred_completes_late():
     """DurableDeferred.raceAll does not replay the run when a losing deferred completes late"""
@@ -1550,22 +1550,22 @@ def test_durable_deferred_race_all_does_not_replay_the_run_when_a_losing_deferre
     wf = R.LosingDeferredWorkflow
     execution_id = yield from wf.execution_id({"id": "losing-deferred"})
     fiber = yield from wf.execute({"id": "losing-deferred"}).fork(start_immediately=True)
-    yield from testing.adjust(0.001)
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 millis")
+    yield from testing.adjust("1 second")
     while flags.get("losing-deferred-tail-runs") != 1:
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
     yield from R.LosingDeferredGate.succeed(
         token=_token(R.LosingDeferredGate, wf, execution_id), value="signal"
     )
     for _ in range(4):
         yield from sharding.poll_storage
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
     assert (yield from fiber.join()) == "activity:tail"
     # The race already settled, so the late completion must not preempt the tail.
     assert flags.get("losing-deferred-tail-runs") == 1
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_wakes_the_active_run_by_replaying_it():
     """DurableDeferred.raceAll wakes the active run by replaying it"""
@@ -1578,7 +1578,7 @@ def test_durable_deferred_race_all_wakes_the_active_run_by_replaying_it():
     assert flags.get("in-place-wake-runs") in (1, 2)
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_wakes_a_branch_wrapped_in_durable_deferred_into():
     """DurableDeferred.raceAll wakes a branch wrapped in DurableDeferred.into"""
@@ -1587,7 +1587,7 @@ def test_durable_deferred_race_all_wakes_a_branch_wrapped_in_durable_deferred_in
     )
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_does_not_preempt_for_deferreds_awaited_inside_activity_bodies():
     """DurableDeferred.raceAll does not preempt for deferreds awaited inside activity bodies"""
@@ -1597,15 +1597,15 @@ def test_durable_deferred_race_all_does_not_preempt_for_deferreds_awaited_inside
     )
     # Only workflow-level awaits preempt; the clock inside the activity does
     # not, so the other branch wins.
-    yield from testing.adjust(0.001)
-    yield from testing.adjust(5)
+    yield from testing.adjust("1 millis")
+    yield from testing.adjust("5 seconds")
     yield from sharding.poll_storage
-    yield from testing.adjust(1)
-    yield from testing.adjust(60)
+    yield from testing.adjust("1 second")
+    yield from testing.adjust("1 minute")
     assert (yield from fiber.join()) == "slow"
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_lets_a_bare_durable_clock_branch_win_while_another_is_active():
     """DurableDeferred.raceAll lets a bare durable clock branch win while another branch is active"""  # noqa: E501
@@ -1613,14 +1613,14 @@ def test_durable_deferred_race_all_lets_a_bare_durable_clock_branch_win_while_an
     fiber = yield from R.BareClockWorkflow.execute({"id": "bare-clock"}).fork(
         start_immediately=True
     )
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     for _ in range(8):
         yield from sharding.poll_storage
-        yield from testing.adjust(5)
+        yield from testing.adjust("5 seconds")
     assert (yield from fiber.join()) == "clock"
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_runs_a_branchs_transformations_on_a_deferred_wake():
     """DurableDeferred.raceAll runs a branch's transformations on a deferred wake"""
@@ -1629,7 +1629,7 @@ def test_durable_deferred_race_all_runs_a_branchs_transformations_on_a_deferred_
     )
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_wakes_a_branch_that_ran_an_activity_before_its_await():
     """DurableDeferred.raceAll wakes a branch that ran an activity before its await"""
@@ -1637,15 +1637,15 @@ def test_durable_deferred_race_all_wakes_a_branch_that_ran_an_activity_before_it
     wf = R.PreGateWorkflow
     execution_id = yield from wf.execution_id({"id": "pre-gate"})
     fiber = yield from wf.execute({"id": "pre-gate"}).fork(start_immediately=True)
-    yield from testing.adjust(0.001)
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
+    yield from testing.adjust("1 millis")
     yield from R.PreGate.succeed(token=_token(R.PreGate, wf, execution_id), value="signal")
     yield from sharding.poll_storage
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from fiber.join()) == "act:signal"
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_re_runs_a_multi_await_branch_once_per_completion():
     """DurableDeferred.raceAll re-runs a multi-await branch once per completion"""
@@ -1658,7 +1658,7 @@ def test_durable_deferred_race_all_re_runs_a_multi_await_branch_once_per_complet
     yield from control.entered.wait()
     yield from R.TwoStepGateA.succeed(token=_token(R.TwoStepGateA, wf, execution_id), value="a")
     yield from sharding.poll_storage
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     yield from control.release.open()
     yield from control.started.wait()
     # The run parks on the second gate after reading the first completion
@@ -1666,12 +1666,12 @@ def test_durable_deferred_race_all_re_runs_a_multi_await_branch_once_per_complet
     assert flags.get("two-step-branch-runs") in (1, 2)
     yield from R.TwoStepGateB.succeed(token=_token(R.TwoStepGateB, wf, execution_id), value="b")
     yield from sharding.poll_storage
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from fiber.join()) == "a:b"
     assert flags.get("two-step-branch-runs") in (2, 3)
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 def test_durable_deferred_resumes_a_discarded_execution_when_completion_precedes_the_commit():
     """DurableDeferred resumes a discarded execution when completion precedes the suspension commit"""  # noqa: E501
     saving_run = yield from fx.Latch.make()
@@ -1747,7 +1747,7 @@ def test_durable_deferred_resumes_a_discarded_execution_when_completion_precedes
     yield from run.pipe(fx.provide(context))
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_delivers_a_completion_that_lands_while_a_suspension_commits():
     """DurableDeferred.raceAll delivers a completion that lands while a suspension commits"""
@@ -1765,13 +1765,13 @@ def test_durable_deferred_race_all_delivers_a_completion_that_lands_while_a_susp
     )
     # Finish the unwind, then the replay and its own ensuring sleep.
     for _ in range(4):
-        yield from testing.adjust(10)
+        yield from testing.adjust("10 seconds")
         yield from sharding.poll_storage
     assert (yield from fiber.join()) == "signal-b"
     assert flags.get("slow-unwind-runs") == 2
 
 
-@testing.effect(timeout=20)
+@testing.effect(timeout="20 seconds")
 @_with_test_layer
 def test_durable_deferred_race_all_suspends_when_every_branch_is_pending_and_resumes():
     """DurableDeferred.raceAll suspends when every branch is pending and resumes with the winner"""
@@ -1780,14 +1780,14 @@ def test_durable_deferred_race_all_suspends_when_every_branch_is_pending_and_res
     execution_id = yield from wf.execution_id({"id": "two-gates"})
     fiber = yield from wf.execute({"id": "two-gates"}).fork(start_immediately=True)
     # Wait for the race to suspend with both gates pending.
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     polled = yield from wf.poll(execution_id)
     while not isinstance(polled, Suspended):
         yield from fx.yield_now()
         polled = yield from wf.poll(execution_id)
     yield from R.TwoGateB.succeed(token=_token(R.TwoGateB, wf, execution_id), value="signal-b")
     yield from sharding.poll_storage
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     assert (yield from fiber.join()) == "signal-b"
 
 
@@ -1803,7 +1803,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
     storage, driver = yield from W.make_shared_memory()
     storage_layer = W.storage_layer_of(storage)
     overrides = {"entity_registration_timeout": Seconds(registration_timeout)}
-    clock = durable_clock.make(name="wait", duration=clock_duration)
+    clock = durable_clock.make(name="wait", duration=Seconds(clock_duration))
 
     @fx.gen
     def first():
@@ -1815,7 +1815,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
         fx.provide(
             removed.to_layer(
                 lambda _, __: durable_clock.sleep(
-                    name="wait", duration=clock_duration, in_memory_threshold=0
+                    name="wait", duration=Seconds(clock_duration), in_memory_threshold=0
                 )
             ).pipe(
                 fx.layer.provide_merge(
@@ -1839,7 +1839,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
     @fx.gen
     def second():
         # Fire the persisted timer before the registration-start deadline.
-        yield from testing.adjust(clock_duration)
+        yield from testing.adjust(Seconds(clock_duration))
         # The completion ClockEntity emits when the persisted timer fires.
         # Calling it directly isolates the registration wait from storage claims.
         fiber = yield from clock.deferred.done(
@@ -1847,7 +1847,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
         ).fork_daemon(start_immediately=True)
         yield from fx.yield_now()
         assert fiber.poll_unsafe() is None
-        yield from testing.adjust(registration_timeout - clock_duration)
+        yield from testing.adjust(Seconds(registration_timeout - clock_duration))
         exit_ = fiber.poll_unsafe()
         assert exit_ is not None, "the notifyLocal registration wait must be bounded"
         defect = exit_.cause.defects[0] if isinstance(exit_, fx.Failure) else None
@@ -1887,7 +1887,7 @@ def _until_complete(wf: Any, execution_id: str) -> Any:
     result = yield from wf.poll(execution_id)
     while not isinstance(result, Complete):
         yield from fx.yield_now()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from sharding.poll_storage
         result = yield from wf.poll(execution_id)
     return result
@@ -1899,7 +1899,7 @@ def test_parallel_child_workflows_inside_an_activity_suspend_the_parent_durably(
     """parallel child workflows inside an activity suspend the parent durably"""
     sharding = yield from Sharding()
     flags = yield from Flags()
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     payload: P.ParallelParentPayload = {
         "id": "parallel-activity",
         "childCount": 3,
@@ -1916,11 +1916,11 @@ def test_parallel_child_workflows_inside_an_activity_suspend_the_parent_durably(
     assert flags.get("parallel-activity-runs-parallel-activity") == 1
     assert flags.get("parallel-activity-releases-parallel-activity") == 1
     # The children complete after a single sleep window and wake the parent.
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
     yield from sharding.poll_storage
     while fiber.poll_unsafe() is None:
         yield from fx.yield_now()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from sharding.poll_storage
     assert fiber.poll_unsafe() == Exit.succeed(("done-0", "done-1", "done-2"))
     # The parent replayed after suspending, and no run retried the activity body.
@@ -1936,7 +1936,7 @@ def test_bounded_child_concurrency_progresses_across_suspended_activity_replays(
     """bounded child concurrency progresses across suspended activity replays"""
     sharding = yield from Sharding()
     flags = yield from Flags()
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     payload: P.ParallelParentPayload = {
         "id": "parallel-bounded",
         "childCount": 5,
@@ -1954,7 +1954,7 @@ def test_bounded_child_concurrency_progresses_across_suspended_activity_replays(
             if flags.get("parallel-activity-runs-parallel-bounded") == flags.get(
                 "parallel-activity-releases-parallel-bounded"
             ):
-                yield from testing.adjust(0.001)
+                yield from testing.adjust("1 millis")
             yield from sharding.poll_storage
             result = yield from wf.poll(execution_id)
             if (
@@ -1969,7 +1969,7 @@ def test_bounded_child_concurrency_progresses_across_suspended_activity_replays(
         assert flags.get("parallel-activity-releases-parallel-bounded") == flags.get(
             "parallel-activity-runs-parallel-bounded"
         )
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         yield from sharding.poll_storage
     result = yield from _until_complete(wf, execution_id)
     assert result == Complete(Exit.succeed(("done-0", "done-1", "done-2", "done-3", "done-4")))
@@ -2011,18 +2011,18 @@ def test_resumes_when_children_complete_during_activity_cleanup():
         )
     )
     child_layer = child.to_layer(
-        lambda p, _: durable_clock.sleep(name="wait", duration=2, in_memory_threshold=0).as_(
-            p["index"]
-        )
+        lambda p, _: durable_clock.sleep(
+            name="wait", duration="2 seconds", in_memory_threshold=0
+        ).as_(p["index"])
     )
 
     @fx.gen
     def run():
         sharding = yield from Sharding()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         execution_id = yield from parent.execute({}, discard=True)
         yield from cleaning_up.wait()
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
         yield from sharding.poll_storage
         for index in (0, 1):
             child_id = yield from child.execution_id({"index": index})
@@ -2089,7 +2089,7 @@ def test_keeps_a_failure_suspended_workflow_parked_when_a_discarded_child_comple
                 return None
             return next((r for r in entry.replies if r["_tag"] == "WithExit"), None)
 
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         execution_id = yield from parent.execute({}, discard=True)
         child_id = yield from child.execution_id({})
         yield from poll_until(parent, execution_id, Suspended)
@@ -2142,7 +2142,7 @@ def test_persists_a_detached_childs_parent_without_waking_it():
     def run():
         sharding = yield from Sharding()
         driver = yield from MemoryDriver()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         execution_id = yield from parent.execute({}, discard=True)
         child_id = yield from child.execution_id({})
         yield from poll_until(parent, execution_id, Suspended)
@@ -2156,7 +2156,7 @@ def test_persists_a_detached_childs_parent_without_waking_it():
         yield from child_gate.succeed(token=_token(child_gate, child, child_id), value=None)
         yield from poll_until(child, child_id, Complete)
         for _ in range(20):
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             yield from sharding.poll_storage
         assert parent_runs[0] == 1, "a detached child must not wake its parent"
 
@@ -2236,7 +2236,7 @@ def test_reacquires_shards_after_a_forced_release_abandons_a_parent_waking_from_
         shard_id = sharding.get_shard_id(EntityId("parent"), "default")
         yield from parent.execute({}, discard=True)
         yield from poll_until(child, (yield from child.execution_id({})), Complete)
-        yield from testing.adjust(1.5)
+        yield from testing.adjust("1500 millis")
         assert sharding.has_shard_id(shard_id)
         storage_down[0] = True
         yield from advance_until(
@@ -2247,10 +2247,10 @@ def test_reacquires_shards_after_a_forced_release_abandons_a_parent_waking_from_
         )
         storage_down[0] = False
         # Release must finish before the shard can be reacquired.
-        yield from testing.adjust(4)
+        yield from testing.adjust("4 seconds")
         assert sharding.has_shard_id(shard_id), "the shard must be reacquired after recovery"
         yield from probe.execute({}, discard=True)
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert probe_runs[0] == 1, "an independent workflow must run after recovery"
 
     yield from run.pipe(fx.provide(context))
@@ -2270,7 +2270,7 @@ def test_interrupts_a_failure_suspended_workflow():
 
     @fx.gen
     def run():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         execution_id = yield from failing.execute({}, discard=True)
         yield from poll_until(failing, execution_id, Suspended)
         yield from failing.interrupt(execution_id)
@@ -2338,7 +2338,7 @@ def test_interrupts_a_replay_that_is_still_persisting_its_suspended_reply():
         yield from wf.interrupt(execution_id)
         # Let the interrupt signal be handled before the Suspended reply is saved.
         for _ in range(10):
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         yield from release_reply.open()
         result = yield from poll_until(wf, execution_id, Complete)
         _assert_interrupted(result, "the interrupt must not be lost")
@@ -2400,7 +2400,7 @@ def test_interrupts_a_failure_suspending_run_while_an_activity_wake_waits_for_it
         yield from wf.interrupt(execution_id)
         # Let the interrupt signal be handled before the Suspended reply is saved.
         for _ in range(10):
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
         yield from release_reply.open()
         result = yield from poll_until(wf, execution_id, Complete)
         _assert_interrupted(result, "the interrupt must not be lost")
@@ -2430,7 +2430,7 @@ def test_interrupts_a_workflow_parked_inside_an_activity():
 
     @fx.gen
     def run():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         execution_id = yield from parent.execute({}, discard=True)
         yield from poll_until(parent, execution_id, Suspended)
         yield from parent.interrupt(execution_id)
@@ -2479,7 +2479,7 @@ def test_interrupt_unsafe_during_a_later_activity_closes_the_superseded_run_and_
     @fx.gen
     def run():
         engine = yield from WorkflowEngine()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         execution_id = yield from wf.execute({}, discard=True)
         yield from started.wait()
         yield from engine.interrupt_unsafe(wf, execution_id)
@@ -2541,7 +2541,7 @@ def test_applies_a_persisted_interrupt_when_a_fresh_owner_replays_a_failure_susp
 
     @fx.gen
     def first():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from failing.execute({}, discard=True)
         yield from poll_until(failing, execution_id, Suspended)
         crashed[0] = True
@@ -2550,7 +2550,7 @@ def test_applies_a_persisted_interrupt_when_a_fresh_owner_replays_a_failure_susp
         for _ in range(2000):
             if result is None:
                 break
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             result = yield from failing.poll(execution_id)
         assert result is None, "the interrupt must reset the run"
 
@@ -2644,19 +2644,19 @@ def test_coalesces_parked_child_wakeups_while_parent_cleanup_is_pending():
         )
     )
     child_layer = child.to_layer(
-        lambda p, _: durable_clock.sleep(name="wait", duration=2, in_memory_threshold=0).as_(
-            p["index"]
-        )
+        lambda p, _: durable_clock.sleep(
+            name="wait", duration="2 seconds", in_memory_threshold=0
+        ).as_(p["index"])
     )
 
     @fx.gen
     def run():
         sharding = yield from Sharding()
         driver = yield from MemoryDriver()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         execution_id = yield from parent.execute({}, discard=True)
         yield from cleaning_up.wait()
-        yield from testing.adjust(2)
+        yield from testing.adjust("2 seconds")
 
         def wake_requests() -> list[Any]:
             return [
@@ -2680,7 +2680,7 @@ def test_coalesces_parked_child_wakeups_while_parent_cleanup_is_pending():
 
         while not all_wakes_handled():
             yield from fx.yield_now()
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             yield from sharding.poll_storage
         wakes = wake_requests()
         parked_before_release = parked[0]
@@ -2688,7 +2688,7 @@ def test_coalesces_parked_child_wakeups_while_parent_cleanup_is_pending():
         result = yield from parent.poll(execution_id)
         while not isinstance(result, Complete) or parked[0] != 0:
             yield from fx.yield_now()
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             yield from sharding.poll_storage
             result = yield from parent.poll(execution_id)
         assert result == Complete(Exit.succeed(tuple(indices)))
@@ -2751,18 +2751,18 @@ def test_resumes_a_fresh_entity_from_a_legacy_envelope(queued_replay: bool):
         sharding = yield from Sharding()
         driver = yield from MemoryDriver()
         engine = yield from WorkflowEngine()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         execution_id = yield from parent.execute({}, discard=True)
         result = yield from parent.poll(execution_id)
         while not isinstance(result, Suspended):
             yield from fx.yield_now()
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             yield from sharding.poll_storage
             result = yield from parent.poll(execution_id)
         for _ in range(12):
             if (yield from sharding.active_entity_count) == 0:
                 break
-            yield from testing.adjust(5)
+            yield from testing.adjust("5 seconds")
         assert (yield from sharding.active_entity_count) == 0
         if queued_replay:
             found = next(
@@ -2792,7 +2792,7 @@ def test_resumes_a_fresh_entity_from_a_legacy_envelope(queued_replay: bool):
         result = yield from parent.poll(execution_id)
         while not isinstance(result, Complete) or legacy_resume.poll_unsafe() is None:
             yield from fx.yield_now()
-            yield from testing.adjust(0.001)
+            yield from testing.adjust("1 millis")
             yield from sharding.poll_storage
             result = yield from parent.poll(execution_id)
         assert result == Complete(Exit.succeed((0, 1)))
@@ -2815,7 +2815,7 @@ def _until_fiber_done(fiber: Any) -> Any:
     sharding = yield from Sharding()
     while fiber.poll_unsafe() is None:
         yield from fx.yield_now()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from sharding.poll_storage
 
 
@@ -2825,7 +2825,7 @@ def test_a_parent_stays_suspended_past_the_activity_interrupt_retry_budget():
     """a parent stays suspended past the activity interrupt retry budget"""
     sharding = yield from Sharding()
     flags = yield from Flags()
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     payload: P.ParallelParentPayload = {
         "id": "parallel-long",
         "childCount": 2,
@@ -2838,13 +2838,13 @@ def test_a_parent_stays_suspended_past_the_activity_interrupt_retry_budget():
     yield from _until_suspended(wf, execution_id)
     # Well past the activity interrupt retry budget the run is still suspended
     # and the activity body has not been re-executed.
-    yield from testing.adjust(50)
+    yield from testing.adjust("50 seconds")
     yield from sharding.poll_storage
     assert isinstance((yield from wf.poll(execution_id)), Suspended)
     assert flags.get("parallel-activity-runs-parallel-long") == 1
     assert flags.get("parallel-activity-releases-parallel-long") == 1
     assert fiber.poll_unsafe() is None
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     yield from sharding.poll_storage
     yield from _until_fiber_done(fiber)
     assert fiber.poll_unsafe() == Exit.succeed(("done-0", "done-1"))
@@ -2856,7 +2856,7 @@ def test_parallel_child_workflows_in_the_workflow_body_all_dispatch_before_suspe
     """parallel child workflows in the workflow body all dispatch before suspending"""
     sharding = yield from Sharding()
     flags = yield from Flags()
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     payload: P.ParallelDirectPayload = {"id": "parallel-direct", "childCount": 3}
     wf = P.ParallelDirectWorkflow
     execution_id = yield from wf.execution_id(payload)
@@ -2865,7 +2865,7 @@ def test_parallel_child_workflows_in_the_workflow_body_all_dispatch_before_suspe
     assert flags.get("parallel-runs-parallel-direct") == 1
     for index in range(3):
         assert flags.get(f"parallel-child-start-parallel-direct-child-{index}") is True
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
     yield from sharding.poll_storage
     yield from _until_fiber_done(fiber)
     assert fiber.poll_unsafe() == Exit.succeed(("done-0", "done-1", "done-2"))
@@ -2894,9 +2894,9 @@ def test_routes_fractional_millisecond_durable_clock_wakeups_to_the_workflow_sha
     assert envelope["address"]["shardId"]["group"] == "workflow"
     deliver_at = driver.encoded.requests[envelope["requestId"]].deliver_at
     assert deliver_at == started_at + 10001
-    yield from testing.adjust(10.001)
+    yield from testing.adjust("10001 millis")
     yield from sharding.poll_storage
-    yield from testing.adjust(5)
+    yield from testing.adjust("5 seconds")
     yield from fiber.join()
 
 

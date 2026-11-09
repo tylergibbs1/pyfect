@@ -26,7 +26,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import layer, testing
-from pyfect.duration import to_seconds
+from pyfect.duration import Seconds
 from pyfect.testing import Services
 
 
@@ -81,7 +81,7 @@ FooLive = layer.succeed(Foo, "foo")
 BarLive = layer.effect(Bar, Foo().map(lambda _: "bar"))
 FooBarLive = BarLive.pipe(layer.provide_merge(FooLive))
 SleeperLive = layer.effect(
-    Sleeper, fx.Clock().map(lambda clock: lambda seconds: clock.sleep(to_seconds(seconds)))
+    Sleeper, fx.Clock().map(lambda clock: lambda seconds: clock.sleep(Seconds(seconds)))
 )
 
 foo = testing.layer_fixture(FooLive)
@@ -122,9 +122,9 @@ def test_layer_anonymous_layer_next_to_a_vitest_fixture_provides_its_context(
 def test_layer_test_services_test_clock(sleeper: Services[Sleeper]):
     """vitest/test/index.test.ts "layer > test services > TestClock"."""
     sleep = yield from Sleeper()
-    fiber = yield from sleep(100_000).fork()
+    fiber = yield from sleep("100 seconds").fork()
     yield from fx.yield_now()
-    yield from testing.adjust(100_000)
+    yield from testing.adjust("100 seconds")
     yield from fiber.join()
 
 
@@ -132,7 +132,7 @@ def test_layer_test_services_test_clock(sleeper: Services[Sleeper]):
 def test_layer_live_services_clock(live_sleeper: Services[Sleeper]):
     """vitest/test/index.test.ts "layer > live services > Clock"."""
     sleep = yield from Sleeper()
-    yield from sleep(0.001)
+    yield from sleep("1 millis")
 
 
 # --- buildPerTest -----------------------------------------------------------------------
@@ -231,8 +231,8 @@ def test_top_level_build_per_test_provides_new_test_services_for_test(
 ):
     """build-per-test.test.ts "top-level buildPerTest > provides new test services for
     test %s"."""
-    assert (yield from fx.clock.now()) == 0
-    yield from testing.adjust(1)
+    assert (yield from fx.clock.current_time_millis()) == 0
+    yield from testing.adjust("1 second")
 
 
 # --- isolation --------------------------------------------------------------------------
@@ -396,7 +396,7 @@ def test_timeout_finalizers(pytester: pytest.Pytester, mode: str) -> None:
         from pyfect import testing
         from resource import events, resource
 
-        @testing.{mode}(timeout=0.075)
+        @testing.{mode}(timeout="75 millis")
         def test_times_out_while_holding_a_resource():
             yield from resource("test")
             return (yield from fx.never)
@@ -421,7 +421,7 @@ def test_timeout_finalizer_defects(pytester: pytest.Pytester) -> None:
         import pyfect as fx
         from pyfect import testing
 
-        @testing.effect(timeout=0.075)
+        @testing.effect(timeout="75 millis")
         def test_times_out_while_a_finalizer_dies():
             yield from fx.add_finalizer(lambda _: fx.die(RuntimeError("finalizer failed")))
             return (yield from fx.never)
@@ -447,7 +447,7 @@ def test_layer_timeout_finalizers(pytester: pytest.Pytester) -> None:
 
         held = testing.layer_fixture(layer.effect(Held, resource("layer")))
 
-        @testing.effect(timeout=0.075)
+        @testing.effect(timeout="75 millis")
         def test_times_out_in_the_last_test_using_the_layer(held: testing.Services[Held]):
             yield from resource("test")
             return (yield from fx.never)

@@ -207,7 +207,7 @@ _SLOW = (
 )
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_an_interrupted_remote_statement_finishes_on_the_server(libsql_server: LibsqlServer):
     """(pyfect) Hrana has no cancel, so the statement goes on after the interrupt, as with
     Effect's client, whose promise nothing can abort"""
@@ -215,17 +215,17 @@ def test_an_interrupted_remote_statement_finishes_on_the_server(libsql_server: L
     yield from sql("DROP TABLE IF EXISTS interrupted_finishes")
     yield from sql("CREATE TABLE interrupted_finishes (n INTEGER)")
     fiber = yield from sql.unsafe(f"INSERT INTO interrupted_finishes {_SLOW}").fork()
-    yield from fx.sleep(0.2)
+    yield from fx.sleep("200 millis")
     yield from fiber.interrupt()
     yield from fiber.await_exit()
     deadline = time.monotonic() + 30
     while not (yield from sql("SELECT n FROM interrupted_finishes")):
         assert time.monotonic() < deadline, "the statement did not finish on the server"
-        yield from fx.sleep(0.1)
+        yield from fx.sleep("100 millis")
     yield from sql("DROP TABLE interrupted_finishes")
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_an_interrupted_remote_statement_still_rolls_its_transaction_back(
     libsql_server: LibsqlServer,
 ):
@@ -236,7 +236,7 @@ def test_an_interrupted_remote_statement_still_rolls_its_transaction_back(
     fiber = yield from sql.with_transaction(
         sql("INSERT INTO interrupted VALUES (1)").and_then(sql(_SLOW))
     ).fork()
-    yield from fx.sleep(0.2)
+    yield from fx.sleep("200 millis")
     yield from fiber.interrupt()
     yield from fiber.await_exit()
     # The server's transaction is over, so its write lock does not hold

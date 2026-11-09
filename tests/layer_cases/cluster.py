@@ -542,7 +542,7 @@ def _run_queued():
         if isinstance(polled, Complete):
             assert polled == Complete(fx.Success(42))
             return
-        yield from fx.sleep(0.01)
+        yield from fx.sleep("10 millis")
     raise AssertionError("the queued workflow did not complete")
 
 

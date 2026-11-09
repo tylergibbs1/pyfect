@@ -251,7 +251,7 @@ def test_acquire_use_release_use_inherits_interrupt_status():
     fiber = yield from (
         fx.acquire_use_release(
             fx.succeed(123),
-            lambda _: _set(flags, "ref").delay(0.01),
+            lambda _: _set(flags, "ref").delay("10 millis"),
             lambda _r, _e: fx.void,
         )
         .uninterruptible()
@@ -288,7 +288,10 @@ def test_async_can_be_uninterruptible():
     """async can be uninterruptible"""
     flags: dict[str, Any] = {}
     fiber = yield from (
-        fx.sleep(0.01).and_then(_set(flags, "ref")).uninterruptible().fork(start_immediately=True)
+        fx.sleep("10 millis")
+        .and_then(_set(flags, "ref"))
+        .uninterruptible()
+        .fork(start_immediately=True)
     )
     yield from fiber.interrupt()
     assert flags == {"ref": True}
@@ -302,7 +305,7 @@ def test_callback_cannot_resume_on_interrupt():
         threading.Timer(0.01, resume, (fx.succeed("foo"),)).start()
 
     waiting: fx.Effect[str] = fx.callback(register)
-    fiber = yield from (waiting.on_interrupt(fx.sleep(0.03)).fork(start_immediately=True))
+    fiber = yield from (waiting.on_interrupt(fx.sleep("30 millis")).fork(start_immediately=True))
     yield from fiber.interrupt()
     assert _interrupted(fiber.poll_unsafe())
 
@@ -658,7 +661,7 @@ def test_recursion():
     def loop() -> fx.Effect[None]:
         return fx.void.flat_map(lambda _: loop())
 
-    assert (yield from loop().timeout_option(0.05)) is None
+    assert (yield from loop().timeout_option("50 millis")) is None
 
 
 def test_lazily_nested_map_continuations() -> None:

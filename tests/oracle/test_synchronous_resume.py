@@ -11,6 +11,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect.cause import Die, Fail, UnhandledError
+from pyfect.duration import Seconds
 from pyfect.errors import TimeoutException
 
 log: list[str] = []
@@ -25,7 +26,7 @@ def _l(s: str) -> fx.Effect[str]:
 
 
 def _sleep(ms: int) -> fx.Effect[None]:
-    return fx.sleep(ms / 1000)
+    return fx.sleep(Seconds(ms / 1000))
 
 
 class _D(Exception):
@@ -258,7 +259,7 @@ _FUZZ: dict[str, tuple[Callable[[], fx.Effect[Any, Any]], tuple[str, list[str]]]
         lambda: (
             fx.succeed("v1")
             .or_die()
-            .timeout(0.005)
+            .timeout("5 millis")
             .race_first(fx.fail("e2"))
             .race_first(
                 fx.fail("e3")
@@ -274,7 +275,7 @@ _FUZZ: dict[str, tuple[Callable[[], fx.Effect[Any, Any]], tuple[str, list[str]]]
         lambda: (
             fx.succeed("v1")
             .race(_sleep(10).and_then(_l("s2")))
-            .timeout(0.015)
+            .timeout("15 millis")
             .race_first(
                 _sleep(0)
                 .and_then(_l("s3"))

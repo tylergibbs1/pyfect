@@ -25,14 +25,14 @@ def flaky_call() -> fx.Effect[str, Flaky]:
 @testing.effect
 def test_retry_backs_off():
     calls.clear()
-    fiber = yield from flaky_call().retry(schedule.exponential(1).up_to(times=3)).fork()
-    yield from testing.adjust(7)  # virtual time: the test takes no real time
+    fiber = yield from flaky_call().retry(schedule.exponential("1 second").up_to(times=3)).fork()
+    yield from testing.adjust("7 seconds")  # virtual time: the test takes no real time
     assert (yield from fiber.join()) == "ok"
     assert [t - calls[0] for t in calls] == [0, 1, 3, 7]  # waits of 1, 2 and 4 seconds
 
 
 @testing.effect
 def test_timeout():
-    fiber = yield from fx.sleep(10).timeout(5).exit().fork()
-    yield from testing.adjust(5)
+    fiber = yield from fx.sleep("10 seconds").timeout("5 seconds").exit().fork()
+    yield from testing.adjust("5 seconds")
     assert isinstance((yield from fiber.join()), fx.Failure)

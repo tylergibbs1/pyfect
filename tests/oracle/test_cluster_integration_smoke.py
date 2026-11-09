@@ -48,7 +48,7 @@ smoke_entity_layer = SmokeEntity.to_layer(
 )
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_persists_messages_and_rebalances_after_an_abrupt_runner_death(cluster_db: ClusterDatabase):
     """persists messages and rebalances after an abrupt runner death"""
 
@@ -90,7 +90,7 @@ class TransportEntity(
     )
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_treats_a_directional_socket_cut_as_runner_unavailable(cluster_db: ClusterDatabase):
     """treats a directional socket cut as RunnerUnavailable for volatile and recovers persisted"""
     backend = cluster_db.backend
@@ -179,7 +179,7 @@ class WatchEntity(
     watch = watch_rpc
 
 
-@testing.live(timeout=60)
+@testing.live(timeout="1 minute")
 def test_dead_caller_socket_closed_with_no_further_messages(cluster_db: ClusterDatabase):
     """dead caller: socket closed with no further messages"""
 
@@ -251,7 +251,7 @@ class ResidencyEntity(
     hold = make_rpc("Hold", payload=S.Struct(IdPayload))
 
 
-@testing.live(timeout=90)
+@testing.live(timeout="90 seconds")
 def test_stays_at_the_entity_cap_and_keeps_residents_moving(cluster_db: ClusterDatabase):
     """stays at the entity cap and keeps residents moving"""
 
@@ -261,7 +261,7 @@ def test_stays_at_the_entity_cap_and_keeps_residents_moving(cluster_db: ClusterD
             ResidencyEntity.handlers()
             .handle(ResidencyEntity.ping)(lambda request: fx.succeed(request.payload["id"]))
             .handle(ResidencyEntity.hold)(lambda _: hold_gate.wait()),
-            max_idle_time=1,
+            max_idle_time="1 second",
             concurrency=2,
         )
         cluster = yield from make(

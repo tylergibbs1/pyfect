@@ -16,6 +16,7 @@ import pytest
 import pyfect as fx
 from pyfect import testing
 from pyfect.cause import Cause, Die
+from pyfect.duration import Seconds
 from pyfect.exit import Failure, Success
 from pyfect.persistence import circuit_breaker as cb
 from pyfect.result import Ok
@@ -25,8 +26,8 @@ from . import _circuit_breaker_suite as suite
 
 def _memory(body: suite.Body, *, idle: float = 3600) -> None:
     testing.run_test(
-        fx.scoped(fx.gen(lambda: body(testing.adjust))).pipe(
-            fx.provide(cb.layer_store_memory(idle_time_to_live=idle))
+        fx.scoped(fx.gen(lambda: body(lambda seconds: testing.adjust(Seconds(seconds))))).pipe(
+            fx.provide(cb.layer_store_memory(idle_time_to_live=Seconds(idle)))
         )
     )
 
@@ -84,7 +85,7 @@ def test_allow_an_admit_outage_runs_the_call_unrecorded_and_reports_the_cause() 
     logs = _Reports()
 
     def body():
-        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=60)
+        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="1 minute")
         call = fx.succeed(42).pipe(breaker.execute(key="allow"))
         assert (yield from call) == 42
         assert (yield from call.pipe(fx.provide_service(fx.UnhandledLogLevel, None))) == 42
@@ -104,7 +105,7 @@ def test_fail_an_admit_outage_fails_with_store_error_without_running_the_call() 
 
     def body():
         breaker = yield from cb.make(
-            trip_policy=cb.consecutive(1), open_duration=60, on_store_error="fail"
+            trip_policy=cb.consecutive(1), open_duration="1 minute", on_store_error="fail"
         )
         ran: list[bool] = []
         error = (
@@ -123,7 +124,7 @@ def test_a_failed_record_never_replaces_the_result() -> None:
 
     def body():
         breaker = yield from cb.make(
-            trip_policy=cb.consecutive(1), open_duration=60, on_store_error="fail"
+            trip_policy=cb.consecutive(1), open_duration="1 minute", on_store_error="fail"
         )
         success = yield from fx.succeed(42).pipe(breaker.execute(key="record"))
         failure = yield from fx.fail("boom").pipe(breaker.execute(key="record")).flip()
@@ -141,7 +142,7 @@ def test_a_record_defect_alongside_a_store_failure_still_dies() -> None:
     bug = RuntimeError("bug")
 
     def body():
-        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=60)
+        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="1 minute")
         call = fx.succeed(42).pipe(breaker.execute(key="record-defect")).exit()
         reported = yield from call
         silenced = yield from call.pipe(fx.provide_service(fx.UnhandledLogLevel, None))
@@ -166,7 +167,7 @@ def test_a_classifier_defect_records_ignored_and_the_call_dies_with_the_combined
         raise thrown_error
 
     def body():
-        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=60)
+        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="1 minute")
         thrown = (
             yield from fx.succeed(1).pipe(breaker.execute(key="defect", classify=throwing)).exit()
         )
@@ -194,7 +195,7 @@ def test_transitions_ends_when_the_breakers_scope_closes() -> None:
 
     def body():
         scope = fx.CloseableScope()
-        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=60).pipe(
+        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="1 minute").pipe(
             fx.provide_service(fx.Scope, scope)
         )
         transitions = yield from breaker.transitions.run_collect().fork(start_immediately=True)
@@ -211,7 +212,7 @@ def test_fences_a_permit_admitted_before_its_key_was_dropped_and_recreated() -> 
     """memory retention / fences a permit admitted before its key was dropped and recreated"""
 
     def body():
-        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration=60)
+        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="1 minute")
         gate = yield from fx.Deferred[None].make()
         admitted = yield from fx.Deferred[None].make()
         stale = yield from (
@@ -222,14 +223,14 @@ def test_fences_a_permit_admitted_before_its_key_was_dropped_and_recreated() -> 
             .fork()
         )
         yield from admitted.wait()
-        yield from testing.adjust(120)
+        yield from testing.adjust("2 minutes")
         yield from fx.void.pipe(breaker.execute(key="recreated"))
 
         yield from gate.succeed(None)
         yield from stale.await_exit()
         assert isinstance((yield from breaker.state("recreated")), cb.Closed)
 
-    _run(fx.gen(body), cb.layer_store_memory(idle_time_to_live=60))
+    _run(fx.gen(body), cb.layer_store_memory(idle_time_to_live="1 minute"))
 
 
 # --- trip policies (CircuitBreaker.ts) ------------------------------------------------

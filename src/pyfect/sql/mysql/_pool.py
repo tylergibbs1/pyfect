@@ -10,6 +10,7 @@ from typing import Any, Never
 
 from pyfect._core import Effect, _Suspend
 from pyfect._primitives import uninterruptible_mask
+from pyfect.duration import Seconds
 from pyfect.effect import succeed
 from pyfect.pool import Pool
 from pyfect.scope import Scope, add_finalizer
@@ -34,7 +35,7 @@ def _open(options: dict[str, Any]) -> Effect[Session, SqlError, Scope]:
 
 
 def make(
-    options: dict[str, Any], *, max_connections: int, idle_timeout: float
+    options: dict[str, Any], *, max_connections: int, idle_timeout: Seconds
 ) -> Effect[Effect[Session, SqlError, Scope], Never, Scope]:
     """A pool closed with the scope, as its checkout: a session until the
     checkout's scope closes."""

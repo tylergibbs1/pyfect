@@ -40,7 +40,7 @@ from pyfect.eventlog.event_log_message import (
     WriteSinglePayload,
 )
 from pyfect.eventlog.event_log_session_auth import (
-    SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_SECONDS,
+    SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_MILLIS,
     SessionAuthPayload,
     make_session_auth_challenge,
     verify_session_authenticate_request,
@@ -264,7 +264,7 @@ def layer_rpc_handlers(
         challenges = yield from Cache.make(
             new_challenge,
             capacity=sys.maxsize,
-            time_to_live=SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_SECONDS,
+            time_to_live=SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_MILLIS,
         )
         signing_keys: dict[str, bytes] = {}
 

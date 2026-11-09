@@ -201,7 +201,7 @@ def test_interrupts_property_checking_on_timeout() -> None:
     """interrupts property checking on timeout"""
     events: list[str] = []
 
-    @testing.effect_prop(S.Literal("value"), runs=1, timeout=0.01)
+    @testing.effect_prop(S.Literal("value"), runs=1, timeout="10 millis")
     def check(_value: str):
         return fx.acquire_use_release(
             fx.sync(lambda: events.append("started")),

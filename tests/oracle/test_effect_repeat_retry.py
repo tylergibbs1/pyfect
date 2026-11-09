@@ -49,8 +49,8 @@ def test_fails_with_a_done_raised_by_the_repeated_effect():
 @testing.effect
 def test_is_interruptible():
     """is interruptible"""
-    fiber = yield from fx.void.forever().timeout_option(0.05).fork()
-    yield from testing.adjust(0.05)
+    fiber = yield from fx.void.forever().timeout_option("50 millis").fork()
+    yield from testing.adjust("50 millis")
     assert (yield from fiber.join()) is None
 
 
@@ -345,8 +345,8 @@ def test_retry_schedule_current_metadata():
             attempt=attempt,
             start=0.0,
             now=0.0,
-            elapsed=0.0,
-            elapsed_since_previous=0.0,
+            elapsed=ZERO,
+            elapsed_since_previous=ZERO,
         )
 
     assert metadata == [at(0, None), at(1, 0), at(2, 1), at(3, 2)]

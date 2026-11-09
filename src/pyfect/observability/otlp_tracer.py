@@ -341,10 +341,10 @@ def make(
             url=url,
             headers=headers,
             compression=compression,
-            export_interval=5.0 if export_interval is None else export_interval,
+            export_interval="5 seconds" if export_interval is None else export_interval,
             max_batch_size=1000 if max_batch_size is None else max_batch_size,
             body=body,
-            shutdown_timeout=3.0 if shutdown_timeout is None else shutdown_timeout,
+            shutdown_timeout="3 seconds" if shutdown_timeout is None else shutdown_timeout,
         )
 
         def export(span: _OtlpTracerSpan) -> None:

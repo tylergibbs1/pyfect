@@ -173,7 +173,7 @@ def retry_respond[A, E, R](times: int, effect: Effect[A, E, R]) -> Effect[A, E, 
     """``effect``, retried ``times`` times 200ms apart on a typed failure."""
     if times == 0:
         return effect
-    return effect.catch_all(lambda _: retry_respond(times - 1, effect).delay(0.2))
+    return effect.catch_all(lambda _: retry_respond(times - 1, effect).delay("200 millis"))
 
 
 __all__ = [

@@ -24,7 +24,7 @@ from pyfect.cause import Cause
 from pyfect.cause import fail as cause_fail
 from pyfect.clock import sleep
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import ZERO, Duration, Seconds, to_seconds
 from pyfect.effect import Effect
 from pyfect.exit import Success
 from pyfect.exit import fail as exit_fail
@@ -72,11 +72,11 @@ def _timing(options: WebSocketOptions[Any]) -> _Timing:
     keep_alive = options.keep_alive
     idle = options.idle_timeout
     return _Timing(
-        ack_timeout=to_seconds(10 if ack is None else ack),
+        ack_timeout=to_seconds("10 seconds" if ack is None else ack),
         keep_alive=None
         if keep_alive is False
-        else to_seconds(10 if keep_alive is None else keep_alive),
-        idle_timeout=to_seconds(0 if idle is None else idle),
+        else to_seconds("10 seconds" if keep_alive is None else keep_alive),
+        idle_timeout=ZERO if idle is None else to_seconds(idle),
     )
 
 

@@ -227,7 +227,7 @@ def test_batched_final_flush_uses_the_construction_context():
     scope = fx.CloseableScope()
     batched = (
         yield from fx.Logger.make(lambda o: _text(o.message))
-        .batched(window=3600, flush=lambda batch: fx.log(",".join(batch)))
+        .batched(window="1 hour", flush=lambda batch: fx.log(",".join(batch)))
         .pipe(fx.provide_service(fx.Scope, scope))
         .pipe(fx.provide(logger.layer([construction])))
     )
@@ -249,21 +249,21 @@ def test_batched_finishes_an_in_flight_flush_before_flushing_remaining_entries_o
             events.append(f"start:{','.join(batch)}")
             if batch[0] == "first":
                 yield from started.succeed(None)
-                yield from fx.sleep(0.05)
+                yield from fx.sleep("50 millis")
             events.append(f"end:{','.join(batch)}")
 
         return run
 
     batched = yield from (
         fx.Logger.make(lambda o: _text(o.message))
-        .batched(window=0.001, flush=flush)
+        .batched(window="1 millis", flush=flush)
         .pipe(fx.provide_service(fx.Scope, scope))
     )
     yield from fx.log("first").pipe(fx.provide(logger.layer([batched])))
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     yield from started.wait()
     yield from fx.log("second").pipe(fx.provide(logger.layer([batched])))
     closing = yield from scope.close(_DONE).fork(start_immediately=True)
-    yield from testing.adjust(0.05)
+    yield from testing.adjust("50 millis")
     yield from closing.join()
     assert events == ["start:first", "end:first", "start:second", "end:second"]

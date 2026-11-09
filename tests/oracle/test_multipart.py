@@ -133,7 +133,9 @@ def test_emits_a_field_buffered_while_reading_a_file_without_pulling_more_input(
             return part.content_effect.map(lambda data: (part.key, data.decode()))
         return effect.succeed((part.key, part.value))
 
-    parts = _value(_parts(source, HEADERS).map_effect(each).take(2).run_collect().timeout(2))
+    parts = _value(
+        _parts(source, HEADERS).map_effect(each).take(2).run_collect().timeout("2 seconds")
+    )
     assert list(parts) == [("file", "file contents"), ("description", "test file")]
 
 
@@ -248,7 +250,7 @@ def test_propagates_upstream_failure_while_consuming_an_active_file() -> None:
             )
         return effect.die(AssertionError("expected file"))
 
-    error = _error(_active_file_parts(upstream).run_for_each(each).timeout(1))
+    error = _error(_active_file_parts(upstream).run_for_each(each).timeout("1 second"))
     assert bytes_read == 5
     assert error is upstream
 
@@ -264,7 +266,7 @@ def test_preserves_upstream_failure_when_collecting_an_active_file_with_content_
             )
         return effect.die(AssertionError("expected file"))
 
-    error = _error(_active_file_parts(upstream).run_for_each(each).timeout(1))
+    error = _error(_active_file_parts(upstream).run_for_each(each).timeout("1 second"))
     assert error is upstream
 
 
@@ -308,7 +310,9 @@ def test_preserves_the_upstream_error_cause_when_persisting_an_active_file() -> 
         bytes_written += len(chunk)
 
     error = _error(
-        _persist(m.to_persisted(_active_file_parts(upstream)), _TempFileSystem(written)).timeout(1)
+        _persist(m.to_persisted(_active_file_parts(upstream)), _TempFileSystem(written)).timeout(
+            "1 second"
+        )
     )
     assert bytes_written == 5
     assert error is upstream

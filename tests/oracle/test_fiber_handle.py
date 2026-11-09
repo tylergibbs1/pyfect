@@ -205,12 +205,12 @@ def test_same_fiber_registration_preserves_propagate_interruption(propagate_inte
 def test_clear_does_not_remove_a_newer_fiber_installed_while_interrupting_the_previous_one():
     """clear does not remove a newer fiber installed while interrupting the previous one"""
     handle = yield from fx.FiberHandle.make()
-    yield from handle.run(fx.sleep(0.2).uninterruptible())
+    yield from handle.run(fx.sleep("200 millis").uninterruptible())
 
     clear_fiber = yield from handle.clear().fork(start_immediately=True)
-    yield from testing.adjust(0.05)
+    yield from testing.adjust("50 millis")
     next_fiber = yield from handle.run(fx.never)
-    yield from testing.adjust(0.2)
+    yield from testing.adjust("200 millis")
     yield from clear_fiber.join()
 
     assert handle.get_unsafe() is next_fiber
@@ -254,12 +254,12 @@ def test_propagate_interruption_true():
 def test_await_empty():
     """awaitEmpty"""
     handle = yield from fx.FiberHandle.make()
-    yield from handle.run(fx.sleep(1))
+    yield from handle.run(fx.sleep("1 second"))
 
     fiber = yield from handle.await_empty().fork()
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert fiber.poll_unsafe() is None
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert fiber.poll_unsafe() is not None
 
 

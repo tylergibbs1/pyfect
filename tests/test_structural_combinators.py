@@ -20,10 +20,12 @@ def test_replicate_effect_collects_each_run() -> None:
 def test_replicate_effect_discard_and_concurrency() -> None:
     @fx.gen
     def program():
-        fiber = yield from fx.sleep(1).replicate_effect(4, concurrency=2, discard=True).fork()
-        yield from testing.adjust(1)
+        fiber = (
+            yield from fx.sleep("1 second").replicate_effect(4, concurrency=2, discard=True).fork()
+        )
+        yield from testing.adjust("1 second")
         first = fiber.poll_unsafe()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         return first, (yield from fiber.join())
 
     assert testing.run_test(program) == (None, None)
@@ -68,15 +70,17 @@ def test_validate_fails_with_every_error_in_order() -> None:
 def test_race_all_first_success_interrupts_the_rest() -> None:
     @fx.gen
     def program():
-        fiber = yield from fx.race_all_first(fx.sleep(2).as_(2), fx.sleep(1).as_(1)).fork()
-        yield from testing.adjust(1)
+        fiber = yield from fx.race_all_first(
+            fx.sleep("2 seconds").as_(2), fx.sleep("1 second").as_(1)
+        ).fork()
+        yield from testing.adjust("1 second")
         return (yield from fiber.join())
 
     assert testing.run_test(program) == 1
 
 
 def test_timeout_option_succeeds_with_some() -> None:
-    assert testing.run_test(fx.succeed(None).timeout_option(1)) == fx.Some(None)
+    assert testing.run_test(fx.succeed(None).timeout_option("1 second")) == fx.Some(None)
 
 
 def test_cached_run_uses_the_context_of_the_caller_that_starts_it() -> None:
@@ -102,9 +106,9 @@ def test_cached_with_a_fixed_ttl_reruns_after_it_expires() -> None:
 
     @fx.gen
     def program():
-        cached = yield from fx.sync(bump).cached_with_ttl(1)
+        cached = yield from fx.sync(bump).cached_with_ttl("1 second")
         seen = [(yield from cached), (yield from cached)]
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         seen.append((yield from cached))
         return seen
 
@@ -121,7 +125,7 @@ def test_invalidate_drops_the_cached_exit() -> None:
 
     @fx.gen
     def program():
-        cached, invalidate = yield from fx.sync(bump).cached_invalidate_with_ttl(3600)
+        cached, invalidate = yield from fx.sync(bump).cached_invalidate_with_ttl("1 hour")
         first = yield from cached
         yield from invalidate
         return first, (yield from cached)

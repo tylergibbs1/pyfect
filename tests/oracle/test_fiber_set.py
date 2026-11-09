@@ -125,12 +125,12 @@ def test_await_empty():
     """awaitEmpty"""
     fiber_set = yield from fx.FiberSet.make()
     for _ in range(4):
-        yield from fiber_set.run(fx.sleep(1))
+        yield from fiber_set.run(fx.sleep("1 second"))
 
     fiber = yield from fiber_set.await_empty().fork()
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert fiber.poll_unsafe() is None
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert fiber.poll_unsafe() is not None
 
 

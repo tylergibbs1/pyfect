@@ -124,7 +124,7 @@ def test_shuffle_reads_its_iterable_when_it_runs():
 def test_a_jittered_schedule_draws_from_the_seeded_generator():
     @fx.gen
     def delays():
-        step = yield from schedule.to_step_with_metadata(schedule.spaced(1).jittered())
+        step = yield from schedule.to_step_with_metadata(schedule.spaced("1 second").jittered())
         out: list[float] = []
         for _ in range(3):
             meta = yield from step(None)

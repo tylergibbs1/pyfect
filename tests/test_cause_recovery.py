@@ -253,13 +253,13 @@ def test_interrupted_recovery_raises_interrupted_at_the_run_boundary():
     @fx.gen
     def program():
         inner = (
-            fx.sleep(0.2)
+            fx.sleep("200 millis")
             .and_then(fx.fail("boom"))
             .uninterruptible()
             .catch_all(lambda _: fx.succeed("recovered"))
         )
         fiber = yield from inner.fork()
-        yield from fx.sleep(0.05)
+        yield from fx.sleep("50 millis")
         yield from fiber.interrupt()
         return (yield from fiber.join())
 
@@ -272,7 +272,7 @@ def test_every_interruptor_is_recorded():
 
     @fx.gen
     def program():
-        fiber = yield from fx.sleep(0.05).uninterruptible().fork()
+        fiber = yield from fx.sleep("50 millis").uninterruptible().fork()
         yield from fx.yield_now()
         fiber.interrupt_as_unsafe(111)
         fiber.interrupt_as_unsafe(222)

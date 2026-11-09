@@ -36,7 +36,7 @@ def test_an_interrupt_right_after_its_request_runs_the_handlers_cleanup() -> Non
             yield from effect.yield_now()
         return cleaned
 
-    assert fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die()) == ["never"]
+    assert fx.run_blocking(fx.scoped(effect.gen(body)).timeout("5 seconds").or_die()) == ["never"]
 
 
 class Gated(RpcGroup):
@@ -56,7 +56,7 @@ def _messages_when_the_handler_signals(follow_up: Interrupt | Eof) -> list[str]:
         def work(_: object) -> effect.Effect[None]:
             return (
                 effect.sync(started.open_unsafe)
-                .and_then(fx.sleep(0.05))
+                .and_then(fx.sleep("50 millis"))
                 .and_then(effect.sync(lambda: seen.append("handler finished")))
                 .on_interrupt(effect.sync(lambda: seen.append("handler interrupted")))
             )
@@ -72,10 +72,10 @@ def _messages_when_the_handler_signals(follow_up: Interrupt | Eof) -> list[str]:
         ended = yield from signal.fork(start_immediately=True)
         yield from server.write(0, Request("1", "Work", None))
         yield from ended.join()
-        yield from fx.sleep(0.2)
+        yield from fx.sleep("200 millis")
         return seen
 
-    return fx.run_blocking(fx.scoped(effect.gen(body)).timeout(5).or_die())
+    return fx.run_blocking(fx.scoped(effect.gen(body)).timeout("5 seconds").or_die())
 
 
 def test_eof_written_while_the_handler_starts_waits_for_the_handler() -> None:

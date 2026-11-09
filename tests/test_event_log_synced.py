@@ -88,7 +88,7 @@ def test_synced_waits_for_the_writes_of_another_device() -> None:
         .pipe(fx.provide(uvicorn_server.layer_test()))
         .pipe(fx.provide(layer_subtle))
     )
-    assert fx.run_blocking_exit(program.timeout(20)) == fx.Success(["n1", "n2"])
+    assert fx.run_blocking_exit(program.timeout("20 seconds")) == fx.Success(["n1", "n2"])
 
 
 def test_synced_with_no_remote_succeeds_at_once() -> None:

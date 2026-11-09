@@ -4,7 +4,6 @@ released when closed or idle."""
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Any, Never, overload
 
@@ -84,7 +83,7 @@ def make(
 
         ref = yield from RcRef.make(
             acquire_alive,
-            idle_time_to_live=math.inf if idle_time_to_live is None else idle_time_to_live,
+            idle_time_to_live="Infinity" if idle_time_to_live is None else idle_time_to_live,
         )
 
         def shut_down(_: Exit[Any, Any]) -> Effect[None]:

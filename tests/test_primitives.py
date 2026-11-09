@@ -217,9 +217,11 @@ def test_semaphore_limits_concurrency():
     @fx.gen
     def program():
         sem = yield from fx.Semaphore.make(2)
-        task = sem.with_permits(fx.sync(enter).and_then(fx.sleep(1)).and_then(fx.sync(leave)))
+        task = sem.with_permits(
+            fx.sync(enter).and_then(fx.sleep("1 second")).and_then(fx.sync(leave))
+        )
         fiber = yield from fx.for_each(range(6), lambda _: task, concurrency="unbounded").fork()
-        yield from fx.testing.adjust(3)
+        yield from fx.testing.adjust("3 seconds")
         yield from fiber.join()
         return (yield from sem.available)
 

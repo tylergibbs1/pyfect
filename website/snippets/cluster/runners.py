@@ -75,7 +75,7 @@ def program(database: Path):
     first = yield from runner(database, ports[0]).build_with_scope(scope)
     second = yield from runner(database, ports[1]).build_with_scope(scope)
     while not (owns_shards(first) and owns_shards(second)):
-        yield from fx.sleep(0.1)
+        yield from fx.sleep("100 millis")
 
     # A client on the first runner reaches every entity, wherever its shard is.
     make_client = yield from Where.client().pipe(fx.provide(first))

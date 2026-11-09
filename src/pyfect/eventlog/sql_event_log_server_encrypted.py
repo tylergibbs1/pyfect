@@ -145,7 +145,7 @@ def make_storage(
         def lookup(scope_key: str) -> Effect[_Scope, SqlError, Scope]:
             return _open_scope(sql, encryption, entry_table_prefix, dialect, scope_key)
 
-        resources = yield from RcMap.make(lookup, idle_time_to_live=300)
+        resources = yield from RcMap.make(lookup, idle_time_to_live="5 minutes")
         return _SqlStorage(sql, remote_id, bindings, resources)
 
     return gen(build).with_tracer_enabled(False)

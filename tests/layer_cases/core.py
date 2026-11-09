@@ -125,8 +125,8 @@ def _join(service: Any) -> AnyEffect:
 def _sleep_on_test_clock() -> AnyEffect:
     @fx.fn
     def run():
-        fiber = yield from fx.sleep(10).fork()
-        yield from testing.adjust(10)
+        fiber = yield from fx.sleep("10 seconds").fork()
+        yield from testing.adjust("10 seconds")
         return (yield from fiber.join())
 
     return run()
@@ -301,7 +301,7 @@ CASES: dict[str, Case] = {
         layer=lambda: date_time.layer_current_zone_named("Europe/London"), use=_now_in_zone
     ),
     "pyfect.date_time.layer_current_zone_offset": Case(
-        layer=lambda: date_time.layer_current_zone_offset(3600), use=_now_in_zone
+        layer=lambda: date_time.layer_current_zone_offset("1 hour"), use=_now_in_zone
     ),
     "pyfect.error_reporter.layer": Case(
         layer=lambda: error_reporter.layer([error_reporter.make(_reports.append)]),

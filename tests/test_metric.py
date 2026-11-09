@@ -21,15 +21,15 @@ def _fresh[A, E](eff: fx.Effect[A, E]) -> fx.Effect[A, E]:
 
 @testing.effect
 def test_a_summary_keeps_observations_up_to_max_age_inclusive():
-    summary = metric.summary("ages", max_age=60, max_size=10, quantiles=[0, 1])
+    summary = metric.summary("ages", max_age="1 minute", max_size=10, quantiles=[0, 1])
     yield from summary.update(1)
-    yield from testing.adjust(30)
+    yield from testing.adjust("30 seconds")
     yield from summary.update(2)
-    yield from testing.adjust(30)
+    yield from testing.adjust("30 seconds")
     assert (yield from summary.value()).quantiles == ((0, 1), (1, 2))
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     assert (yield from summary.value()).quantiles == ((0, 2), (1, 2))
-    yield from testing.adjust(60)
+    yield from testing.adjust("1 minute")
     state = yield from summary.value()
     assert state.quantiles == ((0, None), (1, None))
     assert (state.count, state.min, state.max, state.sum) == (2, 1, 2, 3)
@@ -37,11 +37,13 @@ def test_a_summary_keeps_observations_up_to_max_age_inclusive():
 
 @testing.effect
 def test_summary_with_timestamp_drops_future_and_expired_observations():
-    summary = metric.summary_with_timestamp("stamped", max_age=10, max_size=10, quantiles=[0.5])
-    yield from testing.set_time(100)
-    yield from summary.update((1, 85))  # 15s old
-    yield from summary.update((2, 101))  # in the future
-    yield from summary.update((3, 90.0))  # exactly max_age old
+    summary = metric.summary_with_timestamp(
+        "stamped", max_age="10 seconds", max_size=10, quantiles=[0.5]
+    )
+    yield from testing.set_time(100_000)
+    yield from summary.update((1, 85_000))  # 15s old
+    yield from summary.update((2, 101_000))  # in the future
+    yield from summary.update((3, 90_000))  # exactly max_age old
     state = yield from summary.value()
     assert state.quantiles == ((0.5, 3),)
     assert state.count == 3
@@ -51,12 +53,14 @@ def test_summary_with_timestamp_drops_future_and_expired_observations():
 def test_summary_with_timestamp_ages_non_finite_timestamps_as_effect_does():
     # Effect under Node: NaN and +Infinity timestamps are never in range; a
     # -Infinity one is only within an infinite max_age. All are counted.
-    summary = metric.summary_with_timestamp("odd", max_age=60, max_size=10, quantiles=[0, 1])
-    yield from testing.set_time(100)
+    summary = metric.summary_with_timestamp(
+        "odd", max_age="1 minute", max_size=10, quantiles=[0, 1]
+    )
+    yield from testing.set_time(100_000)
     yield from summary.update((1, math.nan))
     yield from summary.update((2, math.inf))
     yield from summary.update((3, -math.inf))
-    yield from summary.update((4, 100))
+    yield from summary.update((4, 100_000))
     state = yield from summary.value()
     assert state.quantiles == ((0, 4), (1, 4))
     assert (state.count, state.min, state.max, state.sum) == (4, 1, 4, 10)
@@ -68,7 +72,9 @@ def test_summary_with_timestamp_ages_non_finite_timestamps_as_effect_does():
 @testing.effect
 def test_a_summary_quantile_on_an_exact_rank_takes_the_lower_sample():
     # Effect under Node: [[0.25,1],[0.3,2],[0.5,2],[0.75,3]].
-    summary = metric.summary("ranks", max_age=60, max_size=10, quantiles=[0.75, 0.5, 0.25, 0.3])
+    summary = metric.summary(
+        "ranks", max_age="1 minute", max_size=10, quantiles=[0.75, 0.5, 0.25, 0.3]
+    )
     yield from fx.for_each([4, 1, 3, 2], summary.update)
     state = yield from summary.value()
     assert state.quantiles == ((0.25, 1), (0.3, 2), (0.5, 2), (0.75, 3))
@@ -76,7 +82,7 @@ def test_a_summary_quantile_on_an_exact_rank_takes_the_lower_sample():
 
 @testing.effect
 def test_a_summary_keeps_only_the_last_max_size_observations():
-    summary = metric.summary("ring", max_age=60, max_size=3, quantiles=[0.9, 0.5, 0])
+    summary = metric.summary("ring", max_age="1 minute", max_size=3, quantiles=[0.9, 0.5, 0])
     yield from fx.for_each([5, 1, 4, 2], summary.update)
     assert (yield from summary.value()) == metric.SummaryState(
         quantiles=((0, 1), (0.5, 2), (0.9, 4)), count=4, min=1, max=5, sum=12
@@ -85,7 +91,7 @@ def test_a_summary_keeps_only_the_last_max_size_observations():
 
 @testing.effect
 def test_a_summary_of_size_zero_counts_but_keeps_no_samples():
-    summary = metric.summary("none", max_age=60, max_size=0, quantiles=[0.5])
+    summary = metric.summary("none", max_age="1 minute", max_size=0, quantiles=[0.5])
     yield from summary.update(7)
     assert (yield from summary.value()) == metric.SummaryState(
         quantiles=((0.5, None),), count=1, min=7, max=7, sum=7
@@ -94,7 +100,7 @@ def test_a_summary_of_size_zero_counts_but_keeps_no_samples():
 
 def test_a_quantile_out_of_range_dies_on_the_first_update():
     """Printed by Effect under Node: making it is fine, its hooks throw."""
-    bad = metric.summary("bad", max_age=1, max_size=1, quantiles=[0.5, 1.5])
+    bad = metric.summary("bad", max_age="1 second", max_size=1, quantiles=[0.5, 1.5])
     exit = fx.run_blocking_exit(_fresh(bad.update(1)))
     assert isinstance(exit, Failure)
     assert isinstance(exit.cause.reasons[0], Die)
@@ -115,7 +121,7 @@ def test_a_histogram_counts_nan_past_every_boundary():
 def test_a_timer_records_milliseconds_with_a_time_unit_attribute():
     timer = metric.timer("t", attributes={"route": "/"}, boundaries=[1, 10])
     yield from timer.update(timedelta(milliseconds=5))
-    yield from timer.update(0.0005)
+    yield from timer.update("500 micros")
     state = yield from timer.value()
     assert state.buckets == ((1, 1), (10, 2))
     assert state.sum == 5.5
@@ -172,8 +178,13 @@ def test_track_maps_exits_errors_and_defects():
 @testing.effect
 def test_track_duration_records_a_failing_effect_too():
     timer = metric.timer("failing")
-    fiber = yield from fx.sleep(2).flat_map(lambda _: fx.fail("x")).track_duration(timer).fork()
-    yield from testing.adjust(2)
+    fiber = (
+        yield from fx.sleep("2 seconds")
+        .flat_map(lambda _: fx.fail("x"))
+        .track_duration(timer)
+        .fork()
+    )
+    yield from testing.adjust("2 seconds")
     yield from fiber.await_exit()
     assert (yield from timer.value()).sum == 2000
 
@@ -183,8 +194,8 @@ def test_track_duration_records_milliseconds_as_effect_divides_nanoseconds():
     # Effect: Duration.toMillis(5_000_001n nanos) is 5000001 / 1e6 = 5.000001;
     # going through float seconds would give 5.000000999999999.
     timer = metric.timer("exact")
-    fiber = yield from fx.sleep(0.005000001).track_duration(timer).fork()
-    yield from testing.adjust(0.005000001)
+    fiber = yield from fx.sleep("5000001 nanos").track_duration(timer).fork()
+    yield from testing.adjust("5000001 nanos")
     yield from fiber.join()
     assert (yield from timer.value()).sum == 5.000001
 
@@ -301,7 +312,7 @@ def test_dump_and_prometheus_text_match_effect():
         yield from metric.gauge("g-g").update(1e21)
         histogram = metric.histogram("h", boundaries=[5, 1, 2.5])
         yield from fx.for_each([0.5, 1, 3, 10, math.nan, -1], histogram.update)
-        yield from metric.summary("s2", max_age=60, max_size=3, quantiles=[0.5]).value()
+        yield from metric.summary("s2", max_age="1 minute", max_size=3, quantiles=[0.5]).value()
         frequency = metric.frequency("f", preregistered_words=["z"])
         yield from fx.for_each(["a", "a", "b"], frequency.update)
         dumped = yield from metric.dump
@@ -385,7 +396,7 @@ def test_a_metric_is_its_own_description():
 
 def test_a_negative_max_size_keeps_no_samples():
     """Printed by Effect under Node: no error, and as ``maxSize: 0``."""
-    summary = metric.summary("negative-size", max_age=60, max_size=-1, quantiles=[0.5])
+    summary = metric.summary("negative-size", max_age="1 minute", max_size=-1, quantiles=[0.5])
     state = fx.run_blocking(_fresh(summary.update(1).and_then(summary.value())))
     assert state.quantiles == ((0.5, None),)
     assert state.count == 1

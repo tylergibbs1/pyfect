@@ -244,10 +244,10 @@ def test_an_interrupted_lock_operation_keeps_the_reserved_connection(pg_server: 
 
         yield from faults.set("blackhole")
         refresh = yield from storage.refresh(runner_address1, [shard]).fork()
-        yield from fx.sleep(0.05)
+        yield from fx.sleep("50 millis")
         yield from refresh.interrupt()
         yield from faults.set("clear")
-        yield from fx.sleep(0.2)
+        yield from fx.sleep("200 millis")
         assert reserves == [1]
 
     yield from fx.gen(body)

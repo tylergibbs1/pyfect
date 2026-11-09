@@ -23,7 +23,7 @@ def run_test_exit[A, E](
     eff: Effect[A, E, Never],
     *,
     stall_timeout: float = 1.0,
-    warning_delay: Duration = 1.0,
+    warning_delay: Duration = "1 second",
     timeout: Duration | None = None,
 ) -> Exit[A, E]:
     """Run ``eff`` on a synchronous scheduler with a ``TestClock`` and a
@@ -47,7 +47,7 @@ def run_test[A](
     eff: Effect[A, Never, Never],
     *,
     stall_timeout: float = 1.0,
-    warning_delay: Duration = 1.0,
+    warning_delay: Duration = "1 second",
     timeout: Duration | None = None,
 ) -> A:
     return unwrap(
@@ -58,7 +58,10 @@ def run_test[A](
 
 
 async def run_test_async_exit[A, E](
-    eff: Effect[A, E, Never], *, warning_delay: Duration = 1.0, timeout: Duration | None = None
+    eff: Effect[A, E, Never],
+    *,
+    warning_delay: Duration = "1 second",
+    timeout: Duration | None = None,
 ) -> Exit[A, E]:
     """Run ``eff`` on the running asyncio loop with a ``TestClock`` and a
     ``TestConsole``, so
@@ -79,6 +82,9 @@ async def run_test_async_exit[A, E](
 
 
 async def run_test_async[A](
-    eff: Effect[A, Never, Never], *, warning_delay: Duration = 1.0, timeout: Duration | None = None
+    eff: Effect[A, Never, Never],
+    *,
+    warning_delay: Duration = "1 second",
+    timeout: Duration | None = None,
 ) -> A:
     return unwrap(await run_test_async_exit(eff, warning_delay=warning_delay, timeout=timeout))

@@ -221,8 +221,8 @@ _MONOTONIC_NANOS = 123_456_789
 
 
 class _SkewedClock:
-    def now_unsafe(self) -> float:
-        return _WALL_NANOS / 1e9
+    def current_time_millis_unsafe(self) -> float:
+        return _WALL_NANOS / 1e6
 
     def monotonic_unsafe(self) -> float:
         return _MONOTONIC_NANOS / 1e9

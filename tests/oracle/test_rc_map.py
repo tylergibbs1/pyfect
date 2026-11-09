@@ -18,6 +18,7 @@ import pytest
 import pyfect as fx
 from pyfect import testing
 from pyfect.cause import Die
+from pyfect.duration import Seconds
 
 
 def _interrupted(ex: fx.Exit[Any, Any] | None) -> bool:
@@ -83,7 +84,7 @@ def test_releases_every_entry_and_propagates_all_defects_with_ttl(
 
     rc_map = yield from _in(
         owner,
-        fx.RcMap.make(lookup, idle_time_to_live=idle_time_to_live),
+        fx.RcMap.make(lookup, idle_time_to_live=Seconds(idle_time_to_live)),
     )
 
     for key in ["a", "b", "ok"]:
@@ -122,13 +123,13 @@ def _bad_lookup(throws: bool):
 def test_releases_capacity_after_a_failed_lookup(throws: bool, idle_time_to_live: float):
     """releases capacity after a ${throws ? "throwing" : "dying"} lookup with TTL %s"""
     rc_map = yield from fx.RcMap.make(
-        _bad_lookup(throws), capacity=1, idle_time_to_live=idle_time_to_live
+        _bad_lookup(throws), capacity=1, idle_time_to_live=Seconds(idle_time_to_live)
     )
 
     assert _died_with((yield from fx.scoped(rc_map.get("bad")).exit()), "boom")
     if idle_time_to_live > 0:
         assert (yield from rc_map.has("bad"))
-        yield from testing.adjust(idle_time_to_live)
+        yield from testing.adjust(Seconds(idle_time_to_live))
     assert (yield from rc_map.get("good").exit()) == fx.Success("good")
     assert not (yield from rc_map.has("bad"))
 
@@ -141,9 +142,9 @@ def test_shares_a_failed_lookups_defect_with_later_borrowers(throws: bool):
 
     assert _died_with((yield from rc_map.get("bad").exit()), "boom")
     borrower = yield from (
-        rc_map.get_option("bad").exit().timeout_option(1.0).fork(start_immediately=True)
+        rc_map.get_option("bad").exit().timeout_option("1 second").fork(start_immediately=True)
     )
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     result = yield from borrower.join()
     assert isinstance(result, fx.Some)
     assert _died_with(result.value, "boom")
@@ -166,7 +167,9 @@ def test_releases_only_the_invalidated_entry_with_ttl(idle_time_to_live: float):
             fx.sync(acquire), lambda v, _: fx.sync(lambda: released.append(v))
         )
 
-    rc_map = yield from _in(map_scope, fx.RcMap.make(lookup, idle_time_to_live=idle_time_to_live))
+    rc_map = yield from _in(
+        map_scope, fx.RcMap.make(lookup, idle_time_to_live=Seconds(idle_time_to_live))
+    )
 
     assert (yield from _in(old_scope, rc_map.get("key"))) == 1
     yield from rc_map.invalidate("key")
@@ -180,9 +183,9 @@ def test_releases_only_the_invalidated_entry_with_ttl(idle_time_to_live: float):
     yield from new_scope.close(fx.Success(None))
     after_new_release = list(released)
     if idle_time_to_live == 1.0:
-        yield from testing.adjust(0.999)
+        yield from testing.adjust("999 millis")
         assert (yield from rc_map.has("key"))
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         assert not (yield from rc_map.has("key"))
     yield from map_scope.close(fx.Success(None))
 
@@ -206,10 +209,10 @@ def test_an_invalidated_entrys_idle_timer_cannot_remove_its_replacement():
             lambda v, _: fx.sync(lambda: released.append(v)),
         )
 
-    rc_map = yield from _in(map_scope, fx.RcMap.make(lookup, idle_time_to_live=1.0))
+    rc_map = yield from _in(map_scope, fx.RcMap.make(lookup, idle_time_to_live="1 second"))
 
     assert (yield from fx.scoped(rc_map.get("key"))) == 1
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert rc_map._entries is not None
     idle_fiber = rc_map._entries["key"].fiber
     assert idle_fiber is not None
@@ -221,7 +224,7 @@ def test_an_invalidated_entrys_idle_timer_cannot_remove_its_replacement():
     assert (yield from _in(new_scope, rc_map.get("key"))) == 2
     yield from old_scope.close(fx.Success(None))
     assert _interrupted(idle_fiber.poll_unsafe())
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     replacement = yield from fx.scoped(rc_map.get_option("key"))
     after_timer = list(released)
     yield from map_scope.close(fx.Success(None))
@@ -325,21 +328,21 @@ def test_propagates_a_cached_failure():
 def test_retains_an_idle_entry_and_restarts_its_ttl_on_release():
     """retains an idle entry and restarts its TTL on release"""
     released = yield from fx.Ref.make(0)
-    rc_map = yield from fx.RcMap.make(_counting(released), idle_time_to_live=1.0)
+    rc_map = yield from fx.RcMap.make(_counting(released), idle_time_to_live="1 second")
     owner_scope = fx.CloseableScope()
     yield from _in(owner_scope, rc_map.get("ttl"))
     yield from owner_scope.close(fx.Success(None))
 
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     borrower_scope = fx.CloseableScope()
     assert (yield from _in(borrower_scope, rc_map.get_option("ttl"))) == fx.Some("ttl")
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert (yield from released.get()) == 0
 
     yield from borrower_scope.close(fx.Success(None))
-    yield from testing.adjust(0.999)
+    yield from testing.adjust("999 millis")
     assert (yield from released.get()) == 0
-    yield from testing.adjust(0.001)
+    yield from testing.adjust("1 millis")
     assert (yield from released.get()) == 1
     assert (yield from rc_map.get_option("ttl")) is None
 
@@ -417,26 +420,26 @@ def test_idle_time_to_live():
     """idleTimeToLive"""
     acquired: list[str] = []
     released: list[str] = []
-    rc_map = yield from fx.RcMap.make(_lookup(acquired, released), idle_time_to_live=1.0)
+    rc_map = yield from fx.RcMap.make(_lookup(acquired, released), idle_time_to_live="1 second")
 
     assert acquired == []
     assert (yield from fx.scoped(rc_map.get("foo"))) == "foo"
     assert acquired == ["foo"]
     assert released == []
 
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     assert released == ["foo"]
 
     assert (yield from fx.scoped(rc_map.get("bar"))) == "bar"
     assert acquired == ["foo", "bar"]
     assert released == ["foo"]
 
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert (yield from fx.scoped(rc_map.get("bar"))) == "bar"
     assert acquired == ["foo", "bar"]
     assert released == ["foo"]
 
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     assert released == ["foo", "bar"]
 
     yield from fx.scoped(rc_map.get("baz"))
@@ -451,27 +454,27 @@ def test_touch():
     """.touch"""
     acquired: list[str] = []
     released: list[str] = []
-    rc_map = yield from fx.RcMap.make(_lookup(acquired, released), idle_time_to_live=1.0)
+    rc_map = yield from fx.RcMap.make(_lookup(acquired, released), idle_time_to_live="1 second")
 
     assert acquired == []
     assert (yield from fx.scoped(rc_map.get("foo"))) == "foo"
     assert acquired == ["foo"]
     assert released == []
 
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert released == []
 
     yield from rc_map.touch("foo")
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert released == []
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert released == ["foo"]
 
 
 @testing.effect
 def test_capacity():
     """capacity"""
-    rc_map = yield from fx.RcMap.make(_same, capacity=2, idle_time_to_live=1.0)
+    rc_map = yield from fx.RcMap.make(_same, capacity=2, idle_time_to_live="1 second")
 
     assert (yield from fx.scoped(rc_map.get("foo"))) == "foo"
     assert (yield from fx.scoped(rc_map.get("foo"))) == "foo"
@@ -480,7 +483,7 @@ def test_capacity():
     ex = yield from fx.scoped(rc_map.get("baz")).exit()
     assert ex == fx.exit.fail(fx.ExceededCapacityError("RcMap attempted to exceed capacity of 2"))
 
-    yield from testing.adjust(1.0)
+    yield from testing.adjust("1 second")
     assert (yield from fx.scoped(rc_map.get("baz"))) == "baz"
 
 
@@ -516,7 +519,7 @@ def test_keys_lookup():
 
 
 def _short_or_long(key: str) -> float:
-    return 0.5 if key.startswith("short:") else 2.0
+    return Seconds(0.5) if key.startswith("short:") else Seconds(2)
 
 
 @testing.effect
@@ -533,10 +536,10 @@ def test_dynamic_idle_time_to_live():
     assert acquired == ["short:a", "long:b"]
     assert released == []
 
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert released == ["short:a"]
 
-    yield from testing.adjust(1.5)
+    yield from testing.adjust("1500 millis")
     assert released == ["short:a", "long:b"]
 
 
@@ -551,12 +554,12 @@ def test_dynamic_idle_time_to_live_with_touch():
     assert acquired == ["short:a"]
     assert released == []
 
-    yield from testing.adjust(0.25)
+    yield from testing.adjust("250 millis")
     yield from rc_map.touch("short:a")
-    yield from testing.adjust(0.25)
+    yield from testing.adjust("250 millis")
     assert released == []
 
-    yield from testing.adjust(0.25)
+    yield from testing.adjust("250 millis")
     assert released == ["short:a"]
 
 
@@ -576,9 +579,9 @@ def test_closing_the_map_while_an_idle_entry_is_being_released_runs_every_finali
         yield from fx.add_finalizer(lambda _: fx.sync(count))
         yield from fx.add_finalizer(lambda _: gate.wait().and_then(fx.sync(count)))
 
-    rc_map = yield from _in(scope, fx.RcMap.make(lookup, idle_time_to_live=1))
+    rc_map = yield from _in(scope, fx.RcMap.make(lookup, idle_time_to_live="1 second"))
     yield from fx.scoped(rc_map.get("a"))
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert not (yield from rc_map.has("a"))
     closing = yield from scope.close(fx.Success(None)).fork(start_immediately=True)
     yield from gate.succeed(None)
@@ -605,7 +608,7 @@ def test_drops_an_interrupted_lookup_and_closes_its_scope():
         yield from interrupt.wait()
         return (yield from fx.interrupt())
 
-    rc_map = yield from fx.RcMap.make(lookup, idle_time_to_live=60)
+    rc_map = yield from fx.RcMap.make(lookup, idle_time_to_live="1 minute")
 
     # The only borrower leaves, so nothing else releases the entry.
     borrower = yield from fx.scoped(rc_map.get("key")).fork(start_immediately=True)
@@ -631,12 +634,12 @@ def test_idle_entry_is_released_exactly_when_its_ttl_ends():
             fx.succeed(key), lambda _a, _e: fx.clock.now_nanos().map(closed.append)
         )
 
-    rc_map = yield from fx.RcMap.make(lookup, idle_time_to_live=0.2)
-    yield from testing.adjust(0.1)
+    rc_map = yield from fx.RcMap.make(lookup, idle_time_to_live="200 millis")
+    yield from testing.adjust("100 millis")
     scope = fx.CloseableScope()
     yield from _in(scope, rc_map.get("a"))
     yield from scope.close(fx.Success(None))
     with warnings.catch_warnings():
         warnings.simplefilter("error", testing.BusyFiberWarning)
-        yield from testing.adjust(1.0)
+        yield from testing.adjust("1 second")
     assert closed == [300_000_000]

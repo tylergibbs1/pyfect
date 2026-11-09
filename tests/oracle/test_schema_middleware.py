@@ -74,7 +74,7 @@ def test_catch_decoding_sync_fallback():
 
 def test_catch_decoding_async_fallback():
     """catchDecoding / async fallback"""
-    schema = S.String.pipe(S.catch_decoding(lambda _: _b(_).delay(0.01)))
+    schema = S.String.pipe(S.catch_decoding(lambda _: _b(_).delay("10 millis")))
     decoding = SchemaAsserts(schema).decoding()
     decoding.succeed("a")
     decoding.succeed(None, "b")
@@ -154,7 +154,9 @@ def test_catch_encoding_sync_fallback():
 
 def test_catch_encoding_async_fallback():
     """catchEncoding / async fallback"""
-    schema = S.Number.pipe(S.catch_encoding(lambda _: _zero(_).delay(0.01))).pipe(S.encode_to(_INT))
+    schema = S.Number.pipe(S.catch_encoding(lambda _: _zero(_).delay("10 millis"))).pipe(
+        S.encode_to(_INT)
+    )
     encoding = SchemaAsserts(schema).encoding()
     encoding.succeed(1)
     encoding.succeed(None, 0)
@@ -301,7 +303,7 @@ def test_encode_to_as_composition():
 
 def _not_empty(text: str, options: S.ParseOptions) -> Effect[G.CheckOutput]:
     issue = InvalidValue({"message": "input should not be empty string"}) if text == "" else None
-    return fx.succeed(issue).delay(0.01)
+    return fx.succeed(issue).delay("10 millis")
 
 
 def test_check_effect_no_context():

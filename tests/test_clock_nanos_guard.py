@@ -5,9 +5,10 @@ float seconds is off by a fraction of one (``0.1 + 0.2 > 0.3``): the
 leftover floors to a 0 ns sleep that never moves time, so the timer spins
 (``debounce``, ``timeout``, ``RcMap`` idle TTLs), or it fires a nanosecond
 early or late (``throttle``, ``aggregate_within``, ``cached_with_ttl``).
-Epoch milliseconds from ``now_unsafe() * 1000`` floor a millisecond low
-(``snowflake``). Read ``now_nanos_unsafe()`` / ``monotonic_nanos_unsafe()``
-(or ``clock.now_millis_unsafe``), add
+A float of epoch milliseconds (``current_time_millis_unsafe()``) keeps a test
+clock's fraction of a millisecond (``snowflake`` wants whole ones). Read
+``now_nanos_unsafe()`` / ``monotonic_nanos_unsafe()`` (or
+``clock.now_millis_unsafe``), add
 ``duration.nanos_or_infinite(d)`` and sleep ``duration.from_nanos(gap)``.
 """
 
@@ -17,7 +18,7 @@ import ast
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
-_FLOAT_READS = {"now_unsafe", "monotonic_unsafe"}
+_FLOAT_READS = {"current_time_millis_unsafe", "monotonic_unsafe"}
 
 
 def _float_clock_read(node: ast.AST) -> bool:
@@ -35,7 +36,7 @@ def _nodes(root: Path):
 
 
 # Where a float clock read is the value itself: the clock's own float
-# readers, and Schedule steps, whose ``now`` input is float seconds.
+# readers, and Schedule steps, whose ``now`` input is epoch milliseconds.
 _FLOAT_READERS = {
     "clock.py",
     "testing/_clock.py",
@@ -46,9 +47,9 @@ _FLOAT_READERS = {
 
 def test_float_clock_reads_only_feed_schedules():
     """Deadlines, elapsed times and epoch milliseconds are computed from
-    the nanosecond clocks (``clock.now_millis_unsafe`` for milliseconds):
-    ``now_unsafe() * 1000`` floors 1.001 s to 1000 ms, and a float read
-    kept in a variable is off by the same fraction later."""
+    the nanosecond clocks (``clock.now_millis_unsafe`` for whole
+    milliseconds): a float read kept in a variable is off by a fraction of
+    a nanosecond later."""
     offenders = [
         f"{path.relative_to(SRC)}:{getattr(node, 'lineno', 0)}"
         for path, node in _nodes(SRC)

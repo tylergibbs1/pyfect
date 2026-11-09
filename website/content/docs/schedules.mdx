@@ -22,6 +22,20 @@ Combinators: `up_to(times=, duration=)`, `jittered`, `while_`, `max` / `min`, `c
 more. They are methods; `jittered` and `passthrough` also pipe (`s.pipe(schedule.jittered)`). Schedules use the `Clock` service, so tests can run them on virtual time
 ([Testing](/docs/testing)).
 
+## Durations
+
+Every duration in pyfect (a sleep, a timeout, a schedule's delay, a time to live) takes a string
+with its unit (`"500 millis"`, `"10 seconds"`, `"1 hour"`), a `timedelta`, a `(seconds, nanos)`
+pair, a mapping such as `{"minutes": 1, "seconds": 30}`, or a bare number of milliseconds, as in
+Effect. An invalid string raises `ValueError`.
+
+<Callout title="Bare numbers are milliseconds since 0.2.0">
+In 0.1.0 a bare number was seconds, so `fx.sleep(5)` waited 5 seconds; since 0.2.0 it waits 5
+milliseconds. Write the unit (`fx.sleep("5 seconds")`) or a `timedelta`, which read the same in
+every version. Timestamps are epoch milliseconds too: `testing.set_time`,
+`clock.current_time_millis` (which replaces `clock.now`) and a step's `start` and `now`.
+</Callout>
+
 ## Cron
 
 `pyfect.cron` parses cron expressions: five fields (minute, hour, day, month, weekday), or

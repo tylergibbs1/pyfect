@@ -169,7 +169,7 @@ def _make_handlers() -> Any:
             offer = mailbox.offer(User(id=request.payload["id"], name="John")).flat_map(
                 lambda _: bump("emits")
             )
-            yield from fork_scoped(offer.delay(0.1).forever())
+            yield from fork_scoped(offer.delay("100 millis").forever())
             return mailbox
 
         return run

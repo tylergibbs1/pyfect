@@ -51,6 +51,7 @@ from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.snowflake import Generator, Snowflake
 from pyfect.context import Context
 from pyfect.deferred import Deferred
+from pyfect.duration import Seconds
 from pyfect.errors import Done
 from pyfect.http import client as http_client
 from pyfect.http import response as http_response
@@ -239,9 +240,11 @@ def test_delivers_a_persisted_local_reply_completed_before_save_request_returns(
         )
         complete[0] = _save_reply(storage, message, snowflakes.next_unsafe()).or_die()
         pending = yield from fork_scoped(
-            runners.notify_local(message, notify=_no_notify, discard=False).timeout_option(1)
+            runners.notify_local(message, notify=_no_notify, discard=False).timeout_option(
+                "1 second"
+            )
         )
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert (yield from pending.join()) is not None, "the caller must complete"
         assert replies == [Exit.succeed(42)]
 
@@ -273,10 +276,12 @@ def test_answers_a_fresh_local_request_without_reading_or_polling_storage():
             TestRpcPersisted, snowflakes.next_unsafe(), _exits(replies)
         )
         pending = yield from fork_scoped(
-            runners.notify_local(message, notify=_no_notify, discard=False).timeout_option(4 * 3600)
+            runners.notify_local(message, notify=_no_notify, discard=False).timeout_option(
+                Seconds(4 * 3600)
+            )
         )
         # Pass three one-hour poll intervals while the request waits.
-        yield from testing.adjust(3 * 3600)
+        yield from testing.adjust(Seconds(3 * 3600))
         assert reads[0] == 0, "a parked fresh local request must not be read from storage"
         yield from _save_reply(storage, message, snowflakes.next_unsafe())
         yield from testing.adjust(0)
@@ -311,7 +316,7 @@ def test_keeps_a_duplicate_local_waiter_alive_when_the_first_caller_cancels():
 
         a = yield from fork_scoped(notify(first))
         yield from testing.adjust(0)
-        b = yield from fork_scoped(notify(duplicate).timeout_option(1))
+        b = yield from fork_scoped(notify(duplicate).timeout_option("1 second"))
         yield from testing.adjust(0)
         yield from a.interrupt()
         yield from _save_reply(storage, first, snowflakes.next_unsafe())
@@ -613,7 +618,7 @@ def test_a_reply_that_fails_to_serialize_fails_only_its_own_request():
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = yield from make_client(Rpcs)
         request = yield from make_request(BadReplyEntityVolatile, "bad-1", tag="BadReply")
         exit = yield from client.effect({"request": request, "persisted": False}).exit()
@@ -639,7 +644,7 @@ def test_a_stream_reply_that_fails_to_serialize_ends_the_stream_with_the_defect(
 
     @fx.gen
     def body():
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         client = yield from make_client(Rpcs)
         request = yield from make_request(BadReplyEntityVolatile, "bad-2", tag="BadStream")
         queue = yield from client.stream({"request": request, "persisted": False}, as_queue=True)

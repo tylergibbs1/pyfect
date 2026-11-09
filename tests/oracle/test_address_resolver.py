@@ -101,7 +101,7 @@ def test_named_zones():
 SYSTEM = ar.layer_system().pipe(fx.provide(dns.layer_system()))
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_system_hosts_file():
     """looks up domain names from the hosts file"""
 
@@ -115,7 +115,7 @@ def test_system_hosts_file():
     yield from fx.gen(body).pipe(fx.provide(SYSTEM))
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_system_zones():
     """resolves IPv6 zones from the network interfaces"""
 

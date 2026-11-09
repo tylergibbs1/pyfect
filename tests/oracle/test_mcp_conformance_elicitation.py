@@ -165,7 +165,7 @@ def test_must_cancel_the_pending_http_elicitation_when_its_tool_call_is_cancelle
         headers,
     )
     assert cancelled.status == 202
-    remaining = yield from stream.drain().timeout(1)
+    remaining = yield from stream.drain().timeout("1 second")
     assert [message.get("method") for message in remaining] == ["notifications/cancelled"]
     assert remaining[0]["params"]["requestId"] == reverse["id"]
     assert not any(str(m.get("method", "")).startswith("@effect/rpc/") for m in remaining)

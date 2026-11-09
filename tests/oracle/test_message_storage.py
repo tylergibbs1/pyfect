@@ -361,7 +361,7 @@ def test_register_reply_handler():
         fiber = yield from storage.register_reply_handler(
             _with_respond(request, lambda _reply: latch.open().as_void())
         ).fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from storage.save_reply((yield from make_reply(request)))
         yield from latch.wait()
         yield from fiber.await_exit()
@@ -379,7 +379,7 @@ def test_unregister_shard_reply_handlers_fails_waiters_during_rebalance():
         fiber = yield from storage.register_reply_handler(
             _with_respond(request, lambda _reply: fx.void)
         ).fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from storage.unregister_shard_reply_handlers(request.envelope.address.shard_id)
         exit = yield from fiber.await_exit()
         assert isinstance(exit, Failure)
@@ -400,7 +400,7 @@ def test_unregister_shard_reply_handlers_annotates_waiters_during_shutdown():
         fiber = yield from storage.register_reply_handler(
             _with_respond(request, lambda _reply: fx.void)
         ).fork(start_immediately=True)
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from storage.unregister_shard_reply_handlers(
             request.envelope.address.shard_id, interrupt=True
         )
@@ -431,7 +431,7 @@ def test_reply_handlers_receive_persisted_defect_fallback():
             return latch.open().as_void()
 
         fiber = yield from storage.register_reply_handler(_with_respond(request, respond)).fork()
-        yield from testing.adjust(0.001)
+        yield from testing.adjust("1 millis")
         yield from storage.save_reply(
             ReplyWithContext(
                 WithExit(

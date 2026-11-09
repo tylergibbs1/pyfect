@@ -122,7 +122,10 @@ def test_httpx_interrupt_closes_the_connection(hanging_server: str) -> None:
     from pyfect.http import httpx_client
 
     timed_out = _run(
-        c.get(f"{hanging_server}/hang").timeout(0.2).option().pipe(fx.provide(httpx_client.layer))
+        c.get(f"{hanging_server}/hang")
+        .timeout("200 millis")
+        .option()
+        .pipe(fx.provide(httpx_client.layer))
     )
     assert timed_out is None
     assert _Hanging.closed.wait(2)
@@ -166,7 +169,7 @@ def _never_sending(
 
 def test_interrupting_a_request_aborts_its_signal() -> None:
     signals: list[AbortSignal] = []
-    assert _run(_never_sending(signals).get("http://test/").timeout(0.01).option()) is None
+    assert _run(_never_sending(signals).get("http://test/").timeout("10 millis").option()) is None
     assert signals[0].aborted
 
 
@@ -179,7 +182,9 @@ def test_interrupting_a_body_read_aborts_the_request() -> None:
         signals.append(signal)
         return fx.succeed(res.make(request, fx.stream.never))
 
-    reading = c.make(send).get("http://test/").flat_map(lambda r: r.text.timeout(0.01).option())
+    reading = (
+        c.make(send).get("http://test/").flat_map(lambda r: r.text.timeout("10 millis").option())
+    )
     assert _run(reading) is None
     assert signals[0].aborted
 

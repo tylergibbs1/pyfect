@@ -307,7 +307,7 @@ def test_name_server_from_input() -> None:
         assert isinstance(dns.name_server_from_input(cast(Any, value)), Err), value
 
 
-@testing.live(timeout=10)
+@testing.live(timeout="10 seconds")
 def test_system_looks_up_localhost():
     """looks up localhost from the hosts file"""
     service = dns.make_system()

@@ -22,7 +22,7 @@ def until_running(on_server: Callable[[], object]) -> Generator[Any, Any]:
     deadline = time.monotonic() + 15
     while not (yield from fx.blocking(on_server)):
         assert time.monotonic() < deadline, "the statement never reached the server"
-        yield from fx.sleep(0.02)
+        yield from fx.sleep("20 millis")
 
 
 def gone_soon(on_server: Callable[[], object]) -> Generator[Any, Any]:
@@ -30,7 +30,7 @@ def gone_soon(on_server: Callable[[], object]) -> Generator[Any, Any]:
     deadline = time.monotonic() + GONE_WITHIN
     while running := (yield from fx.blocking(on_server)):
         assert time.monotonic() < deadline, f"still on the server: {running}"
-        yield from fx.sleep(0.05)
+        yield from fx.sleep("50 millis")
 
 
 def interrupted_and_gone(

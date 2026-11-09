@@ -9,7 +9,7 @@ import pytest
 import pyfect as fx
 from pyfect import schedule, testing
 from pyfect.cause import Fail
-from pyfect.duration import ZERO, Seconds
+from pyfect.duration import ZERO, Seconds, to_millis
 from pyfect.result import Err
 from pyfect.schedule import Continue, CurrentMetadata, Decision, Metadata, Schedule, Stop
 from pyfect.testing import run_test as run
@@ -20,7 +20,7 @@ def flaky(failures: int, attempts: list[float]) -> fx.Effect[str, str]:
 
     @fx.gen
     def attempt():
-        now = yield from fx.clock.now()
+        now = yield from fx.clock.current_time_millis()
         attempts.append(now)
         if len(attempts) <= failures:
             return (yield from fx.fail(f"attempt {len(attempts)} failed"))
@@ -30,12 +30,13 @@ def flaky(failures: int, attempts: list[float]) -> fx.Effect[str, str]:
 
 
 def decisions[O](s: Schedule[O, None], times: Sequence[float]) -> list[Decision[O]]:
-    """Step a fresh run of ``s`` at each of ``times``."""
+    """Step a fresh run of ``s`` at each of ``times`` (seconds; a step takes
+    epoch milliseconds)."""
 
     @fx.gen
     def go():
         step = yield from schedule.to_step(s)
-        return (yield from fx.for_each(times, lambda now: step(now, None)))
+        return (yield from fx.for_each(times, lambda now: step(to_millis(Seconds(now)), None)))
 
     return run(go)
 
@@ -61,11 +62,11 @@ def test_retry_gives_up_with_the_last_error():
 @testing.effect
 def test_exponential_backoff_timing():
     attempts: list[float] = []
-    policy = schedule.exponential(1).up_to(times=5)
+    policy = schedule.exponential("1 second").up_to(times=5)
     fiber = yield from flaky(3, attempts).retry(policy).fork()
-    yield from testing.adjust(100)
+    yield from testing.adjust("100 seconds")
     assert (yield from fiber.join()) == "ok"
-    assert attempts == [0, 1, 3, 7]
+    assert attempts == [0, 1_000, 3_000, 7_000]
 
 
 def test_while_on_the_input_only_retries_matching_errors():
@@ -106,24 +107,24 @@ def test_repeat_spaced_up_to_times():
 
     @fx.gen
     def program():
-        tick = fx.clock.now().map(ticks.append)
-        fiber = yield from tick.repeat(schedule.spaced(2).up_to(times=3)).fork()
-        yield from testing.adjust(10)
+        tick = fx.clock.current_time_millis().map(ticks.append)
+        fiber = yield from tick.repeat(schedule.spaced("2 seconds").up_to(times=3)).fork()
+        yield from testing.adjust("10 seconds")
         return (yield from fiber.join())
 
     assert run(program) == 3
-    assert ticks == [0, 2, 4, 6]
+    assert ticks == [0, 2_000, 4_000, 6_000]
 
 
 @testing.effect
 def test_fixed_keeps_a_beat_from_the_first_decision_regardless_of_work_time():
     ticks: list[float] = []
-    work = fx.clock.now().map(ticks.append).and_then(fx.sleep(1))
-    fiber = yield from work.repeat(schedule.fixed(3).up_to(times=2)).fork()
-    yield from testing.adjust(20)
+    work = fx.clock.current_time_millis().map(ticks.append).and_then(fx.sleep("1 second"))
+    fiber = yield from work.repeat(schedule.fixed("3 seconds").up_to(times=2)).fork()
+    yield from testing.adjust("20 seconds")
     yield from fiber.join()
     # First run at 0 takes 1s; beats are then every 3s from t=1.
-    assert ticks == [0, 4, 7]
+    assert ticks == [0, 4_000, 7_000]
 
 
 def test_fixed_runs_late_actions_at_once_without_replaying_missed_beats():
@@ -131,13 +132,13 @@ def test_fixed_runs_late_actions_at_once_without_replaying_missed_beats():
 
     @fx.gen
     def program():
-        work = fx.clock.now().map(ticks.append).and_then(fx.sleep(1.5))
-        fiber = yield from work.repeat(schedule.fixed(1).up_to(times=4)).fork()
-        yield from testing.adjust(100)
+        work = fx.clock.current_time_millis().map(ticks.append).and_then(fx.sleep("1500 millis"))
+        fiber = yield from work.repeat(schedule.fixed("1 second").up_to(times=4)).fork()
+        yield from testing.adjust("100 seconds")
         yield from fiber.join()
 
     run(program)
-    assert ticks == [0, 2.5, 4.0, 5.5, 7.0]
+    assert ticks == [0, 2_500, 4_000, 5_500, 7_000]
 
 
 def test_max_stops_when_either_stops():
@@ -154,21 +155,21 @@ def test_max_stops_when_either_stops():
 @testing.effect
 def test_up_to_duration_bounds_total_time():
     attempts: list[float] = []
-    policy = schedule.spaced(1).up_to(duration=3)
+    policy = schedule.spaced("1 second").up_to(duration="3 seconds")
     fiber = yield from flaky(100, attempts).retry(policy).exit().fork()
-    yield from testing.adjust(10)
+    yield from testing.adjust("10 seconds")
     yield from fiber.join()
     # Elapsed is measured from the first decision; at t=3 it is still <= 3.
-    assert attempts == [0, 1, 2, 3, 4]
+    assert attempts == [0, 1_000, 2_000, 3_000, 4_000]
 
 
 def test_fibonacci_sums_the_two_preceding_delays():
     """Schedule.ts fibonacci: a=0, b=one; each step yields a+b."""
-    assert delays(schedule.fibonacci(1), [0.0] * 6) == [1, 2, 3, 5, 8, 13]
+    assert delays(schedule.fibonacci("1 second"), [0.0] * 6) == [1, 2, 3, 5, 8, 13]
 
 
 def test_exponential_multiplies_by_the_factor_each_attempt():
-    assert delays(schedule.exponential(0.5, 3), [0.0] * 4) == [0.5, 1.5, 4.5, 13.5]
+    assert delays(schedule.exponential("500 millis", 3), [0.0] * 4) == [0.5, 1.5, 4.5, 13.5]
 
 
 def test_fixed_with_a_zero_interval_never_waits():
@@ -177,15 +178,15 @@ def test_fixed_with_a_zero_interval_never_waits():
 
 def test_fixed_waits_for_the_window_boundary_when_on_time():
     """A 0.5s action on a 1s beat waits out the rest of each beat."""
-    assert delays(schedule.fixed(1), [0.0, 1.5, 2.5, 3.5]) == [1, 0.5, 0.5, 0.5]
+    assert delays(schedule.fixed("1 second"), [0.0, 1.5, 2.5, 3.5]) == [1, 0.5, 0.5, 0.5]
 
 
 def test_windowed_waits_for_the_end_of_the_current_window():
-    assert delays(schedule.windowed(2), [10.0, 10.5, 13.0]) == [2, 1.5, 1]
+    assert delays(schedule.windowed("2 seconds"), [10.0, 10.5, 13.0]) == [2, 1.5, 1]
 
 
 def test_during_stops_once_more_than_the_duration_has_passed():
-    assert decisions(schedule.during(1), [5.0, 6.0, 6.5]) == [
+    assert decisions(schedule.during("1 second"), [5.0, 6.0, 6.5]) == [
         Continue(Seconds(0.0), ZERO),
         Continue(Seconds(1.0), ZERO),
         Stop(Seconds(1.5)),
@@ -230,7 +231,7 @@ def test_a_failure_making_the_step_fails_every_step():
 
 
 def test_each_run_starts_from_fresh_state():
-    s = schedule.fibonacci(1)
+    s = schedule.fibonacci("1 second")
     assert delays(s, [0.0] * 3) == delays(s, [0.0] * 3) == [1, 2, 3]
 
 
@@ -238,13 +239,13 @@ def test_each_run_starts_from_fresh_state():
 def test_repeat_sees_the_metadata_of_the_step_that_started_each_run():
     seen: list[Metadata[object, object]] = []
     record = CurrentMetadata().map(seen.append)
-    fiber = yield from record.repeat(schedule.spaced(1).up_to(times=2)).fork()
-    yield from testing.adjust(10)
+    fiber = yield from record.repeat(schedule.spaced("1 second").up_to(times=2)).fork()
+    yield from testing.adjust("10 seconds")
     yield from fiber.join()
     assert [(m.attempt, m.output, m.now, m.duration) for m in seen] == [
         (0, None, 0, 0),
         (1, 0, 0, 1),
-        (2, 1, 1, 1),
+        (2, 1, 1_000, 1),
     ]
 
 
@@ -292,20 +293,20 @@ def test_schedule_from_steps_first_with_the_initial_value():
 
 
 def test_concat_continues_with_the_second_schedule_at_the_same_step():
-    s = schedule.recurs(1).concat(schedule.spaced(3))
+    s = schedule.recurs(1).concat(schedule.spaced("3 seconds"))
     assert delays(s, [0.0] * 4) == [0, 3, 3, 3]
 
 
 def test_fixed_keeps_whole_beats_with_decimal_intervals():
     # Effect counts time in whole milliseconds, so a 100ms beat stays 100ms:
     # float seconds give 0.3 % 0.1 == 0.0999..., a near-zero delay.
-    assert delays(schedule.fixed(0.1), [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]) == [0.1] * 6
-    assert delays(schedule.fixed(0.1), [0.0, 0.15, 0.25, 0.35]) == [0.1, 0.05, 0.05, 0.05]
+    assert delays(schedule.fixed("100 millis"), [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]) == [0.1] * 6
+    assert delays(schedule.fixed("100 millis"), [0.0, 0.15, 0.25, 0.35]) == [0.1, 0.05, 0.05, 0.05]
 
 
 def test_windowed_keeps_whole_windows_with_decimal_intervals():
-    assert delays(schedule.windowed(0.1), [0.0, 0.3, 0.6, 0.7]) == [0.1] * 4
-    assert delays(schedule.windowed(0.3), [0.0, 0.4, 0.7]) == [0.3, 0.2, 0.2]
+    assert delays(schedule.windowed("100 millis"), [0.0, 0.3, 0.6, 0.7]) == [0.1] * 4
+    assert delays(schedule.windowed("300 millis"), [0.0, 0.4, 0.7]) == [0.3, 0.2, 0.2]
 
 
 def test_metadata_times_are_exact_to_the_nanosecond():
@@ -321,10 +322,12 @@ def test_metadata_times_are_exact_to_the_nanosecond():
 def test_fixed_keeps_the_beat_when_the_action_takes_the_whole_interval():
     beats: list[Seconds] = []
     tapped = (
-        schedule.fixed(0.1).up_to(times=6).tap(lambda m: fx.sync(lambda: beats.append(m.duration)))
+        schedule.fixed("100 millis")
+        .up_to(times=6)
+        .tap(lambda m: fx.sync(lambda: beats.append(m.duration)))
     )
-    fiber = yield from fx.sleep(0.1).schedule(tapped).fork()
-    yield from testing.adjust(10)
+    fiber = yield from fx.sleep("100 millis").schedule(tapped).fork()
+    yield from testing.adjust("10 seconds")
     yield from fiber.join()
     assert beats == [0.1] * 6
 
@@ -332,22 +335,26 @@ def test_fixed_keeps_the_beat_when_the_action_takes_the_whole_interval():
 def test_windows_follow_effect_when_the_clock_moves_back():
     # Effect's ``%`` keeps the sign of the elapsed time, so a clock moved back
     # 0.3s before the start waits 1.3s for the window boundary.
-    assert delays(schedule.windowed(1), [10.0, 9.7]) == [1, 1.3]
-    assert delays(schedule.fixed(1), [10.0, 9.7]) == [1, 1.3]
+    assert delays(schedule.windowed("1 second"), [10.0, 9.7]) == [1, 1.3]
+    assert delays(schedule.fixed("1 second"), [10.0, 9.7]) == [1, 1.3]
 
 
 def test_fibonacci_and_exponential_keep_whole_delays_with_decimal_units():
     # Effect sums whole milliseconds: 100, 200, 300, 500, 800, 1300.
-    assert delays(schedule.fibonacci(0.1), [0.0] * 6) == [0.1, 0.2, 0.3, 0.5, 0.8, 1.3]
-    assert delays(schedule.exponential(0.1, 3), [0.0] * 3) == [0.1, 0.3, 0.9]
+    assert delays(schedule.fibonacci("100 millis"), [0.0] * 6) == [0.1, 0.2, 0.3, 0.5, 0.8, 1.3]
+    assert delays(schedule.exponential("100 millis", 3), [0.0] * 3) == [0.1, 0.3, 0.9]
 
 
 def test_infinite_intervals_wait_forever():
     inf = float("inf")
-    for s in (schedule.exponential(inf), schedule.fibonacci(inf), schedule.spaced(inf)):
+    for s in (
+        schedule.exponential(Seconds(inf)),
+        schedule.fibonacci(Seconds(inf)),
+        schedule.spaced(Seconds(inf)),
+    ):
         assert delays(s, [0.0, 1.0]) == [inf, inf]
-    assert delays(schedule.fixed(inf), [0.0, 1.0]) == [inf, inf]
-    assert delays(schedule.windowed(inf), [0.0, 1.0]) == [inf, inf]
+    assert delays(schedule.fixed(Seconds(inf)), [0.0, 1.0]) == [inf, inf]
+    assert delays(schedule.windowed(Seconds(inf)), [0.0, 1.0]) == [inf, inf]
 
 
 def test_retry_builder_types_the_schedule_with_the_error():
@@ -415,14 +422,14 @@ def test_a_failing_map_effect_fails_the_repeat():
 @testing.effect
 def test_to_step_with_sleep_sleeps_then_returns_the_decision():
     # Effect: toStepWithSleep(spaced("1 second").pipe(upTo({ times: 2 }))) gives 0, 1, Done(2).
-    step = yield from schedule.to_step_with_sleep(schedule.spaced(1).up_to(times=2))
+    step = yield from schedule.to_step_with_sleep(schedule.spaced("1 second").up_to(times=2))
     times: list[float] = []
 
     def timed_step(i: int) -> fx.Effect[Decision[int]]:
-        return step(i).tap(lambda _: fx.clock.now().map(times.append))
+        return step(i).tap(lambda _: fx.clock.current_time_millis().map(times.append))
 
     fiber = yield from fx.for_each([0, 1, 2], timed_step).fork()
-    yield from testing.adjust(2)
+    yield from testing.adjust("2 seconds")
     decisions = yield from fiber.join()
     assert decisions == [Continue(0, Seconds(1)), Continue(1, Seconds(1)), Stop(2)]
-    assert times == [1, 2, 2]
+    assert times == [1_000, 2_000, 2_000]

@@ -37,12 +37,12 @@ def _alive(_: RunnerAddress) -> Effect[bool]:
 layer_noop: Layer[RunnerHealth] = layer_.succeed(RunnerHealth, RunnerHealthService(_alive))
 """Every runner is alive (for tests and local development)."""
 
-_PING_SCHEDULE = spaced(0.5)
+_PING_SCHEDULE = spaced("500 millis")
 
 
 def _make_ping(runners: RunnersService) -> RunnerHealthService:
     def is_alive(address: RunnerAddress) -> Effect[bool]:
-        pinged = runners.ping(address).timeout(10).retry(times=5, schedule=_PING_SCHEDULE)
+        pinged = runners.ping(address).timeout("10 seconds").retry(times=5, schedule=_PING_SCHEDULE)
         return pinged.exit().map(is_success)
 
     return RunnerHealthService(is_alive)

@@ -13,6 +13,7 @@ from oracle._live_http import TIMEOUT, parse_responses, port, run_live, until_cl
 
 import pyfect as fx
 from pyfect import effect
+from pyfect.duration import Seconds
 from pyfect.http import router, server_response
 from pyfect.http.server_request import HttpServerRequest, ServerRequest
 
@@ -176,7 +177,7 @@ def _held(head: bytes, **options: Any) -> float:
 @pytest.mark.parametrize("framing", [b"Content-Length: 1\r\n", b"Transfer-Encoding: chunked\r\n"])
 def test_a_body_that_never_arrives_is_cut_off_at_the_request_timeout(framing: bytes) -> None:
     head = b"POST /x HTTP/1.1\r\nHost: a\r\n" + framing + b"\r\n"
-    elapsed = _held(head, request_timeout=0.3, keep_alive_timeout=TIMEOUT)
+    elapsed = _held(head, request_timeout="300 millis", keep_alive_timeout=Seconds(TIMEOUT))
     assert 0.2 < elapsed < TIMEOUT / 2
 
 
@@ -195,7 +196,7 @@ def test_a_body_read_by_the_app_is_cut_off_at_the_request_timeout() -> None:
 
     app = router.add("POST", "/x", HttpServerRequest().flat_map(_read_body))
     served = effect.gen(program).pipe(fx.provide(router.serve(app, disable_logger=True)))
-    received, elapsed = run_live(served, request_timeout=0.3)
+    received, elapsed = run_live(served, request_timeout="300 millis")
     assert 0.2 < elapsed < TIMEOUT / 2
     assert [r.status for r in parse_responses(received)] in ([], [400], [408])
 

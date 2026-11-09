@@ -63,7 +63,7 @@ def run_poller[T](
         gen(body)
         .tap_cause(log_warning)
         .sandbox()
-        .retry(spaced(0.5))
+        .retry(spaced("500 millis"))
         .interruptible()
         .fork_scoped()
         .as_void()

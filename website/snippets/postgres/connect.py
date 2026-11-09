@@ -8,7 +8,7 @@ from pyfect.sql import pg
 config = pg.PgPoolConfig(
     url=redacted.make(os.environ["DATABASE_URL"]),
     max_connections=5,
-    idle_timeout=30,
+    idle_timeout="30 seconds",
 )
 
 

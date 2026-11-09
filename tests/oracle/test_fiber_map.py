@@ -261,12 +261,12 @@ def test_await_empty():
     """awaitEmpty"""
     fiber_map = yield from fx.FiberMap[str].make()
     for key in "abcd":
-        yield from fiber_map.run(key, fx.sleep(1))
+        yield from fiber_map.run(key, fx.sleep("1 second"))
 
     fiber = yield from fiber_map.await_empty().fork()
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert fiber.poll_unsafe() is None
-    yield from testing.adjust(0.5)
+    yield from testing.adjust("500 millis")
     assert fiber.poll_unsafe() is not None
 
 

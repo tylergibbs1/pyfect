@@ -38,7 +38,7 @@ from pyfect.socket.datagram import (
     make_udp,
 )
 
-live = testing.live(timeout=10)
+live = testing.live(timeout="10 seconds")
 
 pytestmark = pytest.mark.filterwarnings(
     "error::ResourceWarning", "error::pytest.PytestUnraisableExceptionWarning"
@@ -63,7 +63,7 @@ def open_udp(options: Options) -> Effect[tuple[Reader, Writer], DatagramSocketEr
 
 
 def pull_text(reader: Reader) -> Effect[list[str], Exception]:
-    return reader.pull.timeout(2).map(lambda batch: [d.payload.decode() for d in batch])
+    return reader.pull.timeout("2 seconds").map(lambda batch: [d.payload.decode() for d in batch])
 
 
 def pull_texts(reader: Reader, count: int) -> Effect[list[str], Exception]:
@@ -119,7 +119,7 @@ def test_a_second_reader_waits_for_the_first_to_close():
 
     def first():
         yield from udp.reader
-        yield from sleep(0.1)
+        yield from sleep("100 millis")
         first_scope_open[0] = False
 
     running = yield from scoped(gen(first)).fork()
@@ -167,7 +167,7 @@ def test_a_connected_socket_reports_refused_packets_to_on_error():
     for _ in range(100):
         if errors:
             break
-        yield from sleep(0.02)
+        yield from sleep("20 millis")
     assert errors
     reason = errors[0].reason
     assert isinstance(reason, DatagramSocketReadError)

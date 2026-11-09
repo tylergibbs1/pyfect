@@ -40,7 +40,7 @@ class PooledUsers:
     rows: dict[str, str]
 
     def find(self, user_id: str) -> fx.Effect[str | None]:
-        return fx.sleep(0.01).as_(self.rows.get(user_id))
+        return fx.sleep("10 millis").as_(self.rows.get(user_id))
 
 
 pool = fx.acquire_release(

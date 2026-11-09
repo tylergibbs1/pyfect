@@ -11,7 +11,7 @@ from typing import Any, Never, cast
 from pyfect._core import Effect
 from pyfect.cause import Cause
 from pyfect.context import Tag
-from pyfect.duration import ZERO, Duration, Seconds, to_seconds
+from pyfect.duration import ZERO, Duration, Seconds, to_millis, to_seconds
 from pyfect.effect import fail, fail_cause, gen, provide_service, succeed, suspend
 from pyfect.layer import Layer, effect_discard
 from pyfect.layer import effect as layer_effect
@@ -42,7 +42,7 @@ type RetrySchedule = Schedule[object, int]
 """A queue's retry schedule: its input is the attempt number, its delay
 how long a failed element waits before it is visible again."""
 
-DEFAULT_RETRY_SCHEDULE: RetrySchedule = min(exponential(1), spaced(300))
+DEFAULT_RETRY_SCHEDULE: RetrySchedule = min(exponential("1 second"), spaced("300 seconds"))
 """Exponential from 1 second, capped at 5 minutes."""
 
 DEFAULT_MAX_ATTEMPTS = 10
@@ -72,7 +72,7 @@ def retry_delay(schedule: RetrySchedule, attempts: int) -> Effect[Seconds]:
             if isinstance(decision, Stop):
                 break
             delay = decision.delay
-            now += delay
+            now += to_millis(delay)
         return delay
 
     return gen(body)
@@ -238,14 +238,11 @@ layer: Layer[PersistedQueueFactory, Never, PersistedQueueStore] = layer_effect(
 )
 """The factory over the current store."""
 
-_HOUR = 3600.0
-_DAYS_30 = 30 * 24 * _HOUR
-
 
 def layer_cleanup(
     *,
-    interval: Duration = _HOUR,
-    time_to_live: Duration = _DAYS_30,
+    interval: Duration = "1 hour",
+    time_to_live: Duration = "30 days",
     failed_time_to_live: Duration | None = None,
 ) -> Layer[Never, Never, PersistedQueueStore]:
     """Run the store's ``cleanup`` every ``interval`` (default an hour),

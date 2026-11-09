@@ -52,7 +52,7 @@ def test_a_limit_inferred_from_remaining_does_not_shrink_on_later_responses() ->
     def body():
         limiter = yield from rl.RateLimiter()
         client = c.make(send).with_rate_limiter(
-            limiter=limiter, key="inferred", limit=10, window=60
+            limiter=limiter, key="inferred", limit=10, window="1 minute"
         )
         yield from client.get("http://test/")
         yield from client.get("http://test/")
@@ -82,14 +82,14 @@ def test_a_request_costs_at_least_one_token_of_its_resolved_key() -> None:
             key=lambda request: request.url,
             tokens=lambda _request: 0,
             limit=1,
-            window=60,
+            window="1 minute",
         )
         yield from client.get("http://test/a")
         yield from client.get("http://test/b")
         fiber = yield from client.get("http://test/a").fork(start_immediately=True)
-        yield from testing.adjust(59)
+        yield from testing.adjust("59 seconds")
         assert attempts == ["http://test/a", "http://test/b"]
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         yield from fiber.join()
         assert len(attempts) == 3
 
@@ -125,11 +125,11 @@ def test_a_reset_learned_from_a_response_holds_a_key_for_an_hour_at_most(
     def body():
         limiter = yield from rl.RateLimiter()
         client = c.make(send).with_rate_limiter(
-            limiter=limiter, key="hint", limit=10, window=60, disable_adaptive_learning=True
+            limiter=limiter, key="hint", limit=10, window="1 minute", disable_adaptive_learning=True
         )
         yield from client.get("http://test/")
         fiber = yield from client.get("http://test/").fork(start_immediately=True)
-        yield from testing.adjust(3600)
+        yield from testing.adjust("1 hour")
         assert attempts[0] == 2
         yield from fiber.interrupt()
 
@@ -157,7 +157,7 @@ def test_retry_transient_waits_an_hour_at_most_for_a_retry_after(retry_after: st
     def body():
         client = c.make(send).retry_transient(retry_on="response-only", times=1)
         fiber = yield from client.get("http://test/").fork(start_immediately=True)
-        yield from testing.adjust(3600)
+        yield from testing.adjust("1 hour")
         assert attempts[0] == 2
         response = yield from fiber.join()
         assert response.status == 200

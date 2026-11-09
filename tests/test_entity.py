@@ -79,7 +79,7 @@ def test_a_concurrency_below_one_never_runs_a_request(concurrency: int):
         )
         client = yield from make_client("1")
         fiber = yield from client.ask().fork()
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert fiber.poll_unsafe() is None
 
     yield from body.pipe(fx.provide(_config))

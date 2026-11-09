@@ -156,9 +156,9 @@ def test_done_with_an_interrupt_cause_resumes_every_suspended_waiter():
     assert (yield from d.done(interrupt_exit())) is True
 
     settled = yield from (
-        fx.Fiber.await_all([first, second]).timeout_option(1).fork(start_immediately=True)
+        fx.Fiber.await_all([first, second]).timeout_option("1 second").fork(start_immediately=True)
     )
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     exits = yield from settled.join()
     assert exits is not None, "every waiter should settle"
     for ex in exits.value:

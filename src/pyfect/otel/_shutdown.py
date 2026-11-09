@@ -8,8 +8,8 @@ from pyfect._core import Effect
 from pyfect.duration import Duration, to_millis
 from pyfect.effect import try_
 
-DEFAULT_SHUTDOWN_TIMEOUT: Duration = 3.0
-"""How long a provider may take to flush when released, in seconds."""
+DEFAULT_SHUTDOWN_TIMEOUT: Duration = "3 seconds"
+"""How long a provider may take to flush when released."""
 
 
 class Flushable(Protocol):

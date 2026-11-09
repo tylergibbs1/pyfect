@@ -179,8 +179,8 @@ class _TrackingClock:
         self.inner = inner
         self.active_sleeps = 0
 
-    def now_unsafe(self) -> float:
-        return self.inner.now_unsafe()
+    def current_time_millis_unsafe(self) -> float:
+        return self.inner.current_time_millis_unsafe()
 
     def monotonic_unsafe(self) -> float:
         return self.inner.monotonic_unsafe()
@@ -522,7 +522,7 @@ def test_should_keep_idle_http_subscriptions_alive_with_periodic_sse_comments():
         return effect.pipe(fx.provide_service(clock.Clock, tracking))
 
     harness, server = yield from tracked(_http_server())
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     response = yield from tracked(harness.post(_http_listen("idle-http"), _HTTP_HEADERS))
     assert (response.headers.get("content-type") or "").startswith("text/event-stream")
     reader: SseReader = yield from tracked(sse_reader(response))
@@ -531,12 +531,12 @@ def test_should_keep_idle_http_subscriptions_alive_with_periodic_sse_comments():
     assert acknowledgment.startswith("data: ")
 
     next_chunk = yield from read.fork()
-    yield from testing.adjust(14)
+    yield from testing.adjust("14 seconds")
     assert next_chunk.poll_unsafe() is None
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert (yield from next_chunk.join()) == ": keepalive\n\n"
     heartbeat = yield from read.fork()
-    yield from testing.adjust(15)
+    yield from testing.adjust("15 seconds")
     assert (yield from heartbeat.join()) == ": keepalive\n\n"
 
     tools = yield from tracked(_http_post(harness, "tools-during-subscription", "tools/list"))
@@ -552,7 +552,7 @@ def test_should_keep_idle_http_subscriptions_alive_with_periodic_sse_comments():
     assert '"notifications/tools/list_changed"' in notification
     yield from reader.cancel
     assert tracking.active_sleeps == 0
-    yield from testing.adjust(30)
+    yield from testing.adjust("30 seconds")
     assert tracking.active_sleeps == 0
 
 
@@ -610,8 +610,8 @@ def test_should_not_replay_startup_tool_changes_to_the_first_http_subscription()
     )
     subscription = yield from sse_reader((yield from harness.post(_http_listen(2), _HTTP_HEADERS)))
     _assert_acknowledged((yield from subscription.take()), 2, {"toolsListChanged": True})
-    pending = yield from subscription.take().timeout_option(0.1).fork()
-    yield from testing.adjust(0.1)
+    pending = yield from subscription.take().timeout_option("100 millis").fork()
+    yield from testing.adjust("100 millis")
     assert (yield from pending.join()) is None
     yield from subscription.cancel
 
@@ -1177,8 +1177,8 @@ def test_a_listener_gets_only_the_kinds_of_change_it_asked_for(filters: Json, wa
         yield from fixture.flush_list_changed
     # A change it asked for arrives, the others do not: this is its only message.
     assert (yield from fixture.take_message)["method"] == wanted
-    waiting = yield from fixture.take_message.timeout_option(0.001).fork()
-    yield from testing.adjust(0.001)
+    waiting = yield from fixture.take_message.timeout_option("1 millis").fork()
+    yield from testing.adjust("1 millis")
     assert (yield from waiting.join()) is None
     yield from request.cancel()
 

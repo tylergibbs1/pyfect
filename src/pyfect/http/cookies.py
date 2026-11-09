@@ -23,7 +23,7 @@ from urllib.parse import quote, unquote
 from pyfect import _js_date as js_date
 from pyfect._digits import parse_signed_digits
 from pyfect._js import text_encode
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import ZERO, Duration, Seconds, to_seconds
 from pyfect.errors import TaggedError
 from pyfect.http.headers import format_http_date
 from pyfect.result import Err, Ok, Result
@@ -248,7 +248,7 @@ def _parse_set_cookie(header: str) -> Cookie | None:  # noqa: PLR0912
                 seconds = None if found is None else parse_signed_digits(found[1])
                 # Past what a float holds the attribute is ignored.
                 if seconds is not None and abs(seconds) <= _MAX_SECONDS:
-                    options["max_age"] = float(seconds)
+                    options["max_age"] = Seconds(seconds)
             case "path" if attribute is not None and attribute.startswith("/"):
                 options["path"] = attribute
             case "priority" if attribute is not None and attribute.lower() in (
@@ -334,10 +334,10 @@ class Cookies:
         self, name: str, **options: Unpack[CookieOptionsInput]
     ) -> Result[Cookies, CookiesError]:
         """Set ``name`` to an empty cookie that has already expired."""
-        return self.set(name, "", **{**options, "max_age": 0.0, "expires": _EPOCH})
+        return self.set(name, "", **{**options, "max_age": ZERO, "expires": _EPOCH})
 
     def expire_cookie_unsafe(self, name: str, **options: Unpack[CookieOptionsInput]) -> Cookies:
-        return self.set_unsafe(name, "", **{**options, "max_age": 0.0, "expires": _EPOCH})
+        return self.set_unsafe(name, "", **{**options, "max_age": ZERO, "expires": _EPOCH})
 
     def set_all(
         self, cookies: Iterable[tuple[str, str] | tuple[str, str, CookieOptionsInput]]

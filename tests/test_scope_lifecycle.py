@@ -109,7 +109,7 @@ def test_a_parallel_scope_runs_its_finalizers_concurrently():
         scope = CloseableScope("parallel")
         yield from scope.add_finalizer(lambda _: gate.succeed(None))
         yield from scope.add_finalizer(
-            lambda _: gate.wait().timeout(1.0).result().map(lambda r: log.append(repr(r)))
+            lambda _: gate.wait().timeout("1 second").result().map(lambda r: log.append(repr(r)))
         )
         yield from scope.close(fx.Success(None))
 

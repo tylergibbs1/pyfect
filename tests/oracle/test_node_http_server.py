@@ -402,7 +402,7 @@ def test_answers_keep_alive_requests_while_graceful_shutdown_drains_an_existing_
 
     @fx.fn
     def program():
-        layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout=10)
+        layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout="10 seconds")
         client = yield from scoped(serving()).pipe(fx.provide(layer_live))
         return (yield from client.join())
 
@@ -445,11 +445,11 @@ def test_disposes_after_a_client_aborts_a_handler_awaiting_an_upstream_request()
             yield from fiber.await_exit()
 
         yield from abort()
-        yield from interrupted.wait().timeout(2)
+        yield from interrupted.wait().timeout("2 seconds")
         return True
 
     started_at = time.monotonic()
-    assert run_live(_routed(app, program()), graceful_shutdown_timeout=0.1)
+    assert run_live(_routed(app, program()), graceful_shutdown_timeout="100 millis")
     assert time.monotonic() - started_at < 2
 
 

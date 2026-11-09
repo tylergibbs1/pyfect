@@ -193,7 +193,7 @@ def test_turns_a_throwing_catch_mapper_into_a_defect() -> None:
 
 
 def _run_async_exit[A, E](eff: fx.Effect[A, E]) -> fx.Exit[A, E]:
-    return asyncio.run(testing.run_test_async_exit(eff, timeout=2))
+    return asyncio.run(testing.run_test_async_exit(eff, timeout="2 seconds"))
 
 
 async def _resolve(value: int) -> int:
@@ -697,12 +697,12 @@ def test_filter_preserves_input_order_with_concurrency_2() -> None:
     """filter > preserves input order with concurrency 2"""
 
     def keep(n: int) -> fx.Effect[bool]:
-        return fx.sleep(0.02).as_(True) if n == 1 else fx.succeed(n == 2)
+        return fx.sleep("20 millis").as_(True) if n == 1 else fx.succeed(n == 2)
 
     @fx.gen
     def program():
         fiber = yield from fx.filter([1, 2, 3], keep, concurrency=2).fork()
-        yield from testing.adjust(0.02)
+        yield from testing.adjust("20 millis")
         return (yield from fiber.join())
 
     assert testing.run_test(program) == [1, 2]

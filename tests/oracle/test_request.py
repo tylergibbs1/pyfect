@@ -45,6 +45,7 @@ import pyfect as fx
 from pyfect import batching, exit, testing
 from pyfect import schema as S
 from pyfect.batching import Entry
+from pyfect.duration import Duration
 from pyfect.persistence import PersistenceError, persistable, persistence
 
 # --- fixtures (Effect's module-level helpers) -----------------------------------
@@ -782,8 +783,8 @@ class GetStaleValue(persistable.Class(success=S.String, error=PersistenceError))
         return "value"
 
 
-def _one_second(_exit: object, _req: object) -> float:
-    return 1
+def _one_second(_exit: object, _req: object) -> Duration:
+    return "1 second"
 
 
 @pytest.mark.parametrize("refresh", ["per-entry failure", "whole-batch failure", "no completions"])
@@ -818,11 +819,11 @@ def test_persisted_stale_while_revalidate_persists_only_refresh_results(refresh:
         )
         persisted = resolver.around(lambda _: fx.void, lambda _entries, _b: finished.succeed(None))
 
-        yield from testing.adjust(0.5)
+        yield from testing.adjust("500 millis")
         assert (yield from fx.request(request, persisted)) == "Alice"
         yield from finished.wait()
         # Past the original expiry, but within the TTL of any refreshed result.
-        yield from testing.adjust(0.6)
+        yield from testing.adjust("600 millis")
         expected = None if refresh == "no completions" else exit.fail(error)
         assert (yield from store.get(request)) == expected
 

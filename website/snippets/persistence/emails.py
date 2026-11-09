@@ -20,7 +20,7 @@ def send(email: Email, meta: Metadata) -> fx.Effect[str, str]:
 @fx.fn
 def program():
     queue = yield from persisted_queue.make(
-        name="emails", schema=Email, max_attempts=3, retry_schedule=schedule.spaced(0.05)
+        name="emails", schema=Email, max_attempts=3, retry_schedule=schedule.spaced("50 millis")
     )
     welcome = Email(to="ada@example.com", subject="Welcome")
     yield from queue.offer(welcome, id="welcome-ada")

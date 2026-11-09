@@ -21,7 +21,7 @@ from pyfect.effect import fail, succeed
 from pyfect.errors import IllegalArgumentError
 
 DEFAULT_MAX_SESSIONS = 1000
-DEFAULT_IDLE_TIMEOUT: Duration = 30 * 60
+DEFAULT_IDLE_TIMEOUT: Duration = "30 minutes"
 DEFAULT_MAX_MESSAGE_BYTES: byte_size.Input = "4 MiB"
 
 

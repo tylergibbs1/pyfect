@@ -128,7 +128,7 @@ def test_the_entry_time_comes_from_the_clock_and_spans_measure_from_their_start(
 
     @fx.gen
     def program():
-        yield from testing.adjust(0.25)
+        yield from testing.adjust("250 millis")
         yield from fx.log("tick")
 
     yield from (
@@ -315,12 +315,12 @@ def test_batched_keeps_flushing_after_the_fiber_that_made_it_ends():
 
     made = (
         fx.Logger.make(lambda o: str(o.message[0]))
-        .batched(window=1, flush=flush)
+        .batched(window="1 second", flush=flush)
         .pipe(fx.provide_service(fx.Scope, scope))
     )
     batched = yield from (yield from made.fork()).join()
     yield from fx.log("x").pipe(fx.provide(logger.layer([batched])))
-    yield from testing.adjust(1)
+    yield from testing.adjust("1 second")
     assert flushed == [["x"]]
     yield from scope.close(fx.Success(None))
 
@@ -452,7 +452,7 @@ def test_live_console_writes_to_stdout_and_stderr_with_group_indentation(
 @testing.effect
 def test_to_logging_hands_entries_to_the_standard_library(caplog: pytest.LogCaptureFixture):
     caplog.set_level(logging.DEBUG, logger="pyfect.test")
-    yield from testing.adjust(1.5)
+    yield from testing.adjust("1500 millis")
     yield from (
         fx.log_warning("hello", 42, fx.cause.die(ValueError("bad")))
         .annotate_logs("user", "ada")

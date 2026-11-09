@@ -3,6 +3,7 @@ input is read. Effect's ``forEach`` is ``suspend(() => ...)`` and, on
 interruption, waits for its workers and keeps their failures."""
 
 import pyfect as fx
+from pyfect.duration import Seconds
 from pyfect.queue import Queue
 from pyfect.testing import run_test as run
 
@@ -65,7 +66,7 @@ def test_an_external_interrupt_waits_for_every_worker_to_finish():
     log: list[str] = []
 
     def work(i: int) -> fx.Effect[None]:
-        cleanup = fx.sleep(i + 1).and_then(fx.sync(lambda: log.append(f"w{i} cleaned")))
+        cleanup = fx.sleep(Seconds(i + 1)).and_then(fx.sync(lambda: log.append(f"w{i} cleaned")))
         return fx.never.on_interrupt(cleanup)
 
     @fx.gen
@@ -73,7 +74,7 @@ def test_an_external_interrupt_waits_for_every_worker_to_finish():
         fiber = yield from fx.for_each([0, 1], work, concurrency=2).fork(start_immediately=True)
         yield from fx.yield_now()
         interrupter = yield from fiber.interrupt().fork()
-        yield from fx.testing.adjust(2)
+        yield from fx.testing.adjust("2 seconds")
         yield from interrupter.join()
         log.append("interrupt returned")
         return (yield from fiber.await_exit())

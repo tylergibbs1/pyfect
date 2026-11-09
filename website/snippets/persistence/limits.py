@@ -18,14 +18,14 @@ def limited(error: RateLimiterError) -> fx.Effect[str]:
 def rate_limits():
     limiter = yield from RateLimiter()
     for _ in range(3):
-        consumed = limiter.consume(key="user:1", limit=2, window=60)
+        consumed = limiter.consume(key="user:1", limit=2, window="1 minute")
         allowed = consumed.map(lambda r: f"allowed, {r.remaining} left")
         print((yield from allowed.pipe(fx.catch_tag(RateLimiterError, limited))))
 
     # with_rate_limiter limits any effect: here, waiting instead of failing.
     with_rate_limiter = yield from rate_limiter.make_with_rate_limiter
     reply = yield from fx.succeed("pong").pipe(
-        with_rate_limiter(key="ping", limit=10, window=1, on_exceeded="delay")
+        with_rate_limiter(key="ping", limit=10, window="1 second", on_exceeded="delay")
     )
     print(reply)
 
@@ -53,7 +53,7 @@ def breaker():
     for _ in range(3):
         print((yield from call()))
     print(type((yield from api.state("api"))).__name__)
-    yield from fx.sleep(0.1)  # the open time passes: the next call is the probe
+    yield from fx.sleep("100 millis")  # the open time passes: the next call is the probe
     print((yield from call()))
     print(type((yield from api.state("api"))).__name__)
 
@@ -61,8 +61,8 @@ def breaker():
 # Counters and circuit states in memory; the Redis stores share them between processes.
 Limits = layer.merge(
     rate_limiter.layer.pipe(layer.provide(rate_limiter.layer_store_memory)),
-    circuit_breaker.layer(trip_policy=circuit_breaker.consecutive(2), open_duration=0.1).pipe(
-        layer.provide(circuit_breaker.layer_store_memory())
-    ),
+    circuit_breaker.layer(
+        trip_policy=circuit_breaker.consecutive(2), open_duration="100 millis"
+    ).pipe(layer.provide(circuit_breaker.layer_store_memory())),
 )
 fx.run_main(rate_limits().and_then(breaker()).pipe(fx.provide(Limits)))

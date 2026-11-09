@@ -467,7 +467,7 @@ def test_runtime_atom_skip_initial_run_keeps_seed_only_when_runtime_resolves_unc
 
     def make_layer(get: atom.AtomContext) -> fx.Layer[Never]:
         get(config)
-        return layer.effect_discard(fx.sleep(0.01))
+        return layer.effect_discard(fx.sleep("10 millis"))
 
     runtime = atom.runtime(make_layer)
     runs = [0]
@@ -495,7 +495,7 @@ def test_runtime_atom_skip_initial_run_keeps_seed_only_when_runtime_resolves_unc
 
 def test_effect_initial(timers: FakeTimers) -> None:
     """effect initial"""
-    count = atom.make(fx.succeed(1).delay(0.1), initial_value=0).keep_alive()
+    count = atom.make(fx.succeed(1).delay("100 millis"), initial_value=0).keep_alive()
     r = timers.registry()
     result = r.get(count)
     assert isinstance(result, Success)
@@ -891,7 +891,7 @@ def test_a_build_superseded_while_it_runs_is_released(timers: FakeTimers) -> Non
 
 def test_refresh_derived_before_mount_resolves_base_effect(timers: FakeTimers) -> None:
     """refresh derived before mount resolves base effect"""
-    base_atom = atom.make(fx.succeed("value").delay(0.1))
+    base_atom = atom.make(fx.succeed("value").delay("100 millis"))
 
     def ignore(_ctx: atom.WriteContext[Any], _value: None) -> None:
         pass
@@ -971,7 +971,7 @@ def test_disposed_lifetime_apis_are_no_ops(timers: FakeTimers) -> None:
 
 def test_disposed_lifetime_ignores_async_updates(timers: FakeTimers) -> None:
     """disposed lifetime ignores async updates"""
-    count = atom.make(fx.succeed(1).delay(0.1), initial_value=0, uninterruptible=True)
+    count = atom.make(fx.succeed(1).delay("100 millis"), initial_value=0, uninterruptible=True)
     registry = timers.registry()
     unmount = registry.mount(count)
     initial = registry.get(count)
@@ -987,7 +987,7 @@ def test_disposed_lifetime_ignores_async_updates(timers: FakeTimers) -> None:
 
 
 def _sleepy(start: int, stop: int) -> fx.Stream[int]:
-    return stream.range(start, stop).tap(lambda _: fx.sleep(0.05))
+    return stream.range(start, stop).tap(lambda _: fx.sleep("50 millis"))
 
 
 @testing.effect
@@ -997,7 +997,7 @@ def test_stream():
     count = atom.make(
         stream.range(0, 2)
         .tap(lambda _: AtomRegistry())
-        .tap(lambda _: fx.sleep(0.05))
+        .tap(lambda _: fx.sleep("50 millis"))
         .pipe(stream.provide_context(services))
     )
     r = atom_registry.make()
@@ -1006,18 +1006,18 @@ def test_stream():
     assert result.waiting
     assert isinstance(result, Initial)
     for expected in (0, 1):
-        yield from adjust(0.05)
+        yield from adjust("50 millis")
         result = r.get(count)
         assert result.waiting
         assert isinstance(result, Success)
         assert result.value == expected
-    yield from adjust(0.05)
+    yield from adjust("50 millis")
     result = r.get(count)
     assert not result.waiting
     assert isinstance(result, Success)
     assert result.value == 2
     unmount()
-    yield from adjust(0.05)
+    yield from adjust("50 millis")
     result = r.get(count)
     assert result.waiting
     assert isinstance(result, Initial)
@@ -1116,7 +1116,7 @@ def test_pull(timers: FakeTimers) -> None:
     """pull"""
     _check_pull(
         timers,
-        atom.pull(stream.range(0, 1, chunk_size=1).tap(lambda _: fx.sleep(0.05))),
+        atom.pull(stream.range(0, 1, chunk_size=1).tap(lambda _: fx.sleep("50 millis"))),
         0,
         1,
     )
@@ -1126,13 +1126,15 @@ def test_pull_runtime(timers: FakeTimers) -> None:
     """pull runtime"""
     source = stream.unwrap(
         _counter_get().map(lambda start: stream.range(start, 2, chunk_size=1))
-    ).tap(lambda _: fx.sleep(0.05))
+    ).tap(lambda _: fx.sleep("50 millis"))
     _check_pull(timers, counter_runtime.pull(source), 1, 2)
 
 
 def test_pull_refreshable(timers: FakeTimers) -> None:
     """pull refreshable"""
-    count = atom.pull(lambda _get: stream.range(1, 2, chunk_size=1).tap(lambda _: fx.sleep(0.05)))
+    count = atom.pull(
+        lambda _get: stream.range(1, 2, chunk_size=1).tap(lambda _: fx.sleep("50 millis"))
+    )
     r = timers.registry()
     unmount = r.mount(count)
     result = r.get(count)
@@ -1420,8 +1422,8 @@ def test_map_with_initial_value_still_rerenders_when_source_changes(timers: Fake
 def test_idle_ttl(timers: FakeTimers) -> None:
     """idleTTL"""
     state = atom.make(0)
-    state2 = atom.make(0).set_idle_ttl(10)
-    state3 = atom.make(0).set_idle_ttl(3)
+    state2 = atom.make(0).set_idle_ttl("10 seconds")
+    state3 = atom.make(0).set_idle_ttl("3 seconds")
     r = timers.registry(default_idle_ttl=2)
     for each in (state, state2, state3):
         r.set(each, 10)
@@ -1518,7 +1520,7 @@ def test_fn_initial(timers: FakeTimers) -> None:
 def test_with_fallback(timers: FakeTimers) -> None:
     """withFallback"""
     count = (
-        atom.make(lambda _get: fx.succeed(1).delay(0.1))
+        atom.make(lambda _get: fx.succeed(1).delay("100 millis"))
         .with_fallback(atom.make(lambda _get: fx.succeed(0)))
         .keep_alive()
     )

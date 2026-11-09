@@ -97,7 +97,7 @@ def test_interrupts_notification_consumers_when_the_listener_scope_closes(pg_ser
     yield from _assert_interrupted_on_close(closing, notifications)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_closes_a_listener_whose_connection_stops_responding(cancel_gate: CancelGate):
     """closes a listener whose connection stops responding"""
     connection = yield from pg.connection.make(pg.PgConnectionConfig(url=cancel_gate.url))
@@ -107,12 +107,12 @@ def test_closes_a_listener_whose_connection_stops_responding(cancel_gate: Cancel
     )
     cancel_gate.pause()
     closing = yield from listen_scope.close(fx.Success(None)).fork()
-    closed = yield from closing.await_exit().timeout_option(10)
+    closed = yield from closing.await_exit().timeout_option("10 seconds")
     assert closed is not None, "listener scope did not close within 10 seconds"
     assert isinstance((yield from connection.query("SELECT 1").exit()), fx.Failure)
 
 
-@testing.live(timeout=30)
+@testing.live(timeout="30 seconds")
 def test_keeps_a_busy_pinned_session_when_a_listener_closes(pg_server: PgServer):
     """keeps a busy pinned session when a listener closes"""
     connection = yield from _connect(pg_server)
@@ -141,7 +141,7 @@ def test_skips_unlisten_queued_behind_a_pin_release(pg_server: PgServer):
     yield from pinned.query("SELECT pg_sleep(0.05)")
     yield from pin_scope.close(fx.Success(None))
     following = yield from connection.query("SELECT 1 AS one").fork()
-    result = yield from following.join().timeout(2)
+    result = yield from following.join().timeout("2 seconds")
     assert result.rows == [{"one": 1}]
     yield from closing.join()
 

@@ -256,9 +256,9 @@ def test_accepts_a_history_table_committed_by_a_concurrent_migrator(pg_server: P
                     )
                     if rows:
                         return
-                    yield from fx.sleep(0.01)
+                    yield from fx.sleep("10 millis")
 
-            yield from fx.gen(blocked).timeout(10)
+            yield from fx.gen(blocked).timeout("10 seconds")
             yield from commit.succeed(None)
             yield from creator.join()
             assert (yield from migrator.join()) == []

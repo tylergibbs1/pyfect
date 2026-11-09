@@ -62,7 +62,7 @@ def test_configures_exporters_from_otel_environment_variables():
         yield from fx.log("configured log")
         yield from metric.counter("otel_config_counter").update(1)
         yield from fx.void.with_span("configured-span")
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
 
         by_url = {request.url: request for request in seen.requests}
         log_request = by_url["http://logs.example/custom"]
@@ -105,7 +105,7 @@ def test_does_not_install_exporters_when_otel_sdk_disabled_is_true():
         yield from fx.log("disabled log")
         yield from metric.counter("otel_disabled_counter").update(1)
         yield from fx.void.with_span("disabled-span")
-        yield from testing.adjust(1)
+        yield from testing.adjust("1 second")
         assert seen.requests == []
 
     yield from program.pipe(layer.provide(built))

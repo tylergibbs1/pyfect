@@ -97,7 +97,7 @@ def _wait_for(condition: Callable[[], fx.Effect[bool, Any, Any]]) -> Generator[A
     for _ in range(100):
         if (yield from condition()):
             return
-        yield from fx.sleep(0.1)
+        yield from fx.sleep("100 millis")
 
 
 def _factory_queue[A](
@@ -113,9 +113,9 @@ def test_refreshes_locks_for_acquired_elements(pg_server: PgServer) -> None:
     def body():
         options: dict[str, Any] = {
             "table_name": "effect_queue_lock_refresh",
-            "poll_interval": 0.01,
-            "lock_refresh_interval": 0.1,
-            "lock_expiration": 1,
+            "poll_interval": "10 millis",
+            "lock_refresh_interval": "100 millis",
+            "lock_expiration": "1 second",
         }
         store1 = yield from pq.make_store_sql(**options)
         store2 = yield from pq.make_store_sql(**options)
@@ -139,7 +139,7 @@ def test_refreshes_locks_for_acquired_elements(pg_server: PgServer) -> None:
         yield from acquired.wait()
         second = yield from fx.scoped(store2.take(take_options)).fork_scoped()
 
-        yield from fx.sleep(1.5)
+        yield from fx.sleep("1500 millis")
         assert second.poll_unsafe() is None
 
         yield from first.interrupt()
@@ -154,7 +154,7 @@ def test_dead_letters_malformed_json_and_continues(pg_server: PgServer) -> None:
 
     def body():
         table_name = "effect_queue_invalid_json"
-        store = yield from pq.make_store_sql(table_name=table_name, poll_interval=0.01)
+        store = yield from pq.make_store_sql(table_name=table_name, poll_interval="10 millis")
         queue = yield from _factory_queue(store, "invalid-json", S.String)
         sql = (yield from SqlClient()).without_transforms()
         table = sql.identifier(table_name)
@@ -183,7 +183,10 @@ def test_processes_elements_exactly_once_across_two_workers(pg_server: PgServer)
     """PersistedQueue SQL locks / processes elements exactly once across two workers"""
 
     def body():
-        options: dict[str, Any] = {"table_name": "effect_queue_two_workers", "poll_interval": 0.01}
+        options: dict[str, Any] = {
+            "table_name": "effect_queue_two_workers",
+            "poll_interval": "10 millis",
+        }
         queue1 = yield from _factory_queue(
             (yield from pq.make_store_sql(**options)), "two-workers", S.Number
         )
@@ -218,7 +221,7 @@ def test_recovers_elements_from_crashed_workers_after_lock_expiration(
     def body():
         table_name = "effect_queue_crash_recovery"
         store = yield from pq.make_store_sql(
-            table_name=table_name, poll_interval=0.01, lock_expiration=1
+            table_name=table_name, poll_interval="10 millis", lock_expiration="1 second"
         )
         queue = yield from _factory_queue(store, "crash-recovery", S.Number)
         sql = (yield from SqlClient()).without_transforms()
@@ -249,9 +252,9 @@ def test_dead_letters_elements_from_workers_that_crashed_on_the_final_attempt(
         table_name = "effect_queue_crash_exhausted"
         store = yield from pq.make_store_sql(
             table_name=table_name,
-            poll_interval=0.01,
-            lock_expiration=0.5,
-            lock_refresh_interval=0.2,
+            poll_interval="10 millis",
+            lock_expiration="500 millis",
+            lock_refresh_interval="200 millis",
         )
         queue = yield from _factory_queue(store, "crash-exhausted", S.Number, max_attempts=1)
         sql = (yield from SqlClient()).without_transforms()

@@ -408,14 +408,14 @@ def test_retry_cleans_up_resources_before_restarting_the_stream():
 def test_retry_retries_a_failing_stream_according_to_a_schedule():
     """retry - retries a failing stream according to a schedule"""
     times: list[float] = []
-    failing = stream.from_effect(fx.clock.now().map(times.append)).flat_map(
+    failing = stream.from_effect(fx.clock.current_time_millis().map(times.append)).flat_map(
         lambda _: stream.fail(None)
     )
-    fiber = yield from (failing.retry(schedule.exponential(1)).take(3).run_drain().fork())
-    yield from testing.adjust(1)
-    yield from testing.adjust(2)
+    fiber = yield from (failing.retry(schedule.exponential("1 second")).take(3).run_drain().fork())
+    yield from testing.adjust("1 second")
+    yield from testing.adjust("2 seconds")
     yield from fiber.interrupt()
-    assert [round(t) for t in reversed(times)] == [3, 1, 0]
+    assert [round(t) for t in reversed(times)] == [3_000, 1_000, 0]
 
 
 @testing.effect
@@ -426,19 +426,19 @@ def test_retry_reset_the_schedule_after_a_successful_pull():
 
     @fx.fn
     def attempt():
-        times.insert(0, (yield from fx.clock.now()))
+        times.insert(0, (yield from fx.clock.current_time_millis()))
         return (yield from ref.update_and_get(lambda n: n + 1))
 
     def pick(n: int) -> Stream[int, None]:
         return stream.succeed(n) if n in (3, 5) else stream.fail(None)
 
     retried = stream.from_effect(attempt()).flat_map(pick).forever()
-    fiber = yield from retried.retry(schedule.exponential(1)).take(2).run_drain().fork()
-    yield from testing.adjust(1)
-    yield from testing.adjust(2)
-    yield from testing.adjust(1)
+    fiber = yield from retried.retry(schedule.exponential("1 second")).take(2).run_drain().fork()
+    yield from testing.adjust("1 second")
+    yield from testing.adjust("2 seconds")
+    yield from testing.adjust("1 second")
     yield from fiber.join()
-    assert [round(t) for t in times] == [4, 3, 3, 1, 0]
+    assert [round(t) for t in times] == [4_000, 3_000, 3_000, 1_000, 0]
 
 
 @testing.effect
@@ -452,11 +452,11 @@ def test_retry_schedule_current_metadata():
     fiber = yield from (
         stream.fail(1)
         .tap_error(record)
-        .retry(schedule.exponential(1))
+        .retry(schedule.exponential("1 second"))
         .run_drain()
         .fork(start_immediately=True)
     )
-    yield from testing.adjust(7)
+    yield from testing.adjust("7 seconds")
     yield from fiber.interrupt()
 
     def meta(attempt: int, now: float, since: float, delay: float) -> Metadata[object, object]:
@@ -466,9 +466,9 @@ def test_retry_schedule_current_metadata():
             duration=fx.duration.Seconds(delay),
             attempt=attempt,
             start=0.0,
-            now=now,
-            elapsed=now,
-            elapsed_since_previous=since,
+            now=now * 1000,
+            elapsed=fx.duration.Seconds(now),
+            elapsed_since_previous=fx.duration.Seconds(since),
         )
 
     assert seen == [meta(0, 0, 0, 0), meta(1, 0, 0, 1), meta(2, 1, 1, 2), meta(3, 3, 2, 4)]

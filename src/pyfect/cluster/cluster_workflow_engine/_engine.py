@@ -113,7 +113,7 @@ ENTITY_MAX_IDLE_TIME = Seconds(10)
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
-_retry_policy = min(exponential(0.2, 1.5), spaced(60))
+_retry_policy = min(exponential("200 millis", 1.5), spaced("60 seconds"))
 
 
 def ensure_success[A](effect: Effect[A, Any, Any]) -> Effect[A, Never, Any]:
@@ -139,7 +139,7 @@ def ensure_success[A](effect: Effect[A, Any, Any]) -> Effect[A, Never, Any]:
 def _retry_persistence[A](effect: Effect[A, Any, Any]) -> Effect[A, Never, Any]:
     return effect.retry(
         times=3,
-        schedule=exponential(0.25),
+        schedule=exponential("250 millis"),
         while_=lambda e: isinstance(e, PersistenceError),
     ).or_die()
 
@@ -365,7 +365,7 @@ class ClusterEngine:
                 return
             yield from self.sharding.reset(request_id)
 
-        return gen(body).retry(times=3, schedule=exponential(0.25)).or_die()
+        return gen(body).retry(times=3, schedule=exponential("250 millis")).or_die()
 
     def clear_clock(self, workflow: AnyWorkflow, execution_id: str) -> Effect[None, Any]:
         address = self.entity_address_for(workflow, ClockEntity.type, execution_id)
@@ -1035,7 +1035,7 @@ def _clock_handlers() -> Generator[Effect[Any, Any, Any], Any, EntityHandlers[An
     execution_id = str(address.entity_id)
 
     def run(request: Request[ClockPayload]) -> Effect[None]:
-        deferred = make_clock(name=request.payload.name, duration=0).deferred
+        deferred = make_clock(name=request.payload.name, duration="0 millis").deferred
         return ensure_success(
             engine.deferred_done(
                 deferred,
@@ -1079,8 +1079,8 @@ def make() -> Effect[WorkflowEngineService, Never, Sharding | MessageStorage | S
             )
             return cast("Effect[Callable[[str], Any]]", entity.client())
 
-        clients = yield from RcMap.make(lookup, idle_time_to_live=300)
-        clients_partial = yield from RcMap.make(lookup_partial, idle_time_to_live=300)
+        clients = yield from RcMap.make(lookup, idle_time_to_live="5 minutes")
+        clients_partial = yield from RcMap.make(lookup_partial, idle_time_to_live="5 minutes")
         return ClusterEngine(sharding, storage, clients, clients_partial, holder).service
 
     return cast(

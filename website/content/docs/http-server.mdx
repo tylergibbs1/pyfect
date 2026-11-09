@@ -56,7 +56,7 @@ launching it: `fx.run_main(Main.launch())`. On Ctrl-C the server stops accepting
 and gives the requests in flight `graceful_shutdown_timeout` (20 seconds) before
 interrupting them. A streamed body still open then, such as an SSE stream, stops where it
 is, so one open server-sent events response holds shutdown for the full 20 seconds; pass
-`uvicorn_server.layer(port=8000, graceful_shutdown_timeout=3)` to wait 3 seconds instead.
+`uvicorn_server.layer(port=8000, graceful_shutdown_timeout="3 seconds")` to wait 3 seconds instead.
 `disable_preemptive_shutdown=True` interrupts the requests in flight at once.
 `router.to_asgi(routes)` is the same app as an ASGI application, for `uvicorn main:app` or
 any other ASGI server; its layers are built at the server's startup and released at its
