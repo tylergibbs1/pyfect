@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from ipaddress import IPv4Address
 
+from pyfect._digits import parse_digits
 from pyfect.duration import Seconds
 from pyfect.net.dns._error import DnsErrorReason
 from pyfect.net.net_address._inet import InetAddress, InetAddressV4, InetAddressV6
@@ -62,10 +63,13 @@ def parse_resolv_conf(text: str) -> ResolverConfig:
             case ["options", *options]:
                 for option in options:
                     key, _, value = option.partition(":")
-                    if key == "timeout" and value.isdigit():
-                        timeout = float(max(int(value), 1))
-                    elif key == "attempts" and value.isdigit():
-                        attempts = max(int(value), 1)
+                    number = parse_digits(value)
+                    if number is None:
+                        continue
+                    if key == "timeout":
+                        timeout = float(max(number, 1))
+                    elif key == "attempts":
+                        attempts = max(number, 1)
             case _:
                 pass
     return ResolverConfig(tuple(servers) or (_LOCALHOST,), Seconds(timeout), attempts)
