@@ -1256,3 +1256,50 @@ def test_layer_memory_preserves_interrupt_unsafe_across_a_suspended_replay():
         assert isinstance(result.exit, fx.Failure) and result.exit.cause.has_interrupts
 
     yield from fx.gen(program).pipe(_with_engine(Suspends.to_layer(lambda _p, _id: gate.wait())))
+
+
+@pytest.mark.parametrize("recover", [False, True])
+@testing.effect
+def test_layer_memory_interrupted_child_without_interrupting_its_sibling(recover: bool):
+    """WorkflowEngine / layerMemory ${recover ? "lets a parent recover from" : "fails a parent with a defect for"} an interrupted child without interrupting its sibling"""  # noqa: E501
+    gate = durable_deferred.make("WorkflowEngine/InterruptedChildGate")
+    Parent = workflow.make(
+        f"WorkflowEngine/InterruptedChildParent/{_js_bool(recover)}",
+        payload=EMPTY,
+        idempotency_key=lambda _: "parent",
+    )
+    Child = workflow.make(
+        f"WorkflowEngine/InterruptedChild/{_js_bool(recover)}",
+        payload=S.Struct(Id),
+        idempotency_key=lambda p: p["id"],
+    )
+
+    def parent(_p: Empty, _id: str):
+        def body():
+            yield from Child.execute({"id": "sibling"}, discard=True)
+            child = Child.execute({"id": "child"})
+            yield from (child.exit() if recover else child)
+
+        return fx.gen(body)
+
+    def program():
+        parent_id = yield from Parent.execute({}, discard=True)
+        child_id = yield from Child.execution_id({"id": "child"})
+        sibling_id = yield from Child.execution_id({"id": "sibling"})
+        yield from _poll_until_suspended(Parent, parent_id)
+        yield from Child.interrupt(child_id)
+        result = yield from _poll_until_complete(Parent, parent_id)
+        if recover:
+            assert result.exit == fx.Success(None)
+        else:
+            assert isinstance(result.exit, fx.Failure)
+            assert result.exit.cause.has_dies and not result.exit.cause.has_interrupts
+        yield from _poll_until_suspended(Child, sibling_id)
+
+    yield from fx.gen(program).pipe(
+        _with_engine(Parent.to_layer(parent), Child.to_layer(lambda _p, _id: gate.wait()))
+    )
+
+
+def _js_bool(value: bool) -> str:
+    return "true" if value else "false"

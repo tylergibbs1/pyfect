@@ -9,7 +9,8 @@ A key's circuit is ``Closed`` (calls run and are counted), ``Open`` (calls
 fail with ``CircuitOpen`` for the open time) or ``HalfOpen`` (one probe
 runs; its success closes the circuit, its failure reopens it). The trip
 policy is ``consecutive`` failures or a failure ``rate``; ``classify``
-decides how a call counts (``success``, ``ignored``, ``failure()``).
+decides how a call counts (``success``, ``ignored``, ``failure()``), and
+``on_rejection="allow"`` runs a call the circuit refuses, unrecorded.
 
 States live in a ``CircuitBreakerStore``: ``layer_store_memory``, or
 ``layer_store_redis`` (shared by every process using that Redis).
@@ -19,8 +20,9 @@ from pyfect._public import publish
 from pyfect.persistence.circuit_breaker._breaker import (
     CircuitBreaker,
     CircuitBreakerService,
-    Classify,
+    Classifier,
     Executor,
+    OnRejection,
     OnStoreError,
     OpenDuration,
     layer,
@@ -47,6 +49,7 @@ from pyfect.persistence.circuit_breaker._store import (
 )
 from pyfect.persistence.circuit_breaker._types import (
     Admission,
+    ClassifyContext,
     Closed,
     CloseTransition,
     Consecutive,
@@ -82,7 +85,8 @@ __all__ = [
     "CircuitBreakerStoreService",
     "CircuitHalfOpen",
     "CircuitOpen",
-    "Classify",
+    "Classifier",
+    "ClassifyContext",
     "CloseTransition",
     "Closed",
     "Consecutive",
@@ -91,6 +95,7 @@ __all__ = [
     "HalfOpen",
     "HalfOpenTransition",
     "IgnoredOutcome",
+    "OnRejection",
     "OnStoreError",
     "Open",
     "OpenDuration",

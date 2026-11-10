@@ -4,7 +4,10 @@ docstring is the Effect test title.
 Payloads are encoded with the events' JSON byte codecs (Effect's
 ``payloadSchemaBinary``). ``EventLogRemote.of({...})`` is an
 ``EventLogRemoteService`` built from the same functions; a compactor's
-``effect({entries, write})`` is ``effect(entries, write)``.
+``effect({entries, write})`` is ``effect(entries, write)``. The remote
+compaction titles run devices against an encrypted server on memory storage
+over ``make_no_serialization`` RPC clients, stepping the TestClock as
+Effect's do.
 """
 
 import time
@@ -16,7 +19,6 @@ import pytest
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
-from pyfect.eventlog import _crypto
 from pyfect.eventlog import event as Ev
 from pyfect.eventlog import event_group as G
 from pyfect.eventlog import event_journal as J
@@ -43,6 +45,8 @@ from pyfect.reactivity import layer as reactivity_layer
 from pyfect.rpc import test as rpc_test
 from pyfect.schema import getter as Gt
 from pyfect.schema import transformation as T
+
+from ._counting_web_crypto import CountingWebCrypto
 
 
 class UserPayload(TypedDict):
@@ -1383,22 +1387,7 @@ def test_publishes_local_changes_through_scoped_subscription():
     assert [e.id_string for e in second] == [entry.id_string]
 
 
-class CountingAesGcm:
-    """Counts AES-GCM calls (Effect's test wraps WebCrypto)."""
-
-    def __init__(self) -> None:
-        self.encrypts = 0
-        self.decrypts = 0
-        self.ivs: set[bytes] = set()
-
-    def encrypt(self, key: bytes, iv: bytes, data: bytes, aad: bytes, /) -> bytes:
-        self.encrypts += 1
-        self.ivs.add(iv)
-        return _crypto.aes_gcm_encrypt(key, iv, data, aad)
-
-    def decrypt(self, key: bytes, iv: bytes, data: bytes, aad: bytes, /) -> bytes:
-        self.decrypts += 1
-        return _crypto.aes_gcm_decrypt(key, iv, data, aad)
+CountingAesGcm = CountingWebCrypto
 
 
 def _known_entries_replay(mode: str) -> Generator[fx.Effect[Any, Any, Any], Any]:
@@ -1498,3 +1487,261 @@ def _known_entries_replay(mode: str) -> Generator[fx.Effect[Any, Any, Any], Any]
 def test_does_not_decrypt_known_entries(mode: str):
     """does not decrypt known entries in %s remote replay"""
     yield from _known_entries_replay(mode)
+
+
+# --- remote compaction --------------------------------------------------------------
+
+
+class ValuePayload(TypedDict):
+    id: str
+    value: float
+
+
+ValueSet = Ev.make("ValueSet", primary_key=lambda p: p["id"], payload=S.Struct(ValuePayload))
+ValueGroup = G.empty.add(ValueSet)
+value_schema = L.schema(ValueGroup)
+
+
+def _keep_latest_values(batch: L.BatchCompaction) -> fx.Effect[None]:
+    newest: dict[str, Entry] = {}
+    for item in batch.entries:
+        current = newest.get(item.entry.primary_key)
+        if current is None or J.entry_order(current) < J.entry_order(item.entry):
+            newest[item.entry.primary_key] = item.entry
+    return fx.for_each(list(newest.values()), batch.forward).as_void()
+
+
+keep_latest = L.group_batch_compaction(ValueGroup, _keep_latest_values, remote=True)
+default_store_id = J.StoreId("default")
+
+
+class _CompactionServer:
+    """An encrypted server on memory storage, serving both RPC groups."""
+
+    def __init__(self, storage: Any, connect: Callable[[], fx.Effect[Any, Any, Any]]) -> None:
+        self._storage = storage
+        self.connect = connect
+
+    def snapshots(self, public_key: str) -> fx.Effect[int, Any]:
+        def count(history: Sequence[Any]) -> int:
+            return len([activation for activation in history if activation.kept_count is not None])
+
+        return self._storage.compaction.history(public_key, default_store_id).map(count)
+
+
+def _make_compaction_server() -> Generator[Any, Any, _CompactionServer]:
+    from pyfect.eventlog import event_log_server_encrypted as SE
+    from pyfect.rpc.client._core import ClientOptions
+    from pyfect.rpc.client._core import make_no_serialization as make_rpc_client
+    from pyfect.rpc.message import FromServer
+    from pyfect.rpc.server._core import make_no_serialization as make_rpc_server
+
+    storage_layer = SE.layer_storage_memory_with({"threshold_floor": 1, "stage_ttl": "12 hours"})
+    context = yield from SE.layer_rpc_handlers.pipe(fx.layer.provide_merge(storage_layer)).build()
+    storage = context.get_unsafe(SE.Storage)
+    connections: list[Callable[[FromServer], fx.Effect[None]]] = []
+    server = yield from make_rpc_server(
+        SE.EventLogEncryptedServerRpcs,
+        lambda response: connections[response.client_id](response),
+    ).pipe(fx.provide(context))
+
+    def connect() -> fx.Effect[Any, Any, Any]:
+        def body():
+            client_id = len(connections)
+            client, core = yield from make_rpc_client(
+                SE.EventLogEncryptedServerRpcs,
+                lambda sent: server.write(client_id, sent.message),
+                ClientOptions(supports_ack=True),
+            )
+            connections.append(core.write)
+            return client
+
+        return fx.gen(body)
+
+    return _CompactionServer(storage, connect)
+
+
+class _Device:
+    def __init__(
+        self,
+        log: L.EventLogService,
+        journal: J.EventJournalService,
+        remote: EventLogRemoteService,
+        handled: list[str],
+    ) -> None:
+        self.log = log
+        self.journal = journal
+        self.remote = remote
+        self.handled = handled
+
+    def write(self, id: str, value: float) -> fx.Effect[object, object]:
+        return self.log.write(ValueSet, {"id": id, "value": value})
+
+
+def _make_device(
+    server: _CompactionServer,
+    identity: L.IdentityService,
+    *,
+    journal: J.EventJournalService | None = None,
+    compactor: Layer[Never, Never, L.Registry] | None = None,
+    handled: list[str] | None = None,
+) -> Generator[Any, Any, _Device]:
+    """A device running ``EventLog`` over ``journal``, connected to
+    ``server``. Its handler records each replayed or written value as
+    ``id=value`` in ``handled``."""
+    seen = [] if handled is None else handled
+    stored = journal if journal is not None else (yield from J.make_memory)
+    handlers = fx.layer.merge(
+        L.group(
+            ValueGroup,
+            lambda h: h.handle(
+                ValueSet,
+                lambda input: fx.sync(
+                    lambda: seen.append(f"{input.payload['id']}={input.payload['value']:g}")
+                ),
+            ),
+        ),
+        compactor if compactor is not None else fx.layer.empty,
+    ).pipe(fx.layer.provide(L.layer_registry))
+    context = yield from (
+        L.layer(value_schema, handlers)
+        .pipe(fx.layer.provide(fx.layer.succeed(J.EventJournal, stored)))
+        .pipe(fx.layer.provide(fx.layer.succeed(L.Identity, identity)))
+        .build()
+    )
+    client = yield from server.connect()
+    remote = yield from make_encrypted.pipe(fx.provide_service(EventLogRemoteClient, client)).pipe(
+        fx.provide_context(context)
+    )
+    return _Device(context.get_unsafe(L.EventLog), stored, remote, seen)
+
+
+def _advance_until(done: Callable[[], fx.Effect[bool, Any]], waiting_for: str):
+    """Steps the TestClock 15 minutes at a time until ``done`` holds, for at
+    most 50 hours."""
+    for _ in range(200):
+        if (yield from done()):
+            return
+        yield from testing.adjust("15 minutes")
+        yield from testing.with_live(fx.sleep("5 millis"))
+    raise AssertionError(f"timed out waiting until {waiting_for}")
+
+
+@testing.effect
+def test_bootstraps_new_device_from_background_snapshot():
+    """bootstraps a new device from the snapshot a background run commits, ending with the
+    state of a full replay"""
+
+    def body():
+        server = yield from _make_compaction_server()
+        identity = yield from L.make_identity
+        writer = yield from _make_device(server, identity, compactor=keep_latest)
+        for id, value in [("a", 1), ("b", 1), ("a", 2), ("a", 3), ("b", 2)]:
+            yield from writer.write(id, value)
+        yield from _advance_until(
+            lambda: server.snapshots(identity.public_key).map(lambda count: count == 1),
+            "a snapshot commits",
+        )
+        yield from writer.write("a", 4)
+        reader = yield from _make_device(server, identity)
+        yield from _advance_until(
+            lambda: fx.sync(lambda: "a=4" in reader.handled), "the reader replays the tail"
+        )
+        # A full replay ends with a=4 and b=2 too, after handling all six writes.
+        assert reader.handled == ["a=3", "b=2", "a=4"]
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(layer_subtle))
+
+
+@testing.effect
+def test_serves_device_inside_snapshot_what_next_keeps():
+    """serves a device whose cursor is inside one snapshot everything kept by the next"""
+
+    def body():
+        server = yield from _make_compaction_server()
+        identity = yield from L.make_identity
+        writer = yield from _make_device(server, identity, compactor=keep_latest)
+        journal = yield from J.make_memory
+        handled: list[str] = []
+        yield from writer.write("k1", 1)
+        yield from writer.write("k2", 1)
+        reader_scope = yield from fx.scope.make()
+        reader = yield from fx.gen(
+            lambda: _make_device(server, identity, journal=journal, handled=handled)
+        ).pipe(fx.provide_service(fx.Scope, reader_scope))
+        yield from _advance_until(
+            lambda: fx.sync(lambda: "k2=1" in handled), "the reader reads sequence 1"
+        )
+        yield from reader_scope.close(fx.Success(None))
+        cursor = yield from journal.next_remote_sequence(reader.remote.id)
+
+        # Snapshot g+1 covers sequences 0 to 3, so the reader's cursor is inside it.
+        yield from writer.write("k1", 2)
+        yield from writer.write("k3", 1)
+        yield from _advance_until(
+            lambda: server.snapshots(identity.public_key).map(lambda count: count == 1),
+            "g+1 commits",
+        )
+        yield from writer.write("k3", 2)
+        yield from writer.write("k4", 1)
+        yield from writer.write("k4", 2)
+        yield from _advance_until(
+            lambda: server.snapshots(identity.public_key).map(lambda count: count == 2),
+            "g+2 commits",
+        )
+        yield from _make_device(server, identity, journal=journal, handled=handled)
+        yield from _advance_until(
+            lambda: fx.sync(lambda: "k4=2" in handled), "the reader catches up"
+        )
+        assert {"cursor": cursor, "handled": handled} == {
+            "cursor": 2,
+            "handled": ["k1=1", "k2=1", "k1=2", "k3=2", "k4=2"],
+        }
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(layer_subtle))
+
+
+@testing.effect
+def test_compact_runs_one_compaction_now():
+    """pyfect: compact runs one compaction now on each remote that offers it,
+    and none without a compactor registered with remote"""
+
+    def body():
+        server = yield from _make_compaction_server()
+        identity = yield from L.make_identity
+        plain = yield from _make_device(server, identity)
+        yield from plain.write("a", 1)
+        yield from plain.write("a", 2)
+        yield from plain.log.synced
+        # Past the server's 24 hour lag.
+        yield from testing.adjust("26 hours")
+        assert (yield from plain.log.compact()) == []
+        writer = yield from _make_device(server, identity, compactor=keep_latest)
+        other = J.make_remote_id_unsafe()
+        assert (yield from writer.log.compact(remote_id=other)) == []
+        assert (yield from writer.log.compact(remote_id=writer.remote.id)) == [
+            L.CompactOutcome(writer.remote.id, "Committed")
+        ]
+        assert (yield from server.snapshots(identity.public_key)) == 1
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(layer_subtle))
+
+
+@testing.effect
+def test_compact_commits_no_op_when_nothing_is_dropped():
+    """pyfect: compact commits a no-op, uploading nothing, when the
+    compactors drop nothing"""
+
+    def body():
+        server = yield from _make_compaction_server()
+        identity = yield from L.make_identity
+        plain = yield from _make_device(server, identity)
+        yield from plain.write("a", 1)
+        yield from plain.write("b", 1)
+        yield from plain.log.synced
+        yield from testing.adjust("26 hours")
+        writer = yield from _make_device(server, identity, compactor=keep_latest)
+        assert (yield from writer.log.compact()) == [L.CompactOutcome(writer.remote.id, "NoOp")]
+        assert (yield from server.snapshots(identity.public_key)) == 0
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(layer_subtle))

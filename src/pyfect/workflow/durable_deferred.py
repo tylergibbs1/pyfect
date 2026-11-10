@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Generator, Mapping, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Never, NewType, cast
 from weakref import WeakKeyDictionary
 
@@ -59,7 +60,7 @@ from pyfect.workflow._services import (
     WorkflowInstanceService,
 )
 from pyfect.workflow._suspension import suspend as suspend_run
-from pyfect.workflow._suspension import wrap_activity_result
+from pyfect.workflow._suspension import suspend_with, wrap_activity_result
 from pyfect.workflow.activity import CurrentAttempt, Exactly, codec_of
 
 if TYPE_CHECKING:
@@ -306,6 +307,13 @@ def _record_exit(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _Parked:
+    """Every branch parked; ``cause`` holds the interrupts that stopped them."""
+
+    cause: Cause[Any]
+
+
 def _record_held[A, E, R](
     effect: Effect[A, E, R], self: DurableDeferred[Any, Any], *, check_cache: bool
 ) -> Effect[A, E, R | WorkflowEngine | WorkflowInstance]:
@@ -318,7 +326,7 @@ def _record_held[A, E, R](
         engine = yield from WorkflowEngine()
         instance = yield from WorkflowInstance()
 
-        def held() -> Generator[Effect[Any, Any, Any], Any, Exit[A, E] | None]:
+        def held() -> Generator[Effect[Any, Any, Any], Any, Exit[A, E] | _Parked]:
             if check_cache:
                 cached = yield from engine.deferred_result(self)
                 if cached is not None:
@@ -340,14 +348,14 @@ def _record_held[A, E, R](
                 .fork(start_immediately=True)
             )
 
-            def settle(ex: Exit[A, E]) -> Exit[A, E] | None:
+            def settle(ex: Exit[A, E]) -> Exit[A, E] | _Parked:
                 if local.suspended and isinstance(ex, Failure) and ex.cause.has_interrupts_only:
-                    return None
+                    return _Parked(ex.cause)
                 return ex
 
-            def release(result: Exit[Exit[A, E] | None, Never]) -> Effect[None]:
+            def release(result: Exit[Exit[A, E] | _Parked, Never]) -> Effect[None]:
                 def run() -> None:
-                    if isinstance(result, Success) and result.value is not None:
+                    if isinstance(result, Success) and not isinstance(result.value, _Parked):
                         _release_awaits(instance, owned)
                     else:
                         parent = _await_owners.get(instance)
@@ -365,9 +373,9 @@ def _record_held[A, E, R](
 
         # Every branch parked: release the hold and let the enclosing
         # activities finish before suspending.
-        found = yield from wrap_activity_result(gen(held), lambda e: e is None)
-        if found is None:
-            return (yield from suspend_run(instance))
+        found = yield from wrap_activity_result(gen(held), lambda e: isinstance(e, _Parked))
+        if isinstance(found, _Parked):
+            return (yield from suspend_with(instance, found.cause))
         return (yield from from_exit(found))
 
     return gen(body)

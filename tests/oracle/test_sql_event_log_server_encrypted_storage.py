@@ -20,6 +20,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.crypto import digest
 from pyfect.eventlog import event_journal as J
 from pyfect.eventlog import event_log_server_encrypted as Server
 from pyfect.eventlog import sql_event_log_server_encrypted as SqlE
@@ -64,7 +65,9 @@ def connect(request: pytest.FixtureRequest) -> Connect:
 
 
 def _run(body: Callable[[], Generator[Any, Any, Any]]) -> fx.Effect[Any, Any, Any]:
-    return fx.gen(body).pipe(fx.provide(fx.layer.merge(reactivity_layer, layer_subtle)))
+    return fx.gen(body).pipe(
+        fx.provide(fx.layer.merge(reactivity_layer, layer_subtle, digest.layer_web_crypto))
+    )
 
 
 def make_batch(*entry_ids: EntryId) -> EncryptedBatch:
@@ -89,7 +92,10 @@ def _encrypted_options(prefix: str) -> dict[str, str]:
 def _encrypted_storage(
     sql: SqlClientService, options: dict[str, str]
 ) -> fx.Effect[Server.StorageService, Any, Any]:
-    return SqlE.make_storage(**options).pipe(fx.provide_service(SqlClient, sql))
+    return SqlE.make_storage(
+        entry_table_prefix=options["entry_table_prefix"],
+        remote_id_table=options["remote_id_table"],
+    ).pipe(fx.provide_service(SqlClient, sql))
 
 
 def _await_lock_wait(sql: SqlClientService) -> Generator[Any, Any]:

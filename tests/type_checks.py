@@ -119,6 +119,8 @@ from pyfect.encoding import (
 )
 from pyfect.encoding import zip as encoding_zip
 from pyfect.errors import TaggedError
+from pyfect.eventlog import event_log as ev_log
+from pyfect.eventlog import event_log_remote as ev_remote
 from pyfect.fiber_handle import FiberHandleRuntime
 from pyfect.fiber_map import FiberMapAsyncRuntime, FiberMapRuntime
 from pyfect.fiber_set import FiberSetRuntime
@@ -6872,7 +6874,7 @@ def check_resilience(
 
 
 def _classify_response(
-    exit: fx.Exit[fx.http.HttpClientResponse, HttpClientError],
+    exit: fx.Exit[fx.http.HttpClientResponse, HttpClientError], context: cb.ClassifyContext
 ) -> fx.Effect[cb.Outcome, Never, PersistedLookup]:
     return fx.succeed(cb.success)
 
@@ -8135,28 +8137,32 @@ def graphql_checks() -> None:
 
 
 def eventlog_sql_checks() -> None:
+    from pyfect.crypto.digest import Digest as EvDigest
     from pyfect.eventlog import event_journal as ev_journal
     from pyfect.eventlog import event_log_server_encrypted as ev_encrypted
     from pyfect.eventlog import event_log_server_unencrypted as ev_unencrypted
     from pyfect.eventlog import sql_event_journal as ev_sql_journal
     from pyfect.eventlog import sql_event_log_server_encrypted as ev_sql_encrypted
     from pyfect.eventlog import sql_event_log_server_unencrypted as ev_sql_unencrypted
-    from pyfect.eventlog.event_log_encryption import EventLogEncryption as EvEncryption
     from pyfect.layer import Layer
     from pyfect.sql.client import SqlClient as EvSqlClient
     from pyfect.sql.error import SqlError as EvSqlError
 
     # SQL journal and storages: they need a SqlClient (and the encrypted one
-    # EventLogEncryption, to hash scope keys); the journal opens its tables
-    # once.
+    # a Digest, to hash scope keys); the journal opens its tables once.
     assert_type(
         ev_sql_journal.layer(),
         Layer[ev_journal.EventJournal, EvSqlError, EvSqlClient],
     )
     assert_type(
         ev_sql_encrypted.layer_storage(),
-        Layer[ev_encrypted.Storage, EvSqlError, EvSqlClient | EvEncryption],
+        Layer[ev_encrypted.Storage, EvSqlError, EvSqlClient | EvDigest],
     )
+    assert_type(
+        ev_sql_encrypted.layer_storage_subtle(compaction={"grace": "2 hours", "lag": "1 hour"}),
+        Layer[ev_encrypted.Storage, EvSqlError, EvSqlClient],
+    )
+    ev_sql_encrypted.layer_storage(compaction={"threshold_floor": "many"})  # pyright: ignore[reportArgumentType]
     assert_type(
         ev_sql_unencrypted.layer_storage(insert_batch_size=50),
         Layer[ev_unencrypted.Storage, EvSqlError, EvSqlClient],
@@ -8242,6 +8248,11 @@ def eventlog_checks() -> None:
 
     # Servers over memory storage.
     assert_type(ev_encrypted.layer_storage_memory, Layer[ev_encrypted.Storage])
+    assert_type(
+        ev_encrypted.layer_storage_memory_with({"stage_ttl": "5 minutes"}),
+        Layer[ev_encrypted.Storage],
+    )
+    ev_encrypted.layer_storage_memory_with({"sweep": "1 hour"})  # pyright: ignore[reportArgumentType]
     assert_type(ev_unencrypted.layer_storage_memory, Layer[ev_unencrypted.Storage])
 
     # DevTools: the tracer layer needs only a socket; the server needs a
@@ -10293,3 +10304,92 @@ def mcp_middleware_pins() -> None:
         protocols=(mcp_p.v2025_11_25,),
         cache_hints={"tools": {"ttl": "1 minute", "cache_scope": "public"}},  # pyright: ignore[reportArgumentType]
     )
+
+
+def eventlog_crypto_checks() -> None:
+    """M17 eauth: the event log's encryption and identity keys run on the
+    ``pyfect.crypto`` services."""
+    from pyfect.crypto import aead, digest, secure_random
+    from pyfect.crypto import web_crypto as wc
+    from pyfect.eventlog import event_log_encryption as ev_enc
+    from pyfect.eventlog import event_log_session_auth as ev_auth
+    from pyfect.eventlog._identity import IdentityService as EvIdentity
+
+    assert_type(
+        ev_enc.make,
+        fx.Effect[
+            ev_enc.EventLogEncryptionService,
+            Never,
+            aead.Aead | digest.Digest | secure_random.SecureRandom,
+        ],
+    )
+    assert_type(
+        ev_enc.layer,
+        fx.Layer[
+            ev_enc.EventLogEncryption,
+            Never,
+            aead.Aead | digest.Digest | secure_random.SecureRandom,
+        ],
+    )
+    assert_type(ev_enc.layer_subtle, fx.Layer[ev_enc.EventLogEncryption])
+    assert_type(
+        ev_enc.make_encryption_subtle(wc.WebCrypto.default()),
+        fx.Effect[ev_enc.EventLogEncryptionService],
+    )
+    identity = EvIdentity("pk", redact(bytes(32)))
+    assert_type(ev_auth.derive_signing_public_key(identity), fx.Effect[bytes])
+    # The cipher argument of 4.0.6 is gone: it takes a Web Crypto object.
+    ev_enc.make_encryption_subtle(None)  # pyright: ignore[reportArgumentType]
+
+
+# --- M17 persistence (Effect 4.1.2) ---------------------------------------------------
+
+
+def _probe_classifier(exit: fx.Exit[int, str], context: cb.ClassifyContext) -> cb.Outcome:
+    return cb.failure() if context.probe else cb.ignored
+
+
+def check_m17_persistence(breaker: cb.CircuitBreakerService, call: fx.Effect[int, str]) -> None:
+    assert_type(
+        call.pipe(breaker.execute(key="k", on_rejection="allow", classify=_probe_classifier)),
+        fx.Effect[int, str | cb.CircuitBreakerError],
+    )
+    assert_type(
+        call.pipe(breaker.execute(key="k", on_rejection="fail")),
+        fx.Effect[int, str | cb.CircuitBreakerError],
+    )
+    breaker.execute(call, key="k", on_rejection="retry")  # pyright: ignore[reportArgumentType, reportCallIssue]
+    # A classifier takes the probe context too.
+    breaker.execute(call, key="k", classify=lambda exit: cb.ignored)  # pyright: ignore[reportArgumentType, reportCallIssue]
+    assert_type(rl.make_memory_store, fx.Effect[rl.MemoryRateLimiterStore, Never, fx.Scope])
+    memory: rl.RateLimiterStoreService = rl.MemoryRateLimiterStore()
+    assert_type(rl.MemoryRateLimiterStore().size, int)
+    del memory
+
+
+# --- M17 eventlog client: remote compaction (Effect 4.1.2) ----------------------------
+
+
+def check_m17_eventlog_client(
+    log: ev_log.EventLogService,
+    remote: ev_remote.EventLogRemoteService,
+    registry: ev_log.RegistryService,
+) -> None:
+    from pyfect.eventlog.event_journal import EventJournalError as EvJournalError
+
+    assert_type(
+        log.compact(),
+        fx.Effect[list[ev_log.CompactOutcome], EvJournalError | ev_remote.EventLogRemoteError],
+    )
+    log.compact(remote.id)  # pyright: ignore[reportCallIssue]
+    assert_type(remote.compaction, ev_remote.EventLogRemoteCompaction | None)
+    assert_type(
+        ev_remote.make_encrypted_with(compaction=False),
+        fx.Effect[
+            ev_remote.EventLogRemoteService,
+            ev_remote.EventLogRemoteError,
+            fx.Scope | ev_remote.EventLogRemoteClient | ev_log.EventLogEncryption | ev_log.Registry,
+        ],
+    )
+    # A registered compactor takes the remote flag.
+    registry.register_compaction(["E"], lambda entries, write: fx.void)  # pyright: ignore[reportArgumentType]

@@ -23,7 +23,9 @@ suspended. `execute(payload, discard=True)` starts it and gives its execution id
 `poll`, `interrupt` and `resume` take. `poll` gives a `Complete` with its `Exit` once the
 execution has finished, a `Suspended` while it waits for a deferred or a scheduled wake-up,
 and `None` both while a run is in progress and for an id it has no execution for, as in
-Effect.
+Effect. Inside a workflow, executing another workflow awaits it as a child; a child that
+is interrupted fails the parent with a defect rather than an interrupt, so the parent can
+recover with `catch_defect` or `.exit()`.
 
 <Diagram name="workflow-replay" title="Each run reuses the stored results of the steps it already took, and suspends where an answer is missing" />
 

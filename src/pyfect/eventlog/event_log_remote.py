@@ -10,18 +10,25 @@ after a ``Forbidden``) and register with the log's ``Registry``.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Never, Protocol
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
+from pyfect._public import publish
 from pyfect.cache import Cache
 from pyfect.context import Tag
-from pyfect.effect import gen
-from pyfect.errors import TaggedError
+from pyfect.effect import gen, succeed
 from pyfect.eventlog._identity import Identity, IdentityService
 from pyfect.eventlog._identity_derivation import make_get_identity_root_secret_material
+from pyfect.eventlog._remote_compaction_client import (
+    CompactionStage,
+    EncryptedCompaction,
+    EventLogRemoteCompaction,
+    RemoteSession,
+)
+from pyfect.eventlog._remote_error import EventLogRemoteError
 from pyfect.eventlog.event_journal import (
     EntriesById,
     Entry,
@@ -31,11 +38,16 @@ from pyfect.eventlog.event_journal import (
     StoreId,
 )
 from pyfect.eventlog.event_log import Registry
-from pyfect.eventlog.event_log_encryption import EventLogEncryption, layer_subtle
+from pyfect.eventlog.event_log_encryption import (
+    EventLogEncryption,
+    EventLogEncryptionService,
+    layer_subtle,
+)
 from pyfect.eventlog.event_log_message import (
     CHUNK_SIZE,
     Authenticate,
     ChunkedMessage,
+    EventLogCompactionRpcs,
     EventLogProtocolError,
     EventLogRemoteRpcs,
     HelloResponse,
@@ -56,37 +68,40 @@ from pyfect.layer import effect as layer_effect
 from pyfect.layer import provide as layer_provide
 from pyfect.queue import Dequeue, Queue
 from pyfect.redacted import value as reveal
+from pyfect.result import Err, Ok, Result
 from pyfect.rpc.client import ClientOptions, ClientProtocol
 from pyfect.rpc.client import make as make_rpc_client
 from pyfect.schema import SchemaError
 from pyfect.scope import Scope, fork_scoped
+from pyfect.stream import Stream
+from pyfect.stream import unwrap as unwrap_stream
 
 __all__ = [
     "Changes",
+    "CompactionStage",
     "DecodeChanges",
     "EncodeWrite",
     "EventLogRemote",
     "EventLogRemoteClient",
+    "EventLogRemoteCompaction",
     "EventLogRemoteError",
     "EventLogRemoteService",
     "LatestSequence",
+    "MakeCompaction",
+    "RemoteSession",
     "WhenAuthenticated",
     "WriteFn",
     "layer_client",
     "layer_encrypted",
+    "layer_encrypted_with",
     "layer_unencrypted",
     "make_encrypted",
+    "make_encrypted_with",
     "make_unencrypted",
     "make_with",
 ]
 
-
-@dataclass(eq=False)
-class EventLogRemoteError(TaggedError):
-    """A remote ``method`` failed."""
-
-    method: str
-    cause: object
+publish(globals())
 
 
 class Changes(Protocol):
@@ -132,7 +147,7 @@ class EventLogRemoteService:
     ``None`` when it has none), ``when_authenticated`` and
     ``latest_sequence``, the highest sequence it has stored for a store
     (a pyfect addition, ``None`` for a remote that cannot tell, which
-    ``EventLogService.synced`` then does not wait for)."""
+    ``EventLogService.synced`` then does not wait for), and ``compaction``."""
 
     id: RemoteId
     changes: Changes
@@ -140,6 +155,10 @@ class EventLogRemoteService:
     first_sequence: int | None = None
     when_authenticated: WhenAuthenticated = _authenticated
     latest_sequence: LatestSequence | None = None
+    compaction: EventLogRemoteCompaction | None = None
+    """Encrypted remote compaction: present when the remote advertises
+    ``HelloResponse.compaction`` and the RPC client includes
+    ``EventLogCompactionRpcs``."""
 
 
 class EventLogRemote(Tag[EventLogRemoteService], key="effect/eventlog/EventLogRemote"):
@@ -149,14 +168,20 @@ class EventLogRemote(Tag[EventLogRemoteService], key="effect/eventlog/EventLogRe
 class EventLogRemoteClient(
     Tag[EventLogRemoteRpcs], key="effect/eventlog/EventLogRemote/EventLogRemoteClient"
 ):
-    """The RPC client of an event log server."""
+    """The RPC client of an event log server. The ``EventLogCompactionRpcs``
+    are optional: the encrypted remote offers compaction only when the
+    client is also an ``EventLogCompactionRpcs`` client."""
+
+
+class _RemoteAndCompactionRpcs(EventLogRemoteRpcs, EventLogCompactionRpcs):
+    """Both groups (Effect's ``EventLogRemoteRpcs.merge(EventLogCompactionRpcs)``)."""
 
 
 layer_client: Layer[EventLogRemoteClient, Never, ClientProtocol] = layer_effect(
     EventLogRemoteClient,
-    make_rpc_client(EventLogRemoteRpcs, ClientOptions(disable_tracing=True)),
+    make_rpc_client(_RemoteAndCompactionRpcs, ClientOptions(disable_tracing=True)),
 )
-"""``EventLogRemoteClient`` over the ``ClientProtocol``."""
+"""``EventLogRemoteClient`` over the ``ClientProtocol``, with both groups."""
 
 _get_material = make_get_identity_root_secret_material()
 
@@ -202,6 +227,15 @@ def _is_forbidden(error: object) -> bool:
 
 def _as_remote_error(method: str) -> Callable[[object], EventLogRemoteError]:
     return lambda cause: EventLogRemoteError(method=method, cause=cause)
+
+
+def _to_remote_error(method: str) -> Callable[[object], EventLogRemoteError]:
+    """Wraps a failure, keeping an ``EventLogRemoteError`` as it is."""
+    return lambda cause: (
+        cause
+        if isinstance(cause, EventLogRemoteError)
+        else EventLogRemoteError(method=method, cause=cause)
+    )
 
 
 def _as_changes_error(cause: object) -> EventLogRemoteError:
@@ -256,51 +290,140 @@ def _pump_changes(
     return gen(pump)
 
 
-def make_with(
-    encode_write: EncodeWrite, decode_changes: DecodeChanges
-) -> Effect[EventLogRemoteService, EventLogRemoteError, Scope | EventLogRemoteClient | Registry]:
-    """A remote over the ``EventLogRemoteClient`` writing entries encoded
-    by ``encode_write`` and decoding changes with ``decode_changes``,
-    registered with the ``Registry`` until the scope closes."""
+@dataclass(slots=True)
+class _HelloState:
+    """The server's last hello; ``None`` makes the next authentication say
+    hello again."""
 
+    hello: HelloResponse | None
+
+
+class _Session:
+    """A remote's authentication: each identity authenticates once, and
+    again after a ``Forbidden``."""
+
+    __slots__ = ("_auth_cache", "_identities", "_state", "client")
+
+    def __init__(
+        self,
+        client: EventLogRemoteRpcs,
+        state: _HelloState,
+        identities: dict[str, IdentityService],
+        auth_cache: Cache[str, None, EventLogRemoteError],
+    ) -> None:
+        self.client = client
+        self._state = state
+        self._identities = identities
+        self._auth_cache = auth_cache
+
+    def ensure_authenticated(self, identity: IdentityService) -> Effect[None, EventLogRemoteError]:
+        self._identities.setdefault(identity.public_key, identity)
+        return self._auth_cache.get(identity.public_key)
+
+    def reset_authentication(self, identity: IdentityService) -> Effect[None]:
+        """The next request says hello and authenticates again."""
+        self._state.hello = None
+        return self._auth_cache.invalidate(identity.public_key)
+
+    def retry_forbidden[A, E, R](
+        self, effect: Effect[A, E, R], identity: IdentityService
+    ) -> Effect[A, E, R]:
+        def while_(error: E) -> Effect[bool]:
+            return self.reset_authentication(identity).as_(_is_forbidden(error))
+
+        return effect.retry(while_=while_, times=5)
+
+    def request[A, E](
+        self, method: str, identity: IdentityService, effect: Effect[A, E], /
+    ) -> Effect[A, EventLogRemoteError]:
+        authenticated = self.ensure_authenticated(identity).and_then(effect)
+        return self.retry_forbidden(authenticated, identity).map_error(_to_remote_error(method))
+
+    def framed[A, E, E2](
+        self,
+        method: str,
+        identity: IdentityService,
+        frames: Callable[[], Stream[SingleMessage | ChunkedMessage, E]],
+        decode: Callable[[bytes], Effect[Iterable[A], E2]],
+        /,
+    ) -> Stream[A, EventLogRemoteError]:
+        # Not retried like ``request``; a refused identity authenticates again
+        # on the next request.
+        def open_frames() -> Stream[A, E | E2]:
+            state = ChunkedMessage.initial_join_state()
+
+            def join(frame: SingleMessage | ChunkedMessage) -> Result[bytes, None]:
+                data = (
+                    frame.data
+                    if isinstance(frame, SingleMessage)
+                    else ChunkedMessage.join(state, frame)
+                )
+                return Err(None) if data is None else Ok(data)
+
+            return frames().filter_map(join).map_effect(decode).flatten_iterable()
+
+        def reset_if_forbidden(error: object) -> Effect[None]:
+            return self.reset_authentication(identity) if _is_forbidden(error) else succeed(None)
+
+        opened: Stream[A, E | E2 | EventLogRemoteError] = unwrap_stream(
+            self.ensure_authenticated(identity).map(lambda _: open_frames())
+        )
+        return opened.tap_error(reset_if_forbidden).map_error(_to_remote_error(method))
+
+
+def _make_session(
+    client: EventLogRemoteRpcs,
+) -> Effect[tuple[_Session, HelloResponse], EventLogRemoteError]:
     def body():
-        client = yield from EventLogRemoteClient()
-        registry = yield from Registry()
         hello_call = client.hello().map_error(_as_remote_error("hello"))
-        state: dict[str, HelloResponse | None] = {"hello": (yield from hello_call)}
+        first: HelloResponse = yield from hello_call
+        state = _HelloState(first)
         identities: dict[str, IdentityService] = {}
-        chunk_ids = [0]
 
         def lookup(public_key: str) -> Effect[None, EventLogRemoteError]:
             def authenticate():
-                hello = state["hello"]
+                hello = state.hello
                 if hello is None:
-                    hello = state["hello"] = yield from hello_call
+                    hello = state.hello = yield from hello_call
                 request = yield from _make_authenticate(identities[public_key], hello)
                 yield from client.authenticate(request)
 
             return gen(authenticate).map_error(_as_remote_error("authenticate"))
 
         auth_cache = yield from Cache.make(lookup, capacity=sys.maxsize)
+        return _Session(client, state, identities, auth_cache), first
 
-        def ensure_authenticated(identity: IdentityService) -> Effect[None, EventLogRemoteError]:
-            identities.setdefault(identity.public_key, identity)
-            return auth_cache.get(identity.public_key)
+    return gen(body)
 
-        def retry_forbidden[A, E, R](
-            effect: Effect[A, E, R], identity: IdentityService
-        ) -> Effect[A, E, R]:
-            def while_(error: E) -> Effect[bool]:
-                state["hello"] = None
-                return auth_cache.invalidate(identity.public_key).as_(_is_forbidden(error))
 
-            return effect.retry(while_=while_, times=5)
+type MakeCompaction = Callable[[RemoteSession, EventLogRemoteRpcs], EventLogRemoteCompaction | None]
+
+
+def make_with(
+    encode_write: EncodeWrite, decode_changes: DecodeChanges
+) -> Effect[EventLogRemoteService, EventLogRemoteError, Scope | EventLogRemoteClient | Registry]:
+    """A remote over the ``EventLogRemoteClient`` writing entries encoded
+    by ``encode_write`` and decoding changes with ``decode_changes``,
+    registered with the ``Registry`` until the scope closes."""
+    return _make_remote(encode_write, decode_changes, None)
+
+
+def _make_remote(
+    encode_write: EncodeWrite,
+    decode_changes: DecodeChanges,
+    make_compaction: MakeCompaction | None,
+) -> Effect[EventLogRemoteService, EventLogRemoteError, Scope | EventLogRemoteClient | Registry]:
+    def body():
+        client = yield from EventLogRemoteClient()
+        registry = yield from Registry()
+        session, hello = yield from _make_session(client)
+        chunk_ids = [0]
 
         def write(
             *, identity: IdentityService, store_id: StoreId, entries: Sequence[Entry]
         ) -> Effect[Sequence[WriteAck] | None, EventLogRemoteError]:
             def run():
-                yield from ensure_authenticated(identity)
+                yield from session.ensure_authenticated(identity)
                 encoded = yield from encode_write(identity, store_id, entries)
                 if len(encoded) <= CHUNK_SIZE:
                     return (yield from client.write_single({"data": encoded}))
@@ -310,7 +433,7 @@ def make_with(
                 acks = yield from for_each(parts, client.write_chunked, concurrency=4)
                 return [ack for part in acks for ack in part]
 
-            return retry_forbidden(gen(run), identity).map_error(_as_remote_error("write"))
+            return session.retry_forbidden(gen(run), identity).map_error(_as_remote_error("write"))
 
         def changes(
             *,
@@ -335,7 +458,9 @@ def make_with(
                 # Forbidden retries resubscribe from the same sequence; other
                 # failures reach the EventLog, which reconnects.
                 yield from fork_scoped(
-                    retry_forbidden(ensure_authenticated(identity).and_then(pump), identity)
+                    session.retry_forbidden(
+                        session.ensure_authenticated(identity).and_then(pump), identity
+                    )
                     .map_error(_as_changes_error)
                     .catch_cause(outgoing.fail_cause)
                 )
@@ -346,18 +471,18 @@ def make_with(
         def latest_sequence(
             *, identity: IdentityService, store_id: StoreId
         ) -> Effect[int | None, EventLogRemoteError]:
-            call = ensure_authenticated(identity).and_then(
+            call = session.ensure_authenticated(identity).and_then(
                 client.latest_sequence({"public_key": identity.public_key, "store_id": store_id})
             )
-            return retry_forbidden(call, identity).map_error(_as_remote_error("latestSequence"))
+            return session.retry_forbidden(call, identity).map_error(
+                _as_remote_error("latestSequence")
+            )
 
         def when_authenticated[A, E, R](
             effect: Effect[A, E, R], /
         ) -> Effect[A, E | EventLogRemoteError, R | Identity]:
-            return Identity().flat_map(ensure_authenticated).and_then(effect)
+            return Identity().flat_map(session.ensure_authenticated).and_then(effect)
 
-        hello = state["hello"]
-        assert hello is not None
         remote = EventLogRemoteService(
             id=hello.remote_id,
             first_sequence=hello.first_sequence,
@@ -365,6 +490,11 @@ def make_with(
             write=write,
             when_authenticated=when_authenticated,
             latest_sequence=latest_sequence,
+            compaction=(
+                make_compaction(session, client)
+                if hello.compaction is True and make_compaction is not None
+                else None
+            ),
         )
         yield from registry.register_remote(remote)
         return remote
@@ -372,7 +502,18 @@ def make_with(
     return gen(body)
 
 
-def _encrypted():
+def _make_encrypted_compaction(
+    encryption: EventLogEncryptionService,
+) -> MakeCompaction:
+    def make(session: RemoteSession, client: EventLogRemoteRpcs) -> EventLogRemoteCompaction | None:
+        if not isinstance(client, EventLogCompactionRpcs):
+            return None
+        return EncryptedCompaction(session, client, encryption)
+
+    return make
+
+
+def _encrypted(compaction: bool) -> Generator[Any, Any, EventLogRemoteService]:
     encryption = yield from EventLogEncryption()
 
     def encode_write(
@@ -421,15 +562,32 @@ def _encrypted():
 
         return gen(run)
 
-    return (yield from make_with(encode_write, decode_changes))
+    make_compaction = _make_encrypted_compaction(encryption) if compaction else None
+    return (yield from _make_remote(encode_write, decode_changes, make_compaction))
+
+
+def make_encrypted_with(
+    *, compaction: bool = True
+) -> Effect[
+    EventLogRemoteService,
+    EventLogRemoteError,
+    Scope | EventLogRemoteClient | EventLogEncryption | Registry,
+]:
+    """A remote sending entries encrypted with the ``EventLogEncryption``.
+    It has a ``compaction`` member when the server advertises compaction and
+    the RPC client includes ``EventLogCompactionRpcs``, unless built with
+    ``compaction=False``; without one this client never calls the
+    compaction RPCs."""
+    return gen(lambda: _encrypted(compaction))
 
 
 make_encrypted: Effect[
     EventLogRemoteService,
     EventLogRemoteError,
     Scope | EventLogRemoteClient | EventLogEncryption | Registry,
-] = gen(_encrypted)
-"""A remote sending entries encrypted with the ``EventLogEncryption``."""
+] = make_encrypted_with()
+"""A remote sending entries encrypted with the ``EventLogEncryption``
+(``make_encrypted_with`` opts out of running compaction)."""
 
 
 def _encode_unencrypted(
@@ -452,12 +610,24 @@ make_unencrypted: Effect[
 """A remote sending plain entries (to an unencrypted server)."""
 
 
+def layer_encrypted_with(
+    *, compaction: bool = True
+) -> Layer[EventLogRemote, EventLogRemoteError, ClientProtocol | Registry]:
+    """An encrypted remote over the ``ClientProtocol``; ``compaction=False``
+    leaves it without its ``compaction`` member, so this client never calls
+    the compaction RPCs."""
+    return (
+        layer_effect(EventLogRemote, make_encrypted_with(compaction=compaction))
+        .pipe(layer_provide(layer_client))
+        .pipe(layer_provide(layer_subtle))
+    )
+
+
 layer_encrypted: Layer[EventLogRemote, EventLogRemoteError, ClientProtocol | Registry] = (
-    layer_effect(EventLogRemote, make_encrypted)
-    .pipe(layer_provide(layer_client))
-    .pipe(layer_provide(layer_subtle))
+    layer_encrypted_with()
 )
-"""An encrypted remote over the ``ClientProtocol``."""
+"""An encrypted remote over the ``ClientProtocol`` (``layer_encrypted_with``
+opts out of running compaction)."""
 
 layer_unencrypted: Layer[EventLogRemote, EventLogRemoteError, ClientProtocol | Registry] = (
     layer_effect(EventLogRemote, make_unencrypted).pipe(layer_provide(layer_client))

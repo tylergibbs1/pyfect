@@ -23,6 +23,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.clock import Clock, ClockService, now_millis_unsafe
 from pyfect.context import Tag
+from pyfect.crypto.secure_random import random_bytes_unsafe, uuid_v4_unsafe
 from pyfect.date_time._epoch import from_epoch_millis
 from pyfect.effect import gen, succeed, suspend, sync, try_
 from pyfect.encoding.schema_binary import to_codec
@@ -62,7 +63,7 @@ class EventJournalError(TaggedError):
 
 def make_remote_id_unsafe() -> RemoteId:
     """A new random remote id (Effect's ``makeRemoteIdUnsafe``)."""
-    return RemoteId(_uuid.v4_bytes())
+    return RemoteId(uuid_v4_unsafe(format="bytes"))
 
 
 _MAX_ENTRY_ID_MILLIS = 2**48 - 1
@@ -99,7 +100,7 @@ def _next_entry_id(sequence: _EntryIdSequence, now: int) -> EntryId:
     # The sequence only moves forward, so once exhausted it stays exhausted.
     if sequence.millis > _MAX_ENTRY_ID_MILLIS:
         raise OverflowError("The entry id sequence has passed the last UUID v7 millisecond")
-    raw = _uuid.v7_bytes(sequence.millis)
+    raw = _uuid.v7_bytes(sequence.millis, random_bytes_unsafe(16))
     # The counter replaces the 12 random ``rand_a`` bits after the version.
     raw[6] = 0x70 | (sequence.counter >> 8)
     raw[7] = sequence.counter & 0xFF
@@ -124,11 +125,12 @@ def _max_entry_id(ids: Iterable[EntryId]) -> EntryId | None:
     return max(ids, default=None)
 
 
-def make_entry_id_unsafe(*, msecs: int | None = None) -> EntryId:
+def make_entry_id_unsafe(*, msecs: float | None = None) -> EntryId:
     """A new entry id: the next local id, or with ``msecs`` a random id of
-    that millisecond (Effect's ``makeEntryIdUnsafe``)."""
+    that millisecond, truncated and clamped to the UUID v7 range (Effect's
+    ``makeEntryIdUnsafe``)."""
     if msecs is not None:
-        return EntryId(bytes(_uuid.v7_bytes(msecs)))
+        return EntryId(bytes(_uuid.v7_bytes(msecs, random_bytes_unsafe(16))))
     return _next_entry_id(_process_entry_ids, now_millis())
 
 

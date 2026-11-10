@@ -433,6 +433,59 @@ def test_waits_for_entity_teardown_before_handing_off_without_acquiring_newly_fr
     yield from fx.scoped(body)
 
 
+class PersistedHold(Entity, type="PersistedHold"):
+    hold = make_rpc("Hold").annotate(Persisted, True)
+
+
+@testing.effect
+def test_finishes_a_persisted_reply_that_completes_while_shutdown_starts():
+    """finishes a persisted reply that completes while shutdown starts"""
+
+    @fx.gen
+    def body():
+        # Shutdown unregisters the runner before handing its shards off, with
+        # the sharding scope already closing.
+        unregister_gate = yield from _make_gate
+        state = FailoverState(unregister_gate=unregister_gate)
+        # Closed only once the test passes: a stuck handler would block it.
+        registration_scope = CloseableScope()
+        built = yield from _build_sharding(state)
+        service = built.sharding
+        gate = yield from _make_gate
+        entered = [False]
+        yield from _advance_until(lambda: all(service.has_shard_id(s) for s in _all_shards))
+
+        def hold(_: Any) -> fx.Effect[None]:
+            def enter() -> None:
+                entered[0] = True
+
+            return fx.sync(enter).and_then(gate.wait())
+
+        handlers = PersistedHold.handlers().handle(PersistedHold.hold)(hold)
+        yield from service.register_entity(
+            PersistedHold, fx.succeed(handlers), EntityOptions()
+        ).pipe(fx.provide_service(Scope, registration_scope))
+        make_client = yield from PersistedHold.client().pipe(fx.provide(built.context))
+        yield from make_client("1").hold.discard()
+        yield from _advance_until(lambda: entered[0])
+
+        # The handler finishes while the runner unregisters.
+        closing = yield from built.scope.close(_VOID).fork()
+        yield from testing.adjust("10 millis")
+        yield from gate.open()
+        yield from testing.adjust("10 millis")
+        yield from unregister_gate.open()
+        yield from _advance_until(lambda: closing.poll_unsafe() is not None)
+        assert closing.poll_unsafe() == _VOID
+        # The entity stopped, so its shard was handed off through the per-shard
+        # release rather than left to the final release of every lock.
+        shard_id = service.get_shard_id(EntityId("1"), "default")
+        assert shard_id in state.release_calls
+        yield from registration_scope.close(_VOID)
+
+    yield from fx.scoped(body)
+
+
 @testing.effect
 def test_does_not_record_a_release_cancelled_when_shutdown_handoff_times_out():
     """does not record a release cancelled when shutdown handoff times out"""

@@ -34,7 +34,9 @@ from pyfect.cluster.message_storage import (
     MessageStorageService,
     SaveResult,
     SaveSuccess,
+    TransactionNotifications,
 )
+from pyfect.cluster.message_storage._service import Notification
 from pyfect.cluster.reply import Reply, WithExit
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.runners._service import (
@@ -48,7 +50,7 @@ from pyfect.cluster.runners._service import (
 from pyfect.cluster.sharding_config import ShardingConfig
 from pyfect.cluster.snowflake import Generator, Snowflake, SnowflakeGenerator
 from pyfect.duration import Seconds
-from pyfect.effect import catch_tag, die, gen, never, succeed, suspend
+from pyfect.effect import catch_tag, die, gen, never, succeed, suspend, sync
 from pyfect.latch import Latch
 from pyfect.logger import log_debug
 from pyfect.scope import CloseableScope, Scope, fork_in, fork_scoped, scoped
@@ -75,6 +77,22 @@ def _die_malformed(error: MalformedMessage) -> Effect[Never]:
 
 def _is_persisted(message: Outgoing) -> bool:
     return message.rpc.annotations.get(Persisted)
+
+
+def _notify_after_commit[E](message: Outgoing, notify: Effect[None, E]) -> Effect[None, E]:
+    """A message saved in a transaction is invisible to readers until the
+    commit, so its wake-up waits for the commit. A failure then can no
+    longer be returned and is dropped; the next storage poll delivers the
+    message."""
+    if not _is_persisted(message):
+        return notify
+
+    def defer(notifications: list[Notification] | None) -> Effect[None, E]:
+        if notifications is None:
+            return notify
+        return sync(lambda: notifications.append(notify.ignore()))
+
+    return TransactionNotifications().flat_map(defer)
 
 
 class _LocalRunners:
@@ -382,7 +400,7 @@ class _LocalRunners:
 
         def after(saved: Outgoing, duplicate: bool) -> Effect[None, SendError]:
             if discard or isinstance(saved, OutgoingEnvelope):
-                return transport.notify(address, message, discard)
+                return _notify_after_commit(saved, transport.notify(address, message, discard))
             if not duplicate and address is not None:
                 return transport.send(address, saved).catch_all(
                     lambda _: self._reply_from_storage(saved)
@@ -417,7 +435,7 @@ class _LocalRunners:
 
         def after(saved: Outgoing, _duplicate: bool) -> Effect[None]:
             if discard or isinstance(saved, OutgoingEnvelope):
-                return notify_entity(saved)
+                return _notify_after_commit(saved, notify_entity(saved))
             reply = (
                 self._reply_from_storage(saved)
                 if storage_only

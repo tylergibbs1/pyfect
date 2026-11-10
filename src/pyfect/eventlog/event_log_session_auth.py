@@ -11,17 +11,22 @@ hex text when given as bytes), the challenge, the public key and the
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
 from pyfect._core import Effect
 from pyfect._js import text_encode
-from pyfect.effect import fail, succeed, suspend, sync
+from pyfect.crypto import key_format, secure_random
+from pyfect.crypto import signature as sig
+from pyfect.crypto import web_crypto as web
+from pyfect.crypto.crypto_error import CryptoError
+from pyfect.effect import fail, gen, succeed, suspend, sync, void
 from pyfect.errors import TaggedError
 from pyfect.eventlog._identity import IdentityService
 from pyfect.eventlog._identity_derivation import make_get_identity_root_secret_material
+from pyfect.layer import Layer
+from pyfect.layer import provide as provide_layer
 
 AUTH_PAYLOAD_CONTEXT = "eventlog-auth-v1"
 ED25519_PUBLIC_KEY_LENGTH = 32
@@ -153,48 +158,96 @@ def decode_session_auth_payload(
     return _attempt(lambda: _decode(payload))
 
 
+def _require_web_crypto() -> Effect[None, EventLogSessionAuthError]:
+    # The Web Crypto layers read the ``WebCrypto`` reference, so a runtime
+    # without ``subtle`` fails here rather than with a defect inside a layer.
+    def check(crypto: web.Crypto) -> Effect[None, EventLogSessionAuthError]:
+        if crypto.subtle is None:
+            return fail(
+                EventLogSessionAuthError("CryptoUnavailable", "crypto.subtle is not available")
+            )
+        return void
+
+    return web.WebCrypto().flat_map(check)
+
+
+_layer_signature: Layer[sig.Signature] = sig.layer_web_crypto.pipe(
+    provide_layer(secure_random.layer_web_crypto)
+)
+
+
+def _crypto_failure(message: str) -> Callable[[CryptoError], EventLogSessionAuthError]:
+    return lambda cause: EventLogSessionAuthError("CryptoFailure", message, cause)
+
+
 def sign_session_auth_payload_bytes(
     payload: bytes, signing_private_key: bytes
 ) -> Effect[bytes, EventLogSessionAuthError]:
-    """Sign canonical bytes with a PKCS#8 Ed25519 private key."""
+    """Sign canonical bytes with a PKCS#8 Ed25519 private key, on
+    ``sig.layer_web_crypto`` with the ``WebCrypto`` reference."""
 
-    def sign() -> bytes:
-        from pyfect.eventlog import _crypto
-
-        _decode(payload)
-        try:
-            return _crypto.ed25519_sign(signing_private_key, payload)
-        except ValueError as cause:
-            raise EventLogSessionAuthError(
+    @gen
+    def run():
+        yield from decode_session_auth_payload(payload)
+        yield from _require_web_crypto()
+        private_key = yield from key_format.decode_private(
+            key_format.pkcs8, sig.ed25519, signing_private_key
+        ).map_error(
+            lambda cause: EventLogSessionAuthError(
                 "InvalidSigningPrivateKey",
                 "Failed to import Ed25519 signing private key (expected PKCS#8 bytes)",
                 cause,
-            ) from cause
+            )
+        )
+        return (
+            yield from sig.Signature()
+            .flat_map(lambda service: service.sign(private_key, payload))
+            .pipe(provide_layer(_layer_signature))
+            .map_error(_crypto_failure("Failed to sign canonical session auth payload"))
+        )
 
-    return _attempt(sign)
+    return run
 
 
 def verify_session_auth_payload_bytes(
     payload: bytes, signing_public_key: bytes, signature: bytes
 ) -> Effect[bool, EventLogSessionAuthError]:
-    """Whether ``signature`` signs the canonical bytes for the key."""
+    """Whether ``signature`` signs the canonical bytes for the key; the
+    lengths are checked before verifying on ``sig.layer_web_crypto``
+    with the ``WebCrypto`` reference."""
 
-    def verify() -> bool:
-        from pyfect.eventlog import _crypto
-
-        _decode(payload)
+    @gen
+    def run():
+        yield from decode_session_auth_payload(payload)
         error = _check_signing_public_key(signing_public_key)
         if error is not None:
-            raise error
+            return (yield from fail(error))
         if len(signature) != ED25519_SIGNATURE_LENGTH:
-            raise EventLogSessionAuthError(
-                "InvalidSignatureLength",
-                f"Expected signature length to be {ED25519_SIGNATURE_LENGTH} bytes, "
-                f"received {len(signature)}",
+            return (
+                yield from fail(
+                    EventLogSessionAuthError(
+                        "InvalidSignatureLength",
+                        f"Expected signature length to be {ED25519_SIGNATURE_LENGTH} bytes, "
+                        f"received {len(signature)}",
+                    )
+                )
             )
-        return _crypto.ed25519_verify(signing_public_key, signature, payload)
+        yield from _require_web_crypto()
+        public_key = yield from sig.public_key(sig.ed25519, signing_public_key).map_error(
+            lambda cause: EventLogSessionAuthError(
+                "InvalidSigningPublicKeyLength",
+                "Failed to import Ed25519 signing public key",
+                cause,
+            )
+        )
+        return (
+            yield from sig.Signature()
+            .flat_map(lambda service: service.verify(public_key, signature, payload))
+            .pipe(provide_layer(_layer_signature))
+            .map_error(_crypto_failure("Failed to verify canonical session auth payload signature"))
+        )
 
-    return _attempt(verify)
+    return run
 
 
 def sign_session_auth_payload(
@@ -213,10 +266,13 @@ def verify_session_auth_payload(
     )
 
 
-make_session_auth_challenge: Effect[bytes, EventLogSessionAuthError] = sync(
-    lambda: os.urandom(SESSION_AUTH_CHALLENGE_LENGTH)
+make_session_auth_challenge: Effect[bytes, EventLogSessionAuthError] = (
+    secure_random.SecureRandom()
+    .flat_map(lambda random: random.random_bytes(SESSION_AUTH_CHALLENGE_LENGTH))
+    .pipe(provide_layer(secure_random.layer_web_crypto))
 )
-"""A fresh random challenge."""
+"""A fresh random challenge from ``SecureRandom`` on the ``WebCrypto``
+reference."""
 
 
 _identity_material = make_get_identity_root_secret_material()
@@ -224,9 +280,10 @@ _identity_material = make_get_identity_root_secret_material()
 
 def derive_signing_public_key(identity: IdentityService) -> Effect[bytes]:
     """The Ed25519 signing public key ``identity`` presents in session auth
-    (Effect's ``deriveSigningPublicKey``). Record it when provisioning an
-    identity, so ``authorize_identity`` can reject any other key presented
-    for its public key."""
+    (Effect's ``deriveSigningPublicKey``), derived on the ``WebCrypto``
+    reference. Record it when provisioning an identity, so
+    ``authorize_identity`` can reject any other key presented for its public
+    key."""
     return _identity_material(identity).map(lambda material: material.signing_public_key)
 
 

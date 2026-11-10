@@ -23,7 +23,7 @@ from pyfect.effect import (
     suspend,
     sync,
 )
-from pyfect.exit import Exit
+from pyfect.exit import Exit, Failure
 from pyfect.schedule import Schedule, Stop, exponential, min, spaced, to_step_with_sleep
 from pyfect.schema import decode_unknown_effect, encode_unknown_effect
 from pyfect.scope import Scope, add_finalizer
@@ -251,6 +251,14 @@ def make_unsafe(options: Encoded) -> WorkflowEngineService:
                 result[:] = [wrapped]
                 if isinstance(wrapped, Suspended):
                     return (yield from suspend_run(parent_instance))
+                # A child's interrupt is an outcome for the parent, not an
+                # interrupt of the parent's run: the parent sees a defect.
+                if isinstance(wrapped.exit, Failure) and wrapped.exit.cause.has_interrupts_only:
+                    return (
+                        yield from die(
+                            f'{workflow.tag}.execute: execution "{execution_id}" was interrupted'
+                        )
+                    )
                 return (yield from from_exit(wrapped.exit))
 
             step: Callable[[Any], Effect[Any, Any, Any]] | None = None

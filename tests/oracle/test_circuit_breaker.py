@@ -157,13 +157,64 @@ def test_a_record_defect_alongside_a_store_failure_still_dies() -> None:
     _run(fx.gen(body), store)
 
 
+def test_allow_a_rejection_alongside_an_admit_defect_still_dies_without_running_the_call() -> None:
+    """onRejection / allow: a rejection alongside an admit defect still dies without running the
+    call"""
+
+    def admit(key: str) -> fx.Effect[Any, cb.CircuitBreakerError]:
+        rejected = cb.CircuitBreakerError(reason=cb.CircuitHalfOpen(key=key))
+        return fx.fail_cause(fx.cause.fail(rejected) + fx.cause.die("bug"))
+
+    def body():
+        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="1 minute")
+        ran: list[bool] = []
+        exit = yield from (
+            fx.sync(lambda: ran.append(True))
+            .pipe(breaker.execute(key="admit-defect", on_rejection="allow"))
+            .exit()
+        )
+        assert not ran
+        assert isinstance(exit, Failure)
+        assert any(isinstance(r, Die) and r.defect == "bug" for r in exit.cause.reasons)
+
+    _run(fx.gen(body), _memory_store_with(admit=admit))
+
+
+def test_receives_the_admissions_probe_flag() -> None:
+    """classify / receives the admission's probe flag, so an outcome ignored when closed can
+    reopen a probe"""
+
+    def body():
+        breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="1 minute")
+        probes: list[bool] = []
+
+        def classify(_exit: object, context: cb.ClassifyContext) -> cb.Outcome:
+            probes.append(context.probe)
+            return cb.failure() if context.probe else cb.ignored
+
+        rate_limited = (
+            fx.fail("rate limited").pipe(breaker.execute(key="probe", classify=classify)).ignore()
+        )
+
+        yield from rate_limited
+        assert isinstance((yield from breaker.state("probe")), cb.Closed)
+        yield from fx.fail("boom").pipe(breaker.execute(key="probe")).ignore()
+        yield from testing.adjust("2 minutes")
+        yield from rate_limited
+
+        assert probes == [False, True]
+        assert isinstance((yield from breaker.state("probe")), cb.Open)
+
+    _run(fx.gen(body), cb.layer_store_memory())
+
+
 def test_a_classifier_defect_records_ignored_and_the_call_dies_with_the_combined_cause() -> None:
     """classify / a classifier defect records Ignored and the call dies with the combined
     cause"""
     thrown_error = RuntimeError("thrown")
     died_error = RuntimeError("died")
 
-    def throwing(_: object) -> cb.Outcome:
+    def throwing(_exit: object, _context: cb.ClassifyContext) -> cb.Outcome:
         raise thrown_error
 
     def body():
@@ -173,7 +224,9 @@ def test_a_classifier_defect_records_ignored_and_the_call_dies_with_the_combined
         )
         died = yield from (
             fx.fail("boom")
-            .pipe(breaker.execute(key="defect", classify=lambda _: fx.die(died_error)))
+            .pipe(
+                breaker.execute(key="defect", classify=lambda _exit, _context: fx.die(died_error))
+            )
             .exit()
         )
         assert isinstance(thrown, Failure)

@@ -2,24 +2,26 @@
 ``eventlog/EventLogServer``), shared by the encrypted and unencrypted
 servers.
 
-``layer_rpc_handlers`` answers ``Hello`` with a one-time challenge per
-connection (30 seconds), verifies ``Authenticate`` against the identity's
-bound signing key, joins chunked writes and splits large changes.
+``layer_rpc_handlers`` answers ``Hello`` with a one-time challenge kept on
+the connection (30 seconds from when it was generated), verifies
+``Authenticate`` against the presented signing key and then the identity's
+binding, joins chunked writes and splits large changes.
 ``ConnectionWrites`` keeps a connection's own writes out of its change
 streams.
 """
 
 from __future__ import annotations
 
-import sys
+import itertools
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Never
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect.cache import Cache
+from pyfect.clock import current_time_millis
 from pyfect.context import Tag
+from pyfect.crypto.mac import timing_safe_equal
 from pyfect.effect import fail, gen, succeed, suspend, sync
 from pyfect.eventlog import _uuid
 from pyfect.eventlog._identity import Identity, IdentityService
@@ -49,7 +51,7 @@ from pyfect.exit import Exit, Success
 from pyfect.layer import Layer, provide_merge
 from pyfect.layer import succeed as layer_succeed
 from pyfect.redacted import make as redacted
-from pyfect.rpc import RpcRequest
+from pyfect.rpc import RpcRequest, ServerClient
 from pyfect.rpc.group import HandlersFor
 from pyfect.rpc.middleware import MiddlewareOptions
 from pyfect.stream import Stream
@@ -66,6 +68,7 @@ __all__ = [
     "OnWrite",
     "layer_auth_middleware",
     "layer_rpc_handlers",
+    "make_framer",
 ]
 
 _EMPTY_PRIVATE_KEY = redacted(bytes(32))
@@ -243,6 +246,133 @@ type LatestSequence = Callable[[str, StoreId], Effect[int | None, object]]
 the store is empty."""
 
 
+@dataclass(frozen=True, slots=True)
+class _Pending:
+    challenge: bytes
+    expires_at: float
+
+
+class _PendingChallenge(
+    Tag[_Pending | None], key="effect/eventlog/EventLogServer/PendingChallenge"
+):
+    """The connection's unconsumed ``Hello`` challenge, cleared by
+    ``Authenticate``."""
+
+
+def _pending_challenge(client: ServerClient, now: float) -> _Pending | None:
+    found = client.annotations.get_option(_PendingChallenge)
+    pending = found.value if found is not None else None
+    return pending if pending is not None and pending.expires_at > now else None
+
+
+def make_framer() -> Callable[[bytes], list[SingleMessage | ChunkedMessage]]:
+    """Frames one encoded message for a response stream: a ``SingleMessage``
+    when it fits, else the pieces of a ``ChunkedMessage`` with the next id."""
+    chunk_ids = itertools.count()
+
+    def frame(data: bytes) -> list[SingleMessage | ChunkedMessage]:
+        if len(data) <= CHUNK_SIZE:
+            return [SingleMessage(data=data)]
+        return list(ChunkedMessage.split(next(chunk_ids), data))
+
+    return frame
+
+
+def _hello(
+    remote_id: RemoteId, first_sequence: int | None, compaction: bool
+) -> Callable[[RpcRequest[None]], Effect[HelloResponse]]:
+    def hello(request: RpcRequest[None]) -> Effect[HelloResponse]:
+        client = request.client
+
+        @gen
+        def run():
+            # Kept on the connection, so it is released when the client
+            # disconnects and shared by overlapping Hellos until
+            # ``Authenticate`` consumes it.
+            pending = _pending_challenge(client, (yield from current_time_millis()))
+            if pending is None:
+                challenge = yield from make_session_auth_challenge.or_die()
+                # Read the clock again, as generating the challenge can
+                # suspend. A concurrent Hello may have stored one meanwhile.
+                now = yield from current_time_millis()
+                pending = _pending_challenge(client, now) or _Pending(
+                    challenge, now + SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_MILLIS
+                )
+                client.annotate(_PendingChallenge, pending)
+            return HelloResponse(
+                remote_id=remote_id,
+                challenge=pending.challenge,
+                first_sequence=first_sequence,
+                compaction=True if compaction else None,
+            )
+
+        return run
+
+    return hello
+
+
+def _authenticate(
+    remote_id: RemoteId,
+    authorize_identity: Callable[[str, bytes], Effect[None, EventLogProtocolError]] | None,
+    bound_signing_key: Callable[[str, bytes], Effect[bytes, EventLogProtocolError]],
+) -> Callable[[RpcRequest[Authenticate]], Effect[None, EventLogProtocolError]]:
+    def authenticate(request: RpcRequest[Authenticate]) -> Effect[None, EventLogProtocolError]:
+        payload = request.payload
+        client = request.client
+
+        def verification_failed() -> Effect[Never, EventLogProtocolError]:
+            return fail(
+                _forbidden(
+                    "Authenticate",
+                    "Session auth signature verification failed",
+                    payload.public_key,
+                )
+            )
+
+        @gen
+        def run():
+            pending = _pending_challenge(client, (yield from current_time_millis()))
+            client.annotate(_PendingChallenge, None)
+            if pending is None:
+                return (
+                    yield from fail(
+                        _forbidden(
+                            "Authenticate",
+                            "Session auth challenge has expired",
+                            payload.public_key,
+                        )
+                    )
+                )
+            if authorize_identity is not None:
+                yield from authorize_identity(payload.public_key, payload.signing_public_key)
+            verified = yield from verify_session_authenticate_request(
+                SessionAuthPayload(
+                    remote_id=remote_id,
+                    challenge=pending.challenge,
+                    public_key=payload.public_key,
+                    signing_public_key=payload.signing_public_key,
+                ),
+                payload.signature,
+                payload.algorithm,
+            ).catch_all(lambda _: succeed(False))
+            if not verified:
+                return (yield from verification_failed())
+            # Only a verified key reaches the binding. A key other than
+            # the identity's bound key is rejected like a bad signature.
+            bound = yield from bound_signing_key(payload.public_key, payload.signing_public_key)
+            if not timing_safe_equal(bound, payload.signing_public_key):
+                return (yield from verification_failed())
+            client.annotate(
+                Identity, IdentityService(payload.public_key, _EMPTY_PRIVATE_KEY)
+            ).annotate(
+                AuthenticatedIdentities, _authenticated(request) | {payload.public_key}
+            ).annotate(ChunkedMessageState, ChunkedMessage.initial_join_state())
+
+        return run
+
+    return authenticate
+
+
 def layer_rpc_handlers(
     *,
     remote_id: RemoteId,
@@ -251,21 +381,21 @@ def layer_rpc_handlers(
     changes: Changes,
     latest_sequence: LatestSequence,
     first_sequence: int | None = None,
+    compaction: bool = False,
     authorize_identity: Callable[[str, bytes], Effect[None, EventLogProtocolError]] | None = None,
 ) -> Layer[HandlersFor[EventLogRemoteRpcs] | EventLogAuthentication]:
     """The handlers of ``EventLogRemoteRpcs`` and the auth middleware.
-    ``get_or_create_session_auth_binding`` gives the signing key bound to a
-    public key (binding the presented one on first use)."""
+
+    ``Authenticate`` calls ``authorize_identity`` with the claimed public key
+    and the presented signing public key, then verifies the signature
+    against the presented key. Only a verified key goes to
+    ``get_or_create_session_auth_binding``, which gives the key bound to the
+    public key (binding the presented one on first use); a key that differs
+    from the binding is rejected. ``compaction`` sets
+    ``HelloResponse.compaction``: the server also serves
+    ``EventLogCompactionRpcs``."""
 
     def make():
-        def new_challenge(_client_id: int) -> Effect[bytes]:
-            return make_session_auth_challenge.or_die()
-
-        challenges = yield from Cache.make(
-            new_challenge,
-            capacity=sys.maxsize,
-            time_to_live=SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_MILLIS,
-        )
         signing_keys: dict[str, bytes] = {}
 
         def bound_signing_key(
@@ -292,64 +422,7 @@ def layer_rpc_handlers(
                 .map(remember)
             )
 
-        chunk_ids = [0]
-
-        def hello(request: RpcRequest[None]) -> Effect[HelloResponse]:
-            return challenges.get(request.client.id).map(
-                lambda challenge: HelloResponse(
-                    remote_id=remote_id, challenge=challenge, first_sequence=first_sequence
-                )
-            )
-
-        def authenticate(request: RpcRequest[Authenticate]) -> Effect[None, EventLogProtocolError]:
-            payload = request.payload
-            client = request.client
-
-            def body():
-                found = yield from challenges.get_option(client.id)
-                if found is None:
-                    return (
-                        yield from fail(
-                            _forbidden(
-                                "Authenticate",
-                                "Session auth challenge has expired",
-                                payload.public_key,
-                            )
-                        )
-                    )
-                yield from challenges.invalidate(client.id)
-                if authorize_identity is not None:
-                    yield from authorize_identity(payload.public_key, payload.signing_public_key)
-                signing_key = yield from bound_signing_key(
-                    payload.public_key, payload.signing_public_key
-                )
-                verified = yield from verify_session_authenticate_request(
-                    SessionAuthPayload(
-                        remote_id=remote_id,
-                        challenge=found.value,
-                        public_key=payload.public_key,
-                        signing_public_key=signing_key,
-                    ),
-                    payload.signature,
-                    payload.algorithm,
-                ).catch_all(lambda _: succeed(False))
-                if not verified:
-                    return (
-                        yield from fail(
-                            _forbidden(
-                                "Authenticate",
-                                "Session auth signature verification failed",
-                                payload.public_key,
-                            )
-                        )
-                    )
-                client.annotate(
-                    Identity, IdentityService(payload.public_key, _EMPTY_PRIVATE_KEY)
-                ).annotate(
-                    AuthenticatedIdentities, _authenticated(request) | {payload.public_key}
-                ).annotate(ChunkedMessageState, ChunkedMessage.initial_join_state())
-
-            return gen(body)
+        to_frames = make_framer()
 
         def write_single(
             request: RpcRequest[WriteSinglePayload],
@@ -375,12 +448,6 @@ def layer_rpc_handlers(
 
             return suspend(run)
 
-        def to_messages(data: bytes) -> list[SingleMessage | ChunkedMessage]:
-            if len(data) <= CHUNK_SIZE:
-                return [SingleMessage(data=data)]
-            chunk_ids[0] += 1
-            return list(ChunkedMessage.split(chunk_ids[0] - 1, data))
-
         def changes_handler(
             request: RpcRequest[ChangesPayload],
         ) -> Stream[SingleMessage | ChunkedMessage, EventLogProtocolError]:
@@ -397,7 +464,7 @@ def layer_rpc_handlers(
                     payload["start_sequence"],
                     _connection_writes(request),
                 )
-                .map_array(lambda chunk: tuple(m for data in chunk for m in to_messages(data)))
+                .map_array(lambda chunk: tuple(m for data in chunk for m in to_frames(data)))
                 .catch_cause(
                     lambda _: stream_fail(
                         EventLogProtocolError(
@@ -431,12 +498,14 @@ def layer_rpc_handlers(
 
         return (
             EventLogRemoteRpcs.handlers()
-            .handle(EventLogRemoteRpcs.hello)(hello)
-            .handle(EventLogRemoteRpcs.authenticate)(authenticate)
+            .handle(EventLogRemoteRpcs.hello)(_hello(remote_id, first_sequence, compaction))
+            .handle(EventLogRemoteRpcs.authenticate)(
+                _authenticate(remote_id, authorize_identity, bound_signing_key)
+            )
             .handle(EventLogRemoteRpcs.write_single)(write_single)
             .handle(EventLogRemoteRpcs.write_chunked)(write_chunked)
             .handle(EventLogRemoteRpcs.changes)(changes_handler)
             .handle(EventLogRemoteRpcs.latest_sequence)(latest_sequence_handler)
         )
 
-    return EventLogRemoteRpcs.to_layer_effect(gen(make)).pipe(provide_merge(layer_auth_middleware))
+    return EventLogRemoteRpcs.to_layer_effect(sync(make)).pipe(provide_merge(layer_auth_middleware))

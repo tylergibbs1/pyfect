@@ -16,6 +16,7 @@ import pyfect as fx
 from pyfect import stream as St
 from pyfect import testing
 from pyfect.context import Context
+from pyfect.crypto import digest
 from pyfect.eventlog import event_journal as J
 from pyfect.eventlog import event_log as L
 from pyfect.eventlog import event_log_message as M
@@ -65,7 +66,9 @@ def _storage() -> Generator[Any, Any, Server.StorageService]:
 
 
 def _run(body: Callable[[], Generator[Any, Any, Any]]) -> fx.Effect[Any, Any, Any]:
-    return fx.gen(body).pipe(fx.provide(fx.layer.merge(reactivity_layer, layer_subtle)))
+    return fx.gen(body).pipe(
+        fx.provide(fx.layer.merge(reactivity_layer, layer_subtle, digest.layer_web_crypto))
+    )
 
 
 def _encode_write(

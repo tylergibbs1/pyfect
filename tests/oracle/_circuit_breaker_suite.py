@@ -46,7 +46,7 @@ def held(
     breaker: cb.CircuitBreakerService,
     key: str,
     result: fx.Effect[None, Any],
-    classify: cb.Classify[None, Any] | None = None,
+    classify: cb.Classifier[None, Any] | None = None,
 ) -> fx.Effect[Held]:
     """Starts a call that is admitted and then waits for a gate before
     completing with ``result``."""
@@ -101,7 +101,9 @@ def consecutive(advance: Advance):
     yield from fail(breaker, key)
     yield from fail(breaker, key)
     yield from (
-        fx.fail("boom").pipe(breaker.execute(key=key, classify=lambda _: cb.ignored)).ignore()
+        fx.fail("boom")
+        .pipe(breaker.execute(key=key, classify=lambda _exit, _context: cb.ignored))
+        .ignore()
     )
     assert isinstance((yield from breaker.state(key)), cb.Closed)
 
@@ -120,7 +122,9 @@ def rate(advance: Advance):
     )
     yield from fail(breaker, key)
     yield from (
-        fx.fail("boom").pipe(breaker.execute(key=key, classify=lambda _: cb.ignored)).ignore()
+        fx.fail("boom")
+        .pipe(breaker.execute(key=key, classify=lambda _exit, _context: cb.ignored))
+        .ignore()
     )
     yield from fail(breaker, key)
     assert isinstance((yield from breaker.state(key)), cb.Closed)
@@ -231,7 +235,11 @@ def retry_after_hint(advance: Advance):
     )
     yield from (
         fx.fail("boom")
-        .pipe(breaker.execute(key=key, classify=lambda _: cb.failure(retry_after="1 hour")))
+        .pipe(
+            breaker.execute(
+                key=key, classify=lambda _exit, _context: cb.failure(retry_after="1 hour")
+            )
+        )
         .ignore()
     )
     yield from advance(0.3)
@@ -257,7 +265,7 @@ def interrupts(advance: Advance):
     key = "interrupt"
     breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="200 millis")
 
-    def classify(_: object) -> cb.Outcome:
+    def classify(_exit: object, _context: cb.ClassifyContext) -> cb.Outcome:
         return cb.failure()
 
     interrupted = fx.fail_cause(fx.cause.interrupt())
@@ -275,7 +283,8 @@ def interrupts(advance: Advance):
     classifying_probe = yield from (
         fx.void.pipe(
             breaker.execute(
-                key=key, classify=lambda _: classifying.succeed(None).and_then(fx.never)
+                key=key,
+                classify=lambda _exit, _context: classifying.succeed(None).and_then(fx.never),
             )
         ).fork()
     )
@@ -313,12 +322,48 @@ def stale_outcome(advance: Advance):
     assert reopened.consecutive_openings == 2
 
 
+def on_rejection_allow(advance: Advance):
+    key = "allow"
+    breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="200 millis")
+    allowed = breaker.execute(key=key, on_rejection="allow")
+    assert (yield from fx.fail("boom").pipe(allowed).flip()) == "boom"
+    assert isinstance((yield from breaker.state(key)), cb.Open)
+
+    assert isinstance((yield from rejection(run_void(breaker, key))), cb.CircuitOpen)
+    ran: list[bool] = []
+
+    def run() -> int:
+        ran.append(True)
+        return 1
+
+    assert (yield from fx.sync(run).pipe(allowed)) == 1
+    assert ran == [True]
+
+    # Another call owns the probe, so the allowed failure cannot reopen.
+    yield from advance(0.3)
+    probe = yield from held(breaker, key, fx.void)
+    assert (yield from fx.fail("boom").pipe(allowed).flip()) == "boom"
+    assert (yield from breaker.state(key)) == cb.HalfOpen(key, True, 1)
+    assert isinstance((yield from probe.release), Success)
+    assert (yield from breaker.state(key)) == cb.Closed(key)
+
+    # With the probe slot free, the allowed call is the probe.
+    yield from fail(breaker, key)
+    yield from advance(0.3)
+    yield from fx.void.pipe(allowed)
+    assert (yield from breaker.state(key)) == cb.Closed(key)
+
+
 def idle_reset(advance: Advance):
     key = "idle-reset"
     breaker = yield from cb.make(trip_policy=cb.consecutive(1), open_duration="200 millis")
     yield from (
         fx.fail("boom")
-        .pipe(breaker.execute(key=key, classify=lambda _: cb.failure(retry_after="1 second")))
+        .pipe(
+            breaker.execute(
+                key=key, classify=lambda _exit, _context: cb.failure(retry_after="1 second")
+            )
+        )
         .ignore()
     )
     yield from advance(1.1)
@@ -383,6 +428,11 @@ SUITE: list[tuple[str, Body]] = [
     (
         "a stale outcome changes nothing, while another key's current permit still counts",
         stale_outcome,
+    ),
+    (
+        "onRejection allow runs a refused call unrecorded, while an admitted call records and "
+        "can take the probe",
+        on_rejection_allow,
     ),
 ]
 

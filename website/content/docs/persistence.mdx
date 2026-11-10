@@ -48,7 +48,10 @@ lookup giving an `int` for `success=S.String` makes `get` a pyright error.
 </CodeOutput>
 
 `persistence.layer_memory`, `layer_kvs` (over a `KeyValueStore`), `layer_sql`,
-`layer_sql_multi_table` and `layer_redis` provide `Persistence`. A stored outcome the
+`layer_sql_multi_table` and `layer_redis` provide `Persistence`. Each `store_id` is a
+namespace of its own: the key-value and Redis backends percent-encode `%` and `:` in it, so
+the stores `"cache"` and `"cache:users"` never share an entry, and clearing one leaves the
+other. A stored outcome the
 request's schemas no longer decode is looked up again and replaced, so changing a
 schema doesn't break old entries. `RequestResolver.persisted` stores a
 batching resolver's outcomes the same way.
@@ -73,8 +76,9 @@ failed. Delivery is at least once, so handlers must be safe to run twice.
 A consumer is usually `queue.take(handler).forever()` on a fiber of its own.
 `layer_store_sql` (any `SqlClient`) and `layer_store_redis` keep queues across restarts
 and let several processes take from one queue: a value taken by a process that dies is
-released for another once its lock expires. `persisted_queue.layer_cleanup` removes old
-completed values.
+released for another once its lock expires. Each queue keeps its own custom ids, and a
+handler whose expired claim was handed to another worker can no longer settle it.
+`persisted_queue.layer_cleanup` removes old completed values.
 
 That wait is `lock_expiration`, 120 seconds on `layer_store_sql` and 90 on
 `layer_store_redis`, as in Effect, so a job whose worker was killed sits for that long while

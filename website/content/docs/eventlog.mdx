@@ -35,7 +35,9 @@ appends the event, runs its handler and succeeds with the handler's result;
 
 The identity in this example comes from `make_identity`, which uses
 `event_log_encryption.layer_subtle`: install the `pyfect-dev[eventlog]` extra
-(`cryptography`) for it and for anything encrypted.
+(`cryptography` and PyNaCl) for it and for anything encrypted. The encryption runs on the
+[`pyfect.crypto`](/docs/crypto) services: `layer_subtle` on their Web Crypto layers, and
+`event_log_encryption.layer` on whatever `Aead`, `Digest` and `SecureRandom` you provide.
 
 ## Rows
 
@@ -85,7 +87,12 @@ read: only clients holding the identity's key can. The unencrypted one,
 stores, checks an `EventLogServerAuthorization` and can compact the backlog. Both have
 memory storage for tests and SQL storage (`sql_event_log_server_encrypted`,
 `sql_event_log_server_unencrypted`). Clients authenticate by signing a challenge with an
-Ed25519 key derived from their identity.
+Ed25519 key derived from their identity. A challenge lives on its connection for 30 seconds
+and is used once. The server binds the first verified signing key of an identity and rejects
+any other; `authorize_identity` also receives the presented `signing_public_key`, so a
+deployment that records each identity's key at provisioning time
+(`event_log_session_auth.derive_signing_public_key`) can reject every other key, even on
+first use.
 
 Here a test server and two devices of one user, a laptop and a phone, sync a note. The
 server is `event_log_server_encrypted.layer` behind `rpc_server.layer_protocol_websocket(path)`,
@@ -110,6 +117,41 @@ and then check, without sleeping.
 
 Payloads, entries and the write and change frames are
 [SchemaBinary](/docs/streams#schemabinary) frames with Effect's bytes.
+
+## Remote compaction
+
+An encrypted server that sets `HelloResponse.compaction` can keep a compacted snapshot of
+a store's history, so a new device replays the snapshot and a recent tail instead of every
+write. Only clients can decrypt the entries, so clients build the snapshots. A compactor
+opts in with `remote=True` on `group_compaction` or `group_batch_compaction`
+(`event_row.compaction` always does). That promises what the library can't check: the
+entries it keeps depend only on the set of input entries, never on services, the clock or
+their order, and compaction composes, so `drop(drop(a) + b)` keeps what `drop(a + b)` keeps
+even when `b` holds older entries. A remote run only drops entries: a call that writes a
+new entry keeps its whole input, and entries that don't decode, including ones with fields
+the schema doesn't know, are kept. Before uploading, the run passes the kept entries through
+the compactors again and uploads nothing when that drops more or a compactor dies.
+
+The log polls the compaction status when it connects and about hourly. When the server
+wants compaction and the journal has caught up, it starts a background run after a random
+delay of one to five minutes: it reads the input (from the journal where it can, fetching
+the rest), runs the opted-in compactors and uploads what they keep in segments of about
+512 KB. The server lets one run per store hold a stage, so devices that start together
+download the input once. `log.compact()` (or `log.compact(remote_id=...)`) runs one now and
+returns a `CompactOutcome` per remote. A device with a large store can opt out with
+`event_log_remote.layer_encrypted_with(compaction=False)` and leave compaction to a device
+with more memory, since a run holds every kept entry in memory.
+
+On the server, both storages compact: `event_log_server_encrypted.layer_storage_memory_with(...)`
+and `sql_event_log_server_encrypted.layer_storage(compaction=...)`. A store wants compaction
+once at least `threshold_floor` (1000) entries, and at least as many as the active snapshot
+keeps, were stored more than `lag` (24 hours) ago. After runs that kept everything, it waits
+for that many new entries, doubling the wait after each one. A stage's claim lasts `stage_ttl` (10 minutes) from its last
+uploaded part, and a replaced snapshot stays restorable for `grace` (30 days), which must be
+longer than both. `storage.compaction.rollback(public_key, store_id, activation_id)` withdraws
+the active snapshot and appends its input again at the head, so readers that already passed
+the snapshot get every entry. A sweep every `sweep_interval` (1 hour) closes expired stages
+and prunes what nothing restorable needs; the SQL sweep resumes a prune that died midway.
 
 Reference: [`pyfect.eventlog`](/docs/reference/eventlog),
 [`event_log`](/docs/reference/eventlog/event_log),

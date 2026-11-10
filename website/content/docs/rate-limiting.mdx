@@ -13,7 +13,8 @@ uses it, so a limit of 100 requests a minute holds across a whole fleet.
 per `window`, a duration such as `"1 minute"` (a bare number is milliseconds). The `"fixed-window"` algorithm (the default) counts tokens per
 window; `"token-bucket"` refills them steadily. Over the limit, it fails with a
 `RateLimiterError` whose `reason` is `RateLimitExceeded` (with its `retry_after`), or,
-with `on_exceeded="delay"`, succeeds with the `delay` to wait.
+with `on_exceeded="delay"`, succeeds with the `delay` to wait. A `limit` of zero admits
+no request for tokens: it fails, or waits forever, without touching the store.
 
 `rate_limiter.make_with_rate_limiter` gives a function for `.pipe` that limits any
 effect, waiting out the delay when there is one. `adaptive_consume` and
@@ -26,8 +27,14 @@ calls run and count toward the trip policy: `circuit_breaker.consecutive(n)` fai
 a row, or a share of the last calls failing, with `circuit_breaker.rate(threshold=...)`.
 Once it trips, calls fail at once with `CircuitOpen` for `open_duration` (or a schedule of
 longer openings), and then one probe call decides whether it closes again. `classify`
-decides how a call counts, so a `404` can be a success and a `503` a failure.
+decides how a call counts, so a `404` can be a success and a `503` a failure. It gets the
+call's `Exit` and a `ClassifyContext` whose `probe` says whether the call is the probe, so
+a rate-limited response ignored while closed can still reopen the circuit.
 `breaker.transitions` is a stream of the changes.
+
+A call that must always run, a write to a ledger say, passes `on_rejection="allow"`. When
+the circuit would admit it, it is recorded like any call and can be the probe; when the
+circuit would refuse it, it runs unrecorded instead of failing with `CircuitOpen`.
 
 <Diagram name="circuit-breaker" title="A closed circuit opens when the trip policy says, lets one probe through once the open time passes, and closes when the probe succeeds" />
 
@@ -57,7 +64,8 @@ Over it, `rate_limiter.layer_store_redis()` and `circuit_breaker.layer_store_red
 keep counters and circuit states in Redis, updated atomically by Lua scripts, and
 `persistence.layer_redis` and `persisted_queue.layer_store_redis()` do the same for the
 [persistence](/docs/persistence) services. Swap the memory stores for these and nothing
-else changes.
+else changes. The memory rate limiter store drops a key once its counter is back to where
+an unseen key starts, sweeping idle ones every minute; the Redis one lets them expire.
 
 <include meta='title="redis_live.py"'>../../snippets/persistence/redis_live.py</include>
 

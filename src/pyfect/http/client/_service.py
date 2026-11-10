@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from pyfect.persistence.circuit_breaker import (
         CircuitBreakerError,
         CircuitBreakerService,
-        Classify,
+        Classifier,
     )
     from pyfect.persistence.rate_limiter import Algorithm, RateLimiterError, RateLimiterService
     from pyfect.ref import Ref
@@ -337,7 +337,7 @@ class HttpClientService[E, R = Never]:
         *,
         breaker: CircuitBreakerService,
         key: str | Callable[[HttpClientRequest], str] | None = None,
-        classify: Classify[HttpClientResponse, E, R2] | None = None,
+        classify: Classifier[HttpClientResponse, E, R2] | None = None,
     ) -> HttpClientService[E | CircuitBreakerError, R | R2]:
         """Send each request through ``breaker``'s circuit for ``key``
         (default the request's origin, or its raw URL when it has none),

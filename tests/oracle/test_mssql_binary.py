@@ -19,15 +19,31 @@ pytest.importorskip("pytds")
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.crypto import digest
 from pyfect.eventlog import sql_event_log_server_encrypted as SqlServer
 from pyfect.eventlog.event_journal import EntryId, StoreId
-from pyfect.eventlog.event_log_encryption import EncryptedBatch, layer_subtle
+from pyfect.eventlog.event_log_encryption import EncryptedBatch
 from pyfect.reactivity import layer as reactivity_layer
 from pyfect.sql import SqlClient, mssql
 from pyfect.sql.mssql import TYPES
 from pyfect.sql.mssql._driver import Rows, TypedValue
 
 from . import _mssql_fake
+
+_STORE_ROW: dict[str, object] = {
+    "next_sequence": 1,
+    "active_activation": "originals",
+    "active_batch_set": None,
+    "base_sequence": 0,
+    "active_kept_count": 0,
+    "no_op_at": None,
+    "no_op_count": 0,
+    "open_stage": None,
+    "next_sweep_at": None,
+    "sweep_lease_until": None,
+    "sweep_lease_owner": None,
+    "pruned_through": 0,
+}
 
 
 def _mock_connection(fake: _mssql_fake.Fake) -> None:
@@ -46,6 +62,9 @@ def _mock_connection(fake: _mssql_fake.Fake) -> None:
             return rows
         if not query.startswith("SELECT"):
             return []
+        # The store row the storage locks before each write.
+        if query.startswith("SELECT next_sequence"):
+            return [list(_STORE_ROW.items())]
         if query.startswith("SELECT MAX(last_sequence)"):
             return [[("last_sequence", None)]]
         return [[("value", param.value)] for param in params]
@@ -115,5 +134,5 @@ def test_writes_entry_ids(monkeypatch: pytest.MonkeyPatch, ids: list[bytes], exp
         ]
 
     yield from fx.scoped(fx.gen(body)).pipe(
-        fx.provide(fx.layer.merge(reactivity_layer, layer_subtle))
+        fx.provide(fx.layer.merge(reactivity_layer, digest.layer_web_crypto))
     )

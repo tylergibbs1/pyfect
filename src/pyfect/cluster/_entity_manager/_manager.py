@@ -349,7 +349,6 @@ def make(
             if options.defect_retry_policy is None
             else options.defect_retry_policy.concat(DEFAULT_RETRY_POLICY)
         )
-        retry_driver = yield from to_step_with_sleep(policy)
         rpcs = dict(entity.rpcs)
         rpcs[KeepAliveRpc.tag] = KeepAliveRpc
         core = ManagerCore(
@@ -374,7 +373,7 @@ def make(
                 else options.mailbox_metrics
             ),
             defect_retry_policy=policy,
-            retry_driver=retry_driver,
+            new_restart_step=to_step_with_sleep(policy),
         )
 
         # Registered before the entities resource map, so the series is

@@ -5,7 +5,7 @@ latches that wake each loop."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -171,6 +171,9 @@ class ShardingState:
         default_factory=dict[Snowflake, ClientRequestEntry]
     )
     all_runners: dict[Runner, bool] = field(default_factory=dict[Runner, bool])
+    pending_runners: set[Runner] = field(default_factory=set[Runner])
+    """Runners that joined after the first assignment, kept out of the hash
+    rings until the healthy runners settle (``runner_join_debounce``)."""
     healthy_runner_count: int = 0
     handoff: Effect[None] | None = None
     singletons: Singletons | None = None
@@ -237,6 +240,24 @@ class ShardingState:
             return suspend(loop).timeout_option(self.config.shard_lock_expiration).as_void()
 
         return suspend(start)
+
+    def release_lost_shards(
+        self, refreshed: Sequence[ShardId], acquired: Sequence[ShardId]
+    ) -> None:
+        """Apply a lock refresh: refreshed shards it did not return, and
+        returned shards no longer assigned here, move from acquired to
+        releasing. Shards acquired during the refresh are absent from its
+        response, so only the refreshed ones are considered."""
+        held = set(acquired)
+        for shard_id in refreshed:
+            if shard_id in self.acquired_shards and (
+                shard_id not in held or shard_id not in self.self_shards
+            ):
+                self.acquired_shards.discard(shard_id)
+                self.releasing_shards.add(shard_id)
+        self.update_shard_gauges()
+        if self.releasing_shards:
+            self.active_shards_latch.open_unsafe()
 
     # --- gauges ---------------------------------------------------------------------------
 

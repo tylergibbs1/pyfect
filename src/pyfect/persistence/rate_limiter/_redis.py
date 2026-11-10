@@ -13,6 +13,7 @@ from pyfect.duration import ZERO, Seconds, to_millis
 from pyfect.effect import gen, void
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
+from pyfect.persistence._keys import escape_key_segment
 from pyfect.persistence._seconds import millis
 from pyfect.persistence.persistence._service import now_millis
 from pyfect.persistence.rate_limiter._errors import RateLimiterError, RateLimitStoreError
@@ -65,6 +66,9 @@ local refillms = tonumber(ARGV[2])
 local limit = tonumber(ARGV[3])
 local current = tonumber(redis.call("GET", key))
 if not current then
+  if limit and tokens > limit then
+    return { string.format("%.17g", tokens), 0 }
+  end
   local nextpttl = math.max(1, math.ceil(refillms * tokens))
   redis.call("SET", key, tokens, "PX", nextpttl)
   return { string.format("%.17g", tokens), nextpttl }
@@ -391,12 +395,17 @@ class RedisRateLimiterStore:
         self._adaptive_consume = redis.eval(ADAPTIVE_CONSUME)
         self._adaptive_feedback = redis.eval(ADAPTIVE_FEEDBACK)
 
+    def _key(self, key: str) -> str:
+        """``key``'s Redis key; escaped, so no key spells another's
+        ``:refill`` or ``:adaptive`` key."""
+        return f"{self._prefix}{escape_key_segment(key)}"
+
     def fixed_window(
         self, *, key: str, tokens: float, refill_rate_millis: float, limit: float | None
     ) -> Effect[tuple[float, float], RateLimiterError]:
-        return self._fixed_window(
-            f"{self._prefix}{key}", tokens, refill_rate_millis, limit
-        ).map_error(_failed("fixedWindow"))
+        return self._fixed_window(self._key(key), tokens, refill_rate_millis, limit).map_error(
+            _failed("fixedWindow")
+        )
 
     def token_bucket(
         self,
@@ -407,7 +416,7 @@ class RedisRateLimiterStore:
         refill_rate_millis: float,
         allow_overflow: bool,
     ) -> Effect[tuple[float, float], RateLimiterError]:
-        redis_key = f"{self._prefix}{key}"
+        redis_key = self._key(key)
         refill_key = f"{redis_key}:refill"
 
         def run(clock: ClockService) -> Effect[tuple[float, float], RedisError]:
@@ -430,7 +439,7 @@ class RedisRateLimiterStore:
 
         return (
             self._adaptive_consume(
-                f"{self._prefix}{key}:adaptive",
+                f"{self._key(key)}:adaptive",
                 tokens,
                 to_millis(fallback_window),
                 ADAPTIVE_TTL_GRACE_MILLIS,
@@ -446,7 +455,7 @@ class RedisRateLimiterStore:
             return void
         return (
             self._adaptive_feedback(
-                f"{self._prefix}{key}:adaptive",
+                f"{self._key(key)}:adaptive",
                 epoch,
                 tokens,
                 clamp_adaptive_millis(to_millis(retry_after)),
@@ -461,7 +470,10 @@ class RedisRateLimiterStore:
 def make_store_redis(
     *, prefix: str = "ratelimiter:"
 ) -> Effect[RateLimiterStoreService, Never, Redis]:
-    """A store in the ``Redis`` service, its keys under ``prefix``."""
+    """A store in the ``Redis`` service: a rate-limit key's state under
+    ``<prefix><key>``, its token-bucket refill time under ``...:refill`` and
+    its adaptive state under ``...:adaptive``, with ``%`` and ``:`` in the
+    key percent-encoded so different keys never share Redis state."""
 
     def build() -> Generator[Effect[Any, Never, Any], Any, RateLimiterStoreService]:
         redis = yield from Redis()

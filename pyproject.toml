@@ -74,6 +74,7 @@ redis = [
 ]
 eventlog = [
     "cryptography>=46",
+    "pynacl>=1.6",
 ]
 brotli = [
     "brotli>=1.1",

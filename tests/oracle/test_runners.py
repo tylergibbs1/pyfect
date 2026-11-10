@@ -41,11 +41,13 @@ from pyfect.cluster.runners import (
     RpcClientProtocolService,
     Rpcs,
     Runners,
+    RunnersTransport,
     layer_rpc,
 )
 from pyfect.cluster.runners import (
     layer_noop as runners_layer_noop,
 )
+from pyfect.cluster.runners import make as make_runners
 from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.snowflake import Generator, Snowflake
 from pyfect.context import Context
@@ -248,6 +250,95 @@ def test_delivers_a_persisted_local_reply_completed_before_save_request_returns(
         assert replies == [Exit.succeed(42)]
 
     yield from body.pipe(fx.provide(_layer_local_runners(wrap)))
+
+
+@testing.effect
+def test_notifies_a_discarded_persisted_send_only_after_its_transaction_commits():
+    """notifies a discarded persisted send only after its transaction commits"""
+
+    @fx.gen
+    def body():
+        runners = yield from Runners()
+        storage = yield from MessageStorage()
+        snowflakes = yield from Generator()
+        notified = [0]
+
+        def notify(_: IncomingLocal) -> fx.Effect[None]:
+            def count() -> None:
+                notified[0] += 1
+
+            return fx.sync(count)
+
+        notify_local = runners.notify_local(
+            _make_outgoing_request(TestRpcPersisted, snowflakes.next_unsafe(), _ignore),
+            notify=notify,
+            discard=True,
+        )
+
+        @fx.gen
+        def in_transaction():
+            yield from notify_local
+            assert notified[0] == 0
+
+        yield from storage.with_transaction(in_transaction)
+        assert notified[0] == 1
+
+    yield from body.pipe(fx.provide(_layer_local_runners()))
+
+
+@testing.effect
+def test_a_custom_runners_failed_send_notification_fails_the_caller_only_outside_a_transaction():
+    """a custom runner's failed send notification fails the caller only outside a transaction"""
+
+    @fx.gen
+    def body():
+        storage = yield from MessageStorage()
+        snowflakes = yield from Generator()
+        notified = [0]
+
+        def fail_notify(
+            _address: RunnerAddress | None, _message: Any, _discard: bool
+        ) -> fx.Effect[None, RunnerUnavailable]:
+            def run() -> fx.Effect[None, RunnerUnavailable]:
+                notified[0] += 1
+                return fx.fail(RunnerUnavailable(address=runner_address))
+
+            return fx.suspend(run)
+
+        runners = yield from make_runners(
+            RunnersTransport(
+                codec_for=_codec_for_json,
+                send=lambda _address, _message: fx.die(RuntimeError("unexpected send")),
+                notify=fail_notify,
+                ping=lambda _: fx.void,
+                on_runner_unavailable=lambda _: fx.void,
+            )
+        )
+
+        def notify() -> fx.Effect[None, Any]:
+            return runners.notify(
+                runner_address,
+                _make_outgoing_request(TestRpcPersisted, snowflakes.next_unsafe(), _ignore),
+                discard=True,
+            )
+
+        error = yield from notify().flip()
+        assert isinstance(error, RunnerUnavailable)
+
+        @fx.gen
+        def in_transaction():
+            yield from notify()
+            assert notified[0] == 1
+
+        yield from storage.with_transaction(in_transaction)
+        assert notified[0] == 2
+
+    config = replace(sharding_config.DEFAULTS, entity_reply_poll_interval=Seconds(3600))
+    yield from (
+        fx.scoped(body)
+        .pipe(fx.provide(_layer_local_runners()))
+        .pipe(fx.provide(sharding_config.layer(config)))
+    )
 
 
 @testing.effect

@@ -8,13 +8,15 @@ in ``test_sharding_restart``.
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Callable
-from typing import Any, Never, TypedDict
+from typing import Any, Never, TypedDict, cast
 
 import pyfect as fx
 from pyfect import exit as Exit
 from pyfect import metric, schedule, testing
 from pyfect import schema as S
+from pyfect.clock import current_time_millis
 from pyfect.cluster import _entity_manager as entity_manager
 from pyfect.cluster import _entity_reaper, cluster_metrics, sharding, snowflake
 from pyfect.cluster.cluster_schema import Persisted
@@ -22,15 +24,18 @@ from pyfect.cluster.entity import Entity, EntityHandlers, Request
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.entity_type import EntityType
-from pyfect.cluster.envelope import make_request
-from pyfect.cluster.message import IncomingRequestLocal
+from pyfect.cluster.envelope import Interrupt, make_request
+from pyfect.cluster.message import IncomingEnvelope, IncomingRequestLocal
 from pyfect.cluster.message_storage import NOOP, MemoryDriver
+from pyfect.cluster.reply import WithExit
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.shard_id import make as shard
+from pyfect.cluster.snowflake import Snowflake
 from pyfect.context import Context
 from pyfect.deferred import Deferred
 from pyfect.duration import Seconds
+from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.rpc import make as make_rpc
 from pyfect.scope import CloseableScope, Scope
@@ -113,6 +118,7 @@ def _manager_options(
         runner_address=RunnerAddress(host="localhost", port=1234),
         residency=_AdmitAll(),
         abandon_undelivered=lambda _address, _keep: fx.void,
+        is_shard_owned=lambda _: fx.succeed(True),
         **changes,
     )
 
@@ -233,6 +239,60 @@ def test_restarts_again_when_a_replayed_request_defects_synchronously():
     yield from body.pipe(fx.provide(_defect_recovery_sharding(entity_layer)))
 
 
+class BackoffPayload(TypedDict):
+    id: str
+    dies: int
+
+
+class DefectBackoffEntity(Entity, type="DefectBackoff"):
+    run = make_rpc("run", payload=S.Struct(BackoffPayload))
+
+
+@testing.effect
+def test_backs_off_defect_restarts_per_entity_and_resets_after_recovery():
+    """backs off defect restarts per entity and resets after recovery"""
+    e = DefectBackoffEntity
+    attempts: dict[str, list[float]] = {}
+
+    @fx.fn
+    def run(request: Request[BackoffPayload]):
+        times = attempts.setdefault(request.payload["id"], [])
+        times.append((yield from current_time_millis()))
+        if len(times) <= request.payload["dies"]:
+            return (yield from fx.die(RuntimeError("defect")))
+
+    entity_layer: Layer[Never, Never, Any] = e.to_layer(e.handlers().handle(e.run)(run))
+
+    def gaps(id_: str) -> list[float]:
+        times = attempts.get(id_, [])
+        return [later - earlier for earlier, later in itertools.pairwise(times)]
+
+    def advance[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, E, R]:
+        # sleeps woken by one adjustment still observe their exact wake times
+        return effect.race_first(testing.adjust("100 millis").forever())
+
+    @fx.gen
+    def body():
+        client = yield from e.client()
+        # `b` defects while `a` is still recovering
+        yield from advance(
+            fx.all(
+                client("a").run({"id": "a1", "dies": 2}),
+                client("b").run({"id": "b1", "dies": 1}),
+                concurrency="unbounded",
+            )
+        )
+        yield from advance(client("a").run({"id": "a2", "dies": 1}))
+        # consecutive defects of one entity keep backing off
+        assert gaps("a1") == [500, 750]
+        # another entity of the same type starts from the first delay
+        assert gaps("b1") == [500]
+        # a recovered entity starts from the first delay again
+        assert gaps("a2") == [500]
+
+    yield from body.pipe(fx.provide(_defect_recovery_sharding(entity_layer)))
+
+
 @testing.effect
 def test_replays_unfinished_requests_before_arrivals_during_acquisition():
     """replays unfinished requests before arrivals during acquisition"""
@@ -298,6 +358,231 @@ def test_replays_unfinished_requests_before_arrivals_during_acquisition():
         assert generations.count == 3
 
     yield from body.pipe(fx.provide(_defect_recovery_sharding(entity_layer)))
+
+
+class RememberedInterruptEntity(Entity, type="RememberedInterrupt"):
+    run = make_rpc("run", payload=S.String)
+
+
+type _Respond = Callable[[Any], fx.Effect[None, Any]]
+
+
+def _respond_void(_: Any) -> fx.Effect[None]:
+    return fx.void
+
+
+class _RememberedInterrupt:
+    """Drives an ``EntityManager`` whose "defect" request restarts the
+    entity once, holding the replacement handlers in acquisition until
+    ``generations.acquired``. Every other request runs forever and counts
+    its starts per payload in ``runs``."""
+
+    def __init__(
+        self,
+        generations: _Generations,
+        runs: dict[str, int],
+        manager: entity_manager.EntityManager,
+        service: sharding.ShardingService,
+        address: EntityAddress,
+    ) -> None:
+        self.generations = generations
+        self.runs = runs
+        self.manager = manager
+        self.service = service
+        self.address = address
+
+    def send(self, payload: str, respond: _Respond = _respond_void) -> fx.Effect[Snowflake, Any]:
+        @fx.gen
+        def run():
+            request_id = yield from self.service.get_snowflake
+            message = IncomingRequestLocal(
+                envelope=make_request(
+                    request_id=request_id, address=self.address, tag="run", payload=payload
+                ),
+                last_sent_reply=None,
+                annotations=Context.empty(),
+                respond=respond,
+            )
+            yield from self.manager.send_local(message).fork(start_immediately=True)
+            return request_id
+
+        return run
+
+    def interrupt(self, request_id: Snowflake) -> fx.Effect[None, Any]:
+        @fx.gen
+        def run():
+            envelope = Interrupt(
+                id=(yield from self.service.get_snowflake),
+                address=self.address,
+                request_id=request_id,
+            )
+            yield from self.manager.send_local(IncomingEnvelope(envelope=envelope)).fork(
+                start_immediately=True
+            )
+
+        return run
+
+    @property
+    def hold_rebuild(self) -> fx.Effect[None, Any]:
+        """Restarts the entity and waits until the replacement is held in
+        acquisition."""
+
+        @fx.gen
+        def run():
+            yield from self.send("defect")
+            yield from testing.adjust("10 millis")
+            yield from self.generations.acquiring.wait()
+
+        return run
+
+
+def _remembered_interrupt_manager(entity_id: str) -> fx.Effect[_RememberedInterrupt, Any, Any]:
+    @fx.gen
+    def make():
+        generations = _Generations(2)
+        runs: dict[str, int] = {}
+        e = RememberedInterruptEntity
+
+        def run(request: Request[str]) -> fx.Effect[None]:
+            def step() -> fx.Effect[None]:
+                payload = request.payload
+                runs[payload] = runs.get(payload, 0) + 1
+                if payload == "defect" and runs[payload] == 1:
+                    return fx.die(RuntimeError("restart"))
+                return fx.never
+
+            return fx.suspend(step)
+
+        service = yield from sharding.Sharding()
+        manager = yield from entity_manager.make(
+            e,
+            generations.next.as_(e.handlers().handle(e.run)(run)),
+            _manager_options(
+                service,
+                max_idle_time=None,
+                concurrency="unbounded",
+                defect_retry_policy=schedule.spaced("1 millis"),
+            ),
+        )
+        id_ = EntityId(entity_id)
+        address = _address(e, service.get_shard_id(id_, "default"), entity_id)
+        return _RememberedInterrupt(generations, runs, manager, service, address)
+
+    return make
+
+
+def _is_interrupted(exit: Exit.Exit[Any, Any]) -> bool:
+    return isinstance(exit, Exit.Failure) and exit.cause.has_interrupts
+
+
+@testing.effect
+def test_answers_a_remembered_interrupt_once_when_its_queued_request_is_dispatched():
+    """answers a remembered interrupt once when its queued request is dispatched"""
+    replying = Latch()
+
+    @fx.gen
+    def body():
+        driven = yield from _remembered_interrupt_manager("queued")
+        yield from testing.adjust("1 millis")
+        yield from driven.hold_rebuild
+
+        # The request and its interrupt arrive during acquisition. Its reply is
+        # held so a second answer would overlap the first.
+        replies = [0]
+
+        def respond(_: Any) -> fx.Effect[None]:
+            replies[0] += 1
+            return replying.wait()
+
+        a = yield from driven.send("a", respond)
+        yield from driven.interrupt(a)
+        yield from driven.generations.acquired.succeed(None)
+        yield from testing.adjust("10 millis")
+        assert replies[0] == 1
+
+    yield from (
+        fx.scoped(body).ensuring(replying.open()).pipe(fx.provide(blocked_rebuild_sharding))
+    )
+
+
+@testing.effect
+def test_interrupts_a_replayed_request_whose_interrupt_arrives_before_the_rebuild_publishes():
+    """interrupts a replayed request whose interrupt arrives before the rebuild publishes"""
+    replying = Latch()
+
+    @fx.gen
+    def body():
+        driven = yield from _remembered_interrupt_manager("replayed")
+        exits: list[Exit.Exit[Any, Any]] = []
+        yield from testing.adjust("1 millis")
+
+        def record(reply: Any) -> fx.Effect[None]:
+            if isinstance(reply, WithExit):
+                exits.append(cast("WithExit[Any]", reply).exit)
+            return fx.void
+
+        a = yield from driven.send("a", record)
+        b = yield from driven.send("b", lambda _: replying.wait())
+        yield from testing.adjust("1 millis")
+        yield from driven.hold_rebuild
+
+        # Replay sends A, then B's remembered interrupt holds the rebuild in
+        # preparation while A's interrupt arrives.
+        yield from driven.interrupt(b)
+        yield from driven.generations.acquired.succeed(None)
+        yield from testing.adjust("1 millis")
+        yield from driven.interrupt(a)
+        yield from testing.adjust("1 millis")
+        yield from replying.open()
+        yield from testing.adjust("10 millis")
+        assert len(exits) == 1
+        assert _is_interrupted(exits[0])
+
+    yield from (
+        fx.scoped(body).ensuring(replying.open()).pipe(fx.provide(blocked_rebuild_sharding))
+    )
+
+
+@testing.effect
+def test_keeps_a_queued_request_cancelled_when_its_interrupted_reply_fails():
+    """keeps a queued request cancelled when its interrupted reply fails"""
+    replying = Latch()
+
+    @fx.gen
+    def body():
+        driven = yield from _remembered_interrupt_manager("failed-reply")
+        yield from testing.adjust("1 millis")
+        b = yield from driven.send("b", lambda _: replying.wait())
+        yield from testing.adjust("1 millis")
+        yield from driven.hold_rebuild
+
+        # B's interrupt is remembered. A is queued during acquisition, and the
+        # first attempt to save its interrupted reply fails.
+        yield from driven.interrupt(b)
+        exits: list[Exit.Exit[Any, Any]] = []
+
+        def respond(reply: Any) -> fx.Effect[None]:
+            if not isinstance(reply, WithExit):
+                return fx.void
+            exits.append(cast("WithExit[Any]", reply).exit)
+            return fx.die(RuntimeError("reply lost")) if len(exits) == 1 else fx.void
+
+        a = yield from driven.send("a", respond)
+        yield from driven.generations.acquired.succeed(None)
+        yield from testing.adjust("1 millis")
+
+        # A's interrupt arrives while B's held reply keeps the rebuild preparing.
+        yield from driven.interrupt(a)
+        yield from testing.adjust("1 millis")
+        yield from replying.open()
+        yield from testing.adjust("10 millis")
+        assert "a" not in driven.runs, "the interrupted request must never run"
+        assert len(exits) == 2
+        assert _is_interrupted(exits[1])
+
+    yield from (
+        fx.scoped(body).ensuring(replying.open()).pipe(fx.provide(blocked_rebuild_sharding))
+    )
 
 
 @testing.effect

@@ -37,7 +37,11 @@ from pyfect.persistence.rate_limiter._limiter import (
     make_with_rate_limiter,
     sleep,
 )
-from pyfect.persistence.rate_limiter._memory import layer_store_memory, make_store_memory
+from pyfect.persistence.rate_limiter._memory import (
+    MemoryRateLimiterStore,
+    layer_store_memory,
+    make_memory_store,
+)
 from pyfect.persistence.rate_limiter._redis import (
     layer_store_redis,
     layer_store_redis_config,
@@ -57,6 +61,7 @@ __all__ = [
     "Algorithm",
     "ConsumeResult",
     "Limit",
+    "MemoryRateLimiterStore",
     "OnExceeded",
     "RateLimitExceeded",
     "RateLimitStoreError",
@@ -73,7 +78,7 @@ __all__ = [
     "layer_store_redis",
     "layer_store_redis_config",
     "make",
-    "make_store_memory",
+    "make_memory_store",
     "make_store_redis",
     "make_with_rate_limiter",
     "sleep",

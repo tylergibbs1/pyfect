@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Generator
 from dataclasses import dataclass
-from typing import Any, Literal, Never, Protocol, overload
+from typing import Any, Final, Literal, Never, Protocol, overload
 
 from pyfect import _js as js
 from pyfect._core import Effect
@@ -51,6 +52,9 @@ class ConsumeResult:
             object.__setattr__(self, "remaining", int(self.remaining))
 
 
+_FOREVER: Final = Seconds(math.inf)
+
+
 def _exceeded(key: str, retry_after: Seconds, limit: float) -> Effect[Never, RateLimiterError]:
     return fail(
         RateLimiterError(
@@ -81,11 +85,18 @@ class RateLimiterService:
         ``window`` (at least a millisecond) by ``algorithm``. Over the
         limit, ``on_exceeded`` says whether to fail or to reserve and
         report a delay. A ``"fail"`` request for more than ``limit`` fails
-        at once, with the whole window to wait."""
+        at once, with the whole window to wait. A ``limit`` of zero or less
+        admits no positive request: ``"fail"`` rejects it and ``"delay"``
+        gives an infinite delay, without touching the store."""
         window_millis = max(to_millis(window), 1.0)
-        refill = divide_millis(window_millis, limit)
-        if on_exceeded == "fail" and tokens > limit:
+        exceeded = tokens > limit
+        if on_exceeded == "fail" and exceeded:
             return _exceeded(key, millis(window_millis), limit)
+        if limit <= 0:
+            # A limit that never refills: answered without the store.
+            wait = _FOREVER if exceeded else ZERO
+            return succeed(ConsumeResult(wait, limit, limit - tokens, wait))
+        refill = divide_millis(window_millis, limit)
         if algorithm == "fixed-window":
             return self._fixed_window(
                 key=key,

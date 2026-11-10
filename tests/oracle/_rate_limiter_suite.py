@@ -352,6 +352,56 @@ def accumulated_delay_reservations():
     assert to_millis(result.reset_after) == 361_000
 
 
+def store_caps_a_zero_limit():
+    store = yield from rl.RateLimiterStore()
+    opts: dict[str, Any] = {
+        "key": "fixed-window-zero-limit",
+        "tokens": 1,
+        "refill_rate_millis": 60_000,
+        "limit": 0,
+    }
+    assert (yield from store.fixed_window(**opts)) == (1, 0)
+    assert (yield from store.fixed_window(**opts)) == (1, 0)
+    uncapped = yield from store.fixed_window(
+        key="fixed-window-undefined-limit", tokens=1, refill_rate_millis=60_000, limit=None
+    )
+    assert uncapped == (1, 60_000)
+
+
+def refill_key_isolation():
+    limiter = yield from rl.make
+
+    def consume(key: str) -> fx.Effect[float | str]:
+        return limiter.consume(
+            algorithm="token-bucket", key=key, limit=3, window="3 seconds"
+        ).match(
+            on_success=lambda result: result.remaining,
+            on_failure=lambda error: type(error.reason).__name__,
+        )
+
+    yield from testing.adjust("1 hour")
+    drained = yield from fx.for_each([0, 1, 2, 3], lambda _: consume("isolation-refill"))
+    first = yield from consume("isolation-refill:refill")
+    # Let any 1 ms Redis TTL set by the first call lapse.
+    yield from testing.with_live(fx.sleep("10 millis"))
+    second = yield from consume("isolation-refill:refill")
+    after = yield from consume("isolation-refill")
+    assert {"drained": drained, "neighbour": [first, second], "after": after} == {
+        "drained": [2, 1, 0, "RateLimitExceeded"],
+        "neighbour": [2, 1],
+        "after": "RateLimitExceeded",
+    }
+
+
+def adaptive_key_isolation():
+    limiter = yield from rl.make
+    yield from limiter.consume(key="isolation-adaptive:adaptive", limit=10, window="1 minute")
+    result = yield from limiter.adaptive_consume(
+        key="isolation-adaptive", tokens=1, fallback_limit=10, fallback_window="1 minute"
+    )
+    assert result.phase == "inactive"
+
+
 _ON_EXCEEDED = pytest.mark.parametrize("on_exceeded", ["fail", "delay"])
 
 
@@ -382,6 +432,10 @@ class RateLimiterSuite:
     def test_preserves_fractional_delay_reservations(self) -> None:
         """preserves fractional delay reservations"""
         self.run(fractional_delay_reservations)
+
+    def test_store_caps_a_zero_limit_and_leaves_an_undefined_limit_uncapped(self) -> None:
+        """store caps a zero limit and leaves an undefined limit uncapped"""
+        self.run(store_caps_a_zero_limit)
 
     # RateLimiter token-bucket timing (${name})
 
@@ -465,3 +519,13 @@ class RateLimiterSuite:
     def test_accumulated_delay_reservations_retain_the_partial_refill_interval(self) -> None:
         """accumulated delay reservations retain the partial refill interval"""
         self.run(accumulated_delay_reservations)
+
+    # RateLimiter key isolation (${name})
+
+    def test_a_key_ending_in_refill_does_not_refill_another_keys_token_bucket(self) -> None:
+        """a key ending in :refill does not refill another key's token bucket"""
+        self.run(refill_key_isolation)
+
+    def test_a_key_ending_in_adaptive_does_not_share_another_keys_adaptive_state(self) -> None:
+        """a key ending in :adaptive does not share another key's adaptive state"""
+        self.run(adaptive_key_isolation)

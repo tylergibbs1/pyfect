@@ -24,6 +24,7 @@ pytest.importorskip("redis")
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
+from pyfect.latch import Latch
 from pyfect.persistence import persisted_queue as pq
 from pyfect.persistence import redis_py
 from pyfect.persistence.redis import Redis, RedisError
@@ -178,3 +179,264 @@ def test_dead_letters_elements_from_workers_that_crashed_on_the_final_attempt() 
         assert fiber.poll_unsafe() is None
 
     _run(body, live=True)
+
+
+def test_a_settlement_from_a_recovered_claim_leaves_the_newer_claim_alone() -> None:
+    """Effect 4.1.2's ``makeStoreRedis``: settlements are fenced on the
+    acquisition's lock, so a handler whose lapsed claim another worker
+    recovered and re-claimed cannot release that newer claim."""
+
+    def body():
+        prefix = "effectq-fenced:"
+        name = "fenced"
+        # worker a never renews its lock; worker b resets lapsed locks often
+        a = yield from pq.make_store_redis(
+            prefix=prefix,
+            poll_interval="50 millis",
+            lock_refresh_interval="1 hour",
+            lock_expiration="500 millis",
+        )
+        b = yield from pq.make_store_redis(
+            prefix=prefix, poll_interval="50 millis", lock_refresh_interval="100 millis"
+        )
+        queue_a = yield from _factory_queue(a, name)
+        queue_b = yield from _factory_queue(b, name)
+        redis = yield from Redis()
+        id = yield from queue_a.offer({"n": 1})
+
+        taken_a = Latch()
+        gate_a = Latch()
+        settled_a = yield from queue_a.take(
+            lambda _v, _m: taken_a.open().and_then(gate_a.wait())
+        ).fork_scoped()
+        yield from taken_a.wait()
+
+        taken_b = Latch()
+        gate_b = Latch()
+        settled_b = yield from queue_b.take(
+            lambda _v, meta: taken_b.open().and_then(gate_b.wait()).as_(meta.attempts)
+        ).fork_scoped()
+        yield from taken_b.wait()
+
+        yield from gate_a.open()
+        yield from settled_a.join()
+        assert (yield from redis.send("HEXISTS", f"{prefix}{name}:pending", id)) == 1
+
+        yield from gate_b.open()
+        assert (yield from settled_b.join()) == 2
+        assert (yield from redis.send("HEXISTS", f"{prefix}{name}:pending", id)) == 0
+
+    _run(body, live=True)
+
+
+# --- PersistedQueue (NodeRedis): claim ownership -------------------------------------
+
+
+def _ownership_queue(
+    prefix: str, lock_refresh_interval: str
+) -> Generator[Any, Any, pq.PersistedQueue[RedisItem]]:
+    store = yield from pq.make_store_redis(
+        prefix=prefix,
+        poll_interval="50 millis",
+        lock_expiration="1 second",
+        lock_refresh_interval=lock_refresh_interval,
+    )
+    return (yield from _factory_queue(store, "ownership"))
+
+
+def _live_sleep(duration: str) -> fx.Effect[None]:
+    return testing.with_live(fx.sleep(duration))
+
+
+def _metadata(_value: RedisItem, metadata: pq.Metadata) -> fx.Effect[pq.Metadata]:
+    return fx.succeed(metadata)
+
+
+def test_success_after_lease_expiry_but_before_reset_is_not_redelivered() -> None:
+    """PersistedQueue (NodeRedis) / success after lease expiry but before reset is not
+    redelivered"""
+
+    def body():
+        # Neither refresh nor reset can run again before this handler succeeds.
+        queue = yield from _ownership_queue("effectq-late-success:", "1 hour")
+        yield from queue.offer({"n": 42}, id="order-1")
+
+        def handle(_value: RedisItem, metadata: pq.Metadata) -> fx.Effect[None]:
+            assert metadata.attempts == 1
+            # Redis owns the lease clock; let it expire without another claimant.
+            return fx.sleep("1100 millis")
+
+        yield from queue.take(handle)
+
+        # Only now allow recovery to run: a recorded success must leave no work.
+        recovery = yield from _ownership_queue("effectq-late-success:", "100 millis")
+        duplicate = yield from recovery.take(_metadata).fork_scoped()
+        yield from fx.sleep("1500 millis")
+        assert duplicate.poll_unsafe() is None
+
+    _run(body, live=True)
+
+
+def test_renews_an_expired_lease_before_recovery_revokes_ownership() -> None:
+    """PersistedQueue (NodeRedis) / renews an expired lease before recovery revokes
+    ownership"""
+
+    def body():
+        queue = yield from _ownership_queue("effectq-late-renewal:", "100 millis")
+        # Stagger the timers: renewal is due at 100ms, reset at 150ms.
+        yield from testing.adjust("50 millis")
+        yield from queue.offer({"n": 42}, id="order-1")
+        taken = Latch()
+        finish = Latch()
+        claim = yield from queue.take(
+            lambda _v, _m: taken.open().and_then(finish.wait())
+        ).fork_scoped()
+        yield from taken.wait()
+        yield from _live_sleep("1100 millis")
+        # Only renewal runs, after Redis has expired the lease. Give its I/O
+        # time to complete before introducing a recovery worker.
+        yield from testing.adjust("50 millis")
+        yield from _live_sleep("100 millis")
+        recovery = yield from testing.with_live(
+            fx.gen(lambda: _ownership_queue("effectq-late-renewal:", "100 millis"))
+        )
+        duplicate = yield from testing.with_live(recovery.take(_metadata)).fork_scoped()
+        yield from _live_sleep("400 millis")
+        assert duplicate.poll_unsafe() is None
+        yield from finish.open()
+        yield from claim.join()
+        yield from _live_sleep("1500 millis")
+        assert duplicate.poll_unsafe() is None
+
+    _run(body)
+
+
+def test_revoked_ownership_cannot_settle_recovered_work_before_reacquisition() -> None:
+    """PersistedQueue (NodeRedis) / revoked ownership cannot settle recovered work before
+    reacquisition"""
+
+    def body():
+        # Store construction pauses renewal. Takes use live time so polling
+        # and reset keep running even while this test's clock is stopped.
+        queue = yield from _ownership_queue("effectq-revoked-owner:", "100 millis")
+        yield from queue.offer({"n": 42}, id="order-1")
+        taken = Latch()
+        finish = Latch()
+        stale = yield from testing.with_live(
+            queue.take(lambda _v, _m: taken.open().and_then(finish.wait()))
+        ).fork_scoped()
+        yield from taken.wait()
+        # Reset recovers the expired lease, but no taker can acquire it yet.
+        yield from _live_sleep("1500 millis")
+        yield from testing.adjust("100 millis")
+        yield from _live_sleep("100 millis")
+        yield from finish.open()
+        yield from stale.join()
+
+        def recovered_with(value: RedisItem, metadata: pq.Metadata) -> fx.Effect[Any]:
+            return fx.succeed((value, metadata.id, metadata.attempts))
+
+        recovered = yield from testing.with_live(queue.take(recovered_with))
+        assert recovered == ({"n": 42}, "order-1", 2)
+        duplicate = yield from testing.with_live(queue.take(_metadata)).fork_scoped()
+        yield from _live_sleep("1500 millis")
+        assert duplicate.poll_unsafe() is None
+
+    _run(body)
+
+
+def test_stale_interruption_does_not_release_a_replacement_or_decrement_its_attempts() -> None:
+    """PersistedQueue (NodeRedis) / stale interruption does not release a replacement or
+    decrement its attempts"""
+
+    def body():
+        a = yield from _ownership_queue("effectq-stale-interrupt:", "1 hour")
+        b = yield from _ownership_queue("effectq-stale-interrupt:", "100 millis")
+        yield from a.offer({"n": 42}, id="order-1")
+        taken = Latch()
+        stale = yield from a.take(lambda _v, _m: taken.open().and_then(fx.never)).fork_scoped()
+        yield from taken.wait()
+        replaced = Latch()
+
+        def replace(_value: RedisItem, metadata: pq.Metadata) -> fx.Effect[None]:
+            assert metadata.attempts == 2
+            return replaced.open().and_then(fx.never)
+
+        replacement = yield from b.take(replace).fork_scoped()
+        yield from replaced.wait()
+        yield from stale.interrupt()
+        duplicate = yield from b.take(_metadata).fork_scoped()
+        yield from fx.sleep("1500 millis")
+        assert duplicate.poll_unsafe() is None
+        yield from replacement.interrupt()
+        assert (yield from duplicate.join()).attempts == 2
+
+    _run(body, live=True)
+
+
+def test_same_store_stale_success_preserves_the_replacement_and_its_refresh_registration() -> None:
+    """PersistedQueue (NodeRedis) / same-store stale success preserves the replacement and its
+    refresh registration"""
+
+    def body():
+        queue = yield from _ownership_queue("effectq-same-store:", "100 millis")
+        yield from queue.offer({"n": 42}, id="order-1")
+        a_taken = Latch()
+        release_a = Latch()
+        stale = yield from testing.with_live(
+            queue.take(lambda _v, _m: a_taken.open().and_then(release_a.wait()))
+        ).fork_scoped()
+        yield from a_taken.wait()
+        # Poll/reset use live time; only renewal stays paused until B takes.
+        b_taken = Latch()
+
+        def replace(_value: RedisItem, metadata: pq.Metadata) -> fx.Effect[None]:
+            assert metadata.attempts == 2
+            return b_taken.open().and_then(fx.never)
+
+        replacement = yield from testing.with_live(queue.take(replace)).fork_scoped()
+        yield from b_taken.wait()
+        # Only the replacement can now renew. Keep ticking while Redis I/O
+        # completes, including while testing the old finalizer below.
+        yield from (
+            _live_sleep("100 millis").and_then(testing.adjust("100 millis")).forever().fork_scoped()
+        )
+        yield from release_a.open()
+        yield from stale.join()
+        duplicate = yield from testing.with_live(queue.take(_metadata)).fork_scoped()
+        # The old finalizer must not unregister the new acquisition's refresh.
+        yield from _live_sleep("1500 millis")
+        assert duplicate.poll_unsafe() is None
+        yield from replacement.interrupt()
+        assert (yield from duplicate.join()).attempts == 2
+
+    _run(body)
+
+
+def test_a_renewal_after_recovery_does_not_recreate_the_revoked_lock() -> None:
+    """Effect 4.1.2's ``expireAll``: a lapsed lock is recreated only while its
+    claim still owns the element, so a worker's renewal after a reset
+    recovered the element leaves no lock behind."""
+
+    def body():
+        prefix = "effectq-revoked-renewal:"
+        redis = yield from Redis()
+        queue = yield from _ownership_queue(prefix, "100 millis")
+        yield from queue.offer({"n": 42}, id="order-1")
+        taken = Latch()
+        finish = Latch()
+        stale = yield from testing.with_live(
+            queue.take(lambda _v, _m: taken.open().and_then(finish.wait()))
+        ).fork_scoped()
+        yield from taken.wait()
+        # The lease lapses and the live-clock reset recovers the element.
+        yield from _live_sleep("1500 millis")
+        assert (yield from redis.send("HLEN", f"{prefix}ownership:owners")) == 0
+        # Now the paused renewal runs for the revoked claim.
+        yield from testing.adjust("100 millis")
+        yield from _live_sleep("100 millis")
+        assert (yield from redis.send("KEYS", f"{prefix}lock:*")) == []
+        yield from finish.open()
+        yield from stale.join()
+
+    _run(body)

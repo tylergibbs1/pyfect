@@ -15,6 +15,7 @@ from __future__ import annotations
 import math
 import random
 from collections.abc import Callable, Generator, Sequence
+from dataclasses import dataclass
 from typing import Any, Never, cast
 
 from pyfect import layer as layer_
@@ -31,7 +32,6 @@ from pyfect.cluster.runner_storage import (
     make_encoded,
 )
 from pyfect.cluster.sharding_config import ShardingConfig, ShardingConfigService, shard_group_config
-from pyfect.duration import Seconds
 from pyfect.effect import gen, provide_service, suspend, void
 from pyfect.exit import Exit
 from pyfect.scope import CloseableScope, Scope, fork_in
@@ -52,7 +52,45 @@ def postgres_lock_namespace(prefix: str) -> int:
     return h - 0x1_0000_0000 if h >= 0x8000_0000 else h
 
 
-type _Held = tuple[Connection, int]
+@dataclass(eq=False, slots=True)
+class _LockSession:
+    """The session holding a storage's advisory locks, as other sessions see
+    it. ``pin_lock`` (MySQL only) is the lock that pins the session's lock
+    connection; re-taking it after releasing every lock can change ``pid``."""
+
+    pid: int
+    pin_lock: str | None = None
+
+
+type _Held = tuple[Connection, _LockSession]
+
+_PG_MAX_IDLE_SESSION_TIMEOUT = 2_147_483_647
+"""Milliseconds, the largest ``idle_session_timeout`` PostgreSQL accepts."""
+_MYSQL_MAX_WAIT_TIMEOUT = 31_536_000
+"""Seconds, the largest ``wait_timeout`` MySQL accepts."""
+
+
+def _pin_lock_session(
+    conn: Connection, pin_lock: str | None = None
+) -> Effect[_LockSession, SqlError]:
+    """MySQL names a lock holder by connection id. Behind Vitess that is the
+    id of vtgate's lock connection for the session, which vtgate replaces
+    once the session releases all of its locks. A lock of the session's own
+    pins that connection and reads its id."""
+
+    def body() -> Generator[Effect[Any, Any, Any], Any, _LockSession]:
+        while True:
+            name = pin_lock or f"cluster:pid:{random.randrange(2**53)}"
+            taken = (
+                yield from conn.execute_values(
+                    f"SELECT GET_LOCK('{name}', 10), IS_USED_LOCK('{name}')", []
+                )
+            )[0]
+            if taken[0] is None:
+                continue
+            return _LockSession(int(str(taken[1])), name)
+
+    return gen(body)
 
 
 class _Storage:
@@ -169,7 +207,12 @@ class _Storage:
 
     def use_lock_conn[A, E](self, f: Callable[[Connection, int], Effect[A, E]]) -> Effect[A, E]:
         """``f`` on the reserved connection (PostgreSQL and MySQL, which
-        always have one); a failure replaces it."""
+        always have one) and its session's pid; a failure replaces it."""
+        return self.use_lock_session(lambda conn, session: f(conn, session.pid))
+
+    def use_lock_session[A, E](
+        self, f: Callable[[Connection, _LockSession], Effect[A, E]]
+    ) -> Effect[A, E]:
         lock_conn = cast("ResourceRef[_Held]", self.lock_conn)
 
         def run(held: _Held) -> Effect[A, E]:
@@ -318,12 +361,15 @@ class _Storage:
             statement.flat_map(lambda _: self.acquired_locks(address, shard_ids))
         )
 
-    def _pg_try_locks(
+    def _pg_held_locks(
         self, conn: Connection, pid: int, shard_ids: Sequence[str]
-    ) -> Effect[list[str], SqlError]:
-        def body() -> Generator[Effect[Any, Any, Any], Any, list[str]]:
-            acquired: list[str] = []
-            to_acquire = {self.lock_numbers[s]: s for s in shard_ids}
+    ) -> Effect[tuple[list[str], dict[int, str]], SqlError]:
+        """Split ``shard_ids`` into the advisory locks the lock session holds
+        and the rest, by lock number."""
+
+        def body() -> Generator[Effect[Any, Any, Any], Any, tuple[list[str], dict[int, str]]]:
+            held: list[str] = []
+            not_held = {self.lock_numbers[s]: s for s in shard_ids}
             taken = yield from conn.execute_values(
                 "SELECT objid FROM pg_locks WHERE locktype = 'advisory' AND granted = true "
                 f"AND classid = {self.lock_namespace_oid} AND objsubid = 2 AND pid = {pid} "
@@ -331,9 +377,42 @@ class _Storage:
                 [],
             )
             for lock_number, *_rest in taken:
-                shard_id = to_acquire.pop(int(str(lock_number)), None)
+                shard_id = not_held.pop(int(str(lock_number)), None)
                 if shard_id is not None:
-                    acquired.append(shard_id)
+                    held.append(shard_id)
+            return held, not_held
+
+        return gen(body)
+
+    def _mysql_held_locks(
+        self, conn: Connection, pid: int, shard_ids: Sequence[str]
+    ) -> Effect[tuple[list[str], list[str]], SqlError]:
+        """Split ``shard_ids`` into the named locks the lock session holds
+        and the rest."""
+
+        def body() -> Generator[Effect[Any, Any, Any], Any, tuple[list[str], list[str]]]:
+            all_taken = ", ".join(
+                f"IS_USED_LOCK('{name}') AS \"{shard_id}\""
+                for shard_id, name in self.lock_names.items()
+            )
+            taken = (yield from conn.execute_values(f"SELECT {all_taken}", []))[0]
+            held: list[str] = []
+            not_held: list[str] = []
+            for shard_id in shard_ids:
+                taken_by = taken[self.shard_index[shard_id]]
+                if taken_by is not None and int(str(taken_by)) == pid:
+                    held.append(shard_id)
+                else:
+                    not_held.append(shard_id)
+            return held, not_held
+
+        return gen(body)
+
+    def _pg_try_locks(
+        self, conn: Connection, pid: int, shard_ids: Sequence[str]
+    ) -> Effect[list[str], SqlError]:
+        def body() -> Generator[Effect[Any, Any, Any], Any, list[str]]:
+            acquired, to_acquire = yield from self._pg_held_locks(conn, pid, shard_ids)
             if not to_acquire:
                 return acquired
             locks = ", ".join(
@@ -352,18 +431,7 @@ class _Storage:
         self, conn: Connection, pid: int, shard_ids: Sequence[str]
     ) -> Effect[list[str], SqlError]:
         def body() -> Generator[Effect[Any, Any, Any], Any, list[str]]:
-            all_taken = ", ".join(
-                f"IS_USED_LOCK('{name}') AS \"{shard_id}\""
-                for shard_id, name in self.lock_names.items()
-            )
-            taken = (yield from conn.execute_values(f"SELECT {all_taken}", []))[0]
-            acquired: list[str] = []
-            to_acquire: list[str] = []
-            for shard_id in shard_ids:
-                if taken[self.shard_index[shard_id]] == pid:
-                    acquired.append(shard_id)
-                else:
-                    to_acquire.append(shard_id)
+            acquired, to_acquire = yield from self._mysql_held_locks(conn, pid, shard_ids)
             if not to_acquire:
                 return acquired
             locks = ", ".join(f"GET_LOCK('{self.lock_names[s]}', 0) AS \"{s}\"" for s in to_acquire)
@@ -382,9 +450,17 @@ class _Storage:
         def first_column(rows: Sequence[Any]) -> list[str]:
             return [str(r[0]) for r in rows]
 
+        # An advisory lock refresh only confirms the locks the current lock
+        # session holds. A replaced session has lost its predecessor's locks,
+        # possibly to another runner in between, so reacquiring them here
+        # would hide the loss.
         if sql.dialect == "pg":
             if not self.disable_advisory:
-                return self.acquire_lock(address, shard_ids)
+                return self.use_lock_conn(
+                    lambda conn, pid: self._pg_held_locks(conn, pid, shard_ids).map(
+                        lambda split: split[0]
+                    )
+                )
             statement = sql(
                 "WITH locked AS (SELECT shard_id FROM {} WHERE address = {} AND shard_id IN {} "
                 "{} FOR UPDATE) "
@@ -402,7 +478,11 @@ class _Storage:
             return self.exec_values(statement).map(first_column)
         if sql.dialect == "mysql":
             if not self.disable_advisory:
-                return self.acquire_lock(address, shard_ids)
+                return self.use_lock_conn(
+                    lambda conn, pid: self._mysql_held_locks(conn, pid, shard_ids).map(
+                        lambda split: split[0]
+                    )
+                )
             statement = sql(
                 "UPDATE {} SET acquired_at = {} WHERE address = {} AND shard_id IN {}; "
                 "SELECT shard_id FROM {} WHERE address = {} AND shard_id IN {}",
@@ -474,7 +554,7 @@ class _Storage:
                     while True:
                         yield from conn.execute_raw(f"SELECT RELEASE_LOCK('{name}')", [])
                         taken = yield from conn.execute_values(f"SELECT IS_USED_LOCK('{name}')", [])
-                        if not taken or taken[0][0] != pid:
+                        if not taken or taken[0][0] is None or int(str(taken[0][0])) != pid:
                             return
 
                 return gen(body)
@@ -502,7 +582,17 @@ class _Storage:
         if sql.dialect == "mysql":
             if self.disable_advisory:
                 return self.exec(sql("DELETE FROM {} WHERE address = {}", self.locks, address))
-            return self.exec(sql("SELECT RELEASE_ALL_LOCKS()"))
+
+            def release(conn: Connection, session: _LockSession) -> Effect[None, SqlError]:
+                def body() -> Generator[Effect[Any, Any, Any], Any]:
+                    yield from conn.execute_raw("SELECT RELEASE_ALL_LOCKS()", [])
+                    # Releasing every lock also releases the pin, so take it again.
+                    pinned = yield from _pin_lock_session(conn, session.pin_lock)
+                    session.pid = pinned.pid
+
+                return gen(body)
+
+            return self.use_lock_session(release)
         return sql("DELETE FROM {} WHERE address = {}", self.locks, address)
 
     def insert_runner(
@@ -603,9 +693,14 @@ class _Storage:
     def acquire(
         self, address: str, shard_ids: Sequence[str], /
     ) -> Effect[list[str], PersistenceError]:
-        return PersistenceError.refail(
-            self.with_lock_operation_deadline(self.acquire_lock(address, shard_ids))
-        )
+        # A runner without shards leaves its lock connection idle, so the
+        # server may have ended the session, and the first operation on it
+        # fails and replaces it. Acquiring does not depend on the previous
+        # session, so retry once on the replacement.
+        acquire = self.acquire_lock(address, shard_ids)
+        if self.lock_conn is not None:
+            acquire = acquire.catch_all(lambda _: self.acquire_lock(address, shard_ids))
+        return PersistenceError.refail(self.with_lock_operation_deadline(acquire))
 
     def refresh(
         self, address: str, shard_ids: Sequence[str], /
@@ -640,13 +735,27 @@ def _mysql_machine_id(results: Sequence[Any]) -> list[list[object]]:
 
 
 def _acquire_lock_conn(
-    sql: SqlClientService, disable_advisory: bool, deadline: Seconds
+    sql: SqlClientService, disable_advisory: bool, config: ShardingConfigService
 ) -> Callable[[CloseableScope], Effect[_Held]] | None:
-    """How to reserve the lock connection (PostgreSQL and MySQL only)."""
+    """How to reserve the lock connection (PostgreSQL and MySQL only).
 
-    def unlock_on_close(scope: CloseableScope, conn: Connection, query: str) -> Effect[None]:
+    Advisory locks belong to the session, so a frozen runner whose
+    connection stays open would hold them for good: the server ends the
+    session once it has been idle for ``shard_lock_expiration``, which
+    releases them (runners holding shards use it at least every third of
+    that). PostgreSQL before 14 has no ``idle_session_timeout`` and keeps the
+    session open; Vitess accepts but ignores MySQL's ``wait_timeout``. The
+    connection goes back to the shared pool, so its settings are restored
+    along with releasing its locks, even when the setup fails."""
+    deadline = effective_interval(config)
+    idle_session_timeout = min(
+        math.ceil(config.shard_lock_expiration * 1000), _PG_MAX_IDLE_SESSION_TIMEOUT
+    )
+    wait_timeout = min(max(1, math.ceil(config.shard_lock_expiration)), _MYSQL_MAX_WAIT_TIMEOUT)
+
+    def on_close(scope: CloseableScope, cleanup: Effect[Any, SqlError]) -> Effect[None]:
         def finalizer(_: Exit[Any, Any]) -> Effect[None]:
-            return conn.execute_raw(query, []).timeout(deadline).interruptible().ignore_cause()
+            return cleanup.timeout(deadline).interruptible().ignore_cause()
 
         return scope.add_finalizer(finalizer)
 
@@ -657,10 +766,24 @@ def _acquire_lock_conn(
         def body() -> Generator[Effect[Any, Any, Any], Any, _Held]:
             conn = yield from reserve(scope)
             if disable_advisory:
-                return (conn, 0)
-            pid = (yield from conn.execute_values("SELECT pg_backend_pid()", []))[0][0]
-            yield from unlock_on_close(scope, conn, "SELECT pg_advisory_unlock_all()")
-            return (conn, int(str(pid)))
+                return (conn, _LockSession(0))
+            yield from on_close(
+                scope,
+                conn.execute_raw(
+                    "SELECT pg_advisory_unlock_all(), (SELECT set_config(name, reset_val, false) "
+                    "FROM pg_settings WHERE name = 'idle_session_timeout')",
+                    [],
+                ),
+            )
+            pid = (
+                yield from conn.execute_values(
+                    "SELECT pg_backend_pid(), (SELECT set_config(name, "
+                    f"'{idle_session_timeout}', false) FROM pg_settings "
+                    "WHERE name = 'idle_session_timeout')",
+                    [],
+                )
+            )[0][0]
+            return (conn, _LockSession(int(str(pid))))
 
         return gen(body).or_die()
 
@@ -668,21 +791,17 @@ def _acquire_lock_conn(
         def body() -> Generator[Effect[Any, Any, Any], Any, _Held]:
             conn = yield from reserve(scope)
             if disable_advisory:
-                return (conn, 0)
+                return (conn, _LockSession(0))
+            borrowed = (yield from conn.execute_values("SELECT @@SESSION.wait_timeout", []))[0][0]
+            yield from on_close(
+                scope,
+                conn.execute_raw("SELECT RELEASE_ALL_LOCKS()", []).and_then(
+                    conn.execute_raw(f"SET SESSION wait_timeout = {int(str(borrowed))}", [])
+                ),
+            )
+            yield from conn.execute_raw(f"SET SESSION wait_timeout = {wait_timeout}", [])
             # IS_USED_LOCK names the connection id, also under Vitess
-            pid: int | None = None
-            while pid is None:
-                name = f"cluster:pid:{random.randrange(2**53)}"
-                taken = (
-                    yield from conn.execute_values(
-                        f"SELECT GET_LOCK('{name}', 10), IS_USED_LOCK('{name}')", []
-                    )
-                )[0]
-                if taken[0] is None:
-                    continue
-                pid = int(str(taken[1]))
-            yield from unlock_on_close(scope, conn, "SELECT RELEASE_ALL_LOCKS()")
-            return (conn, pid)
+            return (conn, (yield from _pin_lock_session(conn)))
 
         return gen(body).or_die()
 
@@ -702,11 +821,7 @@ def make_storage(
         # on the shared client.
         single_session = sql.driver == "pglite"
         disable_advisory = config.shard_lock_disable_advisory or single_session
-        acquire = (
-            None
-            if single_session
-            else _acquire_lock_conn(sql, disable_advisory, effective_interval(config))
-        )
+        acquire = None if single_session else _acquire_lock_conn(sql, disable_advisory, config)
         lock_conn = None
         if acquire is not None:
             lock_conn = yield from ResourceRef.make(layer_scope, acquire)

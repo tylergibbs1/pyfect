@@ -565,7 +565,9 @@ def test_does_not_redeliver_entries_removed_by_backlog_compaction(connect: Conne
         compacted = yield from fx.Deferred[None].make()
         release = yield from write_with_held_publication(sql, storage, store_id, [folded])
 
-        def compact(entries: Sequence[Entry], _write: L.CompactWrite) -> fx.Effect[None]:
+        def compact(
+            entries: Sequence[Entry], _write: L.CompactWrite, /, *, remote: bool = False
+        ) -> fx.Effect[None]:
             assert [e.id_string for e in entries] == [folded.id_string]
             return compacted.succeed(None).as_void()
 

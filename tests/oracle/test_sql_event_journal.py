@@ -1059,3 +1059,76 @@ def test_advances_the_remote_sequence_only_across_acknowledgements_that_follow_i
         assert (yield from journal.next_remote_sequence(other_remote_id)) == 3
 
     yield from _run(body)
+
+
+def _limit_parameters[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, E, R]:
+    """Durable Object SQLite binds at most 100 parameters per statement;
+    rejecting larger statements makes oversized batches fail whatever the
+    local SQLite build."""
+
+    def limit(statement: Any, *_: object) -> fx.Effect[Any]:
+        if len(statement.compile()[1]) > 100:
+            return fx.die("too many parameters")
+        return fx.succeed(statement)
+
+    return effect.pipe(fx.provide_service(CurrentTransformer, limit))
+
+
+@testing.effect
+def test_write_many_commits_a_batch_over_the_statement_parameter_limit():
+    """writeMany commits a batch over the statement parameter limit"""
+
+    def body():
+        journal = yield from make_journal
+        written = yield from journal.write_many([_local(str(i)) for i in range(101)], fx.succeed)
+        assert [e.id_string for e in (yield from journal.entries)] == [e.id_string for e in written]
+
+    yield from _limit_parameters(_run(body))
+
+
+@testing.effect
+def test_write_from_remote_reports_each_conflict_once_over_the_parameter_limit():
+    """writeFromRemote reports each conflict once for a batch over the statement parameter limit"""
+
+    def body():
+        journal = yield from make_journal
+        remote_id = J.make_remote_id_unsafe()
+        # Two events sharing 101 keys: as 101 is prime, conflict lookups split
+        # into chunks that mix both events, so a stored row matches several.
+        incoming = [
+            entry(1_000 + e * 101 + i, event, str(i))
+            for e, event in enumerate(["A", "B"])
+            for i in range(101)
+        ]
+        newer = [
+            entry(stored.created_at_millis + 1_000, stored.event, stored.primary_key)
+            for stored in incoming
+        ]
+        yield from journal.write_from_remote(
+            remote_id=J.make_remote_id_unsafe(),
+            entries=remote_entries(newer),
+            effect=lambda _: fx.void,
+        )
+        batches: list[list[tuple[str, list[str]]]] = []
+
+        def record(batch: Sequence[J.EntryWithConflicts]) -> fx.Effect[None]:
+            return fx.sync(
+                lambda: batches.append(
+                    [(e.entry.id_string, [c.id_string for c in e.conflicts]) for e in batch]
+                )
+            )
+
+        yield from journal.write_from_remote(
+            remote_id=remote_id, entries=remote_entries(incoming), effect=record
+        )
+        assert {
+            "batches": batches,
+            "next_sequence": (yield from journal.next_remote_sequence(remote_id)),
+        } == {
+            "batches": [
+                [(item.id_string, [newer[i].id_string]) for i, item in enumerate(incoming)]
+            ],
+            "next_sequence": 202,
+        }
+
+    yield from _limit_parameters(_run(body))

@@ -9,15 +9,19 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Never
 
+import pytest
+
 import pyfect as fx
 from pyfect import exit as Exit
 from pyfect import testing
+from pyfect._fiber import Fiber
 from pyfect.clock import Clock
 from pyfect.cluster import (
     message_storage,
     sharding,
     snowflake,
 )
+from pyfect.cluster.cluster_error import PersistenceError
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.envelope import make_request
@@ -42,6 +46,7 @@ from ._cluster_entities import (
     BoomError,
     IdKeyPayload,
     TestEntity,
+    User,
 )
 from ._sharding_fixtures import test_config, test_sharding_without_storage, update_storage
 
@@ -335,3 +340,119 @@ def test_with_transaction_replays_the_request_without_replying_when_rollback_die
         assert (yield from result.join()) == ("BoomError", 2)
 
     yield from body.pipe(fx.provide(_with_storage(_rollback_memory_storage(wrap))))
+
+
+@testing.effect
+def test_with_transaction_replays_the_request_when_saving_the_reply_aborts_the_transaction():
+    """WithTransaction replays the request when saving the reply aborts the transaction"""
+    flags = {"deadlocked": False, "aborted": False}
+
+    class _Deadlocking(MessageStorageService):
+        """Like a MySQL deadlock: the first in-transaction reply write aborts
+        the transaction, later writes on it autocommit, and the transaction
+        fails."""
+
+        def with_transaction[A, E, R](self, effect: fx.Effect[A, E, R], /) -> fx.Effect[A, E, R]:
+            def open_() -> fx.Effect[A, E, R]:
+                flags["aborted"] = False
+                return super(_Deadlocking, self).with_transaction(effect)
+
+            def check(_: A) -> fx.Effect[None]:
+                return fx.die(RuntimeError("COMMIT failed")) if flags["aborted"] else fx.void
+
+            return fx.suspend(open_).tap(check)
+
+        def save_reply(self, reply: ReplyWithContext, /) -> Any:
+            def save(in_transaction: bool) -> Any:
+                if not in_transaction or flags["deadlocked"]:
+                    return super(_Deadlocking, self).save_reply(reply)
+                flags["deadlocked"] = flags["aborted"] = True
+                return fx.fail(PersistenceError(cause="deadlock"))
+
+            return MemoryTransaction().flat_map(save)
+
+    @fx.gen
+    def body():
+        state = yield from EntityState()
+        make_client = yield from TestEntity.client()
+        yield from testing.adjust("1 millis")
+        # Count handler runs when the reply arrives: only the replay may reply.
+        result = yield from (
+            make_client("1")
+            .with_transaction({"id": 1})
+            .map(lambda value: (value, state.envelopes.size_unsafe()))
+            .fork()
+        )
+        yield from testing.adjust("5 seconds")
+        assert (yield from result.join()) == (True, 2)
+
+    yield from body.pipe(
+        fx.provide(_with_storage(_updated_memory(lambda storage: _Deadlocking(storage.base))))
+    )
+
+
+class _LostCommitAcknowledgement(MemoryEncoded):
+    """Like a lost COMMIT acknowledgement: the first exit reply of a request
+    is stored but reported as failed, and later saves for the same request
+    violate UNIQUE (request_id, kind)."""
+
+    def __init__(self, clock: Any) -> None:
+        super().__init__(clock)
+        self._committed: set[str] = set()
+
+    def save_reply(self, reply: ReplyEncoded, /) -> fx.Effect[None, Any]:
+        if reply["_tag"] != "WithExit":
+            return super().save_reply(reply)
+        failure = fx.fail(PersistenceError(cause="connection lost"))
+        request_id = reply["requestId"]
+        if request_id in self._committed:
+            return failure
+        self._committed.add(request_id)
+        return super().save_reply(reply).and_then(failure)
+
+
+@pytest.mark.parametrize(
+    ("rpc", "expected"),
+    [
+        ("GetUser", Exit.succeed(User(id=1, name="User 1"))),
+        # A transactional failure reply is saved after the transaction ends.
+        ("FailWithTransaction", Exit.fail(BoomError(cause="boom"))),
+    ],
+)
+@testing.effect
+def test_delivers_a_persisted_reply_whose_save_committed_but_reported_a_failure(
+    rpc: str, expected: Exit.Exit[Any, Any]
+):
+    """delivers a persisted $rpc reply whose save committed but reported a failure"""
+    encoded: list[_LostCommitAcknowledgement] = []
+
+    @fx.gen
+    def make():
+        clock = yield from Clock()
+        storage = _LostCommitAcknowledgement(clock)
+        encoded.append(storage)
+        return (yield from make_encoded(storage))
+
+    storage_layer = fx.layer.effect(MessageStorage, make).pipe(
+        fx.layer.provide(snowflake.layer_generator)
+    )
+
+    @fx.gen
+    def body():
+        state = yield from EntityState()
+        make_client = yield from TestEntity.client()
+        yield from testing.adjust("1 millis")
+        client = make_client("1")
+        call = (
+            client.get_user({"id": 1})
+            if rpc == "GetUser"
+            else client.fail_with_transaction(IdKeyPayload(id=1))
+        )
+        fork: fx.Effect[Fiber[Any, Any]] = call.fork()
+        result = yield from fork
+        yield from testing.adjust("5 seconds")
+        assert result.poll_unsafe() == expected
+        assert state.envelopes.size_unsafe() == 1
+        assert len(encoded[0].reply_ids) == 1
+
+    yield from body.pipe(fx.provide(_with_storage(storage_layer)))

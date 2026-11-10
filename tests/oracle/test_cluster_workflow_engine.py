@@ -286,6 +286,27 @@ def test_nested_workflows():
 
 
 @testing.effect
+def test_wakes_the_parent_when_a_suspended_child_is_interrupted():
+    """wakes the parent when a suspended child is interrupted"""
+
+    @fx.gen
+    def body():
+        yield from testing.adjust("1 millis")
+        parent_id = yield from ParentWorkflow.execute({"id": "interrupted"}, discard=True)
+        child_id = yield from W.ChildWorkflow.execution_id({"id": "interrupted"})
+        yield from poll_until(ParentWorkflow, parent_id, Suspended)
+        yield from poll_until(W.ChildWorkflow, child_id, Suspended)
+        yield from W.ChildWorkflow.interrupt(child_id)
+        child = yield from poll_until(W.ChildWorkflow, child_id, Complete)
+        assert isinstance(child.exit, fx.Failure) and child.exit.cause.has_interrupts
+        parent = yield from poll_until(ParentWorkflow, parent_id, Complete)
+        assert isinstance(parent.exit, fx.Failure)
+        assert parent.exit.cause.has_dies and not parent.exit.cause.has_interrupts
+
+    yield from body.pipe(fx.provide(test_workflow_layer))
+
+
+@testing.effect
 def test_suspend_on_failure():
     """SuspendOnFailure"""
 
@@ -639,6 +660,68 @@ def test_shutdown_waits_for_a_running_activity_before_finalizing_its_workflow():
 
 
 @testing.effect
+def test_replays_a_raced_activity_that_starts_during_shutdown_on_the_next_owner():
+    """replays a raced activity that starts during shutdown on the next owner"""
+    wf = workflow.make(
+        "ShutdownRacedActivity", payload=W.EMPTY, success=S.String, idempotency_key=lambda _: "one"
+    )
+    gate = durable_deferred.make("ShutdownRacedActivity/Gate")
+    executions = [0]
+
+    def execute() -> str:
+        executions[0] += 1
+        return "done"
+
+    step = activity.make(name="step", success=S.String, execute=fx.sync(execute))
+    storage = yield from W.make_shared_storage()
+    held = yield from fx.Latch.make()
+
+    def layer(hold_until_shutdown: bool) -> fx.Layer[Any, Any, Any]:
+        @fx.gen
+        def run():
+            if hold_until_shutdown:
+                # Start the activity only once the runner is shutting down.
+                sharding = yield from Sharding()
+                yield from held.open()
+                while not (yield from sharding.is_shutdown):
+                    yield from fx.yield_now()
+            return (
+                yield from durable_deferred.race_all(
+                    name="steer",
+                    success=S.String,
+                    error=S.Never,
+                    effects=[step, gate.wait().as_("steered")],
+                )
+            )
+
+        return wf.to_layer(lambda _, __: run).pipe(
+            fx.layer.provide_merge(
+                W.make_test_workflow_engine(
+                    storage_layer=W.storage_layer_of(storage),
+                    config_overrides={"entity_termination_timeout": Seconds(2)},
+                )
+            )
+        )
+
+    scope = CloseableScope()
+    context = yield from layer(True).build_with_scope(scope)
+    execution_id = yield from wf.execute({}, discard=True).pipe(fx.provide(context))
+    yield from advance_until(held.is_open, "run must start")
+    shutdown = yield from scope.close(Exit.succeed(None)).fork(start_immediately=True)
+    yield from advance_until(
+        lambda: shutdown.poll_unsafe() is not None, "shutdown must finish", step=0.01
+    )
+    yield from shutdown.join()
+
+    @fx.gen
+    def after():
+        assert (yield from poll_until(wf, execution_id, Complete)) == Complete(Exit.succeed("done"))
+        assert executions[0] == 1
+
+    yield from after.pipe(fx.provide(layer(False)))
+
+
+@testing.effect
 def test_retries_an_early_activity_registered_while_its_suspended_reply_is_still_being_persisted():
     """retries an early activity registered while its Suspended reply is still being persisted"""
     wf = workflow.make(
@@ -986,6 +1069,85 @@ def test_keeps_a_completed_reply_when_an_older_concurrent_wake_resets_it():
         yield from first_fiber.join()
 
     yield from run.pipe(fx.provide(context))
+
+
+@testing.effect
+def test_keeps_a_newer_activity_reply_when_a_stale_suspended_reply_resets_the_attempt():
+    """keeps a newer activity reply when a stale Suspended reply resets the attempt"""
+    wf = workflow.make(
+        "StaleActivityReset", payload=W.EMPTY, success=S.Number, idempotency_key=lambda _: "one"
+    )
+    register = yield from fx.Latch.make()
+    stale_reset = yield from fx.Latch.make()
+    allow_stale_reset = yield from fx.Latch.make()
+    executions = [0]
+
+    def execute() -> int:
+        executions[0] += 1
+        return executions[0]
+
+    loser = activity.make(name="loser", success=S.Number, execute=fx.sync(execute))
+    storage = yield from W.make_shared_storage()
+    activity_request_id: list[Any] = [None]
+    activity_resets = [0]
+
+    # Freeze the first reset of the attempt, standing in for a stale runner
+    # that read the Suspended reply before the new owner replaced it.
+    def clear_replies(request_id: Any, **options: Any) -> fx.Effect[None, Any]:
+        if request_id == activity_request_id[0]:
+            activity_resets[0] += 1
+            if activity_resets[0] == 1:
+                return (
+                    stale_reset.open()
+                    .and_then(allow_stale_reset.wait())
+                    .and_then(storage.clear_replies(request_id, **options))
+                )
+        return storage.clear_replies(request_id, **options)
+
+    storage_layer = W.storage_layer_of(W.override_storage(storage, clear_replies=clear_replies))
+    execution_id = yield from wf.execution_id({})
+    request_id = yield from fx.gen(lambda: W.send_unregistered_activity(wf.tag, execution_id)).pipe(
+        fx.provide(
+            wf.to_layer(lambda _, __: loser).pipe(
+                fx.layer.provide_merge(
+                    W.make_test_workflow_engine(
+                        storage_layer=W.unanswered_activity_storage(storage)
+                    )
+                )
+            )
+        )
+    )
+    activity_request_id[0] = request_id
+    yield from fx.add_finalizer(lambda _: allow_stale_reset.open())
+
+    @fx.gen
+    def run():
+        sharding = yield from Sharding()
+        yield from wf.execute({}, discard=True)
+        yield from sharding.poll_storage
+        assert (yield from W.activity_reply(storage, request_id)) == Exit.succeed(Suspended())
+        yield from register.open()
+        yield from advance_until(stale_reset.is_open, "the replay must reset the Suspended attempt")
+        # The new owner resets the same attempt and stores its result.
+        assert (yield from sharding.reset(request_id)) is True
+        yield from poll_storage_until(lambda: executions[0] == 1, "the owner must run the activity")
+        assert (yield from W.activity_reply(storage, request_id)) == Exit.succeed(
+            Complete(Exit.succeed(1))
+        )
+        yield from allow_stale_reset.open()
+        assert (yield from poll_until(wf, execution_id, Complete)) == Complete(Exit.succeed(1))
+        assert executions[0] == 1
+        assert (yield from W.activity_reply(storage, request_id)) == Exit.succeed(
+            Complete(Exit.succeed(1))
+        )
+
+    yield from run.pipe(
+        fx.provide(
+            wf.to_layer(lambda _, __: register.wait().and_then(loser)).pipe(
+                fx.layer.provide_merge(W.make_test_workflow_engine(storage_layer=storage_layer))
+            )
+        )
+    )
 
 
 @pytest.mark.parametrize("mailbox_capacity", [2, 3])
@@ -1423,6 +1585,155 @@ def test_completes_before_deferred_persistence_across(lifecycle: str):  # noqa: 
     yield from run.pipe(fx.provide(context))
 
 
+# --- transient save failures -----------------------------------------------------------------
+
+
+def _transient_save(
+    storage: Any, saves: Any, ack_lost: bool, on_save: Any = None
+) -> tuple[fx.Layer[MessageStorage], dict[str, Any]]:
+    """Storage whose first save of a matching request fails once with a
+    ``PersistenceError``, after storing it when ``ack_lost``."""
+    state: dict[str, Any] = {"failures": 0, "inserts": 0, "payloads": []}
+
+    def save_request(envelope: Any) -> fx.Effect[Any, Any]:
+        if not saves(envelope):
+            return storage.save_request(envelope)
+        state["payloads"].append(envelope.envelope.payload)
+
+        def counted(result: Any) -> None:
+            if isinstance(result, message_storage.SaveSuccess):
+                state["inserts"] += 1
+
+        save = storage.save_request(envelope).tap(lambda r: fx.sync(lambda: counted(r)))
+        if state["failures"] > 0:
+            return save
+        state["failures"] += 1
+        failure = fx.fail(PersistenceError(cause=RuntimeError("Connection closed")))
+        return save.and_then(failure) if ack_lost else failure
+
+    return W.storage_layer_of(W.override_storage(storage, save_request=save_request)), state
+
+
+@pytest.mark.parametrize("ack_lost", [False, True])
+@testing.effect
+def test_runs_an_activity_once_after_a_transient_failure_saving_its_request(ack_lost: bool):
+    """runs an activity once after a transient failure ${ackLost ? "acknowledging" : "saving"} its request"""  # noqa: E501
+    wf = workflow.make(
+        "ActivitySaveRetry", payload=W.EMPTY, success=S.Number, idempotency_key=lambda _: "one"
+    )
+    storage = yield from W.make_shared_storage()
+    storage_layer, state = _transient_save(
+        storage, lambda envelope: envelope.envelope.tag == "activity", ack_lost
+    )
+    runs = [0]
+
+    def step() -> int:
+        runs[0] += 1
+        return 42
+
+    @fx.gen
+    def body():
+        execution_id = yield from wf.execute({}, discard=True)
+        result = yield from poll_until(wf, execution_id, Complete)
+        assert result == Complete(Exit.succeed(42))
+        assert runs[0] == 1
+        assert state["failures"] == 1
+
+    yield from body.pipe(
+        fx.provide(
+            wf.to_layer(
+                lambda _, __: activity.make(name="Step", success=S.Number, execute=fx.sync(step))
+            ).pipe(fx.layer.provide_merge(W.make_test_workflow_engine(storage_layer=storage_layer)))
+        )
+    )
+
+
+_RetrySignal = durable_deferred.make("RetrySignal")
+
+
+def _saves_deferred(envelope: Any) -> bool:
+    return envelope.envelope.tag == "deferred"
+
+
+def _durable_save_cases() -> list[Any]:
+    return [
+        pytest.param(
+            lambda e: e.envelope.address.entity_type == "Workflow/-/DurableClock",
+            lambda: durable_clock.sleep(
+                name="Wait", duration="1 second", in_memory_threshold=0
+            ).as_(42),
+            None,
+            id="a durable clock",
+        ),
+        pytest.param(
+            _saves_deferred,
+            lambda: durable_deferred.race_all(
+                name="Race",
+                success=S.Number,
+                error=S.Never,
+                effects=[fx.succeed(42.0), fx.never],
+            ),
+            None,
+            id="a durable race winner",
+        ),
+        pytest.param(
+            _saves_deferred,
+            lambda: _RetrySignal.wait().as_(42),
+            "registered",
+            id="a token completion",
+        ),
+        pytest.param(
+            _saves_deferred,
+            lambda: _RetrySignal.wait().as_(42),
+            "unregistered",
+            id="a token completion from a runner without the workflow",
+        ),
+    ]
+
+
+@pytest.mark.parametrize("ack_lost", [False, True])
+@pytest.mark.parametrize(("saves", "make_body", "external"), _durable_save_cases())
+@testing.effect
+def test_completes_after_a_transient_failure_saving_it(
+    saves: Any, make_body: Any, external: str | None, ack_lost: bool
+):
+    """completes ${name} after a transient failure ${ackLost ? "acknowledging" : "saving"} it"""
+    wf = workflow.make(
+        "DurableSaveRetry", payload=W.EMPTY, success=S.Number, idempotency_key=lambda _: "one"
+    )
+    storage = yield from W.make_shared_storage()
+    storage_layer, state = _transient_save(storage, saves, ack_lost)
+
+    @fx.gen
+    def body():
+        engine = yield from WorkflowEngine()
+        execution_id = yield from wf.execution_id({})
+        complete = _RetrySignal.done(
+            token=_RetrySignal.token_from_execution_id(workflow=wf, execution_id=execution_id),
+            exit=Exit.succeed(None),
+        ).fork(start_immediately=True)
+        caller = None
+        if external == "unregistered":
+            caller = yield from complete
+        yield from engine.register(wf, lambda _, __: make_body())
+        yield from wf.execute({}, discard=True)
+        if external == "registered":
+            yield from poll_until(wf, execution_id, Suspended)
+            caller = yield from complete
+        result = yield from poll_until(wf, execution_id, Complete)
+        assert result == Complete(Exit.succeed(42))
+        if caller is not None:
+            # A stored completion can wake the workflow before the caller's retry runs.
+            yield from testing.adjust("1 minute")
+            yield from caller.join()
+        assert state["failures"] == 1
+        assert state["inserts"] == 1
+        # A retry resends the original payload, including a clock's deadline.
+        assert state["payloads"][1] == state["payloads"][0]
+
+    yield from body.pipe(fx.provide(W.make_test_workflow_engine(storage_layer=storage_layer)))
+
+
 # --- races ---------------------------------------------------------------------------------
 
 
@@ -1664,6 +1975,9 @@ def test_durable_deferred_race_all_re_runs_a_multi_await_branch_once_per_complet
     # The run parks on the second gate after reading the first completion
     # directly or replaying once while the completion is committed.
     assert flags.get("two-step-branch-runs") in (1, 2)
+    # A completion stored before the await is read directly, so let the run
+    # park on the second gate first.
+    yield from testing.adjust("1 second")
     yield from R.TwoStepGateB.succeed(token=_token(R.TwoStepGateB, wf, execution_id), value="b")
     yield from sharding.poll_storage
     yield from testing.adjust("1 second")
@@ -1769,6 +2083,77 @@ def test_durable_deferred_race_all_delivers_a_completion_that_lands_while_a_susp
         yield from sharding.poll_storage
     assert (yield from fiber.join()) == "signal-b"
     assert flags.get("slow-unwind-runs") == 2
+
+
+@testing.effect
+def test_durable_deferred_race_all_replays_a_persisted_result_its_owner_has_not_processed_yet():
+    """DurableDeferred.raceAll replays a persisted result its owner has not processed yet"""
+    wf = workflow.make(
+        "UnprocessedRaceResult", payload=W.EMPTY, success=S.String, idempotency_key=lambda _: "one"
+    )
+    idle = durable_deferred.make("UnprocessedRaceResult/Idle", success=S.String)
+    text = durable_deferred.make("UnprocessedRaceResult/Text", success=S.String)
+    result = durable_deferred.make("raceAll/pick", success=S.String)
+    storage = yield from W.make_shared_storage()
+
+    # The race result is durable, but the runner's mailbox poll has not read it yet.
+    def is_result(message: Any) -> bool:
+        envelope = message.envelope
+        return (
+            isinstance(envelope, EnvelopeRequest)
+            and envelope.tag == "deferred"
+            and envelope.payload["name"] == result.name
+        )
+
+    def unprocessed_messages(shard_ids: Any, **options: Any) -> fx.Effect[Any, Any]:
+        return storage.unprocessed_messages(shard_ids, **options).map(
+            lambda messages: [m for m in messages if not is_result(m)]
+        )
+
+    layer = wf.to_layer(
+        lambda _, __: durable_deferred.race_all(
+            name="pick",
+            success=S.String,
+            error=S.Never,
+            effects=[idle.wait(), text.wait()],
+        )
+    ).pipe(
+        fx.layer.provide_merge(
+            W.make_test_workflow_engine(
+                storage_layer=W.storage_layer_of(
+                    W.override_storage(storage, unprocessed_messages=unprocessed_messages)
+                )
+            )
+        )
+    )
+    execution_id = yield from wf.execution_id({})
+
+    # The previous owner records `idle` as the winner, then stops.
+    @fx.gen
+    def previous():
+        yield from wf.execute({}, discard=True)
+        yield from poll_until(wf, execution_id, Suspended)
+        yield from result.succeed(
+            token=result.token_from_execution_id(workflow=wf, execution_id=execution_id),
+            value="idle",
+        )
+
+    yield from previous.pipe(fx.provide(layer))
+
+    # Each owner registers with its own RunnerStorage as machine id 0, so on the
+    # same TestClock millisecond its snowflakes would repeat the previous owner's.
+    yield from testing.adjust("1 millis")
+
+    # A later completion wakes the new owner, whose replay must keep `idle`.
+    @fx.gen
+    def next_owner():
+        yield from text.succeed(
+            token=text.token_from_execution_id(workflow=wf, execution_id=execution_id),
+            value="text",
+        )
+        assert (yield from poll_until(wf, execution_id, Complete)) == Complete(Exit.succeed("idle"))
+
+    yield from next_owner.pipe(fx.provide(layer))
 
 
 @testing.effect(timeout="20 seconds")
@@ -2257,6 +2642,95 @@ def test_reacquires_shards_after_a_forced_release_abandons_a_parent_waking_from_
 
 
 @testing.effect
+def test_reacquires_shards_after_a_forced_release_interrupts_a_parent_resume_waiting_on_its_active_run():  # noqa: E501
+    """reacquires shards after a forced release interrupts a parent resume waiting on its active run"""  # noqa: E501
+    storage_down = [False]
+    child = workflow.make("PendingResumeChild", payload=W.EMPTY, idempotency_key=lambda _: "child")
+    parent = workflow.make(
+        "PendingResumeParent", payload=W.EMPTY, success=S.Number, idempotency_key=lambda _: "parent"
+    )
+
+    def wrap(storage: Any) -> Any:
+        def refresh(address: Any, shard_ids: Any) -> fx.Effect[Any, Any]:
+            if storage_down[0]:
+                return fx.fail(PersistenceError(cause=RuntimeError("runner storage outage")))
+            return storage.refresh(address, shard_ids)
+
+        return replace(storage, refresh=refresh)
+
+    runner_storage_layer = fx.layer.effect(RunnerStorage, runner_storage.make_memory().map(wrap))
+
+    # The child's resume waits for the parent's run reply while the activity
+    # keeps that run active. The slow interrupt cleanup, like a storage round
+    # trip, lets shutdown interrupt the uninterruptible resume before the run
+    # exits and abandons its reply waiter.
+    def parent_body(_: Any, __: str) -> fx.Effect[float, Any, Any]:
+        slow = activity.make(name="slow", success=S.Number, execute=fx.sleep("5 seconds").as_(42.0))
+        return (
+            fx.all(child.execute({}), slow, concurrency=2)
+            .map(lambda pair: pair[1])
+            .on_interrupt(fx.sleep("100 millis"))
+        )
+
+    layer = fx.layer.merge(
+        child.to_layer(lambda _, __: fx.void), parent.to_layer(parent_body)
+    ).pipe(
+        fx.layer.provide_merge(
+            W.make_test_workflow_engine(
+                sharding_layer=sharding_layer_of.pipe(fx.layer.provide(runner_storage_layer)),
+                config_overrides={
+                    "shards_per_group": 1,
+                    "shard_lock_refresh_interval": Seconds(0.5),
+                    "shard_lock_expiration": Seconds(3),
+                    "entity_termination_timeout": Seconds(0.5),
+                    "entity_message_poll_interval": Seconds(0.02),
+                    "entity_reply_poll_interval": Seconds(0.02),
+                    "refresh_assignments_interval": Seconds(0.1),
+                },
+            )
+        )
+    )
+
+    def close_scope(scope: CloseableScope) -> Any:
+        closing = yield from scope.close(Exit.succeed(None)).fork_daemon()
+        yield from advance_until(
+            lambda: closing.poll_unsafe() is not None, "the runner must shut down", 0.1, 20
+        )
+
+    scope = yield from fx.acquire_release(
+        fx.sync(CloseableScope), lambda scope, _: fx.gen(lambda: close_scope(scope))
+    )
+    context = yield from layer.build_with_scope(scope)
+
+    @fx.gen
+    def run():
+        sharding = yield from Sharding()
+        shard_id = sharding.get_shard_id(EntityId("parent"), "default")
+        yield from parent.execute({}, discard=True)
+        yield from poll_until(child, (yield from child.execution_id({})), Complete)
+        yield from testing.adjust("1500 millis")
+        assert sharding.has_shard_id(shard_id)
+
+        storage_down[0] = True
+        yield from advance_until(
+            lambda: not sharding.has_shard_id(shard_id),
+            "the outage must force the shard release",
+            0.1,
+            14,
+        )
+        storage_down[0] = False
+
+        # Release must finish before the shard can be reacquired, then the
+        # durable resume replays the parent and its interrupted activity.
+        yield from testing.adjust("10 seconds")
+        assert sharding.has_shard_id(shard_id), "the shard must be reacquired after recovery"
+        result = yield from poll_until(parent, (yield from parent.execution_id({})), Complete)
+        assert result == Complete(Exit.succeed(42))
+
+    yield from run.pipe(fx.provide(context))
+
+
+@testing.effect
 def test_interrupts_a_failure_suspended_workflow():
     """interrupts a failure-suspended workflow"""
     attempts = [0]
@@ -2498,9 +2972,17 @@ def test_interrupt_unsafe_during_a_later_activity_closes_the_superseded_run_and_
     yield from run.pipe(fx.provide(layer))
 
 
+# Both the persisted interrupt and the replayed activity reply are read before a
+# pending interrupt is applied.
+@pytest.mark.parametrize(
+    ("lookup_tag", "lookup_id"),
+    [("deferred", "Workflow/InterruptSignal"), ("activity", "flaky/1")],
+)
 @testing.effect
-def test_applies_a_persisted_interrupt_when_a_fresh_owner_replays_a_failure_suspended_workflow():
-    """applies a persisted interrupt when a fresh owner replays a failure-suspended workflow"""
+def test_applies_a_persisted_interrupt_when_a_fresh_owner_replays_a_failure_suspended_workflow(
+    lookup_tag: str, lookup_id: str
+):
+    """applies a persisted interrupt when a fresh owner replays a failure-suspended workflow after a transient ${lookup.tag} lookup failure"""  # noqa: E501
     attempts = [0]
     failing = workflow.make(
         "FailureInterruptedRecovery", payload=W.EMPTY, idempotency_key=lambda _: "failing"
@@ -2556,19 +3038,13 @@ def test_applies_a_persisted_interrupt_when_a_fresh_owner_replays_a_failure_susp
 
     yield from first.pipe(fx.provide(layer(crashing_storage)))
 
-    # The fresh owner's first read of the persisted interrupt fails once.
+    # The fresh owner's first lookup fails once.
     lookup_failed = [False]
 
     def request_id_for_primary_key(**options: Any) -> fx.Effect[Any, Any]:
-        if (
-            not lookup_failed[0]
-            and options["tag"] == "deferred"
-            and options["id"] == "Workflow/InterruptSignal"
-        ):
+        if not lookup_failed[0] and options["tag"] == lookup_tag and options["id"] == lookup_id:
             lookup_failed[0] = True
-            return fx.fail(
-                PersistenceError(cause=RuntimeError("transient interrupt lookup failure"))
-            )
+            return fx.fail(PersistenceError(cause=RuntimeError("transient lookup failure")))
         return storage.request_id_for_primary_key(**options)
 
     flaky_storage = W.storage_layer_of(
@@ -2578,7 +3054,7 @@ def test_applies_a_persisted_interrupt_when_a_fresh_owner_replays_a_failure_susp
     @fx.gen
     def second():
         result = yield from poll_until(failing, execution_id, Complete)
-        assert lookup_failed[0], "the interrupt lookup must fail once"
+        assert lookup_failed[0], "the lookup must fail once"
         _assert_interrupted(result, "the replay must complete as interrupted")
         assert attempts[0] == 1, "a fresh owner must not re-run the failed activity"
 

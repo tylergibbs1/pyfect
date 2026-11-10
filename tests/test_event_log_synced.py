@@ -11,6 +11,7 @@ import pytest
 import pyfect as fx
 from pyfect import layer
 from pyfect import schema as S
+from pyfect.crypto import digest
 from pyfect.eventlog import event as Ev
 from pyfect.eventlog import event_group as G
 from pyfect.eventlog import event_journal as J
@@ -170,6 +171,6 @@ def test_a_storage_reports_the_sequence_of_its_last_entry(name: str) -> None:
     # Five entries each; the memory encrypted storage numbers from 0.
     first = 0 if name == "encrypted-memory" else 1
     program = fx.scoped(fx.gen(STORAGES[name])).pipe(
-        fx.provide(layer.merge(layer_subtle, reactivity_layer))
+        fx.provide(layer.merge(layer_subtle, reactivity_layer, digest.layer_web_crypto))
     )
     assert fx.run_blocking_exit(program) == fx.Success([None, first + 4, None])

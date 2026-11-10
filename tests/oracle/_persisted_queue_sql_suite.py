@@ -2,8 +2,10 @@
 ``suiteWith(it)``): the delayed-offer and claim-ownership checks each SQL
 driver runs, as a class a test module subclasses with ``make_client``.
 
-They run on the live clock, which the database shares on this host; the
-claim titles keep the stores' lock refreshes on the TestClock (Effect's
+They measure with the test process's clock, which the database clock can
+trail by a few milliseconds (SQL Server's ``SYSDATETIME()`` advances in
+coarse ticks), so the delay checks allow ``CLOCK_TOLERANCE``; the claim
+titles keep the stores' lock refreshes on the TestClock (Effect's
 ``TestClock.withLive`` around the waits only). Durations are seconds.
 """
 
@@ -24,6 +26,11 @@ from pyfect.persistence import persisted_queue as pq
 from pyfect.sql import SqlClient
 
 type Body = Any
+
+
+CLOCK_TOLERANCE = 100
+"""Milliseconds the database clock may lag, far below the half-second and
+multi-second errors the delay checks guard against."""
 
 
 def now_millis() -> Generator[Any, Any, int]:
@@ -90,7 +97,7 @@ class PersistedQueueSqlSuite:
             offered_at = yield from now_millis()
             yield from queue.offer("delayed", delay="1 second")
             yield from queue.take(_succeed)
-            assert (yield from now_millis()) - offered_at >= 1000
+            assert (yield from now_millis()) - offered_at >= 1000 - CLOCK_TOLERANCE
 
         self.run(body)
 
@@ -111,7 +118,7 @@ class PersistedQueueSqlSuite:
 
             offered_at = yield from sql.with_transaction(fx.gen(offer))
             yield from queue.take(_succeed)
-            assert (yield from now_millis()) - offered_at >= 3000
+            assert (yield from now_millis()) - offered_at >= 3000 - CLOCK_TOLERANCE
 
         self.run(body)
 

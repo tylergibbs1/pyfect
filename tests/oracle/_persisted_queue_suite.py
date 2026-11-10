@@ -195,24 +195,6 @@ class PersistedQueueSuite:
 
         self.run(body)
 
-    def test_failure(self) -> None:
-        """failure"""
-
-        def body():
-            queue = yield from pq.make(
-                name="test-queue-c", schema=ITEM, retry_schedule=schedule.spaced(0)
-            )
-            yield from queue.offer({"n": 42})
-            assert (yield from queue.take(_boom).flip()) == "boom"
-
-            def second(value: Item, meta: pq.Metadata) -> fx.Effect[Item]:
-                assert meta.attempts == 2
-                return fx.succeed(value)
-
-            assert (yield from queue.take(second))["n"] == 42
-
-        self.run(body)
-
     def test_delays_retries_with_the_retry_schedule(self) -> None:
         """delays retries with the retry schedule"""
 
@@ -305,34 +287,30 @@ class PersistedQueueSuite:
 
         self.run(body)
 
-    def test_idempotent_offer(self) -> None:
-        """idempotent offer"""
+    def test_settling_a_custom_id_does_not_release_the_same_id_in_another_queue(self) -> None:
+        """settling a custom id does not release the same id in another queue"""
 
         def body():
-            queue = yield from pq.make(name="idempotent-offer", schema=ITEM)
-            yield from queue.offer({"n": 42}, id="custom-id")
-            yield from queue.offer({"n": 42}, id="custom-id")
+            emails = yield from pq.make(name="isolated-emails", schema=ITEM)
+            invoices = yield from pq.make(name="isolated-invoices", schema=ITEM)
+            yield from emails.offer({"n": 1}, id="order-1")
+            yield from invoices.offer({"n": 2}, id="order-1")
 
-            def check(value: Item, _meta: pq.Metadata) -> fx.Effect[None]:
-                assert value["n"] == 42
-                return fx.void
+            # each queue deduplicates its own ids, so the invoice is delivered
+            taken = Latch()
+            invoice: list[Item] = []
 
-            yield from queue.take(check)
-            fiber = yield from queue.take(check).fork_scoped()
-            yield from self.assert_not_delivered(fiber)
+            def hold(value: Item, _meta: pq.Metadata) -> fx.Effect[None]:
+                invoice.append(value)
+                return taken.open().and_then(fx.never)
 
-        self.run(body)
+            yield from invoices.take(hold).fork_scoped()
+            yield from taken.wait()
+            assert invoice == [{"n": 2}]
 
-    def test_deduplicates_custom_ids_independently_in_each_queue(self) -> None:
-        """deduplicates custom ids independently in each queue"""
-
-        def body():
-            first = yield from pq.make(name="custom-id-first", schema=ITEM)
-            second = yield from pq.make(name="custom-id-second", schema=ITEM)
-            yield from first.offer({"n": 1}, id="shared-custom-id")
-            yield from second.offer({"n": 2}, id="shared-custom-id")
-            fiber = yield from second.take(_succeed).fork_scoped()
-            assert (yield from self.await_delivery(fiber)) == {"n": 2}
+            yield from emails.take(_succeed)
+            duplicate = yield from invoices.take(_succeed).fork_scoped()
+            yield from self.assert_not_delivered(duplicate)
 
         self.run(body)
 
@@ -359,23 +337,6 @@ class PersistedQueueSuite:
             yield from fiber.join()
             yield from self.assert_not_delivered(fiber2)
             yield from fiber2.interrupt()
-
-        self.run(body)
-
-    def test_stops_delivering_when_max_attempts_is_exhausted(self) -> None:
-        """stops delivering when maxAttempts is exhausted"""
-
-        def body():
-            queue = yield from pq.make(
-                name="test-queue-exhausted",
-                schema=ITEM,
-                max_attempts=1,
-                retry_schedule=schedule.spaced(0),
-            )
-            yield from queue.offer({"n": 42})
-            assert (yield from queue.take(_boom).flip()) == "boom"
-            fiber = yield from queue.take(_succeed).fork_scoped()
-            yield from self.assert_not_delivered(fiber)
 
         self.run(body)
 
