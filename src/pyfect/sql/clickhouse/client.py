@@ -16,9 +16,11 @@ statement with data (``INSERT ... VALUES``) does not accept: run those with
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping
 from typing import Any, Never, Unpack
 
+from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.config import Config, ConfigError, unwrap
@@ -26,6 +28,7 @@ from pyfect.context import Context, Tag
 from pyfect.effect import fail, provide_service, succeed, with_fiber
 from pyfect.layer import Layer, provide
 from pyfect.layer import effect_context as layer_effect_context
+from pyfect.logger import log_warning
 from pyfect.reactivity import Reactivity
 from pyfect.reactivity import layer as reactivity_layer
 from pyfect.scope import Scope
@@ -217,11 +220,32 @@ def _connect_timed_out() -> Effect[Never, SqlError]:
 
 
 def _http_client(config: ClickhouseClientConfig) -> Effect[Any, Never, Scope]:
+    """The config's ``HttpClient``, or one on httpx with the config's pool
+    (``max_open_connections``, ``keep_alive``) and ``tls``."""
     if config.http_client is not None:
         return succeed(config.http_client)
+    import httpx
+
     from pyfect.http import httpx_client
 
-    return httpx_client.make(timeout=config.connection.request_timeout.to_seconds())
+    connection = config.connection
+    most = connection.max_open_connections
+    connections = None if math.isinf(most) else math.ceil(most)
+    ttl = connection.idle_socket_ttl
+    limits = httpx.Limits(
+        max_connections=connections,
+        max_keepalive_connections=connections if connection.keep_alive else 0,
+        keepalive_expiry=None if ttl.is_zero() else ttl.to_seconds(),
+    )
+    tls: dict[str, Any] = {} if connection.tls is None else {"verify": connection.tls.context}
+    return httpx_client.make(timeout=connection.request_timeout.to_seconds(), limits=limits, **tls)
+
+
+def _config_warnings(config: ClickhouseClientConfig) -> Effect[None]:
+    """What ``@clickhouse/client`` warns about the config when it is
+    made."""
+    logged = for_each(config.connection.warnings, log_warning)
+    return logged.as_void().annotate_logs("module", "Config")
 
 
 def make(
@@ -263,7 +287,7 @@ def make(
 
         return connected.and_then(client.map(finish))
 
-    return _http_client(config).flat_map(build)
+    return _config_warnings(config).and_then(_http_client(config).flat_map(build))
 
 
 def _contexts(client: ClickhouseClientService) -> Context[ClickhouseClient | SqlClient]:

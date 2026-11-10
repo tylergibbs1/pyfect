@@ -5615,6 +5615,17 @@ def sql_clickhouse_driver(
     assert_type(rows.raw, fx.Effect[object, sql_error.SqlError])
     sql_clickhouse.ClickhouseClientConfig(password="secret")  # pyright: ignore[reportArgumentType]
     ch_sql.with_clickhouse_settings(eff, {"max_threads": object()})  # pyright: ignore[reportArgumentType]
+    # ``@clickhouse/client``'s options: a codec's own level name only, a
+    # client certificate with its key, the log levels by name.
+    sql_clickhouse.ClickhouseClientConfig(
+        compression={"request": {"codec": "br", "quality": 4}, "response": {"codec": "zstd"}},
+        keep_alive={"enabled": False, "idle_socket_ttl": "1 second"},
+        tls={"ca_cert": b"pem", "cert": b"pem", "key": b"pem"},
+        log={"level": "OFF"},
+    )
+    sql_clickhouse.ClickhouseClientConfig(compression={"request": {"codec": "gzip", "quality": 4}})  # pyright: ignore[reportArgumentType]
+    sql_clickhouse.ClickhouseClientConfig(log={"level": "LOUD"})  # pyright: ignore[reportArgumentType]
+    sql_clickhouse.ClickhouseClientConfig(keep_alive={"eagerly_destroy_stale_sockets": True})  # pyright: ignore[reportArgumentType]
 
 
 def sql_libsql_driver(libsql_sql: sql_libsql.LibsqlClientService) -> None:

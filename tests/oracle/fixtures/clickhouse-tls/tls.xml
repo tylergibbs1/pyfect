@@ -1,0 +1,15 @@
+<!-- HTTPS on 8443 for the clickhouse tests' tls option (tests/oracle/_clickhouse.py):
+     the fixtures/tls certificate, client certificates verified when sent. -->
+<clickhouse>
+    <https_port>8443</https_port>
+    <openSSL>
+        <server>
+            <certificateFile>/etc/clickhouse-server/tls/cert.pem</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/tls/key.pem</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/tls/cert.pem</caConfig>
+            <verificationMode>relaxed</verificationMode>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+        </server>
+    </openSSL>
+</clickhouse>
