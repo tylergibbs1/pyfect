@@ -46,8 +46,9 @@ def public_functions() -> list[tuple[str, inspect.Signature]]:
     found: list[tuple[str, inspect.Signature]] = []
     for name in duration.__all__:
         value = getattr(duration, name)
-        # parse_duration_text takes text, whose numbers to_seconds' cases cover.
-        if inspect.isfunction(value) and name != "parse_duration_text":
+        # parse_duration_text and from_iso take text, whose numbers to_seconds'
+        # cases and tests/test_duration_iso.py cover.
+        if inspect.isfunction(value) and name not in {"parse_duration_text", "from_iso"}:
             found.append((name, inspect.signature(value)))
     return found
 

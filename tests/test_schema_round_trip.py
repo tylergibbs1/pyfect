@@ -63,6 +63,7 @@ _LATER = datetime(2030, 1, 1, tzinfo=UTC)
 
 _CHECKED: dict[str, S.Bottom[Any, Any]] = {
     "is_ecma_pattern": S.String.check(S.is_ecma_pattern("^[a-c]+$")),
+    "is_ascii": S.String.check(S.is_ascii()),
     "is_base64": S.String.check(S.is_base64()),
     "is_base64_url": S.String.check(S.is_base64_url()),
     "is_between": S.Number.check(S.is_between(minimum=-1.5, maximum=10)),

@@ -101,7 +101,8 @@ def _sqlite_without_table(tmp_path: Path) -> fx.Layer[Any, Any, Any]:
 
     store = pq.layer_store_sql(poll_interval="10 millis")
     dropped = fx.layer.effect_discard(SqlClient().flat_map(drop))
-    return fx.layer.merge(store, dropped).pipe(fx.provide(client))
+    # The drop runs once the store's migrations have made the table.
+    return dropped.pipe(fx.layer.provide_merge(store)).pipe(fx.provide(client))
 
 
 def test_a_failed_sql_offer_or_cleanup_fails_with_a_persisted_queue_error(tmp_path: Path) -> None:

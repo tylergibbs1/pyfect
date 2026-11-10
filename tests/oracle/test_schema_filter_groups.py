@@ -95,6 +95,9 @@ _DELEGATING = frozenset(
         "schema/representation/_to.py on",
     }
 )
+# Effect reads these annotations from the node's own checks only, never inside a
+# group (``SchemaBinary``'s ``fixedWidthKind``).
+_TOP_LEVEL_ONLY = frozenset({"encoding/schema_binary/_compile.py fixed_width_kind"})
 
 
 def test_every_walk_over_checks_looks_inside_filter_groups():
@@ -115,7 +118,7 @@ def test_every_walk_over_checks_looks_inside_filter_groups():
                 for n in pyast.walk(function)
                 if isinstance(n, pyast.For | pyast.comprehension)
             ]
-            if f"{relative} {function.name}" in _DELEGATING:
+            if f"{relative} {function.name}" in _DELEGATING | _TOP_LEVEL_ONLY:
                 continue
             if any(map(_iterates_checks, loops)) and "FilterGroup" not in source:
                 offenders.append(f"{relative}:{function.lineno} {function.name}")

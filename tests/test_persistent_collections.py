@@ -142,8 +142,7 @@ def test_random_trie_updates_match_a_dict() -> None:
         key = "".join(rng.choice(alphabet) for _ in range(rng.randrange(0, 5)))
         if rng.random() < 0.6:
             t = t.insert(key, step)
-            if key:
-                model[key] = step
+            model[key] = step  # Effect 4.1.2 stores "" like any other key
         else:
             t = t.remove(key)
             model.pop(key, None)

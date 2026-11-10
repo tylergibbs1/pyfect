@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Never, cast, overload
 
+from pyfect._equal import dedupe
 from pyfect._js import text_encode
 from pyfect._json_text import quote
 from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
@@ -78,7 +79,7 @@ def decode_records(
                 run(rows)
                 for row in rows:
                     if headers and not names:
-                        if len(set(row.cells)) != len(row.cells):
+                        if len(dedupe(row.cells)) != len(row.cells):
                             raise CsvError("Header", "Duplicate header name", row.record, row.line)
                         names.append(row.cells)
                     else:
