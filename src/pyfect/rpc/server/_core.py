@@ -80,7 +80,15 @@ class ServerOptions:
     the tag, or ``<span_prefix>.<tag>`` (no span with ``disable_tracing``), at most
     ``concurrency`` at once, a defect ending every request of the client
     unless ``disable_fatal_defects``, and waiting for the client's ``Ack``
-    after each stream chunk unless ``disable_client_acks``."""
+    after each stream chunk unless ``disable_client_acks``.
+
+    ``on_disconnect`` (read by ``make`` and the layers over a protocol) is
+    called with each client id the protocol reports disconnected, after
+    the server asked for that client's requests to be interrupted; it does
+    not wait for them. It is not called for a client that ends its input,
+    or one still connected when the server stops. Each call runs in a fiber
+    of its own, interrupted when the server stops; a failure is logged at
+    ``UnhandledLogLevel`` and ignored."""
 
     disable_tracing: bool = False
     disable_span_propagation: bool = False
@@ -89,6 +97,7 @@ class ServerOptions:
     concurrency: Concurrency = "unbounded"
     disable_fatal_defects: bool = False
     disable_client_acks: bool = False
+    on_disconnect: Callable[[int], Effect[None]] | None = None
 
 
 @dataclass(slots=True, eq=False)
@@ -255,16 +264,18 @@ class RpcServer:
             return interrupt()
         rpc = self._group.rpcs.get(request.tag)
         found = None if rpc is None else self._services.get_option(handler_tag(rpc))
+        run = _RequestRun(self, client, request, CloseableScope())
         if rpc is None or found is None:
-            return self._unknown_request(client, request)
+            return self._unknown_request(client, run)
         entry: HandlerEntry = found.value
         metadata = RpcRequest(
             request.payload, client.server_client, request.id, request.headers, rpc
         )
-        result = _run_handler(entry, metadata)
+        result, construction_failed = _run_handler(entry, metadata)
         options = wrap_options(result)
-        run = _RequestRun(self, client, request, CloseableScope())
-        effect = self._handler_effect(entry, rpc, run, unwrap_handler(result)).on_exit(run.on_exit)
+        effect = self._handler_effect(
+            entry, rpc, run, unwrap_handler(result), started=not construction_failed
+        ).on_exit(run.on_exit)
         if on_request is not None:
             effect = on_request(effect)
         if not self._options.disable_tracing:
@@ -283,25 +294,31 @@ class RpcServer:
         run.watch(fiber)
         return _AfterStarted(None)
 
-    def _unknown_request(self, client: _Client, request: Request) -> Effect[None]:
-        write = self._on_from_server(
-            ResponseExit(client.id, request.id, Exit.die(unknown_tag(request.tag)))
-        ).catch_defect(lambda defect: self._send_defect(client, defect))
+    def _unknown_request(self, client: _Client, run: _RequestRun) -> Effect[None]:
+        write = run.respond(Exit.die(unknown_tag(run.request.tag))).catch_defect(
+            lambda defect: self._send_defect(client, defect)
+        )
         if not client.ended or client.fibers:
             return write
         return write.ensuring(self._end_client(client))
 
     def _handler_effect(
-        self, entry: HandlerEntry, rpc: AnyRpc, run: _RequestRun, result: Any
+        self, entry: HandlerEntry, rpc: AnyRpc, run: _RequestRun, result: Any, *, started: bool
     ) -> Effect[Any, Any, Any]:
         """The handler's effect with the RPC's middleware around it; a
-        stream is run, writing its chunks."""
+        stream is run, writing its chunks. A handler that raised while being
+        made (not ``started``) is neither streamed nor acknowledged."""
         client, request = run.client, run.request
         handler: Effect[Any, Any, Any] = (
             self._stream_effect(client, request, result, run.write_failures.append)
-            if rpc.is_stream
+            if rpc.is_stream and started
             else result
         )
+        if run.is_discard and started:
+            # Inside the middleware: acknowledged once the permit is held
+            # and the middleware has started the handler.
+            started_handler = handler
+            handler = run.acknowledge().flat_map(lambda _: started_handler)
         if not rpc.middlewares:
             return handler
         middleware_options = MiddlewareOptions(
@@ -345,7 +362,14 @@ class RpcServer:
         stream: object,
         on_write_failure: Callable[[Cause.Cause[Never]], None],
     ) -> Effect[None, Any, Any]:
+        # The chunks of a notification or a discarded call have no reader,
+        # so they are neither sent nor acknowledged.
+        silent = request.is_notification or request.discard
+
         def write_chunk(values: tuple[Any, ...]) -> Effect[None]:
+            if silent:
+                return _VOID
+
             def failed(cause: Cause.Cause[Never]) -> Effect[None]:
                 if not cause.has_interrupts_only:
                     on_write_failure(cause)
@@ -356,7 +380,7 @@ class RpcServer:
             )
 
         latch: Latch | None = None
-        if not self._options.disable_client_acks:
+        if not self._options.disable_client_acks and not silent:
             latch = client.latches.setdefault(request.id, Latch(False))
 
         def send(values: tuple[Any, ...]) -> Effect[None]:
@@ -387,9 +411,12 @@ class _RequestRun:
     handler that succeeded with a ``Deferred`` until it is done."""
 
     __slots__ = (
+        "acknowledged",
         "client",
         "context",
         "deferred",
+        "is_discard",
+        "is_notification",
         "request",
         "responded",
         "scope",
@@ -408,9 +435,31 @@ class _RequestRun:
         self.responded = False
         self.deferred: Deferred[Any, Any] | None = None
         self.write_failures: list[Cause.Cause[Never]] = []
+        self.is_notification = request.is_notification
+        self.is_discard = not request.is_notification and request.discard
+        self.acknowledged = False
+
+    @property
+    def silent(self) -> bool:
+        """A notification, or a discarded call once acknowledged: no reply
+        of any kind is sent for it."""
+        return self.is_notification or self.acknowledged
 
     def respond(self, exit: Exit.Exit[Any, Any]) -> Effect[None]:
+        if self.silent:
+            return _VOID
         return self.server._on_from_server(ResponseExit(self.client.id, self.request.id, exit))
+
+    def acknowledge(self) -> Effect[None]:
+        """Send a discarded call's acknowledgement (a void success); nothing
+        is sent for it after this."""
+
+        def ack() -> Effect[None]:
+            sent = self.respond(Exit.succeed(None))
+            self.acknowledged = True
+            return sent
+
+        return suspend(ack)
 
     def on_exit(self, exit: Exit.Exit[Any, Any]) -> Effect[None]:
         self.responded = True
@@ -428,6 +477,9 @@ class _RequestRun:
             return self.scope.close_unsafe(exit) or _VOID
         elif (
             not server._options.disable_fatal_defects
+            # A notification or a discarded call only ever fails itself.
+            and not self.is_notification
+            and not self.is_discard
             and exit.cause.has_dies
             and not exit.cause.has_interrupts
         ):
@@ -452,6 +504,14 @@ class _RequestRun:
 
         return _WithFiber(register)
 
+    def _respond_deferred(self, exit: Exit.Exit[Any, Any]) -> Effect[None]:
+        if isinstance(exit, Exit.Failure) and self.silent:
+            # A failure with no reply to carry it is only reported.
+            current = Fiber.get_current()
+            if current is not None:
+                report_unsafe(current, exit.cause)
+        return self.respond(exit)
+
     def watch(self, fiber: Fiber[Any, Any]) -> None:
         fiber.run_in(self.server._track)
         fiber.add_observer_unsafe(self._observe)
@@ -461,7 +521,7 @@ class _RequestRun:
         deferred = self.deferred
         if deferred is not None:
             self.deferred = None
-            waiting = server._run(deferred.wait().on_exit(self.respond), self.context)
+            waiting = server._run(deferred.wait().on_exit(self._respond_deferred), self.context)
             client.fibers[self.request.id] = waiting
             waiting.add_observer_unsafe(self._observe)
             return
@@ -483,14 +543,15 @@ def _scoped_drain(drain: Effect[Any, Any, Any]) -> Effect[None, Any, Any]:
     return scoped(drain.catch_cause(done))
 
 
-def _run_handler(entry: HandlerEntry, request: RpcRequest[Any]) -> Any:
-    """A raise in the handler is a defect of the request."""
+def _run_handler(entry: HandlerEntry, request: RpcRequest[Any]) -> tuple[Any, bool]:
+    """The handler's result, and whether making it raised: a raise is a
+    defect of the request, whose handler never started."""
     try:
-        return entry.handler(request)
+        return entry.handler(request), False
     except KeyboardInterrupt:
         raise  # Ctrl-C: the loop interrupts the fiber (Fiber._raised)
     except BaseException as defect:
-        return die(defect)
+        return die(defect), True
 
 
 def _apply_middleware(

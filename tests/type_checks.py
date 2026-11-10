@@ -167,6 +167,7 @@ from pyfect.persistence import persisted_queue as pq
 from pyfect.persistence import persistence as persistence_module
 from pyfect.persistence import rate_limiter as rl
 from pyfect.persistence import redis as redis_module
+from pyfect.pool import PoolStats
 from pyfect.pool._state import Strategy
 from pyfect.pubsub import Atomic, BackPressureStrategy, SlidingStrategy, Subscription
 from pyfect.pubsub import Strategy as PubSubStrategy
@@ -189,6 +190,7 @@ from pyfect.sql import d1 as sql_d1
 from pyfect.sql import error as sql_error
 from pyfect.sql import libsql as sql_libsql
 from pyfect.sql import migrator as sql_migrator
+from pyfect.sql import migrator_file_system as sql_migrator_file_system
 from pyfect.sql import model as sql_model
 from pyfect.sql import mssql as sql_mssql
 from pyfect.sql import mysql as sql_mysql
@@ -5136,17 +5138,34 @@ def check_process(
     )
     assert_type(handle.exit_code, fx.Effect[ExitCode, fx.PlatformError, Never])
     assert_type(handle.stdout, fx.Stream[bytes, fx.PlatformError, Never])
-    assert_type(handle.stdin, fx.Sink[None, bytes, Never, fx.PlatformError, Never])
+    assert_type(handle.stdin, fx.Sink[None, bytes | str, Never, fx.PlatformError, Never])
     assert_type(handle.kill(force_kill_after=1), fx.Effect[None, fx.PlatformError, Never])
     assert_type(handle.unref, fx.Effect[fx.Effect[None, fx.PlatformError], fx.PlatformError, Never])
     assert_type(spawner.string(command), fx.Effect[str, fx.PlatformError, Never])
     assert_type(spawner.lines(command), fx.Effect[list[str], fx.PlatformError, Never])
     assert_type(spawner.stream_lines(command), fx.Stream[str, fx.PlatformError, Never])
     assert_type(process.layer, fx.Layer[ChildProcessSpawner, Never, fx.FileSystem | fx.Path])
-    process.make("echo", stdin="closed")  # pyright: ignore[reportArgumentType]
-    process.make("echo", stdout=stream.make(b"x"))  # pyright: ignore[reportArgumentType]
+    process.make("echo", stdin="closed")  # pyright: ignore[reportArgumentType, reportCallIssue]
+    process.make("echo", stdout=stream.make(b"x"))  # pyright: ignore[reportArgumentType, reportCallIssue]
     command.pipe_to(command, from_="stdin")  # pyright: ignore[reportArgumentType]
     handle.kill(kill_signal="SIGKILL")  # pyright: ignore[reportArgumentType]
+    secret = fx.redacted.make("token")
+    assert_type(process.make(["git commit -m ", ""], "msg"), process.StandardCommand)
+    assert_type(process.make("curl", ["-H", secret], env={"T": secret}), process.StandardCommand)
+    assert_type(command.args, tuple[str | fx.Redacted[str], ...])
+    assert_type(command.prefix(["time"]), process.Command)
+    assert_type(
+        process.command_line.template(["ls ", ""], ["a", 1]),
+        fx.Result[list[str | fx.Redacted[str]], process.CommandLineError],
+    )
+    assert_type(process.command_line.join(["a", secret]), fx.Result[str, process.CommandLineError])
+    assert_type(process.command_line.display(["a", secret]), str)
+    process.make(
+        "echo", stdout=process.StdoutConfig("ignore"), stdin=process.StdinConfig(encoding="hex")
+    )
+    process.StdinConfig(encoding="utf-32")  # pyright: ignore[reportArgumentType]
+    process.make("echo", ["a"], ["b"])  # pyright: ignore[reportArgumentType]
+    process.command_line.quote("x", format="cmd")  # pyright: ignore[reportArgumentType]
 
 
 def check_http_client(service: fx.http.HttpClientService[fx.http.HttpClientError]) -> None:
@@ -5197,6 +5216,24 @@ def check_http_client(service: fx.http.HttpClientService[fx.http.HttpClientError
     request.get("/", method="GET")  # pyright: ignore[reportCallIssue]
     request.make("FETCH", "/")  # pyright: ignore[reportArgumentType]
     request.post("/").compress_body("brotli")  # pyright: ignore[reportArgumentType]
+    # 4.1.2: a request's method may be an extension method; setting one stays typed.
+    assert_type(request.get("/").method, str)
+    request.get("/").set_method("PROPFIND")  # pyright: ignore[reportArgumentType]
+    assert_type(
+        service.filter_status_ok().timeout("5 seconds"), client.HttpClientService[HttpClientError]
+    )
+    assert_type(
+        service.map_request_effect(lambda r: fx.fail(KeyError()).as_(r)).timeout("1 second"),
+        client.HttpClientService[HttpClientError | KeyError],
+    )
+    from pyfect.http import method as http_method
+
+    def narrow(m: http_method.HttpMethod, raw: str) -> None:
+        if http_method.has_body(m):
+            assert_type(m, http_method.WithBody)
+        assert_type(http_method.has_body(raw), bool)
+
+    del narrow
 
 
 def check_net_socket(
@@ -5231,6 +5268,14 @@ def check_net_socket(
         ],
     )
     assert_type(socket_module.to_stream(sock), Stream[bytes, socket_module.SocketError])
+    assert_type(socket_module.make_net(80, chunk_size=float("inf")), socket_module.SocketService)
+    socket_module.make_net(80, chunk_size="all")  # pyright: ignore[reportArgumentType]
+    from pyfect.http import live_server
+
+    live_server.layer(
+        port=0, websocket_per_message_deflate=live_server.PerMessageDeflate(threshold=0)
+    )
+    live_server.layer(port=0, websocket_per_message_deflate="yes")  # pyright: ignore[reportArgumentType]
     assert_type(
         srv.run(lambda s: s.reader.as_void()),
         fx.Effect[Never, socket_module.server.SocketServerError, fx.Scope],
@@ -5241,10 +5286,12 @@ def check_net_socket(
     )
     assert_type(
         socket_module.from_web_socket(
-            fx.fail(socket_module.SocketError(socket_module.SocketCloseError(1006)))
+            fx.fail(socket_module.SocketError(reason=socket_module.SocketCloseError(code=1006)))
         ),
         socket_module.SocketService,
     )
+    # Socket error reasons are schema classes: keyword-only, as Effect's.
+    socket_module.SocketCloseError(1006)  # pyright: ignore[reportCallIssue]
     socket_module.from_web_socket(fx.succeed(1))  # pyright: ignore[reportArgumentType]
     service.resolve("example.com", str)  # pyright: ignore[reportArgumentType]
     service.lookup("example.com", family="IPv5")  # pyright: ignore[reportArgumentType, reportCallIssue]
@@ -5346,6 +5393,17 @@ def sql_statements(
         ],
     )
 
+    def as_written[A, E, R](effect: fx.Effect[A, E, R]) -> fx.Effect[A, E, R]:
+        return effect
+
+    sql_migrator.make(transform_writes=as_written)
+    # A transform must keep the write's value, errors and requirements.
+    sql_migrator.make(transform_writes=lambda effect: effect.as_void())  # pyright: ignore[reportArgumentType]
+    assert_type(
+        sql_migrator_file_system.from_file_system("migrations"),
+        sql_migrator.Loader[fx.FileSystem | fx.Path],
+    )
+
 
 def sql_pg_driver(
     pg_sql: sql_pg.PgClientService,
@@ -5361,6 +5419,8 @@ def sql_pg_driver(
         fx.Effect[Dequeue[sql_pg.Notification, SqlError], SqlError, fx.Scope],
     )
     assert_type(pg_sql.notify("events", "hi"), fx.Effect[None, SqlError])
+    assert_type(pg_sql.pool_stats, fx.Effect[PoolStats])
+    assert_type(pool.stats, fx.Effect[PoolStats])
     assert_type(conn.query("SELECT 1"), fx.Effect[sql_pg.Result, SqlError])
     assert_type(conn.pin, fx.Effect[sql_pg.PgConnection, Never, fx.Scope])
     assert_type(pool.get, fx.Effect[sql_pg.PgConnection, SqlError, fx.Scope])
@@ -6371,6 +6431,46 @@ def check_http_api_clients() -> None:
 
     del with_layer
 
+    # `decode_response` decodes like the method: the endpoint's success, its
+    # declared errors, and the client's own errors (M17, Effect 4.1.2).
+    def decode_later(response: HttpResponse) -> None:
+        decode = api_client.decode_response(api, ApiUsers, api_get_user)
+        assert_type(
+            decode(response), fx.Effect[ApiUser, api_error.NotFound | HttpClientError | SchemaError]
+        )
+
+    del decode_later
+
+
+class ApiOutOfCredit(
+    api_error.Problem, type="https://example.com/out-of-credit", status=403, title="No credit"
+):
+    balance: float
+
+
+def check_http_api_problems() -> None:
+    from pyfect.http import problem_details
+    from pyfect.http_api import middleware as api_middleware
+    from pyfect.http_api import schema as api_schema
+
+    # A typed problem is a yieldable schema error with the standard members.
+    problem = ApiOutOfCredit(balance=30)
+    assert_type(problem.status, int)
+    assert_type(problem.detail, str | None)
+    assert_type(problem.balance, float)
+    assert_type(fx.schema.decode_unknown_sync(ApiOutOfCredit)({}), ApiOutOfCredit)
+    assert_type(
+        fx.schema.decode_unknown_sync(problem_details.Schema)({}), problem_details.ProblemDetails
+    )
+    assert_type(
+        api_middleware.layer_problem_details(include_details=True),
+        fx.Layer[api_middleware.ProblemDetails],
+    )
+    assert_type(
+        api_error.NotFound.pipe(api_schema.as_problem(title="Not Found")),
+        fx.schema.Bottom[api_error.NotFound, Mapping[str, object]],
+    )
+
 
 # --- rpc ---------------------------------------------------------------------------
 
@@ -6428,8 +6528,23 @@ def check_rpc(users: RpcUsers) -> None:
     assert_type(users.ping(), fx.Effect[None, rpc.RpcClientError])
     assert_type(users.me(), fx.Effect[RpcUser, RpcUnauthorized | rpc.RpcClientError])
     assert_type(users.stream(), Stream[float, rpc.RpcClientError])
-    assert_type(users.get.discard("1"), fx.Effect[None, rpc.RpcClientError])
+    # A discarded call waits for the server's acknowledgement, so the errors
+    # before the handler starts (its middleware's) can still fail it.
+    assert_type(users.get.discard("1"), fx.Effect[None, RpcNotFound | rpc.RpcClientError])
     assert_type(users.ping.discard(), fx.Effect[None, rpc.RpcClientError])
+    assert_type(users.me.discard(), fx.Effect[None, RpcUnauthorized | rpc.RpcClientError])
+    # The reason is Effect's union: an HTTP failure is an HttpClientErrorSchema.
+    assert_type(
+        rpc.RpcClientError(reason=rpc.RpcClientDefect(message="bad")).reason,
+        rpc.client_error.RpcClientErrorReason,
+    )
+    http_failure: HttpClientError | None = None
+    if http_failure is not None:
+        rpc.RpcClientError(reason=http_failure)  # pyright: ignore[reportArgumentType]
+    assert_type(
+        rpc_server.ServerOptions(on_disconnect=lambda _client_id: fx.void).on_disconnect,
+        Callable[[int], fx.Effect[None]] | None,
+    )
     # A stream RPC without a payload can be read as a queue too.
     assert_type(
         users.stream(as_queue=True),
@@ -6618,6 +6733,8 @@ def check_persistence(
     assert_type(kv.get("k"), fx.Effect[str | None, kvs.KeyValueStoreError])
     assert_type(kv.get_bytes("k"), fx.Effect[bytes | None, kvs.KeyValueStoreError])
     assert_type(kv.prefix("p/"), kvs.KeyValueStoreService)
+    assert_type(kv.keys, fx.Effect[list[str], kvs.KeyValueStoreError])
+    assert_type(kv.clear_prefix("p/"), fx.Effect[None, kvs.KeyValueStoreError])
     users_store = kv.to_schema_store(PersistedUser)
     assert_type(
         users_store.get("k"),
@@ -9423,6 +9540,30 @@ def schema_rest_types() -> None:
     assert_type(HS.RecordFromCookies, DecodeToSchema[dict[str, str], http_cookies.Cookies])
     assert_type(HS.UrlParams, S.Bottom[http_url_params.UrlParams])
     assert_type(HS.DateTimeUtcFromHttpDate, DecodeToSchema[datetime, str])
+
+
+def check_cookie_storage() -> None:
+    from pyfect.http import cookies as ck
+    from pyfect.http.client import HttpClientService
+    from pyfect.http.error import HttpClientError
+    from pyfect.ref import Ref
+
+    # M17: client storage is a tuple of scoped cookies (Effect 4.1.2's ReadonlyArray<Cookie>).
+    jar = ck.merge_into_array((), "https://a.test/", ck.from_set_cookie("a=1"), 0)
+    assert_type(jar, tuple[ck.Cookie, ...])
+    assert_type(ck.to_request_cookie_header(jar, "https://a.test/", 0), str | None)
+
+    def with_jar(
+        http: HttpClientService[HttpClientError], ref: Ref[tuple[ck.Cookie, ...]]
+    ) -> HttpClientService[HttpClientError]:
+        return http.with_cookies_ref(ref)
+
+    def with_old_jar(
+        http: HttpClientService[HttpClientError], ref: Ref[ck.Cookies]
+    ) -> HttpClientService[HttpClientError]:
+        return http.with_cookies_ref(ref)  # pyright: ignore[reportArgumentType]
+
+    _ = (with_jar, with_old_jar)
 
 
 def check_schema_graph() -> None:

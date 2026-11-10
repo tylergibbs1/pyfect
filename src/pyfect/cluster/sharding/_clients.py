@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Never
 
+from pyfect import exit as Exit
 from pyfect._concurrency import for_each
 from pyfect._core import Effect, _WithFiber
 from pyfect._fiber import Fiber
@@ -149,11 +150,16 @@ class Clients:
                     last_received_reply=None,
                     rpc=rpc,
                     context=fiber._context,
-                    respond=_respond_discard if sent.discard else respond,
+                    respond=_respond_discard if request.discard else respond,
                     annotations=dynamic_annotations(rpc, envelope),
                 )
-                if sent.discard:
-                    return routing.send_outgoing(outgoing, True)
+                if request.discard:
+                    # A discarded call is acknowledged once its message is sent.
+                    return routing.send_outgoing(outgoing, True).flat_map(
+                        lambda _: cores[0].write(
+                            rpc_message.ResponseExit(0, request.id, Exit.succeed(None))
+                        )
+                    )
                 entry = ClientRequestEntry(rpc, fiber._context, outgoing)
                 state.client_requests[request_id] = entry
 

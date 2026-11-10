@@ -13,9 +13,9 @@ Adapted, with the reason:
 
 Omitted, with the reason:
 
-- ``fromWeb``, ``fromWeb ignores malformed or unsafe content lengths``,
-  ``toWeb stream body``, ``toWebResult returns failure for invalid url``:
-  web ``Request`` conversions (``to_url`` covers the invalid URL).
+- ``toWeb stream body``, ``toWebResult returns failure for invalid url``:
+  there is no web ``Request`` to convert to (``to_url`` covers the invalid
+  URL). ``fromWeb`` is ``request.from_web`` of a ``WebRequest``.
 - ``supports the data-first overload``, ``preserves the request
   prototype`` (twice): there is one method form, and every operation gives
   an ``HttpClientRequest``.
@@ -24,7 +24,7 @@ Omitted, with the reason:
 import gzip
 import json
 import zlib
-from typing import Any
+from typing import Any, assert_type
 
 import pytest
 
@@ -37,6 +37,7 @@ from pyfect.http import headers as h
 from pyfect.http import request as r
 from pyfect.http import url as u
 from pyfect.http._compression import CompressionAlgorithm
+from pyfect.http.web import WebRequest
 from pyfect.platform_error import PlatformError
 from pyfect.redacted import Redacted
 from pyfect.stream import Stream
@@ -119,6 +120,32 @@ def test_compress_unsupported() -> None:
     for encoding in ("identity", "deflate", "gzip"):
         original = r.post(URL).body_text(TEXT).set_header("Content-Encoding", encoding)
         assert _run(original.compress_body("gzip")) is original
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(b.bytes_(DATA, "text/plain"), id="bytes"),
+        pytest.param(b.stream(stream_.make(DATA), "text/plain"), id="stream"),
+    ],
+)
+def test_compress_keeps_content_type(body: b.HttpBody) -> None:
+    """preserves an explicit Content-Type when compressing $name"""
+    request = _run(
+        r.post(URL)
+        .set_body(body)
+        .set_header("content-type", "application/json")
+        .compress_body("gzip")
+    )
+    assert request.headers["content-encoding"] == "gzip"
+    assert request.headers["content-type"] == "application/json"
+
+
+def test_compress_adds_no_content_type() -> None:
+    """does not add a Content-Type when compressing a request without one"""
+    request = _run(r.post(URL).body_text(TEXT).remove_header("content-type").compress_body("gzip"))
+    assert request.headers["content-encoding"] == "gzip"
+    assert "content-type" not in request.headers
 
 
 @pytest.mark.parametrize(
@@ -332,3 +359,47 @@ def test_hides_redacted_params() -> None:
     for output in (str(request.to_json()), str(request), repr(request)):
         assert "param-secret" not in output
         assert "visible" in output
+
+
+def test_from_web() -> None:
+    """fromWeb"""
+    request = r.from_web(
+        WebRequest(
+            "http://localhost:3000/todos/1?a=1&a=2#top",
+            method="POST",
+            headers={"content-type": "application/json", "content-length": "13", "x-test": "ok"},
+            body='{"foo":"bar"}',
+        )
+    )
+    assert request.method == "POST"
+    assert request.url == "http://localhost:3000/todos/1"
+    assert request.hash == "top"
+    assert request.headers["content-type"] == "application/json"
+    assert request.headers["content-length"] == "13"
+    assert request.headers["x-test"] == "ok"
+    assert list(request.url_params) == [("a", "1"), ("a", "2")]
+    assert isinstance(request.body, b.Raw)
+    assert request.body.body == b'{"foo":"bar"}'
+
+
+def test_from_web_content_lengths() -> None:
+    """fromWeb ignores malformed or unsafe content lengths"""
+    for content_length in ("2junk", "1.5", "1e3", "9007199254740992"):
+        request = r.from_web(
+            WebRequest(
+                "http://localhost:3000",
+                method="POST",
+                headers={"content-length": content_length},
+                body="hello",
+            )
+        )
+        assert "content-length" not in request.headers
+        assert isinstance(request.body, b.Raw)
+        assert request.body.content_length is None
+
+
+def test_from_web_extension_method() -> None:
+    """preserves an extension method from a web request without claiming it is a known method"""
+    request = r.from_web(WebRequest("http://localhost/", method="PROPFIND"))
+    assert_type(request.method, str)
+    assert request.method == "PROPFIND"

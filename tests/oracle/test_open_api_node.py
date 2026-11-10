@@ -526,6 +526,13 @@ def test_success_encoding_upgrade() -> None:
     assert "200" not in responses
 
 
+def test_success_encoding_upgrade_with_an_ordinary_success() -> None:
+    """OpenAPI spec / endpoint / success option / encodings / Upgrade with an ordinary success"""
+    success = (api_schema.Upgrade("tcp"), api_schema.Empty(200))
+    responses = _responses(_spec(ep.post("a", "/a", success=success)), method="post")
+    assert sorted(responses) == ["101", "200"]
+
+
 def test_success_encoding_stream_uint8_array_with_annotated_status() -> None:
     """OpenAPI spec / endpoint / success option / encodings / StreamUint8Array with annotated status"""  # noqa: E501
     success = api_schema.status(206)(api_schema.StreamUint8Array())

@@ -19,26 +19,33 @@ Standard output and error are byte streams and standard input a sink;
 closes, a running process is killed with its process group (unless it was
 ``unref``-ed). The ``ChildProcessSpawner`` service runs commands: its
 ``string``, ``lines``, ``exit_code``, ... helpers spawn, collect and clean
-up in one call. ``layer`` is the host's (on ``subprocess``; it needs
+up in one call. ``command_line`` quotes and joins arguments into command
+lines and splits templates into arguments. ``layer`` is the host's (on ``subprocess``; it needs
 ``FileSystem`` and ``Path``, and ``platform.layer`` includes it).
 """
 
+from pyfect.process import command_line
 from pyfect.process._command import (
     AdditionalFd,
     Command,
     CommandInput,
     CommandOptions,
     CommandOutput,
+    DuplexFd,
+    Encoding,
     FlattenedPipeline,
     InputFd,
+    MakeOptions,
     OutputFd,
     PipedCommand,
     PipeFrom,
     PipeOptions,
     PipeTo,
     StandardCommand,
+    StderrConfig,
     StdinConfig,
     StdioKind,
+    StdoutConfig,
     fd_name,
     flatten_command,
     make,
@@ -47,6 +54,7 @@ from pyfect.process._command import (
 from pyfect.process._handle import ChildProcessHandle, ExitCode, Kill, ProcessId, Reref
 from pyfect.process._live import SpawnOptions, build_spawn_options, layer
 from pyfect.process._spawner import ChildProcessSpawner, ChildProcessSpawnerService, Spawn
+from pyfect.process.command_line import CommandLineError, Word
 
 __all__ = [
     "AdditionalFd",
@@ -55,12 +63,16 @@ __all__ = [
     "ChildProcessSpawnerService",
     "Command",
     "CommandInput",
+    "CommandLineError",
     "CommandOptions",
     "CommandOutput",
+    "DuplexFd",
+    "Encoding",
     "ExitCode",
     "FlattenedPipeline",
     "InputFd",
     "Kill",
+    "MakeOptions",
     "OutputFd",
     "PipeFrom",
     "PipeOptions",
@@ -71,9 +83,13 @@ __all__ = [
     "Spawn",
     "SpawnOptions",
     "StandardCommand",
+    "StderrConfig",
     "StdinConfig",
     "StdioKind",
+    "StdoutConfig",
+    "Word",
     "build_spawn_options",
+    "command_line",
     "fd_name",
     "flatten_command",
     "layer",

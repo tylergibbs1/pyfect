@@ -48,7 +48,7 @@ from pyfect.rpc import client as rpc_client
 from pyfect.rpc import serialization as rs
 from pyfect.rpc import server as rpc_server
 from pyfect.rpc.client import ClientOptions, ClientProtocol, ClientProtocolService
-from pyfect.rpc.message import Request
+from pyfect.rpc.message import Ack, Request, ResponseChunk
 from pyfect.schema import transformation as T
 from pyfect.scope import CloseableScope, Scope
 from pyfect.socket import (
@@ -160,7 +160,7 @@ def test_ignores_late_replies_after_terminal_failures() -> None:
         received = Deferred[Handle]()
         sent = yield from Queue[dict[str, Any]].unbounded()
         fail_send = [True]
-        error = RpcClientError(RpcClientDefect("send failed"))
+        error = RpcClientError(reason=RpcClientDefect(message="send failed"))
 
         def send(_client_id: int, message: Any) -> Effect[None, RpcClientError]:
             offered = sent.offer(dict(message))
@@ -593,7 +593,9 @@ def _settle():
 
 
 def _open_error() -> SocketError:
-    return SocketError(SocketOpenError("Unknown", RuntimeError("connection refused")))
+    return SocketError(
+        reason=SocketOpenError(kind="Unknown", cause=RuntimeError("connection refused"))
+    )
 
 
 def _failing_after_request(
@@ -745,7 +747,7 @@ def test_runs_on_ping_timeout_only_when_a_ping_timeout_drops_the_socket():
     def record(event: str) -> Effect[None]:
         return effect.sync(lambda: events.append(event))
 
-    close_error = SocketError(SocketCloseError(1006))
+    close_error = SocketError(reason=SocketCloseError(code=1006))
     connections = [0]
 
     def open_reader() -> Reader:
@@ -959,7 +961,7 @@ def test_closes_the_client_scope_when_a_malformed_chunk_arrives_as_the_socket_cl
             json.dumps({"_tag": "Chunk", "requestId": request_id, "values": [None]})
         )
         open_.close_unsafe()
-        frames.fail_cause_unsafe(Exit.fail(SocketError(SocketCloseError(1012))).cause)
+        frames.fail_cause_unsafe(Exit.fail(SocketError(reason=SocketCloseError(code=1012))).cause)
 
     yield from effect.sync(drop)
     assert isinstance((yield from bad.join()), Exit.Failure)
@@ -1231,3 +1233,218 @@ def test_releases_a_worker_pool_slot_when_the_worker_run_fails():
     yield from second_sent.join()
     yield from second.interrupt()
     assert sent_request_ids == [1, 2]
+
+
+def test_completes_a_discarded_call_on_its_acknowledgement_not_on_the_write() -> None:
+    """RpcClient / completes a discarded call on its acknowledgement, not on the write"""
+
+    def body():
+        client, handle, sent = yield from _chunk_protocol()
+        call = yield from client.unary.discard().fork()
+        request = yield from sent.take()
+        assert request["_tag"] == "Request"
+        assert request["discard"] is True
+        yield from effect.yield_now()
+        assert call.poll_unsafe() is None
+        # An older server replies with the handler result, which also counts
+        # as the acknowledgement.
+        yield from handle(
+            {
+                "_tag": "Exit",
+                "requestId": request["id"],
+                "exit": {"_tag": "Success", "value": "ignored"},
+            }
+        )
+        assert (yield from call.join()) is None
+
+    _run(body)
+
+
+def test_fails_a_discarded_call_on_a_transport_error_and_interrupts_its_pending_send() -> None:
+    """RpcClient / fails a discarded call on a transport error and interrupts its pending send"""
+
+    def body():
+        received = Deferred[Handle]()
+        sent = yield from Queue[dict[str, Any]].unbounded()
+        send_interrupted = Deferred[None]()
+
+        def send(_client_id: int, message: Any) -> Effect[None]:
+            if message["_tag"] != "Request":
+                return effect.succeed(None)
+            # A socket write waits while the connection is down.
+            return (
+                sent.offer(dict(message))
+                .flat_map(lambda _: effect.never)
+                .on_interrupt(send_interrupted.succeed(None))
+            )
+
+        protocol = ClientProtocolService(
+            lambda _id, handle: received.succeed(handle).flat_map(lambda _: effect.never),
+            send,
+            False,
+            rs.json.codec_for,
+        )
+        client = yield from rpc_client.make(ChunkGroup).pipe(
+            effect.provide_service(ClientProtocol, protocol)
+        )
+        handle = yield from received.wait()
+        call = yield from client.unary.discard().fork()
+        yield from sent.take()
+        error = RpcClientError(reason=RpcClientDefect(message="connection lost"))
+        yield from handle({"_tag": "ClientProtocolError", "error": error})
+        assert (yield from call.await_exit()) == Exit.fail(error)
+        yield from send_interrupted.wait()
+
+    _run(body)
+
+
+def test_stops_the_server_stream_promptly_when_an_acknowledged_consumer_is_interrupted() -> None:
+    """RpcClient / stops the server stream promptly when an acknowledged stream consumer is interrupted"""  # noqa: E501
+    from pyfect.rpc import test as rpc_test
+
+    pulls = [0]
+
+    class Counting(RpcGroup):
+        count = make("Count", success=rpc_schema.Stream(S.Number, S.Never))
+
+    def pull(i: int) -> Effect[int]:
+        def bump() -> int:
+            pulls[0] += 1
+            return i
+
+        return effect.sync(bump)
+
+    handlers = Counting.to_layer(
+        Counting.handlers().handle(Counting.count)(
+            lambda _request: stream.from_iterable(range(50), chunk_size=1).map_effect(pull)
+        )
+    )
+
+    def body():
+        client = yield from rpc_test.make_client(Counting, layer=handlers)
+        values = yield from client.count(stream_buffer_size=1).take(1).run_collect()
+        yield from effect.yield_now()
+        assert list(values) == [0]
+        assert pulls[0] <= 3
+
+    _run(body)
+
+
+def test_does_not_acknowledge_a_chunk_dropped_when_its_stream_consumer_is_interrupted() -> None:
+    """RpcClient / does not acknowledge a chunk dropped when its stream consumer is interrupted"""
+
+    def body():
+        consuming = Deferred[None]()
+        sent = yield from Queue[Any].unbounded()
+
+        def on_from_client(options: rpc_client.OnFromClient) -> Effect[None]:
+            return sent.offer(options.message).as_void()
+
+        client, core = yield from rpc_client.make_no_serialization(ChunkGroup, on_from_client)
+        reader = yield from (
+            client.good(stream_buffer_size=1)
+            .run_for_each(lambda _: consuming.succeed(None).flat_map(lambda _: effect.never))
+            .fork()
+        )
+        request = yield from sent.take()
+        assert isinstance(request, Request)
+        request_id = request.id
+        yield from core.write(ResponseChunk(0, request_id, ("a",)))
+        assert (yield from sent.take()) == Ack(request_id)
+        receiver = yield from core.write(ResponseChunk(0, request_id, ("b", "c"))).fork(
+            start_immediately=True
+        )
+        yield from consuming.wait()
+        assert receiver.poll_unsafe() is None
+        yield from reader.interrupt()
+        assert isinstance((yield from receiver.await_exit()), Exit.Success)
+        assert [type(m).__name__ for m in (yield from sent.clear())] == ["Interrupt"]
+
+    _run(body)
+
+
+@testing.effect
+def test_fails_only_the_calls_on_a_crashed_pooled_worker():
+    """RpcClient / fails only the calls on a crashed pooled worker"""
+    sent = yield from Queue[tuple[Any, Deferred[Never, WorkerError], Queue[Any]]].unbounded()
+
+    def spawn(_id: int) -> Effect[Any]:
+        @effect.gen
+        def make():
+            crash = Deferred[Never, WorkerError]()
+            replies = yield from Queue[Any].unbounded()
+
+            def send(message: Any, _transfers: Any) -> Effect[None, WorkerError]:
+                if message["_tag"] != "Request":
+                    return effect.succeed(None)
+                return sent.offer((message["id"], crash, replies)).as_void()
+
+            def run(handler: Any, _on_spawn: Any) -> Effect[Never, Any, Any]:
+                serve = replies.take().flat_map(handler).forever()
+                return crash.wait().race_first(serve)
+
+            return Worker[Any, Any](send=send, run=run)
+
+        return make
+
+    client = (
+        yield from rpc_client.make(TestGroup)
+        .pipe(
+            effect.provide_service_effect(
+                ClientProtocol, rpc_client.make_protocol_worker(size=2, concurrency=1)
+            )
+        )
+        .pipe(effect.provide_service(WorkerPlatform, WorkerPlatformService(spawn)))
+        .pipe(effect.provide_service(Spawner, lambda _: None))
+    )
+    crashing = yield from client.ping().fork()
+    _crashed_id, crash, _ = yield from sent.take()
+    healthy = yield from client.ping().fork()
+    healthy_id, _, healthy_replies = yield from sent.take()
+
+    yield from crash.fail(WorkerError(reason=WorkerReceiveError(message="worker exited")))
+    error = yield from crashing.join().flip()
+    assert isinstance(error.reason, WorkerReceiveError)
+
+    yield from healthy_replies.offer(
+        {"_tag": "Exit", "requestId": healthy_id, "exit": {"_tag": "Success", "value": "pong"}}
+    )
+    assert (yield from healthy.join()) == "pong"
+
+
+@testing.effect
+def test_sends_a_discarded_call_to_a_worker_as_a_request_and_waits_for_its_exit():
+    """RpcClient / sends a discarded call to a worker as a request and waits for its Exit"""
+    sent: list[object] = []
+    request_sent = yield from Deferred[None].make()
+    reply = yield from Deferred[Any].make()
+
+    def send(message: Any, _transfers: Any) -> Effect[None, WorkerError]:
+        sent.append(message)
+        return request_sent.succeed(None).as_void()
+
+    def run(handler: Any, _on_spawn: Any) -> Effect[Never, Any, Any]:
+        return reply.succeed(handler).flat_map(lambda _: effect.never)
+
+    backing = Worker[Any, Any](send=send, run=run)
+    protocol = yield from (
+        rpc_client.make_protocol_worker(size=1)
+        .pipe(
+            effect.provide_service(
+                WorkerPlatform, WorkerPlatformService(lambda _: effect.succeed(backing))
+            )
+        )
+        .pipe(effect.provide_service(Spawner, lambda _: None))
+    )
+    yield from protocol.run(0, lambda _response: effect.succeed(None)).fork_scoped()
+    request = {"_tag": "Request", "id": 1, "tag": "Test", "payload": None, "headers": []}
+
+    call = yield from protocol.send(0, {**request, "discard": True}).fork()
+    yield from request_sent.wait()
+    # The pool counts the worker as busy until the Exit, so it must be asked for one.
+    assert sent == [request]
+    assert call.poll_unsafe() is None
+
+    handler = yield from reply.wait()
+    yield from handler({"_tag": "Exit", "requestId": 1, "exit": {"_tag": "Success", "value": None}})
+    yield from call.join()

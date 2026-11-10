@@ -9,6 +9,7 @@ one. ``make_net``/``make_unix``/``make_tls`` open new connections;
 
 from __future__ import annotations
 
+import math
 import socket
 import ssl
 from collections.abc import Callable, Coroutine, Sequence
@@ -61,17 +62,39 @@ class _Current:
         self.latch = Latch(False)
 
 
+DEFAULT_CHUNK_SIZE = 4096
+"""The most chunks a socket's pull gives at once, unless told otherwise."""
+
+_MAX_SAFE_INTEGER = 2**53 - 1
+
+
+def _chunk_limit(chunk_size: float) -> int | None:
+    """``chunk_size`` as a pull limit (``None``: unbounded for ``math.inf``); anything but a
+    positive safe integer or infinity is the default, as in Effect."""
+    if chunk_size == math.inf:
+        return None
+    if isinstance(chunk_size, int) and not isinstance(chunk_size, bool):
+        if 0 < chunk_size <= _MAX_SAFE_INTEGER:
+            return chunk_size
+    elif chunk_size.is_integer() and 0 < chunk_size <= _MAX_SAFE_INTEGER:
+        return int(chunk_size)
+    return DEFAULT_CHUNK_SIZE
+
+
 def from_connection(
     open: Effect[Connection, SocketError, Scope],
     *,
     open_timeout: Duration | None = None,
+    chunk_size: float = DEFAULT_CHUNK_SIZE,
     tls_server: bool = False,
     target: str | None = None,
 ) -> SocketService:
     """A socket over the connections ``open`` makes. ``open_timeout`` bounds
-    the opening; ``tls_server`` makes TLS upgrades take the server side;
+    the opening; each pull gives at most ``chunk_size`` buffered chunks (``math.inf``
+    for all of them); ``tls_server`` makes TLS upgrades take the server side;
     ``target`` (``host:port``, a path) is named when opening fails."""
     require_effect(open, "open")
+    limit = _chunk_limit(chunk_size)
     current = _Current()
     opening = open
     if open_timeout is not None:
@@ -107,7 +130,7 @@ def from_connection(
 
             return suspend(start)
 
-        return Reader(conn.pull(), upgrade)
+        return Reader(conn.pull(limit), upgrade)
 
     def write(chunk: Chunk | CloseEvent) -> Effect[None, SocketError]:
         def start() -> Effect[None, SocketError]:
@@ -196,15 +219,22 @@ def connecting(
 
 
 def make_net(
-    port: int, host: str = "localhost", *, open_timeout: Duration | None = None
+    port: int,
+    host: str = "localhost",
+    *,
+    open_timeout: Duration | None = None,
+    chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketService:
-    """A TCP socket connecting to ``host:port``."""
+    """A TCP socket connecting to ``host:port``; each pull gives at most
+    ``chunk_size`` chunks."""
 
     async def connect(conn: Connection) -> object:
         return await get_loop().create_connection(lambda: conn, host, port)
 
     target = _address(host, port)
-    return from_connection(connecting(connect, target), open_timeout=open_timeout, target=target)
+    return from_connection(
+        connecting(connect, target), open_timeout=open_timeout, chunk_size=chunk_size, target=target
+    )
 
 
 def make_unix(path: str, *, open_timeout: Duration | None = None) -> SocketService:
@@ -222,9 +252,11 @@ def make_tls(
     *,
     tls: TlsUpgradeOptions | None = None,
     open_timeout: Duration | None = None,
+    chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketService:
     """A TLS socket connecting to ``host:port``; the certificate is checked
-    against ``tls.servername``, else ``host``."""
+    against ``tls.servername``, else ``host``. Each pull gives at most ``chunk_size``
+    chunks."""
     options = tls or TlsUpgradeOptions()
 
     async def connect(conn: Connection) -> None:
@@ -233,7 +265,9 @@ def make_tls(
         await conn.start_tls(context, server_side=False, hostname=options.servername or host)
 
     target = _address(host, port)
-    return from_connection(connecting(connect, target), open_timeout=open_timeout, target=target)
+    return from_connection(
+        connecting(connect, target), open_timeout=open_timeout, chunk_size=chunk_size, target=target
+    )
 
 
 def _address(host: str, port: int) -> str:
@@ -252,30 +286,68 @@ def from_socket(
     *,
     tls_server: bool = False,
     open_timeout: Duration | None = None,
+    chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketService:
     """A socket over the connected ``socket.socket`` each acquisition of
     the reader gets from ``open`` (Effect's ``fromDuplex``); the socket is
     taken over and closed with the reader's scope. ``tls_server`` makes TLS
-    upgrades take the server side."""
+    upgrades take the server side; each pull gives at most ``chunk_size`` chunks."""
     require_effect(open, "open")
-    return from_connection(open.flat_map(_adopt), tls_server=tls_server, open_timeout=open_timeout)
+    return from_connection(
+        open.flat_map(_adopt),
+        tls_server=tls_server,
+        open_timeout=open_timeout,
+        chunk_size=chunk_size,
+    )
 
 
-def make_net_channel[IE = Never](port: int, host: str = "localhost") -> SocketChannel[bytes, IE]:
-    return unwrap_channel(succeed(to_channel(make_net(port, host))))
+def make_net_channel[IE = Never](
+    port: int,
+    host: str = "localhost",
+    *,
+    open_timeout: Duration | None = None,
+    chunk_size: float = DEFAULT_CHUNK_SIZE,
+) -> SocketChannel[bytes, IE]:
+    service = make_net(port, host, open_timeout=open_timeout, chunk_size=chunk_size)
+    return unwrap_channel(succeed(to_channel(service)))
 
 
 def make_tls_channel[IE = Never](
-    port: int, host: str = "localhost", *, tls: TlsUpgradeOptions | None = None
+    port: int,
+    host: str = "localhost",
+    *,
+    tls: TlsUpgradeOptions | None = None,
+    open_timeout: Duration | None = None,
+    chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketChannel[bytes, IE]:
-    return unwrap_channel(succeed(to_channel(make_tls(port, host, tls=tls))))
+    service = make_tls(port, host, tls=tls, open_timeout=open_timeout, chunk_size=chunk_size)
+    return unwrap_channel(succeed(to_channel(service)))
 
 
-def layer_net(port: int, host: str = "localhost") -> Layer[Socket]:
-    return layer_effect(Socket, sync(lambda: make_net(port, host)))
+def layer_net(
+    port: int,
+    host: str = "localhost",
+    *,
+    open_timeout: Duration | None = None,
+    chunk_size: float = DEFAULT_CHUNK_SIZE,
+) -> Layer[Socket]:
+    return layer_effect(
+        Socket,
+        sync(lambda: make_net(port, host, open_timeout=open_timeout, chunk_size=chunk_size)),
+    )
 
 
 def layer_tls(
-    port: int, host: str = "localhost", *, tls: TlsUpgradeOptions | None = None
+    port: int,
+    host: str = "localhost",
+    *,
+    tls: TlsUpgradeOptions | None = None,
+    open_timeout: Duration | None = None,
+    chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> Layer[Socket]:
-    return layer_effect(Socket, sync(lambda: make_tls(port, host, tls=tls)))
+    return layer_effect(
+        Socket,
+        sync(
+            lambda: make_tls(port, host, tls=tls, open_timeout=open_timeout, chunk_size=chunk_size)
+        ),
+    )

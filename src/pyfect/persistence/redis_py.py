@@ -14,6 +14,8 @@ replies (no redis-py response callbacks), decoded as text unless
 ``decode_responses=False`` is passed. ``reserve`` opens connections of its
 own that do not reconnect: run blocking commands there, as a blocking
 command on the shared client holds a connection of its pool.
+Interrupting ``subscribe`` or ``reserve`` while its connection is opening
+(or ``SUBSCRIBE`` is unanswered) cancels the attempt and closes it.
 """
 
 from __future__ import annotations
@@ -235,14 +237,19 @@ def make(
         def subscribe(
             channel: str, on_message: Callable[[RedisMessage], bool]
         ) -> Effect[Effect[None, RedisError], RedisError, Scope]:
-            async def open_subscription() -> PubSub:
+            async def make_subscription() -> PubSub:
                 subscription: PubSub = untyped.pubsub()
-                try:
-                    await subscription.subscribe(channel)
-                except BaseException:
-                    await subscription.aclose()
-                    raise
                 return subscription
+
+            def connected(subscription: PubSub) -> Effect[PubSub, RedisError]:
+                # Only making the subscriber is uninterruptible, so a stalled
+                # connection or ``SUBSCRIBE`` can be interrupted; the scope
+                # closes it.
+                async def open_subscription() -> PubSub:
+                    await subscription.subscribe(channel)
+                    return subscription
+
+                return loop.run(open_subscription, waits_for="work")
 
             def deliver(subscription: PubSub) -> Effect[None, RedisError]:
                 async def next_message() -> Mapping[str, Any] | None:
@@ -262,13 +269,24 @@ def make(
 
                 return gen(body)
 
-            return acquire_release(
-                loop.run(open_subscription, waits_for="work"),
-                lambda subscription, _: loop.run(subscription.aclose, waits_for="work").ignore(),
-            ).map(deliver)
+            return (
+                acquire_release(
+                    loop.run(make_subscription, waits_for="work"),
+                    lambda subscription, _: loop.run(
+                        subscription.aclose, waits_for="work"
+                    ).ignore(),
+                )
+                .flat_map(connected)
+                .map(deliver)
+            )
 
+        # The pool opens connections uninterruptibly; opening one can be
+        # interrupted (and the attempt is cancelled) all the same.
         redis = yield from make_redis(
-            send=send, subscribe=subscribe, connect=loop.run(connect, waits_for="work"), pool=pool
+            send=send,
+            subscribe=subscribe,
+            connect=loop.run(connect, waits_for="work").interruptible(),
+            pool=pool,
         )
         return Context.empty().add(Redis, redis).add(RedisPy, RedisPyService(client, loop))
 

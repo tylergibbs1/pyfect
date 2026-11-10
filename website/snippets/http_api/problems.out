@@ -1,0 +1,3 @@
+OutOfCredit(detail='Your balance is 30.', instance=None, balance=30, type='https://example.com/probs/out-of-credit', status=403, title='You do not have enough credit.')
+403 application/problem+json {"detail":"Your balance is 30.","balance":30,"type":"https://example.com/probs/out-of-credit","status":403,"title":"You do not have enough credit."}
+400 {"detail":"Request validation failed","errors":[{"path":["query","page"],"message":"Expected a string representing a finite number"}],"type":"about:blank","status":400,"title":"Bad Request"}

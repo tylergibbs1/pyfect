@@ -22,6 +22,12 @@ def test_looks_up_standard_mime_types() -> None:
     assert get_type("model.glb") == "model/gltf-binary"
 
 
+def test_looks_up_script_source_types() -> None:
+    """looks up script source types"""
+    assert get_type("scripts/check.py") == "text/x-python"
+    assert get_type("scripts/check.sh") == "text/x-shellscript"
+
+
 def test_returns_none_for_unknown_and_missing_extensions() -> None:
     """returns none for unknown and missing extensions"""
     assert get_type("file.unknown") is None

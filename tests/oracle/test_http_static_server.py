@@ -86,9 +86,11 @@ def handle(app_layer: fx.Layer[Any], request: WebRequest) -> tuple[int, dict[str
     return asyncio.run(main())
 
 
-def text_platform(last_modified: str | None = None) -> HttpPlatformService:
+def text_platform(last_modified: str | None = None, etag: str | None = None) -> HttpPlatformService:
     def respond(_path: str, **_options: Any) -> fx.Effect[HttpServerResponse]:
         response = server_response.text("0123456789")
+        if etag is not None:
+            response = response.set_header("ETag", etag)
         if last_modified is not None:
             response = response.set_header("Last-Modified", last_modified)
         return effect.succeed(response)
@@ -139,12 +141,50 @@ def test_reads_an_asctime_if_modified_since_as_utc_whatever_the_process_time_zon
     # 08:49:37 UTC is before the Last-Modified of 10:00:00 UTC, so the file
     # has changed and must be served in full.
     status, _headers = handle(
-        services(StatFileSystem(10), text_platform("Sun, 06 Nov 1994 10:00:00 GMT")),
+        services(StatFileSystem(10), text_platform(LAST_MODIFIED, '"v1"')),
         WebRequest(
             "http://localhost/file.txt", headers={"If-Modified-Since": "Sun Nov  6 08:49:37 1994"}
         ),
     )
     assert status == 200
+
+
+LAST_MODIFIED = "Sun, 06 Nov 1994 10:00:00 GMT"
+_EARLIER = "Sat, 05 Nov 1994 10:00:00 GMT"
+
+
+@pytest.mark.parametrize(
+    ("headers", "status"),
+    [
+        ({"If-Match": '"stale"', "If-None-Match": '"v1"', "Range": "bytes=2-5"}, 412),
+        ({"If-Match": 'W/"v1"'}, 412),
+        ({"If-Match": 'w/"v1"'}, 412),
+        ({"If-Match": '"other", "v1"', "If-None-Match": '"v1"'}, 304),
+        ({"If-Unmodified-Since": _EARLIER, "If-None-Match": '"v1"', "Range": "bytes=2-5"}, 412),
+        ({"If-Unmodified-Since": LAST_MODIFIED}, 200),
+        ({"If-Unmodified-Since": "invalid"}, 200),
+        ({"If-Match": '"v1"', "If-Unmodified-Since": _EARLIER}, 200),
+    ],
+)
+def test_evaluates_preconditions_before_cache_validators_and_ranges(
+    headers: dict[str, str], status: int
+) -> None:
+    """HttpStaticServer conditional requests evaluates preconditions before cache validators and ranges"""  # noqa: E501
+
+    async def main() -> tuple[int, bytes, dict[str, str]]:
+        app_layer = services(StatFileSystem(10), text_platform(LAST_MODIFIED, '"v1"'))
+        app = await fx.run_async(static.make(root="/root").pipe(fx.provide(app_layer)))
+        response = await to_web_handler(app)(
+            WebRequest("http://localhost/file.txt", headers=headers)
+        )
+        body = await response.read()
+        return response.status, body, {k.lower(): v for k, v in response.header_lines}
+
+    got, body, response_headers = asyncio.run(main())
+    assert got == status
+    if status == 412:
+        assert body == b""
+        assert "content-range" not in response_headers
 
 
 Call = tuple[str, dict[str, Any]]

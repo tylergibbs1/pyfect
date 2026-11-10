@@ -61,8 +61,10 @@ from pyfect.http_api.client import make as api_client_make
 from pyfect.http_api.middleware import (
     ClientMiddlewareOptions,
     HttpApiMiddleware,
+    ProblemDetails,
     layer_client,
     layer_client_effect,
+    layer_problem_details,
     layer_schema_error_transform,
 )
 from pyfect.net import address_resolver, dns
@@ -772,6 +774,21 @@ def _count_api() -> HttpApi[Any]:
     return HttpApi.make("count").add(_COUNT)
 
 
+_PROBLEMS = (
+    HttpApiGroup.make("problems")
+    .add(endpoint.get("count", "/count/:n", params=struct({"n": S.FiniteFromString})))
+    .middleware(ProblemDetails)
+)
+
+
+def _problems_app(value: AnyLayer) -> AnyLayer:
+    api = HttpApi.make("problems").add(_PROBLEMS)
+    live = builder.group(
+        api, _PROBLEMS, lambda h: h.handle(_PROBLEMS.endpoints["count"])(lambda _: fx.void)
+    )
+    return builder.layer(api).pipe(L.provide(live)).pipe(L.provide(value))
+
+
 def _unprocessable(_error: object, _options: object) -> AnyEffect:
     return fx.succeed(server_response.empty(status=422))
 
@@ -818,6 +835,10 @@ _HTTP_API: dict[str, Case] = {
     "pyfect.http_api.middleware.layer_schema_error_transform": Case(
         layer=lambda: layer_schema_error_transform(_Schemas, _unprocessable),
         run=lambda value: _served_api(_count_app(value), "/count/abc", 422),
+    ),
+    "pyfect.http_api.middleware.layer_problem_details": Case(
+        layer=lambda: layer_problem_details(include_details=True),
+        run=lambda value: _served_api(_problems_app(value), "/count/abc", 400),
     ),
 }
 

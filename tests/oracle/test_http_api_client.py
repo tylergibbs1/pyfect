@@ -1071,3 +1071,66 @@ def test_stores_proto_client_identifiers_as_own_properties() -> None:
         yield from alone.method("__proto__")()
 
     assert isinstance(_run(effect.gen(program).exit()), Success)
+
+
+def test_streaming_decodes_a_stream_with_listed_content_types_regardless_of_the_received_one() -> (
+    None
+):
+    """HttpApiClient / streaming responses / decodes a stream with listed content types regardless of the received content type"""  # noqa: E501
+    api = _api(
+        ep.get(
+            "events",
+            "/events",
+            success=api_schema.StreamNdjson(
+                struct({"id": S.Number}), content_type=["application/jsonl", "application/json"]
+            ),
+        )
+    )
+    for content_type in ("application/json", "text/plain"):
+        http = _responding(_chunks('{"id":1}\n'), headers={"content-type": content_type})
+        assert _exit(api, http, lambda g: _collect(g.method("events"))) == Success([{"id": 1}])
+
+
+_WAIT = HttpApiGroup.make("containers").add(
+    ep.post(
+        "wait",
+        "/containers/:id/wait",
+        params=struct({"id": S.String}),
+        success=struct({"StatusCode": S.Number}),
+        error=EndpointError,
+    )
+)
+_WAIT_API = HttpApi.make("WaitApi").add(_WAIT)
+
+
+def test_decode_response_decodes_a_response_only_body_that_arrives_after_the_head() -> None:
+    """HttpApiClient / decodeResponse / decodes a response-only body that arrives after the head"""
+    body = fx.Deferred[bytes]()
+    http = _responding(
+        stream.from_effect(body.wait()), headers={"content-type": "application/json"}
+    )
+    decode = client.decode_response(_WAIT_API, _WAIT, _WAIT.endpoints["wait"])
+
+    def program() -> Any:
+        c = yield from client.make_with(_WAIT_API, http_client=http, base_url="http://test")
+        wait = get_group(c, _WAIT).method("wait")
+        head = yield from wait.response_only(params={"id": "1"})
+        fiber = yield from decode(head).fork()
+        yield from body.succeed(b'{"StatusCode":0}')
+        return (yield from fiber.join())
+
+    assert _run(effect.gen(program)) == {"StatusCode": 0}
+
+
+def test_decode_response_fails_with_declared_errors_like_decoded_only() -> None:
+    """HttpApiClient / decodeResponse / fails with declared errors like decoded-only"""
+    from pyfect.http import request as client_request
+
+    raw = response.make(
+        client_request.post("http://test/containers/1/wait"),
+        b'{"_tag":"EndpointError","message":"no such container"}',
+        status=400,
+        headers={"content-type": "application/json"},
+    )
+    decode = client.decode_response(_WAIT_API, _WAIT, _WAIT.endpoints["wait"])
+    assert _run(decode(raw).flip()) == EndpointError(message="no such container")

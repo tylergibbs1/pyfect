@@ -20,16 +20,16 @@ from pyfect.context import Context, Tag
 from pyfect.effect import succeed
 from pyfect.errors import TaggedError
 from pyfect.exit import Exit, Success
+from pyfect.http._url_text import to_path
 from pyfect.http.server_respondable import to_response_or_else, to_response_or_else_defect
 from pyfect.http.server_response import HttpServerResponse, empty, response_of_defect
-from pyfect.http.url_params import redact_url
 
 if TYPE_CHECKING:
     from pyfect.http.server_request import ServerRequest as HttpServerRequest
 
 
 def _method_and_url(request: HttpServerRequest) -> str:
-    return f"{request.method} {redact_url(request.url)}"
+    return f"{request.method} {to_path(request.url)}"
 
 
 def _request_message(reason: str, description: str | None, info: str) -> str:

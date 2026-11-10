@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 import urllib.parse
 from collections.abc import Callable, Generator, MutableMapping
 from typing import Any
 
+from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._js import text_encode
 from pyfect.effect import fail, gen, succeed, sync, try_
@@ -47,13 +49,22 @@ def make_memory() -> KeyValueStoreService:
     def set_value(key: str, value: Value) -> Effect[None, KeyValueStoreError]:
         return sync(lambda: store.__setitem__(key, value))
 
+    def clear_prefix(prefix: str) -> Effect[None, KeyValueStoreError]:
+        def clear() -> None:
+            for key in [key for key in store if key.startswith(prefix)]:
+                del store[key]
+
+        return sync(clear)
+
     return make(
         get=get,
         get_bytes=get_bytes,
         set=set_value,
         remove=lambda key: sync(lambda: store.pop(key, None)).as_void(),
         clear=sync(store.clear),
+        clear_prefix=clear_prefix,
         size=sync(lambda: len(store)),
+        keys=sync(lambda: list(store)),
     )
 
 
@@ -66,7 +77,9 @@ def layer_file_system(
 ) -> Layer[KeyValueStore, PlatformError, FileSystem | Path]:
     """A store keeping each value in a file of ``directory`` (made if
     missing) named by its percent-encoded key. The keys ``""``, ``"."``
-    and ``".."`` are rejected without touching the file system."""
+    and ``".."`` are rejected without touching the file system. ``keys``
+    decodes the file names (failing on one that is not percent-encoded
+    UTF-8), and ``clear_prefix`` skips such files."""
 
     def build() -> Generator[Effect[Any, PlatformError, FileSystem | Path], Any, Any]:
         fs = yield from FileSystem()
@@ -128,7 +141,7 @@ def layer_file_system(
             return with_key_path(
                 "remove",
                 key,
-                lambda p: fs.remove(p).map_error(
+                lambda p: fs.remove(p, force=True).map_error(
                     failed("remove", key, f"Unable to remove item with key {key}")
                 ),
             )
@@ -154,6 +167,39 @@ def layer_file_system(
             .map(len)
             .map_error(lambda cause: KeyValueStoreError("Unable to get size", "size", None, cause))
         )
+
+        def remove_file(name: str) -> Effect[None, PlatformError]:
+            return fs.remove(path.join(directory, name)).catch_all(
+                lambda cause: succeed(None) if isinstance(cause.reason, NotFound) else fail(cause)
+            )
+
+        def clear_prefix(prefix: str) -> Effect[None, KeyValueStoreError]:
+            def matching(files: list[str]) -> list[str]:
+                return [
+                    name
+                    for name in files
+                    if (key := _decode_file_key(name)) is not None and key.startswith(prefix)
+                ]
+
+            return (
+                fs.read_directory(directory)
+                .flat_map(lambda files: for_each(matching(files), remove_file))
+                .as_void()
+                .map_error(
+                    lambda cause: KeyValueStoreError(
+                        f"Unable to clear items with prefix {prefix}", "clear_prefix", prefix, cause
+                    )
+                )
+            )
+
+        def decode_all(files: list[str]) -> Effect[list[str], Exception]:
+            return try_(lambda: [_strict_decode(name) for name in files], lambda cause: cause)
+
+        keys: Effect[list[str], KeyValueStoreError] = (
+            fs.read_directory(directory)
+            .flat_map(decode_all)
+            .map_error(lambda cause: KeyValueStoreError("Unable to get keys", "keys", None, cause))
+        )
         return make(
             get=get,
             get_bytes=get_bytes,
@@ -161,7 +207,9 @@ def layer_file_system(
             remove=remove,
             has=has,
             clear=clear,
+            clear_prefix=clear_prefix,
             size=size,
+            keys=keys,
         )
 
     return layer_effect(KeyValueStore, gen(build))
@@ -176,6 +224,25 @@ def _file_name(key: str) -> str | None:
     try:
         return urllib.parse.quote(key, safe="-_.!~*'()", errors="strict")
     except UnicodeEncodeError:
+        return None
+
+
+_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+
+
+def _strict_decode(name: str) -> str:
+    """``name`` as JavaScript's ``decodeURIComponent`` reads it: a ``%``
+    not followed by two hex digits, or escapes that are not UTF-8, raise
+    ``ValueError``."""
+    if _PERCENT.search(name):
+        raise ValueError(f"URI malformed: {name}")
+    return urllib.parse.unquote(name, errors="strict")
+
+
+def _decode_file_key(name: str) -> str | None:
+    try:
+        return _strict_decode(name)
+    except ValueError:
         return None
 
 
@@ -210,7 +277,19 @@ def layer_storage(evaluate: Callable[[], MutableMapping[str, str]]) -> Layer[Key
                 lambda: storage.pop(key, None),
             ).as_void(),
             clear=attempt("clear", None, "Unable to clear storage", storage.clear),
+            clear_prefix=lambda prefix: attempt(
+                "clear_prefix",
+                prefix,
+                f"Unable to clear items with prefix {prefix}",
+                lambda: _remove_prefixed(storage, prefix),
+            ),
             size=attempt("size", None, "Unable to get size", lambda: len(storage)),
+            keys=attempt("keys", None, "Unable to get keys", lambda: list(storage)),
         )
 
     return layer_sync(KeyValueStore, build)
+
+
+def _remove_prefixed(storage: MutableMapping[str, str], prefix: str) -> None:
+    for key in [key for key in storage if key.startswith(prefix)]:
+        del storage[key]

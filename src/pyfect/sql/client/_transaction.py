@@ -17,7 +17,6 @@ from pyfect._effect_args import require_effect
 from pyfect._effect_resources import _run_finalizer
 from pyfect._primitives import Restore, uninterruptible_mask
 from pyfect.cause import Cause, Die, Fail, from_reasons
-from pyfect.clock import Clock
 from pyfect.context import Context, Reference, Tag
 from pyfect.effect import die
 from pyfect.exit import Exit, Failure, Success
@@ -28,8 +27,14 @@ from pyfect.scope import CloseableScope, Scope
 from pyfect.semaphore import Semaphore
 from pyfect.sql.connection import Connection
 from pyfect.sql.error import SqlError
+from pyfect.sql.statement._statement import (
+    _propagates,
+    _record_connection_wait,
+    _wait_clock,
+    span_target,
+)
 from pyfect.tracer._refs import ParentSpan
-from pyfect.tracer._spans import use_span
+from pyfect.tracer._spans import in_parent_span, use_span
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
@@ -65,6 +70,19 @@ def transaction_connection(client_id: int | None = None) -> type[TransactionConn
             f"TransactionConnection{client_id}", (TransactionConnection,), {"key": key}
         ),
     )
+
+
+class CurrentTransactionService(
+    Reference[type[TransactionConnection] | None], key="effect/sql/CurrentTransactionService"
+):
+    """The transaction tag of the innermost transaction started with
+    ``make_with_transaction``. ``SqlResolver`` reads it to find that
+    transaction when a request's context has no ``SqlClient`` for it;
+    omitting the tag from a context also hides the transaction."""
+
+    @classmethod
+    def default(cls) -> type[TransactionConnection] | None:
+        return None
 
 
 class SafeIntegers(Reference[bool], key="effect/sql/SqlClient/SafeIntegers"):
@@ -192,6 +210,8 @@ type LevelControl = Callable[[Connection, int], Effect[None, SqlError]]
 
 _semaphore_ids = itertools.count()
 
+_ATTR_DB_OPERATION_NAME = "db.operation.name"
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TransactionOptions:
@@ -223,7 +243,7 @@ class TransactionOptions:
 class WithTransaction:
     """Runs effects in a transaction (see ``SqlClientService.with_transaction``)."""
 
-    __slots__ = ("_after_commit", "_options", "_semaphore_tag")
+    __slots__ = ("_after_commit", "_options", "_semaphore_tag", "_target")
 
     def __init__(self, options: TransactionOptions) -> None:
         self._options = options
@@ -237,6 +257,24 @@ class WithTransaction:
             ),
         )
         self._after_commit = make_after_commit(options.transaction_service)
+        self._target = span_target(options.span_attributes)
+
+    def _control(
+        self, operation: str, effect: Effect[None, SqlError], span: Span
+    ) -> Effect[None, SqlError]:
+        """A transaction control in a client span of its own under the
+        transaction's, so a failure ends that span with the control's exit."""
+        attributes = self._options.span_attributes
+
+        def body(control_span: Span) -> Effect[None, SqlError]:
+            for key, value in attributes:
+                control_span.attribute(key, value)
+            control_span.attribute(_ATTR_DB_OPERATION_NAME, operation)
+            return effect
+
+        target = self._target
+        name = operation if target is None else f"{operation} {target}"
+        return use_span(name, body, kind="client", parent=span)
 
     def __call__[A, E, R](self, effect: Effect[A, E, R]) -> Effect[A, E | SqlError, R]:
         require_effect(effect, "effect")
@@ -255,7 +293,7 @@ class WithTransaction:
         for key, value in opts.span_attributes:
             span.attribute(key, value)
         services: Context[Any] = fiber._context
-        clock = fiber.get_ref(Clock)
+        waited_clock = _wait_clock(fiber) if _propagates(fiber) else None
         found, outer = services.lookup(opts.transaction_service)
         parent: TransactionLevel | None = outer if found else None
         depth = 0 if parent is None else parent.depth + 1
@@ -266,14 +304,16 @@ class WithTransaction:
             level = TransactionLevel(conn, depth)
             _buffers[level] = buffer
             found_reactivity, reactivity = services.lookup(Reactivity)
-            inner = services.add(opts.transaction_service, level)
+            inner = services.add(opts.transaction_service, level).add(
+                CurrentTransactionService, opts.transaction_service
+            )
             if found_reactivity:
                 inner = inner.add(Reactivity, _DeferredReactivity(reactivity, self._after_commit))
             inner = inner.add(self._semaphore_tag, Semaphore(1)).add(ParentSpan, span)
             body: Effect[A, E, R] = _Locally(restore(effect), lambda _: inner)
 
             def finish(exit_: Exit[A, E]) -> Effect[A, E | SqlError, R]:
-                end = self._end(conn, depth, exit_, span, clock.now_nanos_unsafe())
+                end = self._end(conn, depth, exit_, span)
 
                 def done(_: object) -> Effect[A, E]:
                     nonlocal committed
@@ -290,8 +330,10 @@ class WithTransaction:
 
         def start(conn: Connection) -> Effect[None, SqlError]:
             if depth == 0:
-                return opts.begin(conn, fiber.get_ref(BeginTransaction))
-            return opts.savepoint(conn, depth)
+                return self._control(
+                    "BEGIN", opts.begin(conn, fiber.get_ref(BeginTransaction)), span
+                )
+            return self._control("SAVEPOINT", opts.savepoint(conn, depth), span)
 
         transaction: Effect[A, E | SqlError, R]
         if parent is not None:
@@ -303,6 +345,15 @@ class WithTransaction:
             acquire: Effect[Connection, SqlError] = _Locally(
                 opts.acquire_connection(restore), lambda ctx: ctx.add(Scope, scope)
             )
+            acquire = in_parent_span(acquire, span)
+            if waited_clock is not None:
+                clock = waited_clock
+
+                def waited(conn: Connection) -> Connection:
+                    _record_connection_wait(span, clock)
+                    return conn
+
+                acquire = acquire.map(waited)
             transaction = _MatchCause(
                 acquire,
                 lambda c: _run_finalizer(scope.close(Failure(c)), Failure(c)),
@@ -328,41 +379,40 @@ class WithTransaction:
         return semaphore.with_permits(settled)
 
     def _end(
-        self, conn: Connection, depth: int, exit_: Exit[Any, Any], span: Span, now: int
+        self, conn: Connection, depth: int, exit_: Exit[Any, Any], span: Span
     ) -> Effect[None, SqlError]:
         opts = self._options
+        control = self._control
         end: Effect[None, SqlError]
         if isinstance(exit_, Success):
-            if depth == 0:
-                span.event("effect.sql.transaction.commit", now)
-                end = _commit(opts, conn)
-            else:
-                span.event("effect.sql.transaction.savepoint", now)
-                end = _Succeed(None)
-        else:
-            span.event("effect.sql.transaction.rollback", now)
-            end = (
-                opts.rollback_savepoint(conn, depth) if depth > 0 else opts.rollback(conn)
+            end = self._commit(conn, span) if depth == 0 else _Succeed(None)
+        elif depth > 0:
+            end = control(
+                "ROLLBACK TO SAVEPOINT", opts.rollback_savepoint(conn, depth), span
             ).or_die()
+        else:
+            end = control("ROLLBACK", opts.rollback(conn), span).or_die()
         release = opts.release_savepoint
         if depth > 0 and release is not None:
-            end = end.and_then(release(conn, depth).or_die())
+            end = end.and_then(control("RELEASE SAVEPOINT", release(conn, depth), span).or_die())
         return end
 
+    def _commit(self, conn: Connection, span: Span) -> Effect[None, SqlError]:
+        commit = self._control("COMMIT", self._options.commit(conn), span)
+        on_commit_failure = self._options.on_commit_failure
+        if on_commit_failure is None:
+            return commit
 
-def _commit(opts: TransactionOptions, conn: Connection) -> Effect[None, SqlError]:
-    on_commit_failure = opts.on_commit_failure
-    if on_commit_failure is None:
-        return opts.commit(conn)
+        def failed(commit_cause: Cause[SqlError]) -> Effect[None, SqlError]:
+            return _MatchCause(
+                self._control("ROLLBACK", on_commit_failure(conn), span),
+                lambda cleanup_cause: _FailCause(
+                    _failures_to_defects(commit_cause + cleanup_cause)
+                ),
+                lambda _: _FailCause(commit_cause),
+            )
 
-    def failed(commit_cause: Cause[SqlError]) -> Effect[None, SqlError]:
-        return _MatchCause(
-            on_commit_failure(conn),
-            lambda cleanup_cause: _FailCause(_failures_to_defects(commit_cause + cleanup_cause)),
-            lambda _: _FailCause(commit_cause),
-        )
-
-    return _MatchCause(opts.commit(conn), failed, lambda _: _Succeed(None))
+        return _MatchCause(commit, failed, lambda _: _Succeed(None))
 
 
 def _merge_failure(exit_: Exit[Any, Any]) -> Callable[[Cause[Any]], Effect[Never, Any]]:

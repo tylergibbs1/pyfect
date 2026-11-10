@@ -96,14 +96,48 @@ class Bytes:
         }
 
 
+type FileContent = bytes | Callable[[], Stream_[bytes, object]]
+"""A form file's bytes, or a function opening a stream of them each time the
+form is sent (a web ``File``'s ``stream()``): read on demand, as the
+connection takes them."""
+
+
+@dataclass(eq=False)
+class FileSourceError(TaggedError):
+    """A form file's stream could not be opened, or failed while read.
+    A client fails the request with a ``TransportError`` caused by
+    ``cause``."""
+
+    cause: object
+
+
 @final
 @dataclass(frozen=True, slots=True)
 class File:
     """A file part of a form: its content, file name and content type."""
 
-    content: bytes
+    content: FileContent
     name: str = "blob"
     content_type: str = "application/octet-stream"
+
+    def stream(self) -> Stream_[bytes, FileSourceError]:
+        """The content; a source is opened when the stream runs, and its
+        raise or failure is a ``FileSourceError``."""
+        from pyfect import stream as _stream
+
+        content = self.content
+        if isinstance(content, bytes):
+            return _stream.succeed(content)
+        source = content
+
+        def open_source() -> Stream_[bytes, FileSourceError]:
+            try:
+                opened = source()
+            except Exception as error:
+                return _stream.fail(FileSourceError(error))
+            return opened.map_error(FileSourceError)
+
+        return _stream.suspend(open_source)
 
 
 type FormDataValue = str | File
@@ -400,9 +434,16 @@ def update_headers(headers: Headers, body: HttpBody) -> Headers:
         if body.content_type is None
         else headers.set("content-type", body.content_type)
     )
-    if body.content_length is None:
+    return update_content_length(headers, body)
+
+
+def update_content_length(headers: Headers, body: HttpBody) -> Headers:
+    """``headers`` with ``content-length`` matching ``body`` (removed for
+    ``Empty``, ``FormData`` and a body of unknown length)."""
+    length = None if isinstance(body, Empty | FormData) else body.content_length
+    if length is None:
         return headers.remove("content-length")
-    return headers.set("content-length", str(body.content_length))
+    return headers.set("content-length", str(length))
 
 
 __all__ = [
@@ -410,6 +451,8 @@ __all__ = [
     "Bytes",
     "Empty",
     "File",
+    "FileContent",
+    "FileSourceError",
     "FormData",
     "FormDataCoercible",
     "FormDataInput",
@@ -432,6 +475,7 @@ __all__ = [
     "raw",
     "stream",
     "text",
+    "update_content_length",
     "update_headers",
     "url_params",
 ]

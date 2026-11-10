@@ -17,6 +17,7 @@ from pyfect.errors import TaggedError, UnknownError
 from pyfect.eventlog.event_log_session_auth import EventLogSessionAuthError
 from pyfect.http import error as http_error
 from pyfect.http.multipart import MultipartError, MultipartErrorReason
+from pyfect.process import command_line
 from pyfect.rpc.client_error import RpcClientDefect, RpcClientError
 from pyfect.socket._errors import SocketOpenError
 from pyfect.socket.server import SocketServerError, SocketServerOpenError
@@ -108,6 +109,8 @@ _OWN_STR_WITH_A_TEST = {
     http_error.HttpClientError,  # test_http_client_error_messages
     SocketOpenError,  # its message says the cause: test_socket_open_errors
     UnknownError,  # test_a_raised_cause_shows_in_a_plain_tagged_error
+    # ``reason`` is a tag and ``message`` says why: test_command_line.py checks both.
+    command_line.CommandLineError,
 }
 
 
@@ -139,7 +142,7 @@ INSTANCES = {
     "mcp reason": mcp_client_error.TransportError(cause=WHY),
     "mcp error": mcp_client_error.McpClientError(mcp_client_error.TransportError(cause=WHY)),
     "session auth": EventLogSessionAuthError("InvalidPayload", "It failed", WHY),
-    "rpc": RpcClientError(RpcClientDefect("It failed", WHY)),
+    "rpc": RpcClientError(reason=RpcClientDefect(message="It failed", cause=WHY)),
     "multipart": MultipartError(MultipartErrorReason("InternalError", WHY)),
     "socket server": SocketServerError(SocketServerOpenError(WHY)),
     "worker": WorkerSendError(message="It failed", cause=WHY),
@@ -152,6 +155,6 @@ def test_these_errors_name_their_cause(error: TaggedError):
 
 
 def test_a_wrapper_says_its_reasons_message_once():
-    error = RpcClientError(RpcClientDefect("It failed", WHY))
+    error = RpcClientError(reason=RpcClientDefect(message="It failed", cause=WHY))
     assert str(error) == "RpcClientDefect: It failed: Refused: connection refused"
     assert error.message == "RpcClientDefect: It failed"

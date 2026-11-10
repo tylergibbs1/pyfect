@@ -16,7 +16,7 @@ from pyfect.duration import Duration
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.http import body as http_body
 from pyfect.http.client import HttpClientService
-from pyfect.http.error import HttpClientError
+from pyfect.http.error import HttpClientError, HttpClientErrorSchema
 from pyfect.latch import Latch
 from pyfect.rpc.client._protocol import (
     ClientProtocolParts,
@@ -48,14 +48,14 @@ class Batch:
 
 
 def _defect(message: str, cause: object) -> RpcClientError:
-    return RpcClientError(RpcClientDefect(message, cause))
+    return RpcClientError(reason=RpcClientDefect(message=message, cause=cause))
 
 
 def _http_error(error: object) -> RpcClientError:
     if isinstance(error, RpcClientError):
         return error
     if isinstance(error, HttpClientError):
-        return RpcClientError(error)
+        return RpcClientError(reason=HttpClientErrorSchema.from_http_client_error(error))
     return _defect("HTTP request failed", error)
 
 

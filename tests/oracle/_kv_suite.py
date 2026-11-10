@@ -76,3 +76,86 @@ def clear():
     assert (yield from kv.size) == 0
     assert (yield from kv.get("a")) is None
     assert (yield from kv.get("b")) is None
+
+
+def keys():
+    kv = yield from KeyValueStore()
+    yield from kv.clear
+    assert (yield from kv.keys) == []
+    yield from kv.set("a", "1")
+    yield from kv.set("b", bytes([1]))
+    assert sorted((yield from kv.keys)) == ["a", "b"]
+
+
+# --- clearPrefixSuite -----------------------------------------------------------------
+
+
+def treats_sql_wildcard_and_escape_characters_literally():
+    kv = yield from KeyValueStore()
+    yield from kv.clear
+    for prefix in ("literal%", "literal_", "literal!"):
+        yield from kv.set(prefix, "exact")
+        yield from kv.set(f"{prefix}tail", "match")
+        yield from kv.set("literalXtail", "unrelated")
+        yield from kv.clear_prefix(prefix)
+        assert (yield from kv.get(prefix)) is None
+        assert (yield from kv.get(f"{prefix}tail")) is None
+        assert (yield from kv.get("literalXtail")) == "unrelated"
+    yield from kv.clear
+
+
+def matches_prefixes_case_sensitively():
+    kv = yield from KeyValueStore()
+    yield from kv.clear
+    yield from kv.set("scope/one", "match")
+    yield from kv.set("SCOPE/two", "unrelated")
+    yield from kv.clear_prefix("scope/")
+    assert (yield from kv.get("scope/one")) is None
+    assert (yield from kv.get("SCOPE/two")) == "unrelated"
+    yield from kv.clear
+
+
+def clears_keys_beyond_a_prefix_followed_by_uffff():
+    kv = yield from KeyValueStore()
+    yield from kv.clear
+    for prefix in ("edge", "edge￿"):
+        found = [prefix, f"{prefix}￿", f"{prefix}￿tail"]
+        for key in found:
+            yield from kv.set(key, "match")
+        yield from kv.set("edgf", "unrelated")
+        yield from kv.clear_prefix(prefix)
+        for key in found:
+            assert (yield from kv.get(key)) is None
+        assert (yield from kv.get("edgf")) == "unrelated"
+    yield from kv.clear
+
+
+def clearing_a_prefixed_view_preserves_keys_outside_its_namespace():
+    kv = yield from KeyValueStore()
+    yield from kv.clear
+    parent = kv.prefix("parent/")
+    child = parent.prefix("child/")
+    yield from child.set("key", "child")
+    yield from parent.set("sibling/key", "sibling")
+    yield from kv.set("outside", "unrelated")
+    yield from child.clear
+    assert (yield from child.get("key")) is None
+    assert (yield from parent.get("sibling/key")) == "sibling"
+    assert (yield from kv.get("outside")) == "unrelated"
+    yield from kv.clear
+
+
+CLEAR_PREFIX_SUITE: dict[str, Body] = {
+    "treats SQL wildcard and escape characters literally": (
+        treats_sql_wildcard_and_escape_characters_literally
+    ),
+    "matches prefixes case-sensitively": matches_prefixes_case_sensitively,
+    "clears keys beyond a prefix followed by U+FFFF": (
+        clears_keys_beyond_a_prefix_followed_by_uffff
+    ),
+    "clearing a prefixed view preserves keys outside its namespace": (
+        clearing_a_prefixed_view_preserves_keys_outside_its_namespace
+    ),
+}
+"""``clearPrefixSuite(name, layer)``, by Effect title, for a
+``pytest.mark.parametrize`` table of titles."""

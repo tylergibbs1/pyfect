@@ -19,6 +19,8 @@ DATABASE_URL=postgres://user:password@localhost:5432/app python connect.py
 and timeouts, and the session settings. `pg.layer(config)` opens connections as statements
 need them and closes them when the layer's scope closes. To read the settings from the
 environment instead, use `pg.layer_config({"url": fx.config.redacted("DATABASE_URL")})`.
+`sql.pool_stats` gives a `PoolStats` snapshot of the sessions (idle, used, pending, `min`,
+`max`); a `make_client` client always reports its one session as used.
 
 Statements use the same `{}` placeholders as every `SqlClient`. Three things are specific to
 PostgreSQL or easy to miss:

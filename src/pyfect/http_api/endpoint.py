@@ -217,8 +217,8 @@ def make(
     disable_codecs: bool = False,
 ) -> AnyEndpoint:
     """An endpoint; the schemas are checked here (``ValueError``): a
-    stream is a success or payload of a method with a body, an upgrade the
-    only success, response headers once per status, ..."""
+    stream is a success or payload of a method with a body, at most one
+    upgrade and no stream beside it, response headers once per status, ..."""
     properties: Callable[[Top], Top] = _same if disable_codecs else to_codec_http_properties
     payload_map = _payload(payload, method, disable_codecs)
     return HttpApiEndpoint(
@@ -264,13 +264,14 @@ def _payload(
             if has_stream:
                 raise ValueError("Multiple streaming payloads are not supported")
             has_stream = True
-            content_type = media_type.normalize(schema.content_type)
-            if content_type in result:
-                raise ValueError(
-                    "Cannot combine buffered and streaming payloads for content-type: "
-                    + schema.content_type
-                )
-            result[content_type] = StreamPayload(schema.content_type, schema)
+            for declared in schema.content_types:
+                content_type = media_type.normalize(declared)
+                if content_type in result:
+                    raise ValueError(
+                        "Cannot combine buffered and streaming payloads for content-type: "
+                        + declared
+                    )
+                result[content_type] = StreamPayload(declared, schema)
             continue
         encoding = api_schema.get_payload_encoding(schema.__codec__().ast, method)
         content_type = media_type.normalize(encoding.content_type)
@@ -410,16 +411,28 @@ class _StatusEntry:
 
 
 def _validate_success(schemas: tuple[Top, ...], method: HttpMethod, payload: PayloadMap) -> None:
-    if any(api_schema.is_upgrade(s) for s in schemas):
-        _validate_upgrade(schemas, method, payload)
-        return
+    upgrades = [s for s in schemas if api_schema.is_upgrade(s)]
+    if len(upgrades) > 1:
+        raise ValueError("Cannot declare more than one upgrade")
+    has_upgrade = bool(upgrades)
+    if has_upgrade:
+        _validate_upgrade(method, payload)
     has_stream = False
     statuses: dict[int, _StatusEntry] = {}
     for schema in schemas:
+        # The server may decline the upgrade (RFC 9110 §7.8) with another success.
+        if api_schema.is_upgrade(schema):
+            continue
         inner = api_schema.body_of(schema)
         status = api_schema.get_status_success_schema(schema)
+        if has_upgrade and status == 101:
+            raise ValueError(
+                "Cannot combine an upgrade with another success response for status: 101"
+            )
         entry = statuses.setdefault(status, _StatusEntry())
         if api_schema.is_stream_schema(inner):
+            if has_upgrade:
+                raise ValueError("Cannot combine an upgrade with a streaming success response")
             _validate_stream_success(inner, method)
             if has_stream:
                 raise ValueError("Multiple streaming success responses are not supported")
@@ -446,8 +459,9 @@ def _buffered_and_stream(status: int, content_type: str) -> ValueError:
 def _add_stream(entry: _StatusEntry, status: int, stream: api_schema.StreamSchema) -> None:
     if entry.no_content:
         raise _no_content_and_stream(status)
-    if media_type.normalize(stream.content_type) in entry.buffered:
-        raise _buffered_and_stream(status, stream.content_type)
+    for declared in stream.content_types:
+        if media_type.normalize(declared) in entry.buffered:
+            raise _buffered_and_stream(status, declared)
     entry.stream = stream
 
 
@@ -457,16 +471,15 @@ def _add_buffered(entry: _StatusEntry, status: int, schema: Top, inner: Top) -> 
     if entry.stream is not None:
         if no_content:
             raise _no_content_and_stream(status)
-        if media_type.normalize(content_type) == media_type.normalize(entry.stream.content_type):
+        normalized = media_type.normalize(content_type)
+        if any(media_type.normalize(d) == normalized for d in entry.stream.content_types):
             raise _buffered_and_stream(status, content_type)
     if not no_content:
         entry.buffered.add(media_type.normalize(content_type))
     entry.no_content = entry.no_content or no_content
 
 
-def _validate_upgrade(schemas: tuple[Top, ...], method: HttpMethod, payload: PayloadMap) -> None:
-    if len(schemas) > 1:
-        raise ValueError("Cannot combine an upgrade with other success responses")
+def _validate_upgrade(method: HttpMethod, payload: PayloadMap) -> None:
     if method == "HEAD":
         raise ValueError("HEAD endpoints cannot declare an upgrade")
     # The 101 can only follow the end of the request, so the body is read first.

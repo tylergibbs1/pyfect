@@ -94,9 +94,27 @@ def _refinement[A, E](
     def narrow(value: A) -> TypeIs[A]:
         return guard(value)
 
-    return (
-        schema.__codec__().pipe(refine(narrow, expected=expected)).annotate(identifier=identifier)
-    )
+    def to_arbitrary(_parameters: tuple[Any, ...]) -> Any:
+        # Half the draws are the special addresses ``guard`` accepts, so a refinement
+        # that holds for few values (a broadcast address holds for one) still finds them.
+        from pyfect.schema._strategy import _net as strategies
+        from pyfect.schema._to_strategy import to_strategy
+
+        accepted = [a for a in strategies.SPECIAL if _accepts(guard, a)]
+        drawn = to_strategy(schema)
+        return (
+            strategies.st.one_of(strategies.st.sampled_from(accepted), drawn) if accepted else drawn
+        )
+
+    refined = schema.__codec__().pipe(refine(narrow, expected=expected))
+    return refined.annotate(identifier=identifier, to_arbitrary=to_arbitrary)
+
+
+def _accepts[A](guard: Callable[[A], bool], value: object) -> bool:
+    try:
+        return guard(cast("A", value))
+    except (TypeError, AttributeError, ValueError):
+        return False
 
 
 # ------------------------------------------------------------------ addresses

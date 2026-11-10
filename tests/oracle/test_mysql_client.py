@@ -10,8 +10,10 @@ asyncmy's connection, as Effect mocks ``mysql2``'s pool, and records
 which protocol each statement takes.
 """
 
+import json
 from collections.abc import Callable, Generator
 from typing import Any
+from urllib.parse import quote
 
 import pytest
 
@@ -29,6 +31,7 @@ from pyfect.sql import SqlClient, mysql
 from pyfect.sql.error import AuthenticationError, SqlError, UniqueViolation
 from pyfect.sql.statement import CurrentTransformer, Statement
 
+from ._docker import docker
 from ._interrupt_on_server import GONE_WITHIN
 from ._mysql import MysqlServer
 
@@ -515,11 +518,10 @@ def test_interrupting_a_stream_ends_it_on_the_server(mysql_server: MysqlServer):
     yield from _with_client(mysql_server, body, max_connections=1)
 
 
-@pytest.mark.parametrize("disable", [False, True], ids=["prepared", "text"])
 @testing.effect
-def test_dicts_and_lists_bind_as_json(mysql_server: MysqlServer, disable: bool):
-    """(pyfect) a dict or list parameter is sent as its JSON text, as
-    mysql2's ``execute`` does, over both protocols"""
+def test_dicts_and_lists_bind_as_json(mysql_server: MysqlServer):
+    """(pyfect) a dict or list parameter of a prepared statement is sent as its
+    JSON text, as mysql2's ``execute`` does"""
 
     def body():
         sql = yield from SqlClient()
@@ -530,7 +532,7 @@ def test_dicts_and_lists_bind_as_json(mysql_server: MysqlServer, disable: bool):
         )
         assert rows == [{"d": {"a": [1, "x"]}, "l": [1, None]}]
 
-    yield from _with_client(mysql_server, body, disable_prepared_statements=disable)
+    yield from _with_client(mysql_server, body)
 
 
 @testing.effect
@@ -552,3 +554,73 @@ def test_no_backslash_escapes_binds_text_as_the_server_reads_it(mysql_server: My
         mysql_server, body, disable_prepared_statements=True, max_connections=1
     )
     assert rows == [{"plain": "a\\", "bound": "b\\", "quote": "' OR 1=1 -- "}]
+
+
+# --- (pyfect) mysql2's ssl option in the URL ---------------------------------------
+
+
+def _ssl_cipher(server: MysqlServer, query: str) -> fx.Effect[str, Any]:
+    url = redacted.make(f"{redacted.value(server.url)}?{query}")
+
+    def body():
+        sql = yield from mysql.MysqlClient()
+        [row] = yield from sql("SHOW SESSION STATUS LIKE 'Ssl_cipher'")
+        return str(row["Value"])
+
+    return fx.scoped(fx.gen(body)).pipe(fx.provide(mysql.layer(mysql.MysqlClientConfig(url=url))))
+
+
+@testing.live(timeout="30 seconds")
+def test_connects_over_tls_with_the_urls_ssl_option(mysql_server: MysqlServer):
+    """(pyfect) connects over TLS with the URL's ssl option, checking the server's
+    certificate unless rejectUnauthorized is false"""
+    assert (yield from _ssl_cipher(mysql_server, "connectTimeout=5000")) == ""
+    cipher = yield from _ssl_cipher(mysql_server, 'ssl={"rejectUnauthorized":false}')
+    assert cipher != ""
+    # The server's certificate is self-signed by the CA MySQL generated.
+    trusted = yield from _ssl_cipher(
+        mysql_server, "ssl=" + quote(json.dumps({"ca": _server_ca(mysql_server)}))
+    )
+    assert trusted != ""
+    untrusted = yield from _ssl_cipher(mysql_server, "ssl={}").exit()
+    assert isinstance(untrusted, fx.Failure)
+
+
+def _server_ca(server: MysqlServer) -> str:
+    ran = docker("exec", server.container, "cat", "/var/lib/mysql/ca.pem")
+    assert ran.returncode == 0, ran.stderr
+    return ran.stdout
+
+
+# --- (pyfect) lists and dicts in text-protocol statements ----------------------------
+
+
+@testing.effect
+def test_text_statements_write_lists_and_set_dicts_as_mysql2_does(mysql_server: MysqlServer):
+    """(pyfect) a text-protocol statement (``disable_prepared_statements``, and every
+    stream, as mysql2's ``query``) writes a list as ``a, b``, a nested list as
+    ``(a, b), (c, d)`` and a dict in a ``SET`` list as `` `key` = value `` pairs, while a
+    prepared one binds both as JSON (mysql2's ``execute``)"""
+
+    def body():
+        sql = yield from mysql.MysqlClient()
+        yield from sql("DROP TABLE IF EXISTS text_params")
+        yield from sql("CREATE TABLE text_params (id INT PRIMARY KEY, name VARCHAR(20))")
+        yield from sql.unsafe("INSERT INTO text_params (id, name) VALUES ?", [[[1, "a"], [2, "b"]]])
+        yield from sql.unsafe("UPDATE text_params SET ? WHERE id = ?", [{"name": "c"}, 2])
+        rows = yield from sql.unsafe(
+            "SELECT id, name FROM text_params WHERE id IN (?) ORDER BY id", [[1, 2]]
+        )
+        assert rows == [{"id": 1, "name": "a"}, {"id": 2, "name": "c"}]
+        streamed = yield from (
+            sql.unsafe(
+                "SELECT name FROM text_params WHERE id IN (?) ORDER BY id", [[2]]
+            ).stream.run_collect()
+        )
+        assert list(streamed) == [{"name": "c"}]
+        # A dict outside a SET list is its JSON text.
+        [json_row] = yield from sql.unsafe("SELECT ? AS value", [{"a": 1}])
+        assert json_row == {"value": '{"a":1}'}
+        yield from sql("DROP TABLE text_params")
+
+    yield from _with_client(mysql_server, body, disable_prepared_statements=True)

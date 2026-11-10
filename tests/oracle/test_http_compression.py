@@ -219,6 +219,12 @@ def test_sends_identity_with_200_when_nothing_is_acceptable_never_406() -> None:
     assert response.get("vary") == "Accept-Encoding"
 
 
+def test_ignores_empty_accept_encoding_members() -> None:
+    """ignores empty Accept-Encoding members"""
+    response, _ = _get(lambda: _handler(_big_json_app()), {"accept-encoding": " , gzip, , "})
+    assert response.get("content-encoding") == "gzip"
+
+
 def test_treats_a_malformed_accept_encoding_as_absent() -> None:
     """treats a malformed Accept-Encoding as absent"""
     _uncompressed("gzip;q=oops")

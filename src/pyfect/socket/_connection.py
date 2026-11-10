@@ -253,13 +253,17 @@ class Connection(asyncio.Protocol):
 
     # --- fiber side -------------------------------------------------------------
 
-    def _take(self) -> tuple[bytes, ...] | SocketError | None:
+    def _take(self, limit: int | None) -> tuple[bytes, ...] | SocketError | None:
         with self.lock:
             if self._chunks:
-                chunks = tuple(self._chunks)
-                self._chunks.clear()
-                self._size = 0
-                if self._reading_paused and self._error is None:
+                if limit is None or len(self._chunks) <= limit:
+                    chunks = tuple(self._chunks)
+                    self._chunks.clear()
+                    self._size = 0
+                else:
+                    chunks = tuple(self._chunks.popleft() for _ in range(limit))
+                    self._size -= sum(map(len, chunks))
+                if self._reading_paused and self._error is None and self._size < HIGH_WATER_MARK:
                     self._reading_paused = False
                     transport = self.transport
                     if transport is not None:
@@ -270,17 +274,19 @@ class Connection(asyncio.Protocol):
     def _readable(self) -> bool:
         return bool(self._chunks) or self._error is not None
 
-    def pull(self) -> Effect[tuple[bytes, ...], SocketError]:
-        """The buffered chunks, waiting for some; the read side's error once
-        the buffer is empty."""
-        return self.pull_into(lambda chunks: chunks)
+    def pull(self, limit: int | None = None) -> Effect[tuple[bytes, ...], SocketError]:
+        """The buffered chunks (at most ``limit``, the rest left for the next
+        pull), waiting for some; the read side's error once the buffer is empty."""
+        return self.pull_into(lambda chunks: chunks, limit)
 
-    def pull_into[A](self, take: Callable[[tuple[bytes, ...]], A]) -> Effect[A, SocketError]:
-        """``take`` of the buffered chunks, called in the step that takes
-        them, so an interrupt cannot lose them."""
+    def pull_into[A](
+        self, take: Callable[[tuple[bytes, ...]], A], limit: int | None = None
+    ) -> Effect[A, SocketError]:
+        """``take`` of the buffered chunks (at most ``limit``), called in the step
+        that takes them, so an interrupt cannot lose them."""
 
         def step() -> Effect[A, SocketError]:
-            taken = self._take()
+            taken = self._take(limit)
             if isinstance(taken, tuple):
                 return succeed(take(taken))
             if taken is not None:
@@ -326,6 +332,11 @@ class Connection(asyncio.Protocol):
     def write(self, chunks: tuple[bytes, ...]) -> Effect[None, SocketError]:
         """Write ``chunks`` on the loop, then wait while the transport's
         buffer is over its high-water mark."""
+        return self.write_with(lambda: chunks)
+
+    def write_with(self, make: Callable[[], tuple[bytes, ...]]) -> Effect[None, SocketError]:
+        """``write`` of the chunks ``make`` gives, called on the loop: writes made one
+        after another are made, and so encoded, in that order."""
 
         def register(resume: Resume[None, SocketError]) -> None:
             def run() -> None:
@@ -334,6 +345,7 @@ class Connection(asyncio.Protocol):
                     resume(fail(write_error(ConnectionError("socket closed"))))
                     return
                 try:
+                    chunks = make()
                     (self._tls[-1] if self._tls else transport).writelines(chunks)
                 except Exception as cause:
                     resume(fail(write_error(cause)))

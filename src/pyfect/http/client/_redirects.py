@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from pyfect.effect import Effect, succeed, suspend
+from pyfect.effect import Effect, succeed, suspend, sync
 from pyfect.http import body as _body
 from pyfect.http import url as _url
 from pyfect.http import url_params as _url_params
+from pyfect.http.client._make import abort_response
 from pyfect.http.client._service import HttpClientService
 from pyfect.http.headers import Headers, current_redacted_names, is_redacted_name
 from pyfect.http.request import HttpClientRequest
@@ -15,6 +16,8 @@ from pyfect.http.response import HttpClientResponse
 from pyfect.result import Ok
 
 _CREDENTIALS = ("authorization", "proxy-authorization", "cookie")
+# Representation headers of the dropped body (RFC 9110 section 15.4).
+_CONTENT_HEADERS = ("content-encoding", "content-language", "content-location")
 
 
 def _without_credentials(headers: Headers) -> Headers:
@@ -46,7 +49,11 @@ def _next_request(
     if ((status in (301, 302)) and request.method == "POST") or (
         status == 303 and request.method not in ("GET", "HEAD")
     ):
-        request = request.set_method("GET").set_body(_body.EMPTY)
+        request = (
+            request.set_method("GET")
+            .set_body(_body.EMPTY)
+            .update_headers(lambda headers: headers.remove_many(_CONTENT_HEADERS))
+        )
     if _url.origin(url) != _url.origin(previous):
         request = request.update_headers(_without_credentials)
     return HttpClientRequest(
@@ -84,7 +91,10 @@ def follow_redirects[E, R](
                 following = _next_request(response, current[-1] if current else response.request)
                 if following is None:
                     return succeed(response)
-                return loop(succeed(following), redirects + 1)
+                # Abort the discarded response to release its connection unread.
+                return sync(lambda: abort_response(response)).and_then(
+                    loop(succeed(following), redirects + 1)
+                )
 
             return post(requests.map(remember)).flat_map(follow)
 

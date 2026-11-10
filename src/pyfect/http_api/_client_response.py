@@ -11,6 +11,7 @@ from typing import Any, NotRequired, TypedDict, cast
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._json_text import PARSE_ERRORS, parse
+from pyfect._primitives import Restore, uninterruptible_mask
 from pyfect.cause import Cause
 from pyfect.cause import fail as cause_fail
 from pyfect.cause import merge as cause_merge
@@ -26,6 +27,8 @@ from pyfect.option import Some
 from pyfect.schema import ParseOptions, SchemaError, Top
 from pyfect.schema import issue as I
 from pyfect.schema import transformation as T
+from pyfect.scope import scoped
+from pyfect.socket import SocketService
 from pyfect.stream import Stream, transform_pull
 from pyfect.stream import provide_context as stream_provide_context
 
@@ -52,12 +55,11 @@ def decoders(
     success = _alternatives(successes, options.success, options.headers)
     for schema, body in streams:
         status = api_schema.get_status_success_schema(schema)
-        success.setdefault(status, []).append(
-            _Alternative(
-                media_type.normalize(body.content_type),
-                _stream_response(schema, body, options.success, options.headers),
+        decode = _stream_response(schema, body, options.success, options.headers)
+        for content_type in body.content_types:
+            success.setdefault(status, []).append(
+                _Alternative(media_type.normalize(content_type), decode)
             )
-        )
     for status, alternatives in success.items():
         result[status] = _choose(alternatives)
     return result
@@ -103,8 +105,10 @@ def _fail_with(decode: ResponseDecoder) -> ResponseDecoder:
 
 
 def _choose(alternatives: list[_Alternative]) -> ResponseDecoder:
-    if len(alternatives) == 1:
-        return alternatives[0].decode
+    first = alternatives[0].decode
+    if all(alternative.decode is first for alternative in alternatives):
+        # One schema (a stream under several media types) needs no choice.
+        return first
 
     def decode(response: HttpClientResponse, sse_options: SseOptions | None) -> Any:
         content_type = media_type.normalize(response.headers.get("content-type") or "")
@@ -375,3 +379,35 @@ __all__ = [
     "ndjson_schema_error",
     "undeclared_status",
 ]
+
+
+def upgrade_decoder(
+    schema: api_schema.UpgradeSchema[Any], headers_options: ParseOptions
+) -> ResponseDecoder:
+    """Decodes a ``101`` into an ``Upgraded``: the connection and its headers,
+    decoded with the upgrade's ``headers`` schema when it declares one. A
+    failure or an interrupt after the connection is taken closes it."""
+    headers_schema = schema.headers
+    decode_headers: Callable[[object], Effect[Any, SchemaError, Any]] = (
+        succeed
+        if headers_schema is None
+        else S.decode_unknown_effect(headers_schema, **headers_options)
+    )
+
+    def decode(response: HttpClientResponse, _: SseOptions | None) -> Effect[Any, Any, Any]:
+        def taken(restore: Restore, socket: SocketService) -> Effect[Any, Any, Any]:
+            # Nothing takes the connection on failure: releasing the reader's
+            # scope closes it.
+            close = scoped(socket.reader).ignore()
+            return (
+                restore(decode_headers(response.headers))
+                .map(lambda headers: api_schema.Upgraded(headers, socket))
+                .on_error(lambda _cause: close)
+            )
+
+        # The cleanup must be in place before an interruption can be observed.
+        return uninterruptible_mask(
+            lambda restore: response.upgrade.flat_map(lambda socket: taken(restore, socket))
+        )
+
+    return decode

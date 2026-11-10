@@ -464,6 +464,31 @@ def test_fails_a_native_span_without_changing_a_returned_500_response() -> None:
     assert error.reason.response is response
 
 
+def test_keeps_a_synthesized_5xx_span_failure_redacted_after_the_request_completes() -> None:
+    """keeps a synthesized 5xx span failure redacted after the request completes"""
+    from pyfect.http.url_params import CurrentRedactedNames
+
+    recording = _Recording()
+    request = _request("http://localhost/failure?token=s3cret")
+    fx.run_blocking(
+        _traced(effect.succeed(server_response.empty(status=500)), request, recording).pipe(
+            effect.provide_service(CurrentRedactedNames, ("token",))
+        )
+    )
+    span = recording.spans[0]
+    assert isinstance(span.status, Ended)
+    assert span.attributes["url.full"] == "http://localhost/failure?token=REDACTED"
+    span_exit = span.status.exit
+    assert isinstance(span_exit, Failure)
+    [error] = [reason.error for reason in span_exit.cause.reasons if isinstance(reason, Fail)]
+    assert isinstance(error, HttpServerError)
+    # The message is path-only, so query values never reach exporters through it.
+    assert error.message == "ResponseError (500 GET /failure)"
+    # Exporters reading the request later no longer have the request's redacted names.
+    assert isinstance(error.reason, ResponseError)
+    assert error.reason.request.url == "/failure?token=REDACTED"
+
+
 def test_preserves_the_stream_failure_when_the_sent_response_is_500() -> None:
     """preserves the stream failure when the sent response is 500"""
     recording = _Recording()

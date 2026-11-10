@@ -41,7 +41,8 @@ def test_every_reason_is_covered():
     covered = {type(r) for r in reasons(None, None)}
     declared = {getattr(http_error, name) for name in http_error.__all__}
     reason_classes = {c for c in declared if isinstance(c, type) and issubclass(c, Exception)} - {
-        HttpClientError
+        HttpClientError,
+        http_error.HttpClientErrorSchema,
     }
     assert covered == reason_classes
 

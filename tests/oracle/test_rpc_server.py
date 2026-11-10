@@ -38,7 +38,7 @@ from pyfect.rpc import client as rpc_client
 from pyfect.rpc import serialization as rs
 from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
-from pyfect.rpc.message import FromServer, Request, ResponseExit
+from pyfect.rpc.message import ClientEnd, Eof, FromServer, Request, ResponseExit
 from pyfect.rpc.middleware import SuccessValue
 from pyfect.tracer import CurrentTracer, Ended, NativeSpan, SpanRequest, Tracer
 
@@ -548,5 +548,233 @@ def test_isolates_synchronous_handler_throws_when_fatal_defects_are_disabled() -
         assert summarize((yield from messages.take())) == ["3", [["Die", "boom stream"]]]
         yield from release.succeed(None)
         assert summarize((yield from messages.take())) == ["1", ["Success", "served"]]
+
+    fx.run_blocking(fx.scoped(effect.gen(body)).timeout("5 seconds").or_die())
+
+
+class _Page(TypedDict):
+    page: float
+
+
+class HeaderEcho(RpcGroup):
+    sync = make("sync", payload=S.Struct(Empty), success=S.String)
+    async_ = make(
+        "async",
+        payload=S.Struct(
+            _Page,
+            page=S.Finite.pipe(S.with_decoding_default_type(effect.yield_now().as_(1.0))),
+        ),
+        success=S.String,
+    )
+
+
+def test_fails_requests_with_malformed_headers_whether_the_payload_decodes_sync_or_not() -> None:
+    """RpcServer / fails requests with malformed headers, whether the payload decodes synchronously or not"""  # noqa: E501
+
+    def echo(request: Any) -> fx.Effect[str]:
+        return effect.succeed(request.headers.get("x-a"))
+
+    handlers = HeaderEcho.to_layer(
+        HeaderEcho.handlers().handle(HeaderEcho.sync)(echo).handle(HeaderEcho.async_)(echo)
+    )
+
+    async def use(handler: Handler) -> None:
+        async def post(tag: str, headers: object) -> tuple[int, str]:
+            body = {"_tag": "Request", "id": "1", "tag": tag, "payload": {}, "headers": headers}
+            response = await handler(_post(json.dumps(body) + "\n"))
+            return response.status, await response.text()
+
+        for tag in ["sync", "async"]:
+            status, body = await post(tag, [["X-A", "b"]])
+            assert status == 200
+            assert json.loads(body)["exit"] == {"_tag": "Success", "value": "b"}
+            for headers in [[{}], [[1, "b"]]]:
+                status, body = await post(tag, headers)
+                assert status == 200
+                response = json.loads(body)
+                assert response["_tag"] == "Exit"
+                assert response["requestId"] == "1"
+                assert response["exit"]["_tag"] == "Failure"
+                assert response["exit"]["cause"][0]["_tag"] == "Die"
+
+    _serve(_http(HeaderEcho, handlers, rs.layer_ndjson), use)
+
+
+class Guard(RpcMiddleware, key="Guard"):
+    pass
+
+
+class DiscardGroup(RpcGroup):
+    events = make("events", success=S.String, stream=True)
+    guarded = make("guarded", success=S.String).middleware(Guard)
+    boom = make("boom", success=S.String)
+
+
+def _discard_server(release: fx.Deferred[None]) -> Any:
+    def events(_: object) -> stream.Stream[str]:
+        return stream.make("a", "b").concat(
+            stream.from_effect(release.wait().flat_map(lambda _: effect.die("boom")))
+        )
+
+    def boom(_: object) -> fx.Effect[str]:
+        raise RuntimeError("boom")
+
+    handlers = DiscardGroup.to_layer(
+        DiscardGroup.handlers()
+        .handle(DiscardGroup.events)(events)
+        .handle(DiscardGroup.guarded)(lambda _: effect.succeed("done"))
+        .handle(DiscardGroup.boom)(boom)
+    )
+    guard = layer.succeed(Guard, lambda _handler, _options: effect.die("denied"))
+
+    @effect.gen
+    def make_server():
+        messages = yield from fx.Queue[FromServer].unbounded()
+        server = yield from rpc_server.make_no_serialization(
+            DiscardGroup, lambda message: messages.offer(message).as_void()
+        ).pipe(fx.provide(layer.merge(handlers, guard)))
+
+        def request(
+            id: str, tag: str, *, is_notification: bool = False, discard: bool = False
+        ) -> fx.Effect[None]:
+            message = Request(id, tag, None, is_notification=is_notification, discard=discard)
+            return server.write(0, message)
+
+        @effect.gen
+        def take_until_client_end():
+            yield from server.write(0, Eof())
+            sent: list[FromServer] = []
+            while not sent or not isinstance(sent[-1], ClientEnd):
+                sent.append((yield from messages.take()))
+            return sent
+
+        return messages, request, take_until_client_end
+
+    return make_server
+
+
+@pytest.mark.parametrize(
+    ("name", "marker"),
+    [("notification", {"is_notification": True}), ("discarded call", {"discard": True})],
+)
+def test_sends_nothing_for_a_running_request_but_reports_its_failure(
+    name: str, marker: dict[str, bool]
+) -> None:
+    """RpcServer / sends nothing for a running ${name}, but reports its failure"""
+    reports: list[str] = []
+    reporter = ErrorReporter.layer(
+        [ErrorReporter.make(lambda report: reports.append(str(report.error)))]
+    )
+
+    def body():
+        release = fx.Deferred[None]()
+        messages, request, take_until_client_end = yield from _discard_server(release)
+        yield from request("id", "events", **marker)
+        if "discard" in marker:
+            # Acknowledged once the handler starts, not when it ends.
+            assert (yield from messages.take()) == ResponseExit(0, "id", Exit.succeed(None))
+        # No chunks, no result and no defect, which would fail the client's other calls.
+        yield from release.succeed(None)
+        assert (yield from take_until_client_end) == [ClientEnd(0)]
+        assert reports == ["boom"]
+
+    fx.run_blocking(
+        fx.scoped(effect.gen(body)).pipe(fx.provide(reporter)).timeout("5 seconds").or_die()
+    )
+
+
+def test_fails_a_discarded_call_with_its_own_exit_when_it_fails_before_its_acknowledgement() -> (
+    None
+):
+    """RpcServer / fails a discarded call with its own Exit, not a Defect, when it fails before its acknowledgement"""  # noqa: E501
+
+    def summarize(message: FromServer) -> object:
+        if isinstance(message, ResponseExit) and isinstance(message.exit, Exit.Failure):
+            squashed = message.exit.cause.squash()
+            text = squashed if isinstance(squashed, str) else f"Error: {squashed}"
+            return [message.request_id, text]
+        return type(message).__name__
+
+    def body():
+        _messages, request, take_until_client_end = yield from _discard_server(fx.Deferred[None]())
+        yield from request("middleware", "guarded", discard=True)
+        yield from request("construction", "boom", discard=True)
+        sent = yield from take_until_client_end
+        assert [summarize(m) for m in sent] == [
+            ["middleware", "denied"],
+            ["construction", "Error: boom"],
+            "ClientEnd",
+        ]
+
+    fx.run_blocking(
+        fx.scoped(effect.gen(body))
+        .pipe(fx.provide(ErrorReporter.layer([])))
+        .timeout("5 seconds")
+        .or_die()
+    )
+
+
+class WaitOnly(RpcGroup):
+    wait = make("wait", payload=S.Struct(Empty))
+
+
+def test_keeps_interrupting_disconnected_clients_while_an_on_disconnect_callback_is_pending() -> (
+    None
+):
+    """RpcServer / keeps interrupting disconnected clients while an onDisconnect callback is pending"""  # noqa: E501
+
+    def body():
+        started = yield from fx.Queue[int].unbounded()
+        interrupted = yield from fx.Queue[int].unbounded()
+        observed = yield from fx.Queue[int].unbounded()
+        disconnects = yield from fx.Queue[int].unbounded()
+        writers: list[Any] = []
+
+        def parts(write: Any) -> fx.Effect[rpc_server.ProtocolParts]:
+            writers.append(write)
+            return effect.succeed(
+                rpc_server.ProtocolParts(
+                    disconnects=disconnects,
+                    send=lambda _id, _message: effect.void,
+                    end=lambda _id: effect.void,
+                    supports_ack=False,
+                    supports_span_propagation=False,
+                    codec_for=rs.json.codec_for,
+                )
+            )
+
+        protocol = yield from rpc_server.with_run(parts)
+
+        def wait(request: Any) -> fx.Effect[None]:
+            client_id = request.client.id
+            return (
+                started.offer(client_id)
+                .flat_map(lambda _: effect.never)
+                .on_interrupt(interrupted.offer(client_id).as_void())
+            )
+
+        handlers = WaitOnly.to_layer(WaitOnly.handlers().handle(WaitOnly.wait)(wait))
+        options = rpc_server.ServerOptions(
+            on_disconnect=lambda client_id: observed.offer(client_id).flat_map(
+                lambda _: effect.never
+            )
+        )
+        yield from (
+            rpc_server.make(WaitOnly, options)
+            .pipe(effect.provide_service(rpc_server.ServerProtocol, protocol))
+            .pipe(fx.provide(handlers))
+            .fork_scoped()
+        )
+        yield from effect.yield_now()
+        for client_id in [1, 2]:
+            yield from writers[0](
+                client_id,
+                {"_tag": "Request", "id": "1", "tag": "wait", "payload": {}, "headers": []},
+            )
+            assert (yield from started.take()) == client_id
+        yield from disconnects.offer(1)
+        yield from disconnects.offer(2)
+        assert [(yield from interrupted.take()), (yield from interrupted.take())] == [1, 2]
+        assert [(yield from observed.take()), (yield from observed.take())] == [1, 2]
 
     fx.run_blocking(fx.scoped(effect.gen(body)).timeout("5 seconds").or_die())

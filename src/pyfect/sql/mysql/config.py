@@ -3,7 +3,9 @@
 
 ``url`` (``mysql://user:password@host:port/database``) wins over every
 other connection field and over ``connect_options``, as in Effect; it is
-checked when the config is made. ``connect_options`` (Effect's
+checked when the config is made. Its query takes mysql2's ``ssl`` (an
+object such as ``?ssl={"rejectUnauthorized":true}``, values read as JSON)
+and ``connectTimeout`` (milliseconds); other options are refused. ``connect_options`` (Effect's
 ``poolConfig``) are passed to ``asyncmy.connect`` as they are, for TLS
 (``ssl``), a ``unix_socket``, ``init_command`` and the rest.
 """
@@ -18,6 +20,7 @@ from urllib.parse import unquote, urlsplit
 from pyfect.duration import Duration, Seconds
 from pyfect.redacted import Redacted
 from pyfect.redacted import value as redacted_value
+from pyfect.sql.mysql._url_options import UrlOptions, parse_query
 
 DEFAULT_MAX_CONNECTIONS = 10
 """mysql2's ``connectionLimit``."""
@@ -35,6 +38,7 @@ class UrlParts:
     database: str | None
     username: str | None
     password: str | None
+    options: UrlOptions = field(default_factory=UrlOptions)
 
 
 def parse_url(url: str) -> UrlParts:
@@ -43,8 +47,8 @@ def parse_url(url: str) -> UrlParts:
     parts = urlsplit(url)
     if parts.scheme != "mysql":
         raise ValueError(f"expected a mysql:// URL, got scheme {parts.scheme!r}")
-    if parts.query or parts.fragment:
-        raise ValueError("MySQL URLs take no query or fragment; use connect_options")
+    if parts.fragment:
+        raise ValueError("MySQL URLs take no fragment")
     if not parts.hostname:
         raise ValueError("the MySQL URL names no host")
     database = unquote(parts.path.removeprefix("/")) or None
@@ -54,6 +58,7 @@ def parse_url(url: str) -> UrlParts:
         database=database,
         username=None if parts.username is None else unquote(parts.username),
         password=None if parts.password is None else unquote(parts.password),
+        options=parse_query(parts.query),
     )
 
 

@@ -188,6 +188,8 @@ def success_schema(endpoint: AnyEndpoint, headers_options: ParseOptions) -> Top:
         [
             _response_schema(s, api_schema.get_status_success_schema, headers_options)
             for s in success_schemas(endpoint)
+            # The transport writes the 101, so an upgrade has no response encoder.
+            if not api_schema.is_upgrade(s)
         ]
     )
 

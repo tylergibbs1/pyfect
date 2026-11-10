@@ -45,9 +45,12 @@ def _mapping(value: object) -> Mapping[str, Any] | None:
 # --- decoding --------------------------------------------------------------------------
 
 
-def decode_json_rpc(decoded: object, batches: Batches) -> list[object]:
+def decode_json_rpc(
+    decoded: object, batches: Batches, *, control_messages: bool = True
+) -> list[object]:
     """The messages of a parsed JSON-RPC value; items that are not objects
-    are skipped."""
+    are skipped. Without ``control_messages``, an ``@effect/rpc/*`` method
+    is an ordinary notification, for plain JSON-RPC peers."""
     if isinstance(decoded, list):
         batch = _Batch()
         messages: list[object] = []
@@ -55,24 +58,31 @@ def decode_json_rpc(decoded: object, batches: Batches) -> list[object]:
             found = _mapping(item)
             if found is None:
                 continue
-            message = _decode_message(found)
+            message = _decode_message(found, control_messages)
             messages.append(message)
             if message["_tag"] == "Request" and not message.get("isNotification"):
                 batch.size += 1
                 batches[_key(message["id"])] = batch
         return messages
     found = _mapping(decoded)
-    return [] if found is None else [_decode_message(found)]
+    return [] if found is None else [_decode_message(found, control_messages)]
 
 
-def _decode_message(decoded: Mapping[str, Any]) -> Message:
-    return _decode_request(decoded) if "method" in decoded else _decode_response(decoded)
+def _decode_message(decoded: Mapping[str, Any], control_messages: bool) -> Message:
+    if "method" in decoded:
+        return _decode_request(decoded, control_messages)
+    return _decode_response(decoded)
 
 
-def _decode_request(request: Mapping[str, Any]) -> Message:
+def _decode_request(request: Mapping[str, Any], control_messages: bool) -> Message:
     method = request["method"]
     request_id = request.get("id")
-    if request_id is None and isinstance(method, str) and method.startswith(EFFECT_METHOD):
+    if (
+        control_messages
+        and request_id is None
+        and isinstance(method, str)
+        and method.startswith(EFFECT_METHOD)
+    ):
         tag = method[len(EFFECT_METHOD) :]
         params = _mapping(request.get("params"))
         if params is not None and "requestId" in params:
@@ -89,6 +99,8 @@ def _decode_request(request: Mapping[str, Any]) -> Message:
     }
     if "id" not in request:
         message["isNotification"] = True
+    if request.get("discard") is True:
+        message["discard"] = True
     if request.get("spanId"):
         message["traceId"] = request.get("traceId")
         message["spanId"] = request["spanId"]
@@ -140,7 +152,8 @@ def encode_json_rpc(response: object, batches: Batches) -> Message | list[Messag
 
 
 def _encode_raw(response: Mapping[str, Any], batches: Batches) -> Message | list[Message] | None:
-    if "requestId" not in response:
+    # Only exits complete a batch: chunks and control messages go out at once.
+    if response["_tag"] != "Exit":
         return _encode_message(response)
     key = _key(response["requestId"])
     batch = batches.pop(key, None)
@@ -192,6 +205,8 @@ def _encode_request(request: Mapping[str, Any]) -> Message:
         message["id"] = request["id"]
     if request.get("headers"):
         message["headers"] = request["headers"]
+    if request.get("discard"):
+        message["discard"] = True
     for key in ("traceId", "spanId", "sampled"):
         if request.get(key) is not None:
             message[key] = request[key]

@@ -244,3 +244,61 @@ def test_should_accept_cancellation_of_an_active_request_and_reject_new_requests
     assert isinstance(kept, ResponseExit)
     assert (kept.client_id, kept.request_id, kept.exit) == (2, "same", succeed_exit("kept"))
     assert (yield from messages.take()) == ClientEnd(2)
+
+
+class _Empty(TypedDict):
+    pass
+
+
+class _N(TypedDict):
+    n: float
+
+
+class Notified(RpcGroup):
+    wait = make("wait", payload=S.Struct(_Empty), success=S.String)
+    ping = make("ping", payload=S.Struct(_N), success=S.String)
+
+
+@testing.effect
+def test_runs_overlapping_json_rpc_notifications_and_drops_invalid_ones():
+    """RpcServer / runs overlapping JSON-RPC notifications and drops invalid ones, without replying to any"""  # noqa: E501
+    entered = yield from Queue[None].unbounded()
+    release = Deferred[None]()
+    answered = Deferred[None]()
+    close_stdin = Deferred[None]()
+    output: list[str] = []
+    handlers = Notified.to_layer(
+        Notified.handlers()
+        .handle(Notified.wait)(
+            lambda _: entered.offer(None).flat_map(lambda _: release.wait()).as_("released")
+        )
+        .handle(Notified.ping)(lambda _: effect.succeed("pong"))
+    )
+    # Both ``wait`` notifications arrive with the empty id, and both must run.
+    lines = [
+        {"jsonrpc": "2.0", "method": "wait", "params": {}},
+        {"jsonrpc": "2.0", "method": "wait", "params": {}},
+        {"jsonrpc": "2.0", "method": "missing", "params": {}},
+        {"jsonrpc": "2.0", "method": "ping", "params": {"n": "not a number"}},
+        {"jsonrpc": "2.0", "method": "ping", "params": {"n": 1}, "headers": [{}]},
+        {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {"n": 1}},
+    ]
+    stdin = "".join(json.dumps(line) + "\n" for line in lines).encode()
+    stdio = layer_test(
+        stdin=stream.make(stdin).concat(stream.from_effect_drain(close_stdin.wait())),
+        stdout=_output_into(output, answered.succeed(None).as_void()),
+    )
+    server = (
+        rpc_server.layer(Notified)
+        .pipe(layer.provide(handlers))
+        .pipe(layer.provide(rpc_server.layer_protocol_stdio))
+        .pipe(layer.provide(rs.layer_nd_json_rpc()))
+        .pipe(layer.provide(stdio))
+    )
+    running = yield from server.launch().fork_scoped()
+    yield from entered.take_n(2)
+    yield from answered.wait()
+    yield from release.succeed(None)
+    yield from close_stdin.succeed(None)
+    yield from running.await_exit()
+    assert _messages(output) == [{"jsonrpc": "2.0", "id": 1, "result": "pong"}]

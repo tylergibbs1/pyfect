@@ -108,14 +108,14 @@ def test_reader_string_flush_on_close():
 @testing.effect
 def test_to_channel_write_failure():
     """reports a write failure while a pull is suspended"""
-    write_error = SocketError(SocketWriteError(RuntimeError("write failed")))
+    write_error = SocketError(reason=SocketWriteError(cause=RuntimeError("write failed")))
 
     def reader():
         # An idle reader that only fails once its acquisition scope closes,
         # which is why ``to_channel`` needs no per-pull race.
         closed = Latch(False)
         yield from add_finalizer(lambda _exit: closed.open())
-        pull = closed.wait().and_then(fail(SocketError(SocketCloseError(1000))))
+        pull = closed.wait().and_then(fail(SocketError(reason=SocketCloseError(code=1000))))
         return Reader(pull, unsupported_upgrade)
 
     socket = make(

@@ -151,8 +151,8 @@ def with_run_client[EX, RX](
 def protocol_closed() -> RpcClientError:
     """The error of a call through a client protocol whose scope closed."""
     return RpcClientError(
-        RpcClientDefect(
-            closed_message("RPC client protocol")
+        reason=RpcClientDefect(
+            message=closed_message("RPC client protocol")
             + ": provide the protocol around the code that uses the client,"
             " or pass it as make(Group, layer=protocol)"
         )

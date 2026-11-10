@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, ClassVar, Literal
 
+from pyfect import schema as S
 from pyfect.errors import TaggedError, with_cause
 from pyfect.http.url_params import redact_url
 
@@ -174,12 +175,54 @@ class HttpClientError(TaggedError):
         return {"_tag": "HttpClientError", "reason": self.reason.to_json()}
 
 
+type HttpClientErrorKind = Literal[
+    "EncodeError",
+    "DecodeError",
+    "TransportError",
+    "InvalidUrlError",
+    "StatusCodeError",
+    "EmptyBodyError",
+]
+
+
+class HttpClientErrorSchema(
+    S.TaggedError, tag="HttpError", identifier="~effect/http/HttpClientError"
+):
+    """An ``HttpClientError`` in a form that encodes (Effect's
+    ``HttpClientErrorSchema``): the reason's ``kind`` and the reason itself
+    as a defect ``cause``. RPC clients fail with it for HTTP failures."""
+
+    kind: HttpClientErrorKind = S.field(
+        S.Literals(
+            (
+                "EncodeError",
+                "DecodeError",
+                "TransportError",
+                "InvalidUrlError",
+                "StatusCodeError",
+                "EmptyBodyError",
+            )
+        )
+    )
+    cause: object = S.field(S.Union(S.Undefined, S.Defect()), default=None)
+
+    @property
+    def message(self) -> str:
+        return ""
+
+    @classmethod
+    def from_http_client_error(cls, error: HttpClientError) -> HttpClientErrorSchema:
+        return cls(kind=error.reason.tag, cause=error.reason)
+
+
 __all__ = [
     "DecodeError",
     "EmptyBodyError",
     "EncodeError",
     "HttpClientError",
+    "HttpClientErrorKind",
     "HttpClientErrorReason",
+    "HttpClientErrorSchema",
     "InvalidUrlError",
     "RequestError",
     "ResponseError",

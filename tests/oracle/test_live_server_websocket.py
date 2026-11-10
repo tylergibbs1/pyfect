@@ -9,9 +9,10 @@ answered, fragmented messages joined, a message over the size limit
 closed with 1009, an unmasked client frame closed with 1002, and the
 client's close code reaching the handler's pull.
 
-Omitted: "websocket options are forwarded to the WebSocketServer": the
-live server takes no ``permessage-deflate`` (off by default in ``ws``'s
-server too); its one WebSocket option is ``websocket_max_message_size``.
+"websocket options are forwarded to the WebSocketServer" is
+``websocket_per_message_deflate``: the live server takes ``permessage-deflate``
+offers as ``ws``'s server does with ``perMessageDeflate`` (its negotiation is
+checked against Node's ``ws`` 8.22 in ``tests/test_ws_deflate.py``).
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from pyfect.deferred import Deferred
 from pyfect.duration import Seconds
 from pyfect.exit import Failure
 from pyfect.http import router, server_response
+from pyfect.http.live_server import PerMessageDeflate
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.scope import scoped
 from pyfect.socket import SocketError, to_stream
@@ -377,3 +379,210 @@ def test_refuses_custom_response_headers_on_a_websocket_upgrade() -> None:
     received = _routed(handler(), program())
     assert received.startswith(b"HTTP/1.1 200 ")
     assert b"WebSocket upgrades do not support custom response headers" in received
+
+
+# --- permessage-deflate -----------------------------------------------------------
+
+
+def test_websocket_options_are_forwarded_to_the_websocket_server() -> None:
+    """websocket options are forwarded to the WebSocketServer"""
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def connect_both() -> tuple[list[str], list[str]]:
+            with connect(f"ws://127.0.0.1:{at}/ws", open_timeout=TIMEOUT) as compressed:
+                offered = [str(e.name) for e in compressed.protocol.extensions]
+            with connect(
+                f"ws://127.0.0.1:{at}/ws", open_timeout=TIMEOUT, compression=None
+            ) as plain:
+                return offered, [str(e.name) for e in plain.protocol.extensions]
+
+        return (yield from effect.blocking(connect_both))
+
+    compressed, plain = _routed(_echo(), program(), websocket_per_message_deflate=True)
+    assert "permessage-deflate" in compressed
+    assert "permessage-deflate" not in plain
+
+
+def test_ignores_permessage_deflate_offers_unless_enabled() -> None:
+    """``ws``'s server takes no extension unless ``perMessageDeflate`` is set."""
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def run() -> list[str]:
+            with _client(at) as client:
+                client.send("x" * 4096)
+                assert client.recv(timeout=TIMEOUT) == "x" * 4096
+                return [str(e.name) for e in client.protocol.extensions]
+
+        return (yield from effect.blocking(run))
+
+    assert _routed(_echo(), program()) == []
+
+
+def test_echoes_compressed_messages_with_context_takeover() -> None:
+    """Messages round-trip compressed in both directions, many over one context, and
+    a message under the threshold goes uncompressed."""
+    messages: list[str | bytes] = ["a" * 5000, b"\x00\x01" * 3000, "short", "b" * 70000, "a" * 5000]
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def run() -> list[str | bytes]:
+            with _client(at, max_size=None) as client:
+                received: list[str | bytes] = []
+                for message in messages:
+                    client.send(message)
+                    received.append(client.recv(timeout=TIMEOUT))
+                return received
+
+        return (yield from effect.blocking(run))
+
+    assert _routed(_echo(), program(), websocket_per_message_deflate=True) == messages
+
+
+@pytest.mark.parametrize(
+    ("options", "header"),
+    [
+        (
+            PerMessageDeflate(server_no_context_takeover=True, client_no_context_takeover=True),
+            "permessage-deflate; server_no_context_takeover; client_no_context_takeover",
+        ),
+        (
+            PerMessageDeflate(server_max_window_bits=9, client_max_window_bits=10),
+            "permessage-deflate; client_max_window_bits=10; server_max_window_bits=9",
+        ),
+    ],
+)
+def test_applies_the_negotiated_parameters(options: PerMessageDeflate, header: str) -> None:
+    """The ``101`` carries the accepted parameters, and messages compressed under them
+    round-trip."""
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def run() -> tuple[str, list[str]]:
+            with _client(at, max_size=None) as client:
+                response = client.response
+                assert response is not None
+                accepted = response.headers["Sec-WebSocket-Extensions"]
+                received: list[str] = []
+                for size in (3000, 3000, 40000):
+                    client.send("c" * size)
+                    reply = client.recv(timeout=TIMEOUT)
+                    assert isinstance(reply, str)
+                    received.append(reply)
+                return accepted, received
+
+        return (yield from effect.blocking(run))
+
+    accepted, received = _routed(_echo(), program(), websocket_per_message_deflate=options)
+    assert accepted == header
+    assert received == ["c" * 3000, "c" * 3000, "c" * 40000]
+
+
+def test_refuses_an_unacceptable_extension_offer() -> None:
+    """``ws`` answers a malformed or unacceptable ``Sec-WebSocket-Extensions`` with 400."""
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def run() -> bytes:
+            conn, head = _handshake(at, "Sec-WebSocket-Extensions: permessage-deflate; foo\r\n")
+            with conn:
+                return head
+
+        return (yield from effect.blocking(run))
+
+    head = _routed(_echo(), program(), websocket_per_message_deflate=True)
+    assert head.startswith(b"HTTP/1.1 400 Bad Request\r\n")
+
+
+def test_closes_with_1009_when_a_compressed_message_inflates_past_the_limit() -> None:
+    """The size limit counts the inflated bytes (``ws``'s ``maxPayload``)."""
+    import zlib
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def run() -> list[tuple[int, bytes]]:
+            conn, head = _handshake(at, "Sec-WebSocket-Extensions: permessage-deflate\r\n")
+            with conn:
+                assert b"Sec-WebSocket-Extensions: permessage-deflate\r\n" in head
+                deflate = zlib.compressobj(9, zlib.DEFLATED, -15)
+                payload = (deflate.compress(b"z" * 100_000) + deflate.flush(zlib.Z_SYNC_FLUSH))[:-4]
+                conn.sendall(_masked_compressed(payload))
+                return _frames(conn)
+
+        return (yield from effect.blocking(run))
+
+    frames = _routed(
+        _echo(), program(), websocket_per_message_deflate=True, websocket_max_message_size=1024
+    )
+    assert frames[-1] == (0x8, struct.pack("!H", 1009))
+
+
+def _masked_compressed(payload: bytes) -> bytes:
+    frame = bytearray(_masked(0x2, payload))
+    frame[0] |= 0x40  # RSV1: compressed
+    return bytes(frame)
+
+
+def test_closes_with_1002_for_a_compressed_frame_without_the_extension() -> None:
+    """Without ``permessage-deflate`` a frame with RSV1 set breaks the protocol."""
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def run() -> list[tuple[int, bytes]]:
+            conn, _head = _handshake(at)
+            with conn:
+                conn.sendall(_masked_compressed(b"abc"))
+                return _frames(conn)
+
+        return (yield from effect.blocking(run))
+
+    assert _routed(_echo(), program())[-1] == (0x8, struct.pack("!H", 1002))
+
+
+def test_compresses_messages_from_the_threshold() -> None:
+    """``ws`` sets RSV1 on messages of at least ``threshold`` bytes (1024) and sends
+    shorter ones as they are."""
+    import zlib
+
+    @fx.fn
+    def program():
+        at = yield from port
+
+        def run() -> list[tuple[int, bytes]]:
+            conn, _head = _handshake(at, "Sec-WebSocket-Extensions: permessage-deflate\r\n")
+            with conn:
+                conn.sendall(_masked(0x1, b"hi"))
+                deflate = zlib.compressobj(9, zlib.DEFLATED, -15)
+                payload = deflate.compress(b"a" * 2000) + deflate.flush(zlib.Z_SYNC_FLUSH)
+                conn.sendall(_masked_compressed(payload[:-4]))
+                data = bytearray()
+                frames: list[tuple[int, bytes]] = []
+                while len(frames) < 2:
+                    data += conn.recv(65536)
+                    # Both replies are short enough for a one-byte length.
+                    while len(data) >= 2 and len(data) >= 2 + data[1]:
+                        frames.append((data[0], bytes(data[2 : 2 + data[1]])))
+                        del data[: 2 + data[1]]
+                return frames
+
+        return (yield from effect.blocking(run))
+
+    [small, big] = _routed(_echo(), program(), websocket_per_message_deflate=True)
+    assert small == (0x81, b"hi")
+    assert big[0] == 0xC2  # FIN, RSV1, binary
+    assert zlib.decompressobj(-15).decompress(big[1] + b"\x00\x00\xff\xff") == b"a" * 2000

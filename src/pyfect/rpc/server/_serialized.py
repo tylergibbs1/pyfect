@@ -16,6 +16,7 @@ from pyfect.effect import context, fail_cause, gen, provide_context, succeed, su
 from pyfect.error_reporter import report
 from pyfect.http.headers import Headers
 from pyfect.layer import Layer, effect_discard
+from pyfect.logger import log_debug
 from pyfect.rpc._rpc import AnyRpc, exit_schema, handler_tag, parse_options
 from pyfect.rpc.group import HandlersFor, RpcGroup
 from pyfect.rpc.message import (
@@ -52,6 +53,28 @@ class _Codecs:
     encode_chunk: Callable[[object], Effect[Any, S.SchemaError, Any]]
     encode_exit: Callable[[object], Effect[Any, S.SchemaError, Any]]
     context: Context[Any]
+
+
+def _discard_codecs(codec_for: CodecFor, rpc: AnyRpc, codecs: _Codecs) -> _Codecs:
+    """The codecs of a discarded call: its only successful exit is the
+    acknowledgement, which carries no value, so its exits are encoded with a
+    void success."""
+    schema = exit_schema(rpc)
+    void_exit = S.Exit(S.Void, schema.error, schema.defect)
+    return _Codecs(
+        codecs.tag,
+        codecs.decode,
+        codecs.encode_chunk,
+        S.encode_unknown_effect(codec_for(void_exit), **parse_options(rpc)),
+        codecs.context,
+    )
+
+
+def _drop_notification(reason: str) -> Effect[None]:
+    """A notification has no reply to carry the error, so it is only logged."""
+    return log_debug(f"Dropped RPC notification: {reason}").annotate_logs(
+        {"module": "RpcServer", "method": "dropNotification"}
+    )
 
 
 def _rpc_codecs(codec_for: CodecFor, rpc: AnyRpc, context: Context[Any]) -> _Codecs:
@@ -113,8 +136,10 @@ class _Serialized:
     __slots__ = (
         "_clients",
         "_codec_cache",
+        "_discard_cache",
         "_encode_defect",
         "_group",
+        "_notification_count",
         "_protocol",
         "_services",
         "_unknown_exit",
@@ -129,6 +154,8 @@ class _Serialized:
         self._services = services
         self._clients: dict[int, _Client] = {}
         self._codec_cache: dict[str, _Codecs] = {}
+        self._discard_cache: dict[str, _Codecs] = {}
+        self._notification_count = 0
         self._encode_defect, self._unknown_exit = _defect_codecs(protocol.codec_for)
         self.server: RpcServer | None = None
 
@@ -139,6 +166,13 @@ class _Serialized:
             context = Context.empty() if entry is None else entry.value.context
             found = _rpc_codecs(self._protocol.codec_for, rpc, context)
             self._codec_cache[rpc.tag] = found
+        return found
+
+    def _reply_codecs(self, rpc: AnyRpc, codecs: _Codecs) -> _Codecs:
+        found = self._discard_cache.get(rpc.tag)
+        if found is None:
+            found = _discard_codecs(self._protocol.codec_for, rpc, codecs)
+            self._discard_cache[rpc.tag] = found
         return found
 
     def _server(self) -> RpcServer:
@@ -263,36 +297,55 @@ class _Serialized:
 
     def _request(self, client: _Client, message: Message) -> Effect[None]:
         tag = message.get("tag", "")
-        request_id = message.get("id")
-        if not is_request_id(request_id):
-            return self._send_defect(client, f"Invalid request id: {request_id}")
+        is_notification = message.get("isNotification") is True
+        request_id: object
+        if is_notification:
+            # JSON-RPC notifications share an empty id, and no reply names one.
+            request_id = f"@effect/rpc/notification/{self._notification_count}"
+            self._notification_count += 1
+        else:
+            request_id = message.get("id")
+            if not is_request_id(request_id):
+                return self._send_defect(client, f"Invalid request id: {request_id}")
+        rid: RequestId = request_id
         rpc = self._group.rpcs.get(tag) if isinstance(tag, str) else None
         if rpc is None:
-            return self._send_request_defect(
-                client, request_id, self._unknown_exit, unknown_tag(tag)
-            )
+            reason = unknown_tag(tag)
+            if is_notification:
+                return _drop_notification(reason)
+            return self._send_request_defect(client, rid, self._unknown_exit, reason)
         codecs = self._codecs(rpc)
+        is_discard = not is_notification and message.get("discard") is True
+        reply = self._reply_codecs(rpc, codecs) if is_discard else codecs
         headers = _headers(message.get("headers"))
         if headers is None:
-            return self._send_request_defect(
-                client, request_id, codecs.encode_exit, "Invalid request headers"
-            )
+            reason = "Invalid request headers"
+            if is_notification:
+                return _drop_notification(reason)
+            return self._send_request_defect(client, rid, reply.encode_exit, reason)
 
         def decoded(payload: object) -> Effect[None]:
-            client.codecs[request_id] = codecs
+            # Nothing is encoded for a notification, and only a reply would
+            # remove its codecs.
+            if not is_notification:
+                client.codecs[rid] = reply
             request = Request(
-                request_id,
+                rid,
                 rpc.tag,
                 payload,
                 headers,
                 message.get("traceId"),
                 message.get("spanId"),
                 message.get("sampled"),
+                is_notification=is_notification,
+                discard=is_discard,
             )
             return self._server().write(client.id, request)
 
         def invalid(error: S.SchemaError) -> Effect[None]:
-            return self._send_request_defect(client, request_id, codecs.encode_exit, str(error))
+            if is_notification:
+                return _drop_notification(str(error))
+            return self._send_request_defect(client, rid, reply.encode_exit, str(error))
 
         return (
             codecs.decode(message.get("payload"))
@@ -339,12 +392,25 @@ def make[G: RpcGroup](
             disable_client_acks=not protocol.supports_ack,
         )
         state.server = yield from make_no_serialization(group, state.on_from_server, server_options)
+        on_disconnect = resolved.on_disconnect
+
+        def handle_disconnect(client_id: int) -> Effect[None, Never, Scope]:
+            disconnected = state.disconnect(client_id)
+            hook_of = on_disconnect
+            if hook_of is None:
+                return disconnected
+            hook = suspend(lambda: hook_of(client_id)).ignore_cause(
+                log="Unhandled", message="RpcServer onDisconnect hook failed"
+            )
+            # In the server's scope: a slow hook delays no other cleanup, and
+            # pending hooks are interrupted when the server stops.
+            return disconnected.flat_map(lambda _: fork_scoped(hook).as_void())
 
         @gen
         def disconnects():
             while True:
                 client_id = yield from protocol.disconnects.take()
-                yield from state.disconnect(client_id)
+                yield from handle_disconnect(client_id)
 
         yield from fork_scoped(disconnects)
         return (yield from protocol.run(state.on_request))

@@ -13,10 +13,10 @@ from pyfect.sql.migrator import (
     Loader,
     MigrationError,
     Runner,
-    from_file_system,
     from_record,
     make,
 )
+from pyfect.sql.migrator_file_system import from_file_system
 
 run: Runner[Never] = make()
 """Run the new migrations of ``loader`` (see ``migrator.make``)."""

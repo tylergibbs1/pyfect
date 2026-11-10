@@ -21,10 +21,13 @@ from pyfect import schema as S
 from pyfect.context import Tag
 from pyfect.deferred import Deferred
 from pyfect.reactivity import async_result, atom, atom_registry, atom_rpc, hydration
+from pyfect.result import Ok
 from pyfect.rpc import RpcGroup, RpcMiddleware, make
 from pyfect.rpc import test as rpc_test
 from pyfect.rpc.client import ClientProtocol, ClientProtocolService
+from pyfect.rpc.client_error import RpcClientError
 from pyfect.rpc.middleware import ClientMiddlewareOptions, layer_client
+from pyfect.socket import SocketCloseError
 
 
 class _Name(TypedDict):
@@ -238,6 +241,38 @@ def test_dehydrates_the_rest_of_the_registry_when_client_middleware_fails():
     assert [e.value for e in dehydrated if e.key == "unaffected"] == [42]
     unmount_unaffected()
     unmount_failed()
+
+
+@testing.effect
+def test_dehydrates_a_query_that_failed_with_an_rpc_client_error():
+    def fail(_options: ClientMiddlewareOptions) -> fx.Effect[Never, Any]:
+        return fx.fail(RpcClientError(reason=SocketCloseError(code=1006)))
+
+    client = atom_rpc.make(
+        _tag("ClientWithClosedSocket", ClientMiddlewareGroup),
+        group=ClientMiddlewareGroup,
+        protocol=_client_middleware_protocol(fail),
+    )
+    failed = client.query(ClientMiddlewareGroup.get_user, None, serialization_key="closed")
+    registry = atom_registry.make()
+    unmount = registry.mount(failed)
+    yield from fx.yield_now()
+    yield from fx.yield_now()
+
+    dehydrated = hydration.to_values(hydration.dehydrate(registry))
+    [entry] = [e for e in dehydrated if e.key == "AtomRpc:getUser:closed"]
+    value: Any = entry.value
+    [fail_] = value["cause"]
+    assert fail_["error"] == {
+        "_tag": "RpcClientError",
+        "reason": {"_tag": "SocketCloseError", "code": 1006},
+    }
+    hydrated = atom_registry.make()
+    hydration.hydrate(hydrated, dehydrated)
+    result = hydrated.get(failed)
+    assert async_result.is_failure(result)
+    assert result.cause.find_error() == Ok(RpcClientError(reason=SocketCloseError(code=1006)))
+    unmount()
 
 
 @testing.effect

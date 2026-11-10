@@ -42,11 +42,13 @@ class SchemaStore(Generic[T, RD_co, RE_co]):
     remove: Callable[[str], Effect[None, KeyValueStoreError]]
     clear: Effect[None, KeyValueStoreError]
     size: Effect[int, KeyValueStoreError]
+    keys: Effect[list[str], KeyValueStoreError]
+    """A snapshot of the keys, in no particular order."""
     has: Callable[[str], Effect[bool, KeyValueStoreError]]
     is_empty: Effect[bool, KeyValueStoreError]
 
     def __post_init__(self) -> None:
-        for name in ("clear", "size", "is_empty"):
+        for name in ("clear", "size", "keys", "is_empty"):
             require_effect(getattr(self, name), name)
 
 
@@ -86,6 +88,7 @@ def to_schema_store[A, RD, RE](
         remove=store.remove,
         clear=store.clear,
         size=store.size,
+        keys=store.keys,
         has=store.has,
         is_empty=store.is_empty,
     )

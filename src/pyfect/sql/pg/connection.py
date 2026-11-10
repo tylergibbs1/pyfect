@@ -74,6 +74,12 @@ def _released_with_work() -> SqlError:
     )
 
 
+def _released_aborted() -> SqlError:
+    return connection_error(
+        "PgConnection: Pinned connection released in an aborted transaction", "query"
+    )
+
+
 def _escape_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
@@ -146,11 +152,13 @@ class _Lease:
     statement, a stream, a listener) is admitted and counted in one step,
     before anything waits, so a release always sees it."""
 
-    __slots__ = ("_released", "_work")
+    __slots__ = ("_released", "_work", "started_idle")
 
-    def __init__(self) -> None:
+    def __init__(self, started_idle: bool) -> None:
         self._released = False
         self._work = 0
+        self.started_idle = started_idle
+        """No transaction was open when the pin took the session."""
 
     @property
     def released(self) -> bool:
@@ -240,16 +248,22 @@ class PgConnection:
                 closing: Effect[None] = void
                 if lease.release():
                     closing = shared.fatal(_released_with_work()).and_then(shared.close())
+                elif lease.started_idle and not shared.session.closed and shared.session.aborted:
+                    # A failed cleanup, such as a cancelled ``ROLLBACK``, leaves every
+                    # later statement failing. A transaction open before the pin is
+                    # its caller's.
+                    closing = shared.fatal(_released_aborted()).and_then(shared.close())
                 return closing.and_then(shared.owner.release(1)).as_void()
 
             return _Suspend(body)
 
         def body(restore: Restore) -> Effect[PgConnection, Never, Scope]:
-            lease = _Lease()
+            def pinned(_: object) -> Effect[PgConnection, Never, Scope]:
+                lease = _Lease(shared.session.closed or shared.session.idle)
+                return add_finalizer(lambda _: release(lease)).as_(PgConnection(shared, lease))
+
             taken: Effect[int] = restore(shared.owner.take(1))
-            return taken.and_then(add_finalizer(lambda _: release(lease))).as_(
-                PgConnection(shared, lease)
-            )
+            return taken.flat_map(pinned)
 
         return uninterruptible_mask(body)
 

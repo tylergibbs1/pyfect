@@ -4,6 +4,58 @@
 
 ### Breaking
 
+- RPC `client.rpc.discard(payload)` no longer completes when the request is written: as in
+  Effect 4.1.2 it sends `discard: true` and completes once the server acknowledges the call
+  (a successful exit sent as its handler starts, after the middleware ran), so a middleware
+  error or a failure before the handler starts now fails it; its error type is the method's
+  `E | TE` (it was `TE`). An older server answers with the handler's result, which also
+  counts as the acknowledgement. `rpc.client.OnFromClient` has no `discard` field any more:
+  a discarded call is a `Request` with `discard=True`, and a custom `on_from_client` passed
+  to `make_no_serialization` must answer it with a successful `ResponseExit` once the request
+  is delivered (a transport that only delivers requests acknowledges it itself), or the call
+  waits. `message.Request` has new `is_notification` and `discard` fields.
+- An RPC server sends nothing for a request with `isNotification` (a JSON-RPC notification):
+  no exit, chunk or defect, and its failures are only reported; a notification for an unknown
+  method, with an invalid payload or malformed headers is dropped and logged at debug level.
+  It used to be answered like a call with the empty id. Notifications get ids of their own, so
+  overlapping ones all run.
+- The worker RPC client protocol fails only the calls on a worker that crashed (its
+  `ClientProtocolError` lists them in `requestIds`); it used to fail every pending call of the
+  client.
+- A GraphQL response with a status that is not 2xx never succeeds, even with `partial=True`:
+  it fails with a `ResponseError` when its body has `errors`, and otherwise with a
+  `TransportError` carrying the status, headers and `Retry-After` (a 2xx response without
+  data or errors is still a `DecodeError`).
+- `rpc.RpcClientError`, `rpc.RpcClientDefect`, `socket.SocketError` and its reasons
+  (`SocketReadError`, `SocketWriteError`, `SocketOpenError`, `SocketUpgradeError`,
+  `SocketCloseError`) are schema classes, as in Effect, so they encode and take keyword
+  arguments only: `RpcClientError(reason=RpcClientDefect(message="bad"))`,
+  `SocketError(reason=SocketCloseError(code=1006))`. An RPC call over HTTP now fails with an
+  `RpcClientError` whose reason is the new `http.error.HttpClientErrorSchema` (the HTTP
+  error's `kind`, with its reason as the `cause`; `HttpClientErrorSchema.from_http_client_error`)
+  instead of the `HttpClientError` itself. `RpcClientErrorReason` now includes the worker
+  error reasons. `AtomRpc` queries that fail with an `RpcClientError` are now kept by
+  `hydration.dehydrate`. A worker error reason without a `cause` encodes without the key (it
+  was `null`), as Effect's.
+- `process.make(..., shell=True)` with arguments fails with `BadArgument` when spawned, as
+  in Effect 4.1.2: the command is the whole script. pyfect used to quote each argument onto
+  the shell line; build the script with `process.command_line.join([...])` (or `quote`) and
+  pass it alone, or drop `shell`. `make`'s command and arguments are positional-only
+  (`make("ls", ["-l"])`; `args=` is gone), because `make` also takes a template now
+  (`make(["git commit -m ", ""], message)`, or a t-string on 3.14). Errors name a command
+  through `command_line.display`: arguments are shell-quoted, `Redacted` ones masked and
+  control characters escaped (`echo 'a b'`, not `echo a b`). `ChildProcessHandle.stdin` is a
+  `Sink[None, bytes | str, ...]` (text is encoded with `StdinConfig.encoding`), so a
+  hand-built handle's `stdin` must accept `str` too.
+
+- `key_value_store.make` and `make_string_only` take a required `keys` (an effect giving a
+  snapshot of the keys, Effect 4.1.2's `keys`) and an optional `clear_prefix`, which is
+  derived from `keys` and `remove` when omitted; a hand-built store must pass `keys`. Every
+  store has `keys` and `clear_prefix(prefix)`. A prefixed view (`store.prefix(p)`) now
+  scopes `keys`, `size`, `is_empty` and `clear` to its prefix, as in 4.1.2: `clear` on a
+  view removes only its own keys (it cleared the whole store), so
+  `persistence.layer_backing_kvs` stores clear only their own entries. The file-system
+  store's `remove` succeeds for a missing key (it failed with `NotFound`).
 - `encoding.toml.parse` returns a `Result` (`Ok(dict)` or `Err(EncodingError)` with module
   `"Toml"` and Effect's message) instead of raising `ValueError`, as Effect 4.1.2's
   `Toml.parse` does: replace `toml.parse(text)` with `toml.parse(text).get_or_raise()` to
@@ -206,13 +258,165 @@
   with an earlier session, as in Effect 4.1.2. A persisted request's final reply is stored
   only after a lock refresh confirms this runner still owns the shard; otherwise the request
   is left to the shard's new owner.
+- `HttpClientService.with_cookies_ref` takes a `Ref[tuple[Cookie, ...]]` (Effect 4.1.2's
+  `Ref<ReadonlyArray<Cookie>>`) instead of a `Ref[Cookies]`, and stores each cookie with its
+  domain, path and `host_only` flag, as `cookies.merge_into_array` does. Make the jar with
+  `Ref[tuple[Cookie, ...]].make(())`; to seed it, merge `Set-Cookie` values for the URL they
+  belong to: `cookies.merge_into_array((), "https://api.example.com", cookies.from_set_cookie("token=foo; Path=/"), now)`.
+  A cookie put in the jar without a `domain` is never sent (it used to go to every request);
+  a `Secure` cookie from an `http` response is kept (sent only over `https`); cookies are
+  selected for a request's final URL, after `map_request` / `prepend_url` applied after
+  `with_cookies_ref`, and stored for the response's final URL. Same-name cookies for
+  different paths are all sent, longest path first.
+- `cookies.from_set_cookie` trims only spaces and tabs around a cookie's name and value, and
+  ignores a `Max-Age` that is not an optional `-` followed by digits (`1.5`, `+5` and `0oops`
+  were read as `1`, `5` and `0`), as Effect 4.1.2 does.
+- `HttpClientRequest.method` and `ServerRequest.method` are typed `str`, not `HttpMethod`, as
+  in Effect 4.1.2: a received request keeps an extension method such as `PROPFIND`, and so
+  does a client request converted from it. Code that passes a request's method where an
+  `HttpMethod` is expected narrows it first with `method.is_http_method(m)`;
+  `method.has_body` takes any `str` (narrowing only an `HttpMethod`). `set_method` and
+  `request.make` still take an `HttpMethod`.
+- `HttpClientRequest.compress_body` keeps the request's own `content-type` header (an
+  explicit one, or none) and only updates `content-length` and adds `content-encoding`; it
+  used to reset `content-type` from the body. Set the header yourself if you relied on that.
+- `follow_redirects` removes `content-encoding`, `content-language` and `content-location`
+  with the body when a redirect switches the request to `GET`, and aborts each discarded
+  redirect response instead of leaving its connection to be released when collected.
+- `body.File.content` is a `body.FileContent`: `bytes` or a function opening a byte stream
+  (a form file read on demand), no longer always `bytes`. Code reading `file.content` as
+  bytes handles both: branch on `isinstance(file.content, bytes)`, or read
+  `file.stream()` (a `Stream[bytes, FileSourceError]`) for either kind, e.g.
+  `file.stream().run_collect().map(b"".join)`. Constructing a `File` from bytes is unchanged.
+- `http_api.builder.layer` fails (a defect) when two endpoints share a method and path, as
+  Effect 4.1.2 does; the second was unreachable before. Declare one endpoint whose query,
+  headers, payload or success schemas cover each variant.
+- `openapi.from_api` requires every stacked security middleware: an endpoint behind
+  middlewares `A` and `B` lists `[{a: [], b: []}]` where it listed `[{a: []}, {b: []}]`
+  (either one). Several schemes of one middleware are still alternatives. Nothing to change
+  in code; clients generated from the spec now send every credential.
+- `StreamSse(data=...)` encodes and decodes `data` with the schema's JSON codec
+  (`to_codec_json`), as Effect 4.1.2 does, so a date is an ISO string and a big integer a
+  string on the wire. Events whose data schema had no JSON form used to fail; a client and
+  server on different versions disagree on such fields.
+- An endpoint may declare an upgrade beside ordinary successes, as in Effect 4.1.2; what is
+  still rejected (a second upgrade, a `101` or streaming sibling, a streaming payload or
+  `HEAD`) has new messages, and the old "Cannot combine an upgrade with another success
+  response" is gone. Beside other successes, a handler that calls `ctx.upgrade()` must return
+  nothing (`.map(lambda _: None)`); returning a value after upgrading is a defect.
+- HTTP server errors (`RouteNotFound`, `RequestParseError`, `ResponseError`, ...) name only the
+  request path in their message, as in Effect 4.1.2: `RouteNotFound (GET /widgets)` where it
+  was `RouteNotFound (GET /widgets?token=REDACTED)`; an absolute request URL shows its pathname.
+  Read `error.request.url` when you need the query. A synthesized 5xx span error keeps the
+  redacted URL.
+- `url_params_body` on server requests and client responses keeps a leading `?` and a leading
+  byte order mark as form data (`??a=1` reads as `("??a", "1")`, not `("?a", "1")`), as Effect
+  4.1.2 does. Strip them yourself if a peer sent them by mistake.
+- Trace headers are parsed as Effect 4.1.2 parses them: W3C `traceparent` and B3 ids with
+  uppercase hex, and W3C flags that are not exactly two lowercase hex digits, are rejected
+  (no parent span). The sampled flag is bit 0 of the flags (`03` is sampled).
+- `url_params.CurrentRedactedNames` redacts `X-Amz-Signature`, `X-Amz-Credential` and
+  `X-Amz-Security-Token` by default too. Set the reference to drop them if you log them.
+- `static_server` answers `If-Match` and `If-Unmodified-Since` that fail with 412 before
+  checking `If-None-Match`, `If-Modified-Since` and ranges, and its 304 repeats
+  `Cache-Control`, `Content-Location`, `Date`, `ETag`, `Expires`, `Last-Modified` and `Vary`.
+- The live server's WebSocket frame parser closes a frame with RSV1 set (and no
+  `permessage-deflate`) with 1002 and the message "RSV1 must be clear"; other reserved bits
+  give "RSV2 and RSV3 must be clear".
+- A socket reader's pull returns at most `chunk_size` chunks (4096 by default, `math.inf` for
+  no limit), as Effect 4.1.2's `NodeSocket` does; it returned everything buffered. Pass
+  `chunk_size=math.inf` to `make_net` / `make_tls` / `from_socket` to keep the old batching.
+- SQL, Effect 4.1.2: `migrator.from_file_system` moved to the new module
+  `pyfect.sql.migrator_file_system` (`from pyfect.sql.migrator_file_system import
+  from_file_system`), so `pyfect.sql.migrator` no longer imports the file-system loader; the
+  driver migrators (`pyfect.sql.sqlite.migrator.from_file_system` and the others) still
+  re-export it.
+- SQL: a transaction's `BEGIN`, `COMMIT`, `ROLLBACK`, `SAVEPOINT`, `RELEASE SAVEPOINT` and
+  `ROLLBACK TO SAVEPOINT` are client spans under its `sql.transaction` span (named `COMMIT`
+  or `COMMIT <db.namespace>`, with `db.operation.name`), as in 4.1.2, instead of events on
+  it; a tracer that read those events must read the child spans. The connection wait
+  (`db.client.connection.wait_time_ms`) is recorded on the transaction span only with
+  `SpanPropagationEnabled` and `TracerTimingEnabled`. Rollbacks and savepoint releases of
+  cleanup always run unprepared.
+- libsql: `LibsqlSdk` has a required `protocol` (`"http"`, `"ws"` or `"file"`); a hand-built
+  SDK (a test fake) must set it. Remote statements (`http`/`ws`) no longer wait for each
+  other or for an open transaction, as in 4.1.2; local ones still run one at a time.
+- ClickHouse: the migrator writes its ledger (the table and the inserts) with
+  `ClientMethod` `"command"` and runs migrations as queries, as in 4.1.2's
+  `Migrator.make({ transformWrites })` (new: `migrator.make(transform_writes=...)`); the
+  `INSERT ... SELECT ... UNION ALL` workaround is gone.
+- MySQL: a text-protocol statement (`disable_prepared_statements=True`, and every stream)
+  writes a list parameter as `1, 2` (a nested list as `(1, 2), (3, 4)`) and a dict in a `SET`
+  / `ON DUPLICATE KEY UPDATE` list as `` `key` = value `` pairs, as mysql2 does; both were
+  JSON text. Prepared statements still bind them as JSON. To keep sending JSON over the text
+  protocol, pass `json.dumps(value)`.
+- MySQL: a `mysql://` URL's query is read as mysql2 reads it: `ssl` (a JSON object such as
+  `?ssl={"rejectUnauthorized":false}`) and `connectTimeout`; other options are refused when
+  the config is made (all query parameters were).
+- PostgreSQL: `PgClientService(...)` takes a required `pool_stats` (a hand-built client must
+  pass one), and a pin released inside an aborted transaction it did not open closes its
+  session instead of handing it back to the pool. A prepared statement the backend lost
+  (`26000`, a transaction pooler moved the session) or whose plan went stale (`0A000`) is
+  parsed again and the statement retried once, unless the transaction is already aborted.
 
 ### Added
 
+- The live server takes `websocket_per_message_deflate=True` (or a
+  `live_server.PerMessageDeflate(...)`) to accept WebSocket `permessage-deflate` offers, as
+  Effect's `NodeHttpServer` with `ws`'s `perMessageDeflate`; the inflated size counts against
+  `websocket_max_message_size`. `mime` knows `py` (`text/x-python`) and `sh`
+  (`text/x-shellscript`).
+- RPC (Effect 4.1.2): `serialization.json_rpc` / `nd_json_rpc` / `layer_json_rpc` /
+  `layer_nd_json_rpc` take `control_messages=False`, which reads `@effect/rpc/*` methods as
+  ordinary notifications for plain JSON-RPC peers; `ServerOptions(on_disconnect=...)` is
+  called with each client id the transport reports disconnected; a `ClientProtocolError` can
+  name the `requestIds` it fails. JSON-RPC stream chunks of a batched request go out at once
+  instead of waiting for the batch's exits, and a stream consumer that stops early sends no
+  more `Ack`s.
+- `pyfect.http.problem_details` (Effect 4.1.2's `ProblemDetails`): the RFC 9457 `Schema`,
+  which drops wrong-typed members and keeps extensions, and `to_response`.
+- `http_api.error.Problem`: `class OutOfCredit(Problem, type=..., status=..., title=...)` is a
+  typed `application/problem+json` error decoded by its `type`; `BadRequestProblem` and
+  `InternalServerErrorProblem`. `middleware.ProblemDetails` with
+  `layer_problem_details(include_details=)` turns request schema errors into a problem 400
+  (with `errors` when asked) and response encoding errors into a reported problem 500.
+  `schema.as_problem(title=)` sends an existing error as a problem.
+- Stream schemas take a list of content types (`content_type=["a", "b"]`, stored as
+  `content_types`, the first is the default): a stream payload accepts each, a client decodes
+  whatever arrives, OpenAPI lists each. An empty or duplicate list raises `ValueError`.
+- `http_api.client.decode_response(api, group, endpoint)` decodes a response obtained with
+  `response_only` later, like the method would; `client.is_upgraded(value)`.
+- HTTP upgrades on the httpx client (Effect's `HttpClientResponse.upgrade`): a request made
+  with `request.upgrade("tcp")` no longer fails before it is sent, and the `101` response's
+  `upgrade` is the connection as a `Socket`, the bytes the server sent past the head first.
+  Releasing the reader's scope closes it, the writer's half-closes it; any other status fails
+  with a `StatusCodeError`. A derived `HttpApiClient` decodes a `101` into an `Upgraded`
+  (`client.is_upgraded`), closing the connection if its headers fail to decode.
+
+- `HttpClientService.timeout(duration)` (Effect 4.1.2's `HttpClient.timeout`): a request
+  without a response in time fails with an `HttpClientError` whose `TransportError` is caused
+  by a `TimeoutException`, which `retry_transient` retries. Applied before `retry_transient`
+  each attempt gets its own budget; after it, one budget covers the retries.
+- `request.from_web(web_request)` (Effect's `HttpClientRequest.fromWeb`): a client request
+  sending what a `WebRequest` received, its body as a `Raw` body.
+- `body.update_content_length(headers, body)`.
+- A form file's content (`body.File(content, ...)`) can be a function opening a byte stream
+  (a web `File`'s `stream()`) as well as `bytes`: the httpx client reads it on demand as the
+  connection takes it, stops it when the request is interrupted or aborted, and fails with a
+  `TransportError` when the function raises or the stream fails (`body.FileSourceError`
+  carries the cause), as Effect 4.1.2's `NodeHttpClient` does. `File.stream()` gives the
+  content as a stream; `body.File.content` is typed `body.FileContent`.
+
 - `Pool.stats()` returns a `PoolStats` (idle, used, pending, `min`, `max`).
+- SQL: `PgClient.pool_stats` and `PgPool.stats` (a `make_client` client reports its one
+  session as leased), `migrator.TransformWrites` and `migrator.make(transform_writes=)`.
+- MySQL: TLS from a URL (`?ssl={...}` as mysql2's `ssl` object).
 - `stream.ignore`, `ignore_cause` and the channel ones take `log="Unhandled"` to log at the
   fiber's `UnhandledLogLevel` (nothing when it is `None`).
 - `cron.DstOverlapPolicy` (`"earlier"`, `"later"`, `"both"`).
+- `cookies.merge_into_array` and `cookies.to_request_cookie_header` (Effect 4.1.2's RFC 6265
+  client storage) and `CookieOptions.host_only` (`serialize_cookie` leaves out `Domain` for a
+  host-only cookie).
 
 - `pyfect.glob` (`fx.glob`), Effect 4.1.2's `Glob`: `glob.make(pattern, dot=)`,
   `glob.match` / `Glob.match` and `glob.escape`, the patterns `FileSystem.glob` walks

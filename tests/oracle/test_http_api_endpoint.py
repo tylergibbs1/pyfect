@@ -83,6 +83,25 @@ def test_rejects_two_streaming_payloads() -> None:
         )
 
 
+def test_rejects_buffered_payloads_and_successes_on_any_listed_stream_content_type() -> None:
+    """HttpApiEndpoint streaming payload schemas / rejects buffered payloads and successes on any listed stream content type"""  # noqa: E501
+    stream = api_schema.StreamNdjson(
+        S.Number, content_type=["application/x-ndjson", "application/json"]
+    )
+    ok = struct({"ok": S.Boolean})
+    with pytest.raises(
+        ValueError,
+        match="Cannot combine buffered and streaming payloads for content-type: application/json",
+    ):
+        ep.post("upload", "/upload", payload=(stream, ok))
+    with pytest.raises(
+        ValueError,
+        match="Cannot combine buffered and streaming success responses for status 200 "
+        "and content-type: application/json",
+    ):
+        ep.get("export", "/export", success=(stream, ok))
+
+
 def test_rejects_streaming_payloads_on_no_body_methods() -> None:
     """HttpApiEndpoint streaming payload schemas / rejects streaming payloads on no-body methods"""
     with pytest.raises(ValueError, match="GET"):
@@ -432,8 +451,27 @@ def test_keeps_with_headers_in_the_error_set_with_codec_transformed_parts() -> N
 _UPGRADE = api_schema.Upgrade("tcp")
 
 
-def _upgrade_with_success() -> object:
-    return ep.post("attach", "/attach", success=(_UPGRADE, S.String))
+@pytest.mark.parametrize(
+    "success",
+    [api_schema.Empty(200), S.String],
+    ids=["a no-content response", "a buffered response"],
+)
+def test_accepts_an_upgrade(success: S.Codec[Any, Any, Never, Never]) -> None:
+    """HttpApiEndpoint WithHeaders schemas / Upgrade / accepts an upgrade with $name"""
+    endpoint = ep.post("start", "/start", success=(_UPGRADE, success))
+    assert [api_schema.is_upgrade(s) for s in endpoint.success] == [True, False]
+
+
+def _upgrade_with_upgrade() -> object:
+    return ep.post("attach", "/attach", success=(_UPGRADE, api_schema.Upgrade("h2c")))
+
+
+def _upgrade_with_stream() -> object:
+    return ep.post("attach", "/attach", success=(_UPGRADE, _sse()))
+
+
+def _upgrade_with_status_101() -> object:
+    return ep.post("attach", "/attach", success=(_UPGRADE, api_schema.status(101)(S.String)))
 
 
 def _upgrade_in_with_headers() -> object:
@@ -480,7 +518,12 @@ def _upgrade_to_web_socket() -> object:
 @pytest.mark.parametrize(
     ("make", "message"),
     [
-        (_upgrade_with_success, "Cannot combine an upgrade with other success responses"),
+        (_upgrade_with_upgrade, "Cannot declare more than one upgrade"),
+        (_upgrade_with_stream, "Cannot combine an upgrade with a streaming success response"),
+        (
+            _upgrade_with_status_101,
+            "Cannot combine an upgrade with another success response for status: 101",
+        ),
         (_upgrade_in_with_headers, "WithHeaders cannot wrap an upgrade"),
         (_upgrade_in_encode_to_with_headers, "encodeToWithHeaders cannot wrap an upgrade"),
         (_upgrade_on_head, "HEAD endpoints cannot declare an upgrade"),
@@ -493,7 +536,9 @@ def _upgrade_to_web_socket() -> object:
         (_upgrade_to_web_socket, "Upgrade does not support WebSocket"),
     ],
     ids=[
-        "with another success",
+        "with another upgrade",
+        "with a streaming success",
+        "with another success at status 101",
         "wrapped in WithHeaders",
         "wrapped by encodeToWithHeaders",
         "on HEAD",

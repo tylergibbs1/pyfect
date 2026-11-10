@@ -82,7 +82,7 @@ def _method(rpc: AnyRpc, client: object) -> Callable[..., Any]:
 
 def _error_schema(rpc: AnyRpc) -> S.Top:
     middleware_errors = [error for m in rpc.middlewares for error in m.errors()]
-    members = [rpc.error_schema, *middleware_errors, S.instance_of(RpcClientError)]
+    members = [rpc.error_schema, *middleware_errors, RpcClientError]
     return cast("S.Top", S.Union(*cast("list[Any]", members)))
 
 

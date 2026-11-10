@@ -40,6 +40,8 @@ from pyfect import clock, testing
 from pyfect import schema as S
 from pyfect import stream as stream_
 from pyfect.duration import Seconds
+from pyfect.errors import TimeoutException
+from pyfect.exit import Failure
 from pyfect.http import client as c
 from pyfect.http import headers as h
 from pyfect.http import request as req
@@ -47,7 +49,7 @@ from pyfect.http import response as res
 from pyfect.http import url as u
 from pyfect.http import url_params as up
 from pyfect.http.abort import AbortSignal
-from pyfect.http.error import HttpClientError, TransportError
+from pyfect.http.error import EncodeError, HttpClientError, StatusCodeError, TransportError
 from pyfect.redacted import Redacted
 from pyfect.schedule import spaced
 from pyfect.tracer import NativeSpan, SpanRequest, Tracer
@@ -496,12 +498,25 @@ def test_redirect_invalid_location():
 def test_redirect_303():
     """switches 303 requests to GET and drops the body"""
     requests, client = _redirect_client(303, "/destination")
-    yield from client.execute(req.post("https://origin.test/start").body_text("payload"))
+    yield from client.execute(
+        req.post("https://origin.test/start")
+        .body_text("payload")
+        .set_headers(
+            {
+                "content-encoding": "identity",
+                "content-language": "en",
+                "content-location": "/original",
+            }
+        )
+    )
     redirected = requests[1]
     assert redirected.method == "GET"
     assert redirected.body.tag == "Empty"
     assert "content-type" not in redirected.headers
     assert "content-length" not in redirected.headers
+    assert "content-encoding" not in redirected.headers
+    assert "content-language" not in redirected.headers
+    assert "content-location" not in redirected.headers
 
 
 @pytest.mark.parametrize("status", [301, 302])
@@ -583,6 +598,105 @@ def test_retry_delay(header: str | None, status: int, delay: float, scheduled: b
         assert attempts[0] == 1
         yield from testing.adjust("1 millis")
     assert (yield from fiber.join()).status == 200
+
+
+def test_classifies_transient() -> None:
+    """classifies transient responses and errors"""
+    request = req.get("http://test/")
+    responses = [
+        res.make(request, status=status) for status in (200, 404, 408, 429, 500, 501, 502, 503, 504)
+    ]
+    status_errors = [HttpClientError(StatusCodeError(request, response)) for response in responses]
+    expected = [False, False, True, True, True, False, True, True, True]
+    assert [c.is_transient_response(response) for response in responses] == expected
+    assert [c.is_transient_error(error) for error in status_errors] == expected
+    assert [
+        c.is_transient_error(error)
+        for error in (
+            TimeoutException(Seconds(0)),
+            HttpClientError(TransportError(request)),
+            HttpClientError(EncodeError(request)),
+            Exception("boom"),
+        )
+    ] == [True, True, False, False]
+
+
+# timeout
+
+
+def _squashed_failure(exit: fx.Exit[Any, Any] | None) -> object:
+    assert isinstance(exit, Failure)
+    return exit.cause.squash()
+
+
+@testing.effect
+def test_timeout_transport_error():
+    """fails with a TransportError and aborts the request"""
+    signals: list[AbortSignal] = []
+
+    def send(
+        _request: req.HttpClientRequest, _url: fx.Url, signal: AbortSignal, _fiber: Any
+    ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
+        signals.append(signal)
+        return fx.never
+
+    client = c.make(send).timeout("5 seconds")
+    fiber = yield from client.get("http://test/").fork(start_immediately=True)
+    yield from testing.adjust("5 seconds")
+    error = _squashed_failure((yield from fiber.await_exit()))
+    assert isinstance(error, HttpClientError)
+    assert isinstance(error.reason, TransportError)
+    assert error.request.url == "http://test/"
+    assert isinstance(error.cause, TimeoutException)
+    assert "timed out" in error.message
+    assert signals[0].aborted
+
+
+def _slow_client(
+    first: fx.Effect[Any, Any],
+) -> tuple[list[int], c.HttpClientService[HttpClientError]]:
+    """Attempt 0 runs ``first``; later attempts answer 200 after 900 millis."""
+    attempts = [0]
+
+    def send(
+        request: req.HttpClientRequest, *_: object
+    ) -> fx.Effect[res.HttpClientResponse, HttpClientError]:
+        def attempt() -> fx.Effect[res.HttpClientResponse, HttpClientError]:
+            n = attempts[0]
+            attempts[0] += 1
+            if n == 0:
+                return first.flat_map(lambda _: fx.fail(HttpClientError(TransportError(request))))
+            return clock.sleep("900 millis").as_(res.make(request))
+
+        return fx.suspend(attempt)
+
+    return attempts, c.make(send)
+
+
+@testing.effect
+def test_timeout_fresh_budget_per_attempt():
+    """gives each retryTransient attempt a fresh budget"""
+    attempts, base = _slow_client(fx.never)
+    client = base.timeout("1 second").retry_transient(times=1)
+    fiber = yield from client.get("http://test/").fork(start_immediately=True)
+    yield from testing.adjust("1 second")
+    assert attempts[0] == 2
+    yield from testing.adjust("900 millis")
+    assert (yield from fiber.join()).status == 200
+
+
+@testing.effect
+def test_timeout_bounds_retry_loop():
+    """bounds the whole retry loop when applied after retryTransient"""
+    attempts, base = _slow_client(clock.sleep("600 millis"))
+    client = base.retry_transient(times=1).timeout("1 second")
+    fiber = yield from client.get("http://test/").fork(start_immediately=True)
+    yield from testing.adjust("1 second")
+    exit = fiber.poll_unsafe()
+    assert attempts[0] == 2
+    error = _squashed_failure(exit)
+    assert isinstance(error, HttpClientError)
+    assert isinstance(error.cause, TimeoutException)
 
 
 # stream

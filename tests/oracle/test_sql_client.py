@@ -18,7 +18,9 @@ from pyfect.context import Context, Tag
 from pyfect.sql import client as sql_client
 from pyfect.sql import statement as st
 from pyfect.sql.connection import Connection, Row, TransformRows, ValueRow
-from pyfect.sql.error import SqlError, UnknownError
+from pyfect.sql.error import DeadlockError, SerializationError, SqlError, UnknownError
+from pyfect.tracer import NativeSpan, SpanRequest, Tracer, TracerEnabled, TracerTimingEnabled
+from pyfect.tracer._model import Ended
 
 
 def _sql_error(message: str) -> SqlError:
@@ -54,6 +56,9 @@ class _Harness:
 
 def _make_harness(
     *,
+    span_attributes: tuple[tuple[str, object], ...] = (),
+    acquire: fx.Effect[None] | None = None,
+    during_begin: fx.Effect[None] | None = None,
     begin: SqlError | None = None,
     commit: Callable[[], fx.Effect[None, SqlError]] | None = None,
     on_commit_failure: Callable[[], fx.Effect[None, SqlError]] | None = None,
@@ -74,7 +79,7 @@ def _make_harness(
             if begin is not None:
                 return fx.fail(begin)
             state["active"] = True
-            return fx.void
+            return during_begin or fx.void
 
         return record("begin" if statement is None else f"begin({statement})").flat_map(after)
 
@@ -117,9 +122,10 @@ def _make_harness(
             fx.void if failure is None else fx.fail(failure)
         )
 
-    def acquire(_restore: Any) -> fx.Effect[Connection, SqlError, fx.Scope]:
+    def acquire_connection(_restore: Any) -> fx.Effect[Connection, SqlError, fx.Scope]:
         return (
             record("acquireConnection")
+            .and_then(acquire or fx.void)
             .and_then(fx.add_finalizer(lambda _: record("closeConnection")))
             .as_(conn)
         )
@@ -127,8 +133,8 @@ def _make_harness(
     with_transaction = sql_client.make_with_transaction(
         sql_client.TransactionOptions(
             transaction_service=sql_client.transaction_connection(),
-            span_attributes=(),
-            acquire_connection=acquire,
+            span_attributes=span_attributes,
+            acquire_connection=acquire_connection,
             begin=do_begin,
             savepoint=do_savepoint,
             commit=do_commit,
@@ -499,6 +505,214 @@ def test_commits_and_returns_the_value_when_the_wrapped_effect_succeeds():
 
     assert result == 1
     assert harness.calls == ["acquireConnection", "begin", "commit", "closeConnection"]
+
+
+@testing.effect
+def test_replays_the_whole_transaction_when_effect_retry_recovers_a_serialization_failure():
+    """replays the whole transaction when Effect.retry recovers a serialization failure at COMMIT"""
+    commits = [0]
+
+    def commit() -> fx.Effect[None, SqlError]:
+        commits[0] += 1
+        if commits[0] == 1:
+            return fx.fail(
+                SqlError(
+                    reason=SerializationError(
+                        cause=Exception("40001"), message="serialization failure"
+                    )
+                )
+            )
+        return fx.void
+
+    client = yield from _make_client(commit=fx.suspend(commit))
+    sql = client.sql
+
+    def retryable(error: object) -> bool:
+        return isinstance(error, SqlError) and isinstance(
+            error.reason, SerializationError | DeadlockError
+        )
+
+    result = yield from (
+        sql.with_transaction(client.record("body").and_then(client.after("1").as_("body")))
+        .pipe(fx.provide_service(sql_client.BeginTransaction, "BEGIN ISOLATION LEVEL SERIALIZABLE"))
+        .retry(while_=retryable, times=5)
+    )
+
+    assert result == "body"
+    assert client.calls == [
+        "BEGIN ISOLATION LEVEL SERIALIZABLE",
+        "body",
+        "COMMIT",
+        "release",
+        "BEGIN ISOLATION LEVEL SERIALIZABLE",
+        "body",
+        "COMMIT",
+        "release",
+        "after(1)",
+    ]
+
+
+# --- makeWithTransaction tracing ---------------------------------------------------------
+
+_ATTR_WAIT_TIME = "db.client.connection.wait_time_ms"
+
+
+def _recording() -> tuple[Tracer, list[NativeSpan]]:
+    """A tracer collecting every span it starts, in order."""
+    spans: list[NativeSpan] = []
+
+    def make(request: SpanRequest) -> NativeSpan:
+        span = NativeSpan(request)
+        spans.append(span)
+        return span
+
+    return Tracer(make), spans
+
+
+def _traced[A, E](effect: fx.Effect[A, E], tracer: Tracer, propagate: bool) -> fx.Effect[A, E]:
+    return effect.with_tracer(tracer).pipe(fx.provide_service(st.SpanPropagationEnabled, propagate))
+
+
+def _status(span: NativeSpan) -> str:
+    return "Ended" if isinstance(span.status, Ended) else "Started"
+
+
+@testing.effect
+def test_traces_each_transaction_control_as_a_client_span_of_its_transaction_level():
+    """traces each transaction control as a client span of its transaction level"""
+    harness = _make_harness(release_savepoint=True, span_attributes=(("db.namespace", "app"),))
+    tracer, spans = _recording()
+    during_body: list[tuple[str, str]] = []
+
+    def body():
+        during_body.extend((span.name, _status(span)) for span in spans)
+        yield from harness.with_transaction(fx.void)
+        yield from harness.with_transaction(fx.fail("boom")).exit()
+
+    yield from _traced(harness.with_transaction(fx.gen(body)), tracer, True)
+
+    # BEGIN has ended before the body runs, and COMMIT only starts after it.
+    assert during_body == [("sql.transaction", "Started"), ("BEGIN app", "Ended")]
+    level = {"db.namespace": "app"}
+
+    def control(operation: str) -> dict[str, object]:
+        return {**level, "db.operation.name": operation}
+
+    def parent_index(span: NativeSpan) -> int:
+        return -1 if span.parent is None else spans.index(cast("NativeSpan", span.parent))
+
+    assert [(s.name, parent_index(s), s.kind, dict(s.attributes)) for s in spans] == [
+        ("sql.transaction", -1, "internal", {**level, _ATTR_WAIT_TIME: 0}),
+        ("BEGIN app", 0, "client", control("BEGIN")),
+        ("sql.transaction", 0, "internal", level),
+        ("SAVEPOINT app", 2, "client", control("SAVEPOINT")),
+        ("RELEASE SAVEPOINT app", 2, "client", control("RELEASE SAVEPOINT")),
+        ("sql.transaction", 0, "internal", level),
+        ("SAVEPOINT app", 5, "client", control("SAVEPOINT")),
+        ("ROLLBACK TO SAVEPOINT app", 5, "client", control("ROLLBACK TO SAVEPOINT")),
+        ("RELEASE SAVEPOINT app", 5, "client", control("RELEASE SAVEPOINT")),
+        ("COMMIT app", 0, "client", control("COMMIT")),
+    ]
+
+
+@testing.effect
+def test_ends_each_control_span_with_its_own_exit_when_the_body_or_commit_fails():
+    """ends each control span with its own exit when the body or COMMIT fails"""
+
+    def exits(spans: list[NativeSpan]) -> list[tuple[str, object]]:
+        return [
+            (span.name, span.status.exit if isinstance(span.status, Ended) else None)
+            for span in spans
+        ]
+
+    rolled_back, rolled_back_spans = _recording()
+    yield from _traced(_make_harness().with_transaction(fx.fail("boom")), rolled_back, True).exit()
+    assert exits(rolled_back_spans) == [
+        ("sql.transaction", fx.exit.fail("boom")),
+        ("BEGIN", fx.exit.void),
+        ("ROLLBACK", fx.exit.void),
+    ]
+
+    commit_error = _sql_error("commit rejected")
+    failed_commit, failed_commit_spans = _recording()
+    ex = yield from _traced(
+        _make_harness(
+            commit=lambda: fx.fail(commit_error), on_commit_failure=lambda: fx.void
+        ).with_transaction(fx.void),
+        failed_commit,
+        True,
+    ).exit()
+    _assert_typed_failure(ex, commit_error)
+    assert exits(failed_commit_spans) == [
+        ("sql.transaction", fx.exit.fail(commit_error)),
+        ("BEGIN", fx.exit.void),
+        ("COMMIT", fx.exit.fail(commit_error)),
+        ("ROLLBACK", fx.exit.void),
+    ]
+
+
+@testing.effect
+def test_traces_controls_without_span_propagation_but_records_no_wait_time_or_events():
+    """traces controls without span propagation, but records no wait time or events, and none without tracing"""  # noqa: E501
+    harness = _make_harness()
+
+    unpropagated, unpropagated_spans = _recording()
+    yield from _traced(harness.with_transaction(fx.void), unpropagated, False)
+    disabled, disabled_spans = _recording()
+    yield from _traced(harness.with_transaction(fx.void), disabled, True).pipe(
+        fx.provide_service(TracerEnabled, False)
+    )
+
+    assert [(s.name, dict(s.attributes), list(s.events)) for s in unpropagated_spans] == [
+        ("sql.transaction", {}, []),
+        ("BEGIN", {"db.operation.name": "BEGIN"}, []),
+        ("COMMIT", {"db.operation.name": "COMMIT"}, []),
+    ]
+    assert disabled_spans == []
+
+
+@testing.effect
+def test_acquires_under_the_transaction_span_and_records_the_wait_for_the_connection():
+    """acquires under the transaction span and records the wait for the connection, not BEGIN"""
+    acquired_under: list[str | None] = []
+
+    def acquire_body():
+        span = yield from fx.tracer.current_span().option()
+        acquired_under.append(None if span is None else span.value.span_id)
+        yield from fx.sleep("30 millis")
+
+    harness = _make_harness(acquire=fx.gen(acquire_body), during_begin=fx.sleep("20 millis"))
+
+    def run(transaction: fx.Effect[None, Any], *, propagate: bool, timing: bool):
+        tracer, spans = _recording()
+        acquired_under.clear()
+        fiber = yield from (
+            _traced(transaction, tracer, propagate)
+            .pipe(fx.provide_service(TracerTimingEnabled, timing))
+            .fork()
+        )
+        yield from testing.adjust("50 millis")
+        yield from fiber.join()
+        transactions = [span for span in spans if span.name == "sql.transaction"]
+        return (
+            [span_id == transactions[0].span_id for span_id in acquired_under],
+            [span.attributes.get(_ATTR_WAIT_TIME) for span in transactions],
+        )
+
+    nested = harness.with_transaction(harness.with_transaction(fx.void))
+
+    results = [
+        (yield from run(harness.with_transaction(fx.void), propagate=True, timing=True)),
+        (yield from run(nested.with_span("outer"), propagate=True, timing=True)),
+        (yield from run(nested.with_span("outer"), propagate=False, timing=True)),
+        (yield from run(nested, propagate=True, timing=False)),
+    ]
+    assert results == [
+        ([True], [30]),
+        ([True], [30, None]),
+        ([True], [None, None]),
+        ([True], [None, None]),
+    ]
 
 
 # --- afterCommit -------------------------------------------------------------------------

@@ -16,7 +16,9 @@ any. A subclass of `GraphQLGroup` collects them as attributes, and `client.make(
 gives an instance whose methods are typed by each operation: call `group.repo_stars(
 variables)` and get the decoded result. Each call also takes `headers`, `url_params`, a
 per-call `context`, and `partial=True`, which gives a `PartialResult` with the `data` and
-the `errors` instead of failing on GraphQL errors.
+the `errors` instead of failing on GraphQL errors. A non-2xx HTTP response never succeeds,
+even with `partial=True`: it is a `ResponseError` when its body has `errors`, and a
+`TransportError` with the status, headers and `Retry-After` otherwise.
 
 A failure is a `GraphQLClientError` naming the operation, with a `reason`:
 `ResponseError` (the server's `errors`, the status and headers), `TransportError`,

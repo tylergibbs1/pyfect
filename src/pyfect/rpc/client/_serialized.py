@@ -4,7 +4,7 @@ the requests for the ``ClientProtocol`` and decodes its responses."""
 from __future__ import annotations
 
 import itertools
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any, Never, cast, overload
 
@@ -48,6 +48,7 @@ class _Schemas:
     decode_chunk: _Parse | None
     encode_payload: _Parse
     decode_exit: _Parse
+    decode_discard_exit: _Parse
 
 
 def _schemas(protocol: ClientProtocolService, rpc: AnyRpc) -> _Schemas:
@@ -59,10 +60,14 @@ def _schemas(protocol: ClientProtocolService, rpc: AnyRpc) -> _Schemas:
         if streams is None
         else S.decode_unknown_effect(codec_for(S.NonEmptyArray(streams.success)), **options)
     )
+    exits = exit_schema(rpc)
+    # The server encodes the exits of a discarded call with a void success.
+    discard_exit = S.Exit(S.Void, exits.error, exits.defect)
     return _Schemas(
         chunk,
         S.encode_unknown_effect(codec_for(rpc.payload_schema), **options),
-        S.decode_unknown_effect(codec_for(exit_schema(rpc)), **options),
+        S.decode_unknown_effect(codec_for(exits), **options),
+        S.decode_unknown_effect(codec_for(discard_exit), **options),
     )
 
 
@@ -71,6 +76,7 @@ class _Entry:
     rpc: AnyRpc
     context: Context[Any]
     schemas: _Schemas
+    discard: bool = False
 
 
 class _Serialized:
@@ -128,7 +134,7 @@ class _Serialized:
         try:
             return cast("BaseException", self._decode_defect(encoded))
         except S.SchemaError as error:
-            return RpcClientDefect("Error decoding defect", error)
+            return RpcClientDefect(message="Error decoding defect", cause=error)
 
     def _interrupt_request(self, request_id: RequestId) -> Effect[None, RpcClientError]:
         if self._entries.pop(request_id, None) is None:
@@ -155,7 +161,7 @@ class _Serialized:
         rpc = self._group.rpcs[message.tag]
         fiber = Fiber.get_current()
         context = Context.empty() if fiber is None else fiber._context  # pyright: ignore[reportPrivateUsage]
-        entry = _Entry(rpc, context, self._schemas_of(rpc))
+        entry = _Entry(rpc, context, self._schemas_of(rpc), message.discard)
         self._entries[message.id] = entry
 
         def send(payload: object) -> Effect[None, Any]:
@@ -169,6 +175,8 @@ class _Serialized:
                 "payload": payload,
                 "headers": [[k, v] for k, v in message.headers.items()],
             }
+            if message.discard:
+                encoded["discard"] = True
             if message.span_id is not None:
                 encoded["traceId"] = message.trace_id
                 encoded["spanId"] = message.span_id
@@ -199,8 +207,14 @@ class _Serialized:
                 )
             case "ClientProtocolError":
                 error = cast("RpcClientError", message["error"])
-                ids = list(self._entries)
-                self._entries.clear()
+                listed = cast("list[RequestId] | None", message.get("requestIds"))
+                ids = (
+                    list(self._entries)
+                    if listed is None
+                    else [request_id for request_id in listed if request_id in self._entries]
+                )
+                for request_id in ids:
+                    del self._entries[request_id]
                 failure = Exit.fail(error)
 
                 @gen
@@ -248,9 +262,13 @@ class _Serialized:
         if entry is None:
             return _VOID
         core = self._core()
-        decoded = entry.schemas.decode_exit(message.get("exit")).pipe(
-            provide_context(entry.context)
-        )
+        encoded_exit = message.get("exit")
+        # The success of a discarded call is its acknowledgement, which has
+        # no value, and an older server may send the handler's result instead.
+        if entry.discard and _is_success(encoded_exit):
+            return core.write(ResponseExit(0, request_id, Exit.succeed(None)))
+        decode = entry.schemas.decode_discard_exit if entry.discard else entry.schemas.decode_exit
+        decoded = decode(encoded_exit).pipe(provide_context(entry.context))
         return (
             decoded.or_die()
             .exit()
@@ -266,6 +284,13 @@ class _Serialized:
                 )
             )
         )
+
+
+def _is_success(encoded_exit: object) -> bool:
+    """Whether an encoded exit is a success, whatever its value."""
+    if not isinstance(encoded_exit, Mapping):
+        return False
+    return cast("Mapping[str, object]", encoded_exit).get("_tag") == "Success"
 
 
 @overload

@@ -144,7 +144,7 @@ class _Server:
         range_header = request.headers.get("range") if request.method == "GET" else None
         full: HttpServerResponse | None = None
         headers = request.headers
-        if headers.get("if-none-match") is not None or headers.get("if-modified-since") is not None:
+        if any(headers.get(name) is not None for name in _conditional.HEADERS):
             full = yield from self._file_response(request, file_path)
             not_modified = _conditional.evaluate(request, full)
             if not_modified is not None:

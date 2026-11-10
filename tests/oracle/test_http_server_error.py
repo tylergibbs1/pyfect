@@ -38,15 +38,23 @@ def test_formats_request_reason_messages() -> None:
     assert RouteNotFound(request).message == "RouteNotFound (POST /widgets)"
 
 
-def test_redacts_query_params_using_the_current_redacted_names() -> None:
-    """redacts query params using the current redacted names"""
+def test_omits_the_query_string() -> None:
+    """omits the query string"""
     request = _request("GET", "http://example.com/widgets?token=token-secret&sig=sig-visible")
     message = fx.run_blocking(
         effect.sync(lambda: RouteNotFound(request).message).pipe(
             effect.provide_service(CurrentRedactedNames, ("token",))
         )
     )
-    assert message == "RouteNotFound (GET /widgets?token=REDACTED&sig=sig-visible)"
+    assert message == "RouteNotFound (GET /widgets)"
+
+
+def test_formats_an_absolute_request_url_as_its_path() -> None:
+    """formats an absolute request URL as its path"""
+    request = _request("GET", "http://example.com/").modify(
+        url="https://user:password@api.test/path?token=secret"
+    )
+    assert RouteNotFound(request).message == "RouteNotFound (GET /path)"
 
 
 def test_formats_response_reason_messages() -> None:

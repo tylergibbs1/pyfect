@@ -9,12 +9,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from pyfect._core import Effect, _FailCause, _MatchCause, _Succeed, _Sync, _WithFiber
+from pyfect._core import Effect, _FailCause, _MatchCause, _Succeed, _Sync
 from pyfect._effect_args import require_effect
 from pyfect._primitives import uninterruptible_mask
 from pyfect.cause import Cause
 from pyfect.cause import fail as fail_cause
-from pyfect.scope import CloseableScope, Scope
+from pyfect.scope import Scope
 from pyfect.semaphore import Semaphore
 from pyfect.sql.connection import Acquirer, Borrower, Connection
 from pyfect.sql.error import ConnectionError, SqlError
@@ -95,17 +95,11 @@ def make_sqlite_acquirers[C: Connection](
 
     available = connection.flat_map(check)
 
-    def lease_body(fiber: Any) -> Effect[C, SqlError, Scope]:
-        scope: CloseableScope = fiber._context.get_unsafe(Scope)
-        return uninterruptible_mask(
-            lambda restore: (
-                restore(semaphore.take(1))
-                .and_then(scope.add_finalizer(lambda _: semaphore.release(1)))
-                .and_then(available)
-            )
-        )
-
-    lease: Effect[C, SqlError, Scope] = _WithFiber(lease_body)
+    # The permit's release is registered as it is taken, so an interrupt
+    # right after the wait cannot leak it.
+    lease: Effect[C, SqlError, Scope] = uninterruptible_mask(
+        lambda restore: restore(semaphore.take_scoped(1)).and_then(available)
+    )
 
     def borrow[A, E, R](f: Callable[[Connection], Effect[A, E, R]]) -> Effect[A, E | SqlError, R]:
         return semaphore.with_permits(available.flat_map(f))

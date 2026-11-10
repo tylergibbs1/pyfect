@@ -833,3 +833,74 @@ def test_rejects_incompatible_proto_security_schemes() -> None:
     """rejects incompatible __proto__ security schemes"""
     with pytest.raises(ValueError, match="Conflicting OpenAPI security scheme: __proto__"):
         openapi.from_api(_security_api(ProtoHeaderAuth, ProtoQueryAuth))
+
+
+class BearerOrKeyAuth(
+    HttpApiMiddleware,
+    key="BearerOrKeyAuth",
+    security={
+        "bearer": security.bearer,
+        "apiKey": security.api_key(key="x-alternative-key"),
+    },
+):
+    pass
+
+
+def test_requires_every_stacked_security_middleware() -> None:
+    """OpenApi / requires every stacked security middleware"""
+    api = HttpApi.make("Api").add(
+        HttpApiGroup.make("test").add(
+            ep.get("secured", "/secured").middleware(BearerOrKeyAuth).middleware(HeaderAuthA),
+            ep.get("public", "/public"),
+        )
+    )
+    spec = openapi.from_api(api)
+    assert spec["paths"]["/secured"]["get"]["security"] == [
+        {"bearer": [], "auth": []},
+        {"apiKey": [], "auth": []},
+    ]
+    assert spec["paths"]["/public"]["get"]["security"] == []
+
+
+def test_emits_each_listed_stream_content_type_in_declared_order() -> None:
+    """OpenApi / emits each listed stream content type in declared order"""
+    api = HttpApi.make("Api").add(
+        HttpApiGroup.make("test").add(
+            ep.get(
+                "logs",
+                "/logs",
+                success=api_schema.StreamUint8Array(
+                    content_type=[
+                        "application/vnd.docker.raw-stream",
+                        "application/vnd.docker.multiplexed-stream",
+                    ]
+                ),
+            ),
+            ep.post(
+                "ingest",
+                "/ingest",
+                payload=api_schema.StreamNdjson(
+                    S.Finite, content_type=["application/jsonl", "application/json"]
+                ),
+            ),
+        )
+    )
+    spec = openapi.from_api(api)
+    as_bytes = {
+        "schema": {"type": "string", "format": "binary"},
+        "x-effect-stream": {"encoding": "uint8array"},
+    }
+    ndjson = {"schema": {"type": "number"}, "x-effect-stream": {"encoding": "ndjson"}}
+    logs = spec["paths"]["/logs"]["get"]["responses"]["200"]["content"]
+    assert logs == {
+        "application/vnd.docker.raw-stream": as_bytes,
+        "application/vnd.docker.multiplexed-stream": as_bytes,
+    }
+    assert list(logs) == [
+        "application/vnd.docker.raw-stream",
+        "application/vnd.docker.multiplexed-stream",
+    ]
+    assert spec["paths"]["/ingest"]["post"]["requestBody"] == {
+        "content": {"application/jsonl": ndjson, "application/json": ndjson},
+        "required": True,
+    }

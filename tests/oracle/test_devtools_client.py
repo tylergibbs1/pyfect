@@ -23,7 +23,7 @@ refused = fx.fail(open_error("connection refused"))
 
 
 def _close_error(code: int) -> SocketError:
-    return SocketError(SocketCloseError(code))
+    return SocketError(reason=SocketCloseError(code=code))
 
 
 def connection(drop_after: float | None = None):

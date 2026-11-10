@@ -72,6 +72,28 @@ def test_file_system_store_names_files_by_percent_encoded_keys(tmp_path: Path):
 
 
 @testing.effect
+def test_file_system_keys_fail_on_a_file_name_decode_uri_component_rejects(tmp_path: Path):
+    """As Effect's ``decodeURIComponent``: ``keys`` fails on a stray ``%`` or
+    escapes that are not UTF-8, and ``clear_prefix`` leaves such files."""
+    directory = tmp_path / "kv"
+    layer = kvs.layer_file_system(str(directory)).pipe(fx.provide(_PLATFORM))
+
+    def body():
+        kv = yield from kvs.KeyValueStore()
+        yield from kv.set("p/a", "1")
+        for name in ("p%zz", "p%FF"):
+            (directory / name).write_text("x")
+            error = yield from kv.keys.flip()
+            assert (error.method, error.key) == ("keys", None)
+            yield from kv.clear_prefix("p")
+            assert sorted(p.name for p in directory.iterdir()) == [name]
+            (directory / name).unlink()
+            yield from kv.set("p/a", "1")
+
+    yield from fx.gen(body).pipe(fx.provide(layer))
+
+
+@testing.effect
 def test_string_only_store_writes_bytes_as_base64():
     backing: dict[str, str] = {}
 

@@ -214,8 +214,9 @@ def make(
     - ``acquirer`` leases connections; ``borrower`` lends one for a single
       statement outside transactions; ``transaction_acquirer`` (default:
       ``acquirer``) leases those of transactions and ``reserve``
-    - ``prepare_transaction_controls``: run ``BEGIN``, ``COMMIT`` and the
-      rest prepared (off by default: several databases refuse)
+    - ``prepare_transaction_controls``: run ``BEGIN``, ``COMMIT`` and
+      ``SAVEPOINT`` prepared (off by default: several databases refuse);
+      rollbacks and savepoint releases always run unprepared
     - ``commit``: its SQL, or an effect committing on the connection;
       ``on_commit_failure`` cleans up when it fails
     - ``is_transaction``: whether a transaction is open; when it says no,
@@ -225,22 +226,27 @@ def make(
     """
     service = transaction_service or transaction_connection()
 
+    def unprepared(conn: Connection, sql: str) -> Effect[None, SqlError]:
+        return conn.execute_unprepared(sql, (), None).as_void()
+
     def control(conn: Connection, sql: str) -> Effect[None, SqlError]:
         if prepare_transaction_controls:
             return conn.execute(sql, (), None).as_void()
-        return conn.execute_unprepared(sql, (), None).as_void()
+        return unprepared(conn, sql)
 
     def cleanup(conn: Connection, sql: str) -> Effect[None, SqlError]:
+        # Always unprepared, so a prepared statement the backend has dropped
+        # cannot stop a rollback or a savepoint release.
         if is_transaction is not None and not is_transaction(conn):
             return _Succeed(None)
-        return control(conn, sql)
+        return unprepared(conn, sql)
 
     def begin(conn: Connection, statement: str | None) -> Effect[None, SqlError]:
         # Unlike the client's own, a provided statement isn't fixed, so it
         # isn't prepared.
         if statement is None:
             return control(conn, begin_transaction)
-        return conn.execute_unprepared(statement, (), None).as_void()
+        return unprepared(conn, statement)
 
     def name(depth: int) -> str:
         return f"effect_sql_{depth}"

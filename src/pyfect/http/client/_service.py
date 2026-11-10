@@ -10,7 +10,7 @@ from pyfect.context import Tag
 from pyfect.effect import Effect, fail, succeed
 from pyfect.http import request as _request
 from pyfect.http import response as _response
-from pyfect.http.cookies import Cookies
+from pyfect.http.cookies import Cookie
 from pyfect.http.error import HttpClientError
 from pyfect.http.request import HttpClientRequest, RequestOptions, UrlInput
 from pyfect.http.response import HttpClientResponse
@@ -280,6 +280,17 @@ class HttpClientService[E, R = Never]:
             )
         )
 
+    def timeout(self, duration: Duration) -> HttpClientService[E | HttpClientError, R]:
+        """Fail a request that gets no response within ``duration`` with an
+        ``HttpClientError`` whose reason is a ``TransportError`` caused by a
+        ``TimeoutException`` (which ``retry_transient`` retries). The request
+        is interrupted, so it is aborted unless ``with_scope`` holds it.
+        Applied before ``retry_transient`` each attempt gets its own budget;
+        after it, the budget bounds the whole retry loop."""
+        from pyfect.http.client._timeout import timeout
+
+        return self.transform(timeout(duration))
+
     def with_rate_limiter(
         self,
         *,
@@ -338,39 +349,42 @@ class HttpClientService[E, R = Never]:
 
         return self.transform(with_circuit_breaker(breaker, key, classify))
 
-    def with_cookies_ref(self, ref: Ref[Cookies]) -> HttpClientService[E, R]:
-        """Keep the cookies each response sets in ``ref`` and send them back
-        the way a browser does: to the host that set them (or its
-        ``Domain``), on their ``Path``, over https only when ``Secure``. A
-        response cannot set or replace a cookie for a domain it is not part
-        of. Cookies the program puts in ``ref`` without a ``Domain`` go to
-        every request."""
-        from pyfect.http.client import _cookie_jar
+    def with_cookies_ref(self, ref: Ref[tuple[Cookie, ...]]) -> HttpClientService[E, R]:
+        """Keep the cookies each response sets in ``ref``
+        (``cookies.merge_into_array`` for the response URL) and send each
+        request the ones ``cookies.to_request_cookie_header`` selects for its
+        final URL, after later changes such as ``prepend_url``; with
+        ``follow_redirects`` applied after it, on every hop. Expiry reads the
+        ``Clock``."""
+        from pyfect.clock import current_time_millis
+        from pyfect.http.client._make import carry_scope
+        from pyfect.http.cookies import merge_into_array, to_request_cookie_header
 
         pre = self._preprocess
         post = self._postprocess
 
-        def send(request: HttpClientRequest, jar: Cookies) -> HttpClientRequest:
-            cookies = _cookie_jar.for_request(jar, request.url)
-            if cookies.is_empty():
-                return request
-            return request.set_header("cookie", cookies.to_cookie_header())
+        def add_cookies(request: HttpClientRequest) -> Effect[HttpClientRequest]:
+            def with_header(jar: tuple[Cookie, ...], now: float) -> Effect[HttpClientRequest]:
+                header = to_request_cookie_header(jar, request.url, now)
+                if header is None:
+                    return succeed(request)
+                with_cookies = request.set_header("cookie", header)
+                return carry_scope(request, with_cookies).as_(with_cookies)
 
-        def with_cookies(request: HttpClientRequest) -> Effect[HttpClientRequest, Any, Any]:
-            return pre(request).flat_map(
-                lambda request: ref.get().map(lambda jar: send(request, jar))
-            )
+            return ref.get().zip_with(current_time_millis(), with_header).flatten()
 
         def store(
             requests: Effect[HttpClientRequest, Any, Any],
         ) -> Effect[HttpClientResponse, E, R]:
-            return post(requests).tap(
-                lambda response: ref.update(
-                    lambda jar: _cookie_jar.store(jar, response.request.url, response.cookies)
+            return post(requests.flat_map(add_cookies)).tap(
+                lambda response: current_time_millis().flat_map(
+                    lambda now: ref.update(
+                        lambda jar: merge_into_array(jar, response.url, response.cookies, now)
+                    )
                 )
             )
 
-        return HttpClientService(store, with_cookies)
+        return HttpClientService(store, pre)
 
     def with_scope(self) -> HttpClientService[E, R | Scope]:
         """Tie each request to the current ``Scope``: closing it aborts the

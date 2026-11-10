@@ -56,12 +56,40 @@ and `stream_lines` start a command, read its output and clean up in one call.
 
 `pipe_to` feeds one command's output into the next, as `|` does in a shell.
 
+A command can also be a template, written as in a shell: `process.make(["git commit -m ", ""],
+message)` gives its text parts and the values between them, as a tagged template does (on
+Python 3.14, `process.make(t"git commit -m {message}")`). Quotes group words and each value is
+one literal argument, so a value never splits or expands. Text that needs a shell (`|`,
+`$HOME`, `*`, `~`) raises `CommandLineError` where the command is made. With `shell=True` the
+command is the whole script, and arguments next to it are refused with `BadArgument`:
+`command_line.join` and `command_line.quote` build a script with values quoted for POSIX
+shells, PowerShell or Windows programs. Arguments and `env` values can be `Redacted`: the
+process gets their values, while errors show commands through `command_line.display`, which
+masks them.
+
+<CodeOutput>
+
+<include meta='title="command_line.py"'>../../snippets/platform/command_line.py</include>
+
+<include lang="text">../../snippets/platform/command_line.out</include>
+
+</CodeOutput>
+
+`StdoutConfig` and `StderrConfig` wrap an output option, and `StdinConfig` sets how standard
+input ends and the `encoding` text written to the handle's `stdin` is encoded with. A
+`DuplexFd` is an extra descriptor both sides read and write, a socket pair; ending its input
+shuts down only the writing half, so the child can still answer on it.
+
 ## HTTP requests
 
 An `HttpClient` is a value: methods like `filter_status_ok`, `retry_transient` and `transform`
 each give back a new client. `retry_transient` retries timeouts, transport errors and the
 statuses worth retrying (408, 429, 500, 502, 503 and 504), and waits at least as long as a
-response's `Retry-After` asks. `response.schema_body_json` decodes the body with a
+response's `Retry-After` asks. `timeout` fails a request that gets no response in time with a
+`TransportError` (so `retry_transient` retries it); applied before `retry_transient` each
+attempt gets its own budget, applied after it the budget covers every attempt.
+`client.is_transient_error` and `client.is_transient_response` classify failures the same way
+for a policy of your own. `response.schema_body_json` decodes the body with a
 [schema](/docs/schema), so a payload of the wrong shape fails with a `SchemaError`.
 
 This program runs against `client.layer_test`, which answers each request with a function.
@@ -77,6 +105,24 @@ In production, provide `httpx_client.layer` instead (install the `pyfect-dev[htt
 
 Every request runs in a client span and sends trace headers (see
 [observability](/docs/observability)); interrupting a request aborts it.
+
+A body is sent as it is pulled when it is a stream (`body.stream`), and so is a form file
+whose content is a function opening a stream (`body.File(lambda: chunks, "big.bin")`): the
+file is read only as fast as the connection takes it, and an interrupted request stops it.
+
+`with_cookies_ref(ref)` keeps the cookies responses set in a `Ref[tuple[Cookie, ...]]` and
+sends them back the way a browser does (RFC 6265): only to the host that set them, or the
+hosts their `Domain` covers, on their `Path`, over https when they're `Secure`, and not after
+they expire. `cookies.merge_into_array` and `cookies.to_request_cookie_header` are the same
+rules on a plain tuple, for seeding a jar or reading one.
+
+<CodeOutput>
+
+<include meta='title="cookies.py"'>../../snippets/platform/cookies.py</include>
+
+<include lang="text">../../snippets/platform/cookies.out</include>
+
+</CodeOutput>
 
 ## URLs
 

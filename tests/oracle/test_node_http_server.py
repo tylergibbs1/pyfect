@@ -40,7 +40,7 @@ import json
 import re
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Never
 
 import pytest
 
@@ -910,3 +910,86 @@ def test_answers_a_response_with_an_invalid_status_with_a_500_and_closes_the_raw
     assert response.status == 500
     assert len(observed) == 1 and isinstance(observed[0], Exit.Failure)
     assert chunks.closed
+
+
+def test_redacts_configured_headers_when_inspecting_requests() -> None:
+    """redacts configured headers when inspecting requests"""
+    from pyfect.http.headers import CurrentRedactedNames
+
+    def inspect(request: ServerRequest) -> fx.Effect[HttpServerResponse, Any]:
+        return effect.sync(
+            lambda: {
+                "json": json.dumps(request.headers.to_json()),
+                "formatted": repr(request.headers),
+            }
+        ).flat_map(server_response.json)
+
+    app = router.add(
+        "GET",
+        "/inspect",
+        _with_request(inspect).pipe(effect.provide_service(CurrentRedactedNames, ("x-secret",))),
+    )
+
+    @fx.fn
+    def program():
+        client = yield from HttpClient()
+        response = yield from client.get("/inspect", headers={"x-secret": "header-secret"})
+        return (yield from response.json)
+
+    result = run_live(_routed(app, program()))
+    assert '"x-secret": "<redacted>"' in result["json"]
+    assert "header-secret" not in result["json"]
+    assert "header-secret" not in result["formatted"]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        pytest.param(lambda: server_response.bytes_(bytes(1024)), id="Uint8Array"),
+        pytest.param(lambda: server_response.raw(bytes(1024)), id="Raw"),
+    ],
+)
+def test_completes_a_response_sent_after_a_disconnect(
+    response: Callable[[], HttpServerResponse],
+) -> None:
+    """completes a $body response sent on $event after a disconnect
+
+    The handler answers once the client has closed its connection; writing
+    the response must finish rather than wait for a peer that is gone."""
+    import socket as socket_
+
+    from pyfect.deferred import Deferred
+
+    @fx.fn
+    def program():
+        received = yield from Deferred[None, Never].make()
+        disconnected = yield from Deferred[None, Never].make()
+        sent = yield from Deferred[HttpServerResponse, Any].make()
+
+        @fx.fn
+        def handle():
+            yield from received.succeed(None)
+            yield from disconnected.wait()
+            yield from fx.sleep("50 millis")
+            return response()
+
+        app = router.add("GET", "/", handle(), uninterruptible=True)
+
+        def middleware(app: fx.Effect[HttpServerResponse, Any, Any]) -> Any:
+            return app.on_exit(sent.done)
+
+        yield from router.serve(app, middleware=middleware, disable_logger=True).build()
+        at = yield from port
+
+        def connect() -> socket_.socket:
+            conn = socket_.create_connection(("127.0.0.1", at), timeout=5)
+            conn.sendall(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            return conn
+
+        conn = yield from effect.blocking(connect)
+        yield from received.wait()
+        conn.close()
+        yield from disconnected.succeed(None)
+        return (yield from sent.wait().timeout("2 seconds"))
+
+    assert run_live(program()).status == 200

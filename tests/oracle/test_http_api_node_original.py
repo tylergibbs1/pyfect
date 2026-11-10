@@ -19,6 +19,7 @@ from typing import Any
 import pyfect as fx
 from pyfect import date_time, effect, layer, redacted
 from pyfect import schema as S
+from pyfect.clock import current_time_millis
 from pyfect.context import Tag
 from pyfect.exit import Failure, Success
 from pyfect.file_system import FileSystem
@@ -26,6 +27,7 @@ from pyfect.http import body as http_body
 from pyfect.http import client as http_client
 from pyfect.http import cookies, multipart, request, server_response
 from pyfect.http.error import DecodeError, HttpClientError
+from pyfect.http.server import HttpServer, format_address
 from pyfect.http.server_request import HttpServerRequest, ParsedSearchParams
 from pyfect.http.web import WebRequest
 from pyfect.http.web_handler import request_from_web
@@ -496,7 +498,16 @@ def test_security_middleware_sets_current_user() -> None:
     """HttpApi / original tests / security / security middleware sets current user"""
 
     def program() -> Any:
-        jar = yield from Ref.make(cookies.EMPTY.set_unsafe("token", "foo"))
+        address = (yield from HttpServer()).address
+        origin = format_address(address).replace("localhost", "127.0.0.1")
+        jar = yield from Ref.make(
+            cookies.merge_into_array(
+                (),
+                origin,
+                cookies.from_set_cookie("token=foo; Path=/"),
+                (yield from current_time_millis()),
+            )
+        )
         http = (yield from http_client.HttpClient()).with_cookies_ref(jar)
         find = get_group((yield from client.make_with(Api, http_client=http)), Users).method(
             "findById"

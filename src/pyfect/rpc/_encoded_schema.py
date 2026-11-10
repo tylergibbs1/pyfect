@@ -19,6 +19,7 @@ class _Request(TypedDict):
     payload: bytes
     headers: tuple[tuple[str, str], ...]
     isNotification: NotRequired[Literal[True] | None]
+    discard: NotRequired[Literal[True] | None]
     traceId: NotRequired[str | None]
     spanId: NotRequired[str | None]
     sampled: NotRequired[bool | None]
@@ -71,6 +72,7 @@ EncodedSchema: S.Codec[Any, Any] = S.Union(
         payload=S.Bytes,
         headers=S.Array(S.Tuple(S.String, S.String)),
         isNotification=_optional(S.Literal(True)),
+        discard=_optional(S.Literal(True)),
         traceId=_optional(S.String),
         spanId=_optional(S.String),
         sampled=_optional(S.Boolean),

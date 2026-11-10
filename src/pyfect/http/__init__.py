@@ -28,6 +28,7 @@ Server:
 - ``platform``, ``static_server``, ``multipart``, ``etag``, ``mime``,
   ``template``, ``status``
 - ``prometheus``: the metrics registry as a scrape endpoint
+- ``problem_details``: RFC 9457 problem bodies (``application/problem+json``)
 
 ::
 
@@ -60,6 +61,7 @@ from pyfect.http import (
     multipart,
     origin,
     platform,
+    problem_details,
     prometheus,
     request,
     response,
@@ -106,6 +108,7 @@ __all__ = [
     "multipart",
     "origin",
     "platform",
+    "problem_details",
     "prometheus",
     "request",
     "response",

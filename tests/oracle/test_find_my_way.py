@@ -304,7 +304,7 @@ def test_node_with_longer_static_suffix_should_have_higher_priority() -> None:
 
 
 def test_node_with_longer_static_suffix_should_have_higher_priority_reversed() -> None:
-    """node with longer static suffix should have higher priority"""
+    """node with longer static suffix should have higher priority when registered first"""
     router = Router[int]()
     router.on("GET", "/foo/:bar.png.png", 2)
     router.on("GET", "/foo/:bar.png", 1)

@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, Never, TypeVar
 
+from pyfect import cause as _cause
+from pyfect import error_reporter
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.context import Context, ServiceMarker, Tag
@@ -34,13 +36,15 @@ from pyfect.http.error import HttpClientError
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
 from pyfect.http.router import Provided, Unhandled
+from pyfect.http.server_respondable import to_response
 from pyfect.http.server_response import HttpServerResponse
-from pyfect.http_api.error import HttpApiSchemaError
+from pyfect.http_api.error import BadRequestProblem, HttpApiSchemaError, InternalServerErrorProblem
 from pyfect.http_api.security import Credential, HttpApiSecurity
 from pyfect.layer import Layer
 from pyfect.layer import effect_context as layer_effect_context
 from pyfect.layer import succeed as layer_succeed
 from pyfect.schema import Codec, Top
+from pyfect.schema.issue import make_formatter_standard_schema_v1
 
 if TYPE_CHECKING:
     from pyfect.http_api.endpoint import AnyEndpoint
@@ -142,6 +146,60 @@ def layer_schema_error_transform[E, R](
     return layer_succeed(middleware, service)
 
 
+class ProblemDetails(
+    HttpApiMiddleware[Never, BadRequestProblem | InternalServerErrorProblem],
+    key="effect/http-api/HttpApiMiddleware/ProblemDetails",
+):
+    """Renders request decoding and response encoding failures as RFC 9457
+    problems (Effect's ``HttpApiMiddleware.ProblemDetails``). It declares
+    ``BadRequestProblem`` (400) and ``InternalServerErrorProblem`` (500), so
+    the OpenAPI document and clients of an API using it know both. Provide
+    it with ``layer_problem_details``."""
+
+    error = (BadRequestProblem, InternalServerErrorProblem)
+
+
+_format_issues = make_formatter_standard_schema_v1()
+_REQUEST_VALIDATION_FAILED = "Request validation failed"
+
+
+def _problem_issues(error: HttpApiSchemaError) -> list[dict[str, object]]:
+    slot = error.kind.lower()
+    return [
+        {
+            "path": [slot, *(key if isinstance(key, int) else str(key) for key in issue["path"])],
+            "message": issue["message"],
+        }
+        for issue in _format_issues(error.cause.issue)["issues"]
+    ]
+
+
+def layer_problem_details(*, include_details: bool = False) -> Layer[ProblemDetails]:
+    """The ``ProblemDetails`` middleware (Effect's ``layerProblemDetails``): a
+    request that does not decode fails with a ``BadRequestProblem`` whose
+    ``detail`` is generic; ``include_details=True`` adds ``errors``, one
+    entry per issue, its path prefixed by the request slot. A response that
+    does not encode is reported to the error reporters, as without the
+    middleware, and answered with an ``InternalServerErrorProblem``."""
+
+    def transform(
+        error: HttpApiSchemaError, _options: MiddlewareOptions
+    ) -> Effect[HttpServerResponse, BadRequestProblem]:
+        if error.kind in ("Body", "ResponseHeaders"):
+            reported = error_reporter.report(_cause.fail(error))
+            return reported.flat_map(lambda _: to_response(InternalServerErrorProblem()))
+        if include_details:
+            return fail(
+                BadRequestProblem(
+                    detail=_REQUEST_VALIDATION_FAILED,
+                    errors=_problem_issues(error),  # pyright: ignore[reportArgumentType]
+                )
+            )
+        return fail(BadRequestProblem(detail=_REQUEST_VALIDATION_FAILED))
+
+    return layer_schema_error_transform(ProblemDetails, transform)
+
+
 # --- client ------------------------------------------------------------------------
 
 
@@ -222,11 +280,13 @@ __all__ = [
     "MiddlewareFn",
     "MiddlewareOptions",
     "MiddlewareService",
+    "ProblemDetails",
     "SecurityMiddlewareFn",
     "SecurityOptions",
     "client_key",
     "client_tag",
     "layer_client",
     "layer_client_effect",
+    "layer_problem_details",
     "layer_schema_error_transform",
 ]

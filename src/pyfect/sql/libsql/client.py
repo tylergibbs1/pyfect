@@ -1,9 +1,10 @@
 """The libSQL client (Effect's ``@effect/sql-libsql`` ``LibsqlClient``): an
 ``SqlClient`` with SQLite's SQL on one SDK client.
 
-Statements and transactions take turns: a statement outside a
-transaction holds the client until it is done, and a transaction from its
-``BEGIN`` until it commits or rolls back. ``BeginTransaction`` is ignored:
+On a local database statements and transactions take turns: a statement
+outside a transaction holds the client until it is done, and a transaction
+from its ``BEGIN`` until it commits or rolls back. Remote statements and
+transactions overlap, each on a stream of its own. ``BeginTransaction`` is ignored:
 transactions begin in ``write`` mode (``BEGIN IMMEDIATE``). Streams are
 not supported.
 """
@@ -15,7 +16,7 @@ from typing import Any, Never, Unpack, cast
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect._primitives import Restore, uninterruptible_mask
+from pyfect._primitives import Restore
 from pyfect.config import Config, ConfigError, unwrap
 from pyfect.context import Context, Tag
 from pyfect.effect import succeed
@@ -23,7 +24,7 @@ from pyfect.layer import Layer, provide
 from pyfect.layer import effect_context as layer_effect_context
 from pyfect.reactivity import Reactivity
 from pyfect.reactivity import layer as reactivity_layer
-from pyfect.scope import Scope, acquire_release, add_finalizer
+from pyfect.scope import Scope, acquire_release
 from pyfect.semaphore import Semaphore
 from pyfect.sql import _loop
 from pyfect.sql.client import (
@@ -141,20 +142,22 @@ def make(
 
     def build(sdk: LibsqlSdk) -> Effect[LibsqlClientService, Never, Reactivity]:
         connection = ClientConnection(sdk)
-        semaphore = Semaphore(1)
-        release: Effect[None, Never, Scope] = add_finalizer(lambda _: semaphore.release(1))
+        # Remote transports run each statement and transaction on a stream of
+        # its own. A local client may own a single connection that it refuses
+        # to lend while a transaction holds it, so take turns on it instead.
+        permit: Effect[None, Never, Scope] = (
+            succeed(None) if sdk.protocol in {"http", "ws"} else Semaphore(1).take_scoped(1)
+        )
 
         def acquire_transaction(restore: Restore) -> Effect[Connection, SqlError, Scope]:
             # Runs masked: only the wait for the permit is interruptible, so
             # a BEGIN the SDK started always ends in a commit or rollback.
             began: Effect[Connection, SqlError] = connection.begin_transaction()
-            return restore(semaphore.take(1)).and_then(release).and_then(began)
+            return restore(permit).and_then(began)
 
         # Outside a transaction, hold the permit until the statement's scope
         # closes, so no other fiber can begin a transaction while it runs.
-        lease: Effect[Connection, SqlError, Scope] = uninterruptible_mask(
-            lambda restore: restore(semaphore.take(1)).and_then(release).as_(connection)
-        )
+        lease: Effect[Connection, SqlError, Scope] = permit.as_(connection)
         with_transaction = make_with_transaction(
             TransactionOptions(
                 transaction_service=service,

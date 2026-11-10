@@ -87,7 +87,10 @@ app needs more room.
   `from_web_handler` keeps `%2F` encoded and never gets a `.` or `..` segment.
 - WebSocket upgrades from a browser page of another origin get a 403; list more origins with
   `layer.succeed(AllowedOrigins, origin.allow(...))` from `pyfect.http.origin`. A WebSocket
-  write waits while more than 64 KiB are unsent.
+  write waits while more than 64 KiB are unsent. `live_server.layer` accepts
+  `permessage-deflate` only with `websocket_per_message_deflate=True` (or a
+  `live_server.PerMessageDeflate(...)`), and a message's inflated size counts against
+  `websocket_max_message_size`.
 - The decompression middleware counts every decoded byte against the body limit and accepts
   at most two stacked codings. `router.cors(credentials=True)` needs a list of origins
   without `*`. A multipart boundary must follow RFC 2046 (1 to 70 characters). A response

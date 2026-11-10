@@ -24,7 +24,16 @@ from typing import Any, Never, cast, overload
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.context import Context, Reference
-from pyfect.effect import context, die, gen, provide_context, provide_service, succeed, sync
+from pyfect.effect import (
+    context,
+    die,
+    gen,
+    provide_context,
+    provide_service,
+    succeed,
+    suspend,
+    sync,
+)
 from pyfect.http.router import HttpRouter, HttpRouterService, Route, RouteContext, route, use
 from pyfect.http.server_request import HttpServerRequest, ParsedSearchParams, ServerRequest
 from pyfect.http.server_respondable import is_respondable, to_response
@@ -80,11 +89,16 @@ def layer[G](
     def add(router: HttpRouterService) -> Effect[None, Never, Any]:
         def with_services(services: Context[Any]) -> Effect[None, Never, Any]:
             routes: list[Route[Any, Any]] = []
+            owners: dict[str, str] = {}
             for group in api.groups.values():
                 found = services.get_option(group.origin)
                 if found is None:
                     return die(RuntimeError(_missing_group(group, services)))
                 service: GroupService = found.value
+                for entry in service.handlers.values():
+                    clash = _claim_route(owners, group, entry.endpoint)
+                    if clash is not None:
+                        return die(RuntimeError(clash))
                 routes.extend(service.routes)
             if schema_error_details:
                 detailed = provide_service(_SchemaErrorDetails, True)
@@ -99,6 +113,22 @@ def layer[G](
         return context().flat_map(with_services)
 
     return use(add)
+
+
+def _claim_route(owners: dict[str, str], group: AnyGroup, endpoint: AnyEndpoint) -> str | None:
+    """Records ``endpoint`` as its method and path's owner; the message when
+    another endpoint has them already."""
+    owner = f"{group.identifier}.{endpoint.identifier}"
+    key = f"{endpoint.method} {_path.to_router_path(endpoint.path, endpoint.params)}"
+    existing = owners.get(key)
+    if existing is not None:
+        return (
+            f'HttpApiEndpoint "{owner}" ({endpoint.method} {endpoint.path}) has the same '
+            f'method and path as "{existing}". Declare one endpoint whose query, headers, '
+            "payload or success schemas cover each variant instead."
+        )
+    owners[key] = owner
+    return None
 
 
 class _SchemaErrorDetails(Reference[bool]):
@@ -296,10 +326,15 @@ def handler_to_http_effect(
     encode_stream = stream_encoder(endpoint, options.success)
     encode_with_headers = with_headers_encoders(endpoint, options.success, options.headers)
     upgrade = next((s for s in endpoint.success if api_schema.is_upgrade(s)), None)
+    # The handler of a mixed endpoint may decline the upgrade with another success.
+    upgrade_only = upgrade is not None and len(endpoint.success) == 1
     encode_upgrade_headers = (
         None
         if upgrade is None or upgrade.headers is None
         else S.encode_unknown_effect(upgrade.headers, **options.headers)
+    )
+    encode_response = _ResponseEncoder(
+        upgrade_only, encode_success, encode_stream, encode_with_headers, services
     )
     payload_by = (
         payload_decoders(endpoint.payload, options.payload)
@@ -319,10 +354,11 @@ def handler_to_http_effect(
         if decode_query is not None:
             query_value = yield from HttpApiSchemaError.wrap("Query", decode_query(query))
         upgrader = None
+        upgraded: list[bool] = []
         if upgrade is not None:
             if not _is_upgrade_request(request, upgrade.protocol):
                 return _upgrade_required(upgrade.protocol)
-            upgrader = _upgrader(request, encode_upgrade_headers)
+            upgrader = _upgrader(request, encode_upgrade_headers, upgraded)
         if payload_by is not None:
             decoded = decode_payload(payload_by, request, query)
             payload = yield from HttpApiSchemaError.wrap("Payload", decoded)
@@ -333,19 +369,7 @@ def handler_to_http_effect(
                 params, query_value, payload, headers, request, endpoint, group, upgrader
             )
         )
-        if isinstance(response, HttpServerResponse):
-            return response
-        if upgrade is not None:
-            # The server replaces this with the 101 once the connection is upgraded.
-            return empty()
-        if encode_with_headers is not None and isinstance(response, api_schema.WithHeadersValue):
-            value = cast("api_schema.WithHeadersValue[Any, Any]", response)
-            return (
-                yield from _encode_with_headers(encode_with_headers, encode_stream, services, value)
-            )
-        streamed = None if encode_stream is None else encode_stream(response, services)
-        encoding = encode_success(response) if streamed is None else streamed
-        return (yield from HttpApiSchemaError.wrap("Body", encoding))
+        return (yield from encode_response(response, upgraded=bool(upgraded)))
 
     def on_error(error: object) -> Effect[HttpServerResponse, Never, Any]:
         if isinstance(error, HttpApiSchemaError):
@@ -368,6 +392,35 @@ def handler_to_http_effect(
 
     wrapped = _apply_middleware(group, endpoint, services, gen(respond))
     return wrapped.with_error_reporting().catch_all(on_error).pipe(provide_context(services))
+
+
+@dataclasses.dataclass(frozen=True)
+class _ResponseEncoder:
+    """A handler's result as the response: an upgrade's empty placeholder, a
+    response as is, or the success encoded."""
+
+    upgrade_only: bool
+    encode_success: Callable[[object], Effect[Any, S.SchemaError, Any]]
+    encode_stream: StreamEncode | None
+    encode_with_headers: WithHeadersEncoders | None
+    services: Context[Any]
+
+    def __call__(self, response: object, *, upgraded: bool) -> Effect[HttpServerResponse, Any, Any]:
+        if isinstance(response, HttpServerResponse):
+            return succeed(response)
+        if self.upgrade_only or upgraded:
+            if response is not None and not self.upgrade_only:
+                return die(RuntimeError("Cannot return a success value after calling upgrade()"))
+            # The server replaces this with the 101 once the connection is upgraded.
+            return succeed(empty())
+        encode_stream, services = self.encode_stream, self.services
+        encoders = self.encode_with_headers
+        if encoders is not None and isinstance(response, api_schema.WithHeadersValue):
+            value = cast("api_schema.WithHeadersValue[Any, Any]", response)
+            return gen(lambda: _encode_with_headers(encoders, encode_stream, services, value))
+        streamed = None if encode_stream is None else encode_stream(response, services)
+        encoding = self.encode_success(response) if streamed is None else streamed
+        return HttpApiSchemaError.wrap("Body", encoding)
 
 
 def _encode_with_headers(
@@ -393,15 +446,20 @@ def _decoder(
 def _upgrader(
     request: ServerRequest,
     encode_headers: Callable[[object], Effect[Any, S.SchemaError, Any]] | None,
+    upgraded: list[bool],
 ) -> Callable[[object], Effect[Any]]:
     def upgrade(headers: object) -> Effect[Any]:
-        if encode_headers is None:
-            return request.upgrade.or_die()
-        return (
-            HttpApiSchemaError.wrap("ResponseHeaders", encode_headers(headers))
-            .flat_map(lambda encoded: request.upgrade_with(headers=encoded))
-            .or_die()
-        )
+        def run() -> Effect[Any]:
+            upgraded.append(True)
+            if encode_headers is None:
+                return request.upgrade.or_die()
+            return (
+                HttpApiSchemaError.wrap("ResponseHeaders", encode_headers(headers))
+                .flat_map(lambda encoded: request.upgrade_with(headers=encoded))
+                .or_die()
+            )
+
+        return suspend(run)
 
     return upgrade
 

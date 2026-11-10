@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, TypeIs
+from typing import Literal, TypeIs, overload
 
 type HttpMethod = Literal[
     "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "QUERY"
@@ -18,8 +18,14 @@ ALL: frozenset[HttpMethod] = frozenset(
 )
 
 
-def has_body(method: HttpMethod) -> TypeIs[WithBody]:
-    """Whether requests with ``method`` send their body."""
+@overload
+def has_body(method: HttpMethod) -> TypeIs[WithBody]: ...
+@overload
+def has_body(method: str) -> bool: ...
+def has_body(method: str) -> bool:
+    """Whether requests with ``method`` send their body. A method outside
+    ``HttpMethod`` (a received ``PROPFIND``) can carry one, but is not
+    narrowed."""
     return method not in ("GET", "HEAD", "OPTIONS", "TRACE")
 
 

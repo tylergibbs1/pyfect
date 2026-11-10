@@ -14,11 +14,20 @@ import signal
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, Never, final
+from typing import TYPE_CHECKING, Any, Literal, Never, TypedDict, Unpack, final, overload
 
 from pyfect._core import Effect
 from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.platform_error import PlatformError
+from pyfect.process.command_line import (
+    CommandLineError,
+    TemplateExpression,
+    TemplateLike,
+    TemplateStrings,
+    Word,
+)
+from pyfect.process.command_line import template as command_line_template
+from pyfect.redacted import Redacted
 from pyfect.sink import Sink
 from pyfect.sink._sink import require_sink
 from pyfect.stream import Stream
@@ -54,17 +63,59 @@ type PipeTo = Literal["stdin"] | int
 input descriptor (3 or more)."""
 
 
+type Encoding = Literal[
+    "ascii",
+    "utf8",
+    "utf-8",
+    "utf16le",
+    "utf-16le",
+    "ucs2",
+    "ucs-2",
+    "base64",
+    "base64url",
+    "latin1",
+    "binary",
+    "hex",
+]
+"""How text written to a child's standard input becomes bytes (Node's
+buffer encodings)."""
+
+
 @dataclass(frozen=True, slots=True)
 class StdinConfig:
     """A child's standard input; with ``end_on_done`` (the default) the pipe
-    closes once a given stream ends."""
+    closes once a given stream ends. Text written to the handle's ``stdin``
+    sink is encoded with ``encoding`` (UTF-8 by default)."""
 
     stream: CommandInput = "pipe"
     end_on_done: bool = True
+    encoding: Encoding = "utf-8"
 
     def __post_init__(self) -> None:
         if not isinstance(self.stream, str):
             require_stream(self.stream, "stream")
+
+
+@dataclass(frozen=True, slots=True)
+class StdoutConfig:
+    """A child's standard output: ``stream`` as ``make``'s ``stdout`` takes
+    it."""
+
+    stream: CommandOutput = "pipe"
+
+    def __post_init__(self) -> None:
+        _output(self.stream, "stream")
+
+
+@dataclass(frozen=True, slots=True)
+class StderrConfig:
+    """A child's standard error: ``stream`` as ``make``'s ``stderr`` takes
+    it."""
+
+    stream: CommandOutput = "pipe"
+
+    def __post_init__(self) -> None:
+        _output(self.stream, "stream")
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +142,25 @@ class OutputFd:
             require_sink(self.sink, "sink")
 
 
-type AdditionalFd = InputFd | OutputFd
+@dataclass(frozen=True, slots=True)
+class DuplexFd:
+    """An additional descriptor both ends read and write (a socket pair):
+    ``stream``, if given, is written into it and its write side ended when
+    the stream ends; what the child writes is transduced through ``sink``
+    if given. ``pipe_to`` keeps a duplex target duplex, replacing only its
+    input."""
+
+    stream: Stream[bytes, PlatformError] | None = None
+    sink: Sink[bytes, bytes, Never, PlatformError] | None = None
+
+    def __post_init__(self) -> None:
+        if self.stream is not None:
+            require_stream(self.stream, "stream")
+        if self.sink is not None:
+            require_sink(self.sink, "sink")
+
+
+type AdditionalFd = InputFd | OutputFd | DuplexFd
 
 _FIRST_EXTRA_FD = 3
 
@@ -105,7 +174,7 @@ class CommandOptions:
     """How a command runs; see ``make`` for each option."""
 
     cwd: str | None = None
-    env: Mapping[str, str | None] | None = None
+    env: Mapping[str, str | Redacted[str] | None] | None = None
     extend_env: bool = False
     shell: bool | str = False
     detached: bool | None = None
@@ -149,18 +218,26 @@ class _CommandBase(Effect["ChildProcessHandle", PlatformError, "ChildProcessSpaw
         left: Command = self  # pyright: ignore[reportAssignmentType]
         return PipedCommand(left, that, PipeOptions(from_=from_, to=to))
 
-    def prefix(self, command: str, args: Sequence[str] = ()) -> Command:
+    @overload
+    def prefix(self, command: str, args: Sequence[Word] = (), /) -> Command: ...
+    @overload
+    def prefix(
+        self, template: TemplateStrings | TemplateLike, /, *values: TemplateExpression
+    ) -> Command: ...
+    def prefix(self, command: str | TemplateStrings | TemplateLike, /, *rest: Any) -> Command:
         """Run this command through ``command args...`` (``time``, ``nice``,
-        ...); in a pipeline, the leftmost command only."""
+        ...); in a pipeline, the leftmost command only. The prefix can be a
+        template, as ``make`` takes one."""
         this: Command = self  # pyright: ignore[reportAssignmentType]
-        return _prefix(this, command, tuple(args))
+        executable, args = _words(command, rest)
+        return _prefix(this, executable, args)
 
     def set_cwd(self, cwd: str | os.PathLike[str]) -> Command:
         """Run in ``cwd``; in a pipeline, every command."""
         this: Command = self  # pyright: ignore[reportAssignmentType]
         return _set_cwd(this, os.fspath(cwd))
 
-    def set_env(self, env: Mapping[str, str]) -> Command:
+    def set_env(self, env: Mapping[str, str | Redacted[str]]) -> Command:
         """Add ``env`` to the command's environment, replacing variables of
         the same name; in a pipeline, every command's."""
         this: Command = self  # pyright: ignore[reportAssignmentType]
@@ -173,7 +250,7 @@ class StandardCommand(_CommandBase):
 
     __slots__ = ("args", "command", "options")
 
-    def __init__(self, command: str, args: tuple[str, ...], options: CommandOptions) -> None:
+    def __init__(self, command: str, args: tuple[Word, ...], options: CommandOptions) -> None:
         self.command = command
         self.args = args
         self.options = options
@@ -200,66 +277,154 @@ class PipedCommand(_CommandBase):
 type Command = StandardCommand | PipedCommand
 
 
+class MakeOptions(TypedDict, total=False):
+    """The options of ``make``; see ``make`` for each."""
+
+    cwd: str | os.PathLike[str] | None
+    env: Mapping[str, str | Redacted[str] | None] | None
+    extend_env: bool
+    shell: bool | str
+    detached: bool | None
+    windows_hide: bool | None
+    stdin: CommandInput | StdinConfig
+    stdout: CommandOutput | StdoutConfig
+    stderr: CommandOutput | StderrConfig
+    additional_fds: Mapping[int, AdditionalFd] | None
+    kill_signal: signal.Signals | None
+    force_kill_after: Duration | None
+
+
+@overload
 def make(
-    command: str,
-    args: Sequence[str] = (),
-    *,
-    cwd: str | os.PathLike[str] | None = None,
-    env: Mapping[str, str | None] | None = None,
-    extend_env: bool = False,
-    shell: bool | str = False,
-    detached: bool | None = None,
-    windows_hide: bool | None = None,
-    stdin: CommandInput | StdinConfig = "pipe",
-    stdout: CommandOutput = "pipe",
-    stderr: CommandOutput = "pipe",
-    additional_fds: Mapping[int, AdditionalFd] | None = None,
-    kill_signal: signal.Signals | None = None,
-    force_kill_after: Duration | None = None,
+    command: str, args: Sequence[Word] = (), /, **options: Unpack[MakeOptions]
+) -> StandardCommand: ...
+@overload
+def make(
+    template: TemplateStrings | TemplateLike,
+    /,
+    *values: TemplateExpression,
+    **options: Unpack[MakeOptions],
+) -> StandardCommand: ...
+def make(
+    command: str | TemplateStrings | TemplateLike, /, *rest: Any, **options: Unpack[MakeOptions]
 ) -> StandardCommand:
     """A command running ``command`` with ``args`` (Effect's array form of
-    ``ChildProcess.make``; ``shlex.split`` turns a command line into one).
+    ``ChildProcess.make``), or the command a template describes (Effect's
+    template form): its text parts and the values between them, or a
+    t-string on Python 3.14::
+
+        process.make("git", ["commit", "-m", message])
+        process.make(["git commit -m ", ' "two words"'], message)
+        process.make(t'git commit -m {message} "two words"')   # Python 3.14
+
+    A template is split with ``command_line.template``: quotes group words,
+    each value is one literal argument, an argument containing a
+    ``Redacted`` value stays ``Redacted``. Shell syntax (``|``, ``$HOME``,
+    ``*``, ``~``) raises ``CommandLineError`` here: quote it, or pass it as a
+    value. With ``shell``, the template's text is the script, kept as
+    written, and it cannot have values. Arguments of either form can be
+    ``Redacted``; the program name cannot.
 
     - ``cwd``: the working directory, checked to exist when spawned.
     - ``env``: the environment; it replaces the parent's unless
       ``extend_env``, which adds it over the parent's. A ``None`` value
-      removes the variable.
-    - ``shell``: run ``command`` as a line of shell with ``/bin/sh``
-      (``cmd.exe`` on Windows) or the shell given; each of ``args`` is
-      quoted and appended as one literal word.
+      removes the variable. ``Redacted`` values reach the child as they are
+      and never show in errors.
+    - ``shell``: run ``command`` as a shell script with ``/bin/sh``
+      (``cmd.exe`` on Windows) or the shell given. The command is the whole
+      script (build it with ``command_line.join`` or ``quote`` when it
+      contains values); spawning it with ``args`` fails with
+      ``BadArgument``.
     - ``detached``: start a process group of its own, so killing the
       command kills its descendants (the default except on Windows).
     - ``windows_hide``: hide the console window on Windows (the default
       unless detached).
     - ``stdin``, ``stdout``, ``stderr``: see ``CommandInput``,
-      ``CommandOutput`` and ``StdinConfig``; each is a pipe by default.
+      ``CommandOutput``, ``StdinConfig``, ``StdoutConfig`` and
+      ``StderrConfig``; each is a pipe by default.
     - ``additional_fds``: descriptors from 3 up, by number; lower ones are skipped.
     - ``kill_signal``, ``force_kill_after``: how the scope ending the
       command kills it: the signal (``SIGTERM`` by default), then
       ``SIGKILL`` after this long if the process group is still alive.
+
+    A NUL character in the command, an argument or an ``env`` value fails
+    with ``BadArgument`` when the command is spawned.
     """
+    shell = options.get("shell", False)
+    if isinstance(command, str):
+        program, args = _words(command, rest)
+        return StandardCommand(program, args, _options(options))
+    if shell is not False:
+        return StandardCommand(_shell_script(command, rest), (), _options(options))
+    executable, args = _words(command, rest)
+    return StandardCommand(executable, args, _options(options))
+
+
+def _options(options: MakeOptions) -> CommandOptions:
+    stdin = options.get("stdin", "pipe")
+    stdout = options.get("stdout", "pipe")
+    stderr = options.get("stderr", "pipe")
+    cwd = options.get("cwd")
+    env = options.get("env")
+    force_kill_after = options.get("force_kill_after")
     stdin_config = stdin if isinstance(stdin, StdinConfig) else StdinConfig(_input(stdin, "stdin"))
     fds = MappingProxyType(
-        {fd: config for fd, config in (additional_fds or {}).items() if fd >= _FIRST_EXTRA_FD}
+        {
+            fd: config
+            for fd, config in (options.get("additional_fds") or {}).items()
+            if fd >= _FIRST_EXTRA_FD
+        }
     )
     for fd, config in fds.items():
-        if not isinstance(config, (InputFd, OutputFd)):  # pyright: ignore[reportUnnecessaryIsInstance]
-            raise TypeError(f"additional_fds[{fd}] must be an InputFd or OutputFd")
-    options = CommandOptions(
+        if not isinstance(config, (InputFd, OutputFd, DuplexFd)):  # pyright: ignore[reportUnnecessaryIsInstance]
+            raise TypeError(f"additional_fds[{fd}] must be an InputFd, OutputFd or DuplexFd")
+    return CommandOptions(
         cwd=None if cwd is None else os.fspath(cwd),
         env=None if env is None else dict(env),
-        extend_env=extend_env,
-        shell=shell,
-        detached=detached,
-        windows_hide=windows_hide,
+        extend_env=options.get("extend_env", False),
+        shell=options.get("shell", False),
+        detached=options.get("detached"),
+        windows_hide=options.get("windows_hide"),
         stdin=stdin_config,
-        stdout=_output(stdout, "stdout"),
-        stderr=_output(stderr, "stderr"),
+        stdout=stdout.stream if isinstance(stdout, StdoutConfig) else _output(stdout, "stdout"),
+        stderr=stderr.stream if isinstance(stderr, StderrConfig) else _output(stderr, "stderr"),
         additional_fds=fds,
-        kill_signal=kill_signal,
+        kill_signal=options.get("kill_signal"),
         force_kill_after=None if force_kill_after is None else to_seconds(force_kill_after),
     )
-    return StandardCommand(command, tuple(args), options)
+
+
+def _words(
+    command: str | TemplateStrings | TemplateLike, rest: tuple[Any, ...]
+) -> tuple[str, tuple[Word, ...]]:
+    """A program and its arguments: given as such, or split from a
+    template."""
+    if isinstance(command, str):
+        if len(rest) > 1 or (rest and isinstance(rest[0], str)):
+            raise TypeError("the arguments are one sequence of words, not strings")
+        return command, tuple(rest[0]) if rest else ()
+    words = command_line_template(command, *rest).get_or_raise()
+    if not words:
+        return "", ()
+    program, *args = words
+    if isinstance(program, Redacted):
+        raise CommandLineError(
+            "InvalidArgument", "The program name of a command cannot be Redacted"
+        )
+    return program, tuple(args)
+
+
+def _shell_script(template: TemplateStrings | TemplateLike, values: tuple[Any, ...]) -> str:
+    if isinstance(template, (list, tuple)):
+        texts, has_values = tuple(template), bool(values)
+    else:
+        texts, has_values = template.strings, bool(template.interpolations) or bool(values)
+    if has_values:
+        raise CommandLineError(
+            "UnsupportedSyntax",
+            "A shell template cannot interpolate values; build the script with command_line.quote",
+        )
+    return texts[0] if texts else ""
 
 
 def with_options(command: StandardCommand, **changes: Any) -> StandardCommand:
@@ -279,7 +444,7 @@ def _output(value: CommandOutput, name: str) -> CommandOutput:
     return value
 
 
-def _prefix(command: Command, executable: str, args: tuple[str, ...]) -> Command:
+def _prefix(command: Command, executable: str, args: tuple[Word, ...]) -> Command:
     match command:
         case StandardCommand():
             return StandardCommand(
@@ -301,7 +466,7 @@ def _set_cwd(command: Command, cwd: str) -> Command:
             )
 
 
-def _set_env(command: Command, env: dict[str, str]) -> Command:
+def _set_env(command: Command, env: dict[str, str | Redacted[str]]) -> Command:
     match command:
         case StandardCommand():
             merged = env if command.options.env is None else {**command.options.env, **env}

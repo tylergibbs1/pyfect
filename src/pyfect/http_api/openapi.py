@@ -251,9 +251,14 @@ class _Operations:
         _get(endpoint.annotations, Deprecated, lambda v: op.__setitem__("deprecated", v))
         _get(endpoint.annotations, ExternalDocs, lambda v: op.__setitem__("externalDocs", dict(v)))
         for middleware in reflected.middleware:
-            for name, security in (middleware.security or {}).items():
+            securities = middleware.security
+            if securities is None:
+                continue
+            for name, security in securities.items():
                 self._security_scheme(name, security)
-                op["security"].append({name: []})
+            # Stacked middleware must all pass (AND); one middleware's schemes are alternatives.
+            requirements: list[Json] = op["security"] or [{}]
+            op["security"] = [{**r, name: list[str]()} for r in requirements for name in securities]
         body = has_body(endpoint.method)
         if body:
             self._request_body(op, endpoint)
@@ -306,7 +311,8 @@ class _Operations:
         by_content_type: dict[str, tuple[str, list[Top]] | api_schema.StreamSchema] = {}
         for schema in payload_schemas(endpoint):
             if api_schema.is_stream_schema(schema):
-                by_content_type[schema.content_type] = schema
+                for content_type in schema.content_types:
+                    by_content_type[content_type] = schema
                 continue
             if api_schema.is_no_content(schema.__codec__().ast):
                 continue

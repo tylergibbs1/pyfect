@@ -14,7 +14,8 @@ from pyfect.byte_size import ByteSize
 from pyfect.http import request as client_request
 from pyfect.http import server_response
 from pyfect.http.incoming_message import MaxBodySize
-from pyfect.http.server_request import HttpServerRequest, from_client_request
+from pyfect.http.server_error import RequestParseError
+from pyfect.http.server_request import HttpServerRequest, ServerRequest, from_client_request
 from pyfect.http.web import WebRequest, WebResponse
 from pyfect.http.web_handler import WebHandler, from_web_handler, to_web_handler
 
@@ -36,6 +37,23 @@ async def _stalled(chunks: list[str]) -> AsyncIterator[bytes]:
         await asyncio.Event().wait()
     finally:
         await asyncio.shield(asyncio.Event().wait())
+
+
+def _from_client() -> ServerRequest:
+    return from_client_request(
+        client_request.post("http://localhost/upload")
+        .set_header("x-test", "headers-only")
+        .body_stream(stream.succeed(PAYLOAD.encode()), content_type="text/plain")
+    )
+
+
+def test_from_client_request_fails_buffered_reads_over_max_body_size() -> None:
+    """fromClientRequest fails buffered reads over MaxBodySize"""
+    error = fx.run_sync(
+        _from_client().text.flip().or_die().pipe(effect.provide_service(MaxBodySize, ByteSize(4)))
+    )
+    assert isinstance(error.reason, RequestParseError)
+    assert error.reason.kind == "BodyTooLarge"
 
 
 def test_from_web_handler_can_inspect_headers_without_reading_the_body() -> None:

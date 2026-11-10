@@ -1,6 +1,7 @@
-"""``with_cookies_ref`` is a cookie jar: a cookie a response sets goes back
-only to the host that set it (or its Domain), on its Path, and over https
-when it is Secure; one origin cannot overwrite another origin's cookie."""
+"""``with_cookies_ref`` over httpx, redirects included: a cookie a response
+sets goes back only to the host that set it (or its Domain), on its Path,
+and over https when it is Secure; one origin cannot overwrite another
+origin's cookie (Effect 4.1.2's ``Cookies.mergeIntoArray``)."""
 
 from collections.abc import Callable
 from typing import Any
@@ -15,12 +16,15 @@ from pyfect.ref import Ref
 type Handler = Callable[[httpx.Request], httpx.Response]
 
 
-def _run(handler: Handler, urls: list[str], jar: cookies.Cookies | None = None) -> cookies.Cookies:
+type Jar = tuple[cookies.Cookie, ...]
+
+
+def _run(handler: Handler, urls: list[str]) -> Jar:
     """GET each of ``urls`` in turn through one jar-bearing client (following
     redirects after the jar); return the jar at the end."""
 
     def program() -> Any:
-        ref = yield from Ref.make(jar or cookies.EMPTY)
+        ref = yield from Ref[Jar].make(())
         client = (yield from HttpClient()).with_cookies_ref(ref).follow_redirects()
         for url in urls:
             yield from fx.scoped(client.get(url))
@@ -28,6 +32,10 @@ def _run(handler: Handler, urls: list[str], jar: cookies.Cookies | None = None) 
 
     http = httpx_client.layer_with(transport=httpx.MockTransport(handler))
     return fx.run_blocking(fx.gen(program).pipe(fx.provide(http)).or_die())
+
+
+def _sent(jar: Jar, url: str) -> str | None:
+    return cookies.to_request_cookie_header(jar, url, 0)
 
 
 class _Sites:
@@ -80,14 +88,14 @@ def test_another_origin_cannot_overwrite_a_cookie() -> None:
     sites = _Sites()
     jar = _run(sites, ["https://a.test/login", "https://evil.test/", "https://a.test/app/x"])
     assert sites.cookie_for("https://a.test/app/x") == "sid=secret"
-    assert jar.get_value("sid") == "secret"
+    assert _sent(jar, "https://a.test/app/x") == "sid=secret"
 
 
 def test_a_redirect_hop_to_another_origin_cannot_overwrite_a_cookie() -> None:
     sites = _Sites()
     jar = _run(sites, ["https://a.test/login", "https://a.test/redir"])
     assert sites.cookie_for("https://evil.test/") is None
-    assert jar.get_value("sid") == "secret"
+    assert _sent(jar, "https://a.test/app/x") == "sid=secret"
 
 
 def test_a_domain_cookie_reaches_subdomains_but_not_a_foreign_domain() -> None:
@@ -108,18 +116,7 @@ def test_a_domain_cookie_reaches_subdomains_but_not_a_foreign_domain() -> None:
     jar = _run(handler, ["https://www.a.test/", "https://api.a.test/", "https://evil.test/"])
     assert received["api.a.test"] == "d=1"
     assert received["evil.test"] is None
-    assert jar.get("foreign") is None
-
-
-def test_cookies_put_in_the_jar_by_the_program_are_sent_everywhere() -> None:
-    received: list[str | None] = []
-
-    def handler(sent: httpx.Request) -> httpx.Response:
-        received.append(sent.headers.get("cookie"))
-        return httpx.Response(200)
-
-    _run(handler, ["https://api.test/"], jar=cookies.EMPTY.set_unsafe("token", "foo"))
-    assert received == ["token=foo"]
+    assert [cookie.name for cookie in jar] == ["d"]
 
 
 def test_a_cookie_for_a_whole_top_level_domain_is_refused() -> None:
@@ -142,7 +139,7 @@ def test_a_cookie_for_a_whole_top_level_domain_is_refused() -> None:
     jar = _run(handler, ["https://a.test/", "https://evil.test/", "https://b.test/"])
     assert received["evil.test"] is None
     assert received["b.test"] is None
-    assert jar.is_empty()
+    assert jar == ()
 
 
 def test_a_single_label_host_may_set_a_cookie_for_itself() -> None:
@@ -150,4 +147,4 @@ def test_a_single_label_host_may_set_a_cookie_for_itself() -> None:
         return httpx.Response(200, headers={"set-cookie": "sid=1; Domain=localhost"})
 
     jar = _run(handler, ["http://localhost/"])
-    assert jar.get_value("sid") == "1"
+    assert _sent(jar, "http://localhost/") == "sid=1"
