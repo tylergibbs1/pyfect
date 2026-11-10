@@ -1,10 +1,10 @@
-"""Durations become milliseconds through ``duration.to_millis``.
+"""Durations become milliseconds through ``Duration.to_millis``.
 
-A ``Seconds`` value times 1000 goes through a float product: 2.007 s is
+A float of seconds times 1000 goes through a float product: 2.007 s is
 2006.9999999999998 ms or 2007.0000000000002 ms, so a ``ceil`` or ``int``
 of it lands a millisecond off (a durable clock woke at 2008 ms for a
-2007 ms sleep). ``to_millis`` reads the seconds as the decimal that prints
-them, as Effect's millisecond durations are exact."""
+2007 ms sleep). ``to_millis`` reads the exact nanoseconds, as Effect's
+``Duration.toMillis`` does."""
 
 from __future__ import annotations
 

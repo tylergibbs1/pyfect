@@ -1,7 +1,7 @@
 """Ports of Effect's ``Schedule.test.ts``.
 
 Each test's docstring is the Effect test title. A step takes epoch
-milliseconds, as in Effect; delays are ``Seconds``. A step
+milliseconds, as in Effect; delays are ``Duration``s. A step
 returns ``Continue(output, delay)`` where Effect's ``Pull`` succeeds with
 ``[output, delay]``, and ``Stop(output)`` where it fails with
 ``Cause.done(output)``.

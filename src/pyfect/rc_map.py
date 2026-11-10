@@ -38,7 +38,7 @@ from pyfect.deferred import Deferred
 from pyfect.duration import (
     Duration,
     from_input_unsafe,
-    nanos,
+    from_nanos_or_infinite,
     nanos_or_infinite,
     zero,
 )
@@ -317,7 +317,9 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
             def check() -> Effect[None]:
                 remaining = entry.expires_at - clock.monotonic_nanos_unsafe()
                 if remaining > 0:
-                    return restore(clock.sleep(nanos(remaining))).and_then(_Suspend(check))
+                    return restore(clock.sleep(from_nanos_or_infinite(remaining))).and_then(
+                        _Suspend(check)
+                    )
                 current = self._entries
                 if current is None or entry.ref_count > 0 or current.get(key) is not entry:
                     return _VOID

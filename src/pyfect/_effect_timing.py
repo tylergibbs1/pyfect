@@ -26,7 +26,7 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         return sleep(duration).and_then(as_effect(self))
 
     def timed(self) -> Effect[tuple[Duration, A_co], E_co, R_co]:
-        """Pair the value with how long it took, as ``Seconds``."""
+        """Pair the value with how long it took, as a ``Duration``."""
         from pyfect.clock import timed
 
         return timed(as_effect(self))
