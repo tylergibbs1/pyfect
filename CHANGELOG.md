@@ -28,6 +28,13 @@
   answered as Effect answers it: `{"_tag": "Cause", "code", "message", "data"}` with the
   serialized cause in `data`, an internal error for a legacy `tools/call`, and an internal
   error for an interruption alone, which before got no answer.
+- `zip.decode` fails on corrupt deflated data as Effect does: an entry `zlib` rejects, that
+  ends early or that grows past its `size` is replayed through a port of Effect's inflater,
+  so the error has Effect's kind and message (`"InvalidData"` where it gave `"Truncated"` or
+  `"SizeMismatch"` before, and Effect's wording instead of zlib's). Body chunks are cut where
+  Effect cuts them (every 64 KiB of output and where the input runs dry). At most 4 MiB of an
+  entry's compressed input is kept for the replay; a corrupt entry longer than that fails with
+  Effect's kind and zlib's message, as before.
 
 ## 0.5.1 (2026-11-10)
 

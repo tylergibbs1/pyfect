@@ -98,11 +98,13 @@ class ByteQueue:
             n -= len(self.take_some(n))
 
     def unread(self, data: bytes) -> None:
-        """Puts back the tail of what the last ``take_some`` returned."""
+        """Puts back ``data``, the last bytes taken."""
         if self._offset >= len(data):
             self._offset -= len(data)
         else:
-            self._chunks.appendleft(data)
+            # The first chunk holds the end of ``data`` already
+            self._chunks.appendleft(data[: len(data) - self._offset])
+            self._offset = 0
         self.length += len(data)
         self.consumed -= len(data)
 

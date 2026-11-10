@@ -2,9 +2,9 @@
 
 ``encode`` writes each entry as it arrives and adds the central directory once the
 input ends; ``decode`` reads entries in archive order from their local headers, so
-an archive can be read as it arrives. ``decode`` never holds a whole body, which is
-what these channels add to the blocking ``zipfile``, and ``encode`` only collects
-deflated bodies of at most 64 KiB.
+an archive can be read as it arrives. ``decode`` never holds a whole body, at most 4
+MiB of compressed input per entry, which is what these channels add to the blocking
+``zipfile``, and ``encode`` only collects deflated bodies of at most 64 KiB.
 
 Entries are stored or deflated, with ZIP64 fields when sizes, offsets or the entry
 count need them. Encryption, other compression methods and archives split across
@@ -185,9 +185,14 @@ def decode[IE = Never, D = None]() -> Channel[
     about a thousand times, and pulling the next entry inflates the rest of the current
     body to find its end: for untrusted archives check ``size``, count the bytes of
     bodies without one, and end the stream at an entry that is too large rather than
-    skip it. Paths with a NUL character fail with ``"InvalidHeader"``. The channel ends
-    only when its input ends: input after the central directory is read and discarded,
-    so that the upstream's done value can be passed on."""
+    skip it. Corrupt deflated data fails with ``"InvalidData"`` and the message of
+    Effect's inflater: ``zlib`` inflates, and an entry it rejects, or that ends early or
+    grows past its ``size``, is replayed through a port of Effect's inflater. Only the
+    first 4 MiB of an entry's compressed input are kept for that: a corrupt entry
+    longer than that fails with Effect's kind and ``zlib``'s message. Paths with a NUL
+    character fail with ``"InvalidHeader"``. The channel ends only when its input ends:
+    input after the central directory is read and discarded, so that the upstream's
+    done value can be passed on."""
     return decode_channel(Decoder, Entry, ZipError)
 
 

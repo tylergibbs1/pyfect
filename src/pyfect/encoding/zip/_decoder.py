@@ -194,14 +194,22 @@ class Decoder:
                 except InflateError as error:
                     raise ZipError("InvalidData", str(error)) from None
                 if inflated is NEED_INPUT:
+                    # Effect's inflater may reject the input zlib took, before the end
+                    if self._ended and current.inflater.fall_back(current.actual_size):
+                        return self._read_current()
                     return self._need_input()
                 if inflated is not None:
-                    current.actual_size += len(inflated)
                     # Fail before handing out bytes past the reported size, so that
                     # consumers can limit what a small compressed entry inflates to
                     size = current.header.size
-                    if size is not None and current.actual_size > size:
-                        raise size_mismatch(current.header.path, current.actual_size, size)
+                    if size is not None and current.actual_size + len(inflated) > size:
+                        # unless Effect's inflater rejects the data first
+                        if current.inflater.fall_back(current.actual_size):
+                            return self._read_current()
+                        raise size_mismatch(
+                            current.header.path, current.actual_size + len(inflated), size
+                        )
+                    current.actual_size += len(inflated)
                     current.actual_crc = zlib.crc32(inflated, current.actual_crc)
                     return (inflated,)
                 current.actual_compressed_size = queue.consumed - current.start
