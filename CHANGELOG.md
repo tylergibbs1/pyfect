@@ -13,6 +13,14 @@
   `R.hash_map_reviver`) and generated code follow Effect's. `HashSet[X]` / `HashMap[K, V]`
   annotations derive them in `S.Struct` and schema classes.
 
+### Fixed
+
+- The observability guide passed a seconds histogram to `track_duration` without a mapping,
+  which fails on 0.5.0; it now shows Effect's form,
+  `track_duration(histogram, duration.to_seconds)`. Self-contained inline code in the guides
+  is now type-checked (`tests/test_doc_inline_code.py`).
+- A format spec on a `Duration` (`f"{d:g}"`) names the conversion to use in its `TypeError`.
+
 ## 0.5.0 (2026-11-10)
 
 Durations are exact. `duration.Duration` is Effect 4.1.2's `Duration`: whole nanoseconds at
@@ -41,7 +49,9 @@ Every API still takes the same inputs (bare numbers are milliseconds, `"5 second
     error and raises `TypeError`. `ZERO` is `zero`; `from_nanos(n)` is `nanos(n)`;
     `from_millis(n)` is `millis(n)`.
   - A `Duration` is no `float`: `d * 1000`, `d + 0.5`, `d < 1.0` and `float(d)` are type
-    errors, and `d == 0` is always false (pyright reports it). Use `d.to_seconds()`,
+    errors, and `d == 0` is always false (pyright reports it, but not `0 == d` or a
+    comparison with an untyped value, which are silently false too). A format spec such as
+    `f"{d:g}"` raises `TypeError` at run time, and pyright doesn't check format specs. Use `d.to_seconds()`,
     `d.to_millis()`, `d.is_zero()`, `d.is_finite()`, `d < duration.seconds(1)` or
     `d.to_timedelta()`. `+`, `-`, `*` by a number, unary `-`, `abs`, `<` and friends work
     between durations; `d.divide(n)` returns `None` where Effect's `divide` returns `None`.

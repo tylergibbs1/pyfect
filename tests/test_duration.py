@@ -142,3 +142,11 @@ def test_iso_text_of_big_nanosecond_counts():
     assert nanos(10**30 + 1).format_iso() == "P11574074074074074DT1H46M40.000000001S"
     assert nanos(-(10**30) - 7).format_iso() == "-P11574074074074074DT1H46M40.000000007S"
     assert millis(2**60).format_iso() == "P13343998895DT21H54M6.976S"
+
+
+def test_a_format_spec_names_the_conversion_to_use():
+    """`f"{d:g}"` worked while durations were floats; pyright can't see format specs."""
+    d = fx.duration.seconds(2)
+    assert f"{d}" == str(d) == "2000 millis"
+    with pytest.raises(TypeError, match=r"d\.to_seconds\(\)"):
+        f"{d:g}"

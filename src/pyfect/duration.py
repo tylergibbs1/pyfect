@@ -513,6 +513,14 @@ class Duration:
             return f"{int_text(n)} nanos"
         return "Infinity" if n > 0 else "-Infinity"
 
+    def __format__(self, spec: str) -> str:
+        if spec:
+            raise TypeError(
+                f"a Duration takes no format spec ({spec!r}); format a number such as "
+                "d.to_seconds() or d.to_millis()"
+            )
+        return str(self)
+
     def __repr__(self) -> str:
         if self._millis is not None:
             return f"duration.millis({int(self._millis)})"

@@ -33,6 +33,8 @@ UNIT_FREE_TESTS = frozenset(
     TESTS / name
     for name in (
         "type_checks.py",
+        # A copy of the guides' inline code, which the prose check below covers.
+        "_doc_inline_code.py",
         "oracle/test_duration.py",
         "test_duration_literals.py",
         "test_duration_overflow_guard.py",
