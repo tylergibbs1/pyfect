@@ -8,9 +8,9 @@ Python mappings: ``Schema.Tuple([...])`` is ``S.Tuple(...)`` and decodes to
 a ``tuple``; ``Array`` / ``NonEmptyArray`` decode to a ``tuple``, ``List``
 (Effect's ``mutable(Array(...))``) to a ``list``; ``optionalKey`` on a
 tuple element is ``S.optional_key``; ``TupleWithRest(schema, [rest,
-...post])`` is ``S.TupleWithRest(schema, rest, *post)``. ``ReadonlySet`` /
-``HashSet`` are ``S.FrozenSet`` (a ``frozenset``), ``ReadonlyMap`` /
-``HashMap`` ``S.Map`` (a ``dict``), ``Chunk`` an ``Array`` (a tuple). A
+...post])`` is ``S.TupleWithRest(schema, rest, *post)``. ``ReadonlySet`` is
+``S.FrozenSet`` (a ``frozenset``), ``ReadonlyMap`` ``S.Map`` (a ``dict``),
+``Chunk`` an ``Array`` (a tuple). A
 declaration reports a part at the Python attribute holding it: Effect's
 ``["success"]`` / ``["failure"]`` of a ``Result`` are ``["value"]`` /
 ``["error"]`` (``Ok.value``, ``Err.error``). ``Option.none()`` is ``None``,
@@ -60,6 +60,8 @@ from pyfect import effect as fx
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.clock import sleep
+from pyfect.hash_map import HashMap
+from pyfect.hash_set import HashSet
 from pyfect.option import Option, Some
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok
@@ -465,10 +467,15 @@ def test_readonly_set():
 
 def test_hash_set():
     """HashSet"""
-    asserts = SchemaAsserts(S.FrozenSet(S.FiniteFromString))
-    asserts.decoding().succeed(frozenset({"1", "2", "3"}), frozenset({1, 2, 3}))
-    asserts.decoding().fail(frozenset({None}), 'Expected string\n  at ["values"][0]')
-    asserts.encoding().succeed(frozenset({1, 2, 3}), frozenset({"1", "2", "3"}))
+    schema = S.HashSet(S.FiniteFromString)
+    assert schema.value is S.FiniteFromString
+    assert schema.annotate().value is S.FiniteFromString
+    asserts = SchemaAsserts(schema)
+    decoding = asserts.decoding()
+    decoding.succeed(HashSet.make("1", "2", "3"), HashSet.make(1.0, 2.0, 3.0))
+    decoding.fail(None, "Expected HashSet")
+    decoding.fail(HashSet.make(None), 'Expected string\n  at ["values"][0]')
+    asserts.encoding().succeed(HashSet.make(1.0, 2.0, 3.0), HashSet.make("1", "2", "3"))
 
 
 def test_chunk():
@@ -499,10 +506,17 @@ def test_readonly_map():
 
 def test_hash_map():
     """HashMap"""
-    asserts = SchemaAsserts(S.Map(S.String, S.FiniteFromString))
-    asserts.decoding().succeed({"a": "1"}, {"a": 1})
-    asserts.decoding().fail({"a": None}, 'Expected string\n  at ["entries"][0][1]')
-    asserts.encoding().succeed({"a": 1}, {"a": "1"})
+    schema = S.HashMap(S.String, S.FiniteFromString)
+    assert schema.key is S.String
+    assert schema.annotate().key is S.String
+    assert schema.value is S.FiniteFromString
+    assert schema.annotate().value is S.FiniteFromString
+    asserts = SchemaAsserts(schema)
+    decoding = asserts.decoding()
+    decoding.succeed(HashMap.make(("a", "1")), HashMap.make(("a", 1.0)))
+    decoding.fail(None, "Expected HashMap")
+    decoding.fail(HashMap.make(("a", None)), 'Expected string\n  at ["entries"][0][1]')
+    asserts.encoding().succeed(HashMap.make(("a", 1.0)), HashMap.make(("a", "1")))
 
 
 # --------------------------------------------------- date-times and zones

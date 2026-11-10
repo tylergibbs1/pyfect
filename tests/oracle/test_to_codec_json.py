@@ -17,7 +17,7 @@ Omitted:
   name", "ReadonlyMap(Option(Symbol), Date)".
 - "exposes the source schema": the derived codec is a plain ``Bottom``.
 - Ported in ``test_schema_errors.py``: the ``Error`` / ``Defect`` titles.
-- Not yet ported schemas: ``URLSearchParams``, ``RegExp``, ``HashMap``,
+- Not yet ported schemas: ``URLSearchParams``, ``RegExp``,
   ``brand``, ``MutableJson`` and every title
   naming them, "StandardSchemaV1FailureResult".
 - Context-level details with no Python counterpart (a key's context is its
@@ -38,6 +38,7 @@ import pyfect as fx
 from pyfect import duration
 from pyfect import option as O
 from pyfect import schema as S
+from pyfect.hash_map import HashMap
 from pyfect.http.url import Url
 from pyfect.redacted import Redacted
 from pyfect.schema import ast
@@ -545,6 +546,20 @@ def test_readonly_map():
     asserts = _asserts(S.Map(S.Option(S.DateTimeUtc), S.Finite))
     asserts.encoding().succeed({O.Some(_DATE): 0}, ((_SOME_DATE, 0),))
     asserts.decoding().succeed(((_SOME_DATE, 0),), {O.Some(_DATE): 0})
+
+
+def test_hash_map():
+    """schemas without encoding / HashMap"""
+    asserts = _asserts(S.HashMap(S.Option(S.DateTimeUtc), S.Finite))
+    asserts.encoding().succeed(HashMap.make((O.Some(_DATE), 0.0)), ((_SOME_DATE, 0),))
+    asserts.decoding().succeed(((_SOME_DATE, 0),), HashMap.make((O.Some(_DATE), 0.0)))
+
+
+def test_hash_map_string_tree():
+    """toCodecStringTree / schemas without encoding / HashMap"""
+    asserts = SchemaAsserts(S.to_codec_string_tree(S.HashMap(S.Option(S.DateTimeUtc), S.Finite)))
+    asserts.encoding().succeed(HashMap.make((O.Some(_DATE), 0.0)), ((_SOME_DATE, "0"),))
+    asserts.decoding().succeed(((_SOME_DATE, "0"),), HashMap.make((O.Some(_DATE), 0.0)))
 
 
 _FINITE_FROM_DATE = S.DateTimeUtc.pipe(

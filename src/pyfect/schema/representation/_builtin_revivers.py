@@ -250,6 +250,10 @@ map_reviver = _declaration("ReadonlyMap", lambda ps: S.Map(ps[0], ps[1]))
 """Effect's ``ReadonlyMapReviver``: revives ``S.Map``."""
 frozen_set_reviver = _declaration("ReadonlySet", lambda ps: S.FrozenSet(ps[0]))
 """Effect's ``ReadonlySetReviver``: revives ``S.FrozenSet``."""
+hash_map_reviver = _declaration("HashMap", lambda ps: S.HashMap(ps[0], ps[1]))
+"""Effect's ``HashMapReviver``: revives ``S.HashMap``."""
+hash_set_reviver = _declaration("HashSet", lambda ps: S.HashSet(ps[0]))
+"""Effect's ``HashSetReviver``: revives ``S.HashSet``."""
 
 
 def _revive_graph(input: DeclarationInput[Kind]) -> Top:

@@ -190,6 +190,8 @@ IMPORTED_MODULES = frozenset(
         "datetime",
         "fx",
         "graph",
+        "hash_map",
+        "hash_set",
         "semver",
         "semver_range",
         "url",
@@ -234,6 +236,16 @@ _PARAMETRIC: Mapping[str, Callable[[tuple[Code, ...]], tuple[str, str, tuple[str
         (),
     ),
     "ReadonlySet": lambda p: (f"S.FrozenSet({p[0].runtime})", f"frozenset[{p[0].type}]", ()),
+    "HashMap": lambda p: (
+        f"S.HashMap({p[0].runtime}, {p[1].runtime})",
+        f"hash_map.HashMap[{p[0].type}, {p[1].type}]",
+        ("from pyfect import hash_map",),
+    ),
+    "HashSet": lambda p: (
+        f"S.HashSet({p[0].runtime})",
+        f"hash_set.HashSet[{p[0].type}]",
+        ("from pyfect import hash_set",),
+    ),
 }
 
 

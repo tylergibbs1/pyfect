@@ -21,6 +21,8 @@ from pyfect import schema as S
 from pyfect.byte_size import ByteSize
 from pyfect.cause import Fail
 from pyfect.exit import Exit
+from pyfect.hash_map import HashMap
+from pyfect.hash_set import HashSet
 from pyfect.option import Some
 from pyfect.redacted import Redacted
 from pyfect.testing import SchemaAsserts
@@ -144,6 +146,23 @@ def test_annotations_of_sequences_sets_secrets_and_durations_derive_their_schema
     }
     SchemaAsserts(S.Struct(_Shapes)).decoding().fail(
         {**value, "pair": ["a", "b"]}, 'Expected number\n  at ["pair"][1]'
+    )
+
+
+def test_hash_set_and_hash_map_annotations_derive_their_schemas():
+    class Row(TypedDict):
+        flags: HashSet[int | bool]
+        names: HashMap[int | bool, str]
+
+    schema = S.Struct(Row)
+    json = S.to_codec_json(schema)
+    row = S.decode_unknown_sync(json)({"flags": [1, True], "names": [[1, "one"], [True, "yes"]]})
+    assert row == {
+        "flags": HashSet[int | bool].make(1, True),
+        "names": HashMap[int | bool, str].make((1, "one"), (True, "yes")),
+    }
+    SchemaAsserts(schema).decoding().fail(
+        {**row, "flags": frozenset({1})}, 'Expected HashSet\n  at ["flags"]'
     )
 
 

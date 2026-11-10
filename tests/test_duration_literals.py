@@ -242,26 +242,101 @@ def _call_violations(
     return found
 
 
-def _constants(paths: list[Path]) -> frozenset[str]:
-    return frozenset(name for path in paths for name in _numeric_constants(_parse(path)))
+def _module_path(
+    path: Path, module: str | None, level: int, roots: tuple[Path, ...]
+) -> Path | None:
+    """The file ``from <module> import ...`` in ``path`` reads, among the checked ones."""
+    parts = (module or "").split(".") if module else []
+    bases = [path.parents[level - 1]] if level else [*roots, path.parent]
+    for base in bases:
+        target = base.joinpath(*parts)
+        for candidate in (target.with_suffix(".py"), target / "__init__.py"):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _bound_names(tree: ast.Module) -> set[str]:
+    """Every name a module binds at its top level other than by importing it."""
+    names: set[str] = set()
+    for statement in tree.body:
+        match statement:
+            case (
+                ast.FunctionDef(name=name)
+                | ast.AsyncFunctionDef(name=name)
+                | ast.ClassDef(name=name)
+            ):
+                names.add(name)
+            case ast.Assign(targets=targets):
+                names |= {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+            case ast.AnnAssign(target=ast.Name(id=name)) | ast.AugAssign(target=ast.Name(id=name)):
+                names.add(name)
+            case _:
+                pass
+    return names
+
+
+def _constants_by_path(
+    paths: list[Path], roots: tuple[Path, ...] = (SRC.parent, TESTS)
+) -> dict[Path, frozenset[str]]:
+    """Each module's names for a bare number: its own (``_TIMEOUT = 5.0``) and those it
+    imports from another checked module that binds one. A name means what its own module
+    binds it to, so ``_HOUR = 3_600_000`` in one file says nothing about ``_HOUR`` in another."""
+    trees = {path: _parse(path) for path in paths}
+    own = {path: _numeric_constants(tree) for path, tree in trees.items()}
+    found: dict[Path, frozenset[str]] = {}
+    for path, tree in trees.items():
+        bound = _bound_names(tree)
+        imported: set[str] = set()
+        for statement in tree.body:
+            if not isinstance(statement, ast.ImportFrom):
+                continue
+            source = _module_path(path, statement.module, statement.level, roots)
+            exported: set[str] = own.get(source, set()) if source is not None else set()
+            imported |= {
+                alias.asname or alias.name for alias in statement.names if alias.name in exported
+            }
+        found[path] = frozenset(own[path] | (imported - bound))
+    return found
 
 
 def test_no_bare_number_is_given_where_a_duration_is_taken() -> None:
     slots = _duration_slots()
     paths = [path for path in _sources(*CHECKED, TESTS) if path not in UNIT_FREE_TESTS]
-    constants = _constants(paths)
+    constants = _constants_by_path(paths)
     problems = [
         f"{path.relative_to(ROOT)}:{line}: {what}"
         for path in paths
         for tree in (_parse(path),)
         for line, what in sorted(
-            _default_violations(tree) + _call_violations(tree, slots, constants)
+            _default_violations(tree) + _call_violations(tree, slots, constants[path])
         )
     ]
     assert not problems, (
         "a bare number as a Duration is milliseconds; write its unit "
         '("5 seconds", "500 millis") or a timedelta:\n' + "\n".join(problems)
     )
+
+
+def test_a_constant_means_what_its_own_module_binds(tmp_path: Path) -> None:
+    """Two modules may share a constant's name: only the one bound to a bare number (or a
+    module importing it from there) passes a bare number on."""
+    slots = _duration_slots()
+    files = {
+        "journal.py": "_HOUR = 60 * 60 * 1000\n",
+        "cache.py": "_HOUR = millis(3_600_000)\nfx.sleep(_HOUR)\n",
+        "reader.py": "from journal import _HOUR\nfx.sleep(_HOUR)\n",
+        "renamed.py": "from .journal import _HOUR as WAIT\nfx.sleep(WAIT)\n",
+        "shadowed.py": "from journal import _HOUR\n_HOUR = millis(1)\nfx.sleep(_HOUR)\n",
+    }
+    for name, source in files.items():
+        (tmp_path / name).write_text(source)
+    paths = sorted(tmp_path.glob("*.py"))
+    constants = _constants_by_path(paths, roots=(tmp_path,))
+    flagged = {
+        path.name for path in paths if _call_violations(_parse(path), slots, constants[path])
+    }
+    assert flagged == {"reader.py", "renamed.py"}
 
 
 # Callables taking epoch milliseconds (Effect's ``TestClock.setTime``), and

@@ -4,7 +4,8 @@ classes: ``str`` String, ``int`` Int, ``float`` Number, ``bool`` Boolean,
 ``X | Y`` Union, an ``Enum`` Enum, a ``TypedDict`` Struct, ``dict[K, V]`` /
 ``Mapping[K, V]`` Record, ``list[X]`` List, ``tuple[X, ...]`` /
 ``Sequence[X]`` Array, ``tuple[X, Y]`` Tuple, ``frozenset[X]`` /
-``AbstractSet[X]`` FrozenSet, ``Redacted[X]`` Redacted, ``duration.Duration``
+``AbstractSet[X]`` FrozenSet, ``HashSet[X]`` HashSet, ``HashMap[K, V]``
+HashMap, ``Redacted[X]`` Redacted, ``duration.Duration``
 Duration, ``bytes`` Bytes, ``ZoneInfo`` TimeZoneNamed, ``timezone``
 TimeZoneOffset, ``Url`` URL, ``JsonValue`` Json, a schema class itself; ``Annotated[T, ...]`` and
 a ``NewType`` stand for ``T``, a ``type`` alias for its value. Anything
@@ -26,6 +27,8 @@ from zoneinfo import ZoneInfo
 
 from pyfect import duration as _duration
 from pyfect._url import Url
+from pyfect.hash_map import HashMap as _HashMap
+from pyfect.hash_set import HashSet as _HashSet
 from pyfect.redacted import Redacted as _Redacted
 from pyfect.schema import ast
 from pyfect.schema._arrays import Array, List, Tuple
@@ -33,6 +36,7 @@ from pyfect.schema._assignable import assignable
 from pyfect.schema._codecs import URL, Bytes
 from pyfect.schema._collections import FrozenSet
 from pyfect.schema._data import Redacted
+from pyfect.schema._hash_collections import HashMap, HashSet
 from pyfect.schema._literals import Enum, Literal, Literals, Union
 from pyfect.schema._primitives import Any as AnySchema
 from pyfect.schema._primitives import Boolean, Int, Null, Number, String, Unknown
@@ -59,12 +63,19 @@ _SIMPLE: dict[object, AnyBottom] = {
     JsonValue: Json,
 }
 
-_MAPPINGS = frozenset({dict, collections.abc.Mapping, collections.abc.MutableMapping})
+_OF_TWO: dict[object, Callable[[AnyBottom, AnyBottom], AnyBottom]] = {
+    dict: Record,
+    collections.abc.Mapping: Record,
+    collections.abc.MutableMapping: Record,
+    _HashMap: HashMap,
+}
+"""The schemas of the two-argument generic forms (``dict[K, V]``, ...)."""
 _OF_ONE: dict[object, Callable[[AnyBottom], AnyBottom]] = {
     list: List,
     collections.abc.Sequence: Array,
     frozenset: FrozenSet,
     collections.abc.Set: FrozenSet,
+    _HashSet: HashSet,
     _Redacted: Redacted,
 }
 """The schemas of the one-argument generic forms (``list[X]``, ...)."""
@@ -98,8 +109,9 @@ def _of_form(annotation: object, expanding: frozenset[object]) -> AnyBottom | No
         return Literal(args[0]) if len(args) == 1 else Literals(*args)
     if origin is typing.Union or origin is types.UnionType:
         return Union(*map(of, args))
-    if origin in _MAPPINGS and len(args) == 2:
-        return Record(of(args[0]), of(args[1]))
+    two = _OF_TWO.get(origin) if _hashable(origin) else None
+    if two is not None and len(args) == 2:
+        return two(of(args[0]), of(args[1]))
     if origin is tuple:
         return _of_tuple(args, of)
     one = _OF_ONE.get(origin) if _hashable(origin) else None

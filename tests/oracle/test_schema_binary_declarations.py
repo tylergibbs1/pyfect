@@ -9,7 +9,7 @@ Omitted (one line each):
   they count its hits.
 
 Adapted:
-- ``Schema.Chunk``/``HashMap``/``HashSet`` are ``S.List``/``S.Map``/``S.FrozenSet``.
+- ``Schema.Chunk`` is ``S.List``.
 - ``Schema.Date`` has no Python schema (``S.DateTimeUtc`` is a ``datetime``); its
   lines use ``DateTimeUtc``. Symbols are dropped.
 - ``datetime`` covers years 1 to 9999: the boundaries are those, and reading past
@@ -32,6 +32,8 @@ from pyfect import exit as Exit
 from pyfect import schema as S
 from pyfect.cause import Cause, Die, Fail, Interrupt
 from pyfect.encoding import schema_binary as B
+from pyfect.hash_map import HashMap
+from pyfect.hash_set import HashSet
 from pyfect.option import Some
 from pyfect.result import Err, Ok
 from pyfect.schema import getter as G
@@ -282,6 +284,12 @@ def test_uses_declaration_codec_links_for_collections_redacted_class_and_tagged_
     from pyfect import redacted
 
     assert roundtrip(S.List(S.Number), [1, 2, 3]) == [1, 2, 3]
+    hash_map = roundtrip(S.HashMap(S.String, S.Number), HashMap.make(("a", 1.0), ("b", 2.0)))
+    assert hash_map.get("a") == Some(1)
+    assert hash_map.get("b") == Some(2)
+    hash_set = roundtrip(S.HashSet(S.String), HashSet.make("a", "b"))
+    assert hash_set.has("a")
+    assert hash_set.has("b")
     assert roundtrip(S.Map(S.String, S.Number), {"a": 1, "b": 2}) == {"a": 1, "b": 2}
     assert roundtrip(S.FrozenSet(S.String), frozenset(("a", "b"))) == frozenset(("a", "b"))
     secret = roundtrip(S.Redacted(S.String), redacted.make("secret"))

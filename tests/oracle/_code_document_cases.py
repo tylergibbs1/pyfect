@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from typing import Any, NotRequired, TypedDict
 
 from pyfect import schema as S
+from pyfect.hash_map import HashMap
+from pyfect.hash_set import HashSet
 from pyfect.schema import representation as R
 
 
@@ -215,6 +217,8 @@ CASES: dict[str, tuple[Any, list[object], list[object]]] = {
     "recursive": (TreeSchema, [{"value": "a", "children": ()}], [{"value": "a"}]),
     "mutually_recursive": (PingSchema, [{"pong": {"ping": {}}}], [{"pong": {"ping": 1}}]),
     "suspend": (S.suspend(lambda: S.String), ["a"], [1]),
+    "hash_set": (S.HashSet(S.String), [HashSet.make("a")], [frozenset({"a"}), HashSet.make(1)]),
+    "hash_map": (S.HashMap(S.String, S.Number), [HashMap.make(("a", 1.0))], [{"a": 1.0}]),
 }
 
 

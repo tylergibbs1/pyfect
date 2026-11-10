@@ -5,13 +5,13 @@ Coverage counts ported, renamed and §4 exports.
 
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
-| Schema | 407 | 316 | 46 | 45 | 0 | 100% |
+| Schema | 407 | 318 | 46 | 43 | 0 | 100% |
 | SchemaAST | 133 | 58 | 8 | 67 | 0 | 100% |
 | SchemaGetter | 53 | 48 | 0 | 5 | 0 | 100% |
 | SchemaTransformation | 50 | 37 | 5 | 8 | 0 | 100% |
 | SchemaIssue | 21 | 16 | 3 | 2 | 0 | 100% |
 | SchemaParser | 34 | 26 | 0 | 8 | 0 | 100% |
-| SchemaRepresentation | 101 | 89 | 4 | 8 | 0 | 100% |
+| SchemaRepresentation | 101 | 89 | 6 | 6 | 0 | 100% |
 | JsonSchema | 16 | 8 | 8 | 0 | 0 | 100% |
 | **All** | 815 | | | | 0 | 100% |
 
@@ -205,8 +205,8 @@ Coverage counts ported, renamed and §4 exports.
 | `Char` | ported | `pyfect.schema.Char` |
 | `ErrorInstance` | ported | `pyfect.schema.ErrorInstance` |
 | `Defect` | ported | `pyfect.schema.Defect` |
-| `ReadonlyMap` | §4 | `S.Map` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
-| `ReadonlySet` | §4 | `S.FrozenSet` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
+| `ReadonlyMap` | §4 | `S.Map` (§4: `ReadonlySet`, `ReadonlyMap`, `Chunk`) |
+| `ReadonlySet` | §4 | `S.FrozenSet` (§4: `ReadonlySet`, `ReadonlyMap`, `Chunk`) |
 | `RegExp` | ported | `pyfect.schema.RegExp` |
 | `URL` | ported | `pyfect.schema.URL` |
 | `URLFromString` | ported | `pyfect.schema.URLFromString` |
@@ -249,7 +249,7 @@ Coverage counts ported, renamed and §4 exports.
 | `ByteSizeFromNumber` | ported | `pyfect.schema.ByteSizeFromNumber` |
 | `CauseReason` | ported | `pyfect.schema.CauseReason` |
 | `Cause` | ported | `pyfect.schema.Cause` |
-| `Chunk` | §4 | `S.Array` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
+| `Chunk` | §4 | `S.Array` (§4: `ReadonlySet`, `ReadonlyMap`, `Chunk`) |
 | `DateTimeUtc` | ported | `pyfect.schema.DateTimeUtc` |
 | `DateTimeUtcFromDate` | ported | `pyfect.schema.DateTimeUtcFromDate` |
 | `DateTimeUtcFromString` | ported | `pyfect.schema.DateTimeUtcFromString` |
@@ -373,8 +373,8 @@ Coverage counts ported, renamed and §4 exports.
 | `KeyWrapPrivateKeyFromFormat` | renamed | `pyfect.crypto.schema.KeyWrapPrivateKeyFromFormat` |
 | `Exit` | ported | `pyfect.schema.Exit` |
 | `Graph` | ported | `pyfect.schema.Graph` |
-| `HashMap` | §4 | `S.Map` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
-| `HashSet` | §4 | `S.FrozenSet` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
+| `HashMap` | ported | `pyfect.schema.HashMap` |
+| `HashSet` | ported | `pyfect.schema.HashSet` |
 | `Option` | ported | `pyfect.schema.Option` |
 | `OptionFromNullOr` | ported | `pyfect.schema.OptionFromNullOr` |
 | `OptionFromUndefinedOr` | §4 | `S.OptionFromNullOr` (§4: `Schema.UndefinedOr` / `NullishOr`) |
@@ -800,10 +800,10 @@ Coverage counts ported, renamed and §4 exports.
 | `ExitReviver` | ported | `pyfect.schema.representation.exit_reviver` |
 | `ReadonlyMapReviver` | renamed | `pyfect.schema.representation.map_reviver` |
 | `GraphReviver` | renamed | `pyfect.schema.representation.graph_reviver` |
-| `HashMapReviver` | §4 | `map_reviver` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
+| `HashMapReviver` | renamed | `pyfect.schema.representation.hash_map_reviver` |
 | `ReadonlySetReviver` | renamed | `pyfect.schema.representation.frozen_set_reviver` |
-| `HashSetReviver` | §4 | `frozen_set_reviver` (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
-| `ChunkReviver` | §4 | an array needs no reviver (§4: `ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`) |
+| `HashSetReviver` | renamed | `pyfect.schema.representation.hash_set_reviver` |
+| `ChunkReviver` | §4 | an array needs no reviver (§4: `ReadonlySet`, `ReadonlyMap`, `Chunk`) |
 | `RegExpReviver` | ported | `pyfect.schema.representation.reg_exp_reviver` |
 | `URLReviver` | ported | `pyfect.schema.representation.url_reviver` |
 | `DateReviver` | §4 | not ported (§4: `SchemaRepresentation` revivers of schemas pyfect has not ported) |

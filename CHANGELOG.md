@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.1 (unreleased)
+
+### Added
+
+- `S.HashSet(item)` and `S.HashMap(key, value)` (Effect's `Schema.HashSet` / `Schema.HashMap`)
+  decode to `pyfect.hash_set.HashSet` / `pyfect.hash_map.HashMap`, so `1` and `True` are two
+  items or keys and every `NaN` is one, as in Effect. `S.FrozenSet` / `S.Map` still decode to
+  `frozenset` / `dict` and refuse input those would merge. JSON writes a set as an array of its
+  values and a map as an array of `[key, value]` pairs, in Effect's order; ISO, Hypothesis
+  strategies, equivalence, formatter, JSON Schema, representation (`R.hash_set_reviver`,
+  `R.hash_map_reviver`) and generated code follow Effect's. `HashSet[X]` / `HashMap[K, V]`
+  annotations derive them in `S.Struct` and schema classes.
+
 ## 0.5.0 (2026-11-10)
 
 Durations are exact. `duration.Duration` is Effect 4.1.2's `Duration`: whole nanoseconds at

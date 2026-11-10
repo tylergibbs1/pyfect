@@ -13,8 +13,8 @@ Effect, ``node``::
     Cause.combine(Cause.fail(1), Cause.fail(true))                  // two reasons
 
 A Python ``frozenset`` or ``dict`` cannot hold ``1`` and ``True`` apart, so
-a set or map decoding both is a ``SchemaError`` rather than a silent merge
-(PARITY §4).
+``S.FrozenSet`` / ``S.Map`` decoding both is a ``SchemaError`` rather than a
+silent merge (PARITY §4); ``S.HashSet`` / ``S.HashMap`` keep both, as Effect's.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from pyfect import cause as C
 from pyfect import schema as S
 from pyfect import stream
 from pyfect._equal import dedupe, equal_key, equals
+from pyfect.hash_set import HashSet
 
 # Pairs Python's ``==`` calls equal that ``Equal.equals`` keeps apart: the
 # helper every Equal-keyed surface is checked against.
@@ -118,6 +119,36 @@ def test_a_set_or_map_that_python_would_merge_is_a_schema_error(
 def test_a_set_or_map_without_collisions_still_decodes():
     json_map = S.to_codec_json(S.Map(_NUMBER_OR_BOOLEAN, S.String))
     assert S.decode_unknown_sync(json_map)([[1, "a"], [1.0, "b"]]) == {1: "b"}
+
+
+def test_hash_set_and_hash_map_keep_one_and_true_apart():
+    """Effect: ``S.decodeUnknownSync(S.toCodecJson(S.HashSet(S.Unknown)))([1, true])``
+    has size 2, as does the ``HashMap`` of ``[[1, "a"], [true, "b"]]``."""
+    hash_set = S.decode_unknown_sync(S.to_codec_json(S.HashSet(_NUMBER_OR_BOOLEAN)))([1, True])
+    assert len(hash_set) == 2
+    assert hash_set.has(1)
+    assert hash_set.has(True)
+    hash_map = S.decode_unknown_sync(S.to_codec_json(S.HashMap(_NUMBER_OR_BOOLEAN, S.String)))(
+        [[1, "a"], [True, "b"]]
+    )
+    assert hash_map.get(1) == fx.Some("a")
+    assert hash_map.get(True) == fx.Some("b")
+    decoded = S.decode_unknown_sync(S.HashSet(S.Union(S.NumberFromString, S.BooleanFromBit)))(
+        HashSet.make("1", 1)
+    )
+    assert len(decoded) == 2
+
+
+def test_hash_set_and_hash_map_keep_one_nan():
+    """Effect: ``S.toCodecJson(S.HashSet(S.Number))`` decodes ``["NaN", "NaN"]``
+    to one item; ``[["NaN", 1], ["NaN", 2]]`` to the map of ``NaN`` to ``2``."""
+    hash_set = S.decode_unknown_sync(S.to_codec_json(S.HashSet(S.Number)))(["NaN", "NaN"])
+    assert len(hash_set) == 1
+    hash_map = S.decode_unknown_sync(S.to_codec_json(S.HashMap(S.Number, S.Number)))(
+        [["NaN", 1], ["NaN", 2]]
+    )
+    assert len(hash_map) == 1
+    assert hash_map.get(math.nan) == fx.Some(2)
 
 
 def test_cause_combine_keeps_fail_one_apart_from_fail_true():

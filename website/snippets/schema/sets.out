@@ -1,0 +1,2 @@
+Expected items a frozenset keeps apart (True and 1 are one item in Python)
+(('ada', 3), ('alan', 2), ('grace', 5))

@@ -11,6 +11,8 @@ from pyfect import byte_size
 from pyfect import cause
 from pyfect import duration
 from pyfect import graph
+from pyfect import hash_map
+from pyfect import hash_set
 from pyfect import semver
 from pyfect import semver_range
 from pyfect.http import url
@@ -131,6 +133,8 @@ type Schema106Type = PersonType
 type Schema107Type = TreeType
 type Schema108Type = PingType
 type Schema109Type = str
+type Schema110Type = hash_set.HashSet[str]
+type Schema111Type = hash_map.HashMap[str, float]
 _Struct = TypedDict("_Struct", {"x": float, "y": NotRequired[float]})
 _Struct1 = TypedDict("_Struct1", {"value": str, "children": tuple[TreeType, ...]})
 _Struct2 = TypedDict("_Struct2", {"ping": NotRequired[PingType]})
@@ -252,3 +256,5 @@ Schema106 = Person
 Schema107 = Tree
 Schema108 = Ping
 Schema109 = S.suspend(lambda: S.String)
+Schema110 = S.HashSet(S.String).annotate(expected="HashSet")
+Schema111 = S.HashMap(S.String, S.Number).annotate(expected="HashMap")

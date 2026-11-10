@@ -7,7 +7,8 @@ formatter of its own is written by ``format_unknown`` (Effect's
 suffix (a ``BigInt`` is a Python ``int``), a ``timedelta`` is its ``str``
 (``Duration`` has no formatter in Effect either: its text is the value's
 own). ``FrozenSet`` / ``Map`` values are written under those names
-(Effect's ``ReadonlySet`` / ``ReadonlyMap``); an enum member as its value.
+(Effect's ``ReadonlySet`` / ``ReadonlyMap``), ``HashSet`` / ``HashMap``
+values as Effect's; an enum member as its value.
 
 Omitted:
 - ``Void``, ``Undefined``, ``Symbol``, ``UniqueSymbol``, ``ObjectKeyword``,
@@ -15,10 +16,10 @@ Omitted:
   counterpart ("Void", "Symbol", "UniqueSymbol", "ObjectKeyword", "Literal
   / bigint", "Struct / required field with undefined", "Struct / optional
   field", "Record(Symbol, Option(Number))", "suspend / optional", "suspend /
-  optional + Array", "ReadonlySet(Symbol)", "ReadonlyMap(Symbol, String)").
+  optional + Array", "ReadonlySet(Symbol)", "ReadonlyMap(Symbol, String)",
+  "HashSet(Symbol)", "HashMap(Symbol, String)").
 - "StructWithRest": ported in ``test_schema_struct_with_rest.py``.
-- ``Date``, ``RegExp``,
-  ``HashMap``, ``HashSet``, ``Chunk``, ``BigDecimal``: not ported schemas
+- ``Date``, ``RegExp``, ``Chunk``, ``BigDecimal``: not ported schemas
   (every title naming them).
 - "Duration": ``timedelta``'s own text instead (see above).
 - "Enum / Const enum": a Python ``Enum`` is a class (the other enum titles
@@ -37,6 +38,8 @@ from zoneinfo import ZoneInfo
 
 from pyfect import schema as S
 from pyfect.date_time import format_iso_zoned
+from pyfect.hash_map import HashMap
+from pyfect.hash_set import HashSet
 from pyfect.http.url import Url
 from pyfect.option import Option, Some
 from pyfect.redacted import Redacted
@@ -461,6 +464,16 @@ def test_suspend_readonly_map():
     assert format({"a": {"b": {}}}) == 'Map(1) { "a" => Map(1) { "b" => Map(0) {} } }'
 
 
+def test_suspend_hash_map():
+    """suspend / HashMap"""
+    schema: S.Bottom[Any, Any] = S.HashMap(S.String, S.suspend(lambda: schema))
+    format = S.to_formatter(schema)
+    empty = HashMap[str, Any].empty()
+    assert format(empty) == "HashMap(0) {}"
+    nested = HashMap.make(("a", HashMap.make(("b", empty))))
+    assert format(nested) == 'HashMap(1) { "a" => HashMap(1) { "b" => HashMap(0) {} } }'
+
+
 def test_url():
     """URL"""
     assert S.to_formatter(S.URL)(Url("https://www.example.com")) == "https://www.example.com/"
@@ -485,6 +498,22 @@ def test_readonly_map_string_option_number():
     format = S.to_formatter(S.Map(S.String, S.Option(S.Number)))
     assert format({"a": Some(1)}) == 'Map(1) { "a" => some(1) }'
     assert format({"a": None}) == 'Map(1) { "a" => none() }'
+
+
+def test_hash_map_string_option_number():
+    """HashMap(String, Option(Number))"""
+    format = S.to_formatter(S.HashMap(S.String, S.Option(S.Number)))
+    assert format(HashMap.make(("a", Some(1.0)))) == 'HashMap(1) { "a" => some(1) }'
+    assert (
+        format(HashMap[str, Some[float] | None].make(("a", None))) == 'HashMap(1) { "a" => none() }'
+    )
+
+
+def test_hash_set_string():
+    """``HashSet`` values are written sorted, as Effect's ``HashSet(Symbol)``."""
+    format = S.to_formatter(S.HashSet(S.String))
+    assert format(HashSet.make("b", "a")) == 'HashSet(2) { "a", "b" }'
+    assert format(HashSet[str].empty()) == "HashSet(0) {}"
 
 
 def test_redacted_string():

@@ -4509,7 +4509,6 @@ def check_schema_composites(unknown: object) -> None:
     assert_type(S.decode_unknown_sync(S.FrozenSet(S.Int))(unknown), frozenset[int])
     assert_type(S.decode_unknown_sync(S.Map(S.Int, S.String))(unknown), dict[int, str])
     assert_type(S.encode_sync(S.Map(S.Int, S.String)), S.Parser[dict[int, str], Mapping[int, str]])
-
     assert_type(S.decode_unknown_sync(S.Option(S.Int))(unknown), Option[int])
     assert_type(S.decode_unknown_sync(S.Result(S.Int, S.String))(unknown), Result[int, str])
     exceptions = S.instance_of(Exception)
@@ -4536,6 +4535,23 @@ def check_schema_composites(unknown: object) -> None:
         return isinstance(value, str)
 
     assert_type(S.declare(is_str, expected="text"), S.Bottom[str])
+
+
+def check_schema_hash_collections(unknown: object) -> None:
+    """``S.HashSet`` / ``S.HashMap`` decode to pyfect's ``HashSet`` / ``HashMap``."""
+    from pyfect import schema as S
+
+    assert_type(S.decode_unknown_sync(S.HashSet(S.Int))(unknown), HashSet[int])
+    assert_type(S.decode_unknown_sync(S.HashMap(S.Int, S.String))(unknown), HashMap[int, str])
+    assert_type(
+        S.encode_sync(S.HashMap(S.Int, S.FiniteFromString)),
+        S.Parser[HashMap[int, float], HashMap[int, str]],
+    )
+    assert_type(S.HashSet(S.FiniteFromString), S.HashSetSchema[float, str, Never, Never])
+    assert_type(S.HashMap(S.Int, S.String).key, S.Codec[int, int, Never, Never])
+    assert_type(
+        S.encode_sync(S.to_codec_json(S.HashSet(S.Int))), S.Parser[HashSet[int], S.JsonValue]
+    )
 
 
 def check_schema_completeness_pass() -> None:
@@ -4570,6 +4586,8 @@ def check_schema_classes_are_covariant() -> None:
         cause_: S.CauseSchema[str, str, Never, Never],
         exit_: S.ExitSchema[str, int, str, int, Never, Never],
         secret: S.RedactedSchema[str, str, Never, Never],
+        hash_set: S.HashSetSchema[str, str, Never, Never],
+        hash_map: S.HashMapSchema[str, int, str, int, Never, Never],
     ) -> None:
         assert_type(
             S.TupleWithRest(S.Tuple(S.String), needs_db),
@@ -4591,6 +4609,10 @@ def check_schema_classes_are_covariant() -> None:
         _14: S.CauseSchema[object, object, Db, object] = cause_
         _15: S.ExitSchema[object, object, object, object, Db, object] = exit_
         _16: S.RedactedSchema[object, object, Db, object] = secret
+        # HashSet and HashMap take items (``add`` / ``set``): invariant in them.
+        _17: S.HashSetSchema[str, str, Db, object] = hash_set
+        _18: S.HashMapSchema[str, int, str, int, Db, object] = hash_map
+        _19: S.HashSetSchema[object, object, Never, Never] = hash_set  # pyright: ignore[reportAssignmentType]
 
     _ = pins
 

@@ -73,7 +73,7 @@ from __future__ import annotations
 
 import enum
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Sequence, Sized
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Never, NotRequired, TypedDict, TypeIs, cast
 
@@ -293,6 +293,8 @@ def test_derives_built_in_and_canonical_declarations():
             ("Result", S.Result(S.Number, S.String)),
             ("ReadonlySet", S.FrozenSet(S.Number)),
             ("ReadonlyMap", S.Map(S.String, S.Number)),
+            ("HashSet", S.HashSet(S.Number)),
+            ("HashMap", S.HashMap(S.String, S.Number)),
             ("Redacted", S.Redacted(S.String, label="password")),
             ("CauseReason", S.CauseReason(S.String, S.Defect())),
             ("Cause", S.Cause(S.String, S.Defect())),
@@ -669,7 +671,9 @@ def test_derives_productive_structural_declarations_through_canonical_codecs():
             ("Result", S.Result(S.Number, S.String)),
             ("Redacted", S.Redacted(S.String)),
             ("ReadonlySet", S.FrozenSet(S.Int)),
+            ("HashSet", S.HashSet(S.Int)),
             ("ReadonlyMap", S.Map(S.String, S.Int)),
+            ("HashMap", S.HashMap(S.String, S.Int)),
             ("Duration", S.Duration),
             ("Cause", S.Cause(S.String, DEFECTS)),
             ("Exit", S.Exit(S.Int, S.String, DEFECTS)),
@@ -682,17 +686,20 @@ def test_constructs_collection_cardinality_through_declaration_annotations():
     """schema / constructs collection cardinality through declaration
     annotations"""
 
-    def three(value: frozenset[int]) -> bool:
+    def three(value: Sized) -> bool:
         return len(value) == 3
 
-    custom = S.FrozenSet(S.Int).check(
-        S.make_filter(three, arbitrary_constraint=S.ArbitraryConstraint(min_size=3, max_size=3))
-    )
+    exactly_three = S.ArbitraryConstraint(min_size=3, max_size=3)
+    hash_set = S.HashSet(S.Int).check(S.make_filter(three, arbitrary_constraint=exactly_three))
     keys = S.Literals("a", "b", "c")
+    hash_map = S.HashMap(keys, S.Boolean).check(
+        S.make_filter(three, arbitrary_constraint=exactly_three)
+    )
     schemas: list[S.Bottom[Any, Any, Any, Any]] = [
         S.FrozenSet(S.Int).check(S.is_between_size(3, 3)),
-        custom,
+        hash_set,
         S.Map(keys, S.Boolean).check(S.is_between_size(3, 3)),
+        hash_map,
     ]
     for schema in schemas:
         assert all(len(value) == 3 for value in sample(schema, 30))

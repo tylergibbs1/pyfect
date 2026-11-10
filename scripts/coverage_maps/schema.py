@@ -11,7 +11,7 @@ OPTIONAL = "`Schema.UndefinedOr` / `NullishOr`"
 PROMISE = "`Schema.decodePromise` / `encodePromise`"
 TYPE_LEVEL = "`Schema.mutable`, `mutableKey` / `readonlyKey`"
 METHODS = "`Schema.annotate` / `annotateKey`"
-COLLECTIONS = "`ReadonlySet` / `HashSet`, `ReadonlyMap` / `HashMap`, `Chunk`"
+COLLECTIONS = "`ReadonlySet`, `ReadonlyMap`, `Chunk`"
 OPAQUE = "`Schema.Opaque<Self>()(struct)`"
 INTERNAL = "Effect's `@internal` schema exports"
 CONTEXT = "`SchemaAST.Context`"
@@ -115,8 +115,6 @@ SCHEMA = Module(
         "brand": (METHODS, "`S.from_brand(brand)`"),
         "ReadonlyMap": (COLLECTIONS, "`S.Map`"),
         "ReadonlySet": (COLLECTIONS, "`S.FrozenSet`"),
-        "HashMap": (COLLECTIONS, "`S.Map`"),
-        "HashSet": (COLLECTIONS, "`S.FrozenSet`"),
         "Chunk": (COLLECTIONS, "`S.Array`"),
         "Opaque": (OPAQUE, "`class Self(S.Class)`"),
     },
@@ -307,11 +305,11 @@ REPRESENTATION = Module(
         "ReadonlySetReviver": "pyfect.schema.representation.frozen_set_reviver",
         "Uint8ArrayReviver": "pyfect.schema.representation.bytes_reviver",
         "GraphReviver": "pyfect.schema.representation.graph_reviver",
+        "HashMapReviver": "pyfect.schema.representation.hash_map_reviver",
+        "HashSetReviver": "pyfect.schema.representation.hash_set_reviver",
     },
     pythonic={
         "isStringSymbolReviver": (NO_UNDEFINED, "not ported"),
-        "HashMapReviver": (COLLECTIONS, "`map_reviver`"),
-        "HashSetReviver": (COLLECTIONS, "`frozen_set_reviver`"),
         "ChunkReviver": (COLLECTIONS, "an array needs no reviver"),
         **{
             name: (REVIVED_SCHEMAS, "not ported")

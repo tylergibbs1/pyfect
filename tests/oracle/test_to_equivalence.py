@@ -12,7 +12,7 @@ Omitted:
   ``Record(Symbol, ...)``: no Python counterpart ("Tuple / optional
   elements", "Struct / optional fields", "Struct / symbol keys",
   "Record(String, UndefinedOr(Number))", "Record(Symbol, Number)").
-- ``Date``, ``RegExp``, ``HashSet``, ``HashMap``, ``BigDecimal``: not ported
+- ``Date``, ``RegExp``, ``BigDecimal``: not ported
   schemas (every title naming them).
 - "Duration": the infinity forms (``timedelta`` cannot be infinite); the
   finite cases are ported.
@@ -30,6 +30,8 @@ import pytest
 
 from pyfect import duration
 from pyfect import schema as S
+from pyfect.hash_map import HashMap
+from pyfect.hash_set import HashSet
 from pyfect.http.url import Url
 from pyfect.option import Some
 from pyfect.redacted import Redacted
@@ -445,6 +447,45 @@ def test_readonly_map_rejects_a_proper_subset(size: int):
     entries: list[tuple[float, float]] = [(0, 1), (1, 2)]
     subset = dict(entries[:size])
     superset = dict(entries)
+    assert not equivalence(superset, subset)
+    assert not equivalence(subset, superset)
+
+
+@pytest.mark.parametrize("size", [0, 1])
+def test_hash_set_rejects_a_proper_subset(size: int):
+    """HashSet rejects a proper subset of size %i in both orders"""
+    equivalence = S.to_equivalence(S.HashSet(_MODULO_2))
+    subset = HashSet.from_iterable([0.0, 1.0][:size])
+    superset = HashSet.make(0.0, 1.0)
+    assert not equivalence(superset, subset)
+    assert not equivalence(subset, superset)
+
+
+def test_hash_map_modulo_2_modulo_3():
+    """HashMap(Modulo2, Modulo3)"""
+    equivalence = S.to_equivalence(S.HashMap(_MODULO_2, _MODULO_3))
+
+    def m(*entries: tuple[float, float]) -> HashMap[float, float]:
+        return HashMap[float, float].make(*entries)
+
+    assert equivalence(m(), m())
+    assert equivalence(m((0, 1)), m((0, 1)))
+    assert equivalence(m((0, 1)), m((2, 4)))
+    assert equivalence(m((0, 1), (1, 2)), m((0, 1), (1, 2)))
+    assert equivalence(m((0, 1), (1, 2)), m((1, 2), (0, 1)))
+    assert not equivalence(m((0, 1)), m((1, 1)))
+    assert not equivalence(m((0, 1)), m((0, 2)))
+    assert not equivalence(m((0, 1), (1, 2)), m((0, 1), (1, 3)))
+    assert not equivalence(m((0, 1), (1, 2)), m((0, 1), (2, 2)))
+
+
+@pytest.mark.parametrize("size", [0, 1])
+def test_hash_map_rejects_a_proper_subset(size: int):
+    """HashMap rejects a proper subset of size %i in both orders"""
+    equivalence = S.to_equivalence(S.HashMap(_MODULO_2, _MODULO_3))
+    entries: list[tuple[float, float]] = [(0, 1), (1, 2)]
+    subset = HashMap.from_iterable(entries[:size])
+    superset = HashMap.from_iterable(entries)
     assert not equivalence(superset, subset)
     assert not equivalence(subset, superset)
 

@@ -197,6 +197,7 @@ from pyfect.schema._ecma_pattern import EcmaPatternError, compile_ecma, is_ecma_
 from pyfect.schema._error import SchemaError
 from pyfect.schema._error_instance import Defect, DefectSchema, ErrorInstance
 from pyfect.schema._graph import Graph, GraphSchema
+from pyfect.schema._hash_collections import HashMap, HashMapSchema, HashSet, HashSetSchema
 from pyfect.schema._jsonschema import (
     CheckContext,
     CheckOutput,
@@ -571,6 +572,10 @@ __all__ = [
     "Graph",
     "GraphSchema",
     "Guard",
+    "HashMap",
+    "HashMapSchema",
+    "HashSet",
+    "HashSetSchema",
     "Host",
     "HostFromString",
     "HostPort",

@@ -3,8 +3,7 @@
 Effect's ``Date`` has none for this family; ``ReadonlySet`` is ``S.FrozenSet``, ``ReadonlyMap``
 ``S.Map``.
 
-Omitted: "Opaque", "HashMap", "Date": pyfect has no ``Schema.Opaque``, ``Schema.HashMap`` or
-``Schema.Date`` to give them."""
+Omitted: "Opaque", "Date": pyfect has no ``Schema.Opaque`` or ``Schema.Date`` to give them."""
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false
 # pyright: reportUnknownArgumentType=false, reportUnknownLambdaType=false
 # pyright: reportUnknownParameterType=false, reportMissingParameterType=false
@@ -20,6 +19,7 @@ import pytest
 import pyfect as fx
 from pyfect import cause as C
 from pyfect import schema as S
+from pyfect.hash_map import HashMap
 from pyfect.option import Some
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
@@ -268,6 +268,14 @@ def test_readonly_map() -> None:
     update = entry.modify(_add_one)
     modify = S.to_iso(S.Map(S.String, Value)).modify(lambda es: [update(tuple(e)) for e in es])
     assert modify({"a": _at(0)}) == {"a": _at(1)}
+
+
+def test_hash_map() -> None:
+    """Optic generation / toIso / HashMap"""
+    entry: Any = S.to_iso_focus(S.Tuple(S.String, Value)).key(1).key("a")
+    update = entry.modify(_add_one)
+    modify = S.to_iso(S.HashMap(S.String, Value)).modify(lambda es: [update(tuple(e)) for e in es])
+    assert modify(HashMap.make(("a", _at(0)))).to_entries() == [("a", _at(1))]
 
 
 class _UrlField(TypedDict):

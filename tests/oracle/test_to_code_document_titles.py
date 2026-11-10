@@ -1100,9 +1100,21 @@ def test_readonly_set_checks(check: Any, code: str) -> None:
 
 
 def test_hash_map_string_number() -> None:
-    """toCodeDocument / HashMap / HashMap(String, Number): ``S.Map``"""
+    """toCodeDocument / HashMap / HashMap(String, Number)"""
     _assert_schema(
-        S.Map(S.String, S.Number), _code("S.Map(S.String, S.Number)", "dict[str, float]")
+        S.HashMap(S.String, S.Number),
+        _code("S.HashMap(S.String, S.Number)", "hash_map.HashMap[str, float]"),
+        artifacts=[R.ImportArtifact("from pyfect import hash_map")],
+    )
+
+
+def test_hash_set_string() -> None:
+    """``S.HashSet`` writes ``hash_set.HashSet`` with its import (Effect's
+    ``HashSet`` declares no import, so its generated code does not compile)."""
+    _assert_schema(
+        S.HashSet(S.String),
+        _code("S.HashSet(S.String)", "hash_set.HashSet[str]"),
+        artifacts=[R.ImportArtifact("from pyfect import hash_set")],
     )
 
 

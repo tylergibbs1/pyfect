@@ -226,7 +226,6 @@ OMISSIONS: tuple[Omission, ...] = (
         _SYMBOLS,
         "effect/test/schema/representation/fromJson.test.ts",
         "effect/test/schema/toFormatter.test.ts",
-        "effect/test/schema/toEquivalence.test.ts",
         "effect/test/schema/SchemaParser.test.ts",
     ),
     _some("effect/test/schema/SchemaAST.test.ts", _SYMBOLS, r"unique symbol sentinels|^Symbol$"),

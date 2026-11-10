@@ -11,7 +11,8 @@ returns typed data, an encoder back to the wire form, a JSON Schema and Hypothes
 
 `S.Struct(TypedDict)` takes its fields from the TypedDict's annotations: `str`, `int`, `float`,
 `bool`, `None`, `bytes`, `Duration`, enums, literals, unions, TypedDicts, schema classes and
-the standard containers (`list`, `tuple`, `dict`, `frozenset`, `Sequence`, `Mapping`) of these.
+the standard containers (`list`, `tuple`, `dict`, `frozenset`, `Sequence`, `Mapping`) and
+pyfect's `HashSet` / `HashMap` of these.
 A `datetime` has two schemas (`S.DateTimeUtc`, `S.DateTimeZoned`), so give it one. Keyword
 arguments give a field a stricter schema, such as a checked `S.Int`. That schema must decode to
 the key's type: `quantity=S.String` for `quantity: int` is a `TypeError` when the struct is
@@ -38,6 +39,24 @@ unless you pass `on_excess_property="error"`.
 <include meta='title="records.py"'>../../snippets/schema/records.py</include>
 
 <include lang="text">../../snippets/schema/records.out</include>
+
+</CodeOutput>
+
+## Sets and maps
+
+`S.FrozenSet(item)` and `S.Map(key, value)` decode to a `frozenset` and a `dict`. Python's
+containers treat `True` as `1`, where Effect keeps them apart, so these refuse input that would
+merge them. `S.HashSet(item)` and `S.HashMap(key, value)` decode to pyfect's `HashSet` and
+`HashMap`, which compare as Effect's `Equal` does: `1` and `True` are two items and every
+`NaN` is one. In JSON, a set is a list of its items and a map a list of `[key, value]` pairs,
+in the order Effect writes them. Annotations work too: a `HashSet[int]` field is
+`S.HashSet(S.Int)`.
+
+<CodeOutput>
+
+<include meta='title="sets.py"'>../../snippets/schema/sets.py</include>
+
+<include lang="text">../../snippets/schema/sets.out</include>
 
 </CodeOutput>
 
