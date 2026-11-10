@@ -5,21 +5,21 @@ the next owner instead of being answered."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import Any, Never
 
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
 from pyfect.cause import Cause, Interrupt
 from pyfect.cluster.cluster_schema import ABANDON_ANNOTATION, Abandon
-from pyfect.effect import callback, current_fiber
+from pyfect.effect import current_fiber, never
 
 
 def _abandon(fiber: Fiber[Any, Any]) -> Effect[Never]:
-    def register(_resume: Callable[[Effect[Never]], None]) -> None:
-        fiber.interrupt_as_unsafe(fiber.id, ABANDON_ANNOTATION)
-
-    return callback(register).interruptible()
+    # Annotate before opening the interruptible region: an interrupt already
+    # pending on an uninterruptible fiber fires as soon as the region opens,
+    # and the annotation joins that pending cause instead of being lost.
+    fiber.interrupt_as_unsafe(fiber.id, ABANDON_ANNOTATION)
+    return never.interruptible()
 
 
 interrupt: Effect[Never] = current_fiber().flat_map(_abandon)

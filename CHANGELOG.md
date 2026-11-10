@@ -147,6 +147,65 @@
   `Uuid.v7Monotonic` does: ids made in the same millisecond increase strictly.
 - `Base64Url` decoding follows Effect 4.1.2: padded input must be a whole number of 4-character
   groups, and the error messages name the padded or unpadded length rule.
+- `circuit_breaker.Classify` is renamed `Classifier`, and a classifier takes
+  `(exit, context)`: `context` is a `ClassifyContext` whose `probe` is `True` for the
+  half-open probe, as in Effect 4.1.2. Migrate `lambda exit: ...` to
+  `lambda exit, _context: ...`. `http.client.circuit_breaker_classifier` accepts the context
+  and can still be called with the exit alone.
+- `rate_limiter.make_store_memory()` is replaced by `rate_limiter.make_memory_store`, an
+  effect needing a `Scope` that gives a `MemoryRateLimiterStore` whose expired keys a scoped
+  fiber sweeps every minute (Effect's `makeMemoryStore`). Write
+  `yield from rate_limiter.make_memory_store` inside a scope.
+- `RateLimiter.consume` with a `limit` of zero or less no longer reaches the store: `"fail"`
+  rejects a positive request and `"delay"` gives an infinite `delay` and `reset_after`.
+- The Redis and KVS `BackingPersistence` backends store entries under `<store_id>:<key>`,
+  with `%` and `:` in the store id percent-encoded; the Redis rate limiter percent-encodes
+  `%` and `:` in keys. Entries and counters written by earlier versions under such keys
+  (all KVS entries) are no longer found; persisted caches recompute them.
+- The Redis `PersistedQueue` store records each claim under a lock key unique to its
+  acquisition, in `<prefix><name>:owners`, as Effect 4.1.2 does. Stop older workers and let
+  their locks expire before starting upgraded workers on the same prefix.
+- `event_log_encryption.make_encryption_subtle(crypto)` takes a
+  `pyfect.crypto.web_crypto.Crypto` (Effect's `makeEncryptionSubtle(crypto)`) instead of an
+  `AesGcm` cipher; the `AesGcm` protocol and `EventLogEncryptionService.sha256_string` are
+  removed. Wrap the Web Crypto object to count or replace AES-GCM, or use
+  `event_log_encryption.layer` with your own `Aead`, `Digest` and `SecureRandom` layers; use
+  `(yield from encryption.sha256(data)).hex()` for the hex digest. The `eventlog` extra now
+  also installs PyNaCl.
+- The event log server verifies the presented signing key before binding it, and keeps the
+  Hello challenge on the connection: one use, released on disconnect, 30 seconds from
+  generation. A client reusing a challenge, or sending one from an earlier connection, gets
+  "Session auth challenge has expired".
+- `event_journal.make_entry_id_unsafe(msecs=)` clamps out-of-range timestamps as Effect's
+  `v7Bytes` does, instead of raising `OverflowError`.
+- An eventlog compactor (the `CompactFn` given to `register_compaction`) must accept a keyword
+  `remote: bool = False`, `True` during a remote compaction, which only drops entries:
+  `def compact(entries, write, /, *, remote=False): ...`. `RegistryService.remotes` is a
+  `Mapping[RemoteId, EventLogRemoteService]`, as in Effect 4.1.2; iterate `.values()`.
+- `sql_event_log_server_encrypted.make_storage` / `layer_storage` require
+  `pyfect.crypto.digest.Digest` instead of `EventLogEncryption`, as in Effect 4.1.2: provide
+  `digest.layer_web_crypto`, or use `layer_storage_subtle`, which provides it.
+- The encrypted event log server serves 4.1.2's compaction RPCs
+  (`EventLogEncryptedServerRpcs` = `EventLogRemoteRpcs` + `EventLogCompactionRpcs`), and
+  `Hello` answers `compaction=True` when the storage compacts; both built-in storages do (tune
+  them with `layer_storage_memory_with({...})` or `layer_storage(compaction={...})`; invalid
+  options die with `IllegalArgumentError`). `StorageService` has a new
+  `compaction: StorageCompaction | None` attribute; custom storages keep working without
+  compaction. The SQL storage creates `<prefix>_compaction_{stores,buckets,activations,stages}`
+  and a `<table>_snapshot` table per store, seeds stores written by older versions on first
+  open, prunes originals once a snapshot is past `grace` (30 days by default), and omits a
+  write's acks for ids at or below the active snapshot's base.
+- Inside a workflow, awaiting a child workflow that is interrupted fails the parent with a
+  defect (`<Tag>.execute: execution "<id>" was interrupted`) instead of interrupting it, as
+  in Effect 4.1.2. Use `.catch_defect(...)` or `.exit()` on the child's `execute` to recover.
+- `ShardingConfigService` has a new required field `runner_join_debounce: Seconds` (Effect's
+  `runnerJoinDebounce`, 0 in `DEFAULTS` and `layer`); code building `ShardingConfigService(...)`
+  directly must pass it.
+- The SQL runner storage with advisory locks has the server end a lock session left idle for
+  `shard_lock_expiration` (releasing its locks), and a refresh no longer re-takes locks lost
+  with an earlier session, as in Effect 4.1.2. A persisted request's final reply is stored
+  only after a lock refresh confirms this runner still owns the shard; otherwise the request
+  is left to the shard's new owner.
 
 ### Added
 

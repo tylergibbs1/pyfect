@@ -14,6 +14,7 @@ from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.persistence._error import PersistenceError
+from pyfect.persistence._keys import store_namespace
 from pyfect.persistence.key_value_store import (
     KeyValueStore,
     KeyValueStoreError,
@@ -33,7 +34,7 @@ from pyfect.persistence.persistence._service import (
 def _store(
     backing: KeyValueStoreService, clock: ClockService, store_id: str
 ) -> BackingPersistenceStore:
-    store = backing.prefix(store_id)
+    store = backing.prefix(store_namespace(store_id))
 
     def get(key: str) -> Effect[object | None, PersistenceError]:
         def parse(text: str | None) -> Effect[object | None, PersistenceError]:
@@ -131,5 +132,7 @@ def _build() -> Generator[Effect[Any, Never, KeyValueStore], Any, BackingPersist
 layer_backing_kvs: Layer[BackingPersistence, Never, KeyValueStore] = layer_effect(
     BackingPersistence, gen(_build)
 )
-"""Stores in the ``KeyValueStore``, each under its id as a key prefix;
-an entry is written as the JSON ``[value, expires]``."""
+"""Stores in the ``KeyValueStore``, an entry under ``<store_id>:<key>`` with
+``%`` and ``:`` in the store id percent-encoded, so store namespaces cannot
+overlap, written as the JSON ``[value, expires]``. ``clear`` removes only
+the store's entries, through the prefixed store's ``clear``."""

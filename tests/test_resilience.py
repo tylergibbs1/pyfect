@@ -69,10 +69,10 @@ _INF = math.inf
 @pytest.mark.parametrize(
     ("limit", "algorithm", "expected"),
     [
-        # A zero limit never refills: Effect's fixed window gives no delay
-        # (its arithmetic is NaN) and its token bucket an infinite one.
-        (0, "fixed-window", [0, _INF, -1, 0, _INF, -2]),
-        (0, "token-bucket", [_INF, _INF, -1, _INF, _INF, -2]),
+        # A zero limit never refills: since Effect 4.1.2 every positive
+        # request waits forever, and the store is never charged.
+        (0, "fixed-window", [_INF, _INF, -1, _INF, _INF, -1]),
+        (0, "token-bucket", [_INF, _INF, -1, _INF, _INF, -1]),
         # An infinite limit never limits.
         (_INF, "fixed-window", [0, 0, _INF, 0, 0, _INF]),
         (_INF, "token-bucket", [0, 0, _INF, 0, 0, _INF]),

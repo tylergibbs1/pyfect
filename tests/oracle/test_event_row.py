@@ -5,7 +5,8 @@ docstring is the Effect test title.
 key declaration ``{ fields, derive }`` is ``KeyDeclaration(fields, derive)``.
 The property "replicas converge to the fold of every entry in id order"
 draws its commands from a seeded ``random.Random`` (60 runs) instead of
-``it.effect.prop``'s 200 fast-check runs.
+``it.effect.prop``'s 200 fast-check runs; the compaction properties draw
+theirs the same way (200 runs each).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from __future__ import annotations
 import json
 import random
 import time
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict, cast
 
@@ -332,6 +333,7 @@ def test_compacts_only_shadowed_entries():
         yield from register(R.compaction(group, other))
         assert registry.compactors["grocery"].events == frozenset(["grocery"])
         assert registry.compactors["other"].events == frozenset(["other"])
+        assert registry.compactors["grocery"].remote
         for name, inputs, kept in _compaction_cases(other):
             entries: list[Entry] = []
             for i, (event, payload) in enumerate(inputs):
@@ -515,6 +517,132 @@ def test_rejects_unknown_key_fields():
     except ValueError:
         return
     raise AssertionError("make accepted a key field the schema lacks")
+
+
+# --- compaction properties ------------------------------------------------------------
+
+
+def _random_drafts(rng: random.Random) -> list[tuple[int, int, Payload]]:
+    """Entries to compact, as ``(msecs, rank, op)``: ``rank`` picks an
+    entry's position in a shuffled batch."""
+    return [
+        (rng.randint(0, 3), rng.randint(-100, 100), _random_op(rng))
+        for _ in range(rng.randint(0, 8))
+    ]
+
+
+def _draft_entries(drafts: Sequence[tuple[int, int, Payload]]) -> Generator[Any, Any, list[Entry]]:
+    entries: list[Entry] = []
+    for msecs, _, op in drafts:
+        entries.append((yield from _entry_with(1000 + msecs, Grocery, op)))
+    return entries
+
+
+def _make_drop() -> Generator[
+    Any, Any, Callable[[Sequence[Entry]], Generator[Any, Any, list[Entry]]]
+]:
+    """The ids ``EventRow.compaction`` keeps from a batch."""
+    registry = yield from L.Registry()
+    yield from (
+        R.compaction(Groceries, Grocery)
+        .pipe(fx.layer.provide(fx.layer.succeed(L.Registry, registry)))
+        .build()
+    )
+    compactor = registry.compactors["grocery"]
+
+    def drop(entries: Sequence[Entry]) -> Generator[Any, Any, list[Entry]]:
+        kept: list[Entry] = []
+
+        def write(entry: Entry, _source: Entry | None) -> fx.Effect[None]:
+            return fx.sync(lambda: kept.append(entry))
+
+        yield from compactor.effect(entries, write)
+        return kept
+
+    return drop
+
+
+def _ids(entries: Sequence[Entry]) -> list[str]:
+    return sorted(entry.id_string for entry in entries)
+
+
+@testing.effect
+def test_compaction_composes():
+    """compaction composes, including with older entries"""
+
+    def check(rng: random.Random) -> Generator[Any, Any]:
+        drop = yield from _make_drop()
+        older = yield from _draft_entries(_random_drafts(rng))
+        later = yield from _draft_entries(_random_drafts(rng))
+        once = yield from drop(older)
+        assert _ids((yield from drop([*once, *later]))) == _ids((yield from drop([*older, *later])))
+
+    for seed in range(200):
+        rng = random.Random(seed)
+        yield from fx.scoped(fx.gen(lambda rng=rng: check(rng))).pipe(fx.provide(L.layer_registry))
+
+
+@testing.effect
+def test_compaction_is_order_independent():
+    """compaction is independent of input order"""
+
+    def check(rng: random.Random) -> Generator[Any, Any]:
+        drop = yield from _make_drop()
+        drafts = _random_drafts(rng)
+        entries = yield from _draft_entries(drafts)
+        ranked = sorted(zip(drafts, entries, strict=True), key=lambda pair: pair[0][1])
+        shuffled = [entry for _, entry in ranked]
+        assert _ids((yield from drop(shuffled))) == _ids((yield from drop(entries)))
+
+    for seed in range(200):
+        rng = random.Random(seed)
+        yield from fx.scoped(fx.gen(lambda rng=rng: check(rng))).pipe(fx.provide(L.layer_registry))
+
+
+class SkewedGroceryRow(TypedDict):
+    id: str
+    name: str
+    quantity: float | None
+    completed: bool
+    note: str
+
+
+# A newer client's row, with a field this client does not know.
+SkewedGrocery = R.make("grocery", key="id", schema=S.Struct(SkewedGroceryRow), key_type=str)
+
+
+@testing.effect
+def test_remote_compaction_keeps_entries_with_unknown_fields():
+    """pyfect: in a remote compaction the row compactor keeps an entry with
+    fields the row schema does not know; locally it reads past them"""
+    older = yield from _entry_with(1000, Grocery, Grocery.set(X).payload)
+    skewed = yield from _entry_with(
+        2000, SkewedGrocery, SkewedGrocery.set({**Y, "note": "n"}).payload
+    )
+    newer = yield from _entry_with(3000, Grocery, Grocery.set(E).payload)
+
+    def body():
+        registry = yield from L.Registry()
+        yield from (
+            R.compaction(Groceries, Grocery)
+            .pipe(fx.layer.provide(fx.layer.succeed(L.Registry, registry)))
+            .build()
+        )
+        compactor = registry.compactors["grocery"]
+
+        def kept(remote: bool) -> Generator[Any, Any, list[Entry]]:
+            output: list[Entry] = []
+
+            def write(entry: Entry, _source: Entry | None) -> fx.Effect[None]:
+                return fx.sync(lambda: output.append(entry))
+
+            yield from compactor.effect([older, skewed, newer], write, remote=remote)
+            return output
+
+        assert (yield from kept(False)) == [newer]
+        assert (yield from kept(True)) == [skewed, newer]
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(L.layer_registry))
 
 
 # --- replicas --------------------------------------------------------------------------

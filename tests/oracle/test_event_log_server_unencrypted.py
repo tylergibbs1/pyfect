@@ -14,7 +14,10 @@ import pytest
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
+from pyfect.clock import ClockService
 from pyfect.context import Context
+from pyfect.crypto import web_crypto
+from pyfect.duration import Seconds
 from pyfect.effect import Effect
 from pyfect.eventlog import event as Ev
 from pyfect.eventlog import event_group as G
@@ -26,9 +29,16 @@ from pyfect.eventlog import sql_event_log_server_unencrypted as SqlU
 from pyfect.eventlog._identity_derivation import make_get_identity_root_secret_material
 from pyfect.eventlog.event_journal import Entry, EntryId, StoreId
 from pyfect.eventlog.event_log_encryption import layer_subtle
-from pyfect.eventlog.event_log_session_auth import SessionAuthPayload, sign_session_auth_payload
+from pyfect.eventlog.event_log_session_auth import (
+    SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_MILLIS,
+    SessionAuthPayload,
+    derive_signing_public_key,
+    sign_session_auth_payload,
+)
 from pyfect.reactivity import layer as reactivity_layer
 from pyfect.redacted import value as reveal
+from pyfect.rpc import client as rpc_client
+from pyfect.rpc import server as rpc_server
 from pyfect.rpc import test as rpc_test
 from pyfect.sql import sqlite
 from pyfect.sql.client import SqlClient
@@ -546,7 +556,7 @@ def _large_group(fallback: bool):
         for index in range(count)
     ]
 
-    def compact(entries: Sequence[Entry], write: Any) -> Effect[None]:
+    def compact(entries: Sequence[Entry], write: Any, *, remote: bool = False) -> Effect[None]:
         def run():
             for entry in entries[0 if fallback else 1 :]:
                 yield from write(entry, None)
@@ -698,5 +708,272 @@ def test_authenticate_rechecks_identity_on_cached_binding():
         assert error.code == "Forbidden"
         assert policy.calls == [identity.public_key, identity.public_key]
         assert calls[0] == 1
+
+    yield from fx.gen(body).pipe(fx.provide(layer_subtle))
+
+
+def _as(owner: L.IdentityService, key_of: L.IdentityService) -> L.IdentityService:
+    """``owner``'s public key, signing with ``key_of``'s root secret."""
+    return L.IdentityService(owner.public_key, key_of.private_key)
+
+
+@testing.effect
+def test_authenticate_does_not_bind_a_key_that_fails_verification():
+    """Authenticate does not bind a signing key whose signature fails verification"""
+
+    def body():
+        storage, calls = yield from _recording_storage()
+        client = yield from _auth_client(storage, _AllowAll())
+        owner = yield from L.make_identity
+        other = yield from L.make_identity
+        hello = yield from client.hello()
+        request = yield from _authenticate(_as(owner, other), hello)
+        error = yield from client.authenticate(
+            M.Authenticate(
+                public_key=request.public_key,
+                signing_public_key=request.signing_public_key,
+                signature=bytes(64),
+                algorithm=request.algorithm,
+            )
+        ).flip()
+        assert isinstance(error, M.EventLogProtocolError)
+        assert error.code == "Forbidden"
+        assert calls[0] == 0
+        owner_hello = yield from client.hello()
+        yield from client.authenticate((yield from _authenticate(owner, owner_hello)))
+        assert calls[0] == 1
+
+    yield from fx.gen(body).pipe(fx.provide(layer_subtle))
+
+
+@testing.effect
+def test_authenticate_rejects_a_valid_key_other_than_the_binding():
+    """Authenticate rejects a validly signed key that differs from the identity's binding"""
+
+    def body():
+        storage, _ = yield from _recording_storage()
+        client = yield from _auth_client(storage, _AllowAll())
+        owner = yield from L.make_identity
+        other = yield from L.make_identity
+        hello = yield from client.hello()
+        yield from client.authenticate((yield from _authenticate(owner, hello)))
+        other_hello = yield from client.hello()
+        error = yield from client.authenticate(
+            (yield from _authenticate(_as(owner, other), other_hello))
+        ).flip()
+        assert isinstance(error, M.EventLogProtocolError)
+        assert error.code == "Forbidden"
+        owner_hello = yield from client.hello()
+        yield from client.authenticate((yield from _authenticate(owner, owner_hello)))
+
+    yield from fx.gen(body).pipe(fx.provide(layer_subtle))
+
+
+@testing.effect
+def test_authenticate_passes_the_presented_key_to_identity_authorization():
+    """Authenticate passes the presented signing key to identity authorization"""
+
+    def body():
+        storage, calls = yield from _recording_storage()
+        owner = yield from L.make_identity
+        other = yield from L.make_identity
+        owner_key = yield from derive_signing_public_key(owner)
+        other_key = yield from derive_signing_public_key(other)
+        seen: list[bytes] = []
+
+        class Pinned(_AllowAll):
+            def authorize_identity(self, **options: Any) -> Effect[None, U.EventLogServerAuthError]:
+                public_key: str = options["public_key"]
+                signing_public_key: bytes = options["signing_public_key"]
+                seen.append(signing_public_key)
+                if signing_public_key == owner_key:
+                    return fx.void
+                return fx.fail(
+                    U.EventLogServerAuthError(
+                        "Forbidden", public_key, message="Signing key not provisioned"
+                    )
+                )
+
+        client = yield from _auth_client(storage, Pinned())
+        hello = yield from client.hello()
+        error = yield from client.authenticate(
+            (yield from _authenticate(_as(owner, other), hello))
+        ).flip()
+        assert isinstance(error, M.EventLogProtocolError)
+        assert error.code == "Forbidden"
+        assert calls[0] == 0
+        owner_hello = yield from client.hello()
+        yield from client.authenticate((yield from _authenticate(owner, owner_hello)))
+        assert seen == [other_key, owner_key]
+        assert calls[0] == 1
+
+    yield from fx.gen(body).pipe(fx.provide(layer_subtle))
+
+
+def _connections():
+    handlers: Context[Any] = yield from (
+        U.layer_rpc_handlers.pipe(fx.layer.provide(U.layer_storage_memory))
+        .pipe(fx.layer.provide(L.layer_registry))
+        .pipe(fx.layer.provide(fx.layer.succeed(U.StoreMapping, _Identity())))
+        .pipe(fx.layer.provide(fx.layer.succeed(U.EventLogServerAuthorization, _AllowAll())))
+    ).build()
+    clients: dict[int, Any] = {}
+
+    def on_from_server(response: Any) -> Effect[None]:
+        write = clients.get(response.client_id)
+        return write(response) if write is not None else fx.void
+
+    server = yield from rpc_server.make_no_serialization(M.EventLogRemoteRpcs, on_from_server).pipe(
+        fx.provide(handlers)
+    )
+
+    def connect(client_id: int) -> Effect[M.EventLogRemoteRpcs, Any, Any]:
+        def run():
+            client, core = yield from rpc_client.make_no_serialization(
+                M.EventLogRemoteRpcs,
+                lambda sent: server.write(client_id, sent.message),
+                rpc_client.ClientOptions(supports_ack=True),
+            )
+            clients[client_id] = core.write
+            return client
+
+        return fx.gen(run)
+
+    return connect, server.disconnect
+
+
+def _message(error: object) -> Effect[str]:
+    assert isinstance(error, M.EventLogProtocolError)
+    return fx.succeed(error.message)
+
+
+@testing.effect
+def test_authenticate_rejects_a_challenge_of_a_disconnected_client():
+    """Authenticate rejects a challenge issued to a disconnected client"""
+
+    def body():
+        connect, disconnect = yield from _connections()
+        identity = yield from L.make_identity
+        hello = yield from (yield from connect(1)).hello()
+        yield from disconnect(1)
+        reconnected = yield from connect(1)
+        result = yield from reconnected.authenticate(
+            (yield from _authenticate(identity, hello))
+        ).catch_all(_message)
+        assert result == "Session auth challenge has expired"
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(layer_subtle))
+
+
+@testing.effect
+def test_authenticate_rejects_a_challenge_older_than_its_time_to_live():
+    """Authenticate rejects a challenge older than its time to live"""
+
+    def body():
+        connect, _ = yield from _connections()
+        identity = yield from L.make_identity
+        client = yield from connect(1)
+        hello = yield from client.hello()
+        yield from testing.adjust(f"{SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_MILLIS} millis")
+        result = yield from client.authenticate(
+            (yield from _authenticate(identity, hello))
+        ).catch_all(_message)
+        assert result == "Session auth challenge has expired"
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(layer_subtle))
+
+
+@testing.effect
+def test_authenticate_accepts_the_challenge_of_an_earlier_overlapping_hello():
+    """Authenticate accepts the challenge from an earlier overlapping Hello"""
+
+    def body():
+        storage = yield from U.make_storage_memory
+        client = yield from _auth_client(storage, _AllowAll())
+        identity = yield from L.make_identity
+        hello = yield from client.hello()
+        yield from client.hello()
+        yield from client.authenticate((yield from _authenticate(identity, hello)))
+
+    yield from fx.gen(body).pipe(fx.provide(layer_subtle))
+
+
+class _SkewedClock:
+    """The test clock, plus a skew that only grows while challenge bytes
+    are drawn, like a Hello fiber descheduled inside challenge generation."""
+
+    def __init__(self, clock: ClockService) -> None:
+        self._clock = clock
+        self.skew = 0.0
+
+    def current_time_millis_unsafe(self) -> float:
+        return self._clock.current_time_millis_unsafe() + self.skew
+
+    def monotonic_unsafe(self) -> float:
+        return self._clock.monotonic_unsafe() + self.skew / 1000
+
+    def now_nanos_unsafe(self) -> int:
+        return self._clock.now_nanos_unsafe() + int(self.skew * 1_000_000)
+
+    def monotonic_nanos_unsafe(self) -> int:
+        return self._clock.monotonic_nanos_unsafe() + int(self.skew * 1_000_000)
+
+    def sleep(self, seconds: Seconds) -> Effect[None]:
+        return self._clock.sleep(seconds)
+
+
+class _AdvancingCrypto:
+    def __init__(self, clock: _SkewedClock) -> None:
+        self._clock = clock
+        self.advance_on_next_draw = False
+
+    @property
+    def subtle(self) -> web_crypto.SubtleCrypto | None:
+        return web_crypto.WebCrypto.default().subtle
+
+    def get_random_values(self, array: memoryview, /) -> memoryview:
+        if self.advance_on_next_draw:
+            self.advance_on_next_draw = False
+            self._clock.skew += SESSION_AUTH_CHALLENGE_TIME_TO_LIVE_MILLIS
+        return web_crypto.WebCrypto.default().get_random_values(array)
+
+
+@testing.effect
+def test_hello_measures_time_to_live_from_after_generation():
+    """Hello measures a challenge's time to live from after it was generated"""
+    test_clock = yield from fx.Clock()
+    clock = _SkewedClock(test_clock)
+    crypto = _AdvancingCrypto(clock)
+
+    def body():
+        storage = yield from U.make_storage_memory
+        client = yield from _auth_client(storage, _AllowAll())
+        identity = yield from L.make_identity
+        crypto.advance_on_next_draw = True
+        hello = yield from client.hello()
+        assert not crypto.advance_on_next_draw
+        yield from client.authenticate((yield from _authenticate(identity, hello)))
+
+    yield from (
+        fx.gen(body)
+        .pipe(fx.provide(layer_subtle))
+        .pipe(fx.provide_service(fx.Clock, clock))
+        .pipe(fx.provide_service(web_crypto.WebCrypto, crypto))
+    )
+
+
+@testing.effect
+def test_authenticate_consumes_its_challenge():
+    """A challenge authenticates once: replaying the same ``Authenticate``
+    finds no challenge (pyfect's check of Effect's one-time challenge)."""
+
+    def body():
+        storage = yield from U.make_storage_memory
+        client = yield from _auth_client(storage, _AllowAll())
+        identity = yield from L.make_identity
+        request = yield from _authenticate(identity, (yield from client.hello()))
+        yield from client.authenticate(request)
+        result = yield from client.authenticate(request).catch_all(_message)
+        assert result == "Session auth challenge has expired"
 
     yield from fx.gen(body).pipe(fx.provide(layer_subtle))

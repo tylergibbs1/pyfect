@@ -35,6 +35,7 @@ from pyfect import schema as S
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect.effect import fail, gen, succeed
+from pyfect.encoding.schema_binary import to_codec_strict
 from pyfect.eventlog.event import AnyEvent, Event, Write
 from pyfect.eventlog.event_group import EventGroup
 from pyfect.eventlog.event_journal import Entry, entry_order
@@ -400,14 +401,24 @@ def compaction[R: Row, K, E, P: Row](
 ) -> Layer[Never, Never, Registry]:
     """Compact ``row``'s entries a remote sends: an entry is dropped when
     newer ones of its key overwrite everything it writes. Undecodable
-    entries are kept."""
-    decode = S.decode_unknown_effect(group.events[row.tag].payload_codec)
+    entries are kept.
 
-    def compact(entries: Sequence[Entry], write: CompactWrite) -> Effect[None]:
+    The compactor opts into remote compaction (``remote`` of
+    ``event_log.group_compaction``); there it also keeps entries with fields
+    the row schema does not know."""
+    event = group.events[row.tag]
+    decode = S.decode_unknown_effect(event.payload_codec)
+    decode_strict = S.decode_unknown_effect(to_codec_strict(event.payload))
+
+    def compact(
+        entries: Sequence[Entry], write: CompactWrite, /, *, remote: bool = False
+    ) -> Effect[None]:
+        decode_payload = decode_strict if remote else decode
+
         def body():
             ops: dict[int, _Op] = {}
             for entry in entries:
-                result = yield from decode(entry.payload).exit()
+                result = yield from decode_payload(entry.payload).exit()
                 if isinstance(result, Success):
                     ops[id(entry)] = result.value
             shadowed = _shadowed(entries, ops)
@@ -418,6 +429,6 @@ def compaction[R: Row, K, E, P: Row](
 
     def register():
         registry = yield from Registry()
-        yield from registry.register_compaction([row.tag], compact)
+        yield from registry.register_compaction([row.tag], compact, remote=True)
 
     return layer_effect_discard(gen(register))

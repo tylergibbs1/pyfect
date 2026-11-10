@@ -26,7 +26,11 @@ from pyfect.persistence.circuit_breaker import (
 
 if TYPE_CHECKING:
     from pyfect.duration import Seconds
-    from pyfect.persistence.circuit_breaker import CircuitBreakerService, Classify
+    from pyfect.persistence.circuit_breaker import (
+        CircuitBreakerService,
+        Classifier,
+        ClassifyContext,
+    )
 
 _FAILING_STATUSES = frozenset((408, 500, 502, 503, 504))
 
@@ -74,8 +78,11 @@ def _classify(exit: Exit[HttpClientResponse, object], now_millis: float) -> Outc
     return success if succeeded else ignored
 
 
-def circuit_breaker_classifier(exit: Exit[HttpClientResponse, object]) -> Effect[Outcome]:
-    """The default ``with_circuit_breaker`` classifier. A failure: a
+def circuit_breaker_classifier(
+    exit: Exit[HttpClientResponse, object], context: ClassifyContext | None = None
+) -> Effect[Outcome]:
+    """The default ``with_circuit_breaker`` classifier, the same for the
+    probe (``context``) as for any call. A failure: a
     timeout, a transport error, or a 408, 500, 502, 503 or 504 status
     (returned or wrapped in an ``HttpClientError``), with the response's
     ``Retry-After`` (the longest of several) as the hint. Ignored: a 429
@@ -98,7 +105,7 @@ type Send = Effect[HttpClientResponse, Any, Any]
 def with_circuit_breaker(
     breaker: CircuitBreakerService,
     key: str | Callable[[HttpClientRequest], str] | None,
-    classify: Classify[HttpClientResponse, Any, Any] | None,
+    classify: Classifier[HttpClientResponse, Any, Any] | None,
 ) -> Callable[[Send, HttpClientRequest], Send]:
     """The ``transform`` function of ``HttpClientService.with_circuit_breaker``."""
     resolve: Callable[[HttpClientRequest], str] = (

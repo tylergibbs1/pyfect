@@ -21,7 +21,7 @@ import pytest
 import pyfect as fx
 from pyfect import testing
 from pyfect.context import Context
-from pyfect.eventlog import _crypto
+from pyfect.crypto import digest
 from pyfect.eventlog import event_journal as J
 from pyfect.eventlog import event_log as L
 from pyfect.eventlog import event_log_message as M
@@ -39,6 +39,7 @@ from pyfect.rpc import test as rpc_test
 from pyfect.sql import sqlite
 from pyfect.sql.client import SqlClient
 
+from ._counting_web_crypto import CountingWebCrypto
 from ._postgres import PgServer
 
 store_id = StoreId("store-a")
@@ -57,20 +58,7 @@ def make_entries(count: int) -> list[Entry]:
     ]
 
 
-class CountingAesGcm:
-    def __init__(self) -> None:
-        self.encrypts = 0
-        self.decrypts = 0
-        self.ivs: set[bytes] = set()
-
-    def encrypt(self, key: bytes, iv: bytes, data: bytes, aad: bytes, /) -> bytes:
-        self.encrypts += 1
-        self.ivs.add(iv)
-        return _crypto.aes_gcm_encrypt(key, iv, data, aad)
-
-    def decrypt(self, key: bytes, iv: bytes, data: bytes, aad: bytes, /) -> bytes:
-        self.decrypts += 1
-        return _crypto.aes_gcm_decrypt(key, iv, data, aad)
+CountingAesGcm = CountingWebCrypto
 
 
 class _Intercepted:
@@ -201,7 +189,7 @@ def _sql_storage(client: fx.Layer[SqlClient, Any]) -> fx.Layer[Server.Storage, A
         )
         .pipe(fx.layer.provide(client))
         .pipe(fx.layer.provide(reactivity_layer))
-        .pipe(fx.layer.provide(layer_subtle))
+        .pipe(fx.layer.provide(digest.layer_web_crypto))
     )
 
 

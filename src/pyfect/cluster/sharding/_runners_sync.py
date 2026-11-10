@@ -17,7 +17,7 @@ from pyfect.cluster.runner import Runner
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.shard_id import ShardId
 from pyfect.context import Context
-from pyfect.duration import Seconds
+from pyfect.duration import Seconds, to_millis
 from pyfect.effect import gen, succeed
 from pyfect.hash_ring import HashRing
 from pyfect.logger import log_debug, log_warning
@@ -32,101 +32,158 @@ def _with_timeout[A, E](effect: Effect[A, E]) -> Effect[A, Any]:
     return effect.timeout("5 seconds")
 
 
-def sync_loop(state: ShardingState) -> Effect[Never]:  # noqa: PLR0915
+class _Membership:
+    """The sync loop's view of the runners, kept outside the loop so a
+    restart after a storage failure neither drops it nor publishes pending
+    joins early."""
+
+    def __init__(self, state: ShardingState) -> None:
+        self.state = state
+        self.rings: dict[str, HashRing[RunnerAddress]] = {}
+        self.next_runners: dict[Runner, bool] = {}
+        self.healthy_runners: set[Runner] = set()
+        self.join_debounce = to_millis(state.config.runner_join_debounce)
+        # When the first pending join and the latest pending change were seen.
+        self.pending_since = 0
+        self.pending_changed_at = 0
+        # The initial assignment never waits, even if this runner gets no shards.
+        self.assignments_published = False
+        # Stays set until the assignments are actually recomputed.
+        self.changed = False
+
+    def add_to_rings(self, runner: Runner) -> None:
+        for group in runner.groups:
+            ring = self.rings.get(group)
+            if ring is None:
+                ring = HashRing[RunnerAddress]()
+                self.rings[group] = ring
+            ring.add(runner.address, weight=runner.weight)
+
+    def observe(self, runners: list[tuple[Runner, bool]]) -> None:
+        """Apply one membership read: joins (held back while assignments
+        settle), departures and health changes."""
+        state = self.state
+        pending = state.pending_runners
+        now = state.now_millis()
+        for runner, healthy in runners:
+            self.next_runners[runner] = healthy
+            was_healthy = runner in self.healthy_runners
+            if not healthy or was_healthy:
+                if healthy == was_healthy or not was_healthy:
+                    # No change.
+                    state.all_runners.pop(runner, None)
+                continue
+            self.healthy_runners.add(runner)
+            state.all_runners.pop(runner, None)
+            if self.join_debounce > 0 and self.assignments_published:
+                if not pending:
+                    self.pending_since = now
+                self.pending_changed_at = now
+                pending.add(runner)
+                continue
+            self.changed = True
+            self.add_to_rings(runner)
+
+        # Remove the runners no longer present or healthy.
+        for runner in list(state.all_runners):
+            del state.all_runners[runner]
+            self.healthy_runners.discard(runner)
+            state.run_fork(state.runners.on_runner_unavailable(runner.address))
+            # A pending runner owns no shards, so its departure only restarts
+            # the quiet period instead of publishing the other joins mid-burst.
+            if runner in pending:
+                pending.discard(runner)
+                self.pending_changed_at = now
+                if not pending:
+                    # Let the acquisition loop take the shards it held off on.
+                    state.active_shards_latch.open_unsafe()
+                continue
+            self.changed = True
+            for group in runner.groups:
+                found = self.rings.get(group)
+                if found is not None:
+                    found.remove(runner.address)
+
+        # Publish pending joins once the healthy set has settled, the cap is
+        # reached, or the assignments are recomputed anyway.
+        if pending and (
+            self.changed
+            or now - self.pending_changed_at >= self.join_debounce
+            or now - self.pending_since >= self.join_debounce * 4
+        ):
+            self.changed = True
+            for runner in pending:
+                self.add_to_rings(runner)
+            pending.clear()
+
+        previous = state.all_runners
+        state.all_runners = self.next_runners
+        self.next_runners = previous
+        self.next_runners.clear()
+        state.healthy_runner_count = len(self.healthy_runners)
+
+
+def sync_loop(state: ShardingState) -> Effect[Never]:
     self_runner = state.self_runner
+    membership = _Membership(state)
+
+    def register_self():
+        if state.is_shutdown or self_runner is None:
+            return
+        yield from log_debug("Registering runner", self_runner)
+        machine_id = yield from _with_timeout(state.runner_storage.register(self_runner, True))
+        yield from state.snowflakes.set_machine_id(machine_id)
+
+    def publish():
+        """Recompute the shard assignments from the hash rings."""
+        membership.changed = False
+        membership.assignments_published = True
+        state.self_shards.clear()
+        for group, ring in membership.rings.items():
+            assignments = ring.get_shards(state.config.shards_per_group)
+            for i in range(state.config.shards_per_group):
+                shard = ShardId(group=group, id=i + 1)
+                if assignments is not None:
+                    owner = assignments[i]
+                    state.shard_assignments[shard] = owner
+                    if state.shard_locks_healthy_latch.is_open() and state.is_local_runner(owner):
+                        state.self_shards.add(shard)
+                else:
+                    state.shard_assignments.pop(shard, None)
+        yield from log_debug("New shard assignments", sorted(map(str, state.self_shards)))
+        state.active_shards_latch.open_unsafe()
+        yield from state.notify_shard_lock_waiters()
+        if self_runner is not None:
+            cluster_metrics.runners_healthy.update_unsafe(
+                1 if self_runner in membership.healthy_runners else 0, Context.empty()
+            )
+
+    def unregistered() -> bool:
+        return (
+            self_runner is not None
+            and not state.is_shutdown
+            and self_runner not in state.all_runners
+        )
 
     @gen
-    def run():  # noqa: PLR0912, PLR0915
-        rings: dict[str, HashRing[RunnerAddress]] = {}
-        next_runners: dict[Runner, bool] = {}
-        healthy_runners: set[Runner] = set()
-
-        def register_self():
-            if state.is_shutdown or self_runner is None:
-                return
-            yield from log_debug("Registering runner", self_runner)
-            machine_id = yield from _with_timeout(state.runner_storage.register(self_runner, True))
-            yield from state.snowflakes.set_machine_id(machine_id)
-
+    def run():
         while True:
             # Make sure this runner is registered.
-            if (
-                self_runner is not None
-                and not state.is_shutdown
-                and self_runner not in state.all_runners
-            ):
+            if unregistered():
                 yield from state.registration_lock.with_permits(gen(register_self))
 
             runners = yield from _with_timeout(state.runner_storage.get_runners)
-            changed = False
-            for runner, healthy in runners:
-                next_runners[runner] = healthy
-                was_healthy = runner in healthy_runners
-                if not healthy or was_healthy:
-                    if healthy == was_healthy or not was_healthy:
-                        # No change.
-                        state.all_runners.pop(runner, None)
-                    continue
-                changed = True
-                healthy_runners.add(runner)
-                state.all_runners.pop(runner, None)
-                for group in runner.groups:
-                    ring = rings.get(group)
-                    if ring is None:
-                        ring = HashRing[RunnerAddress]()
-                        rings[group] = ring
-                    ring.add(runner.address, weight=runner.weight)
-
-            # Remove the runners no longer present or healthy.
-            for runner in list(state.all_runners):
-                changed = True
-                del state.all_runners[runner]
-                healthy_runners.discard(runner)
-                state.run_fork(state.runners.on_runner_unavailable(runner.address))
-                for group in runner.groups:
-                    found = rings.get(group)
-                    if found is not None:
-                        found.remove(runner.address)
-
-            previous = state.all_runners
-            state.all_runners = next_runners
-            next_runners = previous
-            next_runners.clear()
-            state.healthy_runner_count = len(healthy_runners)
+            membership.observe(runners)
 
             # Make sure this runner is registered.
-            if (
-                self_runner is not None
-                and not state.is_shutdown
-                and self_runner not in state.all_runners
-            ):
+            if unregistered():
                 continue
 
             # Recompute the shard assignments when the healthy runners changed.
-            if changed:
-                state.self_shards.clear()
-                for group, ring in rings.items():
-                    assignments = ring.get_shards(state.config.shards_per_group)
-                    for i in range(state.config.shards_per_group):
-                        shard = ShardId(group=group, id=i + 1)
-                        if assignments is not None:
-                            owner = assignments[i]
-                            state.shard_assignments[shard] = owner
-                            if state.shard_locks_healthy_latch.is_open() and state.is_local_runner(
-                                owner
-                            ):
-                                state.self_shards.add(shard)
-                        else:
-                            state.shard_assignments.pop(shard, None)
-                yield from log_debug("New shard assignments", sorted(map(str, state.self_shards)))
-                state.active_shards_latch.open_unsafe()
-                yield from state.notify_shard_lock_waiters()
-                if self_runner is not None:
-                    cluster_metrics.runners_healthy.update_unsafe(
-                        1 if self_runner in healthy_runners else 0, Context.empty()
-                    )
+            if membership.changed:
+                yield from gen(publish)
 
-            if self_runner is not None and not healthy_runners:
+            if self_runner is not None and not membership.healthy_runners:
                 yield from log_warning("No healthy runners available")
                 # To prevent a deadlock, mark this runner healthy to start the
                 # health check singleton again.

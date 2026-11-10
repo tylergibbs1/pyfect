@@ -48,6 +48,7 @@ from ._clients import Clients
 from ._routing import Routing
 from ._runners_sync import health_check, sync_loop
 from ._service import Sharding, ShardingService
+from ._shard_fence import ShardFence
 from ._singletons import Singletons
 from ._state import EntityManagerState, Residency, ShardingState
 from ._storage_loop import StorageInbox
@@ -61,7 +62,7 @@ _VOID: Effect[None] = succeed(None)
 class _Sharding:
     """The ``Sharding`` service of one runner."""
 
-    __slots__ = ("_clients", "_routing", "_shutdown", "_singletons", "_state")
+    __slots__ = ("_clients", "_fence", "_routing", "_shutdown", "_singletons", "_state")
 
     def __init__(
         self,
@@ -76,6 +77,7 @@ class _Sharding:
         self._clients = clients
         self._singletons = singletons
         self._shutdown = shutdown
+        self._fence = ShardFence(state)
 
     @property
     def get_registration_events(self) -> Stream[ShardingRegistrationEvent]:
@@ -182,6 +184,9 @@ def _register_entity(
             runner_address=runner_address,
             residency=residency,
             abandon_undelivered=sharding._clients.abandon_undelivered,
+            is_shard_owned=lambda shard_id: sharding._fence.is_shard_owned(
+                runner_address, shard_id
+            ),
             max_idle_time=options.max_idle_time,
             concurrency=options.concurrency,
             mailbox_capacity=options.mailbox_capacity,

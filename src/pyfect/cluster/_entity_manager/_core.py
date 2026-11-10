@@ -36,6 +36,10 @@ if TYPE_CHECKING:
     from pyfect.cluster.entity import Entity, EntityHandlers
 
 
+type RestartStep = Callable[[None], Effect[Decision[Any], Any, Any]]
+"""Sleeps for an entity's next restart delay."""
+
+
 @dataclass(eq=False, slots=True)
 class CloseLatches:
     """Opened when an entity's scope has closed (``closed``), or to stop
@@ -61,7 +65,8 @@ class ManagerCore:
     mailbox_capacity: Concurrency
     mailbox_metrics: bool
     defect_retry_policy: Any
-    retry_driver: Callable[[None], Effect[Decision[Any], Any, Any]]
+    new_restart_step: Effect[RestartStep, Never, Any]
+    """A fresh restart backoff, which each entity takes on its first defect."""
     active_servers: dict[EntityId, EntityState] = field(default_factory=dict[EntityId, EntityState])
     draining_servers: dict[EntityId, EntityState] = field(
         default_factory=dict[EntityId, EntityState]
@@ -179,6 +184,7 @@ def retry_respond[A, E, R](times: int, effect: Effect[A, E, R]) -> Effect[A, E, 
 __all__ = [
     "CloseLatches",
     "ManagerCore",
+    "RestartStep",
     "bind_to_caller",
     "request_envelope",
     "retry_respond",

@@ -1,5 +1,6 @@
 """``layer_store_redis``: queues in Redis lists, hashes and sorted sets,
-claimed under per-element locks by Lua scripts."""
+claimed by Lua scripts under a lock key unique to each acquisition, which
+the queue's ``:owners`` hash records as the claim's owner."""
 
 from __future__ import annotations
 
@@ -51,6 +52,9 @@ class _Element:
     attempts: int
     payload: str
     """The record as stored, so a requeue or retry does not re-encode it."""
+    lock: str
+    """This acquisition's lock key, recorded in the owners hash as the
+    claim's token."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,13 +65,7 @@ class _Keys:
     delayed: str
     attempts: str
     ids: str
-    lock_prefix: str
-
-    def lock(self, id: str) -> str:
-        """The claim lock of element ``id`` of this queue. Ids are unique per
-        queue only, so the lock is too: the queue name, length-prefixed so
-        no other queue's name and id spell the same key."""
-        return f"{self.lock_prefix}{id}:lock"
+    owners: str
 
 
 def _offer_failed(error: RedisError) -> PersistedQueueError:
@@ -82,11 +80,12 @@ def _cleanup_failed(error: RedisError) -> PersistedQueueError:
 
 def _elements(results: list[RedisReply]) -> list[_Element]:
     elements: list[_Element] = []
-    for i in range(0, len(results), 2):
+    for i in range(0, len(results), 3):
         payload = cast("str", results[i])
         parsed = cast("dict[str, Any]", parse(payload))
         attempts = int(cast("str | int", results[i + 1]))
-        elements.append(_Element(parsed["id"], parsed.get("element"), attempts, payload))
+        lock = cast("str", results[i + 2])
+        elements.append(_Element(parsed["id"], parsed.get("element"), attempts, payload, lock))
     return elements
 
 
@@ -97,7 +96,6 @@ class _Settings:
     lock_refresh: Seconds
     lock_expiration_millis: float
     ack_schedule: Schedule[object, object]
-    worker_id: str
 
     def keys(self, name: str) -> _Keys:
         base = f"{self.prefix}{name}"
@@ -108,8 +106,12 @@ class _Settings:
             f"{base}:delayed",
             f"{base}:attempts",
             f"{base}:ids",
-            f"{self.prefix}{len(name)}:{name}:",
+            f"{base}:owners",
         )
+
+    def lock_prefix(self) -> str:
+        """The lock keys of one take: unique, numbered per element."""
+        return f"{self.prefix}lock:{uuid.uuid4()}:"
 
 
 class _Scripts:
@@ -159,8 +161,9 @@ def _lookup(
                 lambda e: run.requeue(
                     keys.queue,
                     keys.pending,
-                    keys.lock(e.id),
+                    e.lock,
                     keys.attempts,
+                    keys.owners,
                     e.id,
                     e.payload,
                 ),
@@ -174,7 +177,7 @@ def _lookup(
                 keys.attempts,
                 keys.failed,
                 keys.ids,
-                keys.lock_prefix,
+                keys.owners,
                 state.max_attempts,
                 now_millis(clock),
             )
@@ -187,8 +190,8 @@ def _lookup(
                     keys.pending,
                     keys.delayed,
                     keys.attempts,
-                    keys.lock_prefix,
-                    settings.worker_id,
+                    keys.owners,
+                    settings.lock_prefix(),
                     size,
                     settings.lock_expiration_millis,
                     now_millis(clock),
@@ -220,7 +223,7 @@ class _RedisStore:
         states: QueueStates,
         clock: ClockService,
         mailboxes: RcMap[str, Mailbox[_Element], Never],
-        active_locks: dict[str, None],
+        active_locks: dict[str, scripts.Claim],
     ) -> None:
         self._settings = settings
         self._redis = redis
@@ -264,8 +267,8 @@ class _RedisStore:
 
     def take(self, options: TakeOptions) -> Effect[TakenElement, PersistedQueueError, Scope]:
         def claimed(element: _Element) -> Effect[TakenElement, Never, Scope]:
-            lock = self._settings.keys(options.name).lock(element.id)
-            self._active_locks[lock] = None
+            owners = self._settings.keys(options.name).owners
+            self._active_locks[element.lock] = scripts.Claim(owners, element.id)
             return add_finalizer(lambda exit_: self._settle(options, element, exit_)).as_(
                 TakenElement(element.id, element.attempts, element.element)
             )
@@ -280,7 +283,7 @@ class _RedisStore:
         self, options: TakeOptions, element: _Element, exit_: Exit[Any, Any]
     ) -> Effect[None]:
         keys = self._settings.keys(options.name)
-        lock = keys.lock(element.id)
+        lock = element.lock
         now = now_millis(self._clock)
         run = self._run
 
@@ -304,19 +307,36 @@ class _RedisStore:
             )
             return ack(
                 run.failed(
-                    keys.pending, lock, keys.failed, keys.attempts, keys.ids, element.id, record
+                    keys.pending,
+                    lock,
+                    keys.failed,
+                    keys.attempts,
+                    keys.ids,
+                    keys.owners,
+                    element.id,
+                    record,
                 )
             )
 
         if isinstance(exit_, Success):
-            return ack(run.complete(keys.pending, lock, keys.attempts, keys.ids, element.id, now))
+            return ack(
+                run.complete(
+                    keys.pending, lock, keys.attempts, keys.ids, keys.owners, element.id, now
+                )
+            )
         dead = dead_letter_from_cause(exit_.cause)
         if dead is not None:
             return fail_element(dead.cause)
         if exit_.cause.has_interrupts_only:
             return ack(
                 run.requeue(
-                    keys.queue, keys.pending, lock, keys.attempts, element.id, element.payload
+                    keys.queue,
+                    keys.pending,
+                    lock,
+                    keys.attempts,
+                    keys.owners,
+                    element.id,
+                    element.payload,
                 )
             )
         if element.attempts >= options.max_attempts:
@@ -327,6 +347,7 @@ class _RedisStore:
                     keys.pending,
                     lock,
                     keys.delayed,
+                    keys.owners,
                     element.id,
                     element.payload,
                     now + to_millis(delay),
@@ -396,7 +417,13 @@ def make_store_redis(
     back to the queue, or to ``:failed`` if that was its last attempt.
     Retried and delayed elements wait in ``:delayed``, scored by the
     offering process's clock and released by the polling one's, so clock
-    skew between hosts shifts them."""
+    skew between hosts shifts them. Each acquisition locks under a key of
+    its own, recorded in ``:owners``; settling checks it, so a handler
+    whose claim a reset recovered cannot settle a newer claim of the same
+    id (until a reset recovers it, a handler whose lock lapsed can still
+    settle or renew). Older workers using one lock per id must be stopped,
+    and their locks left to expire, before workers of this format start on
+    the same prefix; keep the Redis data."""
     lock_expiration_seconds = store_interval(lock_expiration, _DEFAULT_LOCK_EXPIRATION)
     settings = _Settings(
         prefix=prefix,
@@ -404,13 +431,12 @@ def make_store_redis(
         lock_refresh=store_interval(lock_refresh_interval, _DEFAULT_LOCK_REFRESH_INTERVAL),
         lock_expiration_millis=to_millis(lock_expiration_seconds),
         ack_schedule=ack_retry_schedule(lock_expiration_seconds),
-        worker_id=str(uuid.uuid4()),
     )
 
     def build(redis: RedisService, clock: ClockService) -> Generator[Any, Any, Any]:
         run = _Scripts(redis)
         states = QueueStates()
-        active_locks: dict[str, None] = {}
+        active_locks: dict[str, scripts.Claim] = {}
         mailboxes = yield from RcMap.make(
             _lookup(settings, run, states, clock), idle_time_to_live="30 seconds"
         )
@@ -419,7 +445,7 @@ def make_store_redis(
             while True:
                 yield from sleep(settings.lock_refresh)
                 yield from run.expire_all(
-                    list(active_locks), settings.lock_expiration_millis
+                    dict(active_locks), settings.lock_expiration_millis
                 ).ignore()
 
         yield from (

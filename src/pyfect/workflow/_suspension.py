@@ -11,6 +11,8 @@ from typing import Any, Literal, Never
 from pyfect._core import Effect, _Callback, _WithFiber
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._stack_frame import StackTrace
+from pyfect.cause import Cause
 from pyfect.context import Context, Tag
 from pyfect.effect import context, gen, provide_service, succeed, sync, yield_now
 from pyfect.exit import Exit, Success
@@ -19,18 +21,30 @@ from pyfect.workflow._result import Suspended
 from pyfect.workflow._services import WorkflowInstance, WorkflowInstanceService
 
 
-def suspend(instance: WorkflowInstanceService) -> Effect[Never]:
-    """Mark ``instance`` suspended and interrupt the current fiber, so the
-    run stops until it is resumed."""
-
+def _park(instance: WorkflowInstanceService, annotations: Context[Any] | None) -> Effect[Never]:
     def register(fiber: Fiber[Any, Any]) -> Effect[Never]:
         def park(_resume: Callable[[Effect[Never]], None]) -> None:
             instance.suspended = True
-            fiber.interrupt_as_unsafe(fiber.id)
+            fiber.interrupt_as_unsafe(fiber.id, annotations)
 
         return _Callback(park)
 
     return _WithFiber(register).interruptible()
+
+
+def suspend(instance: WorkflowInstanceService) -> Effect[Never]:
+    """Mark ``instance`` suspended and interrupt the current fiber, so the
+    run stops until it is resumed."""
+    return _park(instance, None)
+
+
+def suspend_with(instance: WorkflowInstanceService, cause: Cause[Any]) -> Effect[Never]:
+    """``suspend``, keeping the annotations of the interrupts in ``cause``
+    that stopped the branches. A branch can stop on an engine interrupt, such
+    as a runner shutdown abandoning an activity, rather than on a durable
+    wait; the engine must still see that interrupt to replay the run instead
+    of storing it as suspended."""
+    return _park(instance, cause.annotations.pipe(Context.omit(StackTrace)))
 
 
 class _Registration:
@@ -150,4 +164,4 @@ def with_pending_activity[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:
     return context().flat_map(with_context)
 
 
-__all__ = ["suspend", "with_pending_activity", "wrap_activity_result"]
+__all__ = ["suspend", "suspend_with", "with_pending_activity", "wrap_activity_result"]

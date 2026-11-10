@@ -64,10 +64,6 @@ class ConflictIndex:
                     entry.event, entry.primary_key, anchor_entry(entry)
                 )
 
-    @property
-    def events(self) -> list[str]:
-        return list(self._stored)
-
     def groups(self) -> Iterator[ConflictGroup]:
         for by_key in self._stored.values():
             yield from by_key.values()

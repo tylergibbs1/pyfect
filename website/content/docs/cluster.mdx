@@ -83,9 +83,12 @@ rest. Durations are [`duration.Seconds`](/docs/reference/duration).
 takes shard locks, routes each message to the runner holding its shard and retries when a
 shard moves. Three layers build it with everything it needs:
 
-- `test_runner.layer`: one runner in memory, for tests and examples. It takes its shards on
-  the clock, so under the [test clock](/docs/testing) a request waits until the test moves
-  time (`testing.adjust("1 millis")` is enough), as in Effect's own cluster tests.
+- `test_runner.layer`: one runner in memory, for tests and examples. It takes its shards in
+  background fibers once the layer is built. A request sent before they ran is retried
+  `send_retry_interval` (100 milliseconds) later, so under the [test clock](/docs/testing) it
+  waits until the test moves time by that much; a request sent after a yield
+  (`fx.yield_now()`) or from a forked fiber answers at once. Effect's `TestRunner` does the
+  same.
 - `single_runner.layer(...)`: one runner whose messages are in SQL, for a single process
   that should still survive restarts.
 - `cluster_socket.layer(...)` and `cluster_http.layer(transport="http" | "websocket", ...)`:
@@ -137,7 +140,15 @@ requests. They see it is gone when its heartbeat and shard locks are older than
 `shard_lock_expiration` (35 seconds, as in Effect) and their next assignment check runs, so
 with the default settings its shards move about 35 to 55 seconds after it dies. A lower
 `shard_lock_expiration` (kept well above `shard_lock_refresh_interval`, 10 seconds) moves
-them sooner.
+them sooner. A runner that was paused (a frozen process, a long GC) may find its shards
+already taken when it wakes. Before it stores a persisted request's reply it refreshes that
+shard's lock, and if the lock is gone it leaves the request to the shard's new owner.
+
+When several runners join at once, each join would move shards again. `runner_join_debounce`
+(0 by default, as in Effect) waits until the set of healthy runners has stayed the same for
+that long before giving shards to new runners, so each shard moves once. A runner that
+becomes unhealthy still loses its shards at once, and joins wait at most four times the
+debounce.
 
 <include meta='title="drain.py"'>../../snippets/cluster/drain.py</include>
 

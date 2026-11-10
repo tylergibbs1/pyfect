@@ -17,6 +17,7 @@ from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.runner_storage import RunnerStorage, RunnerStorageService
 from pyfect.cluster.shard_id import ShardId
 from pyfect.duration import Seconds
+from pyfect.latch import Latch
 from pyfect.layer import Layer
 
 other_runner = Runner(
@@ -58,6 +59,8 @@ class FailoverState:
     """Number of ``release`` calls that fail before succeeding (``math.inf``
     for every call)."""
     runner: Runner | None = None
+    unregister_gate: Latch | None = None
+    """Holds ``unregister`` until opened, when set."""
     acquire_denied: list[ShardId] = field(default_factory=list[ShardId])
     """Shards ``acquire`` does not grant, as if another runner holds them."""
     acquire_calls: list[AcquireCall] = field(default_factory=list[AcquireCall])
@@ -87,7 +90,8 @@ def make_failover_storage(state: FailoverState, clock: ClockService) -> RunnerSt
         def run() -> None:
             state.runner = None
 
-        return fx.sync(run)
+        gate = state.unregister_gate
+        return fx.sync(run) if gate is None else gate.wait().and_then(fx.sync(run))
 
     def acquire(
         _address: RunnerAddress, shard_ids: Iterable[ShardId]

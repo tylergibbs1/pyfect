@@ -11,12 +11,13 @@ and the body.
 from __future__ import annotations
 
 import functools
-from typing import TypedDict
+from typing import TypedDict, cast
 
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
-from pyfect.workflow import workflow
+from pyfect.crypto import web_crypto
+from pyfect.workflow import activity, workflow
 from pyfect.workflow.workflow_engine import WorkflowInstance, WorkflowInstanceService
 
 BUDGETS = range(1, 40)
@@ -24,6 +25,48 @@ BUDGETS = range(1, 40)
 
 class Empty(TypedDict):
     pass
+
+
+_order = workflow.make("Order", payload=S.Struct(Empty), idempotency_key=lambda _: "42")
+
+
+@testing.effect
+def test_keep_their_sha_256_derived_values():
+    """persisted ids / keep their SHA-256 derived values"""
+    execution_id = yield from _order.execution_id({})
+    assert execution_id == "0f62355133496e612090fb5d4307a4d2"
+    instance = WorkflowInstanceService.initial(_order, execution_id)
+    key = activity.idempotency_key("charge").pipe(fx.provide_service(WorkflowInstance, instance))
+    assert (yield from key) == "c250939b26740218d8122b4cf6a3d2e1"
+    with_attempt = (
+        activity.idempotency_key("charge", include_attempt=True)
+        .pipe(fx.provide_service(WorkflowInstance, instance))
+        .pipe(fx.provide_service(activity.CurrentAttempt, 3))
+    )
+    assert (yield from with_attempt) == "26241ff2cf66bbddd1be618b7ccdf48f"
+
+
+class _FixedSubtle:
+    def digest(self, algorithm: web_crypto.AlgorithmIdentifier, data: bytes) -> bytes:
+        assert algorithm == "SHA-256"
+        return bytes(range(32))
+
+
+class _FixedCrypto:
+    subtle = _FixedSubtle()
+
+    def get_random_values(self, array: memoryview, /) -> memoryview:
+        return array
+
+
+@testing.effect
+def test_persisted_ids_hash_on_the_web_crypto_reference():
+    """Not an Effect title: as in Effect 4.1.2's ``internal/crypto.ts``, execution ids and
+    idempotency keys digest on the ``WebCrypto`` reference."""
+    execution_id = yield from _order.execution_id({}).pipe(
+        fx.provide_service(web_crypto.WebCrypto, cast("web_crypto.Crypto", _FixedCrypto()))
+    )
+    assert execution_id == bytes(range(16)).hex()
 
 
 @testing.effect

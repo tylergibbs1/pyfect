@@ -13,6 +13,7 @@ from pyfect.effect import fail, gen, succeed, suspend, void
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.persistence._error import PersistenceError
+from pyfect.persistence._keys import escape_redis_glob, store_namespace
 from pyfect.persistence.persistence._service import (
     BackingEntry,
     BackingPersistence,
@@ -62,11 +63,12 @@ def _ttl_millis(ttl: Seconds) -> int:
     return math.ceil(to_millis(ttl))
 
 
-def _store(redis: RedisService, prefix: str) -> BackingPersistenceStore:
+def _store(redis: RedisService, store_id: str) -> BackingPersistenceStore:
     set_many_script = redis.eval(SET_MANY)
+    namespace = store_namespace(store_id)
 
     def prefixed(key: str) -> str:
-        return f"{prefix}:{key}"
+        return f"{namespace}{key}"
 
     def failed(message: str) -> Callable[[RedisError], PersistenceError]:
         return lambda error: PersistenceError(message=message, cause=error.cause)
@@ -140,7 +142,7 @@ def _store(redis: RedisService, prefix: str) -> BackingPersistenceStore:
             .as_void()
             .map_error(failed(f"Failed to remove key {key} from Redis"))
         ),
-        clear=redis.send("KEYS", f"{prefix}:*")
+        clear=redis.send("KEYS", f"{escape_redis_glob(namespace)}*")
         .flat_map(delete_all)
         .as_void()
         .map_error(failed("Failed to clear keys from Redis")),
@@ -157,6 +159,7 @@ def _build() -> Generator[Effect[Any, Never, Redis], Any, BackingPersistenceServ
 layer_backing_redis: Layer[BackingPersistence, Never, Redis] = layer_effect(
     BackingPersistence, gen(_build)
 )
-"""Stores in Redis, each under its id as a key prefix (``id:key``); values
-are JSON, and a time to live is a Redis expiry in whole milliseconds,
-rounded up."""
+"""Stores in Redis, an entry under ``<store_id>:<key>`` with ``%`` and ``:``
+in the store id percent-encoded, so store namespaces cannot overlap;
+``clear`` removes only the store's keys. Values are JSON, and a time to
+live is a Redis expiry in whole milliseconds, rounded up."""

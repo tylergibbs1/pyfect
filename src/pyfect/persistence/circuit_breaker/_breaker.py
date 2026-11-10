@@ -28,6 +28,7 @@ from pyfect.persistence.circuit_breaker._store import (
 )
 from pyfect.persistence.circuit_breaker._types import (
     Admission,
+    ClassifyContext,
     Consecutive,
     FailureOutcome,
     Outcome,
@@ -55,9 +56,17 @@ type OpenDuration = Duration | Schedule[object, int]
 """How long an opening lasts: a duration, or a schedule replayed with the
 number of consecutive openings (its delays measured from the opening)."""
 
-type Classify[A, E, R = Never] = Callable[[Exit[A, E]], Outcome | Effect[Outcome, Never, R]]
-"""How a call's exit counts; without it a success is a ``success`` and a
-failure a ``failure()``. An interrupt-only exit is always ``ignored``."""
+type OnRejection = Literal["allow", "fail"]
+"""When the circuit refuses a call: ``"fail"`` fails it with ``CircuitOpen``
+or ``CircuitHalfOpen``, ``"allow"`` runs it unrecorded. An admitted call,
+the probe included, is recorded either way."""
+
+type Classifier[A, E, R = Never] = Callable[
+    [Exit[A, E], ClassifyContext], Outcome | Effect[Outcome, Never, R]
+]
+"""How an admitted call's exit counts; without it a success is a
+``success`` and a failure a ``failure()``. An interrupt-only exit is always
+``ignored``."""
 
 
 def recovering(message: str) -> Callable[[Cause[Any]], Effect[None]]:
@@ -98,7 +107,7 @@ def _open_duration(open_duration: OpenDuration) -> Callable[[int], Effect[Second
 
 
 def _classify[A, E, R](
-    exit: Exit[A, E], classify: Classify[A, E, R] | None, restore: Restore
+    exit: Exit[A, E], probe: bool, classify: Classifier[A, E, R] | None, restore: Restore
 ) -> Effect[Exit[Outcome, Never], Never, R]:
     if isinstance(exit, Failure) and exit.cause.has_interrupts_only:
         return succeed(exit_succeed(ignored))
@@ -107,7 +116,7 @@ def _classify[A, E, R](
     run = classify
 
     def call() -> Effect[Outcome, Never, R]:
-        outcome = run(exit)
+        outcome = run(exit, ClassifyContext(probe))
         return outcome if isinstance(outcome, Effect) else succeed(outcome)
 
     return restore(suspend(call)).exit()
@@ -146,7 +155,13 @@ class CircuitBreakerService:
 
     @overload
     def execute[R2 = Never](
-        self, effect: None = None, /, *, key: str, classify: Classify[Any, Any, R2] | None = None
+        self,
+        effect: None = None,
+        /,
+        *,
+        key: str,
+        classify: Classifier[Any, Any, R2] | None = None,
+        on_rejection: OnRejection = "fail",
     ) -> Executor[R2]: ...
     @overload
     def execute[A, E, R, R2 = Never](
@@ -155,7 +170,8 @@ class CircuitBreakerService:
         /,
         *,
         key: str,
-        classify: Classify[A, E, R2] | None = None,
+        classify: Classifier[A, E, R2] | None = None,
+        on_rejection: OnRejection = "fail",
     ) -> Effect[A, E | CircuitBreakerError, R | R2]: ...
     def execute(
         self,
@@ -163,16 +179,18 @@ class CircuitBreakerService:
         /,
         *,
         key: str,
-        classify: Classify[Any, Any, Any] | None = None,
+        classify: Classifier[Any, Any, Any] | None = None,
+        on_rejection: OnRejection = "fail",
     ) -> Executor[Any] | Effect[Any, Any, Any]:
         """Run ``effect`` through ``key``'s circuit: rejected with
         ``CircuitOpen`` while it is open and ``CircuitHalfOpen`` while its
-        probe runs, else run and counted by ``classify``. Without
-        ``effect``, the function doing that for ``.pipe``."""
+        probe runs (or, with ``on_rejection="allow"``, run unrecorded),
+        else run and counted by ``classify``. Without ``effect``, the
+        function doing that for ``.pipe``."""
         if effect is None:
-            return Executor(self, key, classify)
+            return Executor(self, key, classify, on_rejection)
         require_effect(effect, "effect")
-        return self._run(effect, key, classify)
+        return self._run(effect, key, classify, on_rejection)
 
     def _publish(self, transition: Transition | None) -> Effect[None]:
         return void if transition is None else self._pubsub.publish((transition,)).as_void()
@@ -193,8 +211,33 @@ class CircuitBreakerService:
 
         return self._open_duration(admission.consecutive_openings + 1).map(hinted)
 
+    def _not_admitted[A, E, R](
+        self,
+        cause: Cause[CircuitBreakerError],
+        call: Effect[A, E, R],
+        on_rejection: OnRejection,
+    ) -> Effect[A, E | CircuitBreakerError, R]:
+        """What a call the store did not admit does: a rejection fails, or
+        with ``on_rejection="allow"`` runs ``call`` unrecorded (never past
+        a defect); a store outage follows ``on_store_error``."""
+        error = cause.find_error()
+        if not isinstance(error, Ok):
+            return fail_cause(cause)
+        if not isinstance(error.value.reason, CircuitBreakerStoreError):
+            allowed = on_rejection == "allow" and not cause.has_dies
+            return call if allowed else fail_cause(cause)
+        if self._on_store_error == "fail":
+            return fail_cause(cause)
+        return log_unhandled(
+            "CircuitBreaker store unavailable, running the call unrecorded", cause
+        ).and_then(call)
+
     def _run[A, E, R, R2](
-        self, effect: Effect[A, E, R], key: str, classify: Classify[A, E, R2] | None
+        self,
+        effect: Effect[A, E, R],
+        key: str,
+        classify: Classifier[A, E, R2] | None,
+        on_rejection: OnRejection,
     ) -> Effect[A, E | CircuitBreakerError, R | R2]:
         store = self._store
 
@@ -203,21 +246,11 @@ class CircuitBreakerService:
         ) -> Generator[Effect[Any, Any, Any], Any, A]:
             admit = yield from store.admit(key).pipe(provide_service(Scope, scope)).exit()
             if isinstance(admit, Failure):
-                error = admit.cause.find_error()
-                if (
-                    self._on_store_error == "fail"
-                    or not isinstance(error, Ok)
-                    or not isinstance(error.value.reason, CircuitBreakerStoreError)
-                ):
-                    return (yield from fail_cause(admit.cause))
-                yield from log_unhandled(
-                    "CircuitBreaker store unavailable, running the call unrecorded", admit.cause
-                )
-                return (yield from restore(effect))
+                return (yield from self._not_admitted(admit.cause, restore(effect), on_rejection))
             admission = admit.value
             yield from self._publish(admission.transition)
             exit = yield from restore(effect).exit()
-            classified = yield from _classify(exit, classify, restore)
+            classified = yield from _classify(exit, admission.probe, classify, restore)
             outcome = classified.value if isinstance(classified, Success) else ignored
             open_for = yield from self._open_for(outcome, admission)
             yield from (
@@ -248,23 +281,27 @@ class CircuitBreakerService:
 class Executor[R2 = Never]:
     """``breaker.execute(key=...)``: runs an effect through the circuit."""
 
-    __slots__ = ("_breaker", "_classify", "_key")
+    __slots__ = ("_breaker", "_classify", "_key", "_on_rejection")
 
     def __init__(
         self,
         breaker: CircuitBreakerService,
         key: str,
-        classify: Classify[Any, Any, R2] | None,
+        classify: Classifier[Any, Any, R2] | None,
+        on_rejection: OnRejection,
     ) -> None:
         self._breaker = breaker
         self._key = key
         self._classify = classify
+        self._on_rejection: OnRejection = on_rejection
 
     def __call__[A, E, R](
         self, effect: Effect[A, E, R]
     ) -> Effect[A, E | CircuitBreakerError, R | R2]:
         require_effect(effect, "effect")
-        return self._breaker.execute(effect, key=self._key, classify=self._classify)
+        return self._breaker.execute(
+            effect, key=self._key, classify=self._classify, on_rejection=self._on_rejection
+        )
 
 
 class CircuitBreaker(Tag[CircuitBreakerService], key="~effect/persistence/CircuitBreaker"):

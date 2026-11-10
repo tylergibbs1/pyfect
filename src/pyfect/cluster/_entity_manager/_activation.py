@@ -6,16 +6,20 @@ it was serving), and drain it when its scope closes."""
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from pyfect import cause as Cause
 from pyfect import exit as Exit
+from pyfect._concurrency import for_each
 from pyfect._core import Effect, _Locally
 from pyfect.cluster import _cluster_abandon, cluster_metrics
 from pyfect.cluster._entity_activation import CurrentActivationScope
 from pyfect.cluster._interruptors import acquire_entity, release_entity
 from pyfect.cluster._resource_ref import ResourceRef
-from pyfect.cluster.cluster_error import EntityNotAssignedToRunner, MailboxFull
+from pyfect.cluster.cluster_error import (
+    EntityNotAssignedToRunner,
+    MailboxFull,
+)
 from pyfect.cluster.cluster_schema import (
     InterruptOnTermination,
     Persisted,
@@ -23,7 +27,7 @@ from pyfect.cluster.cluster_schema import (
 )
 from pyfect.cluster.entity._services import CurrentAddress, CurrentRunnerAddress, KeepAliveLatch
 from pyfect.cluster.entity_address import EntityAddress
-from pyfect.cluster.reply import Chunk, WithExit
+from pyfect.cluster.reply import Chunk
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.effect import fail, fail_cause, gen, interrupt, succeed, suspend, sync
 from pyfect.latch import Latch
@@ -35,43 +39,18 @@ from pyfect.rpc.message import FromClient, FromServer
 from pyfect.rpc.server._core import OnRequest, ServerOptions, make_no_serialization
 from pyfect.scope import CloseableScope, Scope, fork_in
 
-from ._core import CloseLatches, ManagerCore, request_envelope, retry_respond, set_context
+from ._core import (
+    CloseLatches,
+    ManagerCore,
+    RestartStep,
+    request_envelope,
+    retry_respond,
+    set_context,
+)
+from ._exit_reply import ExitReply
 from ._state import EntityState, RequestEntry, WriteFn
 
 _VOID: Effect[None] = succeed(None)
-
-
-def _has_stored_exit(core: ManagerCore, request_id: Snowflake) -> Effect[bool]:
-    """Whether storage holds the request's exit (``False`` when it cannot
-    be read, so the request is replayed)."""
-
-    def tag(reply: Any) -> object:
-        if isinstance(reply, dict):
-            return cast("dict[str, object]", reply).get("_tag")
-        return type(reply).__name__
-
-    def found(replies: list[Any]) -> bool:
-        return any(tag(reply) == "WithExit" for reply in replies)
-
-    return (
-        core.storage.replies_for_unfiltered([request_id])
-        .map(found)
-        .catch_cause(lambda _: succeed(False))
-    )
-
-
-def _new_dies(outcome: Cause.Cause[Any], exit: Exit.Exit[Any, Any]) -> bool:
-    """Whether ``outcome`` holds a defect ``exit`` does not (a transaction
-    wrapper can add defects, not typed errors; interrupts may repeat)."""
-    known = (
-        [r.defect for r in exit.cause.reasons if isinstance(r, Cause.Die)]
-        if isinstance(exit, Exit.Failure)
-        else []
-    )
-    return any(
-        isinstance(reason, Cause.Die) and not any(d is reason.defect for d in known)
-        for reason in outcome.reasons
-    )
 
 
 class _Activation:
@@ -86,6 +65,7 @@ class _Activation:
         "end_latch",
         "keep_alive_latch",
         "mailbox_series",
+        "restart_step",
         "retired",
         "scope",
         "state",
@@ -104,6 +84,8 @@ class _Activation:
         self.retired = Latch()
         self.write_ref: ResourceRef[WriteFn] | None = None
         self.state: EntityState | None = None
+        self.restart_step: RestartStep | None = None
+        """This entity's restart backoff, reset when a request completes."""
 
     def is_active(self) -> bool:
         return not self.retired.is_open()
@@ -126,9 +108,53 @@ class _Activation:
                 if not request.delivered:
                     continue
                 request.sent_exit = False
-                yield from write(
-                    0, request_envelope(request), self.core.request_write_options(request)
+                yield from (
+                    self.write_interrupt(request, write)
+                    if request.interrupted
+                    else write(
+                        0, request_envelope(request), self.core.request_write_options(request)
+                    )
                 )
+
+        return run
+
+    def write_interrupt(self, request: RequestEntry, write: WriteFn) -> Effect[None]:
+        """An interrupted request is not run again: its handler generation
+        answers the interrupt as for a request it is not running. Each
+        generation gets it at most once; the flag stays, so a later
+        generation still applies it if this one fails first."""
+        if request.interrupt_sent_to is write:
+            return _VOID
+        request.interrupt_sent_to = write
+        return write(0, rpc_message.Interrupt(request.message.envelope.request_id), None)
+
+    def forward_interrupts(self) -> Effect[None]:
+        """Send the replacement handlers the interrupts remembered after their
+        requests were replayed."""
+
+        def body() -> Effect[None]:
+            write = self._ref().get_unsafe()
+            if write is None:
+                return _VOID
+            interrupted = [r for r in self.active_requests.values() if r.interrupted]
+            return for_each(interrupted, lambda r: self.write_interrupt(r, write)).as_void()
+
+        return suspend(body)
+
+    def remove_active_request(self, request_id: Snowflake) -> None:
+        """Drop a request that has left this entity, starting the idle timer
+        when it was the last one."""
+        self.active_requests.pop(request_id, None)
+        if not self.active_requests and self.state is not None:
+            self.state.last_active_check = self.core.now_millis()
+
+    def restart_delay(self) -> Effect[None]:
+        @gen
+        def run():
+            step = self.restart_step
+            if step is None:
+                step = self.restart_step = yield from self.core.new_restart_step
+            yield from step(None)
 
         return run
 
@@ -136,7 +162,9 @@ class _Activation:
         core = self.core
 
         def after_wait(_: object) -> Effect[None]:
-            return rebuild if self.is_active() else self.end_latch.open().as_void()
+            if self.is_active():
+                return rebuild.and_then(self.forward_interrupts())
+            return self.end_latch.open().as_void()
 
         def failed(next_cause: Cause.Cause[Any]) -> Effect[None]:
             if next_cause.has_interrupts_only:
@@ -146,7 +174,7 @@ class _Activation:
 
         return (
             log_error("Defect in entity, restarting", cause)
-            .and_then(core.retry_driver(None).ignore())
+            .and_then(self.restart_delay().ignore())
             .flat_map(after_wait)
             .annotate_logs(
                 {
@@ -209,7 +237,7 @@ class _Activation:
                 restarting = set_context(activation.restart(cause, rebuild), handler_context)
                 return fork_in(restarting, core.manager_scope).as_void()
 
-            def on_exit(response: rpc_message.ResponseExit) -> Effect[None]:  # noqa: PLR0911
+            def on_exit(response: rpc_message.ResponseExit) -> Effect[None]:
                 request_id = Snowflake(int(response.request_id))
                 request = activation.active_requests.get(request_id)
                 if request is None:
@@ -235,7 +263,7 @@ class _Activation:
                         or not options.sharding.has_shard_id(address.shard_id)
                     )
                     if shutting_down[0] or request.terminating or abandoned:
-                        activation.active_requests.pop(request_id, None)
+                        activation.remove_active_request(request_id)
                         return storage.unregister_reply_handler(request.message.envelope.request_id)
                     # An uninterruptible request ignores the interrupt and runs again.
                     if is_uninterruptible_for_server(request.message.annotations):
@@ -245,62 +273,14 @@ class _Activation:
                         )
                         return fork_in(set_context(again, handler_context), handler_scope).as_void()
 
-                def respond_exit() -> Effect[None, Any]:
-                    return request.message.respond(
-                        WithExit(request_id=request_id, id=core.snowflakes.next_unsafe(), exit=exit)
-                    )
-
-                save = retry_respond(4, suspend(respond_exit))
-
-                def complete_now() -> None:
-                    if core.storage_enabled:
-                        core.processed_request_ids.add(request.message.envelope.request_id)
-                    activation.active_requests.pop(request_id, None)
-                    # Start the idle timer when the last request completes.
-                    if not activation.active_requests and activation.state is not None:
-                        activation.state.last_active_check = core.now_millis()
-
-                complete = sync(complete_now)
-                respond = save.and_then(complete).or_die()
-                transaction = request.transaction
-                if transaction is None:
-                    return respond
-                if not persisted:
-                    if isinstance(exit, Exit.Success):
-                        return respond
-                    transaction.settle = lambda _: respond
-                    return _VOID
-                if isinstance(exit, Exit.Success):
-
-                    def settle_success(outcome: Exit.Exit[Any, Any]) -> Effect[None]:
-                        if isinstance(outcome, Exit.Success):
-                            return complete
-                        cause = outcome.cause
-
-                        def committed(stored: bool) -> Effect[None]:
-                            if not stored:
-                                return restart_from(cause)
-                            # Commit succeeded despite the error; callers read the saved reply.
-                            return complete.and_then(
-                                storage.unregister_reply_handler(
-                                    request.message.envelope.request_id
-                                )
-                            )
-
-                        return _has_stored_exit(core, request.message.envelope.request_id).flat_map(
-                            committed
-                        )
-
-                    transaction.settle = settle_success
-                    return save.or_die()
-
-                def settle_failure(outcome: Exit.Exit[Any, Any]) -> Effect[None]:
-                    if isinstance(outcome, Exit.Success) or not _new_dies(outcome.cause, exit):
-                        return respond
-                    return restart_from(outcome.cause)
-
-                transaction.settle = settle_failure
-                return _VOID
+                return ExitReply(
+                    activation=activation,
+                    request=request,
+                    request_id=request_id,
+                    exit=exit,
+                    persisted=persisted,
+                    restart_from=restart_from,
+                ).run()
 
             def on_chunk(response: rpc_message.ResponseChunk) -> Effect[None]:
                 request_id = Snowflake(int(response.request_id))
@@ -371,11 +351,7 @@ class _Activation:
         def body() -> Effect[None]:
             ref = self._ref()
             if not isinstance(message, rpc_message.Request):
-                # Interrupts, acks and EOF reach the handlers even during shutdown.
-                current = ref.get_unsafe()
-                if current is not None:
-                    return current(client_id, message, on)
-                return ref.await_.flat_map(lambda write: write(client_id, message, on))
+                return self._write_control(client_id, message, on)
             if not self.is_active():
                 return interrupt()
             current = ref.get_unsafe()
@@ -387,9 +363,32 @@ class _Activation:
             if request is None:
                 return _VOID
             request.delivered = True
+            if request.interrupted:
+                return self.write_interrupt(request, current)
             return current(client_id, message, on)
 
         return suspend(body)
+
+    def _write_control(
+        self, client_id: int, message: FromClient, on: OnRequest | None
+    ) -> Effect[None]:
+        """Interrupts, acks and EOF reach the handlers even during shutdown."""
+        ref = self._ref()
+        current = ref.get_unsafe()
+        if current is not None:
+            return current(client_id, message, on)
+        if isinstance(message, rpc_message.Interrupt):
+            # Waiting could stall the sender for good if every rebuild fails,
+            # so remember the interrupt for the next generation.
+            self.remember_interrupt(Snowflake(int(message.request_id)))
+            return _VOID
+        return ref.await_.flat_map(lambda write: write(client_id, message, on))
+
+    def remember_interrupt(self, request_id: Snowflake) -> None:
+        request = self.active_requests.get(request_id)
+        # Uninterruptible requests ignore it.
+        if request is not None and not is_uninterruptible_for_server(request.message.annotations):
+            request.interrupted = True
 
     # --- draining -------------------------------------------------------------------------
 

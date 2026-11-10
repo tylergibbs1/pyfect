@@ -19,7 +19,7 @@ which are compacted by the registered compactors, then replayed.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Never, Protocol, cast, overload
 
@@ -40,8 +40,11 @@ from pyfect.effect import (
     suspend,
     sync,
 )
+from pyfect.encoding.schema_binary import to_codec_strict
+from pyfect.eventlog._compactor import CompactFn, CompactWrite, RegisteredCompactor
 from pyfect.eventlog._conflicts import set_anchor
 from pyfect.eventlog._identity import Identity, IdentityService
+from pyfect.eventlog._log_compaction import CompactOutcome, CompactResult, LogCompaction
 from pyfect.eventlog.event import AnyEvent, AnyWrite, Event, Write
 from pyfect.eventlog.event_group import EventGroup
 from pyfect.eventlog.event_journal import (
@@ -59,6 +62,7 @@ from pyfect.eventlog.event_journal import (
     make_entry_id_unsafe,
 )
 from pyfect.eventlog.event_log_encryption import EventLogEncryption
+from pyfect.fiber_handle import FiberHandle
 from pyfect.fiber_map import FiberMap
 from pyfect.layer import Layer, provide_merge
 from pyfect.layer import effect as layer_effect
@@ -90,6 +94,8 @@ if TYPE_CHECKING:
 __all__ = [
     "BatchCompaction",
     "CompactFn",
+    "CompactOutcome",
+    "CompactResult",
     "CompactWrite",
     "Compaction",
     "CompactionItem",
@@ -221,22 +227,6 @@ class Handlers[R = Never]:
 # --- registry ------------------------------------------------------------------------
 
 
-type CompactWrite = Callable[[Entry, Entry | None], Effect[None]]
-"""A compactor's output: an entry and, optionally, the input entry it
-replaces (its anchor during remote replay; without one a matching id
-keeps its position and a new id takes the group's start)."""
-
-type CompactFn = Callable[[Sequence[Entry], CompactWrite], Effect[None]]
-
-
-@dataclass(frozen=True, slots=True)
-class RegisteredCompactor:
-    """A compactor of ``events``."""
-
-    events: frozenset[str]
-    effect: CompactFn
-
-
 class RegistryService:
     """Handlers, compactors, remotes and reactivity keys of an event log
     (Effect's ``EventLog.Registry``)."""
@@ -255,10 +245,17 @@ class RegistryService:
         self.handlers[event] = handler
 
     def register_compaction(
-        self, events: Sequence[str], effect: CompactFn
+        self, events: Sequence[str], effect: CompactFn, *, remote: bool = False
     ) -> Effect[None, Never, Scope]:
+        """Compact ``events`` with ``effect``. With ``remote``, it also runs
+        over a remote's history to build snapshots: the entries it keeps must
+        depend only on the set of input entries and compose (``drop(drop(a) +
+        b)`` keeps what ``drop(a + b)`` keeps, even when ``b`` holds entries
+        older than ``a``), and a call that writes an entry it was not given
+        keeps its whole input."""
+
         def register() -> None:
-            compactor = RegisteredCompactor(frozenset(events), effect)
+            compactor = RegisteredCompactor(frozenset(events), effect, remote)
             for event in events:
                 self.compactors[event] = compactor
 
@@ -279,9 +276,9 @@ class RegistryService:
         return acquire_release(suspend(acquire), release)
 
     @property
-    def remotes(self) -> Sequence[EventLogRemoteService]:
-        """The remotes registered now."""
-        return tuple(self._remotes.values())
+    def remotes(self) -> Mapping[RemoteId, EventLogRemoteService]:
+        """The remotes registered now, by id."""
+        return dict(self._remotes)
 
     def handle_remote(
         self, handler: Callable[[EventLogRemoteService], Effect[None]]
@@ -480,12 +477,15 @@ def _register_batch_compaction[R](
         [tuple[CompactionItem, ...], _WriteFrom, Callable[[Entry], Effect[None]]],
         Effect[None, Never, R],
     ],
+    remote: bool,
 ) -> Layer[Never, Never, R | Registry]:
     def register():
         registry = yield from Registry()
         services = yield from context()
 
-        def compact(entries: Sequence[Entry], write: CompactWrite) -> Effect[None]:
+        def compact(
+            entries: Sequence[Entry], write: CompactWrite, /, *, remote: bool = False
+        ) -> Effect[None]:
             def write_from(source: Entry, event: AnyEvent | str, payload: Any) -> Effect[None]:
                 found = group.events[event if isinstance(event, str) else event.tag]
 
@@ -507,9 +507,14 @@ def _register_batch_compaction[R](
                     found = group.events.get(entry.event)
                     if found is None:
                         continue
+                    # In a remote compaction, unknown fields make an entry
+                    # undecodable, and undecodable entries are always kept.
+                    codec = to_codec_strict(found.payload) if remote else found.payload_codec
                     decoded = yield from _under(
-                        services, decode_effect(found.payload_codec)(entry.payload)
+                        services, decode_effect(codec)(entry.payload)
                     ).result()
+                    if remote and not isinstance(decoded, Ok):
+                        yield from write(entry, None)
                     batch.append(
                         CompactionItem(
                             entry,
@@ -524,16 +529,30 @@ def _register_batch_compaction[R](
 
             return gen(body)
 
-        yield from registry.register_compaction(list(group.events), compact)
+        yield from registry.register_compaction(list(group.events), compact, remote=remote)
 
     return cast("Layer[Never, Never, R | Registry]", layer_effect_discard(gen(register)))
 
 
 def group_batch_compaction[R = Never](
-    group: EventGroup[AnyEvent], effect: Callable[[BatchCompaction], Effect[None, Never, R]]
+    group: EventGroup[AnyEvent],
+    effect: Callable[[BatchCompaction], Effect[None, Never, R]],
+    *,
+    remote: bool = False,
 ) -> Layer[Never, Never, R | Registry]:
     """Compact the group's entries a remote sends, all in one call.
-    Replacements written with ``write`` take the first entry's place."""
+    Replacements written with ``write`` take the first entry's place.
+
+    With ``remote``, it also runs over a remote's history to build
+    snapshots. That promises what the library cannot check: the kept
+    entries depend only on the set of input entries (never on services, the
+    clock or input order), and compaction composes (``drop(drop(a) + b)``
+    keeps what ``drop(a + b)`` keeps, even when ``b`` holds entries older
+    than ``a``). A remote compaction only drops entries: a call that uses
+    ``write`` keeps its whole input, and entries that fail to decode,
+    including ones with fields the schema does not know, are kept. A run
+    passes the kept entries through the compactors again and uploads
+    nothing when that drops more or a compactor dies."""
 
     def run(
         entries: tuple[CompactionItem, ...],
@@ -545,15 +564,29 @@ def group_batch_compaction[R = Never](
 
         return effect(BatchCompaction(entries, write, forward))
 
-    return _register_batch_compaction(group, run)
+    return _register_batch_compaction(group, run, remote)
 
 
 def group_compaction[R = Never](
-    group: EventGroup[AnyEvent], effect: Callable[[Compaction], Effect[None, Never, R]]
+    group: EventGroup[AnyEvent],
+    effect: Callable[[Compaction], Effect[None, Never, R]],
+    *,
+    remote: bool = False,
 ) -> Layer[Never, Never, R | Registry]:
     """Compact the group's entries a remote sends, one call per primary
     key with the decodable entries; undecodable ones are forwarded
-    unchanged. Replacements take the key's first entry's place."""
+    unchanged. Replacements take the key's first entry's place.
+
+    With ``remote``, it also runs over a remote's history to build
+    snapshots. That promises what the library cannot check: the kept
+    entries depend only on the set of input entries (never on services, the
+    clock or input order), and compaction composes (``drop(drop(a) + b)``
+    keeps what ``drop(a + b)`` keeps, even when ``b`` holds entries older
+    than ``a``). A remote compaction only drops entries: a call that uses
+    ``write`` keeps its whole input, and entries that fail to decode,
+    including ones with fields the schema does not know, are kept. A run
+    passes the kept entries through the compactors again and uploads
+    nothing when that drops more or a compactor dies."""
 
     def run(
         entries: tuple[CompactionItem, ...],
@@ -582,7 +615,7 @@ def group_compaction[R = Never](
 
         return gen(body)
 
-    return _register_batch_compaction(group, run)
+    return _register_batch_compaction(group, run, remote)
 
 
 def group_reactivity(
@@ -737,8 +770,12 @@ class EventLogService:
         entries: Effect[list[Entry], EventJournalError],
         destroy: Effect[None, EventJournalError],
         synced: Effect[None, EventJournalError | EventLogRemoteError],
+        compact: Callable[
+            [RemoteId | None], Effect[list[CompactOutcome], EventJournalError | EventLogRemoteError]
+        ],
     ) -> None:
         self._write_events = write_events
+        self._compact = compact
         self.entries = entries
         self.destroy = destroy
         self.synced = synced
@@ -746,6 +783,17 @@ class EventLogService:
         entries written so far and the log has applied the remote's
         changes up to the latest it stored when asked (a pyfect addition).
         A remote that cannot tell its latest sequence is only uploaded to."""
+
+    def compact(
+        self, *, remote_id: RemoteId | None = None
+    ) -> Effect[list[CompactOutcome], EventJournalError | EventLogRemoteError]:
+        """Run one remote compaction now, on every registered remote that
+        offers compaction or only on ``remote_id``. Unlike the background
+        trigger it does not wait for the journal to catch up, and it works
+        from an empty journal. Remotes built with ``compaction=False`` are
+        skipped, and nothing runs when no compactor is registered with
+        ``remote=True``. See ``CompactResult`` for the results."""
+        return self._compact(remote_id)
 
     @overload
     def write[P, A, E](
@@ -879,7 +927,7 @@ def _synced(
 
         return gen(body)
 
-    return suspend(lambda: for_each(registry.remotes, sync_remote).as_void())
+    return suspend(lambda: for_each(list(registry.remotes.values()), sync_remote).as_void())
 
 
 def _make():
@@ -908,9 +956,11 @@ def _make():
 
     compact_remote = _compact_remote(registry.compactors)
     upload_to = _uploader(journal, identity, store_id, with_lock)
+    log_compaction = LogCompaction(journal, store_id, identity, registry.compactors)
 
     def run_remote(remote: EventLogRemoteService) -> Effect[None]:
-        def consume():
+        def consume(trigger: FiberHandle[None, object]) -> Generator[Any, Any, Never]:
+            yield from log_compaction.poll_status(remote, trigger)
             start_sequence = yield from journal.next_remote_sequence(remote.id)
             changes = yield from remote.changes(
                 identity=identity,
@@ -932,18 +982,21 @@ def _make():
                 # transaction commits.
                 yield from reactivity.with_batch(with_lock(written))
 
-        consumer = (
-            scoped(gen(consume))
-            .catch_cause(log_error)
-            .repeat(_REMOTE_RETRY)
-            .annotate_logs({"service": "EventLog", "effect": "runRemote consume"})
-        )
+        def consumer(trigger: FiberHandle[None, object]) -> Effect[object, Never, Scope]:
+            return (
+                scoped(gen(lambda: consume(trigger)))
+                .catch_cause(log_error)
+                .repeat(_REMOTE_RETRY)
+                .annotate_logs({"service": "EventLog", "effect": "runRemote consume"})
+            )
 
         write = upload_to(remote)
         write_until_success = write.tap_cause(log_debug).retry(_REMOTE_RETRY)
 
         def body():
-            yield from consumer.fork_scoped()
+            trigger = yield from FiberHandle[None, object].make()
+            yield from consumer(trigger).fork_scoped()
+            yield from log_compaction.poll_hourly(remote, trigger)
             yield from add_finalizer(lambda _: write.ignore())
             subscription = yield from journal.changes
             signal = yield from Queue[None, Never].dropping(1)
@@ -987,7 +1040,15 @@ def _make():
 
     yield from registry.handle_remote(run_remote)
     synced = _synced(registry, journal, identity, store_id, upload_to)
-    return EventLogService(write_events, journal.entries, journal.destroy, synced)
+    return EventLogService(
+        write_events,
+        journal.entries,
+        journal.destroy,
+        synced,
+        lambda remote_id: suspend(
+            lambda: log_compaction.compact(list(registry.remotes.values()), remote_id)
+        ),
+    )
 
 
 layer_event_log: Layer[EventLog | Registry, Never, EventJournal | Identity] = (

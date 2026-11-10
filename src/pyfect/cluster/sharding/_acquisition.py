@@ -274,6 +274,22 @@ class ShardAcquisition:
 
     # --- the loops ------------------------------------------------------------------------
 
+    def _may_acquire(self) -> bool:
+        state = self._state
+        return (
+            state.shard_locks_healthy_latch.is_open()
+            # Wait for the pending bulk release before reacquiring, so it
+            # cannot drop a lock acquired here.
+            and not self.forced_release_pending()
+            # A runner that is shutting down takes no new shards.
+            and not state.is_shutdown
+            # While joins are pending the assignments are about to change, so
+            # take no new shards; otherwise a shard released for a joining
+            # runner could be taken here and handed off again. Publishing
+            # reopens the latch.
+            and not state.pending_runners
+        )
+
     def acquisition_loop(self) -> Effect[None]:
         state = self._state
         address = self._self_address
@@ -301,14 +317,7 @@ class ShardAcquisition:
                     yield from self.release_shards()
                 self.check_handed_off()
 
-                if not state.shard_locks_healthy_latch.is_open():
-                    continue
-                # Wait for the pending bulk release before reacquiring, so
-                # it cannot drop a lock acquired here.
-                if self.forced_release_pending():
-                    continue
-                # A runner that is shutting down takes no new shards.
-                if state.is_shutdown:
+                if not self._may_acquire():
                     continue
 
                 unacquired = [
@@ -332,13 +341,16 @@ class ShardAcquisition:
                     .ignore()
                     .timeout_option(state.shard_lock_interval)
                 )
-                # A forced release can start while ``acquire`` is in flight,
-                # so check it here as well as before acquiring.
+                # A forced release or a pending join can begin while
+                # ``acquire`` is in flight, so check both. Shards locked
+                # meanwhile are released without running anything on them.
                 forced_pending = self.forced_release_pending()
+                joins_pending = bool(state.pending_runners)
                 for shard_id in acquired:
                     if (
                         not state.shard_locks_healthy_latch.is_open()
                         or forced_pending
+                        or joins_pending
                         or shard_id in state.releasing_shards
                         or shard_id not in state.self_shards
                     ):
@@ -419,25 +431,15 @@ class ShardAcquisition:
         state = self._state
         address = self._self_address
 
-        @gen
-        def run():
+        def run() -> Effect[None, Any]:
             refreshed = [*state.acquired_shards, *state.releasing_shards]
-            acquired = yield from state.runner_storage.refresh(address, refreshed)
-            # Shards acquired during the request are absent from its response.
-            for shard_id in refreshed:
-                if shard_id in state.acquired_shards and shard_id not in acquired:
-                    state.acquired_shards.discard(shard_id)
-                    state.releasing_shards.add(shard_id)
-            for shard_id in acquired:
-                if shard_id not in state.self_shards:
-                    state.acquired_shards.discard(shard_id)
-                    state.releasing_shards.add(shard_id)
-            state.update_shard_gauges()
-            if state.releasing_shards:
-                yield from state.active_shards_latch.open()
+            return state.runner_storage.refresh(address, refreshed).map(
+                lambda acquired: state.release_lost_shards(refreshed, acquired)
+            )
 
         return (
-            run.retry(times=5, schedule=spaced(Seconds(0.05)))
+            suspend(run)
+            .retry(times=5, schedule=spaced(Seconds(0.05)))
             .timeout(state.shard_lock_interval)
             .catch_cause(self._mark_unhealthy)
         )

@@ -9,7 +9,7 @@ ten minutes.
 
 MySQL and SQL Server statements are ported but not run by the tests.
 Python's integers are exact, so ids need no ``SafeIntegers``; SHA-256 comes
-from ``hashlib`` (Effect reads a ``Crypto`` service).
+from ``hashlib`` (Effect reads a ``Digest`` service).
 """
 
 from __future__ import annotations

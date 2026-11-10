@@ -13,6 +13,7 @@ are immutable ``bytes``; there is no buffer to change under an entry);
 test reads ``id_string`` on one).
 """
 
+import itertools
 import json
 import os
 import uuid
@@ -590,3 +591,17 @@ def test_records_entries_in_memory_and_publishes_local_changes():
         assert entries[0].created_at_millis == created[0]
 
     yield from fx.gen(body).pipe(fx.provide(J.layer_memory))
+
+
+def test_make_entry_id_unsafe_increases_strictly_and_encodes_msecs_exactly() -> None:
+    """makeEntryIdUnsafe increases strictly, and encodes an explicit msecs exactly"""
+    ids = [J.make_entry_id_unsafe().hex() for _ in range(2000)]
+    assert all(earlier < later for earlier, later in itertools.pairwise(ids))
+    assert J.entry_id_millis(J.make_entry_id_unsafe(msecs=1000)) == 1000
+
+
+def test_make_entry_id_unsafe_clamps_msecs_as_effect() -> None:
+    """Effect's ``Uuid.v7Bytes`` truncates and clamps the timestamp."""
+    assert J.entry_id_millis(J.make_entry_id_unsafe(msecs=-5)) == 0
+    assert J.entry_id_millis(J.make_entry_id_unsafe(msecs=1000.9)) == 1000
+    assert J.entry_id_millis(J.make_entry_id_unsafe(msecs=2**49)) == 2**48 - 1

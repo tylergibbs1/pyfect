@@ -832,6 +832,10 @@ def test_transfers_frozen_row_locks_after_expiry(cluster_db: ClusterDatabase):
     yield from run(body)
 
 
+# Effect 4.1.2's lock session sets idle_session_timeout to shard_lock_expiration,
+# so the server ends a frozen runner's session and releases its locks within the
+# observation window. Effect's own test fails the same way under Node at 4.1.2.
+@pytest.mark.xfail(strict=True, reason="stale in Effect 4.1.2: idle lock sessions now end")
 @testing.live(timeout="1 minute")
 def test_retains_frozen_advisory_locks_until_the_session_closes(cluster_db: ClusterDatabase):
     """retains frozen advisory locks until the session closes"""

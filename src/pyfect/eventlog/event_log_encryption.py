@@ -2,35 +2,38 @@
 (Effect's ``eventlog/EventLogEncryption``).
 
 Entries go in batches of at most 100 entries or 256 KiB of payload (a
-larger entry is a batch alone), each encrypted with AES-GCM under the key
-derived from the identity's root secret. The additional data binds a
+larger entry is a batch alone), each encrypted with AES-256-GCM under the
+key derived from the identity's root secret. The additional data binds a
 batch to its store and entry ids, so a server cannot move it to another
-store or relabel it. ``layer_subtle`` (Effect's name, for WebCrypto's
-``crypto.subtle``) runs on the ``cryptography`` package, the extra
-``pyfect-dev[eventlog]``.
+store or relabel it. ``layer`` runs on the ``pyfect.crypto`` services in
+context; ``layer_subtle`` (Effect's name, for WebCrypto's ``crypto.subtle``)
+on their Web Crypto layers. Both need the extra ``pyfect-dev[eventlog]``.
 """
 
 from __future__ import annotations
 
-import hashlib
-import os
-import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Never
 
 from pyfect import schema as S
+from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._js import text_encode
 from pyfect.context import Tag
-from pyfect.effect import die, gen, sync
+from pyfect.crypto import aead, digest, secure_random
+from pyfect.crypto import web_crypto as web
+from pyfect.crypto.crypto_error import CryptoError
+from pyfect.effect import die, gen, provide_service
 from pyfect.encoding.schema_binary import BytesCodec, to_codec
+from pyfect.eventlog._batches import Batch, to_batches
 from pyfect.eventlog._identity import IdentityService
-from pyfect.eventlog._identity_derivation import GetMaterial, make_get_identity_root_secret_material
+from pyfect.eventlog._identity_derivation import cached_by_identity, derive_encryption_key
 from pyfect.eventlog._transferable_bytes import TransferableBytes
 from pyfect.eventlog.event_journal import Entry, EntryId, EntryIdSchema, RemoteEntry
-from pyfect.layer import Layer
+from pyfect.layer import Layer, merge, provide_merge
 from pyfect.layer import effect as layer_effect
+from pyfect.layer import provide as provide_layer
 from pyfect.redacted import make as redacted
 
 
@@ -63,29 +66,6 @@ def remote_batch(sequence: int, batch: EncryptedBatch) -> EncryptedRemoteBatch:
     )
 
 
-_MAX_BATCH_ENTRIES = 100
-_MAX_BATCH_PAYLOAD_BYTES = 256 * 1024
-
-
-def _to_batches(entries: Sequence[Entry]) -> list[list[Entry]]:
-    batches: list[list[Entry]] = []
-    current: list[Entry] = []
-    size = 0
-    for entry in entries:
-        payload = len(entry.payload)
-        if current and (
-            len(current) == _MAX_BATCH_ENTRIES or size + payload > _MAX_BATCH_PAYLOAD_BYTES
-        ):
-            batches.append(current)
-            current = []
-            size = 0
-        current.append(entry)
-        size += payload
-    if current:
-        batches.append(current)
-    return batches
-
-
 def _additional_data(store_id: str, entry_ids: Sequence[bytes]) -> bytes:
     # The store id is length-prefixed, followed by the 16-byte entry ids.
     store = text_encode(store_id)
@@ -93,6 +73,8 @@ def _additional_data(store_id: str, entry_ids: Sequence[bytes]) -> bytes:
 
 
 _BATCH_CODEC: BytesCodec[tuple[Entry, ...]] = to_codec(S.NonEmptyArray(Entry))
+_encode_batch = S.encode_effect(_BATCH_CODEC)
+_decode_batch = S.decode_effect(_BATCH_CODEC)
 
 
 class EventLogEncryptionService(ABC):
@@ -110,110 +92,167 @@ class EventLogEncryptionService(ABC):
         """The entries of ``batches``; a defect when a batch does not
         decrypt or its entries are not its entry ids."""
 
-    def sha256(self, data: bytes, /) -> Effect[bytes]:
-        return sync(lambda: hashlib.sha256(data).digest())
-
-    def sha256_string(self, data: bytes, /) -> Effect[str]:
-        return sync(lambda: hashlib.sha256(data).hexdigest())
+    @abstractmethod
+    def sha256(self, data: bytes, /) -> Effect[bytes]: ...
 
     @property
+    @abstractmethod
     def generate_identity(self) -> Effect[IdentityService]:
         """A new identity: a random UUID public key and 32 random bytes of
         root secret."""
-        return sync(lambda: IdentityService(str(uuid.uuid4()), redacted(os.urandom(32))))
 
 
 class EventLogEncryption(Tag[EventLogEncryptionService], key="effect/eventlog/EventLogEncryption"):
     """How the event log encrypts entries for remotes."""
 
 
-class AesGcm(Protocol):
-    """An AES-GCM implementation (Effect passes a WebCrypto ``Crypto``)."""
-
-    def encrypt(self, key: bytes, iv: bytes, data: bytes, aad: bytes, /) -> bytes: ...
-
-    def decrypt(self, key: bytes, iv: bytes, data: bytes, aad: bytes, /) -> bytes:
-        """The plaintext; raises when the data or ``aad`` were altered."""
-        ...
-
-
-class _CryptographyAesGcm:
-    def encrypt(self, key: bytes, iv: bytes, data: bytes, aad: bytes, /) -> bytes:
-        from pyfect.eventlog import _crypto
-
-        return _crypto.aes_gcm_encrypt(key, iv, data, aad)
-
-    def decrypt(self, key: bytes, iv: bytes, data: bytes, aad: bytes, /) -> bytes:
-        from pyfect.eventlog import _crypto
-
-        return _crypto.aes_gcm_decrypt(key, iv, data, aad)
-
-
-class _AesGcmEncryption(EventLogEncryptionService):
-    def __init__(self, cipher: AesGcm | None = None) -> None:
-        self._material: GetMaterial = make_get_identity_root_secret_material()
-        self._cipher: AesGcm = cipher or _CryptographyAesGcm()
+class _Encryption(EventLogEncryptionService):
+    def __init__(
+        self,
+        aead_service: aead.AeadService,
+        digest_service: digest.DigestService,
+        random: secure_random.SecureRandomService,
+    ) -> None:
+        self._aead = aead_service
+        self._digest = digest_service
+        self._random = random
+        self._encryption_key = cached_by_identity(
+            lambda root_secret: (
+                derive_encryption_key(root_secret)
+                .map(lambda derived: derived.encryption_key)
+                .pipe(provide_service(digest.Digest, digest_service))
+            )
+        )
 
     def encrypt(
         self, identity: IdentityService, store_id: str, entries: Sequence[Entry], /
     ) -> Effect[list[EncryptedBatch]]:
-        def body():
-            key = (yield from self._material(identity)).encryption_key_material
-            result: list[EncryptedBatch] = []
-            for batch in _to_batches(entries):
-                data = yield from S.encode_effect(_BATCH_CODEC)(tuple(batch)).or_die()
-                entry_ids = tuple(entry.id for entry in batch)
-                iv = os.urandom(12)
-                encrypted = self._cipher.encrypt(
-                    key, iv, data, _additional_data(store_id, entry_ids)
+        def seal(
+            key: aead.Key[aead.AesGcm], batch: Batch, data: bytes
+        ) -> Effect[EncryptedBatch, CryptoError]:
+            entry_ids = tuple(entry.id for entry in batch)
+            return self._random.random_bytes(12).flat_map(
+                lambda iv: self._aead.encrypt(
+                    key, data, nonce=iv, aad=_additional_data(store_id, entry_ids)
+                ).map(
+                    lambda encrypted: EncryptedBatch(
+                        entry_ids=entry_ids, iv=iv, encrypted_batch=encrypted
+                    )
                 )
-                result.append(EncryptedBatch(entry_ids=entry_ids, iv=iv, encrypted_batch=encrypted))
-            return result
+            )
 
-        return gen(body)
+        @gen
+        def run():
+            key = yield from self._encryption_key(identity)
+            batches = to_batches(entries)
+            data = yield from for_each(batches, _encode_batch).or_die()
+            return (
+                yield from for_each(
+                    range(len(batches)),
+                    lambda i: seal(key, batches[i], data[i]),
+                    concurrency="unbounded",
+                ).or_die()
+            )
+
+        return run
 
     def decrypt(
         self, identity: IdentityService, store_id: str, batches: Sequence[EncryptedRemoteBatch], /
     ) -> Effect[list[RemoteEntry]]:
-        def body():
-            key = (yield from self._material(identity)).encryption_key_material
-            result: list[RemoteEntry] = []
-            for batch in batches:
-                data = self._cipher.decrypt(
+        @gen
+        def run():
+            key = yield from self._encryption_key(identity)
+            decrypted = yield from for_each(
+                batches,
+                lambda batch: self._aead.decrypt(
                     key,
-                    batch.iv,
                     batch.encrypted_batch,
-                    _additional_data(store_id, batch.entry_ids),
-                )
-                entries = yield from S.decode_effect(_BATCH_CODEC)(data).or_die()
+                    nonce=batch.iv,
+                    aad=_additional_data(store_id, batch.entry_ids),
+                ),
+                concurrency="unbounded",
+            ).or_die()
+            result: list[RemoteEntry] = []
+            for batch, data in zip(batches, decrypted, strict=True):
+                entries = yield from _decode_batch(data).or_die()
                 if [entry.id for entry in entries] != list(batch.entry_ids):
-                    yield from die(ValueError("Encrypted batch entries do not match its entry ids"))
+                    return (
+                        yield from die(
+                            ValueError("Encrypted batch entries do not match its entry ids")
+                        )
+                    )
                 result.extend(
                     RemoteEntry(remote_sequence=batch.sequence + i, entry=entry)
                     for i, entry in enumerate(entries)
                 )
             return result
 
-        return gen(body)
+        return run
+
+    def sha256(self, data: bytes, /) -> Effect[bytes]:
+        return self._digest.digest(digest.sha256, data)
+
+    @property
+    def generate_identity(self) -> Effect[IdentityService]:
+        return self._random.uuid_v4().zip_with(
+            self._random.random_bytes(32),
+            lambda public_key, private_key: IdentityService(public_key, redacted(private_key)),
+        )
 
 
-def make_encryption_subtle(cipher: AesGcm | None = None) -> Effect[EventLogEncryptionService]:
-    """AES-GCM encryption with ``cipher``, by default the ``cryptography``
-    package (Effect's ``makeEncryptionSubtle``)."""
-    return sync(lambda: _AesGcmEncryption(cipher))
+@gen
+def _make():
+    aead_service = yield from aead.Aead()
+    digest_service = yield from digest.Digest()
+    random = yield from secure_random.SecureRandom()
+    service: EventLogEncryptionService = _Encryption(aead_service, digest_service, random)
+    return service
 
 
-layer_subtle: Layer[EventLogEncryption] = layer_effect(EventLogEncryption, sync(_AesGcmEncryption))
-"""The ``EventLogEncryption`` of ``make_encryption_subtle``."""
+make: Effect[
+    EventLogEncryptionService, Never, aead.Aead | digest.Digest | secure_random.SecureRandom
+] = _make
+"""An ``EventLogEncryptionService`` from the ``pyfect.crypto`` services. Each
+identity's AES-256-GCM key is derived from its root secret with ``Digest``
+and cached per identity; batches are encrypted with ``Aead`` under a random
+12-byte nonce from ``SecureRandom``, which also generates identities. A
+batch that fails authentication, or whose entries are not its entry ids, is
+a defect."""
+
+layer: Layer[EventLogEncryption, Never, aead.Aead | digest.Digest | secure_random.SecureRandom] = (
+    layer_effect(EventLogEncryption, make)
+)
+"""``EventLogEncryption`` from the ``Aead``, ``Digest`` and ``SecureRandom``
+services: choose the crypto layers yourself, such as ``pyfect.crypto.native``'s."""
+
+_layer_web_crypto: Layer[aead.Aead | digest.Digest | secure_random.SecureRandom] = merge(
+    aead.layer_web_crypto, digest.layer_web_crypto
+).pipe(provide_merge(secure_random.layer_web_crypto))
+
+
+def make_encryption_subtle(crypto: web.Crypto) -> Effect[EventLogEncryptionService]:
+    """``make`` on the Web Crypto layers of ``Aead``, ``Digest`` and
+    ``SecureRandom``, running on ``crypto``."""
+    # ``local`` keeps enclosing Web Crypto layers, built on another
+    # ``Crypto``, from being reused.
+    return make.pipe(
+        provide_layer(_layer_web_crypto.pipe(provide_layer(web.layer(crypto))), local=True)
+    )
+
+
+layer_subtle: Layer[EventLogEncryption] = layer.pipe(provide_layer(_layer_web_crypto))
+"""``EventLogEncryption`` on the Web Crypto layers of ``Aead``, ``Digest`` and
+``SecureRandom``, which run on the ``WebCrypto`` reference."""
 
 
 __all__ = [
-    "AesGcm",
     "EncryptedBatch",
     "EncryptedRemoteBatch",
     "EventLogEncryption",
     "EventLogEncryptionService",
+    "layer",
     "layer_subtle",
+    "make",
     "make_encryption_subtle",
     "remote_batch",
 ]

@@ -10,9 +10,10 @@ server-backed titles connect ``rpc`` ``make_no_serialization`` clients to one
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Generator, Sequence
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, replace
+from typing import Any, cast
 
 import pyfect as fx
 from pyfect import testing
@@ -27,10 +28,13 @@ from pyfect.eventlog._identity_derivation import make_get_identity_root_secret_m
 from pyfect.eventlog.event_journal import Entry, RemoteEntry, StoreId
 from pyfect.eventlog.event_log_encryption import EventLogEncryption, layer_subtle
 from pyfect.eventlog.event_log_remote import (
+    CompactionStage,
     EventLogRemoteClient,
+    EventLogRemoteCompaction,
     EventLogRemoteError,
     EventLogRemoteService,
     make_encrypted,
+    make_encrypted_with,
     make_unencrypted,
 )
 from pyfect.eventlog.event_log_server import ConnectionWrites
@@ -38,13 +42,17 @@ from pyfect.eventlog.event_log_session_auth import (
     SessionAuthPayload,
     verify_session_authenticate_request,
 )
+from pyfect.exit import fail as exit_fail
 from pyfect.option import Some
 from pyfect.queue import Dequeue
 from pyfect.rpc.client._core import ClientOptions
 from pyfect.rpc.client._core import make_no_serialization as make_rpc_client
-from pyfect.rpc.message import FromServer
+from pyfect.rpc.client_error import RpcClientError
+from pyfect.rpc.message import FromServer, ResponseExit
+from pyfect.rpc.message import Request as Request_
 from pyfect.rpc.server._core import RpcServer
 from pyfect.rpc.server._core import make_no_serialization as make_rpc_server
+from pyfect.socket import SocketCloseError
 from pyfect.stream import from_queue
 
 default_store_id = StoreId("default")
@@ -388,6 +396,42 @@ def test_write_wraps_authentication_failures_in_a_write_error():
     yield from _run(body)
 
 
+@testing.effect
+def test_make_encrypted_authenticates_existing_identity_with_bound_signing_key():
+    """makeEncrypted authenticates an existing identity with its bound signing key"""
+
+    def body():
+        harness = yield from make_harness(make_encrypted)
+        # Servers persist the first signing key seen for a public key, so the
+        # key derived from an existing identity must not change.
+        identity = L.decode_identity_string(
+            "eyJwdWJsaWNLZXkiOiJldmVudGxvZy1jb21wYXQiLCJwcml2YXRlS2V5IjoiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EeEFSRWhNVUZSWVhHQmthR3h3ZEhoOD0ifQ"
+        )
+        yield from harness.remote.write(
+            identity=identity, store_id=default_store_id, entries=[make_entry()]
+        ).fork_scoped()
+        auth = yield from harness.take
+        assert auth.tag == "EventLog.Authenticate"
+        payload: M.Authenticate = auth.request
+        assert payload.signing_public_key == bytes.fromhex(
+            "166a4b5a7f8c32a6517e2a37208bcb2d02926d4c49edda85134b80547234b090"
+        )
+        assert (
+            yield from verify_session_authenticate_request(
+                SessionAuthPayload(
+                    remote_id=remote_id,
+                    challenge=challenge,
+                    public_key=payload.public_key,
+                    signing_public_key=payload.signing_public_key,
+                ),
+                payload.signature,
+                payload.algorithm,
+            )
+        )
+
+    yield from _run(body)
+
+
 # --- server-backed: one RPC server shared by connections with distinct client ids ---
 
 
@@ -598,5 +642,225 @@ def test_acknowledges_each_occurrence_in_overlapping_encrypted_batches():
             "acks": list(acks),
             "next_for_writer": (yield from writer_changes.take()).entry.id_string,
         } == {"acks": _acks(delivered), "next_for_writer": marker.id_string}
+
+    yield from _run(body)
+
+
+# --- compaction: an encrypted server serving both RPC groups ---------------------------
+
+
+def _storage_without_compaction() -> fx.Effect[E.StorageService, Any, Any]:
+    """The memory storage without its compaction sub-service, like a
+    third-party storage that predates compaction."""
+
+    def strip(storage: E.StorageService) -> E.StorageService:
+        stripped = copy.copy(storage)
+        stripped.compaction = None
+        return stripped
+
+    return E.make_storage_memory.map(strip)
+
+
+@dataclass(frozen=True)
+class CompactionConnection:
+    remote: EventLogRemoteService
+    parts: list[M.ChunkedMessage]
+
+
+def make_compaction_server(
+    storage: fx.Layer[E.Storage, Any, Any] | None = None,
+) -> Generator[Any, Any, Callable[..., fx.Effect[CompactionConnection, Any, Any]]]:
+    storage_layer = storage or E.layer_storage_memory_with({"threshold_floor": 1})
+    handlers: Context[Any] = yield from E.layer_rpc_handlers.pipe(
+        fx.layer.provide(storage_layer)
+    ).build()
+    connections: dict[int, Callable[[FromServer], fx.Effect[None]]] = {}
+
+    def on_from_server(response: FromServer) -> fx.Effect[None]:
+        return connections[response.client_id](response)
+
+    server: RpcServer = yield from make_rpc_server(
+        E.EventLogEncryptedServerRpcs, on_from_server
+    ).pipe(fx.provide(handlers))
+    client_ids = iter(range(1_000))
+
+    # ``drop_part`` replaces the response to that Part request, counted from 0
+    # in send order, with the failure a closed socket gives it.
+    def connect(
+        identity: L.IdentityService, drop_part: int | None = None, compaction: bool = True
+    ) -> fx.Effect[CompactionConnection, Any, Any]:
+        def body() -> Generator[Any, Any, CompactionConnection]:
+            client_id = next(client_ids)
+            parts: list[M.ChunkedMessage] = []
+            dropped: list[Any] = []
+
+            def on_from_client(sent: Any) -> fx.Effect[None]:
+                message = sent.message
+                if isinstance(message, Request_) and message.tag == "EventLog.CompactionPart":
+                    payload = cast("M.CompactionPartPayload", message.payload)
+                    parts.append(payload["chunk"])
+                    if len(parts) - 1 == drop_part:
+                        dropped.append(message.id)
+                return server.write(client_id, message)
+
+            client, core = yield from make_rpc_client(
+                E.EventLogEncryptedServerRpcs, on_from_client, ClientOptions(supports_ack=True)
+            )
+
+            def deliver(response: FromServer) -> fx.Effect[None]:
+                if isinstance(response, ResponseExit) and response.request_id in dropped:
+                    closed = RpcClientError(reason=SocketCloseError(code=1006))
+                    return core.write(replace(response, exit=exit_fail(closed)))
+                return core.write(response)
+
+            connections[client_id] = deliver
+            remote: EventLogRemoteService = (
+                yield from make_encrypted_with(compaction=compaction)
+                .pipe(fx.provide_service(EventLogRemoteClient, client))
+                .pipe(fx.provide(L.layer_registry))
+            )
+            yield from remote.when_authenticated(fx.void).pipe(
+                fx.provide_service(L.Identity, identity)
+            )
+            return CompactionConnection(remote, parts)
+
+        return fx.gen(body)
+
+    return connect
+
+
+def _entry_fields(entry: Entry) -> tuple[str, str, str, bytes]:
+    return (entry.id_string, entry.event, entry.primary_key, entry.payload)
+
+
+def _begin_with(
+    writer: EventLogRemoteService, identity: L.IdentityService, entries: Sequence[Entry]
+) -> Generator[Any, Any, tuple[EventLogRemoteCompaction, CompactionStage, list[Entry]]]:
+    """Writes ``entries``, lets them pass the default 24 hour lag, opens a
+    stage and fetches its whole input."""
+    compaction = writer.compaction
+    assert compaction is not None, "expected the remote to support compaction"
+    yield from writer.write(identity=identity, store_id=default_store_id, entries=entries)
+    yield from testing.adjust("26 hours")
+    begun = yield from compaction.begin(identity=identity, store_id=default_store_id)
+    assert isinstance(begun, M.CompactionStarted), f"expected Started, got {begun!r}"
+    stage = CompactionStage(identity, default_store_id, begun.stage_id)
+    headers = yield from compaction.input(stage).run_collect()
+    fetched = yield from compaction.fetch(stage, [h.sequence for h in headers]).run_collect()
+    assert [r.entry.id_string for r in fetched] == [e.id_string for e in entries]
+    return compaction, stage, [r.entry for r in fetched]
+
+
+KB = 1024
+
+
+@testing.effect
+def test_compaction_is_absent_without_server_support():
+    """is absent when the server does not advertise compaction"""
+
+    def body():
+        connect = yield from make_compaction_server(
+            fx.layer.effect(E.Storage, _storage_without_compaction())
+        )
+        connection = yield from connect((yield from L.make_identity))
+        assert connection.remote.compaction is None
+
+    yield from _run(body)
+
+
+@testing.effect
+def test_make_encrypted_with_compaction_false_has_no_compaction():
+    """pyfect: makeEncryptedWith({ compaction: false }) leaves the remote
+    without compaction on a server that advertises it"""
+
+    def body():
+        connect = yield from make_compaction_server()
+        identity = yield from L.make_identity
+        assert (yield from connect(identity)).remote.compaction is not None
+        assert (yield from connect(identity, compaction=False)).remote.compaction is None
+
+    yield from _run(body)
+
+
+@testing.effect
+def test_uploads_kept_entries_in_segments():
+    """uploads kept entries in segments of about 512 KB, splitting an oversized one, with
+    their original bytes"""
+
+    def body():
+        connect = yield from make_compaction_server()
+        identity = yield from L.make_identity
+        writer = yield from connect(identity)
+        entries = [
+            make_entry(primary_key="dropped"),
+            make_entry(payload_size=200 * KB),
+            make_entry(payload_size=200 * KB),
+            make_entry(payload_size=200 * KB),
+            make_entry(payload_size=600 * KB),
+            make_entry(),
+        ]
+        compaction, stage, fetched = yield from _begin_with(writer.remote, identity, entries)
+        kept = fetched[1:]
+        segment_count = yield from compaction.upload(stage, kept)
+        committed = yield from compaction.commit(
+            stage, M.CompactionSnapshot(segment_count=segment_count)
+        )
+        reader = yield from connect(identity)
+        changes = yield from reader.remote.changes(
+            identity=identity,
+            store_id=default_store_id,
+            start_sequence=reader.remote.first_sequence or 0,
+        )
+        served = yield from changes.take_n(len(kept))
+
+        # Each 200 KB entry fills its own batch. Two of them fit in one
+        # segment, the 600 KB batch is a segment of its own split in two, and
+        # the last small batch doesn't fit after it.
+        pieces: dict[int, int] = {}
+        for part in writer.parts:
+            pieces[part.id] = pieces.get(part.id, 0) + 1
+        assert {
+            "segment_count": segment_count,
+            "pieces": sorted(pieces.items()),
+            "largest_piece": max(len(part.data) for part in writer.parts),
+            "committed": committed,
+        } == {
+            "segment_count": 4,
+            "pieces": [(0, 1), (1, 1), (2, 2), (3, 1)],
+            "largest_piece": M.ChunkedMessage.chunk_size,
+            "committed": "Committed",
+        }
+        assert [_entry_fields(r.entry) for r in served] == [_entry_fields(e) for e in entries[1:]]
+
+    yield from _run(body)
+
+
+@testing.effect
+def test_resends_whole_segment_after_dropped_connection():
+    """resends a whole segment after a dropped connection"""
+
+    def body():
+        connect = yield from make_compaction_server()
+        identity = yield from L.make_identity
+        # The response to the piece that completes the segment is lost.
+        writer = yield from connect(identity, drop_part=1)
+        compaction, stage, fetched = yield from _begin_with(
+            writer.remote,
+            identity,
+            [make_entry(primary_key="dropped"), make_entry(payload_size=600 * KB)],
+        )
+        segment_count = yield from compaction.upload(stage, fetched[1:])
+        committed = yield from compaction.commit(
+            stage, M.CompactionSnapshot(segment_count=segment_count)
+        )
+        assert {
+            "segment_count": segment_count,
+            "pieces": sorted(f"{p.id}:{p.part[0]}/{p.part[1]}" for p in writer.parts),
+            "committed": committed,
+        } == {
+            "segment_count": 1,
+            "pieces": ["0:0/2", "0:0/2", "0:1/2", "0:1/2"],
+            "committed": "Committed",
+        }
 
     yield from _run(body)

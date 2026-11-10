@@ -16,12 +16,13 @@ entry per remote is migrated in one transaction when opened.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any, Literal, Never, cast
+from typing import Any, Literal, LiteralString, Never, cast
 
+from pyfect._concurrency import for_each
 from pyfect._core import Effect, Restore, uninterruptible_mask
 from pyfect.clock import Clock, ClockService
 from pyfect.effect import die, gen, succeed
-from pyfect.eventlog._conflicts import ConflictIndex
+from pyfect.eventlog._conflicts import ConflictGroup, ConflictIndex
 from pyfect.eventlog.event_journal import (
     Compact,
     Entry,
@@ -332,6 +333,23 @@ def _open_schema(sql: SqlClientService, dialect: _Dialect, t: _Tables) -> Effect
     return gen(body)
 
 
+# Statements bind at most this many parameters: Cloudflare Durable Object
+# SQLite's per-statement limit, the lowest of the supported databases.
+_MAX_PARAMETERS = 100
+
+
+def _for_each_chunk[A, B, E](
+    values: Sequence[A],
+    parameters_per_value: int,
+    f: Callable[[list[A]], Effect[list[B], E]],
+) -> Effect[list[B], E]:
+    """``f`` in order over chunks of ``values`` binding at most
+    ``_MAX_PARAMETERS`` parameters each, the rows concatenated."""
+    size = _MAX_PARAMETERS // parameters_per_value
+    chunks = [list(values[i : i + size]) for i in range(0, len(values), size)]
+    return for_each(chunks, f).map(lambda rows: [row for chunk in rows for row in chunk])
+
+
 class _SqlJournal(EventJournalService):
     def __init__(
         self,
@@ -360,11 +378,15 @@ class _SqlJournal(EventJournalService):
         return succeed(None)
 
     def _insert(self, table: object, rows: list[dict[str, object]]) -> Effect[object, SqlError]:
-        """Insert ``rows`` (none is nothing to do: ``sql.insert`` needs one)."""
-        if not rows:
-            return succeed(None)
+        """Insert ``rows`` in statements within the parameter limit (none is
+        nothing to do: ``sql.insert`` needs one)."""
         sql = self._sql
-        return sql("INSERT INTO {} {} ON CONFLICT DO NOTHING", table, sql.insert(rows))
+        columns = len(rows[0]) if rows else 1
+        return _for_each_chunk(
+            rows,
+            columns,
+            lambda chunk: sql("INSERT INTO {} {} ON CONFLICT DO NOTHING", table, sql.insert(chunk)),
+        )
 
     def _insert_entries(self, entries: Sequence[Entry]) -> Effect[object, SqlError]:
         return self._insert(self._t.entries, [_to_entry_row(entry) for entry in entries])
@@ -379,6 +401,18 @@ class _SqlJournal(EventJournalService):
             {"entry_id": entry.id, "remote_id": remote_id} for entry in entries
         ]
         return self._insert(self._t.sources, rows)
+
+    def _select_by_id(
+        self, columns: LiteralString, ids: Sequence[bytes]
+    ) -> Effect[list[Row], SqlError]:
+        sql = self._sql
+        return _for_each_chunk(
+            ids,
+            1,
+            lambda chunk: sql(
+                f"SELECT {columns} FROM {{}} WHERE {{}}", self._t.entries, sql.in_("id", chunk)
+            ),
+        )
 
     def _read_cursor(self, remote_id: RemoteId) -> Effect[int, SqlError]:
         return self._sql(
@@ -408,15 +442,41 @@ class _SqlJournal(EventJournalService):
             self._t.entries,
         ).map(lambda rows: [EntryId(column_bytes(row["id"])) for row in rows])
 
-    def _conflicts(self, index: ConflictIndex, primary_keys: list[str]) -> Fragment:
+    def _conflicts(self, index: ConflictIndex) -> Effect[list[Entry], SqlError]:
+        """The stored entries of the batch's groups, each once, in statements
+        within the parameter limit."""
+        # Each group binds its event and key, twice on PostgreSQL, and one
+        # parameter is left for the timestamp.
+        per_chunk = (_MAX_PARAMETERS - 1) // (4 if self._dialect == "pg" else 2)
+        groups = list(index.groups())
+        chunks = [groups[i : i + per_chunk] for i in range(0, len(groups), per_chunk)]
+
+        def unique(rows: list[list[Row]]) -> list[Entry]:
+            # Chunks can share an event and a key, so a row can come twice.
+            seen: set[bytes] = set()
+            entries: list[Entry] = []
+            for row in (row for chunk in rows for row in chunk):
+                found = _to_entry(row)
+                if found.id not in seen:
+                    seen.add(found.id)
+                    entries.append(found)
+            return entries
+
+        return for_each(chunks, lambda chunk: self._conflicts_of(index, chunk)).map(unique)
+
+    def _conflicts_of(
+        self, index: ConflictIndex, groups: list[ConflictGroup]
+    ) -> Effect[list[Row], SqlError]:
         sql = self._sql
+        events = list(dict.fromkeys(group.event for group in groups))
+        primary_keys = list(dict.fromkeys(group.primary_key for group in groups))
         clauses: list[Fragment] = []
         if self._dialect == "pg":
             # Match the hash index; the exact predicates rule out collisions.
             clauses.append(
                 sql(
                     "md5(event) IN ({})",
-                    sql.csv([sql("md5({})", event) for event in index.events]),
+                    sql.csv([sql("md5({})", event) for event in events]),
                 )
             )
             clauses.append(
@@ -425,11 +485,11 @@ class _SqlJournal(EventJournalService):
                     sql.csv([sql("md5({})", key) for key in primary_keys]),
                 )
             )
-        clauses.append(sql.in_("event", index.events))
+        clauses.append(sql.in_("event", events))
         clauses.append(sql.in_("primary_key", primary_keys))
         # A coarse filter: the index compares ids exactly.
         clauses.append(sql("timestamp >= {}", index.oldest_millis))
-        return sql.and_(clauses)
+        return sql("SELECT * FROM {} WHERE {}", self._t.entries, sql.and_(clauses))
 
     # --- the service ----------------------------------------------------------------
 
@@ -445,16 +505,12 @@ class _SqlJournal(EventJournalService):
     def entries_by_id(
         self, ids: Sequence[EntryId], /
     ) -> Effect[list[Entry | None], EventJournalError]:
-        if not ids:
-            return succeed([])
-        sql = self._sql
-
         def pick(rows: list[Row]) -> list[Entry | None]:
             by_id = {entry.id: entry for entry in map(_to_entry, rows)}
             return [by_id.get(entry_id) for entry_id in ids]
 
         return (
-            sql("SELECT * FROM {} WHERE {}", self._t.entries, sql.in_("id", list(ids)))
+            self._select_by_id("*", ids)
             .with_tracer_enabled(False)
             .map(pick)
             .map_error(_journal_error("entriesById"))
@@ -502,19 +558,12 @@ class _SqlJournal(EventJournalService):
         effect: ReplayBatch,
         compact: Compact | None,
     ) -> Effect[list[Entry], Any]:
-        sql = self._sql
-        t = self._t
-
         def body():
             yield from self._lock_writers
-            existing: set[bytes] = set()
-            if remote_entries:
-                rows = yield from sql(
-                    "SELECT id FROM {} WHERE {}",
-                    t.entries,
-                    sql.in_("id", [remote_entry.entry.id for remote_entry in remote_entries]),
-                )
-                existing.update(column_bytes(row["id"]) for row in rows)
+            rows = yield from self._select_by_id(
+                "id", [remote_entry.entry.id for remote_entry in remote_entries]
+            )
+            existing = {column_bytes(row["id"]) for row in rows}
             # Overlapping batches can repeat an entry; the first copy wins.
             incoming: set[bytes] = set()
             uncommitted: list[RemoteEntry] = []
@@ -536,12 +585,8 @@ class _SqlJournal(EventJournalService):
             )
             if compacted:
                 index = ConflictIndex(compacted)
-                primary_keys = list(dict.fromkeys(entry.primary_key for entry in compacted))
-                stored = yield from sql(
-                    "SELECT * FROM {} WHERE {}", t.entries, self._conflicts(index, primary_keys)
-                )
-                for row in stored:
-                    index.add(_to_entry(row))
+                for stored in (yield from self._conflicts(index)):
+                    index.add(stored)
                 yield from effect(index.to_batch())
             # Keep the incoming batch out of conflict queries and persist only
             # after compaction and every callback have succeeded.

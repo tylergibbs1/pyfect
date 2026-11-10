@@ -3,6 +3,7 @@ on ``redis_py`` (Effect's ``NodeRedis``), against the throwaway Redis
 server of ``_redis`` (skipped without one), emptied before each test:
 
 - the ``persistence/PersistedCacheTest.ts`` suite on ``persistence.layer_redis``,
+- the ``BackingPersistenceTest`` suite on ``persistence.layer_backing_redis``,
 - the ``RateLimiterTest`` suite on ``rate_limiter.layer_store_redis``,
 - the ``CircuitBreakerTest`` suite on ``circuit_breaker.layer_store_redis``
   (on live time: the store reads Redis ``TIME``),
@@ -48,6 +49,7 @@ from pyfect.persistence.redis import (
 from pyfect.queue import Dequeue
 from pyfect.scope import Scope
 
+from . import _backing_persistence_suite as backing_suite
 from . import _circuit_breaker_suite as cb_suite
 from . import _persisted_cache_suite as cache_suite
 from . import _rate_limiter_suite as rl_suite
@@ -66,6 +68,16 @@ def _flushed() -> None:
 
 def _redis_layer() -> fx.Layer[Redis | redis_py.RedisPy, RedisError]:
     return redis_py.layer(_redis.server().url)
+
+
+# --- BackingPersistence (NodeRedis) ---------------------------------------------------
+
+
+@pytest.mark.parametrize(("title", "body"), backing_suite.SUITE, ids=backing_suite.IDS)
+def test_backing_persistence_redis(title: str, body: backing_suite.Body) -> None:
+    """BackingPersistence (NodeRedis) / ${title}"""
+    layer = persistence.layer_backing_redis.pipe(fx.provide(_redis_layer()))
+    testing.run_test(fx.scoped(fx.gen(body)).pipe(fx.provide(layer)).or_die())
 
 
 # --- PersistedCache (NodeRedis) -------------------------------------------------------
@@ -399,7 +411,7 @@ def test_does_not_restore_capacity_early_after_a_fractional_token_cost() -> None
     def body():
         redis = yield from Redis()
         store = yield from rl.RateLimiterStore()
-        memory = rl.make_store_memory()
+        memory = yield from rl.make_memory_store
         opts: dict[str, Any] = {
             "key": "fractional-cost-expiry",
             "limit": 5,

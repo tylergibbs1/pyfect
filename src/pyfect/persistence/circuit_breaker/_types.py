@@ -110,6 +110,15 @@ def failure(*, retry_after: Duration | None = None) -> Outcome:
     return FailureOutcome(None if retry_after is None else to_seconds(retry_after))
 
 
+@dataclass(frozen=True, slots=True)
+class ClassifyContext:
+    """What ``classify`` learns beside the exit: ``probe`` is ``True`` for
+    the half-open probe, so an outcome ignored while closed (a rate-limited
+    response, say) can count as a failure that reopens the circuit."""
+
+    probe: bool
+
+
 # --- states ---------------------------------------------------------------------------
 
 

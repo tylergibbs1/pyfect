@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
-from typing import Any, Never, cast
+from typing import Any, Never, TypedDict, cast
 
 import pyfect as fx
 from pyfect import exit as Exit
@@ -43,7 +43,7 @@ from pyfect.cluster.cluster_error import (
     RunnerUnavailable,
 )
 from pyfect.cluster.cluster_schema import Persisted
-from pyfect.cluster.entity import Entity, EntityOptions
+from pyfect.cluster.entity import Entity, EntityOptions, Request
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.envelope import Interrupt as EnvelopeInterrupt
@@ -151,6 +151,42 @@ def test_routes_durable_interrupts_through_storage():
         assert state.interrupts.size_unsafe() == 1
 
     yield from body.pipe(fx.provide(test_sharding))
+
+
+class DiePayload(TypedDict):
+    die: bool
+
+
+class DefectingBox(Entity, type="DefectingBox"):
+    send = make_rpc("Send", payload=S.Struct(DiePayload), success=S.String).annotate(
+        Persisted, True
+    )
+
+
+@testing.effect
+def test_interrupting_a_request_that_keeps_defecting_does_not_stall_other_entities():
+    """interrupting a request that keeps defecting does not stall other entities"""
+
+    def send(request: Request[DiePayload]) -> fx.Effect[str]:
+        return fx.die(RuntimeError("boom")) if request.payload["die"] else fx.succeed("ok")
+
+    layer = DefectingBox.to_layer(DefectingBox.handlers().handle(DefectingBox.send)(send)).pipe(
+        fx.layer.provide_merge(test_sharding)
+    )
+
+    @fx.gen
+    def body():
+        yield from testing.adjust("1 millis")
+        client = yield from DefectingBox.client()
+        dying = yield from client("a").send({"die": True}).fork(start_immediately=True)
+        yield from testing.adjust("1 second")
+        yield from dying.interrupt()
+
+        healthy = yield from client("b").send({"die": False}).fork(start_immediately=True)
+        yield from testing.adjust("1 second")
+        assert healthy.poll_unsafe() == Exit.succeed("ok")
+
+    yield from body.pipe(fx.provide(layer))
 
 
 @testing.effect

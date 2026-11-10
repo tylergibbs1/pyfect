@@ -4,7 +4,8 @@ for its ``PersistedQueue`` suites (another module's): the
 ``layer_backing_sql_multi_table`` (``Persistence (table-per-store)``) and
 ``layer_backing_sql`` (``Persistence (single-table)``), and
 ``Persistence SQL cleanup``, over a SQLite database in a temporary
-directory.
+directory; then the ``BackingPersistenceTest`` suite
+(``_backing_persistence_suite``) on both layers.
 
 Each test's docstring is the Effect test title; the two suites are the
 ``layer`` parameters.
@@ -20,6 +21,7 @@ from pyfect import testing
 from pyfect.persistence import persistence
 from pyfect.sql import sqlite
 
+from . import _backing_persistence_suite as backing_persistence_suite
 from . import _backing_suite as suite
 
 _PROBES = {
@@ -132,3 +134,14 @@ def test_deletes_expired_entries_in_batches(tmp_path: Path) -> None:
         "WHERE type = 'index' AND name = 'effect_persistence_expires_idx'"
     )
     testing.run_test(fx.scoped(fx.gen(body)).pipe(fx.provide(_client(tmp_path))))
+
+
+@_LAYERS
+@pytest.mark.parametrize(
+    ("title", "body"), backing_persistence_suite.SUITE, ids=backing_persistence_suite.IDS
+)
+def test_backing_persistence(
+    tmp_path: Path, layer: fx.Layer[Any, Any, Any], title: str, body: suite.Body
+) -> None:
+    """BackingPersistence (sqlite) / ${title}"""
+    _run(tmp_path, layer, body)

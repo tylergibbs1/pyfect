@@ -1,17 +1,21 @@
-"""``layer_store_memory``: counters in process memory."""
+"""``layer_store_memory``: counters in process memory, each dropped once it
+expires (its state then the same as a key never seen), by a sweep every
+minute for keys left idle."""
 
 from __future__ import annotations
 
 import math
+from collections.abc import Generator
 from dataclasses import dataclass
+from typing import Any, Final, Never
 
 from pyfect import _js as js
 from pyfect._core import Effect
 from pyfect.clock import ClockService, clock_with
 from pyfect.duration import ZERO, Seconds, to_millis
-from pyfect.effect import sync
+from pyfect.effect import gen, sync
 from pyfect.layer import Layer
-from pyfect.layer import sync as layer_sync
+from pyfect.layer import effect as layer_effect
 from pyfect.persistence._seconds import millis
 from pyfect.persistence.persistence._service import now_millis
 from pyfect.persistence.rate_limiter._errors import RateLimiterError
@@ -20,9 +24,12 @@ from pyfect.persistence.rate_limiter._store import (
     AdaptiveConsumeResult,
     AdaptivePhase,
     RateLimiterStore,
-    RateLimiterStoreService,
     clamp_adaptive_millis,
 )
+from pyfect.schedule import spaced
+from pyfect.scope import Scope
+
+_SWEEP_INTERVAL: Final = Seconds(60)
 
 
 @dataclass(slots=True)
@@ -35,6 +42,7 @@ class _Counter:
 class _Bucket:
     tokens: float
     last_refill: float
+    expires_at: float
 
 
 @dataclass(slots=True)
@@ -77,7 +85,7 @@ class MemoryRateLimiterStore:
             if counter is None or counter.expires_at <= now:
                 counter = _Counter(0, now)
                 self._counters[key] = counter
-            if limit and counter.count + tokens > limit:
+            if limit is not None and counter.count + tokens > limit:
                 return counter.count + tokens, counter.expires_at - now
             counter.count += tokens
             counter.expires_at += refill_rate_millis * tokens
@@ -97,8 +105,8 @@ class MemoryRateLimiterStore:
         def run(clock: ClockService) -> tuple[float, float]:
             now = now_millis(clock)
             bucket = self._buckets.get(key)
-            if bucket is None:
-                bucket = _Bucket(limit, now)
+            if bucket is None or bucket.expires_at <= now:
+                bucket = _Bucket(limit, now, now)
                 self._buckets[key] = bucket
             to_add = js.floor(js.divide(now - bucket.last_refill, refill_rate_millis))
             if to_add > 0:
@@ -109,6 +117,10 @@ class MemoryRateLimiterStore:
             new_count = bucket.tokens - tokens
             if allow_overflow or new_count >= 0:
                 bucket.tokens = new_count
+            # Once refilled to ``limit`` it is the same as a fresh bucket.
+            bucket.expires_at = (
+                bucket.last_refill + js.ceil(limit - bucket.tokens) * refill_rate_millis
+            )
             return new_count, max(0, now - bucket.last_refill)
 
         return clock_with(lambda clock: sync(lambda: run(clock)))
@@ -207,11 +219,33 @@ class MemoryRateLimiterStore:
 
         return clock_with(lambda clock: sync(lambda: run(clock)))
 
+    def sweep(self, now: float) -> None:
+        """Drop every entry expired at ``now``."""
+        entries: list[dict[str, _Counter] | dict[str, _Bucket] | dict[str, _Adaptive]] = [
+            self._counters,
+            self._buckets,
+            self._adaptive,
+        ]
+        for entries_by_key in entries:
+            for key in [k for k, entry in entries_by_key.items() if entry.expires_at <= now]:
+                del entries_by_key[key]
 
-def make_store_memory() -> RateLimiterStoreService:
-    """A store in memory."""
-    return MemoryRateLimiterStore()
+    @property
+    def size(self) -> int:
+        """How many keys hold state."""
+        return len(self._counters) + len(self._buckets) + len(self._adaptive)
 
 
-layer_store_memory: Layer[RateLimiterStore] = layer_sync(RateLimiterStore, make_store_memory)
+def _make() -> Generator[Effect[Any, Never, Scope], Any, MemoryRateLimiterStore]:
+    store = MemoryRateLimiterStore()
+    sweep = clock_with(lambda clock: sync(lambda: store.sweep(now_millis(clock))))
+    yield from sweep.repeat(spaced(_SWEEP_INTERVAL)).fork_scoped()
+    return store
+
+
+make_memory_store: Effect[MemoryRateLimiterStore, Never, Scope] = gen(_make)
+"""A store in memory whose expired keys a fiber in the scope sweeps away
+every minute; its ``size`` counts the keys holding state."""
+
+layer_store_memory: Layer[RateLimiterStore] = layer_effect(RateLimiterStore, make_memory_store)
 """Counters in memory, fresh each time the layer is built."""

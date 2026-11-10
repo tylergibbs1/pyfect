@@ -829,6 +829,7 @@ crypto = [
 ]
 eventlog = [
     { name = "cryptography" },
+    { name = "pynacl" },
 ]
 http2 = [
     { name = "hypercorn" },
@@ -904,6 +905,7 @@ requires-dist = [
     { name = "psycopg", marker = "extra == 'pg'", specifier = ">=3.3" },
     { name = "pydantic", marker = "extra == 'pydantic'", specifier = ">=2.11" },
     { name = "pynacl", marker = "extra == 'crypto'", specifier = ">=1.6" },
+    { name = "pynacl", marker = "extra == 'eventlog'", specifier = ">=1.6" },
     { name = "pyopenssl", marker = "extra == 'mssql'", specifier = ">=25" },
     { name = "python-tds", marker = "extra == 'mssql'", specifier = ">=1.17" },
     { name = "redis", marker = "extra == 'redis'", specifier = ">=8.1" },

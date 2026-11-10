@@ -10,6 +10,7 @@ import builtins
 from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from math import ceil
 from typing import Any, Literal, Never, cast
 
@@ -136,12 +137,31 @@ def ensure_success[A](effect: Effect[A, Any, Any]) -> Effect[A, Never, Any]:
     )
 
 
-def _retry_persistence[A](effect: Effect[A, Any, Any]) -> Effect[A, Never, Any]:
-    return effect.retry(
-        times=3,
-        schedule=exponential("250 millis"),
-        while_=lambda e: isinstance(e, PersistenceError),
-    ).or_die()
+def _retry_lookup[A](make: Callable[[], Effect[A, Any, Any]]) -> Effect[A, Never, Any]:
+    """Retry a storage read a few times on ``PersistenceError``, then die.
+    Each attempt calls ``make`` again, so storage is asked anew."""
+    return (
+        suspend(make)
+        .retry(
+            times=3,
+            schedule=exponential("250 millis"),
+            while_=lambda e: isinstance(e, PersistenceError),
+        )
+        .or_die()
+    )
+
+
+def _retry_persistence[A](make: Callable[[], Effect[A, Any, Any]]) -> Effect[A, Never, Any]:
+    """Retry while ``PersistenceError``: a transient storage failure must not
+    become the workflow result. Each attempt calls ``make`` again, so storage
+    is asked anew. Activity, clock and deferred requests are saved under a
+    primary key, so a retry after a lost acknowledgement is deduplicated
+    instead of stored twice."""
+    return (
+        suspend(make)
+        .retry(schedule=_retry_policy, while_=lambda e: isinstance(e, PersistenceError))
+        .or_die()
+    )
 
 
 def _is_suspended_reply(reply: ReplyEncoded) -> bool:
@@ -156,6 +176,9 @@ def _is_failed_reply(reply: ReplyEncoded) -> bool:
 _decode_deferred_with_exit = decode_unknown_sync(
     to_codec_json(with_exit_schema(exit_schema(DeferredRpc)))
 )
+
+
+_decode_deferred_payload = decode_unknown_sync(to_codec_json(DeferredPayload))
 
 
 def _deferred_exit(reply: ReplyEncoded) -> Exit[Any, Any]:
@@ -331,6 +354,13 @@ class ClusterEngine:
 
         return self.storage.replies_for_unfiltered([request_id]).map(last)
 
+    def reset_reply(self, reply: ReplyEncoded) -> Effect[bool]:
+        """Reset ``reply``'s request, only while ``reply`` is still its
+        latest: a newer reply another runner stored is kept."""
+        return self.sharding.reset(
+            Snowflake(int(reply["requestId"])), expected_reply_id=Snowflake(int(reply["id"]))
+        )
+
     def request_reply(
         self, workflow: AnyWorkflow, entity_type: str, execution_id: str, tag: str, id: str
     ) -> Effect[ReplyEncoded | None, Any]:
@@ -363,7 +393,13 @@ class ClusterEngine:
             )
             if request_id is None:
                 return
-            yield from self.sharding.reset(request_id)
+            # Reset only the Suspended reply this runner saw. If another runner
+            # has stored a newer reply, storage skips the reset and the caller
+            # reads it.
+            reply = yield from self.reply_for_request_id(request_id)
+            if reply is None or not _is_suspended_reply(reply):
+                return
+            yield from self.reset_reply(reply)
 
         return gen(body).retry(times=3, schedule=exponential("250 millis")).or_die()
 
@@ -379,10 +415,7 @@ class ClusterEngine:
             # Replies without ``failed`` retain automatic wakes for compatibility.
             if mode == "automatic" and _is_failed_reply(reply):
                 return
-            reset = yield from self.sharding.reset(
-                Snowflake(int(reply["requestId"])),
-                expected_reply_id=Snowflake(int(reply["id"])),
-            )
+            reset = yield from self.reset_reply(reply)
             if not reset:
                 return (yield from fail(RuntimeError("Failed to reset workflow run")))
             yield from self.sharding.poll_storage
@@ -423,7 +456,7 @@ class ClusterEngine:
             reply = yield from self.reply_for_request_id(request_id)
             if reply is None:
                 return
-            yield from self.sharding.reset(request_id)
+            yield from self.reset_reply(reply)
 
         return scoped(gen(body))
 
@@ -523,7 +556,7 @@ class ClusterEngine:
             )
             return request_id
 
-        return _retry_persistence(gen(body))
+        return _retry_lookup(lambda: gen(body))
 
     def interrupt_unsafe(self, workflow: AnyWorkflow, execution_id: str) -> Effect[None]:
         def body() -> Generator[Effect[Any, Any, Any], Any]:
@@ -683,13 +716,15 @@ class ClusterEngine:
             # must not run new activities. Finalizers run once ``interrupted``
             # is set.
             if not instance.interrupted and (yield from self.interrupt_pending(instance)):
-                reply = yield from self.request_reply(
-                    instance.workflow,
-                    f"Workflow/{instance.workflow.tag}",
-                    instance.execution_id,
-                    "activity",
-                    activity_primary_key(activity.name, attempt),
-                ).or_die()
+                reply = yield from _retry_persistence(
+                    lambda: self.request_reply(
+                        instance.workflow,
+                        f"Workflow/{instance.workflow.tag}",
+                        instance.execution_id,
+                        "activity",
+                        activity_primary_key(activity.name, attempt),
+                    )
+                )
                 # Suspend so ``on_exit`` applies the interrupt to the run.
                 if reply is None or _is_suspended_reply(reply):
                     return Suspended()
@@ -698,14 +733,14 @@ class ClusterEngine:
             while True:
                 if activity_id not in self.activities:
                     self.activities[activity_id] = _ActivityEntry(activity, services)
-                call: Effect[Result[Any, Any], Any] = client.activity(
-                    ActivityPayload(
-                        name=activity.name,
-                        attempt=attempt,
-                        withTransaction=activity.annotations.get(WithTransaction),
-                    )
+                payload = ActivityPayload(
+                    name=activity.name,
+                    attempt=attempt,
+                    withTransaction=activity.annotations.get(WithTransaction),
                 )
-                result = yield from call.or_die()
+                result: Result[Any, Any] = yield from _retry_persistence(
+                    partial(client.activity, payload)
+                )
                 # If the activity has suspended and did not execute, resume it
                 # by resetting the attempt and executing it again.
                 if isinstance(result, Suspended) and (
@@ -736,18 +771,30 @@ class ClusterEngine:
                 found = state.results.get(deferred.name)
                 if found is not None:
                     return found
-            reply = yield from self.request_reply(
+            request_id = yield from self.request_id_for(
                 instance.workflow,
                 f"Workflow/{instance.workflow.tag}",
                 instance.execution_id,
                 "deferred",
                 deferred.name,
             )
+            if request_id is None:
+                return None
+            reply = yield from self.reply_for_request_id(request_id)
+            if reply is not None:
+                return _deferred_exit(reply)
+            # The first completion saved under the deferred name wins, so a
+            # request the owner has not processed yet already holds the result.
+            requests = yield from self.storage.unprocessed_messages_by_id([request_id])
+            if requests and isinstance(requests[0].envelope, EnvelopeRequest):
+                return _decode_deferred_payload(requests[0].envelope.payload).exit
+            # It was processed after the first read, so its reply is stored now.
+            reply = yield from self.reply_for_request_id(request_id)
             return None if reply is None else _deferred_exit(reply)
 
         return cast(
             "Effect[Exit[Any, Any] | None, Never, WorkflowInstance]",
-            _retry_persistence(gen(body)),
+            _retry_lookup(lambda: gen(body)),
         )
 
     def deferred_done(
@@ -770,9 +817,15 @@ class ClusterEngine:
                 address = self.entity_address_for(
                     workflow, f"Workflow/{workflow_name}", execution_id
                 )
-                return (yield from self.send_discard(DeferredRpc, address, payload).or_die())
+                return (
+                    yield from _retry_persistence(
+                        lambda: self.send_discard(DeferredRpc, address, payload)
+                    )
+                )
             make_client = yield from self.clients_partial.get(workflow_name)
-            yield from make_client(execution_id).deferred.discard(payload).or_die()
+            yield from _retry_persistence(
+                lambda: make_client(execution_id).deferred.discard(payload)
+            )
 
         return scoped(gen(body))
 
@@ -786,7 +839,8 @@ class ClusterEngine:
             address = self.entity_address_for(workflow, ClockEntity.type, execution_id)
             return self.send_discard(ClockRpc, address, payload)
 
-        return now().flat_map(send).or_die()
+        # The deadline is computed once, so a retried save keeps the original wake-up.
+        return now().flat_map(lambda at: _retry_persistence(lambda: send(at)))
 
 
 class _Handlers:
@@ -882,16 +936,19 @@ class _Handlers:
             )
             if instance.abandoned:
                 instance.suspended = False
+            # Abandoned runs never wake the parent; another owner replays them.
+            resume_parent: Effect[None] = (
+                ensure_success(engine.send_resume_parent(parent, execution_id))
+                if parent is not None
+                and not parent.get("detached", False)
+                and not instance.abandoned
+                else void
+            )
             if (
                 not instance.suspended
                 and not instance.abandoned
                 and not (suspend_on_failure and isinstance(exit, Failure))
             ):
-                resume_parent: Effect[None] = (
-                    ensure_success(engine.send_resume_parent(parent, execution_id))
-                    if parent is not None and not parent.get("detached", False)
-                    else void
-                )
                 if isinstance(exit, Success) or not exit.cause.has_interrupts_only:
                     return resume_parent
 
@@ -912,9 +969,11 @@ class _Handlers:
                     return void
                 instance.suspended = False
                 instance.interrupted = True
+                # The interrupt completes the run, so wake the parent to observe it.
                 return (
                     engine.clear_clock(workflow, execution_id)
                     .ignore()
+                    .and_then(resume_parent)
                     .and_then(_WithFiber(lambda fiber: fiber.interrupt().interruptible()))
                 )
 

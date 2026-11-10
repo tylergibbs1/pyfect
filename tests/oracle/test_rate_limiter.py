@@ -11,6 +11,7 @@ milliseconds (``to_millis``).
 
 from __future__ import annotations
 
+import math
 from collections.abc import Generator
 from typing import Any, Literal
 
@@ -583,5 +584,79 @@ def test_bounds_learned_adaptive_windows_and_expires_the_bounded_state() -> None
         yield from testing.adjust(Seconds(61 * 60))
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (ZERO, 0, "inactive")
+
+    _run(body)
+
+
+@pytest.mark.parametrize("algorithm", ["fixed-window", "token-bucket"])
+def test_rejects_positive_token_requests_with_a_zero_limit(algorithm: Algorithm) -> None:
+    """${algorithm}: oversized requests / rejects positive token requests with a zero limit"""
+
+    def body():
+        limiter = yield from rl.make
+        options: dict[str, Any] = {
+            "algorithm": algorithm,
+            "key": "zero-limit",
+            "limit": 0,
+            "window": "1 minute",
+        }
+        error = yield from limiter.consume(**options, on_exceeded="fail").flip()
+        assert isinstance(error.reason, rl.RateLimitExceeded), "Expected RateLimitExceeded"
+        assert error.reason.remaining == 0
+
+        result = yield from limiter.consume(**options, on_exceeded="delay")
+        assert result.delay == math.inf
+        assert result.reset_after == math.inf
+
+        query = yield from limiter.consume(**options, on_exceeded="delay", tokens=0)
+        assert query.delay == ZERO
+        assert query.reset_after == ZERO
+
+    _run(body)
+
+
+# --- memory store retention -----------------------------------------------------------
+
+
+def test_keeps_state_until_it_expires_then_reclaims_it_while_idle() -> None:
+    """memory store retention / keeps state until it expires, then reclaims it while idle"""
+
+    def body() -> Generator[Any, Any]:
+        memory = yield from rl.make_memory_store
+        limiter = yield from rl.make.pipe(fx.provide_service(rl.RateLimiterStore, memory))
+        # One token of delay-mode debt: fully refilled after three minutes.
+        yield from limiter.consume(
+            algorithm="token-bucket",
+            on_exceeded="delay",
+            key="bucket",
+            limit=2,
+            window="2 minutes",
+            tokens=3,
+        )
+
+        yield from testing.adjust("2 minutes")
+        assert memory.size == 1
+
+        yield from testing.adjust("2 minutes")
+        assert memory.size == 0
+
+    testing.run_test(fx.scoped(fx.gen(body)))
+
+
+def test_starts_an_expired_token_bucket_fresh_before_the_next_sweep() -> None:
+    """memory store retention / starts an expired token bucket fresh before the next sweep"""
+
+    def body():
+        limiter = yield from rl.make
+        yield from limiter.consume(
+            algorithm="token-bucket", key="bucket", limit=1, window="1 second"
+        )
+
+        # Past the bucket's expiry, before any sweep: a new configuration starts fresh.
+        yield from testing.adjust("2 seconds")
+        result = yield from limiter.consume(
+            algorithm="token-bucket", key="bucket", limit=1, window="1 hour"
+        )
+        assert result.remaining == 0
 
     _run(body)

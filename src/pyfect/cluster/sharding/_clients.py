@@ -152,10 +152,18 @@ class Clients:
                     respond=_respond_discard if sent.discard else respond,
                     annotations=dynamic_annotations(rpc, envelope),
                 )
-                if not sent.discard:
-                    entry = ClientRequestEntry(rpc, fiber._context, outgoing)
-                    state.client_requests[request_id] = entry
-                return routing.send_outgoing(outgoing, sent.discard)
+                if sent.discard:
+                    return routing.send_outgoing(outgoing, True)
+                entry = ClientRequestEntry(rpc, fiber._context, outgoing)
+                state.client_requests[request_id] = entry
+
+                # A failed send leaves no reply or interrupt to release the
+                # entry. Only drop the local bookkeeping, as the request may
+                # have been persisted.
+                def forget(_: object) -> Effect[None]:
+                    return sync(lambda: state.client_requests.pop(request_id, None)).as_void()
+
+                return routing.send_outgoing(outgoing, False).tap_error(forget)
 
             return _WithFiber(body)
         if isinstance(message, rpc_message.Ack):

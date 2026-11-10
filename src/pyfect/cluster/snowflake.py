@@ -67,8 +67,9 @@ def to_parts(snowflake: Snowflake) -> Parts:
 
 class SnowflakeGenerator:
     """Makes unique snowflakes for one machine. Within a millisecond the
-    sequence counts up; after 4096 the generator moves on a millisecond,
-    and a clock that goes back keeps the last millisecond."""
+    sequence counts up; after 4096 the generator borrows the next
+    millisecond, and a clock behind it (gone back, or behind the borrowed
+    milliseconds) keeps counting on the last one."""
 
     __slots__ = ("_clock", "_machine_id", "_sequence", "_sequence_at")
 
@@ -89,12 +90,11 @@ class SnowflakeGenerator:
 
     def next_unsafe(self) -> Snowflake:
         now = self._now()
-        if now < self._sequence_at:
-            pass
-        elif now > self._sequence_at:
+        if now > self._sequence_at:
             self._sequence = 0
             self._sequence_at = now
         elif self._sequence >= 4096:
+            # Exhausted, and the clock has not passed this millisecond: borrow the next one.
             self._sequence_at += 1
             self._sequence = 0
         sequence = self._sequence

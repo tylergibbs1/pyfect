@@ -12,6 +12,7 @@ from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.message import IncomingRequestLocal
 from pyfect.cluster.reply import Chunk
 from pyfect.cluster.runner_address import RunnerAddress
+from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.duration import Seconds
 from pyfect.exit import Exit
@@ -40,9 +41,10 @@ class RequestTransaction:
 @dataclass(eq=False, slots=True, kw_only=True)
 class RequestEntry:
     """A request in an entity's mailbox. ``delivered`` excludes requests
-    awaiting their first dispatch from replay; ``terminating`` treats an
-    early termination interrupt as a shutdown one; a request with a
-    ``caller_scope`` does not outlive its caller."""
+        awaiting their first dispatch from replay; ``terminating`` treats an
+        early termination interrupt as a shutdown one; an ``interrupted`` request
+    is never run again; a request with a
+        ``caller_scope`` does not outlive its caller."""
 
     rpc: AnyRpc
     message: IncomingRequestLocal
@@ -54,6 +56,11 @@ class RequestEntry:
     sequence: int = 0
     caller_scope: CloseableScope | None = None
     transaction: RequestTransaction | None = None
+    interrupted: bool = False
+    """An interrupt arrived while no handlers were ready; it is sent to each
+    later handler generation instead of the request."""
+    interrupt_sent_to: WriteFn | None = None
+    """The handler generation the remembered interrupt was last sent to."""
 
 
 @dataclass(eq=False, slots=True, kw_only=True)
@@ -93,6 +100,9 @@ class ManagerOptions:
     runner_address: RunnerAddress
     residency: Residency
     abandon_undelivered: AbandonUndelivered
+    is_shard_owned: Callable[[ShardId], Effect[bool]]
+    """Whether this runner still owns the shard, checked before storing the
+    final reply of a persisted request."""
     max_idle_time: Seconds | None = None
     concurrency: Concurrency = 1
     mailbox_capacity: Concurrency | None = None

@@ -3,7 +3,7 @@ and ``EventLogIdentityDerivation.test.ts``. Each test's docstring is the
 Effect test title."""
 
 import pyfect as fx
-from pyfect.eventlog import _crypto
+from pyfect.crypto import web_crypto
 from pyfect.eventlog import event_log_session_auth as A
 from pyfect.eventlog._identity import IdentityService
 from pyfect.eventlog._identity_derivation import (
@@ -111,6 +111,28 @@ def test_rejects_invalid_canonical_payload_bytes() -> None:
     assert error.reason == "InvalidPayload"
 
 
+class _NoSubtle:
+    """A Web Crypto object without ``subtle`` (Effect's ``{} as Crypto``)."""
+
+    subtle = None
+
+    def get_random_values(self, array: memoryview, /) -> memoryview:
+        raise AssertionError("not drawn")
+
+
+def test_fails_with_crypto_unavailable_without_subtle() -> None:
+    """fails with CryptoUnavailable when the WebCrypto object has no subtle"""
+    public, private = _key_pair()
+    error = fx.run_blocking(
+        A.sign_session_auth_payload(_payload(public), private)
+        .pipe(fx.provide(web_crypto.layer(_NoSubtle())))
+        .flip()
+        .or_die()
+    )
+    assert isinstance(error, A.EventLogSessionAuthError)
+    assert error.reason == "CryptoUnavailable"
+
+
 def _identity(public_key: str, root_secret: bytes) -> IdentityService:
     return IdentityService(public_key, redacted(root_secret))
 
@@ -137,7 +159,12 @@ def test_domain_separated_labels() -> None:
     seed = reveal(derived.signing_private_key)[-32:]
     assert derived.encryption_key_material != seed
     assert ENCRYPTION_DERIVATION_LABEL_V1 != SIGNING_DERIVATION_LABEL_V1
-    assert _crypto.ed25519_public_key(seed) == derived.signing_public_key
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    public = Ed25519PrivateKey.from_private_bytes(seed).public_key()
+    raw = public.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    assert raw == derived.signing_public_key
 
 
 def test_memoizes_per_identity_instance() -> None:

@@ -52,6 +52,11 @@ class ShardingConfigService:
     entity_reply_poll_interval: Seconds
     refresh_assignments_interval: Seconds
     send_retry_interval: Seconds
+    runner_join_debounce: Seconds
+    """How long the healthy runners must stay unchanged before runners that
+    joined get shards, so a burst of joins hands each shard off once. Only
+    joins wait, at most four times this long; ``0`` publishes every change at
+    once."""
     runner_health_check_interval: Seconds
     simulate_remote_serialization: bool
 
@@ -84,6 +89,7 @@ DEFAULTS = ShardingConfigService(
     entity_reply_poll_interval=Seconds(0.2),
     send_retry_interval=Seconds(0.1),
     refresh_assignments_interval=Seconds(3),
+    runner_join_debounce=Seconds(0),
     runner_health_check_interval=Seconds(60),
     simulate_remote_serialization=True,
 )
@@ -175,6 +181,9 @@ def _make(d: ShardingConfigService) -> Config[ShardingConfigService]:
             send_retry_interval=(yield from _seconds("sendRetryInterval", d.send_retry_interval)),
             refresh_assignments_interval=(
                 yield from _seconds("refreshAssignmentsInterval", d.refresh_assignments_interval)
+            ),
+            runner_join_debounce=(
+                yield from _seconds("runnerJoinDebounce", d.runner_join_debounce)
             ),
             runner_health_check_interval=(
                 yield from _seconds("runnerHealthCheckInterval", d.runner_health_check_interval)
