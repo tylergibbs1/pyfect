@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.2 (unreleased)
+
+### Added
+
+- `mcp_server.layer_rpc_protocol(...)` and `mcp_server.run(...)` serve MCP over any RPC server
+  transport, the `rpc.server.ServerProtocol` in the context (Effect's `McpServer.layer` and
+  `McpServer.run`). A transport with `supports_notifications=False` gets no notifications and
+  serves no subscriptions, as in Effect.
+- `rpc.server.ServerProtocolService` and `ProtocolParts` take `supports_notifications`
+  (default `True`; the HTTP protocol sets it from its serialization's framing) and
+  `client_ids` (the connected clients, reported by the built-in transports; default `None`,
+  not reported). `rpc.server.WriteRequest` is exported.
+
+### Fixed
+
+- An MCP request whose failure also holds an interruption (middleware that adds one) is
+  answered as Effect answers it: `{"_tag": "Cause", "code", "message", "data"}` with the
+  serialized cause in `data`, an internal error for a legacy `tools/call`, and an internal
+  error for an interruption alone, which before got no answer.
+
 ## 0.5.1 (2026-11-10)
 
 ### Added

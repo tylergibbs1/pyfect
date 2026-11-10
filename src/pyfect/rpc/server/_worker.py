@@ -90,6 +90,7 @@ def make_protocol_worker_runner() -> Effect[
                 supports_span_propagation=True,
                 codec_for=cast("CodecFor", _codec_for),
                 initial_message=initial.wait().map(_some),
+                client_ids=sync(lambda: frozenset(client_ids)),
             )
 
         return make

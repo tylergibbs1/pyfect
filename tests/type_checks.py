@@ -7450,6 +7450,14 @@ def check_mcp() -> None:
         fx.Effect[None, Illegal | PlatformErr, mcp_m.McpServer | mcp_stdio.Stdio],
     )
     assert_type(
+        mcp_m.run(name="s", version="1", protocols=(mcp_p.v2025_11_25,)),
+        fx.Effect[Never, Illegal, mcp_m.McpServer | rpc_server.ServerProtocol],
+    )
+    assert_type(
+        mcp_m.layer_rpc_protocol(name="s", version="1", protocols=(mcp_p.v2025_11_25,)),
+        fx.Layer[mcp_m.McpServer, Illegal, rpc_server.ServerProtocol],
+    )
+    assert_type(
         mcp_m.layer_http(name="s", version="1", path="/mcp", protocols=(mcp_p.v2025_11_25,)),
         fx.Layer[mcp_m.McpServer, Illegal, Router],
     )

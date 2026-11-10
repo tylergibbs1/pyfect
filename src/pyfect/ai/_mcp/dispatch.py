@@ -29,6 +29,7 @@ from pyfect.ai._mcp import (
 )
 from pyfect.ai._mcp.cache_hints import TtlMillis
 from pyfect.ai._mcp.core import McpServerService, RequestOutbound, RequestServices
+from pyfect.ai._mcp.failure import interrupted_failure
 from pyfect.ai._mcp.http_status import fail_with_http_status
 from pyfect.ai._mcp.input_wire import CONTINUATION_PARAMS, INPUT_REQUESTS, ContinuationParams
 from pyfect.ai._mcp.invoke import RequestRejected, ResourceNotFound, unwrap_rejected
@@ -259,9 +260,7 @@ def _method_not_found(method: str) -> McpError:
 
 def _as_mcp_error(cause: Cause[object]) -> Effect[Wire, McpError]:
     """A request's failure as the error to answer with: its own MCP error,
-    else an internal error. Interruption stays interruption."""
-    if cause.has_interrupts_only:
-        return fail_cause(cast("Cause[Never]", cause))
+    else an internal error."""
     found = cause.find_recoverable_error()
     if isinstance(found, Fail):
         error = found.error
@@ -284,13 +283,13 @@ class Identity:
 
 @dataclass(eq=False)
 class Connection:
-    """One client: a stdio process's or an HTTP session's."""
+    """One client: a stdio process's, an HTTP session's or an RPC protocol's."""
 
     server: McpServerService
     info: ServerInfo
     registry: Registry
     client_id: int
-    transport: Literal["stdio", "http"]
+    transport: Literal["stdio", "http", "custom"]
     broadcast: Send
     default_log_level: Severity
     """The session's threshold until it sets one: the ``CurrentLogLevel``
@@ -320,6 +319,8 @@ class Connection:
     _inflight: dict[RequestId, Fiber[Any, Any]] = field(
         default_factory=dict[RequestId, "Fiber[Any, Any]"]
     )
+    _cancelled: set[RequestId] = field(default_factory=set[RequestId])
+    """The requests ended without an answer (a subscription that overflowed)."""
     _reverse_ids: itertools.count[int] = field(default_factory=lambda: itertools.count(1))
 
     # --- messages ----------------------------------------------------------------------
@@ -389,6 +390,7 @@ class Connection:
         def done() -> None:
             self._inflight.pop(id, None)
             self._listening.discard(id)
+            self._cancelled.discard(id)
 
         served = (
             self.answer(id, request.method, request.params, out)
@@ -417,11 +419,12 @@ class Connection:
         """The response to a request (``None`` when it was cancelled)."""
         version = requested_protocol_version(params)
         stateless = self.registry.find(version) if version is not None else None
+        serves_stateless = stateless is not None and stateless.is_stateless
         if self.closed:
             # A batch read on after its session ended: as Effect's
             # clientMiddleware, the request dies before it is served.
             answered: Effect[Wire, McpError] = die(RuntimeError("Mcp-Session-Id does not exist"))
-        elif stateless is not None and stateless.is_stateless:
+        elif stateless is not None and serves_stateless:
             answered = self._stateless(stateless, id, method, params, out)
         elif version is not None and stateless is None and _offers_stateless(self.registry):
             answered = fail(_unsupported_version(version, self.registry))
@@ -435,13 +438,21 @@ class Connection:
             attributes={"rpc.system.name": "effect_rpc", "rpc.method": method},
         )
         # Effect's RpcServer reports the cause of every failed request.
-        replied: Effect[JsonObject] = (
-            traced.with_error_reporting()
-            .catch_cause(_as_mcp_error)
-            .match(
+        legacy_tool_call = method == "tools/call" and not serves_stateless
+
+        def failed(cause: Cause[object]) -> Effect[JsonObject]:
+            if id in self._cancelled:
+                return fail_cause(cast("Cause[Never]", cause))
+            if cause.has_interrupts:
+                error = interrupted_failure(cause, legacy_tool_call=legacy_tool_call)
+                return succeed({"jsonrpc": "2.0", "id": id, "error": dict(error)})
+            return _as_mcp_error(cause).match(
                 on_failure=lambda error: error_response(id, error),
                 on_success=lambda result: _encodable_response(id, result),
             )
+
+        replied: Effect[JsonObject] = traced.with_error_reporting().match_cause_effect(
+            on_failure=failed, on_success=lambda result: succeed(_encodable_response(id, result))
         )
         return replied.exit().map(lambda exit: exit.value if isinstance(exit, Success) else None)
 
@@ -721,7 +732,7 @@ class Connection:
         presence = self.server.has_registrations
         # A session's client always gets list changes; only 2026-07-28 opts out.
         list_changed = self.supports_subscriptions if protocol.is_stateless else True
-        subscribe = list_changed if protocol.is_stateless else self.transport == "stdio"
+        subscribe = list_changed if protocol.is_stateless else self.transport != "http"
         capabilities: ServerCapabilities = {"logging": {}}
         if protocol.supports_audio:
             capabilities["completions"] = {}
@@ -777,7 +788,7 @@ class Connection:
         match method:
             case "logging/setLevel":
                 return _decode(SET_LEVEL.payload_schema, params).map(self._set_level)
-            case "resources/subscribe" | "resources/unsubscribe" if self.transport == "stdio":
+            case "resources/subscribe" | "resources/unsubscribe" if self.transport != "http":
                 subscribe = method == "resources/subscribe"
                 return _decode(SUBSCRIBE.payload_schema, params).map(
                     lambda decoded: self._subscribe(decoded["uri"], subscribe)
@@ -872,6 +883,8 @@ class Connection:
             return out(notification(method, body))
 
         def terminate(request_id: RequestId, reason: str) -> Effect[None]:
+            # As Effect's cancelRequest: the subscription's end is not answered.
+            self._cancelled.add(request_id)
             # Over HTTP the stream's end says it; stdio's has no end of its own.
             if self.transport == "http":
                 return _VOID

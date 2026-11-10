@@ -4,13 +4,6 @@ McpServer.test.ts, "Resources > Legacy subscriptions" of ResourcesTest.ts and
 the subscription-stream logging title of LoggingTest.ts.
 
 Adapted, with the reason:
-- "should not advertise subscriptions and should reject listen when the
-  transport cannot send notifications" builds a custom RpcServer transport,
-  which pyfect's transports do not expose: ``allow_subscriptions=False`` is
-  what such a transport gets.
-- "should isolate resource subscriptions and clear disconnected sessions"
-  drives one custom transport with two clients: here two stdio harnesses share
-  one server, and the second half reads the server's peers after a client's EOF.
 - Titles calling Effect's ``makeHandlers`` call ``subscriptions.listen``, whose
   ``subscribe``, ``send`` and ``terminate`` are the same seams. Effect's
   ``markSubscriptionCancelled`` has no counterpart: they await the release.
@@ -39,6 +32,7 @@ from pyfect.duration import Duration
 from pyfect.http.response import HttpClientResponse
 from pyfect.pubsub import PubSub
 from pyfect.queue import Queue
+from pyfect.rpc import server as rpc_server
 from pyfect.scope import acquire_release, scoped
 
 from ._mcp import Json, StartedRequest, StdioHarness, stdio_harness
@@ -51,6 +45,8 @@ from ._mcp_http import (
     server_layer,
     sse_reader,
 )
+from ._mcp_rpc import Inbox, custom_transport
+from ._mcp_rpc import request as rpc_request
 
 MODERN = P.v2026_07_28
 STATEFUL = [P.v2024_11_05, P.v2025_03_26, P.v2025_06_18, P.v2025_11_25]
@@ -232,29 +228,33 @@ def test_should_update_discovery_and_subscription_capabilities_after_late_regist
     yield from request.cancel("test complete")
 
 
-def _without_subscriptions(allow_request_scoped: bool) -> fx.Effect[HttpHarness, Any, Any]:
-    return http_harness(
-        server_layer(
-            "SubscriptionConformance",
-            (MODERN,),
-            _registrations(),
-            mode="request" if allow_request_scoped else "server",
-        )
-    )
-
-
 @testing.effect
 def test_should_not_advertise_subscriptions_and_should_reject_listen_when_the_transport_cannot_send_notifications():  # noqa: E501
     """Mcp Conformance (2026-07-28) / Subscriptions / should not advertise subscriptions and should reject listen when the transport cannot send notifications"""  # noqa: E501
-    harness = yield from _without_subscriptions(True)
-    discovery = yield from read_message((yield from _http_post(harness, 1, "server/discover")))
-    capabilities = discovery["result"]["capabilities"]
+    transport = yield from custom_transport(client_ids={0}, supports_notifications=False)
+    served = M.layer_rpc_protocol(
+        name="SubscriptionConformance",
+        version="1.0.0",
+        protocols=[MODERN],
+        registrations=layer.effect_discard(_registrations()),
+    ).pipe(layer.provide(layer.succeed(rpc_server.ServerProtocol, transport.protocol)))
+    yield from served.build()
+    send = yield from transport.ready.wait()
+
+    yield from send(0, rpc_request(1, "server/discover", {"_meta": METADATA}))
+    discovery = (yield from transport.outbound.take())[1]
+    assert discovery["_tag"] == "Exit" and discovery["exit"]["_tag"] == "Success"
+    capabilities = discovery["exit"]["value"]["capabilities"]
     assert capabilities["tools"] == {"listChanged": False}
     assert capabilities["resources"] == {"listChanged": False, "subscribe": False}
     assert capabilities["prompts"] == {"listChanged": False}
-    listened = yield from harness.post(_http_listen(2), _HTTP_HEADERS)
-    message = yield from read_message(listened)
-    assert message["error"]["code"] == MS.METHOD_NOT_FOUND_ERROR_CODE
+
+    listen = {"notifications": {"toolsListChanged": True}, "_meta": METADATA}
+    yield from send(0, rpc_request(2, "subscriptions/listen", listen))
+    response = (yield from transport.outbound.take())[1]
+    assert response["_tag"] == "Exit" and response["exit"]["_tag"] == "Failure"
+    failure = next(r for r in response["exit"]["cause"] if r["_tag"] == "Fail")
+    assert failure["error"]["code"] == MS.METHOD_NOT_FOUND_ERROR_CODE
 
 
 def _direct_listen(
@@ -755,34 +755,66 @@ def test_should_terminate_only_the_slow_subscription_when_its_pending_backlog_ov
 @testing.effect
 def test_should_isolate_resource_subscriptions_and_clear_disconnected_sessions():
     """McpServer / resource subscriptions / should isolate resource subscriptions and clear disconnected sessions"""  # noqa: E501
-    legacy = P.v2025_06_18
-    server = yield from M.make()
-    yield from server.add_resource(_resource("file:///target"))
-    first = yield from stdio_harness(legacy, server=server)
-    second = yield from stdio_harness(legacy, server=server)
-    yield from first.initialize()
-    yield from second.initialize()
-    yield from first.send_request("resources/subscribe", {"uri": "file:///target"})
-    yield from second.send_request("resources/subscribe", {"uri": "file:///sentinel"})
-    yield from server.notify(RESOURCE_UPDATED, {"uri": "file:///target"})
-    yield from server.notify(RESOURCE_UPDATED, {"uri": "file:///sentinel"})
-    assert (yield from first.await_outbound_method(RESOURCE_UPDATED))["params"] == {
-        "uri": "file:///target"
-    }
-    assert (yield from second.await_outbound_method(RESOURCE_UPDATED))["params"] == {
-        "uri": "file:///sentinel"
-    }
-    assert first.stdout.size_unsafe() == 0
-    assert second.stdout.size_unsafe() == 0
+    client_ids = {1, 2}
+    transport = yield from custom_transport(client_ids=client_ids)
+    served = M.layer_rpc_protocol(
+        name="TestServer", version="1.0.0", protocols=[P.v2025_06_18]
+    ).pipe(layer.provide(layer.succeed(rpc_server.ServerProtocol, transport.protocol)))
+    context = yield from (
+        M.resource(uri="file:///target", name="Target", content=fx.succeed("target"))
+        .pipe(layer.provide_merge(served))
+        .build()
+    )
+    server = context.get(M.McpServer)
+    send = yield from transport.ready.wait()
+    inbox = Inbox.of(transport)
 
-    yield from first.close
-    yield from first.fiber.await_exit()
+    def request(
+        client_id: int, id: int, method: str, payload: Json, notification: bool = False
+    ) -> fx.Effect[None]:
+        @fx.gen
+        def run():
+            yield from send(client_id, rpc_request(id, method, payload, notification=notification))
+            if not notification:
+                yield from inbox.exit(client_id, id)
+
+        return run
+
+    def initialize(client_id: int) -> fx.Effect[None]:
+        payload = {
+            "protocolVersion": P.v2025_06_18.protocol_version,
+            "capabilities": {},
+            "clientInfo": {"name": "TestClient", "version": "1.0.0"},
+        }
+        return request(client_id, client_id, "initialize", payload).and_then(
+            request(client_id, client_id + 10, "notifications/initialized", {}, True)
+        )
+
+    yield from initialize(1)
+    yield from initialize(2)
+    yield from request(1, 21, "resources/subscribe", {"uri": "file:///target"})
+    yield from request(2, 22, "resources/subscribe", {"uri": "file:///sentinel"})
+
     yield from server.notify(RESOURCE_UPDATED, {"uri": "file:///target"})
     yield from server.notify(RESOURCE_UPDATED, {"uri": "file:///sentinel"})
-    assert (yield from second.await_outbound_method(RESOURCE_UPDATED))["params"] == {
-        "uri": "file:///sentinel"
-    }
-    assert first.stdout.size_unsafe() == 0
+
+    assert (yield from inbox.request(1, RESOURCE_UPDATED))["payload"]["uri"] == "file:///target"
+    assert (yield from inbox.request(2, RESOURCE_UPDATED))["payload"]["uri"] == "file:///sentinel"
+    assert inbox.empty
+
+    client_ids.discard(1)
+    yield from server.notify(RESOURCE_UPDATED, {"uri": "file:///sentinel"})
+    assert (yield from inbox.request(2, RESOURCE_UPDATED))["payload"]["uri"] == "file:///sentinel"
+    client_ids.add(1)
+    yield from send(1, rpc_request(30, "resources/list", {}))
+    after_sweep = yield from inbox.exit(1, 30)
+    assert after_sweep["exit"]["_tag"] == "Failure"
+
+    yield from initialize(1)
+    yield from send(1, {"_tag": "Eof"})
+    yield from send(1, rpc_request(31, "resources/list", {}))
+    after_reconnect = yield from inbox.exit(1, 31)
+    assert after_reconnect["exit"]["_tag"] == "Failure"
 
 
 @testing.effect

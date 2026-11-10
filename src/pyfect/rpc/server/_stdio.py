@@ -84,6 +84,7 @@ def make_protocol_stdio() -> Effect[ServerProtocolService, Never, Stdio | RpcSer
                     supports_ack=True,
                     supports_span_propagation=True,
                     codec_for=serialization.codec_for,
+                    client_ids=succeed(frozenset({_CLIENT})),
                 )
 
             return build

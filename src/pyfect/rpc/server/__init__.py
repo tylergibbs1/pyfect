@@ -27,6 +27,7 @@ from pyfect.rpc.server._protocol import (
     ProtocolParts,
     ServerProtocol,
     ServerProtocolService,
+    WriteRequest,
     with_run,
 )
 from pyfect.rpc.server._serialized import layer, make
@@ -158,6 +159,7 @@ __all__ = [
     "ServerOptions",
     "ServerProtocol",
     "ServerProtocolService",
+    "WriteRequest",
     "layer",
     "layer_http",
     "layer_protocol_http",

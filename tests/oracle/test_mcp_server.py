@@ -9,23 +9,18 @@ provided.
 
 Omitted, with the reason:
 
-- ``should match reverse responses to their originating connection``,
-  ``should suppress cancelled responses when a custom transport handles MCP
-  messages``, ``should deliver notifications and results to other clients when
-  one client stops reading``, ``should release disconnected clients when a
-  reverse request is cancelled without a reply``, ``drops server notifications
-  from buffered JSON-RPC responses``: they drive Effect's RpcServer protocol
-  with custom transports, which pyfect's transports do not expose.
 - ``should release request metadata when HTTP requests complete without
   server notifications``: a Python dict takes no weak reference; a stateless
   POST's connection is never registered, so nothing keeps it.
 
-Ported elsewhere: resource subscriptions, their backlogs, list-change scheduling,
-``allowSubscriptions`` and the mixed-protocol isolation title in
-test_mcp_conformance_subscriptions.py; ``layerHttpRequestScoped`` in
-test_mcp_request_scoped.py; the direct-service and ``registerToolkit`` titles
-(strict mode, identified schemas, failure modes, registration context) in
-test_mcp_server_registrations.py; POST and DELETE protocol-version checks
+Ported elsewhere: the custom-transport titles (``McpServer.layer`` over an
+``RpcServer.Protocol``) and ``drops server notifications from buffered
+JSON-RPC responses`` in test_mcp_rpc_protocol.py; resource subscriptions,
+their backlogs, list-change scheduling, ``allowSubscriptions`` and the
+mixed-protocol isolation title in test_mcp_conformance_subscriptions.py;
+``layerHttpRequestScoped`` in test_mcp_request_scoped.py; the direct-service
+and ``registerToolkit`` titles (strict mode, identified schemas, failure modes,
+registration context) in test_mcp_server_registrations.py; POST and DELETE protocol-version checks
 and legacy batches in test_mcp_http_admission.py; HTTP batch SSE framing in
 test_mcp_batch_cancellation.py.
 """

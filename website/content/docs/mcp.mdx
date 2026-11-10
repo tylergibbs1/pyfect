@@ -156,7 +156,8 @@ its subscription and nobody else is held up: over HTTP the stream ends, over std
 `notifications/cancelled` with the request's id. Before 2026-07-28 clients get list changes
 unasked and, over stdio, `resources/subscribe`. To turn subscriptions off, pass
 `allow_subscriptions=False` to `mcp_server.layer_http`: discovery advertises no list changes
-and `subscriptions/listen` is method not found.
+and `subscriptions/listen` is method not found. A custom transport turns them off itself (see
+Custom transports).
 
 <CodeOutput>
 
@@ -217,6 +218,26 @@ gets a 400 with error -32020 before the tool runs.
 lets a server ask it for input, so a tool that asks fails with an `HttpError` reason carrying code -32021, and
 an `input_required` result that reaches it anyway fails with `UnsupportedError`. Call such
 tools from a client that implements the continuation.
+
+## Custom transports
+
+`mcp_server.layer_rpc_protocol` (or the effect `mcp_server.run`) serves MCP over any RPC server
+transport, the `rpc.server.ServerProtocol` you provide, as Effect's `McpServer.layer` does. Each
+client of the transport is a session keyed by its client id. Requests arrive as RPC `Request`
+messages (`tag` the method, `payload` the params) and answers leave as `Exit` messages;
+notifications and requests to the client are `Request` messages too. A transport made with
+`supports_notifications=False` can't write to a client unasked, so the server sends it no
+notifications and serves no subscriptions: 2026-07-28 discovery advertises no list changes and
+`subscriptions/listen` is method not found. A transport that reports `client_ids` has the
+sessions of clients that left forgotten the next time a notification goes out.
+
+<CodeOutput>
+
+<include meta='title="custom_transport.py"'>../../snippets/mcp/custom_transport.py</include>
+
+<include lang="text">../../snippets/mcp/custom_transport.out</include>
+
+</CodeOutput>
 
 ## Skills
 

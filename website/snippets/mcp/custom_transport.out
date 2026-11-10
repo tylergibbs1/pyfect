@@ -1,0 +1,2 @@
+server/discover {'listChanged': False}
+subscriptions/listen Method not found: subscriptions/listen

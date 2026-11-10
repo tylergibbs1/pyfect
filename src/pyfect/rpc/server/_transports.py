@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Never, cast
 
 from pyfect._core import Effect
-from pyfect.effect import fail, gen, succeed, suspend
+from pyfect.effect import fail, gen, succeed, suspend, sync
 from pyfect.errors import Done
 from pyfect.http.origin import origin_allowed
 from pyfect.http.server_request import HttpServerRequest
@@ -151,6 +151,7 @@ def make_socket_protocol() -> Effect[SocketProtocol, Never, RpcSerialization]:
                     supports_ack=True,
                     supports_span_propagation=True,
                     codec_for=serialization.codec_for,
+                    client_ids=sync(lambda: frozenset(clients)),
                 )
             )
 
@@ -271,6 +272,8 @@ def make_protocol_with_http_effect(
                     supports_ack=False,
                     supports_span_propagation=False,
                     codec_for=serialization.codec_for,
+                    supports_notifications=serialization.includes_framing,
+                    client_ids=sync(lambda: frozenset(clients)),
                 )
             )
 

@@ -29,6 +29,7 @@ from pyfect._layer_core import require_layer
 from pyfect._public import publish
 from pyfect.ai._mcp import cache_hints as _cache_hints
 from pyfect.ai._mcp import http as _http
+from pyfect.ai._mcp import rpc_protocol as _rpc_protocol
 from pyfect.ai._mcp import sessions as _sessions
 from pyfect.ai._mcp import stdio as _stdio
 from pyfect.ai._mcp.cache_hints import CacheHint, CacheHints
@@ -82,6 +83,7 @@ from pyfect.http.router import HttpRouter
 from pyfect.layer import Layer, effect_discard, provide, provide_merge
 from pyfect.layer import effect as layer_effect
 from pyfect.platform_error import PlatformError
+from pyfect.rpc.server import ServerProtocol
 from pyfect.schema import Codec
 from pyfect.stdio import Stdio
 
@@ -214,6 +216,84 @@ def layer_stdio[RE = Never, RR = Never](
         builder = yield from current_fiber()
         ended = builder.interrupt().fork_daemon(start_immediately=True).as_void()
         yield from running.ignore().ensuring(ended).fork_scoped()
+
+    return _serving(started, registrations)
+
+
+def run(
+    *,
+    name: str,
+    version: str,
+    protocols: Sequence[AnyProtocolAdapter],
+    title: str | None = None,
+    description: str | None = None,
+    website_url: str | None = None,
+    icons: Sequence[Icon] = (),
+    instructions: str | None = None,
+    extensions: Mapping[str, Any] | None = None,
+    cache_hints: CacheHints | None = None,
+) -> Effect[Never, IllegalArgumentError, McpServer | ServerProtocol]:
+    """Serve every client of the RPC ``ServerProtocol`` in the context (a
+    custom transport; Effect's ``McpServer.run``), each a session keyed by
+    the protocol's client id. A protocol without ``supports_notifications``
+    serves no subscriptions: 2026-07-28 discovery advertises no list changes,
+    ``subscriptions/listen`` is method not found, and no notifications are
+    sent."""
+    info = _info(
+        name,
+        version,
+        title=title,
+        description=description,
+        website_url=website_url,
+        icons=icons,
+        instructions=instructions,
+        extensions=extensions,
+        cache_hints=cache_hints,
+    )
+    return info.flat_map(
+        lambda served: make_registry(protocols).flat_map(
+            lambda registry: _rpc_protocol.serve(served, registry)
+        )
+    )
+
+
+def layer_rpc_protocol[RE = Never, RR = Never](
+    *,
+    name: str,
+    version: str,
+    protocols: Sequence[AnyProtocolAdapter],
+    title: str | None = None,
+    description: str | None = None,
+    website_url: str | None = None,
+    icons: Sequence[Icon] = (),
+    instructions: str | None = None,
+    extensions: Mapping[str, Any] | None = None,
+    cache_hints: CacheHints | None = None,
+    registrations: Layer[Any, RE, RR | McpServer | McpServerClient] | None = None,
+) -> Layer[McpServer, IllegalArgumentError | RE, ServerProtocol | RR]:
+    """``run`` in the background of a layer providing the ``McpServer``
+    (Effect's ``McpServer.layer``): the server over the RPC
+    ``ServerProtocol`` the layer is given. ``registrations`` are built
+    before the server reads its first message."""
+    _require_registrations(registrations)
+    running = run(
+        name=name,
+        version=version,
+        protocols=protocols,
+        title=title,
+        description=description,
+        website_url=website_url,
+        icons=icons,
+        instructions=instructions,
+        extensions=extensions,
+        cache_hints=cache_hints,
+    )
+
+    @gen
+    def started():
+        yield from make_registry(protocols)
+        yield from _cache_hints.parse(cache_hints)
+        yield from running.fork_scoped()
 
     return _serving(started, registrations)
 
@@ -495,6 +575,7 @@ __all__ = [
     "layer",
     "layer_http",
     "layer_http_request_scoped",
+    "layer_rpc_protocol",
     "layer_stdio",
     "make",
     "middleware",
@@ -506,6 +587,7 @@ __all__ = [
     "register_toolkit",
     "resource",
     "resource_template",
+    "run",
     "run_stdio",
     "skill",
     "toolkit",

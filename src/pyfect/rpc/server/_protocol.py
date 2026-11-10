@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Set
 from dataclasses import dataclass, field
 from typing import Any, Never
 
@@ -30,7 +30,10 @@ class ServerProtocolService:
     server (and never returns); ``send`` writes a response to a client,
     ``end`` closes it; ``disconnects`` yields the clients that left.
     ``initial_message`` is the value a worker client sent first
-    (``rpc.worker.initial_message``); other transports have none."""
+    (``rpc.worker.initial_message``); other transports have none.
+    ``supports_notifications``: whether the server can write to a client
+    unasked (an MCP server over it serves no subscriptions otherwise).
+    ``client_ids`` are the clients connected now (``None``: not reported)."""
 
     run: Callable[[WriteRequest], Effect[Never]]
     disconnects: Queue[int]
@@ -40,6 +43,8 @@ class ServerProtocolService:
     supports_span_propagation: bool
     codec_for: CodecFor
     initial_message: Effect[Option[object]] = field(default_factory=_no_initial_message)
+    supports_notifications: bool = True
+    client_ids: Effect[Set[int]] | None = None
 
 
 class ServerProtocol(Tag[ServerProtocolService], key="effect/rpc/RpcServer/Protocol"):
@@ -57,6 +62,8 @@ class ProtocolParts:
     supports_span_propagation: bool
     codec_for: CodecFor
     initial_message: Effect[Option[object]] = field(default_factory=_no_initial_message)
+    supports_notifications: bool = True
+    client_ids: Effect[Set[int]] | None = None
 
 
 def with_run[EX, RX](
@@ -106,6 +113,8 @@ def with_run[EX, RX](
                 parts.supports_span_propagation,
                 parts.codec_for,
                 parts.initial_message,
+                parts.supports_notifications,
+                parts.client_ids,
             )
 
         return make(write).map(build)
