@@ -2,11 +2,13 @@
 inflater (``_inflate_port``) for what Effect reports.
 
 ``zlib`` hands out output where Effect's inflater does: at every 64 KiB of output
-and where the queue runs dry. It keeps the input it took until the stream ends. When
+and where the queue runs dry. It keeps the input it took, up to ``REPLAY_LIMIT``. When
 ``zlib`` rejects the stream, or the decoder is about to report an end of input or a
 size mismatch (``fall_back``), the entry is replayed through Effect's inflater, which
 then reads the rest of the stream: its errors are the ones Effect reports, at the
-same output, and the output it repeats is not handed out again."""
+same output, and the output it repeats is not handed out again. Past the limit, an
+entry fails with zlib's words: holding and replaying more would let one upload hold
+its whole compressed size in memory and a fiber for minutes."""
 
 from __future__ import annotations
 
@@ -18,9 +20,23 @@ from pyfect.encoding.zip._inflate_port import Inflater as EffectInflater
 
 __all__ = ["InflateError", "Inflater"]
 
+REPLAY_LIMIT = 4 * 1024 * 1024
+"""The most input of an entry kept for a replay."""
+
 _INPUT_SIZE = 64 * 1024
 """``zlib`` copies what it leaves unused on each call, so a whole archive held in one
 chunk would cost a copy of what is left of it per 64 KiB of output and per entry."""
+
+_MESSAGES = {
+    "invalid stored block lengths": "stored block length is corrupt",
+    "too many length or distance symbols": "too many length or distance codes",
+    "invalid code -- missing end-of-block": "missing end-of-block code",
+    "invalid literal/length code": "invalid literal or length code",
+    "invalid distance too far back": "distance is beyond the start of the data",
+}
+"""zlib's messages, past ``REPLAY_LIMIT``, where Effect's say the same in other words.
+Effect tells apart what zlib reports as one ("invalid code lengths set", "invalid bit
+length repeat"), and those keep zlib's text."""
 
 
 class _Replay:
@@ -63,8 +79,8 @@ class _Replay:
 
 
 class Inflater:
-    __slots__ = ("_decompressor", "_effect", "_more", "_produced", "_queue", "_replay",
-                 "_skip", "_tail", "_taken")  # fmt: skip
+    __slots__ = ("_decompressor", "_effect", "_kept", "_more", "_produced", "_queue",
+                 "_replay", "_skip", "_tail", "_taken")  # fmt: skip
 
     def __init__(self, queue: ByteQueue) -> None:
         self._queue = queue
@@ -74,8 +90,9 @@ class Inflater:
         self._more = False
         # Output handed out so far
         self._produced = 0
-        # The input taken, for a replay
-        self._taken: list[bytes] = []
+        # The input taken, for a replay; None once it passed REPLAY_LIMIT
+        self._taken: list[bytes] | None = []
+        self._kept = 0
         self._effect: EffectInflater | None = None
         self._replay: _Replay | None = None
         # Output Effect's inflater repeats, which was handed out already
@@ -101,11 +118,13 @@ class Inflater:
                     # Effect's inflater stops here too
                     break
                 data = queue.take_some(_INPUT_SIZE)
-                self._taken.append(data)
+                self._keep(data)
             try:
                 out = decompressor.decompress(data, limit - size)
-            except zlib.error:
-                self.fall_back(self._produced)
+            except zlib.error as error:
+                if not self.fall_back(self._produced):
+                    message = str(error).partition(": ")[2]
+                    raise InflateError(_MESSAGES.get(message, message)) from None
                 return self._pull_effect()
             self._tail = decompressor.unconsumed_tail
             self._more = len(out) == limit - size
@@ -122,11 +141,21 @@ class Inflater:
         self._produced += size
         return parts[0] if len(parts) == 1 else b"".join(parts)
 
+    def _keep(self, data: bytes) -> None:
+        taken = self._taken
+        if taken is None:
+            return
+        self._kept += len(data)
+        if self._kept > REPLAY_LIMIT:
+            self._taken = None
+        else:
+            taken.append(data)
+
     def fall_back(self, delivered: int) -> bool:
         """Replays the entry through Effect's inflater, which reads the rest of it,
         handing out output past the first ``delivered`` bytes. ``False`` when it
-        already does or the stream has ended."""
-        if self._effect is not None or self._decompressor.eof:
+        already does, the stream has ended or its input passed ``REPLAY_LIMIT``."""
+        if self._effect is not None or self._decompressor.eof or self._taken is None:
             return False
         self._replay = _Replay(self._taken, self._queue)
         self._effect = EffectInflater(self._replay)
