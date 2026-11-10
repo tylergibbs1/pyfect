@@ -219,7 +219,8 @@ HTTP server), `pg` (the PostgreSQL driver, on psycopg), `mysql` (the MySQL drive
 asyncmy), `mssql` (the SQL Server driver, on python-tds), `redis` (the Redis client, on
 redis-py), `crypto` (cryptography and JOSE, on cryptography), `eventlog` (the event log's encryption, on cryptography), `brotli` (`br` response
 compression on a live server, on brotlicffi), `http2` (the HTTP/2 server, on hypercorn), `intl` (`Intl`-style
-date formatting, on babel) and `regex` (more ECMAScript patterns in schemas), for example
+date formatting, on babel), `regex` (more ECMAScript patterns in schemas) and `watch` (`FileSystem.watch` on
+the operating system's change notification, on watchfiles), for example
 `uv add "pyfect-dev[otel]"`.
 
 pyright is the type checker pyfect is designed for. In strict mode, add

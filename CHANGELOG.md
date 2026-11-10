@@ -11,6 +11,15 @@
   `json`, with their URL parameters (`compression_request`, `compression_response`,
   `keep_alive_enabled`, `keep_alive_idle_socket_ttl`, `max_open_connections`, `log_level`),
   which used to fail as not offered. Their types are in `pyfect.sql.clickhouse.options`.
+- The `watch` extra (`uv add "pyfect-dev[watch]"`, on watchfiles): `FileSystem.watch` on
+  `file_system.layer` / `platform.layer` uses the operating system's change notification
+  (inotify, FSEvents, ReadDirectoryChangesW) through `file_system.WatchfilesBackend`, as Effect's
+  Node file system uses `fs.watch`, so changes arrive as they happen and a file created and
+  removed at once is still reported. Events follow Effect's: an entry that appeared or went
+  away is `Create` if it exists afterwards and `Remove` if not, a changed one is `Update`,
+  paths are relative to the watched directory. The watcher runs on its own thread, stopped and
+  joined when the stream closes. Without the extra, `watch` polls every 50 milliseconds as
+  before; a provided `WatchBackend` still comes first.
 
 ### Changed
 

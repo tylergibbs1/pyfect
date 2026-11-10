@@ -5106,6 +5106,7 @@ def check_platform(
     assert_type(fs.stream("a"), fx.Stream[bytes, fx.PlatformError, Never])
     assert_type(fs.sink("a"), fx.Sink[None, bytes, Never, fx.PlatformError, Never])
     assert_type(fs.watch("a"), fx.Stream[file_system.WatchEvent, fx.PlatformError, Never])
+    fx.provide_service(file_system.WatchBackend, file_system.WatchfilesBackend())
     assert_type(fs.glob("**", dot=True), fx.Effect[list[str], fx.PlatformError, Never])
     assert_type(
         fs.read_directory_entries("a"),
