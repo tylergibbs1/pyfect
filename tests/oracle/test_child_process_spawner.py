@@ -36,7 +36,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import file_system, path, process, redacted, sink, stream, testing
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.file_system import FileSystem
 from pyfect.layer import Layer, merge, provide_merge
 from pyfect.path import Path
@@ -1463,7 +1463,7 @@ def _start_group(
                 sys.executable,
                 [PROCESS_GROUP, "leader", mode, marker, str(delays[0]), str(delays[1])],
                 stdin="pipe" if stdin == "pipe" else "ignore",
-                force_kill_after=None if force_kill_after is None else Seconds(force_kill_after),
+                force_kill_after=None if force_kill_after is None else Duration(force_kill_after),
             ),
         )
         lines = handle.stdout.decode_text().split_lines()

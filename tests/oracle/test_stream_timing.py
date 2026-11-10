@@ -27,7 +27,7 @@ from typing import Any, Literal
 import pyfect as fx
 from pyfect import schedule, stream, testing
 from pyfect.clock import Clock, ClockService
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.pull import catch_done
 from pyfect.queue import Done, Queue
 from pyfect.stream import Stream
@@ -567,8 +567,8 @@ class _ShiftedClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self.base.monotonic_nanos_unsafe() + self.monotonic_offset
 
-    def sleep(self, seconds: Seconds) -> fx.Effect[None]:
-        return self.base.sleep(Seconds(seconds - self.early))
+    def sleep(self, seconds: Duration) -> fx.Effect[None]:
+        return self.base.sleep(Duration(seconds - self.early))
 
 
 def _millis(clock: ClockService) -> fx.Effect[int]:

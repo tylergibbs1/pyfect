@@ -20,7 +20,7 @@ from pyfect.cluster.message_storage import MemoryDriver, MessageStorageService
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.context import Context
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.layer import Layer
 from pyfect.queue import Queue
 from pyfect.rpc import fork
@@ -78,7 +78,7 @@ def _poll_three_times(service: sharding.ShardingService) -> fx.Effect[None]:
 
 def _with_claims(log: _ClaimLog, **extra: Any) -> Layer[Any]:
     return capped(
-        lambda storage: log.storage(storage, **extra), refresh_assignments_interval=Seconds(60)
+        lambda storage: log.storage(storage, **extra), refresh_assignments_interval=millis(60_000)
     )
 
 
@@ -153,7 +153,7 @@ def test_keeps_the_claim_of_an_active_request_replayed_after_an_entity_defect():
             assert running.poll_unsafe() is None
             log.clear()
 
-            yield from testing.adjust(Seconds(_TEN_MINUTES))
+            yield from testing.adjust(Duration(_TEN_MINUTES))
             yield from _poll_three_times(service)
             request_id = Snowflake(int(request["requestId"]))
             assert request_id in log.claimed
@@ -228,7 +228,7 @@ def test_keeps_the_claim_of_an_active_uninterruptible_request_after_restarting()
             assert running.poll_unsafe() is None
             log.clear()
 
-            yield from testing.adjust(Seconds(_TEN_MINUTES))
+            yield from testing.adjust(Duration(_TEN_MINUTES))
             yield from _poll_three_times(service)
             request_id = Snowflake(int(request["requestId"]))
             assert request_id in log.claimed
@@ -286,7 +286,7 @@ def test_keeps_the_claim_of_an_active_stream_after_an_acknowledged_chunk():
         log.clear()
 
         # Await the ack because memory storage does not model SQL reply filtering.
-        yield from testing.adjust(Seconds(_TEN_MINUTES))
+        yield from testing.adjust(Duration(_TEN_MINUTES))
         yield from _poll_three_times(service)
         assert len(log.claimed) > 0
         assert running.poll_unsafe() is None
@@ -297,7 +297,7 @@ def test_keeps_the_claim_of_an_active_stream_after_an_acknowledged_chunk():
     def transform(storage: MessageStorageService) -> MessageStorageService:
         return log.storage(storage, save_envelope=save_envelope_of(storage))
 
-    yield from body.pipe(fx.provide(capped(transform, refresh_assignments_interval=Seconds(60))))
+    yield from body.pipe(fx.provide(capped(transform, refresh_assignments_interval=millis(60_000))))
 
 
 class _PausedRead:
@@ -443,10 +443,10 @@ def test_redelivers_a_request_reset_while_an_asynchronous_storage_read_is_pendin
         assert request.request_id in claimed
         deliveries_before_claim_expiry = state.envelopes.size_unsafe()
 
-        yield from testing.adjust(Seconds(_TEN_MINUTES))
+        yield from testing.adjust(Duration(_TEN_MINUTES))
         assert state.envelopes.size_unsafe() == 1
         assert deliveries_before_claim_expiry == 1, (
             "reset request was claimed but not redelivered before claim expiry"
         )
 
-    yield from body.pipe(fx.provide(capped(transform, refresh_assignments_interval=Seconds(60))))
+    yield from body.pipe(fx.provide(capped(transform, refresh_assignments_interval=millis(60_000))))

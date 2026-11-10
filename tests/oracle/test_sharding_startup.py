@@ -30,7 +30,7 @@ from pyfect.cluster import (
     sharding_config,
 )
 from pyfect.cluster.runner_address import RunnerAddress
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.logger import Options
 from pyfect.scheduler import Cancel, Scheduler, Task
 from pyfect.scope import CloseableScope
@@ -83,7 +83,7 @@ class _StartupLast:
 
         self._inner.schedule(run)
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         return self._inner.call_later(delay, task, daemon=daemon)
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:

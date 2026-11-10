@@ -22,7 +22,7 @@ from pyfect._core import Effect, _Gen, _Succeed, _WithFiber
 from pyfect._layer_core import Layer, effect_context, fork_or_create, require_layer
 from pyfect._unsubscripted import Unsubscripted
 from pyfect.context import Context, ServiceEffect, Tag
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.layer import effect as layer_effect
 from pyfect.layer import unwrap
 from pyfect.rc_ref import RcRef
@@ -45,7 +45,7 @@ class LayerRef[I = Unsubscripted, E = Never]:
         cls: type[LayerRef[Unsubscripted, Any]],
         layer: Layer[I2, X, RR],
         *,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
         preload: Literal[False] = False,
         invalidation_schedule: Schedule[object, object, object, RR] | None = None,
     ) -> Effect[LayerRef[I2, X], Never, Scope | RR]: ...
@@ -55,7 +55,7 @@ class LayerRef[I = Unsubscripted, E = Never]:
         cls: type[LayerRef[Unsubscripted, Any]],
         layer: Layer[I2, X, RR],
         *,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
         preload: bool,
         invalidation_schedule: Schedule[object, object, object, RR] | None = None,
     ) -> Effect[LayerRef[I2, X], X, Scope | RR]: ...
@@ -65,7 +65,7 @@ class LayerRef[I = Unsubscripted, E = Never]:
         cls,
         layer: Layer[I, E, RR],
         *,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
         preload: Literal[False] = False,
         invalidation_schedule: Schedule[object, object, object, RR] | None = None,
     ) -> Effect[LayerRef[I, E], Never, Scope | RR]: ...
@@ -75,7 +75,7 @@ class LayerRef[I = Unsubscripted, E = Never]:
         cls,
         layer: Layer[I, E, RR],
         *,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
         preload: bool,
         invalidation_schedule: Schedule[object, object, object, RR] | None = None,
     ) -> Effect[LayerRef[I, E], E, Scope | RR]: ...
@@ -84,7 +84,7 @@ class LayerRef[I = Unsubscripted, E = Never]:
         cls,
         layer: Layer[Any, Any, Any],
         *,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
         preload: bool = False,
         invalidation_schedule: Schedule[object, object, object, Any] | None = None,
     ) -> Effect[LayerRef[Any, Any], Any, Any]:
@@ -145,7 +145,7 @@ class LayerRefService[I, E = Never](Tag[LayerRef[I, E]], base=True):
         cls,
         layer: Layer[I, E, RR],
         *,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
         preload: Literal[False] = False,
         invalidation_schedule: Schedule[object, object, object, RR] | None = None,
     ) -> Layer[Self, Never, RR]: ...
@@ -155,7 +155,7 @@ class LayerRefService[I, E = Never](Tag[LayerRef[I, E]], base=True):
         cls,
         layer: Layer[I, E, RR],
         *,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
         preload: bool,
         invalidation_schedule: Schedule[object, object, object, RR] | None = None,
     ) -> Layer[Self, E, RR]: ...
@@ -164,7 +164,7 @@ class LayerRefService[I, E = Never](Tag[LayerRef[I, E]], base=True):
         cls,
         layer: Layer[I, E, Any],
         *,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
         preload: bool = False,
         invalidation_schedule: Schedule[object, object, object, Any] | None = None,
     ) -> Layer[Self, Any, Any]:

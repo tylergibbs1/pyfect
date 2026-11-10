@@ -7,7 +7,7 @@ from typing import Any
 import pyfect as fx
 from pyfect import schedule, stream, testing
 from pyfect.clock import Clock
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.queue import Done, Queue
 from pyfect.result import Err, Ok
 
@@ -156,7 +156,7 @@ def test_zip_latest_all_waits_for_every_stream_before_writing():
 def _timed(spacing: float) -> fx.Effect[list[int], Any, Any]:
     @fx.fn
     def run():
-        spaced = stream.make(1, 2, 3).rechunk(1).schedule(schedule.spaced(Seconds(spacing)))
+        spaced = stream.make(1, 2, 3).rechunk(1).schedule(schedule.spaced(Duration(spacing)))
         fiber = yield from spaced.timeout("1 second").run_collect().fork_scoped()
         yield from testing.adjust("5 seconds")
         return (yield from fiber.join())

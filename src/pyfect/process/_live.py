@@ -26,7 +26,8 @@ from pyfect import sink as sink_
 from pyfect import stream as stream_
 from pyfect._core import Effect
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe
 from pyfect.effect import fail, gen, succeed, sync, try_blocking
 from pyfect.file_system import FileSystem, FileSystemService
 from pyfect.layer import Layer
@@ -387,9 +388,9 @@ def _wire(
         return succeed(ExitCode(code))
 
     def kill(
-        *, kill_signal: signal.Signals | None = None, force_kill_after: Duration | None = None
+        *, kill_signal: signal.Signals | None = None, force_kill_after: DurationInput | None = None
     ) -> Effect[None, PlatformError]:
-        timeout = None if force_kill_after is None else to_seconds(force_kill_after)
+        timeout = None if force_kill_after is None else from_input_unsafe(force_kill_after)
         return child.terminate(kill_signal, timeout)
 
     def reref() -> None:
@@ -485,7 +486,9 @@ class _Spawner:
         last = handles[-1]
 
         def kill(
-            *, kill_signal: signal.Signals | None = None, force_kill_after: Duration | None = None
+            *,
+            kill_signal: signal.Signals | None = None,
+            force_kill_after: DurationInput | None = None,
         ) -> Effect[None, PlatformError]:
             def each():
                 for handle in reversed(handles):

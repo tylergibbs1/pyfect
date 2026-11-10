@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Never
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.redacted import Redacted
 
 if TYPE_CHECKING:
@@ -65,8 +65,8 @@ class PgConnectionConfig:
     database: str | None = None
     username: str | None = None
     password: Password | None = None
-    connect_timeout: Duration | None = None
-    keep_alive: Duration | None = None
+    connect_timeout: DurationInput | None = None
+    keep_alive: DurationInput | None = None
     application_name: str | None = None
     startup_parameters: Mapping[str, str] = field(default_factory=dict[str, str])
     startup_options: str | None = None
@@ -126,9 +126,9 @@ class PgPoolConfig(PgClientConfig):
 
     min_connections: int = 0
     max_connections: int = 10
-    idle_timeout: Duration = "60 seconds"
-    connection_ttl: Duration | None = None
-    acquire_timeout: Duration | None = None
+    idle_timeout: DurationInput = "60 seconds"
+    connection_ttl: DurationInput | None = None
+    acquire_timeout: DurationInput | None = None
 
     def __post_init__(self) -> None:
         super(PgPoolConfig, self).__post_init__()

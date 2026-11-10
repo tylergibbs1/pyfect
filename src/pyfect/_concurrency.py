@@ -26,7 +26,8 @@ from pyfect._core import (
 from pyfect._effect_args import require_effects
 from pyfect._fiber import Fiber, interrupt_all
 from pyfect.cause import Cause, Interrupt, fail, merge
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe
 from pyfect.errors import TimeoutException
 from pyfect.exit import Exit, Failure, Success
 from pyfect.option import Option, Some
@@ -272,20 +273,24 @@ def race_all_first[A = Never, EE = Never, RR = Never](
 # The public types of the timeouts live on the ``Effect`` methods.
 
 
-def timeout_option[A, E, R](eff: Effect[A, E, R], duration: Duration) -> Effect[Option[A], E, R]:
+def timeout_option[A, E, R](
+    eff: Effect[A, E, R], duration: DurationInput
+) -> Effect[Option[A], E, R]:
     from pyfect.clock import sleep
 
     return race_first(eff.map(Some), sleep(duration).as_(None))
 
 
 def timeout_or_else(
-    eff: Effect[Any, Any, Any], duration: Duration, or_else: Callable[[], Effect[Any, Any, Any]]
+    eff: Effect[Any, Any, Any],
+    duration: DurationInput,
+    or_else: Callable[[], Effect[Any, Any, Any]],
 ) -> Effect[Any, Any, Any]:
     return timeout_option(eff, duration).flat_map(
         lambda found: or_else() if found is None else _Succeed(found.value)
     )
 
 
-def timeout(eff: Effect[Any, Any, Any], duration: Duration) -> Effect[Any, Any, Any]:
-    seconds = to_seconds(duration)
+def timeout(eff: Effect[Any, Any, Any], duration: DurationInput) -> Effect[Any, Any, Any]:
+    seconds = from_input_unsafe(duration)
     return timeout_or_else(eff, seconds, lambda: _FailCause(fail(TimeoutException(seconds))))

@@ -13,7 +13,7 @@ from pyfect import layer as _layer
 from pyfect._fiber import Fiber
 from pyfect._tracer_ref import CurrentTracer
 from pyfect.context import Context
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import Effect, gen, succeed
 from pyfect.exit import Exit, Success
 from pyfect.http import headers as _headers
@@ -311,10 +311,10 @@ def make(
     resource: ResourceOptions | None = None,
     headers: _headers.Input | None = None,
     compression: Compression = "none",
-    export_interval: Duration | None = None,
+    export_interval: DurationInput | None = None,
     max_batch_size: int | None = None,
     context: SpanContextHook | None = None,
-    shutdown_timeout: Duration | None = None,
+    shutdown_timeout: DurationInput | None = None,
 ) -> Effect[Tracer, Never, Flusher | OtlpSerialization | HttpClient | Scope]:
     """A tracer exporting each sampled span to ``url`` when it ends, in
     batches of ``max_batch_size`` (1000) every ``export_interval`` (5
@@ -365,10 +365,10 @@ def layer(
     resource: ResourceOptions | None = None,
     headers: _headers.Input | None = None,
     compression: Compression = "none",
-    export_interval: Duration | None = None,
+    export_interval: DurationInput | None = None,
     max_batch_size: int | None = None,
     context: SpanContextHook | None = None,
-    shutdown_timeout: Duration | None = None,
+    shutdown_timeout: DurationInput | None = None,
 ) -> Layer[Flusher, Never, OtlpSerialization | HttpClient]:
     """Installs ``make``'s tracer, with the shared ``layer_flusher``."""
     tracer = make(

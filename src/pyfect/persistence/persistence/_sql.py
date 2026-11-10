@@ -10,7 +10,7 @@ from pyfect import _json_text
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect.clock import Clock, ClockService, now_nanos
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -155,7 +155,7 @@ def _make_store(
 
         return suspend(attempt)
 
-    def set_value(key: str, value: object, ttl: Seconds | None) -> Effect[None, PersistenceError]:
+    def set_value(key: str, value: object, ttl: Duration | None) -> Effect[None, PersistenceError]:
         return write(
             ((key, value, ttl),),
             f"Failed to set key {key} in backing store",

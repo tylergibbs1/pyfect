@@ -28,7 +28,8 @@ from pyfect import _js_date as js_date
 from pyfect._digits import parse_signed_digits
 from pyfect._js import text_encode
 from pyfect.date_time._epoch import to_epoch_millis
-from pyfect.duration import ZERO, Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, zero
+from pyfect.duration import Input as DurationInput
 from pyfect.errors import TaggedError
 from pyfect.http import url as _url
 from pyfect.http.headers import format_http_date
@@ -43,7 +44,7 @@ class CookieOptionsInput(TypedDict, total=False):
 
     domain: str
     expires: datetime
-    max_age: Duration
+    max_age: DurationInput
     path: str
     priority: Priority
     http_only: bool
@@ -58,7 +59,7 @@ class CookieOptionsInput(TypedDict, total=False):
 class CookieOptions:
     domain: str | None = None
     expires: datetime | None = None
-    max_age: Duration | None = None
+    max_age: DurationInput | None = None
     path: str | None = None
     priority: Priority | None = None
     http_only: bool | None = None
@@ -163,7 +164,7 @@ def _validate(  # noqa: PLR0911
         return CookiesError.from_reason("InvalidCookieDomain")
     if options.path is not None and not _PATH.fullmatch(options.path):
         return CookiesError.from_reason("InvalidCookiePath")
-    if options.max_age is not None and math.isinf(to_seconds(options.max_age)):
+    if options.max_age is not None and math.isinf(from_input_unsafe(options.max_age)):
         return CookiesError.from_reason("CookieInfinityMaxAge")
     return None
 
@@ -203,7 +204,7 @@ def serialize_cookie(cookie: Cookie) -> str:
     if options is None:
         return out
     if options.max_age is not None:
-        out += f"; Max-Age={math.trunc(to_seconds(options.max_age))}"
+        out += f"; Max-Age={math.trunc(from_input_unsafe(options.max_age))}"
     if options.domain is not None and not options.host_only:
         out += f"; Domain={options.domain}"
     if options.path is not None:
@@ -252,7 +253,7 @@ def _parse_set_cookie(header: str) -> Cookie | None:  # noqa: PLR0912
                 seconds = None if plus else parse_signed_digits(attribute)
                 # Past what a float holds the attribute is ignored.
                 if seconds is not None and abs(seconds) <= _MAX_SECONDS:
-                    options["max_age"] = Seconds(seconds)
+                    options["max_age"] = Duration(seconds)
             case "path" if attribute is not None and attribute.startswith("/"):
                 options["path"] = attribute
             case "priority" if attribute is not None and attribute.lower() in (
@@ -338,10 +339,10 @@ class Cookies:
         self, name: str, **options: Unpack[CookieOptionsInput]
     ) -> Result[Cookies, CookiesError]:
         """Set ``name`` to an empty cookie that has already expired."""
-        return self.set(name, "", **{**options, "max_age": ZERO, "expires": _EPOCH})
+        return self.set(name, "", **{**options, "max_age": zero, "expires": _EPOCH})
 
     def expire_cookie_unsafe(self, name: str, **options: Unpack[CookieOptionsInput]) -> Cookies:
-        return self.set_unsafe(name, "", **{**options, "max_age": ZERO, "expires": _EPOCH})
+        return self.set_unsafe(name, "", **{**options, "max_age": zero, "expires": _EPOCH})
 
     def set_all(
         self, cookies: Iterable[tuple[str, str] | tuple[str, str, CookieOptionsInput]]
@@ -560,11 +561,11 @@ _MAX_DATE_MILLIS = 8_640_000_000_000_000
 """JavaScript's ``Date`` range; past it ``new Date(...)`` is invalid."""
 
 
-def _expiry(now: float, max_age: Duration) -> datetime:
+def _expiry(now: float, max_age: DurationInput) -> datetime:
     """``now`` plus ``max_age`` as an ``expires``: clamped to what ``datetime``
     holds, and expired outright past JavaScript's ``Date`` range (Effect
     stores an invalid ``Date`` there, which is never sent)."""
-    millis = now + to_seconds(max_age) * 1000
+    millis = now + from_input_unsafe(max_age) * 1000
     if abs(millis) > _MAX_DATE_MILLIS:
         return _EPOCH
     try:

@@ -12,7 +12,7 @@ from typing import Any, Final
 
 from pyfect._core import Effect
 from pyfect.cause import Cause
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.effect import gen, sync, void
 from pyfect.persistence._columns import column_int
 from pyfect.persistence.persistence._sql import SQL_CLEANUP_BATCH_SIZE
@@ -93,7 +93,7 @@ class Dialect:
     def seconds_from_now(self, seconds: float) -> Fragment:
         return self.seconds_offset(max(math.ceil(seconds), 0))
 
-    def delayed_visible_at(self, delay: Seconds) -> Fragment:
+    def delayed_visible_at(self, delay: Duration) -> Fragment:
         """When a delayed offer becomes visible, never before ``delay``
         elapses: PostgreSQL reads ``clock_timestamp()`` (``NOW()`` is fixed
         at the transaction's start); MySQL and SQLite clocks drop the
@@ -424,7 +424,7 @@ class Settlements:
             ),
         )
 
-    def retry(self, element: Element, delay: Seconds, cause: Cause[Any]) -> Effect[None]:
+    def retry(self, element: Element, delay: Duration, cause: Cause[Any]) -> Effect[None]:
         sql = self._dialect.sql
         return self._ack(
             element,

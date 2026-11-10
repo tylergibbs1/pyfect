@@ -10,7 +10,7 @@ import pytest
 import pyfect as fx
 from pyfect import clock, testing
 from pyfect._wake_tracking import WakeTracker
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.scheduler import Cancel, Scheduler, Task
 
 
@@ -24,7 +24,7 @@ class TimerRecordingScheduler:
     def schedule(self, task: Task, priority: int = 0) -> None:
         self.inner.schedule(task)
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         self.delays.append(delay)
         return self.inner.call_later(delay, task, daemon=daemon)
 
@@ -76,7 +76,7 @@ def test_timed_measures_whole_monotonic_nanoseconds():
 def test_a_live_sleep_of_zero_or_less_yields_once(seconds: float):
     order: list[str] = []
     other = yield from fx.sync(lambda: order.append("other")).fork()
-    yield from fx.sleep(Seconds(seconds))
+    yield from fx.sleep(Duration(seconds))
     order.append("sleeper")
     yield from other.join()
     assert order == ["other", "sleeper"]

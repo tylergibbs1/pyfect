@@ -57,7 +57,7 @@ from pyfect.cluster.runner_storage import RunnerStorage
 from pyfect.cluster.runners import Rpcs
 from pyfect.context import Tag
 from pyfect.cron import parse_unsafe
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.file_system import FileSystem, NoopFileSystem
 from pyfect.http import client as http_client
 from pyfect.http import httpx_client, response
@@ -131,11 +131,11 @@ def _call_echo():
 _FAST = replace(
     sharding_config.DEFAULTS,
     shards_per_group=12,
-    entity_message_poll_interval=Seconds(0.1),
-    refresh_assignments_interval=Seconds(0.1),
-    shard_lock_refresh_interval=Seconds(0.5),
-    shard_lock_expiration=Seconds(2),
-    entity_termination_timeout=Seconds(0),
+    entity_message_poll_interval=millis(100),
+    refresh_assignments_interval=millis(100),
+    shard_lock_refresh_interval=millis(500),
+    shard_lock_expiration=millis(2000),
+    entity_termination_timeout=millis(0),
 )
 
 

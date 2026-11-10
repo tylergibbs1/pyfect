@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from pyfect.duration import Duration, Seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import millis
 from pyfect.redacted import Redacted
 from pyfect.redacted import value as redacted_value
 from pyfect.sql.mysql._url_options import UrlOptions, parse_query
@@ -25,7 +26,7 @@ from pyfect.sql.mysql._url_options import UrlOptions, parse_query
 DEFAULT_MAX_CONNECTIONS = 10
 """mysql2's ``connectionLimit``."""
 
-DEFAULT_IDLE_TIMEOUT = Seconds(60)
+DEFAULT_IDLE_TIMEOUT = millis(60_000)
 """mysql2's ``idleTimeout``."""
 
 
@@ -90,7 +91,7 @@ class MysqlClientConfig:
     username: str | None = None
     password: Redacted[str] | None = None
     max_connections: int | None = None
-    connection_ttl: Duration | None = None
+    connection_ttl: DurationInput | None = None
     connect_options: Mapping[str, Any] = field(default_factory=dict[str, Any])
     disable_prepared_statements: bool = False
     span_attributes: Mapping[str, object] = field(default_factory=dict[str, object])

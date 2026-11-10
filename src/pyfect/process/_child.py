@@ -24,7 +24,7 @@ from collections.abc import Callable
 from typing import Never
 
 from pyfect._core import Effect
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.effect import callback, fail, gen, succeed, suspend, sync, try_
 from pyfect.platform_error import PlatformError, from_exception, system_error
 from pyfect.process._command import StandardCommand
@@ -32,10 +32,10 @@ from pyfect.process._os import Latch
 from pyfect.process.command_line import Format, display
 from pyfect.scheduler import Cancel, CurrentScheduler, Scheduler
 
-GROUP_GRACE = Seconds(1.0)
+GROUP_GRACE = millis(1000)
 """How long the rest of a process group gets to exit after its leader."""
 
-_POLL = Seconds(0.01)
+_POLL = millis(10)
 
 _SIGKILL: signal.Signals = getattr(signal, "SIGKILL", signal.SIGTERM)
 
@@ -131,7 +131,7 @@ class Child:
             error, module="ChildProcess", method=method, path_or_descriptor=self.command_line
         )
 
-    def _await_group(self, timeout: Seconds) -> Effect[None]:
+    def _await_group(self, timeout: Duration) -> Effect[None]:
         """Wait, at most ``timeout``, for the leader and its group to be
         gone, polling on the scheduler's real-time timers."""
 
@@ -158,7 +158,7 @@ class Child:
         return CurrentScheduler().flat_map(start)
 
     def terminate(
-        self, kill_signal: signal.Signals | None, force_kill_after: Seconds | None
+        self, kill_signal: signal.Signals | None, force_kill_after: Duration | None
     ) -> Effect[None, PlatformError]:
         def body():
             yield from self.signal(kill_signal or signal.SIGTERM)

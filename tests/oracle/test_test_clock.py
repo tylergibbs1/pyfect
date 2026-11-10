@@ -16,7 +16,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Seconds, to_millis
+from pyfect.duration import Duration, nanos, to_millis
 from pyfect.testing import TestClock
 
 HOUR = 3600.0
@@ -58,7 +58,7 @@ def test_adjust_skips_the_cancelled_deadline(
     """TestClock.test.ts "adjust - skips the cancelled deadline (${cancellation})"."""
     clock = TestClock(warning_delay="50 millis")
     if cancellation == "interrupted sleep":
-        sleeper = yield from clock.sleep(fx.duration.Seconds(60)).fork()
+        sleeper = yield from clock.sleep(fx.duration.millis(60_000)).fork()
         yield from fx.yield_now()
         yield from sleeper.interrupt()
     else:
@@ -80,8 +80,8 @@ def test_adjust_skips_the_cancelled_deadline(
 def test_sleep_does_not_require_passage_of_wall_time():
     """TestClock.test.ts "sleep - does not require passage of wall time"."""
     elapsed: list[bool] = []
-    yield from fx.sync(lambda: elapsed.append(True)).delay(Seconds(10 * HOUR)).fork()
-    yield from testing.adjust(Seconds(11 * HOUR))
+    yield from fx.sync(lambda: elapsed.append(True)).delay(Duration(10 * HOUR)).fork()
+    yield from testing.adjust(Duration(11 * HOUR))
     assert elapsed == [True]
 
 
@@ -89,10 +89,10 @@ def test_sleep_does_not_require_passage_of_wall_time():
 def test_sleep_delays_effects_until_time_is_adjusted():
     """TestClock.test.ts "sleep - delays effects until time is adjusted"."""
     elapsed: list[bool] = []
-    fiber = yield from fx.sync(lambda: elapsed.append(True)).delay(Seconds(10 * HOUR)).fork()
-    yield from testing.adjust(Seconds(9 * HOUR))
+    fiber = yield from fx.sync(lambda: elapsed.append(True)).delay(Duration(10 * HOUR)).fork()
+    yield from testing.adjust(Duration(9 * HOUR))
     assert fiber.poll_unsafe() is None
-    yield from testing.adjust(Seconds(11 * HOUR))
+    yield from testing.adjust(Duration(11 * HOUR))
     assert fiber.poll_unsafe() == fx.Success(None)
     assert elapsed == [True]
 
@@ -101,11 +101,11 @@ def test_sleep_delays_effects_until_time_is_adjusted():
 def test_sleep_handles_multiple_sleeps():
     """TestClock.test.ts "sleep - handles multiple sleeps"."""
     message: list[str] = []
-    yield from fx.sync(lambda: message.append("World!")).delay(Seconds(3 * HOUR)).fork_scoped()
-    yield from fx.sync(lambda: message.append("Hello, ")).delay(Seconds(HOUR)).fork_scoped()
-    yield from testing.adjust(Seconds(HOUR))
+    yield from fx.sync(lambda: message.append("World!")).delay(Duration(3 * HOUR)).fork_scoped()
+    yield from fx.sync(lambda: message.append("Hello, ")).delay(Duration(HOUR)).fork_scoped()
+    yield from testing.adjust(Duration(HOUR))
     assert "".join(message) == "Hello, "
-    yield from testing.adjust(Seconds(4 * HOUR))
+    yield from testing.adjust(Duration(4 * HOUR))
     assert "".join(message) == "Hello, World!"
 
 
@@ -113,9 +113,9 @@ def test_sleep_handles_multiple_sleeps():
 def test_set_time_sleep_correctly_handles_new_set_time():
     """TestClock.test.ts "setTime - sleep correctly handles new set time"."""
     elapsed: list[bool] = []
-    yield from fx.sync(lambda: elapsed.append(True)).delay(Seconds(10 * HOUR)).fork()
+    yield from fx.sync(lambda: elapsed.append(True)).delay(Duration(10 * HOUR)).fork()
     assert elapsed == []
-    yield from testing.set_time(to_millis(Seconds(11 * HOUR)))
+    yield from testing.set_time(to_millis(Duration(11 * HOUR)))
     assert elapsed == [True]
 
 
@@ -151,7 +151,7 @@ def test_adjust_preserves_precision_for_nanosecond_durations_beyond_max_safe_int
     """TestClock.test.ts "adjust - preserves precision for nanosecond durations beyond
     Number.MAX_SAFE_INTEGER"."""
     clock = TestClock()
-    yield from clock.adjust(Seconds(999_999_999.999_999))
+    yield from clock.adjust(nanos(999_999_999_999_999_000))
     assert clock.monotonic_nanos_unsafe() == 999_999_999_999_999_000
     assert clock.now_nanos_unsafe() == 999_999_999_999_999_000
 
@@ -161,7 +161,7 @@ def test_adjust_keeps_nanosecond_access_total_after_infinite_durations():
     """TestClock.test.ts "adjust - keeps nanosecond access total after infinite durations"."""
     for duration in (math.inf, -math.inf):
         clock = TestClock()
-        yield from clock.adjust(Seconds(duration))
+        yield from clock.adjust(Duration(duration))
         assert isinstance(clock.now_nanos_unsafe(), int)
 
 
@@ -198,7 +198,7 @@ def test_adjust_advances_monotonic_time_to_intermediate_sleep_deadlines():
 
     @fx.gen
     def sleeper():
-        yield from clock.sleep(fx.duration.Seconds(1))
+        yield from clock.sleep(fx.duration.millis(1000))
         observed.append(clock.monotonic_nanos_unsafe())
 
     yield from sleeper.fork()

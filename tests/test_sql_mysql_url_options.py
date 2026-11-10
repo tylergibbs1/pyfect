@@ -8,7 +8,7 @@ import ssl
 import pytest
 
 from pyfect import redacted
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.sql import mysql
 from pyfect.sql.mysql.config import parse_url
 
@@ -59,7 +59,7 @@ def test_refuses_options_it_does_not_read(query: str, message: str):
 
 def test_reads_connect_timeout_in_milliseconds_and_skips_the_urls_own_keys():
     parts = parse_url("mysql://u@h/db?connectTimeout=2500&user=other&host=elsewhere")
-    assert parts.options.connect_timeout == Seconds(2.5)
+    assert parts.options.connect_timeout == millis(2500)
     assert (parts.host, parts.username) == ("h", "u")
     config = mysql.MysqlClientConfig(url=redacted.make("mysql://h/db?connectTimeout=2500"))
-    assert mysql.client.connect_options(config)["connect_timeout"] == Seconds(2.5)
+    assert mysql.client.connect_options(config)["connect_timeout"] == millis(2500)

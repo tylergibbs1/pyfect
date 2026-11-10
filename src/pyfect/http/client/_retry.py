@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from pyfect.duration import Seconds, to_millis
+from pyfect.duration import Duration, to_millis
 from pyfect.effect import Effect
 from pyfect.errors import TimeoutException
 from pyfect.http.client._service import RetryOn
@@ -37,7 +37,7 @@ def is_transient_error(error: object) -> bool:
     )
 
 
-def retry_after_of(input: object, now_millis: float) -> Seconds | None:
+def retry_after_of(input: object, now_millis: float) -> Duration | None:
     """The ``Retry-After`` delay of a response (or of the response of an
     ``HttpClientError``), at least a millisecond."""
     response = input.response if isinstance(input, HttpClientError) else input
@@ -46,7 +46,7 @@ def retry_after_of(input: object, now_millis: float) -> Seconds | None:
     return retry_after_from_header(response.headers.get("retry-after"), now_millis)
 
 
-def retry_after_from_header(header: str | None, now_millis: float) -> Seconds | None:
+def retry_after_from_header(header: str | None, now_millis: float) -> Duration | None:
     """The delay a ``Retry-After`` value asks for, from a millisecond to an
     hour (Effect leaves it unbounded, so one response could park a request
     for good); ``None`` for a missing or invalid one (RFC 9110 treats it as

@@ -27,7 +27,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.exit import fail as exit_fail
 from pyfect.exit import succeed as exit_succeed
 
@@ -425,7 +425,7 @@ def test_skips_the_ttl_callback_on_interruption_and_invokes_it_once_on_next_succ
 
     def ttl(ex: fx.Exit[int, Any]) -> float:
         exits.append(ex)
-        return Seconds(60)
+        return millis(60_000)
 
     @fx.gen
     def program():
@@ -453,7 +453,7 @@ def test_selects_ttl_from_each_fresh_exit_without_evaluating_on_cache_hits() -> 
 
     def ttl(ex: fx.Exit[int, Any]) -> float:
         exits.append(ex)
-        return Seconds(1) if ex == exit_succeed(1) else Seconds(3)
+        return millis(1000) if ex == exit_succeed(1) else millis(3000)
 
     @fx.gen
     def program():
@@ -487,7 +487,7 @@ def test_supports_a_piped_callback_that_skips_failures_and_caches_successes() ->
 
     def ttl(ex: fx.Exit[int, str]) -> float:
         exits.append(ex)
-        return 0 if isinstance(ex, fx.Failure) else Seconds(1)
+        return 0 if isinstance(ex, fx.Failure) else millis(1000)
 
     @fx.gen
     def program():
@@ -550,7 +550,7 @@ def test_invalidate_supports_a_piped_callback_that_skips_failures_and_caches_suc
 
     def ttl(ex: fx.Exit[int, str]) -> float:
         exits.append(ex)
-        return 0 if isinstance(ex, fx.Failure) else Seconds(1)
+        return 0 if isinstance(ex, fx.Failure) else millis(1000)
 
     @fx.gen
     def program():
@@ -921,7 +921,7 @@ def test_race_all_first() -> None:
 
     def racer(ms: int) -> fx.Effect[int, str]:
         eff: fx.Effect[int, str] = fx.fail("boom") if ms == 0 else fx.succeed(ms)
-        return eff.delay(Seconds(ms / 1000)).on_interrupt(fx.sync(lambda: interrupted.append(ms)))
+        return eff.delay(Duration(ms / 1000)).on_interrupt(fx.sync(lambda: interrupted.append(ms)))
 
     @fx.gen
     def program():
@@ -1055,7 +1055,7 @@ def test_unbounded_fail():
             done.append(i)
             return fx.fail("error") if i == 3 else fx.succeed(i)
 
-        return fx.suspend(run).delay(Seconds(i * 0.1))
+        return fx.suspend(run).delay(Duration(i * 0.1))
 
     handle = yield from fx.for_each([1, 2, 3, 4, 5], visit, concurrency="unbounded").fork()
     yield from testing.adjust("500 millis")

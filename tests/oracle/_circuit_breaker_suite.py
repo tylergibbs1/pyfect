@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import pyfect as fx
-from pyfect.duration import ZERO, to_millis
+from pyfect.duration import to_millis, zero
 from pyfect.exit import Failure, Success
 from pyfect.persistence import circuit_breaker as cb
 from pyfect.result import Err, Ok
@@ -143,7 +143,7 @@ def half_open(advance: Advance):
     yield from advance(0.3)
     lazy = yield from breaker.state(key)
     assert isinstance(lazy, cb.Open)
-    assert lazy.retry_after == ZERO
+    assert lazy.retry_after == zero
 
     probe = yield from held(breaker, key, fx.void)
     assert isinstance((yield from rejection(run_void(breaker, key))), cb.CircuitHalfOpen)

@@ -27,7 +27,7 @@ from pyfect.cluster.message import OutgoingRequest
 from pyfect.cluster.message_storage import MessageStorage, MessageStorageService
 from pyfect.cluster.sharding_config import ShardingConfig
 from pyfect.context import Context
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 
 from ._cluster_entities import TestEntity, test_entity_no_state, test_entity_state_layer
 
@@ -35,10 +35,10 @@ test_config = sharding_config.layer(
     replace(
         sharding_config.DEFAULTS,
         entity_mailbox_capacity=10,
-        entity_termination_timeout=Seconds(0),
-        entity_message_poll_interval=Seconds(5),
-        send_retry_interval=Seconds(0.1),
-        refresh_assignments_interval=Seconds(0),
+        entity_termination_timeout=millis(0),
+        entity_message_poll_interval=millis(5000),
+        send_retry_interval=millis(100),
+        refresh_assignments_interval=millis(0),
     )
 )
 
@@ -76,10 +76,10 @@ test_sharding = test_sharding_without_storage.pipe(
 def make_config(**changes: Any) -> fx.Layer[ShardingConfig]:
     defaults: dict[str, Any] = {
         "entity_mailbox_capacity": 10,
-        "entity_termination_timeout": Seconds(0),
-        "entity_message_poll_interval": Seconds(5),
-        "send_retry_interval": Seconds(0.1),
-        "refresh_assignments_interval": Seconds(0),
+        "entity_termination_timeout": millis(0),
+        "entity_message_poll_interval": millis(5000),
+        "send_retry_interval": millis(100),
+        "refresh_assignments_interval": millis(0),
     }
     return sharding_config.layer(replace(sharding_config.DEFAULTS, **(defaults | changes)))
 

@@ -37,9 +37,9 @@ test_sharding_config = sharding_config.layer(
         sharding_config.DEFAULTS,
         shards_per_group=300,
         entity_mailbox_capacity=10,
-        entity_termination_timeout=fx.duration.Seconds(0),
-        entity_message_poll_interval=fx.duration.Seconds(5),
-        send_retry_interval=fx.duration.Seconds(0.1),
+        entity_termination_timeout=fx.duration.Duration(0),
+        entity_message_poll_interval=fx.duration.Duration(5),
+        send_retry_interval=fx.duration.Duration(0.1),
     )
 )
 

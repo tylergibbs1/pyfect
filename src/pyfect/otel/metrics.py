@@ -24,7 +24,8 @@ from opentelemetry.sdk.metrics.export import MetricReader, MetricsData
 from pyfect import layer as _layer
 from pyfect._context_effects import context
 from pyfect._core import Effect
-from pyfect.duration import Duration, to_millis
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import to_millis
 from pyfect.effect import die, gen, suspend, sync
 from pyfect.layer import Layer
 from pyfect.otel._producer import MetricProducer, TemporalityPreference
@@ -73,7 +74,7 @@ class _ShutsDown(Protocol):
     def shutdown(self, timeout_millis: float = ...) -> None: ...
 
 
-def _shut_down(readers: Sequence[_ShutsDown], timeout: Duration) -> Effect[None]:
+def _shut_down(readers: Sequence[_ShutsDown], timeout: DurationInput) -> Effect[None]:
     """Shut every reader down, ignoring errors, as Effect does."""
 
     def run() -> None:
@@ -88,7 +89,7 @@ def register_producer(
     producer: MetricProducer,
     readers: Readers,
     *,
-    shutdown_timeout: Duration = DEFAULT_SHUTDOWN_TIMEOUT,
+    shutdown_timeout: DurationInput = DEFAULT_SHUTDOWN_TIMEOUT,
 ) -> Effect[list[MetricReader], Never, Scope]:
     """Bind each reader to its own fork of ``producer``, and shut them down
     when the scope closes. If a reader cannot be bound (it is bound
@@ -116,7 +117,7 @@ def layer(
     readers: Readers,
     *,
     temporality: TemporalityPreference = "cumulative",
-    shutdown_timeout: Duration = DEFAULT_SHUTDOWN_TIMEOUT,
+    shutdown_timeout: DurationInput = DEFAULT_SHUTDOWN_TIMEOUT,
 ) -> Layer[Never, Never, OtelResource]:
     """Bind the readers ``readers()`` makes to a producer of the current
     registry while the layer is in use."""

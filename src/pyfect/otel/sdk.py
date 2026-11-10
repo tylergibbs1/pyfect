@@ -30,7 +30,7 @@ from opentelemetry.util.types import AttributeValue
 
 from pyfect import layer as _layer
 from pyfect._core import Effect
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import sync
 from pyfect.layer import Layer
 from pyfect.otel import logger as otel_logger
@@ -79,7 +79,7 @@ class Configuration:
     log_record_processor: sdk_logs.LogRecordProcessor | Sequence[sdk_logs.LogRecordProcessor] = ()
     logger_merge_with_existing: bool = True
     resource: ResourceConfig | None = None
-    shutdown_timeout: Duration = DEFAULT_SHUTDOWN_TIMEOUT
+    shutdown_timeout: DurationInput = DEFAULT_SHUTDOWN_TIMEOUT
 
 
 def _all[T](given: T | Sequence[T], kind: type[T]) -> list[T]:
@@ -95,7 +95,7 @@ def layer_tracer_provider(
     sampler: Sampler | None = None,
     id_generator: IdGenerator | None = None,
     span_limits: SpanLimits | None = None,
-    shutdown_timeout: Duration = DEFAULT_SHUTDOWN_TIMEOUT,
+    shutdown_timeout: DurationInput = DEFAULT_SHUTDOWN_TIMEOUT,
 ) -> Layer[otel_tracer.OtelTracerProvider, Never, OtelResource]:
     """An SDK tracer provider with the ``OtelResource`` and ``processors``,
     flushed (for at most ``shutdown_timeout``) and shut down when the layer

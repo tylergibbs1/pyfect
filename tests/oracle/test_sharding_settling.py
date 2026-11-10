@@ -34,7 +34,7 @@ from pyfect.cluster.runners import Runners, RunnersTransport
 from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.shard_id import make as shard
 from pyfect.context import Context
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.layer import Layer
 from pyfect.scope import CloseableScope, Scope, fork_in
 
@@ -84,8 +84,8 @@ def _config(port: int, **changes: Any) -> Layer[sharding_config.ShardingConfig]:
     defaults: dict[str, Any] = {
         "runner_address": RunnerAddress(host="localhost", port=port),
         "shards_per_group": len(_shards),
-        "entity_termination_timeout": Seconds(0),
-        "refresh_assignments_interval": Seconds(0.1),
+        "entity_termination_timeout": millis(0),
+        "refresh_assignments_interval": millis(100),
     }
     return sharding_config.layer(replace(sharding_config.DEFAULTS, **(defaults | changes)))
 
@@ -171,7 +171,7 @@ def test_hands_each_shard_off_once_for_a_bounded_burst_of_staggered_joins():
     immediate = yield from _staggered_joins()
     assert [int(change.at // 1500) for change in immediate] == [0, 1, 2, 3]
 
-    settled = yield from _staggered_joins(runner_join_debounce=Seconds(2))
+    settled = yield from _staggered_joins(runner_join_debounce=millis(2000))
     assert [change.owned for change in settled] == [immediate[0].owned, immediate[3].owned]
     # the initial assignment does not wait for the window
     assert settled[0].at < 1500
@@ -186,7 +186,7 @@ def test_publishes_continuous_joins_within_four_settle_windows():
     @fx.gen
     def body():
         membership: Membership = []
-        recorder = yield from _build_runner(membership, runner_join_debounce=Seconds(2))
+        recorder = yield from _build_runner(membership, runner_join_debounce=millis(2000))
         yield from recorder.advance(1000)
         # joins every 1000ms never leave membership quiet for the window
         for port in range(5001, 5013):
@@ -208,7 +208,7 @@ def test_publishes_unhealthy_runners_immediately_while_joins_are_settling():
     def body():
         existing = _joiner(5001)
         membership: Membership = [(existing, True)]
-        recorder = yield from _build_runner(membership, runner_join_debounce=Seconds(2))
+        recorder = yield from _build_runner(membership, runner_join_debounce=millis(2000))
         yield from recorder.advance(1000)
         # a runner starting in an existing cluster takes its share without waiting
         assert len(recorder.history) == 1
@@ -255,7 +255,7 @@ def _shared_cluster_storage(cluster: _SharedCluster, port: int) -> RunnerStorage
         )
         stall = cluster.stall_get_runners.pop(port, None)
         if stall is not None:
-            return failed.delay(Seconds(stall / 1000))
+            return failed.delay(Duration(stall / 1000))
         if port in cluster.fail_get_runners:
             cluster.fail_get_runners.discard(port)
             return failed
@@ -299,7 +299,7 @@ def _shared_cluster_storage(cluster: _SharedCluster, port: int) -> RunnerStorage
         if delay is None or not requested:
             return fx.sync(run)
         del cluster.acquire_delays[port]
-        return fx.sync(run).delay(Seconds(delay / 1000))
+        return fx.sync(run).delay(Duration(delay / 1000))
 
     def refresh(
         address: RunnerAddress, shard_ids: Iterable[ShardId]
@@ -391,9 +391,9 @@ def _staggered_cluster(  # noqa: PLR0915
                 fx.layer.provide(
                     _config(
                         port,
-                        refresh_assignments_interval=Seconds(refresh_assignments_interval),
-                        send_retry_interval=Seconds(0.1),
-                        runner_join_debounce=Seconds(2),
+                        refresh_assignments_interval=Duration(refresh_assignments_interval),
+                        send_retry_interval=millis(100),
+                        runner_join_debounce=millis(2000),
                         **config,
                     )
                 )

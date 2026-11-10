@@ -10,7 +10,7 @@ from dataclasses import dataclass, fields
 from ipaddress import IPv4Address, IPv6Address
 from typing import Any, ClassVar, Literal, cast
 
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.net._errors import NetAddressError
 from pyfect.net.host import DomainName, is_domain_name
 from pyfect.net.net_address._ip import IpAddress, format_ip, ipv4_to_octets, ipv6_to_octets
@@ -152,10 +152,10 @@ class Soa(_Record):
     primary: DomainName
     admin: str
     serial: int
-    refresh: Seconds
-    retry: Seconds
-    expire: Seconds
-    minimum: Seconds
+    refresh: Duration
+    retry: Duration
+    expire: Duration
+    minimum: Duration
     tag: ClassVar[RecordType] = "SOA"
     _checks: ClassVar[dict[str, _Check]] = {
         "primary": is_domain_name,
@@ -285,7 +285,7 @@ def _format_name(text: str) -> str:
     return "".join(out)
 
 
-def _seconds(value: Seconds) -> str:
+def _seconds(value: Duration) -> str:
     return str(int(value))
 
 

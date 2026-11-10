@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from ipaddress import IPv4Address
 
 from pyfect._digits import parse_digits
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.net.dns._error import DnsErrorReason
 from pyfect.net.net_address._inet import InetAddress, InetAddressV4, InetAddressV6
 from pyfect.result import Err, Ok, Result
@@ -39,7 +39,7 @@ class ResolverConfig:
     """Name servers and per-attempt timeout, as ``/etc/resolv.conf`` gives them."""
 
     name_servers: tuple[InetAddress, ...]
-    timeout: Seconds
+    timeout: Duration
     attempts: int
 
 
@@ -72,7 +72,7 @@ def parse_resolv_conf(text: str) -> ResolverConfig:
                         attempts = max(number, 1)
             case _:
                 pass
-    return ResolverConfig(tuple(servers) or (_LOCALHOST,), Seconds(timeout), attempts)
+    return ResolverConfig(tuple(servers) or (_LOCALHOST,), Duration(timeout), attempts)
 
 
 def system_config() -> ResolverConfig:

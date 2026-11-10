@@ -16,7 +16,8 @@ from pyfect._js import text_encode
 from pyfect._json_text import PARSE_ERRORS, STRINGIFY_ERRORS, Json, parse, stringify
 from pyfect._json_value import JsonValue
 from pyfect.crypto.crypto_error import CryptoError
-from pyfect.duration import Duration, DurationParts, Seconds, from_input, to_millis
+from pyfect.duration import Duration, from_input, to_millis
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail as fail_effect
 from pyfect.effect import succeed
 from pyfect.jose.jose_error import AnyReason, InvalidArgument, InvalidKey, InvalidToken, JoseError
@@ -174,12 +175,12 @@ def encode_header(
     return succeed(base64_url_encode(utf8(text)))
 
 
-def _has_invalid_component(duration: Duration) -> bool:
+def _has_invalid_component(duration: DurationInput) -> bool:
     """Inputs ``Duration`` reads as zero or NaN, which would silently
     disable a bound: NaN in any form, non-finite components, components that
     overflow on conversion."""
     match duration:
-        case Seconds() | timedelta() | str():
+        case Duration() | timedelta() | str():
             return False
         case float() | int():
             return math.isnan(duration)
@@ -198,7 +199,7 @@ def _has_invalid_component(duration: Duration) -> bool:
             return False
 
 
-def millis(name: str, duration: Duration) -> Effect[float, JoseError]:
+def millis(name: str, duration: DurationInput) -> Effect[float, JoseError]:
     """``duration`` in milliseconds, when it is finite and not negative."""
     parsed = None if _has_invalid_component(duration) else from_input(duration)
     value = None if parsed is None else to_millis(parsed)

@@ -11,7 +11,8 @@ from typing import Any, Never, cast
 from pyfect._core import Effect
 from pyfect.cause import Cause
 from pyfect.context import Tag
-from pyfect.duration import ZERO, Duration, Seconds, to_millis, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, to_millis, zero
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, fail_cause, gen, provide_service, succeed, suspend
 from pyfect.layer import Layer, effect_discard
 from pyfect.layer import effect as layer_effect
@@ -57,16 +58,16 @@ class Metadata:
     attempts: int
 
 
-def retry_delay(schedule: RetrySchedule, attempts: int) -> Effect[Seconds]:
+def retry_delay(schedule: RetrySchedule, attempts: int) -> Effect[Duration]:
     """The delay after failed attempt ``attempts``: a fresh run of
     ``schedule`` replayed up to it, with time simulated from the summed
     delays, so delays keep growing when retries run in different
     processes. A schedule that stops keeps its last delay."""
 
-    def body() -> Generator[Any, Any, Seconds]:
+    def body() -> Generator[Any, Any, Duration]:
         step = yield from to_step(schedule)
         now = 0.0
-        delay = ZERO
+        delay = zero
         for attempt in range(1, attempts + 1):
             decision = yield from step(now, attempt)
             if isinstance(decision, Stop):
@@ -110,7 +111,7 @@ class PersistedQueue[A, R = Never]:
         )
 
     def offer(
-        self, value: A, *, id: str | None = None, delay: Duration | None = None
+        self, value: A, *, id: str | None = None, delay: DurationInput | None = None
     ) -> Effect[str, PersistedQueueError | SchemaError, R]:
         """Add ``value`` and give its id: ``id``, or a new UUID. An id the
         queue already has (even completed, until ``layer_cleanup`` removes
@@ -241,9 +242,9 @@ layer: Layer[PersistedQueueFactory, Never, PersistedQueueStore] = layer_effect(
 
 def layer_cleanup(
     *,
-    interval: Duration = "1 hour",
-    time_to_live: Duration = "30 days",
-    failed_time_to_live: Duration | None = None,
+    interval: DurationInput = "1 hour",
+    time_to_live: DurationInput = "30 days",
+    failed_time_to_live: DurationInput | None = None,
 ) -> Layer[Never, Never, PersistedQueueStore]:
     """Run the store's ``cleanup`` every ``interval`` (default an hour),
     logging a failure. Completed elements are kept ``time_to_live``
@@ -252,9 +253,9 @@ def layer_cleanup(
 
     Run it in one instance of a deployment: racing ones are harmless but
     redundant."""
-    ttl = to_seconds(time_to_live)
-    failed_ttl = None if failed_time_to_live is None else to_seconds(failed_time_to_live)
-    every = to_seconds(interval)
+    ttl = from_input_unsafe(time_to_live)
+    failed_ttl = None if failed_time_to_live is None else from_input_unsafe(failed_time_to_live)
+    every = from_input_unsafe(interval)
 
     def start(store: PersistedQueueStoreService) -> Effect[object, Never, Scope]:
         return (

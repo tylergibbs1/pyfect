@@ -8,7 +8,8 @@ from typing import Literal
 
 from pyfect._core import Effect
 from pyfect.clock import ClockService, clock_with
-from pyfect.duration import Duration, Seconds, to_millis
+from pyfect.duration import Duration, to_millis
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, succeed
 from pyfect.layer import Layer
 from pyfect.layer import sync as layer_sync
@@ -111,7 +112,7 @@ class MemoryCircuitBreakerStore:
         return entry if entry is not None and not self._expired(entry, now) else None
 
     def _open(
-        self, key: str, entry: _Entry, from_: Literal["Closed", "HalfOpen"], open_for: Seconds
+        self, key: str, entry: _Entry, from_: Literal["Closed", "HalfOpen"], open_for: Duration
     ) -> Transition:
         entry.state = "Open"
         entry.generation = self._generation()
@@ -168,7 +169,7 @@ class MemoryCircuitBreakerStore:
         generation: int,
         outcome: OutcomeKind,
         trip_policy: TripPolicy,
-        open_for: Seconds,
+        open_for: Duration,
     ) -> Effect[Transition | None, CircuitBreakerError]:
         def run(clock: ClockService) -> Effect[Transition | None]:
             return succeed(
@@ -184,7 +185,7 @@ class MemoryCircuitBreakerStore:
         generation: int,
         outcome: OutcomeKind,
         trip_policy: TripPolicy,
-        open_for: Seconds,
+        open_for: Duration,
     ) -> Transition | None:
         entry = self._lookup(key, now)
         if entry is None or entry.generation != generation:
@@ -229,14 +230,16 @@ class MemoryCircuitBreakerStore:
         return clock_with(run)
 
 
-def make_store_memory(*, idle_time_to_live: Duration = "1 hour") -> CircuitBreakerStoreService:
+def make_store_memory(*, idle_time_to_live: DurationInput = "1 hour") -> CircuitBreakerStoreService:
     """A store in memory, dropping keys idle for ``idle_time_to_live``
     (default an hour)."""
     store = MemoryCircuitBreakerStore(to_millis(idle_time_to_live))
     return CircuitBreakerStoreService(admit=store.admit, record=store.record, state=store.state)
 
 
-def layer_store_memory(*, idle_time_to_live: Duration = "1 hour") -> Layer[CircuitBreakerStore]:
+def layer_store_memory(
+    *, idle_time_to_live: DurationInput = "1 hour"
+) -> Layer[CircuitBreakerStore]:
     """Circuit states in memory, fresh each time the layer is built."""
     return layer_sync(
         CircuitBreakerStore, lambda: make_store_memory(idle_time_to_live=idle_time_to_live)

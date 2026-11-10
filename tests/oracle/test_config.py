@@ -23,7 +23,7 @@ from pyfect import schema as S
 from pyfect.byte_size import ByteSize
 from pyfect.config import Config, ConfigError, Forbidden, InvalidValue, Pointer, SchemaError
 from pyfect.config_provider import Array, Record, SourceError, Value
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.redacted import Redacted
 
 
@@ -1201,8 +1201,8 @@ def test_decodes_durations_including_infinities():
     provider = unknown(
         {"a": "1000 millis", "b": "1 second", "c": "Infinity", "d": "-Infinity", "failure": "value"}
     )
-    assert_success(config.duration("a"), provider, Seconds(1))
-    assert_success(config.duration("b"), provider, Seconds(1))
+    assert_success(config.duration("a"), provider, millis(1000))
+    assert_success(config.duration("b"), provider, millis(1000))
     assert_success(config.duration("c"), provider, math.inf)
     assert_success(config.duration("d"), provider, -math.inf)
     assert_failure(

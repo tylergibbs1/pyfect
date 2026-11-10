@@ -11,7 +11,8 @@ from pyfect._core import Effect, _Gen, _Suspend
 from pyfect.clock import Clock, LiveClock
 from pyfect.console import CurrentConsole
 from pyfect.context import Context
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, millis
+from pyfect.duration import Input as DurationInput
 from pyfect.run import unwrap
 from pyfect.scope import Scope, scoped
 from pyfect.testing._clock import TestClock
@@ -27,7 +28,7 @@ an effect. Any typed error fails the test."""
 class Settings:
     """Defaults the pytest plugin reads from the ini file."""
 
-    timeout: Seconds | None = Seconds(5.0)
+    timeout: Duration | None = millis(5000)
 
 
 settings = Settings()
@@ -39,10 +40,14 @@ class _Options:
     __slots__ = ("asyncio", "mode", "timeout", "warning_delay")
 
     def __init__(
-        self, mode: _Mode, timeout: Duration | None, asyncio: bool, warning_delay: Duration
+        self,
+        mode: _Mode,
+        timeout: DurationInput | None,
+        asyncio: bool,
+        warning_delay: DurationInput,
     ) -> None:
         self.mode: _Mode = mode
-        self.timeout = None if timeout is None else to_seconds(timeout)
+        self.timeout = None if timeout is None else from_input_unsafe(timeout)
         self.asyncio = asyncio
         self.warning_delay = warning_delay
 
@@ -82,15 +87,18 @@ def effect[S, RO, **P](
 def effect[**P](f: Callable[P, TestBody[Scope]], /) -> Callable[P, None]: ...
 @overload
 def effect(
-    *, timeout: Duration | None = None, asyncio: bool = False, warning_delay: Duration = "1 second"
+    *,
+    timeout: DurationInput | None = None,
+    asyncio: bool = False,
+    warning_delay: DurationInput = "1 second",
 ) -> TestDecorator: ...
 def effect(
     f: Callable[..., Any] | None = None,
     /,
     *,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     asyncio: bool = False,
-    warning_delay: Duration = "1 second",
+    warning_delay: DurationInput = "1 second",
 ) -> Any:
     """A pytest test written as an effect, run with a ``TestClock``, a
     ``TestConsole`` and a ``Scope`` (closed when the test ends)::
@@ -121,12 +129,12 @@ def live[S, RO, **P](
 @overload
 def live[**P](f: Callable[P, TestBody[Scope]], /) -> Callable[P, None]: ...
 @overload
-def live(*, timeout: Duration | None = None, asyncio: bool = False) -> TestDecorator: ...
+def live(*, timeout: DurationInput | None = None, asyncio: bool = False) -> TestDecorator: ...
 def live(
     f: Callable[..., Any] | None = None,
     /,
     *,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     asyncio: bool = False,
 ) -> Any:
     """Like ``effect``, but with the live clock and console: sleeps take

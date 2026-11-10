@@ -9,7 +9,7 @@ arguments: ``eff.repeat(times=2)``, ``eff.retry(schedule=..., until=...)``.
 import pyfect as fx
 from pyfect import schedule, testing
 from pyfect.cause import Die, Fail
-from pyfect.duration import ZERO
+from pyfect.duration import zero
 from pyfect.schedule import CurrentMetadata, Decision, Metadata, Stop
 
 
@@ -341,12 +341,12 @@ def test_retry_schedule_current_metadata():
         return Metadata(
             input=None,
             output=output,
-            duration=ZERO,
+            duration=zero,
             attempt=attempt,
             start=0.0,
             now=0.0,
-            elapsed=ZERO,
-            elapsed_since_previous=ZERO,
+            elapsed=zero,
+            elapsed_since_previous=zero,
         )
 
     assert metadata == [at(0, None), at(1, 0), at(2, 1), at(3, 2)]

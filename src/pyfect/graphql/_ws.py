@@ -24,7 +24,8 @@ from pyfect.cause import Cause
 from pyfect.cause import fail as cause_fail
 from pyfect.clock import sleep
 from pyfect.deferred import Deferred
-from pyfect.duration import ZERO, Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, zero
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import Effect
 from pyfect.exit import Success
 from pyfect.exit import fail as exit_fail
@@ -53,18 +54,18 @@ class WebSocketOptions[R = Never]:
     url: str
     headers: HeadersInput | None = None
     connection_params: Effect[Mapping[str, object] | None, object, R] | None = None
-    connection_ack_timeout: Duration | None = None
-    keep_alive: Duration | Literal[False] | None = None
-    idle_timeout: Duration | None = None
+    connection_ack_timeout: DurationInput | None = None
+    keep_alive: DurationInput | Literal[False] | None = None
+    idle_timeout: DurationInput | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class _Timing:
     """``WebSocketOptions``' durations, parsed once."""
 
-    ack_timeout: Seconds
-    keep_alive: Seconds | None
-    idle_timeout: Seconds
+    ack_timeout: Duration
+    keep_alive: Duration | None
+    idle_timeout: Duration
 
 
 def _timing(options: WebSocketOptions[Any]) -> _Timing:
@@ -72,11 +73,11 @@ def _timing(options: WebSocketOptions[Any]) -> _Timing:
     keep_alive = options.keep_alive
     idle = options.idle_timeout
     return _Timing(
-        ack_timeout=to_seconds("10 seconds" if ack is None else ack),
+        ack_timeout=from_input_unsafe("10 seconds" if ack is None else ack),
         keep_alive=None
         if keep_alive is False
-        else to_seconds("10 seconds" if keep_alive is None else keep_alive),
-        idle_timeout=ZERO if idle is None else to_seconds(idle),
+        else from_input_unsafe("10 seconds" if keep_alive is None else keep_alive),
+        idle_timeout=zero if idle is None else from_input_unsafe(idle),
     )
 
 

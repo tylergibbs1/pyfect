@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pyfect import schema as S
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.persistence._seconds import SECONDS_FROM_MILLIS
 
 
@@ -12,7 +12,7 @@ class CircuitOpen(S.TaggedError, identifier="effect/persistence/CircuitBreaker/C
     ``retry_after``."""
 
     key: str
-    retry_after: Seconds = S.field(SECONDS_FROM_MILLIS, key="retryAfter")
+    retry_after: Duration = S.field(SECONDS_FROM_MILLIS, key="retryAfter")
 
     @property
     def message(self) -> str:

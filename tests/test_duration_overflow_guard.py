@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 from pyfect import duration
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 
 FLOATS = [
     0.0,
@@ -38,7 +38,7 @@ INTS = [0, 10**9, 10**308, 10**400, -(10**400)]
 
 def arguments_for(parameter: inspect.Parameter) -> list[object]:
     annotation = str(parameter.annotation)
-    floats: list[object] = [Seconds(f) for f in FLOATS]
+    floats: list[object] = [Duration(f) for f in FLOATS]
     return floats + INTS if "int" in annotation else floats
 
 
@@ -72,11 +72,11 @@ def test_duration_helpers_never_overflow():
 
 
 def test_infinite_and_huge_counts_saturate():
-    assert duration.nanos_or_infinite(Seconds(1e300)) == math.inf
+    assert duration.nanos_or_infinite(Duration(1e300)) == math.inf
     assert duration.add_nanos(10**308, 10**308) == math.inf
     assert duration.from_nanos(10**400) == math.inf
     assert duration.from_millis(sys.float_info.max * 2) == math.inf
-    assert duration.format_duration(Seconds(sys.float_info.max)) == "Infinity"
+    assert duration.format_duration(Duration(sys.float_info.max)) == "Infinity"
 
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"

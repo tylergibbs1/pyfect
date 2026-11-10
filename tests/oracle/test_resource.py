@@ -6,7 +6,7 @@ Each test's docstring is the Effect test title. ``Resource.isResource`` is
 
 import pyfect as fx
 from pyfect import schedule, testing
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 
 
 @testing.effect
@@ -48,10 +48,10 @@ def test_automatic_refresh_waits_for_the_first_scheduled_delay():
     )
     assert (yield from acquisitions.get()) == 1
     assert (yield from resource.get()) == 1
-    yield from testing.adjust(Seconds(30 * 60))
+    yield from testing.adjust(millis(1_800_000))
     assert (yield from acquisitions.get()) == 1
     assert (yield from resource.get()) == 1
-    yield from testing.adjust(Seconds(31 * 60))
+    yield from testing.adjust(millis(1_860_000))
     assert (yield from acquisitions.get()) == 2
     assert (yield from resource.get()) == 2
 

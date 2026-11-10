@@ -43,7 +43,7 @@ from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.shard_id import make as shard
 from pyfect.context import Context
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.logger import LogLevel, format_json
@@ -119,9 +119,9 @@ def _build_sharding(
 ) -> fx.Effect[_Built, Never, Scope]:
     defaults: dict[str, Any] = {
         "shards_per_group": 2,
-        "entity_termination_timeout": Seconds(0),
-        "entity_message_poll_interval": Seconds(0.01),
-        "refresh_assignments_interval": Seconds(0.01),
+        "entity_termination_timeout": millis(0),
+        "entity_message_poll_interval": millis(10),
+        "refresh_assignments_interval": millis(10),
     }
     layer = (
         sharding.layer.pipe(fx.layer.provide(failover_storage_layer(state)))
@@ -204,10 +204,10 @@ def test_warns_about_pending_entities_and_singletons_and_reacquires_only_after_t
             _build_sharding(
                 state,
                 shards_per_group=1,
-                shard_lock_expiration=Seconds(0.3),
-                shard_lock_refresh_interval=Seconds(1),
+                shard_lock_expiration=millis(300),
+                shard_lock_refresh_interval=millis(1000),
                 # Keep 30 seconds of polling cheap
-                entity_message_poll_interval=Seconds(0.1),
+                entity_message_poll_interval=millis(100),
             ),
             logger,
         ).pipe(fx.provide_service(metric.MetricRegistry, registry))
@@ -257,7 +257,7 @@ def test_warns_about_pending_entities_and_singletons_and_reacquires_only_after_t
         # The entity stops, so the next warning names only the singleton.
         yield from entity_gate.open()
         yield from testing.adjust(
-            Seconds((first_warnings[0][0] + 29_999 - clock.current_time_millis_unsafe()) / 1000)
+            Duration((first_warnings[0][0] + 29_999 - clock.current_time_millis_unsafe()) / 1000)
         )
         warnings_before_repeat = list(warnings)
         assert_still_blocked()
@@ -317,8 +317,8 @@ def test_does_not_warn_when_forced_release_completes_before_the_warning_deadline
             _build_sharding(
                 state,
                 shards_per_group=1,
-                shard_lock_expiration=Seconds(0.3),
-                shard_lock_refresh_interval=Seconds(1),
+                shard_lock_expiration=millis(300),
+                shard_lock_refresh_interval=millis(1000),
             ),
             logger,
         )
@@ -355,7 +355,7 @@ def test_warns_immediately_on_release_failure_and_throttles_retries_to_one_warni
         warnings: list[tuple[float, str]] = []
         logger = yield from _warning_logger(warnings)
         built = yield from _with_loggers(
-            _build_sharding(state, shards_per_group=1, shard_lock_refresh_interval=Seconds(0.1)),
+            _build_sharding(state, shards_per_group=1, shard_lock_refresh_interval=millis(100)),
             logger,
         )
 
@@ -373,7 +373,7 @@ def test_warns_immediately_on_release_failure_and_throttles_retries_to_one_warni
         first_warning_at = warnings[0][0]
         first_attempts = len(state.release_calls)
         yield from testing.adjust(
-            Seconds((first_warning_at + 29_999 - (yield from _now_millis())) / 1000)
+            Duration((first_warning_at + 29_999 - (yield from _now_millis())) / 1000)
         )
         assert len(warnings) == 1, "retries inside the throttle window must not warn"
         assert len(state.release_calls) > first_attempts, "storage retries must continue"
@@ -400,7 +400,7 @@ def test_waits_for_entity_teardown_before_handing_off_without_acquiring_newly_fr
     def body():
         registration_scope = yield from _make_owned_scope
         # Keep assignments unchanged while a peer's lock becomes available.
-        built = yield from _build_sharding(state, refresh_assignments_interval=Seconds(60))
+        built = yield from _build_sharding(state, refresh_assignments_interval=millis(60_000))
         service = built.sharding
         gate = yield from _make_gate
         yield from _advance_until(lambda: service.has_shard_id(held_shard))
@@ -493,7 +493,7 @@ def test_does_not_record_a_release_cancelled_when_shutdown_handoff_times_out():
     registry: dict[Any, Any] = {}
     config: dict[str, Any] = {
         "shards_per_group": 1,
-        "shard_lock_refresh_interval": Seconds(0.1),
+        "shard_lock_refresh_interval": millis(100),
     }
 
     def release_duration() -> metric.HistogramState:
@@ -703,10 +703,10 @@ def _singleton_reassignment_sharding(state: _SingletonStorageState) -> Layer[Any
                     available_shard_groups=("default", "singleton"),
                     assigned_shard_groups=("default", "singleton"),
                     shards_per_group=1,
-                    entity_termination_timeout=Seconds(0),
-                    entity_message_poll_interval=Seconds(0.01),
-                    refresh_assignments_interval=Seconds(0.01),
-                    send_retry_interval=Seconds(0.01),
+                    entity_termination_timeout=millis(0),
+                    entity_message_poll_interval=millis(10),
+                    refresh_assignments_interval=millis(10),
+                    send_retry_interval=millis(10),
                 )
             )
         )
@@ -875,9 +875,9 @@ def _pending_lock_sharding(state: FailoverState) -> Layer[Any]:
             fx.layer.provide(
                 _config(
                     shards_per_group=1,
-                    entity_message_poll_interval=Seconds(0.01),
-                    refresh_assignments_interval=Seconds(0.01),
-                    send_retry_interval=Seconds(0.01),
+                    entity_message_poll_interval=millis(10),
+                    refresh_assignments_interval=millis(10),
+                    send_retry_interval=millis(10),
                 )
             )
         )

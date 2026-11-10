@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from pyfect._core import Effect
     from pyfect._fiber import Fiber
     from pyfect.console import Console
-    from pyfect.duration import Duration
+    from pyfect.duration import Input as DurationInput
     from pyfect.file_system import FileSystem, OpenFlag
     from pyfect.platform_error import PlatformError
     from pyfect.scope import Scope
@@ -131,7 +131,7 @@ class Logger(Generic[O_co]):
         return Logger(write)
 
     def batched(
-        self, *, window: Duration, flush: Callable[[Sequence[O_co]], Effect[object]]
+        self, *, window: DurationInput, flush: Callable[[Sequence[O_co]], Effect[object]]
     ) -> Effect[Logger[None], Never, Scope]:
         """A logger that buffers this one's outputs and hands them to
         ``flush`` every ``window``, and once more when the scope closes
@@ -146,7 +146,7 @@ class Logger(Generic[O_co]):
         *,
         flag: OpenFlag = "a+",
         mode: int = 0o666,
-        batch_window: Duration = "1 second",
+        batch_window: DurationInput = "1 second",
     ) -> Effect[Logger[None], PlatformError, Scope | FileSystem]:
         """A logger appending this one's lines to the file at ``path``
         (opened with ``flag`` until the scope closes), written in batches

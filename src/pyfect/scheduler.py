@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from pyfect._wake_tracking import Tracking, WakeTracker
 from pyfect.context import Reference
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 
 if TYPE_CHECKING:
     from pyfect._fiber import Fiber
@@ -55,7 +55,7 @@ class Scheduler(Protocol):
         within a priority."""
         ...
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         """Run ``task`` after ``delay``. A ``daemon`` timer (a diagnostic)
         does not count as pending work: it never hides a stall."""
         ...
@@ -128,7 +128,7 @@ class EffectScheduler(ABC):
     def schedule(self, task: Task, priority: int = 0) -> None:
         raise RuntimeError("an EffectScheduler schedules through its run: provide it to a fiber")
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         raise RuntimeError("an EffectScheduler schedules through its run: provide it to a fiber")
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
@@ -263,7 +263,7 @@ class BoundScheduler:
         finally:
             _binding.run = outer
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         return self.run.call_later(delay, task, daemon=daemon)
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:
@@ -338,8 +338,8 @@ class SyncScheduler(Tracking):
             self._last_activity = time.monotonic()
             self._cond.notify()
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
-        timer = _Timer(time.monotonic() + max(delay, 0.0), task, daemon=daemon)
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
+        timer = _Timer(time.monotonic() + max(delay.to_seconds(), 0.0), task, daemon=daemon)
         with self._cond:
             heapq.heappush(self._timers, (timer.when, next(self._seq), timer))
             self._cond.notify()
@@ -531,8 +531,8 @@ class AsyncioScheduler(Tracking):
                 raise
             raise LoopClosedError("the asyncio loop this fiber runs on has closed") from None
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
-        return self._loop.call_later(max(delay, 0.0), task).cancel
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
+        return self._loop.call_later(max(delay.to_seconds(), 0.0), task).cancel
 
     def _drain_soon(self) -> None:
         if not self._draining_scheduled:

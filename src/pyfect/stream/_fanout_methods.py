@@ -11,7 +11,7 @@ from pyfect.stream._base import A_co, E_co, R_co, StreamBase
 if TYPE_CHECKING:
     from pyfect._concurrency import Concurrency
     from pyfect._core import Effect
-    from pyfect.duration import Duration
+    from pyfect.duration import Input as DurationInput
     from pyfect.errors import Done
     from pyfect.queue import Dequeue, Strategy
     from pyfect.result import Result
@@ -34,7 +34,7 @@ class FanOutMethods(StreamBase[A_co, E_co, R_co]):
         f: Callable[[A_co], Effect[tuple[K, V], E2, R2]],
         *,
         buffer_size: int = GROUP_BUFFER_SIZE,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
     ) -> Stream[tuple[K, Stream[V]], E_co | E2, R_co | R2]:
         """Write ``(key, group)`` once per new key ``f(item)`` gives, where
         ``group`` is the stream of that key's values. Upstream runs on a
@@ -50,7 +50,7 @@ class FanOutMethods(StreamBase[A_co, E_co, R_co]):
         f: Callable[[A_co], K],
         *,
         buffer_size: int = GROUP_BUFFER_SIZE,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
     ) -> Stream[tuple[K, Stream[A_co]], E_co, R_co]:
         """``group_by`` with the items as values, keyed by ``f(item)``."""
         from pyfect.stream import _grouping
@@ -156,7 +156,7 @@ class FanOutMethods(StreamBase[A_co, E_co, R_co]):
         *,
         capacity: Literal["unbounded"],
         replay: int | None = None,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
     ) -> Effect[Stream[A_co, E_co], Never, R_co | Scope]: ...
     @overload
     def share(
@@ -165,7 +165,7 @@ class FanOutMethods(StreamBase[A_co, E_co, R_co]):
         capacity: int,
         strategy: Strategy = "suspend",
         replay: int | None = None,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
     ) -> Effect[Stream[A_co, E_co], Never, R_co | Scope]: ...
     def share(
         self,
@@ -173,7 +173,7 @@ class FanOutMethods(StreamBase[A_co, E_co, R_co]):
         capacity: Capacity,
         strategy: Strategy = "suspend",
         replay: int | None = None,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
     ) -> Effect[Stream[A_co, E_co], Never, R_co | Scope]:
         """A stream that ``broadcast``s this one when its first reader
         starts and stops it when the last one stops (or ``idle_time_to_live``

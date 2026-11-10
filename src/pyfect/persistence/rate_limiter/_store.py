@@ -13,7 +13,7 @@ from typing import Literal, Protocol
 
 from pyfect._core import Effect
 from pyfect.context import Tag
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.persistence.rate_limiter._errors import RateLimiterError
 
 type AdaptivePhase = Literal["inactive", "cooldown", "learning", "learned"]
@@ -26,7 +26,7 @@ type AdaptivePhase = Literal["inactive", "cooldown", "learning", "learned"]
 class AdaptiveConsumeResult:
     """Wait ``delay`` before sending; report the response with ``epoch``."""
 
-    delay: Seconds
+    delay: Duration
     epoch: int
     phase: AdaptivePhase
 
@@ -59,13 +59,13 @@ class RateLimiterStoreService(Protocol):
         ...
 
     def adaptive_consume(
-        self, *, key: str, tokens: float, fallback_limit: float, fallback_window: Seconds
+        self, *, key: str, tokens: float, fallback_limit: float, fallback_window: Duration
     ) -> Effect[AdaptiveConsumeResult, RateLimiterError]:
         """See ``RateLimiterService.adaptive_consume``."""
         ...
 
     def adaptive_feedback(
-        self, *, key: str, epoch: int, tokens: float, status: int, retry_after: Seconds | None
+        self, *, key: str, epoch: int, tokens: float, status: int, retry_after: Duration | None
     ) -> Effect[None, RateLimiterError]:
         """See ``RateLimiterService.adaptive_feedback``."""
         ...

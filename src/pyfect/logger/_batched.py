@@ -8,7 +8,7 @@ from typing import Never
 
 from pyfect._core import Effect, Restore, _Succeed, _Suspend, uninterruptible_mask
 from pyfect.clock import sleep
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.logger._model import Logger, Options
 from pyfect.scope import Scope, add_finalizer
 
@@ -16,7 +16,7 @@ _VOID: Effect[None] = _Succeed(None)
 
 
 def batched[O](
-    logger: Logger[O], window: Duration, flush: Callable[[Sequence[O]], Effect[object]]
+    logger: Logger[O], window: DurationInput, flush: Callable[[Sequence[O]], Effect[object]]
 ) -> Effect[Logger[None], Never, Scope]:
     def make() -> Effect[Logger[None], Never, Scope]:
         buffer: list[O] = []

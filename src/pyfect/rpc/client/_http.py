@@ -12,7 +12,7 @@ from pyfect import exit as Exit
 from pyfect._core import Effect
 from pyfect.clock import sleep
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.http import body as http_body
 from pyfect.http.client import HttpClientService
@@ -43,7 +43,7 @@ class Batch:
     """Send the requests a client makes within ``window`` of the first in
     one HTTP request, or as soon as there are ``max_size`` of them."""
 
-    window: Duration
+    window: DurationInput
     max_size: int | None = None
 
 

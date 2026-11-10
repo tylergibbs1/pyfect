@@ -10,7 +10,7 @@ from typing import Any, Never
 
 from pyfect._core import Effect, Restore, uninterruptible_mask
 from pyfect.clock import sleep
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.effect import gen, sync, yield_now
 from pyfect.latch import Latch
 from pyfect.logger import log_warning
@@ -38,7 +38,7 @@ def run_poller[T](
     *,
     poll: Callable[[int], Effect[Sequence[T], Any]],
     nudge: Latch,
-    poll_interval: Seconds,
+    poll_interval: Duration,
 ) -> Effect[None, Never, Scope]:
     """Fork the mailbox's poller into the scope: while takers wait it
     claims up to that many elements with ``poll``, and when there are none

@@ -8,7 +8,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Never, TypeIs, overload
 
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
-from pyfect.duration import Duration, Seconds
+from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
@@ -19,12 +20,12 @@ if TYPE_CHECKING:
 class TimingMethods(EffectBase[A_co, E_co, R_co]):
     __slots__ = ()
 
-    def delay(self, duration: Duration) -> Effect[A_co, E_co, R_co]:
+    def delay(self, duration: DurationInput) -> Effect[A_co, E_co, R_co]:
         from pyfect.clock import sleep
 
         return sleep(duration).and_then(as_effect(self))
 
-    def timed(self) -> Effect[tuple[Seconds, A_co], E_co, R_co]:
+    def timed(self) -> Effect[tuple[Duration, A_co], E_co, R_co]:
         """Pair the value with how long it took, as ``Seconds``."""
         from pyfect.clock import timed
 
@@ -39,7 +40,7 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         return cached(as_effect(self))
 
     def cached_with_ttl(
-        self, time_to_live: Duration | Callable[[Exit[A_co, E_co]], Duration]
+        self, time_to_live: DurationInput | Callable[[Exit[A_co, E_co]], DurationInput]
     ) -> Effect[Effect[A_co, E_co, R_co]]:
         """``cached``, but each exit is replayed only for ``time_to_live``
         (or ``time_to_live(exit)``) after it was produced."""
@@ -48,7 +49,7 @@ class TimingMethods(EffectBase[A_co, E_co, R_co]):
         return cached_invalidate_with_ttl(as_effect(self), time_to_live).map(lambda pair: pair[0])
 
     def cached_invalidate_with_ttl(
-        self, time_to_live: Duration | Callable[[Exit[A_co, E_co]], Duration]
+        self, time_to_live: DurationInput | Callable[[Exit[A_co, E_co]], DurationInput]
     ) -> Effect[tuple[Effect[A_co, E_co, R_co], Effect[None]]]:
         """``cached_with_ttl`` plus an effect that drops the cached exit.
 

@@ -16,7 +16,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 
 
 @contextmanager
@@ -102,7 +102,7 @@ def test_an_unrelated_busy_fiber_does_not_stall_each_wake_up():
     log: list[float] = []
 
     def sleeper(seconds: float) -> fx.Effect[None]:
-        return fx.sleep(Seconds(seconds)).and_then(fx.clock.monotonic()).map(log.append)
+        return fx.sleep(Duration(seconds)).and_then(fx.clock.monotonic()).map(log.append)
 
     @fx.gen
     def program():

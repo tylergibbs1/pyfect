@@ -18,7 +18,7 @@ from pyfect import option
 from pyfect import stream as stream_
 from pyfect._context_effects import service_option
 from pyfect._core import Effect
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.effect import fail, gen
 from pyfect.file_system._copy import copy_tree
 from pyfect.file_system._errors import run
@@ -54,7 +54,7 @@ _OPEN_FLAGS: dict[OpenFlag, int] = {
     "ax+": os.O_APPEND | os.O_CREAT | os.O_RDWR | os.O_EXCL,
 }
 
-DEFAULT_WATCH_INTERVAL = Seconds(0.05)
+DEFAULT_WATCH_INTERVAL = millis(50)
 
 
 def _open_flags(flag: OpenFlag) -> int:
@@ -181,7 +181,7 @@ class LiveFileSystem(FileSystemService):
         self,
         *,
         backend: WatchBackendService | None = None,
-        watch_interval: Seconds = DEFAULT_WATCH_INTERVAL,
+        watch_interval: Duration = DEFAULT_WATCH_INTERVAL,
     ) -> None:
         self._backend = backend
         self._watch_interval = watch_interval

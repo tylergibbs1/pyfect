@@ -8,9 +8,11 @@ import sys
 from collections.abc import Iterable, Sequence
 from typing import Any, Literal, overload
 
+from pyfect._timestamps import millis_to_nanos
 from pyfect.clock import Clock
 from pyfect.context import Context
-from pyfect.duration import Duration, millis_to_nanos, nanos_or_infinite, to_millis, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe, nanos_or_infinite, to_millis, zero
 from pyfect.metric._boundaries import exponential_boundaries
 from pyfect.metric._metric import Metric, Series, map_input_with_context
 from pyfect.metric._refs import Attributes, Hooks, merge
@@ -179,12 +181,12 @@ class _Summary(Series[Any, Any]):
         description: str | None,
         attributes: Attributes | None,
         *,
-        max_age: Duration,
+        max_age: DurationInput,
         max_size: int,
         quantiles: tuple[float, ...],
     ) -> None:
         super().__init__("Summary", id, description, attributes)
-        age = max(to_seconds(max_age), 0.0)
+        age = from_input_unsafe(max_age).max(zero)
         self._max_age_ns: float = nanos_or_infinite(age)
         self._max_size = max_size
         self._quantiles = tuple(sorted(quantiles))
@@ -325,7 +327,7 @@ def histogram(
 def summary_with_timestamp(
     name: str,
     *,
-    max_age: Duration,
+    max_age: DurationInput,
     max_size: int,
     quantiles: Sequence[float],
     description: str | None = None,
@@ -353,7 +355,7 @@ def _stamped(value: float, timestamp: float) -> tuple[float, float]:
 def summary(
     name: str,
     *,
-    max_age: Duration,
+    max_age: DurationInput,
     max_size: int,
     quantiles: Sequence[float],
     description: str | None = None,
@@ -378,7 +380,7 @@ def summary(
 def _summary(
     name: str,
     *,
-    max_age: Duration,
+    max_age: DurationInput,
     max_size: int,
     quantiles: Sequence[float],
     description: str | None,
@@ -400,7 +402,7 @@ def timer(
     description: str | None = None,
     attributes: Attributes | None = None,
     boundaries: Iterable[float] | None = None,
-) -> Histogram[Duration]:
+) -> Histogram[DurationInput]:
     """A histogram of durations in milliseconds, with the attribute
     ``time_unit="milliseconds"``. The default boundaries double from 0.5ms,
     34 of them, then ``math.inf``.

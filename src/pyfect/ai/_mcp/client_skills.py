@@ -46,12 +46,12 @@ from pyfect.ai.mcp_schema import (
     Resource,
     ServerCapabilities,
 )
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.effect import fail, gen, succeed
 from pyfect.result import Err
 
 type Deadline = Callable[
-    [Effect[Any, McpClientError], str, Seconds | None], Effect[Any, McpClientError]
+    [Effect[Any, McpClientError], str, Duration | None], Effect[Any, McpClientError]
 ]
 
 
@@ -130,7 +130,7 @@ class SkillsClient:
 
     request: Request
     deadline: Deadline
-    timeout: Seconds
+    timeout: Duration
     capabilities: ServerCapabilities
     limits: DiscoveryLimits
     enabled: bool
@@ -169,7 +169,7 @@ class SkillsClient:
 
     def list_skills(
         self,
-        timeout: Seconds | None,
+        timeout: Duration | None,
         limits: DiscoveryLimitsOptions | None,
         on_invalid_skill: OnInvalidSkill | None,
     ) -> Effect[list[Skill], McpClientError]:
@@ -202,7 +202,7 @@ class SkillsClient:
 
         return self.deadline(run, "skills discovery", self.timeout if timeout is None else timeout)
 
-    def get_skill(self, uri: str, timeout: Seconds | None) -> Effect[Skill, McpClientError]:
+    def get_skill(self, uri: str, timeout: Duration | None) -> Effect[Skill, McpClientError]:
         @gen
         def run():
             yield from self._require_enabled()
@@ -219,7 +219,7 @@ class SkillsClient:
         return self.deadline(run, "skills/get", timeout)
 
     def read_resource_directory(
-        self, uri: str, timeout: Seconds | None, limits: DiscoveryLimitsOptions | None
+        self, uri: str, timeout: Duration | None, limits: DiscoveryLimitsOptions | None
     ) -> Effect[list[Resource], McpClientError]:
         @gen
         def run():
@@ -258,7 +258,7 @@ class SkillsClient:
         )
 
     def read_skill_resource(
-        self, skill: Skill, uri: str, timeout: Seconds | None
+        self, skill: Skill, uri: str, timeout: Duration | None
     ) -> Effect[ReadResourceResult, McpClientError]:
         @gen
         def run():  # noqa: PLR0911

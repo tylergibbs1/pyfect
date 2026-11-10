@@ -28,7 +28,8 @@ from pyfect._url import Url
 from pyfect.clock import current_time_millis
 from pyfect.context import Tag
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration, from_millis
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_millis
 from pyfect.effect import fail, from_exit, gen, succeed, suspend, sync
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
@@ -209,7 +210,7 @@ def _positive_integer(name: str, value: int) -> Effect[int, JoseError]:
     return invalid_argument(f"{name} must be a positive integer")
 
 
-def _positive_millis(name: str, input: Duration) -> Effect[float, JoseError]:
+def _positive_millis(name: str, input: DurationInput) -> Effect[float, JoseError]:
     return millis(name, input).flat_map(
         lambda value: succeed(value) if value > 0 else invalid_argument(f"{name} must be positive")
     )
@@ -392,9 +393,9 @@ class _Remote:
 def make_remote(
     url: str,
     *,
-    time_to_live: Duration = "10 minutes",
-    cooldown: Duration = "30 seconds",
-    timeout: Duration = "5 seconds",
+    time_to_live: DurationInput = "10 minutes",
+    cooldown: DurationInput = "30 seconds",
+    timeout: DurationInput = "5 seconds",
     max_response_bytes: int = 131072,
     max_keys: int = 64,
 ) -> Effect[JwksService, JoseError, HttpClient | Scope]:
@@ -431,9 +432,9 @@ def make_remote(
 def layer_remote(
     url: str,
     *,
-    time_to_live: Duration = "10 minutes",
-    cooldown: Duration = "30 seconds",
-    timeout: Duration = "5 seconds",
+    time_to_live: DurationInput = "10 minutes",
+    cooldown: DurationInput = "30 seconds",
+    timeout: DurationInput = "5 seconds",
     max_response_bytes: int = 131072,
     max_keys: int = 64,
 ) -> Layer[Jwks, JoseError, HttpClient]:

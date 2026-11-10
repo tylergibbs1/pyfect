@@ -27,7 +27,7 @@ from ipaddress import (
 from types import ModuleType as _strategies_module
 from typing import Any, TypeIs, cast
 
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.net import dns, host, ip_interface, ip_network
@@ -398,11 +398,11 @@ _UINT16 = Int.check(is_between(minimum=0, maximum=0xFFFF))
 _UINT32 = Int.check(is_between(minimum=0, maximum=0xFFFFFFFF))
 
 
-def _seconds(count: int) -> Seconds:
-    return Seconds(float(count))
+def _seconds(count: int) -> Duration:
+    return Duration(float(count))
 
 
-def _count(seconds: Seconds) -> int:
+def _count(seconds: Duration) -> int:
     return int(seconds)
 
 

@@ -25,7 +25,7 @@ from pyfect.ai.mcp_schema import CALL_TOOL_RESULT, CallToolResult
 from pyfect.ai.mcp_schema import Tool as McpTool
 from pyfect.ai.prompt import FilePart, TextPart, ToolModelOutputPart
 from pyfect.context import Context, Tag
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, provide_context, succeed
 
 if TYPE_CHECKING:
@@ -64,7 +64,7 @@ def toolkit[RR = Never](
     result_mode: Literal["text"] = "text",
     failure_mode: Literal["error"] = "error",
     trust_annotations: bool = False,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     transform_tool: Callable[
         [RemoteTool[str, McpClientError], McpTool], RemoteTool[str, McpClientError, RR]
     ]
@@ -79,7 +79,7 @@ def toolkit[RR = Never](
     result_mode: Literal["text"] = "text",
     failure_mode: Literal["return"],
     trust_annotations: bool = False,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     transform_tool: Callable[[RemoteTool[str, Never], McpTool], RemoteTool[str, Never, RR]]
     | None = None,
 ) -> Effect[Toolkit.WithHandler[Any, Any, Never, RR], McpClientError]: ...
@@ -92,7 +92,7 @@ def toolkit[RR = Never](
     result_mode: Literal["complete"],
     failure_mode: Literal["error"] = "error",
     trust_annotations: bool = False,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     transform_tool: Callable[
         [RemoteTool[CallToolResult, McpClientError], McpTool],
         RemoteTool[CallToolResult, McpClientError, RR],
@@ -108,7 +108,7 @@ def toolkit[RR = Never](
     result_mode: Literal["complete"],
     failure_mode: Literal["return"],
     trust_annotations: bool = False,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     transform_tool: Callable[
         [RemoteTool[CallToolResult, Never], McpTool], RemoteTool[CallToolResult, Never, RR]
     ]
@@ -122,7 +122,7 @@ def toolkit(
     result_mode: ResultMode = "text",
     failure_mode: Tool.FailureMode = "error",
     trust_annotations: bool = False,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     transform_tool: _Transform | None = None,
 ) -> Effect[Toolkit.WithHandler[Any, Any, Any, Any], McpClientError]:
     """The server's tools (or the approved snapshot ``tools``, without
@@ -215,7 +215,7 @@ def _remote_tool(
 
 
 def _handler(
-    client: McpClientService, descriptor: McpTool, complete: bool, timeout: Duration | None
+    client: McpClientService, descriptor: McpTool, complete: bool, timeout: DurationInput | None
 ) -> Callable[[Any, Any], Effect[Any, McpClientError]]:
     decode_arguments = S.decode_unknown_effect(_ARGUMENTS)
 

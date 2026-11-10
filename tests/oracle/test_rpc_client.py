@@ -35,7 +35,7 @@ from pyfect._core import Effect
 from pyfect.clock import Clock, ClockService
 from pyfect.context import Reference
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.http import client as http_client
 from pyfect.http import response as http_response
 from pyfect.http import router, uvicorn_server
@@ -880,8 +880,8 @@ class _LateClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self._clock.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: Seconds) -> Effect[None]:
-        return self._clock.sleep(Seconds(seconds + 0.001))
+    def sleep(self, seconds: Duration) -> Effect[None]:
+        return self._clock.sleep(Duration(seconds + 0.001))
 
 
 @testing.effect

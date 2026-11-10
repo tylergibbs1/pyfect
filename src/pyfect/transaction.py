@@ -41,7 +41,7 @@ from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.clock import Clock
 from pyfect.context import Tag
-from pyfect.duration import Seconds, from_nanos
+from pyfect.duration import Duration, nanos
 from pyfect.exit import Exit, Success
 
 if TYPE_CHECKING:
@@ -137,12 +137,12 @@ class TransactionMeta:
         return self._now_ns / _NANOS_PER_MILLI
 
     @property
-    def elapsed(self) -> Seconds:
-        return from_nanos(self._now_ns - self._start_ns)
+    def elapsed(self) -> Duration:
+        return nanos(self._now_ns - self._start_ns)
 
     @property
-    def elapsed_since_previous(self) -> Seconds:
-        return from_nanos(self._now_ns - self._previous_ns)
+    def elapsed_since_previous(self) -> Duration:
+        return nanos(self._now_ns - self._previous_ns)
 
     def _entry(self, ref: TxRef[Any]) -> JournalEntry:
         entry = self._journal.get(ref)

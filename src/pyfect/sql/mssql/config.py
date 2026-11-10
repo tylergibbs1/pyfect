@@ -7,23 +7,24 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, millis
+from pyfect.duration import Input as DurationInput
 from pyfect.redacted import Redacted
 from pyfect.sql.mssql.types import ParameterTypes, default_parameter_types
 
 DEFAULT_PORT = 1433
 DEFAULT_MIN_CONNECTIONS = 1
 DEFAULT_MAX_CONNECTIONS = 10
-DEFAULT_CONNECTION_TTL = Seconds(45 * 60)
+DEFAULT_CONNECTION_TTL = millis(2_700_000)
 """How long a connection lives (Effect: 45 minutes from its creation)."""
 
-DEFAULT_CHECK_TIMEOUT = Seconds(5)
+DEFAULT_CHECK_TIMEOUT = millis(5000)
 """How long ``make`` waits for its ``SELECT 1`` without a
 ``connect_timeout``."""
 
-DEFAULT_CONNECT_TIMEOUT = Seconds(15)
-DEFAULT_CANCEL_TIMEOUT = Seconds(5)
-DEFAULT_CONNECTION_RETRY_INTERVAL = Seconds(0.5)
+DEFAULT_CONNECT_TIMEOUT = millis(15_000)
+DEFAULT_CANCEL_TIMEOUT = millis(5000)
+DEFAULT_CONNECTION_RETRY_INTERVAL = millis(500)
 DEFAULT_MAX_RETRIES_ON_TRANSIENT_ERRORS = 3
 """tedious's defaults."""
 
@@ -61,13 +62,13 @@ class MssqlClientConfig:
     password: Redacted[str] | None = None
     encrypt: bool = True
     trust_server: bool = False
-    connect_timeout: Duration | None = None
-    cancel_timeout: Duration | None = None
-    connection_retry_interval: Duration | None = None
+    connect_timeout: DurationInput | None = None
+    cancel_timeout: DurationInput | None = None
+    connection_retry_interval: DurationInput | None = None
     max_retries_on_transient_errors: int | None = None
     min_connections: int | None = None
     max_connections: int | None = None
-    connection_ttl: Duration | None = None
+    connection_ttl: DurationInput | None = None
     parameter_types: ParameterTypes = field(default_factory=lambda: default_parameter_types)
     span_attributes: Mapping[str, object] = field(default_factory=dict[str, object])
     transform_result_names: Callable[[str], str] | None = None
@@ -88,18 +89,18 @@ class MssqlClientConfig:
             raise ValueError(f"parameter_types has no type for {missing}")
 
 
-def seconds_or(value: Duration | None, default: Seconds) -> Seconds:
-    return default if value is None else to_seconds(value)
+def seconds_or(value: DurationInput | None, default: Duration) -> Duration:
+    return default if value is None else from_input_unsafe(value)
 
 
-def driver_seconds_or(value: Duration | None, default: Seconds) -> Seconds:
+def driver_seconds_or(value: DurationInput | None, default: Duration) -> Duration:
     """A timeout for the driver's connection, as Effect hands one to tedious
     (``options.x ? toMillis(...) : undefined``): the falsy numbers 0 and NaN
     are unset, while a ``timedelta(0)``, like Effect's ``Duration.zero``, is
     no time at all."""
     if value is None or value == 0 or (isinstance(value, float) and math.isnan(value)):
         return default
-    return to_seconds(value)
+    return from_input_unsafe(value)
 
 
 __all__ = [

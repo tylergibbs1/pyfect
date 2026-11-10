@@ -8,7 +8,7 @@ from typing import Any, Never
 
 from pyfect import _json_text
 from pyfect._core import Effect
-from pyfect.duration import Seconds, to_millis
+from pyfect.duration import Duration, to_millis
 from pyfect.effect import fail, gen, succeed, suspend, void
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -59,7 +59,7 @@ end
 milliseconds, in one step."""
 
 
-def _ttl_millis(ttl: Seconds) -> int:
+def _ttl_millis(ttl: Duration) -> int:
     return math.ceil(to_millis(ttl))
 
 
@@ -106,7 +106,7 @@ def _store(redis: RedisService, store_id: str) -> BackingPersistenceStore:
             .map(lambda reply: parse_many(keys, reply))
         )
 
-    def set_value(key: str, value: object, ttl: Seconds | None) -> Effect[None, PersistenceError]:
+    def set_value(key: str, value: object, ttl: Duration | None) -> Effect[None, PersistenceError]:
         def run() -> Effect[RedisReply, RedisError]:
             text = to_json(value)
             if ttl is None:

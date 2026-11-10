@@ -19,7 +19,7 @@ import pytest
 import pyfect as fx
 from pyfect import schedule, testing
 from pyfect.cause import Die
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.exit import Failure
 from pyfect.schedule import Schedule
 
@@ -47,16 +47,16 @@ def fixed_input(s: AnySchedule) -> AnySchedule:
 # Every public name of ``pyfect.schedule`` that makes or combines schedules.
 MODULE_CASES: dict[str, Callable[[], list[AnySchedule]]] = {
     "cron": lambda: [schedule.cron("* * * * *")],
-    "duration": lambda: [schedule.duration(Seconds(1e308)), schedule.duration(math.inf)],
+    "duration": lambda: [schedule.duration(Duration(1e308)), schedule.duration(math.inf)],
     "during": lambda: [schedule.during(math.inf)],
     "exponential": lambda: [
         schedule.exponential("200 millis", 1.5),
-        schedule.exponential(Seconds(1e300), 1e300),
+        schedule.exponential(Duration(1e300), 1e300),
     ],
-    "fibonacci": lambda: [schedule.fibonacci("1 second"), schedule.fibonacci(Seconds(1e300))],
+    "fibonacci": lambda: [schedule.fibonacci("1 second"), schedule.fibonacci(Duration(1e300))],
     "fixed": lambda: [
         schedule.fixed("1 second"),
-        schedule.fixed(Seconds(1e300)),
+        schedule.fixed(Duration(1e300)),
         schedule.fixed(math.inf),
     ],
     "forever": lambda: [schedule.forever],
@@ -65,8 +65,8 @@ MODULE_CASES: dict[str, Callable[[], list[AnySchedule]]] = {
     "min": lambda: [schedule.min(*growing(), schedule.spaced("30 seconds"))],
     "once": lambda: [schedule.once],
     "recurs": lambda: [schedule.recurs(RECURRENCES)],
-    "spaced": lambda: [schedule.spaced(Seconds(1e308)), schedule.spaced(math.inf)],
-    "windowed": lambda: [schedule.windowed("1 second"), schedule.windowed(Seconds(1e300))],
+    "spaced": lambda: [schedule.spaced(Duration(1e308)), schedule.spaced(math.inf)],
+    "windowed": lambda: [schedule.windowed("1 second"), schedule.windowed(Duration(1e300))],
     "jittered": lambda: each_growing(schedule.jittered),
     "passthrough": lambda: each_growing(schedule.passthrough),
     "from_step": lambda: [schedule.from_step(schedule.to_step(s)) for s in growing()],
@@ -102,7 +102,7 @@ METHOD_CASES: dict[str, Callable[[AnySchedule], AnySchedule]] = {
     "jittered": lambda s: s.jittered(),
     "pipe": lambda s: s.pipe(schedule.jittered),
     "passthrough": lambda s: s.passthrough(),
-    "up_to": lambda s: s.up_to(duration=Seconds(1e300)),
+    "up_to": lambda s: s.up_to(duration=Duration(1e300)),
     "concat_result": lambda s: schedule.recurs(3).concat_result(s),
     "concat": lambda s: s.concat(schedule.spaced("1 second")),
 }

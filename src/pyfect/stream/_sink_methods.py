@@ -11,7 +11,7 @@ from pyfect.stream._base import A_co, E_co, R_co, StreamBase
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
-    from pyfect.duration import Duration
+    from pyfect.duration import Input as DurationInput
     from pyfect.option import Option
     from pyfect.schedule import Schedule
     from pyfect.scope import Scope
@@ -102,7 +102,9 @@ class SinkMethods(StreamBase[A_co, E_co, R_co]):
         _require_sink(sink)
         return _sinking.aggregate_within(self, sink, schedule)
 
-    def grouped_within(self, chunk_size: int, duration: Duration) -> Stream[list[A_co], E_co, R_co]:
+    def grouped_within(
+        self, chunk_size: int, duration: DurationInput
+    ) -> Stream[list[A_co], E_co, R_co]:
         """Group the items in lists of up to ``chunk_size`` (at least 1),
         ending a group early once ``duration`` has passed since its first
         item."""

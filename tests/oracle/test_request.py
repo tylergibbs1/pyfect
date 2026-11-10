@@ -45,7 +45,7 @@ import pyfect as fx
 from pyfect import batching, exit, testing
 from pyfect import schema as S
 from pyfect.batching import Entry
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.persistence import PersistenceError, persistable, persistence
 
 # --- fixtures (Effect's module-level helpers) -----------------------------------
@@ -783,7 +783,7 @@ class GetStaleValue(persistable.Class(success=S.String, error=PersistenceError))
         return "value"
 
 
-def _one_second(_exit: object, _req: object) -> Duration:
+def _one_second(_exit: object, _req: object) -> DurationInput:
     return "1 second"
 
 

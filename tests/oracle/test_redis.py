@@ -117,7 +117,7 @@ def test_rounds_fractional_persistence_ttls_up_to_whole_milliseconds():
     def body():
         backing = yield from persistence.BackingPersistence()
         store = yield from backing.make("ttl")
-        ttl = fx.duration.Seconds(0.0015)
+        ttl = fx.duration.Duration(0.0015)
         yield from store.set("single", {}, ttl)
         yield from store.set_many([("batch", {}, ttl)])
         assert [c for c in commands if c[0] == "SET"] == [("SET", ("ttl:single", "{}", "PX", "2"))]

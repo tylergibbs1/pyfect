@@ -19,7 +19,7 @@ import pytest
 import pyfect as fx
 from pyfect import cron, random, schedule, testing
 from pyfect.cron import CronParseError
-from pyfect.duration import ZERO, Seconds
+from pyfect.duration import Duration, zero
 from pyfect.result import Err, Ok
 from pyfect.schedule import Continue, Metadata, Schedule, Stop
 
@@ -36,17 +36,19 @@ def run[A, E](eff: fx.Effect[A, E]) -> fx.Effect[A, E]:
     return go
 
 
-def run_delays[I, E](s: Schedule[object, I, E], inputs: Iterable[I]) -> fx.Effect[list[Seconds], E]:
+def run_delays[I, E](
+    s: Schedule[object, I, E], inputs: Iterable[I]
+) -> fx.Effect[list[Duration], E]:
     """Effect's ``runDelays``: each step's delay, then 0 once it stops."""
 
     @fx.gen
     def go():
         step = yield from schedule.to_step_with_metadata(s)
-        out: list[Seconds] = []
+        out: list[Duration] = []
         for value in inputs:
             meta = yield from step(value)
             if isinstance(meta, Stop):
-                out.append(ZERO)
+                out.append(zero)
                 break
             out.append(meta.duration)
         return out
@@ -58,8 +60,8 @@ def nones(n: int) -> list[None]:
     return [None] * n
 
 
-def ms(millis: float) -> Seconds:
-    return Seconds(millis / 1000)
+def ms(millis: float) -> Duration:
+    return Duration(millis / 1000)
 
 
 # --- constructors ---------------------------------------------------------------------
@@ -127,9 +129,9 @@ def test_concat_sequences_self_then_other_and_merges_their_outputs():
     second = yield from step(0.0, "b")
     third = yield from step(0.0, "c")
     assert [first, second, third] == [
-        Continue("left:a", ZERO),
-        Continue("left:b", ZERO),
-        Continue("right:c", ZERO),
+        Continue("left:a", zero),
+        Continue("left:b", zero),
+        Continue("right:c", zero),
     ]
 
 
@@ -142,8 +144,8 @@ def expected_metadata() -> list[Metadata[int, str]]:
             attempt=1,
             start=1_000,
             now=1_000,
-            elapsed=ZERO,
-            elapsed_since_previous=ZERO,
+            elapsed=zero,
+            elapsed_since_previous=zero,
         ),
         Metadata(
             input="b",
@@ -237,9 +239,9 @@ def test_concat_result_wraps_self_outputs_as_failure_and_other_outputs_as_succes
     second = yield from step(0.0, "left-2")
     third = yield from step(0.0, "right-1")
     assert [first, second, third] == [
-        Continue(Err("left-1"), ZERO),
-        Continue(Err("left-2"), ZERO),
-        Continue(Ok("right-1"), ZERO),
+        Continue(Err("left-1"), zero),
+        Continue(Err("left-2"), zero),
+        Continue(Ok("right-1"), zero),
     ]
 
 
@@ -261,7 +263,7 @@ def test_once_recurs_immediately_once_then_completes_with_void():
     step = yield from schedule.to_step(schedule.once)
     first = yield from step(0.0, "first")
     second = yield from step(1.0, "second")
-    assert first == Continue(None, ZERO)
+    assert first == Continue(None, zero)
     assert second == Stop(None)
 
 
@@ -289,7 +291,7 @@ def test_up_to_limits_by_times():
     first = yield from step(0.0, "a")
     second = yield from step(0.0, "b")
     third = yield from step(0.0, "c")
-    assert [first, second, third] == [Continue("a", ZERO), Continue("b", ZERO), Stop("c")]
+    assert [first, second, third] == [Continue("a", zero), Continue("b", zero), Stop("c")]
 
 
 @testing.effect
@@ -300,7 +302,7 @@ def test_up_to_limits_by_duration():
     first = yield from step(0.0, "a")
     second = yield from step(1_000, "b")
     third = yield from step(1_001, "c")
-    assert [first, second, third] == [Continue("a", ZERO), Continue("b", ZERO), Stop("c")]
+    assert [first, second, third] == [Continue("a", zero), Continue("b", zero), Stop("c")]
 
 
 @testing.effect
@@ -310,7 +312,7 @@ def test_up_to_limits_by_the_first_exhausted_option():
     step = yield from schedule.to_step(ids.up_to(duration="1 hour", times=1))
     first = yield from step(0.0, "a")
     second = yield from step(0.0, "b")
-    assert [first, second] == [Continue("a", ZERO), Stop("b")]
+    assert [first, second] == [Continue("a", zero), Stop("b")]
 
 
 @testing.effect
@@ -320,7 +322,7 @@ def test_up_to_leaves_the_schedule_unchanged_when_no_options_are_specified():
     step = yield from schedule.to_step(ids.up_to())
     first = yield from step(0.0, "a")
     second = yield from step(0.0, "b")
-    assert [first, second] == [Continue("a", ZERO), Continue("b", ZERO)]
+    assert [first, second] == [Continue("a", zero), Continue("b", zero)]
 
 
 # --- jittered -------------------------------------------------------------------------
@@ -369,20 +371,20 @@ def test_fixed_constant_delays():
     assert (yield from run_delays(schedule.fixed("1 second"), nones(5))) == [1] * 5
 
 
-def record_delays(s: Schedule[int], action_time: float) -> fx.Effect[list[Seconds]]:
+def record_delays(s: Schedule[int], action_time: float) -> fx.Effect[list[Duration]]:
     """Effect's pattern: tap each delay, ``Effect.schedule`` an action that
     sleeps ``action_time``, record 0 when it finishes, and run the clock."""
 
     @fx.gen
     def go():
-        delays: list[Seconds] = []
+        delays: list[Duration] = []
         tapped = s.while_(lambda m: m.attempt <= 5).tap(
             lambda m: fx.sync(lambda: delays.append(m.duration))
         )
         yield from (
-            fx.sleep(Seconds(action_time))
+            fx.sleep(Duration(action_time))
             .schedule(tapped)
-            .and_then(fx.sync(lambda: delays.append(ZERO)))
+            .and_then(fx.sync(lambda: delays.append(zero)))
             .fork()
         )
         yield from testing.set_time(math.inf)
@@ -463,7 +465,7 @@ def test_cron_waits_for_the_next_match_when_the_delay_to_the_current_one_rounds_
     assert decision.delay == 1
 
 
-def berlin_times(s: Schedule[Seconds, None, CronParseError], start: str) -> fx.Effect[list[str]]:
+def berlin_times(s: Schedule[Duration, None, CronParseError], start: str) -> fx.Effect[list[str]]:
     @fx.gen
     def go():
         at = datetime.fromisoformat(start).timestamp()

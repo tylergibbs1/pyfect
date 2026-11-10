@@ -13,7 +13,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect import _core, testing
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 
 MILLI = 0.001
 
@@ -220,8 +220,8 @@ def test_failed_effect_preserves_failure():
 @testing.effect
 def test_complex_effect_falls_back_to_regular_map():
     """mapEager complex effect falls back to regular map"""
-    fiber = yield from fx.succeed(10).delay(Seconds(MILLI)).map_eager(lambda n: n + 5).fork()
-    yield from testing.adjust(Seconds(MILLI))
+    fiber = yield from fx.succeed(10).delay(Duration(MILLI)).map_eager(lambda n: n + 5).fork()
+    yield from testing.adjust(Duration(MILLI))
     assert (yield from fiber.join()) == 15
 
 
@@ -254,11 +254,11 @@ def test_fallback_to_regular_flat_map_for_complex_effects():
     """flatMapEager fallback to regular flatMap for complex effects"""
     fiber = (
         yield from fx.succeed(10)
-        .delay(Seconds(MILLI))
+        .delay(Duration(MILLI))
         .flat_map_eager(lambda n: fx.succeed(n * 2))
         .fork()
     )
-    yield from testing.adjust(Seconds(MILLI))
+    yield from testing.adjust(Duration(MILLI))
     assert (yield from fiber.join()) == 20
 
 
@@ -280,11 +280,11 @@ def test_fallback_to_regular_map_error_for_complex_effects():
     """mapErrorEager fallback to regular mapError for complex effects"""
     fiber = (
         yield from fx.fail("error")
-        .delay(Seconds(MILLI))
+        .delay(Duration(MILLI))
         .map_error_eager(lambda e: f"mapped: {e}")
         .fork()
     )
-    yield from testing.adjust(Seconds(MILLI))
+    yield from testing.adjust(Duration(MILLI))
     assert (yield from fiber.await_exit()) == fx.exit.fail("mapped: error")
 
 
@@ -311,11 +311,11 @@ def test_fallback_to_regular_map_both_for_complex_effects():
     """mapBothEager fallback to regular mapBoth for complex effects"""
     mapped = (
         fx.succeed(10)
-        .delay(Seconds(MILLI))
+        .delay(Duration(MILLI))
         .map_both_eager(on_failure=lambda e: f"Failed: {e}", on_success=lambda n: n * 2)
     )
     fiber = yield from mapped.fork()
-    yield from testing.adjust(Seconds(MILLI))
+    yield from testing.adjust(Duration(MILLI))
     assert (yield from fiber.join()) == 20
 
 
@@ -336,10 +336,10 @@ def test_applies_catch_function_eagerly_for_failure_effects():
 def test_fallback_to_regular_catch_for_complex_effects():
     """catchEager fallback to regular catch for complex effects"""
     caught = (
-        fx.fail("error").delay(Seconds(MILLI)).catch_eager(lambda e: fx.succeed(f"recovered: {e}"))
+        fx.fail("error").delay(Duration(MILLI)).catch_eager(lambda e: fx.succeed(f"recovered: {e}"))
     )
     fiber = yield from caught.fork()
-    yield from testing.adjust(Seconds(MILLI))
+    yield from testing.adjust(Duration(MILLI))
     assert (yield from fiber.join()) == "recovered: error"
 
 
@@ -366,11 +366,11 @@ def test_fallback_to_regular_match_for_complex_effects():
     """matchEager fallback to regular match for complex effects"""
     matched = (
         fx.succeed(10)
-        .delay(Seconds(MILLI))
+        .delay(Duration(MILLI))
         .match_eager(on_failure=lambda e: f"Failed: {e}", on_success=lambda n: f"Success: {n}")
     )
     fiber = yield from matched.fork()
-    yield from testing.adjust(Seconds(MILLI))
+    yield from testing.adjust(Duration(MILLI))
     assert (yield from fiber.join()) == "Success: 10"
 
 
@@ -518,13 +518,13 @@ def test_preserves_effect_execution_behavior_for_non_eager_paths():
 
     result = (
         fx.succeed(42)
-        .delay(Seconds(MILLI))
+        .delay(Duration(MILLI))
         .flat_map(double)
         .match_cause_eager(on_failure=lambda _c: "ERROR", on_success=lambda value: value + 100)
     )
     assert not isinstance(result, _core._Succeed)
     assert runs == [0]
     fiber = yield from result.fork()
-    yield from testing.adjust(Seconds(MILLI))
+    yield from testing.adjust(Duration(MILLI))
     assert (yield from fiber.join()) == 184
     assert runs == [1]

@@ -19,7 +19,7 @@ from pyfect import layer, stream, testing
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.context import Tag
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.encoding import sse
 from pyfect.exit import Exit
 from pyfect.exit import succeed as exit_succeed
@@ -334,4 +334,4 @@ def test_returns_generated_sse_stream_failures_from_queries():
     events_stream = yield from atom_registry.get_result(registry, query)
     error = yield from events_stream.run_collect().flip()
 
-    assert error == sse.Retry(duration=Seconds(1), last_event_id=None)
+    assert error == sse.Retry(duration=millis(1000), last_event_id=None)

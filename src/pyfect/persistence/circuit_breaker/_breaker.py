@@ -11,7 +11,8 @@ from pyfect._primitives import Restore, uninterruptible_mask
 from pyfect.cause import Cause, Fail
 from pyfect.clock import ClockService, clock_with
 from pyfect.context import Tag
-from pyfect.duration import ZERO, Duration, Seconds, to_millis, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, to_millis, zero
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail_cause, gen, provide_service, succeed, suspend, void
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import succeed as exit_succeed
@@ -52,7 +53,7 @@ type OnStoreError = Literal["allow", "fail"]
 (reporting the cause at the ``UnhandledLogLevel``), ``"fail"`` fails with
 the ``CircuitBreakerStoreError``."""
 
-type OpenDuration = Duration | Schedule[object, int]
+type OpenDuration = DurationInput | Schedule[object, int]
 """How long an opening lasts: a duration, or a schedule replayed with the
 number of consecutive openings (its delays measured from the opening)."""
 
@@ -80,19 +81,19 @@ def recovering(message: str) -> Callable[[Cause[Any]], Effect[None]]:
     return handle
 
 
-def _open_duration(open_duration: OpenDuration) -> Callable[[int], Effect[Seconds]]:
+def _open_duration(open_duration: OpenDuration) -> Callable[[int], Effect[Duration]]:
     if not isinstance(open_duration, Schedule):
-        fixed: Effect[Seconds] = succeed(to_seconds(open_duration))
+        fixed: Effect[Duration] = succeed(from_input_unsafe(open_duration))
         return lambda _: fixed
     schedule = open_duration
 
     # Replays the schedule on a simulated clock, so ``up_to`` measures the
     # time spent open rather than wall time.
-    def replay(openings: int) -> Effect[Seconds]:
-        def body(clock: ClockService) -> Generator[Effect[Any], Any, Seconds]:
+    def replay(openings: int) -> Effect[Duration]:
+        def body(clock: ClockService) -> Generator[Effect[Any], Any, Duration]:
             step = yield from to_step(schedule)
             now = clock.current_time_millis_unsafe()
-            delay = ZERO
+            delay = zero
             for attempt in range(1, openings + 1):
                 decision = yield from step(now, attempt)
                 if isinstance(decision, Stop):
@@ -133,7 +134,7 @@ class CircuitBreakerService:
         pubsub: PubSub[Take[Transition]],
         policy: TripPolicy,
         open_duration: OpenDuration,
-        max_open_duration: Seconds,
+        max_open_duration: Duration,
         on_store_error: OnStoreError,
     ) -> None:
         self._store = store
@@ -195,18 +196,18 @@ class CircuitBreakerService:
     def _publish(self, transition: Transition | None) -> Effect[None]:
         return void if transition is None else self._pubsub.publish((transition,)).as_void()
 
-    def _open_for(self, outcome: Outcome, admission: Admission) -> Effect[Seconds]:
+    def _open_for(self, outcome: Outcome, admission: Admission) -> Effect[Duration]:
         # Only an outcome that can open the circuit needs the open time.
         if not isinstance(outcome, FailureOutcome) and (
             not isinstance(outcome, SuccessOutcome)
             or admission.probe
             or isinstance(self._policy, Consecutive)
         ):
-            return succeed(ZERO)
+            return succeed(zero)
         hint = outcome.retry_after if isinstance(outcome, FailureOutcome) else None
         max_open = self._max_open
 
-        def hinted(delay: Seconds) -> Seconds:
+        def hinted(delay: Duration) -> Duration:
             return delay if hint is None else max(delay, min(hint, max_open))
 
         return self._open_duration(admission.consecutive_openings + 1).map(hinted)
@@ -312,7 +313,7 @@ def make(
     *,
     trip_policy: TripPolicy,
     open_duration: OpenDuration,
-    max_open_duration: Duration = "1 hour",
+    max_open_duration: DurationInput = "1 hour",
     on_store_error: OnStoreError = "allow",
 ) -> Effect[CircuitBreakerService, Never, CircuitBreakerStore | Scope]:
     """A breaker on the ``CircuitBreakerStore``. A closed key opens when
@@ -322,7 +323,7 @@ def make(
     runs: its success closes the key, its failure reopens it. A key closed
     as long as its last opening starts counting openings afresh.
     ``transitions`` ends when the scope closes."""
-    max_open = to_seconds(max_open_duration)
+    max_open = from_input_unsafe(max_open_duration)
 
     def build() -> Generator[Effect[Any, Never, Any], Any, CircuitBreakerService]:
         store = yield from CircuitBreakerStore()
@@ -339,7 +340,7 @@ def layer(
     *,
     trip_policy: TripPolicy,
     open_duration: OpenDuration,
-    max_open_duration: Duration = "1 hour",
+    max_open_duration: DurationInput = "1 hour",
     on_store_error: OnStoreError = "allow",
 ) -> Layer[CircuitBreaker, Never, CircuitBreakerStore]:
     """Provides ``CircuitBreaker`` (see ``make``)."""

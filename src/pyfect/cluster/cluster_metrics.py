@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pyfect import metric
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.metric import Gauge, Histogram
 
 entities: Gauge[int] = metric.gauge("effect_cluster_entities", bigint=True)
@@ -32,7 +32,7 @@ shards: Gauge[int] = metric.gauge("effect_cluster_shards", bigint=True)
 shards_releasing: Gauge[int] = metric.gauge("effect_cluster_shards_releasing", bigint=True)
 """Shards this runner is releasing."""
 
-shard_release_duration: Histogram[Duration] = metric.timer(
+shard_release_duration: Histogram[DurationInput] = metric.timer(
     "effect_cluster_shard_release",
     description=(
         "Time taken to release a shard, including entity teardown, retries and lock storage "

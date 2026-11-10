@@ -11,7 +11,7 @@ from pyfect import config
 from pyfect import layer as _layer
 from pyfect._context_effects import context as current_context
 from pyfect.clock import Clock
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import Effect, gen, succeed, sync
 from pyfect.http import headers as _headers
 from pyfect.http.body import HttpBody
@@ -77,8 +77,8 @@ def make(
     resource: ResourceOptions | None = None,
     headers: _headers.Input | None = None,
     compression: Compression = "none",
-    export_interval: Duration | None = None,
-    shutdown_timeout: Duration | None = None,
+    export_interval: DurationInput | None = None,
+    shutdown_timeout: DurationInput | None = None,
     temporality: AggregationTemporality = "cumulative",
 ) -> Effect[None, Never, Flusher | HttpClient | OtlpSerialization | Scope]:
     """Export the current registry's series to ``url`` every
@@ -147,8 +147,8 @@ def layer(
     resource: ResourceOptions | None = None,
     headers: _headers.Input | None = None,
     compression: Compression = "none",
-    export_interval: Duration | None = None,
-    shutdown_timeout: Duration | None = None,
+    export_interval: DurationInput | None = None,
+    shutdown_timeout: DurationInput | None = None,
     temporality: AggregationTemporality = "cumulative",
 ) -> Layer[Flusher, Never, HttpClient | OtlpSerialization]:
     """Starts ``make``'s exporter, with the shared ``layer_flusher``."""

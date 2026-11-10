@@ -9,7 +9,8 @@ import pytest
 
 import pyfect as fx
 from pyfect import schedule
-from pyfect.duration import Duration, Seconds, format_duration, to_seconds
+from pyfect.duration import Duration, format_duration, from_input_unsafe, infinity, millis
+from pyfect.duration import Input as DurationInput
 
 
 @pytest.mark.parametrize(
@@ -20,14 +21,14 @@ from pyfect.duration import Duration, Seconds, format_duration, to_seconds
         (1500, 1.5),
         (1.5, 0.0015),
         (timedelta(milliseconds=1500), 1.5),
-        (Seconds(1.5), 1.5),
+        (millis(1500), 1.5),
     ],
 )
-def test_to_seconds_normalises_like_effect_duration_make(given: Duration, expected: float):
+def test_to_seconds_normalises_like_effect_duration_make(given: DurationInput, expected: float):
     """A bare number is milliseconds (Effect's ``Duration.millis``), and
     ``Duration.make`` maps NaN (and -0) to zero."""
-    parsed = to_seconds(given)
-    assert isinstance(parsed, Seconds)
+    parsed = from_input_unsafe(given)
+    assert isinstance(parsed, Duration)
     assert parsed == expected and math.copysign(1.0, parsed) == math.copysign(1.0, expected)
 
 
@@ -35,26 +36,26 @@ def test_parsed_seconds_pass_through_unchanged():
     """A parsed ``Seconds`` is a ``Duration`` already, as Effect's
     ``fromInputUnsafe`` returns a ``Duration`` input as it is: it is not
     read again as milliseconds."""
-    parsed = to_seconds("2 seconds")
-    assert to_seconds(parsed) is parsed
+    parsed = from_input_unsafe("2 seconds")
+    assert from_input_unsafe(parsed) is parsed
 
 
 def test_arithmetic_on_seconds_keeps_the_unit():
     """Durations computed from durations stay ``Seconds``, so they are not
     read as milliseconds when passed on; a ratio or a sum with a bare
     number is a plain ``float``."""
-    two = Seconds(2)
+    two = millis(2000)
     for kept in (two + two, two - two, two * 1.5, 3 * two, two / 4, -two, abs(-two), +two):
-        assert type(kept) is Seconds
+        assert type(kept) is Duration
     for plain in (two / two, two + 1.0, 1.0 + two, two - 1):
         assert type(plain) is float
     assert two * timedelta(seconds=1) == timedelta(seconds=2)
-    assert Seconds(math.inf) * 0 == 0.0
-    assert Seconds(math.inf) + Seconds(-math.inf) == 0.0
+    assert infinity * 0 == 0.0
+    assert infinity + Duration(-math.inf) == 0.0
 
 
 def test_seconds_cannot_hold_nan():
-    assert Seconds(float("nan")) == 0.0
+    assert Duration(float("nan")) == 0.0
 
 
 def test_sleep_nan_completes_at_once_on_the_sync_scheduler():
@@ -78,7 +79,7 @@ def test_schedules_treat_nan_as_zero():
         step = yield from schedule.to_step(schedule.spaced(float("nan")))
         return (yield from step(0.0, None))
 
-    assert fx.run_blocking(first_decision) == schedule.Continue(0, Seconds(0.0))
+    assert fx.run_blocking(first_decision) == schedule.Continue(0, millis(0))
 
 
 @pytest.mark.parametrize(
@@ -112,7 +113,7 @@ def test_schedules_treat_nan_as_zero():
 def test_format_duration_matches_effect(seconds: float, text: str):
     """Effect's ``Duration.format`` (Duration.test.ts "format" and the
     negative-duration format checks)."""
-    assert format_duration(Seconds(seconds)) == text
+    assert format_duration(Duration(seconds)) == text
 
 
 def test_an_infinite_sleep_never_wakes_and_does_not_crash_the_sync_scheduler():
@@ -125,4 +126,4 @@ def test_an_infinite_sleep_never_wakes_and_does_not_crash_the_sync_scheduler():
 @pytest.mark.parametrize("seconds", [1e-12, -1e-12])
 def test_format_duration_of_a_sub_nanosecond_value_is_zero(seconds: float):
     """Effect rounds to whole nanoseconds, then ``Duration.format`` of zero is ``"0"``."""
-    assert format_duration(Seconds(seconds)) == "0"
+    assert format_duration(Duration(seconds)) == "0"

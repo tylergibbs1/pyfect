@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, Never, cast
 from pyfect._core import Effect, _Callback, _Sync, _WithFiber
 from pyfect._public import publish
 from pyfect.context import Tag
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.reactivity import async_result
@@ -59,8 +59,8 @@ def make(
     *,
     initial_values: Iterable[InitialValue[Any]] | None = None,
     scheduler: Scheduler | None = None,
-    timeout_resolution: Duration | None = None,
-    default_idle_ttl: Duration | None = None,
+    timeout_resolution: DurationInput | None = None,
+    default_idle_ttl: DurationInput | None = None,
 ) -> AtomRegistryService:
     """A new registry. ``initial_values`` seed atoms (``atom.initial_value``);
     ``default_idle_ttl`` keeps unused atoms that long, checked every
@@ -79,8 +79,8 @@ def layer_options(
     *,
     initial_values: Iterable[InitialValue[Any]] | None = None,
     scheduler: Scheduler | None = None,
-    timeout_resolution: Duration | None = None,
-    default_idle_ttl: Duration | None = None,
+    timeout_resolution: DurationInput | None = None,
+    default_idle_ttl: DurationInput | None = None,
 ) -> Layer[AtomRegistry]:
     """A layer providing a registry made with these options (on the
     building fiber's scheduler by default), disposed with its scope."""

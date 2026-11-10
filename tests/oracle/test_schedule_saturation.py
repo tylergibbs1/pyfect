@@ -11,18 +11,18 @@ import math
 
 import pyfect as fx
 from pyfect import schedule, testing
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.exit import Success
 from pyfect.schedule import Continue, Schedule
 
 
-def delays_after[I](s: Schedule[object, I], input: I, steps: int) -> list[Seconds]:
+def delays_after[I](s: Schedule[object, I], input: I, steps: int) -> list[Duration]:
     """Every delay of the first ``steps`` steps, stepped at time 0."""
 
     @fx.gen
     def go():
         step = yield from schedule.to_step(s)
-        out: list[Seconds] = []
+        out: list[Duration] = []
         for _ in range(steps):
             decision = yield from step(0.0, input)
             assert isinstance(decision, Continue)
@@ -41,7 +41,7 @@ def test_capped_exponential_keeps_recurring_past_float_range():
     def scenario():
         bounded = capped.up_to(times=2_000)
         running = yield from fx.void.repeat(bounded).exit().fork()
-        yield from testing.adjust(Seconds(2_000 * 30))
+        yield from testing.adjust(millis(60_000_000))
         return (yield from running.join())
 
     result = testing.run_test(scenario)
@@ -90,7 +90,7 @@ def test_jittered_infinite_delay_stays_infinite():
 
 def test_add_delay_to_an_infinite_delay_stays_infinite():
     """Effect: addDelay(Duration.infinity, 1s) is Duration.infinity."""
-    added = schedule.exponential("1 second", 1e300).add_delay(lambda _: fx.succeed(Seconds(1)))
+    added = schedule.exponential("1 second", 1e300).add_delay(lambda _: fx.succeed(millis(1000)))
     assert delays_after(added, None, 3)[-1] == math.inf
 
 
@@ -100,7 +100,7 @@ def test_an_infinite_delay_never_wakes_under_adjust():
     @fx.gen
     def scenario():
         running = yield from fx.void.repeat(schedule.exponential("1 second", 1e200)).fork()
-        yield from testing.adjust(Seconds(1e201))
+        yield from testing.adjust(Duration(1e201))
         clock = yield from testing.test_clock()
         seen = running.poll_unsafe(), clock.pending_sleeps
         yield from running.interrupt()

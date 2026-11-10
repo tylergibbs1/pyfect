@@ -39,7 +39,7 @@ import pyfect as fx
 from pyfect import clock, testing
 from pyfect import schema as S
 from pyfect import stream as stream_
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.errors import TimeoutException
 from pyfect.exit import Failure
 from pyfect.http import client as c
@@ -594,7 +594,7 @@ def test_retry_delay(header: str | None, status: int, delay: float, scheduled: b
     )
     fiber = yield from retrying.get("http://test/").fork(start_immediately=True)
     if delay > 0:
-        yield from testing.adjust(Seconds(delay - 0.001))
+        yield from testing.adjust(Duration(delay - 0.001))
         assert attempts[0] == 1
         yield from testing.adjust("1 millis")
     assert (yield from fiber.join()).status == 200
@@ -613,7 +613,7 @@ def test_classifies_transient() -> None:
     assert [
         c.is_transient_error(error)
         for error in (
-            TimeoutException(Seconds(0)),
+            TimeoutException(millis(0)),
             HttpClientError(TransportError(request)),
             HttpClientError(EncodeError(request)),
             Exception("boom"),

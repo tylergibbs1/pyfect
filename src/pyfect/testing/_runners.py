@@ -10,7 +10,8 @@ from pyfect._effect_args import require_effect
 from pyfect.clock import Clock
 from pyfect.console import CurrentConsole
 from pyfect.context import Context
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe
 from pyfect.exit import Exit
 from pyfect.run import unwrap
 from pyfect.scheduler import AsyncioScheduler
@@ -23,8 +24,8 @@ def run_test_exit[A, E](
     eff: Effect[A, E, Never],
     *,
     stall_timeout: float = 1.0,
-    warning_delay: Duration = "1 second",
-    timeout: Duration | None = None,
+    warning_delay: DurationInput = "1 second",
+    timeout: DurationInput | None = None,
 ) -> Exit[A, E]:
     """Run ``eff`` on a synchronous scheduler with a ``TestClock`` and a
     ``TestConsole``.
@@ -34,7 +35,7 @@ def run_test_exit[A, E](
     effect is interrupted and its finalizers run first."""
     require_effect(eff, "eff")
     clock = TestClock(warning_delay=warning_delay)
-    limit = None if timeout is None else to_seconds(timeout)
+    limit = None if timeout is None else from_input_unsafe(timeout)
     try:
         return SyncRuntime(stall_timeout=stall_timeout).run(
             eff, Context.empty().add(Clock, clock).add(CurrentConsole, TestConsole()), timeout=limit
@@ -47,8 +48,8 @@ def run_test[A](
     eff: Effect[A, Never, Never],
     *,
     stall_timeout: float = 1.0,
-    warning_delay: Duration = "1 second",
-    timeout: Duration | None = None,
+    warning_delay: DurationInput = "1 second",
+    timeout: DurationInput | None = None,
 ) -> A:
     return unwrap(
         run_test_exit(
@@ -60,8 +61,8 @@ def run_test[A](
 async def run_test_async_exit[A, E](
     eff: Effect[A, E, Never],
     *,
-    warning_delay: Duration = "1 second",
-    timeout: Duration | None = None,
+    warning_delay: DurationInput = "1 second",
+    timeout: DurationInput | None = None,
 ) -> Exit[A, E]:
     """Run ``eff`` on the running asyncio loop with a ``TestClock`` and a
     ``TestConsole``, so
@@ -69,7 +70,7 @@ async def run_test_async_exit[A, E](
     interrupts the effect and waits for its finalizers."""
     require_effect(eff, "eff")
     clock = TestClock(warning_delay=warning_delay)
-    limit = None if timeout is None else to_seconds(timeout)
+    limit = None if timeout is None else from_input_unsafe(timeout)
     try:
         return await run_on_loop(
             AsyncioScheduler.current(),
@@ -84,7 +85,7 @@ async def run_test_async_exit[A, E](
 async def run_test_async[A](
     eff: Effect[A, Never, Never],
     *,
-    warning_delay: Duration = "1 second",
-    timeout: Duration | None = None,
+    warning_delay: DurationInput = "1 second",
+    timeout: DurationInput | None = None,
 ) -> A:
     return unwrap(await run_test_async_exit(eff, warning_delay=warning_delay, timeout=timeout))

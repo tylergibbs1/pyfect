@@ -27,7 +27,7 @@ from pyfect.crypto.aead import Aead
 from pyfect.crypto.mac import Mac
 from pyfect.crypto.secure_random import SecureRandom
 from pyfect.crypto.signature import Signature
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import gen, succeed
 from pyfect.jose import jwe, jws
 from pyfect.jose._compact import (
@@ -140,8 +140,8 @@ class VerifyOptions(TypedDict, total=False):
     audience: str | Sequence[str]
     subject: str
     typ: str
-    clock_tolerance: Duration
-    max_token_age: Duration
+    clock_tolerance: DurationInput
+    max_token_age: DurationInput
     required_claims: Sequence[RegisteredClaim]
 
 

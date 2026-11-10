@@ -11,7 +11,8 @@ from pyfect._core import Effect
 from pyfect.cause import Cause
 from pyfect.clock import Clock
 from pyfect.context import Reference
-from pyfect.duration import Duration, Seconds, nanos_or_infinite, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, nanos_or_infinite
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.latch import Latch
 from pyfect.result import Ok
@@ -78,7 +79,7 @@ def default_retry_policy() -> Schedule[Any, Any, Never, Never]:
 class _Pinger:
     __slots__ = ("_awaiting", "_clock", "_last_seen", "_timeout", "latch")
 
-    def __init__(self, clock: Any, timeout: Seconds) -> None:
+    def __init__(self, clock: Any, timeout: Duration) -> None:
         self._clock = clock
         self._timeout = nanos_or_infinite(timeout)
         self._last_seen = clock.monotonic_nanos_unsafe()
@@ -112,8 +113,8 @@ class SocketOptions:
     ``retry_transient_errors`` keeps requests waiting while the socket
     cannot open (reporting each error to ``on_transient_error``)."""
 
-    ping_interval: Duration = "5 seconds"
-    ping_timeout: Duration | None = None
+    ping_interval: DurationInput = "5 seconds"
+    ping_timeout: DurationInput | None = None
     retry_transient_errors: bool = False
     retry_policy: Schedule[Any, Any, Never, Never] | None = None
     on_transient_error: Callable[[RpcClientError], Effect[None]] | None = None
@@ -293,9 +294,11 @@ def make_protocol_socket(
             hooks = yield from ConnectionHooks()
             clock = yield from Clock()
             writer = yield from socket.writer
-            interval = to_seconds(resolved.ping_interval)
+            interval = from_input_unsafe(resolved.ping_interval)
             timeout = (
-                interval if resolved.ping_timeout is None else to_seconds(resolved.ping_timeout)
+                interval
+                if resolved.ping_timeout is None
+                else from_input_unsafe(resolved.ping_timeout)
             )
             pinger = _Pinger(clock, timeout)
             client = _SocketClient(

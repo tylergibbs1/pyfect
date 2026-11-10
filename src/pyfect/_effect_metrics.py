@@ -13,7 +13,7 @@ from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
 if TYPE_CHECKING:
     from pyfect._core import Effect
     from pyfect._fiber import Fiber
-    from pyfect.duration import Seconds
+    from pyfect.duration import Duration
     from pyfect.exit import Exit
     from pyfect.metric import Metric
 
@@ -73,10 +73,10 @@ class MetricMethods(EffectBase[A_co, E_co, R_co]):
         return as_effect(self).tap_defect(lambda d: metric.update(d if f is None else f(d)))
 
     @overload
-    def track_duration(self, metric: Metric[Seconds, object], /) -> Effect[A_co, E_co, R_co]: ...
+    def track_duration(self, metric: Metric[Duration, object], /) -> Effect[A_co, E_co, R_co]: ...
     @overload
     def track_duration[I](
-        self, metric: Metric[I, object], f: Callable[[Seconds], I], /
+        self, metric: Metric[I, object], f: Callable[[Duration], I], /
     ) -> Effect[A_co, E_co, R_co]: ...
     def track_duration(
         self, metric: Metric[Any, object], f: Callable[[Any], Any] | None = None, /
@@ -85,7 +85,7 @@ class MetricMethods(EffectBase[A_co, E_co, R_co]):
         ``f(duration)``), measured on the ``Clock``'s monotonic time
         however it ends."""
         from pyfect.clock import Clock
-        from pyfect.duration import Seconds
+        from pyfect.duration import nanos
 
         inner = as_effect(self)
 
@@ -94,7 +94,8 @@ class MetricMethods(EffectBase[A_co, E_co, R_co]):
             start = clock.monotonic_nanos_unsafe()
 
             def record(_: object) -> Effect[None]:
-                elapsed = Seconds((clock.monotonic_nanos_unsafe() - start) / 1_000_000_000)
+                elapsed = nanos(clock.monotonic_nanos_unsafe() - start)
+
                 return metric.update(elapsed if f is None else f(elapsed))
 
             return inner.on_exit(record)

@@ -20,7 +20,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import redacted, sink, stream, testing
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.layer import Layer
 from pyfect.layer import succeed as layer_succeed
 from pyfect.platform_error import PlatformError
@@ -45,7 +45,7 @@ from pyfect.scope import Scope
 
 
 def _kill(
-    *, kill_signal: signal.Signals | None = None, force_kill_after: Duration | None = None
+    *, kill_signal: signal.Signals | None = None, force_kill_after: DurationInput | None = None
 ) -> fx.Effect[None, PlatformError]:
     return fx.void
 

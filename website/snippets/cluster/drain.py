@@ -41,7 +41,7 @@ def runner(database: Path, termination_timeout: float, started: Latch, log: list
             config,
             runner_address=runner_address.make("127.0.0.1", port),
             # How long a stopping runner waits for its entities (15 s by default).
-            entity_termination_timeout=fx.duration.Seconds(termination_timeout),
+            entity_termination_timeout=fx.duration.Duration(termination_timeout),
         )
 
     sql = fx.layer.effect(

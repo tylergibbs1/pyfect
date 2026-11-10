@@ -23,7 +23,7 @@ from pyfect._primitives import Restore, uninterruptible_mask
 from pyfect._tracer_ref import CurrentTracer
 from pyfect.clock import Clock, ClockService, monotonic
 from pyfect.context import Context, Tag
-from pyfect.duration import Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
 from pyfect.effect import fail, provide_service, succeed, sync
 from pyfect.exit import Failure, Success
 from pyfect.pool import Pool, PoolStats
@@ -106,7 +106,7 @@ def _acquire_timed_out() -> Effect[Never, SqlError]:
 
 
 def _with_timeout[A](
-    effect: Effect[A, SqlError, Scope], timeout: Seconds | None
+    effect: Effect[A, SqlError, Scope], timeout: Duration | None
 ) -> Effect[A, SqlError, Scope]:
     """Bound ``effect``; it runs in a child scope, so a lease it took
     before timing out goes back at once."""
@@ -199,8 +199,8 @@ def make(config: PgPoolConfig) -> Effect[PgPoolService, SqlError, Scope]:
 
 
 def _make(config: PgPoolConfig, connects: _Connects) -> Effect[PgPoolService, SqlError, Scope]:
-    ttl = None if config.connection_ttl is None else to_seconds(config.connection_ttl)
-    timeout = None if config.acquire_timeout is None else to_seconds(config.acquire_timeout)
+    ttl = None if config.connection_ttl is None else from_input_unsafe(config.connection_ttl)
+    timeout = None if config.acquire_timeout is None else from_input_unsafe(config.acquire_timeout)
     opened_at: dict[PgConnection, float] = {}
     checked_out: set[PgConnection] = set()
     holder: list[Pool[PgConnection, SqlError]] = []

@@ -36,7 +36,7 @@ import pytest
 import pyfect as fx
 from pyfect import cause, channel, schedule, testing
 from pyfect._wake_tracking import WakeTracker
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.result import Err, Ok, Result
 from pyfect.scheduler import Cancel, Scheduler, Task
 
@@ -262,7 +262,7 @@ class _CountingScheduler:
         self.scheduled += 1
         self.inner.schedule(task)
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         return self.inner.call_later(delay, task, daemon=daemon)
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:

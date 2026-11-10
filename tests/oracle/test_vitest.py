@@ -26,7 +26,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import layer, testing
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.testing import Services
 
 
@@ -81,7 +81,7 @@ FooLive = layer.succeed(Foo, "foo")
 BarLive = layer.effect(Bar, Foo().map(lambda _: "bar"))
 FooBarLive = BarLive.pipe(layer.provide_merge(FooLive))
 SleeperLive = layer.effect(
-    Sleeper, fx.Clock().map(lambda clock: lambda millis: clock.sleep(Seconds(millis / 1000)))
+    Sleeper, fx.Clock().map(lambda clock: lambda millis: clock.sleep(Duration(millis / 1000)))
 )
 
 foo = testing.layer_fixture(FooLive)

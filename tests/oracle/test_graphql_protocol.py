@@ -18,7 +18,7 @@ from pyfect import effect, layer, stream, testing
 from pyfect import schema as S
 from pyfect.context import Context, Reference
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.effect import Effect
 from pyfect.graphql import GraphQLGroup, GraphQLMiddleware, Implementation, client, mutation
 from pyfect.graphql.client_error import DecodeError, ResponseError, TransportError
@@ -310,7 +310,7 @@ def test_a_429_with_a_graphql_body_carries_a_numeric_retry_after():
         )
     ).pipe(expect_reason(ResponseError))
     assert reason.status == 429
-    assert reason.retry_after == Seconds(30)
+    assert reason.retry_after == millis(30_000)
     assert reason.is_retryable
 
 
@@ -361,7 +361,7 @@ def test_an_application_json_429_whose_errors_is_not_a_list_is_a_transport_error
         )
     ).pipe(expect_reason(TransportError))
     assert reason.status == 429
-    assert reason.retry_after == Seconds(5)
+    assert reason.retry_after == millis(5000)
 
 
 @testing.effect
@@ -388,7 +388,7 @@ def test_a_non_graphql_503_is_a_transport_error_carrying_a_numeric_retry_after()
         expect_reason(TransportError)
     )
     assert reason.status == 503
-    assert reason.retry_after == Seconds(30)
+    assert reason.retry_after == millis(30_000)
     assert isinstance(reason.cause, http_error.HttpClientError)
 
 
@@ -400,7 +400,7 @@ def test_an_http_date_retry_after_is_measured_from_the_effect_clock():
     reason = yield from _call_viewer(lambda request, _b, _u: _unavailable(request, date)).pipe(
         expect_reason(TransportError)
     )
-    assert reason.retry_after == Seconds(45)
+    assert reason.retry_after == millis(45_000)
 
 
 @testing.effect
@@ -538,7 +538,7 @@ def test_a_retry_line_becomes_retry_after_when_the_stream_then_fails():
     )
     assert isinstance(error, TransportError)
     assert error.is_retryable
-    assert error.retry_after == Seconds(3)
+    assert error.retry_after == millis(3000)
 
 
 @testing.effect
@@ -640,7 +640,7 @@ def test_a_503_with_null_data_and_no_errors_is_a_transport_error_with_retry_afte
         )
     ).pipe(expect_reason(TransportError))
     assert reason.status == 503
-    assert reason.retry_after == Seconds(30)
+    assert reason.retry_after == millis(30_000)
 
 
 @testing.effect

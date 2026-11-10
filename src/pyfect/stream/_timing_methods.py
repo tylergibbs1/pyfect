@@ -12,7 +12,7 @@ from pyfect.stream._base import A_co, E_co, R_co, StreamBase
 if TYPE_CHECKING:
     from pyfect._core import Effect
     from pyfect.cause import Cause
-    from pyfect.duration import Duration
+    from pyfect.duration import Input as DurationInput
     from pyfect.exit import Exit
     from pyfect.queue import Strategy
     from pyfect.schedule import Schedule
@@ -72,14 +72,14 @@ class TimingMethods(StreamBase[A_co, E_co, R_co]):
 
     # --- timeouts, debouncing and throttling ----------------------------------
 
-    def timeout(self, duration: Duration) -> Stream[A_co, E_co, R_co]:
+    def timeout(self, duration: DurationInput) -> Stream[A_co, E_co, R_co]:
         """End the stream if a pull waits ``duration`` for its chunk."""
         from pyfect.stream import _timing
 
         return _timing.timeout_or_else(self, duration, None)
 
     def timeout_or_else[B, E2 = Never, R2 = Never](
-        self, duration: Duration, or_else: Callable[[], Stream[B, E2, R2]]
+        self, duration: DurationInput, or_else: Callable[[], Stream[B, E2, R2]]
     ) -> Stream[A_co | B, E_co | E2, R_co | R2]:
         """Go on with ``or_else()`` if a pull waits ``duration`` for its
         chunk."""
@@ -87,7 +87,7 @@ class TimingMethods(StreamBase[A_co, E_co, R_co]):
 
         return _timing.timeout_or_else(self, duration, or_else)
 
-    def debounce(self, duration: Duration) -> Stream[A_co, E_co, R_co]:
+    def debounce(self, duration: DurationInput) -> Stream[A_co, E_co, R_co]:
         """Write the last item of a burst once ``duration`` passes without a
         new chunk; earlier items of the burst are dropped."""
         from pyfect.stream import _timing
@@ -99,7 +99,7 @@ class TimingMethods(StreamBase[A_co, E_co, R_co]):
         *,
         cost: Callable[[tuple[A_co, ...]], float],
         units: float,
-        duration: Duration,
+        duration: DurationInput,
         burst: float = 0,
         strategy: ThrottleStrategy = "shape",
     ) -> Stream[A_co, E_co, R_co]:
@@ -123,7 +123,7 @@ class TimingMethods(StreamBase[A_co, E_co, R_co]):
         *,
         cost: Callable[[tuple[A_co, ...]], Effect[float, E2, R2]],
         units: float,
-        duration: Duration,
+        duration: DurationInput,
         burst: float = 0,
         strategy: ThrottleStrategy = "shape",
     ) -> Stream[A_co, E_co | E2, R_co | R2]:

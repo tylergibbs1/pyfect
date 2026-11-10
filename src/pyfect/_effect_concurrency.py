@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Never
 from pyfect import _core
 from pyfect._effect_args import require_effect
 from pyfect._effect_base import A_co, E_co, EffectBase, R_co, as_effect
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 
 if TYPE_CHECKING:
     from pyfect._core import Effect
@@ -108,14 +108,14 @@ class ConcurrencyMethods(EffectBase[A_co, E_co, R_co]):
 
         return race_first(as_effect(self), that)
 
-    def timeout(self, duration: Duration) -> Effect[A_co, E_co | TimeoutException, R_co]:
+    def timeout(self, duration: DurationInput) -> Effect[A_co, E_co | TimeoutException, R_co]:
         """Fail with ``TimeoutException`` if this takes longer than
         ``duration``. The effect is interrupted when time runs out."""
         from pyfect._concurrency import timeout
 
         return timeout(as_effect(self), duration)
 
-    def timeout_option(self, duration: Duration) -> Effect[Option[A_co], E_co, R_co]:
+    def timeout_option(self, duration: DurationInput) -> Effect[Option[A_co], E_co, R_co]:
         """``Some(value)``, or ``None`` if this takes longer than
         ``duration``. The effect is interrupted when time runs out."""
         from pyfect._concurrency import timeout_option
@@ -123,7 +123,7 @@ class ConcurrencyMethods(EffectBase[A_co, E_co, R_co]):
         return timeout_option(as_effect(self), duration)
 
     def timeout_or_else[B, E2 = Never, R2 = Never](
-        self, duration: Duration, or_else: Callable[[], Effect[B, E2, R2]]
+        self, duration: DurationInput, or_else: Callable[[], Effect[B, E2, R2]]
     ) -> Effect[A_co | B, E_co | E2, R_co | R2]:
         """Continue with ``or_else()`` if this takes longer than
         ``duration``. ``or_else`` runs once this effect has been

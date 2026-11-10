@@ -23,7 +23,7 @@ from opentelemetry.util.types import AnyValue
 from pyfect import layer as _layer
 from pyfect.clock import Clock, ClockService
 from pyfect.context import Tag
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import gen, sync
 from pyfect.layer import Layer
 from pyfect.logger import CurrentLogAnnotations, CurrentLogSpans, Logger, LogLevel, Options
@@ -130,7 +130,7 @@ def layer(*, merge_with_existing: bool = True) -> Layer[Never, Never, OtelLogger
 def layer_logger_provider(
     processors: sdk_logs.LogRecordProcessor | Sequence[sdk_logs.LogRecordProcessor],
     *,
-    shutdown_timeout: Duration = DEFAULT_SHUTDOWN_TIMEOUT,
+    shutdown_timeout: DurationInput = DEFAULT_SHUTDOWN_TIMEOUT,
 ) -> Layer[OtelLoggerProvider, Never, OtelResource]:
     """An SDK logger provider with the ``OtelResource`` and ``processors``,
     flushed (for at most ``shutdown_timeout``) and shut down when the layer

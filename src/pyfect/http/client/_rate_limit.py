@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from pyfect.clock import ClockService, clock_with, sleep
-from pyfect.duration import Duration, Seconds, to_millis
+from pyfect.duration import Duration, to_millis
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import Effect, fail, succeed
 from pyfect.http.client._retry import retry_after_from_header
 from pyfect.http.error import HttpClientError, StatusCodeError
@@ -86,7 +87,7 @@ def _header_names(overrides: RateLimitHeaders) -> _HeaderNames:
 @dataclass(frozen=True, slots=True)
 class _Limits:
     limit: float
-    window: Seconds
+    window: Duration
     initial: bool
 
 
@@ -124,14 +125,14 @@ def _now_millis(clock: ClockService) -> int:
     return clock.now_nanos_unsafe() // 1_000_000
 
 
-def _reset_after(value: str | None) -> Seconds | None:
+def _reset_after(value: str | None) -> Duration | None:
     numeric = _number(value)
     if numeric is None or numeric <= 0:
         return None
-    return Seconds(max(numeric, 0.001))
+    return Duration(max(numeric, 0.001))
 
 
-def _reset(now: float, value: str | None) -> Seconds | None:
+def _reset(now: float, value: str | None) -> Duration | None:
     numeric = _number(value)
     if numeric is None or numeric <= 0:
         return None
@@ -139,7 +140,7 @@ def _reset(now: float, value: str | None) -> Seconds | None:
         return millis(max(numeric - now, _MIN_MILLIS))
     if numeric > 1_000_000_000:
         return millis(max(numeric * 1000 - now, _MIN_MILLIS))
-    return Seconds(max(numeric, 0.001))
+    return Duration(max(numeric, 0.001))
 
 
 class _Inspector:
@@ -154,7 +155,7 @@ class _Inspector:
         value = _number(_header(headers, self._names.remaining))
         return value if value is not None and value >= 0 else None
 
-    def window(self, now: float, headers: Headers) -> Seconds | None:
+    def window(self, now: float, headers: Headers) -> Duration | None:
         after = _reset_after(_header(headers, self._names.reset_after))
         return _clamp(
             after if after is not None else _reset(now, _header(headers, self._names.reset))
@@ -178,11 +179,11 @@ class _Inspector:
             return None
         return remaining + tokens if current.initial else max(remaining + tokens, current.limit)
 
-    def retry_after(self, now: float, headers: Headers) -> Seconds | None:
+    def retry_after(self, now: float, headers: Headers) -> Duration | None:
         return retry_after_from_header(_header(headers, self._names.retry_after), now)
 
 
-def _clamp(hint: Seconds | None) -> Seconds | None:
+def _clamp(hint: Duration | None) -> Duration | None:
     """A peer's reset hint, at most an hour, as ``Retry-After`` and the
     adaptive limiter's own are (Effect leaves it unbounded)."""
     return None if hint is None else millis(clamp_adaptive_millis(to_millis(hint)))
@@ -204,7 +205,7 @@ type Send = Effect[HttpClientResponse, Any, Any]
 @dataclass(frozen=True, slots=True, kw_only=True)
 class RateLimitOptions:
     limiter: RateLimiterService
-    window: Duration
+    window: DurationInput
     limit: float
     key: str | Callable[[HttpClientRequest], str]
     algorithm: Algorithm
@@ -329,7 +330,7 @@ class _Attempt:
     def run(self) -> Send:
         options = self._limited.options
 
-        def admitted(delay: Seconds) -> Send:
+        def admitted(delay: Duration) -> Send:
             if delay == 0:
                 return self._paced()
             return sleep(delay).flat_map(lambda _: self._paced())
@@ -360,13 +361,13 @@ class _Attempt:
             fallback_window=self._current.window,
         ).flat_map(paced)
 
-    def _retry(self, retry_after: Seconds | None) -> Send:
+    def _retry(self, retry_after: Duration | None) -> Send:
         again = self._limited.send(self._sending, self._request, self._retries + 1)
         return again if retry_after is None else sleep(retry_after).flat_map(lambda _: again)
 
     def _request_once(self, adaptive: AdaptiveConsumeResult | None) -> Send:
         def on_success(response: HttpClientResponse) -> Send:
-            def after(retry_after: Seconds | None) -> Send:
+            def after(retry_after: Duration | None) -> Send:
                 if response.status != 429 or not self._can_retry:
                     return succeed(response)
                 return self._retry(retry_after)
@@ -388,7 +389,7 @@ class _Attempt:
 
     def _inspect(
         self, response: HttpClientResponse, adaptive: AdaptiveConsumeResult | None
-    ) -> Effect[Seconds | None, Any]:
+    ) -> Effect[Duration | None, Any]:
         """Apply the response's headers; for a ``429``, the delay before
         retrying (a reported reset wins over ``Retry-After``), reported to
         the adaptive pacing too."""

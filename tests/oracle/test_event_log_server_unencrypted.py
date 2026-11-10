@@ -17,7 +17,7 @@ from pyfect import testing
 from pyfect.clock import ClockService
 from pyfect.context import Context
 from pyfect.crypto import web_crypto
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.effect import Effect
 from pyfect.eventlog import event as Ev
 from pyfect.eventlog import event_group as G
@@ -918,7 +918,7 @@ class _SkewedClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self._clock.monotonic_nanos_unsafe() + int(self.skew * 1_000_000)
 
-    def sleep(self, seconds: Seconds) -> Effect[None]:
+    def sleep(self, seconds: Duration) -> Effect[None]:
         return self._clock.sleep(seconds)
 
 

@@ -27,7 +27,7 @@ from typing import Literal
 
 from pyfect._core import Effect, _Callback, _Sync
 from pyfect._wake_tracking import WakeTracker
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.scheduler import CurrentScheduler, Scheduler
 
 type Resume[A, E] = Callable[[Effect[A, E]], None]
@@ -35,7 +35,8 @@ type Cancel = Callable[[], object]
 type Register[A, E] = Callable[[Resume[A, E]], Cancel | None]
 type WaitsFor = Literal["work", "event"]
 
-_KEEPALIVE = Seconds(0.25)
+_KEEPALIVE = millis(250)
+
 """How often a waiting fiber's timer fires; below the test runtime's
 one-second stall timeout."""
 

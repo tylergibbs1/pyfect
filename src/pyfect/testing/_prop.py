@@ -33,7 +33,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 from pyfect._core import Effect
 from pyfect._extras import missing_extra
-from pyfect.duration import Duration, Seconds
+from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.exit import Failure, Success
 from pyfect.run import unwrap
 from pyfect.schema import Codec, to_strategy
@@ -103,9 +104,9 @@ def effect_prop(
     *arbitraries: Arbitrary,
     runs: int | None = None,
     seed: int | None = None,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     asyncio: bool = False,
-    warning_delay: Duration = "1 second",
+    warning_delay: DurationInput = "1 second",
     **keyed: Arbitrary,
 ) -> Callable[[Callable[..., TestBody[Any]]], Callable[..., None]]:
     """A property test written as an effect (``testing.effect`` per drawn
@@ -118,7 +119,7 @@ def live_prop(
     *arbitraries: Arbitrary,
     runs: int | None = None,
     seed: int | None = None,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     asyncio: bool = False,
     **keyed: Arbitrary,
 ) -> Callable[[Callable[..., TestBody[Any]]], Callable[..., None]]:
@@ -218,7 +219,7 @@ def _effect_runner(options: _Options) -> _Check:
         f: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], started: float
     ) -> None:
         limit = options.timeout if options.timeout is not None else plugin_settings.timeout
-        left = None if limit is None else Seconds(max(limit - (time.monotonic() - started), 0.0))
+        left = None if limit is None else Duration(max(limit - (time.monotonic() - started), 0.0))
         _run_sample(f, args, kwargs, options, left)
 
     return check
@@ -229,7 +230,7 @@ def _run_sample(
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
     options: _Options,
-    timeout: Seconds | None,
+    timeout: Duration | None,
 ) -> None:
     services = _services_in(args, kwargs)
     runtime = _runtime_for(services, options)

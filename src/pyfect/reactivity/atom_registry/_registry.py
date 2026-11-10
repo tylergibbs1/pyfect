@@ -23,7 +23,8 @@ from pyfect._effect_args import require_effect
 from pyfect._root import ambient_run, new_root, start_root
 from pyfect._wake_tracking import Tracking
 from pyfect.context import Context
-from pyfect.duration import Duration, Seconds, to_millis, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, to_millis
+from pyfect.duration import Input as DurationInput
 from pyfect.reactivity._hydration import should_hydrate
 from pyfect.reactivity._time import now_millis
 from pyfect.reactivity.atom_registry._batch import run_all
@@ -91,19 +92,21 @@ class AtomRegistryService:
         *,
         initial_values: Iterable[InitialValue[Any]] | None = None,
         scheduler: Scheduler | None = None,
-        timeout_resolution: Duration | None = None,
-        default_idle_ttl: Duration | None = None,
+        timeout_resolution: DurationInput | None = None,
+        default_idle_ttl: DurationInput | None = None,
     ) -> None:
         self.scheduler: Scheduler = ambient_run(None)[0] if scheduler is None else scheduler
         # milliseconds, as Effect keeps them
         self.default_idle_ttl: float | None = (
-            None if default_idle_ttl is None else to_millis(to_seconds(default_idle_ttl))
+            None if default_idle_ttl is None else to_millis(from_input_unsafe(default_idle_ttl))
         )
         if timeout_resolution is None and self.default_idle_ttl is not None:
             self.timeout_resolution = float(round(self.default_idle_ttl / 2))
         else:
             self.timeout_resolution = (
-                1000.0 if timeout_resolution is None else to_millis(to_seconds(timeout_resolution))
+                1000.0
+                if timeout_resolution is None
+                else to_millis(from_input_unsafe(timeout_resolution))
             )
         self.nodes: dict[object, Node[Any]] = {}
         self.preloaded_serializable: dict[str, object] = {}
@@ -303,7 +306,7 @@ class AtomRegistryService:
         bucket = timestamp - (timestamp % resolution) + resolution
         entry = self.timeout_buckets.get(bucket)
         if entry is None:
-            delay = Seconds((bucket - now_millis()) / 1000)
+            delay = Duration((bucket - now_millis()) / 1000)
             nodes: dict[Node[Any], None] = {}
             entry = (nodes, self.scheduler.call_later(delay, lambda: self.sweep_bucket(bucket)))
             self.timeout_buckets[bucket] = entry

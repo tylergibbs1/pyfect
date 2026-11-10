@@ -26,7 +26,7 @@ from pyfect.cluster import (
     sharding,
     sharding_config,
 )
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.workflow import WorkflowEngine, durable_clock, workflow
 
 
@@ -42,12 +42,12 @@ W = workflow.make(
 def _app(*, poll_interval: float, sleep: float) -> fx.Layer[WorkflowEngine]:
     def handler(_p: Payload, _id: str):
         def body():
-            yield from durable_clock.sleep(name="deadline", duration=Seconds(sleep))
+            yield from durable_clock.sleep(name="deadline", duration=Duration(sleep))
             return "woke"
 
         return fx.gen(body)
 
-    config = replace(sharding_config.DEFAULTS, entity_message_poll_interval=Seconds(poll_interval))
+    config = replace(sharding_config.DEFAULTS, entity_message_poll_interval=Duration(poll_interval))
     runner = (
         sharding.layer.pipe(fx.layer.provide_merge(runners.layer_noop))
         .pipe(fx.layer.provide_merge(message_storage.layer_memory))
@@ -65,7 +65,7 @@ def _run_past_the_deadline(app: fx.Layer[WorkflowEngine], after: float) -> fx.Ef
     def scenario():
         running = yield from W.execute({"id": "a"}).fork()
         yield from testing.adjust("1 second")
-        yield from testing.adjust(Seconds(after - 1))
+        yield from testing.adjust(Duration(after - 1))
         return (yield from running.join())
 
     return fx.gen(scenario).pipe(fx.provide(app))

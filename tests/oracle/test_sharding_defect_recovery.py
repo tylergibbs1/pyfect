@@ -34,7 +34,7 @@ from pyfect.cluster.shard_id import make as shard
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.context import Context
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.rpc import make as make_rpc
@@ -61,7 +61,7 @@ needs instead of waking every background Sharding loop along the way."""
 
 blocked_rebuild_sharding = (
     fx.layer.merge(_entity_reaper.layer, snowflake.layer_generator)
-    .pipe(lambda layer: fx.layer.merge(layer, make_config(entity_termination_timeout=Seconds(1))))
+    .pipe(lambda layer: fx.layer.merge(layer, make_config(entity_termination_timeout=millis(1000))))
     .pipe(fx.layer.provide_merge(unregistered()))
 )
 """The directly driven ``EntityManager`` waits up to 1000ms for its entities

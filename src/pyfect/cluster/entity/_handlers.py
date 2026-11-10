@@ -10,7 +10,8 @@ from typing import TYPE_CHECKING, Any, Literal, Never, Protocol, overload
 from pyfect._core import Effect
 from pyfect.cluster.entity._request import Request
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.errors import Done
 from pyfect.queue import Dequeue
 from pyfect.rpc._rpc import AnyRpc, Rpc, StreamRpc
@@ -126,7 +127,7 @@ class EntityOptions:
     ``disable_fatal_defects``, and the entity restarts on the
     ``defect_retry_policy``."""
 
-    max_idle_time: Seconds | None = None
+    max_idle_time: Duration | None = None
     concurrency: Concurrency = 1
     mailbox_capacity: Concurrency | None = None
     mailbox_metrics: bool | None = None
@@ -137,7 +138,7 @@ class EntityOptions:
 
 def parse_options(
     *,
-    max_idle_time: Duration | None,
+    max_idle_time: DurationInput | None,
     concurrency: Concurrency,
     mailbox_capacity: Concurrency | None,
     mailbox_metrics: bool | None,
@@ -147,7 +148,7 @@ def parse_options(
 ) -> EntityOptions:
     """The options of ``to_layer``, checked and parsed once."""
     return EntityOptions(
-        max_idle_time=None if max_idle_time is None else to_seconds(max_idle_time),
+        max_idle_time=None if max_idle_time is None else from_input_unsafe(max_idle_time),
         concurrency=concurrency,
         mailbox_capacity=mailbox_capacity,
         mailbox_metrics=mailbox_metrics,

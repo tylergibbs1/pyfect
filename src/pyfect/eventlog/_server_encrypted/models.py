@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from typing import Literal, TypedDict, cast
 
 from pyfect._core import Effect
-from pyfect.duration import Duration, Seconds, to_millis, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, to_millis
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import die, succeed, suspend
 from pyfect.errors import IllegalArgumentError, TaggedError
 from pyfect.eventlog.event_journal import EntryId, StoreId
@@ -27,11 +28,11 @@ class CompactionOptions(TypedDict, total=False):
     that make compaction wanted (1,000); ``sweep_interval`` is how often
     pruning runs (1 hour)."""
 
-    grace: Duration
-    lag: Duration
-    stage_ttl: Duration
+    grace: DurationInput
+    lag: DurationInput
+    stage_ttl: DurationInput
     threshold_floor: int
-    sweep_interval: Duration
+    sweep_interval: DurationInput
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -39,11 +40,11 @@ class CompactionConfig:
     """Resolved compaction tuning, shared by a storage and the server using
     it. Made only by ``make_compaction_config``, which checks it."""
 
-    grace: Seconds
-    lag: Seconds
-    stage_ttl: Seconds
+    grace: Duration
+    lag: Duration
+    stage_ttl: Duration
     threshold_floor: int
-    sweep_interval: Seconds
+    sweep_interval: Duration
 
     @property
     def grace_millis(self) -> float:
@@ -74,11 +75,11 @@ def make_compaction_config(options: CompactionOptions | None = None) -> Effect[C
 
     def make() -> Effect[CompactionConfig]:
         config = CompactionConfig(
-            grace=to_seconds(given.get("grace", "30 days")),
-            lag=to_seconds(given.get("lag", "24 hours")),
-            stage_ttl=to_seconds(given.get("stage_ttl", "10 minutes")),
+            grace=from_input_unsafe(given.get("grace", "30 days")),
+            lag=from_input_unsafe(given.get("lag", "24 hours")),
+            stage_ttl=from_input_unsafe(given.get("stage_ttl", "10 minutes")),
             threshold_floor=given.get("threshold_floor", 1000),
-            sweep_interval=to_seconds(given.get("sweep_interval", "1 hour")),
+            sweep_interval=from_input_unsafe(given.get("sweep_interval", "1 hour")),
         )
         if not (config.grace > config.lag and config.grace > config.stage_ttl):
             return die(

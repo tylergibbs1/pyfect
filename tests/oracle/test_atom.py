@@ -24,7 +24,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import layer, stream, testing
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.errors import NoSuchElementException
 from pyfect.latch import Latch
 from pyfect.reactivity import async_result, atom, atom_registry
@@ -68,7 +68,7 @@ def test_late_reads_of_uninitialized_dependencies_do_not_rebuild_the_reader(
         def late_read() -> None:
             get(dependency)
 
-        cancel = get.registry.scheduler.call_later(Seconds(0.001), late_read)
+        cancel = get.registry.scheduler.call_later(millis(1), late_read)
         get.add_finalizer(cancel)
         builds[0] += 1
         return builds[0]
@@ -1484,9 +1484,9 @@ def test_releases_a_stream_backed_atom_consumed_through_a_derived_atom_after_idl
     def interval(queue: Any) -> None:
         def tick() -> None:
             queue.offer_unsafe(timers.now_ns)
-            cancels[:] = [timers.call_later(Seconds(0.1), tick)]
+            cancels[:] = [timers.call_later(millis(100), tick)]
 
-        cancels[:] = [timers.call_later(Seconds(0.1), tick)]
+        cancels[:] = [timers.call_later(millis(100), tick)]
 
     def release(_handle: None, _exit: object) -> fx.Effect[None]:
         def stop() -> None:

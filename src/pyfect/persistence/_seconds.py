@@ -9,12 +9,12 @@ from typing import TypeIs
 
 from pyfect import _js as js
 from pyfect import schema as S
-from pyfect.duration import Seconds, to_millis
+from pyfect.duration import Duration, to_millis
 from pyfect.schema import transformation as T
 
 
-def _is_seconds(value: object) -> TypeIs[Seconds]:
-    return isinstance(value, Seconds)
+def _is_seconds(value: object) -> TypeIs[Duration]:
+    return isinstance(value, Duration)
 
 
 def _round_away(value: float) -> int:
@@ -29,12 +29,12 @@ def whole_nanos(millis: float) -> float:
     return _round_away(millis * 1_000_000) / 1_000_000
 
 
-def millis(value: float) -> Seconds:
+def millis(value: float) -> Duration:
     """``Seconds`` of ``value`` milliseconds in whole nanoseconds (Effect's
     ``Duration.millis``); NaN is zero."""
     if not math.isfinite(value) or float(value).is_integer():
-        return Seconds(value / 1000)
-    return Seconds(_round_away(value * 1_000_000) / 1_000_000_000)
+        return Duration(value / 1000)
+    return Duration(_round_away(value * 1_000_000) / 1_000_000_000)
 
 
 def divide_millis(millis: float, by: float) -> float:

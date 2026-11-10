@@ -56,7 +56,7 @@ from pyfect.cluster.snowflake import Snowflake
 from pyfect.context import Context
 from pyfect.date_time import now
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds, to_millis
+from pyfect.duration import millis, to_millis
 from pyfect.effect import (
     context,
     die,
@@ -110,7 +110,7 @@ INTERRUPT_SIGNAL: DurableDeferred[None, Never] = make_deferred("Workflow/Interru
 # released quickly and is rebuilt from storage when the next message arrives.
 # This keeps completed and suspended executions from holding
 # ``max_resident_entities`` slots for the full ``entity_max_idle_time``.
-ENTITY_MAX_IDLE_TIME = Seconds(10)
+ENTITY_MAX_IDLE_TIME = millis(10_000)
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 

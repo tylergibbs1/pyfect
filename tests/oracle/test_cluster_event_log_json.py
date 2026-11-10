@@ -21,7 +21,7 @@ from pyfect.cluster.entity_type import EntityType
 from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.singleton_address import SingletonAddress
 from pyfect.cluster.snowflake import Snowflake
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.eventlog import event_log_message as M
 from pyfect.eventlog.event_journal import Entry, EntryId, RemoteEntry, RemoteId, StoreId
 from pyfect.eventlog.event_log_encryption import EncryptedBatch, EncryptedRemoteBatch
@@ -222,12 +222,12 @@ _OTHER_FORMS: dict[str, tuple[Any, Any, str]] = {
     ),
     "rate_limit": (
         RateLimitExceeded,
-        RateLimitExceeded(retry_after=Seconds(1.0), key="k", limit=1, remaining=0),
+        RateLimitExceeded(retry_after=millis(1000), key="k", limit=1, remaining=0),
         '{"_tag":"RateLimitExceeded","retryAfter":1000,"key":"k","limit":1,"remaining":0}',
     ),
     "circuit_open": (
         CircuitOpen,
-        CircuitOpen(key="k", retry_after=Seconds(1.0)),
+        CircuitOpen(key="k", retry_after=millis(1000)),
         '{"_tag":"CircuitOpen","key":"k","retryAfter":1000}',
     ),
     "chat_not_found": (
@@ -237,7 +237,7 @@ _OTHER_FORMS: dict[str, tuple[Any, Any, str]] = {
     ),
     "graphql_transport": (
         TransportError,
-        TransportError(description="d", status=503, close_code=1006, retry_after=Seconds(1.0)),
+        TransportError(description="d", status=503, close_code=1006, retry_after=millis(1000)),
         '{"_tag":"TransportError","description":"d","status":503,"retryAfter":1000,'
         '"closeCode":1006}',
     ),

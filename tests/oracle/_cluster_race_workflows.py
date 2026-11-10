@@ -10,7 +10,7 @@ from typing import Any
 import pyfect as fx
 from pyfect import schema as S
 from pyfect.context import Tag
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.latch import Latch
 from pyfect.workflow import activity, durable_clock, durable_deferred, workflow
 
@@ -29,7 +29,9 @@ def _bump(flags: dict[str, Any], key: str) -> None:
 
 
 def _slow(name: str, seconds: float, value: str = "slow") -> activity.Activity[str, Any, Any]:
-    return activity.make(name=name, success=S.String, execute=fx.sleep(Seconds(seconds)).as_(value))
+    return activity.make(
+        name=name, success=S.String, execute=fx.sleep(Duration(seconds)).as_(value)
+    )
 
 
 def _race(name: str, *effects: fx.Effect[Any, Any, Any]) -> fx.Effect[Any, Any, Any]:
@@ -39,7 +41,7 @@ def _race(name: str, *effects: fx.Effect[Any, Any, Any]) -> fx.Effect[Any, Any, 
 
 
 def _durable_sleep(name: str, millis: int) -> fx.Effect[None, Any, Any]:
-    return durable_clock.sleep(name=name, duration=Seconds(millis / 1000), in_memory_threshold=0)
+    return durable_clock.sleep(name=name, duration=Duration(millis / 1000), in_memory_threshold=0)
 
 
 RaceWorkflow = _make("RaceWorkflow")
@@ -56,7 +58,7 @@ def _race_workflow(_: IdPayload, __: str):
                 name=f"Activity{n}",
                 success=S.String,
                 execute=fx.succeed(f"Activity{n}")
-                .delay(Seconds(millis / 1000))
+                .delay(Duration(millis / 1000))
                 .on_interrupt(fx.sync(lambda: flags.__setitem__(f"interrupt{n}", True))),
             )
 

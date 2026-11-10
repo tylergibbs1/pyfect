@@ -502,7 +502,7 @@ def test_force_interrupts_a_stuck_handler_after_the_graceful_termination_timeout
             cluster_db,
             entities=entities,
             config={
-                "entity_termination_timeout": fx.duration.Seconds(0.1),
+                "entity_termination_timeout": fx.duration.Duration(0.1),
                 "preemptive_shutdown": False,
             },
         )
@@ -552,9 +552,9 @@ def test_holds_persisted_messages_until_a_slow_entity_layer_registers(
             cluster_db,
             entities=registration_entity_layer,
             config={
-                "entity_message_poll_interval": fx.duration.Seconds(0.1),
-                "entity_registration_timeout": fx.duration.Seconds(1),
-                "send_retry_interval": fx.duration.Seconds(0.1),
+                "entity_message_poll_interval": fx.duration.Duration(0.1),
+                "entity_registration_timeout": fx.duration.Duration(1),
+                "send_retry_interval": fx.duration.Duration(0.1),
                 "shards_per_group": 4,
             },
         )
@@ -599,9 +599,9 @@ def test_defects_a_durable_request_whose_owner_never_registers_the_entity(
             cluster_db,
             entities=registration_entity_layer,
             config={
-                "entity_message_poll_interval": fx.duration.Seconds(0.1),
-                "entity_registration_timeout": fx.duration.Seconds(0.5),
-                "send_retry_interval": fx.duration.Seconds(0.1),
+                "entity_message_poll_interval": fx.duration.Duration(0.1),
+                "entity_registration_timeout": fx.duration.Duration(0.5),
+                "send_retry_interval": fx.duration.Duration(0.1),
                 "shards_per_group": 4,
             },
         )

@@ -14,7 +14,7 @@ from pyfect.cluster.reply import Chunk
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.snowflake import Snowflake
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.exit import Exit
 from pyfect.latch import Latch
 from pyfect.rpc import AnyRpc
@@ -103,7 +103,7 @@ class ManagerOptions:
     is_shard_owned: Callable[[ShardId], Effect[bool]]
     """Whether this runner still owns the shard, checked before storing the
     final reply of a persisted request."""
-    max_idle_time: Seconds | None = None
+    max_idle_time: Duration | None = None
     concurrency: Concurrency = 1
     mailbox_capacity: Concurrency | None = None
     mailbox_metrics: bool | None = None

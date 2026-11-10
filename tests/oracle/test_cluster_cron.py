@@ -33,7 +33,7 @@ from pyfect.cluster.message_storage import (
 from pyfect.cron import next as cron_next
 from pyfect.cron import parse_unsafe
 from pyfect.date_time import format_iso, now
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.rpc import make as make_rpc
 from pyfect.schema import Class, DateTimeUtc, field
 from pyfect.scope import scoped
@@ -43,9 +43,9 @@ EVERY_SECOND = parse_unsafe("* * * * * *", "UTC")
 _deploy_config = sharding_config.layer(
     replace(
         sharding_config.DEFAULTS,
-        entity_registration_timeout=Seconds(1),
-        entity_termination_timeout=Seconds(0),
-        entity_message_poll_interval=Seconds(0.1),
+        entity_registration_timeout=millis(1000),
+        entity_termination_timeout=millis(0),
+        entity_message_poll_interval=millis(100),
     )
 )
 
@@ -97,7 +97,7 @@ def _sharding_with_saves(save: Any) -> fx.Layer[Any, Never, Any]:
         fx.layer.provide(message_storage.layer_memory)
     )
     config = sharding_config.layer(
-        replace(sharding_config.DEFAULTS, entity_message_poll_interval=Seconds(0.1))
+        replace(sharding_config.DEFAULTS, entity_message_poll_interval=millis(100))
     )
     return (
         sharding.layer.pipe(

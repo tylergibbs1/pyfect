@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from pyfect._core import Effect, _Succeed, _Suspend, _WithFiber
 from pyfect.clock import Clock, ClockService
-from pyfect.duration import Seconds, from_nanos, nanos_or_infinite
+from pyfect.duration import Duration, from_nanos, nanos_or_infinite
 from pyfect.pool._state import PoolItem, Strategy
 from pyfect.queue import Queue
 
@@ -26,7 +26,7 @@ def _clock(fiber: Fiber[Any, Any]) -> ClockService:
     return fiber._context.lookup(Clock)[1]
 
 
-def creation_ttl(ttl: Seconds) -> Effect[Strategy[Any, Any]]:
+def creation_ttl(ttl: Duration) -> Effect[Strategy[Any, Any]]:
     """Invalidate each item ``ttl`` after it was acquired, oldest first."""
     ttl_nanos = nanos_or_infinite(ttl)
 
@@ -64,7 +64,7 @@ def creation_ttl(ttl: Seconds) -> Effect[Strategy[Any, Any]]:
     return _WithFiber(make)
 
 
-def usage_ttl(ttl: Seconds) -> Effect[Strategy[Any, Any]]:
+def usage_ttl(ttl: Duration) -> Effect[Strategy[Any, Any]]:
     """Every ``ttl``, while the pool is above its target size, invalidate
     the items idle for at least ``ttl``, longest idle first."""
     ttl_nanos = nanos_or_infinite(ttl)

@@ -18,7 +18,7 @@ from typing import Any, Never
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.channel import unwrap as unwrap_channel
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend, sync, void
 from pyfect.exit import Exit
 from pyfect.latch import Latch
@@ -84,7 +84,7 @@ def _chunk_limit(chunk_size: float) -> int | None:
 def from_connection(
     open: Effect[Connection, SocketError, Scope],
     *,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
     tls_server: bool = False,
     target: str | None = None,
@@ -222,7 +222,7 @@ def make_net(
     port: int,
     host: str = "localhost",
     *,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketService:
     """A TCP socket connecting to ``host:port``; each pull gives at most
@@ -237,7 +237,7 @@ def make_net(
     )
 
 
-def make_unix(path: str, *, open_timeout: Duration | None = None) -> SocketService:
+def make_unix(path: str, *, open_timeout: DurationInput | None = None) -> SocketService:
     """A socket connecting to the Unix socket at ``path``."""
 
     async def connect(conn: Connection) -> object:
@@ -251,7 +251,7 @@ def make_tls(
     host: str = "localhost",
     *,
     tls: TlsUpgradeOptions | None = None,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketService:
     """A TLS socket connecting to ``host:port``; the certificate is checked
@@ -285,7 +285,7 @@ def from_socket(
     open: Effect[socket.socket, SocketError, Scope],
     *,
     tls_server: bool = False,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketService:
     """A socket over the connected ``socket.socket`` each acquisition of
@@ -305,7 +305,7 @@ def make_net_channel[IE = Never](
     port: int,
     host: str = "localhost",
     *,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketChannel[bytes, IE]:
     service = make_net(port, host, open_timeout=open_timeout, chunk_size=chunk_size)
@@ -317,7 +317,7 @@ def make_tls_channel[IE = Never](
     host: str = "localhost",
     *,
     tls: TlsUpgradeOptions | None = None,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> SocketChannel[bytes, IE]:
     service = make_tls(port, host, tls=tls, open_timeout=open_timeout, chunk_size=chunk_size)
@@ -328,7 +328,7 @@ def layer_net(
     port: int,
     host: str = "localhost",
     *,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> Layer[Socket]:
     return layer_effect(
@@ -342,7 +342,7 @@ def layer_tls(
     host: str = "localhost",
     *,
     tls: TlsUpgradeOptions | None = None,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     chunk_size: float = DEFAULT_CHUNK_SIZE,
 ) -> Layer[Socket]:
     return layer_effect(

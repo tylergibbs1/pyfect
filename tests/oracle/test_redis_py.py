@@ -31,7 +31,7 @@ pytest.importorskip("redis")
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import ZERO, Seconds
+from pyfect.duration import Duration, zero
 from pyfect.exit import Failure, Success
 from pyfect.persistence import circuit_breaker as cb
 from pyfect.persistence import persistence, redis_py
@@ -122,7 +122,7 @@ class TestRateLimiterRedis(rl_suite.RateLimiterSuite):
 
 
 def _live(seconds: float) -> fx.Effect[None]:
-    return testing.with_live(fx.sleep(Seconds(seconds)))
+    return testing.with_live(fx.sleep(Duration(seconds)))
 
 
 def _circuit_breaker_run(
@@ -286,7 +286,7 @@ def test_a_renewal_after_an_ignored_probe_frees_the_slot_does_not_take_the_lease
                 generation=admission.generation,
                 outcome="Ignored",
                 trip_policy=_OPTIONS["trip_policy"],
-                open_for=ZERO,
+                open_for=zero,
             )
             # The renewal fiber stays alive until the admit scope closes,
             # as it does while execute is still waiting on record. Its tick
@@ -351,7 +351,7 @@ def test_a_duration_redis_cannot_represent_is_rejected_before_the_script_writes_
 
     def body():
         redis = yield from Redis()
-        unrepresentable = Seconds(1e17)
+        unrepresentable = Duration(1e17)
 
         # admit never creates the key.
         idle_store = yield from _store_on(redis, idle_time_to_live=unrepresentable)
@@ -439,7 +439,7 @@ def test_does_not_restore_capacity_early_after_a_fractional_token_cost() -> None
         elapsed = time.time() * 1000 - refill_at
         assert 2_500 <= elapsed < 4_000
 
-        yield from fx.sleep(Seconds((4_100 - elapsed) / 1000))
+        yield from fx.sleep(Duration((4_100 - elapsed) / 1000))
         assert (yield from memory.token_bucket(**opts, tokens=0))[0] == 5
         assert (yield from store.token_bucket(**opts, tokens=0))[0] == 5
         assert before_refill == {

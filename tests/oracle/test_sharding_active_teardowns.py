@@ -25,7 +25,7 @@ from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.entity_type import EntityType
 from pyfect.cluster.message_storage import MemoryDriver, MemoryDriverService
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.layer import Layer
 from pyfect.rpc import make as make_rpc
 
@@ -79,7 +79,7 @@ reap_storm_sharding = (
     .pipe(fx.layer.provide_merge(message_storage.layer_memory))
     .pipe(
         fx.layer.provide(
-            make_config(entity_max_idle_time=Seconds(0.001), entity_termination_timeout=Seconds(0))
+            make_config(entity_max_idle_time=millis(1), entity_termination_timeout=millis(0))
         )
     )
 )
@@ -131,7 +131,7 @@ def test_swallows_persisted_interrupts_from_an_idle_reaped_nested_proxy_call():
         assert state.interrupts.size_unsafe() == 0
         assert _journal_interrupts(driver) == 0
 
-    yield from body.pipe(fx.provide(_active_teardown_sharding(entity_max_idle_time=Seconds(0.001))))
+    yield from body.pipe(fx.provide(_active_teardown_sharding(entity_max_idle_time=millis(1))))
 
 
 @testing.effect

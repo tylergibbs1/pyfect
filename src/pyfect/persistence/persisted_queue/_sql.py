@@ -12,7 +12,8 @@ from pyfect._core import Effect
 from pyfect._json_text import PARSE_ERRORS, parse, stringify
 from pyfect.cause import Cause
 from pyfect.cause import die as cause_die
-from pyfect.duration import Duration, Seconds
+from pyfect.duration import Duration, millis
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend, sync
 from pyfect.exit import Exit, Success
 from pyfect.layer import Layer
@@ -53,9 +54,9 @@ from pyfect.sql.error import SqlError
 from pyfect.sql.statement import Fragment
 
 _CLEANUP_BATCH_DELAY: Final = "10 millis"
-_DEFAULT_POLL_INTERVAL: Final = Seconds(1)
-_DEFAULT_LOCK_REFRESH_INTERVAL: Final = Seconds(30)
-_DEFAULT_LOCK_EXPIRATION: Final = Seconds(120)
+_DEFAULT_POLL_INTERVAL: Final = millis(1000)
+_DEFAULT_LOCK_REFRESH_INTERVAL: Final = millis(30_000)
+_DEFAULT_LOCK_EXPIRATION: Final = millis(120_000)
 
 
 def _offer_failed(cause: Cause[Any]) -> Effect[Never, PersistedQueueError]:
@@ -80,8 +81,8 @@ def _lookup(  # noqa: PLR0917
     dialect: Dialect,
     table_name: str,
     expires_at: Fragment,
-    poll_every: Seconds,
-    lock_refresh: Seconds,
+    poll_every: Duration,
+    lock_refresh: Duration,
     states: QueueStates,
     settlements: Settlements,
 ) -> Callable[[str], Effect[Mailbox[Element], Never, Scope]]:
@@ -177,7 +178,7 @@ class _SqlStore:
         id: str,
         element: object,
         is_custom_id: bool,
-        delay: Seconds | None = None,
+        delay: Duration | None = None,
     ) -> Effect[None, PersistedQueueError]:
         dialect = self._dialect
 
@@ -238,14 +239,14 @@ class _SqlStore:
 
         return suspend(body)
 
-    def _cleanup_state(self, state: str, time_to_live: Seconds) -> Effect[int, SqlError]:
+    def _cleanup_state(self, state: str, time_to_live: Duration) -> Effect[int, SqlError]:
         return self._cleanup_batch(state, time_to_live).repeat(
             schedule=spaced(_CLEANUP_BATCH_DELAY),
             while_=lambda deleted: deleted == SQL_CLEANUP_BATCH_SIZE,
         )
 
     def cleanup(
-        self, *, time_to_live: Seconds, failed_time_to_live: Seconds | None
+        self, *, time_to_live: Duration, failed_time_to_live: Duration | None
     ) -> Effect[None, PersistedQueueError]:
         def body() -> Generator[Any, Any]:
             yield from self._cleanup_state("completed", time_to_live)
@@ -258,9 +259,9 @@ class _SqlStore:
 def make_store_sql(
     *,
     table_name: str = "effect_queue",
-    poll_interval: Duration = _DEFAULT_POLL_INTERVAL,
-    lock_refresh_interval: Duration = _DEFAULT_LOCK_REFRESH_INTERVAL,
-    lock_expiration: Duration = _DEFAULT_LOCK_EXPIRATION,
+    poll_interval: DurationInput = _DEFAULT_POLL_INTERVAL,
+    lock_refresh_interval: DurationInput = _DEFAULT_LOCK_REFRESH_INTERVAL,
+    lock_expiration: DurationInput = _DEFAULT_LOCK_EXPIRATION,
 ) -> Effect[PersistedQueueStoreService, SqlError, SqlClient | Scope]:
     """A store in the table ``table_name`` (made and migrated if needed) of
     the ``SqlClient``. Each poll claims rows under a lock of its own,
@@ -318,9 +319,9 @@ def make_store_sql(
 def layer_store_sql(
     *,
     table_name: str = "effect_queue",
-    poll_interval: Duration = _DEFAULT_POLL_INTERVAL,
-    lock_refresh_interval: Duration = _DEFAULT_LOCK_REFRESH_INTERVAL,
-    lock_expiration: Duration = _DEFAULT_LOCK_EXPIRATION,
+    poll_interval: DurationInput = _DEFAULT_POLL_INTERVAL,
+    lock_refresh_interval: DurationInput = _DEFAULT_LOCK_REFRESH_INTERVAL,
+    lock_expiration: DurationInput = _DEFAULT_LOCK_EXPIRATION,
 ) -> Layer[PersistedQueueStore, SqlError, SqlClient]:
     """The store of ``make_store_sql``."""
     return layer_effect(

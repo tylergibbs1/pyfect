@@ -11,7 +11,6 @@ in float seconds and whole nanoseconds (``monotonic_nanos``, Effect's
 
 from __future__ import annotations
 
-import math
 import time
 from collections.abc import Callable
 from typing import Any, Never, Protocol
@@ -20,7 +19,8 @@ from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Sync, _WithFiber, _
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
 from pyfect.context import Reference
-from pyfect.duration import Duration, Seconds, from_nanos, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, nanos
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import never
 
 
@@ -42,7 +42,7 @@ class ClockService(Protocol):
         """Monotonic time in whole nanoseconds."""
         ...
 
-    def sleep(self, seconds: Seconds) -> Effect[None]: ...
+    def sleep(self, duration: Duration) -> Effect[None]: ...
 
 
 _NANOS = 1_000_000_000
@@ -65,15 +65,15 @@ class LiveClock:
     def monotonic_nanos_unsafe(self) -> int:
         return time.monotonic_ns()
 
-    def sleep(self, seconds: Seconds) -> Effect[None]:
-        if seconds <= 0:
+    def sleep(self, duration: Duration) -> Effect[None]:
+        if not duration.is_positive():
             return _YieldNow()
-        if math.isinf(seconds):
+        if not duration.is_finite():
             return never
 
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
             def register(resume: Callable[[Effect[None]], None]) -> Effect[None]:
-                cancel = fiber._scheduler.call_later(seconds, lambda: resume(_Succeed(None)))
+                cancel = fiber._scheduler.call_later(duration, lambda: resume(_Succeed(None)))
                 return _Sync(cancel)
 
             return _Callback(register)
@@ -87,9 +87,9 @@ class Clock(Reference[ClockService]):
         return LiveClock()
 
 
-def sleep(duration: Duration) -> Effect[None]:
-    seconds = to_seconds(duration)
-    return Clock().flat_map(lambda c: c.sleep(seconds))
+def sleep(duration: DurationInput) -> Effect[None]:
+    parsed = from_input_unsafe(duration)
+    return Clock().flat_map(lambda c: c.sleep(parsed))
 
 
 def current_time_millis() -> Effect[float]:
@@ -127,8 +127,8 @@ def clock_with[A, E = Never, R = Never](
     return Clock().flat_map(f)
 
 
-def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[Seconds, A], E, R]:
-    """Pair ``eff``'s value with how long it took as ``Seconds``, measured in
+def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[Duration, A], E, R]:
+    """Pair ``eff``'s value with how long it took as a ``Duration``, measured in
     whole monotonic nanoseconds."""
     require_effect(eff, "eff")
 
@@ -136,7 +136,7 @@ def timed[A, E, R](eff: Effect[A, E, R]) -> Effect[tuple[Seconds, A], E, R]:
         start = yield from monotonic_nanos()
         value = yield from eff
         end = yield from monotonic_nanos()
-        return (from_nanos(end - start), value)
+        return (nanos(end - start), value)
 
     return _Gen(body)
 

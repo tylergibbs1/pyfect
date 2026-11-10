@@ -10,7 +10,8 @@ from pyfect._core import Effect
 from pyfect.clock import sleep
 from pyfect.config import Config, ConfigError
 from pyfect.config._config import unwrap
-from pyfect.duration import Duration, Seconds, to_millis
+from pyfect.duration import Duration, to_millis
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -323,12 +324,12 @@ return 1
 )
 
 
-def _redis_millis(duration: Duration) -> float:
+def _redis_millis(duration: DurationInput) -> float:
     # An infinite duration goes as ``Infinity``, which the scripts reject.
     return max(1, js.ceil(to_millis(duration)))
 
 
-def _remaining(reply: RedisReply) -> Seconds:
+def _remaining(reply: RedisReply) -> Duration:
     return millis(max(0, _int(reply)))
 
 
@@ -408,7 +409,7 @@ class RedisCircuitBreakerStore:
         generation: int,
         outcome: OutcomeKind,
         trip_policy: TripPolicy,
-        open_for: Seconds,
+        open_for: Duration,
     ) -> Effect[Transition | None, CircuitBreakerError]:
         def transition(reply: list[RedisReply]) -> Transition | None:
             moved, openings = reply
@@ -462,8 +463,8 @@ def _failed(message: str) -> Callable[[RedisError], CircuitBreakerError]:
 def make_store_redis(
     *,
     prefix: str = "circuitbreaker:",
-    probe_lease: Duration = "10 seconds",
-    idle_time_to_live: Duration = "1 hour",
+    probe_lease: DurationInput = "10 seconds",
+    idle_time_to_live: DurationInput = "1 hour",
 ) -> Effect[CircuitBreakerStoreService, Never, Redis]:
     """A store in the ``Redis`` service, its keys under ``prefix``. A
     probe's lease lasts ``probe_lease`` (renewed while it runs, so a probe
@@ -485,8 +486,8 @@ def make_store_redis(
 def layer_store_redis(
     *,
     prefix: str = "circuitbreaker:",
-    probe_lease: Duration = "10 seconds",
-    idle_time_to_live: Duration = "1 hour",
+    probe_lease: DurationInput = "10 seconds",
+    idle_time_to_live: DurationInput = "1 hour",
 ) -> Layer[CircuitBreakerStore, Never, Redis]:
     """Circuit states in Redis (see ``make_store_redis``)."""
     return layer_effect(

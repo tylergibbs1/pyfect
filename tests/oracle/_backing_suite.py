@@ -11,7 +11,7 @@ from typing import Any, LiteralString
 
 import pyfect as fx
 from pyfect import schedule, testing
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.persistence import persistence
 from pyfect.persistence.persistence import BackingPersistence
 from pyfect.sql import SqlClient
@@ -79,7 +79,7 @@ def expires():
         [
             ("key1", {"name": "Alice"}, None),
             ("key2", {"name": "Bob"}, None),
-            ("key3", {"name": "Charlie"}, fx.duration.Seconds(10)),
+            ("key3", {"name": "Charlie"}, fx.duration.millis(10_000)),
         ]
     )
     everyone = [{"name": "Alice"}, {"name": "Bob"}, {"name": "Charlie"}]
@@ -96,7 +96,7 @@ def expires():
 
 def reused_get_expires():
     store = yield from (yield from BackingPersistence()).make("test_store_reused_get")
-    yield from store.set("key", {"name": "Alice"}, fx.duration.Seconds(10))
+    yield from store.set("key", {"name": "Alice"}, fx.duration.millis(10_000))
     get = store.get("key")
     assert (yield from get) == {"name": "Alice"}
     yield from testing.adjust("10 seconds")
@@ -105,7 +105,7 @@ def reused_get_expires():
 
 def reused_get_many_expires():
     store = yield from (yield from BackingPersistence()).make("test_store_reused_get_many")
-    yield from store.set("key", {"name": "Alice"}, fx.duration.Seconds(10))
+    yield from store.set("key", {"name": "Alice"}, fx.duration.millis(10_000))
     get_many = store.get_many(["key"])
     assert (yield from get_many) == [{"name": "Alice"}]
     yield from testing.adjust("10 seconds")
@@ -151,8 +151,8 @@ def wait_for_count(
     holds, for at most 30 seconds (``SqlCleanupTest.waitForCount``)."""
     return testing.with_live(
         effect.repeat(
-            until=predicate, schedule=schedule.spaced(Seconds(CLEANUP_BATCH_DELAY))
-        ).timeout(Seconds(TEST_TIMEOUT))
+            until=predicate, schedule=schedule.spaced(Duration(CLEANUP_BATCH_DELAY))
+        ).timeout(Duration(TEST_TIMEOUT))
     )
 
 

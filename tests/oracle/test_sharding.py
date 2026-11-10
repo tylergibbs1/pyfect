@@ -61,7 +61,7 @@ from pyfect.cluster.sharding_registration_event import EntityRegistered, Singlet
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.context import Context, Tag
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.logger import LogLevel
 from pyfect.queue import Queue
 from pyfect.rpc import make as make_rpc
@@ -426,8 +426,8 @@ def test_interrupts_are_sent_for_volatile_messages_on_shutdown():
         .pipe(
             fx.layer.provide_merge(
                 make_config(
-                    entity_termination_timeout=Seconds(30),
-                    refresh_assignments_interval=Seconds(0.1),
+                    entity_termination_timeout=millis(30_000),
+                    refresh_assignments_interval=millis(100),
                 )
             )
         )
@@ -742,7 +742,7 @@ def _late_env(
 ) -> fx.Layer[Any, Never, Any]:
     entity = test_entity_no_state
     if delay is not None:
-        entity = entity.pipe(fx.layer.provide(fx.layer.effect_discard(fx.sleep(Seconds(delay)))))
+        entity = entity.pipe(fx.layer.provide(fx.layer.effect_discard(fx.sleep(Duration(delay)))))
     built = (
         entity.pipe(fx.layer.provide_merge(sharding.layer))
         .pipe(fx.layer.provide(runner_storage.layer_memory))
@@ -774,7 +774,7 @@ def _send_request_with_key(key: str):
 def test_holds_durable_messages_while_entity_layers_are_still_building():
     """holds durable messages while entity layers are still building"""
     config = make_config(
-        entity_registration_timeout=Seconds(6), entity_message_poll_interval=Seconds(0.1)
+        entity_registration_timeout=millis(6000), entity_message_poll_interval=millis(100)
     )
 
     @fx.gen
@@ -807,7 +807,7 @@ def test_holds_durable_messages_while_entity_layers_are_still_building():
 def test_reads_durable_messages_from_storage_when_a_late_entity_registers():
     """reads durable messages from storage when a late entity registers"""
     config = make_config(
-        entity_registration_timeout=Seconds(6), entity_message_poll_interval=Seconds(3600)
+        entity_registration_timeout=millis(6000), entity_message_poll_interval=millis(3_600_000)
     )
     reset_started = Deferred[None, Never]()
     release_reset = Deferred[None, Never]()
@@ -855,7 +855,7 @@ def test_reads_durable_messages_from_storage_when_a_late_entity_registers():
 def test_defects_durable_messages_when_no_entity_ever_registers():
     """defects durable messages when no entity ever registers"""
     config = make_config(
-        entity_registration_timeout=Seconds(1), entity_message_poll_interval=Seconds(0.1)
+        entity_registration_timeout=millis(1000), entity_message_poll_interval=millis(100)
     )
     no_entities = (
         sharding.layer.pipe(fx.layer.provide(runner_storage.layer_memory))
@@ -932,7 +932,7 @@ def test_bounds_local_sends_while_entity_registration_is_missing():
             == "Entity type 'MissingRegistrationEntity' not registered"
         )
 
-    yield from body.pipe(fx.provide(capped(entity_registration_timeout=Seconds(1))))
+    yield from body.pipe(fx.provide(capped(entity_registration_timeout=millis(1000))))
 
 
 @testing.effect
@@ -966,7 +966,7 @@ def test_recomputes_the_missing_entity_deadline_when_registration_starts():
             == "Entity type 'MissingRegistrationEntity' not registered"
         )
 
-    yield from scoped(body.pipe(fx.provide(unregistered(entity_registration_timeout=Seconds(1)))))
+    yield from scoped(body.pipe(fx.provide(unregistered(entity_registration_timeout=millis(1000)))))
 
 
 @testing.effect
@@ -998,7 +998,7 @@ def test_keeps_a_shared_registration_latch_when_one_waiter_is_interrupted():
         assert exit.cause.has_interrupts_only
         yield from remaining.join()
 
-    yield from scoped(body.pipe(fx.provide(unregistered(entity_registration_timeout=Seconds(1)))))
+    yield from scoped(body.pipe(fx.provide(unregistered(entity_registration_timeout=millis(1000)))))
 
 
 @testing.effect
@@ -1025,7 +1025,7 @@ def test_bounds_client_interruption_while_entity_registration_is_missing():
         assert isinstance(exit, Exit.Failure)
         assert exit.cause.has_interrupts_only
 
-    yield from body.pipe(fx.provide(capped(entity_registration_timeout=Seconds(1))))
+    yield from body.pipe(fx.provide(capped(entity_registration_timeout=millis(1000))))
 
 
 # --- Sharding residency cap ------------------------------------------------------------------
@@ -1054,7 +1054,7 @@ def test_bounds_resident_entities_to_max_resident_entities():
         assert [user.id for user in users] == [1, 2, 3, 4, 5, 6]
 
     yield from body.pipe(
-        fx.provide(capped(max_resident_entities=2, entity_max_idle_time=Seconds(1)))
+        fx.provide(capped(max_resident_entities=2, entity_max_idle_time=millis(1000)))
     )
 
 
@@ -1371,7 +1371,7 @@ def test_reports_entity_mailbox_sizes_until_entities_are_released():
         ]
 
     yield from body.pipe(
-        fx.provide(capped(entity_mailbox_metrics=True, entity_max_idle_time=Seconds(0.001)))
+        fx.provide(capped(entity_mailbox_metrics=True, entity_max_idle_time=millis(1)))
     ).pipe(fx.provide_service(metric.MetricRegistry, registry))
     # Shutting down releases every shard, tearing down the remaining entity.
     assert sizes() == []
@@ -1450,7 +1450,7 @@ def test_reports_the_largest_entity_mailbox_size_per_type_by_default():
         yield from _wait_for_idle_reap(service, 1)
         assert size_max() == [({"type": "TestEntity"}, metric.GaugeState(1))]
 
-    yield from body.pipe(fx.provide(capped(entity_max_idle_time=Seconds(0.001)))).pipe(
+    yield from body.pipe(fx.provide(capped(entity_max_idle_time=millis(1)))).pipe(
         fx.provide_service(metric.MetricRegistry, registry)
     )
     # Shutting down closes the entity manager, which removes the series.
@@ -1466,7 +1466,7 @@ def test_updates_the_shards_gauge_after_reassignment():
             sharding_config.DEFAULTS,
             runner_address=RunnerAddress(host="localhost", port=1234),
             shards_per_group=8,
-            refresh_assignments_interval=Seconds(0.01),
+            refresh_assignments_interval=millis(10),
         )
     )
     built = (

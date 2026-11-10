@@ -28,7 +28,7 @@ import pyfect as fx
 from pyfect import cause, schedule, sink, stream, testing
 from pyfect.cause import Cause
 from pyfect.clock import current_time_millis
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.exit import Exit
 from pyfect.option import Some
 from pyfect.queue import Queue
@@ -259,7 +259,7 @@ def test_aggregate_within_simple_example():
     folding = sink.fold(start, lambda state: state[1], step)
     result = yield from (
         stream.make(1, 1, 1, 1, 2, 2)
-        .aggregate_within(folding.map(lambda state: state[0]), schedule.spaced(Seconds(30 * 60)))
+        .aggregate_within(folding.map(lambda state: state[0]), schedule.spaced(millis(1_800_000)))
         .run_collect()
     )
     assert result == [[2, 1, 1, 1, 1], [2]]
@@ -295,7 +295,7 @@ def test_aggregate_within_error_propagation_1():
     error = RuntimeError("Boom")
     ex = yield from (
         stream.make(1, 1, 1, 1)
-        .aggregate_within(sink.die(error), schedule.spaced(Seconds(30 * 60)))
+        .aggregate_within(sink.die(error), schedule.spaced(millis(1_800_000)))
         .run_collect()
         .exit()
     )
@@ -313,7 +313,7 @@ def test_aggregate_within_error_propagation_2():
     folding = sink.fold(list[int], lambda _: True, step)
     ex = yield from (
         stream.make(1, 1)
-        .aggregate_within(folding, schedule.spaced(Seconds(30 * 60)))
+        .aggregate_within(folding, schedule.spaced(millis(1_800_000)))
         .run_collect()
         .exit()
     )
@@ -335,7 +335,7 @@ def test_aggregate_within_interruption_propagation_1():
     folding = sink.fold(list[int], lambda _: True, step)
     fiber = yield from (
         stream.make(1, 1, 2)
-        .aggregate_within(folding, schedule.spaced(Seconds(30 * 60)))
+        .aggregate_within(folding, schedule.spaced(millis(1_800_000)))
         .run_collect()
         .fork_scoped()
     )
@@ -351,7 +351,7 @@ def test_aggregate_within_interruption_propagation_2():
     waiting: Sink[Never] = sink.from_effect(fx.never.on_interrupt(interrupted.set(True)))
     fiber = yield from (
         stream.make(1, 1, 2)
-        .aggregate_within(waiting, schedule.spaced(Seconds(30 * 60)))
+        .aggregate_within(waiting, schedule.spaced(millis(1_800_000)))
         .run_collect()
         .fork_scoped(start_immediately=True)
     )

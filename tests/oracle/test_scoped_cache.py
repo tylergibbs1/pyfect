@@ -33,10 +33,10 @@ import pytest
 import pyfect as fx
 from pyfect import clock, exit, testing
 from pyfect.cause import Die
-from pyfect.duration import Seconds, to_millis
+from pyfect.duration import Duration, millis, to_millis
 
-_HOUR = Seconds(3600)
-_MINUTE = Seconds(60)
+_HOUR = millis(3_600_000)
+_MINUTE = millis(60_000)
 _DONE = fx.Success(None)
 
 
@@ -48,7 +48,7 @@ def _length_cache(capacity: int | None = 10, time_to_live: float | None = None):
     return fx.ScopedCache.make(
         _length,
         capacity=capacity,
-        time_to_live=None if time_to_live is None else Seconds(time_to_live),
+        time_to_live=None if time_to_live is None else Duration(time_to_live),
     )
 
 
@@ -175,7 +175,7 @@ def test_make_creates_cache_with_default_infinite_ttl():
     """creates cache with default infinite TTL"""
     cache = yield from _length_cache()
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(1000 * _HOUR))
+    yield from testing.adjust(Duration(1000 * _HOUR))
     assert (yield from cache.has("test"))
 
 
@@ -184,9 +184,9 @@ def test_make_creates_cache_with_custom_ttl():
     """creates cache with custom TTL"""
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(30 * _MINUTE))
+    yield from testing.adjust(Duration(30 * _MINUTE))
     assert (yield from cache.has("test"))
-    yield from testing.adjust(Seconds(31 * _MINUTE))
+    yield from testing.adjust(Duration(31 * _MINUTE))
     assert not (yield from cache.has("test"))
 
 
@@ -237,18 +237,18 @@ def test_make_with_creates_cache_with_function_based_ttl():
 
     def ttl(ex: fx.Exit[int, str], key: str) -> float:
         if isinstance(ex, fx.Failure):
-            return Seconds(1)
+            return millis(1000)
         return _MINUTE if key == "short" else _HOUR
 
     cache = yield from fx.ScopedCache.make(_fail_or_length, capacity=10, time_to_live=ttl)
 
     yield from cache.get("long")
-    yield from testing.adjust(Seconds(30 * _MINUTE))
+    yield from testing.adjust(Duration(30 * _MINUTE))
     assert (yield from cache.has("long"))
 
     yield from cache.get("short")
     assert (yield from cache.has("short"))
-    yield from testing.adjust(Seconds(_MINUTE + 1))
+    yield from testing.adjust(Duration(_MINUTE + 1))
     assert not (yield from cache.has("short"))
     assert (yield from cache.has("long"))
 
@@ -284,7 +284,7 @@ def test_make_with_different_ttl_for_success_vs_failure():
     cache = yield from fx.ScopedCache.make(_fail_or_length, capacity=10, time_to_live=ttl)
     yield from cache.get("success")
     yield from cache.get("fail").exit()
-    yield from testing.adjust(Seconds(30 * _MINUTE))
+    yield from testing.adjust(Duration(30 * _MINUTE))
     assert (yield from cache.has("success"))
     assert not (yield from cache.has("fail"))
 
@@ -297,7 +297,7 @@ def test_make_with_ttl_based_on_key_values():
     )
     yield from cache.get("short")
     yield from cache.get("long")
-    yield from testing.adjust(Seconds(30 * _MINUTE))
+    yield from testing.adjust(Duration(30 * _MINUTE))
     assert not (yield from cache.has("short"))
     assert (yield from cache.has("long"))
 
@@ -313,7 +313,7 @@ def test_make_with_ttl_based_on_result_values():
     cache = yield from fx.ScopedCache.make(_length, capacity=10, time_to_live=ttl)
     yield from cache.get("ab")
     yield from cache.get("abcd")
-    yield from testing.adjust(Seconds(30 * _MINUTE))
+    yield from testing.adjust(Duration(30 * _MINUTE))
     assert not (yield from cache.has("ab"))
     assert (yield from cache.has("abcd"))
 
@@ -325,7 +325,7 @@ def test_make_with_infinite_ttl_handling():
         _length, capacity=10, time_to_live=lambda _ex, _key: float("inf")
     )
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(1000 * _HOUR))
+    yield from testing.adjust(Duration(1000 * _HOUR))
     assert (yield from cache.has("test"))
 
 
@@ -376,12 +376,12 @@ def test_cache_miss_invokes_lookup_for_non_existent_key():
 def test_cache_miss_invokes_lookup_again_after_ttl_expiration():
     """cache miss - invokes lookup again after TTL expiration"""
     _, bump = _counter()
-    cache = yield from fx.ScopedCache.make(_always(bump), capacity=10, time_to_live=Seconds(_HOUR))
+    cache = yield from fx.ScopedCache.make(_always(bump), capacity=10, time_to_live=Duration(_HOUR))
 
     assert (yield from cache.get("test")) == 1
-    yield from testing.adjust(Seconds(30 * _MINUTE))
+    yield from testing.adjust(Duration(30 * _MINUTE))
     assert (yield from cache.get("test")) == 1
-    yield from testing.adjust(Seconds(31 * _MINUTE))
+    yield from testing.adjust(Duration(31 * _MINUTE))
     assert (yield from cache.get("test")) == 2
 
 
@@ -497,7 +497,7 @@ def test_get_option_returns_none_for_expired_value():
     """returns None for expired value"""
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert (yield from cache.get_option("test")) is None
 
 
@@ -560,7 +560,7 @@ def test_get_success_returns_none_for_expired_value():
     """returns None for expired value"""
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert (yield from cache.get_success("test")) is None
 
 
@@ -592,7 +592,7 @@ def test_set_with_ttl_value_expires():
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.set("test", 42)
     assert (yield from cache.has("test"))
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert not (yield from cache.has("test"))
 
 
@@ -652,7 +652,7 @@ def test_has_returns_false_for_expired_key():
     """returns false for expired key"""
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert not (yield from cache.has("test"))
 
 
@@ -919,9 +919,9 @@ def test_refresh_updates_ttl():
     """refresh updates TTL"""
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(30 * _MINUTE))
+    yield from testing.adjust(Duration(30 * _MINUTE))
     yield from cache.refresh("test")
-    yield from testing.adjust(Seconds(40 * _MINUTE))
+    yield from testing.adjust(Duration(40 * _MINUTE))
     assert (yield from cache.has("test"))
 
 
@@ -1126,7 +1126,7 @@ def test_size_expired_entries_are_counted_until_accessed():
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("a")
     yield from cache.get("b")
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
 
     assert (yield from cache.size()) == 2
     yield from cache.has("a")
@@ -1151,7 +1151,7 @@ def test_keys_excludes_keys_for_expired_entries():
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("a")
     yield from cache.get("b")
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert (yield from cache.keys()) == []
 
 
@@ -1167,7 +1167,7 @@ def test_keys_empty_after_invalidate_all():
 
 def _expiring_tracker():
     tracker = _Tracker()
-    return tracker, fx.ScopedCache.make(tracker.lookup, capacity=10, time_to_live=Seconds(_HOUR))
+    return tracker, fx.ScopedCache.make(tracker.lookup, capacity=10, time_to_live=Duration(_HOUR))
 
 
 @testing.effect
@@ -1178,7 +1178,7 @@ def test_keys_resource_cleanup_for_expired_entries_as_side_effect():
     yield from cache.get("a")
     yield from cache.get("b")
     assert tracker.cleaned_up == []
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
 
     assert (yield from cache.keys()) == []
     assert sorted(tracker.cleaned_up) == ["a", "b"]
@@ -1200,7 +1200,7 @@ def test_values_returns_all_successful_cached_values():
 def test_values_doesnt_include_failed_lookups():
     """doesn't include failed lookups"""
     cache = yield from fx.ScopedCache.make(
-        _fail_or_length, capacity=10, time_to_live=Seconds(_HOUR)
+        _fail_or_length, capacity=10, time_to_live=Duration(_HOUR)
     )
     yield from cache.get("a")
     yield from cache.get("fail").exit()
@@ -1214,7 +1214,7 @@ def test_values_doesnt_include_expired_values():
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("a")
     yield from cache.get("b")
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert (yield from cache.values()) == []
 
 
@@ -1226,7 +1226,7 @@ def test_values_resource_cleanup_for_expired_entries_as_side_effect():
     yield from cache.get("a")
     yield from cache.get("b")
     assert tracker.cleaned_up == []
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
 
     assert (yield from cache.values()) == []
     assert sorted(tracker.cleaned_up) == ["a", "b"]
@@ -1248,7 +1248,7 @@ def test_entries_returns_all_key_value_pairs():
 def test_entries_filters_out_failed_lookups():
     """filters out failed lookups"""
     cache = yield from fx.ScopedCache.make(
-        _fail_or_length, capacity=10, time_to_live=Seconds(_HOUR)
+        _fail_or_length, capacity=10, time_to_live=Duration(_HOUR)
     )
     yield from cache.get("a")
     yield from cache.get("fail").exit()
@@ -1261,7 +1261,7 @@ def test_entries_filters_out_expired_entries():
     """filters out expired entries"""
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("a")
-    yield from testing.adjust(Seconds(_HOUR))
+    yield from testing.adjust(Duration(_HOUR))
     yield from cache.get("b")
     assert (yield from cache.entries()) == [("b", 1)]
 
@@ -1273,7 +1273,7 @@ def test_entries_removes_expired_entries_as_side_effect_with_resource_cleanup():
     cache = yield from make
     yield from cache.get("a")
     yield from cache.get("b")
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
 
     assert (yield from cache.size()) == 2
     entries = yield from cache.entries()
@@ -1359,9 +1359,9 @@ def test_fixed_ttl_entry_expires_after_specified_duration():
     """entry expires after specified duration"""
     cache = yield from _length_cache(time_to_live=2 * _HOUR)
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(_HOUR))
+    yield from testing.adjust(Duration(_HOUR))
     assert (yield from cache.has("test"))
-    yield from testing.adjust(Seconds(_HOUR + 1))
+    yield from testing.adjust(Duration(_HOUR + 1))
     assert not (yield from cache.has("test"))
 
 
@@ -1369,10 +1369,10 @@ def test_fixed_ttl_entry_expires_after_specified_duration():
 def test_fixed_ttl_get_after_expiration_invokes_lookup():
     """get after expiration invokes lookup"""
     count, bump = _counter()
-    cache = yield from fx.ScopedCache.make(_always(bump), capacity=10, time_to_live=Seconds(_HOUR))
+    cache = yield from fx.ScopedCache.make(_always(bump), capacity=10, time_to_live=Duration(_HOUR))
     assert (yield from cache.get("test")) == 1
     assert count == [1]
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert (yield from cache.get("test")) == 2
     assert count == [2]
 
@@ -1383,7 +1383,7 @@ def test_fixed_ttl_has_returns_false_for_expired_entries():
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("test")
     assert (yield from cache.has("test"))
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert not (yield from cache.has("test"))
 
 
@@ -1394,7 +1394,7 @@ def test_fixed_ttl_resource_cleanup_for_expired_entries():
     cache = yield from make
     yield from cache.get("test")
     assert tracker.cleaned_up == []
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     yield from cache.has("test")
     assert tracker.cleaned_up == ["test"]
 
@@ -1413,10 +1413,10 @@ def test_function_ttl_different_ttl_for_success_vs_failure():
     yield from cache.get("success")
     yield from cache.get("fail").exit()
 
-    yield from testing.adjust(Seconds(_HOUR))
+    yield from testing.adjust(Duration(_HOUR))
     assert (yield from cache.has("success"))
     assert not (yield from cache.has("fail"))
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert not (yield from cache.has("success"))
 
 
@@ -1435,12 +1435,12 @@ def test_function_ttl_ttl_based_on_key():
     for key in ["short-item", "medium-item", "long-item"]:
         yield from cache.get(key)
 
-    yield from testing.adjust(Seconds(2 * _MINUTE))
+    yield from testing.adjust(Duration(2 * _MINUTE))
     assert not (yield from cache.has("short-item"))
     assert (yield from cache.has("medium-item"))
     assert (yield from cache.has("long-item"))
 
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     assert not (yield from cache.has("medium-item"))
     assert (yield from cache.has("long-item"))
 
@@ -1457,7 +1457,7 @@ def test_function_ttl_ttl_based_on_value():
     cache = yield from fx.ScopedCache.make(_length, capacity=10, time_to_live=ttl)
     yield from cache.get("abc")
     yield from cache.get("longkey")
-    yield from testing.adjust(Seconds(2 * _MINUTE))
+    yield from testing.adjust(Duration(2 * _MINUTE))
     assert not (yield from cache.has("abc"))
     assert (yield from cache.has("longkey"))
 
@@ -1469,7 +1469,7 @@ def test_function_ttl_infinite_ttl():
         _length, capacity=10, time_to_live=lambda _ex, _key: float("inf")
     )
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(365 * 24 * _HOUR))
+    yield from testing.adjust(Duration(365 * 24 * _HOUR))
     assert (yield from cache.has("test"))
 
 
@@ -1493,13 +1493,13 @@ def test_function_ttl_ttl_updates_on_refresh():
 
     cache = yield from fx.ScopedCache.make(_always(bump), capacity=10, time_to_live=ttl)
     yield from cache.get("test")
-    yield from testing.adjust(Seconds(30 * _MINUTE))
+    yield from testing.adjust(Duration(30 * _MINUTE))
     assert (yield from cache.has("test"))
 
     yield from cache.refresh("test")
-    yield from testing.adjust(Seconds(_HOUR))
+    yield from testing.adjust(Duration(_HOUR))
     assert (yield from cache.has("test"))
-    yield from testing.adjust(Seconds(_HOUR))
+    yield from testing.adjust(Duration(_HOUR))
     assert not (yield from cache.has("test"))
 
 
@@ -1675,10 +1675,10 @@ def test_resources_are_cleaned_up_when_cache_is_closed():
 def test_resources_are_cleaned_up_when_entries_expire():
     """resources are cleaned up when entries expire"""
     log: list[str] = []
-    cache = yield from fx.ScopedCache.make(_tracked(log), capacity=10, time_to_live=Seconds(_HOUR))
+    cache = yield from fx.ScopedCache.make(_tracked(log), capacity=10, time_to_live=Duration(_HOUR))
     yield from cache.get("test")
     assert log == ["acquired-test"]
-    yield from testing.adjust(Seconds(2 * _HOUR))
+    yield from testing.adjust(Duration(2 * _HOUR))
     yield from cache.has("test")
     assert log == ["acquired-test", "released-test"]
 
@@ -1792,9 +1792,9 @@ def test_multiple_time_advances_work_correctly():
     cache = yield from _length_cache(time_to_live=_HOUR)
     yield from cache.get("test")
     for _ in range(10):
-        yield from testing.adjust(Seconds(5 * _MINUTE))
+        yield from testing.adjust(Duration(5 * _MINUTE))
         assert (yield from cache.has("test"))
-    yield from testing.adjust(Seconds(15 * _MINUTE))
+    yield from testing.adjust(Duration(15 * _MINUTE))
     assert not (yield from cache.has("test"))
 
 
@@ -1809,15 +1809,15 @@ def test_resource_cleanup_timing_is_correct():
 
         return fx.acquire_release(fx.void, release).as_(len(key))
 
-    cache = yield from fx.ScopedCache.make(lookup, capacity=10, time_to_live=Seconds(_HOUR))
+    cache = yield from fx.ScopedCache.make(lookup, capacity=10, time_to_live=Duration(_HOUR))
     start = yield from clock.current_time_millis()
 
     yield from cache.get("a")
-    yield from testing.adjust(Seconds(30 * _MINUTE))
+    yield from testing.adjust(Duration(30 * _MINUTE))
     yield from cache.get("b")
-    yield from testing.adjust(Seconds(35 * _MINUTE))  # "a" expires
+    yield from testing.adjust(Duration(35 * _MINUTE))  # "a" expires
     yield from cache.has("a")
-    yield from testing.adjust(Seconds(30 * _MINUTE))  # "b" expires
+    yield from testing.adjust(Duration(30 * _MINUTE))  # "b" expires
     yield from cache.has("b")
 
     assert cleanups == [

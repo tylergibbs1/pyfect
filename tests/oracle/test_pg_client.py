@@ -28,7 +28,7 @@ import pyfect as fx
 from pyfect import case, schedule, scope, stream, testing
 from pyfect import schema as S
 from pyfect.context import Reference, Tag
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.option import Some
 from pyfect.schema import model as Model
 from pyfect.sql import SqlClient, pg
@@ -750,7 +750,7 @@ def _with_listen(server: PgServer, body: Body) -> fx.Effect[Any, Any]:
 
 
 def _within(seconds: float, effect: fx.Effect[Any, Any], message: str) -> fx.Effect[Any, Any]:
-    return effect.timeout_or_else(Seconds(seconds), lambda: fx.fail(RuntimeError(message)))
+    return effect.timeout_or_else(Duration(seconds), lambda: fx.fail(RuntimeError(message)))
 
 
 @testing.live

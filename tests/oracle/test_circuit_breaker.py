@@ -16,7 +16,7 @@ import pytest
 import pyfect as fx
 from pyfect import testing
 from pyfect.cause import Cause, Die
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.exit import Failure, Success
 from pyfect.persistence import circuit_breaker as cb
 from pyfect.result import Ok
@@ -26,8 +26,8 @@ from . import _circuit_breaker_suite as suite
 
 def _memory(body: suite.Body, *, idle: float = 3600) -> None:
     testing.run_test(
-        fx.scoped(fx.gen(lambda: body(lambda seconds: testing.adjust(Seconds(seconds))))).pipe(
-            fx.provide(cb.layer_store_memory(idle_time_to_live=Seconds(idle)))
+        fx.scoped(fx.gen(lambda: body(lambda seconds: testing.adjust(Duration(seconds))))).pipe(
+            fx.provide(cb.layer_store_memory(idle_time_to_live=Duration(idle)))
         )
     )
 

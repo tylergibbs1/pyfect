@@ -52,7 +52,7 @@ from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.snowflake import Generator, Snowflake
 from pyfect.context import Context
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.errors import Done
 from pyfect.http import client as http_client
 from pyfect.http import response as http_response
@@ -77,10 +77,10 @@ runner_address = RunnerAddress(host="localhost", port=42_000)
 test_config = replace(
     sharding_config.DEFAULTS,
     entity_mailbox_capacity=10,
-    entity_termination_timeout=fx.duration.Seconds(0),
-    entity_message_poll_interval=fx.duration.Seconds(5),
-    send_retry_interval=fx.duration.Seconds(0.1),
-    refresh_assignments_interval=fx.duration.Seconds(0),
+    entity_termination_timeout=fx.duration.millis(0),
+    entity_message_poll_interval=fx.duration.millis(5000),
+    send_retry_interval=fx.duration.millis(100),
+    refresh_assignments_interval=fx.duration.millis(0),
 )
 
 
@@ -180,7 +180,9 @@ def _layer_local_runners(
     wrapped = fx.layer.effect(MessageStorage, MessageStorage().map(wrap)).pipe(
         fx.layer.provide(layer_memory)
     )
-    config = replace(sharding_config.DEFAULTS, entity_reply_poll_interval=fx.duration.Seconds(3600))
+    config = replace(
+        sharding_config.DEFAULTS, entity_reply_poll_interval=fx.duration.millis(3_600_000)
+    )
     return (
         runners_layer_noop.pipe(fx.layer.provide_merge(wrapped))
         .pipe(fx.layer.provide_merge(snowflake.layer_generator))
@@ -333,7 +335,7 @@ def test_a_custom_runners_failed_send_notification_fails_the_caller_only_outside
         yield from storage.with_transaction(in_transaction)
         assert notified[0] == 2
 
-    config = replace(sharding_config.DEFAULTS, entity_reply_poll_interval=Seconds(3600))
+    config = replace(sharding_config.DEFAULTS, entity_reply_poll_interval=millis(3_600_000))
     yield from (
         fx.scoped(body)
         .pipe(fx.provide(_layer_local_runners()))
@@ -367,11 +369,11 @@ def test_answers_a_fresh_local_request_without_reading_or_polling_storage():
         )
         pending = yield from fork_scoped(
             runners.notify_local(message, notify=_no_notify, discard=False).timeout_option(
-                Seconds(4 * 3600)
+                millis(14_400_000)
             )
         )
         # Pass three one-hour poll intervals while the request waits.
-        yield from testing.adjust(Seconds(3 * 3600))
+        yield from testing.adjust(millis(10_800_000))
         assert reads[0] == 0, "a parked fresh local request must not be read from storage"
         yield from _save_reply(storage, message, snowflakes.next_unsafe())
         yield from testing.adjust(0)

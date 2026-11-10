@@ -32,7 +32,8 @@ from pyfect.context import Context, Tag
 from pyfect.cron import Cron
 from pyfect.cron import next as cron_next
 from pyfect.date_time import format_iso, now
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe
 from pyfect.effect import fail_cause, gen, provide_service, void
 from pyfect.exit import Exit, Failure, Success
 from pyfect.layer import Layer
@@ -83,7 +84,7 @@ def make[E](
     execute: Effect[None, E, CurrentScheduledTime | Scope],
     shard_group: str | None = None,
     calculate_next_run_from_previous: bool = False,
-    skip_if_older_than: Duration | None = None,
+    skip_if_older_than: DurationInput | None = None,
 ) -> Layer[Never, Never, Sharding]: ...
 @overload
 def make[E, R](
@@ -93,7 +94,7 @@ def make[E, R](
     execute: Effect[None, E, R | CurrentScheduledTime | Scope],
     shard_group: str | None = None,
     calculate_next_run_from_previous: bool = False,
-    skip_if_older_than: Duration | None = None,
+    skip_if_older_than: DurationInput | None = None,
 ) -> Layer[Never, Never, Sharding | R]: ...
 def make(
     *,
@@ -102,7 +103,7 @@ def make(
     execute: Effect[None, Any, Any],
     shard_group: str | None = None,
     calculate_next_run_from_previous: bool = False,
-    skip_if_older_than: Duration | None = None,
+    skip_if_older_than: DurationInput | None = None,
 ) -> Layer[Never, Never, Any]:
     """A layer running ``execute`` on ``cron`` through the cluster's
     sharding (in ``shard_group``, ``"default"`` when ``None``).
@@ -115,7 +116,9 @@ def make(
     ``execute`` is logged as a warning; the next run is scheduled anyway."""
     require_effect(execute, "execute")
     from_previous = calculate_next_run_from_previous
-    skip_after = to_seconds(timedelta(days=1) if skip_if_older_than is None else skip_if_older_than)
+    skip_after = from_input_unsafe(
+        timedelta(days=1) if skip_if_older_than is None else skip_if_older_than
+    )
     group = "default" if shard_group is None else shard_group
 
     def next_run(after: datetime) -> datetime:

@@ -44,7 +44,7 @@ from websockets.sync.client import ClientConnection, connect
 import pyfect as fx
 from pyfect import effect, layer, logger
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.exit import Failure
 from pyfect.http import router, server_response, uvicorn_server
 from pyfect.http.client import HttpClient
@@ -144,7 +144,7 @@ def _routed(
     def run(program: fx.Effect[Any, Any, Any]) -> Any:
         routes = router.add("GET", path, handler)
         served = program.pipe(fx.provide(router.serve(routes, disable_logger=True)))
-        return run_uvicorn(served.timeout(Seconds(TIMEOUT)), **options)
+        return run_uvicorn(served.timeout(Duration(TIMEOUT)), **options)
 
     return run
 
@@ -220,7 +220,7 @@ def test_logs_and_traces_status_101_after_an_upgraded_websocket_closes() -> None
         )
     )
     traced = served.pipe(effect.provide_service(CurrentTracer, Tracer.make(spans.span)))
-    status, logged_status = run_uvicorn(traced.timeout(Seconds(TIMEOUT)))
+    status, logged_status = run_uvicorn(traced.timeout(Duration(TIMEOUT)))
     assert status == 101
     assert logged_status == 101
     server_spans = [span for span in spans.spans if span.kind == "server"]
@@ -257,7 +257,7 @@ def test_logs_the_fallback_status_when_an_upgrade_fails(fail_handler: bool) -> N
     served = program().pipe(
         fx.provide(router.serve(routes).pipe(layer.provide(logger.layer([Logger.make(record)]))))
     )
-    status = run_uvicorn(served.timeout(Seconds(TIMEOUT)))
+    status = run_uvicorn(served.timeout(Duration(TIMEOUT)))
     assert status == (500 if fail_handler else 426)
     assert logged == [status]
 

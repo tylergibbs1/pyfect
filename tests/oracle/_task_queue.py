@@ -10,7 +10,7 @@ from collections.abc import Callable
 
 import pyfect as fx
 from pyfect._wake_tracking import WakeTracker
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.scheduler import Cancel, Task
 
 
@@ -22,7 +22,7 @@ class TaskQueue:
     def schedule(self, task: Task, priority: int = 0) -> None:
         self.tasks.append(task)
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         raise AssertionError("a TaskQueue has no timers")
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:

@@ -25,7 +25,7 @@ import pyfect._fiber as fiber_module
 from pyfect import pubsub, stream
 from pyfect import scope as fx_scope
 from pyfect._wake_tracking import WakeTracker
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.encoding import tar
 from pyfect.encoding import zip as encoding_zip
 from pyfect.pull import catch_done
@@ -55,7 +55,7 @@ class _InterruptAt:
             self.inner.schedule(lambda: target.interrupt_as_unsafe(None))
         self.inner.schedule(task)
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         return self.inner.call_later(delay, task, daemon=daemon)
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:

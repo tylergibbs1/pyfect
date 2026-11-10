@@ -20,7 +20,7 @@ from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.config import Config, ConfigError
 from pyfect.config_provider import from_env
 from pyfect.context import Tag
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 
 type Unbounded = Literal["unbounded"]
 
@@ -37,27 +37,27 @@ class ShardingConfigService:
     available_shard_groups: tuple[str, ...]
     assigned_shard_groups: tuple[str, ...]
     shards_per_group: int
-    shard_lock_refresh_interval: Seconds
-    shard_lock_expiration: Seconds
+    shard_lock_refresh_interval: Duration
+    shard_lock_expiration: Duration
     shard_lock_disable_advisory: bool
     preemptive_shutdown: bool
     entity_mailbox_capacity: int | Unbounded
     entity_mailbox_metrics: bool
     max_resident_entities: int | Unbounded
     unprocessed_message_batch_size: int
-    entity_max_idle_time: Seconds
-    entity_registration_timeout: Seconds
-    entity_termination_timeout: Seconds
-    entity_message_poll_interval: Seconds
-    entity_reply_poll_interval: Seconds
-    refresh_assignments_interval: Seconds
-    send_retry_interval: Seconds
-    runner_join_debounce: Seconds
+    entity_max_idle_time: Duration
+    entity_registration_timeout: Duration
+    entity_termination_timeout: Duration
+    entity_message_poll_interval: Duration
+    entity_reply_poll_interval: Duration
+    refresh_assignments_interval: Duration
+    send_retry_interval: Duration
+    runner_join_debounce: Duration
     """How long the healthy runners must stay unchanged before runners that
     joined get shards, so a burst of joins hands each shard off once. Only
     joins wait, at most four times this long; ``0`` publishes every change at
     once."""
-    runner_health_check_interval: Seconds
+    runner_health_check_interval: Duration
     simulate_remote_serialization: bool
 
 
@@ -75,22 +75,22 @@ DEFAULTS = ShardingConfigService(
     available_shard_groups=("default",),
     assigned_shard_groups=("default",),
     preemptive_shutdown=True,
-    shard_lock_refresh_interval=Seconds(10),
-    shard_lock_expiration=Seconds(35),
+    shard_lock_refresh_interval=millis(10_000),
+    shard_lock_expiration=millis(35_000),
     shard_lock_disable_advisory=False,
     entity_mailbox_capacity=4096,
     entity_mailbox_metrics=False,
     max_resident_entities=10_000,
     unprocessed_message_batch_size=1024,
-    entity_max_idle_time=Seconds(60),
-    entity_registration_timeout=Seconds(60),
-    entity_termination_timeout=Seconds(15),
-    entity_message_poll_interval=Seconds(10),
-    entity_reply_poll_interval=Seconds(0.2),
-    send_retry_interval=Seconds(0.1),
-    refresh_assignments_interval=Seconds(3),
-    runner_join_debounce=Seconds(0),
-    runner_health_check_interval=Seconds(60),
+    entity_max_idle_time=millis(60_000),
+    entity_registration_timeout=millis(60_000),
+    entity_termination_timeout=millis(15_000),
+    entity_message_poll_interval=millis(10_000),
+    entity_reply_poll_interval=millis(200),
+    send_retry_interval=millis(100),
+    refresh_assignments_interval=millis(3000),
+    runner_join_debounce=millis(0),
+    runner_health_check_interval=millis(60_000),
     simulate_remote_serialization=True,
 )
 """Effect's defaults."""
@@ -105,7 +105,7 @@ layer_defaults: layer_.Layer[ShardingConfig] = layer()
 _POSITIVE_INT = S.Int.check(S.is_greater_than(0))
 
 
-def _seconds(name: str, default: Seconds) -> Config[Seconds]:
+def _seconds(name: str, default: Duration) -> Config[Duration]:
     return config_.duration(name).with_default(default)
 
 

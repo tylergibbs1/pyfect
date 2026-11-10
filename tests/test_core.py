@@ -218,7 +218,7 @@ def test_an_error_in_generator_cleanup_is_added_as_a_defect():
         NotFound("k"),
         NotFound(key="k"),
         FrozenNotFound("k"),
-        fx.TimeoutException(fx.duration.to_seconds("1500 millis")),
+        fx.TimeoutException(fx.duration.from_input_unsafe("1500 millis")),
     ],
     ids=["positional", "keyword", "frozen", "TimeoutException"],
 )

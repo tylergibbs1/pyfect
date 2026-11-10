@@ -32,7 +32,8 @@ from pyfect.ai.id_generator import IdGenerator, default_id_generator
 from pyfect.ai.id_generator import Service as IdService
 from pyfect.channel import acquire_use_release
 from pyfect.context import Tag
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import sync
 from pyfect.exit import Exit
 from pyfect.layer import Layer
@@ -411,7 +412,7 @@ class Persisted(Service):
         history: Ref[P.Prompt],
         store: BackingPersistenceStore,
         ids: IdService,
-        ttl: Seconds | None,
+        ttl: Duration | None,
     ) -> None:
         super().__init__(history, lambda before: self._save(before).or_die())
         self.id = id
@@ -458,7 +459,9 @@ class PersistenceService:
     def __init__(self, store: BackingPersistenceStore) -> None:
         self._store = store
 
-    def _persisted(self, chat_id: str, history: P.Prompt, ttl: Seconds | None) -> Effect[Persisted]:
+    def _persisted(
+        self, chat_id: str, history: P.Prompt, ttl: Duration | None
+    ) -> Effect[Persisted]:
         return fx.service_option(IdGenerator).map(
             lambda found: Persisted(
                 chat_id,
@@ -470,7 +473,7 @@ class PersistenceService:
         )
 
     def _get(
-        self, chat_id: str, ttl: Seconds | None
+        self, chat_id: str, ttl: Duration | None
     ) -> Effect[Persisted, ChatNotFoundError | PersistenceError]:
         def found(stored: object | None) -> Effect[Persisted, ChatNotFoundError | PersistenceError]:
             if stored is None:
@@ -484,26 +487,26 @@ class PersistenceService:
 
         return self._store.get(chat_id).flat_map(found)
 
-    def _create(self, chat_id: str, ttl: Seconds | None) -> Effect[Persisted, PersistenceError]:
+    def _create(self, chat_id: str, ttl: Duration | None) -> Effect[Persisted, PersistenceError]:
         exported = _encode(P.empty).or_die()
         return exported.flat_map(lambda e: self._store.set(chat_id, e, ttl)).and_then(
             self._persisted(chat_id, P.empty, ttl)
         )
 
     def get(
-        self, chat_id: str, *, time_to_live: Duration | None = None
+        self, chat_id: str, *, time_to_live: DurationInput | None = None
     ) -> Effect[Persisted, ChatNotFoundError | PersistenceError]:
         """The chat stored under ``chat_id``; its saves keep it for
         ``time_to_live`` (forever when ``None``)."""
-        ttl = None if time_to_live is None else to_seconds(time_to_live)
+        ttl = None if time_to_live is None else from_input_unsafe(time_to_live)
         return self._get(chat_id, ttl).with_span("PersistedChat.get")
 
     def get_or_create(
-        self, chat_id: str, *, time_to_live: Duration | None = None
+        self, chat_id: str, *, time_to_live: DurationInput | None = None
     ) -> Effect[Persisted, AiError | PersistenceError]:
         """The chat stored under ``chat_id``, or a new empty one stored
         there."""
-        ttl = None if time_to_live is None else to_seconds(time_to_live)
+        ttl = None if time_to_live is None else from_input_unsafe(time_to_live)
         got = self._get(chat_id, ttl).catch_all(
             lambda error: (
                 self._create(chat_id, ttl)

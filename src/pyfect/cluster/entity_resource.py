@@ -14,7 +14,7 @@ from pyfect.cluster.k8s_http_client import K8sHttpClient, PodStatus, make_create
 from pyfect.cluster.k8s_types import Pod as K8sPod
 from pyfect.cluster.sharding import Sharding
 from pyfect.context import Tag
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import gen, provide_service, succeed
 from pyfect.exit import Exit
 from pyfect.rc_ref import RcRef
@@ -42,20 +42,20 @@ class CloseScope(Tag[CloseableScope], key="effect/cluster/EntityResource/CloseSc
 def make[A, E](
     acquire: Effect[A, E, CloseScope],
     *,
-    idle_time_to_live: Duration | None = None,
+    idle_time_to_live: DurationInput | None = None,
     acquire_eagerly: bool = False,
 ) -> Effect[EntityResource[A, E], E, Scope | Sharding | CurrentAddress]: ...
 @overload
 def make[A, E, R](
     acquire: Effect[A, E, R | CloseScope],
     *,
-    idle_time_to_live: Duration | None = None,
+    idle_time_to_live: DurationInput | None = None,
     acquire_eagerly: bool = False,
 ) -> Effect[EntityResource[A, E], E, Scope | R | Sharding | CurrentAddress]: ...
 def make(
     acquire: Effect[Any, Any, Any],
     *,
-    idle_time_to_live: Duration | None = None,
+    idle_time_to_live: DurationInput | None = None,
     acquire_eagerly: bool = False,
 ) -> Effect[EntityResource[Any, Any], Any, Any]:
     """A resource acquired by ``acquire`` (with its ``CloseScope``) that
@@ -99,7 +99,7 @@ def make(
 
 
 def make_k8s_pod(
-    spec: K8sPod, *, idle_time_to_live: Duration | None = None
+    spec: K8sPod, *, idle_time_to_live: DurationInput | None = None
 ) -> Effect[EntityResource[PodStatus], Never, Scope | Sharding | CurrentAddress | K8sHttpClient]:
     """A Kubernetes pod created from the manifest ``spec`` (a whole ``Pod``,
     with its ``metadata`` and ``spec``) for the entity, and deleted when the

@@ -12,7 +12,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import effect, layer, stream, testing
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import Effect
 from pyfect.exit import Success
 from pyfect.graphql import GraphQLGroup, GraphQLMiddleware, Implementation, client
@@ -60,9 +60,9 @@ def make_protocol(
     server: WsServer,
     *,
     connection_params: Effect[Any, Any] | None = None,
-    connection_ack_timeout: Duration | None = None,
-    keep_alive: Duration | bool | None = None,
-    idle_timeout: Duration | None = None,
+    connection_ack_timeout: DurationInput | None = None,
+    keep_alive: DurationInput | bool | None = None,
+    idle_timeout: DurationInput | None = None,
 ) -> Effect[GraphQLProtocolService, Any, Scope]:
     options = WebSocketOptions[Any](
         url=URL,

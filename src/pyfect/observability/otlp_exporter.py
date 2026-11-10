@@ -21,7 +21,8 @@ from pyfect._version import VERSION
 from pyfect.cause import Cause
 from pyfect.clock import Clock, now_millis_unsafe, sleep
 from pyfect.context import Tag
-from pyfect.duration import ZERO, Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, zero
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import (
     Effect,
     gen,
@@ -105,7 +106,7 @@ that uses it shares one registry per layer build (layers are memoized by
 identity). Flushing an empty registry does nothing."""
 
 
-def _retry_after_delay(value: str | None) -> Effect[Duration]:
+def _retry_after_delay(value: str | None) -> Effect[DurationInput]:
     """A valid ``Retry-After``'s delay; a missing or invalid one waits 5
     seconds."""
     retry_after = None if value is None else parse_retry_after(value)
@@ -115,7 +116,7 @@ def _retry_after_delay(value: str | None) -> Effect[Duration]:
     return Clock().map(lambda clock: retry_after_delay(parsed, now_millis_unsafe(clock)))
 
 
-def _delay(meta: Metadata[object, object]) -> Effect[Duration]:
+def _delay(meta: Metadata[object, object]) -> Effect[DurationInput]:
     error = meta.output
     if (
         isinstance(error, HttpClientError)
@@ -188,7 +189,7 @@ class _Timer:
 
     def loop(
         self,
-        interval: Seconds,
+        interval: Duration,
         export: Effect[Fiber[None, Never]],
         buffered: Callable[[], bool],
     ) -> Effect[Never]:
@@ -210,10 +211,10 @@ def make(
     url: str,
     headers: _headers.Input | None,
     label: str,
-    export_interval: Duration,
+    export_interval: DurationInput,
     max_batch_size: int | Literal["disabled"],
     body: Callable[[list[Any]], tuple[HttpBody, Effect[None]]],
-    shutdown_timeout: Duration,
+    shutdown_timeout: DurationInput,
     compression: Compression = "none",
     export_empty: bool = False,
 ) -> Effect[Exporter, Never, Flusher | HttpClient | Scope]:
@@ -231,8 +232,8 @@ def make(
     what is left and waits up to ``shutdown_timeout`` for its exports,
     then interrupts them. ``"gzip"`` compression happens once, before the
     retries; ``body``'s effect runs after a successful post."""
-    interval = Seconds(max(to_seconds(export_interval), ZERO))
-    timeout = to_seconds(shutdown_timeout)
+    interval = Duration(max(from_input_unsafe(export_interval), zero))
+    timeout = from_input_unsafe(shutdown_timeout)
 
     @gen
     def build():

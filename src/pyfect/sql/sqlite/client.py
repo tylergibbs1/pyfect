@@ -19,7 +19,8 @@ from pyfect._core import Effect, _Suspend, _WithFiber
 from pyfect.clock import Clock, sleep
 from pyfect.config import Config, ConfigError, unwrap
 from pyfect.context import Context, Tag
-from pyfect.duration import Duration, to_millis
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import to_millis
 from pyfect.layer import Layer, provide
 from pyfect.layer import effect_context as layer_effect_context
 from pyfect.reactivity import Reactivity
@@ -63,7 +64,7 @@ class SqliteClientConfig:
     readonly: bool = False
     prepare_cache_size: int = 200
     disable_wal: bool = False
-    busy_timeout: Duration = "5 seconds"
+    busy_timeout: DurationInput = "5 seconds"
     span_attributes: Mapping[str, object] = field(default_factory=dict[str, object])
     transform_result_names: Callable[[str], str] | None = None
     transform_query_names: Callable[[str], str] | None = None
@@ -110,7 +111,7 @@ class SqliteClient(Tag[SqliteClientService], key="@effect/sql-sqlite-node/Sqlite
     """The SQLite client service."""
 
 
-def _busy_timeout_millis(timeout: Duration) -> int:
+def _busy_timeout_millis(timeout: DurationInput) -> int:
     millis = to_millis(timeout)
     if math.isinf(millis):
         return _MAX_BUSY_TIMEOUT

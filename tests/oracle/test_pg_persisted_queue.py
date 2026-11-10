@@ -126,7 +126,7 @@ def test_refreshes_locks_for_acquired_elements(pg_server: PgServer) -> None:
         take_options = pq.TakeOptions(
             name="lock-refresh",
             max_attempts=10,
-            retry_delay=lambda _: fx.succeed(fx.duration.ZERO),
+            retry_delay=lambda _: fx.succeed(fx.duration.zero),
         )
         acquired = Latch()
 

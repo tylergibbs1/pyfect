@@ -35,7 +35,7 @@ from pyfect.ai._mcp.core import PromptEntry, ResourceEntry, ToolEntry
 from pyfect.ai._mcp.subscriptions import Event, Presence
 from pyfect.context import Context
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.http.response import HttpClientResponse
 from pyfect.pubsub import PubSub
 from pyfect.queue import Queue
@@ -191,7 +191,7 @@ class _TrackingClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self.inner.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: Seconds) -> fx.Effect[None]:
+    def sleep(self, seconds: Duration) -> fx.Effect[None]:
         def track(by: int) -> fx.Effect[None]:
             def count() -> None:
                 self.active_sleeps += by

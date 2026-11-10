@@ -9,7 +9,7 @@ from typing import Any, Final, Never, NotRequired, TypedDict
 from pyfect import config
 from pyfect import layer as _layer
 from pyfect.clock import Clock, ClockService
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import Effect, gen, succeed
 from pyfect.http import headers as _headers
 from pyfect.http.client import HttpClient
@@ -137,9 +137,9 @@ def make(
     resource: ResourceOptions | None = None,
     headers: _headers.Input | None = None,
     compression: Compression = "none",
-    export_interval: Duration | None = None,
+    export_interval: DurationInput | None = None,
     max_batch_size: int | None = None,
-    shutdown_timeout: Duration | None = None,
+    shutdown_timeout: DurationInput | None = None,
     exclude_log_spans: bool = False,
 ) -> Effect[Logger[None], Never, Flusher | OtlpSerialization | HttpClient | Scope]:
     """A logger exporting each entry to ``url`` as an OTLP log record, in
@@ -187,9 +187,9 @@ def layer(
     resource: ResourceOptions | None = None,
     headers: _headers.Input | None = None,
     compression: Compression = "none",
-    export_interval: Duration | None = None,
+    export_interval: DurationInput | None = None,
     max_batch_size: int | None = None,
-    shutdown_timeout: Duration | None = None,
+    shutdown_timeout: DurationInput | None = None,
     exclude_log_spans: bool = False,
     merge_with_existing: bool = True,
 ) -> Layer[Flusher, Never, HttpClient | OtlpSerialization]:

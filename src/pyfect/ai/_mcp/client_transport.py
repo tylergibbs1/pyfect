@@ -36,7 +36,7 @@ from pyfect.ai.mcp_schema import JsonObject, RequestId, Tool, parse_request_id
 from pyfect.byte_size import ByteSize
 from pyfect.channel import LineTooLongError, split_lines_within
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.effect import fail, gen, succeed, suspend, sync
 from pyfect.encoding import sse
 from pyfect.errors import Done
@@ -51,7 +51,7 @@ from pyfect.scope import Scope, add_finalizer
 type ClientProtocolVersion = Literal["2025-11-25", "2026-07-28"]
 type ClientProtocol = ProtocolAdapter[ClientProtocolVersion]
 
-CLOSE_TIMEOUT = Seconds(5)
+CLOSE_TIMEOUT = millis(5000)
 DEFAULT_MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
 _VOID: Effect[None] = succeed(None)

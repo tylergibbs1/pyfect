@@ -12,7 +12,7 @@ from pyfect import _json_text, stream
 from pyfect import effect as fx
 from pyfect.clock import ClockService, clock_with, now_millis_unsafe
 from pyfect.context import Context
-from pyfect.duration import Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
 from pyfect.effect import Effect
 from pyfect.encoding import sse
 from pyfect.graphql._types import (
@@ -178,7 +178,7 @@ def _sse_answers(response: HttpClientResponse) -> Stream[Answer, TransportError]
 
         def on_parse(event: sse.AnyEvent) -> None:
             if isinstance(event, sse.Retry):
-                state["retry_after"] = to_seconds(event.duration)
+                state["retry_after"] = from_input_unsafe(event.duration)
             else:
                 pending.append(event)
 
@@ -209,7 +209,7 @@ def _sse_answers(response: HttpClientResponse) -> Stream[Answer, TransportError]
             return fx.succeed(Answer(body=body, headers=headers))
 
         def stream_failed(cause: http_error.HttpClientError) -> TransportError:
-            retry_after: Seconds | None = state["retry_after"]
+            retry_after: Duration | None = state["retry_after"]
             return TransportError(
                 description=f"The graphql-sse stream failed: {cause.message}",
                 retry_after=retry_after,
@@ -219,7 +219,7 @@ def _sse_answers(response: HttpClientResponse) -> Stream[Answer, TransportError]
         def ended() -> Stream[Never, TransportError]:
             if state["complete"]:
                 return stream.make()
-            retry_after: Seconds | None = state["retry_after"]
+            retry_after: Duration | None = state["retry_after"]
             return stream.fail(
                 TransportError(
                     description="The graphql-sse stream ended without a complete event",

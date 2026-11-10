@@ -14,7 +14,7 @@ from pyfect import schema as S
 from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 
 from ._ai import with_language_model
 
@@ -44,7 +44,7 @@ def test_take_starts_no_tool_handler(n: int) -> None:
         ms = int(params["ms"])
         return (
             fx.sync(lambda: log.append(f"start{ms}"))
-            .and_then(fx.sleep(Seconds(ms / 1000)))
+            .and_then(fx.sleep(Duration(ms / 1000)))
             .as_("d")
         )
 

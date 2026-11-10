@@ -9,7 +9,7 @@ from pyfect._core import Effect
 from pyfect.clock import ClockService, clock_with
 from pyfect.config import Config, ConfigError
 from pyfect.config._config import unwrap
-from pyfect.duration import ZERO, Seconds, to_millis
+from pyfect.duration import Duration, to_millis, zero
 from pyfect.effect import gen, void
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -431,11 +431,11 @@ class RedisRateLimiterStore:
         )
 
     def adaptive_consume(
-        self, *, key: str, tokens: float, fallback_limit: float, fallback_window: Seconds
+        self, *, key: str, tokens: float, fallback_limit: float, fallback_window: Duration
     ) -> Effect[AdaptiveConsumeResult, RateLimiterError]:
         def result(reply: tuple[float, int, AdaptivePhase]) -> AdaptiveConsumeResult:
             delay, epoch, phase = reply
-            return AdaptiveConsumeResult(ZERO if delay <= 0 else millis(delay), epoch, phase)
+            return AdaptiveConsumeResult(zero if delay <= 0 else millis(delay), epoch, phase)
 
         return (
             self._adaptive_consume(
@@ -449,7 +449,7 @@ class RedisRateLimiterStore:
         )
 
     def adaptive_feedback(
-        self, *, key: str, epoch: int, tokens: float, status: int, retry_after: Seconds | None
+        self, *, key: str, epoch: int, tokens: float, status: int, retry_after: Duration | None
     ) -> Effect[None, RateLimiterError]:
         if status != 429 or retry_after is None:
             return void

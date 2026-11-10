@@ -19,7 +19,7 @@ from pyfect import effect, layer, stream
 from pyfect import schema as S
 from pyfect.byte_size import ByteSize
 from pyfect.clock import sleep
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.http import body as http_body
 from pyfect.http import cookies as cookies_module
 from pyfect.http import live_server, multipart, router, server, server_response
@@ -400,7 +400,7 @@ def test_set_cookie() -> None:
                 path="/",
                 domain="example.com",
                 expires=expires,
-                max_age=Seconds(300),
+                max_age=millis(300_000),
             ),
         ]
     )

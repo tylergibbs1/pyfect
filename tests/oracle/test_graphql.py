@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from pyfect import schema as S
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.graphql import GraphQLMiddleware, enum_literals, other_typename, query
 from pyfect.graphql._template import render_slices
 from pyfect.graphql.client_error import (
@@ -127,7 +127,7 @@ def test_round_trips_both_error_headers_as_json_records():
     """GraphQLClientError / round trips both error headers as JSON records, encoding retryAfter as milliseconds"""  # noqa: E501
     headers = H.from_input({"X-RateLimit-Remaining": "0"})
     reasons = [
-        TransportError(description="503", status=503, retry_after=Seconds(30), headers=headers),
+        TransportError(description="503", status=503, retry_after=millis(30_000), headers=headers),
         ResponseError(errors=({"message": "Rate limited"},), status=200, headers=headers),
     ]
     for reason in reasons:
@@ -141,7 +141,7 @@ def test_round_trips_both_error_headers_as_json_records():
         assert decoded.reason.headers == headers
         if isinstance(reason, TransportError):
             assert encoded["reason"]["retryAfter"] == 30_000
-            assert decoded.retry_after == Seconds(30)
+            assert decoded.retry_after == millis(30_000)
 
 
 def test_transport_error_is_retryable_for_429_5xx_and_non_fatal_close_codes():
@@ -173,7 +173,7 @@ def test_a_403_with_retry_after_is_retryable():
     headers = H.from_input({"retry-after": "30"})
     reasons = [
         ResponseError(errors=({"message": "Rate limited"},), status=403, headers=headers),
-        TransportError(description="403", status=403, headers=headers, retry_after=Seconds(30)),
+        TransportError(description="403", status=403, headers=headers, retry_after=millis(30_000)),
     ]
     for reason in reasons:
         error = GraphQLClientError(operation="Viewer", reason=reason)

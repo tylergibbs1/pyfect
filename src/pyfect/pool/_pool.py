@@ -33,7 +33,8 @@ from pyfect.cause import Cause
 from pyfect.cause import interrupt as interrupt_cause
 from pyfect.clock import Clock, ClockService
 from pyfect.context import Context
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe
 from pyfect.exit import Exit, Failure, Success
 from pyfect.logger._log import log_unhandled
 from pyfect.pool._state import PoolConfig, PoolItem, PoolState, PoolStats, Strategy
@@ -121,7 +122,7 @@ class Pool[A = Unsubscripted, E = Never]:
         *,
         min: int,
         max: int,
-        time_to_live: Duration,
+        time_to_live: DurationInput,
         time_to_live_strategy: TimeToLiveStrategy = "usage",
         concurrency: int = 1,
         target_utilization: float = 1.0,
@@ -134,7 +135,7 @@ class Pool[A = Unsubscripted, E = Never]:
         *,
         min: int,
         max: int,
-        time_to_live: Duration,
+        time_to_live: DurationInput,
         time_to_live_strategy: TimeToLiveStrategy = "usage",
         concurrency: int = 1,
         target_utilization: float = 1.0,
@@ -146,7 +147,7 @@ class Pool[A = Unsubscripted, E = Never]:
         *,
         min: int,
         max: int,
-        time_to_live: Duration,
+        time_to_live: DurationInput,
         time_to_live_strategy: TimeToLiveStrategy = "usage",
         concurrency: int = 1,
         target_utilization: float = 1.0,
@@ -157,7 +158,7 @@ class Pool[A = Unsubscripted, E = Never]:
         from pyfect.pool._ttl import creation_ttl, usage_ttl
 
         require_effect(acquire, "acquire")
-        ttl = to_seconds(time_to_live)
+        ttl = from_input_unsafe(time_to_live)
         make_strategy = creation_ttl if time_to_live_strategy == "creation" else usage_ttl
         strategy: Effect[Strategy[T, X]] = make_strategy(ttl)
         return strategy.flat_map(

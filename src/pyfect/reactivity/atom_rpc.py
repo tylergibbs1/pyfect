@@ -28,7 +28,8 @@ from pyfect._effect_args import require_effect
 from pyfect._json_text import stringify
 from pyfect._public import publish
 from pyfect.context import Provides, TagLike, tag_class
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.http import headers as http_headers
 from pyfect.http.headers import Headers
 from pyfect.http.headers import Input as HeadersInput
@@ -71,7 +72,7 @@ class _QueryKey(NamedTuple):
     payload: object
     headers: Headers | None
     reactivity_keys: Keys | None
-    time_to_live: Seconds | None
+    time_to_live: Duration | None
     serialization_key: str | None
 
 
@@ -146,7 +147,7 @@ class AtomRpcClient[G: RpcGroup, T]:
         *,
         headers: HeadersInput | None = None,
         reactivity_keys: Keys | None = None,
-        time_to_live: Duration | None = None,
+        time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[A, E | RpcClientError]]: ...
     @overload
@@ -158,7 +159,7 @@ class AtomRpcClient[G: RpcGroup, T]:
         *,
         headers: HeadersInput | None = None,
         reactivity_keys: Keys | None = None,
-        time_to_live: Duration | None = None,
+        time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[AsyncResult[A, E | ME | RpcClientError]]: ...
     @overload
@@ -170,7 +171,7 @@ class AtomRpcClient[G: RpcGroup, T]:
         *,
         headers: HeadersInput | None = None,
         reactivity_keys: Keys | None = None,
-        time_to_live: Duration | None = None,
+        time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Writable[PullResult[A, E | RpcClientError], None]: ...
     @overload
@@ -182,7 +183,7 @@ class AtomRpcClient[G: RpcGroup, T]:
         *,
         headers: HeadersInput | None = None,
         reactivity_keys: Keys | None = None,
-        time_to_live: Duration | None = None,
+        time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Writable[PullResult[A, E | ME | RpcClientError], None]: ...
     def query(
@@ -193,7 +194,7 @@ class AtomRpcClient[G: RpcGroup, T]:
         *,
         headers: HeadersInput | None = None,
         reactivity_keys: Keys | None = None,
-        time_to_live: Duration | None = None,
+        time_to_live: DurationInput | None = None,
         serialization_key: str | None = None,
     ) -> Atom[Any]:
         """An atom holding the result of calling ``rpc`` with ``payload``
@@ -206,7 +207,7 @@ class AtomRpcClient[G: RpcGroup, T]:
             payload,
             None if headers is None else http_headers.from_input(headers),
             reactivity_keys,
-            None if time_to_live is None else to_seconds(time_to_live),
+            None if time_to_live is None else from_input_unsafe(time_to_live),
             serialization_key,
         )
         return self._queries(key)

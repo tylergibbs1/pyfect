@@ -29,7 +29,7 @@ from pyfect.cluster.entity_id import EntityId
 from pyfect.cluster.message_storage import MemoryDriver, MemoryDriverService
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.queue import Queue
@@ -62,10 +62,10 @@ def _live_env(entities: Layer[Never, Never, Any], **changes: Any) -> Layer[Any]:
     defaults: dict[str, Any] = {
         "runner_address": RunnerAddress(host="localhost", port=1234),
         "shards_per_group": 8,
-        "entity_termination_timeout": Seconds(0),
-        "entity_message_poll_interval": Seconds(0.05),
-        "refresh_assignments_interval": Seconds(0.02),
-        "send_retry_interval": Seconds(0.01),
+        "entity_termination_timeout": millis(0),
+        "entity_message_poll_interval": millis(50),
+        "refresh_assignments_interval": millis(20),
+        "send_retry_interval": millis(10),
     }
     config = sharding_config.layer(replace(sharding_config.DEFAULTS, **(defaults | changes)))
     return (
@@ -300,7 +300,7 @@ def test_fails_a_stream_when_its_chunk_acknowledgement_is_abandoned_during_shutd
             yield from (yield from s.client())("1").arm()
 
         _, driver = yield from _arm_and_shut_down(
-            _live_env(entities, entity_termination_timeout=Seconds(1)),
+            _live_env(entities, entity_termination_timeout=millis(1000)),
             arm,
             "Sharding scope-close hung after abandoning a stream chunk acknowledgement",
         )

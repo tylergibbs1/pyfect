@@ -9,7 +9,7 @@ from pyfect import _json_text
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect.clock import Clock, ClockService
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -68,10 +68,10 @@ def _store(
             .flat_map(parse)
         )
 
-    def write(key: str, value: object, ttl: Seconds | None) -> Effect[None, KeyValueStoreError]:
+    def write(key: str, value: object, ttl: Duration | None) -> Effect[None, KeyValueStoreError]:
         return store.set(key, to_json([value, unsafe_ttl_to_expires(clock, ttl)]))
 
-    def set_value(key: str, value: object, ttl: Seconds | None) -> Effect[None, PersistenceError]:
+    def set_value(key: str, value: object, ttl: Duration | None) -> Effect[None, PersistenceError]:
         def attempt() -> Effect[None, PersistenceError]:
             try:
                 written = write(key, value, ttl)

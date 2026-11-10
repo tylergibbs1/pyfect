@@ -18,7 +18,7 @@ from pyfect._core import Effect, _Gen, _Succeed
 from pyfect._fiber import Fiber
 from pyfect.cause import Cause
 from pyfect.channel._sinks import make_pubsub
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import provide_service
 from pyfect.queue import Queue, Strategy
 from pyfect.rc_ref import RcRef
@@ -143,7 +143,7 @@ def share(
     capacity: Capacity,
     strategy: Strategy,
     replay: int | None,
-    idle_time_to_live: Duration | None,
+    idle_time_to_live: DurationInput | None,
 ) -> AnyEffect:
     from pyfect.stream._constructors import unwrap
 

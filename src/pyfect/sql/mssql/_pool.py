@@ -13,7 +13,7 @@ from typing import Any, Never
 
 from pyfect._core import Effect, _Succeed, _Suspend
 from pyfect._primitives import uninterruptible_mask
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.exit import Exit, Success
 from pyfect.pool import Pool
 from pyfect.process._os import Latch
@@ -93,7 +93,7 @@ def make(
     *,
     min_connections: int,
     max_connections: int,
-    ttl: Seconds,
+    ttl: Duration,
 ) -> Effect[Effect[MssqlConnection, SqlError, Scope], Never, Scope]:
     """A pool closed with the scope, as its checkout: a connection until the
     checkout's scope closes."""

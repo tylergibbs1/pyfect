@@ -97,14 +97,17 @@ from pyfect.cli._environment import Environment as CliEnvironment
 from pyfect.cli.global_flag import LogLevel
 from pyfect.context import Tag, TagEffect
 from pyfect.duration import (
-    ZERO,
     Duration,
-    Seconds,
     format_iso,
     from_input,
+    from_input_unsafe,
     from_iso,
+    millis,
     to_micros,
-    to_seconds,
+    zero,
+)
+from pyfect.duration import (
+    Input as DurationInput,
 )
 from pyfect.encoding import (
     EncodingError,
@@ -1203,25 +1206,25 @@ def check_deferred(d: fx.Deferred[int, str]) -> None:
 
 def check_durations(scheduler: SyncScheduler) -> None:
     # Durations are parsed once, at the boundary, into Seconds (never NaN).
-    assert_type(to_seconds(1.5), Seconds)
-    assert_type(from_input("1 second"), Seconds | None)
-    assert_type(from_iso("PT1S"), Seconds | None)
-    assert_type(format_iso(to_seconds(1)), str | None)
+    assert_type(from_input_unsafe(1.5), Duration)
+    assert_type(from_input("1 second"), Duration | None)
+    assert_type(from_iso("PT1S"), Duration | None)
+    assert_type(format_iso(from_input_unsafe(1)), str | None)
     assert_type(to_micros(1), float)
     assert_type(fx.fail("e").ignore(log="Unhandled"), fx.Effect[None])
     fx.fail("e").ignore(log="Handled")  # pyright: ignore[reportArgumentType]
-    assert_type(schedule.fibonacci(1), schedule.Schedule[Seconds])
+    assert_type(schedule.fibonacci(1), schedule.Schedule[Duration])
     # Arithmetic that keeps the unit stays Seconds, so it is not read again as milliseconds.
-    second = to_seconds("1 second")
-    assert_type(second + second, Seconds)
-    assert_type(second - ZERO, Seconds)
-    assert_type(second * 2, Seconds)
-    assert_type(2 * second, Seconds)
-    assert_type(second / 2, Seconds)
-    assert_type(-second, Seconds)
+    second = from_input_unsafe("1 second")
+    assert_type(second + second, Duration)
+    assert_type(second - zero, Duration)
+    assert_type(second * 2, Duration)
+    assert_type(2 * second, Duration)
+    assert_type(second / 2, Duration)
+    assert_type(-second, Duration)
     assert_type(second / second, float)
     assert_type(second + 1.0, float)
-    assert_type(fx.succeed(1).timed(), fx.Effect[tuple[Seconds, int]])
+    assert_type(fx.succeed(1).timed(), fx.Effect[tuple[Duration, int]])
     # A bare number is milliseconds, so it is never a Seconds.
     fx.testing.TestClock().sleep(second + 1.0)  # pyright: ignore[reportArgumentType]
     # Past the boundary, a raw float is rejected: it must go through to_seconds.
@@ -1239,9 +1242,9 @@ def check_schedule_constructors() -> None:
     assert_type(schedule.spaced(1), schedule.Schedule[int, object, Never, Never])
     assert_type(schedule.forever, schedule.Schedule[int])
     assert_type(schedule.once, schedule.Schedule[None])
-    assert_type(schedule.exponential(1), schedule.Schedule[Seconds])
-    assert_type(schedule.during(1), schedule.Schedule[Seconds])
-    assert_type(schedule.max(schedule.spaced(1), schedule.recurs(2)), schedule.Schedule[Seconds])
+    assert_type(schedule.exponential(1), schedule.Schedule[Duration])
+    assert_type(schedule.during(1), schedule.Schedule[Duration])
+    assert_type(schedule.max(schedule.spaced(1), schedule.recurs(2)), schedule.Schedule[Duration])
     ids: schedule.Schedule[str, str] = schedule.identity()
     assert_type(ids.passthrough(), schedule.Schedule[str, str])
     assert_type(ids.concat(schedule.spaced(1)), schedule.Schedule[str | int, str])
@@ -1280,14 +1283,14 @@ def check_schedule_combinators(s: schedule.Schedule[int, str]) -> None:
     _meta: schedule.Metadata[object, object] = schedule.Metadata[int, str](
         input="a",
         output=1,
-        duration=Seconds(0.0),
+        duration=millis(0),
         attempt=1,
         start=0.0,
         now=0.0,
-        elapsed=ZERO,
-        elapsed_since_previous=ZERO,
+        elapsed=zero,
+        elapsed_since_previous=zero,
     )
-    _decision: schedule.Decision[object] = schedule.Continue[int](1, Seconds(0.0))
+    _decision: schedule.Decision[object] = schedule.Continue[int](1, millis(0))
 
     # The predicate sees the schedule's own input and output types.
     def on_int_inputs(m: schedule.Metadata[int, int]) -> bool:
@@ -2229,7 +2232,7 @@ def check_clock() -> None:
         def monotonic_unsafe(self) -> float:
             return 0.0
 
-        def sleep(self, seconds: Seconds) -> fx.Effect[None]:
+        def sleep(self, seconds: Duration) -> fx.Effect[None]:
             return fx.void
 
     # A clock must also give whole nanoseconds.
@@ -2296,8 +2299,8 @@ def check_cron() -> None:
     # A cron is immutable.
     c.minutes = frozenset()  # pyright: ignore[reportAttributeAccessIssue]
     # Parsing can fail, so the schedule carries CronParseError.
-    assert_type(schedule.cron("*/5 * * * *"), schedule.Schedule[Seconds, object, CronParseError])
-    assert_type(schedule.cron(c), schedule.Schedule[Seconds, object, CronParseError])
+    assert_type(schedule.cron("*/5 * * * *"), schedule.Schedule[Duration, object, CronParseError])
+    assert_type(schedule.cron(c), schedule.Schedule[Duration, object, CronParseError])
     # A Cron carries its own zone, so a zone next to one is rejected (Effect's overloads).
     schedule.cron(c, "UTC")  # pyright: ignore[reportArgumentType]
 
@@ -2719,7 +2722,7 @@ def check_metric_constructors() -> None:
         metric.summary_with_timestamp("s", max_age=1, max_size=1, quantiles=[0.5]),
         metric.Metric[tuple[float, float], metric.SummaryState],
     )
-    assert_type(metric.timer("t"), metric.Metric[Duration, metric.HistogramState])
+    assert_type(metric.timer("t"), metric.Metric[DurationInput, metric.HistogramState])
     assert_type(metric.linear_boundaries(start=0, width=1, count=3), tuple[float, ...])
     metric.counter("c", attributes={"k": 1})  # pyright: ignore[reportArgumentType]
     metric.histogram("h")  # pyright: ignore[reportCallIssue]
@@ -3824,7 +3827,7 @@ def check_config_constructors() -> None:
     assert_type(config.integer("A"), fx.Config[int])
     assert_type(config.port("A"), fx.Config[int])
     assert_type(config.boolean("A"), fx.Config[bool])
-    assert_type(config.duration("A"), fx.Config[Seconds])
+    assert_type(config.duration("A"), fx.Config[Duration])
     assert_type(config.byte_size("A"), fx.Config[ByteSize])
     assert_type(config.date_time("A"), fx.Config[datetime])
     assert_type(config.url("A"), fx.Config[Url])
@@ -5125,7 +5128,7 @@ def check_process(
 
     command = process.make("echo", ["hello"], cwd="/tmp", force_kill_after=0.5)
     assert_type(command, process.StandardCommand)
-    assert_type(command.options.force_kill_after, Seconds | None)
+    assert_type(command.options.force_kill_after, Duration | None)
     assert_type(command.pipe_to(process.make("cat"), from_="stderr"), process.PipedCommand)
     assert_type(command.set_cwd("/"), process.Command)
     spawned: fx.Effect[ChildProcessHandle, fx.PlatformError, ChildProcessSpawner | fx.Scope] = (

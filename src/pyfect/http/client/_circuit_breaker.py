@@ -25,7 +25,7 @@ from pyfect.persistence.circuit_breaker import (
 )
 
 if TYPE_CHECKING:
-    from pyfect.duration import Seconds
+    from pyfect.duration import Duration
     from pyfect.persistence.circuit_breaker import (
         CircuitBreakerService,
         Classifier,
@@ -61,7 +61,7 @@ def _classify(exit: Exit[HttpClientResponse, object], now_millis: float) -> Outc
             return failure(retry_after=retry_after_of(exit.value, now_millis))
         return success if kind == "Success" else ignored
     failed = succeeded = False
-    retry_after: Seconds | None = None
+    retry_after: Duration | None = None
     for reason in exit.cause.reasons:
         if not isinstance(reason, Fail):
             continue

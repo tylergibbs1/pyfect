@@ -15,7 +15,7 @@ import pytest
 import pyfect as fx
 from pyfect import testing
 from pyfect.cause import Die
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 
 
 def _interrupted(ex: fx.Exit[Any, Any] | None) -> bool:
@@ -268,7 +268,7 @@ class _RecordingClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self.inner.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: Seconds) -> fx.Effect[None]:
+    def sleep(self, seconds: Duration) -> fx.Effect[None]:
         self.sleeps.append(seconds)
         return self.inner.sleep(seconds)
 

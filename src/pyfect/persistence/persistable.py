@@ -28,7 +28,7 @@ from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._json_value import JsonValue
 from pyfect.batching._request import Request
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.exit import Exit
 from pyfect.persistence._error import PersistenceError
 
@@ -81,7 +81,7 @@ class HasPersistableTypes[A, E](Protocol):
 
 type AnyPersistable = Persistable[Any, Any, Any]
 
-type TimeToLive[K, A, E] = Callable[[Exit[A, E], K], Duration]
+type TimeToLive[K, A, E] = Callable[[Exit[A, E], K], DurationInput]
 """How long to keep a request's outcome: a function of the ``Exit`` and
 the request. Zero or less keeps nothing; infinity keeps it forever."""
 

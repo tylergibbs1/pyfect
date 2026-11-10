@@ -9,7 +9,7 @@ from typing import Final, Never, Protocol
 from pyfect._core import Effect
 from pyfect._subscriber_queue import DEFAULT_CAPACITY
 from pyfect.context import Tag
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.persistence.redis._error import RedisError
 from pyfect.persistence.redis._script import RedisReply, Script
 from pyfect.queue import Dequeue
@@ -75,8 +75,8 @@ class PoolOptions:
 
     max_connections: int = 10
     min_connections: int = 0
-    idle_timeout: Duration = "60 seconds"
-    acquire_timeout: Duration | None = None
+    idle_timeout: DurationInput = "60 seconds"
+    acquire_timeout: DurationInput | None = None
 
 
 class Send(Protocol):

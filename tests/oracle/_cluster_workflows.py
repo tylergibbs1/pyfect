@@ -35,7 +35,7 @@ from pyfect.cluster.sharding import Sharding
 from pyfect.cluster.sharding_config import ShardingConfigService
 from pyfect.context import Tag
 from pyfect.date_time import now
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.rpc import make as make_rpc
 from pyfect.rpc._rpc import exit_schema
 from pyfect.scope import Scope
@@ -78,9 +78,9 @@ def config(**overrides: Any) -> ShardingConfigService:
             "available_shard_groups": ("default", "workflow"),
             "assigned_shard_groups": ("default", "workflow"),
             "entity_mailbox_capacity": 10,
-            "entity_termination_timeout": Seconds(0),
-            "entity_message_poll_interval": Seconds(5),
-            "send_retry_interval": Seconds(0.1),
+            "entity_termination_timeout": millis(0),
+            "entity_message_poll_interval": millis(5000),
+            "send_retry_interval": millis(100),
             **overrides,
         },
     )
@@ -138,7 +138,7 @@ def advance_until(
     for _ in range(rounds):
         if ready():
             break
-        yield from testing.adjust(Seconds(step))
+        yield from testing.adjust(Duration(step))
     assert ready(), message
 
 

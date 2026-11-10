@@ -16,7 +16,8 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Generic, Literal, Never, Protocol, Self, TypeVar, cast
 
 from pyfect._js import same_value
-from pyfect.duration import Duration, Seconds
+from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.option import Option
 
 if TYPE_CHECKING:
@@ -63,7 +64,7 @@ class Atom(Generic[A_co]):
         self.lazy = True
         self.equals: Callable[[Any, Any], bool] = same_value
         self.label: tuple[str, str] | None = None
-        self.idle_ttl: Seconds | None = None
+        self.idle_ttl: Duration | None = None
         self.initial_value_target: Atom[Any] | None = None
         self.serializable_info: SerializableInfo | None = None
         self.server_value: Callable[[Callable[[Atom[Any]], Any]], Any] | None = None
@@ -96,7 +97,7 @@ class Atom(Generic[A_co]):
         read."""
         return self._with(lazy=lazy)
 
-    def set_idle_ttl(self, duration: Duration) -> Self:
+    def set_idle_ttl(self, duration: DurationInput) -> Self:
         """Keep this atom ``duration`` after it is last used; an infinite
         duration keeps it alive."""
         from pyfect.reactivity.atom._combinators import set_idle_ttl
@@ -177,13 +178,13 @@ class Atom(Generic[A_co]):
 
         return with_fallback(self, fallback)
 
-    def debounce(self, duration: Duration) -> Atom[A_co]:
+    def debounce(self, duration: DurationInput) -> Atom[A_co]:
         """Changes reach this atom ``duration`` after the last one."""
         from pyfect.reactivity.atom._combinators import debounce
 
         return debounce(self, duration)
 
-    def with_refresh(self, duration: Duration) -> Atom[A_co]:
+    def with_refresh(self, duration: DurationInput) -> Atom[A_co]:
         """Refresh this atom ``duration`` after each build."""
         from pyfect.reactivity.atom._combinators import with_refresh
 
@@ -206,7 +207,7 @@ class Atom(Generic[A_co]):
     def swr[A, E](
         self: Atom[AsyncResult[A, E]],
         *,
-        stale_time: Duration,
+        stale_time: DurationInput,
         revalidate_on_mount: bool = True,
         revalidate_on_focus: bool | Literal["always"] = False,
         focus_signal: Atom[object] | None = None,
@@ -279,10 +280,10 @@ class Writable(Atom[A_co], Generic[A_co, W_contra]):
     # Derived through ``transform``, these stay writable (writes go to
     # this atom).
 
-    def debounce(self, duration: Duration) -> Writable[A_co, W_contra]:
+    def debounce(self, duration: DurationInput) -> Writable[A_co, W_contra]:
         return cast("Writable[A_co, W_contra]", super().debounce(duration))
 
-    def with_refresh(self, duration: Duration) -> Writable[A_co, W_contra]:
+    def with_refresh(self, duration: DurationInput) -> Writable[A_co, W_contra]:
         return cast("Writable[A_co, W_contra]", super().with_refresh(duration))
 
     def refresh_on_signal(self, signal: Atom[object]) -> Writable[A_co, W_contra]:
@@ -294,7 +295,7 @@ class Writable(Atom[A_co], Generic[A_co, W_contra]):
     def swr[A, E, W](
         self: Writable[AsyncResult[A, E], W],
         *,
-        stale_time: Duration,
+        stale_time: DurationInput,
         revalidate_on_mount: bool = True,
         revalidate_on_focus: bool | Literal["always"] = False,
         focus_signal: Atom[object] | None = None,

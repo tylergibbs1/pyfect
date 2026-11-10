@@ -16,7 +16,7 @@ from pyfect.http.request import HttpClientRequest, RequestOptions, UrlInput
 from pyfect.http.response import HttpClientResponse
 
 if TYPE_CHECKING:
-    from pyfect.duration import Duration
+    from pyfect.duration import Input as DurationInput
     from pyfect.http.client._rate_limit import RateLimitHeaders
     from pyfect.persistence.circuit_breaker import (
         CircuitBreakerError,
@@ -280,7 +280,7 @@ class HttpClientService[E, R = Never]:
             )
         )
 
-    def timeout(self, duration: Duration) -> HttpClientService[E | HttpClientError, R]:
+    def timeout(self, duration: DurationInput) -> HttpClientService[E | HttpClientError, R]:
         """Fail a request that gets no response within ``duration`` with an
         ``HttpClientError`` whose reason is a ``TransportError`` caused by a
         ``TimeoutException`` (which ``retry_transient`` retries). The request
@@ -295,7 +295,7 @@ class HttpClientService[E, R = Never]:
         self,
         *,
         limiter: RateLimiterService,
-        window: Duration,
+        window: DurationInput,
         limit: float,
         key: str | Callable[[HttpClientRequest], str],
         algorithm: Algorithm = "fixed-window",

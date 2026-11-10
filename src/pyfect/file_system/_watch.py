@@ -14,7 +14,7 @@ from typing import Any
 from pyfect import stream as stream_
 from pyfect._core import Effect
 from pyfect.clock import LiveClock
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.effect import gen, sync
 from pyfect.file_system._errors import run
 from pyfect.file_system._model import Create, Remove, Update, WatchEvent
@@ -79,7 +79,7 @@ def poll(
     directory: bool,
     recursive: bool,
     on_ready: Callable[[], None] | None,
-    interval: Seconds,
+    interval: Duration,
 ) -> Stream[WatchEvent, PlatformError]:
     """The changes under ``path``, found by listing it every ``interval``
     of real time (whatever ``Clock`` is provided)."""

@@ -11,7 +11,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect.cause import Die, Fail, UnhandledError
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.errors import TimeoutException
 
 log: list[str] = []
@@ -26,7 +26,7 @@ def _l(s: str) -> fx.Effect[str]:
 
 
 def _sleep(ms: int) -> fx.Effect[None]:
-    return fx.sleep(Seconds(ms / 1000))
+    return fx.sleep(Duration(ms / 1000))
 
 
 class _D(Exception):

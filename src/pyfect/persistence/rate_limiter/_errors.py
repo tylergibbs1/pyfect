@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pyfect import schema as S
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.persistence._seconds import SECONDS_FROM_MILLIS
 
 
@@ -13,7 +13,7 @@ class RateLimitExceeded(
     """A ``"fail"`` consume would go over ``limit`` for ``key``; retry
     after ``retry_after``."""
 
-    retry_after: Seconds = S.field(SECONDS_FROM_MILLIS, key="retryAfter")
+    retry_after: Duration = S.field(SECONDS_FROM_MILLIS, key="retryAfter")
     key: str
     limit: float = S.field(S.Finite)
     remaining: float = S.field(S.Finite)

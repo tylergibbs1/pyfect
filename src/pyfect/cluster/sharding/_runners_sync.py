@@ -17,7 +17,7 @@ from pyfect.cluster.runner import Runner
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.shard_id import ShardId
 from pyfect.context import Context
-from pyfect.duration import Seconds, to_millis
+from pyfect.duration import millis, to_millis
 from pyfect.effect import gen, succeed
 from pyfect.hash_ring import HashRing
 from pyfect.logger import log_debug, log_warning
@@ -198,7 +198,7 @@ def sync_loop(state: ShardingState) -> Effect[Never]:
 
     return (
         run.catch_cause(failed)
-        .repeat(spaced(Seconds(1)))
+        .repeat(spaced(millis(1000)))
         .annotate_logs(
             {
                 "module": "effect/cluster/Sharding",

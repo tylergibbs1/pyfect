@@ -11,7 +11,7 @@ from typing import Never
 
 import pyfect as fx
 from pyfect import layer, testing
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 
 
 def make_layer(key: str, acquired: list[str], released: list[str]) -> fx.Layer[Never]:
@@ -24,11 +24,11 @@ def make_layer(key: str, acquired: list[str], released: list[str]) -> fx.Layer[N
 
 
 def _short_or_long(key: str) -> float:
-    return Seconds(0.5) if key.startswith("short:") else Seconds(2)
+    return millis(500) if key.startswith("short:") else millis(2000)
 
 
 def _record_ttl(key: str) -> float:
-    return Seconds(0.5) if key == "short" else Seconds(2)
+    return millis(500) if key == "short" else millis(2000)
 
 
 @testing.effect
@@ -112,7 +112,7 @@ def test_make_preloads_only_keys_with_non_zero_idle_ttl():
         return make_layer(key, acquired, released)
 
     def ttl(key: str) -> float:
-        return 0 if key == "zero" else Seconds(1) if key == "finite" else math.inf
+        return 0 if key == "zero" else millis(1000) if key == "finite" else math.inf
 
     layer_map = yield from fx.LayerMap.make(
         lookup, preload_keys=["zero", "finite", "infinite"], idle_time_to_live=ttl

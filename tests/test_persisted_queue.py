@@ -16,7 +16,7 @@ from oracle import _redis
 import pyfect as fx
 from pyfect import schedule
 from pyfect import schema as S
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.latch import Latch
 from pyfect.persistence import persisted_queue as pq
 from pyfect.sql import sqlite
@@ -114,7 +114,7 @@ def test_a_failed_sql_offer_or_cleanup_fails_with_a_persisted_queue_error(tmp_pa
         queue = yield from pq.make(name="q", schema=S.String)
         store = yield from pq.PersistedQueueStore()
         errors.append((yield from queue.offer("a").flip()))
-        cleanup = store.cleanup(time_to_live=Seconds(1), failed_time_to_live=Seconds(1))
+        cleanup = store.cleanup(time_to_live=millis(1000), failed_time_to_live=millis(1000))
         errors.append((yield from cleanup.flip()))
 
     suite.run(_sqlite_without_table(tmp_path), body)
@@ -173,7 +173,7 @@ def test_retry_delays_replay_the_schedule_on_simulated_time() -> None:
         yield from take_fail
         for delay in (1, 2, 2):
             fiber = yield from take_fail.fork_scoped()
-            yield from fx.testing.adjust(Seconds(delay - 0.1))
+            yield from fx.testing.adjust(Duration(delay - 0.1))
             early = fiber.poll_unsafe() is not None
             yield from fx.testing.adjust("100 millis")
             on_time = fiber.poll_unsafe() is not None
@@ -213,7 +213,7 @@ def test_an_element_that_fails_to_decode_is_failed_at_once(
         yield from fx.testing.adjust("1 second")
         yield from fx.testing.with_live(fx.sleep("1100 millis"))
         yield from store_service.cleanup(
-            time_to_live=Seconds(86_400), failed_time_to_live=Seconds(0)
+            time_to_live=millis(86_400_000), failed_time_to_live=millis(0)
         )
         yield from queue.offer({"n": 2}, id="poison")
         again = queue.take(_succeed).timeout("3 seconds")

@@ -8,7 +8,8 @@ from collections.abc import Callable
 from typing import Any
 
 from pyfect._core import Effect, _Gen, _Sync
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe, millis, zero
 from pyfect.random import next as next_double
 from pyfect.result import Err, Ok, Result
 from pyfect.schedule._model import (
@@ -39,7 +40,7 @@ def map_effect[O, I, E, R, B, E2, R2](
             def body() -> Any:
                 decision = yield from step(now, input)
                 if isinstance(decision, Stop):
-                    m = meta.full(now, input, decision.output, Seconds(0.0))
+                    m = meta.full(now, input, decision.output, zero)
                     return Stop((yield from f(m)))
                 m = meta.full(now, input, decision.output, decision.delay)
                 return Continue((yield from f(m)), decision.delay)
@@ -89,7 +90,7 @@ def while_effect[O, I, E, R, E2, R2](
 
 
 def modify_delay[O, I, E, R, E2, R2](
-    schedule: Schedule[O, I, E, R], f: Callable[[Metadata[O, I]], Effect[Duration, E2, R2]]
+    schedule: Schedule[O, I, E, R], f: Callable[[Metadata[O, I]], Effect[DurationInput, E2, R2]]
 ) -> Schedule[O, I, E | E2, R | R2]:
     def wrap(step: StepFn[O, I, E, R], meta: _MetadataCounter) -> StepFn[O, I, E | E2, R | R2]:
         def modified(now: float, input: I) -> Effect[Decision[O], E | E2, R | R2]:
@@ -98,7 +99,7 @@ def modify_delay[O, I, E, R, E2, R2](
                 if isinstance(decision, Stop):
                     return decision
                 m = meta.full(now, input, decision.output, decision.delay)
-                return Continue(decision.output, to_seconds((yield from f(m))))
+                return Continue(decision.output, from_input_unsafe((yield from f(m))))
 
             return _Gen(body)
 
@@ -108,9 +109,9 @@ def modify_delay[O, I, E, R, E2, R2](
 
 
 def jittered[O, I, E, R](schedule: Schedule[O, I, E, R]) -> Schedule[O, I, E, R]:
-    def jitter(m: Metadata[O, I]) -> Effect[Duration]:
-        d = m.duration
-        return next_double().map(lambda r: d * 0.8 * (1 - r) + d * 1.2 * r)
+    def jitter(m: Metadata[O, I]) -> Effect[DurationInput]:
+        d = m.duration.to_millis()
+        return next_double().map(lambda r: millis(d * 0.8 * (1 - r) + d * 1.2 * r))
 
     return modify_delay(schedule, jitter)
 

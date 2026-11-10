@@ -27,7 +27,7 @@ from pyfect._os_wait import Resume, os_wait
 from pyfect.channel import Channel
 from pyfect.channel import unwrap as unwrap_channel
 from pyfect.context import Tag
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend, sync, void
 from pyfect.exit import Exit, Success
 from pyfect.latch import Latch
@@ -56,7 +56,7 @@ from pyfect.socket._socket import (
 )
 
 DEFAULT_HIGH_WATER_MARK = 64 * 1024
-DEFAULT_OPEN_TIMEOUT: Duration = "10 seconds"
+DEFAULT_OPEN_TIMEOUT: DurationInput = "10 seconds"
 DEFAULT_MAX_MESSAGE_SIZE = 100 * 1024 * 1024
 """The longest message pyfect's WebSocket servers and clients take (uvicorn's
 ``ws_max_size``); a longer one closes the connection with 1009."""
@@ -396,7 +396,7 @@ class _Current:
 def from_web_socket(
     acquire: Effect[WebSocketLike, SocketError, Scope],
     *,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     high_water_mark: int | None = None,
 ) -> SocketService:
     """A socket over the WebSocket each acquisition of the reader gets from
@@ -480,7 +480,7 @@ def from_web_socket(
 def make_web_socket(
     url: str | Effect[str],
     *,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     protocols: str | Sequence[str] | None = None,
     headers: Mapping[str, str] | None = None,
     high_water_mark: int | None = None,
@@ -506,7 +506,7 @@ def make_web_socket(
 def make_web_socket_channel[IE = Never](
     url: str,
     *,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     protocols: str | Sequence[str] | None = None,
     headers: Mapping[str, str] | None = None,
     high_water_mark: int | None = None,
@@ -537,7 +537,7 @@ def make_web_socket_channel[IE = Never](
 def layer_web_socket(
     url: str | Effect[str],
     *,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     protocols: str | Sequence[str] | None = None,
     headers: Mapping[str, str] | None = None,
     high_water_mark: int | None = None,

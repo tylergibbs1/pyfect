@@ -15,7 +15,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.sql.mssql.types import DataType, ParameterOptions
 
 type Column = tuple[str, object]
@@ -48,9 +48,9 @@ class ConnectOptions:
     password: str | None
     encrypt: bool
     trust_server: bool
-    connect_timeout: Seconds
-    cancel_timeout: Seconds
-    connection_retry_interval: Seconds
+    connect_timeout: Duration
+    cancel_timeout: Duration
+    connection_retry_interval: Duration
     max_retries_on_transient_errors: int
 
 

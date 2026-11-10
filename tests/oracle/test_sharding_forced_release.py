@@ -32,7 +32,7 @@ from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.shard_id import make as shard
 from pyfect.cluster.snowflake import Snowflake
 from pyfect.context import Context
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.layer import Layer
 
 from . import _cluster_entities as entities
@@ -71,22 +71,22 @@ def _graceful_handoff_sharding(state: FailoverState) -> Layer[Any]:
     return _entity_sharding(
         state,
         shards_per_group=1,
-        entity_termination_timeout=Seconds(1),
-        entity_message_poll_interval=Seconds(0.01),
-        refresh_assignments_interval=Seconds(0.01),
-        send_retry_interval=Seconds(0.01),
+        entity_termination_timeout=millis(1000),
+        entity_message_poll_interval=millis(10),
+        refresh_assignments_interval=millis(10),
+        send_retry_interval=millis(10),
     )
 
 
 def _forced_release_sharding(state: FailoverState, **changes: Any) -> Layer[Any]:
     defaults: dict[str, Any] = {
         "shards_per_group": 1,
-        "shard_lock_expiration": Seconds(0.3),
-        "shard_lock_refresh_interval": Seconds(1),
-        "entity_termination_timeout": Seconds(0),
-        "entity_message_poll_interval": Seconds(0.01),
-        "refresh_assignments_interval": Seconds(0.01),
-        "send_retry_interval": Seconds(0.01),
+        "shard_lock_expiration": millis(300),
+        "shard_lock_refresh_interval": millis(1000),
+        "entity_termination_timeout": millis(0),
+        "entity_message_poll_interval": millis(10),
+        "refresh_assignments_interval": millis(10),
+        "send_retry_interval": millis(10),
     }
     return _entity_sharding(state, **(defaults | changes))
 
@@ -124,12 +124,12 @@ def test_keeps_the_graceful_timeout_and_records_release_duration_across_retries_
         state,
         sharding.layer.pipe(fx.layer.provide(update_storage(track))),
         shards_per_group=1,
-        shard_lock_expiration=Seconds(3),
-        shard_lock_refresh_interval=Seconds(0.1),
-        entity_termination_timeout=Seconds(1),
-        entity_message_poll_interval=Seconds(0.01),
-        refresh_assignments_interval=Seconds(0.01),
-        send_retry_interval=Seconds(0.01),
+        shard_lock_expiration=millis(3000),
+        shard_lock_refresh_interval=millis(100),
+        entity_termination_timeout=millis(1000),
+        entity_message_poll_interval=millis(10),
+        refresh_assignments_interval=millis(10),
+        send_retry_interval=millis(10),
     )
 
     @fx.gen
@@ -346,7 +346,7 @@ def test_does_not_register_an_entity_built_after_shard_release():
     yield from fx.scoped(body).pipe(
         fx.provide(
             _forced_release_sharding(
-                state, shard_lock_expiration=Seconds(3), shard_lock_refresh_interval=Seconds(0.1)
+                state, shard_lock_expiration=millis(3000), shard_lock_refresh_interval=millis(100)
             )
         )
     )

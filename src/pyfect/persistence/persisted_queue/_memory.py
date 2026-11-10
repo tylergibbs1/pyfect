@@ -9,7 +9,7 @@ from typing import Any, Literal, Never
 
 from pyfect._core import Effect
 from pyfect.clock import ClockService, clock_with, sleep
-from pyfect.duration import Seconds, to_millis
+from pyfect.duration import Duration, to_millis
 from pyfect.effect import gen, succeed, sync, void
 from pyfect.exit import Exit, Success
 from pyfect.latch import Latch
@@ -69,7 +69,7 @@ class _MemoryStore:
         id: str,
         element: object,
         is_custom_id: bool,
-        delay: Seconds | None = None,
+        delay: Duration | None = None,
     ) -> Effect[None, PersistedQueueError]:
         def run() -> None:
             now = now_millis(self._clock)
@@ -99,7 +99,7 @@ class _MemoryStore:
             queue.pending[entry] = None
             queue.latch.open_unsafe()
 
-        def retry_after(delay: Seconds) -> None:
+        def retry_after(delay: Duration) -> None:
             entry.visible_at = now + to_millis(delay)
             requeue()
 
@@ -151,7 +151,7 @@ class _MemoryStore:
         return gen(body)
 
     def cleanup(
-        self, *, time_to_live: Seconds, failed_time_to_live: Seconds | None
+        self, *, time_to_live: Duration, failed_time_to_live: Duration | None
     ) -> Effect[None, PersistedQueueError]:
         def run() -> None:
             now = now_millis(self._clock)

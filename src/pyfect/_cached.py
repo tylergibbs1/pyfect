@@ -10,7 +10,6 @@ next caller starts afresh. An interrupted run is never cached.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
 from typing import Any, Final
 
@@ -27,12 +26,13 @@ from pyfect._core import (
 from pyfect._fiber import Fiber
 from pyfect.cause import Cause
 from pyfect.clock import Clock, ClockService
-from pyfect.duration import Duration, Seconds, nanos_or_infinite, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, infinity, nanos_or_infinite
+from pyfect.duration import Input as DurationInput
 from pyfect.exit import Exit, Failure, Success
 
-type TimeToLive[A, E] = Duration | Callable[[Exit[A, E]], Duration]
+type TimeToLive[A, E] = DurationInput | Callable[[Exit[A, E]], DurationInput]
 
-_FOREVER: Final = Seconds(math.inf)
+_FOREVER: Final = infinity
 
 
 def cached[A, E, R](source: Effect[A, E, R]) -> Effect[Effect[A, E, R]]:
@@ -51,12 +51,12 @@ def cached_invalidate_with_ttl[A, E, R](
     if callable(time_to_live):
         pick = time_to_live
 
-        def ttl(ex: Exit[A, E]) -> Seconds:
-            return to_seconds(pick(ex))
+        def ttl(ex: Exit[A, E]) -> Duration:
+            return from_input_unsafe(pick(ex))
     else:
-        fixed = to_seconds(time_to_live)
+        fixed = from_input_unsafe(time_to_live)
 
-        def ttl(ex: Exit[A, E]) -> Seconds:
+        def ttl(ex: Exit[A, E]) -> Duration:
             return fixed
 
     def make() -> tuple[Effect[A, E, R], Effect[None]]:
@@ -80,7 +80,7 @@ class _Run:
 class _Cache[A, E, R]:
     __slots__ = ("current", "exit", "expires_at", "get", "invalidate", "source", "ttl")
 
-    def __init__(self, source: Effect[A, E, R], ttl: Callable[[Exit[A, E]], Seconds]) -> None:
+    def __init__(self, source: Effect[A, E, R], ttl: Callable[[Exit[A, E]], Duration]) -> None:
         self.source = source
         self.ttl = ttl
         self.exit: Exit[A, E] | None = None

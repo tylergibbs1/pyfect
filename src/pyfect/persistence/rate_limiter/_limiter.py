@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Any, Final, Literal, Never, Protocol, overload
@@ -12,7 +11,8 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.clock import sleep as clock_sleep
 from pyfect.context import Tag
-from pyfect.duration import ZERO, Duration, Seconds, to_millis, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, infinity, to_millis, zero
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -42,20 +42,20 @@ class ConsumeResult:
     an ``int`` whatever the store computed it with, as Effect's stores all
     give the same JavaScript number."""
 
-    delay: Seconds
+    delay: Duration
     limit: float
     remaining: float
-    reset_after: Seconds
+    reset_after: Duration
 
     def __post_init__(self) -> None:
         if isinstance(self.remaining, float) and self.remaining.is_integer():
             object.__setattr__(self, "remaining", int(self.remaining))
 
 
-_FOREVER: Final = Seconds(math.inf)
+_FOREVER: Final = infinity
 
 
-def _exceeded(key: str, retry_after: Seconds, limit: float) -> Effect[Never, RateLimiterError]:
+def _exceeded(key: str, retry_after: Duration, limit: float) -> Effect[Never, RateLimiterError]:
     return fail(
         RateLimiterError(
             reason=RateLimitExceeded(key=key, retry_after=retry_after, limit=limit, remaining=0)
@@ -76,7 +76,7 @@ class RateLimiterService:
         *,
         key: str,
         limit: float,
-        window: Duration,
+        window: DurationInput,
         algorithm: Algorithm = "fixed-window",
         on_exceeded: OnExceeded = "fail",
         tokens: float = 1,
@@ -94,7 +94,7 @@ class RateLimiterService:
             return _exceeded(key, millis(window_millis), limit)
         if limit <= 0:
             # A limit that never refills: answered without the store.
-            wait = _FOREVER if exceeded else ZERO
+            wait = _FOREVER if exceeded else zero
             return succeed(ConsumeResult(wait, limit, limit - tokens, wait))
         refill = divide_millis(window_millis, limit)
         if algorithm == "fixed-window":
@@ -124,11 +124,11 @@ class RateLimiterService:
                 remaining = limit - count
                 if remaining < 0:
                     return _exceeded(key, millis(ttl), limit)
-                return succeed(ConsumeResult(ZERO, limit, remaining, millis(ttl)))
+                return succeed(ConsumeResult(zero, limit, remaining, millis(ttl)))
             elapsed = count * refill - ttl
             window_number = js.floor(js.divide(count - 1, limit))
             wait = window_number * window_millis - elapsed
-            delay = ZERO if wait <= 0 else millis(wait)
+            delay = zero if wait <= 0 else millis(wait)
             return succeed(ConsumeResult(delay, limit, limit - count, millis(ttl)))
 
         return self._store.fixed_window(
@@ -158,7 +158,7 @@ class RateLimiterService:
         ).flat_map(result)
 
     def adaptive_consume(
-        self, *, key: str, tokens: float, fallback_limit: float, fallback_window: Duration
+        self, *, key: str, tokens: float, fallback_limit: float, fallback_window: DurationInput
     ) -> Effect[AdaptiveConsumeResult, RateLimiterError]:
         """Ask to send ``tokens`` to a server that limits ``key`` by
         ``429`` responses: no delay until one comes, then wait out its
@@ -169,7 +169,7 @@ class RateLimiterService:
             key=key,
             tokens=tokens,
             fallback_limit=fallback_limit,
-            fallback_window=to_seconds(fallback_window),
+            fallback_window=from_input_unsafe(fallback_window),
         )
 
     def adaptive_feedback(
@@ -179,7 +179,7 @@ class RateLimiterService:
         epoch: int,
         tokens: float,
         status: int,
-        retry_after: Duration | None,
+        retry_after: DurationInput | None,
     ) -> Effect[None, RateLimiterError]:
         """Report the response to an ``adaptive_consume``: only a ``429``
         with a ``retry_after`` changes anything, and only for the epoch it
@@ -189,7 +189,7 @@ class RateLimiterService:
             epoch=epoch,
             tokens=tokens,
             status=status,
-            retry_after=None if retry_after is None else to_seconds(retry_after),
+            retry_after=None if retry_after is None else from_input_unsafe(retry_after),
         )
 
 
@@ -242,7 +242,7 @@ class WithRateLimiter:
         *,
         key: str,
         limit: float,
-        window: Duration,
+        window: DurationInput,
         algorithm: Algorithm = "fixed-window",
         on_exceeded: OnExceeded = "fail",
         tokens: float = 1,
@@ -281,7 +281,7 @@ class Sleep(Protocol):
         *,
         key: str,
         limit: float,
-        window: Duration,
+        window: DurationInput,
         algorithm: Algorithm = "fixed-window",
         tokens: float = 1,
     ) -> Effect[ConsumeResult, RateLimiterError]: ...
@@ -296,7 +296,7 @@ def sleep(
     *,
     key: str,
     limit: float,
-    window: Duration,
+    window: DurationInput,
     algorithm: Algorithm = "fixed-window",
     tokens: float = 1,
 ) -> Effect[ConsumeResult, RateLimiterError]: ...
@@ -306,7 +306,7 @@ def sleep(
     *,
     key: str | None = None,
     limit: float = 0,
-    window: Duration = "0 millis",
+    window: DurationInput = "0 millis",
     algorithm: Algorithm = "fixed-window",
     tokens: float = 1,
 ) -> Sleep | Effect[ConsumeResult, RateLimiterError]:
@@ -319,7 +319,7 @@ def sleep(
             *,
             key: str,
             limit: float,
-            window: Duration,
+            window: DurationInput,
             algorithm: Algorithm = "fixed-window",
             tokens: float = 1,
         ) -> Effect[ConsumeResult, RateLimiterError]:

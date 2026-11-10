@@ -15,7 +15,6 @@ full. Closing the scope that made the map releases every entry.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Hashable
 from typing import Any, Final, Never, overload
 
@@ -37,13 +36,14 @@ from pyfect.clock import Clock, ClockService
 from pyfect.context import Context
 from pyfect.deferred import Deferred
 from pyfect.duration import (
-    ZERO,
     Duration,
-    Seconds,
-    from_nanos,
+    from_input_unsafe,
+    nanos,
     nanos_or_infinite,
-    to_nanos,
-    to_seconds,
+    zero,
+)
+from pyfect.duration import (
+    Input as DurationInput,
 )
 from pyfect.effect import fail, from_exit, interrupt
 from pyfect.errors import ExceededCapacityError
@@ -55,7 +55,7 @@ from pyfect.scope import CloseableScope, Scope
 _VOID: Final[Effect[None]] = _Succeed(None)
 _DONE: Final[Exit[None, Never]] = Success(None)
 
-type IdleTimeToLive[K] = Duration | Callable[[K], Duration]
+type IdleTimeToLive[K] = DurationInput | Callable[[K], DurationInput]
 """A duration for every key, or one per key."""
 
 
@@ -70,7 +70,7 @@ class _Entry[A, E]:
         "scope",
     )
 
-    def __init__(self, idle_time_to_live: Seconds) -> None:
+    def __init__(self, idle_time_to_live: Duration) -> None:
         self.deferred: Deferred[A, E] = Deferred()
         self.scope = CloseableScope()
         self.idle_time_to_live = idle_time_to_live
@@ -90,7 +90,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         lookup: Callable[[K], Effect[A, E, Any]],
         context: Context,
         scope: CloseableScope,
-        idle_time_to_live: Callable[[K], Seconds],
+        idle_time_to_live: Callable[[K], Duration],
         capacity: int | None,
     ) -> None:
         self._lookup = lookup
@@ -218,7 +218,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
 
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
             entry = None if self._entries is None else self._entries.get(key)
-            if entry is not None and entry.idle_time_to_live != 0:
+            if entry is not None and not entry.idle_time_to_live.is_zero():
                 clock: ClockService = fiber._context.lookup(Clock)[1]
                 entry.expires_at = clock.monotonic_nanos_unsafe() + nanos_or_infinite(
                     entry.idle_time_to_live
@@ -303,13 +303,13 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         if entries is None or entries.get(key) is not entry:
             return _close_entry(entry)
         ttl = entry.idle_time_to_live
-        if ttl == 0:
+        if ttl.is_zero():
             del entries[key]
             return _close_entry(entry)
-        if math.isinf(ttl):
+        if not ttl.is_finite():
             return _VOID
         clock: ClockService = fiber._context.lookup(Clock)[1]
-        entry.expires_at = clock.monotonic_nanos_unsafe() + to_nanos(ttl)
+        entry.expires_at = clock.monotonic_nanos_unsafe() + ttl.to_nanos_unsafe()
         if entry.fiber is not None:
             return _VOID
 
@@ -317,7 +317,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
             def check() -> Effect[None]:
                 remaining = entry.expires_at - clock.monotonic_nanos_unsafe()
                 if remaining > 0:
-                    return restore(clock.sleep(from_nanos(remaining))).and_then(_Suspend(check))
+                    return restore(clock.sleep(nanos(remaining))).and_then(_Suspend(check))
                 current = self._entries
                 if current is None or entry.ref_count > 0 or current.get(key) is not entry:
                     return _VOID
@@ -362,11 +362,11 @@ def _close_entry(entry: _Entry[Any, Any]) -> Effect[None]:
     return closing if entry.fiber is None else entry.fiber.interrupt().and_then(closing)
 
 
-def _idle_time_to_live[K](ttl: IdleTimeToLive[K] | None) -> Callable[[K], Seconds]:
+def _idle_time_to_live[K](ttl: IdleTimeToLive[K] | None) -> Callable[[K], Duration]:
     if callable(ttl):
         pick = ttl
-        return lambda key: to_seconds(pick(key))
-    fixed = ZERO if ttl is None else to_seconds(ttl)
+        return lambda key: from_input_unsafe(pick(key))
+    fixed = zero if ttl is None else from_input_unsafe(ttl)
     return lambda _: fixed
 
 

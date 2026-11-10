@@ -10,7 +10,8 @@ from typing import Final, Protocol
 
 from pyfect._core import Effect
 from pyfect.context import Tag
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, millis
+from pyfect.duration import Input as DurationInput
 from pyfect.latch import Latch
 from pyfect.persistence.persisted_queue._error import PersistedQueueError
 from pyfect.schedule import Schedule, exponential, min, spaced
@@ -35,7 +36,7 @@ class TakeOptions:
 
     name: str
     max_attempts: int
-    retry_delay: Callable[[int], Effect[Seconds]]
+    retry_delay: Callable[[int], Effect[Duration]]
 
 
 class Offer(Protocol):
@@ -50,7 +51,7 @@ class Offer(Protocol):
         id: str,
         element: object,
         is_custom_id: bool,
-        delay: Seconds | None = None,
+        delay: Duration | None = None,
     ) -> Effect[None, PersistedQueueError]: ...
 
 
@@ -59,7 +60,7 @@ class Cleanup(Protocol):
     de-duplication records; failed ones only with ``failed_time_to_live``."""
 
     def __call__(
-        self, *, time_to_live: Seconds, failed_time_to_live: Seconds | None
+        self, *, time_to_live: Duration, failed_time_to_live: Duration | None
     ) -> Effect[None, PersistedQueueError]: ...
 
 
@@ -119,29 +120,29 @@ class QueueStates:
         return state
 
 
-def ack_retry_schedule(lock_expiration: Seconds) -> Schedule[object, object]:
+def ack_retry_schedule(lock_expiration: Duration) -> Schedule[object, object]:
     """How a store retries settling an element: backing off from 200 ms to
     5 s, for as long as the element's lock lasts."""
     return min(exponential("200 millis", 1.5), spaced("5 seconds")).up_to(duration=lock_expiration)
 
 
-def store_interval(duration: Duration, default: Seconds) -> Seconds:
+def store_interval(duration: DurationInput, default: Duration) -> Duration:
     """A store's interval option as Effect reads it (``options.x ? x :
     default``): zero means ``default``; anything else is at least a
     millisecond."""
-    seconds = to_seconds(duration)
+    seconds = from_input_unsafe(duration)
     if seconds == 0:
         return default
-    return seconds if seconds >= 0.001 else Seconds(0.001)
+    return seconds if seconds >= 0.001 else millis(1)
 
 
-def positive_delay(delay: Duration | None) -> Seconds | None:
+def positive_delay(delay: DurationInput | None) -> Duration | None:
     """A delay a store sees: ``None`` for none, zero or negative."""
     if delay is None:
         return None
-    seconds = to_seconds(delay)
+    seconds = from_input_unsafe(delay)
     return seconds if seconds > 0 else None
 
 
-def is_infinite(delay: Seconds | None) -> bool:
+def is_infinite(delay: Duration | None) -> bool:
     return delay is not None and math.isinf(delay)

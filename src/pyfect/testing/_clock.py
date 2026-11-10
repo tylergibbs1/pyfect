@@ -6,6 +6,7 @@ from __future__ import annotations
 import heapq
 import itertools
 import math
+import sys
 import warnings
 from collections.abc import Callable, Generator
 from typing import Any, Never
@@ -13,16 +14,11 @@ from typing import Any, Never
 from pyfect._core import Effect, _Callback, _Gen, _Succeed, _Sync, _WithFiber, _YieldNow
 from pyfect._effect_args import require_effect
 from pyfect._fiber import Fiber
+from pyfect._timestamps import millis_to_nanos
 from pyfect._wake_tracking import WakeTracker
 from pyfect.clock import Clock, ClockService, LiveClock
-from pyfect.duration import (
-    Duration,
-    Seconds,
-    add_nanos,
-    millis_to_nanos,
-    nanos_or_infinite,
-    to_seconds,
-)
+from pyfect.duration import Duration, from_input_unsafe, nanos_or_infinite
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import provide_service
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -66,7 +62,22 @@ def _timestamp_nanos(millis: float) -> int | float:
         return 0
     if math.isinf(millis):
         return millis
-    return add_nanos(millis_to_nanos(millis), 0)
+    return _add_nanos(millis_to_nanos(millis), 0)
+
+
+_MAX_NANOS = math.floor(sys.float_info.max)
+
+
+def _in_float_range(nanos: int | float) -> int | float:
+    """A count past float range as the infinity it saturates to, as JavaScript's
+    millisecond timestamps do."""
+    if isinstance(nanos, int) and abs(nanos) > _MAX_NANOS:
+        return math.inf if nanos > 0 else -math.inf
+    return nanos
+
+
+def _add_nanos(a: int | float, b: int | float) -> int | float:
+    return _in_float_range(_in_float_range(a) + _in_float_range(b))
 
 
 class _Sleeper:
@@ -87,7 +98,7 @@ class _NotAdvanced:
         self._done = False
         self._cancel: Cancel | None = None
 
-    def arm(self, scheduler: Scheduler, delay: Seconds) -> None:
+    def arm(self, scheduler: Scheduler, delay: Duration) -> None:
         if self._done or self._cancel is not None:
             return
 
@@ -125,7 +136,7 @@ class TestClock:
         self,
         start: float = 0,
         *,
-        warning_delay: Duration = "1 second",
+        warning_delay: DurationInput = "1 second",
         live: ClockService | None = None,
     ) -> None:
         if not math.isfinite(start):
@@ -136,13 +147,13 @@ class TestClock:
         self._monotonic_ns = start_ns
         self._sleepers: list[tuple[float, int, _Sleeper]] = []
         self._seq = itertools.count()
-        self._warning_delay = to_seconds(warning_delay)
+        self._warning_delay = from_input_unsafe(warning_delay)
         self._live = live or LiveClock()
         self._not_advanced = _NotAdvanced()
         self._moving = Semaphore(1)
 
     @staticmethod
-    def layer(*, warning_delay: Duration = "1 second") -> Layer[Never]:
+    def layer(*, warning_delay: DurationInput = "1 second") -> Layer[Never]:
         """Provide a fresh ``TestClock`` as the ``Clock``. Its ``with_live``
         uses the clock that was current when the layer was built."""
 
@@ -171,10 +182,10 @@ class TestClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self._monotonic_ns
 
-    def sleep(self, seconds: Seconds) -> Effect[None]:
+    def sleep(self, duration: Duration) -> Effect[None]:
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
             def register(resume: Callable[[Effect[None]], None]) -> Effect[None] | None:
-                end = add_nanos(self._timestamp_ns, nanos_or_infinite(seconds))
+                end = _add_nanos(self._timestamp_ns, nanos_or_infinite(duration))
                 if end <= self._timestamp_ns:
                     resume(_Succeed(None))
                     return None
@@ -193,13 +204,13 @@ class TestClock:
 
     # --- moving time ------------------------------------------------------------------
 
-    def adjust(self, duration: Duration) -> Effect[None]:
+    def adjust(self, duration: DurationInput) -> Effect[None]:
         """Move time forward by ``duration``, waking sleepers in order.
         Before moving, and after each wake-up, wait for the woken fiber and
         the work it starts to suspend, work on other threads included
         (``fx.blocking``, SQLite and HTTP calls)."""
-        delta = nanos_or_infinite(to_seconds(duration))
-        return self._move(lambda now: add_nanos(now, delta))
+        delta = nanos_or_infinite(from_input_unsafe(duration))
+        return self._move(lambda now: _add_nanos(now, delta))
 
     def set_time(self, timestamp: float) -> Effect[None]:
         """Set wall time to ``timestamp`` (milliseconds since the epoch, as
@@ -308,7 +319,7 @@ def test_clock() -> Effect[TestClock]:
     return Clock().flat_map(check)
 
 
-def adjust(duration: Duration) -> Effect[None]:
+def adjust(duration: DurationInput) -> Effect[None]:
     """Move the test clock forward by ``duration``."""
     return test_clock().flat_map(lambda c: c.adjust(duration))
 

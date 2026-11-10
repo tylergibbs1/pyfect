@@ -9,7 +9,7 @@ from typing import Protocol
 
 from pyfect._core import Effect
 from pyfect.context import Tag
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.persistence.circuit_breaker._errors import CircuitBreakerError
 from pyfect.persistence.circuit_breaker._types import (
     Admission,
@@ -34,7 +34,7 @@ class Record(Protocol):
         generation: int,
         outcome: OutcomeKind,
         trip_policy: TripPolicy,
-        open_for: Seconds,
+        open_for: Duration,
     ) -> Effect[Transition | None, CircuitBreakerError]: ...
 
 

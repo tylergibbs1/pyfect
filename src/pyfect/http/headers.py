@@ -23,7 +23,8 @@ from typing import ClassVar, Literal, cast, final
 from pyfect import _json_text
 from pyfect._digits import is_digits, parse_digits
 from pyfect.context import Reference
-from pyfect.duration import ZERO, Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, zero
+from pyfect.duration import Input as DurationInput
 from pyfect.errors import TaggedError
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok, Result
@@ -251,7 +252,7 @@ def format_http_date(value: datetime) -> str:
 class RetryAfterDuration:
     """A ``Retry-After`` of a delay."""
 
-    duration: Seconds
+    duration: Duration
     tag: ClassVar[Literal["Duration"]] = "Duration"
 
 
@@ -267,13 +268,13 @@ class RetryAfterDateTime:
 type RetryAfter = RetryAfterDuration | RetryAfterDateTime
 
 
-def retry_after_duration(duration: Duration) -> RetryAfterDuration:
+def retry_after_duration(duration: DurationInput) -> RetryAfterDuration:
     """A ``Retry-After`` of ``duration``; negative is zero, infinite raises
     ``ValueError``."""
-    seconds = to_seconds(duration)
+    seconds = from_input_unsafe(duration)
     if math.isinf(seconds):
         raise ValueError("Cannot create a Retry-After value from an infinite duration")
-    return RetryAfterDuration(ZERO if seconds < 0 else seconds)
+    return RetryAfterDuration(zero if seconds < 0 else seconds)
 
 
 def retry_after_date_time(date_time: datetime) -> RetryAfterDateTime:
@@ -292,7 +293,7 @@ def parse_retry_after(input: str) -> Result[RetryAfter, HeaderParseError]:
         whole = parse_digits(trimmed)
         if whole is None or whole > _MAX_SECONDS:
             return Err(HeaderParseError.from_reason("InvalidRetryAfter", input))
-        return Ok(RetryAfterDuration(Seconds(float(whole))))
+        return Ok(RetryAfterDuration(Duration(float(whole))))
     parsed = _http_date(trimmed)
     if parsed is None:
         return Err(HeaderParseError.from_reason("InvalidRetryAfter", input))
@@ -308,7 +309,7 @@ def format_retry_after(value: RetryAfter) -> str:
             return format_http_date(date_time)
 
 
-def retry_after_delay(value: RetryAfter, now_millis: float) -> Seconds:
+def retry_after_delay(value: RetryAfter, now_millis: float) -> Duration:
     """How long to wait from ``now_millis`` (epoch milliseconds); never
     negative."""
     match value:
@@ -316,7 +317,7 @@ def retry_after_delay(value: RetryAfter, now_millis: float) -> Seconds:
             return duration
         case RetryAfterDateTime(date_time):
             millis = (date_time - _EPOCH) // timedelta(milliseconds=1)
-            return Seconds(max(0.0, millis - now_millis) / 1000)
+            return Duration(max(0.0, millis - now_millis) / 1000)
 
 
 __all__ = [

@@ -13,7 +13,8 @@ from pyfect.cause import Cause, Die
 from pyfect.cause import die as die_cause
 from pyfect.channel import transform_pull
 from pyfect.clock import Clock, ClockService, sleep
-from pyfect.duration import Duration, from_nanos, nanos_or_infinite, round_nanos, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe, from_nanos, nanos_or_infinite, round_nanos
 from pyfect.latch import Latch
 from pyfect.schedule import Schedule
 from pyfect.schedule._model import Stop, to_step_with_sleep
@@ -72,11 +73,11 @@ class _TimedOut(Exception):
 
 
 def timeout_or_else(
-    self: AnyStream, duration: Duration, or_else: Callable[[], AnyStream] | None
+    self: AnyStream, duration: DurationInput, or_else: Callable[[], AnyStream] | None
 ) -> AnyStream_:
     from pyfect.stream._constructors import empty, from_effect_drain, suspend, unwrap
 
-    seconds = to_seconds(duration)
+    seconds = from_input_unsafe(duration)
     fallback: Callable[[], AnyStream] = or_else or (lambda: empty)
     if math.isinf(seconds) and seconds > 0:
         return Stream(self._channel)
@@ -129,8 +130,8 @@ def timeout_or_else(
 # --- debouncing ---------------------------------------------------------------
 
 
-def debounce(self: AnyStream, duration: Duration) -> AnyStream_:
-    wait_ns = nanos_or_infinite(to_seconds(duration))
+def debounce(self: AnyStream, duration: DurationInput) -> AnyStream_:
+    wait_ns = nanos_or_infinite(from_input_unsafe(duration))
 
     def build(pull: AnyEffect, scope: CloseableScope) -> AnyEffect:
         def body() -> Generator[AnyEffect, Any, AnyEffect]:
@@ -203,12 +204,12 @@ def throttle(
     self: AnyStream,
     cost: Callable[[Chunk], AnyEffect],
     units: float,
-    duration: Duration,
+    duration: DurationInput,
     *,
     burst: float,
     strategy: str,
 ) -> AnyStream_:
-    seconds = to_seconds(duration)
+    seconds = from_input_unsafe(duration)
     period_ns = nanos_or_infinite(seconds)
     cap = math.inf if units + burst < 0 else units + burst
     if strategy == "enforce":

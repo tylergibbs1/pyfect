@@ -12,7 +12,7 @@ from pyfect._core import Effect, _Suspend
 from pyfect.cause import Cause
 from pyfect.clock import Clock, ClockService
 from pyfect.context import Reference
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.exit import Exit, Failure
 
 E_co = TypeVar("E_co", covariant=True)
@@ -52,7 +52,7 @@ class AttemptSuccess:
     attempt: int
     step_attempt: int
     step_index: int
-    duration: Seconds
+    duration: Duration
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +63,7 @@ class AttemptFailure(Generic[E_co]):
     attempt: int
     step_attempt: int
     step_index: int
-    duration: Seconds
+    duration: Duration
     cause: Cause[E_co]
 
 
@@ -115,7 +115,9 @@ class EventEmitter:
 
     def end(self, state: AttemptState, ex: Exit[Any, Any]) -> Effect[None, Never, Any]:
         def finish(clock: ClockService) -> Effect[None, Never, Any]:
-            duration = Seconds((clock.monotonic_nanos_unsafe() - state.start_nanos) / 1_000_000_000)
+            duration = Duration(
+                (clock.monotonic_nanos_unsafe() - state.start_nanos) / 1_000_000_000
+            )
             event: Event[Any] = (
                 AttemptFailure(
                     state.attempt, state.step_attempt, state.step_index, duration, ex.cause

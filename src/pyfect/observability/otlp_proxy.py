@@ -28,7 +28,7 @@ from pyfect import byte_size
 from pyfect import layer as _layer
 from pyfect._digits import parse_digits
 from pyfect.byte_size import ByteSize
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import Effect, gen, provide_service, succeed
 from pyfect.errors import TimeoutException
 from pyfect.http import headers as _headers
@@ -98,7 +98,7 @@ def _make_handler(
     url: str,
     headers: _headers.Input | None,
     max_body_size: byte_size.Input | None,
-    timeout: Duration | None,
+    timeout: DurationInput | None,
 ) -> Handler:
     # Skips the outbound span and trace headers in one step.
     upstream = client.pipe(transform_response(provide_service(TracerDisabledWhen, lambda _: True)))
@@ -156,7 +156,7 @@ def make(
     urls: Mapping[Signal, str] | None = None,
     headers: _headers.Input | None = None,
     max_body_size: byte_size.Input | None = None,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
 ) -> Effect[dict[Signal, Handler], Never, HttpClient]:
     """One handler per signal, forwarding to ``urls[signal]`` or else
     ``/v1/<signal>`` below ``base_url``. ``max_body_size`` defaults to
@@ -195,7 +195,7 @@ def layer(
     urls: Mapping[Signal, str] | None = None,
     headers: _headers.Input | None = None,
     max_body_size: byte_size.Input | None = None,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     prefix: str | None = None,
     signals: Sequence[Signal] | None = None,
 ) -> Layer[Never, Never, HttpRouter | HttpClient]:
@@ -221,7 +221,7 @@ def layer_from_config(
     *,
     headers: _headers.Input | None = None,
     max_body_size: byte_size.Input | None = None,
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     prefix: str | None = None,
     signals: Sequence[Signal] | None = None,
 ) -> Layer[Never, Never, HttpRouter | HttpClient]:

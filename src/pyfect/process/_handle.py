@@ -9,7 +9,7 @@ from typing import Never, NewType, Protocol
 
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.platform_error import PlatformError
 from pyfect.sink import Sink
 from pyfect.sink._sink import require_sink
@@ -34,7 +34,10 @@ class Kill(Protocol):
     no time limit."""
 
     def __call__(
-        self, *, kill_signal: signal.Signals | None = None, force_kill_after: Duration | None = None
+        self,
+        *,
+        kill_signal: signal.Signals | None = None,
+        force_kill_after: DurationInput | None = None,
     ) -> Effect[None, PlatformError]: ...
 
 

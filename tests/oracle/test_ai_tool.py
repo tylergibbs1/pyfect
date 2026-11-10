@@ -32,7 +32,7 @@ from pyfect.ai import response as R
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.context import Tag
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.json_schema import JsonSchema
 
 from ._ai import with_language_model
@@ -977,7 +977,7 @@ def test_concurrent_preliminary_results():
         loading = JobLoading(status="loading", job=params["name"], progress=50)
         return (
             ctx.preliminary(loading)
-            .and_then(fx.sleep(Seconds(params["delay"] / 1000)))
+            .and_then(fx.sleep(Duration(params["delay"] / 1000)))
             .as_(JobComplete(status="complete", job=params["name"]))
         )
 

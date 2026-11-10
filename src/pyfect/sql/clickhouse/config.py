@@ -21,7 +21,8 @@ from typing import TYPE_CHECKING
 from urllib.parse import parse_qsl, unquote, urlsplit
 
 from pyfect._js import text_encode
-from pyfect.duration import Duration, Seconds, from_millis, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, from_millis, millis
+from pyfect.duration import Input as DurationInput
 from pyfect.redacted import Redacted
 from pyfect.redacted import make as redacted
 from pyfect.redacted import value as redacted_value
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
     from pyfect.http.error import HttpClientError
 
 DEFAULT_URL = "http://localhost:8123"
-DEFAULT_REQUEST_TIMEOUT = Seconds(30.0)
+DEFAULT_REQUEST_TIMEOUT = millis(30_000)
 
 _SETTING_PREFIXES = ("clickhouse_setting_", "ch_")
 _HEADER_PREFIX = "http_header_"
@@ -62,7 +63,7 @@ class Connection:
     application: str | None
     session_id: str | None
     role: tuple[str, ...]
-    request_timeout: Seconds
+    request_timeout: Duration
 
 
 @dataclass(slots=True)
@@ -74,12 +75,12 @@ class _FromUrl:
     pathname: str | None = None
     application: str | None = None
     session_id: str | None = None
-    request_timeout: Seconds | None = None
+    request_timeout: Duration | None = None
     settings: dict[str, Setting] = field(default_factory=dict[str, Setting])
     headers: dict[str, str] = field(default_factory=dict[str, str])
 
 
-def _timeout(value: str) -> Seconds:
+def _timeout(value: str) -> Duration:
     text = value.strip()
     try:
         # As JavaScript's ``Number``: no ``_`` separators, ``NaN`` invalid.
@@ -200,7 +201,7 @@ class ClickhouseClientConfig:
     application: str | None = None
     session_id: str | None = None
     role: str | Sequence[str] | None = None
-    request_timeout: Duration | None = None
+    request_timeout: DurationInput | None = None
     http_client: HttpClientService[HttpClientError] | None = field(default=None, compare=False)
     span_attributes: Mapping[str, object] = field(default_factory=dict[str, object])
     transform_result_names: Callable[[str], str] | None = None
@@ -218,7 +219,7 @@ class ClickhouseClientConfig:
             if found.request_timeout is not None
             else DEFAULT_REQUEST_TIMEOUT
             if self.request_timeout is None
-            else to_seconds(self.request_timeout)
+            else from_input_unsafe(self.request_timeout)
         )
         connection = Connection(
             url=base,

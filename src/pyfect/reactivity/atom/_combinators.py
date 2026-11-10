@@ -11,23 +11,24 @@ from collections.abc import Callable, Hashable
 from typing import Any, cast, overload
 
 from pyfect._equal import equal_key
-from pyfect.duration import ZERO, Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, zero
+from pyfect.duration import Input as DurationInput
 from pyfect.reactivity import async_result
 from pyfect.reactivity.async_result import AsyncResult, Initial
 from pyfect.reactivity.atom._types import Atom, AtomContext, Writable, WriteContext, readable
 from pyfect.reactivity.atom_registry import InitialValue
 
 
-def set_idle_ttl[T: Atom[Any]](atom: T, duration: Duration) -> T:
+def set_idle_ttl[T: Atom[Any]](atom: T, duration: DurationInput) -> T:
     """``atom`` kept ``duration`` after it is last used (an infinite
     duration keeps it alive)."""
-    seconds = to_seconds(duration)
+    seconds = from_input_unsafe(duration)
     finite = not math.isinf(seconds)
     return atom._with(kept_alive=not finite, idle_ttl=seconds if finite else None)  # pyright: ignore[reportPrivateUsage]
 
 
 def remove_ttl[T: Atom[Any]](atom: T) -> T:
-    return set_idle_ttl(atom, ZERO)
+    return set_idle_ttl(atom, zero)
 
 
 def label_site(depth: int) -> str:
@@ -111,8 +112,8 @@ def with_fallback(atom: Atom[AsyncResult[Any, Any]], fallback: Atom[AsyncResult[
     return readable(read, _refresh_of(atom))
 
 
-def debounce[A](atom: Atom[A], duration: Duration) -> Atom[A]:
-    delay = Seconds(to_seconds(duration))
+def debounce[A](atom: Atom[A], duration: DurationInput) -> Atom[A]:
+    delay = Duration(from_input_unsafe(duration))
 
     def read(get: AtomContext, source: Atom[A]) -> A:
         cancel: list[Callable[[], None]] = []
@@ -138,8 +139,8 @@ def debounce[A](atom: Atom[A], duration: Duration) -> Atom[A]:
     return transform(atom, read, initial_value_target=atom)
 
 
-def with_refresh[A](atom: Atom[A], duration: Duration) -> Atom[A]:
-    delay = Seconds(to_seconds(duration))
+def with_refresh[A](atom: Atom[A], duration: DurationInput) -> Atom[A]:
+    delay = Duration(from_input_unsafe(duration))
 
     def read(get: AtomContext, source: Atom[A]) -> A:
         cancel = get.registry.scheduler.call_later(delay, lambda: get.refresh(source))

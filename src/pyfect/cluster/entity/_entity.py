@@ -44,7 +44,7 @@ from pyfect.cluster.entity_type import EntityType
 from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.sharding import Sharding
 from pyfect.context import Context, TagLike
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import context, die, gen, succeed
 from pyfect.layer import Layer
 from pyfect.rpc._rpc import AnyRpc, ClientErrors, HandlerEntry, RpcRequest, handler_tag
@@ -204,7 +204,7 @@ class Entity(ClientErrors[ClusterClientError]):
         handlers: EntityHandlers[Self, R],
         /,
         *,
-        max_idle_time: Duration | None = None,
+        max_idle_time: DurationInput | None = None,
         concurrency: Concurrency = 1,
         mailbox_capacity: Concurrency | None = None,
         mailbox_metrics: bool | None = None,
@@ -234,7 +234,7 @@ class Entity(ClientErrors[ClusterClientError]):
         build: Effect[EntityHandlers[Self, RR], Never, RX | _Activation],
         /,
         *,
-        max_idle_time: Duration | None = None,
+        max_idle_time: DurationInput | None = None,
         concurrency: Concurrency = 1,
         mailbox_capacity: Concurrency | None = None,
         mailbox_metrics: bool | None = None,
@@ -263,7 +263,7 @@ class Entity(ClientErrors[ClusterClientError]):
         behaviour: Behaviour[R],
         /,
         *,
-        max_idle_time: Duration | None = None,
+        max_idle_time: DurationInput | None = None,
         mailbox_capacity: Concurrency | None = None,
         mailbox_metrics: bool | None = None,
         disable_fatal_defects: bool = False,
@@ -291,7 +291,7 @@ class Entity(ClientErrors[ClusterClientError]):
         build: Effect[Behaviour[R], Never, RX | _Activation],
         /,
         *,
-        max_idle_time: Duration | None = None,
+        max_idle_time: DurationInput | None = None,
         mailbox_capacity: Concurrency | None = None,
         mailbox_metrics: bool | None = None,
         disable_fatal_defects: bool = False,

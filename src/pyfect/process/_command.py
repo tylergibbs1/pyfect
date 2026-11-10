@@ -17,7 +17,8 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, Never, TypedDict, Unpack, final, overload
 
 from pyfect._core import Effect
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.platform_error import PlatformError
 from pyfect.process.command_line import (
     CommandLineError,
@@ -184,7 +185,7 @@ class CommandOptions:
     stderr: CommandOutput = "pipe"
     additional_fds: Mapping[int, AdditionalFd] = field(default_factory=_no_fds)
     kill_signal: signal.Signals | None = None
-    force_kill_after: Seconds | None = None
+    force_kill_after: Duration | None = None
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -291,7 +292,7 @@ class MakeOptions(TypedDict, total=False):
     stderr: CommandOutput | StderrConfig
     additional_fds: Mapping[int, AdditionalFd] | None
     kill_signal: signal.Signals | None
-    force_kill_after: Duration | None
+    force_kill_after: DurationInput | None
 
 
 @overload
@@ -390,7 +391,7 @@ def _options(options: MakeOptions) -> CommandOptions:
         stderr=stderr.stream if isinstance(stderr, StderrConfig) else _output(stderr, "stderr"),
         additional_fds=fds,
         kill_signal=options.get("kill_signal"),
-        force_kill_after=None if force_kill_after is None else to_seconds(force_kill_after),
+        force_kill_after=None if force_kill_after is None else from_input_unsafe(force_kill_after),
     )
 
 

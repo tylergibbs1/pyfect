@@ -17,7 +17,7 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.config import Config, ConfigError, unwrap
 from pyfect.context import Context, Tag
-from pyfect.duration import to_seconds
+from pyfect.duration import from_input_unsafe
 from pyfect.effect import fail
 from pyfect.layer import Layer, provide
 from pyfect.layer import effect_context as layer_effect_context
@@ -149,7 +149,9 @@ def make(config: MysqlClientConfig) -> Effect[MysqlClientService, SqlError, Scop
     """A client on a pool of connections; it closes with the scope."""
     prepare = not config.disable_prepared_statements
     idle = (
-        DEFAULT_IDLE_TIMEOUT if config.connection_ttl is None else to_seconds(config.connection_ttl)
+        DEFAULT_IDLE_TIMEOUT
+        if config.connection_ttl is None
+        else from_input_unsafe(config.connection_ttl)
     )
     pool = _pool.make(
         connect_options(config),

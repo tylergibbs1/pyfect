@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Any, Never
 
 from pyfect._core import Effect
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.effect import gen, suspend, sync
 from pyfect.exit import Success
 from pyfect.http.live_server._timers import timeout_option
@@ -29,7 +29,7 @@ from pyfect.socket.server import SocketServerError, SocketServerOpenError
 
 type Listen = Callable[[Callable[[], Connection]], Any]
 
-ABORT_GRACE_PERIOD = Seconds(0.5)
+ABORT_GRACE_PERIOD = millis(500)
 """How long the requests still running when the graceful shutdown timeout
 ends may take to stop once interrupted before their connections are
 aborted."""
@@ -89,7 +89,7 @@ class Listener:
             wake()
 
     def run(
-        self, serve: Callable[[ConnectionState], Effect[None]], shutdown_timeout: Seconds
+        self, serve: Callable[[ConnectionState], Effect[None]], shutdown_timeout: Duration
     ) -> Effect[Never]:
         """Serve every connection, each on a fiber of a scope closed, after
         the graceful shutdown, when this is interrupted."""
@@ -153,7 +153,7 @@ class Listener:
         for conn in pending:
             conn.close(graceful=False)
 
-    def shutdown(self, timeout: Seconds) -> Effect[None]:
+    def shutdown(self, timeout: Duration) -> Effect[None]:
         """Stop serving new requests: close the idle connections and wait
         up to ``timeout`` for the busy ones."""
 

@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import pyfect as fx
 from pyfect._wake_tracking import WakeTracker
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.scheduler import Cancel, Scheduler, Task
 
 
@@ -25,7 +25,7 @@ class HeldScheduler:
         else:
             self.held.append((task, priority))
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         return self.inner.call_later(delay, lambda: self.schedule(task), daemon=daemon)
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:

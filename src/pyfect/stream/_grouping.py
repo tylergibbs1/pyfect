@@ -11,7 +11,6 @@ when it stops, so a group that stops early never blocks the others.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Generator, Hashable
 from typing import Any
 
@@ -19,7 +18,8 @@ from pyfect import channel
 from pyfect._core import Effect, _FailCause, _FlatMap, _Gen, _MatchCause, _Succeed, _Suspend, _Sync
 from pyfect.cause import Cause
 from pyfect.channel._base import end_with
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe, infinity
 from pyfect.effect import provide_service
 from pyfect.errors import Done
 from pyfect.queue import Queue
@@ -59,9 +59,9 @@ def _group_by(
     self: AnyStream,
     offer_chunk: OfferChunk,
     buffer_size: int,
-    idle_time_to_live: Duration | None,
+    idle_time_to_live: DurationInput | None,
 ) -> AnyStream_:
-    ttl = Seconds(math.inf) if idle_time_to_live is None else to_seconds(idle_time_to_live)
+    ttl = infinity if idle_time_to_live is None else from_input_unsafe(idle_time_to_live)
 
     def build(pull: AnyEffect, scope: CloseableScope, forked: CloseableScope) -> AnyEffect:
         def body() -> Generator[AnyEffect, Any, AnyEffect]:
@@ -105,7 +105,7 @@ def group_by(
     self: AnyStream,
     f: Callable[[Any], Effect[tuple[Hashable, Any], Any, Any]],
     buffer_size: int,
-    idle_time_to_live: Duration | None,
+    idle_time_to_live: DurationInput | None,
 ) -> AnyStream_:
     def offer_chunk(
         chunk: Chunk, groups: Groups, open_queues: dict[Any, Queue[Any, Done]]
@@ -125,7 +125,7 @@ def group_by_key(
     self: AnyStream,
     f: Callable[[Any], Hashable],
     buffer_size: int,
-    idle_time_to_live: Duration | None,
+    idle_time_to_live: DurationInput | None,
 ) -> AnyStream_:
     def offer_chunk(
         chunk: Chunk, groups: Groups, open_queues: dict[Any, Queue[Any, Done]]

@@ -16,12 +16,13 @@ from pyfect._core import Effect
 from pyfect.ai._mcp.core import McpServerService
 from pyfect.ai._mcp.dispatch import Connection
 from pyfect.byte_size import ByteSize
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, succeed
 from pyfect.errors import IllegalArgumentError
 
 DEFAULT_MAX_SESSIONS = 1000
-DEFAULT_IDLE_TIMEOUT: Duration = "30 minutes"
+DEFAULT_IDLE_TIMEOUT: DurationInput = "30 minutes"
 DEFAULT_MAX_MESSAGE_BYTES: byte_size.Input = "4 MiB"
 
 
@@ -30,16 +31,16 @@ class Limits:
     """Parsed by ``limits``: every field is positive."""
 
     max_sessions: int
-    idle_timeout: Seconds
+    idle_timeout: Duration
     max_message_bytes: ByteSize
 
 
 def limits(
-    max_sessions: int, idle_timeout: Duration, max_message_bytes: byte_size.Input
+    max_sessions: int, idle_timeout: DurationInput, max_message_bytes: byte_size.Input
 ) -> Effect[Limits, IllegalArgumentError]:
     if isinstance(max_sessions, bool) or max_sessions < 1:
         return fail(IllegalArgumentError(f"max_sessions must be at least 1, got {max_sessions!r}"))
-    timeout = to_seconds(idle_timeout)
+    timeout = from_input_unsafe(idle_timeout)
     if not timeout > 0:
         return fail(
             IllegalArgumentError(f"session_idle_timeout must be positive, got {idle_timeout!r}")

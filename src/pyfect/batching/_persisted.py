@@ -10,7 +10,7 @@ from pyfect._context_effects import provide_context
 from pyfect._core import Effect, _call_user
 from pyfect.batching._request import Entry
 from pyfect.batching._resolver import RequestResolver
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import gen, void
 from pyfect.exit import Exit, Failure
 from pyfect.persistence.persistable import AnyPersistable
@@ -21,7 +21,7 @@ from pyfect.scope import Scope
 def persisted[Q: AnyPersistable](
     resolver: RequestResolver[Q, Any],
     store_id: str,
-    time_to_live: Callable[[Exit[Any, Any], Q], Duration] | None,
+    time_to_live: Callable[[Exit[Any, Any], Q], DurationInput] | None,
     stale_while_revalidate: Callable[[Exit[Any, Any], Q], bool] | None,
 ) -> Effect[RequestResolver[Q, Any], Never, Persistence | Scope]:
     def build() -> Generator[Effect[Any, Never, Any], Any, RequestResolver[Q, Any]]:

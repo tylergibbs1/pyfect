@@ -7,19 +7,21 @@ from typing import Any, Never, overload
 from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.cause import Cause, Die, Fail, from_reasons
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail_cause
 from pyfect.schedule import recurs
 from pyfect.scope import Scope, scoped
 
 
 @overload
-def flaky[A, E](eff: Effect[A, E, Scope], timeout: Duration = "30 seconds") -> Effect[A]: ...
+def flaky[A, E](eff: Effect[A, E, Scope], timeout: DurationInput = "30 seconds") -> Effect[A]: ...
 @overload
 def flaky[A, E, R](
-    eff: Effect[A, E, Scope | R], timeout: Duration = "30 seconds"
+    eff: Effect[A, E, Scope | R], timeout: DurationInput = "30 seconds"
 ) -> Effect[A, Never, R]: ...
-def flaky(eff: Effect[Any, Any, Any], timeout: Duration = "30 seconds") -> Effect[Any, Any, Any]:
+def flaky(
+    eff: Effect[Any, Any, Any], timeout: DurationInput = "30 seconds"
+) -> Effect[Any, Any, Any]:
     """Retry ``eff`` (in a fresh scope each time) after any failure, defects
     included, up to 10 times while less than ``timeout`` has passed. Like
     Effect's ``flakyTest``, the last failure dies: its typed errors become

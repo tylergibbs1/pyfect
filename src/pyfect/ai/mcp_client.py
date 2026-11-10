@@ -80,7 +80,8 @@ from pyfect.ai.mcp_schema import (
 from pyfect.ai.mcp_schema import Tool as McpTool
 from pyfect.context import Tag
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, millis
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.http.client import HttpClient
 from pyfect.layer import Layer, provide
@@ -88,7 +89,7 @@ from pyfect.layer import effect as layer_effect
 from pyfect.process import ChildProcessSpawner, Command
 from pyfect.scope import Scope, add_finalizer
 
-DEFAULT_TIMEOUT = Seconds(60)
+DEFAULT_TIMEOUT = millis(60_000)
 MAX_DISCOVERY_PAGES = DEFAULT_DISCOVERY_LIMITS.max_pages
 MAX_DISCOVERY_ITEMS = DEFAULT_DISCOVERY_LIMITS.max_items
 
@@ -118,10 +119,10 @@ class McpClientService:
         repr=False
     )
     _deadline: Callable[
-        [Effect[Any, McpClientError], str, Seconds | None], Effect[Any, McpClientError]
+        [Effect[Any, McpClientError], str, Duration | None], Effect[Any, McpClientError]
     ] = field(repr=False)
     _is_callable: Callable[[McpTool], bool] = field(repr=False)
-    _timeout: Seconds = field(repr=False)
+    _timeout: Duration = field(repr=False)
     _skills: SkillsClient = field(repr=False)
     """The Skills extension's methods, with the client's discovery limits."""
 
@@ -140,7 +141,7 @@ class McpClientService:
         self,
         kind: str,
         schema: S.Top,
-        timeout: Duration | None,
+        timeout: DurationInput | None,
         limits: DiscoveryLimitsOptions | None,
     ) -> Effect[list[Any], McpClientError]:
         def decode_page(raw: dict[str, Any]) -> Effect[dict[str, Any], McpClientError]:
@@ -163,11 +164,11 @@ class McpClientService:
                 )
             )
 
-        deadline = self._timeout if timeout is None else to_seconds(timeout)
+        deadline = self._timeout if timeout is None else from_input_unsafe(timeout)
         return self._deadline(run, f"{kind} discovery", deadline)
 
     def list_tools(
-        self, *, timeout: Duration | None = None, limits: DiscoveryLimitsOptions | None = None
+        self, *, timeout: DurationInput | None = None, limits: DiscoveryLimitsOptions | None = None
     ) -> Effect[list[McpTool], McpClientError]:
         """Every tool the server lists (and this transport can call), within
         the client's discovery deadline and limits (``timeout`` and
@@ -177,19 +178,19 @@ class McpClientService:
         )
 
     def list_prompts(
-        self, *, timeout: Duration | None = None, limits: DiscoveryLimitsOptions | None = None
+        self, *, timeout: DurationInput | None = None, limits: DiscoveryLimitsOptions | None = None
     ) -> Effect[list[Prompt], McpClientError]:
         return self._list("prompts", LIST_PROMPTS.success_schema, timeout, limits)
 
     def list_resources(
-        self, *, timeout: Duration | None = None, limits: DiscoveryLimitsOptions | None = None
+        self, *, timeout: DurationInput | None = None, limits: DiscoveryLimitsOptions | None = None
     ) -> Effect[list[Resource], McpClientError]:
         return self._list("resources", LIST_RESOURCES.success_schema, timeout, limits)
 
     def list_skills(
         self,
         *,
-        timeout: Duration | None = None,
+        timeout: DurationInput | None = None,
         limits: DiscoveryLimitsOptions | None = None,
         on_invalid_skill: OnInvalidSkill | None = None,
     ) -> Effect[list[Skill], McpClientError]:
@@ -201,7 +202,7 @@ class McpClientService:
         return self._skills.list_skills(_optional_seconds(timeout), limits, on_invalid_skill)
 
     def get_skill(
-        self, uri: str, *, timeout: Duration | None = None
+        self, uri: str, *, timeout: DurationInput | None = None
     ) -> Effect[Skill, McpClientError]:
         """The skill whose ``SKILL.md`` is at ``uri``, listed or not.
         Unbounded unless given a ``timeout``."""
@@ -211,7 +212,7 @@ class McpClientService:
         self,
         uri: str,
         *,
-        timeout: Duration | None = None,
+        timeout: DurationInput | None = None,
         limits: DiscoveryLimitsOptions | None = None,
     ) -> Effect[list[Resource], McpClientError]:
         """The direct children of a directory of a skill namespace, with the
@@ -219,7 +220,7 @@ class McpClientService:
         return self._skills.read_resource_directory(uri, _optional_seconds(timeout), limits)
 
     def read_skill_resource(
-        self, skill: Skill, uri: str, *, timeout: Duration | None = None
+        self, skill: Skill, uri: str, *, timeout: DurationInput | None = None
     ) -> Effect[ReadResourceResult, McpClientError]:
         """Read a file of ``skill``, failing with a ``ValidationError`` unless
         its bytes match the SHA-256 digest and size of the manifest and, for
@@ -234,7 +235,7 @@ class McpClientService:
         prompt: Prompt,
         arguments: Mapping[str, str] | None = None,
         *,
-        timeout: Duration | None = None,
+        timeout: DurationInput | None = None,
     ) -> Effect[GetPromptResult, McpClientError]:
         params: JsonObject = {"name": prompt["name"]}
         if arguments is not None:
@@ -245,7 +246,7 @@ class McpClientService:
         return self._deadline(got, "prompts/get", _optional_seconds(timeout))
 
     def read_resource(
-        self, uri: str, *, timeout: Duration | None = None
+        self, uri: str, *, timeout: DurationInput | None = None
     ) -> Effect[ReadResourceResult, McpClientError]:
         read = (
             self._call("resources", "resources/read", {"uri": uri})
@@ -260,7 +261,7 @@ class McpClientService:
         tool: McpTool,
         arguments: Mapping[str, Any] | None = None,
         *,
-        timeout: Duration | None = None,
+        timeout: DurationInput | None = None,
     ) -> Effect[CallToolResult, McpClientError]: ...
     @overload
     def call_tool[A, R](
@@ -269,7 +270,7 @@ class McpClientService:
         arguments: Mapping[str, Any] | None = None,
         *,
         schema: S.Codec[A, Any, R, Any],
-        timeout: Duration | None = None,
+        timeout: DurationInput | None = None,
     ) -> Effect[A, McpClientError, R]: ...
     def call_tool(
         self,
@@ -277,7 +278,7 @@ class McpClientService:
         arguments: Mapping[str, Any] | None = None,
         *,
         schema: S.Codec[Any, Any, Any, Any] | None = None,
-        timeout: Duration | None = None,
+        timeout: DurationInput | None = None,
     ) -> Effect[Any, McpClientError, Any]:
         """Call ``tool``. With ``schema``, its ``structuredContent`` decoded
         (a tool error then fails with ``ToolError``); else the whole result.
@@ -327,8 +328,8 @@ def _traced[A](
     )
 
 
-def _optional_seconds(timeout: Duration | None) -> Seconds | None:
-    return None if timeout is None else to_seconds(timeout)
+def _optional_seconds(timeout: DurationInput | None) -> Duration | None:
+    return None if timeout is None else from_input_unsafe(timeout)
 
 
 def _version_rejected(error: McpClientError, version: str) -> bool:
@@ -353,7 +354,7 @@ def make(  # noqa: PLR0915
     description: str | None = None,
     website_url: str | None = None,
     icons: Sequence[Icon] = (),
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     discovery_limits: DiscoveryLimitsOptions | None = None,
     extensions: ClientExtensions | None = None,
 ) -> Effect[McpClientService, McpClientError, Transport | Scope]:
@@ -363,7 +364,7 @@ def make(  # noqa: PLR0915
     (100 pages, 10,000 items). ``extensions={"skills": True}`` declares the
     Skills extension and enables the skill methods (else they fail with a
     ``ConfigurationError``)."""
-    limit = DEFAULT_TIMEOUT if timeout is None else to_seconds(timeout)
+    limit = DEFAULT_TIMEOUT if timeout is None else from_input_unsafe(timeout)
     skills_enabled = (extensions or {}).get("skills") is True
     capabilities_declared = client_capabilities(skills_enabled)
 
@@ -440,7 +441,7 @@ def make(  # noqa: PLR0915
             return _traced(transport.request(message, tool).flat_map(answered), method, tool)
 
         def deadline(
-            effect: Effect[Any, McpClientError], operation: str, duration: Seconds | None
+            effect: Effect[Any, McpClientError], operation: str, duration: Duration | None
         ) -> Effect[Any, McpClientError]:
             open_ = effect.race_first(closed.wait())
             if duration is None:
@@ -555,7 +556,7 @@ def layer_stdio(
     description: str | None = None,
     website_url: str | None = None,
     icons: Sequence[Icon] = (),
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     discovery_limits: DiscoveryLimitsOptions | None = None,
     extensions: ClientExtensions | None = None,
     max_message_bytes: int | None = None,
@@ -589,7 +590,7 @@ def layer_http(
     description: str | None = None,
     website_url: str | None = None,
     icons: Sequence[Icon] = (),
-    timeout: Duration | None = None,
+    timeout: DurationInput | None = None,
     discovery_limits: DiscoveryLimitsOptions | None = None,
     extensions: ClientExtensions | None = None,
     max_message_bytes: int | None = None,

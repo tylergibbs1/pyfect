@@ -6,7 +6,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import ClassVar, Final, Literal
 
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 
 # --- trip policies --------------------------------------------------------------------
 
@@ -94,7 +95,7 @@ class FailureOutcome:
     """The call counts as a failure; ``retry_after`` (a server's hint) is
     the least the opening it causes lasts, up to ``max_open_duration``."""
 
-    retry_after: Seconds | None = None
+    retry_after: Duration | None = None
     kind: ClassVar[Literal["Failure"]] = "Failure"
 
 
@@ -105,9 +106,9 @@ success: Final[Outcome] = SuccessOutcome()
 ignored: Final[Outcome] = IgnoredOutcome()
 
 
-def failure(*, retry_after: Duration | None = None) -> Outcome:
+def failure(*, retry_after: DurationInput | None = None) -> Outcome:
     """A failure, opening for at least ``retry_after`` if it opens."""
-    return FailureOutcome(None if retry_after is None else to_seconds(retry_after))
+    return FailureOutcome(None if retry_after is None else from_input_unsafe(retry_after))
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,7 +136,7 @@ class Open:
     ``consecutive_openings`` times without staying closed."""
 
     key: str
-    retry_after: Seconds
+    retry_after: Duration
     consecutive_openings: int
 
 
@@ -161,7 +162,7 @@ class OpenTransition:
 
     key: str
     from_: Literal["Closed", "HalfOpen"]
-    retry_after: Seconds
+    retry_after: Duration
     consecutive_openings: int
     to: ClassVar[Literal["Open"]] = "Open"
 

@@ -16,7 +16,8 @@ from pyfect._js import js_number
 from pyfect._json_text import parse, stringify
 from pyfect.cause import Cause
 from pyfect.clock import ClockService, clock_with, sleep
-from pyfect.duration import Duration, Seconds, to_millis
+from pyfect.duration import Duration, millis, to_millis
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import gen, suspend, sync
 from pyfect.exit import Exit, Success
 from pyfect.layer import Layer
@@ -40,9 +41,9 @@ from pyfect.schedule import Schedule
 from pyfect.scope import Scope, add_finalizer
 
 _LONE_SURROGATE = re.compile("[\ud800-\udfff]")
-_DEFAULT_POLL_INTERVAL: Final = Seconds(1)
-_DEFAULT_LOCK_REFRESH_INTERVAL: Final = Seconds(30)
-_DEFAULT_LOCK_EXPIRATION: Final = Seconds(90)
+_DEFAULT_POLL_INTERVAL: Final = millis(1000)
+_DEFAULT_LOCK_REFRESH_INTERVAL: Final = millis(30_000)
+_DEFAULT_LOCK_EXPIRATION: Final = millis(90_000)
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,8 +93,8 @@ def _elements(results: list[RedisReply]) -> list[_Element]:
 @dataclass(frozen=True, slots=True)
 class _Settings:
     prefix: str
-    poll_interval: Seconds
-    lock_refresh: Seconds
+    poll_interval: Duration
+    lock_refresh: Duration
     lock_expiration_millis: float
     ack_schedule: Schedule[object, object]
 
@@ -240,7 +241,7 @@ class _RedisStore:
         id: str,
         element: object,
         is_custom_id: bool,
-        delay: Seconds | None = None,
+        delay: Duration | None = None,
     ) -> Effect[None, PersistedQueueError]:
         keys = self._settings.keys(name)
         # replace lone surrogates as UTF-8 encoding does, so the id in the
@@ -379,7 +380,7 @@ class _RedisStore:
         )
 
     def cleanup(
-        self, *, time_to_live: Seconds, failed_time_to_live: Seconds | None
+        self, *, time_to_live: Duration, failed_time_to_live: Duration | None
     ) -> Effect[None, PersistedQueueError]:
         prefix = self._settings.prefix
 
@@ -405,9 +406,9 @@ class _RedisStore:
 def make_store_redis(
     *,
     prefix: str = "effectq:",
-    poll_interval: Duration = _DEFAULT_POLL_INTERVAL,
-    lock_refresh_interval: Duration = _DEFAULT_LOCK_REFRESH_INTERVAL,
-    lock_expiration: Duration = _DEFAULT_LOCK_EXPIRATION,
+    poll_interval: DurationInput = _DEFAULT_POLL_INTERVAL,
+    lock_refresh_interval: DurationInput = _DEFAULT_LOCK_REFRESH_INTERVAL,
+    lock_expiration: DurationInput = _DEFAULT_LOCK_EXPIRATION,
 ) -> Effect[PersistedQueueStoreService, Never, Redis | Scope]:
     """A store on Redis. Each queue ``name`` keeps its elements under
     ``<prefix><name>`` (a list, with ``:pending``, ``:attempts``, ``:ids``,
@@ -465,9 +466,9 @@ def make_store_redis(
 def layer_store_redis(
     *,
     prefix: str = "effectq:",
-    poll_interval: Duration = _DEFAULT_POLL_INTERVAL,
-    lock_refresh_interval: Duration = _DEFAULT_LOCK_REFRESH_INTERVAL,
-    lock_expiration: Duration = _DEFAULT_LOCK_EXPIRATION,
+    poll_interval: DurationInput = _DEFAULT_POLL_INTERVAL,
+    lock_refresh_interval: DurationInput = _DEFAULT_LOCK_REFRESH_INTERVAL,
+    lock_expiration: DurationInput = _DEFAULT_LOCK_EXPIRATION,
 ) -> Layer[PersistedQueueStore, Never, Redis]:
     """The store of ``make_store_redis``."""
     return layer_effect(

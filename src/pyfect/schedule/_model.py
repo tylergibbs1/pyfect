@@ -23,7 +23,8 @@ from pyfect._core import Effect, _FailCause, _Gen, _Succeed
 from pyfect._effect_args import require_effect
 from pyfect.clock import Clock, sleep
 from pyfect.context import Reference
-from pyfect.duration import ZERO, Duration, Seconds, from_millis, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, millis, nanos, zero
+from pyfect.duration import Input as DurationInput
 
 if TYPE_CHECKING:
     from pyfect.result import Result
@@ -43,7 +44,7 @@ class Continue(Generic[O_co]):
     """A step's decision to recur after ``delay``, producing ``output``."""
 
     output: O_co
-    delay: Seconds
+    delay: Duration
 
 
 @final
@@ -72,8 +73,8 @@ class InputMetadata(Generic[I_co]):
     attempt: int
     start: float
     now: float
-    elapsed: Seconds
-    elapsed_since_previous: Seconds
+    elapsed: Duration
+    elapsed_since_previous: Duration
 
 
 @final
@@ -82,7 +83,7 @@ class Metadata(InputMetadata[I_co], Generic[O_co, I_co]):
     """``InputMetadata`` plus the step's decision: its output and delay."""
 
     output: O_co
-    duration: Seconds
+    duration: Duration
 
 
 class CurrentMetadata(Reference[Metadata[object, object]]):
@@ -95,12 +96,12 @@ class CurrentMetadata(Reference[Metadata[object, object]]):
         return Metadata(
             input=None,
             output=None,
-            duration=ZERO,
+            duration=zero,
             attempt=0,
             start=0.0,
             now=0.0,
-            elapsed=ZERO,
-            elapsed_since_previous=ZERO,
+            elapsed=zero,
+            elapsed_since_previous=zero,
         )
 
 
@@ -108,16 +109,16 @@ def _value_or_effect(result: object) -> Effect[Any, Any, Any]:
     return cast("Effect[Any, Any, Any]", result) if isinstance(result, Effect) else _Succeed(result)
 
 
-def _since(now: float, then: float) -> Seconds:
+def _since(now: float, then: float) -> Duration:
     """``now - then`` (epoch milliseconds) as a duration, rounded to the
     nearest nanosecond (ties away from zero) as Effect's ``Duration.millis``
     rounds: the exact decimal difference, as a float difference would make
     ``1.3 - 1.0`` 0.30000000000000004 and break the window arithmetic in
     ``fixed`` and ``windowed``."""
     if now == then or not math.isfinite(now - then):  # JavaScript's ``-`` saturates
-        return from_millis(now - then)
+        return millis(now - then)
     exact = (Decimal(repr(float(now))) - Decimal(repr(float(then)))) * 10**6
-    return Seconds(int(exact.to_integral_value(ROUND_HALF_UP)) / 1_000_000_000)
+    return nanos(int(exact.to_integral_value(ROUND_HALF_UP)))
 
 
 class _MetadataCounter:
@@ -134,7 +135,7 @@ class _MetadataCounter:
     def __call__[In](self, now: float, input: In) -> InputMetadata[In]:
         if self.start is None:
             self.start = now
-        since_previous = ZERO if self.previous is None else _since(now, self.previous)
+        since_previous = zero if self.previous is None else _since(now, self.previous)
         self.previous = now
         self.attempt += 1
         return InputMetadata(
@@ -147,7 +148,7 @@ class _MetadataCounter:
         )
 
     def full[Out, In](
-        self, now: float, input: In, output: Out, duration: Seconds
+        self, now: float, input: In, output: Out, duration: Duration
     ) -> Metadata[Out, In]:
         m = self(now, input)
         return Metadata(
@@ -238,7 +239,7 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
 
     def modify_delay[I, E2 = Never, R2 = Never](
         self: Schedule[Out_co, I, E_co, R_co],
-        f: Callable[[Metadata[Out_co, I]], Effect[Duration, E2, R2]],
+        f: Callable[[Metadata[Out_co, I]], Effect[DurationInput, E2, R2]],
     ) -> Schedule[Out_co, I, E_co | E2, R_co | R2]:
         """Replace each delay with the one ``f(metadata)`` gives."""
         from pyfect.schedule._combinators import modify_delay
@@ -247,13 +248,13 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
 
     def add_delay[I, E2 = Never, R2 = Never](
         self: Schedule[Out_co, I, E_co, R_co],
-        f: Callable[[Metadata[Out_co, I]], Effect[Duration, E2, R2]],
+        f: Callable[[Metadata[Out_co, I]], Effect[DurationInput, E2, R2]],
     ) -> Schedule[Out_co, I, E_co | E2, R_co | R2]:
         """Add the delay ``f(metadata)`` gives to each delay."""
         from pyfect.schedule._combinators import modify_delay
 
         return modify_delay(
-            self, lambda m: f(m).map(lambda extra: Seconds(to_seconds(extra) + m.duration))
+            self, lambda m: f(m).map(lambda extra: from_input_unsafe(extra) + m.duration)
         )
 
     def jittered(self) -> Schedule[Out_co, In_contra, E_co, R_co]:
@@ -273,11 +274,11 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
         return passthrough(self)
 
     def up_to(
-        self, *, times: int | None = None, duration: Duration | None = None
+        self, *, times: int | None = None, duration: DurationInput | None = None
     ) -> Schedule[Out_co, In_contra, E_co, R_co]:
         """Stop after ``times`` recurrences, or once more than ``duration``
         has passed since the first step, whichever comes first."""
-        limit = None if duration is None else to_seconds(duration)
+        limit = None if duration is None else from_input_unsafe(duration)
 
         def within(m: Metadata[Any, Any]) -> bool:
             return (times is None or m.attempt <= times) and (limit is None or m.elapsed <= limit)

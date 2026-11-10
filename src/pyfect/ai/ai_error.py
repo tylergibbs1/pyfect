@@ -22,7 +22,7 @@ from pyfect import schema as S
 from pyfect._json_value import JsonValue
 from pyfect._wire_codec import Const, Key, key, wire_codec
 from pyfect.date_time._iso import utc_to_string
-from pyfect.duration import format_duration, to_seconds
+from pyfect.duration import format_duration, from_input_unsafe
 from pyfect.errors import TaggedError
 from pyfect.http import error as http_error
 from pyfect.redacted import Redacted
@@ -186,7 +186,7 @@ class RateLimitError(AiErrorReason):
     def message(self) -> str:
         msg = "Rate limit exceeded"
         if self.retry_after is not None:
-            msg += f". Retry after {format_duration(to_seconds(self.retry_after))}"
+            msg += f". Retry after {format_duration(from_input_unsafe(self.retry_after))}"
         return msg
 
 

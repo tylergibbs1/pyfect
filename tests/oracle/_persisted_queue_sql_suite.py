@@ -20,7 +20,7 @@ import pyfect as fx
 from pyfect import schedule, testing
 from pyfect import schema as S
 from pyfect.clock import now_nanos
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.latch import Latch
 from pyfect.persistence import persisted_queue as pq
 from pyfect.sql import SqlClient
@@ -38,7 +38,7 @@ def now_millis() -> Generator[Any, Any, int]:
 
 
 def make_queue(
-    table_name: str, poll_interval: Duration = "10 millis"
+    table_name: str, poll_interval: DurationInput = "10 millis"
 ) -> Generator[Any, Any, pq.PersistedQueue[str]]:
     store = yield from pq.make_store_sql(table_name=table_name, poll_interval=poll_interval)
     factory = yield from pq.make_factory.pipe(fx.provide_service(pq.PersistedQueueStore, store))

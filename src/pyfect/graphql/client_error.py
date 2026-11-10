@@ -21,7 +21,7 @@ from typing import NotRequired
 from typing_extensions import TypedDict
 
 from pyfect import schema as S
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.graphql._schemas import HEADERS, SECONDS_FROM_MILLIS
 from pyfect.http import error as http_error
 from pyfect.http.headers import Headers, parse_retry_after, retry_after_delay
@@ -74,7 +74,7 @@ def _is_retryable_status(status: int) -> bool:
     return status == 429 or 500 <= status < 600
 
 
-def parse_retry_after_header(value: str | None, now_millis: float) -> Seconds | None:
+def parse_retry_after_header(value: str | None, now_millis: float) -> Duration | None:
     """A ``Retry-After`` value (whole seconds or an HTTP date) as a delay
     from ``now_millis``; anything else is ``None``."""
     if value is None:
@@ -106,8 +106,8 @@ class ResponseError(S.TaggedError, identifier="effect/graphql/GraphQLClientError
         )
 
     @property
-    def retry_after(self) -> Seconds | None:
-        retry_after: Seconds | None = self.__dict__["_retry_after"]
+    def retry_after(self) -> Duration | None:
+        retry_after: Duration | None = self.__dict__["_retry_after"]
         return retry_after
 
     @property
@@ -131,7 +131,7 @@ class TransportError(S.TaggedError, identifier="effect/graphql/GraphQLClientErro
     description: str
     status: int | None = S.field(S.Union(S.Int, Undefined), default=None)
     headers: Headers | None = S.field(S.Union(HEADERS, Undefined), default=None)
-    retry_after: Seconds | None = S.field(
+    retry_after: Duration | None = S.field(
         S.Union(SECONDS_FROM_MILLIS, Undefined), default=None, key="retryAfter"
     )
     close_code: int | None = S.field(S.Union(S.Int, Undefined), default=None, key="closeCode")
@@ -247,7 +247,7 @@ class GraphQLClientError(S.TaggedError, identifier="~effect/graphql/GraphQLClien
         return self.reason.is_retryable
 
     @property
-    def retry_after(self) -> Seconds | None:
+    def retry_after(self) -> Duration | None:
         """The ``Retry-After`` hint of a response or transport reason."""
         reason = self.reason
         if isinstance(reason, ResponseError | TransportError):

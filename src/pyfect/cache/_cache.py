@@ -31,7 +31,7 @@ from pyfect.cache._expiry import (
 )
 from pyfect.cause import Cause
 from pyfect.context import Context
-from pyfect.duration import ZERO, Seconds
+from pyfect.duration import Duration, zero
 from pyfect.exit import Exit, Failure, Success
 from pyfect.option import Option, Some
 
@@ -48,7 +48,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
         lookup: Callable[[K], Effect[A, E, Any]],
         context: Context,
         capacity: int | None,
-        time_to_live: Callable[[Exit[A, E], K], Seconds],
+        time_to_live: Callable[[Exit[A, E], K], Duration],
     ) -> None:
         self._lookup = lookup
         self._context = context
@@ -155,7 +155,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
         def body(fiber: Fiber[Any, Any]) -> Effect[None]:
             ex: Exit[A, E] = Success(value)
             ttl = self._time_to_live(ex, key)
-            if ttl == 0:
+            if ttl.is_zero():
                 self._discard(key)
                 return _VOID
             entry = _Entry[A, E](_finished(fiber, ex))
@@ -253,7 +253,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
                 self._remove(key, entry)
                 return
             ttl = entry.time_to_live
-            if ttl == 0:
+            if ttl.is_zero():
                 skip = True
                 self._remove(key, entry)
             else:
@@ -282,7 +282,7 @@ class Cache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R = Never
                 self._remove(key, entry)
                 return
             ttl = entry.time_to_live
-            if ttl == 0:
+            if ttl.is_zero():
                 if existing:
                     self._discard(key)
                 else:
@@ -369,7 +369,7 @@ class _Entry[A, E]:
         self.awaiters = 0
         self.expires_at: int | None = None
         # Set as the lookup ends; stays zero if ``time_to_live`` raised.
-        self.time_to_live: Seconds = ZERO
+        self.time_to_live: Duration = zero
         # Drops the entry from the cache when its waiters abandon it.
         self.release: Callable[[], None] | None = None
 

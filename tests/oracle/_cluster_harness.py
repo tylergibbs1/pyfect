@@ -91,7 +91,7 @@ type RunnerState = Literal["frozen", "killed", "running", "stopped"]
 type RunnerEntities = Layer[Never, Never, Any]
 type DatabaseMaker = Callable[[], fx.Effect[SqlClientService, Any, Scope]]
 
-S = duration.Seconds
+S = duration.Duration
 
 CLUSTER_CONFIG: dict[str, Any] = {
     "entity_max_idle_time": S(3),

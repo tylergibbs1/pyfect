@@ -23,7 +23,7 @@ import pyfect as fx
 from pyfect import effect, layer, schedule, stream, testing
 from pyfect import schema as S
 from pyfect.context import Context, Tag
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.effect import Effect
 from pyfect.exit import Failure
 from pyfect.graphql import (
@@ -611,7 +611,7 @@ def test_retries_a_retryable_transport_error_on_the_default_schedule():
 @testing.effect
 def test_waits_for_retry_after_when_the_transport_reports_one():
     """GraphQLClient subscriptions / waits for retryAfter when the transport reports one"""
-    protocol, attempts = _scripted([_lost(retry_after=Seconds(2)), stream.make(_event("a"))])
+    protocol, attempts = _scripted([_lost(retry_after=millis(2000)), stream.make(_event("a"))])
     fiber = yield from _subscribe(protocol).run_collect().fork()
     yield from testing.adjust("1999 millis")
     assert attempts[0] == 1

@@ -11,7 +11,7 @@ from typing import Never
 import pytest
 
 from pyfect import schema as S
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.net import dns, ip_network
 from pyfect.net import host as h
 from pyfect.net import net_address as na
@@ -122,10 +122,10 @@ def test_encodes_and_decodes_json() -> None:
         primary=h.domain_name_from_string_unsafe("ns.example.com"),
         admin="hostmaster.example.com",
         serial=1,
-        refresh=Seconds(3600),
-        retry=Seconds(600),
-        expire=Seconds(604800),
-        minimum=Seconds(300),
+        refresh=millis(3_600_000),
+        retry=millis(600_000),
+        expire=millis(604_800_000),
+        minimum=millis(300_000),
     )
     json = {
         "_tag": "SOA",

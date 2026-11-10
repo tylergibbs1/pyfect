@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from pyfect._wake_tracking import Tracking
-from pyfect.duration import Seconds, nanos_or_infinite
+from pyfect.duration import Duration, nanos_or_infinite
 from pyfect.reactivity import _time, atom_registry
 from pyfect.reactivity.atom_registry import AtomRegistryService, InitialValue
 from pyfect.scheduler import Cancel, Task
@@ -42,7 +42,7 @@ class FakeTimers(Tracking):
     def schedule(self, task: Task, priority: int = 0) -> None:
         self._ready.append(self._tracked(task))
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         entry: list[Task | None] = [task]
         heapq.heappush(
             self._timers, (self.now_ns + nanos_or_infinite(delay), next(self._seq), entry)
@@ -83,8 +83,8 @@ class FakeTimers(Tracking):
         return atom_registry.make(
             initial_values=initial_values,
             scheduler=self,
-            default_idle_ttl=None if default_idle_ttl is None else Seconds(default_idle_ttl),
-            timeout_resolution=None if timeout_resolution is None else Seconds(timeout_resolution),
+            default_idle_ttl=None if default_idle_ttl is None else Duration(default_idle_ttl),
+            timeout_resolution=None if timeout_resolution is None else Duration(timeout_resolution),
         )
 
 

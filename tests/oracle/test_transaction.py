@@ -325,7 +325,7 @@ class _AdvancingClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self._base.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: fx.duration.Seconds) -> fx.Effect[None]:
+    def sleep(self, seconds: fx.duration.Duration) -> fx.Effect[None]:
         return self._base.sleep(seconds)
 
 

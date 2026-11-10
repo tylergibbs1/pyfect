@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pyfect.duration import Duration, to_millis, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe, to_millis
 from pyfect.reactivity._time import now_millis
 from pyfect.reactivity.async_result import AsyncResult, Failure, Initial, Success
 from pyfect.reactivity.atom._combinators import transform
@@ -31,12 +32,12 @@ def _should_revalidate(result: AsyncResult[Any, Any], stale_time: float) -> bool
 def swr[A, E](
     atom: Atom[AsyncResult[A, E]],
     *,
-    stale_time: Duration,
+    stale_time: DurationInput,
     revalidate_on_mount: bool = True,
     revalidate_on_focus: bool | Literal["always"] = False,
     focus_signal: Atom[object] | None = None,
 ) -> Atom[AsyncResult[A, E]]:
-    stale = to_millis(to_seconds(stale_time))
+    stale = to_millis(from_input_unsafe(stale_time))
 
     def read(get: AtomContext, source: Atom[AsyncResult[A, E]]) -> AsyncResult[A, E]:
         current = get.once(source)

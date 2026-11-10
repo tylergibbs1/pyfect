@@ -10,7 +10,8 @@ from typing import Any, Never, overload
 from pyfect import channel
 from pyfect._core import Effect, _Succeed, _Suspend, _Sync
 from pyfect.channel._base import end_with
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe
 from pyfect.errors import Done
 from pyfect.pubsub import PubSub, Subscription
 from pyfect.queue import Dequeue, Queue, Strategy
@@ -93,10 +94,10 @@ def from_schedule[O, E = Never, R = Never](schedule: Schedule[O, object, E, R]) 
     return from_pull(to_step_with_metadata(schedule).map(with_step))
 
 
-def tick(interval: Duration) -> Stream[None]:
+def tick(interval: DurationInput) -> Stream[None]:
     """An endless stream of ``None``: the first at once, then one after
     each ``interval``."""
-    seconds = to_seconds(interval)
+    seconds = from_input_unsafe(interval)
     tock: Effect[tuple[None]] = _Succeed((None,))
 
     def make_pull() -> AnyPull:

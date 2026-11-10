@@ -29,7 +29,7 @@ from pyfect._effect_args import require_effect
 from pyfect._unsubscripted import Unsubscripted
 from pyfect.batching._request import Entry, EqualKeys
 from pyfect.clock import sleep
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.exit import Failure, Success
 
 if TYPE_CHECKING:
@@ -333,7 +333,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
         require_effect(delay, "delay")
         return self._with(delay=delay)
 
-    def set_delay(self, duration: Duration) -> RequestResolver[Q_contra, E_co]:
+    def set_delay(self, duration: DurationInput) -> RequestResolver[Q_contra, E_co]:
         """Collect each batch for ``duration``."""
         return self._with(delay=sleep(duration))
 
@@ -350,7 +350,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
         self: RequestResolver[Q, E_co],
         *,
         capacity: int | None,
-        time_to_live: Callable[[Exit[Any, E_co], Q], Duration] | None = None,
+        time_to_live: Callable[[Exit[Any, E_co], Q], DurationInput] | None = None,
         require_services_at: Literal["lookup", "construction"] = "lookup",
     ) -> Effect[Cache[Q, Any, E_co]]:
         """A cache whose lookup makes the request (Effect's ``asCache``). A
@@ -458,7 +458,7 @@ class RequestResolver(Generic[Q_contra, E_co]):
         self: RequestResolver[Q, E_co],
         *,
         store_id: str,
-        time_to_live: Callable[[Exit[Any, Any], Q], Duration] | None = None,
+        time_to_live: Callable[[Exit[Any, Any], Q], DurationInput] | None = None,
         stale_while_revalidate: Callable[[Exit[Any, Any], Q], bool] | None = None,
     ) -> Effect[
         RequestResolver[Q, E_co | PersistenceError | SchemaError], Never, Persistence | Scope

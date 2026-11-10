@@ -32,7 +32,7 @@ from pyfect.cluster.sharding_config import ShardGroups, ShardingConfigService
 from pyfect.cluster.sharding_registration_event import ShardingRegistrationEvent
 from pyfect.cluster.snowflake import Snowflake, SnowflakeGenerator
 from pyfect.context import Context
-from pyfect.duration import Seconds, to_millis
+from pyfect.duration import Duration, to_millis
 from pyfect.effect import die, succeed, suspend
 from pyfect.latch import Latch
 from pyfect.pubsub import PubSub
@@ -185,7 +185,7 @@ class ShardingState:
         return self.config.runner_address
 
     @property
-    def shard_lock_interval(self) -> Seconds:
+    def shard_lock_interval(self) -> Duration:
         return effective_interval(self.config)
 
     def get_shard_id(self, entity_id: EntityId, group: str) -> ShardId:

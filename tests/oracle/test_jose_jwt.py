@@ -10,7 +10,7 @@ from typing import Literal, TypedDict
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.jose import jwe, jwk, jwks, jwt
 from pyfect.jose.jose_error import ClaimValidationFailed
 from pyfect.redacted import make as redacted
@@ -190,7 +190,7 @@ def test_validates_registered_claims_against_the_verification_policy():
 
         # Inputs that ``Duration`` would read as zero are rejected: NaN in any
         # form, non-finite components, and components that overflow.
-        tolerances: list[Duration] = [
+        tolerances: list[DurationInput] = [
             math.nan,
             (math.nan, 0),
             {"seconds": math.nan},

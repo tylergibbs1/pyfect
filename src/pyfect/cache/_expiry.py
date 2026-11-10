@@ -10,16 +10,16 @@ sign) never expires.
 from __future__ import annotations
 
 import itertools
-import math
 from collections.abc import Callable
 from typing import Any, Final, Literal
 
 from pyfect._fiber import Fiber
 from pyfect.clock import Clock, ClockService
-from pyfect.duration import Duration, Seconds, to_nanos, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, infinity
+from pyfect.duration import Input as DurationInput
 from pyfect.exit import Exit
 
-type TimeToLive[K, A, E] = Duration | Callable[[Exit[A, E], K], Duration]
+type TimeToLive[K, A, E] = DurationInput | Callable[[Exit[A, E], K], DurationInput]
 """One duration for every entry, or one per lookup outcome and key."""
 
 type RequireServicesAt = Literal["construction", "lookup"]
@@ -27,22 +27,22 @@ type RequireServicesAt = Literal["construction", "lookup"]
 (``"construction"``, the default), or each caller of ``get``
 (``"lookup"``)."""
 
-_FOREVER: Final = Seconds(math.inf)
+_FOREVER: Final = infinity
 
 
 def time_to_live_of[K, A, E](
     time_to_live: TimeToLive[K, A, E] | None,
-) -> Callable[[Exit[A, E], K], Seconds]:
+) -> Callable[[Exit[A, E], K], Duration]:
     if time_to_live is None:
         return _forever
     if callable(time_to_live):
         pick = time_to_live
-        return lambda ex, key: to_seconds(pick(ex, key))
-    fixed = to_seconds(time_to_live)
+        return lambda ex, key: from_input_unsafe(pick(ex, key))
+    fixed = from_input_unsafe(time_to_live)
     return lambda _ex, _key: fixed
 
 
-def _forever(_ex: object, _key: object) -> Seconds:
+def _forever(_ex: object, _key: object) -> Duration:
     return _FOREVER
 
 
@@ -50,12 +50,11 @@ def clock_of(fiber: Fiber[Any, Any]) -> ClockService:
     return fiber._context.lookup(Clock)[1]
 
 
-def deadline(clock: ClockService, time_to_live: Seconds) -> int | None:
+def deadline(clock: ClockService, time_to_live: Duration) -> int | None:
     """When an entry made now with ``time_to_live`` expires; ``None`` for
     never."""
-    if math.isinf(time_to_live):
-        return None
-    return clock.now_nanos_unsafe() + to_nanos(time_to_live)
+    n = time_to_live.to_nanos()
+    return None if n is None else clock.now_nanos_unsafe() + n
 
 
 def is_expired(expires_at: int | None, now: int) -> bool:

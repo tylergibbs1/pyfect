@@ -14,7 +14,7 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.clock import ClockService
 from pyfect.context import Tag
-from pyfect.duration import Seconds, to_millis, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, infinity, to_millis
 from pyfect.effect import fail, gen, succeed, suspend, void
 from pyfect.exit import Exit, Failure
 from pyfect.layer import Layer
@@ -33,7 +33,7 @@ from pyfect.scope import CloseableScope, Scope
 # --- the backing store: JSON values by string key -----------------------------------
 
 
-type BackingEntry = tuple[str, object, Seconds | None]
+type BackingEntry = tuple[str, object, Duration | None]
 """A key, its JSON value and how long to keep it (``None``: forever)."""
 
 
@@ -45,7 +45,7 @@ class BackingPersistenceStore:
 
     get: Callable[[str], Effect[object | None, PersistenceError]]
     get_many: Callable[[Sequence[str]], Effect[list[object | None], PersistenceError]]
-    set: Callable[[str, object, Seconds | None], Effect[None, PersistenceError]]
+    set: Callable[[str, object, Duration | None], Effect[None, PersistenceError]]
     set_many: Callable[[Sequence[BackingEntry]], Effect[None, PersistenceError]]
     remove: Callable[[str], Effect[None, PersistenceError]]
     clear: Effect[None, PersistenceError]
@@ -129,10 +129,10 @@ class _Store:
         self._time_to_live = time_to_live
         self._scope = scope
 
-    def _ttl(self, value: Exit[Any, Any], key: AnyPersistable) -> Seconds:
+    def _ttl(self, value: Exit[Any, Any], key: AnyPersistable) -> Duration:
         if self._time_to_live is None:
             return _FOREVER
-        return to_seconds(self._time_to_live(value, key))
+        return from_input_unsafe(self._time_to_live(value, key))
 
     def get[A, E, R](
         self, key: Persistable[A, E, R]
@@ -220,10 +220,10 @@ class _Store:
         return self._storage.clear
 
 
-_FOREVER: Final = Seconds(math.inf)
+_FOREVER: Final = infinity
 
 
-def _finite(ttl: Seconds) -> Seconds | None:
+def _finite(ttl: Duration) -> Duration | None:
     return None if math.isinf(ttl) else ttl
 
 
@@ -259,7 +259,7 @@ layer: Layer[Persistence, Never, BackingPersistence] = layer_effect(Persistence,
 # --- helpers for backends -----------------------------------------------------------
 
 
-def unsafe_ttl_to_expires(clock: ClockService, ttl: Seconds | None) -> int | None:
+def unsafe_ttl_to_expires(clock: ClockService, ttl: Duration | None) -> int | None:
     """When an entry written now with ``ttl`` expires, in epoch
     milliseconds (``None``: never)."""
     if ttl is None:

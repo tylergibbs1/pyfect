@@ -13,7 +13,8 @@ from pyfect._layer_core import require_layer
 from pyfect.clock import Clock
 from pyfect.console import CurrentConsole
 from pyfect.context import Context
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe
 from pyfect.effect import Effect, provide_service
 from pyfect.exit import Success
 from pyfect.layer import Layer
@@ -56,8 +57,8 @@ def layer_fixture[RO, E](
     scope: FixtureScope = "module",
     live: bool = False,
     asyncio: bool = False,
-    warning_delay: Duration = "1 second",
-    timeout: Duration | None = None,
+    warning_delay: DurationInput = "1 second",
+    timeout: DurationInput | None = None,
 ) -> FixtureFunctionDefinition:
     """A pytest fixture that builds ``layer`` once per ``scope`` and
     releases its resources when the scope ends.
@@ -89,8 +90,8 @@ def effect_fixture[A, E](
     scope: FixtureScope = "function",
     live: bool = False,
     asyncio: bool = False,
-    warning_delay: Duration = "1 second",
-    timeout: Duration | None = None,
+    warning_delay: DurationInput = "1 second",
+    timeout: DurationInput | None = None,
 ) -> FixtureFunctionDefinition:
     """A pytest fixture whose value is what ``eff`` succeeds with, run once
     per ``scope``. Finalizers ``eff`` adds to its ``Scope`` run when the
@@ -128,12 +129,12 @@ def _held[T](
     *,
     live: bool,
     asyncio: bool,
-    warning_delay: Duration,
-    timeout: Duration | None,
+    warning_delay: DurationInput,
+    timeout: DurationInput | None,
 ) -> Generator[tuple[T, Context, Runtime]]:
     """Run ``build`` on a fresh runtime and clock, hold what it built, then
     close its scope and the runtime."""
-    limit = None if timeout is None else to_seconds(timeout)
+    limit = None if timeout is None else from_input_unsafe(timeout)
     runtime: Runtime = AsyncioRuntime() if asyncio else SyncRuntime()
     clock = None if live else TestClock(warning_delay=warning_delay)
     context = (

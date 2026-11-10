@@ -48,7 +48,7 @@ from pyfect import config_provider, layer, otel, testing
 from pyfect.cause import Cause, Fail
 from pyfect.clock import Clock
 from pyfect.context import Context
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.layer import Layer
 from pyfect.logger import LogLevel, MinimumLogLevel
 from pyfect.otel._attributes import PYFECT_VERSION
@@ -229,7 +229,7 @@ class _SkewedClock:
     def monotonic_nanos_unsafe(self) -> int:
         return _MONOTONIC_NANOS
 
-    def sleep(self, seconds: Seconds) -> fx.Effect[None]:
+    def sleep(self, seconds: Duration) -> fx.Effect[None]:
         return fx.void
 
 

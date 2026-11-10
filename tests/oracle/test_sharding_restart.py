@@ -32,7 +32,7 @@ from pyfect.cluster.message import Incoming, IncomingRequest, OutgoingRequest
 from pyfect.cluster.message_storage import MessageStorage, MessageStorageService
 from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.snowflake import Snowflake
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.rpc import make as make_rpc
@@ -147,11 +147,11 @@ def _restart_sharding(
                     replace(
                         sharding_config.DEFAULTS,
                         entity_mailbox_capacity=10,
-                        entity_message_poll_interval=Seconds(5),
-                        refresh_assignments_interval=Seconds(0),
-                        entity_termination_timeout=Seconds(60),
-                        entity_reply_poll_interval=Seconds(0.001),
-                        send_retry_interval=Seconds(0.01),
+                        entity_message_poll_interval=millis(5000),
+                        refresh_assignments_interval=millis(0),
+                        entity_termination_timeout=millis(60_000),
+                        entity_reply_poll_interval=millis(1),
+                        send_retry_interval=millis(10),
                         **config,
                     )
                 )

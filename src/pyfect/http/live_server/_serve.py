@@ -13,7 +13,7 @@ from typing import Any
 
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.effect import gen, succeed, sync, void
 from pyfect.http._authority import LOCALHOST, absolute_url
 from pyfect.http.headers import Headers
@@ -33,7 +33,7 @@ from pyfect.socket._errors import SocketError
 MAX_HEAD_SIZE = 16 * 1024
 """Node's ``maxHeaderSize``: a longer head is answered with 431."""
 
-CLOSE_GRACE_PERIOD = Seconds(0.5)
+CLOSE_GRACE_PERIOD = millis(500)
 """How long a closing connection waits for the client to stop sending
 before it is torn down (so the response is not lost to a reset)."""
 
@@ -49,9 +49,9 @@ class Timeouts:
     of the head arriving, or its read fails, the response drain
     included, and the connection closes)."""
 
-    keep_alive: Seconds
-    headers: Seconds
-    request: Seconds
+    keep_alive: Duration
+    headers: Duration
+    request: Duration
 
 
 def _reject(conn: Connection, status: int) -> Effect[None]:

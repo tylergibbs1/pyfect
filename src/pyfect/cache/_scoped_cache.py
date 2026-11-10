@@ -37,7 +37,7 @@ from pyfect.cache._expiry import (
 )
 from pyfect.context import Context
 from pyfect.deferred import Deferred
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.effect import from_exit, interrupt
 from pyfect.exit import Exit, Failure, Success, as_void_all
 from pyfect.logger._log import log_unhandled
@@ -59,7 +59,7 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
         lookup: Callable[[K], Effect[A, E, Any]],
         context: Context,
         capacity: int | None,
-        time_to_live: Callable[[Exit[A, E], K], Seconds],
+        time_to_live: Callable[[Exit[A, E], K], Duration],
     ) -> None:
         self._lookup = lookup
         self._context = context

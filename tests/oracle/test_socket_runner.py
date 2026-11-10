@@ -88,9 +88,9 @@ def _config(port: int, **overrides: Any) -> ShardingConfigService:
     return replace(
         DEFAULTS,
         runner_address=runner_address.make(HOST, port),
-        entity_termination_timeout=fx.duration.Seconds(0),
-        entity_message_poll_interval=fx.duration.Seconds(5),
-        send_retry_interval=fx.duration.Seconds(0.1),
+        entity_termination_timeout=fx.duration.Duration(0),
+        entity_message_poll_interval=fx.duration.Duration(5),
+        send_retry_interval=fx.duration.Duration(0.1),
         **overrides,
     )
 

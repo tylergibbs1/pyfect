@@ -7,7 +7,7 @@ from collections.abc import Callable
 import pyfect as fx
 from pyfect import testing
 from pyfect._wake_tracking import WakeTracker
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.exit import Success
 from pyfect.scheduler import Cancel, Scheduler, SyncScheduler, Task
 from pyfect.scope import CloseableScope
@@ -24,7 +24,7 @@ class CountingScheduler:
         self.scheduled += 1
         self.inner.schedule(task)
 
-    def call_later(self, delay: Seconds, task: Task, *, daemon: bool = False) -> Cancel:
+    def call_later(self, delay: Duration, task: Task, *, daemon: bool = False) -> Cancel:
         return self.inner.call_later(delay, task, daemon=daemon)
 
     def track(self, tracker: WakeTracker, f: Callable[[], None]) -> None:

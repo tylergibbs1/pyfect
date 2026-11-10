@@ -20,7 +20,8 @@ import pyfect as fx
 from pyfect import config_provider, layer, metric, stream, testing
 from pyfect._version import VERSION
 from pyfect.clock import Clock, ClockService, current_time_millis
-from pyfect.duration import Duration, Seconds
+from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.http import body as http_body
 from pyfect.http import client, response
 from pyfect.http.body import HttpBody
@@ -44,9 +45,9 @@ type Client = HttpClientService[HttpClientError]
 def _make_exporter(
     http: Client,
     *,
-    export_interval: Duration = "1 hour",
+    export_interval: DurationInput = "1 hour",
     max_batch_size: int | Literal["disabled"] = 1,
-    shutdown_timeout: Duration = "1 second",
+    shutdown_timeout: DurationInput = "1 second",
     body: Any = None,
     headers: dict[str, str] | None = None,
 ):
@@ -218,7 +219,7 @@ class _CountingClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self.inner.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: Seconds) -> fx.Effect[None]:
+    def sleep(self, seconds: Duration) -> fx.Effect[None]:
         def start() -> fx.Effect[None]:
             self.pending += 1
             return self.inner.sleep(seconds).ensuring(fx.sync(self._done))
@@ -388,11 +389,11 @@ def _retry_case(retry_after: str | None, first: float, second: float):
         yield from _yield_now_n(3)
         assert attempts[0] == 1
 
-        yield from testing.adjust(Seconds(first))
+        yield from testing.adjust(Duration(first))
         yield from _yield_now_n(2)
         assert attempts[0] == 1
 
-        yield from testing.adjust(Seconds(second))
+        yield from testing.adjust(Duration(second))
         yield from _yield_now_n(2)
         assert attempts[0] == 2
 

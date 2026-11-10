@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Never
 
 from pyfect import layer as _layer
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.http import headers as _headers
 from pyfect.http import request as _request
 from pyfect.http.client import HttpClient
@@ -37,13 +37,13 @@ def layer(
     compression: Compression = "none",
     max_batch_size: int | None = None,
     tracer_context: SpanContextHook | None = None,
-    logger_export_interval: Duration | None = None,
+    logger_export_interval: DurationInput | None = None,
     logger_exclude_log_spans: bool = False,
     logger_merge_with_existing: bool = True,
-    metrics_export_interval: Duration | None = None,
+    metrics_export_interval: DurationInput | None = None,
     metrics_temporality: AggregationTemporality = "cumulative",
-    tracer_export_interval: Duration | None = None,
-    shutdown_timeout: Duration | None = None,
+    tracer_export_interval: DurationInput | None = None,
+    shutdown_timeout: DurationInput | None = None,
 ) -> Layer[Flusher, Never, HttpClient | OtlpSerialization]:
     """The OTLP logger, metrics exporter and tracer, posting below
     ``base_url``; they share one ``Flusher``."""
@@ -115,13 +115,13 @@ def layer_json(
     compression: Compression = "none",
     max_batch_size: int | None = None,
     tracer_context: SpanContextHook | None = None,
-    logger_export_interval: Duration | None = None,
+    logger_export_interval: DurationInput | None = None,
     logger_exclude_log_spans: bool = False,
     logger_merge_with_existing: bool = True,
-    metrics_export_interval: Duration | None = None,
+    metrics_export_interval: DurationInput | None = None,
     metrics_temporality: AggregationTemporality = "cumulative",
-    tracer_export_interval: Duration | None = None,
-    shutdown_timeout: Duration | None = None,
+    tracer_export_interval: DurationInput | None = None,
+    shutdown_timeout: DurationInput | None = None,
 ) -> Layer[Flusher, Never, HttpClient]:
     """``layer`` with OTLP/JSON bodies."""
     return layer(
@@ -149,13 +149,13 @@ def layer_protobuf(
     compression: Compression = "none",
     max_batch_size: int | None = None,
     tracer_context: SpanContextHook | None = None,
-    logger_export_interval: Duration | None = None,
+    logger_export_interval: DurationInput | None = None,
     logger_exclude_log_spans: bool = False,
     logger_merge_with_existing: bool = True,
-    metrics_export_interval: Duration | None = None,
+    metrics_export_interval: DurationInput | None = None,
     metrics_temporality: AggregationTemporality = "cumulative",
-    tracer_export_interval: Duration | None = None,
-    shutdown_timeout: Duration | None = None,
+    tracer_export_interval: DurationInput | None = None,
+    shutdown_timeout: DurationInput | None = None,
 ) -> Layer[Flusher, Never, HttpClient]:
     """``layer`` with OTLP/protobuf bodies."""
     return layer(

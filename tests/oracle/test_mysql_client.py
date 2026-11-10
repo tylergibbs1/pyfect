@@ -23,7 +23,7 @@ import asyncmy
 
 import pyfect as fx
 from pyfect import case, config, config_provider, redacted, testing
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.logger import Logger
 from pyfect.logger import layer as logger_layer
 from pyfect.reactivity import layer as reactivity_layer
@@ -377,7 +377,7 @@ def test_interrupting_a_statement_ends_it_on_the_server(mysql_server: MysqlServe
         # limit stays under the 5 s after which the server notices a closed socket by itself:
         # at 5 s this passed with the kill not working (test_mysql_interrupt_on_server).
         locked = sql("SELECT id FROM interrupted_locks WHERE id = 1 FOR UPDATE")
-        assert (yield from sql.with_transaction(locked).timeout(Seconds(GONE_WITHIN))) == [
+        assert (yield from sql.with_transaction(locked).timeout(Duration(GONE_WITHIN))) == [
             {"id": 1}
         ]
         sleeping = yield from sql(

@@ -14,7 +14,8 @@ from typing import Never
 
 from pyfect._core import Effect
 from pyfect.clock import sleep as clock_sleep
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import gen, succeed
 from pyfect.workflow._services import WorkflowEngine, WorkflowInstance
 from pyfect.workflow.activity import make as make_activity
@@ -27,30 +28,30 @@ class DurableClock:
     """A named timer of a workflow and the deferred its wake-up completes."""
 
     name: str
-    duration: Seconds
+    duration: Duration
     deferred: DurableDeferred[None]
 
 
-def make(*, name: str, duration: Duration) -> DurableClock:
+def make(*, name: str, duration: DurationInput) -> DurableClock:
     return DurableClock(
         name=name,
-        duration=to_seconds(duration),
+        duration=from_input_unsafe(duration),
         deferred=make_deferred(f"DurableClock/{name}"),
     )
 
 
-DEFAULT_IN_MEMORY_THRESHOLD: Seconds = to_seconds("60 seconds")
+DEFAULT_IN_MEMORY_THRESHOLD: Duration = from_input_unsafe("60 seconds")
 
 
 def sleep(
-    *, name: str, duration: Duration, in_memory_threshold: Duration | None = None
+    *, name: str, duration: DurationInput, in_memory_threshold: DurationInput | None = None
 ) -> Effect[None, Never, WorkflowEngine | WorkflowInstance]:
     """Wait ``duration`` inside a workflow. A zero duration does nothing."""
-    seconds = to_seconds(duration)
+    seconds = from_input_unsafe(duration)
     threshold = (
         DEFAULT_IN_MEMORY_THRESHOLD
         if in_memory_threshold is None
-        else to_seconds(in_memory_threshold)
+        else from_input_unsafe(in_memory_threshold)
     )
     if seconds == 0:
         return succeed(None)

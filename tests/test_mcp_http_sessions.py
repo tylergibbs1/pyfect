@@ -11,7 +11,7 @@ import pyfect as fx
 from pyfect import testing
 from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_server as M
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.errors import IllegalArgumentError
 from pyfect.http import request as R
 from pyfect.http.client import HttpClientService
@@ -71,11 +71,11 @@ def test_a_full_table_still_serves_its_sessions():
 def test_idle_sessions_expire():
     http = yield from _http(max_sessions=1)
     session = (yield from _post(http, _initialize())).headers["mcp-session-id"]
-    yield from testing.adjust(Seconds(29 * 60))
+    yield from testing.adjust(millis(1_740_000))
     assert (yield from _ping(http, session)).status == 200
-    yield from testing.adjust(Seconds(29 * 60))
+    yield from testing.adjust(millis(1_740_000))
     assert (yield from _ping(http, session)).status == 200  # each request renews it
-    yield from testing.adjust(Seconds(30 * 60 + 1))
+    yield from testing.adjust(Duration(30 * 60 + 1))
     assert (yield from _ping(http, session)).status == 404
     # Its slot is free again.
     assert (yield from _post(http, _initialize())).status == 200

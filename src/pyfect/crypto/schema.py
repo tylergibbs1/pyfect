@@ -30,7 +30,7 @@ from pyfect._core import Effect
 from pyfect.crypto import aead, cipher, key_agreement, key_format, key_wrap, mac, signature
 from pyfect.crypto.crypto_error import CryptoError
 from pyfect.crypto.web_crypto import JsonWebKey
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.effect import callback, fail, succeed, sync
 from pyfect.exit import Exit
 from pyfect.scheduler import CurrentScheduler
@@ -224,7 +224,7 @@ def _next_turn() -> Effect[None]:
 
     def wait(scheduler: Any) -> Effect[None]:
         def register(resume: Callable[[Effect[None]], None]) -> Effect[None]:
-            return sync(scheduler.call_later(Seconds(0.0), lambda: resume(succeed(None))))
+            return sync(scheduler.call_later(millis(0), lambda: resume(succeed(None))))
 
         return callback(register)
 

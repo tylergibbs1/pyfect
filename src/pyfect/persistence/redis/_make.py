@@ -3,7 +3,6 @@ and subscriptions (Effect's ``Redis.make``)."""
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Generator
 from typing import Any, Never
 
@@ -14,7 +13,7 @@ from pyfect._subscriber_queue import FellBehind, check_capacity
 from pyfect._subscriber_queue import offer as offer_to_subscriber
 from pyfect.cache import Cache
 from pyfect.cause import Cause
-from pyfect.duration import Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, infinity, millis
 from pyfect.effect import fail, gen, suspend, void
 from pyfect.exit import Exit, Failure, Success
 from pyfect.persistence.redis._error import RedisError
@@ -137,8 +136,8 @@ class _Evaluator:
         return run
 
 
-def _kept_while_loaded(ex: Exit[str, RedisError], _script: object) -> Seconds:
-    return Seconds(math.inf) if isinstance(ex, Success) else Seconds(0.0)
+def _kept_while_loaded(ex: Exit[str, RedisError], _script: object) -> Duration:
+    return infinity if isinstance(ex, Success) else millis(0)
 
 
 def make(
@@ -194,7 +193,7 @@ def make(
         get = connection_pool.get()
         if options.acquire_timeout is not None:
             get = get.timeout_or_else(
-                to_seconds(options.acquire_timeout),
+                from_input_unsafe(options.acquire_timeout),
                 lambda: fail(
                     RedisError(
                         cause=TimeoutError("Timed out waiting for a reserved Redis connection")

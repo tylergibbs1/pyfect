@@ -8,7 +8,7 @@ from typing import Never
 import pyfect as fx
 from pyfect import testing
 from pyfect.cause import Cause, Die, Fail
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 
 
 def _tagged(e: str) -> fx.Result[str, str]:
@@ -90,7 +90,7 @@ def test_filter_map_effect_fails_with_the_filters_error() -> None:
 
 def test_filter_map_effect_collects_in_completion_order_when_concurrent() -> None:
     def after(n: int) -> fx.Effect[fx.Result[int, Never]]:
-        return fx.sleep(Seconds(n / 1000)).as_(fx.Ok(n))
+        return fx.sleep(Duration(n / 1000)).as_(fx.Ok(n))
 
     @fx.gen
     def program():

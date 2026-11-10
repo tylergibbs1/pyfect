@@ -8,7 +8,7 @@ from typing import Any
 
 from pyfect._core import Effect
 from pyfect._js import text_encode
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import gen
 from pyfect.file_system import FileSystem, OpenFlag
 from pyfect.logger._model import Logger
@@ -17,7 +17,7 @@ from pyfect.scope import Scope
 
 
 def to_file(
-    logger: Logger[str], path: str, *, flag: OpenFlag, mode: int, batch_window: Duration
+    logger: Logger[str], path: str, *, flag: OpenFlag, mode: int, batch_window: DurationInput
 ) -> Effect[Logger[None], PlatformError, Scope | FileSystem]:
     def build() -> Generator[Effect[Any, PlatformError, Scope | FileSystem], Any, Logger[None]]:
         fs = yield from FileSystem()

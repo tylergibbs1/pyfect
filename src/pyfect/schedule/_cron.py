@@ -11,27 +11,27 @@ from pyfect import cron as cron_module
 from pyfect._core import Effect, _Succeed, _Sync
 from pyfect.cron import Cron, CronParseError, DstOverlapPolicy
 from pyfect.date_time._epoch import from_epoch_millis, to_epoch_millis
-from pyfect.duration import ZERO, Seconds
+from pyfect.duration import Duration, zero
 from pyfect.effect import from_result
 from pyfect.result import Ok
 from pyfect.schedule._model import Continue, Decision, Schedule, Stop, _since, from_step
 
 
 @overload
-def cron(expression: Cron) -> Schedule[Seconds, object, CronParseError]: ...
+def cron(expression: Cron) -> Schedule[Duration, object, CronParseError]: ...
 @overload
 def cron(
     expression: str,
     tz: tzinfo | str | None = None,
     *,
     on_dst_overlap: DstOverlapPolicy = "earlier",
-) -> Schedule[Seconds, object, CronParseError]: ...
+) -> Schedule[Duration, object, CronParseError]: ...
 def cron(
     expression: str | Cron,
     tz: tzinfo | str | None = None,
     *,
     on_dst_overlap: DstOverlapPolicy = "earlier",
-) -> Schedule[Seconds, object, CronParseError]:
+) -> Schedule[Duration, object, CronParseError]:
     """Recur at each time matching ``expression``, waiting until it. Outputs
     the delay. A string is parsed with ``cron.parse(expression, tz,
     on_dst_overlap=...)`` when the schedule runs, failing it with
@@ -45,16 +45,16 @@ def cron(
     )
 
     def step_for(c: Cron):
-        def step(now: float, _input: object) -> Effect[Decision[Seconds]]:
+        def step(now: float, _input: object) -> Effect[Decision[Duration]]:
             if math.isinf(now):
-                return _Succeed(Stop(ZERO))
+                return _Succeed(Stop(zero))
 
-            def decide() -> Decision[Seconds]:
+            def decide() -> Decision[Duration]:
                 # A JavaScript ``Date`` holds whole milliseconds, cut toward zero.
                 start = from_epoch_millis(math.trunc(now)).astimezone()
                 found = cron_module.next(c, start)
                 delay = _since(to_epoch_millis(found), now)
-                if delay == 0:
+                if delay.is_zero():
                     found = cron_module.next(c, found)
                     delay = _since(to_epoch_millis(found), now)
                 return Continue(delay, delay)

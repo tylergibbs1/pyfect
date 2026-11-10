@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Final, Never, Self, TypeIs, get
 
 from pyfect._core import Effect, _FailCause
 from pyfect.cause import Cause, Fail, Interrupt, Reason, fail, from_reasons
-from pyfect.duration import Seconds, format_duration
+from pyfect.duration import Duration
 from pyfect.result import Err, Ok, Result
 
 if TYPE_CHECKING:
@@ -224,10 +224,10 @@ def _rebuild[T](cls: Callable[..., T], init: dict[str, Any]) -> T:
 class TimeoutException(TaggedError, builtins.TimeoutError):
     """An effect ran longer than its ``timeout`` of ``duration``."""
 
-    duration: Seconds
+    duration: Duration
 
     def __str__(self) -> str:
-        return f"Operation timed out after '{format_duration(self.duration)}'"
+        return f"Operation timed out after '{self.duration.format()}'"
 
 
 class NoSuchElementException(TaggedError, LookupError):

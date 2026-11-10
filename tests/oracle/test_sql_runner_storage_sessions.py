@@ -22,7 +22,7 @@ from pyfect.cluster import runner_address, shard_id, sharding_config
 from pyfect.cluster import sql_runner_storage as SqlRunnerStorage
 from pyfect.cluster.runner_storage import RunnerStorageService
 from pyfect.cluster.sharding_config import DEFAULTS
-from pyfect.duration import Seconds
+from pyfect.duration import millis
 from pyfect.exit import Success
 from pyfect.sql.client import SqlClient, SqlClientService
 
@@ -134,7 +134,7 @@ def test_the_server_ends_a_lock_session_left_idle_for_the_lock_expiration(
     def body() -> Generator[fx.Effect[Any, Any, Any], Any]:
         client = yield from make_client()
         prefix = _prefix()
-        expiring = yield from _storage(client, prefix, shard_lock_expiration=Seconds(1))
+        expiring = yield from _storage(client, prefix, shard_lock_expiration=millis(1000))
         assert (yield from expiring.acquire(address1, [shard1])) == [shard1]
 
         other_client = yield from make_client()
@@ -166,7 +166,7 @@ def test_the_lock_connection_goes_back_to_the_pool_with_its_idle_timeout_restore
         client = yield from make_client()
         before = yield from client.unsafe(show)
         yield from fx.scoped(
-            _storage(client, _prefix(), shard_lock_expiration=Seconds(1)).flat_map(
+            _storage(client, _prefix(), shard_lock_expiration=millis(1000)).flat_map(
                 lambda storage: storage.acquire(address1, [shard1])
             )
         )

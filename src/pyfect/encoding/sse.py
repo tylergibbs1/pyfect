@@ -29,7 +29,8 @@ from pyfect._primitives import _FailCause, _Succeed, _Suspend, _Sync
 from pyfect.cause import fail as fail_cause
 from pyfect.channel import Channel, from_transform
 from pyfect.channel._base import AnyPull, end_with
-from pyfect.duration import Duration, Seconds, to_millis
+from pyfect.duration import Duration, to_millis
+from pyfect.duration import Input as DurationInput
 from pyfect.errors import TaggedError
 from pyfect.exit import Exit, Success
 from pyfect.pull import catch_done
@@ -81,7 +82,7 @@ class Retry(TaggedError):
     """A ``retry:`` directive: reconnect after ``duration``, resuming from
     ``last_event_id``."""
 
-    duration: Duration
+    duration: DurationInput
     last_event_id: str | None = None
 
 
@@ -229,7 +230,7 @@ class Parser:
         elif field == "id" and "\0" not in value:
             self._last_event_id = value
         elif field == "retry" and (millis := parse_digits(value)) is not None:
-            self._on_parse(Retry(Seconds(millis / 1000), self._last_event_id))
+            self._on_parse(Retry(Duration(millis / 1000), self._last_event_id))
 
 
 def make_parser(

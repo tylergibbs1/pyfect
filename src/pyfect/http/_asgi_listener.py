@@ -19,7 +19,8 @@ from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import Resume, WaitsFor, os_wait
 from pyfect._root import run_loop
 from pyfect.context import Context
-from pyfect.duration import ZERO, Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe, zero
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.exit import Exit
 from pyfect.http.asgi._serve import AsgiHandler
@@ -38,7 +39,7 @@ class ListenOptions(TypedDict):
     """0 (the default): any free port."""
     host: NotRequired[str]
     """Every interface by default (IPv6 and IPv4 where the host has both)."""
-    graceful_shutdown_timeout: NotRequired[Duration]
+    graceful_shutdown_timeout: NotRequired[DurationInput]
     """How long requests in flight may run once the server closes (20s)."""
     disable_preemptive_shutdown: NotRequired[bool]
     """Give requests in flight no time: closing interrupts them at once."""
@@ -129,7 +130,7 @@ class Running:
         self,
         server: Engine,
         loop: asyncio.AbstractEventLoop,
-        graceful: Seconds,
+        graceful: Duration,
     ) -> None:
         self.server = server
         self.graceful = graceful
@@ -191,10 +192,10 @@ class Running:
         return suspend(body)
 
 
-def graceful(options: ListenOptions) -> Seconds:
+def graceful(options: ListenOptions) -> Duration:
     if options.get("disable_preemptive_shutdown", False):
-        return ZERO
-    return to_seconds(options.get("graceful_shutdown_timeout", "20 seconds"))
+        return zero
+    return from_input_unsafe(options.get("graceful_shutdown_timeout", "20 seconds"))
 
 
 def _serve(

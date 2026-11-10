@@ -18,7 +18,7 @@ from pyfect.clock import sleep
 from pyfect.cluster import cluster_metrics
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.shard_id import ShardId
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.effect import gen, succeed, suspend, sync
 from pyfect.fiber_map import FiberMap
 from pyfect.logger import log_error, log_info, log_warning
@@ -165,7 +165,7 @@ class ShardAcquisition:
 
                 # ``eventually`` retries at once, so space failures to avoid
                 # hot-looping while storage is unavailable.
-                return suspend(check).annotate_logs(annotations).and_then(sleep(Seconds(0.05)))
+                return suspend(check).annotate_logs(annotations).and_then(sleep(millis(50)))
 
             return effect.sandbox().tap_error(warn).eventually()
 
@@ -179,7 +179,7 @@ class ShardAcquisition:
             state.runner_storage.release(self._self_address, shard_id),
         )
 
-        def record(timed: tuple[Seconds, None]) -> Effect[None]:
+        def record(timed: tuple[Duration, None]) -> Effect[None]:
             return cluster_metrics.shard_release_duration.update(timed[0])
 
         tracked = (
@@ -228,7 +228,7 @@ class ShardAcquisition:
                 return _VOID
             self._forced_release_running = True
             shard_ids = tuple(state.force_releasing_shards)
-            interval = Seconds(max(state.config.shard_lock_expiration, 30))
+            interval = Duration(max(state.config.shard_lock_expiration, 30))
 
             @gen
             def run():
@@ -364,7 +364,7 @@ class ShardAcquisition:
                     yield from fork_in(self._singletons.sync(), state.sharding_scope)
                 # The shutdown handoff releases the shards acquired here
                 # without waiting.
-                yield from sleep(Seconds(1)).race_first(state.handoff_latch.wait())
+                yield from sleep(millis(1000)).race_first(state.handoff_latch.wait())
                 state.active_shards_latch.open_unsafe()
 
         def failed(cause: Cause.Cause[Any]) -> Effect[None]:
@@ -439,7 +439,7 @@ class ShardAcquisition:
 
         return (
             suspend(run)
-            .retry(times=5, schedule=spaced(Seconds(0.05)))
+            .retry(times=5, schedule=spaced(millis(50)))
             .timeout(state.shard_lock_interval)
             .catch_cause(self._mark_unhealthy)
         )

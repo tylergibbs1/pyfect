@@ -12,7 +12,8 @@ from pyfect._core import Effect
 from pyfect.clock import Clock
 from pyfect.context import Tag
 from pyfect.date_time._zones import zone_local, zone_named, zone_of, zone_offset
-from pyfect.duration import Duration, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe
 from pyfect.effect import _ProvideService, fail, provide_service, succeed, suspend, sync
 from pyfect.errors import IllegalArgumentError
 from pyfect.layer import Layer
@@ -69,8 +70,8 @@ def zone_named_effect(zone_id: str) -> Effect[tzinfo, IllegalArgumentError]:
     return suspend(check)
 
 
-def _offset_zone(offset: Duration) -> tzinfo:
-    zone = zone_offset(timedelta(seconds=to_seconds(offset)))
+def _offset_zone(offset: DurationInput) -> tzinfo:
+    zone = zone_offset(timedelta(seconds=from_input_unsafe(offset)))
     if zone is None:
         raise ValueError(f"a zone offset must be strictly within a day, got {offset!r}")
     return zone
@@ -81,7 +82,7 @@ def with_current_zone(zone: tzinfo) -> _ProvideService[tzinfo, CurrentTimeZone]:
     return provide_service(CurrentTimeZone, zone)
 
 
-def with_current_zone_offset(offset: Duration) -> _ProvideService[tzinfo, CurrentTimeZone]:
+def with_current_zone_offset(offset: DurationInput) -> _ProvideService[tzinfo, CurrentTimeZone]:
     """Provide the fixed offset ``offset`` from UTC as the
     ``CurrentTimeZone``. Use with ``.pipe``."""
     return with_current_zone(_offset_zone(offset))
@@ -106,7 +107,7 @@ def layer_current_zone(zone: tzinfo) -> Layer[CurrentTimeZone]:
     return layer_succeed(CurrentTimeZone, zone)
 
 
-def layer_current_zone_offset(offset: Duration) -> Layer[CurrentTimeZone]:
+def layer_current_zone_offset(offset: DurationInput) -> Layer[CurrentTimeZone]:
     return layer_succeed(CurrentTimeZone, _offset_zone(offset))
 
 

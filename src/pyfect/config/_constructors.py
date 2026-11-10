@@ -14,7 +14,7 @@ from pyfect.config import _scalars
 from pyfect.config._config import Config
 from pyfect.config._leaf import scalar_config
 from pyfect.config._scalars import LiteralValue
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.logger import LogLevel
 from pyfect.redacted import Redacted
 
@@ -77,7 +77,7 @@ def log_level(name: str | None = None) -> Config[LogLevel]:
     return scalar_config(_scalars.log_level, name)
 
 
-def duration(name: str | None = None) -> Config[Seconds]:
+def duration(name: str | None = None) -> Config[Duration]:
     """A duration such as ``"10 seconds"`` or ``"500 millis"`` (``nanos``
     to ``weeks``, singular or plural), or ``"Infinity"`` / ``"-Infinity"``."""
     return scalar_config(_scalars.duration, name)

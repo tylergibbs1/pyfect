@@ -19,7 +19,7 @@ from typing import Any, ClassVar, TypedDict
 import pyfect as fx
 from pyfect import schedule, testing
 from pyfect import schema as S
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.latch import Latch
 from pyfect.persistence import persisted_queue as pq
 
@@ -50,7 +50,7 @@ def run(layer: fx.Layer[Any, Any, Any], body: Body) -> None:
 
 
 def live_sleep(seconds: float) -> fx.Effect[None]:
-    return testing.with_live(fx.sleep(Seconds(seconds)))
+    return testing.with_live(fx.sleep(Duration(seconds)))
 
 
 class PersistedQueueSuite:
@@ -155,7 +155,7 @@ class PersistedQueueSuite:
 
             # An unexpired dead letter must keep its custom id deduplicated.
             yield from store.cleanup(
-                time_to_live=Seconds(1), failed_time_to_live=Seconds(30 * 86_400)
+                time_to_live=millis(1000), failed_time_to_live=millis(2_592_000_000)
             )
             yield from queue.offer({"s": "duplicate"}, id=id)
             fiber = yield from queue.take(_succeed).fork_scoped()
@@ -165,7 +165,7 @@ class PersistedQueueSuite:
             # surrogate payload.
             yield from self.advance_past_ttl()
             yield from store.cleanup(
-                time_to_live=Seconds(30 * 86_400), failed_time_to_live=Seconds(1)
+                time_to_live=millis(2_592_000_000), failed_time_to_live=millis(1000)
             )
             yield from queue.offer({"s": "reoffered"}, id=id)
             assert (yield from self.await_delivery(fiber)) == {"s": "reoffered"}
@@ -375,14 +375,14 @@ class PersistedQueueSuite:
             yield from queue.take(_succeed)
 
             # within the ttl the dedupe entry survives, so re-offers are ignored
-            yield from store.cleanup(time_to_live=Seconds(30 * 86_400), failed_time_to_live=None)
+            yield from store.cleanup(time_to_live=millis(2_592_000_000), failed_time_to_live=None)
             yield from queue.offer({"n": 2}, id="cleanup-id")
             fiber = yield from queue.take(_succeed).fork_scoped()
             yield from self.assert_not_delivered(fiber)
 
             # after the ttl the completed element and its dedupe entry go away
             yield from self.advance_past_ttl()
-            yield from store.cleanup(time_to_live=Seconds(1), failed_time_to_live=None)
+            yield from store.cleanup(time_to_live=millis(1000), failed_time_to_live=None)
             yield from queue.offer({"n": 3}, id="cleanup-id")
             assert (yield from self.await_delivery(fiber)) == {"n": 3}
 
@@ -405,14 +405,14 @@ class PersistedQueueSuite:
             # without failed_time_to_live the failed element is the dead
             # letter and is kept, so its id stays deduplicated
             yield from self.advance_past_ttl()
-            yield from store.cleanup(time_to_live=Seconds(1), failed_time_to_live=None)
+            yield from store.cleanup(time_to_live=millis(1000), failed_time_to_live=None)
             yield from queue.offer({"n": 2}, id="failed-cleanup-id")
             fiber = yield from queue.take(_succeed).fork_scoped()
             yield from self.assert_not_delivered(fiber)
 
             # with failed_time_to_live the failed element and its dedupe entry go away
             yield from store.cleanup(
-                time_to_live=Seconds(30 * 86_400), failed_time_to_live=Seconds(1)
+                time_to_live=millis(2_592_000_000), failed_time_to_live=millis(1000)
             )
             yield from queue.offer({"n": 3}, id="failed-cleanup-id")
             assert (yield from self.await_delivery(fiber)) == {"n": 3}
@@ -430,7 +430,7 @@ class PersistedQueueSuite:
             # an element older than the ttl that was never processed keeps its
             # dedupe entry, so the re-offer does not enqueue a duplicate
             yield from self.advance_past_ttl()
-            yield from store.cleanup(time_to_live=Seconds(1), failed_time_to_live=None)
+            yield from store.cleanup(time_to_live=millis(1000), failed_time_to_live=None)
             yield from queue.offer({"n": 2}, id="pending-cleanup-id")
             assert (yield from queue.take(_succeed)) == {"n": 1}
 

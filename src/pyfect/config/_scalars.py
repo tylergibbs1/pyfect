@@ -15,7 +15,7 @@ from pyfect._url import Url
 from pyfect.byte_size import ByteSize
 from pyfect.byte_size import from_string as byte_size_from_string
 from pyfect.config._leaf import EXPECTED_STRING, Scalar, composite, expected
-from pyfect.duration import Seconds, parse_duration_text
+from pyfect.duration import Duration, from_input
 from pyfect.logger import LogLevel
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok, Result
@@ -141,8 +141,8 @@ def _encode_literal(value: LiteralValue) -> str:
             return js_number(value)
 
 
-def _duration(text: str) -> Result[Seconds, Issue]:
-    parsed = parse_duration_text(text)
+def _duration(text: str) -> Result[Duration, Issue]:
+    parsed = from_input(text)
     return (
         Err(InvalidValue({"message": "Expected a valid Duration string"}))
         if parsed is None

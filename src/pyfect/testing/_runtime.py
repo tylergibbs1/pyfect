@@ -15,7 +15,7 @@ from pyfect._core import Effect
 from pyfect._fiber import Fiber, root_fiber
 from pyfect.clock import Clock
 from pyfect.context import Context
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.exit import Exit, Failure
 from pyfect.run import await_fiber
 from pyfect.scheduler import AsyncioScheduler, Cancel, Scheduler, StalledError, SyncScheduler
@@ -31,7 +31,7 @@ class TestTimeoutError(TimeoutError):
 
 class Runtime(Protocol):
     def run[A, E](
-        self, eff: Effect[A, E, Never], context: Context, *, timeout: Seconds | None
+        self, eff: Effect[A, E, Never], context: Context, *, timeout: Duration | None
     ) -> Exit[A, E]: ...
 
     def close(self) -> None: ...
@@ -42,7 +42,7 @@ class _Deadline:
 
     __slots__ = ("_cancel", "expired", "timeout")
 
-    def __init__(self, fiber: Fiber[Any, Any], timeout: Seconds | None) -> None:
+    def __init__(self, fiber: Fiber[Any, Any], timeout: Duration | None) -> None:
         self.timeout = timeout
         self.expired = False
         self._cancel: Cancel | None = None
@@ -56,13 +56,17 @@ class _Deadline:
         # A daemon timer: a stalled test still fails fast with StalledError.
         self._cancel = fiber._scheduler.call_later(timeout, expire, daemon=True)
 
+    def _seconds(self) -> float | None:
+        return None if self.timeout is None else self.timeout.to_seconds()
+
     def check[A, E](self, ex: Exit[A, E], context: Context) -> Exit[A, E]:
+
         if self._cancel is not None:
             self._cancel()
         if not self.expired:
             return ex
         error = TestTimeoutError(
-            f"test timed out after {self.timeout}s; it was interrupted and its finalizers ran"
+            f"test timed out after {self._seconds()}s; it was interrupted and its finalizers ran"
         )
         if isinstance(ex, Failure) and not ex.cause.has_interrupts_only:
             error.add_note("While interrupting it:\n" + ex.cause.pretty())
@@ -73,7 +77,7 @@ class _Deadline:
         """The real failure when interrupting at the deadline left a finalizer stuck: the
         timeout, which ``StalledError`` would otherwise hide."""
         error = TestTimeoutError(
-            f"test timed out after {self.timeout}s; it was interrupted and a finalizer never "
+            f"test timed out after {self._seconds()}s; it was interrupted and a finalizer never "
             f"finished ({stall})"
         )
         _note_sleepers(error, context)
@@ -90,7 +94,7 @@ def _note_sleepers(error: BaseException, context: Context) -> None:
 
 
 def _start[A, E](
-    scheduler: Scheduler, eff: Effect[A, E, Never], context: Context, timeout: Seconds | None
+    scheduler: Scheduler, eff: Effect[A, E, Never], context: Context, timeout: Duration | None
 ) -> tuple[Fiber[A, E], _Deadline]:
     fiber: Fiber[A, E] = root_fiber(scheduler, context)
     fiber._start(eff)
@@ -106,7 +110,7 @@ class SyncRuntime:
         self._stall_timeout = stall_timeout
 
     def run[A, E](
-        self, eff: Effect[A, E, Never], context: Context, *, timeout: Seconds | None
+        self, eff: Effect[A, E, Never], context: Context, *, timeout: Duration | None
     ) -> Exit[A, E]:
         fiber, deadline = _start(self.scheduler, eff, context, timeout)
 
@@ -152,7 +156,7 @@ class AsyncioRuntime:
         self.scheduler = AsyncioScheduler(self._loop)
 
     def run[A, E](
-        self, eff: Effect[A, E, Never], context: Context, *, timeout: Seconds | None
+        self, eff: Effect[A, E, Never], context: Context, *, timeout: Duration | None
     ) -> Exit[A, E]:
         return self._loop.run_until_complete(run_on_loop(self.scheduler, eff, context, timeout))
 
@@ -165,7 +169,7 @@ async def run_on_loop[A, E](
     scheduler: AsyncioScheduler,
     eff: Effect[A, E, Never],
     context: Context,
-    timeout: Seconds | None,
+    timeout: Duration | None,
 ) -> Exit[A, E]:
     """Run on the running loop. Cancelling the awaiting task interrupts the
     fiber and waits for its finalizers."""

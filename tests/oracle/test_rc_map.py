@@ -18,7 +18,7 @@ import pytest
 import pyfect as fx
 from pyfect import testing
 from pyfect.cause import Die
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 
 
 def _interrupted(ex: fx.Exit[Any, Any] | None) -> bool:
@@ -84,7 +84,7 @@ def test_releases_every_entry_and_propagates_all_defects_with_ttl(
 
     rc_map = yield from _in(
         owner,
-        fx.RcMap.make(lookup, idle_time_to_live=Seconds(idle_time_to_live)),
+        fx.RcMap.make(lookup, idle_time_to_live=Duration(idle_time_to_live)),
     )
 
     for key in ["a", "b", "ok"]:
@@ -123,13 +123,13 @@ def _bad_lookup(throws: bool):
 def test_releases_capacity_after_a_failed_lookup(throws: bool, idle_time_to_live: float):
     """releases capacity after a ${throws ? "throwing" : "dying"} lookup with TTL %s"""
     rc_map = yield from fx.RcMap.make(
-        _bad_lookup(throws), capacity=1, idle_time_to_live=Seconds(idle_time_to_live)
+        _bad_lookup(throws), capacity=1, idle_time_to_live=Duration(idle_time_to_live)
     )
 
     assert _died_with((yield from fx.scoped(rc_map.get("bad")).exit()), "boom")
     if idle_time_to_live > 0:
         assert (yield from rc_map.has("bad"))
-        yield from testing.adjust(Seconds(idle_time_to_live))
+        yield from testing.adjust(Duration(idle_time_to_live))
     assert (yield from rc_map.get("good").exit()) == fx.Success("good")
     assert not (yield from rc_map.has("bad"))
 
@@ -168,7 +168,7 @@ def test_releases_only_the_invalidated_entry_with_ttl(idle_time_to_live: float):
         )
 
     rc_map = yield from _in(
-        map_scope, fx.RcMap.make(lookup, idle_time_to_live=Seconds(idle_time_to_live))
+        map_scope, fx.RcMap.make(lookup, idle_time_to_live=Duration(idle_time_to_live))
     )
 
     assert (yield from _in(old_scope, rc_map.get("key"))) == 1
@@ -519,7 +519,7 @@ def test_keys_lookup():
 
 
 def _short_or_long(key: str) -> float:
-    return Seconds(0.5) if key.startswith("short:") else Seconds(2)
+    return millis(500) if key.startswith("short:") else millis(2000)
 
 
 @testing.effect

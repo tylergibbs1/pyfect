@@ -32,7 +32,7 @@ from pyfect.cluster.runner_storage import RunnerStorage
 from pyfect.cluster.sharding import Sharding
 from pyfect.cluster.sharding import layer as sharding_layer_of
 from pyfect.cluster.snowflake import Snowflake
-from pyfect.duration import Seconds
+from pyfect.duration import Duration, millis
 from pyfect.rpc import make as make_rpc
 from pyfect.schema import ast
 from pyfect.scope import CloseableScope, Scope
@@ -574,7 +574,7 @@ def test_shuts_down_without_waiting_for_a_queued_activity_and_replays_it_after_r
             fx.layer.provide_merge(
                 W.make_test_workflow_engine(
                     storage_layer=storage_layer,
-                    config_overrides={"entity_termination_timeout": Seconds(60)},
+                    config_overrides={"entity_termination_timeout": millis(60_000)},
                 )
             )
         )
@@ -633,7 +633,7 @@ def test_shutdown_waits_for_a_running_activity_before_finalizing_its_workflow():
     layer = wf.to_layer(handler).pipe(
         fx.layer.provide_merge(
             W.make_test_workflow_engine(
-                config_overrides={"entity_termination_timeout": Seconds(60)}
+                config_overrides={"entity_termination_timeout": millis(60_000)}
             )
         )
     )
@@ -698,7 +698,7 @@ def test_replays_a_raced_activity_that_starts_during_shutdown_on_the_next_owner(
             fx.layer.provide_merge(
                 W.make_test_workflow_engine(
                     storage_layer=W.storage_layer_of(storage),
-                    config_overrides={"entity_termination_timeout": Seconds(2)},
+                    config_overrides={"entity_termination_timeout": millis(2000)},
                 )
             )
         )
@@ -1757,7 +1757,7 @@ def _poll_and_adjust_until_done(fiber: Any, step: float, message: str) -> Any:
         if fiber.poll_unsafe() is not None:
             break
         yield from sharding.poll_storage
-        yield from testing.adjust(Seconds(step))
+        yield from testing.adjust(Duration(step))
     assert fiber.poll_unsafe() is not None, message
 
 
@@ -2187,8 +2187,8 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
     removed = workflow.make("RemovedWorkflow", payload=W.EMPTY, idempotency_key=lambda _: "one")
     storage, driver = yield from W.make_shared_memory()
     storage_layer = W.storage_layer_of(storage)
-    overrides = {"entity_registration_timeout": Seconds(registration_timeout)}
-    clock = durable_clock.make(name="wait", duration=Seconds(clock_duration))
+    overrides = {"entity_registration_timeout": Duration(registration_timeout)}
+    clock = durable_clock.make(name="wait", duration=Duration(clock_duration))
 
     @fx.gen
     def first():
@@ -2200,7 +2200,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
         fx.provide(
             removed.to_layer(
                 lambda _, __: durable_clock.sleep(
-                    name="wait", duration=Seconds(clock_duration), in_memory_threshold=0
+                    name="wait", duration=Duration(clock_duration), in_memory_threshold=0
                 )
             ).pipe(
                 fx.layer.provide_merge(
@@ -2224,7 +2224,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
     @fx.gen
     def second():
         # Fire the persisted timer before the registration-start deadline.
-        yield from testing.adjust(Seconds(clock_duration))
+        yield from testing.adjust(Duration(clock_duration))
         # The completion ClockEntity emits when the persisted timer fires.
         # Calling it directly isolates the registration wait from storage claims.
         fiber = yield from clock.deferred.done(
@@ -2232,7 +2232,7 @@ def test_bounds_a_durable_clock_notification_when_its_workflow_is_absent_after_r
         ).fork_daemon(start_immediately=True)
         yield from fx.yield_now()
         assert fiber.poll_unsafe() is None
-        yield from testing.adjust(Seconds(registration_timeout - clock_duration))
+        yield from testing.adjust(Duration(registration_timeout - clock_duration))
         exit_ = fiber.poll_unsafe()
         assert exit_ is not None, "the notifyLocal registration wait must be bounded"
         defect = exit_.cause.defects[0] if isinstance(exit_, fx.Failure) else None
@@ -2592,12 +2592,12 @@ def test_reacquires_shards_after_a_forced_release_abandons_a_parent_waking_from_
                 sharding_layer=sharding_layer_of.pipe(fx.layer.provide(runner_storage_layer)),
                 config_overrides={
                     "shards_per_group": 1,
-                    "shard_lock_refresh_interval": Seconds(0.5),
-                    "shard_lock_expiration": Seconds(3),
-                    "entity_termination_timeout": Seconds(0.5),
-                    "entity_message_poll_interval": Seconds(0.02),
-                    "entity_reply_poll_interval": Seconds(0.02),
-                    "refresh_assignments_interval": Seconds(0.1),
+                    "shard_lock_refresh_interval": millis(500),
+                    "shard_lock_expiration": millis(3000),
+                    "entity_termination_timeout": millis(500),
+                    "entity_message_poll_interval": millis(20),
+                    "entity_reply_poll_interval": millis(20),
+                    "refresh_assignments_interval": millis(100),
                 },
             )
         )
@@ -2680,12 +2680,12 @@ def test_reacquires_shards_after_a_forced_release_interrupts_a_parent_resume_wai
                 sharding_layer=sharding_layer_of.pipe(fx.layer.provide(runner_storage_layer)),
                 config_overrides={
                     "shards_per_group": 1,
-                    "shard_lock_refresh_interval": Seconds(0.5),
-                    "shard_lock_expiration": Seconds(3),
-                    "entity_termination_timeout": Seconds(0.5),
-                    "entity_message_poll_interval": Seconds(0.02),
-                    "entity_reply_poll_interval": Seconds(0.02),
-                    "refresh_assignments_interval": Seconds(0.1),
+                    "shard_lock_refresh_interval": millis(500),
+                    "shard_lock_expiration": millis(3000),
+                    "entity_termination_timeout": millis(500),
+                    "entity_message_poll_interval": millis(20),
+                    "entity_reply_poll_interval": millis(20),
+                    "refresh_assignments_interval": millis(100),
                 },
             )
         )
@@ -3279,7 +3279,7 @@ def test_resumes_a_fresh_entity_from_a_legacy_envelope(queued_replay: bool):
             fx.layer.merge(parent_layer, child_layer).pipe(
                 fx.layer.provide_merge(
                     W.make_test_workflow_engine(
-                        config_overrides={"entity_message_poll_interval": Seconds(3600)}
+                        config_overrides={"entity_message_poll_interval": millis(3_600_000)}
                     )
                 )
             )

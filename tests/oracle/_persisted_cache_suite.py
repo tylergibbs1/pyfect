@@ -16,7 +16,7 @@ from typing import Any, Literal, Never, TypedDict
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.persistence import persistable, persisted_cache
 from pyfect.persistence.persistence import Persistence
 
@@ -121,7 +121,7 @@ class _Request(persistable.Class(success=S.Struct(_NewUser), error=S.Struct(_New
         return f"GetUser:{self.id}"
 
 
-def _one_day(_exit: object, _req: object) -> Duration:
+def _one_day(_exit: object, _req: object) -> DurationInput:
     return "1 day"
 
 

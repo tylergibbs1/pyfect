@@ -12,7 +12,7 @@ from typing import Any, Final, Never
 from pyfect import _js as js
 from pyfect._core import Effect
 from pyfect.clock import ClockService, clock_with
-from pyfect.duration import ZERO, Seconds, to_millis
+from pyfect.duration import Duration, millis, to_millis, zero
 from pyfect.effect import gen, sync
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
@@ -29,7 +29,7 @@ from pyfect.persistence.rate_limiter._store import (
 from pyfect.schedule import spaced
 from pyfect.scope import Scope
 
-_SWEEP_INTERVAL: Final = Seconds(60)
+_SWEEP_INTERVAL: Final = millis(60_000)
 
 
 @dataclass(slots=True)
@@ -135,13 +135,13 @@ class MemoryRateLimiterStore:
         return state
 
     def adaptive_consume(
-        self, *, key: str, tokens: float, fallback_limit: float, fallback_window: Seconds
+        self, *, key: str, tokens: float, fallback_limit: float, fallback_window: Duration
     ) -> Effect[AdaptiveConsumeResult, RateLimiterError]:
         def run(clock: ClockService) -> AdaptiveConsumeResult:
             now = now_millis(clock)
             state = self._state(key, now)
             if state is None:
-                return AdaptiveConsumeResult(ZERO, 0, "inactive")
+                return AdaptiveConsumeResult(zero, 0, "inactive")
             match state.phase:
                 case "cooldown":
                     if state.cooldown_until > now:
@@ -153,10 +153,10 @@ class MemoryRateLimiterStore:
                     state.learning_started_at = now
                     state.observed_tokens = tokens
                     state.expires_at = now + to_millis(fallback_window) + ADAPTIVE_TTL_GRACE_MILLIS
-                    return AdaptiveConsumeResult(ZERO, state.epoch, "learning")
+                    return AdaptiveConsumeResult(zero, state.epoch, "learning")
                 case "learning":
                     state.observed_tokens += tokens
-                    return AdaptiveConsumeResult(ZERO, state.epoch, "learning")
+                    return AdaptiveConsumeResult(zero, state.epoch, "learning")
                 case "learned":
                     refill_rate_millis = state.learned_window_millis / state.learned_limit
                     if state.cooldown_until <= now:
@@ -168,15 +168,15 @@ class MemoryRateLimiterStore:
                     elapsed = state.observed_tokens * refill_rate_millis - ttl
                     window = math.floor((state.observed_tokens - 1) / state.learned_limit)
                     remaining = window * state.learned_window_millis - elapsed
-                    delay = ZERO if remaining <= 0 else millis(remaining)
+                    delay = zero if remaining <= 0 else millis(remaining)
                     return AdaptiveConsumeResult(delay, state.epoch, "learned")
                 case "inactive":
-                    return AdaptiveConsumeResult(ZERO, state.epoch, state.phase)
+                    return AdaptiveConsumeResult(zero, state.epoch, state.phase)
 
         return clock_with(lambda clock: sync(lambda: run(clock)))
 
     def adaptive_feedback(
-        self, *, key: str, epoch: int, tokens: float, status: int, retry_after: Seconds | None
+        self, *, key: str, epoch: int, tokens: float, status: int, retry_after: Duration | None
     ) -> Effect[None, RateLimiterError]:
         def run(clock: ClockService) -> None:
             if status != 429 or retry_after is None:

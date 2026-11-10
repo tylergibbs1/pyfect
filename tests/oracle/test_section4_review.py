@@ -13,7 +13,8 @@ from pyfect import cause, layer
 from pyfect import schema as S
 from pyfect._fiber import Fiber
 from pyfect.ai import decision as D
-from pyfect.duration import Duration, nanos_or_infinite, to_seconds
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input_unsafe, nanos_or_infinite
 from pyfect.effect import AsyncioRequiredError
 from pyfect.errors import AsyncFiberError
 from pyfect.exit import Failure, Success
@@ -91,12 +92,12 @@ def test_run_sync_wakes_a_root_parked_on_a_queue_a_child_offers_to() -> None:
 )
 def test_duration_inputs(value: Any, nanos: float) -> None:
     """Duration.fromInputUnsafe on pairs and objects."""
-    parsed: Duration = (
+    parsed: DurationInput = (
         (float(value[0]), float(value[1]))
         if isinstance(value, tuple) and isinstance(value[0], str)
         else value
     )
-    assert nanos_or_infinite(to_seconds(parsed)) == nanos
+    assert nanos_or_infinite(from_input_unsafe(parsed)) == nanos
 
 
 @pytest.mark.parametrize("value", [None, 1, "a", [], {}])

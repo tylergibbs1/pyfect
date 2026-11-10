@@ -42,7 +42,7 @@ def program():
 
 def settings(config: ShardingConfigService) -> ShardingConfigService:
     # Storage is checked for messages that are due every 10 seconds by default.
-    return replace(config, entity_message_poll_interval=fx.duration.Seconds(0.1))
+    return replace(config, entity_message_poll_interval=fx.duration.Duration(0.1))
 
 
 # `single_runner.layer` is one runner with its messages in SQL, here in-memory SQLite.

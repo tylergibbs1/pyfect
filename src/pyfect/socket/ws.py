@@ -37,7 +37,7 @@ except ImportError as error:  # pragma: no cover - depends on the environment
 
 from pyfect._core import Effect
 from pyfect._js import text_encode, to_well_formed
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import provide_service, succeed, sync
 from pyfect.http._authority import parse_authority
 from pyfect.http.origin import AllowedOrigins, OriginPolicy
@@ -361,7 +361,7 @@ layer_web_socket_constructor: Layer[WebSocketConstructor] = layer_web_socket_con
 def layer_web_socket(
     url: str | Effect[str],
     *,
-    open_timeout: Duration | None = None,
+    open_timeout: DurationInput | None = None,
     protocols: str | Sequence[str] | None = None,
     headers: Mapping[str, str] | None = None,
     high_water_mark: int | None = None,

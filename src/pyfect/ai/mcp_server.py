@@ -75,7 +75,7 @@ from pyfect.ai.mcp_protocol import AnyProtocolAdapter, ProtocolAdapter, make_reg
 from pyfect.ai.mcp_schema import CompletionContext, Icon, McpServerClient, PromptMessage, Role
 from pyfect.ai.toolkit import Handlers, Toolkit
 from pyfect.context import Context
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import current_fiber, fail, gen, succeed
 from pyfect.errors import IllegalArgumentError
 from pyfect.http.router import HttpRouter
@@ -234,7 +234,7 @@ def layer_http[RE = Never, RR = Never](
     allow_session_termination: bool = False,
     allow_subscriptions: bool = True,
     max_sessions: int = _sessions.DEFAULT_MAX_SESSIONS,
-    session_idle_timeout: Duration = _sessions.DEFAULT_IDLE_TIMEOUT,
+    session_idle_timeout: DurationInput = _sessions.DEFAULT_IDLE_TIMEOUT,
     max_message_bytes: byte_size.Input = _sessions.DEFAULT_MAX_MESSAGE_BYTES,
     cache_hints: CacheHints | None = None,
     registrations: Layer[Any, RE, RR | McpServer | McpServerClient] | None = None,

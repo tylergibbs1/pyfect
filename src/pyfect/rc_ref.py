@@ -15,7 +15,6 @@ caller has left.
 
 from __future__ import annotations
 
-import math
 from typing import Any, Final, Generic, Literal, Never, TypeVar, overload
 
 from pyfect._core import (
@@ -34,7 +33,8 @@ from pyfect._root import new_root, start_root
 from pyfect._unsubscripted import Unsubscripted
 from pyfect.clock import sleep
 from pyfect.context import Context
-from pyfect.duration import Duration, Seconds, to_seconds
+from pyfect.duration import Duration, from_input_unsafe
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import interrupt
 from pyfect.exit import Exit, Failure, Success
 from pyfect.logger._log import log_unhandled
@@ -85,7 +85,7 @@ class RcRef(Generic[A_co, E_co]):
         acquire: Effect[A_co, E_co, Any],
         context: Context,
         scope: CloseableScope,
-        idle_time_to_live: Seconds | None,
+        idle_time_to_live: Duration | None,
     ) -> None:
         self._acquire = acquire
         self._context = context
@@ -99,22 +99,22 @@ class RcRef(Generic[A_co, E_co]):
         cls: type[RcRef[Unsubscripted, Any]],
         acquire: Effect[T, X, R],
         *,
-        idle_time_to_live: Duration | None = None,
+        idle_time_to_live: DurationInput | None = None,
     ) -> Effect[RcRef[T, X], Never, Scope | R]: ...
     @overload
     @classmethod
     def make[R = Never](
-        cls, acquire: Effect[A_co, E_co, R], *, idle_time_to_live: Duration | None = None
+        cls, acquire: Effect[A_co, E_co, R], *, idle_time_to_live: DurationInput | None = None
     ) -> Effect[RcRef[A_co, E_co], Never, Scope | R]: ...
     @classmethod
     def make[T, X = Never, R = Never](
-        cls, acquire: Effect[T, X, R], *, idle_time_to_live: Duration | None = None
+        cls, acquire: Effect[T, X, R], *, idle_time_to_live: DurationInput | None = None
     ) -> Effect[RcRef[T, X], Never, Scope | R]:
         """A ref that runs ``acquire`` (with the services in scope now, and
         a scope of its own) when first used. Without ``idle_time_to_live``
         the resource is released as soon as the last reference goes."""
         require_effect(acquire, "acquire")
-        ttl = None if idle_time_to_live is None else to_seconds(idle_time_to_live)
+        ttl = None if idle_time_to_live is None else from_input_unsafe(idle_time_to_live)
 
         def body(fiber: Fiber[Any, Any]) -> Effect[RcRef[T, X]]:
             context = fiber._context
@@ -238,7 +238,7 @@ class RcRef(Generic[A_co, E_co]):
             if self._state is state:
                 self._state = "empty"
             return state.scope.close(_DONE)
-        if math.isinf(ttl):
+        if not ttl.is_finite():
             return _VOID
 
         def expire(_: None) -> Effect[None]:

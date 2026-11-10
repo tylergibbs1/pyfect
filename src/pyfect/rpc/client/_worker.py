@@ -12,7 +12,7 @@ from pyfect import schedule
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect.cause import Cause
-from pyfect.duration import Duration
+from pyfect.duration import Input as DurationInput
 from pyfect.effect import gen, service_option, succeed, suspend, sync
 from pyfect.latch import Latch
 from pyfect.layer import Layer
@@ -216,7 +216,7 @@ def make_protocol_worker(
     *,
     min_size: int,
     max_size: int,
-    time_to_live: Duration,
+    time_to_live: DurationInput,
     concurrency: int = 1,
     target_utilization: float = 1.0,
 ) -> Effect[ClientProtocolService, WorkerError, _Requirements]: ...
@@ -225,7 +225,7 @@ def make_protocol_worker(
     size: int | None = None,
     min_size: int | None = None,
     max_size: int | None = None,
-    time_to_live: Duration | None = None,
+    time_to_live: DurationInput | None = None,
     concurrency: int = 1,
     target_utilization: float = 1.0,
 ) -> Effect[ClientProtocolService, WorkerError, _Requirements]:
@@ -292,7 +292,7 @@ def layer_protocol_worker(
     *,
     min_size: int,
     max_size: int,
-    time_to_live: Duration,
+    time_to_live: DurationInput,
     concurrency: int = 1,
     target_utilization: float = 1.0,
 ) -> Layer[ClientProtocol, WorkerError, WorkerPlatform | Spawner]: ...

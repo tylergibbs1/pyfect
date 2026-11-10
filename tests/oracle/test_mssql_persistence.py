@@ -27,7 +27,7 @@ pytest.importorskip("pytds")
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
-from pyfect.duration import Seconds
+from pyfect.duration import Duration
 from pyfect.persistence import persisted_queue as pq
 from pyfect.persistence import persistence
 from pyfect.sql import SqlClient, SqlClientService, mssql
@@ -146,7 +146,7 @@ def _queue(
         store = yield from (
             pq.make_store_sql(table_name=table_name)
             if poll_interval is None
-            else pq.make_store_sql(table_name=table_name, poll_interval=Seconds(poll_interval))
+            else pq.make_store_sql(table_name=table_name, poll_interval=Duration(poll_interval))
         )
         factory = yield from pq.make_factory.pipe(fx.provide_service(pq.PersistedQueueStore, store))
         if retry:

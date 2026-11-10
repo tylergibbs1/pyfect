@@ -9,7 +9,8 @@ from collections.abc import Mapping
 from typing import Any, Literal, TypedDict, cast
 
 from pyfect._core import Effect
-from pyfect.duration import Duration, from_input, to_millis
+from pyfect.duration import Input as DurationInput
+from pyfect.duration import from_input, to_millis
 from pyfect.effect import fail, succeed
 from pyfect.errors import IllegalArgumentError
 
@@ -22,7 +23,7 @@ class CacheHint(TypedDict):
     nonnegative and at most ``2**53 - 1`` milliseconds. Only ``"private"``
     scope exists: shared caches must not store the result."""
 
-    ttl: Duration
+    ttl: DurationInput
     cache_scope: Literal["private"]
 
 

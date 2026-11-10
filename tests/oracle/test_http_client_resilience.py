@@ -21,7 +21,7 @@ import pytest
 import pyfect as fx
 from pyfect import clock, layer, testing
 from pyfect.cause import Fail, from_reasons
-from pyfect.duration import ZERO, Seconds, to_millis
+from pyfect.duration import millis, to_millis, zero
 from pyfect.errors import TimeoutException
 from pyfect.exit import Exit, Failure, die
 from pyfect.exit import fail as exit_fail
@@ -790,7 +790,7 @@ _CLASSIFIER_CASES: list[
         30_000,
     ),
     ("a TransportError", lambda _: exit_fail(_TRANSPORT_ERROR), "Failure", None),
-    ("a TimeoutError", lambda _: exit_fail(TimeoutException(Seconds(1))), "Failure", None),
+    ("a TimeoutError", lambda _: exit_fail(TimeoutException(millis(1000))), "Failure", None),
     ("a wrapped 404", lambda _: exit_fail(_status_error(404)), "Success", None),
     (
         "a returned 429",
@@ -856,7 +856,7 @@ def _unreachable(*_: object) -> fx.Effect[res.HttpClientResponse]:
 def test_retry_transient_never_retries_a_circuit_breaker_error():
     """retryTransient never retries a CircuitBreakerError"""
     reasons: list[cb.CircuitBreakerErrorReason] = [
-        cb.CircuitOpen(key="test", retry_after=ZERO),
+        cb.CircuitOpen(key="test", retry_after=zero),
         cb.CircuitHalfOpen(key="test"),
         cb.CircuitBreakerStoreError(message="store unavailable", cause=_TRANSPORT_ERROR),
     ]

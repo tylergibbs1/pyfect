@@ -9,7 +9,7 @@ import pytest
 import pyfect as fx
 from pyfect import schedule, testing
 from pyfect.cause import Fail
-from pyfect.duration import ZERO, Seconds, to_millis
+from pyfect.duration import Duration, millis, to_millis, zero
 from pyfect.result import Err
 from pyfect.schedule import Continue, CurrentMetadata, Decision, Metadata, Schedule, Stop
 from pyfect.testing import run_test as run
@@ -36,7 +36,7 @@ def decisions[O](s: Schedule[O, None], times: Sequence[float]) -> list[Decision[
     @fx.gen
     def go():
         step = yield from schedule.to_step(s)
-        return (yield from fx.for_each(times, lambda now: step(to_millis(Seconds(now)), None)))
+        return (yield from fx.for_each(times, lambda now: step(to_millis(Duration(now)), None)))
 
     return run(go)
 
@@ -188,23 +188,23 @@ def test_windowed_waits_for_the_end_of_the_current_window():
 
 def test_during_stops_once_more_than_the_duration_has_passed():
     assert decisions(schedule.during("1 second"), [5.0, 6.0, 6.5]) == [
-        Continue(Seconds(0.0), ZERO),
-        Continue(Seconds(1.0), ZERO),
-        Stop(Seconds(1.5)),
+        Continue(millis(0), zero),
+        Continue(millis(1000), zero),
+        Stop(millis(1500)),
     ]
 
 
 def test_recurs_counts_from_zero_and_stops_with_the_last_count():
     assert decisions(schedule.recurs(2), [0.0] * 3) == [
-        Continue(0, ZERO),
-        Continue(1, ZERO),
+        Continue(0, zero),
+        Continue(1, zero),
         Stop(2),
     ]
 
 
 def test_map_also_maps_the_final_output():
     s = schedule.recurs(1).map(lambda m: f"{m.output}@{m.attempt}")
-    assert decisions(s, [0.0, 0.0]) == [Continue("0@1", ZERO), Stop("1@2")]
+    assert decisions(s, [0.0, 0.0]) == [Continue("0@1", zero), Stop("1@2")]
 
 
 def test_passthrough_outputs_the_inputs():
@@ -215,7 +215,7 @@ def test_passthrough_outputs_the_inputs():
         step = yield from schedule.to_step(ids)
         return [(yield from step(0.0, 7)), (yield from step(0.0, 8))]
 
-    assert run(go) == [Continue(7, ZERO), Stop(8)]
+    assert run(go) == [Continue(7, zero), Stop(8)]
 
 
 def test_a_failure_making_the_step_fails_every_step():
@@ -321,7 +321,7 @@ def test_metadata_times_are_exact_to_the_nanosecond():
 
 @testing.effect
 def test_fixed_keeps_the_beat_when_the_action_takes_the_whole_interval():
-    beats: list[Seconds] = []
+    beats: list[Duration] = []
     tapped = (
         schedule.fixed("100 millis")
         .up_to(times=6)
@@ -357,13 +357,13 @@ def test_fibonacci_and_exponential_keep_whole_delays_with_decimal_units():
 def test_infinite_intervals_wait_forever():
     inf = float("inf")
     for s in (
-        schedule.exponential(Seconds(inf)),
-        schedule.fibonacci(Seconds(inf)),
-        schedule.spaced(Seconds(inf)),
+        schedule.exponential(Duration(inf)),
+        schedule.fibonacci(Duration(inf)),
+        schedule.spaced(Duration(inf)),
     ):
         assert delays(s, [0.0, 1.0]) == [inf, inf]
-    assert delays(schedule.fixed(Seconds(inf)), [0.0, 1.0]) == [inf, inf]
-    assert delays(schedule.windowed(Seconds(inf)), [0.0, 1.0]) == [inf, inf]
+    assert delays(schedule.fixed(Duration(inf)), [0.0, 1.0]) == [inf, inf]
+    assert delays(schedule.windowed(Duration(inf)), [0.0, 1.0]) == [inf, inf]
 
 
 def test_retry_builder_types_the_schedule_with_the_error():
@@ -440,5 +440,5 @@ def test_to_step_with_sleep_sleeps_then_returns_the_decision():
     fiber = yield from fx.for_each([0, 1, 2], timed_step).fork()
     yield from testing.adjust("2 seconds")
     decisions = yield from fiber.join()
-    assert decisions == [Continue(0, Seconds(1)), Continue(1, Seconds(1)), Stop(2)]
+    assert decisions == [Continue(0, millis(1000)), Continue(1, millis(1000)), Stop(2)]
     assert times == [1_000, 2_000, 2_000]
