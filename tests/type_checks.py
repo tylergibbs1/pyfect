@@ -10,7 +10,7 @@ import asyncio
 from collections.abc import Callable, Coroutine, Generator, Hashable, Mapping, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import CoroutineType
 from typing import Any, Literal, Never, NotRequired, Protocol, TypedDict, TypeIs, assert_type
 
@@ -4220,7 +4220,7 @@ def check_schema_checks(unknown: object) -> None:
     assert_type(S.is_greater_than_date(datetime.now()), S.Filter[datetime])
     assert_type(S.is_int32(), S.FilterGroup[float])
     assert_type(S.is_property_names(S.String), S.Filter[Mapping[Any, object]])
-    assert_type(S.decode_sync(S.DurationFromIsoString)("PT1H"), timedelta)
+    assert_type(S.decode_sync(S.DurationFromIsoString)("PT1H"), Duration)
     S.String.check(S.is_greater_than(1))  # pyright: ignore[reportArgumentType]
     S.Number.check(S.is_trimmed())  # pyright: ignore[reportArgumentType]
     S.String.check()  # pyright: ignore[reportCallIssue]
@@ -4457,7 +4457,7 @@ def check_schema_composites(unknown: object) -> None:
     """Tuples are exact up to eight elements; an optional element (or more
     elements) joins them. Arrays decode to tuples, ``List`` to a list."""
     from collections.abc import Mapping, Sequence
-    from datetime import datetime, timedelta, tzinfo
+    from datetime import datetime, tzinfo
 
     from pyfect import schema as S
     from pyfect.byte_size import ByteSize
@@ -4523,7 +4523,7 @@ def check_schema_composites(unknown: object) -> None:
     assert_type(S.Cause(S.String, S.Unknown), S.CauseSchema[str, str, Never, Never])
     assert_type(S.decode_unknown_sync(S.Redacted(S.String))(unknown), Redacted[str])
 
-    assert_type(S.Duration, S.Bottom[timedelta])
+    assert_type(S.Duration, S.Bottom[Duration])
     assert_type(S.DateTimeUtc, S.Bottom[datetime])
     assert_type(S.TimeZone, S.Bottom[tzinfo])
     assert_type(S.ByteSize, S.Bottom[ByteSize])
@@ -4765,13 +4765,12 @@ def json_tools() -> None:
 
 def schema_equivalence_and_formatter() -> None:
     from collections.abc import Callable
-    from datetime import timedelta
 
     from pyfect import schema as S
 
     # Both derivations are typed by the schema's decoded side.
     assert_type(S.to_equivalence(S.FiniteFromString), Callable[[float, float], bool])
-    assert_type(S.to_formatter(S.Duration), Callable[[timedelta], str])
+    assert_type(S.to_formatter(S.Duration), Callable[[Duration], str])
     # An override is checked against the schema's values.
     assert_type(
         S.String.override_to_equivalence(lambda: lambda a, b: a[:1] == b[:1]),
@@ -4783,7 +4782,6 @@ def schema_equivalence_and_formatter() -> None:
 
 
 def schema_json() -> None:
-    from datetime import timedelta
     from typing import Literal
 
     from pyfect import json_schema
@@ -4791,7 +4789,7 @@ def schema_json() -> None:
     from pyfect.json_patch import JsonValue
 
     # The JSON codec keeps the type and requirements; its encoded side is JSON.
-    assert_type(S.to_codec_json(S.Duration), S.Bottom[timedelta, JsonValue, Never, Never])
+    assert_type(S.to_codec_json(S.Duration), S.Bottom[Duration, JsonValue, Never, Never])
     assert_type(S.to_codec_json(S.FiniteFromString), S.Bottom[float, JsonValue, Never, Never])
     assert_type(
         S.to_json_schema_document(S.String),
@@ -4807,7 +4805,7 @@ def schema_json() -> None:
     S.to_codec_json(1)  # pyright: ignore[reportArgumentType]
     # The string-tree codec keeps the type; its encoded side is a string tree.
     assert_type(S.to_codec_string_tree(S.Int), S.Bottom[int, S.StringTree, Never, Never])
-    assert_type(S.to_codec_string_tree(S.Duration), S.Bottom[timedelta, S.StringTree, Never, Never])
+    assert_type(S.to_codec_string_tree(S.Duration), S.Bottom[Duration, S.StringTree, Never, Never])
     S.to_codec_string_tree("x")  # pyright: ignore[reportArgumentType]
 
 
@@ -9352,7 +9350,6 @@ def check_schema_template_literals() -> None:
 
 def check_schema_leftover_values() -> None:
     import re
-    from datetime import timedelta
     from ipaddress import IPv4Address, IPv6Network
 
     from pyfect import big_decimal, semver
@@ -9365,8 +9362,8 @@ def check_schema_leftover_values() -> None:
     S.BigDecimal.check(S.is_between_big_decimal(minimum=big, maximum=big))
     S.BigDecimal.check(S.is_greater_than_big_decimal(1.5))  # pyright: ignore[reportArgumentType]
     assert_type(S.decode_unknown_sync(S.RegExp)(re.compile("a")), re.Pattern[str])
-    assert_type(S.decode_unknown_sync(S.DurationFromMillis)(1), timedelta)
-    assert_type(S.encode_sync(S.DurationFromNanos)(timedelta(0)), int)
+    assert_type(S.decode_unknown_sync(S.DurationFromMillis)(1), Duration)
+    assert_type(S.encode_sync(S.DurationFromNanos)(zero), int)
     assert_type(S.decode_unknown_sync(S.SemVerFromString)("1.0.0"), semver.SemVer)
     assert_type(S.decode_unknown_sync(S.BooleanLiterals)("yes"), bool)
     assert_type(S.decode_unknown_sync(S.Ipv4AddressFromString)("1.2.3.4"), IPv4Address)
@@ -9569,7 +9566,7 @@ def schema_representation_types() -> None:
 
 
 def schema_rest_types() -> None:
-    from datetime import timedelta, timezone
+    from datetime import timezone
     from typing import TypedDict as _TypedDict
 
     from pyfect.http import cookies as http_cookies
@@ -9603,7 +9600,7 @@ def schema_rest_types() -> None:
     assert_type(extended, DecodeToSchema[_B, Mapping[str, object], Never, Never])
     assert_type(S.Tree(S.Number), S.Bottom[S.TreeValue[float], S.TreeValue[float], Never, Never])
 
-    assert_type(T.duration_from_string, T.Transformation[timedelta, str])
+    assert_type(T.duration_from_string, T.Transformation[Duration, str])
     assert_type(T.time_zone_offset_from_number, T.Transformation[timezone, int])
     entries: list[tuple[str, str]] = [("a", "1")]
     assert_type(G.make_tree_record(entries), dict[str, S.TreeValue[str | None]])

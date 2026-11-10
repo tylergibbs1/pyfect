@@ -37,6 +37,16 @@
     durations, and parse text with `from_input` / `from_input_unsafe`.
   - A schedule step's `elapsed` and `elapsed_since_previous`, and `TransactionMeta.elapsed`,
     are `Duration`s (Effect has float milliseconds there; a `Duration` keeps them exact).
+  - `Schema.Duration` holds a `duration.Duration`, and the codecs `DurationFromString`,
+    `DurationFromNanos`, `DurationFromMillis` and `DurationFromIsoString` decode to one, as
+    Effect 4.1.2's do: infinities and sub-microsecond values decode, and the "Expected a
+    duration a timedelta can hold" limits are gone. Infinities fail to encode as nanoseconds
+    or ISO text. A `duration.Duration` annotation derives `S.Duration`; a `timedelta`
+    annotation no longer does (annotate `duration.Duration`, and call `d.to_timedelta()`
+    where a `timedelta` is needed). The JSON form is Effect's (`{"_tag": "Nanos", "value":
+    "1500000"}`), and the binary form is Effect's tags.
+  - `AiError.retry_after`, `RateLimitError.retry_after` and parsed `Retry-After` headers are
+    `Duration`s.
   - Two `Millis` durations add as JavaScript numbers do, as in Effect: the sum rounds past
     2**53 ms and saturates to `infinity` past float range; anything with a `Nanos` side adds
     exactly.

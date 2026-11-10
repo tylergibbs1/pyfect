@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from pyfect import duration
 from pyfect import schema as S
 from pyfect.http.url import Url
 from pyfect.option import Some
@@ -451,9 +452,13 @@ def test_readonly_map_rejects_a_proper_subset(size: int):
 def test_duration():
     """Duration"""
     equivalence = S.to_equivalence(S.Duration)
-    assert equivalence(timedelta(milliseconds=1), timedelta(milliseconds=1))
-    assert not equivalence(timedelta(milliseconds=1), timedelta(milliseconds=2))
-    assert equivalence(timedelta(milliseconds=1), timedelta(microseconds=1000))
+    assert equivalence(duration.millis(1), duration.millis(1))
+    assert not equivalence(duration.millis(1), duration.millis(2))
+    assert equivalence(duration.nanos(1), duration.nanos(1))
+    assert equivalence(duration.millis(1), duration.nanos(1_000_000))
+    assert not equivalence(duration.nanos(1), duration.nanos(2))
+    assert equivalence(duration.infinity, duration.infinity)
+    assert not equivalence(duration.infinity, duration.millis(1))
 
 
 def test_date_time_utc():

@@ -846,7 +846,7 @@ def test_immutable_and_picklable() -> None:
     with pytest.raises(AttributeError):
         d._nanos = 6  # pyright: ignore[reportPrivateUsage]
     with pytest.raises(TypeError):
-        Duration()
+        Duration()  # pyright: ignore[reportCallIssue]
     for value in [millis(5), nanos(-7), infinity, negative_infinity, zero, millis(1e303)]:
         same(pickle.loads(pickle.dumps(value)), value)
         same(copy.deepcopy(value), value)
