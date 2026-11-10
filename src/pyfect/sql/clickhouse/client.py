@@ -224,9 +224,10 @@ def _http_client(config: ClickhouseClientConfig) -> Effect[Any, Never, Scope]:
     (``max_open_connections``, ``keep_alive``) and ``tls``."""
     if config.http_client is not None:
         return succeed(config.http_client)
-    import httpx
-
     from pyfect.http import httpx_client
+    from pyfect.http._httpx_options import import_httpx
+
+    httpx = import_httpx()
 
     connection = config.connection
     most = connection.max_open_connections
