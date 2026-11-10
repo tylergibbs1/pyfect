@@ -19,7 +19,7 @@ from opentelemetry import trace
 from opentelemetry.sdk import _logs as sdk_logs
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
-from oracle import _ai_http, _mcp
+from oracle import _ai_http, _mcp, _mcp_rpc
 
 import pyfect as fx
 from layer_cases._case import AnyEffect, AnyLayer, Case
@@ -57,6 +57,7 @@ from pyfect.process import ChildProcessHandle, ChildProcessSpawner, ChildProcess
 from pyfect.process import make as make_command
 from pyfect.queue import Queue
 from pyfect.redacted import make as redact
+from pyfect.rpc import server as rpc_server
 from pyfect.tracer import current_span
 
 _runs = itertools.count(1)
@@ -511,6 +512,38 @@ def _own_server_only(value: AnyLayer) -> AnyEffect:
     return _over_http(app.pipe(L.provide_merge(value)), lambda: listed)
 
 
+def _own_tools_over_a_custom_transport(value: AnyLayer) -> AnyEffect:
+    """A run serves its own transport and registers a tool of its own; its
+    client lists only that one."""
+    name = f"run{next(_runs)}"
+
+    @fx.gen
+    def listed():
+        transport = yield from _mcp_rpc.custom_transport(client_ids={1})
+        served = value.pipe(L.provide(L.succeed(rpc_server.ServerProtocol, transport.protocol)))
+        context = yield from served.build()
+        entry = M.ToolEntry(
+            {"name": name, "inputSchema": {"type": "object"}},
+            fx.Context.empty(),
+            lambda _: fx.succeed({"content": []}),
+        )
+        yield from context.get(M.McpServer).add_tool(entry)
+        write = yield from transport.ready.wait()
+        hello = {
+            "protocolVersion": _PROTOCOL.protocol_version,
+            "capabilities": {},
+            "clientInfo": {"name": "c", "version": "1"},
+        }
+        yield from write(1, _mcp_rpc.request(1, "initialize", hello))
+        yield from transport.outbound.take()
+        yield from write(1, _mcp_rpc.request(2, "tools/list", {}))
+        reply: Any = (yield from transport.outbound.take())[1]
+        tools = [t["name"] for t in reply["exit"]["value"]["tools"]]
+        yield from _check(tools == [name], f"tools {tools}")
+
+    return fx.scoped(listed)
+
+
 _GUIDE = "demo://guide"
 
 _MCP_CASES: dict[str, Case] = {
@@ -532,6 +565,12 @@ _MCP_CASES: dict[str, Case] = {
                 ).pipe(L.provide(_in_memory_http(_tool_app(value))))
             )
         ),
+    ),
+    "pyfect.ai.mcp_server.layer_rpc_protocol": Case(
+        layer=lambda: M.layer_rpc_protocol(
+            name="test-server", version="1.0.0", protocols=(_PROTOCOL,)
+        ),
+        run=_own_tools_over_a_custom_transport,
     ),
     "pyfect.ai.mcp_server.layer_stdio": Case(
         layer=_stdio_server,
