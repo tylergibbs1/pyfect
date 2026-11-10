@@ -136,6 +136,9 @@ layer, concurrency, retries and timeouts.
 - **Graphs.** Directed and undirected graphs with stable indexes: walks, shortest paths,
   components, flows and matchings, GraphViz and Mermaid output, and a schema for storing
   them as JSON. [Graphs →](https://pyfect.dev/docs/graph)
+- **Cryptography.** Secure random ids, digests, authenticated encryption, signatures and key
+  formats as services, and signed or encrypted JOSE tokens on top of them.
+  [Cryptography →](https://pyfect.dev/docs/crypto)
 - **Config.** Typed settings from the environment, `.env` files or dicts, with secrets kept
   out of logs. [Config →](https://pyfect.dev/docs/config)
 - **Observability.** Logging, spans and metrics, exported through Effect's own OTLP exporters
@@ -190,14 +193,15 @@ layer, concurrency, retries and timeouts.
 - **Deterministic tests.** A pytest plugin with a virtual clock, so a test of a 30-second
   retry takes no real time. [Testing →](https://pyfect.dev/docs/testing)
 
-pyfect follows Effect v4, does what Effect does wherever Python can express it, and runs
-Effect's own test cases as its spec: over 22,000 tests, with a test that fails on any Effect
+pyfect follows Effect 4.1.2, does what Effect does wherever Python can express it, and runs
+Effect's own test cases as its spec: over 25,000 tests, with a test that fails on any Effect
 test title neither ported nor omitted with a reason, and about 95% of Effect's API so far. Every
 export of the core modules is listed against Effect's in [`docs/coverage/`](docs/coverage), and
 [`docs/PARITY.md`](docs/PARITY.md) tracks what is done, what is open and what still differs. A
-bare number as a `Duration` is milliseconds, as in Effect, since 0.2.0 (0.1.0 read it as seconds);
-write `"5 seconds"` or a `timedelta` to say the unit. Timestamps given as numbers
-(`testing.set_time`, `clock.current_time_millis`) are epoch milliseconds too.
+`Duration` is Effect's, exact to the nanosecond at any length or infinite, since 0.5.0. A
+bare number given as a duration is milliseconds, as in Effect; write `"5 seconds"` or a
+`timedelta` to say the unit. Timestamps given as numbers (`testing.set_time`,
+`clock.current_time_millis`) are epoch milliseconds too.
 
 ## Installation
 
@@ -213,7 +217,7 @@ Optional extras: `otel` (OpenTelemetry), `hypothesis`, `pydantic`, `msgspec`, `h
 HTTP client backend), `websockets` (WebSocket clients and servers), `server` (the uvicorn
 HTTP server), `pg` (the PostgreSQL driver, on psycopg), `mysql` (the MySQL driver, on
 asyncmy), `mssql` (the SQL Server driver, on python-tds), `redis` (the Redis client, on
-redis-py), `eventlog` (the event log's encryption, on cryptography), `brotli` (`br` response
+redis-py), `crypto` (cryptography and JOSE, on cryptography), `eventlog` (the event log's encryption, on cryptography), `brotli` (`br` response
 compression on a live server, on brotlicffi), `http2` (the HTTP/2 server, on hypercorn), `intl` (`Intl`-style
 date formatting, on babel) and `regex` (more ECMAScript patterns in schemas), for example
 `uv add "pyfect-dev[otel]"`.
