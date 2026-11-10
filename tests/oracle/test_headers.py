@@ -2,7 +2,7 @@
 
 Each test's docstring is the Effect test title. ``Headers`` is a read-only
 ``Mapping``; ``get`` gives ``None`` for a missing name. Dates are aware UTC
-``datetime`` values; Retry-After durations are ``Seconds``.
+``datetime`` values; Retry-After durations are ``Duration``s.
 
 Omitted, with the reason:
 
