@@ -468,3 +468,34 @@ def test_discovery_and_listen_over_a_transport_without_notifications():
             ],
         },
     }
+
+
+@testing.effect
+def test_requests_still_running_end_with_the_server():
+    """As Effect's ``RpcServer``, whose request fibers belong to the server:
+    closing the server's scope interrupts a request still running."""
+    transport = yield from custom_transport(client_ids={1})
+    entered = Deferred[None]()
+    interrupted = Deferred[None]()
+
+    @fx.fn
+    def served():
+        context = yield from _served(transport, [P.v2025_03_26], name="Ends").build()
+        yield from context.get(M.McpServer).add_tool(
+            _empty_tool(
+                "Wait",
+                lambda _: (
+                    entered.succeed(None)
+                    .and_then(fx.never)
+                    .on_interrupt(interrupted.succeed(None).as_void())
+                ),
+            )
+        )
+        write = yield from transport.ready.wait()
+        yield from write(1, request("init", "initialize", _initialize("2025-03-26", "client")))
+        yield from transport.outbound.take()
+        yield from write(1, request("wait", "tools/call", {"name": "Wait"}))
+        yield from entered.wait()
+
+    yield from fx.scoped(served())
+    yield from interrupted.wait().timeout("5 seconds").or_die()

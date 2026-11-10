@@ -148,13 +148,11 @@ class _Transport:
         self.server.connect(_Peer(self, created))
         return created
 
-    def forget(self, client_id: int, client: _Client | None = None) -> Connection | None:
-        """Drop the client's session (only ``client`` 's, when given); its
-        requests still running go on."""
-        found = self.clients.get(client_id)
-        if found is None or (client is not None and found is not client):
+    def forget(self, client_id: int) -> Connection | None:
+        """Drop the client's session; its requests still running go on."""
+        found = self.clients.pop(client_id, None)
+        if found is None:
             return None
-        del self.clients[client_id]
         self.server.disconnect(client_id)
         return found.connection
 
@@ -219,7 +217,7 @@ class _Peer:
 
         def connected(ids: Set[int]) -> Effect[None]:
             if self.client_id not in ids:
-                transport.forget(self.client_id, self.client)
+                transport.forget(self.client_id)
                 return _VOID
             if not transport.protocol.supports_notifications:
                 return _VOID
