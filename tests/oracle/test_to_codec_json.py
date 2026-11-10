@@ -24,8 +24,6 @@ Omitted:
   ``TypedDict`` entry): "Number / reuses the Finite AST in the canonical
   encoding", "Number / does not propagate constructor defaults to the
   canonical encoding".
-- "Duration": ``timedelta`` cannot be infinite, so the ``Infinity`` /
-  ``NegativeInfinity`` forms are left out (the finite forms are ported).
 - toCodecGoJson (and its toJsonSchemaDocument titles): a separate
   derivation, not ported yet.
 - toCodecIso / toCodecStringTree: separate derivations, not JSON (but for a few titles).
@@ -33,10 +31,11 @@ Omitted:
 
 import enum
 import math
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Never, NotRequired, TypedDict
 
 import pyfect as fx
+from pyfect import duration
 from pyfect import option as O
 from pyfect import schema as S
 from pyfect.http.url import Url
@@ -465,19 +464,22 @@ def test_uint8_array():
 
 def test_duration():
     """schemas without encoding / Duration"""
-    # Python: a timedelta is finite and counts microseconds.
     asserts = _asserts(S.Duration)
     encoding = asserts.encoding()
-    encoding.succeed(timedelta(microseconds=1), {"_tag": "Nanos", "value": "1000"})
-    encoding.succeed(timedelta(microseconds=-1), {"_tag": "Nanos", "value": "-1000"})
-    encoding.succeed(timedelta(milliseconds=1), {"_tag": "Millis", "value": 1})
-    encoding.succeed(timedelta(milliseconds=-1), {"_tag": "Millis", "value": -1})
-    encoding.succeed(timedelta(0), {"_tag": "Millis", "value": 0})
+    encoding.succeed(duration.infinity, {"_tag": "Infinity"})
+    encoding.succeed(duration.negative_infinity, {"_tag": "NegativeInfinity"})
+    encoding.succeed(duration.nanos(1000), {"_tag": "Nanos", "value": "1000"})
+    encoding.succeed(duration.nanos(-1000), {"_tag": "Nanos", "value": "-1000"})
+    encoding.succeed(duration.millis(1), {"_tag": "Millis", "value": 1})
+    encoding.succeed(duration.millis(-1), {"_tag": "Millis", "value": -1})
+    encoding.succeed(duration.zero, {"_tag": "Millis", "value": 0})
     decoding = asserts.decoding()
-    decoding.succeed({"_tag": "Millis", "value": 1}, timedelta(milliseconds=1))
-    decoding.succeed({"_tag": "Millis", "value": -1}, timedelta(milliseconds=-1))
-    decoding.succeed({"_tag": "Nanos", "value": "1000"}, timedelta(microseconds=1))
-    decoding.succeed({"_tag": "Nanos", "value": "-1000"}, timedelta(microseconds=-1))
+    decoding.succeed({"_tag": "Infinity"}, duration.infinity)
+    decoding.succeed({"_tag": "NegativeInfinity"}, duration.negative_infinity)
+    decoding.succeed({"_tag": "Millis", "value": 1}, duration.millis(1))
+    decoding.succeed({"_tag": "Millis", "value": -1}, duration.millis(-1))
+    decoding.succeed({"_tag": "Nanos", "value": "1000"}, duration.nanos(1000))
+    decoding.succeed({"_tag": "Nanos", "value": "-1000"}, duration.nanos(-1000))
 
 
 def test_date_time_utc():

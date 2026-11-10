@@ -1,7 +1,6 @@
 """``pyfect.pydantic``: pyfect schemas as pydantic field types, and pydantic
 models as pyfect schemas."""
 
-from datetime import timedelta
 from typing import Annotated, Any, Never
 
 import pytest
@@ -10,6 +9,7 @@ pydantic = pytest.importorskip("pydantic")
 
 from pydantic import BaseModel, ValidationError  # noqa: E402
 
+from pyfect import duration  # noqa: E402
 from pyfect import pydantic as P  # noqa: E402
 from pyfect import schema as S  # noqa: E402
 from pyfect.result import Err  # noqa: E402
@@ -22,13 +22,13 @@ class User(S.Class):
 
 class Order(BaseModel):
     total: Annotated[float, S.FiniteFromString]
-    wait: Annotated[timedelta, S.Duration]
+    wait: Annotated[duration.Duration, S.Duration]
     user: User
 
 
 def _order() -> Order:
     return Order.model_validate(
-        {"total": "1.5", "wait": timedelta(seconds=1), "user": {"name": "a", "age": 3}}
+        {"total": "1.5", "wait": duration.seconds(1), "user": {"name": "a", "age": 3}}
     )
 
 
@@ -40,7 +40,7 @@ def test_python_input_is_decoded_with_the_schema():
 
 
 def test_values_the_decoded_side_accepts_are_kept():
-    order = Order(total=2.0, wait=timedelta(0), user=User(name="b", age=1))
+    order = Order(total=2.0, wait=duration.zero, user=User(name="b", age=1))
 
     assert (order.total, order.user) == (2.0, User(name="b", age=1))
 
@@ -50,7 +50,7 @@ def test_dumping_encodes_with_the_schema_and_json_with_its_json_codec():
 
     assert order.model_dump() == {
         "total": "1.5",
-        "wait": timedelta(seconds=1),
+        "wait": duration.seconds(1),
         "user": {"name": "a", "age": 3},
     }
     text = order.model_dump_json()
@@ -62,7 +62,7 @@ def test_dumping_encodes_with_the_schema_and_json_with_its_json_codec():
 
 def test_a_failure_is_one_pydantic_error_with_the_pyfect_message():
     with pytest.raises(ValidationError) as info:
-        Order.model_validate({"total": "x", "wait": timedelta(0), "user": {"name": 1, "age": 1}})
+        Order.model_validate({"total": "x", "wait": duration.zero, "user": {"name": 1, "age": 1}})
 
     errors = [(e["loc"], e["msg"], e["type"]) for e in info.value.errors()]
     assert errors == [

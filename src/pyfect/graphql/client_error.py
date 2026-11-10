@@ -22,7 +22,7 @@ from typing_extensions import TypedDict
 
 from pyfect import schema as S
 from pyfect.duration import Duration
-from pyfect.graphql._schemas import HEADERS, SECONDS_FROM_MILLIS
+from pyfect.graphql._schemas import HEADERS
 from pyfect.http import error as http_error
 from pyfect.http.headers import Headers, parse_retry_after, retry_after_delay
 from pyfect.result import Ok
@@ -132,7 +132,7 @@ class TransportError(S.TaggedError, identifier="effect/graphql/GraphQLClientErro
     status: int | None = S.field(S.Union(S.Int, Undefined), default=None)
     headers: Headers | None = S.field(S.Union(HEADERS, Undefined), default=None)
     retry_after: Duration | None = S.field(
-        S.Union(SECONDS_FROM_MILLIS, Undefined), default=None, key="retryAfter"
+        S.Union(S.DurationFromMillis, Undefined), default=None, key="retryAfter"
     )
     close_code: int | None = S.field(S.Union(S.Int, Undefined), default=None, key="closeCode")
     fatal: bool | None = S.field(S.Union(S.Boolean, Undefined), default=None)

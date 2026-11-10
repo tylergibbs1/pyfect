@@ -2,11 +2,7 @@
 ``DurationFromMillis``, ``DurationFromIsoString``, ``SemVer``, ``SemVerFromString``,
 ``SemVerRange`` and ``SemVerRangeFromString`` tests from ``schema/Schema.test.ts``.
 
-Each test's docstring is the Effect test title. pyfect's ``Duration`` schema
-is a ``timedelta``, which holds neither infinities nor sub-microsecond
-durations: those cases decode to ``Expected a duration a timedelta can
-hold`` here (each such case is marked), and the encoding cases that start
-from an infinite ``Duration`` have no ``timedelta`` to start from.
+Each test's docstring is the Effect test title.
 
 Omitted, with the reason:
 
@@ -15,46 +11,47 @@ Omitted, with the reason:
   canonical text.
 """
 
-from datetime import timedelta
+import math
 
+from pyfect import duration, semver, semver_range
 from pyfect import schema as S
-from pyfect import semver, semver_range
 from pyfect.testing import SchemaAsserts
-
-_HOLDS = "Expected a duration a timedelta can hold"
 
 
 def test_duration_from_string() -> None:
     """DurationFromString"""
     asserts = SchemaAsserts(S.DurationFromString)
     decoding = asserts.decoding()
-    decoding.succeed("1000 millis", timedelta(milliseconds=1000))
-    decoding.succeed("1 second", timedelta(seconds=1))
-    decoding.fail("Infinity", _HOLDS)  # no infinite timedelta
-    decoding.fail("1 nano", _HOLDS)  # Python: below a microsecond
+    decoding.succeed("1000 millis", duration.millis(1000))
+    decoding.succeed("1 second", duration.seconds(1))
+    decoding.succeed("Infinity", duration.infinity)
+    decoding.succeed("-Infinity", duration.negative_infinity)
     decoding.fail("value", "Expected a valid Duration string")
     encoding = asserts.encoding()
-    encoding.succeed(timedelta(0), "0 millis")
-    encoding.succeed(timedelta(seconds=5), "5000 millis")
-    encoding.succeed(timedelta(microseconds=5), "5000 nanos")
+    encoding.succeed(duration.zero, "0 millis")
+    encoding.succeed(duration.seconds(5), "5000 millis")
+    encoding.succeed(duration.nanos(5000), "5000 nanos")
+    encoding.succeed(duration.infinity, "Infinity")
+    encoding.succeed(duration.negative_infinity, "-Infinity")
 
 
 def test_duration_from_iso_string() -> None:
     """DurationFromIsoString"""
     asserts = SchemaAsserts(S.DurationFromIsoString)
     decoding = asserts.decoding()
-    decoding.succeed("P1W2D", timedelta(days=9))
-    decoding.succeed("PT1H30M", timedelta(minutes=90))
-    decoding.succeed("-PT1.5S", timedelta(milliseconds=-1500))
-    decoding.fail("PT0.000000001S", _HOLDS)  # Python: below a microsecond
+    decoding.succeed("P1W2D", duration.days(9))
+    decoding.succeed("PT1H30M", duration.minutes(90))
+    decoding.succeed("-PT1.5S", duration.millis(-1500))
+    decoding.succeed("PT0.000000001S", duration.nanos(1))
     expected = "Expected an ISO 8601 duration without years or months"
     for text in ("P1Y", "P1M", "1 second"):
         decoding.fail(text, expected)
     encoding = asserts.encoding()
-    encoding.succeed(timedelta(0), "PT0S")
-    encoding.succeed(timedelta(weeks=1), "P7D")
-    # Effect's ``Duration.nanos(-1n)`` and the infinite durations have no ``timedelta``.
-    encoding.succeed(timedelta(microseconds=-1), "-PT0.000001S")
+    encoding.succeed(duration.zero, "PT0S")
+    encoding.succeed(duration.weeks(1), "P7D")
+    encoding.succeed(duration.nanos(-1), "-PT0.000000001S")
+    encoding.fail(duration.infinity, "Expected a finite Duration")
+    encoding.fail(duration.negative_infinity, "Expected a finite Duration")
 
 
 def test_duration_from_nanos() -> None:
@@ -62,14 +59,15 @@ def test_duration_from_nanos() -> None:
     asserts = SchemaAsserts(S.DurationFromNanos)
     asserts.verify_generation()
     decoding = asserts.decoding()
-    decoding.succeed(0, timedelta(0))
-    decoding.succeed(1000, timedelta(microseconds=1))
-    decoding.succeed(-1000, timedelta(microseconds=-1))
-    decoding.fail(1, _HOLDS)  # Python: below a microsecond
+    decoding.succeed(0, duration.zero)
+    decoding.succeed(1000, duration.nanos(1000))
+    decoding.succeed(-1000, duration.nanos(-1000))
     encoding = asserts.encoding()
-    encoding.succeed(timedelta(milliseconds=5), 5_000_000)
-    encoding.succeed(timedelta(microseconds=5), 5000)
-    encoding.succeed(timedelta(microseconds=-5), -5000)
+    encoding.succeed(duration.millis(5), 5_000_000)
+    encoding.succeed(duration.nanos(5000), 5000)
+    encoding.succeed(duration.nanos(-5000), -5000)
+    encoding.fail(duration.infinity, "Expected a Duration representable as a bigint")
+    encoding.fail(duration.negative_infinity, "Expected a Duration representable as a bigint")
 
 
 def test_duration_from_millis() -> None:
@@ -77,19 +75,23 @@ def test_duration_from_millis() -> None:
     asserts = SchemaAsserts(S.DurationFromMillis)
     asserts.verify_generation()
     decoding = asserts.decoding()
-    decoding.fail(float("inf"), _HOLDS)  # no infinite timedelta
-    decoding.succeed(0, timedelta(0))
-    decoding.succeed(-1, timedelta(milliseconds=-1))
-    decoding.succeed(1000, timedelta(seconds=1))
-    decoding.succeed(60 * 1000, timedelta(minutes=1))
-    decoding.succeed(0.1, timedelta(microseconds=100))
-    decoding.succeed(float("nan"), timedelta(0))
+    decoding.succeed(math.inf, duration.infinity)
+    decoding.succeed(-math.inf, duration.negative_infinity)
+    decoding.succeed(0, duration.millis(0))
+    decoding.succeed(-1, duration.millis(-1))
+    decoding.succeed(1000, duration.seconds(1))
+    decoding.succeed(60 * 1000, duration.minutes(1))
+    decoding.succeed(0.1, duration.millis(0.1))
+    decoding.succeed(math.nan, duration.zero)
     encoding = asserts.encoding()
-    encoding.succeed(timedelta(milliseconds=-1), -1)
-    encoding.succeed(timedelta(seconds=5), 5000)
-    encoding.succeed(timedelta(milliseconds=5000), 5000)
-    encoding.succeed(timedelta(microseconds=100), 0.1)
-    encoding.succeed(timedelta(microseconds=5), 0.005)
+    encoding.succeed(duration.infinity, math.inf)
+    encoding.succeed(duration.negative_infinity, -math.inf)
+    encoding.succeed(duration.millis(math.nan), 0)
+    encoding.succeed(duration.millis(-1), -1)
+    encoding.succeed(duration.seconds(5), 5000)
+    encoding.succeed(duration.millis(5000), 5000)
+    encoding.succeed(duration.millis(0.1), 0.1)
+    encoding.succeed(duration.nanos(5000), 0.005)
 
 
 def test_semver() -> None:
@@ -147,43 +149,39 @@ def test_boolean_literals() -> None:
     asserts.encoding().succeed(False, "false")
 
 
-def test_durations_round_to_nanoseconds_before_they_are_held() -> None:
-    """Review: Effect rounds a duration to whole nanoseconds, ties away
-    from zero (text exactly, milliseconds as ``Math.round(millis * 1e6)``),
-    so these are whole microseconds there (values printed by Effect under
-    Node); ``"-Infinity"`` is infinite like ``"Infinity"``."""
+def test_durations_round_to_nanoseconds() -> None:
+    """Review: Effect rounds a duration to whole nanoseconds, ties away from zero (text
+    exactly, milliseconds as ``Math.round(millis * 1e6)``), and keeps any length."""
     text = SchemaAsserts(S.DurationFromString).decoding()
-    text.succeed("1.0000000001 seconds", timedelta(seconds=1))
-    text.succeed("999.5 nanos", timedelta(microseconds=1))
-    text.succeed("-999.5 nanos", timedelta(microseconds=-1))
-    text.fail("999.4 nanos", _HOLDS)
-    text.fail("-Infinity", _HOLDS)
-    text.fail("1" + "0" * 5000 + " nanos", _HOLDS)  # past ``int``'s digit limit
-    text.succeed("1." + "0" * 5000 + " seconds", timedelta(seconds=1))
+    text.succeed("1.0000000001 seconds", duration.seconds(1))
+    text.succeed("999.5 nanos", duration.nanos(1000))
+    text.succeed("-999.5 nanos", duration.nanos(-1000))
+    text.succeed("999.4 nanos", duration.nanos(999))
     millis = SchemaAsserts(S.DurationFromMillis).decoding()
-    millis.succeed(1.0000001, timedelta(milliseconds=1))
-    millis.succeed(0.0000004, timedelta(0))
-    millis.fail(-0.0000005, _HOLDS)
-    millis.fail(10**400, _HOLDS)  # an int past float range
+    millis.succeed(1.0000001, duration.millis(1))
+    millis.succeed(0.0000004, duration.zero)
+    millis.succeed(-0.0000005, duration.nanos(-1))
+    millis.succeed(10**400, duration.infinity)  # an int past float range
 
 
-def test_every_encoded_timedelta_decodes_from_millis() -> None:
-    """Review: a long ``timedelta`` with microseconds encodes to a float
-    whose product with ``1e6`` is not whole microseconds; reading the
-    float's text keeps it decodable."""
-    asserts = SchemaAsserts(S.DurationFromMillis)
-    duration = timedelta(days=104, microseconds=1)
-    millis = S.encode_sync(S.DurationFromMillis)(duration)
-    asserts.decoding().succeed(millis, duration)
+def test_long_durations_keep_every_nanosecond() -> None:
+    """Review: a duration past what a ``timedelta`` holds, to the nanosecond, decodes and
+    encodes exactly through nanoseconds and ISO 8601 text."""
+    long = duration.nanos(10**30 + 1)
+    SchemaAsserts(S.DurationFromNanos).decoding().succeed(10**30 + 1, long)
+    assert S.encode_sync(S.DurationFromNanos)(long) == 10**30 + 1
+    iso = S.encode_sync(S.DurationFromIsoString)(duration.nanos(123_456_789_012_345_678))
+    assert iso == "P1428DT21H33M9.012345678S"
+    assert S.decode_sync(S.DurationFromIsoString)(iso) == duration.nanos(123_456_789_012_345_678)
 
 
-def test_a_timedelta_milliseconds_cannot_hold_fails_to_encode() -> None:
-    """Review: past about 285 years a float of milliseconds has no room
-    for the microseconds, so encoding fails rather than writing a
-    different duration."""
-    encoding = SchemaAsserts(S.DurationFromMillis).encoding()
-    encoding.fail(
-        timedelta(days=237254, microseconds=775114),
-        "Expected a duration a number of milliseconds can hold exactly",
-    )
-    encoding.succeed(timedelta(days=237254), 237254 * 86_400_000)
+def test_fractional_milliseconds_are_held_in_nanoseconds() -> None:
+    """Review: ``Duration.millis(1.5)`` is held as 1500000 nanoseconds, so its text and
+    JSON forms are nanoseconds; a JSON ``Millis`` must be a safe integer (values printed
+    by Effect 4.1.2 under Node)."""
+    assert S.encode_sync(S.DurationFromString)(duration.millis(1.5)) == "1500000 nanos"
+    assert S.encode_sync(S.DurationFromMillis)(duration.nanos(1)) == 0.000001
+    json = SchemaAsserts(S.to_codec_json(S.Duration))
+    json.encoding().succeed(duration.millis(1.5), {"_tag": "Nanos", "value": "1500000"})
+    json.encoding().fail(duration.seconds(1e17), 'Expected an integer\n  at ["value"]')
+    json.decoding().fail({"_tag": "Millis", "value": 1.5}, 'Expected an integer\n  at ["value"]')

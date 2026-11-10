@@ -5,13 +5,14 @@ answered by a mocked ``HttpClient``."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 
 import pyfect as fx
 from pyfect import config, config_provider, testing
+from pyfect import duration as fx_duration
 from pyfect.ai import ai_error as E
 from pyfect.ai._provider import ClientTransform
 from pyfect.ai.typesafe import client
@@ -308,7 +309,7 @@ def test_http_date_retry_after(date: str, expected: float):
     error = yield from failure(mock)
     reason = error.reason
     assert isinstance(reason, E.RateLimitError)
-    assert reason.retry_after == timedelta(seconds=expected)
+    assert reason.retry_after == fx_duration.seconds(expected)
 
 
 @testing.effect
@@ -379,17 +380,17 @@ def test_422():
 @pytest.mark.parametrize(
     ("headers", "expected"),
     [
-        pytest.param({"retry-after": "2"}, timedelta(seconds=2), id="seconds"),
+        pytest.param({"retry-after": "2"}, fx_duration.seconds(2), id="seconds"),
         pytest.param(
             {"retry-after-ms": "1500"},
-            timedelta(milliseconds=1500),
+            fx_duration.millis(1500),
             id="maps 429 status to RateLimitError honoring retry-after-ms",
         ),
         pytest.param({}, None, id="none"),
     ],
 )
 @testing.effect
-def test_429_retry_after(headers: dict[str, str], expected: timedelta | None):
+def test_429_retry_after(headers: dict[str, str], expected: fx_duration.Duration | None):
     """TypeSafeClient / error mapping / maps 429 status to RateLimitError honoring Retry-After
     seconds / honoring retry-after-ms / maps 429 status without retry headers to RateLimitError
     without retryAfter"""
@@ -402,17 +403,19 @@ def test_429_retry_after(headers: dict[str, str], expected: timedelta | None):
 @pytest.mark.parametrize(
     ("headers", "expected"),
     [
-        pytest.param({"retry-after-ms": "0", "retry-after": "5"}, timedelta(0), id="zero-ms-wins"),
         pytest.param(
-            {"retry-after-ms": "-1", "retry-after": "2"}, timedelta(seconds=2), id="negative-ms"
+            {"retry-after-ms": "0", "retry-after": "5"}, fx_duration.zero, id="zero-ms-wins"
         ),
         pytest.param(
-            {"retry-after-ms": "soon", "retry-after": "2"}, timedelta(seconds=2), id="invalid-ms"
+            {"retry-after-ms": "-1", "retry-after": "2"}, fx_duration.seconds(2), id="negative-ms"
+        ),
+        pytest.param(
+            {"retry-after-ms": "soon", "retry-after": "2"}, fx_duration.seconds(2), id="invalid-ms"
         ),
     ],
 )
 @testing.effect
-def test_retry_after_ms_precedence(headers: dict[str, str], expected: timedelta):
+def test_retry_after_ms_precedence(headers: dict[str, str], expected: fx_duration.Duration):
     """A non-negative retry-after-ms, 0 included, wins over Retry-After; any other value
     falls back to it (Python only: Effect's nonNegative)."""
     mock = mock_json({"message": "Rate limit exceeded"}, status=429, headers=headers)

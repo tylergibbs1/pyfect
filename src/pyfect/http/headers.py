@@ -11,9 +11,7 @@ update gives a new ``Headers``::
 
 from __future__ import annotations
 
-import math
 import re
-import sys
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -23,8 +21,9 @@ from typing import ClassVar, Literal, cast, final
 from pyfect import _json_text
 from pyfect._digits import is_digits, parse_digits
 from pyfect.context import Reference
-from pyfect.duration import Duration, from_input_unsafe, zero
+from pyfect.duration import Duration, from_input_unsafe, nanos, seconds, zero
 from pyfect.duration import Input as DurationInput
+from pyfect.duration import millis as millis_duration
 from pyfect.errors import TaggedError
 from pyfect.redacted import Redacted
 from pyfect.result import Err, Ok, Result
@@ -271,17 +270,18 @@ type RetryAfter = RetryAfterDuration | RetryAfterDateTime
 def retry_after_duration(duration: DurationInput) -> RetryAfterDuration:
     """A ``Retry-After`` of ``duration``; negative is zero, infinite raises
     ``ValueError``."""
-    seconds = from_input_unsafe(duration)
-    if math.isinf(seconds):
+    parsed = from_input_unsafe(duration)
+    if not parsed.is_finite():
         raise ValueError("Cannot create a Retry-After value from an infinite duration")
-    return RetryAfterDuration(zero if seconds < 0 else seconds)
+    return RetryAfterDuration(zero if parsed.is_negative() else parsed)
 
 
 def retry_after_date_time(date_time: datetime) -> RetryAfterDateTime:
     return RetryAfterDateTime(date_time)
 
 
-_MAX_SECONDS = int(sys.float_info.max)
+_NANOS_PER_SECOND = 1_000_000_000
+_MAX_SAFE = 2**53 - 1
 
 
 def parse_retry_after(input: str) -> Result[RetryAfter, HeaderParseError]:
@@ -289,11 +289,12 @@ def parse_retry_after(input: str) -> Result[RetryAfter, HeaderParseError]:
     exponent forms) is an ``InvalidRetryAfter``."""
     trimmed = input.strip()
     if is_digits(trimmed):
-        # More seconds than a float holds (or than int() reads) is invalid.
         whole = parse_digits(trimmed)
-        if whole is None or whole > _MAX_SECONDS:
+        if whole is None:  # more digits than int() reads
             return Err(HeaderParseError.from_reason("InvalidRetryAfter", input))
-        return Ok(RetryAfterDuration(Duration(float(whole))))
+        # The millisecond form while it is exact; beyond that, whole nanoseconds.
+        safe = whole * 1000 <= _MAX_SAFE
+        return Ok(RetryAfterDuration(seconds(whole) if safe else nanos(whole * _NANOS_PER_SECOND)))
     parsed = _http_date(trimmed)
     if parsed is None:
         return Err(HeaderParseError.from_reason("InvalidRetryAfter", input))
@@ -304,7 +305,8 @@ def format_retry_after(value: RetryAfter) -> str:
     """Whole seconds rounded up, or an IMF-fixdate."""
     match value:
         case RetryAfterDuration(duration):
-            return str(math.ceil(duration))
+            whole = (duration.to_nanos_unsafe() + _NANOS_PER_SECOND - 1) // _NANOS_PER_SECOND
+            return str(whole)
         case RetryAfterDateTime(date_time):
             return format_http_date(date_time)
 
@@ -317,7 +319,7 @@ def retry_after_delay(value: RetryAfter, now_millis: float) -> Duration:
             return duration
         case RetryAfterDateTime(date_time):
             millis = (date_time - _EPOCH) // timedelta(milliseconds=1)
-            return Duration(max(0.0, millis - now_millis) / 1000)
+            return millis_duration(max(0.0, millis - now_millis))
 
 
 __all__ = [

@@ -30,7 +30,6 @@ from websockets.typing import Subprotocol
 import pyfect as fx
 from pyfect import effect
 from pyfect.deferred import Deferred
-from pyfect.duration import Duration
 from pyfect.exit import Failure
 from pyfect.http import router, server_response
 from pyfect.http.live_server import PerMessageDeflate
@@ -67,7 +66,7 @@ test_does_not_write_the_http_response_to_an_upgraded_websocket = (
 def _routed(handler: fx.Effect[Any, Any, Any], program: fx.Effect[Any, Any, Any], **options: Any):
     routes = router.add("GET", "/ws", scoped(handler))
     served = program.pipe(fx.provide(router.serve(routes, disable_logger=True)))
-    return run_live(served.timeout(Duration(TIMEOUT)), **options)
+    return run_live(served.timeout(fx.duration.seconds(TIMEOUT)), **options)
 
 
 def test_fails_refused_websocket_handshakes_without_hanging_shutdown() -> None:

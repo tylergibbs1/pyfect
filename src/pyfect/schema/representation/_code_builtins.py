@@ -166,7 +166,7 @@ _FIXED: Mapping[str, tuple[str, str, tuple[str, ...]]] = {
     "MutableJson": ("S.Json", "S.JsonValue", ()),
     "RegExp": ("S.RegExp", "re.Pattern[str]", ("import re",)),
     "URL": ("S.URL", "url.Url", ("from pyfect.http import url",)),
-    "Duration": ("S.Duration", "datetime.timedelta", _DATETIME),
+    "Duration": ("S.Duration", "duration.Duration", ("from pyfect import duration",)),
     "ByteSize": ("S.ByteSize", "byte_size.ByteSize", ("from pyfect import byte_size",)),
     "BigDecimal": ("S.BigDecimal", "big_decimal.BigDecimal", ("from pyfect import big_decimal",)),
     "SemVer": ("S.SemVer", "semver.SemVer", ("from pyfect import semver",)),

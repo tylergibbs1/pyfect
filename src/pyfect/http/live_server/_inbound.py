@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable
 
 from pyfect._core import Effect
-from pyfect.duration import Duration
+from pyfect.duration import seconds
 from pyfect.effect import fail, succeed, suspend
 from pyfect.http.live_server._timers import timeout_option
 from pyfect.socket._connection import Connection
@@ -76,7 +76,7 @@ class Inbound:
         left = self.deadline - time.monotonic()
         if left <= 0:
             return fail(read_error(RequestTimeout()))
-        return timeout_option(pulled, Duration(left)).flat_map(
+        return timeout_option(pulled, seconds(left)).flat_map(
             lambda more: fail(read_error(RequestTimeout())) if more is None else succeed(more.value)
         )
 

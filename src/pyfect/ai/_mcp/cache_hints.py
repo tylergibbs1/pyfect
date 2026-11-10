@@ -10,7 +10,7 @@ from typing import Any, Literal, TypedDict, cast
 
 from pyfect._core import Effect
 from pyfect.duration import Input as DurationInput
-from pyfect.duration import from_input, to_millis
+from pyfect.duration import from_input
 from pyfect.effect import fail, succeed
 from pyfect.errors import IllegalArgumentError
 
@@ -61,10 +61,10 @@ _METHODS: Mapping[str, tuple[str, ...]] = {
 
 
 def _ttl_millis(hint: CacheHint) -> int | None:
-    seconds = from_input(hint["ttl"])
-    if seconds is None or math.isinf(seconds) or seconds < 0:
+    ttl = from_input(hint["ttl"])
+    if ttl is None or not ttl.is_finite() or ttl.is_negative():
         return None
-    millis = math.floor(to_millis(seconds))
+    millis = math.floor(ttl.to_millis())
     return millis if millis <= _MAX_SAFE_INTEGER else None
 
 

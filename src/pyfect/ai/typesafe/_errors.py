@@ -6,7 +6,6 @@ and 422 as invalid requests and ``retry-after-ms`` before ``Retry-After``."""
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from datetime import timedelta
 from typing import Any, Never, NotRequired, TypedDict
 
 import pyfect as fx
@@ -25,6 +24,8 @@ from pyfect.ai.ai_error import (
     build_error_description,
     reason_from_http_status,
 )
+from pyfect.duration import Duration
+from pyfect.duration import millis as millis_duration
 from pyfect.http.error import (
     DecodeError,
     EmptyBodyError,
@@ -53,10 +54,10 @@ def _fail(method: str, reason: AnyReason) -> Effect[Never, AiError]:
     return fx.fail(AiError(module=MODULE, method=method, reason=reason))
 
 
-def _retry_after(headers: Mapping[str, str], now: float) -> timedelta | None:
+def _retry_after(headers: Mapping[str, str], now: float) -> Duration | None:
     millis = P.parse_number(headers.get("retry-after-ms"))
     if millis is not None and millis >= 0:
-        return timedelta(milliseconds=millis)
+        return millis_duration(millis)
     return P.retry_after(headers.get("retry-after"), now)
 
 

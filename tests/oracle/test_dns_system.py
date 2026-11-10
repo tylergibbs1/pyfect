@@ -14,6 +14,7 @@ from collections.abc import Iterator
 
 import pytest
 
+from pyfect import duration as fx_duration
 from pyfect import testing
 from pyfect.net import dns
 from pyfect.net import host as h
@@ -154,7 +155,7 @@ def test_resolv_conf_name_servers_and_options():
         "192.0.2.53:53",
         "[2001:db8::53]:53",
     ]
-    assert (config.timeout, config.attempts) == (3, 4)
+    assert (config.timeout, config.attempts) == (fx_duration.seconds(3), 4)
     assert [na.format_inet(s) for s in _wire.parse_resolv_conf("").name_servers] == ["127.0.0.1:53"]
 
 

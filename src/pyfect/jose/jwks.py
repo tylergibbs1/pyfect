@@ -29,7 +29,7 @@ from pyfect.clock import current_time_millis
 from pyfect.context import Tag
 from pyfect.deferred import Deferred
 from pyfect.duration import Input as DurationInput
-from pyfect.duration import from_millis
+from pyfect.duration import millis as millis_duration
 from pyfect.effect import fail, from_exit, gen, succeed, suspend, sync
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit
@@ -316,7 +316,7 @@ class _Remote:
                 )
             )
             .timeout_or_else(
-                from_millis(options.timeout),
+                millis_duration(options.timeout),
                 lambda: fail(_unavailable("The key set request timed out")),
             )
         )

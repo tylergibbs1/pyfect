@@ -5,14 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from pyfect.duration import Duration, to_millis
+from pyfect.duration import Duration, millis, to_millis
 from pyfect.effect import Effect
 from pyfect.errors import TimeoutException
 from pyfect.http.client._service import RetryOn
 from pyfect.http.error import HttpClientError, StatusCodeError, TransportError
 from pyfect.http.headers import parse_retry_after, retry_after_delay
 from pyfect.http.response import HttpClientResponse
-from pyfect.persistence._seconds import millis
 from pyfect.persistence.rate_limiter._store import clamp_adaptive_millis
 from pyfect.result import Ok
 from pyfect.schedule import Continue, Schedule, forever, from_step, to_step

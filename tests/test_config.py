@@ -85,18 +85,18 @@ def test_boolean_is_case_sensitive():
 
 
 @pytest.mark.parametrize(
-    ("text", "seconds"),
+    ("text", "expected"),
     [
-        ("1.5 seconds", 1.5),
-        ("-1 millis", -0.001),
-        ("1  seconds", 1.0),
-        ("2 weeks", 1_209_600.0),
-        ("1 nano", 1e-9),
-        ("3 minutes", 180.0),
+        ("1.5 seconds", fx.duration.millis(1500)),
+        ("-1 millis", fx.duration.millis(-1)),
+        ("1  seconds", fx.duration.seconds(1)),
+        ("2 weeks", fx.duration.weeks(2)),
+        ("1 nano", fx.duration.nanos(1)),
+        ("3 minutes", fx.duration.minutes(3)),
     ],
 )
-def test_duration_reads_effects_syntax_as_seconds(text: str, seconds: float):
-    assert _parse(config.duration("a"), _at_a(text)) == fx.Ok(seconds)
+def test_duration_reads_effects_syntax(text: str, expected: fx.duration.Duration):
+    assert _parse(config.duration("a"), _at_a(text)) == fx.Ok(expected)
 
 
 @pytest.mark.parametrize("text", ["1seconds", "1 Second", " 1 second", "1 second ", "1e3 millis"])

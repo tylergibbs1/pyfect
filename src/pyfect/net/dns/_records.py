@@ -3,7 +3,6 @@ and their presentation format (RFC 1035)."""
 
 from __future__ import annotations
 
-import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, fields
@@ -44,13 +43,10 @@ def _non_empty_strings(values: tuple[object, ...]) -> bool:
 
 def _timer(u: object) -> bool:
     """SOA timers are unsigned 32-bit counts of seconds on the wire."""
-    return (
-        isinstance(u, int | float)
-        and not isinstance(u, bool)
-        and math.isfinite(u)
-        and float(u).is_integer()
-        and 0 <= u <= 0xFFFFFFFF
-    )
+    if not isinstance(u, Duration) or not u.is_finite():
+        return False
+    count = u.to_seconds()
+    return count.is_integer() and 0 <= count <= 0xFFFFFFFF
 
 
 @dataclass(frozen=True, slots=True)
@@ -286,7 +282,7 @@ def _format_name(text: str) -> str:
 
 
 def _seconds(value: Duration) -> str:
-    return str(int(value))
+    return str(int(value.to_seconds()))
 
 
 def format_record(record: DnsRecord) -> str:  # noqa: PLR0911

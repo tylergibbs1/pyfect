@@ -9,7 +9,6 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from datetime import timedelta
 from typing import Any, Never, cast
 
 import pyfect as fx
@@ -29,6 +28,7 @@ from pyfect.ai.ai_error import (
 )
 from pyfect.byte_size import ByteSize, mebibytes
 from pyfect.context import Tag
+from pyfect.duration import Duration
 from pyfect.encoding import sse
 from pyfect.http import headers as H
 from pyfect.http.client import HttpClientService, transform_response
@@ -111,7 +111,7 @@ def parse_number(raw: str | None) -> int | float | None:
     return int(value) if value.is_integer() else value
 
 
-def retry_after(raw: str | None, now_millis: float) -> timedelta | None:
+def retry_after(raw: str | None, now_millis: float) -> Duration | None:
     """The delay a ``Retry-After`` header asks for; an invalid one is
     absent."""
     if raw is None:
@@ -119,7 +119,7 @@ def retry_after(raw: str | None, now_millis: float) -> timedelta | None:
     parsed = H.parse_retry_after(raw)
     if not isinstance(parsed, Ok):
         return None
-    return timedelta(seconds=H.retry_after_delay(parsed.value, now_millis))
+    return H.retry_after_delay(parsed.value, now_millis)
 
 
 def wire_decoder[T](schema: S.Top, _type: type[T]) -> Callable[[object], Effect[T, S.SchemaError]]:

@@ -33,12 +33,16 @@ except ImportError as error:  # pragma: no cover - depends on the environment
 
 from pyfect._core import Effect
 from pyfect.file_system import FileSystem
-from pyfect.http._asgi_listener import Dispatch, ListenOptions, graceful, make_listener
+from pyfect.http._asgi_listener import (
+    Dispatch,
+    ListenOptions,
+    engine_backstop_seconds,
+    make_listener,
+)
 from pyfect.http.client import HttpClient
 from pyfect.http.etag import Generator
 from pyfect.http.httpx_client import layer as httpx_layer
 from pyfect.http.live_server import layer_services
-from pyfect.http.live_server._listener import ABORT_GRACE_PERIOD
 from pyfect.http.platform import HttpPlatform
 from pyfect.http.server import HttpServer, HttpServerService, layer_test_client
 from pyfect.layer import Layer, merge, provide_merge
@@ -76,7 +80,7 @@ def _uvicorn(dispatch: Dispatch, options: Options) -> uvicorn.Server:
     }
     # uvicorn's own timeout only backs up ``_Running.shut_down``, which ends
     # the requests first: its cancel is logged with a traceback.
-    backstop = graceful(options) + ABORT_GRACE_PERIOD
+    backstop = engine_backstop_seconds(options)
     config.update(app=dispatch, lifespan="off", timeout_graceful_shutdown=backstop)
     return _Server(uvicorn.Config(**config))
 

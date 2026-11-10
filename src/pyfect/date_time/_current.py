@@ -71,7 +71,8 @@ def zone_named_effect(zone_id: str) -> Effect[tzinfo, IllegalArgumentError]:
 
 
 def _offset_zone(offset: DurationInput) -> tzinfo:
-    zone = zone_offset(timedelta(seconds=from_input_unsafe(offset)))
+    parsed = from_input_unsafe(offset)
+    zone = zone_offset(parsed.to_timedelta()) if parsed.is_finite() else None
     if zone is None:
         raise ValueError(f"a zone offset must be strictly within a day, got {offset!r}")
     return zone

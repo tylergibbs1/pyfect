@@ -38,10 +38,11 @@ _TREE: S.StructSchema[_Tree, Never, Never] = S.Struct(
 
 
 def _catalog() -> dict[str, S.Bottom[Any, Any]]:
-    """Every exported schema constant, but the two with no value to draw
-    or to encode: ``Never``, and ``ByteSizeFromNumber``, whose large sizes
-    have no safe-integer encoding."""
-    excluded = {"Never", "ByteSizeFromNumber"}
+    """Every exported schema constant, but those with no value to draw or
+    to encode exactly: ``Never``; ``ByteSizeFromNumber``, whose large sizes
+    have no safe-integer encoding; ``DurationFromMillis``, whose milliseconds
+    are a float that drops nanoseconds past about 104 days, as Effect's do."""
+    excluded = {"Never", "ByteSizeFromNumber", "DurationFromMillis"}
     found: dict[str, S.Bottom[Any, Any]] = {
         name: cast("S.Bottom[Any, Any]", value)
         for name, value in vars(S).items()

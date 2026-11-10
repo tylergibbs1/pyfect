@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 import pytest
 
 from pyfect import schema as S
-from pyfect.duration import Duration, infinity
+from pyfect.duration import infinity, seconds
 from pyfect.http import headers as h
 from pyfect.http import schema as HS
 from pyfect.redacted import Redacted
@@ -142,7 +142,7 @@ def test_retry_after_seconds() -> None:
     """parses whole seconds"""
     value = _ok(h.parse_retry_after("120"))
     assert isinstance(value, h.RetryAfterDuration)
-    assert value.duration == 120
+    assert value.duration.to_millis() == 120_000
     assert h.format_retry_after(value) == "120"
 
 
@@ -168,18 +168,20 @@ def test_retry_after_large() -> None:
     """parses and formats seconds beyond the safe integer range exactly"""
     text = "1000000000000000000000"
     value = _ok(h.parse_retry_after(text))
-    assert h.retry_after_delay(value, 0) == 10**21
+    assert h.retry_after_delay(value, 0).to_nanos_unsafe() == 10**30
     assert h.format_retry_after(value) == text
+    codec = HS.RetryAfterFromString
+    assert S.encode_sync(codec)(S.decode_sync(codec)(text)) == text
 
 
 def test_retry_after_duration() -> None:
     """retryAfterDuration rounds fractions up on the wire, clamps negatives and rejects infinity"""
     fractional = h.retry_after_duration("1500 millis")
     assert h.format_retry_after(fractional) == "2"
-    assert h.retry_after_delay(fractional, 0) == 1.5
+    assert h.retry_after_delay(fractional, 0).to_millis() == 1500
     negative = h.retry_after_duration("-5 seconds")
     assert h.format_retry_after(negative) == "0"
-    assert h.retry_after_delay(negative, 0) == 0
+    assert h.retry_after_delay(negative, 0).to_millis() == 0
     with pytest.raises(ValueError, match="infinite"):
         h.retry_after_duration(math.inf)
 
@@ -187,10 +189,10 @@ def test_retry_after_duration() -> None:
 def test_retry_after_delay() -> None:
     """delay is measured from now and never negative"""
     seconds = _ok(h.parse_retry_after("120"))
-    assert h.retry_after_delay(seconds, HTTP_DATE_MILLIS) == 120
+    assert h.retry_after_delay(seconds, HTTP_DATE_MILLIS).to_millis() == 120_000
     date = _ok(h.parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT"))
-    assert h.retry_after_delay(date, HTTP_DATE_MILLIS - 30_000) == 30
-    assert h.retry_after_delay(date, HTTP_DATE_MILLIS + 30_000) == 0
+    assert h.retry_after_delay(date, HTTP_DATE_MILLIS - 30_000).to_millis() == 30_000
+    assert h.retry_after_delay(date, HTTP_DATE_MILLIS + 30_000).to_millis() == 0
 
 
 def test_schema_date_time_utc_from_http_date_decodes_any_format_and_encodes_imf_fixdate() -> None:
@@ -215,5 +217,5 @@ def test_schema_retry_after_accepts_only_finite_non_negative_durations() -> None
     """Schema.RetryAfter accepts only finite, non-negative durations"""
     is_retry_after = S.is_(HS.RetryAfter)
     assert is_retry_after(h.retry_after_duration("5 seconds"))
-    assert not is_retry_after(h.RetryAfterDuration(Duration(-5.0)))
+    assert not is_retry_after(h.RetryAfterDuration(seconds(-5)))
     assert not is_retry_after(h.RetryAfterDuration(infinity))

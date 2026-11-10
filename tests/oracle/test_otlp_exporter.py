@@ -219,10 +219,10 @@ class _CountingClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self.inner.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: Duration) -> fx.Effect[None]:
+    def sleep(self, duration: Duration) -> fx.Effect[None]:
         def start() -> fx.Effect[None]:
             self.pending += 1
-            return self.inner.sleep(seconds).ensuring(fx.sync(self._done))
+            return self.inner.sleep(duration).ensuring(fx.sync(self._done))
 
         return fx.suspend(start)
 
@@ -389,11 +389,11 @@ def _retry_case(retry_after: str | None, first: float, second: float):
         yield from _yield_now_n(3)
         assert attempts[0] == 1
 
-        yield from testing.adjust(Duration(first))
+        yield from testing.adjust(fx.duration.seconds(first))
         yield from _yield_now_n(2)
         assert attempts[0] == 1
 
-        yield from testing.adjust(Duration(second))
+        yield from testing.adjust(fx.duration.seconds(second))
         yield from _yield_now_n(2)
         assert attempts[0] == 2
 

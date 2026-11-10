@@ -18,7 +18,7 @@ from typing import Any, Never, Protocol, ReadOnly, TypedDict, cast
 from pyfect import effect as fx
 from pyfect import stream
 from pyfect.context import Context, Provides
-from pyfect.duration import Duration
+from pyfect.duration import Duration, seconds
 from pyfect.effect import Effect
 from pyfect.graphql._codec import Codec
 from pyfect.graphql._types import (
@@ -63,10 +63,13 @@ class GroupClass[G, T, OT](Protocol):
     def __graphql_group__(self) -> GroupTypes[G, T, OT]: ...
 
 
+_MAX_RETRY_DELAY = seconds(5)
+
+
 def _retry_delay(metadata: Metadata[Duration, GraphQLClientError]) -> Effect[Duration]:
-    capped = Duration(min(metadata.duration, 5.0))
+    capped = metadata.duration.min(_MAX_RETRY_DELAY)
     retry_after = metadata.input.retry_after
-    return fx.succeed(capped if retry_after is None else Duration(max(capped, retry_after)))
+    return fx.succeed(capped if retry_after is None else capped.max(retry_after))
 
 
 default_subscription_retry: Schedule[Duration, GraphQLClientError] = (

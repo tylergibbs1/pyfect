@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from pyfect.duration import Input as DurationInput
-from pyfect.duration import format_duration, from_input_unsafe
+from pyfect.duration import from_input_unsafe
 from pyfect.effect import Effect, fail
 from pyfect.errors import TimeoutException
 from pyfect.http.error import HttpClientError, TransportError
@@ -20,7 +20,7 @@ def timeout[E, R](
     Effect[HttpClientResponse, E | HttpClientError, R],
 ]:
     seconds = from_input_unsafe(duration)
-    description = f"timed out after {format_duration(seconds)}"
+    description = f"timed out after {seconds.format()}"
 
     def apply(
         sending: Effect[HttpClientResponse, E, R], request: HttpClientRequest

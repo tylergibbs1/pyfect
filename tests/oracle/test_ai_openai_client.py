@@ -13,13 +13,13 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownLambdaType=false
 import json
 from collections.abc import Callable
-from datetime import timedelta
 from typing import Any, cast
 
 import pytest
 
 import pyfect as fx
 from pyfect import config, config_provider, testing
+from pyfect import duration as fx_duration
 from pyfect import layer as L
 from pyfect import stream as St
 from pyfect.ai import ai_error as E
@@ -372,7 +372,7 @@ def test_429():
     [
         ("-5", None),
         ("Infinity", None),
-        ("Thu, 01 Jan 1970 00:00:30 GMT", timedelta(seconds=30)),
+        ("Thu, 01 Jan 1970 00:00:30 GMT", fx_duration.seconds(30)),
     ],
     ids=[
         "ignores a negative Retry-After",
@@ -381,7 +381,7 @@ def test_429():
     ],
 )
 @testing.effect
-def test_retry_after(header: str, expected: timedelta | None):
+def test_retry_after(header: str, expected: fx_duration.Duration | None):
     """error mapping / $name (ignores a negative Retry-After, ignores a non-finite
     Retry-After, honors an HTTP-date Retry-After)"""
     error = yield from _error(mock_json(_RATE_LIMITED, status=429, headers={"retry-after": header}))

@@ -6,13 +6,13 @@ table is one parametrized test. Responses are answered by a mocked
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import timedelta
 from typing import Any
 
 import pytest
 
 import pyfect as fx
 from pyfect import config, config_provider, testing
+from pyfect import duration as fx_duration
 from pyfect.ai import ai_error as E
 from pyfect.ai.cloudflare import client
 from pyfect.ai.cloudflare import schema as W
@@ -181,7 +181,7 @@ def test_rate_limit():
     error = yield from create_decisions(mock).flip()
     reason = error.reason
     assert isinstance(reason, E.RateLimitError)
-    assert reason.retry_after == timedelta(seconds=2)
+    assert reason.retry_after == fx_duration.seconds(2)
     assert reason.metadata == {
         "cloudflare": {"rayId": "test-ray", "errors": [{"code": 3040, "message": "Request failed"}]}
     }

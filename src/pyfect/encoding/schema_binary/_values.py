@@ -5,12 +5,13 @@ cycle check of JSON and recursive values."""
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import cast
 
 from pyfect import big_decimal as bd
 from pyfect import redacted
 from pyfect.cause import Cause, Die, Fail, Interrupt
+from pyfect.duration import Duration
 from pyfect.encoding.schema_binary import _layout as L
 from pyfect.encoding.schema_binary import _wire as W
 from pyfect.exit import Failure, Success
@@ -62,7 +63,7 @@ _GUARDS: dict[str, Callable[[object], bool]] = {
     "bytes": lambda value: isinstance(value, bytes),
     "dateTimeUtc": is_utc,
     "dateTimeZoned": is_zoned,
-    "duration": lambda value: isinstance(value, timedelta),
+    "duration": lambda value: isinstance(value, Duration),
     "bigDecimal": lambda value: isinstance(value, bd.BigDecimal),
     "option": lambda value: value is None or isinstance(value, Some),
     "result": lambda value: isinstance(value, Ok | Err),

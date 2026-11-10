@@ -2,7 +2,7 @@
 and JSON (Effect's declarations of them), over the Python types pyfect
 uses for them.
 
-``Duration`` is a ``timedelta``. ``DateTimeUtc`` is an aware ``datetime``
+``Duration`` is a ``pyfect.duration.Duration``. ``DateTimeUtc`` is an aware ``datetime``
 whose zone is ``timezone.utc``; ``DateTimeZoned`` any aware ``datetime``
 (pyfect's UTC and zero-offset date-times are the same value). A
 ``TimeZoneNamed`` is a ``ZoneInfo``, a ``TimeZoneOffset`` a
@@ -11,13 +11,14 @@ whose zone is ``timezone.utc``; ``DateTimeZoned`` any aware ``datetime``
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone, tzinfo
+from datetime import UTC, datetime, timezone, tzinfo
 from typing import Never, TypeIs
 from zoneinfo import ZoneInfo
 
 from pyfect._json_value import JsonValue
 from pyfect.byte_size import ByteSize as _ByteSize
 from pyfect.byte_size import is_byte_size
+from pyfect.duration import Duration as DurationValue
 from pyfect.schema import _arbitrary_links as _arb
 from pyfect.schema import ast
 from pyfect.schema import transformation as T
@@ -38,13 +39,13 @@ from pyfect.schema._value_codecs import (
     time_zone_offset_codec,
 )
 
-Duration: Bottom[timedelta] = instance_of(
-    timedelta,
+Duration: Bottom[DurationValue] = instance_of(
+    DurationValue,
     expected="Duration",
     representation={"id": "effect/schema/Duration", "payload": None},
     to_codec_json=duration_codec,
 )
-"""A ``timedelta`` (Effect's ``Duration``)."""
+"""A ``Duration`` (Effect's ``Schema.Duration``)."""
 
 
 def _is_utc(value: object) -> TypeIs[datetime]:

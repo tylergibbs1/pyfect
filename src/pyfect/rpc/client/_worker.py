@@ -268,7 +268,7 @@ def make_protocol_worker(
                     acquire,
                     min=cast("int", min_size),
                     max=cast("int", max_size),
-                    time_to_live=cast("Duration", time_to_live),
+                    time_to_live=cast("DurationInput", time_to_live),
                     concurrency=concurrency,
                     target_utilization=target_utilization,
                 )

@@ -12,8 +12,8 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from pyfect import big_decimal as bd
+from pyfect import duration, redacted
 from pyfect import exit as Exit
-from pyfect import redacted
 from pyfect import schema as S
 from pyfect.cause import Cause, Fail, Interrupt
 from pyfect.encoding import schema_binary as B
@@ -92,7 +92,7 @@ CASES: dict[str, tuple[Any, Any]] = {
             "when": _second,
             "zoned": _second.astimezone(ZoneInfo("Europe/London")),
             "offset": _second.astimezone(timezone(timedelta(hours=1))),
-            "duration": timedelta(seconds=1.5),
+            "duration": duration.nanos(1_500_000_000),
             "decimal": bd.make(123, 2),
             "secret": redacted.make("hush"),
             "json": {"nested": [1, "two", True, None]},
