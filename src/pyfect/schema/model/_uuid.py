@@ -8,19 +8,18 @@ import os
 import uuid
 from typing import Any, Never, cast
 
+from pyfect import _ids
 from pyfect._core import Effect
-from pyfect.clock import now_nanos
+from pyfect.clock import current_time_millis
 from pyfect.effect import sync
 from pyfect.schema._schema import Codec
 from pyfect.schema.variant_schema import Field, WithConstructorDefault, with_constructor_default
 
 
-def _uuid_v7(millis: int) -> uuid.UUID:
-    """RFC 9562 version 7: 48 bits of Unix milliseconds, then random bits."""
-    value = (millis & 0xFFFF_FFFF_FFFF) << 80 | int.from_bytes(os.urandom(10))
-    value = value & ~(0xF << 76) | 0x7 << 76  # version
-    value = value & ~(0x3 << 62) | 0x2 << 62  # variant
-    return uuid.UUID(int=value)
+def _uuid_v7(millis: float) -> str:
+    """RFC 9562 version 7, strictly increasing across the process (the
+    generator ``crypto.secure_random.uuid_v7_unsafe`` shares)."""
+    return _ids.stringify(_ids.v7_monotonic(millis, os.urandom(16)))
 
 
 def _generated[B](schema: Codec[B, Any, Any, Any], make: Effect[object]) -> Any:
@@ -38,8 +37,9 @@ def UuidV7WithGenerate[B: str, I, RD, RE](
     schema: Codec[B, I, RD, RE], /
 ) -> WithConstructorDefault[B, I, RD, RE]:
     """``schema`` defaulting to a new time-ordered UUID's text, its time
-    read from the ``Clock``."""
-    return _generated(schema, now_nanos().map(lambda n: str(_uuid_v7(n // 1_000_000))))
+    read from the ``Clock``; ids strictly increase, also within a
+    millisecond."""
+    return _generated(schema, current_time_millis().map(_uuid_v7))
 
 
 def UuidV4BytesWithGenerate[B: bytes, I, RD, RE](

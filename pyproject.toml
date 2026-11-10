@@ -78,6 +78,10 @@ eventlog = [
 brotli = [
     "brotli>=1.1",
 ]
+crypto = [
+    "cryptography>=46",
+    "pynacl>=1.6",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.15,<0.13.0"]
@@ -109,6 +113,7 @@ dev = [
     "pyfect-dev[redis]",
     "pyfect-dev[eventlog]",
     "pyfect-dev[brotli]",
+    "pyfect-dev[crypto]",
     "psycopg[binary]>=3.3",
     "pyright>=1.1.414",
     "pytest>=9.1.1",

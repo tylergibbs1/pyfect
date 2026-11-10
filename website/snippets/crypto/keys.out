@@ -1,0 +1,4 @@
+ab106c26aa091dec
+-----BEGIN PUBLIC KEY-----
+ed25519
+CS.SignaturePrivateKeyFromFormat only decodes, pass allow_encode=True to encode the key

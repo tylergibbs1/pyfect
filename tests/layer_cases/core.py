@@ -13,7 +13,6 @@ from layer_cases._case import AnyEffect, AnyLayer, Case
 from pyfect import (
     config,
     config_provider,
-    crypto,
     date_time,
     error_reporter,
     file_system,
@@ -139,10 +138,6 @@ def _console_log_once() -> AnyEffect:
         return (yield from testing.log_lines.flat_map(lambda lines: _expect(lines, ["hi"])))
 
     return run()
-
-
-def _seeded_draw() -> AnyEffect:
-    return crypto.Crypto().flat_map(lambda c: c.random_bytes(4)).map(lambda _: None)
 
 
 @fx.fn
@@ -273,10 +268,6 @@ CASES: dict[str, Case] = {
     ),
     "pyfect.stdio.layer": Case(layer=lambda: stdio.layer, use=_stdout_written),
     "pyfect.stdio.layer_test": Case(layer=stdio.layer_test, use=_stdout_written),
-    "pyfect.crypto.layer": Case(layer=lambda: crypto.layer, use=_seeded_draw),
-    "pyfect.testing.TestCrypto.layer": Case(
-        layer=lambda: testing.TestCrypto.layer("seed"), needs=lambda: crypto.layer, use=_seeded_draw
-    ),
     "pyfect.testing.TestClock.layer": Case(layer=testing.TestClock.layer, use=_sleep_on_test_clock),
     "pyfect.testing.TestConsole.layer": Case(
         layer=testing.TestConsole.layer, use=_console_log_once

@@ -49,6 +49,26 @@
   `otel.resource.layer_from_env` does too, percent-decodes keys and values, accepts a
   structured config record, and drops the whole variable with a warning when its encoding is
   malformed (write a literal `%` as `%25`).
+- `pyfect.crypto` is now Effect 4.1.2's `effect/crypto`, a package with one service per
+  family, and needs the `crypto` extra (`pip install "pyfect-dev[crypto]"`). The 4.0.6
+  `Crypto` service, `CryptoService`, `crypto.make`, `crypto.layer` and the module-level UUID
+  helpers are gone, and `fx.platform.layer` no longer provides crypto. Migrate:
+  - `Crypto().random_bytes(n)`, `random_uuid_v4()`, `random_uuid_v7()`, `random_ulid()` and
+    the shuffles: `SecureRandom()` from `pyfect.crypto.secure_random`, with `random_bytes(n)`,
+    `uuid_v4()`, `uuid_v7()`, `ulid()`, `int_between(...)` and `shuffle(...)`. UUIDs take
+    `format="string"` (was `"hex"`) or `"bytes"`.
+  - `Crypto().digest(algorithm, data)`: `Digest()` from `pyfect.crypto.digest`, with
+    `digest(digest.sha256, data)`.
+  - `Crypto().random()` and the other number draws: `fx.Random`.
+  - Provide `pyfect.crypto.native.layer` (or one family's `native.layer_*`) where
+    `platform.layer` provided `Crypto`. Failures are `CryptoError`, not `PlatformError`.
+- `testing.TestCrypto` is removed; Effect 4.1.2 has no seeded crypto service. Use
+  `fx.Random` with a seed for reproducible numbers, or `web_crypto.layer(fake)` to replace
+  the Web Crypto implementation under every `layer_web_crypto` service.
+- The `Model.UuidV7Insert` generator makes monotonic UUIDv7s from the `Clock`, as Effect's
+  `Uuid.v7Monotonic` does: ids made in the same millisecond increase strictly.
+- `Base64Url` decoding follows Effect 4.1.2: padded input must be a whole number of 4-character
+  groups, and the error messages name the padded or unpadded length rule.
 
 ### Added
 
@@ -62,6 +82,16 @@
   timeout=, transform_tool=)`, `ToolDescriptor`, `RemoteTool`, schemas for `McpClientError`.
 - Anthropic: `tool.DeferLoading`; non-strict tools may have recursive parameters.
 - `config.dict_of(..., trim=, keep_empty_values=)`.
+- The crypto families of Effect 4.1.2: `secure_random`, `digest`, `mac`, `kdf` (HKDF, PBKDF2,
+  Argon2id), `aead` (AES-GCM, ChaCha20-Poly1305, XChaCha20-Poly1305), `cipher` (AES-CBC /
+  CTR), `signature` (Ed25519, ECDSA, RSA-PSS, RSASSA-PKCS1-v1_5), `key_agreement` (X25519,
+  ECDH), `key_wrap` (AES-KW, RSA-OAEP), `key_format` (SPKI, PKCS#8, PKCS#1, SEC1, JWK, PEM),
+  `web_crypto` and `native`, all on `cryptography` and PyNaCl.
+- `pyfect.crypto.schema`: Effect's crypto key schemas (`MacKeyFromBytes`,
+  `SignaturePublicKeyFromFormat`, ...).
+- `pyfect.jose` (`fx.jose`): `jwk`, `jwks`, `jws`, `jwe` and `jwt`, interoperable with Node's
+  `jose`.
+- Docs: [Cryptography and JOSE](/docs/crypto).
 
 ## 0.3.1 (2026-11-09)
 
