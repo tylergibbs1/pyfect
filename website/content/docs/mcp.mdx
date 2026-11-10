@@ -92,6 +92,24 @@ Each request is a span on both sides, named for its method: `McpClient.tools/cal
 the client and `McpServer.tools/call` on the server, each with a `tool` attribute, inside
 the trace of the HTTP request that carries it.
 
+### Return failures as plain text
+
+With `failure_mode="return"` the model gets the encoded `McpClientError`, so a tool's
+text sits as JSON inside its `reason`, and some models answer that with an empty reply.
+The model sees a failure as the tool's failure schema encodes it, so give the tool a
+schema that encodes the `McpClientError` as its `message`, the tool's own text for a tool
+error. `transform_tool` sets it with `set_failure`: the schema's type is still
+`McpClientError`, so the application gets the same error, and only what the model reads
+changes. The schema can't decode, because text doesn't carry the whole error.
+
+<CodeOutput>
+
+<include meta='title="plain_failures.py"'>../../snippets/mcp/plain_failures.py</include>
+
+<include lang="text">../../snippets/mcp/plain_failures.out</include>
+
+</CodeOutput>
+
 ## Strict tools
 
 A tool annotated `tool.Strict` lists a closed input schema (`additionalProperties: false`
