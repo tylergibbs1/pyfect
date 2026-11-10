@@ -12,6 +12,15 @@
   (default `True`; the HTTP protocol sets it from its serialization's framing) and
   `client_ids` (the connected clients, reported by the built-in transports; default `None`,
   not reported). `rpc.server.WriteRequest` is exported.
+- The `watch` extra (`uv add "pyfect-dev[watch]"`, on watchfiles): `FileSystem.watch` on
+  `file_system.layer` / `platform.layer` uses the operating system's change notification
+  (inotify, FSEvents, ReadDirectoryChangesW) through `file_system.WatchfilesBackend`, as Effect's
+  Node file system uses `fs.watch`, so changes arrive as they happen and a file created and
+  removed at once is still reported. Events follow Effect's: an entry that appeared or went
+  away is `Create` if it exists afterwards and `Remove` if not, a changed one is `Update`,
+  paths are relative to the watched directory. The watcher runs on its own thread, stopped and
+  joined when the stream closes. Without the extra, `watch` polls every 50 milliseconds as
+  before; a provided `WatchBackend` still comes first.
 
 ### Fixed
 

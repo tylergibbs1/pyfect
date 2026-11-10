@@ -24,6 +24,7 @@ from pyfect.file_system._copy import copy_tree
 from pyfect.file_system._errors import run
 from pyfect.file_system._file import LiveFile
 from pyfect.file_system._model import DirectoryEntry, FileInfo, FileType, OpenFlag, WatchEvent
+from pyfect.file_system._native_watch import WatchfilesBackend
 from pyfect.file_system._service import (
     File,
     FileSystem,
@@ -55,6 +56,8 @@ _OPEN_FLAGS: dict[OpenFlag, int] = {
 }
 
 DEFAULT_WATCH_INTERVAL = millis(50)
+
+_NATIVE = WatchfilesBackend()
 
 
 def _open_flags(flag: OpenFlag) -> int:
@@ -171,9 +174,10 @@ def _write(path: str, data: bytes, flag: OpenFlag, mode: int) -> None:
 
 
 class LiveFileSystem(FileSystemService):
-    """The host's file system. ``watch`` polls every ``watch_interval``
-    seconds unless a ``WatchBackend`` takes the path: the one provided
-    where the stream runs, else ``backend``."""
+    """The host's file system. ``watch`` asks a ``WatchBackend`` first (the
+    one provided where the stream runs, else ``backend``), then the
+    operating system's change notification (``WatchfilesBackend``, with the
+    ``watch`` extra); without the extra it polls every ``watch_interval``."""
 
     __slots__ = ("_backend", "_watch_interval")
 
@@ -322,11 +326,11 @@ class LiveFileSystem(FileSystemService):
         def make() -> Generator[Effect[Any, PlatformError], Any, Stream[WatchEvent, PlatformError]]:
             info = yield from self.stat(path)
             caller = yield from service_option(WatchBackend)
-            backend = option.get_or_none(caller) or self._backend
-            if backend is not None:
-                found = backend.register(path, info, recursive=recursive, on_ready=on_ready)
-                if found is not None:
-                    return found
+            for backend in (option.get_or_none(caller) or self._backend, _NATIVE):
+                if backend is not None:
+                    found = backend.register(path, info, recursive=recursive, on_ready=on_ready)
+                    if found is not None:
+                        return found
             return poll(
                 path,
                 directory=info.type == "Directory",

@@ -83,6 +83,9 @@ crypto = [
     "cryptography>=46",
     "pynacl>=1.6",
 ]
+watch = [
+    "watchfiles>=1.3",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.15,<0.13.0"]

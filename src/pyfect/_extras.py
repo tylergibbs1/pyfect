@@ -25,6 +25,7 @@ type Extra = Literal[
     "eventlog",
     "brotli",
     "crypto",
+    "watch",
 ]
 """The ``[project.optional-dependencies]`` of ``pyproject.toml``."""
 
@@ -46,6 +47,7 @@ LIBRARIES: Final[Mapping[Extra, frozenset[str]]] = {
     "eventlog": frozenset({"cryptography", "nacl"}),
     "brotli": frozenset({"brotlicffi"}),
     "crypto": frozenset({"cryptography", "nacl"}),
+    "watch": frozenset({"watchfiles"}),
 }
 """The top-level import names of each extra's libraries."""
 

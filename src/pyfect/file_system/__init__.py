@@ -18,8 +18,9 @@ Every operation fails with a ``PlatformError`` whose reason is a
 ``NotFound``, ``PermissionDenied``, ``AlreadyExists``, ``BadResource`` ...
 (``fx.platform_error``). ``open`` and the ``*_scoped`` temporaries live
 until their scope closes; ``stream`` and ``sink`` read and write files as
-byte streams. ``watch`` polls (``LiveFileSystem(watch_interval=...)``) unless
-a ``WatchBackend`` is provided. ``NoopFileSystem`` / ``layer_noop`` are an
+byte streams. ``watch`` uses a provided ``WatchBackend``, else the operating
+system's change notification with the ``watch`` extra (``WatchfilesBackend``),
+else polls (``LiveFileSystem(watch_interval=...)``). ``NoopFileSystem`` / ``layer_noop`` are an
 empty file system to subclass in tests.
 """
 
@@ -36,6 +37,7 @@ from pyfect.file_system._model import (
     Update,
     WatchEvent,
 )
+from pyfect.file_system._native_watch import WatchfilesBackend
 from pyfect.file_system._noop import NoopFileSystem, layer_noop
 from pyfect.file_system._service import (
     DEFAULT_CHUNK_SIZE,
@@ -66,6 +68,7 @@ __all__ = [
     "WatchBackend",
     "WatchBackendService",
     "WatchEvent",
+    "WatchfilesBackend",
     "layer",
     "layer_noop",
 ]
