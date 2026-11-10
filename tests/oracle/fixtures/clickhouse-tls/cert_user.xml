@@ -1,0 +1,16 @@
+<!-- A user authenticated by a client certificate whose common name is localhost
+     (the fixtures/tls certificate), for the clickhouse tests' mutual tls option. -->
+<clickhouse>
+    <users>
+        <pyfect_cert>
+            <ssl_certificates>
+                <common_name>localhost</common_name>
+            </ssl_certificates>
+            <profile>default</profile>
+            <quota>default</quota>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </pyfect_cert>
+    </users>
+</clickhouse>

@@ -11,6 +11,7 @@ are recorded with their parameters.
 
 from __future__ import annotations
 
+import gzip
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -60,7 +61,10 @@ class Call:
 
 def _text(request: HttpClientRequest) -> str:
     body = request.body
-    return body.body.decode() if isinstance(body, http_body.Bytes) else ""
+    if not isinstance(body, http_body.Bytes):
+        return ""
+    gzipped = request.headers.get("content-encoding") == "gzip"
+    return (gzip.decompress(body.body) if gzipped else body.body).decode()
 
 
 @dataclass
@@ -102,7 +106,8 @@ class FakeClickhouse:
 
     def config(self, **fields: Any) -> clickhouse.ClickhouseClientConfig:
         fields.setdefault("http_client", self.http_client)
-        return clickhouse.ClickhouseClientConfig(url="http://localhost:8123", **fields)
+        fields.setdefault("url", "http://localhost:8123")
+        return clickhouse.ClickhouseClientConfig(**fields)
 
 
 __all__ = ["Call", "FakeClickhouse"]

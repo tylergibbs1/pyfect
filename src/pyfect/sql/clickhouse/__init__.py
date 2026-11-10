@@ -12,6 +12,8 @@ one on httpx, the ``pyfect-dev[httpx]`` extra)::
   ``layer``, ``layer_config``, ``layer_from``, ``make_compiler``, and the
   ``ClientMethod`` / ``QueryId`` / ``ClickhouseSettings`` references
 - ``config``: ``ClickhouseClientConfig``
+- ``options``: the ``@clickhouse/client`` options it takes (``compression``,
+  ``keep_alive``, ``tls``, ``log``, ``json``)
 - ``driver``: ``ClickhouseDriver``, the HTTP client underneath
   (``query``, ``command``, ``exec``, ``insert``, ``ping``) and its results
 - ``params``: how values are sent (``TupleParam``, settings, inferred
@@ -20,7 +22,7 @@ one on httpx, the ``pyfect-dev[httpx]`` extra)::
 - ``migrator``: migrations
 """
 
-from pyfect.sql.clickhouse import client, config, driver, error, migrator, params
+from pyfect.sql.clickhouse import client, config, driver, error, migrator, options, params
 from pyfect.sql.clickhouse.client import (
     ClickhouseClient,
     ClickhouseClientService,
@@ -70,5 +72,6 @@ __all__ = [
     "make",
     "make_compiler",
     "migrator",
+    "options",
     "params",
 ]

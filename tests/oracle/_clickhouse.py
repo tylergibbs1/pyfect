@@ -6,7 +6,10 @@ removes it when the test process exits; containers carry the
 ``pyfect.test=clickhouse`` label and are reaped like the MySQL ones
 (``_docker``). Without Docker (or httpx), the tests that need a server
 skip. The user ``pyfect`` (password ``pyfect``) owns the ``default``
-database; ``query_now`` runs a statement over HTTP without pyfect.
+database; ``query_now`` runs a statement over HTTP without pyfect. The
+server also answers HTTPS (``https_url``) with the ``fixtures/tls``
+certificate, and lets ``pyfect_cert`` in with that certificate as a client
+certificate (``fixtures/clickhouse-tls``).
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -28,7 +32,11 @@ IMAGE = "clickhouse/clickhouse-server:latest"
 LABEL = "pyfect.test=clickhouse"
 USER = "pyfect"
 PASSWORD = "pyfect"
+CERT_USER = "pyfect_cert"
 _STARTUP_TIMEOUT = 120.0
+FIXTURES = Path(__file__).parent / "fixtures"
+TLS = FIXTURES / "tls"
+_TLS_CONFIG = FIXTURES / "clickhouse-tls"
 
 
 @dataclass(frozen=True)
@@ -36,10 +44,15 @@ class ClickhouseServer:
     host: str
     port: int
     container: str
+    https_port: int = 0
 
     @property
     def url(self) -> str:
         return f"http://{self.host}:{self.port}"
+
+    @property
+    def https_url(self) -> str:
+        return f"https://{self.host}:{self.https_port}"
 
 
 def reap_stale() -> list[str]:
@@ -85,6 +98,14 @@ def _start() -> ClickhouseServer:
         "nofile=262144:262144",
         "-p",
         "127.0.0.1::8123",
+        "-p",
+        "127.0.0.1::8443",
+        "-v",
+        f"{_TLS_CONFIG / 'tls.xml'}:/etc/clickhouse-server/config.d/tls.xml:ro",
+        "-v",
+        f"{_TLS_CONFIG / 'cert_user.xml'}:/etc/clickhouse-server/users.d/cert_user.xml:ro",
+        "-v",
+        f"{TLS}:/etc/clickhouse-server/tls:ro",
         "-e",
         f"CLICKHOUSE_USER={USER}",
         "-e",
@@ -99,7 +120,10 @@ def _start() -> ClickhouseServer:
     atexit.register(_containers.remove, container)
     try:
         server = ClickhouseServer(
-            "127.0.0.1", _containers.published_port(container, 8123), container
+            "127.0.0.1",
+            _containers.published_port(container, 8123),
+            container,
+            _containers.published_port(container, 8443),
         )
         _wait_ready(server)
     except BaseException:
@@ -139,9 +163,11 @@ def clickhouse_server() -> ClickhouseServer:
 
 
 __all__ = [
+    "CERT_USER",
     "IMAGE",
     "LABEL",
     "PASSWORD",
+    "TLS",
     "USER",
     "ClickhouseServer",
     "clickhouse_server",

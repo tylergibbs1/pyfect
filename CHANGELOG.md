@@ -12,6 +12,13 @@
   (default `True`; the HTTP protocol sets it from its serialization's framing) and
   `client_ids` (the connected clients, reported by the built-in transports; default `None`,
   not reported). `rpc.server.WriteRequest` is exported.
+- The ClickHouse client takes `@clickhouse/client`'s transport options, under the same names,
+  as Effect's `ClickhouseClientConfig` passes them through: `compression` (request and
+  response, gzip, zstd or br), `keep_alive`, `max_open_connections`, `tls` (a CA, and a
+  client certificate), `use_multipart_params` / `use_multipart_params_auto`, `log` and
+  `json`, with their URL parameters (`compression_request`, `compression_response`,
+  `keep_alive_enabled`, `keep_alive_idle_socket_ttl`, `max_open_connections`, `log_level`),
+  which used to fail as not offered. Their types are in `pyfect.sql.clickhouse.options`.
 - The `watch` extra (`uv add "pyfect-dev[watch]"`, on watchfiles): `FileSystem.watch` on
   `file_system.layer` / `platform.layer` uses the operating system's change notification
   (inotify, FSEvents, ReadDirectoryChangesW) through `file_system.WatchfilesBackend`, as Effect's
@@ -21,6 +28,17 @@
   paths are relative to the watched directory. The watcher runs on its own thread, stopped and
   joined when the stream closes. Without the extra, `watch` polls every 50 milliseconds as
   before; a provided `WatchBackend` still comes first.
+
+### Changed
+
+- The httpx client the ClickHouse layer makes now uses `@clickhouse/client`'s pool defaults:
+  at most 10 connections, idle ones closed after 2.5 seconds (httpx's were 100 and 5
+  seconds). Pass `max_open_connections=` or `keep_alive={"idle_socket_ttl": ...}` to change
+  them.
+- As `@clickhouse/client` does, the ClickHouse client logs a failed request at `ERROR`, a
+  failed `/ping` at `WARN`, and warns when the URL overrides a config field or when
+  `request_timeout` is over a minute without progress headers. `log={"level": "OFF"}`
+  silences it.
 
 ### Fixed
 
