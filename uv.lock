@@ -857,7 +857,7 @@ websockets = [
 [package.dev-dependencies]
 dev = [
     { name = "psycopg", extra = ["binary"] },
-    { name = "pyfect-dev", extra = ["brotli", "crypto", "eventlog", "http2", "httpx", "hypothesis", "intl", "msgspec", "mssql", "mysql", "otel", "pg", "pydantic", "redis", "regex", "server", "websockets"] },
+    { name = "pyfect-dev", extra = ["brotli", "crypto", "eventlog", "http2", "httpx", "hypothesis", "intl", "msgspec", "mssql", "mysql", "otel", "pg", "pydantic", "redis", "regex", "server", "watch", "websockets"] },
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
@@ -914,6 +914,7 @@ dev = [
     { name = "pyfect-dev", extras = ["redis"] },
     { name = "pyfect-dev", extras = ["regex"] },
     { name = "pyfect-dev", extras = ["server"] },
+    { name = "pyfect-dev", extras = ["watch"] },
     { name = "pyfect-dev", extras = ["websockets"] },
     { name = "pyright", specifier = ">=1.1.414" },
     { name = "pytest", specifier = ">=9.1.1" },

@@ -146,6 +146,17 @@ def test_the_extras_are_the_ones_pyproject_declares():
     assert set[Extra]().union(*_LIBRARIES.values()) <= declared
 
 
+def test_the_dev_group_installs_every_extra():
+    """The `watch` extra once shipped outside it, so a fresh checkout failed its own tests."""
+    project = _pyproject()
+    declared = set(project["project"]["optional-dependencies"])
+    pattern = re.compile(rf"^{DISTRIBUTION}\[(\w+)\]$")
+    in_dev = {
+        m.group(1) for dep in project["dependency-groups"]["dev"] if (m := pattern.match(dep))
+    }
+    assert sorted(declared - in_dev) == []
+
+
 def test_the_distribution_is_pyfect_dev_and_imports_as_pyfect():
     project = _pyproject()
     assert project["project"]["name"] == DISTRIBUTION == "pyfect-dev"
