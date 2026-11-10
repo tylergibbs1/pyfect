@@ -1,4 +1,3 @@
-# ruff: noqa: E501 (Effect test titles, kept whole so they match)
 """Effect 4.1.2 test titles not ported yet (milestone M17, the move from Effect 4.0.6).
 
 Each M17 agent ports the titles of its area and deletes them here; an empty file closes the
