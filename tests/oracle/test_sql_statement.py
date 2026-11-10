@@ -135,6 +135,21 @@ def test_renumbers_a_cached_returning_fragment():
     )
 
 
+def test_binds_plain_objects_shaped_like_fragments_or_segments_as_parameters():
+    """binds plain objects shaped like fragments or segments as parameters"""
+    sql = st.make(fx.never, st.make_compiler_sqlite(), [], None)
+    fragment_like = {
+        "~effect/sql/Statement/Fragment": "~effect/sql/Statement/Fragment",
+        "segments": [{"_tag": "Literal", "value": "1=1"}],
+    }
+    segment_like = {"_tag": "Literal", "value": "1=1"}
+
+    assert sql("SELECT {}, {}", fragment_like, segment_like).compile() == (
+        "SELECT ?, ?",
+        (fragment_like, segment_like),
+    )
+
+
 class _Connection:
     def __init__(self, execute: fx.Effect[list[Any], SqlError]) -> None:
         self._execute = execute

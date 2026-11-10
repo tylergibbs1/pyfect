@@ -1,7 +1,8 @@
 """pyfect-specific behaviour of child processes: the asyncio runtime,
 interruption, the stall-free wait, argument validation at the boundary,
-and the options Effect's suite does not run (``shell``, removing an
-environment variable)."""
+and the options Effect's suite does not run (a ``shell`` script, removing an
+environment variable, ``StdoutConfig``, stdin ``encoding``, duplex streams
+and sinks)."""
 
 import errno
 import os
@@ -11,12 +12,23 @@ import time
 import pytest
 
 import pyfect as fx
-from pyfect import file_system, path, platform, process, stream, testing
+from pyfect import file_system, path, platform, process, sink, stream, testing
 from pyfect.file_system import FileSystem
 from pyfect.layer import Layer, merge, provide_merge
 from pyfect.path import Path
 from pyfect.platform_error import PlatformError, StreamError, Unknown, system_error
-from pyfect.process import ChildProcessSpawner, InputFd, OutputFd, _pipes, make
+from pyfect.process import (
+    ChildProcessSpawner,
+    DuplexFd,
+    InputFd,
+    OutputFd,
+    StderrConfig,
+    StdinConfig,
+    StdoutConfig,
+    _pipes,
+    command_line,
+    make,
+)
 from pyfect.scope import CloseableScope, Scope
 from pyfect.stream import Stream
 from pyfect.testing import Services
@@ -231,16 +243,64 @@ def test_shell_runs_the_command_line_with_sh(process_services: Services[Platform
 
 
 @testing.effect
-def test_shell_passes_each_argument_as_one_literal_word(process_services: Services[Platform]):
+def test_a_shell_script_built_with_command_line_join_keeps_each_value_one_word(
+    process_services: Services[Platform],
+):
     words = ["a b", "$PYFECT_SHELL_TEST", "; echo injected", "it's", "`id`", ""]
+    script = command_line.join(["printf", "[%s]\\n", *words]).get_or_raise()
     handle = yield from make(
-        "printf '[%s]\\n'",
-        words,
-        shell=True,
-        env={"PYFECT_SHELL_TEST": "expanded"},
-        extend_env=True,
+        script, shell=True, env={"PYFECT_SHELL_TEST": "expanded"}, extend_env=True
     )
     assert (yield from _text(handle.stdout)) == "".join(f"[{word}]\n" for word in words)
+
+
+@testing.effect
+def test_stdout_and_stderr_configs_take_a_stream_option(process_services: Services[Platform]):
+    collected: fx.Sink[list[bytes], bytes] = sink.collect()
+    upper = collected.map(lambda chunks: b"".join(chunks).upper())
+    handle = yield from make(
+        "sh",
+        ["-c", "echo out; echo err >&2"],
+        stdout=StdoutConfig(upper),
+        stderr=StderrConfig("ignore"),
+    )
+    assert (yield from _text(handle.stdout)) == "OUT\n"
+    assert (yield from _text(handle.stderr)) == ""
+
+
+@pytest.mark.parametrize(
+    ("encoding", "text", "written"),
+    [
+        ("utf-8", "h\u00e9", "68c3a9"),
+        ("latin1", "h\u00e9", "68e9"),
+        ("hex", "68e9zz", "68e9"),
+        ("base64", "aOk=", "68e9"),
+        ("utf16le", "h", "6800"),
+    ],
+)
+@testing.effect
+def test_text_written_to_stdin_is_encoded_with_the_stdin_encoding(
+    process_services: Services[Platform], encoding: process.Encoding, text: str, written: str
+):
+    handle = yield from make("od", ["-An", "-tx1"], stdin=StdinConfig("pipe", encoding=encoding))
+    yield from stream.make(text, b"!").run(handle.stdin)
+    output = "".join((yield from _text(handle.stdout)).split())
+    assert output == written + "21"
+
+
+@testing.effect
+def test_a_duplex_fd_writes_its_stream_and_transduces_its_output(
+    process_services: Services[Platform],
+):
+    collected: fx.Sink[list[bytes], bytes] = sink.collect()
+    count = collected.map(lambda chunks: str(len(b"".join(chunks))).encode())
+    handle = yield from make(
+        "sh",
+        ["-c", "cat <&3 | tr a-z A-Z >&3"],
+        additional_fds={3: DuplexFd(stream.make(b"hello"), count)},
+    )
+    assert (yield from _text(handle.get_output_fd(3))) == "5"
+    assert (yield from handle.exit_code) == 0
 
 
 @testing.effect
@@ -367,13 +427,13 @@ def test_descriptors_below_3_are_skipped_as_parse_fd_name_skips_them():
 
 def test_inputs_and_outputs_are_checked_when_made():
     with pytest.raises(TypeError, match="stdin must be a Stream"):
-        make("x", stdin=lambda: None)  # pyright: ignore[reportArgumentType]
+        make("x", stdin=lambda: None)  # pyright: ignore[reportArgumentType, reportCallIssue]
     with pytest.raises(TypeError, match="stdout must be a Sink"):
-        make("x", stdout=stream.empty)  # pyright: ignore[reportArgumentType]
+        make("x", stdout=stream.empty)  # pyright: ignore[reportArgumentType, reportCallIssue]
     with pytest.raises(TypeError, match="stream must be a Stream"):
         InputFd(b"data")  # pyright: ignore[reportArgumentType]
     with pytest.raises(TypeError, match="additional_fds"):
-        make("x", additional_fds={3: "output"})  # pyright: ignore[reportArgumentType]
+        make("x", additional_fds={3: "output"})  # pyright: ignore[reportArgumentType, reportCallIssue]
 
 
 def test_a_command_spawned_without_a_spawner_names_the_missing_service():

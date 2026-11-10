@@ -523,3 +523,29 @@ def test_works_when_node_sqlite_does_not_provide_enable_load_extension(tmp_path:
     assert (yield from sql("SELECT 1 AS value")) == [{"value": 1}]
     error = yield from sql.load_extension(sql.config.filename + ".missing-extension").flip()
     assert isinstance(error, SqlError)
+
+
+@testing.live
+def test_releases_the_connection_when_a_queued_transaction_is_interrupted():
+    """releases the connection when a queued transaction is interrupted"""
+    # Sweep the interrupt across the gap between taking the connection and
+    # registering its release. Statements run on the driver's worker thread,
+    # so the next statement is awaited (with a timeout) instead of polled.
+    for delay in range(31):
+
+        def attempt(delay: int = delay):
+            sql = yield from make_memory_client()
+            holder = yield from sql("SELECT 1").fork()
+            queued = yield from (
+                sql.with_transaction(sql("SELECT 2"))
+                .pipe(fx.provide_service(MaxOpsBeforeYield, 3))
+                .fork()
+            )
+            for _ in range(delay):
+                yield from fx.yield_now()
+            yield from queued.interrupt()
+            yield from holder.join()
+            leaked = yield from sql("SELECT 3").timeout("5 seconds").exit()
+            assert isinstance(leaked, fx.Success), f"connection leaked at delay {delay}"
+
+        yield from fx.scoped(fx.gen(attempt))

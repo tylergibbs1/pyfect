@@ -11,7 +11,9 @@ writes stays the same.
 ## Key-value stores
 
 `KeyValueStore` holds text and bytes by string key. `get` gives `None` for a missing key,
-`prefix(p)` gives a view whose keys all start with `p`, and `to_schema_store(schema)`
+`keys` lists the keys and `clear_prefix(p)` removes those starting with `p`. `prefix(p)`
+gives a view whose keys all start with `p`: its `keys`, `size` and `clear` see only
+those. `to_schema_store(schema)`
 holds one [schema](/docs/schema)'s values as JSON text, so `get` gives an `Option` of
 the decoded value. `key_value_store.layer_memory` keeps a dict, `layer_file_system(dir)`
 a file per key, `layer_sql(table=...)` a table of the `SqlClient`, and

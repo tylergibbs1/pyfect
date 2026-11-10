@@ -56,6 +56,30 @@ and `stream_lines` start a command, read its output and clean up in one call.
 
 `pipe_to` feeds one command's output into the next, as `|` does in a shell.
 
+A command can also be a template, written as in a shell: `process.make(["git commit -m ", ""],
+message)` gives its text parts and the values between them, as a tagged template does (on
+Python 3.14, `process.make(t"git commit -m {message}")`). Quotes group words and each value is
+one literal argument, so a value never splits or expands. Text that needs a shell (`|`,
+`$HOME`, `*`, `~`) raises `CommandLineError` where the command is made. With `shell=True` the
+command is the whole script, and arguments next to it are refused with `BadArgument`:
+`command_line.join` and `command_line.quote` build a script with values quoted for POSIX
+shells, PowerShell or Windows programs. Arguments and `env` values can be `Redacted`: the
+process gets their values, while errors show commands through `command_line.display`, which
+masks them.
+
+<CodeOutput>
+
+<include meta='title="command_line.py"'>../../snippets/platform/command_line.py</include>
+
+<include lang="text">../../snippets/platform/command_line.out</include>
+
+</CodeOutput>
+
+`StdoutConfig` and `StderrConfig` wrap an output option, and `StdinConfig` sets how standard
+input ends and the `encoding` text written to the handle's `stdin` is encoded with. A
+`DuplexFd` is an extra descriptor both sides read and write, a socket pair; ending its input
+shuts down only the writing half, so the child can still answer on it.
+
 ## HTTP requests
 
 An `HttpClient` is a value: methods like `filter_status_ok`, `retry_transient` and `transform`

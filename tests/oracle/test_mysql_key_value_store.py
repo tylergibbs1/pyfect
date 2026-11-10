@@ -69,3 +69,16 @@ def test_remove(mysql_server: MysqlServer, table: str) -> None:
 def test_clear(mysql_server: MysqlServer, table: str) -> None:
     """clear"""
     suite.run(_layer(mysql_server, table), suite.clear)
+
+
+@_TABLES
+def test_keys(mysql_server: MysqlServer, table: str) -> None:
+    """keys"""
+    suite.run(_layer(mysql_server, table), suite.keys)
+
+
+@_TABLES
+@pytest.mark.parametrize("title", list(suite.CLEAR_PREFIX_SUITE))
+def test_clear_prefix_suite(mysql_server: MysqlServer, table: str, title: str) -> None:
+    """KeyValueStore clearPrefix: each title of clearPrefixSuite"""
+    suite.run(_layer(mysql_server, table), suite.CLEAR_PREFIX_SUITE[title])

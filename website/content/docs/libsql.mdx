@@ -31,13 +31,14 @@ startup rather than on the first statement:
 To read the settings from the environment, use
 `libsql.layer_config({"url": fx.config.string("LIBSQL_URL"), "auth_token": fx.config.redacted("LIBSQL_TOKEN")})`.
 A client you made yourself goes in `LibsqlLiveConfig(live_client=...)`. It is any object
-with async `execute(sql, args)` and `transaction(mode)` methods (`libsql.LibsqlSdk`), and the
-caller closes it.
+with async `execute(sql, args)` and `transaction(mode)` methods and a `protocol` (`"http"`,
+`"ws"` or `"file"`; `libsql.LibsqlSdk`), and the caller closes it.
 
 ## How it differs
 
-The client runs one thing at a time. A statement holds it until it finishes, and a
-transaction holds it from `BEGIN IMMEDIATE` until it commits or rolls back. Nested
+A local database runs one thing at a time. A statement holds it until it finishes, and a
+transaction holds it from `BEGIN IMMEDIATE` until it commits or rolls back. A remote one
+(`http` or `ws`) runs statements side by side, and each transaction on its own stream. Nested
 transactions use savepoints. A few things work differently than on the other drivers:
 
 - `.raw` gives a `ResultSet` with `columns`, `column_types`, `rows`, `rows_affected` and

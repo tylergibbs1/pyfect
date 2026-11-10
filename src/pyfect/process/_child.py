@@ -29,6 +29,7 @@ from pyfect.effect import callback, fail, gen, succeed, suspend, sync, try_
 from pyfect.platform_error import PlatformError, from_exception, system_error
 from pyfect.process._command import StandardCommand
 from pyfect.process._os import Latch
+from pyfect.process.command_line import Format, display
 from pyfect.scheduler import Cancel, CurrentScheduler, Scheduler
 
 GROUP_GRACE = Seconds(1.0)
@@ -209,5 +210,8 @@ class Child:
 
 
 def command_line(commands: tuple[StandardCommand, ...]) -> str:
-    """How errors name a pipeline: ``cmd args | cmd args``."""
-    return " | ".join(" ".join((c.command, *c.args)) for c in commands)
+    """How errors name a pipeline: each command as ``command_line.display``
+    shows it (quoted for the host, ``Redacted`` arguments masked, control
+    characters escaped), joined by `` | ``."""
+    form: Format = "windows" if os.name == "nt" else "posix"
+    return " | ".join(display([c.command, *c.args], format=form) for c in commands)

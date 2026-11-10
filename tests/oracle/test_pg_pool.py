@@ -16,7 +16,8 @@ Omitted:
 - "defaults multiplex concurrency to 32", "keeps a multiplexed stream's
   connection to itself", "honours a configured multiplex concurrency",
   "fails a multiplexed reservation that waits on a busy pipeline past
-  acquireTimeout": multiplexing is not ported.
+  acquireTimeout", "counts a multiplexed session once however many fibers
+  share it": multiplexing is not ported.
 - "replaces a fatal session before the next pool.use query": a psycopg
   loader that fails raises from the fetch and leaves the session usable,
   so there is no fatal decode failure to replace.
@@ -46,6 +47,7 @@ from pyfect import scope, testing
 from pyfect.cause import Interrupted
 from pyfect.duration import Seconds
 from pyfect.exit import Failure
+from pyfect.pool import PoolStats
 from pyfect.scope import Scope
 from pyfect.sql import pg
 from pyfect.sql.client import SqlClient
@@ -824,3 +826,115 @@ def test_forgets_the_connect_of_a_session_closed_before_its_first_checkout(
         del pool
 
     yield from fx.scoped(fx.gen(body))
+
+
+@testing.live
+def test_reports_a_cold_transactions_connect_and_control_statements_under_its_span(
+    pg_server: PgServer,
+):
+    """PgPool connection spans / reports a cold transaction's connect and control statements
+    under its transaction span"""
+    tracer, spans = _recording()
+
+    def body():
+        sql = yield from pg.make(_config(pg_server, max_connections=1, prepare=False))
+        yield from sql.with_transaction(fx.void).with_span("outer")
+        (transaction,) = [s for s in spans if s.name == "sql.transaction"]
+        names = ["db.connect", "BEGIN postgres", "COMMIT postgres"]
+        assert [[s.parent for s in spans if s.name == name] for name in names] == [
+            [transaction],
+            [transaction],
+            [transaction],
+        ]
+
+    yield from (
+        fx.scoped(fx.gen(body))
+        .pipe(fx.provide(fx.reactivity.layer))
+        .with_tracer(tracer)
+        .pipe(fx.provide_service(SpanPropagationEnabled, True))
+    )
+
+
+# --- PgClient failed transaction cleanup ------------------------------------------
+
+
+@testing.live
+def test_does_not_reuse_a_session_left_in_an_aborted_transaction(pg_server: PgServer):
+    """PgClient failed transaction cleanup / does not reuse a session left in an aborted
+    transaction
+
+    Adapted: the server is real, so its COMMIT is rejected before it runs by losing the
+    prepared ``COMMIT`` (``DEALLOCATE ALL`` where psycopg cannot see it, as a transaction
+    pooler moving the session would), and a cleanup that leaves the transaction aborted is a
+    pin released inside one (Effect's backend cancels the ``ROLLBACK``)."""
+
+    def body():
+        sql = yield from pg.make(_config(pg_server, max_connections=1))
+        # Prepares BEGIN and COMMIT, then loses them.
+        yield from sql.with_transaction(fx.void)
+        # psycopg forgets its prepared statements when it sees DEALLOCATE ALL.
+        yield from sql("DO $$ BEGIN EXECUTE 'DEALLOCATE ALL'; END $$").unprepared
+        commit = yield from sql.with_transaction(fx.void).exit()
+        assert isinstance(commit, Failure)
+        assert not commit.cause.has_dies
+        error = commit.cause.squash()
+        assert isinstance(error, SqlError)
+        assert (yield from sql("SELECT 1 AS value")) == [{"value": 1}]
+
+        def aborted():
+            conn = yield from sql.reserve
+            [row] = yield from conn.execute_unprepared("SELECT pg_backend_pid() AS pid", (), None)
+            yield from conn.execute_unprepared("BEGIN", (), None)
+            yield from conn.execute_unprepared("SELECT 1 / 0", (), None).exit()
+            return row["pid"]
+
+        before = yield from fx.scoped(fx.gen(aborted))
+        [after] = yield from sql("SELECT 1 AS value, pg_backend_pid() AS pid")
+        assert after["value"] == 1
+        assert after["pid"] != before
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(fx.reactivity.layer))
+
+
+# --- pool stats -----------------------------------------------------------------
+
+
+@testing.live
+def test_pg_client_make_reports_the_occupancy_of_its_pool(pg_server: PgServer):
+    """pool stats / PgClient.make reports the occupancy of its pool"""
+
+    def body():
+        sql = yield from pg.make(_config(pg_server, max_connections=3))
+        assert (yield from sql.pool_stats) == PoolStats(idle=0, used=0, pending=0, min=0, max=3)
+
+        def reserved():
+            yield from sql.reserve
+            stats = yield from sql.pool_stats
+            assert stats == PoolStats(idle=0, used=1, pending=0, min=0, max=3)
+
+        yield from fx.scoped(fx.gen(reserved))
+        assert (yield from sql.pool_stats) == PoolStats(idle=1, used=0, pending=0, min=0, max=3)
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(fx.reactivity.layer))
+
+
+@testing.live
+def test_pg_client_make_client_reports_its_one_session_as_permanently_leased(
+    pg_server: PgServer,
+):
+    """pool stats / PgClient.makeClient reports its one session as permanently leased"""
+
+    def body():
+        sql = yield from pg.make_client(pg.PgClientConfig(url=pg_server.url))
+        # The snapshot describes the session, not statement activity, so it does
+        # not change while work runs on it.
+        leased = PoolStats(idle=0, used=1, pending=0, min=1, max=1)
+        assert (yield from sql.pool_stats) == leased
+
+        def reserved():
+            yield from sql.reserve
+            assert (yield from sql.pool_stats) == leased
+
+        yield from fx.scoped(fx.gen(reserved))
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(fx.reactivity.layer))

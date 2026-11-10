@@ -24,6 +24,7 @@ from pyfect.exit import Failure
 from pyfect.sql import _loop, libsql
 from pyfect.sql.error import SqlError, UnknownError
 from pyfect.sql.libsql import LibsqlClientConfig, LibsqlLiveConfig, ResultSet
+from pyfect.sql.libsql.sdk import SdkProtocol
 
 from ._libsql import LibsqlServer
 
@@ -127,6 +128,8 @@ class _Transaction:
 class _FlakyBegin:
     """Its first ``transaction`` fails; a later one sets ``called``."""
 
+    protocol: SdkProtocol = "file"
+
     def __init__(self) -> None:
         self.transaction_calls = 0
         self.called = asyncio.Event()
@@ -157,6 +160,8 @@ def test_releases_transaction_serialization_after_begin_fails():
 
 class _PendingBegin:
     """Its first ``transaction`` sets ``started`` and waits for ``begin``."""
+
+    protocol: SdkProtocol = "file"
 
     def __init__(self, transaction: _Transaction) -> None:
         self.open = transaction
@@ -216,6 +221,78 @@ def test_rolls_back_an_interrupted_pending_begin_rollback_succeeds():
 def test_rolls_back_an_interrupted_pending_begin_rollback_rejects():
     """rolls back an interrupted pending begin (rollback rejects)"""
     yield from _interrupted_pending_begin(True)
+
+
+class _RemoteStatements:
+    """A remote client whose statements wait until ``resolve`` is called."""
+
+    protocol: SdkProtocol = "http"
+
+    def __init__(self, calls: list[str]) -> None:
+        self.calls = calls
+        self.statement = asyncio.Event()
+
+    async def execute(self, sql: str, args: Sequence[object], /) -> ResultSet:
+        self.calls.append("execute")
+        await self.statement.wait()
+        return _EMPTY
+
+    async def transaction(self, mode: libsql.TransactionMode, /) -> _Transaction:
+        return _Transaction()
+
+    def resolve(self) -> None:
+        _loop.get_loop().call_soon_threadsafe(self.statement.set)
+
+
+@testing.effect
+def test_overlaps_remote_statements_with_each_other_and_open_transactions():
+    """overlaps remote statements with each other and open transactions"""
+    calls: list[str] = []
+    sdk = _RemoteStatements(calls)
+    client = yield from _live(sdk)
+    opened = fx.Deferred[None]()
+    release = fx.Deferred[None]()
+    tx = yield from client.with_transaction(opened.succeed(None).and_then(release.wait())).fork()
+    yield from opened.wait()
+
+    statements = yield from fx.all(
+        client("SELECT 1"), client("SELECT 2"), concurrency="unbounded"
+    ).fork()
+    # The SDK runs on the SQL loop thread: wait until both statements reach it.
+    yield from _on_loop(lambda: _until(lambda: len(calls) == 2))
+    assert calls == ["execute", "execute"]
+
+    sdk.resolve()
+    yield from statements.join()
+    yield from release.succeed(None)
+    yield from tx.join()
+
+
+async def _until(done: Callable[[], bool]) -> None:
+    while not done():
+        await asyncio.sleep(0)
+
+
+@testing.effect
+def test_serializes_local_statements_behind_open_transactions():
+    """serializes local statements behind open transactions"""
+    sql = yield from _memory()
+    yield from sql("CREATE TABLE serialized (value INTEGER)")
+    opened = fx.Deferred[None]()
+    release = fx.Deferred[None]()
+    tx = yield from sql.with_transaction(
+        sql("INSERT INTO serialized VALUES (1)")
+        .and_then(opened.succeed(None))
+        .and_then(release.wait())
+    ).fork()
+    yield from opened.wait()
+
+    read = yield from sql("SELECT value FROM serialized").fork()
+    yield from fx.yield_now()
+    yield from release.succeed(None)
+    yield from tx.join()
+
+    assert (yield from read.join()) == [{"value": 1}]
 
 
 # --- shared tables (sqld) ---------------------------------------------------------

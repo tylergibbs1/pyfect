@@ -1,23 +1,25 @@
 """Ports of Effect's ``process/ChildProcess.test.ts``.
 
-Each test's docstring is the Effect test title. Effect's template-literal
-forms (``make`echo hello```, ``make({ cwd })`ls```) are the list form here,
-``make("echo", ["hello"])`` and ``make("ls", cwd=...)``; ``pipeTo``,
+Each test's docstring is the Effect test title. A tagged template is its
+text parts and values, ``make(["echo ", ""], name)`` (or a t-string on
+3.14), and ``make({ cwd })`ls``` is ``make(["ls"], cwd=...)``; ``pipeTo``,
 ``setCwd`` and ``prefix`` are methods; the ``is*Command`` guards are
 ``isinstance``; additional descriptors are keyed by number.
 
 Omitted, with the reason:
 
-- ``preserves astral Unicode escapes in template arguments``: there is no
-  template literal, so no raw and cooked text to keep apart; a Python
-  string already holds the character.
+- ``preserves astral Unicode escapes in template arguments``: Python
+  cooks the escape where the literal is compiled, so no raw and cooked text
+  reach ``make`` to keep apart; a Python string already holds the character.
 """
 
 import signal
 from typing import Any, Never
 
+import pytest
+
 import pyfect as fx
-from pyfect import sink, stream, testing
+from pyfect import redacted, sink, stream, testing
 from pyfect.duration import Duration
 from pyfect.layer import Layer
 from pyfect.layer import succeed as layer_succeed
@@ -27,6 +29,7 @@ from pyfect.process import (
     ChildProcessSpawner,
     ChildProcessSpawnerService,
     Command,
+    CommandLineError,
     ExitCode,
     InputFd,
     OutputFd,
@@ -92,7 +95,7 @@ def _run[A](eff: fx.Effect[A, Any, ChildProcessSpawner | Scope]) -> fx.Effect[A,
 
 def test_template_literal_form_should_create_a_standard_command():
     """template literal form should create a standard command"""
-    cmd = make("echo", ["hello"])
+    cmd = make(["echo hello"])
     assert isinstance(cmd, StandardCommand)
     assert cmd.command == "echo"
     assert cmd.args == ("hello",)
@@ -108,8 +111,43 @@ def test_array_form_should_create_a_standard_command():
 
 def test_options_form_should_pass_options_to_templated_command():
     """options form should pass options to templated command"""
-    cmd = make("ls", ["-la"], cwd="/tmp")
+    cmd = make(["ls -la"], cwd="/tmp")
     assert cmd.options.cwd == "/tmp"
+
+
+def test_template_form_groups_quoted_words_and_keeps_values_literal():
+    """template form groups quoted words and keeps values literal"""
+    message = "fix: a | b"
+    token = redacted.make("hunter2")
+    cmd = make(["git commit -m ", ' "two words" ', ' "--user=', '"'], message, token, token)
+    assert cmd.command == "git"
+    assert cmd.args[:5] == ("commit", "-m", message, "two words", token)
+    user = cmd.args[5]
+    assert isinstance(user, redacted.Redacted)
+    assert redacted.value(user) == "--user=hunter2"
+
+
+def test_template_form_throws_for_shell_syntax():
+    """template form throws for shell syntax"""
+    with pytest.raises(CommandLineError):
+        make(["ls | wc"])
+    with pytest.raises(CommandLineError):
+        make(["echo $HOME"])
+    with pytest.raises(CommandLineError):
+        make(['echo "open'])
+    with pytest.raises(CommandLineError):
+        make(["", " arg"], redacted.make("program"))
+    with pytest.raises(CommandLineError):
+        make(["echo"]).prefix(["time |"])
+
+
+def test_template_form_with_the_shell_option_keeps_the_script_as_written():
+    """template form with the shell option keeps the script as written"""
+    cmd = make(["echo $HOME | wc -c"], shell=True)
+    assert cmd.command == "echo $HOME | wc -c"
+    assert cmd.args == ()
+    with pytest.raises(CommandLineError):
+        make(["echo ", ""], "value", shell=True)
 
 
 def test_array_form_with_options_should_work():
@@ -126,7 +164,7 @@ def test_array_form_with_options_should_work():
 @testing.effect
 def test_should_spawn_a_templated_command():
     """should spawn a templated command"""
-    handle = yield from _run(make("echo", ["hello"]))
+    handle = yield from _run(make(["echo hello"]))
     assert handle.pid == ProcessId(12345)
 
 
@@ -223,7 +261,7 @@ def test_should_set_cwd_on_all_commands_in_a_pipeline():
 def test_should_prefix_a_standard_command_and_preserve_options():
     """should prefix a standard command and preserve options"""
     command = make("echo", ["hello"], cwd="/tmp", env={"TEST": "1"})
-    prefixed = command.prefix("time")
+    prefixed = command.prefix(["time"])
     assert isinstance(prefixed, StandardCommand)
     assert prefixed.command == "time"
     assert prefixed.args == ("echo", "hello")
@@ -234,11 +272,9 @@ def test_should_prefix_a_standard_command_and_preserve_options():
 def test_should_prefix_the_leftmost_command_in_a_pipeline():
     """should prefix the leftmost command in a pipeline"""
     pipeline = (
-        make("cat", ["file"])
-        .pipe_to(make("grep", ["pattern"]))
-        .pipe_to(make("wc", ["-l"]), from_="stderr")
+        make(["cat file"]).pipe_to(make(["grep pattern"])).pipe_to(make(["wc -l"]), from_="stderr")
     )
-    prefixed = pipeline.prefix("time")
+    prefixed = pipeline.prefix(["time"])
     assert isinstance(prefixed, PipedCommand)
     assert prefixed.options.from_ == "stderr"
 

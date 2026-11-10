@@ -15,9 +15,11 @@ once no thread is using it.
 
 from __future__ import annotations
 
+import contextlib
 import errno
 import os
 import select
+import socket
 import threading
 from collections import deque
 from collections.abc import Callable
@@ -86,6 +88,21 @@ class Reader:
             self._closing = True
             self._cond.notify()
 
+    def fail(self, error: OSError) -> None:
+        """Fail the stream with ``error`` (a write to the same duplex
+        descriptor failed), as Node destroys the readable side: kept until a
+        reader pulls, so it neither goes unseen nor leaves the reader
+        waiting."""
+        with self._cond:
+            if self._ended:
+                return
+            self._chunks.clear()
+            self._error = error
+            self._ended = True
+            waiters, self._waiters = self._waiters, []
+            self._cond.notify()
+        self._wake(waiters)
+
     def _pull(self) -> _Pull:
         def register(resume: Resume[tuple[bytes, ...], PlatformError | Done]) -> Cancel | None:
             with self._cond:
@@ -130,7 +147,7 @@ class Reader:
         finally:
             os.close(self._fd)
 
-    def _read_once(self) -> bool:
+    def _read_once(self) -> bool:  # noqa: PLR0911
         with self._cond:
             while not self._ended and not self._closing and not self._wanted():
                 self._cond.wait()
@@ -146,12 +163,17 @@ class Reader:
             if not _ready(self._fd, write=False):
                 return True
             data = os.read(self._fd, CHUNK_SIZE)
+        except BlockingIOError:
+            # A duplex descriptor shares its non-blocking flag with its writer.
+            return True
         except OSError as e:
             error = e
         if not data:
             self._end([], error)
             return False
         with self._cond:
+            if self._ended:  # failed meanwhile
+                return False
             self._chunks.append(data)
             waiters, self._waiters = self._waiters, []
         self._wake(waiters)
@@ -174,6 +196,8 @@ class Reader:
 
     def _end(self, chunks: list[bytes], error: OSError | None) -> None:
         with self._cond:
+            if self._ended:  # failed meanwhile
+                return
             self._chunks.extend(chunks)
             self._error = error
             self._ended = True
@@ -205,11 +229,32 @@ class _Write:
 class Writer:
     """Writes to the pipe ``fd``; ``sink`` writes its input."""
 
-    __slots__ = ("_closed", "_cond", "_fd", "_on_error", "_queue", "_started")
+    __slots__ = (
+        "_closed",
+        "_cond",
+        "_fd",
+        "_half_close",
+        "_on_error",
+        "_on_failed",
+        "_queue",
+        "_started",
+    )
 
-    def __init__(self, fd: int, on_error: OnError) -> None:
+    def __init__(
+        self,
+        fd: int,
+        on_error: OnError,
+        *,
+        half_close: bool = False,
+        on_failed: Callable[[OSError], None] | None = None,
+    ) -> None:
+        """``half_close``: ``fd`` is a socket another descriptor also reads,
+        so closing shuts down its write side first (the peer reads the end).
+        ``on_failed`` hears of each write the system refused."""
         self._fd = fd
         self._on_error = on_error
+        self._half_close = half_close
+        self._on_failed = on_failed
         self._cond = threading.Condition()
         self._queue: deque[_Write] = deque()
         self._closed: tuple[str, str] | None = None
@@ -223,6 +268,18 @@ class Writer:
         input ends."""
         write: Sink[None, bytes, Never, PlatformError] = sink_.for_each(self.write)
         return write.ensuring(sync(self.end)) if end_on_done else write
+
+    def text_sink(
+        self, encode: Callable[[str], bytes], *, end_on_done: bool
+    ) -> Sink[None, bytes | str, Never, PlatformError]:
+        """``sink``, also taking text, made bytes by ``encode`` (Node's
+        writable ``encoding``)."""
+
+        def write(chunk: bytes | str) -> Effect[None, PlatformError]:
+            return self.write(encode(chunk) if isinstance(chunk, str) else chunk)
+
+        sink: Sink[None, bytes | str, Never, PlatformError] = sink_.for_each(write)
+        return sink.ensuring(sync(self.end)) if end_on_done else sink
 
     def write(self, data: bytes) -> Effect[None, PlatformError]:
         """Write ``data``. As Node's stream, a write first tries the pipe at once and leaves
@@ -245,7 +302,7 @@ class Writer:
                 return None
             if request is not None:
                 return request.cancel
-            resume(succeed(None) if isinstance(written, int) else fail(self._on_error(written)))
+            resume(succeed(None) if isinstance(written, int) else self._failed(written))
             return None
 
         return os_wait(register, waits_for="work")
@@ -291,7 +348,7 @@ class Writer:
             started = self._started
             self._cond.notify()
         if not started:
-            os.close(self._fd)
+            self._release()
 
     def _start(self) -> None:
         if not self._started:
@@ -303,7 +360,21 @@ class Writer:
             while (request := self._next()) is not None:
                 self._serve(request)
         finally:
+            self._release()
+
+    def _release(self) -> None:
+        if self._half_close:
+            sock = socket.socket(fileno=self._fd)
+            with contextlib.suppress(OSError):
+                sock.shutdown(socket.SHUT_WR)
+            sock.close()
+        else:
             os.close(self._fd)
+
+    def _failed(self, error: OSError) -> Effect[None, PlatformError]:
+        if self._on_failed is not None:
+            self._on_failed(error)
+        return fail(self._on_error(error))
 
     def _next(self) -> _Write | None:
         with self._cond:
@@ -345,7 +416,7 @@ class Writer:
                 except BlockingIOError:
                     continue
                 except OSError as error:
-                    return fail(self._on_error(error))
+                    return self._failed(error)
 
 
 def _cancelled() -> OSError:

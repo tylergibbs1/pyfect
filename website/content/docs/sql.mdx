@@ -99,7 +99,8 @@ Two processes starting at once don't run them twice.
 `migrator.from_record` takes migrations keyed `<id>_<name>` (`"1_create_users"`) and, as
 Effect's `fromRecord`, skips any other key, so a misnamed migration never runs: check the
 ids `migrator.run` returns in a test.
-`migrator.from_file_system(directory)` loads `<id>_<name>.py` modules instead, each with its
+`migrator_file_system.from_file_system(directory)` (in `pyfect.sql.migrator_file_system`,
+re-exported by each driver's `migrator`) loads `<id>_<name>.py` modules instead, each with its
 migration as `default`. `migrator.layer(loader=...)` runs the migrations when the layer is
 built, so the app's layer can migrate before anything else uses the database.
 

@@ -67,3 +67,16 @@ def test_remove(tmp_path: Path, table: str) -> None:
 def test_clear(tmp_path: Path, table: str) -> None:
     """clear"""
     suite.run(_layer(tmp_path, table), suite.clear)
+
+
+@_TABLES
+def test_keys(tmp_path: Path, table: str) -> None:
+    """keys"""
+    suite.run(_layer(tmp_path, table), suite.keys)
+
+
+@_TABLES
+@pytest.mark.parametrize("title", list(suite.CLEAR_PREFIX_SUITE))
+def test_clear_prefix_suite(tmp_path: Path, table: str, title: str) -> None:
+    """KeyValueStore clearPrefix: each title of clearPrefixSuite"""
+    suite.run(_layer(tmp_path, table), suite.CLEAR_PREFIX_SUITE[title])

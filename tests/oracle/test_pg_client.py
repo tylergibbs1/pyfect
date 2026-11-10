@@ -929,3 +929,48 @@ def test_closes_the_hooks_scope_after_each_statement(pg_server: PgServer):
         assert len(finalized) == 2
 
     yield from fx.scoped(fx.gen(body)).pipe(fx.provide(fx.reactivity.layer))
+
+
+# A transaction pooler moves the session to another server between transactions,
+# where the statements prepared on the last one do not exist. psycopg forgets its
+# prepared statements when it sees ``DEALLOCATE ALL``, so it is run where psycopg
+# cannot see it, as a pooler would.
+_LOSE_PREPARED = "DO $$ BEGIN EXECUTE 'DEALLOCATE ALL'; END $$"
+
+
+@testing.effect
+def test_ends_transactions_whose_prepared_statements_went_missing(pg_server: PgServer):
+    """ends transactions whose prepared statements went missing"""
+
+    def body():
+        # Its own session, so losing its statements cannot affect other tests.
+        sql = yield from pg.make_client(pg.PgClientConfig(url=pg_server.url))
+        select = sql("SELECT {}::int4 AS value", 1)
+
+        def assert_sql_failure(cause: fx.Cause[Any]) -> None:
+            assert not cause.has_dies, cause.pretty()
+            error = cause.squash()
+            assert isinstance(error, SqlError)
+            assert getattr(error.reason.cause, "sqlstate", None) == "26000"
+
+        # Prepares BEGIN, the body, ROLLBACK and COMMIT.
+        yield from sql.with_transaction(select.and_then(fx.fail("rollback"))).flip()
+        yield from sql.with_transaction(select)
+        yield from sql(_LOSE_PREPARED).unprepared
+
+        # The body fails on its lost statement, and ROLLBACK still has to run.
+        lost_body = yield from sql.with_transaction(select).exit()
+        assert isinstance(lost_body, fx.Failure)
+        assert_sql_failure(lost_body.cause)
+        # psycopg forgets every prepared statement after a ROLLBACK, so the
+        # statements are prepared and lost again for the COMMIT.
+        yield from sql.with_transaction(select)
+        yield from sql(_LOSE_PREPARED).unprepared
+        # The body succeeds, but the lost COMMIT never runs.
+        lost_commit = yield from sql.with_transaction(sql("SELECT {}::int4 AS fresh", 2)).exit()
+        assert isinstance(lost_commit, fx.Failure)
+        assert_sql_failure(lost_commit.cause)
+
+        assert (yield from sql.with_transaction(select)) == [{"value": 1}]
+
+    yield from fx.scoped(fx.gen(body)).pipe(fx.provide(fx.reactivity.layer))

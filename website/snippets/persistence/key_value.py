@@ -22,6 +22,10 @@ def program():
     users = kv.prefix("user:")
     yield from users.set("1", "Ada")
     print((yield from kv.has("user:1")))
+    # A view lists and clears only its own keys.
+    print((yield from users.keys))
+    yield from users.clear
+    print((yield from kv.keys))
 
     # A schema store holds typed values, written as JSON text.
     settings = kv.to_schema_store(Settings)

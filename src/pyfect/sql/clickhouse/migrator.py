@@ -9,21 +9,31 @@ from __future__ import annotations
 
 from typing import Never
 
+from pyfect._core import Effect
+from pyfect.effect import provide_service
 from pyfect.layer import Layer
 from pyfect.layer import effect_discard as layer_effect_discard
+from pyfect.sql.clickhouse._connection import ClientMethod
 from pyfect.sql.client import SqlClient
 from pyfect.sql.error import SqlError
 from pyfect.sql.migrator import (
     Loader,
     MigrationError,
     Runner,
-    from_file_system,
     from_record,
     make,
 )
+from pyfect.sql.migrator_file_system import from_file_system
 
-run: Runner[Never] = make()
-"""Run the new migrations of ``loader`` (see ``migrator.make``)."""
+
+def _as_command[A, E, R](effect: Effect[A, E, R], /) -> Effect[A, E, R]:
+    return effect.pipe(provide_service(ClientMethod, "command"))
+
+
+run: Runner[Never] = make(transform_writes=_as_command)
+"""Run the new migrations of ``loader`` (see ``migrator.make``). The
+migrations table is created and written with commands; reads and the
+migrations themselves run as queries."""
 
 
 def layer[R = Never](
