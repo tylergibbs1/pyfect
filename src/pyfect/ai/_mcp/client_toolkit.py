@@ -142,7 +142,9 @@ def toolkit(
     hints into the tool's annotations (never its approval).
     ``transform_tool`` gets each annotated tool and its descriptor and
     returns a tool derived from it (``set_needs_approval``, ``annotate``,
-    ``add_dependency``), keeping its name, schemas and failure mode."""
+    ``add_dependency``), keeping its name, schemas and failure mode; a
+    failure schema of ``McpClientError`` encoded otherwise (``set_failure``)
+    changes only what the model reads of a returned failure."""
     complete = result_mode == "complete"
 
     @gen
