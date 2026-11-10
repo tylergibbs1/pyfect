@@ -176,9 +176,10 @@ def fill_random(crypto: Crypto, size: int) -> bytes:
     """``size`` bytes from ``crypto.get_random_values``, 64 KiB at a time
     (Web Crypto refuses more per call)."""
     buffer = bytearray(size)
-    view = memoryview(buffer)
-    for offset in range(0, size, 65_536):
-        crypto.get_random_values(view[offset : offset + 65_536])
+    with memoryview(buffer) as view:
+        for offset in range(0, size, 65_536):
+            with view[offset : offset + 65_536] as chunk:
+                crypto.get_random_values(chunk)
     return bytes(buffer)
 
 
