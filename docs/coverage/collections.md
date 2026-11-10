@@ -23,7 +23,7 @@ Coverage counts ported, renamed and §4 exports.
 | UndefinedOr | 8 | 0 | 0 | 8 | 0 | 100% |
 | Combiner | 8 | 0 | 0 | 8 | 0 | 100% |
 | Reducer | 2 | 0 | 0 | 2 | 0 | 100% |
-| Duration | 55 | 6 | 0 | 49 | 0 | 100% |
+| Duration | 55 | 24 | 19 | 12 | 0 | 100% |
 | ByteSize | 50 | 33 | 0 | 17 | 0 | 100% |
 | HashMap | 38 | 36 | 0 | 2 | 0 | 100% |
 | HashSet | 18 | 16 | 0 | 2 | 0 | 100% |
@@ -693,57 +693,57 @@ Coverage counts ported, renamed and §4 exports.
 
 | Effect | Status | pyfect |
 |---|---|---|
-| `fromInputUnsafe` | §4 | `duration.to_seconds(d)` (a `float` or `timedelta`) (§4: Duration) |
-| `fromInput` | §4 | `duration.to_seconds(d)` (§4: Duration) |
-| `isDuration` | §4 | `isinstance(d, (int, float, timedelta))` (§4: Duration) |
-| `isFinite` | §4 | `math.isfinite(s)` (§4: Duration) |
-| `isZero` | §4 | `s == 0` (§4: Duration) |
-| `isNegative` | §4 | `s < 0` (§4: Duration) |
-| `isPositive` | §4 | `s > 0` (§4: Duration) |
-| `abs` | §4 | `abs(s)` (§4: Duration) |
-| `negate` | §4 | `-s` (§4: Duration) |
-| `zero` | §4 | `duration.ZERO` (§4: Duration) |
-| `infinity` | §4 | `math.inf` (§4: Duration) |
-| `negativeInfinity` | §4 | `-math.inf` (§4: Duration) |
-| `nanos` | §4 | `duration.from_nanos(n)` (§4: Duration) |
-| `micros` | §4 | `n / 1e6` (§4: Duration) |
-| `millis` | §4 | `duration.from_millis(n)` (§4: Duration) |
-| `seconds` | §4 | `n` (§4: Duration) |
-| `minutes` | §4 | `n * 60` / `timedelta(minutes=n)` (§4: Duration) |
-| `hours` | §4 | `n * 3600` / `timedelta(hours=n)` (§4: Duration) |
-| `days` | §4 | `n * 86400` / `timedelta(days=n)` (§4: Duration) |
-| `weeks` | §4 | `timedelta(weeks=n)` (§4: Duration) |
+| `fromInputUnsafe` | ported | `pyfect.duration.from_input_unsafe` |
+| `fromInput` | ported | `pyfect.duration.from_input` |
+| `isDuration` | §4 | `isinstance(d, duration.Duration)` (§4: Duration) |
+| `isFinite` | renamed | `pyfect.duration.Duration.is_finite` |
+| `isZero` | renamed | `pyfect.duration.Duration.is_zero` |
+| `isNegative` | renamed | `pyfect.duration.Duration.is_negative` |
+| `isPositive` | renamed | `pyfect.duration.Duration.is_positive` |
+| `abs` | renamed | `pyfect.duration.Duration.abs` |
+| `negate` | renamed | `pyfect.duration.Duration.negate` |
+| `zero` | ported | `pyfect.duration.zero` |
+| `infinity` | ported | `pyfect.duration.infinity` |
+| `negativeInfinity` | ported | `pyfect.duration.negative_infinity` |
+| `nanos` | ported | `pyfect.duration.nanos` |
+| `micros` | ported | `pyfect.duration.micros` |
+| `millis` | ported | `pyfect.duration.millis` |
+| `seconds` | ported | `pyfect.duration.seconds` |
+| `minutes` | ported | `pyfect.duration.minutes` |
+| `hours` | ported | `pyfect.duration.hours` |
+| `days` | ported | `pyfect.duration.days` |
+| `weeks` | ported | `pyfect.duration.weeks` |
 | `toMicros` | ported | `pyfect.duration.to_micros` |
 | `toMillis` | ported | `pyfect.duration.to_millis` |
 | `toSeconds` | ported | `pyfect.duration.to_seconds` |
-| `toMinutes` | §4 | `s / 60` (§4: Duration) |
-| `toHours` | §4 | `s / 3600` (§4: Duration) |
-| `toDays` | §4 | `s / 86400` (§4: Duration) |
-| `toWeeks` | §4 | `s / 604800` (§4: Duration) |
-| `toNanosUnsafe` | §4 | `duration.to_nanos(s)` (§4: Duration) |
+| `toMinutes` | ported | `pyfect.duration.to_minutes` |
+| `toHours` | ported | `pyfect.duration.to_hours` |
+| `toDays` | ported | `pyfect.duration.to_days` |
+| `toWeeks` | ported | `pyfect.duration.to_weeks` |
+| `toNanosUnsafe` | ported | `pyfect.duration.to_nanos_unsafe` |
 | `toNanos` | ported | `pyfect.duration.to_nanos` |
-| `toHrTime` | §4 | `divmod(duration.to_nanos(s), 10**9)` (§4: Duration) |
-| `match` | §4 | `if math.isinf(s): ...` (§4: Duration) |
-| `matchPair` | §4 | a `match` on both (§4: Duration) |
+| `toHrTime` | ported | `pyfect.duration.to_hr_time` |
+| `match` | renamed | `pyfect.duration.Duration.match` |
+| `matchPair` | §4 | `d.match(...)` on each, or a `match` on both `.value`s (§4: Duration) |
 | `Order` | §4 | `<` / `sorted` (§4: Order, Equivalence, Combiner, Reducer) |
-| `between` | §4 | `low <= x <= high` (§4: Order, Equivalence, Combiner, Reducer) |
+| `between` | renamed | `pyfect.duration.Duration.between` |
 | `Equivalence` | §4 | `==` (§4: Order, Equivalence, Combiner, Reducer) |
-| `min` | §4 | `min` (§4: Order, Equivalence, Combiner, Reducer) |
-| `max` | §4 | `max` (§4: Order, Equivalence, Combiner, Reducer) |
-| `clamp` | §4 | `min(max(x, low), high)` (§4: Order, Equivalence, Combiner, Reducer) |
-| `divide` | §4 | `s / n if n else None` (§4: Duration) |
-| `divideUnsafe` | §4 | `s / n` (§4: Duration) |
-| `times` | §4 | `s * n` (§4: Duration) |
-| `subtract` | §4 | `a - b` (§4: Duration) |
-| `sum` | §4 | `a + b` (§4: Duration) |
+| `min` | renamed | `pyfect.duration.Duration.min` |
+| `max` | renamed | `pyfect.duration.Duration.max` |
+| `clamp` | renamed | `pyfect.duration.Duration.clamp` |
+| `divide` | renamed | `pyfect.duration.Duration.divide` |
+| `divideUnsafe` | renamed | `pyfect.duration.Duration.divide_unsafe` |
+| `times` | renamed | `pyfect.duration.Duration.times` |
+| `subtract` | renamed | `pyfect.duration.Duration.subtract` |
+| `sum` | renamed | `pyfect.duration.Duration.sum` |
 | `isLessThan` | §4 | `<` (§4: Order, Equivalence, Combiner, Reducer) |
 | `isLessThanOrEqualTo` | §4 | `<=` (§4: Order, Equivalence, Combiner, Reducer) |
 | `isGreaterThan` | §4 | `>` (§4: Order, Equivalence, Combiner, Reducer) |
 | `isGreaterThanOrEqualTo` | §4 | `>=` (§4: Order, Equivalence, Combiner, Reducer) |
 | `equals` | §4 | `==` (§4: Order, Equivalence, Combiner, Reducer) |
-| `parts` | §4 | `divmod` on `duration.to_nanos(s)` (§4: Duration) |
-| `format` | §4 | `duration.format_duration(s)` (§4: Duration) |
-| `formatIso` | ported | `pyfect.duration.format_iso` |
+| `parts` | renamed | `pyfect.duration.Duration.parts` |
+| `format` | renamed | `pyfect.duration.Duration.format` |
+| `formatIso` | renamed | `pyfect.duration.Duration.format_iso` |
 | `fromIso` | ported | `pyfect.duration.from_iso` |
 | `ReducerSum` | §4 | `sum` (§4: Order, Equivalence, Combiner, Reducer) |
 | `CombinerMax` | §4 | `max` (§4: Order, Equivalence, Combiner, Reducer) |

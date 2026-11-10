@@ -26,7 +26,7 @@ from pyfect import (
 )
 from pyfect import schema as S
 from pyfect.batching import Entry, RequestResolver
-from pyfect.duration import from_input_unsafe, to_nanos
+from pyfect.duration import from_input_unsafe, infinity, millis, nanos, seconds, to_nanos
 from pyfect.errors import Done
 from pyfect.exit import Failure, Success
 from pyfect.queue import Queue
@@ -375,11 +375,11 @@ def test_config_int_is_safe_and_read_as_a_number():
 
 def test_duration_input_forms():
     # Node: fromInputUnsafe on each form; "1.5 nanos" is 2 nanos, ties away from zero.
-    assert from_input_unsafe("5 seconds") == 5
+    assert from_input_unsafe("5 seconds") == seconds(5)
     assert to_nanos(from_input_unsafe("1.5 nanos")) == 2
-    assert from_input_unsafe("Infinity") == float("inf")
-    assert from_input_unsafe((1, 5)) == pytest.approx(1.000000005)
-    assert from_input_unsafe({"seconds": 1, "milliseconds": 5}) == pytest.approx(1.005)
+    assert from_input_unsafe("Infinity") == infinity
+    assert from_input_unsafe((1, 5)) == nanos(1_000_000_005)
+    assert from_input_unsafe({"seconds": 1, "milliseconds": 5}) == millis(1005)
     with pytest.raises(ValueError, match="Invalid Input: abc"):
         from_input_unsafe("abc")
 

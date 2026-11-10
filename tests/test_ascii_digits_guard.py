@@ -20,7 +20,7 @@ from pyfect import cron, date_time, effect
 from pyfect._digits import MAX_DIGITS, parse_digits
 from pyfect.http import cookies, headers, router, server_response
 from pyfect.net import host, net_address
-from pyfect.result import Err
+from pyfect.result import Err, Ok
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"
 _BANNED = frozenset({"isdigit", "isdecimal", "isnumeric"})
@@ -101,10 +101,11 @@ def test_parse_digits_refuses_more_digits_than_int_reads():
     assert parse_digits("9" * MAX_DIGITS) is not None
 
 
-def test_a_huge_retry_after_is_invalid_not_a_crash():
-    for digits in (400, 5000):
-        result = headers.parse_retry_after("9" * digits)
-        assert isinstance(result, Err)
+def test_a_huge_retry_after_is_a_duration_or_invalid_not_a_crash():
+    # Effect reads the seconds as a bigint, so 400 digits are a (long) duration; past the
+    # digits Python's int reads, it is invalid rather than a ValueError.
+    assert isinstance(headers.parse_retry_after("9" * 400), Ok)
+    assert isinstance(headers.parse_retry_after("9" * 5000), Err)
 
 
 def test_a_huge_cron_number_is_a_parse_error_not_a_crash():

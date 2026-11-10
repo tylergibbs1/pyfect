@@ -364,8 +364,6 @@ class Duration:
 
         def __eq__(self, other: object) -> bool:
             if not isinstance(other, Duration):
-                if isinstance(other, int | float) and not isinstance(other, bool):  # AUDIT-TRAP
-                    raise TypeError(f"AUDIT-TRAP: Duration == {other!r}")  # AUDIT-TRAP
                 return NotImplemented
             return self._nanos == other._nanos
 
