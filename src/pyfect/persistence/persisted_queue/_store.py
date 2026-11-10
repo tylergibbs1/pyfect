@@ -3,7 +3,6 @@ and what every store shares."""
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final, Protocol
@@ -130,19 +129,19 @@ def store_interval(duration: DurationInput, default: Duration) -> Duration:
     """A store's interval option as Effect reads it (``options.x ? x :
     default``): zero means ``default``; anything else is at least a
     millisecond."""
-    seconds = from_input_unsafe(duration)
-    if seconds == 0:
+    parsed = from_input_unsafe(duration)
+    if parsed.is_zero():
         return default
-    return seconds if seconds >= 0.001 else millis(1)
+    return max(parsed, millis(1))
 
 
 def positive_delay(delay: DurationInput | None) -> Duration | None:
     """A delay a store sees: ``None`` for none, zero or negative."""
     if delay is None:
         return None
-    seconds = from_input_unsafe(delay)
-    return seconds if seconds > 0 else None
+    parsed = from_input_unsafe(delay)
+    return parsed if parsed.is_positive() else None
 
 
 def is_infinite(delay: Duration | None) -> bool:
-    return delay is not None and math.isinf(delay)
+    return delay is not None and not delay.is_finite()

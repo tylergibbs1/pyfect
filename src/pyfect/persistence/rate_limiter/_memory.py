@@ -16,7 +16,6 @@ from pyfect.duration import Duration, millis, to_millis, zero
 from pyfect.effect import gen, sync
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
-from pyfect.persistence._seconds import millis
 from pyfect.persistence.persistence._service import now_millis
 from pyfect.persistence.rate_limiter._errors import RateLimiterError
 from pyfect.persistence.rate_limiter._store import (

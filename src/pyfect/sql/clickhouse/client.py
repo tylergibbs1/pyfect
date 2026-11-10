@@ -221,7 +221,7 @@ def _http_client(config: ClickhouseClientConfig) -> Effect[Any, Never, Scope]:
         return succeed(config.http_client)
     from pyfect.http import httpx_client
 
-    return httpx_client.make(timeout=float(config.connection.request_timeout))
+    return httpx_client.make(timeout=config.connection.request_timeout.to_seconds())
 
 
 def make(

@@ -319,8 +319,8 @@ class _FrozenClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self._inner.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: fx.duration.Duration) -> fx.Effect[None]:
-        return self._inner.sleep(seconds)
+    def sleep(self, duration: fx.duration.Duration) -> fx.Effect[None]:
+        return self._inner.sleep(duration)
 
 
 @testing.effect

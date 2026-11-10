@@ -185,7 +185,7 @@ class _Store:
 
         def write() -> Effect[None, PersistenceError | SchemaError, R]:
             ttl = self._ttl(value, key)
-            if ttl <= 0:
+            if not ttl.is_positive():
                 return void
             return serialize_exit(key, value).flat_map(
                 lambda encoded: storage.set(key.primary_key(), encoded, _finite(ttl))
@@ -203,7 +203,7 @@ class _Store:
             encoded: list[BackingEntry] = []
             for key, value in pairs:
                 ttl = self._ttl(value, key)
-                if ttl <= 0:
+                if not ttl.is_positive():
                     continue
                 json_value = yield from serialize_exit(key, value)
                 encoded.append((key.primary_key(), json_value, _finite(ttl)))
@@ -224,7 +224,7 @@ _FOREVER: Final = infinity
 
 
 def _finite(ttl: Duration) -> Duration | None:
-    return None if math.isinf(ttl) else ttl
+    return ttl if ttl.is_finite() else None
 
 
 class _Persistence:

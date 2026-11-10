@@ -11,12 +11,12 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.clock import sleep as clock_sleep
 from pyfect.context import Tag
-from pyfect.duration import Duration, from_input_unsafe, infinity, to_millis, zero
+from pyfect.duration import Duration, from_input_unsafe, infinity, millis, to_millis, zero
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail, gen, succeed
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
-from pyfect.persistence._seconds import divide_millis, millis
+from pyfect.persistence._seconds import divide_millis
 from pyfect.persistence.rate_limiter._errors import RateLimiterError, RateLimitExceeded
 from pyfect.persistence.rate_limiter._store import (
     AdaptiveConsumeResult,
@@ -222,7 +222,7 @@ class Limit:
         require_effect(effect, "effect")
 
         def run(result: ConsumeResult) -> Effect[A, E, R]:
-            return effect if result.delay == 0 else effect.delay(result.delay)
+            return effect if result.delay.is_zero() else effect.delay(result.delay)
 
         return self._consume.flat_map(run)
 
@@ -330,7 +330,7 @@ def sleep(
         return partial
 
     def wait(result: ConsumeResult) -> Effect[ConsumeResult]:
-        return succeed(result) if result.delay == 0 else clock_sleep(result.delay).as_(result)
+        return succeed(result) if result.delay.is_zero() else clock_sleep(result.delay).as_(result)
 
     return limiter.consume(
         key=key,

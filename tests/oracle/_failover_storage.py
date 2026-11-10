@@ -16,7 +16,6 @@ from pyfect.cluster.runner import Runner
 from pyfect.cluster.runner_address import RunnerAddress
 from pyfect.cluster.runner_storage import RunnerStorage, RunnerStorageService
 from pyfect.cluster.shard_id import ShardId
-from pyfect.duration import Duration
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 
@@ -137,7 +136,9 @@ def make_failover_storage(state: FailoverState, clock: ClockService) -> RunnerSt
             def complete() -> None:
                 call.completed = True
 
-            return fx.sleep(Duration(state.release_all_duration)).and_then(fx.sync(complete))
+            return fx.sleep(fx.duration.seconds(state.release_all_duration)).and_then(
+                fx.sync(complete)
+            )
 
         return fx.suspend(run)
 

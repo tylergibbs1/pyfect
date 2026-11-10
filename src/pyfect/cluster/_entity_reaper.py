@@ -14,7 +14,7 @@ from pyfect.cluster._resource_map import ResourceMap
 from pyfect.cluster.entity_address import EntityAddress
 from pyfect.cluster.entity_id import EntityId
 from pyfect.context import Tag
-from pyfect.duration import Duration
+from pyfect.duration import millis
 from pyfect.effect import gen, suspend
 from pyfect.latch import Latch
 from pyfect.layer import Layer
@@ -60,7 +60,7 @@ class EntityReaperService:
         def loop():
             clock = yield from Clock()
             while True:
-                yield from sleep(Duration(self._resolution / 1000))
+                yield from sleep(millis(self._resolution))
                 now = now_millis_unsafe(clock)
                 for registered in list(self._registered):
                     for state in list(registered.servers.values()):

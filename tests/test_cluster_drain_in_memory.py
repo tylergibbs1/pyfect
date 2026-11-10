@@ -36,7 +36,7 @@ class VolatileJob(Entity, type="VolatileJob"):
 def _in_memory(termination_timeout: float):
     settings = replace(
         sharding_config_.DEFAULTS,
-        entity_termination_timeout=fx.duration.Duration(termination_timeout),
+        entity_termination_timeout=fx.duration.seconds(termination_timeout),
     )
     return (
         sharding.layer.pipe(layer_.provide_merge(runners.layer_noop))

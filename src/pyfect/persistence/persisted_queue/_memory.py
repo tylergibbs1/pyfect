@@ -9,13 +9,12 @@ from typing import Any, Literal, Never
 
 from pyfect._core import Effect
 from pyfect.clock import ClockService, clock_with, sleep
-from pyfect.duration import Duration, to_millis
+from pyfect.duration import Duration, millis, to_millis
 from pyfect.effect import gen, succeed, sync, void
 from pyfect.exit import Exit, Success
 from pyfect.latch import Latch
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
-from pyfect.persistence._seconds import millis
 from pyfect.persistence.persisted_queue._error import PersistedQueueError, dead_letter_from_cause
 from pyfect.persistence.persisted_queue._store import (
     PersistedQueueStore,

@@ -98,7 +98,7 @@ class LayerMap[K: Hashable = Unsubscripted, I = Unsubscripted, E = Never]:
 
             rc_map = yield from RcMap.make(build, idle_time_to_live=idle_time_to_live)
             for key in preload_keys or ():
-                if rc_map._idle_time_to_live(key) != 0:
+                if not rc_map._idle_time_to_live(key).is_zero():
                     yield from scoped(rc_map.get(key))
             return LayerMap(rc_map)
 

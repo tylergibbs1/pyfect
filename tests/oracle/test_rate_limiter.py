@@ -11,7 +11,6 @@ milliseconds (``to_millis``).
 
 from __future__ import annotations
 
-import math
 from collections.abc import Generator
 from typing import Any, Literal
 
@@ -19,7 +18,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Duration, millis, to_millis, zero
+from pyfect.duration import infinity, millis, seconds, to_millis, zero
 from pyfect.persistence import rate_limiter as rl
 
 from . import _rate_limiter_suite as suite
@@ -72,7 +71,7 @@ def test_charges_oversized_delay_mode_requests_behind_the_queue_and_delays_later
                 tokens=tokens,
             ),
         )
-        assert [to_millis(result.delay) for result in results] == delays
+        assert [result.delay for result in results] == [millis(d) for d in delays]
         assert [result.remaining for result in results] == [0, -4, -9, -14, -18]
         assert [to_millis(result.reset_after) for result in results] == [
             60_000,
@@ -103,7 +102,7 @@ def test_rejects_oversized_fail_mode_requests_without_charging_them(algorithm: A
         assert error.key == "oversized"
         assert error.limit == 4
         assert error.remaining == 0
-        assert error.retry_after == 60
+        assert error.retry_after == seconds(60)
         result = yield from limiter.consume(**opts, tokens=4)
         assert result.remaining == 0
 
@@ -161,7 +160,7 @@ def test_reports_a_full_window_reset_for_an_exact_reservation() -> None:
         assert result.limit == 5
         assert result.remaining == 0
         assert result.delay == zero
-        assert to_millis(result.reset_after) == 60_000
+        assert result.reset_after == millis(60_000)
 
     _run(body)
 
@@ -174,7 +173,7 @@ def test_reports_a_fresh_partial_reset_lifetime_without_rounding() -> None:
         assert result.limit == 5
         assert result.remaining == 4
         assert result.delay == zero
-        assert to_millis(result.reset_after) == 12_000
+        assert result.reset_after == millis(12_000)
 
     _run(body)
 
@@ -189,7 +188,7 @@ def test_subtracts_elapsed_time_from_reset_metadata() -> None:
         assert result.limit == 5
         assert result.remaining == 0
         assert result.delay == zero
-        assert to_millis(result.reset_after) == 50_000
+        assert result.reset_after == millis(50_000)
 
     _run(body)
 
@@ -204,8 +203,8 @@ def test_reports_the_exact_reserved_lifetime_without_changing_overflow_delay() -
         result = yield from consume
         assert result.limit == 5
         assert result.remaining == -1
-        assert result.delay == 60
-        assert to_millis(result.reset_after) == 72_000
+        assert result.delay == seconds(60)
+        assert result.reset_after == millis(72_000)
 
     _run(body)
 
@@ -228,18 +227,18 @@ def test_returns_accumulated_delays_after_the_fixed_window_is_exceeded() -> None
         result = yield from consume  # 5
         assert result.delay == zero
         result = yield from consume  # 6
-        assert result.delay == 60
+        assert result.delay == seconds(60)
         yield from consume.repeat(times=2)  # 7, 8, 9
         result = yield from consume  # 10
-        assert result.delay == 60
+        assert result.delay == seconds(60)
         result = yield from consume  # 11
-        assert result.delay == 120
+        assert result.delay == seconds(120)
         yield from testing.adjust("30 seconds")
         result = yield from consume  # 12
-        assert result.delay == 90
+        assert result.delay == seconds(90)
         yield from testing.adjust("45 seconds")
         result = yield from consume  # 13
-        assert result.delay == 45
+        assert result.delay == seconds(45)
 
     _run(body)
 
@@ -254,11 +253,11 @@ def test_fails_with_retry_after_until_the_fixed_window_resets() -> None:
         result = yield from consume
         assert result.delay == zero
         error = yield from suite.exceeded(consume)
-        assert error.retry_after == 60
+        assert error.retry_after == seconds(60)
         assert error.remaining == 0
         yield from testing.adjust("30 seconds")
         error = yield from suite.exceeded(consume)
-        assert error.retry_after == 30
+        assert error.retry_after == seconds(30)
         assert error.remaining == 0
         yield from testing.adjust("30 seconds")
         result = yield from consume
@@ -277,7 +276,7 @@ def test_returns_delay_based_on_the_token_refill_rate() -> None:
     def body():
         limiter = yield from rl.make
         consume = _consume_one(limiter, "token-bucket", "delay")
-        refill_rate = 12
+        refill_rate = seconds(12)
         yield from consume.repeat(times=3)  # 1 + 3
         result = yield from consume  # 5
         assert result.delay == zero
@@ -303,7 +302,7 @@ def test_fails_until_enough_tokens_are_refilled() -> None:
         result = yield from consume
         assert result.delay == zero
         error = yield from suite.exceeded(consume)
-        assert error.retry_after == 12
+        assert error.retry_after == seconds(12)
         assert error.remaining == 0
         yield from testing.adjust(millis(36_000))
         result = yield from consume
@@ -337,7 +336,7 @@ def _feedback(
         epoch=epoch,
         tokens=tokens,
         status=status,
-        retry_after=None if retry_after is None else Duration(retry_after),
+        retry_after=None if retry_after is None else fx.duration.seconds(retry_after),
     )
 
 
@@ -380,7 +379,7 @@ def test_starts_cooldown_on_the_first_429_retry_after_feedback() -> None:
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 5)
         result = yield from _adaptive(store)
-        assert (result.delay, result.epoch, result.phase) == (5, 0, "cooldown")
+        assert (result.delay, result.epoch, result.phase) == (seconds(5), 0, "cooldown")
         other = yield from _adaptive(store, key="b")
         assert (other.delay, other.epoch, other.phase) == (zero, 0, "inactive")
 
@@ -395,7 +394,7 @@ def test_clamps_zero_retry_after_feedback_to_the_minimum_cooldown() -> None:
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 0)
         result = yield from _adaptive(store)
-        assert (to_millis(result.delay), result.epoch, result.phase) == (1, 0, "cooldown")
+        assert (result.delay, result.epoch, result.phase) == (millis(1), 0, "cooldown")
 
     _run(body)
 
@@ -408,7 +407,7 @@ def test_bounds_excessive_adaptive_retry_after_cooldowns() -> None:
         first = yield from _adaptive(store)
         yield from _feedback(store, first.epoch, 7200)
         result = yield from _adaptive(store)
-        assert (result.delay, result.epoch, result.phase) == (3600, 0, "cooldown")
+        assert (result.delay, result.epoch, result.phase) == (seconds(3600), 0, "cooldown")
         yield from testing.adjust("1 hour")
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (zero, 1, "learning")
@@ -425,7 +424,7 @@ def test_returns_the_remaining_cooldown_delay() -> None:
         yield from _feedback(store, first.epoch, 10)
         yield from testing.adjust("4 seconds")
         result = yield from _adaptive(store)
-        assert (result.delay, result.epoch, result.phase) == (6, 0, "cooldown")
+        assert (result.delay, result.epoch, result.phase) == (seconds(6), 0, "cooldown")
 
     _run(body)
 
@@ -479,7 +478,7 @@ def test_learns_the_accepted_token_count_and_inferred_window_from_learning_feedb
         result = yield from _adaptive(store)
         assert (result.delay, result.phase) == (zero, "learned")
         result = yield from _adaptive(store)
-        assert (result.delay, result.phase) == (10, "learned")
+        assert (result.delay, result.phase) == (seconds(10), "learned")
 
     _run(body)
 
@@ -509,7 +508,7 @@ def test_prevents_repeated_learning_429_feedback_from_corrupting_learned_state()
         yield from _feedback(store, rejected.epoch, 30)
         learned = yield from _adaptive(store)
         assert (learned.delay, learned.epoch, learned.phase) == (
-            5,
+            seconds(5),
             rejected.epoch + 1,
             "learned",
         )
@@ -527,7 +526,11 @@ def test_same_epoch_learned_429_feedback_enters_cooldown_and_can_only_extend_it(
         yield from _feedback(store, learned.epoch, 5)
         yield from _feedback(store, learned.epoch, 10)
         result = yield from _adaptive(store)
-        assert (result.delay, result.epoch, result.phase) == (10, learned.epoch, "cooldown")
+        assert (result.delay, result.epoch, result.phase) == (
+            seconds(10),
+            learned.epoch,
+            "cooldown",
+        )
 
     _run(body)
 
@@ -543,7 +546,11 @@ def test_stores_only_cooldown_when_no_tokens_were_accepted_during_learning() -> 
         learning = yield from _adaptive(store, tokens=2)
         yield from _feedback(store, learning.epoch, 5, tokens=2)
         result = yield from _adaptive(store)
-        assert (result.delay, result.epoch, result.phase) == (5, learning.epoch, "cooldown")
+        assert (result.delay, result.epoch, result.phase) == (
+            seconds(5),
+            learning.epoch,
+            "cooldown",
+        )
         yield from testing.adjust("5 seconds")
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (
@@ -580,7 +587,7 @@ def test_bounds_learned_adaptive_windows_and_expires_the_bounded_state() -> None
         rejected = yield from _adaptive(store)
         yield from _feedback(store, rejected.epoch, 7200)
         result = yield from _adaptive(store)
-        assert (result.delay, result.phase) == (3600, "learned")
+        assert (result.delay, result.phase) == (seconds(3600), "learned")
         yield from testing.adjust(millis(3_660_000))
         result = yield from _adaptive(store)
         assert (result.delay, result.epoch, result.phase) == (zero, 0, "inactive")
@@ -605,8 +612,8 @@ def test_rejects_positive_token_requests_with_a_zero_limit(algorithm: Algorithm)
         assert error.reason.remaining == 0
 
         result = yield from limiter.consume(**options, on_exceeded="delay")
-        assert result.delay == math.inf
-        assert result.reset_after == math.inf
+        assert result.delay == infinity
+        assert result.reset_after == infinity
 
         query = yield from limiter.consume(**options, on_exceeded="delay", tokens=0)
         assert query.delay == zero

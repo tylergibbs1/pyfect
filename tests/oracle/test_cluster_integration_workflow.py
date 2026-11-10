@@ -1067,7 +1067,7 @@ def test_recovers_a_persisted_activity_across_an_actual_owner_handoff(
             fx.layer.provide(cluster_workflow_engine.layer)
         ).or_die()
         cluster = yield from started(
-            cluster_db, layer, config={"entity_termination_timeout": fx.duration.Duration(0.1)}
+            cluster_db, layer, config={"entity_termination_timeout": fx.duration.seconds(0.1)}
         )
         execution_id = yield from with_workflow(
             cluster, ShutdownActivityWorkflow.execute({"id": id}, discard=True)

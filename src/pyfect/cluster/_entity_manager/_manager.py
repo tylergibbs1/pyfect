@@ -5,7 +5,6 @@ them alive, and stops those of a shard."""
 
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING, Any, Never
 
 from pyfect import exit as Exit
@@ -400,7 +399,7 @@ def make(
         max_idle = (
             config.entity_max_idle_time if options.max_idle_time is None else options.max_idle_time
         )
-        if math.isfinite(max_idle):
+        if max_idle.is_finite():
             yield from reaper.register(
                 max_idle_millis=to_millis(max_idle),
                 servers=core.active_servers,

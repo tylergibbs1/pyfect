@@ -12,7 +12,7 @@ from pyfect._core import Effect, _Suspend
 from pyfect.cause import Cause
 from pyfect.clock import Clock, ClockService
 from pyfect.context import Reference
-from pyfect.duration import Duration
+from pyfect.duration import Duration, nanos
 from pyfect.exit import Exit, Failure
 
 E_co = TypeVar("E_co", covariant=True)
@@ -115,9 +115,7 @@ class EventEmitter:
 
     def end(self, state: AttemptState, ex: Exit[Any, Any]) -> Effect[None, Never, Any]:
         def finish(clock: ClockService) -> Effect[None, Never, Any]:
-            duration = Duration(
-                (clock.monotonic_nanos_unsafe() - state.start_nanos) / 1_000_000_000
-            )
+            duration = nanos(clock.monotonic_nanos_unsafe() - state.start_nanos)
             event: Event[Any] = (
                 AttemptFailure(
                     state.attempt, state.step_attempt, state.step_index, duration, ex.cause

@@ -2,7 +2,7 @@
 
 A store works in milliseconds, as Effect's does (and its Redis scripts),
 so its arithmetic is Effect's to the last bit; ``RateLimiter`` turns the
-results into ``Seconds``.
+results into ``Duration`` values.
 """
 
 from __future__ import annotations

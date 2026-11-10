@@ -98,7 +98,7 @@ def connect_options(config: MysqlClientConfig) -> dict[str, Any]:
         if url.options.tls is not None:
             fields["ssl"] = url.options.tls.context()
         if url.options.connect_timeout is not None:
-            fields["connect_timeout"] = url.options.connect_timeout
+            fields["connect_timeout"] = url.options.connect_timeout.to_seconds()
         return connect_keywords(fields)
     fields = {
         **config.connect_options,

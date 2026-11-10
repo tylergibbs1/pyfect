@@ -85,9 +85,9 @@ def make_compaction_config(options: CompactionOptions | None = None) -> Effect[C
             return die(
                 IllegalArgumentError("Compaction grace must be longer than lag and stageTtl")
             )
-        if not config.stage_ttl > 0:
+        if not config.stage_ttl.is_positive():
             return die(IllegalArgumentError("Compaction stageTtl must be positive"))
-        if not config.sweep_interval > 0:
+        if not config.sweep_interval.is_positive():
             return die(IllegalArgumentError("Compaction sweepInterval must be positive"))
         # Untyped callers can pass any value.
         floor = cast(object, config.threshold_floor)

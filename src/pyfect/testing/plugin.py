@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from pyfect.duration import Duration
+from pyfect.duration import Duration, seconds
 from pyfect.exit import Failure
 from pyfect.testing._assertions import annotation_difference, describe_exit
 from pyfect.testing._decorators import settings
@@ -35,7 +35,7 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "pyfect_live: a test run with the live clock")
     config.stash[_previous_timeout] = settings.timeout
     timeout = float(config.getini("pyfect_timeout"))
-    settings.timeout = Duration(timeout) if timeout > 0 else None
+    settings.timeout = seconds(timeout) if timeout > 0 else None
 
 
 def pytest_unconfigure(config: pytest.Config) -> None:

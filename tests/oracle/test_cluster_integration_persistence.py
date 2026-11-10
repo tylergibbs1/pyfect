@@ -349,7 +349,7 @@ def test_does_not_lose_an_uninterruptible_request_during_runner_shutdown(
         cluster = yield from make(
             cluster_db,
             entities=persistence_entity_layer,
-            config={"entity_termination_timeout": fx.duration.Duration(0.1)},
+            config={"entity_termination_timeout": fx.duration.seconds(0.1)},
         )
         [owner] = yield from cluster.start(1)
         yield from cluster.wait_for_stable_assignments()
@@ -396,7 +396,7 @@ def test_does_not_store_or_redeliver_a_volatile_request_after_runner_failure(
         cluster = yield from make(
             cluster_db,
             entities=persistence_entity_layer,
-            config={"entity_termination_timeout": fx.duration.Duration(0.1)},
+            config={"entity_termination_timeout": fx.duration.seconds(0.1)},
         )
         [owner] = yield from cluster.start(1)
         yield from cluster.wait_for_stable_assignments()
@@ -441,7 +441,7 @@ def test_completes_a_discarded_volatile_caller_while_the_handler_is_still_blocke
         cluster = yield from make(
             cluster_db,
             entities=persistence_entity_layer,
-            config={"entity_termination_timeout": fx.duration.Duration(0.1)},
+            config={"entity_termination_timeout": fx.duration.seconds(0.1)},
         )
         yield from cluster.start(1)
         yield from cluster.wait_for_stable_assignments()

@@ -178,9 +178,9 @@ def test_query_creates_a_serializable_atom_with_reactivity_and_retention():
         time_to_live="1 minute",
         serialization_key="1",
     )
-    assert (query.idle_ttl, atom.is_serializable(query)) == (60, True)
-    assert client.query(Users.get_user, {"id": 2}, time_to_live=0).idle_ttl == 0
-    assert client.query(Users.get_user, {"id": 3}, time_to_live=0.0).idle_ttl == 0
+    assert (query.idle_ttl, atom.is_serializable(query)) == (fx.duration.minutes(1), True)
+    assert client.query(Users.get_user, {"id": 2}, time_to_live=0).idle_ttl == fx.duration.zero
+    assert client.query(Users.get_user, {"id": 3}, time_to_live=0.0).idle_ttl == fx.duration.zero
     keep_alive = client.query(
         Users.get_user,
         {"id": 2},

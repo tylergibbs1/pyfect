@@ -8,13 +8,14 @@ import math
 from collections.abc import Callable, Generator
 from typing import Any
 
+from pyfect import _js as js
 from pyfect._core import Effect, _FailCause, _FlatMap, _Gen, _Succeed, _Suspend
 from pyfect.cause import Cause, Die
 from pyfect.cause import die as die_cause
 from pyfect.channel import transform_pull
 from pyfect.clock import Clock, ClockService, sleep
 from pyfect.duration import Input as DurationInput
-from pyfect.duration import from_input_unsafe, from_nanos, nanos_or_infinite, round_nanos
+from pyfect.duration import from_input_unsafe, from_nanos_or_infinite, nanos_or_infinite
 from pyfect.latch import Latch
 from pyfect.schedule import Schedule
 from pyfect.schedule._model import Stop, to_step_with_sleep
@@ -77,14 +78,14 @@ def timeout_or_else(
 ) -> AnyStream_:
     from pyfect.stream._constructors import empty, from_effect_drain, suspend, unwrap
 
-    seconds = from_input_unsafe(duration)
+    parsed = from_input_unsafe(duration)
     fallback: Callable[[], AnyStream] = or_else or (lambda: empty)
-    if math.isinf(seconds) and seconds > 0:
+    if not parsed.is_finite() and parsed.is_positive():
         return Stream(self._channel)
-    if seconds <= 0:
+    if not parsed.is_positive():
         return suspend(fallback)
     marker = _TimedOut()
-    timeout_ns = nanos_or_infinite(seconds)
+    timeout_ns = nanos_or_infinite(parsed)
 
     def with_clock(clock: ClockService) -> AnyStream_:
         # When the pull in flight times out (clock nanoseconds); empty while
@@ -110,7 +111,7 @@ def timeout_or_else(
                 yield waiting.wait()
                 if not deadline:
                     continue
-                yield sleep(from_nanos(deadline[0] - clock.now_nanos_unsafe()))
+                yield sleep(from_nanos_or_infinite(deadline[0] - clock.now_nanos_unsafe()))
                 if not deadline or deadline[0] - clock.now_nanos_unsafe() > 0:
                     continue
                 yield _FailCause(die_cause(marker))
@@ -169,7 +170,9 @@ def debounce(self: AnyStream, duration: DurationInput) -> AnyStream_:
             def loop() -> AnyEffect:
                 now = clock.now_nanos_unsafe()
                 delay = wait_ns if emit_at < now else min(wait_ns, emit_at - now)
-                return _FlatMap(sleep(from_nanos(delay)).race_first(ended.wait()), after)
+                return _FlatMap(
+                    sleep(from_nanos_or_infinite(delay)).race_first(ended.wait()), after
+                )
 
             def after(_: object) -> AnyEffect:
                 if clock.now_nanos_unsafe() < emit_at:
@@ -283,7 +286,7 @@ def _throttle_shape(
                 if delay <= 0:
                     return keep()
                 # Effect sleeps fractional milliseconds rounded to the nanosecond.
-                wait = from_nanos(delay if math.isinf(delay) else round_nanos(delay))
+                wait = from_nanos_or_infinite(delay if math.isinf(delay) else int(js.round(delay)))
                 return _FlatMap(sleep(wait), keep)
 
             return _FlatMap(cost(chunk), weighed)

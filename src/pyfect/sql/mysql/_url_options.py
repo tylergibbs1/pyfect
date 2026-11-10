@@ -15,7 +15,7 @@ from typing import cast
 from urllib.parse import parse_qsl
 
 from pyfect import _json_text as json_text
-from pyfect.duration import Duration
+from pyfect.duration import Duration, millis
 
 _URL_KEYS = frozenset(("host", "port", "database", "user", "password"))
 _TLS_VERSIONS = {
@@ -183,7 +183,7 @@ def _tls(value: object) -> Tls | None:
 def _connect_timeout(value: object) -> Duration:
     if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
         raise ValueError(f"connectTimeout in the MySQL URL must be milliseconds, got {value!r}")
-    return Duration(value / 1000)
+    return millis(value)
 
 
 def parse_query(query: str) -> UrlOptions:

@@ -204,9 +204,9 @@ def _open(options: ConnectOptions) -> tuple[Any, _Transport]:
         server=host,
         port=options.port,
         instance=options.instance_name or "",
-        timeout=options.connect_timeout,
+        timeout=options.connect_timeout.to_seconds(),
     )
-    raw = socket.create_connection((host, port), options.connect_timeout)
+    raw = socket.create_connection((host, port), options.connect_timeout.to_seconds())
     transport = _Transport(raw)
     connect: Any = pytds._connect
     try:
@@ -215,7 +215,7 @@ def _open(options: ConnectOptions) -> tuple[Any, _Transport]:
             host=host,
             port=port,
             instance=options.instance_name or "",
-            timeout=options.connect_timeout,
+            timeout=options.connect_timeout.to_seconds(),
             pooling=False,
             key=None,
             autocommit=True,
@@ -420,7 +420,7 @@ class TdsConnection:
 
 def _connect_once(options: ConnectOptions, on_end: Callable[[], None]) -> TdsConnection:
     conn, transport = _open(options)
-    connection = TdsConnection(conn, transport, options.cancel_timeout, on_end)
+    connection = TdsConnection(conn, transport, options.cancel_timeout.to_seconds(), on_end)
     try:
         connection.initialize()
     except BaseException:
@@ -441,7 +441,7 @@ def connect(options: ConnectOptions, on_end: Callable[[], None]) -> TdsConnectio
             if retries == 0 or getattr(error, "number", None) not in _TRANSIENT:
                 raise
             retries -= 1
-            time.sleep(options.connection_retry_interval)
+            time.sleep(max(options.connection_retry_interval.to_seconds(), 0.0))
 
 
 __all__ = ["CancelTimeout", "RequestCancelled", "TdsConnection", "connect"]

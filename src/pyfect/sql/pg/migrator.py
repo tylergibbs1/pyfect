@@ -57,8 +57,8 @@ def _clean(dump: str) -> str:
 def _conninfo(resolved: ResolvedConfig) -> str:
     params = dict(resolved.params)
     params.pop("client_encoding", None)
-    if math.isfinite(resolved.connect_timeout):
-        params["connect_timeout"] = str(max(1, math.ceil(resolved.connect_timeout)))
+    if resolved.connect_timeout.is_finite():
+        params["connect_timeout"] = str(max(1, math.ceil(resolved.connect_timeout.to_seconds())))
     return make_conninfo(**params)
 
 

@@ -45,7 +45,6 @@ pytest.importorskip("psycopg")
 import pyfect as fx
 from pyfect import scope, testing
 from pyfect.cause import Interrupted
-from pyfect.duration import Duration
 from pyfect.exit import Failure
 from pyfect.pool import PoolStats
 from pyfect.scope import Scope
@@ -705,7 +704,9 @@ def _first_checkout(
             pg.PgPoolConfig(
                 url=gate.url,
                 max_connections=1,
-                acquire_timeout=None if acquire_timeout is None else Duration(acquire_timeout),
+                acquire_timeout=None
+                if acquire_timeout is None
+                else fx.duration.seconds(acquire_timeout),
             )
         )
         gate.pause()

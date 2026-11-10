@@ -9,12 +9,11 @@ from pyfect._core import Effect
 from pyfect.clock import ClockService, clock_with
 from pyfect.config import Config, ConfigError
 from pyfect.config._config import unwrap
-from pyfect.duration import Duration, to_millis, zero
+from pyfect.duration import Duration, millis, to_millis, zero
 from pyfect.effect import gen, void
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.persistence._keys import escape_key_segment
-from pyfect.persistence._seconds import millis
 from pyfect.persistence.persistence._service import now_millis
 from pyfect.persistence.rate_limiter._errors import RateLimiterError, RateLimitStoreError
 from pyfect.persistence.rate_limiter._store import (

@@ -3,7 +3,7 @@
 ``DEFAULTS`` holds Effect's defaults; ``layer(dataclasses.replace(DEFAULTS,
 shards_per_group=30))`` provides a variation, and ``config`` /
 ``layer_from_env`` read one (``HOST``, ``PORT``, ``SHARDS_PER_GROUP``, ...
-in the environment). Durations are ``Seconds``. ``"unbounded"`` for the
+in the environment). Durations are ``Duration`` values. ``"unbounded"`` for the
 mailbox capacity and resident entities is only available in code.
 """
 

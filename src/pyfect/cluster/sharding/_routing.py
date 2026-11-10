@@ -29,7 +29,7 @@ from pyfect.cluster.message import (
     OutgoingRequest,
 )
 from pyfect.cluster.runner_address import RunnerAddress
-from pyfect.duration import Duration
+from pyfect.duration import millis
 from pyfect.effect import callback, catch_tag, die, fail, succeed, suspend
 from pyfect.latch import Latch
 from pyfect.logger import log_debug, log_warning
@@ -59,7 +59,7 @@ class Routing:
         def run() -> Effect[Any]:
             remaining = self._state.registration_time_remaining()
             if remaining > 0:
-                return sleep(Duration(remaining / 1000)).and_then(
+                return sleep(millis(remaining)).and_then(
                     self._await_registration_deadline(entity_type)
                 )
             return entity_not_registered(entity_type)
@@ -286,7 +286,7 @@ def _read_when_due(state: ShardingState, message: Outgoing | Incoming) -> None:
     due = deliver_at.to_millis(request.payload)
     wait = None if due is None else due - state.now_millis()
     if wait is not None and wait > 0:
-        state.run_fork(sleep(Duration(wait / 1000)).and_then(state.storage_read_latch.open()))
+        state.run_fork(sleep(millis(wait)).and_then(state.storage_read_latch.open()))
 
 
 def _die(error: MalformedMessage) -> Effect[Any]:

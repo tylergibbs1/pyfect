@@ -332,7 +332,7 @@ def test_effect_emits_start_and_success_on_first_attempt():
     assert collector.simplified() == [_start(1, 1, 0), _success(1, 1, 0)]
     success = collector.events[1]
     assert isinstance(success, AttemptSuccess)
-    assert isinstance(success.duration, float)
+    assert isinstance(success.duration, fx.duration.Duration)
 
 
 @testing.effect

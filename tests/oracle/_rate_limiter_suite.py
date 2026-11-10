@@ -18,7 +18,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Duration, to_millis, zero
+from pyfect.duration import to_millis, zero
 from pyfect.persistence import rate_limiter as rl
 
 type Body = Callable[[], Generator[Any, Any]]
@@ -69,12 +69,12 @@ def restarts_interval(
         excess = limiter.consume(**excess_opts)
         if on_exceeded == "fail":
             error = yield from exceeded(excess)
-            assert to_millis(error.retry_after) == 60_000
+            assert error.retry_after == fx.duration.millis(60_000)
         else:
             delayed = yield from excess
             assert delayed.remaining == -1
-            assert to_millis(delayed.delay) == 60_000
-            assert to_millis(delayed.reset_after) == 360_000
+            assert delayed.delay == fx.duration.millis(60_000)
+            assert delayed.reset_after == fx.duration.millis(360_000)
 
     return body
 
@@ -145,7 +145,7 @@ def timing(on_exceeded: OnExceeded, elapsed: int, tokens: int, expected: int, re
         limiter = yield from rl.make
         opts = options(f"timing-{on_exceeded}-{elapsed}-{tokens}", on_exceeded)
         yield from limiter.consume(**opts, tokens=5)
-        yield from testing.adjust(Duration(elapsed / 1000))
+        yield from testing.adjust(fx.duration.millis(elapsed))
         if on_exceeded == "fail":
             error = yield from exceeded(limiter.consume(**opts, tokens=tokens))
             assert to_millis(error.retry_after) == expected
@@ -164,12 +164,12 @@ def reset_after_accounts_for_elapsed_time(on_exceeded: OnExceeded) -> Body:
         limiter = yield from rl.make
         opts = options(f"timing-allowed-{on_exceeded}", on_exceeded)
         initial = yield from limiter.consume(**opts, tokens=4)
-        assert to_millis(initial.reset_after) == 240_000
+        assert initial.reset_after == fx.duration.millis(240_000)
         yield from testing.adjust("59 seconds")
         result = yield from limiter.consume(**opts)
         assert result.delay == zero
         assert result.remaining == 0
-        assert to_millis(result.reset_after) == 241_000
+        assert result.reset_after == fx.duration.millis(241_000)
 
         yield from testing.adjust("241 seconds")
         full = yield from limiter.consume(**opts, tokens=0)
@@ -189,7 +189,7 @@ def zero_token_call_restarts_the_interval():
     result = yield from limiter.consume(**opts)
     assert result.remaining == 4
     assert result.delay == zero
-    assert to_millis(result.reset_after) == 60_000
+    assert result.reset_after == fx.duration.millis(60_000)
 
 
 def signed_fractional_token_counts(allow_overflow: bool) -> Body:
@@ -337,7 +337,7 @@ def failed_retries_do_not_reserve_tokens():
     result = yield from limiter.consume(**opts)
     assert result.delay == zero
     assert result.remaining == 0
-    assert to_millis(result.reset_after) == 300_000
+    assert result.reset_after == fx.duration.millis(300_000)
 
 
 def accumulated_delay_reservations():
@@ -347,9 +347,9 @@ def accumulated_delay_reservations():
     yield from testing.adjust("59 seconds")
     yield from limiter.consume(**opts)
     result = yield from limiter.consume(**opts)
-    assert to_millis(result.delay) == 61_000
+    assert result.delay == fx.duration.millis(61_000)
     assert result.remaining == -2
-    assert to_millis(result.reset_after) == 361_000
+    assert result.reset_after == fx.duration.millis(361_000)
 
 
 def store_caps_a_zero_limit():
@@ -470,7 +470,9 @@ class RateLimiterSuite:
     ) -> None:
         """${onExceeded}: restarts the refill interval after ${idle} idle"""
         key = f"timing-idle-{on_exceeded}-{tokens}"
-        self.run(restarts_interval(key, on_exceeded, tokens, testing.adjust(Duration(idle))))
+        self.run(
+            restarts_interval(key, on_exceeded, tokens, testing.adjust(fx.duration.seconds(idle)))
+        )
 
     def test_restarts_the_interval_after_a_zero_token_call_without_a_whole_token_refill(
         self,

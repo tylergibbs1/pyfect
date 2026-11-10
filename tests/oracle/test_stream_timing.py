@@ -567,8 +567,8 @@ class _ShiftedClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self.base.monotonic_nanos_unsafe() + self.monotonic_offset
 
-    def sleep(self, seconds: Duration) -> fx.Effect[None]:
-        return self.base.sleep(Duration(seconds - self.early))
+    def sleep(self, duration: Duration) -> fx.Effect[None]:
+        return self.base.sleep(duration - fx.duration.seconds(self.early))
 
 
 def _millis(clock: ClockService) -> fx.Effect[int]:

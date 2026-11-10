@@ -173,7 +173,7 @@ def make(
 
     def run_execute(date_time: datetime) -> Effect[None, Never, Any]:
         def check(at: datetime) -> Effect[None, Any, Any]:
-            if date_time < at - timedelta(seconds=skip_after):
+            if date_time < at - skip_after.to_timedelta():
                 return void
             return execute.pipe(provide_service(CurrentScheduledTime, date_time))
 

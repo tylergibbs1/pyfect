@@ -34,7 +34,7 @@ from pyfect.cluster.runners import Runners, RunnersTransport
 from pyfect.cluster.shard_id import ShardId
 from pyfect.cluster.shard_id import make as shard
 from pyfect.context import Context
-from pyfect.duration import Duration, millis
+from pyfect.duration import millis
 from pyfect.layer import Layer
 from pyfect.scope import CloseableScope, Scope, fork_in
 
@@ -255,7 +255,7 @@ def _shared_cluster_storage(cluster: _SharedCluster, port: int) -> RunnerStorage
         )
         stall = cluster.stall_get_runners.pop(port, None)
         if stall is not None:
-            return failed.delay(Duration(stall / 1000))
+            return failed.delay(fx.duration.seconds(stall / 1000))
         if port in cluster.fail_get_runners:
             cluster.fail_get_runners.discard(port)
             return failed
@@ -299,7 +299,7 @@ def _shared_cluster_storage(cluster: _SharedCluster, port: int) -> RunnerStorage
         if delay is None or not requested:
             return fx.sync(run)
         del cluster.acquire_delays[port]
-        return fx.sync(run).delay(Duration(delay / 1000))
+        return fx.sync(run).delay(fx.duration.seconds(delay / 1000))
 
     def refresh(
         address: RunnerAddress, shard_ids: Iterable[ShardId]
@@ -391,7 +391,9 @@ def _staggered_cluster(  # noqa: PLR0915
                 fx.layer.provide(
                     _config(
                         port,
-                        refresh_assignments_interval=Duration(refresh_assignments_interval),
+                        refresh_assignments_interval=fx.duration.seconds(
+                            refresh_assignments_interval
+                        ),
                         send_retry_interval=millis(100),
                         runner_join_debounce=millis(2000),
                         **config,

@@ -33,7 +33,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from pyfect._core import Effect
 from pyfect._extras import missing_extra
-from pyfect.duration import Duration
+from pyfect.duration import Duration, seconds, zero
 from pyfect.duration import Input as DurationInput
 from pyfect.exit import Failure, Success
 from pyfect.run import unwrap
@@ -219,7 +219,7 @@ def _effect_runner(options: _Options) -> _Check:
         f: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], started: float
     ) -> None:
         limit = options.timeout if options.timeout is not None else plugin_settings.timeout
-        left = None if limit is None else Duration(max(limit - (time.monotonic() - started), 0.0))
+        left = None if limit is None else (limit - seconds(time.monotonic() - started)).max(zero)
         _run_sample(f, args, kwargs, options, left)
 
     return check

@@ -93,8 +93,8 @@ class _FreezableClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self._live.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: Duration) -> fx.Effect[None]:
-        return self._live.sleep(seconds).and_then(self.thawed.wait())
+    def sleep(self, duration: Duration) -> fx.Effect[None]:
+        return self._live.sleep(duration).and_then(self.thawed.wait())
 
 
 def _runner_layer(probe: _Probe, prefix: str, advisory: bool) -> Layer[Any, Never, SqlClient]:
@@ -146,7 +146,7 @@ def _within[A](
     def timed_out(found: Any) -> fx.Effect[A]:
         return fx.die(AssertionError(failure)) if found is None else fx.succeed(found.value)
 
-    return effect.timeout_option(Duration(seconds)).flat_map(timed_out)
+    return effect.timeout_option(fx.duration.seconds(seconds)).flat_map(timed_out)
 
 
 def _pg_client(pg_server: Any) -> fx.Effect[SqlClientService, Any, fx.Scope]:
