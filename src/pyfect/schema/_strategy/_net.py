@@ -41,6 +41,13 @@ _MAC_SPECIAL = tuple(
     bytes.fromhex(text) for text in ("ffffffffffff", "01005e000001", "020000000001", "001122334455")
 )
 
+SPECIAL: tuple[object, ...] = (
+    *_IPV4_SPECIAL,
+    *_IPV6_SPECIAL,
+    *(na.MacAddress(octets) for octets in _MAC_SPECIAL),
+)
+"""Every special address, for the refinements (``schema/_net.py``) to draw those they accept."""
+
 type _Parameters = tuple[Any, ...]
 
 ipv4 = st.one_of(st.sampled_from(_IPV4_SPECIAL), st.ip_addresses(v=4).map(IPv4Address))
