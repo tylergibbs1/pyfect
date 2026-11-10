@@ -643,3 +643,100 @@ def test_idle_entry_is_released_exactly_when_its_ttl_ends():
         warnings.simplefilter("error", testing.BusyFiberWarning)
         yield from testing.adjust("1 second")
     assert closed == [300_000_000]
+
+
+# --- Effect 4.1.2: background release defects at UnhandledLogLevel ---------------
+
+
+def _logged_defects(logged: list[fx.logger.Options]) -> list[tuple[fx.LogLevel, list[str]]]:
+    return [
+        (event.log_level, [str(r.defect) for r in event.cause.reasons if isinstance(r, Die)])
+        for event in logged
+    ]
+
+
+def _capturing_warn[A, E](
+    logged: list[fx.logger.Options], eff: fx.Effect[A, E, Any]
+) -> fx.Effect[A, E, Any]:
+    capture = fx.Logger.make(logged.append)
+    return eff.pipe(fx.provide(fx.logger.layer([capture]))).pipe(
+        fx.provide_service(fx.UnhandledLogLevel, fx.LogLevel.WARN)
+    )
+
+
+def _dying_release(released: list[str], key: str) -> fx.Effect[str, Never, fx.Scope]:
+    return fx.acquire_release(
+        fx.succeed(key),
+        lambda _a, _e: fx.sync(lambda: released.append(key)).and_then(
+            fx.die(Exception(f"release {key}"))
+        ),
+    )
+
+
+@testing.effect
+def test_reports_idle_expiry_defects_at_unhandled_log_level():
+    """reports idle expiry defects at UnhandledLogLevel"""
+    logged: list[fx.logger.Options] = []
+
+    @fx.gen
+    def body():
+        released: list[str] = []
+
+        def lookup(key: str) -> fx.Effect[str, Never, fx.Scope]:
+            return _dying_release(released, key)
+
+        rc_map = yield from fx.RcMap.make(lookup, idle_time_to_live="1 second")
+        yield from fx.scoped(rc_map.get("a"))
+        yield from testing.adjust("1 second")
+        assert released == ["a"]
+        assert not (yield from rc_map.has("a"))
+        assert _logged_defects(logged) == [(fx.LogLevel.WARN, ["release a"])]
+
+    yield from _capturing_warn(logged, body)
+
+
+@pytest.mark.parametrize("leaves_first", [False, True])
+@testing.effect
+def test_interrupted_lookup_release_defects(leaves_first: bool):
+    """interrupted lookup release defects (borrower leaves first: %s)"""
+    logged: list[fx.logger.Options] = []
+
+    @fx.gen
+    def body():
+        started = yield from fx.Deferred[None].make()
+        proceed = yield from fx.Deferred[None].make()
+        released: list[str] = []
+
+        def lookup(key: str) -> fx.Effect[str, Never, fx.Scope]:
+            @fx.gen
+            def go():
+                yield from fx.add_finalizer(
+                    lambda _: fx.sync(lambda: released.append(key)).and_then(
+                        fx.die(Exception(f"release {key}"))
+                    )
+                )
+                yield from started.succeed(None)
+                yield from proceed.wait()
+                return (yield from fx.interrupt())
+
+            return go
+
+        rc_map = yield from fx.RcMap.make(lookup, idle_time_to_live="1 minute")
+        borrower = yield from fx.scoped(rc_map.get("a")).fork(start_immediately=True)
+        yield from started.wait()
+        if leaves_first:
+            yield from borrower.interrupt()
+        yield from proceed.succeed(None)
+        ex = yield from borrower.await_exit()
+        # Drain detached cleanup without reaching the entry's idle deadline.
+        yield from testing.adjust("1 second")
+        assert released == ["a"]
+        assert _interrupted(ex)
+        if leaves_first:
+            assert _logged_defects(logged) == [(fx.LogLevel.WARN, ["release a"])]
+        else:
+            assert isinstance(ex, fx.Failure)
+            assert [str(r.defect) for r in ex.cause.reasons if isinstance(r, Die)] == ["release a"]
+            assert logged == []
+
+    yield from _capturing_warn(logged, body)

@@ -366,15 +366,13 @@ def test_sse_write_keeps_fractions_of_a_millisecond():
     assert sse.write(sse.Retry(timedelta(microseconds=1500))) == "retry: 1.5\n\n"
 
 
-@pytest.mark.parametrize("field", ["event", "id"])
 @pytest.mark.parametrize("value", ["a\nevent: failure", "a\rretry: 1", "a\r\ndata: x"])
-def test_an_sse_event_name_or_id_cannot_hold_a_line_break(field: str, value: str):
+def test_an_sse_event_name_or_id_with_a_line_break_is_written_without_it(value: str):
     # A line break would start another field: an injected data:, retry: or event:.
-    with pytest.raises(ValueError, match=field):
-        if field == "event":
-            sse.Event(data="x", event=value)
-        else:
-            sse.Event(data="x", id=value)
+    # Effect 4.1.2 removes it on write (it was a ValueError here before 4.1.2).
+    flat = value.replace("\r", "").replace("\n", "")
+    assert sse.write(sse.Event(data="x", event=value)) == f"event: {flat}\ndata: x\n\n"
+    assert sse.write(sse.Event(data="x", id=value)) == f"id: {flat}\ndata: x\n\n"
 
 
 def test_sse_event_data_lines_are_each_written_as_data():

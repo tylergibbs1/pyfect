@@ -27,6 +27,14 @@ class Key:
 
 
 @dataclass(frozen=True, slots=True)
+class Size:
+    """Terminal dimensions in character cells."""
+
+    columns: int
+    rows: int
+
+
+@dataclass(frozen=True, slots=True)
 class UserInput:
     """One key press: the character it typed (``None`` for an escape
     sequence such as an arrow key) and the key."""
@@ -49,17 +57,20 @@ class TerminalService:
     """Effect's ``Terminal``; the constructor is ``Terminal.make``.
 
     ``read_input`` gives a queue of key presses for as long as its scope is
-    open; the queue ends when input ends or the user quits.
+    open; the queue ends when input ends or the user quits. ``size`` gives
+    a queue holding the current ``Size``, then each resize until its scope
+    closes, keeping only the latest.
     ``read_line`` reads one line without its line break."""
 
     columns: Effect[int]
     rows: Effect[int]
+    size: Effect[Dequeue[Size, Done], Never, Scope]
     read_input: Effect[Dequeue[UserInput, Done], Never, Scope]
     read_line: Effect[str, QuitError]
     display: Callable[[str], Effect[None, PlatformError]]
 
     def __post_init__(self) -> None:
-        for name in ("columns", "rows", "read_input", "read_line"):
+        for name in ("columns", "rows", "size", "read_input", "read_line"):
             require_effect(getattr(self, name), name)
 
 

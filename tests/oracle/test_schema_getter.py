@@ -41,6 +41,7 @@ from pyfect.run import run_blocking_exit
 from pyfect.schema import (
     BigInt,
     ParseOptions,
+    Record,
     Struct,
     decode_sync,
     decode_to,
@@ -239,6 +240,25 @@ def test_snake_to_camel_round_trips_unless_a_segment_starts_with_a_digit():
     assert round_trip("foo_2_bar") == "foo2_bar"
 
 
+def test_split_key_value_trims_and_keeps_empty_values_when_requested():
+    """splitKeyValue trims and keeps empty values when requested"""
+    text = " b = x ,empty=,blank= , =ignored,novalue"
+
+    def split(*, trim: bool = False, keep_empty_values: bool = False) -> object:
+        getter = G.split_key_value(trim=trim, keep_empty_values=keep_empty_values)
+        return _ok(getter, Some(text))
+
+    assert split() == Some({" b ": " x ", "blank": " ", " ": "ignored"})
+    assert split(trim=True) == Some({"b": "x"})
+    assert split(keep_empty_values=True) == Some(
+        {" b ": " x ", "empty": "", "blank": " ", " ": "ignored"}
+    )
+    assert split(trim=True, keep_empty_values=True) == Some({"b": "x", "empty": "", "blank": ""})
+    record: Any = Record(SString, SString)
+    schema = SString.pipe(decode_to(record, T.split_key_value(trim=True)))
+    assert decode_sync(schema)(" b = x ") == {"b": "x"}
+
+
 def test_is_transformation():
     """SchemaTransformation / isTransformation"""
     same: T.Transformation[str, str] = T.passthrough()
@@ -255,6 +275,27 @@ def test_pipe():
 
 
 # ------------------------------------------------------- makeTreeRecord
+
+
+def test_make_tree_record_preserves_unmatched_and_nested_bracket_characters():
+    """makeTreeRecord / preserves unmatched and nested bracket characters"""
+    assert G.make_tree_record([("a[b", "value")]) == {"a[b": "value"}
+    assert G.make_tree_record([("a[b][", "value")]) == {"a": {"b[": "value"}}
+    assert G.make_tree_record([("a[b[c]]", "value")]) == {"a": {"b[c]": "value"}}
+
+
+def test_make_tree_record_does_not_match_brackets_across_line_terminators():
+    """makeTreeRecord / does not match brackets across line terminators"""
+    for terminator in ("\n", "\r", "\u2028", "\u2029"):
+        key = f"a[b{terminator}c]"
+        assert G.make_tree_record([(f"{key}[d]", "value")]) == {key: {"d": "value"}}
+
+
+def test_make_tree_record_preserves_long_unmatched_bracket_runs():
+    """makeTreeRecord / preserves long unmatched bracket runs"""
+    brackets = "[" * 64_000
+    for key in (brackets, f"{brackets}\n]"):
+        assert G.make_tree_record([(key, "value")]) == {key: "value"}
 
 
 def test_make_tree_record_preserves_array_valued_leaves_at_duplicate_paths():

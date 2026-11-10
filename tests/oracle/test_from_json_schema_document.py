@@ -369,6 +369,50 @@ def test_from_json_schema_document_any_of_with_siblings() -> None:
     )
 
 
+def _is_from_draft_07(schema: Any) -> Callable[[object], bool]:
+    imported = R.from_json_schema_document(JS.from_schema_draft_07(schema))
+    return cast("Callable[[object], bool]", S.is_(imported))
+
+
+def test_from_json_schema_document_any_of_with_siblings_redeclaring_an_enum_property() -> None:
+    "fromJsonSchemaDocument / anyOf with siblings redeclaring an enum property (#10047)"
+    is_ = _is_from_draft_07(
+        {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "kind": {"enum": ["direct", "all"]}},
+            "anyOf": [
+                {"properties": {"name": {"type": "string"}}, "required": ["name"]},
+                {"properties": {"kind": {"enum": ["direct", "all"]}}, "required": ["kind"]},
+            ],
+        }
+    )
+    assert is_({"name": "a"})
+    assert is_({"kind": "direct"})
+    assert is_({"name": "a", "kind": "all"})
+    assert not is_({})
+    assert not is_({"kind": "other"})
+    assert not is_({"name": 1})
+    assert not is_({"name": "a", "kind": "other"})
+
+
+def test_from_json_schema_document_intersects_sibling_and_branch_enums() -> None:
+    "fromJsonSchemaDocument / intersects sibling and branch enums"
+    is_ = _is_from_draft_07(
+        {
+            "type": "object",
+            "properties": {"kind": {"enum": ["direct", "all"]}},
+            "anyOf": [
+                {"properties": {"kind": {"enum": ["direct", "other"]}}, "required": ["kind"]},
+                {"required": ["name"]},
+            ],
+        }
+    )
+    assert is_({"kind": "direct"})
+    assert not is_({"kind": "all"})
+    assert not is_({"kind": "other"})
+    assert is_({"name": "a", "kind": "all"})
+
+
 def test_from_json_schema_document_one_of() -> None:
     "fromJsonSchemaDocument / oneOf"
     assert_from_json_schema(
@@ -2336,10 +2380,18 @@ def test_from_json_schema_document_all_of_rejects_intersections_requiring_a_cart
     )
 
 
-def test_from_json_schema_document_all_of_rejects_distributions_that_duplicate_a_nested_choice() -> (
-    None
-):
-    "fromJsonSchemaDocument / allOf / rejects distributions that duplicate a nested choice"
+@pytest.mark.parametrize(
+    "nested",
+    [
+        {"anyOf": [{"type": "string"}, {"type": "number"}]},
+        {"oneOf": [{"const": "a"}, {"const": "b"}]},
+    ],
+    ids=["non-literal anyOf", "literal oneOf"],
+)
+def test_from_json_schema_document_all_of_rejects_distributions_that_duplicate_a_nested_title(
+    nested: Any,
+) -> None:
+    "fromJsonSchemaDocument / allOf / rejects distributions that duplicate a nested $title"
     throws(
         lambda: to_schema_from_json_schema_document(
             from_schema(
@@ -2351,12 +2403,7 @@ def test_from_json_schema_document_all_of_rejects_distributions_that_duplicate_a
                                 {"type": "object", "properties": {"tag": {"const": "b"}}},
                             ]
                         },
-                        {
-                            "type": "object",
-                            "properties": {
-                                "value": {"anyOf": [{"type": "string"}, {"type": "number"}]}
-                            },
-                        },
+                        {"type": "object", "properties": {"value": nested}},
                     ]
                 }
             )

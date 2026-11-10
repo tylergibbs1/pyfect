@@ -11,6 +11,7 @@ local offset, which a cron without a zone runs in, as Effect's does.
 Every title is ported. JavaScript rolls the invalid ``2025-02-29`` over to
 March 1, which is what the leap-year port passes."""
 
+from builtins import next as builtins_next
 from datetime import UTC, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -630,3 +631,131 @@ def test_handles_utc_timezone():
         "2024-10-27T02:30:00.000+00:00[UTC]",
         "2024-10-27T03:30:00.000+00:00[UTC]",
     )
+
+
+# --- onDstOverlap ---------------------------------------------------------------
+# Europe/Berlin falls back on 2026-10-25: local 02:00-02:59 runs first at
+# 00:00Z-00:59Z (+02:00) and again at 01:00Z-01:59Z (+01:00).
+
+_EVERY5 = "*/5 * * * *"
+_DAILY = "0 30 2 * * *"
+
+
+def test_on_dst_overlap_defaults_to_earlier():
+    """defaults to earlier"""
+
+    def make(on_dst_overlap: cron.DstOverlapPolicy | None = None) -> Cron:
+        fields = cron.make(minutes=[0], hours=[2], days=[], months=[], weekdays=[])
+        if on_dst_overlap is None:
+            return fields
+        return cron.make(
+            minutes=[0], hours=[2], days=[], months=[], weekdays=[], on_dst_overlap=on_dst_overlap
+        )
+
+    assert cron.parse_unsafe(_EVERY5, "Europe/Berlin").on_dst_overlap == "earlier"
+    assert make() == make("earlier")
+    assert make() != make("both")
+    assert hash(make()) == hash(make("earlier"))
+
+
+_NEXT_CASES: list[tuple[str, str, cron.DstOverlapPolicy, str, str]] = [
+    (_EVERY5, "Europe/Berlin", "earlier", "2026-10-25T00:55:00Z", "2026-10-25T02:00:00Z"),
+    (_EVERY5, "Europe/Berlin", "later", "2026-10-25T00:55:00Z", "2026-10-25T01:00:00Z"),
+    (_EVERY5, "Europe/Berlin", "both", "2026-10-25T00:55:00Z", "2026-10-25T01:00:00Z"),
+    # inside the first occurrence
+    (_EVERY5, "Europe/Berlin", "earlier", "2026-10-25T00:07:00Z", "2026-10-25T00:10:00Z"),
+    (_EVERY5, "Europe/Berlin", "later", "2026-10-25T00:07:00Z", "2026-10-25T01:00:00Z"),
+    (_EVERY5, "Europe/Berlin", "both", "2026-10-25T00:07:00Z", "2026-10-25T00:10:00Z"),
+    # inside the second occurrence
+    (_EVERY5, "Europe/Berlin", "earlier", "2026-10-25T01:07:00Z", "2026-10-25T02:00:00Z"),
+    (_EVERY5, "Europe/Berlin", "later", "2026-10-25T01:07:00Z", "2026-10-25T01:10:00Z"),
+    (_EVERY5, "Europe/Berlin", "both", "2026-10-25T01:07:00Z", "2026-10-25T01:10:00Z"),
+    # daily schedule inside the fold
+    (_DAILY, "Europe/Berlin", "earlier", "2026-10-24T23:00:00Z", "2026-10-25T00:30:00Z"),
+    (_DAILY, "Europe/Berlin", "later", "2026-10-24T23:00:00Z", "2026-10-25T01:30:00Z"),
+    (_DAILY, "Europe/Berlin", "both", "2026-10-25T00:30:00Z", "2026-10-25T01:30:00Z"),
+    (_DAILY, "Europe/Berlin", "both", "2026-10-25T01:30:00Z", "2026-10-26T01:30:00Z"),
+    # three-hour fold: Casey repeats 00:00:00-02:59:59 rolling back from +11:00 to +08:00
+    (
+        "* * * * * *",
+        "Antarctica/Casey",
+        "both",
+        "2023-03-09T00:00:00+08:00",
+        "2023-03-09T00:00:01+08:00",
+    ),
+    # spring-forward gaps are unaffected
+    (_DAILY, "Europe/Berlin", "earlier", "2026-03-28T23:00:00Z", "2026-03-29T01:30:00Z"),
+    (_DAILY, "Europe/Berlin", "later", "2026-03-28T23:00:00Z", "2026-03-29T01:30:00Z"),
+    (_DAILY, "Europe/Berlin", "both", "2026-03-28T23:00:00Z", "2026-03-29T01:30:00Z"),
+    # UTC has no repeated times
+    (_EVERY5, "UTC", "earlier", "2026-10-25T00:55:00Z", "2026-10-25T01:00:00Z"),
+    (_EVERY5, "UTC", "later", "2026-10-25T00:55:00Z", "2026-10-25T01:00:00Z"),
+    (_EVERY5, "UTC", "both", "2026-10-25T00:55:00Z", "2026-10-25T01:00:00Z"),
+]
+
+
+@pytest.mark.parametrize(("expression", "tz", "policy", "start", "expected"), _NEXT_CASES)
+def test_on_dst_overlap_next(
+    expression: str, tz: str, policy: cron.DstOverlapPolicy, start: str, expected: str
+):
+    """next"""
+    parsed = cron.parse_unsafe(expression, tz, on_dst_overlap=policy)
+    # In UTC: an aware datetime in a fold never equals one in another zone (PEP 495).
+    assert cron.next(parsed, utc(start)).astimezone(UTC) == utc(expected)
+
+
+def test_on_dst_overlap_next_raises_when_nothing_matches():
+    with pytest.raises(ValueError, match="Unable to find cron date"):
+        cron.next(cron.parse_unsafe("0 0 30 2 *", "Europe/Berlin", on_dst_overlap="both"))
+
+
+_PREV_CASES: list[tuple[cron.DstOverlapPolicy, str, str]] = [
+    ("earlier", "2026-10-25T02:00:00Z", "2026-10-25T00:55:00Z"),
+    ("later", "2026-10-25T02:00:00Z", "2026-10-25T01:55:00Z"),
+    ("both", "2026-10-25T02:00:00Z", "2026-10-25T01:55:00Z"),
+    # inside the second occurrence
+    ("earlier", "2026-10-25T01:07:00Z", "2026-10-25T00:55:00Z"),
+    ("later", "2026-10-25T01:07:00Z", "2026-10-25T01:05:00Z"),
+    ("both", "2026-10-25T01:07:00Z", "2026-10-25T01:05:00Z"),
+    # start of the second occurrence
+    ("earlier", "2026-10-25T01:00:00Z", "2026-10-25T00:55:00Z"),
+    ("later", "2026-10-25T01:00:00Z", "2026-10-24T23:55:00Z"),
+    ("both", "2026-10-25T01:00:00Z", "2026-10-25T00:55:00Z"),
+    # inside the first occurrence
+    ("earlier", "2026-10-25T00:07:00Z", "2026-10-25T00:05:00Z"),
+    ("later", "2026-10-25T00:07:00Z", "2026-10-24T23:55:00Z"),
+    ("both", "2026-10-25T00:07:00Z", "2026-10-25T00:05:00Z"),
+]
+
+
+@pytest.mark.parametrize(("policy", "start", "expected"), _PREV_CASES)
+def test_on_dst_overlap_prev(policy: cron.DstOverlapPolicy, start: str, expected: str):
+    """prev"""
+    parsed = cron.parse_unsafe(_EVERY5, "Europe/Berlin", on_dst_overlap=policy)
+    assert cron.prev(parsed, utc(start)).astimezone(UTC) == utc(expected)
+
+
+@pytest.mark.parametrize("policy", ["earlier", "later", "both"])
+@pytest.mark.parametrize(
+    ("expression", "start", "expected"),
+    [
+        (_DAILY, "2026-03-29T01:40:00Z", "2026-03-29T01:30:00Z"),
+        (_DAILY, "2026-03-29T01:20:00Z", "2026-03-28T01:30:00Z"),
+        ("30 * * * *", "2026-03-29T01:20:00Z", "2026-03-29T00:30:00Z"),
+    ],
+)
+def test_prev_across_a_spring_forward_gap(
+    policy: cron.DstOverlapPolicy, expression: str, start: str, expected: str
+):
+    """prev across a spring-forward gap"""
+    # Europe/Berlin skips local 02:00-02:59 on 2026-03-29; 02:30 resolves to 03:30 (01:30Z).
+    parsed = cron.parse_unsafe(expression, "Europe/Berlin", on_dst_overlap=policy)
+    assert cron.prev(parsed, utc(start)).astimezone(UTC) == utc(expected)
+
+
+def test_sequence_with_both_visits_every_instant_of_the_fold_in_order():
+    """sequence with both visits every instant of the fold in order"""
+    parsed = cron.parse_unsafe(_EVERY5, "Europe/Berlin", on_dst_overlap="both")
+    found = cron.sequence(parsed, utc("2026-10-25T00:55:00Z"))
+    expected = [datetime(2026, 10, 25, 1, tzinfo=UTC) + timedelta(minutes=i * 5) for i in range(13)]
+    assert [builtins_next(found).astimezone(UTC) for _ in range(13)] == expected

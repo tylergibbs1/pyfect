@@ -27,6 +27,7 @@ from decimal import ROUND_HALF_UP, Context, Decimal
 from typing import TypedDict, cast, final, overload
 
 from pyfect import _js
+from pyfect._duration_iso import format_iso_nanos, parse_iso_nanos
 from pyfect._js import SPACE
 
 
@@ -343,6 +344,17 @@ def to_millis(duration: Duration) -> float:
     return float(Decimal(repr(float(seconds))) * 1000)
 
 
+def to_micros(duration: Duration) -> float:
+    """Microseconds in ``duration``, read as ``to_millis`` reads milliseconds
+    (Effect's ``Duration.toMicros``)."""
+    if isinstance(duration, timedelta):
+        return duration / timedelta(microseconds=1)
+    seconds = to_seconds(duration)
+    if math.isinf(seconds):
+        return float(seconds)
+    return float(Decimal(repr(float(seconds))) * 1_000_000)
+
+
 def _exact_nanos(seconds: float) -> Decimal:
     return Decimal(repr(float(seconds))) * 10**9
 
@@ -381,6 +393,22 @@ def format_duration(seconds: Seconds) -> str:
     return ("-" if seconds < 0 else "") + " ".join(pieces)
 
 
+def format_iso(seconds: Seconds) -> str | None:
+    """The duration as an ISO 8601 duration (``"P1DT2H3M4.5S"``, days of 24 hours,
+    no years or months), or ``None`` for an infinite one (Effect's
+    ``Duration.formatIso``)."""
+    if not math.isfinite(seconds):
+        return None
+    return format_iso_nanos(int(_exact_nanos(seconds).to_integral_value(rounding=ROUND_HALF_UP)))
+
+
+def from_iso(text: str) -> Seconds | None:
+    """An ISO 8601 duration (weeks, days, hours, minutes and seconds, a fraction of up
+    to nine digits on the last time unit), or ``None`` (Effect's ``Duration.fromIso``)."""
+    nanos = parse_iso_nanos(text)
+    return None if nanos is None else from_nanos(nanos)
+
+
 __all__ = [
     "ZERO",
     "Duration",
@@ -388,13 +416,16 @@ __all__ = [
     "Seconds",
     "add_nanos",
     "format_duration",
+    "format_iso",
     "from_input",
+    "from_iso",
     "from_millis",
     "from_nanos",
     "millis_to_nanos",
     "nanos_or_infinite",
     "parse_duration_text",
     "round_nanos",
+    "to_micros",
     "to_millis",
     "to_nanos",
     "to_seconds",

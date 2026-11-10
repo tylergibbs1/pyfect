@@ -7,6 +7,7 @@ from pyfect.json_schema._keywords import (
     ANCHOR_REGEXP,
     JSON_SCHEMA_SINGLE_KEYWORDS,
     MISSING,
+    append_all_of,
     contains_cardinality,
     convert_dependencies,
     convert_legacy_id,
@@ -190,7 +191,7 @@ def to_draft_07(source: JsonSchema, context: Context) -> JsonSchema:
                 )
             case "$defs":
                 out["definitions"] = context.schema_map(value, key, "definitions")
-            case "required" if is_array(value) and len(as_array(value)) == 0:
+            case "required" | "enum" if is_array(value) and len(as_array(value)) == 0:
                 pass
             case _:
                 out[key] = value
@@ -199,5 +200,9 @@ def to_draft_07(source: JsonSchema, context: Context) -> JsonSchema:
         out["minContains"] = source["minContains"]
     convert_dependencies(source, out, context, "draft-07")
     convert_legacy_id(source, out, "$id", "Draft-07")
+    enum = source.get("enum", MISSING)
+    if is_array(enum) and len(as_array(enum)) == 0:
+        # Draft-07 requires a non-empty ``enum``; nothing matches either way.
+        append_all_of(out, {"not": {}})
     convert_reference(out, source.get("$ref", MISSING), context)
     return out

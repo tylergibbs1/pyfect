@@ -114,10 +114,21 @@ def uncapitalize() -> Transformation[str, str]:
 
 
 def split_key_value(
-    *, separator: str = ",", key_value_separator: str = "="
+    *,
+    separator: str = ",",
+    key_value_separator: str = "=",
+    trim: bool = False,
+    keep_empty_values: bool = False,
 ) -> Transformation[dict[str, str], str]:
-    """``"a=1,b=2"`` and ``{"a": "1", "b": "2"}``."""
-    split = split_key_value_getter(separator=separator, key_value_separator=key_value_separator)
+    """``"a=1,b=2"`` and ``{"a": "1", "b": "2"}``; ``trim`` and ``keep_empty_values`` as
+    ``G.split_key_value``. It round-trips when keys and values hold no separator and,
+    with ``trim``, no surrounding whitespace."""
+    split = split_key_value_getter(
+        separator=separator,
+        key_value_separator=key_value_separator,
+        trim=trim,
+        keep_empty_values=keep_empty_values,
+    )
     join = join_key_value(separator=separator, key_value_separator=key_value_separator)
     return Transformation(split, join)
 

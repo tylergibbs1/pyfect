@@ -357,6 +357,11 @@ def test_is_guid_with_annotations() -> None:
     )
 
 
+def test_is_ascii() -> None:
+    """toCodeDocument / String / checks / isAscii"""
+    _assert_schema(S.String.check(S.is_ascii()), _code("S.String.check(S.is_ascii())", "str"))
+
+
 def test_finite() -> None:
     """toCodeDocument / Number / Finite"""
     _assert_schema(S.Finite, _code("S.Finite", "float"))

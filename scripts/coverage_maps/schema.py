@@ -317,6 +317,9 @@ JSON_SCHEMA = Module(
         "fromSchemaOpenApi3_1": "pyfect.json_schema.from_schema_open_api_3_1",
         "fromSchemaOpenApi3_0": "pyfect.json_schema.from_schema_open_api_3_0",
         "toDocumentDraft07": "pyfect.json_schema.to_document_draft_07",
+        "toDocumentDraft07WithDefinitionsPath": (
+            "pyfect.json_schema.to_document_draft_07_with_definitions_path"
+        ),
         "toDocumentDraft04": "pyfect.json_schema.to_document_draft_04",
         "toMultiDocumentOpenApi3_1": "pyfect.json_schema.to_multi_document_open_api_3_1",
     },

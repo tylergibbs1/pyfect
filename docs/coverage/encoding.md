@@ -6,17 +6,47 @@ Coverage counts ported, renamed and §4 exports.
 | Module | Exports | Ported | Renamed | §4 | Missing | Coverage |
 |---|---|---|---|---|---|---|
 | Toml | 1 | 1 | 0 | 0 | 0 | 100% |
+| Csv | 10 | 10 | 0 | 0 | 0 | 100% |
+| Json5 | 1 | 1 | 0 | 0 | 0 | 100% |
+| Jsonc | 1 | 1 | 0 | 0 | 0 | 100% |
 | Xml | 7 | 7 | 0 | 0 | 0 | 100% |
 | Tar | 9 | 9 | 0 | 0 | 0 | 100% |
 | Zip | 7 | 7 | 0 | 0 | 0 | 100% |
-| SchemaBinary | 15 | 10 | 0 | 0 | 5 | 66% |
-| **All** | 39 | | | | 5 | 87% |
+| SchemaBinary | 15 | 15 | 0 | 0 | 0 | 100% |
+| **All** | 51 | | | | 0 | 100% |
 
 ## Toml
 
 | Effect | Status | pyfect |
 |---|---|---|
 | `parse` | ported | `pyfect.encoding.toml.parse` |
+
+## Csv
+
+| Effect | Status | pyfect |
+|---|---|---|
+| `CsvError` | ported | `pyfect.encoding.csv.CsvError` |
+| `isCsvError` | ported | `pyfect.encoding.csv.is_csv_error` |
+| `decodeString` | ported | `pyfect.encoding.csv.decode_string` |
+| `decode` | ported | `pyfect.encoding.csv.decode` |
+| `decodeSchemaString` | ported | `pyfect.encoding.csv.decode_schema_string` |
+| `decodeSchema` | ported | `pyfect.encoding.csv.decode_schema` |
+| `encodeString` | ported | `pyfect.encoding.csv.encode_string` |
+| `encode` | ported | `pyfect.encoding.csv.encode` |
+| `encodeSchemaString` | ported | `pyfect.encoding.csv.encode_schema_string` |
+| `encodeSchema` | ported | `pyfect.encoding.csv.encode_schema` |
+
+## Json5
+
+| Effect | Status | pyfect |
+|---|---|---|
+| `parse` | ported | `pyfect.encoding.json5.parse` |
+
+## Jsonc
+
+| Effect | Status | pyfect |
+|---|---|---|
+| `parse` | ported | `pyfect.encoding.jsonc.parse` |
 
 ## Xml
 
@@ -61,7 +91,7 @@ Coverage counts ported, renamed and §4 exports.
 | Effect | Status | pyfect |
 |---|---|---|
 | `toCodec` | ported | `pyfect.encoding.schema_binary.to_codec` |
-| `toCodecStrict` | missing |  |
+| `toCodecStrict` | ported | `pyfect.encoding.schema_binary.to_codec_strict` |
 | `toCodecDirect` | ported | `pyfect.encoding.schema_binary.to_codec_direct` |
 | `encodeUnknownSync` | ported | `pyfect.encoding.schema_binary.encode_unknown_sync` |
 | `encodeManyUnknownSync` | ported | `pyfect.encoding.schema_binary.encode_many_unknown_sync` |
@@ -71,7 +101,7 @@ Coverage counts ported, renamed and §4 exports.
 | `decode` | ported | `pyfect.encoding.schema_binary.decode` |
 | `duplex` | ported | `pyfect.encoding.schema_binary.duplex` |
 | `fieldId` | ported | `pyfect.encoding.schema_binary.field_id` |
-| `int32` | missing |  |
-| `uint32` | missing |  |
-| `int64` | missing |  |
-| `uint64` | missing |  |
+| `int32` | ported | `pyfect.encoding.schema_binary.int32` |
+| `uint32` | ported | `pyfect.encoding.schema_binary.uint32` |
+| `int64` | ported | `pyfect.encoding.schema_binary.int64` |
+| `uint64` | ported | `pyfect.encoding.schema_binary.uint64` |

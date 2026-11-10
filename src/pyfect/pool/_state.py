@@ -147,6 +147,20 @@ class Strategy[A, E]:
     reclaim: Callable[[Pool[A, E]], Effect[PoolItem[A, E] | None]]
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class PoolStats:
+    """A point-in-time count of a pool's items and waiting borrowers
+    (Effect's ``Pool.Stats``). ``idle`` and ``used`` count acquired items,
+    not borrowers; ``pending`` counts borrowers waiting for an item; ``min``
+    and ``max`` are the configured bounds."""
+
+    idle: int
+    used: int
+    pending: int
+    min: int
+    max: int
+
+
 @dataclass(frozen=True, slots=True)
 class PoolConfig[A, E]:
     """A pool's settings. ``acquire`` runs with the services in scope when

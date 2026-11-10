@@ -68,11 +68,20 @@ KIND_CAUSE_REASON = 20
 
 _F64 = struct.Struct("<d")
 _I64 = struct.Struct("<q")
+_U64 = struct.Struct("<Q")
 _U32 = struct.Struct("<I")
 _I32 = struct.Struct("<i")
 
+I32_MIN = -(2**31)
+I32_MAX = 2**31 - 1
+U32_MAX = 2**32 - 1
+I64_MIN = -(2**63)
+I64_MAX = 2**63 - 1
+U64_MAX = 2**64 - 1
+
 F64 = _F64
 I64 = _I64
+U64 = _U64
 U32 = _U32
 I32 = _I32
 
@@ -224,6 +233,9 @@ class Writer:
 
     def i64(self, n: int) -> None:
         self.buf += I64.pack(n)
+
+    def u64(self, n: int) -> None:
+        self.buf += U64.pack(n)
 
     def u32le(self, n: int) -> None:
         self.buf += U32.pack(n)

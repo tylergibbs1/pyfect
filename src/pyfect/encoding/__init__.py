@@ -6,7 +6,11 @@
 - ``sse``: Server-Sent Events.
 - ``ini``: INI text to nested dicts (``parse``).
 - ``yaml``: one YAML document to Python values (``parse``).
-- ``toml``: TOML text to nested dicts (``parse``).
+- ``toml``: TOML text to nested dicts (``parse``, a ``Result``).
+- ``json5``, ``jsonc``: JSON5, and JSON with comments, to Python values
+  (``parse``, a ``Result``).
+- ``csv``: CSV records to rows or header dicts and back, optionally through a
+  schema.
 - ``xml``: XML documents to events and back, streamed; ``elements`` collects
   repeated elements into small trees.
 - ``tar``, ``zip``: archives to entries with streamed bodies, and back.
@@ -27,10 +31,13 @@ from pyfect._json_text import Json
 from pyfect.encoding import (
     base64,
     base64_url,
+    csv,
     encoding_error,
     hex,
     ini,
+    json5,
     json_array,
+    jsonc,
     ndjson,
     schema_binary,
     sse,
@@ -47,10 +54,13 @@ __all__ = [
     "Json",
     "base64",
     "base64_url",
+    "csv",
     "encoding_error",
     "hex",
     "ini",
+    "json5",
     "json_array",
+    "jsonc",
     "ndjson",
     "schema_binary",
     "sse",

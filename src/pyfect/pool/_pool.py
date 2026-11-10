@@ -36,7 +36,7 @@ from pyfect.context import Context
 from pyfect.duration import Duration, to_seconds
 from pyfect.exit import Exit, Failure, Success
 from pyfect.logger._log import log_unhandled
-from pyfect.pool._state import PoolConfig, PoolItem, PoolState, Strategy
+from pyfect.pool._state import PoolConfig, PoolItem, PoolState, PoolStats, Strategy
 from pyfect.pool._waiters import Waiter
 from pyfect.scope import CloseableScope, Scope, acquire_release, fork_in
 from pyfect.semaphore import Semaphore
@@ -214,7 +214,8 @@ class Pool[A = Unsubscripted, E = Never]:
         def body(restore: Restore) -> Effect[Pool[T, X]]:
             def with_fiber(fiber: Fiber[Any, Any]) -> Effect[Pool[T, X]]:
                 context = fiber._context
-                scope = context.get_unsafe(Scope)
+                # A child scope keeps the pool usable in later finalizers of the outer scope.
+                scope = context.get_unsafe(Scope).fork_unsafe()
                 config = PoolConfig(
                     acquire=_Locally(acquire, context.merge),
                     concurrency=concurrency,
@@ -335,6 +336,33 @@ class Pool[A = Unsubscripted, E = Never]:
             return _WithFiber(run)
 
         return acquire_release(_Sync(take), lambda pool_item, _: give_back(pool_item)).as_void()
+
+    def stats(self) -> Effect[PoolStats]:
+        """A snapshot of how many acquired items are idle or in use and how
+        many borrowers wait. An item is used while it has a borrower or a
+        reservation; one being acquired, or whose acquisition failed, is not
+        counted. An invalidated item counts as used until its last borrower
+        returns it, so ``idle + used`` can briefly exceed ``max``."""
+
+        def snapshot() -> PoolStats:
+            state = self.state
+            idle = used = 0
+            for item in state.items:
+                if not isinstance(item.exit, Success):
+                    continue
+                if item.ref_count > 0 or item.reservations > 0:
+                    used += 1
+                else:
+                    idle += 1
+            return PoolStats(
+                idle=idle,
+                used=used,
+                pending=state.waiters.sleeping,
+                min=self.config.min_size,
+                max=self.config.max_size,
+            )
+
+        return _Sync(snapshot)
 
     def _find(self, value: A) -> PoolItem[A, E] | None:
         """The pool item holding ``value`` itself; an equal value is another item."""

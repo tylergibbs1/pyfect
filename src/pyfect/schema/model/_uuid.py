@@ -9,6 +9,7 @@ import uuid
 from typing import Any, Never, cast
 
 from pyfect._core import Effect
+from pyfect._uuid_v7 import v7_monotonic
 from pyfect.clock import now_nanos
 from pyfect.effect import sync
 from pyfect.schema._schema import Codec
@@ -16,11 +17,9 @@ from pyfect.schema.variant_schema import Field, WithConstructorDefault, with_con
 
 
 def _uuid_v7(millis: int) -> uuid.UUID:
-    """RFC 9562 version 7: 48 bits of Unix milliseconds, then random bits."""
-    value = (millis & 0xFFFF_FFFF_FFFF) << 80 | int.from_bytes(os.urandom(10))
-    value = value & ~(0xF << 76) | 0x7 << 76  # version
-    value = value & ~(0x3 << 62) | 0x2 << 62  # variant
-    return uuid.UUID(int=value)
+    """RFC 9562 version 7 in the process-wide order (``pyfect._uuid_v7``): each sorts
+    after the previous one, even within a millisecond or when the clock goes back."""
+    return uuid.UUID(bytes=v7_monotonic(millis, os.urandom(16)))
 
 
 def _generated[B](schema: Codec[B, Any, Any, Any], make: Effect[object]) -> Any:
@@ -38,7 +37,8 @@ def UuidV7WithGenerate[B: str, I, RD, RE](
     schema: Codec[B, I, RD, RE], /
 ) -> WithConstructorDefault[B, I, RD, RE]:
     """``schema`` defaulting to a new time-ordered UUID's text, its time
-    read from the ``Clock``."""
+    read from the ``Clock``. Every such UUID in the process shares one order, so a
+    ``Clock`` behind the latest timestamp used (a ``TestClock``) gives that timestamp."""
     return _generated(schema, now_nanos().map(lambda n: str(_uuid_v7(n // 1_000_000))))
 
 

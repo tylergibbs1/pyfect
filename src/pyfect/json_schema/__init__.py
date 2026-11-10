@@ -24,6 +24,7 @@ from pyfect.json_schema._api import (
     from_schema_open_api_3_1,
     to_document_draft_04,
     to_document_draft_07,
+    to_document_draft_07_with_definitions_path,
     to_multi_document_open_api_3_1,
 )
 from pyfect.json_schema._model import (
@@ -41,6 +42,7 @@ from pyfect.json_schema._model import (
     rewrite_refs,
     sanitize_open_api_components_schemas_key,
 )
+from pyfect.json_schema._openapi import to_multi_document_components
 
 __all__ = [
     "META_SCHEMA_URI_DRAFT_04",
@@ -62,5 +64,7 @@ __all__ = [
     "sanitize_open_api_components_schemas_key",
     "to_document_draft_04",
     "to_document_draft_07",
+    "to_document_draft_07_with_definitions_path",
+    "to_multi_document_components",
     "to_multi_document_open_api_3_1",
 ]

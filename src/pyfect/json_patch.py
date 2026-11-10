@@ -15,6 +15,7 @@ every other value as it is. An operation that cannot be applied raises
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from typing import Literal, NotRequired, TypedDict, cast
 
@@ -134,7 +135,12 @@ def _tokenize(pointer: str) -> list[str]:
         raise ValueError(
             f'Invalid JSON Pointer, it must start with "/": {_json_text.stringify(pointer)}'
         )
+    if _BAD_ESCAPE.search(pointer):
+        raise ValueError(f"Invalid JSON Pointer escape: {_json_text.stringify(pointer)}")
     return [unescape_token(token) for token in pointer.split("/")[1:]]
+
+
+_BAD_ESCAPE = re.compile(r"~(?![01])")
 
 
 def _array_index(token: str) -> int:

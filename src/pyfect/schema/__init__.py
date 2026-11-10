@@ -102,6 +102,7 @@ from pyfect.schema._checks_size import (
     is_unique_key,
 )
 from pyfect.schema._checks_string import (
+    is_ascii,
     is_base64,
     is_base64_url,
     is_capitalized,
@@ -187,6 +188,7 @@ from pyfect.schema._decimal_regexp import (
 )
 from pyfect.schema._declare import Parse, declare, declare_constructor, instance_of
 from pyfect.schema._duration_codecs import (
+    DurationFromIsoString,
     DurationFromMillis,
     DurationFromNanos,
     DurationFromString,
@@ -216,6 +218,7 @@ from pyfect.schema._literals import (
     Union,
     UnionSchema,
 )
+from pyfect.schema._make import make_class_sync
 from pyfect.schema._middleware import (
     CatchDecoding,
     CatchEncoding,
@@ -536,6 +539,7 @@ __all__ = [
     "DomainName",
     "DomainNameFromString",
     "Duration",
+    "DurationFromIsoString",
     "DurationFromMillis",
     "DurationFromNanos",
     "DurationFromString",
@@ -777,6 +781,7 @@ __all__ = [
     "getter",
     "instance_of",
     "is_",
+    "is_ascii",
     "is_base64",
     "is_base64_url",
     "is_between",
@@ -839,6 +844,7 @@ __all__ = [
     "issue",
     "link",
     "make",
+    "make_class_sync",
     "make_effect",
     "make_filter",
     "make_filter_group",

@@ -55,9 +55,17 @@ class HelpDoc:
     flags: tuple[FlagDoc, ...]
     annotations: Context[Any] = field(default_factory=Context[Any])
     global_flags: tuple[FlagDoc, ...] = ()
+    """Global flags active at this command, built-ins (``--help``) included."""
     args: tuple[ArgDoc, ...] = ()
     subcommands: tuple[SubcommandGroupDoc, ...] = ()
     examples: tuple[ExampleDoc, ...] = ()
+    inherited_flags: tuple[FlagDoc, ...] = ()
+    """Shared flags inherited from ancestor commands."""
+    global_flags_scope: tuple[str, ...] | None = None
+    """Root-to-command path of the nearest command (this one or an ancestor)
+    declaring global flags; the root when only built-ins are active."""
+    command_path: tuple[str, ...] | None = None
+    """Command names from the root to this command: ``("myapp", "deploy")``."""
 
 
 __all__ = ["ArgDoc", "ExampleDoc", "FlagDoc", "HelpDoc", "SubcommandDoc", "SubcommandGroupDoc"]

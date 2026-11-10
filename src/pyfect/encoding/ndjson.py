@@ -153,7 +153,7 @@ def _decode_pull(
 def _parse_line(
     line: str, out: list[Json], ignore_empty_lines: bool, unterminated: bool
 ) -> NdjsonError | None:
-    if ignore_empty_lines and not line:
+    if ignore_empty_lines and not line.strip(" \t"):
         return None
     try:
         out.append(parse(line))
@@ -171,7 +171,8 @@ def decode_string[E = Never, D = None](
 ) -> Channel[tuple[Json, ...], E | NdjsonError, D, tuple[str, ...], E, D]:
     """Parse chunks of text as NDJSON. The first line that is not JSON fails
     the channel (``"InvalidJson"``) after the values before it are written;
-    blank lines fail too unless ``ignore_empty_lines``."""
+    blank lines (empty, or only spaces and tabs) fail too unless
+    ``ignore_empty_lines``."""
 
     def transform(upstream: AnyPull, scope: CloseableScope) -> Any:
         # ``split_lines`` writes a line after its input has ended only when

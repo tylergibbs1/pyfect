@@ -60,9 +60,11 @@ the first failure of a fiber in the set. Give the set its fibers' success and er
 
 ## Limits per key
 
-A `Semaphore` caps how many fibers run a section at once. A `PartitionedSemaphore[K]` is one
-pool of permits shared by keys, such as hosts: each fiber waits in its key's line, and freed
-permits go round-robin across the keys, so a key with many waiters can't starve the others.
+A `Semaphore` caps how many fibers run a section at once; waiting fibers are served in the
+order they asked, so one that gives its permits back and asks again goes behind them. A
+`PartitionedSemaphore[K]` is one pool of permits shared by keys, such as hosts: each fiber
+waits in its key's line, and freed permits go round-robin across the keys, each turn serving
+one waiter's whole request, so a key with many waiters can't starve the others.
 
 <CodeOutput>
 

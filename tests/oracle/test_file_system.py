@@ -33,12 +33,14 @@ from typing import Any, Literal, NamedTuple
 import pytest
 
 import pyfect as fx
-from pyfect import file_system, stream, testing
+from pyfect import file_system, glob, stream, testing
 from pyfect.file_system import (
     Create,
+    DirectoryEntry,
     FileInfo,
     FileSystem,
     FileSystemService,
+    LiveFileSystem,
     OpenFlag,
     WatchBackend,
     WatchEvent,
@@ -884,6 +886,203 @@ def test_glob_honors_exclude_patterns(fs_layer: Services[FileSystem]):
 
     assert len(matches) == 1
     assert _posix(matches[0]).endswith("src/index.ts")
+
+
+@testing.effect
+def test_make_temp_directory_scoped_tolerates_an_already_removed_directory(
+    fs_layer: Services[FileSystem],
+):
+    """makeTempDirectoryScoped tolerates an already removed directory"""
+    fs = yield from _fs()
+
+    @fx.fn
+    def body():
+        directory = yield from fs.make_temp_directory_scoped()
+        yield from fs.remove(directory, recursive=True)
+        return "body succeeded"
+
+    assert (yield from fx.scoped(body())) == "body succeeded"
+
+
+@testing.effect
+def test_make_temp_file_scoped_tolerates_an_already_removed_directory(
+    fs_layer: Services[FileSystem],
+):
+    """makeTempFileScoped tolerates an already removed directory"""
+    fs = yield from _fs()
+
+    @fx.fn
+    def body():
+        root = yield from fs.make_temp_directory_scoped()
+        file = yield from fs.make_temp_file_scoped(directory=root)
+        yield from fs.remove(os.path.dirname(file), recursive=True)
+        return "body succeeded"
+
+    assert (yield from fx.scoped(body())) == "body succeeded"
+
+
+@testing.effect
+def test_read_directory_entries_reports_the_type_of_each_entry_itself(
+    fs_layer: Services[FileSystem],
+):
+    """readDirectoryEntries reports the type of each entry itself"""
+    fs = yield from _fs()
+    directory = yield from fs.make_temp_directory_scoped()
+    yield from fs.make_directory(f"{directory}/directory")
+    yield from fs.write_file_string(f"{directory}/file", "")
+    yield from fs.symlink(f"{directory}/directory", f"{directory}/link")
+    entries = yield from fs.read_directory_entries(directory)
+    assert sorted(entries, key=lambda entry: entry.name) == [
+        DirectoryEntry("directory", "Directory"),
+        DirectoryEntry("file", "File"),
+        DirectoryEntry("link", "SymbolicLink"),
+    ]
+
+
+# testGlob, run against the live file system and (as NodeFileSystem.test.ts's
+# "FileSystem without typed directory listings") one whose listings report every
+# entry as "Unknown", so glob learns types from stat and read_link alone.
+
+
+class _UntypedFileSystem(LiveFileSystem):
+    def read_directory_entries(
+        self, path: str
+    ) -> fx.Effect[tuple[DirectoryEntry, ...], PlatformError]:
+        return self.read_directory(path).map(
+            lambda names: tuple(DirectoryEntry(name, "Unknown") for name in names)
+        )
+
+
+untyped_fs_layer = testing.layer_fixture(fx.layer.succeed(FileSystem, _UntypedFileSystem()))
+
+
+@pytest.fixture(params=["typed", "untyped"])
+def glob_layer(request: pytest.FixtureRequest) -> Services[FileSystem]:
+    name = "fs_layer" if request.param == "typed" else "untyped_fs_layer"
+    return request.getfixturevalue(name)
+
+
+@fx.fn
+def _glob_fixture():
+    fs = yield from _fs()
+    root = yield from fs.make_temp_directory_scoped()
+    for directory in ("src/sub", "a", "b", ".hidden", "node_modules/pkg"):
+        yield from fs.make_directory(f"{root}/{directory}", recursive=True)
+    for file in (
+        "README.md",
+        ".env",
+        "src/index.ts",
+        "src/sub/deep.ts",
+        "src/sub/deep.js",
+        "a/x.ts",
+        "b/y.ts",
+        ".hidden/secret.ts",
+        "node_modules/pkg/index.ts",
+    ):
+        yield from fs.write_file_string(f"{root}/{file}", "")
+    return root
+
+
+class _GlobCase(NamedTuple):
+    pattern: str
+    expected: list[str]
+    exclude: tuple[str, ...] = ()
+    dot: bool = False
+
+
+_GLOB_CASES = [
+    _GlobCase(
+        "**/*.ts",
+        ["a/x.ts", "b/y.ts", "node_modules/pkg/index.ts", "src/index.ts", "src/sub/deep.ts"],
+    ),
+    _GlobCase(".*", [".env", ".hidden"]),
+    _GlobCase("src/**", ["src", "src/index.ts", "src/sub", "src/sub/deep.js", "src/sub/deep.ts"]),
+    _GlobCase("*/", ["a", "b", "node_modules", "src"]),
+    _GlobCase("{a,b}/*.ts", ["a/x.ts", "b/y.ts"]),
+    _GlobCase("src/index.ts", ["src/index.ts"]),
+    _GlobCase("readme.*", []),
+    _GlobCase("**/.", []),
+    _GlobCase("src/index.ts/.", []),
+    _GlobCase("src/.", ["src"]),
+    _GlobCase(
+        "**/*.ts",
+        [".hidden/secret.ts", "a/x.ts", "b/y.ts", "src/index.ts", "src/sub/deep.ts"],
+        exclude=("node_modules",),
+        dot=True,
+    ),
+    _GlobCase("*", ["README.md", "a", "b", "node_modules"], exclude=("**/src/", "**/README.md/")),
+]
+
+
+@pytest.mark.parametrize(
+    "case",
+    _GLOB_CASES,
+    ids=[f"glob {c.pattern} (exclude: {list(c.exclude)}, dot: {c.dot})" for c in _GLOB_CASES],
+)
+@testing.effect
+def test_glob_pattern(glob_layer: Services[FileSystem], case: _GlobCase):
+    """glob $pattern (exclude: $exclude, dot: $dot)"""
+    fs = yield from _fs()
+    root = yield from _glob_fixture()
+    assert (yield from fs.glob(case.pattern, root=root, exclude=case.exclude, dot=case.dot)) == (
+        case.expected
+    )
+
+
+@testing.effect
+def test_glob_returns_absolute_paths_for_an_absolute_pattern(glob_layer: Services[FileSystem]):
+    """glob returns absolute paths for an absolute pattern"""
+    fs = yield from _fs()
+    root = _posix((yield from _glob_fixture()))
+    assert (yield from fs.glob(f"{glob.escape(root)}/src/**/*.ts")) == [
+        f"{root}/src/index.ts",
+        f"{root}/src/sub/deep.ts",
+    ]
+
+
+@testing.effect
+def test_glob_resolves_dot_dot_segments_against_root(glob_layer: Services[FileSystem]):
+    """glob resolves .. segments against root"""
+    fs = yield from _fs()
+    root = yield from _glob_fixture()
+    assert (yield from fs.glob("../a/*.ts", root=f"{root}/src")) == ["../a/x.ts"]
+
+
+@testing.effect
+def test_glob_returns_an_empty_array_for_a_missing_root(glob_layer: Services[FileSystem]):
+    """glob returns an empty array for a missing root"""
+    fs = yield from _fs()
+    root = yield from fs.make_temp_directory_scoped()
+    assert (yield from fs.glob("**", root=f"{root}/missing")) == []
+
+
+@testing.effect
+def test_glob_includes_a_dangling_symlink(glob_layer: Services[FileSystem]):
+    """glob includes a dangling symlink named by a literal or wildcard"""
+    fs = yield from _fs()
+    root = yield from fs.make_temp_directory_scoped()
+    yield from fs.symlink(f"{root}/missing", f"{root}/dangling")
+    assert (yield from fs.glob("dangling", root=root)) == ["dangling"]
+    assert (yield from fs.glob("dang*", root=root)) == ["dangling"]
+
+
+@testing.effect
+def test_glob_follows_a_named_symlink_but_not_through_globstar(glob_layer: Services[FileSystem]):
+    """glob follows a named symlink but not through **"""
+    fs = yield from _fs()
+    root = yield from fs.make_temp_directory_scoped()
+    yield from fs.make_directory(f"{root}/target")
+    yield from fs.write_file_string(f"{root}/target/file.ts", "")
+    yield from fs.symlink(f"{root}/target", f"{root}/link")
+    # a link back to the root would loop if `**` followed it
+    yield from fs.symlink(root, f"{root}/target/loop")
+    assert (yield from fs.glob("**", root=root)) == [
+        "link",
+        "target",
+        "target/file.ts",
+        "target/loop",
+    ]
+    assert (yield from fs.glob("link/*.ts", root=root)) == ["link/file.ts"]
 
 
 # --- NodeFileSystem.test.ts -------------------------------------------------------------

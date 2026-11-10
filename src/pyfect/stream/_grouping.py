@@ -16,12 +16,12 @@ from collections.abc import Callable, Generator, Hashable
 from typing import Any
 
 from pyfect import channel
-from pyfect._core import Effect, _FlatMap, _Gen, _Succeed, _Suspend, _Sync
+from pyfect._core import Effect, _FailCause, _FlatMap, _Gen, _MatchCause, _Succeed, _Suspend, _Sync
+from pyfect.cause import Cause
 from pyfect.channel._base import end_with
 from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.effect import provide_service
 from pyfect.errors import Done
-from pyfect.pull import catch_done
 from pyfect.queue import Queue
 from pyfect.rc_map import RcMap
 from pyfect.scope import CloseableScope, Scope, acquire_release, fork_in, scoped
@@ -86,7 +86,14 @@ def _group_by(
             run = _FlatMap(pull, lambda chunk: offer_chunk(chunk, groups, open_queues)).forever(
                 disable_yield=True
             )
-            yield fork_in(run.catch_cause(out.fail_cause), scope)
+
+            def stop(cause: Cause[Any]) -> AnyEffect:
+                # Effect 4.1.2: the groups end too, so a reader of one never waits forever.
+                for queue in list(open_queues.values()):
+                    queue.end_unsafe()
+                return out.fail_cause(cause)
+
+            yield fork_in(run.catch_cause(stop), scope)
             return out.take_all().map(tuple)
 
         return _Gen(body)
@@ -141,7 +148,7 @@ def group_adjacent_by(self: AnyStream, f: Callable[[Any], object]) -> AnyStream_
     def build(pull: AnyEffect, _scope: CloseableScope) -> AnyEffect:
         key: object = None
         group: list[Any] = []
-        done = False
+        stopped: Cause[Any] | None = None
 
         def split(chunk: Chunk) -> AnyEffect:
             nonlocal key, group
@@ -156,13 +163,15 @@ def group_adjacent_by(self: AnyStream, f: Callable[[Any], object]) -> AnyStream_
                 group.append(item)
             return _Succeed(tuple(ready)) if ready else loop
 
-        def flush(_: None) -> AnyEffect:
-            nonlocal done, group
-            done = True
+        def flush(cause: Cause[Any]) -> AnyEffect:
+            # The upstream's end or failure: emit the group held first, then stop with it.
+            nonlocal stopped, group
+            stopped = cause
             last, group = group, []
-            return _Succeed(((key, tuple(last)),)) if last else _ENDED
+            return _Succeed(((key, tuple(last)),)) if last else _FailCause(cause)
 
         loop: AnyEffect = _FlatMap(pull, split)
-        return _Succeed(catch_done(_Suspend(lambda: _ENDED if done else loop), flush))
+        pulled = _Suspend(lambda: loop if stopped is None else _FailCause(stopped))
+        return _Succeed(_MatchCause(pulled, flush, None))
 
     return transform_pull(self, build)

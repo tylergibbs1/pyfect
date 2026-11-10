@@ -11,9 +11,9 @@ recoverable error, so a defect always wins.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from pyfect._core import Effect, _FailCause, _MatchCause, _Succeed, _Suspend
+from pyfect._core import Effect, _FailCause, _MatchCause, _Succeed, _Suspend, _WithFiber
 from pyfect.cause import Cause, Fail
 from pyfect.cause import die as die_cause
 from pyfect.channel._base import AnyChannel, AnyPull, is_done
@@ -26,7 +26,12 @@ from pyfect.result import Err, Ok, Result
 from pyfect.scope import CloseableScope
 
 if TYPE_CHECKING:
+    from pyfect._fiber import Fiber
     from pyfect.logger import Severity
+
+type IgnoreLog = bool | Severity | Literal["Unhandled"]
+"""``ignore``'s ``log``: ``"Unhandled"`` logs at the ``UnhandledLogLevel`` read when the
+failure happens (nothing when it is ``None``)."""
 
 type Channel_ = Channel[Any, Any, Any, Any, Any, Any, Any]
 type Handler = Callable[[Any], AnyChannel]
@@ -157,24 +162,36 @@ def or_die(self: AnyChannel) -> Channel_:
     return catch_all(self, lambda error: fail_cause_channel(die_cause(error)))
 
 
-def _logging(self: AnyChannel, log: bool | Severity, *, fails_only: bool) -> AnyChannel:
+def _logging(self: AnyChannel, log: IgnoreLog, *, fails_only: bool) -> AnyChannel:
     if log is False:
         return self
     from pyfect.logger import log_with_level
 
-    level = None if log is True else log
+    def at(level: Severity | None, cause: Cause[Any]) -> Effect[None]:
+        return log_with_level(level, cause)
+
+    def at_unhandled(cause: Cause[Any]) -> Effect[None]:
+        from pyfect.logger import UnhandledLogLevel
+
+        def body(fiber: Fiber[Any, Any]) -> Effect[None]:
+            level = fiber.get_ref(UnhandledLogLevel)
+            return _Succeed(None) if level is None else at(level, cause)
+
+        return _WithFiber(body)
 
     def write(cause: Cause[Any]) -> Effect[None]:
         if fails_only and not cause.has_fails:
             return _Succeed(None)
-        return log_with_level(level, cause)
+        if log == "Unhandled":
+            return at_unhandled(cause)
+        return at(None if log is True else log, cause)
 
     return tap_cause(self, write)
 
 
-def ignore(self: AnyChannel, log: bool | Severity) -> Channel_:
+def ignore(self: AnyChannel, log: IgnoreLog) -> Channel_:
     return catch_all(_logging(self, log, fails_only=True), lambda _: empty)
 
 
-def ignore_cause(self: AnyChannel, log: bool | Severity) -> Channel_:
+def ignore_cause(self: AnyChannel, log: IgnoreLog) -> Channel_:
     return catch_cause(_logging(self, log, fails_only=False), lambda _: empty)

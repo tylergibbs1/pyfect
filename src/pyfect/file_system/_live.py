@@ -5,9 +5,7 @@ runs on a worker thread, so fibers never block on the disk."""
 from __future__ import annotations
 
 import errno
-import glob as glob_
 import os
-import re
 import secrets
 import shutil
 import stat
@@ -25,7 +23,7 @@ from pyfect.effect import fail, gen
 from pyfect.file_system._copy import copy_tree
 from pyfect.file_system._errors import run
 from pyfect.file_system._file import LiveFile
-from pyfect.file_system._model import FileInfo, OpenFlag, WatchEvent
+from pyfect.file_system._model import DirectoryEntry, FileInfo, FileType, OpenFlag, WatchEvent
 from pyfect.file_system._service import (
     File,
     FileSystem,
@@ -75,21 +73,23 @@ def _copy_file(source: str, target: str) -> None:
     shutil.copymode(source, target)
 
 
-def _glob(pattern: str, root: str | None, exclude: tuple[str, ...]) -> list[str]:
-    """Node's ``fs.glob``: an excluded directory takes everything under it
-    with it, and a match has no trailing separator."""
-    excluded = [
-        re.compile(glob_.translate(p, recursive=True, include_hidden=True)) for p in exclude
-    ]
+def _entry_type(entry: os.DirEntry[str]) -> FileType:
+    """Node's ``Dirent`` type: the entry itself, a link not followed."""
+    try:
+        if entry.is_symlink():
+            return "SymbolicLink"
+        if entry.is_dir(follow_symlinks=False):
+            return "Directory"
+        if entry.is_file(follow_symlinks=False):
+            return "File"
+        return file_info(entry.stat(follow_symlinks=False)).type
+    except OSError:
+        return "Unknown"
 
-    def kept(match: str) -> bool:
-        parts = match.split(os.sep)
-        prefixes = (os.sep.join(parts[:end]) for end in range(1, len(parts) + 1))
-        return not any(e.fullmatch(prefix) for prefix in prefixes for e in excluded)
 
-    matches = glob_.glob(pattern, root_dir=root, recursive=True)
-    trimmed = (m.rstrip(os.sep) or m for m in matches)
-    return [m for m in trimmed if kept(m)]
+def _read_directory_entries(path: str) -> tuple[DirectoryEntry, ...]:
+    with os.scandir(path) as entries:
+        return tuple(DirectoryEntry(entry.name, _entry_type(entry)) for entry in entries)
 
 
 def _make_directory(path: str, recursive: bool, mode: int) -> None:
@@ -213,11 +213,6 @@ class LiveFileSystem(FileSystemService):
     def chown(self, path: str, uid: int, gid: int) -> Effect[None, PlatformError]:
         return run("chown", path, lambda: os.chown(path, uid, gid))
 
-    def glob(
-        self, pattern: str, *, root: str | None = None, exclude: tuple[str, ...] = ()
-    ) -> Effect[list[str], PlatformError]:
-        return run("glob", pattern, lambda: _glob(pattern, root, exclude))
-
     def link(self, from_path: str, to_path: str) -> Effect[None, PlatformError]:
         return run("link", from_path, lambda: os.link(from_path, to_path))
 
@@ -240,7 +235,7 @@ class LiveFileSystem(FileSystemService):
         method = "make_temp_directory_scoped"
         return acquire_release(
             run(method, directory, lambda: _temp_directory(directory, prefix)),
-            lambda path, _exit: run(method, path, lambda: shutil.rmtree(path)).or_die(),
+            lambda path, _exit: run(method, path, lambda: _remove(path, True, True)).or_die(),
         )
 
     def make_temp_file(
@@ -255,7 +250,7 @@ class LiveFileSystem(FileSystemService):
         return acquire_release(
             run(method, directory, lambda: _temp_file(directory, prefix, suffix)),
             lambda path, _exit: run(
-                method, path, lambda: shutil.rmtree(os.path.dirname(path))
+                method, path, lambda: _remove(os.path.dirname(path), True, True)
             ).or_die(),
         )
 
@@ -283,6 +278,11 @@ class LiveFileSystem(FileSystemService):
         self, path: str, *, recursive: bool = False
     ) -> Effect[list[str], PlatformError]:
         return run("read_directory", path, lambda: _read_directory(path, recursive))
+
+    def read_directory_entries(
+        self, path: str
+    ) -> Effect[tuple[DirectoryEntry, ...], PlatformError]:
+        return run("read_directory_entries", path, lambda: _read_directory_entries(path))
 
     def read_file(self, path: str) -> Effect[bytes, PlatformError]:
         return run("read_file", path, lambda: _read(path))

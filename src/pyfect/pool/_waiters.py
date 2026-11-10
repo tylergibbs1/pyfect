@@ -76,6 +76,11 @@ class PoolWaiters:
         del self._line[waiter]
         return True
 
+    @property
+    def sleeping(self) -> int:
+        """How many waiters are asleep; a woken one about to retry is not counted."""
+        return sum(1 for w in self._line if w.is_sleeping)
+
     def first_sleeping(self) -> Waiter | None:
         return next((w for w in self._line if w.is_sleeping), None)
 

@@ -1,9 +1,10 @@
 """``PartitionedSemaphore[K]``: one pool of permits shared fairly by keys.
 
-Waiters are grouped by key, and freed permits go round-robin across keys,
-one permit per turn, so a key with many waiters cannot starve the others. A
-waiter that needs several permits collects them as they come and is woken
-once it has them all. Only the wait is interruptible: an interrupt at any
+Waiters are grouped by key and served round-robin across keys, so a key with
+many waiters cannot starve the others. Each turn completes the waiter's
+request before moving to the next key (Effect 4.1.2); a waiter that needs
+more permits than are free keeps the turn and collects them as they come,
+and is woken once it has them all. Only the wait is interruptible: an interrupt at any
 point before the permits are guarded gives back what the waiter collected.
 
 A request for more permits than the capacity never completes, as in Effect.
@@ -78,7 +79,15 @@ class _GiveBackOnFailure(Frame):
 
 
 class PartitionedSemaphore[K: Hashable = Hashable]:
-    __slots__ = ("_pending", "_releasing", "_total", "_waiters", "_waiting", "capacity")
+    __slots__ = (
+        "_partial",
+        "_pending",
+        "_releasing",
+        "_total",
+        "_waiters",
+        "_waiting",
+        "capacity",
+    )
 
     def __init__(self, permits: int) -> None:
         self.capacity = max(0, permits)
@@ -86,6 +95,8 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
         self._waiting = 0  # permits waiters still miss
         self._pending = 0  # released permits not yet handed out
         self._releasing = False
+        # The waiter whose turn it is while it still misses permits.
+        self._partial: tuple[Hashable, _Waiter] | None = None
         # Typed by Hashable, not K, so K only goes in (contravariant, as in Effect).
         self._waiters: RoundRobin[Hashable, _Waiter] = RoundRobin()
 
@@ -173,6 +184,8 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
         return _Suspend(run)
 
     def _give_up(self, key: K, n: int, waiter: _Waiter) -> None:
+        if self._partial is not None and self._partial[1] is waiter:
+            self._partial = None
         self._waiters.remove(key, waiter)
         self._waiting -= waiter.missing
         self._release(n - waiter.missing)
@@ -196,16 +209,20 @@ class PartitionedSemaphore[K: Hashable = Hashable]:
 
     def _hand_out(self) -> None:
         while self._pending > 0 and self._waiting > 0:
-            found = self._waiters.next()
+            found = self._partial or self._waiters.next()
             if found is None:
                 return
             key, waiter = found
-            waiter.missing -= 1
-            self._waiting -= 1
-            self._pending -= 1
+            granted = min(waiter.missing, self._pending)
+            waiter.missing -= granted
+            self._waiting -= granted
+            self._pending -= granted
             if waiter.missing == 0:
+                self._partial = None
                 self._waiters.remove(key, waiter)
                 waiter.wake()
+            else:
+                self._partial = found
 
 
 __all__ = ["PartitionedSemaphore"]

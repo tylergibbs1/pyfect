@@ -15,7 +15,10 @@ Omitted, with the reason:
   so mutating it afterwards can't change an immutable context.
 
 The overlay "rebase" tests keep their observable half: values, order and the
-parent left unchanged.
+parent left unchanged. So do the ``maxDepth`` titles: ``makeUnsafe``'s
+``maxDepth`` option only sets when overlays are rebased, which a dict copied on
+add has no use for, so ``Context(mapping)`` takes no such option and the tests
+check the values across the same additions, rebases, merges and picks.
 """
 
 import pyfect as fx
@@ -98,6 +101,45 @@ def test_bounds_deep_overlay_chains_without_changing_values_or_order():
     assert _keys(context) == [key.key for key in keys]
     for i, key in enumerate(keys):
         assert context.get_unsafe(key) == i
+
+
+def test_inherits_max_depth_across_additions_rebases_and_merge():
+    """inherits maxDepth across additions, rebases, and merge"""
+    context: fx.Context = fx.Context()
+    context = context.add(A, 1).add(B, 2)
+    assert _entries(context) == [(A.key, 1), (B.key, 2)]
+    for _ in range(2):
+        context = context.add(C, 3)
+        assert _entries(context) == [(A.key, 1), (B.key, 2), (C.key, 3)]
+        context = context.add(A, 1).add(B, 2)
+    context = context.merge(fx.Context.make(A, 4)).add(B, 5).add(C, 6).add(A, 7)
+    assert _entries(context) == [(A.key, 7), (B.key, 5), (C.key, 6)]
+
+
+def test_keeps_max_depth_when_picking_zero_or_one_key():
+    """keeps maxDepth when picking zero or one key"""
+    source = fx.Context({A: 1})
+    picked: list[fx.Context] = [source.pipe(fx.Context.pick()), source.pipe(fx.Context.pick(A))]
+    results = [_entries(context.add(B, 2).add(C, 3).add(A, 4)) for context in picked]
+    assert results == [
+        [(B.key, 2), (C.key, 3), (A.key, 4)],
+        [(A.key, 4), (B.key, 2), (C.key, 3)],
+    ]
+    assert _entries(source) == [(A.key, 1)]
+
+
+def test_uses_depth_8_by_default_for_invalid_options_and_after_merge_all():
+    """uses depth 8 by default, for invalid options, and after mergeAll"""
+    for start in (
+        fx.Context(),
+        fx.Context.merge_all(fx.Context({A: 1}), fx.Context({B: 2})),
+    ):
+        context: fx.Context = start
+        for i in range(8):
+            context = context.add(A, i)
+        context = context.add(B, 8)
+        assert context.get_unsafe(A) == 7
+        assert context.get_unsafe(B) == 8
 
 
 def test_rebases_a_shadowing_overlay_chain_from_a_cold_or_warm_parent():

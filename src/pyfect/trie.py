@@ -70,6 +70,8 @@ def _walk(node: _Node, prefix: str) -> Iterator[tuple[str, object]]:
 def _replace(root: _Node, key: str, leaf: _Node | None) -> _Node:
     """``root`` with the node at ``key`` (which exists up to its parent)
     replaced by ``leaf``; ``None`` drops it, and parents left empty."""
+    if not key:
+        return _EMPTY if leaf is None else leaf
     path = [root]
     for c in key[:-1]:
         path.append(path[-1].children[c])
@@ -153,7 +155,7 @@ class Trie[V = Unsubscripted]:
         return None if node is None else Some(self._value(node))
 
     def has(self, key: str) -> bool:
-        return key != "" and self._node(key) is not None
+        return self._node(key) is not None
 
     def get_unsafe(self, key: str) -> V:
         """The value for ``key``; raises ``KeyError`` without one."""
@@ -198,7 +200,8 @@ class Trie[V = Unsubscripted]:
 
     def longest_prefix_of(self, key: str) -> Option[tuple[str, V]]:
         """The entry whose key is the longest one that ``key`` starts with."""
-        node, found = self._root, None
+        node = self._root
+        found = (0, node) if node.has else None
         for end, c in enumerate(key, 1):
             child = node.children.get(c)
             if child is None:
@@ -224,9 +227,7 @@ class Trie[V = Unsubscripted]:
     # --- updates --------------------------------------------------------------------
 
     def insert(self, key: str, value: V) -> Trie[V]:
-        """The trie with ``key`` set to ``value``; the same trie for ``""``."""
-        if not key:
-            return self
+        """The trie with ``key`` set to ``value``."""
         root, depth = self._root, 0
         node: _Node | None = root
         while depth < len(key) and node is not None:
@@ -248,7 +249,7 @@ class Trie[V = Unsubscripted]:
 
     def remove(self, key: str) -> Trie[V]:
         """The trie without ``key``; the same trie when it has no ``key``."""
-        node = self._node(key) if key else None
+        node = self._node(key)
         if node is None:
             return self
         leaf = _Node(False, None, node.children) if node.children else None
@@ -263,7 +264,7 @@ class Trie[V = Unsubscripted]:
     def modify(self, key: str, f: Callable[[V], V]) -> Trie[V]:
         """The trie with ``key``'s value replaced by ``f(value)``; the same
         trie without ``key``."""
-        node = self._node(key) if key else None
+        node = self._node(key)
         if node is None:
             return self
         return self.insert(key, f(self._value(node)))

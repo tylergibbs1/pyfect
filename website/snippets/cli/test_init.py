@@ -4,7 +4,7 @@ from pyfect.cli import Config, Flag, ShowHelp, command, prompt
 from pyfect.cli.terminal_capabilities import Capabilities, TerminalCapabilities
 from pyfect.errors import Done
 from pyfect.queue import Queue
-from pyfect.terminal import Terminal, TerminalService, UserInput, decode
+from pyfect.terminal import Size, Terminal, TerminalService, UserInput, decode
 
 
 class Init(Config):
@@ -32,9 +32,12 @@ def user_types(keys: str):
     def make():
         queue = yield from Queue[UserInput, Done].unbounded()
         yield from queue.offer_all(decode(keys))
+        sizes = yield from Queue[Size, Done].unbounded()
+        yield from sizes.offer(Size(80, 24))
         return TerminalService(
             columns=fx.succeed(80),
             rows=fx.succeed(24),
+            size=fx.succeed(sizes),
             read_input=fx.succeed(queue),
             read_line=fx.succeed(""),
             display=lambda _text: fx.void,

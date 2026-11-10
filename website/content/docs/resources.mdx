@@ -44,7 +44,8 @@ released when it leaves the cache.
 out: `pool.use(f)` borrows one for as long as `f`'s effect runs, and borrowers wait in line
 for a free one. All the items are released when the pool's scope closes.
 `Pool.make_with_ttl(acquire, min=..., max=..., time_to_live=...)` grows with demand and
-shrinks back once items have been idle.
+shrinks back once items have been idle. `pool.stats()` gives a `PoolStats` snapshot (idle and
+used items, waiting borrowers, `min` and `max`) to report as metrics.
 
 <include meta='title="pool.py"'>../../snippets/resources/pool.py</include>
 

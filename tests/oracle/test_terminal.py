@@ -14,6 +14,7 @@ Omitted, with the reason:
 
 import io
 import os
+import signal
 import sys
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
@@ -25,7 +26,7 @@ import pyfect as fx
 from pyfect import file_system, layer, path, terminal, testing
 from pyfect.cli import prompt
 from pyfect.cli.prompt import Choice
-from pyfect.terminal import QuitError, Terminal, TerminalService, UserInput
+from pyfect.terminal import QuitError, Size, Terminal, TerminalService, UserInput
 
 
 @contextmanager
@@ -245,3 +246,61 @@ def test_fails_a_prompt_with_quit_error_after_piped_input_is_exhausted():
         second = yield from prompt.run(prompt.confirm("Second")).flip().pipe(fx.provide(env))
     assert first is True
     assert isinstance(second, QuitError)
+
+
+_no_winch = pytest.mark.skipif(not hasattr(signal, "SIGWINCH"), reason="no SIGWINCH")
+
+
+@pytest.fixture
+def terminal_size(monkeypatch: pytest.MonkeyPatch) -> Callable[[int, int], None]:
+    """Sets the size the terminal reports (Effect's ``mockSize``)."""
+    current = os.terminal_size((80, 24))
+
+    def get_terminal_size(fd: int = 1) -> os.terminal_size:
+        return current
+
+    def set_size(columns: int, rows: int) -> None:
+        nonlocal current
+        current = os.terminal_size((columns, rows))
+
+    monkeypatch.setattr(os, "get_terminal_size", get_terminal_size)
+    return set_size
+
+
+def _resize(set_size: Callable[[int, int], None], columns: int, rows: int) -> None:
+    """Effect's ``resize``: a new size, then the resize event."""
+    set_size(columns, rows)
+    signal.raise_signal(signal.SIGWINCH)
+
+
+@_no_winch
+@testing.live
+def test_size_offers_the_current_size_then_only_the_latest_resize(
+    terminal_size: Callable[[int, int], None],
+):
+    """size offers the current size, then only the latest resize"""
+    with open(os.devnull, "w") as output:
+        service = terminal.live(input=0, output=output)
+        sizes = yield from service.size
+        assert (yield from sizes.take()) == Size(80, 24)
+        _resize(terminal_size, 100, 30)
+        _resize(terminal_size, 120, 50)
+        assert (yield from sizes.take_all()) == [Size(120, 50)]
+
+
+@_no_winch
+@testing.live
+def test_size_removes_its_resize_listener_when_the_scope_closes():
+    """size removes its resize listener when the scope closes"""
+    before = signal.getsignal(signal.SIGWINCH)
+    service = terminal.live(input=0, output=io.StringIO())
+
+    def listening(_: object) -> fx.Effect[None]:
+        return fx.sync(lambda: _assert_replaced(before))
+
+    yield from fx.scoped(service.size.tap(listening))
+    assert signal.getsignal(signal.SIGWINCH) == before
+
+
+def _assert_replaced(before: object) -> None:
+    assert signal.getsignal(signal.SIGWINCH) != before

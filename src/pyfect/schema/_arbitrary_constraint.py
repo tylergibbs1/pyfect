@@ -213,6 +213,7 @@ _STRING_PATTERNS = frozenset(
         "isUUID",
         "isGUID",
         "isULID",
+        "isAscii",
         "isBase64",
         "isBase64Url",
         "isStartingWith",

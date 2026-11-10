@@ -27,6 +27,9 @@ from pyfect._js import int_text, js_number
 _MAX_SAFE = 2**53 - 1
 _DEFAULT_PRECISION = 100
 _MAX_COMPARISON_SCALE_ALIGNMENT = 100
+_MAX_SCALE = 10_000
+# Allows aligning values parsed at opposite bounds.
+_MAX_SCALE_ALIGNMENT = 2 * _MAX_SCALE
 
 type RoundingMode = Literal[
     "ceil",
@@ -46,6 +49,16 @@ def _check_scale(scale: int) -> int:
     if type(scale) is not int or not -_MAX_SAFE <= scale <= _MAX_SAFE:
         raise ValueError(f"Scale must be a safe integer, got {js_number(scale)}")
     return scale
+
+
+def _power_of_ten(exponent: int) -> int:
+    """``10 ** exponent`` for aligning scales; past ``_MAX_SCALE_ALIGNMENT`` digits it
+    raises ``ValueError`` (Effect's ``RangeError``)."""
+    if exponent > _MAX_SCALE_ALIGNMENT:
+        raise ValueError(
+            f"Scale alignment must not exceed {_MAX_SCALE_ALIGNMENT} digits, got {exponent}"
+        )
+    return 10**exponent
 
 
 def _tdiv(a: int, b: int) -> int:
@@ -95,9 +108,9 @@ class BigDecimal:
         """The number at ``scale``, digits beyond it truncated toward zero
         (Effect's ``scale``)."""
         if scale > self.scale:
-            return BigDecimal(self.value * 10 ** (scale - self.scale), scale)
+            return BigDecimal(self.value * _power_of_ten(scale - self.scale), scale)
         if scale < self.scale:
-            return BigDecimal(_tdiv(self.value, 10 ** (self.scale - scale)), scale)
+            return BigDecimal(_tdiv(self.value, _power_of_ten(self.scale - scale)), scale)
         return self
 
     def format(self) -> str:
@@ -242,7 +255,7 @@ class BigDecimal:
         """Digits beyond ``scale`` dropped (toward zero)."""
         if self.scale <= scale:
             return self
-        return BigDecimal(_tdiv(self.value, 10 ** (self.scale - scale)), scale)
+        return BigDecimal(_tdiv(self.value, _power_of_ten(self.scale - scale)), scale)
 
     def ceil(self, scale: int = 0) -> BigDecimal:
         truncated = self.truncate(scale)
@@ -261,10 +274,12 @@ class BigDecimal:
         negative for a negative number."""
         if self.scale < scale:
             return 0
-        return _trem(_tdiv(self.value, 10 ** (self.scale - scale)), 10)
+        return _trem(_tdiv(self.value, _power_of_ten(self.scale - scale)), 10)
 
     def round(self, *, scale: int = 0, mode: RoundingMode = "half-from-zero") -> BigDecimal:  # noqa: PLR0911
         """Rounded to ``scale`` digits by ``mode``."""
+        if self.scale <= scale:
+            return self
         up, down = BigDecimal(5, scale + 1), BigDecimal(-5, scale + 1)
         match mode:
             case "ceil":
@@ -440,7 +455,7 @@ def _finite_int(text: str) -> int | None:
 
 def from_string(text: str) -> BigDecimal | None:
     """``[+-]digits[.digits][e[+-]digits]`` (``""`` is zero); ``None`` for
-    anything else or a scale past ``2**53 - 1``."""
+    anything else, a scale past 10,000 or a normalized scale below -10,000."""
     if text == "":
         return _ZERO
     base, exp = text, 0
@@ -451,11 +466,16 @@ def from_string(text: str) -> BigDecimal | None:
             return None
         exp = parsed
     lead, dot, fraction = base.partition(".")
-    value = _finite_int(lead + fraction if dot else base)
+    if fraction and digits_value(fraction) is None:
+        return None
+    digits = lead + fraction if dot else base
+    value = _finite_int(digits)
     if value is None:
         return None
     scale = len(fraction) - exp
-    if not -_MAX_SAFE <= scale <= _MAX_SAFE:
+    # The normalized scale keeps ``format``'s output parseable.
+    normalized_scale = scale if value == 0 else scale - (len(digits) - len(digits.rstrip("0")))
+    if scale > _MAX_SCALE or normalized_scale < -_MAX_SCALE:
         return None
     return BigDecimal(value, scale)
 

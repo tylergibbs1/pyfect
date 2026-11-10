@@ -32,7 +32,7 @@ from typing import Any, Unpack
 from pyfect import schema as S
 from pyfect.encoding.schema_binary import _dictionary, _encode
 from pyfect.encoding.schema_binary._channels import decode, duplex, encode
-from pyfect.encoding.schema_binary._compile import FIELD_ID_KEY
+from pyfect.encoding.schema_binary._compile import FIELD_ID_KEY, FIXED_WIDTH_KEY
 from pyfect.encoding.schema_binary._fingerprint import compile_mode
 from pyfect.encoding.schema_binary._parser import Parser, make_parser
 from pyfect.encoding.schema_binary._target import (
@@ -42,6 +42,7 @@ from pyfect.encoding.schema_binary._target import (
     is_success_exit,
     make_codec,
     make_direct_codec,
+    make_strict_codec,
 )
 from pyfect.encoding.schema_binary._wire import IssueError
 from pyfect.schema import ParseOptions, SchemaError, ast
@@ -60,6 +61,13 @@ def to_codec[A](
     identical encoded layout). Most union codecs prefix values with a member
     selector, so they cannot read bytes written by a member's own codec."""
     return make_codec(schema.__codec__(), fingerprint)
+
+
+def to_codec_strict[A](schema: S.Codec[A, Any, Any, Any], /) -> BytesCodec[A]:
+    """The default-mode ``to_codec`` codec, except that decoding rejects a
+    struct field, an extra key, a union member or a field wire kind the schema
+    does not know, instead of skipping it."""
+    return make_strict_codec(schema.__codec__())
 
 
 def to_codec_direct[A](
@@ -215,6 +223,52 @@ def encoder(
     return Encoder(encode_one, encode_many)
 
 
+int32: S.Bottom[float] = S.Number.check(S.is_int32(**{FIXED_WIDTH_KEY: "i32"}))
+"""A 32-bit signed integer written as four little-endian bytes, for values
+that regularly need more than four bytes as a varint (hashes, full-range ids);
+small values are cheaper as ``S.Int``. Rejects non-integers and values outside
+``-2 ** 31`` through ``2 ** 31 - 1`` instead of truncating them; ``-0`` is
+written as ``0``.
+
+Switching a field between this, ``uint32``, ``S.Number`` or ``S.Int`` changes
+its encoding, so it is not a compatible evolution: in default mode the other
+reader can decode a different value without an error. Fingerprint mode
+rejects the layout mismatch."""
+
+uint32: S.Bottom[float] = S.Number.check(S.is_uint32(**{FIXED_WIDTH_KEY: "u32"}))
+"""A 32-bit unsigned integer written as four little-endian bytes. Rejects
+non-integers and values outside ``0`` through ``2 ** 32 - 1`` instead of
+wrapping them; see ``int32``."""
+
+int64: S.Bottom[int] = S.BigInt.check(
+    S.is_between_big_int(
+        minimum=-(2**63),
+        maximum=2**63 - 1,
+        expected="a 64-bit integer",
+        **{FIXED_WIDTH_KEY: "i64"},  # pyright: ignore[reportArgumentType]
+    )
+)
+"""A 64-bit signed integer (Effect's ``bigint``) written as eight
+little-endian bytes. Rejects values outside ``-2 ** 63`` through
+``2 ** 63 - 1`` instead of wrapping them. As a struct field it costs one
+length byte more than the payload, because the eight-byte field kind belongs
+to floating-point numbers. Switching a field between this, ``uint64`` or
+``S.BigInt`` is not a compatible evolution: a default-mode reader may decode
+the other form as a different value without an error."""
+
+uint64: S.Bottom[int] = S.BigInt.check(
+    S.is_between_big_int(
+        minimum=0,
+        maximum=2**64 - 1,
+        expected="a 64-bit unsigned integer",
+        **{FIXED_WIDTH_KEY: "u64"},  # pyright: ignore[reportArgumentType]
+    )
+)
+"""A 64-bit unsigned integer (Effect's ``bigint``) written as eight
+little-endian bytes. Rejects values outside ``0`` through ``2 ** 64 - 1``
+instead of wrapping them; see ``int64``."""
+
+
 def _with_key_id(node: ast.AST, id: int) -> ast.AST:
     annotations = {**(node.key_annotations or {}), FIELD_ID_KEY: id}
     return ast.replace_context(node, key_annotations=annotations)
@@ -251,7 +305,12 @@ __all__ = [
     "encode_unknown_sync",
     "encoder",
     "field_id",
+    "int32",
+    "int64",
     "parser",
     "to_codec",
     "to_codec_direct",
+    "to_codec_strict",
+    "uint32",
+    "uint64",
 ]

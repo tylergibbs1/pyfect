@@ -6,6 +6,8 @@ where a test says it pins a Pythonic difference (docs/PARITY.md, section 4).
 
 import math
 import os
+import subprocess
+import sys
 from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -485,3 +487,27 @@ def test_literal_takes_a_sequence_as_effect_does():
     assert _parse(env, cp.from_unknown({"ENV": "x"})) == _parse(
         config.literal("dev", "prod", name="ENV"), cp.from_unknown({"ENV": "x"})
     )
+
+
+def test_the_default_provider_reads_the_environment_as_it_was_at_first_use() -> None:
+    """Effect caches a ``Context.Reference``'s default value, so the default
+    ``ConfigProvider.fromEnv()`` copies ``process.env`` once: under Node 4.1.2 a
+    later write to ``process.env`` is not seen (``["a", "a", "Failure"]``). Run
+    in a fresh interpreter, as the cache lives for the process."""
+    script = """
+import os
+import pyfect as fx
+from pyfect import config
+os.environ["PYFECT_DEFAULT_ENV_X"] = "a"
+first = fx.run_sync(config.string("PYFECT_DEFAULT_ENV_X"))
+os.environ["PYFECT_DEFAULT_ENV_X"] = "b"
+os.environ["PYFECT_DEFAULT_ENV_Y"] = "new"
+second = fx.run_sync(config.string("PYFECT_DEFAULT_ENV_X"))
+late = fx.run_sync(config.string("PYFECT_DEFAULT_ENV_Y").result())
+print(first, second, type(late).__name__)
+"""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYFECT_DEFAULT_ENV_")}
+    out = subprocess.run(
+        [sys.executable, "-c", script], env=env, capture_output=True, text=True, check=True
+    )
+    assert out.stdout.split() == ["a", "a", "Err"]

@@ -4,6 +4,7 @@ Ported from Effect's Effect.test.ts, Scope.test.ts and Cause.test.ts; each test
 names the Effect test it follows.
 """
 
+import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -218,6 +219,45 @@ def test_skipped_handlers_drop_failures_and_keep_defects_when_interrupted():
         return (yield from fiber.await_exit())
 
     assert _reasons(testing.run_test(program)) == [("Die", DEFECT), ("Interrupt", 123)]
+
+
+def test_interrupting_a_fiber_inside_spans_records_the_interruption_once():
+    """Effect.test.ts 'interrupting a fiber inside spans records the interruption once'."""
+
+    class Value(fx.Reference[float]):
+        @classmethod
+        def default(cls) -> float:
+            return 0
+
+    @fx.fn("inner")
+    def inner():
+        return (yield from fx.never)
+
+    @fx.fn("outer")
+    def outer():
+        return (yield from inner())
+
+    @fx.gen
+    def program():
+        counts: list[int] = []
+        for effect in (fx.never.with_span("a").with_span("b"), outer()):
+            fiber = yield from effect.fork()
+            yield from fx.yield_now()
+            yield from fiber.interrupt()
+            exit_ = yield from fiber.await_exit()
+            assert isinstance(exit_, fx.Failure)
+            counts.append(len(exit_.cause.reasons))
+        fiber = yield from fx.never.with_span("a").with_span("b").fork()
+        yield from fx.yield_now()
+        yield from fiber.interrupt_as(123, fx.Context.make(Value, math.nan))
+        exit_ = yield from fiber.await_exit()
+        assert isinstance(exit_, fx.Failure)
+        counts.append(len(exit_.cause.reasons))
+        # The given annotations reach the interruption.
+        assert math.isnan(exit_.cause.annotations.get(Value))
+        return counts
+
+    assert testing.run_test(program) == [1, 1, 1]
 
 
 def test_uninterruptible_handlers_observe_the_interruption_after_skipped_handlers():

@@ -16,7 +16,7 @@ __all__ = ["timers"]
 
 
 def test_subscription_ref(timers: FakeTimers) -> None:
-    """SubscriptionRef"""
+    """SubscriptionRef reflects updates made to the ref"""
     ref = SubscriptionRef(123)
     mirrored = atom.subscription_ref(ref)
     r = timers.registry()
@@ -26,7 +26,7 @@ def test_subscription_ref(timers: FakeTimers) -> None:
 
 
 def test_subscription_ref_set(timers: FakeTimers) -> None:
-    """SubscriptionRef (the second test of that title: setting the atom)"""
+    """SubscriptionRef writes registry sets to the ref"""
     ref = SubscriptionRef(0)
     mirrored = atom.subscription_ref(ref)
     r = timers.registry()

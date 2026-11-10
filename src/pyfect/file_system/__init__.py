@@ -27,6 +27,7 @@ from pyfect.file_system._file import LiveFile
 from pyfect.file_system._live import DEFAULT_WATCH_INTERVAL, LiveFileSystem, layer
 from pyfect.file_system._model import (
     Create,
+    DirectoryEntry,
     FileInfo,
     FileType,
     OpenFlag,
@@ -49,6 +50,7 @@ __all__ = [
     "DEFAULT_CHUNK_SIZE",
     "DEFAULT_WATCH_INTERVAL",
     "Create",
+    "DirectoryEntry",
     "File",
     "FileInfo",
     "FileSystem",

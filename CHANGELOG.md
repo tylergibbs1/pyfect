@@ -1,5 +1,133 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+### Breaking
+
+- `encoding.toml.parse` returns a `Result` (`Ok(dict)` or `Err(EncodingError)` with module
+  `"Toml"` and Effect's message) instead of raising `ValueError`, as Effect 4.1.2's
+  `Toml.parse` does: replace `toml.parse(text)` with `toml.parse(text).get_or_raise()` to
+  keep raising (now the `EncodingError`), or match on the result. TOML is also read more
+  strictly, as in 4.1.2: a table defined by dotted keys cannot be redefined by a header, an
+  inline table or array cannot be extended, dates and times out of range (`2026-02-30`,
+  `24:00:00`, an offset of `+24:00`) and integers past 2**53 - 1 are errors, raw control
+  characters and a bare carriage return are errors, and up to two quotes before a multiline
+  string's closing delimiter belong to its content. `cli.primitive.file_parse` reports a
+  bad TOML file as `EncodingError: ...` (it said `SyntaxError: ...`).
+- `encoding.yaml.parse` reads an unquoted `<<` key as a YAML 1.1 merge key, as Effect 4.1.2
+  does: it merges a mapping (or a list of them) into the enclosing one, where it used to be an
+  ordinary `"<<"` key. Quote it (`"<<": ...`) to keep the old reading.
+
+- `FileSystemService` has a new abstract `read_directory_entries(path)`, giving each name
+  with the type of the entry itself (`file_system.DirectoryEntry`), and `glob` is no longer
+  abstract: it is built from `read_directory_entries`, `stat` and `read_link`, as Effect
+  4.1.2's `FileSystem.make` builds it. A `FileSystemService` subclass must implement
+  `read_directory_entries` (one wrapping another file system can delegate it; one that
+  reports no types can give `"Unknown"` for every entry) and can drop its `glob`
+  (`NoopFileSystem` already does both). `glob` now follows Effect's (and `pyfect.glob`'s)
+  pattern rules instead of Python's `glob.glob`: results are `/`-separated even on
+  Windows, depth first with each directory's entries sorted by name, `dir/**` includes
+  `dir`, `**` does not follow symbolic links to directories, an unreadable directory
+  named by the pattern fails the glob, and the new `dot=True` matches names that start
+  with `.`.
+- `TerminalService` has a required `size` field: an `Effect[Dequeue[Size, Done], Never,
+  Scope]` whose queue holds the current `terminal.Size` and then the latest size after
+  each resize until its scope closes (Effect 4.1.2's `Terminal.size`). A hand-built
+  terminal (in tests, say) must pass one, for example a queue holding one
+  `Size(80, 24)`.
+- `Trie` stores the empty string key like any other, as Effect 4.1.2 does: `insert("", v)`
+  adds it (it was ignored), it iterates first, counts in `len`, and `longest_prefix_of`
+  falls back to it. Code that relied on `""` being dropped must skip it itself.
+- `big_decimal.from_string` gives `None` for a scale past 10,000 or a normalized scale below
+  -10,000 (it accepted any safe-integer scale) and for a fraction that is not digits
+  (`".-1"`); arithmetic that has to align scales more than 20,000 digits apart (`sum`,
+  `subtract`, `remainder`, `rescale`, `truncate`, `round`) raises `ValueError`, as Effect
+  4.1.2's `RangeError`. Build very large or very small values with `big_decimal.make`.
+- `json_patch.apply` rejects a JSON Pointer with a `~` not followed by `0` or `1`
+  (`Invalid JSON Pointer escape`); it read `~2` as a literal.
+- CLI help lists a subcommand's own flags under `FLAGS` and the shared flags of its
+  ancestors under a new `INHERITED FLAGS` section, as Effect 4.1.2 does; they were listed
+  first under `FLAGS`. `HelpDoc.flags` from `help_for_path` no longer holds the inherited
+  flags: read `HelpDoc.inherited_flags` for them (also new: `command_path` and
+  `global_flags_scope`). A custom `Formatter` must render `inherited_flags` to keep them
+  in its help.
+- `sse.Event` accepts an `event` or `id` holding `\r` or `\n` (it raised `ValueError`, and
+  `encode_schema` failed with a `SchemaError`); `sse.write` removes them, and NUL from the
+  id, as Effect 4.1.2's encoder does. Code that relied on the error to reject such values
+  must check them itself.
+- `Semaphore` serves waiters in the order they asked, as Effect 4.1.2 does: a fiber that
+  releases its permits and takes again goes behind those already waiting (it could take
+  them straight back), and a waiter keeps its place until it takes its permits. Code that
+  relied on a holder reacquiring at once must not.
+- `PartitionedSemaphore` gives a partly served waiter the permits released next until its
+  request is whole, before turning to the next partition (it gave one permit per
+  partition per turn, so two multi-permit waiters could each hold some and deadlock).
+- `cron.prev` of a time a DST gap skipped returns the matches before that time, as Effect
+  4.1.2 does (it could return the gap's shifted wall time). A wall time a DST change
+  repeats still runs once, at its first occurrence; pass `on_dst_overlap="later"` or
+  `"both"` (new on `cron.make`, `cron.parse`, `cron.parse_unsafe` and `schedule.cron`) to
+  change that. `Cron` equality now includes `on_dst_overlap`.
+- `schedule.cron` waits for the next match when the delay to the current one rounds to
+  zero (it ran twice), and schedule elapsed times are rounded to the nanosecond, as
+  Effect's `Duration` (a `fixed` or `windowed` schedule waits a full window when the delay
+  to its boundary rounds to zero).
+- `Pool.make` and `make_with_ttl` run in a child of the current scope, so a finalizer added
+  to that scope after the pool can still borrow from it.
+- `Stream.rechunk` and `group_adjacent_by` emit the elements they hold before failing (they
+  were dropped), and `group_by` ends its open groups when the upstream fails or ends.
+- `date_time.start_of`, `end_of` and `nearest` below a day keep a time in the repeated DST
+  hour in that occurrence (they could move it to the other one).
+- Defects of resources released in the background (`RcMap` and `RcRef` idle expiry and
+  interrupted lookups, `ScopedCache` expiry) are logged at `UnhandledLogLevel` ("Unhandled
+  error in RcMap finalizer") instead of being lost.
+- An atom build that releases a failed earlier build reports that build's finalizer error
+  once the new build commits (it was raised in the middle of the rebuild).
+
+### Added
+
+- `Pool.stats()` returns a `PoolStats` (idle, used, pending, `min`, `max`).
+- `stream.ignore`, `ignore_cause` and the channel ones take `log="Unhandled"` to log at the
+  fiber's `UnhandledLogLevel` (nothing when it is `None`).
+- `cron.DstOverlapPolicy` (`"earlier"`, `"later"`, `"both"`).
+
+- `pyfect.glob` (`fx.glob`), Effect 4.1.2's `Glob`: `glob.make(pattern, dot=)`,
+  `glob.match` / `Glob.match` and `glob.escape`, the patterns `FileSystem.glob` walks
+  with (braces, bracket and POSIX classes, `**`, a trailing `/` for directories, linear
+  wildcard matching).
+- `FileSystem.read_directory_entries` and `glob(dot=)`; `make_temp_directory_scoped` and
+  `make_temp_file_scoped` no longer die when their directory was already removed.
+- `Terminal.size` and `terminal.Size`: the terminal's size, then each resize.
+- `schema_binary.int32`, `uint32`, `int64` and `uint64`: integers written as four or eight
+  little-endian bytes, and `schema_binary.to_codec_strict`, which rejects unknown fields,
+  keys, union members and field wire kinds instead of skipping them.
+- `cli_output.default_formatter(inherited_flags=, global_flags=)`: `"full"`, `"summary"`
+  (a pointer to the declaring command's help) or `"none"`.
+- Bash completion of file and directory values keeps a path with spaces as one argument
+  and an expandable or quoted directory as typed.
+- `ndjson` `ignore_empty_lines=True` also skips lines of only spaces and tabs.
+- `S.is_ascii()` (with `representation.is_ascii_reviver`), `S.DurationFromIsoString`
+  (`"PT1H30M"` to a `timedelta`; years and months rejected) and
+  `transformation.duration_from_iso_string`.
+- `getter.split_key_value` / `transformation.split_key_value` take `trim=` and
+  `keep_empty_values=`.
+- `json_schema.to_document_draft_07_with_definitions_path` and
+  `json_schema.to_multi_document_components`; an empty `enum` becomes
+  `{"allOf": [{"not": {}}]}` in Draft-07, which requires a non-empty one.
+- A tagged schema class's `make` fills in `_tag` when given plain fields, and uses a
+  constructor installed for the class (`S.make_class_sync`, Effect's `makeClassSync`).
+- `Model.UuidV7Insert` ids sort in the order they are made, also within a millisecond or
+  under a `TestClock`.
+- Importing JSON Schema intersects an `anyOf` sibling's `enum` with a branch's (Effect
+  issue 10047), where it raised `RepresentationError`.
+
+- `ignore(log="Unhandled")` / `ignore_cause(log="Unhandled")` log at the
+  `UnhandledLogLevel`, and not at all when that is `None`.
+- `Fiber.interrupt_as(by, annotations)` adds annotations to the interruption.
+- `config.dict_of(..., trim=True, keep_empty_values=True)`.
+- `duration.to_micros`, `duration.format_iso` and `duration.from_iso` (ISO 8601 durations).
+- `byte_size`'s decimal units scale the shortest decimal form exactly, so
+  `megabytes(2.01)` is 2,010,000 bytes (it failed on the float product).
+
 ## 0.3.0 (2026-11-09)
 
 ### Breaking

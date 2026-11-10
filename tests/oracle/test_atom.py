@@ -385,7 +385,7 @@ def test_runtime_replacement_preserves_global_layers(timers: FakeTimers) -> None
 
 
 def test_runtime_replacement(timers: FakeTimers) -> None:
-    """runtime replacement"""
+    """runtime replacement via a layer initial value"""
     count = counter_runtime.atom(_counter_get())
     r = timers.registry(initial_values=[atom.initial_value(counter_runtime.layer, CounterTest)])
     result = r.get(count)
@@ -398,7 +398,7 @@ def _identity(x: int, _get: atom.FnContext) -> int:
 
 
 def test_runtime_replacement_fn_sync(timers: FakeTimers) -> None:
-    """runtime replacement (the second test of that title: fnSync)"""
+    """fnSync replacement via an initial value"""
     count = atom.fn_sync(_identity, initial_value=0)
     r = timers.registry(initial_values=[atom.initial_value(count, 10)])
     assert r.get(count) == 10
@@ -818,6 +818,45 @@ def test_listener_on_stale_node_hears_changes_through_parent_rebuilding_to_same_
     r.subscribe(derived, seen.append)
     r.set(a, 0)
     assert seen == [5]
+
+
+def test_a_listener_added_to_an_uninitialized_derived_atom_hears_its_changes(
+    timers: FakeTimers,
+) -> None:
+    """a listener added to an uninitialized derived atom hears its changes"""
+    count = atom.make(0)
+    doubled = count.map(lambda n: n * 2)
+    r = timers.registry()
+    seen: list[int] = []
+    r.subscribe(doubled, seen.append)
+    r.set(count, 1)
+    r.set(count, 2)
+    assert seen == [2, 4]
+
+
+def test_subscribing_reports_a_dependencys_finalizer_error_from_a_failed_build(
+    timers: FakeTimers,
+) -> None:
+    """subscribing reports a dependency's finalizer error from a failed build"""
+    failing = [True]
+
+    def cleanup() -> None:
+        raise RuntimeError("cleanup failed")
+
+    def build(get: atom.AtomContext) -> int:
+        if not failing[0]:
+            return 0
+        get.add_finalizer(cleanup)
+        raise RuntimeError("build failed")
+
+    parent = atom.make(build)
+    derived = parent.map(lambda n: n)
+    r = timers.registry()
+    with pytest.raises(RuntimeError, match="build failed"):
+        r.get(derived)
+    failing[0] = False
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        r.subscribe(derived, lambda _: None)
 
 
 def test_recovers_an_observed_dependent_when_its_parent_first_succeeds_after_throwing(

@@ -1304,6 +1304,22 @@ def test_supports_custom_separators():
     )
 
 
+def test_trims_and_keeps_empty_values_when_requested():
+    """Record: trims and keeps empty values when requested"""
+    assert_success(
+        config.dict_of(
+            config.string(), "OTEL_RESOURCE_ATTRIBUTES", trim=True, keep_empty_values=True
+        ),
+        env({"OTEL_RESOURCE_ATTRIBUTES": " b = x ,empty=, =ignored"}),
+        {"b": "x", "empty": ""},
+    )
+    assert_success(
+        config.dict_of(config.string(), "OTEL_RESOURCE_ATTRIBUTES"),
+        env({"OTEL_RESOURCE_ATTRIBUTES": " b = x ,empty=, =ignored"}),
+        {" b ": " x ", " ": "ignored"},
+    )
+
+
 # --- schema: materialization (Config.Record / Config.Array) -------------------------------------
 
 

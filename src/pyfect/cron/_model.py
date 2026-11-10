@@ -6,7 +6,11 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import tzinfo
-from typing import final
+from typing import Literal, final
+
+type DstOverlapPolicy = Literal["earlier", "later", "both"]
+"""Which occurrence of a wall time a DST fold repeats a cron runs at: the
+first (``"earlier"``, the default), the second (``"later"``) or both."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +58,9 @@ class Cron:
 
     Days and weekdays both restricted match either one, as in classic cron,
     unless ``and_`` is set. Without a zone, a cron runs in the zone of the
-    datetime it is given. Build one with ``cron.parse`` or ``cron.make``."""
+    datetime it is given. A wall time a DST fold repeats runs at the
+    occurrence ``on_dst_overlap`` picks. Build one with ``cron.parse`` or
+    ``cron.make``."""
 
     tz: tzinfo | None
     seconds: frozenset[int]
@@ -64,6 +70,7 @@ class Cron:
     months: frozenset[int]
     weekdays: frozenset[int]
     and_: bool
+    on_dst_overlap: DstOverlapPolicy
     _plan: _Plan = field(compare=False, repr=False)
 
     def __init__(
@@ -77,6 +84,7 @@ class Cron:
         seconds: Iterable[int] = (0,),
         and_: bool = False,
         tz: tzinfo | None = None,
+        on_dst_overlap: DstOverlapPolicy = "earlier",
     ) -> None:
         """Raises ``ValueError`` for a value outside its field's range.
         Weekday 7 is Sunday, as 0."""
@@ -92,6 +100,7 @@ class Cron:
             object.__setattr__(self, name, frozenset(values))
         object.__setattr__(self, "and_", and_)
         object.__setattr__(self, "tz", tz)
+        object.__setattr__(self, "on_dst_overlap", on_dst_overlap)
         object.__setattr__(self, "_plan", _plan(**fields))
 
 
@@ -105,6 +114,7 @@ def make(
     seconds: Iterable[int] = (0,),
     and_: bool = False,
     tz: tzinfo | None = None,
+    on_dst_overlap: DstOverlapPolicy = "earlier",
 ) -> Cron:
     """A ``Cron`` from explicit field values (see ``Cron``)."""
     return Cron(
@@ -116,6 +126,7 @@ def make(
         seconds=seconds,
         and_=and_,
         tz=tz,
+        on_dst_overlap=on_dst_overlap,
     )
 
 

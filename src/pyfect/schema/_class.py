@@ -37,6 +37,7 @@ from dataclasses import MISSING, FrozenInstanceError
 from typing import (
     Any,
     ClassVar,
+    LiteralString,
     NamedTuple,
     Never,
     Self,
@@ -53,8 +54,10 @@ from pyfect.exit import Success
 from pyfect.option import Option
 from pyfect.schema import ast
 from pyfect.schema._adapters import CONSTRUCTOR, raise_schema_failure
+from pyfect.schema._constructor_default import tag as tag_schema
 from pyfect.schema._derive import AnyBottom, schema_of
 from pyfect.schema._error import SchemaError
+from pyfect.schema._make import make_class_sync
 from pyfect.schema._options import ParseOptions
 from pyfect.schema._schema import Bottom, Codec
 from pyfect.schema._undefined import is_undefined
@@ -220,7 +223,8 @@ class _Shape:
                 for name, schema in schemas.items()
             )
             if self.tag is not None:
-                tag = ast.PropertySignature("_tag", ast.Literal(self.tag))
+                # Effect's ``tag``: ``make`` from plain fields fills it in.
+                tag = ast.PropertySignature("_tag", tag_schema(cast("LiteralString", self.tag)).ast)
                 keyed, named = (tag, *keyed), (tag, *named)
             # As Effect's ``extend``: a subclass's fields carry its identifier.
             extends = any(_SHAPE in base.__dict__ for base in self.cls.__mro__[1:])
@@ -467,8 +471,15 @@ class _SchemaClass:
     @classmethod
     def make(cls, input: Self, /, **options: Unpack[ParseOptions]) -> Self:
         """``input`` checked against the class's schema (its checks
-        included); raises ``SchemaError``. Construct with ``cls(...)``."""
-        return cls.__codec__().make(input, **options)
+        included); raises ``SchemaError``. Construct with ``cls(...)``; an
+        instance is kept as it is."""
+        shape = _shape_of(cls)
+        return make_class_sync(
+            cls.ast.to_type(),
+            input,
+            options,
+            lambda fields: cast("Self", shape.construct(dict(fields))),
+        )
 
     @classmethod
     def make_option(cls, input: Self, /, **options: Unpack[ParseOptions]) -> Option[Self]:

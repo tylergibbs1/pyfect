@@ -1,6 +1,7 @@
-"""``DurationFromString``, ``DurationFromNanos`` and ``DurationFromMillis``
+"""``DurationFromString``, ``DurationFromNanos``, ``DurationFromMillis`` and
+``DurationFromIsoString``
 (Effect's), decoding into pyfect's ``Duration`` schema, a ``timedelta``,
-through ``T.duration_from_string`` / ``_nanos`` / ``_millis`` (their
+through ``T.duration_from_string`` / ``_nanos`` / ``_millis`` / ``_iso_string`` (their
 limits are in ``schema/transformation/_durations.py``).
 """
 
@@ -25,3 +26,8 @@ DurationFromMillis: DecodeToSchema[timedelta, float] = Number.pipe(
     decode_to(Duration, T.duration_from_millis)
 )
 """A ``timedelta`` read from a count of milliseconds."""
+DurationFromIsoString: DecodeToSchema[timedelta, str] = String.annotate(
+    expected="an ISO 8601 duration string that will be decoded as a Duration"
+).pipe(decode_to(Duration, T.duration_from_iso_string))
+"""A ``timedelta`` read from an ISO 8601 duration (``"PT1H30M"``); years and months are
+rejected."""

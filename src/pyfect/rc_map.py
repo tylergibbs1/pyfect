@@ -48,6 +48,7 @@ from pyfect.duration import (
 from pyfect.effect import fail, from_exit, interrupt
 from pyfect.errors import ExceededCapacityError
 from pyfect.exit import Exit, Failure, Success, as_void_all
+from pyfect.logger._log import log_unhandled
 from pyfect.option import Option, Some
 from pyfect.scope import CloseableScope, Scope
 
@@ -288,7 +289,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
         if entry.ref_count > 0:  # the borrowers close it as they let go
             return
         closer: Fiber[None, Never] = new_root(lookup._run_scheduler, lookup._context)
-        start_root(closer, _close_entry(entry))
+        start_root(closer, _report_unhandled(_close_entry(entry)))
         closer.run_in(self._scope)
 
     def _release(self, key: K, entry: _Entry[A, E]) -> Effect[None]:
@@ -321,7 +322,7 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
                 if current is None or entry.ref_count > 0 or current.get(key) is not entry:
                     return _VOID
                 del current[key]
-                return entry.scope.close(_DONE)
+                return _report_unhandled(entry.scope.close(_DONE))
 
             return _Suspend(check)
 
@@ -346,6 +347,14 @@ class RcMap[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never]:
 
         closing = for_each(list(entries.values()), lambda entry: _close_entry(entry).exit())
         return closing.flat_map(finish)
+
+
+def _report_unhandled(closing: Effect[None]) -> Effect[None]:
+    """A release nobody waits for: its failure is logged at the
+    ``UnhandledLogLevel``, as Effect 4.1.2 does."""
+    return closing.catch_cause(
+        lambda cause: log_unhandled("Unhandled error in RcMap finalizer", cause)
+    )
 
 
 def _close_entry(entry: _Entry[Any, Any]) -> Effect[None]:

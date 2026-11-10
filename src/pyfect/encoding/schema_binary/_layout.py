@@ -23,6 +23,10 @@ type LeafKind = Literal[
     "string",
     "bytes",
     "bigint",
+    "i32",
+    "u32",
+    "i64",
+    "u64",
     "json",
     "duration",
     "bigDecimal",
@@ -40,6 +44,10 @@ LEAF_KINDS = frozenset(
         "string",
         "bytes",
         "bigint",
+        "i32",
+        "u32",
+        "i64",
+        "u64",
         "json",
         "duration",
         "bigDecimal",
@@ -262,9 +270,15 @@ def is_self_delimiting(layout: Layout) -> bool:
 def packed_size(layout: Layout) -> int | None:
     if isinstance(layout, LiteralLayout):
         return packed_size(layout.leaf)
-    if layout.kind == "bool":
-        return 1
-    return 8 if layout.kind == "dateTimeUtc" else None
+    match layout.kind:
+        case "bool":
+            return 1
+        case "i32" | "u32":
+            return 4
+        case "dateTimeUtc" | "i64" | "u64":
+            return 8
+        case _:
+            return None
 
 
 def is_zero_width_slot(layout: Layout) -> bool:
@@ -293,6 +307,8 @@ def field_wire_mask(layout: Layout) -> int:
             )
         case "int":
             return 1 << W.FIELD_WIRE_VARINT
+        case "i32" | "u32":
+            return 1 << W.FIELD_WIRE_FIXED32
         case _:
             return 1 << W.FIELD_WIRE_SIZED
 

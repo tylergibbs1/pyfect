@@ -117,6 +117,13 @@ def root_mask(node: N.Node) -> int:  # noqa: PLR0911
             return _ARRAYS
 
 
+def _is_literal_set(union: N.Union) -> bool:
+    """An ``anyOf`` of literals only (Effect's ``isLiteralSet``)."""
+    return (union.mode or "any_of") == "any_of" and all(
+        _literal_key(t) is not None for t in union.types
+    )
+
+
 def _literal_key(node: N.Node) -> tuple[str, object] | None:
     """A map key standing for a literal's value (``None`` for any other node),
     keeping ``True`` and ``1`` apart."""
@@ -365,7 +372,10 @@ class Intersector:
             case N.Reference():
                 return self.definitions.has_choices_in(node)
             case N.Union(types=types):
-                return len(types) > 1 or any(self.has_choices(t) for t in types)
+                # Finite literal sets intersect without expansion, so they may be duplicated.
+                return not _is_literal_set(node) and (
+                    len(types) > 1 or any(self.has_choices(t) for t in types)
+                )
             case N.Arrays(elements=elements, rest=rest):
                 return any(self.has_choices(e.type) for e in elements) or (
                     rest is not None and self.has_choices(rest)
@@ -394,13 +404,11 @@ class Intersector:
                 return False
 
     def _literal_unions(self, left: N.Union, right: N.Union, path: Path) -> N.Node | None:
-        if (left.mode or "any_of") != "any_of" or (right.mode or "any_of") != "any_of":
+        if not _is_literal_set(left) or not _is_literal_set(right):
             return None
-        by_value: dict[tuple[str, object], N.Node] = {}
+        by_value: dict[tuple[str, object] | None, N.Node] = {}
         for node in right.types:
             key = _literal_key(node)
-            if key is None:
-                return None
             previous = by_value.get(key)
             by_value[key] = replace(
                 node,
@@ -411,10 +419,7 @@ class Intersector:
             )
         types: list[N.Node] = []
         for node in left.types:
-            key = _literal_key(node)
-            if key is None:
-                return None
-            match = by_value.get(key)
+            match = by_value.get(_literal_key(node))
             if match is not None:
                 types.append(self.intersect(node, N.annotate(match, right), path))
         return _make_union(left, tuple(types))

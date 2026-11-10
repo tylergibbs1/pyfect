@@ -17,13 +17,21 @@ from collections.abc import Callable, Generator
 from typing import Any, Never, TextIO
 
 from pyfect._core import Effect
-from pyfect.effect import blocking, gen, sync, try_blocking
+from pyfect._os_wait import os_wait
+from pyfect.effect import blocking, gen, sync, try_blocking, void
 from pyfect.errors import Done
 from pyfect.platform_error import PlatformError, bad_argument
 from pyfect.queue import Dequeue, Queue
 from pyfect.scope import Scope, acquire_release
 from pyfect.terminal._keys import ESCAPE_CODE_TIMEOUT, KeyDecoder
-from pyfect.terminal._service import QuitError, TerminalService, UserInput, default_should_quit
+from pyfect.terminal._resize import resizes
+from pyfect.terminal._service import (
+    QuitError,
+    Size,
+    TerminalService,
+    UserInput,
+    default_should_quit,
+)
 
 _WAIT = 0.05
 """Seconds one read waits for input before giving the fiber back."""
@@ -135,11 +143,78 @@ class _RawMode:
             return
 
 
+class _Wake:
+    """Wakes one waiting fiber from any thread; a wake with nobody waiting
+    is kept for the next wait."""
+
+    __slots__ = ("_lock", "_pending", "_resume")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._resume: Callable[[Effect[None]], None] | None = None
+        self._pending = False
+
+    def notify(self) -> None:
+        with self._lock:
+            resume, self._resume = self._resume, None
+            if resume is None:
+                self._pending = True
+        if resume is not None:
+            resume(void)
+
+    def wait(self) -> Effect[None]:
+        def register(resume: Callable[[Effect[None]], None]) -> Callable[[], None] | None:
+            with self._lock:
+                if not self._pending:
+                    self._resume = resume
+                    return self._cancel
+                self._pending = False
+            resume(void)
+            return None
+
+        return os_wait(register, waits_for="event")
+
+    def _cancel(self) -> None:
+        with self._lock:
+            self._resume = None
+
+
 def _size(output: TextIO) -> os.terminal_size | None:
     try:
         return os.get_terminal_size(output.fileno())
     except (OSError, ValueError, AttributeError):
         return None
+
+
+def _sizes(current: Callable[[], Size]) -> Effect[Dequeue[Size, Done], Never, Scope]:
+    """A queue of the current size, then the latest after each resize
+    until the scope closes (Node's ``resize`` listener)."""
+
+    def size() -> Generator[Effect[Any, Never, Scope], Any, Dequeue[Size, Done]]:
+        queue = yield from Queue[Size, Done].sliding(1)
+        wake = _Wake()
+
+        def pump() -> Generator[Effect[Any], Any]:
+            while True:
+                yield from wake.wait()
+                queue.offer_unsafe(current())
+
+        def subscribe() -> Callable[[], None]:
+            queue.offer_unsafe(current())
+            return resizes.subscribe(wake.notify, current)
+
+        def unsubscribe(stop: Callable[[], None], _exit: object) -> Effect[None]:
+            def run() -> None:
+                stop()
+                queue.end_unsafe()
+
+            return sync(run)
+
+        yield from acquire_release(sync(subscribe), unsubscribe)
+        yield from gen(pump).fork_scoped()
+        return queue
+
+    return gen(size)
 
 
 def live(
@@ -230,9 +305,14 @@ def live(
         size = _size(out())
         return 0 if size is None else size.lines
 
+    def current() -> Size:
+        size = _size(out())
+        return Size(0, 0) if size is None else Size(size.columns, size.lines)
+
     return TerminalService(
         columns=sync(columns),
         rows=sync(rows),
+        size=_sizes(current),
         read_input=gen(read_input),
         read_line=gen(read_line),
         display=display,

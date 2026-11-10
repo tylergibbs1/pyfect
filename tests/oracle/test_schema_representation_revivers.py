@@ -258,6 +258,18 @@ def test_revives_is_ulid():
     )
 
 
+def test_revives_is_ascii():
+    """revives isAscii"""
+    assert_filter_reviver(
+        S.String.check(S.is_ascii()),
+        "effect/schema/isAscii",
+        None,
+        R.is_ascii_reviver,
+        valid="ascii only",
+        invalid="caf\u00e9",
+    )
+
+
 def test_revives_is_base64():
     """revives isBase64"""
     assert_filter_reviver(

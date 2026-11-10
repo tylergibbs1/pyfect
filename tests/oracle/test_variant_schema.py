@@ -12,8 +12,9 @@ the keyword constructor and ``User.make`` takes an instance. ``undefined``
 in a field map is ``None``. ``Model.Override`` is ``Model.override``.
 """
 
+import itertools
 from datetime import datetime
-from typing import TypedDict
+from typing import Any, TypedDict
 
 import pytest
 
@@ -160,6 +161,17 @@ def test_boolean_sqlite_encodes_database_bits_and_json_booleans_across_variants(
     assert S.decode_sync(select)({"active": 0}) == {"active": False}
     assert S.encode_sync(json)({"active": True}) == {"active": True}
     assert S.decode_sync(json)({"active": False}) == {"active": False}
+
+
+@testing.effect
+def test_uuid_v7_insert_generates_strictly_increasing_ids():
+    """Model / UuidV7Insert generates strictly increasing ids"""
+    insert = Model.extract(Model.Struct({"id": Model.UuidV7Insert(S.String)}), "insert")
+    ids: list[str] = []
+    for _ in range(2000):
+        made: Any = yield from insert.make_effect({})
+        ids.append(made["id"])
+    assert all(previous < id for previous, id in itertools.pairwise(ids))
 
 
 @testing.effect

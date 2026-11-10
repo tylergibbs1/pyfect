@@ -22,6 +22,7 @@ class Reader:
     options: ParseOptions
     positional: bool
     dict_: D.DictRead | None = None
+    reject_unknown_fields: bool = False
     intern: list[object] | None = None
     """Handed to a row-run field's immediate consumer, then cleared."""
     nesting: int = 0
@@ -140,6 +141,9 @@ class Reader:
 
     def i64(self) -> int:
         return W.I64.unpack(self.take(8))[0]
+
+    def u64(self) -> int:
+        return W.U64.unpack(self.take(8))[0]
 
     def u32le(self) -> int:
         return W.U32.unpack(self.take(4))[0]

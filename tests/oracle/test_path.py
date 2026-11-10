@@ -19,6 +19,16 @@ win32_layer = testing.layer_fixture(path.layer_win32)
 
 
 @testing.effect
+def test_format_adds_a_missing_dot_to_extensions(posix_layer: Services[Path]):
+    """format adds a missing dot to extensions"""
+    p = yield from Path()
+
+    assert p.format(name="report", ext="csv") == "report.csv"
+    assert p.format(name="report", ext=".csv") == "report.csv"
+    assert p.format(name="report", ext="") == "report"
+
+
+@testing.effect
 def test_resolve_within_keeps_posix_paths_lexically_inside_the_root(
     posix_layer: Services[Path],
 ):

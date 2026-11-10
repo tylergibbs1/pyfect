@@ -12,11 +12,13 @@ place the pause at every step; ``test_custom_dispatchers.py`` runs Effect's own
 form.
 """
 
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Never
 
 import pyfect as fx
 from pyfect import testing
 from pyfect.duration import Seconds
+from pyfect.scheduler import CurrentScheduler, MixedScheduler
 
 from ._task_queue import TaskQueue
 
@@ -281,20 +283,16 @@ def test_sequential_tasks_in_same_partition():
 @testing.effect
 def test_take_interruption_does_not_leak_permits():
     """take interruption does not leak permits"""
+    # Effect's form, pausing the woken waiter from ``shouldYield``, is in
+    # ``test_custom_dispatchers.py``. Here the waiter is interrupted after the
+    # release counted the permit for it but before the wake task runs.
     queue = TaskQueue()
     sem = yield from fx.Semaphore.make(0)
-    # A budget of one step pauses the woken waiter before it retries the take.
-    waiter = yield from queue.provide(_with_budget(sem.take(1), 1)).fork()
+    waiter = yield from queue.provide(sem.take(1)).fork()
     yield from fx.yield_now()
     yield from queue.run_all()
 
-    # As in Effect, the release wakes the waiter in a task on the
-    # releasing fiber's scheduler.
     yield from queue.provide(sem.release(1))
-    assert waiter.poll_unsafe() is None
-
-    queue.run_next()
-    yield from fx.yield_now()
     assert waiter.poll_unsafe() is None
 
     waiter.interrupt_as_unsafe(None)
@@ -443,3 +441,62 @@ def test_take_scoped_takes_no_permits_when_interrupted_while_waiting():
     yield from waiter.interrupt()
     yield from sem.release(1)
     assert (yield from sem.take_if_available(1))
+
+
+# --- Effect 4.1.2 -------------------------------------------------------------------------
+
+
+@testing.effect
+def test_take_admits_requests_in_fifo_order_when_a_holder_immediately_reacquires():
+    """take admits requests in FIFO order when a holder immediately reacquires"""
+    sem = yield from fx.Semaphore.make(1)
+    asked = 0
+    admitted: list[int] = []
+
+    def body() -> Any:
+        nonlocal asked
+        ticket = asked
+        asked += 1
+        yield from fx.acquire_release(sem.take(1), lambda _a, _e: sem.release(1))
+        admitted.append(ticket)
+        yield from fx.sleep("10 millis")
+
+    use = fx.scoped(fx.gen(body))
+    chained = yield from use.repeat(times=2).fork()
+    others = yield from fx.for_each((1, 2, 3), lambda at: use.delay(f"{at} millis").fork())
+    yield from testing.adjust("100 millis")
+    yield from chained.join()
+    yield from fx.Fiber.join_all(others)
+    assert admitted == [0, 1, 2, 3, 4, 5]
+
+
+@testing.effect
+def test_admits_queued_requests_covered_by_a_release_in_one_dispatcher_turn():
+    """admits queued requests covered by a release in one dispatcher turn"""
+    turns: list[Callable[[], None]] = []
+
+    def _no_cancel() -> None:
+        pass
+
+    def hold(run: Callable[[], None]) -> Callable[[], None]:
+        turns.append(run)
+        return _no_cancel
+
+    on_scheduler = fx.provide_service(CurrentScheduler, MixedScheduler("async", hold))
+    sem = yield from fx.Semaphore.make(2)
+    yield from sem.take(2)
+    admitted: list[int] = []
+
+    def waiter(ticket: int) -> fx.Effect[fx.Fiber[None, Never]]:
+        taken = sem.take(1).and_then(fx.sync(lambda: admitted.append(ticket)))
+        return taken.pipe(on_scheduler).fork(start_immediately=True)
+
+    waiters = yield from fx.for_each((0, 1), waiter)
+    yield from sem.release(2).pipe(on_scheduler)
+
+    def run_turn() -> None:
+        turns.pop(0)()
+
+    yield from fx.sync(run_turn)
+    assert admitted == [0, 1]
+    yield from fx.Fiber.join_all(waiters)

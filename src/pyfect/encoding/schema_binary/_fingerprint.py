@@ -3,7 +3,7 @@ back-edge distances (Effect's ``layoutFingerprint``)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 
 from pyfect._js import text_encode
@@ -25,6 +25,10 @@ _LEAF_CODES = {
     "bigDecimal": 12,
     "dateTimeZoned": 13,
     "dateTimeUtc": 15,
+    "i32": 26,
+    "u32": 27,
+    "i64": 28,
+    "u64": 29,
 }
 _BACK_EDGE = 0
 _NEVER = 16
@@ -149,9 +153,13 @@ class Mode:
     envelope: int
     expected_envelope: str
     fingerprint: bytes
+    reject_unknown_fields: bool = False
+    """``to_codec_strict``: a field, key, union member or wire kind the schema
+    does not know fails instead of being skipped."""
 
 
 DEFAULT_MODE = Mode(False, W.ENVELOPE, "version 2 envelope, flags 0", bytes(8))
+STRICT_MODE = replace(DEFAULT_MODE, reject_unknown_fields=True)
 
 
 @lru_cache(maxsize=4096)

@@ -197,10 +197,15 @@ class Entry:
         return found
 
     @property
+    def compiled_make_effect(self) -> Parser | None:
+        """The installed ``make_effect``, if any (Effect's ``compiledMakeEffect``)."""
+        return self._memo("compiled_make_effect", lambda: self._operation("make_effect"))
+
+    @property
     def make_effect(self) -> Parser:
         found = self.constructor
         if found is None:
-            found = self.constructor = self._operation("make_effect") or interpreter(
+            found = self.constructor = self.compiled_make_effect or interpreter(
                 self.ast, self.resolve
             )
         return found

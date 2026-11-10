@@ -14,6 +14,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.cause import Die
 from pyfect.duration import Seconds
 
 
@@ -444,3 +445,48 @@ def test_closing_the_ref_interrupts_a_pending_acquisition_and_closes_its_scope()
 
     assert counter.released == 1
     assert _interrupted((yield from getter.await_exit()))
+
+
+# --- Effect 4.1.2: background release defects at UnhandledLogLevel ---------------
+
+
+def _logged_defects(logged: list[fx.logger.Options]) -> list[tuple[fx.LogLevel, list[str]]]:
+    return [
+        (event.log_level, [str(r.defect) for r in event.cause.reasons if isinstance(r, Die)])
+        for event in logged
+    ]
+
+
+def _capturing_warn[A, E](
+    logged: list[fx.logger.Options], eff: fx.Effect[A, E, Any]
+) -> fx.Effect[A, E, Any]:
+    capture = fx.Logger.make(logged.append)
+    return eff.pipe(fx.provide(fx.logger.layer([capture]))).pipe(
+        fx.provide_service(fx.UnhandledLogLevel, fx.LogLevel.WARN)
+    )
+
+
+def _dying_release(released: list[str], key: str) -> fx.Effect[str, Never, fx.Scope]:
+    return fx.acquire_release(
+        fx.succeed(key),
+        lambda _a, _e: fx.sync(lambda: released.append(key)).and_then(
+            fx.die(Exception(f"release {key}"))
+        ),
+    )
+
+
+@testing.effect
+def test_reports_idle_expiry_defects_at_unhandled_log_level():
+    """reports idle expiry defects at UnhandledLogLevel"""
+    logged: list[fx.logger.Options] = []
+
+    @fx.gen
+    def body():
+        released: list[str] = []
+        ref = yield from fx.RcRef.make(_dying_release(released, "a"), idle_time_to_live="1 second")
+        yield from fx.scoped(ref.get())
+        yield from testing.adjust("1 second")
+        assert released == ["a"]
+        assert _logged_defects(logged) == [(fx.LogLevel.WARN, ["release a"])]
+
+    yield from _capturing_warn(logged, body)

@@ -28,6 +28,16 @@ type FileType = Literal[
 
 
 @dataclass(frozen=True, slots=True)
+class DirectoryEntry:
+    """A name in a directory listing and the type of the entry itself, not
+    of a symbolic link's target. ``"Unknown"`` when the listing could not
+    tell."""
+
+    name: str
+    type: FileType
+
+
+@dataclass(frozen=True, slots=True)
 class FileInfo:
     """What ``stat`` reports about a file. Times are aware UTC datetimes;
     a field the platform does not report is ``None``."""

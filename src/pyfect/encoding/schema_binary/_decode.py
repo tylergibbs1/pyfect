@@ -98,8 +98,13 @@ def _decode_scalar_field(kind: int, r: Reader) -> object:
 
 def _decode_field_payload(layout: L.Layout, wire_mask: int, kind: int, r: Reader) -> object:
     if not wire_mask & (1 << kind):
+        if r.reject_unknown_fields:
+            raise r.fail("matching field wire kind", kind)
         _skip_field_payload(kind, r)
         return ABSENT
+    # Only the two 32-bit layouts accept this kind, so the payload needs no window.
+    if kind == W.FIELD_WIRE_FIXED32:
+        return r.u32le() if layout.kind == "u32" else r.i32le()
     if kind != W.FIELD_WIRE_SIZED:
         value = _decode_scalar_field(kind, r)
         if isinstance(layout, L.LiteralLayout) and not layout.has(value):
@@ -140,6 +145,8 @@ def _decode_extra_pair(
     seen.add(key)
     signature = layout.find_extra(key, r.options)
     if signature is None:
+        if r.reject_unknown_fields:
+            raise r.fail("a key matching an index signature", key)
         _skip_field_payload(kind, r)
         return
     r.path.append(key)
@@ -207,6 +214,8 @@ def _decode_struct(layout: L.StructLayout, r: Reader) -> object:
             continue
         f = by_id.get(id)
         if f is None:
+            if r.reject_unknown_fields:
+                raise r.fail("a known field id", id)
             if id in seen_unknown:
                 raise r.fail("unique field ids")
             seen_unknown.add(id)
@@ -378,6 +387,8 @@ def _decode_run_row(
                 raise r.fail("unique field ids")
             seen.add(id)
             slot = _EXTRA if id == 0 else struct.by_id.get(id)
+            if slot is None and r.reject_unknown_fields:
+                raise r.fail("a known field id", id)
             declared.append(slot)
             present |= _decode_run_slot(plan, tables, slot, out, r)
         if plan.shapes:
@@ -536,13 +547,18 @@ def _with_sentinels(variant: L.VariantRow, payload: object) -> object:
 def _decode_union(layout: L.UnionLayout, r: Reader) -> object:
     kind = r.byte()
     if kind == W.KIND_VARIANT:
-        variant = layout.by_tag.get(r.u32le())
+        tag = r.u32le()
+        variant = layout.by_tag.get(tag)
         if variant is None:
+            if r.reject_unknown_fields:
+                raise r.fail("known union member", tag)
             r.take(r.remaining)
             return ABSENT
         return _with_sentinels(variant, _decode_checked(variant.payload, r))
     member = layout.by_kind.get(kind)
     if member is None:
+        if r.reject_unknown_fields:
+            raise r.fail("known union member", kind)
         r.take(r.remaining)
         return ABSENT
     return _decode_checked(member, r)
@@ -632,6 +648,17 @@ def _number(_: L.LeafLayout, r: Reader) -> object:
 
 def _int(_: L.LeafLayout, r: Reader) -> object:
     return r.number_varint()
+
+
+def _fixed(
+    size: int, expected: str, read: Callable[[Reader], int]
+) -> Callable[[Any, Reader], object]:
+    def decode(_: L.LeafLayout, r: Reader) -> object:
+        if r.remaining != size:
+            raise r.fail(expected)
+        return read(r)
+
+    return decode
 
 
 def _string(layout: L.LeafLayout, r: Reader) -> object:
@@ -790,6 +817,10 @@ _DECODERS: dict[str, Callable[[Any, Reader], object]] = {
     "string": _string,
     "bytes": _bytes,
     "bigint": _bigint,
+    "i32": _fixed(4, "a 32-bit integer", Reader.i32le),
+    "u32": _fixed(4, "a 32-bit unsigned integer", Reader.u32le),
+    "i64": _fixed(8, "a 64-bit integer", Reader.i64),
+    "u64": _fixed(8, "a 64-bit unsigned integer", Reader.u64),
     "dateTimeUtc": _date_time_utc,
     "dateTimeZoned": _date_time_zoned,
     "duration": _duration,
@@ -836,7 +867,14 @@ def decode_frame_body(layout: L.Layout, r: Reader, mode: Mode) -> object:
 
 
 def decode_one_shot(layout: L.Layout, data: bytes, options: ParseOptions, mode: Mode) -> object:
-    r = Reader(data, 0, len(data), options, mode.positional)
+    r = Reader(
+        data,
+        0,
+        len(data),
+        options,
+        mode.positional,
+        reject_unknown_fields=mode.reject_unknown_fields,
+    )
     n = r.uvarint()
     if n == 0:
         raise r.fail("nonzero frame length")

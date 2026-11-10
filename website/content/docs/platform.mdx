@@ -16,7 +16,10 @@ says what went wrong (`NotFound`, `PermissionDenied`, `AlreadyExists`, ...).
 `fs.read_file_string` and `fs.write_file_string` read and write a whole file; `fs.stream`
 reads one as a stream of byte chunks, so memory stays bounded however large it is, and
 `fs.sink` writes one from a stream. `make_temp_directory_scoped` gives a directory that is
-removed, with everything in it, when its scope closes.
+removed, with everything in it, when its scope closes. `fs.glob` finds the paths under a
+root that match a pattern (`**` crosses directories, `{a,b}` and `[a-z]` choose, `dot=True`
+includes names starting with `.`); `pyfect.glob` matches the same patterns against a path
+string.
 
 <CodeOutput>
 
@@ -122,5 +125,6 @@ is virtual, so a test of a five-second timeout finishes at once.
 <include meta='title="test_todos.py"'>../../snippets/platform/test_todos.py</include>
 
 Reference: [`pyfect.file_system`](/docs/reference/file_system),
+[`pyfect.glob`](/docs/reference/glob),
 [`pyfect.process`](/docs/reference/process), [`pyfect.http`](/docs/reference/http),
 [`pyfect.platform`](/docs/reference/platform).

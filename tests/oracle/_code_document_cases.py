@@ -140,6 +140,7 @@ CASES: dict[str, tuple[Any, list[object], list[object]]] = {
     "string_big_int": (S.String.check(S.is_string_big_int()), ["1"], ["a"]),
     "guid": (S.String.check(S.is_guid()), [], ["a"]),
     "ulid": (S.String.check(S.is_ulid()), [], ["a"]),
+    "ascii": (S.String.check(S.is_ascii()), ["a\x7f"], ["\u00e9"]),
     "base64": (S.String.check(S.is_base64()), ["YQ=="], ["!"]),
     "base64_url": (S.String.check(S.is_base64_url()), ["YQ"], ["!"]),
     "uppercased": (S.String.check(S.is_uppercased()), ["A"], ["a"]),

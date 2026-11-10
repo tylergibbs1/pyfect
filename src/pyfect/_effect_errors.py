@@ -252,11 +252,12 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
         return self.tap_error(lambda e: f(e) if isinstance(e, tag) else _core._Succeed(None))
 
     def ignore(
-        self, *, log: bool | Severity = False, message: str | None = None
+        self, *, log: bool | Severity | Literal["Unhandled"] = False, message: str | None = None
     ) -> Effect[None, Never, R_co]:
         """Discard the value and any typed error. With ``log``, log the
         failure's cause first, after ``message`` if given, at the current
-        log level (``True``) or the level given."""
+        log level (``True``), the level given, or the ``UnhandledLogLevel``
+        (``"Unhandled"``, not logged when that is ``None``)."""
         if log is False:
             return _core._MatchCause(as_effect(self), _ignore_failure, _succeed_none)
         write = _cause_logger(log, message)
@@ -268,7 +269,7 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
         return _core._MatchCause(as_effect(self), on_failure, _succeed_none)
 
     def ignore_cause(
-        self, *, log: bool | Severity = False, message: str | None = None
+        self, *, log: bool | Severity | Literal["Unhandled"] = False, message: str | None = None
     ) -> Effect[None, Never, R_co]:
         """Discard the value and the whole cause: typed errors, defects and
         interrupts. ``log`` and ``message`` as for ``ignore``."""
@@ -291,12 +292,19 @@ class ErrorMethods(EffectBase[A_co, E_co, R_co]):
 
 
 def _cause_logger(
-    log: Literal[True] | Severity, message: str | None
+    log: Literal[True, "Unhandled"] | Severity, message: str | None
 ) -> Callable[[Cause[Any]], Effect[None]]:
-    from pyfect.logger import log_with_level
+    from pyfect.logger import UnhandledLogLevel, log_with_level
 
-    level = None if log is True else log
     prefix = () if message is None else (message,)
+    if log == "Unhandled":
+
+        def at_unhandled_level(fiber: Fiber[Any, Any], cause: Cause[Any]) -> Effect[None]:
+            level = fiber.get_ref(UnhandledLogLevel)
+            return _succeed_none(None) if level is None else log_with_level(level, *prefix, cause)
+
+        return lambda cause: _core._WithFiber(lambda fiber: at_unhandled_level(fiber, cause))
+    level = None if log is True else log
     return lambda cause: log_with_level(level, *prefix, cause)
 
 

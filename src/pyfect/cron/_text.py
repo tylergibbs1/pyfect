@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import tzinfo
 
 from pyfect._digits import parse_digits
-from pyfect.cron._model import Cron
+from pyfect.cron._model import Cron, DstOverlapPolicy
 from pyfect.date_time import zone_from_string
 from pyfect.errors import TaggedError
 from pyfect.result import Err, Ok, Result
@@ -51,12 +51,17 @@ _WEEKDAY = _Field(
 )
 
 
-def parse(expression: str, tz: tzinfo | str | None = None) -> Result[Cron, CronParseError]:
+def parse(
+    expression: str,
+    tz: tzinfo | str | None = None,
+    *,
+    on_dst_overlap: DstOverlapPolicy = "earlier",
+) -> Result[Cron, CronParseError]:
     """Parse a cron expression of five fields (minute hour day month
     weekday) or six (with seconds first). Fields take ``*``, values, ranges
     ``a-b``, steps ``/n`` and lists ``a,b``; months and weekdays also take
     three-letter names. ``tz`` is a zone or a zone string
-    (``"Europe/Berlin"``, ``"+02:00"``)."""
+    (``"Europe/Berlin"``, ``"+02:00"``); ``on_dst_overlap`` as for ``Cron``."""
     segments = expression.split()
     if len(segments) not in (5, 6):
         return Err(CronParseError("Invalid number of segments in cron expression", expression))
@@ -84,13 +89,19 @@ def parse(expression: str, tz: tzinfo | str | None = None) -> Result[Cron, CronP
             months=months[0],
             weekdays=weekdays,
             and_=(days_wild or weekdays_wild) and bool(days) and bool(weekdays),
+            on_dst_overlap=on_dst_overlap,
         )
     )
 
 
-def parse_unsafe(expression: str, tz: tzinfo | str | None = None) -> Cron:
+def parse_unsafe(
+    expression: str,
+    tz: tzinfo | str | None = None,
+    *,
+    on_dst_overlap: DstOverlapPolicy = "earlier",
+) -> Cron:
     """``parse``, raising ``CronParseError`` for a bad expression."""
-    return parse(expression, tz).get_or_raise()
+    return parse(expression, tz, on_dst_overlap=on_dst_overlap).get_or_raise()
 
 
 def _number(text: str) -> int | None:

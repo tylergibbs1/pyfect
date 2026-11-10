@@ -10,6 +10,11 @@ parameter directly; a set cannot hold the struct's dict outputs);
 a pyfect class's ``make`` takes instances, not plain objects (see
 ``test_schema_class.py``). ``schema.make`` is a method, so "initializes and
 caches makers on first access" checks that bound makers compare equal.
+
+The "keeps the caller" titles are ported but for the stack: a Python exception has a
+traceback only once raised, so there is no creation stack to name the caller (the made
+error has none, ``__traceback__ is None``). ``Class.make`` takes plain fields here as in
+Effect (``C.make({"value": ...})``); its type asks for an instance.
 """
 
 from __future__ import annotations
@@ -102,6 +107,122 @@ _OPTIONS: list[S.ParseOptions] = [
 
 
 # ------------------------------------------------------------------- tests
+
+
+class _C(S.Class):
+    value: str
+
+
+class _E(S.TaggedError, tag="E"):
+    message: str
+
+
+def _fields(**values: object) -> Any:
+    """Plain fields for ``Class.make``, typed as the instance it asks for."""
+    return values
+
+
+def test_uses_an_installed_constructor_for_class_make_without_reinitializing_it():
+    """uses an installed constructor for Class.make without reinitializing it"""
+    instance = _C(value="installed")
+    reads = 0
+
+    class Installed:
+        decode_effect = staticmethod(ok)
+
+        @property
+        def make_effect(self) -> Any:
+            nonlocal reads
+            reads += 1
+
+            def make(_input: object, _options: object) -> Any:
+                return Success(instance)
+
+            return make
+
+    SC.set(_C.ast.to_type(), Installed())
+    assert _C.make(_fields(value="input")) is instance
+    assert _C.make(_fields(value="another input")) is instance
+    assert reads == 1
+
+
+def test_uses_an_installed_synchronous_constructor_for_class_make_without_resolving_make_effect():
+    """uses an installed synchronous constructor for Class.make without resolving makeEffect"""
+    instance = _C(value="installed")
+
+    class Installed:
+        decode_effect = staticmethod(ok)
+
+        @staticmethod
+        def make(_input: object, _options: object) -> Any:
+            return instance
+
+        @property
+        def make_effect(self) -> Any:
+            raise RuntimeError("unused detailed constructor")
+
+    SC.set(_C.ast.to_type(), Installed())
+    assert _C.make(_fields(value="input")) is instance
+
+
+def test_constructs_and_validates_class_fields_with_selective_compilation():
+    """constructs and validates class fields with selective compilation"""
+    jit_compiler.enable(_C.ast.to_type())
+    assert _C.make(_fields(value="input")) == _C(value="input")
+    with pytest.raises(S.SchemaError):
+        _C.make(_fields(value=1))
+
+
+def _made_at_callsite() -> _E:
+    return _E.make(_fields(message="failure"))
+
+
+def test_keeps_the_caller_and_honors_a_custom_child_constructor_for_an_interpreted_class():
+    """keeps the caller and honors a custom child constructor for an interpreted class"""
+
+    class Custom:
+        decode_effect = staticmethod(ok)
+
+        @staticmethod
+        def make_effect(_input: object, _options: object) -> Any:
+            return Success({"_tag": "E", "message": "custom child constructor"})
+
+    _registry.set(_E.ast.to_type(), None, lambda child: _registry.set(child, Custom()))
+    error = _made_at_callsite()
+    assert error.__traceback__ is None
+    assert error.message == "custom child constructor"
+
+
+@pytest.mark.parametrize("registration", ["decoder", "compiler"])
+@testing.effect
+def test_keeps_the_caller_with_a_registration_that_has_no_constructor_operations(
+    registration: str,
+):
+    """keeps the caller with a ${registration} that has no constructor operations"""
+    reads = 0
+
+    class NoConstructor:
+        decode_effect = staticmethod(ok)
+
+        @property
+        def make_effect(self) -> Any:
+            nonlocal reads
+            reads += 1
+
+    decoder = NoConstructor()
+    ast = _E.ast.to_type()
+    if registration == "decoder":
+        SC.set(ast, decoder)
+    else:
+        _registry.set_compiler(
+            ast, lambda _ast, _resolve, operation: getattr(decoder, operation, None)
+        )
+    assert reads == 0
+    assert _made_at_callsite().__traceback__ is None
+    assert _made_at_callsite().message == "failure"
+    made = yield from _E.make_effect(_fields(message="failure"))
+    assert made.message == "failure"
+    assert reads == 1
 
 
 @testing.effect

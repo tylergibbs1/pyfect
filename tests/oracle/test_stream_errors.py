@@ -213,6 +213,7 @@ class _Captured:
 def _run_ignoring(
     ignore: Callable[[Stream[Never, str]], Stream[Never]],
     current_log_level: fx.logger.Severity = fx.LogLevel.INFO,
+    unhandled_log_level: fx.logger.Severity | None = fx.LogLevel.ERROR,
 ) -> list[_Captured]:
     captured: list[_Captured] = []
     capture = fx.Logger.make(lambda o: captured.append(_Captured(o.log_level, o.cause)))
@@ -222,6 +223,7 @@ def _run_ignoring(
         .pipe(fx.provide(fx.logger.layer([capture])))
         .pipe(fx.provide_service(fx.MinimumLogLevel, fx.LogLevel.TRACE))
         .pipe(fx.provide_service(fx.CurrentLogLevel, current_log_level))
+        .pipe(fx.provide_service(fx.UnhandledLogLevel, unhandled_log_level))
     )
     return captured
 
@@ -254,6 +256,25 @@ def test_ignore_logs_with_the_provided_level_when_log_is_a_log_level() -> None:
     assert len(logs) == 1
     assert logs[0].log_level is fx.LogLevel.ERROR
     assert _fails_with_boom(logs[0].cause)
+
+
+def test_ignore_logs_with_the_unhandled_level_when_log_is_unhandled() -> None:
+    """logs with the unhandled level when log is Unhandled"""
+    logs = _run_ignoring(lambda s: s.ignore(log="Unhandled"), fx.LogLevel.INFO, fx.LogLevel.WARN)
+    assert len(logs) == 1
+    assert logs[0].log_level is fx.LogLevel.WARN
+    assert _fails_with_boom(logs[0].cause)
+
+
+def test_ignore_skips_logging_when_log_is_unhandled_and_the_level_is_none() -> None:
+    assert _run_ignoring(lambda s: s.ignore(log="Unhandled"), fx.LogLevel.INFO, None) == []
+
+
+def test_ignore_cause_logs_with_the_unhandled_level_when_log_is_unhandled() -> None:
+    logs = _run_ignoring(
+        lambda s: s.ignore_cause(log="Unhandled"), fx.LogLevel.INFO, fx.LogLevel.WARN
+    )
+    assert [log.log_level for log in logs] == [fx.LogLevel.WARN]
 
 
 def test_ignore_cause_does_not_log_when_log_is_omitted() -> None:

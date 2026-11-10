@@ -33,8 +33,7 @@ class WithMessage(fx.TaggedError):
 
 
 def test_dataclass_errors_compare_and_hash_by_fields():
-    """Effect Data.test.ts "structural equality via Equal.equals" and
-    "not equal when fields differ"."""
+    """Effect Data.test.ts "compares instances structurally"."""
     assert NotFound("x") == NotFound("x")
     assert NotFound("x") != NotFound("y")
     assert hash(NotFound("x")) == hash(NotFound("x"))
@@ -75,8 +74,8 @@ def test_an_explicit_eq_is_kept():
 
 
 def test_message_field_is_the_string_form():
-    """Effect Data.test.ts Error "assigns fields": ``e.message`` is the
-    message argument."""
+    """Effect Data.test.ts "is a globalThis.Error with a stack trace and the provided
+    fields": ``e.message`` is the message argument."""
     assert str(WithMessage("not found")) == "not found"
 
 

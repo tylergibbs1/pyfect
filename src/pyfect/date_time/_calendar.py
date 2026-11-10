@@ -100,13 +100,14 @@ def start_of(
     dt: datetime, unit: Unit, *, week_starts_on: calendar.Day = calendar.SUNDAY
 ) -> datetime:
     """The first millisecond of ``dt``'s ``unit``, on its wall clock."""
-    return _on_wall_clock(dt, zone_of(dt, "dt"), lambda wall: _start(wall, unit, week_starts_on))
+    return _rounding(dt, unit, lambda wall: _start(wall, unit, week_starts_on))
 
 
 def end_of(dt: datetime, unit: Unit, *, week_starts_on: calendar.Day = calendar.SUNDAY) -> datetime:
     """The last millisecond of ``dt``'s ``unit``, on its wall clock
-    (``.999``)."""
-    return _on_wall_clock(dt, zone_of(dt, "dt"), lambda wall: _end(wall, unit, week_starts_on))
+    (``.999``). A wall time a DST fold repeats ends at its later
+    occurrence."""
+    return _rounding(dt, unit, lambda wall: _end(wall, unit, week_starts_on), "later")
 
 
 def nearest(
@@ -114,14 +115,13 @@ def nearest(
 ) -> datetime:
     """The start of ``dt``'s ``unit`` or of the next one, whichever is
     closer on the wall clock; halfway rounds up."""
-    zone = zone_of(dt, "dt")
 
     def round_wall(wall: datetime) -> datetime:
         start = _start(wall, unit, week_starts_on)
         after = _end(wall, unit, week_starts_on) + timedelta(milliseconds=1)
         return start if wall - start < after - wall else after
 
-    return _on_wall_clock(dt, zone, round_wall)
+    return _rounding(dt, unit, round_wall)
 
 
 def _add_truncated(epoch_millis: Decimal, amount: float, millis_per_unit: Decimal) -> Decimal:
@@ -129,6 +129,26 @@ def _add_truncated(epoch_millis: Decimal, amount: float, millis_per_unit: Decima
     JavaScript's TimeClip cuts a time value. The float is read as the
     decimal that prints it, so ``1.001`` seconds is 1,001ms."""
     return Decimal(int(epoch_millis + Decimal(repr(amount)) * millis_per_unit))
+
+
+def _rounding(
+    dt: datetime,
+    unit: Unit,
+    f: Callable[[datetime], datetime],
+    disambiguation: Literal["compatible", "later"] = "compatible",
+) -> datetime:
+    """``f`` on ``dt``'s wall clock (Effect 4.1.2's ``mutateRounding``).
+    Below a day the result keeps ``dt``'s offset when the zone still has it
+    there, so rounding stays in the same occurrence of a repeated hour; a
+    calendar unit resolves its wall time with ``disambiguation``."""
+    zone = zone_of(dt, "dt")
+    wall = f(dt.replace(tzinfo=None, fold=0))
+    offset = dt.utcoffset()
+    if unit in ("millisecond", "second", "minute", "hour") and offset is not None:
+        kept = (wall - offset).replace(tzinfo=UTC).astimezone(zone)
+        if kept.utcoffset() == offset:
+            return kept
+    return make_zoned(wall, zone, disambiguation=disambiguation)
 
 
 def _on_wall_clock(dt: datetime, zone: tzinfo, f: Callable[[datetime], datetime]) -> datetime:

@@ -10,7 +10,7 @@ import asyncio
 from collections.abc import Callable, Coroutine, Generator, Hashable, Mapping, Sequence, Sized
 from contextlib import AbstractAsyncContextManager, AbstractContextManager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import CoroutineType
 from typing import Any, Literal, Never, NotRequired, Protocol, TypedDict, TypeIs, assert_type
 
@@ -95,7 +95,16 @@ from pyfect.cli import (
 from pyfect.cli._environment import Environment as CliEnvironment
 from pyfect.cli.global_flag import LogLevel
 from pyfect.context import Tag, TagEffect
-from pyfect.duration import ZERO, Duration, Seconds, from_input, to_seconds
+from pyfect.duration import (
+    ZERO,
+    Duration,
+    Seconds,
+    format_iso,
+    from_input,
+    from_iso,
+    to_micros,
+    to_seconds,
+)
 from pyfect.encoding import (
     EncodingError,
     Json,
@@ -1191,6 +1200,11 @@ def check_durations(scheduler: SyncScheduler) -> None:
     # Durations are parsed once, at the boundary, into Seconds (never NaN).
     assert_type(to_seconds(1.5), Seconds)
     assert_type(from_input("1 second"), Seconds | None)
+    assert_type(from_iso("PT1S"), Seconds | None)
+    assert_type(format_iso(to_seconds(1)), str | None)
+    assert_type(to_micros(1), float)
+    assert_type(fx.fail("e").ignore(log="Unhandled"), fx.Effect[None])
+    fx.fail("e").ignore(log="Handled")  # pyright: ignore[reportArgumentType]
     assert_type(schedule.fibonacci(1), schedule.Schedule[Seconds])
     # Arithmetic that keeps the unit stays Seconds, so it is not read again as milliseconds.
     second = to_seconds("1 second")
@@ -2615,6 +2629,9 @@ def check_fn_pipeables() -> None:
 
     untraced = fx.fn_untraced(find, lambda eff: eff.map(len), lambda eff: eff.map(str))
     assert_type(untraced("u"), fx.Effect[str, NotFound, Primary])
+    eager = fx.fn_untraced_eager(find, lambda eff: eff.map(len))
+    assert_type(eager("u"), fx.Effect[int, NotFound, Primary])
+    assert_type(fx.fn_untraced_eager(find)("u"), fx.Effect[str, NotFound, Primary])
     assert_type(fx.fn(find, tagged)("u"), fx.Effect[str, NotFound, Primary])
     caught = fx.fn("find")(find, fx.catch_tag(NotFound, lambda _: fx.succeed("none")))
     assert_type(caught("u"), fx.Effect[str, Never, Primary])
@@ -4165,6 +4182,9 @@ def check_schema_checks(unknown: object) -> None:
     assert_type(S.is_greater_than_date(datetime.now()), S.Filter[datetime])
     assert_type(S.is_int32(), S.FilterGroup[float])
     assert_type(S.is_property_names(S.String), S.Filter[Mapping[Any, object]])
+    assert_type(S.is_ascii(), S.Filter[str])
+    S.Number.check(S.is_ascii())  # pyright: ignore[reportArgumentType]
+    assert_type(S.decode_sync(S.DurationFromIsoString)("PT1H"), timedelta)
     S.String.check(S.is_greater_than(1))  # pyright: ignore[reportArgumentType]
     S.Number.check(S.is_trimmed())  # pyright: ignore[reportArgumentType]
     S.String.check()  # pyright: ignore[reportCallIssue]
@@ -5025,6 +5045,14 @@ def check_platform(
     assert_type(fs.stream("a"), fx.Stream[bytes, fx.PlatformError, Never])
     assert_type(fs.sink("a"), fx.Sink[None, bytes, Never, fx.PlatformError, Never])
     assert_type(fs.watch("a"), fx.Stream[file_system.WatchEvent, fx.PlatformError, Never])
+    assert_type(fs.glob("**", dot=True), fx.Effect[list[str], fx.PlatformError, Never])
+    assert_type(
+        fs.read_directory_entries("a"),
+        fx.Effect[tuple[file_system.DirectoryEntry, ...], fx.PlatformError, Never],
+    )
+    assert_type(term.size, fx.Effect[Dequeue[terminal.Size, fx.Done], Never, fx.Scope])
+    assert_type(fx.glob.make("*.ts").match("a.ts"), bool)
+    fx.glob.make("*.ts", True)  # pyright: ignore[reportCallIssue]
     assert_type(file.read_alloc(5), fx.Effect[bytes | None, fx.PlatformError, Never])
     assert_type(file.seek(5, "current"), fx.Effect[int, fx.PlatformError, Never])
     fs.open("a", flag="rw")  # pyright: ignore[reportArgumentType]
@@ -9492,9 +9520,65 @@ def check_builders_honour_a_subscript(
 
 
 def encoding_toml_types() -> None:
-    from pyfect.encoding import toml
+    from pyfect.encoding import json5, jsonc, toml
 
-    assert_type(toml.parse("a = 1"), dict[str, Any])
+    assert_type(toml.parse("a = 1"), fx.result.Result[dict[str, Any], EncodingError])
+    assert_type(json5.parse("{a: 1}"), fx.result.Result[object, EncodingError])
+    assert_type(jsonc.parse("{}"), fx.result.Result[object, EncodingError])
+
+
+class _CsvPoint(TypedDict):
+    x: float
+
+
+def encoding_csv_types() -> None:
+    from collections.abc import Mapping, Sequence
+
+    from pyfect.encoding import csv
+
+    assert_type(
+        csv.decode_string(),
+        fx.Channel[tuple[csv.Row, ...], csv.CsvError, None, tuple[str, ...], Never, None],
+    )
+    assert_type(
+        csv.decode(headers=True),
+        fx.Channel[tuple[dict[str, str], ...], csv.CsvError, None, tuple[bytes, ...], Never, None],
+    )
+    assert_type(
+        csv.encode_string(columns=["a"]),
+        fx.Channel[tuple[str, ...], Never, None, tuple[Mapping[str, str | None], ...], Never, None],
+    )
+    assert_type(
+        csv.encode_string(),
+        fx.Channel[tuple[str, ...], Never, None, tuple[Sequence[str | None], ...], Never, None],
+    )
+    point = fx.schema.Struct(_CsvPoint)
+    assert_type(
+        csv.decode_schema_string(point, headers=True),
+        fx.Channel[
+            tuple[_CsvPoint, ...],
+            csv.CsvError | fx.schema.SchemaError,
+            None,
+            tuple[str, ...],
+            Never,
+            None,
+            Never,
+        ],
+    )
+    assert_type(
+        csv.encode_schema(point),
+        fx.Channel[
+            tuple[bytes, ...],
+            fx.schema.SchemaError,
+            None,
+            tuple[_CsvPoint, ...],
+            Never,
+            None,
+            Never,
+        ],
+    )
+    # Header records go through ``columns``; rows are not mappings.
+    csv.decode_string(headers=True).pipe_to(csv.encode_string())  # pyright: ignore[reportArgumentType]
 
 
 class _BinaryPoint(TypedDict):
@@ -9508,6 +9592,9 @@ assert_type(S.decode_sync(_binary_codec)(b""), _BinaryPoint)
 assert_type(schema_binary.parser(_binary_points).feed_sync(b""), list[_BinaryPoint])
 assert_type(schema_binary.encoder(_binary_points, fingerprint=True).encode({"x": 1}), bytes)
 assert_type(schema_binary.encode_unknown_sync(_binary_points)({"x": 1}), bytes)
+assert_type(S.decode_sync(schema_binary.to_codec_strict(_binary_points))(b""), _BinaryPoint)
+assert_type(S.decode_sync(schema_binary.to_codec(schema_binary.int32))(b""), float)
+assert_type(S.decode_sync(schema_binary.to_codec(schema_binary.uint64))(b""), int)
 
 
 def xml_zip_tar_channels(

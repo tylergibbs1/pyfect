@@ -63,9 +63,29 @@ def test_roundtrips_cr_crlf_and_lf_data_lines_preserving_a_trailing_empty_line()
     assert events == [Event(data="10%\n50%\ndone\n")]
 
 
+def test_strips_cr_and_lf_from_id_and_event_so_they_cannot_inject_fields_or_events():
+    """strips CR and LF from id and event so they cannot inject fields or events"""
+    parser, events = _parser()
+    parser.feed(
+        sse.write(
+            Event(id="1\nretry: 1000", event="update\r\ndata: forged\r\rid: 2\n\n", data="real")
+        )
+    )
+    assert events == [Event(id="1retry: 1000", event="updatedata: forgedid: 2", data="real")]
+
+
+def test_strips_nul_from_id_so_the_encoded_id_is_not_ignored_by_parsers():
+    """strips NUL from id so the encoded id is not ignored by parsers"""
+    parser, events = _parser()
+    parser.feed(sse.write(Event(id="1", data="first")))
+    parser.feed(sse.write(Event(id="2\x003", data="second")))
+    assert [event.id for event in events if isinstance(event, Event)] == ["1", "23"]
+
+
 def test_strips_a_utf8_bom_from_the_start_of_an_sse_stream():
     """strips a UTF-8 BOM from the start of an SSE stream"""
     parser, events = _parser()
+    parser.feed("")
     parser.feed("﻿data: ok\n\n")
     assert events == [Event(data="ok")]
 

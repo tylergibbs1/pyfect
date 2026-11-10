@@ -954,6 +954,8 @@ TRIE = Module(
     pythonic=_rows(EQUAL_KEYED, {"size": "`len(trie)`"}),
 )
 
+GLOB = Module("Glob", "effect/src/Glob.ts", ("pyfect.glob", "pyfect.glob:Glob"))
+
 GRAPH = Module(
     "Graph",
     "effect/src/Graph.ts",
@@ -1071,6 +1073,7 @@ CLUSTER = Cluster(
         MUTABLE_LIST,
         MUTABLE_REF,
         TRIE,
+        GLOB,
         GRAPH,
         HASH_RING,
         SEM_VER,

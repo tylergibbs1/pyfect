@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from copy import copy
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pyfect._js import text_encode
 from pyfect.encoding.schema_binary import _layout as L
@@ -18,6 +18,31 @@ from pyfect.schema.ast._candidates import Sentinel, collect_sentinels
 from pyfect.schema.ast._check import FilterGroup
 
 FIELD_ID_KEY = "~effect/encoding/SchemaBinary/fieldId"
+FIXED_WIDTH_KEY = "~effect/encoding/SchemaBinary/fixedWidth"
+"""Marks the check that opts a number or bigint into a fixed-width encoding.
+It lives on a check, not the node, so later annotations and checks keep it."""
+
+type FixedWidthKind = Literal["i32", "u32", "i64", "u64"]
+
+
+def fixed_width_kind(node: ast.AST) -> FixedWidthKind | None:
+    """The fixed width the schema opted into, from any of its checks."""
+    for check in node.checks or ():
+        kind = (check.annotations or {}).get(FIXED_WIDTH_KEY)
+        if kind is not None:
+            return cast("FixedWidthKind", kind)
+    return None
+
+
+def _is_fixed_width_only(node: ast.AST) -> bool:
+    """The binary layer enforces a fixed-width check on its own, so the node
+    is exact when no other check rides along."""
+    return (
+        isinstance(node, ast.Number | ast.BigInt)
+        and len(node.checks or ()) == 1
+        and fixed_width_kind(node) is not None
+    )
+
 
 NATIVES: dict[str, tuple[int, bool]] = {
     "effect/schema/DateTimeUtc": (W.KIND_INT64, True),
@@ -269,9 +294,13 @@ class _Compiler:
             case ast.Null():
                 return self.leaf("null")
             case ast.Number():
+                fixed = fixed_width_kind(node)
+                if fixed in ("i32", "u32"):
+                    return self.leaf(fixed)
                 return self.leaf("int" if _proves_integer(node) else "number")
             case ast.BigInt():
-                return self.leaf("bigint")
+                fixed = fixed_width_kind(node)
+                return self.leaf(fixed if fixed in ("i64", "u64") else "bigint")
             case ast.Literal(literal=literal):
                 return L.LiteralLayout(self.leaf(_leaf_kind_of_literal(literal)), (literal,))
             case ast.Unknown() | ast.Any():
@@ -513,7 +542,11 @@ def _matches_every_key(parameter: ast.AST) -> bool:
 
 
 def _clean(node: ast.AST) -> bool:
-    return node.encoding is None and node.checks is None and node.encoding_checks is None
+    return (
+        node.encoding is None
+        and (node.checks is None or _is_fixed_width_only(node))
+        and node.encoding_checks is None
+    )
 
 
 def is_exact(root: ast.AST) -> bool:

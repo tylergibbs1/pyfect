@@ -11,11 +11,13 @@ Effect's ``new Date(2024, 0, 1)`` does.
 """
 
 import math
-from collections.abc import Iterable
-from datetime import datetime
+from collections.abc import Callable, Iterable
+from datetime import UTC, datetime
+
+import pytest
 
 import pyfect as fx
-from pyfect import random, schedule, testing
+from pyfect import cron, random, schedule, testing
 from pyfect.cron import CronParseError
 from pyfect.duration import ZERO, Seconds
 from pyfect.result import Err, Ok
@@ -355,6 +357,13 @@ def test_spaced_constant_delays():
 
 
 @testing.effect
+def test_fibonacci_repeats_the_initial_delay():
+    """repeats the initial delay"""
+    output = yield from run_delays(schedule.fibonacci("100 millis"), nones(5))
+    assert output == [ms(100), ms(100), ms(200), ms(300), ms(500)]
+
+
+@testing.effect
 def test_fixed_constant_delays():
     """fixed / constant delays"""
     assert (yield from run_delays(schedule.fixed("1 second"), nones(5))) == [1] * 5
@@ -396,6 +405,19 @@ def test_fixed_matches_effect_v3_when_action_duration_exceeds_the_interval():
     assert delays == [1, 0, 0, 0, 0, 0]
 
 
+@pytest.mark.parametrize("make", [schedule.fixed, schedule.windowed])
+@testing.effect
+def test_waits_a_full_window_when_the_delay_to_the_boundary_rounds_to_zero(
+    make: Callable[[str], Schedule[int]],
+):
+    """waits a full window when the delay to the boundary rounds to zero"""
+    step = yield from schedule.to_step(make("1 second"))
+    yield from step(1000, None)
+    decision = yield from step(1999.9999999999998, None)
+    assert isinstance(decision, Continue)
+    assert decision.delay == 1
+
+
 @testing.effect
 def test_windowed_constant_delays():
     """windowed / constant delays"""
@@ -430,6 +452,63 @@ def cron_times(
         return times
 
     return go
+
+
+@testing.effect
+def test_cron_waits_for_the_next_match_when_the_delay_to_the_current_one_rounds_to_zero():
+    """waits for the next match when the delay to the current one rounds to zero"""
+    step = yield from schedule.to_step(schedule.cron("* * * * * *"))
+    decision = yield from step(1999.9999999999998, None)
+    assert isinstance(decision, Continue)
+    assert decision.delay == 1
+
+
+def berlin_times(s: Schedule[Seconds, None, CronParseError], start: str) -> fx.Effect[list[str]]:
+    @fx.gen
+    def go():
+        at = datetime.fromisoformat(start).timestamp()
+        yield from testing.set_time(at * 1000)
+        delays = yield from run_delays(s, nones(4)).or_die()
+        times: list[str] = []
+        for delay in delays:
+            at += delay
+            times.append(datetime.fromtimestamp(at, UTC).isoformat().replace("+00:00", "Z"))
+        return times
+
+    return go
+
+
+@testing.effect
+def test_cron_honors_on_dst_overlap_across_a_dst_fold():
+    """honors onDstOverlap across a DST fold"""
+    # Europe/Berlin repeats local 02:00-02:59 at 01:00Z-01:59Z on 2026-10-25.
+    every5 = "*/5 * * * *"
+    earlier = yield from berlin_times(
+        schedule.cron(every5, "Europe/Berlin"), "2026-10-25T00:55:00Z"
+    )
+    assert earlier == [
+        "2026-10-25T02:00:00Z",
+        "2026-10-25T02:05:00Z",
+        "2026-10-25T02:10:00Z",
+        "2026-10-25T02:15:00Z",
+    ]
+    both = yield from berlin_times(
+        schedule.cron(every5, "Europe/Berlin", on_dst_overlap="both"), "2026-10-25T00:55:00Z"
+    )
+    assert both == [
+        "2026-10-25T01:00:00Z",
+        "2026-10-25T01:05:00Z",
+        "2026-10-25T01:10:00Z",
+        "2026-10-25T01:15:00Z",
+    ]
+    parsed = cron.parse_unsafe(every5, "Europe/Berlin", on_dst_overlap="both")
+    from_cron = yield from berlin_times(schedule.cron(parsed), "2026-10-25T01:07:00Z")
+    assert from_cron == [
+        "2026-10-25T01:10:00Z",
+        "2026-10-25T01:15:00Z",
+        "2026-10-25T01:20:00Z",
+        "2026-10-25T01:25:00Z",
+    ]
 
 
 @testing.effect

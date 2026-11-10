@@ -120,7 +120,13 @@ class FrameParser[T]:
                 break
             start = pos + header_length
             reader = Reader(
-                buf, start, start + length, self.options, self.mode.positional, self.dict_
+                buf,
+                start,
+                start + length,
+                self.options,
+                self.mode.positional,
+                self.dict_,
+                self.mode.reject_unknown_fields,
             )
             try:
                 value = decode_frame_body(self.layout, reader, self.mode)

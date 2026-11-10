@@ -32,11 +32,9 @@ from pyfect.channel._base import AnyPull, end_with
 from pyfect.duration import Duration, Seconds, to_millis
 from pyfect.errors import TaggedError
 from pyfect.exit import Exit, Success
-from pyfect.exit import fail as fail_exit
-from pyfect.option import Some
 from pyfect.pull import catch_done
 from pyfect.schema import transformation as T
-from pyfect.schema.issue import InvalidValue, Issue
+from pyfect.schema.issue import Issue
 
 __all__ = [
     "DEFAULT_MAX_EVENT_SIZE",
@@ -65,31 +63,17 @@ DEFAULT_MAX_EVENT_SIZE = 10 * 1024 * 1024
 
 
 _LINE_BREAK = re.compile(r"[\r\n]")
-
-
-def _broken_field(event: str, id: str | None) -> str | None:
-    """``"event"`` or ``"id"`` when that one holds a line break, which
-    would let it write other fields (``data:``, ``retry:``, ``event:``)."""
-    if _LINE_BREAK.search(event):
-        return "event"
-    return "id" if id is not None and _LINE_BREAK.search(id) else None
+_ID_BREAK = re.compile("[\r\n\x00]")
 
 
 @dataclass(frozen=True, kw_only=True)
 class Event:
     """One event: its ``event`` name, its ``data`` lines joined with
-    ``\\n``, and the last event ID seen (``None`` before any). The name
-    and ID cannot hold a line break (``ValueError``)."""
+    ``\\n``, and the last event ID seen (``None`` before any)."""
 
     data: str
     event: str = "message"
     id: str | None = None
-
-    def __post_init__(self) -> None:
-        # Unlike Effect, which writes the line break.
-        field = _broken_field(self.event, self.id)
-        if field is not None:
-            raise ValueError(f"an SSE event {field} cannot hold a line break")
 
 
 @dataclass(eq=False)
@@ -183,6 +167,9 @@ class Parser:
         pending event passes ``max_event_size``. If the callback resets the
         parser, the rest of the chunk is dropped; if it raises, the
         exception propagates and the rest of the chunk is dropped."""
+        if not chunk:
+            # An empty chunk must not use up the leading BOM check.
+            return None
         if self._first_chunk and chunk.startswith(_BOM):
             chunk = chunk[len(_BOM) :]
         self._first_chunk = False
@@ -320,13 +307,14 @@ def write(event: AnyEvent) -> str:
     """The SSE text of ``event`` (Effect's ``encoder.write``): ``id:``,
     ``event:`` (unless ``"message"``) and one ``data:`` line per line of
     data, then a blank line; a ``Retry`` is a ``retry:`` line in
-    milliseconds."""
+    milliseconds. CR and LF are removed from ``id`` and ``event``, and NUL
+    from ``id``, so they cannot inject fields or events."""
     if isinstance(event, Retry):
         millis = to_millis(event.duration)
         return f"retry: {int(millis) if millis.is_integer() else millis}\n\n"
-    text = "" if event.id is None else f"id: {event.id}\n"
+    text = "" if event.id is None else f"id: {_ID_BREAK.sub('', event.id)}\n"
     if event.event != "message":
-        text += f"event: {event.event}\n"
+        text += f"event: {_LINE_BREAK.sub('', event.event)}\n"
     return text + "data: " + _DATA_BREAK.sub("\ndata: ", event.data) + "\n\n"
 
 
@@ -406,10 +394,6 @@ def _decode_event(event: Event, _options: S.ParseOptions) -> Exit[Mapping[str, o
 def _encode_event(fields: Mapping[str, object], _options: S.ParseOptions) -> Exit[Event, Issue]:
     name = cast("str", fields.get("event", "message"))
     id = cast("str | None", fields.get("id"))
-    field = _broken_field(name, id)
-    if field is not None:
-        message = f"an SSE event {field} cannot hold a line break"
-        return fail_exit(InvalidValue({"message": message}, Some(fields)))
     return Success(Event(event=name, id=id, data=cast("str", fields["data"])))
 
 

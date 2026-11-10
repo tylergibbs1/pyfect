@@ -83,24 +83,32 @@ def split(*, separator: str = ",") -> Getter[Sequence[str], str]:
 
 
 def split_key_value(
-    *, separator: str = ",", key_value_separator: str = "="
+    *,
+    separator: str = ",",
+    key_value_separator: str = "=",
+    trim: bool = False,
+    keep_empty_values: bool = False,
 ) -> Getter[dict[str, str], str]:
-    """``"a=1,b=2"`` as ``{"a": "1", "b": "2"}``; a pair without a key or a
-    value is skipped (Effect's ``splitKeyValue``)."""
+    """``"a=1,b=2"`` as ``{"a": "1", "b": "2"}`` (Effect's ``splitKeyValue``): a pair
+    without ``key_value_separator`` or with an empty key is skipped, and one with an empty
+    value unless ``keep_empty_values`` (then its value is ``""``); ``trim`` trims keys and
+    values first. An empty ``key_value_separator`` takes a pair's first two characters."""
 
     def run(text: str) -> dict[str, str]:
         out: dict[str, str] = {}
         for pair in text.split(separator):
             if key_value_separator == "":
-                if len(pair) >= 2:
-                    out[pair[0]] = pair[1]
+                key, value = pair[:1], pair[1:2]
+            else:
+                index = pair.find(key_value_separator)
+                if index == -1:
+                    continue
+                key, value = pair[:index], pair[index + len(key_value_separator) :]
+            if trim:
+                key, value = js_trim(key), js_trim(value)
+            if key == "" or (value == "" and not keep_empty_values):
                 continue
-            index = pair.find(key_value_separator)
-            if index <= 0:
-                continue
-            value = pair[index + len(key_value_separator) :]
-            if value:
-                out[pair[:index]] = value
+            out[key] = value
         return out
 
     return Transform(run)

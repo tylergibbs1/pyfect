@@ -10,7 +10,7 @@ import pyfect as fx
 from pyfect import layer, scope
 from pyfect.errors import Done
 from pyfect.queue import Queue
-from pyfect.terminal import Key, Terminal, TerminalService, UserInput
+from pyfect.terminal import Key, Size, Terminal, TerminalService, UserInput
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -46,9 +46,16 @@ def _make() -> fx.Effect[MockTerminalService, Never, scope.Scope]:
         def display(text: str) -> fx.Effect[None]:
             return fx.sync(lambda: output.append(text))
 
+        @fx.fn
+        def size():
+            sizes = yield from Queue[Size, Done].unbounded()
+            yield from sizes.offer(Size(80, 24))
+            return sizes
+
         return MockTerminalService(
             columns=fx.succeed(80),
             rows=fx.succeed(24),
+            size=size(),
             display=display,
             read_input=fx.succeed(queue),
             read_line=fx.succeed(""),

@@ -345,12 +345,20 @@ class Fiber(Generic[A_co, E_co]):
         Read the outcome with ``await_exit``."""
         return _WithFiber(lambda me: self._interrupt_from(me, me.id))
 
-    def interrupt_as(self, by: int | None) -> Effect[None, Never, Never]:
-        """``interrupt``, attributed to the fiber with id ``by``."""
-        return _WithFiber(lambda me: self._interrupt_from(me, by))
+    def interrupt_as(
+        self, by: int | None, annotations: Context | None = None
+    ) -> Effect[None, Never, Never]:
+        """``interrupt``, attributed to the fiber with id ``by``; ``annotations`` are
+        added to the interruption, after the interrupting fiber's own."""
+        return _WithFiber(lambda me: self._interrupt_from(me, by, annotations))
 
-    def _interrupt_from(self, me: Fiber[Any, Any], by: int | None) -> Effect[None, Never, Never]:
-        self.interrupt_as_unsafe(by, me._interruptor_annotations())
+    def _interrupt_from(
+        self, me: Fiber[Any, Any], by: int | None, annotations: Context | None = None
+    ) -> Effect[None, Never, Never]:
+        own = me._interruptor_annotations()
+        if own is not None and annotations is not None:
+            own = own.merge(annotations)
+        self.interrupt_as_unsafe(by, own if own is not None else annotations)
         return self.await_exit().as_void()
 
     def run_in(self, scope: CloseableScope) -> Fiber[A_co, E_co]:

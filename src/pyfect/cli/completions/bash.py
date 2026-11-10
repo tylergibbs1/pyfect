@@ -4,6 +4,7 @@ script runs on Bash 3.2 and works without the bash-completion package."""
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from pyfect.cli.completions._descriptor import (
     ArgumentType,
@@ -95,6 +96,53 @@ CHOICES_HELPER = (
     "}\n"
 )
 
+PATHS_HELPER_NAME = "_x--paths"
+PATHS_HELPER = (
+    "_x--paths()\n"
+    "{\n"
+    '  local _kind="$1" _cur="$2" _word="$3"\n'
+    "\n"
+    '  local _prefix="$_cur" _committed="${_cur%"$_word"}"\n'
+    "  _prefix=${_prefix//\\\\/}; _prefix=${_prefix//\\\"/}; _prefix=${_prefix//\\'/}\n"
+    '  _committed=${_committed//\\\\/}; _committed=${_committed//\\"/};'
+    " _committed=${_committed//\\'/}\n"
+    "\n"
+    '  local _typed="" _dir="$_committed" _open="" _i\n'
+    '  if [[ "$_word" == */* ]]; then\n'
+    '    _typed="${_word%/*}/"\n'
+    '    _dir="${_prefix%/*}/"\n'
+    '    if [[ "$_cur" == "$_word" ]]; then\n'
+    "      for ((_i = 0; _i < ${#_typed}; _i++)); do\n"
+    '        case "$_open${_typed:_i:1}" in\n'
+    '          \\\\|\\"\\\\) ((_i += 1)) ;;\n'
+    '          \\"|\\\') _open="${_typed:_i:1}" ;;\n'
+    '          \\"\\"|\\\'\\\') _open="" ;;\n'
+    "        esac\n"
+    "      done\n"
+    "    fi\n"
+    "  fi\n"
+    "\n"
+    '  local _path _names=() _rest="${_word#"$_typed"}"\n'
+    "  while IFS= read -r _path; do\n"
+    '    if [[ "$_path" == "$_dir"* ]]; then\n'
+    '      _names+=("$_committed${_path#"$_dir"}")\n'
+    '    elif [[ -z "$_committed" ]]; then\n'
+    '      _names+=("$_path")\n'
+    '      _typed="" _rest="" _open=""\n'
+    "    fi\n"
+    '  done < <(compgen "$_kind" -- "$_prefix")\n'
+    '  if [[ -n "$_open" ]]; then\n'
+    '    _typed+="$_open"\n'
+    '    _rest="${_prefix##*/}"\n'
+    "  fi\n"
+    "\n"
+    '  _x--choices "${_cur%"$_word"}$_rest" "$_rest" "${_names[@]}"\n'
+    "  for ((_i = 0; _i < ${#COMPREPLY[@]}; _i++)); do\n"
+    '    COMPREPLY[_i]="$_typed${COMPREPLY[_i]}"\n'
+    "  done\n"
+    "}\n"
+)
+
 
 def _escape(text: str) -> str:
     return text.replace("'", "'\\''")
@@ -121,22 +169,19 @@ def _flag_group_declarations(flags: tuple[FlagDescriptor, ...], lines: list[str]
     lines.append("")
 
 
-def _choice_completion(helper: str, values: tuple[str, ...]) -> str:
-    quoted = " ".join(f"'{_escape(value)}'" for value in values)
-    return f'{helper} "$cur" "$_comp_word" {quoted}'
+@dataclass(frozen=True, slots=True)
+class _Helpers:
+    choices: str
+    paths: str
 
 
-def _path_completion(kind: PathKind) -> str:
-    if kind.path_type == "directory":
-        return 'COMPREPLY=( $(compgen -d -- "$cur") )'
-    return 'COMPREPLY=( $(compgen -f -- "$cur") )'
-
-
-def _value_completion(kind: FlagType | ArgumentType, helper: str) -> str | None:
+def _value_completion(kind: FlagType | ArgumentType, helpers: _Helpers) -> str | None:
     if isinstance(kind, Choice):
-        return _choice_completion(helper, kind.values)
+        quoted = " ".join(f"'{_escape(value)}'" for value in kind.values)
+        return f'{helpers.choices} "$cur" "$_comp_word" {quoted}'
     if isinstance(kind, PathKind):
-        return _path_completion(kind)
+        option = "-d" if kind.path_type == "directory" else "-f"
+        return f'{helpers.paths} {option} "$cur" "$_comp_word"'
     return None
 
 
@@ -158,7 +203,7 @@ def _skip_loop_head(lines: list[str]) -> None:
     lines.append("    fi")
 
 
-def _flag_values(descriptor: CommandDescriptor, helper: str, lines: list[str]) -> None:
+def _flag_values(descriptor: CommandDescriptor, helpers: _Helpers, lines: list[str]) -> None:
     with_values = [flag for flag in descriptor.flags if takes_separate_value(flag)]
     if not with_values:
         return
@@ -168,7 +213,7 @@ def _flag_values(descriptor: CommandDescriptor, helper: str, lines: list[str]) -
         names = [f"--{flag.name}"] + [
             f"-{alias}" if len(alias) == 1 else f"--{alias}" for alias in flag.aliases
         ]
-        completion = _value_completion(flag.type, helper)
+        completion = _value_completion(flag.type, helpers)
         if completion:
             lines.append(f"    {'|'.join(names)})")
             lines.append(f"      {completion}")
@@ -198,11 +243,11 @@ def _subcommand_dispatch(descriptor: CommandDescriptor, path: list[str], lines: 
     lines.append("")
 
 
-def _positionals(descriptor: CommandDescriptor, helper: str, lines: list[str]) -> None:
+def _positionals(descriptor: CommandDescriptor, helpers: _Helpers, lines: list[str]) -> None:
     completions = [
         (index, argument, completion)
         for index, argument in enumerate(descriptor.arguments)
-        if (completion := _value_completion(argument.type, helper)) is not None
+        if (completion := _value_completion(argument.type, helpers)) is not None
     ]
     if not completions:
         if descriptor.subcommands:
@@ -245,7 +290,7 @@ def _positionals(descriptor: CommandDescriptor, helper: str, lines: list[str]) -
 
 
 def _function(
-    descriptor: CommandDescriptor, parent: list[str], lines: list[str], helper: str
+    descriptor: CommandDescriptor, parent: list[str], lines: list[str], helpers: _Helpers
 ) -> None:
     path = [*parent, descriptor.name]
     lines.append(f"{_function_name(path)}()")
@@ -256,7 +301,7 @@ def _function(
     if not parent:
         lines.append('  local _comp_word="$2"')
     lines.append("")
-    _flag_values(descriptor, helper, lines)
+    _flag_values(descriptor, helpers, lines)
     _subcommand_dispatch(descriptor, path, lines)
     _flag_group_declarations(descriptor.flags, lines)
     if descriptor.flags or descriptor.subcommands:
@@ -267,16 +312,16 @@ def _function(
         lines.append("    return")
         lines.append("  fi")
         lines.append("")
-    _positionals(descriptor, helper, lines)
+    _positionals(descriptor, helpers, lines)
     lines.append("}")
     lines.append("")
     for sub in descriptor.subcommands:
-        _function(sub, path, lines, helper)
+        _function(sub, path, lines, helpers)
 
 
 def generate(executable: str, descriptor: CommandDescriptor) -> str:
     safe = _sanitize(executable)
-    helper = f"_{safe}--choices"
+    helpers = _Helpers(f"_{safe}--choices", f"_{safe}--paths")
     name = _escape(executable)
     lines = [
         f"###-begin-{name}-completions-###",
@@ -289,12 +334,22 @@ def generate(executable: str, descriptor: CommandDescriptor) -> str:
         "",
     ]
     lines += INIT_COMPLETION_FALLBACK.split("\n")[:-1]
-    lines += CHOICES_HELPER.replace(CHOICES_HELPER_NAME, helper).split("\n")[:-1]
+    lines += CHOICES_HELPER.replace(CHOICES_HELPER_NAME, helpers.choices).split("\n")[:-1]
     lines.append("")
-    _function(descriptor, [], lines, helper)
+    paths = PATHS_HELPER.replace(PATHS_HELPER_NAME, helpers.paths)
+    lines += paths.replace(CHOICES_HELPER_NAME, helpers.choices).split("\n")[:-1]
+    lines.append("")
+    _function(descriptor, [], lines, helpers)
     lines.append(f"complete -F _{safe} {name}")
     lines.append(f"###-end-{name}-completions-###")
     return "\n".join(lines)
 
 
-__all__ = ["CHOICES_HELPER", "CHOICES_HELPER_NAME", "INIT_COMPLETION_FALLBACK", "generate"]
+__all__ = [
+    "CHOICES_HELPER",
+    "CHOICES_HELPER_NAME",
+    "INIT_COMPLETION_FALLBACK",
+    "PATHS_HELPER",
+    "PATHS_HELPER_NAME",
+    "generate",
+]

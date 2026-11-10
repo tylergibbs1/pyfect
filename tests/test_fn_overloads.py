@@ -1,4 +1,4 @@
-"""Guard: ``fn``, ``fn_untraced`` and ``fn("name")`` take pipeables, typed
+"""Guard: ``fn``, ``fn_untraced``, ``fn_untraced_eager`` and ``fn("name")`` take pipeables, typed
 so each sees the previous result (Effect's ``Effect.fn(body, ...pipeables)``).
 
 Each pipeable has its own result type, which pyright can only spell as one
@@ -58,6 +58,12 @@ def render_fn_untraced() -> str:
     return "".join(_signature("fn_untraced", "", [], GEN_BODY, n) for n in range(MAX_PIPEABLES + 1))
 
 
+def render_fn_untraced_eager() -> str:
+    return "".join(
+        _signature("fn_untraced_eager", "", [], GEN_BODY, n) for n in range(MAX_PIPEABLES + 1)
+    )
+
+
 def render_traced() -> str:
     return "".join(
         _signature("__call__", "    ", ["self"], body, n)
@@ -70,6 +76,7 @@ SECTIONS = {
     "_Traced.__call__": ("    ", render_traced),
     "fn": ("", render_fn),
     "fn_untraced": ("", render_fn_untraced),
+    "fn_untraced_eager": ("", render_fn_untraced_eager),
 }
 
 

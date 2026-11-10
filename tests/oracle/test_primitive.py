@@ -388,7 +388,7 @@ def test_a_file_that_does_not_parse_fails_with_the_js_error_text(env: Services[A
         return with_file_system(primitive.file_parse().parse(path).flip(), _FileHolding(content))
 
     assert (yield from failure("/bad.toml", "a")) == (
-        "Failed to parse '.toml' file content: SyntaxError: Expected '=' at line 1, column 2"
+        "Failed to parse '.toml' file content: EncodingError: Expected '=' at line 1, column 2"
     )
     assert (yield from failure("/bad.ini", "a=1\n[a]\nb=2")) == (
         "Failed to parse '.ini' file content: TypeError: Cannot create property 'b' on string '1'"

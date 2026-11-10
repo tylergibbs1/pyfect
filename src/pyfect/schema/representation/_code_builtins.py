@@ -25,6 +25,7 @@ _NO_ARGUMENTS = frozenset(
         "isStringBigInt",
         "isGUID",
         "isULID",
+        "isAscii",
         "isBase64",
         "isBase64Url",
         "isUppercased",

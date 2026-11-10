@@ -17,6 +17,7 @@ from pyfect.terminal._live import live
 from pyfect.terminal._service import (
     Key,
     QuitError,
+    Size,
     Terminal,
     TerminalService,
     UserInput,
@@ -29,6 +30,7 @@ layer: Layer[Terminal] = _layer_sync(Terminal, live)
 __all__ = [
     "Key",
     "QuitError",
+    "Size",
     "Terminal",
     "TerminalService",
     "UserInput",

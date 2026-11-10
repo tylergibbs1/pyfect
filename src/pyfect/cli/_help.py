@@ -1,7 +1,7 @@
 """Help docs for a command path (Effect's internal ``buildHelpDoc`` and
-``cli/internal/help``): usage, arguments, the command's flags after the
-shared flags of its ancestors, subcommands, examples and the global flags
-in scope."""
+``cli/internal/help``): usage, arguments, the command's flags, the
+shared flags inherited from its ancestors, subcommands, examples and the
+global flags in scope."""
 
 from __future__ import annotations
 
@@ -139,11 +139,11 @@ def global_flags_for_tree(
     return _dedupe([*built_ins, *_dedupe(collected)])
 
 
-def _shared_flags(commands: Sequence[AnyCommand], current: Sequence[FlagDoc]) -> list[FlagDoc]:
+def _inherited_flags(commands: Sequence[AnyCommand], current: Sequence[FlagDoc]) -> list[FlagDoc]:
     if len(commands) <= 1:
         return []
     seen = {flag.name for flag in current}
-    shared: list[FlagDoc] = []
+    inherited: list[FlagDoc] = []
     for ancestor in commands[:-1]:
         for flag in ancestor.state.context_config.flags:
             metadata = flag.metadata()
@@ -151,8 +151,8 @@ def _shared_flags(commands: Sequence[AnyCommand], current: Sequence[FlagDoc]) ->
                 if single.name in seen or single.hidden:
                     continue
                 seen.add(single.name)
-                shared.append(to_flag_doc(single, metadata))
-    return shared
+                inherited.append(to_flag_doc(single, metadata))
+    return inherited
 
 
 def help_for_path(
@@ -160,7 +160,7 @@ def help_for_path(
 ) -> HelpDoc:
     commands = commands_for_path(command, path)
     base = build_help_doc(commands[-1], path)
-    shared = _shared_flags(commands, base.flags)
+    inherited = _inherited_flags(commands, base.flags)
     global_docs: list[FlagDoc] = []
     for global_flag in global_flags_for_path(command, path, built_ins):
         param = flag_of(global_flag).param
@@ -172,15 +172,23 @@ def help_for_path(
             global_docs.append(
                 FlagDoc(doc.name, doc.aliases, doc.type, doc.description, required=False)
             )
+    # Globals accumulate along the path, so the deepest declaring scope lists them all.
+    scope_length = next(
+        (i + 1 for i in range(len(commands) - 1, 0, -1) if commands[i].state.global_flags), 1
+    )
+    command_path = tuple(path)
     return HelpDoc(
         description=base.description,
         usage=base.usage,
-        flags=(*shared, *base.flags),
+        flags=base.flags,
         annotations=base.annotations,
         global_flags=tuple(global_docs),
         args=base.args,
         subcommands=base.subcommands,
         examples=base.examples,
+        inherited_flags=tuple(inherited),
+        global_flags_scope=command_path[:scope_length],
+        command_path=command_path,
     )
 
 

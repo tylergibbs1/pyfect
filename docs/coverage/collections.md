@@ -23,7 +23,7 @@ Coverage counts ported, renamed and §4 exports.
 | UndefinedOr | 8 | 0 | 0 | 8 | 0 | 100% |
 | Combiner | 8 | 0 | 0 | 8 | 0 | 100% |
 | Reducer | 2 | 0 | 0 | 2 | 0 | 100% |
-| Duration | 55 | 3 | 0 | 49 | 3 | 94% |
+| Duration | 55 | 6 | 0 | 49 | 0 | 100% |
 | ByteSize | 50 | 33 | 0 | 17 | 0 | 100% |
 | HashMap | 38 | 36 | 0 | 2 | 0 | 100% |
 | HashSet | 18 | 16 | 0 | 2 | 0 | 100% |
@@ -32,6 +32,7 @@ Coverage counts ported, renamed and §4 exports.
 | MutableList | 17 | 0 | 0 | 17 | 0 | 100% |
 | MutableRef | 16 | 0 | 0 | 16 | 0 | 100% |
 | Trie | 28 | 27 | 0 | 1 | 0 | 100% |
+| Glob | 3 | 3 | 0 | 0 | 0 | 100% |
 | Graph | 93 | 93 | 0 | 0 | 0 | 100% |
 | HashRing | 8 | 6 | 1 | 1 | 0 | 100% |
 | SemVer | 41 | 28 | 0 | 13 | 0 | 100% |
@@ -41,7 +42,7 @@ Coverage counts ported, renamed and §4 exports.
 | Base64Url | 4 | 4 | 0 | 0 | 0 | 100% |
 | Hex | 4 | 4 | 0 | 0 | 0 | 100% |
 | EncodingError | 3 | 2 | 0 | 1 | 0 | 100% |
-| **All** | 986 | | | | 3 | 99% |
+| **All** | 989 | | | | 0 | 100% |
 
 ## Array
 
@@ -712,7 +713,7 @@ Coverage counts ported, renamed and §4 exports.
 | `hours` | §4 | `n * 3600` / `timedelta(hours=n)` (§4: Duration) |
 | `days` | §4 | `n * 86400` / `timedelta(days=n)` (§4: Duration) |
 | `weeks` | §4 | `timedelta(weeks=n)` (§4: Duration) |
-| `toMicros` | missing |  |
+| `toMicros` | ported | `pyfect.duration.to_micros` |
 | `toMillis` | ported | `pyfect.duration.to_millis` |
 | `toSeconds` | ported | `pyfect.duration.to_seconds` |
 | `toMinutes` | §4 | `s / 60` (§4: Duration) |
@@ -742,8 +743,8 @@ Coverage counts ported, renamed and §4 exports.
 | `equals` | §4 | `==` (§4: Order, Equivalence, Combiner, Reducer) |
 | `parts` | §4 | `divmod` on `duration.to_nanos(s)` (§4: Duration) |
 | `format` | §4 | `duration.format_duration(s)` (§4: Duration) |
-| `formatIso` | missing |  |
-| `fromIso` | missing |  |
+| `formatIso` | ported | `pyfect.duration.format_iso` |
+| `fromIso` | ported | `pyfect.duration.from_iso` |
 | `ReducerSum` | §4 | `sum` (§4: Order, Equivalence, Combiner, Reducer) |
 | `CombinerMax` | §4 | `max` (§4: Order, Equivalence, Combiner, Reducer) |
 | `CombinerMin` | §4 | `min` (§4: Order, Equivalence, Combiner, Reducer) |
@@ -979,6 +980,14 @@ Coverage counts ported, renamed and §4 exports.
 | `modify` | ported | `pyfect.trie.Trie.modify` |
 | `removeMany` | ported | `pyfect.trie.Trie.remove_many` |
 | `insertMany` | ported | `pyfect.trie.Trie.insert_many` |
+
+## Glob
+
+| Effect | Status | pyfect |
+|---|---|---|
+| `make` | ported | `pyfect.glob.make` |
+| `match` | ported | `pyfect.glob.match` |
+| `escape` | ported | `pyfect.glob.escape` |
 
 ## Graph
 

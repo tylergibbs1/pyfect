@@ -47,7 +47,7 @@ Omitted:
 """
 
 import traceback
-from typing import NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 import pytest
 
@@ -126,6 +126,23 @@ def test_class_make_applies_defaults_source_checks_and_the_constructor_once():
     assert isinstance(instance, A)
     assert instance.a == "default"
     assert (len(defaults), len(checks), len(constructions)) == (1, 1, 1)
+
+
+def test_class_make_preserves_constructor_defects():
+    """Class / make preserves constructor defects: Effect's ``Error`` whose cause is
+    ``Cause.die(defect)`` is a ``RuntimeError`` raised from the defect"""
+    defect = ValueError("constructor defect")
+
+    class A(S.Class):
+        a: str
+
+        def __post_init__(self) -> None:
+            raise defect
+
+    plain: Any = {"a": "a"}
+    with pytest.raises(RuntimeError, match="Constructor adapter can only throw schema issues") as e:
+        A.make(plain)
+    assert e.value.__cause__ is defect
 
 
 def test_class_make_with_void_input():
@@ -493,6 +510,34 @@ def test_tagged_class_extended_constructor_does_not_treat_subclass_fields_as_exc
 
 
 # ------------------------------------------------------------------- Error
+
+
+class _Untagged(S.Error):
+    message: str
+
+
+class _Tagged(S.TaggedError, tag="Tagged"):
+    message: str
+
+
+def test_error_make_retains_the_caller_in_error_stacks():
+    """Error / make retains the caller in error stacks: a Python exception has a traceback
+    only once raised, so ``make`` leaves none and raising it names the caller"""
+    for error_class in (_Untagged, _Tagged):
+        error = _make_error_at_callsite(error_class)
+        assert error.__traceback__ is None
+        with pytest.raises(error_class) as e:
+            _raise_at_callsite(error)
+        assert "_raise_at_callsite" in [frame.name for frame in traceback.extract_tb(e.tb)]
+
+
+def _make_error_at_callsite(error_class: type[_Untagged | _Tagged]) -> BaseException:
+    plain: Any = {"message": "failure"}
+    return error_class.make(plain)
+
+
+def _raise_at_callsite(error: BaseException) -> None:
+    raise error
 
 
 def test_error_make_with_void_input():

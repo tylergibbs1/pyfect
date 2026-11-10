@@ -3,14 +3,19 @@ replay test runs only where ``pwsh`` is installed, as in Effect."""
 
 from __future__ import annotations
 
+import os
 import re
+import select
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 from pathlib import Path
 
 import pytest
 
+import pyfect as fx
 from pyfect.cli import Argument, Config, Flag, command
 from pyfect.cli import completions as Completions
 from pyfect.cli.completions import bash as Bash
@@ -283,14 +288,116 @@ def test_bash_generates_no_flag_for_boolean_flags():
     assert "--no-loud" in Bash.generate("greet", from_command(simple_cmd))
 
 
-def test_uses_compgen_f_for_file_type_flags():
-    """uses compgen -f for file-type flags"""
-    assert "compgen -f" in Bash.generate("process", from_command(with_paths))
+def _script_args(command: str) -> list[str]:
+    """``script`` arguments that run ``command`` on a pseudo-terminal."""
+    if sys.platform == "linux":
+        return ["script", "-qec", command, "/dev/null"]
+    return ["script", "-q", "/dev/null", *command.split(" ")]
 
 
-def test_uses_compgen_d_for_directory_type_flags():
-    """uses compgen -d for directory-type flags"""
-    assert "compgen -d" in Bash.generate("process", from_command(with_paths))
+def _has_readline() -> bool:
+    if shutil.which("bash") is None or shutil.which("script") is None:
+        return False
+    bash = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-c", "compgen -W x"], capture_output=True, check=False
+    )
+    tty = subprocess.run(
+        _script_args("bash --noprofile --norc -c true"),
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+        check=False,
+    )
+    return bash.returncode == 0 and tty.returncode == 0
+
+
+_HAS_READLINE = _has_readline()
+
+
+_ESCAPES = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+"""Terminal control sequences, such as bracketed paste mode, around the output."""
+
+
+def _type_into(args: list[str], directory: str, keys: str) -> str:
+    """Runs ``args`` and types ``keys`` once its prompt shows: typed earlier,
+    the pseudo-terminal can take them before Bash's readline reads them."""
+    process = subprocess.Popen(
+        args,
+        cwd=directory,
+        env={**os.environ, "HOME": directory},
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    seen = b""
+    deadline = time.monotonic() + 10
+    while b"$ " not in seen and time.monotonic() < deadline:
+        ready, _, _ = select.select([process.stdout], [], [], 0.1)
+        if ready:
+            chunk = os.read(process.stdout.fileno(), 4096)
+            if not chunk:
+                break
+            seen += chunk
+    try:
+        rest, _ = process.communicate(keys.encode(), timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        rest, _ = process.communicate()
+    return (seen + rest).decode(errors="replace")
+
+
+def _replay_bash_completion(line: str) -> list[str]:
+    """Type ``line``, a tab and Enter into interactive Bash in a directory of
+    ``process`` fixtures, and return the arguments ``process`` receives."""
+    with tempfile.TemporaryDirectory(prefix="pyfect-cli-bash-") as directory:
+        root = Path(directory)
+        (root / "project files").mkdir()
+        for name in ("project.txt", "report data.txt", "report.txt"):
+            (root / name).write_text("")
+        (root / "rc.bash").write_text(
+            "\n".join(
+                [
+                    Bash.generate("process", from_command(with_paths)),
+                    "process() { printf '<%s>\\n' \"$@\"; }",
+                    "PS1='$ ' TMOUT=1",
+                ]
+            )
+        )
+        # Ctrl-D exits, or ends a quote left open; TMOUT exits once input runs out.
+        output = _type_into(
+            _script_args("bash --noprofile --rcfile rc.bash -i"),
+            directory,
+            f"{line}\t\n\x04exit\n",
+        )
+        return [
+            text[1:-1].replace(directory, "~", 1)
+            for text in _ESCAPES.sub("", output).replace("\r", "").split("\n")
+            if text.startswith("<") and text.endswith(">")
+        ]
+
+
+@pytest.mark.skipif(not _HAS_READLINE, reason="no interactive Bash with readline")
+def test_completes_paths_containing_spaces_as_one_argument():
+    """completes paths containing spaces as one argument"""
+    assert _replay_bash_completion("process --input report\\ d") == [
+        "--input",
+        "report data.txt",
+    ]
+    assert _replay_bash_completion("process --output-dir pro") == [
+        "--output-dir",
+        "project files",
+    ]
+
+
+@pytest.mark.skipif(not _HAS_READLINE, reason="no interactive Bash with readline")
+def test_keeps_an_expandable_or_quoted_directory_as_typed():
+    """keeps an expandable or quoted directory as typed"""
+    assert _replay_bash_completion("process --input $HOME/report\\ d") == [
+        "--input",
+        "~/report data.txt",
+    ]
+    assert _replay_bash_completion('process --input "./"rep') == ["--input", "./report"]
 
 
 def test_inlines_choice_values_for_choice_flags():
@@ -853,6 +960,29 @@ def test_dispatches_to_powershell_generator():
     assert "Register-ArgumentCompleter -Native -CommandName 'greet'" in script
 
 
+class _Port(Config):
+    port = Flag.integer("port")
+
+
+def test_derives_a_zsh_script_from_a_command_tree_without_running_its_handlers():
+    """derives a zsh script from a Command tree without running its handlers"""
+
+    def handler(_: object) -> fx.Effect[None]:
+        raise AssertionError("command handler should not run")
+
+    cli = command.make("server", Config, handler).with_subcommands(
+        command.make("start", _Port, handler)
+    )
+
+    descriptor = Completions.from_command(cli)
+    assert [sub.name for sub in descriptor.subcommands] == ["start"]
+
+    script = Completions.generate("server", "zsh", descriptor)
+    assert "#compdef server" in script
+    assert "_server_start()" in script
+    assert "--port" in script
+
+
 # --- Completions integration ---------------------------------------------------------
 
 
@@ -882,7 +1012,6 @@ def test_generates_valid_bash_script_for_comprehensive_cli():
         "_mycli_admin_users_create()",
         "_mycli_admin_config_set()",
         "_mycli_admin_config_get()",
-        "compgen -f",
     ]:
         assert needle in script
 
@@ -1006,7 +1135,7 @@ def _replay_power_shell(descriptor: CommandDescriptor, line: str) -> list[str]:
             check=True,
             timeout=20,
         ).stdout
-    return [text for text in re.split(r"\r?\n", output) if text]
+    return [text for text in _ESCAPES.sub("", output).replace("\r", "").split("\n") if text]
 
 
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh is not installed")

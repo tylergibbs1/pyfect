@@ -1035,6 +1035,17 @@ def test_check_is_ulid():
     decoding.fail("", message)
 
 
+def test_check_is_ascii():
+    """Check / isAscii"""
+    schema = S.String.check(S.is_ascii())
+    SchemaAsserts(schema).verify_generation()
+    assert _representation(schema) == {"id": "effect/schema/isAscii", "payload": None}
+    decoding = SchemaAsserts(schema).decoding()
+    decoding.succeed("")
+    decoding.succeed("\x00a\x7f")
+    decoding.fail("a\x80", "Expected an ASCII string")
+
+
 def test_check_is_base64():
     """Check / isBase64"""
     schema = S.String.check(S.is_base64())

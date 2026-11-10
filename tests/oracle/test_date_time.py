@@ -857,3 +857,22 @@ def test_does_not_append_z_to_strings_containing_gmt():
 def test_accepts_lowercase_utc_designators(text: str, expected: str):
     """accepts lowercase UTC designators: %s"""
     assert _make(text) == expected
+
+
+# --- rounding across DST (Effect 4.1.2) ------------------------------------------------
+
+
+def test_rounds_within_the_repeated_dst_hour():
+    """rounds within the repeated DST hour"""
+    second_one_thirty = utc("2025-11-02T06:30:15.250+00:00").astimezone(NEW_YORK)
+    assert iso(date_time.start_of(second_one_thirty, "hour")) == "2025-11-02T06:00:00.000Z"
+    assert iso(date_time.end_of(second_one_thirty, "second")) == "2025-11-02T06:30:15.999Z"
+    assert iso(date_time.nearest(second_one_thirty, "minute")) == "2025-11-02T06:30:00.000Z"
+
+
+def test_rounds_calendar_units_to_the_whole_day_across_dst():
+    """rounds calendar units to the whole day across DST"""
+    havana_noon = utc("2025-11-02T17:00:00+00:00").astimezone(ZoneInfo("America/Havana"))
+    assert iso(date_time.start_of(havana_noon, "day")) == "2025-11-02T04:00:00.000Z"
+    santiago_noon = utc("2025-04-05T15:00:00+00:00").astimezone(ZoneInfo("America/Santiago"))
+    assert iso(date_time.end_of(santiago_noon, "day")) == "2025-04-06T03:59:59.999Z"

@@ -1,6 +1,6 @@
 """The ``Duration`` transformations (Effect's ``durationFromString``,
-``durationFromNanos``, ``durationFromMillis``) between a ``timedelta`` and
-its text, nanoseconds or milliseconds.
+``durationFromNanos``, ``durationFromMillis``, ``durationFromIsoString``) between a
+``timedelta`` and its text, nanoseconds, milliseconds or ISO 8601 text.
 
 A ``timedelta`` counts whole microseconds within about 2.7 million years,
 so a duration it cannot hold once rounded to whole nanoseconds as Effect
@@ -23,6 +23,7 @@ from fractions import Fraction
 from typing import cast
 
 from pyfect._digits import digits_value
+from pyfect._duration_iso import format_iso_nanos, parse_iso_nanos
 from pyfect._js import js_number
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
@@ -136,6 +137,18 @@ def _encode_millis(duration: timedelta, options: ParseOptions) -> Exit[float, Is
     return Success(int(millis) if millis.is_integer() else millis)
 
 
+def _decode_iso(text: str, options: ParseOptions) -> Exit[timedelta, Issue]:
+    nanos = parse_iso_nanos(text)
+    if nanos is None:
+        return _invalid("an ISO 8601 duration without years or months", text, options)
+    duration = _from_nanos(nanos)
+    return _invalid(_HOLDS, text, options) if duration is None else Success(duration)
+
+
+def _encode_iso(duration: timedelta, _: ParseOptions) -> Exit[str, Issue]:
+    return Success(format_iso_nanos(_nanos_of(duration)))
+
+
 duration_from_string: Transformation[timedelta, str] = transform_effect(
     decode=_decode_text, encode=_encode_text
 )
@@ -148,3 +161,9 @@ duration_from_millis: Transformation[timedelta, float] = transform_effect(
     decode=_decode_millis, encode=_encode_millis
 )
 """A ``timedelta`` from a count of milliseconds."""
+duration_from_iso_string: Transformation[timedelta, str] = transform_effect(
+    decode=_decode_iso, encode=_encode_iso
+)
+"""A ``timedelta`` from an ISO 8601 duration (``"PT1H30M"``, ``"P1W2D"``); years and
+months, which have no fixed length, are rejected. Encodes with days, hours, minutes and
+seconds."""

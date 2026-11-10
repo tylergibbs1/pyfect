@@ -16,7 +16,14 @@ from pyfect._js import text_encode
 from pyfect.context import Tag
 from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.errors import Done
-from pyfect.file_system._model import FileInfo, OpenFlag, SeekMode, WatchEvent
+from pyfect.file_system._glob import glob as glob_walk
+from pyfect.file_system._model import (
+    DirectoryEntry,
+    FileInfo,
+    OpenFlag,
+    SeekMode,
+    WatchEvent,
+)
 from pyfect.platform_error import NotFound, PlatformError, bad_argument
 from pyfect.scope import Scope
 from pyfect.sink import Sink, for_each
@@ -75,7 +82,7 @@ class FileSystemService(ABC):
     """Files and directories (Effect's ``FileSystem``). Paths are strings;
     every operation fails with a ``PlatformError``.
 
-    An implementation defines the abstract operations; ``exists``,
+    An implementation defines the abstract operations; ``exists``, ``glob``,
     ``read_file_string``, ``write_file_string``, ``stream`` and ``sink`` are
     built from them."""
 
@@ -105,14 +112,6 @@ class FileSystemService(ABC):
 
     @abstractmethod
     def chown(self, path: str, uid: int, gid: int) -> Effect[None, PlatformError]: ...
-
-    @abstractmethod
-    def glob(
-        self, pattern: str, *, root: str | None = None, exclude: tuple[str, ...] = ()
-    ) -> Effect[list[str], PlatformError]:
-        """The paths below ``root`` (the working directory) matching
-        ``pattern`` (``**`` crosses directories) and none of ``exclude``,
-        relative to ``root``."""
 
     @abstractmethod
     def link(self, from_path: str, to_path: str) -> Effect[None, PlatformError]:
@@ -171,6 +170,17 @@ class FileSystemService(ABC):
         it, relative to it."""
 
     @abstractmethod
+    def read_directory_entries(
+        self, path: str
+    ) -> Effect[tuple[DirectoryEntry, ...], PlatformError]:
+        """The names in a directory (as ``read_directory``, in no particular
+        order) with the type of each entry itself, not of a link's target;
+        ``"Unknown"`` where the listing cannot tell, and ``glob`` then asks
+        ``stat``. A wrapper that changes ``read_directory`` (prefixing
+        paths, say) must change this the same way for ``glob`` to list the
+        right directory."""
+
+    @abstractmethod
     def read_file(self, path: str) -> Effect[bytes, PlatformError]: ...
 
     @abstractmethod
@@ -220,6 +230,32 @@ class FileSystemService(ABC):
     ) -> Effect[None, PlatformError]: ...
 
     # --- derived -------------------------------------------------------------
+
+    def glob(
+        self,
+        pattern: str,
+        *,
+        root: str | None = None,
+        exclude: tuple[str, ...] = (),
+        dot: bool = False,
+    ) -> Effect[list[str], PlatformError]:
+        """The paths below ``root`` (the working directory) matching the
+        ``pyfect.glob`` pattern and none of ``exclude``: ``/``-separated,
+        relative to ``root`` (absolute for an absolute pattern), depth
+        first with each directory's entries sorted by name. Wildcards skip
+        names that start with ``.`` unless the segment does or ``dot`` is
+        set, and ``dir/**`` includes ``dir``. ``**`` does not follow
+        symbolic links to directories; a link named by another segment is
+        followed. Excluded directories are not read; an entry whose type
+        cannot be told (a broken link) counts as a file.
+
+        Failing to read the root or a leading literal directory fails;
+        missing paths give nothing, and unreadable directories reached
+        through wildcards are skipped. Wildcards are case-sensitive; leading
+        literal segments use ``stat``, so they follow the file system's case
+        rules and results keep the pattern's spelling. Built from
+        ``read_directory_entries``, ``stat`` and ``read_link``."""
+        return glob_walk(self, pattern, root=root, exclude=exclude, dot=dot)
 
     def exists(self, path: str) -> Effect[bool, PlatformError]:
         """Whether ``path`` exists; errors other than ``NotFound`` fail."""

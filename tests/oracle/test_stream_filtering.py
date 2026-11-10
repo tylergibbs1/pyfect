@@ -425,6 +425,19 @@ def test_rechunk_preserves_a_large_source_chunk_with_target_size(size: int, leng
 
 
 @testing.effect
+def test_rechunk_emits_buffered_elements_before_failing():
+    """rechunk emits buffered elements before failing"""
+    result = yield from (
+        stream.make(1, 2, 3)
+        .concat(stream.fail("Ouch"))
+        .rechunk(10)
+        .catch_all(stream.make)
+        .run_collect()
+    )
+    assert result == [1, 2, 3, "Ouch"]
+
+
+@testing.effect
 def test_rechunk_and_grouped_normalize_their_chunk_size():
     """rechunk and grouped normalize their chunk size"""
     sizes = [-1, 0, 1, 2]

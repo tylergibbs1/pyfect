@@ -21,8 +21,12 @@ import pytest
 from pyfect.duration import (
     Duration,
     Seconds,
+    format_iso,
     from_input,
+    from_iso,
+    from_nanos,
     nanos_or_infinite,
+    to_micros,
     to_millis,
     to_nanos,
     to_seconds,
@@ -181,6 +185,94 @@ def test_from_input() -> None:
     assert from_input((0, -math.inf)) == NEGATIVE_INFINITY
     assert from_input((0, math.nan)) == 0
     assert from_input("invalid") is None
+
+
+def test_to_micros() -> None:
+    """toMicros"""
+    assert to_micros(1) == 1000
+    assert to_micros((0, 1)) == 0.001
+    assert to_micros("Infinity") == math.inf
+
+
+def test_format_iso() -> None:
+    """ISO 8601 > formatIso"""
+    for duration, expected in [
+        (0, "PT0S"),
+        (-0.0, "PT0S"),
+        ("1 week", "P7D"),
+        ("26 hours", "P1DT2H"),
+        ("90 minutes", "PT1H30M"),
+        (1500, "PT1.5S"),
+        (86_400_001, "P1DT0.001S"),
+        ((0, 1), "PT0.000000001S"),
+        (-93_784_500, "-P1DT2H3M4.5S"),
+    ]:
+        assert format_iso(to_seconds(duration)) == expected, duration
+    assert format_iso(INFINITY) is None
+    assert format_iso(NEGATIVE_INFINITY) is None
+
+
+def test_from_iso() -> None:
+    """ISO 8601 > fromIso"""
+    valid: list[tuple[str, Duration]] = [
+        ("PT0S", 0),
+        ("P0D", 0),
+        ("-PT0S", 0),
+        ("+P1D", "1 day"),
+        ("-P1D", {"days": -1}),
+        ("P1W2D", "9 days"),
+        ("PT1.5H", "90 minutes"),
+        ("PT1H0.5M", "3630 seconds"),
+        ("PT1,5S", 1500),
+        ("PT1.123456789S", (0, 1_123_456_789)),
+        ("-P1DT2H3M4.5S", -93_784_500),
+        ("P400D", "400 days"),
+    ]
+    for text, expected in valid:
+        assert from_iso(text) == to_seconds(expected), text
+    for text in [
+        "",
+        "P",
+        "PT",
+        "-P",
+        "P1DT",
+        "P1.5D",
+        "P1.5W",
+        "PT1.5H1M",
+        "PT.5S",
+        "PT1.S",
+        "PT1.1234567891S",
+        "P1D1W",
+        "PT1S1M",
+        "P-1D",
+        " P1D",
+        "pt1s",
+        "P1Y",
+        "P1M",
+        "P1MT1H",
+        "-P1M",
+        "PT1S\n",
+        "PT\u0661S",
+    ]:
+        assert from_iso(text) is None, text
+    assert from_iso("PT1.5S") == to_seconds(1500)
+    assert from_iso("PT0.000000001S") == to_seconds((0, 1))
+    assert from_iso("PT9007199254740.993S") == nearest(9_007_199_254_740_993_000_000)
+
+
+def test_format_iso_from_iso_round_trip() -> None:
+    """ISO 8601 > formatIso / fromIso round trip"""
+    for duration in [
+        to_seconds((0, 1)),
+        to_seconds(0.5),
+        to_seconds("90 minutes"),
+        to_seconds("400 days"),
+        to_seconds(-1500),
+        from_nanos(123_456_789_012_345_678),
+    ]:
+        text = format_iso(duration)
+        assert text is not None
+        assert from_iso(text) == duration, text
 
 
 def test_to_millis() -> None:

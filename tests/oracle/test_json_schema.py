@@ -1894,11 +1894,12 @@ def test_todocumentdraft07_preserves_validation_semantics():
                     "mode": {"const": "on"},
                     "value": {"type": "number", "exclusiveMinimum": 0},
                     "tuple": {"type": "array", "prefixItems": [{"type": "string"}], "items": False},
+                    "empty": {"enum": [], "$ref": "#/$defs/Anything"},
                 },
                 "required": ["mode", "value", "tuple"],
                 "additionalProperties": False,
             },
-            "definitions": {},
+            "definitions": {"Anything": {}},
         },
         {
             "dialect": "draft-07",
@@ -1912,11 +1913,13 @@ def test_todocumentdraft07_preserves_validation_semantics():
                         "items": [{"type": "string"}],
                         "additionalItems": False,
                     },
+                    # Draft-07 requires a non-empty ``enum``: an empty one matches nothing.
+                    "empty": {"allOf": [{"not": {}}, {"$ref": "#/definitions/Anything"}]},
                 },
                 "required": ["mode", "value", "tuple"],
                 "additionalProperties": False,
             },
-            "definitions": {},
+            "definitions": {"Anything": {}},
         },
     )
 
@@ -2965,6 +2968,53 @@ def test_todocumentdraft04_converts_documents_generated_from_effect_s():
             "definitions": {},
         },
     )
+
+
+def test_to_multi_document_components():
+    """``toMultiDocumentComponents``: OpenAPI 3.1 components without its keyword checks,
+    the error naming the target (Node's output)."""
+    multi = json_schema.MultiDocument(
+        "draft-2020-12",
+        ({"$ref": "#/$defs/a%20b"}, {"example": 1}),
+        {"a b": {"type": "string"}, "a_b": {"$ref": "#/$defs/a%20b/x"}},
+    )
+    out = json_schema.to_multi_document_components(multi, target="X")
+    assert out.schemas == ({"$ref": "#/components/schemas/a_b_1"}, {"example": 1})
+    assert out.definitions == {
+        "a_b_1": {"type": "string"},
+        "a_b": {"$ref": "#/components/schemas/a_b_1/x"},
+    }
+    resource = json_schema.MultiDocument(
+        "draft-2020-12", ({"$id": "https://x/s", "$ref": "#/$defs/A"},), {"A": {}}
+    )
+    with pytest.raises(ValueError) as info:
+        json_schema.to_multi_document_components(resource, target="Target 1")
+    assert str(info.value) == (
+        'Cannot convert JSON Schema keyword "$ref" to Target 1: '
+        "a schema resource cannot reference the shared definitions pool"
+    )
+
+
+def test_to_document_draft_07_with_definitions_path():
+    """``toDocumentDraft07WithDefinitionsPath``: references into the given path stay put
+    (Node's output)."""
+    document = json_schema.Document(
+        "draft-2020-12",
+        {"$ref": "#/components/schemas/A"},
+        {
+            "A": {"prefixItems": [{"type": "string"}], "$ref": "#/components/schemas/B"},
+            "B": {"type": "string"},
+        },
+    )
+    out = json_schema.to_document_draft_07_with_definitions_path(
+        document, ["components", "schemas"]
+    )
+    assert out.dialect == "draft-07"
+    assert out.schema == {"$ref": "#/components/schemas/A"}
+    assert out.definitions == {
+        "A": {"items": [{"type": "string"}], "allOf": [{"$ref": "#/components/schemas/B"}]},
+        "B": {"type": "string"},
+    }
 
 
 def test_tomultidocumentopenapi3_1_rejects_opaque_keywords_that_opena():

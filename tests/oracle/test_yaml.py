@@ -4,6 +4,7 @@ Effect test title; an ``it.each`` table is a parametrized test."""
 from __future__ import annotations
 
 import re
+from typing import Any
 
 import pytest
 
@@ -665,3 +666,89 @@ def test_preserves_hashes_in_single_and_double_quoted_flow_sequence_items():
     """preserves hashes in single- and double-quoted flow sequence items"""
     source = "descriptions: [\"Deploy # now\", 'Verify # later'] # end\n"
     assert yaml.parse(source) == {"descriptions": ["Deploy # now", "Verify # later"]}
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("-   name: a\n    age: 1\n", [{"name": "a", "age": 1}]),
+        (
+            "items:\n-   name: a\n    age: 1\n-   name: b\n    age: 2\n",
+            {"items": [{"name": "a", "age": 1}, {"name": "b", "age": 2}]},
+        ),
+    ],
+    ids=["root sequence", "indentless sequence"],
+)
+def test_sequence_entry_mappings_indented_past_the_dash_parses(source: str, expected: object):
+    """sequence entry mappings indented past the dash parses $name"""
+    assert yaml.parse(source) == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["-   name: a\n  age: 1\n", "-   name: a\n   age: 1\n"],
+    ids=["two spaces", "three spaces"],
+)
+def test_rejects_a_later_key_indented_by(source: str):
+    """rejects a later key indented by %s"""
+    with pytest.raises(ValueError):
+        yaml.parse(source)
+
+
+def test_rejects_a_tab_before_the_first_key():
+    """rejects a tab before the first key"""
+    with pytest.raises(ValueError, match="Tabs cannot be used for YAML indentation"):
+        yaml.parse("- \tname: a\n   age: 1\n")
+
+
+def test_merges_mappings_with_explicit_keys_and_earlier_sources_taking_precedence():
+    """merges mappings with explicit keys and earlier sources taking precedence"""
+    source = """base: &base {a: 1, b: 2}
+other: &other {b: 3, c: 4}
+block:
+  c: 5
+  <<: [*base, *other]
+flow: {<<: *other, c: 5}
+items:
+  - <<: *base
+    a: 5
+"""
+    result: Any = yaml.parse(source)
+    assert result == {
+        "base": {"a": 1, "b": 2},
+        "other": {"b": 3, "c": 4},
+        "block": {"a": 1, "b": 2, "c": 5},
+        "flow": {"b": 3, "c": 5},
+        "items": [{"a": 5, "b": 2}],
+    }
+    assert list(result["flow"]) == ["b", "c"]
+
+
+def test_treats_quoted_merge_keys_as_ordinary_keys():
+    """treats quoted merge keys as ordinary keys"""
+    assert yaml.parse("\"<<\": 1\nflow: {'<<': 2}\n") == {"<<": 1, "flow": {"<<": 2}}
+
+
+@pytest.mark.parametrize("source", ["<<: 1\n", "{<<: [{a: 1}, 2]}", "<<: {a: 1}\n<<: {b: 2}\n"])
+def test_rejects_invalid_merge_usage_in(source: str):
+    """rejects invalid merge usage in %j"""
+    with pytest.raises(ValueError):
+        yaml.parse(source)
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        ("<<: 1\n", "Merge key values must be mappings at line 1"),
+        ("{<<: [{a: 1}, 2]}", "Merge key values must be mappings at flow offset 16"),
+        ("-   name: a\n  age: 1\n", "Unexpected indentation of 2 spaces at line 2"),
+        ("<<: {a: 1}\n<<: {b: 2}\n", "Duplicate key '<<' at line 2"),
+        ("a: 1\n<<: {a: 2}\na: 3\n", "Duplicate key 'a' at line 3"),
+        ("- \tname: a\n", "Tabs cannot be used for YAML indentation at line 1"),
+    ],
+)
+def test_merge_and_indentation_errors_give_effect_s_message(source: str, message: str):
+    """(pyfect) printed by Effect 4.1.2 under Node"""
+    with pytest.raises(ValueError) as raised:
+        yaml.parse(source)
+    assert str(raised.value) == message

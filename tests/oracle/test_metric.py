@@ -30,8 +30,10 @@ import itertools
 import json
 import math
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
+
+import pytest
 
 import pyfect as fx
 from pyfect import metric, testing
@@ -788,100 +790,38 @@ def test_summary_should_return_the_correct_quantile_when_the_first_chunk_oversho
     )
 
 
-@testing.effect
-def test_track_updates_on_success():
-    """track > updates on success"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.succeed(1).track(counter)
-    assert (yield from counter.value()) == metric.CounterState(1, False)
+_TRACKERS: list[
+    tuple[str, Callable[[fx.Effect[int, int], Any], fx.Effect[int, int]], list[int]]
+] = [
+    ("track", lambda eff, counter: eff.track(counter), [1, 2, 3]),
+    ("track_errors", lambda eff, counter: eff.track_errors(counter), [0, 1, 1]),
+    ("track_defects", lambda eff, counter: eff.track_defects(counter), [0, 0, 1]),
+]
 
 
-@testing.effect
-def test_track_updates_on_failure():
-    """track > updates on failure"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.fail(1).track(counter).exit()
-    assert (yield from counter.value()) == metric.CounterState(1, False)
+@pytest.mark.parametrize(("name", "track", "expected"), _TRACKERS, ids=[t[0] for t in _TRACKERS])
+def test_track_updates_after_success_failure_and_defect(
+    name: str,
+    track: Callable[[fx.Effect[int, int], Any], fx.Effect[int, int]],
+    expected: list[float],
+) -> None:
+    """${name} updates after success, failure and defect: ${expected}"""
+    defect = RuntimeError(1)
 
+    @fx.gen
+    def program():
+        counter = metric.counter(_next_id()).with_constant_input(1)
+        exits: list[fx.Exit[int, int]] = []
+        counts: list[float] = []
+        effects: list[fx.Effect[int, int]] = [fx.succeed(1), fx.fail(1), fx.die(defect)]
+        for effect in effects:
+            exits.append((yield from track(effect, counter).exit()))
+            counts.append((yield from counter.value()).count)
+        return exits, counts
 
-@testing.effect
-def test_track_updates_on_defect():
-    """track > updates on defect"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.die(RuntimeError(1)).track(counter).exit()
-    assert (yield from counter.value()) == metric.CounterState(1, False)
-
-
-@testing.effect
-def test_track_maps_exits_while_preserving_the_instrumented_effect_result():
-    """track > maps exits while preserving the instrumented effect result"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    assert (yield from fx.succeed(1).track(counter)) == 1
-    assert (yield from counter.value()) == metric.CounterState(1, False)
-
-
-@testing.effect
-def test_track_updates_on_failure_second_block():
-    """track > updates on failure (the second ``track`` block)"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.fail(1).track(counter).exit()
-    assert (yield from counter.value()) == metric.CounterState(1, False)
-
-
-@testing.effect
-def test_track_updates_on_defect_second_block():
-    """track > updates on defect (the second ``track`` block)"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.die(RuntimeError(1)).track(counter).exit()
-    assert (yield from counter.value()) == metric.CounterState(1, False)
-
-
-@testing.effect
-def test_track_errors_does_not_update_on_success():
-    """trackErrors > does not update on success"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.succeed(1).track_errors(counter)
-    assert (yield from counter.value()) == metric.CounterState(0, False)
-
-
-@testing.effect
-def test_track_errors_updates_on_failure():
-    """trackErrors > updates on failure"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.fail(1).track_errors(counter).exit()
-    assert (yield from counter.value()) == metric.CounterState(1, False)
-
-
-@testing.effect
-def test_track_errors_does_not_update_on_defect():
-    """trackErrors > does not update on defect"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.die(RuntimeError(1)).track_errors(counter).exit()
-    assert (yield from counter.value()) == metric.CounterState(0, False)
-
-
-@testing.effect
-def test_track_defects_does_not_update_on_success():
-    """trackDefects > does not update on success"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.succeed(1).track_defects(counter)
-    assert (yield from counter.value()) == metric.CounterState(0, False)
-
-
-@testing.effect
-def test_track_defects_does_not_update_on_failure():
-    """trackDefects > does not update on failure"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.fail(1).track_defects(counter).exit()
-    assert (yield from counter.value()) == metric.CounterState(0, False)
-
-
-@testing.effect
-def test_track_defects_updates_on_defect():
-    """trackDefects > updates on defect"""
-    counter = metric.counter(_next_id()).with_constant_input(1)
-    yield from fx.die(RuntimeError(1)).track_defects(counter).exit()
-    assert (yield from counter.value()) == metric.CounterState(1, False)
+    exits, counts = testing.run_test(program)
+    assert exits == [fx.exit.succeed(1), fx.exit.fail(1), fx.exit.die(defect)]
+    assert counts == expected
 
 
 @testing.effect

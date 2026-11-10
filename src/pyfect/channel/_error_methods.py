@@ -10,7 +10,7 @@ as for ``Effect``.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Never, overload
+from typing import TYPE_CHECKING, Any, Literal, Never, overload
 
 from pyfect.channel._base import (
     ChannelBase,
@@ -284,19 +284,20 @@ class ErrorMethods(
         return _errors.or_die(self)
 
     def ignore(
-        self, *, log: bool | Severity = False
+        self, *, log: bool | Severity | Literal["Unhandled"] = False
     ) -> Channel[
         OutElem_co, Never, OutDone_co | None, InElem_contra, InErr_contra, InDone_contra, Env_co
     ]:
         """End (with ``None``) instead of failing with a typed error. With
-        ``log``, log the cause first, at the current log level (``True``)
-        or the level given."""
+        ``log``, log the cause first, at the current log level (``True``),
+        the level given, or the ``UnhandledLogLevel`` read when it fails
+        (``"Unhandled"``)."""
         from pyfect.channel import _errors
 
         return _errors.ignore(self, log)
 
     def ignore_cause(
-        self, *, log: bool | Severity = False
+        self, *, log: bool | Severity | Literal["Unhandled"] = False
     ) -> Channel[
         OutElem_co, Never, OutDone_co | None, InElem_contra, InErr_contra, InDone_contra, Env_co
     ]:

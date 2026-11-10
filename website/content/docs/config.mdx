@@ -28,6 +28,8 @@ secret out of logs and error messages.
 Constructors: `string`, `integer`, `number`, `boolean`, `port`, `url`, `duration`, `literal`,
 `log_level`, `byte_size`, `date_time`, `redacted`, `list_of`, `dict_of`; combine with
 `config.all`, `all_dict` or `@config.gen`.
+`dict_of` also reads a separated string (`"a=1,b=2"`): `trim=True` trims keys and values, and
+`keep_empty_values=True` keeps `"empty="` as `""` instead of skipping it.
 `url` gives a `Url` (`fx.Url`, JavaScript's `URL`), parsed as `new URL(text)` parses it;
 see [URLs](/docs/platform#urls).
 `date_time` reads text as JavaScript's `Date` does, V8's forms included (`2024-01-15`,

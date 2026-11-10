@@ -42,7 +42,10 @@ every version. Timestamps are epoch milliseconds too: `testing.set_time`,
 six with seconds first, in a time zone. `cron.next(c, now)` is the first matching time after
 `now`, `cron.sequence` the ones after it, and `cron.match` tests a datetime. `cron.parse`
 returns a `Result` with a `CronParseError` for a bad expression; `cron.parse_unsafe` raises
-it. `schedule.cron` repeats an effect at each matching time. To run a cron job once across a
+it. A wall time a DST change repeats runs at its first occurrence;
+`on_dst_overlap="later"` picks the second and `"both"` runs at both (`cron.parse(expr, tz,
+on_dst_overlap=...)`, also on `schedule.cron`). `schedule.cron` repeats an effect at each
+matching time. To run a cron job once across a
 cluster, see [cron jobs](/docs/cluster#singletons-and-cron-jobs).
 
 <CodeOutput>

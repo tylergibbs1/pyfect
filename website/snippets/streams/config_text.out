@@ -1,0 +1,5 @@
+Ok(value={'port': 8080})
+Ok(value={'port': 8080, 'hosts': ['a', 'b']})
+Ok(value={'port': 8080, 'database': {'host': 'localhost'}})
+Err(error=EncodingError(kind='Decode', module='Toml', input='port = ', message='Expected a value at line 1, column 8'))
+{'base': {'retries': 3}, 'prod': {'retries': 3, 'port': 443}}

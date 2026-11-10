@@ -18,7 +18,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import schedule, testing
-from pyfect.pool import PoolItem, Strategy
+from pyfect.pool import PoolItem, PoolStats, Strategy
 
 from ._task_queue import TaskQueue
 
@@ -1250,3 +1250,143 @@ def test_usage_ttl_preserves_fifo_retirement_and_minimum_size(removal: str, remo
         assert numbers.finalized == [*expected, 4, 5]
         assert len(pool.state.items) == 1
         assert (yield from fx.scoped(pool.get())) == 6
+
+
+# --- Effect 4.1.2 ---------------------------------------------------------------
+
+
+@testing.effect
+def test_admits_requests_in_fifo_order_when_a_borrower_immediately_reacquires():
+    """admits requests in FIFO order when a borrower immediately reacquires"""
+    pool = yield from fx.Pool.make(fx.succeed("connection"), size=1)
+    asked = 0
+    admitted: list[int] = []
+
+    def body() -> Any:
+        nonlocal asked
+        ticket = asked
+        asked += 1
+        yield from pool.get()
+        admitted.append(ticket)
+        yield from fx.sleep("10 millis")
+
+    use = fx.scoped(fx.gen(body))
+    chained = yield from use.repeat(times=2).fork()
+    others = yield from fx.for_each((1, 2, 3), lambda at: use.delay(f"{at} millis").fork())
+    yield from testing.adjust("100 millis")
+    yield from chained.join()
+    yield from fx.Fiber.join_all(others)
+    assert admitted == [0, 1, 2, 3, 4, 5]
+
+
+@testing.effect
+def test_a_later_finalizer_of_the_pools_scope_can_get_an_item_after_idle_items_expire():
+    """a later finalizer of the pool's scope can get an item after idle items expire"""
+    acquired = 0
+
+    def acquire() -> int:
+        nonlocal acquired
+        acquired += 1
+        return acquired
+
+    scope = fx.CloseableScope()
+    pool = yield from _in(
+        scope, fx.Pool.make_with_ttl(fx.sync(acquire), min=0, max=1, time_to_live="1 second")
+    )
+    result: list[fx.Exit[int, Never]] = []
+    yield from scope.add_finalizer(lambda _: fx.scoped(pool.get()).exit().map(result.append))
+    yield from fx.scoped(pool.get())
+    yield from testing.adjust("2 seconds")
+    closing = yield from scope.close(_DONE).fork_daemon()
+    for _ in range(100):
+        if closing.poll_unsafe() is not None:
+            break
+        yield from fx.yield_now()
+    assert closing.poll_unsafe() is not None, "Scope.close did not return"
+    assert result == [fx.Success(2)]
+
+
+def _stats(idle: int, used: int, pending: int, low: int, high: int) -> PoolStats:
+    return PoolStats(idle=idle, used=used, pending=pending, min=low, max=high)
+
+
+@testing.effect
+def test_stats_counts_leased_items_rather_than_borrowers_and_parked_waiters_as_pending():
+    """counts leased items rather than borrowers, and parked waiters as pending"""
+    acquired = 0
+
+    def acquire() -> int:
+        nonlocal acquired
+        acquired += 1
+        return acquired
+
+    pool = yield from fx.Pool.make(fx.sync(acquire), size=2, concurrency=2)
+    yield from _wait_until(lambda: acquired == 2)
+    assert (yield from pool.stats()) == _stats(2, 0, 0, 2, 2)
+    outer = yield from fx.Scope()
+    leases = outer.fork_unsafe()
+    yield from _in(leases, pool.get())
+    yield from _in(leases, pool.get())
+    assert (yield from pool.stats()) == _stats(1, 1, 0, 2, 2)
+    yield from _in(leases, pool.get())
+    yield from _in(leases, pool.get())
+    assert (yield from pool.stats()) == _stats(0, 2, 0, 2, 2)
+    waiter = outer.fork_unsafe()
+    fiber = yield from _in(waiter, pool.get()).fork(start_immediately=True)
+    assert (yield from pool.stats()) == _stats(0, 2, 1, 2, 2)
+    yield from leases.close(_DONE)
+    yield from fiber.join()
+    assert (yield from pool.stats()) == _stats(1, 1, 0, 2, 2)
+    yield from waiter.close(_DONE)
+
+
+@testing.effect
+def test_stats_counts_a_reserved_item_as_used_after_its_borrowers_return():
+    """counts a reserved item as used after its borrowers return"""
+    resource = "resource"
+    pool = yield from fx.Pool.make(fx.succeed(resource), size=1, concurrency=2)
+    outer = yield from fx.Scope()
+    lease = outer.fork_unsafe()
+    reservation = outer.fork_unsafe()
+    yield from _in(lease, pool.get())
+    yield from _in(reservation, pool.reserve(resource))
+    yield from lease.close(_DONE)
+    assert (yield from pool.stats()) == _stats(0, 1, 0, 1, 1)
+    yield from reservation.close(_DONE)
+    assert (yield from pool.stats()) == _stats(1, 0, 0, 1, 1)
+
+
+@testing.effect
+def test_stats_counts_an_invalidated_item_as_used_until_its_last_borrower_returns():
+    """counts an invalidated item as used until its last borrower returns"""
+    acquired = 0
+
+    def acquire() -> int:
+        nonlocal acquired
+        acquired += 1
+        return acquired
+
+    pool = yield from fx.Pool.make(fx.sync(acquire), size=1)
+    lease = (yield from fx.Scope()).fork_unsafe()
+    item = yield from _in(lease, pool.get())
+    yield from pool.invalidate(item)
+    yield from _wait_until(lambda: acquired == 2)
+    # The invalidated session is still open, so both count against ``max``.
+    assert (yield from pool.stats()) == _stats(1, 1, 0, 1, 1)
+    yield from lease.close(_DONE)
+    assert (yield from pool.stats()) == _stats(1, 0, 0, 1, 1)
+
+
+@testing.effect
+def test_stats_does_not_count_failed_acquisitions():
+    """does not count failed acquisitions"""
+    attempts = 0
+
+    def attempt() -> fx.Effect[int, str]:
+        nonlocal attempts
+        attempts += 1
+        return fx.fail("boom") if attempts == 2 else fx.succeed(attempts)
+
+    pool = yield from fx.Pool.make(fx.suspend(attempt), size=2)
+    yield from _wait_until(lambda: len(pool.state.items) == 2)
+    assert (yield from pool.stats()) == _stats(1, 0, 0, 2, 2)

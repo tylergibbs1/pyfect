@@ -10,9 +10,9 @@ Omitted, with the reason:
 
 - the two "supports .pipe()" titles: a dataclass has no ``pipe``; Python
   calls the function on it.
-- "copies own enumerable string and symbol keys only" and "keeps the class
-  prototype when args has an own __proto__ key": a dataclass constructor
-  takes exactly its fields, so there are no extra keys or prototypes to copy.
+- "keeps the class prototype when args has an own __proto__ key": a
+  dataclass constructor takes exactly its fields, so there is no prototype
+  to copy.
 - "declarations reference the named constructor types": TypeScript
   declaration emit.
 - "toJSON includes fields": ``dataclasses.asdict`` is the field dictionary;
@@ -22,6 +22,8 @@ Omitted, with the reason:
 import dataclasses
 import math
 from dataclasses import dataclass
+
+import pytest
 
 import pyfect as fx
 from pyfect import testing
@@ -34,21 +36,24 @@ class Person:
     age: int
 
 
-def test_class_assigns_fields_from_constructor_args() -> None:
-    """assigns fields from constructor args"""
-    p = Person(name="Alice", age=30)
-    assert (p.name, p.age) == ("Alice", 30)
+def test_class_compares_instances_structurally() -> None:
+    """compares instances structurally"""
+    a = Person(name="Bob", age=25)
+    assert a == Person(name="Bob", age=25)
+    assert hash(a) == hash(Person(name="Bob", age=25))
+    assert a != Person(name="Bob", age=26)
 
 
-def test_class_structural_equality() -> None:
-    """structural equality via Equal.equals"""
-    assert Person(name="Bob", age=25) == Person(name="Bob", age=25)
-    assert hash(Person(name="Bob", age=25)) == hash(Person(name="Bob", age=25))
+def test_class_copies_own_fields_only() -> None:
+    """copies own enumerable string and symbol keys only, as enumerable fields
 
-
-def test_class_not_equal_when_fields_differ() -> None:
-    """not equal when fields differ"""
-    assert Person(name="Bob", age=25) != Person(name="Bob", age=26)
+    A dataclass takes exactly its fields: they are its attributes, in order, and an
+    extra key is refused rather than copied."""
+    p = Person(name="E", age=3)
+    assert (p.name, p.age) == ("E", 3)
+    assert [f.name for f in dataclasses.fields(p)] == ["name", "age"]
+    with pytest.raises(TypeError):
+        Person(name="E", age=3, hidden=1)  # pyright: ignore[reportCallIssue]
 
 
 def test_class_without_fields() -> None:
@@ -61,38 +66,26 @@ def test_class_without_fields() -> None:
     assert isinstance(Empty(), Empty)
 
 
-def test_class_fields_are_enumerable() -> None:
-    """fields are enumerable"""
-    assert sorted(f.name for f in dataclasses.fields(Person(name="D", age=2))) == ["age", "name"]
-
-
 @dataclass(frozen=True)
 class Foo:
     value: int
 
 
-def test_tagged_class_sets_tag() -> None:
-    """sets _tag to the provided tag"""
-    assert type(Foo(1)) is Foo
+def test_tagged_class_sets_tag_and_assigns_fields() -> None:
+    """sets _tag to the provided tag and assigns fields"""
+    f = Foo(42)
+    assert type(f) is Foo
+    assert f.value == 42
 
 
-def test_tagged_class_assigns_fields() -> None:
-    """TaggedClass: assigns fields"""
-    assert Foo(42).value == 42
-
-
-def test_tagged_class_structural_equality_includes_tag() -> None:
-    """structural equality includes _tag"""
-    assert Foo(1) == Foo(1)
-
-
-def test_tagged_class_different_tags_are_not_equal() -> None:
-    """different tags are not equal"""
+def test_tagged_class_compares_structurally_including_tag() -> None:
+    """compares instances structurally, including _tag"""
 
     @dataclass(frozen=True)
     class Bar:
         value: int
 
+    assert Foo(1) == Foo(1)
     assert Foo(1) != Bar(1)
 
 
@@ -128,59 +121,35 @@ def area(shape: Shape) -> float:
             return width * height
 
 
-def test_tagged_enum_creates_a_variant() -> None:
-    """creates a variant with _tag"""
+def test_tagged_enum_constructors() -> None:
+    """constructors create tagged variants"""
     c = Circle(radius=5)
-    assert type(c) is Circle
-    assert c.radius == 5
-
-
-def test_tagged_enum_creates_different_variants() -> None:
-    """creates different variants"""
+    assert (type(c), c.radius) == (Circle, 5)
     r = Rect(width=3, height=4)
-    assert type(r) is Rect
-    assert (r.width, r.height) == (3, 4)
+    assert (type(r), r.width, r.height) == (Rect, 3, 4)
 
 
-def test_tagged_enum_is_matching_variant() -> None:
-    """returns true for matching variant"""
-    assert isinstance(Circle(1), Circle)
+def test_tagged_enum_is() -> None:
+    """$is only accepts values with the named tag"""
+    values: list[object] = [Circle(1), Rect(1, 1), None, "string", {}]
+    assert [isinstance(value, Circle) for value in values] == [True, False, False, False, False]
 
 
-def test_tagged_enum_is_non_matching_variant() -> None:
-    """returns false for non-matching variant"""
-    shape: Shape = Rect(1, 1)
-    assert not isinstance(shape, Circle)
+def test_tagged_enum_match() -> None:
+    """$match dispatches on _tag, data-last and data-first"""
 
-
-def test_tagged_enum_is_non_tagged_values() -> None:
-    """returns false for non-tagged values"""
-    values: list[object] = [None, "string", {}]
-    for value in values:
-        assert not isinstance(value, Circle)
-
-
-def test_tagged_enum_match_circle() -> None:
-    """data-last: matches Circle"""
-    assert area(Circle(5)) == math.pi * 25
-
-
-def test_tagged_enum_match_rect() -> None:
-    """data-last: matches Rect"""
-    assert area(Rect(3, 4)) == 12
-
-
-def test_tagged_enum_match_directly() -> None:
-    """data-first: matches directly"""
-
-    def double_radius(shape: Shape) -> float:
+    def measure(shape: Shape) -> float:
         match shape:
             case Circle(radius):
                 return radius * 2
-            case Rect():
-                return 0
+            case Rect(width, height):
+                return width * height
 
-    assert double_radius(Circle(1)) == 2
+    assert measure(Circle(5)) == 10
+    assert measure(Rect(3, 4)) == 12
+    assert measure(Circle(1)) == 2
+    assert measure(Rect(2, 5)) == 10
+    assert area(Circle(5)) == math.pi * 25
 
 
 @dataclass(frozen=True)
@@ -193,13 +162,8 @@ class Just:
     value: int
 
 
-def test_tagged_enum_accepts_void_for_empty_variants() -> None:
-    """accepts void for empty variants"""
-    assert type(Nothing()) is Nothing
-
-
-def test_tagged_enum_match_for_empty_variants() -> None:
-    """works with $match for empty variants"""
+def test_tagged_enum_variants_without_fields() -> None:
+    """constructs and matches variants without fields"""
 
     def show(o: Nothing | Just) -> str:
         match o:
@@ -208,6 +172,7 @@ def test_tagged_enum_match_for_empty_variants() -> None:
             case Just(value):
                 return f"some({value})"
 
+    assert type(Nothing()) is Nothing
     assert show(Nothing()) == "none"
     assert show(Just(42)) == "some(42)"
 
@@ -218,23 +183,17 @@ class MyError(TaggedError):
     message: str
 
 
-def test_error_is_an_instance_of_error() -> None:
-    """Error: is an instance of globalThis.Error"""
-    assert isinstance(MyError(code=500, message="fail"), Exception)
+def test_error_with_stack_trace_and_fields() -> None:
+    """is a globalThis.Error with a stack trace and the provided fields
 
-
-def test_error_assigns_fields() -> None:
-    """Error: assigns fields"""
+    The stack trace is there once raised, as for any Python exception."""
     e = MyError(code=404, message="not found")
+    assert isinstance(e, Exception)
     assert (e.code, e.message, str(e)) == (404, "not found", "not found")
-
-
-def test_error_has_a_stack_trace() -> None:
-    """has a stack trace (once raised, as any Python exception)"""
     try:
-        raise MyError(code=1, message="x")
-    except MyError as e:
-        assert e.__traceback__ is not None
+        raise e
+    except MyError as raised:
+        assert raised.__traceback__ is not None
 
 
 def test_error_without_fields() -> None:
@@ -264,19 +223,13 @@ class NotFound(TaggedError):
     resource: str
 
 
-def test_tagged_error_sets_tag() -> None:
-    """sets _tag"""
-    assert type(NotFound(resource="/x")) is NotFound
-
-
-def test_tagged_error_assigns_fields() -> None:
-    """TaggedError: assigns fields"""
-    assert NotFound(resource="/users").resource == "/users"
-
-
-def test_tagged_error_is_an_instance_of_error() -> None:
-    """TaggedError: is an instance of globalThis.Error"""
-    assert isinstance(NotFound(resource="r"), Exception)
+def test_tagged_error_named_after_tag_with_fields() -> None:
+    """is a globalThis.Error named after its _tag, with the provided fields"""
+    e = NotFound(resource="/users")
+    assert isinstance(e, Exception)
+    assert type(e) is NotFound
+    assert type(e).__name__ == "NotFound"
+    assert e.resource == "/users"
 
 
 @testing.effect
@@ -304,11 +257,6 @@ def test_tagged_error_without_fields() -> None:
     e = Boom()
     assert type(e) is Boom
     assert isinstance(e, Exception)
-
-
-def test_tagged_error_name_is_the_tag() -> None:
-    """sets .name to the tag"""
-    assert type(NotFound(resource="x")).__name__ == "NotFound"
 
 
 def test_tagged_error_different_tags_are_not_equal() -> None:

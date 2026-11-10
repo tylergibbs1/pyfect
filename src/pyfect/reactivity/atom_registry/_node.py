@@ -132,11 +132,14 @@ class Node[A]:
     def build(self) -> None:
         from pyfect.reactivity.atom_registry._lifetime import Lifetime
 
-        # A lifetime still attached to a node that needs a value belongs to
-        # a build that failed, or to one that is running and now superseded.
-        self.dispose_lifetime()
-        self.invalidated_during_build = False
         lifetime = Lifetime(self)
+        # Release a failed or superseded build. Its finalizers run only once,
+        # so their failure is raised once this build commits (Effect 4.1.2).
+        try:
+            self.dispose_lifetime()
+        except Exception as error:
+            lifetime.failure = error
+        self.invalidated_during_build = False
         self.lifetime = lifetime
         read = False
         value: Any = None

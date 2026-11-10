@@ -421,6 +421,14 @@ def test_rejects_relative_pointer():
     _expect_message([{"op": "add", "path": "invalid", "value": 1}], {}, 'must start with "/"')
 
 
+def test_rejects_invalid_escape_sequences():
+    """apply / errors / rejects invalid escape sequences"""
+    for path in ["/a~", "/a~2"]:
+        _expect_message(
+            [{"op": "add", "path": path, "value": 1}], {}, "Invalid JSON Pointer escape"
+        )
+
+
 def test_rejects_invalid_indices():
     """apply / errors / rejects invalid array indices"""
     _expect_message([{"op": "add", "path": "/abc", "value": 1}], [], "Invalid array index")

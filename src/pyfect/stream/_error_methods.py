@@ -10,7 +10,7 @@ the stream's type, use ``pyfect.stream.catch_tag`` / ``catch_if`` with
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Never, overload
+from typing import TYPE_CHECKING, Any, Literal, Never, overload
 
 from pyfect._tags import Tags
 from pyfect.result import Err, Ok, Result
@@ -214,16 +214,21 @@ class ErrorMethods(StreamBase[A_co, E_co, R_co]):
 
         return Stream(self._channel.or_die())
 
-    def ignore(self, *, log: bool | Severity = False) -> Stream[A_co, Never, R_co]:
+    def ignore(
+        self, *, log: bool | Severity | Literal["Unhandled"] = False
+    ) -> Stream[A_co, Never, R_co]:
         """End instead of failing with a typed error. With ``log``, log the
-        cause first, at the current log level (``True``) or the level
-        given."""
+        cause first, at the current log level (``True``), the level
+        given, or the ``UnhandledLogLevel`` read when it fails
+        (``"Unhandled"``)."""
         from pyfect.stream._stream import Stream
 
         ignored: Any = self._channel.ignore(log=log)
         return Stream(ignored)
 
-    def ignore_cause(self, *, log: bool | Severity = False) -> Stream[A_co, Never, R_co]:
+    def ignore_cause(
+        self, *, log: bool | Severity | Literal["Unhandled"] = False
+    ) -> Stream[A_co, Never, R_co]:
         """End instead of failing in any way. ``log`` as for ``ignore``."""
         from pyfect.stream._stream import Stream
 

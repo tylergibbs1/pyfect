@@ -3,9 +3,9 @@
 declared afterwards, and a date is a space away from its time.
 
 A date-time with an offset is a ``datetime`` in UTC (Effect's ``Date``, within the
-years ``datetime`` holds); a local date, date-time or time stays text. Invalid text
-raises ``ValueError`` with Effect's message, its position counted in UTF-16 code
-units."""
+years ``datetime`` holds); a local date, date-time or time stays text. ``parse``
+returns a ``Result``: invalid text is an ``EncodingError`` with Effect's message,
+its position counted in UTF-16 code units."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ from datetime import UTC, datetime
 from typing import Any, Never, cast
 
 from pyfect import _js_date as js_date
+from pyfect._binary_codecs import EncodingError
 from pyfect._js import SPACE
+from pyfect.result import Err, Ok, Result
 
 type _Table = dict[str, Any]
 
@@ -22,8 +24,12 @@ _ESCAPES = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r", '"': '"', "\\
 _DATE = r"\d{4}-\d{2}-\d{2}"
 _TIME = r"\d{2}:\d{2}:\d{2}(?:\.\d+)?"
 _SPACED_DATE_TIME = re.compile(f"({_DATE}) ({_TIME}(?:[Zz]|[+-]\\d{{2}}:\\d{{2}})?)", re.ASCII)
-_OFFSET_DATE_TIME = re.compile(f"{_DATE}[Tt]{_TIME}(?:[Zz]|[+-]\\d{{2}}:\\d{{2}})", re.ASCII)
-_LOCAL_DATE_TIME = re.compile(f"{_DATE}[Tt]{_TIME}|{_DATE}|{_TIME}", re.ASCII)
+_DATE_TIME = re.compile(f"({_DATE})[Tt]({_TIME})([Zz]|[+-]\\d{{2}}:\\d{{2}})?", re.ASCII)
+_LOCAL_DATE = re.compile(r"(\d{4})-(\d{2})-(\d{2})", re.ASCII)
+_LOCAL_TIME = re.compile(r"(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?", re.ASCII)
+_NUMERIC_OFFSET = re.compile(r"[+-](\d{2}):(\d{2})", re.ASCII)
+_DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+_MAX_SAFE_INTEGER = 2**53 - 1
 _RADIX = (
     (re.compile(r"0x[0-9A-Fa-f](?:_?[0-9A-Fa-f])*"), 16),
     (re.compile(r"0o[0-7](?:_?[0-7])*"), 8),
@@ -40,6 +46,35 @@ _BARE_KEY = re.compile(r"[A-Za-z0-9_-]*")
 _TOKEN = re.compile(f"[^{SPACE},#\\]}}]*")
 
 
+def _is_valid_date(date: str) -> bool:
+    year, month, day = map(int, cast("re.Match[str]", _LOCAL_DATE.fullmatch(date)).groups())
+    leap = year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    if not 1 <= month <= 12:
+        return False
+    return 1 <= day <= (29 if month == 2 and leap else _DAYS_IN_MONTH[month - 1])
+
+
+def _is_valid_time(time: str) -> bool:
+    hour, minute, second = map(int, cast("re.Match[str]", _LOCAL_TIME.fullmatch(time)).groups())
+    return hour <= 23 and minute <= 59 and second <= 60
+
+
+def _is_valid_offset(offset: str) -> bool:
+    numeric = _NUMERIC_OFFSET.fullmatch(offset)
+    return numeric is None or (int(numeric[1]) <= 23 and int(numeric[2]) <= 59)
+
+
+def _is_control(text: str, index: int) -> bool:
+    """A control character TOML forbids raw: below U+0020 but tab, LF and
+    the CR of a CRLF, or DEL."""
+    code = ord(text[index])
+    if code == 0x7F:
+        return True
+    if code >= 0x20 or code in (0x09, 0x0A):
+        return False
+    return not (code == 0x0D and text[index + 1 : index + 2] == "\n")
+
+
 def _number(token: str) -> int | float | None:
     normalized = token.replace("_", "")
     if _NON_FINITE.fullmatch(token):
@@ -53,7 +88,17 @@ def _number(token: str) -> int | float | None:
 
 
 class _Parser:
-    __slots__ = ("_column", "_current", "_explicit", "_index", "_input", "_line", "root")
+    __slots__ = (
+        "_column",
+        "_current",
+        "_dotted",
+        "_explicit",
+        "_index",
+        "_inline",
+        "_input",
+        "_line",
+        "root",
+    )
 
     def __init__(self, text: str) -> None:
         self.root: _Table = {}
@@ -63,6 +108,11 @@ class _Parser:
         self._line = 1
         self._column = 1
         self._explicit: set[int] = set()
+        # Tables defined by dotted keys; a header cannot define them again.
+        self._dotted: set[int] = set()
+        # Values written as ``[...]`` or ``{...}`` are complete; headers and
+        # dotted keys cannot extend them.
+        self._inline: set[int] = set()
 
     def parse(self) -> _Table:
         while True:
@@ -93,7 +143,7 @@ class _Parser:
         self._finish_statement()
         table = self._resolve_table(path, array)
         if not array:
-            if id(table) in self._explicit:
+            if id(table) in self._explicit or id(table) in self._dotted:
                 self._fail(f"Cannot redefine table '{'.'.join(path)}'")
             self._explicit.add(id(table))
         self._current = table
@@ -103,7 +153,10 @@ class _Parser:
         for index, key in enumerate(path):
             value = table.get(key)
             redefined = f"Cannot redefine existing key '{'.'.join(path[: index + 1])}'"
-            if index == len(path) - 1 and array:
+            last = index == len(path) - 1
+            if value is not None and id(value) in self._inline:
+                self._fail(redefined)
+            if last and array:
                 if value is None:
                     value = table[key] = []
                 if not isinstance(value, list):
@@ -113,7 +166,7 @@ class _Parser:
                 return following
             if value is None:
                 value = table[key] = {}
-            if isinstance(value, list):
+            if isinstance(value, list) and not last:
                 entries = cast("list[object]", value)
                 value = entries[-1] if entries else None
             if not isinstance(value, dict):
@@ -124,15 +177,20 @@ class _Parser:
     def _assign(self, target: _Table, keys: list[str], value: object) -> None:
         table = target
         for index, key in enumerate(keys[:-1]):
-            existing = table.get(key)
+            existing: object = table.get(key)
             if existing is None:
                 existing = table[key] = {}
-            if not isinstance(existing, dict):
+            elif not isinstance(existing, dict) or self._is_sealed(cast("_Table", existing)):
                 self._fail(f"Cannot redefine existing key '{'.'.join(keys[: index + 1])}'")
             table = cast("_Table", existing)
+            self._dotted.add(id(table))
         if keys[-1] in table:
             self._fail(f"Cannot redefine existing key '{'.'.join(keys)}'")
         table[keys[-1]] = value
+
+    def _is_sealed(self, table: _Table) -> bool:
+        """Defined by a header or written inline: dotted keys cannot extend it."""
+        return id(table) in self._explicit or id(table) in self._inline
 
     def _key_path(self, stop: str) -> list[str]:
         keys: list[str] = []
@@ -164,10 +222,10 @@ class _Parser:
             return self._basic_string(multiline=self._input.startswith('"""', self._index))
         if character == "'":
             return self._literal_string(multiline=self._input.startswith("'''", self._index))
-        if character == "[":
-            return self._array()
-        if character == "{":
-            return self._inline_table()
+        if character in ("[", "{"):
+            collection: object = self._array() if character == "[" else self._inline_table()
+            self._inline.add(id(collection))
+            return collection
         spaced = _SPACED_DATE_TIME.match(self._input, self._index)
         if spaced is not None:
             self._advance(len(spaced.group(0)))
@@ -190,16 +248,28 @@ class _Parser:
         number = _number(token)
         if number is None:
             self._fail(f"Invalid value '{token}'")
+        if isinstance(number, int) and abs(number) > _MAX_SAFE_INTEGER:
+            self._fail(f"Integer out of range '{token}'")
         return number
 
     def _date(self, token: str) -> datetime | str | None:
-        if _OFFSET_DATE_TIME.fullmatch(token):
-            value = js_date.to_datetime(js_date.parse(token))
+        date_time = _DATE_TIME.fullmatch(token)
+        if date_time is not None:
+            date, time, offset = date_time.groups()
+            # ``Date`` cannot hold a leap second, so offset date-times reject ``:60``.
+            offset_valid = offset is None or (_is_valid_offset(offset) and time[6:8] != "60")
+            if not _is_valid_date(date) or not _is_valid_time(time) or not offset_valid:
+                self._fail(f"Invalid date-time '{token}'")
+            if offset is None:
+                return f"{date}T{time}"
+            value = js_date.to_datetime(js_date.parse(f"{date}T{time}{offset.upper()}"))
             if value is None:
                 self._fail(f"Invalid date-time '{token}'")
             return value.astimezone(UTC)
-        if _LOCAL_DATE_TIME.fullmatch(token):
-            return token.replace("t", "T", 1)
+        if _LOCAL_DATE.fullmatch(token):
+            return token if _is_valid_date(token) else self._fail(f"Invalid date-time '{token}'")
+        if _LOCAL_TIME.fullmatch(token):
+            return token if _is_valid_time(token) else self._fail(f"Invalid date-time '{token}'")
         return None
 
     def _basic_string(self, *, multiline: bool) -> str:
@@ -208,7 +278,7 @@ class _Parser:
         while not self._done:
             if multiline and self._input.startswith('"""', self._index):
                 self._advance(3)
-                return "".join(output)
+                return "".join(output) + self._closing_quotes('"')
             character = self._peek()
             if not multiline and character == '"':
                 self._advance()
@@ -262,7 +332,7 @@ class _Parser:
             if multiline and self._input.startswith("'''", self._index):
                 output = self._input[start : self._index]
                 self._advance(3)
-                return output
+                return output + self._closing_quotes("'")
             if not multiline and self._peek() == "'":
                 output = self._input[start : self._index]
                 self._advance()
@@ -271,6 +341,15 @@ class _Parser:
                 self._fail("Literal strings cannot contain newlines")
             self._advance()
         self._fail("Unterminated literal string")
+
+    def _closing_quotes(self, quote: str) -> str:
+        """Up to two quotes right before a multiline string's delimiter
+        belong to its content."""
+        quotes = ""
+        while len(quotes) < 2 and self._peek() == quote:
+            quotes += quote
+            self._advance()
+        return quotes
 
     def _open(self, quote: str, multiline: bool) -> None:
         self._expect(quote)
@@ -348,7 +427,10 @@ class _Parser:
         self._advance()
 
     def _advance(self, count: int = 1) -> None:
-        for character in self._input[self._index : self._index + count]:
+        for index in range(self._index, min(self._index + count, len(self._input))):
+            if _is_control(self._input, index):
+                self._fail("Invalid control character")
+            character = self._input[index]
             if character == "\n":
                 self._line += 1
                 self._column = 1
@@ -367,9 +449,13 @@ class _Parser:
         raise ValueError(f"{message} at line {self._line}, column {self._column}")
 
 
-def parse(text: str, /) -> dict[str, Any]:
-    """The tables, keys and values of ``text``."""
-    return _Parser(text.removeprefix("﻿")).parse()
+def parse(text: str, /) -> Result[dict[str, Any], EncodingError]:
+    """The tables, keys and values of ``text``, or an ``EncodingError``
+    (module ``"Toml"``) giving what is wrong and where."""
+    try:
+        return Ok(_Parser(text.removeprefix("\ufeff")).parse())
+    except ValueError as error:
+        return Err(EncodingError(kind="Decode", module="Toml", input=text, message=str(error)))
 
 
 __all__ = ["parse"]

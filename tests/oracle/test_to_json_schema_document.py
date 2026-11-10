@@ -467,6 +467,11 @@ def test_duration():
     )
 
 
+def test_duration_from_iso_string():
+    """Declaration / DurationFromIsoString"""
+    _check(S.DurationFromIsoString, {"type": "string"})
+
+
 def test_option_string():
     """Declaration / Option(String)"""
     _check(S.Option(S.String), {"anyOf": [_tagged("Some", {"type": "string"}), _tagged("None")]})
@@ -802,6 +807,14 @@ def test_is_ulid():
             "description": "description",
             "pattern": "^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
         },
+    )
+
+
+def test_is_ascii():
+    """String / checks / isAscii"""
+    _check(
+        S.String.annotate(description="description").check(S.is_ascii()),
+        {"type": "string", "description": "description", "pattern": "^[\\x00-\\x7F]*$"},
     )
 
 

@@ -57,6 +57,24 @@ def test_decode_handles_a_leading_bom_crlf_split_across_chunks_and_a_bare_cr():
 
 
 @testing.effect
+def test_ignore_empty_lines_skips_lines_containing_only_spaces_or_tabs():
+    """ignoreEmptyLines skips lines containing only spaces or tabs"""
+    text = "1\n \t\n2\n\t"
+    from_string = yield from (
+        stream.make(text)
+        .pipe_through_channel(ndjson.decode_string(ignore_empty_lines=True))
+        .run_collect()
+    )
+    from_bytes = yield from (
+        stream.make(text.encode())
+        .pipe_through_channel(ndjson.decode(ignore_empty_lines=True))
+        .run_collect()
+    )
+    assert from_string == [1, 2]
+    assert from_bytes == [1, 2]
+
+
+@testing.effect
 def test_decode_fails_a_line_over_max_line_bytes_before_reading_the_rest_of_it():
     """decode fails a line over maxLineBytes before reading the rest of it"""
     data = stream.make('"é"\r\n"éé'.encode()).concat(stream.fail("read past the oversized line"))

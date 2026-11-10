@@ -2,7 +2,9 @@
 ``yaml`` 2.9.0 package).
 
 One document: block and flow collections, indentless sequence values,
-multiline plain and quoted scalars, block scalars, anchors and aliases, with
+multiline plain and quoted scalars, block scalars, anchors and aliases, YAML
+1.1 merge keys (an unquoted ``<<`` merges a mapping or a list of mappings;
+explicit keys win over merged ones, earlier sources over later ones), with
 the YAML 1.2 core schema (``null`` / ``~``, booleans, ints including ``0x``
 and ``0o``, floats, ``.inf``, ``.nan``; dates stay strings). Unlike YAML 1.2,
 a multiline flow collection's closing bracket may sit at its parent's
@@ -20,7 +22,7 @@ import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Never
+from typing import Never, cast
 
 from pyfect._js import LINE_END, SPACE, js_number, trim, trim_end, trim_start
 
@@ -262,6 +264,39 @@ def _parse_key(text: str) -> str:
     return _key_text(_parse_scalar(text))
 
 
+class _MappingBuilder:
+    """A mapping with YAML 1.1 merge keys: explicit keys take precedence over
+    merged ones, and earlier merge sources over later ones."""
+
+    __slots__ = ("_merged", "output")
+
+    def __init__(self) -> None:
+        self.output: _Record = {}
+        # Keys the merge key added, which an explicit key may still override.
+        self._merged: set[str] | None = None
+
+    def set(self, key: str, value: object, fail: Callable[[str], Never]) -> None:
+        if key in self.output:
+            if self._merged is None or key not in self._merged:
+                fail(f"Duplicate key '{key}'")
+            self._merged.discard(key)
+        self.output[key] = value
+
+    def merge(self, value: object, fail: Callable[[str], Never]) -> None:
+        if self._merged is not None:
+            fail("Duplicate key '<<'")
+        merged: set[str] = set()
+        self._merged = merged
+        sources = cast("list[object]", value) if isinstance(value, list) else [value]
+        for source in sources:
+            if not isinstance(source, dict):
+                fail("Merge key values must be mappings")
+            for key, item in cast("_Record", source).items():
+                if key not in self.output:
+                    self.output[key] = item
+                    merged.add(key)
+
+
 def _fold_block(content: list[str]) -> str:
     """A folded (``>``) block scalar's lines joined: a single break becomes a
     space except around more-indented lines; blank lines are kept."""
@@ -354,21 +389,24 @@ class _FlowParser:
 
     def _mapping(self) -> _Record:
         self._expect("{")
-        output: _Record = {}
+        mapping = _MappingBuilder()
         if self._close("}"):
-            return output
+            return mapping.output
         while True:
+            self._skip_whitespace()
+            quoted = self._peek() in ('"', "'") and self._peek() != ""
             key = self._key()
             self._skip_whitespace()
             self._expect(":")
-            if key in output:
-                self._fail(f"Duplicate key '{key}'")
-            output[key] = self._value()
+            if not quoted and key == "<<":
+                mapping.merge(self._value(), self._fail)
+            else:
+                mapping.set(key, self._value(), self._fail)
             if self._close("}"):
-                return output
+                return mapping.output
             self._expect(",")
             if self._close("}"):
-                return output
+                return mapping.output
 
     def _key(self) -> str:
         self._skip_whitespace()
@@ -448,30 +486,35 @@ class _Parser:
         self._index += 1
         return self._node_value(line.text, parent)
 
-    def _mapping(self, indent: int, output: _Record | None = None) -> _Record:
-        mapping: _Record = {} if output is None else output
+    def _mapping(self, indent: int, mapping: _MappingBuilder | None = None) -> _Record:
+        builder = _MappingBuilder() if mapping is None else mapping
         while True:
             self._skip_ignored()
             line = self._line(self._index)
             if line is None or line.indent < indent:
-                return mapping
+                return builder.output
             if line.indent > indent:
                 self._fail(line, f"Unexpected indentation of {line.indent} spaces")
             separator = _mapping_separator(line.text)
             if separator == -1:
-                return mapping
+                return builder.output
             self._index += 1
-            self._mapping_entry(mapping, line.text, separator, indent, line)
+            self._mapping_entry(builder, line.text, separator, indent, line)
 
     def _mapping_entry(
-        self, output: _Record, text: str, separator: int, indent: int, line: _Line
+        self, mapping: _MappingBuilder, text: str, separator: int, indent: int, line: _Line
     ) -> None:
-        key = _parse_key(trim(text[:separator]))
+        raw_key = trim(text[:separator])
         raw_value = trim_start(text[separator + 1 :])
         value = self._node_value(raw_value, indent, allow_indentless=True)
-        if key in output:
-            self._fail(line, f"Duplicate key '{key}'")
-        output[key] = value
+
+        def fail(message: str) -> Never:
+            self._fail(line, message)
+
+        if raw_key == "<<":
+            mapping.merge(value, fail)
+        else:
+            mapping.set(_parse_key(raw_key), value, fail)
 
     def _sequence(self, indent: int) -> list[object]:
         output: list[object] = []
@@ -492,9 +535,15 @@ class _Parser:
             if separator == -1:
                 output.append(self._node_value(item, indent))
             else:
-                mapping: _Record = {}
-                self._mapping_entry(mapping, item, separator, indent + 2, line)
-                output.append(self._mapping(indent + 2, mapping))
+                # The mapping is indented to its first key, which may sit more
+                # than one space after the dash.
+                key_offset = len(line.text) - len(item)
+                if "\t" in line.text[1:key_offset]:
+                    self._fail(line, "Tabs cannot be used for YAML indentation")
+                mapping_indent = indent + key_offset
+                mapping = _MappingBuilder()
+                self._mapping_entry(mapping, item, separator, mapping_indent, line)
+                output.append(self._mapping(mapping_indent, mapping))
 
     def _node_value(
         self, raw_value: str, parent_indent: int, *, allow_indentless: bool = False

@@ -40,6 +40,7 @@ from pyfect.schema.transformation._builtins import (
     url_from_string,
 )
 from pyfect.schema.transformation._durations import (
+    duration_from_iso_string,
     duration_from_millis,
     duration_from_nanos,
     duration_from_string,
@@ -68,6 +69,7 @@ __all__ = [
     "capitalize",
     "date_time_utc_from_string",
     "date_time_zoned_from_string",
+    "duration_from_iso_string",
     "duration_from_millis",
     "duration_from_nanos",
     "duration_from_string",

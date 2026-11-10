@@ -37,6 +37,7 @@ from pyfect.context import Context
 from pyfect.duration import Duration, Seconds, to_seconds
 from pyfect.effect import interrupt
 from pyfect.exit import Exit, Failure, Success
+from pyfect.logger._log import log_unhandled
 from pyfect.scope import CloseableScope, Scope
 
 _VOID: Final[Effect[None]] = _Succeed(None)
@@ -243,7 +244,10 @@ class RcRef(Generic[A_co, E_co]):
         def expire(_: None) -> Effect[None]:
             if self._state is state and state.ref_count == 0:
                 self._state = "empty"
-                return state.scope.close(_DONE)
+                # Nobody waits for this release: report its failure (Effect 4.1.2).
+                return state.scope.close(_DONE).catch_cause(
+                    lambda cause: log_unhandled("Unhandled error in RcRef finalizer", cause)
+                )
             return _VOID
 
         def forget() -> None:

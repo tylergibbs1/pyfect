@@ -426,8 +426,51 @@ def test_from_string() -> None:
         assert big_decimal.from_string(text) == make(value, scale), text
     assert big_decimal.from_string("0.0000e2e1") is None
     assert big_decimal.from_string("0.1.2") is None
+    assert big_decimal.from_string(".-1") is None
+    assert big_decimal.from_string(".+1") is None
     with pytest.raises(ValueError, match=r"^Invalid numerical string: abc$"):
         _("abc")
+
+
+def test_from_string_rejects_scales_beyond_10_000() -> None:
+    """fromString rejects scales beyond 10_000"""
+    assert big_decimal.from_string("1e10000") == make(1, -10_000)
+    assert big_decimal.from_string("1e-10000") == make(1, 10_000)
+    for text in [
+        "1e10001",
+        "1e-10001",
+        "0.1e-10000",
+        f"1.{'0' * 10_001}",
+        "10e10000",
+        "1e300000000",
+    ]:
+        assert big_decimal.from_string(text) is None, text[:20]
+
+
+def test_arithmetic_rejects_scale_alignment_beyond_20_000() -> None:
+    """arithmetic rejects scale alignment beyond 20_000"""
+    large = make(1, -20_001)
+    small = make(1, 20_001)
+    for thunk in [
+        lambda: large.sum(_("1")),
+        lambda: _("1").subtract(large),
+        lambda: large.remainder(_("1")),
+        lambda: large.rescale(0),
+        small.truncate,
+        small.round,
+    ]:
+        with pytest.raises(ValueError, match=r"^Scale alignment must not exceed 20000 digits"):
+            thunk()
+    assert _("1e10000").sum(_("1e-10000")) == _(f"1{'0' * 10_000}.{'0' * 9_999}1")
+    assert make(1, 20_000).truncate() == _("0")
+    huge = make(1, -300_000_000)
+    assert equals(huge.sum(_("0")), huge)
+    assert equals(huge.rescale(huge.scale), huge)
+    assert equals(huge.truncate(), huge)
+    assert equals(huge.floor(), huge)
+    assert equals(huge.ceil(), huge)
+    assert equals(huge.round(), huge)
+    assert _("1e10000").round(mode="half-even") == _("1e10000")
 
 
 def test_format() -> None:
@@ -750,7 +793,17 @@ def _js_to_exponential(n: float) -> str:
     return f"{'-' if sign else ''}{mantissa}e{'+' if power >= 0 else '-'}{abs(power)}"
 
 
-@testing.prop(_ARB_WITH_ZERO)
+# Effect 4.1.2's ``fromString`` refuses a scale past 10,000 either way, which its skipped
+# property (scales over all int32) would now find; the round trip is drawn within that bound.
+_PARSEABLE = st.one_of(
+    st.just(big_decimal.make_normalized_unsafe(0, 0)),
+    st.tuples(st.integers(-(10**30), 10**30), st.integers(-9_900, 10_000)).map(
+        lambda vs: make(*vs)
+    ),
+)
+
+
+@testing.prop(_PARSEABLE)
 def test_unsafe_from_string_and_format_should_be_inverses(bd: BigDecimal) -> bool:
     """unsafeFromString and format should be inverses"""
     return big_decimal.from_string_unsafe(bd.format()) == bd

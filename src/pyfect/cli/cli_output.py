@@ -94,9 +94,21 @@ class _Colors:
         return self._wrap("32", text)
 
 
+type FlagSectionMode = Literal["full", "summary", "none"]
+"""How help shows inherited or global flags: listed, as a pointer to the
+help of the command that declares them, or not at all."""
+
+
+@dataclass(frozen=True, slots=True)
+class _HelpOptions:
+    inherited_flags: FlagSectionMode
+    global_flags: FlagSectionMode
+
+
 @dataclass(frozen=True, slots=True)
 class _DefaultFormatter:
     colors: _Colors
+    help: _HelpOptions
 
     def _title(self, text: str) -> str:
         if not self.colors.enabled:
@@ -107,7 +119,7 @@ class _DefaultFormatter:
         return ansi.reset if self.colors.enabled else ""
 
     def format_help_doc(self, doc: HelpDoc) -> str:
-        return _format_help_doc(doc, self.colors)
+        return _format_help_doc(doc, self.colors, self.help)
 
     def format_cli_error(self, error: CliError) -> str:
         return _escape(error.message)
@@ -135,10 +147,22 @@ class _DefaultFormatter:
         return f"{colors.bold(name)} {colors.dim('v')}{colors.bold(version)}"
 
 
-def default_formatter(*, colors: bool | None = None) -> Formatter:
+def default_formatter(
+    *,
+    colors: bool | None = None,
+    inherited_flags: FlagSectionMode = "full",
+    global_flags: FlagSectionMode = "full",
+) -> Formatter:
     """The built-in formatter; ``colors`` defaults to whether stdout is a
-    terminal and ``NO_COLOR`` is unset."""
-    return _DefaultFormatter(_Colors(ansi.detect_colors() if colors is None else colors))
+    terminal and ``NO_COLOR`` is unset. ``inherited_flags`` and
+    ``global_flags`` choose how a subcommand's help shows the shared flags of
+    its ancestors and the global flags: listed (``"full"``), as a pointer to
+    the declaring command's help (``"summary"``) or not at all (``"none"``).
+    The command declaring global flags always lists them."""
+    return _DefaultFormatter(
+        _Colors(ansi.detect_colors() if colors is None else colors),
+        _HelpOptions(inherited_flags, global_flags),
+    )
 
 
 def resolve_formatter() -> Effect[Formatter]:
@@ -232,7 +256,51 @@ def _section(sections: list[str], title: str, body: str, *, blank: bool = True) 
         sections.append("")
 
 
-def _format_help_doc(doc: HelpDoc, colors: _Colors) -> str:  # noqa: PLR0912 - one branch per section
+def _flag_sections(
+    sections: list[str], doc: HelpDoc, colors: _Colors, options: _HelpOptions
+) -> None:
+    def render(title: str, flags: Sequence[FlagDoc]) -> None:
+        _section(sections, colors.bold(title), _render_table(_flag_rows(flags, colors)))
+
+    summaries: list[str] = []
+
+    def render_section(
+        title: str,
+        flags: Sequence[FlagDoc],
+        mode: FlagSectionMode,
+        summary_path: Sequence[str] | None,
+    ) -> None:
+        if not flags or mode == "none":
+            return
+        if mode == "summary" and summary_path:
+            summaries.append(f"Run '{' '.join(summary_path)} --help' for {title.lower()}")
+        else:
+            render(title, flags)
+
+    if doc.flags:
+        render("FLAGS", doc.flags)
+    path = doc.command_path
+    render_section(
+        "INHERITED FLAGS",
+        doc.inherited_flags,
+        options.inherited_flags,
+        None if path is None else path[:-1],
+    )
+    # Keep globals discoverable on their declaring command, even in "none" mode.
+    scope = (
+        doc.global_flags_scope
+        if doc.global_flags_scope is not None
+        else (None if path is None else path[:1])
+    )
+    declares = path is None or (scope is not None and len(scope) == len(path))
+    render_section(
+        "GLOBAL FLAGS", doc.global_flags, "full" if declares else options.global_flags, scope
+    )
+    if summaries:
+        sections.extend([*summaries, ""])
+
+
+def _format_help_doc(doc: HelpDoc, colors: _Colors, options: _HelpOptions) -> str:  # noqa: PLR0912 - one branch per section
     sections: list[str] = []
     if doc.description:
         sections += [colors.bold("DESCRIPTION"), f"  {doc.description}", ""]
@@ -246,12 +314,7 @@ def _format_help_doc(doc: HelpDoc, colors: _Colors) -> str:  # noqa: PLR0912 - o
                 (f"{colors.green(name)} {colors.dim(arg.type)}", (arg.description or "") + optional)
             )
         _section(sections, colors.bold("ARGUMENTS"), _render_table(rows, 25))
-    if doc.flags:
-        flag_rows = _flag_rows(doc.flags, colors)
-        _section(sections, colors.bold("FLAGS"), _render_table(flag_rows))
-    if doc.global_flags:
-        global_rows = _flag_rows(doc.global_flags, colors)
-        _section(sections, colors.bold("GLOBAL FLAGS"), _render_table(global_rows))
+    _flag_sections(sections, doc, colors, options)
     if doc.subcommands:
         ungrouped = next((g for g in doc.subcommands if g.group is None), None)
         if ungrouped is not None:
@@ -291,6 +354,7 @@ __all__ = [
     "CurrentFormatter",
     "CurrentPresenter",
     "Event",
+    "FlagSectionMode",
     "Formatter",
     "Help",
     "InvalidInvocation",

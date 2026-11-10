@@ -1,3 +1,4 @@
 'milk\neggs\nbread\n'
 ['milk', 'eggs', 'bread']
 exists: True
+['drafts/todo.txt', 'notes.txt']

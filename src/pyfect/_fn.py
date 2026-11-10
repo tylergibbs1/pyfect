@@ -686,15 +686,111 @@ def _eager_run(
     return _Suspend(resume)
 
 
+# --- generated fn_untraced_eager overloads (tests/test_fn_overloads.py) ---
+@overload
 def fn_untraced_eager[**P, A, E = Never, R = Never](
-    f: Callable[P, Generator[Effect[Any, E, R], Any, A]], /, *pipeables: Callable[..., Any]
-) -> Callable[P, Effect[A, E, R]]:
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    /,
+) -> Callable[P, Effect[A, E, R]]: ...
+@overload
+def fn_untraced_eager[**P, A, B1, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    p1: Pipe[Effect[A, E, R], B1, P],
+    /,
+) -> Callable[P, B1]: ...
+@overload
+def fn_untraced_eager[**P, A, B1, B2, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    p1: Pipe[Effect[A, E, R], B1, P],
+    p2: Pipe[B1, B2, P],
+    /,
+) -> Callable[P, B2]: ...
+@overload
+def fn_untraced_eager[**P, A, B1, B2, B3, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    p1: Pipe[Effect[A, E, R], B1, P],
+    p2: Pipe[B1, B2, P],
+    p3: Pipe[B2, B3, P],
+    /,
+) -> Callable[P, B3]: ...
+@overload
+def fn_untraced_eager[**P, A, B1, B2, B3, B4, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    p1: Pipe[Effect[A, E, R], B1, P],
+    p2: Pipe[B1, B2, P],
+    p3: Pipe[B2, B3, P],
+    p4: Pipe[B3, B4, P],
+    /,
+) -> Callable[P, B4]: ...
+@overload
+def fn_untraced_eager[**P, A, B1, B2, B3, B4, B5, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    p1: Pipe[Effect[A, E, R], B1, P],
+    p2: Pipe[B1, B2, P],
+    p3: Pipe[B2, B3, P],
+    p4: Pipe[B3, B4, P],
+    p5: Pipe[B4, B5, P],
+    /,
+) -> Callable[P, B5]: ...
+@overload
+def fn_untraced_eager[**P, A, B1, B2, B3, B4, B5, B6, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    p1: Pipe[Effect[A, E, R], B1, P],
+    p2: Pipe[B1, B2, P],
+    p3: Pipe[B2, B3, P],
+    p4: Pipe[B3, B4, P],
+    p5: Pipe[B4, B5, P],
+    p6: Pipe[B5, B6, P],
+    /,
+) -> Callable[P, B6]: ...
+@overload
+def fn_untraced_eager[**P, A, B1, B2, B3, B4, B5, B6, B7, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    p1: Pipe[Effect[A, E, R], B1, P],
+    p2: Pipe[B1, B2, P],
+    p3: Pipe[B2, B3, P],
+    p4: Pipe[B3, B4, P],
+    p5: Pipe[B4, B5, P],
+    p6: Pipe[B5, B6, P],
+    p7: Pipe[B6, B7, P],
+    /,
+) -> Callable[P, B7]: ...
+@overload
+def fn_untraced_eager[**P, A, B1, B2, B3, B4, B5, B6, B7, B8, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    p1: Pipe[Effect[A, E, R], B1, P],
+    p2: Pipe[B1, B2, P],
+    p3: Pipe[B2, B3, P],
+    p4: Pipe[B3, B4, P],
+    p5: Pipe[B4, B5, P],
+    p6: Pipe[B5, B6, P],
+    p7: Pipe[B6, B7, P],
+    p8: Pipe[B7, B8, P],
+    /,
+) -> Callable[P, B8]: ...
+@overload
+def fn_untraced_eager[**P, A, B1, B2, B3, B4, B5, B6, B7, B8, B9, E = Never, R = Never](
+    f: Callable[P, Generator[Effect[Any, E, R], Any, A]],
+    p1: Pipe[Effect[A, E, R], B1, P],
+    p2: Pipe[B1, B2, P],
+    p3: Pipe[B2, B3, P],
+    p4: Pipe[B3, B4, P],
+    p5: Pipe[B4, B5, P],
+    p6: Pipe[B5, B6, P],
+    p7: Pipe[B6, B7, P],
+    p8: Pipe[B7, B8, P],
+    p9: Pipe[B8, B9, P],
+    /,
+) -> Callable[P, B9]: ...
+# --- end generated fn_untraced_eager overloads ---
+def fn_untraced_eager(f: _Body, /, *pipeables: Callable[..., Any]) -> Callable[..., Any]:
     """``fn_untraced``, but a call runs the body at once while its effects
-    already hold their exits (Effect's ``fnUntracedEager``)."""
+    already hold their exits (Effect's ``fnUntracedEager``); pipeables
+    post-process each call's effect, as ``fn_untraced``'s do."""
     appliers = _appliers(pipeables)
 
     @functools.wraps(f)
-    def call(*args: P.args, **kwargs: P.kwargs) -> Effect[A, E, R]:
+    def call(*args: Any, **kwargs: Any) -> Any:
         effect: Any = _eager_run(lambda: f(*args, **kwargs))
         for apply in appliers:
             effect = apply(effect, args, kwargs)

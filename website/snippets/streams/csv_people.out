@@ -1,0 +1,8 @@
+[{'name': 'Smith, Charlie', 'age': 32}, {'name': 'Ada', 'age': 36}]
+Full Name,Age (years)
+"Smith, Charlie",32
+Ada,36
+Expected a string representing a finite number
+  at [2]["Age (years)"]
+Expected "Infinity" | "-Infinity" | "NaN"
+  at [2]["Age (years)"]

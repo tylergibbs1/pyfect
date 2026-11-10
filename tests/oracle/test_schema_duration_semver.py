@@ -1,6 +1,6 @@
 """Ports of Effect's ``DurationFromString``, ``DurationFromNanos``,
-``DurationFromMillis``, ``SemVer``, ``SemVerFromString``, ``SemVerRange`` and
-``SemVerRangeFromString`` tests from ``schema/Schema.test.ts``.
+``DurationFromMillis``, ``DurationFromIsoString``, ``SemVer``, ``SemVerFromString``,
+``SemVerRange`` and ``SemVerRangeFromString`` tests from ``schema/Schema.test.ts``.
 
 Each test's docstring is the Effect test title. pyfect's ``Duration`` schema
 is a ``timedelta``, which holds neither infinities nor sub-microsecond
@@ -37,6 +37,24 @@ def test_duration_from_string() -> None:
     encoding.succeed(timedelta(0), "0 millis")
     encoding.succeed(timedelta(seconds=5), "5000 millis")
     encoding.succeed(timedelta(microseconds=5), "5000 nanos")
+
+
+def test_duration_from_iso_string() -> None:
+    """DurationFromIsoString"""
+    asserts = SchemaAsserts(S.DurationFromIsoString)
+    decoding = asserts.decoding()
+    decoding.succeed("P1W2D", timedelta(days=9))
+    decoding.succeed("PT1H30M", timedelta(minutes=90))
+    decoding.succeed("-PT1.5S", timedelta(milliseconds=-1500))
+    decoding.fail("PT0.000000001S", _HOLDS)  # Python: below a microsecond
+    expected = "Expected an ISO 8601 duration without years or months"
+    for text in ("P1Y", "P1M", "1 second"):
+        decoding.fail(text, expected)
+    encoding = asserts.encoding()
+    encoding.succeed(timedelta(0), "PT0S")
+    encoding.succeed(timedelta(weeks=1), "P7D")
+    # Effect's ``Duration.nanos(-1n)`` and the infinite durations have no ``timedelta``.
+    encoding.succeed(timedelta(microseconds=-1), "-PT0.000001S")
 
 
 def test_duration_from_nanos() -> None:

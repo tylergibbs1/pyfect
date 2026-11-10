@@ -183,10 +183,15 @@ def _js_error_text(error: Exception) -> str:
     return f"{name}: {error}"
 
 
+def _parse_toml(content: str) -> object:
+    """``Result.getOrThrow(Toml.parse(content))``: the ``EncodingError`` raised."""
+    return toml.parse(content).get_or_raise()
+
+
 _FILE_PARSERS: dict[str, Callable[[str], object]] = {
     "ini": ini.parse,
     "json": parse_json,
-    "toml": toml.parse,
+    "toml": _parse_toml,
     "yml": yaml.parse,
     "yaml": yaml.parse,
 }

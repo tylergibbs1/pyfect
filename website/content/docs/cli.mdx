@@ -41,6 +41,12 @@ command's description and examples. `--help` prints it for any command or subcom
 a command line that doesn't parse prints the error and a suggestion (`Did you mean this?
 --force`) to standard error, then exits with status 1.
 
+A subcommand's help lists its own flags under `FLAGS` and the shared flags of its ancestors
+under `INHERITED FLAGS`. In a deep tree, `cli_output.default_formatter(inherited_flags=
+"summary", global_flags="summary")` replaces both lists with a pointer such as `Run 'app
+--help' for inherited flags`, and `"none"` leaves them out; the command that declares global
+flags always lists them.
+
 <CodeOutput>
 
 <include meta='title="deploy_help.py"'>../../snippets/cli/deploy_help.py</include>

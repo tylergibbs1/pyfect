@@ -62,12 +62,13 @@ def test_a_leading_step_of_one_leaves_the_whole_field_unrestricted():
 
 
 def test_prev_of_a_time_a_dst_gap_skips_matches_effect():
-    # Effect 4.0.6 under Node: prev lands on the instant after Lord Howe's
-    # gap (02:30 +11:00) and stays there, and in Berlin it finds nothing.
+    # Effect 4.1.2 under Node: a candidate in a gap resolves to the instant
+    # after it, kept only when that is before the input (4.0.6 stayed on
+    # Lord Howe's 15:30Z and found nothing in Berlin).
     times = walk("30 2 * * *", "Australia/Lord_Howe", "2024-10-05T18:00:00+00:00", 3, back=True)
-    assert times == ["2024-10-05T15:30:00Z"] * 3
-    with pytest.raises(ValueError, match="Unable to find cron date"):
-        walk("30 2 * * *", "Europe/Berlin", "2024-03-31T03:00:00+00:00", 1, back=True)
+    assert times == ["2024-10-05T15:30:00Z", "2024-10-04T16:00:00Z", "2024-10-03T16:00:00Z"]
+    times = walk("30 2 * * *", "Europe/Berlin", "2024-03-31T03:00:00+00:00", 3, back=True)
+    assert times == ["2024-03-31T01:30:00Z", "2024-03-30T01:30:00Z", "2024-03-29T01:30:00Z"]
 
 
 def test_next_raises_for_a_day_that_never_exists():

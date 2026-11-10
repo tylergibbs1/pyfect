@@ -12,7 +12,7 @@ from pyfect import stream as stream_
 from pyfect._core import Effect
 from pyfect.effect import die, fail, succeed, void
 from pyfect.file_system._errors import not_found
-from pyfect.file_system._model import FileInfo, OpenFlag, WatchEvent
+from pyfect.file_system._model import DirectoryEntry, FileInfo, OpenFlag, WatchEvent
 from pyfect.file_system._service import (
     DEFAULT_CHUNK_SIZE,
     File,
@@ -70,7 +70,12 @@ class NoopFileSystem(FileSystemService):
         return _missing("chown", path)
 
     def glob(
-        self, pattern: str, *, root: str | None = None, exclude: tuple[str, ...] = ()
+        self,
+        pattern: str,
+        *,
+        root: str | None = None,
+        exclude: tuple[str, ...] = (),
+        dot: bool = False,
     ) -> Effect[list[str], PlatformError]:
         return _missing("glob", pattern)
 
@@ -117,6 +122,11 @@ class NoopFileSystem(FileSystemService):
         self, path: str, *, recursive: bool = False
     ) -> Effect[list[str], PlatformError]:
         return _missing("read_directory", path)
+
+    def read_directory_entries(
+        self, path: str
+    ) -> Effect[tuple[DirectoryEntry, ...], PlatformError]:
+        return _missing("read_directory_entries", path)
 
     def read_file(self, path: str) -> Effect[bytes, PlatformError]:
         return _missing("read_file", path)

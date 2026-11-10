@@ -134,6 +134,7 @@ is_uuid_reviver = make_reviver_filter(
 )
 is_guid_reviver = _filter("isGUID", lambda a: S.is_guid(**a))
 is_ulid_reviver = _filter("isULID", lambda a: S.is_ulid(**a))
+is_ascii_reviver = _filter("isAscii", lambda a: S.is_ascii(**a))
 is_base64_reviver = _filter("isBase64", lambda a: S.is_base64(**a))
 is_base64_url_reviver = _filter("isBase64Url", lambda a: S.is_base64_url(**a))
 is_starting_with_reviver = _bound("isStartingWith", "startsWith", S.String, S.is_starting_with)

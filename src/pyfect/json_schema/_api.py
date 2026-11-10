@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Literal, cast
 
 from pyfect.json_schema._converter import Adapter, Converter
@@ -56,11 +56,14 @@ def _convert_document(
     document: Document[Draft2020],
     adapter: Adapter,
     boolean_adapter: Callable[[bool], object] | None = None,
+    definitions_path: Sequence[str] | None = None,
 ) -> tuple[JsonSchema, Definitions]:
     converter = Converter(adapter, boolean_adapter=boolean_adapter, track_ids=True)
     schema = cast("JsonSchema", converter.convert(document.schema))
+    source = ["$defs"] if definitions_path is None else list(definitions_path)
+    target = ["definitions"] if definitions_path is None else list(definitions_path)
     definitions = {
-        key: cast("JsonSchema", converter.convert(value, ["$defs", key], ["definitions", key]))
+        key: cast("JsonSchema", converter.convert(value, [*source, key], [*target, key]))
         for key, value in document.definitions.items()
     }
     converter.finish()
@@ -70,7 +73,19 @@ def _convert_document(
 def to_document_draft_07(document: Document[Draft2020]) -> Document[Literal["draft-07"]]:
     """The document in Draft-07. A keyword Draft-07 cannot express raises
     ``ValueError``."""
-    schema, definitions = _convert_document(document, to_draft_07)
+    return to_document_draft_07_with_definitions_path(document)
+
+
+def to_document_draft_07_with_definitions_path(
+    document: Document[Draft2020], definitions_path: Sequence[str] | None = None
+) -> Document[Literal["draft-07"]]:
+    """The document in Draft-07 with its definitions located at ``definitions_path``,
+    such as ``["components", "schemas"]`` after ``to_multi_document_components``, so
+    references into them stay in place (Effect's ``toDocumentDraft07WithDefinitionsPath``);
+    by default ``$defs`` become ``definitions``."""
+    schema, definitions = _convert_document(
+        document, to_draft_07, definitions_path=definitions_path
+    )
     return Document("draft-07", schema, definitions)
 
 

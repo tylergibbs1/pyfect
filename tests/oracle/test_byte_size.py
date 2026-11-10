@@ -80,9 +80,18 @@ def test_validates_primitive_and_unit_constructor_inputs() -> None:
     for value in (-1, 0.5, float(MAX_SAFE + 1), math.nan, math.inf, -math.inf):
         assert byte_size.from_input(value) is None
     assert byte_size.kilobytes(1.5) == byte_size.bytes(1500)
+    assert byte_size.megabytes(2.01) == byte_size.bytes(2_010_000)
+    assert byte_size.quettabytes(4e-15) == byte_size.bytes(4_000_000_000_000_000)
+    assert byte_size.petabytes(8.00000000000001) == byte_size.bytes(8_000_000_000_000_010)
     assert byte_size.kibibytes(0.5) == byte_size.bytes(512)
     with pytest.raises(ValueError, match=r"received 0\.1 KiB"):
         byte_size.kibibytes(0.1)
+    with pytest.raises(ValueError, match=r"received 1\.0005 kB"):
+        byte_size.kilobytes(1.0005)
+    with pytest.raises(ValueError, match=r"received 9\.718626485371681e-10 YB"):
+        byte_size.yottabytes(9.718626485371681e-10)
+    with pytest.raises(ValueError, match=r"received 9\.007199254740993 PB"):
+        byte_size.petabytes(9.007199254740993)
 
 
 @pytest.mark.parametrize(

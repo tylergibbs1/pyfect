@@ -17,7 +17,7 @@ from pyfect.encoding.schema_binary._compile import (
     representation_id,
 )
 from pyfect.encoding.schema_binary._decode import decode_one_shot
-from pyfect.encoding.schema_binary._fingerprint import Mode, compile_mode
+from pyfect.encoding.schema_binary._fingerprint import STRICT_MODE, Mode, compile_mode
 from pyfect.encoding.schema_binary._layout import Layout
 from pyfect.encoding.schema_binary._values import is_cyclic
 from pyfect.exit import Exit, Success
@@ -278,7 +278,14 @@ def _assemble(
 
 def _make_codec(schema: S.Codec[Any, Any, Any, Any], fingerprint: bool) -> BytesCodec[Any]:
     compiled = compile_target(schema)
-    mode = compile_mode(compiled.layout, fingerprint)
+    return _codec_in_mode(compiled, compile_mode(compiled.layout, fingerprint))
+
+
+def _make_strict_codec(schema: S.Codec[Any, Any, Any, Any]) -> BytesCodec[Any]:
+    return _codec_in_mode(compile_target(schema), STRICT_MODE)
+
+
+def _codec_in_mode(compiled: CompiledTarget, mode: Mode) -> BytesCodec[Any]:
     if not compiled.exact:
         return _assemble(compiled.target, compiled.layout, mode, None)
     trusted = _Trusted()
@@ -299,6 +306,7 @@ def _make_direct_codec(schema: S.Codec[Any, Any, Any, Any], fingerprint: bool) -
 
 
 make_codec = lru_cache(maxsize=4096)(_make_codec)
+make_strict_codec = lru_cache(maxsize=4096)(_make_strict_codec)
 make_direct_codec = lru_cache(maxsize=4096)(_make_direct_codec)
 """Memoized by schema identity and wire mode."""
 

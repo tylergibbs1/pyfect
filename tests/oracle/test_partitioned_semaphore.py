@@ -24,6 +24,36 @@ def _succeeded(fiber: fx.Fiber[Any, Any]) -> bool:
 
 
 @testing.effect
+def test_multi_permit_waiters_in_different_partitions_do_not_deadlock():
+    """multi-permit waiters in different partitions do not deadlock"""
+    sem = yield from fx.PartitionedSemaphore[str].make(2)
+    completed: list[str] = []
+    yield from sem.take("holder", 2)
+    for key in ("x", "y"):
+        task = sem.with_permits(key, fx.sync(lambda key=key: completed.append(key)), 2)
+        yield from task.fork_daemon(start_immediately=True)
+    yield from sem.release(2)
+    assert completed == ["x", "y"]
+    assert (yield from sem.available) == 2
+
+
+@testing.effect
+def test_a_partly_served_waiter_keeps_its_turn():
+    # Effect 4.1.2: permits released one at a time finish the waiter being
+    # served before the next partition gets any (values from Node).
+    sem = yield from fx.PartitionedSemaphore[str].make(2)
+    completed: list[str] = []
+    yield from sem.take("holder", 2)
+    for key in ("x", "y"):
+        task = sem.with_permits(key, fx.sync(lambda key=key: completed.append(key)), 2)
+        yield from task.fork_daemon(start_immediately=True)
+    yield from sem.release(1)
+    assert completed == []
+    yield from sem.release(1)
+    assert completed == ["x", "y"]
+
+
+@testing.effect
 def test_a_resumed_waiter_can_immediately_reacquire_released_permits():
     """a resumed waiter can immediately reacquire released permits"""
     sem = yield from fx.PartitionedSemaphore[str].make(1)

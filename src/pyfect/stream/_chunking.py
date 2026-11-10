@@ -12,7 +12,6 @@ from pyfect.cause import Cause
 from pyfect.channel import transform_pull
 from pyfect.channel._base import end_with
 from pyfect.option import Some
-from pyfect.pull import catch_done
 from pyfect.stream._base import AnyStream
 from pyfect.stream._mapping import map_chunks, one
 from pyfect.stream._stream import Stream
@@ -46,7 +45,7 @@ def rechunk(self: AnyStream, size: int) -> AnyStream_:
 
     def build(pull: AnyEffect) -> AnyEffect:
         held: list[Any] = []
-        done = False
+        stopped: Cause[Any] | None = None
 
         def emit() -> AnyEffect:
             out = tuple(held[:target])
@@ -60,20 +59,21 @@ def rechunk(self: AnyStream, size: int) -> AnyStream_:
             return loop()
 
         def loop() -> AnyEffect:
-            if done:
-                return _ENDED
+            if stopped is not None:
+                return _FailCause(stopped)
             return emit() if len(held) >= target else _FlatMap(pull, got)
 
-        def flush(_: object) -> AnyEffect:
-            nonlocal done
+        def flush(cause: Cause[Any]) -> AnyEffect:
+            # The upstream's end or failure: emit what is held first, then stop with it.
+            nonlocal stopped
             if not held:
-                return _ENDED
-            done = True
+                return _FailCause(cause)
+            stopped = cause
             out = tuple(held)
             held.clear()
             return _Succeed(out)
 
-        return catch_done(_Suspend(loop), flush)
+        return _MatchCause(_Suspend(loop), flush, None)
 
     return _pulling(self, build)
 

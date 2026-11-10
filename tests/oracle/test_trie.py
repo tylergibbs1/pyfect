@@ -274,6 +274,28 @@ def test_longest_prefix_of_returns_the_longest_stored_key_that_prefixes_the_inpu
     assert trie.longest_prefix_of("shellsort") == Some(("shells", 0))
 
 
+def test_stores_the_empty_string_key_like_any_other_key() -> None:
+    """stores the empty string key like any other key"""
+    base = Trie.make(("a", 2))
+    with_empty = base.insert("", 1)
+    removed = with_empty.remove("")
+    assert (len(with_empty), with_empty.has(""), list(with_empty)) == (
+        2,
+        True,
+        [("", 1), ("a", 2)],
+    )
+    assert list(Trie.make(("a", 2), ("", 1))) == [("", 1), ("a", 2)]
+    assert (list(base), list(removed), len(removed)) == ([("a", 2)], [("a", 2)], 1)
+
+
+def test_longest_prefix_of_falls_back_to_a_stored_empty_key() -> None:
+    """longestPrefixOf falls back to a stored empty key"""
+    trie = Trie.make(("", 1), ("a", 2))
+    assert trie.longest_prefix_of("xyz") == Some(("", 1))
+    assert trie.longest_prefix_of("") == Some(("", 1))
+    assert trie.longest_prefix_of("ab") == Some(("a", 2))
+
+
 def test_longest_prefix_of_ignores_valued_sibling_nodes_that_do_not_match_the_input() -> None:
     """longestPrefixOf ignores valued sibling nodes that do not match the input"""
     assert Trie.make(("a", 1), ("b", 2)).longest_prefix_of("c") is None

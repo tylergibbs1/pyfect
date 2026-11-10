@@ -28,9 +28,13 @@ def test_big_decimal_from_string() -> None:
     decoding = asserts.decoding()
     decoding.succeed("0", _bd("0"))
     decoding.succeed("123.456", _bd("123.456"))
+    decoding.fail("1e300000000", "Expected a valid BigDecimal string")
+    decoding.fail("10e10000", "Expected a valid BigDecimal string")
+    decoding.succeed("1e+10000", bd.make(1, -10_000))
     encoding = asserts.encoding()
     encoding.succeed(bd.make(0, 0), "0")
     encoding.succeed(bd.make(123456, 3), "123.456")
+    encoding.succeed(bd.make(1, -10_000), "1e+10000")
     encoding.fail("a", "Expected BigDecimal")
 
 

@@ -165,8 +165,9 @@ OMISSIONS: tuple[Omission, ...] = (
     _some(
         "effect/test/Duration.test.ts",
         "section 4: a Duration is `duration.Seconds` or `timedelta`; `to_*` are arithmetic there, "
-        "and `Hash` / `Combiner` are Python's (input forms: tests/oracle/test_duration.py)",
-        r"^(?!fromInput|converts large finite|toMillis$|toSeconds$)",
+        "and `Hash` / `Combiner` are Python's (input forms and ISO 8601: "
+        "tests/oracle/test_duration.py)",
+        r"^(?!fromInput|converts large finite|toMillis$|toSeconds$|toMicros$|formatIso|fromIso)",
     ),
     *_whole(
         "`is*` guards are `isinstance`, `_tag` strings are classes (section 4), and the rest is "

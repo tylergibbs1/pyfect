@@ -18,11 +18,12 @@ grows once ``usage / target_utilization`` exceeds what its items serve.
 function's effect runs; borrowers wait in line for a free item, and a
 failed acquisition fails the borrower that reaches it. ``invalidate``
 retires an item once its last borrower returns it, ``reserve`` keeps an
-item from new borrowers for a scope.
+item from new borrowers for a scope. ``stats`` counts idle and used items
+and waiting borrowers.
 """
 
 from pyfect.pool._pool import Pool, TimeToLiveStrategy
-from pyfect.pool._state import PoolConfig, PoolItem, PoolState, Strategy
+from pyfect.pool._state import PoolConfig, PoolItem, PoolState, PoolStats, Strategy
 from pyfect.pool._waiters import PoolWaiters
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "PoolConfig",
     "PoolItem",
     "PoolState",
+    "PoolStats",
     "PoolWaiters",
     "Strategy",
     "TimeToLiveStrategy",

@@ -9,8 +9,9 @@ Adapted, with the reason:
 
 - "should proxy body length": Python functions have no ``length``; the
   decorated functions keep the body's signature (``inspect.signature``).
-- "should support self with pipeable arguments": ``{ self }`` binds
-  ``this``; in Python the body is a bound method.
+- "should support self with pipeable arguments" and "untraced should support
+  self with pipeable arguments": ``{ self }`` binds ``this``; in Python the
+  body is a bound method.
 
 Omitted, with the reason:
 
@@ -111,6 +112,25 @@ def test_should_support_self_with_pipeable_arguments():
     f = fx.fn(Prefixed().render, lambda eff: eff.map(str.upper))
     result = yield from f("value")
     assert result == "BOUND:VALUE"
+
+
+@testing.effect
+def test_untraced_should_support_self_with_pipeable_arguments():
+    """untraced should support self with pipeable arguments"""
+
+    class Prefixed:
+        prefix = "bound"
+
+        def render(self, value: str):
+            yield from fx.void
+            return f"{self.prefix}:{value}"
+
+    body = Prefixed().render
+    untraced = fx.fn_untraced(body, lambda eff: eff.map(str.upper))
+    eager = fx.fn_untraced_eager(body, lambda eff: eff.map(str.upper))
+    assert list(inspect.signature(untraced).parameters) == ["value"]
+    assert (yield from untraced("value")) == "BOUND:VALUE"
+    assert (yield from eager("value")) == "BOUND:VALUE"
 
 
 @testing.effect

@@ -142,6 +142,16 @@ def is_ulid(**annotations: object) -> Filter[str]:
     )
 
 
+_ASCII = re.compile("[\x00-\x7f]*")
+
+
+def is_ascii(**annotations: object) -> Filter[str]:
+    """Only ASCII characters (``U+0000`` to ``U+007F``), the empty string included."""
+    return string_filter(
+        lambda s: _ASCII.fullmatch(s) is not None, "an ASCII string", "isAscii", None, annotations
+    )
+
+
 _BASE64 = re.compile(r"[0-9a-zA-Z+/]*={0,2}")
 _BASE64_URL = re.compile(r"[0-9a-zA-Z\-_]*={0,2}")
 

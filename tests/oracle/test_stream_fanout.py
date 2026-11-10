@@ -94,6 +94,32 @@ def test_group_by_a_group_that_stops_early_does_not_block_the_others():
     assert sorted(result) == [1, 2, 4, 6, 8]
 
 
+@testing.effect
+def test_group_by_key_groups_end_when_the_upstream_ends():
+    """groupByKey - groups end when the upstream ends"""
+    result = yield from (
+        stream.make(1, 2, 3, 4, 5)
+        .group_by_key(_parity)
+        .map_effect(lambda group: group[1].run_collect().map(lambda values: (group[0], values)))
+        .run_collect()
+    )
+    assert result == [("odd", [1, 3, 5]), ("even", [2, 4])]
+
+
+@testing.effect
+def test_group_by_key_groups_end_when_the_upstream_fails():
+    """groupByKey - groups end when the upstream fails"""
+    exit_ = yield from (
+        stream.make(1, 2, 3)
+        .concat(stream.fail("boom"))
+        .group_by_key(lambda n: n % 2)
+        .map_effect(lambda group: group[1].run_collect())
+        .run_collect()
+        .exit()
+    )
+    assert exit_ == fx.exit.fail("boom")
+
+
 # --- share -----------------------------------------------------------------------
 
 
@@ -161,6 +187,23 @@ def _code(message: tuple[int, str]) -> int:
 def _groups_of(source: Stream[tuple[int, str]]) -> fx.Effect[list[list[tuple[int, str]]]]:
     collected = source.group_adjacent_by(_code).run_collect()
     return collected.map(lambda groups: [list(chunk) for _, chunk in groups])
+
+
+@testing.effect
+def test_group_adjacent_by_emits_the_buffered_group_before_failing():
+    """emits the buffered group before failing"""
+    result = yield from (
+        stream.from_arrays([1, 1, 2], [2])
+        .concat(stream.fail("Ouch"))
+        .group_adjacent_by(lambda n: n)
+        .catch_all(stream.make)
+        .run_collect()
+    )
+    assert [g if isinstance(g, str) else (g[0], list(g[1])) for g in result] == [
+        (1, [1, 1]),
+        (2, [2, 2]),
+        "Ouch",
+    ]
 
 
 @testing.effect

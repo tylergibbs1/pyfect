@@ -21,6 +21,11 @@ def program():
     lines = yield from fs.stream(notes, chunk_size=4).decode_text().split_lines().run_collect()
     print(lines)
     print("exists:", (yield from fs.exists(notes)))
+
+    # Paths under a root matching a glob, sorted by name, depth first.
+    yield from fs.make_directory(path.join(root, "drafts"))
+    yield from fs.write_file_string(path.join(root, "drafts", "todo.txt"), "")
+    print((yield from fs.glob("**/*.txt", root=root)))
     return root
 
 

@@ -3,6 +3,7 @@
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -125,7 +126,7 @@ def _extra_pairs(
     return pairs
 
 
-def _value_wire_code(ctx: _Context, layout: L.Layout, value: object) -> int:  # noqa: PLR0911
+def _value_wire_code(ctx: _Context, layout: L.Layout, value: object) -> int:  # noqa: PLR0911, PLR0912
     """The field wire kind; a decimal's scale rides above its low three bits."""
     if isinstance(layout, L.LiteralLayout):
         if not layout.has(value):
@@ -153,6 +154,9 @@ def _value_wire_code(ctx: _Context, layout: L.Layout, value: object) -> int:  # 
             if not W.is_safe_integer(value):
                 raise ctx.fail("an integer", value)
             return W.FIELD_WIRE_VARINT
+        case "i32" | "u32":
+            # The payload write validates the value.
+            return W.FIELD_WIRE_FIXED32
         case _:
             return W.FIELD_WIRE_SIZED
 
@@ -167,6 +171,8 @@ def _encode_wire_payload(
         w.number_varint(value)
     elif kind == W.FIELD_WIRE_FIXED64:
         w.f64(value)
+    elif kind == W.FIELD_WIRE_FIXED32:
+        encode_value(ctx, layout, value, w)
     elif kind == W.FIELD_WIRE_DECIMAL:
         scale = wire // W.FIELD_WIRE_FACTOR
         w.number_varint(W.rounded_mantissa(float(value), scale))
@@ -635,6 +641,55 @@ def _bigint(ctx: _Context, _: L.LeafLayout, value: object, w: W.Writer) -> None:
     w.zigzag(value)
 
 
+# ``disable_checks`` can bypass the range check that selected these layouts.
+
+
+def _fixed_number(value: object, low: int, high: int) -> int | None:
+    """``value`` as an integer in ``[low, high]`` (``-0`` is ``0``), else
+    ``None``."""
+    if not W.is_number(value):
+        return None
+    number = cast("float", value)
+    if not (isinstance(number, int) or math.isfinite(number)) or number != int(number):
+        return None
+    whole = int(number)
+    return whole if low <= whole <= high else None
+
+
+def _fixed_bigint(value: object, low: int, high: int) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
+        return None
+    return value
+
+
+def _i32(ctx: _Context, _: L.LeafLayout, value: object, w: W.Writer) -> None:
+    n = _fixed_number(value, W.I32_MIN, W.I32_MAX)
+    if n is None:
+        raise ctx.fail("a 32-bit integer", value)
+    w.i32le(n)
+
+
+def _u32(ctx: _Context, _: L.LeafLayout, value: object, w: W.Writer) -> None:
+    n = _fixed_number(value, 0, W.U32_MAX)
+    if n is None:
+        raise ctx.fail("a 32-bit unsigned integer", value)
+    w.u32le(n)
+
+
+def _i64(ctx: _Context, _: L.LeafLayout, value: object, w: W.Writer) -> None:
+    n = _fixed_bigint(value, W.I64_MIN, W.I64_MAX)
+    if n is None:
+        raise ctx.fail("a 64-bit integer", value)
+    w.i64(n)
+
+
+def _u64(ctx: _Context, _: L.LeafLayout, value: object, w: W.Writer) -> None:
+    n = _fixed_bigint(value, 0, W.U64_MAX)
+    if n is None:
+        raise ctx.fail("a 64-bit unsigned integer", value)
+    w.u64(n)
+
+
 def _epoch_millis(value: datetime) -> int:
     return (value - EPOCH) // _MILLISECOND
 
@@ -763,6 +818,10 @@ _ENCODERS: dict[str, Callable[[_Context, Any, Any, W.Writer], None]] = {
     "string": _string,
     "bytes": _bytes,
     "bigint": _bigint,
+    "i32": _i32,
+    "u32": _u32,
+    "i64": _i64,
+    "u64": _u64,
     "dateTimeUtc": _date_time_utc,
     "dateTimeZoned": _date_time_zoned,
     "duration": _duration,

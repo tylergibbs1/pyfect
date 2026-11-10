@@ -49,6 +49,17 @@ def test_preserves_explicit_options_on_an_empty_union() -> None:
     )
 
 
+def test_preserves_top_level_and_nested_proto_annotations_in_generated_code() -> None:
+    """toCodeDocument annotations / preserves top-level and nested __proto__ annotations in
+    generated code"""
+    value = {"__proto__": {"trusted": True}}
+    annotations: dict[str, object] = {**value, "examples": [value]}
+    schema = S.Unknown.annotate(**annotations)
+    namespace: dict[str, Any] = {"__name__": "generated"}
+    exec(R.to_code_module(R.to_code_document(R.to_representations((schema,)))), namespace)
+    assert S.resolve_annotations(namespace["Schema0"]) == annotations
+
+
 def test_compiles_the_is_pattern_and_option_vertical_slice() -> None:
     """toCodeDocument annotations / compiles the isPattern and Option vertical
     slice"""

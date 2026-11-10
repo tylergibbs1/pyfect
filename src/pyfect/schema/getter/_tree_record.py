@@ -27,7 +27,14 @@ if TYPE_CHECKING:
 
 _MAX_ARRAY_HOLES = 20
 _MAX_INDEX = 2**32 - 1
-_BRACKETS = re.compile(r"\[(.*?)\]")
+_BRACKETS = re.compile("\\[([^\\]\r\n\u2028\u2029]*)(\\])?")
+"""A bracket and what follows up to its closing bracket or a line terminator (JavaScript's),
+so an unmatched run is consumed once rather than scanned again for each bracket."""
+
+
+def _replace_bracket(match: re.Match[str]) -> str:
+    return f".{match[1]}" if match[2] is not None else match[0]
+
 
 type _Token = str | int
 
@@ -40,7 +47,7 @@ def _is_index(part: str) -> bool:
 def _tokens(path: str) -> list[_Token]:
     if path == "":
         return [""]
-    replaced = _BRACKETS.sub(r".\1", path)
+    replaced = _BRACKETS.sub(_replace_bracket, path)
     parts = replaced.split(".")[1 if replaced.startswith(".") else 0 :]
     return [int(part) if _is_index(part) else part for part in parts]
 

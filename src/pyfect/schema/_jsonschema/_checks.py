@@ -59,6 +59,7 @@ _ANY_UUID = (
 )
 _GUID = "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
 _ULID = "^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$"
+_ASCII = "^[\\x00-\\x7F]*$"
 NUMBER_KEY_PATTERN = f"^(?:{_FINITE_PATTERN}|Infinity|-Infinity|NaN)$"
 """The text of any number: a key of a number-keyed mapping."""
 
@@ -216,6 +217,7 @@ BUILTINS: Mapping[str, _Builtin] = {
     "isUUID": _uuid,
     "isGUID": _pattern(_GUID),
     "isULID": _pattern(_ULID),
+    "isAscii": _pattern(_ASCII),
     "isBase64": _pattern(_BASE64),
     "isBase64Url": _pattern(_BASE64_URL),
     "isStartingWith": _literal("startsWith", lambda escaped: f"^{escaped}"),

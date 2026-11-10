@@ -451,7 +451,7 @@ class ScopedCache[K: Hashable = Unsubscripted, A = Unsubscripted, E = Never, R =
             for key, entry in list(entries.items()):
                 if is_expired(entry.expires_at, now):
                     del entries[key]
-                    expired.append(entry.scope.close(_DONE))
+                    expired.append(_close_evicted(entry))
                 else:
                     item = pick(key, entry)
                     if item is not None:

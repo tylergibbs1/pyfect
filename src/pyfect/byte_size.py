@@ -73,7 +73,8 @@ def _names() -> dict[str, int]:
 
 
 _UNITS_BY_NAME = _names()
-_SYNTAX = re.compile(rf"[{SPACE}]*([0-9]+)(?:\.([0-9]+))?[{SPACE}]*([A-Za-z]+)[{SPACE}]*")
+_SYNTAX = re.compile(rf"[{SPACE}]*([0-9]+(?:\.[0-9]+)?)[{SPACE}]*([A-Za-z]+)[{SPACE}]*")
+_DECIMAL_TEXT = re.compile(r"([0-9]+)(?:\.([0-9]+))?(?:e([+-][0-9]+))?")
 
 zero = ByteSize(0)
 
@@ -90,6 +91,21 @@ def _safe_integer(value: float) -> int | None:
     return None
 
 
+def _scale_decimal(quantity: str, factor: int) -> int | None:
+    """A decimal such as ``"2.01"`` or ``"4e-15"`` times ``factor`` exactly, or
+    ``None`` when that is not a whole number of bytes (or not such a decimal)."""
+    match = _DECIMAL_TEXT.fullmatch(quantity)
+    if match is None:
+        return None
+    whole, fraction, exponent = match.group(1), match.group(2) or "", match.group(3) or "0"
+    numerator = int(whole + fraction) * factor
+    shift = int(exponent) - len(fraction)
+    if shift >= 0:
+        return numerator * 10**shift
+    scale = 10**-shift
+    return numerator // scale if numerator % scale == 0 else None
+
+
 def _from_quantity(quantity: float, symbol: Unit) -> ByteSize:
     """``quantity`` units of ``symbol``. An ``int`` may be any size; a
     ``float`` must give a whole number of bytes below 2**53. Raises
@@ -99,7 +115,13 @@ def _from_quantity(quantity: float, symbol: Unit) -> ByteSize:
         if quantity < 0:
             raise _invalid(f"expected a non-negative quantity, received {quantity}")
         return ByteSize(quantity * factor)
-    value = _safe_integer(quantity * float(factor))
+    if symbol in _BINARY_SYMBOLS or symbol == "B":
+        # Binary factors are powers of 2, so the float product is exact.
+        value = _safe_integer(quantity * float(factor))
+    else:
+        # The shortest decimal form, scaled exactly, avoids floating-point rounding.
+        value = _scale_decimal(js_number(quantity), factor)
+        value = None if value is None or value > _MAX_SAFE_INTEGER else value
     if value is None or value < 0:
         raise _invalid(
             "expected an exact non-negative safe-integer byte result, "
@@ -153,15 +175,14 @@ def from_string_unsafe(text: str) -> ByteSize:
     match = _SYNTAX.fullmatch(text)
     if match is None:
         raise _invalid(f"unsupported syntax {_quote(text)}")
-    whole, fraction, unit = match.group(1), match.group(2) or "", match.group(3)
+    quantity, unit = match.group(1), match.group(2)
     factor = _UNITS_BY_NAME.get(unit)
     if factor is None:
         raise _invalid(f"unsupported unit {_quote(unit)}")
-    numerator = int(whole + fraction) * factor
-    scale = 10 ** len(fraction)
-    if numerator % scale != 0:
+    value = _scale_decimal(quantity, factor)
+    if value is None:
         raise _invalid(f"{_quote(text)} does not represent an integral number of bytes")
-    return ByteSize(numerator // scale)
+    return ByteSize(value)
 
 
 def from_string(text: str) -> ByteSize | None:

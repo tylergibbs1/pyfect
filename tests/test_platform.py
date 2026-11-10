@@ -422,6 +422,7 @@ def test_services_reject_a_non_effect_field():
         TerminalService(
             columns=fx.succeed(0),
             rows=0,  # pyright: ignore[reportArgumentType]
+            size=terminal.live(input=0).size,
             read_input=terminal.live(input=0).read_input,
             read_line=fx.succeed(""),
             display=lambda _text: fx.void,

@@ -10,6 +10,7 @@ from pyfect import testing
 from pyfect.cli import Argument, Config, Flag, cli_output, command, group
 from pyfect.cli._help import build_help_doc
 from pyfect.cli.cli_error import ShowHelp
+from pyfect.cli.global_flag import Setting
 from pyfect.cli.help_doc import ExampleDoc
 from pyfect.testing import Services
 
@@ -257,6 +258,97 @@ def test_hidden_flag_name_does_not_leak_through_unrecognized_flag_suggestions(
     assert "experimental-foo" not in error_text + (yield from log_text())
 
 
+class _Profile(Config):
+    profile = Flag.string("profile")
+
+
+class _Target(Config):
+    target = Flag.string("target")
+
+
+def _shared_flags_app() -> command.Command[Any, Any, Any, Any]:
+    return (
+        command.make("app", _Profile)
+        .with_shared_flags(_Profile)
+        .with_subcommands(command.make("deploy", _Target))
+    )
+
+
+def _with_formatter[A, E, R](
+    eff: fx.Effect[A, E, R],
+    *,
+    inherited_flags: cli_output.FlagSectionMode = "full",
+    global_flags: cli_output.FlagSectionMode = "full",
+) -> fx.Effect[A, E, R]:
+    formatter = cli_output.default_formatter(
+        colors=False, inherited_flags=inherited_flags, global_flags=global_flags
+    )
+    return eff.pipe(fx.provide(cli_output.layer(formatter)))
+
+
+@testing.effect
+def test_summary_replaces_inherited_and_global_flags_with_a_pointer_to_the_root_help(
+    env: Services[Any],
+):
+    """summary replaces inherited and global flags with a pointer to the root help"""
+    run = runner(_shared_flags_app())
+    yield from _with_formatter(
+        run(["deploy", "--help"]), inherited_flags="summary", global_flags="summary"
+    )
+    deploy_help = yield from log_text()
+    assert "--target" in deploy_help
+    assert "Run 'app --help' for inherited flags" in deploy_help
+    assert "Run 'app --help' for global flags" in deploy_help
+    assert "--profile" not in deploy_help
+    assert "--log-level" not in deploy_help
+
+
+@testing.effect
+def test_none_omits_inherited_and_global_flags_but_the_root_help_keeps_its_own_and_global_flags(
+    env: Services[Any],
+):
+    """none omits inherited and global flags, but the root help keeps its own and global flags"""
+    run = runner(_shared_flags_app())
+    yield from _with_formatter(run(["--help"]), inherited_flags="none", global_flags="none")
+    root_help = yield from log_text()
+    yield from _with_formatter(
+        run(["deploy", "--help"]), inherited_flags="none", global_flags="none"
+    )
+    deploy_help = (yield from log_text())[len(root_help) :]
+    assert "--profile" in root_help
+    assert "GLOBAL FLAGS" in root_help
+    assert "--log-level" in root_help
+    assert "--target" in deploy_help
+    assert "--profile" not in deploy_help
+    assert "--log-level" not in deploy_help
+    assert "Run 'app --help'" not in deploy_help
+
+
+class _Region(Setting[str | None]):
+    flag = Flag.string("region").optional()
+
+
+@testing.effect
+def test_global_flag_summary_points_at_the_nearest_command_that_declares_global_flags(
+    env: Services[Any],
+):
+    """global flag summary points at the nearest command that declares global flags"""
+    run = runner(
+        command.make("app").with_subcommands(
+            command.make("admin")
+            .pipe(command.with_global_flags(_Region))
+            .with_subcommands(command.make("leaf"))
+        )
+    )
+    yield from _with_formatter(run(["admin", "--help"]), global_flags="summary")
+    admin_help = yield from log_text()
+    yield from _with_formatter(run(["admin", "leaf", "--help"]), global_flags="summary")
+    leaf_help = (yield from log_text())[len(admin_help) :]
+    assert "--region" in admin_help
+    assert "--region" not in leaf_help
+    assert "Run 'app admin --help' for global flags" in leaf_help
+
+
 @testing.effect
 def test_hides_unlisted_subcommands_from_help_output(env: Services[Any]):
     """hides unlisted subcommands from help output"""
@@ -365,12 +457,14 @@ def test_renders_file_command_positional_arguments(env: Services[Any]):
           destination file    Destination path
 
         FLAGS
-          --debug, -d              Enable debug logging
-          --config, -c file        Path to configuration file
-          --quiet, -q              Suppress non-error output
           --recursive, -r          Copy directories recursively
           --force, -f              Overwrite existing files
           --buffer-size integer    Buffer size in KB
+
+        INHERITED FLAGS
+          --debug, -d          Enable debug logging
+          --config, -c file    Path to configuration file
+          --quiet, -q          Suppress non-error output
 
         """
     ) + "\n\n" + GLOBAL_FLAGS
@@ -391,12 +485,14 @@ def test_renders_variadic_arguments(env: Services[Any]):
           files... string    Files to remove
 
         FLAGS
+          --recursive, -r    Remove directories and contents
+          --force, -f        Force removal without prompts
+          --verbose, -v      Explain what is being done
+
+        INHERITED FLAGS
           --debug, -d          Enable debug logging
           --config, -c file    Path to configuration file
           --quiet, -q          Suppress non-error output
-          --recursive, -r      Remove directories and contents
-          --force, -f          Force removal without prompts
-          --verbose, -v        Explain what is being done
 
         """
     ) + "\n\n" + GLOBAL_FLAGS
@@ -414,13 +510,15 @@ def test_renders_deeply_nested_subcommand_help(env: Services[Any]):
           mycli admin users list [flags]
 
         FLAGS
+          --format string    Output format (json, table, csv)
+          --active           Show only active users
+          --verbose, -v      Show detailed information
+
+        INHERITED FLAGS
           --debug, -d          Enable debug logging
           --config, -c file    Path to configuration file
           --quiet, -q          Suppress non-error output
           --sudo               Run with elevated privileges
-          --format string      Output format (json, table, csv)
-          --active             Show only active users
-          --verbose, -v        Show detailed information
 
         """
     ) + "\n\n" + GLOBAL_FLAGS
@@ -442,12 +540,14 @@ def test_renders_mixed_required_and_optional_positional_arguments(env: Services[
           email string       Email address (optional) (optional)
 
         FLAGS
+          --role string    User role (admin, user, guest)
+          --notify, -n     Send notification email
+
+        INHERITED FLAGS
           --debug, -d          Enable debug logging
           --config, -c file    Path to configuration file
           --quiet, -q          Suppress non-error output
           --sudo               Run with elevated privileges
-          --role string        User role (admin, user, guest)
-          --notify, -n         Send notification email
 
         """
     ) + "\n\n" + GLOBAL_FLAGS
@@ -465,11 +565,13 @@ def test_renders_intermediate_subcommand_shared_flags_and_children(env: Services
           mycli admin config <subcommand> [flags]
 
         FLAGS
-          --debug, -d             Enable debug logging
-          --config, -c file       Path to configuration file
-          --quiet, -q             Suppress non-error output
-          --sudo                  Run with elevated privileges
           --profile, -p string    Configuration profile to use
+
+        INHERITED FLAGS
+          --debug, -d          Enable debug logging
+          --config, -c file    Path to configuration file
+          --quiet, -q          Suppress non-error output
+          --sudo               Run with elevated privileges
 
         """
     ) + "\n\n" + GLOBAL_FLAGS + "\n\n" + snapshot(
@@ -496,12 +598,14 @@ def test_renders_variadic_arguments_with_a_minimum_count(env: Services[Any]):
           key=value... string    Configuration key-value pairs
 
         FLAGS
-          --debug, -d               Enable debug logging
-          --config, -c file         Path to configuration file
-          --quiet, -q               Suppress non-error output
-          --sudo                    Run with elevated privileges
-          --profile, -p string      Configuration profile to use
           --config-file, -f file    Write to specific config file
+
+        INHERITED FLAGS
+          --debug, -d             Enable debug logging
+          --config, -c file       Path to configuration file
+          --quiet, -q             Suppress non-error output
+          --sudo                  Run with elevated privileges
+          --profile, -p string    Configuration profile to use
 
         """
     ) + "\n\n" + GLOBAL_FLAGS

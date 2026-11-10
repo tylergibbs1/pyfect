@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Literal, cast
 
 from pyfect._js import js_sort_key
@@ -162,6 +163,28 @@ def _component_keys(definition_keys: list[str]) -> dict[str, str]:
 def to_open_api_3_1(
     multi_document: MultiDocument[Literal["draft-2020-12"]],
 ) -> MultiDocument[Literal["openapi-3.1"]]:
+    def check(node: JsonSchema) -> None:
+        reject_keyword_collisions(
+            node, _OPEN_API_31_TARGET_COLLISIONS, "OpenAPI 3.1", "Draft 2020-12"
+        )
+
+    components = to_multi_document_components(
+        multi_document, target="OpenAPI 3.1", check_schema=check
+    )
+    return MultiDocument("openapi-3.1", components.schemas, components.definitions)
+
+
+def to_multi_document_components(
+    multi_document: MultiDocument[Literal["draft-2020-12"]],
+    *,
+    target: str,
+    check_schema: Callable[[JsonSchema], None] | None = None,
+) -> MultiDocument[Literal["draft-2020-12"]]:
+    """The documents with their shared definitions moved under ``components.schemas``
+    (Effect's ``toMultiDocumentComponents``): references rewritten, keys OpenAPI forbids
+    sanitized (``_1``, ``_2``... on a collision), each schema node first given to
+    ``check_schema``. A schema resource referencing the shared pool raises ``ValueError``
+    naming ``target``."""
     definitions = multi_document.definitions
     key_map = _component_keys(list(definitions))
 
@@ -171,9 +194,8 @@ def to_open_api_3_1(
         local_definitions = as_object(local) if is_object(local) else None
 
         def transform(node: JsonSchema, in_embedded_resource: bool) -> None:
-            reject_keyword_collisions(
-                node, _OPEN_API_31_TARGET_COLLISIONS, "OpenAPI 3.1", "Draft 2020-12"
-            )
+            if check_schema is not None:
+                check_schema(node)
 
             def rewrite_ref(reference: str, keyword: str) -> str:
                 path = parse_uri_fragment(reference) if reference.startswith("#") else None
@@ -189,7 +211,7 @@ def to_open_api_3_1(
                     ):
                         raise unsupported(
                             keyword,
-                            "OpenAPI 3.1",
+                            target,
                             "a schema resource cannot reference the shared definitions pool",
                         )
                     return reference
@@ -205,4 +227,4 @@ def to_open_api_3_1(
 
     schemas = tuple(rewrite(schema, True) for schema in multi_document.schemas)
     out: Definitions = {key_map.get(key, key): rewrite(value) for key, value in definitions.items()}
-    return MultiDocument("openapi-3.1", schemas, out)
+    return MultiDocument("draft-2020-12", schemas, out)

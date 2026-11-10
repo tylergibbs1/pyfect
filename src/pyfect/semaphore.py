@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-import contextlib
-from collections import deque
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Never
 
@@ -29,73 +27,59 @@ if TYPE_CHECKING:
 
 
 class _Waiter:
-    """A fiber parked for ``n`` permits; ``woken`` once a release counted
-    permits for it."""
+    """A queued request for ``n`` permits. It keeps its place until it takes
+    them or leaves; a wake only resumes it to check again (Effect 4.1.2)."""
 
-    __slots__ = ("n", "resume", "woken")
+    __slots__ = ("n", "resume")
 
     def __init__(self, n: int) -> None:
         self.n = n
-        self.woken = False
-        self.resume: Callable[[Effect[None]], None] = _no_resume
-
-
-def _no_resume(_: Effect[None]) -> None:
-    return None
-
-
-def _resume_all(waiters: list[_Waiter]) -> None:
-    for waiter in waiters:
-        waiter.resume(_Succeed(None))
-
-
-def _as_is[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:
-    return effect
-
-
-_CHECKPOINT: Effect[None] = _Succeed(None)
+        self.resume: Callable[[Effect[None]], None] | None = None
 
 
 class _Turn(Frame):
-    """Settles a wait for permits. Once woken, it stays on the stack for one
-    more step (where an interrupt can land, if the caller is interruptible
-    there), then retries; a waiter interrupted after its wake-up passes the
-    wake-up on, so the permits counted for it are never stranded."""
+    """Below a parked request. When resumed, the request takes its permits
+    if it is now the first queued request that fits, in this same step
+    (``claims``), else it parks again; however the wait ends otherwise
+    (an interrupt), the request leaves the queue."""
 
-    __slots__ = ("checked", "semaphore", "then", "waiter")
-    # The retry takes the permits here and returns them as an exit.
+    __slots__ = ("restore", "semaphore", "then", "waiter")
+    # The take happens here and its result goes straight on.
     claims = True
 
     def __init__(
-        self, semaphore: Semaphore, waiter: _Waiter, then: Callable[[], Effect[Any, Any, Any]]
+        self,
+        semaphore: Semaphore,
+        waiter: _Waiter,
+        restore: Restore,
+        then: Callable[[], Effect[Any, Any, Any]],
     ) -> None:
         self.semaphore = semaphore
         self.waiter = waiter
+        self.restore = restore
         self.then = then
-        self.checked = False
 
     def _on_success(self, value: Any, fiber: Fiber[Any, Any]) -> Step:
-        if not self.checked:
-            self.checked = True
+        semaphore = self.semaphore
+        if semaphore._first_available() is not self.waiter:
             fiber._push(self)
-            return _CHECKPOINT
-        self.semaphore._settle(self.waiter)
-        # The retry may take the permits now: they reach the caller with no
-        # pause in between (``claims``), or a yield could strand them.
+            return self.restore(_Callback(semaphore._park(self.waiter)))
+        semaphore._taken += self.waiter.n
+        semaphore._leave(self.waiter)
         return run_known(self.then())
 
     def _on_failure(self, cause: Any, fiber: Fiber[Any, Any]) -> Step:
-        if self.waiter.woken:
-            self.semaphore._settle(self.waiter)
-            self.semaphore._wake()
+        self.semaphore._leave(self.waiter)
         return super()._on_failure(cause, fiber)
 
 
-class _WaitTurn(Effect[Any, Any, Any]):
-    """Park until a release wakes this waiter (``restore`` makes only the
-    park interruptible), then retry under ``_Turn``."""
+class _Take(Effect[Any, Any, Any]):
+    """Take ``n`` permits and continue with ``then()`` in the same step, or
+    queue a request, install its ``_Turn`` and park, also in one step, so no
+    interrupt can leave a request queued with nobody waiting on it.
+    ``restore`` makes only the park interruptible."""
 
-    __slots__ = ("restore", "semaphore", "then", "waiter")
+    __slots__ = ("n", "restore", "semaphore", "then")
 
     def __init__(
         self,
@@ -105,29 +89,45 @@ class _WaitTurn(Effect[Any, Any, Any]):
         then: Callable[[], Effect[Any, Any, Any]],
     ) -> None:
         self.semaphore = semaphore
-        self.waiter = _Waiter(n)
+        self.n = n
         self.restore = restore
         self.then = then
 
     def _step(self, fiber: Fiber[Any, Any]) -> Step:
-        fiber._push(_Turn(self.semaphore, self.waiter, self.then))
-        return self.restore(_Callback(self.semaphore._park(self.waiter)))
+        semaphore = self.semaphore
+        n = self.n
+        if semaphore._free >= n and semaphore._first_available() is None:
+            semaphore._taken += n
+            return run_known(self.then())
+        waiter = _Waiter(n)
+        semaphore._waiters[waiter] = None
+        fiber._push(_Turn(semaphore, waiter, self.restore, self.then))
+        return self.restore(_Callback(semaphore._park(waiter)))
+
+
+def _as_is[A, E, R](effect: Effect[A, E, R]) -> Effect[A, E, R]:
+    return effect
+
+
+_ABSENT = object()
 
 
 class Semaphore:
-    """Permits shared by fibers. A release wakes only the waiters its free
-    permits can serve (a woken waiter retries; Effect resumes the first one
-    at once, so the rest stay parked), so contention costs O(1) per
-    release rather than a wake-up of every waiter."""
+    """Permits shared by fibers. Requests queue in arrival order: a request
+    takes permits at once only when they are free and no queued request
+    fits in them, so a holder that releases and takes again goes behind
+    those already waiting. A queued request larger than the free permits
+    keeps its place but is overtaken by smaller ones behind it. A release
+    resumes, in one scheduled task, the queued requests its free permits
+    cover; each then checks again."""
 
-    __slots__ = ("_permits", "_taken", "_waiters", "_waking")
+    __slots__ = ("_permits", "_taken", "_waiters")
 
     def __init__(self, permits: int) -> None:
         self._permits = permits
         self._taken = 0
-        self._waiters: deque[_Waiter] = deque()
-        # Permits counted for woken waiters that have not retried yet.
-        self._waking = 0
+        # A dict as an insertion-ordered set: a request leaves from anywhere.
+        self._waiters: dict[_Waiter, None] = {}
 
     @classmethod
     def make(cls, permits: int) -> Effect[Semaphore]:
@@ -145,15 +145,8 @@ class Semaphore:
         """Wait for ``n`` permits and take them; succeeds with ``n``. Prefer
         ``with_permits``, which also gives them back."""
 
-        # Interruptible throughout, as Effect's ``take``: a waiter
-        # interrupted after its wake-up passes it on (``_Turn``).
-        def attempt() -> Effect[int]:
-            if self._free >= n:
-                self._taken += n
-                return _Succeed(n)
-            return _WaitTurn(self, n, _as_is, attempt)
-
-        return _Suspend(attempt)
+        # Interruptible throughout, as Effect's ``take``.
+        return self._take_then(n, _as_is, lambda: _Succeed(n))
 
     def take_scoped(self, n: int = 1) -> Effect[None, Never, Scope]:
         """Wait for ``n`` permits and hold them until the current scope
@@ -163,13 +156,9 @@ class Semaphore:
 
         def body(restore: Restore) -> Effect[None, Never, Scope]:
             def with_scope(scope: CloseableScope) -> Effect[None]:
-                def acquire() -> Effect[None]:
-                    if self._free < n:
-                        return _WaitTurn(self, n, restore, acquire)
-                    self._taken += n
-                    return scope.add_finalizer(lambda _exit: self.release(n))
-
-                return _Suspend(acquire)
+                return self._take_then(
+                    n, restore, lambda: scope.add_finalizer(lambda _exit: self.release(n))
+                )
 
             return Scope().flat_map(with_scope)
 
@@ -200,7 +189,7 @@ class Semaphore:
 
         def run() -> None:
             self._permits = permits
-            self._wake(soon=True)
+            self._wake_soon()
 
         return _Sync(run)
 
@@ -211,13 +200,7 @@ class Semaphore:
         require_effect(eff, "eff")
 
         def body(restore: Restore) -> Effect[A, E, R]:
-            def acquire() -> Effect[A, E, R]:
-                if self._free < n:
-                    return _WaitTurn(self, n, restore, acquire)
-                self._taken += n
-                return restore(eff).ensuring(self.release(n))
-
-            return _Suspend(acquire)
+            return self._take_then(n, restore, lambda: restore(eff).ensuring(self.release(n)))
 
         return uninterruptible_mask(body)
 
@@ -241,57 +224,59 @@ class Semaphore:
 
     def _release(self, n: int) -> int:
         self._taken -= n
-        self._wake(soon=True)
+        self._wake_soon()
         return self._free
 
     # --- waiting ---------------------------------------------------------------
 
-    def _park(self, waiter: _Waiter) -> Callable[[Callable[[Effect[None]], None]], Effect[None]]:
-        def register(resume: Callable[[Effect[None]], None]) -> Effect[None]:
-            waiter.resume = resume
-            self._waiters.append(waiter)
-            # A release can land between the caller's check and this park.
-            self._wake()
-            return _Sync(lambda: self._discard(waiter))
+    def _take_then[A, E, R](
+        self, n: int, restore: Restore, then: Callable[[], Effect[A, E, R]]
+    ) -> Effect[A, E, R]:
+        """Take ``n`` permits, then continue with ``then()`` in the same
+        step; only the wait is wrapped in ``restore``."""
+
+        return _Take(self, n, restore, then)
+
+    def _first_available(self) -> _Waiter | None:
+        """The first queued request that fits in the free permits."""
+        free = self._free
+        return next((w for w in self._waiters if w.n <= free), None)
+
+    def _park(self, waiter: _Waiter) -> Callable[[Callable[[Effect[None]], None]], None]:
+        def register(resume: Callable[[Effect[None]], None]) -> None:
+            # The fiber may have yielded since the last check, missing a wake.
+            if self._first_available() is waiter:
+                resume(_Succeed(None))
+            else:
+                waiter.resume = resume
 
         return register
 
-    def _wake(self, *, soon: bool = False) -> None:
-        """Wake, in order, the waiters the free permits not yet counted for
-        a woken waiter can serve. The permits are counted for them now; with
-        ``soon`` (a release or resize, as Effect's ``releaseUnsafe``) they
-        are resumed in a scheduled task, after the releasing step."""
-        spare = self._free - self._waking
-        waiters = self._waiters
-        woken: list[_Waiter] = []
-        too_large: list[_Waiter] = []
-        while spare > 0 and waiters:
-            waiter = waiters.popleft()
-            if waiter.n <= spare:
-                spare -= waiter.n
-                woken.append(waiter)
-            else:
-                too_large.append(waiter)
-        waiters.extendleft(reversed(too_large))
-        for waiter in woken:
-            waiter.woken = True
-            self._waking += waiter.n
-        if not woken:
+    def _leave(self, waiter: _Waiter) -> None:
+        """Take ``waiter`` out of the queue; the requests behind it may fit now."""
+        waiter.resume = None
+        if self._waiters.pop(waiter, _ABSENT) is not _ABSENT:
+            self._wake_soon()
+
+    def _wake_soon(self) -> None:
+        """Resume, in one scheduled task, every queued request the free
+        permits cover. A request already woken still counts against them,
+        since it keeps its place until it takes its permits."""
+        if not self._waiters:
             return
-        if soon:
-            wake_soon(lambda: _resume_all(woken))
-        else:
-            _resume_all(woken)
 
-    def _settle(self, waiter: _Waiter) -> None:
-        """A woken waiter retries (or gives up): its permits are no longer
-        counted for it."""
-        waiter.woken = False
-        self._waking -= waiter.n
+        def wake() -> None:
+            remaining = self._free
+            for waiter in list(self._waiters):
+                if waiter not in self._waiters or waiter.n > remaining:
+                    continue
+                remaining -= waiter.n
+                resume = waiter.resume
+                waiter.resume = None
+                if resume is not None:
+                    resume(_Succeed(None))
 
-    def _discard(self, waiter: _Waiter) -> None:
-        with contextlib.suppress(ValueError):
-            self._waiters.remove(waiter)
+        wake_soon(wake)
 
 
 __all__ = ["Semaphore"]
