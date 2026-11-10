@@ -8,7 +8,7 @@
     "dev": "next dev",
     "prebuild": "node scripts/check-api.mjs",
     "build": "next build",
-    "postbuild": "node scripts/check-links.mjs",
+    "postbuild": "node scripts/check-links.mjs && node scripts/check-search-size.mjs",
     "start": "next start",
     "check:layout": "node scripts/check-layout.mjs",
     "diagram:readme": "node scripts/readme-diagram.mjs",
