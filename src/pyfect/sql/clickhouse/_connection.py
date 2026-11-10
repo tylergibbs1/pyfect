@@ -15,7 +15,6 @@ import uuid
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from pyfect import _json_text
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
 from pyfect.context import Reference
@@ -93,13 +92,13 @@ def _data(result: object) -> Any:
     return document.get("data", document)
 
 
-def _document(text: str) -> Effect[Any, SqlError]:
+def _document(text: str, parse: Callable[[str], object]) -> Effect[Any, SqlError]:
     """The rows of a ``JSON`` / ``JSONCompact`` body. A statement without
     output (DDL, ``INSERT ... SELECT``) answers with no body: no rows."""
     if not text.strip():
         return succeed([])
     try:
-        return succeed(_data(_json_text.parse(text)))
+        return succeed(_data(parse(text)))
     except ValueError as error:
         return fail(_PARSE_RESULT(error))
 
@@ -147,7 +146,10 @@ class ClickhouseConnection:
         def read(result: ResultSet | CommandResult) -> Effect[Any, SqlError]:
             if isinstance(result, CommandResult):
                 return succeed([])
-            return result.text().map_error(_PARSE_RESULT).flat_map(_document)
+            parse = self.driver.connection.json.parse
+            return (
+                result.text().map_error(_PARSE_RESULT).flat_map(lambda text: _document(text, parse))
+            )
 
         return self._killed(
             lambda fiber, query_id: self._request(fiber, query_id, sql, params, format).flat_map(
@@ -190,6 +192,7 @@ class ClickhouseConnection:
         from pyfect import stream as stream_module
 
         driver = self.driver
+        parse_row = driver.connection.json.parse
 
         def opened(fiber: Fiber[Any, Any]) -> Effect[Stream[str, SqlError], SqlError]:
             query_id = query_id_of(fiber)
@@ -217,7 +220,7 @@ class ClickhouseConnection:
 
         def parse(chunk: tuple[str, ...]) -> Effect[tuple[Row, ...], SqlError]:
             try:
-                found = [cast("Row", _json_text.parse(text)) for text in chunk]
+                found = [cast("Row", parse_row(text)) for text in chunk]
             except ValueError as error:
                 return fail(_PARSE_ROW(error))
             return succeed(tuple(found if transform_rows is None else transform_rows(found)))

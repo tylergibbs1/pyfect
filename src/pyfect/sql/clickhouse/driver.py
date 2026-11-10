@@ -18,8 +18,9 @@ for a request that got no answer.
 from __future__ import annotations
 
 import platform
+import re
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -34,10 +35,12 @@ from pyfect.http.client import HttpClientService, TracerDisabledWhen
 from pyfect.http.error import HttpClientError
 from pyfect.http.headers import Headers
 from pyfect.http.response import HttpClientResponse
+from pyfect.logger import log_error, log_warning
 from pyfect.redacted import value as redacted_value
 from pyfect.sql.clickhouse._rows import RowSplitter, body_error
 from pyfect.sql.clickhouse.config import Connection
 from pyfect.sql.clickhouse.error import ClickhouseError, parse_error
+from pyfect.sql.clickhouse.options import form_encoded_length
 from pyfect.sql.clickhouse.params import Settings, format_query_param, format_setting
 
 if TYPE_CHECKING:
@@ -132,12 +135,19 @@ class ResultSet:
     """The answer to a ``query`` or ``exec``, its body not yet read (read it
     once): ``text``, ``json`` or the rows of ``stream``."""
 
-    __slots__ = ("format", "query_id", "response")
+    __slots__ = ("_parse", "format", "query_id", "response")
 
-    def __init__(self, response: HttpClientResponse, query_id: str, format: str | None) -> None:
+    def __init__(
+        self,
+        response: HttpClientResponse,
+        query_id: str,
+        format: str | None,
+        parse: Callable[[str], object] = _json_text.parse,
+    ) -> None:
         self.response = response
         self.query_id = query_id
         self.format = format
+        self._parse = parse
 
     def __repr__(self) -> str:
         return f"ResultSet(query_id={self.query_id!r}, format={self.format!r})"
@@ -170,13 +180,14 @@ class ResultSet:
     def json(self) -> Effect[Any, ClickhouseRequestError | ValueError]:
         """The body as JSON: the document of a single-document format, the
         list of rows of a format with a value per line. A body that is not
-        JSON fails with the parser's ``ValueError``."""
+        JSON fails with the parser's ``ValueError`` (the config's ``json``
+        parser reads it)."""
         if self.format in STREAMABLE_JSON_FORMATS:
-            return self.stream().map(_json_text.parse).run_collect().map(list)
+            return self.stream().map(self._parse).run_collect().map(list)
 
         def parse(text: str) -> Effect[Any, ValueError]:
             try:
-                return succeed(_json_text.parse(text))
+                return succeed(self._parse(text))
             except ValueError as error:
                 return fail(error)
 
@@ -221,10 +232,6 @@ def _json_default(value: object) -> object:
             raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
-def _encode_row(row: object) -> str:
-    return _json_text.stringify(row, default=_json_default) + "\n"
-
-
 def _trim(query: str) -> str:
     return query.strip().rstrip(";")
 
@@ -238,41 +245,95 @@ def _columns(columns: InsertColumns | None) -> str:
     return f" ({', '.join(columns)})" if columns else ""
 
 
+type Operation = Literal["Query", "Insert", "Command", "Exec"]
+
+_SAFE_PART_NAME = re.compile(r"[A-Za-z0-9_.-]+", re.ASCII)
+MAX_URL_BIND_PARAM_LENGTH = 4096
+"""How long a query's parameters may make the URL under
+``use_multipart_params_auto`` before they go in a multipart body."""
+
+
+def _multipart(parts: Mapping[str, str], boundary: str) -> str:
+    """``@clickhouse/client``'s ``buildMultipartBody``."""
+    chunks: list[str] = []
+    for name, value in parts.items():
+        if not _SAFE_PART_NAME.fullmatch(name):
+            raise ValueError(
+                f'Invalid multipart part name: "{name}". Part names must match /^[A-Za-z0-9_.-]+$/.'
+            )
+        chunks.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'
+        )
+    chunks.append(f"--{boundary}--\r\n")
+    return "".join(chunks)
+
+
+def _is_one(value: object) -> bool:
+    """JavaScript's ``value === 1``."""
+    return not isinstance(value, bool) and isinstance(value, int | float) and value == 1
+
+
 class ClickhouseDriver:
     """Requests to one server (see the module)."""
 
-    __slots__ = ("connection", "http_client")
+    __slots__ = ("connection", "connection_id", "http_client")
 
     def __init__(
         self, http_client: HttpClientService[HttpClientError], connection: Connection
     ) -> None:
         self.http_client = http_client
         self.connection = connection
+        self.connection_id = str(uuid.uuid4())
 
     def _headers(self, options: RequestOptions) -> dict[str, str]:
         connection = self.connection
         agent = f"pyfect ({_SYSTEM})"
-        return {
+        headers = {
             **connection.http_headers,
             **options.get("http_headers", {}),
-            "Connection": "keep-alive",
+            "Connection": "keep-alive" if connection.keep_alive else "close",
             "User-Agent": agent
             if connection.application is None
             else f"{connection.application} {agent}",
-            "Authorization": redacted_value(connection.authorization),
         }
+        credentials = connection.tls_credentials
+        if credentials is None:
+            return {**headers, "Authorization": redacted_value(connection.authorization)}
+        headers["X-ClickHouse-User"] = credentials[0]
+        headers["X-ClickHouse-Key"] = redacted_value(credentials[1])
+        if connection.tls is not None and connection.tls.mutual:
+            headers["X-ClickHouse-SSL-Certificate-Auth"] = "on"
+        return headers
+
+    def _settings(self, options: RequestOptions, *, compressed: bool) -> Settings:
+        """The settings of a request: ``enable_http_compression=1`` first
+        when a compressed response is configured (``withHttpSettings``)."""
+        connection = self.connection
+        asked: Settings = (
+            {"enable_http_compression": 1}
+            if compressed and connection.decompress_response is not None
+            else {}
+        )
+        return {**asked, **connection.clickhouse_settings, **options.get("clickhouse_settings", {})}
 
     def _url_params(
-        self, query_id: str, options: RequestOptions, query: str | None
+        self,
+        query_id: str,
+        options: RequestOptions,
+        settings: Settings,
+        *,
+        query: str | None = None,
+        param_entries: list[tuple[str, str]] | None = None,
+        params_in_url: bool = True,
     ) -> list[tuple[str, str]]:
         """``@clickhouse/client``'s ``toSearchParams``."""
         connection = self.connection
-        entries = [("query_id", query_id)]
-        entries += [
-            (f"param_{key}", format_query_param(value))
-            for key, value in options.get("query_params", {}).items()
-        ]
-        settings = {**connection.clickhouse_settings, **options.get("clickhouse_settings", {})}
+        if param_entries is not None:
+            entries = [*param_entries, ("query_id", query_id)]
+        else:
+            entries = [("query_id", query_id)]
+            if params_in_url:
+                entries += self._param_entries(options)
         entries += [(key, format_setting(value)) for key, value in settings.items()]
         if connection.database != "default":
             entries.append(("database", connection.database))
@@ -285,6 +346,13 @@ class ClickhouseDriver:
         roles = connection.role if role is None else (role,) if isinstance(role, str) else role
         entries += [("role", r) for r in roles]
         return entries
+
+    @staticmethod
+    def _param_entries(options: RequestOptions) -> list[tuple[str, str]]:
+        return [
+            (f"param_{key}", format_query_param(value))
+            for key, value in options.get("query_params", {}).items()
+        ]
 
     def _send(
         self, request: http_request.HttpClientRequest
@@ -304,15 +372,78 @@ class ClickhouseDriver:
         sent = self.http_client.execute(request).pipe(provide_service(TracerDisabledWhen, _always))
         return sent.flat_map(check)
 
-    def _post(
-        self, body: str, query_id: str, options: RequestOptions
+    def _logged[A](
+        self, op: Operation, query_id: str, options: RequestOptions, sent: Effect[A, Any]
+    ) -> Effect[A, Any]:
+        """``sent``, its failure (or abort) logged as ``@clickhouse/client``
+        logs a failed request, at ``ERROR``."""
+        if not self.connection.logs("ERROR"):
+            return sent
+        annotations = {
+            "module": "Connection",
+            "operation": op,
+            "connection_id": self.connection_id,
+            "query_id": query_id,
+            "session_id": options.get("session_id") or self.connection.session_id,
+        }
+
+        def log(error: object) -> Effect[None]:
+            return log_error(f"{op}: HTTP request error.", error).annotate_logs(annotations)
+
+        return sent.tap_error(log).on_interrupt(log(Exception("The user aborted a request.")))
+
+    def _compressed(
+        self, request: http_request.HttpClientRequest, data: bytes | Stream[bytes, object]
+    ) -> http_request.HttpClientRequest:
+        """``request`` with ``data`` as its body, compressed as the config
+        says (``Content-Encoding``)."""
+        from pyfect import stream as stream_module
+
+        codec = self.connection.compress_request
+        if codec is None:
+            return (
+                request.body_bytes(data) if isinstance(data, bytes) else request.body_stream(data)
+            )
+        request = request.set_header("Content-Encoding", codec.codec)
+        if isinstance(data, bytes):
+            compressor = codec.compressor()
+            return request.body_bytes(compressor.compress(data) + compressor.flush())
+
+        def compressed() -> Stream[bytes, object]:
+            compressor = codec.compressor()
+            body = data.map(compressor.compress).concat(stream_module.sync(compressor.flush))
+            return body.filter(lambda chunk: len(chunk) > 0)
+
+        return request.body_stream(stream_module.suspend(compressed))
+
+    def _accept(
+        self, request: http_request.HttpClientRequest, codec: str | None
+    ) -> http_request.HttpClientRequest:
+        return request if codec is None else request.set_header("Accept-Encoding", codec)
+
+    def _encode_row(self, row: object) -> str:
+        stringify = self.connection.json.stringify
+        if stringify is not None:
+            return stringify(row) + "\n"
+        return _json_text.stringify(row, default=_json_default) + "\n"
+
+    def _run_exec(
+        self, query: str, query_id: str, options: RequestOptions
     ) -> Effect[HttpClientResponse, ClickhouseRequestError]:
+        """``runExec``: the query as the (compressed) body."""
+
         def build() -> Effect[HttpClientResponse, ClickhouseRequestError]:
+            settings = self._settings(options, compressed=True)
             request = http_request.post(
                 self.connection.url + "/",
-                url_params=self._url_params(query_id, options, None),
+                url_params=self._url_params(query_id, options, settings),
                 headers=self._headers(options),
-            ).body_text(body, "text/plain; charset=UTF-8")
+            )
+            request = self._accept(request, self.connection.decompress_response)
+            if self.connection.compress_request is None:
+                request = request.body_text(query, "text/plain; charset=UTF-8")
+            else:
+                request = self._compressed(request, text_encode(query))
             return self._send(request)
 
         return suspend(build)
@@ -328,26 +459,31 @@ class ClickhouseDriver:
         from pyfect.stream import Stream
 
         def build() -> Effect[HttpClientResponse, ClickhouseRequestError]:
+            settings = {
+                **self.connection.clickhouse_settings,
+                **options.get("clickhouse_settings", {}),
+            }
             request = http_request.post(
                 self.connection.url + "/",
-                url_params=self._url_params(query_id, options, query),
+                url_params=self._url_params(query_id, options, settings, query=query),
                 headers=self._headers(options),
             )
+            data: bytes | Stream[bytes, object]
             match values:
                 case bytes():
-                    request = request.body_bytes(values)
+                    data = values
                 case str():
-                    request = request.body_text(values)
+                    data = text_encode(values)
                 case Stream():
                     items: Stream[Any, object] = values
                     if format in _JSON_FORMATS:
-                        items = items.map(lambda row: text_encode(_encode_row(row)))
-                    request = request.body_stream(items)
+                        items = items.map(lambda row: text_encode(self._encode_row(row)))
+                    data = items
                 case Mapping():
-                    request = request.body_text(_encode_row(values))
+                    data = text_encode(self._encode_row(values))
                 case _:
-                    request = request.body_text("".join(_encode_row(row) for row in values))
-            return self._send(request)
+                    data = text_encode("".join(self._encode_row(row) for row in values))
+            return self._send(self._compressed(request, data))
 
         return suspend(build)
 
@@ -356,22 +492,68 @@ class ClickhouseDriver:
         return query_id or str(uuid.uuid4())
 
     def ping(self) -> Effect[None, ClickhouseRequestError]:
-        """``GET /ping``, the body drained."""
+        """``GET /ping``, the body drained; a failure is logged at
+        ``WARN``."""
 
         def build() -> Effect[None, ClickhouseRequestError]:
             request = http_request.get(self.connection.url + "/ping", headers=self._headers({}))
             return self._send(request).flat_map(lambda response: response.bytes_).as_void()
 
-        return suspend(build)
+        pinged = suspend(build)
+        if not self.connection.logs("WARN"):
+            return pinged
+        annotations = {
+            "module": "Connection",
+            "connection_id": self.connection_id,
+            "query_id": str(uuid.uuid4()),
+        }
+        return pinged.tap_error(
+            lambda error: log_warning("Ping: HTTP request error.", error).annotate_logs(annotations)
+        )
 
     def query(
         self, query: str, *, format: DataFormat = "JSON", **options: Unpack[RequestOptions]
     ) -> Effect[ResultSet, ClickhouseRequestError]:
-        """``query`` with ``FORMAT <format>`` appended."""
+        """``query`` with ``FORMAT <format>`` appended; its parameters go in
+        a multipart body under ``use_multipart_params`` (or, once long,
+        ``use_multipart_params_auto``)."""
         query_id = self._query_id(options.get("query_id"))
         body = f"{_trim(query)} \nFORMAT {format}"
-        return self._post(body, query_id, options).map(
-            lambda response: ResultSet(response, query_id, format)
+        connection = self.connection
+
+        def build() -> Effect[HttpClientResponse, ClickhouseRequestError]:
+            settings = self._settings(options, compressed=True)
+            has_params = bool(options.get("query_params"))
+            multipart = has_params and connection.use_multipart_params
+            entries = None
+            if has_params and not multipart and connection.use_multipart_params_auto:
+                entries = self._param_entries(options)
+                if form_encoded_length(entries) > MAX_URL_BIND_PARAM_LENGTH:
+                    multipart, entries = True, None
+            request = http_request.post(
+                connection.url + "/",
+                url_params=self._url_params(
+                    query_id, options, settings, param_entries=entries, params_in_url=not multipart
+                ),
+                headers=self._headers(options),
+            )
+            asked = settings.get("enable_http_compression")
+            request = self._accept(
+                request, (connection.decompress_response or "gzip") if _is_one(asked) else None
+            )
+            if multipart:
+                boundary = f"----clickhouse-js-{uuid.uuid4()}"
+                parts = {"query": body, **dict(self._param_entries(options))}
+                request = request.body_text(
+                    _multipart(parts, boundary), f"multipart/form-data; boundary={boundary}"
+                )
+            else:
+                request = request.body_text(body, "text/plain; charset=UTF-8")
+            return self._send(request)
+
+        sent = self._logged("Query", query_id, options, suspend(build))
+        return sent.map(
+            lambda response: ResultSet(response, query_id, format, connection.json.parse)
         )
 
     def command(
@@ -384,7 +566,8 @@ class ClickhouseDriver:
             result = CommandResult(query_id, _summary(response.headers), response.headers)
             return response.bytes_.as_(result)
 
-        return self._post(_trim(query), query_id, options).flat_map(done)
+        sent = self._run_exec(_trim(query), query_id, options)
+        return self._logged("Command", query_id, options, sent).flat_map(done)
 
     def exec(
         self, query: str, **options: Unpack[RequestOptions]
@@ -392,8 +575,9 @@ class ClickhouseDriver:
         """``query`` as written (with its own ``FORMAT``); read the body
         through the ``ResultSet``."""
         query_id = self._query_id(options.get("query_id"))
-        return self._post(_trim(query), query_id, options).map(
-            lambda response: ResultSet(response, query_id, None)
+        sent = self._run_exec(_trim(query), query_id, options)
+        return self._logged("Exec", query_id, options, sent).map(
+            lambda response: ResultSet(response, query_id, None, self.connection.json.parse)
         )
 
     def insert(
@@ -416,10 +600,12 @@ class ClickhouseDriver:
             result = InsertResult(True, query_id, _summary(response.headers), response.headers)
             return response.bytes_.as_(result)
 
-        return self._with_body(values, format, query_id, options, query).flat_map(done)
+        sent = self._with_body(values, format, query_id, options, query).flat_map(done)
+        return self._logged("Insert", query_id, options, sent)
 
 
 __all__ = [
+    "MAX_URL_BIND_PARAM_LENGTH",
     "SINGLE_DOCUMENT_JSON_FORMATS",
     "STREAMABLE_JSON_FORMATS",
     "ClickhouseDriver",

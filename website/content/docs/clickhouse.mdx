@@ -32,6 +32,42 @@ answer within five seconds. `/ping` checks no credentials, so a wrong password s
 the first statement. For a named user that is an `AuthenticationError`, but the `default`
 user gets code 194 (`REQUIRED_PASSWORD`, HTTP 401), which is an `UnknownError`; see below.
 
+## Transport options
+
+The config takes `@clickhouse/client`'s transport options under the same names:
+
+- `compression={"response": True, "request": True}` asks the server for gzipped responses and
+  gzips what the client sends (insert bodies, commands). Pick a codec with
+  `{"response": {"codec": "br"}}` or `{"request": {"codec": "zstd", "level": 3}}`; Brotli
+  takes `quality` (4 by default). Compressing zstd needs Python 3.14, Brotli the
+  `pyfect-dev[brotli]` extra. httpx reads Brotli responses with that extra and zstd ones
+  only with the `zstandard` package, so the config checks for them when it's made. A
+  user with `readonly=1` can't ask for compressed responses, since that sets
+  `enable_http_compression`.
+- `max_open_connections` (10) caps the connections open at once. `keep_alive={"enabled": False}`
+  closes each connection after its request; `idle_socket_ttl` (2500 ms) is how long an idle
+  one stays open.
+- `tls={"ca_cert": pem}` trusts a private CA on an `https` URL; add `cert` and `key` to log in
+  with a client certificate. With `tls`, credentials go in the `X-ClickHouse-User` and
+  `X-ClickHouse-Key` headers, as `@clickhouse/client` sends them, and an `access_token`
+  is refused.
+- `use_multipart_params=True` sends a query's parameters (and the query) as a
+  `multipart/form-data` body instead of in the URL, for parameters too long for a URL.
+  `use_multipart_params_auto=True` does that only once they'd take more than 4096
+  characters.
+- `log={"level": "ERROR"}` sets which of the client's own logs are written (`WARN` by
+  default; `"OFF"` for none). As `@clickhouse/client` does, it logs a failed request at
+  `ERROR`, a failed `/ping` at `WARN`, and warns when the URL overrides a field or when
+  `request_timeout` is over a minute without progress headers. The logs go through the
+  fiber's loggers, so `fx.logger.layer(...)` takes the place of `LoggerClass`.
+- `json={"parse": ..., "stringify": ...}` reads result rows and writes inserted rows.
+
+The URL can set most of these too: `compression_request=1`, `compression_response=1`,
+`keep_alive_enabled=0`, `keep_alive_idle_socket_ttl`, `max_open_connections` and
+`log_level`. `max_open_connections`, `keep_alive` and `tls` configure the httpx client the
+layer makes. They do nothing for an `http_client=` of your own, just as
+`@clickhouse/client` ignores them when you pass an `http_agent`.
+
 ## Statements
 
 Each value becomes a `{p1: Type}` parameter. The type comes from the value: `Int64` for an

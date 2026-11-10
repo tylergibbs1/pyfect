@@ -379,8 +379,6 @@ def test_the_url_sets_credentials_settings_and_headers():
     assert redacted.value(token.connection.authorization) == "Bearer jwt"
     with pytest.raises(ValueError, match="Unknown URL parameters: nope"):
         clickhouse.ClickhouseClientConfig(url="http://h?nope=1")
-    with pytest.raises(ValueError, match="not offered here: compression_request, log_level"):
-        clickhouse.ClickhouseClientConfig(url="http://h?compression_request=1&log_level=INFO")
     for timeout in ("nan", "1_000", "x"):
         with pytest.raises(ValueError, match='"request_timeout" has invalid numeric value'):
             clickhouse.ClickhouseClientConfig(url=f"http://h?request_timeout={timeout}")
