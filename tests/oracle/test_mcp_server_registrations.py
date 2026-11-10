@@ -153,6 +153,10 @@ def _registered_server() -> fx.Effect[M.McpServerService, Any]:
     @fx.gen
     def run():
         server = yield from M.make()
+        provide_label = M.middleware(
+            lambda effect, _: effect.pipe(fx.provide_service(RegistrationLabel, "middleware")),
+            provides=RegistrationLabel,
+        )
 
         def register(_: object) -> fx.Effect[MS.CallToolResult, Any, Any]:
             @fx.gen
@@ -180,7 +184,8 @@ def _registered_server() -> fx.Effect[M.McpServerService, Any]:
                 return cast("MS.CallToolResult", {"content": []})
 
             return (
-                body.pipe(fx.provide_service(M.McpServer, server))
+                body.pipe(fx.provide(provide_label.layer))
+                .pipe(fx.provide_service(M.McpServer, server))
                 .pipe(fx.provide_service(RegistrationLabel, "registered"))
                 .or_die()
             )
@@ -197,7 +202,7 @@ def _registered_server() -> fx.Effect[M.McpServerService, Any]:
 
 
 BOB = _client(2, "Bob")
-EXPECTED_OWNER = "registered:2:Bob:Bob"
+EXPECTED_OWNER = "middleware:2:Bob:Bob"
 
 
 def _as_bob[A, E](effect: fx.Effect[A, E, MS.McpServerClient]) -> fx.Effect[A, E]:
@@ -802,10 +807,10 @@ class VaultLocked(S.TaggedError):
 
 
 @testing.effect
-def test_a_declared_failure_without_a_message_never_sends_a_redacted_field():
+def test_a_declared_failure_without_a_message_sends_its_json_codec_fields():
     """(pyfect) arpc_mcp_docs_gaps: a declared failure with no message is sent with its
-    fields, as in Effect, but a ``Redacted`` one is written ``<redacted>``, as Effect's
-    ``JSON.stringify`` writes a ``Redacted`` (its ``toJSON``)."""
+    fields through its schema's JSON codec, as in Effect 4.1.2, which writes a
+    ``Redacted`` field's value: a secret must not be in a declared failure."""
     vault = T.make("Vault", failure=VaultLocked)
     secret = "tok-hunter2"
     server, exit = yield from _register(
@@ -817,12 +822,7 @@ def test_a_declared_failure_without_a_message_never_sends_a_redacted_field():
     assert isinstance(exit, fx.Success)
     result = yield from _direct(server.call_tool({"name": "Vault", "arguments": {}}))
     assert result.get("isError") is True
-    assert secret not in json.dumps(result)
-    assert json.loads(_text(result)) == {
-        "_tag": "VaultLocked",
-        "vault": "main",
-        "token": "<redacted>",
-    }
+    assert json.loads(_text(result)) == {"_tag": "VaultLocked", "vault": "main", "token": secret}
 
 
 @testing.effect
@@ -838,7 +838,9 @@ def test_scrubs_and_records_serialization_failures_in_declared_non_error_failure
     assert "structuredContent" not in result
     assert result["content"] == [{"type": "text", "text": M.INTERNAL_TOOL_ERROR_MESSAGE}]
     [reported] = recorded["reported"]
-    assert isinstance(reported.squash(), TypeError)
+    error = reported.squash()
+    assert isinstance(error, AiErr.AiError)
+    assert isinstance(error.reason, AiErr.ToolResultEncodingError)
     [logged] = recorded["logged"]
     assert logged.squash() is reported.squash()
 
@@ -945,15 +947,16 @@ def test_returns_a_generic_message_for_non_validation_ai_error_failures():
 
 
 @testing.effect
-def test_reports_response_serialization_defects_before_a_generic_message():
-    """McpServer / registerToolkit / reports response serialization defects before returning a generic message"""  # noqa: E501
+def test_reports_response_serialization_failures_before_a_generic_message():
+    """McpServer / registerToolkit / reports response serialization failures before returning a generic message"""  # noqa: E501
     harness, recorded = yield from _toolkit_client()
     result = (yield from _call(harness, "UnserializableResultTool", {}))["result"]
     assert result["isError"] is True
     assert _text(result) == M.INTERNAL_TOOL_ERROR_MESSAGE
     [reported] = recorded["reported"]
-    assert reported.has_dies
-    assert isinstance(reported.squash(), TypeError)
+    error = reported.squash()
+    assert isinstance(error, AiErr.AiError)
+    assert isinstance(error.reason, AiErr.ToolResultEncodingError)
 
 
 @testing.effect

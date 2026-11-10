@@ -10,12 +10,15 @@ tool reported an error. Handle one kind with
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar, Self, cast
 
+from pyfect import schema as S
 from pyfect._js import or_default
 from pyfect._json_value import JsonValue
-from pyfect.ai.mcp_schema import CallToolResult
+from pyfect._wire_codec import Const, Key, key, wire_codec
+from pyfect.ai.mcp_schema import CALL_TOOL_RESULT, CallToolResult
 from pyfect.errors import TaggedError
 
 
@@ -23,6 +26,10 @@ class McpClientErrorReason(TaggedError):
     """What every reason has: a message."""
 
     _tag: ClassVar[str]
+
+    @classmethod
+    def __codec__(cls) -> S.Bottom[Self, Mapping[str, object]]:
+        return cls.__dict__["_wire"]
 
     @property
     def message(self) -> str:
@@ -195,6 +202,10 @@ class McpClientError(TaggedError):
     def message(self) -> str:
         return self.reason.message
 
+    @classmethod
+    def __codec__(cls) -> S.Bottom[McpClientError, Mapping[str, object]]:
+        return MCP_CLIENT_ERROR
+
 
 def is_mcp_client_error(u: object) -> bool:
     return isinstance(u, McpClientError)
@@ -204,7 +215,93 @@ def is_mcp_client_error_reason(u: object) -> bool:
     return isinstance(u, McpClientErrorReason)
 
 
+# Schemas (Effect's error classes are schemas: a returned tool failure is
+# sent to the model encoded) ----------------------------------------------------------
+
+
+def _codec(cls: type[McpClientErrorReason], *keys: Key) -> None:
+    tag = cls._tag  # pyright: ignore[reportPrivateUsage]
+    codec = wire_codec(
+        cls, [Const("_tag", tag), *keys], identifier=f"effect/ai/McpClientError/{tag}"
+    )
+    type.__setattr__(cls, "_wire", codec)
+
+
+def _optional(name: str, attr: str, schema: S.Top, unset: object = None) -> Key:
+    return key(name, attr, schema, optional=True, unset=unset)
+
+
+_DEFECT = S.Defect()
+_codec(
+    TransportError,
+    _optional("description", "description", S.String),
+    _optional("cause", "cause", _DEFECT),
+)
+_codec(
+    ProtocolError,
+    _optional("code", "code", S.Int),
+    _optional("data", "data", S.Unknown),
+    _optional("description", "description", S.String),
+    _optional("cause", "cause", _DEFECT),
+)
+_codec(
+    HttpError,
+    key("status", "status", S.Int),
+    _optional("code", "code", S.Int),
+    _optional("data", "data", S.Unknown),
+    _optional("description", "description", S.String),
+    _optional("wwwAuthenticate", "www_authenticate", S.String),
+    _optional("retryAfter", "retry_after", S.String),
+)
+_codec(
+    UnsupportedError,
+    key("description", "description", S.String),
+    _optional("result", "result", CALL_TOOL_RESULT),
+)
+_codec(
+    ClosedError,
+    _optional("sessionExpired", "session_expired", S.Boolean, unset=False),
+    _optional("description", "description", S.String),
+)
+_codec(TimeoutError, key("operation", "operation", S.String))
+_codec(LimitError, key("description", "description", S.String))
+for _described in (ConfigurationError, ValidationError):
+    _codec(
+        _described,
+        key("description", "description", S.String),
+        _optional("cause", "cause", _DEFECT),
+    )
+_codec(ToolError, key("result", "result", CALL_TOOL_RESULT))
+
+REASONS: tuple[type[McpClientErrorReason], ...] = (
+    TransportError,
+    ProtocolError,
+    HttpError,
+    UnsupportedError,
+    ClosedError,
+    TimeoutError,
+    LimitError,
+    ConfigurationError,
+    ValidationError,
+    ToolError,
+)
+
+MCP_CLIENT_ERROR_REASON: S.Bottom[AnyReason, Mapping[str, object]] = cast(
+    "Any", S.Union(*(r.__codec__() for r in REASONS))
+)
+"""The schema of every reason (Effect's ``McpClientErrorReason``)."""
+
+MCP_CLIENT_ERROR: S.Bottom[McpClientError, Mapping[str, object]] = wire_codec(
+    McpClientError,
+    [Const("_tag", "McpClientError"), key("reason", "reason", MCP_CLIENT_ERROR_REASON)],
+    identifier="effect/ai/McpClientError/McpClientError",
+)
+"""The schema of ``McpClientError`` (Effect's ``McpClientError`` class)."""
+
 __all__ = [
+    "MCP_CLIENT_ERROR",
+    "MCP_CLIENT_ERROR_REASON",
+    "REASONS",
     "AnyReason",
     "ClosedError",
     "ConfigurationError",

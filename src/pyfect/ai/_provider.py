@@ -1,13 +1,13 @@
 """The HTTP plumbing the AI providers share (each Effect provider package's
-``internal/errors.ts``): request and response details for errors and
-parts, the mapping of an ``HttpClientError`` to an ``AiError``, numbers
-and ``Retry-After`` read from headers, and the SSE events of a response.
+``internal/errors.ts``): response details for errors, the mapping of an
+``HttpClientError`` to an ``AiError``, numbers and ``Retry-After`` read
+from headers, and the SSE events of a response.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import Any, Never, cast
@@ -22,7 +22,6 @@ from pyfect.ai import prompt as Prompt
 from pyfect.ai.ai_error import (
     AiError,
     HttpContext,
-    HttpRequestDetails,
     HttpResponseDetails,
     InvalidOutputError,
     InvalidResponseError,
@@ -43,7 +42,6 @@ from pyfect.http.error import (
     TransportError,
 )
 from pyfect.http.headers import CurrentRedactedNames, current_redacted_names
-from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse, with_body_limit
 from pyfect.result import Ok
 from pyfect.stream import Stream
@@ -82,41 +80,16 @@ def response_limit(max_response_bytes: byte_size.Input | None) -> ByteSize:
     return size
 
 
-def _plain_headers(headers: H.Headers, secret_headers: Sequence[str]) -> dict[str, str]:
-    names = (*current_redacted_names(), *secret_headers)
-    return {k: str(v) for k, v in headers.redact(names).items()}
-
-
-def request_details(
-    request: HttpClientRequest, *, secret_headers: Sequence[str]
-) -> HttpRequestDetails:
-    """The request as an error or a response part shows it, its secret
-    headers redacted: the current redacted names and the provider's
-    ``secret_headers``, which are named here because a response part is
-    built after the client's redaction scope has ended."""
-    details: HttpRequestDetails = {
-        "method": request.method,
-        "url": request.url,
-        "urlParams": [(k, str(v)) for k, v in request.url_params],
-        "headers": _plain_headers(request.headers, secret_headers),
-    }
-    if request.hash is not None:
-        details["hash"] = request.hash
-    return details
-
-
 def response_details(response: HttpClientResponse) -> HttpResponseDetails:
-    return {"status": response.status, "headers": _plain_headers(response.headers, ())}
+    """The response as an error shows it, its redacted headers hidden."""
+    headers = response.headers.redact(current_redacted_names())
+    return {"status": response.status, "headers": {k: str(v) for k, v in headers.items()}}
 
 
 def http_context(
-    request: HttpClientRequest,
-    response: HttpClientResponse | None = None,
-    body: str | None = None,
-    *,
-    secret_headers: Sequence[str],
+    response: HttpClientResponse | None = None, body: str | None = None
 ) -> HttpContext:
-    context: HttpContext = {"request": request_details(request, secret_headers=secret_headers)}
+    context: HttpContext = {}
     if response is not None:
         context["response"] = response_details(response)
     if body is not None:
@@ -261,7 +234,7 @@ class ErrorMapper:
         reason = error.reason
         match reason:
             case TransportError() | EncodeError() | InvalidUrlError():
-                return fx.fail(self.error(method, NetworkError.from_request_error(reason)))
+                return fx.fail(self.error(method, NetworkError.from_http_client_error(error)))
             case StatusCodeError():
                 return self.status(reason, method)
             case DecodeError():

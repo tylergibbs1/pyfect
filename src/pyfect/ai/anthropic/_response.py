@@ -17,9 +17,8 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import prompt as Pr
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.anthropic import _schema as W
-from pyfect.ai.anthropic._errors import SECRET_HEADERS
 from pyfect.ai.anthropic._prompt import is_citation_part
-from pyfect.ai.anthropic_structured_output import to_codec_anthropic
+from pyfect.ai.anthropic._tools import to_codec_lenient
 from pyfect.ai.id_generator import IdGenerator
 from pyfect.ai.response import FinishReason
 from pyfect.ai.tool import NameMapper
@@ -140,8 +139,11 @@ def citation_source(citation: dict[str, Any], documents: list[CitableDocument]) 
 def transform_params(
     options: lm.ProviderOptions, tool_name: str, params: object
 ) -> Effect[object, AiError, Any]:
+    """A non-strict tool's request used the plain JSON Schema when
+    Anthropic's codec rejected its parameters, so its calls decode with the
+    plain codec too."""
     return PT.transform_params(
-        "AnthropicLanguageModel", options, tool_name, params, transformer=to_codec_anthropic
+        "AnthropicLanguageModel", options, tool_name, params, transformer=to_codec_lenient
     )
 
 
@@ -153,6 +155,12 @@ def tool_result(id: str, name: str, is_failure: bool, result: object) -> Part:
         "isFailure": is_failure,
         "result": result,
     }
+
+
+def server_tool_result(id: str, name: str, is_failure: bool, result: object) -> Part:
+    """A result the server produced in the assistant turn (tool search,
+    web search), replayed there by ``Prompt.from_response_parts``."""
+    return {**tool_result(id, name, is_failure, result), "providerExecuted": True}
 
 
 @dataclass
@@ -210,8 +218,9 @@ class ServerResults:
         name = self.names.get_custom_name(provider or "undefined")
         content = P.obj(block.get("content"))
         if content.get("type") == "tool_search_tool_search_result":
-            return [tool_result(block["tool_use_id"], name, False, content.get("tool_references"))]
-        return [tool_result(block["tool_use_id"], name, True, content)]
+            references = content.get("tool_references")
+            return [server_tool_result(block["tool_use_id"], name, False, references)]
+        return [server_tool_result(block["tool_use_id"], name, True, content)]
 
     def web_fetch(self, block: W.ContentBlock) -> list[Part]:
         name = self.names.get_custom_name("web_fetch")
@@ -232,9 +241,9 @@ class ServerResults:
         content: object = block.get("content")
         error = P.obj(content)
         if "type" in error:
-            return [tool_result(block["tool_use_id"], name, True, error)]
+            return [server_tool_result(block["tool_use_id"], name, True, error)]
         results = P.arr(content)
-        parts = [tool_result(block["tool_use_id"], name, False, results)]
+        parts = [server_tool_result(block["tool_use_id"], name, False, results)]
         for result in results:
             id = yield from generate_id()
             parts.append(
@@ -428,7 +437,6 @@ class _Response:
                 "id": self.message["id"],
                 "modelId": self.message["model"],
                 "timestamp": self.timestamp,
-                "request": P.request_details(self.response.request, secret_headers=SECRET_HEADERS),
             }
         )
         skip_text = self.has_response_tool()

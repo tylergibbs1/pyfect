@@ -21,10 +21,9 @@ from pyfect.http import error as http_error
 from pyfect.http import request as http_request
 from pyfect.http.client import HttpClientService
 from pyfect.http.error import HttpClientError
-from pyfect.http.request import HttpClientRequest
 from pyfect.redacted import make as redact
 
-from ._ai_http import MockHttp, body_json, mock_json
+from ._ai_http import MockHttp, body_json, mock_json, refuse_transport, stringify_error
 
 REQUEST: W.SystemOneRequest = {
     "state": "My card was charged twice.",
@@ -261,7 +260,7 @@ def test_redacts_authorization():
     reason = error.reason
     assert isinstance(reason, E.InvalidRequestError)
     assert reason.http is not None
-    assert reason.http["request"]["headers"]["authorization"] == "<redacted>"
+    assert "secret-key" not in stringify_error(error)
     assert status_of(reason.http) == 422
 
 
@@ -315,22 +314,16 @@ def test_http_date_retry_after(date: str, expected: float):
 @testing.effect
 def test_transport_error():
     """TypeSafeClient / error mapping / maps TransportError to NetworkError reason"""
-
-    def refuse(request: HttpClientRequest) -> Any:
-        return fx.fail(
-            http_error.HttpClientError(
-                http_error.TransportError(request=request, cause=ConnectionRefusedError())
-            )
-        )
-
+    failures: list[http_error.HttpClientError] = []
     error = (
         yield from client.make(api_key=_KEY)
         .flat_map(lambda c: c.system_one(REQUEST).flip())
-        .pipe(fx.provide(MockHttp(refuse).layer))
+        .pipe(fx.provide(MockHttp(refuse_transport(failures, ConnectionRefusedError())).layer))
     )
     assert error.module == "TypeSafeClient"
     assert error.method == "systemOne"
     assert isinstance(error.reason, E.NetworkError)
+    assert error.reason.cause is failures[0]
 
 
 @testing.effect

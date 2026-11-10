@@ -37,9 +37,15 @@ def _quote(text: str) -> str:
 
 
 def resolve_root(document: Document[Draft2020]) -> JsonSchema:
-    """The root schema, a top-level ``$ref`` replaced by its definition."""
-    ref = document.schema.get("$ref")
-    return resolve_reference(ref, document.definitions) if isinstance(ref, str) else document.schema
+    """The root schema, top-level ``$ref``s followed to a definition that is not one."""
+    schema = document.schema
+    visited: set[str] = set()
+    while isinstance(ref := schema.get("$ref"), str):
+        if ref in visited:
+            raise ValueError(f"Circular reference {_quote(ref)}")
+        visited.add(ref)
+        schema = resolve_reference(ref, document.definitions)
+    return schema
 
 
 def is_json_schema(value: object) -> TypeIs[JsonSchema]:

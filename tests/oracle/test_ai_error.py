@@ -19,11 +19,12 @@ from typing import Any, Never, TypedDict
 import pytest
 
 import pyfect as fx
-from pyfect import redacted
+from pyfect import redacted, testing
 from pyfect import schema as S
 from pyfect.ai import ai_error as E
 from pyfect.http import error as http_error
 from pyfect.http import request as http_request
+from pyfect.http import response as http_response
 
 
 class Named(TypedDict):
@@ -42,15 +43,69 @@ def _roundtrip(schema: Any, value: object) -> Any:
     return S.decode_unknown_sync(schema)(S.encode_unknown_sync(schema)(value))
 
 
-def test_network_error_preserves_redacted_query_params():
-    """NetworkError / preserves redacted query params from request errors"""
-    request = http_request.get("https://example.com").set_url_param(
-        "remote", redacted.make("param-secret")
+def test_network_error_keeps_only_method_and_url():
+    """NetworkError / keeps only the method and url from request errors"""
+    request = (
+        http_request.get("https://example.com/models")
+        .set_url_param("remote", redacted.make("param-secret"))
+        .set_header("authorization", "Bearer header-secret")
     )
     error = E.NetworkError.from_request_error(http_error.TransportError(request=request))
+    assert error.method == "GET"
+    assert error.url == "https://example.com/models"
     output = json.dumps(S.encode_unknown_sync(E.NetworkError)(error), default=str)
-    assert "remote" in output
     assert "param-secret" not in output
+    assert "header-secret" not in output
+
+
+def test_network_error_from_request_error_as_callback():
+    """NetworkError / keeps fromRequestError usable as a callback"""
+    reasons: list[http_error.RequestError] = [
+        http_error.TransportError(request=http_request.get("https://example.com/a")),
+        http_error.InvalidUrlError(request=http_request.get("https://example.com/b")),
+    ]
+    errors = list(map(E.NetworkError.from_request_error, reasons))
+    assert [error.cause for error in errors] == [None, None]
+
+
+@testing.effect
+def test_network_error_round_trips_extension_method():
+    """NetworkError / round-trips an extension method"""
+    error = E.NetworkError(
+        reason="TransportError", method="PROPFIND", url="https://api.example.com/resources"
+    )
+    encoded = yield from S.encode_effect(E.NetworkError)(error)
+    assert encoded["method"] == "PROPFIND"
+    decoded = yield from S.decode_effect(E.NetworkError)(encoded)
+    assert decoded.method == "PROPFIND"
+    assert decoded.cause is None
+
+
+def test_network_error_from_http_client_error():
+    """NetworkError.fromHttpClientError keeps the HttpClientError as cause (the
+    module example)"""
+    platform_error = http_error.HttpClientError(
+        reason=http_error.TransportError(
+            request=http_request.get("https://example.com/models"),
+            description="Connection refused",
+        )
+    )
+    ai_error = E.NetworkError.from_http_client_error(platform_error)
+    assert ai_error.reason == "TransportError"
+    assert ai_error.cause is platform_error
+    assert ai_error.description == "Connection refused"
+    assert (ai_error.method, ai_error.url) == ("GET", "https://example.com/models")
+
+
+def test_network_error_from_http_client_error_refuses_response_reasons():
+    """pyfect: Effect's type admits only an ``HttpClientError`` with a request
+    reason; ``HttpClientError`` is not generic in its reason, so a response
+    reason raises ``TypeError``."""
+    request = http_request.get("https://example.com/models")
+    response = http_response.make(request, "", status=500)
+    error = http_error.HttpClientError(reason=http_error.StatusCodeError(request, response))
+    with pytest.raises(TypeError, match="StatusCodeError is not a request error"):
+        E.NetworkError.from_http_client_error(error)
 
 
 @pytest.mark.parametrize(
@@ -316,12 +371,6 @@ class Choices(TypedDict):
 
 
 _HTTP: E.HttpContext = {
-    "request": {
-        "method": "POST",
-        "url": "https://api.example.com/v1/chat",
-        "urlParams": [],
-        "headers": {},
-    },
     "response": {"status": 200, "headers": {"x-request-id": "req_123"}},
     "body": '{"choices":"none"}',
 }
@@ -343,7 +392,7 @@ def test_invalid_response_roundtrip():
     decoded = _roundtrip(E.AI_ERROR_REASON, error)
     assert isinstance(decoded, E.InvalidResponseError)
     assert decoded.is_retryable is False
-    assert decoded.http == {**_HTTP, "request": {**_HTTP["request"], "urlParams": ()}}
+    assert decoded.http == _HTTP
 
 
 def test_unknown_message_with_description():
@@ -469,13 +518,8 @@ def test_is_ai_error_false():
 
 def test_is_ai_error_false_for_reasons():
     """isAiError / should return false for reason types"""
-    request: E.HttpRequestDetails = {
-        "method": "GET",
-        "url": "https://example.com",
-        "urlParams": [],
-        "headers": {},
-    }
-    assert not E.is_ai_error(E.NetworkError(reason="TransportError", request=request))
+    network_error = E.NetworkError(reason="TransportError", method="GET", url="https://example.com")
+    assert not E.is_ai_error(network_error)
 
 
 def test_provider_metadata_roundtrip():
@@ -498,12 +542,6 @@ def test_usage_info_roundtrip():
 def test_http_context_roundtrip():
     """HttpContext / should encode and decode roundtrip"""
     context = {
-        "request": {
-            "method": "POST",
-            "url": "https://api.example.com/v1/chat",
-            "urlParams": (("model", "gpt-4"),),
-            "headers": {"Content-Type": "application/json"},
-        },
         "response": {"status": 200, "headers": {"Content-Type": "application/json"}},
         "body": '{"result": "success"}',
     }

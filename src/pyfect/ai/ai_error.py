@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, ClassVar, Literal, NotRequired, Self, TypedDict, cast
+from typing import Any, ClassVar, Literal, Self, TypedDict, cast
 
 from pyfect import schema as S
 from pyfect._json_value import JsonValue
@@ -25,22 +25,7 @@ from pyfect.date_time._iso import utc_to_string
 from pyfect.duration import format_duration, to_seconds
 from pyfect.errors import TaggedError
 from pyfect.http import error as http_error
-from pyfect.http.headers import current_redacted_names
 from pyfect.redacted import Redacted
-
-type HttpMethod = Literal[
-    "GET", "POST", "PATCH", "PUT", "DELETE", "HEAD", "OPTIONS", "TRACE", "QUERY"
-]
-
-
-class HttpRequestDetails(TypedDict):
-    """The request an error happened on (Effect's ``HttpRequestDetails``)."""
-
-    method: HttpMethod
-    url: str
-    urlParams: Sequence[tuple[str, str | Redacted[str]]]
-    hash: NotRequired[str]
-    headers: Mapping[str, str | Redacted[str]]
 
 
 class HttpResponseDetails(TypedDict):
@@ -50,12 +35,12 @@ class HttpResponseDetails(TypedDict):
     headers: Mapping[str, str | Redacted[str]]
 
 
-class HttpContext(TypedDict):
-    """The HTTP exchange behind a provider error."""
+class HttpContext(TypedDict, total=False):
+    """The HTTP exchange behind a provider error: the response and its
+    body, when there was one."""
 
-    request: HttpRequestDetails
-    response: NotRequired[HttpResponseDetails]
-    body: NotRequired[str]
+    response: HttpResponseDetails
+    body: str
 
 
 class UsageInfo(TypedDict, total=False):
@@ -71,18 +56,12 @@ type ProviderMetadata = dict[str, JsonValue]
 
 _HeaderValue = S.Union(S.String, S.Redacted(S.String))
 
-HTTP_REQUEST_DETAILS = S.Struct(
-    HttpRequestDetails,
-    method=S.Literals("GET", "POST", "PATCH", "PUT", "DELETE", "HEAD", "OPTIONS", "TRACE", "QUERY"),
-    urlParams=S.Array(S.Tuple(S.String, _HeaderValue)),
-    headers=S.Record(S.String, _HeaderValue),
-).annotate(identifier="HttpRequestDetails")
 HTTP_RESPONSE_DETAILS = S.Struct(
     HttpResponseDetails, status=S.Int, headers=S.Record(S.String, _HeaderValue)
 ).annotate(identifier="HttpResponseDetails")
-HTTP_CONTEXT = S.Struct(
-    HttpContext, request=HTTP_REQUEST_DETAILS, response=HTTP_RESPONSE_DETAILS
-).annotate(identifier="HttpContext")
+HTTP_CONTEXT = S.Struct(HttpContext, response=HTTP_RESPONSE_DETAILS).annotate(
+    identifier="HttpContext"
+)
 USAGE_INFO = S.Struct(UsageInfo).annotate(identifier="UsageInfo")
 PROVIDER_METADATA = S.Record(S.String, S.NullOr(S.Json))
 """Effect's ``ProviderMetadata`` schema."""
@@ -94,13 +73,6 @@ def _metadata_key() -> Key:
 
 def _http_key() -> Key:
     return key("http", "http", HTTP_CONTEXT, optional=True)
-
-
-def _redact_headers(headers: object) -> dict[str, str]:
-    from pyfect.http.headers import Headers
-
-    assert isinstance(headers, Headers)
-    return {k: str(v) for k, v in headers.redact(current_redacted_names()).items()}
 
 
 class AiErrorReason(TaggedError):
@@ -123,31 +95,53 @@ class AiErrorReason(TaggedError):
 
 @dataclass(eq=False)
 class NetworkError(AiErrorReason):
-    """The request did not reach the provider (or could not be built)."""
+    """The request did not reach the provider (or could not be built):
+    its ``method`` and ``url`` (without its URL parameters), and, when made
+    with ``from_http_client_error``, the ``HttpClientError`` as ``cause``,
+    kept as it is (its text is not redacted)."""
 
     _tag: ClassVar[str] = "NetworkError"
     reason: Literal["TransportError", "EncodeError", "InvalidUrlError"]
-    request: HttpRequestDetails
+    method: str
+    url: str
     description: str | None = None
+    cause: object = None
 
     @property
     def is_retryable(self) -> bool:
         return self.reason == "TransportError"
 
     @staticmethod
-    def from_request_error(
-        error: http_error.TransportError | http_error.EncodeError | http_error.InvalidUrlError,
-    ) -> NetworkError:
-        request = error.request
-        details: HttpRequestDetails = {
-            "method": request.method,
-            "url": request.url,
-            "urlParams": list(request.url_params),
-            "headers": _redact_headers(request.headers),
-        }
-        if request.hash is not None:
-            details["hash"] = request.hash
-        return NetworkError(reason=error.tag, request=details, description=error.description)
+    def from_request_error(error: http_error.RequestError) -> NetworkError:
+        """The error for a request reason of an ``HttpClientError``."""
+        return NetworkError(
+            reason=error.tag,
+            method=error.request.method,
+            url=error.request.url,
+            description=error.description,
+        )
+
+    @staticmethod
+    def from_http_client_error(error: http_error.HttpClientError) -> NetworkError:
+        """The error for an ``HttpClientError`` whose reason is a request
+        reason, keeping ``error`` as ``cause``. Raises ``TypeError`` for a
+        response reason (Effect's type admits only request reasons)."""
+        reason = error.reason
+        match reason:
+            case (
+                http_error.TransportError()
+                | http_error.EncodeError()
+                | http_error.InvalidUrlError()
+            ):
+                return NetworkError(
+                    reason=reason.tag,
+                    method=reason.request.method,
+                    url=reason.request.url,
+                    description=reason.description,
+                    cause=error,
+                )
+            case _:
+                raise TypeError(f"{reason.tag} is not a request error")
 
     @property
     def message(self) -> str:
@@ -156,7 +150,7 @@ class NetworkError(AiErrorReason):
             if self.description
             else f"{self.reason}: A network error occurred."
         )
-        base += f" ({self.request['method']} {self.request['url']})"
+        base += f" ({self.method} {self.url})"
         match self.reason:
             case "EncodeError":
                 suggestion = (
@@ -624,8 +618,10 @@ def _codec(cls: type[AiErrorReason], *keys: Key) -> None:
 _codec(
     NetworkError,
     key("reason", "reason", S.Literals("TransportError", "EncodeError", "InvalidUrlError")),
-    key("request", "request", HTTP_REQUEST_DETAILS),
+    key("method", "method", S.String),
+    key("url", "url", S.String),
     key("description", "description", S.String, optional=True),
+    key("cause", "cause", S.Defect(), optional=True),
 )
 _codec(
     RateLimitError,
@@ -743,7 +739,6 @@ _AI_ERROR = wire_codec(
 __all__ = [
     "AI_ERROR_REASON",
     "HTTP_CONTEXT",
-    "HTTP_REQUEST_DETAILS",
     "HTTP_RESPONSE_DETAILS",
     "PROVIDER_METADATA",
     "REASONS",
@@ -755,8 +750,6 @@ __all__ = [
     "AuthenticationKind",
     "ContentPolicyError",
     "HttpContext",
-    "HttpMethod",
-    "HttpRequestDetails",
     "HttpResponseDetails",
     "InternalProviderError",
     "InvalidOutputError",

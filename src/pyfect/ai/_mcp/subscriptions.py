@@ -46,6 +46,7 @@ class Presence:
     tools: bool
     resources: bool
     prompts: bool
+    skills: bool = False
 
 
 def _honored(requested: SubscriptionFilter, presence: Presence) -> SubscriptionFilter:

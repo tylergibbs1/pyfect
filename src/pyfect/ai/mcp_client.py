@@ -17,15 +17,27 @@ reaches one at a URL; ``toolkit`` turns the server's tools into a
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal, Never, TypedDict, cast, overload
+from typing import Any, Never, cast, overload
 
 from pyfect import schema as S
 from pyfect._core import Effect
-from pyfect.ai import tool as Tool
-from pyfect.ai import toolkit as Toolkit
+from pyfect.ai._mcp.client_discovery import (
+    DEFAULT_DISCOVERY_LIMITS,
+    DiscoveryLimitsOptions,
+    check_cacheable,
+    paginate,
+    resolve_limits,
+)
+from pyfect.ai._mcp.client_skills import (
+    ClientExtensions,
+    InvalidSkill,
+    OnInvalidSkill,
+    SkillsClient,
+    client_capabilities,
+)
+from pyfect.ai._mcp.client_toolkit import RemoteTool, ToolDescriptor, toolkit
 from pyfect.ai._mcp.client_transport import (
     ClientProtocol,
     ClientProtocolVersion,
@@ -33,10 +45,9 @@ from pyfect.ai._mcp.client_transport import (
 )
 from pyfect.ai._mcp.client_transport import http as _http
 from pyfect.ai._mcp.client_transport import stdio as _stdio
-from pyfect.ai._mcp.client_wire import failure, limit_error, requires_tasks, to_text
+from pyfect.ai._mcp.client_wire import failure, requires_tasks
 from pyfect.ai.mcp_client_error import (
     ClosedError,
-    ConfigurationError,
     HttpError,
     McpClientError,
     ProtocolError,
@@ -64,12 +75,13 @@ from pyfect.ai.mcp_schema import (
     ReadResourceResult,
     Resource,
     ServerCapabilities,
+    Skill,
 )
 from pyfect.ai.mcp_schema import Tool as McpTool
-from pyfect.context import Context, Tag
+from pyfect.context import Tag
 from pyfect.deferred import Deferred
 from pyfect.duration import Duration, Seconds, to_seconds
-from pyfect.effect import fail, gen, provide_context, succeed, suspend
+from pyfect.effect import fail, gen, succeed, suspend
 from pyfect.http.client import HttpClient
 from pyfect.layer import Layer, provide
 from pyfect.layer import effect as layer_effect
@@ -77,21 +89,10 @@ from pyfect.process import ChildProcessSpawner, Command
 from pyfect.scope import Scope, add_finalizer
 
 DEFAULT_TIMEOUT = Seconds(60)
-MAX_DISCOVERY_PAGES = 100
-MAX_DISCOVERY_ITEMS = 10_000
+MAX_DISCOVERY_PAGES = DEFAULT_DISCOVERY_LIMITS.max_pages
+MAX_DISCOVERY_ITEMS = DEFAULT_DISCOVERY_LIMITS.max_items
 
-_MODEL_TOOL_NAME = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 _SERVER_INFO_META = "io.modelcontextprotocol/serverInfo"
-
-
-class _CacheableResult(TypedDict):
-    resultType: Literal["complete"]
-    ttlMs: int
-    cacheScope: Literal["public", "private"]
-
-
-_CACHEABLE_RESULT = S.Struct(_CacheableResult, ttlMs=S.Int.check(S.is_greater_than_or_equal_to(0)))
-"""What a 2026-07-28 list result has besides its items."""
 
 
 class Transport(Tag[TransportService], key="effect/ai/McpClient/Transport"):
@@ -121,6 +122,8 @@ class McpClientService:
     ] = field(repr=False)
     _is_callable: Callable[[McpTool], bool] = field(repr=False)
     _timeout: Seconds = field(repr=False)
+    _skills: SkillsClient = field(repr=False)
+    """The Skills extension's methods, with the client's discovery limits."""
 
     def _call(
         self, kind: str, method: str, params: JsonObject, tool: McpTool | None = None
@@ -131,65 +134,100 @@ class McpClientService:
 
     def _check_cacheable(self, raw: object) -> Effect[None, McpClientError]:
         """A 2026-07-28 list or read result's cache fields."""
-        if self.protocol_version != "2026-07-28":
-            return succeed(None)
-        return _decode(_CACHEABLE_RESULT, raw).as_void()
+        return check_cacheable(self.protocol_version == "2026-07-28", raw)
 
     def _list(
-        self, kind: str, schema: S.Top, timeout: Duration | None
+        self,
+        kind: str,
+        schema: S.Top,
+        timeout: Duration | None,
+        limits: DiscoveryLimitsOptions | None,
     ) -> Effect[list[Any], McpClientError]:
+        def decode_page(raw: dict[str, Any]) -> Effect[dict[str, Any], McpClientError]:
+            return self._check_cacheable(raw).and_then(_decode(schema, raw))
+
         @gen
         def run():
-            items: list[Any] = []
+            bounds = yield from resolve_limits(limits, self._skills.limits)
             if self.capabilities.get(kind) is None:
-                return items
-            cursors: set[str] = set()
-            cursor: str | None = None
-            for _ in range(MAX_DISCOVERY_PAGES):
-                params: JsonObject = {} if cursor is None else {"cursor": cursor}
-                raw: dict[str, Any] = yield from self._request(f"{kind}/list", params, None)
-                listed = raw.get(kind)
-                if isinstance(listed, list) and len(items) + len(cast("list[Any]", listed)) > (
-                    MAX_DISCOVERY_ITEMS
-                ):
-                    return (
-                        yield from fail(
-                            limit_error(f"MCP {kind} discovery exceeded its item limit")
-                        )
-                    )
-                yield from self._check_cacheable(raw)
-                result: dict[str, Any] = yield from _decode(schema, raw)
-                page: list[Any] = result[kind]
-                items.extend(page)
-                next_cursor: str | None = result.get("nextCursor")
-                if next_cursor is None:
-                    return items
-                if next_cursor in cursors:
-                    return (yield from fail(limit_error(f"MCP {kind} discovery repeated a cursor")))
-                cursors.add(next_cursor)
-                cursor = next_cursor
-            return (yield from fail(limit_error(f"MCP {kind} discovery exceeded its page limit")))
+                return list[Any]()
+            return (
+                yield from paginate(
+                    self._request,
+                    label=kind,
+                    method=f"{kind}/list",
+                    key=kind,
+                    params={},
+                    limits=bounds,
+                    decode_page=decode_page,
+                )
+            )
 
         deadline = self._timeout if timeout is None else to_seconds(timeout)
         return self._deadline(run, f"{kind} discovery", deadline)
 
     def list_tools(
-        self, *, timeout: Duration | None = None
+        self, *, timeout: Duration | None = None, limits: DiscoveryLimitsOptions | None = None
     ) -> Effect[list[McpTool], McpClientError]:
-        """Every tool the server lists (and this transport can call)."""
-        return self._list("tools", LIST_TOOLS.success_schema, timeout).map(
+        """Every tool the server lists (and this transport can call), within
+        the client's discovery deadline and limits (``timeout`` and
+        ``limits`` override them)."""
+        return self._list("tools", LIST_TOOLS.success_schema, timeout, limits).map(
             lambda tools: [t for t in tools if self._is_callable(t)]
         )
 
     def list_prompts(
-        self, *, timeout: Duration | None = None
+        self, *, timeout: Duration | None = None, limits: DiscoveryLimitsOptions | None = None
     ) -> Effect[list[Prompt], McpClientError]:
-        return self._list("prompts", LIST_PROMPTS.success_schema, timeout)
+        return self._list("prompts", LIST_PROMPTS.success_schema, timeout, limits)
 
     def list_resources(
-        self, *, timeout: Duration | None = None
+        self, *, timeout: Duration | None = None, limits: DiscoveryLimitsOptions | None = None
     ) -> Effect[list[Resource], McpClientError]:
-        return self._list("resources", LIST_RESOURCES.success_schema, timeout)
+        return self._list("resources", LIST_RESOURCES.success_schema, timeout, limits)
+
+    def list_skills(
+        self,
+        *,
+        timeout: Duration | None = None,
+        limits: DiscoveryLimitsOptions | None = None,
+        on_invalid_skill: OnInvalidSkill | None = None,
+    ) -> Effect[list[Skill], McpClientError]:
+        """Every skill the server lists, with the bounds of ``list_tools``;
+        none when it does not declare the Skills extension. An entry breaking
+        the extension's rules fails the scan, unless ``on_invalid_skill`` is
+        given: it is then told of each and the entry is left out. The skill
+        methods require ``extensions={"skills": True}``."""
+        return self._skills.list_skills(_optional_seconds(timeout), limits, on_invalid_skill)
+
+    def get_skill(
+        self, uri: str, *, timeout: Duration | None = None
+    ) -> Effect[Skill, McpClientError]:
+        """The skill whose ``SKILL.md`` is at ``uri``, listed or not.
+        Unbounded unless given a ``timeout``."""
+        return self._skills.get_skill(uri, _optional_seconds(timeout))
+
+    def read_resource_directory(
+        self,
+        uri: str,
+        *,
+        timeout: Duration | None = None,
+        limits: DiscoveryLimitsOptions | None = None,
+    ) -> Effect[list[Resource], McpClientError]:
+        """The direct children of a directory of a skill namespace, with the
+        bounds of ``list_tools``. Requires the server's ``directoryRead``."""
+        return self._skills.read_resource_directory(uri, _optional_seconds(timeout), limits)
+
+    def read_skill_resource(
+        self, skill: Skill, uri: str, *, timeout: Duration | None = None
+    ) -> Effect[ReadResourceResult, McpClientError]:
+        """Read a file of ``skill``, failing with a ``ValidationError`` unless
+        its bytes match the SHA-256 digest and size of the manifest and, for
+        ``SKILL.md``, its frontmatter equals the listed one. A ``"dynamic"``
+        skill has no digests: any file in its directory is read, and its
+        ``SKILL.md`` still checked. A file outside the manifest or directory
+        is never requested. Unbounded unless given a ``timeout``."""
+        return self._skills.read_skill_resource(skill, uri, _optional_seconds(timeout))
 
     def get_prompt(
         self,
@@ -316,17 +354,26 @@ def make(  # noqa: PLR0915
     website_url: str | None = None,
     icons: Sequence[Icon] = (),
     timeout: Duration | None = None,
+    discovery_limits: DiscoveryLimitsOptions | None = None,
+    extensions: ClientExtensions | None = None,
 ) -> Effect[McpClientService, McpClientError, Transport | Scope]:
     """Connect over the ``Transport``: initialize (2025-11-25) or discover
-    the server (2026-07-28) within ``timeout``."""
+    the server (2026-07-28) within ``timeout``, which also bounds each
+    complete list scan. ``discovery_limits`` sets the default scan limits
+    (100 pages, 10,000 items). ``extensions={"skills": True}`` declares the
+    Skills extension and enables the skill methods (else they fail with a
+    ``ConfigurationError``)."""
     limit = DEFAULT_TIMEOUT if timeout is None else to_seconds(timeout)
+    skills_enabled = (extensions or {}).get("skills") is True
+    capabilities_declared = client_capabilities(skills_enabled)
 
     @gen
-    def run():
+    def run():  # noqa: PLR0915
         transport = yield from Transport()
         protocol: ClientProtocol = transport.protocol
         protocol_version = protocol.protocol_version
         modern = protocol_version == "2026-07-28"
+        limits = yield from resolve_limits(discovery_limits, DEFAULT_DISCOVERY_LIMITS)
         closed = Deferred[Never, McpClientError]()
         yield from add_finalizer(
             lambda _: closed.fail(failure(ClosedError(description="MCP client scope closed")))
@@ -345,7 +392,7 @@ def make(  # noqa: PLR0915
         meta: JsonObject = {
             "io.modelcontextprotocol/protocolVersion": protocol_version,
             "io.modelcontextprotocol/clientInfo": cast("Any", client_info),
-            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/clientCapabilities": capabilities_declared,
         }
 
         def request(
@@ -408,7 +455,7 @@ def make(  # noqa: PLR0915
                         "initialize",
                         {
                             "protocolVersion": protocol_version,
-                            "capabilities": {},
+                            "capabilities": capabilities_declared,
                             "clientInfo": cast("Any", client_info),
                         },
                         None,
@@ -474,111 +521,7 @@ def make(  # noqa: PLR0915
             deadline,
             transport.is_callable,
             limit,
-        )
-
-    return run
-
-
-@overload
-def toolkit(
-    client: McpClientService, prefix: str = "", *, failure_mode: Literal["error"] = "error"
-) -> Effect[Toolkit.WithHandler[Any, Any, McpClientError, Never], McpClientError]: ...
-@overload
-def toolkit(
-    client: McpClientService, prefix: str = "", *, failure_mode: Literal["return"]
-) -> Effect[Toolkit.WithHandler[Any, Any, Never, Never], McpClientError]: ...
-def toolkit(
-    client: McpClientService, prefix: str = "", *, failure_mode: Tool.FailureMode = "error"
-) -> Effect[Toolkit.WithHandler[Any, Any, Any, Never], McpClientError]:
-    """The server's tools as a toolkit with handlers. A model tool's name
-    is ``prefix`` and the tool's name joined as they are (pass
-    ``"docs__"``, not ``"docs"``), at most 64 letters, digits, ``_`` and
-    ``-``; a call's result is the text of the tool result.
-
-    With ``failure_mode="error"`` (Effect's) a tool error (``isError``)
-    or a failed request fails the call with ``McpClientError``. With
-    ``"return"`` it goes back to the model as a failed result: the tool
-    error's text, or the request's error message."""
-
-    @gen
-    def run():
-        descriptors = yield from client.list_tools()
-        tools: list[Tool.AnyTool] = []
-        handlers: list[Tool.Handler[Any]] = []
-        for descriptor in descriptors:
-            model_name = f"{prefix}{descriptor['name']}"
-            if _MODEL_TOOL_NAME.match(model_name) is None or any(
-                t.name == model_name for t in tools
-            ):
-                return (
-                    yield from fail(
-                        failure(
-                            ConfigurationError(
-                                f"Invalid or duplicate MCP model tool name: {model_name}"
-                            )
-                        )
-                    )
-                )
-            dynamic = cast(
-                "Tool.AnyTool",
-                Tool.dynamic(
-                    cast("Any", model_name),
-                    parameters=cast("Any", descriptor["inputSchema"]),
-                    description=descriptor.get("description"),
-                    success=S.String,
-                    failure=S.Unknown if failure_mode == "error" else S.String,
-                    failure_mode=cast("Any", failure_mode),
-                ).annotate(Tool.Strict, False),
-            )
-            handle = _tool_handler(client, descriptor)
-            if failure_mode == "return":
-                handle = _returning(handle)
-            tools.append(dynamic)
-            handlers.append(dynamic.handler(handle))
-        kit = Toolkit.make(*tools)
-        context: Context[Any] = yield from kit.to_handlers(*handlers)
-        built: Toolkit.WithHandler[Any, Any, Any, Never] = yield from cast(
-            "Effect[Any, Never, Never]", kit
-        ).pipe(provide_context(context))
-        return built
-
-    return run
-
-
-def _tool_handler(
-    client: McpClientService, descriptor: McpTool
-) -> Callable[[Any, Any], Effect[str, McpClientError]]:
-    def handle(params: Any, _: Any) -> Effect[str, McpClientError]:
-        if not isinstance(params, dict):
-            return fail(failure(ValidationError("MCP tool arguments must be a JSON object")))
-        arguments = cast("dict[str, Any]", params)
-
-        def text(result: CallToolResult) -> Effect[str, McpClientError]:
-            if result.get("isError") is True:
-                return fail(failure(ToolError(result)))
-            return to_text(result)
-
-        return client.call_tool(descriptor, arguments).flat_map(text)
-
-    return handle
-
-
-def _returning(
-    handle: Callable[[Any, Any], Effect[str, McpClientError]],
-) -> Callable[[Any, Any], Effect[str, str]]:
-    """``handle`` failing with what the model is told: a tool error's text
-    (or its message, when the text has none), any other error's message."""
-
-    def told(error: McpClientError) -> Effect[str, McpClientError]:
-        reason = error.reason
-        if isinstance(reason, ToolError):
-            return to_text(reason.result).map(lambda text: text or reason.message)
-        return succeed(error.message)
-
-    def run(params: Any, context: Any) -> Effect[str, str]:
-        attempt = handle(params, context)
-        return attempt.catch_all(
-            lambda error: told(error).catch_all(lambda _: succeed(error.message)).flat_map(fail)
+            SkillsClient(request, deadline, limit, capabilities, limits, skills_enabled, modern),
         )
 
     return run
@@ -613,6 +556,8 @@ def layer_stdio(
     website_url: str | None = None,
     icons: Sequence[Icon] = (),
     timeout: Duration | None = None,
+    discovery_limits: DiscoveryLimitsOptions | None = None,
+    extensions: ClientExtensions | None = None,
     max_message_bytes: int | None = None,
 ) -> Layer[McpClient, McpClientError, ChildProcessSpawner]:
     """An ``McpClient`` of the server ``command`` runs."""
@@ -624,6 +569,8 @@ def layer_stdio(
         website_url=website_url,
         icons=icons,
         timeout=timeout,
+        discovery_limits=discovery_limits,
+        extensions=extensions,
     )
     transport = layer_effect(
         Transport, stdio(command=command, protocol=protocol, max_message_bytes=max_message_bytes)
@@ -643,6 +590,8 @@ def layer_http(
     website_url: str | None = None,
     icons: Sequence[Icon] = (),
     timeout: Duration | None = None,
+    discovery_limits: DiscoveryLimitsOptions | None = None,
+    extensions: ClientExtensions | None = None,
     max_message_bytes: int | None = None,
 ) -> Layer[McpClient, McpClientError, HttpClient]:
     """An ``McpClient`` of the server at ``url``."""
@@ -654,6 +603,8 @@ def layer_http(
         website_url=website_url,
         icons=icons,
         timeout=timeout,
+        discovery_limits=discovery_limits,
+        extensions=extensions,
     )
     transport = layer_effect(
         Transport,
@@ -663,14 +614,21 @@ def layer_http(
 
 
 __all__ = [
+    "DEFAULT_DISCOVERY_LIMITS",
     "DEFAULT_TIMEOUT",
     "MAX_DISCOVERY_ITEMS",
     "MAX_DISCOVERY_PAGES",
+    "ClientExtensions",
     "ClientProtocol",
     "ClientProtocolVersion",
+    "DiscoveryLimitsOptions",
+    "InvalidSkill",
     "McpClient",
     "McpClientError",
     "McpClientService",
+    "OnInvalidSkill",
+    "RemoteTool",
+    "ToolDescriptor",
     "Transport",
     "TransportService",
     "http",

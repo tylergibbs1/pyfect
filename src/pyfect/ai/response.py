@@ -28,12 +28,7 @@ from pyfect._json_value import JsonValue
 from pyfect._url import Url
 from pyfect._wire_codec import Const, Key, key, wire_codec
 from pyfect.ai import prompt as P
-from pyfect.ai.ai_error import (
-    HTTP_REQUEST_DETAILS,
-    HTTP_RESPONSE_DETAILS,
-    HttpRequestDetails,
-    HttpResponseDetails,
-)
+from pyfect.ai.ai_error import HTTP_RESPONSE_DETAILS, HttpResponseDetails
 from pyfect.exit import Success
 from pyfect.schema import ast
 from pyfect.schema import getter as G
@@ -278,7 +273,6 @@ class ResponseMetadataPart(_Wire):
     id: str | None = None
     model_id: str | None = None
     timestamp: datetime | None = None
-    request: HttpRequestDetails | None = None
     metadata: ProviderMetadata = field(default_factory=_metadata)
 
 
@@ -475,7 +469,6 @@ _id(
     key("id", "id", S.String, optional=True),
     key("modelId", "model_id", S.String, optional=True),
     key("timestamp", "timestamp", S.DateTimeUtcFromString, optional=True),
-    key("request", "request", HTTP_REQUEST_DETAILS, optional=True),
 )
 _define(
     InputTokens,

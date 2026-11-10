@@ -1,7 +1,7 @@
-"""``mcp_client.toolkit``'s ``failure_mode`` (DOGFOOD atlas #2). Not an
-Effect port: Effect's ``McpClient.toolkit`` always fails the call on a tool
-error, which ``failure_mode="error"`` (the default) keeps; with ``"return"``
-a tool error goes back to the model, as MCP means it to."""
+"""``mcp_client.toolkit``'s ``failure_mode`` through ``generate_text``
+(DOGFOOD atlas #2). Not Effect titles: Effect 4.1's ``failureMode`` test
+calls ``handle`` directly. A tool error fails the call by default; with
+``"return"`` the ``McpClientError`` goes back to the model, encoded."""
 
 from __future__ import annotations
 
@@ -62,9 +62,13 @@ def test_with_failure_mode_return_a_tool_error_goes_back_to_the_model(
     response = yield from ask(kit, "fail")
     [result] = response.tool_results
     assert result.is_failure
-    # The tool error's text, as the server wrote it (the JSON of its failure).
-    assert result.result == '"denied"'
-    assert result.encoded_result == '"denied"'
+    assert isinstance(result.result, McpClientError)
+    assert isinstance(result.result.reason, CE.ToolError)
+    # The tool error's result, as the server wrote it (the JSON of its failure).
+    encoded = result.encoded_result
+    assert encoded["_tag"] == "McpClientError"
+    assert encoded["reason"]["_tag"] == "ToolError"
+    assert encoded["reason"]["result"]["content"] == [{"type": "text", "text": '"denied"'}]
 
     answered = yield from ask(kit, "add", ADD)
     [added] = answered.tool_results
@@ -80,4 +84,7 @@ def test_with_failure_mode_return_a_failed_request_goes_back_to_the_model_too():
     response = yield from ask(kit, "add", ADD)
     [result] = response.tool_results
     assert result.is_failure
-    assert result.result == "MCP HTTP transport closed"
+    assert result.encoded_result == {
+        "_tag": "McpClientError",
+        "reason": {"_tag": "ClosedError", "description": "MCP HTTP transport closed"},
+    }

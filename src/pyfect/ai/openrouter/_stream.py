@@ -290,7 +290,6 @@ class _Stream:
                     "id": chunk["id"],
                     "modelId": chunk["model"],
                     "timestamp": date_time.format_iso(now),
-                    "request": Rs.request_details(self.response.request),
                 }
             )
             self.metadata_emitted = True

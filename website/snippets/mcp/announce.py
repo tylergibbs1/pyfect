@@ -9,13 +9,14 @@ from pyfect.http import request as R
 URI = "note://today"
 note = {"text": "draft"}
 
+Note = mcp_server.resource(uri=URI, name="today", content=fx.sync(lambda: note["text"]))
 Server = mcp_server.layer_http(
     name="notes",
     version="1.0.0",
     path="/mcp",
     protocols=(mcp_protocol.v2026_07_28,),
+    registrations=Note,
 )
-Note = mcp_server.resource(uri=URI, name="today", content=fx.sync(lambda: note["text"]))
 
 
 # The route takes the McpServer when the layer builds, not per request, so
@@ -34,7 +35,7 @@ def add_routes(routes: router.HttpRouterService):
 
 
 Routes = router.use(add_routes).pipe(fx.layer.provide_merge(Server))
-Served = router.serve(fx.layer.merge(Routes, Note), disable_logger=True, disable_listen_log=True)
+Served = router.serve(Routes, disable_logger=True, disable_listen_log=True)
 
 METADATA: dict[str, Any] = {
     "io.modelcontextprotocol/protocolVersion": "2026-07-28",

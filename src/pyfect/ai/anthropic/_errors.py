@@ -50,6 +50,8 @@ def map_status_code_to_reason(  # noqa: PLR0911
     *,
     status: int,
     now: float,
+    method: str,
+    url: str,
     headers: Mapping[str, str],
     message: str | None,
     metadata: AnthropicErrorMetadata,
@@ -60,8 +62,8 @@ def map_status_code_to_reason(  # noqa: PLR0911
     description = build_error_description(
         status=status,
         message=message,
-        method=http["request"]["method"],
-        url=http["request"]["url"],
+        method=method,
+        url=url,
         error_type=metadata["errorType"],
         request_id=metadata["requestId"],
         body=http.get("body"),
@@ -109,10 +111,12 @@ def _fail(
         reason = map_status_code_to_reason(
             status=response.status,
             now=now,
+            method=request.method,
+            url=request.url,
             headers=response.headers,
             message=message,
             metadata=metadata,
-            http=P.http_context(request, response, body, secret_headers=SECRET_HEADERS),
+            http=P.http_context(response, body),
         )
         return fx.fail(AiError(module=MODULE, method=method, reason=reason))
 

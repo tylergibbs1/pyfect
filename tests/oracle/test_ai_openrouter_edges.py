@@ -511,7 +511,7 @@ def test_empty_api_url_is_kept():
     errors = yield from _both_calls("", http)
     reasons = [error.reason for error in errors]
     assert all(isinstance(r, E.NetworkError) and r.reason == "InvalidUrlError" for r in reasons)
-    assert [r.request["url"] for r in reasons if isinstance(r, E.NetworkError)] == [
+    assert [r.url for r in reasons if isinstance(r, E.NetworkError)] == [
         "/chat/completions",
         "/alpha/decisions",
     ]

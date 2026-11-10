@@ -63,6 +63,8 @@ def map_status_code_to_reason(  # noqa: PLR0911
     *,
     status: int,
     now: float,
+    method: str,
+    url: str,
     headers: Mapping[str, str],
     message: str | None,
     metadata: OpenRouterErrorMetadata,
@@ -74,8 +76,8 @@ def map_status_code_to_reason(  # noqa: PLR0911
     description = build_error_description(
         status=status,
         message=message,
-        method=http["request"]["method"],
-        url=http["request"]["url"],
+        method=method,
+        url=url,
         error_code=cast("str | int | None", code),
         error_type=metadata["errorType"],
         request_id=metadata["requestId"],
@@ -131,10 +133,12 @@ def _map_status(reason: StatusCodeError, method: str) -> Effect[Never, AiError]:
         mapped = map_status_code_to_reason(
             status=response.status,
             now=now,
+            method=reason.request.method,
+            url=reason.request.url,
             headers=response.headers,
             message=None if error is None else error["message"],
             metadata=metadata,
-            http=P.http_context(reason.request, response, body, secret_headers=SECRET_HEADERS),
+            http=P.http_context(response, body),
         )
         return _fail(method, mapped)
 
@@ -157,12 +161,14 @@ def map_client_error(error: OpenRouterClientError, method: str) -> Effect[Never,
         "errorType": detail.get("type"),
         "requestId": response.headers.get("x-request-id"),
     }
-    http = P.http_context(error.request, response, P.dumps(cause), secret_headers=SECRET_HEADERS)
+    http = P.http_context(response, P.dumps(cause))
 
     def build(now: float) -> Effect[Never, AiError]:
         reason = map_status_code_to_reason(
             status=response.status,
             now=now,
+            method=error.request.method,
+            url=error.request.url,
             headers=response.headers,
             message=detail["message"],
             metadata=metadata,

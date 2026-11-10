@@ -5,6 +5,7 @@ library)."""
 
 from __future__ import annotations
 
+import base64
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -38,20 +39,22 @@ class OtlpSerialization(Tag[OtlpSerializationService]):
     """The serialization the OTLP exporters post their payloads with."""
 
 
-def _json_ready(value: object) -> object:
+def _json_ready(value: object, key: str = "") -> object:
     """``value`` with each non-finite float as the text OTLP/JSON wants
     (``"NaN"``, ``"Infinity"``, ``"-Infinity"``; ``JSON.stringify`` would
-    write ``null``) and bytes as ``JSON.stringify`` writes a
-    ``Uint8Array``."""
+    write ``null``), a ``bytesValue``'s bytes as base64 and other bytes as
+    ``JSON.stringify`` writes a ``Uint8Array``."""
     match value:
         case float() if not math.isfinite(value):
             return "NaN" if math.isnan(value) else ("Infinity" if value > 0 else "-Infinity")
         case dict():
             items = cast("Mapping[str, object]", value).items()
-            return {key: _json_ready(item) for key, item in items}
+            return {name: _json_ready(item, name) for name, item in items}
         case list() | tuple():
             return [_json_ready(item) for item in cast("list[object]", value)]
-        case bytes():
+        case bytes() | bytearray() if key == "bytesValue":
+            return base64.b64encode(value).decode("ascii")
+        case bytes() | bytearray():
             return {str(i): byte for i, byte in enumerate(value)}
         case _:
             return value
@@ -70,7 +73,8 @@ layer_json: Final[Layer[OtlpSerialization]] = _layer.succeed(
     OtlpSerializationService(traces=_json_body, metrics=_json_body, logs=_json_body),
 )
 """OTLP/JSON bodies (``application/json``). ``NaN`` and the infinities are
-written as the strings OTLP/JSON expects, not as ``null``."""
+written as the strings OTLP/JSON expects, not as ``null``; ``bytesValue``
+data is written as a base64 string."""
 
 layer_protobuf: Final[Layer[OtlpSerialization]] = _layer.succeed(
     OtlpSerialization,

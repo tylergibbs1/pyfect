@@ -94,6 +94,19 @@ def test_non_recursive_suspend():
     _check(S.suspend(lambda: S.String), {"type": "string"})
 
 
+def test_resolves_root_alias_of_identified_schema():
+    """Canonical JSON and mechanical invariants / resolves a root alias of an identified schema"""
+    nr = S.Struct(_A).annotate(identifier="NR")
+    params = S.suspend(lambda: nr).annotate(identifier="Params")
+    body: JsonSchema = {
+        "type": "object",
+        "properties": {"a": {"type": "string"}},
+        "required": ["a"],
+        "additionalProperties": False,
+    }
+    _check(params, {**body, "$defs": {"NR": body, "Params": {"$ref": "#/$defs/NR"}}})
+
+
 def test_rejects_recursive_suspend():
     """Canonical JSON and mechanical invariants / rejects recursive Suspend"""
 

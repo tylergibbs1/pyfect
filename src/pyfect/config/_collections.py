@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, Never
 
+from pyfect import _js
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._digits import in_object_order
@@ -70,11 +71,14 @@ def dict_of[A](
     *,
     separator: str = ",",
     key_value_separator: str = "=",
+    trim: bool = False,
+    keep_empty_values: bool = False,
 ) -> Config[dict[str, A]]:
     """A dict whose values are read with ``value`` (a config, or a schema
     read as ``schema(value)``): from a record node (its keys that hold
     something), else from a separated string (``"a=1,b=2"``; a pair with
-    no separator, an empty key or an empty value is skipped)."""
+    no separator or an empty key is skipped, and one with an empty value
+    unless ``keep_empty_values``; ``trim`` trims keys and values first)."""
     value = _as_config(value, "value")
 
     def from_record(provider: ConfigProvider, path: Path, node: Node | None) -> Effect[Any, Any]:
@@ -87,7 +91,9 @@ def dict_of[A](
         text = None if node is None else node.value
         if text is None:
             return succeed(Err(at(path, EXPECTED_STRING)))
-        pairs = _split_key_value(text, separator, key_value_separator)
+        pairs = _split_key_value(
+            text, separator, key_value_separator, trim=trim, keep_empty_values=keep_empty_values
+        )
         keys = list(pairs)
         return _read_pieces(value, [((*path, k), pairs[k]) for k in keys]).map(_keyed(keys))
 
@@ -275,7 +281,9 @@ def _read_item[A](
     )
 
 
-def _split_key_value(text: str, separator: str, key_value_separator: str) -> dict[str, str]:
+def _split_key_value(
+    text: str, separator: str, key_value_separator: str, *, trim: bool, keep_empty_values: bool
+) -> dict[str, str]:
     """Effect's ``splitKeyValue``: a pair splits at its first separator."""
     pairs: dict[str, str] = {}
     for pair in _split(text, separator):
@@ -283,9 +291,11 @@ def _split_key_value(text: str, separator: str, key_value_separator: str) -> dic
             key, value = pair[:1], pair[1:2]
         else:
             index = pair.find(key_value_separator)
-            if index <= 0:
+            if index == -1:
                 continue
             key, value = pair[:index], pair[index + len(key_value_separator) :]
-        if key and value:
+        if trim:
+            key, value = _js.trim(key), _js.trim(value)
+        if key and (value or keep_empty_values):
             pairs[key] = value
     return pairs

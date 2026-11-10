@@ -50,12 +50,26 @@ from pyfect.stream import Stream
 from pyfect.tracer import Span
 
 type Model = Literal[
-    "claude-opus-5-5",
-    "claude-sonnet-5-5",
     "claude-haiku-5-5",
-    "claude-opus-4-5",
-    "claude-sonnet-4-5",
+    "claude-sonnet-5-5",
+    "claude-fable-5-1",
+    "claude-opus-5-5",
+    "claude-mythos-5-1",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-mythos-5",
+    "claude-opus-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-mythos-preview",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
     "claude-haiku-4-5",
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-5",
+    "claude-opus-4-5-20251101",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-5-20250929",
 ]
 """Model names (any other string is accepted too)."""
 
@@ -173,7 +187,7 @@ def _make_request(
         ):
             schema = json_schema(options.response_format.schema, "getOutputFormat")
             output_format = {"type": "json_schema", "schema": schema}
-        tools = prepare_tools(options, capabilities, config, betas)
+        tools = prepare_tools(options, capabilities, config, betas, names)
     except UnsupportedInput as error:
         return fx.fail(error.error)
     params: MessageParams = {}

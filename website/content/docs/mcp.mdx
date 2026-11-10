@@ -21,10 +21,12 @@ model can read, and any other failure as an internal error that leaks no details
 tool whose result is another kind of value, such as a list, sends it as text content only,
 with no `structuredContent` and no output schema in its listing.
 `mcp_server.resource`, `resource_template` and `prompt` add resources and prompts the same
-way, as layers.
+way, as layers. Each of these layers needs the `McpServer`, so it can't be merged next to a
+transport: pass it, or several merged, as the transport's `registrations=`, which builds them
+against the transport's server before serving.
 
 A transport layer serves them. `mcp_server.layer_http(name=..., version=..., path=...,
-protocols=...)` adds MCP's Streamable HTTP transport to an
+protocols=..., registrations=...)` adds MCP's Streamable HTTP transport to an
 [HTTP router](/docs/http-server), with sessions and JSON or Server-Sent Event replies.
 `mcp_server.run_stdio(...)` serves on standard input and output until the input ends, for
 a server that a client starts as a child process; see
@@ -59,11 +61,32 @@ default), a transport or protocol error.
 handlers, so `generate_text(prompt, toolkit=...)` lets a model call another program's
 tools. Each model tool is named `prefix` followed by the server's name for it, joined as
 they are, as in Effect: `"docs__"` gives `docs__search`, and `"docs"` gives `docssearch`.
-A tool error from the server (`isError`) fails the call with `McpClientError` by default.
-Pass `failure_mode="return"` to give it to the model as a failed result instead, as a
-local tool with `failure_mode="return"` does, so the model can read "no country has the
-code 'XX'" and answer. A request that fails, such as a timeout or a closed transport, then
-goes back to the model too, as its error message.
+Pass `tools=` a list you approved earlier (from `list_tools`) to bind exactly those
+tools without listing them again, and `timeout=` to bound each call. The client's
+`capabilities` say what the server offers.
+
+A call's result is the tool result's text. With `result_mode="complete"` it is the whole
+`CallToolResult`, and the model gets its content as text and file parts, so an image a
+tool returns reaches the model as an image. A tool error from the server (`isError`)
+fails the call with `McpClientError` by default. Pass `failure_mode="return"` to give it
+to the model as a failed result instead, as a local tool with `failure_mode="return"`
+does: the model gets the encoded `McpClientError`, the tool's own result for a tool
+error, so it can read "no country has the code 'XX'" and answer. A request that fails,
+such as a timeout or a closed transport, goes back to the model the same way.
+
+The server describes its tools, so its hints are not trusted by default.
+`trust_annotations=True` copies them (read-only, destructive, idempotent, open-world and
+the title) into the tools' annotations. `transform_tool` gets each tool with its
+descriptor and returns one derived from it, to ask for approval or add annotations; the
+descriptor stays on the tool as `mcp_client.ToolDescriptor`.
+
+<CodeOutput>
+
+<include meta='title="remote_toolkit.py"'>../../snippets/mcp/remote_toolkit.py</include>
+
+<include lang="text">../../snippets/mcp/remote_toolkit.out</include>
+
+</CodeOutput>
 
 Each request is a span on both sides, named for its method: `McpClient.tools/call` on
 the client and `McpServer.tools/call` on the server, each with a `tool` attribute, inside
@@ -172,10 +195,85 @@ gets a 400 with error -32020 before the tool runs.
 
 </CodeOutput>
 
-`McpClient` can't answer `InputRequired`, as Effect's can't: it declares no client
-capabilities, so a tool that asks fails with an `HttpError` reason carrying code -32021, and
+`McpClient` can't answer `InputRequired`, as Effect's can't: it declares no capability that
+lets a server ask it for input, so a tool that asks fails with an `HttpError` reason carrying code -32021, and
 an `input_required` result that reaches it anyway fails with `UnsupportedError`. Call such
 tools from a client that implements the continuation.
+
+## Skills
+
+The Skills extension (SEP-2640) serves [Agent Skills](https://agentskills.io): a `SKILL.md`
+with YAML frontmatter and the files it refers to. `mcp_server.skill(uri, files)` registers
+one at `skill://<path>/SKILL.md`, whose last path segment must be the frontmatter's `name`.
+Each file becomes a resource, `skills/list` and `skills/get` list the skill with the SHA-256
+digest and size of every file, and `resources/directory/read` browses the namespace. The
+server declares `io.modelcontextprotocol/skills` once a skill is registered. Registration
+fails with `IllegalArgumentError` when the frontmatter is not valid Agent Skills frontmatter,
+a path leaves the skill, two skills overlap, or a file's URI is already a resource; a
+resource registered later at a skill file's URI is a defect.
+
+The client's skill methods need `extensions={"skills": True}`: `list_skills`, `get_skill`,
+`read_resource_directory` and `read_skill_resource`. They call only a server that declares
+the extension, and `read_skill_resource` fails with a `ValidationError` unless the bytes
+match the listed digest and, for `SKILL.md`, the frontmatter matches the listing. An invalid
+listed skill fails `list_skills`, unless `on_invalid_skill` is given: it is told of each one,
+which is left out. Every list scan is bounded by `discovery_limits` (100 pages and 10,000
+items by default), which `limits=` overrides per call.
+
+<CodeOutput>
+
+<include meta='title="skills.py"'>../../snippets/mcp/skills.py</include>
+
+<include lang="text">../../snippets/mcp/skills.out</include>
+
+</CodeOutput>
+
+## Middleware and visibility
+
+`mcp_server.middleware(fn, provides=...)` runs `fn(effect, options)` around each
+`tools/call`, `resources/read`, `prompts/get` and `completion/complete` of the registrations
+its `.layer` is provided to. `options` carries the method, the target (a tool or prompt name,
+a URI), the payload, the request context, the HTTP headers and the session id. It can provide
+services to the handler (named in `provides`, so the layer discharges them from the
+registrations' requirements), run before or after it, or fail with an `McpError`, which the
+client gets as a JSON-RPC error with that code and message. `.layer_global`, or
+`global_=True`, runs it around every request of the server, outside the local middleware;
+middleware provided both ways runs once. `a.combine(b)` runs `a` inside `b`, and middleware
+provided further out runs outside all of a combination.
+
+`mcp_server.visibility(check)` is middleware that hides registrations per request: where
+`check` gives `False` the registration is left out of `tools/list`, `resources/list`,
+`resources/templates/list` and `prompts/list`, and a request for it fails as if it were not
+registered. It sees what the middleware outside it provides, so combine it inside the
+middleware it reads from. On a list only the middleware outside the innermost visibility
+runs, once per registration, and its failure fails the list.
+
+<CodeOutput>
+
+<include meta='title="middleware.py"'>../../snippets/mcp/middleware.py</include>
+
+<include lang="text">../../snippets/mcp/middleware.out</include>
+
+</CodeOutput>
+
+`mcp_test.make_client(registrations, protocols=...)` is Effect's `McpTest`: it builds a server
+with the registrations, connects an in-memory client and performs the handshake, so a test
+calls tools through the server's routing, middleware and encoding as a wire client would. A
+request answered with an error fails with an `McpError` of that code; the server's
+notifications arrive on `client.notifications`, and its requests to the client get method not
+found.
+
+## Cache hints
+
+On 2026-07-28, list and discovery results carry `ttlMs` and `cacheScope: "private"`, with a
+`ttlMs` of 0 unless the transport's `cache_hints=` says otherwise, such as
+`{"tools": {"ttl": "1 minute", "cache_scope": "private"}}` for `tools/list`. The kinds are
+`discover`, `tools`, `resources`, `resource_templates`, `prompts` and `skills`; `ttl` is sent
+in whole milliseconds, rounded down. A hint that can't be sent (negative, infinite, past
+`2**53 - 1` milliseconds, unparsable, or not `"private"`) fails the layer with
+`IllegalArgumentError`. A hint lets a client keep a list after it changed, and a client
+shared between users reuse one user's list for another, so give one only to lists that are
+the same for everyone.
 
 ## Security defaults
 
@@ -183,10 +281,11 @@ tools from a client that implements the continuation.
   they are all in use; a session idle for `session_idle_timeout` (30 minutes) expires. A
   message larger than `max_message_bytes` (4 MiB, and never more than the app's
   `MaxBodySize`) gets a 413.
-- A defect in a tool, resource, prompt or completion handler is logged and the client gets
-  "Internal server error". A declared failure with a message sends only its message; one
-  without a message sends its encoded fields, as Effect does, so keep secrets out of a
-  failure's fields or make them `Redacted`, which is sent as `<redacted>`.
+- A defect in a tool, resource, prompt or completion handler, or in middleware, is logged and
+  reported, and the client gets "Internal error" (code -32603); a tool call gets a generic
+  tool error instead. A declared failure with a message sends only its message; one without a
+  message sends its fields through their JSON codec, as Effect 4.1.2 does, which writes a
+  `Redacted` field's value: keep secrets out of a declared failure's fields.
 - Replies to the server's own requests (roots, sampling, elicitation) are decoded with their
   result schema; a malformed elicitation reply counts as declined.
 - The client reads each server message under `max_message_bytes` (16 MiB by default) and

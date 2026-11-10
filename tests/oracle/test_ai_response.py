@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Sequence
+from dataclasses import fields
 from typing import Any, Literal, TypedDict
 
 import pytest
@@ -289,7 +290,7 @@ def test_decodes_response_metadata_with_omitted_fields():
 @testing.effect
 def test_round_trips_response_metadata():
     """round trips response metadata with undefined optional fields through JSON"""
-    part = R.ResponseMetadataPart(id=None, model_id=None, timestamp=None, request=None)
+    part = R.ResponseMetadataPart(id=None, model_id=None, timestamp=None)
     encoded = yield from S.encode_effect(R.ResponseMetadataPart)(part)
     data = _json(encoded)
     decoded = yield from S.decode_unknown_effect(R.ResponseMetadataPart)(data)
@@ -297,25 +298,13 @@ def test_round_trips_response_metadata():
     assert decoded == R.ResponseMetadataPart()
 
 
-@testing.effect
-def test_round_trips_http_request_details():
-    """round trips HTTP request details with an undefined hash through JSON"""
-    request: E.HttpRequestDetails = {
-        "method": "POST",
-        "url": "https://example.com/v1/responses",
-        "urlParams": [],
-        "headers": {},
-    }
-    encoded = yield from S.encode_unknown_effect(E.HTTP_REQUEST_DETAILS)(request)
-    data = _json(encoded)
-    decoded = yield from S.decode_unknown_effect(E.HTTP_REQUEST_DETAILS)(data)
-    assert data == {
-        "method": "POST",
-        "url": "https://example.com/v1/responses",
-        "urlParams": [],
-        "headers": {},
-    }
-    assert decoded == {**data, "urlParams": ()}
+def test_response_metadata_has_no_request_details():
+    # Effect 4.1 dropped `ResponseMetadataPart.request`; a `request` key is ignored on decode.
+    assert "request" not in {f.name for f in fields(R.ResponseMetadataPart)}
+    decoded = S.decode_unknown_sync(R.ResponseMetadataPart)(
+        {"type": "response-metadata", "id": "resp_1", "request": {"method": "POST"}}
+    )
+    assert decoded == R.ResponseMetadataPart(id="resp_1")
 
 
 @testing.effect

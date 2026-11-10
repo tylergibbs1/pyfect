@@ -7,7 +7,7 @@ import base64
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from pyfect._url import Url
 from pyfect.ai import _provider as P
@@ -252,7 +252,12 @@ def _caller(options: dict[str, Any]) -> Block | None:
 def _tool_call(part: Pr.ToolCallPart, names: NameMapper, mcp_ids: set[str]) -> Block | None:
     options = anthropic_options(part.options)
     if not part.provider_executed:
-        block: Block = {"type": "tool_use", "id": part.id, "name": part.name, "input": part.params}
+        block: Block = {
+            "type": "tool_use",
+            "id": part.id,
+            "name": names.get_provider_name(part.name),
+            "input": part.params,
+        }
         caller = _caller(options)
         if caller is not None:
             block["caller"] = caller
@@ -289,6 +294,10 @@ def _tool_result(part: Pr.ToolResultPart, names: NameMapper, mcp_ids: set[str]) 
     block_type = _SERVER_RESULTS.get(tool_name)
     if block_type is None:
         return None
+    if block_type == "tool_search_tool_result" and isinstance(result, list | tuple):
+        # The response part carries the bare tool references
+        references = list(cast("Sequence[object]", result))
+        result = {"type": "tool_search_tool_search_result", "tool_references": references}
     return {"type": block_type, "tool_use_id": part.id, "content": result}
 
 

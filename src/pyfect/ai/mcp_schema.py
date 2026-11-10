@@ -790,6 +790,11 @@ class _ListPromptsResult(TypedDict):
     nextCursor: NotRequired[str]
 
 
+ListToolsResult = _ListToolsResult
+ListResourcesResult = _ListResourcesResult
+ListResourceTemplatesResult = _ListResourceTemplatesResult
+ListPromptsResult = _ListPromptsResult
+
 _CURSOR = S.Struct(_Cursor, _meta=REQUEST_META_OBJECT)
 _URI = S.Struct(_Uri, _meta=REQUEST_META_OBJECT)
 
@@ -1112,6 +1117,15 @@ def param[T](name: str, schema: S.Codec[T, Any, Any, Any]) -> Param[T]:
     return Param(name, schema)
 
 
+from pyfect.ai._mcp.skill_schema import (  # noqa: E402
+    SKILL,
+    SKILL_FRONTMATTER,
+    SKILL_RESOURCE,
+    Skill,
+    SkillFrontmatter,
+    SkillResource,
+)
+
 __all__ = [
     "ANNOTATIONS",
     "AUDIO_CONTENT",
@@ -1186,6 +1200,9 @@ __all__ = [
     "SERVER_CAPABILITIES",
     "SERVER_REQUESTS",
     "SET_LEVEL",
+    "SKILL",
+    "SKILL_FRONTMATTER",
+    "SKILL_RESOURCE",
     "SUBSCRIBE",
     "SUBSCRIPTIONS_LISTEN",
     "SUBSCRIPTION_FILTER",
@@ -1244,7 +1261,11 @@ __all__ = [
     "JsonRpcSuccess",
     "LegacyTitledEnum",
     "ListChanged",
+    "ListPromptsResult",
+    "ListResourceTemplatesResult",
+    "ListResourcesResult",
     "ListRootsResult",
+    "ListToolsResult",
     "LoggingLevel",
     "McpError",
     "McpInputRequest",
@@ -1284,6 +1305,9 @@ __all__ = [
     "SamplingMessage",
     "ServerCapabilities",
     "ServerClient",
+    "Skill",
+    "SkillFrontmatter",
+    "SkillResource",
     "SubscriptionFilter",
     "SubscriptionsListenParams",
     "TextContent",

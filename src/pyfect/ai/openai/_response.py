@@ -22,7 +22,6 @@ from pyfect.ai.ai_error import AiError, ToolParameterValidationError
 from pyfect.ai.id_generator import IdGenerator
 from pyfect.ai.id_generator import Service as IdService
 from pyfect.ai.openai import _schema as W
-from pyfect.ai.openai._errors import OPENAI
 from pyfect.ai.openai._prompt import KEY, MODULE, openai_options, provider_tool
 from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.ai.response import FinishReason
@@ -68,10 +67,6 @@ def encrypted_metadata(encrypted: object) -> dict[str, Any]:
 
 def timestamp(created_at: float) -> str:
     return date_time.format_iso(datetime.fromtimestamp(created_at, UTC))
-
-
-def request_details(response: HttpClientResponse) -> Any:
-    return P.request_details(response.request, secret_headers=OPENAI.secret_headers)
 
 
 def _token_detail(details: object, key: str) -> int | float | None:
@@ -550,7 +545,6 @@ def _make_response(
             "id": raw["id"],
             "modelId": raw["model"],
             "timestamp": timestamp(raw["created_at"]),
-            "request": request_details(response),
         }
     ]
     for item in raw["output"]:

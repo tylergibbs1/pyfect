@@ -50,6 +50,25 @@ def test_decodes_percent_encoded_otel_resource_attributes() -> None:
     assert attributes["comma"] == "comma,value"
 
 
+def test_trims_otel_resource_attributes_entries_and_keeps_empty_values() -> None:
+    """fromConfig trims OTEL_RESOURCE_ATTRIBUTES entries and keeps empty values"""
+    resource = fx.run_sync(
+        _from_config(
+            {
+                "OTEL_SERVICE_NAME": "env-service",
+                "OTEL_RESOURCE_ATTRIBUTES": "message = hello%20world ,empty=,novalue, =ignored,a=1",
+            }
+        )
+    )
+    assert _attributes(resource) == {
+        **SDK,
+        "service.name": "env-service",
+        "message": "hello world",
+        "empty": "",
+        "a": "1",
+    }
+
+
 def test_uses_explicit_service_options_before_attributes_and_environment_variables() -> None:
     """fromConfig uses explicit service options before attributes and environment variables"""
     resource = fx.run_sync(

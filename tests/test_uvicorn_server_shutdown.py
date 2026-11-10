@@ -132,11 +132,12 @@ def test_a_pooled_client_connection_open_at_shutdown_is_closed_cleanly() -> None
     handlers = calculator.to_layer(
         add.handler(lambda p, _: fx.succeed(_Sum(total=p["a"] + p["b"])))
     )
-    mcp = layer.merge(
-        mcp_server.layer_http(
-            name="calculator", version="1.0.0", path="/mcp", protocols=(mcp_protocol.v2025_11_25,)
-        ),
-        mcp_server.toolkit(calculator).pipe(layer.provide(handlers)),
+    mcp = mcp_server.layer_http(
+        name="calculator",
+        version="1.0.0",
+        path="/mcp",
+        protocols=(mcp_protocol.v2025_11_25,),
+        registrations=mcp_server.toolkit(calculator).pipe(layer.provide(handlers)),
     )
 
     class Clients(fx.Tag[RcMap[str, McpClientService, McpClientError]], key="test/Clients"): ...

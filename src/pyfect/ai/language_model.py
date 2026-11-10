@@ -39,6 +39,7 @@ from pyfect.ai._stream_resolution import (
     resolve_stream,
     result_part,
 )
+from pyfect.ai._structured_output_json import resolve_root
 from pyfect.ai.ai_error import (
     AiError,
     InvalidOutputError,
@@ -172,14 +173,10 @@ class GenerateObjectResponse[NN: str, RP, A](GenerateTextResponse[NN, RP]):
 
 
 def default_codec_transformer(schema: S.Top) -> tuple[S.Top, JsonSchema]:
-    """``schema`` itself and its JSON Schema, a top-level ``$ref``
+    """``schema`` itself and its JSON Schema, top-level ``$ref``s
     resolved."""
     document = S.to_json_schema_document(schema)
-    root: JsonSchema = dict(document.schema)
-    ref = root.get("$ref")
-    if isinstance(ref, str):
-        key = ref.removeprefix("#/$defs/")
-        root = dict(document.definitions[key])
+    root: JsonSchema = dict(resolve_root(document))
     if document.definitions:
         root["$defs"] = dict(document.definitions)
     return schema, root

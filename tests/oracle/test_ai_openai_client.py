@@ -37,7 +37,7 @@ from pyfect.redacted import make as redact
 from pyfect.socket import WebSocketConstructor
 from pyfect.socket._web_socket import WebSocketClientOptions
 
-from ._ai_http import MockHttp, mock_json, sse_body, unexpected
+from ._ai_http import MockHttp, mock_json, refuse_transport, sse_body, stringify_error, unexpected
 from ._graphql import FakeWebSocket
 
 _TEST: client.CreateResponse = {"model": "gpt-4o", "input": "test"}
@@ -259,11 +259,10 @@ def test_redacts_headers():
     )
     reason = error.reason
     assert isinstance(reason, E.InvalidRequestError)
-    assert reason.http is not None
-    headers = reason.http["request"]["headers"]
-    assert headers["authorization"] == "<redacted>"
-    assert headers["openai-organization"] == "<redacted>"
-    assert headers["openai-project"] == "<redacted>"
+    output = stringify_error(error)
+    assert "test-key" not in output
+    assert "org-secret" not in output
+    assert "proj-secret" not in output
 
 
 # error mapping ----------------------------------------------------------------------------
@@ -273,18 +272,25 @@ def test_redacts_headers():
 def test_transport_error():
     """error mapping / maps TransportError to NetworkError reason"""
 
-    def refuse(request: HttpClientRequest) -> Any:
-        return fx.fail(
-            http_error.HttpClientError(
-                http_error.TransportError(request=request, cause=ConnectionRefusedError())
-            )
-        )
-
-    error = yield from _error(MockHttp(refuse))
+    failures: list[http_error.HttpClientError] = []
+    error = yield from _error(MockHttp(refuse_transport(failures, ConnectionRefusedError())))
     assert isinstance(error, E.AiError)
     assert error.module == "OpenAiClient"
     assert error.method == "createResponse"
     assert isinstance(error.reason, E.NetworkError)
+    assert error.reason.cause is failures[0]
+    assert error.reason.description is None
+
+
+@testing.effect
+def test_transport_error_without_cause():
+    """error mapping / keeps the HttpClientError as the NetworkError cause when it has no
+    cause"""
+    failures: list[http_error.HttpClientError] = []
+    error = yield from _error(MockHttp(refuse_transport(failures, None)))
+    assert failures[0].cause is None
+    assert isinstance(error.reason, E.NetworkError)
+    assert error.reason.cause is failures[0]
 
 
 @testing.effect
@@ -327,15 +333,9 @@ def test_fallback_body_truncated():
         headers={},
         message=None,
         metadata={"errorCode": None, "errorType": None, "requestId": None},
-        http={
-            "request": {
-                "method": "POST",
-                "url": "https://api.openai.com/v1/responses",
-                "urlParams": [],
-                "headers": {},
-            },
-            "body": body,
-        },
+        method="POST",
+        url="https://api.openai.com/v1/responses",
+        http={"body": body},
     )
     assert isinstance(reason, E.InvalidRequestError)
     assert reason.description == (
@@ -435,14 +435,9 @@ def test_map_status_insufficient_quota():
             "errorType": "insufficient_quota",
             "requestId": None,
         },
-        http={
-            "request": {
-                "method": "POST",
-                "url": "https://api.openai.com",
-                "urlParams": [],
-                "headers": {},
-            }
-        },
+        method="POST",
+        url="https://api.openai.com",
+        http={},
     )
     assert isinstance(reason, E.QuotaExhaustedError)
 

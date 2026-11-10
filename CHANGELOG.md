@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+### Breaking
+
+- AI, Effect 4.1.2: `ai_error.NetworkError` has `method: str`, `url: str` (without URL
+  parameters) and an optional `cause` instead of `request`. Read `err.method` / `err.url`
+  instead of `err.request["method"]` / `err.request["url"]`; build one with
+  `NetworkError(reason=..., method=..., url=...)`, or `NetworkError.from_http_client_error(error)`
+  to keep the HTTP client error as `cause`. `ai_error.HttpRequestDetails`,
+  `HTTP_REQUEST_DETAILS` and `HttpMethod` are removed and `HttpContext` has no `request`: read
+  `http["response"]` / `http["body"]`, and log the request yourself if you need it. Status
+  mappers of the providers take `method=` and `url=`.
+- AI: `response.ResponseMetadataPart` no longer has `request` (decoding ignores the key), and no
+  provider's response-metadata parts carry the request.
+- AI decisions: provider answers are plain dicts tagged by `_tag`:
+  `ProviderClassifyAnswer("x", probs)` becomes
+  `{"_tag": "Classify", "label": "x", "probabilities": probs}`; likewise `"Rate"` (`rating`),
+  `"Probability"` (`probability`), `"Locate"` (`box` as a `{left, top, right, bottom}` dict,
+  `confidence`) and `{"_tag": "Refusal"}`. `decision_model.ProviderBoundingBox` is new.
+- Anthropic: `tool.ComputerUse_20241022` is named `computer` on the wire (was `computer_use`).
+  `TextEditor_20250429` and `TextEditor_20250728` decode inserts as `InsertTextCommand`
+  (`params["insert_text"]`), not `InsertCommand` (`new_str`, kept for the older versions).
+  `ToolSearchRegex_20251119` takes `ToolSearchRegexParameters` (`pattern`, optional `limit`) and
+  `ToolSearchBM25_20251119` `ToolSearchBM25Parameters` (`query`, optional `limit`) instead of
+  `QueryParameters`. `language_model.Model` lists 4.1.2's model names (`claude-opus-4-1` is
+  gone); any string is still accepted.
+- MCP server: the registration layers `mcp_server.toolkit`, `resource`, `resource_template`,
+  `prompt` and `skill` require `McpServer`. Give them to the transport,
+  `layer_http(..., registrations=toolkit(...))` (also `layer_stdio`), or write
+  `registrations.pipe(layer.provide_merge(transport))`, instead of
+  `layer.merge(transport, toolkit(...))`.
+- MCP server: a defect in a handler or middleware answers `{"code": -32603, "message":
+  "Internal error"}` (was `Internal server error`); match on the code.
+- MCP server: a declared tool failure is sent through its schema's JSON codec, as in Effect
+  4.1.2: a `BigInt` is a string, and a `Redacted` field's value is sent. Keep secrets out of
+  declared failure fields, or declare them with `S.Redacted(..., disallow_json_encode=True)`
+  so encoding refuses them. A result that fails to encode is an `AiError` with a
+  `ToolResultEncodingError` reason. Resource and template listings always carry
+  `annotations`.
+- MCP client: `mcp_client.toolkit(..., failure_mode="return")` sends the model the encoded
+  `McpClientError` (`{"_tag": "McpClientError", "reason": {...}}`) and the result is the
+  `McpClientError`, not its text; tool failures have the `McpClientError` schema (was
+  `Unknown`). Read `result.reason` (a `ToolError`'s `result["content"]`), or reshape with
+  `transform_tool`. A resource link with an empty `title` reads `": <uri>"`, as in Effect.
+- Observability: OTLP/JSON writes `bytesValue` as base64 text. `otlp_resource.from_config`
+  trims `OTEL_RESOURCE_ATTRIBUTES` keys and values and keeps `key=` as `""`;
+  `otel.resource.layer_from_env` does too, percent-decodes keys and values, accepts a
+  structured config record, and drops the whole variable with a warning when its encoding is
+  malformed (write a literal `%` as `%25`).
+
+### Added
+
+- MCP Skills (`io.modelcontextprotocol/skills`): `mcp_server.skill(uri, files)`, and on the
+  client `extensions={"skills": True}` with `list_skills`, `get_skill`,
+  `read_resource_directory` and `read_skill_resource` (digest-checked); client
+  `discovery_limits` and per-call `limits=`.
+- MCP server: `mcp_server.middleware`, `visibility`, `Middleware.layer` / `layer_global` /
+  `combine`, `cache_hints=` (2026-07-28 `ttlMs`), and `pyfect.ai.mcp_test.make_client`.
+- MCP client: `toolkit(tools=, result_mode="complete", failure_mode=, trust_annotations=,
+  timeout=, transform_tool=)`, `ToolDescriptor`, `RemoteTool`, schemas for `McpClientError`.
+- Anthropic: `tool.DeferLoading`; non-strict tools may have recursive parameters.
+- `config.dict_of(..., trim=, keep_empty_values=)`.
+
 ## 0.3.0 (2026-11-09)
 
 ### Breaking

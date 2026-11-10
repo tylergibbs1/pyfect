@@ -45,9 +45,12 @@ def provider_answers(
             continue
         match answer["type"]:
             case "choice":
-                found[key] = DM.ProviderClassifyAnswer(
-                    answer["choice"], answer["probabilities"], answer["confidence"]
-                )
+                found[key] = {
+                    "_tag": "Classify",
+                    "label": answer["choice"],
+                    "probabilities": answer["probabilities"],
+                    "confidence": answer["confidence"],
+                }
             case "score":
                 levels = decision.criteria if isinstance(decision, D.Rate) else ()
                 by_index = answer["probabilities"]
@@ -56,9 +59,12 @@ def provider_answers(
                     for index, level in enumerate(levels)
                     if str(index) in by_index
                 }
-                found[key] = DM.ProviderRateAnswer(
-                    answer["score"], probabilities, answer["confidence"]
-                )
+                found[key] = {
+                    "_tag": "Rate",
+                    "rating": answer["score"],
+                    "probabilities": probabilities,
+                    "confidence": answer["confidence"],
+                }
             case "noul":
-                found[key] = DM.ProviderProbabilityAnswer(answer["noul"])
+                found[key] = {"_tag": "Probability", "probability": answer["noul"]}
     return found

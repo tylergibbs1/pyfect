@@ -13,7 +13,11 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
 from pyfect.ai._provider_tools import UnsupportedInput
 from pyfect.ai.ai_error import InvalidUserInputError
+from pyfect.ai.anthropic.tool import DeferLoading
 from pyfect.ai.anthropic_structured_output import to_codec_anthropic
+from pyfect.ai.tool import NameMapper
+from pyfect.json_schema import JsonSchema
+from pyfect.schema import Top
 
 type Block = dict[str, Any]
 
@@ -42,8 +46,19 @@ def json_schema(schema: Any, method: str) -> Block:
     return PT.json_schema(MODULE, schema, method, transformer=to_codec_anthropic)
 
 
-def tool_json_schema(tool: T.AnyTool) -> Block:
-    return PT.tool_json_schema(MODULE, tool, require_object=True, transformer=to_codec_anthropic)
+def to_codec_lenient(schema: Top) -> tuple[Top, JsonSchema]:
+    """Anthropic's codec, or the plain JSON one for a schema Anthropic's
+    strict mode cannot express (recursion): its restrictions only apply to
+    strict tools."""
+    try:
+        return to_codec_anthropic(schema)
+    except Exception:
+        return lm.default_codec_transformer(schema)
+
+
+def tool_json_schema(tool: T.AnyTool, strict: bool) -> Block:
+    transformer = to_codec_anthropic if strict else to_codec_lenient
+    return PT.tool_json_schema(MODULE, tool, require_object=True, transformer=transformer)
 
 
 def _computer(args: Mapping[str, Any], name: str, type_: str) -> Block:
@@ -177,30 +192,33 @@ def _provider_tool(
 def _user_tool(
     tool: T.AnyTool, capabilities: Capabilities, strict_default: bool | None, betas: dict[str, None]
 ) -> Block:
-    block: Block = {"name": tool.name, "input_schema": tool_json_schema(tool)}
+    strict: bool | None = None
+    if capabilities.supports_structured_output:
+        own = T.get_strict_mode(tool)
+        strict = own if own is not None else (strict_default is not False)
+    block: Block = {"name": tool.name, "input_schema": tool_json_schema(tool, strict is True)}
     description = T.get_description(tool)
     if description is not None:
         block["description"] = description
-    if capabilities.supports_structured_output:
-        strict = T.get_strict_mode(tool)
-        block["strict"] = strict if strict is not None else (strict_default is not False)
+    if strict is not None:
+        block["strict"] = strict
         betas["structured-outputs-2025-11-13"] = None
+    if tool.annotations.get_unsafe(DeferLoading):
+        block["defer_loading"] = True
     return block
 
 
-def _tool_choice(choice: lm.ToolChoice, tools: list[Block]) -> tuple[list[Block], Block]:
+def _tool_choice(choice: lm.ToolChoice, names: NameMapper) -> Block:
+    """The tools a ``one_of`` choice names are already the request's only
+    tools."""
     if choice == "auto":
-        return tools, {"type": "auto"}
+        return {"type": "auto"}
     if choice == "required":
-        return tools, {"type": "any"}
+        return {"type": "any"}
     if isinstance(choice, dict) and "tool" in choice:
-        return tools, {"type": "tool", "name": choice["tool"]}
+        return {"type": "tool", "name": names.get_provider_name(choice["tool"])}
     assert isinstance(choice, dict)
-    allowed = set(choice.get("one_of", ()))
-    mode = choice.get("mode")
-    return [t for t in tools if t["name"] in allowed], {
-        "type": "any" if mode == "required" else "auto"
-    }
+    return {"type": "any" if choice.get("mode") == "required" else "auto"}
 
 
 def prepare_tools(
@@ -208,6 +226,7 @@ def prepare_tools(
     capabilities: Capabilities,
     config: Mapping[str, Any],
     betas: dict[str, None],
+    names: NameMapper,
 ) -> Prepared:
     """Raises ``UnsupportedInput`` for a schema or tool Anthropic cannot
     take."""
@@ -241,8 +260,8 @@ def prepare_tools(
             user_tools.append(
                 _user_tool(tool, capabilities, config.get("strict_json_schema"), betas)
             )
-    tools, choice = _tool_choice(options.tool_choice, [*user_tools, *provider_tools])
+    choice = _tool_choice(options.tool_choice, names)
     disable = config.get("disable_parallel_tool_calls")
     if disable is not None and choice["type"] != "none":
         choice["disable_parallel_tool_use"] = disable
-    return Prepared(tools, choice)
+    return Prepared([*user_tools, *provider_tools], choice)

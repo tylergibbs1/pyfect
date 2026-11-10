@@ -20,7 +20,7 @@ from pyfect.exit import Failure
 from pyfect.redacted import make as redact
 from pyfect.result import Ok
 
-from ._ai_http import MockHttp, mock_json
+from ._ai_http import MockHttp, mock_json, stringify_error
 
 _CHAT: client.ChatRequest = {
     "model": "openai/gpt-4o-mini",
@@ -78,10 +78,8 @@ def test_redacts_api_key():
     mock = mock_json({"error": {"code": 400, "message": "Bad request"}}, status=400)
     error = yield from _chat_error(mock)
     assert isinstance(error.reason, E.InvalidRequestError)
-    http = error.reason.http
-    assert http is not None
     assert "/chat/completions" in mock.requests[0].url
-    assert str(http["request"]["headers"]["authorization"]) == "<redacted>"
+    assert "sk-test-key" not in stringify_error(error)
 
 
 @testing.effect
@@ -111,15 +109,9 @@ def test_fallback_body_truncated():
         headers={},
         message=None,
         metadata={"errorCode": None, "errorType": None, "requestId": None},
-        http={
-            "request": {
-                "method": "POST",
-                "url": "https://openrouter.ai/api/v1/chat/completions",
-                "urlParams": [],
-                "headers": {},
-            },
-            "body": body,
-        },
+        method="POST",
+        url="https://openrouter.ai/api/v1/chat/completions",
+        http={"body": body},
     )
     assert isinstance(reason, E.InvalidRequestError)
     assert reason.description == (

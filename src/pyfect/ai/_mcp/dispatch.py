@@ -19,10 +19,19 @@ from pyfect import _json_text
 from pyfect import schema as S
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
-from pyfect.ai._mcp import log_levels, param_headers, projection, reverse_policy, subscriptions
+from pyfect.ai._mcp import (
+    log_levels,
+    param_headers,
+    projection,
+    reverse_policy,
+    skills,
+    subscriptions,
+)
+from pyfect.ai._mcp.cache_hints import TtlMillis
 from pyfect.ai._mcp.core import McpServerService, RequestOutbound, RequestServices
 from pyfect.ai._mcp.http_status import fail_with_http_status
 from pyfect.ai._mcp.input_wire import CONTINUATION_PARAMS, INPUT_REQUESTS, ContinuationParams
+from pyfect.ai._mcp.invoke import RequestRejected, ResourceNotFound, unwrap_rejected
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter, Registry
 from pyfect.ai.mcp_schema import (
     CALL_TOOL_PARAMS,
@@ -78,6 +87,7 @@ from pyfect.ai.mcp_schema import (
 from pyfect.cause import Cause, Fail
 from pyfect.deferred import Deferred
 from pyfect.effect import (
+    catch_tag,
     die,
     fail,
     fail_cause,
@@ -123,6 +133,8 @@ class ServerInfo:
     icons: tuple[Icon, ...] = ()
     instructions: str | None = None
     extensions: Mapping[str, Any] | None = None
+    cache_hints: TtlMillis = field(default_factory=dict[str, int])
+    """The 2026-07-28 ``ttlMs`` by method; others have 0."""
 
     def implementation(self) -> Implementation:
         info: Implementation = {"name": self.name, "version": self.version}
@@ -251,8 +263,12 @@ def _as_mcp_error(cause: Cause[object]) -> Effect[Wire, McpError]:
     if cause.has_interrupts_only:
         return fail_cause(cast("Cause[Never]", cause))
     found = cause.find_recoverable_error()
-    if isinstance(found, Fail) and isinstance(found.error, McpError):
-        return fail(found.error)
+    if isinstance(found, Fail):
+        error = found.error
+        if isinstance(error, RequestRejected):
+            return fail(error.error)
+        if isinstance(error, McpError):
+            return fail(error)
     return fail(InternalError("Internal error"))
 
 
@@ -293,6 +309,9 @@ class Connection:
     subscriptions: set[str] = field(default_factory=set[str])
     supports_subscriptions: bool = True
     """Whether 2026-07-28 clients may ``subscriptions/listen``."""
+    list_change_revision: int = 0
+    """The server's newest list change when the client initialized: it gets
+    only newer ones."""
     _listening: set[RequestId] = field(default_factory=set[RequestId])
     """The requests that are subscriptions: they end only when cancelled."""
     _pending: dict[RequestId, Deferred[JsonObject]] = field(
@@ -453,11 +472,13 @@ class Connection:
             return self.protocol is not None and self.protocol.supports_icons
         return True
 
-    def deliver(self, method: str, params: JsonObject) -> Effect[None]:
+    def deliver(self, method: str, params: JsonObject, revision: int | None = None) -> Effect[None]:
         """A broadcast notification, sent once the client is initialized
         and if it wants it (``Peer``)."""
         protocol = self.protocol
         if protocol is None or not self.initialized or not self.wants(method, params):
+            return _VOID
+        if revision is not None and revision <= self.list_change_revision:
             return _VOID
         return self.broadcast(
             notification(method, projection.notification(protocol, method, params))
@@ -681,6 +702,7 @@ class Connection:
 
         def start(payload: Any) -> Wire:
             self.protocol = protocol
+            self.list_change_revision = self.server.list_change_revision
             capabilities = projection.client_capabilities(protocol, payload["capabilities"])
             self.identity = Identity(capabilities, payload["clientInfo"])
             self.initialize_payload = dict(params)
@@ -703,7 +725,9 @@ class Connection:
         capabilities: ServerCapabilities = {"logging": {}}
         if protocol.supports_audio:
             capabilities["completions"] = {}
-        extensions = _extensions(protocol, self.info.extensions)
+        extensions = skills.declare_extension(
+            _extensions(protocol, self.info.extensions), presence.skills
+        )
         if extensions:
             capabilities["extensions"] = extensions
         if presence.prompts:
@@ -741,10 +765,14 @@ class Connection:
                 )
             )
 
-        def listed(
-            key: str, items: Callable[[RequestContext], list[Any]]
+        def listed[D](
+            key: str,
+            items: Callable[[RequestContext], Effect[list[D], RequestRejected, RequestServices]],
+            project: Callable[[D], Any],
         ) -> Effect[Wire, McpError]:
-            return serve(lambda c: succeed({key: items(c)}))
+            return serve(
+                lambda c: unwrap_rejected(items(c).map(lambda xs: {key: [project(x) for x in xs]}))
+            )
 
         match method:
             case "logging/setLevel":
@@ -756,10 +784,7 @@ class Connection:
                 )
             case "tools/list":
                 return _decode(LIST_TOOLS.payload_schema, params).and_then(
-                    listed(
-                        "tools",
-                        lambda c: [projection.tool(protocol, t) for t in server.list_tools(c)],
-                    )
+                    listed("tools", server.list_tools, lambda t: projection.tool(protocol, t))
                 )
             case "tools/call":
                 return _decode(CALL_TOOL_PARAMS, params).flat_map(
@@ -767,16 +792,13 @@ class Connection:
                 )
             case "resources/list":
                 return listed(
-                    "resources",
-                    lambda c: [projection.resource(protocol, r) for r in server.list_resources(c)],
+                    "resources", server.list_resources, lambda r: projection.resource(protocol, r)
                 )
             case "resources/templates/list":
                 return listed(
                     "resourceTemplates",
-                    lambda c: [
-                        projection.resource_template(protocol, t)
-                        for t in server.list_resource_templates(c)
-                    ],
+                    server.list_resource_templates,
+                    lambda t: projection.resource_template(protocol, t),
                 )
             case "resources/read":
                 return _decode(READ_RESOURCE.payload_schema, params).flat_map(
@@ -786,21 +808,26 @@ class Connection:
                 )
             case "prompts/list":
                 return listed(
-                    "prompts",
-                    lambda c: [projection.prompt(protocol, p) for p in server.list_prompts(c)],
+                    "prompts", server.list_prompts, lambda p: projection.prompt(protocol, p)
                 )
             case "prompts/get":
                 return _decode(GET_PROMPT.payload_schema, params).flat_map(
                     lambda decoded: serve_continued(
-                        lambda c: server.get_prompt_for(
-                            decoded["name"], decoded.get("arguments") or {}, c
+                        lambda c: unwrap_rejected(
+                            server.get_prompt_for(
+                                decoded["name"], decoded.get("arguments") or {}, c
+                            )
                         ).flat_map(lambda outcome: _prompt_on_wire(protocol, identity, outcome))
                     )
                 )
             case "completion/complete":
                 return _decode(COMPLETE_PARAMS, params).flat_map(
-                    lambda decoded: serve(lambda _: server.complete_for(decoded).map(_wire))
+                    lambda decoded: serve(
+                        lambda _: unwrap_rejected(server.complete_for(decoded)).map(_wire)
+                    )
                 )
+            case "skills/list" | "skills/get" | "resources/directory/read":
+                return serve(lambda c: server.skills_for(method, params, c))
             case _:
                 return fail(_method_not_found(method))
 
@@ -818,16 +845,22 @@ class Connection:
     def _read(
         self, protocol: AnyProtocolAdapter, uri: str, context: RequestContext
     ) -> Effect[Wire, McpError, RequestServices]:
-        found = self.server.read_resource_for(uri, context)
-        if found is None:
+
+        def not_found(error: ResourceNotFound) -> Effect[Never, McpError]:
+            # Only 2026-07-28 names the URI in the error's data.
+            data = {"uri": error.uri} if protocol.is_stateless else None
             return fail(
                 ProtocolError(
-                    f"Resource '{uri}' not found",
-                    {"uri": uri},
+                    f"Resource '{error.uri}' not found",
+                    data,
                     error_code=protocol.resource_not_found_code,
                 )
             )
-        return found.map(_wire)
+
+        read = self.server.read_resource_for(uri, context).pipe(
+            catch_tag(ResourceNotFound, not_found)
+        )
+        return unwrap_rejected(read).map(_wire)
 
     # --- 2026-07-28 ----------------------------------------------------------------------
 
@@ -886,7 +919,7 @@ class Connection:
             result_type = "input_required" if isinstance(result, _InputRequired) else "complete"
             completed: JsonObject = {**result, "_meta": merged, "resultType": result_type}
             if cacheable:
-                completed["ttlMs"] = 0
+                completed["ttlMs"] = self.info.cache_hints.get(method, 0)
                 completed["cacheScope"] = "private"
             return completed
 
@@ -909,9 +942,14 @@ class Connection:
             # An unadvertised capability's method (Effect's 2026-07-28 prompts/list).
             return fail_with_http_status(404, _method_not_found_bare())
         cacheable = method in _CACHEABLE
-        return self._feature(protocol, identity, method, params, out).map(
-            lambda result: complete(result, cacheable)
-        )
+        served = self._feature(protocol, identity, method, params, out)
+        if method in skills.METHODS:
+            # Effect's 2026-07-28 requireSkills: a method the server does not declare.
+            served = served.catch_if(
+                lambda error: error.code == METHOD_NOT_FOUND_ERROR_CODE,
+                lambda error: fail_with_http_status(404, error),
+            )
+        return served.map(lambda result: complete(result, cacheable))
 
 
 class _InputRequired(dict[str, Any]):
@@ -925,6 +963,7 @@ _NOT_ON_2026_07_28 = frozenset(
 
 _CACHEABLE = frozenset(
     {"tools/list", "prompts/list", "resources/list", "resources/templates/list", "resources/read"}
+    | skills.METHODS
 )
 """The 2026-07-28 results carrying ``ttlMs`` and ``cacheScope`` (with
 ``server/discover``)."""
@@ -944,13 +983,13 @@ def _call_tool(
     found = server.find_tool(name, context)
     if found is None:
         return fail(InvalidParams(f"Tool '{name}' not found"))
-    called = server.call_tool_for(call, context)
+    outcome: Effect[CallToolResult | InputRequired, McpError | RequestRejected, RequestServices] = (
+        server.call_tool_for(call, context)
+    )
     continued = context.input_responses is not None or context.request_state is not None
     if protocol.reports_tool_errors_as_results:
 
-        def reported(
-            error: InvalidParams | InternalError,
-        ) -> Effect[CallToolResult, InvalidParams]:
+        def reported(error: InvalidParams | InternalError) -> Effect[CallToolResult, McpError]:
             if continued and isinstance(error, InvalidParams):
                 return fail(error)
             return succeed(
@@ -960,7 +999,9 @@ def _call_tool(
                 )
             )
 
-        called = called.catch_all(reported)
+        # Middleware rejecting the call, a hidden tool included, stays a protocol error.
+        outcome = outcome.pipe(catch_tag((InvalidParams, InternalError), reported))
+    called = unwrap_rejected(outcome)
 
     def on_wire(outcome: CallToolResult | InputRequired) -> Effect[Wire, McpError]:
         if isinstance(outcome, InputRequired):
