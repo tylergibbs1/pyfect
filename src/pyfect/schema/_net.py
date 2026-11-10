@@ -27,7 +27,7 @@ from ipaddress import (
 from types import ModuleType as _strategies_module
 from typing import Any, TypeIs, cast
 
-from pyfect.duration import Duration
+from pyfect.duration import Duration, seconds
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit
 from pyfect.net import dns, host, ip_interface, ip_network
@@ -50,6 +50,7 @@ from pyfect.schema._primitives import Boolean, Int, NonEmptyString, String
 from pyfect.schema._refine import refine
 from pyfect.schema._schema import Bottom, Codec
 from pyfect.schema._transform import DecodeToSchema, decode_to
+from pyfect.schema._values import Duration as DurationSchema
 from pyfect.schema.ast import make_filter
 from pyfect.schema.issue import InvalidValue, Issue, reported
 
@@ -398,15 +399,12 @@ _UINT16 = Int.check(is_between(minimum=0, maximum=0xFFFF))
 _UINT32 = Int.check(is_between(minimum=0, maximum=0xFFFFFFFF))
 
 
-def _seconds(count: int) -> Duration:
-    return Duration(float(count))
+def _count(duration: Duration) -> float:
+    count = duration.to_seconds()
+    return int(count) if count.is_integer() else count
 
 
-def _count(seconds: Duration) -> int:
-    return int(seconds)
-
-
-_TIMER = ast.decode_to(_UINT32.ast, ast.number, T.transform(decode=_seconds, encode=_count))
+_TIMER = ast.decode_to(_UINT32.ast, DurationSchema.ast, T.transform(decode=seconds, encode=_count))
 """An SOA timer: whole seconds, as in zone files."""
 _TIMER_DRAWN = ast.append_checks(
     ast.number, (int_value(), is_between(minimum=0, maximum=0xFFFFFFFF))
@@ -449,11 +447,18 @@ def _record[R: dns.DnsRecord](cls: type[R], identifier: str, **schemas: ast.AST)
         )
     )
 
+    timers = frozenset(n for n in names if schemas[n] is _TIMER)
+
     def made(values: Mapping[str, Any]) -> R:
-        return dns.make_record(cls, **values).get_or_raise()
+        drawn_values = {n: seconds(v) if n in timers else v for n, v in values.items()}
+        return dns.make_record(cls, **drawn_values).get_or_raise()
+
+    def fields_of(record: R) -> Mapping[str, object]:
+        values = _fields_of(record)
+        return {n: _count(cast("Duration", v)) if n in timers else v for n, v in values.items()}
 
     def arbitrary(_: tuple[ast.AST, ...], __: ArbitraryConstraint) -> ast.Link:
-        return link(drawn, decode=made, encode=_fields_of)
+        return link(drawn, decode=made, encode=fields_of)
 
     return declare(
         _is(cls), identifier=identifier, to_codec_json=codec, to_codec_arbitrary=arbitrary

@@ -8,7 +8,7 @@ import enum
 import importlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, NotRequired, TypedDict, TypeIs, cast
@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from pyfect import cause, exit
+from pyfect import cause, duration, exit
 from pyfect import schema as S
 from pyfect.byte_size import ByteSize
 from pyfect.cause import Fail
@@ -114,7 +114,7 @@ class _Shapes(TypedDict):
     tags: frozenset[str]
     items: Sequence[int]
     secret: Redacted[str]
-    timeout: timedelta
+    timeout: duration.Duration
     nested: NotRequired[list[tuple[str, ...]]]
 
 
@@ -128,7 +128,7 @@ def test_annotations_of_sequences_sets_secrets_and_durations_derive_their_schema
         "tags": {"x"},
         "items": [1, 2],
         "secret": secret,
-        "timeout": timedelta(seconds=1),
+        "timeout": duration.seconds(1),
         "nested": [["a"]],
     }
     assert S.decode_unknown_sync(S.Struct(_Shapes))(value) == {
@@ -139,7 +139,7 @@ def test_annotations_of_sequences_sets_secrets_and_durations_derive_their_schema
         "tags": frozenset({"x"}),
         "items": (1, 2),
         "secret": secret,
-        "timeout": timedelta(seconds=1),
+        "timeout": duration.seconds(1),
         "nested": [("a",)],
     }
     SchemaAsserts(S.Struct(_Shapes)).decoding().fail(

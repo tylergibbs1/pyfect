@@ -19,7 +19,6 @@ import pytest
 
 import pyfect as fx
 from pyfect import effect
-from pyfect.duration import Duration
 from pyfect.http import live_server, server, server_response
 from pyfect.http.server import HttpServer
 from pyfect.http.server_request import HttpServerRequest
@@ -200,7 +199,7 @@ def test_closes_a_connection_whose_client_stops_reading_when_the_shutdown_timeou
     layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout="300 millis")
     program = scoped(serving()).pipe(fx.provide(layer_live))
     started_at = time.monotonic()
-    fx.run_blocking(program.timeout(Duration(TIMEOUT)).or_die())
+    fx.run_blocking(program.timeout(fx.duration.seconds(TIMEOUT)).or_die())
     assert time.monotonic() - started_at < 2.5
 
 
@@ -233,7 +232,7 @@ def test_aborts_a_streamed_body_still_open_when_the_shutdown_timeout_ends() -> N
     layer_live = live_server.layer(host="127.0.0.1", graceful_shutdown_timeout="300 millis")
     program = scoped(serving()).pipe(fx.provide(layer_live))
     started_at = time.monotonic()
-    reader = fx.run_blocking(program.timeout(Duration(TIMEOUT)).or_die())
+    reader = fx.run_blocking(program.timeout(fx.duration.seconds(TIMEOUT)).or_die())
     reader.join(TIMEOUT)
     assert time.monotonic() - started_at < 2.5
     [body] = received

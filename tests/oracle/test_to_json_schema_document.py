@@ -11,7 +11,6 @@ Python differs in a few places, each kept as the expected value:
   length bounds are exact (Effect loosens ``minLength`` by half for UTF-16).
 - An ``int`` record key is read from its digits, so ``Record(Int, ...)``
   selects keys by an exact pattern.
-- A ``timedelta`` cannot be infinite: ``Duration`` has no infinity forms.
 - ``is_pattern`` takes a Python ``re`` pattern, which JSON Schema cannot
   carry: it is left out. ``is_ecma_pattern`` is Effect's ``isPattern``.
 - ``Schema.Date`` is ``S.DateTimeUtc``, ``MutableJson`` is ``S.Json`` and
@@ -455,11 +454,12 @@ def _tagged(tag: str, value: JsonSchema | None = None) -> JsonSchema:
 
 def test_duration():
     """Declaration / Duration"""
-    # Python: a timedelta is never infinite.
     _check(
         S.Duration,
         {
             "anyOf": [
+                _tagged("Infinity"),
+                _tagged("NegativeInfinity"),
                 _tagged("Nanos", {"type": "string", "pattern": "^-?\\d+$"}),
                 _tagged("Millis", _INT),
             ]

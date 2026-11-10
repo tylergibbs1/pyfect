@@ -25,6 +25,7 @@ from pyfect.effect import fail, succeed, suspend, sync
 from pyfect.exit import Exit
 from pyfect.http.asgi._serve import AsgiHandler
 from pyfect.http.asgi._types import Receive, Scope, Send
+from pyfect.http.live_server._listener import ABORT_GRACE_PERIOD
 from pyfect.http.server import HttpApp, HttpServerService, Middleware
 from pyfect.http.server import make as make_server
 from pyfect.net.net_address import inet_address_from_native_unsafe
@@ -196,6 +197,12 @@ def graceful(options: ListenOptions) -> Duration:
     if options.get("disable_preemptive_shutdown", False):
         return zero
     return from_input_unsafe(options.get("graceful_shutdown_timeout", "20 seconds"))
+
+
+def engine_backstop_seconds(options: ListenOptions) -> float:
+    """The engine's own graceful timeout, in seconds as its config takes it: the
+    graceful shutdown timeout plus the abort grace period."""
+    return (graceful(options) + ABORT_GRACE_PERIOD).to_seconds()
 
 
 def _serve(

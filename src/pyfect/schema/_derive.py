@@ -4,7 +4,7 @@ classes: ``str`` String, ``int`` Int, ``float`` Number, ``bool`` Boolean,
 ``X | Y`` Union, an ``Enum`` Enum, a ``TypedDict`` Struct, ``dict[K, V]`` /
 ``Mapping[K, V]`` Record, ``list[X]`` List, ``tuple[X, ...]`` /
 ``Sequence[X]`` Array, ``tuple[X, Y]`` Tuple, ``frozenset[X]`` /
-``AbstractSet[X]`` FrozenSet, ``Redacted[X]`` Redacted, ``timedelta``
+``AbstractSet[X]`` FrozenSet, ``Redacted[X]`` Redacted, ``duration.Duration``
 Duration, ``bytes`` Bytes, ``ZoneInfo`` TimeZoneNamed, ``timezone``
 TimeZoneOffset, ``Url`` URL, ``JsonValue`` Json, a schema class itself; ``Annotated[T, ...]`` and
 a ``NewType`` stand for ``T``, a ``type`` alias for its value. Anything
@@ -24,6 +24,7 @@ from typing import Any, cast, get_args, get_origin, get_type_hints, is_typeddict
 from weakref import WeakKeyDictionary
 from zoneinfo import ZoneInfo
 
+from pyfect import duration as _duration
 from pyfect._url import Url
 from pyfect.redacted import Redacted as _Redacted
 from pyfect.schema import ast
@@ -50,7 +51,7 @@ _SIMPLE: dict[object, AnyBottom] = {
     type(None): Null,
     object: Unknown,
     Any: AnySchema,
-    datetime.timedelta: Duration,
+    _duration.Duration: Duration,
     bytes: Bytes,
     ZoneInfo: TimeZoneNamed,
     datetime.timezone: TimeZoneOffset,

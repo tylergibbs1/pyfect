@@ -946,7 +946,7 @@ def test_preliminary_results_before_failure():
 
 class Job(TypedDict):
     name: str
-    delay: float
+    delay: Duration
 
 
 class JobLoading(TypedDict):
@@ -963,12 +963,10 @@ class JobComplete(TypedDict):
 @testing.effect
 def test_concurrent_preliminary_results():
     """Preliminary Results / should interleave results from concurrent tools with preliminary results"""  # noqa: E501
-    # Effect's ``Schema.DurationFromMillis`` parameter is a number of
-    # milliseconds here (pyfect has no such codec).
     tool = T.make(
         "ConcurrentIncrementalTool",
         description="A test tool",
-        parameters=S.Struct(Job),
+        parameters=S.Struct(Job, delay=S.DurationFromMillis),
         success=S.Union(S.Struct(JobLoading), S.Struct(JobComplete)),
     )
     toolkit = K.make(tool)
@@ -977,7 +975,7 @@ def test_concurrent_preliminary_results():
         loading = JobLoading(status="loading", job=params["name"], progress=50)
         return (
             ctx.preliminary(loading)
-            .and_then(fx.sleep(Duration(params["delay"] / 1000)))
+            .and_then(fx.sleep(params["delay"]))
             .as_(JobComplete(status="complete", job=params["name"]))
         )
 

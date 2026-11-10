@@ -303,7 +303,7 @@ class _Transport:
         conn = self.connection
         if self.active > 0 or conn is None:
             return fx.void
-        if self.timing.idle_timeout == 0:
+        if self.timing.idle_timeout.is_zero():
             return self.close(conn)
         self.idle_generation += 1
         generation = self.idle_generation

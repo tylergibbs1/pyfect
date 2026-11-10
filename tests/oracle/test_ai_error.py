@@ -13,12 +13,12 @@ from __future__ import annotations
 # pyright: reportPrivateUsage=false
 import json
 import re
-from datetime import timedelta
 from typing import Any, Never, TypedDict
 
 import pytest
 
 import pyfect as fx
+from pyfect import duration as fx_duration
 from pyfect import redacted, testing
 from pyfect import schema as S
 from pyfect.ai import ai_error as E
@@ -197,7 +197,7 @@ def test_tag(cls: type[E.AiErrorReason]):
     ("reason", "patterns"),
     [
         pytest.param(
-            E.RateLimitError(retry_after=timedelta(seconds=60)),
+            E.RateLimitError(retry_after=fx_duration.seconds(60)),
             ["Retry after"],
             id="RateLimitError / should format message with retryAfter",
         ),
@@ -430,7 +430,7 @@ def test_delegates_retry_after():
     with_retry = E.AiError(
         module="OpenAI",
         method="completion",
-        reason=E.RateLimitError(retry_after=timedelta(seconds=60)),
+        reason=E.RateLimitError(retry_after=fx_duration.seconds(60)),
     )
     assert with_retry.retry_after is not None
     without = E.AiError(
@@ -550,7 +550,7 @@ def test_http_context_roundtrip():
 
 def test_rate_limit_roundtrip():
     """schema roundtrip / RateLimitError roundtrip"""
-    decoded = _roundtrip(E.RateLimitError, E.RateLimitError(retry_after=timedelta(seconds=60)))
+    decoded = _roundtrip(E.RateLimitError, E.RateLimitError(retry_after=fx_duration.seconds(60)))
     assert decoded._tag == "RateLimitError"
     assert decoded.retry_after is not None
 

@@ -1,8 +1,7 @@
 """Encoded values with no Python form are a ``SchemaError``, never a defect
-(QA schema-data F03). Effect's ``Duration`` and ``TimeZone.Offset`` are not
-bounded; ``timedelta`` holds less than a billion days and ``timezone``
-offsets lie strictly inside a day, so pyfect rejects the rest as invalid
-values (PARITY §4).
+(QA schema-data F03). Effect's ``TimeZone.Offset`` is not bounded; ``timezone``
+offsets lie strictly inside a day, so pyfect rejects the rest as invalid values
+(PARITY §4). A ``Duration`` holds any length, as Effect's does.
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from pyfect import duration
 from pyfect import schema as S
 
 
@@ -28,13 +28,6 @@ def _decode_json(schema: Any, value: object) -> object:
             f'Expected an integer, got {10**20}\n  at ["value"]',
         ),
         (
-            S.Duration,
-            {"_tag": "Nanos", "value": "9" * 30},
-            'Expected a duration a timedelta can hold, got {"_tag":"Nanos","value":'
-            + "9" * 30
-            + "}",
-        ),
-        (
             S.TimeZoneOffset,
             86400000,
             "Expected an offset strictly between -24 and +24 hours, got 86400000",
@@ -45,6 +38,12 @@ def test_an_out_of_range_json_value_is_a_schema_error(schema: Any, value: object
     with pytest.raises(S.SchemaError) as error:
         S.decode_unknown_sync(S.to_codec_json(schema), report_input=True)(value)
     assert str(error.value) == message
+
+
+def test_a_duration_of_any_length_decodes_from_json():
+    assert _decode_json(S.Duration, {"_tag": "Nanos", "value": "9" * 30}) == duration.nanos(
+        10**30 - 1
+    )
 
 
 def test_the_largest_offset_inside_a_day_still_decodes():

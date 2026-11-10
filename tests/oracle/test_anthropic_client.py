@@ -6,12 +6,12 @@ from __future__ import annotations
 
 # pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
 # pyright: reportUnknownMemberType=false, reportUnknownLambdaType=false
-from datetime import timedelta
 from typing import Any
 
 import pytest
 
 import pyfect as fx
+from pyfect import duration as fx_duration
 from pyfect import testing
 from pyfect.ai import ai_error as E
 from pyfect.ai.anthropic import _errors, client
@@ -66,7 +66,7 @@ def test_gateway_429_retry_after():
     )
     reason = error.reason
     assert isinstance(reason, E.RateLimitError)
-    assert reason.retry_after == timedelta(seconds=3)
+    assert reason.retry_after == fx_duration.seconds(3)
     assert reason.http is not None
     assert reason.http.get("response", {}).get("status") == 429
 
@@ -76,7 +76,7 @@ def test_gateway_429_retry_after():
     [
         ("-5", None),
         ("Infinity", None),
-        ("Thu, 01 Jan 1970 00:00:30 GMT", timedelta(seconds=30)),
+        ("Thu, 01 Jan 1970 00:00:30 GMT", fx_duration.seconds(30)),
     ],
     ids=[
         "ignores a negative Retry-After",
@@ -85,7 +85,7 @@ def test_gateway_429_retry_after():
     ],
 )
 @testing.effect
-def test_retry_after_header(header: str, expected: timedelta | None):
+def test_retry_after_header(header: str, expected: fx_duration.Duration | None):
     """$name (ignores a negative / non-finite Retry-After, honors an HTTP-date Retry-After)"""
     error = yield from _create_error(
         mock_json(
@@ -107,7 +107,7 @@ def test_envelope_429_retry_after():
     error = yield from _create_error(mock_json(body, status=429, headers={"retry-after": "3"}))
     reason = error.reason
     assert isinstance(reason, E.RateLimitError)
-    assert reason.retry_after == timedelta(seconds=3)
+    assert reason.retry_after == fx_duration.seconds(3)
     assert reason.http is not None
     assert reason.http.get("response", {}).get("status") == 429
 

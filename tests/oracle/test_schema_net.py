@@ -11,7 +11,7 @@ from typing import Never
 import pytest
 
 from pyfect import schema as S
-from pyfect.duration import millis
+from pyfect.duration import Duration, infinity, millis, seconds
 from pyfect.net import dns, ip_network
 from pyfect.net import host as h
 from pyfect.net import net_address as na
@@ -159,3 +159,18 @@ def test_a_caa_tag_is_checked_by_its_json_pattern() -> None:
             {"_tag": "CAA", "critical": False, "tag": "is-sue", "value": "x"}
         )
     assert str(error.value) == 'Expected a string matching the RegExp ^[a-z0-9]+$\n  at ["tag"]'
+
+
+@pytest.mark.parametrize("refresh", [millis(1500), infinity, seconds(2**32)])
+def test_an_soa_timer_is_whole_seconds_that_fit_32_bits(refresh: Duration) -> None:
+    """pyfect: Effect's ``isTimer`` takes a finite ``Duration`` of whole uint32 seconds."""
+    with pytest.raises(na.NetAddressError, match="invalid SOA record refresh"):
+        dns.Soa(
+            primary=h.domain_name_from_string_unsafe("ns.example.com"),
+            admin="hostmaster.example.com",
+            serial=1,
+            refresh=refresh,
+            retry=seconds(600),
+            expire=seconds(604_800),
+            minimum=seconds(300),
+        )

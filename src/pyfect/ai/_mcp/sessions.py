@@ -8,7 +8,6 @@ under a size limit. Effect's table has none of these (see PARITY.md).
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 
 from pyfect import byte_size
@@ -41,7 +40,7 @@ def limits(
     if isinstance(max_sessions, bool) or max_sessions < 1:
         return fail(IllegalArgumentError(f"max_sessions must be at least 1, got {max_sessions!r}"))
     timeout = from_input_unsafe(idle_timeout)
-    if not timeout > 0:
+    if not timeout.is_positive():
         return fail(
             IllegalArgumentError(f"session_idle_timeout must be positive, got {idle_timeout!r}")
         )
@@ -75,8 +74,8 @@ class Table:
     def _idle(self, entry: _Entry, now: float) -> bool:
         timeout = self.limits.idle_timeout
         return (
-            not math.isinf(timeout)
-            and now - entry.last_used > timeout
+            timeout.is_finite()
+            and now - entry.last_used > timeout.to_seconds()
             and not entry.connection.busy
         )
 

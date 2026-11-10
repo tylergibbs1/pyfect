@@ -26,12 +26,16 @@ except ImportError as error:  # pragma: no cover - depends on the environment
 
 from pyfect._core import Effect
 from pyfect.file_system import FileSystem
-from pyfect.http._asgi_listener import Dispatch, ListenOptions, graceful, make_listener
+from pyfect.http._asgi_listener import (
+    Dispatch,
+    ListenOptions,
+    engine_backstop_seconds,
+    make_listener,
+)
 from pyfect.http.client import HttpClient
 from pyfect.http.etag import Generator
 from pyfect.http.httpx_client import layer as httpx_layer
 from pyfect.http.live_server import layer_services
-from pyfect.http.live_server._listener import ABORT_GRACE_PERIOD
 from pyfect.http.platform import HttpPlatform
 from pyfect.http.server import HttpServer, HttpServerService, layer_test_client
 from pyfect.layer import Layer, merge, provide_merge
@@ -53,7 +57,7 @@ class _Hypercorn:
     def __init__(self, dispatch: Dispatch, options: Options) -> None:
         self.dispatch = dispatch
         self.config = Config()
-        self.config.graceful_timeout = graceful(options) + ABORT_GRACE_PERIOD
+        self.config.graceful_timeout = engine_backstop_seconds(options)
         for name, value in options.get("config", {}).items():
             setattr(self.config, name, value)
         self.started = False

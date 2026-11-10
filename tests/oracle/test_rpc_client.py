@@ -880,8 +880,8 @@ class _LateClock:
     def monotonic_nanos_unsafe(self) -> int:
         return self._clock.monotonic_nanos_unsafe()
 
-    def sleep(self, seconds: Duration) -> Effect[None]:
-        return self._clock.sleep(Duration(seconds + 0.001))
+    def sleep(self, duration: Duration) -> Effect[None]:
+        return self._clock.sleep(duration + fx.duration.millis(1))
 
 
 @testing.effect

@@ -16,7 +16,7 @@ from pyfect._js import text_encode
 from pyfect._json_text import PARSE_ERRORS, STRINGIFY_ERRORS, Json, parse, stringify
 from pyfect._json_value import JsonValue
 from pyfect.crypto.crypto_error import CryptoError
-from pyfect.duration import Duration, from_input, to_millis
+from pyfect.duration import Duration, DurationObject, from_input, to_millis
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import fail as fail_effect
 from pyfect.effect import succeed
@@ -193,7 +193,7 @@ def _has_invalid_component(duration: DurationInput) -> bool:
                     continue
                 if not math.isfinite(component):
                     return True
-                single = cast("DurationParts", {unit: component})
+                single = cast("DurationObject", {unit: component})
                 if not math.isfinite(to_millis(single)):
                     return True
             return False

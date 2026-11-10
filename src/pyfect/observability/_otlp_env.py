@@ -9,7 +9,8 @@ from pyfect import config
 from pyfect import schema as S
 from pyfect._js import trim
 from pyfect._url import Url
-from pyfect.duration import Duration, from_millis
+from pyfect.duration import Duration
+from pyfect.duration import millis as millis_duration
 from pyfect.effect import Effect, gen
 from pyfect.http import url as _url
 from pyfect.observability.otlp_exporter import Compression
@@ -85,12 +86,11 @@ def compression(signal: Signal) -> Effect[Compression, config.ConfigError]:
 
 
 def millis(name: str) -> Effect[Duration | None, config.ConfigError]:
-    """An integer number of milliseconds at ``name``, as seconds; ``None``
-    when unset."""
+    """An integer number of milliseconds at ``name``; ``None`` when unset."""
     return (
         config.integer(name)
         .option()
-        .map(lambda value: from_millis(value.value) if isinstance(value, Some) else None)
+        .map(lambda value: millis_duration(value.value) if isinstance(value, Some) else None)
     )
 
 

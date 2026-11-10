@@ -13,7 +13,6 @@ from pyfect import testing
 from pyfect.deferred import Deferred
 from pyfect.devtools import client as devtools_client
 from pyfect.devtools import layer_socket
-from pyfect.duration import Duration
 from pyfect.latch import Latch
 from pyfect.socket import CloseEvent, Reader, Socket, SocketError, Writer
 from pyfect.socket import make as make_socket
@@ -42,7 +41,7 @@ def connection(drop_after: float | None = None):
             disconnected = (
                 closed.wait()
                 if drop_after is None
-                else fx.sleep(Duration(drop_after)).race_first(closed.wait())
+                else fx.sleep(fx.duration.seconds(drop_after)).race_first(closed.wait())
             )
             return disconnected.and_then(fx.fail(_close_error(1006)))
 

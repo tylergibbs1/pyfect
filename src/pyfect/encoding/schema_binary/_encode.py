@@ -15,6 +15,7 @@ from pyfect._js import text_encode
 from pyfect._json_text import STRINGIFY_ERRORS, stringify
 from pyfect._stack import stack_nearly_full, with_fresh_stack
 from pyfect.cause import Cause, Die, Fail, Interrupt
+from pyfect.duration import Duration, Infinity, Millis, Nanos, NegativeInfinity
 from pyfect.encoding.schema_binary import _dictionary as D
 from pyfect.encoding.schema_binary import _layout as L
 from pyfect.encoding.schema_binary import _wire as W
@@ -35,7 +36,6 @@ from pyfect.schema.issue import InvalidType, Issue, MissingKey, UnexpectedKey, r
 
 EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _MILLISECOND = timedelta(milliseconds=1)
-_MICROSECOND = timedelta(microseconds=1)
 _STACK_CHECK_EVERY = 32
 
 _INTERN_DISABLE_AT = 64
@@ -714,10 +714,19 @@ def _date_time_zoned(ctx: _Context, _: L.LeafLayout, value: Any, w: W.Writer) ->
 
 
 def _duration(ctx: _Context, _: L.LeafLayout, value: object, w: W.Writer) -> None:
-    if not isinstance(value, timedelta):
+    if not isinstance(value, Duration):
         raise ctx.fail("a Duration", value)
-    w.byte(0)
-    w.zigzag((value // _MICROSECOND) * 1000)
+    match value.value:
+        case Infinity():
+            w.byte(1)
+        case NegativeInfinity():
+            w.byte(2)
+        case Nanos(nanos=count):
+            w.byte(0)
+            w.zigzag(count)
+        case Millis(millis=count):
+            w.byte(0)
+            w.zigzag(int(count) * 1_000_000)
 
 
 def _big_decimal(ctx: _Context, _: L.LeafLayout, value: object, w: W.Writer) -> None:

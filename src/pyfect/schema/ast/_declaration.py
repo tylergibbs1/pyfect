@@ -1,6 +1,6 @@
 """``Declaration``: values a function parses, given the nodes of its type
 parameters (Effect's ``Declaration``): ``Option(A)``, ``frozenset[A]``,
-``timedelta``, ...
+``ZoneInfo``, ...
 
 ``run(type_parameters)`` makes the parser on first use; the parser gets
 the input, the declaration itself (for its issues) and the parse options.

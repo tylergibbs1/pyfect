@@ -10,6 +10,7 @@ from typing import TypeIs
 from pyfect import _js as js
 from pyfect import schema as S
 from pyfect.duration import Duration, to_millis
+from pyfect.duration import millis as duration_millis
 from pyfect.schema import transformation as T
 
 
@@ -30,11 +31,8 @@ def whole_nanos(millis: float) -> float:
 
 
 def millis(value: float) -> Duration:
-    """``Seconds`` of ``value`` milliseconds in whole nanoseconds (Effect's
-    ``Duration.millis``); NaN is zero."""
-    if not math.isfinite(value) or float(value).is_integer():
-        return Duration(value / 1000)
-    return Duration(_round_away(value * 1_000_000) / 1_000_000_000)
+    """Effect's ``Duration.millis``; NaN is zero."""
+    return duration_millis(value)
 
 
 def divide_millis(millis: float, by: float) -> float:

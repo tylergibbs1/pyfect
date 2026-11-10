@@ -15,7 +15,6 @@ shape): the duration must be finite and non-negative.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import TypeIs
@@ -208,7 +207,7 @@ def JsonFromUrlParamsField(field: str, /) -> DecodeToSchema[object, _url_params.
 
 def _is_retry_after(value: object) -> TypeIs[_headers.RetryAfter]:
     if isinstance(value, _headers.RetryAfterDuration):
-        return math.isfinite(value.duration) and value.duration >= 0
+        return value.duration.is_finite() and not value.duration.is_negative()
     return isinstance(value, _headers.RetryAfterDateTime)
 
 

@@ -232,7 +232,7 @@ def make(
     what is left and waits up to ``shutdown_timeout`` for its exports,
     then interrupts them. ``"gzip"`` compression happens once, before the
     retries; ``body``'s effect runs after a successful post."""
-    interval = Duration(max(from_input_unsafe(export_interval), zero))
+    interval = from_input_unsafe(export_interval).max(zero)
     timeout = from_input_unsafe(shutdown_timeout)
 
     @gen

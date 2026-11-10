@@ -1,7 +1,7 @@
 """Rate limiting requests (Effect's ``HttpClient.withRateLimiter``).
 
 Budgets and reset times are in epoch milliseconds, as Effect keeps them,
-so header arithmetic matches it; windows and delays are ``Seconds``.
+so header arithmetic matches it; windows and delays are ``Duration``s.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from pyfect.clock import ClockService, clock_with, sleep
-from pyfect.duration import Duration, to_millis
+from pyfect.duration import Duration, from_input_unsafe, millis, seconds, to_millis
 from pyfect.duration import Input as DurationInput
 from pyfect.effect import Effect, fail, succeed
 from pyfect.http.client._retry import retry_after_from_header
@@ -21,7 +21,6 @@ from pyfect.http.error import HttpClientError, StatusCodeError
 from pyfect.http.headers import Headers
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
-from pyfect.persistence._seconds import millis
 from pyfect.persistence.rate_limiter._store import clamp_adaptive_millis
 
 if TYPE_CHECKING:
@@ -125,11 +124,14 @@ def _now_millis(clock: ClockService) -> int:
     return clock.now_nanos_unsafe() // 1_000_000
 
 
+_MIN_DELAY = millis(1)
+
+
 def _reset_after(value: str | None) -> Duration | None:
     numeric = _number(value)
     if numeric is None or numeric <= 0:
         return None
-    return Duration(max(numeric, 0.001))
+    return seconds(numeric).max(_MIN_DELAY)
 
 
 def _reset(now: float, value: str | None) -> Duration | None:
@@ -140,7 +142,7 @@ def _reset(now: float, value: str | None) -> Duration | None:
         return millis(max(numeric - now, _MIN_MILLIS))
     if numeric > 1_000_000_000:
         return millis(max(numeric * 1000 - now, _MIN_MILLIS))
-    return Duration(max(numeric, 0.001))
+    return seconds(numeric).max(_MIN_DELAY)
 
 
 class _Inspector:
@@ -228,7 +230,7 @@ class _Limited:
             if options.disable_response_inspection
             else _Inspector(_header_names(options.response_headers))
         )
-        window = millis(max(to_millis(options.window), _MIN_MILLIS))
+        window = from_input_unsafe(options.window).max(_MIN_DELAY)
         self._initial = _Limits(options.limit, window, initial=True)
         self._limits: dict[str, _Limits] = {}
         self._budgets: dict[str, _Budget] = {}
@@ -331,7 +333,7 @@ class _Attempt:
         options = self._limited.options
 
         def admitted(delay: Duration) -> Send:
-            if delay == 0:
+            if delay.is_zero():
                 return self._paced()
             return sleep(delay).flat_map(lambda _: self._paced())
 
@@ -350,7 +352,7 @@ class _Attempt:
             return self._request_once(None)
 
         def paced(adaptive: AdaptiveConsumeResult) -> Send:
-            if adaptive.delay != 0 and adaptive.phase == "cooldown":
+            if not adaptive.delay.is_zero() and adaptive.phase == "cooldown":
                 return sleep(adaptive.delay).flat_map(lambda _: self._paced())
             return self._request_once(adaptive)
 
@@ -383,7 +385,7 @@ class _Attempt:
             )
 
         sent = self._sending.match_effect(on_failure=on_failure, on_success=on_success)
-        if adaptive is None or adaptive.delay == 0:
+        if adaptive is None or adaptive.delay.is_zero():
             return sent
         return sleep(adaptive.delay).flat_map(lambda _: sent)
 

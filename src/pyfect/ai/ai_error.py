@@ -15,14 +15,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, ClassVar, Literal, Self, TypedDict, cast
 
 from pyfect import schema as S
 from pyfect._json_value import JsonValue
 from pyfect._wire_codec import Const, Key, key, wire_codec
 from pyfect.date_time._iso import utc_to_string
-from pyfect.duration import format_duration, from_input_unsafe
+from pyfect.duration import Duration
 from pyfect.errors import TaggedError
 from pyfect.http import error as http_error
 from pyfect.redacted import Redacted
@@ -174,7 +174,7 @@ class RateLimitError(AiErrorReason):
     """Too many requests; ``retry_after`` says when to try again."""
 
     _tag: ClassVar[str] = "RateLimitError"
-    retry_after: timedelta | None = None
+    retry_after: Duration | None = None
     metadata: ProviderMetadata = field(default_factory=dict[str, JsonValue])
     http: HttpContext | None = None
 
@@ -186,7 +186,7 @@ class RateLimitError(AiErrorReason):
     def message(self) -> str:
         msg = "Rate limit exceeded"
         if self.retry_after is not None:
-            msg += f". Retry after {format_duration(from_input_unsafe(self.retry_after))}"
+            msg += f". Retry after {self.retry_after.format()}"
         return msg
 
 
@@ -524,7 +524,7 @@ class AiError(TaggedError):
         return self.reason.is_retryable
 
     @property
-    def retry_after(self) -> timedelta | None:
+    def retry_after(self) -> Duration | None:
         return self.reason.retry_after if isinstance(self.reason, RateLimitError) else None
 
     @property

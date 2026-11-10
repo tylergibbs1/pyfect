@@ -12,8 +12,8 @@ Adapted:
 - ``Schema.Chunk``/``HashMap``/``HashSet`` are ``S.List``/``S.Map``/``S.FrozenSet``.
 - ``Schema.Date`` has no Python schema (``S.DateTimeUtc`` is a ``datetime``); its
   lines use ``DateTimeUtc``. Symbols are dropped.
-- ``timedelta`` cannot be infinite, and ``datetime`` covers years 1 to 9999: the
-  boundaries are those, and reading past them is the failure.
+- ``datetime`` covers years 1 to 9999: the boundaries are those, and reading past
+  them is the failure.
 """
 # pyright: reportPrivateUsage=false, reportUnknownMemberType=false
 
@@ -27,6 +27,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import big_decimal as bd
+from pyfect import duration
 from pyfect import exit as Exit
 from pyfect import schema as S
 from pyfect.cause import Cause, Die, Fail, Interrupt
@@ -188,9 +189,10 @@ def test_round_trips_bigint_date_bytes_option_and_result() -> None:
 
 def test_round_trips_duration_and_normalized_big_decimal() -> None:
     """round-trips Duration and normalized BigDecimal"""
-    assert roundtrip(S.Duration, timedelta(milliseconds=1.5)) == timedelta(microseconds=1500)
-    assert roundtrip(S.Duration, timedelta(microseconds=-7)) == timedelta(microseconds=-7)
-    assert roundtrip(S.Duration, timedelta(0)) == timedelta(0)
+    assert roundtrip(S.Duration, duration.millis(1.5)).to_nanos_unsafe() == 1_500_000
+    assert roundtrip(S.Duration, duration.infinity) is duration.infinity
+    assert roundtrip(S.Duration, duration.negative_infinity) is duration.negative_infinity
+    assert roundtrip(S.Duration, duration.nanos(-7)).to_nanos_unsafe() == -7
     decimal = roundtrip(S.BigDecimal, bd.make(100, 2))
     assert (decimal.value, decimal.scale) == (1, 0)
     negative = roundtrip(S.BigDecimal, bd.make(-123, -4))

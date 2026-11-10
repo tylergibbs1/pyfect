@@ -109,8 +109,8 @@ output_schema=...)` are the same as channels for `Stream.pipe_through_channel`.
 Field ids are hashes of their names, so renaming a field changes its wire identity:
 `S.String.pipe(schema_binary.field_id(7))` fixes it across a rename. `S.field(S.String, key="primaryKey")`
 gives a snake_case attribute Effect's camelCase field, on every wire. A `datetime` is written
-in whole milliseconds. Python has no infinite `timedelta` and its dates cover years 1 to 9999,
-so Effect's values beyond those fail to read here.
+in whole milliseconds and a `Duration` in nanoseconds. Python's dates cover years 1 to 9999,
+so Effect's dates beyond those fail to read here.
 
 Numbers are varints by default. `schema_binary.int32` and `uint32` write four little-endian
 bytes, and `int64` and `uint64` eight; they reject a value out of range instead of wrapping it,

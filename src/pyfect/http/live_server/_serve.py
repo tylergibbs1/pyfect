@@ -208,7 +208,7 @@ def serve_connection(
             state.idle = True
             inbound.deadline = None
             data = yield from next_head(first)
-            inbound.deadline = time.monotonic() + timeouts.request
+            inbound.deadline = time.monotonic() + timeouts.request.to_seconds()
             first = False
             state.idle = False
             head = parsed(data)
@@ -217,7 +217,7 @@ def serve_connection(
             if isinstance(head, int):
                 yield from _reject(conn, head)
                 return
-            exchange = Exchange(conn, inbound, head, int(timeouts.keep_alive))
+            exchange = Exchange(conn, inbound, head, int(timeouts.keep_alive.to_seconds()))
             request = _request(exchange, protocol, remote_address, websocket)
             yield from _run_request(exchange, handle(request, exchange))
             if not (yield from after(exchange)):

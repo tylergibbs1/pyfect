@@ -15,13 +15,14 @@ Adapted:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from pyfect import big_decimal as bd
+from pyfect import duration
 from pyfect import exit as Exit
 from pyfect import schema as S
 from pyfect.cause import Cause, Die, Fail, Interrupt
@@ -210,7 +211,7 @@ def test_round_trips_native_declarations_recursion_and_mixed_unions() -> None:
         "result": Err("boom"),
         "big": 2**70,
         "bytes": bytes((1, 2, 3)),
-        "duration": timedelta(seconds=1.5),
+        "duration": duration.nanos(1_500_000_000),
         "decimal": bd.make(123, 2),
     }
     decoded = roundtrip_fp(natives, value)
@@ -218,7 +219,7 @@ def test_round_trips_native_declarations_recursion_and_mixed_unions() -> None:
     assert decoded["result"] == value["result"]
     assert decoded["big"] == value["big"]
     assert decoded["bytes"] == bytes((1, 2, 3))
-    assert decoded["duration"] == timedelta(seconds=1.5)
+    assert decoded["duration"].to_nanos_unsafe() == 1_500_000_000
     assert (decoded["decimal"].value, decoded["decimal"].scale) == (123, 2)
     tree = {"value": 1, "children": ({"value": 2, "children": ()}, {"value": 3, "children": ()})}
     assert roundtrip_fp(_tree(), tree) == tree

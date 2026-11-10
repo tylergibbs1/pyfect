@@ -4,7 +4,6 @@ signal), plus ``set_idle_ttl``, ``family`` and ``initial_value``."""
 
 from __future__ import annotations
 
-import math
 import traceback
 import weakref
 from collections.abc import Callable, Hashable
@@ -22,9 +21,9 @@ from pyfect.reactivity.atom_registry import InitialValue
 def set_idle_ttl[T: Atom[Any]](atom: T, duration: DurationInput) -> T:
     """``atom`` kept ``duration`` after it is last used (an infinite
     duration keeps it alive)."""
-    seconds = from_input_unsafe(duration)
-    finite = not math.isinf(seconds)
-    return atom._with(kept_alive=not finite, idle_ttl=seconds if finite else None)  # pyright: ignore[reportPrivateUsage]
+    ttl = from_input_unsafe(duration)
+    finite = ttl.is_finite()
+    return atom._with(kept_alive=not finite, idle_ttl=ttl if finite else None)  # pyright: ignore[reportPrivateUsage]
 
 
 def remove_ttl[T: Atom[Any]](atom: T) -> T:

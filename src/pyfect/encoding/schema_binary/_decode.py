@@ -11,6 +11,7 @@ from pyfect._json_text import PARSE_ERRORS, parse
 from pyfect._stack import stack_nearly_full, with_fresh_stack
 from pyfect.cause import Cause, Die, Fail, Interrupt, Reason
 from pyfect.date_time import zone_named
+from pyfect.duration import infinity, nanos, negative_infinity
 from pyfect.encoding.schema_binary import _dictionary as D
 from pyfect.encoding.schema_binary import _layout as L
 from pyfect.encoding.schema_binary import _wire as W
@@ -724,14 +725,15 @@ def _date_time_zoned(_: L.LeafLayout, r: Reader) -> object:
 
 
 def _duration(_: L.LeafLayout, r: Reader) -> object:
-    tag = r.byte()
-    if tag != 0:
-        # A ``timedelta`` cannot be infinite (Effect's tags 1 and 2).
-        raise r.fail("duration")
-    try:
-        return timedelta(microseconds=r.zigzag() // 1000)
-    except OverflowError as error:
-        raise r.fail("duration") from error
+    match r.byte():
+        case 0:
+            return nanos(r.zigzag())
+        case 1:
+            return infinity
+        case 2:
+            return negative_infinity
+        case _:
+            raise r.fail("duration")
 
 
 def _big_decimal(_: L.LeafLayout, r: Reader) -> object:

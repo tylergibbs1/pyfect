@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from ipaddress import IPv4Address
 
 from pyfect._digits import parse_digits
-from pyfect.duration import Duration
+from pyfect.duration import Duration, seconds
 from pyfect.net.dns._error import DnsErrorReason
 from pyfect.net.net_address._inet import InetAddress, InetAddressV4, InetAddressV6
 from pyfect.result import Err, Ok, Result
@@ -72,7 +72,7 @@ def parse_resolv_conf(text: str) -> ResolverConfig:
                         attempts = max(number, 1)
             case _:
                 pass
-    return ResolverConfig(tuple(servers) or (_LOCALHOST,), Duration(timeout), attempts)
+    return ResolverConfig(tuple(servers) or (_LOCALHOST,), seconds(timeout), attempts)
 
 
 def system_config() -> ResolverConfig:
@@ -222,9 +222,9 @@ def query_ptr(name: str, config: ResolverConfig) -> Result[list[str], DnsErrorRe
             query_id = secrets.randbelow(0x10000)
             query = ptr_query(query_id, name)
             try:
-                packet = _over_udp(server, query, query_id, config.timeout)
+                packet = _over_udp(server, query, query_id, config.timeout.to_seconds())
                 if _is_truncated(packet):
-                    packet = _over_tcp(server, query, config.timeout)
+                    packet = _over_tcp(server, query, config.timeout.to_seconds())
             except TimeoutError:
                 last = "Timeout"
                 continue

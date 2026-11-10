@@ -3,14 +3,15 @@ ai-workflow AI-2, AI-3)."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
+from pyfect import duration as fx_duration
 from pyfect.ai import ai_error as E
 
 
 def test_a_zero_retry_after_is_in_the_message():
     """A ``Duration`` is an object, so ``if (this.retryAfter)`` keeps zero."""
-    error = E.RateLimitError(retry_after=timedelta(0))
+    error = E.RateLimitError(retry_after=fx_duration.zero)
     assert error.message == "Rate limit exceeded. Retry after 0"
 
 

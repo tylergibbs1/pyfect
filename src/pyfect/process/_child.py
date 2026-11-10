@@ -137,7 +137,7 @@ class Child:
 
         def start(scheduler: Scheduler) -> Effect[None]:
             def register(resume: Callable[[Effect[None]], None]) -> Effect[None]:
-                deadline = time.monotonic() + timeout
+                deadline = time.monotonic() + timeout.to_seconds()
                 pending: list[Cancel] = []
 
                 def poll() -> None:

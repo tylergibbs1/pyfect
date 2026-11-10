@@ -18,9 +18,9 @@ smaller frames, and rejects a peer whose encoded layout differs.
 for concatenated frames and ``encoder`` for a writer with a connection-scoped
 string dictionary; ``encode``, ``decode`` and ``duplex`` are channels.
 
-A ``datetime`` is written in milliseconds and a ``timedelta`` in nanoseconds,
-as Effect's are. A ``timedelta`` cannot hold Effect's infinite durations, nor
-a ``datetime`` its dates outside years 1 to 9999: reading one fails.
+A ``datetime`` is written in milliseconds and a ``Duration`` in nanoseconds,
+as Effect's are. A ``datetime`` cannot hold Effect's dates outside years 1 to
+9999: reading one fails.
 """
 
 from __future__ import annotations
