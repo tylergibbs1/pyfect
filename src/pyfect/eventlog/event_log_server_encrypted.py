@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from typing import Never
 
 from pyfect._core import Effect
+from pyfect._public import publish
 from pyfect.effect import fail, gen
 from pyfect.eventlog import _uuid
 from pyfect.eventlog._server_encrypted.handlers import layer_compaction_rpc_handlers
@@ -88,6 +89,8 @@ __all__ = [
     "make_storage_memory",
     "make_storage_memory_with",
 ]
+
+publish(globals())
 
 
 class EventLogEncryptedServerRpcs(EventLogRemoteRpcs, EventLogCompactionRpcs):

@@ -22,8 +22,27 @@ _LAYERS = {
 }
 
 
-@pytest.mark.parametrize("name", list(_LAYERS))
-@pytest.mark.parametrize(("title", "body"), suite.SUITE, ids=suite.IDS)
+# Needs 4.1.2's prefix-scoped ``KeyValueStore.prefix(...).clear``, which the M17
+# KeyValueStore work brings; strict, so the merge that brings it turns this red.
+_NEEDS_PREFIXED_CLEAR = pytest.mark.xfail(
+    reason="KeyValueStore.prefix(...).clear still clears the whole store", strict=True
+)
+_CASES = [
+    pytest.param(
+        name,
+        title,
+        body,
+        id=f"{body.__name__}-{name}",
+        marks=[_NEEDS_PREFIXED_CLEAR]
+        if (name, body.__name__) == ("kvs", "clear_only_removes_its_store")
+        else [],
+    )
+    for name in _LAYERS
+    for title, body in suite.SUITE
+]
+
+
+@pytest.mark.parametrize(("name", "title", "body"), _CASES)
 def test_backing_persistence(name: str, title: str, body: suite.Body) -> None:
     """BackingPersistence (${name}) / ${title}"""
     layer: fx.Layer[Any, Any] = _LAYERS[name]

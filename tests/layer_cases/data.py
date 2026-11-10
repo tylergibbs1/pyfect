@@ -29,10 +29,12 @@ from pyfect import config, config_provider, file_system, path, redacted
 from pyfect import schema as S
 from pyfect import socket as fx_socket
 from pyfect.context import Tag
+from pyfect.crypto import aead, digest, secure_random
 from pyfect.eventlog import event as Ev
 from pyfect.eventlog import event_group as G
 from pyfect.eventlog import event_journal as J
 from pyfect.eventlog import event_log as EL
+from pyfect.eventlog import event_log_encryption as Encryption
 from pyfect.eventlog import event_log_message as M
 from pyfect.eventlog import event_log_remote as Remote
 from pyfect.eventlog import event_log_server as Server
@@ -43,7 +45,7 @@ from pyfect.eventlog import sql_event_journal as SqlJournal
 from pyfect.eventlog import sql_event_log_server_encrypted as SqlEnc
 from pyfect.eventlog import sql_event_log_server_unencrypted as SqlUnenc
 from pyfect.eventlog.event_journal import Entry, RemoteEntry, StoreId
-from pyfect.eventlog.event_log_encryption import EventLogEncryption, layer_subtle
+from pyfect.eventlog.event_log_encryption import EventLogEncryption, layer_subtle, remote_batch
 from pyfect.eventlog.event_log_remote import EventLogRemoteError, EventLogRemoteService
 from pyfect.persistence import PersistenceError, persistable, persistence, redis_py
 from pyfect.persistence import circuit_breaker as cb
@@ -792,7 +794,7 @@ def _encrypt_decrypt():
     identity = yield from encryption.generate_identity
     entry = yield from _entry()
     batches = yield from encryption.encrypt(identity, _STORE, [entry])
-    remote = [Enc.remote_batch(0, batch) for batch in batches]
+    remote = [remote_batch(0, batch) for batch in batches]
     [decrypted] = yield from encryption.decrypt(identity, _STORE, remote)
     assert decrypted.entry.id == entry.id
 
@@ -962,6 +964,13 @@ _EVENTLOG: dict[str, Case] = {
     "pyfect.eventlog.event_log_encryption.layer_subtle": Case(
         layer=lambda: layer_subtle, use=_gen(_encrypt_decrypt)
     ),
+    "pyfect.eventlog.event_log_encryption.layer": Case(
+        layer=lambda: Encryption.layer,
+        needs=lambda: fx.layer.merge(aead.layer_web_crypto, digest.layer_web_crypto).pipe(
+            fx.layer.provide_merge(secure_random.layer_web_crypto)
+        ),
+        use=_gen(_encrypt_decrypt),
+    ),
     "pyfect.eventlog.event_log.layer_registry": Case(
         layer=lambda: EL.layer_registry, use=_gen(_registry_knows_handlers)
     ),
@@ -1006,9 +1015,13 @@ _EVENTLOG: dict[str, Case] = {
         layer=lambda: Enc.layer_storage_memory,
         use=_with_subtle(_encrypted_storage_round_trip),
     ),
+    "pyfect.eventlog.event_log_server_encrypted.layer_storage_memory_with": Case(
+        layer=Enc.layer_storage_memory_with,
+        use=_with_subtle(_encrypted_storage_round_trip),
+    ),
     "pyfect.eventlog.sql_event_log_server_encrypted.layer_storage": Case(
         layer=SqlEnc.layer_storage,
-        needs=lambda: fx.layer.merge(_sqlite(), layer_subtle),
+        needs=lambda: fx.layer.merge(_sqlite(), digest.layer_web_crypto),
         use=_with_subtle(_encrypted_storage_round_trip),
     ),
     "pyfect.eventlog.sql_event_log_server_encrypted.layer_storage_subtle": Case(
@@ -1076,6 +1089,11 @@ _EVENTLOG: dict[str, Case] = {
     ),
     "pyfect.eventlog.event_log_remote.layer_encrypted": Case(
         layer=lambda: Remote.layer_encrypted,
+        needs=lambda: _connected(_encrypted_server()),
+        use=_gen(_remote_write),
+    ),
+    "pyfect.eventlog.event_log_remote.layer_encrypted_with": Case(
+        layer=lambda: Remote.layer_encrypted_with(compaction=False),
         needs=lambda: _connected(_encrypted_server()),
         use=_gen(_remote_write),
     ),

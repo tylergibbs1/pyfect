@@ -16,6 +16,7 @@ from typing import Any, Never, Protocol
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
+from pyfect._public import publish
 from pyfect.cache import Cache
 from pyfect.context import Tag
 from pyfect.effect import gen, succeed
@@ -99,6 +100,8 @@ __all__ = [
     "make_unencrypted",
     "make_with",
 ]
+
+publish(globals())
 
 
 class Changes(Protocol):
