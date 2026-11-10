@@ -2,14 +2,27 @@
 
 ## 0.5.2 (unreleased)
 
+### Added
+
+- The `watch` extra (`uv add "pyfect-dev[watch]"`, on watchfiles): `FileSystem.watch` on
+  `file_system.layer` / `platform.layer` uses the operating system's change notification
+  (inotify, FSEvents, ReadDirectoryChangesW) through `file_system.WatchfilesBackend`, as Effect's
+  Node file system uses `fs.watch`, so changes arrive as they happen and a file created and
+  removed at once is still reported. Events follow Effect's: an entry that appeared or went
+  away is `Create` if it exists afterwards and `Remove` if not, a changed one is `Update`,
+  paths are relative to the watched directory. The watcher runs on its own thread, stopped and
+  joined when the stream closes. Without the extra, `watch` polls every 50 milliseconds as
+  before; a provided `WatchBackend` still comes first.
+
 ### Fixed
 
 - `zip.decode` fails on corrupt deflated data as Effect does: an entry `zlib` rejects, that
   ends early or that grows past its `size` is replayed through a port of Effect's inflater,
   so the error has Effect's kind and message (`"InvalidData"` where it gave `"Truncated"` or
   `"SizeMismatch"` before, and Effect's wording instead of zlib's). Body chunks are cut where
-  Effect cuts them (every 64 KiB of output and where the input runs dry). The compressed data
-  of the deflated entry being read is now held until the entry ends.
+  Effect cuts them (every 64 KiB of output and where the input runs dry). At most 4 MiB of an
+  entry's compressed input is kept for the replay; a corrupt entry longer than that fails with
+  Effect's kind and zlib's message, as before.
 
 ## 0.5.1 (2026-11-10)
 
