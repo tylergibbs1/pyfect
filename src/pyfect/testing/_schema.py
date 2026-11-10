@@ -179,7 +179,7 @@ class SchemaAsserts(Generic[RD_co, RE_co]):
             from hypothesis import HealthCheck, given, settings
             from hypothesis import seed as hypothesis_seed
         except ImportError as error:
-            raise missing_extra("verify_round_trip", "hypothesis") from error
+            raise missing_extra("verify_round_trip", "hypothesis", error) from error
 
         schema = self.schema
 
@@ -221,7 +221,7 @@ class SchemaAsserts(Generic[RD_co, RE_co]):
         try:
             from hypothesis import HealthCheck, given, settings
         except ImportError as error:
-            raise missing_extra("verify_generation", "hypothesis") from error
+            raise missing_extra("verify_generation", "hypothesis", error) from error
 
         is_value = is_(self.schema)
 

@@ -31,7 +31,7 @@ from pyfect._extras import missing_extra
 try:
     import redis  # noqa: F401  # pyright: ignore[reportUnusedImport]
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.persistence.redis_py", "redis") from error
+    raise missing_extra("pyfect.persistence.redis_py", "redis", error) from error
 
 from pyfect._core import Effect
 from pyfect._loop_thread import LoopThread

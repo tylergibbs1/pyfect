@@ -29,7 +29,7 @@ from pyfect._extras import missing_extra
 try:
     import uvicorn
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.http.uvicorn_server", "server") from error
+    raise missing_extra("pyfect.http.uvicorn_server", "server", error) from error
 
 from pyfect._core import Effect
 from pyfect.file_system import FileSystem

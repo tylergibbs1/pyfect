@@ -31,7 +31,7 @@ from pyfect._extras import missing_extra
 try:
     import psycopg  # noqa: F401  # pyright: ignore[reportUnusedImport]
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.sql.pg", "pg") from error
+    raise missing_extra("pyfect.sql.pg", "pg", error) from error
 
 from pyfect.sql.pg import client, config, connection, error, migrator, pool
 from pyfect.sql.pg.client import (

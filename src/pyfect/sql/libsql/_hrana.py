@@ -21,7 +21,7 @@ from pyfect._extras import missing_extra
 try:
     import httpx
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.sql.libsql's remote client", "httpx") from error
+    raise missing_extra("pyfect.sql.libsql's remote client", "httpx", error) from error
 
 from pyfect.sql.libsql._targets import RemoteTarget
 from pyfect.sql.libsql._values import to_values

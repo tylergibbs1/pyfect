@@ -23,7 +23,7 @@ try:
     from babel import Locale
     from babel.dates import format_date, format_datetime, format_time, match_skeleton
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.date_time.intl", "intl") from error
+    raise missing_extra("pyfect.date_time.intl", "intl", error) from error
 
 type Style = Literal["full", "long", "medium", "short"]
 type Numeric = Literal["numeric", "2-digit"]

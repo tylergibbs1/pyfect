@@ -22,7 +22,7 @@ try:
     from hypercorn.asyncio.run import worker_serve  # pyright: ignore[reportUnknownVariableType]
     from hypercorn.config import Config, Sockets
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.http.hypercorn_server", "http2") from error
+    raise missing_extra("pyfect.http.hypercorn_server", "http2", error) from error
 
 from pyfect._core import Effect
 from pyfect.file_system import FileSystem

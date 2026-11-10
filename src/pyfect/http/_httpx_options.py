@@ -87,7 +87,7 @@ def import_httpx():  # the inferred return type is the httpx module
     try:
         import httpx
     except ImportError as error:
-        raise missing_extra("pyfect.http.httpx_client", "httpx") from error
+        raise missing_extra("pyfect.http.httpx_client", "httpx", error) from error
     return httpx
 
 

@@ -199,7 +199,7 @@ def _zstd_available() -> bool:
 
 
 def _brotli_available() -> bool:
-    return find_spec("brotli") is not None
+    return find_spec("brotlicffi") is not None
 
 
 class _Compressor(Protocol):

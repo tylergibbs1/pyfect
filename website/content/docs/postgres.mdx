@@ -3,7 +3,9 @@ title: PostgreSQL
 description: "A pooled PostgreSQL client: JSON columns, LISTEN/NOTIFY, notifications sent on commit, and migrations."
 ---
 
-`pyfect.sql.pg` runs on psycopg 3; install the `pyfect-dev[pg]` extra. `pg.layer` provides
+`pyfect.sql.pg` runs on psycopg 3; install the `pyfect-dev[pg]` extra. psycopg needs the
+libpq C library: slim Docker images leave it out, so install it there (`apt-get install libpq5`)
+or add `psycopg[binary]`, which bundles it (not built for free-threaded Python). `pg.layer` provides
 both `PgClient` and `SqlClient`, so the code from the [SQL guide](/docs/sql) runs unchanged on
 PostgreSQL. `PgClient` adds what only PostgreSQL has: `json`, `listen` and `notify`.
 

@@ -21,7 +21,7 @@ try:
     from hypothesis import strategies as st
     from hypothesis.errors import InvalidArgument
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("to_strategy", "hypothesis") from error
+    raise missing_extra("to_strategy", "hypothesis", error) from error
 
 from pyfect.exit import Failure, Success
 from pyfect.schema import ast

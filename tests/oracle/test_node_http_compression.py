@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-import brotli as _brotli  # pyright: ignore[reportMissingTypeStubs]
+import brotlicffi as _brotli  # pyright: ignore[reportMissingTypeStubs]
 import pytest
 
 import pyfect as fx

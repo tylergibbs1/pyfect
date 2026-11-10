@@ -25,10 +25,10 @@ from pyfect.http.server_respondable import to_response_or_else, to_response_or_e
 from pyfect.http.server_response import HttpServerResponse, empty, response_of_defect
 
 if TYPE_CHECKING:
-    from pyfect.http.server_request import ServerRequest as HttpServerRequest
+    from pyfect.http.server_request import ServerRequest
 
 
-def _method_and_url(request: HttpServerRequest) -> str:
+def _method_and_url(request: ServerRequest) -> str:
     return f"{request.method} {to_path(request.url)}"
 
 
@@ -39,7 +39,7 @@ def _request_message(reason: str, description: str | None, info: str) -> str:
 
 @dataclass(eq=False)
 class _RequestReason(TaggedError):
-    request: HttpServerRequest
+    request: ServerRequest
     description: str | None = None
     cause: object = None
     status: ClassVar[int] = 500
@@ -92,7 +92,7 @@ class InternalError(_RequestReason):
 class ResponseError(TaggedError):
     """The response could not be sent (500)."""
 
-    request: HttpServerRequest
+    request: ServerRequest
     response: HttpServerResponse
     description: str | None = None
     cause: object = None
@@ -126,7 +126,7 @@ class HttpServerError(TaggedError):
         self.report_ignored = self.reason.report_ignored
 
     @property
-    def request(self) -> HttpServerRequest:
+    def request(self) -> ServerRequest:
         return self.reason.request
 
     @property
@@ -162,7 +162,7 @@ CLIENT_ABORT_ANNOTATION: Context[ClientAbort | StackTrace] = Context.make(Client
 
 
 def request_parse_error(
-    request: HttpServerRequest,
+    request: ServerRequest,
     description: str | None = None,
     cause: object = None,
     kind: Literal["Parse", "BodyTooLarge"] = "Parse",

@@ -28,7 +28,7 @@ from pyfect._extras import missing_extra
 try:
     import asyncmy  # noqa: F401  # pyright: ignore[reportUnusedImport]
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.sql.mysql", "mysql") from error
+    raise missing_extra("pyfect.sql.mysql", "mysql", error) from error
 
 from pyfect.sql.mysql import client, config, error, migrator
 from pyfect.sql.mysql._session import ResultSetHeader

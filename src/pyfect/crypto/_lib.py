@@ -29,7 +29,7 @@ try:
     from nacl import bindings as nacl_bindings
     from nacl.exceptions import CryptoError as NaclCryptoError
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.crypto keys", "crypto") from error
+    raise missing_extra("pyfect.crypto keys", "crypto", error) from error
 
 __all__ = [
     "AESGCM",

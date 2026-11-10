@@ -15,7 +15,7 @@ from pyfect._extras import missing_extra
 try:
     import opentelemetry.sdk  # noqa: F401  # pyright: ignore[reportUnusedImport]
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.otel", "otel") from error
+    raise missing_extra("pyfect.otel", "otel", error) from error
 
 from pyfect.otel import logger, metrics, resource, sdk, tracer
 

@@ -214,7 +214,7 @@ HTTP client backend), `websockets` (WebSocket clients and servers), `server` (th
 HTTP server), `pg` (the PostgreSQL driver, on psycopg), `mysql` (the MySQL driver, on
 asyncmy), `mssql` (the SQL Server driver, on python-tds), `redis` (the Redis client, on
 redis-py), `eventlog` (the event log's encryption, on cryptography), `brotli` (`br` response
-compression on a live server), `http2` (the HTTP/2 server, on hypercorn), `intl` (`Intl`-style
+compression on a live server, on brotlicffi), `http2` (the HTTP/2 server, on hypercorn), `intl` (`Intl`-style
 date formatting, on babel) and `regex` (more ECMAScript patterns in schemas), for example
 `uv add "pyfect-dev[otel]"`.
 

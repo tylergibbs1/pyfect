@@ -8438,7 +8438,15 @@ def cluster_storage_types() -> None:
 
 
 def cluster_entity_types() -> None:
-    from pyfect.cluster import entity_resource, runner_health, runner_server, runners, singleton
+    from pyfect.cluster import (
+        entity_resource,
+        k8s_http_client,
+        k8s_types,
+        runner_health,
+        runner_server,
+        runners,
+        singleton,
+    )
     from pyfect.cluster.cluster_error import (
         AlreadyProcessingMessage,
         EntityNotAssignedToRunner,
@@ -8532,6 +8540,22 @@ def cluster_entity_types() -> None:
             fx.Scope | Sharding | CurrentAddress,
         ],
     )
+    # As Effect's ``makeK8sPod(spec: K8sPod)``: a whole pod manifest, not a
+    # ``PodSpec``.
+    pod: k8s_types.Pod = {
+        "metadata": {"name": "worker"},
+        "spec": {"containers": [{"name": "worker", "image": "worker:1"}]},
+    }
+    assert_type(
+        entity_resource.make_k8s_pod(pod),
+        fx.Effect[
+            entity_resource.EntityResource[k8s_http_client.PodStatus],
+            Never,
+            fx.Scope | Sharding | CurrentAddress | k8s_http_client.K8sHttpClient,
+        ],
+    )
+    pod_spec: k8s_types.PodSpec = {"containers": [{"name": "worker", "image": "worker:1"}]}
+    entity_resource.make_k8s_pod(pod_spec)  # pyright: ignore[reportArgumentType]
 
 
 def cluster_sharding_types() -> None:

@@ -21,7 +21,7 @@ from pyfect._core import Effect
 from pyfect._js import or_default
 from pyfect._wire_codec import key, wire_codec
 from pyfect.clock import sleep
-from pyfect.cluster.k8s_types import Pod as PodSpec
+from pyfect.cluster.k8s_types import Pod as K8sPod
 from pyfect.context import Tag
 from pyfect.effect import gen, succeed, void
 from pyfect.file_system import FileSystem
@@ -195,13 +195,13 @@ def make_get_pods(
     return gen(body)
 
 
-type CreatePod = Callable[[PodSpec], Effect[PodStatus, Never, Scope]]
+type CreatePod = Callable[[K8sPod], Effect[PodStatus, Never, Scope]]
 
 
 def _make_create_pod() -> Generator[Effect[Any, Any, Any], Any, CreatePod]:
     client = yield from K8sHttpClient()
 
-    def create(spec: PodSpec) -> Effect[PodStatus, Never, Scope]:
+    def create(spec: K8sPod) -> Effect[PodStatus, Never, Scope]:
         # Effect spreads ``spec`` last, so its own metadata wins whole
         full: dict[str, Any] = {
             "apiVersion": "v1",

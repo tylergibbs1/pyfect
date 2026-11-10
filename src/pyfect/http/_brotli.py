@@ -1,13 +1,14 @@
-"""Brotli through the ``brotli`` extra; ``http.platform`` offers ``br`` when it is installed."""
+"""Brotli through the ``brotli`` extra (brotlicffi, which keeps the GIL off on a
+free-threaded CPython); ``http.platform`` offers ``br`` when it is installed."""
 
 from typing import Any
 
 from pyfect._extras import missing_extra
 
 try:
-    import brotli as _library  # pyright: ignore[reportMissingTypeStubs]
+    import brotlicffi as _library  # pyright: ignore[reportMissingTypeStubs]
 except ImportError as error:
-    raise missing_extra("Brotli compression", "brotli") from error
+    raise missing_extra("Brotli compression", "brotli", error) from error
 
 _NODE_DEFAULT_QUALITY = 11
 

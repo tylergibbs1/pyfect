@@ -11,7 +11,7 @@ from pyfect._core import Effect
 from pyfect._effect_args import require_effect
 from pyfect.cluster.entity import CurrentAddress, keep_alive
 from pyfect.cluster.k8s_http_client import K8sHttpClient, PodStatus, make_create_pod
-from pyfect.cluster.k8s_types import Pod as PodSpec
+from pyfect.cluster.k8s_types import Pod as K8sPod
 from pyfect.cluster.sharding import Sharding
 from pyfect.context import Tag
 from pyfect.duration import Duration
@@ -99,9 +99,10 @@ def make(
 
 
 def make_k8s_pod(
-    spec: PodSpec, *, idle_time_to_live: Duration | None = None
+    spec: K8sPod, *, idle_time_to_live: Duration | None = None
 ) -> Effect[EntityResource[PodStatus], Never, Scope | Sharding | CurrentAddress | K8sHttpClient]:
-    """A Kubernetes pod made from ``spec`` for the entity, deleted when the
+    """A Kubernetes pod created from the manifest ``spec`` (a whole ``Pod``,
+    with its ``metadata`` and ``spec``) for the entity, and deleted when the
     resource is released."""
 
     @gen

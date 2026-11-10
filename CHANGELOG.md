@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.4.1 (unreleased)
+
+### Added
+
+- The cluster guide has a Kubernetes section (`runner_address` from the pod IP,
+  `runner_listen_address`, the `k8s` health check, RBAC, CA trust, shutdown and an example
+  manifest) and documents `entity_resource` and `make_k8s_pod`. The installation and
+  PostgreSQL guides say psycopg needs libpq.
+
+### Changed
+
+- The `brotli` extra installs brotlicffi instead of Google's `brotli`, whose C module turns
+  the GIL back on for the whole process on a free-threaded CPython (3.14t), and httpx imports
+  it whenever it is installed. Every extra now keeps the GIL off on 3.14t, which
+  `tests/test_free_threaded.py` checks. If another dependency still installs `brotli`, httpx
+  loads it instead; the installation guide shows how to check.
+
+### Fixed
+
+- Importing a module whose extra is installed but fails to import (psycopg without the libpq
+  C library, as on slim Docker images) no longer says to install the extra: the `ImportError`
+  shows the library's own error, and chains it. Only a library that is not installed gets
+  the install command. The same holds for the `regex` fallback of schema patterns, which used
+  to refuse `\p{...}` silently when an installed `regex` failed to import.
+- `entity_resource.make_k8s_pod(spec)` is typed with `k8s_types.Pod`, under its own name (it
+  was an alias named `PodSpec`, read as `k8s_types.PodSpec`): it takes a whole pod manifest,
+  as Effect's `makeK8sPod(spec: K8sPod)` does. The same misleading alias is gone from
+  `k8s_http_client.CreatePod`.
+
 ## 0.4.0 (2026-11-10)
 
 pyfect now follows Effect 4.1.2 (it followed 4.0.6). Every test title Effect 4.1.2 added is

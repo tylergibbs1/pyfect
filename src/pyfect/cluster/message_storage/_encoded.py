@@ -38,9 +38,8 @@ from pyfect.cluster.message_storage._service import (
 )
 from pyfect.cluster.reply import Reply, ReplyWithContext, WithExit
 from pyfect.cluster.shard_id import ShardId
-from pyfect.cluster.snowflake import Generator as SnowflakeGenerator
-from pyfect.cluster.snowflake import Snowflake
-from pyfect.cluster.snowflake import SnowflakeGenerator as Snowflakes
+from pyfect.cluster.snowflake import Generator as SnowflakeGeneratorTag
+from pyfect.cluster.snowflake import Snowflake, SnowflakeGenerator
 from pyfect.effect import gen, succeed, suspend, try_, void
 from pyfect.result import Ok
 
@@ -128,7 +127,7 @@ class _EncodedBase:
     __slots__ = ("_clock", "_encoded", "_snowflakes")
 
     def __init__(
-        self, encoded: EncodedStorage, snowflakes: Snowflakes, clock: ClockService
+        self, encoded: EncodedStorage, snowflakes: SnowflakeGenerator, clock: ClockService
     ) -> None:
         self._encoded = encoded
         self._snowflakes = snowflakes
@@ -371,11 +370,13 @@ def _json_checked(encoded: reply_.Encoded) -> Effect[reply_.Encoded, MalformedMe
     return MalformedMessage.refail(try_(check))
 
 
-def make_encoded(encoded: EncodedStorage) -> Effect[MessageStorageService, Any, SnowflakeGenerator]:
+def make_encoded(
+    encoded: EncodedStorage,
+) -> Effect[MessageStorageService, Any, SnowflakeGeneratorTag]:
     """A message storage on the driver ``encoded``."""
 
     def body() -> Generator[Effect[Any, Any, Any], Any, MessageStorageService]:
-        snowflakes = yield from SnowflakeGenerator()
+        snowflakes = yield from SnowflakeGeneratorTag()
         clock = yield from Clock()
         base = _EncodedBase(encoded, snowflakes, clock)
         return (yield from make(base))

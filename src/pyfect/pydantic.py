@@ -37,7 +37,7 @@ try:
     from pydantic import BaseModel, GetCoreSchemaHandler, GetJsonSchemaHandler, ValidationError
     from pydantic_core import CoreSchema, PydanticCustomError, core_schema
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.pydantic", "pydantic") from error
+    raise missing_extra("pyfect.pydantic", "pydantic", error) from error
 
 from pyfect.exit import Exit, Failure, Success
 from pyfect.exit import fail as fail_exit

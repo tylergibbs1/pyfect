@@ -23,6 +23,7 @@ from functools import lru_cache
 from typing import cast
 
 from pyfect._digits import is_digits
+from pyfect._extras import is_absent, missing_extra
 from pyfect.schema._checks_string import string_filter
 from pyfect.schema._ecma_flags import (
     UNICODE,
@@ -411,7 +412,9 @@ def _compile_on_regex(source: str, mode: Mode, refused: Exception) -> re.Pattern
         raise EcmaPatternError(_ERROR) from refused
     try:
         import regex
-    except ImportError:
+    except ImportError as error:
+        if not is_absent(error, "regex"):
+            raise missing_extra("Unicode property escapes", "regex", error) from error
         raise EcmaPatternError(_ERROR) from refused
     try:
         translated = _Translation(source, properties=True, mode=mode).run()

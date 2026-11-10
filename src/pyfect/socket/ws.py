@@ -33,7 +33,7 @@ try:
     from websockets.http11 import Request
     from websockets.typing import Subprotocol
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.socket.ws", "websockets") from error
+    raise missing_extra("pyfect.socket.ws", "websockets", error) from error
 
 from pyfect._core import Effect
 from pyfect._js import text_encode, to_well_formed

@@ -29,7 +29,7 @@ from pyfect._extras import missing_extra
 try:
     import msgspec
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.msgspec", "msgspec") from error
+    raise missing_extra("pyfect.msgspec", "msgspec", error) from error
 
 from pyfect.exit import Exit, Success
 from pyfect.exit import fail as fail_exit

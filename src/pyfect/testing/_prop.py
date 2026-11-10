@@ -149,7 +149,7 @@ def _property(
         import hypothesis
         from hypothesis.strategies import SearchStrategy
     except ImportError as error:
-        raise missing_extra("testing.prop", "hypothesis") from error
+        raise missing_extra("testing.prop", "hypothesis", error) from error
 
     def decorate(f: Callable[..., Any]) -> Callable[..., None]:
         strategies = _strategies_for(f, arbitraries, keyed, SearchStrategy)

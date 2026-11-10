@@ -36,7 +36,7 @@ try:
     import OpenSSL  # noqa: F401  # pyright: ignore[reportUnusedImport]
     import pytds  # noqa: F401  # pyright: ignore[reportUnusedImport, reportMissingTypeStubs]
 except ImportError as error:  # pragma: no cover - depends on the environment
-    raise missing_extra("pyfect.sql.mssql", "mssql") from error
+    raise missing_extra("pyfect.sql.mssql", "mssql", error) from error
 
 from pyfect.sql.mssql import client, config, error, migrator, parameter, procedure, types
 from pyfect.sql.mssql.client import (

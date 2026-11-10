@@ -264,9 +264,105 @@ shard. `runner_storage.layer_memory` is for tests; `sql_runner_storage.layer` ta
 PostgreSQL advisory locks on one reserved connection, or leases in a table on SQLite (and
 with `shard_lock_disable_advisory`), renewed every `shard_lock_refresh_interval`.
 
-`k8s_http_client.layer` is a Kubernetes API client for runners in a cluster: it reads the
-pod's service-account token and lists or creates pods, and `Pod.is_ready` reads a pod's
-conditions, which the runner health check uses.
+## Kubernetes
+
+Run each runner as a pod (a Deployment or a StatefulSet), every one pointing at the same
+database, with `cluster_socket.layer(...)` or `cluster_http.layer(...)`. Their settings come
+from the environment in CONSTANT_CASE (`sharding_config.layer_from_env`), so a manifest
+configures a runner with environment variables.
+
+**Addresses.** `runner_address` is the address a runner advertises: the others dial it, and
+the Kubernetes health check looks the runner's pod up by it, so set its host to the pod's IP
+with the downward API (`HOST` from `status.podIP`, and `PORT`, 34431 by default). A runner
+binds to `runner_address` unless `runner_listen_address` is set (`LISTEN_HOST`, and
+`LISTEN_PORT`, also 34431 by default). Set it when the advertised address is not one of the
+pod's own interfaces, such as a Service name or a NAT address; `LISTEN_HOST=0.0.0.0` listens
+on every interface.
+
+**Health.** `runner_health="k8s"` decides whether a runner that stopped answering is alive
+by reading its pod instead of pinging it: the runner is alive while its pod is ready or still
+initializing. It lists the running pods (`runner_health_k8s_namespace` and
+`runner_health_k8s_label_selector` narrow the list; without a namespace it lists the whole
+cluster) and caches the list for ten seconds. When the API can't be read, it logs "Failed to
+fetch pods from Kubernetes API" and counts every runner alive, so a dead runner's shards move
+only once its shard locks expire, as in Effect.
+
+**RBAC.** The pod's service account needs `list` on pods for the health check, and `create`,
+`get` and `delete` on pods for `entity_resource.make_k8s_pod`, in the namespaces they use. A
+health check without a namespace needs a ClusterRole.
+
+**CA trust.** The client calls `https://kubernetes.default.svc/api` with the service
+account's token, read again at most once a minute so a rotated token is picked up. The
+layers above build their Kubernetes client with `layer_k8s_http_client` (in
+`cluster_socket` and `cluster_http`), which needs the `httpx` extra and trusts the CA mounted
+at `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt`, as Effect's
+`layerK8sHttpClient` does. Provide that layer for your own calls too.
+`k8s_http_client.layer` alone runs on the `HttpClient` you give it, which must trust that CA.
+
+**Shutdown.** Kubernetes sends SIGTERM and kills the pod after
+`terminationGracePeriodSeconds` (30 by default). `fx.run_main` interrupts the program on
+SIGTERM, and the runner drains for up to `entity_termination_timeout` (15 seconds), so keep
+the grace period above it.
+
+```yaml title="runner.yaml"
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: runner, namespace: jobs }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: runner, namespace: jobs }
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [list, get, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: runner, namespace: jobs }
+subjects: [{ kind: ServiceAccount, name: runner, namespace: jobs }]
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: runner }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: runner, namespace: jobs }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: runner } }
+  template:
+    metadata: { labels: { app: runner } }
+    spec:
+      serviceAccountName: runner
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: runner
+          image: registry.example.com/runner:1
+          ports: [{ containerPort: 34431 }]
+          env:
+            - name: HOST
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - name: PORT
+              value: "34431"
+            - name: DATABASE_URL
+              valueFrom: { secretKeyRef: { name: runner-db, key: url } }
+```
+
+### Entity resources
+
+`entity_resource.make(acquire)` holds a resource for an entity: a process, a client, a pod.
+It is acquired on the first `get`, kept while the entity's handlers restart, and keeps the
+entity alive while it is held. `close` releases it, as does `idle_time_to_live` without a
+`get` (never by default); `acquire_eagerly=True` acquires it when the entity starts.
+Finalizers `acquire` adds to `entity_resource.CloseScope` run only on that release, not when
+the runner stops, so the resource outlives a runner that hands the entity over.
+
+`entity_resource.make_k8s_pod(pod)` is such a resource for a Kubernetes pod. It takes a whole
+`k8s_types.Pod` manifest, as Effect's `makeK8sPod` does: `metadata.name` is required and the
+namespace defaults to `default`. It creates the pod (or adopts it when one with that name
+exists), waits until it is ready, and returns its `PodStatus`. On release it deletes the pod
+and waits until it is gone. It needs a `K8sHttpClient`:
+
+<include meta='title="k8s.py"'>../../snippets/cluster/k8s.py</include>
 
 Reference: [`pyfect.cluster`](/docs/reference/cluster),
 [`entity`](/docs/reference/cluster/entity),
@@ -275,4 +371,6 @@ Reference: [`pyfect.cluster`](/docs/reference/cluster),
 [`cluster_workflow_engine`](/docs/reference/cluster/cluster_workflow_engine),
 [`pyfect.hash_ring`](/docs/reference/hash_ring),
 [`sharding_config`](/docs/reference/cluster/sharding_config),
-[`message_storage`](/docs/reference/cluster/message_storage).
+[`message_storage`](/docs/reference/cluster/message_storage),
+[`entity_resource`](/docs/reference/cluster/entity_resource),
+[`k8s_http_client`](/docs/reference/cluster/k8s_http_client).
