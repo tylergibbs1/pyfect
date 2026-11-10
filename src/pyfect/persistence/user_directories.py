@@ -1,8 +1,13 @@
 """Where a program keeps its files per user (Effect's
-``effect/persistence/UserDirectories``)::
+``effect/persistence/UserDirectories``). Provide ``user_directories.layer``;
+``platform.layer`` doesn't include it (nor does Effect's ``NodeServices``)::
 
-    dirs = yield from UserDirectories()
-    path = yield from dirs.config("myapp")   # ~/.config/myapp on Linux
+    @fx.fn
+    def config_dir():
+        dirs = yield from UserDirectories()
+        return (yield from dirs.config("myapp"))   # ~/.config/myapp on Linux
+
+    path = fx.run_blocking(config_dir().pipe(fx.provide(user_directories.layer)))
 
 An absolute ``XDG_CONFIG_HOME`` / ``XDG_DATA_HOME`` / ``XDG_CACHE_HOME`` /
 ``XDG_STATE_HOME`` wins on every platform. Otherwise macOS uses

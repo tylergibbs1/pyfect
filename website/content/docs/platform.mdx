@@ -38,6 +38,27 @@ working directory (the `=C:` variable), as Node does.
 These programs run with `fx.run_main` rather than `run_blocking`, which only takes effects that
 cannot fail: `run_main` logs a failure and exits the process with a nonzero status.
 
+## User directories
+
+`UserDirectories` gives the directories a program keeps its files in for the current user:
+`config`, `data`, `cache` and `state`, each for an application name, and `home`. Provide
+`user_directories.layer`; `platform.layer` doesn't include it, as Effect's `NodeServices`
+doesn't. An absolute `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` or `XDG_STATE_HOME`
+wins on every platform. Otherwise macOS uses `~/Library/Application Support` (and
+`~/Library/Caches` for the cache), Windows uses `APPDATA` and `LOCALAPPDATA` (or `AppData`
+under `USERPROFILE`, with the cache in a `Cache` folder), and other systems use the XDG
+defaults. The variables are read from the `ConfigProvider` on every call, so a test can fix
+them, and `layer_platform(...)` picks the platform's rules. Without a home directory a
+lookup fails with a `NotFound` `PlatformError`.
+
+<CodeOutput>
+
+<include meta='title="user_directories.py"'>../../snippets/platform/user_directories.py</include>
+
+<include lang="text">../../snippets/platform/user_directories.out</include>
+
+</CodeOutput>
+
 ## Child processes
 
 `process.make(command, args)` describes a process. Running it in a scope starts the process

@@ -21,7 +21,18 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any, Literal, LiteralString, Never, TypedDict, cast, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generic,
+    Literal,
+    LiteralString,
+    Never,
+    TypedDict,
+    TypeVar,
+    cast,
+    overload,
+)
 
 import pyfect as fx
 from pyfect import _json_text
@@ -120,11 +131,18 @@ type GenerateFn = Callable[[ProviderOptions], Effect[Sequence[EncodedPart], AiEr
 type StreamFn = Callable[[ProviderOptions], Stream[EncodedPart, AiError, Any]]
 
 
+# Declared covariant: pyright infers a frozen dataclass's PEP 695 parameters as
+# invariant, and a response of one toolkit must be one of a wider toolkit too.
+_NN_co = TypeVar("_NN_co", bound=str, covariant=True)
+_RP_co = TypeVar("_RP_co", covariant=True)
+_A_co = TypeVar("_A_co", covariant=True)
+
+
 @dataclass(frozen=True)
-class GenerateTextResponse[NN: str, RP]:
+class GenerateTextResponse(Generic[_NN_co, _RP_co]):
     """A generated response: its parts, with accessors."""
 
-    content: Sequence[R.Part[NN, RP]]
+    content: Sequence[R.Part[_NN_co, _RP_co]]
 
     @property
     def text(self) -> str:
@@ -140,13 +158,17 @@ class GenerateTextResponse[NN: str, RP]:
         return "".join(texts) if texts else None
 
     @property
-    def tool_calls(self) -> list[R.ToolCallPart[NN, object]]:
-        return [part for part in self.content if isinstance(part, R.ToolCallPart)]
+    def tool_calls(self) -> Sequence[R.ToolCallPart[_NN_co, object]]:
+        return [
+            cast("R.ToolCallPart[_NN_co, object]", part)
+            for part in self.content
+            if isinstance(part, R.ToolCallPart)
+        ]
 
     @property
-    def tool_results(self) -> list[RP]:
+    def tool_results(self) -> Sequence[_RP_co]:
         return [
-            cast("RP", part)
+            cast("_RP_co", part)
             for part in self.content
             if isinstance(part, R.ToolResultSuccess | R.ToolResultFailure)
         ]
@@ -166,10 +188,10 @@ class GenerateTextResponse[NN: str, RP]:
 
 
 @dataclass(frozen=True)
-class GenerateObjectResponse[NN: str, RP, A](GenerateTextResponse[NN, RP]):
+class GenerateObjectResponse(GenerateTextResponse[_NN_co, _RP_co], Generic[_NN_co, _RP_co, _A_co]):
     """A generated response with its decoded ``value``."""
 
-    value: A
+    value: _A_co
 
 
 def default_codec_transformer(schema: S.Top) -> tuple[S.Top, JsonSchema]:

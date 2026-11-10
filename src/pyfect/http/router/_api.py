@@ -344,7 +344,13 @@ def serve(
     """Serve the routes ``app_layer`` adds on the ``HttpServer``, logging
     each request (unless ``disable_logger``) and the address (unless
     ``disable_listen_log``). The layer's other services are the server
-    layer's requirements (Effect's ``Exclude<R, HttpRouter>``)."""
+    layer's requirements (Effect's ``Exclude<R, HttpRouter>``).
+
+    ``middleware`` wraps the whole request, sending included, so the
+    response it returns is dropped (as in Effect): it is for middleware such
+    as ``middleware.compression()`` that change the response through
+    ``http_effect.append_pre_response_handler``. Change every response with
+    ``router.middleware(f, global_=True)``."""
     require_layer(app_layer, "app_layer")
     app_middleware = _app_middleware(middleware, disable_logger)
     with_router = _with_router(app_layer, router_config)

@@ -11,9 +11,8 @@ Omitted, with the reason:
   ``int``.
 
 From the platform suite (``Dns.test-utils.ts``), "looks up localhost from
-the hosts file" runs against ``layer_system``; its other cases query
-records from a CoreDNS container, and the system resolver has no record
-queries (``resolve`` fails with ``Unsupported``).
+the hosts file" runs against ``layer_system``; its PTR and reverse cases are
+in ``test_dns_system.py``.
 """
 
 from collections.abc import Sequence

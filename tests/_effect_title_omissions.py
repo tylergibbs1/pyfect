@@ -180,9 +180,11 @@ OMISSIONS: tuple[Omission, ...] = (
         "effect/test/Sink.test.ts",
     ),
     _some("effect/test/Stream.test.ts", _NODE_STREAMS, r"event|ReadableStream"),
-    *_whole(
-        "the suite needs a BIND container and `node:dns`; `tests/oracle/test_dns.py` ports `Dns`",
+    _some(
         "platform/node-shared/test/Dns.test-utils.ts",
+        "the system resolver queries only PTR records (`resolve` of other types fails with "
+        "`Unsupported`); `tests/oracle/test_dns_system.py` ports the PTR and reverse titles",
+        r"every record type|TLSA|TXT record|no record can be represented|refused",
     ),
     *_whole(NOT_PORTED_HTTP2, "platform/node-shared/test/HttpServerHttp2.test-utils.ts"),
     _some(

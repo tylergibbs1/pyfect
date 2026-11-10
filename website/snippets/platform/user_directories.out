@@ -1,0 +1,5 @@
+('/home/ada/.config/myapp', '/home/ada/.cache/myapp')
+('/etc/ada/myapp', '/home/ada/.cache/myapp')
+('/Users/ada/Library/Application Support/myapp', '/Users/ada/Library/Caches/myapp')
+('C:\\Users\\ada\\AppData\\Roaming\\myapp', 'C:\\Users\\ada\\AppData\\Local\\myapp\\Cache')
+NotFound - HOME is not set

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Generator, Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal, get_args
 
 import pyfect as fx
 from pyfect import date_time
@@ -147,20 +147,41 @@ def transform_params(
     )
 
 
-def tool_result(id: str, name: str, is_failure: bool, result: object) -> Part:
+def server_tool_result(id: str, name: str, is_failure: bool, result: object) -> Part:
+    """A result the server produced in the assistant turn (code execution,
+    MCP, tool search, web fetch and search), replayed there by
+    ``Prompt.from_response_parts``. Effect 4.1.2 leaves ``providerExecuted``
+    off the code execution, MCP and web fetch results, so a chat replays them
+    as user ``tool_result`` blocks, which Anthropic rejects."""
     return {
         "type": "tool-result",
         "id": id,
         "name": name,
         "isFailure": is_failure,
         "result": result,
+        "providerExecuted": True,
     }
 
 
-def server_tool_result(id: str, name: str, is_failure: bool, result: object) -> Part:
-    """A result the server produced in the assistant turn (tool search,
-    web search), replayed there by ``Prompt.from_response_parts``."""
-    return {**tool_result(id, name, is_failure, result), "providerExecuted": True}
+def provider_tool_name(server_tool: str) -> str:
+    """The provider-defined tool a ``server_tool_use`` name belongs to:
+    code execution's ``bash_code_execution`` and ``text_editor_code_execution``
+    sub-tools are calls of ``code_execution`` (as Effect's stream decoder
+    names them; its non-streaming decoder leaves them unmapped, so the call
+    matches no tool)."""
+    return "code_execution" if server_tool.endswith("_code_execution") else server_tool
+
+
+type ServerResultBlock = Literal[
+    "mcp_tool_result",
+    "code_execution_tool_result",
+    "bash_code_execution_tool_result",
+    "text_editor_code_execution_tool_result",
+    "tool_search_tool_result",
+    "web_fetch_tool_result",
+    "web_search_tool_result",
+]
+SERVER_RESULT_BLOCKS: tuple[ServerResultBlock, ...] = get_args(ServerResultBlock.__value__)
 
 
 @dataclass
@@ -190,7 +211,7 @@ class ServerResults:
         if call is None:
             return []
         server = call["metadata"]["anthropic"]["mcp_tool"]
-        part = tool_result(
+        part = server_tool_result(
             block["tool_use_id"], call["name"], block.get("is_error", False), block.get("content")
         )
         part["metadata"] = {"anthropic": {"mcp_tool": server}}
@@ -206,7 +227,7 @@ class ServerResults:
                 "text_editor_code_execution_tool_result_error",
             )
         name = self.names.get_custom_name("code_execution")
-        return [tool_result(block["tool_use_id"], name, failed, content)]
+        return [server_tool_result(block["tool_use_id"], name, failed, content)]
 
     def tool_search(self, block: W.ContentBlock) -> list[Part]:
         provider = self.search_calls.get(block["tool_use_id"])
@@ -233,8 +254,8 @@ class ServerResults:
                     P.obj(document.get("source")).get("media_type") or "",
                 )
             )
-            return [tool_result(block["tool_use_id"], name, False, content)]
-        return [tool_result(block["tool_use_id"], name, True, content)]
+            return [server_tool_result(block["tool_use_id"], name, False, content)]
+        return [server_tool_result(block["tool_use_id"], name, True, content)]
 
     def web_search(self, block: W.ContentBlock) -> Gen[list[Part]]:
         name = self.names.get_custom_name("web_search")
@@ -261,7 +282,7 @@ class ServerResults:
     def result_parts(self, block: W.ContentBlock) -> Gen[list[Part] | None]:
         """The parts of a server tool result block, ``None`` for another
         block."""
-        handlers: dict[str, Callable[[W.ContentBlock], list[Part]]] = {
+        handlers: dict[ServerResultBlock, Callable[[W.ContentBlock], list[Part]]] = {
             "mcp_tool_result": self.mcp_result,
             "code_execution_tool_result": self.code_execution,
             "bash_code_execution_tool_result": self.code_execution,
@@ -346,7 +367,7 @@ class _Response:
 
     def server_tool_use(self, block: W.ContentBlock) -> None:
         provider = block["name"]
-        name = self.results.names.get_custom_name(provider)
+        name = self.results.names.get_custom_name(provider_tool_name(provider))
         input = P.obj(block.get("input"))
         if provider in ("bash_code_execution", "text_editor_code_execution"):
             params: dict[str, Any] = {"type": provider, **input}

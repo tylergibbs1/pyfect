@@ -1,0 +1,9 @@
+('rc', 1) ('build', '5')
+1.3.0 1.2.3-rc.2
+['1.2.0-alpha', '1.2.0', '1.10.0']
+major
+Invalid SemVer "1.2": expected MAJOR.MINOR.PATCH
+True False
+1.4.1
+False True
+~1.2.3

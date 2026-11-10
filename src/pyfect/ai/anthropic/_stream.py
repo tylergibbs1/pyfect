@@ -20,6 +20,7 @@ from pyfect.ai.anthropic._response import (
     citable_documents,
     citation_source,
     now_iso,
+    provider_tool_name,
     resolve_finish_reason,
     transform_params,
     usage_part,
@@ -186,7 +187,7 @@ class _State:
     def _server_tool_use_start(self, index: int, block: W.ContentBlock) -> list[Part]:
         provider = block["name"]
         if provider in _SERVER_CALLS:
-            custom = "code_execution" if provider.endswith("_code_execution") else provider
+            custom = provider_tool_name(provider)
         elif provider in _SEARCH_CALLS:
             self.results.search_calls[block["id"]] = provider
             custom = provider

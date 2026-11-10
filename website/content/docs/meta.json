@@ -20,6 +20,7 @@
     "graph",
     "platform",
     "crypto",
+    "data-formats",
     "sql",
     "postgres",
     "mysql",

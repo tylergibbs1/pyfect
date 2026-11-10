@@ -32,14 +32,40 @@ gets an empty 400 and a `NoSuchElementException` an empty 404.
 `uvicorn_server.layer_test()` runs the server on a free local port and gives an `HttpClient`
 whose relative URLs go to it, so the program above sends real requests.
 
+## HTML templates
+
+`server_response.html_template(strings, *values)` renders a template as a `text/html`
+response, and `html_stream` streams one; `template.make` gives the text. A value can be an
+effect or, for `html_stream`, a stream. As in Effect, values are inserted without HTML
+escaping, so text from a user or a log line must go through `html.escape` first.
+
+<CodeOutput>
+
+<include meta='title="template.py"'>../../snippets/http_server/template.py</include>
+
+<include lang="text">../../snippets/http_server/template.out</include>
+
+</CodeOutput>
+
 ## Middleware
 
 A middleware is a function of the handler it wraps. `router.middleware(f)` makes route
 middleware, provided to the route layers it should wrap with `layer.provide(m.layer)`, and
 `router.middleware(f, global_=True)` a layer that wraps every request. `router.cors(...)`
-answers preflight requests and adds the CORS headers; `serve(..., middleware=...)` takes the
-app-wide middleware of `pyfect.http.middleware`, such as `compression()`. Each request is
-logged unless `disable_logger=True`.
+answers preflight requests and adds the CORS headers. Each request is logged unless
+`disable_logger=True`.
+
+<Callout title="serve(middleware=...) can't change the response">
+
+`serve(..., middleware=...)` wraps the whole request, sending included, so the response it
+returns is dropped, as in Effect: `lambda app: app.map(lambda res: res.set_header(...))` there
+adds nothing. It is for the app-wide middleware of `pyfect.http.middleware`, such as
+`compression()`, which change the response through `http_effect.append_pre_response_handler`.
+To change every response, use `router.middleware(f, global_=True)`. A 404 or a failed handler
+is still a failure inside it, so `f` sees it only by catching it (`catch_cause`, then
+`server_error.cause_response`).
+
+</Callout>
 
 <Diagram name="http-server-request" title="Global middleware wraps every request; the router matches it and runs the route middleware of the matched route, then its handler" />
 

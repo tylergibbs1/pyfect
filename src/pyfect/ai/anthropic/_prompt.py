@@ -25,6 +25,8 @@ _SERVER_TOOLS = frozenset(
 )
 _CODE_EXECUTION_RESULTS = {
     "code_execution_result": "code_execution_tool_result",
+    # Effect 4.1.2 drops this one, leaving the server_tool_use without its result.
+    "code_execution_tool_result_error": "code_execution_tool_result",
     "bash_code_execution_result": "bash_code_execution_tool_result",
     "bash_code_execution_tool_result_error": "bash_code_execution_tool_result",
     "text_editor_code_execution_tool_result": "text_editor_code_execution_tool_result",
@@ -227,13 +229,14 @@ def _reasoning(part: Pr.ReasoningPart) -> Block | None:
 def _server_tool_use(part: Pr.ToolCallPart, tool_name: str) -> Block | None:
     params = part.params
     kind = P.obj(params).get("type")
+    # The decoder adds `type` to code execution's input; Anthropic sent it without.
+    rest = {k: v for k, v in P.obj(params).items() if k != "type"}
     if tool_name == "code_execution" and kind in (
         "bash_code_execution",
         "text_editor_code_execution",
     ):
-        return {"type": "server_tool_use", "id": part.id, "name": kind, "input": params}
+        return {"type": "server_tool_use", "id": part.id, "name": kind, "input": rest}
     if tool_name == "code_execution" and kind == "programmatic-tool-call":
-        rest = {k: v for k, v in P.obj(params).items() if k != "type"}
         return {"type": "server_tool_use", "id": part.id, "name": tool_name, "input": rest}
     if tool_name in _SERVER_TOOLS:
         return {"type": "server_tool_use", "id": part.id, "name": tool_name, "input": params}

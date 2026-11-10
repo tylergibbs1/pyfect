@@ -1,6 +1,7 @@
-"""TOML text to nested dicts (Effect's ``encoding/Toml``, based on the ``toml``
-4.1.2 package), which is laxer than ``tomllib``: a dotted key's table can be
-declared afterwards, and a date is a space away from its time.
+"""TOML text to nested dicts (Effect's ``encoding/Toml``, whose behaviour is
+based on the ``toml`` 4.1.2 package). It parses what Effect's parser parses and
+rejects what it rejects, which is not always what ``tomllib`` does; use
+``tomllib`` when a file must follow the TOML specification to the letter.
 
 A date-time with an offset is a ``datetime`` in UTC (Effect's ``Date``, within the
 years ``datetime`` holds); a local date, date-time or time stays text. ``parse``

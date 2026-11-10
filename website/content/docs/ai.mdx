@@ -138,6 +138,29 @@ file replaced by a placeholder.
 
 </CodeOutput>
 
+## Provider tools
+
+A provider-defined tool is one the provider knows by name, such as those in
+`pyfect.ai.anthropic.tool`. Anthropic sends and calls them under its own names (`bash`,
+`code_execution`), while the toolkit and the response parts use the tools' custom names
+(`AnthropicBash`, `AnthropicCodeExecution`); the provider maps between the two.
+
+A client tool, such as `Bash_20250124`, is run by your handler: give `Bash.handler(f)` to the
+toolkit's `to_layer`, as with your own tools. A handler that needs a service declares it with
+`Bash.add_dependency(Shell)`, so pyright checks the handler against it and the program must
+provide it. A server tool, such as `CodeExecution_20250825`, is run by Anthropic: `to_layer()`
+takes no handler for it, and its call and result arrive in the response as parts with
+`provider_executed` set. A chat keeps them in the assistant message and sends them back to
+Anthropic as they came, so the conversation can go on after the tool ran.
+
+<CodeOutput>
+
+<include meta='title="provider_tools.py"'>../../snippets/ai/provider_tools.py</include>
+
+<include lang="text">../../snippets/ai/provider_tools.out</include>
+
+</CodeOutput>
+
 ## Structured output
 
 `language_model.generate_object(prompt, schema=...)` asks for JSON matching a
@@ -221,6 +244,29 @@ concurrent `embed` calls are sent as one batch;
 runs in a span, such as `LanguageModel.generateText`, that
 [tracing](/docs/observability) records.
 
+## Tokenizer
+
+A `Tokenizer` service counts a prompt's tokens for one model, so a program can keep a long
+conversation within the model's context window. `tokenizer.make(tokenize=f)` builds one from
+a function that gives a prompt's token ids; `tokenize(prompt)` gives them, and
+`truncate(prompt, n)` keeps the latest messages whose tokens fit in `n`. No provider here
+supplies a tokenizer, so a program brings its own `f`, such as a local tokenizer library
+for its model.
+
+<CodeOutput>
+
+<include meta='title="tokenizer.py"'>../../snippets/ai/tokenizer.py</include>
+
+<include lang="text">../../snippets/ai/tokenizer.out</include>
+
+</CodeOutput>
+
+`ResponseIdTracker` is the other side of that problem: a provider that keeps a conversation
+on its server is sent the previous response's id and only the new messages. Only OpenAI's
+Responses language model reads it, and its WebSocket mode (`client.with_web_socket_mode` or
+`client.layer_web_socket_mode()`) provides it, so a program doesn't provide one itself.
+Anthropic's Messages API keeps no conversation state, so Anthropic ignores it.
+
 ## Decisions
 
 A `DecisionModel` answers judgments instead of writing text. `decision.classify` picks one
@@ -259,6 +305,7 @@ as a test does. Its answers are plain dicts tagged by `_tag` (`"Classify"`, `"Ra
 Reference: [`pyfect.ai`](/docs/reference/ai),
 [`language_model`](/docs/reference/ai/language_model),
 [`tool`](/docs/reference/ai/tool), [`toolkit`](/docs/reference/ai/toolkit),
+[`tokenizer`](/docs/reference/ai/tokenizer),
 [`pyfect.ai.anthropic`](/docs/reference/ai/anthropic),
 [`pyfect.ai.openai`](/docs/reference/ai/openai),
 [`pyfect.ai.openrouter`](/docs/reference/ai/openrouter),

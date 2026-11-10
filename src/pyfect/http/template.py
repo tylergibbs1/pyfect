@@ -11,6 +11,13 @@ A value is a primitive (``str``, ``int``, ``float``, ``bool``; ``None``
 renders as nothing; a sequence renders its items joined), a ``Some``, or an
 effect of one. ``stream`` also takes streams, and writes each part as soon
 as it is known. Effects run concurrently.
+
+Values are inserted as they are, without HTML escaping, as in Effect: a value
+holding ``<script>`` becomes markup. Escape text that isn't yours first::
+
+    from html import escape
+
+    template.make(t"<p>Hello, {escape(name)}!</p>")
 """
 
 from __future__ import annotations

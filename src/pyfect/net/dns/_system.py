@@ -1,12 +1,13 @@
 """The operating system's resolver as the ``Dns`` service (Effect's
-``NodeDns``, minus record queries).
+``NodeDns``, with PTR as the only record query).
 
 Lookups go through ``getaddrinfo`` (the hosts file and the system's DNS
-configuration, as Node's ``dns.lookup``); reverse lookups through
-``gethostbyaddr``. Python's standard library has no DNS record queries, so
-``resolve`` fails with ``Unsupported``. Each call runs on a thread of its
-own and resumes the fiber through its scheduler; an interrupted call's
-answer is dropped.
+configuration, as Node's ``dns.lookup``). PTR queries go to the name servers
+in ``/etc/resolv.conf`` (or the ones given), and reverse lookups are PTR
+queries, as in Effect: the names are the records' targets, and the hosts file
+is not read. Other record types fail with ``Unsupported``. Each call runs on a
+thread of its own and resumes the fiber through its scheduler; an interrupted
+call's answer is dropped.
 """
 
 from __future__ import annotations
@@ -22,9 +23,13 @@ from pyfect.effect import fail, succeed
 from pyfect.layer import Layer
 from pyfect.layer import succeed as layer_succeed
 from pyfect.net.dns._error import DnsError, DnsErrorReason, DnsMethod
-from pyfect.net.dns._service import Dns, DnsService, make
+from pyfect.net.dns._records import DnsRecord, Ptr, RecordType
+from pyfect.net.dns._service import Dns, DnsService, Resolve, make
+from pyfect.net.dns._wire import query_ptr_from
 from pyfect.net.host import DomainName
-from pyfect.net.net_address._ip import IpAddress, IpFamily, format_ip
+from pyfect.net.net_address._inet import InetAddress
+from pyfect.net.net_address._ip import IpAddress, IpFamily
+from pyfect.result import Err, Ok, Result
 
 _REASON_NAMES: list[tuple[str, DnsErrorReason]] = [
     ("EAI_NONAME", "NotFound"),
@@ -71,19 +76,34 @@ def _lookup(host: DomainName, family: IpFamily | None) -> Effect[Sequence[IpAddr
     return _on_thread("lookup", host, call)
 
 
-def _reverse(address: IpAddress) -> Effect[Sequence[str], DnsError]:
-    def call() -> list[str]:
-        name, aliases, _ = socket.gethostbyaddr(format_ip(address))
-        return [name, *aliases]
+def _resolver(name_servers: Sequence[InetAddress]) -> Resolve:
+    def resolve(name: DomainName, record_type: RecordType) -> Effect[Sequence[DnsRecord], DnsError]:
+        if record_type != "PTR":
+            return fail(DnsError("Unsupported", "resolve", name, record_type))
 
-    return _on_thread("reverse", format_ip(address), call)
+        def answered(
+            found: Result[list[str], DnsErrorReason],
+        ) -> Effect[Sequence[DnsRecord], DnsError]:
+            match found:
+                case Ok(targets):
+                    return succeed([Ptr(target) for target in targets])
+                case Err(reason):
+                    return fail(DnsError(reason, "resolve", name, record_type))
+
+        return _on_thread("resolve", name, lambda: query_ptr_from(name, name_servers)).flat_map(
+            answered
+        )
+
+    return resolve
 
 
-def make_system() -> DnsService:
-    """The system resolver as a ``DnsService``."""
-    return make(_lookup, reverse=_reverse)
+def make_system(name_servers: Sequence[InetAddress] = ()) -> DnsService:
+    """The system resolver as a ``DnsService``; PTR queries and reverse
+    lookups ask ``name_servers`` (from ``dns.name_server_from_input``) instead
+    of the system's name servers when given."""
+    return make(_lookup, _resolver(name_servers))
 
 
-def layer_system() -> Layer[Dns]:
+def layer_system(name_servers: Sequence[InetAddress] = ()) -> Layer[Dns]:
     """``Dns`` answered by the operating system's resolver."""
-    return layer_succeed(Dns, make_system())
+    return layer_succeed(Dns, make_system(name_servers))

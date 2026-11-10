@@ -301,14 +301,17 @@ def html(body: str, **options: Unpack[Options]) -> HttpServerResponse:
 def html_template[EE = Never, RR = Never](
     strings: Sequence[str], *args: _template.Interpolated[EE, RR]
 ) -> Effect[HttpServerResponse, EE, RR]:
-    """The template's text as ``text/html`` (Effect's tagged ``html``)."""
+    """The template's text as ``text/html`` (Effect's tagged ``html``).
+    Values are not HTML-escaped (as in Effect); escape text that isn't yours
+    with ``html.escape``."""
     return _template.make(strings, *args).map(html)
 
 
 def html_stream[EE = Never, RR = Never](
     strings: Sequence[str], *args: _template.InterpolatedWithStream[EE, RR]
 ) -> HttpServerResponse:
-    """The template streamed as ``text/html``, each part as it is known."""
+    """The template streamed as ``text/html``, each part as it is known.
+    Values are not HTML-escaped (as in Effect)."""
     chunks = _template.stream(strings, *args).encode_text()
     return stream(cast("Stream[bytes, object]", chunks), content_type="text/html")
 

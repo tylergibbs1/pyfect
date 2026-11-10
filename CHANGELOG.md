@@ -416,6 +416,31 @@
   `jose`.
 - Docs: [Cryptography and JOSE](/docs/crypto).
 
+### Fixed
+
+- `net.dns.layer_system()`'s `reverse` returned the query name (`8.8.8.8.in-addr.arpa`) among
+  an address's names, and answered from the hosts file: it read `gethostbyaddr`. As Effect's
+  `NodeDns`, it now asks the name servers in `/etc/resolv.conf` for PTR records and returns
+  their targets (`dns.google.`). The system `resolve` answers PTR queries (other types still
+  fail with `Unsupported`), and `make_system` / `layer_system` take `name_servers=`.
+- Anthropic: a response holding code execution 20250825's `bash_code_execution` /
+  `text_editor_code_execution` blocks failed with `InvalidOutputError`; the calls now decode as
+  `AnthropicCodeExecution` calls. A chat that used code execution, web fetch or an MCP server
+  sent the results back as user `tool_result` blocks, which Anthropic rejects with 400
+  "unexpected `tool_use_id`"; every server tool result is now provider-executed and replayed in
+  the assistant message as Anthropic sent it, a 20250522 error result included. Effect 4.1.2
+  has both bugs (docs/PARITY.md section 4).
+- `GenerateTextResponse` and `GenerateObjectResponse` are covariant, so a response of one
+  toolkit can be typed as one of a wider toolkit; `tool_calls` and `tool_results` are typed
+  `Sequence` (still lists).
+- Docs: the `http.template` / `html_template` docstrings and the HTTP server guide say that
+  values are not HTML-escaped (as in Effect), and the guide says that what
+  `serve(middleware=...)` returns is dropped, as in Effect, pointing at
+  `router.middleware(f, global_=True)`. The `UserDirectories` example provides
+  `user_directories.layer`, and the `encoding.toml` docstring no longer calls its differences
+  from `tomllib` a feature. New guides: data formats (TOML, YAML, INI, `semver`,
+  `big_decimal`), user directories, Anthropic provider tools and the tokenizer.
+
 ## 0.3.1 (2026-11-09)
 
 ### Added

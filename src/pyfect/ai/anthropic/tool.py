@@ -86,17 +86,19 @@ class CodeExecution_20250825_Parameters(TypedDict):
     code: str
 
 
+_CODE_EXECUTION_PARAMETERS = S.Union(
+    S.Struct(CodeExecutionProgrammaticToolCall),
+    S.Struct(CodeExecutionBashCommand),
+    S.Struct(CodeExecutionTextEditorView),
+    S.Struct(CodeExecutionTextEditorCreate),
+    S.Struct(CodeExecutionTextEditorStrReplace),
+)
+
 CodeExecution_20250522 = T.provider_defined(
     id="anthropic.code_execution_20250522",
     custom_name="AnthropicCodeExecution",
     provider_name="code_execution",
-    parameters=S.Union(
-        S.Struct(CodeExecutionProgrammaticToolCall),
-        S.Struct(CodeExecutionBashCommand),
-        S.Struct(CodeExecutionTextEditorView),
-        S.Struct(CodeExecutionTextEditorCreate),
-        S.Struct(CodeExecutionTextEditorStrReplace),
-    ),
+    parameters=_CODE_EXECUTION_PARAMETERS,
     success=_BLOCK,
     failure=_BLOCK,
 )
@@ -104,7 +106,9 @@ CodeExecution_20250825 = T.provider_defined(
     id="anthropic.code_execution_20250825",
     custom_name="AnthropicCodeExecution",
     provider_name="code_execution",
-    parameters=S.Struct(CodeExecution_20250825_Parameters),
+    # Effect 4.1.2 gives this version only `{code}` (and 20250522 the sub-tool
+    # calls), but 20250825 is the version whose calls are the sub-tools.
+    parameters=_CODE_EXECUTION_PARAMETERS,
     success=_BLOCK,
     failure=_BLOCK,
 )

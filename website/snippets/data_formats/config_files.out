@@ -1,0 +1,5 @@
+8080 ['hammer', 'nail']
+Cannot redefine existing key 'a' at line 2, column 6
+{'base': {'retries': 3, 'timeout': 5}, 'prod': {'retries': 3, 'timeout': 30}}
+invalid YAML: Expected ',' at flow offset 5
+{'debug': True, 'name': True, 'db': {'main': {'host': 'localhost', 'flag': True}}}

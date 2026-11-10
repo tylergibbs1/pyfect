@@ -7346,6 +7346,28 @@ def check_ai_result_narrowing(
                 pass
 
 
+def check_ai_response_covariant(
+    weather: lm.GenerateTextResponse[
+        Literal["Weather"], ai_response.ToolResultSuccess[Literal["Weather"], AiWeather]
+    ],
+    obj: lm.GenerateObjectResponse[Literal["Weather"], Never, int],
+) -> None:
+    """A response of one toolkit is a response of a wider one (dogfood shipwright 14)."""
+
+    def wider(
+        r: lm.GenerateTextResponse[Literal["Weather", "Clock"], AiResults],
+    ) -> lm.GenerateTextResponse[Literal["Weather", "Clock"], AiResults]:
+        return r
+
+    def either(
+        r: lm.GenerateObjectResponse[str, object, int | str],
+    ) -> lm.GenerateObjectResponse[str, object, int | str]:
+        return r
+
+    assert_type(wider(weather).tool_calls[0].name, Literal["Weather", "Clock"])
+    assert_type(either(obj).value, int | str)
+
+
 def check_mcp() -> None:
     from pyfect import stdio as mcp_stdio
     from pyfect.ai import mcp_client as mcp_c

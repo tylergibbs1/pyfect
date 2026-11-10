@@ -1,0 +1,85 @@
+---
+title: Data formats
+description: "Parse TOML, YAML and INI files, compare semantic versions and match ranges, and compute with exact decimals."
+---
+
+These modules are plain functions and values, with no services to provide. Each follows
+the Effect module it ports, including where Effect differs from Python's standard library.
+
+## TOML, YAML and INI
+
+`pyfect.encoding.toml`, `yaml` and `ini` parse text into dicts, lists and scalars. They only
+parse; none of them writes text back, as in Effect.
+
+- `toml.parse(text)` returns a `Result`: `Ok` with the tables, or `Err` with an
+  `EncodingError` whose `message` gives the line and column. A date-time with an offset
+  becomes a `datetime` in UTC; a local date, date-time or time stays a string. It follows
+  Effect's parser, which is not always what `tomllib` accepts or rejects. Use `tomllib` when
+  a file must follow the TOML specification to the letter.
+- `yaml.parse(text)` returns the value of one document and raises `ValueError` on text it
+  can't read, as Effect's `Yaml.parse` throws. Anchors, aliases and YAML 1.1 merge keys
+  work: `<<: *base` copies `base` into the mapping, and the mapping's own keys win. Tags,
+  directives and several documents in one stream are not supported.
+- `ini.parse(text)` never fails. `[a.b]` sections nest, `key[]` collects a list, a key
+  without `=` is `True`, and `true`, `false` and `null` become `True`, `False` and `None`.
+  Quotes are removed before those words are read, so an INI file can't hold the strings
+  `"true"`, `"false"` or `"null"` (as in Effect and npm's `ini`).
+
+<CodeOutput>
+
+<include meta='title="config_files.py"'>../../snippets/data_formats/config_files.py</include>
+
+<include lang="text">../../snippets/data_formats/config_files.out</include>
+
+</CodeOutput>
+
+## Semantic versions
+
+`semver.parse(text)` returns a `Result` of a `SemVer` (SemVer 2.0.0), or a `SemVerError`;
+`parse_unsafe` raises it instead. A `SemVer` is a frozen dataclass with `major`, `minor`,
+`patch`, `prerelease` and `build`. `<` and `>` follow the spec's precedence, so a
+pre-release sorts before its release and build metadata is ignored; `==` includes the build.
+`bump(...)` follows npm's `semver.inc`, and `difference(other)` names the release type
+that separates two versions.
+
+`semver_range.parse(text)` reads npm's range grammar: `^` and `~`, comparators, x-ranges
+(`1.x`, `*`), hyphen ranges and `||`. `matches(version)` tests one version and
+`max_satisfying` / `min_satisfying` pick from a list. A pre-release matches only a bound
+with a pre-release on the same version, unless you pass `include_prerelease=True`.
+`caret`, `tilde`, `between` and the comparison functions build ranges without parsing.
+
+<CodeOutput>
+
+<include meta='title="versions.py"'>../../snippets/data_formats/versions.py</include>
+
+<include lang="text">../../snippets/data_formats/versions.out</include>
+
+</CodeOutput>
+
+## Exact decimals
+
+A `BigDecimal` is an integer `value` and a `scale`, the number being
+`value * 10 ** -scale`. Sums, differences and products are exact, and `==` compares
+values, so `0.3` equals `0.30`. `decimal.Decimal` instead rounds every result to its
+context's precision.
+
+`from_string` returns `None` for text that isn't a number; `from_string_unsafe` raises.
+`divide` gives 100 significant digits, rounded half up as in Effect, and `None` for a zero
+divisor. `round(scale=..., mode=...)` takes Effect's rounding modes (`"half-from-zero"` by
+default, `"half-even"`, `"ceil"`, `"floor"`, `"to-zero"`, ...), and `format()` prints the
+number without trailing zeros.
+
+<CodeOutput>
+
+<include meta='title="decimals.py"'>../../snippets/data_formats/decimals.py</include>
+
+<include lang="text">../../snippets/data_formats/decimals.out</include>
+
+</CodeOutput>
+
+Reference: [`pyfect.encoding.toml`](/docs/reference/encoding/toml),
+[`pyfect.encoding.yaml`](/docs/reference/encoding/yaml),
+[`pyfect.encoding.ini`](/docs/reference/encoding/ini),
+[`pyfect.semver`](/docs/reference/semver),
+[`pyfect.semver_range`](/docs/reference/semver_range),
+[`pyfect.big_decimal`](/docs/reference/big_decimal).

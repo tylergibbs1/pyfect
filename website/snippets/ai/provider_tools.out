@@ -1,0 +1,10 @@
+call: AnthropicBash {'command': 'ls'}
+result: AnthropicBash ran ls
+call: AnthropicCodeExecution {'type': 'bash_code_execution', 'command': "python -c 'print(17 * 23)'"} run by Anthropic: True
+text: 17 * 23 = 391
+tools: ['bash', 'code_execution']
+user ['text']
+assistant ['tool_use']
+user ['tool_result']
+assistant ['server_tool_use', 'bash_code_execution_tool_result', 'text']
+user ['text']
