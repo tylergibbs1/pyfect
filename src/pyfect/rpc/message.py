@@ -30,7 +30,13 @@ type RequestId = str | int
 
 @dataclass(frozen=True, slots=True)
 class Request:
-    """A call of the RPC ``tag`` with its decoded ``payload``."""
+    """A call of the RPC ``tag`` with its decoded ``payload``.
+
+    ``is_notification`` marks a request that gets no reply (a server
+    notification, an inbound JSON-RPC notification); ``discard`` marks a
+    client call made with ``discard=True``: it keeps its id, and the server
+    acknowledges it with a successful exit once the handler starts, then
+    sends nothing more for it."""
 
     id: RequestId
     tag: str
@@ -39,6 +45,8 @@ class Request:
     trace_id: str | None = None
     span_id: str | None = None
     sampled: bool | None = None
+    is_notification: bool = False
+    discard: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +125,7 @@ class RequestEncoded(TypedDict):
     payload: object
     headers: EncodedHeaders
     isNotification: NotRequired[Literal[True]]
+    discard: NotRequired[Literal[True]]
     traceId: NotRequired[str]
     spanId: NotRequired[str]
     sampled: NotRequired[bool]
@@ -172,10 +181,12 @@ class ResponseDefectEncoded(TypedDict):
 
 class ClientProtocolError(TypedDict):
     """Delivered to a client by its protocol when the connection failed;
-    never on the wire."""
+    never on the wire. It fails the requests in ``requestIds``, or every
+    request of the client when it is absent."""
 
     _tag: Literal["ClientProtocolError"]
     error: RpcClientError
+    requestIds: NotRequired[Sequence[RequestId]]
 
 
 type FromClientEncoded = RequestEncoded | AckEncoded | InterruptEncoded | Ping | EofEncoded

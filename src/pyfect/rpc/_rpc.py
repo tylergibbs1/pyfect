@@ -342,7 +342,7 @@ def exit_schema(rpc: AnyRpc) -> S.ExitSchema[Any, Any, Any, Any, Any, Any]:
     schema = S.Exit(
         S.Null if streams is not None else rpc.success_schema,
         S.Union(*failures),
-        rpc.defect_schema,  # pyright: ignore[reportArgumentType]
+        rpc.defect_schema,
     )
     _exit_schemas[id(rpc)] = (rpc, schema)
     return schema

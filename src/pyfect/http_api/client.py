@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Generic, Never, TypeVar, cast
+from typing import Any, Generic, Never, TypeIs, TypeVar, cast
 from urllib.parse import quote
 from warnings import deprecated
 
@@ -37,7 +37,12 @@ from pyfect.http_api import _path
 from pyfect.http_api import schema as api_schema
 from pyfect.http_api._client_method import EndpointClient, ResponseMode, SseOptions
 from pyfect.http_api._client_payload import payload_encoder, stream_payload_encoder
-from pyfect.http_api._client_response import ResponseDecoder, decoders, undeclared_status
+from pyfect.http_api._client_response import (
+    ResponseDecoder,
+    decoders,
+    undeclared_status,
+    upgrade_decoder,
+)
 from pyfect.http_api.api import (
     AnyApi,
     ApiWith,
@@ -56,6 +61,8 @@ from pyfect.stream import Stream
 from pyfect.stream import provide_context as stream_provide_context
 
 G_contra = TypeVar("G_contra", contravariant=True)
+A_co = TypeVar("A_co", covariant=True)
+E_co = TypeVar("E_co", covariant=True)
 
 type TransformResponse = Callable[[Effect[Any, Any, Any]], Effect[Any, Any, Any]]
 type _Call = Callable[[Mapping[str, Any], ResponseMode], Effect[Any, Any, Any]]
@@ -256,12 +263,7 @@ def _endpoint_call(
     endpoint = reflected.endpoint
     options = get_slot_parse_options(reflected.merged_annotations)
     make_url = compile_path(endpoint.path, endpoint.params)
-    streams = [
-        (schema, body)
-        for schema in endpoint.success
-        if api_schema.is_stream_schema(body := api_schema.body_of(schema))
-    ]
-    decode_map = decoders(reflected.errors, reflected.successes, streams, options)
+    decode_response = _response_decoder(reflected)
     upgrade = next((s for s in endpoint.success if api_schema.is_upgrade(s)), None)
     encode_params = _encoder(endpoint.params, options.params)
     encode_headers = _encoder(endpoint.headers, options.headers)
@@ -288,8 +290,9 @@ def _endpoint_call(
             response: HttpClientResponse = yield from execute(http_request)
             if mode == "response-only":
                 return response
-            decode: ResponseDecoder = decode_map.get(response.status, undeclared_status)
-            decoded = decode(response, cast("SseOptions | None", request.get("sse_options")))
+            decoded = decode_response(
+                response, cast("SseOptions | None", request.get("sse_options"))
+            )
             value = yield from (
                 decoded if transform_response is None else transform_response(decoded)
             )
@@ -298,6 +301,75 @@ def _endpoint_call(
         return gen(run)
 
     return call
+
+
+def _response_decoder(reflected: ReflectedEndpoint) -> ResponseDecoder:
+    """Decodes a response of ``reflected`` as its client method does in
+    ``"decoded-only"`` mode."""
+    options = get_slot_parse_options(reflected.merged_annotations)
+    streams = [
+        (schema, body)
+        for schema in reflected.endpoint.success
+        if api_schema.is_stream_schema(body := api_schema.body_of(schema))
+    ]
+    decode_map = dict(decoders(reflected.errors, reflected.successes, streams, options))
+    upgrade = next((s for s in reflected.endpoint.success if api_schema.is_upgrade(s)), None)
+    if upgrade is not None:
+        decode_map[101] = upgrade_decoder(upgrade, options.headers)
+    return lambda response, sse_options: decode_map.get(response.status, undeclared_status)(
+        response, sse_options
+    )
+
+
+class DecodeResponse(Generic[A_co, E_co]):
+    """What ``decode_response`` gives: call it with a response."""
+
+    __slots__ = ("_decode",)
+
+    def __init__(self, decode: ResponseDecoder) -> None:
+        self._decode = decode
+
+    def __call__(
+        self, response: HttpClientResponse, /, *, sse_options: SseOptions | None = None
+    ) -> Effect[A_co, E_co | HttpClientError | S.SchemaError]:
+        return self._decode(response, sse_options)
+
+
+def decode_response[P, Q, B, CB, H, S1, CS, E, M](
+    api: HttpApi[Any],
+    group: AnyGroup,
+    endpoint: HttpApiEndpoint[P, Q, B, CB, H, S1, CS, E, M],
+) -> DecodeResponse[CS, E]:
+    """Decodes raw responses of ``endpoint`` of ``group`` as its client
+    method does in ``"decoded-only"`` mode (Effect's ``decodeResponse``),
+    for a response read with ``response_only()`` whose body comes later
+    (long polling). A declared error fails with the decoded error, an
+    undeclared status with an ``HttpClientError`` (``DecodeError``). The
+    body is read when the effect runs, so run it in the response's scope.
+    Middleware and ``transform_response`` are not applied. Building it
+    walks the API: build it once per endpoint."""
+    reflected: list[ReflectedEndpoint] = []
+    reflect(
+        api,
+        on_group=lambda _g, _a: None,
+        on_endpoint=reflected.append,
+        predicate=lambda g, e: (
+            g.identifier == group.identifier and e.identifier == endpoint.identifier
+        ),
+    )
+    if not reflected:
+        raise ValueError(
+            f'HttpApiEndpoint "{group.identifier}.{endpoint.identifier}" not found in '
+            f'HttpApi "{api.identifier}"'
+        )
+    return DecodeResponse(_response_decoder(reflected[0]))
+
+
+def is_upgraded(value: object) -> TypeIs[api_schema.Upgraded[Any]]:
+    """``value`` (a client method's result) is an upgraded connection
+    (Effect's ``isUpgraded``): an endpoint declaring an upgrade beside
+    ordinary successes gives one or the other."""
+    return isinstance(value, api_schema.Upgraded)
 
 
 type _Requested = Effect[HttpClientRequest, Any, Any]
@@ -465,12 +537,15 @@ def url_builder(api: HttpApi[Any], *, base_url: str | Url | None = None) -> UrlB
 
 __all__ = [
     "Client",
+    "DecodeResponse",
     "TransformResponse",
     "UrlBuilder",
     "compile_path",
+    "decode_response",
     "endpoint",
     "get_group",
     "group",
+    "is_upgraded",
     "make",
     "make_with",
     "url_builder",

@@ -615,3 +615,49 @@ def test_interrupting_the_stream_aborts_the_request():
     assert not signals[0].aborted
     yield from fiber.interrupt()
     assert signals[0].aborted
+
+
+@testing.effect
+def test_a_503_with_data_and_no_errors_is_a_transport_error():
+    """GraphQLProtocol.layerHttp / a ${contentType} 503 with data and no errors is a TransportError, not a result"""  # noqa: E501
+    for content_type in ["application/json", "application/graphql-response+json"]:
+        reason = yield from _call_viewer(
+            lambda request, _b, _u, ct=content_type: graphql_response(
+                request, VIEWER_DATA, status=503, content_type=ct
+            )
+        ).pipe(expect_reason(TransportError))
+        assert reason.status == 503
+        assert reason.headers == H.from_input({"content-type": content_type})
+        assert reason.is_retryable
+
+
+@testing.effect
+def test_a_503_with_null_data_and_no_errors_is_a_transport_error_with_retry_after():
+    """GraphQLProtocol.layerHttp / a 503 with data: null and no errors is a TransportError carrying its Retry-After"""  # noqa: E501
+    reason = yield from _call_viewer(
+        lambda request, _b, _u: graphql_response(
+            request, {"data": None}, status=503, headers={"retry-after": "30"}
+        )
+    ).pipe(expect_reason(TransportError))
+    assert reason.status == 503
+    assert reason.retry_after == Seconds(30)
+
+
+@testing.effect
+def test_a_500_with_data_and_errors_is_a_response_error_even_with_partial():
+    """GraphQLProtocol.layerHttp / a 500 with data and errors is a ResponseError even with partial: true"""  # noqa: E501
+    body = {**VIEWER_DATA, "errors": [{"message": "boom", "path": ["viewer"]}]}
+    reason = yield from (
+        client.make(ViewerGroup)
+        .flat_map(lambda api: api.viewer(partial=True))
+        .pipe(
+            fx.provide(
+                fixture_layer_http(
+                    lambda request, _b, _u: graphql_response(request, body, status=500)
+                )
+            )
+        )
+        .pipe(expect_reason(ResponseError))
+    )
+    assert reason.status == 500
+    assert reason.is_retryable

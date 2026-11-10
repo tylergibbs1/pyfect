@@ -28,7 +28,7 @@ from pyfect.rpc.client._protocol import (
     with_run_client,
 )
 from pyfect.rpc.client._transports import ConnectionHooks
-from pyfect.rpc.client_error import RpcClientDefect, RpcClientError
+from pyfect.rpc.client_error import RpcClientDefect, RpcClientError, RpcClientErrorReason
 from pyfect.rpc.message import MalformedMessage, ServerMessage, decode_from_server
 from pyfect.rpc.serialization import CodecFor
 from pyfect.rpc.worker import InitialMessage
@@ -82,7 +82,9 @@ class _WorkerClient:
         try:
             responses = decode_from_server([message])
         except MalformedMessage as cause:
-            return self._fail(backing, RpcClientDefect("Error decoding message", cause))
+            return self._fail(
+                backing, RpcClientDefect(message="Error decoding message", cause=cause)
+            )
         return _VOID if not responses else self._on_response(responses[0])
 
     def _on_response(self, response: ServerMessage) -> Effect[None]:
@@ -104,20 +106,33 @@ class _WorkerClient:
             return self._write(entry.client_id, response)
         return self._broadcast(response)
 
-    def _fail(self, backing: _Backing, reason: Any) -> Effect[None]:
-        """Release the requests on ``backing`` and fail the clients'."""
+    def _fail(self, backing: _Backing, reason: RpcClientErrorReason) -> Effect[None]:
+        """Release the requests on ``backing`` and fail only those: each
+        client gets a ``ClientProtocolError`` listing its requests there."""
+        by_client: dict[int, list[object]] = {}
         for request_id, entry in list(self._entries.items()):
             if entry.worker is backing:
                 del self._entries[request_id]
                 entry.latch.open_unsafe()
-        return self._broadcast({"_tag": "ClientProtocolError", "error": RpcClientError(reason)})
+                by_client.setdefault(entry.client_id, []).append(request_id)
+        error = RpcClientError(reason=reason)
+
+        @gen
+        def deliver():
+            for client_id, request_ids in by_client.items():
+                yield from self._write(
+                    client_id,
+                    {"_tag": "ClientProtocolError", "error": error, "requestIds": request_ids},
+                )
+
+        return deliver
 
     def _on_cause(self, backing: _Backing, cause: Cause[Any]) -> Effect[None]:
         found = cause.find_error()
         if isinstance(found, Ok) and isinstance(found.value, WorkerError):
-            reason: Any = found.value.reason
+            reason: RpcClientErrorReason = found.value.reason
         else:
-            reason = RpcClientDefect("Error in worker", cause.squash())
+            reason = RpcClientDefect(message="Error in worker", cause=cause.squash())
         return self._fail(backing, reason)
 
     def acquire(self) -> Effect[_Backing, WorkerError, Any]:
@@ -156,11 +171,19 @@ class _WorkerClient:
             def body() -> Effect[None, RpcClientError]:
                 tag = request.get("_tag")
                 if tag == "Request":
+                    # The pool counts a worker as busy until the exit arrives,
+                    # so a discarded call is sent without its marker to get the
+                    # handler's exit.
+                    message = (
+                        {key: value for key, value in request.items() if key != "discard"}
+                        if request.get("discard") is True
+                        else request
+                    )
 
                     def lent(worker: _Backing) -> Effect[None, WorkerError]:
                         latch = Latch(False)
                         self._entries[request["id"]] = _Entry(client_id, worker, latch)
-                        return worker.send(request).flat_map(lambda _: latch.wait())
+                        return worker.send(message).flat_map(lambda _: latch.wait())
 
                     return scoped(pool.get().flat_map(lent)).or_die()
                 if tag == "Interrupt":

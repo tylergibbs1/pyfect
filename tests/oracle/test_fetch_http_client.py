@@ -9,6 +9,10 @@ Adapted, with the reason:
 - ``sends bodies from Web requests``: there is no web ``Request``; a
   request with a ``raw`` body (as ``fromWeb`` makes) is sent instead.
 
+- ``keeps supported request bodies streaming with duplex half``: httpx
+  sends a stream body as it is pulled, chunked, as fetch does with
+  ``duplex: "half"``; the server reports the framing it received.
+
 Omitted, with the reason:
 
 - ``exposes the original Web response body``, ``exposes the original Web
@@ -20,7 +24,7 @@ import pytest
 
 pytest.importorskip("httpx")
 
-from pyfect import testing
+from pyfect import stream, testing
 from pyfect.http import body, httpx_client
 from pyfect.http import request as req
 from pyfect.http.client import HttpClient
@@ -42,4 +46,16 @@ def test_sends_bodies(http: Services[HttpClient]):
     client = yield from HttpClient()
     response = yield from client.execute(request)
     assert response.url == f"{base_url()}/?existing=1&value=a%23b"
+    assert (yield from response.text) == "hello"
+
+
+@testing.live(timeout="10 seconds")
+def test_keeps_request_bodies_streaming(http: Services[HttpClient]):
+    """keeps supported request bodies streaming with duplex half"""
+    request = req.post(f"{base_url()}/framing").body_stream(
+        stream.make(b"he", b"llo"), content_type="application/octet-stream"
+    )
+    client = yield from HttpClient()
+    response = yield from client.execute(request)
+    assert response.headers["x-framing"] == "chunked"
     assert (yield from response.text) == "hello"

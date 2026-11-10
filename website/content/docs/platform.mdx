@@ -61,7 +61,11 @@ and `stream_lines` start a command, read its output and clean up in one call.
 An `HttpClient` is a value: methods like `filter_status_ok`, `retry_transient` and `transform`
 each give back a new client. `retry_transient` retries timeouts, transport errors and the
 statuses worth retrying (408, 429, 500, 502, 503 and 504), and waits at least as long as a
-response's `Retry-After` asks. `response.schema_body_json` decodes the body with a
+response's `Retry-After` asks. `timeout` fails a request that gets no response in time with a
+`TransportError` (so `retry_transient` retries it); applied before `retry_transient` each
+attempt gets its own budget, applied after it the budget covers every attempt.
+`client.is_transient_error` and `client.is_transient_response` classify failures the same way
+for a policy of your own. `response.schema_body_json` decodes the body with a
 [schema](/docs/schema), so a payload of the wrong shape fails with a `SchemaError`.
 
 This program runs against `client.layer_test`, which answers each request with a function.
@@ -77,6 +81,24 @@ In production, provide `httpx_client.layer` instead (install the `pyfect-dev[htt
 
 Every request runs in a client span and sends trace headers (see
 [observability](/docs/observability)); interrupting a request aborts it.
+
+A body is sent as it is pulled when it is a stream (`body.stream`), and so is a form file
+whose content is a function opening a stream (`body.File(lambda: chunks, "big.bin")`): the
+file is read only as fast as the connection takes it, and an interrupted request stops it.
+
+`with_cookies_ref(ref)` keeps the cookies responses set in a `Ref[tuple[Cookie, ...]]` and
+sends them back the way a browser does (RFC 6265): only to the host that set them, or the
+hosts their `Domain` covers, on their `Path`, over https when they're `Secure`, and not after
+they expire. `cookies.merge_into_array` and `cookies.to_request_cookie_header` are the same
+rules on a plain tuple, for seeding a jar or reading one.
+
+<CodeOutput>
+
+<include meta='title="cookies.py"'>../../snippets/platform/cookies.py</include>
+
+<include lang="text">../../snippets/platform/cookies.out</include>
+
+</CodeOutput>
 
 ## URLs
 

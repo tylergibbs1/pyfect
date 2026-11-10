@@ -6,24 +6,31 @@ options are keyword arguments (``CookieOptionsInput``)::
 
     cookies = empty.set_unsafe("session", "abc", path="/", http_only=True)
     cookies.to_set_cookie_headers()   # ["session=abc; Path=/; HttpOnly"]
+
+For client-side storage, ``merge_into_array`` and
+``to_request_cookie_header`` work on a tuple of cookies scoped by domain,
+path and scheme, following RFC 6265.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import re
 import sys
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, fields
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal, TypedDict, Unpack, final
 from urllib.parse import quote, unquote
 
 from pyfect import _js_date as js_date
 from pyfect._digits import parse_signed_digits
 from pyfect._js import text_encode
+from pyfect.date_time._epoch import to_epoch_millis
 from pyfect.duration import ZERO, Duration, Seconds, to_seconds
 from pyfect.errors import TaggedError
+from pyfect.http import url as _url
 from pyfect.http.headers import format_http_date
 from pyfect.result import Err, Ok, Result
 
@@ -43,6 +50,7 @@ class CookieOptionsInput(TypedDict, total=False):
     secure: bool
     partitioned: bool
     same_site: SameSite
+    host_only: bool
 
 
 @final
@@ -57,6 +65,8 @@ class CookieOptions:
     secure: bool | None = None
     partitioned: bool | None = None
     same_site: SameSite | None = None
+    # A stored client cookie sent only to the exact ``domain``; never serialized.
+    host_only: bool | None = None
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -118,7 +128,7 @@ _FIELD_CONTENT = re.compile(r"[\t\x20-\x7e\x80-\xff]+")
 _NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 _DOMAIN = re.compile(r"[\t\x20-\x3a\x3c-\x7e\x80-\xff]+")
 _PATH = re.compile(r"[\x20-\x3a\x3c-\x7e]+")
-_LEADING_INT = re.compile(r"\s*([+-]?[0-9]+)")
+_COOKIE_WHITESPACE = re.compile(r"^[\t ]+|[\t ]+$")
 _MAX_SECONDS = int(sys.float_info.max)
 _BAD_ESCAPE = re.compile(r"%(?![0-9A-Fa-f]{2})")
 
@@ -194,7 +204,7 @@ def serialize_cookie(cookie: Cookie) -> str:
         return out
     if options.max_age is not None:
         out += f"; Max-Age={math.trunc(to_seconds(options.max_age))}"
-    if options.domain is not None:
+    if options.domain is not None and not options.host_only:
         out += f"; Domain={options.domain}"
     if options.path is not None:
         out += f"; Path={options.path}"
@@ -218,8 +228,10 @@ def _parse_set_cookie(header: str) -> Cookie | None:  # noqa: PLR0912
     if not parts:
         return None
     name, equal, value_encoded = parts[0].partition("=")
+    name = _COOKIE_WHITESPACE.sub("", name)
     if not equal or not _NAME.fullmatch(name):
         return None
+    value_encoded = _COOKIE_WHITESPACE.sub("", value_encoded)
     value = _decode_component(value_encoded)
     options: CookieOptionsInput = {}
     for part in parts[1:]:
@@ -235,8 +247,9 @@ def _parse_set_cookie(header: str) -> Cookie | None:  # noqa: PLR0912
                 if date is not None:
                     options["expires"] = date
             case "max-age" if attribute is not None:
-                found = _LEADING_INT.match(attribute)
-                seconds = None if found is None else parse_signed_digits(found[1])
+                # RFC 6265 section 5.2.2: an optional "-", then digits.
+                plus = attribute.startswith("+")
+                seconds = None if plus else parse_signed_digits(attribute)
                 # Past what a float holds the attribute is ignored.
                 if seconds is not None and abs(seconds) <= _MAX_SECONDS:
                     options["max_age"] = Seconds(seconds)
@@ -407,11 +420,186 @@ def parse_header(header: str) -> dict[str, str]:
             continue
         key = header[pos:eq].strip()
         if key not in result:
-            raw = header[eq + 1 : end]
-            val = raw[1:-1].strip() if raw.startswith('"') else raw.strip()
+            val = header[eq + 1 : end].strip()
+            if val.startswith('"'):
+                val = val[1:-1].strip()
             result[key] = _decode_component(val) if "%" in val else val
         pos = end + 1
     return result
+
+
+# Client storage (RFC 6265): a tuple of cookies, each scoped by domain and path.
+
+
+def merge_into_array(
+    jar: Sequence[Cookie], url: str, cookies: Cookies, now: float
+) -> tuple[Cookie, ...]:
+    """``jar`` with the cookies a response from ``url`` set, at ``now``
+    (epoch milliseconds).
+
+    A cookie without ``Domain`` is ``host_only`` for the host of ``url``; a
+    ``Domain`` is accepted only when that host domain-matches it (never for
+    an IP address or a single label such as ``com``; there is no public
+    suffix list). Without ``Path`` the cookie takes the default path of
+    ``url``. ``Max-Age`` wins over ``Expires``; both become an absolute
+    ``expires``. A cookie replaces the one with the same name, domain and
+    path in place; an expired one removes it. ``jar`` is returned unchanged
+    when ``url`` is not an absolute URL."""
+    parsed = _parse_url(url)
+    if parsed is None:
+        return tuple(jar)
+    stored = list(jar)
+    for cookie in cookies:
+        scoped = _scope_cookie(parsed, cookie, now)
+        if scoped is None:
+            continue
+        key = (scoped.name, _cookie_domain(scoped), _cookie_path(scoped))
+        index = next(
+            (
+                i
+                for i, held in enumerate(stored)
+                if (held.name, _cookie_domain(held), _cookie_path(held)) == key
+            ),
+            None,
+        )
+        if _expired(scoped, now):
+            if index is not None:
+                del stored[index]
+        elif index is None:
+            stored.append(scoped)
+        else:
+            stored[index] = scoped
+    return tuple(stored)
+
+
+def to_request_cookie_header(jar: Sequence[Cookie], url: str, now: float) -> str | None:
+    """The ``Cookie`` header value for a request to ``url`` at ``now``
+    (epoch milliseconds): the unexpired cookies whose domain and path match
+    ``url`` (``Secure`` ones only over https), same names included, longest
+    path first; ``None`` when none match. A cookie without a ``domain`` is
+    never sent; one without a ``path`` matches every path."""
+    parsed = _parse_url(url)
+    if parsed is None:
+        return None
+    host = parsed.hostname
+    secure = parsed.protocol == "https:"
+
+    def matches(cookie: Cookie) -> bool:
+        domain = _cookie_domain(cookie)
+        options = cookie.options or _NO_OPTIONS
+        return (
+            domain is not None
+            and (host == domain if options.host_only else _domain_matches(host, domain))
+            and _path_matches(parsed.pathname, _cookie_path(cookie))
+            and not _expired(cookie, now)
+            and (secure or not options.secure)
+        )
+
+    matching = sorted(
+        (cookie for cookie in jar if matches(cookie)), key=lambda c: -len(_cookie_path(c))
+    )
+    if not matching:
+        return None
+    return "; ".join(f"{c.name}={c.value_encoded}" for c in matching)
+
+
+_NO_OPTIONS = CookieOptions()
+_IPV4 = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+")
+
+
+def _parse_url(url: str) -> _url.Url | None:
+    try:
+        return _url.parse(url)
+    except ValueError:
+        return None
+
+
+def _cookie_domain(cookie: Cookie) -> str | None:
+    domain = None if cookie.options is None else cookie.options.domain
+    return (domain or "").removeprefix(".").lower() or None
+
+
+def _cookie_path(cookie: Cookie) -> str:
+    path = None if cookie.options is None else cookie.options.path
+    return path if path is not None and path.startswith("/") else "/"
+
+
+def _expires_millis(expires: datetime) -> int:
+    return to_epoch_millis(expires if expires.tzinfo else expires.replace(tzinfo=UTC))
+
+
+def _expired(cookie: Cookie, now: float) -> bool:
+    expires = None if cookie.options is None else cookie.options.expires
+    return expires is not None and _expires_millis(expires) <= now
+
+
+def _is_ip_address(host: str) -> bool:
+    return host.startswith("[") or _IPV4.fullmatch(host) is not None
+
+
+def _domain_matches(host: str, domain: str) -> bool:
+    return host == domain or (host.endswith("." + domain) and not _is_ip_address(host))
+
+
+def _path_matches(request_path: str, cookie_path: str) -> bool:
+    return request_path == cookie_path or (
+        request_path.startswith(cookie_path)
+        and (
+            cookie_path.endswith("/")
+            or request_path[len(cookie_path) : len(cookie_path) + 1] == "/"
+        )
+    )
+
+
+def _default_path(pathname: str) -> str:
+    index = pathname.rfind("/")
+    return "/" if index <= 0 else pathname[:index]
+
+
+_MAX_DATE_MILLIS = 8_640_000_000_000_000
+"""JavaScript's ``Date`` range; past it ``new Date(...)`` is invalid."""
+
+
+def _expiry(now: float, max_age: Duration) -> datetime:
+    """``now`` plus ``max_age`` as an ``expires``: clamped to what ``datetime``
+    holds, and expired outright past JavaScript's ``Date`` range (Effect
+    stores an invalid ``Date`` there, which is never sent)."""
+    millis = now + to_seconds(max_age) * 1000
+    if abs(millis) > _MAX_DATE_MILLIS:
+        return _EPOCH
+    try:
+        return _EPOCH + timedelta(milliseconds=millis)
+    except OverflowError:
+        return datetime.max.replace(tzinfo=UTC) if millis > 0 else _EPOCH
+
+
+def _scope_cookie(url: _url.Url, cookie: Cookie, now: float) -> Cookie | None:
+    host = url.hostname
+    domain, host_only = host, True
+    attribute = _cookie_domain(cookie)
+    if attribute is not None:
+        if _is_ip_address(host) or not _domain_matches(host, attribute):
+            return None
+        if "." in attribute:
+            domain, host_only = attribute, False
+        elif attribute != host:
+            # a single-label domain such as "com" is treated like a public suffix
+            return None
+    options = cookie.options or _NO_OPTIONS
+    path = options.path
+    return Cookie(
+        cookie.name,
+        cookie.value,
+        cookie.value_encoded,
+        dataclasses.replace(
+            options,
+            domain=domain,
+            host_only=True if host_only else None,
+            path=path if path is not None and path.startswith("/") else _default_path(url.pathname),
+            expires=options.expires if options.max_age is None else _expiry(now, options.max_age),
+            max_age=None,
+        ),
+    )
 
 
 __all__ = [
@@ -430,6 +618,8 @@ __all__ = [
     "from_set_cookie",
     "make_cookie",
     "make_cookie_unsafe",
+    "merge_into_array",
     "parse_header",
     "serialize_cookie",
+    "to_request_cookie_header",
 ]

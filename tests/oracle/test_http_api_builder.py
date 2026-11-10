@@ -941,3 +941,123 @@ def test_returns_the_callback_unchanged_and_supports_registration_in_a_group() -
     )
     assert result == {"id": 42, "name": "Ada"}
     assert len(calls) == 1
+
+
+def test_sends_the_first_listed_stream_content_type_unless_a_declared_header_selects_another() -> (
+    None
+):
+    """HttpApiBuilder streaming success responses / sends the first listed stream content type unless a declared header selects another"""  # noqa: E501
+    raw_type = "application/vnd.docker.raw-stream"
+    multiplexed_type = "application/vnd.docker.multiplexed-stream"
+    logs = api_schema.StreamUint8Array(content_type=[raw_type, multiplexed_type])
+    g = HttpApiGroup.make("test").add(
+        ep.get("raw", "/raw", success=logs),
+        ep.get(
+            "multiplexed",
+            "/multiplexed",
+            success=api_schema.WithHeaders(
+                logs, struct({"content-type": S.Literals(raw_type, multiplexed_type)})
+            ),
+        ),
+    )
+    api = HttpApi.make("Api").add(g)
+
+    def use(c: Any) -> Any:
+        def run() -> Any:
+            raw = yield from c.method("raw").response_only()
+            multiplexed = yield from c.method("multiplexed")()
+            chunks = yield from multiplexed.body.run_collect()
+            return raw.headers["content-type"], multiplexed.headers, [bytes(x) for x in chunks]
+
+        return effect.gen(run)
+
+    r = call_group(
+        api,
+        g,
+        lambda h: h.handle(g.endpoints["raw"])(
+            lambda _: effect.succeed(stream.make(b"\x01"))
+        ).handle(g.endpoints["multiplexed"])(
+            lambda _: effect.succeed(
+                api_schema.with_headers(stream.make(b"\x02"), {"content-type": multiplexed_type})
+            )
+        ),
+        use,
+    )
+    assert r == (raw_type, {"content-type": multiplexed_type}, [b"\x02"])
+
+
+def test_rejects_endpoints_that_share_a_method_and_path() -> None:
+    """HttpApiBuilder streaming success responses / rejects endpoints that share a method and path"""  # noqa: E501
+    stats = struct({"cpu": S.Number})
+    g = HttpApiGroup.make("stats").add(
+        ep.get("once", "/stats", query=struct({"stream": S.Literal(False)}), success=stats),
+        ep.get(
+            "stream",
+            "/stats",
+            query=struct({"stream": S.Literal(True)}),
+            success=api_schema.StreamNdjson(stats),
+        ),
+    )
+    api = HttpApi.make("Api").add(g)
+    live = builder.group(
+        api,
+        g,
+        lambda h: h.handle(g.endpoints["once"])(lambda _: effect.succeed({"cpu": 1})).handle(
+            g.endpoints["stream"]
+        )(lambda _: effect.succeed(stream.make({"cpu": 1}))),
+    )
+    app = api_layer(api, live).pipe(layer.provide(server.layer_services))
+    exit_ = fx.run_blocking(scoped(router.to_http_effect(app)).exit())
+    assert isinstance(exit_, Failure)
+    error = exit_.cause.squash()
+    assert isinstance(error, Exception)
+    assert str(error) == (
+        'HttpApiEndpoint "stats.stream" (GET /stats) has the same method and path as '
+        '"stats.once". Declare one endpoint whose query, headers, payload or success schemas '
+        "cover each variant instead."
+    )
+
+
+def test_accepts_each_listed_content_type_for_byte_and_ndjson_stream_payloads() -> None:
+    """HttpApiBuilder streaming payloads / accepts each listed content type for byte and NDJSON stream payloads"""  # noqa: E501
+    item = struct({"n": S.Finite})
+    g = HttpApiGroup.make("test").add(
+        ep.post(
+            "bytes",
+            "/bytes",
+            payload=api_schema.StreamUint8Array(
+                content_type=["application/x-tar", "application/gzip"]
+            ),
+            success=S.Finite,
+        ),
+        ep.post(
+            "ndjson",
+            "/ndjson",
+            payload=api_schema.StreamNdjson(
+                item, content_type=["application/jsonl", "application/json"]
+            ),
+            success=S.Finite,
+        ),
+    )
+    api = HttpApi.make("Api").add(g)
+    live = builder.group(
+        api,
+        g,
+        lambda h: h.handle(g.endpoints["bytes"])(
+            lambda ctx: ctx.payload.run_collect().map(lambda chunks: sum(len(c) for c in chunks))
+        ).handle(g.endpoints["ndjson"])(lambda ctx: ctx.payload.run_collect().map(len)),
+    )
+
+    async def use(handler: Any) -> None:
+        for content_type in ("application/x-tar", "application/gzip"):
+            response = await handler(_post("/bytes", content_type, bytes(3)))
+            assert response.status == 200
+            assert await response.json() == 3
+        for content_type in ("application/jsonl", "application/json"):
+            response = await handler(_post("/ndjson", content_type, '{"n":1}\n{"n":2}\n'))
+            assert response.status == 200
+            assert await response.json() == 2
+        assert (await handler(_post("/bytes", "application/octet-stream", "abc"))).status == 415
+        assert (await handler(_post("/ndjson", "application/x-ndjson", '{"n":1}\n'))).status == 415
+
+    _with_handler(api_layer(api, live), use)

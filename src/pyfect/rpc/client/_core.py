@@ -78,12 +78,12 @@ def with_headers(headers: Mapping[str, str] | Headers) -> _WithHeaders:
 
 @dataclass(frozen=True, slots=True)
 class OnFromClient:
-    """A message for the protocol, with the call's services ``context``
-    and whether its caller ``discard``\\s the result."""
+    """A message for the protocol, with the call's services ``context``. A
+    discarded call is a ``Request`` with ``discard`` set: it waits for the
+    server's acknowledgement, a successful ``ResponseExit``."""
 
     message: FromClient
     context: Context[Any]
-    discard: bool
 
 
 type SendFn = Callable[[OnFromClient], Effect[None, Any]]
@@ -206,13 +206,22 @@ class ClientCore:
         if call.headers is not None:
             headers = headers.merge(from_input(call.headers))
         if span is None:
-            return Request(id, rpc.tag, payload, headers)
-        return Request(id, rpc.tag, payload, headers, span.trace_id, span.span_id, _sampled(span))
+            return Request(id, rpc.tag, payload, headers, discard=call.discard)
+        return Request(
+            id,
+            rpc.tag,
+            payload,
+            headers,
+            span.trace_id,
+            span.span_id,
+            _sampled(span),
+            discard=call.discard,
+        )
 
     def _send_interrupt(
         self, request_id: RequestId, context: Context[Any], interruptors: tuple[int, ...]
     ) -> Effect[None]:
-        sent = self._send(OnFromClient(Interrupt(request_id, interruptors), context, False))
+        sent = self._send(OnFromClient(Interrupt(request_id, interruptors), context))
         return sent.timeout("1 second").exit().as_void()
 
     # --- unary calls -----------------------------------------------------------------
@@ -240,13 +249,11 @@ class ClientCore:
             id = self._next_id()
             send = self._with_middleware(
                 rpc,
-                lambda message: self._send(OnFromClient(message, context, call.discard)),
+                lambda message: self._send(OnFromClient(message, context)),
                 self._request(parent, rpc, id, payload=payload, call=call, span=span),
             )
             if span is not None:
                 send = send.with_parent_span(span, capture_stack_trace=False)
-            if call.discard:
-                return send.as_void()
             sender: list[Fiber[Any, Any]] = []
 
             def on_exit(exit: Exit.Exit[Any, Any]) -> Effect[None]:
@@ -264,7 +271,14 @@ class ClientCore:
 
             waiting: Effect[Any, Any] = callback(
                 lambda resume: self._register(
-                    parent, rpc, id, context, send=send, resume=resume, sender=sender
+                    parent,
+                    rpc,
+                    id,
+                    context,
+                    send=send,
+                    resume=resume,
+                    sender=sender,
+                    discard=call.discard,
                 )
             )
             return waiting.on_exit(on_exit)
@@ -281,8 +295,19 @@ class ClientCore:
         send: Effect[Any, Any],
         resume: Callable[[Effect[Any, Any]], None],
         sender: list[Fiber[Any, Any]],
+        discard: bool,
     ) -> None:
+        acked = [False]
+
         def done(exit: Exit.Exit[Any, Any]) -> None:
+            if discard and isinstance(exit, Exit.Success):
+                # A successful acknowledgement waits for the send to finish,
+                # as interrupting the send could cancel the call (an HTTP
+                # handler is scoped to its request). Failures complete at once.
+                acked[0] = True
+                if sender and sender[0].poll_unsafe() is not None:
+                    resume(_VOID)
+                return
             resume(from_exit(exit))
             if sender and sender[0].poll_unsafe() is None:
                 # Deferred to a task, as Effect's: the sender may be the
@@ -298,6 +323,8 @@ class ClientCore:
             if isinstance(exit, Exit.Failure):
                 self._entries.pop(id, None)
                 resume(from_exit(exit))
+            elif acked[0]:
+                resume(_VOID)
 
         fiber.add_observer_unsafe(observe)
 
@@ -336,7 +363,7 @@ class ClientCore:
             self._entries[id] = _QueueEntry(rpc, queue, context)
             send = self._with_middleware(
                 rpc,
-                lambda message: self._send(OnFromClient(message, context, False)),
+                lambda message: self._send(OnFromClient(message, context)),
                 self._request(fiber, rpc, id, payload=payload, call=call, span=span),
             )
             if span is not None:
@@ -386,8 +413,12 @@ class ClientCore:
     ) -> Effect[None]:
         offered: Effect[Any, Any] = entry.queue.offer_all(values)
         if self._options.supports_ack:
+            # Values are dropped when an interrupted consumer shut the queue
+            # down, so the server is not asked for more.
             offered = offered.flat_map(
-                lambda _: self._send(OnFromClient(Ack(request_id), entry.context, False))
+                lambda dropped: (
+                    _VOID if dropped else self._send(OnFromClient(Ack(request_id), entry.context))
+                )
             )
         return offered.catch_cause(lambda cause: entry.queue.fail_cause(cause).as_void())
 

@@ -123,7 +123,8 @@ class ResponseError(S.TaggedError, identifier="effect/graphql/GraphQLClientError
 
 class TransportError(S.TaggedError, identifier="effect/graphql/GraphQLClientError/TransportError"):
     """No GraphQL response came: a network failure, an HTTP response that
-    is not GraphQL (``status`` and ``headers`` set), or a closed WebSocket
+    is not GraphQL or a non-2xx GraphQL response without ``errors``
+    (``status`` and ``headers`` set), or a closed WebSocket
     (``close_code``). ``fatal`` marks a failure retrying cannot fix;
     ``cause`` is the original error."""
 

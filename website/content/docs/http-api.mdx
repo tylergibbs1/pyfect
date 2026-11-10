@@ -33,7 +33,10 @@ endpoint has no handler. `builder.layer(api)` adds every group's routes to the
 `client.make(api)` derives a client: `get_group(api_client, Users).get_user(params={"id": 1})`
 encodes the request, sends it with the `HttpClient` and decodes the response, failing with
 the endpoint's declared errors as values of their own classes. `get_group` is typed as the
-group you name, and a group the API lacks is a pyright error.
+group you name, and a group the API lacks is a pyright error. A method's `response_only`
+gives the raw response; `client.decode_response(api, Users, Users.get_user)` decodes it
+later, as the method would have. Two endpoints with the same method and path are an error
+when the routes are built.
 
 <CodeOutput>
 
@@ -49,6 +52,30 @@ the client what was wrong, build the routes with
 `builder.layer(api, schema_error_details=True)`: the 400 then carries
 `{"_tag": "HttpApiSchemaError", "kind": "Payload", "message": "Missing key\n  at [\"url\"]"}`.
 It is off by default, as in Effect, since the message describes your schemas.
+
+## Problem details
+
+`error.Problem` declares an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) error:
+`class OutOfCredit(Problem, type=..., status=..., title=...)` with its own fields as
+extensions. An endpoint failing with it answers with that status and an
+`application/problem+json` body, the OpenAPI document lists it so, and the client decodes it
+back by its `type` into an `OutOfCredit`. `detail` and `instance` are optional on every
+problem. `schema.as_problem(title=...)` sends an error class you already have as a problem.
+
+Add the `middleware.ProblemDetails` middleware to the API and provide
+`layer_problem_details()` to answer requests that don't decode with a `BadRequestProblem`
+instead of the empty 400; `include_details=True` adds `errors`, each a path starting with
+the slot (`query`, `payload`, ...) and a message. A response that fails to encode becomes an
+`InternalServerErrorProblem`, and the schema error is reported once. `http.problem_details`
+has the plain RFC 9457 schema for problems from other servers.
+
+<CodeOutput>
+
+<include meta='title="problems.py"'>../../snippets/http_api/problems.py</include>
+
+<include lang="text">../../snippets/http_api/problems.out</include>
+
+</CodeOutput>
 
 ## Security
 
@@ -79,7 +106,9 @@ request on with `options.next(...)`, here with the token added. Provide it to `c
 
 </CodeOutput>
 
-The OpenAPI document lists the security scheme and the 401 response.
+The OpenAPI document lists the security scheme and the 401 response. An endpoint behind
+several security middlewares requires all of them there, while the schemes of one
+middleware are alternatives.
 
 ## Uploads and streams
 
@@ -96,7 +125,13 @@ file before the handler runs, and the handler gets a `multipart.PersistedFile` w
 `Stream` and each element is sent as one event, encoded by the schema. The client method
 gives back a `Stream` of the decoded events, so `run_for_each` follows them as they arrive.
 `StreamSse(events=...)` sends whole events (with `event` and `id`) instead of their data,
-and `error=` encodes a failure of the stream as an event the client fails with.
+and `error=` encodes a failure of the stream as an event the client fails with. Event data
+goes through its schema's JSON codec, so dates and big integers are strings on the wire.
+
+`StreamUint8Array` and `StreamNdjson` also take a list of content types,
+`content_type=["application/jsonl", "application/json"]`: a payload is accepted under any of
+them, a response is sent with the first unless a declared `content-type` header picks
+another, and the client decodes the stream whatever type arrives.
 
 <CodeOutput>
 

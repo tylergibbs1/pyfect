@@ -22,6 +22,7 @@ from pyfect.http.live_server._exchange import (
     encode_fields,
 )
 from pyfect.http.live_server._websocket import web_socket
+from pyfect.http.live_server._ws_deflate import WebSocketConfig
 from pyfect.http.server_error import HttpServerError, InternalError, request_parse_error
 from pyfect.http.server_request import ServerRequest
 from pyfect.http.server_response import empty
@@ -47,7 +48,7 @@ def _upgrade_error(
 
 
 def upgrade(
-    exchange: Exchange, request: ServerRequest, headers: Headers, websocket_max_message_size: int
+    exchange: Exchange, request: ServerRequest, headers: Headers, websocket: WebSocketConfig
 ) -> Effect[SocketService, HttpServerError]:
     """The connection of an ``Upgrade`` request: a WebSocket or raw."""
     protocol = exchange.head.upgrade
@@ -57,7 +58,7 @@ def upgrade(
         if headers:
             message = "WebSocket upgrades do not support custom response headers"
             return fail(_upgrade_error(request, message))
-        return succeed(web_socket(exchange, websocket_max_message_size))
+        return succeed(web_socket(exchange, websocket))
     reserved = sorted(_RESERVED.intersection(headers))
     if reserved:
         return fail(_upgrade_error(request, f"Reserved upgrade header: {reserved[0]}"))

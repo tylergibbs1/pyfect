@@ -80,10 +80,10 @@ def test_an_open_timeout_keeps_the_target() -> None:
 def test_the_message_is_effects_whatever_the_target_and_cause() -> None:
     for target in (None, "ws://x"):
         for cause in (None, OSError("no route")):
-            assert SocketOpenError("Unknown", cause, target).message == (
+            assert SocketOpenError(kind="Unknown", cause=cause, target=target).message == (
                 "An error occurred during Open"
             )
-            assert SocketOpenError("Timeout", cause, target).message == (
+            assert SocketOpenError(kind="Timeout", cause=cause, target=target).message == (
                 'timeout waiting for "open"'
             )
 

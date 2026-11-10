@@ -1,5 +1,5 @@
 """The server side of RFC 6455's opening handshake and framing, as Node's
-``ws`` speaks it with its server defaults (no extensions): the
+``ws`` speaks it (``permessage-deflate``, when negotiated, is ``_ws_deflate``): the
 ``Sec-WebSocket-Accept`` key, unmasked frames out, and a parser of the
 client's masked frames that turns them into messages, pings and the
 close, or a ``ProtocolError`` with the close code ``ws`` sends for it."""
@@ -12,6 +12,7 @@ import re
 import struct
 from dataclasses import dataclass
 from enum import Enum, IntEnum, auto
+from typing import Protocol
 
 from pyfect._js import text_encode
 
@@ -44,10 +45,10 @@ def is_valid_close_code(code: int) -> bool:
     return (1000 <= code <= 1014 and code not in (1004, 1005, 1006)) or 3000 <= code <= 4999
 
 
-def encode_frame(opcode: Opcode, payload: bytes) -> bytes:
-    """One final, unmasked frame."""
+def encode_frame(opcode: Opcode, payload: bytes, *, compressed: bool = False) -> bytes:
+    """One final, unmasked frame; ``compressed`` sets RSV1 (``permessage-deflate``)."""
     size = len(payload)
-    first = 0x80 | opcode
+    first = 0x80 | opcode | (0x40 if compressed else 0)
     if size < 126:
         head = struct.pack("!BB", first, size)
     elif size < 1 << 16:
@@ -130,20 +131,38 @@ def _parse_close(payload: bytes) -> Close:
     return Close(code, reason)
 
 
+class Inflate(Protocol):
+    def feed(self, payload: bytes, fin: bool, inflated_so_far: int) -> bytes: ...
+
+
 class FrameParser:
     """Feeds the client's bytes in, gives the events of the frames they
-    complete. Messages longer than ``max_message_size`` bytes are a 1009
-    ``ProtocolError``; once one is raised, or a close is parsed, the parser
-    takes nothing more."""
+    complete. Messages longer than ``max_message_size`` bytes (sent, or
+    inflated when compressed) are a 1009 ``ProtocolError``; once one is raised,
+    or a close is parsed, the parser takes nothing more. Without ``inflate``
+    (no ``permessage-deflate``) a frame with RSV1 set is a protocol error."""
 
-    __slots__ = ("_buffer", "_done", "_fragments", "_max", "_message_opcode", "_message_size")
+    __slots__ = (
+        "_buffer",
+        "_compressed",
+        "_done",
+        "_fragments",
+        "_inflate",
+        "_inflated",
+        "_max",
+        "_message_opcode",
+        "_message_size",
+    )
 
-    def __init__(self, max_message_size: int) -> None:
+    def __init__(self, max_message_size: int, inflate: Inflate | None = None) -> None:
         self._max = max_message_size
+        self._inflate = inflate
         self._buffer = bytearray()
         self._fragments: list[bytes] = []
         self._message_opcode: Opcode | None = None
         self._message_size = 0
+        self._compressed = False
+        self._inflated = 0
         self._done = False
 
     def feed(self, data: bytes) -> list[Event]:
@@ -171,8 +190,11 @@ class FrameParser:
         if len(buffer) < 2:
             return None
         first, second = buffer[0], buffer[1]
-        if first & 0x70:
-            raise ProtocolError(1002, "RSV1, RSV2 and RSV3 must be clear")
+        if first & 0x30:
+            raise ProtocolError(1002, "RSV2 and RSV3 must be clear")
+        compressed = bool(first & 0x40)
+        if compressed and self._inflate is None:
+            raise ProtocolError(1002, "RSV1 must be clear")
         try:
             opcode = Opcode(first & 0x0F)
         except ValueError:
@@ -192,23 +214,27 @@ class FrameParser:
                 return None
             (length,) = struct.unpack_from("!Q", buffer, 2)
             offset = 10
-        self._check(opcode, fin, length)
+        self._check(opcode, fin, length, compressed)
         end = offset + 4 + length
         if len(buffer) < end:
             return None
         mask = bytes(buffer[offset : offset + 4])
         payload = _unmask(bytes(buffer[offset + 4 : end]), mask)
         del buffer[:end]
-        return self._event(opcode, fin, payload)
+        return self._event(opcode, fin, payload, compressed)
 
-    def _check(self, opcode: Opcode, fin: bool, length: int) -> None:
+    def _check(self, opcode: Opcode, fin: bool, length: int, compressed: bool) -> None:
         if opcode >= Opcode.CLOSE:
             if not fin:
                 raise ProtocolError(1002, "FIN must be set")
+            if compressed:
+                raise ProtocolError(1002, "RSV1 must be clear")
             if length > _MAX_CONTROL_PAYLOAD:
                 raise ProtocolError(1002, f"invalid payload length {length}")
             return
         if opcode == Opcode.CONTINUATION:
+            if compressed:
+                raise ProtocolError(1002, "RSV1 must be clear")
             if self._message_opcode is None:
                 raise ProtocolError(1002, "invalid opcode 0")
         elif self._message_opcode is not None:
@@ -216,7 +242,9 @@ class FrameParser:
         if self._message_size + length > self._max:
             raise ProtocolError(1009, "Max payload size exceeded")
 
-    def _event(self, opcode: Opcode, fin: bool, payload: bytes) -> Event | _NoEvent:
+    def _event(
+        self, opcode: Opcode, fin: bool, payload: bytes, compressed: bool
+    ) -> Event | _NoEvent:
         if opcode == Opcode.CLOSE:
             return _parse_close(payload)
         if opcode == Opcode.PING:
@@ -225,8 +253,12 @@ class FrameParser:
             return _NO_EVENT
         if opcode != Opcode.CONTINUATION:
             self._message_opcode = opcode
-        self._fragments.append(payload)
+            self._compressed = compressed
         self._message_size += len(payload)
+        if self._compressed and self._inflate is not None:
+            payload = self._inflate.feed(payload, fin, self._inflated)
+            self._inflated += len(payload)
+        self._fragments.append(payload)
         if not fin:
             return _NO_EVENT
         data = b"".join(self._fragments)
@@ -234,6 +266,8 @@ class FrameParser:
         self._fragments.clear()
         self._message_opcode = None
         self._message_size = 0
+        self._compressed = False
+        self._inflated = 0
         if not text:
             return Message(data)
         try:

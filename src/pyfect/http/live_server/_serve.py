@@ -23,6 +23,7 @@ from pyfect.http.live_server._inbound import BareLineFeed, HeadTooLarge, Inbound
 from pyfect.http.live_server._listener import ConnectionState, Listener
 from pyfect.http.live_server._timers import timeout_option
 from pyfect.http.live_server._upgrade import upgrade
+from pyfect.http.live_server._ws_deflate import WebSocketConfig
 from pyfect.http.server_error import CLIENT_ABORT_ANNOTATION
 from pyfect.http.server_request import RequestProtocol, SourceRequest
 from pyfect.option import Option
@@ -91,7 +92,7 @@ def _request(
     exchange: Exchange,
     protocol: RequestProtocol,
     remote_address: str | None,
-    websocket_max_message_size: int,
+    websocket: WebSocketConfig,
 ) -> SourceRequest:
     head = exchange.head
     url = head.target
@@ -100,7 +101,7 @@ def _request(
 
     def upgrade_request(upgrade_headers: Headers) -> Effect[Any, Any]:
         assert request is not None
-        return upgrade(exchange, request, upgrade_headers, websocket_max_message_size)
+        return upgrade(exchange, request, upgrade_headers, websocket)
 
     request = SourceRequest(
         head.method,
@@ -147,7 +148,7 @@ def serve_connection(
     protocol: RequestProtocol,
     timeouts: Timeouts,
     *,
-    websocket_max_message_size: int,
+    websocket: WebSocketConfig,
 ) -> Effect[None]:
     conn = state.conn
     inbound = Inbound(conn)
@@ -217,7 +218,7 @@ def serve_connection(
                 yield from _reject(conn, head)
                 return
             exchange = Exchange(conn, inbound, head, int(timeouts.keep_alive))
-            request = _request(exchange, protocol, remote_address, websocket_max_message_size)
+            request = _request(exchange, protocol, remote_address, websocket)
             yield from _run_request(exchange, handle(request, exchange))
             if not (yield from after(exchange)):
                 return

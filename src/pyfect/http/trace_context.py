@@ -26,10 +26,11 @@ def to_headers(span: Span) -> Headers:
     )
 
 
-_W3C_TRACE_ID = re.compile(r"[0-9a-f]{32}", re.IGNORECASE)
-_W3C_SPAN_ID = re.compile(r"[0-9a-f]{16}", re.IGNORECASE)
-_HEX_PREFIX = re.compile(r"[0-9a-f]+", re.IGNORECASE)
-_B3_TRACE_ID = re.compile(r"[0-9a-f]{16}|[0-9a-f]{32}", re.IGNORECASE)
+# Lowercase only, as W3C Trace Context and B3 write them.
+_W3C_TRACE_ID = re.compile(r"[0-9a-f]{32}")
+_W3C_SPAN_ID = re.compile(r"[0-9a-f]{16}")
+_W3C_TRACE_FLAGS = re.compile(r"[0-9a-f]{2}")
+_B3_TRACE_ID = re.compile(r"[0-9a-f]{16}|[0-9a-f]{32}")
 
 
 def _b3_ids(trace_id: str, span_id: str) -> bool:
@@ -39,7 +40,8 @@ def _b3_ids(trace_id: str, span_id: str) -> bool:
 
 
 def w3c(headers: Headers) -> ExternalSpan | None:
-    """The span of a version ``00`` ``traceparent`` header."""
+    """The span of a version ``00`` ``traceparent`` header with lowercase
+    identifiers and two-digit trace flags."""
     traceparent = headers.get("traceparent")
     if not traceparent:
         return None
@@ -51,13 +53,12 @@ def w3c(headers: Headers) -> ExternalSpan | None:
         version != "00"
         or _W3C_TRACE_ID.fullmatch(trace_id) is None
         or _W3C_SPAN_ID.fullmatch(span_id) is None
+        or _W3C_TRACE_FLAGS.fullmatch(flags) is None
         or trace_id == "0" * 32
         or span_id == "0" * 16
     ):
         return None
-    digits = _HEX_PREFIX.match(flags)
-    sampled = digits is not None and int(digits[0], 16) & 1 == 1
-    return ExternalSpan(span_id=span_id, trace_id=trace_id, sampled=sampled)
+    return ExternalSpan(span_id=span_id, trace_id=trace_id, sampled=int(flags, 16) & 1 == 1)
 
 
 def b3(headers: Headers) -> ExternalSpan | None:

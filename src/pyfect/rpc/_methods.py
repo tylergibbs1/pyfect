@@ -19,7 +19,8 @@ from pyfect.stream import Stream
 @dataclass(frozen=True, slots=True)
 class CallOptions:
     """How one call is made: extra ``headers``, services ``context`` for
-    the client middleware, ``discard`` (do not wait for the result), and
+    the client middleware, ``discard`` (wait for the server's acknowledgement,
+    not the result), and
     for streams the ``stream_buffer_size`` of the queue of chunks."""
 
     headers: HeadersInput | None = None
@@ -78,7 +79,7 @@ class UnaryMethod[P, S, E, TE = RpcClientError]:
         *,
         headers: HeadersInput | None = None,
         context: Context[Any] | None = None,
-    ) -> Effect[None, TE]: ...
+    ) -> Effect[None, E | TE]: ...
     @overload
     def discard(
         self,
@@ -87,7 +88,7 @@ class UnaryMethod[P, S, E, TE = RpcClientError]:
         *,
         headers: HeadersInput | None = None,
         context: Context[Any] | None = None,
-    ) -> Effect[None, TE]: ...
+    ) -> Effect[None, E | TE]: ...
     def discard(
         self,
         payload: object = None,
@@ -95,9 +96,13 @@ class UnaryMethod[P, S, E, TE = RpcClientError]:
         *,
         headers: HeadersInput | None = None,
         context: Context[Any] | None = None,
-    ) -> Effect[None, TE]:
-        """Send the request without waiting for its result (Effect's
-        ``discard: true``)."""
+    ) -> Effect[None, E | TE]:
+        """Send the request and complete once the server acknowledges it as
+        its handler starts, after the middleware ran (Effect's ``discard:
+        true``). The handler's result and error are not returned; transport
+        errors, middleware errors and failures before the handler starts
+        still fail the call. Over HTTP and workers it completes once the
+        handler is done."""
         return self._call(payload, CallOptions(headers, context, discard=True))
 
 

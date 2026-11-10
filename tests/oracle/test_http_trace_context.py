@@ -71,11 +71,37 @@ def test_64_bit_trace_id(headers: dict[str, str]) -> None:
         {"X-B3-TraceId": TRACE_ID, "X-B3-SpanId": f"{SPAN_ID[:-1]}g"},
         {"X-B3-TraceId": TRACE_ID[:-1], "X-B3-SpanId": SPAN_ID},
         {"X-B3-TraceId": TRACE_ID, "X-B3-SpanId": SPAN_ID[:-1]},
+        {"b3": f"{TRACE_ID.upper()}-{SPAN_ID}-1"},
+        {"b3": f"{TRACE_ID}-{SPAN_ID.upper()}-1"},
+        {"X-B3-TraceId": TRACE_ID.upper(), "X-B3-SpanId": SPAN_ID},
+        {"X-B3-TraceId": TRACE_ID, "X-B3-SpanId": SPAN_ID.upper()},
     ],
 )
 def test_rejects_invalid_b3(headers: dict[str, str]) -> None:
     """rejects invalid B3 identifiers: %j"""
     assert trace_context.from_headers(h.from_input(headers)) is None
+
+
+@pytest.mark.parametrize(
+    "traceparent",
+    [f"00-{TRACE_ID.upper()}-{SPAN_ID}-01", f"00-{TRACE_ID}-{SPAN_ID.upper()}-01"],
+)
+def test_rejects_uppercase_w3c_identifiers(traceparent: str) -> None:
+    """rejects uppercase W3C identifiers: %s"""
+    assert trace_context.from_headers(h.from_input({"traceparent": traceparent})) is None
+
+
+def test_reads_the_sampled_bit_from_w3c_trace_flags() -> None:
+    """reads the sampled bit from W3C trace flags"""
+    _assert_sampled({"traceparent": f"00-{TRACE_ID}-{SPAN_ID}-02"}, sampled=False)
+    _assert_sampled({"traceparent": f"00-{TRACE_ID}-{SPAN_ID}-ff"}, sampled=True)
+
+
+@pytest.mark.parametrize("flags", ["1", "001", "0g", "FF"])
+def test_rejects_malformed_w3c_trace_flags(flags: str) -> None:
+    """rejects malformed W3C trace flags: %j"""
+    headers = h.from_input({"traceparent": f"00-{TRACE_ID}-{SPAN_ID}-{flags}"})
+    assert trace_context.from_headers(headers) is None
 
 
 def test_rejects_zero_trace_id() -> None:

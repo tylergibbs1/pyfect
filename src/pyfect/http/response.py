@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from functools import cached_property
-from typing import Literal, Unpack, cast, final
+from typing import TYPE_CHECKING, Literal, Unpack, cast, final
 
 from pyfect._cached import memoize
 from pyfect._digits import parse_digits
@@ -25,8 +25,15 @@ from pyfect._json_text import PARSE_ERRORS, Json, parse
 from pyfect.byte_size import ByteSize
 from pyfect.effect import Effect, fail, succeed, suspend, sync
 from pyfect.http import url as _url
+from pyfect.http._url_text import params_from_body
 from pyfect.http.cookies import Cookies, from_set_cookie
-from pyfect.http.error import DecodeError, EmptyBodyError, HttpClientError, StatusCodeError
+from pyfect.http.error import (
+    DecodeError,
+    EmptyBodyError,
+    HttpClientError,
+    StatusCodeError,
+    TransportError,
+)
 from pyfect.http.headers import Headers
 from pyfect.http.headers import Input as HeadersInput
 from pyfect.http.headers import from_input as headers_from_input
@@ -38,7 +45,6 @@ from pyfect.http.incoming_message import (
 )
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.url_params import UrlParams
-from pyfect.http.url_params import parse as parse_url_params
 from pyfect.schema import (
     Codec,
     SchemaError,
@@ -52,6 +58,9 @@ from pyfect.stream import Stream, from_effect
 from pyfect.stream import fail as fail_stream
 from pyfect.stream import succeed as succeed_stream
 from pyfect.stream import suspend as suspend_stream
+
+if TYPE_CHECKING:
+    from pyfect.socket import SocketService
 
 type ResponseBody = bytes | Stream[bytes, object] | None
 """A response body: all of it, a stream of it (read once), or none (a
@@ -86,6 +95,7 @@ class HttpClientResponse:
         url: str | None = None,
         set_cookie: Sequence[str] = (),
         remote_address: str | None = None,
+        upgrade: Effect[SocketService, HttpClientError] | None = None,
     ) -> None:
         self.request = request
         self.status = status
@@ -94,6 +104,7 @@ class HttpClientResponse:
         self._url = url
         self._set_cookie = tuple(set_cookie)
         self._remote_address = remote_address
+        self._upgrade = upgrade
         self._bytes: Effect[bytes, HttpClientError] | None = None
 
     def __repr__(self) -> str:
@@ -167,7 +178,7 @@ class HttpClientResponse:
 
     @property
     def url_params_body(self) -> Effect[UrlParams, HttpClientError]:
-        return self.text.map(parse_url_params)
+        return self.bytes_.map(params_from_body)
 
     @property
     def stream(self) -> Stream[bytes, HttpClientError]:
@@ -185,6 +196,22 @@ class HttpClientResponse:
         if isinstance(body, bytes):
             return succeed_stream(body)
         return body.map_error(self._error)
+
+    @property
+    def upgrade(self) -> Effect[SocketService, HttpClientError]:
+        """The connection of a ``101 Switching Protocols`` response as a
+        socket (ask for one with ``HttpClientRequest.upgrade``). Bytes the
+        server sent after the response head come first on the reader;
+        releasing the reader's scope closes the connection, releasing the
+        writer's half-closes it. Any other status fails with a
+        ``StatusCodeError``, so a refusal's body can still be read."""
+        if self._upgrade is not None:
+            return self._upgrade
+        if self.status == 101:
+            description = "the client did not hand over the connection of the upgrade"
+            return fail(HttpClientError(TransportError(self.request, None, description)))
+        description = "expected 101 Switching Protocols"
+        return fail(HttpClientError(StatusCodeError(self.request, self, None, description)))
 
 
 @final
@@ -256,6 +283,10 @@ class _InterruptibleResponse(HttpClientResponse):
 
         return suspend_stream(make)
 
+    @property
+    def upgrade(self) -> Effect[SocketService, HttpClientError]:
+        return self._interruptible(lambda original: original.upgrade)
+
 
 class ResponseTooLargeError(Exception):
     """The cause of the ``DecodeError`` of a body read past its limit."""
@@ -290,6 +321,10 @@ class _LimitedResponse(HttpClientResponse):
 
     def _read(self) -> Effect[bytes, HttpClientError]:
         return self.stream.run_collect().map(b"".join)
+
+    @property
+    def upgrade(self) -> Effect[SocketService, HttpClientError]:
+        return self.original.upgrade
 
     def _too_large(self, max_bytes: int) -> HttpClientError:
         cause = ResponseTooLargeError(max_bytes)

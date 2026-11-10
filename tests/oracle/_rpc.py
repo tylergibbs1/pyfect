@@ -116,6 +116,8 @@ class UserRpcs(RpcGroup):
 
 def _auth(eff: Any, options: rpc_middleware.MiddlewareOptions) -> Any:
     headers = options.headers
+    if headers.get("unauthorized"):
+        return effect.fail(Unauthorized())
     user = User(id=headers.get("userid", "1"), name=headers.get("name", "Fallback name"))
     return eff.pipe(effect.provide_service(CurrentUser, user))
 

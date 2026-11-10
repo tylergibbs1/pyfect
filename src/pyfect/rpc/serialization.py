@@ -179,24 +179,31 @@ ndjson = make_ndjson()
 
 
 class _JsonRpcParser:
-    __slots__ = ("_batches",)
+    __slots__ = ("_batches", "_control_messages")
 
-    def __init__(self) -> None:
+    def __init__(self, control_messages: bool) -> None:
         self._batches: Batches = {}
+        self._control_messages = control_messages
 
     def decode(self, data: Frame, /) -> list[object]:
-        return decode_json_rpc(parse(_text(data)), self._batches)
+        return decode_json_rpc(
+            parse(_text(data)), self._batches, control_messages=self._control_messages
+        )
 
     def encode(self, response: object, /) -> Frame | None:
         encoded = encode_json_rpc(response, self._batches)
         return None if encoded is None else stringify(encoded)
 
 
-def json_rpc(*, content_type: str = "application/json") -> RpcSerializationService:
+def json_rpc(
+    *, content_type: str = "application/json", control_messages: bool = True
+) -> RpcSerializationService:
     """JSON-RPC 2.0, one JSON value per frame: a request batch (an array)
-    is answered with one array once each of its requests is done."""
+    is answered with one array once each of its requests is done. Set
+    ``control_messages=False`` for plain JSON-RPC peers, so ``@effect/rpc/*``
+    methods are not read as RPC control messages."""
     return RpcSerializationService(
-        make_unsafe=_JsonRpcParser,
+        make_unsafe=lambda: _JsonRpcParser(control_messages),
         content_type=content_type,
         includes_framing=False,
         codec_for=_codec_for_json,
@@ -204,17 +211,20 @@ def json_rpc(*, content_type: str = "application/json") -> RpcSerializationServi
 
 
 class _NdJsonRpcParser:
-    __slots__ = ("_batches", "_parser")
+    __slots__ = ("_batches", "_control_messages", "_parser")
 
-    def __init__(self, max_buffer_size: MaxBufferSize) -> None:
+    def __init__(self, max_buffer_size: MaxBufferSize, control_messages: bool) -> None:
         self._parser = _NdjsonParser(max_buffer_size)
         self._batches: Batches = {}
+        self._control_messages = control_messages
 
     def decode(self, data: Frame, /) -> list[object]:
         frames = self._parser.decode(data)
         messages: list[object] = []
         for frame in frames:
-            messages.extend(decode_json_rpc(frame, self._batches))
+            messages.extend(
+                decode_json_rpc(frame, self._batches, control_messages=self._control_messages)
+            )
         return messages
 
     def encode(self, response: object, /) -> Frame | None:
@@ -226,10 +236,12 @@ def nd_json_rpc(
     *,
     content_type: str = "application/json-rpc",
     max_buffer_size: MaxBufferSize = DEFAULT_MAX_BUFFER_SIZE,
+    control_messages: bool = True,
 ) -> RpcSerializationService:
-    """JSON-RPC 2.0, one JSON value per line."""
+    """JSON-RPC 2.0, one JSON value per line (``control_messages`` as in
+    ``json_rpc``)."""
     return RpcSerializationService(
-        make_unsafe=lambda: _NdJsonRpcParser(max_buffer_size),
+        make_unsafe=lambda: _NdJsonRpcParser(max_buffer_size, control_messages),
         content_type=content_type,
         includes_framing=True,
         codec_for=_codec_for_json,
@@ -314,17 +326,27 @@ def layer_schema_binary(
     )
 
 
-def layer_json_rpc(*, content_type: str = "application/json") -> Layer[RpcSerialization]:
-    return layer_succeed(RpcSerialization, json_rpc(content_type=content_type))
+def layer_json_rpc(
+    *, content_type: str = "application/json", control_messages: bool = True
+) -> Layer[RpcSerialization]:
+    return layer_succeed(
+        RpcSerialization, json_rpc(content_type=content_type, control_messages=control_messages)
+    )
 
 
 def layer_nd_json_rpc(
     *,
     content_type: str = "application/json-rpc",
     max_buffer_size: MaxBufferSize = DEFAULT_MAX_BUFFER_SIZE,
+    control_messages: bool = True,
 ) -> Layer[RpcSerialization]:
     return layer_succeed(
-        RpcSerialization, nd_json_rpc(content_type=content_type, max_buffer_size=max_buffer_size)
+        RpcSerialization,
+        nd_json_rpc(
+            content_type=content_type,
+            max_buffer_size=max_buffer_size,
+            control_messages=control_messages,
+        ),
     )
 
 

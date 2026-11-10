@@ -200,3 +200,21 @@ def test_preserves_full_defect_with_custom_schema() -> None:
         assert defect.stack == "Error: detailed error\n  at handler.ts:1"
 
     _run("e2e http ndjson", body)
+
+
+@pytest.mark.parametrize("suite", _NAMES)
+def test_completes_a_discarded_call_on_its_acknowledgement_and_fails_it_when_rejected(
+    suite: str,
+) -> None:
+    """RpcServer / {suite} / completes a discarded call on its acknowledgement, and fails it when its middleware rejects it"""  # noqa: E501
+    from ._rpc import Unauthorized
+
+    def body():
+        client = yield from UsersClient()
+        assert (yield from client.get_user.discard({"id": "1"})) is None
+        error = yield from (
+            client.get_user.discard({"id": "1"}).pipe(with_headers({"unauthorized": "true"})).flip()
+        )
+        assert isinstance(error, Unauthorized)
+
+    _run(suite, body)

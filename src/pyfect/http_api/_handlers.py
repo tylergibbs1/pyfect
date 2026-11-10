@@ -63,8 +63,9 @@ class HttpApiRequest(Generic[P_co, Q_co, B_co, H_co]):
 
     def upgrade(self, headers: object = None) -> Effect[SocketService]:
         """The upgraded connection of an ``Upgrade`` endpoint, answering the
-        ``101`` with ``headers`` (encoded by the upgrade's headers schema).
-        Return it from the handler."""
+        ``101`` with ``headers`` (encoded by the upgrade's headers schema),
+        sent once its reader is taken. Beside other successes, a handler that
+        upgrades returns nothing."""
         if self.upgrader is None:
             raise TypeError(f"Endpoint {self.endpoint.identifier!r} declares no Upgrade")
         return self.upgrader(headers)

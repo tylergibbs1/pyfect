@@ -194,11 +194,20 @@ def parse(query: str) -> UrlParams:
 
 
 class CurrentRedactedNames(Reference[tuple[Pattern, ...]]):
-    """The parameter names whose values logs, spans and error messages hide."""
+    """The parameter names whose values logs and spans hide; the default is OpenTelemetry's
+    ``url.full`` list."""
 
     @classmethod
     def default(cls) -> tuple[Pattern, ...]:
-        return ("AWSAccessKeyId", "Signature", "sig", "X-Goog-Signature")
+        return (
+            "X-Amz-Signature",
+            "X-Amz-Credential",
+            "X-Amz-Security-Token",
+            "AWSAccessKeyId",
+            "Signature",
+            "sig",
+            "X-Goog-Signature",
+        )
 
 
 def current_redacted_names() -> tuple[Pattern, ...]:

@@ -12,16 +12,11 @@ from pyfect.cause import Interrupt
 from pyfect.effect import from_exit
 from pyfect.exit import Exit, Failure
 from pyfect.http import _request_state
+from pyfect.http._url_text import strip_search_and_hash
 from pyfect.http.server_error import ClientAbort, cause_response_stripped
 from pyfect.http.server_request import HttpServerRequest
 from pyfect.http.server_response import HttpServerResponse
 from pyfect.logger import log
-
-
-def strip_search_and_hash(url: str) -> str:
-    """``url`` without its query and fragment."""
-    ends = [index for index in (url.find("?"), url.find("#")) if index != -1]
-    return url[: min(ends)] if ends else url
 
 
 def with_logger_disabled[A, E, R](eff: Effect[A, E, R]) -> Effect[A, E, R | HttpServerRequest]:

@@ -80,7 +80,18 @@ def _platform(
     def respond(_path: str, **options: Any) -> fx.Effect[HttpServerResponse, PlatformError]:
         if file_response_error is not None:
             return effect.fail(file_response_error)
-        headers = {"ETag": '"etag-value"', "Last-Modified": LAST_MODIFIED} if validators else {}
+        headers = (
+            {
+                "Content-Location": "/file.txt",
+                "Date": LAST_MODIFIED,
+                "ETag": '"etag-value"',
+                "Expires": "Thu, 02 Jan 2025 00:00:00 GMT",
+                "Last-Modified": LAST_MODIFIED,
+                "Vary": "Accept-Encoding",
+            }
+            if validators
+            else {}
+        )
         return effect.succeed(
             server_response.text(FILE_BODY, status=options.get("status", 200), headers=headers)
         )
@@ -138,6 +149,10 @@ def test_304_with_if_none_match_exact_weak_and_wildcard() -> None:
     assert exact.get("etag") == etag
     assert exact.get("cache-control") == "public, max-age=60"
     assert exact.get("last-modified") == LAST_MODIFIED
+    assert exact.get("content-location") == "/file.txt"
+    assert exact.get("date") == LAST_MODIFIED
+    assert exact.get("expires") == "Thu, 02 Jan 2025 00:00:00 GMT"
+    assert exact.get("vary") == "Accept-Encoding"
     assert exact.get("content-type") is None
     assert exact.get("content-length") is None
 

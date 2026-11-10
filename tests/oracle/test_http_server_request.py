@@ -13,7 +13,7 @@ Changed, with the reason:
 """
 
 import json
-from typing import TypedDict
+from typing import TypedDict, assert_type
 
 import pytest
 
@@ -22,10 +22,12 @@ from pyfect import effect, schema
 from pyfect.exit import Success
 from pyfect.http import body as http_body
 from pyfect.http import request as client_request
-from pyfect.http import url_params
+from pyfect.http import response as client_response
+from pyfect.http import server_response, url_params
 from pyfect.http.multipart import Field, File
 from pyfect.http.server_request import (
     HttpServerRequest,
+    ServerRequest,
     from_client_request,
     schema_body_json,
     to_client_request,
@@ -33,6 +35,42 @@ from pyfect.http.server_request import (
 )
 from pyfect.http.web import WebRequest
 from pyfect.http.web_handler import request_from_web
+
+
+def test_preserves_an_extension_method() -> None:
+    """preserves an extension method through web-server-client conversion"""
+    request = request_from_web(WebRequest("http://localhost/", method="PROPFIND"))
+    assert_type(request.method, str)
+    assert request.method == "PROPFIND"
+    forwarded = to_client_request(request)
+    assert_type(forwarded.method, str)
+    assert forwarded.method == "PROPFIND"
+    assert from_client_request(forwarded).method == "PROPFIND"
+
+
+def test_url_params_body_preserves_leading_question_marks() -> None:
+    """urlParamsBody preserves leading question marks"""
+    body = "??name=value"
+    client = client_request.post("http://localhost/").body_text(
+        body, "application/x-www-form-urlencoded"
+    )
+    messages: list[ServerRequest | client_response.HttpClientResponse] = [
+        request_from_web(WebRequest("http://localhost/", method="POST", body=body)),
+        from_client_request(client),
+        client_response.make(client, body),
+        server_response.to_client_response(server_response.text(body)),
+    ]
+    for message in messages:
+        params = fx.run_sync(message.url_params_body.or_die())
+        assert list(params) == [("??name", "value")]
+
+
+def test_url_params_body_preserves_a_leading_bom() -> None:
+    """urlParamsBody preserves a leading BOM"""
+    request = request_from_web(
+        WebRequest("http://localhost/", method="POST", body="\ufeffname=value")
+    )
+    assert list(fx.run_sync(request.url_params_body.or_die())) == [("\ufeffname", "value")]
 
 
 def test_preserves_form_data_through_client_server_client_conversion() -> None:

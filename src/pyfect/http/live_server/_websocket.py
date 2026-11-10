@@ -4,7 +4,8 @@ handing ``Upgrade: websocket`` requests to ``ws``'s ``handleUpgrade``).
 Acquiring the socket's reader checks the handshake as ``ws`` does (a bad
 one is answered with ``ws``'s 400 or 405 and fails the reader as a socket
 closed before the upgrade), sends the ``101`` with ``Sec-WebSocket-Accept``
-(and the client's first subprotocol), then speaks RFC 6455: pulls give
+(the client's first subprotocol, and the accepted ``permessage-deflate`` offer
+when the server takes them), then speaks RFC 6455: pulls give
 the client's messages (text as ``str``), pings are answered, and the
 client's close is answered and fails the pull with its code (1006 when the
 connection ends without one). The reader's scope closes the WebSocket with
@@ -26,6 +27,7 @@ from pyfect.effect import fail, succeed, suspend, sync, void
 from pyfect.exit import Exit
 from pyfect.http._field import is_token
 from pyfect.http.live_server._exchange import Exchange, encode_fields
+from pyfect.http.live_server._ws_deflate import Negotiated, WebSocketConfig, negotiate
 from pyfect.http.live_server._ws_frames import (
     Close,
     FrameParser,
@@ -86,8 +88,11 @@ def _subprotocols(value: str | None) -> list[str]:
     return protocols
 
 
-def _switching_head(exchange: Exchange) -> bytes:
-    """The ``101``, or ``_Refused`` for a handshake ``ws`` refuses."""
+def _switching_head(
+    exchange: Exchange, websocket: WebSocketConfig
+) -> tuple[bytes, Negotiated | None]:
+    """The ``101`` and the ``permessage-deflate`` parameters it accepted, or ``_Refused``
+    for a handshake ``ws`` refuses."""
     head = exchange.head
     headers = head.headers
     if head.method != "GET":
@@ -103,6 +108,17 @@ def _switching_head(exchange: Exchange) -> bytes:
             ("Sec-WebSocket-Version", "13, 8"),
         )
     protocols = _subprotocols(headers.get("sec-websocket-protocol"))
+    negotiated = None
+    offered = headers.get("sec-websocket-extensions")
+    if websocket.per_message_deflate is not None and offered is not None:
+        try:
+            negotiated = negotiate(
+                websocket.per_message_deflate, offered, websocket.max_message_size
+            )
+        except ValueError:
+            raise _Refused(
+                400, "Bad Request", "Invalid or unacceptable Sec-WebSocket-Extensions header"
+            ) from None
     fields = [
         ("Upgrade", "websocket"),
         ("Connection", "Upgrade"),
@@ -110,7 +126,9 @@ def _switching_head(exchange: Exchange) -> bytes:
     ]
     if protocols:
         fields.append(("Sec-WebSocket-Protocol", protocols[0]))
-    return encode_fields("HTTP/1.1 101 Switching Protocols", fields)
+    if negotiated is not None:
+        fields.append(("Sec-WebSocket-Extensions", negotiated.header()))
+    return encode_fields("HTTP/1.1 101 Switching Protocols", fields), negotiated
 
 
 def _closed_before_upgrade() -> SocketError:
@@ -122,6 +140,7 @@ class _Session:
     over or answer, and whether a close frame was sent."""
 
     __slots__ = (
+        "_deflater",
         "_end_writing",
         "_error",
         "_leftover",
@@ -133,9 +152,13 @@ class _Session:
         "exchange",
     )
 
-    def __init__(self, exchange: Exchange, max_message_size: int) -> None:
+    def __init__(
+        self, exchange: Exchange, max_message_size: int, negotiated: Negotiated | None
+    ) -> None:
         self.exchange = exchange
-        self._parser = FrameParser(max_message_size)
+        inflater = None if negotiated is None else negotiated.inflater()
+        self._parser = FrameParser(max_message_size, inflater)
+        self._deflater = None if negotiated is None else negotiated.deflater()
         self._leftover = exchange.take_pending()
         self._lock = threading.Lock()
         self._ready: deque[Chunk] = deque()
@@ -219,9 +242,27 @@ class _Session:
         # the reader sees the connection end.
         return self.exchange.conn.write(frames).catch_all(lambda _: void)
 
+    def _send_messages(self, chunks: Sequence[Chunk]) -> Effect[None, SocketError]:
+        deflater = self._deflater
+        if deflater is None:
+            return self._send(tuple(map(encode_message, chunks)))
+
+        def encode(chunk: Chunk) -> bytes:
+            text = isinstance(chunk, str)
+            data = text_encode(chunk) if isinstance(chunk, str) else chunk
+            opcode = Opcode.TEXT if text else Opcode.BINARY
+            compressed = deflater.compress(data)
+            if compressed is None:
+                return encode_frame(opcode, data)
+            return encode_frame(opcode, compressed, compressed=True)
+
+        # Compressed on the loop, in write order, as the shared context requires.
+        written = self.exchange.conn.write_with(lambda: tuple(map(encode, chunks)))
+        return written.catch_all(lambda _: void)
+
     def write(self, chunk: Chunk | CloseEvent) -> Effect[None, SocketError]:
         if not isinstance(chunk, CloseEvent):
-            return void if self.close_sent else self._send((encode_message(chunk),))
+            return void if self.close_sent else self._send_messages((chunk,))
         reason = chunk.reason or ""
         if not is_valid_close_code(chunk.code):
             return fail(write_error(TypeError("First argument must be a valid error code number")))
@@ -234,7 +275,7 @@ class _Session:
     def write_all(self, chunks: Sequence[Chunk]) -> Effect[None, SocketError]:
         if self.close_sent:
             return void
-        return self._send(tuple(map(encode_message, chunks)))
+        return self._send_messages(chunks)
 
     def close(self, exit: Exit[object, object]) -> Effect[None]:
         if not self.claim_close():
@@ -242,7 +283,7 @@ class _Session:
         return self._send((encode_close(close_code(exit)),)).catch_all(lambda _: void)
 
 
-def web_socket(exchange: Exchange, max_message_size: int) -> SocketService:
+def web_socket(exchange: Exchange, websocket: WebSocketConfig) -> SocketService:
     """The socket of a WebSocket upgrade request."""
     opened = Latch(False)
     current: list[_Session] = []
@@ -254,14 +295,14 @@ def web_socket(exchange: Exchange, max_message_size: int) -> SocketService:
         exchange.headers_sent = True
         exchange.close_after = True
         try:
-            head = _switching_head(exchange)
+            head, negotiated = _switching_head(exchange, websocket)
         except _Refused as refused:
             written = conn.write((refused.response(),)).catch_all(lambda _: void)
             return written.flat_map(lambda _: sync(conn.end_writing)).flat_map(
                 lambda _: fail(_closed_before_upgrade())
             )
         exchange.upgraded = _SWITCHED
-        session = _Session(exchange, max_message_size)
+        session = _Session(exchange, websocket.max_message_size, negotiated)
         return conn.write((head,)).map_error(lambda _: _closed_before_upgrade()).as_(session)
 
     def release(session: _Session, exit: Exit[object, object]) -> Effect[None]:

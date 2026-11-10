@@ -65,6 +65,7 @@ def test_schema_json_applies_a_json_reviver() -> None:
 
 def _encoded(form: http_body.FormData) -> tuple[stream.Stream[bytes], dict[str, str]]:
     data, content_type = _form_data.encode(form)
+    assert isinstance(data, bytes)  # every file here is bytes
     return stream.make(data), {"content-type": content_type}
 
 

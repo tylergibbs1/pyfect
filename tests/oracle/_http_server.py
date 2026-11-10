@@ -97,6 +97,8 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(200, b"test")
             case "/redirect":
                 self._send(302, location="/redirected")
+            case "/redirect-body":
+                self._send(302, b"redirecting", location="/redirected")
             case "/redirected":
                 self._send(200, b"redirected")
             case "/redirect-fragment":
@@ -136,6 +138,9 @@ class _Handler(BaseHTTPRequestHandler):
         match self.path.split("?")[0]:
             case "/":
                 self._send(200, body)
+            case "/framing":
+                framing = self.headers.get("transfer-encoding", "content-length")
+                self._send(200, body, **{"x-framing": framing})
             case "/todos":
                 self._json({**json.loads(body), "id": 201})
             case "/bom-json":
@@ -143,6 +148,10 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(200, ("﻿" + json.dumps(value)).encode(), "application/json")
             case "/multipart":
                 self._json(_multipart(self.headers["content-type"], body))
+            case "/upgrade":
+                self._send(
+                    401, json.dumps({"message": "unauthorized"}).encode(), "application/json"
+                )
             case _:
                 self._send(404)
 

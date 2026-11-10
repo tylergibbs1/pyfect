@@ -82,14 +82,14 @@ class _Scoped:
     """The controller ``with_scope`` aborts when its scope closes, for the
     one request it sends (Effect keys it on the request)."""
 
-    __slots__ = ("controller", "request")
+    __slots__ = ("controller", "requests")
 
     def __init__(self, request: HttpClientRequest) -> None:
-        self.request = request
+        self.requests = [request]
         self.controller = AbortController()
 
     def controller_for(self, request: HttpClientRequest) -> AbortController | None:
-        return self.controller if request is self.request else None
+        return self.controller if any(r is request for r in self.requests) else None
 
 
 class _ScopedAbort(Reference[_Scoped | None]):
@@ -110,6 +110,17 @@ def scoped[A, E, R](
         return add_finalizer(lambda _exit: sync(tie.controller.abort)).and_then(tied)
 
     return suspend(run)
+
+
+def carry_scope(previous: HttpClientRequest, request: HttpClientRequest) -> Effect[None]:
+    """Let ``request``, made from ``previous`` inside the sending ``with_scope``
+    wraps (``with_cookies_ref`` adding a header), keep ``previous``'s abort."""
+
+    def carry(tie: _Scoped | None) -> None:
+        if tie is not None and tie.controller_for(previous) is not None:
+            tie.requests.append(request)
+
+    return _ScopedAbort().map(carry)
 
 
 _DEFAULT_PORTS = {"http:": 80, "https:": 443, "ws:": 80, "wss:": 443}
@@ -151,6 +162,27 @@ def _add_header_attributes(
             span.attribute(f"http.{phase}.header.{name}", shown)
 
 
+_response_controllers: weakref.WeakKeyDictionary[HttpClientResponse, AbortController] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def abort_response(response: HttpClientResponse) -> None:
+    """Abort the request of a response this module made (scoped or not),
+    releasing its connection without reading the body."""
+    controller = _response_controllers.get(response)
+    if controller is not None:
+        controller.abort()
+
+
+def _track(
+    response: HttpClientResponse, controller: AbortController, scoped: bool
+) -> HttpClientResponse:
+    tracked = response if scoped else _interruptible(response, controller)
+    _response_controllers[tracked] = controller
+    return tracked
+
+
 def _interruptible(response: HttpClientResponse, controller: AbortController) -> HttpClientResponse:
     """Abort when the unread ``response`` is collected, when a body read is
     interrupted, or when its stream ends."""
@@ -175,7 +207,7 @@ def _guarded(
 
     def on_success(response: HttpClientResponse) -> Effect[HttpClientResponse, HttpClientError]:
         on_response(response)
-        return succeed(response if scoped else _interruptible(response, controller))
+        return succeed(_track(response, controller, scoped))
 
     return uninterruptible_mask(
         lambda restore: restore(sending).match_cause_effect(
@@ -198,7 +230,7 @@ def _send(
     if fiber.get_ref(DisablePropagation) or fiber.get_ref(TracerDisabledWhen)(request):
         sending = _call_user(send, request, url, controller.signal, fiber)
         if scoped_controller is not None:
-            return sending
+            return sending.map(lambda response: _track(response, scoped_controller, True))
         return _guarded(sending, controller, lambda _response: None, False)
 
     def traced(span: Span) -> Effect[HttpClientResponse, HttpClientError]:

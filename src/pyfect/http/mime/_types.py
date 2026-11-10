@@ -1,5 +1,6 @@
 """The standard MIME types and their file extensions (Effect's
-``internal/mimeTypes``, from the ``mime`` package). An extension starting
+``internal/mimeTypes``, from the ``mime`` package, plus ``text/x-python``
+and ``text/x-shellscript`` for ``py`` and ``sh`` scripts). An extension starting
 with ``*`` is listed for its type but does not map back to it."""
 
 TYPES: dict[str, tuple[str, ...]] = {
@@ -341,6 +342,8 @@ TYPES: dict[str, tuple[str, ...]] = {
     "text/vcard": ("vcard",),
     "text/vtt": ("vtt",),
     "text/wgsl": ("wgsl",),
+    "text/x-python": ("py",),
+    "text/x-shellscript": ("sh",),
     "text/xml": ("*xml",),
     "text/yaml": ("yaml", "yml"),
     "video/3gpp": ("3gp", "3gpp"),

@@ -19,6 +19,11 @@ added with ``add``; ``Layer.succeed(M, fn)`` for a middleware is
 """
 
 import asyncio
+import contextlib
+import socket
+import threading
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing import Any, Never
 
 import pyfect as fx
@@ -30,6 +35,7 @@ from pyfect.http import body as http_body
 from pyfect.http import client as http_client
 from pyfect.http import multipart, request, router, server
 from pyfect.http.error import DecodeError, HttpClientError
+from pyfect.http.httpx_client import layer as http_client_layer
 from pyfect.http.response import HttpClientResponse
 from pyfect.http.web import WebRequest
 from pyfect.http_api import builder, client, get_group, security
@@ -845,12 +851,23 @@ class ContainerNotFound(S.TaggedError, tag="NotFound", annotations={"http_api_st
     pass
 
 
-def test_success_option_upgrade() -> None:
-    """HttpApi / success option / upgrade
+def _read_until_close(reader: Any) -> Any:
+    """Effect's ``readUntilClose``: the text read until the peer closes."""
 
-    The refusals without an upgrade request only: pyfect's one HTTP client
-    (httpx) cannot send an ``Upgrade`` request, so the accepted upgrade,
-    the 400 after the upgrade check and the client half are not ported."""
+    def loop() -> Any:
+        text = ""
+        while True:
+            chunks = yield from reader.pull.catch_all(lambda _: effect.succeed(None))
+            if chunks is None:
+                return text
+            for chunk in chunks:
+                text += chunk if isinstance(chunk, str) else chunk.decode()
+
+    return effect.gen(loop)
+
+
+def test_success_option_upgrade() -> None:
+    """HttpApi / success option / upgrade"""
     group = HttpApiGroup.make("containers").add(
         ep.post(
             "attach",
@@ -863,34 +880,242 @@ def test_success_option_upgrade() -> None:
             "start",
             "/containers/:id/start",
             params=struct({"id": S.String}),
-            payload=struct({"tty": S.Boolean}),
-            success=api_schema.Upgrade(
-                "tcp",
-                headers=struct(
-                    {"content-type": S.Literals("application/raw", "application/multiplexed")}
+            payload=struct({"tty": S.Boolean, "detach": S.Boolean}),
+            success=(
+                api_schema.Upgrade(
+                    "tcp",
+                    headers=struct(
+                        {"content-type": S.Literals("application/raw", "application/multiplexed")}
+                    ),
                 ),
+                S.String,
             ),
+            error=ContainerNotFound,
         ),
     )
     api = HttpApi.make("api").add(group)
     e = group.endpoints
+
+    def echo(socket: Any, prefix: str) -> Any:
+        def run() -> Any:
+            reader = yield from socket.reader
+            writer = yield from socket.writer
+            yield from writer.write(f"{prefix}:{(yield from _read_until_close(reader))}")
+
+        return scope.scoped(effect.gen(run))
+
+    def attach(ctx: Any) -> Any:
+        # fails before the 101 is sent
+        if ctx.params["id"] != "abc":
+            return effect.fail(ContainerNotFound())
+        return ctx.upgrade().flat_map(lambda socket: echo(socket, ctx.params["id"]))
+
+    def start(ctx: Any) -> Any:
+        if ctx.params["id"] != "abc":
+            return effect.fail(ContainerNotFound())
+        # the server may decline the upgrade with an ordinary success
+        if ctx.payload["detach"]:
+            return effect.succeed(f"{ctx.params['id']}:detached")
+        tty = ctx.payload["tty"]
+        content_type = "application/raw" if tty else "application/multiplexed"
+        return ctx.upgrade({"content-type": content_type}).flat_map(
+            lambda socket: echo(socket, f"{ctx.params['id']}:{str(tty).lower()}")
+        )
+
     live = builder.group(
-        api,
-        group,
-        lambda h: h.handle(e["attach"])(lambda ctx: ctx.upgrade()).handle(e["start"])(
-            lambda ctx: ctx.upgrade()
-        ),
+        api, group, lambda h: h.handle(e["attach"])(attach).handle(e["start"])(start)
     )
+    upgrade_headers = {"connection": "Upgrade", "upgrade": "tcp"}
+
+    def ping(upgraded: Any) -> Any:
+        def run() -> Any:
+            reader = yield from upgraded.socket.reader
+            yield from scope.scoped(upgraded.socket.writer.flat_map(lambda w: w.write("ping")))
+            return (yield from _read_until_close(reader))
+
+        return scope.scoped(effect.gen(run))
 
     def program() -> Any:
         refused = yield from http_client.post("/containers/abc/attach")
         assert refused.status == 426
         assert refused.headers.get("upgrade") == "tcp"
+        # the upgrade is checked before the payload is decoded
         invalid_payload = http_body.text("{", "application/json")
         refused_start = yield from http_client.post("/containers/abc/start", body=invalid_payload)
         assert refused_start.status == 426
+        invalid_start = yield from http_client.post(
+            "/containers/abc/start", headers=upgrade_headers, body=invalid_payload
+        )
+        assert invalid_start.status == 400
+        detached_start = yield from http_client.post(
+            "/containers/abc/start",
+            headers=upgrade_headers,
+            body=http_body.text('{"tty":false,"detach":true}', "application/json"),
+        )
+        assert detached_start.status == 200
+        assert (yield from detached_start.json) == "abc:detached"
+
+        # client side
+        c = get_group((yield from client.make(api)), group)
+        attached = yield from c.method("attach")(params={"id": "abc"})
+        assert client.is_upgraded(attached)
+        assert attached.headers.get("upgrade") == "tcp"
+        assert (yield from ping(attached)) == "abc:ping"
+        error = yield from c.method("attach")(params={"id": "missing"}).flip()
+        assert error == ContainerNotFound()
+
+        started = yield from c.method("start")(
+            params={"id": "abc"}, payload={"tty": True, "detach": False}
+        )
+        assert client.is_upgraded(started)
+        assert started.headers == {"content-type": "application/raw"}
+        assert (yield from ping(started)) == "abc:true:ping"
+        detached = yield from c.method("start")(
+            params={"id": "abc"}, payload={"tty": False, "detach": True}
+        )
+        assert detached == "abc:detached"
+        start_error = yield from c.method("start")(
+            params={"id": "missing"}, payload={"tty": False, "detach": False}
+        ).flip()
+        assert start_error == ContainerNotFound()
 
     run_served(api_layer(api, live), effect.gen(program))
+
+
+def test_a_success_value_after_upgrading_is_a_defect() -> None:
+    """Beside other successes, a handler that calls ``upgrade()`` and then
+    returns a value dies ("Cannot return a success value after calling
+    upgrade()", as in Effect's ``HttpApiBuilder``): a 500."""
+    group = HttpApiGroup.make("containers").add(
+        ep.post("start", "/start", success=(api_schema.Upgrade("tcp"), S.String))
+    )
+    api = HttpApi.make("api").add(group)
+    live = builder.group(
+        api,
+        group,
+        lambda h: h.handle(group.endpoints["start"])(
+            lambda ctx: ctx.upgrade().map(lambda _: "too late")
+        ),
+    )
+
+    def program() -> Any:
+        headers = {"connection": "Upgrade", "upgrade": "tcp"}
+        response = yield from http_client.post("/start", headers=headers)
+        assert response.status == 500
+
+    run_served(api_layer(api, live), effect.gen(program))
+
+
+_UPGRADE_API = HttpApi.make("api").add(
+    HttpApiGroup.make("containers").add(
+        ep.post(
+            "start",
+            "/start",
+            success=api_schema.Upgrade(
+                "tcp", headers=struct({"content-type": S.Literal("application/raw")})
+            ),
+        )
+    )
+)
+
+
+@contextmanager
+def _upgrade_server() -> Generator[tuple[str, threading.Event]]:
+    """Effect's ``makeUpgradeServer``: answers an upgrade request with a 101
+    whose content-type does not match ``_UPGRADE_API``, and sets the event
+    once the client closes the connection."""
+    listener = socket.create_server(("127.0.0.1", 0))
+    closed = threading.Event()
+
+    def serve() -> None:
+        with contextlib.suppress(OSError):
+            conn, _ = listener.accept()
+            with conn:
+                head = b""
+                while b"\r\n\r\n" not in head:
+                    head += conn.recv(4096)
+                conn.sendall(
+                    b"HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\n"
+                    b"Upgrade: tcp\r\nContent-Type: text/plain\r\n\r\n"
+                )
+                # the server side must read for the client's close to arrive
+                while conn.recv(4096):
+                    pass
+                closed.set()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{listener.getsockname()[1]}", closed
+    finally:
+        listener.close()
+        thread.join(2)
+
+
+def _with_upgrade_server(use: Any) -> threading.Event:
+    with _upgrade_server() as (base_url, closed):
+
+        def program() -> Any:
+            c = yield from client.make(_UPGRADE_API, base_url=base_url)
+            yield from use(get_group(c, _UPGRADE_API.groups["containers"]))
+            # still inside the client's scope: closing the client would close it too
+            return (yield from effect.sync(lambda: closed.wait(2)))
+
+        program_ = scope.scoped(effect.gen(program)).pipe(fx.provide(http_client_layer))
+        assert fx.run_blocking(program_), "the upgraded connection was not closed"
+        return closed
+
+
+def test_closes_an_upgraded_connection_whose_headers_fail_to_decode() -> None:
+    """HttpApi / success option / closes an upgraded connection whose headers fail to decode"""
+
+    def use(c: Any) -> Any:
+        return (
+            scope.scoped(c.method("start")())
+            .flip()
+            .map(lambda error: _assert(isinstance(error, S.SchemaError)))
+        )
+
+    _with_upgrade_server(use)
+
+
+def test_closes_an_upgraded_connection_when_interrupted_as_the_upgrade_is_taken() -> None:
+    """HttpApi / success option / closes an upgraded connection when interrupted as the upgrade is taken"""  # noqa: E501
+    containers = _UPGRADE_API.groups["containers"]
+    decode_start = client.decode_response(_UPGRADE_API, containers, containers.endpoints["start"])
+
+    def use(c: Any) -> Any:
+        def run() -> Any:
+            response = yield from c.method("start").response_only()
+            # interrupts the decoding fiber as soon as the upgrade succeeds
+            interrupted = _UpgradeInterrupting(response)
+            fiber = yield from decode_start(interrupted).fork()
+            exit_ = yield from fiber.await_exit()
+            assert isinstance(exit_, Failure)
+            assert exit_.cause.has_interrupts
+
+        return effect.gen(run)
+
+    _with_upgrade_server(use)
+
+
+class _UpgradeInterrupting(HttpClientResponse):
+    """``response`` whose ``upgrade`` interrupts its own fiber once it succeeds
+    (Effect's ``Object.create(response, { upgrade })``)."""
+
+    def __init__(self, response: HttpClientResponse) -> None:
+        super().__init__(response.request, response.status, response.headers, None)
+        self._original = response
+
+    @property
+    def upgrade(self) -> Any:
+        return self._original.upgrade.tap(
+            lambda _: effect.with_fiber_succeed(lambda fiber: fiber.interrupt_as_unsafe(fiber.id))
+        )
+
+
+def _assert(condition: bool) -> None:
+    assert condition
 
 
 def test_success_option_no_content_via_to_web_handler() -> None:

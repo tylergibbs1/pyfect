@@ -32,17 +32,17 @@ from pyfect.http import _form_data, incoming_message
 from pyfect.http import body as _body
 from pyfect.http import url as _url
 from pyfect.http._authority import ROOT, absolute_url, parse_authority, parse_origin_form
+from pyfect.http._url_text import params_from_body
 from pyfect.http.cookies import parse_header as parse_cookie_header
 from pyfect.http.headers import Headers
 from pyfect.http.headers import Input as HeadersInput
 from pyfect.http.incoming_message import MaxBodySize, Reviver
-from pyfect.http.method import HttpMethod, has_body
+from pyfect.http.method import has_body
 from pyfect.http.request import HttpClientRequest
 from pyfect.http.server_error import HttpServerError, RequestParseError, request_parse_error
 from pyfect.http.server_response import parse_content_length
 from pyfect.http.url_params import EMPTY as EMPTY_URL_PARAMS
 from pyfect.http.url_params import UrlParams
-from pyfect.http.url_params import parse as parse_url_params
 from pyfect.http.url_params import to_string as url_params_to_string
 from pyfect.path import Path
 from pyfect.result import Err, Ok, Result
@@ -102,7 +102,8 @@ class ServerRequest(ABC):
 
     @property
     @abstractmethod
-    def method(self) -> HttpMethod: ...
+    def method(self) -> str:
+        """The uppercase method as received, maybe outside ``HttpMethod``."""
 
     @abstractmethod
     def _source_headers(self) -> Headers: ...
@@ -189,7 +190,7 @@ class ServerRequest(ABC):
 
     @property
     def url_params_body(self) -> Effect[UrlParams, HttpServerError]:
-        return self.text.map(parse_url_params)
+        return self.bytes_.map(params_from_body)
 
     @property
     def multipart_stream(self) -> Stream[Part, Any]:
@@ -418,8 +419,8 @@ class SourceRequest(ServerRequest):
         return self._original_url
 
     @property
-    def method(self) -> HttpMethod:
-        return cast("HttpMethod", self._method)
+    def method(self) -> str:
+        return self._method
 
     def _source_headers(self) -> Headers:
         raise AssertionError("a SourceRequest always has headers")
@@ -477,7 +478,7 @@ class ClientRequest(ServerRequest):
         return self._original_url
 
     @property
-    def method(self) -> HttpMethod:
+    def method(self) -> str:
         return self._source.method
 
     def _source_headers(self) -> Headers:
@@ -494,7 +495,9 @@ class ClientRequest(ServerRequest):
             case _body.Stream():
                 return body.stream.map_error(lambda cause: request_parse_error(self, None, cause))
             case _body.FormData():
-                return succeed_stream(_form_data.encode(body)[0])
+                encoded = _form_data.encode(body)[0]
+                chunks = succeed_stream(encoded) if isinstance(encoded, bytes) else encoded
+                return chunks.map_error(lambda cause: request_parse_error(self, None, cause))
             case _body.Raw():
                 data = _raw_bytes(body.body)
                 if data is None:
@@ -529,13 +532,16 @@ class ClientRequest(ServerRequest):
         form = form_data_body(self)
         if form is None:
             return super().multipart_stream
-        from pyfect.http.multipart import Field, File
+        from pyfect.http.multipart import Field, File, MultipartError
         from pyfect.stream import from_iterable
+
+        def internal(error: object) -> MultipartError:
+            return MultipartError.from_reason("InternalError", error)
 
         parts: list[Part] = [
             Field(key, "text/plain", value)
             if isinstance(value, str)
-            else File(key, value.name, value.content_type, succeed_stream(value.content))
+            else File(key, value.name, value.content_type, value.stream().map_error(internal))
             for key, value in form.entries
         ]
         return from_iterable(parts)

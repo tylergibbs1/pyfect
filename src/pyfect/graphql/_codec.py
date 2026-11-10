@@ -10,6 +10,7 @@ from typing import Any, Never, NotRequired, TypedDict
 
 from pyfect import effect as fx
 from pyfect import schema as S
+from pyfect.clock import ClockService, clock_with, now_millis_unsafe
 from pyfect.effect import Effect
 from pyfect.graphql._types import Answer, ExecutionResult
 from pyfect.graphql.client_error import (
@@ -20,6 +21,8 @@ from pyfect.graphql.client_error import (
     GraphQLError,
     Reason,
     ResponseError,
+    TransportError,
+    parse_retry_after_header,
 )
 from pyfect.graphql.operation import AnyOperation, PartialResult
 
@@ -33,6 +36,11 @@ class _Body(TypedDict):
 _decode_body = S.decode_unknown_effect(
     S.Struct(_Body, errors=S.Array(GRAPHQL_ERROR), extensions=S.Record(S.String, S.Json))
 )
+
+
+def _is_status_ok(result: ExecutionResult) -> bool:
+    """A result without an HTTP status, such as a graphql-ws event, counts as 2xx."""
+    return result.status is None or 200 <= result.status < 300
 
 
 def response_error(result: ExecutionResult) -> ResponseError:
@@ -93,24 +101,47 @@ class Codec:
 
     def fail_response(self, result: ExecutionResult) -> Effect[Never, GraphQLClientError]:
         """The failure of a response without usable data: a
-        ``ResponseError`` when it has errors, else a ``DecodeError``."""
+        ``ResponseError`` when it has errors, else a ``DecodeError`` for a
+        2xx result and a ``TransportError`` with the HTTP metadata for any
+        other status."""
         # GraphQL requires errors when data is null or missing; checked
         # before decoding, since schemas such as S.Json accept null.
         if result.errors:
             return fx.fail(self.fail(response_error(result)))
-        return fx.fail(self.fail(DecodeError(description="data is null or missing without errors")))
+        if _is_status_ok(result):
+            return fx.fail(
+                self.fail(DecodeError(description="data is null or missing without errors"))
+            )
+        headers = result.headers
+
+        def transport(clock: ClockService) -> Effect[Never, GraphQLClientError]:
+            header = None if headers is None else headers.get("retry-after")
+            return fx.fail(
+                self.fail(
+                    TransportError(
+                        description=f"HTTP {result.status} response without GraphQL errors",
+                        status=result.status,
+                        headers=headers,
+                        retry_after=parse_retry_after_header(header, now_millis_unsafe(clock)),
+                    )
+                )
+            )
+
+        return clock_with(transport)
 
     def decode_strict(self, result: ExecutionResult) -> Effect[Any, GraphQLClientError, Any]:
-        """The decoded data; any error fails the call."""
-        if result.errors or result.data is None:
+        """The decoded data; any error, or a status that is not 2xx, fails
+        the call."""
+        if not _is_status_ok(result) or result.errors or result.data is None:
             return self.fail_response(result)
         return self._decode_data(result.data)
 
     def decode_partial(
         self, result: ExecutionResult
     ) -> Effect[PartialResult[Any], GraphQLClientError, Any]:
-        """The decoded data with the response's errors."""
-        if result.data is None:
+        """The decoded data with the response's errors; a status that is not
+        2xx fails the call."""
+        if not _is_status_ok(result) or result.data is None:
             return self.fail_response(result)
         return self._decode_data(result.data).map(
             lambda data: PartialResult(data, result.errors, response=result)

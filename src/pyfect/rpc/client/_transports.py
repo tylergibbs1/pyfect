@@ -46,7 +46,7 @@ def _key(request_id: object) -> tuple[type[object], object]:
 
 
 def _defect(message: str, cause: object) -> RpcClientError:
-    return RpcClientError(RpcClientDefect(message, cause))
+    return RpcClientError(reason=RpcClientDefect(message=message, cause=cause))
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,7 +236,9 @@ class _SocketClient:
                 if connected:
                     yield from on_timeout.ignore_cause()
                 return (
-                    yield from fail(SocketErrorClass(SocketReadError(RuntimeError("ping timeout"))))
+                    yield from fail(
+                        SocketErrorClass(reason=SocketReadError(cause=RuntimeError("ping timeout")))
+                    )
                 )
 
             return timed_out
@@ -252,7 +254,7 @@ class _SocketClient:
             defect = _defect("Unknown socket error", cause.squash())
             return self.broadcast_error(defect)
         error = found.value
-        rpc_error = RpcClientError(error.reason)
+        rpc_error = RpcClientError(reason=error.reason)
         if self._options.retry_transient_errors and isinstance(error.reason, SocketOpenError):
             hook = self._options.on_transient_error
             return _VOID if hook is None else hook(rpc_error).ignore_cause()
@@ -306,7 +308,7 @@ def make_protocol_socket(
             connection = client.connection(socket, hooks).tap_cause(client.on_cause)
             yield from fork_scoped(
                 connection.retry(policy).catch_all(
-                    lambda error: client.broadcast_error(RpcClientError(error.reason))
+                    lambda error: client.broadcast_error(RpcClientError(reason=error.reason))
                 )
             )
             return ClientProtocolParts(client.send, True, serialization.codec_for)

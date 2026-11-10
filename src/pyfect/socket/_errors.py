@@ -3,10 +3,10 @@ event a writer sends to close the socket."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
-from pyfect.errors import TaggedError
+from pyfect import schema as S
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,18 +21,16 @@ class CloseEvent:
         return f"{self.code}: {self.reason}" if self.reason else f"{self.code}"
 
 
-@dataclass(eq=False)
-class SocketReadError(TaggedError):
-    cause: object
+class SocketReadError(S.TaggedError, identifier="effect/socket/Socket/SocketReadError"):
+    cause: object = S.field(S.Defect())
 
     @property
     def message(self) -> str:
         return "An error occurred during Read"
 
 
-@dataclass(eq=False)
-class SocketWriteError(TaggedError):
-    cause: object
+class SocketWriteError(S.TaggedError, identifier="effect/socket/Socket/SocketWriteError"):
+    cause: object = S.field(S.Defect())
 
     @property
     def message(self) -> str:
@@ -42,14 +40,14 @@ class SocketWriteError(TaggedError):
 type OpenErrorKind = Literal["Unknown", "Timeout"]
 
 
-@dataclass(eq=False)
-class SocketOpenError(TaggedError):
+class SocketOpenError(S.TaggedError, identifier="effect/socket/Socket/SocketOpenError"):
     """Opening the socket failed; ``target`` is where it was going (a URL,
-    ``host:port`` or a path) when known."""
+    ``host:port`` or a path) when known. Effect has no ``target``: it is
+    encoded only when set, and Effect's decoder ignores it."""
 
-    kind: OpenErrorKind
-    cause: object
-    target: str | None = None
+    kind: OpenErrorKind = S.field(S.Literals(("Unknown", "Timeout")))
+    cause: object = S.field(S.Defect())
+    target: str | None = S.field(S.Union(S.String, S.Undefined), default=None)
 
     @property
     def message(self) -> str:
@@ -61,12 +59,11 @@ class SocketOpenError(TaggedError):
         return self.message
 
 
-@dataclass(eq=False)
-class SocketUpgradeError(TaggedError):
+class SocketUpgradeError(S.TaggedError, identifier="effect/socket/Socket/SocketUpgradeError"):
     """A TLS upgrade failed; without a ``cause``, the socket does not
     support one."""
 
-    cause: object = None
+    cause: object = S.field(S.Union(S.Undefined, S.Defect()), default=None)
 
     @property
     def message(self) -> str:
@@ -75,13 +72,14 @@ class SocketUpgradeError(TaggedError):
         return "An error occurred during TLS upgrade"
 
 
-@dataclass(eq=False)
-class SocketCloseError(TaggedError):
+class SocketCloseError(S.TaggedError, identifier="effect/socket/Socket/SocketCloseError"):
     """The socket closed: ``code`` 1000 is a normal close (the peer ended
     the stream), 1006 an abnormal one."""
 
-    code: int
-    close_reason: str | None = None
+    code: int = S.field(S.Int)
+    close_reason: str | None = S.field(
+        S.Union(S.String, S.Undefined), default=None, key="closeReason"
+    )
 
     @property
     def message(self) -> str:
@@ -92,16 +90,24 @@ type SocketErrorReason = (
     SocketReadError | SocketWriteError | SocketOpenError | SocketUpgradeError | SocketCloseError
 )
 
+SOCKET_ERROR_REASON = S.Union(
+    SocketReadError, SocketWriteError, SocketOpenError, SocketUpgradeError, SocketCloseError
+)
+"""The schema of every reason (Effect's ``SocketErrorReason`` schema)."""
 
-@dataclass(eq=False)
-class SocketError(TaggedError):
-    """A socket operation failed; ``reason`` says how."""
 
-    reason: SocketErrorReason
-    cause: object = field(init=False, compare=False, repr=False)
+class SocketError(S.TaggedError, identifier="~effect/socket/Socket/SocketError"):
+    """A socket operation failed; ``reason`` says how. Its ``cause`` (and
+    ``__cause__``) is the reason's, ``None`` for a close."""
+
+    reason: SocketErrorReason = S.field(SOCKET_ERROR_REASON)
 
     def __post_init__(self) -> None:
-        self.cause = None if isinstance(self.reason, SocketCloseError) else self.reason.cause
+        self.__cause__ = self.cause if isinstance(self.cause, BaseException) else None
+
+    @property
+    def cause(self) -> object:
+        return None if isinstance(self.reason, SocketCloseError) else self.reason.cause
 
     @property
     def message(self) -> str:
@@ -109,7 +115,7 @@ class SocketError(TaggedError):
 
 
 def close_error(code: int, close_reason: str | None = None) -> SocketError:
-    return SocketError(SocketCloseError(code, close_reason))
+    return SocketError(reason=SocketCloseError(code=code, close_reason=close_reason))
 
 
 def is_clean_close(error: SocketError) -> bool:
@@ -118,18 +124,18 @@ def is_clean_close(error: SocketError) -> bool:
 
 
 def read_error(cause: object) -> SocketError:
-    return SocketError(SocketReadError(cause))
+    return SocketError(reason=SocketReadError(cause=cause))
 
 
 def write_error(cause: object) -> SocketError:
-    return SocketError(SocketWriteError(cause))
+    return SocketError(reason=SocketWriteError(cause=cause))
 
 
 def open_error(
     cause: object, kind: OpenErrorKind = "Unknown", *, target: str | None = None
 ) -> SocketError:
-    return SocketError(SocketOpenError(kind, cause, target))
+    return SocketError(reason=SocketOpenError(kind=kind, cause=cause, target=target))
 
 
 def upgrade_error(cause: object = None) -> SocketError:
-    return SocketError(SocketUpgradeError(cause))
+    return SocketError(reason=SocketUpgradeError(cause=cause))

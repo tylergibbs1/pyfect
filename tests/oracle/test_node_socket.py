@@ -23,7 +23,9 @@ Omitted:
   checked through a real handshake below.
 """
 
+import asyncio
 import gc
+import math
 import socket
 import ssl
 import threading
@@ -56,6 +58,8 @@ from pyfect.socket import (
     reader_bytes,
     server,
 )
+from pyfect.socket._connection import Connection
+from pyfect.socket._net import from_connection
 
 FIXTURES = Path(__file__).parent / "fixtures" / "tls"
 CERT = (FIXTURES / "cert.pem").read_text()
@@ -498,3 +502,64 @@ def test_handshake_failure():
     cause = error.reason.cause
     assert isinstance(cause, ssl.SSLCertVerificationError)
     assert cause.verify_code == 18
+
+
+class _QuietTransport(asyncio.Transport):
+    """A transport that accepts everything and sends nothing: the connection is fed by
+    hand, as Node's in-memory ``Duplex`` is."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._closing = False
+
+    def is_closing(self) -> bool:
+        return self._closing
+
+    def close(self) -> None:
+        self._closing = True
+
+    def abort(self) -> None:
+        self._closing = True
+
+    def pause_reading(self) -> None:
+        pass
+
+    def resume_reading(self) -> None:
+        pass
+
+    def write(self, data: bytes | bytearray | memoryview[int]) -> None:
+        pass
+
+    def can_write_eof(self) -> bool:
+        return False
+
+
+@pytest.mark.parametrize("chunk_size", [None, 2, math.inf], ids=["default 4096", "2", "Infinity"])
+@live
+def test_batches_synchronous_duplex_drains_and_completes_in_order(chunk_size: float | None):
+    """batches synchronous duplex drains and completes in order ($chunkSize)"""
+    data = "abcdefghij" * 1000
+    conn = Connection()
+    conn.connection_made(_QuietTransport())
+    for char in data:
+        conn.data_received(char.encode())
+    conn.eof_received()
+    opened: Effect[Connection, SocketError, Scope] = succeed(conn)
+    sock = (
+        from_connection(opened)
+        if chunk_size is None
+        else from_connection(opened, chunk_size=chunk_size)
+    )
+    reader = yield from sock.reader
+    limit = len(data) if chunk_size == math.inf else int(chunk_size or 4096)
+    first = yield from reader.pull
+    assert len(first) == limit
+    received = decode(first)
+    while len(received) < len(data):
+        batch = yield from reader.pull
+        assert len(batch) <= limit
+        received += decode(batch)
+    assert received == data
+    error = yield from reader.pull.flip()
+    assert isinstance(error.reason, SocketCloseError)
+    assert error.reason.code == 1000

@@ -8,12 +8,13 @@ status), ``http_api_encoding`` (an ``Encoding``) and
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    LiteralString,
     Never,
     NotRequired,
     TypedDict,
@@ -28,7 +29,9 @@ from pyfect.byte_size import ByteSize
 from pyfect.http import status as http_status
 from pyfect.http.method import HttpMethod, has_body
 from pyfect.http.multipart import Limits
+from pyfect.http.problem_details import BLANK_TYPE, CONTENT_TYPE, fixed_member
 from pyfect.http.status import StatusLiteral
+from pyfect.http_api import _media_type as media_type
 from pyfect.schema import (
     Bottom,
     Codec,
@@ -39,6 +42,8 @@ from pyfect.schema import (
     decode_to,
     from_json_string,
     instance_of,
+    tag,
+    to_codec_json,
     to_type,
 )
 from pyfect.schema import transformation as T
@@ -346,6 +351,48 @@ def as_no_content[A](
     return Void.pipe(decode_to(to_type(schema), transformation))
 
 
+class _ProblemMembers(TypedDict):
+    type: str
+    status: int
+    title: str
+
+
+class _AsProblem:
+    __slots__ = ("decode", "title", "type")
+
+    def __init__(self, type: str, title: str, decode: Callable[[], Any] | None) -> None:
+        self.type = type
+        self.title = title
+        self.decode = decode
+
+    def __call__[A](self, schema: Codec[A, Any, Any, Any], /) -> Bottom[A, Mapping[str, object]]:
+        code = get_status_error(schema.__codec__().ast)
+        body = {"type": self.type, "status": code, "title": self.title}
+        decode = self.decode if self.decode is not None else cast("Callable[[], A]", schema)
+        members = Struct(
+            _ProblemMembers,
+            type=tag(cast("LiteralString", self.type)),
+            status=fixed_member(code),
+            title=fixed_member(self.title),
+        )
+        transformation: T.Transformation[A, Any] = T.transform(
+            decode=lambda _: decode(), encode=lambda _: body
+        )
+        problem = members.pipe(decode_to(to_type(schema), transformation))
+        return as_json(content_type=CONTENT_TYPE)(problem)
+
+
+def as_problem(
+    *, title: str, type: str = BLANK_TYPE, decode: Callable[[], Any] | None = None
+) -> _AsProblem:
+    """An error class sent as an RFC 9457 problem (Effect's ``asProblem``):
+    an ``application/problem+json`` body with ``type``, ``title`` and the
+    class's status. A client decodes a body of the same ``type`` with
+    ``decode()`` (default: the class called without arguments); another
+    ``type`` is rejected. Use with ``.pipe``."""
+    return _AsProblem(type, title, decode)
+
+
 # --- streams -------------------------------------------------------------------------
 
 _STREAM = cast("Bottom[Stream[Any, Any]]", instance_of(Stream))
@@ -361,6 +408,8 @@ class StreamSseSchema[A, E = Never](Bottom[Stream[A, E], Stream[A, E], Never, Ne
 
     sse_mode: StreamSseMode = field(kw_only=True)
     content_type: str = field(kw_only=True)
+    content_types: tuple[str, *tuple[str, ...]] = field(kw_only=True)
+    """Every media type it is sent under; the first is ``content_type``."""
     events: Codec[Any, Mapping[str, object], Any, Any] = field(kw_only=True)
     error: Top = field(kw_only=True)
 
@@ -377,6 +426,8 @@ class StreamUint8ArraySchema(Bottom[Stream[bytes, Any], Stream[bytes, Any], Neve
     """A byte stream body; as a payload, at most ``max_bytes``."""
 
     content_type: str = field(kw_only=True)
+    content_types: tuple[str, *tuple[str, ...]] = field(kw_only=True)
+    """Every media type it is sent under; the first is ``content_type``."""
     max_bytes: ByteSize | None = field(kw_only=True)
 
     if TYPE_CHECKING:
@@ -395,6 +446,8 @@ class StreamNdjsonSchema[A](Bottom[Stream[A, Any], Stream[A, Any], Never, Never]
     payload, at most ``max_bytes`` and ``max_element_bytes`` a line."""
 
     content_type: str = field(kw_only=True)
+    content_types: tuple[str, *tuple[str, ...]] = field(kw_only=True)
+    """Every media type it is sent under; the first is ``content_type``."""
     schema: Codec[A, Any, Any, Any] = field(kw_only=True)
     max_bytes: ByteSize | None = field(kw_only=True)
     max_element_bytes: ByteSize = field(kw_only=True)
@@ -424,64 +477,90 @@ def StreamSse[A, E = Never](
     *,
     events: Codec[A, Mapping[str, object], Any, Any],
     error: Codec[E, Any, Any, Any] | None = None,
-    content_type: str = "text/event-stream",
+    content_type: str | Sequence[str] = "text/event-stream",
 ) -> StreamSseSchema[A, E]: ...
 @overload
 def StreamSse[A, E = Never](
     *,
     data: Codec[A, Any, Any, Any],
     error: Codec[E, Any, Any, Any] | None = None,
-    content_type: str = "text/event-stream",
+    content_type: str | Sequence[str] = "text/event-stream",
 ) -> StreamSseSchema[A, E]: ...
 def StreamSse(
     *,
     events: Codec[Any, Mapping[str, object], Any, Any] | None = None,
     data: Codec[Any, Any, Any, Any] | None = None,
     error: Codec[Any, Any, Any, Any] | None = None,
-    content_type: str = "text/event-stream",
+    content_type: str | Sequence[str] = "text/event-stream",
 ) -> StreamSseSchema[Any, Any]:
     """Server-sent events: each decoded by ``events`` from its fields
     (``event``, ``data``, ``id``), or ``message`` events whose JSON data
     ``data`` decodes (the stream is of the data values). ``error`` encodes
-    the stream's failure, sent as a reserved event."""
+    the stream's failure, sent as a reserved event. ``data`` is written
+    with its JSON codec (``to_codec_json``)."""
     if data is not None:
-        events = Struct(_SseDataFields, data=from_json_string(data))
+        events = Struct(_SseDataFields, data=from_json_string(to_codec_json(data)))
     elif events is None:
         raise TypeError("StreamSse needs events or data")
     return StreamSseSchema(
         _STREAM.ast,
         sse_mode="data" if data is not None else "events",
-        content_type=content_type,
+        **_content_types(content_type),
         events=events,
         error=error if error is not None else _NEVER,
     )
 
 
 def StreamUint8Array(
-    *, content_type: str = "application/octet-stream", max_bytes: byte_size.Input | None = None
+    *,
+    content_type: str | Sequence[str] = "application/octet-stream",
+    max_bytes: byte_size.Input | None = None,
 ) -> StreamUint8ArraySchema:
-    """A byte stream body; as a payload, at most ``max_bytes``."""
+    """A byte stream body; as a payload, at most ``max_bytes``. A list of
+    content types sends the stream under several media types: the first is
+    the response's, and a payload is taken under any of them."""
     return StreamUint8ArraySchema(
-        _STREAM.ast, content_type=content_type, max_bytes=_sizes(max_bytes)
+        _STREAM.ast, **_content_types(content_type), max_bytes=_sizes(max_bytes)
     )
 
 
 def StreamNdjson[A](
     schema: Codec[A, Any, Any, Any],
     *,
-    content_type: str = "application/x-ndjson",
+    content_type: str | Sequence[str] = "application/x-ndjson",
     max_bytes: byte_size.Input | None = None,
     max_element_bytes: byte_size.Input | None = None,
 ) -> StreamNdjsonSchema[A]:
     """Newline-delimited JSON of ``schema`` values; a line is at most
-    ``max_element_bytes`` (1 MiB)."""
+    ``max_element_bytes`` (1 MiB). A list of content types takes aliases
+    such as ``application/jsonl``; the first is the default."""
     return StreamNdjsonSchema(
         _STREAM.ast,
-        content_type=content_type,
+        **_content_types(content_type),
         schema=schema,
         max_bytes=_sizes(max_bytes),
         max_element_bytes=_sizes(max_element_bytes) or _DEFAULT_MAX_ELEMENT_BYTES,
     )
+
+
+class _ContentTypes(TypedDict):
+    content_type: str
+    content_types: tuple[str, *tuple[str, ...]]
+
+
+def _content_types(content_type: str | Sequence[str]) -> _ContentTypes:
+    if isinstance(content_type, str):
+        return {"content_type": content_type, "content_types": (content_type,)}
+    listed = tuple(content_type)
+    if not listed:
+        raise ValueError("Stream schemas require at least one content type")
+    seen: set[str] = set()
+    for entry in listed:
+        normalized = media_type.normalize(entry)
+        if normalized in seen:
+            raise ValueError(f"Duplicate stream content type: {entry}")
+        seen.add(normalized)
+    return {"content_type": listed[0], "content_types": (listed[0], *listed[1:])}
 
 
 def is_stream_payload(
@@ -686,6 +765,7 @@ __all__ = [
     "as_multipart",
     "as_multipart_stream",
     "as_no_content",
+    "as_problem",
     "as_text",
     "as_uint8_array",
     "body_of",

@@ -9,6 +9,7 @@ Omitted: "supports a fields shorthand for headers" (a pyfect struct is
 declared by a ``TypedDict``, so the headers are always a schema).
 """
 
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -69,6 +70,24 @@ def test_creates_an_event_schema_from_a_json_data_schema() -> None:
     }
 
 
+def test_encodes_data_with_its_json_codec() -> None:
+    """HttpApiSchema / StreamSse / encodes data with its JSON codec"""
+    data = struct({"at": S.DateTimeUtc, "total": S.BigInt})  # Effect: Schema.Date
+    stream = api_schema.StreamSse(data=data)
+    encode = S.encode_unknown_sync(stream.events)
+    decode = S.decode_unknown_sync(stream.events)
+    wire = '{"at":"1970-01-01T00:00:00.000Z","total":"1"}'
+    epoch = datetime(1970, 1, 1, tzinfo=UTC)
+    assert encode({"event": "tick", "data": {"at": epoch, "total": 1}}) == {
+        "event": "tick",
+        "data": wire,
+    }
+    assert decode({"event": "tick", "data": wire}) == {
+        "event": "tick",
+        "data": {"at": epoch, "total": 1},
+    }
+
+
 def test_stream_uint8_array_stores_default_metadata() -> None:
     """HttpApiSchema / StreamUint8Array / stores default metadata"""
     stream = api_schema.StreamUint8Array()
@@ -83,6 +102,32 @@ def test_stream_uint8_array_stores_custom_content_type() -> None:
     """HttpApiSchema / StreamUint8Array / stores custom content type"""
     stream = api_schema.StreamUint8Array(content_type="application/custom-binary")
     assert stream.content_type == "application/custom-binary"
+
+
+def test_stores_a_list_of_content_types_with_the_first_as_the_default() -> None:
+    """HttpApiSchema / StreamUint8Array / stores a list of content types with the first as the default"""  # noqa: E501
+    stream = api_schema.StreamUint8Array(
+        content_type=[
+            "application/vnd.docker.raw-stream",
+            "application/vnd.docker.multiplexed-stream",
+        ]
+    )
+    assert stream.content_type == "application/vnd.docker.raw-stream"
+    assert stream.content_types == (
+        "application/vnd.docker.raw-stream",
+        "application/vnd.docker.multiplexed-stream",
+    )
+    assert api_schema.StreamUint8Array().content_types == ("application/octet-stream",)
+
+
+def test_rejects_empty_and_duplicate_content_type_lists() -> None:
+    """HttpApiSchema / StreamUint8Array / rejects empty and duplicate content type lists"""
+    with pytest.raises(ValueError, match=r"^Stream schemas require at least one content type$"):
+        api_schema.StreamUint8Array(content_type=[])
+    with pytest.raises(ValueError, match=r"^Duplicate stream content type: "):
+        api_schema.StreamNdjson(
+            S.Number, content_type=["application/json", "Application/JSON; charset=utf-8"]
+        )
 
 
 def _headers(name: str, schema: S.Codec[Any, Any, Any, Any] = S.String) -> Any:

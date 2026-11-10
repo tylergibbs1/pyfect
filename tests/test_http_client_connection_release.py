@@ -44,7 +44,11 @@ def _breaker(client: Client, url: str) -> Sending:
 
 
 def _cookies(client: Client, url: str) -> Sending:
-    return Ref.make(cookies.EMPTY).flat_map(lambda ref: client.with_cookies_ref(ref).get(f"{url}/"))
+    return (
+        Ref[tuple[cookies.Cookie, ...]]
+        .make(())
+        .flat_map(lambda ref: client.with_cookies_ref(ref).get(f"{url}/"))
+    )
 
 
 def _ok(r: HttpClientResponse) -> fx.Effect[HttpClientResponse]:
@@ -55,6 +59,7 @@ _CLIENT_CASES: dict[str, Send] = {
     "transform": lambda client, url: client.transform(lambda s, _r: s.timeout("10 seconds")).get(
         f"{url}/"
     ),
+    "timeout": lambda client, url: client.timeout("10 seconds").get(f"{url}/"),
     "transform_response": lambda client, url: client.pipe(
         c.transform_response(lambda s: s.timeout("10 seconds"))
     ).get(f"{url}/"),

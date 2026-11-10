@@ -18,7 +18,9 @@ pulled as httpx sends it. httpx applies no timeout by default here, as
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Coroutine
+import contextlib
+import socket
+from collections.abc import AsyncIterator, Callable, Coroutine, Sequence
 from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any, Never
 
@@ -27,8 +29,9 @@ from pyfect._js import text_encode
 from pyfect._loop_thread import LoopThread
 from pyfect._os_wait import WaitsFor, os_wait
 from pyfect._released import Lifetime
-from pyfect.effect import Effect, fail, succeed, sync
+from pyfect.effect import Effect, fail, succeed, suspend, sync
 from pyfect.errors import Done
+from pyfect.http import _form_data
 from pyfect.http import body as _body
 from pyfect.http import url as _url
 from pyfect.http._httpx_options import RequestDefaults, import_httpx, split_options
@@ -43,13 +46,51 @@ from pyfect.http.response import HttpClientResponse
 from pyfect.layer import Layer
 from pyfect.layer import effect as layer_effect
 from pyfect.scope import Scope, acquire_release
+from pyfect.socket import SocketService
+from pyfect.socket._errors import CloseEvent, SocketError, close_error, read_error, write_error
+from pyfect.socket._socket import Chunk, Reader, Writer, encode_chunk
+from pyfect.socket._socket import make as make_socket
 from pyfect.stream import Stream, from_effect_repeat
+from pyfect.stream._async_iterable import StreamAsyncIterator
 
 if TYPE_CHECKING:
     import httpx
 
 _NO_BODY_STATUSES = frozenset((204, 205, 304))
 _EMPTY_FORM_BOUNDARY = "pyfect-empty-form"
+_READ_SIZE = 65536
+"""The most an upgraded connection's reader takes per pull."""
+
+
+_FORM_CONTENT_TYPE = "pyfect_form_content_type"
+_BODY_READER = "pyfect_body_reader"
+"""The keys ``_content`` returns a streamed form's content type and a
+streamed body's reader under (taken out before the rest goes to httpx)."""
+
+
+def _stream_content(
+    stream: Stream[bytes, object], fiber: Fiber[Any, Any], failures: list[object]
+) -> dict[str, Any]:
+    chunks = stream.tap_error(lambda error: sync(lambda: failures.append(error)))
+    reader = aiter(chunks.to_async_iterable_with(fiber._context))
+
+    async def content() -> AsyncIterator[bytes]:
+        async with contextlib.aclosing(reader):
+            async for chunk in reader:
+                yield chunk
+
+    return {"content": content(), _BODY_READER: reader}
+
+
+def _form_body(
+    form: _body.FormData, fiber: Fiber[Any, Any], failures: list[object]
+) -> dict[str, Any]:
+    if not _form_data.has_file_source(form):
+        return _form_content(form)
+    # Encoded by pyfect, so each file source is read as the connection takes it.
+    encoded, content_type = _form_data.encode(form)
+    assert not isinstance(encoded, bytes)
+    return {**_stream_content(encoded, fiber, failures), _FORM_CONTENT_TYPE: content_type}
 
 
 def _form_content(form: _body.FormData) -> dict[str, Any]:
@@ -128,6 +169,11 @@ class _Backend:
         failed with ``Released``."""
         return self._lifetime.submit(lambda: self._thread.submit(make))
 
+    def _close_reader(self, reader: StreamAsyncIterator[bytes]) -> None:
+        task = self.loop.create_task(reader.aclose())
+        self._closing.add(task)
+        task.add_done_callback(self._closing.discard)
+
     def _call_soon(self, f: Callable[[], object]) -> None:
         """Run ``f`` on the loop; once the backend has closed (and with it
         every response), there is nothing left to do."""
@@ -165,16 +211,9 @@ class _Backend:
             case _body.Raw():
                 return {"content": body.body}
             case _body.FormData():
-                return _form_content(body)
+                return _form_body(body, fiber, failures)
             case _body.Stream():
-                chunks = body.stream.tap_error(lambda error: sync(lambda: failures.append(error)))
-                iterable = chunks.to_async_iterable_with(fiber._context)
-
-                async def content() -> AsyncIterator[bytes]:
-                    async for chunk in iterable:
-                        yield chunk
-
-                return {"content": content()}
+                return _stream_content(body.stream, fiber, failures)
             case _body.Empty():
                 return {}
 
@@ -185,17 +224,21 @@ class _Backend:
         signal: AbortSignal,
         fiber: Fiber[Any, Any],
     ) -> Effect[HttpClientResponse, HttpClientError]:
-        if "upgrade" in request.headers:
-            return fail(
-                HttpClientError(
-                    TransportError(request, None, "httpx cannot send an HTTP upgrade request")
-                )
-            )
         failures: list[object] = []
         content = self._content(request, fiber, failures)
+        reader: StreamAsyncIterator[bytes] | None = content.pop(_BODY_READER, None)
+        if reader is not None:
+            # An abort (interrupt, timeout) stops the body's stream at once: an
+            # upload the server stopped reading must not hold it open.
+            body_reader = reader
+            signal.add_listener(lambda: self._call_soon(lambda: self._close_reader(body_reader)))
         headers = request.headers
         if isinstance(request.body, _body.FormData):
             headers = headers.remove("content-type")
+            streamed_type = content.pop(_FORM_CONTENT_TYPE, None)
+            if streamed_type is not None:
+                # A form pyfect encodes itself carries its own boundary.
+                headers = headers.set("content-type", streamed_type)
             if not request.body.entries:
                 content_type = f"multipart/form-data; boundary={_EMPTY_FORM_BOUNDARY}"
                 headers = headers.set("content-type", content_type)
@@ -211,6 +254,8 @@ class _Backend:
             return response
 
         def on_error(error: BaseException) -> Effect[Never, HttpClientError]:
+            if failures and isinstance(failures[0], _body.FileSourceError):
+                return fail(HttpClientError(TransportError(request, failures[0].cause)))
             if failures:
                 return fail(HttpClientError(EncodeError(request, failures[0])))
             return fail(HttpClientError(TransportError(request, error)))
@@ -226,7 +271,12 @@ class _Backend:
             {name: ", ".join(response.headers.get_list(name)) for name in response.headers}
         )
         body: Stream[bytes, object] | None = None
-        if request.method != "HEAD" and response.status_code not in _NO_BODY_STATUSES:
+        upgrade: Effect[SocketService, HttpClientError] | None = None
+        if response.status_code == 101:
+            # httpcore hands over the switched connection, the bytes it read
+            # past the head first (as httpx-ws takes WebSockets).
+            upgrade = succeed(self._upgraded(response))
+        elif request.method != "HEAD" and response.status_code not in _NO_BODY_STATUSES:
             body = self._body(response)
         else:
             self._call_soon(lambda: self._close_response(response))
@@ -237,7 +287,55 @@ class _Backend:
             body,
             url=str(response.url),
             set_cookie=response.headers.get_list("set-cookie"),
+            upgrade=upgrade,
         )
+
+    def _upgraded(self, response: httpx.Response) -> SocketService:
+        """The connection of a ``101`` response as a socket: releasing the
+        reader's scope closes it, releasing the writer's half-closes it."""
+        stream = response.extensions["network_stream"]
+
+        async def close() -> None:
+            try:
+                await stream.aclose()
+            finally:
+                await response.aclose()
+
+        async def half_close() -> None:
+            sock = stream.get_extra_info("socket")
+            with contextlib.suppress(OSError):
+                sock.shutdown(socket.SHUT_WR)
+
+        def run(
+            make: Callable[[], Coroutine[Any, Any, Any]], waits_for: WaitsFor
+        ) -> Effect[Any, BaseException]:
+            return _future(None, lambda: self.submit(make), waits_for=waits_for)
+
+        def read() -> Effect[tuple[bytes, ...], SocketError]:
+            async def chunk() -> bytes:
+                return await stream.read(_READ_SIZE)
+
+            def got(data: bytes) -> Effect[tuple[bytes, ...], SocketError]:
+                return succeed((data,)) if data else fail(close_error(1000))
+
+            return run(chunk, "event").map_error(read_error).flat_map(got)
+
+        def write(chunk: Chunk | CloseEvent) -> Effect[None, SocketError]:
+            if isinstance(chunk, CloseEvent):
+                return run(close, "work").ignore()
+            return write_all((chunk,))
+
+        def write_all(chunks: Sequence[Chunk]) -> Effect[None, SocketError]:
+            data = b"".join(encode_chunk(chunk) for chunk in chunks)
+            return run(lambda: stream.write(data), "work").map_error(write_error).as_(None)
+
+        reader = acquire_release(
+            succeed(Reader(suspend(read))), lambda _r, _e: run(close, "work").ignore()
+        )
+        writer = acquire_release(
+            succeed(Writer(write, write_all)), lambda _w, _e: run(half_close, "work").ignore()
+        )
+        return make_socket(reader, writer)
 
     def _body(self, response: httpx.Response) -> Stream[bytes, object]:
         chunks = response.aiter_bytes()

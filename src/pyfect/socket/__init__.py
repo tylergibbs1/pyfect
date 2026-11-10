@@ -30,6 +30,7 @@ provides on the ``websockets`` library (extra ``pyfect-dev[websockets]``).
 from pyfect._public import publish
 from pyfect.socket import datagram, server
 from pyfect.socket._errors import (
+    SOCKET_ERROR_REASON,
     CloseEvent,
     OpenErrorKind,
     SocketCloseError,
@@ -89,6 +90,7 @@ from pyfect.socket._web_socket import (
 )
 
 __all__ = [
+    "SOCKET_ERROR_REASON",
     "Chunk",
     "CloseEvent",
     "Listener",

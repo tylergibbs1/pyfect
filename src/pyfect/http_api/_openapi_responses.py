@@ -79,7 +79,10 @@ def _bodies(schemas: tuple[Top, ...], get_status: Callable[[Top], int]) -> dict[
                 entry.headers.append(body.headers)
         elif api_schema.is_stream_schema(body):
             entry = bodies.setdefault(status, _Body())
-            entry.streams = {**(entry.streams or {}), body.content_type: body}
+            entry.streams = {
+                **(entry.streams or {}),
+                **dict.fromkeys(body.content_types, body),
+            }
         elif api_schema.is_no_content(body_node):
             node = schema.__codec__().ast
             description = _description(node) or _description(body_node) or "<No Content>"

@@ -77,11 +77,16 @@ def uses_native_tracer(fiber: Fiber[Any, Any]) -> bool:
 
 
 def _response_span_exit(
-    request: ServerRequest, response: HttpServerResponse
+    fiber: Fiber[Any, Any], request: ServerRequest, response: HttpServerResponse
 ) -> Exit[HttpServerResponse, HttpServerError]:
     # OpenTelemetry fails server spans of 5xx responses.
     if not 500 <= response.status < 600:
         return Success(response)
+    # The message is path-only, but exporters can still read the error's request URL
+    # after the request's redacted names are gone.
+    url = _url_params.redact_url(request.url, fiber.get_ref(_url_params.CurrentRedactedNames))
+    if url != request.url:
+        request = request.modify(url=url)
     return Failure(fail(HttpServerError(ResponseError(request, response))))
 
 
@@ -90,7 +95,7 @@ def _end(fiber: Fiber[Any, Any], span: Span, request: ServerRequest, exit: Exit[
     if isinstance(exit, Success) and (
         not span.sampled or fiber.get_ref(CurrentTracer) is native_tracer
     ):
-        span.end(end_time, _response_span_exit(request, exit.value))
+        span.end(end_time, _response_span_exit(fiber, request, exit.value))
         return
     redacted_headers = fiber.get_ref(_headers.CurrentRedactedNames)
     accept = fiber.get_ref(TracerHeaderFilter)
@@ -101,10 +106,10 @@ def _end(fiber: Fiber[Any, Any], span: Span, request: ServerRequest, exit: Exit[
         if cause is not None and (response.status >= 500 or cause.has_interrupts):
             span_exit = Failure(cause)
         else:
-            span_exit = _response_span_exit(request, response)
+            span_exit = _response_span_exit(fiber, request, response)
     else:
         response = exit.value
-        span_exit = _response_span_exit(request, response)
+        span_exit = _response_span_exit(fiber, request, response)
     if span.sampled:
         span.attribute("http.request.method", request.method)
         url = to_url(request)

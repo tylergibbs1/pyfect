@@ -186,9 +186,10 @@ OMISSIONS: tuple[Omission, ...] = (
     ),
     *_whole(NOT_PORTED_HTTP2, "platform/node-shared/test/HttpServerHttp2.test-utils.ts"),
     _some(
-        "platform/node/test/NodeHttpClient.test.ts",
-        "NOT_PORTED client-side `Connection: Upgrade`, reached only by Node's agent",
-        r"upgraded connection|101 response",
+        "effect/test/http/FetchHttpClient.test.ts",
+        "section 4 `StreamBodyFallback` row: a fetch runtime without streaming request bodies; "
+        "httpx streams every stream body",
+        r"unsupported streaming",
     ),
     _some(
         "platform/node/test/NodeSocket.test.ts",

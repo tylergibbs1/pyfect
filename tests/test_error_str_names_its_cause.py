@@ -139,7 +139,7 @@ INSTANCES = {
     "mcp reason": mcp_client_error.TransportError(cause=WHY),
     "mcp error": mcp_client_error.McpClientError(mcp_client_error.TransportError(cause=WHY)),
     "session auth": EventLogSessionAuthError("InvalidPayload", "It failed", WHY),
-    "rpc": RpcClientError(RpcClientDefect("It failed", WHY)),
+    "rpc": RpcClientError(reason=RpcClientDefect(message="It failed", cause=WHY)),
     "multipart": MultipartError(MultipartErrorReason("InternalError", WHY)),
     "socket server": SocketServerError(SocketServerOpenError(WHY)),
     "worker": WorkerSendError(message="It failed", cause=WHY),
@@ -152,6 +152,6 @@ def test_these_errors_name_their_cause(error: TaggedError):
 
 
 def test_a_wrapper_says_its_reasons_message_once():
-    error = RpcClientError(RpcClientDefect("It failed", WHY))
+    error = RpcClientError(reason=RpcClientDefect(message="It failed", cause=WHY))
     assert str(error) == "RpcClientDefect: It failed: Refused: connection refused"
     assert error.message == "RpcClientDefect: It failed"

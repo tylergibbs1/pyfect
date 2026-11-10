@@ -44,13 +44,13 @@ def default_compressible(content_type: str) -> bool:
 
 
 def parse_accept_encoding(header: str) -> dict[str, float] | None:
-    """Each coding's quality; ``None`` for an empty or malformed header."""
-    trimmed = header.strip()
-    if not trimmed:
-        return None
+    """Each coding's quality (empty members skipped); ``None`` for a
+    malformed header."""
     accepted: dict[str, float] = {}
-    for part in trimmed.split(","):
+    for part in header.split(","):
         member = ";".join(piece.strip(" \t") for piece in part.strip().lower().split(";"))
+        if not member:
+            continue
         match = _ACCEPT_MEMBER.match(member)
         if match is None:
             return None

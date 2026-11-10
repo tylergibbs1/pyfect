@@ -636,3 +636,61 @@ def test_layer_schema_binary_provides_the_serialization():
     program: Any = rs.RpcSerialization()
     service: Any = yield from program.pipe(fx.provide(rs.layer_schema_binary()))
     assert service.content_type == "application/vnd.effect.rpc+schema-binary"
+
+
+@pytest.mark.parametrize(
+    ("serialization", "delimiter"),
+    [(rs.json_rpc(control_messages=False), ""), (rs.nd_json_rpc(control_messages=False), "\n")],
+    ids=["jsonRpc", "ndJsonRpc"],
+)
+def test_decodes_control_methods_as_notifications_without_control_messages(
+    serialization: rs.RpcSerializationService, delimiter: str
+) -> None:
+    """RpcSerialization / %s decodes control methods as notifications when controlMessages is false"""  # noqa: E501
+    parser = serialization.make_unsafe()
+    encoded = json.dumps({"jsonrpc": "2.0", "method": "@effect/rpc/Eof"}) + delimiter
+    assert parser.decode(encoded) == [
+        {
+            "_tag": "Request",
+            "id": "",
+            "tag": "@effect/rpc/Eof",
+            "payload": None,
+            "headers": [],
+            "isNotification": True,
+        }
+    ]
+
+
+def test_json_rpc_emits_stream_chunks_of_a_batched_request_immediately() -> None:
+    """RpcSerialization / jsonRpc emits stream chunks of a batched request immediately"""
+    parser = rs.json_rpc().make_unsafe()
+    parser.decode(
+        '[{"jsonrpc":"2.0","id":1,"method":"users.stream"},'
+        '{"jsonrpc":"2.0","id":2,"method":"users.get"}]'
+    )
+    chunk = parser.encode({"_tag": "Chunk", "requestId": 1, "values": ["a"]})
+    assert isinstance(chunk, str)
+    assert json.loads(chunk) == {"jsonrpc": "2.0", "chunk": True, "id": 1, "result": ["a"]}
+    assert parser.encode(_exit_success(1, None)) is None
+    exits = parser.encode(_exit_success(2, "two"))
+    assert isinstance(exits, str)
+    assert json.loads(exits) == [
+        {"jsonrpc": "2.0", "id": 1, "result": None},
+        {"jsonrpc": "2.0", "id": 2, "result": "two"},
+    ]
+
+
+def test_json_rpc_carries_the_discard_marker() -> None:
+    """A discarded call's ``discard`` marker survives a JSON-RPC round trip (Effect 4.1.2's
+    ``decodeJsonRpcMessage`` / ``encodeJsonRpcMessage``)."""
+    parser = rs.json_rpc().make_unsafe()
+    encoded = parser.encode(_request(7, "users.get", discard=True))
+    assert isinstance(encoded, str)
+    assert json.loads(encoded) == {
+        "jsonrpc": "2.0",
+        "method": "users.get",
+        "params": None,
+        "id": 7,
+        "discard": True,
+    }
+    assert parser.decode(encoded) == [_request(7, "users.get", discard=True)]

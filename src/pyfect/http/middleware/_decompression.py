@@ -19,7 +19,7 @@ from pyfect.effect import fail, succeed
 from pyfect.http.headers import Headers
 from pyfect.http.headers import Input as HeadersInput
 from pyfect.http.incoming_message import MaxBodySize
-from pyfect.http.method import HttpMethod, has_body
+from pyfect.http.method import has_body
 from pyfect.http.middleware._types import AppMiddleware
 from pyfect.http.server_error import HttpServerError, RequestParseError, request_parse_error
 from pyfect.http.server_request import HttpServerRequest, RequestProtocol, ServerRequest
@@ -125,7 +125,7 @@ class DecompressedRequest(ServerRequest):
         return self.inner.url
 
     @property
-    def method(self) -> HttpMethod:
+    def method(self) -> str:
         return self.inner.method
 
     @property

@@ -9,7 +9,7 @@ from pyfect import schema as S
 
 
 def _cause_field() -> object:
-    return S.field(S.Union(S.Null, S.Defect()), default=None)
+    return S.field(S.Union(S.Undefined, S.Defect()), default=None)
 
 
 class WorkerSpawnError(S.TaggedError, identifier="effect/workers/WorkerError/WorkerSpawnError"):

@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, TypedDict, Unpack, final
 
 from pyfect import byte_size
+from pyfect._digits import parse_digits
 from pyfect._js import text_encode
 from pyfect.effect import Effect, succeed
 from pyfect.http import body as _body
@@ -31,7 +32,7 @@ from pyfect.http._compression import CompressionAlgorithm, compress_body
 from pyfect.http.headers import EMPTY as EMPTY_HEADERS
 from pyfect.http.headers import Headers
 from pyfect.http.headers import Input as HeadersInput
-from pyfect.http.method import HttpMethod
+from pyfect.http.method import HttpMethod, has_body
 from pyfect.redacted import Redacted
 from pyfect.redacted import value as redacted_value
 from pyfect.result import Ok
@@ -41,6 +42,7 @@ from pyfect.stream import Stream
 
 if TYPE_CHECKING:
     from pyfect.file_system import FileSystem
+    from pyfect.http.web import WebRequest
     from pyfect.platform_error import PlatformError
 
 type UrlInput = str | _url.Url
@@ -77,7 +79,9 @@ def _join_segments(first: str, second: str) -> str:
 @final
 @dataclass(frozen=True, slots=True)
 class HttpClientRequest:
-    method: HttpMethod
+    method: str
+    """The method; outside ``HttpMethod`` when converted from a received
+    request (``PROPFIND``)."""
     url: str
     url_params: _params.UrlParams
     hash: str | None
@@ -104,7 +108,7 @@ class HttpClientRequest:
     def _with(
         self,
         *,
-        method: HttpMethod | None = None,
+        method: str | None = None,
         url: str | None = None,
         url_params: _params.UrlParams | None = None,
         headers: Headers | None = None,
@@ -248,7 +252,17 @@ class HttpClientRequest:
             lambda body: (
                 self
                 if body is self.body
-                else self.set_body(body).set_header("content-encoding", algorithm)
+                # The headers keep the caller's content-type; only the length changes.
+                else HttpClientRequest(
+                    self.method,
+                    self.url,
+                    self.url_params,
+                    self.hash,
+                    _body.update_content_length(self.headers, body).set(
+                        "content-encoding", algorithm
+                    ),
+                    body,
+                )
             )
         )
 
@@ -314,6 +328,32 @@ EMPTY: HttpClientRequest = HttpClientRequest(
 )
 
 
+def from_web(request: WebRequest) -> HttpClientRequest:
+    """A client request sending what ``request`` received (Effect's
+    ``HttpClientRequest.fromWeb``): its method (an extension method such as
+    ``PROPFIND`` kept), URL, headers, and its body as a ``Raw`` body with
+    the received ``content-type`` and a valid ``content-length``."""
+    match _url.from_string(request.url):
+        case Ok(url):
+            target: UrlInput = url
+        case _:
+            target = request.url
+    base = HttpClientRequest(request.method, "", _params.EMPTY, None, EMPTY_HEADERS, _body.EMPTY)
+    return base.set_url(target).set_headers(request.headers).set_body(_web_body(request))
+
+
+def _web_body(request: WebRequest) -> _body.HttpBody:
+    if not has_body(request.method) or request.body is None:
+        return _body.EMPTY
+    length = request.headers.get("content-length")
+    parsed = None if length is None else parse_digits(length)
+    return _body.raw(
+        request.body,
+        content_type=request.headers.get("content-type"),
+        content_length=parsed if parsed is not None and parsed <= 2**53 - 1 else None,
+    )
+
+
 def make(method: HttpMethod, url: UrlInput, **options: Unpack[RequestOptions]) -> HttpClientRequest:
     return EMPTY.modify(method=method, url=url, **options)
 
@@ -371,6 +411,7 @@ __all__ = [
     "RequestOptions",
     "UrlInput",
     "delete",
+    "from_web",
     "get",
     "head",
     "make",

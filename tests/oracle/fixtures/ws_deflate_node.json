@@ -1,0 +1,1385 @@
+{
+ "source": "ws 8.22.1 extension.parse + PerMessageDeflate.accept (isServer), Node v24.22.1",
+ "cases": [
+  {
+   "options": {},
+   "header": "permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; client_max_window_bits",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; client_max_window_bits=10",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_max_window_bits=9",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=9"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_no_context_takeover; client_no_context_takeover",
+   "result": {
+    "ok": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; client_max_window_bits=\"12\"",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=12"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_max_window_bits=\"1\\0\"",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=10"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_max_window_bits",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_max_window_bits=16",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_max_window_bits=0x0f",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=15"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_max_window_bits=1e1",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=10"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; foo",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_no_context_takeover=1",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; client_max_window_bits=10; client_max_window_bits=11",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "x-webkit-deflate-frame",
+   "result": {
+    "none": true
+   }
+  },
+  {
+   "options": {},
+   "header": "foo, permessage-deflate; server_max_window_bits=10, permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=10"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_max_window_bits=12, permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=12"
+   }
+  },
+  {
+   "options": {},
+   "header": "",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": " ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate,",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": ";",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate ; client_max_window_bits = 10",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate;client_max_window_bits=10 ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; client_max_window_bits=+10",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; client_max_window_bits=10.0",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; client_max_window_bits=010",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10"
+   }
+  },
+  {
+   "options": {},
+   "header": "a b",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; x=\"a",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate\t; server_no_context_takeover",
+   "result": {
+    "ok": "permessage-deflate; server_no_context_takeover"
+   }
+  },
+  {
+   "options": {},
+   "header": "permessage-deflate; server_max_window_bits=8",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=8"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; client_max_window_bits",
+   "result": {
+    "ok": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; client_max_window_bits=10",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_max_window_bits=9",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=9; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_no_context_takeover; client_no_context_takeover",
+   "result": {
+    "ok": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; client_max_window_bits=\"12\"",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=12; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_max_window_bits=\"1\\0\"",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=10; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_max_window_bits",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_max_window_bits=16",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_max_window_bits=0x0f",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=15; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_max_window_bits=1e1",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=10; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; foo",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_no_context_takeover=1",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; client_max_window_bits=10; client_max_window_bits=11",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "x-webkit-deflate-frame",
+   "result": {
+    "none": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "foo, permessage-deflate; server_max_window_bits=10, permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=10; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_max_window_bits=12, permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=12; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": " ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate,",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": ";",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate ; client_max_window_bits = 10",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate;client_max_window_bits=10 ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; client_max_window_bits=+10",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; client_max_window_bits=10.0",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; client_max_window_bits=010",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "a b",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; x=\"a",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate\t; server_no_context_takeover",
+   "result": {
+    "ok": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": true,
+    "clientNoContextTakeover": true
+   },
+   "header": "permessage-deflate; server_max_window_bits=8",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=8; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; client_max_window_bits",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=10",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=9",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=9"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_no_context_takeover; client_no_context_takeover",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=\"12\"",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=12"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=\"1\\0\"",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=10"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_max_window_bits",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=16",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=0x0f",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=15"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=1e1",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=10"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; foo",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_no_context_takeover=1",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=10; client_max_window_bits=11",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "x-webkit-deflate-frame",
+   "result": {
+    "none": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "foo, permessage-deflate; server_max_window_bits=10, permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=10"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=12, permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=12"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": " ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate,",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": ";",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate ; client_max_window_bits = 10",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate;client_max_window_bits=10 ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=+10",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=10.0",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=010",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=10"
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "a b",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; x=\"a",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate\t; server_no_context_takeover",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverNoContextTakeover": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=8",
+   "result": {
+    "ok": "permessage-deflate; server_max_window_bits=8"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; client_max_window_bits",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=11; server_max_window_bits=10"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; client_max_window_bits=10",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_max_window_bits=9",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_no_context_takeover; client_no_context_takeover",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; client_max_window_bits=\"12\"",
+   "result": {
+    "ok": "permessage-deflate; client_max_window_bits=11; server_max_window_bits=10"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_max_window_bits=\"1\\0\"",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_max_window_bits",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_max_window_bits=16",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_max_window_bits=0x0f",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_max_window_bits=1e1",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; foo",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_no_context_takeover=1",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; client_max_window_bits=10; client_max_window_bits=11",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "x-webkit-deflate-frame",
+   "result": {
+    "none": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "foo, permessage-deflate; server_max_window_bits=10, permessage-deflate",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_max_window_bits=12, permessage-deflate",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": " ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate,",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": ";",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate ; client_max_window_bits = 10",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate;client_max_window_bits=10 ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; client_max_window_bits=+10",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; client_max_window_bits=10.0",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; client_max_window_bits=010",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "a b",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; x=\"a",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate\t; server_no_context_takeover",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": 10,
+    "clientMaxWindowBits": 11
+   },
+   "header": "permessage-deflate; server_max_window_bits=8",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; client_max_window_bits",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=10",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=9",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_no_context_takeover; client_no_context_takeover",
+   "result": {
+    "ok": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=\"12\"",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=\"1\\0\"",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_max_window_bits",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=16",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=0x0f",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=1e1",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; foo",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_no_context_takeover=1",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=10; client_max_window_bits=11",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "x-webkit-deflate-frame",
+   "result": {
+    "none": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "foo, permessage-deflate; server_max_window_bits=10, permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=12, permessage-deflate",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": " ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate,",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": ";",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate ; client_max_window_bits = 10",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate;client_max_window_bits=10 ",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=+10",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=10.0",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; client_max_window_bits=010",
+   "result": {
+    "ok": "permessage-deflate"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "a b",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; x=\"a",
+   "result": {
+    "error": true
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate\t; server_no_context_takeover",
+   "result": {
+    "ok": "permessage-deflate; server_no_context_takeover"
+   }
+  },
+  {
+   "options": {
+    "serverMaxWindowBits": false,
+    "clientMaxWindowBits": false
+   },
+   "header": "permessage-deflate; server_max_window_bits=8",
+   "result": {
+    "error": true
+   }
+  }
+ ]
+}
