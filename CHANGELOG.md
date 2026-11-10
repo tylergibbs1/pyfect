@@ -1,6 +1,12 @@
 # Changelog
 
-## 0.5.0 (unreleased)
+## 0.5.0 (2026-11-10)
+
+Durations are exact. `duration.Duration` is Effect 4.1.2's `Duration`: whole nanoseconds at
+any length, or infinity, compared and hashed as Effect's are. It replaces the float-based
+`duration.Seconds` everywhere pyfect handles time, and `Schema.Duration` decodes to it.
+Every API still takes the same inputs (bare numbers are milliseconds, `"5 seconds"`,
+`timedelta`, ...). The renames are listed below with how to migrate.
 
 ### Changed (breaking)
 
