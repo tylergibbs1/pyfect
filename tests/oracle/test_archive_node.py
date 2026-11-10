@@ -4,9 +4,9 @@ path-traversal entries (``archive_oracle.ts`` says how to record it). Not Effect
 titles: found by comparing with Effect.
 
 Effect returns traversal paths as written; ``test_paths_are_returned_as_written`` says
-so outright, since that is what callers must guard against. Only ``zlib`` differences
-differences are allowed (``DIVERGENCES``, ``docs/PARITY.md`` section 4): which message
-of corrupt deflate data is reported depends on the zlib build."""
+so outright, since that is what callers must guard against. Corrupt deflate data
+fails with Effect's kind and message: ``zip``'s inflater replays an entry ``zlib``
+rejects through a port of Effect's."""
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false
 
 from __future__ import annotations
@@ -298,36 +298,9 @@ def run(case: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0911
             raise AssertionError(op)
 
 
-DIVERGENCES: dict[str, dict[str, Any]] = {
-    # zlib takes a code length code without symbols, and fails when it next reads
-    # enough input, which this archive does not have
-    "zip.decode/deflate/invalid/dynamic-incomplete": {
-        "items": [{"body": None}],
-        "kind": "Truncated",
-    },
-}
-
-
-def normalized(result: dict[str, Any]) -> dict[str, Any]:
-    """Without the wording of zlib's errors."""
-    error = result.get("error")
-    if error is not None and error["kind"] == "InvalidData":
-        return {**result, "error": {"kind": "InvalidData"}}
-    return result
-
-
 @pytest.mark.parametrize("case", CASES, ids=[case["id"] for case in CASES])
 def test_matches_effect(case: dict[str, Any]) -> None:
-    id_ = case["id"].removesuffix("#7")
-    result = run(case)
-    if id_ in DIVERGENCES:
-        expected = DIVERGENCES[id_]
-        assert result["error"]["kind"] == expected["kind"]
-        assert [item["body"] for item in result["items"]] == [
-            item["body"] for item in expected["items"]
-        ]
-        return
-    assert normalized(result) == normalized(ORACLE[case["id"]])
+    assert run(case) == ORACLE[case["id"]]
 
 
 @testing.effect
