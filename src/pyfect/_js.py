@@ -153,6 +153,17 @@ def divide(dividend: float, divisor: float) -> float:
     return math.copysign(math.inf, dividend) * math.copysign(1.0, divisor)
 
 
+def remainder(dividend: float, divisor: float) -> float:
+    """JavaScript's ``%``: the sign of ``dividend``; NaN for an infinite dividend or a zero
+    divisor, and ``dividend`` itself for an infinite divisor (Python's ``%`` takes the
+    divisor's sign, and ``math.fmod`` raises)."""
+    if math.isinf(dividend) or divisor == 0 or math.isnan(dividend) or math.isnan(divisor):
+        return math.nan
+    if math.isinf(divisor):
+        return dividend
+    return math.fmod(dividend, divisor)
+
+
 def power(base: float, exponent: float) -> float:
     """``Math.pow`` / ``**``: a result past float range is a signed
     infinity, ``0 ** -n`` is an infinity, ``(-8) ** 0.5`` and

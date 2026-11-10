@@ -9,12 +9,11 @@ from typing import Any
 
 from pyfect._concurrency import for_each
 from pyfect._core import Effect, _Gen, _Succeed, _Sync
-from pyfect._js import power
+from pyfect._js import power, remainder
 from pyfect.duration import (
     Duration,
     from_input_unsafe,
     millis,
-    nanos,
     to_millis,
     zero,
 )
@@ -110,24 +109,27 @@ def fixed(interval: DurationInput) -> Schedule[int]:
     """Recur on a fixed beat of ``interval``, counted from the first step.
     A run that overruns the beat is followed at once; missed beats are not
     replayed. Outputs the count, from 0."""
-    window = from_input_unsafe(interval)
+    window = to_millis(from_input_unsafe(interval))
 
     def make() -> Callable[[InputMetadata[object]], Effect[Decision[int]]]:
-        # Effect's arithmetic, on exact durations since the first step.
-        last_run = zero
+        # Effect's float milliseconds, ``%`` included.
+        start = 0.0
+        last_run = 0.0
 
         def step(m: InputMetadata[object]) -> Decision[int]:
-            nonlocal last_run
-            if window.is_zero():
+            nonlocal start, last_run
+            if window == 0:
                 return Continue(m.attempt - 1, zero)
             if m.attempt == 1:
-                last_run = window
-                return Continue(0, window)
-            now = m.elapsed
-            running_behind = now > last_run + window
-            delay = zero if running_behind else _to_boundary(now, window)
-            last_run = now + delay
-            return Continue(m.attempt - 1, delay)
+                start = m.now
+                last_run = m.now + window
+                return Continue(0, millis(window))
+            running_behind = m.now > last_run + window
+            boundary = window - remainder(m.now - start, window)
+            on_beat = window if millis(boundary).is_zero() else boundary
+            delay = 0.0 if running_behind else on_beat
+            last_run = m.now if running_behind else m.now + delay
+            return Continue(m.attempt - 1, millis(delay))
 
         return lambda m: _Sync(lambda: step(m))
 
@@ -137,25 +139,15 @@ def fixed(interval: DurationInput) -> Schedule[int]:
 def windowed(interval: DurationInput) -> Schedule[int]:
     """Recur at the end of each ``interval``-long window, counted from the
     first step. Outputs the count, from 0."""
-    window = from_input_unsafe(interval)
+    window = to_millis(from_input_unsafe(interval))
 
     def step(m: InputMetadata[object]) -> Decision[int]:
-        delay = zero if window.is_zero() else _to_boundary(m.elapsed, window)
-        return Continue(m.attempt - 1, delay)
+        if window == 0:
+            return Continue(m.attempt - 1, zero)
+        delay = millis(window - remainder(m.elapsed, window))
+        return Continue(m.attempt - 1, millis(window) if delay.is_zero() else delay)
 
     return _stateless(step)
-
-
-def _to_boundary(elapsed: Duration, window: Duration) -> Duration:
-    """The time to the next window boundary, with JavaScript's ``%`` (the remainder takes
-    the sign of ``elapsed``) as Effect computes it. With an infinite ``elapsed`` JavaScript
-    gives ``NaN``, a zero delay that Effect replaces by ``window``; an infinite ``window``
-    leaves ``elapsed`` as the remainder and the delay is infinite, ``window`` again."""
-    if not (elapsed.is_finite() and window.is_finite()):
-        return window
-    at, size = elapsed.to_nanos_unsafe(), window.to_nanos_unsafe()
-    rest = abs(at) % abs(size)
-    return nanos(size - (rest if at >= 0 else -rest))
 
 
 def duration(duration: DurationInput) -> Schedule[Duration]:
@@ -167,10 +159,10 @@ def duration(duration: DurationInput) -> Schedule[Duration]:
 def during(duration: DurationInput) -> Schedule[Duration]:
     """Recur without waiting until more than ``duration`` has passed since
     the first step. Outputs the time elapsed."""
-    limit = from_input_unsafe(duration)
+    limit = to_millis(duration)
 
     def step(m: InputMetadata[object]) -> Decision[Duration]:
-        elapsed = m.elapsed
+        elapsed = millis(m.elapsed)
         return Stop(elapsed) if m.elapsed > limit else Continue(elapsed, zero)
 
     return _stateless(step)

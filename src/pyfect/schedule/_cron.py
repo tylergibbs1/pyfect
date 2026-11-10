@@ -11,10 +11,10 @@ from pyfect import cron as cron_module
 from pyfect._core import Effect, _Succeed, _Sync
 from pyfect.cron import Cron, CronParseError, DstOverlapPolicy
 from pyfect.date_time._epoch import from_epoch_millis, to_epoch_millis
-from pyfect.duration import Duration, zero
+from pyfect.duration import Duration, millis, zero
 from pyfect.effect import from_result
 from pyfect.result import Ok
-from pyfect.schedule._model import Continue, Decision, Schedule, Stop, _since, from_step
+from pyfect.schedule._model import Continue, Decision, Schedule, Stop, from_step
 
 
 @overload
@@ -53,10 +53,10 @@ def cron(
                 # A JavaScript ``Date`` holds whole milliseconds, cut toward zero.
                 start = from_epoch_millis(math.trunc(now)).astimezone()
                 found = cron_module.next(c, start)
-                delay = _since(to_epoch_millis(found), now)
+                delay = millis(to_epoch_millis(found) - now)
                 if delay.is_zero():
                     found = cron_module.next(c, found)
-                    delay = _since(to_epoch_millis(found), now)
+                    delay = millis(to_epoch_millis(found) - now)
                 return Continue(delay, delay)
 
             return _Sync(decide)

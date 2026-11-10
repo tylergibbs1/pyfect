@@ -19,7 +19,7 @@ import pytest
 import pyfect as fx
 from pyfect import cron, random, schedule, testing
 from pyfect.cron import CronParseError
-from pyfect.duration import Duration, millis, seconds, zero
+from pyfect.duration import Duration, infinity, millis, nanos, seconds, zero
 from pyfect.result import Err, Ok
 from pyfect.schedule import Continue, Metadata, Schedule, Stop
 
@@ -148,8 +148,8 @@ def expected_metadata() -> list[Metadata[int, str]]:
             attempt=1,
             start=1_000,
             now=1_000,
-            elapsed=zero,
-            elapsed_since_previous=zero,
+            elapsed=0,
+            elapsed_since_previous=0,
         ),
         Metadata(
             input="b",
@@ -158,8 +158,8 @@ def expected_metadata() -> list[Metadata[int, str]]:
             attempt=2,
             start=1_000,
             now=1_250,
-            elapsed=ms(250),
-            elapsed_since_previous=ms(250),
+            elapsed=250,
+            elapsed_since_previous=250,
         ),
     ]
 
@@ -188,7 +188,7 @@ def test_modify_delay_provides_full_metadata():
 
     def modify(m: Metadata[int, str]) -> fx.Effect[Duration]:
         observed.append(m)
-        return fx.succeed(m.duration + m.elapsed_since_previous)
+        return fx.succeed(m.duration + millis(m.elapsed_since_previous))
 
     s = schedule.spaced(ms(250)).pipe(schedule.set_input_type(str)).modify_delay(modify)
     step = yield from schedule.to_step(s)
@@ -206,7 +206,7 @@ def test_add_delay_provides_full_metadata():
 
     def extra(m: Metadata[int, str]) -> fx.Effect[Duration]:
         observed.append(m)
-        return fx.succeed(m.elapsed_since_previous)
+        return fx.succeed(millis(m.elapsed_since_previous))
 
     s = schedule.spaced(ms(250)).pipe(schedule.set_input_type(str)).add_delay(extra)
     step = yield from schedule.to_step(s)
@@ -558,3 +558,81 @@ def test_cron_does_not_fail_when_the_test_clock_is_adjusted_to_infinity():
     yield from testing.adjust(math.inf)
     yield from latch.succeed(None)
     yield from fiber.join()
+
+
+def _node_delays(s: Schedule[object, None], times: list[float]) -> list[Duration | None]:
+    @fx.gen
+    def go():
+        step = yield from schedule.to_step(s)
+        out: list[Duration | None] = []
+        for now in times:
+            decision = yield from step(now, None)
+            out.append(decision.delay if isinstance(decision, Continue) else None)
+        return out
+
+    return testing.run_test(go)
+
+
+@pytest.mark.parametrize(
+    ("s", "times", "expected"),
+    [
+        (
+            schedule.fixed("100 millis"),
+            [0, 100, 200, 350, 700, 700.0000001],
+            [ms(100), ms(100), ms(100), ms(50), zero, nanos(100_000_000)],
+        ),
+        (
+            schedule.fixed("300 millis"),
+            [0.1, 0.2, 0.3, 300.3, 600.3],
+            [
+                ms(300),
+                nanos(299_900_000),
+                nanos(299_800_000),
+                nanos(299_800_000),
+                nanos(299_800_000),
+            ],
+        ),
+        # An infinite now overruns the beat, then JavaScript's NaN boundary gives the window.
+        (
+            schedule.fixed(ms(1e303)),
+            [0, math.inf, math.inf, math.inf],
+            [ms(1e303), zero, ms(1e303), ms(1e303)],
+        ),
+        (schedule.fixed(infinity), [0, 5, 10], [infinity] * 3),
+        (
+            schedule.windowed("100 millis"),
+            [1000, 1300, 1100.3],
+            [ms(100), ms(100), nanos(99_700_000)],
+        ),
+        # An elapsed time past float range is infinite: NaN again, so the window.
+        (schedule.windowed(ms(1e303)), [-1.7e308, 1.7e308, math.inf], [ms(1e303)] * 3),
+        (schedule.windowed(infinity), [0, 5], [infinity] * 2),
+        (
+            schedule.windowed(ms(2**53 - 1)),
+            [0, 2**53, 2**53 + 2, 3 * 2**52],
+            [ms(2**53 - 1), ms(2**53 - 2), ms(2**53 - 4), ms(2**52 - 2)],
+        ),
+        (
+            schedule.fixed(ms(2**53 + 2)),
+            [0, 1, 2**53, 2**54 + 8],
+            [ms(2**53 + 2), ms(2**53), ms(2), zero],
+        ),
+        (
+            schedule.windowed(nanos(1500)),
+            [0, 0.001, 0.0035],
+            [nanos(1500), nanos(500), nanos(1000)],
+        ),
+        (
+            schedule.spaced("1 second").up_to(duration="1 second"),
+            [0, 1000, 1000.0000004, 1000.0000006],
+            [ms(1000)] * 3 + [None],
+        ),
+    ],
+)
+def test_float_millisecond_windows_match_effect_under_node(
+    s: Schedule[object, None], times: list[float], expected: list[Duration | None]
+):
+    """Effect 4.1.2's float-millisecond ``elapsed`` and ``%``, as Node printed them."""
+    assert [d.value if d else None for d in _node_delays(s, times)] == [
+        d.value if d else None for d in expected
+    ]

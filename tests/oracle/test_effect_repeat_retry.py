@@ -345,8 +345,8 @@ def test_retry_schedule_current_metadata():
             attempt=attempt,
             start=0.0,
             now=0.0,
-            elapsed=zero,
-            elapsed_since_previous=zero,
+            elapsed=0,
+            elapsed_since_previous=0,
         )
 
     assert metadata == [at(0, None), at(1, 0), at(2, 1), at(3, 2)]

@@ -1310,8 +1310,8 @@ def check_schedule_combinators(s: schedule.Schedule[int, str]) -> None:
         attempt=1,
         start=0.0,
         now=0.0,
-        elapsed=zero,
-        elapsed_since_previous=zero,
+        elapsed=0,
+        elapsed_since_previous=0,
     )
     _decision: schedule.Decision[object] = schedule.Continue[int](1, millis(0))
 

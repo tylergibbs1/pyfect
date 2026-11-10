@@ -488,8 +488,8 @@ def test_retry_schedule_current_metadata():
             attempt=attempt,
             start=0.0,
             now=now * 1000,
-            elapsed=fx.duration.seconds(now),
-            elapsed_since_previous=fx.duration.seconds(since),
+            elapsed=now * 1000,
+            elapsed_since_previous=since * 1000,
         )
 
     assert seen == [meta(0, 0, 0, 0), meta(1, 0, 0, 1), meta(2, 1, 1, 2), meta(3, 3, 2, 4)]

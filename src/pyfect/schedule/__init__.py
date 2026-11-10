@@ -13,7 +13,7 @@ schedule can be shared freely::
 
 Each step sees ``Metadata``: the input, the attempt number, the start and
 current times (wall-clock milliseconds since the epoch), the elapsed
-durations, and the step's output and delay. The effect being repeated or
+milliseconds, and the step's output and delay. The effect being repeated or
 retried reads the metadata of the step that started it from
 ``CurrentMetadata``.
 

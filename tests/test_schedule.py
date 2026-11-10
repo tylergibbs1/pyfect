@@ -310,13 +310,13 @@ def test_windowed_keeps_whole_windows_with_decimal_intervals():
     assert delays(schedule.windowed("300 millis"), [0.0, 0.4, 0.7]) == [0.3, 0.2, 0.2]
 
 
-def test_metadata_times_are_exact_to_the_nanosecond():
-    seen: list[tuple[Duration, Duration]] = []
+def test_metadata_times_are_milliseconds_since_the_start_and_the_previous_step():
+    seen: list[tuple[float, float]] = []
     s = schedule.forever.tap(
         lambda m: fx.sync(lambda: seen.append((m.elapsed, m.elapsed_since_previous)))
     )
     decisions(s, [1.0, 1.1, 1.3])
-    assert seen == [(zero, zero), (millis(100), millis(100)), (millis(300), millis(200))]
+    assert seen == [(0, 0), (100, 100), (300, 200)]
 
 
 @testing.effect

@@ -35,8 +35,11 @@
     `d.parts()` returns.
   - `add_nanos`, `millis_to_nanos`, `round_nanos` and `parse_duration_text` are gone: add
     durations, and parse text with `from_input` / `from_input_unsafe`.
-  - A schedule step's `elapsed` and `elapsed_since_previous`, and `TransactionMeta.elapsed`,
-    are `Duration`s (Effect has float milliseconds there; a `Duration` keeps them exact).
+  - A schedule step's `elapsed` and `elapsed_since_previous`, and `TransactionMeta.elapsed`
+    and `elapsed_since_previous`, are float milliseconds (`now - start`), as in Effect (they
+    were `Seconds`): `m.elapsed / 1000` for seconds, `duration.millis(m.elapsed)` for a
+    `Duration`. `fixed`, `windowed`, `during`, `up_to(duration=)` and `cron` compute with
+    Effect's float milliseconds and JavaScript's `%`.
   - `Schema.Duration` holds a `duration.Duration`, and the codecs `DurationFromString`,
     `DurationFromNanos`, `DurationFromMillis` and `DurationFromIsoString` decode to one, as
     Effect 4.1.2's do: infinities and sub-microsecond values decode, and the "Expected a
