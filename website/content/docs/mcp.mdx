@@ -20,6 +20,9 @@ model can read, and any other failure as an internal error that leaks no details
 2025 revisions allow only an object as a structured result, so on them, as in Effect, a
 tool whose result is another kind of value, such as a list, sends it as text content only,
 with no `structuredContent` and no output schema in its listing.
+A tool decodes its arguments with its parameters schema as it is, but lists that schema's
+JSON form, as Effect does, so a parameter such as `S.HashSet` is listed as a JSON array yet
+refuses one unless the tool's `parameters=` is wrapped in `S.to_codec_json(...)`.
 `mcp_server.resource`, `resource_template` and `prompt` add resources and prompts the same
 way, as layers. Each of these layers needs the `McpServer`, so it can't be merged next to a
 transport: pass it, or several merged, as the transport's `registrations=`, which builds them
@@ -47,7 +50,9 @@ The `McpClient` then has the server's `server_info` and `instructions`, `list_to
 `list_prompts` and `list_resources`, `call_tool(tool, arguments, schema=...)` decoding the
 result's structured content, `get_prompt` and `read_resource`. Failures are an
 `McpClientError` whose `reason` says which: a tool error, a timeout (60 seconds by
-default), a transport or protocol error.
+default), a transport or protocol error. A tool error is a failure only with `schema=`:
+without one, `call_tool` succeeds with the whole `CallToolResult`, so check its `isError`,
+as with Effect's `callTool`.
 
 <CodeOutput>
 
@@ -97,8 +102,9 @@ the trace of the HTTP request that carries it.
 With `failure_mode="return"` the model gets the encoded `McpClientError`, so a tool's
 text sits as JSON inside its `reason`, and some models answer that with an empty reply.
 The model sees a failure as the tool's failure schema encodes it, so give the tool a
-schema that encodes the `McpClientError` as its `message`, the tool's own text for a tool
-error. `transform_tool` sets it with `set_failure`: the schema's type is still
+schema that encodes the `McpClientError` as its `message`. For a tool error that is the
+tool's own text after Effect's prefix, `MCP tool reported an error: <text>`, as the output
+below shows. `transform_tool` sets it with `set_failure`: the schema's type is still
 `McpClientError`, so the application gets the same error, and only what the model reads
 changes. The schema can't decode, because text doesn't carry the whole error.
 
@@ -275,10 +281,18 @@ its `.layer` is provided to. `options` carries the method, the target (a tool or
 a URI), the payload, the request context, the HTTP headers and the session id. It can provide
 services to the handler (named in `provides`, so the layer discharges them from the
 registrations' requirements), run before or after it, or fail with an `McpError`, which the
-client gets as a JSON-RPC error with that code and message. `.layer_global`, or
+client gets as a JSON-RPC error with that code and message. Pick custom codes from -32000
+to -32019, as Effect advises: any code is sent as is, but MCP uses -32020 to -32022 for its
+own header, capability and protocol-version errors. `.layer_global`, or
 `global_=True`, runs it around every request of the server, outside the local middleware;
 middleware provided both ways runs once. `a.combine(b)` runs `a` inside `b`, and middleware
 provided further out runs outside all of a combination.
+The result is a `Middleware[P, R, LE]`: what it provides, what it needs (per request and to
+be built) and what building it may fail with. A `def` middleware types its handler as
+`fx.Effect[mcp_server.MiddlewareSuccess, McpError, P]` with `P` what it provides (`Never` for
+none); typed `Any`, the middleware's types are `Any` too. `combine` discharges what `b`
+provides only when that is all `a` needs, so combine inside out:
+`rate.combine(visible.combine(auth))`.
 
 `mcp_server.visibility(check)` is middleware that hides registrations per request: where
 `check` gives `False` the registration is left out of `tools/list`, `resources/list`,
@@ -297,7 +311,9 @@ runs, once per registration, and its failure fails the list.
 
 `mcp_test.make_client(registrations, protocols=...)` is Effect's `McpTest`: it builds a server
 with the registrations, connects an in-memory client and performs the handshake, so a test
-calls tools through the server's routing, middleware and encoding as a wire client would. A
+calls tools through the server's routing, middleware and encoding as a wire client would.
+Every message is written as JSON text and read back, both ways, as on stdio and HTTP, so a
+result holds lists where the server's value had tuples, exactly as a wire client reads it. A
 request answered with an error fails with an `McpError` of that code; the server's
 notifications arrive on `client.notifications`, and its requests to the client get method not
 found.

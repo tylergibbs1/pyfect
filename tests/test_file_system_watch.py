@@ -151,7 +151,7 @@ def test_a_stream_that_ends_stops_its_watcher(tmp_path: Path):
     assert len(_watcher_threads()) == before
 
 
-def test_without_the_extra_watch_polls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def _without_watchfiles(monkeypatch: pytest.MonkeyPatch) -> None:
     class Absent(importlib.abc.MetaPathFinder):
         def find_spec(self, name: str, path: object = None, target: object = None) -> None:
             if name.split(".", maxsplit=1)[0] == "watchfiles":
@@ -160,6 +160,10 @@ def test_without_the_extra_watch_polls(tmp_path: Path, monkeypatch: pytest.Monke
     for name in [name for name in sys.modules if name.split(".")[0] == "watchfiles"]:
         monkeypatch.delitem(sys.modules, name)
     monkeypatch.setattr(sys, "meta_path", [Absent(), *sys.meta_path])
+
+
+def test_without_the_extra_watch_polls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    _without_watchfiles(monkeypatch)
     seen: list[int] = []
 
     def act() -> None:
@@ -169,6 +173,20 @@ def test_without_the_extra_watch_polls(tmp_path: Path, monkeypatch: pytest.Monke
     events = _watch(tmp_path, act, lambda event: event.path == "a.txt")
     assert events[-1] == Create("a.txt")
     assert seen == [0]
+
+
+def test_a_polled_rename_removes_the_old_name_before_creating_the_new_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """As the native watcher (and Node) reports it, whichever name sorts first."""
+    _without_watchfiles(monkeypatch)
+    (tmp_path / "z.txt").write_text("x")
+    events = _watch(
+        tmp_path,
+        lambda: os.rename(tmp_path / "z.txt", tmp_path / "a.txt"),
+        lambda event: event == Create("a.txt"),
+    )
+    assert events == [Remove("z.txt"), Create("a.txt")]
 
 
 def test_a_watcher_that_cannot_start_fails_the_stream(tmp_path: Path):

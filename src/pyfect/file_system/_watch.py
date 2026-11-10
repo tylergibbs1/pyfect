@@ -60,15 +60,16 @@ def _list_file(path: str) -> _Listing:
 
 
 def _changes(before: _Listing, after: _Listing) -> tuple[WatchEvent, ...]:
-    events: list[WatchEvent] = []
-    for name in sorted(before.keys() | after.keys()):
+    """Removals first, children before their directories, as the native
+    watcher orders a batch (so a rename is ``Remove`` then ``Create``), then
+    what was created or changed, by name."""
+    removed = [Remove(name) for name in sorted(before.keys() - after.keys(), reverse=True)]
+    events: list[WatchEvent] = list(removed)
+    for name in sorted(after.keys()):
         old = before.get(name)
-        new = after.get(name)
         if old is None:
             events.append(Create(name))
-        elif new is None:
-            events.append(Remove(name))
-        elif old != new:
+        elif old != after[name]:
             events.append(Update(name))
     return tuple(events)
 

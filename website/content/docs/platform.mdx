@@ -18,8 +18,9 @@ reads one as a stream of byte chunks, so memory stays bounded however large it i
 `fs.sink` writes one from a stream. `make_temp_directory_scoped` gives a directory that is
 removed, with everything in it, when its scope closes. `fs.glob` finds the paths under a
 root that match a pattern (`**` crosses directories, `{a,b}` and `[a-z]` choose, `dot=True`
-includes names starting with `.`); `pyfect.glob` matches the same patterns against a path
-string.
+includes names starting with `.`). `exclude=` takes patterns of paths to leave out; a
+directory that matches one is not read at all, so excluding `.venv` or `node_modules` saves
+walking them. `pyfect.glob` matches the same patterns against a path string.
 
 <CodeOutput>
 
@@ -41,15 +42,18 @@ cannot fail: `run_main` logs a failure and exits the process with a nonzero stat
 ### Watching for changes
 
 `fs.watch(path)` is a stream of `Create`, `Update` and `Remove` events for a directory's
-entries, or for one file, with paths relative to the directory; `recursive=True` reports
+entries, or for one file. An event's path is relative to the watched directory (`notes.txt`,
+or `drafts/todo.txt` in a recursive watch), and a watched file's events carry its name; `recursive=True` reports
 changes in subdirectories too, and `on_ready` runs once the watcher is installed. The events
 are Node's `fs.watch`'s as Effect reads them: an entry that appeared or went away is `Create`
-if it exists afterwards and `Remove` if not, and a changed one is `Update`. With the `watch`
+if it exists afterwards and `Remove` if not, and a changed one is `Update`. So a rename is a
+`Remove` of the old name followed by a `Create` of the new one. With the `watch`
 extra (`uv add "pyfect-dev[watch]"`, on watchfiles) the operating system reports changes as
 they happen (inotify, FSEvents, ReadDirectoryChangesW) through `WatchfilesBackend`, on a thread
 of its own that stops when the stream does. Without it, `watch` compares listings every 50
 milliseconds (`LiveFileSystem(watch_interval=...)`), which reports a change up to that late
-and misses a file created and removed between two listings. A `WatchBackend` provided where the
+and misses a file created and removed between two listings; each listing reads the whole tree,
+so on a large one (a `.venv`, a `.git`) polling keeps a core busy and the extra is the fix. A `WatchBackend` provided where the
 stream runs, or where the layer is built, takes the path first.
 
 ## User directories

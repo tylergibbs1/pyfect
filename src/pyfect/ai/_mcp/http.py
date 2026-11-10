@@ -16,12 +16,11 @@ import uuid
 from collections.abc import Callable, Sequence
 from typing import Any, Never, cast
 
-from pyfect import _json_text, stream
+from pyfect import stream
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
 from pyfect._js import text_encode
-from pyfect._json_text import parse as parse_json_text
-from pyfect.ai._mcp import batch
+from pyfect.ai._mcp import batch, frames
 from pyfect.ai._mcp import sessions as S
 from pyfect.ai._mcp.core import McpServer, McpServerService
 from pyfect.ai._mcp.dispatch import (
@@ -85,7 +84,7 @@ def _media_types(header: str | None) -> list[str]:
 
 
 def _json(message: JsonObject | list[JsonObject]) -> str:
-    return _json_text.stringify(cast("Any", message))
+    return frames.write(message)
 
 
 def _event(message: JsonObject | list[JsonObject]) -> bytes:
@@ -324,7 +323,7 @@ def _post(sessions: _Sessions, request: ServerRequest) -> Effect[HttpServerRespo
             return text
         now = yield from monotonic()
         try:
-            message: object = parse_json_text(text) if text is not None else Unparsable()
+            message: object = frames.read(text) if text is not None else Unparsable()
         except ValueError:
             message = Unparsable()
         session_id = request.headers.get(SESSION_HEADER)

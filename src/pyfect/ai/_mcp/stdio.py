@@ -5,12 +5,11 @@ from __future__ import annotations
 
 from typing import Any, Never, cast
 
-from pyfect import _json_text, stream
+from pyfect import stream
 from pyfect._concurrency import for_each
 from pyfect._core import Effect
 from pyfect._fiber import Fiber
-from pyfect._json_text import parse as parse_json_text
-from pyfect.ai._mcp import batch
+from pyfect.ai._mcp import batch, frames
 from pyfect.ai._mcp.core import McpServer
 from pyfect.ai._mcp.dispatch import Connection, ServerInfo, error_response
 from pyfect.ai.mcp_protocol import Registry
@@ -27,7 +26,7 @@ _OUTPUT_BUFFER = 8
 
 
 def _encode(message: JsonObject) -> str:
-    return _json_text.stringify(message) + "\n"
+    return frames.write(message) + "\n"
 
 
 def _await_batch(fiber: Fiber[None, Never]) -> Effect[object]:
@@ -71,7 +70,7 @@ def serve(info: ServerInfo, registry: Registry) -> Effect[None, PlatformError, M
             if not line.strip():
                 return _VOID
             try:
-                message: Any = parse_json_text(line)
+                message: Any = frames.read(line)
             except ValueError:
                 return write(error_response(None, ParseError("Parse error")))
             if isinstance(message, list):

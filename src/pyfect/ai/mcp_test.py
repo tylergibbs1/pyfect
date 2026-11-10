@@ -11,8 +11,10 @@ with sessions, the request ``_meta`` on every request for 2026-07-28::
     )
     result = yield from client.read_resource({"uri": "test://greeting"})
 
-Requests go through the server's routing, middleware and response encoding,
-so results and errors are what a wire client gets. A request answered with an
+Every message, both ways, is written as JSON text and read back, as the
+transports write and read it, and goes through the server's routing,
+middleware and response encoding, so results and errors are what a wire
+client gets (lists, not tuples). A request answered with an
 error fails with an ``McpError`` of its code, message and data. The server's
 notifications are queued on ``notifications`` in delivery order; its requests
 to the client (elicitation, sampling, roots) are answered with method not
@@ -22,7 +24,7 @@ found. Client and server live in the surrounding ``Scope``.
 from __future__ import annotations
 
 import itertools
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Never, cast
 
@@ -30,12 +32,14 @@ from pyfect._core import Effect
 from pyfect._js import or_default
 from pyfect._layer_core import require_layer
 from pyfect.ai import mcp_server
+from pyfect.ai._mcp import frames
 from pyfect.ai._mcp.core import McpServer, McpServerService
 from pyfect.ai._mcp.dispatch import (
     CLIENT_CAPABILITIES_META,
     CLIENT_INFO_META,
     PROTOCOL_VERSION_META,
     Connection,
+    Send,
     ServerInfo,
     error_response,
     notification,
@@ -98,6 +102,29 @@ def _error_of(wire: Mapping[str, Any]) -> McpError:
     return ProtocolError(message, data, error_code=code) if known is None else known(message, data)
 
 
+def _from_server(receive: Callable[[frames.Frame], Effect[None]]) -> Send:
+    """What the server writes, as a transport carries it: JSON text."""
+    return lambda message: suspend(lambda: receive(frames.write(message)))
+
+
+@dataclass(frozen=True, slots=True)
+class _Wire:
+    """The client's only way to the server: each message is written as JSON
+    text and read back before the server sees it, and the server's replies
+    reach the client as JSON text."""
+
+    _connection: Connection
+
+    def send(
+        self, message: JsonObject, receive: Callable[[frames.Frame], Effect[None]]
+    ) -> Effect[None]:
+        return suspend(
+            lambda: self._connection.dispatch(
+                frames.read(frames.write(message)), _from_server(receive)
+            )
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class Notification:
     """A notification the server sent the client, as written."""
@@ -115,7 +142,7 @@ class McpTestClient:
     server: McpServerService
     """The server, to register with or send notifications from a test."""
     _notifications: Queue[Notification, Never]
-    _connection: Connection
+    _wire: _Wire
     _metadata: JsonObject | None
     _pending: dict[int, Deferred[JsonObject]] = field(default_factory=dict[int, Any])
     _ids: itertools.count[int] = field(default_factory=lambda: itertools.count(2))
@@ -125,9 +152,9 @@ class McpTestClient:
         """What the server sent this client, in delivery order."""
         return self._notifications
 
-    def _receive(self, message: JsonObject) -> Effect[None]:
+    def _receive(self, frame: frames.Frame) -> Effect[None]:
         """A message the server wrote."""
-        return suspend(lambda: self._received(message))
+        return suspend(lambda: self._received(cast("JsonObject", frames.read(frame))))
 
     def _received(self, message: JsonObject) -> Effect[None]:
         method = message.get("method")
@@ -135,9 +162,7 @@ class McpTestClient:
         if isinstance(method, str) and id is not None:
             # A request to the client: refused, as the client offers none.
             refused = MethodNotFound(f"Method not found: {method}")
-            return self._connection.dispatch(
-                error_response(cast("Any", id), refused), self._receive
-            )
+            return self._wire.send(error_response(cast("Any", id), refused), self._receive)
         if isinstance(method, str):
             payload = cast("JsonObject", message.get("params") or {})
             return self._notifications.offer(Notification(method, payload)).as_void()
@@ -159,7 +184,7 @@ class McpTestClient:
                 own = cast("JsonObject", body.get("_meta") or {})
                 body["_meta"] = {**self._metadata, **own}
             message: JsonObject = {"jsonrpc": "2.0", "id": id, "method": method, "params": body}
-            yield from self._connection.dispatch(message, self._receive)
+            yield from self._wire.send(message, self._receive)
             answer = yield from reply.wait()
             error = answer.get("error")
             if isinstance(error, dict):
@@ -260,8 +285,8 @@ def make_client[RE = Never, RR = Never](
             }
         client: McpTestClient
 
-        def broadcast(message: JsonObject) -> Effect[None]:
-            return client._receive(message)  # pyright: ignore[reportPrivateUsage]
+        def receive(frame: frames.Frame) -> Effect[None]:
+            return client._receive(frame)  # pyright: ignore[reportPrivateUsage]
 
         connection = Connection(
             server,
@@ -271,10 +296,11 @@ def make_client[RE = Never, RR = Never](
             registry,
             server.next_client_id(),
             "stdio",
-            broadcast=broadcast,
+            broadcast=_from_server(receive),
             default_log_level=level,
         )
-        client = McpTestClient(selected.protocol_version, server, queue, connection, metadata)
+        wire = _Wire(connection)
+        client = McpTestClient(selected.protocol_version, server, queue, wire, metadata)
         yield from acquire_release(
             sync(lambda: server.connect(connection)),
             lambda _, __: sync(lambda: server.disconnect(connection.client_id)).and_then(
@@ -290,7 +316,7 @@ def make_client[RE = Never, RR = Never](
                     "clientInfo": cast("Any", info),
                 },
             ).or_die()
-            yield from connection.dispatch(notification("notifications/initialized", {}), broadcast)
+            yield from wire.send(notification("notifications/initialized", {}), receive)
         return client
 
     return cast("Any", run)

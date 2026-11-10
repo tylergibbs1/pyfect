@@ -35,6 +35,14 @@
   Effect cuts them (every 64 KiB of output and where the input runs dry). At most 4 MiB of an
   entry's compressed input is kept for the replay; a corrupt entry longer than that fails with
   Effect's kind and zlib's message, as before.
+- `mcp_test.make_client` writes every message as JSON text and reads it back, both ways, as
+  the stdio and HTTP transports do and as Effect's `McpTest` does, so a test sees what a wire
+  client sees: a tool's `structuredContent` holds lists where it held the server's tuples, and
+  a server reads a test's request as a transport delivers it. `mcp_test`, stdio and HTTP
+  share one encoding, and the in-memory client can only read encoded messages.
+- `FileSystem.watch` without the `watch` extra reports a batch's removals first, as the native
+  watcher does, so a rename is `Remove` of the old name then `Create` of the new one whichever
+  name sorts first.
 
 ## 0.5.1 (2026-11-10)
 

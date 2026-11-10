@@ -10474,3 +10474,81 @@ def check_m17_eventlog_client(
     )
     # A registered compactor takes the remote flag.
     registry.register_compaction(["E"], lambda entries, write: fx.void)  # pyright: ignore[reportArgumentType]
+
+
+# --- McpServer middleware and visibility: what they provide and need, never Any ------
+from pyfect.ai import mcp_server as mcp_server_module  # noqa: E402
+
+
+class McpUser(Tag[str], key="type_checks/McpUser"):
+    pass
+
+
+class McpLimiter(Tag[int], key="type_checks/McpLimiter"):
+    pass
+
+
+class McpAudit(Tag[str], key="type_checks/McpAudit"):
+    pass
+
+
+type _McpHandler[P] = fx.Effect[mcp_server_module.MiddlewareSuccess, mcp_schema_module.McpError, P]
+
+
+def mcp_provide_user(
+    effect: _McpHandler[McpUser], options: mcp_server_module.MiddlewareOptions
+) -> _McpHandler[Never]: ...
+def mcp_pass(
+    effect: _McpHandler[Never], options: mcp_server_module.MiddlewareOptions
+) -> _McpHandler[Never]: ...
+def mcp_audited(
+    effect: _McpHandler[Never], options: mcp_server_module.MiddlewareOptions
+) -> _McpHandler[McpAudit]: ...
+def mcp_visible(
+    options: mcp_server_module.MiddlewareOptions,
+) -> fx.Effect[bool, Never, McpUser]: ...
+def mcp_make_rate() -> fx.Effect[
+    mcp_server_module.MiddlewareFunction[Never, Never, Never], Never, McpLimiter
+]: ...
+
+
+mcp_auth = mcp_server_module.middleware(mcp_provide_user, provides=McpUser)
+assert_type(mcp_auth, mcp_server_module.Middleware[McpUser, Never, Never])
+assert_type(mcp_server_module.middleware(mcp_pass), mcp_server_module.Middleware[Never, Never])
+assert_type(
+    mcp_server_module.middleware(mcp_audited), mcp_server_module.Middleware[Never, McpAudit]
+)
+# An effect making the function: what it needs to be built is in ``R`` too.
+mcp_rate = mcp_server_module.middleware(mcp_make_rate())
+assert_type(mcp_rate, mcp_server_module.Middleware[Never, McpLimiter, Never])
+mcp_shown = mcp_server_module.visibility(mcp_visible)
+assert_type(mcp_shown, mcp_server_module.Middleware[Never, McpUser, Never])
+assert_type(
+    mcp_server_module.visibility(fx.succeed(mcp_visible)),
+    mcp_server_module.Middleware[Never, McpUser, Never],
+)
+assert_type(mcp_shown.layer, fx.Layer[Never, Never, McpUser])
+# ``combine`` discharges what ``other`` provides when that is all ``self`` needs, so
+# combine inside out: the visibility with the auth that feeds it, then the rest.
+assert_type(mcp_shown.combine(mcp_auth), mcp_server_module.Middleware[McpUser, Never, Never])
+assert_type(
+    mcp_rate.combine(mcp_shown.combine(mcp_auth)),
+    mcp_server_module.Middleware[McpUser, McpLimiter, Never],
+)
+# A union is kept whole (sound, if less precise): Python has no ``Exclude``.
+assert_type(
+    mcp_rate.combine(mcp_shown).combine(mcp_auth),
+    mcp_server_module.Middleware[McpUser, McpLimiter | McpUser, Never],
+)
+assert_type(
+    mcp_server_module.middleware(mcp_pass, global_=True),
+    fx.Layer[Never, Never, mcp_server_module.McpServer],
+)
+assert_type(
+    mcp_server_module.middleware(mcp_make_rate(), global_=True),
+    fx.Layer[Never, Never, McpLimiter | mcp_server_module.McpServer],
+)
+assert_type(
+    mcp_server_module.visibility(mcp_visible, global_=True),
+    fx.Layer[Never, Never, McpUser | mcp_server_module.McpServer],
+)

@@ -26,6 +26,8 @@ def program():
     yield from fs.make_directory(path.join(root, "drafts"))
     yield from fs.write_file_string(path.join(root, "drafts", "todo.txt"), "")
     print((yield from fs.glob("**/*.txt", root=root)))
+    # An excluded directory is not read at all.
+    print((yield from fs.glob("**/*.txt", root=root, exclude=("drafts",))))
     return root
 
 
