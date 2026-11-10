@@ -63,7 +63,7 @@ def map_response_error(response: HttpClientResponse) -> Effect[Never, AiError]:
     def build(body: str | None, now: float) -> Effect[Never, AiError]:
         details = _parse_error_body(P.parse_json(body))
         errors = [] if details is None else details["errors"]
-        http = P.http_context(request, response, body, secret_headers=SECRET_HEADERS)
+        http = P.http_context(response, body)
         ray_id = response.headers.get("cf-ray")
         description = build_error_description(
             status=status,
@@ -98,7 +98,7 @@ def map_error(error: object) -> Effect[Never, AiError]:
     """Client and schema failures as ``AiError``; an ``AiError`` passes."""
     match error:
         case HttpClientError(reason=TransportError() | EncodeError() | InvalidUrlError() as source):
-            return fail(NetworkError.from_request_error(source))
+            return fail(NetworkError.from_http_client_error(error))
         case HttpClientError(reason=DecodeError() | EmptyBodyError() as source):
             description = source.description or "Failed to decode Cloudflare response"
             return fail(InvalidOutputError(description=description))

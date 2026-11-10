@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
+from pyfect.ai._mcp import skills
 from pyfect.ai._mcp.dispatch import CLIENT_CAPABILITIES_META, PROTOCOL_VERSION_META
 from pyfect.ai._mcp.routing_header import decode_routing_header
 from pyfect.ai.mcp_protocol import AnyProtocolAdapter, Registry
@@ -43,8 +44,10 @@ STATELESS_METHODS = frozenset(
         "subscriptions/listen",
         "notifications/cancelled",
     }
+    | skills.METHODS
 )
-"""The messages a 2026-07-28 server takes (Effect's ``ClientRpcs``)."""
+"""The messages a 2026-07-28 server takes (Effect's ``ClientRpcs``, with the
+Skills extension's)."""
 
 
 @dataclass(frozen=True, slots=True)

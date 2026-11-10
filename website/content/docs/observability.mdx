@@ -50,7 +50,10 @@ Transient failures are retried three times, honouring a 429's `Retry-After`; any
 drops the batch and pauses that exporter for a minute; the first item pushed after the minute
 ends the pause. `otlp.layer_from_config()` reads the standard `OTEL_*` variables
 (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_TRACES_EXPORTER=otlp`, ...)
-and installs nothing unless a signal is switched on. Unlike `layer_json`, it needs an encoding
+and installs nothing unless a signal is switched on. In `OTEL_RESOURCE_ATTRIBUTES` keys and
+values are trimmed and percent-decoded once, and `key=` keeps an empty value; malformed
+percent-encoding is a defect here, while the OpenTelemetry bridge's
+`otel.resource.layer_from_env()` logs a warning and drops the variable. Unlike `layer_json`, it needs an encoding
 as well as the `HttpClient`: provide `otlp_serialization.layer_json` (or `layer_protobuf`).
 `otlp_proxy.layer(base_url=..., headers=...)` mounts the same routes on your `HttpRouter` and
 forwards browser exports to the collector, adding the credentials on the server.

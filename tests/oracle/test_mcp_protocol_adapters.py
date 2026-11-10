@@ -114,9 +114,7 @@ def test_attaches_cache_metadata_to_every_cacheable_operation():
     for method, params in cases:
         result = (yield from harness.send_request(method, params))["result"]
         assert result["resultType"] == "complete", method
-        assert isinstance(result["ttlMs"], int), method
-        assert result["ttlMs"] >= 0, method
-        assert result["cacheScope"] in ("public", "private"), method
+        assert (result["ttlMs"], result["cacheScope"]) == (0, "private"), method
         assert result["_meta"][SERVER_INFO_META] == SERVER_INFO, method
 
 

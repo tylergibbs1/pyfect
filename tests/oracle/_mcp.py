@@ -13,6 +13,7 @@ from pyfect import sink, stdio, stream
 from pyfect.ai import mcp_protocol as P
 from pyfect.ai import mcp_server as M
 from pyfect.errors import Done
+from pyfect.layer import Layer
 from pyfect.queue import Queue
 from pyfect.scope import Scope
 
@@ -203,11 +204,13 @@ def stdio_harness(
     instructions: str | None = None,
     server: M.McpServerService | None = None,
     before_write: Callable[[Json], fx.Effect[None]] | None = None,
+    layer: Layer[Any, Any, Any] | None = None,
 ) -> fx.Effect[StdioHarness, Any, Scope]:
     """A stdio server speaking ``protocols`` (default ``(protocol,)``) with
     ``registrations`` run first, and a client of it speaking ``protocol``.
     ``server`` shares one with another harness; ``before_write`` runs on each
-    message being written, so it can hold up the writer."""
+    message being written, so it can hold up the writer. ``layer`` is a
+    registration layer (Effect's ``registrations``), built for the scope."""
 
     @fx.gen
     def run():
@@ -235,6 +238,8 @@ def stdio_harness(
 
         for registration in registrations:
             yield from registration.pipe(fx.provide_service(M.McpServer, service))
+        if layer is not None:
+            yield from layer.build().pipe(fx.provide_service(M.McpServer, service))
         serving = M.run_stdio(
             name="test-server",
             version="1.0.0",

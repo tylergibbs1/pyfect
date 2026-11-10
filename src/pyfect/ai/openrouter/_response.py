@@ -15,12 +15,10 @@ from pyfect._core import Effect
 from pyfect.ai import _provider as P
 from pyfect.ai.ai_error import AiError, InvalidOutputError, ToolParameterValidationError
 from pyfect.ai.id_generator import IdGenerator
-from pyfect.ai.openrouter._errors import SECRET_HEADERS
 from pyfect.ai.openrouter._prompt import KEY, MODULE, base64_from_data_url, media_type_of
 from pyfect.ai.openrouter.generated import types as GT
 from pyfect.ai.response import FinishReason
 from pyfect.ai.tool import unsafe_secure_json_parse
-from pyfect.http.request import HttpClientRequest
 from pyfect.http.response import HttpClientResponse
 
 type Part = dict[str, Any]
@@ -69,10 +67,6 @@ def usage(raw: GT.ChatUsage | None) -> dict[str, Any]:
             "reasoning": reasoning,
         },
     }
-
-
-def request_details(request: HttpClientRequest) -> Any:
-    return P.request_details(request, secret_headers=SECRET_HEADERS)
 
 
 def timestamp(created: float) -> str:
@@ -164,7 +158,6 @@ def _make_response(raw: GT.ChatResult, response: HttpClientResponse) -> Gen[list
             "id": raw["id"],
             "modelId": raw["model"],
             "timestamp": timestamp(raw["created"]),
-            "request": request_details(response.request),
         }
     ]
     if not raw["choices"]:

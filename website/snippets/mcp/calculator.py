@@ -25,14 +25,12 @@ Handlers = Calculator.to_layer(
 )
 
 # The server: the toolkit, served over MCP's Streamable HTTP transport at /mcp.
-Server = layer.merge(
-    mcp_server.layer_http(
-        name="calculator",
-        version="1.0.0",
-        path="/mcp",
-        protocols=(mcp_protocol.v2025_11_25, mcp_protocol.v2026_07_28),
-    ),
-    mcp_server.toolkit(Calculator).pipe(layer.provide(Handlers)),
+Server = mcp_server.layer_http(
+    name="calculator",
+    version="1.0.0",
+    path="/mcp",
+    protocols=(mcp_protocol.v2025_11_25, mcp_protocol.v2026_07_28),
+    registrations=mcp_server.toolkit(Calculator).pipe(layer.provide(Handlers)),
 )
 Served = router.serve(Server, disable_logger=True, disable_listen_log=True)
 

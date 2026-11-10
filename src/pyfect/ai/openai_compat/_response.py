@@ -16,7 +16,6 @@ from pyfect.ai import _provider as P
 from pyfect.ai import _provider_tools as PT
 from pyfect.ai import language_model as lm
 from pyfect.ai import tool as T
-from pyfect.ai._openai_errors import COMPAT
 from pyfect.ai.ai_error import AiError, ToolParameterValidationError
 from pyfect.ai.openai_compat import _schema as W
 from pyfect.ai.openai_compat._prompt import KEY, MODULE
@@ -150,7 +149,6 @@ def _make_response(
             "id": completion["id"],
             "modelId": completion["model"],
             "timestamp": _timestamp(completion["created"]),
-            "request": P.request_details(response.request, secret_headers=COMPAT.secret_headers),
         }
     ]
     choice = completion["choices"][0] if completion["choices"] else None
@@ -357,9 +355,6 @@ class _Stream:
                     "id": chunk["id"],
                     "modelId": chunk["model"],
                     "timestamp": _timestamp(chunk["created"]),
-                    "request": P.request_details(
-                        self.response.request, secret_headers=COMPAT.secret_headers
-                    ),
                 }
             )
         if not chunk["choices"]:

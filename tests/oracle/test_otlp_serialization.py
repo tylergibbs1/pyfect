@@ -198,3 +198,92 @@ def test_layer_json_preserves_json_values_and_writes_non_finite_doubles_as_strin
             },
             {"key": "text", "value": {"stringValue": "null"}},
         ]
+
+
+def test_layer_protobuf_omits_absent_metric_start_timestamps() -> None:
+    """layerProtobuf omits absent metric start timestamps"""
+    serialization = _with(otlp_serialization.layer_protobuf)
+
+    def point(**fields: object) -> dict[str, object]:
+        return {"attributes": [], "timeUnixNano": "2", **fields}
+
+    metrics: list[dict[str, Any]] = [
+        {"name": "g", "gauge": {"dataPoints": [point(asInt=1)]}},
+        {
+            "name": "h",
+            "histogram": {
+                "dataPoints": [point(count=1, bucketCounts=[1], explicitBounds=[])],
+                "aggregationTemporality": 2,
+            },
+        },
+        {"name": "s", "summary": {"dataPoints": [point(count=1, sum=1, quantileValues=[])]}},
+    ]
+    body = _bytes(
+        serialization.metrics(
+            {
+                "resourceMetrics": [
+                    {
+                        "resource": {"attributes": [], "droppedAttributesCount": 0},
+                        "scopeMetrics": [{"scope": {"name": "s"}, "metrics": metrics}],
+                    }
+                ]
+            }
+        )
+    )
+    time = [0x19, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]  # time_unix_nano: 2
+    one = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+    expected = [
+        [0x0A, 0x6E],  # resource_metrics
+        [0x0A, 0x00],  # resource
+        [0x12, 0x6A],  # scope_metrics
+        [0x0A, 0x03, 0x0A, 0x01, 0x73],  # scope { name: "s" }
+        [0x12, 0x19, 0x0A, 0x01, 0x67],  # metrics { name: "g" }
+        [0x2A, 0x14, 0x0A, 0x12],  # gauge.data_points
+        [*time, 0x31, *one],  # as_int: 1
+        [0x12, 0x24, 0x0A, 0x01, 0x68],  # metrics { name: "h" }
+        [0x4A, 0x1F, 0x0A, 0x1B],  # histogram.data_points
+        [*time, 0x21, *one, 0x31, *one],  # count: 1, bucket_counts: [1]
+        [0x10, 0x02],  # aggregation_temporality: 2
+        [0x12, 0x22, 0x0A, 0x01, 0x73],  # metrics { name: "s" }
+        [0x5A, 0x1D, 0x0A, 0x1B],  # summary.data_points
+        [*time, 0x21, *one, 0x29, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F],  # sum: 1.0
+    ]
+    assert list(body.body) == [byte for group in expected for byte in group]
+
+
+def _buffer(data: bytes) -> Any:
+    """A mutable byte buffer, as Effect's test passes a Node ``Buffer``."""
+    return bytearray(data)
+
+
+def test_layer_json_writes_bytes_as_base64() -> None:
+    """layerJson writes bytes as base64"""
+    serialization = _with(otlp_serialization.layer_json)
+    body = _bytes(
+        serialization.traces(
+            {
+                "resourceSpans": [
+                    {
+                        "resource": {
+                            "attributes": [
+                                {
+                                    "key": "slice",
+                                    "value": {"bytesValue": bytes([9, 0, 255, 1])[1:]},
+                                },
+                                {
+                                    "key": "buffer",
+                                    "value": {"bytesValue": _buffer(b"\x00\xff\x01")},
+                                },
+                            ],
+                            "droppedAttributesCount": 0,
+                        },
+                        "scopeSpans": [],
+                    }
+                ]
+            }
+        )
+    )
+    assert json.loads(body.body)["resourceSpans"][0]["resource"]["attributes"] == [
+        {"key": "slice", "value": {"bytesValue": "AP8B"}},
+        {"key": "buffer", "value": {"bytesValue": "AP8B"}},
+    ]

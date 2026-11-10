@@ -115,8 +115,16 @@ def _box_answers(
         answer = answers.get(key)
         if answer is not None and answer["type"] == "box":
             box = answer["box"]
-            bounds = D.BoundingBox(box["left"], box["top"], box["right"], box["bottom"])
-            found[key] = DM.ProviderLocateAnswer(bounds, answer["confidence"])
+            found[key] = {
+                "_tag": "Locate",
+                "box": {
+                    "left": box["left"],
+                    "top": box["top"],
+                    "right": box["right"],
+                    "bottom": box["bottom"],
+                },
+                "confidence": answer["confidence"],
+            }
     return found
 
 

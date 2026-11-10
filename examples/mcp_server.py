@@ -46,7 +46,11 @@ handlers = Calculator.to_layer(
     Shout.handler(lambda params, _: fx.succeed(params["text"].upper())),
 )
 
-served = layer.merge(mcp_server.layer, mcp_server.toolkit(Calculator).pipe(layer.provide(handlers)))
+served = (
+    mcp_server.toolkit(Calculator)
+    .pipe(layer.provide(handlers))
+    .pipe(layer.provide_merge(mcp_server.layer))
+)
 
 
 @fx.fn

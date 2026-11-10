@@ -151,6 +151,8 @@ def map_status_code_to_reason(  # noqa: PLR0911
     *,
     status: int,
     now: float,
+    method: str,
+    url: str,
     headers: Mapping[str, str],
     message: str | None,
     metadata: ErrorMetadata,
@@ -161,8 +163,8 @@ def map_status_code_to_reason(  # noqa: PLR0911
     description = build_error_description(
         status=status,
         message=message,
-        method=http["request"]["method"],
-        url=http["request"]["url"],
+        method=method,
+        url=url,
         error_code=metadata["errorCode"],
         error_type=metadata["errorType"],
         request_id=metadata["requestId"],
@@ -213,12 +215,12 @@ def status_code_mapper(
                 dialect,
                 status=response.status,
                 now=now,
+                method=reason.request.method,
+                url=reason.request.url,
                 headers=response.headers,
                 message=info.message,
                 metadata=metadata,
-                http=P.http_context(
-                    reason.request, response, body, secret_headers=dialect.secret_headers
-                ),
+                http=P.http_context(response, body),
             )
             return fx.fail(AiError(module=dialect.module, method=method, reason=mapped))
 

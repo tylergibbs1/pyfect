@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import Any, Literal, NotRequired, TypedDict, TypeGuard, cast
 
 from pyfect.ai import decision as D
 from pyfect.result import Err, Ok
@@ -16,48 +15,50 @@ from pyfect.result import Err, Ok
 _SUM_TOLERANCE = 1e-6
 
 
-@dataclass(frozen=True)
-class ProviderClassifyAnswer:
-    """A classify answer; ``probabilities`` ``None`` when the provider has
-    no distribution."""
+class ProviderClassifyAnswer(TypedDict):
+    """A classify answer; ``probabilities`` left out (or ``None``) when the
+    provider has no distribution."""
 
-    tag: ClassVar[str] = "Classify"
+    _tag: Literal["Classify"]
     label: str
-    probabilities: Mapping[str, float] | None = None
-    confidence: float | None = None
+    probabilities: NotRequired[Mapping[str, float] | None]
+    confidence: NotRequired[float | None]
 
 
-@dataclass(frozen=True)
-class ProviderRateAnswer:
-    """A rate answer: the label is the most probable level's, so the
-    provider gives none."""
+class ProviderRateAnswer(TypedDict):
+    """A rate answer: the label is the most probable level's (ties go to
+    the first), so the provider gives none."""
 
-    tag: ClassVar[str] = "Rate"
+    _tag: Literal["Rate"]
     rating: float
-    probabilities: Mapping[str, float] | None = None
-    confidence: float | None = None
+    probabilities: NotRequired[Mapping[str, float] | None]
+    confidence: NotRequired[float | None]
 
 
-@dataclass(frozen=True)
-class ProviderProbabilityAnswer:
-    tag: ClassVar[str] = "Probability"
+class ProviderProbabilityAnswer(TypedDict):
+    _tag: Literal["Probability"]
     probability: float
 
 
-@dataclass(frozen=True)
-class ProviderLocateAnswer:
-    """A locate answer; ``box`` ``None`` when the provider gave none."""
+class ProviderBoundingBox(TypedDict):
+    """A box as a provider gives it (Effect's ``Decision.BoundingBox``)."""
 
-    tag: ClassVar[str] = "Locate"
-    box: D.BoundingBox | None
-    confidence: float | None = None
+    left: float
+    top: float
+    right: float
+    bottom: float
 
 
-@dataclass(frozen=True)
-class ProviderRefusalAnswer:
+class ProviderLocateAnswer(TypedDict):
+    _tag: Literal["Locate"]
+    box: ProviderBoundingBox
+    confidence: NotRequired[float | None]
+
+
+class ProviderRefusalAnswer(TypedDict):
     """The provider declined to answer."""
 
-    tag: ClassVar[str] = "Refusal"
+    _tag: Literal["Refusal"]
 
 
 type ProviderAnswer = (
@@ -67,6 +68,13 @@ type ProviderAnswer = (
     | ProviderLocateAnswer
     | ProviderRefusalAnswer
 )
+"""A provider's answer to one decision, a plain dict tagged by ``_tag``
+(Effect's ``ProviderAnswer``). Keys it does not name are dropped."""
+
+
+type _Raw = Mapping[str, object]
+"""An answer as validation reads it: the provider's dict, whose values are
+checked before use (Effect's ``validateAnswer`` takes ``unknown``)."""
 
 
 def _unanswered(reason: D.UnansweredReason, description: str) -> Err[D.Unanswered]:
@@ -77,27 +85,32 @@ def _invalid(description: str) -> Err[D.Unanswered]:
     return _unanswered("Invalid", description)
 
 
-def _is_unit(value: float) -> bool:
-    return math.isfinite(value) and 0 <= value <= 1
+def _is_finite(value: object) -> TypeGuard[float]:
+    """A finite JavaScript number: an int or float, not a bool."""
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _is_unit(value: object) -> TypeGuard[float]:
+    return _is_finite(value) and 0 <= value <= 1
 
 
 def _distribution(
     key: str,
     labels: Sequence[str],
-    raw: Mapping[str, float] | None,
+    raw: object,
     rounding_error: float,
 ) -> D.Outcome[dict[str, float]]:
     """The distribution over ``labels``, rescaled to sum to 1 when its drift
     is within the provider's rounding (``len(labels) * rounding_error``)."""
-    if raw is None:
+    if not isinstance(raw, Mapping):
         return _unanswered(
             "NoDistribution", f'Provider returned no probabilities for decision "{key}"'
         )
     probabilities: dict[str, float] = {}
     total = 0.0  # added in order, as JavaScript does: builtin sum() is compensated
     for label in labels:
-        value = raw.get(label)
-        if value is None or not _is_unit(value):
+        value = cast("_Raw", raw).get(label)
+        if not _is_unit(value):
             return _invalid(
                 f'Provider returned no probability for label "{label}" of decision "{key}"'
             )
@@ -113,40 +126,41 @@ def _distribution(
     return Ok(probabilities)
 
 
-def _confidence(key: str, confidence: float | None) -> D.Outcome[float | None]:
+def _confidence(key: str, confidence: object) -> D.Outcome[float | None]:
     if confidence is None or _is_unit(confidence):
         return Ok(confidence)
     return _invalid(f'Provider returned confidence outside [0, 1] for decision "{key}"')
 
 
 def _classify(
-    key: str, decision: D.Classify[Any], answer: ProviderClassifyAnswer, rounding_error: float
+    key: str, decision: D.Classify[Any], answer: _Raw, rounding_error: float
 ) -> D.Outcome[D.AnyAnswer]:
     labels = list(decision.criteria)
-    if answer.label not in labels:
+    label = answer.get("label")
+    if not isinstance(label, str) or label not in labels:
         return _invalid(f'Provider returned an unknown label for decision "{key}"')
-    confidence = _confidence(key, answer.confidence)
+    confidence = _confidence(key, answer.get("confidence"))
     if isinstance(confidence, Err):
         return confidence
-    probabilities = _distribution(key, labels, answer.probabilities, rounding_error)
+    probabilities = _distribution(key, labels, answer.get("probabilities"), rounding_error)
     if isinstance(probabilities, Err):
         return probabilities
-    return Ok(D.ClassifyAnswer(answer.label, probabilities.value, confidence.value))
+    return Ok(D.ClassifyAnswer(label, probabilities.value, confidence.value))
 
 
 def _rate(
-    key: str, decision: D.Rate[Any], answer: ProviderRateAnswer, rounding_error: float
+    key: str, decision: D.Rate[Any], answer: _Raw, rounding_error: float
 ) -> D.Outcome[D.AnyAnswer]:
     levels = [level.label for level in decision.criteria]
-    rating = answer.rating
-    if not (math.isfinite(rating) and 0 <= rating <= len(levels) - 1):
+    rating = answer.get("rating")
+    if not (_is_finite(rating) and 0 <= rating <= len(levels) - 1):
         return _invalid(
             f'Provider returned a rating outside [0, {len(levels) - 1}] for decision "{key}"'
         )
-    confidence = _confidence(key, answer.confidence)
+    confidence = _confidence(key, answer.get("confidence"))
     if isinstance(confidence, Err):
         return confidence
-    probabilities = _distribution(key, levels, answer.probabilities, rounding_error)
+    probabilities = _distribution(key, levels, answer.get("probabilities"), rounding_error)
     if isinstance(probabilities, Err):
         return probabilities
     found = probabilities.value
@@ -157,61 +171,53 @@ def _rate(
     return Ok(D.RateAnswer(rating, label, found, confidence.value))
 
 
-def _probability(key: str, answer: ProviderProbabilityAnswer) -> D.Outcome[D.ProbabilityAnswer]:
-    if not _is_unit(answer.probability):
+def _probability(key: str, answer: _Raw) -> D.Outcome[D.ProbabilityAnswer]:
+    probability = answer.get("probability")
+    if not _is_unit(probability):
         return _invalid(f'Provider returned a probability outside [0, 1] for decision "{key}"')
-    return Ok(D.ProbabilityAnswer(answer.probability))
+    return Ok(D.ProbabilityAnswer(probability))
 
 
-def _locate(key: str, answer: ProviderLocateAnswer) -> D.Outcome[D.AnyAnswer]:
-    box = answer.box
-    if box is None or not all(_is_unit(e) for e in (box.left, box.top, box.right, box.bottom)):
+def _locate(key: str, answer: _Raw) -> D.Outcome[D.AnyAnswer]:
+    box = answer.get("box")
+    if not isinstance(box, Mapping):
         return _invalid(f'Provider returned a box with edges outside [0, 1] for decision "{key}"')
-    if box.left > box.right or box.top > box.bottom:
+    sides = cast("_Raw", box)
+    edges = [e for name in ("left", "top", "right", "bottom") if _is_unit(e := sides.get(name))]
+    if len(edges) != 4:
+        return _invalid(f'Provider returned a box with edges outside [0, 1] for decision "{key}"')
+    left, top, right, bottom = edges
+    if left > right or top > bottom:
         return _invalid(f'Provider returned a box with crossed edges for decision "{key}"')
-    confidence = _confidence(key, answer.confidence)
+    confidence = _confidence(key, answer.get("confidence"))
     if isinstance(confidence, Err):
         return confidence
-    bounds = D.BoundingBox(box.left, box.top, box.right, box.bottom)
-    return Ok(D.LocateAnswer(bounds, confidence.value))
+    return Ok(D.LocateAnswer(D.BoundingBox(left, top, right, bottom), confidence.value))
 
 
-def validate(
+def validate(  # noqa: PLR0911
     key: str, decision: D.AnyDecision, answer: ProviderAnswer | None, rounding_error: float
 ) -> D.Outcome[D.AnyAnswer]:
     """``answer`` checked against ``decision`` (named ``key``)."""
-    match answer:
-        case None:
-            return _unanswered("Missing", f'Provider returned no answer for decision "{key}"')
-        case ProviderRefusalAnswer():
-            return _unanswered("Refused", f'Provider refused to answer decision "{key}"')
-        case _:
-            return _answered(key, decision, answer, rounding_error)
-
-
-def _answered(
-    key: str,
-    decision: D.AnyDecision,
-    answer: ProviderClassifyAnswer
-    | ProviderRateAnswer
-    | ProviderProbabilityAnswer
-    | ProviderLocateAnswer,
-    rounding_error: float,
-) -> D.Outcome[D.AnyAnswer]:
-    match decision, answer:
-        case D.Classify(), ProviderClassifyAnswer():
-            return _classify(key, decision, answer, rounding_error)
-        case D.Rate(), ProviderRateAnswer():
-            return _rate(key, decision, answer, rounding_error)
-        case D.Probability(), ProviderProbabilityAnswer():
-            return _probability(key, answer)
-        case D.Locate(), ProviderLocateAnswer():
-            return _locate(key, answer)
-        case _:
-            return _invalid(
-                f'Provider returned a "{answer.tag}" answer for decision "{key}", '
-                f'expected "{decision.tag}"'
-            )
+    if answer is None:
+        return _unanswered("Missing", f'Provider returned no answer for decision "{key}"')
+    raw = cast("_Raw", answer)
+    tag = raw.get("_tag")
+    if tag == "Refusal":
+        return _unanswered("Refused", f'Provider refused to answer decision "{key}"')
+    if tag != decision.tag:
+        return _invalid(
+            f'Provider returned a "{tag}" answer for decision "{key}", expected "{decision.tag}"'
+        )
+    match decision:
+        case D.Classify():
+            return _classify(key, decision, raw, rounding_error)
+        case D.Rate():
+            return _rate(key, decision, raw, rounding_error)
+        case D.Probability():
+            return _probability(key, raw)
+        case D.Locate():
+            return _locate(key, raw)
 
 
 def settle(

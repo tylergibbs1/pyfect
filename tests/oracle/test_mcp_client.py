@@ -18,7 +18,7 @@ from typing import Any, TypedDict, cast
 import pytest
 
 import pyfect as fx
-from pyfect import layer, sink, stream, testing
+from pyfect import layer, sink, stdio, stream, testing
 from pyfect import schema as S
 from pyfect.ai import language_model as lm
 from pyfect.ai import mcp_client as C
@@ -29,6 +29,7 @@ from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
 from pyfect.ai.mcp_client_error import McpClientError
 from pyfect.ai.mcp_schema import Prompt, Tool
+from pyfect.ai.prompt import FilePart, TextPart
 from pyfect.deferred import Deferred
 from pyfect.errors import Done
 from pyfect.http.client import HttpClient
@@ -72,20 +73,20 @@ _handlers = TestToolkit.to_layer(
     Slow.handler(lambda _, __: fx.never),
 )
 
-SERVER_LAYER: Any = layer.merge(
-    M.layer_http(
-        name="test-server",
-        version="1.0.0",
-        path="/mcp",
-        protocols=(P.v2026_07_28, P.v2025_11_25),
+SERVER_LAYER: Any = M.layer_http(
+    name="test-server",
+    version="1.0.0",
+    path="/mcp",
+    protocols=(P.v2026_07_28, P.v2025_11_25),
+    registrations=layer.merge(
+        M.toolkit(TestToolkit),
+        M.prompt(
+            name="explain",
+            parameters=S.Struct(ExplainParams),
+            content=lambda p: fx.succeed(f"Explain {p['total']}"),
+        ),
+        M.resource(uri="demo://guide", name="guide", content=fx.succeed("Guide")),
     ),
-    M.toolkit(TestToolkit),
-    M.prompt(
-        name="explain",
-        parameters=S.Struct(ExplainParams),
-        content=lambda p: fx.succeed(f"Explain {p['total']}"),
-    ),
-    M.resource(uri="demo://guide", name="guide", content=fx.succeed("Guide")),
 ).pipe(layer.provide(_handlers))
 
 SLOW_TOOL: Tool = {"name": "slow", "inputSchema": {"type": "object"}}
@@ -809,3 +810,263 @@ def test_fails_pending_calls_when_the_process_exits():
     yield from server.exit.succeed(1)
     yield from testing.adjust("5 seconds")
     assert isinstance((yield from call.join()).reason, CE.TransportError)
+
+
+# --- server capabilities and toolkit options -----------------------------------------------
+
+
+def handled(kit: K.WithHandler[Any, Any, Any, Any], name: str) -> fx.Effect[list[Any], Any, Any]:
+    """The outputs of calling the toolkit's ``name`` with no arguments."""
+    return kit.handle(name, {}).flat_map(lambda results: results.run_collect())
+
+
+def call_reply(result: dict[str, Any]) -> Reply:
+    """Answers ``tools/call`` with ``result``, anything else as ``scripted_reply``."""
+
+    def reply(message: dict[str, Any], request: HttpClientRequest) -> HttpClientResponse:
+        if message["method"] == "tools/call":
+            return json_result(request, message, {**DISCOVER_RESULT, **result})
+        return scripted_reply(P.v2026_07_28, message, request)
+
+    return reply
+
+
+@testing.effect
+def test_exposes_server_capabilities_when_initialization_succeeds():
+    """McpClient / discovery limits / should expose server capabilities when initialization succeeds"""  # noqa: E501
+    capabilities: dict[str, Any] = {"tools": {"listChanged": True}, "experimental": {"custom": {}}}
+    scripted = yield from scripted_http(
+        lambda message, request: json_result(
+            request, message, {**DISCOVER_RESULT, "capabilities": capabilities}
+        )
+    )
+    assert scripted.client.capabilities == capabilities
+
+
+@testing.effect
+def test_maps_complete_results_to_model_output_when_bound_to_an_approved_snapshot():
+    """McpClient / toolkit options / should map complete results to model output when bound to an approved snapshot"""  # noqa: E501
+    scripted = yield from scripted_http(
+        call_reply(
+            {
+                "content": [
+                    {"type": "text", "text": "preview"},
+                    {"type": "image", "data": "aW1hZ2U=", "mimeType": "image/png"},
+                    {
+                        "type": "resource",
+                        "resource": {
+                            "uri": "test://notes",
+                            "text": "notes",
+                            "mimeType": "text/plain",
+                        },
+                    },
+                    {
+                        "type": "resource",
+                        "resource": {
+                            "uri": "test://report",
+                            "blob": "cGRm",
+                            "mimeType": "application/pdf",
+                        },
+                    },
+                ],
+                "structuredContent": {"total": 42},
+            }
+        )
+    )
+    kit = yield from C.toolkit(
+        scripted.client, "remote__", tools=[SLOW_TOOL], result_mode="complete"
+    )
+    [output] = yield from handled(kit, "remote__slow")
+    assert "content" in output.result
+    assert output.result["structuredContent"] == {"total": 42}
+    # Binary content stays base64 text in pyfect (Effect decodes it to bytes).
+    assert output.model_output == (
+        TextPart(text="preview"),
+        FilePart(media_type="image/png", data="aW1hZ2U="),
+        TextPart(text="notes"),
+        FilePart(media_type="application/pdf", data="cGRm"),
+    )
+    assert not any(_method_of(s.message) == "tools/list" for s in scripted.sent)
+
+
+@testing.effect
+def test_returns_tool_and_transport_failures_to_the_model_when_failure_mode_is_return():
+    """McpClient / toolkit options / should return tool and transport failures to the model when failureMode is return"""  # noqa: E501
+
+    def reply(message: dict[str, Any], request: HttpClientRequest) -> HttpClientResponse:
+        if message["method"] != "tools/call":
+            return scripted_reply(P.v2026_07_28, message, request)
+        if message["params"]["name"] == "denied":
+            return json_result(
+                request,
+                message,
+                {
+                    **DISCOVER_RESULT,
+                    "content": [{"type": "text", "text": "denied"}],
+                    "isError": True,
+                },
+            )
+        return make_response(request, None, status=503)
+
+    scripted = yield from scripted_http(reply)
+    tools: list[Tool] = [{**SLOW_TOOL, "name": "denied"}, SLOW_TOOL]
+    returning = yield from C.toolkit(scripted.client, tools=tools, failure_mode="return")
+    [denied] = yield from handled(returning, "denied")
+    [unavailable] = yield from handled(returning, "slow")
+    assert isinstance(denied.result, McpClientError)
+    assert isinstance(denied.result.reason, CE.ToolError)
+    assert denied.result.reason.result["content"] == [{"type": "text", "text": "denied"}]
+    assert isinstance(unavailable.result, McpClientError)
+    assert isinstance(unavailable.result.reason, CE.HttpError)
+    # The model gets the encoded McpClientError, as Effect sends it.
+    assert unavailable.encoded_result == {
+        "_tag": "McpClientError",
+        "reason": {"_tag": "HttpError", "status": 503},
+    }
+
+    failing = yield from C.toolkit(scripted.client, tools=tools)
+    error = yield from handled(failing, "denied").flip()
+    assert isinstance(error, McpClientError)
+    assert isinstance(error.reason, CE.ToolError)
+
+
+@testing.effect
+def test_copies_server_hints_only_when_annotations_are_trusted():
+    """McpClient / toolkit options / should copy server hints only when annotations are trusted"""
+    scripted = yield from scripted_http(
+        lambda message, request: scripted_reply(P.v2026_07_28, message, request)
+    )
+    descriptor: Tool = {
+        "name": "hints",
+        "inputSchema": {"type": "object"},
+        "annotations": {
+            "readOnlyHint": True,
+            "destructiveHint": False,
+            "idempotentHint": True,
+            "openWorldHint": False,
+        },
+    }
+    untrusted = (yield from C.toolkit(scripted.client, tools=[descriptor])).tools["hints"]
+    trusted = (
+        yield from C.toolkit(scripted.client, tools=[descriptor], trust_annotations=True)
+    ).tools["hints"]
+    assert untrusted.annotations.get_unsafe(C.ToolDescriptor) is descriptor
+    assert trusted.needs_approval is None
+    for annotation, expected in (
+        (T.Readonly, True),
+        (T.Destructive, False),
+        (T.Idempotent, True),
+        (T.OpenWorld, False),
+    ):
+        assert untrusted.annotations.get_unsafe(annotation) is (not expected)
+        assert trusted.annotations.get_unsafe(annotation) is expected
+
+
+@testing.effect
+def test_times_out_a_tool_call_when_the_toolkit_deadline_expires():
+    """McpClient / toolkit options / should time out a tool call when the toolkit deadline expires"""  # noqa: E501
+    client = yield from connect(P.v2025_11_25)
+    kit = yield from C.toolkit(client, tools=[SLOW_TOOL], timeout="1 second")
+    call = yield from handled(kit, "slow").flip().fork()
+    yield from testing.adjust("1 second")
+    error = yield from call.join()
+    assert isinstance(error, McpClientError)
+    assert isinstance(error.reason, CE.TimeoutError)
+
+
+@testing.effect
+def test_keeps_the_remote_contract_when_transform_tool_derives_a_tool():
+    """McpClient / toolkit options / should keep the remote contract when transformTool derives a tool"""  # noqa: E501
+    scripted = yield from scripted_http(call_reply({"content": [{"type": "text", "text": "done"}]}))
+
+    def transform(tool: C.RemoteTool, descriptor: Tool) -> C.RemoteTool:
+        assert descriptor is SLOW_TOOL
+        return tool.set_needs_approval(True).annotate(T.Title, "Approved tool")
+
+    kit = yield from C.toolkit(scripted.client, tools=[SLOW_TOOL], transform_tool=transform)
+    tool = kit.tools["slow"]
+    assert tool.needs_approval is True
+    assert tool.annotations.get_unsafe(T.Title) == "Approved tool"
+    assert tool.annotations.get_unsafe(C.ToolDescriptor) is SLOW_TOOL
+    assert T.get_json_schema(tool) == SLOW_TOOL["inputSchema"]
+    [output] = yield from handled(kit, "slow")
+    assert output.result == "done"
+    [call] = [s.body for s in scripted.sent if _method_of(s.message) == "tools/call"]
+    assert call["params"]["name"] == "slow"
+
+
+@testing.effect
+def test_returns_mcp_server_request_errors_and_keeps_the_transport_usable():
+    """McpClient / stdio / should return McpServer request errors and keep the transport usable"""
+    transport = yield from connect_stdio_server(P.v2025_11_25)
+    yield from C.make(name="test-client", version="1.0.0").pipe(
+        fx.provide_service(C.Transport, transport)
+    )
+
+    missing = yield from transport.request(
+        {"jsonrpc": "2.0", "id": "missing", "method": "missing/method"}, None
+    )
+    assert cast("Any", missing)["error"]["code"] == -32601
+
+    invalid = yield from transport.request(
+        {"jsonrpc": "2.0", "id": "invalid", "method": "resources/read", "params": {"uri": 1}},
+        None,
+    )
+    assert cast("Any", invalid)["error"]["code"] == -32602
+
+    pong = yield from transport.request({"jsonrpc": "2.0", "id": "ping", "method": "ping"}, None)
+    assert pong == {"jsonrpc": "2.0", "id": "ping", "result": {}}
+
+
+def connect_stdio_server(protocol: C.ClientProtocol) -> fx.Effect[C.TransportService, Any, Any]:
+    """``mcp_client.stdio`` connected to an in-memory ``McpServer.layer_stdio``."""
+
+    @fx.gen
+    def run():
+        to_server = Queue[bytes, Done]()
+        to_client = Queue[bytes, Done]()
+        exit = Deferred[int]()
+
+        def write(chunk: str | bytes) -> fx.Effect[bool]:
+            return to_client.offer(chunk.encode() if isinstance(chunk, str) else chunk)
+
+        def stdout(*, end_on_done: bool = False) -> Any:
+            del end_on_done
+            return sink.for_each(write)
+
+        server = M.layer_stdio(name="scripted-server", version="1.0.0", protocols=[protocol])
+        yield from (
+            server.pipe(
+                layer.provide(stdio.layer_test(stdin=stream.from_queue(to_server), stdout=stdout))
+            )
+            .launch()
+            .fork_scoped()
+        )
+
+        def kill(**_options: object) -> fx.Effect[None]:
+            return exit.succeed(0).as_void()
+
+        handle = ChildProcessHandle(
+            pid=cast("Any", 1),
+            exit_code=cast("Any", exit.wait()),
+            is_running=fx.succeed(True),
+            kill=kill,
+            stdin=cast(
+                "Any",
+                sink.for_each(to_server.offer).pipe(lambda s: s.ensuring(exit.succeed(0))),
+            ),
+            stdout=stream.from_queue(to_client),
+            stderr=stream.empty,
+            all=stream.empty,
+            get_input_fd=lambda _: cast("Any", sink.drain),
+            get_output_fd=lambda _: stream.empty,
+            unref=cast("Any", fx.succeed(fx.succeed(None))),
+        )
+        spawner = ChildProcessSpawnerService(lambda _: fx.succeed(handle))
+        return (
+            yield from C.stdio(command=make_command("test-mcp-server"), protocol=protocol).pipe(
+                fx.provide_service(ChildProcessSpawner, spawner)
+            )
+        )
+
+    return run

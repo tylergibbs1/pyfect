@@ -32,6 +32,7 @@ from pyfect.ai import ai_error as E
 from pyfect.ai import decision as D
 from pyfect.ai._decision_answers import (
     ProviderAnswer,
+    ProviderBoundingBox,
     ProviderClassifyAnswer,
     ProviderLocateAnswer,
     ProviderProbabilityAnswer,
@@ -393,6 +394,7 @@ __all__ = [
     "Metadata",
     "Path",
     "ProviderAnswer",
+    "ProviderBoundingBox",
     "ProviderClassifyAnswer",
     "ProviderDecide",
     "ProviderImage",

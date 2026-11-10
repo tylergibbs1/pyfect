@@ -134,3 +134,25 @@ def meta(metadata: object, *path: str) -> Any:
     for key in path:
         value = cast("dict[str, Any]", value).get(key) if isinstance(value, dict) else None
     return value
+
+
+def stringify_error(error: object) -> str:
+    """An ``AiError`` as JSON (Effect's ``JSON.stringify(error)``), to check
+    that no secret reaches it."""
+    from pyfect import schema as S
+    from pyfect.ai.ai_error import AiError
+
+    return json.dumps(S.encode_unknown_sync(AiError)(error), default=str)
+
+
+def refuse_transport(failures: list[HttpClientError], cause: object) -> Handler:
+    """Effect's ``makeTransportErrorHttpClient``: each request fails with a
+    ``TransportError`` of ``cause``, recorded in ``failures``."""
+    from pyfect.http.error import TransportError
+
+    def refuse(request: HttpClientRequest) -> fx.Effect[HttpClientResponse, HttpClientError]:
+        error = HttpClientError(TransportError(request=request, cause=cause))
+        failures.append(error)
+        return fx.fail(error)
+
+    return refuse

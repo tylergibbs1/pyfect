@@ -18,7 +18,7 @@ from pyfect.ai.openai_compat import client, telemetry
 from pyfect.redacted import make as redact
 from pyfect.tracer import NativeSpan, current_span
 
-from ._ai_http import MockHttp, body_json, mock_json, mock_raw_sse, mock_sse
+from ._ai_http import MockHttp, body_json, mock_json, mock_raw_sse, mock_sse, stringify_error
 
 _URL = "https://compat.example.test/v1"
 _HELLO: dict[str, Any] = {
@@ -261,11 +261,10 @@ def test_redacts_headers():
     """request behavior / redacts OpenAI-specific headers in AI error context"""
     error = yield from _error(mock_json(_BAD_REQUEST, status=400))
     assert isinstance(error.reason, E.InvalidRequestError)
-    assert error.reason.http is not None
-    headers = error.reason.http["request"]["headers"]
-    assert headers["authorization"] == "<redacted>"
-    assert headers["openai-organization"] == "<redacted>"
-    assert headers["openai-project"] == "<redacted>"
+    output = stringify_error(error)
+    assert "sk-test-key" not in output
+    assert "org_123" not in output
+    assert "proj_456" not in output
 
 
 # error mapping -------------------------------------------------------------------------
@@ -313,15 +312,9 @@ def test_fallback_body_truncated():
         headers={},
         message=None,
         metadata={"errorCode": None, "errorType": None, "requestId": None},
-        http={
-            "request": {
-                "method": "POST",
-                "url": f"{_URL}/chat/completions",
-                "urlParams": [],
-                "headers": {},
-            },
-            "body": body,
-        },
+        method="POST",
+        url=f"{_URL}/chat/completions",
+        http={"body": body},
     )
     assert isinstance(reason, E.InvalidRequestError)
     assert reason.description == (

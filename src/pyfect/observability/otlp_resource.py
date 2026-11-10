@@ -9,19 +9,15 @@ camelCase keys, so ``OtlpSerialization`` writes them as they are.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Any, NotRequired, TypedDict, cast
+from typing import NotRequired, TypedDict, cast
 
 from pyfect import config
-from pyfect import schema as S
 from pyfect._digits import in_object_order
-from pyfect._js import decode_uri_component
 from pyfect._version import VERSION
-from pyfect.config import ConfigError, Pointer
-from pyfect.effect import Effect, fail, gen, succeed
+from pyfect.effect import Effect, gen
 from pyfect.logger._text import format_unknown
+from pyfect.observability._resource_attributes import resource_attributes
 from pyfect.option import Option, Some
-from pyfect.schema import SchemaError
-from pyfect.schema.issue import InvalidValue
 
 __all__ = [
     "AnyValue",
@@ -118,28 +114,6 @@ def make(
     }
 
 
-def _decode_keys(name: str) -> Any:
-    def decode(values: dict[str, str]) -> Effect[dict[str, str], ConfigError]:
-        decoded: dict[str, str] = {}
-        for key, value in values.items():
-            try:
-                decoded[decode_uri_component(key)] = value
-            except ValueError:
-                issue = InvalidValue(
-                    {"message": "Expected a URI component encoded string"}, Some(key)
-                )
-                return fail(ConfigError(SchemaError(Pointer((name, key), issue))))
-        return succeed(in_object_order(decoded))
-
-    return decode
-
-
-def _uri_record(name: str) -> config.Config[dict[str, str]]:
-    """``Config.Record(StringFromUriComponent, StringFromUriComponent,
-    name)``: ``a=1,b=2`` with keys and values percent-decoded."""
-    return config.dict_of(S.StringFromUriComponent, name).map_effect(_decode_keys(name))
-
-
 def _first[A](*options: Option[A]) -> A | None:
     for option in options:
         if isinstance(option, Some):
@@ -164,9 +138,7 @@ def from_config(
 
     @gen
     def build():
-        env: dict[str, str] | None = yield from _uri_record(
-            "OTEL_RESOURCE_ATTRIBUTES"
-        ).with_default(None)
+        env: dict[str, str] | None = yield from resource_attributes().with_default(None)
         explicit = attributes or {}
 
         name: object = service_name

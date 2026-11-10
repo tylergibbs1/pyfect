@@ -65,7 +65,7 @@ def _status_error(source: StatusCodeError, method: str) -> Effect[Never, AiError
 
     def build(body: str | None, now: float) -> Effect[Never, AiError]:
         details = _parse_error_body(P.parse_json(body)) or _ErrorBody()
-        http = P.http_context(request, response, body, secret_headers=SECRET_HEADERS)
+        http = P.http_context(response, body)
         request_id = response.headers.get(_REQUEST_ID)
         status = response.status
         description = build_error_description(
@@ -105,10 +105,8 @@ def mapper(method: str) -> Callable[[object], Effect[Never, AiError]]:
 
     def handle(error: object) -> Effect[Never, AiError]:
         match error:
-            case HttpClientError(
-                reason=TransportError() | EncodeError() | InvalidUrlError() as source
-            ):
-                return _fail(method, NetworkError.from_request_error(source))
+            case HttpClientError(reason=TransportError() | EncodeError() | InvalidUrlError()):
+                return _fail(method, NetworkError.from_http_client_error(error))
             case HttpClientError(reason=DecodeError() | EmptyBodyError() as source):
                 description = source.description or "Failed to decode TypeSafe response"
                 return _fail(method, InvalidOutputError(description=description))

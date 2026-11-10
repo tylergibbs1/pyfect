@@ -23,8 +23,8 @@ from pyfect.ai._mcp.core import (
     ResourceEntry,
     ResourceTemplateEntry,
     ToolEntry,
-    omit_request_services,
 )
+from pyfect.ai._mcp.invoke import omit_request_services
 from pyfect.ai._mcp.tool_schema import tool_json_schema
 from pyfect.ai.ai_error import AiError
 from pyfect.ai.mcp_schema import (
@@ -70,7 +70,6 @@ from pyfect.errors import TaggedError
 from pyfect.http.find_my_way import Router, RouterConfig
 
 INTERNAL_TOOL_ERROR_MESSAGE = "Tool execution failed due to an internal server error."
-INTERNAL_ERROR_MESSAGE = "Internal server error"
 
 type ResourceContent = ReadResourceResult | str | bytes
 """What a resource handler gives: a result, a text or binary contents."""
@@ -92,16 +91,15 @@ def _first_message(cause: Cause[object]) -> str:
 
 
 def _internal[A](effect: Effect[A, Any, Any]) -> Effect[A, InternalError, Any]:
-    """``effect`` with every failure an ``InternalError`` of its message. A
-    defect is logged and reported, and its text stays here: the peer gets
-    ``INTERNAL_ERROR_MESSAGE``, as for a tool (Effect sends the defect's
-    message)."""
+    """``effect`` with a typed failure an ``InternalError`` of its message
+    (Effect's ``handlerFailureToInternalError``). Defects and interruption
+    pass on: the server logs and reports a defect and sends
+    ``Internal error``, keeping its text here."""
 
     def answer(cause: Cause[object]) -> Effect[A, InternalError]:
-        if not cause.has_dies:
-            return fail(InternalError(_first_message(cause)))
-        reported = fx.log_error(cause).and_then(error_reporter.report(cause))
-        return reported.and_then(fail(InternalError(INTERNAL_ERROR_MESSAGE)))
+        if cause.has_dies or cause.has_interrupts:
+            return fail_cause(cast("Cause[Never]", cause))
+        return fail(InternalError(_first_message(cause)))
 
     return effect.catch_cause(answer)
 
@@ -195,7 +193,7 @@ def register_toolkit[N: LiteralString, RP, HE, R](
             return map_handler_contexts(toolkit, context, omit_request_services)
 
         kit = yield from toolkit.pipe(fx.update_context(without_request))
-        services = omit_request_services((yield from fx.context()))
+        services: Context[Any] = yield from fx.context()
 
         def internal_tool_error(cause: Cause[object]) -> Effect[CallToolResult, InvalidParams]:
             if cause.has_interrupts_only:
@@ -234,7 +232,8 @@ def register_toolkit[N: LiteralString, RP, HE, R](
                 ToolEntry(
                     mcp_tool,
                     tool.annotations,
-                    _tool_handler(kit, tool, services, internal_tool_error),
+                    _tool_handler(kit, tool, internal_tool_error),
+                    services,
                 )
             )
         # Every tool is checked before any is added: a toolkit registers whole or not at all.
@@ -244,16 +243,37 @@ def register_toolkit[N: LiteralString, RP, HE, R](
     return register
 
 
+def _json_encoder(tool: Tool.AnyTool, schema: S.Top) -> Callable[[object], Effect[object, AiError]]:
+    """Encodes with ``schema`` 's JSON codec: MCP content is JSON. A failure
+    is a ``ToolResultEncodingError``."""
+    encode = cast(
+        "Callable[[object], Effect[object, S.SchemaError]]",
+        S.encode_unknown_effect(S.to_codec_json(cast("S.Codec[Any, Any, Any, Any]", schema))),
+    )
+
+    def encoded(value: object) -> Effect[object, AiError]:
+        return encode(value).map_error(
+            lambda error: AiErr.make(
+                module="McpServer",
+                method="registerToolkit",
+                reason=AiErr.ToolResultEncodingError(
+                    tool_name=tool.name, tool_result=value, description=error.message
+                ),
+            )
+        )
+
+    return encoded
+
+
 def _tool_handler(
     kit: Any,
     tool: Tool.AnyTool,
-    services: Context[Any],
     internal_tool_error: Callable[[Cause[object]], Effect[CallToolResult, InvalidParams]],
 ) -> Callable[[JsonObject | None], Effect[CallToolResult, InvalidParams, RequestServices]]:
-    encode_failure = cast(
-        "Callable[[object], Effect[object, S.SchemaError]]",
-        S.encode_unknown_effect(tool.failure_schema),
-    )
+    encode_failure = _json_encoder(tool, tool.failure_schema)
+    # Successes and returned failures come encoded by the toolkit: only their JSON form is left.
+    encode_returned_failure = _json_encoder(tool, S.to_encoded(cast("Any", tool.failure_schema)))
+    encode_structured = _json_encoder(tool, S.to_encoded(cast("Any", tool.success_schema)))
     is_declared_failure = S.is_(tool.failure_schema)
     void = tool.success_schema is S.Null
     strict = tool.annotations.get_unsafe(Tool.Strict) is True
@@ -262,15 +282,19 @@ def _tool_handler(
         "on_excess_property": "error" if strict else "ignore",
     }
 
+    def failure_result(encoded: object) -> CallToolResult:
+        return {"isError": True, "content": _content_of(encoded, void=False)}
+
     def declared_failure_result(error: object) -> Effect[CallToolResult, Any]:
         message = _error_message(error)
         if message:
             return succeed(_tool_error_result(message))
-        return encode_failure(error).map(
-            lambda encoded: cast(
-                "CallToolResult", {"isError": True, "content": _content_of(encoded, void=False)}
-            )
-        )
+        return encode_failure(error).map(failure_result)
+
+    def success_result(encoded: object) -> CallToolResult:
+        out: CallToolResult = {"isError": False, "content": _content_of(encoded, void=False)}
+        out["structuredContent"] = cast("Any", encoded)
+        return out
 
     def handle_cause(cause: Cause[object]) -> Effect[CallToolResult, InvalidParams]:
         found = cause.find_recoverable_error()
@@ -286,16 +310,15 @@ def _tool_handler(
         return internal_tool_error(cause)
 
     def to_result(result: HandlerResult) -> Effect[CallToolResult, Any]:
-        if result.is_failure and result.failure_origin != "handler":
-            origin = Context.make(FailureOriginAnnotation, result.failure_origin or "result")
-            return fail_cause(Cause((Fail(result.result),)).annotate(origin))
-        out: CallToolResult = {
-            "isError": result.is_failure,
-            "content": _content_of(result.encoded_result, void=void),
-        }
-        if not result.is_failure and not (void and result.encoded_result is None):
-            out["structuredContent"] = cast("Any", result.encoded_result)
-        return succeed(out)
+        if not result.is_failure:
+            if void and result.encoded_result is None:
+                # An absent result has no structured form.
+                return succeed({"isError": False, "content": []})
+            return encode_structured(result.encoded_result).map(success_result)
+        if result.failure_origin == "handler":
+            return encode_returned_failure(result.encoded_result).map(failure_result)
+        origin = Context.make(FailureOriginAnnotation, result.failure_origin or "result")
+        return fail_cause(Cause((Fail(result.result),)).annotate(origin))
 
     def handle(
         arguments: JsonObject | None,
@@ -306,7 +329,6 @@ def _tool_handler(
             .flat_map(fx.from_option)
             .flat_map(to_result)
             .catch_cause(handle_cause)
-            .pipe(fx.provide_context(services))
         )
 
     return handle
@@ -323,15 +345,14 @@ def _resolve_content(uri: str, content: ResourceContent) -> ReadResourceResult:
     return content
 
 
-def _resource_annotations(
-    audience: Sequence[Role] | None, priority: float | None
-) -> Annotations | None:
+def _resource_annotations(audience: Sequence[Role] | None, priority: float | None) -> Annotations:
+    """Always listed, as Effect does: ``{}`` when neither is given."""
     annotations: Annotations = {}
     if audience is not None:
         annotations["audience"] = list(audience)
     if priority is not None:
         annotations["priority"] = priority
-    return annotations or None
+    return annotations
 
 
 def _described[T: Mapping[str, Any]](
@@ -373,7 +394,7 @@ def register_resource[E = Never, R = Never](
 
     @gen
     def register():
-        services = omit_request_services((yield from fx.context()))
+        services: Context[Any] = yield from fx.context()
         server = yield from McpServer()
         resource: Resource = _described(
             {"uri": uri, "name": name},
@@ -384,9 +405,9 @@ def register_resource[E = Never, R = Never](
         )
         handle: Effect[ReadResourceResult, McpError, Any] = _internal(
             content.map(lambda c: _resolve_content(uri, c))
-        ).pipe(fx.provide_context(services))
+        )
         yield from server.add_resource(
-            ResourceEntry(resource, annotations or Context.empty(), handle)
+            ResourceEntry(resource, annotations or Context.empty(), handle, services)
         )
 
     return register
@@ -463,9 +484,7 @@ type CompletionFunction = Callable[[str, CompletionContext], Effect[Sequence[Any
 """Completes one argument: the values for what the user typed so far."""
 
 
-def _completion(
-    schema: S.Top, complete: CompletionFunction, services: Context[Any]
-) -> CompletionHandler:
+def _completion(schema: S.Top, complete: CompletionFunction) -> CompletionHandler:
     encode = cast(
         "Callable[[object], Effect[list[str], S.SchemaError]]",
         S.encode_unknown_effect(S.List(cast("S.Codec[Any, Any, Any, Any]", schema))),
@@ -484,7 +503,7 @@ def _completion(
                 )
             )
         )
-        return _internal(completed).pipe(fx.provide_context(services))
+        return _internal(completed)
 
     return handler
 
@@ -507,7 +526,7 @@ def register_resource_template[*Ts, E = Never, R = Never](
 
     @gen
     def register():
-        services = omit_request_services((yield from fx.context()))
+        services: Context[Any] = yield from fx.context()
         server = yield from McpServer()
         decode = cast(
             "Callable[[object], Effect[tuple[Any, ...], S.SchemaError]]",
@@ -522,7 +541,7 @@ def register_resource_template[*Ts, E = Never, R = Never](
         )
         by_name = dict(zip(template.names, template.schemas, strict=True))
         completions = {
-            param_name: _completion(by_name[param_name], complete, services)
+            param_name: _completion(by_name[param_name], complete)
             for param_name, complete in (completion or {}).items()
         }
 
@@ -541,7 +560,7 @@ def register_resource_template[*Ts, E = Never, R = Never](
                     )
                 )
             )
-            return read.pipe(fx.provide_context(services))
+            return read
 
         yield from server.add_resource_template(
             ResourceTemplateEntry(
@@ -550,6 +569,7 @@ def register_resource_template[*Ts, E = Never, R = Never](
                 template.match,
                 completions,
                 handle,
+                services,
             )
         )
 
@@ -591,7 +611,7 @@ def register_prompt[P = Mapping[str, Never], E = Never, R = Never](
 
     @gen
     def register():
-        services = omit_request_services((yield from fx.context()))
+        services: Context[Any] = yield from fx.context()
         server = yield from McpServer()
         prompt: Prompt = {"name": name, "arguments": _prompt_arguments(parameters)}
         if title is not None:
@@ -605,7 +625,7 @@ def register_prompt[P = Mapping[str, Never], E = Never, R = Never](
         )
         fields: Mapping[str, Any] = getattr(parameters, "fields", {})
         completions = {
-            argument: _completion(fields[argument], complete, services)
+            argument: _completion(fields[argument], complete)
             for argument, complete in (completion or {}).items()
         }
 
@@ -627,10 +647,10 @@ def register_prompt[P = Mapping[str, Never], E = Never, R = Never](
                 .flat_map(lambda decoded: _internal(suspend(lambda: content(decoded))))
                 .map(messages_of)
             )
-            return got.pipe(fx.provide_context(services))
+            return got
 
         yield from server.add_prompt(
-            PromptEntry(prompt, annotations or Context.empty(), completions, handle)
+            PromptEntry(prompt, annotations or Context.empty(), completions, handle, services)
         )
 
     return register

@@ -5,7 +5,6 @@ table is one parametrized test. Responses are answered by a mocked
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
@@ -21,7 +20,14 @@ from pyfect.http import error as http_error
 from pyfect.http.request import HttpClientRequest
 from pyfect.redacted import make as redact
 
-from ._ai_http import MockHttp, body_json, json_response, text_response
+from ._ai_http import (
+    MockHttp,
+    body_json,
+    json_response,
+    refuse_transport,
+    stringify_error,
+    text_response,
+)
 
 PAYLOAD: W.DecisionsRequest = {
     "model": "clef-flash",
@@ -146,7 +152,7 @@ def test_failure_envelope(status: int, tag: type[E.AiErrorReason]):
     http = getattr(reason, "http", None)
     assert http is not None
     assert http["response"]["status"] == status
-    assert "test-token" not in json.dumps(http["request"])
+    assert "test-token" not in stringify_error(error)
     description = getattr(reason, "description", None)
     assert description is not None
     assert "Request failed" in description
@@ -203,13 +209,8 @@ def test_success_without_envelope():
 @testing.effect
 def test_transport_error():
     """CloudflareClient / error mapping / maps TransportError to NetworkError"""
-
-    def refuse(request: HttpClientRequest) -> Any:
-        return fx.fail(
-            http_error.HttpClientError(
-                http_error.TransportError(request=request, cause=ConnectionRefusedError())
-            )
-        )
-
-    error = yield from create_decisions(MockHttp(refuse)).flip()
+    failures: list[http_error.HttpClientError] = []
+    mock = MockHttp(refuse_transport(failures, ConnectionRefusedError()))
+    error = yield from create_decisions(mock).flip()
     assert isinstance(error.reason, E.NetworkError)
+    assert error.reason.cause is failures[0]

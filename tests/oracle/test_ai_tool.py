@@ -21,6 +21,8 @@ from __future__ import annotations
 # pyright: reportPrivateUsage=false
 from typing import Any, Literal, NotRequired, TypedDict, cast
 
+import pytest
+
 import pyfect as fx
 from pyfect import schema as S
 from pyfect import testing
@@ -29,7 +31,6 @@ from pyfect.ai import language_model as lm
 from pyfect.ai import response as R
 from pyfect.ai import tool as T
 from pyfect.ai import toolkit as K
-from pyfect.ai.openai_structured_output import to_codec_openai
 from pyfect.context import Tag
 from pyfect.duration import Seconds
 from pyfect.json_schema import JsonSchema
@@ -75,9 +76,8 @@ def _generate(
     handler: T.Handler[Any],
     name: str,
     params: object,
-    transformer: T.CodecTransformer | None = None,
 ) -> fx.Effect[lm.GenerateTextResponse[Any, Any], Any, Any]:
-    model = with_language_model(generate_text=_call(name, params), codec_transformer=transformer)
+    model = with_language_model(generate_text=_call(name, params))
     return (
         lm.generate_text("Test", toolkit=toolkit)
         .pipe(model)
@@ -149,22 +149,6 @@ def test_returns_handler_failures_in_return_mode():
     handler = FailureModeReturn.handler(lambda _, __: fx.fail(failure))
     response = yield from _generate(
         toolkit, handler, "FailureModeReturn", {"testParam": "test-param"}
-    )
-    assert response.tool_results == [
-        R.ToolResultFailure(
-            id="tool-123", name="FailureModeReturn", result=failure, encoded_result=failure
-        )
-    ]
-
-
-@testing.effect
-def test_returns_handler_failures_in_return_mode_with_openai_transformer():
-    """User Defined / should return tool call handler failures with failure mode return using OpenAI transformer"""  # noqa: E501
-    failure = ToolFailure(testFailure="failure-mode-return-tool")
-    toolkit = K.make(FailureModeReturn)
-    handler = FailureModeReturn.handler(lambda _, __: fx.fail(failure))
-    response = yield from _generate(
-        toolkit, handler, "FailureModeReturn", {"testParam": "test-param"}, to_codec_openai
     )
     assert response.tool_results == [
         R.ToolResultFailure(
@@ -1044,3 +1028,18 @@ def test_concurrent_preliminary_results():
         False,
         {"status": "complete", "job": "slow"},
     )
+
+
+def test_secure_json_parse_rejects_unicode_escaped_prototype_keys():
+    """unsafeSecureJsonParse / rejects Unicode-escaped prototype keys"""
+    for text in (
+        '{"\\u005f_proto__":{"polluted":true}}',
+        '{"\\u0063onstructor":{"prototype":{"polluted":true}}}',
+    ):
+        with pytest.raises(ValueError, match=r"^Object contains forbidden prototype property$"):
+            T.unsafe_secure_json_parse(text)
+
+
+def test_secure_json_parse_accepts_escaped_constructor_with_null():
+    """unsafeSecureJsonParse / accepts Unicode-escaped constructor keys with null values"""
+    assert T.unsafe_secure_json_parse('{"\\u0063onstructor":null}') == {"constructor": None}
