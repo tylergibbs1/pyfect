@@ -11,6 +11,7 @@ import pyfect as fx
 from pyfect import cause, schedule, sink, stream, testing
 from pyfect.cause import Cause
 from pyfect.context import Tag
+from pyfect.duration import Duration, seconds
 from pyfect.option import Option, Some
 from pyfect.queue import Done, Queue
 from pyfect.sink import End, Sink
@@ -329,7 +330,7 @@ def test_unwrap_closes_its_resources_when_the_sink_run_ends():
 
 @testing.effect
 def test_aggregate_within_leaves_the_idle_time_out_of_the_schedule_clock():
-    seen: list[float] = []
+    seen: list[Duration] = []
 
     def record(meta: schedule.Metadata[Any, Any]) -> bool:
         seen.append(meta.elapsed)
@@ -345,4 +346,4 @@ def test_aggregate_within_leaves_the_idle_time_out_of_the_schedule_clock():
     )
     yield from testing.adjust("30 seconds")
     assert (yield from fiber.join()) == [[1], [2], [3]]
-    assert seen == [0, 1, 2]
+    assert seen == [seconds(0), seconds(1), seconds(2)]

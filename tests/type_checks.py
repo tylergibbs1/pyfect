@@ -23,6 +23,7 @@ from pyfect import (
     big_decimal,
     channel,
     crypto,
+    duration,
     execution_plan,
     graphql,
     jose,
@@ -98,7 +99,6 @@ from pyfect.cli.global_flag import LogLevel
 from pyfect.context import Tag, TagEffect
 from pyfect.duration import (
     Duration,
-    format_iso,
     from_input,
     from_input_unsafe,
     from_iso,
@@ -1205,37 +1205,60 @@ def check_deferred(d: fx.Deferred[int, str]) -> None:
 
 
 def check_durations(scheduler: SyncScheduler) -> None:
-    # Durations are parsed once, at the boundary, into Seconds (never NaN).
+    # Durations are parsed once, at the boundary, into a Duration (exact nanoseconds).
     assert_type(from_input_unsafe(1.5), Duration)
     assert_type(from_input("1 second"), Duration | None)
     assert_type(from_iso("PT1S"), Duration | None)
-    assert_type(format_iso(from_input_unsafe(1)), str | None)
+    assert_type(from_input_unsafe(1).format_iso(), str | None)
     assert_type(to_micros(1), float)
+    assert_type(duration.to_nanos("1 second"), int | None)
+    assert_type(duration.nanos(10**30), Duration)
+    assert_type(duration.infinity, Duration)
     assert_type(fx.fail("e").ignore(log="Unhandled"), fx.Effect[None])
     fx.fail("e").ignore(log="Handled")  # pyright: ignore[reportArgumentType]
     assert_type(schedule.fibonacci(1), schedule.Schedule[Duration])
-    # Arithmetic that keeps the unit stays Seconds, so it is not read again as milliseconds.
+    # Arithmetic on durations stays a Duration, so it is not read again as milliseconds.
     second = from_input_unsafe("1 second")
     assert_type(second + second, Duration)
     assert_type(second - zero, Duration)
     assert_type(second * 2, Duration)
     assert_type(2 * second, Duration)
-    assert_type(second / 2, Duration)
     assert_type(-second, Duration)
-    assert_type(second / second, float)
-    assert_type(second + 1.0, float)
+    assert_type(abs(second), Duration)
+    assert_type(second.divide(2), Duration | None)
+    assert_type(second.divide_unsafe(2), Duration)
+    assert_type(second.max(zero), Duration)
+    assert_type(second < zero, bool)
+    assert_type(second.to_millis(), float)
+    assert_type(second.to_nanos(), int | None)
+    assert_type(second.to_nanos_unsafe(), int)
+    assert_type(second.to_hr_time(), tuple[float, float])
+    assert_type(second.value, duration.DurationValue)
+    assert_type(second.parts(), duration.Parts)
+    assert_type(
+        second.match(on_millis=lambda _: "ms", on_nanos=lambda _: "ns", on_infinity=lambda: "inf"),
+        str,
+    )
     assert_type(fx.succeed(1).timed(), fx.Effect[tuple[Duration, int]])
-    # A bare number is milliseconds, so it is never a Seconds.
-    fx.testing.TestClock().sleep(second + 1.0)  # pyright: ignore[reportArgumentType]
-    # Past the boundary, a raw float is rejected: it must go through to_seconds.
+    # A Duration is no number: mixing them is an error, not a silent unit change.
+    assert second + 1.0  # pyright: ignore[reportOperatorIssue]
+    assert second / 2  # pyright: ignore[reportOperatorIssue]
+    assert second < 1.0  # pyright: ignore[reportOperatorIssue]
+    float(second)  # pyright: ignore[reportArgumentType]
+    # A Duration never equals a number; pyright reports the comparison.
+    _ = second == 0  # pyright: ignore[reportUnnecessaryComparison]
+    _ = second != 0.5  # pyright: ignore[reportUnnecessaryComparison]
+    # No constructor call: build one with millis, nanos, seconds...
+    Duration()  # pyright: ignore[reportCallIssue]
+    Duration(5)  # pyright: ignore[reportArgumentType]
+    # Past the boundary, a raw float is rejected: it must go through from_input_unsafe.
     fx.testing.TestClock().sleep(1.0)  # pyright: ignore[reportArgumentType]
     scheduler.call_later(1.0, lambda: None)  # pyright: ignore[reportArgumentType]
-    # A schedule's delay is Seconds too, so custom steps can't return NaN.
+    # A schedule's delay is a Duration too, so custom steps can't return NaN.
     schedule.Continue(1, 1.0)  # pyright: ignore[reportArgumentType]
-
-
-# --- Schedule ---------------------------------------------------------------------------
-# Schedule[Out, In, E, R]: steps may fail with E and need R; combinators add to both.
+    # duration.Input takes every boundary form.
+    inputs: list[DurationInput] = [1, 1.5, "1 second", (1, 0), {"seconds": 1}, second]
+    assert_type(inputs, list[DurationInput])
 
 
 def check_schedule_constructors() -> None:
@@ -2763,7 +2786,10 @@ def check_track_methods(eff: fx.Effect[int, NotFound, Primary]) -> None:
     assert_type(eff.track_errors(errors, lambda e: e.key), fx.Effect[int, NotFound, Primary])
     assert_type(eff.track_defects(errors, repr), fx.Effect[int, NotFound, Primary])
     assert_type(eff.track_duration(metric.timer("t")), fx.Effect[int, NotFound, Primary])
-    assert_type(eff.track_duration(counter, lambda d: d * 2), fx.Effect[int, NotFound, Primary])
+    assert_type(
+        eff.track_duration(counter, lambda d: d.to_millis() * 2),
+        fx.Effect[int, NotFound, Primary],
+    )
     # A metric must take what it is given.
     eff.track_successes(errors)  # pyright: ignore[reportArgumentType]
     eff.track_errors(counter)  # pyright: ignore[reportArgumentType]

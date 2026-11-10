@@ -10,7 +10,7 @@ import pytest
 import pyfect as fx
 from pyfect import clock, testing
 from pyfect._wake_tracking import WakeTracker
-from pyfect.duration import Duration
+from pyfect.duration import Duration, infinity, millis, seconds
 from pyfect.scheduler import Cancel, Scheduler, Task
 
 
@@ -19,7 +19,7 @@ class TimerRecordingScheduler:
 
     def __init__(self, inner: Scheduler) -> None:
         self.inner = inner
-        self.delays: list[float] = []
+        self.delays: list[Duration] = []
 
     def schedule(self, task: Task, priority: int = 0) -> None:
         self.inner.schedule(task)
@@ -35,8 +35,8 @@ class TimerRecordingScheduler:
         return self.inner.outside_work()
 
 
-def _timer_delays(eff: fx.Effect[object]) -> fx.Effect[list[float]]:
-    def run(inner: Scheduler) -> fx.Effect[list[float]]:
+def _timer_delays(eff: fx.Effect[object]) -> fx.Effect[list[Duration]]:
+    def run(inner: Scheduler) -> fx.Effect[list[Duration]]:
         recording = TimerRecordingScheduler(inner)
         return eff.pipe(fx.provide_service(fx.CurrentScheduler, recording)).map(
             lambda _: recording.delays
@@ -68,15 +68,15 @@ def test_timed_measures_whole_monotonic_nanoseconds():
     fiber = yield from fx.sleep("300 millis").as_("done").timed().fork()
     yield from testing.adjust("100 millis")
     yield from testing.adjust("200 millis")  # 0.1 + 0.2 is 0.30000000000000004 in floats
-    assert (yield from fiber.join()) == (0.3, "done")
+    assert (yield from fiber.join()) == (millis(300), "done")
 
 
-@pytest.mark.parametrize("seconds", [0.0, -1.0])
+@pytest.mark.parametrize("delay", [0.0, -1.0])
 @testing.live
-def test_a_live_sleep_of_zero_or_less_yields_once(seconds: float):
+def test_a_live_sleep_of_zero_or_less_yields_once(delay: float):
     order: list[str] = []
     other = yield from fx.sync(lambda: order.append("other")).fork()
-    yield from fx.sleep(Duration(seconds))
+    yield from fx.sleep(seconds(delay))
     order.append("sleeper")
     yield from other.join()
     assert order == ["other", "sleeper"]
@@ -90,7 +90,7 @@ def test_a_live_sleep_of_zero_or_less_sets_no_timer():
 @testing.live
 def test_a_live_infinite_sleep_sets_no_timer():
     delays = yield from _timer_delays(fx.sleep(math.inf).timeout_option("20 millis"))
-    assert math.inf not in delays
+    assert infinity not in delays
 
 
 @testing.live

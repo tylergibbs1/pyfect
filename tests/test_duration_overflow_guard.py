@@ -2,10 +2,10 @@
 
 Python raises ``OverflowError`` where JavaScript gives ``Infinity``: for
 ``float ** n``, ``math.pow``, an int too big for a float, and big ``int /
-int`` (DOGFOOD outlay #10). Every public function of ``pyfect.duration``
-(found by walking the module) is called with extreme values and must not
-raise it; and the time code (schedules, durations, the TestClock) must
-raise powers only through ``_js.power``.
+int`` (DOGFOOD outlay #10). Every public function of ``pyfect.duration`` and
+every method of ``Duration`` (found by walking them) is called with extreme
+values and must not raise it; and the time code (schedules, durations, the
+TestClock) must raise powers only through ``_js.power``.
 """
 
 import ast
@@ -13,6 +13,7 @@ import inspect
 import itertools
 import math
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from pyfect import duration
@@ -34,49 +35,77 @@ FLOATS = [
 ]
 # Nanosecond counts: past float range too (sums of in-range counts get there).
 INTS = [0, 10**9, 10**308, 10**400, -(10**400)]
+DURATIONS = [
+    *(duration.millis(f) for f in FLOATS),
+    *(duration.nanos(i) for i in INTS),
+    duration.infinity,
+    duration.negative_infinity,
+]
 
 
 def arguments_for(parameter: inspect.Parameter) -> list[object]:
     annotation = str(parameter.annotation)
-    floats: list[object] = [Duration(f) for f in FLOATS]
-    return floats + INTS if "int" in annotation else floats
+    if parameter.kind is inspect.Parameter.VAR_KEYWORD or annotation.startswith("Callable"):
+        return []
+    if annotation in ("Input", "Duration"):
+        return [*DURATIONS, *(FLOATS if annotation == "Input" else ())]
+    if annotation in ("int", "int | float"):
+        return [*INTS, *(FLOATS if "float" in annotation else ())]
+    if annotation == "float":
+        return [*FLOATS, *INTS]
+    return []
 
 
-def public_functions() -> list[tuple[str, inspect.Signature]]:
-    found: list[tuple[str, inspect.Signature]] = []
+def calls() -> list[tuple[str, Callable[..., object], inspect.Signature]]:
+    found: list[tuple[str, Callable[..., object], inspect.Signature]] = []
     for name in duration.__all__:
         value = getattr(duration, name)
-        # parse_duration_text and from_iso take text, whose numbers to_seconds'
-        # cases and tests/test_duration_iso.py cover.
-        if inspect.isfunction(value) and name not in {"parse_duration_text", "from_iso"}:
-            found.append((name, inspect.signature(value)))
+        # from_iso takes text, whose numbers tests/test_duration_iso.py covers.
+        if inspect.isfunction(value) and name != "from_iso":
+            found.append((name, value, inspect.signature(value)))
+    for name, method in vars(Duration).items():
+        if inspect.isfunction(method) and not name.startswith("_") and name != "match":
+            found.append((f"Duration.{name}", method, inspect.signature(method)))
     return found
 
 
 def test_duration_helpers_never_overflow():
-    assert len(public_functions()) >= 9
-    for name, signature in public_functions():
-        f = getattr(duration, name)
-        pools = [arguments_for(p) for p in signature.parameters.values()]
+    assert len(calls()) >= 40
+    for name, f, signature in calls():
+        pools: list[list[object]] = []
+        for parameter in signature.parameters.values():
+            if parameter.name == "self":
+                pools.append(list(DURATIONS))
+            elif parameter.kind is inspect.Parameter.KEYWORD_ONLY:
+                continue
+            else:
+                pools.append(arguments_for(parameter))
+        kwargs_names = [
+            p.name
+            for p in signature.parameters.values()
+            if p.kind is inspect.Parameter.KEYWORD_ONLY
+        ]
         for args in itertools.product(*pools):
+            kwargs = dict.fromkeys(kwargs_names, duration.zero) if kwargs_names else {}
             try:
-                f(*args)
+                f(*args, **kwargs)
             except ValueError:
-                # The finite-only helpers refuse infinities and NaN by name.
-                assert any(isinstance(a, float) and not math.isfinite(a) for a in args), (
-                    name,
-                    args,
-                )
+                # The finite-only helpers refuse infinities by name.
+                assert any(isinstance(a, Duration) and not a.is_finite() for a in args) or any(
+                    isinstance(a, float) and not math.isfinite(a) for a in args
+                ), (name, args)
+            except OverflowError:
+                # Only ``to_timedelta`` meets ``timedelta``'s own range.
+                assert name == "Duration.to_timedelta", (name, args)
             except Exception as error:
-                raise AssertionError(f"duration.{name}{args} raised {error!r}") from error
+                raise AssertionError(f"{name}{args} raised {error!r}") from error
 
 
 def test_infinite_and_huge_counts_saturate():
-    assert duration.nanos_or_infinite(Duration(1e300)) == math.inf
-    assert duration.add_nanos(10**308, 10**308) == math.inf
-    assert duration.from_nanos(10**400) == math.inf
-    assert duration.from_millis(sys.float_info.max * 2) == math.inf
-    assert duration.format_duration(Duration(sys.float_info.max)) == "Infinity"
+    assert duration.millis(sys.float_info.max * 2) == duration.infinity
+    assert duration.nanos(10**400).to_seconds() == math.inf
+    assert duration.nanos(10**400).to_hr_time() == (math.inf, 0)
+    assert duration.from_input_unsafe(10**400) == duration.infinity
 
 
 SRC = Path(__file__).resolve().parent.parent / "src" / "pyfect"

@@ -5,6 +5,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import random, schedule
+from pyfect.duration import Duration, millis
 
 
 def seeded[A](eff: fx.Effect[A], seed: str | float) -> A:
@@ -125,7 +126,7 @@ def test_a_jittered_schedule_draws_from_the_seeded_generator():
     @fx.gen
     def delays():
         step = yield from schedule.to_step_with_metadata(schedule.spaced("1 second").jittered())
-        out: list[float] = []
+        out: list[Duration] = []
         for _ in range(3):
             meta = yield from step(None)
             assert isinstance(meta, schedule.Metadata)
@@ -133,7 +134,9 @@ def test_a_jittered_schedule_draws_from_the_seeded_generator():
         return out
 
     draws = (0.1633802591287037, 0.690650922132836, 0.0031429880468195615)
-    assert seeded(delays, "example") == [0.8 * (1 - r) + 1.2 * r for r in draws]
+    # Effect's jittered: Duration.millis(d * 0.8 * (1 - r) + d * 1.2 * r), d in milliseconds.
+    expected = [millis(1000 * 0.8 * (1 - r) + 1000 * 1.2 * r) for r in draws]
+    assert seeded(delays, "example") == expected
 
 
 ZERO_SEED = (0.18761596091856492, 0.8562177131738374, 0.49493102975267533)

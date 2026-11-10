@@ -11,7 +11,7 @@ from pyfect._core import Effect, _Gen, _Suspend
 from pyfect.clock import Clock, LiveClock
 from pyfect.console import CurrentConsole
 from pyfect.context import Context
-from pyfect.duration import Duration, from_input_unsafe, millis
+from pyfect.duration import Duration, from_input_unsafe, seconds
 from pyfect.duration import Input as DurationInput
 from pyfect.run import unwrap
 from pyfect.scope import Scope, scoped
@@ -28,7 +28,7 @@ an effect. Any typed error fails the test."""
 class Settings:
     """Defaults the pytest plugin reads from the ini file."""
 
-    timeout: Duration | None = millis(5000)
+    timeout: Duration | None = seconds(5)
 
 
 settings = Settings()

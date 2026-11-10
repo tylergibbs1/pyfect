@@ -27,7 +27,22 @@ more. They are methods; `jittered` and `passthrough` also pipe (`s.pipe(schedule
 Every duration in pyfect (a sleep, a timeout, a schedule's delay, a time to live) takes a string
 with its unit (`"500 millis"`, `"10 seconds"`, `"1 hour"`), a `timedelta`, a `(seconds, nanos)`
 pair, a mapping such as `{"minutes": 1, "seconds": 30}`, or a bare number of milliseconds, as in
-Effect. An invalid string raises `ValueError`.
+Effect (the type is `duration.Input`). An invalid string raises `ValueError`.
+
+Each one is parsed once, at the boundary, into a `duration.Duration`: Effect's `Duration`, an
+immutable value of whole milliseconds, whole nanoseconds or an infinity. It stays exact past what
+a float can count, adds and compares with other durations (not with numbers), and gives units back
+with `to_millis()`, `to_seconds()`, `to_nanos()`, `to_timedelta()`, `format()` and
+`format_iso()`. A schedule's delay, `timed`'s result and a schedule step's `elapsed` are
+durations too.
+
+<CodeOutput>
+
+<include meta='title="durations.py"'>../../snippets/schedules/durations.py</include>
+
+<include lang="text">../../snippets/schedules/durations.out</include>
+
+</CodeOutput>
 
 <Callout title="Bare numbers are milliseconds since 0.2.0">
 In 0.1.0 a bare number was seconds, so `fx.sleep(5)` waited 5 seconds; since 0.2.0 it waits 5

@@ -17,7 +17,7 @@ from oracle import _redis
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Duration, millis, to_millis
+from pyfect.duration import millis, seconds, to_millis
 from pyfect.exit import Failure
 from pyfect.persistence import circuit_breaker as cb
 from pyfect.persistence import rate_limiter as rl
@@ -33,7 +33,7 @@ def _consume_twice(
         for _ in range(2):
             result = yield from limiter.consume(
                 key="key",
-                window=Duration(window_millis / 1000),
+                window=millis(window_millis),
                 limit=limit,
                 algorithm=algorithm,
                 on_exceeded="delay",
@@ -106,7 +106,7 @@ def test_a_shorter_same_epoch_retry_after_does_not_shorten_a_cooldown() -> None:
         store: rl.RateLimiterStoreService, epoch: int, retry_after: float
     ) -> fx.Effect[None, Any]:
         return store.adaptive_feedback(
-            key="a", epoch=epoch, tokens=1, status=429, retry_after=Duration(retry_after)
+            key="a", epoch=epoch, tokens=1, status=429, retry_after=seconds(retry_after)
         )
 
     def body() -> Generator[Any, Any, rl.AdaptiveConsumeResult]:

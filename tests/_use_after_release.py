@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pyfect as fx
-from pyfect.duration import Duration
+from pyfect.duration import seconds
 from pyfect.exit import Failure
 from pyfect.result import Ok
 
@@ -31,7 +31,7 @@ def assert_fails_after_release[A](
     @fx.fn
     def program():
         value = yield from make().pipe(fx.provide(layer))
-        return (yield from use(value).timeout(Duration(timeout)).exit())
+        return (yield from use(value).timeout(seconds(timeout)).exit())
 
     exit_ = fx.run_blocking(fx.scoped(program()))
     assert isinstance(exit_, Failure), f"used after release, it succeeded: {exit_}"

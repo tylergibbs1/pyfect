@@ -27,7 +27,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Duration, millis
+from pyfect.duration import Duration, millis, seconds, zero
 from pyfect.exit import fail as exit_fail
 from pyfect.exit import succeed as exit_succeed
 
@@ -423,7 +423,7 @@ def test_skips_the_ttl_callback_on_interruption_and_invokes_it_once_on_next_succ
         runs += 1
         return fx.interrupt() if runs == 1 else fx.succeed(runs)
 
-    def ttl(ex: fx.Exit[int, Any]) -> float:
+    def ttl(ex: fx.Exit[int, Any]) -> Duration:
         exits.append(ex)
         return millis(60_000)
 
@@ -451,7 +451,7 @@ def test_selects_ttl_from_each_fresh_exit_without_evaluating_on_cache_hits() -> 
         count += 1
         return count
 
-    def ttl(ex: fx.Exit[int, Any]) -> float:
+    def ttl(ex: fx.Exit[int, Any]) -> Duration:
         exits.append(ex)
         return millis(1000) if ex == exit_succeed(1) else millis(3000)
 
@@ -485,9 +485,9 @@ def test_supports_a_piped_callback_that_skips_failures_and_caches_successes() ->
         count += 1
         return fx.fail("boom") if count == 1 else fx.succeed(count)
 
-    def ttl(ex: fx.Exit[int, str]) -> float:
+    def ttl(ex: fx.Exit[int, str]) -> Duration:
         exits.append(ex)
-        return 0 if isinstance(ex, fx.Failure) else millis(1000)
+        return zero if isinstance(ex, fx.Failure) else millis(1000)
 
     @fx.gen
     def program():
@@ -548,9 +548,9 @@ def test_invalidate_supports_a_piped_callback_that_skips_failures_and_caches_suc
         count += 1
         return fx.fail("boom") if count == 1 else fx.succeed(count)
 
-    def ttl(ex: fx.Exit[int, str]) -> float:
+    def ttl(ex: fx.Exit[int, str]) -> Duration:
         exits.append(ex)
-        return 0 if isinstance(ex, fx.Failure) else millis(1000)
+        return zero if isinstance(ex, fx.Failure) else millis(1000)
 
     @fx.gen
     def program():
@@ -921,7 +921,7 @@ def test_race_all_first() -> None:
 
     def racer(ms: int) -> fx.Effect[int, str]:
         eff: fx.Effect[int, str] = fx.fail("boom") if ms == 0 else fx.succeed(ms)
-        return eff.delay(Duration(ms / 1000)).on_interrupt(fx.sync(lambda: interrupted.append(ms)))
+        return eff.delay(millis(ms)).on_interrupt(fx.sync(lambda: interrupted.append(ms)))
 
     @fx.gen
     def program():
@@ -1029,7 +1029,7 @@ def test_timed_uses_monotonic_time_when_wall_time_moves_backward():
 
     duration, result = yield from body.timed()
     assert result == "done"
-    assert duration == 0.1
+    assert duration == millis(100)
 
 
 @testing.effect
@@ -1055,7 +1055,7 @@ def test_unbounded_fail():
             done.append(i)
             return fx.fail("error") if i == 3 else fx.succeed(i)
 
-        return fx.suspend(run).delay(Duration(i * 0.1))
+        return fx.suspend(run).delay(seconds(i * 0.1))
 
     handle = yield from fx.for_each([1, 2, 3, 4, 5], visit, concurrency="unbounded").fork()
     yield from testing.adjust("500 millis")

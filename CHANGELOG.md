@@ -1,5 +1,46 @@
 # Changelog
 
+## 0.5.0 (unreleased)
+
+### Changed (breaking)
+
+- `duration.Duration` is now Effect's `Duration` value: an immutable, hashable, final class
+  holding whole milliseconds, whole nanoseconds or an infinity (its `.value` is `Millis`,
+  `Nanos`, `Infinity` or `NegativeInfinity`), with Effect's arithmetic, equality, order,
+  `format`, `format_iso`, `parts`, `to_hr_time` and `to_json`. It replaces `duration.Seconds`,
+  a `float` of seconds that rounded past 2**53 ns and had no exact sub-microsecond or huge
+  values. `fx.Duration` is this value type. Everything that took or returned `Seconds` (sleeps,
+  timeouts, `Clock.sleep`, `Scheduler.call_later`, schedule delays and `Metadata` fields,
+  `timed`, `TimeoutException.duration`, TTLs, the schema duration codecs) takes or returns a
+  `Duration`. Migrate:
+  - The input alias `duration.Duration` (number, string, `timedelta`, pair, mapping) is now
+    `duration.Input`; annotate parameters `duration.Input` and parse them with
+    `duration.from_input_unsafe(x)` (was `duration.to_seconds(x)`). `duration.to_seconds(x)`
+    now returns a `float` of seconds, as Effect's `toSeconds`.
+  - Build durations with `duration.millis(n)`, `nanos(n)`, `micros`, `seconds`, `minutes`,
+    `hours`, `days`, `weeks`, `zero`, `infinity` and `negative_infinity`. `Duration(x)` is a type
+    error and raises `TypeError`. `ZERO` is `zero`; `from_nanos(n)` is `nanos(n)`;
+    `from_millis(n)` is `millis(n)`.
+  - A `Duration` is no `float`: `d * 1000`, `d + 0.5`, `d < 1.0` and `float(d)` are type
+    errors, and `d == 0` is always false (pyright reports it). Use `d.to_seconds()`,
+    `d.to_millis()`, `d.is_zero()`, `d.is_finite()`, `d < duration.seconds(1)` or
+    `d.to_timedelta()`. `+`, `-`, `*` by a number, unary `-`, `abs`, `<` and friends work
+    between durations; `d.divide(n)` returns `None` where Effect's `divide` returns `None`.
+  - `format_duration(d)` is `d.format()`; `format_iso(d)` is `d.format_iso()` (both are
+    Effect's: `format` prints a long count of days as a JavaScript number).
+  - `to_nanos(x)` returns `None` for an infinite duration (Effect's `toNanos`); use
+    `to_nanos_unsafe` to raise. `nanos_or_infinite` takes a `Duration`, and
+    `from_nanos_or_infinite` is its inverse.
+  - `DurationParts` is `DurationObject` (Effect's `DurationObject`); `Parts` is what
+    `d.parts()` returns.
+  - `add_nanos`, `millis_to_nanos`, `round_nanos` and `parse_duration_text` are gone: add
+    durations, and parse text with `from_input` / `from_input_unsafe`.
+  - A schedule step's `elapsed` and `elapsed_since_previous`, and `TransactionMeta.elapsed`,
+    are `Duration`s (Effect has float milliseconds there; a `Duration` keeps them exact).
+  - Two `Millis` durations add as JavaScript numbers do, as in Effect: the sum rounds past
+    2**53 ms and saturates to `infinity` past float range; anything with a `Nanos` side adds
+    exactly.
+
 ## 0.4.1 (2026-11-10)
 
 ### Added

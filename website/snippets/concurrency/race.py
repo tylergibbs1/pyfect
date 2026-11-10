@@ -1,11 +1,11 @@
 import pyfect as fx
-from pyfect.duration import Duration
+from pyfect.duration import seconds
 
 released: list[str] = []
 
 
 def replica(name: str, delay: float) -> fx.Effect[str]:
-    return fx.sleep(Duration(delay)).as_(name).on_interrupt(fx.sync(lambda: released.append(name)))
+    return fx.sleep(seconds(delay)).as_(name).on_interrupt(fx.sync(lambda: released.append(name)))
 
 
 # The first to succeed wins; the loser is interrupted, and race waits for it.

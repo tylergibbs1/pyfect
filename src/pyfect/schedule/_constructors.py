@@ -13,9 +13,8 @@ from pyfect._js import power
 from pyfect.duration import (
     Duration,
     from_input_unsafe,
-    from_nanos_or_infinite,
     millis,
-    nanos_or_infinite,
+    nanos,
     to_millis,
     zero,
 )
@@ -111,24 +110,24 @@ def fixed(interval: DurationInput) -> Schedule[int]:
     """Recur on a fixed beat of ``interval``, counted from the first step.
     A run that overruns the beat is followed at once; missed beats are not
     replayed. Outputs the count, from 0."""
-    window = nanos_or_infinite(from_input_unsafe(interval))
+    window = from_input_unsafe(interval)
 
     def make() -> Callable[[InputMetadata[object]], Effect[Decision[int]]]:
-        # Effect's arithmetic, in whole nanoseconds since the first step.
-        last_run: float = 0
+        # Effect's arithmetic, on exact durations since the first step.
+        last_run = zero
 
         def step(m: InputMetadata[object]) -> Decision[int]:
             nonlocal last_run
-            if window == 0:
+            if window.is_zero():
                 return Continue(m.attempt - 1, zero)
             if m.attempt == 1:
                 last_run = window
-                return Continue(0, from_nanos_or_infinite(window))
-            now = nanos_or_infinite(m.elapsed)
+                return Continue(0, window)
+            now = m.elapsed
             running_behind = now > last_run + window
-            delay = 0 if running_behind else _to_boundary(now, window)
+            delay = zero if running_behind else _to_boundary(now, window)
             last_run = now + delay
-            return Continue(m.attempt - 1, from_nanos_or_infinite(delay))
+            return Continue(m.attempt - 1, delay)
 
         return lambda m: _Sync(lambda: step(m))
 
@@ -138,20 +137,25 @@ def fixed(interval: DurationInput) -> Schedule[int]:
 def windowed(interval: DurationInput) -> Schedule[int]:
     """Recur at the end of each ``interval``-long window, counted from the
     first step. Outputs the count, from 0."""
-    window = nanos_or_infinite(from_input_unsafe(interval))
+    window = from_input_unsafe(interval)
 
     def step(m: InputMetadata[object]) -> Decision[int]:
-        delay = 0 if window == 0 else _to_boundary(nanos_or_infinite(m.elapsed), window)
-        return Continue(m.attempt - 1, from_nanos_or_infinite(delay))
+        delay = zero if window.is_zero() else _to_boundary(m.elapsed, window)
+        return Continue(m.attempt - 1, delay)
 
     return _stateless(step)
 
 
-def _to_boundary(elapsed: float, window: float) -> float:
-    """Nanoseconds to the next window boundary, with JavaScript's ``%``
-    (the remainder takes the sign of ``elapsed``) as Effect computes it."""
-    rest = abs(elapsed) % abs(window)
-    return window - (rest if elapsed >= 0 else -rest)
+def _to_boundary(elapsed: Duration, window: Duration) -> Duration:
+    """The time to the next window boundary, with JavaScript's ``%`` (the remainder takes
+    the sign of ``elapsed``) as Effect computes it. With an infinite ``elapsed`` JavaScript
+    gives ``NaN``, a zero delay that Effect replaces by ``window``; an infinite ``window``
+    leaves ``elapsed`` as the remainder and the delay is infinite, ``window`` again."""
+    if not (elapsed.is_finite() and window.is_finite()):
+        return window
+    at, size = elapsed.to_nanos_unsafe(), window.to_nanos_unsafe()
+    rest = abs(at) % abs(size)
+    return nanos(size - (rest if at >= 0 else -rest))
 
 
 def duration(duration: DurationInput) -> Schedule[Duration]:

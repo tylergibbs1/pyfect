@@ -9,13 +9,13 @@ from typing import Never
 
 import pyfect as fx
 from pyfect import channel, testing
-from pyfect.duration import Duration
+from pyfect.duration import seconds
 
 
 @testing.live
 def test_map_effect_keeps_upstreams_order_unless_unordered():
     def slow(n: int) -> fx.Effect[int]:
-        return fx.sleep(Duration(n * 0.005)).as_(n)
+        return fx.sleep(seconds(n * 0.005)).as_(n)
 
     ordered = channel.from_iterable([3, 1, 2]).map_effect(slow, concurrency=3)
     assert (yield from ordered.run_collect()) == [3, 1, 2]

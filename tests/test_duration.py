@@ -9,53 +9,64 @@ import pytest
 
 import pyfect as fx
 from pyfect import schedule
-from pyfect.duration import Duration, format_duration, from_input_unsafe, infinity, millis
+from pyfect.duration import (
+    Duration,
+    from_input_unsafe,
+    infinity,
+    millis,
+    nanos,
+    negative_infinity,
+    seconds,
+    zero,
+)
 from pyfect.duration import Input as DurationInput
 
 
 @pytest.mark.parametrize(
     ("given", "expected"),
     [
-        (float("nan"), 0.0),
-        (-0.0, 0.0),
-        (1500, 1.5),
-        (1.5, 0.0015),
-        (timedelta(milliseconds=1500), 1.5),
-        (millis(1500), 1.5),
+        (float("nan"), zero),
+        (-0.0, zero),
+        (1500, millis(1500)),
+        (1.5, nanos(1_500_000)),
+        (timedelta(milliseconds=1500), millis(1500)),
+        (millis(1500), millis(1500)),
     ],
 )
-def test_to_seconds_normalises_like_effect_duration_make(given: DurationInput, expected: float):
+def test_parsing_normalises_like_effect_duration_make(given: DurationInput, expected: Duration):
     """A bare number is milliseconds (Effect's ``Duration.millis``), and
     ``Duration.make`` maps NaN (and -0) to zero."""
     parsed = from_input_unsafe(given)
     assert isinstance(parsed, Duration)
-    assert parsed == expected and math.copysign(1.0, parsed) == math.copysign(1.0, expected)
+    assert parsed.value == expected.value
 
 
-def test_parsed_seconds_pass_through_unchanged():
-    """A parsed ``Seconds`` is a ``Duration`` already, as Effect's
-    ``fromInputUnsafe`` returns a ``Duration`` input as it is: it is not
+def test_a_parsed_duration_passes_through_unchanged():
+    """A ``Duration`` input is returned as it is (Effect's ``fromInputUnsafe``): it is not
     read again as milliseconds."""
     parsed = from_input_unsafe("2 seconds")
     assert from_input_unsafe(parsed) is parsed
 
 
-def test_arithmetic_on_seconds_keeps_the_unit():
-    """Durations computed from durations stay ``Seconds``, so they are not
-    read as milliseconds when passed on; a ratio or a sum with a bare
-    number is a plain ``float``."""
-    two = millis(2000)
-    for kept in (two + two, two - two, two * 1.5, 3 * two, two / 4, -two, abs(-two), +two):
+def test_arithmetic_keeps_the_type_and_is_exact():
+    """Durations computed from durations stay durations; ``Nanos`` add exactly past
+    2**53 ns, where a float would round (checked under Node)."""
+    two = seconds(2)
+    for kept in (two + two, two - two, two * 1.5, 3 * two, -two, abs(-two), +two):
         assert type(kept) is Duration
-    for plain in (two / two, two + 1.0, 1.0 + two, two - 1):
-        assert type(plain) is float
-    assert two * timedelta(seconds=1) == timedelta(seconds=2)
-    assert infinity * 0 == 0.0
-    assert infinity + Duration(-math.inf) == 0.0
+    assert (nanos(2**53) + nanos(1)).to_nanos_unsafe() == 9_007_199_254_740_993
+    assert (millis(2**53) + nanos(1)).to_nanos_unsafe() == 9_007_199_254_740_992_000_001
+    assert (nanos(2**70) - millis(1)).to_nanos_unsafe() == 1_180_591_620_717_410_303_424
+    assert infinity * 0 == zero
+    assert infinity + negative_infinity == zero
 
 
-def test_seconds_cannot_hold_nan():
-    assert Duration(float("nan")) == 0.0
+def test_two_millis_add_as_javascript_numbers():
+    """``Millis`` plus ``Millis`` is a float sum, as in Effect: it rounds past 2**53 ms
+    and saturates past float range (checked under Node)."""
+    assert (millis(2**53) + millis(1)).value == millis(2**53).value
+    assert millis(1e308) + millis(1e308) == infinity
+    assert millis(1e308) * 10 == infinity
 
 
 def test_sleep_nan_completes_at_once_on_the_sync_scheduler():
@@ -79,41 +90,37 @@ def test_schedules_treat_nan_as_zero():
         step = yield from schedule.to_step(schedule.spaced(float("nan")))
         return (yield from step(0.0, None))
 
-    assert fx.run_blocking(first_decision) == schedule.Continue(0, millis(0))
+    assert fx.run_blocking(first_decision) == schedule.Continue(0, zero)
 
 
 @pytest.mark.parametrize(
-    ("seconds", "text"),
+    ("given", "text"),
     [
-        (1.0, "1s"),
-        (1.001, "1s 1ms"),
-        (1.5, "1s 500ms"),
-        (300.0, "5m"),
-        (5.325 * 60, "5m 19s 500ms"),
-        (3 * 3600.0, "3h"),
-        (3.11125 * 3600, "3h 6m 40s 500ms"),
-        (2 * 86400.0, "2d"),
-        (2.25 * 86400, "2d 6h"),
-        (7 * 86400.0, "7d"),
-        (0.0, "0"),
-        (0.000_001_5, "1500ns"),
-        (-5.0, "-5s"),
-        (1_000_000_000.001, "11574d 1h 46m 40s 1ms"),
+        (seconds(1), "1s"),
+        (seconds(1.001), "1s 1ms"),
+        (seconds(1.5), "1s 500ms"),
+        (millis(0.0015), "1500ns"),
+        (seconds(-5), "-5s"),
+        (seconds(1_000_000_000.001), "11574d 1h 46m 40s 1ms"),
         # Half-nanosecond ties round away from zero, from the milliseconds
         # ``seconds * 1000`` (checked under Node).
-        (2.5e-9, "3ns"),
-        (-2.5e-9, "-3ns"),
-        (7.0000000005, "7s 1ns"),
-        (1.0000000005, "1s 1ns"),
-        (0.5e-9 * 3, "2ns"),
-        (math.inf, "Infinity"),
-        (-math.inf, "-Infinity"),
+        (seconds(2.5e-9), "3ns"),
+        (seconds(-2.5e-9), "-3ns"),
+        (seconds(7.0000000005), "7s 1ns"),
+        (seconds(1.0000000005), "1s 1ns"),
+        (seconds(0.5e-9 * 3), "2ns"),
+        (seconds(1e-12), "0"),
+        (seconds(-1e-12), "0"),
+        (nanos(10**25 + 5), "115740740740d 17h 46m 40s 5ns"),
+        (nanos(-1_500_000_001), "-1s 500ms 1ns"),
+        (infinity, "Infinity"),
+        (negative_infinity, "-Infinity"),
     ],
 )
-def test_format_duration_matches_effect(seconds: float, text: str):
-    """Effect's ``Duration.format`` (Duration.test.ts "format" and the
-    negative-duration format checks)."""
-    assert format_duration(Duration(seconds)) == text
+def test_format_matches_effect(given: Duration, text: str):
+    """Effect's ``Duration.format``; the long one prints its days as a JavaScript number
+    (checked under Node)."""
+    assert given.format() == text
 
 
 def test_an_infinite_sleep_never_wakes_and_does_not_crash_the_sync_scheduler():
@@ -123,7 +130,15 @@ def test_an_infinite_sleep_never_wakes_and_does_not_crash_the_sync_scheduler():
     assert fx.run_blocking(fx.sleep(math.inf).as_("slept").race(other_thread)) == "other"
 
 
-@pytest.mark.parametrize("seconds", [1e-12, -1e-12])
-def test_format_duration_of_a_sub_nanosecond_value_is_zero(seconds: float):
-    """Effect rounds to whole nanoseconds, then ``Duration.format`` of zero is ``"0"``."""
-    assert format_duration(Duration(seconds)) == "0"
+def test_a_sleep_past_float_range_never_wakes():
+    """A finite sleep longer than any timer can wait is handed to the loop as an infinity."""
+    other_thread = fx.blocking(lambda: time.sleep(0.05)).as_("other")
+    sleep = fx.sleep(nanos(10**400)).as_("slept")
+    assert fx.run_blocking(sleep.race(other_thread)) == "other"
+
+
+def test_iso_text_of_big_nanosecond_counts():
+    """``formatIso`` stays exact past 2**53 ns (checked under Node)."""
+    assert nanos(10**30 + 1).format_iso() == "P11574074074074074DT1H46M40.000000001S"
+    assert nanos(-(10**30) - 7).format_iso() == "-P11574074074074074DT1H46M40.000000007S"
+    assert millis(2**60).format_iso() == "P13343998895DT21H54M6.976S"

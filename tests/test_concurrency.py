@@ -5,6 +5,7 @@ from collections.abc import Callable
 import pytest
 
 import pyfect as fx
+from pyfect.duration import millis, seconds
 from pyfect.testing import run_test as run
 
 
@@ -33,7 +34,7 @@ def test_concurrent_all_overlaps_sleeps():
 
     elapsed, values = run(program)
     assert values == ("a", "b", "c")
-    assert elapsed == 3
+    assert elapsed == seconds(3)
 
 
 def test_sequential_all_does_not_overlap():
@@ -45,7 +46,7 @@ def test_sequential_all_does_not_overlap():
         return (yield from fiber.join())
 
     elapsed, _ = run(program)
-    assert elapsed == 6
+    assert elapsed == seconds(6)
 
 
 def test_for_each_respects_the_concurrency_limit():
@@ -184,5 +185,5 @@ def test_timeout_produces_a_useful_error_message():
     assert isinstance(ex, fx.Failure)
     (error,) = ex.cause.failures
     assert isinstance(error, fx.TimeoutException)
-    assert error.duration == 1.5
+    assert error.duration == millis(1500)
     assert str(error) == "Operation timed out after '1s 500ms'"

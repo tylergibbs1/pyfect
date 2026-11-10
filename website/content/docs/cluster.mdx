@@ -75,7 +75,7 @@ hash each key to one of a fixed number of shards and let `get_shards` place the 
 `sharding_config.layer(settings)` provides settings (start from `dataclasses.replace(
 sharding_config.DEFAULTS, ...)`), and `layer_from_env()` reads them from the environment
 in CONSTANT_CASE (`SHARDS_PER_GROUP`, `HOST`, `PORT`), with Effect's defaults for the
-rest. Durations are [`duration.Seconds`](/docs/reference/duration).
+rest. Durations are [`duration.Duration`](/docs/reference/duration) values.
 
 ## Running a cluster
 

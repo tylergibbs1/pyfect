@@ -23,7 +23,7 @@ from layer_cases._case import Case
 
 import pyfect
 import pyfect as fx
-from pyfect.duration import Duration
+from pyfect.duration import seconds
 from pyfect.exit import Success
 from pyfect.layer import Layer
 
@@ -89,7 +89,7 @@ def test_one_layer_value_serves_three_runs(name: str) -> None:
     case = CASES[name]
     value = case.layer()
     for run in range(_RUNS):
-        exit_ = fx.run_blocking_exit(fx.scoped(case.program(value)).timeout(Duration(case.timeout)))
+        exit_ = fx.run_blocking_exit(fx.scoped(case.program(value)).timeout(seconds(case.timeout)))
         assert isinstance(exit_, Success), f"run {run + 1} of {name}: {exit_}"
 
 
@@ -100,7 +100,7 @@ def test_one_layer_value_serves_two_runs_at_once(name: str) -> None:
     with ThreadPoolExecutor(2) as pool:
         runs = [
             pool.submit(
-                fx.run_blocking_exit, fx.scoped(case.program(value)).timeout(Duration(case.timeout))
+                fx.run_blocking_exit, fx.scoped(case.program(value)).timeout(seconds(case.timeout))
             )
             for _ in range(2)
         ]

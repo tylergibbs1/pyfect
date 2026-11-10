@@ -16,7 +16,7 @@ import pytest
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Duration, nanos, to_millis
+from pyfect.duration import nanos, seconds, to_millis
 from pyfect.testing import TestClock
 
 HOUR = 3600.0
@@ -80,8 +80,8 @@ def test_adjust_skips_the_cancelled_deadline(
 def test_sleep_does_not_require_passage_of_wall_time():
     """TestClock.test.ts "sleep - does not require passage of wall time"."""
     elapsed: list[bool] = []
-    yield from fx.sync(lambda: elapsed.append(True)).delay(Duration(10 * HOUR)).fork()
-    yield from testing.adjust(Duration(11 * HOUR))
+    yield from fx.sync(lambda: elapsed.append(True)).delay(seconds(10 * HOUR)).fork()
+    yield from testing.adjust(seconds(11 * HOUR))
     assert elapsed == [True]
 
 
@@ -89,10 +89,10 @@ def test_sleep_does_not_require_passage_of_wall_time():
 def test_sleep_delays_effects_until_time_is_adjusted():
     """TestClock.test.ts "sleep - delays effects until time is adjusted"."""
     elapsed: list[bool] = []
-    fiber = yield from fx.sync(lambda: elapsed.append(True)).delay(Duration(10 * HOUR)).fork()
-    yield from testing.adjust(Duration(9 * HOUR))
+    fiber = yield from fx.sync(lambda: elapsed.append(True)).delay(seconds(10 * HOUR)).fork()
+    yield from testing.adjust(seconds(9 * HOUR))
     assert fiber.poll_unsafe() is None
-    yield from testing.adjust(Duration(11 * HOUR))
+    yield from testing.adjust(seconds(11 * HOUR))
     assert fiber.poll_unsafe() == fx.Success(None)
     assert elapsed == [True]
 
@@ -101,11 +101,11 @@ def test_sleep_delays_effects_until_time_is_adjusted():
 def test_sleep_handles_multiple_sleeps():
     """TestClock.test.ts "sleep - handles multiple sleeps"."""
     message: list[str] = []
-    yield from fx.sync(lambda: message.append("World!")).delay(Duration(3 * HOUR)).fork_scoped()
-    yield from fx.sync(lambda: message.append("Hello, ")).delay(Duration(HOUR)).fork_scoped()
-    yield from testing.adjust(Duration(HOUR))
+    yield from fx.sync(lambda: message.append("World!")).delay(seconds(3 * HOUR)).fork_scoped()
+    yield from fx.sync(lambda: message.append("Hello, ")).delay(seconds(HOUR)).fork_scoped()
+    yield from testing.adjust(seconds(HOUR))
     assert "".join(message) == "Hello, "
-    yield from testing.adjust(Duration(4 * HOUR))
+    yield from testing.adjust(seconds(4 * HOUR))
     assert "".join(message) == "Hello, World!"
 
 
@@ -113,9 +113,9 @@ def test_sleep_handles_multiple_sleeps():
 def test_set_time_sleep_correctly_handles_new_set_time():
     """TestClock.test.ts "setTime - sleep correctly handles new set time"."""
     elapsed: list[bool] = []
-    yield from fx.sync(lambda: elapsed.append(True)).delay(Duration(10 * HOUR)).fork()
+    yield from fx.sync(lambda: elapsed.append(True)).delay(seconds(10 * HOUR)).fork()
     assert elapsed == []
-    yield from testing.set_time(to_millis(Duration(11 * HOUR)))
+    yield from testing.set_time(to_millis(seconds(11 * HOUR)))
     assert elapsed == [True]
 
 
@@ -161,7 +161,7 @@ def test_adjust_keeps_nanosecond_access_total_after_infinite_durations():
     """TestClock.test.ts "adjust - keeps nanosecond access total after infinite durations"."""
     for duration in (math.inf, -math.inf):
         clock = TestClock()
-        yield from clock.adjust(Duration(duration))
+        yield from clock.adjust(seconds(duration))
         assert isinstance(clock.now_nanos_unsafe(), int)
 
 

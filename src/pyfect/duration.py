@@ -24,7 +24,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import TYPE_CHECKING, Final, Literal, TypedDict, cast, final
+from typing import TYPE_CHECKING, Final, Literal, Never, TypedDict, cast, final
 
 from pyfect import _js
 from pyfect._duration_iso import format_iso_nanos, parse_iso_nanos
@@ -159,7 +159,9 @@ class Duration:
     _millis: float | None
     _nanos: int | float
 
-    def __init__(self) -> None:
+    def __init__(self, _private: Never) -> None:
+        # ``Never``: pyright rejects every call, so ``Duration(5)`` (whose unit no one can
+        # tell) is a type error and not only a runtime one.
         raise TypeError("build a Duration with duration.millis, duration.nanos, ...")
 
     def __setattr__(self, name: str, value: object) -> None:
@@ -654,7 +656,8 @@ def _parse_nanos(text: str, scale: int) -> int:
     if not dot:
         return int(whole) * scale
     negative = whole.startswith("-")
-    fraction_scale = 10 ** len(fraction)
+    fraction_scale = int("1".ljust(len(fraction) + 1, "0"))  # 10 ** len(fraction)
+
     scaled = (int(whole.removeprefix("-")) * fraction_scale + int(fraction)) * scale
     return _divide_ties_away(-scaled if negative else scaled, fraction_scale)
 
@@ -760,7 +763,12 @@ def _from_object(obj: Mapping[str, float]) -> Duration:
 
 
 def _from_timedelta(td: timedelta) -> Duration:
-    return _from_object({"days": td.days, "seconds": td.seconds, "microseconds": td.microseconds})
+    """As the ``DurationObject`` of its days, seconds and milliseconds (or microseconds,
+    when they are not whole milliseconds)."""
+    ms, us = divmod(td.microseconds, 1_000)
+    units: dict[str, float] = {"days": td.days, "seconds": td.seconds}
+    units["microseconds" if us else "milliseconds"] = td.microseconds if us else ms
+    return _from_object(units)
 
 
 def from_input_unsafe(input: Input) -> Duration:

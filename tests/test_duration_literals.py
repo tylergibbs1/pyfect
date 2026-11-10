@@ -3,7 +3,7 @@
 A bare number as a `Duration` is milliseconds, as in Effect (since 0.2.0; before, seconds).
 Code written as `fx.sleep(5)` reads the same either way, so a default or a call written with
 seconds in mind would silently wait 1,000 times less. This test reads every function and
-class field annotated `Duration` in `src/`, then fails on a numeric literal given to one, as a
+class field annotated `duration.Input` in `src/`, then fails on a numeric literal given to one, as a
 default or at a call, in `src/`, `examples/`, `website/snippets/` and `tests/`: write
 `"5 seconds"`, `"500 millis"` or a `timedelta`, which say their unit. Zero is the same in every
 unit, so it may stay bare.
@@ -31,9 +31,19 @@ TESTS = ROOT / "tests"
 # Tests whose subject is what a bare number means.
 UNIT_FREE_TESTS = frozenset(
     TESTS / name
-    for name in ("type_checks.py", "oracle/test_duration.py", "test_duration_literals.py")
+    for name in (
+        "type_checks.py",
+        "oracle/test_duration.py",
+        "test_duration_literals.py",
+        "test_duration_overflow_guard.py",
+    )
 )
-_DURATION = re.compile(r"\bDuration\b")
+# A parameter that takes `duration.Input` (imported as `DurationInput`), or `Input` inside
+# `pyfect/duration.py` itself, reads a bare number as milliseconds. A `Duration` parameter
+# takes only the parsed value, so pyright already refuses a number there.
+_DURATION = re.compile(r"\b(?:DurationInput|duration\.Input)\b")
+_OWN_INPUT = re.compile(r"(?<![\w.])Input\b")
+_DURATION_MODULE = SRC / "duration.py"
 
 
 @dataclass
@@ -44,8 +54,8 @@ class _Slots:
     keywords: set[str] = field(default_factory=set[str])
 
 
-def _is_duration(annotation: ast.expr | None) -> bool:
-    return annotation is not None and bool(_DURATION.search(ast.unparse(annotation)))
+def _is_duration(annotation: ast.expr | None, pattern: re.Pattern[str] = _DURATION) -> bool:
+    return annotation is not None and bool(pattern.search(ast.unparse(annotation)))
 
 
 def _is_bare_number(node: ast.expr) -> bool:
@@ -69,29 +79,31 @@ def _sources(*roots: Path) -> list[Path]:
     return sorted(path for root in roots for path in root.rglob("*.py"))
 
 
-def _function_slots(fn: ast.FunctionDef | ast.AsyncFunctionDef, in_class: bool) -> _Slots:
+def _function_slots(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef, in_class: bool, pattern: re.Pattern[str]
+) -> _Slots:
     slots = _Slots()
     positional = [*fn.args.posonlyargs, *fn.args.args]
     if in_class and positional and positional[0].arg in ("self", "cls"):
         positional = positional[1:]
     for index, arg in enumerate(positional):
-        if _is_duration(arg.annotation):
+        if _is_duration(arg.annotation, pattern):
             slots.positions.add(index)
             slots.keywords.add(arg.arg)
     for arg in fn.args.kwonlyargs:
-        if _is_duration(arg.annotation):
+        if _is_duration(arg.annotation, pattern):
             slots.keywords.add(arg.arg)
     return slots
 
 
-def _class_slots(cls: ast.ClassDef) -> _Slots:
+def _class_slots(cls: ast.ClassDef, pattern: re.Pattern[str]) -> _Slots:
     """Fields annotated `Duration` (dataclasses, TypedDicts, NamedTuples)."""
     slots = _Slots()
     fields = [
         s for s in cls.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)
     ]
     for index, statement in enumerate(fields):
-        if _is_duration(statement.annotation):
+        if _is_duration(statement.annotation, pattern):
             assert isinstance(statement.target, ast.Name)
             slots.positions.add(index)
             slots.keywords.add(statement.target.id)
@@ -101,23 +113,23 @@ def _class_slots(cls: ast.ClassDef) -> _Slots:
 def _duration_slots() -> dict[str, _Slots]:
     found: dict[str, _Slots] = defaultdict(_Slots)
 
-    def visit(node: ast.AST, in_class: bool) -> None:
+    def visit(node: ast.AST, in_class: bool, pattern: re.Pattern[str]) -> None:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
-                slots = _function_slots(child, in_class)
+                slots = _function_slots(child, in_class, pattern)
                 found[child.name].positions |= slots.positions
                 found[child.name].keywords |= slots.keywords
-                visit(child, False)
+                visit(child, False, pattern)
             elif isinstance(child, ast.ClassDef):
-                slots = _class_slots(child)
+                slots = _class_slots(child, pattern)
                 found[child.name].positions |= slots.positions
                 found[child.name].keywords |= slots.keywords
-                visit(child, True)
+                visit(child, True, pattern)
             else:
-                visit(child, in_class)
+                visit(child, in_class, pattern)
 
     for path in _sources(SRC):
-        visit(_parse(path), False)
+        visit(_parse(path), False, _OWN_INPUT if path == _DURATION_MODULE else _DURATION)
     return {name: slots for name, slots in found.items() if slots.positions or slots.keywords}
 
 
@@ -303,13 +315,20 @@ def test_the_guard_finds_duration_slots_and_bare_numbers() -> None:
     assert "duration" in slots["timeout"].keywords
     tree = ast.parse(
         "fx.sleep(5)\nfx.sleep(-0.5)\nfx.sleep('5 seconds')\nx.timeout(duration=2 * 3)\n"
-        "def f(d: Duration = 5): ...\n_WAIT = 0.5\nfx.sleep(_WAIT)\n_TTL_MILLIS = 500\n"
+        "def f(d: DurationInput = 5): ...\n_WAIT = 0.5\nfx.sleep(_WAIT)\n_TTL_MILLIS = 500\n"
         "fx.sleep(_TTL_MILLIS)\nfx.sleep(math.inf)\nimport asyncio\nasyncio.sleep(0.5)\n"
         "fx.sleep(0)\nfx.sleep(0.0)\n@testing.live(timeout=10)\ndef test(): ...\n"
     )
     constants = frozenset(_numeric_constants(tree))
     found = _call_violations(tree, slots, constants) + _default_violations(tree)
     assert sorted(line for line, _ in found) == [1, 2, 4, 5, 7, 15]
+
+
+def test_only_parameters_that_parse_an_input_are_duration_slots() -> None:
+    """``Duration.max`` takes a parsed ``Duration``: the builtin ``max(1, n)`` is no slot."""
+    slots = _duration_slots()
+    assert "max" not in slots
+    assert {0} <= slots["to_millis"].positions
 
 
 # Prose: the guides, the README and every docstring in `src`. Inline code and docstring

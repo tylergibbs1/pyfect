@@ -12,6 +12,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect import testing
+from pyfect.duration import Duration, seconds, zero
 
 
 def _yield_times(n: int) -> fx.Effect[None]:
@@ -337,7 +338,7 @@ def test_starts_with_zero_durations_when_the_clock_advances_between_reads():
     @fx.fn
     def body():
         metadata = yield from fx.Transaction()
-        assert (metadata.elapsed, metadata.elapsed_since_previous) == (0, 0)
+        assert (metadata.elapsed, metadata.elapsed_since_previous) == (zero, zero)
         assert metadata.start == metadata.now
 
     yield from fx.tx(body()).pipe(fx.provide_service(fx.Clock, _AdvancingClock(base)))
@@ -349,8 +350,8 @@ class _Snapshot:
     retry_reason: fx.transaction.TransactionRetryReason | None
     start: float
     now: float
-    elapsed: float
-    elapsed_since_previous: float
+    elapsed: Duration
+    elapsed_since_previous: Duration
     nested_same: bool
 
 
@@ -403,7 +404,7 @@ def test_tracks_nested_metadata_across_retries_and_conflicts():
     yield from fiber.join()
 
     assert snapshots == [
-        _Snapshot(1, None, 0, 0, 0, 0, nested_same=True),
-        _Snapshot(2, "retry", 0, 1_000, 1, 1, nested_same=True),
-        _Snapshot(3, "conflict", 0, 1_500, 1.5, 0.5, nested_same=True),
+        _Snapshot(1, None, 0, 0, zero, zero, nested_same=True),
+        _Snapshot(2, "retry", 0, 1_000, seconds(1), seconds(1), nested_same=True),
+        _Snapshot(3, "conflict", 0, 1_500, seconds(1.5), seconds(0.5), nested_same=True),
     ]

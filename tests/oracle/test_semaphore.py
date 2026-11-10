@@ -17,7 +17,7 @@ from typing import Any, Never
 
 import pyfect as fx
 from pyfect import testing
-from pyfect.duration import Duration
+from pyfect.duration import seconds
 from pyfect.scheduler import CurrentScheduler, MixedScheduler
 
 from ._task_queue import TaskQueue
@@ -229,7 +229,7 @@ def test_many_partitions():
     ).fork()
 
     for expected in (3, 6, 9, 10):
-        yield from testing.adjust(Duration(1.5 if expected == 3 else 1))
+        yield from testing.adjust(seconds(1.5 if expected == 3 else 1))
         assert len(messages) == expected
 
 

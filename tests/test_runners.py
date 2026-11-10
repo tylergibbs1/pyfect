@@ -71,7 +71,7 @@ def _layer(original_id: Snowflake) -> Layer[Runners | MessageStorage]:
     wrapped = fx.layer.effect(MessageStorage, MessageStorage().map(wrap)).pipe(
         fx.layer.provide(layer_memory)
     )
-    config = replace(sharding_config.DEFAULTS, entity_reply_poll_interval=fx.duration.Duration(1))
+    config = replace(sharding_config.DEFAULTS, entity_reply_poll_interval=fx.duration.seconds(1))
     return (
         runners_layer_noop.pipe(fx.layer.provide_merge(wrapped))
         .pipe(fx.layer.provide(snowflake.layer_generator))

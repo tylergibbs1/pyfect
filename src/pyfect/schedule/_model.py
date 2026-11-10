@@ -180,7 +180,7 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
         self._make_step = make_step
 
     @overload
-    def map[B, I, E2, R2](  # pyright: ignore[reportOverlappingOverload]
+    def map[B, I, E2, R2](
         self: Schedule[Out_co, I, E_co, R_co], f: Callable[[Metadata[Out_co, I]], Effect[B, E2, R2]]
     ) -> Schedule[B, I, E_co | E2, R_co | R2]: ...
     @overload
@@ -212,7 +212,7 @@ class Schedule(Generic[Out_co, In_contra, E_co, R_co]):
         return tap(self, f)
 
     @overload
-    def while_[I, E2, R2](  # pyright: ignore[reportOverlappingOverload]
+    def while_[I, E2, R2](
         self: Schedule[Out_co, I, E_co, R_co],
         predicate: Callable[[Metadata[Out_co, I]], Effect[bool, E2, R2]],
     ) -> Schedule[Out_co, I, E_co | E2, R_co | R2]: ...

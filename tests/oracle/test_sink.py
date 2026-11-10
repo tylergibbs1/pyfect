@@ -25,7 +25,7 @@ from typing import Any
 
 import pyfect as fx
 from pyfect import cause, sink, stream, testing
-from pyfect.duration import Duration, to_millis
+from pyfect.duration import seconds, to_millis
 from pyfect.option import Option, Some
 from pyfect.result import Err, Ok, Result
 from pyfect.stream import Stream
@@ -345,7 +345,7 @@ def test_with_duration_uses_monotonic_time_when_wall_time_moves_backward():
 
     empty: Stream[int] = stream.empty
     _, duration = yield from empty.run(sink.from_effect(fx.gen(body)).with_duration())
-    assert to_millis(Duration(duration)) == 100
+    assert to_millis(seconds(duration)) == 100
 
 
 # --- flatMap -----------------------------------------------------------------------
